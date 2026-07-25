@@ -2827,3 +2827,66 @@ prefer_github_native_stacks = true
 	assert.Equal([]int64{10, 11}, stackMemberNumbers(*after.JSON200.Members),
 		"a repository no longer tracked must still lose native ordering when the preview is disabled")
 }
+
+// TestNewServerRestoresProjectionWhenNativeStacksBootDisabled covers a daemon
+// that starts with the preview already off. The setting can be edited while the
+// daemon is stopped, or a previous run can save it and exit before reconciling,
+// so binding the syncer preference is not enough: stored native ordering would
+// drive the merge safeguard until each repository next synced, and forever for
+// repositories no longer tracked.
+func TestNewServerRestoresProjectionWhenNativeStacksBootDisabled(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	dir := t.TempDir()
+	database := dbtest.Open(t)
+	seedStackedPR(t, database, "acme", "widget", 10, "feat/base", "main", db.MergeRequestStateOpen, "", "")
+	seedStackedPR(t, database, "acme", "widget", 11, "feat/tip", "feat/base", db.MergeRequestStateOpen, "", "")
+	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	require.NotNil(repo)
+	now := time.Now().UTC()
+	require.NoError(database.ReplaceGitHubNativeStack(ctx, db.GitHubNativeStack{
+		RepoID: repo.ID, GitHubID: 9001, Number: 42, Size: 2,
+		BaseRef: "main", IsOpen: true, GitHubCreatedAt: now,
+		ContentFingerprint: "native", LastObservedAt: now,
+		Members: []db.GitHubNativeStackMember{
+			{Position: 1, PullRequestNumber: 11, State: "open", HeadRef: "feat/tip", HeadSHA: "sha11"},
+			{Position: 2, PullRequestNumber: 10, State: "open", HeadRef: "feat/base", HeadSHA: "sha10"},
+		},
+	}))
+	// The last run left native ordering behind.
+	require.NoError(stacks.RunDetectionWithNativeStacks(ctx, database, repo.ID, []int{42}))
+
+	// This run boots with the preview off.
+	cfgPath := filepath.Join(dir, "config.toml")
+	require.NoError(os.WriteFile(cfgPath, []byte(`
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "widget"
+
+[pull_requests]
+prefer_github_native_stacks = false
+`), 0o644))
+	cfg, err := config.Load(cfgPath)
+	require.NoError(err)
+	clients := map[string]ghclient.Client{"github.com": &mockGH{}}
+	syncer := ghclient.NewSyncer(clients, database, nil, nil, time.Minute, nil, nil)
+	t.Cleanup(syncer.Stop)
+	srv := NewWithConfig(database, syncer, nil, nil, cfg, cfgPath,
+		ServerOptions{HostCheckAllowLoopbackAnyPort: true})
+	client := setupTestClientWithBaseURL(t, srv, "http://127.0.0.1:8091")
+
+	// No sync has run, and the repository is not even tracked.
+	resp, err := client.HTTP.GetPullStackWithResponse(ctx, "gh", "acme", "widget", 10)
+	require.NoError(err)
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.Members)
+	assert.Equal([]int64{10, 11}, stackMemberNumbers(*resp.JSON200.Members),
+		"a server booting with the preview disabled must not serve native ordering")
+}

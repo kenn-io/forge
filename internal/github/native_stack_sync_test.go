@@ -3,6 +3,7 @@ package github
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -31,6 +32,7 @@ type nativeStackSyncTestClient struct {
 	// listErrors is consumed one entry per open-PR list call so a test can model
 	// a 304 arriving on a later sync.
 	listErrors []error
+	listCalls  atomic.Int32
 	// onPage runs before each stacks page is served so a test can model state
 	// changing while the sync is in flight.
 	onPage func()
@@ -39,6 +41,7 @@ type nativeStackSyncTestClient struct {
 func (c *nativeStackSyncTestClient) ListOpenPullRequestsWithNativeStackHints(
 	context.Context, string, string,
 ) ([]*gh.PullRequest, map[int]*NativeStackHint, error) {
+	c.listCalls.Add(1)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if len(c.listErrors) > 0 {
@@ -916,4 +919,86 @@ func TestNativeStackHintListingClassifiesDisabledPullRequests(t *testing.T) {
 	require.ErrorAs(err, &platformErr)
 	assert.Equal(platform.ErrCodeRepositoryFeatureDisabled, platformErr.Code)
 	assert.Equal(platform.RepositoryFeatureMergeRequests, platformErr.Capability)
+}
+
+// TestRunOncePersistsPullRequestsWhenHintIsUnclaimed carries the lenient hint
+// decode through the sync engine: a pull request GitHub declined to claim (or
+// whose hint could not be read) must still be indexed and fall back to branch
+// inference, not be dropped along with its stack membership.
+func TestRunOncePersistsPullRequestsWhenHintIsUnclaimed(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := openTestDB(t)
+	now := time.Date(2026, time.July, 24, 12, 0, 0, 0, time.UTC)
+	first := buildOpenPR(101, now)
+	second := buildOpenPR(102, now)
+	first.Head.Ref = new("feature/a")
+	second.Head.Ref = new("feature/b")
+	client := &nativeStackSyncTestClient{
+		mockClient: &mockClient{},
+		pulls:      []*gh.PullRequest{first, second},
+		// 101 is claimed by no stack; 102's hint was rejected at decode and is
+		// indistinguishable from that. Neither may cost the pull request itself.
+		hints: map[int]*NativeStackHint{101: nil, 102: nil},
+	}
+	repo := RepoRef{
+		Owner: "owner", Name: "repo", PlatformHost: "github.com",
+		PlatformExternalID: "repo-owner-repo",
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client}, database, nil,
+		[]RepoRef{repo}, time.Minute, nil, nil,
+	)
+	syncer.now = func() time.Time { return now }
+	syncer.SetPreferGitHubNativeStacks(true)
+	var results []RepoSyncResult
+	syncer.SetOnSyncCompleted(func(got []RepoSyncResult) { results = got })
+
+	syncer.RunOnce(t.Context())
+
+	require.Len(results, 1)
+	require.NotNil(results[0].GitHubNativeStacks)
+	assert.Empty(results[0].GitHubNativeStacks.ConfirmedNumbers,
+		"unclaimed pull requests confirm no stack")
+	repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "owner", "repo"))
+	require.NoError(err)
+	for _, number := range []int{101, 102} {
+		mr, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, number)
+		require.NoError(err)
+		assert.NotNil(mr, "pull request %d must be indexed regardless of its hint", number)
+	}
+}
+
+// TestRunOncePutsDisabledPullRequestsIntoCooldownWithHintsEnabled proves the
+// classification reaches the cooldown machinery. A repository with pull requests
+// disabled answers 410 on the hint listing; without classification the syncer
+// would treat that as a hard failure and re-list every cycle.
+func TestRunOncePutsDisabledPullRequestsIntoCooldownWithHintsEnabled(t *testing.T) {
+	assert := assert.New(t)
+	database := openTestDB(t)
+	now := time.Date(2026, time.July, 24, 12, 0, 0, 0, time.UTC)
+	disabled := fmt.Errorf("list open pull requests: %w", &gh.ErrorResponse{
+		Response: &http.Response{StatusCode: http.StatusGone},
+		Message:  "Pull requests are disabled for this repository",
+	})
+	client := &nativeStackSyncTestClient{mockClient: &mockClient{}}
+	client.listErrors = []error{disabled, disabled}
+	repo := RepoRef{
+		Platform: platform.KindGitHub, PlatformHost: "github.com",
+		Owner: "owner", Name: "repo", PlatformExternalID: "repo-owner-repo",
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client}, database, nil,
+		[]RepoRef{repo}, time.Minute, nil, nil,
+	)
+	syncer.now = func() time.Time { return now }
+	syncer.SetPreferGitHubNativeStacks(true)
+
+	syncer.RunOnce(t.Context())
+	syncer.RunOnce(t.Context())
+
+	assert.EqualValues(1, client.listCalls.Load(),
+		"the second sync must respect the feature cooldown instead of re-listing")
+	_, failed := syncer.failedRepos.Load(repoFailKey(repo))
+	assert.False(failed, "a disabled feature is a cooldown, not a repository failure")
 }

@@ -171,7 +171,9 @@ fallback repository listing.
   cannot replay over it. That recheck is only sound because the swap itself
   takes the projection lock. Reconciliation covers every repository holding
   cached native stacks, not just tracked ones: a repository dropped from config
-  still serves its stored pull requests and no sync will revisit it.
+  still serves its stored pull requests and no sync will revisit it. Boot with
+  the preference off reconciles the same way, since the setting can change while
+  the daemon is stopped.
   (`internal/server/native_stack_settings.go::reconcileGitHubNativeStackProjection`,
   `internal/github/sync.go::SetPreferGitHubNativeStacks`)
 - The preview must not widen the blast radius of the list it rides on. The REST

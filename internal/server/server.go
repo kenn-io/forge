@@ -1109,6 +1109,15 @@ func newServer(
 	// rather than relying on the caller that assembled the syncer.
 	if syncer != nil && cfg != nil {
 		syncer.SetPreferGitHubNativeStacks(cfg.PullRequests.PreferGitHubNativeStacks)
+		if !cfg.PullRequests.PreferGitHubNativeStacks {
+			// Boot is a transition point too: the setting may have been edited
+			// while the daemon was stopped, or a previous run may have saved it and
+			// exited before reconciling. Stored native ordering would otherwise
+			// keep driving the merge safeguard until each repository next synced,
+			// and forever for repositories no longer tracked. Nothing is served
+			// yet, so this runs before the handler goes live.
+			s.restoreBranchDerivedStackProjections()
+		}
 	}
 
 	return s

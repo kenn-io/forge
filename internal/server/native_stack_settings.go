@@ -33,6 +33,17 @@ func (s *Server) reconcileGitHubNativeStackProjection(previous, enabled bool) {
 	if s.syncer == nil || !previous || enabled {
 		return
 	}
+	s.restoreBranchDerivedStackProjections()
+}
+
+// restoreBranchDerivedStackProjections re-derives every stored GitHub
+// repository's stacks from branch relationships. Callers must have established
+// that the preview is off; the projection lock then keeps that decision stable
+// for the whole sweep.
+func (s *Server) restoreBranchDerivedStackProjections() {
+	if s.syncer == nil {
+		return
+	}
 	ctx := s.bgCtx
 
 	// Serialize with the sync completion hook: an in-flight sync that captured

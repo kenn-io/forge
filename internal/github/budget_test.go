@@ -37,9 +37,23 @@ func TestSyncBudgetWorstCase(t *testing.T) {
 }
 
 func TestArchiveLiveFloorReservesWorstCaseWireAttempts(t *testing.T) {
-	assert.Equal(t, 24, archiveLiveFloor(platform.KindGitHub))
-	assert.Equal(t, 24, archiveLiveFloor(platform.KindGitLab))
-	assert.Equal(t, 24, archiveLiveFloor(platform.KindGitea))
+	assert := assert.New(t)
+	assert.Equal(24, archiveLiveFloor(platform.KindGitHub))
+	assert.Equal(24, archiveLiveFloor(platform.KindGitLab))
+	assert.Equal(11, archiveLiveFloor(platform.KindGitea))
+	assert.Equal(11, archiveLiveFloor(platform.KindForgejo))
+}
+
+func TestLocalArchiveSpendAvailablePreservesLiveFloor(t *testing.T) {
+	assert := assert.New(t)
+	budget := NewSyncBudget(50)
+
+	assert.Equal(39, budget.LocalArchiveSpendAvailable(11))
+	budget.SpendArchive(38)
+	assert.Equal(1, budget.LocalArchiveSpendAvailable(11))
+	budget.SpendArchive(1)
+	assert.Zero(budget.LocalArchiveSpendAvailable(11))
+	assert.Equal(11, budget.Remaining())
 }
 
 func TestSyncBudgetArchiveAdmissionRampsTowardReset(t *testing.T) {

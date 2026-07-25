@@ -904,7 +904,12 @@ func (s *Syncer) Admit(
 	resetAt := archiveBudgetResetAt(tracker)
 	available := 0
 	if budget != nil {
-		available = budget.ArchiveSpendAvailable(now, resetAt, archiveLiveFloor(ref.Platform))
+		liveFloor := archiveLiveFloor(ref.Platform)
+		if resetAt == nil && (ref.Platform == platform.KindGitea || ref.Platform == platform.KindForgejo) {
+			available = budget.LocalArchiveSpendAvailable(liveFloor)
+		} else {
+			available = budget.ArchiveSpendAvailable(now, resetAt, liveFloor)
+		}
 	}
 	if available < cost {
 		probe.abandon()
@@ -993,6 +998,9 @@ func archiveBudgetResetAt(tracker *RateTracker) *time.Time {
 }
 
 func archiveLiveFloor(kind platform.Kind) int {
+	if kind == platform.KindGitea || kind == platform.KindForgejo {
+		return PRDetailWorstCase + 1 // detail calls plus repository feature confirmation
+	}
 	floor := detailWorstCaseAttemptCost(kind, QueueItemPR) + wireAttemptsPerRequest
 	if kind == platform.KindGitHub {
 		floor += wireAttemptsPerRequest // one notification page

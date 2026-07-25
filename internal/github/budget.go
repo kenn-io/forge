@@ -119,6 +119,15 @@ func (b *SyncBudget) ArchiveSpendAvailable(now time.Time, resetAt *time.Time, li
 	return b.archiveSpendAvailable(now, resetAt, liveFloor)
 }
 
+// LocalArchiveSpendAvailable returns the unspent configured hourly budget
+// above the live-work floor. It is used only by providers whose responses do
+// not expose a usable quota window; it does not create provider quota state.
+func (b *SyncBudget) LocalArchiveSpendAvailable(liveFloor int) int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return max(b.limit-max(liveFloor, 0)-b.spent, 0)
+}
+
 func (b *SyncBudget) SpendArchive(n int) {
 	b.mu.Lock()
 	defer b.mu.Unlock()

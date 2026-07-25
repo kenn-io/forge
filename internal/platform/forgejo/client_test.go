@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -14,6 +15,8 @@ import (
 	ghsync "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/platform"
 	"go.kenn.io/middleman/internal/platform/gitealike"
+	"go.kenn.io/middleman/internal/ratelimit"
+	"go.kenn.io/middleman/internal/testutil/dbtest"
 )
 
 var (
@@ -35,6 +38,40 @@ var (
 	_ platform.DiffReviewDraftMutator         = (*Client)(nil)
 	_ platform.MergeRequestReviewThreadReader = (*Client)(nil)
 )
+
+func TestClientRecordsRateLimitHeaders(t *testing.T) {
+	assert := assert.New(t)
+	require := Require.New(t)
+	reset := time.Now().UTC().Add(30 * time.Minute).Unix()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-RateLimit-Limit", "5000")
+		w.Header().Set("X-RateLimit-Remaining", "4999")
+		w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(reset, 10))
+		_, _ = w.Write([]byte(`{"id":1,"name":"repo","full_name":"owner/repo","owner":{"id":2,"login":"owner"}}`))
+	}))
+	defer server.Close()
+	database := dbtest.Open(t)
+	tracker := ratelimit.NewPlatformRateTracker(database, "forgejo", "forgejo.test", "rest")
+	client, err := NewClient(
+		"forgejo.test",
+		testTokenSource("token"),
+		WithBaseURLForTesting(server.URL),
+		WithRateTracker(tracker),
+	)
+	require.NoError(err)
+
+	_, err = client.GetRepository(t.Context(), platform.RepoRef{Owner: "owner", Name: "repo"})
+	require.NoError(err)
+	row, err := database.GetPlatformRateLimit("forgejo", "forgejo.test", "rest")
+	require.NoError(err)
+	require.NotNil(row)
+	assert.Equal(1, row.RequestsHour)
+	assert.Equal(5000, row.RateLimit)
+	assert.Equal(4999, row.RateRemaining)
+	require.NotNil(row.RateResetAt)
+	assert.Equal(reset, row.RateResetAt.Unix())
+}
 
 func TestClientClassifiesDisabledIssuesFromRepositoryMetadata(t *testing.T) {
 	assert := assert.New(t)

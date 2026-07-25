@@ -735,6 +735,52 @@ func TestArchiveAdmissionAttemptAllowanceUsesAvailableSurplus(t *testing.T) {
 	}
 }
 
+func TestGitealikeArchiveAdmissionUsesHeaderlessLocalBudget(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	budget := NewSyncBudget(50)
+	giteaKey := RateBucketKey("gitea", "gitea.test")
+	giteaTracker := NewPlatformRateTracker(database, "gitea", "gitea.test", "rest")
+	giteaTracker.RecordRequest()
+	syncer := NewSyncerWithRegistry(
+		nil, database, nil, nil, time.Hour,
+		map[string]*RateTracker{giteaKey: giteaTracker},
+		map[string]*SyncBudget{giteaKey: budget},
+	)
+	giteaRef := platform.RepoRef{
+		Platform: platform.KindGitea, Host: "gitea.test", Owner: "acme", Name: "widget",
+	}
+
+	admission, err := syncer.Admit(
+		t.Context(), giteaRef, db.ArchiveItemTypeMergeRequest, 38,
+	)
+	require.NoError(err)
+	require.True(admission.Allowed)
+	t.Cleanup(func() { admission.Complete(nil, true) })
+	for range 39 {
+		assert.True(ConsumeArchiveAttemptAllowance(admission.Context))
+	}
+	assert.False(ConsumeArchiveAttemptAllowance(admission.Context))
+
+	githubKey := RateBucketKey("github", "github.test")
+	githubTracker := NewPlatformRateTracker(database, "github", "github.test", "rest")
+	githubTracker.RecordRequest()
+	githubSyncer := NewSyncerWithRegistry(
+		nil, database, nil, nil, time.Hour,
+		map[string]*RateTracker{githubKey: githubTracker},
+		map[string]*SyncBudget{githubKey: NewSyncBudget(50)},
+	)
+	githubRef := platform.RepoRef{
+		Platform: platform.KindGitHub, Host: "github.test", Owner: "acme", Name: "widget",
+	}
+	denied, err := githubSyncer.Admit(
+		t.Context(), githubRef, db.ArchiveItemTypeMergeRequest, 1,
+	)
+	require.NoError(err)
+	assert.False(denied.Allowed)
+}
+
 func TestArchiveAdmissionPreservesProviderReserveForDeclaredCost(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

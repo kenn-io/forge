@@ -203,6 +203,9 @@ func (t *rateTrackingTransport) RoundTrip(req *http.Request) (*http.Response, er
 	resp, err := base.RoundTrip(req)
 	if resp != nil && t.rateTracker != nil {
 		t.rateTracker.RecordRequest()
+		if rate, ok := gitealike.RateFromHeaders(resp.Header); ok {
+			t.rateTracker.UpdateFromRate(rate)
+		}
 	}
 	return resp, err
 }

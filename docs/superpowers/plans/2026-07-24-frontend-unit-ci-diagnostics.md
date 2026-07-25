@@ -31,7 +31,7 @@
 - Consumes: the root `package.json` dependency `vite-plus: "0.2.3"`
 - Produces: four setup-vp invocations that install Vite+ 0.2.3 before running lockfile installation
 
-- [ ] **Step 1: Add the explicit version to every non-container setup**
+- [x] **Step 1: Add the explicit version to every non-container setup**
 
 Add the same input to each existing `Setup Vite+` block:
 
@@ -43,7 +43,7 @@ with:
   run-install: true
 ```
 
-- [ ] **Step 2: Inspect the workflow diff**
+- [x] **Step 2: Inspect the workflow diff**
 
 Run:
 
@@ -54,7 +54,7 @@ git diff -- .github/workflows/ci.yml
 
 Expected: four `version: "0.2.3"` additions and no unrelated changes.
 
-- [ ] **Step 3: Commit the toolchain pin**
+- [x] **Step 3: Commit the toolchain pin**
 
 Run the repository-local `context-sync --commit` workflow, then:
 
@@ -73,7 +73,7 @@ git commit -m "ci: pin Vite+ setup to the lockfile version" \
 - Consumes: cgroup v2 files under `/sys/fs/cgroup`, `/usr/bin/time`, Node's diagnostic-report flags, and the existing unit command
 - Produces: `tmp/frontend-unit-diagnostics/{versions.txt,cgroup-before.txt,cgroup-after.txt,time.txt,vitest.log,node-reports/*}`
 
-- [ ] **Step 1: Prepare the diagnostic directory and baseline evidence**
+- [x] **Step 1: Prepare the diagnostic directory and baseline evidence**
 
 Before the test step, add a preparation step that creates
 `tmp/frontend-unit-diagnostics/node-reports`, records `node`, `bun`, and local
@@ -100,7 +100,7 @@ done
 
 Mark this telemetry step `continue-on-error: true`.
 
-- [ ] **Step 2: Instrument Vitest without changing its result**
+- [x] **Step 2: Instrument Vitest without changing its result**
 
 Replace the bare unit-test command with:
 
@@ -124,13 +124,13 @@ run: |
 GitHub's Bash shell keeps `pipefail`; `set +e` allows the script to capture
 `PIPESTATUS[0]` before exiting with the timed Vitest command's result.
 
-- [ ] **Step 3: Capture post-test cgroup evidence**
+- [x] **Step 3: Capture post-test cgroup evidence**
 
 Add an `if: always()` step that repeats the readable cgroup snapshot into
 `cgroup-after.txt`. Mark it `continue-on-error: true` so telemetry cannot
 override the test result.
 
-- [ ] **Step 4: Upload diagnostics after every result**
+- [x] **Step 4: Upload diagnostics after every result**
 
 Use the existing pinned artifact action:
 
@@ -146,7 +146,7 @@ Use the existing pinned artifact action:
     retention-days: 7
 ```
 
-- [ ] **Step 5: Exercise the shell behavior**
+- [x] **Step 5: Exercise the shell behavior**
 
 Run controlled success and failure commands through the same
 `/usr/bin/time | tee` status-capture pattern.
@@ -159,7 +159,7 @@ Expected:
   not;
 - Node accepts every configured diagnostic-report option.
 
-- [ ] **Step 6: Validate and commit diagnostics**
+- [x] **Step 6: Validate and commit diagnostics**
 
 Run:
 
@@ -186,7 +186,7 @@ git commit -m "ci: preserve frontend unit termination evidence" \
 - Consumes: the artifact and GitHub runner-debug behavior introduced in Task 2
 - Produces: a durable maintainer procedure for a frontend unit run that exits without a summary
 
-- [ ] **Step 1: Add the testing-context rule**
+- [x] **Step 1: Add the testing-context rule**
 
 Document that the frontend unit artifact contains Vitest output, `/usr/bin/time`
 resource usage, Node fatal reports, and pre/post cgroup memory counters. State
@@ -194,7 +194,7 @@ that a repeat silent exit should be rerun once with the repository variable
 `ACTIONS_RUNNER_DEBUG=true`, followed by removal of that variable after the
 runner diagnostic logs are downloaded.
 
-- [ ] **Step 2: Run final verification**
+- [x] **Step 2: Run final verification**
 
 Run:
 
@@ -215,7 +215,7 @@ Inspect the complete branch diff from `origin/main` and confirm:
 - all four setup-vp steps use 0.2.3;
 - no private hostname, credential, or unrelated change appears.
 
-- [ ] **Step 3: Commit the context update**
+- [x] **Step 3: Commit the context update**
 
 Run the repository-local `context-sync --commit` workflow, then:
 

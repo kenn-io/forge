@@ -315,18 +315,20 @@ jobs:
           done
 
       - name: Run frontend unit tests
-        env:
-          NODE_OPTIONS: >-
-            --report-on-fatalerror
-            --report-uncaught-exception
-            --report-exclude-env
-            --report-directory=../tmp/frontend-unit-diagnostics/node-reports
         run: |
           set +e
+          diagnostics="$PWD/tmp/frontend-unit-diagnostics"
+          if ! mkdir -p "$diagnostics/node-reports" || \
+            ! test -w "$diagnostics/node-reports" || \
+            ! touch "$diagnostics/time.txt" "$diagnostics/vitest.log"; then
+            cd frontend
+            exec ../node_modules/.bin/vp test run --project unit
+          fi
           cd frontend
-          /usr/bin/time -v -o ../tmp/frontend-unit-diagnostics/time.txt \
-            ../node_modules/.bin/vp test run --project unit \
-            2>&1 | tee ../tmp/frontend-unit-diagnostics/vitest.log
+          NODE_OPTIONS="--report-on-fatalerror --report-uncaught-exception --report-exclude-env --report-directory=$diagnostics/node-reports" \
+            /usr/bin/time -v -o "$diagnostics/time.txt" \
+              ../node_modules/.bin/vp test run --project unit \
+              2>&1 | tee "$diagnostics/vitest.log"
           test_status=${PIPESTATUS[0]}
           exit "$test_status"
 

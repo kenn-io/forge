@@ -296,6 +296,38 @@ token_env = "MIDDLEMAN_STANDALONE_OWNER_PAT"
 		"a standalone owner route is a usable platform credential")
 }
 
+// An App installation with no [[repos]] entry is the other standalone route:
+// ProviderTokenSources registers it for the installation account, and it is the
+// only credential that can enumerate a selected installation. Reporting that
+// configuration as unauthenticated would be wrong before any import happens.
+func TestConfiguredCredentialAvailableSeesStandaloneAppRoute(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	keyPath := filepath.Join(t.TempDir(), "app.pem")
+	require.NoError(os.WriteFile(keyPath, []byte("private-key\n"), 0o600))
+	cfg, err := Load(writeConfig(t, `
+github_token_env = "MIDDLEMAN_OWNER_ROUTE_TEST_ABSENT_DEFAULT"
+
+[[github_apps]]
+app_id = 42
+private_key_path = "`+keyPath+`"
+installation_id = 99
+installation_account = "acme"
+repository_selection = "selected"
+selected_repos = ["acme/widgets"]
+`))
+	require.NoError(err)
+	require.Empty(cfg.Repos)
+
+	assert.True(cfg.ConfiguredCredentialAvailable(),
+		"a standalone App installation is a usable platform credential")
+
+	require.NoError(os.WriteFile(keyPath, nil, 0o600))
+
+	assert.False(cfg.ConfiguredCredentialAvailable(),
+		"an empty private key file cannot mint installation tokens")
+}
+
 // A readable App private key is a usable credential: startup mints
 // installation tokens from it on demand, so a host with only an App
 // installation is authenticated.

@@ -294,8 +294,66 @@ jobs:
           cache: false
           run-install: true
 
+      - name: Prepare frontend unit diagnostics
+        continue-on-error: true
+        run: |
+          set -u
+          diagnostics=tmp/frontend-unit-diagnostics
+          mkdir -p "$diagnostics/node-reports"
+          {
+            node --version
+            bun --version
+            ./node_modules/.bin/vp --version
+          } > "$diagnostics/versions.txt"
+          for metric in memory.current memory.peak memory.max memory.events; do
+            if [[ -r "/sys/fs/cgroup/$metric" ]]; then
+              {
+                echo "== $metric =="
+                sed -n '1,120p' "/sys/fs/cgroup/$metric"
+              } >> "$diagnostics/cgroup-before.txt"
+            fi
+          done
+
       - name: Run frontend unit tests
-        run: cd frontend && ../node_modules/.bin/vp test run --project unit
+        env:
+          NODE_OPTIONS: >-
+            --report-on-fatalerror
+            --report-uncaught-exception
+            --report-exclude-env
+            --report-directory=../tmp/frontend-unit-diagnostics/node-reports
+        run: |
+          set +e
+          cd frontend
+          /usr/bin/time -v -o ../tmp/frontend-unit-diagnostics/time.txt \
+            ../node_modules/.bin/vp test run --project unit \
+            2>&1 | tee ../tmp/frontend-unit-diagnostics/vitest.log
+          test_status=${PIPESTATUS[0]}
+          exit "$test_status"
+
+      - name: Capture frontend unit cgroup diagnostics
+        if: always()
+        continue-on-error: true
+        run: |
+          set -u
+          diagnostics=tmp/frontend-unit-diagnostics
+          for metric in memory.current memory.peak memory.max memory.events; do
+            if [[ -r "/sys/fs/cgroup/$metric" ]]; then
+              {
+                echo "== $metric =="
+                sed -n '1,120p' "/sys/fs/cgroup/$metric"
+              } >> "$diagnostics/cgroup-after.txt"
+            fi
+          done
+
+      - name: Upload frontend unit diagnostics
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: frontend-unit-diagnostics
+          path: tmp/frontend-unit-diagnostics/
+          if-no-files-found: warn
+          retention-days: 7
 
   pty-windows:
     name: PTY tests (windows)

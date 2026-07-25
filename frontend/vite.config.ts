@@ -392,6 +392,10 @@ const config = {
       // Pre-bundling every icon -- not just the /pulls subset -- stops the cold
       // optimizer from discovering a new icon mid-run on issues/detail routes,
       // re-bundling, and reloading the page out from under a browser-tier mount.
+      "@lucide/svelte/icons/maximize",
+      "@lucide/svelte/icons/minimize",
+      "@lucide/svelte/icons/square-split-horizontal",
+      "@lucide/svelte/icons/square-split-vertical",
       "@lucide/svelte/icons/alarm-clock",
       "@lucide/svelte/icons/alert-triangle",
       "@lucide/svelte/icons/archive-restore",

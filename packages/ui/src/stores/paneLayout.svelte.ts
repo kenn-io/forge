@@ -17,6 +17,16 @@ import { getStackDepth } from "./keyboard/modal-stack.svelte.js";
 
 export type PaneSurfaceKey = "prs" | "issues" | "activity";
 
+/** One entry per pane a surface can show. Lives here, not in the component, so it is re-exportable. */
+export interface PaneTabSpec {
+  key: string;
+  label: string;
+  /** False prunes the pane from the rendered tree while keeping its stored place. */
+  available: boolean;
+  /** Whether the user can hide this pane (the inline workspace's close action). */
+  hideable?: boolean | undefined;
+}
+
 export const PANE_LAYOUT_STORAGE_PREFIX = "middleman-pane-layout-v1:";
 
 export interface PaneLayoutStore {

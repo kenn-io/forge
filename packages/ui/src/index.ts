@@ -142,6 +142,8 @@ export type { SelectDropdownOption } from "@kenn-io/kit-ui";
 export { SplitResizeHandle } from "@kenn-io/kit-ui";
 export type { SplitResizeEvent, SplitResizeOrientation } from "@kenn-io/kit-ui";
 export { default as TabbedPanelTree } from "./components/shared/TabbedPanelTree.svelte";
+export { default as DetailPaneLayout } from "./components/shared/DetailPaneLayout.svelte";
+export { default as PaneLeafActions } from "./components/shared/PaneLeafActions.svelte";
 export {
   clearActiveTabbedPanelDrag,
   readTabbedPanelTabDrag,
@@ -186,7 +188,7 @@ export {
   getPaneLayoutStore,
   resetPaneLayoutStoresForTest,
 } from "./stores/paneLayout.svelte.js";
-export type { PaneLayoutStore, PaneSurfaceKey } from "./stores/paneLayout.svelte.js";
+export type { PaneLayoutStore, PaneSurfaceKey, PaneTabSpec } from "./stores/paneLayout.svelte.js";
 export { default as WorkspaceRightSidebar } from "./components/workspace/WorkspaceRightSidebar.svelte";
 export { default as WorkspaceDiffPanel } from "./components/workspace/WorkspaceDiffPanel.svelte";
 export { default as WorkspaceDockPanel } from "./components/workspace/WorkspaceDockPanel.svelte";

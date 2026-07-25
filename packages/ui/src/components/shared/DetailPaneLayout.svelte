@@ -1,0 +1,191 @@
+<script lang="ts">
+  import type { Snippet } from "svelte";
+  import { Button } from "@kenn-io/kit-ui";
+  import ChevronsUpIcon from "@lucide/svelte/icons/chevrons-up";
+  import PaneLeafActions from "./PaneLeafActions.svelte";
+  import TabbedPanelTree from "./TabbedPanelTree.svelte";
+  import {
+    flattenTabbedPanelTree,
+    type TabbedPanelDescriptor,
+    type TabbedPanelLeaf,
+  } from "./tabbed-panel-layout.js";
+  import type { PaneLayoutStore, PaneTabSpec } from "../../stores/paneLayout.svelte.js";
+
+  interface Props {
+    layout: PaneLayoutStore;
+    tabs: PaneTabSpec[];
+    renderPane: Snippet<[string, boolean]>;
+    paneIcon?: Snippet<[TabbedPanelDescriptor]> | undefined;
+    tablistLabel?: string;
+    leafLabel?: string;
+    /** Below this container width the tree flattens to a single strip. */
+    flattenBelowPx?: number;
+    /** Route-bound tab, when the surface has one. */
+    routeTabKey?: string | undefined;
+    /** A tab was clicked. Surfaces route this through navigate(). */
+    onSelectTab?: ((tabKey: string) => void) | undefined;
+  }
+
+  const {
+    layout,
+    tabs,
+    renderPane,
+    paneIcon = undefined,
+    tablistLabel = "Detail panes",
+    leafLabel = "Detail pane group",
+    flattenBelowPx = 1280,
+    routeTabKey = undefined,
+    onSelectTab = undefined,
+  }: Props = $props();
+
+  let host = $state<HTMLElement | null>(null);
+  let hostWidth = $state(0);
+
+  const availableTabs = $derived(tabs.filter((tab) => tab.available).map((tab) => tab.key));
+  const descriptors = $derived<TabbedPanelDescriptor[]>(
+    tabs.filter((tab) => tab.available).map((tab) => ({ key: tab.key, label: tab.label })),
+  );
+  const renderTree = $derived(layout.renderTree(availableTabs));
+  const zoomedLeafID = $derived(layout.effectiveZoomedLeafID(availableTabs));
+
+  // Measured rather than media-queried: these surfaces are embedded at several
+  // widths (focus presentation, activity drawer) inside the same viewport.
+  const flattened = $derived(hostWidth > 0 && hostWidth < flattenBelowPx);
+
+  const activeTree = $derived.by(() => {
+    const tree = renderTree;
+    if (!tree) return null;
+    if (!flattened) return tree;
+    // A tree has no single active tab, so the surface's last-focused tab breaks
+    // the tie; the route-bound tab wins when there is one.
+    return flattenTabbedPanelTree(tree, routeTabKey ?? layout.lastFocusedTabKey() ?? undefined);
+  });
+
+  const hiddenButAvailable = $derived(
+    tabs.filter((tab) => tab.available && layout.hiddenTabKeys().includes(tab.key)),
+  );
+
+  function selectTab(tabKey: string): void {
+    layout.activateTab(tabKey);
+    layout.noteFocused(tabKey);
+    onSelectTab?.(tabKey);
+  }
+
+  $effect(() => {
+    const el = host;
+    if (!el) {
+      hostWidth = 0;
+      return;
+    }
+    hostWidth = Math.round(el.getBoundingClientRect().width);
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver((entries) => {
+      hostWidth = Math.round(entries[0]?.contentRect.width ?? el.getBoundingClientRect().width);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  });
+</script>
+
+<div class="detail-pane-layout" bind:this={host}>
+  {#if activeTree}
+    <div class="detail-pane-tree">
+      <TabbedPanelTree
+        dragScope={layout.dragScope}
+        node={activeTree}
+        tabs={descriptors}
+        activeTabKey={routeTabKey ?? layout.lastFocusedTabKey() ?? ""}
+        {tablistLabel}
+        {leafLabel}
+        resizeLabel="Resize detail panes"
+        dropTargetsLabel="Detail pane drop targets"
+        tabIcon={paneIcon}
+        {zoomedLeafID}
+        onSelectTab={selectTab}
+        onRatioChange={flattened ? undefined : (splitID, ratio) => layout.setRatio(splitID, ratio)}
+        onMoveTabBefore={flattened ? undefined : (source, target) => layout.moveTabBefore(source, target)}
+        onAppendTabToLeaf={flattened ? undefined : (source, leafID) => layout.appendTabToLeaf(source, leafID)}
+        onSplitTab={flattened
+          ? undefined
+          : (source, leafID, direction, placement) => layout.splitTab(source, leafID, direction, placement)}
+        leafActions={flattened ? undefined : leafActions}
+      >
+        {#snippet renderTab(tabKey, visible)}
+          {@render renderPane(tabKey, visible)}
+        {/snippet}
+      </TabbedPanelTree>
+    </div>
+  {/if}
+
+  {#each hiddenButAvailable as tab (tab.key)}
+    <!-- Hiding a pane can empty its leaf, which then stops rendering, so the way
+         back cannot live inside the tree. -->
+    <div class="detail-pane-reopen">
+      <span class="detail-pane-reopen-label">{tab.label}</span>
+      <Button
+        size="sm"
+        surface="soft"
+        tone="neutral"
+        label={`Show ${tab.label}`}
+        onclick={() => layout.setHidden(tab.key, false)}
+      >
+        <ChevronsUpIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+      </Button>
+    </div>
+  {/each}
+</div>
+
+{#snippet leafActions(leaf: TabbedPanelLeaf)}
+  <PaneLeafActions
+    {leaf}
+    zoomed={zoomedLeafID === leaf.id}
+    onSplit={(tabKey, leafID, direction, placement) =>
+      layout.splitTab(tabKey, leafID, direction, placement)}
+    onToggleZoom={(leafID) => layout.toggleZoom(leafID)}
+  />
+{/snippet}
+
+<style>
+  .detail-pane-layout {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .detail-pane-tree {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .detail-pane-tree > :global(*) {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  .detail-pane-reopen {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex-shrink: 0;
+    padding: 6px 12px;
+    border-top: var(--chrome-border-width) solid var(--border-muted);
+    background: var(--bg-inset);
+  }
+
+  .detail-pane-reopen-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+  }
+</style>

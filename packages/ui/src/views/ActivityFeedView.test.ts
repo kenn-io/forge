@@ -41,7 +41,7 @@ describe("ActivityFeedView inline workspace", () => {
     vi.unstubAllGlobals();
   });
 
-  it("threads the controller to the embedded PR view with renderWorkspaceDock=false and renders a single dock", () => {
+  it("threads the controller to the embedded PR view without wrapping it in a dock", () => {
     const { controller } = createClaimTestController("activity");
     const drawerItem = {
       itemType: "pr" as const,
@@ -62,13 +62,13 @@ describe("ActivityFeedView inline workspace", () => {
     });
 
     const embeddedPR = screen.getByTestId("embedded-pr-list-view");
-    expect(embeddedPR.getAttribute("data-render-workspace-dock")).toBe("false");
     expect(embeddedPR.getAttribute("data-has-inline-workspace")).toBe("true");
     expect(screen.queryByTestId("embedded-issue-list-view")).toBeNull();
 
-    // ActivityFeedView owns the single dock for its embedded views; the
-    // embed itself never renders one (renderWorkspaceDock=false above).
-    expect(document.querySelectorAll(".workspace-dock-panel")).toHaveLength(1);
+    // The embed hosts the workspace as one of its own panes. An outer dock as
+    // well would put two portal slots on the page, and whichever registered
+    // last would silently win the single live terminal.
+    expect(document.querySelectorAll(".workspace-dock-panel")).toHaveLength(0);
   });
 
   it("threads the controller to the embedded issue view without wrapping it in a dock", () => {

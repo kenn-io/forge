@@ -124,6 +124,27 @@ describe("pane layout store", () => {
     expect(s.effectiveZoomedLeafID(["conversation", "files"])).toBeNull();
   });
 
+  it("drops the zoom when a tab is split out of the maximized leaf", () => {
+    // A split always mints a new leaf while the zoom names an older one, so the
+    // pane the user just split off would land hidden behind the zoom.
+    const s = store();
+    s.toggleZoom("leaf-detail");
+    s.splitTab("files", "leaf-detail", "horizontal", "after");
+
+    expect(s.zoomedLeafID()).toBeNull();
+    expect(s.leafIDForTab("files")).not.toBe(s.leafIDForTab("conversation"));
+  });
+
+  it("keeps the zoom when a split is rejected", () => {
+    const s = store();
+    s.toggleZoom("leaf-detail");
+    // Splitting the only tab out of its own leaf is a no-op, so nothing moved
+    // and there is nothing for the zoom to be hiding.
+    s.splitTab("workspace", "leaf-workspace", "horizontal", "after");
+
+    expect(s.zoomedLeafID()).toBe("leaf-detail");
+  });
+
   it("tracks the last focused tab across leaves", () => {
     const s = store();
     s.noteFocused("files");

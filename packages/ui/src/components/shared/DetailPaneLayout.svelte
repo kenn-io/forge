@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Snippet } from "svelte";
+  import { untrack, type Snippet } from "svelte";
   import { Button } from "@kenn-io/kit-ui";
   import ChevronsUpIcon from "@lucide/svelte/icons/chevrons-up";
   import XIcon from "@lucide/svelte/icons/x";
@@ -25,6 +25,12 @@
     routeTabKey?: string | undefined;
     /** A tab was clicked. Surfaces route this through navigate(). */
     onSelectTab?: ((tabKey: string) => void) | undefined;
+    /**
+     * Focus moved into a different pane's body. Surfaces with a route-bound tab
+     * use this to follow the user between panes that are visible at once, where
+     * clicking a tab is not what moved them.
+     */
+    onFocusPane?: ((tabKey: string) => void) | undefined;
   }
 
   const {
@@ -37,6 +43,7 @@
     flattenBelowPx = 1280,
     routeTabKey = undefined,
     onSelectTab = undefined,
+    onFocusPane = undefined,
   }: Props = $props();
 
   let host = $state<HTMLElement | null>(null);
@@ -73,6 +80,36 @@
     onSelectTab?.(tabKey);
   }
 
+  function focusPane(tabKey: string): void {
+    if (layout.lastFocusedTabKey() === tabKey) return;
+    layout.noteFocused(tabKey);
+    onFocusPane?.(tabKey);
+  }
+
+  // A zoom must not survive the disappearance of what was zoomed. The store
+  // cannot see availability, so masking it at render time is not enough: a
+  // workspace pane zoomed, released, then reclaimed would come back maximized
+  // over the conversation the user was reading. Drop the stored value instead.
+  $effect(() => {
+    if (layout.zoomedLeafID() === null) return;
+    if (layout.effectiveZoomedLeafID(availableTabs) !== null) return;
+    untrack(() => layout.clearZoom());
+  });
+
+  // A deep link is authoritative over stored layout state: it must activate the
+  // pane it names, and drop a zoom held by any other leaf, or the URL and the
+  // screen disagree with no way for the user to tell why.
+  $effect(() => {
+    const key = routeTabKey;
+    if (!key || !tabs.some((tab) => tab.key === key && tab.available)) return;
+    untrack(() => {
+      layout.activateTab(key);
+      layout.noteFocused(key);
+      const zoomed = layout.zoomedLeafID();
+      if (zoomed !== null && zoomed !== layout.leafIDForTab(key)) layout.clearZoom();
+    });
+  });
+
   $effect(() => {
     const el = host;
     if (!el) {
@@ -105,6 +142,7 @@
         tabActions={hideableTabKeys.length > 0 ? tabActions : undefined}
         {zoomedLeafID}
         onSelectTab={selectTab}
+        onFocusPane={onFocusPane ? focusPane : undefined}
         onRatioChange={flattened ? undefined : (splitID, ratio) => layout.setRatio(splitID, ratio)}
         onMoveTabBefore={flattened ? undefined : (source, target) => layout.moveTabBefore(source, target)}
         onAppendTabToLeaf={flattened ? undefined : (source, leafID) => layout.appendTabToLeaf(source, leafID)}

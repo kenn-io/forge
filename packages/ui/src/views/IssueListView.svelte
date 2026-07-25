@@ -156,15 +156,12 @@
               hideStaleWhileLoading={hideStaleDetailWhileLoading}
               {inlineWorkspace}
             />
-          {:else if tabKey === "workspace" && inlineWorkspace}
-            <!-- Portal target. The live terminal subtree is reparented in here by
-                 the frontend host; `visible` gates its reveal so a pane hidden
-                 behind another tab or a zoom never shows a stray terminal. -->
-            <div
-              class="detail-pane-workspace-slot"
-              data-pane-visible={String(visible)}
-              {@attach inlineWorkspace.slotAttachment}
-            ></div>
+          {:else if tabKey === "workspace" && inlineWorkspace && visible}
+            <!-- Portal target for the single live terminal subtree, which the
+                 frontend host reparents in here. Mounted only while visible: a slot
+                 that lingered behind another tab or a zoom would stay the registered
+                 host and strand the terminal off screen. Unmounting parks it. -->
+            <div class="detail-pane-workspace-slot" {@attach inlineWorkspace.slotAttachment}></div>
           {/if}
         {/snippet}
       </DetailPaneLayout>

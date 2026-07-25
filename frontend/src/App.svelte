@@ -935,8 +935,11 @@
     roborevBaseUrl="/api/roborev"
     onError={(msg) => showFlash(msg, { tone: "danger" })}
     onNotification={showFlash}
-    onNavigate={(e) =>
-      navigate(typeof e === "string" ? e : e.path)}
+    onNavigate={(e, options) => {
+      const path = typeof e === "string" ? e : e.path;
+      if (options?.replace) replaceUrl(path);
+      else navigate(path);
+    }}
     onWorkspaceCommand={emitWorkspaceCommand}
     actions={{
       pull: getPullRequestActions().map((a) => ({

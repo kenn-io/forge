@@ -7,6 +7,7 @@
     workspaceAvailable?: boolean;
     routeTabKey?: string | undefined;
     onSelectTab?: ((tabKey: string) => void) | undefined;
+    onFocusPane?: ((tabKey: string) => void) | undefined;
   }
 
   const {
@@ -14,6 +15,7 @@
     workspaceAvailable = true,
     routeTabKey = undefined,
     onSelectTab = undefined,
+    onFocusPane = undefined,
   }: Props = $props();
 
   const tabs = $derived<PaneTabSpec[]>([
@@ -23,7 +25,7 @@
   ]);
 </script>
 
-<DetailPaneLayout {layout} {tabs} {routeTabKey} {onSelectTab}>
+<DetailPaneLayout {layout} {tabs} {routeTabKey} {onSelectTab} {onFocusPane}>
   {#snippet renderPane(tabKey, visible)}
     <section data-testid={`pane-${tabKey}`} data-visible={String(visible)}>
       Pane {tabKey}

@@ -258,6 +258,12 @@ Keyboard handlers must have one clear owner for each key press.
 - Expanded inline workspaces reuse the live hosted shell and fill the pane
   edge-to-edge; never add outer chrome or mutate the shell's workflow/terminal
   layout state (`packages/ui/src/components/workspace/WorkspaceDockPanel.svelte::expanded`).
+- A pane bound to a URL has two write paths with different history semantics: a
+  tab click pushes (`navigate`), while focus moving between panes that are
+  visible at once replaces (`navigate(path, { replace: true })`), so walking
+  between them does not fill the Back stack. The URL wins over stored layout
+  state on load: it activates the pane it names and drops a zoom held elsewhere
+  (`packages/ui/src/views/PRListView.svelte::handlePaneFocus`).
 - The hosted terminal is one live DOM subtree reparented between registered
   portal slots, so exactly one slot may be mounted at a time. A host that
   embeds a view owning its own workspace pane must not also wrap it in a

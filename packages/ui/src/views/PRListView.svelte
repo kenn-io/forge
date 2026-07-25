@@ -11,12 +11,15 @@
   import { untrack } from "svelte";
   import { getNavigate, getSidebar, getStores } from "../context.js";
   import { CollapsibleSidebar } from "@kenn-io/kit-ui";
-  import { SplitResizeHandle } from "@kenn-io/kit-ui";
-  import type { SplitResizeEvent } from "@kenn-io/kit-ui";
   import PullList from "../components/sidebar/PullList.svelte";
   import PullDetail from "../components/detail/PullDetail.svelte";
   import DiffFilesLayout from "../components/diff/DiffFilesLayout.svelte";
-  import WorkspaceDockPanel from "../components/workspace/WorkspaceDockPanel.svelte";
+  import DetailPaneLayout from "../components/shared/DetailPaneLayout.svelte";
+  import {
+    createTabbedPanelLeaf,
+    splitTabbedPanelTabIntoLeaf,
+  } from "../components/shared/tabbed-panel-layout.js";
+  import { getPaneLayoutStore, type PaneTabSpec } from "../stores/paneLayout.svelte.js";
   import type { ProviderCapabilities, PullDetail as PullDetailResponse } from "../api/types.js";
   import type { DetailSyncMode } from "../stores/detail.svelte.js";
   import { reviewThreadsFromEvents } from "../components/diff/review-thread-context.js";
@@ -35,11 +38,24 @@
   const { isSidebarToggleEnabled, toggleSidebar } = getSidebar();
   const navigate = getNavigate();
   const { detail: detailStore } = getStores();
-  const splitViewStorageKey = "pr-detail-split-view";
-  const splitViewRatioStorageKey = "pr-detail-split-ratio";
-  const minSplitViewWidth = 1280;
-  const minSplitPaneWidth = 480;
-  const splitResizeHandleWidth = 4;
+  const PR_PANE_TABS = ["conversation", "files", "workspace"];
+
+  /** Conversation and files share a leaf, with the workspace below: the layout
+   * the PR detail had before panes became rearrangeable. */
+  function defaultPRPaneTree() {
+    const base = createTabbedPanelLeaf(["conversation", "files"], "conversation");
+    return (
+      splitTabbedPanelTabIntoLeaf(
+        createTabbedPanelLeaf(PR_PANE_TABS, "conversation", base.id),
+        "workspace",
+        base.id,
+        "vertical",
+        "after",
+      ) ?? base
+    );
+  }
+
+  const paneLayout = getPaneLayoutStore("prs", PR_PANE_TABS, defaultPRPaneTree());
 
   const defaultProviderCapabilities: ProviderCapabilities = {
     read_repositories: true,
@@ -89,9 +105,6 @@
     onDetailTabChange?: (tab: DetailTab) => void;
     onStackMemberNavigate?: StackMemberNavigate;
     inlineWorkspace?: InlineWorkspaceController | null;
-    /** ActivityFeedView embeds this view twice and owns a single outer dock;
-     * it passes false so the embedded views never render their own. */
-    renderWorkspaceDock?: boolean;
   }
 
   let {
@@ -109,94 +122,7 @@
     onDetailTabChange,
     onStackMemberNavigate,
     inlineWorkspace = null,
-    renderWorkspaceDock = true,
   }: Props = $props();
-
-  let detailHost: HTMLDivElement | undefined = $state();
-  let detailHostWidth = $state(0);
-  let splitViewEnabled = $state(loadSplitViewPreference());
-  let committedSplitRatio = $state(loadSplitViewRatio());
-  let dragSplitWidth: number | null = $state(null);
-  let splitResizeStartWidth = 0;
-
-  const splitViewAvailable = $derived(selectedPR !== null && detailHostWidth >= minSplitViewWidth);
-  const splitViewActive = $derived(splitViewAvailable && splitViewEnabled);
-  const splitContentWidth = $derived(Math.max(0, detailHostWidth - splitResizeHandleWidth));
-  const splitConversationWidth = $derived.by(() => {
-    if (splitContentWidth <= 0) return 0;
-    return clampSplitPaneWidth(dragSplitWidth ?? splitContentWidth * committedSplitRatio);
-  });
-
-  function safeGetItem(key: string): string | null {
-    try {
-      return localStorage.getItem(key);
-    } catch {
-      return null;
-    }
-  }
-
-  function safeSetItem(key: string, value: string): void {
-    try {
-      localStorage.setItem(key, value);
-    } catch {
-      /* ignore */
-    }
-  }
-
-  function loadSplitViewPreference(): boolean {
-    return safeGetItem(splitViewStorageKey) === "1";
-  }
-
-  function loadSplitViewRatio(): number {
-    const stored = safeGetItem(splitViewRatioStorageKey);
-    if (stored === null || stored.trim() === "") return 0.5;
-    const value = Number(stored);
-    return Number.isFinite(value) ? clampSplitRatio(value) : 0.5;
-  }
-
-  function setSplitViewEnabled(enabled: boolean): void {
-    splitViewEnabled = enabled;
-    safeSetItem(splitViewStorageKey, enabled ? "1" : "0");
-  }
-
-  function clampSplitRatio(ratio: number): number {
-    if (!Number.isFinite(ratio)) return 0.5;
-    return Math.max(0.2, Math.min(0.8, ratio));
-  }
-
-  function splitPaneBounds(): { min: number; max: number } {
-    const min = Math.min(minSplitPaneWidth, Math.max(0, splitContentWidth / 2));
-    return {
-      min,
-      max: Math.max(min, splitContentWidth - min),
-    };
-  }
-
-  function clampSplitPaneWidth(width: number): number {
-    const bounds = splitPaneBounds();
-    return Math.max(bounds.min, Math.min(bounds.max, width));
-  }
-
-  function handleSplitResizeStart(): void {
-    splitResizeStartWidth = splitConversationWidth;
-  }
-
-  function splitWidthFromResize(event: SplitResizeEvent): number {
-    return clampSplitPaneWidth(splitResizeStartWidth + event.delta);
-  }
-
-  function handleSplitResize(event: SplitResizeEvent): void {
-    dragSplitWidth = splitWidthFromResize(event);
-  }
-
-  function handleSplitResizeEnd(event: SplitResizeEvent): void {
-    const finalWidth = splitWidthFromResize(event);
-    const finalRatio =
-      splitContentWidth > 0 ? clampSplitRatio(finalWidth / splitContentWidth) : 0.5;
-    committedSplitRatio = finalRatio;
-    dragSplitWidth = null;
-    safeSetItem(splitViewRatioStorageKey, finalRatio.toFixed(4));
-  }
 
   function filesScrollKey(): string | null {
     if (selectedPR === null) return null;
@@ -219,15 +145,43 @@
     filesScrollPositions[key] = scrollTop;
   }
 
+  function detailTabRoute(tab: DetailTab, ref: PullRequestRouteRef): string {
+    return tab === "files" ? buildPullRequestFilesRoute(ref) : buildPullRequestRoute(ref);
+  }
+
   function selectDetailTab(tab: DetailTab): void {
     if (onDetailTabChange) {
       onDetailTabChange(tab);
       return;
     }
     if (selectedPR === null) return;
-    navigate(
-      tab === "files" ? buildPullRequestFilesRoute(selectedPR) : buildPullRequestRoute(selectedPR),
-    );
+    navigate(detailTabRoute(tab, selectedPR));
+  }
+
+  function isRouteBoundPane(tabKey: string): tabKey is DetailTab {
+    return tabKey === "conversation" || tabKey === "files";
+  }
+
+  function handlePaneSelect(tabKey: string): void {
+    // The workspace pane has no route of its own; only the two route-bound panes
+    // may move the URL.
+    if (isRouteBoundPane(tabKey)) selectDetailTab(tabKey);
+  }
+
+  function handlePaneFocus(tabKey: string): void {
+    if (!isRouteBoundPane(tabKey) || tabKey === detailTab) return;
+    // Only meaningful once the two route-bound panes sit in different leaves and
+    // are therefore visible at once. While they share a leaf, switching between
+    // them is a tab click, and that path already owns the route.
+    if (paneLayout.leafIDForTab("conversation") === paneLayout.leafIDForTab("files")) return;
+    if (onDetailTabChange) {
+      onDetailTabChange(tabKey);
+      return;
+    }
+    if (selectedPR === null) return;
+    // Replace, not push: walking between two panes on screen at the same time
+    // must not fill the Back stack.
+    navigate(detailTabRoute(tabKey, selectedPR), { replace: true });
   }
 
   function handleStackMemberNavigate(ref: PullRequestRouteRef): boolean | void {
@@ -271,7 +225,9 @@
   }
 
   $effect(() => {
-    if (selectedPR === null || (!splitViewActive && detailTab !== "files")) return;
+    // The diff pane can be on screen alongside the conversation, so a matching
+    // detail is needed whenever the files pane renders, not only on its route.
+    if (selectedPR === null || (!filesPaneVisible && detailTab !== "files")) return;
     const ref = selectedPR;
     untrack(() => {
       if (detailMatchesSelected(detailStore.getDetail(), ref)) return;
@@ -293,6 +249,23 @@
       : null,
   );
 
+  const workspaceClaimed = $derived(
+    inlineWorkspace !== null &&
+      claimIdentity !== null &&
+      inlineWorkspace.isClaimedFor(claimIdentity),
+  );
+
+  const paneTabs = $derived<PaneTabSpec[]>([
+    { key: "conversation", label: "Conversation", available: true },
+    { key: "files", label: "Files changed", available: true },
+    { key: "workspace", label: "Workspace", available: workspaceClaimed, hideable: true },
+  ]);
+
+  /** True when files renders alongside the conversation rather than behind it. */
+  const filesPaneVisible = $derived(
+    paneLayout.leafIDForTab("conversation") !== paneLayout.leafIDForTab("files"),
+  );
+
   useItemWorkspaceClaim({
     controller: () => inlineWorkspace,
     identity: () => claimIdentity,
@@ -301,27 +274,6 @@
     refresh: () => void refreshSelectedDetail(),
   });
 
-  $effect(() => {
-    const host = detailHost;
-    if (!host) {
-      detailHostWidth = 0;
-      return;
-    }
-
-    detailHostWidth = Math.round(host.getBoundingClientRect().width);
-    if (typeof ResizeObserver === "undefined") return;
-
-    const observer = new ResizeObserver((entries) => {
-      detailHostWidth = Math.round(
-        entries[0]?.contentRect.width ?? host.getBoundingClientRect().width,
-      );
-    });
-    observer.observe(host);
-
-    return () => {
-      observer.disconnect();
-    };
-  });
 </script>
 
 <CollapsibleSidebar
@@ -339,42 +291,18 @@
   {/snippet}
 
   {#if selectedPR !== null}
-    {#snippet detailContent()}
-      <div class="detail-tabs">
-        <button
-          class="detail-tab"
-          class:detail-tab--active={detailTab === "conversation"}
-          onclick={() => selectDetailTab("conversation")}
-        >
-          Conversation
-        </button>
-        <button
-          class="detail-tab"
-          class:detail-tab--active={detailTab === "files"}
-          onclick={() => selectDetailTab("files")}
-        >
-          Files changed
-        </button>
-        {#if splitViewAvailable}
-          <button
-            type="button"
-            class="detail-split-toggle"
-            class:detail-split-toggle--active={splitViewActive}
-            aria-pressed={splitViewActive}
-            onclick={() => setSplitViewEnabled(!splitViewEnabled)}
-          >
-            Split view
-          </button>
-        {/if}
-      </div>
-
-      {#if splitViewActive}
-        <div class="detail-split-layout">
-          <section
-            class="detail-split-pane detail-split-pane--conversation"
-            aria-label="Conversation"
-            style:flex-basis={`${Math.round(splitConversationWidth)}px`}
-          >
+    <div class="detail-host">
+      <DetailPaneLayout
+        layout={paneLayout}
+        tabs={paneTabs}
+        tablistLabel="Pull request detail panes"
+        leafLabel="Pull request detail pane group"
+        routeTabKey={detailTab}
+        onSelectTab={handlePaneSelect}
+        onFocusPane={handlePaneFocus}
+      >
+        {#snippet renderPane(tabKey, visible)}
+          {#if tabKey === "conversation"}
             <PullDetail
               owner={selectedPR.owner}
               name={selectedPR.name}
@@ -389,19 +317,13 @@
               onStackMemberNavigate={handleStackMemberNavigate}
               {inlineWorkspace}
             />
-          </section>
-          <SplitResizeHandle
-            class="detail-split-resize-handle"
-            ariaLabel="Resize PR split view"
-            orientation="horizontal"
-            ariaValueMin={splitPaneBounds().min}
-            ariaValueMax={splitPaneBounds().max}
-            ariaValueNow={splitConversationWidth}
-            onResizeStart={handleSplitResizeStart}
-            onResize={handleSplitResize}
-            onResizeEnd={handleSplitResizeEnd}
-          />
-          <section class="detail-split-pane detail-split-pane--files" aria-label="Files changed">
+          {:else if tabKey === "files" && visible}
+            <!-- Mounted only while on screen: every leaf renders all of its tabs, so
+                 an unconditional diff pane would fetch a diff for every PR the user
+                 merely looks at. Keyed on the PR because DiffFilesLayout keeps
+                 per-file state that must not leak across pull requests; the
+                 remembered scroll offset is restored through initialScrollTop so
+                 neither the remount nor a pane switch loses the reader's place. -->
             {#key `${selectedPR.provider}/${selectedPR.platformHost ?? ""}/${selectedPR.repoPath}/${selectedPR.number}`}
               <DiffFilesLayout
                 owner={selectedPR.owner}
@@ -418,54 +340,15 @@
                 onScrollTopChange={rememberFilesScroll}
               />
             {/key}
-          </section>
-        </div>
-      {:else if detailTab === "files"}
-        {#key `${selectedPR.provider}/${selectedPR.platformHost ?? ""}/${selectedPR.repoPath}/${selectedPR.number}`}
-          <DiffFilesLayout
-            owner={selectedPR.owner}
-            name={selectedPR.name}
-            number={selectedPR.number}
-            provider={selectedPR.provider}
-            platformHost={selectedPR.platformHost}
-            repoPath={selectedPR.repoPath}
-            diffHeadSHA={selectedDetail?.diff_head_sha}
-            capabilities={selectedDetail?.repo?.capabilities ?? defaultProviderCapabilities}
-            operations={selectedDetail?.repo?.operations}
-            reviewThreads={reviewThreadsFromEvents(selectedDetail?.events)}
-            initialScrollTop={filesScrollTop()}
-            onScrollTopChange={rememberFilesScroll}
-          />
-        {/key}
-      {:else}
-        <PullDetail
-          owner={selectedPR.owner}
-          name={selectedPR.name}
-          number={selectedPR.number}
-          provider={selectedPR.provider}
-          platformHost={selectedPR.platformHost}
-          repoPath={selectedPR.repoPath}
-          autoSync={autoSyncDetail}
-          {workflowApprovalSync}
-          hideTabs={true}
-          hideStaleWhileLoading={hideStaleDetailWhileLoading}
-          onStackMemberNavigate={handleStackMemberNavigate}
-          {inlineWorkspace}
-        />
-      {/if}
-    {/snippet}
-
-    <div class="detail-host" bind:this={detailHost}>
-      {#if inlineWorkspace && renderWorkspaceDock}
-        <WorkspaceDockPanel
-          controller={inlineWorkspace}
-          active={claimIdentity !== null && inlineWorkspace.isClaimedFor(claimIdentity)}
-        >
-          {@render detailContent()}
-        </WorkspaceDockPanel>
-      {:else}
-        {@render detailContent()}
-      {/if}
+          {:else if tabKey === "workspace" && inlineWorkspace && visible}
+            <!-- Portal target for the single live terminal subtree, which the
+                 frontend host reparents in here. Mounted only while visible: a slot
+                 that lingered behind another tab or a zoom would stay the registered
+                 host and strand the terminal off screen. Unmounting parks it. -->
+            <div class="detail-pane-workspace-slot" {@attach inlineWorkspace.slotAttachment}></div>
+          {/if}
+        {/snippet}
+      </DetailPaneLayout>
     </div>
   {:else}
     <div class="placeholder-content">
@@ -485,13 +368,12 @@
     overflow: hidden;
   }
 
-  .detail-tabs {
+  .detail-pane-workspace-slot {
     display: flex;
-    align-items: center;
-    gap: 0;
-    border-bottom: 1px solid var(--border-default);
-    background: var(--bg-surface);
-    flex-shrink: 0;
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    height: 100%;
   }
 
   .placeholder-content {
@@ -510,84 +392,7 @@
     opacity: 0.7;
   }
 
-  .detail-tab {
-    font-size: var(--font-size-sm);
-    font-weight: 500;
-    padding: 8px 16px;
-    color: var(--text-secondary);
-    border-bottom: 2px solid transparent;
-    transition:
-      color 0.1s,
-      border-color 0.1s;
-  }
-
-  .detail-tab:hover {
-    color: var(--text-primary);
-    background: var(--bg-surface-hover);
-  }
-
-  .detail-tab--active {
-    color: var(--text-primary);
-    border-bottom-color: var(--accent-blue);
-  }
-
-  .detail-split-toggle {
-    margin-left: auto;
-    margin-right: 8px;
-    min-height: 28px;
-    padding: 4px 10px;
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-sm);
-    color: var(--text-secondary);
-    background: var(--bg-primary);
-    font-size: var(--font-size-xs);
-    font-weight: 600;
-    transition:
-      color 0.1s,
-      border-color 0.1s,
-      background 0.1s;
-  }
-
-  .detail-split-toggle:hover {
-    color: var(--text-primary);
-    border-color: var(--border-strong, var(--border-default));
-    background: var(--bg-surface-hover);
-  }
-
-  .detail-split-toggle--active {
-    color: var(--accent-blue);
-    border-color: var(--accent-blue);
-    background: var(--accent-blue-soft, var(--bg-primary));
-  }
-
-  .detail-split-layout {
-    display: flex;
-    flex: 1;
-    min-height: 0;
-    min-width: 0;
-    overflow: hidden;
-  }
-
-  .detail-split-pane {
-    display: flex;
-    min-width: 0;
-    min-height: 0;
-    overflow: hidden;
-  }
-
-  .detail-split-pane--conversation {
-    flex: 0 0 auto;
-  }
-
-  .detail-split-pane--files {
-    flex: 1 1 0;
-  }
-
-  :global(.detail-split-resize-handle) {
-    background: var(--border-default);
-  }
-
-  .detail-split-pane :global(.pull-detail-content) {
+  .detail-host :global(.pull-detail-content) {
     max-width: 800px;
   }
 </style>

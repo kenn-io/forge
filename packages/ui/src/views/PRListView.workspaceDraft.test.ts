@@ -6,6 +6,7 @@ import { ACTIONS_KEY, API_CLIENT_KEY, NAVIGATE_KEY, SIDEBAR_KEY, STORES_KEY, UI_
 import type { PullRequestRouteRef } from "../routes.js";
 import { createDetailActivityViewStore } from "../stores/detail-activity-view.svelte.js";
 import { resetModalStack } from "../stores/keyboard/modal-stack.svelte.js";
+import { resetPaneLayoutStoresForTest } from "../stores/paneLayout.svelte.js";
 import { createClaimTestController } from "./viewWorkspaceTestDoubles.svelte.js";
 
 // This spec mounts the real PullDetail (unlike PRListView.test.ts, which
@@ -184,10 +185,11 @@ function renderWithRealPullDetail(
   };
 }
 
-describe("PRListView workspace dock draft survival", () => {
+describe("PRListView workspace pane draft survival", () => {
   beforeEach(() => {
     localStorage.clear();
     resetModalStack();
+    resetPaneLayoutStoresForTest();
     vi.stubGlobal(
       "MutationObserver",
       class {
@@ -205,12 +207,13 @@ describe("PRListView workspace dock draft survival", () => {
   afterEach(() => {
     cleanup();
     resetModalStack();
+    resetPaneLayoutStoresForTest();
     localStorage.clear();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
 
-  it("keeps an unsaved title draft mounted across an expand/collapse round trip", async () => {
+  it("keeps an unsaved title draft mounted across a maximize round trip", async () => {
     const { controller } = createClaimTestController();
     const { container } = renderWithRealPullDetail(pullDetail(), controller);
     await tick();
@@ -225,20 +228,26 @@ describe("PRListView workspace dock draft survival", () => {
     await fireEvent.input(titleInput!, { target: { value: "Draft title in progress" } });
     expect(titleInput!.value).toBe("Draft title in progress");
 
-    controller.setDockMode("expanded");
+    // Maximize the workspace pane. The conversation must be hidden, not
+    // unmounted: a torn-down PullDetail silently discards the draft the user is
+    // in the middle of typing.
+    const workspaceLeaf = container.querySelector(".detail-pane-workspace-slot")!.closest(".tabbed-panel-leaf")!;
+    const zoomButton = workspaceLeaf.querySelector<HTMLButtonElement>('[data-testid="pane-toggle-zoom"]');
+    expect(zoomButton).toBeTruthy();
+    await fireEvent.click(zoomButton!);
     await tick();
 
-    const detailWrapper = container.querySelector(".workspace-dock-detail");
-    expect(detailWrapper?.hasAttribute("hidden")).toBe(true);
-    const titleInputWhileExpanded = container.querySelector<HTMLInputElement>(".title-edit-input");
-    expect(titleInputWhileExpanded).toBe(titleInput);
-    expect(titleInputWhileExpanded!.value).toBe("Draft title in progress");
+    const conversationBranch = container.querySelector(".title-edit-input")!.closest(".tabbed-panel-split-child");
+    expect(conversationBranch?.hasAttribute("hidden")).toBe(true);
+    const titleInputWhileZoomed = container.querySelector<HTMLInputElement>(".title-edit-input");
+    expect(titleInputWhileZoomed).toBe(titleInput);
+    expect(titleInputWhileZoomed!.value).toBe("Draft title in progress");
 
-    controller.setDockMode("split");
+    await fireEvent.click(workspaceLeaf.querySelector<HTMLButtonElement>('[data-testid="pane-toggle-zoom"]')!);
     await tick();
 
-    const titleInputAfterCollapse = container.querySelector<HTMLInputElement>(".title-edit-input");
-    expect(titleInputAfterCollapse).toBe(titleInput);
-    expect(titleInputAfterCollapse!.value).toBe("Draft title in progress");
+    const titleInputAfterRestore = container.querySelector<HTMLInputElement>(".title-edit-input");
+    expect(titleInputAfterRestore).toBe(titleInput);
+    expect(titleInputAfterRestore!.value).toBe("Draft title in progress");
   });
 });

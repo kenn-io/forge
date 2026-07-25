@@ -3,6 +3,7 @@ import { tick } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { NAVIGATE_KEY, SIDEBAR_KEY, STORES_KEY } from "../context.js";
 import { resetModalStack } from "../stores/keyboard/modal-stack.svelte.js";
+import { resetPaneLayoutStoresForTest } from "../stores/paneLayout.svelte.js";
 import type { PullRequestRouteRef } from "../routes.js";
 import type { InlineWorkspaceController } from "../workspace-inline.js";
 import { createClaimTestController, createReactiveValue } from "./viewWorkspaceTestDoubles.svelte.js";
@@ -31,7 +32,8 @@ vi.mock("../components/diff/DiffFilesLayout.svelte", async () => ({
 
 import PRListView from "./PRListView.svelte";
 
-const minSplitViewWidth = 1280;
+/** DetailPaneLayout flattens the tree below this measured host width. */
+const flattenBelowPx = 1280;
 
 const selectedPR: PullRequestRouteRef = {
   provider: "github",
@@ -78,8 +80,8 @@ interface RenderPRListViewOptions {
   detailTab?: "conversation" | "files";
   selectedPR?: PullRequestRouteRef | null;
   inlineWorkspace?: InlineWorkspaceController | null;
-  renderWorkspaceDock?: boolean;
   detail?: unknown;
+  navigate?: (path: string | { path: string }, options?: { replace?: boolean }) => void;
 }
 
 function renderPRListView(options: RenderPRListViewOptions = {}) {
@@ -98,7 +100,6 @@ function renderPRListView(options: RenderPRListViewOptions = {}) {
         detailTab: options.detailTab ?? "conversation",
         hideSidebar: true,
         ...(options.inlineWorkspace !== undefined ? { inlineWorkspace: options.inlineWorkspace } : {}),
-        ...(options.renderWorkspaceDock !== undefined ? { renderWorkspaceDock: options.renderWorkspaceDock } : {}),
       },
       context: new Map<symbol, unknown>([
         [
@@ -108,83 +109,117 @@ function renderPRListView(options: RenderPRListViewOptions = {}) {
             toggleSidebar: vi.fn(),
           },
         ],
-        [NAVIGATE_KEY, vi.fn()],
+        [NAVIGATE_KEY, options.navigate ?? vi.fn()],
         [STORES_KEY, { detail: detailStore }],
       ]),
     }),
   };
 }
 
-describe("PRListView split view", () => {
+describe("PRListView detail panes", () => {
   beforeEach(() => {
     localStorage.clear();
-    observedWidth.value = minSplitViewWidth;
+    resetModalStack();
+    resetPaneLayoutStoresForTest();
+    observedWidth.value = 1600;
     vi.stubGlobal("ResizeObserver", ResizeObserverMock);
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(mockElementRect);
   });
 
   afterEach(() => {
     cleanup();
+    resetModalStack();
+    resetPaneLayoutStoresForTest();
+    localStorage.clear();
+    // observedWidth is a module-level fixture shared across describe blocks and
+    // test order is shuffled, so a leftover width would leak pane flattening
+    // into unrelated tests.
+    observedWidth.value = 0;
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
 
-  it("does not expose split view below the xl detail-pane width", async () => {
-    observedWidth.value = minSplitViewWidth - 1;
-
+  it("shows conversation and files as panes without a bespoke split toggle", async () => {
     renderPRListView();
     await tick();
 
     expect(screen.queryByRole("button", { name: "Split view" })).toBeNull();
+    expect(screen.getByRole("tab", { name: "Conversation" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Files changed" })).toBeTruthy();
     expect(screen.getByTestId("pull-detail").textContent).toContain("Conversation acme/widgets#12");
-    expect(screen.queryByTestId("diff-files")).toBeNull();
   });
 
-  it("keeps wide split view off until the user enables it", async () => {
+  it("navigates on a pane tab click", async () => {
+    const navigate = vi.fn();
+    renderPRListView({ navigate });
+    await tick();
+
+    await fireEvent.click(screen.getByRole("tab", { name: "Files changed" }));
+
+    expect(navigate).toHaveBeenCalledWith("/pulls/github/acme/widgets/12/files");
+  });
+
+  it("leaves the route alone when focus moves within one pane group", async () => {
+    // Conversation and files start in the same leaf, so only one is on screen and
+    // switching between them is a tab click. That path pushes history; a focus
+    // event must not also write the route.
+    const navigate = vi.fn();
+    renderPRListView({ navigate });
+    await tick();
+
+    const panes = document.querySelectorAll<HTMLElement>(".tabbed-panel-tab-panel");
+    await fireEvent.focusIn(panes[1]!);
+
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it("replaces rather than pushes when focus moves between panes split apart", async () => {
+    const navigate = vi.fn();
+    renderPRListView({ navigate });
+    await tick();
+
+    // Split the panes apart: both are visible now, so there is no tab to click
+    // and the route has to follow focus instead.
+    await fireEvent.click(screen.getByTestId("pane-split-right"));
+    await tick();
+
+    const filesPane = screen.getByTestId("diff-files").closest(".tabbed-panel-tab-panel");
+    await fireEvent.focusIn(filesPane!);
+
+    // Replace, not push: walking between two panes on screen at once must not
+    // fill the Back stack.
+    expect(navigate).toHaveBeenCalledWith("/pulls/github/acme/widgets/12/files", { replace: true });
+  });
+
+  it("keeps the diff pane scroll offset across a pane switch", async () => {
+    renderPRListView({ detailTab: "files" });
+    await tick();
+
+    const diff = screen.getByTestId("diff-files");
+    expect(diff.getAttribute("data-initial-scroll-top")).toBe("0");
+    Object.defineProperty(diff, "scrollTop", { configurable: true, value: 420 });
+    await fireEvent.scroll(diff);
+
+    // Remounting the pane (as a PR switch or a layout change does) must restore
+    // the reader's place rather than jump back to the top.
+    cleanup();
+    renderPRListView({ detailTab: "files" });
+    await tick();
+
+    expect(screen.getByTestId("diff-files").getAttribute("data-initial-scroll-top")).toBe("420");
+  });
+
+  it("flattens to a single tab strip on a narrow host", async () => {
+    observedWidth.value = flattenBelowPx - 1;
+
     renderPRListView();
     await tick();
 
-    const toggle = screen.getByRole("button", { name: "Split view" });
-    expect(toggle.getAttribute("aria-pressed")).toBe("false");
-    expect(screen.getByTestId("pull-detail")).toBeTruthy();
-    expect(screen.queryByTestId("diff-files")).toBeNull();
-
-    await fireEvent.click(toggle);
-
-    expect(toggle.getAttribute("aria-pressed")).toBe("true");
-    expect(screen.getByTestId("pull-detail")).toBeTruthy();
-    expect(screen.getByTestId("diff-files")).toBeTruthy();
-    expect(localStorage.getItem("pr-detail-split-view")).toBe("1");
-  });
-
-  it("lets users resize wide split view panes", async () => {
-    observedWidth.value = 2200;
-
-    const { container } = renderPRListView();
-    await tick();
-
-    await fireEvent.click(screen.getByRole("button", { name: "Split view" }));
-    await tick();
-
-    const conversationPane = container.querySelector<HTMLElement>(".detail-split-pane--conversation");
-    expect(conversationPane).not.toBeNull();
-    expect(conversationPane!.style.flexBasis).toBe("1098px");
-
-    const resizeHandle = screen.getByRole("separator", {
-      name: "Resize PR split view",
-    });
-    mockPointerCapture(resizeHandle);
-    await fireEvent.pointerDown(resizeHandle, { button: 0, clientX: 100, pointerId: 1 });
-    await fireEvent.pointerMove(resizeHandle, { clientX: 340, pointerId: 1 });
-    await tick();
-
-    expect(conversationPane!.style.flexBasis).toBe("1338px");
-
-    await fireEvent.pointerUp(resizeHandle, { clientX: 340, pointerId: 1 });
-    await tick();
-
-    expect(conversationPane!.style.flexBasis).toBe("1338px");
-    expect(localStorage.getItem("pr-detail-split-ratio")).toBe("0.6093");
+    // One leaf, so no divider and no per-leaf split controls: rearranging panes
+    // is not offered where there is no room for two of them.
+    expect(screen.queryByRole("separator", { name: "Resize detail panes" })).toBeNull();
+    expect(screen.queryByTestId("pane-split-right")).toBeNull();
+    expect(screen.getAllByRole("tablist")).toHaveLength(1);
   });
 });
 
@@ -216,6 +251,7 @@ describe("PRListView inline workspace", () => {
   beforeEach(() => {
     localStorage.clear();
     resetModalStack();
+    resetPaneLayoutStoresForTest();
     vi.stubGlobal(
       "MutationObserver",
       class {
@@ -230,6 +266,7 @@ describe("PRListView inline workspace", () => {
   afterEach(() => {
     cleanup();
     resetModalStack();
+    resetPaneLayoutStoresForTest();
     localStorage.clear();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
@@ -318,27 +355,29 @@ describe("PRListView inline workspace", () => {
     expect(controller.release).toHaveBeenCalled();
   });
 
-  it("renders the dock only when renderWorkspaceDock and claimed", () => {
-    const detail = pullDetailFixture({ id: "ws-1", status: "ready" });
-
-    // renderWorkspaceDock={false}: no dock even though the detail claims
-    // the workspace normally.
+  it("offers a workspace pane only once the workspace is claimed", () => {
+    // Unclaimed: the pane is unavailable, so it prunes out of the tree and no
+    // portal slot exists to steal the single live terminal.
     {
       const { controller } = createClaimTestController();
-      renderPRListView({ inlineWorkspace: controller, renderWorkspaceDock: false, detail });
-      expect(controller.claim).toHaveBeenCalled();
-      expect(document.querySelector(".workspace-dock-panel")).toBeNull();
+      renderPRListView({ inlineWorkspace: controller, detail: pullDetailFixture(undefined) });
+      expect(controller.claim).not.toHaveBeenCalled();
       expect(screen.getByTestId("pull-detail")).toBeTruthy();
+      expect(screen.queryByRole("tab", { name: "Workspace" })).toBeNull();
+      expect(document.querySelector(".detail-pane-workspace-slot")).toBeNull();
       cleanup();
     }
 
-    // Default renderWorkspaceDock (true): the dock renders once claimed.
     {
       const { controller } = createClaimTestController();
-      renderPRListView({ inlineWorkspace: controller, detail });
+      renderPRListView({
+        inlineWorkspace: controller,
+        detail: pullDetailFixture({ id: "ws-1", status: "ready" }),
+      });
       expect(controller.claim).toHaveBeenCalled();
-      expect(document.querySelector(".workspace-dock-panel")).toBeTruthy();
-      expect(screen.getByRole("region", { name: "Workspace terminal" })).toBeTruthy();
+      expect(screen.getByRole("tab", { name: "Workspace" })).toBeTruthy();
+      expect(document.querySelector(".detail-pane-workspace-slot")).toBeTruthy();
+      expect(controller.slotAttachment).toHaveBeenCalled();
       cleanup();
     }
   });
@@ -349,7 +388,7 @@ describe("PRListView inline workspace", () => {
     const { detailStore, detailBox } = renderPRListView({ inlineWorkspace: controller, detail });
 
     expect(controller.claim).toHaveBeenCalled();
-    expect(screen.getByRole("region", { name: "Workspace terminal" })).toBeTruthy();
+    expect(document.querySelector(".detail-pane-workspace-slot")).toBeTruthy();
 
     notifyInvalidated(selectedPRIdentity);
 
@@ -367,33 +406,16 @@ describe("PRListView inline workspace", () => {
     await tick();
 
     expect(controller.release).toHaveBeenCalled();
-    expect(screen.queryByRole("region", { name: "Workspace terminal" })).toBeNull();
+    expect(document.querySelector(".detail-pane-workspace-slot")).toBeNull();
   });
 
-  it("threads inlineWorkspace to both PullDetail render sites (default and split view)", async () => {
+  it("threads inlineWorkspace to PullDetail", () => {
     const { controller } = createClaimTestController();
-    vi.stubGlobal("ResizeObserver", ResizeObserverMock);
-    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(mockElementRect);
-    observedWidth.value = minSplitViewWidth;
+    renderPRListView({ inlineWorkspace: controller });
 
-    try {
-      renderPRListView({ inlineWorkspace: controller });
-      await tick();
-
-      // A dropped `{inlineWorkspace}` on either PullDetail call site would
-      // silently revert that surface to the pre-inline-dock behavior without
-      // failing any other assertion, so both sites are checked directly.
-      expect(screen.getByTestId("pull-detail").getAttribute("data-has-inline-workspace")).toBe("true");
-
-      await fireEvent.click(screen.getByRole("button", { name: "Split view" }));
-      await tick();
-
-      expect(screen.getByTestId("pull-detail").getAttribute("data-has-inline-workspace")).toBe("true");
-    } finally {
-      // observedWidth is a module-level fixture shared across describe
-      // blocks (and test order is shuffled): leaving it non-zero would leak
-      // split-view availability into unrelated tests.
-      observedWidth.value = 0;
-    }
+    // A dropped `{inlineWorkspace}` on PullDetail's render site would silently
+    // revert this surface to the pre-inline-workspace behavior without failing
+    // any other assertion.
+    expect(screen.getByTestId("pull-detail").getAttribute("data-has-inline-workspace")).toBe("true");
   });
 });

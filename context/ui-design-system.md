@@ -287,6 +287,18 @@ Pass the mutation callbacks that match the interactions you expose:
 callbacks make that interaction read-only instead of rendering a visual drop
 target that cannot apply.
 
+A leaf renders every one of its tabs, showing only the active one, so the
+`visible` flag passed to `renderTab` is the caller's only signal. Gate expensive
+or side-effecting pane bodies (a diff fetch, the workspace portal slot) on it:
+unconditional bodies mount for every selected item, and a portal slot that
+lingers behind another tab stays the registered host and strands its content off
+screen.
+
+Zoom is transient focus state, not part of the saved arrangement. Drop it
+whenever what was zoomed stops rendering (`DetailPaneLayout`'s reconciliation
+effect covers availability, which the store cannot see) and on any successful
+split, which mints a leaf the older zoom would hide.
+
 The current accessibility scope is labeled tab groups, focusable tabs and tab
 actions, and labeled pointer resize handles. Keyboard tab reordering, keyboard
 splitting, and keyboard resizing are not implemented here; extend

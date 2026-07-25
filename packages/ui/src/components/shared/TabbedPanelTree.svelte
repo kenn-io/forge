@@ -49,6 +49,12 @@
     resizeLabel?: string;
     dropTargetsLabel?: string;
     onSelectTab?: ((tabKey: string) => void) | undefined;
+    /**
+     * Focus landed inside a pane body. Surfaces that bind a pane to the URL use
+     * this to follow the user between two simultaneously visible panes, where
+     * there is no tab to click.
+     */
+    onFocusPane?: ((tabKey: string) => void) | undefined;
     onMoveTabBefore?: ((sourceTabKey: string, targetTabKey: string) => void) | undefined;
     onAppendTabToLeaf?: ((sourceTabKey: string, leafID: string) => void) | undefined;
     onSplitTab?:
@@ -84,6 +90,7 @@
     resizeLabel = "Resize panel split",
     dropTargetsLabel = "Panel group drop targets",
     onSelectTab,
+    onFocusPane = undefined,
     onMoveTabBefore,
     onAppendTabToLeaf,
     onSplitTab,
@@ -573,6 +580,7 @@
               scrollable: scrollPanels,
             },
           ]}
+          onfocusin={onFocusPane ? () => onFocusPane(tabKey) : undefined}
         >
           {@render renderTab(tabKey, paneVisible(tabKey))}
         </div>
@@ -616,6 +624,7 @@
         {resizeLabel}
         {dropTargetsLabel}
         {onSelectTab}
+        {onFocusPane}
         {onMoveTabBefore}
         {onAppendTabToLeaf}
         {onSplitTab}
@@ -662,6 +671,7 @@
         {resizeLabel}
         {dropTargetsLabel}
         {onSelectTab}
+        {onFocusPane}
         {onMoveTabBefore}
         {onAppendTabToLeaf}
         {onSplitTab}

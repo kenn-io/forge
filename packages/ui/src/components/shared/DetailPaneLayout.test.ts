@@ -188,6 +188,56 @@ describe("detail pane layout", () => {
     expect(screen.getByRole("tab", { name: "Files" }).getAttribute("aria-selected")).toBe("false");
   });
 
+  it("drops a stored zoom once the maximized pane stops being available", async () => {
+    // Masking it at render time is not enough: a workspace pane zoomed,
+    // released, then reclaimed would come back maximized over whatever the user
+    // moved on to reading.
+    const layout = store(splitTree());
+    const { rerender } = render(DetailPaneLayoutTestHarness, { layout });
+
+    fireEvent.click(screen.getAllByTestId("pane-toggle-zoom")[1]!);
+    expect(layout.zoomedLeafID()).toBe("leaf-workspace");
+
+    await rerender({ layout, workspaceAvailable: false });
+    expect(layout.zoomedLeafID()).toBeNull();
+
+    await rerender({ layout, workspaceAvailable: true });
+    expect(layout.zoomedLeafID()).toBeNull();
+    expect(screen.getByTestId("pane-conversation").getAttribute("data-visible")).toBe("true");
+  });
+
+  it("activates the pane a deep link names and drops a zoom hiding it", async () => {
+    // The URL is authoritative over stored layout state; without this the route
+    // and the screen disagree with no way for the user to tell why.
+    const layout = store(splitTree());
+    const { rerender } = render(DetailPaneLayoutTestHarness, { layout, routeTabKey: "conversation" });
+
+    fireEvent.click(screen.getAllByTestId("pane-toggle-zoom")[1]!);
+    expect(layout.zoomedLeafID()).toBe("leaf-workspace");
+
+    await rerender({ layout, routeTabKey: "files" });
+
+    expect(layout.zoomedLeafID()).toBeNull();
+    expect(screen.getByTestId("pane-files").getAttribute("data-visible")).toBe("true");
+    expect(screen.getByRole("tab", { name: "Files" }).getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("notifies the surface when focus moves into a different pane body", async () => {
+    const layout = store(splitTree());
+    const onFocusPane = vi.fn();
+    render(DetailPaneLayoutTestHarness, { layout, onFocusPane });
+
+    fireEvent.focusIn(screen.getByTestId("pane-workspace"));
+    expect(onFocusPane).toHaveBeenCalledWith("workspace");
+    expect(layout.lastFocusedTabKey()).toBe("workspace");
+
+    // Repeat focus in the same pane is not a change, so it must not be reported
+    // again — a surface that replaces the URL here would do so on every click.
+    onFocusPane.mockClear();
+    fireEvent.focusIn(screen.getByTestId("pane-workspace"));
+    expect(onFocusPane).not.toHaveBeenCalled();
+  });
+
   it("records the focused tab and notifies the surface on a tab click", () => {
     const layout = store(mergedTree());
     const onSelectTab = vi.fn();

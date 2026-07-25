@@ -5,6 +5,7 @@ export type {
   ActionRegistry,
   NavigateEvent,
   NavigateCallback,
+  NavigateOptions,
   MiddlemanEvent,
   EventCallback,
   PrepareRouteCallback,

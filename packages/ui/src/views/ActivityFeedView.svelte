@@ -3,13 +3,12 @@
   import { getStackDepth } from "../stores/keyboard/modal-stack.svelte.js";
   import ActivityFeed from "../components/ActivityFeed.svelte";
   import CommitDiffPanel from "../components/CommitDiffPanel.svelte";
-  import WorkspaceDockPanel from "../components/workspace/WorkspaceDockPanel.svelte";
   import { IconButton, SidebarToggle, SplitResizeHandle } from "@kenn-io/kit-ui";
   import type { SplitResizeEvent } from "@kenn-io/kit-ui";
   import type { PullRequestRouteRef } from "../routes.js";
   import PRListView from "./PRListView.svelte";
   import IssueListView from "./IssueListView.svelte";
-  import type { InlineWorkspaceController, WorkspaceItemIdentity } from "../workspace-inline.js";
+  import type { InlineWorkspaceController } from "../workspace-inline.js";
 
   type ActivityDetailTab = "conversation" | "files";
 
@@ -180,25 +179,6 @@
         }
       : null,
   );
-  // The claim itself is made by the embedded PRListView/IssueListView's own
-  // claim effect (they receive {inlineWorkspace} below); this view only
-  // renders the dock, so it needs the identity to ask the controller
-  // whether that claim is currently active.
-  const claimIdentity = $derived<WorkspaceItemIdentity | null>(
-    activeDrawer
-      ? {
-          provider: activeDrawer.provider,
-          platformHost: activeDrawer.platformHost,
-          owner: activeDrawer.owner,
-          name: activeDrawer.name,
-          repoPath: activeDrawer.repoPath,
-          number: activeDrawer.number,
-          // Drawer vocabulary ("pr"/"issue"); canonicalItemType maps it.
-          itemType: activeDrawer.itemType,
-        }
-      : null,
-  );
-
   function handleDetailTabChange(
     tab: ActivityDetailTab,
   ): void {
@@ -408,35 +388,22 @@
           />
         {/key}
       {:else if drawerPRSelection}
-        {#snippet prEmbed()}
-          <PRListView
-            selectedPR={drawerPRSelection}
-            detailTab={effectiveDetailTab}
-            isSidebarCollapsed={true}
-            hideSidebar={true}
-            autoSyncDetail="background"
-            hideStaleDetailWhileLoading={true}
-            workflowApprovalSync={false}
-            onDetailTabChange={handleDetailTabChange}
-            onStackMemberNavigate={handleStackMemberNavigate}
-            renderWorkspaceDock={false}
-            {inlineWorkspace}
-          />
-        {/snippet}
-
-        {#if inlineWorkspace}
-          <WorkspaceDockPanel
-            controller={inlineWorkspace}
-            active={claimIdentity !== null && inlineWorkspace.isClaimedFor(claimIdentity)}
-          >
-            {@render prEmbed()}
-          </WorkspaceDockPanel>
-        {:else}
-          {@render prEmbed()}
-        {/if}
+        <!-- Neither embed sits inside an outer dock any more: each owns the
+             workspace as one of its own panes, and a second portal slot on the
+             page would compete for the single live terminal. -->
+        <PRListView
+          selectedPR={drawerPRSelection}
+          detailTab={effectiveDetailTab}
+          isSidebarCollapsed={true}
+          hideSidebar={true}
+          autoSyncDetail="background"
+          hideStaleDetailWhileLoading={true}
+          workflowApprovalSync={false}
+          onDetailTabChange={handleDetailTabChange}
+          onStackMemberNavigate={handleStackMemberNavigate}
+          {inlineWorkspace}
+        />
       {:else if drawerIssueSelection}
-        <!-- The embedded issue view owns its own workspace pane, so it must not
-             also sit inside the outer dock: two portal slots would compete. -->
         <IssueListView
           selectedIssue={drawerIssueSelection}
           isSidebarCollapsed={true}

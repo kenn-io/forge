@@ -39,7 +39,16 @@ export interface NavigateEvent {
   repo?: { provider?: string; host?: string; platform_host?: string; repo_path?: string; owner: string; name: string };
 }
 
-export type NavigateCallback = (event: string | NavigateEvent) => void;
+export interface NavigateOptions {
+  /**
+   * Rewrite the current history entry instead of pushing a new one. Used when a
+   * route change only records which of several simultaneously visible panes the
+   * user is in, so moving between them does not fill the Back stack.
+   */
+  replace?: boolean;
+}
+
+export type NavigateCallback = (event: string | NavigateEvent, options?: NavigateOptions) => void;
 
 export interface WorkspaceCommandResult {
   ok: boolean;

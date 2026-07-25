@@ -136,8 +136,16 @@ export function createPaneLayoutStore(
 
     appendTabToLeaf: (source, leafID) => withTree(appendTabbedPanelTabToLeaf(state.tree, source, leafID)),
 
-    splitTab: (source, leafID, direction, placement) =>
-      withTree(splitTabbedPanelTabIntoLeaf(state.tree, source, leafID, direction, placement)),
+    splitTab: (source, leafID, direction, placement) => {
+      const tree = splitTabbedPanelTabIntoLeaf(state.tree, source, leafID, direction, placement);
+      // Rejected splits hand back the same tree; nothing moved, so nothing can
+      // be hiding behind the zoom.
+      if (!tree || tree === state.tree) return;
+      // A split always mints a new leaf, and any surviving zoom names an older
+      // one — so the pane the user just split off would land hidden behind the
+      // zoom. Arranging panes and maximizing one are mutually exclusive intents.
+      commit({ ...state, tree, zoomedLeafID: null });
+    },
 
     setRatio: (splitID, ratio) => withTree(updateTabbedPanelSplitRatio(state.tree, splitID, ratio)),
 
@@ -152,6 +160,9 @@ export function createPaneLayoutStore(
       commit({ ...state, zoomedLeafID: null });
     },
 
+    // Callers still need to reconcile a zoom that stops rendering for reasons the
+    // store cannot see (a pane becoming unavailable): see
+    // DetailPaneLayout's zoom reconciliation effect.
     setHidden: (tabKey, hidden) => {
       const already = state.hiddenTabKeys.includes(tabKey);
       if (already === hidden) return;

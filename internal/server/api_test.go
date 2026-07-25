@@ -29831,3 +29831,132 @@ func TestMergeBlocksPredecessorPreservedByNativeStackOverlapFallback(t *testing.
 	assert.Contains(string(resp.Body), `"blocking_number":100`)
 	assert.False(merged, "the provider must not be asked to merge past an open predecessor")
 }
+
+// TestMergeBlocksPredecessorRestoredWhenNativeStackAgesOut is the full-stack
+// consequence of the observation-based aging bound. Cache aging spans hours, so
+// the syncer clock is injected rather than waited on. Under the stale native
+// projection PR 101 follows a merged predecessor and would merge; once the
+// observation ages out the projection returns to branch inference, which
+// restores the open predecessor the merge safeguard must block on.
+func TestMergeBlocksPredecessorRestoredWhenNativeStackAgesOut(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	observed := time.Now().UTC().Add(-24 * time.Hour).Truncate(time.Second)
+	repoCloneURL := "https://github.com/acme/widget.git"
+	makeGHPR := func(id int64, number int, head, base string) *gh.PullRequest {
+		sha := fmt.Sprintf("sha%d", number)
+		title := fmt.Sprintf("PR #%d", number)
+		return &gh.PullRequest{
+			ID: &id, Number: &number, State: new("open"), Title: &title,
+			Body: new(""), User: &gh.User{Login: new("testuser")},
+			CreatedAt: &gh.Timestamp{Time: observed}, UpdatedAt: &gh.Timestamp{Time: observed},
+			Head: &gh.PullRequestBranch{
+				Ref: &head, SHA: &sha,
+				Repo: &gh.Repository{CloneURL: &repoCloneURL},
+			},
+			Base: &gh.PullRequestBranch{Ref: &base, SHA: new("basesha")},
+		}
+	}
+	prs := []*gh.PullRequest{
+		makeGHPR(1000, 100, "feature/a", "main"),
+		makeGHPR(1001, 101, "feature/b", "feature/a"),
+	}
+	var listCalls atomic.Int32
+	merged := false
+	mock := &mockGH{
+		getRepositoryFn: func(_ context.Context, owner, repo string) (*gh.Repository, error) {
+			nodeID := "repo-" + owner + "-" + repo
+			return &gh.Repository{
+				Name: &repo, NodeID: &nodeID, Owner: &gh.User{Login: &owner},
+				CloneURL: &repoCloneURL, Archived: new(false),
+			}, nil
+		},
+		mergePullRequestFn: func(_ context.Context, _, _ string, _ int, _, _, _ string) (*gh.PullRequestMergeResult, error) {
+			merged = true
+			return &gh.PullRequestMergeResult{}, nil
+		},
+		nativeStackAPI: &mockGHNativeStackAPI{
+			listOpenPullRequests: func(
+				context.Context, string, string,
+			) ([]*gh.PullRequest, map[int]*ghclient.NativeStackHint, error) {
+				if listCalls.Add(1) > 1 {
+					// The open-PR list is byte-identical on the later sync, which
+					// is the path a stale confirmation would survive on.
+					return nil, nil, &gh.ErrorResponse{Response: &http.Response{
+						StatusCode: http.StatusNotModified,
+						Request: &http.Request{
+							Method: http.MethodGet,
+							URL:    &url.URL{Scheme: "https", Host: "api.github.com", Path: "/pulls"},
+						},
+					}}
+				}
+				// Only the tip is claimed by the stack, so no hint can attest to the
+				// leading member the cached row names.
+				return prs, map[int]*ghclient.NativeStackHint{
+					101: {Number: 42, Size: 2, Position: 2, BaseRef: "main"},
+				}, nil
+			},
+			listStackPage: func(
+				context.Context, string, string, int,
+			) (ghclient.NativeStackPage, error) {
+				return ghclient.NativeStackPage{}, errors.New("catalog must not be refetched while confirmed")
+			},
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	// PR 900 is merged, so the stale native chain shows PR 101 following a
+	// finished predecessor.
+	seedStackedPR(t, database, "acme", "widget", 900, "feature/z", "main", db.MergeRequestStateMerged, "", "")
+	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	require.NotNil(repo)
+	require.NoError(database.ReplaceGitHubNativeStack(ctx, db.GitHubNativeStack{
+		RepoID: repo.ID, GitHubID: 9042, Number: 42, Size: 2,
+		BaseRef: "main", IsOpen: true, GitHubCreatedAt: observed,
+		ContentFingerprint: "native-42", LastObservedAt: observed,
+		Members: []db.GitHubNativeStackMember{
+			{Position: 1, PullRequestNumber: 900, State: "merged", HeadRef: "feature/z", HeadSHA: "sha900"},
+			{Position: 2, PullRequestNumber: 101, State: "open", HeadRef: "feature/b", HeadSHA: "sha101"},
+		},
+	}))
+	clock := observed.Add(11 * time.Hour)
+	srv.syncer.SetClock(func() time.Time { return clock })
+	srv.syncer.SetPreferGitHubNativeStacks(true)
+	srv.syncer.SetOnSyncCompleted(stacks.SyncCompletedHook(ctx, database, nil))
+	client := setupTestClient(t, srv)
+
+	srv.syncer.RunOnce(ctx)
+
+	stackResp, err := client.HTTP.GetPullStackWithResponse(ctx, "gh", "acme", "widget", 101)
+	require.NoError(err)
+	require.Equal(http.StatusOK, stackResp.StatusCode(), string(stackResp.Body))
+	require.NotNil(stackResp.JSON200)
+	require.NotNil(stackResp.JSON200.Members)
+	require.Equal([]int64{900, 101}, stackMemberNumbers(*stackResp.JSON200.Members),
+		"inside its observation window the cached stack still owns the projection")
+
+	// Two hours later the cached stack is past its own 12h window.
+	clock = observed.Add(13 * time.Hour)
+	srv.syncer.RunOnce(ctx)
+
+	stackResp, err = client.HTTP.GetPullStackWithResponse(ctx, "gh", "acme", "widget", 101)
+	require.NoError(err)
+	require.Equal(http.StatusOK, stackResp.StatusCode(), string(stackResp.Body))
+	require.NotNil(stackResp.JSON200)
+	require.NotNil(stackResp.JSON200.Members)
+	assert.Equal([]int64{100, 101}, stackMemberNumbers(*stackResp.JSON200.Members),
+		"an aged observation must hand the repository back to branch inference")
+
+	tipHeadSHA := "sha101"
+	mergeResp, err := client.HTTP.MergePullWithResponse(
+		ctx, "gh", "acme", "widget", 101,
+		generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &tipHeadSHA},
+	)
+	require.NoError(err)
+
+	assert.Equal(http.StatusConflict, mergeResp.StatusCode(), string(mergeResp.Body))
+	assert.Contains(string(mergeResp.Body), `"reason":"mid_stack_merge_disallowed"`)
+	assert.Contains(string(mergeResp.Body), `"blocking_number":100`)
+	assert.False(merged, "the provider must not be asked to merge past an open predecessor")
+}

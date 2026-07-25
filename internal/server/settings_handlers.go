@@ -504,11 +504,12 @@ func (s *Server) updateSettings(
 		)
 	}
 	nativeStacksEnabled := s.cfg.PullRequests.PreferGitHubNativeStacks
+	nativeStacksPrevious := s.swapGitHubNativeStackPreferenceLocked(nativeStacksEnabled)
 	s.refreshRuntimeTargetsLocked()
 	s.applyWorkspaceConfigLocked()
 	s.applyPullConfigLocked()
 	s.cfgMu.Unlock()
-	s.applyGitHubNativeStackPreference(ctx, nativeStacksEnabled)
+	s.reconcileGitHubNativeStackProjection(nativeStacksPrevious, nativeStacksEnabled)
 
 	return &settingsOutput{Body: s.buildLocalSettingsResponse()}, nil
 }

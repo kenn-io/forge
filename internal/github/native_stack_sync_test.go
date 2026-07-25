@@ -444,6 +444,10 @@ func TestRunOnceWithdrawsAgedNativeStacksFromProjectionInput(t *testing.T) {
 		"a cache-confirmed stack still inside its window must project")
 	require.Empty(client.pageCalls, "reconfirming from cache must not refetch the catalog")
 
+	// Enabling the preference and the first sync both invalidate ETags, so only
+	// the delta across the aging sync says anything.
+	invalidatesBefore := client.invalidateCalls.Load()
+
 	// Two hours later the stack is past its own 12h window. The 304 must not
 	// reuse a confirmation that this sync's own clock would have extended.
 	clock = observed.Add(13 * time.Hour)
@@ -453,7 +457,7 @@ func TestRunOnceWithdrawsAgedNativeStacksFromProjectionInput(t *testing.T) {
 	require.NotNil(results[0].GitHubNativeStacks)
 	assert.Empty(results[0].GitHubNativeStacks.ConfirmedNumbers,
 		"an aged stack must be withheld from projection so branch inference owns the repo")
-	assert.Positive(client.invalidateCalls.Load(),
+	assert.Equal(invalidatesBefore+1, client.invalidateCalls.Load(),
 		"the pull-request list ETag must be evicted so the next sync refetches the catalog")
 }
 
@@ -571,7 +575,11 @@ func TestRefreshGitHubNativeStackCacheDoesNotReuseIncompleteRefreshAfterNotModif
 	}
 
 	partial := syncer.refreshGitHubNativeStackCache(t.Context(), repo, repoID, hints, false)
-	assert.Equal([]int{42}, partial.ConfirmedNumbers)
+	// Stack 42 alone cannot be projected either: stack 43 stayed unresolved, so
+	// detection's overlap scan cannot see whether 42 claims a pull request 43
+	// also holds, and projecting 42 could hide 43's predecessor.
+	assert.Empty(partial.ConfirmedNumbers,
+		"an incomplete refresh must project nothing rather than an unverifiable subset")
 	assert.EqualValues(1, client.invalidateCalls.Load(),
 		"an incomplete refresh must evict the pull-request list ETag so the next sync retries")
 

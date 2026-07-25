@@ -2815,6 +2815,18 @@ func (s *Syncer) SetFetchers(fetchers map[string]*GraphQLFetcher) {
 	s.fetchers = fetchers
 }
 
+// SetClock replaces the syncer's time source. Cache aging bounds -- notably the
+// native-stack observation window -- span hours, so callers that need to observe
+// those transitions inject a clock instead of waiting. The field is read without
+// synchronization on the sync path, so this must not be called while a sync is
+// running.
+func (s *Syncer) SetClock(now func() time.Time) {
+	if now == nil {
+		return
+	}
+	s.now = now
+}
+
 // SetGitHubRouters registers configuration-bounded credential routers keyed by
 // GitHub host. Route-specific GraphQL fetchers take precedence over legacy
 // host fallback fetchers.

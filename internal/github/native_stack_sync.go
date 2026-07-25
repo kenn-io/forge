@@ -131,6 +131,11 @@ func (s *Syncer) refreshGitHubNativeStackCache(
 			})
 			return
 		}
+		// An unresolved target is invisible to the overlap scan, so projecting the
+		// stacks this pass did confirm could let one of them claim a pull request
+		// the unresolved stack also holds -- shortening that stack and hiding a
+		// preceding merge blocker. The whole pass falls back to branch inference.
+		result.ConfirmedNumbers = nil
 		s.nativeStackConfirmations.Delete(confirmationKey)
 		if client, ok := s.optionalGitHubClientFor(repo); ok {
 			client.InvalidateListETagsForRepo(repo.Owner, repo.Name, "pulls")

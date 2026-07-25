@@ -2851,10 +2851,10 @@
           <section class="workspace-zero-state" aria-label="Workspaces empty state">
             <div class="workspace-zero-copy">
               <p class="workspace-zero-eyebrow">Workspaces</p>
-              <h2>Create a workspace to run agents from a PR or issue</h2>
+              <h2>Create a workspace to run agents on a branch</h2>
               <p>
-                Workspaces are git worktrees created from PR or issue
-                heads.
+                Workspaces are git worktrees created from PR or issue heads, or
+                from the repository's default branch when you start new work.
               </p>
               <p>
                 From a PR or issue, use the
@@ -2880,6 +2880,10 @@
                   </Button>
                 </span>
                 button to launch a workspace.
+              </p>
+              <p>
+                For unplanned work, use New workspace in the sidebar to pick a
+                tracked repository and branch from its default head.
               </p>
               <p>
                 Once it exists, this pane can start agents, local review

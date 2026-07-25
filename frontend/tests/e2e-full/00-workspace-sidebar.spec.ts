@@ -160,11 +160,12 @@ test.describe("workspace sidebar full-stack", () => {
 
       await expect(
         page.getByRole("heading", {
-          name: "Create a workspace to run agents from a PR or issue",
+          name: "Create a workspace to run agents on a branch",
         }),
       ).toBeVisible();
-      await expect(page.getByText("Workspaces are git worktrees created from PR or issue heads.")).toBeVisible();
+      await expect(page.getByText(/Workspaces are git worktrees created from PR or issue heads/)).toBeVisible();
       await expect(page.getByText(/From a PR or issue, use the/)).toBeVisible();
+      await expect(page.getByText(/use New workspace in the sidebar/)).toBeVisible();
       await expect(page.getByRole("button", { name: "Create Workspace" })).toBeDisabled();
       await expect(page.getByText("No workspaces yet.")).toBeVisible();
 

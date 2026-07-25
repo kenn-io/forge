@@ -162,6 +162,7 @@ registry helpers return typed errors for missing providers or capabilities.
   empty forever, which silently degrades the worktree diff sampler to a bare
   HEAD diff (0/0 sidebar stats).
 - Child datasets and detail/CI/diff freshness writes are fenced to the parent snapshot revision. Complete comments and inline review sets replace; submitted reviews remain additive. (`internal/db/queries_snapshot_children.go::CommitMergeRequestChildSnapshot`)
+- Resumable inline-review hydration stages in the canonical detail path; partial generations stay invisible until a parent-revision-fenced transaction replaces the complete live set. (`internal/db/queries_review_hydration.go::CommitMRReviewHydrationStage`)
 
 ## Historical Archive
 

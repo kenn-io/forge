@@ -53,6 +53,8 @@ func TestOpenAndSchema(t *testing.T) {
 		"middleman_mr_review_drafts",
 		"middleman_mr_review_draft_comments",
 		"middleman_mr_review_threads",
+		"middleman_mr_review_hydration_stages",
+		"middleman_mr_review_hydration_threads",
 		"middleman_project_worktree_runtime_sessions",
 		"middleman_host_runtime_sessions",
 		"middleman_notification_items",

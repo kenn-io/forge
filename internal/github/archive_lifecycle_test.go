@@ -735,7 +735,7 @@ func TestArchiveAdmissionAttemptAllowanceUsesAvailableSurplus(t *testing.T) {
 	}
 }
 
-func TestGitealikeArchiveAdmissionUsesHeaderlessLocalBudget(t *testing.T) {
+func TestGitealikeArchiveAdmissionDoesNotTruncateAdmittedMergeRequest(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -753,15 +753,14 @@ func TestGitealikeArchiveAdmissionUsesHeaderlessLocalBudget(t *testing.T) {
 	}
 
 	admission, err := syncer.Admit(
-		t.Context(), giteaRef, db.ArchiveItemTypeMergeRequest, 38,
+		t.Context(), giteaRef, db.ArchiveItemTypeMergeRequest, 22,
 	)
 	require.NoError(err)
 	require.True(admission.Allowed)
 	t.Cleanup(func() { admission.Complete(nil, true) })
-	for range 39 {
+	for range 64 {
 		assert.True(ConsumeArchiveAttemptAllowance(admission.Context))
 	}
-	assert.False(ConsumeArchiveAttemptAllowance(admission.Context))
 
 	githubKey := RateBucketKey("github", "github.test")
 	githubTracker := NewPlatformRateTracker(database, "github", "github.test", "rest")
@@ -952,7 +951,7 @@ func TestArchiveCompletionWithoutProviderAttemptAbandonsExpiredFeatureProbeReser
 	admission, err := syncer.Admit(t.Context(), ref, db.ArchiveItemTypeIssue, 1)
 	require.NoError(err)
 	require.True(admission.Allowed, admission.Detail)
-	providerAttempted, _, syncErr := syncer.SyncArchiveItem(
+	providerAttempted, syncErr := syncer.SyncArchiveItem(
 		admission.Context, ref, db.ArchiveItemTypeIssue, 7,
 	)
 	require.Error(syncErr)

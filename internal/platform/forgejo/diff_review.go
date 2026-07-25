@@ -8,7 +8,6 @@ import (
 
 	forgejosdk "codeberg.org/mvdkleijn/forgejo-sdk/forgejo/v3"
 	"go.kenn.io/middleman/internal/platform"
-	"go.kenn.io/middleman/internal/platform/gitealike"
 )
 
 func (c *Client) PublishDiffReviewDraft(
@@ -26,45 +25,6 @@ func (c *Client) ListMergeRequestReviewThreads(
 	number int,
 ) ([]platform.MergeRequestReviewThread, error) {
 	threads, err := c.transport.ListMergeRequestReviewThreads(ctx, ref, number)
-	if err != nil {
-		return nil, c.ClassifyRepositoryFeatureError(
-			ctx, ref, platform.RepositoryFeatureMergeRequests, err,
-		)
-	}
-	return threads, nil
-}
-
-func (c *Client) ListMergeRequestReviewIDs(
-	ctx context.Context,
-	ref platform.RepoRef,
-	number int,
-) ([]string, error) {
-	reviews, err := c.transport.listAllPullReviews(ctx, ref, number)
-	if err != nil {
-		return nil, c.ClassifyRepositoryFeatureError(
-			ctx, ref, platform.RepositoryFeatureMergeRequests, err,
-		)
-	}
-	ids := make([]string, 0, len(reviews))
-	for _, review := range reviews {
-		if review != nil {
-			ids = append(ids, strconv.FormatInt(review.ID, 10))
-		}
-	}
-	return ids, nil
-}
-
-func (c *Client) ListMergeRequestReviewThreadsForReview(
-	ctx context.Context,
-	ref platform.RepoRef,
-	number int,
-	reviewID string,
-) ([]platform.MergeRequestReviewThread, error) {
-	id, err := strconv.ParseInt(reviewID, 10, 64)
-	if err != nil {
-		return nil, fmt.Errorf("parse Forgejo review id %q: %w", reviewID, err)
-	}
-	threads, err := c.transport.listPullReviewThreads(ctx, ref, number, id)
 	if err != nil {
 		return nil, c.ClassifyRepositoryFeatureError(
 			ctx, ref, platform.RepositoryFeatureMergeRequests, err,
@@ -131,13 +91,6 @@ func (t *transport) ListMergeRequestReviewThreads(
 		if err != nil {
 			return nil, err
 		}
-		commentCount := len(threads) + len(comments)
-		if commentCount > gitealike.MaxReviewHydrationComments {
-			return nil, gitealike.ReviewHydrationLimit(
-				"review_hydration_comments", commentCount,
-				gitealike.MaxReviewHydrationComments,
-			)
-		}
 		for _, comment := range comments {
 			threads = append(threads, forgejoReviewThread(review, comment))
 		}
@@ -150,9 +103,7 @@ func (t *transport) listAllPullReviews(
 	ref platform.RepoRef,
 	number int,
 ) ([]*forgejosdk.PullReview, error) {
-	accepted := 0
-	pages := 0
-	return platform.CollectPages(ctx, "1", func(
+	return platform.CollectAllPages(ctx, "1", func(
 		ctx context.Context,
 		cursor string,
 	) (platform.Page[*forgejosdk.PullReview], error) {
@@ -160,12 +111,6 @@ func (t *transport) listAllPullReviews(
 		if err != nil {
 			return platform.Page[*forgejosdk.PullReview]{}, fmt.Errorf(
 				"parse Forgejo review page cursor: %w", err,
-			)
-		}
-		pages++
-		if pages > gitealike.MaxReviewHydrationPages {
-			return platform.Page[*forgejosdk.PullReview]{}, gitealike.ReviewHydrationLimit(
-				"review_hydration_pages", pages, gitealike.MaxReviewHydrationPages,
 			)
 		}
 		var reviews []*forgejosdk.PullReview
@@ -180,13 +125,6 @@ func (t *transport) listAllPullReviews(
 		if err != nil {
 			return platform.Page[*forgejosdk.PullReview]{}, forgejoHTTPError(resp, err)
 		}
-		accepted += len(reviews)
-		if accepted > gitealike.MaxReviewHydrationReviews {
-			return platform.Page[*forgejosdk.PullReview]{}, gitealike.ReviewHydrationLimit(
-				"review_hydration_reviews", accepted,
-				gitealike.MaxReviewHydrationReviews,
-			)
-		}
 		if resp == nil || resp.NextPage == 0 {
 			return platform.Page[*forgejosdk.PullReview]{Items: reviews, Exhausted: true}, nil
 		}
@@ -194,30 +132,6 @@ func (t *transport) listAllPullReviews(
 			Items: reviews, NextCursor: strconv.Itoa(resp.NextPage),
 		}, nil
 	})
-}
-
-func (t *transport) listPullReviewThreads(
-	ctx context.Context,
-	ref platform.RepoRef,
-	number int,
-	reviewID int64,
-) ([]platform.MergeRequestReviewThread, error) {
-	comments, err := t.listPullReviewComments(ctx, ref, number, reviewID)
-	if err != nil {
-		return nil, err
-	}
-	if len(comments) > gitealike.MaxReviewHydrationComments {
-		return nil, gitealike.ReviewHydrationLimit(
-			"review_hydration_comments", len(comments),
-			gitealike.MaxReviewHydrationComments,
-		)
-	}
-	review := &forgejosdk.PullReview{ID: reviewID}
-	threads := make([]platform.MergeRequestReviewThread, 0, len(comments))
-	for _, comment := range comments {
-		threads = append(threads, forgejoReviewThread(review, comment))
-	}
-	return threads, nil
 }
 
 func (t *transport) listPullReviewComments(

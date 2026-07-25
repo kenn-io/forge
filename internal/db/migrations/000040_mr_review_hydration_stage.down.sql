@@ -1,3 +1,0 @@
-DROP INDEX IF EXISTS idx_mr_review_hydration_threads_stage;
-DROP TABLE IF EXISTS middleman_mr_review_hydration_threads;
-DROP TABLE IF EXISTS middleman_mr_review_hydration_stages;

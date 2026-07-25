@@ -39,7 +39,6 @@ var (
 	_ platform.IssuePageReader                = (*Client)(nil)
 	_ platform.MergeRequestPageReader         = (*Client)(nil)
 	_ platform.MergeRequestReviewThreadReader = (*Client)(nil)
-	_ platform.MergeRequestReviewHydrator     = (*Client)(nil)
 )
 
 func TestClientRecordsRateLimitHeaders(t *testing.T) {

@@ -162,13 +162,12 @@ registry helpers return typed errors for missing providers or capabilities.
   empty forever, which silently degrades the worktree diff sampler to a bare
   HEAD diff (0/0 sidebar stats).
 - Child datasets and detail/CI/diff freshness writes are fenced to the parent snapshot revision. Complete comments and inline review sets replace; submitted reviews remain additive. (`internal/db/queries_snapshot_children.go::CommitMergeRequestChildSnapshot`)
-- Resumable inline-review hydration stages in the canonical detail path; partial generations stay invisible until a parent-revision-fenced transaction replaces the complete live set. (`internal/db/queries_review_hydration.go::CommitMRReviewHydrationStage`)
 
 ## Historical Archive
 
 - Archive is a scheduling and progress mode over normal sync, not a second sync engine; completeness is repository and item progress scoped by full repository identity. (`internal/db/queries_archive.go::GetArchiveProgress`)
 - Created-order inventory calls require the historical capability; updated-order maintenance traversal does not. Each returns one bounded identity page with an advancing opaque cursor or explicit exhaustion. (`internal/platform/reader_validation.go::pageReaderValidation.prepare`)
-- Hydration admits one item and invokes canonical item sync; incomplete staged detail passes remain pending, and only complete sync records an archive outcome. Do not add archive-specific content paths. (`internal/archive/hydrate.go::hydrateItem`)
+- Hydration admits one item and invokes canonical item sync; only a successful complete sync records an archive outcome. Do not add archive-specific content paths. (`internal/archive/hydrate.go::hydrateItem`)
 - Only parent lookups explicitly classified as removed, moved, or inaccessible are terminal. Generic and child-dataset not-found responses remain retries; a successful non-GitHub feature-metadata confirmation doubles as repository-accessibility evidence and must not be repeated before marking the parent absent. Canonical item content stays untouched. (`internal/archive/hydrate.go::archiveTerminalSyncOutcome`, `internal/platform/gitealike/feature_disabled.go::Provider.repositoryItemLookupError`,
   `internal/platform/gitlab/feature_disabled.go::Client.repositoryItemLookupError`)
 - Maintenance rediscovery reopens terminal item progress for hydration; unsupported and blocked items remain excluded. (`internal/db/queries_dataset_progress.go::reopenArchiveItemProgressTx`)
@@ -177,8 +176,8 @@ registry helpers return typed errors for missing providers or capabilities.
 - Configuration reconciliation pauses omitted repositories with a durable `configuration_removed` reason while retaining archive content and progress. Re-adding the same full identity clears only that automatic pause; an operator pause stays paused. (`internal/db/queries_archive.go::ReconcileDiscoveryArchives`, `internal/db/queries_archive.go::EnsureDiscoveryArchives`)
 - Reconcile configured repositories only at startup or configuration reload; idle scheduler polls must remain read-only unless they claim actual work. (`internal/github/sync.go::SetReposWithContext`, `internal/archive/scheduler.go::RunEligible`)
 - Authentication and repository-blocked errors defer every archive work class, including already-pending hydration, until an explicit retry clears the repository error. (`internal/archive/scheduler.go::archiveRepoDeferred`)
-- Archive admission is provider-host scoped and request-bounded. Normal index, notification, and active-detail work outrank archive requests; live work registers first, cancels the active archive request context, and waits for that request lease to release before provider I/O. Archive leases are released before SQLite commits. Register repo index and item detail work inside their shared execution functions so periodic, watched, manual, API, and item-number entry points cannot bypass admission. (`internal/github/sync.go::beginProviderWork`, `internal/github/sync.go::tryBeginArchiveProviderRequest`, `internal/github/sync.go::Admit`, `internal/archive/scheduler.go::admit`)
-- Archive admission requires the declared minimum cost, then bounds all wire attempts above the provider live floor. Provider reset signals release quadratic surplus; headerless Gitealike hosts use only configured local hourly surplus, while unknown reset timing disables other providers. (`internal/github/budget.go::LocalArchiveSpendAvailable`,
+- Archive admission is provider-host scoped. Normal index, notification, and active-detail work outrank archive requests; live work registers first, cancels the active archive request context, and waits for that request lease to release before provider I/O. Archive leases are released before SQLite commits. Register repo index and item detail work inside their shared execution functions so periodic, watched, manual, API, and item-number entry points cannot bypass admission. (`internal/github/sync.go::beginProviderWork`, `internal/github/sync.go::tryBeginArchiveProviderRequest`, `internal/github/sync.go::Admit`, `internal/archive/scheduler.go::admit`)
+- Archive admission requires the declared minimum cost and normally bounds wire attempts above the live floor. Gitealike merge-request reads remain preemptible but may exceed the estimate to complete their atomic dataset. (`internal/github/budget.go::LocalArchiveSpendAvailable`,
   `internal/archive/scheduler.go::archiveFeatureReadAttemptCost`, `internal/github/sync.go::Admit`)
 
 ## Label Catalogs And Mutations
@@ -239,9 +238,10 @@ Archive access probes preserve transient and rate-limit failures for retry. Only
 authoritative repository permission or not-found responses may become permanent
 inaccessibility. (`internal/platform/gitealike/pages.go::classifyLookupOutcome`)
 
-Inline review hydration is complete-or-deferred: bound review pagination and
-per-review comment fan-out before revision-fenced dataset replacement
-(`internal/platform/gitealike/review_hydration.go::MaxReviewHydrationReviews`).
+Inline review hydration is complete-or-error: drain every review page and every
+per-review comment before revision-fenced dataset replacement. Never publish a
+partial review dataset or report an incomplete explicit sync as successful
+(`internal/github/sync.go::syncProviderMRReviewThreads`).
 
 ## Import And Routes
 

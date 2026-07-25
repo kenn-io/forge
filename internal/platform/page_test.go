@@ -77,14 +77,25 @@ func TestCollectPagesEnforcesPageBound(t *testing.T) {
 
 	require.ErrorIs(t, err, ErrPageLimit)
 	require.NotErrorIs(t, err, ErrProviderContract)
-	// Distinct advancing cursors never repeat, so only the page bound stops it.
 	assert.Equal(MaxCollectPages, calls)
 }
 
+func TestCollectAllPagesDrainsUntilProviderExhaustion(t *testing.T) {
+	calls := 0
+	items, err := CollectAllPages(t.Context(), "0", func(_ context.Context, cursor string) (Page[int], error) {
+		calls++
+		if calls == MaxCollectPages+1 {
+			return Page[int]{Items: []int{calls}, Exhausted: true}, nil
+		}
+		return Page[int]{Items: []int{calls}, NextCursor: cursor + "-next"}, nil
+	})
+
+	require.NoError(t, err)
+	require.Len(t, items, MaxCollectPages+1)
+	assert.Equal(t, MaxCollectPages+1, calls)
+}
+
 func TestCollectPagesClassifiesCycleAtPageBoundAsContractError(t *testing.T) {
-	// The cursor for page N is "cN"; the fetch that would exhaust the budget
-	// instead revisits the very first cursor. Cycle detection must win over
-	// the page bound.
 	_, err := CollectPages(t.Context(), "c0", func(_ context.Context, cursor string) (Page[int], error) {
 		var n int
 		_, scanErr := fmt.Sscanf(cursor, "c%d", &n)

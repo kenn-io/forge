@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -15,7 +16,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	Require "github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/platform"
-	"go.kenn.io/middleman/internal/platform/gitealike"
 )
 
 func TestForgejoReviewThreadPreservesContextCoordinates(t *testing.T) {
@@ -226,49 +226,24 @@ func TestListMergeRequestReviewThreadsReadsForgejoReviewComments(t *testing.T) {
 	assert.Equal("head-sha", threads[0].Range.CommitSHA)
 }
 
-func TestListMergeRequestReviewIDsDoesNotFanOut(t *testing.T) {
+func TestListMergeRequestReviewThreadsReadsBeyondTenthReviewPage(t *testing.T) {
 	assert := assert.New(t)
 	require := Require.New(t)
-	var commentRequests atomic.Int32
+	var reviewRequests atomic.Int32
 	var server *httptest.Server
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Path != "/api/v1/repos/acme/widgets/pulls/42/reviews" {
-			commentRequests.Add(1)
-			http.Error(w, "unexpected comment fan-out", http.StatusInternalServerError)
+			reviewPath := strings.TrimSuffix(r.URL.Path, "/comments")
+			reviewID, err := strconv.Atoi(reviewPath[strings.LastIndexByte(reviewPath, '/')+1:])
+			assert.NoError(err)
+			assert.NoError(json.NewEncoder(w).Encode([]map[string]any{{"id": 1000 + reviewID}}))
 			return
 		}
-		if r.URL.Query().Get("page") == "1" {
-			w.Header().Set("Link", fmt.Sprintf(`<%s/api/v1/repos/acme/widgets/pulls/42/reviews?page=2&limit=100>; rel="next"`, server.URL))
-			assert.NoError(json.NewEncoder(w).Encode([]map[string]any{{"id": 99}}))
-			return
-		}
-		assert.NoError(json.NewEncoder(w).Encode([]map[string]any{{"id": 100}}))
-	}))
-	defer server.Close()
-	client, err := NewClient("codeberg.test", testTokenSource("token"), WithBaseURLForTesting(server.URL))
-	require.NoError(err)
-
-	ids, err := client.ListMergeRequestReviewIDs(t.Context(), platform.RepoRef{
-		Owner: "acme", Name: "widgets",
-	}, 42)
-
-	require.NoError(err)
-	assert.Equal([]string{"99", "100"}, ids)
-	assert.Zero(commentRequests.Load())
-}
-
-func TestListMergeRequestReviewIDsStopsBeforeEleventhPage(t *testing.T) {
-	assert := assert.New(t)
-	require := Require.New(t)
-	var requests atomic.Int32
-	var server *httptest.Server
-	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requests.Add(1)
-		w.Header().Set("Content-Type", "application/json")
+		reviewRequests.Add(1)
 		page, err := strconv.Atoi(r.URL.Query().Get("page"))
 		assert.NoError(err)
-		if page <= gitealike.MaxReviewHydrationPages {
+		if page < 11 {
 			w.Header().Set("Link", fmt.Sprintf(
 				`<%s/api/v1/repos/acme/widgets/pulls/42/reviews?page=%d&limit=100>; rel="next"`,
 				server.URL, page+1,
@@ -280,36 +255,15 @@ func TestListMergeRequestReviewIDsStopsBeforeEleventhPage(t *testing.T) {
 	client, err := NewClient("codeberg.test", testTokenSource("token"), WithBaseURLForTesting(server.URL))
 	require.NoError(err)
 
-	_, err = client.ListMergeRequestReviewIDs(t.Context(), platform.RepoRef{
+	threads, err := client.ListMergeRequestReviewThreads(t.Context(), platform.RepoRef{
 		Owner: "acme", Name: "widgets",
 	}, 42)
 
-	require.ErrorIs(err, platform.ErrPageLimit)
-	assert.Equal(int32(gitealike.MaxReviewHydrationPages), requests.Load())
-}
-
-func TestListMergeRequestReviewThreadsForReviewReadsOnlyRequestedReview(t *testing.T) {
-	assert := assert.New(t)
-	require := Require.New(t)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		assert.Equal("/api/v1/repos/acme/widgets/pulls/42/reviews/100/comments", r.URL.Path)
-		assert.NoError(json.NewEncoder(w).Encode([]map[string]any{{
-			"id": 201, "body": "requested review", "pull_request_review_id": 100,
-		}}))
-	}))
-	defer server.Close()
-	client, err := NewClient("codeberg.test", testTokenSource("token"), WithBaseURLForTesting(server.URL))
 	require.NoError(err)
-
-	threads, err := client.ListMergeRequestReviewThreadsForReview(t.Context(), platform.RepoRef{
-		Owner: "acme", Name: "widgets",
-	}, 42, "100")
-
-	require.NoError(err)
-	require.Len(threads, 1)
-	assert.Equal("100", threads[0].ProviderReviewID)
-	assert.Equal("201", threads[0].ProviderCommentID)
+	require.Len(threads, 11)
+	assert.Equal("1", threads[0].ProviderReviewID)
+	assert.Equal("11", threads[10].ProviderReviewID)
+	assert.Equal(int32(11), reviewRequests.Load())
 }
 
 func TestListMergeRequestReviewThreadsClassifiesDisabledMergeRequests(t *testing.T) {
@@ -405,14 +359,14 @@ func TestListMergeRequestReviewThreadsMapsAuthenticationErrors(t *testing.T) {
 	}
 }
 
-func TestListMergeRequestReviewThreadsDefersOversizedReviewDatasetBeforeFanout(t *testing.T) {
+func TestListMergeRequestReviewThreadsReadsEveryLargeDatasetReview(t *testing.T) {
 	assert := assert.New(t)
 	require := Require.New(t)
 	var commentRequests atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Path == "/api/v1/repos/acme/widgets/pulls/42/reviews" {
-			reviews := make([]map[string]any, gitealike.MaxReviewHydrationReviews+1)
+			reviews := make([]map[string]any, 101)
 			for i := range reviews {
 				reviews[i] = map[string]any{"id": i + 1}
 			}
@@ -420,7 +374,10 @@ func TestListMergeRequestReviewThreadsDefersOversizedReviewDatasetBeforeFanout(t
 			return
 		}
 		commentRequests.Add(1)
-		assert.NoError(json.NewEncoder(w).Encode([]map[string]any{}))
+		reviewPath := strings.TrimSuffix(r.URL.Path, "/comments")
+		reviewID, err := strconv.Atoi(reviewPath[strings.LastIndexByte(reviewPath, '/')+1:])
+		assert.NoError(err)
+		assert.NoError(json.NewEncoder(w).Encode([]map[string]any{{"id": 1000 + reviewID}}))
 	}))
 	defer server.Close()
 
@@ -433,7 +390,44 @@ func TestListMergeRequestReviewThreadsDefersOversizedReviewDatasetBeforeFanout(t
 		Owner: "acme", Name: "widgets",
 	}, 42)
 
-	require.ErrorIs(err, platform.ErrPageLimit)
-	assert.Nil(threads)
-	assert.Zero(commentRequests.Load())
+	require.NoError(err)
+	require.Len(threads, 101)
+	assert.Equal("1", threads[0].ProviderReviewID)
+	assert.Equal("101", threads[100].ProviderReviewID)
+	assert.Equal(int32(101), commentRequests.Load())
+}
+
+func TestListMergeRequestReviewThreadsReadsEveryLargeDatasetComment(t *testing.T) {
+	assert := assert.New(t)
+	require := Require.New(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/repos/acme/widgets/pulls/42/reviews":
+			assert.NoError(json.NewEncoder(w).Encode([]map[string]any{{"id": 99}}))
+		case "/api/v1/repos/acme/widgets/pulls/42/reviews/99/comments":
+			comments := make([]map[string]any, 1001)
+			for i := range comments {
+				comments[i] = map[string]any{"id": i + 1}
+			}
+			assert.NoError(json.NewEncoder(w).Encode(comments))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client, err := NewClient(
+		"codeberg.test", testTokenSource("token"),
+		WithBaseURLForTesting(server.URL),
+	)
+	require.NoError(err)
+	threads, err := client.ListMergeRequestReviewThreads(t.Context(), platform.RepoRef{
+		Owner: "acme", Name: "widgets",
+	}, 42)
+
+	require.NoError(err)
+	require.Len(threads, 1001)
+	assert.Equal("1", threads[0].ProviderCommentID)
+	assert.Equal("1001", threads[1000].ProviderCommentID)
 }

@@ -269,22 +269,6 @@ type MergeRequestReviewThreadReader interface {
 	) ([]MergeRequestReviewThread, error)
 }
 
-// MergeRequestReviewHydrator splits bounded review discovery from per-review
-// inline-comment reads so canonical detail sync can durably resume fan-out.
-type MergeRequestReviewHydrator interface {
-	ListMergeRequestReviewIDs(
-		ctx context.Context,
-		ref RepoRef,
-		number int,
-	) ([]string, error)
-	ListMergeRequestReviewThreadsForReview(
-		ctx context.Context,
-		ref RepoRef,
-		number int,
-		reviewID string,
-	) ([]MergeRequestReviewThread, error)
-}
-
 type MergeRequestContentMutator interface {
 	EditMergeRequestContent(
 		ctx context.Context,

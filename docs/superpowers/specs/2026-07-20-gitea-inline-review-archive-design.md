@@ -42,7 +42,7 @@ The shared gitealike provider will not advertise review-thread reads by default.
 
 Review-list or comment-list failures abort the reader and leave the prior revision-fenced dataset intact. The reader never returns a successful partial dataset. HTTP failures use each provider's existing error mapping.
 
-Review pagination uses the platform's cycle- and page-bounded collector. One hydration accepts at most 100 reviews and 1,000 inline comments; oversized datasets return a typed page-limit deferral before replacing the prior complete dataset. The per-review comments endpoint is treated as a complete response because the pinned SDK exposes no pagination input for that endpoint. If a future provider version introduces paginated review comments, support must not be broadened until the transport can consume every page.
+Review pagination uses the platform's cycle-detecting collector and drains until the provider reports exhaustion. Hydration imposes no review-page, review-count, or inline-comment-count cap: it fetches every review and every comment before the revision-fenced transaction replaces the prior complete dataset. Context cancellation, a cursor cycle, or any provider error aborts the read without publishing a partial dataset. The per-review comments endpoint is treated as a complete response because the pinned SDK exposes no pagination input for that endpoint. If a future provider version introduces paginated review comments, support must not be broadened until the transport can consume every page.
 
 ## Testing
 

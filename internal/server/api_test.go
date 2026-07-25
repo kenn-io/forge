@@ -16416,7 +16416,7 @@ func TestAPIForgejoPublishReviewDraftIngestsTimelineThread(t *testing.T) {
 	assert.Equal(7, detail.Events[0].DiffThread.Line)
 }
 
-func TestAPIForgejoSyncRecoversReviewThreadTimelineMetadata(t *testing.T) {
+func TestAPIForgejoSyncPersistsCompleteLargeReviewDatasetBeforeSuccess(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	caps := platform.Capabilities{
@@ -16446,38 +16446,39 @@ func TestAPIForgejoSyncRecoversReviewThreadTimelineMetadata(t *testing.T) {
 	require.Empty(events)
 
 	now := time.Now().UTC().Truncate(time.Second)
-	line := 8
-	provider.reviewThreads = []platform.MergeRequestReviewThread{{
-		ProviderThreadID:  "comment-99",
-		ProviderReviewID:  "review-99",
-		ProviderCommentID: "comment-99",
-		Body:              "Recovered inline note",
-		AuthorLogin:       "ada",
-		Range: platform.DiffReviewLineRange{
-			Path:        "src/recovered.go",
-			Side:        "right",
-			Line:        line,
-			NewLine:     &line,
-			LineType:    "add",
-			DiffHeadSHA: "abc123",
-			CommitSHA:   "abc123",
-		},
-		CreatedAt: now,
-		UpdatedAt: now,
-	}}
+	provider.reviewThreads = make([]platform.MergeRequestReviewThread, 101)
+	for i := range provider.reviewThreads {
+		line := i + 1
+		id := fmt.Sprintf("%d", line)
+		provider.reviewThreads[i] = platform.MergeRequestReviewThread{
+			ProviderThreadID: "thread-" + id, ProviderReviewID: "review-" + id,
+			ProviderCommentID: "comment-" + id, Body: "inline note " + id,
+			AuthorLogin: "ada",
+			Range: platform.DiffReviewLineRange{
+				Path: "src/recovered.go", Side: "right", Line: line,
+				NewLine: &line, LineType: "add",
+				DiffHeadSHA: "abc123", CommitSHA: "abc123",
+			},
+			CreatedAt: now, UpdatedAt: now,
+		}
+	}
 
 	syncRR := doJSON(t, srv, http.MethodPost, "/api/v1/pulls/forgejo/acme/widgets/42/sync", nil)
 	require.Equal(http.StatusOK, syncRR.Code, syncRR.Body.String())
+	threads, err := database.ListMRReviewThreads(ctx, mr.ID)
+	require.NoError(err)
+	require.Len(threads, 101)
 
 	detailRR := doJSON(t, srv, http.MethodGet, "/api/v1/pulls/forgejo/acme/widgets/42", nil)
 	require.Equal(http.StatusOK, detailRR.Code, detailRR.Body.String())
 	var detail pullapi.MergeRequestDetailResponse
 	require.NoError(json.NewDecoder(detailRR.Body).Decode(&detail))
-	require.Len(detail.Events, 1)
-	require.NotNil(detail.Events[0].DiffThread)
-	assert.Equal("review_comment", detail.Events[0].EventType)
-	assert.Equal("Recovered inline note", detail.Events[0].DiffThread.Body)
-	assert.Equal("src/recovered.go", detail.Events[0].DiffThread.Path)
+	require.Len(detail.Events, 101)
+	for _, event := range detail.Events {
+		assert.Equal("review_comment", event.EventType)
+		require.NotNil(event.DiffThread)
+		assert.Equal("src/recovered.go", event.DiffThread.Path)
+	}
 }
 
 func TestAPIGitLabSyncKeepsCanonicalReviewThreadWhenProviderReturnsReplies(t *testing.T) {

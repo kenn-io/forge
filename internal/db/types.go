@@ -768,25 +768,6 @@ type MRReviewThread struct {
 	MetadataJSON      string
 }
 
-type MRReviewHydrationStageKey struct {
-	MergeRequestID    int64
-	ProviderUpdatedAt time.Time
-	HeadSHA           string
-}
-
-type MRReviewHydrationThread struct {
-	MRReviewThread
-	DirectURL string
-}
-
-type MRReviewHydrationStage struct {
-	MRReviewHydrationStageKey
-	Generation      int64
-	ReviewIDs       []string
-	NextReviewIndex int
-	Threads         []MRReviewHydrationThread
-}
-
 type KanbanState struct {
 	MergeRequestID int64
 	Status         string

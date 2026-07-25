@@ -55,25 +55,6 @@ func DBReviewThreads(threads []MergeRequestReviewThread) ([]db.MREvent, []db.MRR
 	return events, dbThreads
 }
 
-func DBReviewHydrationThreads(threads []MergeRequestReviewThread) []db.MRReviewHydrationThread {
-	_, dbThreads := DBReviewThreads(threads)
-	directURLs := make(map[string]string, len(threads))
-	for _, thread := range threads {
-		threadID := firstNonEmptyString(thread.ProviderThreadID, thread.ProviderCommentID)
-		if _, exists := directURLs[threadID]; !exists {
-			directURLs[threadID] = thread.DirectURL
-		}
-	}
-	staged := make([]db.MRReviewHydrationThread, 0, len(dbThreads))
-	for _, thread := range dbThreads {
-		staged = append(staged, db.MRReviewHydrationThread{
-			MRReviewThread: thread,
-			DirectURL:      directURLs[thread.ProviderThreadID],
-		})
-	}
-	return staged
-}
-
 func DBReviewLineRange(input DiffReviewLineRange) db.ReviewLineRange {
 	return db.ReviewLineRange{
 		Path: input.Path, OldPath: input.OldPath, Side: input.Side,

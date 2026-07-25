@@ -95,24 +95,35 @@ func ValidateItemPageQuery(q ItemPageQuery) error {
 	return nil
 }
 
-// MaxCollectPages bounds how many pages a single CollectPages drain may fetch
-// before it refuses to spend further provider requests. Finite cursor cycles
-// are caught by the seen-set; this bound covers what the seen-set cannot — a
-// provider emitting endless unique cursors — and caps how much of a
-// legitimately oversized dataset a single in-memory drain will pull. Datasets
-// beyond it belong on the durable-cursor archive path.
+// MaxCollectPages bounds ordinary in-memory page drains. Callers whose contract
+// requires a complete finite dataset can opt into CollectAllPages instead.
 const MaxCollectPages = 1000
 
-// CollectPages drains fetch from cursor into a flat slice of items. It stops
-// and returns a typed platform.ErrProviderContract error when a page repeats
-// any previously seen cursor (an immediate or longer cursor cycle) or when a
-// non-exhausted page returns no next cursor, and a typed platform.ErrPageLimit
-// error when the drain exceeds MaxCollectPages — the latter is a caller-side
-// resource bound, not a provider violation. Provider and context errors
-// surface unchanged.
+// CollectPages drains fetch from cursor into a flat slice while preserving the
+// ordinary page safety bound.
 func CollectPages[T any](
 	ctx context.Context,
 	cursor string,
+	fetch func(context.Context, string) (Page[T], error),
+) ([]T, error) {
+	return collectPages(ctx, cursor, MaxCollectPages, fetch)
+}
+
+// CollectAllPages drains until provider exhaustion without a local page cap.
+// Repeated cursors, missing progress, cancellation, and provider errors still
+// abort the read.
+func CollectAllPages[T any](
+	ctx context.Context,
+	cursor string,
+	fetch func(context.Context, string) (Page[T], error),
+) ([]T, error) {
+	return collectPages(ctx, cursor, 0, fetch)
+}
+
+func collectPages[T any](
+	ctx context.Context,
+	cursor string,
+	maxPages int,
 	fetch func(context.Context, string) (Page[T], error),
 ) ([]T, error) {
 	var items []T
@@ -130,11 +141,11 @@ func CollectPages[T any](
 				"page collection revisited cursor %q", cursor,
 			)
 		}
-		if pages >= MaxCollectPages {
+		if maxPages > 0 && pages >= maxPages {
 			return nil, &Error{
 				Code:  ErrCodePageLimit,
 				Field: "collect_pages_bound",
-				Err:   fmt.Errorf("page collection exceeded the maximum of %d pages", MaxCollectPages),
+				Err:   fmt.Errorf("page collection exceeded the maximum of %d pages", maxPages),
 			}
 		}
 		seen[cursor] = struct{}{}

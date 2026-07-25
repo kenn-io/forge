@@ -246,7 +246,7 @@ func TestSyncArchiveItemClassifiesOnlyConfirmedParentNotFound(t *testing.T) {
 				Owner: ref.Owner, Name: ref.Name, RepoPath: ref.RepoPath,
 			}}, time.Minute, nil, nil)
 
-			_, _, err = syncer.SyncArchiveItem(t.Context(), ref, db.ArchiveItemTypeIssue, issue.Number)
+			_, err = syncer.SyncArchiveItem(t.Context(), ref, db.ArchiveItemTypeIssue, issue.Number)
 			require.Error(err)
 			assert.Equal(test.wantNotPresent, errors.Is(err, platform.ErrLookupNotPresent))
 			assert.Equal(test.wantRepoQueries, provider.getRepositoryCalls.Load())
@@ -264,8 +264,8 @@ func TestArchiveItemSyncCostIncludesProviderConfirmationAndAuthRetry(t *testing.
 	}{
 		{name: "GitHub pull request", kind: platform.KindGitHub, itemType: db.ArchiveItemTypeMergeRequest, want: 20},
 		{name: "GitLab pull request", kind: platform.KindGitLab, itemType: db.ArchiveItemTypeMergeRequest, want: 22},
-		{name: "Gitea pull request", kind: platform.KindGitea, itemType: db.ArchiveItemTypeMergeRequest, want: 38},
-		{name: "Forgejo pull request", kind: platform.KindForgejo, itemType: db.ArchiveItemTypeMergeRequest, want: 38},
+		{name: "Gitea pull request", kind: platform.KindGitea, itemType: db.ArchiveItemTypeMergeRequest, want: 22},
+		{name: "Forgejo pull request", kind: platform.KindForgejo, itemType: db.ArchiveItemTypeMergeRequest, want: 22},
 		{name: "GitHub issue", kind: platform.KindGitHub, itemType: db.ArchiveItemTypeIssue, want: 4},
 		{name: "Forgejo issue", kind: platform.KindForgejo, itemType: db.ArchiveItemTypeIssue, want: 6},
 	}

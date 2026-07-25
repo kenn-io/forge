@@ -925,7 +925,12 @@ func (s *Syncer) Admit(
 		retryAt := now.Add(time.Second)
 		return archive.AdmissionResult{RetryAt: &retryAt, Detail: "higher-priority sync work is active"}, nil
 	}
-	requestCtx = WithArchiveAttemptAllowance(WithArchiveSyncBudget(requestCtx), available)
+	requestCtx = WithArchiveSyncBudget(requestCtx)
+	completeGitealikeMR := itemType == db.ArchiveItemTypeMergeRequest &&
+		(ref.Platform == platform.KindGitea || ref.Platform == platform.KindForgejo)
+	if !completeGitealikeMR {
+		requestCtx = WithArchiveAttemptAllowance(requestCtx, available)
+	}
 	var completeOnce sync.Once
 	var featureDeferred *archive.FeatureDeferral
 	complete := func(cause error, providerAttempted bool) *archive.FeatureDeferral {
@@ -945,9 +950,10 @@ func (s *Syncer) Admit(
 		})
 		return featureDeferred
 	}
-	// The declared cost is the admission minimum. Once admitted, the request may
-	// use the archive surplus currently available without crossing the live
-	// floor; provider-SDK and authentication retries share this allowance.
+	// The declared cost is the admission minimum. Gitealike merge-request reads
+	// are atomic and data-complete, so they remain preemptible but are not cut
+	// off mid-dataset by the admission estimate. Other archive reads may use the
+	// currently available surplus without crossing the live floor.
 	return archive.AdmissionResult{
 		Allowed:  true,
 		Context:  requestCtx,
@@ -999,7 +1005,7 @@ func archiveBudgetResetAt(tracker *RateTracker) *time.Time {
 
 func archiveLiveFloor(kind platform.Kind) int {
 	if kind == platform.KindGitea || kind == platform.KindForgejo {
-		return PRDetailWorstCase + 1 // detail calls plus repository feature confirmation
+		return detailWorstCaseAttemptCost(kind, QueueItemPR)
 	}
 	floor := detailWorstCaseAttemptCost(kind, QueueItemPR) + wireAttemptsPerRequest
 	if kind == platform.KindGitHub {
@@ -6908,7 +6914,7 @@ func (s *Syncer) fetchProviderMRDetail(
 		)
 	}
 
-	detailCalls, pending, detailComplete, err := s.syncProviderMRDetailExtras(
+	detailCalls, pending, err := s.syncProviderMRDetailExtras(
 		ctx, reader, repo, repoID, mrID, number, revision, normalized.PlatformHeadSHA,
 	)
 	calls += detailCalls
@@ -6917,9 +6923,6 @@ func (s *Syncer) fetchProviderMRDetail(
 			return calls, nil
 		}
 		return calls, err
-	}
-	if !detailComplete {
-		return calls, nil
 	}
 	if _, err := s.persistMergedActorEvent(ctx, mrID, revision, mr.MergedBy, normalized.MergedAt); err != nil {
 		return calls, fmt.Errorf("persist merged lifecycle event for MR #%d: %w", number, err)
@@ -6957,12 +6960,12 @@ func (s *Syncer) syncProviderMRDetailExtras(
 	number int,
 	expectedRevision int64,
 	headSHA string,
-) (int, bool, bool, error) {
+) (int, bool, error) {
 	calls := 0
 	events, err := reader.ListMergeRequestEvents(ctx, platformRepoRef(repo), number)
 	calls++
 	if err != nil && !errors.Is(err, platform.ErrUnsupportedCapability) {
-		return calls, false, false, fmt.Errorf("list MR events for #%d: %w", number, err)
+		return calls, false, fmt.Errorf("list MR events for #%d: %w", number, err)
 	}
 	if err == nil {
 		dbEvents := make([]db.MREvent, 0, len(events))
@@ -6970,7 +6973,7 @@ func (s *Syncer) syncProviderMRDetailExtras(
 		reviews := make([]db.MREvent, 0, len(events))
 		commitOrderer, orderErr := s.commitOrderAssigner(ctx, mrID)
 		if orderErr != nil {
-			return calls, false, false, fmt.Errorf("load commit order for MR #%d: %w", number, orderErr)
+			return calls, false, fmt.Errorf("load commit order for MR #%d: %w", number, orderErr)
 		}
 		commitListOrder := 0
 		for _, event := range events {
@@ -6990,7 +6993,7 @@ func (s *Syncer) syncProviderMRDetailExtras(
 		}
 		dbEvents, err = s.filterDuplicateMergedLifecycleEvents(ctx, mrID, dbEvents)
 		if err != nil {
-			return calls, false, false, fmt.Errorf("dedupe merged lifecycle events for MR #%d: %w", number, err)
+			return calls, false, fmt.Errorf("dedupe merged lifecycle events for MR #%d: %w", number, err)
 		}
 		applied, commitErr := s.commitMergeRequestDatasets(
 			ctx, repo, number, expectedRevision,
@@ -6999,40 +7002,37 @@ func (s *Syncer) syncProviderMRDetailExtras(
 			nil, nil, false, dbEvents, nil,
 		)
 		if commitErr != nil {
-			return calls, false, false, fmt.Errorf("replace provider MR events for #%d: %w", number, commitErr)
+			return calls, false, fmt.Errorf("replace provider MR events for #%d: %w", number, commitErr)
 		}
 		if !applied {
-			return calls, false, false, errParentSnapshotAdvanced
+			return calls, false, errParentSnapshotAdvanced
 		}
 	}
 
-	reviewThreadCalls, reviewThreadsComplete, err := s.syncProviderMRReviewThreads(ctx, repo, mrID, number, expectedRevision)
+	reviewThreadCalls, err := s.syncProviderMRReviewThreads(ctx, repo, mrID, number, expectedRevision)
 	calls += reviewThreadCalls
 	if err != nil {
-		return calls, false, false, fmt.Errorf("sync review threads for MR #%d: %w", number, err)
-	}
-	if !reviewThreadsComplete {
-		return calls, false, false, nil
+		return calls, false, fmt.Errorf("sync review threads for MR #%d: %w", number, err)
 	}
 
 	pending := false
 	if headSHA == "" {
-		return calls, pending, true, nil
+		return calls, pending, nil
 	}
 	ciReader, err := s.ciReaderFor(repo)
 	if err != nil {
 		if errors.Is(err, platform.ErrUnsupportedCapability) {
-			return calls, pending, true, nil
+			return calls, pending, nil
 		}
-		return calls, false, false, fmt.Errorf("resolve CI reader for %s/%s: %w", repo.Owner, repo.Name, err)
+		return calls, false, fmt.Errorf("resolve CI reader for %s/%s: %w", repo.Owner, repo.Name, err)
 	}
 	checks, err := ciReader.ListCIChecks(ctx, platformRepoRef(repo), headSHA)
 	calls++
 	if err != nil && !errors.Is(err, platform.ErrUnsupportedCapability) {
-		return calls, false, false, fmt.Errorf("list CI checks for MR #%d: %w", number, err)
+		return calls, false, fmt.Errorf("list CI checks for MR #%d: %w", number, err)
 	}
 	if err != nil {
-		return calls, pending, true, nil
+		return calls, pending, nil
 	}
 	dbChecks := platform.DBCIChecks(checks)
 	if dbChecks == nil {
@@ -7044,13 +7044,13 @@ func (s *Syncer) syncProviderMRDetailExtras(
 		ctx, mrID, expectedRevision, ciStatus, string(ciJSON),
 	)
 	if err != nil {
-		return calls, false, false, fmt.Errorf("update CI status for MR #%d: %w", number, err)
+		return calls, false, fmt.Errorf("update CI status for MR #%d: %w", number, err)
 	}
 	if !ciApplied {
-		return calls, false, false, errParentSnapshotAdvanced
+		return calls, false, errParentSnapshotAdvanced
 	}
 	pending = ciHasPending(string(ciJSON))
-	return calls, pending, true, nil
+	return calls, pending, nil
 }
 
 func (s *Syncer) syncProviderMRReviewThreads(
@@ -7059,30 +7059,25 @@ func (s *Syncer) syncProviderMRReviewThreads(
 	mrID int64,
 	number int,
 	expectedRevision int64,
-) (int, bool, error) {
+) (int, error) {
 	caps, err := s.clients.Capabilities(repoPlatform(repo), repoHost(repo))
 	if err != nil {
 		if errors.Is(err, platform.ErrUnsupportedCapability) {
-			return 0, true, nil
+			return 0, nil
 		}
-		return 0, false, err
+		return 0, err
 	}
 	if !caps.ReadReviewThreads {
-		return 0, true, nil
+		return 0, nil
 	}
 	reader, err := s.clients.MergeRequestReviewThreadReader(repoPlatform(repo), repoHost(repo))
 	if err != nil {
-		return 0, false, err
-	}
-	if hydrator, ok := reader.(platform.MergeRequestReviewHydrator); ok {
-		return s.syncStagedMRReviewThreads(
-			ctx, hydrator, repo, mrID, number, expectedRevision,
-		)
+		return 0, err
 	}
 	threads, err := reader.ListMergeRequestReviewThreads(ctx, platformRepoRef(repo), number)
 	calls := 1
 	if err != nil {
-		return calls, false, err
+		return calls, err
 	}
 
 	for i := range threads {
@@ -7095,12 +7090,12 @@ func (s *Syncer) syncProviderMRReviewThreads(
 		ctx, repo, number, expectedRevision, nil, false, nil, events, dbThreads, true, nil, nil,
 	)
 	if err != nil {
-		return calls, false, err
+		return calls, err
 	}
 	if !applied {
-		return calls, false, errParentSnapshotAdvanced
+		return calls, errParentSnapshotAdvanced
 	}
-	return calls, true, nil
+	return calls, nil
 }
 
 // fetchIssueDetail performs a full detail fetch for a single
@@ -7459,7 +7454,7 @@ func (s *Syncer) refreshTimeline(
 	if !applied {
 		return errParentSnapshotAdvanced
 	}
-	if _, _, err := s.syncProviderMRReviewThreads(ctx, repo, mrID, number, expectedRevision); err != nil {
+	if _, err := s.syncProviderMRReviewThreads(ctx, repo, mrID, number, expectedRevision); err != nil {
 		return fmt.Errorf("sync review threads for MR #%d: %w", number, err)
 	}
 	return nil
@@ -9132,8 +9127,7 @@ func (s *Syncer) syncMRForRepo(
 		}
 
 		pending := false
-		var detailComplete bool
-		_, pending, detailComplete, err = s.syncProviderMRDetailExtras(
+		_, pending, err = s.syncProviderMRDetailExtras(
 			ctx, mrReader, repo, repoID, mrID, number, revision, normalized.PlatformHeadSHA,
 		)
 		if err != nil {
@@ -9141,9 +9135,6 @@ func (s *Syncer) syncMRForRepo(
 				return nil
 			}
 			return err
-		}
-		if !detailComplete {
-			return nil
 		}
 		if _, err := s.persistMergedActorEvent(ctx, mrID, revision, platformMR.MergedBy, normalized.MergedAt); err != nil {
 			return fmt.Errorf("persist merged lifecycle event for MR #%d: %w", number, err)
@@ -9499,14 +9490,11 @@ func (s *Syncer) syncIssueForRepo(
 	return s.markClosedLinkedNotificationsDone(ctx)
 }
 
-// ArchiveItemSyncCost returns the worst-case wire-attempt allowance for the
-// existing full item sync. One logical request may spend a second attempt
-// after authentication refresh.
+// ArchiveItemSyncCost returns the provider-aware admission estimate for the
+// existing full item sync. Gitealike merge-request hydration may exceed this
+// estimate after admission because its complete dataset is committed atomically.
 func (s *Syncer) ArchiveItemSyncCost(kind platform.Kind, itemType db.ArchiveItemType) int {
 	if itemType == db.ArchiveItemTypeMergeRequest {
-		if kind == platform.KindGitea || kind == platform.KindForgejo {
-			return 38
-		}
 		return detailWorstCaseAttemptCost(kind, QueueItemPR)
 	}
 	return detailWorstCaseAttemptCost(kind, QueueItemIssue)
@@ -9521,10 +9509,10 @@ func (s *Syncer) SyncArchiveItem(
 	ref platform.RepoRef,
 	itemType db.ArchiveItemType,
 	number int,
-) (bool, bool, error) {
+) (bool, error) {
 	repo, ok := s.trackedRepoByIdentity(ref.Platform, ref.Owner, ref.Name, ref.Host)
 	if !ok {
-		return false, false, fmt.Errorf(
+		return false, fmt.Errorf(
 			"repo %s/%s on %s/%s is not tracked",
 			ref.Owner, ref.Name, ref.Platform, ref.Host,
 		)
@@ -9536,32 +9524,16 @@ func (s *Syncer) SyncArchiveItem(
 	case db.ArchiveItemTypeIssue:
 		providerAttempted := false
 		err := s.syncIssueForRepo(ctx, repo, number, &providerAttempted)
-		return providerAttempted, err == nil, err
+		return providerAttempted, err
 	case db.ArchiveItemTypeMergeRequest:
 		providerAttempted := false
 		err := s.syncMRForRepo(ctx, repo, number, false, &providerAttempted)
 		if _, onlyDiffFailed := err.(*DiffSyncError); onlyDiffFailed { //nolint:errorlint // joined hard failures must propagate
-			err = nil
+			return providerAttempted, nil
 		}
-		if err != nil {
-			return providerAttempted, false, err
-		}
-		mr, err := s.db.GetMergeRequest(
-			ctx, string(repoPlatform(repo)), repoHost(repo), repo.Owner, repo.Name, number,
-		)
-		if err != nil {
-			return providerAttempted, false, fmt.Errorf("load archive merge request completion: %w", err)
-		}
-		if mr == nil {
-			return providerAttempted, false, fmt.Errorf("archive merge request #%d is missing after sync", number)
-		}
-		stage, err := s.db.GetMRReviewHydrationStage(ctx, mr.ID)
-		if err != nil {
-			return providerAttempted, false, fmt.Errorf("load archive review hydration completion: %w", err)
-		}
-		return providerAttempted, stage == nil, nil
+		return providerAttempted, err
 	default:
-		return false, false, fmt.Errorf("sync archive item: invalid item type %q", itemType)
+		return false, fmt.Errorf("sync archive item: invalid item type %q", itemType)
 	}
 }
 

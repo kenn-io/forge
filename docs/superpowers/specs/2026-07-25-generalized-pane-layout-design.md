@@ -222,9 +222,39 @@ per-leaf pixel minimum, is what prevents unusable narrow panes.
 Dragging is not discoverable and the "Split view" toggle is being deleted.
 Replacements:
 
-- A per-leaf tab-strip overflow menu: Split right, Split down, Maximize, Reset
-  layout.
+- A per-leaf icon cluster, right-aligned in the tab strip. Not a dropdown: it
+  reuses the existing `tabbed-panel-tab-tool` idiom that per-tab rename, move,
+  and close already use — 20x22px icon-only buttons, hidden until the leaf is
+  hovered or a button takes focus. Icon-only requires `title` plus `aria-label`
+  on every button, as `WorkflowSplitTree.svelte` already does.
 - Command palette entries alongside the existing PR-detail commands.
+
+| Action | Icon | Applies |
+| --- | --- | --- |
+| Split right | `square-split-horizontal` | active tab of this leaf, `direction: "horizontal"`, `placement: "after"` |
+| Split down | `square-split-vertical` | active tab of this leaf, `direction: "vertical"`, `placement: "after"` |
+| Maximize / Restore | `maximize` / `minimize` | toggles `zoomedLeafID` for this leaf |
+
+All four icons are new to this repository: none of
+`square-split-horizontal`, `square-split-vertical`, `maximize`, or `minimize`
+currently appears in the `optimizeDeps.include` list in
+`frontend/vite.config.ts`. Per `context/testing.md`, each must be added there or
+the browser-lane CI job fails on a cold cache with "Failed to fetch dynamically
+imported module" in unrelated suites, while passing locally on a warm one.
+
+Icon names are verified against `@lucide/svelte@1.23.0`. Lucide's
+`horizontal`/`vertical` suffix names the arrangement axis, matching the tree's
+own `SplitDirection`: `square-split-horizontal` draws a vertical divider with
+halves side by side and pairs with `direction: "horizontal"`. The names align;
+do not "correct" them.
+
+Both split buttons are disabled when the leaf holds a single tab.
+`splitTabbedPanelTabIntoLeaf` already returns the tree unchanged in that case,
+so an enabled button would be a dead control.
+
+Reset layout is surface-scoped, not leaf-scoped, so it appears only in the
+palette — never in a per-leaf control, where it would silently act beyond the
+leaf the user aimed at.
 
 ## Deletions and migration
 
@@ -254,7 +284,10 @@ Following the four axes in `CLAUDE.md`:
 - **Vitest + jsdom:** `paneLayout.svelte.ts` rules — the five zoom behaviors,
   per-surface persistence isolation, derived dock mode for each of the three
   states, route ↔ active-tab binding including the split-apart and deep-link
-  cases. `appHarness` mounts where route-derived state matters.
+  cases. Also the per-leaf icon cluster, which is UI-owned state: both split
+  buttons disabled on a single-tab leaf, the maximize/restore toggle following
+  `zoomedLeafID`, and an accessible label on every icon-only button.
+  `appHarness` mounts where route-derived state matters.
 - **Browser tier:** extend the existing `TabbedPanelTree.test.ts` and
   `WorkspaceDockPanel.browser.svelte.ts` for drag between leaves, edge-split
   drop, native focus restoration on pane close, and tab-strip keyboard

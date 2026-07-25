@@ -448,7 +448,6 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 		newCfg.PullRequests.PreferGitHubNativeStacks,
 	)
 
-
 	slog.Info(
 		"config reload applied",
 		"path", s.cfgPath,

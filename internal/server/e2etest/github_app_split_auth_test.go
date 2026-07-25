@@ -211,9 +211,16 @@ repository_selection = "all"
 	}
 	require.NotNil(source)
 
+	// Production always wires a quota registry, so the split-auth path must be
+	// exercised with one: it is what attributes each wire attempt to the
+	// credential that authorized it.
+	quotaRegistry := ghclient.NewQuotaRegistry()
+	appIdentity := ghclient.IdentityKey{Host: "github.com", Principal: "installation:11"}
+	userIdentity := ghclient.IdentityKey{Host: "github.com", Principal: "user:4242"}
 	client, err := ghclient.NewClient(
 		source, "github.com", nil, nil,
 		ghclient.WithBaseURLForTesting(fakeGitHub.URL),
+		ghclient.WithQuotaAccounting(quotaRegistry, appIdentity, userIdentity),
 	)
 	require.NoError(err)
 	registry, err := ghclient.NewProviderRegistry(
@@ -259,6 +266,7 @@ repository_selection = "all"
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry, database, nil, []ghclient.RepoRef{ref}, time.Minute, nil, nil,
 	)
+	syncer.SetQuotaRegistry(quotaRegistry)
 	t.Cleanup(syncer.Stop)
 	srv := servertest.NewWithConfig(t,
 		database, syncer, nil, nil, cfg, cfgPath,
@@ -364,6 +372,40 @@ repository_selection = "all"
 		}
 		assert.Equal("Bearer ghs_app_token_e2e", auth, "call %s", name)
 	}
+
+	// The same traffic must land in two separate credential pools. This is the
+	// wire-visible half of split auth: app-token reads and PAT writes share one
+	// host, so a single merged pool would misreport both.
+	poolsResp := doServerJSON(
+		t, httpServer.Client(), http.MethodGet,
+		httpServer.URL+"/api/v1/rate-limits", nil,
+	)
+	defer poolsResp.Body.Close()
+	require.Equal(http.StatusOK, poolsResp.StatusCode)
+	var limits struct {
+		ProviderPools map[string]struct {
+			Provider      string `json:"provider"`
+			PlatformHost  string `json:"platform_host"`
+			RatePrincipal string `json:"rate_principal"`
+			REST          struct {
+				Requests int `json:"requests"`
+			} `json:"rest"`
+		} `json:"provider_pools"`
+		LocalCeilings map[string]struct {
+			Limit int `json:"limit"`
+		} `json:"local_ceilings"`
+	}
+	require.NoError(json.NewDecoder(poolsResp.Body).Decode(&limits))
+	appPool, ok := limits.ProviderPools["github:github.com:installation:11"]
+	require.True(ok,
+		"app installation pool must be reported separately: %+v", limits.ProviderPools)
+	userPool, ok := limits.ProviderPools["github:github.com:user:4242"]
+	require.True(ok,
+		"user pool must be reported separately: %+v", limits.ProviderPools)
+	assert.Positive(appPool.REST.Requests,
+		"installation-token reads must be attributed to the app pool")
+	assert.Positive(userPool.REST.Requests,
+		"PAT writes and notification reads must be attributed to the user pool")
 }
 
 func TestGitHubAppGlobDiscoveryUsesInstallationRepositoriesE2E(t *testing.T) {

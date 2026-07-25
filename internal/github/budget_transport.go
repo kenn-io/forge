@@ -95,12 +95,13 @@ func (t *budgetTransport) RoundTrip(
 	}
 	counted := IsSyncBudgetContext(req.Context())
 	archive := IsArchiveSyncBudgetContext(req.Context())
+	var window BudgetWindow
 	if counted {
 		var reserved bool
 		if archive {
-			reserved = t.budget.TrySpendArchive(1)
+			window, reserved = t.budget.TrySpendArchive(1)
 		} else {
-			reserved = t.budget.TrySpend(1)
+			window, reserved = t.budget.TrySpend(1)
 		}
 		if !reserved {
 			return nil, platform.ErrSyncBudgetExhausted
@@ -109,9 +110,9 @@ func (t *budgetTransport) RoundTrip(
 	resp, err := t.base.RoundTrip(req)
 	if counted && resp != nil && resp.StatusCode == http.StatusNotModified {
 		if archive {
-			t.budget.RefundArchive(1)
+			t.budget.RefundArchive(window, 1)
 		} else {
-			t.budget.Refund(1)
+			t.budget.Refund(window, 1)
 		}
 	}
 	return resp, err

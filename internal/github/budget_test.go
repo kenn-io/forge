@@ -130,21 +130,25 @@ func TestSyncBudgetRollsWindowWithoutProviderResponse(t *testing.T) {
 	clock := time.Date(2026, 7, 24, 12, 0, 0, 0, time.UTC)
 	budget.now = func() time.Time { return clock }
 	budget.windowStart = clock
+	spend := func(n int) bool {
+		_, ok := budget.TrySpend(n)
+		return ok
+	}
 
-	assert.True(budget.TrySpend(2))
-	assert.False(budget.TrySpend(1))
+	assert.True(spend(2))
+	assert.False(spend(1))
 	assert.Zero(budget.Remaining())
 
 	// Still inside the window: the ceiling must hold.
 	clock = clock.Add(59 * time.Minute)
-	assert.False(budget.TrySpend(1))
+	assert.False(spend(1))
 	assert.Zero(budget.Remaining())
 
 	// The window elapsed. Nothing observed a provider response in between, so
 	// only the budget's own clock can release the ceiling.
 	clock = clock.Add(time.Minute)
 	assert.Equal(2, budget.Remaining())
-	assert.True(budget.TrySpend(1))
+	assert.True(spend(1))
 	assert.Equal(1, budget.Spent())
 }
 
@@ -154,13 +158,84 @@ func TestSyncBudgetRollsArchiveSpendWithWindow(t *testing.T) {
 	clock := time.Date(2026, 7, 24, 12, 0, 0, 0, time.UTC)
 	budget.now = func() time.Time { return clock }
 	budget.windowStart = clock
+	spendArchive := func(n int) bool {
+		_, ok := budget.TrySpendArchive(n)
+		return ok
+	}
 
-	assert.True(budget.TrySpendArchive(4))
+	assert.True(spendArchive(4))
 	assert.Equal(4, budget.ArchiveSpent())
-	assert.False(budget.TrySpendArchive(1))
+	assert.False(spendArchive(1))
 
 	clock = clock.Add(time.Hour)
 	assert.Zero(budget.ArchiveSpent())
 	assert.Zero(budget.Spent())
-	assert.True(budget.TrySpendArchive(1))
+	assert.True(spendArchive(1))
+}
+
+// A reservation made before a rollover must not be credited back into the new
+// window: the roll already cleared it, so refunding again would let the new
+// window spend past its ceiling.
+func TestSyncBudgetDropsRefundFromElapsedWindow(t *testing.T) {
+	assert := assert.New(t)
+	budget := NewSyncBudget(2)
+	clock := time.Date(2026, 7, 24, 12, 0, 0, 0, time.UTC)
+	budget.now = func() time.Time { return clock }
+	budget.windowStart = clock
+
+	stale, ok := budget.TrySpend(1)
+	assert.True(ok)
+
+	clock = clock.Add(time.Hour)
+	// Fill the new window to its ceiling.
+	_, ok = budget.TrySpend(2)
+	assert.True(ok)
+	assert.Equal(2, budget.Spent())
+
+	// The old window's 304 lands now. It must be ignored.
+	budget.Refund(stale, 1)
+	assert.Equal(2, budget.Spent())
+	_, ok = budget.TrySpend(1)
+	assert.False(ok)
+
+	// A refund from the current window still applies.
+	current, ok := budget.TrySpend(0)
+	assert.True(ok)
+	budget.Refund(current, 1)
+	assert.Equal(1, budget.Spent())
+}
+
+func TestSyncBudgetDropsArchiveRefundFromElapsedWindow(t *testing.T) {
+	assert := assert.New(t)
+	budget := NewSyncBudget(4)
+	clock := time.Date(2026, 7, 24, 12, 0, 0, 0, time.UTC)
+	budget.now = func() time.Time { return clock }
+	budget.windowStart = clock
+
+	stale, ok := budget.TrySpendArchive(1)
+	assert.True(ok)
+
+	clock = clock.Add(time.Hour)
+	_, ok = budget.TrySpendArchive(2)
+	assert.True(ok)
+
+	budget.RefundArchive(stale, 1)
+	assert.Equal(2, budget.ArchiveSpent())
+	assert.Equal(2, budget.Spent())
+}
+
+// Reset starts a fresh window too, so an in-flight reservation from before a
+// provider-driven reset cannot credit the cleared window either.
+func TestSyncBudgetResetDropsInFlightRefund(t *testing.T) {
+	assert := assert.New(t)
+	budget := NewSyncBudget(2)
+
+	stale, ok := budget.TrySpend(1)
+	assert.True(ok)
+	budget.Reset()
+	_, ok = budget.TrySpend(2)
+	assert.True(ok)
+
+	budget.Refund(stale, 1)
+	assert.Equal(2, budget.Spent())
 }

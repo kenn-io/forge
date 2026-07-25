@@ -888,7 +888,8 @@ func TestSyncerNotificationAdmissionUsesRepositoryWriteIdentity(t *testing.T) {
 	require.NoError(err)
 	writeRT := NewRateTracker(database, "github.com", "user:123", "rest")
 	writeBudget := NewSyncBudget(1)
-	writeBudget.Spend(1)
+	writeBudgetWindow, spent := writeBudget.TrySpend(1)
+	require.True(spent)
 	syncer := &Syncer{
 		routers: map[string]*HostRouter{"github.com": router},
 		writeRateTrackers: map[string]*RateTracker{
@@ -906,7 +907,7 @@ func TestSyncerNotificationAdmissionUsesRepositoryWriteIdentity(t *testing.T) {
 	require.Error(err)
 	require.ErrorContains(err, "sync budget exhausted")
 
-	writeBudget.Refund(1)
+	writeBudget.Refund(writeBudgetWindow, 1)
 	writeRT.UpdateFromRate(Rate{
 		Limit: 5000, Remaining: 0, Reset: time.Now().Add(time.Hour),
 	})

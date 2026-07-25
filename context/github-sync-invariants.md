@@ -353,9 +353,16 @@ response never overwrites an App installation pool
   before any wire attempt, so a reset driven only by response headers or
   rate-tracker rollover wedges background sync for good
   (`internal/github/budget.go::rollLocked`).
+- Reservations carry the window they were made in and refunds are dropped once
+  that window elapses, so a 304 arriving after a roll cannot raise the new
+  window's ceiling (`internal/github/budget.go::Refund`).
 - Notification reads and queued ack propagation resolve to the write identity,
   so they gate on that credential's REST pool even when repository reads run on
-  an App token (`internal/github/notifications_sync.go::ensureNotificationPageBudget`).
+  an App token. Gate on the operation's worst-case request count, not one
+  request (`internal/github/notifications_sync.go::ensureNotificationBudget`).
+- A scheduling decision must read the pool of the credential that will perform
+  the work; a host-wide tracker lets one credential's exhaustion suppress
+  another's (`internal/github/sync.go::bulkGraphQLAllowed`).
 
 ## GitHub App Manifest Flow
 

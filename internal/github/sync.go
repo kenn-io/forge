@@ -3763,6 +3763,31 @@ func (s *Syncer) advanceNextSync(
 	}
 }
 
+// bulkGraphQLAllowed reports whether a bulk GraphQL fetch may run for repo.
+//
+// In quota-registry mode the decision reads the repository credential's own
+// GraphQL pool: the fetcher's tracker is host-wide, so one credential reaching
+// zero would otherwise suppress bulk fetches for a healthy credential and push
+// that work onto REST. The threshold stays the legacy exhaustion point rather
+// than the 200-request reserve, because this decision also runs on foreground
+// syncs, where the reserve must not block explicit work; background scheduling
+// applies the reserve earlier in repoEligibility and Admit.
+func (s *Syncer) bulkGraphQLAllowed(repo RepoRef, fetcher *GraphQLFetcher) bool {
+	if repoPlatform(repo) == platform.KindGitHub && s.quotaRegistry != nil {
+		if identity, err := s.identityForRepo(repo, false); err == nil {
+			availability := s.quotaRegistry.CheckReserve(
+				identity,
+				[]QuotaResource{QuotaResourceGraphQL},
+				1,
+				0,
+			)
+			return availability.Allowed || !availability.Known
+		}
+	}
+	backoff, _ := fetcher.ShouldBackoff()
+	return !backoff
+}
+
 func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 	ctx = WithSyncBudget(ctx)
 
@@ -5738,7 +5763,7 @@ func (s *Syncer) indexSyncRepo(
 			graphQLDone := false
 			if fetcher := s.fetcherFor(repo); fetcher != nil &&
 				s.shouldUseBulkGraphQLForMRs(ctx, repo, repoID, len(openMRs)) {
-				if backoff, _ := fetcher.ShouldBackoff(); !backoff {
+				if s.bulkGraphQLAllowed(repo, fetcher) {
 					result, gqlErr := fetcher.FetchRepoPRs(
 						ctx, repo.Owner, repo.Name, preferNativeStacks,
 					)
@@ -5875,7 +5900,7 @@ func (s *Syncer) indexSyncRepo(
 			graphQLIssuesDone := false
 			if fetcher := s.fetcherFor(repo); fetcher != nil &&
 				s.shouldUseBulkGraphQLForIssues(ctx, repo, repoID, len(openIssues)+len(ghIssues)) {
-				if backoff, _ := fetcher.ShouldBackoff(); !backoff {
+				if s.bulkGraphQLAllowed(repo, fetcher) {
 					issueResult, gqlErr := fetcher.FetchRepoIssues(
 						ctx, repo.Owner, repo.Name,
 					)

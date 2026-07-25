@@ -15461,3 +15461,75 @@ func TestProcessQueuedNotificationReadsRequiresWorstCaseHeadroom(t *testing.T) {
 	require.ErrorContains(err, "user rate reserve exhausted")
 	assert.Equal(int32(0), marked.Load())
 }
+
+// The fetcher's GraphQL tracker is host-wide. In quota-registry mode the bulk
+// decision must read the repository credential's own pool, so an App
+// installation sitting at zero cannot suppress bulk GraphQL for a PAT-backed
+// repository on the same host (or the reverse).
+func TestBulkGraphQLAllowedIsolatesCredentialGraphQLPools(t *testing.T) {
+	assert := assert.New(t)
+	d := openTestDB(t)
+	appRepo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
+	userRepo := RepoRef{Owner: "other", Name: "gadget", PlatformHost: "github.com"}
+	client := &credentialRateLimitSnapshotMockClient{mockClient: &mockClient{}}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client},
+		d, nil, []RepoRef{appRepo, userRepo}, time.Minute, nil, nil,
+	)
+	appIdentity := IdentityKey{Host: "github.com", Principal: "installation:42"}
+	userIdentity := IdentityKey{Host: "github.com", Principal: "user:7"}
+	router, routerErr := NewHostRouter(
+		"github.com",
+		&Route{
+			Key: RouteKey{Host: "github.com", Owner: "acme"}, Client: client,
+			ReadIdentity: appIdentity, WriteIdentity: appIdentity,
+		},
+		&Route{
+			Key: RouteKey{Host: "github.com", Owner: "other"}, Client: client,
+			ReadIdentity: userIdentity, WriteIdentity: userIdentity,
+		},
+	)
+	require.NoError(t, routerErr)
+	syncer.SetGitHubRouters(map[string]*HostRouter{"github.com": router})
+	registry := NewQuotaRegistry()
+	// The App pool is exhausted; the user pool is healthy.
+	registry.UpdateSnapshot(appIdentity, QuotaResourceGraphQL, Rate{
+		Limit: 5000, Remaining: 0, Reset: time.Now().UTC().Add(time.Hour),
+	})
+	registry.UpdateSnapshot(userIdentity, QuotaResourceGraphQL, Rate{
+		Limit: 5000, Remaining: 4000, Reset: time.Now().UTC().Add(time.Hour),
+	})
+	syncer.SetQuotaRegistry(registry)
+
+	// A host-wide tracker reporting exhaustion would block both repos.
+	exhausted := NewRateTracker(d, "github.com", "host", "graphql")
+	exhausted.UpdateFromRate(Rate{
+		Limit: 5000, Remaining: 0, Reset: time.Now().UTC().Add(time.Hour),
+	})
+	fetcher := &GraphQLFetcher{rateTracker: exhausted}
+	backoff, _ := fetcher.ShouldBackoff()
+	assert.True(backoff, "host-wide tracker should report exhaustion")
+
+	assert.False(syncer.bulkGraphQLAllowed(appRepo, fetcher),
+		"exhausted App credential must back off")
+	assert.True(syncer.bulkGraphQLAllowed(userRepo, fetcher),
+		"healthy user credential must not inherit the App pool's exhaustion")
+}
+
+// Without a registry the host-wide tracker remains authoritative.
+func TestBulkGraphQLAllowedFallsBackToHostTracker(t *testing.T) {
+	assert := assert.New(t)
+	d := openTestDB(t)
+	repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": &mockClient{}},
+		d, nil, []RepoRef{repo}, time.Minute, nil, nil,
+	)
+	exhausted := NewRateTracker(d, "github.com", "host", "graphql")
+	exhausted.UpdateFromRate(Rate{
+		Limit: 5000, Remaining: 0, Reset: time.Now().UTC().Add(time.Hour),
+	})
+
+	assert.False(syncer.bulkGraphQLAllowed(repo, &GraphQLFetcher{rateTracker: exhausted}))
+	assert.True(syncer.bulkGraphQLAllowed(repo, &GraphQLFetcher{}))
+}

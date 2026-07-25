@@ -33,7 +33,7 @@ vi.mock("../components/diff/DiffFilesLayout.svelte", async () => ({
 import PRListView from "./PRListView.svelte";
 
 /** DetailPaneLayout flattens the tree below this measured host width. */
-const flattenBelowPx = 1280;
+const flattenBelowPx = 720;
 
 const selectedPR: PullRequestRouteRef = {
   provider: "github",

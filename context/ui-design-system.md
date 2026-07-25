@@ -293,6 +293,12 @@ unconditional bodies mount for every selected item, and a portal slot that
 lingers behind another tab stays the registered host and strands its content off
 screen.
 
+A pane body is stretched by its panel, which is a flex container: a pane body
+must not size itself from its own content. Detail views end their chain at a
+`ScrollBox` that expects a height-constrained flex parent, so a block panel
+turns their internal scrolling into outer overflow with no visible error
+(`packages/ui/src/components/shared/TabbedPanelTree.svelte::.tabbed-panel-tab-panel`).
+
 Zoom is transient focus state, not part of the saved arrangement. Drop it
 whenever what was zoomed stops rendering (`DetailPaneLayout`'s reconciliation
 effect covers availability, which the store cannot see) and on any successful

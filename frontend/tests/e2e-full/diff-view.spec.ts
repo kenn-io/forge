@@ -1717,18 +1717,10 @@ test.describe("diff view", () => {
       .poll(async () => page.evaluate(() => localStorage.getItem("diff-file-tree-width")))
       .toBe(String(beforeWidth + 80));
 
-    await page
-      .locator(".detail-tab", {
-        hasText: "Conversation",
-      })
-      .click();
+    await page.getByRole("tab", { name: "Conversation" }).click();
     await expect(page.locator(".diff-view")).toHaveCount(0);
 
-    await page
-      .locator(".detail-tab", {
-        hasText: "Files changed",
-      })
-      .click();
+    await page.getByRole("tab", { name: "Files changed" }).click();
     await waitForDiffLoaded(page);
     await waitForSidebarFilesLoaded(page);
 
@@ -1756,11 +1748,7 @@ test.describe("diff view", () => {
       })
       .toBeGreaterThanOrEqual(320);
 
-    await page
-      .locator(".detail-tab", {
-        hasText: "Conversation",
-      })
-      .click();
+    await page.getByRole("tab", { name: "Conversation" }).click();
     await expect.poll(async () => page.evaluate(() => localStorage.getItem("diff-file-tree-width"))).toBe("520");
   });
 
@@ -2161,17 +2149,11 @@ test.describe("diff view", () => {
     await waitForDiffLoaded(page);
 
     // On the /files route the "Files changed" tab is active.
-    const filesTab = page.locator(".detail-tab", {
-      hasText: "Files changed",
-    });
-    await expect(filesTab).toHaveClass(/detail-tab--active/);
+    const filesTab = page.getByRole("tab", { name: "Files changed" });
+    await expect(filesTab).toHaveAttribute("aria-selected", "true");
 
     // Clicking "Conversation" navigates back to the PR detail.
-    await page
-      .locator(".detail-tab", {
-        hasText: "Conversation",
-      })
-      .click();
+    await page.getByRole("tab", { name: "Conversation" }).click();
     await expect(page).toHaveURL(/\/pulls\/github\/acme\/widgets\/1$/);
   });
 
@@ -2247,7 +2229,10 @@ test.describe("diff view", () => {
     await navigateToDiff(page);
     await waitForDiffLoaded(page);
 
-    const firstCodeLine = page.locator(".pierre-diff [data-line]").first();
+    // Scoped to the diff area: the conversation pane stays mounted behind the
+    // files pane, and a review-thread snippet there renders its own always
+    // wrapped pierre diff earlier in the DOM.
+    const firstCodeLine = page.locator(".diff-area .pierre-diff [data-line]").first();
 
     await openDiffFilterMenu(page);
     const wrapToggle = page.getByRole("switch", { name: "Word wrap" });

@@ -486,7 +486,7 @@ test.describe("activity split view", () => {
     const detail = await openActivityPRSplit(page);
     await expect(page.locator(".activity-pane")).toBeVisible();
 
-    await detail.locator(".detail-tab", { hasText: "Files changed" }).click();
+    await detail.getByRole("tab", { name: "Files changed" }).click();
     await expect(page).toHaveURL(/selected=pr%3A1/);
     await expect(page).toHaveURL(/provider=github/);
     await expect(page).toHaveURL(/repo_path=acme%2Fwidgets/);
@@ -498,7 +498,7 @@ test.describe("activity split view", () => {
 
     // Switching back to Conversation unmounts the diff and restores
     // the conversation view.
-    await detail.locator(".detail-tab", { hasText: "Conversation" }).click();
+    await detail.getByRole("tab", { name: "Conversation" }).click();
     await expect(detail.locator(".diff-view")).toHaveCount(0);
     await expect(detail.locator(".pull-detail")).toBeVisible();
 
@@ -911,7 +911,7 @@ test.describe("activity split view", () => {
     await waitForActivityTable(page);
 
     const detail = await openActivityPRSplit(page);
-    await detail.locator(".detail-tab", { hasText: "Files changed" }).click();
+    await detail.getByRole("tab", { name: "Files changed" }).click();
 
     await expect(detail.locator(".diff-view")).toBeVisible();
     await expect(detail.locator(".diff-toolbar")).toBeVisible();
@@ -954,7 +954,7 @@ test.describe("activity split view", () => {
     await waitForActivityTable(page);
 
     const detail = await openActivityPRSplit(page);
-    await detail.locator(".detail-tab", { hasText: "Files changed" }).click();
+    await detail.getByRole("tab", { name: "Files changed" }).click();
 
     const diffArea = detail.locator(".diff-area .kit-scrollbox__viewport");
 
@@ -976,7 +976,7 @@ test.describe("activity split view", () => {
     const detail = await openActivityPRSplit(page);
     await expect(page.locator(".activity-pane")).toBeHidden();
     await expect(detail.locator(".activity-detail-header")).toBeVisible();
-    await detail.locator(".detail-tab", { hasText: "Files changed" }).click();
+    await detail.getByRole("tab", { name: "Files changed" }).click();
     await expect(detail.locator(".diff-view")).toBeVisible();
   });
 
@@ -1247,26 +1247,22 @@ test.describe("activity split view", () => {
 
     const detail = await openActivityPRSplit(page);
 
-    const conversationTab = detail.locator(".detail-tab", {
-      hasText: "Conversation",
-    });
-    const filesTab = detail.locator(".detail-tab", {
-      hasText: "Files changed",
-    });
+    const conversationTab = detail.getByRole("tab", { name: "Conversation" });
+    const filesTab = detail.getByRole("tab", { name: "Files changed" });
 
     // Conversation is active by default.
-    await expect(conversationTab).toHaveClass(/detail-tab--active/);
-    await expect(filesTab).not.toHaveClass(/detail-tab--active/);
+    await expect(conversationTab).toHaveAttribute("aria-selected", "true");
+    await expect(filesTab).toHaveAttribute("aria-selected", "false");
 
     // Clicking Files shifts active state.
     await filesTab.click();
-    await expect(filesTab).toHaveClass(/detail-tab--active/);
-    await expect(conversationTab).not.toHaveClass(/detail-tab--active/);
+    await expect(filesTab).toHaveAttribute("aria-selected", "true");
+    await expect(conversationTab).toHaveAttribute("aria-selected", "false");
 
     // Clicking back restores conversation as active.
     await conversationTab.click();
-    await expect(conversationTab).toHaveClass(/detail-tab--active/);
-    await expect(filesTab).not.toHaveClass(/detail-tab--active/);
+    await expect(conversationTab).toHaveAttribute("aria-selected", "true");
+    await expect(filesTab).toHaveAttribute("aria-selected", "false");
   });
 
   test("activity split view highlights matching activity rows", async ({ page }) => {
@@ -1288,7 +1284,7 @@ test.describe("activity split view", () => {
     const detail = await openActivityPRSplit(page);
 
     // Switch to the Files tab and confirm the diff renders.
-    await detail.locator(".detail-tab", { hasText: "Files changed" }).click();
+    await detail.getByRole("tab", { name: "Files changed" }).click();
     await expect(detail.locator(".diff-view")).toBeVisible();
 
     // Escape should still clear selection, even from the Files tab state.
@@ -1312,43 +1308,37 @@ test.describe("activity split view", () => {
 
     // Wait for the PRListView tab bar (scoped to .kit-sidebar-layout__main) to
     // render.
-    await page.locator(".kit-sidebar-layout__main .detail-tabs").first().waitFor({ state: "visible", timeout: 10_000 });
+    await page
+      .locator(".kit-sidebar-layout__main")
+      .getByRole("tablist", { name: "Pull request detail panes" })
+      .first()
+      .waitFor({ state: "visible", timeout: 10_000 });
 
     // Exactly one tab bar is present inside the outer PRListView
     // container. If PullDetail ever stops respecting hideTabs, a
-    // second .detail-tabs element would show up inside .kit-sidebar-layout__main.
-    await expect(page.locator(".kit-sidebar-layout__main .detail-tabs")).toHaveCount(1);
+    // second detail tablist would show up inside .kit-sidebar-layout__main.
     await expect(
-      page.locator(".kit-sidebar-layout__main .detail-tabs .detail-tab", {
-        hasText: "Conversation",
-      }),
+      page.locator(".kit-sidebar-layout__main").getByRole("tablist", { name: "Pull request detail panes" }),
     ).toHaveCount(1);
-    await expect(
-      page.locator(".kit-sidebar-layout__main .detail-tabs .detail-tab", {
-        hasText: "Files changed",
-      }),
-    ).toHaveCount(1);
+    await expect(page.locator(".kit-sidebar-layout__main").getByRole("tab", { name: "Conversation" })).toHaveCount(1);
+    await expect(page.locator(".kit-sidebar-layout__main").getByRole("tab", { name: "Files changed" })).toHaveCount(1);
 
     // Clicking Files changed in the outer tab bar updates the URL to
     // the /files sub-route.
-    await page
-      .locator(".kit-sidebar-layout__main .detail-tabs .detail-tab", {
-        hasText: "Files changed",
-      })
-      .click();
+    await page.locator(".kit-sidebar-layout__main").getByRole("tab", { name: "Files changed" }).click();
     await expect(page).toHaveURL(/\/pulls\/github\/acme\/widgets\/1\/files$/);
     await expect(page.locator(".diff-view")).toBeVisible();
-    await expect(page.locator(".kit-sidebar-layout__main .detail-tabs")).toHaveCount(1);
+    await expect(
+      page.locator(".kit-sidebar-layout__main").getByRole("tablist", { name: "Pull request detail panes" }),
+    ).toHaveCount(1);
 
     // Clicking Conversation routes back and keeps the tab bar
     // singular.
-    await page
-      .locator(".kit-sidebar-layout__main .detail-tabs .detail-tab", {
-        hasText: "Conversation",
-      })
-      .click();
+    await page.locator(".kit-sidebar-layout__main").getByRole("tab", { name: "Conversation" }).click();
     await expect(page).toHaveURL(/\/pulls\/github\/acme\/widgets\/1$/);
-    await expect(page.locator(".kit-sidebar-layout__main .detail-tabs")).toHaveCount(1);
+    await expect(
+      page.locator(".kit-sidebar-layout__main").getByRole("tablist", { name: "Pull request detail panes" }),
+    ).toHaveCount(1);
   });
 
   test("direct load of provider PR files route renders the diff with a single tab bar", async ({ page }) => {
@@ -1360,14 +1350,18 @@ test.describe("activity split view", () => {
 
     await page.goto("/pulls/github/acme/widgets/1/files");
 
-    await page.locator(".kit-sidebar-layout__main .detail-tabs").first().waitFor({ state: "visible", timeout: 10_000 });
+    await page
+      .locator(".kit-sidebar-layout__main")
+      .getByRole("tablist", { name: "Pull request detail panes" })
+      .first()
+      .waitFor({ state: "visible", timeout: 10_000 });
 
-    await expect(page.locator(".kit-sidebar-layout__main .detail-tabs")).toHaveCount(1);
+    await expect(
+      page.locator(".kit-sidebar-layout__main").getByRole("tablist", { name: "Pull request detail panes" }),
+    ).toHaveCount(1);
     await expect(page.locator(".diff-view")).toBeVisible();
     await expect(
-      page.locator(".kit-sidebar-layout__main .detail-tabs .detail-tab--active", {
-        hasText: "Files changed",
-      }),
+      page.locator('.kit-sidebar-layout__main [role="tab"][aria-selected="true"]').filter({ hasText: "Files changed" }),
     ).toHaveCount(1);
   });
 });

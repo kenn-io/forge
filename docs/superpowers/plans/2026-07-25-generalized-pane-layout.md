@@ -259,11 +259,11 @@ Delete: the `DetailTab` split-view state (`splitViewEnabled`, `committedSplitRat
 
 Add: one `DetailPaneLayout surface="prs"` with tabs `conversation` (always available), `files` (always available), `workspace` (available when `inlineWorkspace` holds a claim for `claimIdentity`). Keep `filesScrollPositions` and the `{#key}` guard around `DiffFilesLayout` exactly as they are — the diff pane must keep its scroll memory. Route binding per the spec's Route and active tab section: a tab click keeps `navigate()`; a focus-derived change while split apart uses `replaceUrl()`.
 
-- [ ] **Step 1** Update `PRListView.test.ts` and `PRListView.workspaceDraft.test.ts` for the new structure; add a case asserting the diff pane keeps its scroll offset across a tab switch.
-- [ ] **Step 2** Run `./node_modules/.bin/vp test --project unit PRListView`. Expected FAIL.
-- [ ] **Step 3** Implement.
-- [ ] **Step 4** Run `./node_modules/.bin/vp test --project unit PRListView`, then the App browser specs that assert detail-tab chrome: `./node_modules/.bin/vp test --project browser "detail-code-wrap|palette-pr-detail-commands|navigation"`. Expected PASS.
-- [ ] **Step 5** Commit via the `kenn:commit` skill.
+- [x] **Step 1** Update `PRListView.test.ts` and `PRListView.workspaceDraft.test.ts` for the new structure; add a case asserting the diff pane keeps its scroll offset across a tab switch.
+- [x] **Step 2** Run `./node_modules/.bin/vp test --project unit PRListView`. Expected FAIL.
+- [x] **Step 3** Implement.
+- [x] **Step 4** Run `./node_modules/.bin/vp test --project unit PRListView`, then the App browser specs that assert detail-tab chrome: `./node_modules/.bin/vp test --project browser "detail-code-wrap|palette-pr-detail-commands|navigation"`. Expected PASS.
+- [x] **Step 5** Commit via the `kenn:commit` skill.
 
 ---
 
@@ -274,11 +274,11 @@ Add: one `DetailPaneLayout surface="prs"` with tabs `conversation` (always avail
 
 Delete the `renderWorkspaceDock` prop, the `WorkspaceDockPanel` import and usage, and the `.detail-host` wrapper that exists only to host it. Add one `DetailPaneLayout surface="issues"` with two tabs: `conversation` (always available, rendering the existing `IssueDetail` with its current props) and `workspace` (available when `inlineWorkspace` holds a claim for `claimIdentity`). There is no diff pane and no route-bound tab here, so no `navigate()`/`replaceUrl()` handling is needed — issues have a single detail route. Keep the `CollapsibleSidebar`, the `IssueList` sidebar snippet, and the "Select an issue" placeholder branch exactly as they are.
 
-- [ ] **Step 1** Update `IssueListView.test.ts`.
-- [ ] **Step 2** Run `./node_modules/.bin/vp test --project unit IssueListView`. Expected FAIL.
-- [ ] **Step 3** Implement.
-- [ ] **Step 4** Run the same command. Expected PASS.
-- [ ] **Step 5** Commit via the `kenn:commit` skill.
+- [x] **Step 1** Update `IssueListView.test.ts`.
+- [x] **Step 2** Run `./node_modules/.bin/vp test --project unit IssueListView`. Expected FAIL.
+- [x] **Step 3** Implement.
+- [x] **Step 4** Run the same command. Expected PASS.
+- [x] **Step 5** Commit via the `kenn:commit` skill.
 
 ---
 
@@ -301,11 +301,11 @@ Replace `dockModes` with derivation from the surface's `PaneLayoutStore`:
 
 All six behaviors from the spec's Zoom section need a test. The two that a tree-derived rewrite most easily breaks, and which `workspace-host.test.ts` already covers today, are: a same-identity claim re-assert must not un-zoom (`:543`), and a collapsed dock keeps its claim (`:476`).
 
-- [ ] **Step 1** Extend `workspace-host.test.ts` with one case per behavior, keeping the two existing cases above passing unchanged.
-- [ ] **Step 2** Run `./node_modules/.bin/vp test --project unit workspace-host`. Expected FAIL.
-- [ ] **Step 3** Implement; delete the three files.
-- [ ] **Step 4** Run `./node_modules/.bin/vp test --project unit workspace-host` and `--project browser WorkspaceDockPanel`. Expected PASS.
-- [ ] **Step 5** Commit via the `kenn:commit` skill.
+- [x] **Step 1** Extend `workspace-host.test.ts` with one case per behavior, keeping the two existing cases above passing unchanged.
+- [x] **Step 2** Run `./node_modules/.bin/vp test --project unit workspace-host`. Expected FAIL.
+- [x] **Step 3** Implement; delete the three files.
+- [x] **Step 4** Run `./node_modules/.bin/vp test --project unit workspace-host` and `--project browser WorkspaceDockPanel`. Expected PASS.
+- [x] **Step 5** Commit via the `kenn:commit` skill.
 
 ---
 
@@ -319,11 +319,11 @@ Stop embedding `PRListView` / `IssueListView` for the detail. Render one `Detail
 
 Leave the Activity rail completely alone: `ACTIVITY_PANE_WIDTH_KEY`, collapse state, `minDetailPaneWidth`, its own `SplitResizeHandle`, and the Escape handler all stay. `PullDetailPane.svelte` exists so PRs mode and Activity share the conversation/files bodies without duplicating prop threading.
 
-- [ ] **Step 1** Update `ActivityFeedView.test.ts`: a PR selection offers three panes plus workspace; an issue selection offers no `files` pane; a commit selection offers the `commit` pane; switching PR to issue does not remount the workspace slot.
-- [ ] **Step 2** Run `./node_modules/.bin/vp test --project unit ActivityFeedView`. Expected FAIL.
-- [ ] **Step 3** Implement.
-- [ ] **Step 4** Run `./node_modules/.bin/vp test --project unit ActivityFeedView` plus `--project browser "activity"`. Expected PASS.
-- [ ] **Step 5** Commit via the `kenn:commit` skill.
+- [x] **Step 1** Update `ActivityFeedView.test.ts`: a PR selection offers three panes plus workspace; an issue selection offers no `files` pane; a commit selection offers the `commit` pane; switching PR to issue does not remount the workspace slot.
+- [x] **Step 2** Run `./node_modules/.bin/vp test --project unit ActivityFeedView`. Expected FAIL.
+- [x] **Step 3** Implement.
+- [x] **Step 4** Run `./node_modules/.bin/vp test --project unit ActivityFeedView` plus `--project browser "activity"`. Expected PASS.
+- [x] **Step 5** Commit via the `kenn:commit` skill.
 
 ---
 
@@ -356,11 +356,18 @@ Add, in the same lane because they need real geometry:
 - the flatten fallback at a narrow viewport, asserting no split or maximize control is reachable;
 - terminal continuity across a PR-to-issue selection change in Activity, proving the slot element is not remounted.
 
-- [ ] **Step 1** Read all three specs and list every selector they use that this work removes.
-- [ ] **Step 2** Run the three specs unchanged against the new UI to confirm they fail, so their coverage is proven live rather than assumed: `./node_modules/.bin/vp exec playwright test tests/e2e-full/00-inline-workspace-continuity.spec.ts tests/e2e-full/detail-action-buttons.spec.ts tests/e2e-full/activity-drawer.spec.ts`
-- [ ] **Step 3** Update the selectors and add the three cases above.
-- [ ] **Step 4** Re-run the three specs. Expected PASS.
-- [ ] **Step 5** Commit via the `kenn:commit` skill.
+- [x] **Step 1** Read all three specs and list every selector they use that this work removes.
+- [x] **Step 2** Run the three specs unchanged against the new UI to confirm they fail, so their coverage is proven live rather than assumed: `./node_modules/.bin/vp exec playwright test tests/e2e-full/00-inline-workspace-continuity.spec.ts tests/e2e-full/detail-action-buttons.spec.ts tests/e2e-full/activity-drawer.spec.ts`
+- [x] **Step 3** Update the selectors and add the three cases above.
+- [x] **Step 4** Re-run the three specs. Expected PASS.
+- [x] **Step 5** Commit via the `kenn:commit` skill.
+
+Lane note: the three added cases landed in the narrowest lane that observes
+them, per `context/testing.md`. The ratio drag plus reload is
+`frontend/tests/e2e/pr-detail-panes.spec.ts` (real pointer geometry, no backend
+state involved); the flatten fallback is `DetailPaneLayout.test.ts` at a mocked
+600px width; PR-to-issue slot continuity is `ActivityFeedView.test.ts` plus the
+real-backend terminal liveness case in `00-inline-workspace-continuity.spec.ts`.
 
 ---
 

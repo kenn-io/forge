@@ -103,7 +103,7 @@ describe("detail pane layout", () => {
   it("suppresses every structural control while flattened", () => {
     // A flat leaf merges tabs from several stored leaves, so any structural edit
     // would move panes the user cannot currently see.
-    mockWidth(900);
+    mockWidth(600);
     render(DetailPaneLayoutTestHarness, { layout: store(splitTree()) });
 
     expect(screen.queryByTestId("tabbed-panel-leaf-actions")).toBeNull();
@@ -111,7 +111,7 @@ describe("detail pane layout", () => {
   });
 
   it("shows every pane in one strip while flattened", () => {
-    mockWidth(900);
+    mockWidth(600);
     render(DetailPaneLayoutTestHarness, { layout: store(splitTree()) });
 
     expect(screen.getAllByRole("tablist")).toHaveLength(1);

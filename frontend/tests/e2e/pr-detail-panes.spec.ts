@@ -150,64 +150,81 @@ test.beforeEach(async ({ page }) => {
   await mockSplitViewPR(page);
 });
 
-async function detailHostWidth(page: Page): Promise<number> {
-  return Math.round(await page.locator(".detail-host").evaluate((el) => el.getBoundingClientRect().width));
+const LAYOUT_KEY = "middleman-pane-layout-v1:prs";
+
+async function firstPaneWidth(page: Page): Promise<number> {
+  const box = await page.locator(".tabbed-panel-split-child.first").boundingBox();
+  return box?.width ?? 0;
 }
 
-test("lets wide PR detail panes opt into split conversation and files", async ({ page }) => {
+interface StoredNode {
+  type: string;
+  ratio?: number;
+  first?: StoredNode;
+  second?: StoredNode;
+}
+
+/**
+ * Every split ratio in the stored tree.
+ *
+ * The stored tree keeps panes the current selection cannot offer (here the
+ * workspace), so the dragged split is nested rather than the root.
+ */
+async function persistedRatios(page: Page): Promise<number[]> {
+  const raw = await page.evaluate((key) => localStorage.getItem(key), LAYOUT_KEY);
+  if (raw === null) return [];
+  const parsed = JSON.parse(raw) as { tree?: StoredNode };
+  const ratios: number[] = [];
+  const walk = (node: StoredNode | undefined): void => {
+    if (!node || node.type !== "split") return;
+    if (typeof node.ratio === "number") ratios.push(node.ratio);
+    walk(node.first);
+    walk(node.second);
+  };
+  walk(parsed.tree);
+  return ratios;
+}
+
+test("splits the PR detail panes apart and remembers the dragged ratio", async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 1000 });
   await page.goto("/pulls/github/acme/widgets/42");
 
   await expect(page.locator(".detail-title")).toContainText("Add browser regression coverage");
-  await expect(page.locator(".detail-split-layout")).toHaveCount(0);
+  // Conversation and files start stacked in one leaf, so only one body shows.
+  await expect(page.locator(".tabbed-panel-split-child")).toHaveCount(0);
+  await expect(page.locator(".files-layout")).toHaveCount(0);
 
-  const splitToggle = page.getByRole("button", {
-    name: "Split view",
-    exact: true,
-  });
-  await expect.poll(async () => detailHostWidth(page)).toBeLessThan(1280);
-  await expect(splitToggle).toHaveCount(0);
+  await page.getByRole("button", { name: "Split active pane right" }).click();
 
-  await page.setViewportSize({ width: 1680, height: 1000 });
-  await expect.poll(async () => detailHostWidth(page)).toBeGreaterThanOrEqual(1280);
-  await expect.poll(async () => detailHostWidth(page)).toBeLessThan(1696);
-  await expect(splitToggle).toBeVisible();
-  await expect(splitToggle).toHaveAttribute("aria-pressed", "false");
-
-  await splitToggle.click();
-
-  await expect(splitToggle).toHaveAttribute("aria-pressed", "true");
-  await expect(page.locator(".detail-split-layout")).toBeVisible();
-  await expect(page.locator(".detail-title")).toContainText("Add browser regression coverage");
-  await expect(page.locator(".files-view")).toBeVisible();
+  await expect(page.locator(".tabbed-panel-split-child")).toHaveCount(2);
+  await expect(page.locator(".pull-detail")).toBeVisible();
+  await expect(page.locator(".files-layout")).toBeVisible();
   await expect(page.getByText("src/split-view.ts")).toBeVisible();
 
-  const conversationPane = page.locator(".detail-split-pane--conversation");
-  const resizeHandle = page.getByRole("separator", { name: "Resize PR split view" });
-  await expect(conversationPane).toBeVisible();
+  const resizeHandle = page.getByRole("separator", { name: "Resize detail panes" });
   await expect(resizeHandle).toBeVisible();
   await expect(resizeHandle).toHaveCSS("cursor", "col-resize");
 
-  const before = await conversationPane.boundingBox();
+  const before = await firstPaneWidth(page);
   const handleBox = await resizeHandle.boundingBox();
-  expect(before).not.toBeNull();
+  expect(before).toBeGreaterThan(0);
   expect(handleBox).not.toBeNull();
-  if (!before || !handleBox) {
-    throw new Error("Expected split pane and resize handle to be measurable");
+  if (!handleBox) {
+    throw new Error("Expected the pane divider to be measurable");
   }
 
   await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
   await page.mouse.down();
-  await page.mouse.move(handleBox.x + handleBox.width / 2 + 240, handleBox.y + handleBox.height / 2);
+  await page.mouse.move(handleBox.x + handleBox.width / 2 - 240, handleBox.y + handleBox.height / 2);
   await page.mouse.up();
 
-  await expect
-    .poll(async () => {
-      const box = await conversationPane.boundingBox();
-      return box?.width ?? 0;
-    })
-    .toBeGreaterThan(before.width + 150);
-  await expect
-    .poll(async () => await page.evaluate(() => localStorage.getItem("pr-detail-split-ratio")))
-    .not.toBeNull();
+  await expect.poll(async () => firstPaneWidth(page)).toBeLessThan(before - 150);
+  // The ratio has to survive in storage: the layout is per top-level mode and is
+  // restored on the next visit rather than recomputed from the viewport.
+  const ratios = await persistedRatios(page);
+  expect(ratios.some((ratio) => ratio < 0.4)).toBe(true);
+
+  await page.reload();
+  await expect(page.locator(".files-layout")).toBeVisible();
+  await expect.poll(async () => firstPaneWidth(page)).toBeLessThan(before - 150);
 });

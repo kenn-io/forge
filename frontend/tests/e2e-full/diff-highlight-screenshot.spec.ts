@@ -222,7 +222,7 @@ test.describe("diff highlight backgrounds on horizontal scroll", () => {
 
     // Wait for syntax highlighting on both add and delete lines — highlighting
     // is incremental so we need both row types ready before asserting widths.
-    const diffHost = page.locator(".pierre-diff").first();
+    const diffHost = page.locator(".diff-area .pierre-diff").first();
     await expect
       .poll(
         async () => {

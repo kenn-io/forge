@@ -406,11 +406,7 @@ test.describe("phone routes", () => {
     await page.goto("/focus/pulls/github/acme/widgets/1");
     await expect(page.locator(".focus-layout .pull-detail .detail-title")).toBeVisible();
 
-    await page
-      .locator(".focus-layout .detail-tab", {
-        hasText: "Files changed",
-      })
-      .click();
+    await page.locator(".focus-layout").getByRole("tab", { name: "Files changed" }).click();
 
     await expect(page).toHaveURL(/\/focus\/pulls\/github\/acme\/widgets\/1\/files$/);
     await expect(page.locator(".focus-layout .files-layout")).toBeVisible();
@@ -423,11 +419,7 @@ test.describe("phone routes", () => {
     await expectPathname(page, "/pulls/github/acme/widgets/1");
     await expect(page.locator(".focus-layout .pull-detail .detail-title")).toBeVisible();
 
-    await page
-      .locator(".focus-layout .detail-tab", {
-        hasText: "Files changed",
-      })
-      .click();
+    await page.locator(".focus-layout").getByRole("tab", { name: "Files changed" }).click();
 
     await expectPathname(page, "/pulls/github/acme/widgets/1/files");
     await expect(page.locator(".focus-layout .files-layout")).toBeVisible();

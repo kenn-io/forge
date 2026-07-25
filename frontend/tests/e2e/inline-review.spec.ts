@@ -603,7 +603,7 @@ async function mockInlineReviewAPI(
 
 async function firstDiffGutterRight(page: Page): Promise<number> {
   return page
-    .locator(".pierre-diff")
+    .locator(".diff-area .pierre-diff")
     .first()
     .evaluate((host) => {
       const gutter = host.shadowRoot?.querySelector("[data-gutter]");
@@ -655,8 +655,8 @@ test("unavailable operations disable inline review authoring and thread replies"
 test("a loaded draft becomes unpublishable when review_draft flips unavailable", async ({ page }) => {
   // The riskiest Files-tab path: a draft that is already loaded and
   // publishable must lose its publish affordance when review_draft
-  // becomes unavailable while the diff stays mounted. Split view
-  // keeps the conversation pane (which polls the detail payload) and
+  // becomes unavailable while the diff stays mounted. Splitting the
+  // conversation pane out keeps it (it polls the detail payload) and
   // the files pane mounted together, so the flip arrives through the
   // real in-app poll without any navigation or reload. The local
   // draft view clearing while gated is the store's designed behavior;
@@ -704,7 +704,7 @@ test("a loaded draft becomes unpublishable when review_draft flips unavailable",
   await page.clock.install();
   await page.setViewportSize({ width: 2200, height: 1000 });
   await page.goto("/pulls/github/acme/widgets/42");
-  await page.getByRole("button", { name: "Split view", exact: true }).click();
+  await page.getByRole("button", { name: "Split active pane right" }).click();
   await expect(page.getByText("1 draft comment")).toBeVisible();
   await expect(page.getByRole("button", { name: "Publish review" })).toBeVisible();
 
@@ -737,7 +737,7 @@ test("adds and publishes an inline draft review comment", async ({ page }) => {
   await mockInlineReviewAPI(page);
 
   await page.goto("/pulls/github/acme/widgets/42");
-  await page.getByRole("button", { name: "Files changed" }).click();
+  await page.getByRole("tab", { name: "Files changed" }).click();
   await page.getByRole("button", { name: "Comment on new line 2" }).click();
   const composer = page.getByPlaceholder("Leave a comment");
   await composer.fill("Please cover this line.");
@@ -956,7 +956,7 @@ test("shows a visible composer focus indicator without focus flicker", async ({ 
   await mockInlineReviewAPI(page);
 
   await page.goto("/pulls/github/acme/widgets/42");
-  await page.getByRole("button", { name: "Files changed" }).click();
+  await page.getByRole("tab", { name: "Files changed" }).click();
 
   // Regression guard for issues #445/#446: the composer textarea must never
   // visibly blur while open (focusout count stays zero) and must end up
@@ -1078,7 +1078,7 @@ test("keeps inline composer inside the visible diff pane on long lines", async (
   await page.goto("/pulls/github/acme/widgets/42/files");
   await page.getByRole("button", { name: "Comment on new line 1141" }).click();
 
-  const scrollPane = page.locator(".file-content").first();
+  const scrollPane = page.locator(".diff-area .file-content").first();
   const composer = page.locator(".inline-composer");
   await expect(composer).toBeVisible();
 
@@ -1131,10 +1131,12 @@ test("shows saved draft comments inline and jumps from the tray", async ({ page 
   await page.getByRole("button", { name: "Add comment" }).click();
 
   const inlineDraft = page.locator(".inline-draft-comment");
-  const scrollPane = page.locator(".file-content").first();
+  const scrollPane = page.locator(".diff-area .file-content").first();
   await expect(inlineDraft).toBeVisible();
   await expect(inlineDraft).toContainText("Please cover both lines.");
-  await expect(page.locator(".gutter-new.gutter--selected")).toHaveCount(2);
+  // Scoped to the diff: the conversation pane stays mounted behind the files
+  // pane and its review snippet carries the same gutter markup.
+  await expect(page.locator(".diff-area .gutter-new.gutter--selected")).toHaveCount(2);
 
   const scrollBox = await scrollPane.boundingBox();
   const inlineBox = await inlineDraft.boundingBox();
@@ -1192,7 +1194,7 @@ test("hides inline review controls when provider draft review is unsupported", a
   });
 
   await page.goto("/pulls/github/acme/widgets/42");
-  await page.getByRole("button", { name: "Files changed" }).click();
+  await page.getByRole("tab", { name: "Files changed" }).click();
   await expect(page.getByRole("button", { name: "Comment on new line 2" })).toHaveCount(0);
 });
 
@@ -1213,9 +1215,11 @@ test("shows published inline review context in conversation and jumps to the dif
   await expect(page.getByLabel("Commented diff context")).toContainText("const b = 2;");
   await page.getByRole("button", { name: "Jump to diff" }).click();
 
-  await expect(page.getByRole("button", { name: /Files changed/ })).toHaveClass(/detail-tab--active/);
+  await expect(page.getByRole("tab", { name: "Files changed" })).toHaveAttribute("aria-selected", "true");
   await expect(
-    page.locator('[data-diff-path="src/main.ts"][data-diff-new-line="2"]:not([data-middleman-line-comment-cell])'),
+    page.locator(
+      '.diff-area [data-diff-path="src/main.ts"][data-diff-new-line="2"]:not([data-middleman-line-comment-cell])',
+    ),
   ).toBeVisible();
 });
 
@@ -1223,15 +1227,15 @@ test("keeps published inline review context loaded after switching back from fil
   await mockInlineReviewAPI(page);
 
   await page.goto("/pulls/github/acme/widgets/42/files");
-  await expect(page.getByRole("button", { name: /Files changed/ })).toHaveClass(/detail-tab--active/);
+  await expect(page.getByRole("tab", { name: "Files changed" })).toHaveAttribute("aria-selected", "true");
 
-  await page.getByRole("button", { name: "Conversation" }).click();
+  await page.getByRole("tab", { name: "Conversation" }).click();
   await expect(page).toHaveURL(/\/pulls\/github\/acme\/widgets\/42$/);
   await expect(page.getByLabel("Commented diff context")).toContainText("const b = 2;");
   await expect(page.getByText("Loading diff")).toHaveCount(0);
 
-  await page.getByRole("button", { name: "Files changed" }).click();
-  await expect(page.getByRole("button", { name: /Files changed/ })).toHaveClass(/detail-tab--active/);
+  await page.getByRole("tab", { name: "Files changed" }).click();
+  await expect(page.getByRole("tab", { name: "Files changed" })).toHaveAttribute("aria-selected", "true");
 });
 
 test("preserves PR detail scroll positions while switching tabs", async ({ page }) => {
@@ -1251,7 +1255,7 @@ test("preserves PR detail scroll positions while switching tabs", async ({ page 
   });
   await expect.poll(async () => conversationScroller.evaluate((element) => element.scrollTop)).toBeGreaterThan(350);
 
-  await page.getByRole("button", { name: /Files changed/ }).click();
+  await page.getByRole("tab", { name: "Files changed" }).click();
   const diffArea = page.locator(".diff-area .kit-scrollbox__viewport");
   await expect(diffArea).toBeVisible();
   await diffArea.evaluate((element) => {
@@ -1259,10 +1263,10 @@ test("preserves PR detail scroll positions while switching tabs", async ({ page 
     element.dispatchEvent(new Event("scroll", { bubbles: true }));
   });
 
-  await page.getByRole("button", { name: "Conversation" }).click();
+  await page.getByRole("tab", { name: "Conversation" }).click();
   await expect.poll(async () => conversationScroller.evaluate((element) => element.scrollTop)).toBeGreaterThan(350);
 
-  await page.getByRole("button", { name: /Files changed/ }).click();
+  await page.getByRole("tab", { name: "Files changed" }).click();
   await expect.poll(async () => diffArea.evaluate((element) => element.scrollTop)).toBeGreaterThan(480);
 });
 

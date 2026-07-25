@@ -19,7 +19,15 @@
     paneIcon?: Snippet<[TabbedPanelDescriptor]> | undefined;
     tablistLabel?: string;
     leafLabel?: string;
-    /** Below this container width the tree flattens to a single strip. */
+    /**
+     * Below this container width the tree flattens to a single tab strip.
+     *
+     * Set to twice the narrowest useful pane, not to a "wide desktop" width: the
+     * default arrangement stacks the workspace BELOW the detail, which needs
+     * height rather than width, and a high threshold silently removed that whole
+     * layout at ordinary window sizes. Side-by-side splits above this width stay
+     * the user's explicit choice and are already ratio-clamped.
+     */
     flattenBelowPx?: number;
     /** Route-bound tab, when the surface has one. */
     routeTabKey?: string | undefined;
@@ -40,7 +48,7 @@
     paneIcon = undefined,
     tablistLabel = "Detail panes",
     leafLabel = "Detail pane group",
-    flattenBelowPx = 1280,
+    flattenBelowPx = 720,
     routeTabKey = undefined,
     onSelectTab = undefined,
     onFocusPane = undefined,

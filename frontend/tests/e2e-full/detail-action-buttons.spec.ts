@@ -60,7 +60,7 @@ async function waitForWorkspaceReady(api: APIRequestContext, workspaceId: string
 test.describe("detail action buttons", () => {
   test.describe.configure({ timeout: lockedWorkspaceTestTimeoutMs });
 
-  test("issue detail creates a middleman workspace in the inline dock", async ({ page }) => {
+  test("issue detail creates a middleman workspace in its inline workspace pane", async ({ page }) => {
     test.skip(
       !hasCommand("git") || !hasCommand("tmux", ["-V"]),
       "git and tmux are required for the real workspace flow",
@@ -99,13 +99,13 @@ test.describe("detail action buttons", () => {
       expect(createdWorkspace.item_number).toBe(10);
       expect(createdWorkspace.git_head_ref).toBe("middleman/issue-10-widget-rendering-broken-on-safari");
 
-      // Creation stays on the issue: the workspace claims the inline dock
+      // Creation stays on the issue: the workspace claims the inline pane
       // instead of navigating away.
       await expect(page).toHaveURL(/\/issues\/github\/acme\/widgets\/10$/);
-      // The dock panel div renders before any claim; the slot (and the
+      // The pane tree renders before any claim; the workspace slot (and the
       // reparented workspace host inside it) exists only once the created
-      // workspace actually claims and hosts the inline dock.
-      await expect(page.locator(".workspace-dock-slot .workspace-host-wrapper")).toBeVisible();
+      // workspace actually claims and hosts the pane.
+      await expect(page.locator(".detail-pane-workspace-slot .workspace-host-wrapper")).toBeVisible();
 
       const readyWorkspace = await waitForWorkspaceReady(apiContext, createdWorkspace.id);
       await access(readyWorkspace.worktree_path);
@@ -122,7 +122,7 @@ test.describe("detail action buttons", () => {
     }
   });
 
-  test("PR detail creates a middleman workspace in the inline dock", async ({ page }) => {
+  test("PR detail creates a middleman workspace in its inline workspace pane", async ({ page }) => {
     test.skip(
       !hasCommand("git") || !hasCommand("tmux", ["-V"]),
       "git and tmux are required for the real workspace flow",
@@ -161,12 +161,12 @@ test.describe("detail action buttons", () => {
       expect(createdWorkspace.item_number).toBe(1);
 
       // Creation stays on the pull request: the workspace claims the
-      // inline dock instead of navigating away. The dock panel div renders
+      // inline pane instead of navigating away. The pane tree renders
       // before any claim; the slot (and the reparented workspace host
       // inside it) exists only once the created workspace actually claims
-      // and hosts the inline dock.
+      // and hosts the pane.
       await expect(page).toHaveURL(/\/pulls\/github\/acme\/widgets\/1$/);
-      await expect(page.locator(".workspace-dock-slot .workspace-host-wrapper")).toBeVisible();
+      await expect(page.locator(".detail-pane-workspace-slot .workspace-host-wrapper")).toBeVisible();
 
       const readyWorkspace = await waitForWorkspaceReady(apiContext, createdWorkspace.id);
       await access(readyWorkspace.worktree_path);
@@ -182,7 +182,7 @@ test.describe("detail action buttons", () => {
     }
   });
 
-  test("activity feed hosts a created workspace in its inline dock", async ({ page }) => {
+  test("activity feed hosts a created workspace in its workspace pane", async ({ page }) => {
     test.skip(
       !hasCommand("git") || !hasCommand("tmux", ["-V"]),
       "git and tmux are required for the real workspace flow",
@@ -225,8 +225,8 @@ test.describe("detail action buttons", () => {
       // into its slot and the terminal view stays live on the activity page
       // (the selection URL, not /terminal).
       await expect(page).toHaveURL(/\?selected=pr%3A1/);
-      await expect(page.locator(".workspace-dock-slot .workspace-host-wrapper")).toBeVisible();
-      await expect(page.locator(".workspace-dock-slot .terminal-view")).toBeVisible();
+      await expect(page.locator(".detail-pane-workspace-slot .workspace-host-wrapper")).toBeVisible();
+      await expect(page.locator(".detail-pane-workspace-slot .terminal-view")).toBeVisible();
 
       await waitForWorkspaceReady(apiContext, createdWorkspace.id);
     } finally {
@@ -350,12 +350,12 @@ test.describe("detail action buttons", () => {
     const createResponse = await createResponsePromise;
     expect(createResponse.status()).toBe(202);
     expect(createCalls).toBe(1);
-    // The workspace lands in the inline dock; the issue stays selected.
+    // The workspace lands in its inline workspace pane; the issue stays selected.
     await expect(page).toHaveURL(/\/issues\/github\/acme\/widgets\/10$/);
-    // The dock panel div renders before any claim; the slot (and the
+    // The pane tree renders before any claim; the workspace slot (and the
     // reparented workspace host inside it) exists only once the created
-    // workspace actually claims and hosts the inline dock.
-    await expect(page.locator(".workspace-dock-slot .workspace-host-wrapper")).toBeVisible();
+    // workspace actually claims and hosts the pane.
+    await expect(page.locator(".detail-pane-workspace-slot .workspace-host-wrapper")).toBeVisible();
   });
 
   for (const scenario of [
@@ -509,12 +509,12 @@ test.describe("detail action buttons", () => {
             ...scenario.reusePayload,
           },
         ]);
-      // The workspace lands in the inline dock; the issue stays selected.
+      // The workspace lands in its inline workspace pane; the issue stays selected.
       await expect(page).toHaveURL(/\/issues\/github\/acme\/widgets\/10$/);
-      // The dock panel div renders before any claim; the slot (and the
+      // The pane tree renders before any claim; the workspace slot (and the
       // reparented workspace host inside it) exists only once the created
-      // workspace actually claims and hosts the inline dock.
-      await expect(page.locator(".workspace-dock-slot .workspace-host-wrapper")).toBeVisible();
+      // workspace actually claims and hosts the pane.
+      await expect(page.locator(".detail-pane-workspace-slot .workspace-host-wrapper")).toBeVisible();
     });
   }
 
@@ -642,12 +642,12 @@ test.describe("detail action buttons", () => {
           git_head_ref: "middleman/issue-10-2",
         },
       ]);
-    // The workspace lands in the inline dock; the issue stays selected.
+    // The workspace lands in its inline workspace pane; the issue stays selected.
     await expect(page).toHaveURL(/\/issues\/github\/acme\/widgets\/10$/);
-    // The dock panel div renders before any claim; the slot (and the
+    // The pane tree renders before any claim; the workspace slot (and the
     // reparented workspace host inside it) exists only once the created
-    // workspace actually claims and hosts the inline dock.
-    await expect(page.locator(".workspace-dock-slot .workspace-host-wrapper")).toBeVisible();
+    // workspace actually claims and hosts the pane.
+    await expect(page.locator(".detail-pane-workspace-slot .workspace-host-wrapper")).toBeVisible();
   });
 
   test("supported pull request actions use shared ActionButton component", async ({ page }) => {

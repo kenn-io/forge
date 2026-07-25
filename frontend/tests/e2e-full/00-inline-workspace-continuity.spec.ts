@@ -2,7 +2,7 @@
 // dispatches files in path order, and multi-second tests that start near the
 // end of the run stretch the suite tail.
 //
-// These specs prove the inline workspace dock's core claim: the single
+// These specs prove the inline workspace pane's core claim: the single
 // hosted WorkspaceHost/WorkspaceTerminalView instance reparents between the
 // Workspaces tab slot and a per-surface WorkspaceDockPanel slot without
 // tearing down the terminal underneath it. A `data-continuity` tag applied
@@ -189,8 +189,19 @@ async function expectPersistedTerminalFontSize(api: APIRequestContext, fontSize:
     .toBe(fontSize);
 }
 
-test.describe("inline workspace dock continuity", () => {
+test.describe("inline workspace pane continuity", () => {
   test.describe.configure({ mode: "serial", timeout: lockedWorkspaceTestTimeoutMs });
+
+  // These tests share one page (serial mode) and the pane layout persists, so a
+  // test that closes or maximizes the workspace pane would hand that arrangement
+  // to the next one. Reset it on every document load.
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      for (const surface of ["prs", "issues", "activity"]) {
+        localStorage.removeItem(`middleman-pane-layout-v1:${surface}`);
+      }
+    });
+  });
 
   test("expanding an inline workspace keeps the app frame fixed and its controls reachable", async ({ page }) => {
     test.skip(
@@ -238,7 +249,7 @@ test.describe("inline workspace dock continuity", () => {
           const [mainBox, railBox, panelBox] = await Promise.all([
             appMain.boundingBox(),
             itemRail.boundingBox(),
-            page.locator(".workspace-dock-panel").boundingBox(),
+            page.locator(".tabbed-panel-split-child.zoomed").boundingBox(),
           ]);
           return {
             railTopDelta: railBox && mainBox ? railBox.y - mainBox.y : undefined,
@@ -256,7 +267,62 @@ test.describe("inline workspace dock continuity", () => {
         });
 
       await collapse.click();
-      await expect(page.locator(".workspace-dock-slot")).toHaveCount(0);
+      await expect(page.locator(".detail-pane-workspace-slot")).toHaveCount(0);
+    } finally {
+      await api?.dispose();
+      await isolatedServer?.stop();
+    }
+  });
+
+  test("the pane's own maximize and close controls keep the live terminal", async ({ page }) => {
+    // The terminal toolbar's Expand/Collapse are covered above. These are the
+    // pane-native controls that replaced the dock's chrome, and they drive the
+    // same layout state through a different path, so they need their own proof
+    // that the single hosted terminal is reparented rather than rebuilt.
+    test.skip(
+      !hasCommand("git") || !hasCommand("tmux", ["-V"]),
+      "git and tmux are required for the real workspace flow",
+    );
+
+    let isolatedServer: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    try {
+      isolatedServer = await startIsolatedWorkspaceE2EServer();
+      api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
+      const workspace = await createIssueWorkspace(api, 10);
+
+      await page.goto(`${isolatedServer.info.base_url}/issues/github/acme/widgets/10`);
+      await expect(page.locator(".detail-pane-workspace-slot .workspace-host-wrapper")).toBeVisible();
+      // The hosted shell opens on its workflow panel; the terminal container only
+      // exists once that panel is open.
+      const paneContainer = await openTerminalPanel(page);
+      await paneContainer.evaluate((el) => el.setAttribute("data-continuity", "witness"));
+      const witness = page.locator('[data-continuity="witness"]');
+
+      const workspaceLeaf = page.locator(".tabbed-panel-leaf").filter({
+        has: page.locator(".detail-pane-workspace-slot"),
+      });
+      const zoom = workspaceLeaf.locator('[data-testid="pane-toggle-zoom"]');
+
+      await zoom.click();
+      await expect(page.locator(".tabbed-panel-split-child.zoomed")).toBeVisible();
+      // Maximizing must not rebuild the shell: the tagged node is the live one.
+      await expect(paneContainer).toHaveAttribute("data-continuity", "witness");
+      await typeMarkerCommand(page, paneContainer, workspace.worktree_path, "pane-marker-zoomed");
+
+      await zoom.click();
+      await expect(page.locator(".tabbed-panel-split-child.zoomed")).toHaveCount(0);
+      await expect(witness).toBeVisible();
+
+      // Closing unmounts the slot, so the host parks; the terminal is not torn
+      // down, and reopening must reparent the same node back in.
+      await workspaceLeaf.locator('[data-testid="pane-hide-workspace"]').click();
+      await expect(page.locator(".detail-pane-workspace-slot")).toHaveCount(0);
+
+      await page.getByRole("button", { name: "Show Workspace" }).click();
+      await expect(paneContainer).toHaveAttribute("data-continuity", "witness");
+      // A torn-down or wedged session cannot run this.
+      await typeMarkerCommand(page, paneContainer, workspace.worktree_path, "pane-marker-reopened");
     } finally {
       await api?.dispose();
       await isolatedServer?.stop();
@@ -342,19 +408,19 @@ test.describe("inline workspace dock continuity", () => {
       });
 
       // Select the issue that owns this workspace: its detail carries a
-      // ready workspace ref, so the inline claim fires and the dock takes
+      // ready workspace ref, so the inline claim fires and the detail pane takes
       // the shared host — same hostedWorkspaceKey, so this must reparent
       // the exact tagged node rather than recreate it.
       await selectIssueByTitle(page, SAFARI_ISSUE_TITLE);
 
       const witness = page.locator('[data-continuity="witness"]');
       await expect(witness).toBeVisible();
-      const dockContainer = page.locator(".workspace-dock-panel .workspace-dock-slot .terminal-container");
-      await expect(dockContainer).toHaveAttribute("data-continuity", "witness");
-      await typeMarkerCommand(page, dockContainer, workspace.worktree_path, "continuity-marker-two");
+      const paneContainer = page.locator(".detail-pane-workspace-slot .terminal-container");
+      await expect(paneContainer).toHaveAttribute("data-continuity", "witness");
+      await typeMarkerCommand(page, paneContainer, workspace.worktree_path, "continuity-marker-two");
 
       // Flip back to the Workspaces tab: route memory returns to
-      // /terminal/{id} — the same hostedWorkspaceKey as the dock claim, so
+      // /terminal/{id} — the same hostedWorkspaceKey as the pane claim, so
       // this is another reparent, not a reconnect.
       await selectTopBarTab(page, "Workspaces");
       await expect(page).toHaveURL(new RegExp(`/terminal/${workspace.id}$`));
@@ -365,6 +431,93 @@ test.describe("inline workspace dock continuity", () => {
       // The same session must still accept input after the second
       // reparent — a torn-down or wedged terminal cannot run this.
       await typeMarkerCommand(page, backInTab, workspace.worktree_path, "continuity-marker-three");
+    } finally {
+      await api?.dispose();
+      await isolatedServer?.stop();
+    }
+  });
+
+  test("tab flip preserves the live terminal (ghostty)", async ({ page }) => {
+    test.skip(
+      !hasCommand("git") || !hasCommand("tmux", ["-V"]),
+      "git and tmux are required for the real workspace flow",
+    );
+
+    let isolatedServer: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    try {
+      const refreshFrames = observeTerminalRefreshFrames(page);
+      isolatedServer = await startIsolatedWorkspaceE2EServer();
+      api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
+
+      await switchRendererToGhosttyViaSettings(page, isolatedServer.info.base_url);
+
+      const workspace = await createIssueWorkspace(api, 10);
+
+      await page.goto(`${isolatedServer.info.base_url}/terminal/${workspace.id}`);
+      const tabContainer = await openTerminalPanel(page);
+      await expect(tabContainer.locator("canvas")).toHaveCount(1);
+      await typeMarkerCommand(page, tabContainer, workspace.worktree_path, "continuity-marker-one");
+      const beforeZoom = await readPtyGeometry(
+        page,
+        tabContainer,
+        workspace.worktree_path,
+        "ghostty-geometry-before-zoom",
+      );
+      const resetZoom = page.getByRole("button", {
+        name: "Reset terminal font size",
+      });
+      await expect(resetZoom).toHaveText("12px");
+      const refreshCountBeforeZoom = refreshFrames.length;
+      for (let fontSize = 13; fontSize <= ZOOMED_TERMINAL_FONT_SIZE; fontSize += 1) {
+        await page.getByRole("button", { name: "Increase terminal font size" }).click();
+        await expect(resetZoom).toHaveText(`${fontSize}px`);
+      }
+      await expectPersistedTerminalFontSize(api, ZOOMED_TERMINAL_FONT_SIZE);
+      await expect.poll(() => refreshFrames.length).toBeGreaterThan(refreshCountBeforeZoom);
+      await expect.poll(() => refreshFrames.at(-1)?.cols).toBeLessThan(beforeZoom.cols);
+      await waitForPtyColumnsBelow(
+        page,
+        tabContainer,
+        workspace.worktree_path,
+        "ghostty-geometry-after-zoom",
+        beforeZoom.cols,
+      );
+
+      await tabContainer.evaluate((el) => {
+        el.setAttribute("data-continuity", "witness");
+      });
+
+      // Select the issue that owns this workspace: same reparent contract
+      // as the xterm case, witnessed on the same canvas-backed container.
+      await selectIssueByTitle(page, SAFARI_ISSUE_TITLE);
+
+      const witness = page.locator('[data-continuity="witness"]');
+      await expect(witness).toBeVisible();
+      const paneContainer = page.locator(".detail-pane-workspace-slot .terminal-container");
+      await expect(paneContainer).toHaveAttribute("data-continuity", "witness");
+      await typeMarkerCommand(page, paneContainer, workspace.worktree_path, "continuity-marker-two");
+      await paneContainer.click({ position: { x: 10, y: 10 } });
+      await page.keyboard.press("Control+=");
+      await expect(resetZoom).toHaveText(`${ZOOMED_TERMINAL_FONT_SIZE + 1}px`);
+      await expectPersistedTerminalFontSize(api, ZOOMED_TERMINAL_FONT_SIZE + 1);
+
+      // Flip back to the Workspaces tab: same hostedWorkspaceKey, so the
+      // tagged container (and the canvas inside it) must still be the one
+      // that reappears in the tab slot, with no reconnect repaint.
+      await selectTopBarTab(page, "Workspaces");
+      await expect(page).toHaveURL(new RegExp(`/terminal/${workspace.id}$`));
+      const backInTab = page.locator(".workspace-tab-slot .terminal-container");
+      await expect(witness).toBeVisible();
+      await expect(backInTab).toHaveAttribute("data-continuity", "witness");
+      await expect(resetZoom).toHaveText(`${ZOOMED_TERMINAL_FONT_SIZE + 1}px`);
+      // The same session must still accept input after the second
+      // reparent — a torn-down or wedged terminal cannot run this.
+      await typeMarkerCommand(page, backInTab, workspace.worktree_path, "continuity-marker-three");
+      await page.reload();
+      await expect(page.getByRole("button", { name: "Reset terminal font size" })).toHaveText(
+        `${ZOOMED_TERMINAL_FONT_SIZE + 1}px`,
+      );
     } finally {
       await api?.dispose();
       await isolatedServer?.stop();
@@ -395,8 +548,8 @@ test.describe("inline workspace dock continuity", () => {
       // Select issue A: its ready workspace claims the shared host inline,
       // a different hostedWorkspaceKey than the remembered B route.
       await selectIssueByTitle(page, SAFARI_ISSUE_TITLE);
-      const dockContainer = await openTerminalPanel(page);
-      await dockContainer.evaluate((el) => {
+      const paneContainer = await openTerminalPanel(page);
+      await paneContainer.evaluate((el) => {
         el.setAttribute("data-continuity", "witness-a");
       });
       await expect(page.locator('[data-continuity="witness-a"]')).toBeVisible();

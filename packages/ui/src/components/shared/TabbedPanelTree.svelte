@@ -1017,11 +1017,22 @@
     overflow: hidden;
   }
 
+  /* Flex so a pane body inherits the panel's height rather than growing to its
+     own content height. As a block container it left any child that expects to
+     fill a flex parent — the detail views' scroll regions — unconstrained, so
+     their internal scrolling silently turned into outer overflow. */
   .tabbed-panel-tab-panel {
     position: absolute;
     inset: 0;
+    display: flex;
     visibility: hidden;
     overflow: hidden;
+  }
+
+  .tabbed-panel-tab-panel > :global(*) {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
   }
 
   .tabbed-panel-tab-panel.scrollable {

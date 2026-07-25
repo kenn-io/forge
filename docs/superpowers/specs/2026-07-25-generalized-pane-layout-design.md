@@ -330,10 +330,17 @@ comment-dense edge-case handling in `WorkspaceDockPanel` and `setClaim` /
 Below a container width of 1280px — the same threshold `PRListView`'s
 `minSplitViewWidth` uses today — the renderer uses
 `flattenTabbedPanelTree(tree)`: flat tabs, no splits, without mutating the
-persisted tree. This replaces `PRListView`'s `detailHostWidth >= 1280` gate and
-covers the phone and focus presentations, which pass `hideSidebar` and have no
-room for splits. Ratio clamps stay at 0.12–0.88; the flatten threshold, not a
-per-leaf pixel minimum, is what prevents unusable narrow panes.
+persisted tree. This covers the phone and focus presentations, which pass
+`hideSidebar` and have no room for splits. Ratio clamps stay at 0.12–0.88; the
+flatten threshold, not a per-leaf pixel minimum, is what prevents unusable narrow
+panes.
+
+The threshold is **720px, twice the narrowest useful pane**, not `PRListView`'s
+old `detailHostWidth >= 1280` split-view gate. That gate guarded a side-by-side
+layout only, while flattening removes every arrangement including the default
+workspace-below-detail stack, which needs height rather than width. Reusing 1280
+silently deleted the inline workspace split at ordinary window sizes — a 1280px
+window minus the list rail measures roughly 940px.
 
 The `embed-workspace-detail` route is **not** covered by this: it renders
 `WorkspaceRightSidebar` directly (`WorkspaceEmbedShell.svelte:218`) rather than

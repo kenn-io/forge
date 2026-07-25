@@ -122,6 +122,15 @@ Agent lifecycle hooks intentionally have no full agent-launch E2E. Cover hook co
 CLI relay, and HTTP handling independently because agent-process invocation is external
 and a combined test duplicates those seams (`internal/server/workspaceapi/agent_hook_test.go::TestReceiveAgentHookRecordsActivityAndGeneratesClaudeContext`).
 
+Detail-pane bodies other than the active one stay mounted (hidden) so their
+scroll and fetch state survives a pane switch, so a page-wide DOM locator can
+match the wrong pane: the conversation timeline renders review-thread diff
+snippets carrying the same `pierre-diff`, `[data-diff-*]`, `gutter--selected`,
+and `.file-content` markup as the diff. Scope diff locators to `.diff-area`.
+Pane tab headers are `role="tab"` with an `aria-label`, so use
+`getByRole("tab", { name })` — `getByRole(..., { hasText })` is not a valid
+option and silently matches every tab.
+
 Every `@lucide/svelte/icons/<name>` import added anywhere in `frontend/src` or
 `packages/ui/src` must also be added to the `optimizeDeps.include` list in
 `frontend/vite.config.ts`. A missing entry passes locally on a warm Vite cache

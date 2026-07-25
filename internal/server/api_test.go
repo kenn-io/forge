@@ -29768,3 +29768,66 @@ func TestAPIEditIssueMissing404(t *testing.T) {
 		map[string]string{"body": "anything"})
 	require.Equal(http.StatusNotFound, rr.Code)
 }
+
+// TestMergeBlocksPredecessorPreservedByNativeStackOverlapFallback closes the
+// seam between stack detection and the merge safeguard. Detection tests prove
+// the projection and pullapi tests prove the guard blocks on hand-seeded rows;
+// neither proves the rows detection writes for an overlap actually preserve the
+// preceding blocker the guard reads.
+func TestMergeBlocksPredecessorPreservedByNativeStackOverlapFallback(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	merged := false
+	mock := &mockGH{
+		mergePullRequestFn: func(_ context.Context, _, _ string, _ int, _, _, _ string) (*gh.PullRequestMergeResult, error) {
+			merged = true
+			return &gh.PullRequestMergeResult{}, nil
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	ctx := t.Context()
+	seedStackedPR(t, database, "acme", "widget", 100, "feature/a", "main", db.MergeRequestStateOpen, "", "")
+	seedStackedPR(t, database, "acme", "widget", 101, "feature/b", "feature/a", db.MergeRequestStateMerged, "", "")
+	tipHeadSHA := "sha102"
+	seedStackedPR(t, database, "acme", "widget", 102, "feature/c", "feature/b", db.MergeRequestStateOpen, "", "")
+	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	require.NotNil(repo)
+	now := time.Now().UTC()
+	// Two confirmed stacks share merged PR 101, and stack 42's leading member
+	// has no row yet, so the overlap is only visible from declared membership.
+	require.NoError(database.ReplaceGitHubNativeStack(ctx, db.GitHubNativeStack{
+		RepoID: repo.ID, GitHubID: 9043, Number: 43, Size: 2,
+		BaseRef: "main", IsOpen: true, GitHubCreatedAt: now,
+		ContentFingerprint: "native-43", LastObservedAt: now,
+		Members: []db.GitHubNativeStackMember{
+			{Position: 1, PullRequestNumber: 101, State: "merged", HeadRef: "feature/b", HeadSHA: "sha101"},
+			{Position: 2, PullRequestNumber: 102, State: "open", HeadRef: "feature/c", HeadSHA: tipHeadSHA},
+		},
+	}))
+	require.NoError(database.ReplaceGitHubNativeStack(ctx, db.GitHubNativeStack{
+		RepoID: repo.ID, GitHubID: 9042, Number: 42, Size: 2,
+		BaseRef: "main", IsOpen: true, GitHubCreatedAt: now,
+		ContentFingerprint: "native-42", LastObservedAt: now,
+		Members: []db.GitHubNativeStackMember{
+			{Position: 1, PullRequestNumber: 900, State: "open", HeadRef: "feature/z", HeadSHA: "sha900"},
+			{Position: 2, PullRequestNumber: 101, State: "merged", HeadRef: "feature/b", HeadSHA: "sha101"},
+		},
+	}))
+	require.NoError(stacks.RunDetectionWithNativeStacks(ctx, database, repo.ID, []int{42, 43}))
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.MergePullWithResponse(
+		ctx, "gh", "acme", "widget", 102,
+		generated.MergePRInputBody{
+			Method:          "squash",
+			ExpectedHeadSha: &tipHeadSHA,
+		},
+	)
+	require.NoError(err)
+
+	assert.Equal(http.StatusConflict, resp.StatusCode())
+	assert.Contains(string(resp.Body), `"reason":"mid_stack_merge_disallowed"`)
+	assert.Contains(string(resp.Body), `"blocking_number":100`)
+	assert.False(merged, "the provider must not be asked to merge past an open predecessor")
+}

@@ -113,16 +113,22 @@ func (s *Syncer) refreshGitHubNativeStackCache(
 	// later 304 reuses. Caching a partial result would suppress the unresolved
 	// stacks for as long as the pull-request list keeps returning 304.
 	complete := true
-	unobservable := false
+	// The deadline follows each stack's own observation, not this refresh: a
+	// stack confirmed from cache at 11 hours old must not earn another full
+	// window merely because an unrelated 200 response arrived.
+	var revalidateAt time.Time
+	noteRevalidation := func(observedAt time.Time) {
+		deadline := observedAt.Add(nativeStackObservationTTL)
+		if revalidateAt.IsZero() || deadline.Before(revalidateAt) {
+			revalidateAt = deadline
+		}
+	}
 	defer func() {
 		if complete {
-			confirmation := nativeStackConfirmation{
-				numbers: slices.Clone(result.ConfirmedNumbers),
-			}
-			if unobservable {
-				confirmation.revalidateAfter = s.now().UTC().Add(nativeStackObservationTTL)
-			}
-			s.nativeStackConfirmations.Store(confirmationKey, confirmation)
+			s.nativeStackConfirmations.Store(confirmationKey, nativeStackConfirmation{
+				numbers:         slices.Clone(result.ConfirmedNumbers),
+				revalidateAfter: revalidateAt,
+			})
 			return
 		}
 		s.nativeStackConfirmations.Delete(confirmationKey)
@@ -166,7 +172,9 @@ func (s *Syncer) refreshGitHubNativeStackCache(
 		if cachedStackMatchesCurrentHints(stack, hints) && !targets[stack.Number] &&
 			!nativeStackObservationExpired(stack, hints, now) {
 			confirmed[stack.Number] = true
-			unobservable = unobservable || cachedStackHasUnobservableMember(stack, hints)
+			if cachedStackHasUnobservableMember(stack, hints) {
+				noteRevalidation(stack.LastObservedAt)
+			}
 		} else {
 			targets[stack.Number] = true
 			delete(confirmed, stack.Number)
@@ -239,7 +247,10 @@ func (s *Syncer) refreshGitHubNativeStackCache(
 			}
 			if stack.Open {
 				confirmed[stack.Number] = true
-				unobservable = unobservable || nativeStackHasUnobservableMember(stack, hints)
+				if nativeStackHasUnobservableMember(stack, hints) {
+					// Freshly persisted with this refresh's timestamp.
+					noteRevalidation(now)
+				}
 			}
 		}
 

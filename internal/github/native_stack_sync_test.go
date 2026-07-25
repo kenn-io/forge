@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -325,6 +326,46 @@ func TestRefreshGitHubNativeStackCacheExpiresConfirmationsReusedByNotModified(t 
 	}
 }
 
+func TestRefreshGitHubNativeStackCacheKeepsDeadlineTiedToStackObservation(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := openTestDB(t)
+	repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widgets"))
+	require.NoError(err)
+	observed := time.Date(2026, time.July, 24, 0, 0, 0, 0, time.UTC)
+	// The row is already 11 hours old and still holds a merged member.
+	require.NoError(database.ReplaceGitHubNativeStack(t.Context(), db.GitHubNativeStack{
+		RepoID: repoID, GitHubID: 900, Number: 42, Size: 2,
+		BaseRef: "main", IsOpen: true, GitHubCreatedAt: observed,
+		ContentFingerprint: "cached", LastObservedAt: observed,
+		Members: []db.GitHubNativeStackMember{
+			{Position: 1, PullRequestNumber: 100, State: "merged", HeadRef: "a", HeadSHA: "aaa"},
+			{Position: 2, PullRequestNumber: 101, State: "open", HeadRef: "b", HeadSHA: "bbb"},
+		},
+	}))
+	client := &nativeStackSyncTestClient{mockClient: &mockClient{}}
+	syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil, nil, time.Minute, nil, nil)
+	clock := observed.Add(11 * time.Hour)
+	syncer.now = func() time.Time { return clock }
+	repo := RepoRef{Owner: "acme", Name: "widgets", PlatformHost: "github.com"}
+
+	// An unrelated 200 response reconfirms the stack from cache without
+	// refetching the catalog.
+	seeded := syncer.refreshGitHubNativeStackCache(t.Context(), repo, repoID, map[int]*NativeStackHint{
+		101: {Number: 42, Size: 2, Position: 2, BaseRef: "main"},
+	}, false)
+	require.Equal([]int{42}, seeded.ConfirmedNumbers)
+	require.Empty(client.pageCalls)
+
+	// Two hours later the stack is 13 hours past its own observation, so the
+	// confirmation must not survive on a deadline this refresh granted.
+	clock = observed.Add(13 * time.Hour)
+	unchanged := syncer.refreshGitHubNativeStackCache(t.Context(), repo, repoID, nil, true)
+
+	assert.Empty(unchanged.ConfirmedNumbers)
+	assert.EqualValues(1, client.invalidateCalls.Load())
+}
+
 func TestRefreshGitHubNativeStackCacheMarksFailedPersistenceIncomplete(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -560,6 +601,37 @@ func TestRunOnceKeepsRESTHintsWhenGraphQLRejectsNativeStackFields(t *testing.T) 
 	require.NotNil(results[0].GitHubNativeStacks,
 		"REST-derived hints must survive a GraphQL query that dropped the preview fields")
 	assert.Equal([]int{42}, results[0].GitHubNativeStacks.ConfirmedNumbers)
+}
+
+func TestSetPreferGitHubNativeStacksReportsTransitionToExactlyOneCaller(t *testing.T) {
+	assert := assert.New(t)
+	database := openTestDB(t)
+	syncer := NewSyncer(
+		map[string]Client{"github.com": &mockClient{}}, database, nil, nil,
+		time.Minute, nil, nil,
+	)
+	syncer.SetPreferGitHubNativeStacks(true)
+
+	// Competing config writers each disable the preference. Only the caller
+	// whose swap observed the enabled value may reconcile projections, so the
+	// restore cannot run twice or be skipped no matter how they interleave.
+	const callers = 8
+	var transitions atomic.Int32
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	for range callers {
+		wg.Go(func() {
+			<-start
+			if previous := syncer.SetPreferGitHubNativeStacks(false); previous {
+				transitions.Add(1)
+			}
+		})
+	}
+	close(start)
+	wg.Wait()
+
+	assert.EqualValues(1, transitions.Load())
+	assert.False(syncer.preferGitHubNativeStacks.Load())
 }
 
 func TestSetPreferGitHubNativeStacksRefreshesHintsOnEnable(t *testing.T) {

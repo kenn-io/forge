@@ -173,7 +173,9 @@ fallback repository listing.
 - Confirmation reconciles against currently observed open-PR hints, never cached
   or payload member state. Hints cannot attest to merged or closed members, so a
   stack holding one is refetched on a bounded schedule and its confirmation ages
-  out rather than surviving every 304.
+  out rather than surviving every 304. The deadline is anchored to each stack's
+  own observation time and the earliest one wins, so re-confirming an old stack
+  during an unrelated refresh cannot extend its window.
   (`internal/github/native_stack_sync.go::cachedStackMatchesCurrentHints`,
   `internal/github/native_stack_sync.go::nativeStackObservationExpired`)
 - A pull request may belong to at most one projected stack. Member eviction

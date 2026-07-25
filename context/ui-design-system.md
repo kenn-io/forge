@@ -271,6 +271,12 @@ inside a draggable workspace. Do not use it for simple fixed sidebars,
 single-purpose drawers, or file-tree/content splits where `SplitResizeHandle`
 or a narrower layout primitive is enough.
 
+PR, issue, and activity detail panes (conversation, diff, inline workspace) are
+an intended home for this primitive, not an exception to the line above: they
+are rearrangeable panes, so do not hand-roll another splitter for them. List
+rails stay on `CollapsibleSidebar`/`SplitResizeHandle`. See
+`docs/superpowers/specs/2026-07-25-generalized-pane-layout-design.md`.
+
 Use neutral `tabbed-panel-*` DOM classes/selectors for tests and consumers.
 Do not add workflow-specific aliases or compatibility selectors when moving
 this primitive into new surfaces.

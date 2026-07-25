@@ -1,6 +1,6 @@
 <script lang="ts">
   import { copyToClipboard, EmptyState } from "@kenn-io/kit-ui";
-  import { onMount, onDestroy } from "svelte";
+  import { onMount } from "svelte";
   import {
     getStores,
     getUIConfig,
@@ -258,17 +258,26 @@
     if (stores.roborevDaemon?.isAvailable()) {
       void stores.roborevJobs.loadJobs();
     }
+  });
 
+  $effect(() => {
+    const jobsStore = stores.roborevJobs;
+    if (
+      !jobsStore ||
+      !stores.roborevDaemon?.isAvailable()
+    ) {
+      return;
+    }
     const bp = (uiConfig.basePath ?? "/").replace(
       /\/$/,
       "",
     );
     const eventStreamBase = bp + "/api/roborev";
-    stores.roborevJobs.connectEventStream(eventStreamBase);
-  });
+    jobsStore.connectEventStream(eventStreamBase);
 
-  onDestroy(() => {
-    stores.roborevJobs?.disconnectEventStream();
+    return () => {
+      jobsStore.disconnectEventStream();
+    };
   });
 </script>
 

@@ -1194,7 +1194,7 @@ test.describe.serial("Roborev", () => {
       restartDaemon();
     });
 
-    test("click Retry in empty state loads table on same page", async ({ page }) => {
+    test("Retry while down does not prevent automatic recovery on the same page", async ({ page }) => {
       // Start with daemon stopped to get the empty state
       stopDaemon();
       await page.goto("/reviews");
@@ -1202,10 +1202,11 @@ test.describe.serial("Roborev", () => {
         timeout: 15_000,
       });
 
-      // Restart daemon (waits for healthcheck), click
-      // Retry once, then wait for recovery.
-      startDaemon();
+      // Exercise Retry while the daemon is still unavailable.
       await page.locator(".kit-empty-state button").click();
+      await expect(page.locator(".kit-empty-state")).toBeVisible();
+
+      startDaemon();
       await expect(page.locator(".kit-empty-state")).not.toBeVisible({
         timeout: 20_000,
       });
@@ -1216,8 +1217,8 @@ test.describe.serial("Roborev", () => {
     });
 
     test("table has data after recovery on same page", async ({ page }) => {
-      // Same pattern: stop, load, restart, retry, verify
-      // data is present — all on the same page.
+      // Stop, load, restart, and verify data is present
+      // without manual recovery — all on the same page.
       stopDaemon();
       await page.goto("/reviews");
       await expect(page.locator(".kit-empty-state")).toBeVisible({
@@ -1225,7 +1226,6 @@ test.describe.serial("Roborev", () => {
       });
 
       startDaemon();
-      await page.locator(".kit-empty-state button").click();
       await expect(page.locator(".kit-empty-state")).not.toBeVisible({
         timeout: 20_000,
       });
@@ -1236,8 +1236,20 @@ test.describe.serial("Roborev", () => {
     });
 
     test("status strip shows connected after recovery", async ({ page }) => {
-      await waitForReviewsReady(page);
-      await expect(page.locator(".conn-indicator.connected")).toBeVisible();
+      stopDaemon();
+      await page.goto("/reviews");
+      await expect(page.locator(".kit-empty-state")).toBeVisible({
+        timeout: 15_000,
+      });
+
+      startDaemon();
+      await expect(page.locator(".kit-empty-state")).not.toBeVisible({
+        timeout: 20_000,
+      });
+      await expect(page.locator(".conn-indicator.connected")).toBeVisible({
+        timeout: 15_000,
+      });
+      await waitForJobRows(page, 1);
     });
 
     test("recovery from empty state then open drawer", async ({ page }) => {
@@ -1248,9 +1260,8 @@ test.describe.serial("Roborev", () => {
         timeout: 15_000,
       });
 
-      // Restart daemon, click Retry to recover
+      // Restart daemon and recover automatically.
       startDaemon();
-      await page.locator(".kit-empty-state button").click();
       await expect(page.locator(".kit-empty-state")).not.toBeVisible({
         timeout: 20_000,
       });

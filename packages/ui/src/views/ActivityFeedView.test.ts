@@ -71,7 +71,7 @@ describe("ActivityFeedView inline workspace", () => {
     expect(document.querySelectorAll(".workspace-dock-panel")).toHaveLength(1);
   });
 
-  it("threads the controller to the embedded issue view with renderWorkspaceDock=false and renders a single dock", () => {
+  it("threads the controller to the embedded issue view without wrapping it in a dock", () => {
     const { controller } = createClaimTestController("activity");
     const drawerItem = {
       itemType: "issue" as const,
@@ -92,11 +92,13 @@ describe("ActivityFeedView inline workspace", () => {
     });
 
     const embeddedIssue = screen.getByTestId("embedded-issue-list-view");
-    expect(embeddedIssue.getAttribute("data-render-workspace-dock")).toBe("false");
     expect(embeddedIssue.getAttribute("data-has-inline-workspace")).toBe("true");
     expect(screen.queryByTestId("embedded-pr-list-view")).toBeNull();
 
-    expect(document.querySelectorAll(".workspace-dock-panel")).toHaveLength(1);
+    // The embedded issue view now hosts the workspace as one of its own panes.
+    // Wrapping it in the outer dock as well would put two portal slots on the
+    // page, and whichever registered last would silently win the terminal.
+    expect(document.querySelectorAll(".workspace-dock-panel")).toHaveLength(0);
   });
 
   it("renders no dock when there is no inline workspace controller", () => {

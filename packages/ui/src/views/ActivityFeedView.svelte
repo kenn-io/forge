@@ -407,33 +407,21 @@
             commitSha={commitDrawer.commitSha}
           />
         {/key}
-      {:else if drawerPRSelection || drawerIssueSelection}
-        {#snippet activityEmbed()}
-          {#if drawerPRSelection}
-            <PRListView
-              selectedPR={drawerPRSelection}
-              detailTab={effectiveDetailTab}
-              isSidebarCollapsed={true}
-              hideSidebar={true}
-              autoSyncDetail="background"
-              hideStaleDetailWhileLoading={true}
-              workflowApprovalSync={false}
-              onDetailTabChange={handleDetailTabChange}
-              onStackMemberNavigate={handleStackMemberNavigate}
-              renderWorkspaceDock={false}
-              {inlineWorkspace}
-            />
-          {:else if drawerIssueSelection}
-            <IssueListView
-              selectedIssue={drawerIssueSelection}
-              isSidebarCollapsed={true}
-              hideSidebar={true}
-              autoSyncDetail="background"
-              hideStaleDetailWhileLoading={true}
-              renderWorkspaceDock={false}
-              {inlineWorkspace}
-            />
-          {/if}
+      {:else if drawerPRSelection}
+        {#snippet prEmbed()}
+          <PRListView
+            selectedPR={drawerPRSelection}
+            detailTab={effectiveDetailTab}
+            isSidebarCollapsed={true}
+            hideSidebar={true}
+            autoSyncDetail="background"
+            hideStaleDetailWhileLoading={true}
+            workflowApprovalSync={false}
+            onDetailTabChange={handleDetailTabChange}
+            onStackMemberNavigate={handleStackMemberNavigate}
+            renderWorkspaceDock={false}
+            {inlineWorkspace}
+          />
         {/snippet}
 
         {#if inlineWorkspace}
@@ -441,11 +429,22 @@
             controller={inlineWorkspace}
             active={claimIdentity !== null && inlineWorkspace.isClaimedFor(claimIdentity)}
           >
-            {@render activityEmbed()}
+            {@render prEmbed()}
           </WorkspaceDockPanel>
         {:else}
-          {@render activityEmbed()}
+          {@render prEmbed()}
         {/if}
+      {:else if drawerIssueSelection}
+        <!-- The embedded issue view owns its own workspace pane, so it must not
+             also sit inside the outer dock: two portal slots would compete. -->
+        <IssueListView
+          selectedIssue={drawerIssueSelection}
+          isSidebarCollapsed={true}
+          hideSidebar={true}
+          autoSyncDetail="background"
+          hideStaleDetailWhileLoading={true}
+          {inlineWorkspace}
+        />
       {/if}
     </section>
   {/if}

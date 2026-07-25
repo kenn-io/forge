@@ -3,6 +3,7 @@ import { tick } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { SIDEBAR_KEY, STORES_KEY } from "../context.js";
 import { resetModalStack } from "../stores/keyboard/modal-stack.svelte.js";
+import { resetPaneLayoutStoresForTest } from "../stores/paneLayout.svelte.js";
 import type { IssueRouteRef } from "../routes.js";
 import type { InlineWorkspaceController } from "../workspace-inline.js";
 import { createClaimTestController, createReactiveValue } from "./viewWorkspaceTestDoubles.svelte.js";
@@ -53,7 +54,6 @@ function issueDetailFixture(workspace: { id: string; status: string } | undefine
 interface RenderIssueListViewOptions {
   selectedIssue?: IssueRouteRef | null;
   inlineWorkspace?: InlineWorkspaceController | null;
-  renderWorkspaceDock?: boolean;
   detail?: unknown;
 }
 
@@ -72,7 +72,6 @@ function renderIssueListView(options: RenderIssueListViewOptions = {}) {
         selectedIssue: options.selectedIssue === undefined ? selectedIssue : options.selectedIssue,
         hideSidebar: true,
         ...(options.inlineWorkspace !== undefined ? { inlineWorkspace: options.inlineWorkspace } : {}),
-        ...(options.renderWorkspaceDock !== undefined ? { renderWorkspaceDock: options.renderWorkspaceDock } : {}),
       },
       context: new Map<symbol, unknown>([
         [
@@ -92,6 +91,7 @@ describe("IssueListView inline workspace", () => {
   beforeEach(() => {
     localStorage.clear();
     resetModalStack();
+    resetPaneLayoutStoresForTest();
     vi.stubGlobal(
       "MutationObserver",
       class {
@@ -109,6 +109,7 @@ describe("IssueListView inline workspace", () => {
   afterEach(() => {
     cleanup();
     resetModalStack();
+    resetPaneLayoutStoresForTest();
     localStorage.clear();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
@@ -197,29 +198,54 @@ describe("IssueListView inline workspace", () => {
     expect(controller.release).toHaveBeenCalled();
   });
 
-  it("renders the dock only when renderWorkspaceDock and claimed", () => {
-    const detail = issueDetailFixture({ id: "ws-1", status: "ready" });
-
-    // renderWorkspaceDock={false}: no dock even though the detail claims
-    // the workspace normally.
+  it("offers a workspace pane only once the workspace is claimed", () => {
+    // Unclaimed: the workspace tab is unavailable, so the tree prunes to the
+    // conversation pane alone and no portal slot exists to steal the terminal.
     {
       const { controller } = createClaimTestController();
-      renderIssueListView({ inlineWorkspace: controller, renderWorkspaceDock: false, detail });
-      expect(controller.claim).toHaveBeenCalled();
-      expect(document.querySelector(".workspace-dock-panel")).toBeNull();
+      renderIssueListView({ inlineWorkspace: controller, detail: issueDetailFixture(undefined) });
+      expect(controller.claim).not.toHaveBeenCalled();
       expect(screen.getByTestId("issue-detail")).toBeTruthy();
+      expect(screen.queryByRole("tab", { name: "Workspace" })).toBeNull();
+      expect(document.querySelector(".detail-pane-workspace-slot")).toBeNull();
       cleanup();
     }
 
-    // Default renderWorkspaceDock (true): the dock renders once claimed.
+    // Claimed: the workspace pane joins the tree with a live portal slot.
     {
       const { controller } = createClaimTestController();
-      renderIssueListView({ inlineWorkspace: controller, detail });
+      renderIssueListView({
+        inlineWorkspace: controller,
+        detail: issueDetailFixture({ id: "ws-1", status: "ready" }),
+      });
       expect(controller.claim).toHaveBeenCalled();
-      expect(document.querySelector(".workspace-dock-panel")).toBeTruthy();
-      expect(screen.getByRole("region", { name: "Workspace terminal" })).toBeTruthy();
+      expect(screen.getByRole("tab", { name: "Conversation" })).toBeTruthy();
+      expect(screen.getByRole("tab", { name: "Workspace" })).toBeTruthy();
+      expect(document.querySelector(".detail-pane-workspace-slot")).toBeTruthy();
+      expect(controller.slotAttachment).toHaveBeenCalled();
       cleanup();
     }
+  });
+
+  it("hides the workspace pane on demand and offers a way back", async () => {
+    const { controller } = createClaimTestController();
+    renderIssueListView({
+      inlineWorkspace: controller,
+      detail: issueDetailFixture({ id: "ws-1", status: "ready" }),
+    });
+
+    screen.getByTestId("pane-hide-workspace").click();
+    await tick();
+
+    expect(document.querySelector(".detail-pane-workspace-slot")).toBeNull();
+    expect(screen.getByTestId("issue-detail")).toBeTruthy();
+
+    // The reopen strip is the only way back, so it must survive the pane's leaf
+    // emptying out.
+    screen.getByRole("button", { name: "Show Workspace" }).click();
+    await tick();
+
+    expect(document.querySelector(".detail-pane-workspace-slot")).toBeTruthy();
   });
 
   it("refetches the detail when the claimed identity is invalidated by deletion", async () => {
@@ -228,7 +254,7 @@ describe("IssueListView inline workspace", () => {
     const { issuesStore, detailBox } = renderIssueListView({ inlineWorkspace: controller, detail });
 
     expect(controller.claim).toHaveBeenCalled();
-    expect(screen.getByRole("region", { name: "Workspace terminal" })).toBeTruthy();
+    expect(document.querySelector(".detail-pane-workspace-slot")).toBeTruthy();
 
     notifyInvalidated(selectedIssueIdentity);
 
@@ -251,7 +277,7 @@ describe("IssueListView inline workspace", () => {
     await tick();
 
     expect(controller.release).toHaveBeenCalled();
-    expect(screen.queryByRole("region", { name: "Workspace terminal" })).toBeNull();
+    expect(document.querySelector(".detail-pane-workspace-slot")).toBeNull();
   });
 
   it("threads inlineWorkspace to IssueDetail", () => {

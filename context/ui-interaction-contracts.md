@@ -258,6 +258,12 @@ Keyboard handlers must have one clear owner for each key press.
 - Expanded inline workspaces reuse the live hosted shell and fill the pane
   edge-to-edge; never add outer chrome or mutate the shell's workflow/terminal
   layout state (`packages/ui/src/components/workspace/WorkspaceDockPanel.svelte::expanded`).
+- The hosted terminal is one live DOM subtree reparented between registered
+  portal slots, so exactly one slot may be mounted at a time. A host that
+  embeds a view owning its own workspace pane must not also wrap it in a
+  second slot: registration order alone decides which one gets the terminal,
+  and the loser renders empty
+  (`frontend/src/lib/components/terminal/WorkspaceHost.svelte`).
 - The desktop `.app-main` clips overflow but must never become a scroll
   container; focus-driven scrolling there shifts every mode rail and creates
   matching chrome gaps (`frontend/src/App.svelte::.app-main`).

@@ -5,7 +5,9 @@
     from "../components/sidebar/IssueList.svelte";
   import IssueDetail
     from "../components/detail/IssueDetail.svelte";
-  import WorkspaceDockPanel from "../components/workspace/WorkspaceDockPanel.svelte";
+  import DetailPaneLayout from "../components/shared/DetailPaneLayout.svelte";
+  import { createTabbedPanelLeaf, splitTabbedPanelTabIntoLeaf } from "../components/shared/tabbed-panel-layout.js";
+  import { getPaneLayoutStore, type PaneTabSpec } from "../stores/paneLayout.svelte.js";
   import type { IssueDetail as IssueDetailResponse } from "../api/types.js";
   import type { IssueDetailSyncMode } from "../stores/issues.svelte.js";
   import type { IssueRouteRef } from "../routes.js";
@@ -27,9 +29,6 @@
     hideStaleDetailWhileLoading?: boolean;
     onSidebarResize?: (width: number) => void;
     inlineWorkspace?: InlineWorkspaceController | null;
-    /** ActivityFeedView embeds this view and owns a single outer dock; it
-     * passes false so the embedded view never renders its own. */
-    renderWorkspaceDock?: boolean;
   }
 
   let {
@@ -42,7 +41,6 @@
     hideStaleDetailWhileLoading = false,
     onSidebarResize,
     inlineWorkspace = null,
-    renderWorkspaceDock = true,
   }: Props = $props();
 
   function detailMatchesSelected(
@@ -87,6 +85,33 @@
       : null,
   );
 
+  const ISSUE_PANE_TABS = ["conversation", "workspace"];
+
+  /** Conversation above the workspace, reproducing the dock's original position. */
+  function defaultIssuePaneTree() {
+    const base = createTabbedPanelLeaf(["conversation"], "conversation");
+    return (
+      splitTabbedPanelTabIntoLeaf(
+        createTabbedPanelLeaf(ISSUE_PANE_TABS, "conversation", base.id),
+        "workspace",
+        base.id,
+        "vertical",
+        "after",
+      ) ?? base
+    );
+  }
+
+  const paneLayout = getPaneLayoutStore("issues", ISSUE_PANE_TABS, defaultIssuePaneTree());
+
+  const workspaceClaimed = $derived(
+    inlineWorkspace !== null && claimIdentity !== null && inlineWorkspace.isClaimedFor(claimIdentity),
+  );
+
+  const paneTabs = $derived<PaneTabSpec[]>([
+    { key: "conversation", label: "Conversation", available: true },
+    { key: "workspace", label: "Workspace", available: workspaceClaimed, hideable: true },
+  ]);
+
   useItemWorkspaceClaim({
     controller: () => inlineWorkspace,
     identity: () => claimIdentity,
@@ -111,31 +136,38 @@
   {/snippet}
 
   {#if selectedIssue !== null}
-    {#snippet detailContent()}
-      <IssueDetail
-        owner={selectedIssue.owner}
-        name={selectedIssue.name}
-        number={selectedIssue.number}
-        provider={selectedIssue.provider}
-        platformHost={selectedIssue.platformHost}
-        repoPath={selectedIssue.repoPath}
-        autoSync={autoSyncDetail}
-        hideStaleWhileLoading={hideStaleDetailWhileLoading}
-        {inlineWorkspace}
-      />
-    {/snippet}
-
     <div class="detail-host">
-      {#if inlineWorkspace && renderWorkspaceDock}
-        <WorkspaceDockPanel
-          controller={inlineWorkspace}
-          active={claimIdentity !== null && inlineWorkspace.isClaimedFor(claimIdentity)}
-        >
-          {@render detailContent()}
-        </WorkspaceDockPanel>
-      {:else}
-        {@render detailContent()}
-      {/if}
+      <DetailPaneLayout
+        layout={paneLayout}
+        tabs={paneTabs}
+        tablistLabel="Issue detail panes"
+        leafLabel="Issue detail pane group"
+      >
+        {#snippet renderPane(tabKey, visible)}
+          {#if tabKey === "conversation"}
+            <IssueDetail
+              owner={selectedIssue.owner}
+              name={selectedIssue.name}
+              number={selectedIssue.number}
+              provider={selectedIssue.provider}
+              platformHost={selectedIssue.platformHost}
+              repoPath={selectedIssue.repoPath}
+              autoSync={autoSyncDetail}
+              hideStaleWhileLoading={hideStaleDetailWhileLoading}
+              {inlineWorkspace}
+            />
+          {:else if tabKey === "workspace" && inlineWorkspace}
+            <!-- Portal target. The live terminal subtree is reparented in here by
+                 the frontend host; `visible` gates its reveal so a pane hidden
+                 behind another tab or a zoom never shows a stray terminal. -->
+            <div
+              class="detail-pane-workspace-slot"
+              data-pane-visible={String(visible)}
+              {@attach inlineWorkspace.slotAttachment}
+            ></div>
+          {/if}
+        {/snippet}
+      </DetailPaneLayout>
     </div>
   {:else}
     <div class="placeholder-content">
@@ -146,6 +178,14 @@
 </CollapsibleSidebar>
 
 <style>
+  .detail-pane-workspace-slot {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    height: 100%;
+  }
+
   .detail-host {
     display: flex;
     flex: 1;

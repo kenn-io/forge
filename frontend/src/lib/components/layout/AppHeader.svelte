@@ -16,7 +16,6 @@
     getLastWorkspaceRoute,
     getPage,
     getRoute,
-    getView,
     navigate,
   } from "../../stores/router.svelte.ts";
   import {
@@ -75,7 +74,7 @@
 
   const hasSidebarStrip = $derived(
     getPage() === "issues"
-    || (getPage() === "pulls" && getView() === "list")
+    || getPage() === "pulls"
     || getPage() === "workspaces"
     || getPage() === "terminal",
   );
@@ -92,7 +91,6 @@
     | "messages"
     | "pulls"
     | "issues"
-    | "board"
     | "reviews"
     | "workspaces";
   type NavValue = NavDestination | "settings" | "design-system";
@@ -105,7 +103,6 @@
     { value: "messages", label: "Messages", mode: "messages" },
     { value: "pulls", label: "PRs", mode: "pulls" },
     { value: "issues", label: "Issues", mode: "issues" },
-    { value: "board", label: "Board", mode: "board" },
     { value: "reviews", label: "Reviews", mode: "reviews" },
     { value: "workspaces", label: "Workspaces", mode: "workspaces" },
   ];
@@ -252,9 +249,7 @@
   });
 
   const routeTabId = $derived(
-    getPage() === "pulls" && getView() === "board"
-      ? "board"
-      : getPage() === "terminal"
+    getPage() === "terminal"
         ? "workspaces"
         : getPage() === "repo-browser"
           ? "repos"
@@ -314,8 +309,7 @@
     }
     else if (destination === "pulls" || destination === "issues") {
       navigate(routeForTab(destination));
-    } else if (destination === "board") navigate("/pulls/board");
-    else if (destination === "reviews") navigate("/reviews");
+    } else if (destination === "reviews") navigate("/reviews");
     else if (destination === "workspaces") {
       if (getPage() !== "workspaces" && getPage() !== "terminal") {
         navigate(getLastWorkspaceRoute());
@@ -333,7 +327,6 @@
     else if (value === "messages") navigateTab("messages");
     else if (value === "pulls") navigateTab("pulls");
     else if (value === "issues") navigateTab("issues");
-    else if (value === "board") navigateTab("board");
     else if (value === "reviews") navigateTab("reviews");
     else if (value === "workspaces") navigateTab("workspaces");
     else if (value === "settings") navigateTab("settings");

@@ -4332,8 +4332,6 @@ components:
       properties:
         activity:
           type: boolean
-        board:
-          type: boolean
         docs:
           type: boolean
         issues:
@@ -4358,7 +4356,6 @@ components:
         - messages
         - pulls
         - issues
-        - board
         - reviews
         - workspaces
       type: object

@@ -90,14 +90,14 @@ test.describe("comment editor autocomplete", () => {
     await editor.evaluate((node) => {
       node.dispatchEvent(
         new KeyboardEvent("keydown", {
-          key: "2",
+          key: "1",
           bubbles: true,
           cancelable: true,
         }),
       );
     });
 
-    await expect(page).not.toHaveURL(/\/pulls\/board$/);
+    await expect(page).toHaveURL(/\/pulls\/github\/acme\/widgets\/\d+$/);
     await expect(detail).toBeVisible();
   });
 

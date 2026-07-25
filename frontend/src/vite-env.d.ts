@@ -234,7 +234,6 @@ type MiddlemanNavigatePage =
   | "kata"
   | "docs"
   | "messages"
-  | "board"
   | "reviews"
   | "workspaces";
 
@@ -246,7 +245,6 @@ type MiddlemanNavigateType =
   | "kata"
   | "docs"
   | "messages"
-  | "board"
   | "reviews"
   | "workspaces";
 

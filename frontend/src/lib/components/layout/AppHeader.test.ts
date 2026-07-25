@@ -7,17 +7,7 @@ const mockedContainerSize = vi.hoisted(() => ({
   value: "wide" as "narrow" | "medium" | "wide",
 }));
 
-type ModeKey =
-  | "activity"
-  | "repos"
-  | "kata"
-  | "docs"
-  | "messages"
-  | "pulls"
-  | "issues"
-  | "board"
-  | "reviews"
-  | "workspaces";
+type ModeKey = "activity" | "repos" | "kata" | "docs" | "messages" | "pulls" | "issues" | "reviews" | "workspaces";
 
 const mockedReviewsDaemonAvailable = vi.hoisted(() => ({ value: true }));
 
@@ -36,7 +26,6 @@ const mockedModeVisibility = vi.hoisted(() => ({
     messages: false,
     pulls: true,
     issues: true,
-    board: true,
     reviews: true,
     workspaces: true,
   } as Record<ModeKey, boolean>,
@@ -157,7 +146,6 @@ describe("AppHeader", () => {
       messages: false,
       pulls: true,
       issues: true,
-      board: true,
       reviews: true,
       workspaces: true,
     };
@@ -185,7 +173,6 @@ describe("AppHeader", () => {
       messages: false,
       pulls: true,
       issues: true,
-      board: true,
       reviews: true,
       workspaces: true,
     };
@@ -476,6 +463,13 @@ describe("AppHeader", () => {
 
     expect(screen.queryByRole("img", { name: "Reviews daemon unavailable" })).toBeNull();
     expect(screen.queryByRole("button", { name: /Reviews/ })).toBeNull();
+  });
+
+  it("does not offer a Board mode", () => {
+    initTheme();
+    render(AppHeader);
+
+    expect(screen.queryByRole("button", { name: "Board" })).toBeNull();
   });
 
   it("marks the Workspaces tab current on terminal routes", () => {

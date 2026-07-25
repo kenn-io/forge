@@ -494,7 +494,6 @@ func TestConfigReload_UpdatesModes(t *testing.T) {
 	assert.True(*gotModes.Repos)
 	assert.True(*gotModes.Pulls)
 	assert.True(*gotModes.Issues)
-	assert.True(*gotModes.Board)
 	assert.True(*gotModes.Reviews)
 }
 

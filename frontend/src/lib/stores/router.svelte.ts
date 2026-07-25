@@ -44,7 +44,7 @@ export type Route =
   | { page: "workspaces" }
   | {
       page: "pulls";
-      view: "list" | "board";
+      view: "list";
       selected?: NumberedItemRef;
       tab?: "files";
     }
@@ -273,7 +273,7 @@ function parseRoute(fullPath: string): Route {
   }
   if (path.startsWith("/pulls")) {
     const rest = path.slice("/pulls".length);
-    if (rest !== "" && rest !== "/board") {
+    if (rest !== "") {
       const selected = parseHostProviderNumberedPath(parts, "pulls");
       const isFiles = parts[parts.length - 1] === "files";
       if (selected && (parts.length === 5 || (parts.length === 6 && isFiles))) {
@@ -285,7 +285,6 @@ function parseRoute(fullPath: string): Route {
         };
       }
     }
-    if (rest === "/board") return { page: "pulls", view: "board" };
     return { page: "pulls", view: "list" };
   }
   if (path === "/repos") {
@@ -676,7 +675,7 @@ function buildRouteEvent(r: Route): MiddlemanNavigateEvent {
   } else if (r.page === "mobile-activity") {
     navType = "activity";
   } else if (r.page === "pulls") {
-    navType = r.view === "board" ? "board" : "pull";
+    navType = "pull";
   } else if (r.page === "issues") {
     navType = "issue";
   } else if (r.page === "repos" || r.page === "repo-browser") {
@@ -891,18 +890,7 @@ export function getSelectedPRFromRoute(): NumberedItemRef | null {
 
 // --- backward-compat helpers for existing components ---
 
-export type View = "list" | "board";
 export type Tab = "pulls" | "issues";
-
-export function getView(): View {
-  return route.page === "pulls" && "view" in route && route.view === "board" ? "board" : "list";
-}
-
-export function setView(v: View): void {
-  if (route.page === "pulls") {
-    navigate(v === "board" ? "/pulls/board" : "/pulls");
-  }
-}
 
 export function getTab(): Tab {
   if (route.page === "pulls" || route.page === "mobile-pulls") return "pulls";

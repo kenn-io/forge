@@ -42,7 +42,6 @@ export interface PullsStoreOptions {
   client: MiddlemanClient;
   getGlobalRepo?: () => string | undefined;
   getGroupByRepo?: () => boolean;
-  getView?: () => "list" | "board";
 }
 
 function apiErrorMessage(error: { detail?: string; title?: string }, fallback: string): string {
@@ -53,7 +52,6 @@ export function createPullsStore(opts: PullsStoreOptions) {
   const apiClient = opts.client;
   const getGlobalRepo = opts.getGlobalRepo ?? (() => undefined);
   const getGroupByRepo = opts.getGroupByRepo ?? (() => false);
-  const getView = opts.getView ?? ((): "list" | "board" => "list");
 
   // --- state ---
 
@@ -172,13 +170,9 @@ export function createPullsStore(opts: PullsStoreOptions) {
     filterState = s;
   }
 
-  /**
-   * Returns PRs in display order: grouped by repo when
-   * groupByRepo is true or when in board view, flat
-   * chronological otherwise.
-   */
+  /** Returns PRs in display order: grouped by repo or flat chronological. */
   function getDisplayOrderPRs(): PullRequest[] {
-    if (getGroupByRepo() || getView() === "board") {
+    if (getGroupByRepo()) {
       const grouped = pullsByRepo();
       const ordered: PullRequest[] = [];
       for (const prs of grouped.values()) {

@@ -6281,7 +6281,6 @@ export interface components {
         };
         ModeVisibility: {
             activity: boolean;
-            board: boolean;
             docs: boolean;
             issues: boolean;
             kata: boolean;

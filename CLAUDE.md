@@ -96,7 +96,7 @@ Kata, Docs, and Messages are first-class middleman modes, but they are not platf
 | `frontend/src/App.svelte`                    | Root component, view routing                                                                      |
 | `frontend/src/app.css`                       | Design tokens, theme, global styles                                                               |
 | `frontend/src/lib/stores/`                   | Svelte 5 rune-based stores                                                                        |
-| `frontend/src/lib/components/`               | UI components (sidebar, detail, kanban)                                                           |
+| `frontend/src/lib/components/`               | UI components (sidebar, detail, app modes)                                                        |
 
 ## Development
 

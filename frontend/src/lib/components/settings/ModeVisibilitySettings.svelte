@@ -43,7 +43,6 @@
     { key: "messages", label: "Messages" },
     { key: "pulls", label: "PRs" },
     { key: "issues", label: "Issues" },
-    { key: "board", label: "Board" },
     { key: "reviews", label: "Reviews" },
     { key: "workspaces", label: "Workspaces" },
   ];

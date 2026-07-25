@@ -7,7 +7,6 @@
     IssueListView,
     ActivityFeedView,
     MobileActivityView,
-    KanbanBoardView,
     ReviewsView,
     FocusListView,
     normalizeRepoFilterSelection,
@@ -81,7 +80,6 @@
   import {
     getRoute,
     getPage,
-    getView,
     navigate,
     replaceUrl,
     getBasePath,
@@ -678,9 +676,7 @@
     }
     if (repo === lastRepo) return;
     lastRepo = repo;
-    void stores.pulls.loadPulls(
-      getView() === "board" ? { state: "open" } : undefined,
-    );
+    void stores.pulls.loadPulls();
     void stores.issues.loadIssues();
     void stores.activity.loadActivity();
   });
@@ -1033,7 +1029,6 @@
     hostState={{
       getGlobalRepo: getNormalizedGlobalRepo,
       getGroupByRepo: () => stores?.grouping.getGroupByRepo() ?? true,
-      getView,
       getActiveWorktreeKey,
     }}
     getActivitySelection={() => drawerItem}
@@ -1274,27 +1269,22 @@
           </div>
         {/if}
       {:else if getPage() === "pulls"}
-        {@const route = getRoute()}
-        {#if route.page === "pulls" && route.view === "board"}
-          <KanbanBoardView />
-        {:else}
-          {@const selectedPR =
-            getSelectedPRFromRoute() ??
-            stores?.pulls.getSelectedPR() ??
-            null}
-          {@const detailTab = getDetailTab()}
-          <!-- Desktop shell only: focus-presentation and mobile branches of
-               this view get no controller (structural eligibility). -->
-          <PRListView
-            {selectedPR}
-            {detailTab}
-            isSidebarCollapsed={isSidebarCollapsed()}
-            sidebarWidth={getSidebarWidth()}
-            sidebarOverlay={isNarrow()}
-            onSidebarResize={handleSidebarResize}
-            inlineWorkspace={getInlineWorkspaceController("prs")}
-          />
-        {/if}
+        {@const selectedPR =
+          getSelectedPRFromRoute() ??
+          stores?.pulls.getSelectedPR() ??
+          null}
+        {@const detailTab = getDetailTab()}
+        <!-- Desktop shell only: focus-presentation and mobile branches of
+             this view get no controller (structural eligibility). -->
+        <PRListView
+          {selectedPR}
+          {detailTab}
+          isSidebarCollapsed={isSidebarCollapsed()}
+          sidebarWidth={getSidebarWidth()}
+          sidebarOverlay={isNarrow()}
+          onSidebarResize={handleSidebarResize}
+          inlineWorkspace={getInlineWorkspaceController("prs")}
+        />
       {:else if getPage() === "issues"}
         {@const selectedIssue =
           stores?.issues.getSelectedIssue() ?? null}

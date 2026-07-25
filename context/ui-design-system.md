@@ -25,7 +25,7 @@ Use this document as the intent-level guide for frontend UI work in `middleman`.
   (the `--mermaid-*`/`--viewer-scrim` tokens and diagram viewer chrome;
   both imported at the top of `frontend/src/app.css`) plus the
   middleman-specific tokens `app.css` defines on top (chrome, budget,
-  kanban, review, verdict, diff, viewer glass controls)
+  workflow status, review, verdict, diff, viewer glass controls)
 - Shared primitives: `@kenn-io/kit-ui` first; app-specific compositions live
   in `packages/ui/src/components/shared/` and
   `frontend/src/lib/components/shared/`
@@ -356,7 +356,7 @@ A `$state` record written by full-object reassignment (`x = { ...x, k: v }`) tha
 
 For TypeScript/Svelte state and routing contracts, avoid anonymous object type literals when the shape represents a domain concept that is reused or exposed across modules. Name shared item identity shapes, route payloads, embed callbacks, and API view models near the module that owns the concept, then import those types at call sites. PR/issue/file/focus route identity and URL construction belongs in the shared route item module at `packages/ui/src/routes.ts`; the frontend router remains the browser-location adapter over those builders. New routed item callers should use those named refs and builders instead of repeating `{ owner; name; number; platformHost }` shapes or hand-building `/pulls`, `/issues`, or `/focus` URLs.
 
-When TypeScript complains, prefer making the owning type more precise over adding call-site assertions. Generated OpenAPI types, named domain unions, and shared option arrays should carry their real values so components can consume them directly. Good cleanups look like `handleCommandResult(result: void | Promise<void>, ...)`, `KanbanColumn` receiving `id: KanbanStatus`, or a typed dropdown option returning `TimeRange`; they remove runtime probing and casts by tightening the contract. Bad cleanups add `as unknown as`, broad `as any`, defensive `instanceof` branches, or response-normalization functions around data that is already typed by the API schema.
+When TypeScript complains, prefer making the owning type more precise over adding call-site assertions. Generated OpenAPI types, named domain unions, and shared option arrays should carry their real values so components can consume them directly. Good cleanups look like `handleCommandResult(result: void | Promise<void>, ...)` or a typed dropdown option returning `TimeRange`; they remove runtime probing and casts by tightening the contract. Bad cleanups add `as unknown as`, broad `as any`, defensive `instanceof` branches, or response-normalization functions around data that is already typed by the API schema.
 
 Use assertions only at real boundaries: DOM event targets, `JSON.parse`, third-party libraries with incomplete types, test fixtures, and browser globals. Keep those assertions local and obvious. Do not turn a simple input handler into a defensive branch when the markup already owns the element type; likewise, do not add runtime validation around a generated API response unless the schema is wrong. If the schema is wrong, fix the Go/Huma/OpenAPI source and regenerate clients.
 

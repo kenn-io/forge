@@ -2617,7 +2617,6 @@ type MessagesSavedSearchesBody struct {
 // ModeVisibility defines model for ModeVisibility.
 type ModeVisibility struct {
 	Activity   bool `json:"activity"`
-	Board      bool `json:"board"`
 	Docs       bool `json:"docs"`
 	Issues     bool `json:"issues"`
 	Kata       bool `json:"kata"`

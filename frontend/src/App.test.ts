@@ -70,7 +70,6 @@ vi.mock("@middleman/ui", async () => {
     IssueListView: Stub,
     ActivityFeedView: Stub,
     MobileActivityView: Stub,
-    KanbanBoardView: Stub,
     ReviewsView: Stub,
     FocusListView: Stub,
     normalizeRepoFilterSelection: (repo: string | undefined) => repo,

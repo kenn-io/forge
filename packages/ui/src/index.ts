@@ -124,7 +124,6 @@ export {
   providerQualifiedRepoFilterValue,
   repoFilterValueNeedsProvider,
 } from "./utils/repo-filter-values.js";
-export { default as KanbanBoardView } from "./views/KanbanBoardView.svelte";
 export { default as ReviewsView } from "./views/ReviewsView.svelte";
 export { default as FocusListView } from "./views/FocusListView.svelte";
 export { Button } from "@kenn-io/kit-ui";

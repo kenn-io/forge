@@ -81,7 +81,6 @@ function makeSettings(): Settings {
       messages: false,
       pulls: true,
       issues: true,
-      board: true,
       reviews: true,
       workspaces: true,
     },

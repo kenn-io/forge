@@ -422,7 +422,6 @@ func TestHandleUpdateSettingsPersistsModes(t *testing.T) {
 	assert.True(*resp.Modes.Repos)
 	assert.True(*resp.Modes.Pulls)
 	assert.True(*resp.Modes.Issues)
-	assert.True(*resp.Modes.Board)
 	assert.True(*resp.Modes.Reviews)
 
 	cfg2, err := config.Load(cfgPath)
@@ -435,7 +434,6 @@ func TestHandleUpdateSettingsPersistsModes(t *testing.T) {
 	assert.True(*cfg2.Modes.Repos)
 	assert.True(*cfg2.Modes.Pulls)
 	assert.True(*cfg2.Modes.Issues)
-	assert.True(*cfg2.Modes.Board)
 	assert.True(*cfg2.Modes.Reviews)
 }
 
@@ -504,7 +502,6 @@ func assertDefaultModeVisibility(t *testing.T, modes config.ModeVisibility) {
 	assert.False(*modes.Messages)
 	assert.True(*modes.Pulls)
 	assert.True(*modes.Issues)
-	assert.True(*modes.Board)
 	assert.True(*modes.Reviews)
 	assert.True(*modes.Workspaces)
 }

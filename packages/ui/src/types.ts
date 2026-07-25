@@ -27,7 +27,7 @@ export interface ActionRegistry {
 export interface NavigateEvent {
   path: string;
   route: {
-    page: "pulls" | "issues" | "activity" | "diff" | "board" | "reviews" | "inbox";
+    page: "pulls" | "issues" | "activity" | "diff" | "reviews" | "inbox";
     view?: string;
     tab?: string;
     presentation?: "fullLayout" | "focus";
@@ -69,7 +69,6 @@ export type PrepareRouteCallback = (
 export interface HostStateAccessors {
   getGlobalRepo?: () => string | undefined;
   getGroupByRepo?: () => boolean;
-  getView?: () => "list" | "board";
   getActiveWorktreeKey?: () => string | undefined;
 }
 

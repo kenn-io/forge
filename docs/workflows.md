@@ -55,9 +55,9 @@ rather than hidden GitHub-only behavior.
 
 ## Track local PR state
 
-Open **Board** when you want a local maintainer queue. Drag PRs through the
-columns that match your process. Board state is stored in middleman and does not
-write provider labels, milestones, projects, or fields.
+Set a PR's workflow status from its detail view, and filter the PR list by one
+or more statuses. Workflow status is stored in middleman and does not write
+provider labels, milestones, projects, or fields.
 
 ## Work issues
 

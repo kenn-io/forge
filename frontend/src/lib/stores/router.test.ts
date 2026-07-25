@@ -60,11 +60,6 @@ describe("router /pulls files route", () => {
     expect(isDiffView()).toBe(false);
   });
 
-  it("isDiffView returns false for board view", () => {
-    navigate("/pulls/board");
-    expect(isDiffView()).toBe(false);
-  });
-
   it("getSelectedPRFromRoute returns PR for files route", () => {
     navigate(prFilesRoute);
     expect(getSelectedPRFromRoute()).toEqual(prRef);
@@ -135,9 +130,9 @@ describe("router basic routes", () => {
     expect(getRoute()).toEqual({ page: "pulls", view: "list" });
   });
 
-  it("parses /pulls/board as board view", () => {
+  it("does not recognize /pulls/board as a separate view", () => {
     navigate("/pulls/board");
-    expect(getRoute()).toEqual({ page: "pulls", view: "board" });
+    expect(getRoute()).toEqual({ page: "pulls", view: "list" });
   });
 
   it("does not parse legacy owner/name pull detail routes", () => {
@@ -672,7 +667,7 @@ describe("router navigation events", () => {
     });
   });
 
-  it("fires onNavigate with board page for /pulls/board", () => {
+  it("reports /pulls/board as the pull list fallback", () => {
     const spy = vi.fn();
     installOnNavigate(spy);
 
@@ -680,8 +675,8 @@ describe("router navigation events", () => {
 
     expect(spy).toHaveBeenCalledTimes(1);
     const payload = spy.mock.calls[0]![0];
-    expect(payload.page).toBe("board");
-    expect(payload.type).toBe("board");
+    expect(payload.page).toBe("pulls");
+    expect(payload.type).toBe("pull");
     expect(payload.focus).toBe(false);
   });
 

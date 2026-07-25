@@ -33,8 +33,7 @@ next?
 - Move with the command palette and view-specific keyboard shortcuts.
 - Inspect diffs, changed files, CI status, branch metadata, review state, labels,
   and release signals without leaving the console.
-- Track PRs on a local kanban board. Board state stays in middleman and does not
-  mutate provider labels or projects.
+- Track local PR workflow status without mutating provider labels or projects.
 - Launch and attach to local workspace sessions for repository work.
 - Browse repository source, branches, and files from the UI.
 - Use optional modes for Kata task daemons, local markdown docs, and msgvault

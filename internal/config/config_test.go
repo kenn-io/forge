@@ -2744,13 +2744,13 @@ name = "b"
 		assert.False(*cfg.Modes.Messages)
 		assert.True(*cfg.Modes.Pulls)
 		assert.True(*cfg.Modes.Issues)
-		assert.True(*cfg.Modes.Board)
 		assert.True(*cfg.Modes.Reviews)
 		assert.True(*cfg.Modes.Workspaces)
 	})
 
 	t.Run("preserves configured false values through save", func(t *testing.T) {
 		assert := assert.New(t)
+		require := require.New(t)
 		cfg, err := Load(writeConfig(t, `
 [[repos]]
 owner = "a"
@@ -2764,16 +2764,18 @@ docs = false
 messages = false
 pulls = false
 issues = false
-board = false
 reviews = false
 workspaces = false
 `))
-		require.NoError(t, err)
+		require.NoError(err)
 
 		savePath := filepath.Join(t.TempDir(), "saved.toml")
-		require.NoError(t, cfg.Save(savePath))
+		require.NoError(cfg.Save(savePath))
+		saved, err := os.ReadFile(savePath)
+		require.NoError(err)
+		assert.NotContains(string(saved), "board =")
 		cfg2, err := Load(savePath)
-		require.NoError(t, err)
+		require.NoError(err)
 
 		assert.False(*cfg2.Modes.Activity)
 		assert.False(*cfg2.Modes.Repos)
@@ -2782,7 +2784,6 @@ workspaces = false
 		assert.False(*cfg2.Modes.Messages)
 		assert.False(*cfg2.Modes.Pulls)
 		assert.False(*cfg2.Modes.Issues)
-		assert.False(*cfg2.Modes.Board)
 		assert.False(*cfg2.Modes.Reviews)
 		assert.False(*cfg2.Modes.Workspaces)
 	})

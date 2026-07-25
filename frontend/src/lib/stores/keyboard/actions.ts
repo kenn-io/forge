@@ -34,10 +34,7 @@ function stores(): StoreInstances {
 
 const always = (): boolean => true;
 
-const isBoardRoute = (ctx: Context): boolean =>
-  ctx.route.page === "pulls" && "view" in ctx.route && ctx.route.view === "board";
-
-const onPullsListNotBoard = (ctx: Context): boolean => ctx.page === "pulls" && !ctx.isDiffView && !isBoardRoute(ctx);
+const onPullsList = (ctx: Context): boolean => ctx.page === "pulls" && !ctx.isDiffView;
 
 const onIssuesList = (ctx: Context): boolean => ctx.page === "issues";
 
@@ -364,7 +361,7 @@ export const defaultActions: Action[] = [
     scope: "view-pulls",
     binding: { key: "j" },
     priority: 0,
-    when: onPullsListNotBoard,
+    when: onPullsList,
     handler: () => {
       stores().pulls.selectNextPR();
       navigateToSelectedPR();
@@ -376,7 +373,7 @@ export const defaultActions: Action[] = [
     scope: "view-pulls",
     binding: { key: "k" },
     priority: 0,
-    when: onPullsListNotBoard,
+    when: onPullsList,
     handler: () => {
       stores().pulls.selectPrevPR();
       navigateToSelectedPR();
@@ -428,7 +425,7 @@ export const defaultActions: Action[] = [
     scope: "view-pulls",
     binding: { key: "Escape" },
     priority: 0,
-    when: (ctx) => (ctx.page === "pulls" || ctx.page === "issues") && !isBoardRoute(ctx),
+    when: (ctx) => ctx.page === "pulls" || ctx.page === "issues",
     handler: (ctx) => {
       if (ctx.page === "issues") {
         navigate("/issues");
@@ -445,15 +442,6 @@ export const defaultActions: Action[] = [
     priority: 0,
     when: onNumberNavPages,
     handler: () => navigate("/pulls"),
-  },
-  {
-    id: "nav.pulls.board",
-    label: "Pull requests (board)",
-    scope: "global",
-    binding: { key: "2" },
-    priority: 0,
-    when: onNumberNavPages,
-    handler: () => navigate("/pulls/board"),
   },
   {
     id: "sidebar.toggle",

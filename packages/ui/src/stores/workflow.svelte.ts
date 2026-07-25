@@ -28,8 +28,8 @@ export function normalizeKanbanStatus(status: string | undefined): KanbanStatus 
 /**
  * Classify a PR into the Status grouping used by PR lists.
  *
- * Status grouping mirrors the kanban board, so worktree linkage stays item
- * metadata/actions and does not override the user's review status.
+ * Worktree linkage stays item metadata/actions and does not override the
+ * user's review status.
  */
 export function classifyPR(pr: PullRequest): WorkflowGroup {
   if (pr.State === "closed" || pr.State === "merged") {
@@ -39,7 +39,7 @@ export function classifyPR(pr: PullRequest): WorkflowGroup {
 }
 
 /**
- * Group PRs by kanban status.
+ * Group PRs by workflow status.
  *
  * Returns groups in display order, omitting empty groups.
  * Items within each group are sorted by LastActivityAt

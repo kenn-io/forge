@@ -104,7 +104,6 @@ describe("defaultActions", () => {
         "tab.toggle",
         "escape.list",
         "nav.pulls.list",
-        "nav.pulls.board",
         "sidebar.toggle",
         "palette.open",
         "repo.browser.open",
@@ -118,6 +117,7 @@ describe("defaultActions", () => {
         "nav.design-system",
       ]),
     );
+    expect(ids).not.toContain("nav.pulls.board");
   });
 
   it("palette.open binds Cmd/Ctrl+K, Cmd/Ctrl+P, and Cmd/Ctrl+Shift+P", () => {
@@ -258,20 +258,6 @@ describe("defaultActions", () => {
     expect(visible(compactPulls)).toBe(false);
     action!.handler(compactPulls);
     expect(isSidebarCollapsed()).toBe(false);
-    expect(
-      action!.when(
-        ctx("pulls", {
-          route: { page: "pulls", view: "board" } as never,
-        }),
-      ),
-    ).toBe(true);
-    expect(
-      visible(
-        ctx("pulls", {
-          route: { page: "pulls", view: "board" } as never,
-        }),
-      ),
-    ).toBe(false);
     expect(action!.when(ctx("issues"))).toBe(true);
     expect(visible(ctx("issues"))).toBe(true);
     expect(action!.when(ctx("workspaces"))).toBe(true);
@@ -294,14 +280,10 @@ describe("defaultActions", () => {
 
   it("does not enable pull request number navigation on Kata", () => {
     const list = defaultActions.find((a) => a.id === "nav.pulls.list");
-    const board = defaultActions.find((a) => a.id === "nav.pulls.board");
 
     expect(list).toBeDefined();
-    expect(board).toBeDefined();
     expect(list!.when(ctx("kata"))).toBe(false);
-    expect(board!.when(ctx("kata"))).toBe(false);
     expect(list!.when(ctx("pulls"))).toBe(true);
-    expect(board!.when(ctx("pulls"))).toBe(true);
   });
 
   it("opens the repo browser from a selected pull request", () => {

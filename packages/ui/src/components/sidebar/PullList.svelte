@@ -200,7 +200,7 @@
       })),
     },
     {
-      title: "Kanban",
+      title: "Status",
       items: kanbanFilterOptions.map((option) => ({
         id: `kanban-${option.value}`,
         label: option.label,

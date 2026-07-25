@@ -619,7 +619,6 @@ type ModeVisibility struct {
 	Messages   *bool `toml:"messages,omitempty" json:"messages" nullable:"false"`
 	Pulls      *bool `toml:"pulls,omitempty" json:"pulls" nullable:"false"`
 	Issues     *bool `toml:"issues,omitempty" json:"issues" nullable:"false"`
-	Board      *bool `toml:"board,omitempty" json:"board" nullable:"false"`
 	Reviews    *bool `toml:"reviews,omitempty" json:"reviews" nullable:"false"`
 	Workspaces *bool `toml:"workspaces,omitempty" json:"workspaces" nullable:"false"`
 }
@@ -633,7 +632,6 @@ func DefaultModeVisibility() ModeVisibility {
 		Messages:   new(false),
 		Pulls:      new(true),
 		Issues:     new(true),
-		Board:      new(true),
 		Reviews:    new(true),
 		Workspaces: new(true),
 	}
@@ -661,9 +659,6 @@ func (m ModeVisibility) WithDefaults() ModeVisibility {
 	}
 	if m.Issues != nil {
 		defaults.Issues = m.Issues
-	}
-	if m.Board != nil {
-		defaults.Board = m.Board
 	}
 	if m.Reviews != nil {
 		defaults.Reviews = m.Reviews
@@ -1080,7 +1075,6 @@ docs = false
 messages = false
 pulls = true
 issues = true
-board = true
 reviews = true
 workspaces = true
 

@@ -2618,7 +2618,7 @@ func TestListPullRequestsFilterByKanban(t *testing.T) {
 
 	// Set PR 2 to "reviewing".
 	require.NoError(d.SetKanbanState(ctx, id2, "reviewing"))
-	// Leave PR 1 without a kanban row; the board treats missing rows as "new".
+	// Leave PR 1 without a workflow-state row; missing status defaults to "new".
 	require.NoError(d.EnsureKanbanState(ctx, id3))
 
 	prs, err := d.ListMergeRequests(ctx, ListMergeRequestsOpts{KanbanState: "reviewing"})

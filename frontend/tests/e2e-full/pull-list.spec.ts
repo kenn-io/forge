@@ -254,9 +254,8 @@ test.describe("PR list sidebar", () => {
     await expect(repoName).toBeVisible();
     await expectRepoNameToClipSafely(firstItem, repoName, longRepoPath);
 
-    // The kanban status chip was removed from the sidebar entirely (the
-    // kanban feature itself may go away); no row shows one regardless of
-    // its workflow state.
+    // Workflow status is available as a filter and detail field, but no row
+    // shows a redundant status chip.
     await expect(page.locator(".pull-item .status-chip")).toHaveCount(0);
 
     // Compact layout: repo name lives in the meta row, no standalone repo

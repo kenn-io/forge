@@ -164,9 +164,6 @@
     }
     pullsOpts.getGroupByRepo =
       hs.getGroupByRepo ?? grouping.getGroupByRepo;
-    if (hs.getView) {
-      pullsOpts.getView = hs.getView;
-    }
     const pullsStore = createPullsStore(pullsOpts);
 
     const syncStore = createSyncStore({

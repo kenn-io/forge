@@ -21,7 +21,6 @@ type ModeVisibility = {
   messages: boolean;
   pulls: boolean;
   issues: boolean;
-  board: boolean;
   reviews: boolean;
   workspaces: boolean;
 };
@@ -54,7 +53,6 @@ const {
     messages: false,
     pulls: true,
     issues: true,
-    board: true,
     reviews: true,
     workspaces: true,
   };
@@ -85,7 +83,6 @@ vi.mock("@middleman/ui", async (importOriginal) => {
       messages: false,
       pulls: true,
       issues: true,
-      board: true,
       reviews: true,
       workspaces: true,
     },

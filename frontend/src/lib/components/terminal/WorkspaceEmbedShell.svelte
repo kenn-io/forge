@@ -15,7 +15,6 @@
     getBasePath,
     getPage,
     getRoute,
-    getView,
     navigate,
   } from "../../stores/router.svelte.ts";
   import {
@@ -171,7 +170,6 @@
   hostState={{
     getGlobalRepo,
     getGroupByRepo: () => stores?.grouping.getGroupByRepo() ?? true,
-    getView,
     getActiveWorktreeKey,
   }}
   {getPage}

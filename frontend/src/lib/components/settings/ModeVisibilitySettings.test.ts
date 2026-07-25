@@ -16,7 +16,6 @@ vi.mock("@middleman/ui", () => ({
     messages: false,
     pulls: true,
     issues: true,
-    board: true,
     reviews: true,
     workspaces: true,
   },
@@ -46,7 +45,6 @@ function defaultModes(): ModeVisibility {
     messages: false,
     pulls: true,
     issues: true,
-    board: true,
     reviews: true,
     workspaces: true,
   };
@@ -81,6 +79,7 @@ describe("ModeVisibilitySettings", () => {
     expect((screen.getByLabelText("Kata") as HTMLInputElement).checked).toBe(false);
     expect((screen.getByLabelText("Docs") as HTMLInputElement).checked).toBe(false);
     expect((screen.getByLabelText("Messages") as HTMLInputElement).checked).toBe(false);
+    expect(screen.queryByLabelText("Board")).toBeNull();
 
     await fireEvent.click(screen.getByLabelText("Kata"));
     await fireEvent.click(screen.getByLabelText("Docs"));

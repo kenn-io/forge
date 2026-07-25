@@ -67,7 +67,6 @@ startup and then repeats on the configured interval.
 - **Activity**: recent cross-repo changes and discussion.
 - **Pulls**: PR/MR triage, review, CI, diff, and merge workflows.
 - **Issues**: issue triage, comments, state changes, and workspace launch.
-- **Board**: local kanban state for pull requests.
 - **Reviews**: review jobs and review-oriented activity.
 - **Workspaces**: local working sessions tied to repos and tasks.
 - **Settings**: repository and app configuration.

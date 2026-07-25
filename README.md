@@ -40,10 +40,6 @@ Inline diffs with a collapsible file tree sidebar. Files are grouped by director
 
 Filter the file tree by name, toggle whitespace visibility, and adjust tab width. Navigate between files with `j`/`k`. Each file section is independently collapsible.
 
-### Kanban board
-
-Track PRs through **New / Reviewing / Waiting / Awaiting Merge** columns with drag-and-drop. Kanban state is local to middleman -- it doesn't touch your GitHub labels or projects.
-
 ### Issue tracking
 
 Same filtering, search, and detail view as PRs. Post comments, close/reopen, and star issues without context-switching to GitHub.
@@ -64,7 +60,7 @@ Expandable check run section on each PR shows pass/fail/pending status with colo
 | Key | Action |
 |-----|--------|
 | `j` / `k` | Move through the list (or between files in diff view) |
-| `1` / `2` | Switch between list and kanban views |
+| `1` | Open the pull request list |
 | `Escape` | Close detail view / clear selection |
 
 ### Other
@@ -349,7 +345,7 @@ On startup:
 - **Dirty or failed migration state**: startup fails and instructs you to delete the database file and let middleman recreate it.
 - **Newer database** (migration version > binary): startup fails and instructs you to upgrade middleman.
 
-If a migration cannot be applied cleanly, delete `~/.config/middleman/middleman.db` and let middleman recreate it. Sync data will be repopulated from GitHub on the next run; local-only state (kanban columns, stars, and worktree links) is lost.
+If a migration cannot be applied cleanly, delete `~/.config/middleman/middleman.db` and let middleman recreate it. Sync data will be repopulated from GitHub on the next run; local-only state (PR workflow statuses, stars, and worktree links) is lost.
 
 ## Development
 

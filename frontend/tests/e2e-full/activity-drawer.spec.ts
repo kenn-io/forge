@@ -103,7 +103,7 @@ const tinyDiff: DiffResult = withServerDiffData({
 });
 
 // Multi-file diff fixture: 20 files with 20 lines each to force the
-// diff area to overflow in the kanban drawer.
+// activity detail diff area to overflow.
 const multiFileDiff: DiffResult = withServerDiffData({
   stale: false,
   whitespace_only_count: 0,
@@ -474,9 +474,7 @@ async function expectDiffFileVisibleInScrollArea(diffArea: Locator, filePath: st
     .toBe(true);
 }
 
-// TODO: Split this file once kanban drawer coverage moves to a dedicated
-// spec; it currently covers both the Activity split view and kanban drawer.
-test.describe("activity split view and detail drawers", () => {
+test.describe("activity split view", () => {
   test("PR split view shows diff when switching to Files tab", async ({ page }) => {
     // Route-level mocks must be installed before navigation so the
     // diff store never sees a real backend response.
@@ -902,39 +900,6 @@ test.describe("activity split view and detail drawers", () => {
     await expect(page).toHaveURL(/\/host\/ghe\.example\.com\/issues\/github\/acme\/widgets\/10$/);
   });
 
-  test("kanban drawer shows diff when switching to Files tab", async ({ page }) => {
-    await mockDiffForAllPRs(page, tinyDiff);
-
-    await page.goto("/pulls/board");
-    await page.locator(".kanban-card").first().waitFor({ state: "visible", timeout: 10_000 });
-
-    // Click the kanban card for widgets#1 specifically so the drawer
-    // title assertion is deterministic.
-    const card = page.locator(".kanban-card").filter({ hasText: "Add widget caching layer" }).first();
-    await card.click();
-
-    const drawer = page.locator(".drawer-panel");
-    await expect(drawer).toBeVisible();
-    await expect(drawer.locator(".drawer-title")).toHaveText("acme/widgets#1");
-
-    await drawer.locator(".detail-tab", { hasText: "Files changed" }).click();
-
-    await expect(drawer.locator(".diff-view")).toBeVisible();
-    await expect(drawer.locator(".diff-file")).toHaveCount(1);
-
-    // Switching back to Conversation unmounts the diff and restores
-    // the conversation view.
-    await drawer.locator(".detail-tab", { hasText: "Conversation" }).click();
-    await expect(drawer.locator(".diff-view")).toHaveCount(0);
-    await expect(drawer.locator(".pull-detail")).toBeVisible();
-
-    // Escape closes the drawer and the kanban board is preserved
-    // underneath.
-    await page.keyboard.press("Escape");
-    await expect(drawer).toHaveCount(0);
-    await expect(page.locator(".kanban-board")).toBeVisible();
-  });
-
   test("activity split view Files tab renders diff inside detail pane", async ({ page }) => {
     // Regression guard: when the split view is on the Files tab, the
     // PR diff must stay inside the embedded detail pane, with the
@@ -979,28 +944,6 @@ test.describe("activity split view and detail drawers", () => {
     await expect(detail.locator(".pull-detail")).toBeVisible();
   });
 
-  test("kanban drawer Files tab renders the file/commit sidebar", async ({ page }) => {
-    await mockDiffForAllPRs(page, tinyDiff);
-
-    await page.goto("/pulls/board");
-    await page.locator(".kanban-card").first().waitFor({ state: "visible", timeout: 10_000 });
-
-    const card = page.locator(".kanban-card").filter({ hasText: "Add widget caching layer" }).first();
-    await card.click();
-
-    const drawer = page.locator(".drawer-panel");
-    await expect(drawer).toBeVisible();
-    await drawer.locator(".detail-tab", { hasText: "Files changed" }).click();
-
-    const sidebar = drawer.locator(".files-layout > .files-sidebar");
-    await expect(sidebar).toBeVisible();
-    await expect(drawer.locator(".files-layout > .files-main .diff-view")).toBeVisible();
-
-    await expect(drawer.locator(".diff-scope-picker")).toBeVisible();
-    await expect(treeFileItems(sidebar)).toHaveCount(1);
-    await expect(treeFileItem(sidebar, "src/handler.go")).toBeVisible();
-  });
-
   test("activity split view Files tab renders every diff file", async ({ page }) => {
     // Regression guard for embedded PR diff rendering: multi-file PRs
     // must still render the full DiffView inside Activity detail even
@@ -1035,60 +978,6 @@ test.describe("activity split view and detail drawers", () => {
     await expect(detail.locator(".activity-detail-header")).toBeVisible();
     await detail.locator(".detail-tab", { hasText: "Files changed" }).click();
     await expect(detail.locator(".diff-view")).toBeVisible();
-  });
-
-  test("kanban drawer multi-file sidebar clicks navigate DiffView", async ({ page }) => {
-    await mockDiffForAllPRs(page, multiFileDiff);
-
-    await page.goto("/pulls/board");
-    await page.locator(".kanban-card").first().waitFor({ state: "visible", timeout: 10_000 });
-
-    const card = page.locator(".kanban-card").filter({ hasText: "Add widget caching layer" }).first();
-    await card.click();
-
-    const drawer = page.locator(".drawer-panel");
-    await expect(drawer).toBeVisible();
-    await drawer.locator(".detail-tab", { hasText: "Files changed" }).click();
-
-    const sidebar = drawer.locator(".files-layout > .files-sidebar");
-    const diffArea = drawer.locator(".files-layout > .files-main .diff-area .kit-scrollbox__viewport");
-
-    await expect(diffArea).toBeVisible();
-    await expect(treeFileItems(sidebar)).toHaveCount(20);
-
-    // Click the 12th file (file_11.go) and verify navigation.
-    await treeFileItem(sidebar, "src/file_11.go").click();
-    await expect(treeFileItem(sidebar, "src/file_11.go")).toHaveAttribute("aria-selected", "true");
-    await expectDiffFileVisibleInScrollArea(diffArea, "src/file_11.go");
-  });
-
-  test("kanban drawer sidebar click waits for delayed diff file DOM", async ({ page }) => {
-    const releaseDiff = await mockDiffForAllPRsWithDelayedDiff(page, multiFileDiff);
-
-    await page.goto("/pulls/board");
-    await page.locator(".kanban-card").first().waitFor({ state: "visible", timeout: 10_000 });
-
-    const card = page.locator(".kanban-card").filter({ hasText: "Add widget caching layer" }).first();
-    await card.click();
-
-    const drawer = page.locator(".drawer-panel");
-    await expect(drawer).toBeVisible();
-    await drawer.locator(".detail-tab", { hasText: "Files changed" }).click();
-
-    const sidebar = drawer.locator(".files-layout > .files-sidebar");
-    const filesMain = drawer.locator(".files-layout > .files-main");
-
-    await expect(filesMain).toBeVisible();
-    await expect(treeFileItems(sidebar)).toHaveCount(20);
-
-    await treeFileItem(sidebar, "src/file_11.go").click();
-    await expect(treeFileItem(sidebar, "src/file_11.go")).toHaveAttribute("aria-selected", "true");
-
-    releaseDiff();
-    const diffArea = filesMain.locator(".diff-area .kit-scrollbox__viewport");
-    await expect(diffArea).toBeVisible();
-    await expect(drawer.locator(".diff-file")).toHaveCount(20);
-    await expectDiffFileVisibleInScrollArea(diffArea, "src/file_11.go");
   });
 
   test("issue split view scrolls internally to bottom of content", async ({ page }) => {
@@ -1351,24 +1240,6 @@ test.describe("activity split view and detail drawers", () => {
     ).toBeVisible();
   });
 
-  test("kanban drawer spans full viewport width", async ({ page }) => {
-    await page.goto("/pulls/board");
-    await page.locator(".kanban-card").first().waitFor({ state: "visible", timeout: 10_000 });
-    await page.locator(".kanban-card").first().click();
-
-    const drawer = page.locator(".drawer-panel");
-    await expect(drawer).toBeVisible();
-
-    const viewport = page.viewportSize();
-    const drawerBox = await drawer.boundingBox();
-    expect(viewport).not.toBeNull();
-    expect(drawerBox).not.toBeNull();
-    // Drawer spans the full viewport width (Task 8 widened to 100%).
-    // Sub-pixel rounding from layout can yield a box width that differs
-    // from the viewport by a fraction of a pixel, so allow 1px slack.
-    expect(Math.abs(drawerBox!.width - viewport!.width)).toBeLessThan(1);
-  });
-
   test("active tab visual state switches with selection", async ({ page }) => {
     await mockDiffForAllPRs(page, tinyDiff);
     await page.goto("/");
@@ -1433,212 +1304,6 @@ test.describe("activity split view and detail drawers", () => {
     await expect(page.locator(".drawer-backdrop")).toHaveCount(0);
   });
 
-  test("kanban drawer Files view remains scrollable at full width", async ({ page }) => {
-    // Serve a multi-file diff so the diff area is guaranteed to
-    // overflow the drawer.
-    await mockDiffForAllPRs(page, multiFileDiff);
-
-    await page.goto("/pulls/board");
-    await page.locator(".kanban-card").first().waitFor({ state: "visible", timeout: 10_000 });
-
-    const card = page.locator(".kanban-card").filter({ hasText: "Add widget caching layer" }).first();
-    await card.click();
-
-    const drawer = page.locator(".drawer-panel");
-    await expect(drawer).toBeVisible();
-
-    // Open the Files tab.
-    await drawer.locator(".detail-tab", { hasText: "Files changed" }).click();
-    await expect(drawer.locator(".diff-view")).toBeVisible();
-
-    // The diff-area inside the drawer is the internal scroll
-    // container. Wait for all 20 seeded files to render before
-    // measuring overflow.
-    const diffArea = drawer.locator(".diff-area .kit-scrollbox__viewport");
-    await expect(diffArea).toBeVisible();
-    await expect(drawer.locator(".diff-file")).toHaveCount(20);
-
-    // Content overflows the viewport.
-    const before = await diffArea.evaluate((el) => ({
-      scrollHeight: el.scrollHeight,
-      clientHeight: el.clientHeight,
-      scrollTop: el.scrollTop,
-    }));
-    expect(before.scrollHeight).toBeGreaterThan(before.clientHeight);
-    expect(before.scrollTop).toBe(0);
-
-    // Drive a real scroll to the bottom on the diff area.
-    await diffArea.evaluate((el) => {
-      el.scrollTop = el.scrollHeight;
-    });
-
-    const finalScroll = await diffArea.evaluate((el) => el.scrollTop);
-    expect(finalScroll).toBeGreaterThan(0);
-  });
-
-  test("kanban drawer Close action refreshes board with open filter", async ({ page }) => {
-    // Fully synthetic /pulls?state=open response so the test does not
-    // depend on the shared backend's mutable state. We mock ONLY the
-    // open-filtered list endpoint — the exact path the kanban refreshes
-    // through after the close action — and let every other /pulls
-    // request fall through to the real backend. That way the close
-    // refresh is the only thing that can change what the board shows.
-    let pullsContainsWidgets1 = true;
-    const widgetsRepo = {
-      provider: "github",
-      platform_host: "github.com",
-      owner: "acme",
-      name: "widgets",
-      repo_path: "acme/widgets",
-      capabilities: {
-        read_repositories: true,
-        read_merge_requests: true,
-        read_issues: true,
-        read_comments: true,
-        read_releases: true,
-        read_ci: true,
-        comment_mutation: true,
-        state_mutation: true,
-        merge_mutation: true,
-        review_mutation: true,
-        workflow_approval: true,
-        ready_for_review: true,
-        draft_mutation: true,
-        issue_mutation: true,
-      },
-    };
-
-    const widgets1Card = {
-      ID: 1001,
-      Number: 1,
-      Title: "Add widget caching layer",
-      Body: "",
-      Author: "alice",
-      AuthorDisplayName: "alice",
-      State: "open",
-      KanbanStatus: "new",
-      IsDraft: false,
-      Additions: 240,
-      Deletions: 30,
-      CreatedAt: new Date(Date.now() - 2 * 3_600_000).toISOString(),
-      UpdatedAt: new Date(Date.now() - 2 * 3_600_000).toISOString(),
-      URL: "https://github.com/acme/widgets/pull/1",
-      CIStatus: "",
-      ReviewDecision: "",
-      MergeableState: "",
-      Starred: false,
-      CIChecksJSON: "",
-      labels: [],
-      repo: widgetsRepo,
-      worktree_links: [],
-    };
-
-    // Always-present card. Lets the test assert that the close
-    // refresh removes only widgets#1, not unrelated open PRs.
-    const otherCard = {
-      ID: 1002,
-      Number: 2,
-      Title: "Refactor widget pipeline",
-      Body: "",
-      Author: "bob",
-      AuthorDisplayName: "bob",
-      State: "open",
-      KanbanStatus: "reviewing",
-      IsDraft: false,
-      Additions: 80,
-      Deletions: 12,
-      CreatedAt: new Date(Date.now() - 4 * 3_600_000).toISOString(),
-      UpdatedAt: new Date(Date.now() - 4 * 3_600_000).toISOString(),
-      URL: "https://github.com/acme/widgets/pull/2",
-      CIStatus: "",
-      ReviewDecision: "",
-      MergeableState: "",
-      Starred: false,
-      CIChecksJSON: "",
-      labels: [],
-      repo: widgetsRepo,
-      worktree_links: [],
-    };
-
-    const buildOpenPullsResponse = (): unknown[] => {
-      if (!pullsContainsWidgets1) return [otherCard];
-      return [widgets1Card, otherCard];
-    };
-
-    // Function predicate: intercept only the top-level
-    // /api/v1/pulls?state=open list. Other /pulls* requests
-    // (per-PR detail, files, diff) fall through to the real backend.
-    await page.route(
-      (url) => url.pathname.endsWith("/api/v1/pulls") && url.searchParams.get("state") === "open",
-      async (route) => {
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify(buildOpenPullsResponse()),
-        });
-      },
-    );
-
-    // Mock the state-change endpoint and flip the synthetic list on
-    // success. The detail load goes through the real backend (which
-    // still shows widgets#1 as open), but the kanban board reads only
-    // from the mocked /pulls endpoint.
-    await page.route("**/api/v1/pulls/github/*/*/*/github-state", async (route) => {
-      pullsContainsWidgets1 = false;
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: "{}",
-      });
-    });
-
-    // Track calls to the open-filtered pulls endpoint that occur
-    // after the close button is clicked. onPullsRefresh forwarding
-    // must trigger at least one such call.
-    let openPullsRequestsAfterClose = 0;
-    let closeClicked = false;
-    page.on("request", (req) => {
-      const url = req.url();
-      if (closeClicked && url.includes("/api/v1/pulls") && url.includes("state=open")) {
-        openPullsRequestsAfterClose++;
-      }
-    });
-
-    await page.goto("/pulls/board");
-
-    // Open widgets#1 in the kanban drawer.
-    const card = page.locator(".kanban-card").filter({ hasText: "Add widget caching layer" }).first();
-    await expect(card).toBeVisible({ timeout: 10_000 });
-    await card.click();
-
-    const drawer = page.locator(".drawer-panel");
-    await expect(drawer).toBeVisible();
-    await expect(drawer.locator(".drawer-title")).toHaveText("acme/widgets#1");
-
-    // Wait for the Close button inside the drawer's PullDetail.
-    const closeBtn = drawer.locator("button.btn--close");
-    await expect(closeBtn).toBeVisible();
-
-    closeClicked = true;
-    await closeBtn.click();
-
-    // After the close succeeds, widgets#1 disappears from the kanban
-    // board because the refetched synthetic /pulls?state=open list
-    // omits it. Other open cards remain visible — proves the refresh
-    // dropped only widgets#1, not unrelated entries.
-    await expect(page.locator(".kanban-card").filter({ hasText: "Add widget caching layer" })).toHaveCount(0, {
-      timeout: 10_000,
-    });
-    await expect(page.locator(".kanban-card").filter({ hasText: "Refactor widget pipeline" })).toBeVisible();
-
-    // At least one /api/v1/pulls?state=open request must have
-    // happened after the close was clicked. This proves the refresh
-    // went through the open-filtered path wired via onPullsRefresh.
-    expect(openPullsRequestsAfterClose).toBeGreaterThan(0);
-  });
-});
-
-test.describe("PR list tabs", () => {
   test("outer PR-list tab bar remains singular and router-driven", async ({ page }) => {
     // Mock the diff so navigating to /files does not depend on real data.
     await mockDiffForAllPRs(page, tinyDiff);

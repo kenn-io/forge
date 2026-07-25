@@ -12,14 +12,13 @@ import {
 /**
  * Reactive `InlineWorkspaceController` test double for the view-level claim
  * lifecycle specs (PRListView/IssueListView/ActivityFeedView). Unlike
- * `WorkspaceDockPanelTestController` (which only needs `getDockMode`/
- * `setDockMode` backed by `$state` because `WorkspaceDockPanel` takes
- * `active` as a plain prop), these specs assert that a view's own
- * `active={... inlineWorkspace.isClaimedFor(claimIdentity)}` template
- * expression reacts to `claim`/`release` calls the same way the real
- * workspace-host store's `isClaimedFor` (backed by `$state`) does — so
- * `claim`/`release`/`isClaimedFor` here are backed by real `$state` too.
- * This module is a `.svelte.ts` file so runes compile here.
+ * `inlineWorkspaceTestController` (which only needs `getDockMode`/`setDockMode`
+ * backed by `$state`), these specs assert that a view's own
+ * `available={... inlineWorkspace.isClaimedFor(claimIdentity)}` pane expression
+ * reacts to `claim`/`release` calls the same way the real workspace-host store's
+ * `isClaimedFor` (backed by `$state`) does — so `claim`/`release`/`isClaimedFor`
+ * here are backed by real `$state` too. This module is a `.svelte.ts` file so
+ * runes compile here.
  */
 export function createClaimTestController(surface: InlineWorkspaceSurface = "prs"): {
   controller: InlineWorkspaceController;

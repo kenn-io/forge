@@ -580,6 +580,7 @@
               scrollable: scrollPanels,
             },
           ]}
+          data-pane-key={tabKey}
           onfocusin={onFocusPane ? () => onFocusPane(tabKey) : undefined}
         >
           {@render renderTab(tabKey, paneVisible(tabKey))}

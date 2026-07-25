@@ -234,15 +234,14 @@ Keyboard handlers must have one clear owner for each key press.
   `hostVisible` goes false; only dialog open-state designed to restore on
   reveal may persist the hidden window
   (`frontend/src/lib/components/terminal/TerminalOptionsMenu.svelte`).
-- Detail views hidden behind an expanded inline dock stay mounted with live
-  window-level command listeners: a command that opens detail UI must restore
-  the dock to split first so it cannot build an invisible overlay
+- Panes hidden behind a maximized one stay mounted with live window-level
+  command listeners: a command that opens detail UI must un-maximize first so it
+  cannot build an invisible overlay
   (`packages/ui/src/components/detail/PullDetail.svelte::onOpenLabelPickerCommand`).
-- Focus Terminal reveals, it never maximizes: a collapsed inline dock reopens
-  in split — the layout the workspace first appeared in — and a visible dock
-  keeps its mode; expanding over the detail is only ever the terminal
-  toolbar's explicit action. A collapsed dock also keeps its own reopen
-  affordance at the bottom of the pane
+- Focus Terminal reveals, it never maximizes: a closed workspace pane reopens
+  alongside the detail and a visible one keeps its arrangement. Maximizing over
+  the detail is only ever an explicit user action. Reopening also has to clear a
+  zoom held by any other leaf, or the revealed pane sits behind it
   (`frontend/src/lib/stores/workspace-host.svelte.ts::focusTerminal`).
 - Terminal panes call `.focus()` only once, at terminal
   creation, and only when a focus-intent guard captured at mount still holds:
@@ -255,9 +254,9 @@ Keyboard handlers must have one clear owner for each key press.
   `shouldReclaimFocus`)
   (`frontend/src/lib/components/terminal/terminal-focus.ts`,
   `frontend/src/lib/components/terminal/XtermTerminalPane.svelte::start`).
-- Expanded inline workspaces reuse the live hosted shell and fill the pane
+- A maximized inline workspace reuses the live hosted shell and fills the pane
   edge-to-edge; never add outer chrome or mutate the shell's workflow/terminal
-  layout state (`packages/ui/src/components/workspace/WorkspaceDockPanel.svelte::expanded`).
+  layout state (`frontend/src/lib/components/terminal/WorkspaceHost.browser.svelte.ts`).
 - A pane bound to a URL has two write paths with different history semantics: a
   tab click pushes (`navigate`), while focus moving between panes that are
   visible at once replaces (`navigate(path, { replace: true })`), so walking
@@ -273,18 +272,20 @@ Keyboard handlers must have one clear owner for each key press.
 - The desktop `.app-main` clips overflow but must never become a scroll
   container; focus-driven scrolling there shifts every mode rail and creates
   matching chrome gaps (`frontend/src/App.svelte::.app-main`).
-- An expanded dock mode must not outlive its claim: WorkspaceDockPanel resets
-  on inactive and on teardown, and the store resets `expanded` itself both
-  when a claim is directly replaced by a different identity (`setClaim`) and
-  synchronously on release (`clearClaim`) — a release-and-reclaim within one
-  update leaves no observable inactive gap for the panel and no previous
-  claim for setClaim's replacement check
-  (`frontend/src/lib/stores/workspace-host.svelte.ts::clearClaim`).
-- A collapse control must be reachable in every inline workspace state, not
-  only from the ready toolbar: WorkspaceDockPanel's BottomDock is not
-  closable, so the creating, fetch-failure, and setup-error branches render
-  their own collapse button or the dock cannot be closed short of deleting
-  the workspace
+- The inline dock mode is DERIVED from the surface's pane layout — maximized is
+  the workspace pane's leaf holding the zoom, collapsed is that pane hidden —
+  never stored alongside it, or the two disagree when a leaf's own controls
+  maximize a pane. A maximized workspace must not outlive its claim: the store
+  un-zooms both when a claim is replaced by a different identity (`setClaim`)
+  and synchronously on release (`clearClaim`), because a release-and-reclaim
+  within one update gives the layout host no availability gap to notice and
+  leaves setClaim no previous claim to compare against. Same-identity
+  re-asserts (a ref status change) must NOT un-zoom
+  (`frontend/src/lib/stores/workspace-host.svelte.ts::dockModeFor`).
+- A collapse control must be reachable in every inline workspace state, not only
+  from the ready toolbar: the creating, fetch-failure, and setup-error branches
+  render their own collapse button, since the pane's own close control is the
+  only other way out short of deleting the workspace
   (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::inlineCollapseControl`).
   Dock mode changes are pure local UI — never disable them behind mutation
   guards like `actionsBlocked`; only the modal-stack guard applies, and only
@@ -309,9 +310,9 @@ shortcuts while it is open.
 - Unmounting a subtree that holds focus (dock close, claim release) must
   reclaim focus for a deliberate target after the DOM update — and only when
   focus fell to `<body>` or was still inside the closing subtree, so a
-  transition triggered in the background (e.g. a selection change resetting
-  an expanded dock) never steals focus from a control the user moved to
-  (`packages/ui/src/components/workspace/WorkspaceDockPanel.svelte::shouldReclaimFocus`).
+  transition triggered in the background (e.g. a selection change un-zooming a
+  maximized pane) never steals focus from a control the user moved to
+  (`packages/ui/src/components/shared/DetailPaneLayout.svelte::shouldReclaimFocus`).
 - Background actions that are still visible should be disabled or skipped when
   their `when` predicate no longer matches the active modal state.
 - Outside-click, focus-leave, and Escape close paths should converge on the same

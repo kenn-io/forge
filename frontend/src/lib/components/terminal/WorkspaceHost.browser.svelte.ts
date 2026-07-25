@@ -1,5 +1,5 @@
 import { page } from "vite-plus/test/browser";
-import { createRawSnippet, flushSync, mount, unmount } from "svelte";
+import { flushSync, mount, unmount } from "svelte";
 import { describe, expect, it, vi, beforeEach, afterEach } from "vite-plus/test";
 import { DEFAULT_TERMINAL_SETTINGS } from "@middleman/ui";
 import { createDiffStore } from "@middleman/ui/stores/diff";
@@ -14,7 +14,8 @@ import {
   resetWorkspaceHostForTest,
 } from "../../stores/workspace-host.svelte.ts";
 import WorkspaceHost from "./WorkspaceHost.svelte";
-import WorkspaceDockPanel from "../../../../../packages/ui/src/components/workspace/WorkspaceDockPanel.svelte";
+import InlineWorkspacePaneHarness from "./InlineWorkspacePaneHarness.svelte";
+import { createPaneLayoutStore } from "../../../../../packages/ui/src/stores/paneLayout.svelte.js";
 
 const WAIT = 10_000;
 
@@ -51,10 +52,6 @@ const workspace = {
 };
 
 const emptyRuntime = { launch_targets: [], sessions: [] };
-
-const detailChildren = createRawSnippet(() => ({
-  render: () => `<div>PR detail</div>`,
-}));
 
 function workspaceRoutes(): MockRouteOverride {
   return (req) => {
@@ -262,10 +259,9 @@ describe("WorkspaceHost", () => {
     });
 
     const prs = getInlineWorkspaceController("prs");
-    // A collapsed dock's BottomDock (and the .workspace-dock-slot div it
-    // renders {@attach controller.slotAttachment} onto) is unmounted, not
-    // just hidden — so simulate "collapsed" here by unregistering the slot
-    // rather than registering the beforeEach fixture div.
+    // A hidden workspace pane unmounts its portal slot rather than merely
+    // hiding it, so simulate "collapsed" here by unregistering the slot rather
+    // than registering the beforeEach fixture div.
     prs.setDockMode("collapsed");
     registerSlotElement("prs", null);
     prs.claim(identityA, { id: "ws-1", status: "ready" });
@@ -362,20 +358,29 @@ describe("WorkspaceHost", () => {
     expect(parkedScope.getByRole("button", { name: "Collapse Terminal" }).query()).toBeNull();
   });
 
-  it("fills the expanded PR pane with the existing hosted workspace shell", async () => {
+  it("fills the maximized PR pane with the existing hosted workspace shell", async () => {
     const prs = getInlineWorkspaceController("prs");
-    prs.setDockMode("split");
+    // A fresh store rather than the surface-cached one: this spec owns the
+    // arrangement it maximizes, and localStorage from another test must not
+    // decide where the workspace pane sits.
+    localStorage.removeItem("middleman-pane-layout-v1:prs");
+    const layout = createPaneLayoutStore("prs", ["conversation", "workspace"], {
+      type: "split",
+      id: "split-root",
+      direction: "vertical",
+      ratio: 0.5,
+      first: { type: "leaf", id: "leaf-detail", tabs: ["conversation"], activeTabKey: "conversation" },
+      second: { type: "leaf", id: "leaf-workspace", tabs: ["workspace"], activeTabKey: "workspace" },
+    });
 
     const panelTarget = document.createElement("div");
-    panelTarget.style.cssText = "display: flex; width: 800px; height: 600px;";
+    // Wide enough that the layout keeps its tree: below its flatten threshold
+    // the panes collapse into one strip and the workspace slot never mounts.
+    panelTarget.style.cssText = "display: flex; width: 1600px; height: 600px;";
     document.body.appendChild(panelTarget);
-    const panel = mount(WorkspaceDockPanel, {
+    const panel = mount(InlineWorkspacePaneHarness, {
       target: panelTarget,
-      props: {
-        controller: prs,
-        active: true,
-        children: detailChildren,
-      },
+      props: { layout, controller: prs },
     });
 
     try {
@@ -389,24 +394,21 @@ describe("WorkspaceHost", () => {
       flushSync();
       await waitForReparent();
 
-      const panelElement = panelTarget.querySelector<HTMLElement>(".workspace-dock-panel");
       const host = panelTarget.querySelector<HTMLElement>(".workspace-host-wrapper");
-      expect(panelElement).not.toBeNull();
       expect(host).not.toBeNull();
       await vi.waitFor(() => expect(host?.inert).toBe(false), WAIT);
       const existingStage = host!.querySelector(".workspace-stage");
       expect(existingStage).not.toBeNull();
 
-      flushSync(() => prs.setDockMode("expanded"));
+      // Maximizing must reuse the live shell, not rebuild it: a remounted stage
+      // means a dropped terminal socket.
+      flushSync(() => layout.toggleZoom("leaf-workspace"));
 
-      const panelRect = panelElement!.getBoundingClientRect();
+      const paneRect = panelTarget.querySelector<HTMLElement>(".detail-pane-layout")!.getBoundingClientRect();
       const hostRect = host!.getBoundingClientRect();
       expect(host!.querySelector(".workspace-stage")).toBe(existingStage);
-      expect({
-        top: Math.round(hostRect.top - panelRect.top),
-        bottom: Math.round(panelRect.bottom - hostRect.bottom),
-        height: Math.round(hostRect.height),
-      }).toEqual({ top: 0, bottom: 0, height: 600 });
+      expect(Math.round(hostRect.height)).toBeGreaterThan(Math.round(paneRect.height * 0.8));
+      expect(Math.round(paneRect.bottom - hostRect.bottom)).toBe(0);
     } finally {
       flushSync(() => unmount(panel));
       panelTarget.remove();

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { untrack, type Snippet } from "svelte";
+  import { tick, untrack, type Snippet } from "svelte";
   import { Button } from "@kenn-io/kit-ui";
   import ChevronsUpIcon from "@lucide/svelte/icons/chevrons-up";
   import XIcon from "@lucide/svelte/icons/x";
@@ -80,6 +80,45 @@
     onSelectTab?.(tabKey);
   }
 
+  /**
+   * Focus must never be stolen from a control the user moved to themselves, so
+   * reclaim only when it already fell to `<body>` or still sits inside the
+   * subtree that is going away.
+   */
+  function shouldReclaimFocus(closing: Element | null): boolean {
+    const focused = document.activeElement;
+    if (focused === null || focused === document.body) return true;
+    return closing?.contains(focused) ?? false;
+  }
+
+  async function reclaimFocus(): Promise<void> {
+    await tick();
+    if (shouldReclaimFocus(null)) host?.focus();
+  }
+
+  /**
+   * Closing a pane unmounts its body. Focus that lived inside it — the terminal,
+   * a diff comment box — would fall to `<body>`, stranding keyboard users and
+   * leaving the global single-key shortcuts armed against nothing.
+   */
+  function closePane(tabKey: string): void {
+    const closing = host?.querySelector(`[data-pane-key="${tabKey}"]`) ?? null;
+    const reclaim = shouldReclaimFocus(closing);
+    layout.setHidden(tabKey, true);
+    if (reclaim) void reclaimFocus();
+  }
+
+  // The same stranding happens without a click: a released or deleted workspace
+  // makes its pane unavailable and unmounts it out from under the focused
+  // terminal.
+  let lastAvailableTabs: string[] = untrack(() => availableTabs);
+  $effect(() => {
+    const now = availableTabs;
+    const removed = lastAvailableTabs.some((key) => !now.includes(key));
+    lastAvailableTabs = now;
+    if (removed) void reclaimFocus();
+  });
+
   function focusPane(tabKey: string): void {
     if (layout.lastFocusedTabKey() === tabKey) return;
     layout.noteFocused(tabKey);
@@ -126,7 +165,8 @@
   });
 </script>
 
-<div class="detail-pane-layout" bind:this={host}>
+<!-- tabindex so the layout can hold focus itself after a pane closes under it. -->
+<div class="detail-pane-layout" bind:this={host} tabindex="-1">
   {#if activeTree}
     <div class="detail-pane-tree">
       <TabbedPanelTree
@@ -186,7 +226,7 @@
       title={`Hide ${tab.label}`}
       aria-label={`Hide ${tab.label}`}
       data-testid={`pane-hide-${tab.key}`}
-      onclick={() => layout.setHidden(tab.key, true)}
+      onclick={() => closePane(tab.key)}
     >
       <XIcon size="11" strokeWidth="2.3" aria-hidden="true" />
     </button>

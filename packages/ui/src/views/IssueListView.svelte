@@ -6,7 +6,6 @@
   import IssueDetail
     from "../components/detail/IssueDetail.svelte";
   import DetailPaneLayout from "../components/shared/DetailPaneLayout.svelte";
-  import { createTabbedPanelLeaf, splitTabbedPanelTabIntoLeaf } from "../components/shared/tabbed-panel-layout.js";
   import { getPaneLayoutStore, type PaneTabSpec } from "../stores/paneLayout.svelte.js";
   import type { IssueDetail as IssueDetailResponse } from "../api/types.js";
   import type { IssueDetailSyncMode } from "../stores/issues.svelte.js";
@@ -85,23 +84,7 @@
       : null,
   );
 
-  const ISSUE_PANE_TABS = ["conversation", "workspace"];
-
-  /** Conversation above the workspace, reproducing the dock's original position. */
-  function defaultIssuePaneTree() {
-    const base = createTabbedPanelLeaf(["conversation"], "conversation");
-    return (
-      splitTabbedPanelTabIntoLeaf(
-        createTabbedPanelLeaf(ISSUE_PANE_TABS, "conversation", base.id),
-        "workspace",
-        base.id,
-        "vertical",
-        "after",
-      ) ?? base
-    );
-  }
-
-  const paneLayout = getPaneLayoutStore("issues", ISSUE_PANE_TABS, defaultIssuePaneTree());
+  const paneLayout = getPaneLayoutStore("issues");
 
   const workspaceClaimed = $derived(
     inlineWorkspace !== null && claimIdentity !== null && inlineWorkspace.isClaimedFor(claimIdentity),

@@ -493,7 +493,7 @@ function insertTabbedPanelTabIntoFirstLeaf(node: TabbedPanelNode, tabKey: string
   };
 }
 
-function splitTabbedPanelLeaf(
+export function splitTabbedPanelLeaf(
   node: TabbedPanelNode,
   leafID: string,
   newLeaf: TabbedPanelLeaf,

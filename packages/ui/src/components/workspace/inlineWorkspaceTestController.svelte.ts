@@ -3,12 +3,16 @@ import { vi } from "vite-plus/test";
 import type { InlineDockMode, InlineWorkspaceController, InlineWorkspaceSurface } from "../../workspace-inline.js";
 
 /**
- * Minimal `InlineWorkspaceController` test double for `WorkspaceDockPanel`
- * specs. `getDockMode`/`setDockMode` are backed by a real `$state` cell
- * (this module is a `.svelte.ts` file, so runes compile here) so the panel's
- * own `$derived`/`$effect` blocks react to `setDockMode` calls the same way
- * they would against the real frontend workspace-host store, without
- * needing a `rerender()` between interactions within a single test.
+ * Minimal `InlineWorkspaceController` test double for the detail components that
+ * merely thread a controller through (their workspace buttons, focus requests,
+ * create/delete plumbing). `getDockMode`/`setDockMode` are backed by a real
+ * `$state` cell — this module is a `.svelte.ts` file, so runes compile here — so
+ * a consumer's own `$derived`/`$effect` blocks react to `setDockMode` the same
+ * way they do against the real workspace-host store, with no `rerender()` needed
+ * between interactions in one test.
+ *
+ * Prefer `views/viewWorkspaceTestDoubles.svelte.ts` when a spec needs claims to
+ * be reactive as well.
  */
 export function createTestController(
   initialMode: InlineDockMode,

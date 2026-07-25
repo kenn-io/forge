@@ -15,6 +15,7 @@ import {
   type TabbedPanelNode,
 } from "../components/shared/tabbed-panel-layout.js";
 import { getStackDepth } from "./keyboard/modal-stack.svelte.js";
+import { PANE_SURFACES } from "./pane-surfaces.js";
 
 export type PaneSurfaceKey = "prs" | "issues" | "activity";
 
@@ -191,15 +192,20 @@ export function createPaneLayoutStore(
 
 const stores = new Map<PaneSurfaceKey, PaneLayoutStore>();
 
-/** Cached per surface: one layout per top-level mode, shared by every consumer. */
-export function getPaneLayoutStore(
-  surface: PaneSurfaceKey,
-  knownTabs: readonly string[],
-  defaultTree: TabbedPanelNode,
-): PaneLayoutStore {
+/**
+ * Cached per surface: one layout per top-level mode, shared by every consumer.
+ *
+ * The surface key alone is the argument on purpose. The views and the
+ * workspace-host store (which derives the inline dock mode from the layout) both
+ * reach for the same store, and passing tabs or a default tree here would let
+ * whichever called first define the surface for the other. `PANE_SURFACES` is
+ * the single definition.
+ */
+export function getPaneLayoutStore(surface: PaneSurfaceKey): PaneLayoutStore {
   const cached = stores.get(surface);
   if (cached) return cached;
-  const created = createPaneLayoutStore(surface, knownTabs, defaultTree);
+  const definition = PANE_SURFACES[surface];
+  const created = createPaneLayoutStore(surface, definition.tabs, definition.defaultTree());
   stores.set(surface, created);
   return created;
 }

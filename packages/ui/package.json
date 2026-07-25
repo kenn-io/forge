@@ -87,6 +87,10 @@
       "svelte": "./src/stores/workflow.svelte.ts",
       "default": "./src/stores/workflow.svelte.ts"
     },
+    "./stores/paneLayout": {
+      "svelte": "./src/stores/paneLayout.svelte.ts",
+      "default": "./src/stores/paneLayout.svelte.ts"
+    },
     "./stores/workspace-create-pending": {
       "svelte": "./src/stores/workspace-create-pending.svelte.ts",
       "default": "./src/stores/workspace-create-pending.svelte.ts"

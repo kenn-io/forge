@@ -13,7 +13,7 @@ import {
 } from "../../stores/workspace-create-pending.svelte.js";
 import type { InlineWorkspaceController, WorkspaceItemIdentity } from "../../workspace-inline.js";
 import { openLabelPickerFor } from "./labelPickerCommand.js";
-import { createTestController } from "../workspace/WorkspaceDockPanelTestController.svelte.js";
+import { createTestController } from "../workspace/inlineWorkspaceTestController.svelte.js";
 
 const launchTargets = [
   {

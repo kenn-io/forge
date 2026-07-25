@@ -544,10 +544,10 @@ describe("workspace host store", () => {
     const prs = getInlineWorkspaceController("prs");
     prs.claim(identityA, refA);
     prs.setDockMode("expanded");
-    // Direct replacement (selection change whose new detail already
-    // matches) never gives WorkspaceDockPanel an inactive gap, so the
-    // store must reset the mode itself or B's detail opens hidden behind
-    // a fullscreen terminal.
+    // Direct replacement (selection change whose new detail already matches)
+    // never makes the workspace pane unavailable, so the layout host's zoom
+    // reconciliation never fires and the store must un-zoom itself or B's
+    // detail opens hidden behind a maximized terminal.
     prs.claim(identityB, { id: "ws-b", status: "ready" });
     expect(prs.getDockMode()).toBe("split");
     // Same-identity re-asserts (ref status changes) keep expanded intact.
@@ -562,10 +562,10 @@ describe("workspace host store", () => {
     prs.setDockMode("expanded");
     // Selection change to an item whose detail is already cached: the old
     // view's effect cleanup releases and the new claim lands in the same
-    // update. WorkspaceDockPanel's effects only see the final claimed
-    // state — no inactive gap — and setClaim sees no previous claim to
-    // detect the replacement, so the release itself must reset the mode
-    // or B's detail opens hidden behind a fullscreen terminal.
+    // update. The layout host only ever sees the final claimed state — no
+    // availability gap — and setClaim sees no previous claim to detect the
+    // replacement, so the release itself must un-zoom or B's detail opens
+    // hidden behind a maximized terminal.
     prs.release();
     prs.claim(identityB, { id: "ws-b", status: "ready" });
     expect(prs.getDockMode()).toBe("split");

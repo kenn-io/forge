@@ -15,10 +15,6 @@
   import PullDetail from "../components/detail/PullDetail.svelte";
   import DiffFilesLayout from "../components/diff/DiffFilesLayout.svelte";
   import DetailPaneLayout from "../components/shared/DetailPaneLayout.svelte";
-  import {
-    createTabbedPanelLeaf,
-    splitTabbedPanelTabIntoLeaf,
-  } from "../components/shared/tabbed-panel-layout.js";
   import { getPaneLayoutStore, type PaneTabSpec } from "../stores/paneLayout.svelte.js";
   import type { ProviderCapabilities, PullDetail as PullDetailResponse } from "../api/types.js";
   import type { DetailSyncMode } from "../stores/detail.svelte.js";
@@ -38,24 +34,7 @@
   const { isSidebarToggleEnabled, toggleSidebar } = getSidebar();
   const navigate = getNavigate();
   const { detail: detailStore } = getStores();
-  const PR_PANE_TABS = ["conversation", "files", "workspace"];
-
-  /** Conversation and files share a leaf, with the workspace below: the layout
-   * the PR detail had before panes became rearrangeable. */
-  function defaultPRPaneTree() {
-    const base = createTabbedPanelLeaf(["conversation", "files"], "conversation");
-    return (
-      splitTabbedPanelTabIntoLeaf(
-        createTabbedPanelLeaf(PR_PANE_TABS, "conversation", base.id),
-        "workspace",
-        base.id,
-        "vertical",
-        "after",
-      ) ?? base
-    );
-  }
-
-  const paneLayout = getPaneLayoutStore("prs", PR_PANE_TABS, defaultPRPaneTree());
+  const paneLayout = getPaneLayoutStore("prs");
 
   const defaultProviderCapabilities: ProviderCapabilities = {
     read_repositories: true,

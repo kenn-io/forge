@@ -17,6 +17,7 @@ import {
   resolveControllerlessWorkspaceRef,
 } from "@middleman/ui/stores/workspace-create-pending";
 import { getStackDepth } from "@middleman/ui/stores/keyboard/modal-stack";
+import { getPaneLayoutStore, resetPaneLayoutStoresForTest } from "@middleman/ui/stores/paneLayout";
 import { forgetWorkspaceRoute, getRoute, navigate } from "./router.svelte.ts";
 
 export type HostedWorkspaceKey = { workspaceId: string; hostKey: string | undefined };
@@ -51,11 +52,6 @@ function isTombstone(override: Override | undefined): override is DeletionTombst
 
 let claims = $state<Partial<Record<InlineWorkspaceSurface, InlineClaim>>>({});
 let overrides = $state<Record<string, Override>>({});
-let dockModes = $state<Record<InlineWorkspaceSurface, InlineDockMode>>({
-  activity: "split",
-  prs: "split",
-  issues: "split",
-});
 // Sticky key: parking must not tear down the live workspace.
 let lastInlineKey = $state<HostedWorkspaceKey>({ workspaceId: "", hostKey: undefined });
 
@@ -135,11 +131,41 @@ export function desiredKey(): HostedWorkspaceKey {
   return lastInlineKey;
 }
 
+/**
+ * The inline dock mode is a VIEW of the surface's pane layout, not state of its
+ * own: `expanded` is the workspace pane's leaf holding the zoom, `collapsed` is
+ * the pane hidden, `split` is anything else. Storing it separately would let the
+ * two disagree — a pane maximized from its own leaf controls while the dock
+ * still reported "split".
+ */
+const WORKSPACE_PANE_KEY = "workspace";
+
+function dockModeFor(surface: InlineWorkspaceSurface): InlineDockMode {
+  const layout = getPaneLayoutStore(surface);
+  if (layout.hiddenTabKeys().includes(WORKSPACE_PANE_KEY)) return "collapsed";
+  const leafID = layout.leafIDForTab(WORKSPACE_PANE_KEY);
+  return leafID !== null && layout.zoomedLeafID() === leafID ? "expanded" : "split";
+}
+
+/**
+ * Un-maximize the workspace pane, if it is what holds the zoom.
+ *
+ * A claim replaced directly by another item's (a selection change whose new
+ * detail is already cached) gives the layout no availability gap for
+ * DetailPaneLayout's reconciliation effect to notice, so the new item's detail
+ * would open hidden behind a fullscreen terminal.
+ */
+function unzoomWorkspacePane(surface: InlineWorkspaceSurface): void {
+  const layout = getPaneLayoutStore(surface);
+  const leafID = layout.leafIDForTab(WORKSPACE_PANE_KEY);
+  if (leafID !== null && layout.zoomedLeafID() === leafID) layout.clearZoom();
+}
+
 export function isHostVisible(): boolean {
   const slot = desiredSlot();
   if (slot === null) return false;
   if (slot === "tab") return true;
-  return dockModes[slot] !== "collapsed";
+  return dockModeFor(slot) !== "collapsed";
 }
 
 function effectiveRef(
@@ -180,14 +206,13 @@ function effectiveRef(
 function setClaim(surface: InlineWorkspaceSurface, identity: WorkspaceItemIdentity, ref: WorkspaceRefLite): void {
   const existing = claims[surface];
   if (existing && sameIdentity(existing.identity, identity) && sameRef(existing.ref, ref)) return;
-  // Replacing one item's claim directly with another's (selection change
-  // whose new detail already matches) never gives WorkspaceDockPanel an
-  // inactive gap, so its reset-on-inactive effect can't run; without this
-  // the new item's detail would open hidden behind a fullscreen terminal.
-  // Same-identity re-asserts (ref status changes) must not collapse an
-  // expanded dock.
-  if (existing && !sameIdentity(existing.identity, identity) && dockModes[surface] === "expanded") {
-    dockModes = { ...dockModes, [surface]: "split" };
+  // Replacing one item's claim directly with another's (selection change whose
+  // new detail already matches) never makes the workspace pane unavailable, so
+  // the layout host's own zoom reconciliation never fires and the new item's
+  // detail would open hidden behind a maximized terminal. Same-identity
+  // re-asserts (a ref status change on the same workspace) must NOT un-zoom.
+  if (existing && !sameIdentity(existing.identity, identity)) {
+    unzoomWorkspacePane(surface);
   }
   claims = { ...claims, [surface]: { identity, ref } };
   workspaceIdentityById.set(ref.id, identity);
@@ -196,18 +221,14 @@ function setClaim(surface: InlineWorkspaceSurface, identity: WorkspaceItemIdenti
 
 function clearClaim(surface: InlineWorkspaceSurface): void {
   if (!claims[surface]) return;
-  // A claim ending while expanded resets to split here, synchronously —
-  // not only when WorkspaceDockPanel observes the inactive gap. A reclaim
-  // landing in the same update (selection change to an item whose detail
-  // is already cached) leaves no observable gap: the panel's
-  // reset-on-inactive effect never fires and setClaim sees no previous
-  // claim to detect the replacement, so the new item's detail would open
-  // hidden behind a fullscreen terminal. Focus restoration is unaffected:
-  // the panel reclaims focus on the dockOpen -> closed transition, which
-  // an observed release still produces whatever the mode.
-  if (dockModes[surface] === "expanded") {
-    dockModes = { ...dockModes, [surface]: "split" };
-  }
+  // A claim ending while maximized un-zooms here, synchronously, rather than
+  // waiting for the layout host to notice the pane went away: a reclaim landing
+  // in the same update (selection change to an item whose detail is already
+  // cached) leaves no availability gap to notice, and setClaim then sees no
+  // previous claim to detect the replacement — so the new item's detail would
+  // open hidden behind a maximized terminal. It also covers the view
+  // unmounting outright, where the host component's effects never run at all.
+  unzoomWorkspacePane(surface);
   const next = { ...claims };
   delete next[surface];
   claims = next;
@@ -386,13 +407,27 @@ export function getInlineWorkspaceController(surface: InlineWorkspaceSurface): I
       delete next[key];
       overrides = next;
     },
-    getDockMode: () => dockModes[surface],
+    getDockMode: () => dockModeFor(surface),
     setDockMode: (mode) => {
       // A modal frame is open: refuse to expand the dock over it. Any other
       // mode change (split/collapsed) is unaffected by the modal guard.
       if (mode === "expanded" && getStackDepth() > 0) return;
-      if (dockModes[surface] === mode) return;
-      dockModes = { ...dockModes, [surface]: mode };
+      if (dockModeFor(surface) === mode) return;
+      const layout = getPaneLayoutStore(surface);
+      if (mode === "collapsed") {
+        layout.setHidden(WORKSPACE_PANE_KEY, true);
+        return;
+      }
+      layout.setHidden(WORKSPACE_PANE_KEY, false);
+      const leafID = layout.leafIDForTab(WORKSPACE_PANE_KEY);
+      if (mode === "expanded") {
+        if (leafID !== null) layout.toggleZoom(leafID);
+        return;
+      }
+      // Split means the workspace shares the surface with the detail, so no leaf
+      // may hold a zoom — not just not this one. Revealing the pane under
+      // someone else's maximized leaf would leave it invisible.
+      layout.clearZoom();
     },
     focusTerminal: () => {
       // A modal frame is open: leave the layout alone and don't pull
@@ -403,7 +438,7 @@ export function getInlineWorkspaceController(surface: InlineWorkspaceSurface): I
       // already visible keeps its mode. Maximizing over the detail is
       // the terminal toolbar's own expand action, never a side effect
       // of asking for focus.
-      if (dockModes[surface] === "collapsed") {
+      if (dockModeFor(surface) === "collapsed") {
         controller.setDockMode("split");
       }
       // Best-effort direct attempt: works when the host is already
@@ -433,7 +468,9 @@ export function getInlineWorkspaceController(surface: InlineWorkspaceSurface): I
 export function resetWorkspaceHostForTest(): void {
   claims = {};
   overrides = {};
-  dockModes = { activity: "split", prs: "split", issues: "split" };
+  // Dock mode lives in the pane layouts now, so resetting the host means
+  // resetting those too or a zoomed/hidden pane leaks into the next test.
+  resetPaneLayoutStoresForTest();
   lastInlineKey = { workspaceId: "", hostKey: undefined };
   hostEl = null;
   parkingEl = null;

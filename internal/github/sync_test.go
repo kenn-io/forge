@@ -264,6 +264,8 @@ func TestArchiveItemSyncCostIncludesProviderConfirmationAndAuthRetry(t *testing.
 	}{
 		{name: "GitHub pull request", kind: platform.KindGitHub, itemType: db.ArchiveItemTypeMergeRequest, want: 20},
 		{name: "GitLab pull request", kind: platform.KindGitLab, itemType: db.ArchiveItemTypeMergeRequest, want: 22},
+		{name: "Gitea pull request", kind: platform.KindGitea, itemType: db.ArchiveItemTypeMergeRequest, want: 38},
+		{name: "Forgejo pull request", kind: platform.KindForgejo, itemType: db.ArchiveItemTypeMergeRequest, want: 38},
 		{name: "GitHub issue", kind: platform.KindGitHub, itemType: db.ArchiveItemTypeIssue, want: 4},
 		{name: "Forgejo issue", kind: platform.KindForgejo, itemType: db.ArchiveItemTypeIssue, want: 6},
 	}

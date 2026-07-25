@@ -3,8 +3,10 @@ package forgejo
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -222,6 +224,92 @@ func TestListMergeRequestReviewThreadsReadsForgejoReviewComments(t *testing.T) {
 	assert.Equal("right", threads[0].Range.Side)
 	assert.Equal(7, threads[0].Range.Line)
 	assert.Equal("head-sha", threads[0].Range.CommitSHA)
+}
+
+func TestListMergeRequestReviewIDsDoesNotFanOut(t *testing.T) {
+	assert := assert.New(t)
+	require := Require.New(t)
+	var commentRequests atomic.Int32
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path != "/api/v1/repos/acme/widgets/pulls/42/reviews" {
+			commentRequests.Add(1)
+			http.Error(w, "unexpected comment fan-out", http.StatusInternalServerError)
+			return
+		}
+		if r.URL.Query().Get("page") == "1" {
+			w.Header().Set("Link", fmt.Sprintf(`<%s/api/v1/repos/acme/widgets/pulls/42/reviews?page=2&limit=100>; rel="next"`, server.URL))
+			assert.NoError(json.NewEncoder(w).Encode([]map[string]any{{"id": 99}}))
+			return
+		}
+		assert.NoError(json.NewEncoder(w).Encode([]map[string]any{{"id": 100}}))
+	}))
+	defer server.Close()
+	client, err := NewClient("codeberg.test", testTokenSource("token"), WithBaseURLForTesting(server.URL))
+	require.NoError(err)
+
+	ids, err := client.ListMergeRequestReviewIDs(t.Context(), platform.RepoRef{
+		Owner: "acme", Name: "widgets",
+	}, 42)
+
+	require.NoError(err)
+	assert.Equal([]string{"99", "100"}, ids)
+	assert.Zero(commentRequests.Load())
+}
+
+func TestListMergeRequestReviewIDsStopsBeforeEleventhPage(t *testing.T) {
+	assert := assert.New(t)
+	require := Require.New(t)
+	var requests atomic.Int32
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		page, err := strconv.Atoi(r.URL.Query().Get("page"))
+		assert.NoError(err)
+		if page <= gitealike.MaxReviewHydrationPages {
+			w.Header().Set("Link", fmt.Sprintf(
+				`<%s/api/v1/repos/acme/widgets/pulls/42/reviews?page=%d&limit=100>; rel="next"`,
+				server.URL, page+1,
+			))
+		}
+		assert.NoError(json.NewEncoder(w).Encode([]map[string]any{{"id": page}}))
+	}))
+	defer server.Close()
+	client, err := NewClient("codeberg.test", testTokenSource("token"), WithBaseURLForTesting(server.URL))
+	require.NoError(err)
+
+	_, err = client.ListMergeRequestReviewIDs(t.Context(), platform.RepoRef{
+		Owner: "acme", Name: "widgets",
+	}, 42)
+
+	require.ErrorIs(err, platform.ErrPageLimit)
+	assert.Equal(int32(gitealike.MaxReviewHydrationPages), requests.Load())
+}
+
+func TestListMergeRequestReviewThreadsForReviewReadsOnlyRequestedReview(t *testing.T) {
+	assert := assert.New(t)
+	require := Require.New(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		assert.Equal("/api/v1/repos/acme/widgets/pulls/42/reviews/100/comments", r.URL.Path)
+		assert.NoError(json.NewEncoder(w).Encode([]map[string]any{{
+			"id": 201, "body": "requested review", "pull_request_review_id": 100,
+		}}))
+	}))
+	defer server.Close()
+	client, err := NewClient("codeberg.test", testTokenSource("token"), WithBaseURLForTesting(server.URL))
+	require.NoError(err)
+
+	threads, err := client.ListMergeRequestReviewThreadsForReview(t.Context(), platform.RepoRef{
+		Owner: "acme", Name: "widgets",
+	}, 42, "100")
+
+	require.NoError(err)
+	require.Len(threads, 1)
+	assert.Equal("100", threads[0].ProviderReviewID)
+	assert.Equal("201", threads[0].ProviderCommentID)
 }
 
 func TestListMergeRequestReviewThreadsClassifiesDisabledMergeRequests(t *testing.T) {

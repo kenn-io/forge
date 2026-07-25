@@ -7,9 +7,14 @@ import (
 )
 
 const (
+	// MaxReviewHydrationPages bounds review identity discovery before any
+	// per-review comment fan-out begins.
+	MaxReviewHydrationPages = 10
 	// MaxReviewHydrationReviews caps the per-review comment fan-out for one
 	// merge-request detail refresh.
 	MaxReviewHydrationReviews = 100
+	// MaxReviewHydrationReviewsPerPass bounds one resumable detail continuation.
+	MaxReviewHydrationReviewsPerPass = 8
 	// MaxReviewHydrationComments caps the complete inline-comment dataset that
 	// one merge-request detail refresh may persist.
 	MaxReviewHydrationComments = 1000

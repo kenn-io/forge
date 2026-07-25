@@ -9489,6 +9489,9 @@ func (s *Syncer) syncIssueForRepo(
 // after authentication refresh.
 func (s *Syncer) ArchiveItemSyncCost(kind platform.Kind, itemType db.ArchiveItemType) int {
 	if itemType == db.ArchiveItemTypeMergeRequest {
+		if kind == platform.KindGitea || kind == platform.KindForgejo {
+			return 38
+		}
 		return detailWorstCaseAttemptCost(kind, QueueItemPR)
 	}
 	return detailWorstCaseAttemptCost(kind, QueueItemIssue)

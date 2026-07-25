@@ -10,11 +10,22 @@ import (
 
 // ListPRsForStackDetection returns non-closed PRs for a repo (open + merged).
 func (d *DB) ListPRsForStackDetection(ctx context.Context, repoID int64) ([]MergeRequest, error) {
+	return d.listPRsForStacks(ctx, repoID, `AND state IN ('open', 'merged')`)
+}
+
+// ListPRsForNativeStackMembers returns every PR for a repo regardless of state.
+// A provider-authoritative stack can keep a closed, unmerged member, and
+// dropping that row would leave the whole stack unresolvable.
+func (d *DB) ListPRsForNativeStackMembers(ctx context.Context, repoID int64) ([]MergeRequest, error) {
+	return d.listPRsForStacks(ctx, repoID, "")
+}
+
+func (d *DB) listPRsForStacks(ctx context.Context, repoID int64, stateFilter string) ([]MergeRequest, error) {
 	rows, err := d.ro.QueryContext(ctx, `
 		SELECT id, number, title, head_branch, base_branch, state, ci_status, review_decision,
 		       head_repo_clone_url
 		FROM middleman_merge_requests
-		WHERE repo_id = ? AND state IN ('open', 'merged')
+		WHERE repo_id = ? `+stateFilter+`
 		ORDER BY number`,
 		repoID,
 	)

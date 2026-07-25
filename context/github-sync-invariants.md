@@ -164,7 +164,20 @@ fallback repository listing.
   (`internal/server/native_stack_settings.go::applyGitHubNativeStackPreference`)
 - Preview-only GraphQL fields must be absent from disabled query shapes;
   `@include(false)` does not bypass schema validation on servers without those
-  fields. (`internal/github/graphql.go::gqlPRWithNativeStacks`)
+  fields. Schema rejection drops the fields for that host instead of abandoning
+  bulk fetch. (`internal/github/graphql.go::isNativeStackSchemaRejection`)
+- Confirmation reconciles against currently observed open-PR hints, never cached
+  or payload member state, and a PR may join at most one projected stack: member
+  eviction would silently drop a preceding merge blocker.
+  (`internal/github/native_stack_sync.go::cachedStackMatchesCurrentHints`,
+  `internal/stacks/detect.go::RunDetectionWithNativeStacks`)
+- Only a refresh that resolved every target seeds the confirmation a later 304
+  reuses; an incomplete refresh evicts the pull-request list ETag so the next
+  sync retries. (`internal/github/native_stack_sync.go::refreshGitHubNativeStackCache`)
+- Native results carry the preference generation and project under the shared
+  stack-projection lock, so a sync that began while the preview was enabled
+  cannot reinstate it afterward.
+  (`internal/github/sync.go::dropStaleNativeStackResults`)
 
 ## Historical Archive Rules
 

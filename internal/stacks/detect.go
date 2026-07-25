@@ -2,6 +2,7 @@ package stacks
 
 import (
 	"context"
+	"log/slog"
 	"net/url"
 	"slices"
 	"strings"
@@ -260,8 +261,16 @@ func RunDetectionWithNativeStacks(
 		if err != nil {
 			return err
 		}
-		prsByNumber := make(map[int]db.MergeRequest, len(prs))
-		for _, pr := range prs {
+		// Native membership is authoritative and can include a closed,
+		// unmerged pull request. Resolving members against the
+		// branch-inference row set would drop that member and discard the
+		// whole confirmed stack.
+		memberRows, err := database.ListPRsForNativeStackMembers(ctx, repoID)
+		if err != nil {
+			return err
+		}
+		prsByNumber := make(map[int]db.MergeRequest, len(memberRows))
+		for _, pr := range memberRows {
 			prsByNumber[pr.Number] = pr
 		}
 		for _, nativeStack := range nativeStacks {
@@ -274,6 +283,17 @@ func RunDetectionWithNativeStacks(
 			for _, member := range nativeStack.Members {
 				pr, ok := prsByNumber[member.PullRequestNumber]
 				if !ok {
+					usable = false
+					break
+				}
+				if claimed[pr.ID] {
+					// A pull request can belong to only one persisted stack.
+					// Projecting an overlap would evict the member from the
+					// stack that was written first, silently shortening it and
+					// hiding a preceding merge blocker.
+					slog.Warn("skip overlapping native stack projection",
+						"repo_id", repoID, "stack_number", nativeStack.Number,
+						"pull_request", member.PullRequestNumber)
 					usable = false
 					break
 				}

@@ -21,6 +21,9 @@ type nativeStackSyncTestClient struct {
 	pages     map[int]NativeStackPage
 	errors    map[int]error
 	pageCalls []int
+	// onPage runs before each stacks page is served so a test can model state
+	// changing while the sync is in flight.
+	onPage func()
 }
 
 func (c *nativeStackSyncTestClient) ListOpenPullRequestsWithNativeStackHints(
@@ -32,6 +35,9 @@ func (c *nativeStackSyncTestClient) ListOpenPullRequestsWithNativeStackHints(
 func (c *nativeStackSyncTestClient) ListNativeStacksPage(
 	_ context.Context, _, _ string, page int,
 ) (NativeStackPage, error) {
+	if c.onPage != nil {
+		c.onPage()
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.pageCalls = append(c.pageCalls, page)
@@ -198,6 +204,138 @@ func TestRefreshGitHubNativeStackCacheDoesNotReconfirmSuspectCacheAfterNotModifi
 	assert.Empty(t, failed.ConfirmedNumbers)
 	unchanged := syncer.refreshGitHubNativeStackCache(t.Context(), repo, repoID, nil, true)
 	assert.Empty(t, unchanged.ConfirmedNumbers)
+}
+
+func TestRefreshGitHubNativeStackCacheRejectsMemberClaimedByAnotherStack(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := openTestDB(t)
+	repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widgets"))
+	require.NoError(err)
+	now := time.Date(2026, time.July, 24, 12, 0, 0, 0, time.UTC)
+	// Cached stack 42 still lists PR 103 from when it was closed.
+	require.NoError(database.ReplaceGitHubNativeStack(t.Context(), db.GitHubNativeStack{
+		RepoID: repoID, GitHubID: 900, Number: 42, Size: 2,
+		BaseRef: "main", IsOpen: true, GitHubCreatedAt: now,
+		ContentFingerprint: "cached", LastObservedAt: now,
+		Members: []db.GitHubNativeStackMember{
+			{Position: 1, PullRequestNumber: 101, State: "open", HeadRef: "a", HeadSHA: "aaa"},
+			{Position: 2, PullRequestNumber: 103, State: "closed", HeadRef: "c", HeadSHA: "ccc"},
+		},
+	}))
+	client := &nativeStackSyncTestClient{
+		mockClient: &mockClient{},
+		// The refetch of stack 42 still reports the reopened PR as closed.
+		pages: map[int]NativeStackPage{1: {Stacks: []NativeStack{{
+			ID: 900, Number: 42, BaseRef: "main", Open: true, CreatedAt: now,
+			Members: []NativeStackMember{
+				{Position: 1, PullRequestNumber: 101, State: "open", HeadRef: "a", HeadSHA: "aaa"},
+				{Position: 2, PullRequestNumber: 103, State: "closed", HeadRef: "c", HeadSHA: "ccc"},
+			},
+		}}}},
+	}
+	syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil, nil, time.Minute, nil, nil)
+	syncer.now = func() time.Time { return now }
+
+	// PR 103 is open again and GitHub now reports it in stack 43.
+	result := syncer.refreshGitHubNativeStackCache(t.Context(), RepoRef{
+		Owner: "acme", Name: "widgets", PlatformHost: "github.com",
+	}, repoID, map[int]*NativeStackHint{
+		101: {Number: 42, Size: 2, Position: 1, BaseRef: "main"},
+		103: {Number: 43, Size: 2, Position: 2, BaseRef: "main"},
+	}, false)
+
+	assert.NotContains(result.ConfirmedNumbers, 42,
+		"a stack whose member now belongs to another stack must not stay confirmed")
+}
+
+func TestRefreshGitHubNativeStackCacheDoesNotReuseIncompleteRefreshAfterNotModified(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := openTestDB(t)
+	repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widgets"))
+	require.NoError(err)
+	now := time.Date(2026, time.July, 24, 12, 0, 0, 0, time.UTC)
+	require.NoError(database.ReplaceGitHubNativeStack(t.Context(), db.GitHubNativeStack{
+		RepoID: repoID, GitHubID: 900, Number: 42, Size: 2,
+		BaseRef: "main", IsOpen: true, GitHubCreatedAt: now,
+		ContentFingerprint: "cached", LastObservedAt: now,
+		Members: []db.GitHubNativeStackMember{
+			{Position: 1, PullRequestNumber: 101, State: "open", HeadRef: "a", HeadSHA: "aaa"},
+			{Position: 2, PullRequestNumber: 102, State: "open", HeadRef: "b", HeadSHA: "bbb"},
+		},
+	}))
+	client := &nativeStackSyncTestClient{
+		mockClient: &mockClient{},
+		errors: map[int]error{1: &gh.ErrorResponse{
+			Response: &http.Response{StatusCode: http.StatusServiceUnavailable},
+		}},
+	}
+	syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil, nil, time.Minute, nil, nil)
+	repo := RepoRef{Owner: "acme", Name: "widgets", PlatformHost: "github.com"}
+	// Stack 42 is confirmable from cache, while PR 103 points at an uncached
+	// stack whose catalog fetch fails: a partial refresh.
+	hints := map[int]*NativeStackHint{
+		101: {Number: 42, Size: 2, Position: 1, BaseRef: "main"},
+		102: {Number: 42, Size: 2, Position: 2, BaseRef: "main"},
+		103: {Number: 43, Size: 1, Position: 1, BaseRef: "main"},
+	}
+
+	partial := syncer.refreshGitHubNativeStackCache(t.Context(), repo, repoID, hints, false)
+	assert.Equal([]int{42}, partial.ConfirmedNumbers)
+	assert.EqualValues(1, client.invalidateCalls.Load(),
+		"an incomplete refresh must evict the pull-request list ETag so the next sync retries")
+
+	unchanged := syncer.refreshGitHubNativeStackCache(t.Context(), repo, repoID, nil, true)
+	assert.Empty(unchanged.ConfirmedNumbers,
+		"a 304 must not reuse confirmations from an incomplete refresh")
+}
+
+func TestRunOnceDropsNativeStacksDisabledDuringSync(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := openTestDB(t)
+	now := time.Date(2026, time.July, 24, 12, 0, 0, 0, time.UTC)
+	first := buildOpenPR(101, now)
+	second := buildOpenPR(102, now)
+	first.Head.Ref = new("feature/a")
+	second.Head.Ref = new("feature/b")
+	client := &nativeStackSyncTestClient{
+		mockClient: &mockClient{},
+		pulls:      []*gh.PullRequest{first, second},
+		hints: map[int]*NativeStackHint{
+			101: {Number: 42, Size: 2, Position: 1, BaseRef: "main"},
+			102: {Number: 42, Size: 2, Position: 2, BaseRef: "main"},
+		},
+		pages: map[int]NativeStackPage{1: {
+			Stacks: []NativeStack{{
+				ID: 9001, Number: 42, BaseRef: "main", Open: true, CreatedAt: now,
+				Members: []NativeStackMember{
+					{Position: 1, PullRequestNumber: 101, State: "open", HeadRef: "feature/a", HeadSHA: "aaa"},
+					{Position: 2, PullRequestNumber: 102, State: "open", HeadRef: "feature/b", HeadSHA: "bbb"},
+				},
+			}},
+		}},
+	}
+	repo := RepoRef{
+		Owner: "owner", Name: "repo", PlatformHost: "github.com",
+		PlatformExternalID: "repo-owner-repo",
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client}, database, nil,
+		[]RepoRef{repo}, time.Minute, nil, nil,
+	)
+	syncer.SetPreferGitHubNativeStacks(true)
+	// Model the user turning the preview off while this sync is still running.
+	client.onPage = func() { syncer.SetPreferGitHubNativeStacks(false) }
+	var results []RepoSyncResult
+	syncer.SetOnSyncCompleted(func(got []RepoSyncResult) { results = got })
+
+	syncer.RunOnce(t.Context())
+
+	require.Len(results, 1)
+	assert.Nil(results[0].GitHubNativeStacks,
+		"a result captured under the enabled preference must not project after it is disabled")
 }
 
 func TestSetPreferGitHubNativeStacksRefreshesHintsOnEnable(t *testing.T) {

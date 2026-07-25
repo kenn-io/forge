@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	gh "github.com/google/go-github/v88/github"
@@ -736,6 +737,11 @@ type GraphQLFetcher struct {
 	client      *githubv4.Client
 	rateTracker *RateTracker
 	host        string
+	// nativeStacksRejected latches when this host validates the preview-only
+	// stack fields as unknown. Hosts without the preview reject the shape on
+	// every query, so re-sending it would abandon bulk fetch each cycle. A
+	// process restart is the reset point once the host gains the preview.
+	nativeStacksRejected atomic.Bool
 }
 
 // RateTracker returns the GraphQL rate tracker, or nil if none
@@ -816,9 +822,24 @@ func (g *GraphQLFetcher) ShouldBackoff() (bool, time.Duration) {
 func (g *GraphQLFetcher) FetchRepoPRs(
 	ctx context.Context, owner, name string, includeNativeStacks bool,
 ) (*RepoBulkResult, error) {
+	includeNativeStacks = includeNativeStacks && !g.nativeStacksRejected.Load()
 	result, err := g.fetchRepoPRsWithPageSize(
 		ctx, owner, name, topLevelPageSize, includeNativeStacks,
 	)
+	if err != nil && includeNativeStacks && isNativeStackSchemaRejection(err) {
+		// Retrying the same shape cannot help: the host's schema has no
+		// preview stack fields. Drop them and keep bulk fetch instead of
+		// degrading every cycle to the REST index. REST-derived stack hints
+		// still reach the native cache refresh.
+		slog.Warn("GraphQL rejected native stack preview fields, querying without them",
+			"owner", owner, "name", name, "err", err,
+		)
+		g.nativeStacksRejected.Store(true)
+		includeNativeStacks = false
+		result, err = g.fetchRepoPRsWithPageSize(
+			ctx, owner, name, topLevelPageSize, false,
+		)
+	}
 	if err != nil {
 		slog.Warn("GraphQL query failed, retrying with smaller page",
 			"owner", owner, "name", name,
@@ -829,6 +850,30 @@ func (g *GraphQLFetcher) FetchRepoPRs(
 		)
 	}
 	return result, err
+}
+
+// isNativeStackSchemaRejection reports whether err is GraphQL schema validation
+// rejecting the preview-only stack fields rather than a transient or
+// complexity-related failure.
+func isNativeStackSchemaRejection(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	if !strings.Contains(message, "stack") {
+		return false
+	}
+	for _, phrase := range []string{
+		"doesn't exist on type",
+		"does not exist on type",
+		"cannot query field",
+		"unknown field",
+	} {
+		if strings.Contains(message, phrase) {
+			return true
+		}
+	}
+	return false
 }
 
 func (g *GraphQLFetcher) fetchRepoPRsWithPageSize(

@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"net/http"
 	"slices"
-	"strings"
 	"time"
 
 	"go.kenn.io/middleman/internal/db"
@@ -16,6 +15,10 @@ import (
 // inference even when an older cache row exists.
 type GitHubNativeStackSyncResult struct {
 	ConfirmedNumbers []int
+	// generation is the preference generation this result was produced under.
+	// The completion hook discards results whose generation is no longer
+	// current so a disabled preview cannot be reinstated by an in-flight sync.
+	generation uint64
 }
 
 func nativeStackHintsFromBulk(result *RepoBulkResult) map[int]*NativeStackHint {
@@ -30,6 +33,33 @@ func nativeStackHintsFromBulk(result *RepoBulkResult) map[int]*NativeStackHint {
 	return hints
 }
 
+// RunUnderStackProjection serializes fn with the stack projection performed by
+// the sync completion hook. Callers that reconcile stacks after a native-stack
+// preference change use it so an in-flight sync cannot write its projection
+// after the reconciliation already restored branch inference.
+func (s *Syncer) RunUnderStackProjection(fn func()) {
+	s.stackProjectionMu.Lock()
+	defer s.stackProjectionMu.Unlock()
+	fn()
+}
+
+// dropStaleNativeStackResults clears native confirmations captured under a
+// superseded preference generation. It must run with stackProjectionMu held so
+// the decision cannot be invalidated while the hook projects.
+func (s *Syncer) dropStaleNativeStackResults(results []RepoSyncResult) {
+	generation := s.nativeStackGeneration.Load()
+	enabled := s.preferGitHubNativeStacks.Load()
+	for i := range results {
+		native := results[i].GitHubNativeStacks
+		if native == nil {
+			continue
+		}
+		if !enabled || native.generation != generation {
+			results[i].GitHubNativeStacks = nil
+		}
+	}
+}
+
 func (s *Syncer) refreshGitHubNativeStackCache(
 	ctx context.Context,
 	repo RepoRef,
@@ -37,7 +67,9 @@ func (s *Syncer) refreshGitHubNativeStackCache(
 	hints map[int]*NativeStackHint,
 	listUnchanged bool,
 ) *GitHubNativeStackSyncResult {
-	result := &GitHubNativeStackSyncResult{}
+	result := &GitHubNativeStackSyncResult{
+		generation: s.nativeStackGeneration.Load(),
+	}
 	confirmationKey := repoFailKey(repo)
 	if listUnchanged {
 		if confirmed, ok := s.nativeStackConfirmations.Load(confirmationKey); ok {
@@ -50,16 +82,28 @@ func (s *Syncer) refreshGitHubNativeStackCache(
 		}
 		return result
 	}
+	// Only a refresh that resolved every target may seed the confirmation a
+	// later 304 reuses. Caching a partial result would suppress the unresolved
+	// stacks for as long as the pull-request list keeps returning 304.
+	complete := true
 	defer func() {
-		s.nativeStackConfirmations.Store(
-			confirmationKey, slices.Clone(result.ConfirmedNumbers),
-		)
+		if complete {
+			s.nativeStackConfirmations.Store(
+				confirmationKey, slices.Clone(result.ConfirmedNumbers),
+			)
+			return
+		}
+		s.nativeStackConfirmations.Delete(confirmationKey)
+		if client, ok := s.optionalGitHubClientFor(repo); ok {
+			client.InvalidateListETagsForRepo(repo.Owner, repo.Name, "pulls")
+		}
 	}()
 	cached, err := s.db.ListGitHubNativeStacks(ctx, repoID)
 	if err != nil {
 		slog.Warn("load github native stack cache failed",
 			"platform", repoPlatform(repo), "host", repoHost(repo),
 			"repo", repo.Owner+"/"+repo.Name, "err", err)
+		complete = false
 		return result
 	}
 	if hints == nil {
@@ -119,6 +163,7 @@ func (s *Syncer) refreshGitHubNativeStackCache(
 			slog.Warn("refresh github native stack cache failed",
 				"platform", repoPlatform(repo), "host", repoHost(repo),
 				"repo", repo.Owner+"/"+repo.Name, "page", pageNumber, "err", err)
+			complete = false
 			result.ConfirmedNumbers = sortedStackNumbers(confirmed)
 			return result
 		}
@@ -174,6 +219,7 @@ func (s *Syncer) refreshGitHubNativeStackCache(
 			slog.Warn("delete absent github native stacks failed",
 				"platform", repoPlatform(repo), "host", repoHost(repo),
 				"repo", repo.Owner+"/"+repo.Name, "err", err)
+			complete = false
 			result.ConfirmedNumbers = sortedStackNumbers(confirmed)
 			return result
 		}
@@ -202,12 +248,16 @@ func nativeStackMatchesCurrentHints(stack NativeStack, hints map[int]*NativeStac
 			return false
 		}
 	}
+	// Reconcile against observation rather than the state the stack payload
+	// reports. A member the payload calls closed may already be open in another
+	// stack, and confirming both would project overlapping stacks whose member
+	// eviction can drop a preceding merge blocker.
 	for _, member := range stack.Members {
-		if !strings.EqualFold(member.State, "open") {
+		hint, observed := hints[member.PullRequestNumber]
+		if !observed {
 			continue
 		}
-		hint, ok := hints[member.PullRequestNumber]
-		if !ok || hint == nil || hint.Number != stack.Number ||
+		if hint == nil || hint.Number != stack.Number ||
 			hint.Size != len(stack.Members) || hint.BaseRef != stack.BaseRef ||
 			hint.Position != member.Position {
 			return false
@@ -232,14 +282,16 @@ func cachedStackMatchesCurrentHints(stack db.GitHubNativeStack, hints map[int]*N
 	if !stack.IsOpen || len(stack.Members) != stack.Size {
 		return false
 	}
+	// Cached member state can be stale, so trust the current observation: a
+	// member that is open now must still point at this stack.
 	foundOpen := false
 	for _, member := range stack.Members {
-		if !strings.EqualFold(member.State, "open") {
+		hint, observed := hints[member.PullRequestNumber]
+		if !observed {
 			continue
 		}
 		foundOpen = true
-		hint, ok := hints[member.PullRequestNumber]
-		if !ok || hint == nil || !cachedStackMatchesHint(stack, member.PullRequestNumber, *hint) {
+		if hint == nil || !cachedStackMatchesHint(stack, member.PullRequestNumber, *hint) {
 			return false
 		}
 	}

@@ -551,6 +551,15 @@ type Syncer struct {
 	// nativeStackConfirmations pairs the in-memory PR-list ETag lifecycle with
 	// the last native stack set confirmed from that exact representation.
 	nativeStackConfirmations sync.Map // map[string][]int
+	// nativeStackGeneration advances on every native-stack preference change.
+	// A sync that captured an older generation must not project its native
+	// result, or an in-flight run could reinstate native ordering after the
+	// user turned the preview off.
+	nativeStackGeneration atomic.Uint64
+	// stackProjectionMu serializes stack projection between the sync
+	// completion hook and preference-change reconciliation so the last write
+	// always reflects the current preference.
+	stackProjectionMu sync.Mutex
 
 	featureCooldowns repositoryFeatureCooldowns
 
@@ -2648,6 +2657,11 @@ func (s *Syncer) SetActiveMRWindow(d time.Duration) {
 // subsequent repository syncs. Existing branch inference remains the fallback.
 func (s *Syncer) SetPreferGitHubNativeStacks(enabled bool) {
 	previous := s.preferGitHubNativeStacks.Swap(enabled)
+	if previous != enabled {
+		// Invalidate results captured under the old preference before any
+		// caller reconciles projections.
+		s.nativeStackGeneration.Add(1)
+	}
 	if !enabled || previous {
 		return
 	}
@@ -4613,7 +4627,10 @@ dispatch:
 	slog.Info("sync complete", "repos", total)
 
 	if s.onSyncCompleted != nil {
-		s.onSyncCompleted(results)
+		s.RunUnderStackProjection(func() {
+			s.dropStaleNativeStackResults(results)
+			s.onSyncCompleted(results)
+		})
 	}
 
 	s.publishStatus(&SyncStatus{

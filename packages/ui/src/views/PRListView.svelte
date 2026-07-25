@@ -27,7 +27,8 @@
     type PullRequestRouteRef,
   } from "../routes.js";
   import { canonicalProvider, resolvedPlatformHost } from "../api/provider-routes.js";
-  import { identityEquals, type InlineWorkspaceController, type WorkspaceItemIdentity } from "../workspace-inline.js";
+  import type { InlineWorkspaceController, WorkspaceItemIdentity } from "../workspace-inline.js";
+  import { useItemWorkspaceClaim } from "../item-workspace-claim.svelte.js";
 
   type StackMemberNavigate = (ref: PullRequestRouteRef) => boolean | void;
 
@@ -292,33 +293,12 @@
       : null,
   );
 
-  $effect(() => {
-    const controller = inlineWorkspace;
-    if (!controller) return;
-    const detail = detailStore.getDetail();
-    if (!claimIdentity || !detailMatchesSelected(detail, selectedPR ?? null)) {
-      controller.release();
-      return;
-    }
-    const ref = controller.effectiveWorkspaceRef(claimIdentity, detail?.workspace ?? null);
-    if (ref) controller.claim(claimIdentity, ref);
-    else controller.release();
-  });
-
-  $effect(() => {
-    const controller = inlineWorkspace;
-    if (!controller) return;
-    return () => controller.release();
-  });
-
-  $effect(() => {
-    const controller = inlineWorkspace;
-    if (!controller) return;
-    return controller.onIdentityInvalidated((identity) => {
-      if (claimIdentity && identityEquals(identity, claimIdentity)) {
-        void refreshSelectedDetail();
-      }
-    });
+  useItemWorkspaceClaim({
+    controller: () => inlineWorkspace,
+    identity: () => claimIdentity,
+    detailMatches: () => detailMatchesSelected(detailStore.getDetail(), selectedPR ?? null),
+    envelopeRef: () => detailStore.getDetail()?.workspace ?? null,
+    refresh: () => void refreshSelectedDetail(),
   });
 
   $effect(() => {

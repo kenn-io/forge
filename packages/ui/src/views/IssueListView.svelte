@@ -10,7 +10,8 @@
   import type { IssueDetailSyncMode } from "../stores/issues.svelte.js";
   import type { IssueRouteRef } from "../routes.js";
   import { canonicalProvider, resolvedPlatformHost } from "../api/provider-routes.js";
-  import { identityEquals, type InlineWorkspaceController, type WorkspaceItemIdentity } from "../workspace-inline.js";
+  import type { InlineWorkspaceController, WorkspaceItemIdentity } from "../workspace-inline.js";
+  import { useItemWorkspaceClaim } from "../item-workspace-claim.svelte.js";
 
   const { isSidebarToggleEnabled, toggleSidebar } = getSidebar();
   const { issues } = getStores();
@@ -86,33 +87,12 @@
       : null,
   );
 
-  $effect(() => {
-    const controller = inlineWorkspace;
-    if (!controller) return;
-    const detail = issues.getIssueDetail();
-    if (!claimIdentity || !detailMatchesSelected(detail, selectedIssue ?? null)) {
-      controller.release();
-      return;
-    }
-    const ref = controller.effectiveWorkspaceRef(claimIdentity, detail?.workspace ?? null);
-    if (ref) controller.claim(claimIdentity, ref);
-    else controller.release();
-  });
-
-  $effect(() => {
-    const controller = inlineWorkspace;
-    if (!controller) return;
-    return () => controller.release();
-  });
-
-  $effect(() => {
-    const controller = inlineWorkspace;
-    if (!controller) return;
-    return controller.onIdentityInvalidated((identity) => {
-      if (claimIdentity && identityEquals(identity, claimIdentity)) {
-        void refreshSelectedDetail();
-      }
-    });
+  useItemWorkspaceClaim({
+    controller: () => inlineWorkspace,
+    identity: () => claimIdentity,
+    detailMatches: () => detailMatchesSelected(issues.getIssueDetail(), selectedIssue ?? null),
+    envelopeRef: () => issues.getIssueDetail()?.workspace ?? null,
+    refresh: () => void refreshSelectedDetail(),
   });
 </script>
 

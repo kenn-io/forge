@@ -327,20 +327,25 @@ comment-dense edge-case handling in `WorkspaceDockPanel` and `setClaim` /
 
 ## Responsive fallback
 
-Below a container width of 1280px — the same threshold `PRListView`'s
-`minSplitViewWidth` uses today — the renderer uses
-`flattenTabbedPanelTree(tree)`: flat tabs, no splits, without mutating the
+The threshold is **720px of container width**, measured on the layout host: at
+720px and above the stored arrangement renders, below it the renderer uses
+`flattenTabbedPanelTree(tree)` — flat tabs, no splits, without mutating the
 persisted tree. This covers the phone and focus presentations, which pass
-`hideSidebar` and have no room for splits. Ratio clamps stay at 0.12–0.88; the
-flatten threshold, not a per-leaf pixel minimum, is what prevents unusable narrow
-panes.
+`hideSidebar` and have no room for splits.
 
-The threshold is **720px, twice the narrowest useful pane**, not `PRListView`'s
-old `detailHostWidth >= 1280` split-view gate. That gate guarded a side-by-side
+720px is twice the narrowest useful pane, and deliberately not `PRListView`'s old
+`detailHostWidth >= 1280` split-view gate. That gate guarded a side-by-side
 layout only, while flattening removes every arrangement including the default
 workspace-below-detail stack, which needs height rather than width. Reusing 1280
 silently deleted the inline workspace split at ordinary window sizes — a 1280px
-window minus the list rail measures roughly 940px.
+window minus the list rail measures roughly 940px. 1280 appears nowhere in the
+pane layout; the only threshold is 720.
+
+Ratio clamps stay at 0.12–0.88, so 360px is a guideline for the DEFAULT layout,
+not an enforced per-pane minimum: a user who drags a divider to the clamp at
+720px gets an ~86px pane and keeps it. That is accepted — an explicit drag is the
+user's own arrangement, while the flatten threshold is what stops the layout from
+imposing unusable panes on its own.
 
 The `embed-workspace-detail` route is **not** covered by this: it renders
 `WorkspaceRightSidebar` directly (`WorkspaceEmbedShell.svelte:218`) rather than

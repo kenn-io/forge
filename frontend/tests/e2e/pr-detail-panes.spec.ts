@@ -228,3 +228,39 @@ test("splits the PR detail panes apart and remembers the dragged ratio", async (
   await expect(page.locator(".files-layout")).toBeVisible();
   await expect.poll(async () => firstPaneWidth(page)).toBeLessThan(before - 150);
 });
+
+async function detailPaneHostWidth(page: Page): Promise<number> {
+  return Math.round(await page.locator(".detail-pane-layout").evaluate((el) => el.getBoundingClientRect().width));
+}
+
+test("keeps the arrangement at an ordinary window width and flattens below 720px", async ({ page }) => {
+  // The regression this pins: reusing the old 1280px split-view gate flattened
+  // the layout at ordinary window sizes, because a 1280px window minus the list
+  // rail leaves the pane host around 940px.
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/pulls/github/acme/widgets/42");
+  await expect(page.locator(".detail-title")).toContainText("Add browser regression coverage");
+
+  const ordinaryWidth = await detailPaneHostWidth(page);
+  expect(ordinaryWidth).toBeLessThan(1280);
+  expect(ordinaryWidth).toBeGreaterThanOrEqual(720);
+  await expect(page.getByRole("button", { name: "Split active pane right" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Split active pane right" }).click();
+  await expect(page.locator(".tabbed-panel-split-child")).toHaveCount(2);
+  await expect(page.getByRole("separator", { name: "Resize detail panes" })).toBeVisible();
+
+  // Below the threshold every structural control goes away and the panes collapse
+  // into one flat tab strip, without discarding the stored arrangement.
+  await page.setViewportSize({ width: 700, height: 900 });
+  await expect.poll(async () => detailPaneHostWidth(page)).toBeLessThan(720);
+  await expect(page.locator(".tabbed-panel-split-child")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Split active pane right" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Maximize pane" })).toHaveCount(0);
+  await expect(page.getByRole("separator", { name: "Resize detail panes" })).toHaveCount(0);
+  await expect(page.getByRole("tab", { name: "Files changed" })).toBeVisible();
+
+  // Back above the threshold the split the user made is still there.
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await expect(page.locator(".tabbed-panel-split-child")).toHaveCount(2);
+});

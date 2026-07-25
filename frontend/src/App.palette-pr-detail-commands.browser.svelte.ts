@@ -212,3 +212,85 @@ describe("PR-detail palette commands", () => {
     expect(paletteRowsNamed(/Mark ready for review/i)).toHaveLength(0);
   });
 });
+
+describe("pane layout palette commands", () => {
+  vi.setConfig({ testTimeout: 20_000 });
+
+  let mounted: MountedBrowserApp | null = null;
+
+  beforeEach(async () => {
+    await page.viewport(1280, 900);
+  });
+
+  afterEach(async () => {
+    mounted?.unmount();
+    mounted = null;
+    localStorage.clear();
+    await resetKeyboardModuleState();
+  });
+
+  function splitChildren(): HTMLElement[] {
+    return Array.from(document.querySelectorAll<HTMLElement>(".tabbed-panel-split-child"));
+  }
+
+  async function runCommand(query: string, pattern: RegExp): Promise<void> {
+    await openPaletteWith(query);
+    await vi.waitFor(() => expect(paletteRowsNamed(pattern).length).toBeGreaterThan(0));
+    pressKey("Enter", {}, paletteInput());
+  }
+
+  it("splits the active pane out of its leaf and resets back", async () => {
+    mounted = await mountBrowserApp("/pulls/github/acme/widgets/42");
+    await expect.element(page.getByText("Adds Playwright smoke tests")).toBeVisible();
+
+    // Conversation and files share a leaf by default, so nothing is split yet.
+    expect(splitChildren()).toHaveLength(0);
+
+    await runCommand("split pane right", /Split pane right/i);
+    await vi.waitFor(() => expect(splitChildren()).toHaveLength(2));
+
+    // Reset is surface-scoped and is the only way back to the default tree once
+    // panes have been rearranged.
+    await runCommand("reset pane layout", /Reset pane layout/i);
+    await vi.waitFor(() => expect(splitChildren()).toHaveLength(0));
+  });
+
+  it("offers Maximize and Restore according to the current zoom", async () => {
+    mounted = await mountBrowserApp("/pulls/github/acme/widgets/42");
+    await expect.element(page.getByText("Adds Playwright smoke tests")).toBeVisible();
+
+    await openPaletteWith("pane");
+    await vi.waitFor(() => expect(paletteRowsNamed(/Maximize pane/i).length).toBeGreaterThan(0));
+    expect(paletteRowsNamed(/Restore pane size/i)).toHaveLength(0);
+
+    // Run it from the palette already open rather than reopening: the toggle
+    // that opens the palette also closes it.
+    const input = paletteInput();
+    input.value = "maximize pane";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    await vi.waitFor(() => expect(paletteRowsNamed(/Maximize pane/i).length).toBeGreaterThan(0));
+    pressKey("Enter", {}, paletteInput());
+
+    await vi.waitFor(() => {
+      const zoom = document.querySelector<HTMLElement>("[data-testid='pane-toggle-zoom']");
+      expect(zoom?.getAttribute("aria-pressed")).toBe("true");
+    });
+
+    // The pair swaps rather than both showing: the zoom is a single toggle.
+    await openPaletteWith("pane");
+    await vi.waitFor(() => expect(paletteRowsNamed(/Restore pane size/i).length).toBeGreaterThan(0));
+    expect(paletteRowsNamed(/Maximize pane/i)).toHaveLength(0);
+  });
+
+  it("does not offer pane commands outside a pane surface", async () => {
+    // The Workspaces tab has its own tree with its own drag scope; detail pane
+    // commands must not reach it.
+    mounted = await mountBrowserApp("/workspaces");
+
+    await openPaletteWith("pane");
+
+    expect(paletteRowsNamed(/Split pane right/i)).toHaveLength(0);
+    expect(paletteRowsNamed(/Maximize pane/i)).toHaveLength(0);
+    expect(paletteRowsNamed(/Reset pane layout/i)).toHaveLength(0);
+  });
+});

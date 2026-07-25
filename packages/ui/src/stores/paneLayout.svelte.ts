@@ -50,6 +50,12 @@ export interface PaneLayoutStore {
   leafIDForTab(tabKey: string): string | null;
   /** Whether this tab is the active one in its own leaf. */
   isTabActive(tabKey: string): boolean;
+  /**
+   * Whether splitting this tab out would change anything — it shares its leaf.
+   * Callers that offer a split control need this to avoid a dead affordance,
+   * since the tree model answers a lone-tab split with the same tree.
+   */
+  canSplitTab(tabKey: string): boolean;
   activateTab(tabKey: string): void;
   noteFocused(tabKey: string): void;
   moveTabBefore(source: string, target: string): void;
@@ -128,6 +134,8 @@ export function createPaneLayoutStore(
     leafIDForTab: (tabKey) => findTabbedPanelLeafByTab(state.tree, tabKey)?.id ?? null,
 
     isTabActive: (tabKey) => findTabbedPanelLeafByTab(state.tree, tabKey)?.activeTabKey === tabKey,
+
+    canSplitTab: (tabKey) => (findTabbedPanelLeafByTab(state.tree, tabKey)?.tabs.length ?? 0) > 1,
 
     activateTab: (tabKey) => withTree(activateTabbedPanelTab(state.tree, tabKey)),
 

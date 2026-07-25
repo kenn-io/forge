@@ -334,11 +334,19 @@ Leave the Activity rail completely alone: `ACTIVITY_PANE_WIDTH_KEY`, collapse st
 
 Add Split right, Split down, Maximize/Restore, and Reset layout for the active surface. Reset layout is surface-scoped and exists **only** here, never in a leaf cluster.
 
-- [ ] **Step 1** Extend `App.palette-pr-detail-commands.browser.svelte.ts` with the new entries.
-- [ ] **Step 2** Run `./node_modules/.bin/vp test --project browser palette-pr-detail-commands`. Expected FAIL.
-- [ ] **Step 3** Implement.
-- [ ] **Step 4** Full gate, per `CLAUDE.md`'s pre-push rule: `./node_modules/.bin/vp test` (whole suite, both projects) from `frontend/`, then the affected Playwright suite. Then `make lint`.
-- [ ] **Step 5** Commit via the `kenn:commit` skill.
+- [x] **Step 1** Extend `App.palette-pr-detail-commands.browser.svelte.ts` with the new entries.
+- [x] **Step 2** Run `./node_modules/.bin/vp test --project browser palette-pr-detail-commands`. Expected FAIL.
+- [x] **Step 3** Implement.
+- [x] **Step 4** Full gate, per `CLAUDE.md`'s pre-push rule: `./node_modules/.bin/vp test` (whole suite, both projects) from `frontend/`, then the affected Playwright suite. Then `make lint`.
+- [x] **Step 5** Commit via the `kenn:commit` skill.
+
+The commands live in `frontend/src/lib/stores/keyboard/actions.ts` under the
+`detail` scope (`pane.splitRight`, `pane.splitDown`, `pane.toggleZoom`,
+`pane.restore`, `pane.reset`), keyed off the surface the current page arranges so
+the Workspaces tree stays out of reach. Maximize and Restore are two entries
+gated on the current zoom rather than one relabelled entry, matching how the
+palette filters by label. `PaneLayoutStore.canSplitTab` exists so the split
+entries do not surface as dead rows on a single-tab leaf.
 
 ---
 
@@ -348,26 +356,21 @@ Add Split right, Split down, Maximize/Restore, and Reset layout for the active s
 - Modify: `frontend/tests/e2e-full/00-inline-workspace-continuity.spec.ts`
 - Modify: `frontend/tests/e2e-full/detail-action-buttons.spec.ts`
 - Modify: `frontend/tests/e2e-full/activity-drawer.spec.ts`
+- Rewrite: `frontend/tests/e2e/pr-split-view.spec.ts` → `pr-detail-panes.spec.ts`
+- Modify: `frontend/tests/e2e/inline-review.spec.ts`, `frontend/tests/e2e-full/{diff-view,diff-highlight-screenshot,mobile-routes}.spec.ts`
 
-These three assert the dock and split-view DOM this work deletes, and they are the only coverage of behavior no component test can reach: workspace creation against a real backend, claim switching as the selection changes, live-terminal continuity across those switches, and collapse/reopen. Updating their selectors is mandatory, not a re-run.
+The three real-backend specs assert the dock and split-view DOM this work deletes, and they are the only coverage of behavior no component test can reach: workspace creation against a real backend, claim switching as the selection changes, live-terminal continuity across those switches, and collapse/reopen. Updating their selectors is mandatory, not a re-run.
 
-Add, in the same lane because they need real geometry:
-- a ratio drag whose resulting pixel widths survive a page reload;
-- the flatten fallback at a narrow viewport, asserting no split or maximize control is reachable;
-- terminal continuity across a PR-to-issue selection change in Activity, proving the slot element is not remounted.
+Add the three missing cases, each in the narrowest lane that observes it:
+- the ratio drag and the 720px breakpoint (ordinary 1280px window keeps its split, below 720 flattens with no structural control, and the split survives coming back) in `frontend/tests/e2e/pr-detail-panes.spec.ts` — real pointer drag and real container geometry, no backend state involved;
+- flattened-mode control suppression also in `DetailPaneLayout.test.ts` at a mocked 600px width, which is where the control set itself is owned;
+- terminal continuity across a PR-to-issue selection change in `ActivityFeedView.test.ts` (slot element identity) plus the real-backend liveness case in `00-inline-workspace-continuity.spec.ts`.
 
 - [x] **Step 1** Read all three specs and list every selector they use that this work removes.
-- [x] **Step 2** Run the three specs unchanged against the new UI to confirm they fail, so their coverage is proven live rather than assumed: `./node_modules/.bin/vp exec playwright test tests/e2e-full/00-inline-workspace-continuity.spec.ts tests/e2e-full/detail-action-buttons.spec.ts tests/e2e-full/activity-drawer.spec.ts`
-- [x] **Step 3** Update the selectors and add the three cases above.
-- [x] **Step 4** Re-run the three specs. Expected PASS.
+- [x] **Step 2** Run the three specs unchanged against the new UI to confirm they fail, so their coverage is proven live rather than assumed: `./node_modules/.bin/vp exec playwright test --config playwright-e2e.config.ts --project=chromium tests/e2e-full/00-inline-workspace-continuity.spec.ts tests/e2e-full/detail-action-buttons.spec.ts tests/e2e-full/activity-drawer.spec.ts`
+- [x] **Step 3** Update the selectors and add the cases above.
+- [x] **Step 4** Re-run both Playwright suites whole, since the pane chrome change reaches specs beyond the three: `./node_modules/.bin/vp exec playwright test --config playwright-e2e.config.ts --project=chromium` and `./node_modules/.bin/vp exec playwright test --config playwright.config.ts --project=chromium`. Expected PASS.
 - [x] **Step 5** Commit via the `kenn:commit` skill.
-
-Lane note: the three added cases landed in the narrowest lane that observes
-them, per `context/testing.md`. The ratio drag plus reload is
-`frontend/tests/e2e/pr-detail-panes.spec.ts` (real pointer geometry, no backend
-state involved); the flatten fallback is `DetailPaneLayout.test.ts` at a mocked
-600px width; PR-to-issue slot continuity is `ActivityFeedView.test.ts` plus the
-real-backend terminal liveness case in `00-inline-workspace-continuity.spec.ts`.
 
 ---
 

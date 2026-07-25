@@ -15,6 +15,7 @@ import {
   buildRepoBrowserRoute,
   type RepositoryRouteRef,
 } from "@middleman/ui/routes";
+import { getPaneLayoutStore, type PaneLayoutStore, type PaneSurfaceKey } from "@middleman/ui/stores/paneLayout";
 import type { ConfigRepo } from "@middleman/ui/api/types";
 import type { StoreInstances } from "@middleman/ui";
 import type { Action, Context, PreviewBlock } from "./types.js";
@@ -355,6 +356,56 @@ function navigateToSelectedPR(): void {
   }
 }
 
+/**
+ * The detail pane surface the current page arranges, if any.
+ *
+ * Pane commands are surface-scoped, never global: the Workspaces tab has its
+ * own tree with its own drag scope and must not be reachable from here.
+ */
+function paneSurfaceFor(ctx: Context): PaneSurfaceKey | null {
+  switch (ctx.page) {
+    case "pulls":
+      return "prs";
+    case "issues":
+      return "issues";
+    case "activity":
+      return "activity";
+    default:
+      return null;
+  }
+}
+
+interface PaneCommandTarget {
+  layout: PaneLayoutStore;
+  tabKey: string;
+  leafID: string;
+}
+
+/**
+ * The pane a command acts on: the last one focused, falling back to the pane the
+ * route names so the commands work before the user has touched a tab header.
+ */
+function paneCommandTarget(ctx: Context): PaneCommandTarget | null {
+  const surface = paneSurfaceFor(ctx);
+  if (surface === null) return null;
+  const layout = getPaneLayoutStore(surface);
+  const tabKey = layout.lastFocusedTabKey() ?? (surface === "issues" ? "conversation" : ctx.detailTab);
+  const leafID = layout.leafIDForTab(tabKey);
+  if (leafID === null) return null;
+  return { layout, tabKey, leafID };
+}
+
+function paneIsZoomed(ctx: Context): boolean {
+  const target = paneCommandTarget(ctx);
+  return target !== null && target.layout.zoomedLeafID() === target.leafID;
+}
+
+function splitActivePane(ctx: Context, direction: "horizontal" | "vertical"): void {
+  const target = paneCommandTarget(ctx);
+  if (target === null) return;
+  target.layout.splitTab(target.tabKey, target.leafID, direction, "after");
+}
+
 export const defaultActions: Action[] = [
   {
     id: "go.next",
@@ -514,6 +565,70 @@ export const defaultActions: Action[] = [
     handler: (ctx) => {
       const detail = labelPickerDetail(ctx);
       if (detail !== null) openLabelPickerFor(detail);
+    },
+  },
+  {
+    id: "pane.splitRight",
+    label: "Split pane right",
+    scope: "detail",
+    binding: null,
+    priority: 0,
+    // Splitting a lone tab out of its own leaf is a no-op in the tree model, so
+    // offering it would put a dead row in the palette.
+    when: (ctx) => {
+      const target = paneCommandTarget(ctx);
+      return target !== null && target.layout.canSplitTab(target.tabKey);
+    },
+    handler: (ctx) => splitActivePane(ctx, "horizontal"),
+  },
+  {
+    id: "pane.splitDown",
+    label: "Split pane down",
+    scope: "detail",
+    binding: null,
+    priority: 0,
+    when: (ctx) => {
+      const target = paneCommandTarget(ctx);
+      return target !== null && target.layout.canSplitTab(target.tabKey);
+    },
+    handler: (ctx) => splitActivePane(ctx, "vertical"),
+  },
+  {
+    id: "pane.toggleZoom",
+    label: "Maximize pane",
+    scope: "detail",
+    binding: null,
+    priority: 0,
+    when: (ctx) => paneCommandTarget(ctx) !== null && !paneIsZoomed(ctx),
+    handler: (ctx) => {
+      const target = paneCommandTarget(ctx);
+      target?.layout.toggleZoom(target.leafID);
+    },
+  },
+  {
+    id: "pane.restore",
+    label: "Restore pane size",
+    scope: "detail",
+    binding: null,
+    priority: 0,
+    when: paneIsZoomed,
+    handler: (ctx) => {
+      const target = paneCommandTarget(ctx);
+      target?.layout.toggleZoom(target.leafID);
+    },
+  },
+  {
+    id: "pane.reset",
+    label: "Reset pane layout",
+    scope: "detail",
+    binding: null,
+    priority: 0,
+    // Surface-scoped and only here: a leaf cluster is the wrong place for an
+    // action that discards arrangements the user cannot currently see.
+    when: (ctx) => paneSurfaceFor(ctx) !== null,
+    handler: (ctx) => {
+      const surface = paneSurfaceFor(ctx);
+      if (surface !== null) getPaneLayoutStore(surface).reset();
     },
   },
   {

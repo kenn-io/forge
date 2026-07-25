@@ -455,4 +455,21 @@ name = "*"
 	withoutApp := requiredByScope(t, globRepo)
 	assert.True(withoutApp["owner:acme"],
 		"without a covering App the pattern still needs its own credential")
+
+	// A blank repository name creates no exact App route, so it must not
+	// count as coverage either — otherwise the pattern route becomes
+	// optional and startup proceeds with nothing able to serve it.
+	malformed := requiredByScope(t, `
+[[github_apps]]
+app_id = 42
+private_key_path = "`+keyPath+`"
+installation_id = 99
+installation_account = "acme"
+repository_selection = "selected"
+selected_repos = ["acme/"]
+`+globRepo)
+	assert.True(malformed["owner:acme"],
+		"a selected entry with no repository name is not App coverage")
+	assert.NotContains(malformed, "repo:acme/",
+		"a selected entry with no repository name creates no exact route")
 }

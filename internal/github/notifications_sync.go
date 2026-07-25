@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 	"time"
@@ -569,23 +570,30 @@ func (s *Syncer) ProcessQueuedNotificationReads(ctx context.Context, kind platfo
 	// could overlap these requests. Rows whose repository no longer resolves
 	// to a route register nothing: their wire calls fail closed at routing
 	// without upstream I/O.
-	seenBuckets := make(map[string]struct{}, len(queued))
+	bucketRepos, ackBuckets := s.ackRepoBuckets(kind, host, queued)
+	seenBuckets := make(map[string]struct{}, len(bucketRepos))
 	for _, notification := range queued {
-		repo := RepoRef{
-			Platform: kind, PlatformHost: host,
-			Owner: notification.RepoOwner, Name: notification.RepoName,
-		}
-		bucket, bucketErr := s.bucketKeyForRepo(repo, kind == platform.KindGitHub)
-		if bucketErr != nil {
+		bucket, ok := ackBuckets[notification.ID]
+		if !ok {
 			continue
 		}
-		if _, ok := seenBuckets[bucket]; ok {
+		if _, seen := seenBuckets[bucket]; seen {
 			continue
 		}
 		seenBuckets[bucket] = struct{}{}
 		defer s.beginProviderWork(bucket, archive.PriorityNotificationRefresh)()
 	}
+	// A rate limit stops only the credential that hit it. Its remaining rows
+	// are already deferred in the database, so skipping them here avoids
+	// re-spending an exhausted budget while repositories served by other
+	// credentials on this host keep propagating.
+	exhausted := make(map[string]struct{}, len(seenBuckets))
+	var rateLimitErr error
 	for _, notification := range queued {
+		bucket := ackBuckets[notification.ID]
+		if _, stop := exhausted[bucket]; stop {
+			continue
+		}
 		current, err := s.db.NotificationAckPropagationCurrent(ctx, notification.ID, notification.SourceAckQueuedAt, notification.SourceUpdatedAt)
 		if err != nil {
 			return err
@@ -600,8 +608,18 @@ func (s *Syncer) ProcessQueuedNotificationReads(ctx context.Context, kind platfo
 			// rather than retry the same due row every tick. Only this refetch
 			// API error routes through backoff; the persistence error below
 			// surfaces normally so a failed local refresh is not hidden.
-			if deferErr := s.deferQueuedNotificationAckOnError(ctx, kind, host, notification, err); deferErr != nil {
+			limited, deferErr := s.deferQueuedNotificationAckOnError(
+				ctx, kind, host, bucket, bucketRepos[bucket], notification, err,
+			)
+			if deferErr != nil {
 				return deferErr
+			}
+			if limited {
+				exhausted[bucket] = struct{}{}
+				rateLimitErr = fmt.Errorf(
+					"notification read propagation rate limited for %s/%s on %s: %w",
+					notification.RepoOwner, notification.RepoName, host, err,
+				)
 			}
 			continue
 		}
@@ -624,8 +642,18 @@ func (s *Syncer) ProcessQueuedNotificationReads(ctx context.Context, kind platfo
 			}
 		}
 		if err := markRead(ctx, notification.PlatformNotificationID); err != nil {
-			if deferErr := s.deferQueuedNotificationAckOnError(ctx, kind, host, notification, err); deferErr != nil {
+			limited, deferErr := s.deferQueuedNotificationAckOnError(
+				ctx, kind, host, bucket, bucketRepos[bucket], notification, err,
+			)
+			if deferErr != nil {
 				return deferErr
+			}
+			if limited {
+				exhausted[bucket] = struct{}{}
+				rateLimitErr = fmt.Errorf(
+					"notification read propagation rate limited for %s/%s on %s: %w",
+					notification.RepoOwner, notification.RepoName, host, err,
+				)
 			}
 			continue
 		}
@@ -651,7 +679,61 @@ func (s *Syncer) ProcessQueuedNotificationReads(ctx context.Context, kind platfo
 			return err
 		}
 	}
-	return nil
+	// Healthy credentials finished their rows; still report the rate limit so
+	// the caller records the host's sync error rather than claiming success.
+	return rateLimitErr
+}
+
+// ackRepoBuckets groups the repositories whose queued acknowledgements share a
+// credential. A rate limit belongs to the credential that hit it, so only its
+// repositories may be deferred; repositories on the same host served by another
+// credential still have quota.
+//
+// Both the due batch and the tracked repository list contribute. The batch is
+// always present, so deferral works even for a syncer with no tracked repos,
+// while the tracked list also reaches queued rows this batch did not include.
+func (s *Syncer) ackRepoBuckets(
+	kind platform.Kind, host string, queued []db.Notification,
+) (map[string][]db.NotificationRepoRef, map[int64]string) {
+	byBucket := make(map[string][]db.NotificationRepoRef)
+	byNotification := make(map[int64]string, len(queued))
+	seen := make(map[string]struct{})
+	write := kind == platform.KindGitHub
+	add := func(bucket, owner, name string) {
+		key := bucket + "\x00" + strings.ToLower(owner) + "/" + strings.ToLower(name)
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		byBucket[bucket] = append(byBucket[bucket], db.NotificationRepoRef{
+			Owner: owner, Name: name,
+		})
+	}
+	for _, notification := range queued {
+		bucket, err := s.bucketKeyForRepo(RepoRef{
+			Platform: kind, PlatformHost: host,
+			Owner: notification.RepoOwner, Name: notification.RepoName,
+		}, write)
+		if err != nil {
+			continue
+		}
+		byNotification[notification.ID] = bucket
+		add(bucket, notification.RepoOwner, notification.RepoName)
+	}
+	for _, repo := range s.TrackedRepos() {
+		if repoPlatform(repo) != kind || repoHost(repo) != host {
+			continue
+		}
+		bucket, err := s.bucketKeyForRepo(repo, write)
+		if err != nil {
+			continue
+		}
+		if _, relevant := byBucket[bucket]; !relevant {
+			continue
+		}
+		add(bucket, repo.Owner, repo.Name)
+	}
+	return byBucket, byNotification
 }
 
 func (s *Syncer) reopenNotificationAfterPostAckRefetchError(
@@ -684,15 +766,24 @@ func (s *Syncer) deferQueuedNotificationAckOnError(
 	ctx context.Context,
 	kind platform.Kind,
 	host string,
+	bucket string,
+	bucketRepos []db.NotificationRepoRef,
 	notification db.Notification,
 	cause error,
-) error {
+) (rateLimited bool, err error) {
 	now := time.Now().UTC()
 	if nextAttemptAt, ok := notificationReadRateLimitNextAttempt(cause, now); ok {
-		if recordErr := s.db.DeferQueuedNotificationAcks(ctx, string(kind), host, nextAttemptAt, "rate_limited"); recordErr != nil {
-			return recordErr
+		if recordErr := s.db.DeferQueuedNotificationAcksForRepos(
+			ctx, string(kind), host, bucketRepos, nextAttemptAt, "rate_limited",
+		); recordErr != nil {
+			return true, recordErr
 		}
-		return fmt.Errorf("notification read propagation rate limited for host %s: %w", host, cause)
+		slog.Warn("notification read propagation rate limited",
+			"host", host, "bucket", bucket,
+			"owner", notification.RepoOwner, "name", notification.RepoName,
+			"err", cause,
+		)
+		return true, nil
 	}
 	errText := cause.Error()
 	var nextAttemptAt *time.Time
@@ -703,9 +794,9 @@ func (s *Syncer) deferQueuedNotificationAckOnError(
 		nextAttemptAt = &next
 	}
 	if recordErr := s.db.MarkNotificationAckPropagationResult(ctx, notification.ID, notification.SourceAckQueuedAt, notification.SourceUpdatedAt, nil, errText, nextAttemptAt); recordErr != nil {
-		return recordErr
+		return false, recordErr
 	}
-	return nil
+	return false, nil
 }
 
 // fetchAdvancedNotificationThread refetches the upstream thread and reports

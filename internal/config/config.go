@@ -2131,6 +2131,22 @@ func (c *Config) ResolveRepoToken(r Repo) string {
 // demand. The `gh` CLI candidate is deliberately excluded: it shells out and is
 // host-scoped, so pollers resolve it once per host through TokenForPlatformHost
 // instead of once per route here.
+// selectedRepoUnderAccount splits one selected_repos entry and reports whether
+// it names a repository the installation account owns. App route generation and
+// coverage checks must agree on this predicate: an entry with a blank repository
+// name (for example "acme/") creates no route, so it must not count as coverage
+// either.
+func selectedRepoUnderAccount(
+	entry, installationAccount string,
+) (string, string, bool) {
+	owner, name, ok := strings.Cut(strings.TrimSpace(entry), "/")
+	if !ok || strings.TrimSpace(name) == "" ||
+		!strings.EqualFold(owner, installationAccount) {
+		return "", "", false
+	}
+	return owner, name, true
+}
+
 // globServedBySelectedApp reports whether repo is a name pattern whose
 // repositories a selected-repository App installation already covers. Such a
 // pattern gets an owner-scoped route because the App cannot cover the literal
@@ -2154,8 +2170,7 @@ func (c *Config) globServedBySelectedApp(repo Repo) bool {
 			continue
 		}
 		for _, selected := range app.SelectedRepos {
-			owner, _, ok := strings.Cut(strings.TrimSpace(selected), "/")
-			if ok && strings.EqualFold(owner, repo.Owner) {
+			if _, _, ok := selectedRepoUnderAccount(selected, repo.Owner); ok {
 				return true
 			}
 		}
@@ -2417,9 +2432,10 @@ func (c *Config) ProviderTokenSources() []ProviderTokenSource {
 		}
 		if strings.EqualFold(app.RepositorySelection, "selected") {
 			for _, fullName := range app.SelectedRepos {
-				owner, name, ok := strings.Cut(strings.TrimSpace(fullName), "/")
-				if !ok || strings.TrimSpace(name) == "" ||
-					!strings.EqualFold(owner, app.InstallationAccount) {
+				owner, name, ok := selectedRepoUnderAccount(
+					fullName, app.InstallationAccount,
+				)
+				if !ok {
 					continue
 				}
 				repo := Repo{

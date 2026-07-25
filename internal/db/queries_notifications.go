@@ -867,6 +867,60 @@ func (d *DB) ReopenNotificationAckPropagation(ctx context.Context, id int64, que
 	return nil
 }
 
+// NotificationRepoRef identifies one repository whose queued acknowledgements
+// share a credential.
+type NotificationRepoRef struct {
+	Owner string
+	Name  string
+}
+
+// DeferQueuedNotificationAcksForRepos defers queued acknowledgements for the
+// listed repositories only. A rate limit belongs to the credential that hit it,
+// and a host can carry several credentials, so deferring the whole host would
+// stall repositories whose credentials still have quota. An empty list defers
+// nothing.
+func (d *DB) DeferQueuedNotificationAcksForRepos(
+	ctx context.Context,
+	platform, host string,
+	repos []NotificationRepoRef,
+	nextAttemptAt time.Time,
+	errText string,
+) error {
+	if len(repos) == 0 {
+		return nil
+	}
+	var err error
+	platform, host, err = canonicalizeNotificationPlatformHost(platform, host)
+	if err != nil {
+		return err
+	}
+	now := time.Now().UTC()
+	nextAttemptAt = canonicalUTCTime(nextAttemptAt)
+	args := []any{errText, now, nextAttemptAt, nextAttemptAt, platform, host}
+	placeholders := make([]string, 0, len(repos))
+	for _, repo := range repos {
+		placeholders = append(placeholders, "(LOWER(?), LOWER(?))")
+		args = append(args, repo.Owner, repo.Name)
+	}
+	_, err = d.rw.ExecContext(ctx, `UPDATE middleman_notification_items
+		SET source_ack_error = ?, source_ack_last_attempt_at = ?,
+		    source_ack_next_attempt_at = CASE
+			    WHEN source_ack_next_attempt_at IS NULL OR source_ack_next_attempt_at < ? THEN ?
+			    ELSE source_ack_next_attempt_at
+		    END
+		WHERE platform = ?
+		  AND platform_host = ?
+		  AND source_ack_queued_at IS NOT NULL
+		  AND source_ack_synced_at IS NULL
+		  AND source_ack_error != 'max_attempts_exceeded'
+		  AND (LOWER(repo_owner), LOWER(repo_name)) IN (`+
+		strings.Join(placeholders, ", ")+`)`, args...)
+	if err != nil {
+		return fmt.Errorf("defer queued notification acks for repos: %w", err)
+	}
+	return nil
+}
+
 func (d *DB) DeferQueuedNotificationAcks(ctx context.Context, platform, host string, nextAttemptAt time.Time, errText string) error {
 	var err error
 	platform, host, err = canonicalizeNotificationPlatformHost(platform, host)

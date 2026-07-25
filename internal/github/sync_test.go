@@ -14647,3 +14647,221 @@ func TestIsGitHubHeadModified(t *testing.T) {
 }
 
 var errOther = fmt.Errorf("transport down")
+
+// A rate limit belongs to the credential that hit it. With two owners on one
+// host routed to different PATs, exhausting one must not stall the other: the
+// exhausted owner's queued acks defer, while the healthy owner's ack still
+// propagates in the same pass.
+func TestProcessQueuedNotificationReadsDefersOnlyRateLimitedIdentity(t *testing.T) {
+	require := require.New(t)
+	check := assert.New(t)
+	d := openTestDB(t)
+	limitedRepo, err := d.UpsertRepo(
+		t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	healthyRepo, err := d.UpsertRepo(
+		t.Context(), db.GitHubRepoIdentity("github.com", "other", "thing"),
+	)
+	require.NoError(err)
+	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
+	limitedNumber := 7
+	healthyNumber := 8
+	require.NoError(d.UpsertNotifications(t.Context(), []db.Notification{
+		{
+			Platform: "github", PlatformHost: "github.com",
+			PlatformNotificationID: "limited-thread", RepoID: &limitedRepo,
+			RepoOwner: "acme", RepoName: "widget", SubjectType: "PullRequest",
+			SubjectTitle: "Exhausted owner", ItemNumber: &limitedNumber,
+			ItemType: "pr", Reason: "mention", Unread: true,
+			SourceUpdatedAt: now, SyncedAt: now,
+		},
+		{
+			Platform: "github", PlatformHost: "github.com",
+			PlatformNotificationID: "healthy-thread", RepoID: &healthyRepo,
+			RepoOwner: "other", RepoName: "thing", SubjectType: "PullRequest",
+			SubjectTitle: "Healthy owner", ItemNumber: &healthyNumber,
+			ItemType: "pr", Reason: "mention", Unread: true,
+			SourceUpdatedAt: now, SyncedAt: now,
+		},
+	}))
+	items, err := d.ListNotifications(
+		t.Context(), db.ListNotificationsOpts{State: "all", Sort: "updated"},
+	)
+	require.NoError(err)
+	require.Len(items, 2)
+	ids := make([]int64, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, item.ID)
+	}
+	_, err = d.QueueNotificationIDsRead(t.Context(), ids, now.Add(time.Minute))
+	require.NoError(err)
+
+	resetAt := time.Now().UTC().Add(time.Hour).Round(0)
+	var marked []string
+	mc := &mockClient{markNotificationThreadReadFn: func(
+		_ context.Context, threadID string,
+	) error {
+		marked = append(marked, threadID)
+		if threadID != "limited-thread" {
+			return nil
+		}
+		return &gh.RateLimitError{
+			Rate: gh.Rate{Reset: gh.Timestamp{Time: resetAt}},
+			Response: &http.Response{
+				StatusCode: http.StatusForbidden,
+				Request: httptest.NewRequest(
+					http.MethodPatch,
+					"https://api.github.com/notifications/threads/"+threadID, nil,
+				),
+			},
+			Message: "API rate limit exceeded",
+		}
+	}}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil, nil, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	router, err := NewHostRouter("github.com",
+		&Route{
+			Key: RouteKey{Host: "github.com", Owner: "acme"}, Client: mc,
+			ReadIdentity:  IdentityKey{Host: "github.com", Principal: "user:1"},
+			WriteIdentity: IdentityKey{Host: "github.com", Principal: "user:1"},
+		},
+		&Route{
+			Key: RouteKey{Host: "github.com", Owner: "other"}, Client: mc,
+			ReadIdentity:  IdentityKey{Host: "github.com", Principal: "user:2"},
+			WriteIdentity: IdentityKey{Host: "github.com", Principal: "user:2"},
+		},
+	)
+	require.NoError(err)
+	syncer.SetGitHubRouters(map[string]*HostRouter{"github.com": router})
+
+	err = syncer.ProcessQueuedNotificationReads(
+		t.Context(), platform.KindGitHub, "github.com", 10,
+	)
+	require.Error(err, "the rate limit is still reported for the host")
+
+	items, err = d.ListNotifications(
+		t.Context(), db.ListNotificationsOpts{State: "all", Sort: "updated"},
+	)
+	require.NoError(err)
+	byThread := map[string]db.Notification{}
+	for _, item := range items {
+		byThread[item.PlatformNotificationID] = item
+	}
+	check.ElementsMatch([]string{"limited-thread", "healthy-thread"}, marked,
+		"the healthy owner's ack is still attempted")
+	check.Equal("rate_limited", byThread["limited-thread"].SourceAckError)
+	check.Nil(byThread["limited-thread"].SourceAckSyncedAt,
+		"the exhausted owner's ack stays queued")
+	check.Empty(byThread["healthy-thread"].SourceAckError,
+		"another owner's exhausted PAT must not defer this ack")
+	check.NotNil(byThread["healthy-thread"].SourceAckSyncedAt,
+		"the healthy owner's ack propagated in the same pass")
+}
+
+// Deferral must be scoped even for queued rows this pass never reaches. With a
+// batch that holds only the exhausted owner's ack, the other owner's queued row
+// must stay due: a host-wide deferral would push it out by the exhausted
+// credential's reset window even though its own PAT has quota.
+func TestProcessQueuedNotificationReadsLeavesOtherIdentityQueuedRowsDue(t *testing.T) {
+	require := require.New(t)
+	check := assert.New(t)
+	d := openTestDB(t)
+	limitedRepo, err := d.UpsertRepo(
+		t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	healthyRepo, err := d.UpsertRepo(
+		t.Context(), db.GitHubRepoIdentity("github.com", "other", "thing"),
+	)
+	require.NoError(err)
+	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
+	limitedNumber := 7
+	healthyNumber := 8
+	require.NoError(d.UpsertNotifications(t.Context(), []db.Notification{
+		{
+			Platform: "github", PlatformHost: "github.com",
+			PlatformNotificationID: "limited-thread", RepoID: &limitedRepo,
+			RepoOwner: "acme", RepoName: "widget", SubjectType: "PullRequest",
+			SubjectTitle: "Exhausted owner", ItemNumber: &limitedNumber,
+			ItemType: "pr", Reason: "mention", Unread: true,
+			SourceUpdatedAt: now, SyncedAt: now,
+		},
+		{
+			Platform: "github", PlatformHost: "github.com",
+			PlatformNotificationID: "healthy-thread", RepoID: &healthyRepo,
+			RepoOwner: "other", RepoName: "thing", SubjectType: "PullRequest",
+			SubjectTitle: "Healthy owner", ItemNumber: &healthyNumber,
+			ItemType: "pr", Reason: "mention", Unread: true,
+			SourceUpdatedAt: now, SyncedAt: now,
+		},
+	}))
+	items, err := d.ListNotifications(
+		t.Context(), db.ListNotificationsOpts{State: "all", Sort: "updated"},
+	)
+	require.NoError(err)
+	require.Len(items, 2)
+	ids := make([]int64, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, item.ID)
+	}
+	_, err = d.QueueNotificationIDsRead(t.Context(), ids, now.Add(time.Minute))
+	require.NoError(err)
+
+	resetAt := time.Now().UTC().Add(time.Hour).Round(0)
+	mc := &mockClient{markNotificationThreadReadFn: func(
+		_ context.Context, threadID string,
+	) error {
+		return &gh.RateLimitError{
+			Rate: gh.Rate{Reset: gh.Timestamp{Time: resetAt}},
+			Response: &http.Response{
+				StatusCode: http.StatusForbidden,
+				Request: httptest.NewRequest(
+					http.MethodPatch,
+					"https://api.github.com/notifications/threads/"+threadID, nil,
+				),
+			},
+			Message: "API rate limit exceeded",
+		}
+	}}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil, nil, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	router, err := NewHostRouter("github.com",
+		&Route{
+			Key: RouteKey{Host: "github.com", Owner: "acme"}, Client: mc,
+			ReadIdentity:  IdentityKey{Host: "github.com", Principal: "user:1"},
+			WriteIdentity: IdentityKey{Host: "github.com", Principal: "user:1"},
+		},
+		&Route{
+			Key: RouteKey{Host: "github.com", Owner: "other"}, Client: mc,
+			ReadIdentity:  IdentityKey{Host: "github.com", Principal: "user:2"},
+			WriteIdentity: IdentityKey{Host: "github.com", Principal: "user:2"},
+		},
+	)
+	require.NoError(err)
+	syncer.SetGitHubRouters(map[string]*HostRouter{"github.com": router})
+
+	// Batch of one: only the exhausted owner's ack is due this pass.
+	err = syncer.ProcessQueuedNotificationReads(
+		t.Context(), platform.KindGitHub, "github.com", 1,
+	)
+	require.Error(err)
+
+	items, err = d.ListNotifications(
+		t.Context(), db.ListNotificationsOpts{State: "all", Sort: "updated"},
+	)
+	require.NoError(err)
+	byThread := map[string]db.Notification{}
+	for _, item := range items {
+		byThread[item.PlatformNotificationID] = item
+	}
+	check.Equal("rate_limited", byThread["limited-thread"].SourceAckError)
+	check.Empty(byThread["healthy-thread"].SourceAckError,
+		"an untouched owner's queued ack must not inherit the deferral")
+	check.Nil(byThread["healthy-thread"].SourceAckNextAttemptAt,
+		"the healthy owner's ack stays due instead of waiting for another reset")
+}

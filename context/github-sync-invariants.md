@@ -208,6 +208,13 @@ repository whose credential route is unavailable or exhausted reports its error
 without holding back watermark advancement for healthy repositories on the same
 host (`internal/github/notifications_sync.go::Syncer.syncNotificationsForRepo`).
 
+Queued read-acknowledgement backoff is scoped the same way. A rate limit belongs
+to the credential that hit it, so defer only that identity's repositories and
+keep propagating the batch's other identities; the pass still returns the rate
+limit so the host records its error
+(`internal/github/notifications_sync.go::Syncer.ProcessQueuedNotificationReads`,
+`internal/db/queries_notifications.go::DB.DeferQueuedNotificationAcksForRepos`).
+
 Selected-repository App routes may expose installation-repository listing as an
 owner-scoped discovery route, but that route must never become a fallback for
 other repository operations. Owner discovery unions the PAT route's listing

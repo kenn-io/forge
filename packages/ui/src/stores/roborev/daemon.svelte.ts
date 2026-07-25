@@ -26,11 +26,16 @@ export function createDaemonStore(opts: DaemonStoreOptions) {
   let pollHandle: ReturnType<typeof setTimeout> | null = null;
   let pollGeneration = 0;
 
-  async function checkHealth(): Promise<void> {
-    const prevAvailable = available;
+  async function checkHealthForGeneration(generation: number): Promise<boolean> {
+    const isCurrent = () => generation === pollGeneration;
+    if (!isCurrent()) return false;
+
+    let recovered = false;
     loading = true;
     try {
       const { data, error } = await opts.middlemanClient.GET("/roborev/status");
+      if (!isCurrent()) return false;
+
       if (error || !data) {
         available = false;
         queuedJobs = 0;
@@ -40,12 +45,16 @@ export function createDaemonStore(opts: DaemonStoreOptions) {
         canceledJobs = 0;
         activeWorkers = 0;
         maxWorkers = 0;
-        return;
+        return false;
       }
+      const prevAvailable = available;
       available = data.available;
       version = data.version;
       endpoint = data.endpoint;
+      recovered = available && !prevAvailable;
     } catch {
+      if (!isCurrent()) return false;
+
       available = false;
       queuedJobs = 0;
       runningJobs = 0;
@@ -55,9 +64,10 @@ export function createDaemonStore(opts: DaemonStoreOptions) {
       activeWorkers = 0;
       maxWorkers = 0;
     } finally {
-      loading = false;
+      if (isCurrent()) loading = false;
     }
-    if (available && !prevAvailable) {
+
+    if (recovered) {
       // Fire onRecover on ANY false→true transition,
       // including the first connect after a failed startup.
       // The mount-time loadJobs may have failed if the
@@ -67,6 +77,12 @@ export function createDaemonStore(opts: DaemonStoreOptions) {
       void loadStatus();
       opts.onRecover?.();
     }
+    return recovered;
+  }
+
+  async function checkHealth(): Promise<void> {
+    const generation = pollGeneration;
+    await checkHealthForGeneration(generation);
   }
 
   async function loadStatus(): Promise<void> {
@@ -83,10 +99,10 @@ export function createDaemonStore(opts: DaemonStoreOptions) {
   }
 
   async function poll(generation: number): Promise<void> {
-    await checkHealth();
+    const recovered = await checkHealthForGeneration(generation);
     if (generation !== pollGeneration) return;
 
-    if (available) void loadStatus();
+    if (available && !recovered) void loadStatus();
 
     const interval = available ? AVAILABLE_POLL_INTERVAL_MS : UNAVAILABLE_POLL_INTERVAL_MS;
     pollHandle = setTimeout(() => {
@@ -103,6 +119,7 @@ export function createDaemonStore(opts: DaemonStoreOptions) {
 
   function stopPolling(): void {
     pollGeneration += 1;
+    loading = false;
     if (pollHandle !== null) {
       clearTimeout(pollHandle);
       pollHandle = null;

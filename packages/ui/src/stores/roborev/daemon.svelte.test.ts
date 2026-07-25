@@ -5,6 +5,115 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import { createDaemonStore } from "./daemon.svelte.js";
 
 describe("createDaemonStore", () => {
+  it("ignores health responses from a stopped polling generation", async () => {
+    let resolveOldHealth!: (response: {
+      data: {
+        available: boolean;
+        endpoint: string;
+        version: string;
+      };
+    }) => void;
+    const oldHealth = new Promise<{
+      data: {
+        available: boolean;
+        endpoint: string;
+        version: string;
+      };
+    }>((resolve) => {
+      resolveOldHealth = resolve;
+    });
+    let resolveCurrentHealth!: (response: {
+      data: {
+        available: boolean;
+        endpoint: string;
+        version: string;
+      };
+    }) => void;
+    const currentHealth = new Promise<{
+      data: {
+        available: boolean;
+        endpoint: string;
+        version: string;
+      };
+    }>((resolve) => {
+      resolveCurrentHealth = resolve;
+    });
+    const unavailable = {
+      data: {
+        available: false,
+        endpoint: "http://roborev:7373",
+        version: "",
+      },
+    };
+    const middlemanGet = vi
+      .fn()
+      .mockReturnValueOnce(oldHealth)
+      .mockResolvedValueOnce(unavailable)
+      .mockReturnValueOnce(currentHealth);
+    const roborevGet = vi.fn().mockResolvedValue({
+      data: {
+        active_workers: 1,
+        applied_jobs: 2,
+        canceled_jobs: 3,
+        completed_jobs: 4,
+        failed_jobs: 5,
+        max_workers: 6,
+        queue_paused: false,
+        queued_jobs: 7,
+        rebased_jobs: 8,
+        running_jobs: 9,
+        skipped_jobs: 10,
+        version: "test",
+      },
+    });
+    const onRecover = vi.fn();
+    const store = createDaemonStore({
+      client: { GET: roborevGet } as unknown as RoborevClient,
+      middlemanClient: { GET: middlemanGet } as unknown as MiddlemanClient,
+      onRecover,
+    });
+
+    try {
+      store.startPolling();
+      expect(middlemanGet).toHaveBeenCalledTimes(1);
+
+      store.stopPolling();
+      store.startPolling();
+      await vi.waitFor(() => {
+        expect(middlemanGet).toHaveBeenCalledTimes(2);
+        expect(store.isLoading()).toBe(false);
+      });
+      expect(store.isAvailable()).toBe(false);
+
+      const currentCheck = store.checkHealth();
+      expect(store.isLoading()).toBe(true);
+
+      resolveOldHealth({
+        data: {
+          available: true,
+          endpoint: "http://roborev:7373",
+          version: "stale",
+        },
+      });
+      await oldHealth;
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(store.isAvailable()).toBe(false);
+      expect(store.isLoading()).toBe(true);
+      expect(store.getQueuedJobs()).toBe(0);
+      expect(store.getWasEverAvailable()).toBe(false);
+      expect(onRecover).not.toHaveBeenCalled();
+      expect(roborevGet).not.toHaveBeenCalled();
+
+      resolveCurrentHealth(unavailable);
+      await currentCheck;
+      expect(store.isLoading()).toBe(false);
+    } finally {
+      store.stopPolling();
+    }
+  });
+
   it("polls quickly while unavailable and returns to the healthy cadence after recovery", async () => {
     vi.useFakeTimers();
 
@@ -61,6 +170,7 @@ describe("createDaemonStore", () => {
       expect(middlemanGet).toHaveBeenCalledTimes(2);
       expect(store.isAvailable()).toBe(true);
       expect(onRecover).toHaveBeenCalledTimes(1);
+      expect(roborevGet).toHaveBeenCalledTimes(1);
 
       await vi.advanceTimersByTimeAsync(29_999);
       expect(middlemanGet).toHaveBeenCalledTimes(2);

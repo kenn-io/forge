@@ -3177,13 +3177,6 @@
     min-width: 0;
   }
 
-  .actions-row :global(.kit-button__label),
-  .actions-row :global(.kit-button__short-label) {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
   @container pull-detail (max-width: 560px) {
     .actions-row--primary :global(.btn--close svg) {
       display: none;

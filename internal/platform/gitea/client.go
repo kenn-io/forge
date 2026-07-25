@@ -101,6 +101,7 @@ func NewClient(host string, source tokenauth.Source, options ...ClientOption) (*
 		Base:    httpTransport,
 		Capture: mergeRejections,
 	}
+	httpTransport = &timelineLabelTransport{base: httpTransport}
 	authRT := tokenauth.AuthTransport{
 		Source:              source,
 		Base:                httpTransport,

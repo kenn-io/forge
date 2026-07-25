@@ -136,15 +136,10 @@ provider-equivalent behavior from the flags alone:
   (`gitealike.MergeRejectionCaptureTransport`) and surface the real
   status and message — without that, a rejected merge would be
   recorded as a successful one. Both providers answer 409 for
-  unrelated merge conflicts too, so only their distinctive
-  head-mismatch messages (the `IsErrSHADoesNotMatch` branch of both
-  providers' merge endpoints: "head out of date" on current Gitea and
-  Forgejo, "head target does not match" on older Gitea) classify as
-  `stale_state`; any other 409 stays a generic conflict. If a future
-  provider release changes the phrase, the failure mode is the safe
-  direction — a true head mismatch presents as a generic conflict
-  rather than a false stale — and the container e2e fixtures probe
-  the real rejection shape live. Approval pins are provider-gated only on
+  unrelated merge conflicts too. Distinctive head-mismatch messages classify
+  directly; ambiguous 405/409 responses classify as `stale_state` only after a
+  live PR read proves the head differs from the supplied pin. The container e2e
+  fixtures probe the real rejection shape live. Approval pins are provider-gated only on
   GitLab, whose approvals API rejects a mismatched `sha` atomically.
   GitHub/Gitea/Forgejo review commit ids record rather than gate, so
   approvals there are pre-checked against the live provider head

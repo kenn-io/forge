@@ -547,6 +547,17 @@ func TestProviderMergePinsExpectedHeadAndClassifiesConflict(t *testing.T) {
 		assert.Equal(platform.ErrCodeStaleState, platformErr.Code, message)
 	}
 
+	// Gitea 1.24.6 returns only "Please try again later" for this rejection.
+	// Confirm the current head before classifying that ambiguous response.
+	transport.mergeErr = &HTTPError{StatusCode: 405, Message: "Please try again later"}
+	transport.pr.Head.SHA = "current-head"
+	_, err = provider.MergeMergeRequest(context.Background(), ref, 7, "t", "m", "squash", "reviewed-head")
+	require.ErrorIs(err, platform.ErrStaleState)
+
+	transport.pr.Head.SHA = "reviewed-head"
+	_, err = provider.MergeMergeRequest(context.Background(), ref, 7, "t", "m", "squash", "reviewed-head")
+	require.NotErrorIs(err, platform.ErrStaleState)
+
 	// The merge endpoint answers 409 for ordinary merge conflicts too;
 	// those must stay generic so the UI shows the provider message
 	// instead of a stale-head re-review flow.

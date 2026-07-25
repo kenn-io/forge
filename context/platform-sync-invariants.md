@@ -150,6 +150,7 @@ registry helpers return typed errors for missing providers or capabilities.
   the provider error mapper so reads and mutations retain typed platform errors.
   Workflow approval and ready-for-review must remain hidden or return typed
   `unsupported_capability` errors until proven per provider.
+- Gitea 1.24 timeline responses encode `label` as one object while the SDK expects an array; normalize that field at the HTTP boundary so detail sync remains usable at the supported version floor. (`internal/platform/gitea/timeline_transport.go::timelineLabelTransport`)
 - GitHub GraphQL bulk fetch, ETag recovery, and detailed diff behavior are
   GitHub-only optimizations. Keep them optional around the neutral persistence
   path.

@@ -557,6 +557,7 @@ func TestClientReadsTimelineAssignmentAndTitleEvents(t *testing.T) {
 			assert.NoError(json.NewEncoder(w).Encode([]map[string]any{
 				{
 					"id": 11, "type": "assigned", "user": map[string]any{"login": "bob"},
+					"label":      map[string]any{"id": 1, "name": "bug"},
 					"created_at": "2026-05-01T10:01:00Z",
 				},
 				{

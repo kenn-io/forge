@@ -149,15 +149,22 @@ export {
 } from "./components/shared/tabbed-panel-drag.js";
 export type { TabbedPanelTabDragPayload } from "./components/shared/tabbed-panel-drag.js";
 export {
+  FLATTENED_TABBED_PANEL_LEAF_ID,
   activateTabbedPanelTab,
   appendTabbedPanelTabToLeaf,
   clampTabbedPanelRatio,
+  collectTabbedPanelLeafIDs,
   collectTabbedPanelTabKeys,
   createTabbedPanelLeaf,
+  defaultTabbedPanelLayout,
   findTabbedPanelLeafByTab,
   firstTabbedPanelLeaf,
+  flattenTabbedPanelTree,
   moveTabbedPanelTabBefore,
   normalizeTabbedPanelTree,
+  parseTabbedPanelLayout,
+  pruneTabbedPanelTreeToAvailable,
+  serializeTabbedPanelLayout,
   splitTabbedPanelTabIntoLeaf,
   tabbedPanelSplitEdgeFromPoint,
   tabbedPanelSplitPlacementForEdge,
@@ -166,12 +173,20 @@ export {
 export type {
   TabbedPanelDescriptor,
   TabbedPanelDirection,
+  TabbedPanelLayoutState,
   TabbedPanelLeaf,
   TabbedPanelNode,
   TabbedPanelSplit,
   TabbedPanelStatus,
   TabbedPanelSplitEdge,
 } from "./components/shared/tabbed-panel-layout.js";
+export {
+  PANE_LAYOUT_STORAGE_PREFIX,
+  createPaneLayoutStore,
+  getPaneLayoutStore,
+  resetPaneLayoutStoresForTest,
+} from "./stores/paneLayout.svelte.js";
+export type { PaneLayoutStore, PaneSurfaceKey } from "./stores/paneLayout.svelte.js";
 export { default as WorkspaceRightSidebar } from "./components/workspace/WorkspaceRightSidebar.svelte";
 export { default as WorkspaceDiffPanel } from "./components/workspace/WorkspaceDiffPanel.svelte";
 export { default as WorkspaceDockPanel } from "./components/workspace/WorkspaceDockPanel.svelte";

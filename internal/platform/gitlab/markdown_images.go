@@ -60,14 +60,18 @@ func (c *Client) GetMarkdownImage(
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		code := platform.ErrCodeInvalidRepoRef
+		var code platform.PlatformErrorCode
 		switch resp.StatusCode {
+		case http.StatusBadRequest:
+			code = platform.ErrCodeInvalidRepoRef
 		case http.StatusUnauthorized, http.StatusForbidden:
 			code = platform.ErrCodePermissionDenied
 		case http.StatusNotFound:
 			code = platform.ErrCodeNotFound
 		case http.StatusTooManyRequests:
 			code = platform.ErrCodeRateLimited
+		default:
+			return platform.MarkdownImage{}, fmt.Errorf("GitLab markdown image request failed: %s", resp.Status)
 		}
 		return platform.MarkdownImage{}, &platform.Error{
 			Code: code, Provider: platform.KindGitLab, PlatformHost: c.host,

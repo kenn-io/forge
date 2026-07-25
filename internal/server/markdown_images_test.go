@@ -96,6 +96,51 @@ func TestMarkdownImageRouteMapsProviderDeadlineToUpstreamError(t *testing.T) {
 	require.Equal(t, http.StatusBadGateway, rr.Code, rr.Body.String())
 }
 
+func TestMarkdownImageRouteMapsGitLabServerErrorToUpstreamError(t *testing.T) {
+	require := require.New(t)
+	gitlabServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/api/v4/projects/42/uploads/secret/private.png", r.URL.EscapedPath())
+		assert.Equal(t, "gitlab-token", r.Header.Get("PRIVATE-TOKEN"))
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(gitlabServer.Close)
+
+	provider, err := platformgitlab.NewClient(
+		"gitlab.example.com",
+		testTokenSource("gitlab-token"),
+		platformgitlab.WithBaseURLForTesting(gitlabServer.URL+"/api/v4"),
+		platformgitlab.WithoutRetriesForTesting(),
+	)
+	require.NoError(err)
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	database := dbtest.Open(t)
+	_, err = database.UpsertRepo(t.Context(), db.RepoIdentity{
+		Platform:       "gitlab",
+		PlatformHost:   "gitlab.example.com",
+		PlatformRepoID: "42",
+		Owner:          "group",
+		Name:           "project",
+		RepoPath:       "group/project",
+	})
+	require.NoError(err)
+	syncer := ghclient.NewSyncerWithRegistry(registry, database, nil, nil, time.Minute, nil, nil)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	srv.markdownImages = newMarkdownImageCache(t.TempDir())
+
+	rr := repoBrowserRequest(
+		t,
+		srv,
+		http.MethodGet,
+		"/api/v1/host/gitlab.example.com/repo/gitlab/group/project/markdown-image?source="+
+			url.QueryEscape(gitlabServer.URL+"/group/project/uploads/secret/private.png"),
+	)
+
+	require.Equal(http.StatusBadGateway, rr.Code, rr.Body.String())
+}
+
 func TestMarkdownImageRouteResolvesOpaqueGitLabProjectID(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

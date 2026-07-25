@@ -28,6 +28,12 @@
   import StatusBar from "./lib/components/layout/StatusBar.svelte";
   import Palette from "./lib/components/keyboard/Palette.svelte";
   import Cheatsheet from "./lib/components/keyboard/Cheatsheet.svelte";
+  import NewWorkspaceDialog from "./lib/components/terminal/NewWorkspaceDialog.svelte";
+  import {
+    closeNewWorkspaceDialog,
+    getNewWorkspaceSeedRepo,
+    isNewWorkspaceDialogOpen,
+  } from "./lib/stores/new-workspace.svelte.js";
   import RepoSummaryPage from "./lib/components/repositories/RepoSummaryPage.svelte";
   import SettingsPage from "./lib/components/settings/SettingsPage.svelte";
   import WorkspaceHost from "./lib/components/terminal/WorkspaceHost.svelte";
@@ -1293,6 +1299,11 @@
       onOpenDoc={openDoc}
     />
     <Cheatsheet />
+    <NewWorkspaceDialog
+      open={isNewWorkspaceDialogOpen()}
+      seedRepo={getNewWorkspaceSeedRepo()}
+      onClose={closeNewWorkspaceDialog}
+    />
   </Provider>
 {/if}
 

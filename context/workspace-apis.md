@@ -1,9 +1,9 @@
 # Workspace APIs
 
 These APIs manage **middleman-owned workspaces**: durable local execution
-contexts for tracked PRs, provider issues, and mapped Kata tasks. They are not a
-generic Git worktree browser and not an embedder protocol for arbitrary host
-state.
+contexts for tracked PRs, provider issues, mapped Kata tasks, and ad-hoc work in
+a tracked repository. They are not a generic Git worktree browser and not an
+embedder protocol for arbitrary host state.
 
 ## Purpose
 
@@ -31,6 +31,12 @@ state.
 - `POST /repos/{owner}/{name}/issues/{number}/workspace`: create or reuse an
   issue-backed workspace; these start from the repo's current `origin/HEAD`,
   not from a PR head branch.
+- `POST /repo/{provider}/{owner}/{name}/workspaces`: create or reuse an ad-hoc
+  workspace for new work with no source item. Its branch is its identity: the
+  item key is `adhoc:<branch>` and `item_number` stays 0, so item-key fallbacks
+  derived from the number must exclude this type
+  (`internal/db/queries.go::workspaceItemTypeKeysByNumber`). Requesting the same
+  branch twice returns the existing workspace.
 - `GET /kata/tasks/snapshot`: the browser's sole Kata task authority. Daemon,
   scope, project, status authority, selected task, and graph source form request
   identity; selected detail, history, graph, and workspace target belong to the

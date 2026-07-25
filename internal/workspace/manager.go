@@ -71,17 +71,27 @@ type CreateIssueOptions struct {
 	ReuseExistingBranch bool
 }
 
-// IssueWorkspaceBranchConflictError reports that the requested issue-workspace
-// branch already exists locally, so the caller must either reuse it or choose
-// a different name before a new middleman workspace can be created.
-type IssueWorkspaceBranchConflictError struct {
+// CreateAdHocOptions controls how ad-hoc workspaces choose their branch.
+//
+// Ad-hoc workspaces have no source item, so the branch is their only identity.
+// An empty BranchName generates one; a name that already exists locally is
+// either reused or reported as a conflict, matching the issue-workspace flow.
+type CreateAdHocOptions struct {
+	BranchName          string
+	ReuseExistingBranch bool
+}
+
+// WorkspaceBranchConflictError reports that the requested workspace branch
+// already exists locally, so the caller must either reuse it or choose a
+// different name before a new middleman workspace can be created.
+type WorkspaceBranchConflictError struct {
 	Branch          string
 	SuggestedBranch string
 }
 
-func (e *IssueWorkspaceBranchConflictError) Error() string {
+func (e *WorkspaceBranchConflictError) Error() string {
 	return fmt.Sprintf(
-		"issue workspace branch %q already exists; suggested alternative %q",
+		"workspace branch %q already exists; suggested alternative %q",
 		e.Branch,
 		e.SuggestedBranch,
 	)
@@ -108,7 +118,8 @@ var (
 
 func workspaceUsesOriginHead(ws *Workspace) bool {
 	return ws.ItemType == db.WorkspaceItemTypeIssue ||
-		ws.ItemType == db.WorkspaceItemTypeKataTask
+		ws.ItemType == db.WorkspaceItemTypeKataTask ||
+		ws.ItemType == db.WorkspaceItemTypeAdHoc
 }
 
 type TerminalPaneSnapshot struct {
@@ -359,7 +370,7 @@ func (m *Manager) CreateIssue(
 	}
 
 	workspaceBranch := gitHeadRef
-	branchDir, ok, localBase, err := m.issueBranchInspectionDir(
+	branchDir, ok, localBase, err := m.branchInspectionDir(
 		ctx, repo.Platform, platformHost, owner, name,
 		workspaceCloneRemoteURL(repo, platformHost, owner, name),
 	)
@@ -367,7 +378,7 @@ func (m *Manager) CreateIssue(
 		return nil, err
 	}
 	if ok {
-		branch, err := issueWorkspaceBranchForExistingLocalBranch(
+		branch, err := workspaceBranchForExistingLocalBranch(
 			ctx, branchDir, gitHeadRef, opts.ReuseExistingBranch,
 			localBase,
 		)
@@ -481,6 +492,111 @@ func (m *Manager) CreateKataTask(
 	return ws, nil
 }
 
+// CreateAdHoc persists a workspace for new work in a tracked repository that
+// has no pull request, provider issue, or Kata task behind it.
+//
+// The branch is the workspace's only identity: it becomes the item key, so a
+// second create for the same branch in the same repository collides on the
+// workspace unique index instead of producing a duplicate worktree. Like
+// issue-backed workspaces these start from the repository's current
+// origin/HEAD; the caller runs Setup in the background to materialize the
+// worktree and tmux session.
+func (m *Manager) CreateAdHoc(
+	ctx context.Context,
+	provider, platformHost, owner, name string,
+	opts CreateAdHocOptions,
+) (*Workspace, error) {
+	repo, err := m.workspaceRepo(ctx, provider, platformHost, owner, name)
+	if err != nil {
+		return nil, fmt.Errorf("look up repo: %w", err)
+	}
+	if repo == nil {
+		return nil, fmt.Errorf("repository not tracked")
+	}
+
+	id, err := newWorkspaceID()
+	if err != nil {
+		return nil, err
+	}
+
+	gitHeadRef := strings.TrimSpace(opts.BranchName)
+	if gitHeadRef == "" {
+		gitHeadRef = adHocWorkspaceBranch(id)
+	}
+	if err := validateLocalBranchName(ctx, "", gitHeadRef); err != nil {
+		return nil, err
+	}
+
+	workspaceBranch := gitHeadRef
+	branchDir, ok, localBase, err := m.branchInspectionDir(
+		ctx, repo.Platform, platformHost, owner, name,
+		workspaceCloneRemoteURL(repo, platformHost, owner, name),
+	)
+	if err != nil {
+		return nil, err
+	}
+	if ok {
+		branch, err := workspaceBranchForExistingLocalBranch(
+			ctx, branchDir, gitHeadRef, opts.ReuseExistingBranch, localBase,
+		)
+		if err != nil {
+			return nil, err
+		}
+		workspaceBranch = branch
+	}
+
+	ws := &Workspace{
+		ID:              id,
+		Platform:        repo.Platform,
+		PlatformHost:    platformHost,
+		RepoOwner:       owner,
+		RepoName:        name,
+		ItemType:        db.WorkspaceItemTypeAdHoc,
+		ItemKey:         db.AdHocWorkspaceItemKey(gitHeadRef),
+		GitHeadRef:      gitHeadRef,
+		WorkspaceBranch: workspaceBranch,
+		WorktreePath: filepath.Join(
+			m.worktreeDir, repo.Platform, platformHost, owner, name,
+			adHocWorktreeDirName(gitHeadRef),
+		),
+		TmuxSession:     "middleman-" + id,
+		TerminalBackend: m.PreferredTerminalBackend(),
+		Status:          "creating",
+	}
+
+	if err := m.db.InsertWorkspace(ctx, ws); err != nil {
+		if isUniqueConstraintError(err) {
+			return nil, fmt.Errorf("%w: %v", ErrWorkspaceDuplicate, err)
+		}
+		return nil, fmt.Errorf("insert workspace: %w", err)
+	}
+	return ws, nil
+}
+
+// adHocWorkspaceBranch names a branch for work the user did not name. The
+// workspace ID is already unique, so its prefix keeps generated branches from
+// colliding without needing a repository round-trip.
+func adHocWorkspaceBranch(workspaceID string) string {
+	suffix := workspaceID
+	if len(suffix) > 8 {
+		suffix = suffix[:8]
+	}
+	return "middleman/work-" + suffix
+}
+
+// adHocWorktreeDirName derives a filesystem-safe directory name from the
+// branch. The slug alone is not injective (slashes and punctuation collapse),
+// so a branch hash keeps two distinct branches in distinct worktrees.
+func adHocWorktreeDirName(branch string) string {
+	sum := sha256.Sum256([]byte(branch))
+	hash := hex.EncodeToString(sum[:])[:8]
+	slug := truncateSlug(slugifyIssueTitle(branch), 48-len(hash)-1)
+	if slug == "" {
+		return "work-" + hash
+	}
+	return "work-" + slug + "-" + hash
+}
+
 func kataTaskBranchID(metadata db.WorkspaceKataMetadata) string {
 	scopeHash := kataTaskScopeHash(metadata)
 	for _, candidate := range []string{metadata.ShortID, metadata.QualifiedID, metadata.IssueUID} {
@@ -536,7 +652,7 @@ func workspaceCloneNamespace(platform string) string {
 	return platform
 }
 
-func (m *Manager) issueBranchInspectionDir(
+func (m *Manager) branchInspectionDir(
 	ctx context.Context, platform, platformHost, owner, name, remoteURL string,
 ) (dir string, ok bool, localBase bool, err error) {
 	if baseDir, ok, err := m.localWorktreeBaseDir(ctx, platform, platformHost, owner, name); err != nil || ok {
@@ -572,7 +688,7 @@ func workspaceCloneRemoteURL(
 	return fmt.Sprintf("https://%s/%s/%s.git", platformHost, owner, name)
 }
 
-func issueWorkspaceBranchForExistingLocalBranch(
+func workspaceBranchForExistingLocalBranch(
 	ctx context.Context, dir, branch string, reuse, localBase bool,
 ) (string, error) {
 	exists, err := localBranchExists(ctx, dir, branch)
@@ -594,17 +710,17 @@ func issueWorkspaceBranchForExistingLocalBranch(
 			return "", nil
 		}
 	}
-	return "", issueWorkspaceBranchConflict(ctx, dir, branch)
+	return "", workspaceBranchConflict(ctx, dir, branch)
 }
 
-func issueWorkspaceBranchConflict(
+func workspaceBranchConflict(
 	ctx context.Context, dir, branch string,
 ) error {
 	suggested, err := nextAvailableBranchName(ctx, dir, branch)
 	if err != nil {
 		return fmt.Errorf("suggest branch name: %w", err)
 	}
-	return &IssueWorkspaceBranchConflictError{
+	return &WorkspaceBranchConflictError{
 		Branch:          branch,
 		SuggestedBranch: suggested,
 	}

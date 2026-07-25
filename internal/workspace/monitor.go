@@ -114,7 +114,8 @@ func (m *PRMonitor) refreshWorkspaceAssociation(
 func workspacePRMonitorEligible(ws *Workspace) bool {
 	return ws != nil &&
 		(ws.ItemType == db.WorkspaceItemTypeIssue ||
-			ws.ItemType == db.WorkspaceItemTypeKataTask) &&
+			ws.ItemType == db.WorkspaceItemTypeKataTask ||
+			ws.ItemType == db.WorkspaceItemTypeAdHoc) &&
 		ws.AssociatedPRNumber == nil &&
 		ws.Status == "ready" &&
 		strings.TrimSpace(ws.WorktreePath) != ""

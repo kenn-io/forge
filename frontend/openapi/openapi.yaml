@@ -962,6 +962,38 @@ components:
         - is_glob
         - matched_repo_count
       type: object
+    CreateAdHocWorkspaceHostInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/CreateAdHocWorkspaceHostInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        branch:
+          description: Branch for the new worktree; generated when empty
+          type: string
+        reuse_existing_branch:
+          type: boolean
+      type: object
+    CreateAdHocWorkspaceInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/CreateAdHocWorkspaceInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        branch:
+          description: Branch for the new worktree; generated when empty
+          type: string
+        reuse_existing_branch:
+          type: boolean
+      type: object
     CreateDiffReviewDraftCommentHostInputBody:
       additionalProperties: false
       properties:
@@ -13431,6 +13463,52 @@ paths:
       summary: Resolve repository item
       tags:
         - Repositories
+  /host/{platform_host}/repo/{provider}/{owner}/{name}/workspaces:
+    post:
+      operationId: create-repo-workspace-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAdHocWorkspaceHostInputBody"
+        required: true
+      responses:
+        "202":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceResponse"
+          description: Accepted
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Create workspace for new work
+      tags:
+        - Workspaces
   /host/{platform_host}/repo/{provider}/{owner}/{name}/worktree-base:
     put:
       operationId: update-repo-worktree-base-on-host
@@ -17668,6 +17746,47 @@ paths:
       summary: Resolve repository item
       tags:
         - Repositories
+  /repo/{provider}/{owner}/{name}/workspaces:
+    post:
+      operationId: create-repo-workspace
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAdHocWorkspaceInputBody"
+        required: true
+      responses:
+        "202":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceResponse"
+          description: Accepted
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Create workspace for new work
+      tags:
+        - Workspaces
   /repo/{provider}/{owner}/{name}/worktree-base:
     put:
       operationId: update-repo-worktree-base

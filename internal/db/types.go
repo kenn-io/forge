@@ -1112,7 +1112,22 @@ const (
 	WorkspaceItemTypePullRequest = "pull_request"
 	WorkspaceItemTypeIssue       = "issue"
 	WorkspaceItemTypeKataTask    = "kata_task"
+	// WorkspaceItemTypeAdHoc is new work started from a tracked repository
+	// with no provider item and no Kata task behind it. Its identity is the
+	// branch, carried in item_key; item_number is always 0.
+	WorkspaceItemTypeAdHoc = "adhoc"
 )
+
+// AdHocWorkspaceItemKey returns the workspace item key that makes an ad-hoc
+// workspace unique within a repository. The branch is the only identity such a
+// workspace has, so it is the key.
+func AdHocWorkspaceItemKey(branch string) string {
+	branch = strings.TrimSpace(branch)
+	if branch == "" {
+		return ""
+	}
+	return "adhoc:" + branch
+}
 
 type WorkspaceKataMetadata struct {
 	DaemonID    string `json:"daemon_id"`

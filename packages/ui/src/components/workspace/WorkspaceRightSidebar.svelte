@@ -47,7 +47,7 @@
     repoOwner: string;
     repoName: string;
     repoPath: string;
-    ownerItemType: "pull_request" | "issue" | "kata_task";
+    ownerItemType: "pull_request" | "issue" | "kata_task" | "adhoc";
     ownerItemNumber: number;
     associatedPRNumber: number | null;
     branch: string;

@@ -3,6 +3,11 @@ import { tick } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import WorkspaceListSidebar from "./WorkspaceListSidebar.svelte";
+import {
+  getNewWorkspaceSeedRepo,
+  isNewWorkspaceDialogOpen,
+  resetNewWorkspaceDialogState,
+} from "../../stores/new-workspace.svelte.js";
 
 const mockGet = vi.fn();
 const mockPost = vi.fn();
@@ -40,7 +45,7 @@ interface WorkspaceFixtureOptions {
   number: number;
   title?: string;
   branch?: string;
-  itemType?: "pull_request" | "issue" | "kata_task";
+  itemType?: "pull_request" | "issue" | "kata_task" | "adhoc";
   itemKey?: string;
   isDraft?: boolean;
   kata?: {
@@ -90,7 +95,8 @@ function workspaceFixture({
   tmuxActivitySource = "unknown",
   status = "ready",
 }: WorkspaceFixtureOptions) {
-  const isKata = itemType === "kata_task";
+  // Kata and ad-hoc workspaces carry no joined provider item metadata.
+  const noProviderItem = itemType === "kata_task" || itemType === "adhoc";
   return {
     id,
     repo: {
@@ -117,9 +123,9 @@ function workspaceFixture({
     created_at: createdAt,
     tmux_last_output_at: tmuxLastOutputAt,
     item_last_activity_at: itemLastActivityAt,
-    mr_title: isKata ? null : title,
-    mr_state: isKata ? null : "open",
-    mr_is_draft: isKata ? null : isDraft,
+    mr_title: noProviderItem ? null : title,
+    mr_state: noProviderItem ? null : "open",
+    mr_is_draft: noProviderItem ? null : isDraft,
     mr_additions: additions,
     mr_deletions: deletions,
     commits_ahead: commitsAhead,
@@ -187,6 +193,7 @@ describe("WorkspaceListSidebar", () => {
     mockDelete.mockReset();
     mockNavigate.mockReset();
     MockEventSource.instances.length = 0;
+    resetNewWorkspaceDialogState();
     localStorage.clear();
     vi.stubGlobal("EventSource", MockEventSource);
     Object.defineProperty(navigator, "clipboard", {
@@ -1796,5 +1803,86 @@ describe("WorkspaceListSidebar", () => {
     expect(screen.queryByRole("menuitem", { name: "Push branch" })).toBeNull();
     expect(screen.queryByRole("menuitem", { name: "Pull remote changes" })).toBeNull();
     expect(screen.getByRole("menuitem", { name: "Refresh git status" })).toBeTruthy();
+  });
+
+  function adHocWorkspaceFixture(overrides: Partial<WorkspaceFixtureOptions> = {}) {
+    return workspaceFixture({
+      id: "ws-adhoc",
+      provider: "github",
+      platformHost: "github.com",
+      owner: "kenn-io",
+      name: "middleman",
+      number: 0,
+      branch: "spike/rate-limits",
+      itemType: "adhoc",
+      itemKey: "adhoc:spike/rate-limits",
+      ...overrides,
+    });
+  }
+
+  it("labels an ad-hoc workspace by branch and shows no item bubble", async () => {
+    mockGet.mockResolvedValue({
+      data: { workspaces: [adHocWorkspaceFixture()] },
+    });
+
+    const { container } = render(WorkspaceListSidebar, {
+      props: { selectedId: "ws-adhoc" },
+    });
+    await waitFor(() => expect(rowTitles(container)).toEqual(["spike/rate-limits"]));
+
+    // No provider item and no Kata task: there is nothing for a bubble to
+    // open, and the row must never advertise #0.
+    expect(container.querySelector(".item-bubble")).toBeNull();
+    expect(container.textContent).not.toContain("#0");
+  });
+
+  it("finds an ad-hoc workspace by branch", async () => {
+    mockGet.mockResolvedValue({
+      data: {
+        workspaces: [
+          adHocWorkspaceFixture(),
+          workspaceFixture({
+            id: "ws-pr",
+            provider: "github",
+            platformHost: "github.com",
+            owner: "kenn-io",
+            name: "middleman",
+            number: 4,
+            title: "Some pull request",
+          }),
+        ],
+      },
+    });
+
+    const { container } = render(WorkspaceListSidebar, {
+      props: { selectedId: "ws-adhoc" },
+    });
+    await screen.findByText("Some pull request");
+
+    await fireEvent.input(screen.getByLabelText("Filter workspaces"), {
+      target: { value: "rate-limits" },
+    });
+
+    await waitFor(() => expect(rowTitles(container)).toEqual(["spike/rate-limits"]));
+  });
+
+  it("opens the new-workspace dialog seeded with the selected workspace repo", async () => {
+    mockGet.mockResolvedValue({
+      data: { workspaces: [adHocWorkspaceFixture()] },
+    });
+
+    const { container } = render(WorkspaceListSidebar, { props: { selectedId: "ws-adhoc" } });
+    await waitFor(() => expect(rowTitles(container)).toEqual(["spike/rate-limits"]));
+    expect(isNewWorkspaceDialogOpen()).toBe(false);
+
+    await fireEvent.click(screen.getByRole("button", { name: "New workspace" }));
+
+    expect(isNewWorkspaceDialogOpen()).toBe(true);
+    expect(getNewWorkspaceSeedRepo()).toEqual({
+      provider: "github",
+      platformHost: "github.com",
+      owner: "kenn-io",
+      name: "middleman",
+    });
   });
 });

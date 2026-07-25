@@ -142,6 +142,7 @@ type RepoSuffix =
   | "/markdown-image"
   | "/refresh"
   | "/worktree-base"
+  | "/workspaces"
   | "/resolve/{number}";
 
 type RepoPath<S extends RepoSuffix> =

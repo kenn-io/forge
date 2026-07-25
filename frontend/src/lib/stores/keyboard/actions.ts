@@ -3,6 +3,7 @@ import { getUIConfig } from "../embed-config.svelte.js";
 import { isSidebarToggleEnabled, toggleSidebar } from "../sidebar.svelte.js";
 import { toggleTheme } from "../theme.svelte.js";
 import { toggleCheatsheet } from "./cheatsheet-state.svelte.js";
+import { openNewWorkspaceDialog } from "../new-workspace.svelte.js";
 import { togglePalette } from "./palette-state.svelte.js";
 import {
   openLabelPickerFor,
@@ -559,6 +560,31 @@ export const defaultActions: Action[] = [
     priority: 0,
     when: always,
     handler: () => navigate("/reviews"),
+  },
+  {
+    id: "workspace.new",
+    label: "New workspace",
+    scope: "global",
+    binding: null,
+    priority: 0,
+    when: always,
+    handler: (ctx) => {
+      const ref = workspacePageRepoRef(ctx);
+      openNewWorkspaceDialog(
+        ref
+          ? {
+              provider: ref.provider,
+              platformHost: ref.platformHost ?? "",
+              owner: ref.owner,
+              name: ref.name,
+            }
+          : undefined,
+      );
+    },
+    preview: () => ({
+      title: "New workspace",
+      subtitle: "Start work in a tracked repository on a new worktree branch",
+    }),
   },
   {
     id: "nav.workspaces",

@@ -46,7 +46,23 @@ type createIssueWorkspaceInput struct {
 // CreateIssueWorkspaceInput is shared with provider-aware route wrappers.
 type CreateIssueWorkspaceInput = createIssueWorkspaceInput
 
+type createAdHocWorkspaceInput struct {
+	Provider     string `path:"provider"`
+	PlatformHost string
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Body         struct {
+		Branch              *string `json:"branch,omitempty" doc:"Branch for the new worktree; generated when empty"`
+		ReuseExistingBranch bool    `json:"reuse_existing_branch,omitempty"`
+	}
+}
+
+// CreateAdHocWorkspaceInput is shared with provider-aware route wrappers.
+type CreateAdHocWorkspaceInput = createAdHocWorkspaceInput
+
 const issueWorkspaceBranchConflictType = "urn:middleman:error:issue-workspace-branch-conflict"
+
+const adHocWorkspaceBranchConflictType = "urn:middleman:error:workspace-branch-conflict"
 
 type getWorkspaceInput struct {
 	ID string `path:"id"`
@@ -388,7 +404,7 @@ func (s *Handler) createIssueWorkspace(
 	)
 	if err != nil {
 		msg := err.Error()
-		var branchConflict *workspace.IssueWorkspaceBranchConflictError
+		var branchConflict *workspace.WorkspaceBranchConflictError
 		if errors.As(err, &branchConflict) {
 			// Branch-conflict gets the typed problem envelope with
 			// Type carrying the URN and Details carrying the conflicting
@@ -472,6 +488,162 @@ func (s *Handler) CreateIssueWorkspace(
 	ctx context.Context, input *CreateIssueWorkspaceInput,
 ) (*CreateWorkspaceOutput, error) {
 	return s.createIssueWorkspace(ctx, input)
+}
+
+// createAdHocWorkspace creates or reuses a workspace for new work in a tracked
+// repository.
+//
+// This API exists so a maintainer can start work that has no pull request,
+// issue, or Kata task behind it without inventing one first. The branch is the
+// workspace's identity, so requesting the same branch twice returns the first
+// workspace instead of a second worktree. Like issue-backed workspaces these
+// start from the repository's current origin/HEAD.
+func (s *Handler) createAdHocWorkspace(
+	ctx context.Context, input *createAdHocWorkspaceInput,
+) (*createWorkspaceOutput, error) {
+	if s.workspaces == nil {
+		return nil, httpapi.ServiceUnavailable("workspace manager not configured")
+	}
+	repo, err := s.lookupRepoByProviderRoute(
+		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
+	)
+	if err != nil {
+		return nil, providerRouteLookupError(err)
+	}
+
+	branch := strings.TrimSpace(derefString(input.Body.Branch))
+	itemKey := db.AdHocWorkspaceItemKey(branch)
+	if itemKey != "" {
+		existing, err := s.adHocWorkspaceForBranch(ctx, repo, itemKey)
+		if err != nil {
+			return nil, err
+		}
+		if existing != nil {
+			return existing, nil
+		}
+	}
+
+	ws, err := s.workspaces.CreateAdHoc(
+		ctx,
+		repo.Platform,
+		repo.PlatformHost,
+		repo.Owner,
+		repo.Name,
+		workspace.CreateAdHocOptions{
+			BranchName:          branch,
+			ReuseExistingBranch: input.Body.ReuseExistingBranch,
+		},
+	)
+	if err != nil {
+		return s.adHocWorkspaceCreateError(ctx, repo, itemKey, err)
+	}
+
+	s.runWorkspaceSetup(ws)
+
+	summary, err := s.workspaces.GetSummary(ctx, ws.ID)
+	if err != nil {
+		return nil, httpapi.Internal("get workspace summary: " + err.Error())
+	}
+	if summary == nil {
+		return nil, httpapi.Internal("workspace summary missing after create")
+	}
+	return &createWorkspaceOutput{
+		Status: http.StatusAccepted,
+		Body:   s.toWorkspaceResponse(ctx, summary),
+	}, nil
+}
+
+// adHocWorkspaceForBranch returns the accepted response for an ad-hoc
+// workspace that already owns the requested branch, or nil when none exists.
+func (s *Handler) adHocWorkspaceForBranch(
+	ctx context.Context, repo *db.Repo, itemKey string,
+) (*createWorkspaceOutput, error) {
+	existing, err := s.workspaces.GetByItemKeyForProvider(
+		ctx,
+		repo.Platform,
+		repo.PlatformHost,
+		repo.Owner,
+		repo.Name,
+		db.WorkspaceItemTypeAdHoc,
+		itemKey,
+	)
+	if err != nil {
+		return nil, httpapi.Internal("lookup existing workspace: " + err.Error())
+	}
+	if existing == nil {
+		return nil, nil
+	}
+	summary, err := s.workspaces.GetSummary(ctx, existing.ID)
+	if err != nil {
+		return nil, httpapi.Internal("get workspace summary: " + err.Error())
+	}
+	if summary == nil {
+		return nil, httpapi.Internal("workspace summary missing for existing workspace")
+	}
+	return &createWorkspaceOutput{
+		Status: http.StatusAccepted,
+		Body:   s.toWorkspaceResponse(ctx, summary),
+	}, nil
+}
+
+func (s *Handler) adHocWorkspaceCreateError(
+	ctx context.Context, repo *db.Repo, itemKey string, err error,
+) (*createWorkspaceOutput, error) {
+	msg := err.Error()
+	var branchConflict *workspace.WorkspaceBranchConflictError
+	if errors.As(err, &branchConflict) {
+		conflict := httpapi.NewProblem(
+			http.StatusConflict,
+			httpapi.CodeBranchConflict,
+			"A local branch with the requested name already exists.",
+			map[string]any{
+				"branch":          branchConflict.Branch,
+				"suggestedBranch": branchConflict.SuggestedBranch,
+			},
+		)
+		conflict.Type = adHocWorkspaceBranchConflictType
+		conflict.Title = "Workspace branch conflict"
+		conflict.Errors = []*huma.ErrorDetail{
+			{
+				Message:  "Requested branch already exists",
+				Location: "body.branch",
+				Value:    branchConflict.Branch,
+			},
+			{
+				Message:  "Suggested alternative branch name",
+				Location: "body.suggested_branch",
+				Value:    branchConflict.SuggestedBranch,
+			},
+		}
+		return nil, conflict
+	}
+	if strings.Contains(msg, "not tracked") {
+		return nil, httpapi.NotFound(httpapi.CodeNotFound, msg, nil)
+	}
+	if strings.Contains(msg, "invalid branch name") {
+		return nil, httpapi.Validation("body.branch", msg)
+	}
+	// A racing create for the same branch loses on the workspace unique
+	// index; hand back the winner instead of a conflict the caller cannot
+	// act on.
+	if itemKey != "" &&
+		(errors.Is(err, workspace.ErrWorkspaceDuplicate) ||
+			strings.Contains(msg, "UNIQUE constraint")) {
+		existing, existingErr := s.adHocWorkspaceForBranch(ctx, repo, itemKey)
+		if existingErr == nil && existing != nil {
+			return existing, nil
+		}
+		return nil, httpapi.Conflict(httpapi.CodeConflict,
+			"workspace already exists for this branch", nil)
+	}
+	return nil, httpapi.Internal("create workspace: " + msg)
+}
+
+// CreateAdHocWorkspace creates or reuses a workspace for new work.
+func (s *Handler) CreateAdHocWorkspace(
+	ctx context.Context, input *CreateAdHocWorkspaceInput,
+) (*CreateWorkspaceOutput, error) {
+	return s.createAdHocWorkspace(ctx, input)
 }
 
 // listWorkspaces returns middleman's persisted workspace records.
@@ -586,6 +758,9 @@ func (s *Handler) refreshWorkspace(
 	case db.WorkspaceItemTypeKataTask:
 		// Kata tasks are not provider issues. The live task pane refreshes
 		// through the Kata daemon; this route only refreshes the mapped repo.
+	case db.WorkspaceItemTypeAdHoc:
+		// Ad-hoc workspaces have no source item to refresh. Only the mapped
+		// repo index and any PR later detected for the branch matter.
 	default:
 		return nil, httpapi.Internal("workspace has unsupported item type")
 	}

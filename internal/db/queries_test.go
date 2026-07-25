@@ -4473,6 +4473,60 @@ func TestWorkspaceItemKeyDefaultsFromItemNumber(t *testing.T) {
 	assert.Equal("42", byIssue.ItemKey)
 }
 
+// Ad-hoc workspaces all carry item_number 0, so the number fallback would key
+// every one of them in a repository as "0" and silently collide.
+func TestAdHocWorkspaceRequiresItemKey(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+
+	err := d.InsertWorkspace(ctx, &Workspace{
+		ID:              "ws-adhoc-nokey",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		ItemType:        WorkspaceItemTypeAdHoc,
+		GitHeadRef:      "spike/thing",
+		WorkspaceBranch: "spike/thing",
+		WorktreePath:    "/tmp/ws-adhoc-nokey",
+		TmuxSession:     "ws-adhoc-nokey",
+		Status:          "ready",
+	})
+	require.Error(err)
+	assert.Contains(err.Error(), "item_key is required")
+
+	require.NoError(d.InsertWorkspace(ctx, &Workspace{
+		ID:              "ws-adhoc",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		ItemType:        WorkspaceItemTypeAdHoc,
+		ItemKey:         AdHocWorkspaceItemKey("spike/thing"),
+		GitHeadRef:      "spike/thing",
+		WorkspaceBranch: "spike/thing",
+		WorktreePath:    "/tmp/ws-adhoc",
+		TmuxSession:     "ws-adhoc",
+		Status:          "ready",
+	}))
+
+	got, err := d.GetWorkspace(ctx, "ws-adhoc")
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Equal("adhoc:spike/thing", got.ItemKey)
+
+	summaries, err := d.ListWorkspaceSummaries(ctx)
+	require.NoError(err)
+	found := false
+	for _, summary := range summaries {
+		if summary.ID == "ws-adhoc" {
+			found = true
+			assert.Equal("adhoc:spike/thing", summary.ItemKey)
+		}
+	}
+	assert.True(found, "ad-hoc workspace must appear in summaries")
+}
+
 func TestKataWorkspaceMetadata(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

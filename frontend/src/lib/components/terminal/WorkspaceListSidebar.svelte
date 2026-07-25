@@ -1,10 +1,16 @@
 <script lang="ts">
   import {
     copyToClipboard,
+    IconButton,
     SearchInput,
     StatusDot,
     type StatusDotStatus,
   } from "@kenn-io/kit-ui";
+  import PlusIcon from "@lucide/svelte/icons/plus";
+  import {
+    openNewWorkspaceDialog,
+    type NewWorkspaceRepoSeed,
+  } from "../../stores/new-workspace.svelte.js";
   import { onMount, tick } from "svelte";
   import { navigate } from "../../stores/router.svelte.ts";
   import GitBranchIcon from "@lucide/svelte/icons/git-branch";
@@ -52,7 +58,7 @@
     platform_host: string;
     repo_owner: string;
     repo_name: string;
-    item_type: "pull_request" | "issue" | "kata_task";
+    item_type: "pull_request" | "issue" | "kata_task" | "adhoc";
     item_number: number;
     item_key?: string;
     kata?: KataWorkspaceMetadata | null;
@@ -558,6 +564,10 @@
         ws.kata?.issue_uid,
         ws.item_key,
       );
+    } else if (ws.item_type === "adhoc") {
+      // No number or item title to match on: the branch (already in the
+      // haystack) plus the kind keywords are what a user would type.
+      haystack.push("adhoc", "new work");
     } else {
       const itemKind = ws.item_type === "issue" ? "issue" : "pr";
       const itemNumber = String(ws.item_number);
@@ -660,9 +670,9 @@
   }
 
   function providerItemURL(ws: Workspace): string | null {
-    // Kata workspaces are owned by an external Kata task, not a provider
-    // PR/issue, so there is no provider item URL (item_number is 0).
-    if (ws.item_type === "kata_task") return null;
+    // Kata and ad-hoc workspaces are not backed by a provider PR/issue, so
+    // there is no provider item URL (item_number is 0).
+    if (ws.item_type === "kata_task" || ws.item_type === "adhoc") return null;
     const provider = workspaceProvider(ws)?.toLowerCase();
     const repoPath = ws.repo?.repo_path ?? `${ws.repo_owner}/${ws.repo_name}`;
     const encodedPath = repoPath
@@ -980,6 +990,20 @@
     return `${ws.fleet_host_key ?? "self"}:${ws.id}`;
   }
 
+  // Preselects the repository of the workspace the user is already looking at,
+  // which is nearly always the repo they want to start more work in.
+  function newWorkspaceSeedRepo(): NewWorkspaceRepoSeed | undefined {
+    const current = workspaces.find(isSelectedWorkspace);
+    const provider = current?.repo?.provider;
+    if (!current || !provider) return undefined;
+    return {
+      provider,
+      platformHost: current.platform_host,
+      owner: current.repo_owner,
+      name: current.repo_name,
+    };
+  }
+
   function isSelectedWorkspace(ws: Workspace): boolean {
     return (
       ws.id === selectedId &&
@@ -1042,6 +1066,15 @@
   <div class="sidebar-header">
     <span class="sidebar-header-label">Workspaces</span>
     <span class="sidebar-header-count">{sidebarCountLabel}</span>
+    <IconButton
+      class="workspace-new-button"
+      size="sm"
+      ariaLabel="New workspace"
+      title="New workspace"
+      onclick={() => openNewWorkspaceDialog(newWorkspaceSeedRepo())}
+    >
+      <PlusIcon size="13" strokeWidth="2.2" aria-hidden="true" />
+    </IconButton>
     <div class="workspace-sort">
       <FilterDropdown
         label="View"
@@ -1266,6 +1299,9 @@
                 {/if}
               </div>
             </div>
+            <!-- Ad-hoc workspaces have no provider item or task to open, so
+                 they render no bubble at all rather than an empty one. -->
+            {#if ws.item_type !== "adhoc"}
             <button
               class={[
                 "item-bubble",
@@ -1284,6 +1320,7 @@
             >
               {itemBubbleLabel(ws)}
             </button>
+            {/if}
           </div>
     {/snippet}
     {#if workspaceListStatus === "loading" && workspaces.length === 0}

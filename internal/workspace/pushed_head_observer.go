@@ -227,7 +227,8 @@ func pushedHeadWorkspaceEligible(ws *Workspace) bool {
 	}
 	return ws.ItemType == db.WorkspaceItemTypePullRequest ||
 		ws.ItemType == db.WorkspaceItemTypeIssue ||
-		ws.ItemType == db.WorkspaceItemTypeKataTask
+		ws.ItemType == db.WorkspaceItemTypeKataTask ||
+		ws.ItemType == db.WorkspaceItemTypeAdHoc
 }
 
 func (o *PushedHeadObserver) resolveWorkspacePR(ctx context.Context, ws *Workspace) (*WorkspacePRAssociation, *db.Repo, *db.MergeRequest, bool, error) {
@@ -249,7 +250,7 @@ func (o *PushedHeadObserver) resolveWorkspacePR(ctx context.Context, ws *Workspa
 	switch ws.ItemType {
 	case db.WorkspaceItemTypePullRequest:
 		prNumber = ws.ItemNumber
-	case db.WorkspaceItemTypeIssue, db.WorkspaceItemTypeKataTask:
+	case db.WorkspaceItemTypeIssue, db.WorkspaceItemTypeKataTask, db.WorkspaceItemTypeAdHoc:
 		if ws.AssociatedPRNumber != nil {
 			prNumber = *ws.AssociatedPRNumber
 		} else if ws.ItemType == db.WorkspaceItemTypeKataTask {

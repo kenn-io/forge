@@ -110,7 +110,7 @@
       name: string;
       repo_path: string;
     };
-    item_type: "pull_request" | "issue" | "kata_task";
+    item_type: "pull_request" | "issue" | "kata_task" | "adhoc";
     item_number: number;
     item_key?: string | undefined;
     git_head_ref: string;

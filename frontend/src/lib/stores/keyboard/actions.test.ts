@@ -6,6 +6,11 @@ import {
   OPEN_LABEL_PICKER_EVENT,
   type OpenLabelPickerDetail,
 } from "../../../../../packages/ui/src/components/detail/labelPickerCommand.js";
+import {
+  getNewWorkspaceSeedRepo,
+  isNewWorkspaceDialogOpen,
+  resetNewWorkspaceDialogState,
+} from "../new-workspace.svelte.js";
 import type { Context } from "./types.js";
 
 function ctx(page: Context["page"], overrides: Partial<Context> = {}): Context {
@@ -90,6 +95,7 @@ function setConfiguredRepos(repos: ReturnType<typeof configuredRepo>[]): void {
 describe("defaultActions", () => {
   afterEach(() => {
     setSidebarCollapsed(false);
+    resetNewWorkspaceDialogState();
     delete window.__middleman_config;
     window.history.replaceState(null, "", "/");
   });
@@ -536,5 +542,38 @@ describe("defaultActions", () => {
     ]);
 
     expect(action.when(ctx("workspaces"))).toBe(false);
+  });
+
+  it("offers New workspace everywhere and seeds the workspace-page repo", () => {
+    const action = command("workspace.new");
+    expect(action.when(ctx("pulls"))).toBe(true);
+
+    // From a PR/issue page there is no workspace repo context, so the dialog
+    // opens unseeded and the user picks a repository.
+    action.handler(ctx("pulls"));
+    expect(isNewWorkspaceDialogOpen()).toBe(true);
+    expect(getNewWorkspaceSeedRepo()).toBeNull();
+
+    resetNewWorkspaceDialogState();
+    window.__middleman_config = {
+      ui: {
+        repo: {
+          provider: "gitea",
+          platform_host: "code.example.com",
+          repo_path: "acme/widgets",
+          owner: "acme",
+          name: "widgets",
+        },
+      },
+    };
+
+    action.handler(ctx("workspaces"));
+    expect(isNewWorkspaceDialogOpen()).toBe(true);
+    expect(getNewWorkspaceSeedRepo()).toEqual({
+      provider: "gitea",
+      platformHost: "code.example.com",
+      owner: "acme",
+      name: "widgets",
+    });
   });
 });

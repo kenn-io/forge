@@ -301,6 +301,12 @@ func worktreeFromWorkspace(sum db.WorkspaceSummary, wtKey, projKey string) fleet
 	if sum.ItemType == db.WorkspaceItemTypeKataTask {
 		return wt
 	}
+	if sum.ItemType == db.WorkspaceItemTypeAdHoc {
+		// Ad-hoc workspaces have no provider item; only a PR later detected
+		// for the pushed branch can be linked.
+		wt.LinkedPRNumber = sum.AssociatedPRNumber
+		return wt
+	}
 	// Pull-request workspaces: the PR number is the item itself, and the
 	// joined MR metadata describes that PR. The worktree's own diff size
 	// (DiffAdded/DiffRemoved) still comes from the live git stats sampler,

@@ -394,6 +394,8 @@ func (s *Server) registerProviderRepoAPI(api huma.API) {
 		httpapi.DocumentOperation("resolve-repo-item", "Resolve repository item", "Repositories"))
 	huma.Post(api, hostRepoPath+"/resolve/{number}", s.resolveItemOnHost,
 		httpapi.DocumentOperation("resolve-repo-item-on-host", "Resolve repository item", "Repositories"))
+	huma.Register(api, huma.Operation{OperationID: "create-repo-workspace", Method: http.MethodPost, Path: repoPath + "/workspaces", DefaultStatus: http.StatusAccepted, Summary: "Create workspace for new work", Tags: []string{"Workspaces"}}, s.workspaceAPI.CreateAdHocWorkspace)
+	huma.Register(api, huma.Operation{OperationID: "create-repo-workspace-on-host", Method: http.MethodPost, Path: hostRepoPath + "/workspaces", DefaultStatus: http.StatusAccepted, Summary: "Create workspace for new work", Tags: []string{"Workspaces"}}, s.createAdHocWorkspaceOnHost)
 	huma.Get(api, repoPath, s.getRepo,
 		httpapi.DocumentOperation("get-repo", "Get repository", "Repositories"))
 	huma.Get(api, hostRepoPath, s.getRepoOnHost,

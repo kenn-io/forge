@@ -78,6 +78,12 @@ Use **Workspaces** to launch and attach to shell or agent sessions tied to local
 repositories. tmux-backed sessions let middleman keep a durable attach point for
 ongoing work.
 
+New work does not need an existing pull request, issue, or Kata task. Use **New
+workspace** in the Workspaces sidebar, or the same command in the palette
+(Cmd/Ctrl+K), to pick a tracked repository and start a fresh worktree. Name the
+branch or leave it empty and middleman generates one; either way the worktree
+branches from the repository's default branch.
+
 ## Use Kata tasks
 
 Enable Kata mode when your work is tracked in Kata. middleman discovers Kata

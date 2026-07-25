@@ -62,6 +62,17 @@ type createIssueWorkspaceHostInput struct {
 	}
 }
 
+type createAdHocWorkspaceHostInput struct {
+	Provider     string `path:"provider"`
+	PlatformHost string `path:"platform_host"`
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Body         struct {
+		Branch              *string `json:"branch,omitempty" doc:"Branch for the new worktree; generated when empty"`
+		ReuseExistingBranch bool    `json:"reuse_existing_branch,omitempty"`
+	}
+}
+
 func (s *Server) resolveItemOnHost(ctx context.Context, input *resolveItemHostInput) (*resolveItemOutput, error) {
 	next := resolveItemInput{
 		Provider:     input.Provider,
@@ -142,4 +153,15 @@ func (s *Server) createIssueWorkspaceOnHost(ctx context.Context, input *createIs
 		Body:         input.Body,
 	}
 	return s.workspaceAPI.CreateIssueWorkspace(ctx, &next)
+}
+
+func (s *Server) createAdHocWorkspaceOnHost(ctx context.Context, input *createAdHocWorkspaceHostInput) (*workspaceapi.CreateWorkspaceOutput, error) {
+	next := workspaceapi.CreateAdHocWorkspaceInput{
+		Provider:     input.Provider,
+		PlatformHost: input.PlatformHost,
+		Owner:        input.Owner,
+		Name:         input.Name,
+		Body:         input.Body,
+	}
+	return s.workspaceAPI.CreateAdHocWorkspace(ctx, &next)
 }

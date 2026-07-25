@@ -1996,6 +1996,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/host/{platform_host}/repo/{provider}/{owner}/{name}/workspaces": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create workspace for new work */
+        post: operations["create-repo-workspace-on-host"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/host/{platform_host}/repo/{provider}/{owner}/{name}/worktree-base": {
         parameters: {
             query?: never;
@@ -3556,6 +3573,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/repo/{provider}/{owner}/{name}/workspaces": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create workspace for new work */
+        post: operations["create-repo-workspace"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/repo/{provider}/{owner}/{name}/worktree-base": {
         parameters: {
             query?: never;
@@ -4653,6 +4687,28 @@ export interface components {
             provider: string;
             repo_path: string;
             worktree_base_path?: string;
+        };
+        CreateAdHocWorkspaceHostInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/CreateAdHocWorkspaceHostInputBody.json
+             */
+            readonly $schema?: string;
+            /** @description Branch for the new worktree; generated when empty */
+            branch?: string;
+            reuse_existing_branch?: boolean;
+        };
+        CreateAdHocWorkspaceInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/CreateAdHocWorkspaceInputBody.json
+             */
+            readonly $schema?: string;
+            /** @description Branch for the new worktree; generated when empty */
+            branch?: string;
+            reuse_existing_branch?: boolean;
         };
         CreateDiffReviewDraftCommentHostInputBody: {
             /**
@@ -12276,6 +12332,44 @@ export interface operations {
             };
         };
     };
+    "create-repo-workspace-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateAdHocWorkspaceHostInputBody"];
+            };
+        };
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
     "update-repo-worktree-base-on-host": {
         parameters: {
             query?: never;
@@ -15830,6 +15924,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ResolveItemResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "create-repo-workspace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateAdHocWorkspaceInputBody"];
+            };
+        };
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceResponse"];
                 };
             };
             /** @description Error */

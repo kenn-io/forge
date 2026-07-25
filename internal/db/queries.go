@@ -4518,7 +4518,21 @@ func workspaceItemKeyForInsert(ws *Workspace) (string, error) {
 	if ws.ItemType == WorkspaceItemTypeKataTask {
 		return "", errors.New("kata task workspace item_key is required")
 	}
+	// Ad-hoc workspaces have no item number, so the number fallback below
+	// would key every one of them in a repository as "0" and collide on the
+	// (platform, host, repo, item_type, item_key) unique index.
+	if ws.ItemType == WorkspaceItemTypeAdHoc {
+		return "", errors.New("ad-hoc workspace item_key is required")
+	}
 	return strconv.Itoa(ws.ItemNumber), nil
+}
+
+// workspaceItemTypeKeysByNumber reports whether an item type's workspace key
+// is derived from its item number. Kata-task and ad-hoc workspaces have no
+// meaningful item number and always carry an explicit item_key.
+func workspaceItemTypeKeysByNumber(itemType string) bool {
+	return itemType != WorkspaceItemTypeKataTask &&
+		itemType != WorkspaceItemTypeAdHoc
 }
 
 func workspaceKataMetadataJSON(ws *Workspace) (string, error) {
@@ -4545,7 +4559,7 @@ func scanWorkspace(scanner interface{ Scan(...any) error }) (*Workspace, error) 
 	if err != nil {
 		return nil, err
 	}
-	if ws.ItemKey == "" && ws.ItemType != WorkspaceItemTypeKataTask {
+	if ws.ItemKey == "" && workspaceItemTypeKeysByNumber(ws.ItemType) {
 		ws.ItemKey = strconv.Itoa(ws.ItemNumber)
 	}
 	ws.CreatedAt = ws.CreatedAt.UTC()
@@ -5232,7 +5246,7 @@ func scanWorkspaceSummary(
 	s.CreatedAt = s.CreatedAt.UTC()
 	s.MRTitle = s.SourceTitle
 	s.MRState = s.SourceState
-	if s.ItemKey == "" && s.ItemType != WorkspaceItemTypeKataTask {
+	if s.ItemKey == "" && workspaceItemTypeKeysByNumber(s.ItemType) {
 		s.ItemKey = strconv.Itoa(s.ItemNumber)
 	}
 	if strings.TrimSpace(kataMetadataJSON) != "" {

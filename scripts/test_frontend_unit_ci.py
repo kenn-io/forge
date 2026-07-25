@@ -4,8 +4,29 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from scripts.frontend_unit_ci import run_frontend_unit
+
+
+class FailingWriteStream:
+    def __init__(self, stream: io.TextIOWrapper) -> None:
+        self.stream = stream
+
+    def write(self, _: str) -> int:
+        raise OSError("diagnostic write failed")
+
+    def flush(self) -> None:
+        self.stream.flush()
+
+    def close(self) -> None:
+        self.stream.close()
+
+    def __enter__(self) -> "FailingWriteStream":
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        self.close()
 
 
 class FrontendUnitCITest(unittest.TestCase):
@@ -110,15 +131,30 @@ class FrontendUnitCITest(unittest.TestCase):
         self.assertIn("--report-exclude-env", log)
         self.assertIn(str((self.diagnostics / "node-reports").resolve()), log)
 
-    def test_version_report_write_failure_preserves_child_status(self) -> None:
-        self.full_destination("versions.txt")
-        status, output, _ = self.run_child(
-            "print('child output'); import sys; sys.exit(23)",
-            version_commands=((sys.executable, "-c", "print('version' * 2000)"),),
-        )
+    def test_version_report_write_failure_preserves_child_status_on_timed_path(self) -> None:
+        destination = self.diagnostics / "versions.txt"
+        original_open = Path.open
+        opened = False
+
+        def open_then_fail_write(path: Path, *args: object, **kwargs: object) -> object:
+            nonlocal opened
+            stream = original_open(path, *args, **kwargs)
+            if path == destination:
+                opened = True
+                return FailingWriteStream(stream)
+            return stream
+
+        with patch.object(Path, "open", autospec=True, side_effect=open_then_fail_write):
+            status, output, warnings = self.run_child(
+                "print('child output'); import sys; sys.exit(23)",
+                version_commands=((sys.executable, "-c", "print('version')"),),
+            )
 
         self.assertEqual(23, status)
+        self.assertTrue(opened)
         self.assertIn("child output", output)
+        self.assertEqual("", warnings)
+        self.assertTrue((self.diagnostics / "time.txt").read_text())
 
     def test_post_test_cgroup_write_failure_preserves_child_status(self) -> None:
         self.full_destination("cgroup-after.txt")
@@ -133,11 +169,26 @@ class FrontendUnitCITest(unittest.TestCase):
         self.assertEqual(23, status)
         self.assertIn("child output", output)
 
-    def test_log_write_or_flush_failure_preserves_status_and_streams_output(self) -> None:
-        self.full_destination("vitest.log")
-        status, output, _ = self.run_child(
-            "print('child output' * 2000); import sys; sys.exit(23)"
-        )
+    def test_log_write_failure_preserves_status_and_streams_output_on_timed_path(self) -> None:
+        destination = self.diagnostics / "vitest.log"
+        original_open = Path.open
+        opened = False
+
+        def open_then_fail_write(path: Path, *args: object, **kwargs: object) -> object:
+            nonlocal opened
+            stream = original_open(path, *args, **kwargs)
+            if path == destination:
+                opened = True
+                return FailingWriteStream(stream)
+            return stream
+
+        with patch.object(Path, "open", autospec=True, side_effect=open_then_fail_write):
+            status, output, warnings = self.run_child(
+                "print('child output'); import sys; sys.exit(23)"
+            )
 
         self.assertEqual(23, status)
+        self.assertTrue(opened)
         self.assertIn("child output", output)
+        self.assertEqual("", warnings)
+        self.assertTrue((self.diagnostics / "time.txt").read_text())

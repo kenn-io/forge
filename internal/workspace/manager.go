@@ -16,6 +16,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -977,7 +978,7 @@ func existingWorkspacePersistedBranch(
 	useMergeRequestHeadRef bool,
 ) (string, bool, error) {
 	if ws.ItemType == db.WorkspaceItemTypePullRequest &&
-		currentBranch == syntheticPRWorktreeBranch(ws.ItemNumber) {
+		isSyntheticPRWorktreeBranch(ws.ItemNumber, currentBranch) {
 		ok, err := existingWorkspaceHeadMatchesCurrentHead(
 			ctx, gitDir, ws, currentBranch, useMergeRequestHeadRef,
 		)
@@ -1503,25 +1504,89 @@ func (m *Manager) addWorktreeLocked(
 			ws.GitHeadRef, err, fallbackBranch, startRefErr,
 		)
 	}
-	fallbackErr := runGitWorktreeAdd(
-		ctx, cloneDir, ws.WorktreePath,
-		"-b", fallbackBranch, startRef,
+	branch, fallbackErr := m.addFallbackWorktree(
+		ctx, cloneDir, ws, fallbackBranch, startRef,
 	)
 	if fallbackErr == nil {
-		if upErr := configureFallbackBranchUpstream(
-			ctx, cloneDir, ws, fallbackBranch,
-		); upErr != nil {
-			cleanupWorktreeAddOnUpstreamFailure(
-				ctx, cloneDir, ws.WorktreePath, fallbackBranch,
-			)
-			return "", fmt.Errorf("configure branch upstream: %w", upErr)
-		}
-		return fallbackBranch, nil
+		return branch, nil
 	}
 	return "", fmt.Errorf(
 		"preferred branch %q failed: %w; fallback branch %q failed: %w",
 		ws.GitHeadRef, err, fallbackBranch, fallbackErr,
 	)
+}
+
+// addFallbackWorktree checks out the workspace head under a name other than the
+// PR head branch, which is where setup lands whenever the preferred name is
+// unusable (stale local branch, checked out elsewhere, or simply taken).
+//
+// Every failure reachable from here is a naming collision inside middleman's own
+// branch namespace, never a missing commit, so no collision may be terminal: a
+// taken synthetic name is uniquified, and if no branch can be created at all the
+// worktree is checked out detached. A workspace the maintainer can open and
+// rename by hand always beats a setup error with nothing to retry into.
+func (m *Manager) addFallbackWorktree(
+	ctx context.Context,
+	cloneDir string,
+	ws *Workspace,
+	fallbackBranch, startRef string,
+) (string, error) {
+	branch, err := m.addFallbackBranchWorktree(
+		ctx, cloneDir, ws, fallbackBranch, startRef,
+	)
+	if err == nil {
+		return branch, nil
+	}
+	fallbackErr := err
+
+	// Uniquifying leaves the colliding branch untouched: it may be a live
+	// workspace's checkout or a user branch middleman never created.
+	if uniqueBranch, nameErr := nextAvailableBranchName(
+		ctx, cloneDir, fallbackBranch,
+	); nameErr == nil {
+		branch, err = m.addFallbackBranchWorktree(
+			ctx, cloneDir, ws, uniqueBranch, startRef,
+		)
+		if err == nil {
+			return branch, nil
+		}
+	}
+
+	if detachErr := runGitWorktreeAdd(
+		ctx, cloneDir, ws.WorktreePath, "--detach", startRef,
+	); detachErr != nil {
+		return "", fmt.Errorf(
+			"%w; detached checkout failed: %w", fallbackErr, detachErr,
+		)
+	}
+	// An empty managed branch: middleman owns no branch here, so rollback and
+	// delete leave every existing branch in place.
+	slog.Warn("workspace worktree checked out detached",
+		"workspace_id", ws.ID, "path", ws.WorktreePath,
+		"branch", fallbackBranch, "err", fallbackErr)
+	return "", nil
+}
+
+func (m *Manager) addFallbackBranchWorktree(
+	ctx context.Context,
+	cloneDir string,
+	ws *Workspace,
+	branch, startRef string,
+) (string, error) {
+	if err := runGitWorktreeAdd(
+		ctx, cloneDir, ws.WorktreePath, "-b", branch, startRef,
+	); err != nil {
+		return "", err
+	}
+	if err := configureFallbackBranchUpstream(
+		ctx, cloneDir, ws, branch,
+	); err != nil {
+		cleanupWorktreeAddOnUpstreamFailure(
+			ctx, cloneDir, ws.WorktreePath, branch,
+		)
+		return "", fmt.Errorf("configure branch upstream: %w", err)
+	}
+	return branch, nil
 }
 
 func (m *Manager) addIssueWorktree(
@@ -1678,6 +1743,23 @@ func workspaceMergeRequestHeadRef(ws *Workspace) string {
 
 func syntheticPRWorktreeBranch(mrNumber int) string {
 	return fmt.Sprintf("middleman/pr-%d", mrNumber)
+}
+
+// isSyntheticPRWorktreeBranch reports whether branch is the synthetic PR branch
+// for this merge request or one of the numbered variants addFallbackWorktree
+// creates when that name is taken. Both are middleman-created names for the same
+// workspace head, so reuse and upstream repair must recognize either.
+func isSyntheticPRWorktreeBranch(mrNumber int, branch string) bool {
+	base := syntheticPRWorktreeBranch(mrNumber)
+	if branch == base {
+		return true
+	}
+	suffix, ok := strings.CutPrefix(branch, base+"-")
+	if !ok {
+		return false
+	}
+	_, err := strconv.Atoi(suffix)
+	return err == nil
 }
 
 // cleanupWorktreeAddOnUpstreamFailure rolls back a just-added worktree (and,

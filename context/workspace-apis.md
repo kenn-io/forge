@@ -350,6 +350,15 @@ server check exactly.
   cancellable while hashing; cached diff membership never authorizes traversal
   (`internal/workspace/diff_snapshot.go::fingerprintWorktreePath`).
 
+## Worktree Branch Names
+
+An unavailable branch name must never fail workspace creation: an unusable PR
+head branch degrades to `middleman/pr-<n>`, then to a numbered variant of it,
+then to a detached checkout with no managed branch
+(`internal/workspace/manager.go::addFallbackWorktree`). Middleman owns the
+synthetic name and its numbered variants and may delete them during cleanup;
+any other pre-existing branch is user-owned and must keep pointing where it did.
+
 ## Branch Upstream
 
 The branch's git upstream config (`branch.<name>.remote`/`.merge`) is the

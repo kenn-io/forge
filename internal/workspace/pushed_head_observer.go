@@ -470,7 +470,7 @@ func (o *PushedHeadObserver) configureMissingUpstream(
 		return false, nil
 	}
 	synthetic := ws.ItemType == db.WorkspaceItemTypePullRequest &&
-		branch == syntheticPRWorktreeBranch(ws.ItemNumber)
+		isSyntheticPRWorktreeBranch(ws.ItemNumber, branch)
 	if branch != head && !synthetic {
 		return false, nil
 	}

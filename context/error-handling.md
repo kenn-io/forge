@@ -99,8 +99,9 @@ Translate `internal/platform` typed errors at the server boundary:
 | `provider_not_configured`, `missing_token`, `invalid_repo_ref`, `invalid_argument` | `400 badRequest` |
 | Unknown provider/platform failures | `502 upstreamError` |
 
-Context cancellation and deadline errors should pass through cancellation paths
-instead of being wrapped as provider failures.
+Cancellation and deadline errors pass through only when the request context is
+done; a provider child-context deadline while the request remains active is a
+`502 upstreamError` (`internal/server/markdown_images.go::markdownImageError`).
 
 ## Frontend Handling
 

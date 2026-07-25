@@ -1,5 +1,6 @@
 import type { DiffResult, FilePreview, FilesResult, CommitInfo } from "../api/types.js";
 import { createAPIClient } from "../api/generated/client.js";
+import { configuredAPIBaseURL } from "../api/runtime-base.js";
 import {
   providerItemPath,
   providerRepoPath,
@@ -79,11 +80,7 @@ function withVisibleFiles<T extends DiffResult | FilesResult>(result: T, files: 
 }
 
 function apiBaseURL(basePath: string): string {
-  const path = `${basePath.replace(/\/$/, "")}/api/v1`;
-  if (typeof window !== "undefined") {
-    return new URL(path, window.location.origin).toString();
-  }
-  return `http://localhost${path}`;
+  return configuredAPIBaseURL(basePath);
 }
 
 function safeGetItem(key: string): string | null {

@@ -1,4 +1,5 @@
 import type { components } from "@middleman/ui/api/schema";
+import { configuredAPIBaseURL } from "@middleman/ui/api/runtime-base";
 
 import { apiErrorMessage, createRuntimeClient } from "../runtime.js";
 import type {
@@ -77,9 +78,7 @@ function resourceURLFor(baseURL: string | undefined, path: string, query: Record
 }
 
 function defaultAPIBaseURL(): string {
-  const basePath = typeof window !== "undefined" ? (window.__BASE_PATH__ ?? "/") : "/";
-  const origin = typeof window !== "undefined" ? window.location.origin : "http://localhost";
-  return new URL(`${basePath.replace(/\/$/, "")}/api/v1`, origin).toString();
+  return configuredAPIBaseURL();
 }
 
 function serializeHideDeleted(value: boolean | undefined): string | undefined {

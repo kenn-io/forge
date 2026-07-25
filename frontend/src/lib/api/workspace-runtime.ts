@@ -1,6 +1,7 @@
 import type { LaunchTarget, RuntimeSession, WorkspaceRuntime } from "@middleman/ui/api/types";
+import { configuredAPIBaseURL } from "@middleman/ui/api/runtime-base";
 
-import { tracedFetch } from "./runtime.js";
+import { createRuntimeClient } from "./runtime.js";
 
 export type WorkspaceRuntimeState = Omit<WorkspaceRuntime, "launch_targets" | "sessions"> & {
   launch_targets: LaunchTarget[];
@@ -14,10 +15,6 @@ function basePath(): string {
   return path.replace(/\/$/, "");
 }
 
-function apiBaseUrl(): string {
-  return `${basePath()}/api/v1`;
-}
-
 function wsBaseUrl(): string {
   return `${basePath()}/ws/v1`;
 }
@@ -26,19 +23,26 @@ function hostPrefix(hostKey?: string): string {
   return hostKey ? `/fleet/hosts/${encodeURIComponent(hostKey)}` : "";
 }
 
-function workspaceRuntimeURL(workspaceId: string, hostKey?: string): string {
-  return `${apiBaseUrl()}${hostPrefix(hostKey)}/workspaces/${encodeURIComponent(workspaceId)}/runtime`;
+function problemMessage(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null) return undefined;
+  if ("detail" in error && typeof error.detail === "string") return error.detail;
+  if ("title" in error && typeof error.title === "string") return error.title;
+  return undefined;
 }
 
-async function readJSON<T>(response: Response, fallback: string): Promise<T> {
-  if (response.ok) {
-    return (await response.json()) as T;
+function runtimeResult<T>(data: unknown, error: unknown, response: Response, fallback: string): T {
+  if (response.ok && data !== undefined) {
+    return data as T;
   }
-  const body = (await response.json().catch(() => ({}))) as {
-    detail?: string;
-    title?: string;
-  };
-  throw new Error(body.detail ?? body.title ?? fallback);
+  throw new Error(problemMessage(error) ?? fallback);
+}
+
+function runtimeFetch(hostKeyOrFetch: string | RuntimeFetch | undefined, fallback: RuntimeFetch): RuntimeFetch {
+  return typeof hostKeyOrFetch === "function" ? hostKeyOrFetch : fallback;
+}
+
+function workspaceRuntimeClient(fetchImpl: RuntimeFetch) {
+  return createRuntimeClient(fetchImpl, configuredAPIBaseURL());
 }
 
 export async function getWorkspaceRuntime(
@@ -47,9 +51,20 @@ export async function getWorkspaceRuntime(
   fetchFn: RuntimeFetch = fetch,
 ): Promise<WorkspaceRuntimeState> {
   const hostKey = typeof hostKeyOrFetch === "string" ? hostKeyOrFetch : undefined;
-  const runtimeFetch = tracedFetch(typeof hostKeyOrFetch === "function" ? hostKeyOrFetch : fetchFn);
-  const response = await runtimeFetch(workspaceRuntimeURL(workspaceId, hostKey));
-  const runtime = await readJSON<WorkspaceRuntime>(response, `GET workspace runtime failed (${response.status})`);
+  const client = workspaceRuntimeClient(runtimeFetch(hostKeyOrFetch, fetchFn));
+  const result = hostKey
+    ? await client.GET("/fleet/hosts/{host_key}/workspaces/{id}/runtime", {
+        params: { path: { host_key: hostKey, id: workspaceId } },
+      })
+    : await client.GET("/workspaces/{id}/runtime", {
+        params: { path: { id: workspaceId } },
+      });
+  const runtime = runtimeResult<WorkspaceRuntime>(
+    result.data,
+    result.error,
+    result.response,
+    `GET workspace runtime failed (${result.response.status})`,
+  );
   return {
     ...runtime,
     launch_targets: runtime.launch_targets ?? [],
@@ -66,22 +81,32 @@ export async function launchWorkspaceSession(
 ): Promise<RuntimeSession> {
   const hostKey = typeof hostKeyOrRegionOrFetch === "string" ? hostKeyOrRegionOrFetch : undefined;
   const displayRegion = regionOrFetch === "workflow" || regionOrFetch === "terminal" ? regionOrFetch : undefined;
-  const runtimeFetch = tracedFetch(
+  const fetchImpl =
     typeof hostKeyOrRegionOrFetch === "function"
       ? hostKeyOrRegionOrFetch
       : typeof regionOrFetch === "function"
         ? regionOrFetch
-        : fetchFn,
+        : fetchFn;
+  const client = workspaceRuntimeClient(fetchImpl);
+  const body = {
+    target_key: targetKey,
+    ...(displayRegion ? { display_region: displayRegion } : {}),
+  };
+  const result = hostKey
+    ? await client.POST("/fleet/hosts/{host_key}/workspaces/{id}/runtime/sessions", {
+        params: { path: { host_key: hostKey, id: workspaceId } },
+        body,
+      })
+    : await client.POST("/workspaces/{id}/runtime/sessions", {
+        params: { path: { id: workspaceId } },
+        body,
+      });
+  return runtimeResult<RuntimeSession>(
+    result.data,
+    result.error,
+    result.response,
+    `Launch session failed (${result.response.status})`,
   );
-  const response = await runtimeFetch(`${workspaceRuntimeURL(workspaceId, hostKey)}/sessions`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      target_key: targetKey,
-      ...(displayRegion ? { display_region: displayRegion } : {}),
-    }),
-  });
-  return readJSON<RuntimeSession>(response, `Launch session failed (${response.status})`);
 }
 
 export async function stopWorkspaceSession(
@@ -91,16 +116,18 @@ export async function stopWorkspaceSession(
   fetchFn: RuntimeFetch = fetch,
 ): Promise<void> {
   const hostKey = typeof hostKeyOrFetch === "string" ? hostKeyOrFetch : undefined;
-  const runtimeFetch = tracedFetch(typeof hostKeyOrFetch === "function" ? hostKeyOrFetch : fetchFn);
-  const response = await runtimeFetch(
-    `${workspaceRuntimeURL(workspaceId, hostKey)}/sessions/${encodeURIComponent(sessionKey)}`,
-    {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-    },
-  );
-  if (!response.ok && response.status !== 204) {
-    await readJSON<unknown>(response, `Stop session failed (${response.status})`);
+  const client = workspaceRuntimeClient(runtimeFetch(hostKeyOrFetch, fetchFn));
+  const result = hostKey
+    ? await client.DELETE("/fleet/hosts/{host_key}/workspaces/{id}/runtime/sessions/{session_key}", {
+        params: { path: { host_key: hostKey, id: workspaceId, session_key: sessionKey } },
+        headers: { "Content-Type": "application/json" },
+      })
+    : await client.DELETE("/workspaces/{id}/runtime/sessions/{session_key}", {
+        params: { path: { id: workspaceId, session_key: sessionKey } },
+        headers: { "Content-Type": "application/json" },
+      });
+  if (!result.response.ok && result.response.status !== 204) {
+    throw new Error(problemMessage(result.error) ?? `Stop session failed (${result.response.status})`);
   }
 }
 
@@ -112,16 +139,22 @@ export async function renameWorkspaceSession(
   fetchFn: RuntimeFetch = fetch,
 ): Promise<RuntimeSession> {
   const hostKey = typeof hostKeyOrFetch === "string" ? hostKeyOrFetch : undefined;
-  const runtimeFetch = tracedFetch(typeof hostKeyOrFetch === "function" ? hostKeyOrFetch : fetchFn);
-  const response = await runtimeFetch(
-    `${workspaceRuntimeURL(workspaceId, hostKey)}/sessions/${encodeURIComponent(sessionKey)}`,
-    {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ label }),
-    },
+  const client = workspaceRuntimeClient(runtimeFetch(hostKeyOrFetch, fetchFn));
+  const result = hostKey
+    ? await client.PATCH("/fleet/hosts/{host_key}/workspaces/{id}/runtime/sessions/{session_key}", {
+        params: { path: { host_key: hostKey, id: workspaceId, session_key: sessionKey } },
+        body: { label },
+      })
+    : await client.PATCH("/workspaces/{id}/runtime/sessions/{session_key}", {
+        params: { path: { id: workspaceId, session_key: sessionKey } },
+        body: { label },
+      });
+  return runtimeResult<RuntimeSession>(
+    result.data,
+    result.error,
+    result.response,
+    `Rename session failed (${result.response.status})`,
   );
-  return readJSON<RuntimeSession>(response, `Rename session failed (${response.status})`);
 }
 
 export function workspaceSessionWebSocketPath(workspaceId: string, sessionKey: string, hostKey?: string): string {

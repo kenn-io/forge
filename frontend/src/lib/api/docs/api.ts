@@ -1,4 +1,5 @@
 import type { components } from "@middleman/ui/api/schema";
+import { configuredAPIBaseURL } from "@middleman/ui/api/runtime-base";
 import type {
   AddFolderInput,
   BrowseResponse,
@@ -204,8 +205,7 @@ function resourceURLFor(baseURL: string | undefined, path: string): URL {
 }
 
 function defaultAPIBaseURL(): string {
-  const basePath = typeof window !== "undefined" ? (window.__BASE_PATH__ ?? "/") : "/";
-  return new URL(`${basePath.replace(/\/$/, "")}/api/v1`, runtimeOrigin()).toString();
+  return configuredAPIBaseURL();
 }
 
 function runtimeOrigin(): string {

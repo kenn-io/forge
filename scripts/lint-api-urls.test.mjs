@@ -88,13 +88,58 @@ test("allows generated client base path helpers", async () => {
   const root = await makeRoot();
   await write(
     root,
-    "packages/ui/src/stores/diff.svelte.ts",
+    "packages/ui/src/api/runtime-base.ts",
     ["function apiBaseURL(basePath) {", '  return `${basePath.replace(/\\/$/, "")}/api/v1`;', "}", ""].join("\n"),
   );
 
   const findings = await lintApiUrls({ root });
 
   assert.deepEqual(findings, []);
+});
+
+test("flags dynamic API-base aliases and their endpoint consumers", async () => {
+  const root = await makeRoot();
+  await write(
+    root,
+    "frontend/src/lib/api/manual.ts",
+    [
+      "const base = `${basePath}/api/v1`;",
+      "const settingsURL = `${base}/settings`;",
+      "export const loadSettings = () => fetch(settingsURL);",
+      "",
+    ].join("\n"),
+  );
+
+  const findings = await lintApiUrls({ root });
+
+  assert.deepEqual(
+    findings.map((finding) => finding.line),
+    [1, 2, 3],
+  );
+  assert.ok(findings.every((finding) => /generated client/.test(finding.message)));
+});
+
+test("allows the Kata upstream API prefix only inside its proxy path helper", async () => {
+  const root = await makeRoot();
+  await write(
+    root,
+    "frontend/src/lib/api/kata/daemons.ts",
+    [
+      "export function kataProxyPath(path) {",
+      '  return configuredAPIPath(`/kata/proxy/api/v1${path}`);',
+      "}",
+      "export function directKataPath(path) {",
+      '  return `/api/v1${path}`;',
+      "}",
+      "",
+    ].join("\n"),
+  );
+
+  const findings = await lintApiUrls({ root });
+
+  assert.equal(findings.length, 1);
+  assert.match(findings[0].file, /daemons\.ts$/);
+  assert.equal(findings[0].line, 5);
 });
 
 test("allows scoped streaming transports", async () => {

@@ -129,9 +129,7 @@ describe("kata api helpers", () => {
 
     expect(seenURL?.pathname).toBe("/middleman/api/v1/kata/daemons");
     expect(daemons.map((d) => d.id)).toEqual(["home"]);
-    expect(kataProxyPath("/api/v1/projects?include=stats")).toBe(
-      "/middleman/api/v1/kata/proxy/api/v1/projects?include=stats",
-    );
+    expect(kataProxyPath("/projects?include=stats")).toBe("/middleman/api/v1/kata/proxy/api/v1/projects?include=stats");
   });
 
   it("returns an empty roster when the control endpoint is absent", async () => {

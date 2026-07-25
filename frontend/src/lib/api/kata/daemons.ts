@@ -14,8 +14,9 @@ function apiBaseURL(): string {
 }
 
 export function kataProxyPath(path: string): string {
+  const kataUpstreamAPIRoute = "/api/v1";
   const normalized = path.startsWith("/") ? path : `/${path}`;
-  return configuredAPIPath(`${KATA_PROXY_ROUTE}${normalized}`);
+  return configuredAPIPath(`${KATA_PROXY_ROUTE}${kataUpstreamAPIRoute}${normalized}`);
 }
 
 export async function fetchKataDaemons(fetchImpl: typeof fetch = fetch): Promise<KataDaemonInfo[]> {

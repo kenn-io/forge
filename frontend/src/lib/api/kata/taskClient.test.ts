@@ -164,6 +164,29 @@ describe("kata mutation and recurrence HTTP client", () => {
     expect(calls.map((call) => [proxyPath(call.url), call.method])).toEqual([["/api/v1/projects", "POST"]]);
   });
 
+  test("keeps the Kata API path independent of Middleman's configured base path", async () => {
+    const previousBasePath = window.__BASE_PATH__;
+    window.__BASE_PATH__ = "/middleman/";
+    try {
+      const { calls, fetchImpl } = createFetchStub({
+        "/api/v1/projects": { body: { project: project("project-new", "New") } },
+      });
+      const api = createKataTaskAPI({ fetchImpl });
+
+      await api.createProject("New", { daemonId: "home" });
+
+      const requestURL = calls[0]?.url;
+      if (requestURL === undefined) throw new Error("expected a Kata proxy request");
+      expect(new URL(requestURL, window.location.origin).pathname).toBe("/middleman/api/v1/kata/proxy/api/v1/projects");
+    } finally {
+      if (previousBasePath === undefined) {
+        delete window.__BASE_PATH__;
+      } else {
+        window.__BASE_PATH__ = previousBasePath;
+      }
+    }
+  });
+
   test("creates tasks with metadata on one explicitly pinned daemon", async () => {
     const { calls, fetchImpl } = createFetchStub({
       "/api/v1/projects/7/issues": {

@@ -11,12 +11,20 @@ const SOURCE_EXTENSIONS = new Set([".js", ".jsx", ".svelte", ".ts", ".tsx"]);
 const DEFAULT_SCAN_PATHS = ["frontend/src", "packages/ui/src"];
 
 const API_URL_MESSAGE =
-  "Manual Middleman API URL in production frontend code. Use the generated client through the frontend runtime (or injected typed UI client) for REST requests; use the configured API base helper for browser resource URLs. Only scoped streaming transport helpers are exempt.";
+  "Manual Middleman API URL in production frontend code. Use the generated client through the frontend runtime (or injected typed UI client) for REST requests; use the configured API base helper for browser resource URLs. Only explicit scoped transport helpers are exempt.";
 
 const GENERATED_CLIENT_RUNTIME_FILES = new Set([
   "frontend/src/lib/api/runtime.ts",
   "packages/ui/src/api/runtime-base.ts",
 ]);
+
+// This helper builds a Middleman proxy URL whose nested /api/v1 belongs to
+// Kata, not Middleman. Keep the exception tied to the proxy boundary itself;
+// callers and neighboring files remain subject to the normal API-client rule.
+const SCOPED_UPSTREAM_PROXY_HELPERS = new Map([
+  ["frontend/src/lib/api/kata/daemons.ts", new Set(["kataProxyPath"])],
+]);
+const GENERATED_CLIENT_FACTORIES = new Set(["createAPIClient", "createRuntimeClient"]);
 
 function toPosix(path) {
   return path.split(sep).join("/");
@@ -64,10 +72,14 @@ function isAllowedStreamingTransport(line, context) {
     return true;
   }
 
+  if (context.includes("EventSource") && context.includes("/api/v1/events")) {
+    return true;
+  }
+
   if (
     (context.includes("WebSocket") || context.includes("buildWsUrl")) &&
     context.includes("/terminal") &&
-    line.includes("/api/v1/workspaces/")
+    context.includes("/api/v1/workspaces/")
   ) {
     return true;
   }
@@ -79,13 +91,41 @@ function isAllowedStreamingTransport(line, context) {
   return false;
 }
 
-function isApiBasePathOnly(line, column) {
-  const next = line[column + API_MARKER.length];
-  return next === undefined || next === "`" || next === "'" || next === '"';
-}
-
 function lineNumberAt(content, offset) {
   return content.slice(0, offset).split(/\r?\n/).length;
+}
+
+function lineStartOffsets(content) {
+  const offsets = [0];
+  const newline = /\r?\n/g;
+  let match;
+  while ((match = newline.exec(content)) !== null) {
+    offsets.push(match.index + match[0].length);
+  }
+  return offsets;
+}
+
+function scopedUpstreamProxyRanges(content, path) {
+  const helperNames = SCOPED_UPSTREAM_PROXY_HELPERS.get(path);
+  if (!helperNames) return [];
+
+  const sourceFile = ts.createSourceFile(path, content, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const ranges = [];
+
+  function visit(node) {
+    if (ts.isFunctionDeclaration(node) && node.name && helperNames.has(node.name.text)) {
+      ranges.push([node.getStart(sourceFile), node.end]);
+      return;
+    }
+    ts.forEachChild(node, visit);
+  }
+
+  visit(sourceFile);
+  return ranges;
+}
+
+function isInScopedUpstreamProxy(offset, ranges) {
+  return ranges.some(([start, end]) => offset >= start && offset < end);
 }
 
 function svelteScriptRegions(content, path) {
@@ -204,15 +244,88 @@ function referencesForbiddenConstant(node, declarations) {
   return found;
 }
 
-function structuralFindings(content, path) {
+function nearestAliasScope(node) {
+  let current = node.parent;
+  while (current) {
+    if (ts.isSourceFile(current) || ts.isFunctionLike(current)) return current;
+    current = current.parent;
+  }
+  return undefined;
+}
+
+function referencesAlias(node, aliasesByScope) {
+  let found = false;
+
+  function visit(child) {
+    if (found) return;
+    if (ts.isIdentifier(child)) {
+      let scope = nearestAliasScope(child);
+      while (scope) {
+        if (aliasesByScope.get(scope)?.has(child.text)) {
+          found = true;
+          return;
+        }
+        scope = nearestAliasScope(scope);
+      }
+    }
+    ts.forEachChild(child, visit);
+  }
+
+  visit(node);
+  return found;
+}
+
+function isGeneratedClientFactoryCall(node) {
+  node = unwrapExpression(node);
+  return ts.isCallExpression(node) && ts.isIdentifier(node.expression) && GENERATED_CLIENT_FACTORIES.has(node.expression.text);
+}
+
+function apiPathAliases(sourceFile) {
+  const declarations = [];
+  function collect(node) {
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.initializer &&
+      ts.isVariableDeclarationList(node.parent) &&
+      (node.parent.flags & ts.NodeFlags.Const) !== 0
+    ) {
+      declarations.push({ name: node.name.text, initializer: node.initializer, scope: nearestAliasScope(node) });
+    }
+    ts.forEachChild(node, collect);
+  }
+  collect(sourceFile);
+
+  const aliasesByScope = new Map();
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const { name, initializer, scope } of declarations) {
+      if (!scope) continue;
+      const aliases = aliasesByScope.get(scope) ?? new Set();
+      if (aliases.has(name)) continue;
+      if (isGeneratedClientFactoryCall(initializer)) continue;
+      if (initializer.getText(sourceFile).includes(API_MARKER) || referencesAlias(initializer, aliasesByScope)) {
+        aliases.add(name);
+        aliasesByScope.set(scope, aliases);
+        changed = true;
+      }
+    }
+  }
+  return aliasesByScope;
+}
+
+function structuralFindings(content, path, scopedProxyRanges) {
   const findings = [];
 
   for (const region of svelteScriptRegions(content, path)) {
     const sourceFile = ts.createSourceFile(path, region.content, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
     const declarations = constDeclarations(sourceFile);
+    const pathAliases = apiPathAliases(sourceFile);
 
     function addFinding(node) {
       const offset = region.offset + node.getStart(sourceFile);
+      if (isInScopedUpstreamProxy(offset, scopedProxyRanges)) return;
       const line = lineNumberAt(content, offset);
       const lineText = content.split(/\r?\n/)[line - 1] ?? "";
       const column = offset - content.lastIndexOf("\n", offset - 1);
@@ -225,9 +338,10 @@ function structuralFindings(content, path) {
       if (ts.isVariableDeclaration(node) && node.initializer) {
         const value = staticString(node.initializer, declarations);
         if (
-          value?.includes(API_MARKER) &&
-          (!node.initializer.getText(sourceFile).includes(API_MARKER) || value === API_MARKER) &&
-          !referencesForbiddenConstant(node.initializer, declarations)
+          (value?.includes(API_MARKER) &&
+            !node.initializer.getText(sourceFile).includes(API_MARKER) &&
+            !referencesForbiddenConstant(node.initializer, declarations)) ||
+          (referencesAlias(node.initializer, pathAliases) && !isGeneratedClientFactoryCall(node.initializer))
         ) {
           addFinding(node.initializer);
         }
@@ -243,7 +357,7 @@ function structuralFindings(content, path) {
         const value = staticString(node, declarations);
         if (
           value?.includes(API_MARKER) &&
-          (!node.getText(sourceFile).includes(API_MARKER) || value === API_MARKER) &&
+          !node.getText(sourceFile).includes(API_MARKER) &&
           !referencesForbiddenConstant(node, declarations)
         ) {
           addFinding(node);
@@ -301,13 +415,15 @@ export async function lintApiUrls({ root = process.cwd(), paths = DEFAULT_SCAN_P
 
     const content = await readFile(file, "utf8");
     const lines = content.split(/\r?\n/);
+    const lineStarts = lineStartOffsets(content);
+    const scopedProxyRanges = scopedUpstreamProxyRanges(content, relPath);
 
-    findings.push(...structuralFindings(content, relPath));
+    findings.push(...structuralFindings(content, relPath, scopedProxyRanges));
 
     lines.forEach((line, index) => {
       const column = line.indexOf(API_MARKER);
       if (column === -1 || isCommentOnly(line)) return;
-      if (isApiBasePathOnly(line, column)) return;
+      if (isInScopedUpstreamProxy(lineStarts[index] + column, scopedProxyRanges)) return;
 
       const context = contextFor(lines, index);
       if (isAllowedStreamingTransport(line, context)) return;
@@ -321,7 +437,7 @@ export async function lintApiUrls({ root = process.cwd(), paths = DEFAULT_SCAN_P
     });
   }
 
-  return findings;
+  return findings.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.column - b.column);
 }
 
 function parseArgs(argv) {
@@ -357,7 +473,7 @@ function printHelp() {
 
 Detect hardcoded Middleman /api/v1 URLs in production frontend TypeScript
 and Svelte code. Test files, generated code, and scoped streaming
-transports are ignored.
+or upstream-proxy transports are ignored.
 `);
 }
 

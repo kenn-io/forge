@@ -55,7 +55,7 @@ func (s *Server) getMarkdownImageFor(
 	host := httpapi.ProviderHost(*repo)
 	reader, err := s.syncer.Registry().MarkdownImageReader(kind, host)
 	if err != nil {
-		return nil, httpapi.MapPlatformError(err)
+		return nil, markdownImageError(ctx, err, kind, host)
 	}
 	ref := httpapi.PlatformRepoRef(*repo)
 	cacheKey := string(ref.Platform) + "\x00" + ref.Host + "\x00" + ref.RepoPath + "\x00" + source
@@ -63,7 +63,7 @@ func (s *Server) getMarkdownImageFor(
 		return reader.GetMarkdownImage(fetchCtx, ref, source)
 	})
 	if err != nil {
-		return nil, httpapi.MapPlatformError(err)
+		return nil, markdownImageError(ctx, err, kind, host)
 	}
 	return &markdownImageOutput{
 		ContentType:        image.ContentType,
@@ -72,6 +72,13 @@ func (s *Server) getMarkdownImageFor(
 		ContentTypeOptions: "nosniff",
 		Body:               image.Content,
 	}, nil
+}
+
+func markdownImageError(ctx context.Context, err error, kind platform.Kind, host string) error {
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return ctxErr
+	}
+	return httpapi.ProviderCallProblem(err, string(kind), host)
 }
 
 func markdownImageResponses() map[string]*huma.Response {

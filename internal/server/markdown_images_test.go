@@ -72,6 +72,30 @@ func TestMarkdownImageRouteFetchesThroughProvider(t *testing.T) {
 	assert.Len(entries, 1)
 }
 
+func TestMarkdownImageRouteMapsProviderDeadlineToUpstreamError(t *testing.T) {
+	mock := &mockGH{getMarkdownImageFn: func(
+		context.Context,
+		string,
+		string,
+	) (platform.MarkdownImage, error) {
+		return platform.MarkdownImage{}, context.DeadlineExceeded
+	}}
+	srv, database := setupTestServerWithMock(t, mock)
+	srv.markdownImages = newMarkdownImageCache(t.TempDir())
+	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(t, err)
+
+	rr := repoBrowserRequest(
+		t,
+		srv,
+		http.MethodGet,
+		"/api/v1/repo/github/acme/widget/markdown-image?source="+
+			url.QueryEscape("https://github.com/user-attachments/assets/11111111-2222-3333-4444-555555555555"),
+	)
+
+	require.Equal(t, http.StatusBadGateway, rr.Code, rr.Body.String())
+}
+
 func TestMarkdownImageRouteResolvesOpaqueGitLabProjectID(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

@@ -1,5 +1,3 @@
-import { configuredAPIPath } from "@middleman/ui/api/runtime-base";
-
 import { KATA_DAEMON_HEADER, kataProxyPath } from "./daemons.js";
 import { normalizeKataRecurrenceResponse, normalizeKataRecurrences } from "./taskNormalizers.js";
 import type {
@@ -58,7 +56,7 @@ function parseErrorEnvelope(body: unknown, status: number): ErrorEnvelope {
 }
 
 function taskPath(path: string): string {
-  return configuredAPIPath(path);
+  return path.startsWith("/") ? path : `/${path}`;
 }
 
 interface KataCreateProtocolResponse extends KataTaskMutationResponse {

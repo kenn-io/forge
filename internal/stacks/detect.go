@@ -273,6 +273,17 @@ func RunDetectionWithNativeStacks(
 		for _, pr := range memberRows {
 			prsByNumber[pr.Number] = pr
 		}
+		// Resolve every confirmed stack before persisting any of them. A pull
+		// request can belong to only one persisted stack, and persisting an
+		// overlap would evict the shared member from whichever stack was
+		// written first, silently shortening it and hiding a preceding merge
+		// blocker. Projecting only one side of the overlap has the same effect
+		// on the side that loses, so an overlap makes the whole native
+		// projection ambiguous and branch inference owns the repository for
+		// this pass.
+		chains := make([][]db.MergeRequest, 0, len(nativeStacks))
+		claimedBy := make(map[int64]int, len(memberRows))
+		overlapping := false
 		for _, nativeStack := range nativeStacks {
 			if !confirmed[nativeStack.Number] || !nativeStack.IsOpen ||
 				len(nativeStack.Members) != nativeStack.Size || len(nativeStack.Members) < 2 {
@@ -286,29 +297,38 @@ func RunDetectionWithNativeStacks(
 					usable = false
 					break
 				}
-				if claimed[pr.ID] {
-					// A pull request can belong to only one persisted stack.
-					// Projecting an overlap would evict the member from the
-					// stack that was written first, silently shortening it and
-					// hiding a preceding merge blocker.
-					slog.Warn("skip overlapping native stack projection",
+				if other, claimedElsewhere := claimedBy[pr.ID]; claimedElsewhere {
+					slog.Warn("native stacks overlap; falling back to branch inference",
 						"repo_id", repoID, "stack_number", nativeStack.Number,
+						"other_stack_number", other,
 						"pull_request", member.PullRequestNumber)
+					overlapping = true
 					usable = false
 					break
 				}
 				chain = append(chain, pr)
 			}
+			if overlapping {
+				break
+			}
 			if !usable || !hasOpenMember(chain) {
 				continue
 			}
-			stackID, err := persistStackChain(ctx, database, repoID, chain)
-			if err != nil {
-				return err
-			}
-			activeIDs = append(activeIDs, stackID)
 			for _, pr := range chain {
-				claimed[pr.ID] = true
+				claimedBy[pr.ID] = nativeStack.Number
+			}
+			chains = append(chains, chain)
+		}
+		if !overlapping {
+			for _, chain := range chains {
+				stackID, err := persistStackChain(ctx, database, repoID, chain)
+				if err != nil {
+					return err
+				}
+				activeIDs = append(activeIDs, stackID)
+				for _, pr := range chain {
+					claimed[pr.ID] = true
+				}
 			}
 		}
 	}

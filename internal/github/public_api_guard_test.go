@@ -63,9 +63,17 @@ func TestNewClientBlocksPublicGitHubAPIInDefaultTests(t *testing.T) {
 }
 
 func TestRoutedClientExplicitlyImplementsOwnerBearingClientMethods(t *testing.T) {
+	// Optional client surfaces are covered too: they are reached by type
+	// assertion, and an unrouted one fails that assertion silently on every
+	// production host instead of failing to compile.
+	interfaces := []struct {
+		file string
+		name string
+	}{
+		{file: "client.go", name: "Client"},
+		{file: "native_stacks.go", name: "NativeStackClient"},
+	}
 	files := token.NewFileSet()
-	clientFile, err := parser.ParseFile(files, "client.go", nil, 0)
-	require.NoError(t, err)
 	routerFile, err := parser.ParseFile(files, "auth_router.go", nil, 0)
 	require.NoError(t, err)
 
@@ -85,31 +93,37 @@ func TestRoutedClientExplicitlyImplementsOwnerBearingClientMethods(t *testing.T)
 		}
 	}
 
-	var missing []string
-	ast.Inspect(clientFile, func(node ast.Node) bool {
-		typeSpec, ok := node.(*ast.TypeSpec)
-		if !ok || typeSpec.Name.Name != "Client" {
-			return true
-		}
-		iface, ok := typeSpec.Type.(*ast.InterfaceType)
-		if !ok {
-			return false
-		}
-		for _, field := range iface.Methods.List {
-			if len(field.Names) != 1 {
-				continue
-			}
-			fn, ok := field.Type.(*ast.FuncType)
-			if !ok || !functionHasParameterNamed(fn, "owner", "repo") {
-				continue
-			}
-			if _, ok := routedMethods[field.Names[0].Name]; !ok {
-				missing = append(missing, field.Names[0].Name)
-			}
-		}
-		return false
-	})
-	assert.Empty(t, missing, "owner-bearing Client methods must route explicitly")
+	for _, target := range interfaces {
+		t.Run(target.name, func(t *testing.T) {
+			sourceFile, err := parser.ParseFile(files, target.file, nil, 0)
+			require.NoError(t, err)
+			var missing []string
+			ast.Inspect(sourceFile, func(node ast.Node) bool {
+				typeSpec, ok := node.(*ast.TypeSpec)
+				if !ok || typeSpec.Name.Name != target.name {
+					return true
+				}
+				iface, ok := typeSpec.Type.(*ast.InterfaceType)
+				if !ok {
+					return false
+				}
+				for _, field := range iface.Methods.List {
+					if len(field.Names) != 1 {
+						continue
+					}
+					fn, ok := field.Type.(*ast.FuncType)
+					if !ok || !functionHasParameterNamed(fn, "owner", "repo") {
+						continue
+					}
+					if _, ok := routedMethods[field.Names[0].Name]; !ok {
+						missing = append(missing, field.Names[0].Name)
+					}
+				}
+				return false
+			})
+			assert.Empty(t, missing, "owner-bearing methods must route explicitly")
+		})
+	}
 }
 
 func functionHasParameterNamed(fn *ast.FuncType, names ...string) bool {

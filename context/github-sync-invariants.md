@@ -167,13 +167,17 @@ fallback repository listing.
   fields. Schema rejection drops the fields for that host instead of abandoning
   bulk fetch. (`internal/github/graphql.go::isNativeStackSchemaRejection`)
 - Confirmation reconciles against currently observed open-PR hints, never cached
-  or payload member state, and a PR may join at most one projected stack: member
-  eviction would silently drop a preceding merge blocker. Hints cannot attest to
-  merged or closed members, so a stack holding one is refetched on a bounded
-  schedule instead of staying confirmed indefinitely.
+  or payload member state. Hints cannot attest to merged or closed members, so a
+  stack holding one is refetched on a bounded schedule and its confirmation ages
+  out rather than surviving every 304.
   (`internal/github/native_stack_sync.go::cachedStackMatchesCurrentHints`,
-  `internal/github/native_stack_sync.go::nativeStackObservationExpired`,
-  `internal/stacks/detect.go::RunDetectionWithNativeStacks`)
+  `internal/github/native_stack_sync.go::nativeStackObservationExpired`)
+- A pull request may belong to at most one projected stack. Member eviction
+  would silently shorten the stack written first and hide a preceding merge
+  blocker, and projecting one side of an overlap does the same to the other, so
+  an overlap makes the whole native projection ambiguous and branch inference
+  owns the repository for that pass.
+  (`internal/stacks/detect.go::RunDetectionWithNativeStacks`)
 - Only a query that requested the preview fields may replace stack hints;
   a GraphQL shape that dropped them says nothing about membership and must leave
   REST-derived hints intact. (`internal/github/graphql.go::RepoBulkResult`)
@@ -268,7 +272,10 @@ unsupported on every routed host. When adding an optional GitHub client
 interface, give `RoutedClient` a repository-routed method and add its
 `_ iface = (*RoutedClient)(nil)` assertion; carry owner and repository name in
 the interface so exact `repo:` routes pick their own credential
-(`internal/github/auth_router.go::RoutedClient.GetMarkdownImage`).
+(`internal/github/auth_router.go::RoutedClient.GetMarkdownImage`). List each
+optional interface in the routing guard so an unrouted owner-bearing method
+fails a test instead of silently disabling the feature
+(`internal/github/public_api_guard_test.go::TestRoutedClientExplicitlyImplementsOwnerBearingClientMethods`).
 
 A wire call issued during repository sync routes by repository even when the
 endpoint itself is host-scoped (`/users/{login}` for author display names).

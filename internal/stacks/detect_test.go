@@ -422,7 +422,7 @@ func TestRunDetectionWithNativeStacksKeepsStackWithClosedMember(t *testing.T) {
 	assert.Equal([]int{100, 101, 102}, stackNumbersFromMembers(members))
 }
 
-func TestRunDetectionWithNativeStacksSkipsOverlappingStacks(t *testing.T) {
+func TestRunDetectionWithNativeStacksFallsBackWhenStacksOverlap(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -454,7 +454,8 @@ func TestRunDetectionWithNativeStacksSkipsOverlappingStacks(t *testing.T) {
 	}
 	// Both stacks claim merged PR 101, which no open-PR observation can
 	// arbitrate. Persisting both would evict 101 from whichever stack was
-	// written first.
+	// written first, and projecting only one of them would strip the other's
+	// members of their preceding merge blockers.
 	require.NoError(database.ReplaceGitHubNativeStack(ctx, realdb.GitHubNativeStack{
 		RepoID: repoID, GitHubID: 9043, Number: 43, Size: 2,
 		BaseRef: "main", IsOpen: true, GitHubCreatedAt: now,
@@ -476,14 +477,12 @@ func TestRunDetectionWithNativeStacksSkipsOverlappingStacks(t *testing.T) {
 
 	require.NoError(RunDetectionWithNativeStacks(ctx, database, repoID, []int{42, 43}))
 
+	// Branch inference owns the repository, so PR 102 keeps every preceding
+	// member instead of losing the ones the dropped native stack held.
 	stack, members, err := database.GetStackForPRByRepoID(ctx, repoID, 102)
 	require.NoError(err)
 	require.NotNil(stack)
-	assert.Equal([]int{101, 102}, stackNumbersFromMembers(members),
-		"the projected stack must keep the preceding member an overlap would evict")
-	overlapping, _, err := database.GetStackForPRByRepoID(ctx, repoID, 100)
-	require.NoError(err)
-	assert.Nil(overlapping)
+	assert.Equal([]int{100, 101, 102}, stackNumbersFromMembers(members))
 }
 
 func TestRunDetection_ForkBranchNameDoesNotShadowUpstreamStackBranch(t *testing.T) {

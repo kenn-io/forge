@@ -403,6 +403,73 @@ func TestHostRouterReturnsSafeMissingRouteError(t *testing.T) {
 	require.ErrorContains(err, "private-org")
 }
 
+// routedNativeStackClient is a route client that also serves the preview stack
+// surface, so the test can prove routing reaches it instead of silently losing
+// it to a failed type assertion.
+type routedNativeStackClient struct {
+	*routeRecordingClient
+	hints map[int]*NativeStackHint
+	page  NativeStackPage
+}
+
+func (c *routedNativeStackClient) ListOpenPullRequestsWithNativeStackHints(
+	_ context.Context, owner, repo string,
+) ([]*gh.PullRequest, map[int]*NativeStackHint, error) {
+	c.calls = append(c.calls, "native-hints:"+owner+"/"+repo)
+	return nil, c.hints, nil
+}
+
+func (c *routedNativeStackClient) ListNativeStacksPage(
+	_ context.Context, owner, repo string, page int,
+) (NativeStackPage, error) {
+	c.calls = append(c.calls, fmt.Sprintf("native-page:%s/%s:%d", owner, repo, page))
+	return c.page, nil
+}
+
+func TestRoutedClientServesNativeStacksThroughSelectedRoute(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	hints := map[int]*NativeStackHint{
+		101: {Number: 42, Size: 2, Position: 1, BaseRef: "main"},
+	}
+	ownerClient := &routedNativeStackClient{
+		routeRecordingClient: &routeRecordingClient{marker: "owner"},
+		hints:                hints,
+		page: NativeStackPage{Stacks: []NativeStack{{
+			ID: 9001, Number: 42, BaseRef: "main", Open: true,
+		}}},
+	}
+	fallbackClient := &routeRecordingClient{marker: "fallback"}
+	router, err := NewHostRouter(
+		"github.com",
+		&Route{Key: RouteKey{Host: "github.com"}, Client: fallbackClient},
+		&Route{Key: RouteKey{Host: "github.com", Owner: "acme"}, Client: ownerClient},
+	)
+	require.NoError(err)
+	client, err := NewRoutedClient(router)
+	require.NoError(err)
+
+	native, ok := any(client).(NativeStackClient)
+	require.True(ok, "a routed client must expose the preview stack surface")
+	_, gotHints, err := native.ListOpenPullRequestsWithNativeStackHints(t.Context(), "acme", "widget")
+	require.NoError(err)
+	assert.Equal(hints, gotHints)
+	page, err := native.ListNativeStacksPage(t.Context(), "acme", "widget", 1)
+	require.NoError(err)
+	require.Len(page.Stacks, 1)
+	assert.Equal(42, page.Stacks[0].Number)
+	assert.Equal(
+		[]string{"native-hints:acme/widget", "native-page:acme/widget:1"},
+		ownerClient.calls,
+	)
+
+	// A route whose client has no preview surface reports an unsupported
+	// capability rather than pretending the repository has no stacks.
+	_, err = native.ListNativeStacksPage(t.Context(), "other", "repo", 1)
+	require.Error(err)
+	assert.Contains(err.Error(), "read_native_stacks")
+}
+
 func TestRoutedClientDelegatesByRepositoryOwnerAndFallback(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

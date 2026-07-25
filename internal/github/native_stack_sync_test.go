@@ -270,6 +270,61 @@ func TestRefreshGitHubNativeStackCacheRefetchesUnobservableMembersOnSchedule(t *
 	}
 }
 
+func TestRefreshGitHubNativeStackCacheExpiresConfirmationsReusedByNotModified(t *testing.T) {
+	now := time.Date(2026, time.July, 24, 12, 0, 0, 0, time.UTC)
+	cases := []struct {
+		name          string
+		elapsed       time.Duration
+		wantConfirmed []int
+		wantInvalidem int32
+	}{
+		{
+			name: "within the revalidation window", elapsed: time.Hour,
+			wantConfirmed: []int{42}, wantInvalidem: 0,
+		},
+		{
+			name: "past the revalidation window", elapsed: nativeStackObservationTTL + time.Hour,
+			wantConfirmed: nil, wantInvalidem: 1,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			database := openTestDB(t)
+			repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widgets"))
+			require.NoError(err)
+			// PR 100 is merged, so the confirmation covers membership that an
+			// unchanged pull-request list can never contradict.
+			require.NoError(database.ReplaceGitHubNativeStack(t.Context(), db.GitHubNativeStack{
+				RepoID: repoID, GitHubID: 900, Number: 42, Size: 2,
+				BaseRef: "main", IsOpen: true, GitHubCreatedAt: now,
+				ContentFingerprint: "cached", LastObservedAt: now,
+				Members: []db.GitHubNativeStackMember{
+					{Position: 1, PullRequestNumber: 100, State: "merged", HeadRef: "a", HeadSHA: "aaa"},
+					{Position: 2, PullRequestNumber: 101, State: "open", HeadRef: "b", HeadSHA: "bbb"},
+				},
+			}))
+			client := &nativeStackSyncTestClient{mockClient: &mockClient{}}
+			syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil, nil, time.Minute, nil, nil)
+			clock := now
+			syncer.now = func() time.Time { return clock }
+			repo := RepoRef{Owner: "acme", Name: "widgets", PlatformHost: "github.com"}
+
+			seeded := syncer.refreshGitHubNativeStackCache(t.Context(), repo, repoID, map[int]*NativeStackHint{
+				101: {Number: 42, Size: 2, Position: 2, BaseRef: "main"},
+			}, false)
+			require.Equal([]int{42}, seeded.ConfirmedNumbers)
+
+			clock = now.Add(tc.elapsed)
+			unchanged := syncer.refreshGitHubNativeStackCache(t.Context(), repo, repoID, nil, true)
+
+			assert.Equal(tc.wantConfirmed, unchanged.ConfirmedNumbers)
+			assert.Equal(tc.wantInvalidem, client.invalidateCalls.Load())
+		})
+	}
+}
+
 func TestRefreshGitHubNativeStackCacheMarksFailedPersistenceIncomplete(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

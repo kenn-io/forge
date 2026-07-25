@@ -233,6 +233,7 @@ var (
 	_ pageClient                          = (*RoutedClient)(nil)
 	_ markdownImageClient                 = (*RoutedClient)(nil)
 	_ repoUserClient                      = (*RoutedClient)(nil)
+	_ NativeStackClient                   = (*RoutedClient)(nil)
 )
 
 func NewRoutedClient(routes *HostRouter) (*RoutedClient, error) {
@@ -326,6 +327,45 @@ func (c *RoutedClient) GetMarkdownImage(
 		)
 	}
 	return reader.GetMarkdownImage(ctx, owner, repo, sourceURL)
+}
+
+// ListOpenPullRequestsWithNativeStackHints and ListNativeStacksPage carry the
+// preview stack surface through routing. The embedded Client interface does not
+// include NativeStackClient, so without these methods every routed GitHub host
+// — which is every production host — fails the optional type assertion and the
+// native stack preview silently never runs.
+func (c *RoutedClient) ListOpenPullRequestsWithNativeStackHints(
+	ctx context.Context,
+	owner, repo string,
+) ([]*gh.PullRequest, map[int]*NativeStackHint, error) {
+	client, err := c.routeForRepo(owner, repo)
+	if err != nil {
+		return nil, nil, err
+	}
+	native, ok := client.(NativeStackClient)
+	if !ok {
+		prs, err := client.ListOpenPullRequests(ctx, owner, repo)
+		return prs, nil, err
+	}
+	return native.ListOpenPullRequestsWithNativeStackHints(ctx, owner, repo)
+}
+
+func (c *RoutedClient) ListNativeStacksPage(
+	ctx context.Context,
+	owner, repo string,
+	page int,
+) (NativeStackPage, error) {
+	client, err := c.routeForRepo(owner, repo)
+	if err != nil {
+		return NativeStackPage{}, err
+	}
+	native, ok := client.(NativeStackClient)
+	if !ok {
+		return NativeStackPage{}, platform.UnsupportedCapability(
+			platform.KindGitHub, c.routes.host, "read_native_stacks",
+		)
+	}
+	return native.ListNativeStacksPage(ctx, owner, repo, page)
 }
 
 func (c *RoutedClient) fallbackClient() (Client, error) {

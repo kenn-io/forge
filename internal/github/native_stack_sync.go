@@ -15,6 +15,19 @@ import (
 // refetch.
 const nativeStackObservationTTL = 12 * time.Hour
 
+// nativeStackConfirmation is the confirmation a 304 pull-request list reuses.
+// revalidateAfter is set only when the confirmation covers a stack with members
+// no open-PR hint can attest to; an unchanged pull-request list cannot report
+// that such a stack changed, so the confirmation itself has to age out.
+type nativeStackConfirmation struct {
+	numbers         []int
+	revalidateAfter time.Time
+}
+
+func (c nativeStackConfirmation) expired(now time.Time) bool {
+	return !c.revalidateAfter.IsZero() && now.After(c.revalidateAfter)
+}
+
 // GitHubNativeStackSyncResult carries the native cache rows that were safe to
 // use for this repository sync. Numbers omitted here must fall back to branch
 // inference even when an older cache row exists.
@@ -77,10 +90,19 @@ func (s *Syncer) refreshGitHubNativeStackCache(
 	}
 	confirmationKey := repoFailKey(repo)
 	if listUnchanged {
-		if confirmed, ok := s.nativeStackConfirmations.Load(confirmationKey); ok {
-			result.ConfirmedNumbers = slices.Clone(confirmed.([]int))
-		} else if client, ok := s.optionalGitHubClientFor(repo); ok {
-			// This can happen when the setting changes during an in-flight list
+		if entry, ok := s.nativeStackConfirmations.Load(confirmationKey); ok {
+			confirmation := entry.(nativeStackConfirmation)
+			if !confirmation.expired(s.now().UTC()) {
+				result.ConfirmedNumbers = slices.Clone(confirmation.numbers)
+				return result
+			}
+			// The confirmation covers membership no current hint can attest to
+			// and has aged out. Withhold it and re-list so the catalog refreshes
+			// rather than projecting it for as long as 304s keep arriving.
+			s.nativeStackConfirmations.Delete(confirmationKey)
+		}
+		if client, ok := s.optionalGitHubClientFor(repo); ok {
+			// This also covers the setting changing during an in-flight list
 			// request. Force a fresh representation on the next sync rather than
 			// projecting cache rows that this ETag lifecycle never confirmed.
 			client.InvalidateListETagsForRepo(repo.Owner, repo.Name, "pulls")
@@ -91,11 +113,16 @@ func (s *Syncer) refreshGitHubNativeStackCache(
 	// later 304 reuses. Caching a partial result would suppress the unresolved
 	// stacks for as long as the pull-request list keeps returning 304.
 	complete := true
+	unobservable := false
 	defer func() {
 		if complete {
-			s.nativeStackConfirmations.Store(
-				confirmationKey, slices.Clone(result.ConfirmedNumbers),
-			)
+			confirmation := nativeStackConfirmation{
+				numbers: slices.Clone(result.ConfirmedNumbers),
+			}
+			if unobservable {
+				confirmation.revalidateAfter = s.now().UTC().Add(nativeStackObservationTTL)
+			}
+			s.nativeStackConfirmations.Store(confirmationKey, confirmation)
 			return
 		}
 		s.nativeStackConfirmations.Delete(confirmationKey)
@@ -139,6 +166,7 @@ func (s *Syncer) refreshGitHubNativeStackCache(
 		if cachedStackMatchesCurrentHints(stack, hints) && !targets[stack.Number] &&
 			!nativeStackObservationExpired(stack, hints, now) {
 			confirmed[stack.Number] = true
+			unobservable = unobservable || cachedStackHasUnobservableMember(stack, hints)
 		} else {
 			targets[stack.Number] = true
 			delete(confirmed, stack.Number)
@@ -211,6 +239,7 @@ func (s *Syncer) refreshGitHubNativeStackCache(
 			}
 			if stack.Open {
 				confirmed[stack.Number] = true
+				unobservable = unobservable || nativeStackHasUnobservableMember(stack, hints)
 			}
 		}
 
@@ -287,11 +316,34 @@ func nativeStackMatchesCurrentHints(stack NativeStack, hints map[int]*NativeStac
 func nativeStackObservationExpired(
 	stack db.GitHubNativeStack, hints map[int]*NativeStackHint, now time.Time,
 ) bool {
+	if !cachedStackHasUnobservableMember(stack, hints) {
+		return false
+	}
+	return now.Sub(stack.LastObservedAt) > nativeStackObservationTTL
+}
+
+// cachedStackHasUnobservableMember and nativeStackHasUnobservableMember report
+// whether a stack holds a member the current open-PR hints cannot speak for.
+// Such a stack can drift without any hint disagreeing, so its confirmation must
+// age out instead of surviving every 304.
+func cachedStackHasUnobservableMember(
+	stack db.GitHubNativeStack, hints map[int]*NativeStackHint,
+) bool {
 	for _, member := range stack.Members {
-		if _, observed := hints[member.PullRequestNumber]; observed {
-			continue
+		if _, observed := hints[member.PullRequestNumber]; !observed {
+			return true
 		}
-		return now.Sub(stack.LastObservedAt) > nativeStackObservationTTL
+	}
+	return false
+}
+
+func nativeStackHasUnobservableMember(
+	stack NativeStack, hints map[int]*NativeStackHint,
+) bool {
+	for _, member := range stack.Members {
+		if _, observed := hints[member.PullRequestNumber]; !observed {
+			return true
+		}
 	}
 	return false
 }

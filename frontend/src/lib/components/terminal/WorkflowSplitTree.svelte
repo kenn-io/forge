@@ -90,8 +90,12 @@
   }
 </script>
 
+<!-- The drag scope is namespaced even though the onStartTabDrag/onReadDraggedTab
+     overrides below mean it never reaches a payload today: scope comparison is
+     plain string equality, so a bare workspace id equal to a detail surface key
+     would let a detail pane land here the moment those overrides go away. -->
 <TabbedPanelTree
-  dragScope={workspaceId}
+  dragScope={`workspace:${workspaceId}`}
   {node}
   {tabs}
   {activeTabKey}

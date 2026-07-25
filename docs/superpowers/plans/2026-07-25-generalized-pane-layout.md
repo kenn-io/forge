@@ -382,11 +382,16 @@ Add the three missing cases, each in the narrowest lane that observes it:
 
 `WorkflowSplitTree` passes the raw `workspaceId` as `dragScope`, and scope comparison is plain string equality, so a workspace whose id equalled a surface key would collide with the detail scopes. Prefix it `workspace:`.
 
-- [ ] **Step 1** Write a failing test asserting a `detail:prs` payload is rejected by a `workspace:<id>` scope and vice versa.
-- [ ] **Step 2** Run `./node_modules/.bin/vp test --project unit tabbed-panel`. Expected FAIL.
-- [ ] **Step 3** Prefix the scope in `WorkflowSplitTree.svelte`.
-- [ ] **Step 4** Run `./node_modules/.bin/vp test --project unit "tabbed-panel"` and `--project unit WorkspaceTerminalView`. Expected PASS.
-- [ ] **Step 5** Commit via the `kenn:commit` skill.
+- [x] **Step 1** Write a failing test asserting a `detail:prs` payload is rejected by a `workspace:<id>` scope and vice versa (`packages/ui/src/components/shared/tabbed-panel-drag.test.ts`, which had no test file at all).
+- [x] **Step 2** Run `./node_modules/.bin/vp test --project unit tabbed-panel-drag`. Expected FAIL.
+- [x] **Step 3** Prefix the scope in `WorkflowSplitTree.svelte`.
+- [x] **Step 4** Run `./node_modules/.bin/vp test --project unit "tabbed-panel"` and `--project unit WorkspaceTerminalView`. Expected PASS.
+- [x] **Step 5** Commit via the `kenn:commit` skill.
+
+Note: `WorkflowSplitTree` passes both `onStartTabDrag` and `onReadDraggedTab`
+(its own `terminal-drag` payload with its own MIME), so its `dragScope` never
+reaches a payload today and the collision is currently unreachable. The prefix and
+its comment exist so removing those overrides cannot silently reintroduce it.
 
 ---
 

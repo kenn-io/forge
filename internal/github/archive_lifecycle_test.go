@@ -740,8 +740,8 @@ func TestGitealikeArchiveAdmissionDoesNotTruncateAdmittedMergeRequest(t *testing
 	require := require.New(t)
 	database := dbtest.Open(t)
 	budget := NewSyncBudget(50)
-	giteaKey := RateBucketKey("gitea", "gitea.test")
-	giteaTracker := NewPlatformRateTracker(database, "gitea", "gitea.test", "rest")
+	giteaKey := RateBucketKey("gitea", "gitea.test", "host")
+	giteaTracker := NewPlatformRateTracker(database, "gitea", "gitea.test", "host", "rest")
 	giteaTracker.RecordRequest()
 	syncer := NewSyncerWithRegistry(
 		nil, database, nil, nil, time.Hour,
@@ -762,8 +762,8 @@ func TestGitealikeArchiveAdmissionDoesNotTruncateAdmittedMergeRequest(t *testing
 		assert.True(ConsumeArchiveAttemptAllowance(admission.Context))
 	}
 
-	githubKey := RateBucketKey("github", "github.test")
-	githubTracker := NewPlatformRateTracker(database, "github", "github.test", "rest")
+	githubKey := RateBucketKey("github", "github.test", "host")
+	githubTracker := NewPlatformRateTracker(database, "github", "github.test", "host", "rest")
 	githubTracker.RecordRequest()
 	githubSyncer := NewSyncerWithRegistry(
 		nil, database, nil, nil, time.Hour,

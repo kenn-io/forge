@@ -6316,7 +6316,7 @@ func TestDetailDrainCompletesWhenProviderExceedsAdmittedCost(t *testing.T) {
 	}
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
-	rateKey := RateBucketKey("gitea", "gitea.example.com")
+	rateKey := RateBucketKey("gitea", "gitea.example.com", "host")
 	syncer := NewSyncerWithRegistry(
 		registry, database, nil, []RepoRef{repo}, time.Minute, nil,
 		map[string]*SyncBudget{rateKey: NewSyncBudget(100)},

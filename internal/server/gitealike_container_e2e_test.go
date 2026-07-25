@@ -95,8 +95,10 @@ func TestForgejoContainerSync(t *testing.T) {
 	})
 
 	database := dbtest.Open(t)
-	rateKey := ghclient.RateBucketKey(string(platform.KindForgejo), manifest.Host)
-	tracker := ghclient.NewPlatformRateTracker(database, string(platform.KindForgejo), manifest.Host, "rest")
+	rateKey := ghclient.RateBucketKey(string(platform.KindForgejo), manifest.Host, "host")
+	tracker := ghclient.NewPlatformRateTracker(
+		database, string(platform.KindForgejo), manifest.Host, "host", "rest",
+	)
 	budget := ghclient.NewSyncBudget(5000)
 	client, err := platformforgejo.NewClient(
 		manifest.Host,
@@ -133,8 +135,10 @@ func TestGiteaContainerSync(t *testing.T) {
 	})
 
 	database := dbtest.Open(t)
-	rateKey := ghclient.RateBucketKey(string(platform.KindGitea), manifest.Host)
-	tracker := ghclient.NewPlatformRateTracker(database, string(platform.KindGitea), manifest.Host, "rest")
+	rateKey := ghclient.RateBucketKey(string(platform.KindGitea), manifest.Host, "host")
+	tracker := ghclient.NewPlatformRateTracker(
+		database, string(platform.KindGitea), manifest.Host, "host", "rest",
+	)
 	budget := ghclient.NewSyncBudget(5000)
 	client, err := platformgitea.NewClient(
 		manifest.Host,

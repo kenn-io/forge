@@ -48,6 +48,15 @@ func (c *routeRecordingClient) ListInventoryPullRequestsPage(
 	return []*gh.PullRequest{{Title: new(c.marker)}}, true, nil
 }
 
+func (c *routeRecordingClient) GetMarkdownImage(
+	_ context.Context, owner, repo, sourceURL string,
+) (platform.MarkdownImage, error) {
+	c.calls = append(c.calls, "markdown-image:"+owner+"/"+repo+":"+sourceURL)
+	return platform.MarkdownImage{
+		Content: []byte(c.marker), ContentType: "image/png",
+	}, nil
+}
+
 func (c *routeRecordingClient) ListRepositoriesByOwner(
 	_ context.Context, owner string,
 ) ([]*gh.Repository, error) {
@@ -143,6 +152,42 @@ func TestGitHubProviderPreservesRepositoryAwareNotificationRouting(t *testing.T)
 	))
 
 	assert.Equal([]string{"thread:thread-1", "mark-read:thread-1"}, owner.calls)
+	assert.Empty(fallback.calls)
+}
+
+func TestGitHubProviderRoutesMarkdownImagesByRepositoryCredential(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	const source = "https://github.com/user-attachments/assets/1111"
+	fallback := &routeRecordingClient{marker: "fallback"}
+	owner := &routeRecordingClient{marker: "owner"}
+	exact := &routeRecordingClient{marker: "exact"}
+	router, err := NewHostRouter(
+		"github.com",
+		&Route{Key: RouteKey{Host: "github.com"}, Client: fallback},
+		&Route{Key: RouteKey{Host: "github.com", Owner: "acme"}, Client: owner},
+		&Route{
+			Key:    RouteKey{Host: "github.com", Owner: "acme", Name: "widget"},
+			Client: exact,
+		},
+	)
+	require.NoError(err)
+	routed, err := NewRoutedClient(router)
+	require.NoError(err)
+	provider := &gitHubClientProvider{client: routed, host: "github.com"}
+
+	require.True(provider.Capabilities().ReadMarkdownImages,
+		"a routed GitHub host must keep private markdown image previews")
+
+	image, err := provider.GetMarkdownImage(t.Context(), platform.RepoRef{
+		Platform: platform.KindGitHub, Host: "github.com",
+		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+	}, source)
+	require.NoError(err)
+
+	assert.Equal("exact", string(image.Content))
+	assert.Equal([]string{"markdown-image:acme/widget:" + source}, exact.calls)
+	assert.Empty(owner.calls)
 	assert.Empty(fallback.calls)
 }
 

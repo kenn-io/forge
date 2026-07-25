@@ -217,6 +217,15 @@ lists only its selection — and fails closed if either configured source fails
 rather than silently narrowing coverage
 (`internal/github/auth_router.go::RoutedClient.listRepositoriesByOwnerAcrossRoutes`).
 
+`RoutedClient` embeds the `Client` interface, so any optional capability
+interface it does not re-declare disappears from behind the wrapper and
+`gitHubClientProvider.Capabilities()` silently reports that capability as
+unsupported on every routed host. When adding an optional GitHub client
+interface, give `RoutedClient` a repository-routed method and add its
+`_ iface = (*RoutedClient)(nil)` assertion; carry owner and repository name in
+the interface so exact `repo:` routes pick their own credential
+(`internal/github/auth_router.go::RoutedClient.GetMarkdownImage`).
+
 Managed Git uses exact-repository or owner PAT routes with mutation context and
 must never expose an App installation token to smart HTTP. Thread full provider,
 host, owner, and repository identity through clone/fetch and local reads;

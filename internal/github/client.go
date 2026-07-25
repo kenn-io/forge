@@ -170,8 +170,13 @@ type Client interface {
 	InvalidateListETagsForRepo(owner, repo string, endpoints ...string)
 }
 
+// markdownImageClient carries the full repository identity even though the
+// attachment URL is host-scoped: credential selection is per repository, so a
+// repo-scoped route must be able to pick its own token for the fetch.
 type markdownImageClient interface {
-	GetMarkdownImage(ctx context.Context, owner, sourceURL string) (platform.MarkdownImage, error)
+	GetMarkdownImage(
+		ctx context.Context, owner, repo, sourceURL string,
+	) (platform.MarkdownImage, error)
 }
 
 const maxMarkdownImageBytes = 25 << 20
@@ -187,7 +192,7 @@ var allowedMarkdownImageTypes = map[string]struct{}{
 
 func (c *liveClient) GetMarkdownImage(
 	ctx context.Context,
-	owner, sourceURL string,
+	owner, _, sourceURL string,
 ) (platform.MarkdownImage, error) {
 	parsed, err := url.Parse(sourceURL)
 	if err != nil || parsed.Scheme != "https" || parsed.User != nil ||

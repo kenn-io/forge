@@ -230,6 +230,7 @@ var (
 	_ githubAssigneeClient                = (*RoutedClient)(nil)
 	_ githubReviewerClient                = (*RoutedClient)(nil)
 	_ pageClient                          = (*RoutedClient)(nil)
+	_ markdownImageClient                 = (*RoutedClient)(nil)
 )
 
 func NewRoutedClient(routes *HostRouter) (*RoutedClient, error) {
@@ -301,6 +302,28 @@ func (c *RoutedClient) ListInventoryPullRequestsPage(
 		return nil, false, err
 	}
 	return paged.ListInventoryPullRequestsPage(ctx, owner, repo, sortBy, page)
+}
+
+// GetMarkdownImage fetches a private attachment with the credential that owns
+// the repository the image is rendered in. Without this method the embedded
+// Client interface hides GetMarkdownImage, so the provider's capability probe
+// reports ReadMarkdownImages as unsupported and every routed GitHub host loses
+// private image previews.
+func (c *RoutedClient) GetMarkdownImage(
+	ctx context.Context,
+	owner, repo, sourceURL string,
+) (platform.MarkdownImage, error) {
+	client, err := c.routeForRepo(owner, repo)
+	if err != nil {
+		return platform.MarkdownImage{}, err
+	}
+	reader, ok := client.(markdownImageClient)
+	if !ok {
+		return platform.MarkdownImage{}, platform.UnsupportedCapability(
+			platform.KindGitHub, c.routes.host, "read_markdown_images",
+		)
+	}
+	return reader.GetMarkdownImage(ctx, owner, repo, sourceURL)
 }
 
 func (c *RoutedClient) fallbackClient() (Client, error) {

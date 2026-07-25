@@ -245,7 +245,7 @@ type mockGH struct {
 	listIssueCommentsErr       error
 	listNotificationsFn        func(context.Context, ghclient.NotificationListOptions) ([]ghclient.NotificationThread, bool, error)
 	markNotificationReadFn     func(context.Context, string) error
-	getMarkdownImageFn         func(context.Context, string, string) (platform.MarkdownImage, error)
+	getMarkdownImageFn         func(context.Context, string, string, string) (platform.MarkdownImage, error)
 }
 
 func (m *mockGH) ListOpenPullRequests(ctx context.Context, owner, repo string) ([]*gh.PullRequest, error) {
@@ -712,10 +712,10 @@ func (m *mockGH) MarkNotificationThreadRead(ctx context.Context, threadID string
 
 func (m *mockGH) GetMarkdownImage(
 	ctx context.Context,
-	owner, sourceURL string,
+	owner, repo, sourceURL string,
 ) (platform.MarkdownImage, error) {
 	if m.getMarkdownImageFn != nil {
-		return m.getMarkdownImageFn(ctx, owner, sourceURL)
+		return m.getMarkdownImageFn(ctx, owner, repo, sourceURL)
 	}
 	return platform.MarkdownImage{}, nil
 }

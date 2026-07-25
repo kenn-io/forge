@@ -1298,7 +1298,7 @@ func (p *gitHubClientProvider) GetMarkdownImage(
 	if !ok {
 		return platform.MarkdownImage{}, platform.UnsupportedCapability(platform.KindGitHub, p.host, "read_markdown_images")
 	}
-	return reader.GetMarkdownImage(ctx, ref.Owner, sourceURL)
+	return reader.GetMarkdownImage(ctx, ref.Owner, ref.Name, sourceURL)
 }
 
 func (p *gitHubClientProvider) OperationRateLimitBuckets(

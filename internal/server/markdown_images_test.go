@@ -38,7 +38,7 @@ func TestMarkdownImageRouteFetchesThroughProvider(t *testing.T) {
 	fetches := 0
 	mock := &mockGH{getMarkdownImageFn: func(
 		_ context.Context,
-		owner, sourceURL string,
+		owner, _, sourceURL string,
 	) (platform.MarkdownImage, error) {
 		fetches++
 		gotOwner, gotSource = owner, sourceURL
@@ -72,9 +72,62 @@ func TestMarkdownImageRouteFetchesThroughProvider(t *testing.T) {
 	assert.Len(entries, 1)
 }
 
+// Production GitHub hosts are served by a RoutedClient, not a bare client, so
+// this drives the markdown-image route through one. The route here is
+// repo-scoped with no host fallback: the credential that owns acme/widget must
+// serve the fetch, and the capability probe must not report the whole host as
+// unable to read markdown images.
+func TestMarkdownImageRouteFetchesThroughRoutedRepositoryCredential(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	const source = "https://github.com/user-attachments/assets/11111111-2222-3333-4444-555555555555"
+	var gotOwner, gotRepo string
+	mock := &mockGH{getMarkdownImageFn: func(
+		_ context.Context,
+		owner, repo, _ string,
+	) (platform.MarkdownImage, error) {
+		gotOwner, gotRepo = owner, repo
+		return platform.MarkdownImage{
+			Content: []byte("routed-bytes"), ContentType: "image/png",
+		}, nil
+	}}
+	router, err := ghclient.NewHostRouter("github.com", &ghclient.Route{
+		Key:    ghclient.RouteKey{Host: "github.com", Owner: "acme", Name: "widget"},
+		Client: mock,
+	})
+	require.NoError(err)
+	routed, err := ghclient.NewRoutedClient(router)
+	require.NoError(err)
+
+	database := dbtest.Open(t)
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": routed},
+		database, nil, defaultTestRepos, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	srv.markdownImages = newMarkdownImageCache(t.TempDir())
+	_, err = database.UpsertRepo(
+		t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+
+	rr := repoBrowserRequest(t, srv, http.MethodGet,
+		"/api/v1/repo/github/acme/widget/markdown-image?source="+url.QueryEscape(source),
+	)
+
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	assert.Equal("image/png", rr.Header().Get("Content-Type"))
+	assert.Equal("routed-bytes", rr.Body.String())
+	assert.Equal("acme", gotOwner)
+	assert.Equal("widget", gotRepo)
+}
+
 func TestMarkdownImageRouteMapsProviderDeadlineToUpstreamError(t *testing.T) {
 	mock := &mockGH{getMarkdownImageFn: func(
 		context.Context,
+		string,
 		string,
 		string,
 	) (platform.MarkdownImage, error) {

@@ -4,7 +4,6 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 from scripts.frontend_unit_ci import run_frontend_unit
 
@@ -30,6 +29,12 @@ class FrontendUnitCITest(unittest.TestCase):
         with contextlib.redirect_stdout(output), contextlib.redirect_stderr(warnings):
             status = run_frontend_unit(**options)
         return status, output.getvalue(), warnings.getvalue()
+
+    def full_destination(self, name: str) -> Path:
+        self.diagnostics.mkdir(parents=True)
+        destination = self.diagnostics / name
+        destination.symlink_to("/dev/full")
+        return destination
 
     def test_streams_output_and_preserves_success(self) -> None:
         status, output, _ = self.run_child("print('child output')")
@@ -106,46 +111,33 @@ class FrontendUnitCITest(unittest.TestCase):
         self.assertIn(str((self.diagnostics / "node-reports").resolve()), log)
 
     def test_version_report_write_failure_preserves_child_status(self) -> None:
-        destination = self.diagnostics / "versions.txt"
-        original_open = Path.open
-
-        def fail_version_write(path: Path, *args: object, **kwargs: object) -> object:
-            if path == destination:
-                raise OSError("version report write failed")
-            return original_open(path, *args, **kwargs)
-
-        with patch.object(Path, "open", autospec=True, side_effect=fail_version_write):
-            status, output, _ = self.run_child("print('child output'); import sys; sys.exit(23)")
+        self.full_destination("versions.txt")
+        status, output, _ = self.run_child(
+            "print('child output'); import sys; sys.exit(23)",
+            version_commands=((sys.executable, "-c", "print('version' * 2000)"),),
+        )
 
         self.assertEqual(23, status)
         self.assertIn("child output", output)
 
     def test_post_test_cgroup_write_failure_preserves_child_status(self) -> None:
-        destination = self.diagnostics / "cgroup-after.txt"
-        original_open = Path.open
-
-        def fail_post_test_capture(path: Path, *args: object, **kwargs: object) -> object:
-            if path == destination:
-                raise OSError("cgroup report write failed")
-            return original_open(path, *args, **kwargs)
-
-        with patch.object(Path, "open", autospec=True, side_effect=fail_post_test_capture):
-            status, output, _ = self.run_child("print('child output'); import sys; sys.exit(23)")
+        self.full_destination("cgroup-after.txt")
+        cgroup_root = self.root / "cgroup"
+        cgroup_root.mkdir()
+        (cgroup_root / "memory.current").write_text("123\n" * 3000)
+        status, output, _ = self.run_child(
+            "print('child output'); import sys; sys.exit(23)",
+            cgroup_root=cgroup_root,
+        )
 
         self.assertEqual(23, status)
         self.assertIn("child output", output)
 
-    def test_log_write_failure_preserves_child_status_and_streams_output(self) -> None:
-        destination = self.diagnostics / "vitest.log"
-        original_open = Path.open
-
-        def fail_log_write(path: Path, *args: object, **kwargs: object) -> object:
-            if path == destination:
-                raise OSError("vitest log write failed")
-            return original_open(path, *args, **kwargs)
-
-        with patch.object(Path, "open", autospec=True, side_effect=fail_log_write):
-            status, output, _ = self.run_child("print('child output'); import sys; sys.exit(23)")
+    def test_log_write_or_flush_failure_preserves_status_and_streams_output(self) -> None:
+        self.full_destination("vitest.log")
+        status, output, _ = self.run_child(
+            "print('child output' * 2000); import sys; sys.exit(23)"
+        )
 
         self.assertEqual(23, status)
         self.assertIn("child output", output)

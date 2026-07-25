@@ -148,6 +148,41 @@ function dockModeFor(surface: InlineWorkspaceSurface): InlineDockMode {
 }
 
 /**
+ * Whether the workspace pane is actually on screen, which is NOT the same as its
+ * dock mode: "split" only says the pane is neither hidden nor maximized, while a
+ * pane sharing a leaf with an inactive sibling tab, or sitting behind another
+ * leaf's zoom, renders nothing. The host is parked in both cases, so conflating
+ * the two lets `isHostVisible()` claim a parked host is visible.
+ *
+ * Read from the stored tree, so it does not account for the narrow-width
+ * flattened rendering, where the host component picks the active tab itself.
+ */
+function workspacePaneVisible(surface: InlineWorkspaceSurface): boolean {
+  const layout = getPaneLayoutStore(surface);
+  if (layout.hiddenTabKeys().includes(WORKSPACE_PANE_KEY)) return false;
+  if (!layout.isTabActive(WORKSPACE_PANE_KEY)) return false;
+  const zoomed = layout.zoomedLeafID();
+  return zoomed === null || zoomed === layout.leafIDForTab(WORKSPACE_PANE_KEY);
+}
+
+/**
+ * Bring the workspace pane on screen without maximizing it.
+ *
+ * Unhiding is not enough: the pane may be tabbed behind a sibling, or hidden by a
+ * zoom on another leaf. Both leave it structurally present and completely
+ * invisible. A zoom held by the workspace's OWN leaf is left alone — revealing
+ * must never undo the user's maximize.
+ */
+function revealWorkspacePane(surface: InlineWorkspaceSurface): void {
+  const layout = getPaneLayoutStore(surface);
+  layout.setHidden(WORKSPACE_PANE_KEY, false);
+  layout.activateTab(WORKSPACE_PANE_KEY);
+  const leafID = layout.leafIDForTab(WORKSPACE_PANE_KEY);
+  const zoomed = layout.zoomedLeafID();
+  if (zoomed !== null && zoomed !== leafID) layout.clearZoom();
+}
+
+/**
  * Un-maximize the workspace pane, if it is what holds the zoom.
  *
  * A claim replaced directly by another item's (a selection change whose new
@@ -165,7 +200,7 @@ export function isHostVisible(): boolean {
   const slot = desiredSlot();
   if (slot === null) return false;
   if (slot === "tab") return true;
-  return dockModeFor(slot) !== "collapsed";
+  return workspacePaneVisible(slot);
 }
 
 function effectiveRef(
@@ -433,14 +468,12 @@ export function getInlineWorkspaceController(surface: InlineWorkspaceSurface): I
       // A modal frame is open: leave the layout alone and don't pull
       // focus out of the dialog.
       if (getStackDepth() > 0) return;
-      // Reveal without maximizing: a collapsed dock reopens in split —
-      // the same layout the workspace first appeared in — and a dock
-      // already visible keeps its mode. Maximizing over the detail is
-      // the terminal toolbar's own expand action, never a side effect
-      // of asking for focus.
-      if (dockModeFor(surface) === "collapsed") {
-        controller.setDockMode("split");
-      }
+      // Reveal without maximizing. "Collapsed" is not the only way to be
+      // invisible: the pane can be tabbed behind a sibling or buried under
+      // another leaf's zoom, and in both cases its portal slot is unmounted, so
+      // focusing the parked host can never land. Maximizing over the detail
+      // stays the terminal toolbar's own explicit action.
+      revealWorkspacePane(surface);
       // Best-effort direct attempt: works when the host is already
       // attached and visible (e.g. the dock was open in "split", where
       // its slot element is already mounted). Only falls back to the

@@ -257,12 +257,28 @@ Keyboard handlers must have one clear owner for each key press.
 - A maximized inline workspace reuses the live hosted shell and fills the pane
   edge-to-edge; never add outer chrome or mutate the shell's workflow/terminal
   layout state (`frontend/src/lib/components/terminal/WorkspaceHost.browser.svelte.ts`).
-- A pane bound to a URL has two write paths with different history semantics: a
-  tab click pushes (`navigate`), while focus moving between panes that are
-  visible at once replaces (`navigate(path, { replace: true })`), so walking
-  between them does not fill the Back stack. The URL wins over stored layout
-  state on load: it activates the pane it names and drops a zoom held elsewhere
-  (`packages/ui/src/views/PRListView.svelte::handlePaneFocus`).
+- History semantics for a URL-bound pane follow the ARRANGEMENT, never which
+  control the user touched: while the route-bound panes share a leaf a change
+  pushes, and once they are split apart — both on screen — it replaces, so
+  walking between them does not fill the Back stack. Keying off "click pushes,
+  focus replaces" is wrong because a pane split into its own leaf still renders a
+  clickable tab header. The URL wins over stored layout state on load: it
+  activates the pane it names and drops a zoom held elsewhere
+  (`packages/ui/src/views/PRListView.svelte::routePanesSplitApart`).
+- Pane availability must be derived at render time, not read back from an effect's
+  result: a claim made in an effect lags one tick, and one tick of an unavailable
+  pane prunes it out, collapses a split into a bare leaf, and remounts the whole
+  subtree — losing scroll state and reparenting the live terminal
+  (`packages/ui/src/item-workspace-claim.svelte.ts::useItemWorkspaceClaim`).
+  For the same reason the release-on-teardown guard reads its controller
+  untracked: reactive reads re-run the effect on a mere prop reassignment and its
+  cleanup then clobbers the claim just made in the same flush.
+- Rendered visibility is not dock mode. A workspace pane that is neither hidden
+  nor maximized still renders nothing when it is tabbed behind a sibling or
+  buried under another leaf's zoom, and its portal slot is unmounted in both
+  cases — so revealing it means unhide, activate its tab, AND clear a zoom held
+  by another leaf, while leaving its own zoom untouched
+  (`frontend/src/lib/stores/workspace-host.svelte.ts::workspacePaneVisible`).
 - The hosted terminal is one live DOM subtree reparented between registered
   portal slots, so exactly one slot may be mounted at a time. A host that
   embeds a view owning its own workspace pane must not also wrap it in a

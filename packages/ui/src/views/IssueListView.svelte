@@ -7,10 +7,9 @@
     from "../components/detail/IssueDetail.svelte";
   import DetailPaneLayout from "../components/shared/DetailPaneLayout.svelte";
   import { getPaneLayoutStore, type PaneTabSpec } from "../stores/paneLayout.svelte.js";
-  import type { IssueDetail as IssueDetailResponse } from "../api/types.js";
   import type { IssueDetailSyncMode } from "../stores/issues.svelte.js";
   import type { IssueRouteRef } from "../routes.js";
-  import { canonicalProvider, resolvedPlatformHost } from "../api/provider-routes.js";
+  import { issueDetailMatchesRef } from "../components/detail/detail-match.js";
   import type { InlineWorkspaceController, WorkspaceItemIdentity } from "../workspace-inline.js";
   import { useItemWorkspaceClaim } from "../item-workspace-claim.svelte.js";
 
@@ -42,23 +41,6 @@
     inlineWorkspace = null,
   }: Props = $props();
 
-  function detailMatchesSelected(
-    detail: IssueDetailResponse | null,
-    ref: IssueRouteRef | null,
-  ): boolean {
-    return (
-      !!detail &&
-      !!ref &&
-      detail.repo_owner === ref.owner &&
-      detail.repo_name === ref.name &&
-      detail.issue.Number === ref.number &&
-      canonicalProvider(detail.repo?.provider ?? "") === canonicalProvider(ref.provider) &&
-      resolvedPlatformHost(ref.provider, detail.repo?.platform_host) ===
-        resolvedPlatformHost(ref.provider, ref.platformHost) &&
-      detail.repo?.repo_path === ref.repoPath
-    );
-  }
-
   function refreshSelectedDetail(): Promise<void> | undefined {
     if (selectedIssue === null) return undefined;
     const ref = selectedIssue;
@@ -86,22 +68,18 @@
 
   const paneLayout = getPaneLayoutStore("issues");
 
-  const workspaceClaimed = $derived(
-    inlineWorkspace !== null && claimIdentity !== null && inlineWorkspace.isClaimedFor(claimIdentity),
-  );
-
-  const paneTabs = $derived<PaneTabSpec[]>([
-    { key: "conversation", label: "Conversation", available: true },
-    { key: "workspace", label: "Workspace", available: workspaceClaimed, hideable: true },
-  ]);
-
-  useItemWorkspaceClaim({
+  const workspaceClaim = useItemWorkspaceClaim({
     controller: () => inlineWorkspace,
     identity: () => claimIdentity,
-    detailMatches: () => detailMatchesSelected(issues.getIssueDetail(), selectedIssue ?? null),
+    detailMatches: () => issueDetailMatchesRef(issues.getIssueDetail(), selectedIssue ?? null),
     envelopeRef: () => issues.getIssueDetail()?.workspace ?? null,
     refresh: () => void refreshSelectedDetail(),
   });
+
+  const paneTabs = $derived<PaneTabSpec[]>([
+    { key: "conversation", label: "Conversation", available: true },
+    { key: "workspace", label: "Workspace", available: workspaceClaim.ref() !== null, hideable: true },
+  ]);
 </script>
 
 <CollapsibleSidebar

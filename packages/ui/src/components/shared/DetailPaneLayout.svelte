@@ -81,31 +81,30 @@
   }
 
   /**
-   * Focus must never be stolen from a control the user moved to themselves, so
-   * reclaim only when it already fell to `<body>` or still sits inside the
-   * subtree that is going away.
+   * Reclaim focus for the layout after something focusable inside it went away.
+   *
+   * Checked AFTER the DOM update rather than before: whether focus fell to
+   * `<body>` is the whole question, and asking beforehand means deciding which
+   * elements are about to be removed. That guess was wrong for the close button
+   * itself — it lives in the tab header, not the pane body — so keyboard-closing
+   * a pane declined restoration and stranded focus. Focus already elsewhere is
+   * never stolen, so a background close leaves the user's control alone.
    */
-  function shouldReclaimFocus(closing: Element | null): boolean {
-    const focused = document.activeElement;
-    if (focused === null || focused === document.body) return true;
-    return closing?.contains(focused) ?? false;
-  }
-
   async function reclaimFocus(): Promise<void> {
     await tick();
-    if (shouldReclaimFocus(null)) host?.focus();
+    const focused = document.activeElement;
+    if (focused === null || focused === document.body) host?.focus();
   }
 
   /**
    * Closing a pane unmounts its body. Focus that lived inside it — the terminal,
-   * a diff comment box — would fall to `<body>`, stranding keyboard users and
-   * leaving the global single-key shortcuts armed against nothing.
+   * a diff comment box, the close button — would fall to `<body>`, stranding
+   * keyboard users and leaving the global single-key shortcuts armed against
+   * nothing.
    */
   function closePane(tabKey: string): void {
-    const closing = host?.querySelector(`[data-pane-key="${tabKey}"]`) ?? null;
-    const reclaim = shouldReclaimFocus(closing);
     layout.setHidden(tabKey, true);
-    if (reclaim) void reclaimFocus();
+    void reclaimFocus();
   }
 
   // The same stranding happens without a click: a released or deleted workspace

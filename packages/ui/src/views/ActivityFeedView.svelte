@@ -6,9 +6,14 @@
   import { IconButton, SidebarToggle, SplitResizeHandle } from "@kenn-io/kit-ui";
   import type { SplitResizeEvent } from "@kenn-io/kit-ui";
   import type { PullRequestRouteRef } from "../routes.js";
-  import PRListView from "./PRListView.svelte";
-  import IssueListView from "./IssueListView.svelte";
-  import type { InlineWorkspaceController } from "../workspace-inline.js";
+  import IssueDetail from "../components/detail/IssueDetail.svelte";
+  import PullDetailPane from "../components/detail/PullDetailPane.svelte";
+  import { issueDetailMatchesRef, pullDetailMatchesRef } from "../components/detail/detail-match.js";
+  import DetailPaneLayout from "../components/shared/DetailPaneLayout.svelte";
+  import { getPaneLayoutStore, type PaneTabSpec } from "../stores/paneLayout.svelte.js";
+  import { getStores } from "../context.js";
+  import { useItemWorkspaceClaim } from "../item-workspace-claim.svelte.js";
+  import type { InlineWorkspaceController, WorkspaceItemIdentity } from "../workspace-inline.js";
 
   type ActivityDetailTab = "conversation" | "files";
 
@@ -44,7 +49,7 @@
     detailTab?: ActivityDetailTab;
     onSelectItem?: (item: ActivityItem) => void;
     onCloseDrawer?: () => void;
-    onDetailTabChange?: (tab: ActivityDetailTab) => void;
+    onDetailTabChange?: (tab: ActivityDetailTab, options?: { replace?: boolean }) => void;
     onDrawerItemChange?: (item: DrawerPRItem) => void;
     phone?: boolean;
     inlineWorkspace?: InlineWorkspaceController | null;
@@ -60,6 +65,9 @@
     phone = false,
     inlineWorkspace = null,
   }: Props = $props();
+
+  const { detail: detailStore, issues: issuesStore } = getStores();
+  const paneLayout = getPaneLayoutStore("activity");
 
   const ACTIVITY_PANE_WIDTH_KEY = "middleman-activity-pane-width";
   const DEFAULT_ACTIVITY_PANE_WIDTH = 360;
@@ -179,11 +187,95 @@
         }
       : null,
   );
+  const isPRSelection = $derived(drawerPRSelection !== null);
+
+  /** The selected item, whichever kind, for the claim lifecycle. */
+  const claimIdentity = $derived<WorkspaceItemIdentity | null>(
+    activeDrawer
+      ? {
+          provider: activeDrawer.provider,
+          platformHost: activeDrawer.platformHost,
+          owner: activeDrawer.owner,
+          name: activeDrawer.name,
+          repoPath: activeDrawer.repoPath,
+          number: activeDrawer.number,
+          // Drawer vocabulary ("pr"/"issue"); canonicalItemType maps it.
+          itemType: activeDrawer.itemType,
+        }
+      : null,
+  );
+
+  /** Detail for the selected PR, or null while it is stale or absent. */
+  const selectedPullDetail = $derived.by(() => {
+    const detail = detailStore.getDetail();
+    return pullDetailMatchesRef(detail, drawerPRSelection) ? detail : null;
+  });
+
+  function loadedDetailMatchesSelection(): boolean {
+    if (drawerPRSelection) return pullDetailMatchesRef(detailStore.getDetail(), drawerPRSelection);
+    if (drawerIssueSelection) return issueDetailMatchesRef(issuesStore.getIssueDetail(), drawerIssueSelection);
+    return false;
+  }
+
+  function selectionEnvelopeRef() {
+    if (drawerPRSelection) return detailStore.getDetail()?.workspace ?? null;
+    if (drawerIssueSelection) return issuesStore.getIssueDetail()?.workspace ?? null;
+    return null;
+  }
+
+  function refreshSelectionDetail(): void {
+    if (drawerPRSelection) {
+      const ref = drawerPRSelection;
+      void detailStore.loadDetail(ref.owner, ref.name, ref.number, {
+        sync: false,
+        provider: ref.provider,
+        platformHost: ref.platformHost,
+        repoPath: ref.repoPath,
+      });
+      return;
+    }
+    if (drawerIssueSelection) {
+      const ref = drawerIssueSelection;
+      void issuesStore.loadIssueDetail(ref.owner, ref.name, ref.number, {
+        sync: false,
+        provider: ref.provider,
+        platformHost: ref.platformHost,
+        repoPath: ref.repoPath,
+      });
+    }
+  }
+
+  const workspaceClaim = useItemWorkspaceClaim({
+    controller: () => inlineWorkspace,
+    identity: () => claimIdentity,
+    detailMatches: loadedDetailMatchesSelection,
+    envelopeRef: selectionEnvelopeRef,
+    refresh: refreshSelectionDetail,
+  });
+
+  // One pane vocabulary for every Activity selection kind, with availability
+  // doing the switching: a PR contributes a diff pane, a commit contributes its
+  // own, and an issue contributes neither. Keeping them in one tree is what lets
+  // an arrangement survive moving between selections.
+  const paneTabs = $derived<PaneTabSpec[]>([
+    { key: "conversation", label: "Conversation", available: activeDrawer !== null },
+    { key: "files", label: "Files changed", available: isPRSelection },
+    { key: "commit", label: "Commit", available: commitDrawer !== null },
+    { key: "workspace", label: "Workspace", available: workspaceClaim.ref() !== null, hideable: true },
+  ]);
+
+  function handlePaneSelect(tabKey: string): void {
+    // Only the PR's two panes are bound to the drawer's tab state; commit and
+    // workspace have no equivalent.
+    if (tabKey === "conversation" || tabKey === "files") handleDetailTabChange(tabKey);
+  }
+
   function handleDetailTabChange(
     tab: ActivityDetailTab,
+    options?: { replace?: boolean },
   ): void {
     if (controlled) {
-      onDetailTabChange?.(tab);
+      onDetailTabChange?.(tab, options);
       return;
     }
     internalDetailTab = tab;
@@ -376,43 +468,58 @@
         </IconButton>
       </div>
 
-      {#if commitDrawer}
-        {#key commitDrawer.commitSha}
-          <CommitDiffPanel
-            provider={commitDrawer.provider}
-            platformHost={commitDrawer.platformHost}
-            owner={commitDrawer.owner}
-            name={commitDrawer.name}
-            repoPath={commitDrawer.repoPath}
-            commitSha={commitDrawer.commitSha}
-          />
-        {/key}
-      {:else if drawerPRSelection}
-        <!-- Neither embed sits inside an outer dock any more: each owns the
-             workspace as one of its own panes, and a second portal slot on the
-             page would compete for the single live terminal. -->
-        <PRListView
-          selectedPR={drawerPRSelection}
-          detailTab={effectiveDetailTab}
-          isSidebarCollapsed={true}
-          hideSidebar={true}
-          autoSyncDetail="background"
-          hideStaleDetailWhileLoading={true}
-          workflowApprovalSync={false}
-          onDetailTabChange={handleDetailTabChange}
-          onStackMemberNavigate={handleStackMemberNavigate}
-          {inlineWorkspace}
-        />
-      {:else if drawerIssueSelection}
-        <IssueListView
-          selectedIssue={drawerIssueSelection}
-          isSidebarCollapsed={true}
-          hideSidebar={true}
-          autoSyncDetail="background"
-          hideStaleDetailWhileLoading={true}
-          {inlineWorkspace}
-        />
-      {/if}
+      <DetailPaneLayout
+        layout={paneLayout}
+        tabs={paneTabs}
+        tablistLabel="Activity detail panes"
+        leafLabel="Activity detail pane group"
+        routeTabKey={isPRSelection ? effectiveDetailTab : undefined}
+        onSelectTab={handlePaneSelect}
+      >
+        {#snippet renderPane(tabKey, visible)}
+          {#if tabKey === "commit" && commitDrawer && visible}
+            {#key commitDrawer.commitSha}
+              <CommitDiffPanel
+                provider={commitDrawer.provider}
+                platformHost={commitDrawer.platformHost}
+                owner={commitDrawer.owner}
+                name={commitDrawer.name}
+                repoPath={commitDrawer.repoPath}
+                commitSha={commitDrawer.commitSha}
+              />
+            {/key}
+          {:else if tabKey === "workspace" && inlineWorkspace && visible}
+            <!-- Portal target for the single live terminal subtree. Mounted only
+                 while visible: a slot left behind another tab or a zoom would stay
+                 the registered host and strand the terminal off screen. -->
+            <div class="detail-pane-workspace-slot" {@attach inlineWorkspace.slotAttachment}></div>
+          {:else if drawerPRSelection}
+            <PullDetailPane
+              {tabKey}
+              {visible}
+              pr={drawerPRSelection}
+              detail={selectedPullDetail}
+              autoSync="background"
+              hideStaleWhileLoading={true}
+              workflowApprovalSync={false}
+              onStackMemberNavigate={handleStackMemberNavigate}
+              {inlineWorkspace}
+            />
+          {:else if tabKey === "conversation" && drawerIssueSelection}
+            <IssueDetail
+              owner={drawerIssueSelection.owner}
+              name={drawerIssueSelection.name}
+              number={drawerIssueSelection.number}
+              provider={drawerIssueSelection.provider}
+              platformHost={drawerIssueSelection.platformHost}
+              repoPath={drawerIssueSelection.repoPath}
+              autoSync="background"
+              hideStaleWhileLoading={true}
+              {inlineWorkspace}
+            />
+          {/if}
+        {/snippet}
+      </DetailPaneLayout>
     </section>
   {/if}
 </div>
@@ -495,6 +602,14 @@
     overflow: hidden;
     display: flex;
     flex-direction: column;
+  }
+
+  .detail-pane-workspace-slot {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    height: 100%;
   }
 
   @container (max-width: 760px) {

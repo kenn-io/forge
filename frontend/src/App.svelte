@@ -559,12 +559,15 @@
   function navigateFocusPRDetailTab(
     ref: Parameters<typeof buildFocusPullRequestRoute>[0],
     tab: "conversation" | "files",
+    options?: { replace?: boolean },
   ): void {
-    navigate(
-      tab === "files"
-        ? buildFocusPullRequestFilesRoute(ref)
-        : buildFocusPullRequestRoute(ref),
-    );
+    const path =
+      tab === "files" ? buildFocusPullRequestFilesRoute(ref) : buildFocusPullRequestRoute(ref);
+    // Replace when the view says this only records which of two simultaneously
+    // visible panes the user is in, so moving between them does not fill the
+    // Back stack.
+    if (options?.replace) replaceUrl(path);
+    else navigate(path);
   }
 
   function desktopPathForMobileRoute(): string {
@@ -1015,7 +1018,7 @@
         <PRListView
           {selectedPR}
           detailTab={r.tab === "files" ? "files" : "conversation"}
-          onDetailTabChange={(tab) => navigateFocusPRDetailTab(selectedPR, tab)}
+          onDetailTabChange={(tab, options) => navigateFocusPRDetailTab(selectedPR, tab, options)}
           isSidebarCollapsed={true}
           hideSidebar={true}
           routeFamily="focus"

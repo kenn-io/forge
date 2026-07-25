@@ -1,4 +1,5 @@
 import { describe, expect, it, beforeEach } from "vite-plus/test";
+import { getPaneLayoutStore } from "@middleman/ui/stores/paneLayout";
 import { pushModalFrame } from "@middleman/ui/stores/keyboard/modal-stack";
 import {
   createdWorkspaceRef,
@@ -585,6 +586,53 @@ describe("workspace host store", () => {
     expect(prs.getDockMode()).toBe("split");
     prs.setDockMode("expanded");
     prs.focusTerminal();
+    expect(prs.getDockMode()).toBe("expanded");
+  });
+
+  it("reveals a workspace buried under another leaf's zoom", () => {
+    const prs = getInlineWorkspaceController("prs");
+    prs.claim(identityA, refA);
+    const layout = getPaneLayoutStore("prs");
+    const detailLeaf = layout.leafIDForTab("conversation");
+
+    // Maximizing the conversation leaves the workspace structurally present and
+    // completely invisible, with its portal slot unmounted — "split" by dock
+    // mode, but nothing on screen to focus.
+    layout.toggleZoom(detailLeaf!);
+    expect(prs.getDockMode()).toBe("split");
+    expect(isHostVisible()).toBe(false);
+
+    prs.focusTerminal();
+
+    expect(layout.zoomedLeafID()).toBeNull();
+    expect(isHostVisible()).toBe(true);
+  });
+
+  it("reveals a workspace tabbed behind a sibling pane", () => {
+    const prs = getInlineWorkspaceController("prs");
+    prs.claim(identityA, refA);
+    const layout = getPaneLayoutStore("prs");
+    // Drag the workspace into the detail group and switch away from it: still
+    // unhidden, still not rendered.
+    layout.appendTabToLeaf("workspace", layout.leafIDForTab("conversation")!);
+    layout.activateTab("conversation");
+    expect(prs.getDockMode()).toBe("split");
+    expect(isHostVisible()).toBe(false);
+
+    prs.focusTerminal();
+
+    expect(isHostVisible()).toBe(true);
+  });
+
+  it("leaves the workspace's own zoom alone when revealing it", () => {
+    // Focus Terminal reveals, it never maximizes - and it must not un-maximize
+    // either, or asking for focus silently undoes the user's own layout.
+    const prs = getInlineWorkspaceController("prs");
+    prs.claim(identityA, refA);
+    prs.setDockMode("expanded");
+
+    prs.focusTerminal();
+
     expect(prs.getDockMode()).toBe("expanded");
   });
 

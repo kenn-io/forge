@@ -149,14 +149,31 @@ describe("PRListView detail panes", () => {
     expect(screen.getByTestId("pull-detail").textContent).toContain("Conversation acme/widgets#12");
   });
 
-  it("navigates on a pane tab click", async () => {
+  it("pushes history on a pane tab click while the panes share a leaf", async () => {
     const navigate = vi.fn();
     renderPRListView({ navigate });
     await tick();
 
     await fireEvent.click(screen.getByRole("tab", { name: "Files changed" }));
 
-    expect(navigate).toHaveBeenCalledWith("/pulls/github/acme/widgets/12/files");
+    expect(navigate).toHaveBeenCalledWith("/pulls/github/acme/widgets/12/files", { replace: false });
+  });
+
+  it("replaces history on a tab click once the panes are split apart", async () => {
+    // History semantics follow the arrangement, not which control was touched: a
+    // pane split into its own leaf still renders a clickable header, and clicking
+    // it must behave the same as focusing its body.
+    const navigate = vi.fn();
+    renderPRListView({ navigate });
+    await tick();
+
+    await fireEvent.click(screen.getByTestId("pane-split-right"));
+    await tick();
+    navigate.mockClear();
+
+    await fireEvent.click(screen.getByRole("tab", { name: "Files changed" }));
+
+    expect(navigate).toHaveBeenCalledWith("/pulls/github/acme/widgets/12/files", { replace: true });
   });
 
   it("leaves the route alone when focus moves within one pane group", async () => {

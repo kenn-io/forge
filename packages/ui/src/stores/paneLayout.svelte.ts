@@ -48,6 +48,8 @@ export interface PaneLayoutStore {
   hiddenTabKeys(): readonly string[];
   lastFocusedTabKey(): string | null;
   leafIDForTab(tabKey: string): string | null;
+  /** Whether this tab is the active one in its own leaf. */
+  isTabActive(tabKey: string): boolean;
   activateTab(tabKey: string): void;
   noteFocused(tabKey: string): void;
   moveTabBefore(source: string, target: string): void;
@@ -124,6 +126,8 @@ export function createPaneLayoutStore(
     lastFocusedTabKey: () => state.lastFocusedTabKey,
 
     leafIDForTab: (tabKey) => findTabbedPanelLeafByTab(state.tree, tabKey)?.id ?? null,
+
+    isTabActive: (tabKey) => findTabbedPanelLeafByTab(state.tree, tabKey)?.activeTabKey === tabKey,
 
     activateTab: (tabKey) => withTree(activateTabbedPanelTab(state.tree, tabKey)),
 
@@ -212,4 +216,15 @@ export function getPaneLayoutStore(surface: PaneSurfaceKey): PaneLayoutStore {
 
 export function resetPaneLayoutStoresForTest(): void {
   stores.clear();
+  // Also drop the persisted layouts: clearing only the in-memory cache leaves the
+  // next store to re-read a previous test's arrangement out of localStorage, and
+  // with the inline dock mode derived from the layout that leaks a zoom or a
+  // hidden pane across tests under shuffled ordering.
+  for (const surface of Object.keys(PANE_SURFACES) as PaneSurfaceKey[]) {
+    try {
+      localStorage.removeItem(storageKey(surface));
+    } catch {
+      // Storage blocked; nothing was persisted to clear.
+    }
+  }
 }

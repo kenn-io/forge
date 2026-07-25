@@ -3,6 +3,7 @@
   import type {
     TabbedPanelDescriptor,
     TabbedPanelDirection,
+    TabbedPanelLeaf,
     TabbedPanelNode,
   } from "./tabbed-panel-layout.js";
 
@@ -21,6 +22,10 @@
       | undefined;
     onRatioChange?: ((splitID: string, ratio: number) => void) | undefined;
     disabled?: boolean;
+    zoomedLeafID?: string | null;
+    /** Render the per-leaf action cluster; off by default so existing cases are unaffected. */
+    withLeafActions?: boolean;
+    onLeafAction?: ((leafID: string) => void) | undefined;
   }
 
   const {
@@ -31,6 +36,9 @@
     onSplitTab,
     onRatioChange,
     disabled = false,
+    zoomedLeafID = null,
+    withLeafActions = false,
+    onLeafAction = undefined,
   }: Props = $props();
 
   const tabs: TabbedPanelDescriptor[] = [
@@ -58,10 +66,12 @@
   dropTargetsLabel="Test panel drop targets"
   resizeLabel="Resize test split"
   {disabled}
+  {zoomedLeafID}
   {onMoveTabBefore}
   {onAppendTabToLeaf}
   {onSplitTab}
   {onRatioChange}
+  leafActions={withLeafActions ? leafActions : undefined}
 >
   {#snippet renderTab(tabKey, active)}
     <section data-testid={`panel-${tabKey}`} data-active={String(active)}>
@@ -79,3 +89,16 @@
     </button>
   {/snippet}
 </TabbedPanelTree>
+
+{#snippet leafActions(leaf: TabbedPanelLeaf)}
+  <button
+    class="tabbed-panel-tab-tool"
+    type="button"
+    data-testid={`leaf-action-${leaf.id}`}
+    aria-label={`Leaf action ${leaf.id}`}
+    disabled={leaf.tabs.length <= 1}
+    onclick={() => onLeafAction?.(leaf.id)}
+  >
+    L
+  </button>
+{/snippet}

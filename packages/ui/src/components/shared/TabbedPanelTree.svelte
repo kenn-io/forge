@@ -10,11 +10,13 @@
   import type {
     TabbedPanelDescriptor,
     TabbedPanelDirection,
+    TabbedPanelLeaf,
     TabbedPanelNode,
     TabbedPanelSplitEdge,
   } from "./tabbed-panel-layout.js";
   import {
     clampTabbedPanelRatio,
+    collectTabbedPanelLeafIDs,
     tabbedPanelSplitEdgeFromPoint,
     tabbedPanelSplitPlacementForEdge,
   } from "./tabbed-panel-layout.js";
@@ -27,6 +29,19 @@
     renderTab: Snippet<[string, boolean]>;
     tabIcon?: Snippet<[TabbedPanelDescriptor]> | undefined;
     tabActions?: Snippet<[TabbedPanelDescriptor]> | undefined;
+    /**
+     * Rendered once per leaf, right-aligned in its tab strip. Receives the leaf
+     * so callers can act on its id (split, maximize) rather than on a tab.
+     */
+    leafActions?: Snippet<[TabbedPanelLeaf]> | undefined;
+    /** Leaf rendered at full size; every other subtree is hidden but stays mounted. */
+    zoomedLeafID?: string | null;
+    /**
+     * Set only by this component's own recursive calls. A leaf's active tab is
+     * still invisible when an ancestor's other branch holds the zoom, so
+     * visibility has to descend rather than be recomputed per leaf.
+     */
+    ancestorHidden?: boolean;
     scrollPanels?: boolean;
     disabled?: boolean;
     tablistLabel?: string;
@@ -59,6 +74,9 @@
     renderTab,
     tabIcon = undefined,
     tabActions = undefined,
+    leafActions = undefined,
+    zoomedLeafID = null,
+    ancestorHidden = false,
     scrollPanels = false,
     disabled = false,
     tablistLabel = "Panel group tabs",
@@ -426,6 +444,25 @@
     return !disabled && Boolean(onStartTabDrag || onMoveTabBefore || onAppendTabToLeaf || onSplitTab);
   }
 
+  /**
+   * Which branch of this split contains the zoomed leaf, if either.
+   *
+   * Drives three things at once: the zoomed branch grows to fill, the other is
+   * hidden, and the divider between them is dropped. Leaving the divider
+   * rendered would put a draggable handle on top of a supposedly full-size pane,
+   * silently changing ratios the user cannot see.
+   */
+  const zoomSide = $derived.by<"first" | "second" | null>(() => {
+    if (node.type !== "split" || zoomedLeafID === null) return null;
+    if (collectTabbedPanelLeafIDs(node.first).includes(zoomedLeafID)) return "first";
+    if (collectTabbedPanelLeafIDs(node.second).includes(zoomedLeafID)) return "second";
+    return null;
+  });
+
+  function paneVisible(tabKey: string): boolean {
+    return !ancestorHidden && node.type === "leaf" && node.activeTabKey === tabKey;
+  }
+
   function canSortTabs(): boolean {
     return !disabled && Boolean(onMoveTabBefore);
   }
@@ -508,6 +545,11 @@
           {/if}
         {/if}
       {/each}
+      {#if leafActions}
+        <div class="tabbed-panel-leaf-actions" data-testid="tabbed-panel-leaf-actions">
+          {@render leafActions(node)}
+        </div>
+      {/if}
     </div>
     <div
       class={["tabbed-panel-body", { "show-drop-targets": dropTargetsVisible }]}
@@ -527,7 +569,7 @@
             },
           ]}
         >
-          {@render renderTab(tabKey, node.activeTabKey === tabKey)}
+          {@render renderTab(tabKey, paneVisible(tabKey))}
         </div>
       {/each}
       <div
@@ -546,7 +588,11 @@
     class={["tabbed-panel-split", node.direction]}
     style={`--first-ratio: ${node.ratio}; --second-ratio: ${1 - node.ratio};`}
   >
-    <div class="tabbed-panel-split-child first">
+    <div
+      class={["tabbed-panel-split-child", "first", { zoomed: zoomSide === "first" }]}
+      hidden={zoomSide === "second"}
+      inert={zoomSide === "second"}
+    >
       <Self
         {dragScope}
         node={node.first}
@@ -555,6 +601,9 @@
         {renderTab}
         {tabIcon}
         {tabActions}
+        {leafActions}
+        {zoomedLeafID}
+        ancestorHidden={ancestorHidden || zoomSide === "second"}
         {scrollPanels}
         {disabled}
         {tablistLabel}
@@ -572,18 +621,24 @@
         {onClearDrag}
       />
     </div>
-    <SplitResizeHandle
-      class="tabbed-panel-split-divider"
-      ariaLabel={resizeLabel}
-      orientation={node.direction}
-      ariaValueMin={Math.round(MIN_RATIO * splitSize)}
-      ariaValueMax={Math.round(MAX_RATIO * splitSize)}
-      ariaValueNow={Math.round(node.ratio * splitSize)}
-      {disabled}
-      onResizeStart={startResize}
-      onResize={handleResize}
-    />
-    <div class="tabbed-panel-split-child second">
+    {#if zoomSide === null}
+      <SplitResizeHandle
+        class="tabbed-panel-split-divider"
+        ariaLabel={resizeLabel}
+        orientation={node.direction}
+        ariaValueMin={Math.round(MIN_RATIO * splitSize)}
+        ariaValueMax={Math.round(MAX_RATIO * splitSize)}
+        ariaValueNow={Math.round(node.ratio * splitSize)}
+        {disabled}
+        onResizeStart={startResize}
+        onResize={handleResize}
+      />
+    {/if}
+    <div
+      class={["tabbed-panel-split-child", "second", { zoomed: zoomSide === "second" }]}
+      hidden={zoomSide === "first"}
+      inert={zoomSide === "first"}
+    >
       <Self
         {dragScope}
         node={node.second}
@@ -592,6 +647,9 @@
         {renderTab}
         {tabIcon}
         {tabActions}
+        {leafActions}
+        {zoomedLeafID}
+        ancestorHidden={ancestorHidden || zoomSide === "first"}
         {scrollPanels}
         {disabled}
         {tablistLabel}
@@ -645,6 +703,29 @@
 
   .tabbed-panel-split-child.second {
     flex: var(--second-ratio) 1 0;
+  }
+
+  /* A zoomed branch takes the whole split, overriding its stored ratio. Its
+     sibling keeps its subtree mounted so scroll offsets and any reparented
+     singleton pane survive the zoom, but contributes no layout space. */
+  .tabbed-panel-split-child.zoomed {
+    flex: 1 1 100%;
+  }
+
+  .tabbed-panel-split-child[hidden] {
+    display: none;
+  }
+
+  .tabbed-panel-leaf-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 1px;
+    margin-left: auto;
+    padding-right: 4px;
+    /* Sits above the tab strip's bottom-border pseudo-element. */
+    position: relative;
+    z-index: 2;
+    flex-shrink: 0;
   }
 
   :global(.tabbed-panel-split-divider) {
@@ -823,6 +904,40 @@
   .tabbed-panel-tab:hover :global(.tabbed-panel-tab-tool),
   .tabbed-panel-tab :global(.tabbed-panel-tab-tool:focus-visible) {
     opacity: 1;
+  }
+
+  /* Leaf-level controls borrow the per-tab tool styling, but reveal on hover of
+     the whole leaf rather than of a single tab: they act on the leaf, not on the
+     tab the pointer happens to be over. */
+  .tabbed-panel-leaf-actions :global(.tabbed-panel-tab-tool) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 22px;
+    border: 0;
+    border-radius: 3px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    opacity: 0;
+  }
+
+  .tabbed-panel-leaf:hover .tabbed-panel-leaf-actions :global(.tabbed-panel-tab-tool),
+  .tabbed-panel-leaf-actions :global(.tabbed-panel-tab-tool:focus-visible) {
+    opacity: 1;
+  }
+
+  .tabbed-panel-leaf-actions :global(.tabbed-panel-tab-tool:hover:not(:disabled)),
+  .tabbed-panel-leaf-actions :global(.tabbed-panel-tab-tool:focus-visible) {
+    background: var(--bg-surface-hover);
+    color: var(--text-primary);
+    outline: none;
+  }
+
+  .tabbed-panel-leaf-actions :global(.tabbed-panel-tab-tool:disabled) {
+    cursor: default;
+    opacity: 0.3;
   }
 
   .tabbed-panel-tab :global(.tabbed-panel-tab-tool:hover),

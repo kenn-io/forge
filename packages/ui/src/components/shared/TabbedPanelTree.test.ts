@@ -374,3 +374,109 @@ describe("TabbedPanelTree", () => {
     expect(onRatioChange).not.toHaveBeenCalled();
   });
 });
+
+describe("zoom and leaf actions", () => {
+  function splitTree(): TabbedPanelNode {
+    return {
+      type: "split",
+      id: "split-root",
+      direction: "horizontal",
+      ratio: 0.5,
+      first: { type: "leaf", id: "leaf-a", tabs: ["feed", "detail"], activeTabKey: "detail" },
+      second: { type: "leaf", id: "leaf-b", tabs: ["files"], activeTabKey: "files" },
+    };
+  }
+
+  it("hides the sibling branch while keeping its subtree mounted", () => {
+    render(TabbedPanelTreeTestHarness, { node: splitTree(), zoomedLeafID: "leaf-b" });
+
+    // Mounted, not destroyed: a reparented singleton pane and any scroll
+    // offsets have to survive a zoom.
+    const hiddenPanel = screen.getByTestId("panel-detail");
+    expect(hiddenPanel).toBeTruthy();
+
+    const hiddenBranch = hiddenPanel.closest<HTMLElement>(".tabbed-panel-split-child");
+    expect(hiddenBranch?.hasAttribute("hidden")).toBe(true);
+    // Svelte sets `inert` as a DOM property, which jsdom does not reflect back
+    // to an attribute — assert the property, which is what actually removes the
+    // subtree from focus and pointer reach.
+    expect(hiddenBranch?.inert).toBe(true);
+
+    const zoomedBranch = screen.getByTestId("panel-files").closest(".tabbed-panel-split-child");
+    expect(zoomedBranch?.classList.contains("zoomed")).toBe(true);
+    expect(zoomedBranch?.hasAttribute("hidden")).toBe(false);
+  });
+
+  it("reports a zoom-hidden active panel as not visible", () => {
+    // The regression this guards: leaf-a's active tab is 'detail', so a
+    // per-leaf visibility check would say visible even though an ancestor's
+    // other branch holds the zoom. The inline workspace's host placement and
+    // focus read this flag.
+    render(TabbedPanelTreeTestHarness, { node: splitTree(), zoomedLeafID: "leaf-b" });
+
+    expect(screen.getByTestId("panel-detail").dataset.active).toBe("false");
+    expect(screen.getByTestId("panel-files").dataset.active).toBe("true");
+  });
+
+  it("marks the active panel visible when nothing is zoomed", () => {
+    render(TabbedPanelTreeTestHarness, { node: splitTree() });
+
+    expect(screen.getByTestId("panel-detail").dataset.active).toBe("true");
+    expect(screen.getByTestId("panel-files").dataset.active).toBe("true");
+  });
+
+  it("removes the divider on the path to a zoomed leaf", () => {
+    // Leaving it rendered would put a draggable handle over a supposedly
+    // full-size pane, silently changing a ratio the user cannot see.
+    render(TabbedPanelTreeTestHarness, { node: splitTree(), zoomedLeafID: "leaf-b" });
+    expect(screen.queryByRole("separator", { name: "Resize test split" })).toBeNull();
+  });
+
+  it("keeps the divider when no leaf is zoomed", () => {
+    render(TabbedPanelTreeTestHarness, { node: splitTree() });
+    expect(screen.getByRole("separator", { name: "Resize test split" })).toBeTruthy();
+  });
+
+  it("ignores a zoom naming a leaf outside the tree", () => {
+    render(TabbedPanelTreeTestHarness, { node: splitTree(), zoomedLeafID: "leaf-ghost" });
+
+    expect(screen.getByRole("separator", { name: "Resize test split" })).toBeTruthy();
+    for (const child of document.querySelectorAll(".tabbed-panel-split-child")) {
+      expect(child.hasAttribute("hidden")).toBe(false);
+    }
+  });
+
+  it("renders one leaf action cluster per leaf, carrying that leaf's id", () => {
+    render(TabbedPanelTreeTestHarness, { node: splitTree(), withLeafActions: true });
+
+    expect(screen.getAllByTestId("tabbed-panel-leaf-actions")).toHaveLength(2);
+    expect(screen.getByTestId("leaf-action-leaf-a")).toBeTruthy();
+    expect(screen.getByTestId("leaf-action-leaf-b")).toBeTruthy();
+  });
+
+  it("omits the cluster entirely when no leafActions snippet is supplied", () => {
+    // How the narrow flattened renderer suppresses structural controls: it
+    // simply does not pass the snippet.
+    render(TabbedPanelTreeTestHarness, { node: splitTree() });
+    expect(screen.queryByTestId("tabbed-panel-leaf-actions")).toBeNull();
+  });
+
+  it("lets a leaf action act on its own leaf", async () => {
+    const onLeafAction = vi.fn();
+    render(TabbedPanelTreeTestHarness, {
+      node: splitTree(),
+      withLeafActions: true,
+      onLeafAction,
+    });
+
+    await fireEvent.click(screen.getByTestId("leaf-action-leaf-a"));
+    expect(onLeafAction).toHaveBeenCalledWith("leaf-a");
+  });
+
+  it("disables a leaf action that cannot apply to a single-tab leaf", () => {
+    render(TabbedPanelTreeTestHarness, { node: splitTree(), withLeafActions: true });
+
+    expect(screen.getByTestId("leaf-action-leaf-b").hasAttribute("disabled")).toBe(true);
+    expect(screen.getByTestId("leaf-action-leaf-a").hasAttribute("disabled")).toBe(false);
+  });
+});

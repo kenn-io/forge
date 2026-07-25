@@ -2,6 +2,7 @@ import {
   activateTabbedPanelTab,
   appendTabbedPanelTabToLeaf,
   collectTabbedPanelLeafIDs,
+  findTabbedPanelLeafByID,
   findTabbedPanelLeafByTab,
   moveTabbedPanelTabBefore,
   parseTabbedPanelLayout,
@@ -157,7 +158,18 @@ export function createPaneLayoutStore(
       const hiddenTabKeys = hidden
         ? [...state.hiddenTabKeys, tabKey]
         : state.hiddenTabKeys.filter((key) => key !== tabKey);
-      commit({ ...state, hiddenTabKeys });
+      // Hiding the last visible tab of the zoomed leaf must clear the zoom, not
+      // just mask it. Closing a maximized pane would otherwise leave a stored
+      // zoom naming a leaf with nothing in it, and any consumer reading the
+      // stored value — the workspace dock-mode derivation reports "expanded" —
+      // would disagree with what is on screen.
+      const zoomedLeaf = state.zoomedLeafID ? findTabbedPanelLeafByID(state.tree, state.zoomedLeafID) : null;
+      const zoomStillHasContent = zoomedLeaf === null || zoomedLeaf.tabs.some((key) => !hiddenTabKeys.includes(key));
+      commit({
+        ...state,
+        hiddenTabKeys,
+        zoomedLeafID: zoomStillHasContent ? state.zoomedLeafID : null,
+      });
     },
 
     reset: () => commit(parseTabbedPanelLayout(null, knownTabs, defaultTree)),

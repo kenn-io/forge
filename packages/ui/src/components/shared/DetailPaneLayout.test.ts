@@ -138,6 +138,56 @@ describe("detail pane layout", () => {
     expect(screen.queryByRole("button", { name: "Show Workspace" })).toBeNull();
   });
 
+  it("offers a close control on a hideable pane, completing the round trip", () => {
+    // Deleting the workspace dock removes its close button; without this the
+    // reopen strip would be a one-way door out of a state nothing can enter.
+    const layout = store(splitTree());
+    render(DetailPaneLayoutTestHarness, { layout });
+
+    fireEvent.click(screen.getByTestId("pane-hide-workspace"));
+    expect(layout.hiddenTabKeys()).toContain("workspace");
+    expect(screen.queryByTestId("pane-workspace")).toBeNull();
+  });
+
+  it("offers no close control on a pane that is not hideable", () => {
+    render(DetailPaneLayoutTestHarness, { layout: store(splitTree()) });
+    expect(screen.queryByTestId("pane-hide-conversation")).toBeNull();
+  });
+
+  it("clears the zoom when the maximized pane is closed", () => {
+    // Otherwise the stored zoom names a leaf with nothing left in it, and a
+    // consumer reading it — the workspace dock-mode derivation — reports
+    // "expanded" while the pane is gone from the screen.
+    const layout = store(splitTree());
+    render(DetailPaneLayoutTestHarness, { layout });
+
+    fireEvent.click(screen.getAllByTestId("pane-toggle-zoom")[1]!);
+    expect(layout.zoomedLeafID()).toBe("leaf-workspace");
+
+    fireEvent.click(screen.getByTestId("pane-hide-workspace"));
+    expect(layout.zoomedLeafID()).toBeNull();
+  });
+
+  it("keeps a zoom when a closed pane shared its leaf with a survivor", () => {
+    const layout = store(mergedTree());
+    render(DetailPaneLayoutTestHarness, { layout });
+
+    fireEvent.click(screen.getByTestId("pane-toggle-zoom"));
+    fireEvent.click(screen.getByTestId("pane-hide-workspace"));
+
+    expect(layout.zoomedLeafID()).toBe("leaf-all");
+  });
+
+  it("marks each leaf's own tab selected so a split has no unselected tablist", () => {
+    render(DetailPaneLayoutTestHarness, { layout: store(splitTree()) });
+
+    // Keying this to one tree-wide value would leave the workspace leaf's
+    // tablist reporting nothing selected.
+    expect(screen.getByRole("tab", { name: "Conversation" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("tab", { name: "Workspace" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("tab", { name: "Files" }).getAttribute("aria-selected")).toBe("false");
+  });
+
   it("records the focused tab and notifies the surface on a tab click", () => {
     const layout = store(mergedTree());
     const onSelectTab = vi.fn();

@@ -385,7 +385,7 @@ function uniqueTabbedPanelTabs(tabs: string[]): string[] {
   return unique;
 }
 
-function findTabbedPanelLeafByID(node: TabbedPanelNode | null, leafID: string): TabbedPanelLeaf | null {
+export function findTabbedPanelLeafByID(node: TabbedPanelNode | null, leafID: string): TabbedPanelLeaf | null {
   if (!node) return null;
   if (node.type === "leaf") {
     return node.id === leafID ? node : null;

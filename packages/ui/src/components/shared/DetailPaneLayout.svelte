@@ -2,6 +2,7 @@
   import type { Snippet } from "svelte";
   import { Button } from "@kenn-io/kit-ui";
   import ChevronsUpIcon from "@lucide/svelte/icons/chevrons-up";
+  import XIcon from "@lucide/svelte/icons/x";
   import PaneLeafActions from "./PaneLeafActions.svelte";
   import TabbedPanelTree from "./TabbedPanelTree.svelte";
   import {
@@ -42,6 +43,7 @@
   let hostWidth = $state(0);
 
   const availableTabs = $derived(tabs.filter((tab) => tab.available).map((tab) => tab.key));
+  const hideableTabKeys = $derived(tabs.filter((tab) => tab.hideable === true).map((tab) => tab.key));
   const descriptors = $derived<TabbedPanelDescriptor[]>(
     tabs.filter((tab) => tab.available).map((tab) => ({ key: tab.key, label: tab.label })),
   );
@@ -100,6 +102,7 @@
         resizeLabel="Resize detail panes"
         dropTargetsLabel="Detail pane drop targets"
         tabIcon={paneIcon}
+        tabActions={hideableTabKeys.length > 0 ? tabActions : undefined}
         {zoomedLeafID}
         onSelectTab={selectTab}
         onRatioChange={flattened ? undefined : (splitID, ratio) => layout.setRatio(splitID, ratio)}
@@ -134,6 +137,23 @@
     </div>
   {/each}
 </div>
+
+{#snippet tabActions(tab: TabbedPanelDescriptor)}
+  {#if hideableTabKeys.includes(tab.key)}
+    <!-- The only way INTO the hidden state. Deleting the workspace dock removes
+         its close button, and the reopen strip alone would be a one-way door. -->
+    <button
+      class="tabbed-panel-tab-tool"
+      type="button"
+      title={`Hide ${tab.label}`}
+      aria-label={`Hide ${tab.label}`}
+      data-testid={`pane-hide-${tab.key}`}
+      onclick={() => layout.setHidden(tab.key, true)}
+    >
+      <XIcon size="11" strokeWidth="2.3" aria-hidden="true" />
+    </button>
+  {/if}
+{/snippet}
 
 {#snippet leafActions(leaf: TabbedPanelLeaf)}
   <PaneLeafActions

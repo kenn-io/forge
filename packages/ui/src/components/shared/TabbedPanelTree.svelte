@@ -490,6 +490,11 @@
               aria-hidden="true"
             ></div>
           {/if}
+          <!-- aria-selected below reads this leaf's own activeTabKey, not the
+               tree-wide one: a split renders one tablist per leaf, so a single
+               shared value leaves every other tablist reporting nothing
+               selected — and under a zoom can leave the only visible tablist
+               with no selected tab while the selected one sits hidden. -->
           <div
             class={[
               "tabbed-panel-tab",
@@ -512,7 +517,7 @@
               ondragstart={(event) => startTabDrag(event, tab)}
               ondragend={finishTabDrag}
               ondblclick={() => onTabDoubleClick?.(tab.key)}
-              aria-selected={activeTabKey === tab.key}
+              aria-selected={node.activeTabKey === tab.key}
               aria-label={tab.status ? `${tab.label}, ${tab.status.label}` : tab.label}
               role="tab"
               onclick={() => onSelectTab?.(tab.key)}

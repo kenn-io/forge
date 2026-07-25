@@ -237,7 +237,10 @@ A wire call issued during repository sync routes by repository even when the
 endpoint itself is host-scoped (`/users/{login}` for author display names).
 Owner-only and App-only configurations have no host fallback route, so a
 fallback-only lookup fails for every repository and, where a fallback does
-exist, spends the wrong identity's budget
+exist, spends the wrong identity's budget. Such a call must also pass
+`tokenauth.WithGitHubOwner`: the transport derives the owner from the request
+path, so an ownerless path silently skips the App candidate and pays with the
+PAT for a read the route's tracker bills to the installation
 (`internal/github/auth_router.go::RoutedClient.GetUserForRepo`).
 
 Managed Git uses exact-repository or owner PAT routes with mutation context and

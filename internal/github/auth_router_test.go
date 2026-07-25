@@ -25,6 +25,8 @@ type routeRecordingClient struct {
 	snapshotErr    error
 	snapshotSource tokenauth.Source
 	snapshotToken  string
+	userSource     tokenauth.Source
+	userToken      string
 }
 
 func (c *routeRecordingClient) GetRepository(
@@ -58,9 +60,16 @@ func (c *routeRecordingClient) GetMarkdownImage(
 }
 
 func (c *routeRecordingClient) GetUser(
-	_ context.Context, login string,
+	ctx context.Context, login string,
 ) (*gh.User, error) {
 	c.calls = append(c.calls, "user:"+login)
+	if c.userSource != nil {
+		token, err := c.userSource.Token(ctx)
+		if err != nil {
+			return nil, err
+		}
+		c.userToken = token
+	}
 	name := c.marker + " display"
 	return &gh.User{Login: new(login), Name: new(name)}, nil
 }
@@ -235,6 +244,51 @@ func TestDisplayNameLookupUsesRepositoryCredentialWithoutHostFallback(t *testing
 	assert.Equal([]string{"user:octocat"}, exact.calls)
 	assert.Empty(owner.calls,
 		"the repository's own credential pays for the lookup")
+}
+
+// An App-backed repository route must mint its installation token for the
+// user lookup. `/users/{login}` carries no owner in its path, so the transport
+// derives none and the App candidate is skipped for the PAT unless the caller
+// supplies owner context — silently spending the user's budget for a read the
+// route's tracker bills to the installation.
+func TestRepositoryRoutedUserLookupUsesAppInstallationToken(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	t.Setenv("USER_LOOKUP_PAT", "user-token")
+	source := tokenauth.NewManagedSource(tokenauth.Descriptor{
+		Key: tokenauth.Key{
+			Platform: "github", Host: "github.com", Scope: "repo:acme/widget",
+		},
+		Candidates: []tokenauth.Candidate{
+			{
+				Kind: tokenauth.SourceKindGitHubApp, Host: "github.com",
+				AppID: 1, InstallationID: 2, InstallationAccount: "acme",
+			},
+			{Kind: tokenauth.SourceKindEnv, EnvName: "USER_LOOKUP_PAT"},
+		},
+	}, tokenauth.Options{GitHubApp: func(
+		context.Context, tokenauth.Candidate,
+	) (string, time.Time, error) {
+		return "installation-token", time.Now().Add(time.Hour), nil
+	}})
+	exact := &routeRecordingClient{marker: "exact", userSource: source}
+	router, err := NewHostRouter("github.com", &Route{
+		Key:    RouteKey{Host: "github.com", Owner: "acme", Name: "widget"},
+		Client: exact,
+		ReadIdentity: IdentityKey{
+			Host: "github.com", Principal: "installation:2",
+		},
+	})
+	require.NoError(err)
+	routed, err := NewRoutedClient(router)
+	require.NoError(err)
+
+	user, err := routed.GetUserForRepo(t.Context(), "acme", "widget", "octocat")
+	require.NoError(err)
+
+	require.NotNil(user)
+	assert.Equal("installation-token", exact.userToken,
+		"the installation the route bills is the one that pays for the read")
 }
 
 func TestSyncerRateSnapshotScopesAppRouteToOwner(t *testing.T) {

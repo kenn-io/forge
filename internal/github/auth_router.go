@@ -9,6 +9,7 @@ import (
 
 	gh "github.com/google/go-github/v88/github"
 	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/middleman/internal/tokenauth"
 )
 
 // RouteKey identifies one configuration-bounded GitHub authorization route.
@@ -530,6 +531,10 @@ func (c *RoutedClient) GetUser(ctx context.Context, login string) (*gh.User, err
 // repository keeps owner-only and App-only configurations — which have no host
 // fallback route — able to read /users at all, and bills the request to the
 // identity whose repository triggered it.
+// The owner must be supplied explicitly: `/users/{login}` carries no owner in
+// its path, so the transport derives none and an App candidate — which only
+// mints for a matching installation account — would be skipped in favor of the
+// PAT, spending the user's budget on a read billed to the installation.
 func (c *RoutedClient) GetUserForRepo(
 	ctx context.Context, owner, repo, login string,
 ) (*gh.User, error) {
@@ -537,7 +542,7 @@ func (c *RoutedClient) GetUserForRepo(
 	if err != nil {
 		return nil, err
 	}
-	return client.GetUser(ctx, login)
+	return client.GetUser(tokenauth.WithGitHubOwner(ctx, owner), login)
 }
 
 func (c *RoutedClient) ListNotifications(ctx context.Context, opts NotificationListOptions) ([]NotificationThread, bool, error) {

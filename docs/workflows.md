@@ -80,7 +80,8 @@ ongoing work.
 
 New work does not need an existing pull request, issue, or Kata task. Use **New
 workspace** in the Workspaces sidebar, or the same command in the palette
-(Cmd/Ctrl+K), to pick a tracked repository and start a fresh worktree. Name the
+(Cmd/Ctrl+K), to pick a tracked repository and start a fresh worktree. The
+picker preselects the repository you last started work in. Name the
 branch or leave it empty and middleman generates one; either way the worktree
 branches from the repository's default branch.
 

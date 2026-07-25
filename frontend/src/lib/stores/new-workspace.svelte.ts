@@ -9,6 +9,11 @@ export type NewWorkspaceRepoSeed = {
   name: string;
 };
 
+// Repo of the last workspace started from the dialog. Ad-hoc work tends to
+// repeat in the same repository, so the picker prefers it whenever the caller
+// did not supply a more specific seed.
+const LAST_REPO_STORAGE_KEY = "middleman:workspace:new_repo";
+
 let open = $state(false);
 let seedRepo = $state<NewWorkspaceRepoSeed | null>(null);
 
@@ -30,6 +35,25 @@ export function isNewWorkspaceDialogOpen(): boolean {
 // currently open in the sidebar).
 export function getNewWorkspaceSeedRepo(): NewWorkspaceRepoSeed | null {
   return seedRepo;
+}
+
+// Repository key (`provider/host/owner/name`) of the last created workspace,
+// or an empty string when nothing was created on this machine yet.
+export function getLastUsedNewWorkspaceRepoKey(): string {
+  try {
+    return localStorage.getItem(LAST_REPO_STORAGE_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+export function rememberNewWorkspaceRepoKey(key: string): void {
+  try {
+    if (key) localStorage.setItem(LAST_REPO_STORAGE_KEY, key);
+    else localStorage.removeItem(LAST_REPO_STORAGE_KEY);
+  } catch {
+    // Storage can be disabled; the next open just falls back to the first repo.
+  }
 }
 
 export function resetNewWorkspaceDialogState(): void {

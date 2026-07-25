@@ -6,7 +6,11 @@
   import Modal from "../shared/Modal.svelte";
   import { apiErrorMessage, client } from "../../api/runtime.js";
   import { navigate } from "../../stores/router.svelte.js";
-  import type { NewWorkspaceRepoSeed } from "../../stores/new-workspace.svelte.js";
+  import {
+    getLastUsedNewWorkspaceRepoKey,
+    rememberNewWorkspaceRepoKey,
+    type NewWorkspaceRepoSeed,
+  } from "../../stores/new-workspace.svelte.js";
 
   // Starts new work in a tracked repository without a pull request, issue, or
   // Kata task: pick the repo, optionally name the branch, and middleman
@@ -78,10 +82,13 @@
         return;
       }
       repos = (data ?? []).map(repoOption);
-      const preferred = seedKey(seedRepo);
-      selectedKey = repos.some((repo) => repo.key === preferred)
-        ? preferred
-        : (repos[0]?.key ?? "");
+      // Prefer the repo the caller pointed at, then the last one work was
+      // started in, then whatever is first in the list.
+      const candidates = [seedKey(seedRepo), getLastUsedNewWorkspaceRepoKey()];
+      selectedKey =
+        candidates.find((key) => key && repos.some((repo) => repo.key === key)) ??
+        repos[0]?.key ??
+        "";
     });
   });
 
@@ -143,6 +150,7 @@
         return;
       }
       const workspaceId = data.id;
+      rememberNewWorkspaceRepoKey(repo.key);
       onClose();
       if (onCreated) onCreated(workspaceId);
       else navigate(`/terminal/${workspaceId}`);

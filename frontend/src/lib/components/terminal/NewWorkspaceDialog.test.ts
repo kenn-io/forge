@@ -51,6 +51,7 @@ async function pickRepo(label: string): Promise<void> {
 
 describe("NewWorkspaceDialog", () => {
   beforeEach(() => {
+    localStorage.clear();
     mockGet.mockReset();
     mockPost.mockReset();
     mockNavigate.mockReset();
@@ -107,6 +108,39 @@ describe("NewWorkspaceDialog", () => {
     await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(1));
     const [, options] = mockPost.mock.calls[0] as [string, { params: { path: Record<string, string> } }];
     expect(options.params.path.name).toBe("gadget");
+  });
+
+  it("defaults to the repo work was last started in", async () => {
+    await renderDialog();
+    await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
+    await pickRepo("acme/gadget");
+    await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
+    await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(1));
+    cleanup();
+
+    await renderDialog();
+    await waitFor(() => expect(repoPicker().textContent).toContain("acme/gadget"));
+  });
+
+  it("prefers the seeded repo over the last used one", async () => {
+    await renderDialog();
+    await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
+    await pickRepo("acme/gadget");
+    await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
+    await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(1));
+    cleanup();
+
+    await renderDialog({
+      seedRepo: { provider: "github", platformHost: "github.com", owner: "acme", name: "widget" },
+    });
+    await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
+  });
+
+  it("falls back to the first repo when the last used one is no longer tracked", async () => {
+    localStorage.setItem("middleman:workspace:new_repo", "github/github.com/acme/retired");
+    await renderDialog();
+
+    await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
   });
 
   it("preselects the seeded repo", async () => {

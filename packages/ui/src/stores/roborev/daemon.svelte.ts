@@ -25,8 +25,12 @@ export function createDaemonStore(opts: DaemonStoreOptions) {
   let maxWorkers = $state(0);
   let pollHandle: ReturnType<typeof setTimeout> | null = null;
   let pollGeneration = 0;
+  let activeHealthCheck: {
+    generation: number;
+    result: Promise<boolean>;
+  } | null = null;
 
-  async function checkHealthForGeneration(generation: number): Promise<boolean> {
+  async function runHealthCheckForGeneration(generation: number): Promise<boolean> {
     const isCurrent = () => generation === pollGeneration;
     if (!isCurrent()) return false;
 
@@ -78,6 +82,20 @@ export function createDaemonStore(opts: DaemonStoreOptions) {
       opts.onRecover?.();
     }
     return recovered;
+  }
+
+  function checkHealthForGeneration(generation: number): Promise<boolean> {
+    if (generation !== pollGeneration) return Promise.resolve(false);
+    if (activeHealthCheck?.generation === generation) return activeHealthCheck.result;
+
+    const result = runHealthCheckForGeneration(generation);
+    const check = { generation, result };
+    activeHealthCheck = check;
+    const clear = () => {
+      if (activeHealthCheck === check) activeHealthCheck = null;
+    };
+    void result.then(clear, clear);
+    return result;
   }
 
   async function checkHealth(): Promise<void> {

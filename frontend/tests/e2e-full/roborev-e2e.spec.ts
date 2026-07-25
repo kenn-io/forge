@@ -1235,12 +1235,22 @@ test.describe.serial("Roborev", () => {
       expect(count).toBeGreaterThan(0);
     });
 
-    test("status strip shows connected after recovery", async ({ page }) => {
+    test("event stream waits for daemon recovery before connecting", async ({ page }) => {
+      let healthRequests = 0;
+      let eventStreamRequests = 0;
+      page.on("request", (request) => {
+        const pathname = new URL(request.url()).pathname;
+        if (pathname.endsWith("/roborev/status")) healthRequests += 1;
+        if (pathname.endsWith("/api/roborev/api/stream/events")) eventStreamRequests += 1;
+      });
+
       stopDaemon();
       await page.goto("/reviews");
       await expect(page.locator(".kit-empty-state")).toBeVisible({
         timeout: 15_000,
       });
+      await expect.poll(() => healthRequests).toBeGreaterThanOrEqual(2);
+      expect(eventStreamRequests).toBe(0);
 
       startDaemon();
       await expect(page.locator(".kit-empty-state")).not.toBeVisible({
@@ -1250,6 +1260,8 @@ test.describe.serial("Roborev", () => {
         timeout: 15_000,
       });
       await waitForJobRows(page, 1);
+      await expect.poll(countRoborevDaemonEventStreams).toBe(1);
+      expect(eventStreamRequests).toBeGreaterThan(0);
     });
 
     test("recovery from empty state then open drawer", async ({ page }) => {

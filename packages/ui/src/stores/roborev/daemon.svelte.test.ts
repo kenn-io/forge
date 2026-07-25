@@ -5,6 +5,66 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import { createDaemonStore } from "./daemon.svelte.js";
 
 describe("createDaemonStore", () => {
+  it("shares an in-flight poll with a manual health check", async () => {
+    let resolveHealth!: (response: {
+      data: {
+        available: boolean;
+        endpoint: string;
+        version: string;
+      };
+    }) => void;
+    const health = new Promise<{
+      data: {
+        available: boolean;
+        endpoint: string;
+        version: string;
+      };
+    }>((resolve) => {
+      resolveHealth = resolve;
+    });
+    const middlemanGet = vi.fn().mockReturnValue(health);
+    const roborevGet = vi.fn().mockResolvedValue({
+      data: {
+        active_workers: 0,
+        applied_jobs: 0,
+        canceled_jobs: 0,
+        completed_jobs: 0,
+        failed_jobs: 0,
+        max_workers: 1,
+        queue_paused: false,
+        queued_jobs: 0,
+        rebased_jobs: 0,
+        running_jobs: 0,
+        skipped_jobs: 0,
+        version: "test",
+      },
+    });
+    const store = createDaemonStore({
+      client: { GET: roborevGet } as unknown as RoborevClient,
+      middlemanClient: { GET: middlemanGet } as unknown as MiddlemanClient,
+    });
+
+    try {
+      store.startPolling();
+      const retry = store.checkHealth();
+
+      expect(middlemanGet).toHaveBeenCalledTimes(1);
+
+      resolveHealth({
+        data: {
+          available: true,
+          endpoint: "http://roborev:7373",
+          version: "test",
+        },
+      });
+      await retry;
+
+      expect(store.isAvailable()).toBe(true);
+    } finally {
+      store.stopPolling();
+    }
+  });
+
   it("ignores health responses from a stopped polling generation", async () => {
     let resolveOldHealth!: (response: {
       data: {

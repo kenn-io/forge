@@ -100,3 +100,31 @@ func TestPlatformAuthResolverOwnerTokenOnlyIsAuthenticated(t *testing.T) {
 	require.True(platformAuthResolver(handler.snapshotPlatformAuthConfig)(),
 		"an owner PAT is a usable platform credential")
 }
+
+// Before any repository is imported, an owner PAT is the whole configuration.
+// Resolving only tracked repositories reports that state as unauthenticated,
+// which is exactly when a maintainer is looking at Fleet to confirm the daemon
+// can reach the platform.
+func TestPlatformAuthResolverStandaloneOwnerRouteIsAuthenticated(t *testing.T) {
+	require := require.New(t)
+	t.Setenv("MIDDLEMAN_PLATFORM_AUTH_TEST_STANDALONE_PAT", "owner-tok")
+	handler := &Handler{}
+	handler.ApplyConfig(ConfigSnapshot{
+		PlatformAuthEnabled: true,
+		PlatformAuthConfig: config.Config{
+			GitHubTokenEnv:      "MIDDLEMAN_PLATFORM_AUTH_TEST_ABSENT",
+			DefaultPlatformHost: "github.example.com",
+			GitHubOwnerTokens: []config.GitHubOwnerTokenConfig{{
+				Host:     "github.example.com",
+				Owner:    "acme",
+				TokenEnv: "MIDDLEMAN_PLATFORM_AUTH_TEST_STANDALONE_PAT",
+			}},
+		},
+	})
+
+	snapshot := handler.snapshotPlatformAuthConfig()
+	require.NotNil(snapshot)
+	require.Empty(snapshot.Repos, "no repository is tracked yet")
+	require.True(platformAuthResolver(handler.snapshotPlatformAuthConfig)(),
+		"a configured owner route means the platform backend can act")
+}

@@ -66,14 +66,15 @@ func platformAuthResolver(snapshot func() *config.Config) func() bool {
 			seen[key] = true
 			return cfg.TokenForPlatformHost(platform, host, tokenEnv) != ""
 		}
+		// Every declared credential route first. It is the only view that
+		// sees owner PATs and App installations, including standalone
+		// routes that no [[repos]] entry names, so a configuration served
+		// solely by an owner token is authenticated even though no
+		// host-level token exists.
+		if cfg.ConfiguredCredentialAvailable() {
+			return true
+		}
 		for _, repo := range cfg.Repos {
-			// The repository-aware chain first: it is the only one that
-			// sees owner PATs and App installations, so a repository
-			// served solely by an owner token is authenticated even
-			// though no host-level token exists.
-			if cfg.RepoConfiguredCredentialAvailable(repo) {
-				return true
-			}
 			if hasToken(
 				repo.PlatformOrDefault(), repo.PlatformHostOrDefault(),
 				repo.TokenEnv,

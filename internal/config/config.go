@@ -2113,20 +2113,30 @@ func (c *Config) ResolveRepoToken(r Repo) string {
 	)
 }
 
-// RepoConfiguredCredentialAvailable reports whether r's repository-aware
-// credential chain resolves to a configured credential right now, in the order
-// provider startup uses: repository override, covering GitHub App installation,
-// owner PAT, platform host token, then the host defaults. A readable App
-// private key counts, since it mints installation tokens on demand.
+// ConfiguredCredentialAvailable reports whether any credential route this
+// config declares resolves to a credential right now. It walks the same plans
+// provider startup registers, so it sees standalone owner PAT and App
+// installation routes that no [[repos]] entry names — those routes still serve
+// owner discovery and repository import.
 //
-// It deliberately ignores the `gh` CLI candidate: that fallback shells out and
-// is host-scoped, so pollers resolve it once per host through
-// TokenForPlatformHost rather than once per repository here.
-func (c *Config) RepoConfiguredCredentialAvailable(r Repo) bool {
+// A readable App private key counts, since it mints installation tokens on
+// demand. The `gh` CLI candidate is deliberately excluded: it shells out and is
+// host-scoped, so pollers resolve it once per host through TokenForPlatformHost
+// instead of once per route here.
+func (c *Config) ConfiguredCredentialAvailable() bool {
 	if c == nil {
 		return false
 	}
-	for _, candidate := range c.ResolveRepoTokenSource(r).Candidates {
+	for _, plan := range c.ProviderTokenSources() {
+		if descriptorCredentialAvailable(plan.Descriptor) {
+			return true
+		}
+	}
+	return false
+}
+
+func descriptorCredentialAvailable(desc tokenauth.Descriptor) bool {
+	for _, candidate := range desc.Candidates {
 		switch candidate.Kind {
 		case tokenauth.SourceKindEnv:
 			if os.Getenv(candidate.EnvName) != "" {

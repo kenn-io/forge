@@ -246,11 +246,11 @@ func candidateSafeStrings(desc tokenauth.Descriptor) []string {
 }
 
 // Fleet asks this question on a timer to report whether the platform backend
-// can act. It must see owner-scoped routes: a repository whose only credential
-// is its owner PAT is authenticated, and the same repository with that PAT
-// absent is not. The gh CLI candidate is excluded by contract, so both
+// can act. It must see owner-scoped routes: a configuration whose only
+// credential is an owner PAT is authenticated, and the same configuration with
+// that PAT absent is not. The gh CLI candidate is excluded by contract, so both
 // directions hold whether or not the developer is signed in to gh.
-func TestRepoConfiguredCredentialAvailableSeesOwnerTokenRoute(t *testing.T) {
+func TestConfiguredCredentialAvailableSeesOwnerTokenRoute(t *testing.T) {
 	assert := assert.New(t)
 	cfg, err := Load(writeConfig(t, `
 github_token_env = "MIDDLEMAN_OWNER_ROUTE_TEST_ABSENT_DEFAULT"
@@ -262,28 +262,44 @@ token_env = "MIDDLEMAN_OWNER_ROUTE_TEST_ACME_PAT"
 [[repos]]
 owner = "acme"
 name = "widgets"
-
-[[repos]]
-owner = "other"
-name = "thing"
 `))
 	require.NoError(t, err)
 
-	assert.False(cfg.RepoConfiguredCredentialAvailable(cfg.Repos[0]),
+	assert.False(cfg.ConfiguredCredentialAvailable(),
 		"an owner route whose PAT env is unset supplies no credential")
 
 	t.Setenv("MIDDLEMAN_OWNER_ROUTE_TEST_ACME_PAT", "acme-tok")
 
-	assert.True(cfg.RepoConfiguredCredentialAvailable(cfg.Repos[0]),
-		"the owner PAT is the repository's credential")
-	assert.False(cfg.RepoConfiguredCredentialAvailable(cfg.Repos[1]),
-		"an owner PAT must not authenticate a different owner")
+	assert.True(cfg.ConfiguredCredentialAvailable(),
+		"the owner PAT is a usable platform credential")
+}
+
+// An owner PAT or App installation that no [[repos]] entry names is still a
+// registered route: it serves owner discovery and repository import. Walking
+// only tracked repositories would report such a configuration as
+// unauthenticated, which is the state a maintainer is in before importing
+// anything.
+func TestConfiguredCredentialAvailableSeesRoutesWithoutTrackedRepos(t *testing.T) {
+	assert := assert.New(t)
+	t.Setenv("MIDDLEMAN_STANDALONE_OWNER_PAT", "standalone-tok")
+	cfg, err := Load(writeConfig(t, `
+github_token_env = "MIDDLEMAN_OWNER_ROUTE_TEST_ABSENT_DEFAULT"
+
+[[github_owner_tokens]]
+owner = "acme"
+token_env = "MIDDLEMAN_STANDALONE_OWNER_PAT"
+`))
+	require.NoError(t, err)
+	require.Empty(t, cfg.Repos)
+
+	assert.True(cfg.ConfiguredCredentialAvailable(),
+		"a standalone owner route is a usable platform credential")
 }
 
 // A readable App private key is a usable credential: startup mints
 // installation tokens from it on demand, so a host with only an App
 // installation is authenticated.
-func TestRepoConfiguredCredentialAvailableAcceptsAppPrivateKey(t *testing.T) {
+func TestConfiguredCredentialAvailableAcceptsAppPrivateKey(t *testing.T) {
 	assert := assert.New(t)
 	dir := t.TempDir()
 	keyPath := filepath.Join(dir, "app.pem")
@@ -304,11 +320,11 @@ name = "widgets"
 `))
 	require.NoError(t, err)
 
-	assert.True(cfg.RepoConfiguredCredentialAvailable(cfg.Repos[0]))
+	assert.True(cfg.ConfiguredCredentialAvailable())
 
 	require.NoError(t, os.WriteFile(keyPath, nil, 0o600))
 
-	assert.False(cfg.RepoConfiguredCredentialAvailable(cfg.Repos[0]),
+	assert.False(cfg.ConfiguredCredentialAvailable(),
 		"an empty private key file cannot mint installation tokens")
 }
 

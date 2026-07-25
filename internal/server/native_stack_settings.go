@@ -40,6 +40,12 @@ func (s *Server) reconcileGitHubNativeStackProjection(previous, enabled bool) {
 	// reconciliation restores branch inference.
 	reconciled := false
 	s.syncer.RunUnderStackProjection(func() {
+		// A later enable may have already landed and projected while this
+		// reconciliation waited for the lock. Replaying the older disable would
+		// overwrite the current preference's projection with branch inference.
+		if s.syncer.PrefersGitHubNativeStacks() {
+			return
+		}
 		for _, ref := range s.syncer.TrackedRepos() {
 			kind, err := platform.NormalizeKind(string(ref.Platform))
 			if err != nil || kind != platform.KindGitHub {

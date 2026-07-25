@@ -124,11 +124,12 @@ func TestRefreshGitHubNativeStackCacheStopsAfterTargetIsFoundOrPassed(t *testing
 		}
 	}
 	cases := []struct {
-		name          string
-		page          NativeStackPage
-		hintSize      int
-		wantConfirmed []int
-		wantCached    int
+		name              string
+		page              NativeStackPage
+		hintSize          int
+		wantConfirmed     []int
+		wantCached        int
+		wantInvalidations int32
 	}{
 		{
 			name: "target found on first page",
@@ -145,9 +146,11 @@ func TestRefreshGitHubNativeStackCacheStopsAfterTargetIsFoundOrPassed(t *testing
 			wantConfirmed: []int{}, wantCached: 0,
 		},
 		{
+			// A rejected row leaves the target unaccounted for, so the pass is
+			// partial: nothing projects and the next sync must re-list.
 			name:     "target resource disagrees with pull request size",
 			page:     NativeStackPage{Stacks: []NativeStack{stack(42)}},
-			hintSize: 3, wantConfirmed: []int{}, wantCached: 0,
+			hintSize: 3, wantConfirmed: nil, wantCached: 0, wantInvalidations: 1,
 		},
 	}
 	for _, tc := range cases {
@@ -176,6 +179,7 @@ func TestRefreshGitHubNativeStackCacheStopsAfterTargetIsFoundOrPassed(t *testing
 
 			assert.Equal(tc.wantConfirmed, result.ConfirmedNumbers)
 			assert.Equal([]int{1}, client.pageCalls)
+			assert.Equal(tc.wantInvalidations, client.invalidateCalls.Load())
 			cached, err := database.ListGitHubNativeStacks(t.Context(), repoID)
 			require.NoError(err)
 			assert.Len(cached, tc.wantCached)

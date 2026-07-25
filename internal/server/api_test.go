@@ -29960,3 +29960,111 @@ func TestMergeBlocksPredecessorRestoredWhenNativeStackAgesOut(t *testing.T) {
 	assert.Contains(string(mergeResp.Body), `"blocking_number":100`)
 	assert.False(merged, "the provider must not be asked to merge past an open predecessor")
 }
+
+// TestMergeBlocksPredecessorWhenNativeStackRefreshIsPartial is the full-stack
+// consequence of refusing to project a partial refresh. Stack 42 is confirmable
+// from cache and would place PR 101 behind a merged predecessor; stack 43 is
+// hinted but its catalog row is rejected, so nothing about it -- including
+// whether it also claims PR 101 -- is known. The pass must fall back to branch
+// inference, which restores the open predecessor the safeguard blocks on.
+func TestMergeBlocksPredecessorWhenNativeStackRefreshIsPartial(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Second)
+	repoCloneURL := "https://github.com/acme/widget.git"
+	makeGHPR := func(id int64, number int, head, base string) *gh.PullRequest {
+		sha := fmt.Sprintf("sha%d", number)
+		title := fmt.Sprintf("PR #%d", number)
+		return &gh.PullRequest{
+			ID: &id, Number: &number, State: new("open"), Title: &title,
+			Body: new(""), User: &gh.User{Login: new("testuser")},
+			CreatedAt: &gh.Timestamp{Time: now}, UpdatedAt: &gh.Timestamp{Time: now},
+			Head: &gh.PullRequestBranch{
+				Ref: &head, SHA: &sha,
+				Repo: &gh.Repository{CloneURL: &repoCloneURL},
+			},
+			Base: &gh.PullRequestBranch{Ref: &base, SHA: new("basesha")},
+		}
+	}
+	prs := []*gh.PullRequest{
+		makeGHPR(1000, 100, "feature/a", "main"),
+		makeGHPR(1001, 101, "feature/b", "feature/a"),
+		makeGHPR(1003, 103, "feature/c", "main"),
+	}
+	merged := false
+	mock := &mockGH{
+		getRepositoryFn: func(_ context.Context, owner, repo string) (*gh.Repository, error) {
+			nodeID := "repo-" + owner + "-" + repo
+			return &gh.Repository{
+				Name: &repo, NodeID: &nodeID, Owner: &gh.User{Login: &owner},
+				CloneURL: &repoCloneURL, Archived: new(false),
+			}, nil
+		},
+		mergePullRequestFn: func(_ context.Context, _, _ string, _ int, _, _, _ string) (*gh.PullRequestMergeResult, error) {
+			merged = true
+			return &gh.PullRequestMergeResult{}, nil
+		},
+		nativeStackAPI: &mockGHNativeStackAPI{
+			listOpenPullRequests: func(
+				context.Context, string, string,
+			) ([]*gh.PullRequest, map[int]*ghclient.NativeStackHint, error) {
+				return prs, map[int]*ghclient.NativeStackHint{
+					101: {Number: 42, Size: 2, Position: 2, BaseRef: "main"},
+					103: {Number: 43, Size: 1, Position: 1, BaseRef: "main"},
+				}, nil
+			},
+			listStackPage: func(
+				context.Context, string, string, int,
+			) (ghclient.NativeStackPage, error) {
+				// Stack 43 comes back naming a different pull request than the hint,
+				// so the row is rejected and the target stays unresolved.
+				return ghclient.NativeStackPage{Stacks: []ghclient.NativeStack{{
+					ID: 9043, Number: 43, BaseRef: "main", Open: true, CreatedAt: now,
+					Members: []ghclient.NativeStackMember{
+						{Position: 1, PullRequestNumber: 999, State: "open", HeadRef: "feature/x", HeadSHA: "sha999"},
+					},
+				}}}, nil
+			},
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	seedStackedPR(t, database, "acme", "widget", 900, "feature/z", "main", db.MergeRequestStateMerged, "", "")
+	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	require.NotNil(repo)
+	require.NoError(database.ReplaceGitHubNativeStack(ctx, db.GitHubNativeStack{
+		RepoID: repo.ID, GitHubID: 9042, Number: 42, Size: 2,
+		BaseRef: "main", IsOpen: true, GitHubCreatedAt: now,
+		ContentFingerprint: "native-42", LastObservedAt: now,
+		Members: []db.GitHubNativeStackMember{
+			{Position: 1, PullRequestNumber: 900, State: "merged", HeadRef: "feature/z", HeadSHA: "sha900"},
+			{Position: 2, PullRequestNumber: 101, State: "open", HeadRef: "feature/b", HeadSHA: "sha101"},
+		},
+	}))
+	srv.syncer.SetPreferGitHubNativeStacks(true)
+	srv.syncer.SetOnSyncCompleted(stacks.SyncCompletedHook(ctx, database, nil))
+	client := setupTestClient(t, srv)
+
+	srv.syncer.RunOnce(ctx)
+
+	stackResp, err := client.HTTP.GetPullStackWithResponse(ctx, "gh", "acme", "widget", 101)
+	require.NoError(err)
+	require.Equal(http.StatusOK, stackResp.StatusCode(), string(stackResp.Body))
+	require.NotNil(stackResp.JSON200)
+	require.NotNil(stackResp.JSON200.Members)
+	assert.Equal([]int64{100, 101}, stackMemberNumbers(*stackResp.JSON200.Members),
+		"a pass that could not resolve every stack must project none of them")
+
+	tipHeadSHA := "sha101"
+	mergeResp, err := client.HTTP.MergePullWithResponse(
+		ctx, "gh", "acme", "widget", 101,
+		generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &tipHeadSHA},
+	)
+	require.NoError(err)
+
+	assert.Equal(http.StatusConflict, mergeResp.StatusCode(), string(mergeResp.Body))
+	assert.Contains(string(mergeResp.Body), `"reason":"mid_stack_merge_disallowed"`)
+	assert.Contains(string(mergeResp.Body), `"blocking_number":100`)
+	assert.False(merged, "the provider must not be asked to merge past an open predecessor")
+}

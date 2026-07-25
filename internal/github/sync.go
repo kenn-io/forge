@@ -2815,6 +2815,14 @@ func (s *Syncer) SetFetchers(fetchers map[string]*GraphQLFetcher) {
 	s.fetchers = fetchers
 }
 
+// PrefersGitHubNativeStacks reports the preference currently in force. Callers
+// reconciling a past transition recheck it under the projection lock: a newer
+// transition may have already landed and projected, and replaying the older
+// decision would overwrite it.
+func (s *Syncer) PrefersGitHubNativeStacks() bool {
+	return s.preferGitHubNativeStacks.Load()
+}
+
 // SetClock replaces the syncer's time source. Cache aging bounds -- notably the
 // native-stack observation window -- span hours, so callers that need to observe
 // those transitions inject a clock instead of waiting. The field is read without

@@ -2712,3 +2712,56 @@ prefer_github_native_stacks = true
 	assert.Equal([]int64{10, 11}, stackMemberNumbers(*after.JSON200.Members),
 		"committed-state reconciliation must not depend on the request context")
 }
+
+// TestReconcileNativeStackProjectionSkipsSupersededDisable covers the window
+// between the swap and the projection lock. A disable that lost the race to a
+// later enable must not replay: the enable has already published native
+// ordering, and replaying branch inference over it would leave the projection
+// disagreeing with the preference until another sync.
+func TestReconcileNativeStackProjectionSkipsSupersededDisable(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, database, _ := setupTestServerWithConfigContent(t, `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "widget"
+
+[pull_requests]
+prefer_github_native_stacks = true
+`, &mockGH{})
+	ctx := t.Context()
+	seedStackedPR(t, database, "acme", "widget", 10, "feat/base", "main", db.MergeRequestStateOpen, "", "")
+	seedStackedPR(t, database, "acme", "widget", 11, "feat/tip", "feat/base", db.MergeRequestStateOpen, "", "")
+	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	require.NotNil(repo)
+	now := time.Now().UTC()
+	require.NoError(database.ReplaceGitHubNativeStack(ctx, db.GitHubNativeStack{
+		RepoID: repo.ID, GitHubID: 9001, Number: 42, Size: 2,
+		BaseRef: "main", IsOpen: true, GitHubCreatedAt: now,
+		ContentFingerprint: "native", LastObservedAt: now,
+		Members: []db.GitHubNativeStackMember{
+			{Position: 1, PullRequestNumber: 11, State: "open", HeadRef: "feat/tip", HeadSHA: "sha11"},
+			{Position: 2, PullRequestNumber: 10, State: "open", HeadRef: "feat/base", HeadSHA: "sha10"},
+		},
+	}))
+	require.NoError(stacks.RunDetectionWithNativeStacks(ctx, database, repo.ID, []int{42}))
+	client := setupTestClientWithBaseURL(t, srv, "http://127.0.0.1:8091")
+	require.True(srv.syncer.PrefersGitHubNativeStacks())
+
+	// A disable observed the enabled value, but by the time it reaches
+	// reconciliation a later enable has already won the swap.
+	srv.reconcileGitHubNativeStackProjection(true, false)
+
+	after, err := client.HTTP.GetPullStackWithResponse(ctx, "gh", "acme", "widget", 10)
+	require.NoError(err)
+	require.NotNil(after.JSON200)
+	require.NotNil(after.JSON200.Members)
+	assert.Equal([]int64{11, 10}, stackMemberNumbers(*after.JSON200.Members),
+		"a superseded disable must not overwrite the projection the current preference produced")
+}

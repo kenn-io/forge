@@ -225,11 +225,16 @@ func (s *Syncer) refreshGitHubNativeStackCache(
 				continue
 			}
 			delete(targets, stack.Number)
+			// A dropped target that was never persisted leaves membership this
+			// pass cannot account for, exactly like a fetch failure: the stack is
+			// still out there and may share pull requests with the stacks that did
+			// confirm, so the refresh is partial however the row was rejected.
 			if err := validateNativeStack(stack); err != nil {
 				slog.Warn("ignore malformed github native stack",
 					"platform", repoPlatform(repo), "host", repoHost(repo),
 					"repo", repo.Owner+"/"+repo.Name,
 					"stack_number", stack.Number, "err", err)
+				complete = false
 				continue
 			}
 			if !nativeStackMatchesCurrentHints(stack, hints) {
@@ -237,6 +242,7 @@ func (s *Syncer) refreshGitHubNativeStackCache(
 					"platform", repoPlatform(repo), "host", repoHost(repo),
 					"repo", repo.Owner+"/"+repo.Name,
 					"stack_number", stack.Number)
+				complete = false
 				continue
 			}
 			if err := s.db.ReplaceGitHubNativeStack(ctx, dbGitHubNativeStack(repoID, stack, s.now().UTC())); err != nil {

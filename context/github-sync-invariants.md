@@ -166,7 +166,9 @@ fallback repository listing.
   concurrent writers cannot reconcile twice or not at all. The swap happens under
   cfgMu so the preference order matches the persisted order, and the
   reconciliation that follows the unlock is committed-state work: it runs on the
-  server-lifecycle context, never the request's.
+  server-lifecycle context, never the request's, and rechecks the current
+  preference under the projection lock so a disable that lost to a later enable
+  cannot replay over it.
   (`internal/server/native_stack_settings.go::reconcileGitHubNativeStackProjection`,
   `internal/github/sync.go::SetPreferGitHubNativeStacks`)
 - Preview-only GraphQL fields must be absent from disabled query shapes;
@@ -195,7 +197,9 @@ fallback repository listing.
   sync retries. It also projects nothing for that pass, not the subset it did
   confirm: an unresolved stack is invisible to the overlap scan, so a confirmed
   stack could claim a pull request the unresolved one holds and hide its
-  predecessor. (`internal/github/native_stack_sync.go::refreshGitHubNativeStackCache`)
+  predecessor. A target dropped without being persisted -- fetch failure,
+  malformed row, or disagreement with current hints -- makes the pass partial.
+  (`internal/github/native_stack_sync.go::refreshGitHubNativeStackCache`)
 - Native results carry the preference generation and project under the shared
   stack-projection lock, so a sync that began while the preview was enabled
   cannot reinstate it afterward.

@@ -20629,18 +20629,72 @@ func TestAPIRateLimits(t *testing.T) {
 	err = json.NewDecoder(resp.Body).Decode(&body)
 	require.NoError(t, err)
 
-	gh, ok := body.Hosts["github.com"]
+	gh, ok := body.ProviderPools["github.com"]
 	assert.True(ok)
-	assert.Equal(0, gh.RequestsHour)
-	assert.Equal(-1, gh.RateRemaining)
-	assert.False(gh.Known)
-	assert.Equal(1, gh.SyncThrottleFactor)
-	assert.False(gh.SyncPaused)
+	assert.Equal("host", gh.RatePrincipal)
+	assert.Equal("Host credential", gh.PrincipalLabel)
+	assert.Equal(0, gh.REST.Requests)
+	assert.Equal(-1, gh.REST.Remaining)
+	assert.False(gh.REST.Known)
 	assert.Equal(200, gh.ReserveBuffer)
-	// Budget fields default to zero when budgetPerHour=0.
-	assert.Equal(0, gh.BudgetLimit)
-	assert.Equal(0, gh.BudgetSpent)
-	assert.Equal(0, gh.BudgetRemaining)
+	assert.Empty(body.LocalCeilings)
+}
+
+func TestAPIRateLimitsSeparatesCredentialPoolsFromLocalCeilings(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	registry := ghclient.NewQuotaRegistry()
+	reset := time.Now().UTC().Add(time.Hour).Truncate(time.Second)
+	appIdentity := ghclient.IdentityKey{Host: "github.com", Principal: "installation:42"}
+	userIdentity := ghclient.IdentityKey{Host: "github.com", Principal: "user:7"}
+	registry.UpdateSnapshot(
+		appIdentity, ghclient.QuotaResourceREST,
+		ghclient.Rate{Limit: 15000, Remaining: 14900, Reset: reset},
+	)
+	registry.UpdateSnapshot(
+		appIdentity, ghclient.QuotaResourceGraphQL,
+		ghclient.Rate{Limit: 10000, Remaining: 9900, Reset: reset},
+	)
+	registry.UpdateSnapshot(
+		userIdentity, ghclient.QuotaResourceREST,
+		ghclient.Rate{Limit: 5000, Remaining: 4900, Reset: reset},
+	)
+	budget := ghclient.NewSyncBudget(50000)
+	budget.Spend(42)
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": &mockGH{}},
+		database, nil,
+		[]ghclient.RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
+		time.Minute, nil,
+		map[string]*ghclient.SyncBudget{"github.com": budget},
+	)
+	syncer.SetQuotaRegistry(registry)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/api/v1/rate-limits")
+	require.NoError(err)
+	defer resp.Body.Close()
+	require.Equal(http.StatusOK, resp.StatusCode)
+	var body rateLimitsResponse
+	require.NoError(json.NewDecoder(resp.Body).Decode(&body))
+
+	app, ok := body.ProviderPools["github:github.com:installation:42"]
+	require.True(ok)
+	user, ok := body.ProviderPools["github:github.com:user:7"]
+	require.True(ok)
+	assert.Equal(14900, app.REST.Remaining)
+	assert.Equal(9900, app.GraphQL.Remaining)
+	assert.Equal(4900, user.REST.Remaining)
+	assert.False(user.GraphQL.Known)
+	ceiling, ok := body.LocalCeilings["github.com"]
+	require.True(ok)
+	assert.Equal(50000, ceiling.Limit)
+	assert.Equal(42, ceiling.Spent)
+	assert.Equal(49958, ceiling.Remaining)
 }
 
 func TestAPISyncPRIncrementsRequestCount(t *testing.T) {
@@ -20678,9 +20732,9 @@ func TestAPISyncPRIncrementsRequestCount(t *testing.T) {
 	err = json.NewDecoder(resp.Body).Decode(&before)
 	require.NoError(err)
 
-	gh0, ok := before.Hosts["github.com"]
+	gh0, ok := before.ProviderPools["github.com"]
 	assert.True(ok)
-	assert.Equal(0, gh0.RequestsHour)
+	assert.Equal(0, gh0.REST.Requests)
 
 	// Simulate 5 API calls via RecordRequest.
 	for range 5 {
@@ -20697,9 +20751,9 @@ func TestAPISyncPRIncrementsRequestCount(t *testing.T) {
 	err = json.NewDecoder(resp2.Body).Decode(&after)
 	require.NoError(err)
 
-	gh5, ok := after.Hosts["github.com"]
+	gh5, ok := after.ProviderPools["github.com"]
 	assert.True(ok)
-	assert.Equal(5, gh5.RequestsHour)
+	assert.Equal(5, gh5.REST.Requests)
 }
 
 func TestAPIRateLimitsWithBudget(t *testing.T) {
@@ -20739,11 +20793,11 @@ func TestAPIRateLimitsWithBudget(t *testing.T) {
 	err = json.NewDecoder(resp.Body).Decode(&body)
 	require.NoError(t, err)
 
-	gh, ok := body.Hosts["github.com"]
+	gh, ok := body.LocalCeilings["github.com"]
 	assert.True(ok)
-	assert.Equal(500, gh.BudgetLimit)
-	assert.Equal(42, gh.BudgetSpent)
-	assert.Equal(458, gh.BudgetRemaining)
+	assert.Equal(500, gh.Limit)
+	assert.Equal(42, gh.Spent)
+	assert.Equal(458, gh.Remaining)
 }
 
 func TestAPIRateLimitsResetExpiredBudgetWindow(t *testing.T) {
@@ -20788,11 +20842,11 @@ func TestAPIRateLimitsResetExpiredBudgetWindow(t *testing.T) {
 	err = json.NewDecoder(resp.Body).Decode(&body)
 	require.NoError(t, err)
 
-	gh, ok := body.Hosts["github.com"]
+	gh, ok := body.LocalCeilings["github.com"]
 	assert.True(ok)
-	assert.Equal(500, gh.BudgetLimit)
-	assert.Equal(0, gh.BudgetSpent)
-	assert.Equal(500, gh.BudgetRemaining)
+	assert.Equal(500, gh.Limit)
+	assert.Equal(0, gh.Spent)
+	assert.Equal(500, gh.Remaining)
 }
 
 func TestAPIRateLimitsUsesSafeIdentityKeyAndResolvedPrincipalLabel(t *testing.T) {
@@ -20830,8 +20884,8 @@ func TestAPIRateLimitsUsesSafeIdentityKeyAndResolvedPrincipalLabel(t *testing.T)
 	require.Equal(http.StatusOK, resp.StatusCode)
 	var body rateLimitsResponse
 	require.NoError(json.NewDecoder(resp.Body).Decode(&body))
-	require.Len(body.Hosts, 1)
-	for key, status := range body.Hosts {
+	require.Len(body.ProviderPools, 1)
+	for key, status := range body.ProviderPools {
 		assert.NotContains(key, "\x00")
 		assert.Equal("github:github.com:user:123", key)
 		assert.Equal("user:123", status.RatePrincipal)
@@ -20862,9 +20916,9 @@ func TestAPIRateLimitsIncludesWriteOnlyGraphQLState(t *testing.T) {
 	defer resp.Body.Close()
 	var body rateLimitsResponse
 	require.NoError(json.NewDecoder(resp.Body).Decode(&body))
-	status := body.Hosts["github:github.com:user:123"]
-	assert.True(status.GQLKnown)
-	assert.Equal(4300, status.GQLRemaining)
+	status := body.ProviderPools["github:github.com:user:123"]
+	assert.True(status.GraphQL.Known)
+	assert.Equal(4300, status.GraphQL.Remaining)
 }
 
 func TestAPIRateLimitsWithGQL(t *testing.T) {
@@ -20912,16 +20966,16 @@ func TestAPIRateLimitsWithGQL(t *testing.T) {
 	err = json.NewDecoder(resp.Body).Decode(&body)
 	require.NoError(t, err)
 
-	host, ok := body.Hosts["github.com"]
+	host, ok := body.ProviderPools["github.com"]
 	assert.True(ok)
 
 	// GQL fields should be populated.
 	assert.Equal("host", host.RatePrincipal)
 	assert.Equal("Host credential", host.PrincipalLabel)
-	assert.Equal(4800, host.GQLRemaining)
-	assert.Equal(5000, host.GQLLimit)
-	assert.True(host.GQLKnown)
-	assert.NotEmpty(host.GQLResetAt)
+	assert.Equal(4800, host.GraphQL.Remaining)
+	assert.Equal(5000, host.GraphQL.Limit)
+	assert.True(host.GraphQL.Known)
+	assert.NotEmpty(host.GraphQL.ResetAt)
 }
 
 func TestAPIRateLimitsReadsLocalStateWithoutRefreshingGitHubRateLimit(t *testing.T) {
@@ -20995,18 +21049,18 @@ func TestAPIRateLimitsReadsLocalStateWithoutRefreshingGitHubRateLimit(t *testing
 	}
 
 	body := fetch()
-	host, ok := body.Hosts["github.com"]
+	user, ok := body.ProviderPools["github.com"]
 	assert.True(ok)
 	assert.Equal(0, mock.rateLimitSnapshotCalls)
-	assert.Equal(0, host.RequestsHour)
-	assert.Equal(3000, host.RateRemaining)
-	assert.Equal(5000, host.RateLimit)
-	assert.Equal(formatUTCRFC3339(localRestReset), host.RateResetAt)
-	assert.True(host.Known)
-	assert.Equal(4000, host.GQLRemaining)
-	assert.Equal(5000, host.GQLLimit)
-	assert.Equal(formatUTCRFC3339(localGQLReset), host.GQLResetAt)
-	assert.True(host.GQLKnown)
+	assert.Equal(0, user.REST.Requests)
+	assert.Equal(3000, user.REST.Remaining)
+	assert.Equal(5000, user.REST.Limit)
+	assert.Equal(formatUTCRFC3339(localRestReset), user.REST.ResetAt)
+	assert.True(user.REST.Known)
+	assert.Equal(4000, user.GraphQL.Remaining)
+	assert.Equal(5000, user.GraphQL.Limit)
+	assert.Equal(formatUTCRFC3339(localGQLReset), user.GraphQL.ResetAt)
+	assert.True(user.GraphQL.Known)
 
 	_ = fetch()
 	assert.Equal(0, mock.rateLimitSnapshotCalls)
@@ -21044,11 +21098,11 @@ func TestAPIRateLimitsGQLDefaultsUnknown(t *testing.T) {
 	err = json.NewDecoder(resp.Body).Decode(&body)
 	require.NoError(t, err)
 
-	host := body.Hosts["github.com"]
-	assert.Equal(-1, host.GQLRemaining)
-	assert.Equal(-1, host.GQLLimit)
-	assert.False(host.GQLKnown)
-	assert.Empty(host.GQLResetAt)
+	user := body.ProviderPools["github.com"]
+	assert.Equal(-1, user.GraphQL.Remaining)
+	assert.Equal(-1, user.GraphQL.Limit)
+	assert.False(user.GraphQL.Known)
+	assert.Empty(user.GraphQL.ResetAt)
 }
 
 func TestAPIRateLimitsMultiHostMixed(t *testing.T) {
@@ -21103,19 +21157,19 @@ func TestAPIRateLimitsMultiHostMixed(t *testing.T) {
 	require.NoError(t, err)
 
 	// Both hosts present.
-	assert.Len(body.Hosts, 2)
+	assert.Len(body.ProviderPools, 2)
 
 	// github.com has GQL data.
-	ghHost := body.Hosts["github.com"]
-	assert.True(ghHost.GQLKnown)
-	assert.Equal(4500, ghHost.GQLRemaining)
-	assert.Equal(5000, ghHost.GQLLimit)
+	ghHost := body.ProviderPools["github.com"]
+	assert.True(ghHost.GraphQL.Known)
+	assert.Equal(4500, ghHost.GraphQL.Remaining)
+	assert.Equal(5000, ghHost.GraphQL.Limit)
 
 	// ghe.example.com has no GQL fetcher — defaults to unknown.
-	gheHost := body.Hosts["ghe.example.com"]
-	assert.Equal(-1, gheHost.GQLRemaining)
-	assert.Equal(-1, gheHost.GQLLimit)
-	assert.False(gheHost.GQLKnown)
+	gheHost := body.ProviderPools["ghe.example.com"]
+	assert.Equal(-1, gheHost.GraphQL.Remaining)
+	assert.Equal(-1, gheHost.GraphQL.Limit)
+	assert.False(gheHost.GraphQL.Known)
 }
 
 func TestAPIRateLimitsScopesSameHostByProvider(t *testing.T) {
@@ -21159,17 +21213,17 @@ func TestAPIRateLimitsScopesSameHostByProvider(t *testing.T) {
 	err = json.NewDecoder(resp.Body).Decode(&body)
 	require.NoError(t, err)
 
-	ghStatus, ok := body.Hosts[host]
+	ghStatus, ok := body.ProviderPools[host]
 	assert.True(ok)
 	assert.Equal("github", ghStatus.Provider)
 	assert.Equal(host, ghStatus.PlatformHost)
-	assert.Equal(1, ghStatus.RequestsHour)
+	assert.Equal(1, ghStatus.REST.Requests)
 
-	glStatus, ok := body.Hosts["gitlab:"+host]
+	glStatus, ok := body.ProviderPools["gitlab:"+host]
 	assert.True(ok)
 	assert.Equal("gitlab", glStatus.Provider)
 	assert.Equal(host, glStatus.PlatformHost)
-	assert.Equal(2, glStatus.RequestsHour)
+	assert.Equal(2, glStatus.REST.Requests)
 }
 
 func TestAPIGetPullDetailLoaded(t *testing.T) {

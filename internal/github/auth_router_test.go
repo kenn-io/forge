@@ -1106,11 +1106,10 @@ func TestSyncerAppPauseDoesNotDelayPATIdentityOnSameHost(t *testing.T) {
 		rateTrackers: map[string]*RateTracker{appBucket: appRT, userBucket: userRT},
 	}
 
-	appKey, err := syncer.bucketKeyForRepo(RepoRef{Owner: "org-app", Name: "one", PlatformHost: "github.com"}, false)
-	require.NoError(err)
-	patKey, err := syncer.bucketKeyForRepo(RepoRef{Owner: "org-pat", Name: "two", PlatformHost: "github.com"}, false)
-	require.NoError(err)
-	eligible := syncer.hostEligibility([]string{appKey, patKey}, map[string]time.Time{})
+	eligible := syncer.repoEligibility([]RepoRef{
+		{Owner: "org-app", Name: "one", PlatformHost: "github.com"},
+		{Owner: "org-pat", Name: "two", PlatformHost: "github.com"},
+	}, map[string]time.Time{})
 	assert.False(eligible[appBucket])
 	assert.True(eligible[userBucket])
 }

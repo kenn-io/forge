@@ -155,31 +155,45 @@ type resolveItemResponse struct {
 }
 
 type diffResponse = httpapi.DiffResponse
+type rateLimitResourceStatus struct {
+	Remaining int    `json:"remaining"`
+	Limit     int    `json:"limit"`
+	ResetAt   string `json:"reset_at"`
+	Known     bool   `json:"known"`
+	Requests  int    `json:"requests"`
+}
+
+// rateLimitHostStatus is one credential principal's provider-side quota on one
+// host. GitHub meters each principal independently, so an App installation and
+// the user's PAT appear as separate entries for the same host.
 type rateLimitHostStatus struct {
-	Provider           string `json:"provider"`
-	PlatformHost       string `json:"platform_host"`
-	RatePrincipal      string `json:"rate_principal"`
-	PrincipalLabel     string `json:"principal_label"`
-	RequestsHour       int    `json:"requests_hour"`
-	RateRemaining      int    `json:"rate_remaining"`
-	RateLimit          int    `json:"rate_limit"`
-	RateResetAt        string `json:"rate_reset_at"`
-	HourStart          string `json:"hour_start"`
-	SyncThrottleFactor int    `json:"sync_throttle_factor"`
-	SyncPaused         bool   `json:"sync_paused"`
-	ReserveBuffer      int    `json:"reserve_buffer"`
-	Known              bool   `json:"known"`
-	BudgetLimit        int    `json:"budget_limit"`
-	BudgetSpent        int    `json:"budget_spent"`
-	BudgetRemaining    int    `json:"budget_remaining"`
-	GQLRemaining       int    `json:"gql_remaining"`
-	GQLLimit           int    `json:"gql_limit"`
-	GQLResetAt         string `json:"gql_reset_at"`
-	GQLKnown           bool   `json:"gql_known"`
+	Provider           string                  `json:"provider"`
+	PlatformHost       string                  `json:"platform_host"`
+	RatePrincipal      string                  `json:"rate_principal"`
+	PrincipalLabel     string                  `json:"principal_label"`
+	ReserveBuffer      int                     `json:"reserve_buffer"`
+	SyncThrottleFactor int                     `json:"sync_throttle_factor"`
+	SyncPaused         bool                    `json:"sync_paused"`
+	REST               rateLimitResourceStatus `json:"rest"`
+	GraphQL            rateLimitResourceStatus `json:"graphql"`
+}
+
+// localSyncCeilingStatus is middleman's own hourly spend guard for one
+// principal. It is independent of provider quota: the ceiling can be reached
+// while GitHub still reports capacity, and it resets on its own clock.
+type localSyncCeilingStatus struct {
+	Provider       string `json:"provider"`
+	PlatformHost   string `json:"platform_host"`
+	RatePrincipal  string `json:"rate_principal"`
+	PrincipalLabel string `json:"principal_label"`
+	Limit          int    `json:"limit"`
+	Spent          int    `json:"spent"`
+	Remaining      int    `json:"remaining"`
 }
 
 type rateLimitsResponse struct {
-	Hosts map[string]rateLimitHostStatus `json:"hosts"`
+	ProviderPools map[string]rateLimitHostStatus    `json:"provider_pools"`
+	LocalCeilings map[string]localSyncCeilingStatus `json:"local_ceilings"`
 }
 
 const activitySafetyCap = 5000

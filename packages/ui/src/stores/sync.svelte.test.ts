@@ -11,7 +11,7 @@ describe("sync store", () => {
           data: { running: false, last_run_at: "", last_error: "" },
         };
       }
-      return { data: { hosts: {} } };
+      return { data: { provider_pools: {}, local_ceilings: {} } };
     });
     const store = createSyncStore({
       client: {
@@ -40,7 +40,7 @@ describe("sync store", () => {
           data: { running: false, last_run_at: "", last_error: "" },
         };
       }
-      return { data: { hosts: {} } };
+      return { data: { provider_pools: {}, local_ceilings: {} } };
     });
     const store = createSyncStore({
       client: {

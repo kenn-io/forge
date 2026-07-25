@@ -154,11 +154,14 @@
     popoverOpen = false;
   }
 
-  let rateLimitHosts = $derived.by(() => {
-    void tick;
-    return sync.getRateLimits();
+  let rateLimits = $derived.by(() => {
+	void tick;
+	return sync.getRateLimits();
   });
-  let hasHosts = $derived(Object.keys(rateLimitHosts).length > 0);
+  let hasRateLimits = $derived(
+	Object.keys(rateLimits.provider_pools).length > 0
+	|| Object.keys(rateLimits.local_ceilings).length > 0,
+  );
 </script>
 
 <!-- overflow="visible": the budget popover anchors inside the right section;
@@ -173,11 +176,15 @@
     <span class="status-item">{counts.repos} repos</span>
   {/snippet}
   {#snippet right()}
-    {#if hasHosts}
+    {#if hasRateLimits}
       <span class="budget-wrapper">
-        <BudgetBars hosts={rateLimitHosts} onclick={togglePopover} expanded={popoverOpen} />
+        <BudgetBars providerPools={rateLimits.provider_pools} onclick={togglePopover} expanded={popoverOpen} />
         {#if popoverOpen}
-          <BudgetPopover hosts={rateLimitHosts} onclose={closePopover} />
+          <BudgetPopover
+			providerPools={rateLimits.provider_pools}
+			localCeilings={rateLimits.local_ceilings}
+			onclose={closePopover}
+		  />
         {/if}
       </span>
       <span class="status-sep">&middot;</span>

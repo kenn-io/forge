@@ -682,7 +682,7 @@ func TestArchiveAdmissionSharesSyncBudgetAndProviderReserve(t *testing.T) {
 	assert.True(IsSyncBudgetContext(allowed.Context))
 	assert.True(IsArchiveSyncBudgetContext(allowed.Context))
 
-	budget.Spend(archiveLiveFloor(ref.Platform) + 87)
+	budget.Spend(100)
 	denied, err := syncer.Admit(t.Context(), ref, db.ArchiveItemTypeIssue, 1)
 	require.NoError(err)
 	assert.False(denied.Allowed)
@@ -708,6 +708,86 @@ func TestArchiveAdmissionSharesSyncBudgetAndProviderReserve(t *testing.T) {
 	require.NoError(err)
 	assert.False(denied.Allowed)
 	assert.Contains(denied.Detail, "normal sync")
+}
+
+func TestGitHubArchiveAdmissionUsesCredentialRESTAndGraphQLPools(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	now := time.Now().UTC()
+	reset := now.Add(time.Minute)
+	registry := NewQuotaRegistry()
+	client := &credentialRateLimitSnapshotMockClient{mockClient: &mockClient{}}
+	appIdentity := IdentityKey{Host: "github.test", Principal: "installation:42"}
+	userIdentity := IdentityKey{Host: "github.test", Principal: "user:7"}
+	appBucket := RateBucketKey("github", "github.test", "installation:42")
+	userBucket := RateBucketKey("github", "github.test", "user:7")
+	syncer := NewSyncer(
+		map[string]Client{"github.test": client},
+		database, nil,
+		[]RepoRef{
+			{Platform: platform.KindGitHub, PlatformHost: "github.test", Owner: "acme", Name: "widget"},
+			{Platform: platform.KindGitHub, PlatformHost: "github.test", Owner: "other", Name: "tool"},
+		},
+		time.Hour, nil,
+		map[string]*SyncBudget{
+			appBucket:  NewSyncBudget(100),
+			userBucket: NewSyncBudget(100),
+		},
+	)
+	router, err := NewHostRouter(
+		"github.test",
+		&Route{
+			Key: RouteKey{Host: "github.test", Owner: "acme"}, Client: client,
+			ReadIdentity: appIdentity, WriteIdentity: appIdentity,
+		},
+		&Route{
+			Key: RouteKey{Host: "github.test", Owner: "other"}, Client: client,
+			ReadIdentity: userIdentity, WriteIdentity: userIdentity,
+		},
+	)
+	require.NoError(err)
+	syncer.SetGitHubRouters(map[string]*HostRouter{"github.test": router})
+	syncer.SetQuotaRegistry(registry)
+	syncer.now = func() time.Time { return now }
+	appRef := platform.RepoRef{
+		Platform: platform.KindGitHub, Host: "github.test", Owner: "acme", Name: "widget",
+	}
+	userRef := platform.RepoRef{
+		Platform: platform.KindGitHub, Host: "github.test", Owner: "other", Name: "tool",
+	}
+	registry.UpdateSnapshot(appIdentity, QuotaResourceREST,
+		Rate{Limit: 15000, Remaining: 14000, Reset: reset})
+
+	unknownGraphQL, err := syncer.Admit(
+		t.Context(), appRef, db.ArchiveItemTypeIssue, 1,
+	)
+	require.NoError(err)
+	assert.False(unknownGraphQL.Allowed)
+	assert.Contains(unknownGraphQL.Detail, "provider quota unknown")
+
+	registry.UpdateSnapshot(appIdentity, QuotaResourceGraphQL,
+		Rate{Limit: 10000, Remaining: RateReserveBuffer, Reset: reset})
+	appAtReserve, err := syncer.Admit(
+		t.Context(), appRef, db.ArchiveItemTypeIssue, 1,
+	)
+	require.NoError(err)
+	assert.False(appAtReserve.Allowed)
+	assert.Contains(appAtReserve.Detail, "provider rate reserve")
+	assert.Equal(reset, *appAtReserve.RetryAt)
+
+	// The user credential has its own pools, so the App installation sitting
+	// at its reserve must not hold back work routed to the user.
+	registry.UpdateSnapshot(userIdentity, QuotaResourceREST,
+		Rate{Limit: 5000, Remaining: 4900, Reset: reset})
+	registry.UpdateSnapshot(userIdentity, QuotaResourceGraphQL,
+		Rate{Limit: 5000, Remaining: 4800, Reset: reset})
+	userAllowed, err := syncer.Admit(
+		t.Context(), userRef, db.ArchiveItemTypeIssue, 1,
+	)
+	require.NoError(err)
+	require.True(userAllowed.Allowed)
+	userAllowed.Complete(nil, false)
 }
 
 func TestArchiveAdmissionAttemptAllowanceUsesAvailableSurplus(t *testing.T) {

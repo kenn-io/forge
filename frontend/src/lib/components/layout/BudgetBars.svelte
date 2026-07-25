@@ -3,31 +3,29 @@
   import { budgetColor, worstCaseRatio } from "./budget-utils";
 
   interface Props {
-    hosts: Record<string, RateLimitHostStatus>;
+    providerPools: Record<string, RateLimitHostStatus>;
     onclick?: () => void;
     expanded?: boolean;
   }
 
-  let { hosts, onclick, expanded = false }: Props = $props();
+  let { providerPools, onclick, expanded = false }: Props = $props();
 
   function anyPaused(): boolean {
-    return Object.values(hosts).some((h) => h.sync_paused);
+    return Object.values(providerPools).some(
+      (pool) =>
+        pool.sync_paused ||
+        [pool.rest, pool.graphql].some(
+          (resource) => resource.known && resource.remaining <= pool.reserve_buffer,
+        ),
+    );
   }
 
   function restEntries() {
-    return Object.values(hosts).map((h) => ({
-      remaining: h.rate_remaining,
-      limit: h.rate_limit,
-      known: h.known,
-    }));
+    return Object.values(providerPools).map((pool) => pool.rest);
   }
 
   function gqlEntries() {
-    return Object.values(hosts).map((h) => ({
-      remaining: h.gql_remaining ?? -1,
-      limit: h.gql_limit ?? -1,
-      known: h.gql_known ?? false,
-    }));
+    return Object.values(providerPools).map((pool) => pool.graphql);
   }
 
   function restRatio() {

@@ -1,14 +1,19 @@
 <script lang="ts">
   import { dismissable } from "@kenn-io/kit-ui";
-  import type { RateLimitHostStatus } from "@middleman/ui/api/types";
+  import type {
+    LocalSyncCeilingStatus,
+    RateLimitHostStatus,
+    RateLimitResourceStatus,
+  } from "@middleman/ui/api/types";
   import { budgetColor, formatCompact, syncBudgetColor } from "./budget-utils";
 
   interface Props {
-    hosts: Record<string, RateLimitHostStatus>;
+    providerPools: Record<string, RateLimitHostStatus>;
+    localCeilings: Record<string, LocalSyncCeilingStatus>;
     onclose: () => void;
   }
 
-  let { hosts, onclose }: Props = $props();
+  let { providerPools, localCeilings, onclose }: Props = $props();
 
   let popoverEl: HTMLDivElement | undefined = $state();
 
@@ -25,8 +30,10 @@
     });
   });
 
-  function hostEntries() {
-    return Object.entries(hosts);
+  // One entry per credential principal. GitHub meters each principal
+  // separately, so a host with an App installation and a PAT shows two.
+  function poolEntries() {
+    return Object.entries(providerPools);
   }
 
   function ratio(remaining: number, limit: number): number {
@@ -42,131 +49,135 @@
     return `resets ${min}m`;
   }
 
-  function isHostFresh(h: RateLimitHostStatus): boolean {
-    const restFresh = h.known && h.rate_limit > 0 && h.rate_remaining >= 0;
-    const gqlFresh = (h.gql_known ?? false) && (h.gql_limit ?? 0) > 0 && (h.gql_remaining ?? -1) >= 0;
-    return restFresh || gqlFresh;
+  function resourceFresh(resource: RateLimitResourceStatus): boolean {
+    return resource.known && resource.limit > 0 && resource.remaining >= 0;
   }
 
-  function hostHealthColor(h: RateLimitHostStatus): string {
-    if (h.sync_paused) return "var(--budget-red)";
-    if (!isHostFresh(h)) return "var(--text-muted)";
-    const restOk = h.known && h.rate_limit > 0 && h.rate_remaining >= 0;
-    const gqlOk = (h.gql_known ?? false) && (h.gql_limit ?? 0) > 0 && (h.gql_remaining ?? -1) >= 0;
-    const rr = restOk ? h.rate_remaining / h.rate_limit : 1;
-    const gr = gqlOk ? (h.gql_remaining ?? 0) / (h.gql_limit ?? 1) : 1;
-    return budgetColor(Math.min(rr, gr));
+  function resourceColor(resource: RateLimitResourceStatus, reserve: number): string {
+    if (!resourceFresh(resource)) return "var(--text-muted)";
+    if (resource.remaining <= reserve) return "var(--budget-red)";
+    return budgetColor(resource.remaining / resource.limit);
   }
 
-  const singleHost = $derived(hostEntries().length === 1);
+  function poolResources(pool: RateLimitHostStatus): RateLimitResourceStatus[] {
+    return [pool.rest, pool.graphql];
+  }
+
+  function isPoolFresh(pool: RateLimitHostStatus): boolean {
+    return poolResources(pool).some(resourceFresh);
+  }
+
+  function poolHealthColor(pool: RateLimitHostStatus): string {
+    if (pool.sync_paused) return "var(--budget-red)";
+    const known = poolResources(pool).filter(resourceFresh);
+    if (known.length === 0) return "var(--text-muted)";
+    if (known.some((resource) => resource.remaining <= pool.reserve_buffer)) {
+      return "var(--budget-red)";
+    }
+    return budgetColor(Math.min(...known.map((r) => r.remaining / r.limit)));
+  }
+
+  function poolAtReserve(pool: RateLimitHostStatus): boolean {
+    return poolResources(pool).some(
+      (resource) => resourceFresh(resource) && resource.remaining <= pool.reserve_buffer,
+    );
+  }
+
+  function resourceRows(pool: RateLimitHostStatus) {
+    return [
+      { label: "REST", resource: pool.rest, unit: "req" },
+      { label: "GraphQL", resource: pool.graphql, unit: "pts" },
+    ];
+  }
+
+  // Local ceilings are middleman's own hourly guard, not GitHub quota, so
+  // they render in their own section rather than beside the provider pools.
+  function ceilingEntries() {
+    return Object.entries(localCeilings).filter(([, ceiling]) => ceiling.limit > 0);
+  }
 </script>
 
 <div
   class="budget-popover kit-popover-card"
   role="dialog"
-  aria-label="API Budget"
+  aria-label="API quota and local sync ceiling"
   bind:this={popoverEl}
 >
-  <div class="popover-header">API Budget</div>
+  <div class="popover-header">Provider quota</div>
 
-  {#each hostEntries() as [entryKey, h], i (entryKey)}
+  {#each poolEntries() as [poolKey, pool], i (poolKey)}
     {#if i > 0}
       <div class="popover-divider"></div>
     {/if}
 
     <div class="host-section">
-      {#if !singleHost}
-        <div class="host-name">
-          <span
-            class="health-dot"
-            class:health-dot--unknown={!isHostFresh(h)}
-            style:background={hostHealthColor(h)}
-          ></span>
-          <span class="host-identity">
-            <span>{h.platform_host}</span>
-            <span class="principal-label">{h.principal_label}</span>
-          </span>
+      <div class="host-name">
+        <span
+          class="health-dot"
+          class:health-dot--unknown={!isPoolFresh(pool)}
+          style:background={poolHealthColor(pool)}
+        ></span>
+        <span class="host-identity">
+          <span>{pool.platform_host || poolKey}</span>
+          <span class="principal-label">{pool.principal_label}</span>
+        </span>
+      </div>
+
+      {#each resourceRows(pool) as { label, resource, unit } (label)}
+        <div class="budget-row">
+          <span class="row-label">{label}</span>
+          {#if resourceFresh(resource) && ratio(resource.remaining, resource.limit) >= 0}
+            {@const resourceRatio = ratio(resource.remaining, resource.limit)}
+            <span class="row-bar-cell">
+              <span class="bar-track">
+                <span
+                  class="bar-fill"
+                  style:width="{Math.max(resourceRatio * 100, 2)}%"
+                  style:background={resourceColor(resource, pool.reserve_buffer)}
+                ></span>
+              </span>
+            </span>
+            <span class="row-value">
+              {formatCompact(resource.remaining)} / {formatCompact(resource.limit)} <span class="row-unit">{unit}</span>
+              {#if resetText(resource.reset_at)}<span class="row-reset"> · {resetText(resource.reset_at)}</span>{/if}
+            </span>
+          {:else}
+            <span class="row-bar-cell"></span>
+            <span class="row-unknown">not yet observed</span>
+          {/if}
         </div>
+      {/each}
+      {#if poolAtReserve(pool)}
+        <div class="reserve-indicator">provider reserve reached</div>
       {/if}
+      {#if pool.sync_paused}
+        <div class="throttle-indicator throttle-paused">sync paused</div>
+      {:else if pool.sync_throttle_factor > 1}
+        <div class="throttle-indicator">sync {pool.sync_throttle_factor}x slower</div>
+      {/if}
+    </div>
+  {/each}
 
-      <!-- REST -->
-      <div class="budget-row">
-        <span class="row-label">REST</span>
-        {#if h.known && ratio(h.rate_remaining, h.rate_limit) >= 0}
-          {@const rr = ratio(h.rate_remaining, h.rate_limit)}
-          <span class="row-bar-cell">
-            <span class="bar-track">
-              <span
-                class="bar-fill"
-                style:width="{Math.max(rr * 100, 2)}%"
-                style:background={budgetColor(rr)}
-              ></span>
-            </span>
-          </span>
-          <span class="row-value">
-            {formatCompact(h.rate_remaining)} / {formatCompact(h.rate_limit)} <span class="row-unit">req</span>
-            {#if resetText(h.rate_reset_at)}<span class="row-reset"> · {resetText(h.rate_reset_at)}</span>{/if}
-          </span>
-        {:else}
-          <span class="row-bar-cell"></span>
-          <span class="row-unknown">not yet observed</span>
-        {/if}
-      </div>
-
-      <!-- GraphQL -->
-      <div class="budget-row">
-        <span class="row-label">GraphQL</span>
-        {#if (h.gql_known ?? false) && ratio(h.gql_remaining ?? -1, h.gql_limit ?? -1) >= 0}
-          {@const gr = ratio(h.gql_remaining ?? -1, h.gql_limit ?? -1)}
-          <span class="row-bar-cell">
-            <span class="bar-track">
-              <span
-                class="bar-fill"
-                style:width="{Math.max(gr * 100, 2)}%"
-                style:background={budgetColor(gr)}
-              ></span>
-            </span>
-          </span>
-          <span class="row-value">
-            {formatCompact(h.gql_remaining ?? 0)} / {formatCompact(h.gql_limit ?? 0)} <span class="row-unit">pts</span>
-            {#if resetText(h.gql_reset_at ?? "")}<span class="row-reset"> · {resetText(h.gql_reset_at ?? "")}</span>{/if}
-          </span>
-        {:else}
-          <span class="row-bar-cell"></span>
-          <span class="row-unknown">not yet observed</span>
-        {/if}
-      </div>
-
-      <!-- Eager refresh budget -->
-      {#if h.budget_limit > 0}
-        <div class="budget-row budget-row--eager">
-          <span class="row-label">Eager refresh</span>
+  {#if ceilingEntries().length > 0}
+    <div class="popover-section-divider"></div>
+    <div class="popover-header local-ceiling-header">Local sync ceiling</div>
+    {#each ceilingEntries() as [key, ceiling] (key)}
+      <div class="ceiling-section">
+        <div class="credential-name">{ceiling.platform_host || key} · {ceiling.principal_label}</div>
+        <div class="budget-row budget-row--ceiling">
+          <span class="row-label">Process guard</span>
           <span class="row-bar-cell"></span>
           <span class="row-value">
             <span
               class="budget-spent"
-              class:budget-spent--over={h.budget_spent > h.budget_limit}
-              style:color={syncBudgetColor(h.budget_spent, h.budget_limit)}
-            >{formatCompact(h.budget_spent)}</span> / {formatCompact(h.budget_limit)} <span class="row-unit">budgeted req/hr</span>
+              style:color={syncBudgetColor(ceiling.spent, ceiling.limit)}
+            >{formatCompact(ceiling.spent)}</span> / {formatCompact(ceiling.limit)} <span class="row-unit">requests</span>
           </span>
-          <span class="row-note">
-            {#if h.budget_spent > h.budget_limit}
-              Details, comments, and backfills are paused.
-            {:else}
-              Details, comments, and backfills pause when spent.
-            {/if}
-          </span>
+          <span class="row-note">Emergency ceiling for background sync; provider quota above is authoritative.</span>
         </div>
-      {/if}
-
-      <!-- Throttle -->
-      {#if h.sync_paused}
-        <div class="throttle-indicator throttle-paused">sync paused</div>
-      {:else if h.sync_throttle_factor > 1}
-        <div class="throttle-indicator">sync {h.sync_throttle_factor}x slower</div>
-      {/if}
-    </div>
-  {/each}
+      </div>
+    {/each}
+  {/if}
 </div>
 
 <style>
@@ -200,17 +211,6 @@
     align-items: center;
     gap: 6px;
   }
-  .host-identity {
-    display: flex;
-    min-width: 0;
-    flex-direction: column;
-    gap: 1px;
-  }
-  .principal-label {
-    color: var(--text-muted);
-    font-size: var(--font-size-2xs);
-    font-weight: 400;
-  }
   .health-dot {
     width: 8px;
     height: 8px;
@@ -225,8 +225,24 @@
     column-gap: 8px;
     margin-bottom: 6px;
   }
-  .budget-row--eager {
+  .budget-row--ceiling {
     align-items: start;
+  }
+
+  .credential-name {
+    color: var(--text-secondary);
+    font-size: var(--font-size-2xs);
+    font-weight: 600;
+    margin: 7px 0 5px;
+  }
+
+  .popover-section-divider {
+    border-top: 1px solid var(--border-default);
+    margin: 12px 0 10px;
+  }
+
+  .local-ceiling-header {
+    margin-bottom: 6px;
   }
   .row-label {
     color: var(--text-muted);
@@ -278,15 +294,9 @@
     color: var(--budget-blue);
     font-weight: 600;
   }
-  .budget-spent--over {
-    font-weight: 700;
-  }
-  .throttle-indicator {
-    font-size: var(--font-size-2xs);
-    color: var(--accent-amber);
-    margin-top: 4px;
-  }
-  .throttle-paused {
+  .reserve-indicator {
     color: var(--accent-red);
+    font-size: var(--font-size-2xs);
+    margin-top: 5px;
   }
 </style>

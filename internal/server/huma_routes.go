@@ -845,7 +845,10 @@ func (s *Server) getRateLimits(
 	_ context.Context, _ *struct{},
 ) (*rateLimitsOutput, error) {
 	if s.syncer == nil {
-		return &rateLimitsOutput{Body: rateLimitsResponse{Hosts: map[string]rateLimitHostStatus{}}}, nil
+		return &rateLimitsOutput{Body: rateLimitsResponse{
+			ProviderPools: map[string]rateLimitHostStatus{},
+			LocalCeilings: map[string]localSyncCeilingStatus{},
+		}}, nil
 	}
 	trackers := s.syncer.RateTrackers()
 	gqlTrackers := s.syncer.GQLRateTrackers()
@@ -856,60 +859,123 @@ func (s *Server) getRateLimits(
 	}
 	budgets := s.syncer.Budgets()
 	principalLabels := s.syncer.RatePrincipalLabels()
+	quotaRegistry := s.syncer.QuotaRegistry()
+
+	labelFor := func(key, providerName, principal string) string {
+		if label := principalLabels[key]; label != "" {
+			return label
+		}
+		return ratePrincipalLabel(providerName, principal)
+	}
+	fromTracker := func(rt *ratelimit.RateTracker) rateLimitResourceStatus {
+		if rt == nil {
+			return rateLimitResourceStatus{Remaining: -1, Limit: -1}
+		}
+		resource := rateLimitResourceStatus{
+			Remaining: rt.Remaining(), Limit: rt.RateLimit(),
+			Known: rt.Known(), Requests: rt.RequestsThisHour(),
+		}
+		if resetAt := rt.ResetAt(); resetAt != nil {
+			resource.ResetAt = formatUTCRFC3339(*resetAt)
+		}
+		return resource
+	}
+
 	hosts := make(map[string]rateLimitHostStatus, len(trackers))
 	for key, rt := range trackers {
-		resetStr := ""
-		if resetAt := rt.ResetAt(); resetAt != nil {
-			resetStr = formatUTCRFC3339(*resetAt)
-		}
-		principalLabel := principalLabels[key]
-		if principalLabel == "" {
-			principalLabel = ratePrincipalLabel(rt.Provider(), rt.Principal())
-		}
-		status := rateLimitHostStatus{
+		statusKey := rateLimitStatusKey(rt)
+		hosts[statusKey] = rateLimitHostStatus{
 			Provider:           rt.Provider(),
 			PlatformHost:       rt.PlatformHost(),
 			RatePrincipal:      rt.Principal(),
-			PrincipalLabel:     principalLabel,
-			RequestsHour:       rt.RequestsThisHour(),
-			RateRemaining:      rt.Remaining(),
-			RateLimit:          rt.RateLimit(),
-			RateResetAt:        resetStr,
-			HourStart:          formatUTCRFC3339(rt.HourStart()),
+			PrincipalLabel:     labelFor(key, rt.Provider(), rt.Principal()),
+			ReserveBuffer:      ghclient.RateReserveBuffer,
 			SyncThrottleFactor: rt.ThrottleFactor(),
 			SyncPaused:         rt.IsPaused(),
-			ReserveBuffer:      ghclient.RateReserveBuffer,
-			Known:              rt.Known(),
-			GQLRemaining:       -1,
-			GQLLimit:           -1,
+			REST:               fromTracker(rt),
+			GraphQL:            fromTracker(gqlTrackers[key]),
 		}
-		if gqlRT := gqlTrackers[key]; gqlRT != nil {
-			status.GQLRemaining = gqlRT.Remaining()
-			status.GQLLimit = gqlRT.RateLimit()
-			status.GQLKnown = gqlRT.Known()
-			if resetAt := gqlRT.ResetAt(); resetAt != nil {
-				status.GQLResetAt = resetAt.UTC().Format(time.RFC3339)
+	}
+	// The registry records what GitHub actually reported per principal and
+	// per resource, including pools no local tracker observed yet, so it
+	// overrides the tracker-derived view wherever it holds a pool.
+	if quotaRegistry != nil {
+		for _, pool := range quotaRegistry.Snapshot() {
+			key := rateLimitStatusKeyFor(
+				string(platform.KindGitHub), pool.Identity.Host, pool.Identity.Principal,
+			)
+			status, ok := hosts[key]
+			if !ok {
+				status = rateLimitHostStatus{
+					Provider:       string(platform.KindGitHub),
+					PlatformHost:   pool.Identity.Host,
+					RatePrincipal:  pool.Identity.Principal,
+					PrincipalLabel: labelFor(key, string(platform.KindGitHub), pool.Identity.Principal),
+					ReserveBuffer:  ghclient.RateReserveBuffer,
+					REST:           rateLimitResourceStatus{Remaining: -1, Limit: -1},
+					GraphQL:        rateLimitResourceStatus{Remaining: -1, Limit: -1},
+				}
 			}
+			resource := rateLimitResourceStatus{
+				Remaining: pool.Remaining, Limit: pool.Limit,
+				Known: pool.Known, Requests: pool.Requests,
+			}
+			if !pool.ResetAt.IsZero() {
+				resource.ResetAt = formatUTCRFC3339(pool.ResetAt)
+			}
+			if pool.Resource == ghclient.QuotaResourceGraphQL {
+				status.GraphQL = resource
+			} else {
+				status.REST = resource
+			}
+			hosts[key] = status
 		}
-		if b := budgets[key]; b != nil {
-			status.BudgetLimit = b.Limit()
-			status.BudgetSpent = b.Spent()
-			status.BudgetRemaining = b.Remaining()
+	}
+
+	ceilings := make(map[string]localSyncCeilingStatus, len(budgets))
+	for key, budget := range budgets {
+		if budget == nil {
+			continue
 		}
-		hosts[rateLimitStatusKey(rt)] = status
+		providerName := string(platform.KindGitHub)
+		host := key
+		principal := ""
+		statusKey := key
+		if tracker := trackers[key]; tracker != nil {
+			providerName = tracker.Provider()
+			host = tracker.PlatformHost()
+			principal = tracker.Principal()
+			statusKey = rateLimitStatusKey(tracker)
+		} else if prefix, remainder, ok := strings.Cut(key, ":"); ok {
+			providerName = prefix
+			host = remainder
+		}
+		ceilings[statusKey] = localSyncCeilingStatus{
+			Provider: providerName, PlatformHost: host,
+			RatePrincipal:  principal,
+			PrincipalLabel: labelFor(key, providerName, principal),
+			Limit:          budget.Limit(),
+			Spent:          budget.Spent(),
+			Remaining:      budget.Remaining(),
+		}
 	}
 	return &rateLimitsOutput{
-		Body: rateLimitsResponse{Hosts: hosts},
+		Body: rateLimitsResponse{ProviderPools: hosts, LocalCeilings: ceilings},
 	}, nil
 }
 
 func rateLimitStatusKey(rt *ratelimit.RateTracker) string {
-	if rt.Principal() == "host" {
-		return rt.BucketKey()
+	return rateLimitStatusKeyFor(rt.Provider(), rt.PlatformHost(), rt.Principal())
+}
+
+// rateLimitStatusKeyFor names one principal's entry in the rate-limit
+// response. Tracker-derived rows and registry-derived pools must agree on it
+// or the same principal would appear twice.
+func rateLimitStatusKeyFor(providerName, host, principal string) string {
+	if principal == "" || principal == "host" {
+		return ghclient.RateBucketKey(providerName, host, "host")
 	}
-	return strings.Join([]string{
-		rt.Provider(), rt.PlatformHost(), rt.Principal(),
-	}, ":")
+	return strings.Join([]string{providerName, host, principal}, ":")
 }
 
 func ratePrincipalLabel(providerName, principal string) string {

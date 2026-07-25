@@ -25,6 +25,16 @@ func (k IdentityKey) String() string {
 		strings.TrimSpace(k.Principal)
 }
 
+// hostPrincipal is the principal used when no credential router resolved a
+// GitHub identity, so one host-wide chain accounts for all of its traffic.
+const hostPrincipal = "host"
+
+// HostIdentity returns the fallback identity for host, used when startup
+// configured no per-owner credential routes.
+func HostIdentity(host string) IdentityKey {
+	return IdentityKey{Host: normalizedPlatformHost(host), Principal: hostPrincipal}
+}
+
 // GitHubIdentity is the stable principal plus safe display metadata resolved
 // for one credential route.
 type GitHubIdentity struct {

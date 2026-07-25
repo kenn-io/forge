@@ -311,24 +311,40 @@ export const mockSettings = {
 export function makeRateLimits() {
   const now = Date.now();
   return {
-    hosts: {
+    provider_pools: {
       "github.com": {
-        requests_hour: 188,
-        rate_remaining: 4812,
-        rate_limit: 5000,
-        rate_reset_at: new Date(now + 42 * 60_000).toISOString(),
-        hour_start: new Date(now - 18 * 60_000).toISOString(),
+        provider: "github",
+        platform_host: "github.com",
+        rate_principal: "host",
+        principal_label: "Host credential",
+        reserve_buffer: 200,
         sync_throttle_factor: 1,
         sync_paused: false,
-        reserve_buffer: 200,
-        known: true,
-        budget_limit: 500,
-        budget_spent: 42,
-        budget_remaining: 458,
-        gql_remaining: 4950,
-        gql_limit: 5000,
-        gql_reset_at: new Date(now + 38 * 60_000).toISOString(),
-        gql_known: true,
+        rest: {
+          remaining: 4812,
+          limit: 5000,
+          reset_at: new Date(now + 42 * 60_000).toISOString(),
+          known: true,
+          requests: 188,
+        },
+        graphql: {
+          remaining: 4950,
+          limit: 5000,
+          reset_at: new Date(now + 38 * 60_000).toISOString(),
+          known: true,
+          requests: 50,
+        },
+      },
+    },
+    local_ceilings: {
+      "github.com": {
+        provider: "github",
+        platform_host: "github.com",
+        rate_principal: "host",
+        principal_label: "Host credential",
+        limit: 50000,
+        spent: 42,
+        remaining: 49958,
       },
     },
   };

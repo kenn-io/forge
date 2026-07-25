@@ -316,7 +316,7 @@ type WatchedMR struct {
 // SetParallelism has not been called. Bounded so we don't burst the
 // per-host GitHub rate limit / abuse-detection thresholds.
 const defaultParallelism = 4
-const rateLimitSnapshotRefreshInterval = time.Minute
+const rateLimitSnapshotRefreshInterval = 3 * time.Minute
 const activeMRHotActivityWindow = 30 * time.Minute
 const activeMRWarmRefreshInterval = 5 * time.Minute
 
@@ -476,6 +476,7 @@ type Syncer struct {
 	writeRateTrackers        map[string]*RateTracker    // provider/host bucket -> mutation-credential REST tracker
 	writeGQLRateTrackers     map[string]*RateTracker    // provider/host bucket -> mutation-credential GraphQL tracker
 	budgets                  map[string]*SyncBudget     // provider/host bucket -> budget
+	quotaRegistry            *QuotaRegistry             // GitHub principal -> live provider quota
 	fetchers                 map[string]*GraphQLFetcher // host -> fallback GraphQL fetcher
 	routers                  map[string]*HostRouter     // GitHub host -> credential router
 	ratePrincipalLabels      map[string]string
@@ -924,7 +925,26 @@ func (s *Syncer) Admit(
 		return archive.AdmissionResult{RetryAt: &retryAt, Detail: "higher-priority sync work is active"}, nil
 	}
 	tracker := s.rateTrackers[key]
-	if tracker != nil && (tracker.IsPaused() ||
+	var providerResetAt *time.Time
+	identity, identityErr := s.identityForRepo(repo, false)
+	if ref.Platform == platform.KindGitHub && s.quotaRegistry != nil && identityErr == nil {
+		resources := []QuotaResource{QuotaResourceREST, QuotaResourceGraphQL}
+		availability := s.quotaRegistry.CheckReserve(
+			identity, resources, cost, RateReserveBuffer,
+		)
+		providerResetAt = s.quotaRegistry.EarliestReset(identity, resources)
+		if !availability.Allowed {
+			probe.abandon()
+			retryAt := now.Add(time.Minute)
+			detail := "provider rate reserve reached"
+			if !availability.Known {
+				detail = "provider quota unknown"
+			} else if availability.ResetAt != nil && availability.ResetAt.After(now) {
+				retryAt = availability.ResetAt.UTC()
+			}
+			return archive.AdmissionResult{RetryAt: &retryAt, Detail: detail}, nil
+		}
+	} else if tracker != nil && (tracker.IsPaused() ||
 		tracker.Known() && tracker.Remaining()-cost < RateReserveBuffer) {
 		probe.abandon()
 		retryAt := now.Add(time.Minute)
@@ -934,7 +954,10 @@ func (s *Syncer) Admit(
 		return archive.AdmissionResult{RetryAt: &retryAt, Detail: "provider rate reserve reached"}, nil
 	}
 	budget := s.budgets[key]
-	resetAt := archiveBudgetResetAt(tracker)
+	resetAt := providerResetAt
+	if resetAt == nil {
+		resetAt = archiveBudgetResetAt(tracker)
+	}
 	available := 0
 	if budget != nil {
 		liveFloor := archiveLiveFloor(ref.Platform)
@@ -2948,12 +2971,12 @@ func repoHost(repo RepoRef) string {
 
 func (s *Syncer) identityForRepo(repo RepoRef, write bool) (IdentityKey, error) {
 	if repoPlatform(repo) != platform.KindGitHub {
-		return IdentityKey{Host: repoHost(repo), Principal: "host"}, nil
+		return HostIdentity(repoHost(repo)), nil
 	}
 	host := repoHost(repo)
 	router := s.routers[host]
 	if router == nil {
-		return IdentityKey{Host: host, Principal: "host"}, nil
+		return HostIdentity(host), nil
 	}
 	if write {
 		return router.WriteIdentityForRepo(repo.Owner, repo.Name)
@@ -3664,42 +3687,64 @@ func (s *Syncer) runArchiveLoop(ctx context.Context, ready <-chan struct{}) {
 	}
 }
 
-// syncWatchedMRs syncs each MR on the watch list via SyncMR.
-// Fires onMRSynced (inside SyncMR) but not onSyncCompleted.
-// Checks per-host rate limits before issuing API calls.
-// hostEligibility computes which hosts are eligible for sync
-// based on rate tracker state and the next-sync-after gate.
-// hosts may contain duplicates; they are deduplicated internally.
-func (s *Syncer) hostEligibility(
-	hosts []string,
+// backgroundQuotaAvailability reports the repository's routed credential
+// capacity for background work. Non-GitHub repositories and unconfigured
+// registries report unknown, which callers treat as no provider gate.
+func (s *Syncer) backgroundQuotaAvailability(
+	repo RepoRef, cost int,
+) QuotaAvailability {
+	if repoPlatform(repo) != platform.KindGitHub || s.quotaRegistry == nil {
+		return QuotaAvailability{Allowed: true, Known: false}
+	}
+	identity, err := s.identityForRepo(repo, false)
+	if err != nil {
+		return QuotaAvailability{Allowed: true, Known: false}
+	}
+	return s.quotaRegistry.CheckReserve(
+		identity,
+		[]QuotaResource{QuotaResourceREST, QuotaResourceGraphQL},
+		cost,
+		RateReserveBuffer,
+	)
+}
+
+// repoEligibility computes which credential buckets may sync now. Buckets are
+// the routed identity buckets, so one credential's exhaustion cannot throttle
+// a repository routed to a different credential.
+func (s *Syncer) repoEligibility(
+	repos []RepoRef,
 	nextAfter map[string]time.Time,
 ) map[string]bool {
 	now := time.Now().UTC()
-	eligible := make(map[string]bool, len(hosts))
-	for _, host := range hosts {
-		if _, checked := eligible[host]; checked {
+	eligible := make(map[string]bool, len(repos))
+	for _, repo := range repos {
+		key, err := s.bucketKeyForRepo(repo, false)
+		if err != nil {
 			continue
 		}
-		rt := s.rateTrackers[host]
-		if rt == nil {
-			eligible[host] = true
+		if _, checked := eligible[key]; checked {
 			continue
 		}
-		if rt.IsPaused() {
-			eligible[host] = false
+		if after, ok := nextAfter[key]; ok && now.Before(after) {
+			eligible[key] = false
 			continue
 		}
-		if after, ok := nextAfter[host]; ok && now.Before(after) {
-			eligible[host] = false
+		if repoPlatform(repo) == platform.KindGitHub && s.quotaRegistry != nil {
+			availability := s.backgroundQuotaAvailability(repo, 1)
+			// Ordinary background sync may establish an unknown pool from
+			// response headers. Archive admission is stricter and waits for
+			// both pools to be known before spending surplus.
+			eligible[key] = availability.Allowed || !availability.Known
 			continue
 		}
-		eligible[host] = true
+		tracker := s.rateTrackers[key]
+		eligible[key] = tracker == nil || !tracker.IsPaused()
 	}
 	return eligible
 }
 
-// advanceNextSync updates the next-sync-after gate for hosts
-// that were eligible, using each host's current throttle factor.
+// advanceNextSync updates the next-sync-after gate for buckets
+// that were eligible, using each bucket's current throttle factor.
 func (s *Syncer) advanceNextSync(
 	eligible map[string]bool,
 	nextAfter map[string]time.Time,
@@ -3714,9 +3759,7 @@ func (s *Syncer) advanceNextSync(
 		if rt == nil {
 			continue
 		}
-		nextAfter[host] = now.Add(
-			interval * time.Duration(rt.ThrottleFactor()),
-		)
+		nextAfter[host] = now.Add(interval * time.Duration(rt.ThrottleFactor()))
 	}
 }
 
@@ -3729,22 +3772,19 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 	}
 
 	watchInt, _ := s.watchSettings()
-	watchBuckets := make([]string, len(mrs))
+	watchRepos := make([]RepoRef, len(mrs))
 	for i, mr := range mrs {
-		bucket, err := s.readBucketKeyForWatchedMR(mr)
-		if err != nil {
-			continue
+		watchRepos[i] = RepoRef{
+			Platform: watchedMRPlatform(mr), PlatformHost: watchedMRHost(mr),
+			Owner: mr.Owner, Name: mr.Name,
 		}
-		watchBuckets[i] = bucket
 	}
-	eligibleBuckets := s.hostEligibility(
-		watchBuckets, s.nextWatchSyncAfter,
-	)
+	eligibleBuckets := s.repoEligibility(watchRepos, s.nextWatchSyncAfter)
 
 	// Check backoff once per provider/host bucket to avoid redundant checks.
 	blockedBuckets := make(map[string]bool)
-	for _, mr := range mrs {
-		bucket, err := s.readBucketKeyForWatchedMR(mr)
+	for i := range mrs {
+		bucket, err := s.bucketKeyForRepo(watchRepos[i], false)
 		if err != nil {
 			continue
 		}
@@ -3763,7 +3803,13 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 	syncedAny := false
 	for _, mr := range mrs {
 		host := watchedMRHost(mr)
-		bucket, bucketErr := s.readBucketKeyForWatchedMR(mr)
+		repo := RepoRef{
+			Platform:     watchedMRPlatform(mr),
+			PlatformHost: host,
+			Owner:        mr.Owner,
+			Name:         mr.Name,
+		}
+		bucket, bucketErr := s.bucketKeyForRepo(repo, false)
 		if bucketErr != nil {
 			slog.Warn("resolve fast-sync credential route",
 				"host", host,
@@ -3772,12 +3818,6 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 				"err", bucketErr,
 			)
 			continue
-		}
-		repo := RepoRef{
-			Platform:     watchedMRPlatform(mr),
-			PlatformHost: host,
-			Owner:        mr.Owner,
-			Name:         mr.Name,
 		}
 		if !eligibleBuckets[bucket] {
 			slog.Debug("skipping fast-sync for throttled host",
@@ -4096,6 +4136,20 @@ func (s *Syncer) Budgets() map[string]*SyncBudget {
 	return s.budgets
 }
 
+func (s *Syncer) SetQuotaRegistry(registry *QuotaRegistry) {
+	s.quotaRegistry = registry
+}
+
+func (s *Syncer) QuotaRegistry() *QuotaRegistry {
+	return s.quotaRegistry
+}
+
+func (s *Syncer) reposSnapshot() []RepoRef {
+	s.reposMu.Lock()
+	defer s.reposMu.Unlock()
+	return slices.Clone(s.repos)
+}
+
 // GQLRateTrackers returns per-provider/host GraphQL rate trackers
 // extracted from the registered GraphQL fetchers. Hosts with
 // nil fetchers or trackers are skipped.
@@ -4236,13 +4290,21 @@ func (s *Syncer) refreshRateLimitSnapshotForRoute(
 	if snapshot == nil {
 		return false
 	}
+	// The tracker is already bound to one principal's bucket, so it names the
+	// identity whose pools this snapshot describes. Reconciling the registry
+	// here keeps provider quota and the local trackers reading the same facts.
+	identity := IdentityKey{Host: rt.PlatformHost(), Principal: rt.Principal()}
 	updated := false
 	if snapshot.Core != nil {
 		rt.UpdateFromSnapshot(*snapshot.Core)
+		s.quotaRegistry.UpdateSnapshot(identity, QuotaResourceREST, *snapshot.Core)
 		updated = true
 	}
-	if snapshot.GraphQL != nil && route.Fetcher != nil && route.Fetcher.RateTracker() != nil {
-		route.Fetcher.RateTracker().UpdateFromSnapshot(*snapshot.GraphQL)
+	if snapshot.GraphQL != nil {
+		if route.Fetcher != nil && route.Fetcher.RateTracker() != nil {
+			route.Fetcher.RateTracker().UpdateFromSnapshot(*snapshot.GraphQL)
+		}
+		s.quotaRegistry.UpdateSnapshot(identity, QuotaResourceGraphQL, *snapshot.GraphQL)
 	}
 	return updated
 }
@@ -4359,6 +4421,31 @@ func (s *Syncer) runWorker(
 			state.errMu.Unlock()
 			state.results[item.index].Error = bucketErr.Error()
 			continue
+		}
+		// Provider reserve first: this credential's own GitHub pool. The
+		// tracker backoff below is a separate signal (secondary limits and
+		// Retry-After), so both gates apply.
+		if availability := s.backgroundQuotaAvailability(repo, 1); availability.Known &&
+			!availability.Allowed {
+			wait := time.Minute
+			if availability.ResetAt != nil {
+				wait = time.Until(*availability.ResetAt)
+				if wait <= 0 {
+					wait = time.Minute
+				}
+			}
+			s.publishStatus(&SyncStatus{
+				Running: true,
+				Progress: fmt.Sprintf(
+					"rate limited, waiting %s", formatRateLimitWait(wait),
+				),
+			})
+			select {
+			case <-time.After(wait):
+			case <-ctx.Done():
+				state.canceled.Store(true)
+				return
+			}
 		}
 		if rt := s.rateTrackers[bucket]; rt != nil {
 			if backoff, wait := rt.ShouldBackoff(); backoff {
@@ -4542,13 +4629,6 @@ func (s *Syncer) runOnce(
 		}
 	}
 
-	repoBuckets := make([]string, len(repos))
-	for i, r := range repos {
-		bucket, err := s.bucketKeyForRepo(r, false)
-		if err == nil {
-			repoBuckets[i] = bucket
-		}
-	}
 	nextAfter := s.nextSyncAfter
 	if bypassNextSyncAfter {
 		nextAfter = nil
@@ -4557,7 +4637,7 @@ func (s *Syncer) runOnce(
 		refreshed := s.refreshRateLimitSnapshots(rateLimitSnapshotCtx)
 		s.clearRecoveredRateLimitGates(refreshed, nextAfter, s.interval)
 	}
-	eligibleBuckets := s.hostEligibility(repoBuckets, nextAfter)
+	eligibleBuckets := s.repoEligibility(repos, nextAfter)
 
 	var (
 		completed atomic.Int32
@@ -9032,20 +9112,19 @@ func (s *Syncer) drainDetailQueue(
 			Owner: qi.RepoOwner, Name: qi.RepoName,
 			Platform: qi.Platform, PlatformHost: qi.PlatformHost,
 		}
-		bucket, err := s.bucketKeyForRepo(repo, false)
-		if err != nil {
-			continue
-		}
-
-		if !eligibleBuckets[bucket] {
-			continue
-		}
 		host := repoHost(repo)
 		if tracked, ok := s.trackedRepoByIdentity(qi.Platform, qi.RepoOwner, qi.RepoName, host); ok {
 			repo = tracked
 			repo.Owner = qi.RepoOwner
 			repo.Name = qi.RepoName
 			repo.PlatformHost = host
+		}
+		// Resolve the credential bucket from the tracked repository. Routing
+		// keys off the owner and host that survive tracking, not the raw
+		// queue row, so this must follow the lookup above.
+		bucket, err := s.bucketKeyForRepo(repo, false)
+		if err != nil || !eligibleBuckets[bucket] {
+			continue
 		}
 		feature := platform.RepositoryFeatureIssues
 		if qi.Type == QueueItemPR {

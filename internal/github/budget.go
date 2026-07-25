@@ -55,7 +55,7 @@ func (b *SyncBudget) CanSpend(n int) bool {
 func (b *SyncBudget) TrySpend(n int) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if b.spent+n > b.limit {
+	if n < 0 || b.spent+n > b.limit {
 		return false
 	}
 	b.spent += n
@@ -63,9 +63,7 @@ func (b *SyncBudget) TrySpend(n int) bool {
 }
 
 func (b *SyncBudget) Spend(n int) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.spent += n
+	b.TrySpend(n)
 }
 
 // Refund returns n calls back to the budget.
@@ -88,7 +86,7 @@ func (b *SyncBudget) Reset() {
 func (b *SyncBudget) Remaining() int {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.limit - b.spent
+	return max(b.limit-b.spent, 0)
 }
 
 func (b *SyncBudget) Spent() int {
@@ -129,10 +127,25 @@ func (b *SyncBudget) LocalArchiveSpendAvailable(liveFloor int) int {
 }
 
 func (b *SyncBudget) SpendArchive(n int) {
+	b.TrySpendArchive(n)
+}
+
+func (b *SyncBudget) TrySpendArchive(n int) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if n < 0 || b.spent+n > b.limit {
+		return false
+	}
 	b.spent += n
 	b.archiveSpent += n
+	return true
+}
+
+func (b *SyncBudget) RefundArchive(n int) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.spent = max(b.spent-n, 0)
+	b.archiveSpent = max(b.archiveSpent-n, 0)
 }
 
 func (b *SyncBudget) ArchiveSpent() int {

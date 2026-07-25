@@ -1,4 +1,4 @@
-import type { RateLimitHostStatus, SyncStatus } from "../api/types.js";
+import type { RateLimitsResponse, SyncStatus } from "../api/types.js";
 import type { MiddlemanClient } from "../types.js";
 
 export interface SyncStoreOptions {
@@ -13,7 +13,7 @@ export function createSyncStore(opts: SyncStoreOptions) {
   // --- state ---
 
   let status = $state<SyncStatus | null>(null);
-  let rateLimits = $state<Record<string, RateLimitHostStatus>>({});
+  let rateLimits = $state.raw<RateLimitsResponse>({ provider_pools: {}, local_ceilings: {} });
   let pollingHandle: ReturnType<typeof setInterval> | null = null;
   let wasRunning = false;
   let onSyncCompleteOnce: (() => void) | null = null;
@@ -29,7 +29,7 @@ export function createSyncStore(opts: SyncStoreOptions) {
     return status;
   }
 
-  function getRateLimits(): Record<string, RateLimitHostStatus> {
+  function getRateLimits(): RateLimitsResponse {
     return rateLimits;
   }
 
@@ -85,7 +85,7 @@ export function createSyncStore(opts: SyncStoreOptions) {
     if (rateResult.status === "fulfilled") {
       const { data, error } = rateResult.value;
       if (!error && data) {
-        rateLimits = data.hosts ?? {};
+        rateLimits = data;
       }
     }
   }

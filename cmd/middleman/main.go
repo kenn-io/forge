@@ -605,6 +605,7 @@ func run(opts serve.Options) error {
 	syncer.SetFetchers(startup.fetchers)
 	syncer.SetGitHubRouters(startup.githubRouters)
 	syncer.SetRatePrincipalLabels(startup.ratePrincipalLabels)
+	syncer.SetQuotaRegistry(startup.quotaRegistry)
 	syncer.SetWriteRateTrackers(startup.writeRateTrackers)
 	syncer.SetWriteGQLRateTrackers(startup.writeGQLRateTrackers)
 	archiveService, err := archive.NewService(

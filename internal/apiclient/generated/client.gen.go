@@ -2390,6 +2390,17 @@ type ListWorktreesOutputBody struct {
 	Worktrees *[]WorktreeResponse `json:"worktrees"`
 }
 
+// LocalSyncCeilingStatus defines model for LocalSyncCeilingStatus.
+type LocalSyncCeilingStatus struct {
+	Limit          int64  `json:"limit"`
+	PlatformHost   string `json:"platform_host"`
+	PrincipalLabel string `json:"principal_label"`
+	Provider       string `json:"provider"`
+	RatePrincipal  string `json:"rate_principal"`
+	Remaining      int64  `json:"remaining"`
+	Spent          int64  `json:"spent"`
+}
+
 // MergePRBody defines model for MergePRBody.
 type MergePRBody struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -2907,33 +2918,32 @@ type PullResponse struct {
 
 // RateLimitHostStatus defines model for RateLimitHostStatus.
 type RateLimitHostStatus struct {
-	BudgetLimit        int64  `json:"budget_limit"`
-	BudgetRemaining    int64  `json:"budget_remaining"`
-	BudgetSpent        int64  `json:"budget_spent"`
-	GqlKnown           bool   `json:"gql_known"`
-	GqlLimit           int64  `json:"gql_limit"`
-	GqlRemaining       int64  `json:"gql_remaining"`
-	GqlResetAt         string `json:"gql_reset_at"`
-	HourStart          string `json:"hour_start"`
-	Known              bool   `json:"known"`
-	PlatformHost       string `json:"platform_host"`
-	PrincipalLabel     string `json:"principal_label"`
-	Provider           string `json:"provider"`
-	RateLimit          int64  `json:"rate_limit"`
-	RatePrincipal      string `json:"rate_principal"`
-	RateRemaining      int64  `json:"rate_remaining"`
-	RateResetAt        string `json:"rate_reset_at"`
-	RequestsHour       int64  `json:"requests_hour"`
-	ReserveBuffer      int64  `json:"reserve_buffer"`
-	SyncPaused         bool   `json:"sync_paused"`
-	SyncThrottleFactor int64  `json:"sync_throttle_factor"`
+	Graphql            RateLimitResourceStatus `json:"graphql"`
+	PlatformHost       string                  `json:"platform_host"`
+	PrincipalLabel     string                  `json:"principal_label"`
+	Provider           string                  `json:"provider"`
+	RatePrincipal      string                  `json:"rate_principal"`
+	ReserveBuffer      int64                   `json:"reserve_buffer"`
+	Rest               RateLimitResourceStatus `json:"rest"`
+	SyncPaused         bool                    `json:"sync_paused"`
+	SyncThrottleFactor int64                   `json:"sync_throttle_factor"`
+}
+
+// RateLimitResourceStatus defines model for RateLimitResourceStatus.
+type RateLimitResourceStatus struct {
+	Known     bool   `json:"known"`
+	Limit     int64  `json:"limit"`
+	Remaining int64  `json:"remaining"`
+	Requests  int64  `json:"requests"`
+	ResetAt   string `json:"reset_at"`
 }
 
 // RateLimitsResponse defines model for RateLimitsResponse.
 type RateLimitsResponse struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema *string                        `json:"$schema,omitempty"`
-	Hosts  map[string]RateLimitHostStatus `json:"hosts"`
+	Schema        *string                           `json:"$schema,omitempty"`
+	LocalCeilings map[string]LocalSyncCeilingStatus `json:"local_ceilings"`
+	ProviderPools map[string]RateLimitHostStatus    `json:"provider_pools"`
 }
 
 // RawHost defines model for RawHost.

@@ -24,89 +24,123 @@ import {
 } from "../../../test/browserAppHarness.js";
 import { jsonResponse, type MockRouteOverride } from "../../../test/mockApiFetch.js";
 
-function rateLimits(hosts: Record<string, unknown>): MockRouteOverride {
-  const normalizedHosts = Object.fromEntries(
-    Object.entries(hosts).map(([key, value]) => [
-      key,
-      key.includes("\\u0000") || key.includes("\u0000")
-        ? value
-        : { ...(value as Record<string, unknown>), platform_host: key },
-    ]),
-  );
+function rateLimits(
+  providerPools: Record<string, unknown>,
+  localCeilings: Record<string, unknown> = {},
+): MockRouteOverride {
   return (req) => {
     if (req.method !== "GET" || req.url.pathname !== "/api/v1/rate-limits") return null;
-    return jsonResponse({ hosts: normalizedHosts });
+    const normalizedPools = Object.fromEntries(
+      Object.entries(providerPools).map(([key, value]) => [
+        key,
+        { ...(value as Record<string, unknown>), platform_host: key },
+      ]),
+    );
+    return jsonResponse({ provider_pools: normalizedPools, local_ceilings: localCeilings });
   };
 }
 
-const knownHost = {
-  provider: "github",
-  platform_host: "github.com",
-  rate_principal: "host",
-  principal_label: "Host credential",
-  requests_hour: 100,
-  rate_remaining: 4500,
-  rate_limit: 5000,
-  rate_reset_at: new Date(Date.now() + 30 * 60_000).toISOString(),
-  hour_start: new Date().toISOString(),
-  sync_throttle_factor: 1,
-  sync_paused: false,
-  reserve_buffer: 200,
-  known: true,
-  budget_limit: 500,
-  budget_spent: 100,
-  budget_remaining: 400,
-  gql_remaining: 4900,
-  gql_limit: 5000,
-  gql_reset_at: new Date(Date.now() + 25 * 60_000).toISOString(),
-  gql_known: true,
-};
+function credentialAwareRateLimits(): MockRouteOverride {
+  return (req) => {
+    if (req.method !== "GET" || req.url.pathname !== "/api/v1/rate-limits") return null;
+    const reset = new Date(Date.now() + 30 * 60_000).toISOString();
+    return jsonResponse({
+      provider_pools: {
+        "github:github.com:installation:42": {
+          provider: "github",
+          platform_host: "github.com",
+          rate_principal: "installation:42",
+          principal_label: "GitHub App installation 42",
+          reserve_buffer: 200,
+          sync_throttle_factor: 1,
+          sync_paused: false,
+          rest: { remaining: 14900, limit: 15000, reset_at: reset, known: true, requests: 100 },
+          graphql: { remaining: 9900, limit: 10000, reset_at: reset, known: true, requests: 25 },
+        },
+        "github:github.com:user:7": {
+          provider: "github",
+          platform_host: "github.com",
+          rate_principal: "user:7",
+          principal_label: "GitHub user maintainer",
+          reserve_buffer: 200,
+          sync_throttle_factor: 1,
+          sync_paused: false,
+          rest: { remaining: 4900, limit: 5000, reset_at: reset, known: true, requests: 10 },
+          graphql: { remaining: -1, limit: -1, reset_at: "", known: false, requests: 0 },
+        },
+      },
+      local_ceilings: {
+        "github.com": {
+          provider: "github",
+          platform_host: "github.com",
+          rate_principal: "host",
+          principal_label: "Host credential",
+          limit: 50000,
+          spent: 42,
+          remaining: 49958,
+        },
+      },
+    });
+  };
+}
 
-const unknownHost = {
-  provider: "github",
-  platform_host: "github.com",
-  rate_principal: "host",
-  principal_label: "Host credential",
-  requests_hour: 0,
-  rate_remaining: -1,
-  rate_limit: -1,
-  rate_reset_at: "",
-  hour_start: new Date().toISOString(),
-  sync_throttle_factor: 1,
-  sync_paused: false,
-  reserve_buffer: 200,
+const unknownResource = {
+  remaining: -1,
+  limit: -1,
+  reset_at: "",
   known: false,
-  budget_limit: 0,
-  budget_spent: 0,
-  budget_remaining: 0,
-  gql_remaining: -1,
-  gql_limit: -1,
-  gql_reset_at: "",
-  gql_known: false,
+  requests: 0,
 };
 
-const pausedHost = {
-  provider: "github",
-  platform_host: "github.com",
-  rate_principal: "host",
-  principal_label: "Host credential",
-  requests_hour: 500,
-  rate_remaining: 50,
-  rate_limit: 5000,
-  rate_reset_at: new Date(Date.now() + 10 * 60_000).toISOString(),
-  hour_start: new Date().toISOString(),
-  sync_throttle_factor: 8,
-  sync_paused: true,
-  reserve_buffer: 200,
-  known: true,
-  budget_limit: 500,
-  budget_spent: 400,
-  budget_remaining: 100,
-  gql_remaining: 100,
-  gql_limit: 5000,
-  gql_reset_at: new Date(Date.now() + 10 * 60_000).toISOString(),
-  gql_known: true,
-};
+function providerHost(rest: Record<string, unknown>, graphql: Record<string, unknown> = unknownResource) {
+  return {
+    provider: "github",
+    platform_host: "github.com",
+    rate_principal: "host",
+    principal_label: "Host credential",
+    reserve_buffer: 200,
+    sync_throttle_factor: 1,
+    sync_paused: false,
+    rest,
+    graphql,
+  };
+}
+
+const knownHost = providerHost(
+  {
+    remaining: 4500,
+    limit: 5000,
+    reset_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+    known: true,
+    requests: 100,
+  },
+  {
+    remaining: 4900,
+    limit: 5000,
+    reset_at: new Date(Date.now() + 25 * 60_000).toISOString(),
+    known: true,
+    requests: 25,
+  },
+);
+
+const unknownHost = providerHost(unknownResource);
+
+const pausedHost = providerHost(
+  {
+    remaining: 50,
+    limit: 5000,
+    reset_at: new Date(Date.now() + 10 * 60_000).toISOString(),
+    known: true,
+    requests: 500,
+  },
+  {
+    remaining: 100,
+    limit: 5000,
+    reset_at: new Date(Date.now() + 10 * 60_000).toISOString(),
+    known: true,
+    requests: 100,
+  },
+);
 
 // Real Chromium drives the genuine async render/network chain, which is slower
 // than jsdom's synchronous fixtures, so each poll gets a generous window. The
@@ -160,6 +194,18 @@ describe("budget display", () => {
     expect(bars.textContent).toContain("GQL");
   });
 
+  it("shows credential-specific provider quota separately from the local sync ceiling", async () => {
+    const bars = await mountStatusBar([credentialAwareRateLimits()]);
+    const popover = await openPopover(bars);
+    expect(popover.textContent).toContain("Provider quota");
+    expect(popover.textContent).toContain("GitHub App installation 42");
+    expect(popover.textContent).toContain("GitHub user maintainer");
+    expect(popover.textContent).toContain("Local sync ceiling");
+    expect(popover.textContent).toContain("42 / 50k requests");
+    expect(popover.textContent).not.toContain("Eager refresh");
+    expect(popover.textContent).not.toContain("budgeted req/hr");
+  });
+
   it("budget bars keep eager refresh budget out of the compact status", async () => {
     const bars = await mountStatusBar();
     expect(bars.textContent).not.toContain("Refresh");
@@ -167,25 +213,27 @@ describe("budget display", () => {
     expect(bars.querySelector(".budget-count")).toBeNull();
   });
 
-  // The popover dialog exposes REST req, GraphQL pts, and the eager
-  // refresh budget spend from the same payload.
+  // The popover dialog exposes provider REST/GraphQL pools and the separate
+  // local process ceiling from the same payload.
   it("clicking budget area opens popover with per-host breakdown", async () => {
     const bars = await mountStatusBar();
     const popover = await openPopover(bars);
     const units = Array.from(popover.querySelectorAll(".row-unit")).map((el) => el.textContent?.trim());
     expect(units).toContain("req");
     expect(units).toContain("pts");
-    expect(popover.textContent).toContain("Eager refresh");
-    expect(popover.textContent).toContain("42 / 500 budgeted req/hr");
-    expect(popover.textContent).toContain("Details, comments, and backfills pause when spent.");
-    expect(popover.textContent).not.toContain("Optional");
+    expect(popover.textContent).toContain("Provider quota");
+    expect(popover.textContent).toContain("Local sync ceiling");
+    expect(popover.textContent).toContain("42 / 50k requests");
+    expect(popover.textContent).toContain("provider quota above is authoritative");
     expect(popover.querySelector(".budget-spent")?.textContent).toBe("42");
 
-    const eagerLabel = popover.querySelector<HTMLElement>(".budget-row--eager .row-label");
-    const eagerValue = popover.querySelector<HTMLElement>(".budget-row--eager .row-value");
-    expect(eagerLabel).not.toBeNull();
-    expect(eagerValue).not.toBeNull();
-    expect(Math.abs(eagerLabel!.getBoundingClientRect().top - eagerValue!.getBoundingClientRect().top)).toBeLessThan(2);
+    const ceilingLabel = popover.querySelector<HTMLElement>(".budget-row--ceiling .row-label");
+    const ceilingValue = popover.querySelector<HTMLElement>(".budget-row--ceiling .row-value");
+    expect(ceilingLabel).not.toBeNull();
+    expect(ceilingValue).not.toBeNull();
+    expect(
+      Math.abs(ceilingLabel!.getBoundingClientRect().top - ceilingValue!.getBoundingClientRect().top),
+    ).toBeLessThan(2);
 
     // The bar runs with overflow="visible" so the popover's absolute
     // bottom-anchored panel can open fully above the 24px bar rather than
@@ -199,28 +247,31 @@ describe("budget display", () => {
     expect(popoverRect.bottom).toBeLessThanOrEqual(barRect.top + 1);
   });
 
-  it("marks sync budget spend that exceeds the configured limit", async () => {
+  it("marks a local ceiling that has been fully spent", async () => {
     const bars = await mountStatusBar([
-      rateLimits({
-        "github.com": {
-          ...knownHost,
-          budget_limit: 500,
-          budget_spent: 1300,
-          budget_remaining: -800,
+      rateLimits(
+        { "github.com": knownHost },
+        {
+          "github.com": {
+            provider: "github",
+            platform_host: "github.com",
+            limit: 500,
+            spent: 500,
+            remaining: 0,
+          },
         },
-      }),
+      ),
     ]);
 
     expect(bars.textContent).not.toContain("Refresh");
-    expect(bars.textContent).not.toContain("1.3k / 500");
+    expect(bars.textContent).not.toContain("500 / 500");
     expect(bars.querySelector(".budget-count")).toBeNull();
 
     const popover = await openPopover(bars);
     const spent = popover.querySelector<HTMLElement>(".budget-spent");
-    expect(spent?.textContent).toBe("1.3k");
-    expect(spent?.classList.contains("budget-spent--over")).toBe(true);
-    expect(popover.textContent).toContain("Details, comments, and backfills are paused.");
-    expect(popover.textContent).not.toContain("eager refresh deferred");
+    expect(spent?.textContent).toBe("500");
+    expect(spent?.style.color).toBe("var(--budget-red)");
+    expect(popover.textContent).toContain("Local sync ceiling");
   });
 
   it("popover dismisses on Escape and restores focus to the trigger", async () => {
@@ -262,29 +313,6 @@ describe("budget display", () => {
 
     pressKey("Escape", {}, document);
     await vi.waitFor(() => expect(document.querySelector(".budget-popover")).toBeNull(), WAIT);
-  });
-
-  it("identity-scoped entries render safe host and principal labels", async () => {
-    const bars = await mountStatusBar([
-      rateLimits({
-        "github\\u0000github.com\\u0000user:123": {
-          ...knownHost,
-          rate_principal: "user:123",
-          principal_label: "GitHub user maintainer",
-        },
-        "github\\u0000github.com\\u0000installation:789": {
-          ...unknownHost,
-          rate_principal: "installation:789",
-          principal_label: "GitHub App installation 789",
-        },
-      }),
-    ]);
-
-    const popover = await openPopover(bars);
-    expect(popover.textContent).toContain("github.com");
-    expect(popover.textContent).toContain("GitHub user maintainer");
-    expect(popover.textContent).toContain("GitHub App installation 789");
-    expect(popover.textContent).not.toContain("github\\u0000github.com");
   });
 
   it("mixed known/unknown hosts show worst-case from known only", async () => {
@@ -336,22 +364,19 @@ describe("budget display", () => {
     expect(restFill).not.toBeNull();
     expect(restFill!.style.background).toBe("var(--budget-red)");
 
-    // Open popover — should show "sync paused" indicator
+    // Open popover — should identify the actual provider reserve.
     const popover = await openPopover(bars);
-    expect(popover.textContent).toContain("sync paused");
-    // Single-host mode hides hostname header (and health dot).
-    // Health dot color is tested in the multi-host paused case below.
+    expect(popover.textContent).toContain("provider reserve reached");
   });
 
   it("paused multi-host shows red health dot in popover", async () => {
-    const freshSecondHost = {
-      ...unknownHost,
-      requests_hour: 10,
-      rate_remaining: 4900,
-      rate_limit: 5000,
-      rate_reset_at: new Date(Date.now() + 50 * 60_000).toISOString(),
+    const freshSecondHost = providerHost({
+      remaining: 4900,
+      limit: 5000,
+      reset_at: new Date(Date.now() + 50 * 60_000).toISOString(),
       known: true,
-    };
+      requests: 10,
+    });
     const bars = await mountStatusBar([
       rateLimits({
         "github.com": pausedHost,
@@ -367,16 +392,13 @@ describe("budget display", () => {
   it("GQL known but REST unknown still hides eager refresh budget from compact status", async () => {
     const bars = await mountStatusBar([
       rateLimits({
-        "github.com": {
-          ...unknownHost,
-          budget_limit: 500,
-          budget_spent: 10,
-          budget_remaining: 490,
-          gql_remaining: 4800,
-          gql_limit: 5000,
-          gql_reset_at: new Date(Date.now() + 30 * 60_000).toISOString(),
-          gql_known: true,
-        },
+        "github.com": providerHost(unknownResource, {
+          remaining: 4800,
+          limit: 5000,
+          reset_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+          known: true,
+          requests: 10,
+        }),
       }),
     ]);
 
@@ -384,22 +406,18 @@ describe("budget display", () => {
     expect(bars.textContent).toContain("GQL");
     expect(bars.textContent).not.toContain("REST");
     expect(bars.textContent).toContain("--");
-    // Eager refresh budget remains available in the popover, not the compact status.
+    // The compact status remains provider-only.
     expect(bars.textContent).not.toContain("Refresh");
     expect(bars.textContent).not.toContain("10 / 500");
     expect(bars.querySelector(".budget-count")).toBeNull();
 
     const popover = await openPopover(bars);
-    expect(popover.textContent).toContain("Eager refresh");
-    expect(popover.textContent).toContain("10 / 500 budgeted req/hr");
+    expect(popover.textContent).toContain("Provider quota");
+    expect(popover.textContent).not.toContain("Local sync ceiling");
   });
 
   it("stale host excluded from compact bars, fresh host drives ratio", async () => {
-    const staleHost = {
-      ...unknownHost,
-      rate_limit: 5000,
-      known: true,
-    };
+    const staleHost = providerHost({ ...unknownResource, limit: 5000, known: true });
     const bars = await mountStatusBar([
       rateLimits({
         "github.com": knownHost,

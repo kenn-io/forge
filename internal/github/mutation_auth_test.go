@@ -15,37 +15,32 @@ import (
 	"go.kenn.io/middleman/internal/tokenauth"
 )
 
+// splitAuthReadIdentity and splitAuthWriteIdentity are the principals a
+// split-auth route accounts to: App installation reads, user PAT writes.
+var (
+	splitAuthReadIdentity  = IdentityKey{Host: "github.example.com", Principal: "installation:11"}
+	splitAuthWriteIdentity = IdentityKey{Host: "github.example.com", Principal: "user:1"}
+)
+
 // newSplitAuthTestClient builds a liveClient wired exactly like
 // NewClient's read/write split (shared auth transport, mutation-marked
 // write path) but pointed at srv instead of a real GitHub host.
 func newSplitAuthTestClient(
 	t *testing.T, srv *httptest.Server, source tokenauth.Source,
+	registries ...*QuotaRegistry,
 ) *liveClient {
 	t.Helper()
-	authRT := tokenauth.AuthTransport{
-		Source:              source,
-		Base:                http.DefaultTransport,
-		SetHeader:           tokenauth.BearerAuthHeader,
-		RetryOnUnauthorized: true,
+	options := []ClientOption{WithBaseURLForTesting(srv.URL)}
+	if len(registries) > 0 {
+		options = append(options, WithQuotaAccounting(
+			registries[0], splitAuthReadIdentity, splitAuthWriteIdentity,
+		))
 	}
-	readHTTP := &http.Client{Transport: authRT}
-	writeHTTP := &http.Client{Transport: mutationAuthTransport{base: authRT}}
-	ghRead, err := newEnterpriseGHClient(readHTTP,
-		srv.URL+"/api/v3/", srv.URL+"/api/uploads/")
-
+	client, err := NewClient(source, "github.example.com", nil, nil, options...)
 	require.NoError(t, err)
-	ghWrite, err := newEnterpriseGHClient(writeHTTP,
-		srv.URL+"/api/v3/", srv.URL+"/api/uploads/")
-
-	require.NoError(t, err)
-	return &liveClient{
-		gh:              ghRead,
-		ghWrite:         ghWrite,
-		source:          source,
-		httpClient:      readHTTP,
-		httpWriteClient: writeHTTP,
-		graphQLEndpoint: srv.URL + "/api/graphql",
-	}
+	live, ok := client.(*liveClient)
+	require.True(t, ok)
+	return live
 }
 
 // TestMutationsUseUserPATWhileReadsUseAppToken pins the credential
@@ -73,6 +68,9 @@ func TestMutationsUseUserPATWhileReadsUseAppToken(t *testing.T) {
 		func(w http.ResponseWriter, r *http.Request) {
 			record("read:releases", r)
 			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("X-RateLimit-Limit", "15000")
+			w.Header().Set("X-RateLimit-Remaining", "14999")
+			w.Header().Set("X-RateLimit-Reset", "2000000000")
 			_, _ = w.Write([]byte(`[]`))
 		})
 	mux.HandleFunc("POST /api/v3/repos/acme/widgets/issues/5/comments",
@@ -153,7 +151,8 @@ func TestMutationsUseUserPATWhileReadsUseAppToken(t *testing.T) {
 			return "ghs_app_token", time.Now().Add(time.Hour), nil
 		},
 	})
-	c := newSplitAuthTestClient(t, srv, source)
+	quotaRegistry := NewQuotaRegistry()
+	c := newSplitAuthTestClient(t, srv, source, quotaRegistry)
 	writeGQLRT := NewRateTracker(openTestDB(t), "github.example.com", "user:1", "graphql_write")
 	c.SetWriteGraphQLRateTracker(writeGQLRT)
 
@@ -193,6 +192,12 @@ func TestMutationsUseUserPATWhileReadsUseAppToken(t *testing.T) {
 	// tracker, including the ready-for-review node-ID lookup — the
 	// fake only sets rate headers on the lookup response.
 	assert.Equal(4321, writeGQLRT.Remaining())
+	appREST, ok := quotaRegistry.Get(splitAuthReadIdentity, QuotaResourceREST)
+	require.True(ok)
+	assert.Equal(14999, appREST.Remaining)
+	userGraphQL, ok := quotaRegistry.Get(splitAuthWriteIdentity, QuotaResourceGraphQL)
+	require.True(ok)
+	assert.Equal(4321, userGraphQL.Remaining)
 }
 
 func TestNotificationAPIsUseUserAuthAndBackgroundBudget(t *testing.T) {
@@ -275,6 +280,7 @@ func TestNotificationAPIsUseUserAuthAndBackgroundBudget(t *testing.T) {
 	writeRT := NewRateTracker(database, "github.example.com", "user:1", "rest")
 	readBudget := NewSyncBudget(100)
 	writeBudget := NewSyncBudget(100)
+	quotaRegistry := NewQuotaRegistry()
 	client, err := NewClient(
 		source,
 		"github.example.com",
@@ -282,6 +288,9 @@ func TestNotificationAPIsUseUserAuthAndBackgroundBudget(t *testing.T) {
 		readBudget,
 		WithBaseURLForTesting(srv.URL),
 		WithNotificationAccounting(writeRT, writeBudget),
+		WithQuotaAccounting(
+			quotaRegistry, splitAuthReadIdentity, splitAuthWriteIdentity,
+		),
 	)
 	require.NoError(err)
 	c, ok := client.(*liveClient)
@@ -313,6 +322,14 @@ func TestNotificationAPIsUseUserAuthAndBackgroundBudget(t *testing.T) {
 	assert.Equal(4988, writeRT.Remaining())
 	assert.Equal(0, readBudget.Spent())
 	assert.Equal(3, writeBudget.Spent())
+	// Notification traffic authenticates with the PAT, so its quota must
+	// land on the write principal and leave the App installation pool
+	// untouched.
+	userPool, ok := quotaRegistry.Get(splitAuthWriteIdentity, QuotaResourceREST)
+	require.True(ok)
+	assert.Equal(4988, userPool.Remaining)
+	_, appPoolExists := quotaRegistry.Get(splitAuthReadIdentity, QuotaResourceREST)
+	assert.False(appPoolExists)
 }
 
 // TestViewerPermissionOverlayChargesWriteBudget pins background split-auth

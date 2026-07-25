@@ -47,7 +47,8 @@ func TestSyncRoutesWithoutProviderSyncerE2E(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusOK, rates.StatusCode(), string(rates.Body))
 	require.NotNil(rates.JSON200)
-	assert.Empty(rates.JSON200.Hosts)
+	assert.Empty(rates.JSON200.ProviderPools)
+	assert.Empty(rates.JSON200.LocalCeilings)
 
 	trigger, err := client.HTTP.TriggerSyncWithResponse(
 		t.Context(),
@@ -84,7 +85,9 @@ func TestSyncListNotModifiedDoesNotChangeRateLimitBudgetE2E(t *testing.T) {
 
 	database := dbtest.Open(t)
 	restTracker := ghclient.NewRateTracker(database, "github.com", "host", "rest")
-	budget := ghclient.NewSyncBudget(2)
+	// Leave one unit of reservation headroom so each conditional request can
+	// reserve before I/O; a 304 refunds that unit for the next endpoint.
+	budget := ghclient.NewSyncBudget(3)
 	client, err := ghclient.NewClient(
 		staticTokenSource("token"),
 		"github.com",
@@ -162,9 +165,9 @@ func TestSyncListNotModifiedDoesNotChangeRateLimitBudgetE2E(t *testing.T) {
 		require.NoError(err)
 		require.Equal(http.StatusOK, resp.StatusCode(), string(resp.Body))
 		require.NotNil(resp.JSON200)
-		host, ok := resp.JSON200.Hosts["github.com"]
+		ceiling, ok := resp.JSON200.LocalCeilings["github.com"]
 		require.True(ok)
-		return host.BudgetSpent
+		return ceiling.Spent
 	}
 
 	triggerSync()

@@ -20,10 +20,11 @@ import (
 type providerFactory func(providerFactoryInput) (providerFactoryOutput, error)
 
 type providerFactoryInput struct {
-	host        string
-	tokenSource tokenauth.Source
-	rateTracker *github.RateTracker
-	budget      *github.SyncBudget
+	host          string
+	tokenSource   tokenauth.Source
+	rateTracker   *github.RateTracker
+	budget        *github.SyncBudget
+	quotaRegistry *github.QuotaRegistry
 }
 
 type providerFactoryOutput struct {
@@ -114,6 +115,7 @@ type providerStartup struct {
 	githubRouters        map[string]*github.HostRouter
 	githubClients        map[string]github.Client
 	ratePrincipalLabels  map[string]string
+	quotaRegistry        *github.QuotaRegistry
 }
 
 func (s *providerStartup) SourceForRepo(
@@ -179,8 +181,14 @@ func (s *providerStartup) FallbackSource(host string) tokenauth.Source {
 func defaultProviderFactories() map[string]providerFactory {
 	return map[string]providerFactory{
 		string(platform.KindGitHub): func(input providerFactoryInput) (providerFactoryOutput, error) {
+			// No credential router on this path, so reads and mutations both
+			// account to the host-wide chain.
+			hostIdentity := github.HostIdentity(input.host)
 			client, err := github.NewClient(
 				input.tokenSource, input.host, input.rateTracker, input.budget,
+				github.WithQuotaAccounting(
+					input.quotaRegistry, hostIdentity, hostIdentity,
+				),
 			)
 			if err != nil {
 				return providerFactoryOutput{}, err
@@ -298,6 +306,7 @@ func buildProviderStartup(
 		githubRouters:        make(map[string]*github.HostRouter),
 		githubClients:        make(map[string]github.Client),
 		ratePrincipalLabels:  make(map[string]string),
+		quotaRegistry:        github.NewQuotaRegistry(),
 	}
 	if resolver != nil {
 		if err := buildGitHubIdentityRuntimes(
@@ -333,10 +342,11 @@ func buildProviderStartup(
 			return providerStartup{}, fmt.Errorf("unsupported platform %q", platformName)
 		}
 		built, err := factory(providerFactoryInput{
-			host:        host,
-			tokenSource: tokenSource,
-			rateTracker: startup.rateTrackers[rateKey],
-			budget:      startup.budgets[rateKey],
+			host:          host,
+			tokenSource:   tokenSource,
+			rateTracker:   startup.rateTrackers[rateKey],
+			budget:        startup.budgets[rateKey],
+			quotaRegistry: startup.quotaRegistry,
 		})
 		if err != nil {
 			return providerStartup{}, fmt.Errorf(
@@ -424,6 +434,9 @@ func buildProviderStartup(
 		}]
 		startup.fetchers[host] = github.NewGraphQLFetcher(
 			source, host, gqlRT, startup.budgets[rateKey],
+			github.WithGraphQLQuotaAccounting(
+				startup.quotaRegistry, github.HostIdentity(host),
+			),
 		)
 	}
 	return startup, nil
@@ -568,6 +581,9 @@ func buildGitHubRouteClients(startup *providerStartup) error {
 				writeRuntime.rest, writeRuntime.budget,
 			))
 		}
+		clientOptions = append(clientOptions, github.WithQuotaAccounting(
+			startup.quotaRegistry, configured.readIdentity, configured.writeIdentity,
+		))
 		client, err := github.NewClient(
 			configured.source, key.Host, readRuntime.rest, readRuntime.budget,
 			clientOptions...,
@@ -592,6 +608,9 @@ func buildGitHubRouteClients(startup *providerStartup) error {
 		}
 		fetcher := github.NewGraphQLFetcher(
 			configured.source, key.Host, readRuntime.graphql, readRuntime.budget,
+			github.WithGraphQLQuotaAccounting(
+				startup.quotaRegistry, configured.readIdentity,
+			),
 		)
 		var writeSnapshotClient github.Client
 		if writeRuntime != nil && configured.writeIdentity != configured.readIdentity {

@@ -739,14 +739,35 @@ func parseRateLimitHeaders(resp *http.Response) Rate {
 
 // GraphQLFetcher fetches PR data via GitHub's GraphQL API (v4).
 type GraphQLFetcher struct {
-	client      *githubv4.Client
-	rateTracker *RateTracker
-	host        string
+	client        *githubv4.Client
+	rateTracker   *RateTracker
+	quotaRegistry *QuotaRegistry
+	readIdentity  IdentityKey
+	host          string
 	// nativeStacksRejected latches when this host validates the preview-only
 	// stack fields as unknown. Hosts without the preview reject the shape on
 	// every query, so re-sending it would abandon bulk fetch each cycle. A
 	// process restart is the reset point once the host gains the preview.
 	nativeStacksRejected atomic.Bool
+}
+
+type GraphQLFetcherOption func(*graphQLFetcherOptions)
+
+type graphQLFetcherOptions struct {
+	quotaRegistry *QuotaRegistry
+	readIdentity  IdentityKey
+}
+
+// WithGraphQLQuotaAccounting records the fetcher's GraphQL quota against the
+// principal authenticating its reads. A fetcher only ever reads, so it needs
+// no write identity.
+func WithGraphQLQuotaAccounting(
+	registry *QuotaRegistry, readIdentity IdentityKey,
+) GraphQLFetcherOption {
+	return func(options *graphQLFetcherOptions) {
+		options.quotaRegistry = registry
+		options.readIdentity = readIdentity
+	}
 }
 
 // RateTracker returns the GraphQL rate tracker, or nil if none
@@ -758,13 +779,33 @@ func (f *GraphQLFetcher) RateTracker() *RateTracker {
 	return f.rateTracker
 }
 
+func (f *GraphQLFetcher) QuotaRegistry() *QuotaRegistry {
+	if f == nil {
+		return nil
+	}
+	return f.quotaRegistry
+}
+
+// ReadIdentity returns the principal whose GraphQL pool this fetcher spends.
+func (f *GraphQLFetcher) ReadIdentity() IdentityKey {
+	if f == nil {
+		return IdentityKey{}
+	}
+	return f.readIdentity
+}
+
 // NewGraphQLFetcher creates a fetcher for the given host. budget may be nil.
 func NewGraphQLFetcher(
 	source tokenauth.Source,
 	platformHost string,
 	rateTracker *RateTracker,
 	budget *SyncBudget,
+	options ...GraphQLFetcherOption,
 ) *GraphQLFetcher {
+	var resolvedOptions graphQLFetcherOptions
+	for _, option := range options {
+		option(&resolvedOptions)
+	}
 	// The budget transport sits beneath AuthTransport so every wire
 	// attempt authRT makes on a request — including its own internal
 	// 401-invalidate-retry — is counted as a separate spend, matching the
@@ -772,7 +813,16 @@ func NewGraphQLFetcher(
 	// above authRT would let a 401-then-retry count as a single spend
 	// since AuthTransport's retry never becomes visible to a wrapper
 	// above it.
-	readBase := WrapSyncBudgetTransport(http.DefaultTransport, budget)
+	var readBase http.RoundTripper = WrapSyncBudgetTransport(
+		http.DefaultTransport, budget,
+	)
+	if resolvedOptions.quotaRegistry != nil &&
+		resolvedOptions.readIdentity.Principal != "" {
+		readBase = &quotaTransport{
+			base: readBase, registry: resolvedOptions.quotaRegistry,
+			identity: resolvedOptions.readIdentity, resource: QuotaResourceGraphQL,
+		}
+	}
 	authRT := tokenauth.AuthTransport{
 		Source:              source,
 		Base:                readBase,
@@ -799,9 +849,11 @@ func NewGraphQLFetcher(
 	}
 
 	return &GraphQLFetcher{
-		client:      gqlClient,
-		rateTracker: rateTracker,
-		host:        platformHost,
+		client:        gqlClient,
+		rateTracker:   rateTracker,
+		quotaRegistry: resolvedOptions.quotaRegistry,
+		readIdentity:  resolvedOptions.readIdentity,
+		host:          platformHost,
 	}
 }
 

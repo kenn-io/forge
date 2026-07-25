@@ -5905,6 +5905,18 @@ export interface components {
             readonly $schema?: string;
             worktrees: components["schemas"]["WorktreeResponse"][] | null;
         };
+        LocalSyncCeilingStatus: {
+            /** Format: int64 */
+            limit: number;
+            platform_host: string;
+            principal_label: string;
+            provider: string;
+            rate_principal: string;
+            /** Format: int64 */
+            remaining: number;
+            /** Format: int64 */
+            spent: number;
+        };
         MergePRBody: {
             /**
              * Format: uri
@@ -6487,36 +6499,27 @@ export interface components {
             upstream: string;
         };
         RateLimitHostStatus: {
-            /** Format: int64 */
-            budget_limit: number;
-            /** Format: int64 */
-            budget_remaining: number;
-            /** Format: int64 */
-            budget_spent: number;
-            gql_known: boolean;
-            /** Format: int64 */
-            gql_limit: number;
-            /** Format: int64 */
-            gql_remaining: number;
-            gql_reset_at: string;
-            hour_start: string;
-            known: boolean;
+            graphql: components["schemas"]["RateLimitResourceStatus"];
             platform_host: string;
             principal_label: string;
             provider: string;
-            /** Format: int64 */
-            rate_limit: number;
             rate_principal: string;
             /** Format: int64 */
-            rate_remaining: number;
-            rate_reset_at: string;
-            /** Format: int64 */
-            requests_hour: number;
-            /** Format: int64 */
             reserve_buffer: number;
+            rest: components["schemas"]["RateLimitResourceStatus"];
             sync_paused: boolean;
             /** Format: int64 */
             sync_throttle_factor: number;
+        };
+        RateLimitResourceStatus: {
+            known: boolean;
+            /** Format: int64 */
+            limit: number;
+            /** Format: int64 */
+            remaining: number;
+            /** Format: int64 */
+            requests: number;
+            reset_at: string;
         };
         RateLimitsResponse: {
             /**
@@ -6525,7 +6528,10 @@ export interface components {
              * @example /api/v1/schemas/RateLimitsResponse.json
              */
             readonly $schema?: string;
-            hosts: {
+            local_ceilings: {
+                [key: string]: components["schemas"]["LocalSyncCeilingStatus"];
+            };
+            provider_pools: {
                 [key: string]: components["schemas"]["RateLimitHostStatus"];
             };
         };

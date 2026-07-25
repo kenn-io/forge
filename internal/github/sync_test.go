@@ -953,6 +953,25 @@ type rateLimitSnapshotMockClient struct {
 	syncBudgetContexts atomic.Int32
 }
 
+type credentialRateLimitSnapshotMockClient struct {
+	*mockClient
+	appSnapshot  *RateLimitSnapshot
+	userSnapshot *RateLimitSnapshot
+	appCalls     atomic.Int32
+	userCalls    atomic.Int32
+}
+
+func (m *credentialRateLimitSnapshotMockClient) GetRateLimitSnapshot(
+	ctx context.Context,
+) (*RateLimitSnapshot, error) {
+	if tokenauth.IsMutationAuth(ctx) {
+		m.userCalls.Add(1)
+		return m.userSnapshot, nil
+	}
+	m.appCalls.Add(1)
+	return m.appSnapshot, nil
+}
+
 func (m *rateLimitSnapshotMockClient) GetRateLimitSnapshot(ctx context.Context) (*RateLimitSnapshot, error) {
 	m.snapshotCalls.Add(1)
 	if IsSyncBudgetContext(ctx) {
@@ -8877,6 +8896,82 @@ func TestRunOnceSkipsThrottledHosts(t *testing.T) {
 		"ghe.corp.com client should NOT have been called")
 }
 
+func TestRunOnceScopesGitHubProviderReserveToRepoCredential(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := openTestDB(t)
+	now := time.Now().UTC()
+	var ownersMu sync.Mutex
+	var listedOwners []string
+	base := &mockClient{}
+	base.listOpenPRsFn = func(
+		_ context.Context, owner, _ string,
+	) ([]*gh.PullRequest, error) {
+		ownersMu.Lock()
+		listedOwners = append(listedOwners, owner)
+		ownersMu.Unlock()
+		return nil, nil
+	}
+	// The App installation is parked at its REST reserve; the user credential
+	// is healthy. Only the repository routed to the user may sync.
+	appClient := &credentialRateLimitSnapshotMockClient{
+		mockClient: base,
+		appSnapshot: &RateLimitSnapshot{
+			Core:    &Rate{Limit: 15000, Remaining: RateReserveBuffer, Reset: now.Add(time.Hour)},
+			GraphQL: &Rate{Limit: 10000, Remaining: 9000, Reset: now.Add(time.Hour)},
+		},
+	}
+	userClient := &credentialRateLimitSnapshotMockClient{
+		mockClient: base,
+		appSnapshot: &RateLimitSnapshot{
+			Core:    &Rate{Limit: 5000, Remaining: 4900, Reset: now.Add(time.Hour)},
+			GraphQL: &Rate{Limit: 5000, Remaining: 4800, Reset: now.Add(time.Hour)},
+		},
+	}
+	appIdentity := IdentityKey{Host: "github.com", Principal: "installation:42"}
+	userIdentity := IdentityKey{Host: "github.com", Principal: "user:7"}
+	appBucket := RateBucketKey("github", "github.com", "installation:42")
+	userBucket := RateBucketKey("github", "github.com", "user:7")
+	syncer := NewSyncer(
+		map[string]Client{"github.com": appClient}, database, nil,
+		[]RepoRef{
+			{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
+			{Owner: "other", Name: "tool", PlatformHost: "github.com"},
+		},
+		time.Minute,
+		map[string]*RateTracker{
+			appBucket:  NewRateTracker(database, "github.com", "installation:42", "rest"),
+			userBucket: NewRateTracker(database, "github.com", "user:7", "rest"),
+		},
+		nil,
+	)
+	router, err := NewHostRouter(
+		"github.com",
+		&Route{
+			Key: RouteKey{Host: "github.com", Owner: "acme"}, Client: appClient,
+			ReadIdentity: appIdentity, WriteIdentity: appIdentity,
+		},
+		&Route{
+			Key: RouteKey{Host: "github.com", Owner: "other"}, Client: userClient,
+			ReadIdentity: userIdentity, WriteIdentity: userIdentity,
+		},
+	)
+	require.NoError(err)
+	syncer.SetGitHubRouters(map[string]*HostRouter{"github.com": router})
+	syncer.SetQuotaRegistry(NewQuotaRegistry())
+	var results []RepoSyncResult
+	syncer.SetOnSyncCompleted(func(got []RepoSyncResult) { results = got })
+
+	syncer.RunOnce(t.Context())
+
+	require.Len(results, 2)
+	assert.Equal("skipped: rate limit throttled", results[0].Error)
+	assert.Empty(results[1].Error)
+	ownersMu.Lock()
+	assert.Equal([]string{"other"}, listedOwners)
+	ownersMu.Unlock()
+}
+
 // ignoresCancelClient embeds mockClient and triggers an outer
 // cancel() on the first ListOpenIssues call while still returning
 // (nil, nil) successfully. This simulates a Client implementation
@@ -14424,6 +14519,75 @@ func TestRunOnceRefreshesGitHubRateLimitSnapshotOutsideSyncBudget(t *testing.T) 
 	if assert.NotNil(gqlRT.ResetAt()) {
 		assert.Equal(gqlReset, *gqlRT.ResetAt())
 	}
+}
+
+func TestRefreshRateLimitSnapshotsReconcilesEachCredentialEveryThreeMinutes(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	now := time.Now().UTC().Truncate(time.Second)
+	database := openTestDB(t)
+	registry := NewQuotaRegistry()
+	appIdentity := IdentityKey{Host: "github.com", Principal: "installation:42"}
+	userIdentity := IdentityKey{Host: "github.com", Principal: "user:7"}
+	appClient := &credentialRateLimitSnapshotMockClient{
+		mockClient: &mockClient{},
+		appSnapshot: &RateLimitSnapshot{
+			Core:    &Rate{Limit: 15000, Remaining: 14900, Reset: now.Add(time.Hour)},
+			GraphQL: &Rate{Limit: 10000, Remaining: 9900, Reset: now.Add(time.Hour)},
+		},
+	}
+	userClient := &credentialRateLimitSnapshotMockClient{
+		mockClient: &mockClient{},
+		appSnapshot: &RateLimitSnapshot{
+			Core:    &Rate{Limit: 5000, Remaining: 4900, Reset: now.Add(time.Hour)},
+			GraphQL: &Rate{Limit: 5000, Remaining: 4800, Reset: now.Add(time.Hour)},
+		},
+	}
+	appREST := NewRateTracker(database, "github.com", "installation:42", "rest")
+	userREST := NewRateTracker(database, "github.com", "user:7", "rest")
+	router, err := NewHostRouter(
+		"github.com",
+		&Route{
+			Key: RouteKey{Host: "github.com", Owner: "acme"}, Client: appClient,
+			ReadIdentity: appIdentity, WriteIdentity: appIdentity,
+		},
+		&Route{
+			Key: RouteKey{Host: "github.com", Owner: "other"}, Client: userClient,
+			ReadIdentity: userIdentity, WriteIdentity: userIdentity,
+		},
+	)
+	require.NoError(err)
+	syncer := &Syncer{
+		clients: registryFromGitHubClients(map[string]Client{"github.com": appClient}),
+		routers: map[string]*HostRouter{"github.com": router},
+		rateTrackers: map[string]*RateTracker{
+			RateBucketKey("github", "github.com", "installation:42"): appREST,
+			RateBucketKey("github", "github.com", "user:7"):          userREST,
+		},
+		quotaRegistry:            registry,
+		rateLimitSnapshotRefresh: make(map[string]time.Time),
+		now:                      time.Now,
+	}
+
+	syncer.RefreshRateLimitSnapshots(t.Context())
+	// The second pass falls inside the three-minute reconcile window, so it
+	// must not spend another snapshot call on either credential.
+	syncer.RefreshRateLimitSnapshots(t.Context())
+
+	assert.Equal(int32(1), appClient.appCalls.Load())
+	assert.Equal(int32(1), userClient.appCalls.Load())
+	appRESTPool, ok := registry.Get(appIdentity, QuotaResourceREST)
+	require.True(ok)
+	appGraphQL, ok := registry.Get(appIdentity, QuotaResourceGraphQL)
+	require.True(ok)
+	userRESTPool, ok := registry.Get(userIdentity, QuotaResourceREST)
+	require.True(ok)
+	userGraphQL, ok := registry.Get(userIdentity, QuotaResourceGraphQL)
+	require.True(ok)
+	assert.Equal(14900, appRESTPool.Remaining)
+	assert.Equal(9900, appGraphQL.Remaining)
+	assert.Equal(4900, userRESTPool.Remaining)
+	assert.Equal(4800, userGraphQL.Remaining)
 }
 
 func TestRunOnceSnapshotWindowResetResetsSyncBudget(t *testing.T) {

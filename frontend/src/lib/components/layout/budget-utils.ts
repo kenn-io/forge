@@ -42,12 +42,10 @@ export function formatCompact(n: number): string {
 }
 
 /**
- * Aggregates budget across hosts, excluding disabled ones (limit == 0).
- * Budget data comes from SyncBudget which is independent of REST/GQL
- * rate limit observation — a host can have real budget spend even when
- * REST rate headers haven't arrived yet.
+ * Aggregates local emergency ceilings across hosts, excluding disabled ones.
+ * These counters are independent of provider REST/GraphQL quota.
  */
-export function aggregateBudget(entries: { budget_limit: number; budget_spent: number }[]): {
+export function aggregateBudget(entries: { limit: number; spent: number }[]): {
   spent: number;
   limit: number;
   hasAny: boolean;
@@ -56,10 +54,10 @@ export function aggregateBudget(entries: { budget_limit: number; budget_spent: n
   let limit = 0;
   let hasAny = false;
   for (const e of entries) {
-    if (e.budget_limit <= 0) continue;
+    if (e.limit <= 0) continue;
     hasAny = true;
-    spent += e.budget_spent;
-    limit += e.budget_limit;
+    spent += e.spent;
+    limit += e.limit;
   }
   return { spent, limit, hasAny };
 }

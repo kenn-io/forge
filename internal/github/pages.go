@@ -721,7 +721,12 @@ func (c *liveClient) doArchiveGraphQL(
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.graphQLEndpoint, bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(
+		withQuotaResource(ctx, QuotaResourceGraphQL),
+		http.MethodPost,
+		c.graphQLEndpoint,
+		bytes.NewReader(payload),
+	)
 	if err != nil {
 		return err
 	}

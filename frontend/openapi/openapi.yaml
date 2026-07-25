@@ -3650,6 +3650,35 @@ components:
       required:
         - worktrees
       type: object
+    LocalSyncCeilingStatus:
+      additionalProperties: false
+      properties:
+        limit:
+          format: int64
+          type: integer
+        platform_host:
+          type: string
+        principal_label:
+          type: string
+        provider:
+          type: string
+        rate_principal:
+          type: string
+        remaining:
+          format: int64
+          type: integer
+        spent:
+          format: int64
+          type: integer
+      required:
+        - provider
+        - platform_host
+        - rate_principal
+        - principal_label
+        - limit
+        - spent
+        - remaining
+      type: object
     MergePRBody:
       additionalProperties: false
       properties:
@@ -5040,51 +5069,21 @@ components:
     RateLimitHostStatus:
       additionalProperties: false
       properties:
-        budget_limit:
-          format: int64
-          type: integer
-        budget_remaining:
-          format: int64
-          type: integer
-        budget_spent:
-          format: int64
-          type: integer
-        gql_known:
-          type: boolean
-        gql_limit:
-          format: int64
-          type: integer
-        gql_remaining:
-          format: int64
-          type: integer
-        gql_reset_at:
-          type: string
-        hour_start:
-          type: string
-        known:
-          type: boolean
+        graphql:
+          $ref: "#/components/schemas/RateLimitResourceStatus"
         platform_host:
           type: string
         principal_label:
           type: string
         provider:
           type: string
-        rate_limit:
-          format: int64
-          type: integer
         rate_principal:
           type: string
-        rate_remaining:
-          format: int64
-          type: integer
-        rate_reset_at:
-          type: string
-        requests_hour:
-          format: int64
-          type: integer
         reserve_buffer:
           format: int64
           type: integer
+        rest:
+          $ref: "#/components/schemas/RateLimitResourceStatus"
         sync_paused:
           type: boolean
         sync_throttle_factor:
@@ -5095,22 +5094,34 @@ components:
         - platform_host
         - rate_principal
         - principal_label
-        - requests_hour
-        - rate_remaining
-        - rate_limit
-        - rate_reset_at
-        - hour_start
+        - reserve_buffer
         - sync_throttle_factor
         - sync_paused
-        - reserve_buffer
+        - rest
+        - graphql
+      type: object
+    RateLimitResourceStatus:
+      additionalProperties: false
+      properties:
+        known:
+          type: boolean
+        limit:
+          format: int64
+          type: integer
+        remaining:
+          format: int64
+          type: integer
+        requests:
+          format: int64
+          type: integer
+        reset_at:
+          type: string
+      required:
+        - remaining
+        - limit
+        - reset_at
         - known
-        - budget_limit
-        - budget_spent
-        - budget_remaining
-        - gql_remaining
-        - gql_limit
-        - gql_reset_at
-        - gql_known
+        - requests
       type: object
     RateLimitsResponse:
       additionalProperties: false
@@ -5122,12 +5133,17 @@ components:
           format: uri
           readOnly: true
           type: string
-        hosts:
+        local_ceilings:
+          additionalProperties:
+            $ref: "#/components/schemas/LocalSyncCeilingStatus"
+          type: object
+        provider_pools:
           additionalProperties:
             $ref: "#/components/schemas/RateLimitHostStatus"
           type: object
       required:
-        - hosts
+        - provider_pools
+        - local_ceilings
       type: object
     RawHost:
       additionalProperties: false

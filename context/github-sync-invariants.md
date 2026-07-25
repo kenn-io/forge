@@ -336,6 +336,19 @@ removing a bounded route requires restart. Added, removed, or descriptor-changed
 bounded router keeps its boot descriptor until restart so it cannot lose auth or
 move to a different identity while retaining the old trackers and budget.
 
+## Credential-Aware Quota
+
+Provider quota is keyed by `IdentityKey` and REST/GraphQL resource, so a user
+response never overwrites an App installation pool
+(`internal/github/quota.go::QuotaRegistry`).
+
+- Each client transport chain carries a fixed identity: reads spend the route's
+  read identity, mutations and notifications its write identity
+  (`internal/github/client.go::WithQuotaAccounting`).
+- Background admission gates on the routed credential's own reserve; the local
+  `sync_budget_per_hour` ceiling is separate and is reported apart from provider
+  quota (`internal/github/sync.go::backgroundQuotaAvailability`).
+
 ## GitHub App Manifest Flow
 
 `middleman-github-app create` uses GitHub's App Manifest flow so sync can read

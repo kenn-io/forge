@@ -319,6 +319,9 @@ type clientOptions struct {
 	notificationRateTracker *RateTracker
 	notificationBudget      *SyncBudget
 	mutationsDisabled       bool
+	quotaRegistry           *QuotaRegistry
+	readIdentity            IdentityKey
+	writeIdentity           IdentityKey
 }
 
 // WithBaseURLForTesting points the client's REST and GraphQL traffic
@@ -358,6 +361,20 @@ func WithNotificationAccounting(
 	}
 }
 
+// WithQuotaAccounting records each transport chain's observed GitHub quota
+// against the principal that authenticates it. Reads spend readIdentity;
+// mutations and notifications spend writeIdentity, which differs from
+// readIdentity on split-auth routes where an App token serves reads.
+func WithQuotaAccounting(
+	registry *QuotaRegistry, readIdentity, writeIdentity IdentityKey,
+) ClientOption {
+	return func(o *clientOptions) {
+		o.quotaRegistry = registry
+		o.readIdentity = readIdentity
+		o.writeIdentity = writeIdentity
+	}
+}
+
 // NewClient creates a GitHub Client authenticated with the given
 // token source. platformHost selects the API endpoint: "" or "github.com"
 // uses the public API; any other value creates an Enterprise
@@ -377,7 +394,24 @@ func NewClient(
 	if options.baseURLOverride != "" {
 		allowedOrigin = options.baseURLOverride
 	}
-	readBase := WrapSyncBudgetTransport(http.DefaultTransport, budget)
+	// wrapQuota attributes a chain's rate-limit headers to the principal that
+	// authenticates it. It sits directly above the budget transport so every
+	// wire attempt is observed, including AuthTransport's 401-retry.
+	wrapQuota := func(
+		base http.RoundTripper, identity IdentityKey,
+	) http.RoundTripper {
+		if options.quotaRegistry == nil || identity.Principal == "" {
+			return base
+		}
+		return &quotaTransport{
+			base: base, registry: options.quotaRegistry,
+			identity: identity, resource: QuotaResourceREST,
+		}
+	}
+	readBase := wrapQuota(
+		WrapSyncBudgetTransport(http.DefaultTransport, budget),
+		options.readIdentity,
+	)
 	authRT := tokenauth.AuthTransport{
 		Source:              source,
 		Base:                readBase,
@@ -397,7 +431,10 @@ func NewClient(
 	// overlay in GetRepository), so it charges the write identity's sync
 	// budget. The budget transport is context-gated: foreground mutations
 	// stay uncharged.
-	mutationAuthRT.Base = WrapSyncBudgetTransport(http.DefaultTransport, writeBudget)
+	mutationAuthRT.Base = wrapQuota(
+		WrapSyncBudgetTransport(http.DefaultTransport, writeBudget),
+		options.writeIdentity,
+	)
 	var mutationBase http.RoundTripper = mutationAuthTransport{base: mutationAuthRT}
 	if options.mutationsDisabled {
 		mutationBase = errorTransport{err: ErrMissingWriteIdentity}
@@ -413,8 +450,9 @@ func NewClient(
 		mutationBase,
 	)}
 	notificationAuthRT := authRT
-	notificationAuthRT.Base = WrapSyncBudgetTransport(
-		http.DefaultTransport, writeBudget,
+	notificationAuthRT.Base = wrapQuota(
+		WrapSyncBudgetTransport(http.DefaultTransport, writeBudget),
+		options.writeIdentity,
 	)
 	var notificationRoundTripper http.RoundTripper = mutationAuthTransport{
 		base: notificationAuthRT,
@@ -474,6 +512,7 @@ func NewClient(
 		platformHost:            normalizedPlatformHost(platformHost),
 		graphQLEndpoint:         graphQLEndpoint,
 		etag:                    et,
+		quotaRegistry:           options.quotaRegistry,
 	}, nil
 }
 
@@ -580,6 +619,7 @@ type liveClient struct {
 	platformHost            string
 	graphQLEndpoint         string
 	etag                    *etagTransport
+	quotaRegistry           *QuotaRegistry
 	viewerMu                sync.Mutex
 	viewerLogin             string
 	viewerLoginAt           time.Time
@@ -1984,7 +2024,7 @@ func (c *liveClient) ListPullRequestTimelineEvents(
 		}
 
 		req, err := http.NewRequestWithContext(
-			ctx,
+			withQuotaResource(ctx, QuotaResourceGraphQL),
 			http.MethodPost,
 			c.graphQLEndpoint,
 			bytes.NewReader(payload),
@@ -2188,7 +2228,7 @@ func (c *liveClient) ListIssueTimelineEvents(
 		}
 
 		req, err := http.NewRequestWithContext(
-			ctx,
+			withQuotaResource(ctx, QuotaResourceGraphQL),
 			http.MethodPost,
 			c.graphQLEndpoint,
 			bytes.NewReader(payload),
@@ -2832,7 +2872,12 @@ func (c *liveClient) createCommitForReviewSuggestions(
 	if err != nil {
 		return nil, fmt.Errorf("marshal review suggestion commit mutation: %w", err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.graphQLEndpoint, bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(
+		withQuotaResource(ctx, QuotaResourceGraphQL),
+		http.MethodPost,
+		c.graphQLEndpoint,
+		bytes.NewReader(payload),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("create review suggestion commit request: %w", err)
 	}
@@ -3086,7 +3131,7 @@ func (c *liveClient) MarkPullRequestReadyForReview(
 			return nil, err
 		}
 		req, err := http.NewRequestWithContext(
-			ctx,
+			withQuotaResource(ctx, QuotaResourceGraphQL),
 			http.MethodPost,
 			c.graphQLEndpoint,
 			bytes.NewReader(body),
@@ -3215,7 +3260,7 @@ func (c *liveClient) ConvertPullRequestToDraft(
 			return nil, err
 		}
 		req, err := http.NewRequestWithContext(
-			ctx,
+			withQuotaResource(ctx, QuotaResourceGraphQL),
 			http.MethodPost,
 			c.graphQLEndpoint,
 			bytes.NewReader(body),

@@ -159,12 +159,25 @@ func (t *syncBudgetTransport) RoundTrip(req *http.Request) (*http.Response, erro
 	if !ghsync.ConsumeArchiveAttemptAllowance(req.Context()) {
 		return nil, platform.ErrArchiveAttemptBudget
 	}
-	resp, err := t.base.RoundTrip(req)
-	if ghsync.IsSyncBudgetContext(req.Context()) {
-		if ghsync.IsArchiveSyncBudgetContext(req.Context()) {
-			t.budget.SpendArchive(1)
+	counted := ghsync.IsSyncBudgetContext(req.Context())
+	archive := ghsync.IsArchiveSyncBudgetContext(req.Context())
+	if counted {
+		var reserved bool
+		if archive {
+			reserved = t.budget.TrySpendArchive(1)
 		} else {
-			t.budget.Spend(1)
+			reserved = t.budget.TrySpend(1)
+		}
+		if !reserved {
+			return nil, platform.ErrSyncBudgetExhausted
+		}
+	}
+	resp, err := t.base.RoundTrip(req)
+	if counted && resp != nil && resp.StatusCode == http.StatusNotModified {
+		if archive {
+			t.budget.RefundArchive(1)
+		} else {
+			t.budget.Refund(1)
 		}
 	}
 	return resp, err

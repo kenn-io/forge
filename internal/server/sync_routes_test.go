@@ -31,7 +31,8 @@ func TestSyncRoutesWithoutSyncer(t *testing.T) {
 
 	var rates rateLimitsResponse
 	require.NoError(json.NewDecoder(ratesRR.Body).Decode(&rates))
-	assert.Empty(rates.Hosts)
+	assert.Empty(rates.ProviderPools)
+	assert.Empty(rates.LocalCeilings)
 
 	syncRR := doJSON(t, srv, http.MethodPost, "/api/v1/sync", nil)
 	require.Equal(http.StatusServiceUnavailable, syncRR.Code, syncRR.Body.String())

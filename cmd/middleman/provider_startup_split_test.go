@@ -65,6 +65,7 @@ func TestBuildProviderStartupScopesWriteTrackersToAppChains(t *testing.T) {
 		defaultProviderFactories(), nil,
 	)
 	require.NoError(err)
+	require.NotNil(startup.quotaRegistry)
 
 	appKey := github.RateBucketKey(string(platform.KindGitHub), "github.com", "host")
 	envKey := github.RateBucketKey(string(platform.KindGitHub), "ghe.example.com", "host")
@@ -73,4 +74,6 @@ func TestBuildProviderStartupScopesWriteTrackersToAppChains(t *testing.T) {
 	assert.NotContains(startup.writeRateTrackers, envKey,
 		"shared-credential hosts must keep gating on the sync trackers")
 	assert.NotContains(startup.writeGQLRateTrackers, envKey)
+	assert.Same(startup.quotaRegistry, startup.fetchers["github.com"].QuotaRegistry())
+	assert.Same(startup.quotaRegistry, startup.fetchers["ghe.example.com"].QuotaRegistry())
 }

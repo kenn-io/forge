@@ -61,6 +61,10 @@ var (
 // repository-blocking contract error.
 var ErrArchiveAttemptBudget = errors.New("archive wire-attempt allowance exhausted")
 
+// ErrSyncBudgetExhausted is returned before provider I/O when the process-local
+// emergency ceiling cannot reserve another background wire attempt.
+var ErrSyncBudgetExhausted = errors.New("local sync emergency ceiling exhausted")
+
 // ErrLookupInaccessible marks a single-item lookup that the provider has
 // explicitly classified as inaccessible rather than a generic authentication
 // or permission failure.

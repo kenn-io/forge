@@ -9,14 +9,18 @@ import (
 	"go.kenn.io/middleman/internal/stacks"
 )
 
+// applyGitHubNativeStackPreference reconciles on the transition the swap itself
+// performed rather than on a config snapshot read earlier: concurrent config
+// writers each hold their own snapshot, and reconciling from those could run
+// the restore twice or skip it entirely.
 func (s *Server) applyGitHubNativeStackPreference(
 	ctx context.Context,
-	previous, enabled bool,
+	enabled bool,
 ) {
 	if s.syncer == nil {
 		return
 	}
-	s.syncer.SetPreferGitHubNativeStacks(enabled)
+	previous := s.syncer.SetPreferGitHubNativeStacks(enabled)
 	if !previous || enabled {
 		return
 	}

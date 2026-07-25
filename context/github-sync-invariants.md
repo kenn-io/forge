@@ -160,8 +160,12 @@ fallback repository listing.
   independent stack number remains cache-only.
   (`internal/stacks/detect.go::persistStackChain`)
 - Disabling the preference synchronously restores branch-derived projections;
-  cached native rows remain dormant.
-  (`internal/server/native_stack_settings.go::applyGitHubNativeStackPreference`)
+  cached native rows remain dormant. The syncer's preference is the transition
+  authority — every server binds it to the boot config and reconciles on the
+  swap's own previous value, never on a separately read config snapshot, so
+  concurrent writers cannot reconcile twice or not at all.
+  (`internal/server/native_stack_settings.go::applyGitHubNativeStackPreference`,
+  `internal/github/sync.go::SetPreferGitHubNativeStacks`)
 - Preview-only GraphQL fields must be absent from disabled query shapes;
   `@include(false)` does not bypass schema validation on servers without those
   fields. Schema rejection drops the fields for that host instead of abandoning

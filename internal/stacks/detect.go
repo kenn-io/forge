@@ -273,21 +273,43 @@ func RunDetectionWithNativeStacks(
 		for _, pr := range memberRows {
 			prsByNumber[pr.Number] = pr
 		}
-		// Resolve every confirmed stack before persisting any of them. A pull
-		// request can belong to only one persisted stack, and persisting an
+		// A pull request can belong to only one persisted stack. Persisting an
 		// overlap would evict the shared member from whichever stack was
 		// written first, silently shortening it and hiding a preceding merge
-		// blocker. Projecting only one side of the overlap has the same effect
-		// on the side that loses, so an overlap makes the whole native
-		// projection ambiguous and branch inference owns the repository for
-		// this pass.
-		chains := make([][]db.MergeRequest, 0, len(nativeStacks))
-		claimedBy := make(map[int64]int, len(memberRows))
+		// blocker, and projecting only one side does the same to the side that
+		// loses. Overlap therefore makes the whole native projection ambiguous
+		// and branch inference owns the repository for this pass.
+		//
+		// This scan runs over declared membership before rows are resolved: a
+		// member missing from the database must not stop the search and let a
+		// later duplicate through.
+		usableStacks := make([]db.GitHubNativeStack, 0, len(nativeStacks))
+		claimedBy := make(map[int]int, len(memberRows))
 		overlapping := false
 		for _, nativeStack := range nativeStacks {
 			if !confirmed[nativeStack.Number] || !nativeStack.IsOpen ||
 				len(nativeStack.Members) != nativeStack.Size || len(nativeStack.Members) < 2 {
 				continue
+			}
+			usableStacks = append(usableStacks, nativeStack)
+			for _, member := range nativeStack.Members {
+				other, duplicate := claimedBy[member.PullRequestNumber]
+				if duplicate {
+					slog.Warn("native stacks overlap; falling back to branch inference",
+						"repo_id", repoID, "stack_number", nativeStack.Number,
+						"other_stack_number", other,
+						"pull_request", member.PullRequestNumber)
+					overlapping = true
+					continue
+				}
+				claimedBy[member.PullRequestNumber] = nativeStack.Number
+			}
+		}
+
+		chains := make([][]db.MergeRequest, 0, len(usableStacks))
+		for _, nativeStack := range usableStacks {
+			if overlapping {
+				break
 			}
 			chain := make([]db.MergeRequest, 0, len(nativeStack.Members))
 			usable := true
@@ -297,25 +319,10 @@ func RunDetectionWithNativeStacks(
 					usable = false
 					break
 				}
-				if other, claimedElsewhere := claimedBy[pr.ID]; claimedElsewhere {
-					slog.Warn("native stacks overlap; falling back to branch inference",
-						"repo_id", repoID, "stack_number", nativeStack.Number,
-						"other_stack_number", other,
-						"pull_request", member.PullRequestNumber)
-					overlapping = true
-					usable = false
-					break
-				}
 				chain = append(chain, pr)
-			}
-			if overlapping {
-				break
 			}
 			if !usable || !hasOpenMember(chain) {
 				continue
-			}
-			for _, pr := range chain {
-				claimedBy[pr.ID] = nativeStack.Number
 			}
 			chains = append(chains, chain)
 		}

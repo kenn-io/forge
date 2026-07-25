@@ -1104,6 +1104,13 @@ func newServer(
 		otelhttp.WithFilter(otelTraceable(basePath)),
 		otelhttp.WithSpanNameFormatter(otelSpanName))
 
+	// The syncer's native-stack preference is the transition authority for
+	// later settings changes, so every server binds it to the boot config
+	// rather than relying on the caller that assembled the syncer.
+	if syncer != nil && cfg != nil {
+		syncer.SetPreferGitHubNativeStacks(cfg.PullRequests.PreferGitHubNativeStacks)
+	}
+
 	return s
 }
 

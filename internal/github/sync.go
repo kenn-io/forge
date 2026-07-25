@@ -2655,7 +2655,10 @@ func (s *Syncer) SetActiveMRWindow(d time.Duration) {
 
 // SetPreferGitHubNativeStacks enables GitHub's read-only preview metadata for
 // subsequent repository syncs. Existing branch inference remains the fallback.
-func (s *Syncer) SetPreferGitHubNativeStacks(enabled bool) {
+// It returns the previous value so a caller reconciles on the transition it
+// actually performed: two concurrent config writers reading the preference from
+// their own config snapshots could otherwise both believe they turned it off.
+func (s *Syncer) SetPreferGitHubNativeStacks(enabled bool) bool {
 	previous := s.preferGitHubNativeStacks.Swap(enabled)
 	if previous != enabled {
 		// Invalidate results captured under the old preference before any
@@ -2663,7 +2666,7 @@ func (s *Syncer) SetPreferGitHubNativeStacks(enabled bool) {
 		s.nativeStackGeneration.Add(1)
 	}
 	if !enabled || previous {
-		return
+		return previous
 	}
 	s.nativeStackConfirmations.Range(func(key, _ any) bool {
 		s.nativeStackConfirmations.Delete(key)
@@ -2680,6 +2683,7 @@ func (s *Syncer) SetPreferGitHubNativeStacks(enabled bool) {
 			client.InvalidateListETagsForRepo(repo.Owner, repo.Name, "pulls")
 		}
 	}
+	return previous
 }
 
 func (s *Syncer) watchSettings() (time.Duration, time.Duration) {

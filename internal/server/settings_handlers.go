@@ -508,9 +508,7 @@ func (s *Server) updateSettings(
 	s.applyWorkspaceConfigLocked()
 	s.applyPullConfigLocked()
 	s.cfgMu.Unlock()
-	s.applyGitHubNativeStackPreference(
-		ctx, prevPullRequests.PreferGitHubNativeStacks, nativeStacksEnabled,
-	)
+	s.applyGitHubNativeStackPreference(ctx, nativeStacksEnabled)
 
 	return &settingsOutput{Body: s.buildLocalSettingsResponse()}, nil
 }

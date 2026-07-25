@@ -1,13 +1,17 @@
 package github
 
 import (
+	"bytes"
 	"context"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"sync"
 	"testing"
 	"time"
 
 	gh "github.com/google/go-github/v88/github"
+	"github.com/shurcooL/githubv4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/db"
@@ -206,6 +210,104 @@ func TestRefreshGitHubNativeStackCacheDoesNotReconfirmSuspectCacheAfterNotModifi
 	assert.Empty(t, unchanged.ConfirmedNumbers)
 }
 
+func TestRefreshGitHubNativeStackCacheRefetchesUnobservableMembersOnSchedule(t *testing.T) {
+	now := time.Date(2026, time.July, 24, 12, 0, 0, 0, time.UTC)
+	cases := []struct {
+		name           string
+		lastObservedAt time.Time
+		wantPageCalls  []int
+	}{
+		{
+			name:           "recent observation reuses the cache",
+			lastObservedAt: now.Add(-time.Hour),
+			wantPageCalls:  nil,
+		},
+		{
+			name:           "stale observation refetches the stack",
+			lastObservedAt: now.Add(-nativeStackObservationTTL - time.Hour),
+			wantPageCalls:  []int{1},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			database := openTestDB(t)
+			repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widgets"))
+			require.NoError(err)
+			// PR 100 is merged, so no open-PR hint can attest to its position.
+			require.NoError(database.ReplaceGitHubNativeStack(t.Context(), db.GitHubNativeStack{
+				RepoID: repoID, GitHubID: 900, Number: 42, Size: 2,
+				BaseRef: "main", IsOpen: true, GitHubCreatedAt: now,
+				ContentFingerprint: "cached", LastObservedAt: tc.lastObservedAt,
+				Members: []db.GitHubNativeStackMember{
+					{Position: 1, PullRequestNumber: 100, State: "merged", HeadRef: "a", HeadSHA: "aaa"},
+					{Position: 2, PullRequestNumber: 101, State: "open", HeadRef: "b", HeadSHA: "bbb"},
+				},
+			}))
+			client := &nativeStackSyncTestClient{
+				mockClient: &mockClient{},
+				pages: map[int]NativeStackPage{1: {Stacks: []NativeStack{{
+					ID: 900, Number: 42, BaseRef: "main", Open: true, CreatedAt: now,
+					Members: []NativeStackMember{
+						{Position: 1, PullRequestNumber: 100, State: "merged", HeadRef: "a", HeadSHA: "aaa"},
+						{Position: 2, PullRequestNumber: 101, State: "open", HeadRef: "b", HeadSHA: "bbb"},
+					},
+				}}}},
+			}
+			syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil, nil, time.Minute, nil, nil)
+			syncer.now = func() time.Time { return now }
+
+			result := syncer.refreshGitHubNativeStackCache(t.Context(), RepoRef{
+				Owner: "acme", Name: "widgets", PlatformHost: "github.com",
+			}, repoID, map[int]*NativeStackHint{
+				101: {Number: 42, Size: 2, Position: 2, BaseRef: "main"},
+			}, false)
+
+			assert.Equal([]int{42}, result.ConfirmedNumbers)
+			assert.Equal(tc.wantPageCalls, client.pageCalls)
+		})
+	}
+}
+
+func TestRefreshGitHubNativeStackCacheMarksFailedPersistenceIncomplete(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := openTestDB(t)
+	repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widgets"))
+	require.NoError(err)
+	now := time.Date(2026, time.July, 24, 12, 0, 0, 0, time.UTC)
+	ctx, cancel := context.WithCancel(t.Context())
+	client := &nativeStackSyncTestClient{
+		mockClient: &mockClient{},
+		pages: map[int]NativeStackPage{1: {Stacks: []NativeStack{{
+			ID: 900, Number: 42, BaseRef: "main", Open: true, CreatedAt: now,
+			Members: []NativeStackMember{
+				{Position: 1, PullRequestNumber: 101, State: "open", HeadRef: "a", HeadSHA: "aaa"},
+				{Position: 2, PullRequestNumber: 102, State: "open", HeadRef: "b", HeadSHA: "bbb"},
+			},
+		}}}},
+	}
+	// Cancel after the catalog page is served so persistence, not the catalog
+	// fetch, is what fails.
+	client.onPage = cancel
+	syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil, nil, time.Minute, nil, nil)
+	syncer.now = func() time.Time { return now }
+	repo := RepoRef{Owner: "acme", Name: "widgets", PlatformHost: "github.com"}
+	hints := map[int]*NativeStackHint{
+		101: {Number: 42, Size: 2, Position: 1, BaseRef: "main"},
+		102: {Number: 42, Size: 2, Position: 2, BaseRef: "main"},
+	}
+
+	result := syncer.refreshGitHubNativeStackCache(ctx, repo, repoID, hints, false)
+
+	assert.Empty(result.ConfirmedNumbers)
+	assert.EqualValues(1, client.invalidateCalls.Load(),
+		"a refresh whose persistence failed must force the next sync to re-list")
+	unchanged := syncer.refreshGitHubNativeStackCache(t.Context(), repo, repoID, nil, true)
+	assert.Empty(unchanged.ConfirmedNumbers)
+}
+
 func TestRefreshGitHubNativeStackCacheRejectsMemberClaimedByAnotherStack(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -336,6 +438,73 @@ func TestRunOnceDropsNativeStacksDisabledDuringSync(t *testing.T) {
 	require.Len(results, 1)
 	assert.Nil(results[0].GitHubNativeStacks,
 		"a result captured under the enabled preference must not project after it is disabled")
+}
+
+func TestRunOnceKeepsRESTHintsWhenGraphQLRejectsNativeStackFields(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := openTestDB(t)
+	now := time.Date(2026, time.July, 24, 12, 0, 0, 0, time.UTC)
+	first := buildOpenPR(101, now)
+	second := buildOpenPR(102, now)
+	first.Head.Ref = new("feature/a")
+	second.Head.Ref = new("feature/b")
+	// GraphQL rejects the preview fields; the fallback query succeeds but says
+	// nothing about stack membership.
+	gqlSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		if bytes.Contains(body, []byte("stackEntry")) {
+			_, _ = w.Write([]byte(`{"errors":[{"message":"Field 'stackEntry' doesn't exist on type 'PullRequest'"}]}`))
+			return
+		}
+		if bytes.Contains(body, []byte("pullRequests")) {
+			_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequests":{"totalCount":0,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"data":{"repository":{"issues":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`))
+	}))
+	defer gqlSrv.Close()
+	client := &nativeStackSyncTestClient{
+		mockClient: &mockClient{},
+		pulls:      []*gh.PullRequest{first, second},
+		hints: map[int]*NativeStackHint{
+			101: {Number: 42, Size: 2, Position: 1, BaseRef: "main"},
+			102: {Number: 42, Size: 2, Position: 2, BaseRef: "main"},
+		},
+		pages: map[int]NativeStackPage{1: {
+			Stacks: []NativeStack{{
+				ID: 9001, Number: 42, BaseRef: "main", Open: true, CreatedAt: now,
+				Members: []NativeStackMember{
+					{Position: 1, PullRequestNumber: 101, State: "open", HeadRef: "feature/a", HeadSHA: "aaa"},
+					{Position: 2, PullRequestNumber: 102, State: "open", HeadRef: "feature/b", HeadSHA: "bbb"},
+				},
+			}},
+		}},
+	}
+	repo := RepoRef{
+		Owner: "owner", Name: "repo", PlatformHost: "github.com",
+		PlatformExternalID: "repo-owner-repo",
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client}, database, nil,
+		[]RepoRef{repo}, time.Minute, nil, nil,
+	)
+	syncer.SetFetchers(map[string]*GraphQLFetcher{
+		"github.com": NewGraphQLFetcherWithClient(
+			githubv4.NewEnterpriseClient(gqlSrv.URL, gqlSrv.Client()), nil,
+		),
+	})
+	syncer.SetPreferGitHubNativeStacks(true)
+	var results []RepoSyncResult
+	syncer.SetOnSyncCompleted(func(got []RepoSyncResult) { results = got })
+
+	syncer.RunOnce(t.Context())
+
+	require.Len(results, 1)
+	require.NotNil(results[0].GitHubNativeStacks,
+		"REST-derived hints must survive a GraphQL query that dropped the preview fields")
+	assert.Equal([]int{42}, results[0].GitHubNativeStacks.ConfirmedNumbers)
 }
 
 func TestSetPreferGitHubNativeStacksRefreshesHintsOnEnable(t *testing.T) {

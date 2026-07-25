@@ -5638,7 +5638,10 @@ func (s *Syncer) indexSyncRepo(
 							)
 						}
 					} else {
-						if preferNativeStacks {
+						// Only a query that asked for the preview fields can
+						// speak for stack membership. A GraphQL fallback that
+						// dropped them must leave REST-derived hints intact.
+						if preferNativeStacks && result.NativeStacksQueried {
 							nativeStackHints = nativeStackHintsFromBulk(result)
 						}
 						if err := s.doSyncRepoGraphQL(

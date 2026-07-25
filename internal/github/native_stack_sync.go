@@ -10,6 +10,11 @@ import (
 	"go.kenn.io/middleman/internal/db"
 )
 
+// nativeStackObservationTTL bounds how long a cached stack whose membership
+// cannot be fully reconciled against open-PR hints stays confirmed without a
+// refetch.
+const nativeStackObservationTTL = 12 * time.Hour
+
 // GitHubNativeStackSyncResult carries the native cache rows that were safe to
 // use for this repository sync. Numbers omitted here must fall back to branch
 // inference even when an older cache row exists.
@@ -126,11 +131,13 @@ func (s *Syncer) refreshGitHubNativeStackCache(
 			targets[hint.Number] = true
 		}
 	}
+	now := s.now().UTC()
 	for _, stack := range cached {
 		if !stack.IsOpen {
 			continue
 		}
-		if cachedStackMatchesCurrentHints(stack, hints) && !targets[stack.Number] {
+		if cachedStackMatchesCurrentHints(stack, hints) && !targets[stack.Number] &&
+			!nativeStackObservationExpired(stack, hints, now) {
 			confirmed[stack.Number] = true
 		} else {
 			targets[stack.Number] = true
@@ -196,6 +203,10 @@ func (s *Syncer) refreshGitHubNativeStackCache(
 					"platform", repoPlatform(repo), "host", repoHost(repo),
 					"repo", repo.Owner+"/"+repo.Name,
 					"stack_number", stack.Number, "err", err)
+				// The target was already dropped, so nothing else marks this
+				// refresh partial: a 304 would otherwise reuse confirmations
+				// that never included this stack.
+				complete = false
 				continue
 			}
 			if stack.Open {
@@ -264,6 +275,25 @@ func nativeStackMatchesCurrentHints(stack NativeStack, hints map[int]*NativeStac
 		}
 	}
 	return true
+}
+
+// nativeStackObservationExpired reports whether a cached stack holds a member
+// that current hints cannot speak for and has not been refetched recently.
+// Open-PR hints only prove the positions of members that are still open, so a
+// stack containing merged or closed members can drift from GitHub's membership
+// without any hint disagreeing. Refetching such a stack on a bounded schedule
+// keeps the projection from diverging indefinitely while preserving the cache
+// for stacks whose members are all observable.
+func nativeStackObservationExpired(
+	stack db.GitHubNativeStack, hints map[int]*NativeStackHint, now time.Time,
+) bool {
+	for _, member := range stack.Members {
+		if _, observed := hints[member.PullRequestNumber]; observed {
+			continue
+		}
+		return now.Sub(stack.LastObservedAt) > nativeStackObservationTTL
+	}
+	return false
 }
 
 func cachedStackMatchesHint(stack db.GitHubNativeStack, prNumber int, hint NativeStackHint) bool {

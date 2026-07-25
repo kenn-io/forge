@@ -168,9 +168,15 @@ fallback repository listing.
   bulk fetch. (`internal/github/graphql.go::isNativeStackSchemaRejection`)
 - Confirmation reconciles against currently observed open-PR hints, never cached
   or payload member state, and a PR may join at most one projected stack: member
-  eviction would silently drop a preceding merge blocker.
+  eviction would silently drop a preceding merge blocker. Hints cannot attest to
+  merged or closed members, so a stack holding one is refetched on a bounded
+  schedule instead of staying confirmed indefinitely.
   (`internal/github/native_stack_sync.go::cachedStackMatchesCurrentHints`,
+  `internal/github/native_stack_sync.go::nativeStackObservationExpired`,
   `internal/stacks/detect.go::RunDetectionWithNativeStacks`)
+- Only a query that requested the preview fields may replace stack hints;
+  a GraphQL shape that dropped them says nothing about membership and must leave
+  REST-derived hints intact. (`internal/github/graphql.go::RepoBulkResult`)
 - Only a refresh that resolved every target seeds the confirmation a later 304
   reuses; an incomplete refresh evicts the pull-request list ETag so the next
   sync retries. (`internal/github/native_stack_sync.go::refreshGitHubNativeStackCache`)

@@ -631,6 +631,11 @@ func ghTimestampPtr(t *time.Time) *gh.Timestamp {
 type RepoBulkResult struct {
 	PullRequests []BulkPR
 	Issues       []BulkIssue
+	// NativeStacksQueried reports whether the query that produced this result
+	// asked for the preview stack fields. When it did not, the absent hints say
+	// nothing about stack membership and must not replace hints from another
+	// source.
+	NativeStacksQueried bool
 }
 
 // BulkIssue holds an issue and its nested comments from a single
@@ -885,7 +890,7 @@ func (g *GraphQLFetcher) fetchRepoPRsWithPageSize(
 		Name:         name,
 		PlatformHost: g.host,
 	}, "graphql")
-	result := &RepoBulkResult{}
+	result := &RepoBulkResult{NativeStacksQueried: includeNativeStacks}
 	if includeNativeStacks {
 		gqlPRs, err := fetchGraphQLPullRequestPages[gqlPRWithNativeStacks](
 			ctx, g.client, owner, name, pageSize, progress,

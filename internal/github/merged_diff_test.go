@@ -617,7 +617,7 @@ func TestIntegrationSyncMRWrapsDiffFailureAsDiffSyncError(t *testing.T) {
 	require.NotNil(shas)
 	assert.Empty(shas.DiffHeadSHA, "diff SHAs should remain unset when computation failed")
 
-	_, archiveErr := syncer.SyncArchiveItem(ctx, platform.RepoRef{
+	_, _, archiveErr := syncer.SyncArchiveItem(ctx, platform.RepoRef{
 		Platform: platform.KindGitHub, Host: "github.com", Owner: "owner", Name: "repo",
 	}, db.ArchiveItemTypeMergeRequest, number)
 	require.NoError(archiveErr, "archive hydration should accept fresh activity when only diff sync failed")

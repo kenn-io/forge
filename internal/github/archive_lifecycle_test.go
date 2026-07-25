@@ -952,7 +952,7 @@ func TestArchiveCompletionWithoutProviderAttemptAbandonsExpiredFeatureProbeReser
 	admission, err := syncer.Admit(t.Context(), ref, db.ArchiveItemTypeIssue, 1)
 	require.NoError(err)
 	require.True(admission.Allowed, admission.Detail)
-	providerAttempted, syncErr := syncer.SyncArchiveItem(
+	providerAttempted, _, syncErr := syncer.SyncArchiveItem(
 		admission.Context, ref, db.ArchiveItemTypeIssue, 7,
 	)
 	require.Error(syncErr)

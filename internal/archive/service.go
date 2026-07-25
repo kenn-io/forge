@@ -23,7 +23,7 @@ type ItemSyncer interface {
 	ArchiveItemSyncCost(platform.Kind, db.ArchiveItemType) int
 	SyncArchiveItem(
 		context.Context, platform.RepoRef, db.ArchiveItemType, int,
-	) (providerAttempted bool, err error)
+	) (providerAttempted bool, complete bool, err error)
 }
 
 type AdmissionResult struct {

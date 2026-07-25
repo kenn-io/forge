@@ -246,7 +246,7 @@ func TestSyncArchiveItemClassifiesOnlyConfirmedParentNotFound(t *testing.T) {
 				Owner: ref.Owner, Name: ref.Name, RepoPath: ref.RepoPath,
 			}}, time.Minute, nil, nil)
 
-			_, err = syncer.SyncArchiveItem(t.Context(), ref, db.ArchiveItemTypeIssue, issue.Number)
+			_, _, err = syncer.SyncArchiveItem(t.Context(), ref, db.ArchiveItemTypeIssue, issue.Number)
 			require.Error(err)
 			assert.Equal(test.wantNotPresent, errors.Is(err, platform.ErrLookupNotPresent))
 			assert.Equal(test.wantRepoQueries, provider.getRepositoryCalls.Load())

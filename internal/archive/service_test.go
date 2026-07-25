@@ -40,6 +40,40 @@ func TestArchiveRetryClassifierTreatsAttemptBudgetRefusalAsTransient(t *testing.
 	}
 }
 
+type incompleteArchiveItemSource struct{}
+
+func (incompleteArchiveItemSource) ArchiveItemSyncCost(platform.Kind, db.ArchiveItemType) int {
+	return 1
+}
+
+func (incompleteArchiveItemSource) SyncArchiveItem(
+	context.Context,
+	platform.RepoRef,
+	db.ArchiveItemType,
+	int,
+) (bool, bool, error) {
+	return true, false, nil
+}
+
+func TestArchiveHydrationDefersIncompleteCanonicalItemSync(t *testing.T) {
+	database := dbtest.Open(t)
+	ref := archiveServiceRef(platform.KindGitea, "gitea.test", "widget")
+	repoID := archiveServiceSeedRepo(t, database, ref)
+	service := &Service{
+		db: database, items: incompleteArchiveItemSource{},
+		clock: fixedClock{value: archiveTestTime()},
+	}
+
+	err := service.hydrateItem(t.Context(), resolvedRepository{
+		ID: repoID, Ref: ref,
+	}, db.ArchiveItemWork{
+		RepoID: repoID, ItemType: db.ArchiveItemTypeMergeRequest,
+		ItemNumber: 7, ScanGeneration: 1,
+	})
+
+	require.ErrorIs(t, err, errAdmissionDeferred)
+}
+
 func TestArchiveTerminalSyncOutcomeRetriesGenericPermissionDenied(t *testing.T) {
 	assert := assert.New(t)
 	outcome, destination, terminal := archiveTerminalSyncOutcome(
@@ -675,8 +709,8 @@ func (archiveTestSource) SyncArchiveItem(
 	platform.RepoRef,
 	db.ArchiveItemType,
 	int,
-) (bool, error) {
-	return true, nil
+) (bool, bool, error) {
+	return true, true, nil
 }
 
 type archiveMutableSource struct{ refs []platform.RepoRef }

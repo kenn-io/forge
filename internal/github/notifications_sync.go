@@ -663,8 +663,18 @@ func (s *Syncer) ProcessQueuedNotificationReads(ctx context.Context, kind platfo
 		// queued ack until this refetch proves there was no newer activity.
 		remote, advanced, err = s.fetchAdvancedNotificationThread(ctx, host, client, notification)
 		if err != nil {
-			if deferErr := s.reopenNotificationAfterPostAckRefetchError(ctx, kind, host, notification, err); deferErr != nil {
+			limited, deferErr := s.reopenNotificationAfterPostAckRefetchError(
+				ctx, kind, host, bucket, bucketRepos[bucket], notification, err,
+			)
+			if deferErr != nil {
 				return deferErr
+			}
+			if limited {
+				exhausted[bucket] = struct{}{}
+				rateLimitErr = fmt.Errorf(
+					"notification read propagation rate limited for %s/%s on %s: %w",
+					notification.RepoOwner, notification.RepoName, host, err,
+				)
 			}
 			continue
 		}
@@ -736,31 +746,47 @@ func (s *Syncer) ackRepoBuckets(
 	return byBucket, byNotification
 }
 
+// reopenNotificationAfterPostAckRefetchError puts the notification back in
+// front of the user when the reconciliation refetch could not prove the thread
+// was unchanged. The refetch spends the same credential's budget as the
+// mark-read, so a rate limit here belongs to that credential alone: only its
+// repositories' remaining queued acks defer, and rateLimited tells the caller to
+// stop spending this bucket while other credentials on the host keep going.
 func (s *Syncer) reopenNotificationAfterPostAckRefetchError(
 	ctx context.Context,
 	kind platform.Kind,
 	host string,
+	bucket string,
+	bucketRepos []db.NotificationRepoRef,
 	notification db.Notification,
 	cause error,
-) error {
+) (rateLimited bool, err error) {
 	if err := s.db.ReopenNotificationAckPropagation(ctx, notification.ID, notification.SourceAckQueuedAt, notification.SourceUpdatedAt); err != nil {
-		return err
+		return false, err
 	}
-	if nextAttemptAt, ok := notificationReadRateLimitNextAttempt(cause, time.Now().UTC()); ok {
-		if recordErr := s.db.DeferQueuedNotificationAcks(ctx, string(kind), host, nextAttemptAt, "rate_limited"); recordErr != nil {
-			return recordErr
-		}
-		return fmt.Errorf("notification read propagation rate limited for host %s: %w", host, cause)
+	nextAttemptAt, ok := notificationReadRateLimitNextAttempt(cause, time.Now().UTC())
+	if !ok {
+		return false, nil
 	}
-	return nil
+	if recordErr := s.db.DeferQueuedNotificationAcksForRepos(
+		ctx, string(kind), host, bucketRepos, nextAttemptAt, "rate_limited",
+	); recordErr != nil {
+		return true, recordErr
+	}
+	slog.Warn("notification read propagation rate limited after ack",
+		"host", host, "bucket", bucket,
+		"owner", notification.RepoOwner, "name", notification.RepoName,
+		"err", cause,
+	)
+	return true, nil
 }
 
 // deferQueuedNotificationAckOnError records backoff after a propagation step
-// (thread refetch or mark-read) fails for a queued ack. Rate-limit errors
-// defer every queued ack for the host and return an error so the batch stops
-// without burning the shared upstream budget on a row that cannot make
+// (thread refetch or mark-read) fails for a queued ack. Rate-limit errors defer
+// the queued acks of the repositories sharing the exhausted credential, so the
+// caller can skip that bucket instead of burning a budget that cannot make
 // progress; any other error records a per-row next-attempt time so only this
-// row backs off. A nil return means the ack was deferred and the caller should
+// row backs off. A nil error means the ack was deferred and the caller should
 // advance to the next queued row.
 func (s *Syncer) deferQueuedNotificationAckOnError(
 	ctx context.Context,

@@ -658,7 +658,10 @@ func TestNotificationPlatformScopedOperationsRejectBlankPlatform(t *testing.T) {
 	_, err = d.ListQueuedNotificationAcks(t.Context(), "", "github.com", 10, now)
 	require.ErrorContains(err, "notification platform is required")
 
-	err = d.DeferQueuedNotificationAcks(t.Context(), "", "github.com", now, "later")
+	err = d.DeferQueuedNotificationAcksForRepos(
+		t.Context(), "", "github.com",
+		[]NotificationRepoRef{{Owner: "acme", Name: "widget"}}, now, "later",
+	)
 	require.ErrorContains(err, "notification platform is required")
 }
 

@@ -209,9 +209,9 @@ without holding back watermark advancement for healthy repositories on the same
 host (`internal/github/notifications_sync.go::Syncer.syncNotificationsForRepo`).
 
 Queued read-acknowledgement backoff is scoped the same way. A rate limit belongs
-to the credential that hit it, so defer only that identity's repositories and
-keep propagating the batch's other identities; the pass still returns the rate
-limit so the host records its error
+to the credential that hit it — on either refetch leg or the mark-read — so
+defer only that identity's repositories and keep propagating the batch's other
+identities; the pass still returns the rate limit so the host records its error
 (`internal/github/notifications_sync.go::Syncer.ProcessQueuedNotificationReads`,
 `internal/db/queries_notifications.go::DB.DeferQueuedNotificationAcksForRepos`).
 
@@ -235,7 +235,9 @@ the interface so exact `repo:` routes pick their own credential
 
 Managed Git uses exact-repository or owner PAT routes with mutation context and
 must never expose an App installation token to smart HTTP. Thread full provider,
-host, owner, and repository identity through clone/fetch and local reads;
+host, owner, and repository identity through clone/fetch and local reads, passing
+the normalized platform (`repoPlatform(repo)`) so an unqualified GitHub ref still
+picks its credential route instead of none;
 partition non-GitHub clone storage by provider on shared hosts. Before injecting
 a PAT into workspace fetch or push, require the branch upstream to be `origin`,
 reject repository-local URL rewrites, and validate every origin fetch/push URL.

@@ -921,31 +921,6 @@ func (d *DB) DeferQueuedNotificationAcksForRepos(
 	return nil
 }
 
-func (d *DB) DeferQueuedNotificationAcks(ctx context.Context, platform, host string, nextAttemptAt time.Time, errText string) error {
-	var err error
-	platform, host, err = canonicalizeNotificationPlatformHost(platform, host)
-	if err != nil {
-		return err
-	}
-	now := time.Now().UTC()
-	nextAttemptAt = canonicalUTCTime(nextAttemptAt)
-	_, err = d.rw.ExecContext(ctx, `UPDATE middleman_notification_items
-		SET source_ack_error = ?, source_ack_last_attempt_at = ?,
-		    source_ack_next_attempt_at = CASE
-			    WHEN source_ack_next_attempt_at IS NULL OR source_ack_next_attempt_at < ? THEN ?
-			    ELSE source_ack_next_attempt_at
-		    END
-		WHERE platform = ?
-		  AND platform_host = ?
-		  AND source_ack_queued_at IS NOT NULL
-		  AND source_ack_synced_at IS NULL
-		  AND source_ack_error != 'max_attempts_exceeded'`, errText, now, nextAttemptAt, nextAttemptAt, platform, host)
-	if err != nil {
-		return fmt.Errorf("defer queued notification acks: %w", err)
-	}
-	return nil
-}
-
 func (d *DB) MarkClosedLinkedNotificationsDone(ctx context.Context, now time.Time) error {
 	now = canonicalUTCTime(now)
 	_, err := d.rw.ExecContext(ctx, `

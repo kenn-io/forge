@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -26,6 +27,7 @@ import (
 	"go.kenn.io/middleman/internal/gitclone"
 	"go.kenn.io/middleman/internal/platform"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
+	"go.kenn.io/middleman/internal/tokenauth"
 )
 
 // openTestDB opens a temporary SQLite database for the duration of the test.
@@ -457,6 +459,103 @@ func requireSyncActivityRepoRow(t *testing.T, d *db.DB) db.Repo {
 	require.NoError(t, err)
 	require.NotNil(t, repoRow)
 	return *repoRow
+}
+
+// recordingCloneRoutes records the platform every managed-Git credential
+// lookup is made with, so tests can prove clone calls route by the same
+// normalized identity the rest of sync uses.
+type recordingCloneRoutes struct {
+	mu        sync.Mutex
+	platforms []string
+}
+
+func (r *recordingCloneRoutes) SourceForRepo(
+	platformName, _, _, _ string,
+) tokenauth.Source {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.platforms = append(r.platforms, platformName)
+	return nil
+}
+
+func (r *recordingCloneRoutes) FallbackSource(string) tokenauth.Source {
+	return nil
+}
+
+func (r *recordingCloneRoutes) seen() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.platforms)
+}
+
+// A RepoRef may carry no platform: every other sync path normalizes that to
+// GitHub, so the clone manager must too. Handing it the empty string instead
+// picks no credential route, which drops private fetches and lets public ones
+// run outside identity routing.
+func TestSyncRepoRoutesCloneCredentialsForUnqualifiedGitHubRepoRef(t *testing.T) {
+	require := require.New(t)
+	check := assert.New(t)
+	dir := t.TempDir()
+	remote := filepath.Join(dir, "remote.git")
+	syncActivityGitRun(t, dir, "init", "--bare", "--initial-branch=main", remote)
+	work := filepath.Join(dir, "work")
+	syncActivityGitRun(t, dir, "clone", remote, work)
+	syncActivityGitRun(t, work, "config", "user.email", "alice@example.com")
+	syncActivityGitRun(t, work, "config", "user.name", "Alice")
+	syncActivityCommitAndPush(
+		t, work, "direct.txt", "direct work\n", "direct work", "main",
+	)
+
+	d := openTestDB(t)
+	routes := &recordingCloneRoutes{}
+	clones := gitclone.New(t.TempDir(), routes)
+	repo := RepoRef{
+		PlatformHost:       "github.com",
+		Owner:              "acme",
+		Name:               "widget",
+		RepoPath:           "acme/widget",
+		PlatformExternalID: "R_unqualified_ref",
+		CloneURL:           remote,
+		DefaultBranch:      "main",
+	}
+	provider := &syncTestRepositoryReadProvider{
+		syncTestReadProvider: &syncTestReadProvider{
+			syncTestProvider: syncTestProvider{
+				kind: platform.KindGitHub,
+				host: "github.com",
+			},
+		},
+		repository: platform.Repository{
+			Ref: platform.RepoRef{
+				Platform:           platform.KindGitHub,
+				Host:               "github.com",
+				Owner:              "acme",
+				Name:               "widget",
+				RepoPath:           "acme/widget",
+				PlatformExternalID: "R_unqualified_ref",
+				CloneURL:           remote,
+				DefaultBranch:      "main",
+			},
+			PlatformExternalID: "R_unqualified_ref",
+			CloneURL:           remote,
+			DefaultBranch:      "main",
+		},
+	}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	syncer := NewSyncerWithRegistry(
+		registry, d, clones, []RepoRef{repo}, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+
+	require.NoError(syncer.syncRepo(t.Context(), repo))
+
+	seen := routes.seen()
+	require.NotEmpty(seen, "managed Git resolved a credential for the clone")
+	for _, platformName := range seen {
+		check.Equal(string(platform.KindGitHub), platformName,
+			"an unqualified GitHub ref must not bypass credential routing")
+	}
 }
 
 func TestSyncRepoRecordsDefaultBranchCommits(t *testing.T) {
@@ -14864,4 +14963,152 @@ func TestProcessQueuedNotificationReadsLeavesOtherIdentityQueuedRowsDue(t *testi
 		"an untouched owner's queued ack must not inherit the deferral")
 	check.Nil(byThread["healthy-thread"].SourceAckNextAttemptAt,
 		"the healthy owner's ack stays due instead of waiting for another reset")
+}
+
+// The post-ack reconciliation refetch spends the same credential's budget, so a
+// rate limit there is also owned by one identity. The exhausted owner's queued
+// acks defer, while the healthy owner's queued row must still be reached and
+// propagated in the same pass.
+func TestProcessQueuedNotificationReadsScopesPostAckRefetchRateLimit(t *testing.T) {
+	require := require.New(t)
+	check := assert.New(t)
+	d := openTestDB(t)
+	limitedRepo, err := d.UpsertRepo(
+		t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	siblingRepo, err := d.UpsertRepo(
+		t.Context(), db.GitHubRepoIdentity("github.com", "acme", "gadget"),
+	)
+	require.NoError(err)
+	healthyRepo, err := d.UpsertRepo(
+		t.Context(), db.GitHubRepoIdentity("github.com", "other", "thing"),
+	)
+	require.NoError(err)
+	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
+	limitedNumber := 7
+	siblingNumber := 9
+	healthyNumber := 8
+	require.NoError(d.UpsertNotifications(t.Context(), []db.Notification{
+		{
+			Platform: "github", PlatformHost: "github.com",
+			PlatformNotificationID: "limited-thread", RepoID: &limitedRepo,
+			RepoOwner: "acme", RepoName: "widget", SubjectType: "PullRequest",
+			SubjectTitle: "Exhausted owner", ItemNumber: &limitedNumber,
+			ItemType: "pr", Reason: "mention", Unread: true,
+			SourceUpdatedAt: now, SyncedAt: now,
+		},
+		{
+			Platform: "github", PlatformHost: "github.com",
+			PlatformNotificationID: "sibling-thread", RepoID: &siblingRepo,
+			RepoOwner: "acme", RepoName: "gadget", SubjectType: "PullRequest",
+			SubjectTitle: "Same credential", ItemNumber: &siblingNumber,
+			ItemType: "pr", Reason: "mention", Unread: true,
+			SourceUpdatedAt: now, SyncedAt: now,
+		},
+		{
+			Platform: "github", PlatformHost: "github.com",
+			PlatformNotificationID: "healthy-thread", RepoID: &healthyRepo,
+			RepoOwner: "other", RepoName: "thing", SubjectType: "PullRequest",
+			SubjectTitle: "Healthy owner", ItemNumber: &healthyNumber,
+			ItemType: "pr", Reason: "mention", Unread: true,
+			SourceUpdatedAt: now, SyncedAt: now,
+		},
+	}))
+	items, err := d.ListNotifications(
+		t.Context(), db.ListNotificationsOpts{State: "all", Sort: "updated"},
+	)
+	require.NoError(err)
+	require.Len(items, 3)
+	ids := make([]int64, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, item.ID)
+	}
+	queuedAt := now.Add(time.Minute)
+	_, err = d.QueueNotificationIDsRead(t.Context(), ids, queuedAt)
+	require.NoError(err)
+
+	resetAt := time.Now().UTC().Add(time.Hour).Round(0)
+	getCalls := map[string]int{}
+	var marked []string
+	mc := &mockClient{
+		getNotificationThreadFn: func(
+			_ context.Context, threadID string,
+		) (NotificationThread, error) {
+			getCalls[threadID]++
+			// Only the exhausted owner's reconciliation refetch is rate
+			// limited; both pre-ack refetches report an unadvanced thread.
+			if threadID == "limited-thread" && getCalls[threadID] == 2 {
+				return NotificationThread{}, &gh.RateLimitError{
+					Rate: gh.Rate{Reset: gh.Timestamp{Time: resetAt}},
+					Response: &http.Response{
+						StatusCode: http.StatusForbidden,
+						Request: httptest.NewRequest(
+							http.MethodGet,
+							"https://api.github.com/notifications/threads/"+threadID,
+							nil,
+						),
+					},
+					Message: "API rate limit exceeded",
+				}
+			}
+			return NotificationThread{
+				ID: threadID, SubjectType: "PullRequest",
+				Reason: "mention", UpdatedAt: now, LastReadAt: &queuedAt,
+			}, nil
+		},
+		markNotificationThreadReadFn: func(
+			_ context.Context, threadID string,
+		) error {
+			marked = append(marked, threadID)
+			return nil
+		},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil, nil, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	router, err := NewHostRouter("github.com",
+		&Route{
+			Key: RouteKey{Host: "github.com", Owner: "acme"}, Client: mc,
+			ReadIdentity:  IdentityKey{Host: "github.com", Principal: "user:1"},
+			WriteIdentity: IdentityKey{Host: "github.com", Principal: "user:1"},
+		},
+		&Route{
+			Key: RouteKey{Host: "github.com", Owner: "other"}, Client: mc,
+			ReadIdentity:  IdentityKey{Host: "github.com", Principal: "user:2"},
+			WriteIdentity: IdentityKey{Host: "github.com", Principal: "user:2"},
+		},
+	)
+	require.NoError(err)
+	syncer.SetGitHubRouters(map[string]*HostRouter{"github.com": router})
+
+	err = syncer.ProcessQueuedNotificationReads(
+		t.Context(), platform.KindGitHub, "github.com", 10,
+	)
+	require.Error(err, "the rate limit is still reported for the host")
+
+	items, err = d.ListNotifications(
+		t.Context(), db.ListNotificationsOpts{State: "all", Sort: "updated"},
+	)
+	require.NoError(err)
+	byThread := map[string]db.Notification{}
+	for _, item := range items {
+		byThread[item.PlatformNotificationID] = item
+	}
+	check.ElementsMatch([]string{"limited-thread", "healthy-thread"}, marked,
+		"the healthy owner's ack is still attempted after the other's limit")
+	check.Nil(byThread["limited-thread"].SourceAckSyncedAt,
+		"the exhausted owner's ack reopens instead of clearing")
+	check.True(byThread["limited-thread"].Unread,
+		"the reconciliation refetch could not prove the thread was unchanged")
+	check.Equal("rate_limited", byThread["sibling-thread"].SourceAckError,
+		"the exhausted credential's other queued acks back off")
+	check.NotNil(byThread["sibling-thread"].SourceAckNextAttemptAt)
+	check.Empty(byThread["healthy-thread"].SourceAckError,
+		"another owner's exhausted PAT must not defer this ack")
+	check.Nil(byThread["healthy-thread"].SourceAckNextAttemptAt,
+		"the healthy owner's ack is not pushed out by another reset window")
+	check.NotNil(byThread["healthy-thread"].SourceAckSyncedAt,
+		"the healthy owner's ack propagated in the same pass")
 }

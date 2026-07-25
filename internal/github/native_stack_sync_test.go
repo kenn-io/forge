@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -26,6 +27,9 @@ type nativeStackSyncTestClient struct {
 	pages     map[int]NativeStackPage
 	errors    map[int]error
 	pageCalls []int
+	// listErrors is consumed one entry per open-PR list call so a test can model
+	// a 304 arriving on a later sync.
+	listErrors []error
 	// onPage runs before each stacks page is served so a test can model state
 	// changing while the sync is in flight.
 	onPage func()
@@ -34,7 +38,27 @@ type nativeStackSyncTestClient struct {
 func (c *nativeStackSyncTestClient) ListOpenPullRequestsWithNativeStackHints(
 	context.Context, string, string,
 ) ([]*gh.PullRequest, map[int]*NativeStackHint, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.listErrors) > 0 {
+		err := c.listErrors[0]
+		c.listErrors = c.listErrors[1:]
+		if err != nil {
+			return nil, nil, err
+		}
+	}
 	return c.pulls, c.hints, nil
+}
+
+// notModified is the error the ETag transport surfaces for a 304 open-PR list.
+func notModified() error {
+	return &gh.ErrorResponse{Response: &http.Response{
+		StatusCode: http.StatusNotModified,
+		Request: &http.Request{
+			Method: http.MethodGet,
+			URL:    &url.URL{Scheme: "https", Host: "api.github.com", Path: "/repos/owner/repo/pulls"},
+		},
+	}}
 }
 
 func (c *nativeStackSyncTestClient) ListNativeStacksPage(
@@ -364,6 +388,73 @@ func TestRefreshGitHubNativeStackCacheKeepsDeadlineTiedToStackObservation(t *tes
 
 	assert.Empty(unchanged.ConfirmedNumbers)
 	assert.EqualValues(1, client.invalidateCalls.Load())
+}
+
+// TestRunOnceWithdrawsAgedNativeStacksFromProjectionInput drives the aging rule
+// through a real sync rather than the cache helper: the projection only ever
+// sees what RunOnce publishes, so a deadline that survives the sync path is the
+// one that would keep a stale predecessor out of the merge safeguard.
+func TestRunOnceWithdrawsAgedNativeStacksFromProjectionInput(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := openTestDB(t)
+	observed := time.Date(2026, time.July, 24, 0, 0, 0, 0, time.UTC)
+	repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "owner", "repo"))
+	require.NoError(err)
+	// The cached stack claims a merged leading member, which no open-PR hint can
+	// attest to, and it was last observed 11 hours ago.
+	require.NoError(database.ReplaceGitHubNativeStack(t.Context(), db.GitHubNativeStack{
+		RepoID: repoID, GitHubID: 9001, Number: 42, Size: 2,
+		BaseRef: "main", IsOpen: true, GitHubCreatedAt: observed,
+		ContentFingerprint: "cached", LastObservedAt: observed,
+		Members: []db.GitHubNativeStackMember{
+			{Position: 1, PullRequestNumber: 900, State: "merged", HeadRef: "feature/z", HeadSHA: "zzz"},
+			{Position: 2, PullRequestNumber: 101, State: "open", HeadRef: "feature/b", HeadSHA: "bbb"},
+		},
+	}))
+	tip := buildOpenPR(101, observed)
+	tip.Head.Ref = new("feature/b")
+	client := &nativeStackSyncTestClient{
+		mockClient: &mockClient{},
+		pulls:      []*gh.PullRequest{tip},
+		hints: map[int]*NativeStackHint{
+			101: {Number: 42, Size: 2, Position: 2, BaseRef: "main"},
+		},
+		// A second sync finds the open-PR list byte-identical.
+		listErrors: []error{nil, notModified()},
+	}
+	repo := RepoRef{
+		Owner: "owner", Name: "repo", PlatformHost: "github.com",
+		PlatformExternalID: "repo-owner-repo",
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client}, database, nil,
+		[]RepoRef{repo}, time.Minute, nil, nil,
+	)
+	clock := observed.Add(11 * time.Hour)
+	syncer.now = func() time.Time { return clock }
+	syncer.SetPreferGitHubNativeStacks(true)
+	var results []RepoSyncResult
+	syncer.SetOnSyncCompleted(func(got []RepoSyncResult) { results = got })
+
+	syncer.RunOnce(t.Context())
+	require.Len(results, 1)
+	require.NotNil(results[0].GitHubNativeStacks)
+	require.Equal([]int{42}, results[0].GitHubNativeStacks.ConfirmedNumbers,
+		"a cache-confirmed stack still inside its window must project")
+	require.Empty(client.pageCalls, "reconfirming from cache must not refetch the catalog")
+
+	// Two hours later the stack is past its own 12h window. The 304 must not
+	// reuse a confirmation that this sync's own clock would have extended.
+	clock = observed.Add(13 * time.Hour)
+	syncer.RunOnce(t.Context())
+
+	require.Len(results, 1)
+	require.NotNil(results[0].GitHubNativeStacks)
+	assert.Empty(results[0].GitHubNativeStacks.ConfirmedNumbers,
+		"an aged stack must be withheld from projection so branch inference owns the repo")
+	assert.Positive(client.invalidateCalls.Load(),
+		"the pull-request list ETag must be evicted so the next sync refetches the catalog")
 }
 
 func TestRefreshGitHubNativeStackCacheMarksFailedPersistenceIncomplete(t *testing.T) {

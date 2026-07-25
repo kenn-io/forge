@@ -25,7 +25,7 @@
     "@codemirror/lang-markdown": "^6.5.0",
     "@codemirror/state": "^6.6.0",
     "@codemirror/view": "^6.43.0",
-    "@kenn-io/kit-ui": "github:kenn-io/kit-ui#b35e4ca7df66969f4650327d6e315986afef8716",
+    "@kenn-io/kit-ui": "github:kenn-io/kit-ui#97be355ef25a02ce96de6da4f3627ed5b922c4c3",
     "@lucide/svelte": "1.23.0",
     "@middleman/ui": "workspace:*",
     "@pierre/diffs": "1.2.12",

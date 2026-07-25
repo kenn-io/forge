@@ -201,6 +201,116 @@ export function normalizeTabbedPanelTree(
   return tree;
 }
 
+export interface TabbedPanelLayoutState {
+  version: 1;
+  tree: TabbedPanelNode;
+  zoomedLeafID: string | null;
+  collapsedLeafIDs: string[];
+}
+
+export function defaultTabbedPanelLayout(tabs: readonly string[]): TabbedPanelLayoutState {
+  return { version: 1, tree: createTabbedPanelLeaf(tabs), zoomedLeafID: null, collapsedLeafIDs: [] };
+}
+
+export function serializeTabbedPanelLayout(state: TabbedPanelLayoutState): string {
+  return JSON.stringify(state);
+}
+
+export function collectTabbedPanelLeafIDs(node: TabbedPanelNode | null): string[] {
+  if (!node) return [];
+  if (node.type === "leaf") return [node.id];
+  return [...collectTabbedPanelLeafIDs(node.first), ...collectTabbedPanelLeafIDs(node.second)];
+}
+
+/**
+ * Prune to the currently available tabs WITHOUT reinserting anything.
+ *
+ * This is the render-time counterpart to `normalizeTabbedPanelTree`, which
+ * deliberately reinserts missing tabs. Availability is transient (an inline
+ * workspace exists only while claimed), so the persisted "intent" tree keeps
+ * unavailable tabs and only the rendered view drops them. Surviving leaves keep
+ * their ids, which is what lets an edit made against the rendered tree be
+ * applied to the intent tree by id.
+ */
+export function pruneTabbedPanelTreeToAvailable(
+  node: TabbedPanelNode,
+  availableTabs: readonly string[],
+): TabbedPanelNode | null {
+  return pruneTabbedPanelNode(node, new Set(availableTabs));
+}
+
+export function parseTabbedPanelLayout(raw: string | null, knownTabs: readonly string[]): TabbedPanelLayoutState {
+  const fallback = defaultTabbedPanelLayout(knownTabs);
+  if (!raw) return fallback;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return fallback;
+    const record = parsed as Record<string, unknown>;
+    if (record.version !== 1) return fallback;
+    const tree = parseTabbedPanelNode(record.tree);
+    if (!tree || !hasUniqueTabbedPanelIdentity(tree)) return fallback;
+    // Normalized against the surface's KNOWN tabs, never its available ones:
+    // a tab added since this layout was stored must appear, and a retired one
+    // must go, but availability is resolved later at render time.
+    const normalized = normalizeTabbedPanelTree(tree, knownTabs);
+    const leafIDs = new Set(collectTabbedPanelLeafIDs(normalized));
+    const zoomedLeafID =
+      typeof record.zoomedLeafID === "string" && leafIDs.has(record.zoomedLeafID) ? record.zoomedLeafID : null;
+    const collapsedLeafIDs = Array.isArray(record.collapsedLeafIDs)
+      ? record.collapsedLeafIDs.filter((id): id is string => typeof id === "string" && leafIDs.has(id))
+      : [];
+    return { version: 1, tree: normalized, zoomedLeafID, collapsedLeafIDs };
+  } catch {
+    return fallback;
+  }
+}
+
+function collectTabbedPanelNodeIDs(node: TabbedPanelNode): string[] {
+  if (node.type === "leaf") return [node.id];
+  return [node.id, ...collectTabbedPanelNodeIDs(node.first), ...collectTabbedPanelNodeIDs(node.second)];
+}
+
+/**
+ * Reject rather than repair a persisted tree with a repeated tab key or node id.
+ *
+ * A pane can host a singleton portal (the inline workspace reparents one live
+ * DOM subtree into the rendered slot), so a tab key appearing twice would
+ * register two slot elements for one surface. Edits are applied by node id, so a
+ * repeated id would land in several nodes at once. `normalizeTabbedPanelTree`
+ * only dedupes within a single leaf and cannot catch either case.
+ */
+function hasUniqueTabbedPanelIdentity(node: TabbedPanelNode): boolean {
+  const tabs = collectTabbedPanelTabKeys(node);
+  const ids = collectTabbedPanelNodeIDs(node);
+  return new Set(tabs).size === tabs.length && new Set(ids).size === ids.length;
+}
+
+function parseTabbedPanelNode(value: unknown): TabbedPanelNode | null {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
+  const node = value as Record<string, unknown>;
+  if (typeof node.id !== "string" || node.id === "") return null;
+  if (node.type === "leaf") {
+    if (!Array.isArray(node.tabs)) return null;
+    const tabs = node.tabs.filter((tab): tab is string => typeof tab === "string" && tab !== "");
+    if (tabs.length === 0) return null;
+    const activeTabKey =
+      typeof node.activeTabKey === "string" && tabs.includes(node.activeTabKey) ? node.activeTabKey : tabs[0]!;
+    return { type: "leaf", id: node.id, tabs, activeTabKey };
+  }
+  if (node.type !== "split") return null;
+  const first = parseTabbedPanelNode(node.first);
+  const second = parseTabbedPanelNode(node.second);
+  if (!first || !second) return null;
+  return {
+    type: "split",
+    id: node.id,
+    direction: node.direction === "vertical" ? "vertical" : "horizontal",
+    ratio: clampTabbedPanelRatio(typeof node.ratio === "number" ? node.ratio : 0.5),
+    first,
+    second,
+  };
+}
+
 function uniqueTabbedPanelTabs(tabs: string[]): string[] {
   const seen = new Set<string>();
   const unique: string[] = [];

@@ -94,16 +94,23 @@ func TestForgejoContainerSync(t *testing.T) {
 		TitlePrefix: "Forgejo",
 	})
 
+	database := dbtest.Open(t)
+	rateKey := ghclient.RateBucketKey(string(platform.KindForgejo), manifest.Host)
+	tracker := ghclient.NewPlatformRateTracker(database, string(platform.KindForgejo), manifest.Host, "rest")
 	budget := ghclient.NewSyncBudget(5000)
 	client, err := platformforgejo.NewClient(
 		manifest.Host,
 		testTokenSource(manifest.Token),
 		platformforgejo.WithBaseURLForTesting(manifest.BaseURL),
 		platformforgejo.WithForegroundTimeoutForTesting(time.Minute),
+		platformforgejo.WithRateTracker(tracker),
 		platformforgejo.WithSyncBudget(budget),
 	)
 	require.NoError(t, err)
-	assertGiteaLikeContainerSync(t, ctx, platform.KindForgejo, manifest, client, budget)
+	assertGiteaLikeContainerSync(
+		t, ctx, platform.KindForgejo, manifest, client, budget,
+		database, rateKey, tracker,
+	)
 }
 
 func TestGiteaContainerSync(t *testing.T) {
@@ -125,16 +132,23 @@ func TestGiteaContainerSync(t *testing.T) {
 		TitlePrefix: "Gitea",
 	})
 
+	database := dbtest.Open(t)
+	rateKey := ghclient.RateBucketKey(string(platform.KindGitea), manifest.Host)
+	tracker := ghclient.NewPlatformRateTracker(database, string(platform.KindGitea), manifest.Host, "rest")
 	budget := ghclient.NewSyncBudget(5000)
 	client, err := platformgitea.NewClient(
 		manifest.Host,
 		testTokenSource(manifest.Token),
 		platformgitea.WithBaseURLForTesting(manifest.BaseURL),
 		platformgitea.WithForegroundTimeoutForTesting(time.Minute),
+		platformgitea.WithRateTracker(tracker),
 		platformgitea.WithSyncBudget(budget),
 	)
 	require.NoError(t, err)
-	assertGiteaLikeContainerSync(t, ctx, platform.KindGitea, manifest, client, budget)
+	assertGiteaLikeContainerSync(
+		t, ctx, platform.KindGitea, manifest, client, budget,
+		database, rateKey, tracker,
+	)
 }
 
 func assertGiteaLikeContainerSync(
@@ -144,6 +158,9 @@ func assertGiteaLikeContainerSync(
 	manifest giteaLikeContainerManifest,
 	client giteaLikeContainerClient,
 	budget *ghclient.SyncBudget,
+	database *db.DB,
+	rateKey string,
+	tracker *ghclient.RateTracker,
 ) {
 	t.Helper()
 	assert := assert.New(t)
@@ -151,7 +168,6 @@ func assertGiteaLikeContainerSync(
 
 	registry, err := platform.NewRegistry(client)
 	require.NoError(err)
-	database := dbtest.Open(t)
 	repo := ghclient.RepoRef{
 		Platform:           kind,
 		PlatformHost:       manifest.Host,
@@ -164,11 +180,6 @@ func assertGiteaLikeContainerSync(
 		CloneURL:           manifest.CloneURL,
 		DefaultBranch:      manifest.DefaultBranch,
 	}
-	rateKey := ghclient.RateBucketKey(string(kind), manifest.Host)
-	tracker := ghclient.NewPlatformRateTracker(database, string(kind), manifest.Host, "rest")
-	tracker.UpdateFromRate(ghclient.Rate{
-		Limit: 5000, Remaining: 4999, Reset: time.Now().UTC().Add(time.Minute),
-	})
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry, database, nil, []ghclient.RepoRef{repo}, time.Minute,
 		map[string]*ghclient.RateTracker{rateKey: tracker},

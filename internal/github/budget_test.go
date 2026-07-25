@@ -123,3 +123,44 @@ func TestSyncBudgetResetClearsArchiveSpend(t *testing.T) {
 	assert.Zero(t, budget.Spent())
 	assert.Zero(t, budget.ArchiveSpent())
 }
+
+func TestSyncBudgetRollsWindowWithoutProviderResponse(t *testing.T) {
+	assert := assert.New(t)
+	budget := NewSyncBudget(2)
+	clock := time.Date(2026, 7, 24, 12, 0, 0, 0, time.UTC)
+	budget.now = func() time.Time { return clock }
+	budget.windowStart = clock
+
+	assert.True(budget.TrySpend(2))
+	assert.False(budget.TrySpend(1))
+	assert.Zero(budget.Remaining())
+
+	// Still inside the window: the ceiling must hold.
+	clock = clock.Add(59 * time.Minute)
+	assert.False(budget.TrySpend(1))
+	assert.Zero(budget.Remaining())
+
+	// The window elapsed. Nothing observed a provider response in between, so
+	// only the budget's own clock can release the ceiling.
+	clock = clock.Add(time.Minute)
+	assert.Equal(2, budget.Remaining())
+	assert.True(budget.TrySpend(1))
+	assert.Equal(1, budget.Spent())
+}
+
+func TestSyncBudgetRollsArchiveSpendWithWindow(t *testing.T) {
+	assert := assert.New(t)
+	budget := NewSyncBudget(4)
+	clock := time.Date(2026, 7, 24, 12, 0, 0, 0, time.UTC)
+	budget.now = func() time.Time { return clock }
+	budget.windowStart = clock
+
+	assert.True(budget.TrySpendArchive(4))
+	assert.Equal(4, budget.ArchiveSpent())
+	assert.False(budget.TrySpendArchive(1))
+
+	clock = clock.Add(time.Hour)
+	assert.Zero(budget.ArchiveSpent())
+	assert.Zero(budget.Spent())
+	assert.True(budget.TrySpendArchive(1))
+}

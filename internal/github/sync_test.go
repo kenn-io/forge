@@ -15283,3 +15283,130 @@ func TestProcessQueuedNotificationReadsScopesPostAckRefetchRateLimit(t *testing.
 	check.NotNil(byThread["healthy-thread"].SourceAckSyncedAt,
 		"the healthy owner's ack propagated in the same pass")
 }
+
+// Notification traffic always resolves to the user credential. A split-auth
+// client bypasses the legacy shared read tracker, so the user REST pool in the
+// quota registry is the only thing standing between background notification
+// work and the reserve held for foreground mutations.
+func TestSyncNotificationsStopsWhenUserRESTPoolAtReserve(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	_, err := d.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	var calls atomic.Int32
+	syncer := NewSyncer(
+		map[string]Client{
+			"github.com": &mockClient{
+				bypassNotificationReadReserve: true,
+				listNotificationsFn: func(context.Context, NotificationListOptions) ([]NotificationThread, bool, error) {
+					calls.Add(1)
+					return nil, false, nil
+				},
+			},
+		},
+		d,
+		nil,
+		[]RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
+		time.Minute,
+		nil,
+		map[string]*SyncBudget{"github.com": NewSyncBudget(1000)},
+	)
+	registry := NewQuotaRegistry()
+	registry.UpdateSnapshot(
+		HostIdentity("github.com"), QuotaResourceREST,
+		Rate{
+			Limit:     5000,
+			Remaining: RateReserveBuffer,
+			Reset:     time.Now().UTC().Add(time.Hour),
+		},
+	)
+	syncer.SetQuotaRegistry(registry)
+
+	syncErr := syncer.SyncNotifications(t.Context())
+
+	require.Error(syncErr)
+	require.ErrorContains(syncErr, "user rate reserve exhausted")
+	assert.Equal(int32(0), calls.Load())
+}
+
+// An unknown pool must not pause notification work: ordinary response headers
+// are what populate the registry in the first place.
+func TestSyncNotificationsProceedsWhenUserRESTPoolUnknown(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	_, err := d.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	var calls atomic.Int32
+	syncer := NewSyncer(
+		map[string]Client{
+			"github.com": &mockClient{
+				bypassNotificationReadReserve: true,
+				listNotificationsFn: func(context.Context, NotificationListOptions) ([]NotificationThread, bool, error) {
+					calls.Add(1)
+					return nil, false, nil
+				},
+			},
+		},
+		d,
+		nil,
+		[]RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
+		time.Minute,
+		nil,
+		map[string]*SyncBudget{"github.com": NewSyncBudget(1000)},
+	)
+	syncer.SetQuotaRegistry(NewQuotaRegistry())
+
+	require.NoError(syncer.SyncNotifications(t.Context()))
+	assert.Positive(calls.Load())
+}
+
+// Queued acknowledgement propagation spends the user credential too, so it must
+// stop at the reserve instead of discovering it as a per-row rate-limit error.
+func TestProcessQueuedNotificationReadsStopsWhenUserRESTPoolAtReserve(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	repoID, err := d.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
+	number := 7
+	require.NoError(d.UpsertNotifications(t.Context(), []db.Notification{{
+		Platform: "github", PlatformHost: "github.com", PlatformNotificationID: "thread-1", RepoID: &repoID,
+		RepoOwner: "acme", RepoName: "widget", SubjectType: "PullRequest", SubjectTitle: "Please review",
+		WebURL: "https://github.com/acme/widget/pull/7", ItemNumber: &number, ItemType: "pr",
+		Reason: "mention", Unread: true, SourceUpdatedAt: now, SyncedAt: now,
+	}}))
+	items, err := d.ListNotifications(t.Context(), db.ListNotificationsOpts{State: "all"})
+	require.NoError(err)
+	require.Len(items, 1)
+	_, err = d.QueueNotificationIDsRead(t.Context(), []int64{items[0].ID}, now.Add(time.Minute))
+	require.NoError(err)
+
+	var marked atomic.Int32
+	mc := &mockClient{
+		bypassNotificationReadReserve: true,
+		markNotificationThreadReadFn: func(context.Context, string) error {
+			marked.Add(1)
+			return nil
+		},
+	}
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, nil, time.Minute, nil, nil)
+	registry := NewQuotaRegistry()
+	registry.UpdateSnapshot(
+		HostIdentity("github.com"), QuotaResourceREST,
+		Rate{
+			Limit:     5000,
+			Remaining: RateReserveBuffer,
+			Reset:     time.Now().UTC().Add(time.Hour),
+		},
+	)
+	syncer.SetQuotaRegistry(registry)
+
+	err = syncer.ProcessQueuedNotificationReads(t.Context(), platform.KindGitHub, "github.com", 10)
+
+	require.Error(err)
+	require.ErrorContains(err, "user rate reserve exhausted")
+	assert.Equal(int32(0), marked.Load())
+}

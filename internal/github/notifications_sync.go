@@ -440,6 +440,26 @@ func (s *Syncer) ensureNotificationPageBudget(repo RepoRef, client notificationC
 	if budget := s.budgets[bucket]; budget != nil && !budget.CanSpend(1) {
 		return fmt.Errorf("notification sync paused for %s: sync budget exhausted", host)
 	}
+	// Notification reads and acknowledgement propagation resolve to the write
+	// identity, so they gate on that credential's REST pool even when
+	// repository reads run on an App installation token and therefore bypass
+	// the shared read tracker. Without this, split-auth hosts would let
+	// background notification work spend the user credential below the reserve
+	// held for foreground mutations.
+	if repoPlatform(repo) == platform.KindGitHub && s.quotaRegistry != nil {
+		if identity, idErr := s.identityForRepo(repo, writeIdentity); idErr == nil {
+			availability := s.quotaRegistry.CheckReserve(
+				identity, []QuotaResource{QuotaResourceREST}, 1, RateReserveBuffer,
+			)
+			// An unknown pool does not pause notification work: ordinary
+			// response headers are what establish it in the first place.
+			if availability.Known && !availability.Allowed {
+				return fmt.Errorf(
+					"notification sync paused for %s: user rate reserve exhausted", host,
+				)
+			}
+		}
+	}
 	bypassReserve := notificationBypassesReadRateReserve(client)
 	if s.routers[host] != nil {
 		bypassReserve = false
@@ -593,6 +613,16 @@ func (s *Syncer) ProcessQueuedNotificationReads(ctx context.Context, kind platfo
 		bucket := ackBuckets[notification.ID]
 		if _, stop := exhausted[bucket]; stop {
 			continue
+		}
+		// Each queued ack spends a refetch, the mark-read, and a
+		// reconciliation refetch on this row's credential. Stop before
+		// crossing that credential's reserve instead of discovering it as a
+		// per-row rate-limit error partway through the acknowledgement.
+		if err := s.ensureNotificationPageBudget(RepoRef{
+			Platform: kind, PlatformHost: host,
+			Owner: notification.RepoOwner, Name: notification.RepoName,
+		}, client); err != nil {
+			return err
 		}
 		current, err := s.db.NotificationAckPropagationCurrent(ctx, notification.ID, notification.SourceAckQueuedAt, notification.SourceUpdatedAt)
 		if err != nil {

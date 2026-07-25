@@ -348,6 +348,14 @@ response never overwrites an App installation pool
 - Background admission gates on the routed credential's own reserve; the local
   `sync_budget_per_hour` ceiling is separate and is reported apart from provider
   quota (`internal/github/sync.go::backgroundQuotaAvailability`).
+- The local ceiling rolls its hourly window on its own clock and must never need
+  a provider response to reset: an exhausted ceiling refuses counted requests
+  before any wire attempt, so a reset driven only by response headers or
+  rate-tracker rollover wedges background sync for good
+  (`internal/github/budget.go::rollLocked`).
+- Notification reads and queued ack propagation resolve to the write identity,
+  so they gate on that credential's REST pool even when repository reads run on
+  an App token (`internal/github/notifications_sync.go::ensureNotificationPageBudget`).
 
 ## GitHub App Manifest Flow
 

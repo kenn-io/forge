@@ -1,11 +1,13 @@
 package github
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"slices"
@@ -63,9 +65,14 @@ type NativeStackClient interface {
 	) (NativeStackPage, error)
 }
 
+// nativePullRequestResource keeps the preview field out of the pull-request
+// decode. The field rides along on the primary open-PR list, so a preview whose
+// shape changes must not fail that list and stall ordinary synchronization; the
+// raw value is decoded separately and a rejected hint simply leaves the pull
+// request unclaimed, which forces the catalog to be refetched.
 type nativePullRequestResource struct {
 	gh.PullRequest
-	Stack *nativeStackHintResource `json:"stack"`
+	Stack json.RawMessage `json:"stack"`
 }
 
 type nativeStackHintResource struct {
@@ -103,6 +110,31 @@ type nativePullRequestObservation struct {
 	Hint *NativeStackHint
 }
 
+// decodeNativeStackHint reads one pull request's preview field. A value that no
+// longer matches the expected shape yields no hint rather than an error: the
+// pull request itself is still valid data, and an unclaimed pull request makes
+// the catalog authoritative for that repository.
+func decodeNativeStackHint(
+	owner, repo string, resource *nativePullRequestResource,
+) *NativeStackHint {
+	raw := resource.Stack
+	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
+		return nil
+	}
+	var hint nativeStackHintResource
+	if err := json.Unmarshal(raw, &hint); err != nil {
+		slog.Warn("ignore unreadable github native stack hint",
+			"repo", owner+"/"+repo,
+			"pull_request", resource.GetNumber(), "err", err)
+		return nil
+	}
+	return &NativeStackHint{
+		ID: hint.ID, Number: hint.Number,
+		Size: hint.Size, Position: hint.Position,
+		BaseRef: hint.Base.Ref,
+	}
+}
+
 func (c *liveClient) ListOpenPullRequestsWithNativeStackHints(
 	ctx context.Context,
 	owner, repo string,
@@ -127,13 +159,9 @@ func (c *liveClient) ListOpenPullRequestsWithNativeStackHints(
 		page := make([]nativePullRequestObservation, 0, len(resources))
 		for i := range resources {
 			resource := &resources[i]
-			observation := nativePullRequestObservation{PR: &resource.PullRequest}
-			if resource.Stack != nil {
-				observation.Hint = &NativeStackHint{
-					ID: resource.Stack.ID, Number: resource.Stack.Number,
-					Size: resource.Stack.Size, Position: resource.Stack.Position,
-					BaseRef: resource.Stack.Base.Ref,
-				}
+			observation := nativePullRequestObservation{
+				PR:   &resource.PullRequest,
+				Hint: decodeNativeStackHint(owner, repo, resource),
 			}
 			page = append(page, observation)
 		}

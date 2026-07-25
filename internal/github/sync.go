@@ -1577,6 +1577,14 @@ func (p *gitHubClientProvider) ListOpenMergeRequestsWithNativeStackHints(
 		ctx, ref.Owner, ref.Name,
 	)
 	if err != nil {
+		// Same classification as ListOpenMergeRequests: a repository with pull
+		// requests disabled must enter the feature cooldown, not be retried as a
+		// hard failure every cycle just because the preview is enabled.
+		if disabledErr := githubRepositoryFeatureDisabled(
+			p.host, platform.RepositoryFeatureMergeRequests, err,
+		); disabledErr != nil {
+			return nil, nil, disabledErr
+		}
 		return nil, nil, err
 	}
 	out := make([]platform.MergeRequest, 0, len(prs))

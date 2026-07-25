@@ -126,29 +126,6 @@ func (d *DB) ListGitHubNativeStacks(ctx context.Context, repoID int64) ([]GitHub
 	return stacks, memberRows.Err()
 }
 
-// ListReposWithGitHubNativeStacks returns every repository holding cached
-// native stacks. Disabling the preview reconciles against this set rather than
-// the tracked set: a repository dropped from config still serves its stored
-// pull requests, and no sync will ever revisit it to undo native ordering.
-func (d *DB) ListReposWithGitHubNativeStacks(ctx context.Context) ([]int64, error) {
-	rows, err := d.ro.QueryContext(ctx, `
-		SELECT DISTINCT repo_id FROM github_native_stacks ORDER BY repo_id`)
-	if err != nil {
-		return nil, fmt.Errorf("list repos with github native stacks: %w", err)
-	}
-	defer rows.Close()
-
-	var repoIDs []int64
-	for rows.Next() {
-		var repoID int64
-		if err := rows.Scan(&repoID); err != nil {
-			return nil, fmt.Errorf("scan repo with github native stacks: %w", err)
-		}
-		repoIDs = append(repoIDs, repoID)
-	}
-	return repoIDs, rows.Err()
-}
-
 // DeleteGitHubNativeStacks removes specific repository-scoped stack numbers.
 func (d *DB) DeleteGitHubNativeStacks(ctx context.Context, repoID int64, numbers []int) error {
 	if len(numbers) == 0 {

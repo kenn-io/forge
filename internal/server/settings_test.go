@@ -2804,6 +2804,9 @@ prefer_github_native_stacks = true
 		},
 	}))
 	require.NoError(stacks.RunDetectionWithNativeStacks(ctx, database, repo.ID, []int{42}))
+	// The cache row is gone but the projection it produced remains, so the
+	// native ordering cannot be found by looking for native rows.
+	require.NoError(database.DeleteGitHubNativeStacks(ctx, repo.ID, []int{42}))
 	client := setupTestClientWithBaseURL(t, srv, "http://127.0.0.1:8091")
 	before, err := client.HTTP.GetPullStackWithResponse(ctx, "gh", "acme", "removed", 10)
 	require.NoError(err)

@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/middleman/internal/platform"
 )
 
 type nativeStackSyncTestClient struct {
@@ -845,4 +846,74 @@ func TestSetPreferGitHubNativeStacksWaitsForStackProjection(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		assert.Fail("preference swap did not proceed after the projection finished")
 	}
+}
+
+// TestListOpenPullRequestsWithNativeStackHintsSurvivesUnreadableHint pins the
+// blast radius of the preview field. It rides along on the primary open-PR list,
+// so a shape change on GitHub's side must cost the hint for that pull request,
+// not the whole list and with it ordinary synchronization for the repository.
+func TestListOpenPullRequestsWithNativeStackHintsSurvivesUnreadableHint(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v3/repos/acme/widget/pulls", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		// PR 101 carries a stack field that is no longer an object.
+		_, _ = w.Write([]byte(`[
+			{"number":101,"state":"open","title":"tip","stack":"stack-42"},
+			{"number":100,"state":"open","title":"base",
+			 "stack":{"id":9042,"number":42,"size":2,"position":1,"base":{"ref":"main"}}}
+		]`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	ghClient, err := newEnterpriseGHClient(srv.Client(), srv.URL+"/api/v3/", srv.URL+"/api/uploads/")
+	require.NoError(err)
+	client := &liveClient{gh: ghClient, platformHost: "github.com"}
+
+	prs, hints, err := client.ListOpenPullRequestsWithNativeStackHints(t.Context(), "acme", "widget")
+
+	require.NoError(err, "an unreadable preview field must not fail the pull-request list")
+	require.Len(prs, 2)
+	assert.Equal([]int{101, 100}, []int{prs[0].GetNumber(), prs[1].GetNumber()})
+	assert.Nil(hints[101], "a rejected hint leaves the pull request unclaimed")
+	require.NotNil(hints[100])
+	assert.Equal(42, hints[100].Number)
+	assert.Equal("main", hints[100].BaseRef)
+}
+
+// TestNativeStackHintListingClassifiesDisabledPullRequests keeps the preview on
+// the same failure taxonomy as the plain list. A repository with pull requests
+// disabled answers 410; classified, it enters the feature cooldown, and
+// unclassified it would be retried as a hard sync failure every cycle purely
+// because the preview is enabled.
+func TestNativeStackHintListingClassifiesDisabledPullRequests(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	disabled := &gh.ErrorResponse{
+		Response: &http.Response{
+			StatusCode: http.StatusGone,
+			Request: &http.Request{
+				Method: http.MethodGet,
+				URL:    &url.URL{Scheme: "https", Host: "api.github.com", Path: "/pulls"},
+			},
+		},
+		Message: "Pull requests are disabled for this repository",
+	}
+	client := &nativeStackSyncTestClient{mockClient: &mockClient{}}
+	client.listErrors = []error{disabled}
+	provider := &gitHubClientProvider{client: client, host: "github.com"}
+
+	_, _, err := provider.ListOpenMergeRequestsWithNativeStackHints(
+		t.Context(), platform.RepoRef{
+			Platform: platform.KindGitHub, Host: "github.com",
+			Owner: "acme", Name: "widget",
+		},
+	)
+
+	require.Error(err)
+	var platformErr *platform.Error
+	require.ErrorAs(err, &platformErr)
+	assert.Equal(platform.ErrCodeRepositoryFeatureDisabled, platformErr.Code)
+	assert.Equal(platform.RepositoryFeatureMergeRequests, platformErr.Capability)
 }

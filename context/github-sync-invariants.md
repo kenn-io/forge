@@ -174,6 +174,13 @@ fallback repository listing.
   still serves its stored pull requests and no sync will revisit it.
   (`internal/server/native_stack_settings.go::reconcileGitHubNativeStackProjection`,
   `internal/github/sync.go::SetPreferGitHubNativeStacks`)
+- The preview must not widen the blast radius of the list it rides on. The REST
+  hint decodes separately from the pull request, so a changed field shape costs
+  that hint and not the list, and hint-listing errors get the same
+  feature-disabled classification as the plain list so a repository with pull
+  requests off still enters the cooldown.
+  (`internal/github/native_stacks.go::decodeNativeStackHint`,
+  `internal/github/sync.go::ListOpenMergeRequestsWithNativeStackHints`)
 - Preview-only GraphQL fields must be absent from disabled query shapes;
   `@include(false)` does not bypass schema validation on servers without those
   fields. Schema rejection drops the fields for that host instead of abandoning

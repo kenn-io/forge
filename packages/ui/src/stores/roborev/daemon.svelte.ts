@@ -1,6 +1,9 @@
 import type { RoborevClient } from "../../api/roborev/client.js";
 import type { MiddlemanClient } from "../../types.js";
 
+const UNAVAILABLE_POLL_INTERVAL_MS = 1_000;
+const AVAILABLE_POLL_INTERVAL_MS = 30_000;
+
 export interface DaemonStoreOptions {
   client: RoborevClient;
   middlemanClient: MiddlemanClient;
@@ -20,7 +23,8 @@ export function createDaemonStore(opts: DaemonStoreOptions) {
   let canceledJobs = $state(0);
   let activeWorkers = $state(0);
   let maxWorkers = $state(0);
-  let pollHandle: ReturnType<typeof setInterval> | null = null;
+  let pollHandle: ReturnType<typeof setTimeout> | null = null;
+  let pollGeneration = 0;
 
   async function checkHealth(): Promise<void> {
     const prevAvailable = available;
@@ -78,21 +82,29 @@ export function createDaemonStore(opts: DaemonStoreOptions) {
     if (data.version) version = data.version;
   }
 
+  async function poll(generation: number): Promise<void> {
+    await checkHealth();
+    if (generation !== pollGeneration) return;
+
+    if (available) void loadStatus();
+
+    const interval = available ? AVAILABLE_POLL_INTERVAL_MS : UNAVAILABLE_POLL_INTERVAL_MS;
+    pollHandle = setTimeout(() => {
+      pollHandle = null;
+      void poll(generation);
+    }, interval);
+  }
+
   function startPolling(): void {
     stopPolling();
-    void checkHealth().then(() => {
-      if (available) void loadStatus();
-    });
-    pollHandle = setInterval(() => {
-      void checkHealth().then(() => {
-        if (available) void loadStatus();
-      });
-    }, 30_000);
+    const generation = pollGeneration;
+    void poll(generation);
   }
 
   function stopPolling(): void {
+    pollGeneration += 1;
     if (pollHandle !== null) {
-      clearInterval(pollHandle);
+      clearTimeout(pollHandle);
       pollHandle = null;
     }
   }

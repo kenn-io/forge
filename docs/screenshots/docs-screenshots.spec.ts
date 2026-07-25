@@ -1,13 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { startIsolatedWorkspaceE2EServer } from "../../frontend/tests/e2e-full/support/e2eServer";
 
-const here = path.dirname(fileURLToPath(import.meta.url));
-const docsDir = path.resolve(here, "..");
-const outputDir = path.join(docsDir, "assets", "generated");
+const outputDir = process.env.MIDDLEMAN_DOCS_SCREENSHOT_DIR;
 
 type ThemeName = "light" | "dark";
 
@@ -41,7 +38,8 @@ const cases: CaptureCase[] = [
     readyText: "Widget rendering broken on Safari",
     workspaceSelector: ".issue-detail .btn--workspace",
     loadingText: /Loading comments/i,
-    description: "Issue triage view in dark mode with the newest issue context first and a workspace action in the detail pane.",
+    description:
+      "Issue triage view in dark mode with the newest issue context first and a workspace action in the detail pane.",
   },
   {
     name: "code-reviewer",
@@ -51,7 +49,8 @@ const cases: CaptureCase[] = [
     readyText: "Add widget caching layer",
     workspaceSelector: ".pull-detail .btn--workspace",
     loadingText: /Loading discussion/i,
-    description: "Code review view with recent PR activity, review state, CI context, and workspace creation in one pane.",
+    description:
+      "Code review view with recent PR activity, review state, CI context, and workspace creation in one pane.",
   },
   {
     name: "code-reviewer",
@@ -61,7 +60,8 @@ const cases: CaptureCase[] = [
     readyText: "Add widget caching layer",
     workspaceSelector: ".pull-detail .btn--workspace",
     loadingText: /Loading discussion/i,
-    description: "Code review view in dark mode with recent PR activity, review state, CI context, and workspace creation in one pane.",
+    description:
+      "Code review view in dark mode with recent PR activity, review state, CI context, and workspace creation in one pane.",
   },
 ];
 
@@ -90,12 +90,15 @@ async function waitForIdleSync(page: Page): Promise<void> {
   await expect(page.getByText(/syncing/i)).toHaveCount(0);
 }
 
-async function svgDOMSnapshot(page: Page, input: {
-  title: string;
-  description: string;
-  width: number;
-  height: number;
-}): Promise<string> {
+async function svgDOMSnapshot(
+  page: Page,
+  input: {
+    title: string;
+    description: string;
+    width: number;
+    height: number;
+  },
+): Promise<string> {
   return page.evaluate(({ title, description, width, height }) => {
     const svgNS = "http://www.w3.org/2000/svg";
     const xhtmlNS = "http://www.w3.org/1999/xhtml";
@@ -103,7 +106,9 @@ async function svgDOMSnapshot(page: Page, input: {
     const styles = Array.from(document.styleSheets)
       .map((sheet) => {
         try {
-          return Array.from(sheet.cssRules).map((rule) => rule.cssText).join("\n");
+          return Array.from(sheet.cssRules)
+            .map((rule) => rule.cssText)
+            .join("\n");
         } catch {
           return "";
         }
@@ -216,6 +221,9 @@ test.describe("docs workflow screenshots", () => {
   let server: Awaited<ReturnType<typeof startIsolatedWorkspaceE2EServer>> | null = null;
 
   test.beforeAll(async () => {
+    if (!outputDir) {
+      throw new Error("MIDDLEMAN_DOCS_SCREENSHOT_DIR must point to the staged docs asset directory");
+    }
     server = await startIsolatedWorkspaceE2EServer();
     await mkdir(outputDir, { recursive: true });
   });
@@ -253,10 +261,7 @@ test.describe("docs workflow screenshots", () => {
       expect(svg).not.toMatch(/>\s*Syncing(?:\.\.\.)?\s*</i);
       expect(svg).not.toMatch(/>\s*syncing(?:\u2026|\s*\([^<]*\))?\s*</i);
       expect(svg).not.toMatch(/\b(?:aria-label|title)="Syncing"/);
-      await writeFile(
-        path.join(outputDir, `${capture.name}-${capture.theme}.svg`),
-        svg,
-      );
+      await writeFile(path.join(outputDir!, `${capture.name}-${capture.theme}.svg`), svg);
     });
   }
 });

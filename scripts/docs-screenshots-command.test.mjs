@@ -7,7 +7,7 @@ async function readJSON(path) {
   return JSON.parse(await readFile(path, "utf8"));
 }
 
-test("docs screenshot regeneration uses root Playwright dependencies", async () => {
+test("docs build uses root Playwright dependencies", async () => {
   const [rootPkg, spec, config, readme] = await Promise.all([
     readJSON("package.json"),
     readFile("docs/screenshots/docs-screenshots.spec.ts", "utf8"),
@@ -15,10 +15,7 @@ test("docs screenshot regeneration uses root Playwright dependencies", async () 
     readFile("docs/screenshots/README.md", "utf8"),
   ]);
 
-  assert.equal(
-    rootPkg.scripts?.["docs:screenshots"],
-    "node node_modules/vite-plus/bin/vp exec -- playwright test --config docs/screenshots/playwright.config.ts --project=chromium",
-  );
+  assert.equal(rootPkg.scripts?.["docs:build"], "node scripts/build-docs.mjs");
   // The exact version is checked against the CI container by
   // scripts/check-playwright-version.mjs; here only the exact-pin shape
   // matters, so Playwright bumps don't have to touch this test.
@@ -28,9 +25,21 @@ test("docs screenshot regeneration uses root Playwright dependencies", async () 
     "root package.json must pin an exact @playwright/test version",
   );
 
-  const list = spawnSync(process.execPath, ["node_modules/vite-plus/bin/vp", "run", "docs:screenshots", "--list"], {
-    encoding: "utf8",
-  });
+  const list = spawnSync(
+    process.execPath,
+    [
+      "node_modules/vite-plus/bin/vp",
+      "exec",
+      "--",
+      "playwright",
+      "test",
+      "--config",
+      "docs/screenshots/playwright.config.ts",
+      "--project=chromium",
+      "--list",
+    ],
+    { encoding: "utf8" },
+  );
   assert.equal(list.status, 0, list.stderr || list.stdout);
   assert.match(list.stdout, /docs workflow screenshots/);
 

@@ -18,7 +18,6 @@ type ModeVisibility = {
   repos: boolean;
   kata: boolean;
   docs: boolean;
-  messages: boolean;
   pulls: boolean;
   issues: boolean;
   reviews: boolean;
@@ -50,7 +49,6 @@ const {
     repos: true,
     kata: false,
     docs: false,
-    messages: false,
     pulls: true,
     issues: true,
     reviews: true,
@@ -80,7 +78,6 @@ vi.mock("@middleman/ui", async (importOriginal) => {
       repos: true,
       kata: false,
       docs: false,
-      messages: false,
       pulls: true,
       issues: true,
       reviews: true,

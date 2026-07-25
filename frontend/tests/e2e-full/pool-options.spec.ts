@@ -37,7 +37,6 @@ test("pooled server leases reset cleanly across option combinations", async ({ r
     const visibility = await fetchModes(request, modes.info.base_url);
     expect(visibility.kata).toBe(true);
     expect(visibility.docs).toBe(true);
-    expect(visibility.messages).toBe(true);
     const repos = await fetchRepos(request, modes.info.base_url);
     expect(repos.some((repo) => repo.Owner === "enterprise")).toBe(false);
   } finally {
@@ -49,7 +48,6 @@ test("pooled server leases reset cleanly across option combinations", async ({ r
     const visibility = await fetchModes(request, plain.info.base_url);
     expect(visibility.kata).toBe(false);
     expect(visibility.docs).toBe(false);
-    expect(visibility.messages).toBe(false);
     const repos = await fetchRepos(request, plain.info.base_url);
     expect(repos.some((repo) => repo.Owner === "enterprise")).toBe(false);
     expect(repos.some((repo) => repo.Owner === "acme" && repo.Name === "widgets")).toBe(true);

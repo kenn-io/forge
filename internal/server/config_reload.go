@@ -14,7 +14,6 @@ import (
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/platform"
 	"go.kenn.io/middleman/internal/server/docsapi"
-	"go.kenn.io/middleman/internal/server/messagesapi"
 	"go.kenn.io/middleman/internal/tokenauth"
 )
 
@@ -33,7 +32,7 @@ type configChangedEvent struct {
 	// (listener address, base path, sync interval, data dir, token env
 	// names, platform registry, tmux/shell command, etc.) differ from
 	// the boot-time snapshot. Hot-reloadable fields (repos, activity,
-	// terminal, agents, docs, msgvault) are applied regardless.
+	// terminal, agents, docs) are applied regardless.
 	RestartRequired bool `json:"restart_required"`
 }
 
@@ -63,8 +62,8 @@ type startupConfigSnapshot struct {
 	// wrong bucket.
 	GitHubAppSplitHosts []string
 	// TokenEnvNames is the boot-time baseline of provider token env
-	// names (msgvault excluded) used to accumulate runtime strip-env
-	// lists; it is not compared for restart-required drift.
+	// names used to accumulate runtime strip-env lists; it is not
+	// compared for restart-required drift.
 	TokenEnvNames []string
 	Roborev       config.Roborev
 	Tmux          config.Tmux
@@ -158,9 +157,7 @@ func startupBoundTokenEnvNames(cfg *config.Config) []string {
 	if cfg == nil {
 		return nil
 	}
-	withoutMsgvault := *cfg
-	withoutMsgvault.Msgvault = nil
-	names := withoutMsgvault.TokenEnvNames()
+	names := cfg.TokenEnvNames()
 	slices.Sort(names)
 	return names
 }
@@ -413,10 +410,6 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 	if s.docsAPI != nil {
 		s.docsAPI.ReplaceFolders(newCfg.DocFolders)
 	}
-	if s.messagesAPI != nil {
-		s.messagesAPI.ApplyConfig(newCfg)
-	}
-
 	slog.Info(
 		"config reload applied",
 		"path", s.cfgPath,
@@ -614,7 +607,6 @@ func cloneReloadedConfig(in *config.Config) config.Config {
 	out.Modes = cloneModeVisibility(in.Modes)
 	out.Agents = cloneConfigAgents(in.Agents)
 	out.DocFolders = slices.Clone(in.DocFolders)
-	out.Msgvault = messagesapi.CloneConfig(in.Msgvault)
 	out.Tmux.Command = slices.Clone(in.Tmux.Command)
 	if in.Tmux.AgentSessions != nil {
 		v := *in.Tmux.AgentSessions

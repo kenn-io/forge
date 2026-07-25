@@ -19,7 +19,6 @@
         daemon?: string | null;
       }, options?: { replace?: boolean }) => void
     ) | undefined;
-    onOpenMessage?: ((messageId: number) => void) | undefined;
   }
 
   let {
@@ -31,7 +30,6 @@
     requestedDaemonId = null,
     onSelectedIssueChange = undefined,
     onRouteStateChange = undefined,
-    onOpenMessage = undefined,
   }: Props = $props();
 </script>
 
@@ -44,5 +42,4 @@
   {requestedDaemonId}
   {onSelectedIssueChange}
   {onRouteStateChange}
-  {onOpenMessage}
 />

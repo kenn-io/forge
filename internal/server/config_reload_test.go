@@ -13,7 +13,6 @@ import (
 	"slices"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -24,6 +23,7 @@ import (
 	"go.kenn.io/middleman/internal/db"
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/platform"
+	ptyownerruntime "go.kenn.io/middleman/internal/ptyowner/runtime"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
 	"go.kenn.io/middleman/internal/tokenauth"
 	"go.kenn.io/middleman/internal/workspace/localruntime"
@@ -311,7 +311,6 @@ name = "widget"
 [modes]
 kata = true
 docs = true
-messages = true
 workspaces = false
 `
 
@@ -410,7 +409,7 @@ allow_mid_stack_merges = true
 }
 
 // A server constructed without a syncer (Server.New permits nil; embedded
-// and docs/msgvault-only setups use it) must hot-reload non-sync surfaces
+// and docs-only setups use it) must hot-reload non-sync surfaces
 // instead of panicking in the watcher goroutine. Regression test for a nil
 // TrackedRepos dereference that crashed the whole test binary in CI.
 func TestConfigReload_NilSyncerAppliesHotReloadWithoutPanic(t *testing.T) {
@@ -488,7 +487,6 @@ func TestConfigReload_UpdatesModes(t *testing.T) {
 	srv.cfgMu.Unlock()
 	assert.True(*gotModes.Kata)
 	assert.True(*gotModes.Docs)
-	assert.True(*gotModes.Messages)
 	assert.False(*gotModes.Workspaces)
 	assert.True(*gotModes.Activity)
 	assert.True(*gotModes.Repos)
@@ -556,69 +554,6 @@ func TestConfigReload_UpdatesDocFoldersAndRegistry(t *testing.T) {
 	assert.Equal(http.StatusNotFound, oldReadRR.Code, oldReadRR.Body.String())
 }
 
-func TestConfigReloadThenMsgvaultConfigurePreservesReloadedState(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	t.Setenv("MSGVAULT_API_KEY_TEST", "secret-key")
-	upstream := msgvaultOKUpstream(t)
-	defer upstream.Close()
-
-	srv, _, cfgPath := setupTestServerWithConfigContent(
-		t, validReloadConfig, &mockGH{},
-	)
-	waitForConfigWatcher(t, srv, 2*time.Second)
-	stream := streamConfigEvents(t, srv)
-	defer stream.Close()
-	writeConfigToml(t, cfgPath, validReloadConfigRepoTokenEnv)
-	ev := waitForConfigEvent(t, stream, 2*time.Second)
-	require.True(ev.Valid)
-
-	owner := &msgvaultRuntimeOwner{}
-	srv.runtime = localruntime.NewManager(localruntime.Options{
-		Targets: []localruntime.LaunchTarget{{
-			Key:       "helper",
-			Label:     "Helper",
-			Kind:      localruntime.LaunchTargetAgent,
-			Source:    "test",
-			Command:   []string{"/bin/echo"},
-			Available: true,
-		}},
-		PtyOwnerRuntime: owner,
-	})
-	t.Cleanup(srv.runtime.Shutdown)
-
-	rr := doMsgvaultJSON(t, srv, http.MethodPost, "/api/v1/msgvault/configure", map[string]any{
-		"url":         upstream.URL,
-		"api_key_env": "MSGVAULT_API_KEY_TEST",
-	})
-	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-	assert.Equal(upstream.URL, decodeMsgvaultHealth(t, rr).URL)
-
-	reloaded, err := config.Load(cfgPath)
-	require.NoError(err)
-	require.Len(reloaded.Repos, 1)
-	assert.Equal("MIDDLEMAN_REPO_TOKEN", reloaded.Repos[0].TokenEnv)
-	require.NotNil(reloaded.Msgvault)
-	assert.Equal(upstream.URL, reloaded.Msgvault.URL)
-
-	srv.cfgMu.Lock()
-	inMemory := cloneReloadedConfig(srv.cfg)
-	srv.cfgMu.Unlock()
-	require.Len(inMemory.Repos, 1)
-	assert.Equal("MIDDLEMAN_REPO_TOKEN", inMemory.Repos[0].TokenEnv)
-	require.NotNil(inMemory.Msgvault)
-	assert.Equal(upstream.URL, inMemory.Msgvault.URL)
-
-	health := doMsgvaultJSON(t, srv, http.MethodGet, "/api/v1/msgvault/health", nil)
-	require.Equal(http.StatusOK, health.Code, health.Body.String())
-	assert.Equal(upstream.URL, decodeMsgvaultHealth(t, health).URL)
-
-	_, err = srv.runtime.Launch(context.Background(), "ws-1", t.TempDir(), "helper")
-	require.NoError(err)
-	assert.Contains(owner.startedStripEnvVars, "MIDDLEMAN_REPO_TOKEN")
-	assert.Contains(owner.startedStripEnvVars, "MSGVAULT_API_KEY_TEST")
-}
-
 func TestConfigReloadSerializesDocsFolderMutation(t *testing.T) {
 	require := require.New(t)
 	initialRoot := t.TempDir()
@@ -668,137 +603,6 @@ func TestConfigReloadSerializesDocsFolderMutation(t *testing.T) {
 	registry := srv.docsAPI.Folders()
 	assert.Equal(t, disk.DocFolders, inMemory)
 	assert.Equal(t, disk.DocFolders, registry)
-}
-
-func TestConfigReload_UpdatesMsgvaultHealthHandler(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	t.Setenv("MSGVAULT_API_KEY_TEST", "secret-key")
-	var firstStats, secondStats atomic.Int32
-	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/api/v1/stats":
-			firstStats.Add(1)
-			_, _ = w.Write([]byte(`{}`))
-		default:
-			_, _ = w.Write([]byte(`{"status":"ok"}`))
-		}
-	}))
-	defer first.Close()
-	second := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/api/v1/stats":
-			secondStats.Add(1)
-			_, _ = w.Write([]byte(`{}`))
-		default:
-			_, _ = w.Write([]byte(`{"status":"ok"}`))
-		}
-	}))
-	defer second.Close()
-
-	initialConfig := validReloadConfig + fmt.Sprintf(`
-[msgvault]
-url = %q
-api_key_env = "MSGVAULT_API_KEY_TEST"
-`, first.URL)
-	updatedConfig := validReloadConfig + fmt.Sprintf(`
-[msgvault]
-url = %q
-api_key_env = "MSGVAULT_API_KEY_TEST"
-`, second.URL)
-
-	srv, _, cfgPath := setupTestServerWithConfigContent(
-		t, initialConfig, &mockGH{},
-	)
-	waitForConfigWatcher(t, srv, 2*time.Second)
-	stream := streamConfigEvents(t, srv)
-	defer stream.Close()
-
-	firstRR := doMsgvaultJSON(t, srv, http.MethodGet, "/api/v1/msgvault/health", nil)
-	require.Equal(http.StatusOK, firstRR.Code, firstRR.Body.String())
-	firstBody := decodeMsgvaultHealth(t, firstRR)
-	require.True(firstBody.OK)
-	assert.Equal(first.URL, firstBody.URL)
-	assert.Equal(int32(1), firstStats.Load())
-
-	writeConfigToml(t, cfgPath, updatedConfig)
-
-	ev := waitForConfigEvent(t, stream, 2*time.Second)
-	require.True(ev.Valid)
-	assert.False(ev.RestartRequired)
-
-	secondRR := doMsgvaultJSON(t, srv, http.MethodGet, "/api/v1/msgvault/health", nil)
-	require.Equal(http.StatusOK, secondRR.Code, secondRR.Body.String())
-	secondBody := decodeMsgvaultHealth(t, secondRR)
-	require.True(secondBody.OK)
-	assert.Equal(second.URL, secondBody.URL)
-	assert.Equal(int32(1), secondStats.Load())
-}
-
-func TestConfigReload_UpdatesMsgvaultTokenEnvWithoutRestart(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(`{"status":"ok"}`))
-	}))
-	defer first.Close()
-	second := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(`{"status":"ok"}`))
-	}))
-	defer second.Close()
-
-	initialConfig := validReloadConfig + fmt.Sprintf(`
-[msgvault]
-url = %q
-api_key_env = "MSGVAULT_OLD_KEY"
-
-[[agents]]
-key = "helper"
-label = "Helper"
-command = ["/bin/echo"]
-`, first.URL)
-	updatedConfig := validReloadConfig + fmt.Sprintf(`
-[msgvault]
-url = %q
-api_key_env = "MSGVAULT_NEW_KEY"
-
-[[agents]]
-key = "helper"
-label = "Helper"
-command = ["/bin/echo"]
-`, second.URL)
-
-	srv, _, cfgPath := setupTestServerWithConfigContent(
-		t, initialConfig, &mockGH{},
-	)
-	owner := &msgvaultRuntimeOwner{}
-	srv.runtime = localruntime.NewManager(localruntime.Options{
-		Targets: []localruntime.LaunchTarget{{
-			Key:       "helper",
-			Label:     "Helper",
-			Kind:      localruntime.LaunchTargetAgent,
-			Source:    "test",
-			Command:   []string{"/bin/echo"},
-			Available: true,
-		}},
-		PtyOwnerRuntime: owner,
-		StripEnvVars:    []string{"MSGVAULT_OLD_KEY"},
-	})
-	t.Cleanup(srv.runtime.Shutdown)
-	waitForConfigWatcher(t, srv, 2*time.Second)
-	stream := streamConfigEvents(t, srv)
-	defer stream.Close()
-
-	writeConfigToml(t, cfgPath, updatedConfig)
-
-	ev := waitForConfigEvent(t, stream, 2*time.Second)
-	require.True(ev.Valid)
-	assert.False(ev.RestartRequired)
-
-	_, err := srv.runtime.Launch(context.Background(), "ws-1", t.TempDir(), "helper")
-	require.NoError(err)
-	assert.Contains(owner.startedStripEnvVars, "MSGVAULT_NEW_KEY")
-	assert.Contains(owner.startedStripEnvVars, "MSGVAULT_OLD_KEY")
 }
 
 func TestConfigReload_WatcherFiresOnAtomicRename(t *testing.T) {
@@ -1589,6 +1393,61 @@ func TestConfigReload_RepoTokenOverrideWithPlatformFallbackUpdatesSource(t *test
 	assert.Equal("repo-token", newToken)
 }
 
+type fakeRuntimeOwner struct {
+	startedStripEnvVars []string
+	pty                 *fakeRuntimePTY
+}
+
+type fakeRuntimePTY struct {
+	output chan []byte
+	done   chan struct{}
+}
+
+func (m *fakeRuntimeOwner) HasState(string) bool {
+	return m.pty != nil
+}
+
+func (m *fakeRuntimeOwner) Attach(context.Context, string) (ptyownerruntime.PTY, error) {
+	return m.pty, nil
+}
+
+func (m *fakeRuntimeOwner) Start(
+	_ context.Context,
+	_ string,
+	_ string,
+	_ []string,
+	stripEnvVars []string,
+) (ptyownerruntime.PTY, error) {
+	m.startedStripEnvVars = append([]string(nil), stripEnvVars...)
+	m.pty = &fakeRuntimePTY{
+		output: make(chan []byte),
+		done:   make(chan struct{}),
+	}
+	return m.pty, nil
+}
+
+func (m *fakeRuntimeOwner) Stop(context.Context, string) error {
+	if m.pty != nil {
+		m.pty.Close()
+	}
+	return nil
+}
+
+func (p *fakeRuntimePTY) Output() <-chan []byte { return p.output }
+func (p *fakeRuntimePTY) Done() <-chan struct{} { return p.done }
+func (p *fakeRuntimePTY) Write([]byte) error    { return nil }
+func (p *fakeRuntimePTY) Resize(int, int) error { return nil }
+func (p *fakeRuntimePTY) ExitCode() int         { return 0 }
+
+func (p *fakeRuntimePTY) Close() {
+	select {
+	case <-p.done:
+	default:
+		close(p.done)
+		close(p.output)
+	}
+}
+
 func TestConfigReload_RuntimeStripsBootAndReloadedStartupBoundTokenEnvs(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -1617,7 +1476,7 @@ command = ["/bin/echo"]
 	srv, _, cfgPath := setupTestServerWithConfigContent(
 		t, initialConfig, &mockGH{},
 	)
-	owner := &msgvaultRuntimeOwner{}
+	owner := &fakeRuntimeOwner{}
 	srv.runtime = localruntime.NewManager(localruntime.Options{
 		Targets: []localruntime.LaunchTarget{{
 			Key:       "helper",

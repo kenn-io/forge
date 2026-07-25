@@ -12,7 +12,6 @@ export interface KataTaskMetadata {
   today_bucket?: "day" | "evening" | undefined;
   checklist?: KataTaskChecklistItem[] | undefined;
   area?: string | undefined;
-  mail_links?: KataTaskMessageLinkRef[] | undefined;
   [key: string]: unknown;
 }
 
@@ -136,15 +135,6 @@ export interface KataTaskLabel {
   label: string;
   author: string;
   created_at: string;
-}
-
-export interface KataTaskMessageLinkRef {
-  message_id: number;
-  conversation_id?: number | undefined;
-  subject: string;
-  from: string;
-  sent_at: string;
-  added_at: string;
 }
 
 export interface KataTaskLink {

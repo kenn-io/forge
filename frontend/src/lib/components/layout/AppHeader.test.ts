@@ -7,7 +7,7 @@ const mockedContainerSize = vi.hoisted(() => ({
   value: "wide" as "narrow" | "medium" | "wide",
 }));
 
-type ModeKey = "activity" | "repos" | "kata" | "docs" | "messages" | "pulls" | "issues" | "reviews" | "workspaces";
+type ModeKey = "activity" | "repos" | "kata" | "docs" | "pulls" | "issues" | "reviews" | "workspaces";
 
 const mockedReviewsDaemonAvailable = vi.hoisted(() => ({ value: true }));
 
@@ -113,7 +113,6 @@ function showImportedModes(): void {
     ...mockedModeVisibility.value,
     kata: true,
     docs: true,
-    messages: true,
   };
 }
 
@@ -143,7 +142,6 @@ describe("AppHeader", () => {
       repos: true,
       kata: false,
       docs: false,
-      messages: false,
       pulls: true,
       issues: true,
       reviews: true,
@@ -170,7 +168,6 @@ describe("AppHeader", () => {
       repos: true,
       kata: false,
       docs: false,
-      messages: false,
       pulls: true,
       issues: true,
       reviews: true,
@@ -504,7 +501,6 @@ describe("AppHeader", () => {
 
     expect(screen.queryByRole("button", { name: "Kata" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Docs" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Messages" })).toBeNull();
   });
 
   it("navigates to Kata from the desktop nav", async () => {
@@ -538,16 +534,6 @@ describe("AppHeader", () => {
     expect(window.location.pathname + window.location.search).toBe("/docs");
   });
 
-  it("navigates to Messages from the desktop nav", async () => {
-    initTheme();
-    showImportedModes();
-    render(AppHeader);
-
-    await fireEvent.click(screen.getByRole("button", { name: "Messages" }));
-
-    expect(window.location.pathname + window.location.search).toBe("/messages");
-  });
-
   it("reserves the provider repo selector slot on Kata without exposing the selector", () => {
     initTheme();
     navigate("/kata");
@@ -559,14 +545,6 @@ describe("AppHeader", () => {
   it("reserves the provider repo selector slot on Docs without exposing the selector", () => {
     initTheme();
     navigate("/docs");
-    const { container } = render(AppHeader);
-
-    expectReservedRepoSelectorSlot(container);
-  });
-
-  it("reserves the provider repo selector slot on Messages without exposing the selector", () => {
-    initTheme();
-    navigate("/messages");
     const { container } = render(AppHeader);
 
     expectReservedRepoSelectorSlot(container);

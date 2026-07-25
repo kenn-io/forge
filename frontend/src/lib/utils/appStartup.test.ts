@@ -78,7 +78,6 @@ function makeSettings(): Settings {
       repos: true,
       kata: false,
       docs: false,
-      messages: false,
       pulls: true,
       issues: true,
       reviews: true,

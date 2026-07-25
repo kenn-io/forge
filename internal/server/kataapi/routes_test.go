@@ -165,7 +165,7 @@ token_env = "MIDDLEMAN_KATA_MISSING_TOKEN"
 	rr := doJSON(t, srv, http.MethodGet, "/api/v1/kata/daemons", nil)
 
 	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
-	problem := decodeMsgvaultProblem(t, rr)
+	problem := decodeProblem(t, rr)
 	assert.Equal(httpapi.CodeBadRequest, problem.Code)
 	assert.Contains(problem.Detail, "token_env")
 	assert.Contains(problem.Detail, "MIDDLEMAN_KATA_MISSING_TOKEN")
@@ -191,7 +191,7 @@ local = true
 	rr := doJSON(t, srv, http.MethodGet, "/api/v1/kata/daemons", nil)
 
 	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
-	problem := decodeMsgvaultProblem(t, rr)
+	problem := decodeProblem(t, rr)
 	assert.Equal(httpapi.CodeBadRequest, problem.Code)
 	assert.Contains(problem.Detail, "duplicate")
 	assert.Contains(problem.Detail, "work")

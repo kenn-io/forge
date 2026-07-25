@@ -69,9 +69,8 @@ knowledge that changes what future agents should do.
 | `mobile` | `context/mobile-ux.md` | frontend `/m` routes and phone-first components |
 | `kata` | `docs/superpowers/specs/2026-06-08-kata-docs-msgvault-modes-design.md` | `internal/kata/` |
 | `docs` | same modes spec | `internal/docs/` |
-| `messages` | same modes spec | `internal/messages/msgvault/` |
 
-When Kata, Docs, or Messages graduate to dedicated topic docs, update this map and route
+When Kata or Docs graduate to dedicated topic docs, update this map and route
 the new doc from `CLAUDE.md`.
 
 ## Audit Workflow

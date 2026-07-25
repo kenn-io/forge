@@ -403,7 +403,6 @@ func TestHandleUpdateSettingsPersistsModes(t *testing.T) {
 	modes := config.DefaultModeVisibility()
 	*modes.Kata = true
 	*modes.Docs = true
-	*modes.Messages = true
 	*modes.Workspaces = false
 
 	rr := doJSON(
@@ -416,7 +415,6 @@ func TestHandleUpdateSettingsPersistsModes(t *testing.T) {
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	assert.True(*resp.Modes.Kata)
 	assert.True(*resp.Modes.Docs)
-	assert.True(*resp.Modes.Messages)
 	assert.False(*resp.Modes.Workspaces)
 	assert.True(*resp.Modes.Activity)
 	assert.True(*resp.Modes.Repos)
@@ -428,7 +426,6 @@ func TestHandleUpdateSettingsPersistsModes(t *testing.T) {
 	require.NoError(err)
 	assert.True(*cfg2.Modes.Kata)
 	assert.True(*cfg2.Modes.Docs)
-	assert.True(*cfg2.Modes.Messages)
 	assert.False(*cfg2.Modes.Workspaces)
 	assert.True(*cfg2.Modes.Activity)
 	assert.True(*cfg2.Modes.Repos)
@@ -499,7 +496,6 @@ func assertDefaultModeVisibility(t *testing.T, modes config.ModeVisibility) {
 	assert.True(*modes.Repos)
 	assert.False(*modes.Kata)
 	assert.False(*modes.Docs)
-	assert.False(*modes.Messages)
 	assert.True(*modes.Pulls)
 	assert.True(*modes.Issues)
 	assert.True(*modes.Reviews)
@@ -571,7 +567,6 @@ hide_bots = true
 
 [modes]
 docs = false
-messages = false
 `, &mockGH{})
 
 	terminal := config.Terminal{
@@ -601,7 +596,6 @@ messages = false
 	assert.Equal(2000, cfg2.Terminal.Scrollback)
 	assert.Equal(1, cfg2.Terminal.LetterSpacing)
 	assert.False(*cfg2.Modes.Docs)
-	assert.False(*cfg2.Modes.Messages)
 }
 
 func TestHandleUpdateSettingsPersistsAgents(t *testing.T) {

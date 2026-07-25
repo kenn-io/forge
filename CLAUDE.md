@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-middleman is a local-first maintainer console. Its original core is a dashboard for tracking pull and merge requests across a maintainer's fixed set of repositories on multiple platforms: it syncs PR/MR data into SQLite on a timer, serves a Svelte 5 SPA via an embedded Go HTTP server, and provides a focused workflow for triage, review, and merge from one place rather than each provider's notification UI. The product surface is expanding to include first-class modes for external Kata task daemons, markdown docs, and msgvault-backed message search without moving those domains into the provider registry.
+middleman is a local-first maintainer console. Its original core is a dashboard for tracking pull and merge requests across a maintainer's fixed set of repositories on multiple platforms: it syncs PR/MR data into SQLite on a timer, serves a Svelte 5 SPA via an embedded Go HTTP server, and provides a focused workflow for triage, review, and merge from one place rather than each provider's notification UI. The product surface is expanding to include first-class modes for external Kata task daemons and markdown docs without moving those domains into the provider registry.
 
 ## Architecture
 
@@ -13,7 +13,7 @@ CLI (middleman) → Config (TOML) → DB (SQLite)
                     ↓                ↓
                HTTP Server → REST API + Embedded SPA
                     ↓
-          App Modes (PRs/issues, Kata, Docs, Messages)
+          App Modes (PRs/issues, Kata, Docs)
 ```
 
 - **Server**: Huma-based HTTP server on loopback (default 127.0.0.1:8091)
@@ -21,7 +21,6 @@ CLI (middleman) → Config (TOML) → DB (SQLite)
 - **Sync**: Periodic pull from each configured provider host (configurable, default 5m)
 - **Kata**: External daemon client mode; daemon catalog comes from Kata's own `$KATA_HOME/config.toml` and runtime records, not middleman config
 - **Docs**: Configured markdown folders with filesystem-safe browse/read/write/search/git publish behavior
-- **Messages**: msgvault-backed message search, detail, thread, and safe HTML/image handling
 - **Frontend**: Svelte 5 SPA embedded in the Go binary at build time
 - **Config**: TOML at `~/.config/middleman/config.toml`; per-provider `MIDDLEMAN_<PROVIDER>_TOKEN` env vars (with optional repo-level `token_env` overrides). Optional `[[github_apps]]` entries (written by the `middleman-github-app` CLI) authenticate GitHub sync reads with app installation tokens ahead of PATs to relieve rate limits; mutations (merges, comments, state changes) stay on the user's PAT chain so they remain attributed to the user
 
@@ -44,12 +43,11 @@ For package layout and the new-provider checklist, see `context/provider-archite
 
 ## Non-Provider Modes
 
-Kata, Docs, and Messages are first-class middleman modes, but they are not platform providers and do not use provider-neutral repository identity. Do not force them through `internal/platform` or provider capability abstractions.
+Kata and Docs are first-class middleman modes, but they are not platform providers and do not use provider-neutral repository identity. Do not force them through `internal/platform` or provider capability abstractions.
 
 - Kata mode talks to external Kata daemons. Middleman reads the Kata daemon catalog from `$KATA_HOME/config.toml` (default `~/.kata/config.toml`) and resolves `local = true` daemon entries from Kata runtime records. Middleman config must not become the source of truth for Kata daemon definitions.
 - Docs mode operates on explicitly configured local markdown folders. Treat folder reads, writes, deletes, browse, and git publish as local filesystem surfaces requiring explicit path safety, CSRF, and loopback-access decisions.
-- Messages mode uses frontend and app-domain `messages` naming and the browser route `/messages`. The current external backend adapter lives under `internal/messages/msgvault`; API routes, config keys, tags, and adapter docs for that backend source use `msgvault` naming.
-- These modes may link to each other, but their data ownership remains separate: provider PR/MR data lives in middleman's SQLite DB, Kata task data stays in external Kata daemons, docs files stay on disk, and msgvault data stays in msgvault.
+- These modes may link to each other, but their data ownership remains separate: provider PR/MR data lives in middleman's SQLite DB, Kata task data stays in external Kata daemons, and docs files stay on disk.
 
 ## Project Structure
 
@@ -60,7 +58,6 @@ Kata, Docs, and Messages are first-class middleman modes, but they are not platf
 - `internal/db/` - SQLite schema, connection, queries, types
 - `internal/kata/` - Kata daemon catalog/runtime discovery, health, and proxy integration
 - `internal/docs/` - Markdown folder filesystem, search, and git-publish support (planned on this branch)
-- `internal/messages/msgvault/` - Msgvault client/proxy, health, sanitization, and image handling
 - `internal/platform/` - Provider-neutral types, capability interfaces, registry, persistence helpers
 - `internal/platform/<provider>/` - Per-provider API transport and normalization
 - `internal/github/` - GitHub-only sync orchestration (GraphQL bulk fetch, ETag/rate-limit transports) consumed by the platform registry
@@ -80,7 +77,6 @@ Kata, Docs, and Messages are first-class middleman modes, but they are not platf
 | `internal/db/types.go`                       | DB model types                                                                                    |
 | `internal/kata/`                             | External Kata daemon discovery, selection, health, and passthrough transport                      |
 | `internal/docs/`                             | Planned on this branch: markdown folder registry, safe file operations, search, and git publish   |
-| `internal/messages/msgvault/`                | Msgvault server integration, health/configure flow, sanitization, image proxying                  |
 | `internal/platform/types.go`                 | Provider-neutral domain types (Repository, MergeRequest, Issue, events, labels, releases, checks) |
 | `internal/platform/registry.go`              | `(platform, platform_host)` provider lookup and capability error types                            |
 | `internal/platform/metadata.go`              | Provider metadata (kind, label, default host, owner casing/nesting behavior)                      |
@@ -178,7 +174,7 @@ Coverage of real behavior is non-negotiable; the lane is chosen by the behavior 
 - For frontend UI and TypeScript/Svelte conventions, follow `context/ui-design-system.md`; prefer extending shared UI primitives over adding one-off local badge/chip/button styling, and name reused domain object shapes instead of repeating anonymous inline types.
 - For mobile, phone, narrow-viewport, touch, or `/m` route work, follow `context/mobile-ux.md`; mobile UX is a phone-first workflow, not desktop UI resized under mobile routes.
 - For Kata task authority, daemon integration, and workspace behavior, follow `context/workspace-apis.md`.
-- For Docs and Messages/msgvault mode integration, follow `docs/superpowers/specs/2026-06-08-kata-docs-msgvault-modes-design.md` until dedicated context docs exist.
+- For Docs mode integration, follow `docs/superpowers/specs/2026-06-08-kata-docs-msgvault-modes-design.md` until dedicated context docs exist; its Messages/msgvault sections are historical (that mode was removed).
 - Datetimes are UTC across storage and API boundaries. Store timestamps in UTC, emit API timestamps as UTC RFC3339, and only convert to local time in the Svelte UI presentation layer.
 
 ## Roborev

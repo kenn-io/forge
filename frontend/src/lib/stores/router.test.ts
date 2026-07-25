@@ -295,19 +295,8 @@ describe("router basic routes", () => {
     expect(getPage()).toBe("docs");
   });
 
-  it("parses /messages route state", () => {
-    navigate("/messages?q=label%3AInbox&message=42&view=linked");
-    expect(getRoute()).toEqual({
-      page: "messages",
-      q: "label:Inbox",
-      message: "42",
-      view: "linked",
-    });
-    expect(getPage()).toBe("messages");
-  });
-
-  it("does not parse the old mail route as messages", () => {
-    navigate("/mail?q=label%3AInbox");
+  it("does not parse the removed messages route", () => {
+    navigate("/messages?q=label%3AInbox");
     expect(getRoute()).toEqual({ page: "activity" });
     expect(getPage()).toBe("activity");
   });
@@ -728,18 +717,6 @@ describe("router navigation events", () => {
     expect(payload.page).toBe("docs");
     expect(payload.type).toBe("docs");
     expect(payload.view).toBe("/docs?folder=notes&doc=Daily%2Ftoday.md");
-  });
-
-  it("maps /messages to messages navigation events", () => {
-    const spy = vi.fn();
-    installOnNavigate(spy);
-
-    navigate("/messages?q=from%3Aops");
-
-    const payload = spy.mock.calls[spy.mock.calls.length - 1]![0];
-    expect(payload.page).toBe("messages");
-    expect(payload.type).toBe("messages");
-    expect(payload.view).toBe("/messages?q=from%3Aops");
   });
 
   it("maps repo browser routes to provider-aware repos navigation events and preserves URL fragments", () => {

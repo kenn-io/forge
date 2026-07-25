@@ -493,7 +493,7 @@ const defaultPooledOptions: PooledServerOptions = {
 // order-dependent behavior. Snapshot the values at module load and
 // fail fast when a pooled lease is requested after a mutation —
 // such tests must pass freshProcess: true instead.
-const envSensitiveServerVars = ["KATA_HOME", "MIDDLEMAN_MESSAGES_SAVED_SEARCHES_PATH"] as const;
+const envSensitiveServerVars = ["KATA_HOME"] as const;
 const envSensitiveBaseline = new Map<string, string | undefined>(
   envSensitiveServerVars.map((key) => [key, process.env[key]]),
 );

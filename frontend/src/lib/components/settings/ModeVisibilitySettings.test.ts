@@ -13,7 +13,6 @@ vi.mock("@middleman/ui", () => ({
     repos: true,
     kata: false,
     docs: false,
-    messages: false,
     pulls: true,
     issues: true,
     reviews: true,
@@ -42,7 +41,6 @@ function defaultModes(): ModeVisibility {
     repos: true,
     kata: false,
     docs: false,
-    messages: false,
     pulls: true,
     issues: true,
     reviews: true,
@@ -63,7 +61,6 @@ describe("ModeVisibilitySettings", () => {
       ...modes,
       kata: true,
       docs: true,
-      messages: true,
       workspaces: false,
     };
     mockUpdateSettings.mockResolvedValue({ modes: updated });
@@ -78,12 +75,11 @@ describe("ModeVisibilitySettings", () => {
 
     expect((screen.getByLabelText("Kata") as HTMLInputElement).checked).toBe(false);
     expect((screen.getByLabelText("Docs") as HTMLInputElement).checked).toBe(false);
-    expect((screen.getByLabelText("Messages") as HTMLInputElement).checked).toBe(false);
+    expect(screen.queryByLabelText("Messages")).toBeNull();
     expect(screen.queryByLabelText("Board")).toBeNull();
 
     await fireEvent.click(screen.getByLabelText("Kata"));
     await fireEvent.click(screen.getByLabelText("Docs"));
-    await fireEvent.click(screen.getByLabelText("Messages"));
     await fireEvent.click(screen.getByLabelText("Workspaces"));
     await fireEvent.click(screen.getByRole("button", { name: "Save" }));
 

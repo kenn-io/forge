@@ -19,8 +19,6 @@
   } from "../../api/kata/taskTypes.js";
   import type { KataIssueNavigationTarget } from "../../api/kata/navigation.js";
   import type { KataLinkFilters } from "../../features/kata/kataLinkFilters.js";
-  import type { MessageLinkRef } from "../../messages/types";
-  import IssueMessageLinks from "../../features/kata/IssueMessageLinks.svelte";
   import RecurrencePanel from "../recurrence/RecurrencePanel.svelte";
   import KataChecklistEditor from "./KataChecklistEditor.svelte";
   import KataIssueActions from "./KataIssueActions.svelte";
@@ -45,8 +43,6 @@
     onLinkFiltersChange: (next: KataLinkFilters) => void;
     projects: KataProjectSummary[];
     ownerOptions: TypeaheadOption[];
-    messageLinks: MessageLinkRef[];
-    unlinkBusyIds: ReadonlySet<number>;
     selectedRecurrences: KataRecurrence[];
     checklistRevealed: boolean;
     actionsDisabled?: boolean | undefined;
@@ -62,8 +58,6 @@
     onSetPriority: (uid: string, priority: number | null) => boolean | Promise<boolean>;
     onAddLabel: (uid: string, label: string) => boolean | Promise<boolean>;
     onRemoveLabel: (uid: string, label: string) => void | Promise<void>;
-    onOpenMessage?: ((link: MessageLinkRef) => void) | undefined;
-    onUnlinkMessage: (link: MessageLinkRef) => void | Promise<void>;
     onRevealChecklist: () => void;
     onCreateRecurrence: () => void;
     onEditRecurrence: (recurrence: KataRecurrence) => void;
@@ -89,8 +83,6 @@
     onLinkFiltersChange,
     projects,
     ownerOptions,
-    messageLinks,
-    unlinkBusyIds,
     selectedRecurrences,
     checklistRevealed,
     actionsDisabled = false,
@@ -106,8 +98,6 @@
     onSetPriority,
     onAddLabel,
     onRemoveLabel,
-    onOpenMessage = undefined,
-    onUnlinkMessage,
     onRevealChecklist,
     onCreateRecurrence,
     onEditRecurrence,
@@ -432,15 +422,6 @@
   />
 
   <fieldset class="mutation-controls" disabled={actionsDisabled || detailInert}>
-  <IssueMessageLinks
-    links={messageLinks}
-    busyIds={unlinkBusyIds}
-    onOpenMessage={onOpenMessage}
-    onUnlink={(link) => {
-      void onUnlinkMessage(link);
-    }}
-  />
-
   <KataChecklistEditor
     {issue}
     revealed={checklistRevealed}

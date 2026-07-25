@@ -109,7 +109,6 @@ vi.mock("@middleman/ui/stores/settings", () => ({
       repos: true,
       kata: false,
       docs: false,
-      messages: false,
       pulls: true,
       issues: true,
       reviews: true,

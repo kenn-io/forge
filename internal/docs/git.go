@@ -19,7 +19,7 @@ import (
 // docsGitBase is the base kit runner for every git command against a docs
 // folder. StripEnv drops inherited GIT_* variables so a docs git command
 // can never bind to another repository or splice in caller config, and the
-// secret stripping keeps middleman and msgvault credentials out of git
+// secret stripping keeps middleman credentials out of git
 // child processes. Stripping is deliberately wholesale — env-based
 // customization such as GIT_SSH_COMMAND and GIT_AUTHOR_*/GIT_COMMITTER_*
 // goes too, rather than resurrecting a hand-maintained allowlist; the
@@ -121,9 +121,6 @@ func isDocsSecretEnv(key string) bool {
 		return false
 	}
 	if strings.HasPrefix(upper, "MIDDLEMAN_") && strings.Contains(upper, "TOKEN") {
-		return true
-	}
-	if strings.HasPrefix(upper, "MSGVAULT_") {
 		return true
 	}
 	for _, part := range []string{"TOKEN", "SECRET", "PASSWORD", "API_KEY", "ACCESS_KEY", "PRIVATE_KEY"} {

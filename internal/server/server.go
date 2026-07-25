@@ -37,7 +37,6 @@ import (
 	"go.kenn.io/middleman/internal/server/httpapi"
 	"go.kenn.io/middleman/internal/server/issueapi"
 	"go.kenn.io/middleman/internal/server/kataapi"
-	"go.kenn.io/middleman/internal/server/messagesapi"
 	"go.kenn.io/middleman/internal/server/pullapi"
 	"go.kenn.io/middleman/internal/server/repobrowserapi"
 	"go.kenn.io/middleman/internal/server/workspaceapi"
@@ -90,7 +89,6 @@ type ServerOptions struct {
 	// port matching after HostCheck/cfg options have been selected.
 	// Use this for httptest-style listeners on ephemeral ports.
 	HostCheckAllowLoopbackAnyPort bool
-	msgvaultRemoteImageDeps       *messagesapi.RemoteImageDeps
 	deferredMergeMaxWait          time.Duration
 }
 
@@ -206,7 +204,6 @@ type Server struct {
 	docsAPI                *docsapi.Handler
 	kataAPI                *kataapi.Handler
 	shutdownKata           func(context.Context) error
-	messagesAPI            *messagesapi.Handler
 	repoBrowserAPI         *repobrowserapi.Handler
 	pullAPI                *pullapi.Handler
 	issueAPI               *issueapi.Handler
@@ -793,38 +790,6 @@ func newServer(
 	if cfg != nil {
 		docsapi.WarnDaemonBindings(cfg.DocFolders)
 	}
-	s.messagesAPI = messagesapi.New(messagesapi.Deps{
-		Config:      cfg,
-		BasePath:    basePath,
-		RemoteImage: options.msgvaultRemoteImageDeps,
-		BeginConfigMutation: func() func() {
-			s.configReloadMu.Lock()
-			return s.configReloadMu.Unlock
-		},
-		SaveConfig: func(next *config.Msgvault) (*config.Config, error) {
-			if s.cfgPath == "" || s.cfg == nil {
-				return nil, messagesapi.ErrSettingsUnavailable
-			}
-			s.cfgMu.Lock()
-			defer s.cfgMu.Unlock()
-			previous := messagesapi.CloneConfig(s.cfg.Msgvault)
-			s.cfg.Msgvault = messagesapi.CloneConfig(next)
-			if err := s.cfg.Save(s.cfgPath); err != nil {
-				s.cfg.Msgvault = previous
-				return nil, err
-			}
-			snapshot := cloneReloadedConfig(s.cfg)
-			return &snapshot, nil
-		},
-		UpdateRuntimeStripEnv: func(cfg *config.Config) {
-			if s.runtime != nil {
-				s.cfgMu.Lock()
-				stripEnvVars := s.updateRuntimeStripEnvVarsLocked(cfg)
-				s.cfgMu.Unlock()
-				s.runtime.UpdateStripEnvVars(stripEnvVars)
-			}
-		},
-	})
 	s.repoBrowserAPI = repobrowserapi.New(repobrowserapi.Deps{
 		Resolver: repoResolver,
 		Clones:   clones,
@@ -1303,26 +1268,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			))
 			return
 		}
-		if s.isMutatingMessagesAPIRequest(r) {
-			if !isLoopbackRemoteAddr(r.RemoteAddr) {
-				writeProblemResponse(w, httpapi.NewProblem(
-					http.StatusForbidden,
-					httpapi.CodeForbidden,
-					"message configuration changes require a loopback client",
-					map[string]any{"reason": "loopbackOnly"},
-				))
-				return
-			}
-			if r.Header.Get(middlemanCSRFHeaderName) == "" {
-				writeProblemResponse(w, httpapi.NewProblem(
-					http.StatusForbidden,
-					httpapi.CodeForbidden,
-					"message mutations require the "+middlemanCSRFHeaderName+" header",
-					map[string]any{"reason": "missingCsrfHeader"},
-				))
-				return
-			}
-		}
 	}
 	if r.Method == http.MethodGet && s.isDocsBrowseAPIRequest(r) && !isLoopbackRemoteAddr(r.RemoteAddr) {
 		writeProblemResponse(w, httpapi.NewProblem(
@@ -1338,15 +1283,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.StatusForbidden,
 			httpapi.CodeForbidden,
 			"docs reads require a loopback client",
-			map[string]any{"reason": "loopbackOnly"},
-		))
-		return
-	}
-	if r.Method == http.MethodGet && s.isMessagesSavedSearchesAPIRequest(r) && !isLoopbackRemoteAddr(r.RemoteAddr) {
-		writeProblemResponse(w, httpapi.NewProblem(
-			http.StatusForbidden,
-			httpapi.CodeForbidden,
-			"message saved searches require a loopback client",
 			map[string]any{"reason": "loopbackOnly"},
 		))
 		return
@@ -1408,25 +1344,6 @@ func (s *Server) isMutatingDocsAPIRequest(r *http.Request) bool {
 		path = strings.TrimPrefix(path, prefix)
 	}
 	return strings.HasPrefix(path, "/api/v1/docs/")
-}
-
-func (s *Server) isMutatingMessagesAPIRequest(r *http.Request) bool {
-	path := r.URL.Path
-	if s.basePath != "/" {
-		prefix := strings.TrimSuffix(s.basePath, "/")
-		path = strings.TrimPrefix(path, prefix)
-	}
-	return path == "/api/v1/msgvault/configure" ||
-		path == "/api/v1/messages/saved-searches"
-}
-
-func (s *Server) isMessagesSavedSearchesAPIRequest(r *http.Request) bool {
-	path := r.URL.Path
-	if s.basePath != "/" {
-		prefix := strings.TrimSuffix(s.basePath, "/")
-		path = strings.TrimPrefix(path, prefix)
-	}
-	return path == "/api/v1/messages/saved-searches"
 }
 
 func (s *Server) isDocsBrowseAPIRequest(r *http.Request) bool {

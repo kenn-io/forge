@@ -165,24 +165,13 @@ type BackendState = {
   failNextAssignOwner?: string | undefined;
   failNextProjectsStatus?: number | undefined;
   failNextReadyStatus?: number | undefined;
-  failNextMetadataMessage?: string | undefined;
   failNextMoveMessage?: string | undefined;
   issuesBarrier?: Promise<void> | undefined;
   projectCreateBarrier?: Promise<void> | undefined;
 };
 
-type MsgvaultBackendState = {
-  authorized: boolean;
-};
-
 type BackendHandle = {
   state: BackendState;
-  url: string;
-  close: () => Promise<void>;
-};
-
-type MsgvaultBackendHandle = {
-  state: MsgvaultBackendState;
   url: string;
   close: () => Promise<void>;
 };
@@ -197,7 +186,6 @@ type ProjectRow = {
 
 const now = "2026-05-15T10:00:00Z";
 const today = localDateString();
-const middlemanCSRFHeader = { "X-Middleman-Csrf": "1" };
 const kataProjectEventPageSize = 100;
 
 function daemonAPIPath(...segments: string[]): string {
@@ -590,23 +578,6 @@ async function startKataBackend(options: KataBackendOptions = {}): Promise<Backe
       }
       await closeServer(server);
     },
-  };
-}
-
-async function startMsgvaultBackend(): Promise<MsgvaultBackendHandle> {
-  const state: MsgvaultBackendState = {
-    authorized: false,
-  };
-  const server = createServer((req, res) => {
-    handleMsgvaultRequest(state, req, res);
-  });
-  server.listen(0, "127.0.0.1");
-  await once(server, "listening");
-  const addr = server.address() as AddressInfo;
-  return {
-    state,
-    url: `http://127.0.0.1:${addr.port}`,
-    close: () => closeServer(server),
   };
 }
 
@@ -1055,50 +1026,6 @@ async function handleProjectRename(
   publishProjectMutationChange(state, project, "project.updated");
 }
 
-function handleMsgvaultRequest(state: MsgvaultBackendState, req: IncomingMessage, res: ServerResponse): void {
-  const url = new URL(req.url ?? "/", "http://127.0.0.1");
-  switch (url.pathname) {
-    case "/health":
-      writeJSON(res, 200, { status: "ok" });
-      return;
-    case "/api/v1/stats":
-      if (!state.authorized) {
-        writeJSON(res, 401, { error: "unauthorized", message: "bad key" });
-        return;
-      }
-      writeJSON(res, 200, { total_messages: 1 });
-      return;
-    case "/api/v1/search":
-      writeJSON(res, 200, {
-        query: url.searchParams.get("q") ?? "",
-        total: 1,
-        page: 1,
-        page_size: 20,
-        messages: [messageSummary()],
-      });
-      return;
-    case "/api/v1/messages/101":
-      writeJSON(res, 200, {
-        ...messageSummary(),
-        body: "Deploy details are ready for the project sync.",
-        body_html: "",
-        attachments: [],
-      });
-      return;
-    case "/api/v1/messages/filter":
-      writeJSON(res, 200, { messages: [messageSummary()] });
-      return;
-    case "/api/v1/aggregates":
-      writeJSON(res, 200, {
-        view_type: url.searchParams.get("view_type") ?? "senders",
-        rows: [],
-      });
-      return;
-    default:
-      writeJSON(res, 404, { error: "not_found", message: url.pathname });
-  }
-}
-
 async function handleCreateRecurrence(
   state: BackendState,
   req: IncomingMessage,
@@ -1197,24 +1124,6 @@ async function handleRecurrenceDetail(
   }
 
   writeJSON(res, 405, { error: "method_not_allowed" });
-}
-
-function messageSummary() {
-  return {
-    id: 101,
-    conversation_id: 501,
-    subject: "Project sync",
-    from: "alice@example.com",
-    to: ["bob@example.com"],
-    cc: [],
-    bcc: [],
-    sent_at: now,
-    snippet: "Deploy details are ready.",
-    labels: ["work"],
-    has_attachments: false,
-    size_bytes: 2048,
-    deleted_at: null,
-  };
 }
 
 async function handleIssueEdit(
@@ -1391,12 +1300,6 @@ async function handleIssueMutation(
 
   if (req.method === "PUT" && route.kind === "metadata") {
     state.seenIfMatches.push(req.headers["if-match"]?.toString() ?? "");
-    if (state.failNextMetadataMessage !== undefined) {
-      const message = state.failNextMetadataMessage;
-      state.failNextMetadataMessage = undefined;
-      writeJSON(res, 503, { error: { code: "metadata_unavailable", message } });
-      return;
-    }
     const payload = await readJSONBody(req);
     const patch = isRecord(payload.patch) ? payload.patch : {};
     found.metadata = { ...found.metadata, ...patch };
@@ -2488,48 +2391,6 @@ test("kata daemon switch fences a late old-daemon compact frame delivered on the
     kataHome.restore();
     await home.close();
     await work.close();
-  }
-});
-
-test("kata message unlink failure keeps the linked message visible", async ({ page }) => {
-  const linkedIssue = issueSummary({
-    ...issues[0]!,
-    metadata: {
-      ...issues[0]!.metadata,
-      mail_links: [
-        {
-          message_id: 2001,
-          conversation_id: 2001,
-          subject: "Lease renewal",
-          from: "alice@example.com",
-          sent_at: "2026-05-15T09:00:00Z",
-          added_at: "2026-05-18T00:00:00Z",
-        },
-      ],
-    },
-  });
-  const backend = await startKataBackend({ issues: [linkedIssue] });
-  backend.state.failNextMetadataMessage = "";
-  const kataHome = await configureKataHome(backend.url);
-  const server = await startIsolatedE2EServer();
-
-  try {
-    await page.goto(`${server.info.base_url}/kata?issue=issue-rent`);
-
-    const taskLinks = page.getByRole("region", { name: "Linked messages" });
-    await expect(taskLinks).toContainText("Lease renewal");
-    await taskLinks.getByRole("button", { name: "Unlink Lease renewal" }).click();
-
-    await expect(page.locator(".kit-flash-stack").getByRole("status")).toContainText("Could not unlink message.");
-    await expect(taskLinks).toContainText("Lease renewal");
-    await expect.poll(() => backend.state.seenPaths).toContain("PUT /api/v1/projects/1/issues/issue-rent/metadata");
-    expect(backend.state.issues.find((issue) => issue.uid === "issue-rent")?.metadata.mail_links).toEqual(
-      linkedIssue.metadata.mail_links,
-    );
-  } finally {
-    await server.stop();
-    kataHome.restore();
-    await backend.close();
   }
 });
 
@@ -4707,105 +4568,6 @@ test("docs uid links resolve colliding tasks through the folder-bound external d
   }
 });
 
-test("message linking follows the daemon activated by a folder-bound docs link", async ({ page }) => {
-  const workProject = {
-    id: 202,
-    uid: "project-work",
-    name: "Work",
-    metadata: { area: "Work", sidebar_order: 1 },
-    open_count: 1,
-  };
-  const work = await startKataBackend({
-    projects: [workProject],
-    issues: [
-      issueSummary({
-        id: 2021,
-        uid: "issue-work",
-        project_id: workProject.id,
-        project_uid: workProject.uid,
-        project_name: workProject.name,
-        short_id: "shared-1",
-        qualified_id: "Work#shared-1",
-        title: "Bound daemon task",
-        body: "Opened through the folder daemon binding.",
-        labels: ["work"],
-      }),
-    ],
-  });
-  const msgvault = await startMsgvaultBackend();
-  msgvault.state.authorized = true;
-  const kataHome = await configureKataHomeDaemons(
-    [
-      { name: "home", url: "http://127.0.0.1:9" },
-      { name: "work", url: work.url },
-    ],
-    "home",
-  );
-  const docsRoot = await createDocsFixture();
-  await writeFile(path.join(docsRoot, "bound-link.md"), ["# Bound Link", "", "Open #shared-1 here.", ""].join("\n"));
-  const envName = `MSGVAULT_E2E_KEY_${Date.now()}`;
-  const previousEnv = process.env[envName];
-  const previousSavedSearchesPath = process.env.MIDDLEMAN_MESSAGES_SAVED_SEARCHES_PATH;
-  process.env[envName] = "secret-key";
-  const savedSearchesDir = await mkdtemp(path.join(os.tmpdir(), "middleman-messages-bound-daemon-e2e-"));
-  process.env.MIDDLEMAN_MESSAGES_SAVED_SEARCHES_PATH = path.join(savedSearchesDir, "saved-searches.toml");
-  const server = await startIsolatedE2EServer();
-
-  try {
-    const configureMessages = await page.request.post(`${server.info.base_url}/api/v1/msgvault/configure`, {
-      headers: middlemanCSRFHeader,
-      data: {
-        url: msgvault.url,
-        api_key_env: envName,
-      },
-    });
-    expect(configureMessages.status()).toBe(200);
-    const addFolder = await page.request.post(`${server.info.base_url}/api/v1/docs/folders`, {
-      data: {
-        id: "work-notes",
-        name: "Work Notes",
-        path: docsRoot,
-        daemon: "work",
-      },
-    });
-    expect(addFolder.status()).toBe(201);
-
-    await page.goto(`${server.info.base_url}/docs?folder=work-notes&doc=bound-link.md`);
-    await page.getByRole("link", { name: "#shared-1" }).click();
-    await expect(page).toHaveURL(/\/kata\?view=all&scope=project-work&issue=issue-work&daemon=work/);
-    await expect(page.getByRole("region", { name: "Task detail" })).toContainText(
-      "Opened through the folder daemon binding.",
-    );
-
-    await page.getByRole("button", { name: "Messages" }).click();
-    const searchBox = page.getByPlaceholder("Search messages...");
-    await expect(searchBox).toBeVisible();
-    await searchBox.fill("project");
-    await page
-      .getByRole("search", { name: "Search messages" })
-      .getByRole("button", { name: "Search", exact: true })
-      .click();
-    await page.getByRole("button", { name: /Project sync/ }).click();
-    await expect(page.getByRole("heading", { name: "Project sync" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Link to task" })).toBeVisible();
-  } finally {
-    await server.stop();
-    kataHome.restore();
-    await msgvault.close();
-    await work.close();
-    if (previousEnv === undefined) {
-      delete process.env[envName];
-    } else {
-      process.env[envName] = previousEnv;
-    }
-    if (previousSavedSearchesPath === undefined) {
-      delete process.env.MIDDLEMAN_MESSAGES_SAVED_SEARCHES_PATH;
-    } else {
-      process.env.MIDDLEMAN_MESSAGES_SAVED_SEARCHES_PATH = previousSavedSearchesPath;
-    }
-  }
-});
-
 test("docs issue autocomplete searches the folder-bound external daemon", async ({ page }) => {
   const homeProject = {
     id: 101,
@@ -5015,139 +4777,6 @@ test("docs issue autocomplete scopes qualified suggestions and preserves no-matc
     await server.stop();
     kataHome.restore();
     await backend.close();
-  }
-});
-
-test("kata linked message pills route to Messages setup when Messages is not configured", async ({ page }) => {
-  const backend = await startKataBackend({
-    issues: [
-      issueSummary({
-        id: 22,
-        uid: "issue-q3",
-        project_id: 2,
-        project_uid: "project-kata",
-        project_name: "Kata",
-        short_id: "kat-7",
-        qualified_id: "Kata#kat-7",
-        title: "Email Susan re: Q3",
-        body: "Confirm the Q3 project review agenda.",
-        owner: "Susan",
-        labels: ["work"],
-        metadata: {
-          mail_links: [
-            {
-              message_id: 101,
-              conversation_id: 501,
-              subject: "Project sync",
-              from: "alice@example.com",
-              sent_at: "2026-05-15T10:00:00Z",
-              added_at: "2026-05-15T10:00:00Z",
-            },
-          ],
-        },
-      }),
-    ],
-  });
-  const kataHome = await configureKataHome(backend.url);
-  const server = await startIsolatedE2EServer();
-
-  try {
-    await page.goto(`${server.info.base_url}/kata?issue=issue-q3`);
-
-    await expect(page.getByRole("region", { name: "Task detail" })).toContainText("Email Susan re: Q3");
-    const links = page.getByRole("region", { name: "Linked messages" });
-    await expect(links).toBeVisible();
-    const pill = links.locator(".pill-open");
-    await expect(pill).toBeVisible();
-    await expect(pill).toBeEnabled();
-    await pill.click();
-    await expect(page).toHaveURL(/\/messages\?message=101$/);
-    await expect(page.getByRole("button", { name: "Set up Messages" })).toBeVisible();
-  } finally {
-    await server.stop();
-    kataHome.restore();
-    await backend.close();
-  }
-});
-
-test("kata linked message pills become active after same-session Messages setup", async ({ page }) => {
-  const backend = await startKataBackend({
-    issues: [
-      issueSummary({
-        id: 22,
-        uid: "issue-q3",
-        project_id: 2,
-        project_uid: "project-kata",
-        project_name: "Kata",
-        short_id: "kat-7",
-        qualified_id: "Kata#kat-7",
-        title: "Email Susan re: Q3",
-        body: "Confirm the Q3 project review agenda.",
-        owner: "Susan",
-        labels: ["work"],
-        metadata: {
-          mail_links: [
-            {
-              message_id: 101,
-              conversation_id: 501,
-              subject: "Project sync",
-              from: "alice@example.com",
-              sent_at: "2026-05-15T10:00:00Z",
-              added_at: "2026-05-15T10:00:00Z",
-            },
-          ],
-        },
-      }),
-    ],
-  });
-  const msgvault = await startMsgvaultBackend();
-  msgvault.state.authorized = true;
-  const kataHome = await configureKataHome(backend.url);
-  const envName = `MSGVAULT_E2E_KEY_${Date.now()}`;
-  const previousEnv = process.env[envName];
-  const previousSavedSearchesPath = process.env.MIDDLEMAN_MESSAGES_SAVED_SEARCHES_PATH;
-  process.env[envName] = "secret-key";
-  const savedSearchesDir = await mkdtemp(path.join(os.tmpdir(), "middleman-messages-kata-setup-e2e-"));
-  process.env.MIDDLEMAN_MESSAGES_SAVED_SEARCHES_PATH = path.join(savedSearchesDir, "saved-searches.toml");
-  const server = await startIsolatedE2EServer();
-
-  try {
-    await page.goto(`${server.info.base_url}/kata?issue=issue-q3`);
-
-    const links = page.getByRole("region", { name: "Linked messages" });
-    const pill = links.locator(".pill-open");
-    await expect(pill).toBeVisible();
-    await expect(pill).toBeEnabled();
-
-    await appHeaderTab(page, "Messages").click();
-    await expect(page).toHaveURL(/\/messages$/);
-    await page.getByRole("button", { name: "Set up Messages" }).click();
-    await page.getByLabel("Message source URL").fill(msgvault.url);
-    await page.getByLabel("API key env var name").fill(envName);
-    await page.getByRole("button", { name: "Save" }).click();
-    await expect(page.getByPlaceholder("Search messages...")).toBeVisible();
-
-    await appHeaderTab(page, "Kata").click();
-    await expect(page).toHaveURL(/\/kata\?issue=issue-q3$/);
-    await expect(pill).toBeEnabled();
-    await pill.click();
-    await expect(page).toHaveURL(/\/messages\?message=101$/);
-    await expect(page.getByRole("heading", { name: "Project sync" })).toBeVisible();
-  } finally {
-    await server.stop();
-    kataHome.restore();
-    await msgvault.close();
-    await backend.close();
-    if (previousEnv === undefined) {
-      delete process.env[envName];
-    } else {
-      process.env[envName] = previousEnv;
-    }
-    if (previousSavedSearchesPath === undefined) {
-      delete process.env.MIDDLEMAN_MESSAGES_SAVED_SEARCHES_PATH;
-    } else {
-      process.env.MIDDLEMAN_MESSAGES_SAVED_SEARCHES_PATH = previousSavedSearchesPath;
-    }
   }
 });
 

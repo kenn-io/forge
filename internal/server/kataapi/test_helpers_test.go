@@ -173,7 +173,7 @@ func doJSON(
 	return rr
 }
 
-func decodeMsgvaultProblem(t *testing.T, rr *httptest.ResponseRecorder) httpapi.ProblemError {
+func decodeProblem(t *testing.T, rr *httptest.ResponseRecorder) httpapi.ProblemError {
 	t.Helper()
 	var body httpapi.ProblemError
 	require.NoError(t, json.NewDecoder(rr.Body).Decode(&body))

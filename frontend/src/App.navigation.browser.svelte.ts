@@ -2,18 +2,18 @@
 // What lives here is the app-shell navigation that needs only the activity feed
 // and the PR/issue lists: selecting an activity item and returning to it after a
 // detour preserves the selection in the URL and reopens the split view, the
-// legacy /mail route falls through to Activity rather than Messages, and clicking
-// a list row opens the detail pane. The app is mounted for real with those feeds
-// mocked at the fetch boundary.
+// legacy /mail route falls through to Activity, and clicking a list row opens
+// the detail pane. The app is mounted for real with those feeds mocked at the
+// fetch boundary.
 //
 // A real Chromium page provides matchMedia/ResizeObserver/IntersectionObserver/
 // canvas natively, so the jsdom installAppDomGlobals() shim is gone; the browser
 // harness stubs only EventSource.
 //
-// The cross-mode tab tour (Kata/Docs/Messages shells), the Kata-shell specifics,
-// the direct Docs/Messages loads, and the settings/diff route toggle stay in
-// Playwright: they depend on the external mode-shell backends and diff rendering,
-// which are full-stack concerns.
+// The cross-mode tab tour (Kata/Docs shells), the Kata-shell specifics, the
+// direct Docs loads, and the settings/diff route toggle stay in Playwright:
+// they depend on the external mode-shell backends and diff rendering, which
+// are full-stack concerns.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
@@ -258,11 +258,10 @@ describe("view navigation", () => {
     expect(window.location.search).toContain("selected=pr%3A");
   });
 
-  it("legacy /mail route falls through to Activity, not Messages", async () => {
+  it("legacy /mail route falls through to Activity", async () => {
     mounted = await mountBrowserApp("/mail?q=label%3AInbox", { overrides: overrides() });
 
     await vi.waitFor(() => expect(document.querySelector(".activity-feed")).not.toBeNull(), WAIT);
-    expect(page.getByRole("heading", { name: "Messages" }).elements().length).toBe(0);
   });
 
   it("clicking a PR row opens the detail pane", async () => {

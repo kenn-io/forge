@@ -40,8 +40,6 @@
   import KataResizableSash from "../../components/kata/KataResizableSash.svelte";
   import KataSidebar from "../../components/kata/KataSidebar.svelte";
   import QuickCapture from "../../components/shared/QuickCapture.svelte";
-  import { computeRemoveMessageLinkPatch, readMessageLinks } from "../../messages/messageLinks.js";
-  import type { MessageLinkRef } from "../../messages/types";
   import {
     getActiveKataDaemon,
     getDefaultKataDaemon,
@@ -89,7 +87,6 @@
         daemon?: string | null;
       }, options?: { replace?: boolean }) => void
     ) | undefined;
-    onOpenMessage?: ((messageId: number) => void) | undefined;
   }
 
   interface KataRouteSnapshot {
@@ -142,7 +139,6 @@
     requestedDaemonId = null,
     onSelectedIssueChange = undefined,
     onRouteStateChange = undefined,
-    onOpenMessage = undefined,
   }: Props = $props();
 
   let loading = $state(true);
@@ -152,7 +148,6 @@
   let error = $state<string | null>(null);
   let viewError = $state<string | null>(null);
   let lastTaskError: string | null = null;
-  let unlinkBusyIds = $state<ReadonlySet<number>>(new Set());
   let daemonInfos = $state.raw<KataDaemonInfo[]>([]);
   let daemonRosterLoaded = $state(false);
   let switchingDaemon = $state(false);
@@ -1594,10 +1589,6 @@
     ), "flash");
   }
 
-  function selectedMessageLinks(): MessageLinkRef[] {
-    return acceptedSelectedIssue ? readMessageLinks(acceptedSelectedIssue.issue.metadata) : [];
-  }
-
   function openWorkspace(id: string): void {
     navigate(`/terminal/${encodeURIComponent(id)}`);
   }
@@ -1733,32 +1724,6 @@
     return closeSelectedIssue("wontfix", "Deleted from issue detail.");
   }
 
-  async function unlinkMessageLink(link: MessageLinkRef): Promise<void> {
-    if (mutationActionsBlocked || unlinkBusyIds.size > 0) return;
-    const selected = acceptedSelectedIssue;
-    if (!selected) return;
-    const uid = selected.issue.uid;
-    const links = selectedMessageLinks();
-    const patch = computeRemoveMessageLinkPatch(links, link.message_id);
-    if (patch === null) return;
-    const metadataPatch: Record<string, unknown> = { mail_links: patch.mail_links };
-
-    unlinkBusyIds = new Set(links.map((item) => item.message_id));
-    try {
-      const ok = await runViewTask(() => runAuthorityMutation(() => taskAPI.patchIssueMetadata(
-        selectedMutationTarget(uid),
-        actor,
-        metadataPatch,
-        selectedMutationETag(uid),
-        { daemonId: acceptedDaemonIDForMutation() },
-      )), "none");
-      if (!ok) {
-        showFlash(lastTaskError || "Could not unlink message.", { tone: "danger" });
-      }
-    } finally {
-      unlinkBusyIds = new Set();
-    }
-  }
 </script>
 
 <section class="kata-feature" aria-labelledby="kata-title" inert={switchingDaemon} aria-busy={loading || switchingDaemon}>
@@ -1936,8 +1901,6 @@
       }}
       projects={acceptedProjects}
       ownerOptions={ownerOptions()}
-      messageLinks={selectedMessageLinks()}
-      unlinkBusyIds={unlinkBusyIds}
       {selectedRecurrences}
       {checklistRevealed}
       actionsDisabled={mutationActionsBlocked}
@@ -1953,12 +1916,6 @@
       onSetPriority={setSelectedPriority}
       onAddLabel={addSelectedLabel}
       onRemoveLabel={removeSelectedLabel}
-      onOpenMessage={onOpenMessage
-        ? (link) => {
-          onOpenMessage?.(link.message_id);
-        }
-        : undefined}
-      onUnlinkMessage={unlinkMessageLink}
       onRevealChecklist={revealChecklist}
       onCreateRecurrence={() => recurrenceDialogs?.openCreateRecurrence()}
       onEditRecurrence={(recurrence) => recurrenceDialogs?.openEditRecurrence(recurrence)}

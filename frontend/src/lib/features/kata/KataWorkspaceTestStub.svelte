@@ -16,7 +16,6 @@
         daemon?: string | null;
       }, options?: { replace?: boolean }) => void
     ) | undefined;
-    onOpenMessage?: ((messageId: number) => void) | undefined;
   }
 
   let {
@@ -27,7 +26,6 @@
     requestedDaemonId = null,
     onSelectedIssueChange = undefined,
     onRouteStateChange = undefined,
-    onOpenMessage = undefined,
   }: Props = $props();
 </script>
 
@@ -41,5 +39,4 @@
 >
   <button type="button" onclick={() => onSelectedIssueChange?.("issue-next")}>select</button>
   <button type="button" onclick={() => onRouteStateChange?.({ view: "today", scope: "project-a", issue: "issue-next" })}>route</button>
-  <button type="button" onclick={() => onOpenMessage?.(42)}>message</button>
 </div>

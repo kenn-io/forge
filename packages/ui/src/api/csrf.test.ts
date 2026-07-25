@@ -32,9 +32,9 @@ describe("csrfFetch", () => {
     });
 
     const fetch = csrfFetch(inner);
-    await fetch("https://middleman.test/api/v1/messages/saved-searches", {
+    await fetch("https://middleman.test/api/v1/settings", {
       method: "PUT",
-      body: JSON.stringify({ searches: [] }),
+      body: JSON.stringify({ modes: {} }),
     });
 
     expect(request?.headers.get("X-Middleman-Csrf")).toBe("1");
@@ -48,7 +48,7 @@ describe("csrfFetch", () => {
     });
 
     const fetch = csrfFetch(inner);
-    await fetch("https://middleman.test/api/v1/messages/saved-searches");
+    await fetch("https://middleman.test/api/v1/settings");
 
     expect(request?.headers.has("X-Middleman-Csrf")).toBe(false);
   });

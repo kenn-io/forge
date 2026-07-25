@@ -73,7 +73,7 @@ export const SETTINGS_PANELS: SettingsPanelMeta[] = [
     title: "Visible modes",
     group: "Navigation",
     description: "Modes shown in the app header",
-    keywords: "visible modes navigation tabs prs issues reviews docs messages kata",
+    keywords: "visible modes navigation tabs prs issues reviews docs kata",
   },
 ];
 

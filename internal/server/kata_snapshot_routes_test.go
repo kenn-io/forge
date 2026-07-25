@@ -22,6 +22,13 @@ import (
 	"go.kenn.io/middleman/internal/server/kataapi"
 )
 
+func decodeProblem(t *testing.T, rr *httptest.ResponseRecorder) httpapi.ProblemError {
+	t.Helper()
+	var body httpapi.ProblemError
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&body))
+	return body
+}
+
 func writeKataServerCatalog(t *testing.T, home, body string) {
 	t.Helper()
 	require.NoError(t, os.WriteFile(
@@ -57,7 +64,7 @@ url = "`+upstream.URL+`"
 
 	require.Equal(http.StatusServiceUnavailable, rr.Code, rr.Body.String())
 	assert.Contains(rr.Header().Values("Vary"), kataapi.DaemonHeaderName)
-	problem := decodeMsgvaultProblem(t, rr)
+	problem := decodeProblem(t, rr)
 	assert.Equal(httpapi.CodeServiceUnavailable, problem.Code)
 }
 
@@ -89,7 +96,7 @@ url = "`+upstream.URL+`"
 
 	require.Equal(http.StatusServiceUnavailable, rr.Code, rr.Body.String())
 	assert.Contains(rr.Header().Values("Vary"), kataapi.DaemonHeaderName)
-	problem := decodeMsgvaultProblem(t, rr)
+	problem := decodeProblem(t, rr)
 	assert.Equal(httpapi.CodeServiceUnavailable, problem.Code)
 }
 

@@ -75,15 +75,13 @@ Press `?` in the UI for the current keyboard shortcuts.
 
 ## Optional modes
 
-Kata, Docs, and Messages are hidden by default. Enable them in config:
+Kata and Docs are hidden by default. Enable them in config:
 
 ```toml
 [modes]
 kata = true
 docs = true
-messages = true
 ```
 
 - Kata reads daemon definitions from Kata's own config.
 - Docs uses folders you register with `middleman docs add-folder`.
-- Messages requires a msgvault URL and API key environment variable.

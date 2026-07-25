@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 // The activity-selection-restore flows, the legacy /mail fallthrough, and the
 // list-row -> detail-pane opens moved to the browser tier
 // (frontend/src/App.navigation.browser.svelte.ts). What stays here depends on the
-// external mode-shell backends (Kata/Docs/Messages) or on diff rendering, which
+// external mode-shell backends (Kata/Docs) or on diff rendering, which
 // are full-stack concerns best exercised against the live backend.
 
 test.describe("view navigation", () => {
@@ -22,11 +22,6 @@ test.describe("view navigation", () => {
     await page.locator(".kit-top-bar__tabs .kit-top-bar__tab", { hasText: "Docs" }).click();
     await expect(page).toHaveURL(/\/docs/);
     await page.locator(".docs-workspace").waitFor({ state: "visible", timeout: 10_000 });
-
-    // Click Messages tab -> URL should contain /messages, messages shell renders.
-    await page.locator(".kit-top-bar__tabs .kit-top-bar__tab", { hasText: "Messages" }).click();
-    await expect(page).toHaveURL(/\/messages/);
-    await expect(page.getByRole("heading", { name: "Messages" })).toBeVisible();
 
     // Click PRs tab -> URL should contain /pulls, list renders.
     await page.locator(".kit-top-bar__tabs .kit-top-bar__tab", { hasText: "PRs" }).click();
@@ -62,14 +57,10 @@ test.describe("view navigation", () => {
     await expect.poll(() => new URL(page.url()).pathname).toBe("/kata");
   });
 
-  test("Docs and Messages routes load their mode shells directly", async ({ page }) => {
+  test("Docs route loads its mode shell directly", async ({ page }) => {
     await page.goto("/docs");
     await expect(page).toHaveURL(/\/docs$/);
     await page.locator(".docs-workspace").waitFor({ state: "visible", timeout: 10_000 });
-
-    await page.goto("/messages");
-    await expect(page).toHaveURL(/\/messages$/);
-    await expect(page.getByRole("heading", { name: "Messages" })).toBeVisible();
   });
 
   test("settings button toggles back to the previous route", async ({ page }) => {

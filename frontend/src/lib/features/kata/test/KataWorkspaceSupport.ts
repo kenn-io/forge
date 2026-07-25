@@ -15,7 +15,6 @@ import type {
   KataTaskEvent,
   KataTaskSummary,
 } from "../../../api/kata/taskTypes.js";
-import type { MessageLinkRef } from "../../../messages/types";
 import {
   getActiveKataDaemon,
   getDefaultKataDaemon,
@@ -234,18 +233,6 @@ function deferred<T>() {
 }
 
 const fetchedAt = "2026-05-15T16:00:00.000Z";
-
-function messageLink(overrides: Partial<MessageLinkRef> = {}): MessageLinkRef {
-  return {
-    message_id: 1001,
-    conversation_id: 1001,
-    subject: "Project sync",
-    from: "alice@example.com",
-    sent_at: "2026-05-15T09:00:00Z",
-    added_at: "2026-05-18T00:00:00Z",
-    ...overrides,
-  };
-}
 
 function project(
   uid: string,
@@ -599,7 +586,6 @@ export {
   fetchedAt,
   initialIssues,
   issue,
-  messageLink,
   projects,
   recurrence,
 };

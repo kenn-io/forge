@@ -2741,7 +2741,6 @@ name = "b"
 		assert.True(*cfg.Modes.Repos)
 		assert.False(*cfg.Modes.Kata)
 		assert.False(*cfg.Modes.Docs)
-		assert.False(*cfg.Modes.Messages)
 		assert.True(*cfg.Modes.Pulls)
 		assert.True(*cfg.Modes.Issues)
 		assert.True(*cfg.Modes.Reviews)
@@ -2761,7 +2760,6 @@ activity = false
 repos = false
 kata = false
 docs = false
-messages = false
 pulls = false
 issues = false
 reviews = false
@@ -2781,7 +2779,6 @@ workspaces = false
 		assert.False(*cfg2.Modes.Repos)
 		assert.False(*cfg2.Modes.Kata)
 		assert.False(*cfg2.Modes.Docs)
-		assert.False(*cfg2.Modes.Messages)
 		assert.False(*cfg2.Modes.Pulls)
 		assert.False(*cfg2.Modes.Issues)
 		assert.False(*cfg2.Modes.Reviews)
@@ -3510,17 +3507,6 @@ func TestTokenEnvNamesIncludesFallbackProviderDefaultsForRepoTokenEnv(t *testing
 		},
 		cfg.TokenEnvNames(),
 	)
-}
-
-func TestTokenEnvNamesIncludesMsgvaultAPIKeyEnv(t *testing.T) {
-	cfg := &Config{
-		Msgvault: &Msgvault{
-			URL:       "http://127.0.0.1:8123",
-			APIKeyEnv: " MSGVAULT_API_KEY_TEST ",
-		},
-	}
-
-	assert.Contains(t, cfg.TokenEnvNames(), "MSGVAULT_API_KEY_TEST")
 }
 
 func TestGhAuthTokenForHostPassesHostnameFlag(t *testing.T) {

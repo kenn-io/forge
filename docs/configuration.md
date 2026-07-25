@@ -121,15 +121,14 @@ activity = true
 repos = true
 kata = false
 docs = false
-messages = false
 pulls = true
 issues = true
 reviews = true
 workspaces = true
 ```
 
-Set a mode to `false` to hide it from the app. Kata, Docs, and Messages default
-to hidden because they depend on external or local sources.
+Set a mode to `false` to hide it from the app. Kata and Docs default to hidden
+because they depend on external or local sources.
 
 ## Docs folders
 
@@ -149,22 +148,6 @@ id = "notes"
 name = "Notes"
 path = "/Users/you/notes"
 ```
-
-## Messages
-
-Messages mode uses msgvault:
-
-```toml
-[modes]
-messages = true
-
-[msgvault]
-url = "http://127.0.0.1:8080"
-api_key_env = "MSGVAULT_API_KEY"
-```
-
-Plain HTTP is accepted only for loopback hosts. Use HTTPS for remote msgvault
-servers.
 
 ## Telemetry
 

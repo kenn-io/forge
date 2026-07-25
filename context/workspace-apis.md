@@ -74,9 +74,8 @@ state.
   parsing; raw fetch paths bypass base-path and tracing policy
   (`frontend/src/lib/api/kata/eventStream.ts::readKataEventStream`).
 - Auxiliary selected-detail reads must remain independent from shared global/all
-  authority refresh; catalog-visible mutations refresh shared authority separately,
-  without reclassifying an acknowledged write as failed
-  (`frontend/src/lib/messages/kataMessageLinker.ts::patchFreshDetail`).
+  authority refresh
+  (`frontend/src/lib/features/kata/kataAuxiliaryAuthority.svelte.ts::selectIssue`).
 - Every frontend Kata mutation and recurrence request is explicitly pinned to
   the accepted snapshot daemon; ambient active/default daemon fallback is
   forbidden (`frontend/src/lib/api/kata/taskClient.ts::pinnedDaemonHeaders`).

@@ -8,10 +8,9 @@ For user-facing setup and workflow docs, start with
 [docs/index.md](docs/index.md).
 
 This workstream expands middleman beyond provider PR/MR triage with first-class
-modes for external Kata task daemons, local markdown docs, and msgvault-backed
-message search. Those domains stay owned by their source systems: Kata task
-data remains in Kata daemons, docs remain on disk, and msgvault data remains in
-msgvault.
+modes for external Kata task daemons and local markdown docs. Those domains
+stay owned by their source systems: Kata task data remains in Kata daemons and
+docs remain on disk.
 
 ## Features
 
@@ -79,8 +78,6 @@ Expandable check run section on each PR shows pass/fail/pending status with colo
   `$KATA_HOME/config.toml` and runtime records.
 - **Docs** -- browse, view, edit, search, and publish configured markdown
   folders.
-- **Messages** -- search and inspect msgvault-backed messages with safe HTML and
-  image handling.
 - **Federated fleet** -- one daemon (the hub) merges snapshots from remote
   middleman daemons, proxies mutations to the host that owns the resource,
   and hands out native tmux attach commands fleet-wide. Peers are reached
@@ -166,7 +163,7 @@ All fields are optional. Repos can be added in the config file or through the Se
 | `activity.default_branch_retention_days` | `90` | Days of default-branch commits to keep for Activity |
 | `activity.default_branch_max_commits` | `5000` | Maximum default-branch commit rows kept per repo branch |
 
-The integration branch also adds docs-folder and msgvault configuration. Kata
+The integration branch also adds docs-folder configuration. Kata
 daemon definitions are intentionally not stored in middleman config; middleman
 reads the Kata daemon catalog from `$KATA_HOME/config.toml`, defaulting to
 `~/.kata/config.toml`.
@@ -319,13 +316,13 @@ fleet and daemon contract details.
 
 Middleman is a single Go binary with the Svelte frontend embedded at build time.
 The provider dashboard stores synced provider state in SQLite. Additional modes
-may talk to local external services such as Kata daemons and msgvault.
+may talk to local external services such as Kata daemons.
 
 ```
 middleman binary
   |- Config loader (TOML)
   |- Sync engine -> provider registry (GitHub/GitLab/Forgejo/Gitea readers)
-  |- Mode adapters -> Kata daemons, markdown folders, msgvault
+  |- Mode adapters -> Kata daemons, markdown folders
   |- SQLite database (WAL mode, pure Go driver)
   +- HTTP server (Huma) -> REST API + embedded SPA
 ```

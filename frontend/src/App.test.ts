@@ -3,18 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 
 const featureImports = vi.hoisted(() => ({
   docs: 0,
-  messages: 0,
   failDocsOnce: false,
-  failMessagesOnce: false,
 }));
 
 const startup = vi.hoisted(() => ({
   autoReady: true,
   readyCallbacks: [] as Array<() => void>,
-}));
-
-const messagesHealth = vi.hoisted(() => ({
-  pendingCapabilities: false,
 }));
 
 const kataClients = vi.hoisted(() => ({
@@ -43,10 +37,6 @@ const kataAuxiliary = vi.hoisted(() => {
   return { instance, create: vi.fn(() => instance) };
 });
 
-const kataLinker = vi.hoisted(() => ({
-  create: vi.fn(() => ({ linkMessage: vi.fn() })),
-}));
-
 const modePalette = vi.hoisted(() => ({
   search: vi.fn(async (query: string) => ({
     query,
@@ -57,7 +47,6 @@ const modePalette = vi.hoisted(() => ({
 
 const appSurfaceProps = vi.hoisted(() => ({
   palette: null as Record<string, unknown> | null,
-  messages: null as Record<string, unknown> | null,
   docs: null as Record<string, unknown> | null,
 }));
 
@@ -138,32 +127,6 @@ vi.mock("./lib/features/docs/DocsFeature.svelte?retry2", async () => {
     default: (await import("./lib/testing/AppDocsFeatureMock.svelte")).default,
   };
 });
-vi.mock("./lib/features/messages/MessagesFeature.svelte", async () => {
-  featureImports.messages += 1;
-  if (featureImports.failMessagesOnce) {
-    featureImports.failMessagesOnce = false;
-    throw new Error("messages chunk unavailable");
-  }
-  const Feature = (await import("./lib/testing/AppMessagesFeatureMock.svelte")).default;
-  return {
-    default: (anchor: Parameters<typeof Feature>[0], props: Parameters<typeof Feature>[1]) => {
-      appSurfaceProps.messages = props as Record<string, unknown>;
-      return Feature(anchor, props);
-    },
-  };
-});
-vi.mock("./lib/features/messages/MessagesFeature.svelte?retry", async () => {
-  featureImports.messages += 1;
-  return {
-    default: (await import("./lib/testing/AppMessagesFeatureMock.svelte")).default,
-  };
-});
-vi.mock("./lib/features/messages/MessagesFeature.svelte?retry2", async () => {
-  featureImports.messages += 1;
-  return {
-    default: (await import("./lib/testing/AppMessagesFeatureMock.svelte")).default,
-  };
-});
 vi.mock("./lib/api/kata/daemons.js", () => ({
   fetchKataDaemons: vi.fn(async () => kataDaemons.rows),
 }));
@@ -178,26 +141,6 @@ vi.mock("./lib/features/kata/kataAuxiliaryAuthority.svelte.js", () => ({
 }));
 vi.mock("./lib/api/docs/api.js", () => ({
   createDocsAPI: () => ({}),
-}));
-vi.mock("./lib/api/messages/api.js", () => ({
-  createMessagesAPI: () => ({
-    capabilities: vi.fn(() => {
-      if (messagesHealth.pendingCapabilities) {
-        return new Promise(() => {});
-      }
-      return Promise.resolve({
-        configured: true,
-        ok: true,
-        features: {},
-      });
-    }),
-  }),
-}));
-vi.mock("./lib/api/messages/visibility.js", () => ({
-  shouldShowMessagesMode: () => true,
-}));
-vi.mock("./lib/messages/kataMessageLinker.js", () => ({
-  createMessageIssueLinker: kataLinker.create,
 }));
 vi.mock("./lib/stores/keyboard/mode-palette-search.js", () => ({
   searchModePalette: modePalette.search,
@@ -256,16 +199,12 @@ describe("App feature routes", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     featureImports.docs = 0;
-    featureImports.messages = 0;
     featureImports.failDocsOnce = false;
-    featureImports.failMessagesOnce = false;
     startup.autoReady = true;
     startup.readyCallbacks = [];
-    messagesHealth.pendingCapabilities = false;
     kataDaemons.rows = [];
     kataAuxiliary.instance.issues = [];
     appSurfaceProps.palette = null;
-    appSurfaceProps.messages = null;
     appSurfaceProps.docs = null;
     kataReferences.search.mockResolvedValue({
       server_instance_id: "server-a",
@@ -290,21 +229,21 @@ describe("App feature routes", () => {
   });
 
   it("retries lazy feature imports after a chunk load failure", async () => {
-    featureImports.failMessagesOnce = true;
+    featureImports.failDocsOnce = true;
     const { replaceUrl } = await import("./lib/stores/router.svelte.ts");
-    replaceUrl("/messages?q=project");
+    replaceUrl("/docs?folder=notes&doc=README.md");
     const { default: App } = await import("./App.svelte");
 
     render(App, { target: createAppTarget() });
 
-    await waitFor(() => expect(featureImports.messages).toBe(1));
+    await waitFor(() => expect(featureImports.docs).toBe(1));
     expect(screen.getByText(/\[vitest\] There was an error when mocking a module/)).toBeTruthy();
-    expect(featureImports.messages).toBe(1);
+    expect(featureImports.docs).toBe(1);
 
-    await fireEvent.click(screen.getByRole("button", { name: "Retry loading Messages" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Retry loading Docs" }));
 
-    await waitFor(() => expect(screen.getByTestId("messages-feature")).toBeTruthy());
-    expect(featureImports.messages).toBe(2);
+    await waitFor(() => expect(screen.getByTestId("docs-feature")).toBeTruthy());
+    expect(featureImports.docs).toBe(2);
   }, 10_000);
 
   it("waits for app readiness before mounting lazy feature shells", async () => {
@@ -328,7 +267,7 @@ describe("App feature routes", () => {
     await waitFor(() => expect(fetchKataDaemons).toHaveBeenCalledTimes(1));
   });
 
-  it("keeps Docs and Messages mounted while hidden", async () => {
+  it("keeps Docs mounted while hidden", async () => {
     const { default: App } = await import("./App.svelte");
 
     render(App, { target: createAppTarget() });
@@ -342,9 +281,8 @@ describe("App feature routes", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Docs count 0" }));
     expect(document.querySelector("[data-testid='docs-feature'] button")?.textContent).toContain("Docs count 1");
 
-    navigate("/messages?q=project");
-    await waitFor(() => expect(screen.getByTestId("messages-feature")).toBeTruthy());
-    expect(document.querySelector(".docs-shell")?.hasAttribute("hidden")).toBe(true);
+    navigate("/kata");
+    await waitFor(() => expect(document.querySelector(".docs-shell")?.hasAttribute("hidden")).toBe(true));
     expect(document.querySelector("[data-testid='docs-feature'] button")?.textContent).toContain("Docs count 1");
 
     navigate("/docs?folder=notes&doc=guide.md");
@@ -376,20 +314,6 @@ describe("App feature routes", () => {
     }
   });
 
-  it("opens Kata linked messages before Messages capabilities resolve", async () => {
-    messagesHealth.pendingCapabilities = true;
-    const { replaceUrl } = await import("./lib/stores/router.svelte.ts");
-    replaceUrl("/kata");
-    const { default: App } = await import("./App.svelte");
-
-    render(App, { target: createAppTarget() });
-    await waitFor(() => expect(screen.queryByText("Loading")).toBeNull());
-
-    await fireEvent.click(screen.getByRole("button", { name: "message" }));
-
-    expect(window.location.pathname + window.location.search).toBe("/messages?message=42");
-  });
-
   it("isolates the Kata workspace client from cross-surface searches", async () => {
     const { replaceUrl } = await import("./lib/stores/router.svelte.ts");
     replaceUrl("/kata");
@@ -401,17 +325,17 @@ describe("App feature routes", () => {
     expect(kataClients.create).toHaveBeenCalledTimes(2);
   });
 
-  it("shares one auxiliary Kata authority across palette and Messages", async () => {
+  it("shares one auxiliary Kata authority with the palette", async () => {
     kataDaemons.rows = [
       { id: "home", url: "http://127.0.0.1:7777", default: true, auth: "none", health: "connected" },
       { id: "work", url: "http://127.0.0.1:7778", default: false, auth: "none", health: "connected" },
     ];
     const { replaceUrl } = await import("./lib/stores/router.svelte.ts");
-    replaceUrl("/messages?view=linked");
+    replaceUrl("/docs?folder=notes&doc=README.md");
     const { default: App } = await import("./App.svelte");
 
     const { unmount } = render(App, { target: createAppTarget() });
-    await waitFor(() => expect(appSurfaceProps.messages).not.toBeNull());
+    await waitFor(() => expect(appSurfaceProps.docs).not.toBeNull());
     await waitFor(() => expect(kataAuxiliary.instance.load).toHaveBeenCalledWith("home"));
 
     const modeSearch = appSurfaceProps.palette?.modeSearch as ((query: string) => Promise<unknown>) | undefined;
@@ -423,8 +347,6 @@ describe("App feature routes", () => {
       kata: kataAuxiliary.instance,
       docs: expect.any(Object),
     });
-    expect(appSurfaceProps.messages?.kataAuthority).toBe(kataAuxiliary.instance);
-    expect(kataLinker.create).toHaveBeenCalledWith(kataAuxiliary.instance, expect.any(Object));
 
     const { setActiveKataDaemon } = await import("./lib/stores/active-kata-daemon.svelte.js");
     setActiveKataDaemon("work", false);
@@ -436,8 +358,6 @@ describe("App feature routes", () => {
 
   it("opens a cross-surface Kata task in an authority that contains it", async () => {
     kataDaemons.rows = [{ id: "home", url: "http://127.0.0.1:7777", default: true, auth: "none", health: "connected" }];
-    const { replaceUrl } = await import("./lib/stores/router.svelte.ts");
-    replaceUrl("/messages");
     const { default: App } = await import("./App.svelte");
 
     render(App, { target: createAppTarget() });
@@ -468,13 +388,13 @@ describe("App feature routes", () => {
       detail: { issue: { uid: "issue-closed", status: "closed", project_uid: "project-target" } },
     });
     const { replaceUrl } = await import("./lib/stores/router.svelte.ts");
-    replaceUrl("/messages");
+    replaceUrl("/docs?folder=notes&doc=README.md");
     const { default: App } = await import("./App.svelte");
 
     render(App, { target: createAppTarget() });
-    await waitFor(() => expect(appSurfaceProps.messages).not.toBeNull());
+    await waitFor(() => expect(appSurfaceProps.docs).not.toBeNull());
 
-    const openIssue = appSurfaceProps.messages?.onOpenIssue as ((uid: string) => void) | undefined;
+    const openIssue = appSurfaceProps.docs?.onOpenIssue as ((uid: string) => void) | undefined;
     openIssue?.("issue-closed");
 
     await waitFor(() =>
@@ -524,13 +444,13 @@ describe("App feature routes", () => {
       detail: { issue: { uid: "issue-new", status: "open", project_uid: "project-new" } },
     });
     const { replaceUrl } = await import("./lib/stores/router.svelte.ts");
-    replaceUrl("/messages");
+    replaceUrl("/docs?folder=notes&doc=README.md");
     const { default: App } = await import("./App.svelte");
 
     render(App, { target: createAppTarget() });
-    await waitFor(() => expect(appSurfaceProps.messages).not.toBeNull());
+    await waitFor(() => expect(appSurfaceProps.docs).not.toBeNull());
 
-    const openIssue = appSurfaceProps.messages?.onOpenIssue as ((uid: string) => void) | undefined;
+    const openIssue = appSurfaceProps.docs?.onOpenIssue as ((uid: string) => void) | undefined;
     openIssue?.("issue-old");
     openIssue?.("issue-new");
 

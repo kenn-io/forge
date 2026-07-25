@@ -58,17 +58,6 @@ describe("router initialization", () => {
     expect(getPage()).toBe("kata");
   });
 
-  it("preserves messages route state on initial load", async () => {
-    const { getRoute, getPage } = await importRouterAt("/messages?q=from%3Aops&message=7");
-
-    expect(getRoute()).toEqual({
-      page: "messages",
-      q: "from:ops",
-      message: "7",
-    });
-    expect(getPage()).toBe("messages");
-  });
-
   it("uses embed initialRoute before the first app render", async () => {
     window.__middleman_config = {
       embed: {

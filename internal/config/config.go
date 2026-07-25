@@ -601,14 +601,6 @@ type Roborev struct {
 	Endpoint string `toml:"endpoint,omitempty"`
 }
 
-// Msgvault configures the external msgvault server used by the Messages UI.
-// Secrets are resolved from APIKeyEnv at runtime and are never stored on the
-// serializable config object.
-type Msgvault struct {
-	URL       string `toml:"url,omitempty" json:"url,omitempty"`
-	APIKeyEnv string `toml:"api_key_env,omitempty" json:"api_key_env,omitempty"`
-}
-
 // ModeVisibility controls which top-level app modes are shown. Nil booleans
 // mean the mode uses its default visibility.
 type ModeVisibility struct {
@@ -616,7 +608,6 @@ type ModeVisibility struct {
 	Repos      *bool `toml:"repos,omitempty" json:"repos" nullable:"false"`
 	Kata       *bool `toml:"kata,omitempty" json:"kata" nullable:"false"`
 	Docs       *bool `toml:"docs,omitempty" json:"docs" nullable:"false"`
-	Messages   *bool `toml:"messages,omitempty" json:"messages" nullable:"false"`
 	Pulls      *bool `toml:"pulls,omitempty" json:"pulls" nullable:"false"`
 	Issues     *bool `toml:"issues,omitempty" json:"issues" nullable:"false"`
 	Reviews    *bool `toml:"reviews,omitempty" json:"reviews" nullable:"false"`
@@ -629,7 +620,6 @@ func DefaultModeVisibility() ModeVisibility {
 		Repos:      new(true),
 		Kata:       new(false),
 		Docs:       new(false),
-		Messages:   new(false),
 		Pulls:      new(true),
 		Issues:     new(true),
 		Reviews:    new(true),
@@ -651,9 +641,6 @@ func (m ModeVisibility) WithDefaults() ModeVisibility {
 	if m.Docs != nil {
 		defaults.Docs = m.Docs
 	}
-	if m.Messages != nil {
-		defaults.Messages = m.Messages
-	}
 	if m.Pulls != nil {
 		defaults.Pulls = m.Pulls
 	}
@@ -668,14 +655,6 @@ func (m ModeVisibility) WithDefaults() ModeVisibility {
 	}
 	return defaults
 }
-
-type MsgvaultState int
-
-const (
-	MsgvaultAbsent MsgvaultState = iota
-	MsgvaultMisconfigured
-	MsgvaultOK
-)
 
 type Tmux struct {
 	Command       []string `toml:"command,omitempty"`
@@ -795,7 +774,6 @@ type Config struct {
 	Agents            []Agent                  `toml:"agents"`
 	DocFolders        []DocFolder              `toml:"doc_folders"`
 	Roborev           Roborev                  `toml:"roborev"`
-	Msgvault          *Msgvault                `toml:"msgvault"`
 	Tmux              Tmux                     `toml:"tmux"`
 	Shell             Shell                    `toml:"shell"`
 	Fleet             Fleet                    `toml:"fleet"`
@@ -924,52 +902,6 @@ func IsLoopbackHostname(hostname string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-// MsgvaultState classifies the optional msgvault config and resolves the API
-// key from the configured environment variable when possible.
-func (c *Config) MsgvaultState() (state MsgvaultState, canonicalURL, apiKey string, err error) {
-	if c == nil || c.Msgvault == nil {
-		return MsgvaultAbsent, "", "", nil
-	}
-	mv := c.Msgvault
-	rawURL := strings.TrimSpace(mv.URL)
-	apiKeyEnv := strings.TrimSpace(mv.APIKeyEnv)
-	if rawURL == "" {
-		return MsgvaultMisconfigured, "", "", errors.New("[msgvault]: url is required")
-	}
-	u, perr := url.ParseRequestURI(rawURL)
-	if perr != nil {
-		return MsgvaultMisconfigured, "", "", fmt.Errorf("[msgvault]: invalid url: %w", perr)
-	}
-	if u.Scheme != "http" && u.Scheme != "https" {
-		return MsgvaultMisconfigured, "", "", fmt.Errorf("[msgvault]: url scheme must be http or https, got %q", u.Scheme)
-	}
-	if u.Host == "" {
-		return MsgvaultMisconfigured, "", "", errors.New("[msgvault]: url is missing host")
-	}
-	if u.Scheme == "http" && !IsLoopbackHostname(u.Hostname()) {
-		return MsgvaultMisconfigured, "", "", fmt.Errorf(
-			"[msgvault]: http url %q would send the API key in cleartext; use https, or http only with a loopback host (localhost/127.0.0.1)", rawURL)
-	}
-	if u.User != nil {
-		return MsgvaultMisconfigured, "", "", errors.New("[msgvault]: url must not include userinfo")
-	}
-	if u.RawQuery != "" || u.ForceQuery {
-		return MsgvaultMisconfigured, "", "", errors.New("[msgvault]: url must not include query string")
-	}
-	if u.Fragment != "" {
-		return MsgvaultMisconfigured, "", "", errors.New("[msgvault]: url must not include fragment")
-	}
-	canonicalURL = strings.TrimRight(u.String(), "/")
-	if apiKeyEnv == "" {
-		return MsgvaultMisconfigured, canonicalURL, "", errors.New("[msgvault]: api_key_env is required")
-	}
-	apiKey, ok := os.LookupEnv(apiKeyEnv)
-	if !ok || strings.TrimSpace(apiKey) == "" {
-		return MsgvaultMisconfigured, canonicalURL, "", fmt.Errorf("[msgvault]: env var %s is not set", apiKeyEnv)
-	}
-	return MsgvaultOK, canonicalURL, apiKey, nil
-}
-
 func DefaultConfigPath() string {
 	return filepath.Join(baseDir(), "config.toml")
 }
@@ -1072,7 +1004,6 @@ activity = true
 repos = true
 kata = false
 docs = false
-messages = false
 pulls = true
 issues = true
 reviews = true
@@ -1253,9 +1184,6 @@ func LoadForGitHubAppRepair(path string) (*Config, error) {
 
 func rejectDeprecatedConfigKeys(meta toml.MetaData) error {
 	for _, key := range meta.Undecoded() {
-		if len(key) == 2 && key[0] == "msgvault" && key[1] == "api_key" {
-			return errors.New("[msgvault]: api_key is not supported; use api_key_env")
-		}
 		if len(key) >= 1 && (key[0] == "notebooks" || key[0] == "vaults") {
 			return fmt.Errorf("[[%s]] is not supported; use [[doc_folders]]", key[0])
 		}
@@ -2386,9 +2314,6 @@ func (c *Config) TokenEnvNames() []string {
 	for _, r := range c.Repos {
 		names = appendTokenEnvNamesFromDescriptor(names, c.ResolveRepoTokenSource(r))
 	}
-	if c.Msgvault != nil && c.Msgvault.APIKeyEnv != "" {
-		names = appendTokenEnvName(names, strings.TrimSpace(c.Msgvault.APIKeyEnv))
-	}
 	return names
 }
 
@@ -2641,7 +2566,6 @@ type configFile struct {
 	Roborev                   Roborev                  `toml:"roborev,omitempty"`
 	PullRequests              PullRequests             `toml:"pull_requests,omitempty"`
 	Issues                    Issues                   `toml:"issues,omitempty"`
-	Msgvault                  *Msgvault                `toml:"msgvault,omitempty"`
 	Tmux                      Tmux                     `toml:"tmux,omitempty"`
 	Shell                     Shell                    `toml:"shell,omitempty"`
 	Fleet                     Fleet                    `toml:"fleet,omitempty"`
@@ -2677,7 +2601,6 @@ func (c *Config) Save(path string) error {
 		Roborev:                 cfg.Roborev,
 		PullRequests:            cfg.PullRequests,
 		Issues:                  cfg.Issues,
-		Msgvault:                cfg.Msgvault,
 		Tmux:                    cfg.Tmux,
 		Shell:                   cfg.Shell,
 		Fleet:                   cfg.Fleet,

@@ -143,7 +143,7 @@ Silencing a failing guard without recording the decision is forbidden.
 | HTTP test discipline (apitest vs e2etest) | `context/testing.md` | Wire-level testing |
 | UI/TS/Svelte conventions, interaction contracts | `context/ui-design-system.md`, `context/ui-interaction-contracts.md` | Frontend consistency |
 | Phone-first mobile workflow | `context/mobile-ux.md` | `/m` is its own UX |
-| Kata / Docs / Messages mode integration | `docs/superpowers/specs/2026-06-08-kata-docs-msgvault-modes-design.md` | Until dedicated docs exist |
+| Kata / Docs mode integration | `docs/superpowers/specs/2026-06-08-kata-docs-msgvault-modes-design.md` | Until dedicated docs exist |
 | A decision chosen over an alternative | `docs/adr/NNNN-title.md` | Dated, durable rationale |
 | A feature still being designed | `docs/superpowers/specs/YYYY-MM-DD-topic-design.md` | Loaded only when needed |
 

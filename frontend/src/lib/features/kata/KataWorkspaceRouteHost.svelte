@@ -24,7 +24,6 @@
     initialDaemon?: string | null | undefined;
     onSelectedIssueChange?: ((uid: string | null) => void) | undefined;
     onRouteStateChange?: ((state: RouteState, options?: { replace?: boolean }) => void) | undefined;
-    onOpenMessage?: ((messageId: number) => void) | undefined;
   }
 
   let {
@@ -35,7 +34,6 @@
     initialDaemon = null,
     onSelectedIssueChange = undefined,
     onRouteStateChange = undefined,
-    onOpenMessage = undefined,
   }: Props = $props();
 
   // The initial* props deliberately seed the mutable route state once.
@@ -87,5 +85,4 @@
   requestedDaemonId={daemon}
   onSelectedIssueChange={handleSelectedIssueChange}
   onRouteStateChange={handleRouteStateChange}
-  {onOpenMessage}
 />

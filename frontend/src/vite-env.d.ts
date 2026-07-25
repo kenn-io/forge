@@ -226,27 +226,9 @@ interface WorkspaceDetailContext {
   host: WorkspaceHost | null;
 }
 
-type MiddlemanNavigatePage =
-  | "pulls"
-  | "issues"
-  | "activity"
-  | "repos"
-  | "kata"
-  | "docs"
-  | "messages"
-  | "reviews"
-  | "workspaces";
+type MiddlemanNavigatePage = "pulls" | "issues" | "activity" | "repos" | "kata" | "docs" | "reviews" | "workspaces";
 
-type MiddlemanNavigateType =
-  | "pull"
-  | "issue"
-  | "activity"
-  | "repos"
-  | "kata"
-  | "docs"
-  | "messages"
-  | "reviews"
-  | "workspaces";
+type MiddlemanNavigateType = "pull" | "issue" | "activity" | "repos" | "kata" | "docs" | "reviews" | "workspaces";
 
 interface MiddlemanNavigateEvent {
   page: MiddlemanNavigatePage;

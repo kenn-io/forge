@@ -82,8 +82,8 @@ ongoing work.
 
 Enable Kata mode when your work is tracked in Kata. middleman discovers Kata
 daemons from Kata's own config and runtime records. You can browse tasks, open
-details, update task state, and cross-link task references from Docs or Messages
-when the source contains them.
+details, update task state, and cross-link task references from Docs when the
+source contains them.
 
 Kata task data stays in Kata; middleman is the console.
 
@@ -93,13 +93,6 @@ Enable Docs mode and register markdown folders. Use it to browse, search, read,
 edit, and publish local docs from the same console you use for code review.
 
 Docs files stay on disk. middleman only operates inside the configured folders.
-
-## Search messages
-
-Enable Messages mode when msgvault is available. Use it to search messages,
-inspect details, follow threads, and open linked Kata items where possible.
-
-Messages stay in msgvault. middleman proxies and renders them safely.
 
 ## Use a fleet
 

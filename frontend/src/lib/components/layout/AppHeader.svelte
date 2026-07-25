@@ -88,7 +88,6 @@
     | "repos"
     | "kata"
     | "docs"
-    | "messages"
     | "pulls"
     | "issues"
     | "reviews"
@@ -100,7 +99,6 @@
     { value: "repos", label: "Repos", mode: "repos" },
     { value: "kata", label: "Kata", mode: "kata" },
     { value: "docs", label: "Docs", mode: "docs" },
-    { value: "messages", label: "Messages", mode: "messages" },
     { value: "pulls", label: "PRs", mode: "pulls" },
     { value: "issues", label: "Issues", mode: "issues" },
     { value: "reviews", label: "Reviews", mode: "reviews" },
@@ -264,16 +262,15 @@
     activeTab = routeTabId;
   });
 
-  type StickyMode = "kata" | "docs" | "messages";
+  type StickyMode = "kata" | "docs";
   const stickyModeDefaults: Record<StickyMode, string> = {
     kata: "/kata",
     docs: "/docs",
-    messages: "/messages",
   };
   const lastStickyModeRoutes = new SvelteMap<StickyMode, string>();
 
   function stickyModeForPage(page: ReturnType<typeof getPage>): StickyMode | null {
-    return page === "kata" || page === "docs" || page === "messages" ? page : null;
+    return page === "kata" || page === "docs" ? page : null;
   }
 
   function rememberCurrentStickyModeRoute(): void {
@@ -299,7 +296,7 @@
       if (getPage() !== "activity") navigate(getLastActivityRoute());
     }
     else if (destination === "repos") navigate("/repos");
-    else if (destination === "kata" || destination === "docs" || destination === "messages") {
+    else if (destination === "kata" || destination === "docs") {
       if (currentMode === destination) {
         lastStickyModeRoutes.set(destination, stickyModeDefaults[destination]);
         navigate(stickyModeDefaults[destination]);
@@ -324,7 +321,6 @@
     else if (value === "repos") navigateTab("repos");
     else if (value === "kata") navigateTab("kata");
     else if (value === "docs") navigateTab("docs");
-    else if (value === "messages") navigateTab("messages");
     else if (value === "pulls") navigateTab("pulls");
     else if (value === "issues") navigateTab("issues");
     else if (value === "reviews") navigateTab("reviews");

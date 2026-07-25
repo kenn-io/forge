@@ -1072,7 +1072,6 @@ func buildAppState(
 		modes := config.DefaultModeVisibility()
 		*modes.Kata = true
 		*modes.Docs = true
-		*modes.Messages = true
 		cfg.Modes = modes
 	}
 

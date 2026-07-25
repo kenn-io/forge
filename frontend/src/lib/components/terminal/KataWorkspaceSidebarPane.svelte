@@ -22,8 +22,6 @@
   import type { KataWorkspaceMetadata } from "../../api/kata/workspaces.js";
   import KataIssueDetail from "../../components/kata/KataIssueDetail.svelte";
   import type { TypeaheadOption } from "@kenn-io/kit-ui";
-  import { computeRemoveMessageLinkPatch, readMessageLinks } from "../../messages/messageLinks.js";
-  import type { MessageLinkRef } from "../../messages/types";
   import KataRecurrenceDialogs from "../../features/kata/KataRecurrenceDialogs.svelte";
   import { createKataLinkFilters, type KataLinkFilters } from "../../features/kata/kataLinkFilters.js";
   import { acknowledgeKataMutationThenRevalidate } from "../../features/kata/kataMutationRevalidation.js";
@@ -54,7 +52,6 @@
   let checklistRevealed = $state(false);
   let linkFilters = $state<KataLinkFilters>(createKataLinkFilters("all"));
   let pendingMoveIssueUIDs = $state.raw<ReadonlySet<string>>(new Set());
-  let unlinkBusyIds = $state<ReadonlySet<number>>(new Set());
   let loadRequestID = 0;
   let issueContextGeneration = 0;
   let lastPropIssueUID = "";
@@ -194,10 +191,6 @@
       .filter((owner, index, owners) => owners.indexOf(owner) === index)
       .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))
       .map((owner) => ({ name: owner, label: owner }));
-  }
-
-  function selectedMessageLinks(): MessageLinkRef[] {
-    return selectedIssue ? readMessageLinks(selectedIssue.issue.metadata) : [];
   }
 
   function selectedMutationTarget(uid: string): KataTaskMutationTarget {
@@ -450,26 +443,6 @@
     return closeSelectedIssue("wontfix", "Deleted from workspace sidebar.");
   }
 
-  async function unlinkMessageLink(link: MessageLinkRef): Promise<void> {
-    if (unlinkBusyIds.size > 0) return;
-    const selected = selectedIssue;
-    if (!selected) return;
-    const links = selectedMessageLinks();
-    const patch = computeRemoveMessageLinkPatch(links, link.message_id);
-    if (patch === null) return;
-    unlinkBusyIds = new Set([link.message_id]);
-    await runTask(() =>
-      mutateSelected(() => api.patchIssueMetadata(
-        selectedMutationTarget(selected.issue.uid),
-        actor,
-        { mail_links: patch.mail_links },
-        selectedMutationETag(selected.issue.uid),
-        acceptedMutationOptions(),
-      )),
-    );
-    unlinkBusyIds = new Set();
-  }
-
   async function selectIssue(uid: string): Promise<void> {
     recurrenceDialogs?.closeAll();
     issueContextGeneration += 1;
@@ -532,8 +505,6 @@
       }}
       {projects}
       ownerOptions={ownerOptions()}
-      messageLinks={selectedMessageLinks()}
-      unlinkBusyIds={unlinkBusyIds}
       {selectedRecurrences}
       {checklistRevealed}
       actionsDisabled={mutationActionsBlocked}
@@ -549,7 +520,6 @@
       onSetPriority={setSelectedPriority}
       onAddLabel={addSelectedLabel}
       onRemoveLabel={removeSelectedLabel}
-      onUnlinkMessage={unlinkMessageLink}
       onRevealChecklist={revealChecklist}
       onCreateRecurrence={() => recurrenceDialogs?.openCreateRecurrence()}
       onEditRecurrence={(recurrence) => recurrenceDialogs?.openEditRecurrence(recurrence)}

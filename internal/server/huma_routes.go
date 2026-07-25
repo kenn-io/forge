@@ -183,7 +183,6 @@ func (s *Server) registerAPI(api huma.API) {
 	s.kataAPI.Register(api)
 	s.registerKataFrontendAPI(api)
 	s.docsAPI.Register(api)
-	s.messagesAPI.Register(api)
 	s.registerArchiveAPI(api)
 	huma.Register(api, huma.Operation{
 		OperationID:   "list-notifications",

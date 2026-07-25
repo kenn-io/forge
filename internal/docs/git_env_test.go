@@ -16,7 +16,7 @@ func TestStripDocsSecretEnvDropsCredentialLikeVars(t *testing.T) {
 		"PATH=/bin",
 		"MIDDLEMAN_GITHUB_TOKEN=provider-secret",
 		"MIDDLEMAN_CUSTOM_TOKEN=custom-secret",
-		"MSGVAULT_API_KEY=message-secret",
+		"SERVICE_API_KEY=service-secret",
 		"SERVICE_PASSWORD=password-secret",
 		"AWS_ACCESS_KEY=cloud-secret",
 		"UNRELATED=value",

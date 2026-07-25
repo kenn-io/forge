@@ -17,7 +17,6 @@ describe("KataFeature", () => {
     const api = {} as KataTaskAPI;
     const onSelectedIssueChange = vi.fn();
     const onRouteStateChange = vi.fn();
-    const onOpenMessage = vi.fn();
 
     render(KataFeature, {
       props: {
@@ -28,7 +27,6 @@ describe("KataFeature", () => {
         requestedDaemonId: "work",
         onSelectedIssueChange,
         onRouteStateChange,
-        onOpenMessage,
       },
     });
 
@@ -41,10 +39,8 @@ describe("KataFeature", () => {
 
     await fireEvent.click(screen.getByRole("button", { name: "select" }));
     await fireEvent.click(screen.getByRole("button", { name: "route" }));
-    await fireEvent.click(screen.getByRole("button", { name: "message" }));
 
     expect(onSelectedIssueChange).toHaveBeenCalledWith("issue-next");
     expect(onRouteStateChange).toHaveBeenCalledWith({ view: "today", scope: "project-a", issue: "issue-next" });
-    expect(onOpenMessage).toHaveBeenCalledWith(42);
   });
 });

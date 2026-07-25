@@ -8,7 +8,6 @@ import type {
   KataTaskViewResponse,
 } from "../../api/kata/taskTypes.js";
 import { createKataLinkFilters } from "../../features/kata/kataLinkFilters.js";
-import type { MessageLinkRef } from "../../messages/types";
 
 import KataIssueDetail from "./KataIssueDetail.svelte";
 
@@ -72,18 +71,6 @@ function makeRecurrence(): KataRecurrence {
   };
 }
 
-function makeMessageLink(overrides: Partial<MessageLinkRef> = {}): MessageLinkRef {
-  return {
-    message_id: 1001,
-    conversation_id: 1001,
-    subject: "Project sync",
-    from: "alice@example.com",
-    sent_at: "2026-05-15T09:00:00Z",
-    added_at: "2026-05-18T00:00:00Z",
-    ...overrides,
-  };
-}
-
 function makeView(): KataTaskViewResponse {
   return {
     view: "today",
@@ -103,8 +90,6 @@ function renderDetail(props: Partial<KataIssueDetailProps> = {}) {
       onLinkFiltersChange: vi.fn(),
       projects: [makeProject("project-1", "Inbox", "inbox"), makeProject("project-2", "Roadmap")],
       ownerOptions: [],
-      messageLinks: [],
-      unlinkBusyIds: new Set<number>(),
       selectedRecurrences: [makeRecurrence()],
       checklistRevealed: false,
       onMoveIssue: vi.fn(async () => true),
@@ -116,8 +101,6 @@ function renderDetail(props: Partial<KataIssueDetailProps> = {}) {
       onSetPriority: vi.fn(async () => true),
       onAddLabel: vi.fn(async () => true),
       onRemoveLabel: vi.fn(),
-      onOpenMessage: undefined,
-      onUnlinkMessage: vi.fn(),
       onRevealChecklist: vi.fn(),
       onCreateRecurrence: vi.fn(),
       onEditRecurrence: vi.fn(),
@@ -253,32 +236,5 @@ describe("KataIssueDetail", () => {
     });
 
     expect(screen.getByText("Roadmap")).toBeTruthy();
-  });
-
-  it("renders linked messages through the detail composition", () => {
-    renderDetail({
-      messageLinks: [makeMessageLink({ subject: "Lease renewal", from: "alice@example.com" })],
-    });
-
-    const linked = screen.getByRole("region", { name: "Linked messages" });
-    expect(within(linked).getByText("Lease renewal")).toBeTruthy();
-    expect(within(linked).getByText("alice@example.com")).toBeTruthy();
-  });
-
-  it("opens and unlinks linked messages through detail callbacks", async () => {
-    const link = makeMessageLink({ message_id: 2001, subject: "Lease renewal" });
-    const onOpenMessage = vi.fn();
-    const onUnlinkMessage = vi.fn();
-    renderDetail({
-      messageLinks: [link],
-      onOpenMessage,
-      onUnlinkMessage,
-    });
-
-    await fireEvent.click(screen.getByTitle("Open alice@example.com - Lease renewal"));
-    expect(onOpenMessage).toHaveBeenCalledWith(link);
-
-    await fireEvent.click(screen.getByRole("button", { name: "Unlink Lease renewal" }));
-    expect(onUnlinkMessage).toHaveBeenCalledWith(link);
   });
 });

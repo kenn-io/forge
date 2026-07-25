@@ -495,7 +495,7 @@ token_env = "MIDDLEMAN_KATA_PROXY_MISSING_TOKEN"
 	rr := doJSON(t, srv, http.MethodGet, "/api/v1/kata/proxy/api/v1/instance", nil)
 
 	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
-	problem := decodeMsgvaultProblem(t, rr)
+	problem := decodeProblem(t, rr)
 	assert.Equal(httpapi.CodeBadRequest, problem.Code)
 	assert.Contains(problem.Detail, "token_env")
 	assert.Contains(problem.Detail, "MIDDLEMAN_KATA_PROXY_MISSING_TOKEN")
@@ -529,7 +529,7 @@ local = true
 	rr := doJSON(t, srv, http.MethodGet, "/api/v1/kata/proxy/api/v1/instance", nil)
 
 	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
-	problem := decodeMsgvaultProblem(t, rr)
+	problem := decodeProblem(t, rr)
 	assert.Equal(httpapi.CodeBadRequest, problem.Code)
 	assert.Contains(problem.Detail, "duplicate")
 	assert.Contains(problem.Detail, "home")
@@ -650,7 +650,7 @@ local = true
 	rr := doJSON(t, srv, http.MethodGet, "/api/v1/kata/proxy/api/v1/instance", nil)
 
 	require.Equal(http.StatusBadGateway, rr.Code, rr.Body.String())
-	problem := decodeMsgvaultProblem(t, rr)
+	problem := decodeProblem(t, rr)
 	assert.Equal(httpapi.CodeUpstreamError, problem.Code)
 	assert.NotContains(rr.Body.String(), "Authentication required")
 }

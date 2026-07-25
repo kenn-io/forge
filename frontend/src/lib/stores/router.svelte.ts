@@ -26,7 +26,6 @@ export type Route =
   | { page: "repos" }
   | { page: "kata"; issue?: string; view?: KataTaskViewName; scope?: string; daemon?: string }
   | { page: "docs"; folder: string | null; doc: string | null }
-  | { page: "messages"; q: string | null; message: string | null; view?: "linked" }
   | {
       page: "repo-browser";
       provider: string;
@@ -337,16 +336,6 @@ function parseRoute(fullPath: string): Route {
       page: "docs",
       folder: emptyToNull(sp.get("folder")),
       doc: emptyToNull(sp.get("doc")),
-    };
-  }
-  if (path === "/messages") {
-    const sp = new URLSearchParams(search);
-    const view = sp.get("view");
-    return {
-      page: "messages",
-      q: sp.get("q"),
-      message: sp.get("message"),
-      ...(view === "linked" ? { view: "linked" as const } : {}),
     };
   }
   if (path === "/settings" && !isEmbedded()) return { page: "settings" };
@@ -684,8 +673,6 @@ function buildRouteEvent(r: Route): MiddlemanNavigateEvent {
     navType = "kata";
   } else if (r.page === "docs") {
     navType = "docs";
-  } else if (r.page === "messages") {
-    navType = "messages";
   } else if (r.page === "reviews") {
     navType = "reviews";
   } else if (r.page === "project-intake" || isWorkspacePage(r.page)) {

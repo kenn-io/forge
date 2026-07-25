@@ -42,7 +42,7 @@ async function closeServer(server: Server): Promise<void> {
 
 test("browser cannot deliver cross-origin JSON mutations (preflight is blocked)", async ({ page, baseURL }) => {
   expect(baseURL).toBeTruthy();
-  const target = apiURL(baseURL!, "/api/v1/msgvault/configure");
+  const target = apiURL(baseURL!, "/api/v1/sync");
   const observedResponses: string[] = [];
   page.on("response", (response) => {
     if (response.url() === target) observedResponses.push(response.request().method());
@@ -85,7 +85,7 @@ test("browser cannot deliver cross-origin JSON mutations (preflight is blocked)"
 
 test("browser sends cross-origin simple mutations but cannot read the guarded response", async ({ page, baseURL }) => {
   expect(baseURL).toBeTruthy();
-  const target = apiURL(baseURL!, "/api/v1/msgvault/configure");
+  const target = apiURL(baseURL!, "/api/v1/sync");
   const observed: string[] = [];
   page.on("request", (request) => {
     if (request.url() === target) observed.push(request.method());
@@ -128,7 +128,7 @@ test("same-origin browser JSON mutations reach the API", async ({ page, baseURL 
   await page.goto(baseURL!);
 
   const result = await page.evaluate(async () => {
-    const response = await fetch("/api/v1/msgvault/configure", {
+    const response = await fetch("/api/v1/sync", {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Middleman-Csrf": "1" },
       body: "{}",
@@ -136,7 +136,7 @@ test("same-origin browser JSON mutations reach the API", async ({ page, baseURL 
     return { status: response.status };
   });
 
-  expect(result.status).toBe(400);
+  expect(result.status).toBe(202);
 });
 
 test("SPA shell cannot be framed by another origin", async ({ page, baseURL }) => {
@@ -225,7 +225,7 @@ test("same-origin browser non-JSON mutations return a JSON 415 error", async ({ 
   await page.goto(baseURL!);
 
   const result = await page.evaluate(async () => {
-    const response = await fetch("/api/v1/msgvault/configure", {
+    const response = await fetch("/api/v1/sync", {
       method: "POST",
       headers: { "Content-Type": "text/plain" },
       body: "body=test",

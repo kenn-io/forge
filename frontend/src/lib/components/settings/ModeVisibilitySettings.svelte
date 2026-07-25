@@ -40,7 +40,6 @@
     { key: "repos", label: "Repos" },
     { key: "kata", label: "Kata" },
     { key: "docs", label: "Docs" },
-    { key: "messages", label: "Messages" },
     { key: "pulls", label: "PRs" },
     { key: "issues", label: "Issues" },
     { key: "reviews", label: "Reviews" },

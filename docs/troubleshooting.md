@@ -93,21 +93,6 @@ middleman does not store Kata daemon definitions. Check Kata's own config:
 
 or set `KATA_HOME` before starting middleman.
 
-## Messages mode is unavailable
-
-Messages requires both mode visibility and msgvault config:
-
-```toml
-[modes]
-messages = true
-
-[msgvault]
-url = "http://127.0.0.1:8080"
-api_key_env = "MSGVAULT_API_KEY"
-```
-
-The API key environment variable must be set in the daemon environment.
-
 ## The database will not migrate
 
 middleman stores synced data in:

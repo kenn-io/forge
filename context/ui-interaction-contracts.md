@@ -199,7 +199,7 @@ Whenever a control persists, document and test:
 - what happens after navigating away and back
 - for layout dimensions, clamping on restore and whenever container bounds
   change, with the normalized value re-persisted so stale geometry cannot return
-  (`frontend/src/lib/components/messages/MessagesWorkspace.svelte::handleSashWidth`)
+  (`frontend/src/lib/components/kata/KataResizableSash.svelte::clampSize`)
 
 ## Keyboard Scope Precedence
 

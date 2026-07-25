@@ -25,16 +25,8 @@ def _status(returncode: int) -> int:
 
 def _run_direct(command: Sequence[str], cwd: Path) -> int:
     try:
-        result = subprocess.run(
-            command,
-            cwd=cwd,
-            check=False,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-        )
-        sys.stdout.write(result.stdout)
-        return _status(result.returncode)
+        returncode = subprocess.run(command, cwd=cwd, check=False).returncode
+        return _status(returncode)
     except FileNotFoundError:
         return 127
     except PermissionError:
@@ -58,33 +50,39 @@ def _prepare_diagnostics(time_binary: Path, diagnostics_dir: Path) -> tuple[Path
 
 
 def _record_versions(commands: Sequence[Sequence[str]], cwd: Path, destination: Path) -> None:
-    with destination.open("w") as versions_file:
-        for command in commands:
-            try:
-                result = subprocess.run(
-                    command,
-                    cwd=cwd,
-                    check=False,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                )
-                output = result.stdout
-            except (FileNotFoundError, PermissionError):
-                output = f"{' '.join(command)}: unavailable\n"
-            versions_file.write(output)
+    try:
+        with destination.open("w") as versions_file:
+            for command in commands:
+                try:
+                    result = subprocess.run(
+                        command,
+                        cwd=cwd,
+                        check=False,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        text=True,
+                    )
+                    output = result.stdout
+                except OSError:
+                    output = f"{' '.join(command)}: unavailable\n"
+                versions_file.write(output)
+    except OSError:
+        return
 
 
 def _capture_cgroup_metrics(cgroup_root: Path, destination: Path) -> None:
-    with destination.open("w") as metrics_file:
-        for metric in CGROUP_METRICS:
-            try:
-                value = (cgroup_root / metric).read_text()
-            except OSError:
-                continue
-            metrics_file.write(f"== {metric} ==\n{value}")
-            if not value.endswith("\n"):
-                metrics_file.write("\n")
+    try:
+        with destination.open("w") as metrics_file:
+            for metric in CGROUP_METRICS:
+                try:
+                    value = (cgroup_root / metric).read_text()
+                except OSError:
+                    continue
+                metrics_file.write(f"== {metric} ==\n{value}")
+                if not value.endswith("\n"):
+                    metrics_file.write("\n")
+    except OSError:
+        return
 
 
 def _diagnostic_node_options(node_reports: Path) -> str:
@@ -149,11 +147,32 @@ def run_frontend_unit(
             )
             return _run_direct(test_command, frontend_dir)
 
+        try:
+            log_file = vitest_log.open("w")
+        except OSError:
+            log_file = None
+
         assert process.stdout is not None
-        with vitest_log.open("w") as log_file:
+        try:
             for line in process.stdout:
                 sys.stdout.write(line)
-                log_file.write(line)
+                sys.stdout.flush()
+                if log_file is not None:
+                    try:
+                        log_file.write(line)
+                        log_file.flush()
+                    except OSError:
+                        try:
+                            log_file.close()
+                        except OSError:
+                            pass
+                        log_file = None
+        finally:
+            if log_file is not None:
+                try:
+                    log_file.close()
+                except OSError:
+                    pass
         return _status(process.wait())
     finally:
         _capture_cgroup_metrics(cgroup_root, diagnostics_dir / "cgroup-after.txt")

@@ -519,7 +519,7 @@ func (s *Server) writeCredentialGateForRepo(repo db.Repo) writeCredentialGate {
 			}
 			cacheKey, err := s.syncer.WriteCredentialProbeKeyForRepo(ref)
 			if err != nil {
-				return writeCredentialGateFromError(repoProviderHost(repo), err)
+				return writeCredentialGateFromError(httpapi.ProviderHost(repo), err)
 			}
 			if cacheKey == "" {
 				return writeCredentialGate{}
@@ -536,7 +536,7 @@ func (s *Server) writeCredentialGateForRepo(repo db.Repo) writeCredentialGate {
 					)
 					defer cancel()
 					return writeCredentialGateFromError(
-						repoProviderHost(repo),
+						httpapi.ProviderHost(repo),
 						s.syncer.ProbeWriteCredentialForRepo(ctx, ref),
 					)
 				},

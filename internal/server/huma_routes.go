@@ -18,14 +18,10 @@ import (
 	"go.kenn.io/middleman/internal/gitclone"
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/platform"
-	"go.kenn.io/middleman/internal/platform/gitealike"
 	"go.kenn.io/middleman/internal/ratelimit"
 	"go.kenn.io/middleman/internal/server/httpapi"
 	"go.kenn.io/middleman/internal/server/issueapi"
 	"go.kenn.io/middleman/internal/server/pullapi"
-	"go.kenn.io/middleman/internal/tokenauth"
-	"go.kenn.io/middleman/internal/workspace"
-	"go.kenn.io/middleman/internal/workspace/localruntime"
 )
 
 type repoNumberInput struct {
@@ -473,7 +469,7 @@ func (s *Server) getRepoCommitDiff(
 		return nil, httpapi.Validation("path.sha", "commit SHA must be a full object ID")
 	}
 
-	sha, err := s.clones.ResolveCommit(ctx, string(repoProviderKind(*repo)), host, repo.Owner, repo.Name, input.SHA)
+	sha, err := s.clones.ResolveCommit(ctx, string(httpapi.ProviderKind(*repo)), host, repo.Owner, repo.Name, input.SHA)
 	if err != nil {
 		if errors.Is(err, gitclone.ErrNotFound) {
 			return nil, httpapi.NotFound(httpapi.CodeNotFound, "diff not available: referenced commit not found", nil)
@@ -482,7 +478,7 @@ func (s *Server) getRepoCommitDiff(
 		return nil, httpapi.Upstream("failed to compute diff", "", "")
 	}
 
-	parent, err := s.clones.ParentOf(ctx, string(repoProviderKind(*repo)), host, repo.Owner, repo.Name, sha)
+	parent, err := s.clones.ParentOf(ctx, string(httpapi.ProviderKind(*repo)), host, repo.Owner, repo.Name, sha)
 	if err != nil {
 		if errors.Is(err, gitclone.ErrNotFound) {
 			return nil, httpapi.NotFound(httpapi.CodeNotFound, "diff not available: referenced commit not found", nil)
@@ -492,7 +488,7 @@ func (s *Server) getRepoCommitDiff(
 	}
 
 	hideWhitespace := input.Whitespace == "hide"
-	result, err := s.clones.Diff(ctx, string(repoProviderKind(*repo)), host, repo.Owner, repo.Name, parent, sha, hideWhitespace)
+	result, err := s.clones.Diff(ctx, string(httpapi.ProviderKind(*repo)), host, repo.Owner, repo.Name, parent, sha, hideWhitespace)
 	if err != nil {
 		if errors.Is(err, gitclone.ErrNotFound) {
 			return nil, httpapi.NotFound(httpapi.CodeNotFound, "diff not available: referenced commit not found", nil)

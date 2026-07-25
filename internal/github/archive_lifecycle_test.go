@@ -343,7 +343,7 @@ func TestArchiveDisabledIssueInventorySharesCooldownWithoutBlockingMergeRequests
 			return nil, false, nil
 		},
 	}
-	tracker := NewPlatformRateTracker(database, "github", "github.com", "rest")
+	tracker := NewPlatformRateTracker(database, "github", "github.com", "host", "rest")
 	tracker.UpdateFromRate(Rate{
 		Limit: 5000, Remaining: 4999, Reset: now.Add(time.Minute),
 	})
@@ -442,7 +442,7 @@ func newDisabledArchiveHydrationFixture(t *testing.T) *disabledArchiveHydrationF
 		},
 	}
 	fixture.tracker = NewPlatformRateTracker(
-		fixture.database, "github", "github.com", "rest",
+		fixture.database, "github", "github.com", "host", "rest",
 	)
 	fixture.tracker.UpdateFromRate(Rate{
 		Limit: 5000, Remaining: 4999, Reset: fixture.now.Add(time.Minute),
@@ -500,7 +500,7 @@ func TestArchiveDisabledIssueHydrationRecoversImmediatelyAfterRestart(t *testing
 	fixture.disabled.Store(false)
 	fixture.now = fixture.now.Add(time.Minute)
 	restartedTracker := NewPlatformRateTracker(
-		fixture.database, "github", "github.com", "rest",
+		fixture.database, "github", "github.com", "host", "rest",
 	)
 	restartedTracker.UpdateFromRate(Rate{
 		Limit: 5000, Remaining: 4999, Reset: fixture.now.Add(time.Minute),
@@ -878,7 +878,7 @@ func TestArchiveAdmissionDenialAbandonsExpiredFeatureProbeReservation(t *testing
 	require := require.New(t)
 	database := dbtest.Open(t)
 	now := time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC)
-	key := RateBucketKey("github", "github.test")
+	key := RateBucketKey("github", "github.test", "host")
 	syncer := NewSyncerWithRegistry(
 		nil, database, nil, nil, time.Hour,
 		nil, map[string]*SyncBudget{key: NewSyncBudget(100)},
@@ -920,8 +920,8 @@ func TestArchiveCompletionWithoutProviderAttemptAbandonsExpiredFeatureProbeReser
 	require := require.New(t)
 	database := dbtest.Open(t)
 	now := time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC)
-	key := RateBucketKey("github", "github.test")
-	tracker := NewPlatformRateTracker(database, "github", "github.test", "rest")
+	key := RateBucketKey("github", "github.test", "host")
+	tracker := NewPlatformRateTracker(database, "github", "github.test", "host", "rest")
 	tracker.UpdateFromRate(Rate{
 		Limit: 5000, Remaining: 4999,
 		Reset: now.Add(repositoryFeatureProbeInterval + time.Minute),

@@ -335,7 +335,7 @@ test.describe("collapsible sidebar", () => {
     await expect(filterBar.locator(".compact-filter-menu .kit-filter-dropdown__badge")).toHaveCount(0);
   });
 
-  test("pull compact filters apply PR attributes and workflow status against the real API", async ({ page }) => {
+  test("retired Board route falls back to the PR list with workflow status filters", async ({ page }) => {
     const server = await startIsolatedE2EServer();
     try {
       const stateResponse = await page.request.put(`${server.info.base_url}/api/v1/pulls/github/acme/widgets/1/state`, {
@@ -351,7 +351,10 @@ test.describe("collapsible sidebar", () => {
         .map((pull) => pull.Title);
       expect(expectedTitles).toEqual(["Add widget caching layer"]);
 
-      const filterBar = await setPersistedSidebarWidth(page, `${server.info.base_url}/pulls`, 395, waitForPRList);
+      const filterBar = await setPersistedSidebarWidth(page, `${server.info.base_url}/pulls/board`, 395, waitForPRList);
+      await expect(page).toHaveURL(/\/pulls\/board$/);
+      await expect(page.locator(".pull-list")).toBeVisible();
+      await expect(page.getByRole("button", { name: "Board", exact: true })).toHaveCount(0);
       await expectCompactFilterBar(filterBar);
 
       const dropdown = await openCompactFilters(filterBar);

@@ -21,6 +21,11 @@ const (
 	notificationFullSyncInterval              = time.Hour
 )
 
+// notificationAckWorstCaseRequests is the number of user-credential requests
+// one queued acknowledgement can spend: the pre-ack refetch, the mark-read,
+// and the post-ack reconciliation refetch.
+const notificationAckWorstCaseRequests = 3
+
 type NotificationSyncStatus struct {
 	Running        bool
 	LastStartedAt  time.Time
@@ -309,7 +314,7 @@ func (s *Syncer) syncNotificationsForRepo(
 		return err
 	}
 	for page := 1; ; page++ {
-		if err := s.ensureNotificationPageBudget(repo, client); err != nil {
+		if err := s.ensureNotificationBudget(repo, client, 1); err != nil {
 			return err
 		}
 		threads, hasNext, err := client.ListNotifications(ctx, NotificationListOptions{
@@ -395,7 +400,7 @@ func (s *Syncer) listParticipatingNotificationIDs(
 	participating := map[string]bool{}
 	for _, repo := range trackedRepos {
 		for page := 1; ; page++ {
-			if err := s.ensureNotificationPageBudget(repo, client); err != nil {
+			if err := s.ensureNotificationBudget(repo, client, 1); err != nil {
 				return nil, err
 			}
 			threads, hasNext, err := client.ListNotifications(ctx, NotificationListOptions{
@@ -422,7 +427,14 @@ func (s *Syncer) listParticipatingNotificationIDs(
 	return participating, nil
 }
 
-func (s *Syncer) ensureNotificationPageBudget(repo RepoRef, client notificationClient) error {
+// ensureNotificationBudget checks both ceilings for an operation that can spend
+// up to cost requests on the repository's notification credential. Callers pass
+// the operation's worst case, not one request, so a multi-request
+// acknowledgement cannot start with only enough headroom for its first call and
+// cross a ceiling partway through.
+func (s *Syncer) ensureNotificationBudget(
+	repo RepoRef, client notificationClient, cost int,
+) error {
 	host := repoHost(repo)
 	writeIdentity := repoPlatform(repo) == platform.KindGitHub
 	if writeIdentity && s.routers[host] != nil {
@@ -437,7 +449,7 @@ func (s *Syncer) ensureNotificationPageBudget(repo RepoRef, client notificationC
 	if err != nil {
 		return err
 	}
-	if budget := s.budgets[bucket]; budget != nil && !budget.CanSpend(1) {
+	if budget := s.budgets[bucket]; budget != nil && !budget.CanSpend(cost) {
 		return fmt.Errorf("notification sync paused for %s: sync budget exhausted", host)
 	}
 	// Notification reads and acknowledgement propagation resolve to the write
@@ -449,7 +461,7 @@ func (s *Syncer) ensureNotificationPageBudget(repo RepoRef, client notificationC
 	if repoPlatform(repo) == platform.KindGitHub && s.quotaRegistry != nil {
 		if identity, idErr := s.identityForRepo(repo, writeIdentity); idErr == nil {
 			availability := s.quotaRegistry.CheckReserve(
-				identity, []QuotaResource{QuotaResourceREST}, 1, RateReserveBuffer,
+				identity, []QuotaResource{QuotaResourceREST}, cost, RateReserveBuffer,
 			)
 			// An unknown pool does not pause notification work: ordinary
 			// response headers are what establish it in the first place.
@@ -618,10 +630,10 @@ func (s *Syncer) ProcessQueuedNotificationReads(ctx context.Context, kind platfo
 		// reconciliation refetch on this row's credential. Stop before
 		// crossing that credential's reserve instead of discovering it as a
 		// per-row rate-limit error partway through the acknowledgement.
-		if err := s.ensureNotificationPageBudget(RepoRef{
+		if err := s.ensureNotificationBudget(RepoRef{
 			Platform: kind, PlatformHost: host,
 			Owner: notification.RepoOwner, Name: notification.RepoName,
-		}, client); err != nil {
+		}, client, notificationAckWorstCaseRequests); err != nil {
 			return err
 		}
 		current, err := s.db.NotificationAckPropagationCurrent(ctx, notification.ID, notification.SourceAckQueuedAt, notification.SourceUpdatedAt)

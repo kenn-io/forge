@@ -868,9 +868,9 @@ func TestSyncerNotificationAdmissionRejectsMissingWriteIdentity(t *testing.T) {
 	require.NoError(err)
 	syncer := &Syncer{routers: map[string]*HostRouter{"github.com": router}}
 
-	err = syncer.ensureNotificationPageBudget(
+	err = syncer.ensureNotificationBudget(
 		RepoRef{Owner: "org-app", Name: "one", PlatformHost: "github.com"},
-		&routeRecordingClient{},
+		&routeRecordingClient{}, 1,
 	)
 	require.Error(err)
 	require.ErrorContains(err, "no startup-resolved write identity")
@@ -899,9 +899,9 @@ func TestSyncerNotificationAdmissionUsesRepositoryWriteIdentity(t *testing.T) {
 		},
 	}
 
-	err = syncer.ensureNotificationPageBudget(
+	err = syncer.ensureNotificationBudget(
 		RepoRef{Owner: "org-a", Name: "one", PlatformHost: "github.com"},
-		&routeRecordingClient{},
+		&routeRecordingClient{}, 1,
 	)
 	require.Error(err)
 	require.ErrorContains(err, "sync budget exhausted")
@@ -910,9 +910,9 @@ func TestSyncerNotificationAdmissionUsesRepositoryWriteIdentity(t *testing.T) {
 	writeRT.UpdateFromRate(Rate{
 		Limit: 5000, Remaining: 0, Reset: time.Now().Add(time.Hour),
 	})
-	err = syncer.ensureNotificationPageBudget(
+	err = syncer.ensureNotificationBudget(
 		RepoRef{Owner: "org-a", Name: "one", PlatformHost: "github.com"},
-		&routeRecordingClient{marker: "fallback"},
+		&routeRecordingClient{marker: "fallback"}, 1,
 	)
 	require.Error(err)
 	require.ErrorContains(err, "rate reserve exhausted")

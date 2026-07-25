@@ -15410,3 +15410,54 @@ func TestProcessQueuedNotificationReadsStopsWhenUserRESTPoolAtReserve(t *testing
 	require.ErrorContains(err, "user rate reserve exhausted")
 	assert.Equal(int32(0), marked.Load())
 }
+
+// A queued ack spends up to three user-credential requests, so headroom for
+// only one must not admit it: starting with two units above the reserve would
+// cross the reserve partway through, after the mark-read already landed.
+func TestProcessQueuedNotificationReadsRequiresWorstCaseHeadroom(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	repoID, err := d.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
+	number := 7
+	require.NoError(d.UpsertNotifications(t.Context(), []db.Notification{{
+		Platform: "github", PlatformHost: "github.com", PlatformNotificationID: "thread-1", RepoID: &repoID,
+		RepoOwner: "acme", RepoName: "widget", SubjectType: "PullRequest", SubjectTitle: "Please review",
+		WebURL: "https://github.com/acme/widget/pull/7", ItemNumber: &number, ItemType: "pr",
+		Reason: "mention", Unread: true, SourceUpdatedAt: now, SyncedAt: now,
+	}}))
+	items, err := d.ListNotifications(t.Context(), db.ListNotificationsOpts{State: "all"})
+	require.NoError(err)
+	require.Len(items, 1)
+	_, err = d.QueueNotificationIDsRead(t.Context(), []int64{items[0].ID}, now.Add(time.Minute))
+	require.NoError(err)
+
+	var marked atomic.Int32
+	mc := &mockClient{
+		bypassNotificationReadReserve: true,
+		markNotificationThreadReadFn: func(context.Context, string) error {
+			marked.Add(1)
+			return nil
+		},
+	}
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, nil, time.Minute, nil, nil)
+	registry := NewQuotaRegistry()
+	// Two units above the reserve: enough for one request, not for three.
+	registry.UpdateSnapshot(
+		HostIdentity("github.com"), QuotaResourceREST,
+		Rate{
+			Limit:     5000,
+			Remaining: RateReserveBuffer + 2,
+			Reset:     time.Now().UTC().Add(time.Hour),
+		},
+	)
+	syncer.SetQuotaRegistry(registry)
+
+	err = syncer.ProcessQueuedNotificationReads(t.Context(), platform.KindGitHub, "github.com", 10)
+
+	require.Error(err)
+	require.ErrorContains(err, "user rate reserve exhausted")
+	assert.Equal(int32(0), marked.Load())
+}

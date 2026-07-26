@@ -6,10 +6,16 @@ name: CI
 on:
   pull_request:
 
-permissions: read-all
+permissions:
+  checks: write
+  contents: read
+  issues: read
+  packages: write
+  pull-requests: read
+  statuses: read
 
 jobs:
   run:
     uses: kenn-io/middleman/.github/workflows/ci.yml@main
     with:
-      checkout_ref: refs/pull/${{ github.event.pull_request.number }}/merge
+      checkout_ref: ${{ github.sha }}

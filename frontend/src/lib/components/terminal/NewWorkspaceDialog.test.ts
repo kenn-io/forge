@@ -228,6 +228,39 @@ describe("NewWorkspaceDialog", () => {
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 
+  it("keeps the form locked when a stale create resolves under a newer one", async () => {
+    const resolvers: ((value: unknown) => void)[] = [];
+    mockPost.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvers.push(resolve);
+        }),
+    );
+    const { rerender } = await renderDialog();
+    await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
+    await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
+    await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(1));
+
+    // Dismiss mid-create, reopen, and start a second create; the first request
+    // is still outstanding.
+    await rerender({ open: false });
+    await rerender({ open: true });
+    await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
+    await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
+    await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(2));
+
+    resolvers[0]?.({ data: { id: "ws-stale" } });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // The second create still owns the dialog, so the form stays locked (the
+    // submit button still reads "Creating…") and no third request can fire.
+    const submit = screen.getByRole("button", { name: /Creating|Create workspace/ }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(true);
+    await fireEvent.click(submit);
+    expect(mockPost).toHaveBeenCalledTimes(2);
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
   it("cannot submit against the previous selection while a reopen reloads", async () => {
     const { rerender } = await renderDialog();
     await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));

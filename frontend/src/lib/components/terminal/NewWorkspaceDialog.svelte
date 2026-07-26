@@ -184,7 +184,9 @@
         error = "Could not create workspace";
       }
     } finally {
-      submitting = false;
+      // A stale create must not re-enable the form under a newer one that is
+      // still in flight; each open resets this flag for its own session.
+      if (open && version === repoFetchVersion) submitting = false;
     }
   }
 

@@ -151,16 +151,11 @@ func TestCreateAdHocWorkspaceExistingBranchReturnsTypedConflict(t *testing.T) {
 	require.NotNil(problem)
 	require.NotNil(problem.Type)
 	assert.Equal("urn:middleman:error:workspace-branch-conflict", *problem.Type)
-	require.NotNil(problem.Errors)
-	locations := map[string]any{}
-	for _, detail := range *problem.Errors {
-		if detail.Location == nil {
-			continue
-		}
-		locations[*detail.Location] = detail.Value
-	}
-	assert.Equal(branch, locations["body.branch"])
-	assert.Equal(branch+"-2", locations["body.suggested_branch"])
+	assert.Equal(generated.BranchConflict, problem.Code)
+	require.NotNil(problem.Details)
+	details := *problem.Details
+	assert.Equal(branch, details["branch"])
+	assert.Equal(branch+"-2", details["suggestedBranch"])
 }
 
 func TestCreateAdHocWorkspaceReusesExistingBranchWhenAsked(t *testing.T) {

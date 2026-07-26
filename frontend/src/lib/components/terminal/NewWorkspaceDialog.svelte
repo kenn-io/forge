@@ -78,22 +78,31 @@
     selectedKey = "";
     reposError = null;
     reposLoading = true;
-    void client.GET("/repos").then(({ data, error: requestError }) => {
-      if (version !== repoFetchVersion) return;
-      reposLoading = false;
-      if (requestError) {
-        reposError = apiErrorMessage(requestError, "Could not load repositories");
-        return;
-      }
-      repos = (data ?? []).map(repoOption);
-      // Prefer the repo the caller pointed at, then the last one work was
-      // started in, then whatever is first in the list.
-      const candidates = [seedKey(seedRepo), getLastUsedNewWorkspaceRepoKey()];
-      selectedKey =
-        candidates.find((key) => key && repos.some((repo) => repo.key === key)) ??
-        repos[0]?.key ??
-        "";
-    });
+    void client
+      .GET("/repos")
+      .then(({ data, error: requestError }) => {
+        if (version !== repoFetchVersion) return;
+        reposLoading = false;
+        if (requestError) {
+          reposError = apiErrorMessage(requestError, "Could not load repositories");
+          return;
+        }
+        repos = (data ?? []).map(repoOption);
+        // Prefer the repo the caller pointed at, then the last one work was
+        // started in, then whatever is first in the list.
+        const candidates = [seedKey(seedRepo), getLastUsedNewWorkspaceRepoKey()];
+        selectedKey =
+          candidates.find((key) => key && repos.some((repo) => repo.key === key)) ??
+          repos[0]?.key ??
+          "";
+      })
+      // A transport failure never reaches the error field above, and leaving
+      // the picker on "Loading repositories…" forever hides the reason.
+      .catch(() => {
+        if (version !== repoFetchVersion) return;
+        reposLoading = false;
+        reposError = "Could not load repositories";
+      });
   });
 
   const repoRows = $derived<TypeaheadOption[]>(
@@ -106,15 +115,16 @@
     reposLoading ? "Loading repositories…" : "No tracked repositories yet",
   );
 
-  type APIErrorDetails = {
-    errors?: { location?: string; value?: unknown }[] | null;
+  // Branch conflicts are recognized by the stable problem code and read from
+  // typed `details`, never from prose or the per-field huma error array.
+  type APIProblem = {
+    code?: string | null;
+    details?: Record<string, unknown> | null;
   };
 
-  function conflictValue(
-    requestError: APIErrorDetails | undefined,
-    location: string,
-  ): string | null {
-    const value = requestError?.errors?.find((entry) => entry.location === location)?.value;
+  function suggestedBranchFrom(requestError: APIProblem | undefined): string | null {
+    if (requestError?.code !== "branchConflict") return null;
+    const value = requestError.details?.["suggestedBranch"];
     return typeof value === "string" && value ? value : null;
   }
 
@@ -151,7 +161,7 @@
       const current = open && version === repoFetchVersion;
       if (requestError) {
         if (!current) return;
-        suggestedBranch = conflictValue(requestError, "body.suggested_branch");
+        suggestedBranch = suggestedBranchFrom(requestError);
         error = apiErrorMessage(requestError, "Could not create workspace");
         return;
       }
@@ -168,6 +178,11 @@
       onClose();
       if (onCreated) onCreated(workspaceId);
       else navigate(`/terminal/${workspaceId}`);
+    } catch {
+      // A rejected request would otherwise leave the dialog silent.
+      if (open && version === repoFetchVersion) {
+        error = "Could not create workspace";
+      }
     } finally {
       submitting = false;
     }

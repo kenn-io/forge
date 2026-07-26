@@ -83,6 +83,9 @@ Rules for handler code:
   enabled; return `conflict` with reason `mid_stack_merge_disallowed` and `blocking_number` (`internal/server/huma_routes.go::requireMidStackMergeAllowed`).
 - Huma's `errors[]` field is reserved for Huma validation compatibility. Do not
   add new machine-readable contracts there.
+- Map domain failures to statuses from typed or sentinel errors with
+  `errors.Is`/`errors.As`. Matching on `err.Error()` text makes a documented
+  `404` or `400` collapse into `500` the moment wording changes.
 
 ## Platform Error Translation
 

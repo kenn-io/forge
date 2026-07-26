@@ -114,6 +114,10 @@ var (
 	ErrWorkspaceNotSynced    = errors.New("workspace merge request not synced")
 	ErrWorkspaceDuplicate    = errors.New("workspace already exists")
 	ErrWorkspaceInvalidState = errors.New("workspace invalid state")
+	// ErrInvalidBranchName lets HTTP handlers map a rejected branch to a
+	// validation response with errors.Is instead of matching on the git
+	// message this error carries.
+	ErrInvalidBranchName = errors.New("invalid branch name")
 )
 
 func workspaceUsesOriginHead(ws *Workspace) bool {
@@ -511,7 +515,7 @@ func (m *Manager) CreateAdHoc(
 		return nil, fmt.Errorf("look up repo: %w", err)
 	}
 	if repo == nil {
-		return nil, fmt.Errorf("repository not tracked")
+		return nil, fmt.Errorf("%w: repository not tracked", ErrWorkspaceNotFound)
 	}
 
 	id, err := newWorkspaceID()
@@ -1912,7 +1916,7 @@ func validateLocalBranchName(
 	if msg == "" {
 		msg = err.Error()
 	}
-	return fmt.Errorf("invalid branch name %q: %s", branch, msg)
+	return fmt.Errorf("%w %q: %s", ErrInvalidBranchName, branch, msg)
 }
 
 // Delete tears down a workspace: kills tmux, removes the git

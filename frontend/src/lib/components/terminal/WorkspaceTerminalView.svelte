@@ -2853,8 +2853,9 @@
               <p class="workspace-zero-eyebrow">Workspaces</p>
               <h2>Create a workspace to run agents on a branch</h2>
               <p>
-                Workspaces are git worktrees created from PR or issue heads, or
-                from the repository's default branch when you start new work.
+                Workspaces are git worktrees: a PR workspace checks out the PR
+                head, while issue-backed and unplanned work start from the
+                repository's default branch.
               </p>
               <p>
                 From a PR or issue, use the

@@ -603,32 +603,18 @@ func (s *Handler) adHocWorkspaceCreateError(
 		)
 		conflict.Type = adHocWorkspaceBranchConflictType
 		conflict.Title = "Workspace branch conflict"
-		conflict.Errors = []*huma.ErrorDetail{
-			{
-				Message:  "Requested branch already exists",
-				Location: "body.branch",
-				Value:    branchConflict.Branch,
-			},
-			{
-				Message:  "Suggested alternative branch name",
-				Location: "body.suggested_branch",
-				Value:    branchConflict.SuggestedBranch,
-			},
-		}
 		return nil, conflict
 	}
-	if strings.Contains(msg, "not tracked") {
+	if errors.Is(err, workspace.ErrWorkspaceNotFound) {
 		return nil, httpapi.NotFound(httpapi.CodeNotFound, msg, nil)
 	}
-	if strings.Contains(msg, "invalid branch name") {
+	if errors.Is(err, workspace.ErrInvalidBranchName) {
 		return nil, httpapi.Validation("body.branch", msg)
 	}
 	// A racing create for the same branch loses on the workspace unique
 	// index; hand back the winner instead of a conflict the caller cannot
 	// act on.
-	if itemKey != "" &&
-		(errors.Is(err, workspace.ErrWorkspaceDuplicate) ||
-			strings.Contains(msg, "UNIQUE constraint")) {
+	if itemKey != "" && errors.Is(err, workspace.ErrWorkspaceDuplicate) {
 		existing, existingErr := s.adHocWorkspaceForBranch(ctx, repo, itemKey)
 		if existingErr == nil && existing != nil {
 			return existing, nil

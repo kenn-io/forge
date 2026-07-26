@@ -468,7 +468,7 @@ describe("WorkspaceTerminalView", () => {
     });
 
     expect(await screen.findByText("Create a workspace to run agents on a branch")).toBeTruthy();
-    expect(screen.getByText(/Workspaces are git worktrees created from PR or issue heads/i)).toBeTruthy();
+    expect(screen.getByText(/a PR workspace checks out the PR head/i)).toBeTruthy();
     expect(screen.getByText(/From a PR or issue, use the/i)).toBeTruthy();
     expect(screen.getByText(/use New workspace in the sidebar/i)).toBeTruthy();
     const exampleCard = screen.getByLabelText("Workspace workflow example");

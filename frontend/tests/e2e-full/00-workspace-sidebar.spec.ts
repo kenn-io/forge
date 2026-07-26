@@ -163,7 +163,9 @@ test.describe("workspace sidebar full-stack", () => {
           name: "Create a workspace to run agents on a branch",
         }),
       ).toBeVisible();
-      await expect(page.getByText(/Workspaces are git worktrees created from PR or issue heads/)).toBeVisible();
+      // Regex text matching sees the template's line breaks, so the phrase has
+      // to sit on one source line of the copy.
+      await expect(page.getByText(/issue-backed and unplanned work start from the/)).toBeVisible();
       await expect(page.getByText(/From a PR or issue, use the/)).toBeVisible();
       await expect(page.getByText(/use New workspace in the sidebar/)).toBeVisible();
       await expect(page.getByRole("button", { name: "Create Workspace" })).toBeDisabled();

@@ -19,8 +19,14 @@ branch. It is created directly against a tracked repository quad
 `origin/HEAD`, and has no provider item, no item number, and no Kata task.
 
 Non-goals: this is not a generic worktree browser, does not accept an arbitrary
-base ref (always `origin/HEAD`), and stores no task title or description — the
-branch name is the only user-supplied label.
+base ref, and stores no task title or description — the branch name is the only
+user-supplied label.
+
+`origin/HEAD` is the base for every branch middleman creates.
+`reuse_existing_branch` is the one explicit exception: it checks out a branch the
+user already has at whatever commit that branch points to, which may be
+unrelated to `origin/HEAD`. Reuse is opt-in per request precisely because it
+trades the default-branch guarantee for the user's own starting point.
 
 ## Storage
 
@@ -33,6 +39,12 @@ workspace uniqueness is already
 - `item_key = "adhoc:" + <requested branch>` — the branch is the workspace
   identity, so two ad-hoc workspaces for the same branch in the same repo
   collide on the existing unique index and the second create reuses the first.
+  The key is the creation-time branch and is never rewritten: renaming the
+  branch inside the worktree does not re-key the workspace, so a later create
+  for the old name still returns this workspace and one for the new name makes a
+  separate worktree. Renames are a shell action middleman does not observe;
+  reconciling identity with the live branch would mean watching every worktree's
+  HEAD, so identity stays immutable instead.
 - `workspaceItemKeyForInsert` and `scanWorkspace` must require an explicit
   `item_key` for ad-hoc rows, exactly as they do for Kata rows. Falling back to
   `strconv.Itoa(item_number)` would give every ad-hoc workspace in a repo the
@@ -73,10 +85,23 @@ navigate to `/terminal/{id}` while setup runs in the background.
 Failure envelopes:
 
 - untracked repo → `404`
-- invalid branch name → `422` on `body.branch`
-- local branch conflict → `409` `branch_conflict` with
-  `details.branch` and `details.suggestedBranch`
-- existing ad-hoc workspace for the same branch → `202` with that workspace
+- invalid branch name → `400` `validationError` on `body.branch`, the status
+  `httpapi.Validation` already emits for every other input check
+- local branch conflict → `409` `branchConflict` with `details.branch` and
+  `details.suggestedBranch`, plus the
+  `urn:middleman:error:workspace-branch-conflict` type. Clients branch on the
+  code and read `details`; the envelope carries no per-field `errors[]` copy of
+  the same values
+- existing ad-hoc workspace for the same branch → `202` with that workspace,
+  whatever its status. A `creating` or `ready` record is the workspace the user
+  asked for, and a failed one is recovered from its own terminal view (retry
+  setup or delete) rather than by re-POSTing, which is how PR- and issue-backed
+  dedupe already behaves
+
+Domain failures are mapped from sentinel errors with `errors.Is`
+(`ErrWorkspaceNotFound`, `ErrInvalidBranchName`, `ErrWorkspaceDuplicate`), not
+from manager message text, so rewording an error cannot turn a `404` into a
+`500`.
 
 `refreshWorkspace`'s item-type switch gets an ad-hoc case that refreshes only
 the mapped repository index, like the Kata case.

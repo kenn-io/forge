@@ -169,10 +169,7 @@ describe("NewWorkspaceDialog", () => {
       error: {
         code: "branchConflict",
         detail: "A local branch with the requested name already exists.",
-        errors: [
-          { location: "body.branch", value: "spike/thing" },
-          { location: "body.suggested_branch", value: "spike/thing-2" },
-        ],
+        details: { branch: "spike/thing", suggestedBranch: "spike/thing-2" },
       },
     });
     await renderDialog();
@@ -251,6 +248,25 @@ describe("NewWorkspaceDialog", () => {
     resolveGet({ data: [repoFixture("acme", "gadget")] });
     await waitFor(() => expect(repoPicker().textContent).toContain("acme/gadget"));
     expect(mockPost).not.toHaveBeenCalled();
+  });
+
+  it("reports a rejected create instead of failing silently", async () => {
+    mockPost.mockRejectedValue(new Error("network down"));
+    await renderDialog();
+    await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
+
+    await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
+
+    expect((await screen.findByRole("alert")).textContent).toContain("Could not create workspace");
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it("stops loading and reports when the repository request is rejected", async () => {
+    mockGet.mockRejectedValue(new Error("network down"));
+    await renderDialog();
+
+    await waitFor(() => expect(repoPicker().textContent).toContain("No tracked repositories yet"));
+    expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("cannot submit when the repository list fails to load", async () => {

@@ -353,6 +353,11 @@ response never overwrites an App installation pool
   still sync (`internal/github/sync.go::backgroundQuotaAvailability`). That makes
   `bulkGraphQLAllowed` the only place the GraphQL reserve is applied: it must
   hold the reserve for background work and waive it for foreground syncs.
+- Admission is once per fetch, but bulk GraphQL pagination is unbounded, so a
+  background fetch must also re-check the reserve between pages
+  (`internal/github/graphql.go::backgroundReserveGuard`). Aborting is safe
+  because a bulk-fetch error falls back to the REST index; only a successful
+  fetch persists.
 - A reserve gate inside a per-credential loop stops only its own bucket: mark
   that bucket exhausted, retain the error, and keep processing, or one exhausted
   credential silently defers work every other credential could still do

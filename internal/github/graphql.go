@@ -2,6 +2,7 @@ package github
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -876,6 +877,36 @@ func (g *GraphQLFetcher) ShouldBackoff() (bool, time.Duration) {
 	return g.rateTracker.ShouldBackoff()
 }
 
+// errGraphQLBackgroundReserve stops bulk pagination that would spend a
+// credential's GraphQL pool into the buffer held for foreground work. The
+// caller treats a failed bulk fetch as a signal to sync the repository over
+// REST instead, so aborting here costs a slower path, not a partial result.
+var errGraphQLBackgroundReserve = errors.New(
+	"graphql background reserve reached",
+)
+
+// backgroundReserveGuard stops between pages once this fetcher's credential
+// reaches its GraphQL reserve. Admission checks the pool once, before a fetch
+// whose page count nothing knows in advance, so a repository with many open
+// pull requests -- or several such repositories syncing concurrently -- can
+// each be admitted just above the reserve and then page straight through it.
+// Foreground syncs are explicit user work and hold no reserve.
+func (g *GraphQLFetcher) backgroundReserveGuard(ctx context.Context) error {
+	if g == nil || g.quotaRegistry == nil || !IsSyncBudgetContext(ctx) {
+		return nil
+	}
+	availability := g.quotaRegistry.CheckReserve(
+		g.readIdentity,
+		[]QuotaResource{QuotaResourceGraphQL},
+		1,
+		RateReserveBuffer,
+	)
+	if availability.Exhausted {
+		return errGraphQLBackgroundReserve
+	}
+	return nil
+}
+
 func (g *GraphQLFetcher) FetchRepoPRs(
 	ctx context.Context, owner, name string, includeNativeStacks bool,
 ) (*RepoBulkResult, error) {
@@ -897,7 +928,7 @@ func (g *GraphQLFetcher) FetchRepoPRs(
 			ctx, owner, name, topLevelPageSize, false,
 		)
 	}
-	if err != nil {
+	if err != nil && !errors.Is(err, errGraphQLBackgroundReserve) {
 		slog.Warn("GraphQL query failed, retrying with smaller page",
 			"owner", owner, "name", name,
 			"err", err, "retryPageSize", retryPageSize,
@@ -946,6 +977,7 @@ func (g *GraphQLFetcher) fetchRepoPRsWithPageSize(
 	if includeNativeStacks {
 		gqlPRs, err := fetchGraphQLPullRequestPages[gqlPRWithNativeStacks](
 			ctx, g.client, owner, name, pageSize, progress,
+			g.backgroundReserveGuard,
 		)
 		if err != nil {
 			return nil, err
@@ -957,6 +989,7 @@ func (g *GraphQLFetcher) fetchRepoPRsWithPageSize(
 	} else {
 		gqlPRs, err := fetchGraphQLPullRequestPages[gqlPR](
 			ctx, g.client, owner, name, pageSize, progress,
+			g.backgroundReserveGuard,
 		)
 		if err != nil {
 			return nil, err
@@ -976,10 +1009,19 @@ func fetchGraphQLPullRequestPages[T any](
 	owner, name string,
 	pageSize int,
 	progress *listFetchProgressLogger,
+	guard func(context.Context) error,
 ) ([]T, error) {
 	return fetchAllPagesWithProgress(ctx, func(
 		ctx context.Context, cursor *string,
 	) ([]T, pageInfo, error) {
+		// The first page is covered by the admission check that chose this
+		// path; later pages are not, because the page count is unknown until
+		// the repository answers.
+		if cursor != nil && guard != nil {
+			if err := guard(ctx); err != nil {
+				return nil, pageInfo{}, err
+			}
+		}
 		var q gqlPRQuery[T]
 		vars := map[string]any{
 			"owner":    githubv4.String(owner),

@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -795,6 +796,125 @@ func TestGraphQLFetcherFetchRepoPRsLogsFetchProgressForPaginatedPullRequestSet(t
 	assert.Contains(logs, "fetched=50")
 	assert.Contains(logs, `msg="merge request list fetch completed"`)
 	assert.Contains(logs, "fetched=51")
+}
+
+// A repository large enough to paginate can be admitted just above the reserve
+// and then page straight through it, because admission runs once and nothing
+// knows the page count in advance. Background pagination must stop at the
+// reserve; the caller falls back to REST, so no partial result is persisted.
+func TestGraphQLFetcherStopsBackgroundPaginationAtGraphQLReserve(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	now := time.Date(2026, 5, 20, 12, 0, 0, 0, time.UTC).Format(time.RFC3339)
+	identity := IdentityKey{Host: "github.com", Principal: "user:7"}
+	registry := NewQuotaRegistry()
+	reset := time.Now().UTC().Add(time.Hour)
+	registry.UpdateSnapshot(identity, QuotaResourceGraphQL, Rate{
+		Limit: 5000, Remaining: RateReserveBuffer + 1, Reset: reset,
+	})
+
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(
+		w http.ResponseWriter, _ *http.Request,
+	) {
+		call := int(calls.Add(1))
+		// The first page lands the credential exactly on its reserve, which
+		// is what the guard must observe before requesting page two.
+		registry.UpdateSnapshot(identity, QuotaResourceGraphQL, Rate{
+			Limit: 5000, Remaining: RateReserveBuffer, Reset: reset,
+		})
+		w.Header().Set("Content-Type", "application/json")
+		// Bounded so that a regression removing the guard fails the call
+		// count assertion instead of paginating forever.
+		resp := map[string]any{
+			"data": map[string]any{
+				"repository": map[string]any{
+					"pullRequests": map[string]any{
+						"totalCount": 30,
+						"nodes":      testGQLPRNodes(((call-1)*10)+1, 10, now),
+						"pageInfo": map[string]any{
+							"hasNextPage": call < 3,
+							"endCursor":   fmt.Sprintf("cursor-%d", call),
+						},
+					},
+				},
+			},
+		}
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}))
+	defer srv.Close()
+
+	fetcher := NewGraphQLFetcherWithClient(
+		githubv4.NewEnterpriseClient(srv.URL, srv.Client()), nil,
+	)
+	fetcher.quotaRegistry = registry
+	fetcher.readIdentity = identity
+
+	_, err := fetcher.FetchRepoPRs(
+		WithSyncBudget(t.Context()), "acme", "widgets", false,
+	)
+
+	require.ErrorIs(err, errGraphQLBackgroundReserve)
+	assert.Equal(int32(1), calls.Load(),
+		"pagination must stop at the reserve instead of continuing, and the "+
+			"reserve must not trigger the smaller-page retry")
+}
+
+// Foreground syncs are explicit user work, so the reserve exists to protect
+// them rather than to stop them.
+func TestGraphQLFetcherPaginatesForegroundFetchThroughTheReserve(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	now := time.Date(2026, 5, 20, 12, 0, 0, 0, time.UTC).Format(time.RFC3339)
+	identity := IdentityKey{Host: "github.com", Principal: "user:7"}
+	registry := NewQuotaRegistry()
+	registry.UpdateSnapshot(identity, QuotaResourceGraphQL, Rate{
+		Limit: 5000, Remaining: 1, Reset: time.Now().UTC().Add(time.Hour),
+	})
+
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(
+		w http.ResponseWriter, _ *http.Request,
+	) {
+		call := int(calls.Add(1))
+		last := call == 2
+		w.Header().Set("Content-Type", "application/json")
+		resp := map[string]any{
+			"data": map[string]any{
+				"repository": map[string]any{
+					"pullRequests": map[string]any{
+						"totalCount": 20,
+						"nodes":      testGQLPRNodes(((call-1)*10)+1, 10, now),
+						"pageInfo": map[string]any{
+							"hasNextPage": !last,
+							"endCursor":   fmt.Sprintf("cursor-%d", call),
+						},
+					},
+				},
+			},
+		}
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}))
+	defer srv.Close()
+
+	fetcher := NewGraphQLFetcherWithClient(
+		githubv4.NewEnterpriseClient(srv.URL, srv.Client()), nil,
+	)
+	fetcher.quotaRegistry = registry
+	fetcher.readIdentity = identity
+
+	result, err := fetcher.FetchRepoPRs(t.Context(), "acme", "widgets", false)
+
+	require.NoError(err)
+	require.NotNil(result)
+	assert.Len(result.PullRequests, 20)
+	assert.Equal(int32(2), calls.Load())
 }
 
 func testGQLPRNodes(start, count int, now string) []map[string]any {

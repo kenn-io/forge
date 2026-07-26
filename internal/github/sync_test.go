@@ -14546,13 +14546,19 @@ func TestRefreshRateLimitSnapshotsSpendsOneRequestPerCredentialWhenRefreshFails(
 	database := openTestDB(t)
 	registry := NewQuotaRegistry()
 	appIdentity := IdentityKey{Host: "github.com", Principal: "installation:42"}
-	client := &failingSnapshotClient{mockClient: &mockClient{}}
 	appREST := NewRateTracker(database, "github.com", "installation:42", "rest")
+	// Startup builds a separate client per route, so the routes must not share
+	// a client pointer here either; only the credential behind them is shared.
+	clients := make([]*failingSnapshotClient, 0, 5)
 	routes := make([]*Route, 0, 5)
 	for _, owner := range []string{"acme", "other", "third", "fourth", "fifth"} {
+		client := &failingSnapshotClient{mockClient: &mockClient{}}
+		clients = append(clients, client)
 		routes = append(routes, &Route{
-			Key: RouteKey{Host: "github.com", Owner: owner}, Client: client,
-			ReadIdentity: appIdentity, WriteIdentity: appIdentity,
+			Key:           RouteKey{Host: "github.com", Owner: owner},
+			CredentialKey: "github\x00github.com\x00app:1",
+			Client:        client,
+			ReadIdentity:  appIdentity, WriteIdentity: appIdentity,
 		})
 	}
 	router, err := NewHostRouter("github.com", routes...)
@@ -14564,7 +14570,9 @@ func TestRefreshRateLimitSnapshotsSpendsOneRequestPerCredentialWhenRefreshFails(
 		Limit: 15000, Remaining: 14900, Reset: reset,
 	})
 	syncer := &Syncer{
-		clients: registryFromGitHubClients(map[string]Client{"github.com": client}),
+		clients: registryFromGitHubClients(
+			map[string]Client{"github.com": clients[0]},
+		),
 		routers: map[string]*HostRouter{"github.com": router},
 		rateTrackers: map[string]*RateTracker{
 			RateBucketKey("github", "github.com", "installation:42"): appREST,
@@ -14577,7 +14585,11 @@ func TestRefreshRateLimitSnapshotsSpendsOneRequestPerCredentialWhenRefreshFails(
 	syncer.RefreshRateLimitSnapshots(t.Context())
 	syncer.RefreshRateLimitSnapshots(t.Context())
 
-	assert.Equal(int32(1), client.calls.Load(),
+	var total int32
+	for _, client := range clients {
+		total += client.calls.Load()
+	}
+	assert.Equal(int32(1), total,
 		"a failed snapshot must not retry once per route, nor again next pass")
 	pool, ok := registry.Get(appIdentity, QuotaResourceREST)
 	require.True(ok, "the last known pool must survive a failed refresh")

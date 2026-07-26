@@ -361,7 +361,10 @@ response never overwrites an App installation pool
 - Snapshot refresh claims its cadence window before the attempt, not after
   success, or a credential whose `/rate_limit` call keeps failing re-attempts
   every pass. Routes sharing a credential may hold distinct clients, so the
-  fallback to a healthy route stays, but only distinct clients are tried
+  fallback to a healthy route stays, but only distinct credentials are tried.
+  Startup builds one client per route, so dedupe on `Route.CredentialKey` (the
+  token source's canonical string, not its scope) — client identity would let a
+  shared App installation issue one request per owner
   (`internal/github/sync.go::RefreshRateLimitSnapshots`).
 - A reserve gate inside a per-credential loop stops only its own bucket: mark
   that bucket exhausted, retain the error, and keep processing, or one exhausted

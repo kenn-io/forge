@@ -637,9 +637,16 @@ func buildGitHubRouteClients(startup *providerStartup) error {
 				discoveryClient = client
 			}
 		}
+		// Every route gets its own client, so the token source is what tells
+		// apart many routes on one credential from independent credentials
+		// that happen to resolve to the same account. The canonical source
+		// string names the candidate chain rather than the route scope, so
+		// owner routes sharing one PAT or App installation agree on it.
+		credentialKey := configured.source.Descriptor().CanonicalSourceString()
 		byHost[key.Host] = append(byHost[key.Host], &github.Route{
-			Key:    github.RouteKey{Host: key.Host, Owner: owner, Name: name},
-			Client: client, DiscoveryClient: discoveryClient,
+			Key:           github.RouteKey{Host: key.Host, Owner: owner, Name: name},
+			CredentialKey: credentialKey,
+			Client:        client, DiscoveryClient: discoveryClient,
 			WriteSnapshotClient: writeSnapshotClient,
 			Fetcher:             fetcher, ReadIdentity: configured.readIdentity,
 			WriteIdentity: configured.writeIdentity,

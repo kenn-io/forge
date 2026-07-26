@@ -4223,6 +4223,11 @@ func (s *Syncer) refreshRateLimitSnapshots(ctx context.Context) map[string]struc
 		tracker *RateTracker
 		fetcher *GraphQLFetcher
 		owner   string
+		// credential distinguishes routes backed by different token sources.
+		// Startup builds a separate client per route, so client identity
+		// cannot tell many routes on one credential apart from genuinely
+		// independent credentials resolving to the same account.
+		credential string
 	}
 	candidates := make(map[string][]snapshotCandidate)
 	for _, router := range s.routers {
@@ -4234,6 +4239,7 @@ func (s *Syncer) refreshRateLimitSnapshots(ctx context.Context) map[string]struc
 			candidates[readBucket] = append(candidates[readBucket], snapshotCandidate{
 				client: route.Client, tracker: s.rateTrackers[readBucket],
 				fetcher: route.Fetcher, owner: route.Key.Owner,
+				credential: route.CredentialKey,
 			})
 			if route.WriteIdentity.Principal != "" && route.WriteIdentity != route.ReadIdentity {
 				writeBucket := RateBucketKey(
@@ -4249,6 +4255,7 @@ func (s *Syncer) refreshRateLimitSnapshots(ctx context.Context) map[string]struc
 					client:  route.WriteSnapshotClient,
 					tracker: s.writeRateTrackers[writeBucket],
 					fetcher: writeFetcher, owner: route.Key.Owner,
+					credential: route.CredentialKey,
 				})
 			}
 		}
@@ -4263,21 +4270,28 @@ func (s *Syncer) refreshRateLimitSnapshots(ctx context.Context) map[string]struc
 		if !s.claimRateLimitSnapshotRefresh(bucket, time.Now().UTC()) {
 			continue
 		}
-		// Routes sharing a credential may still hold distinct clients, so a
-		// route whose token is broken must not stop the credential from being
-		// refreshed through a healthy one. Only distinct clients are worth
-		// trying: repeating the identical client once per repository owner
-		// under a shared App installation cannot produce a different answer,
-		// and turns one failure into one request per owner.
-		attempted := make(map[Client]struct{}, len(candidates[bucket]))
+		// Routes sharing a credential may still hold distinct token sources, so
+		// a route whose token is broken must not stop the credential from being
+		// refreshed through a healthy one. Only distinct sources are worth
+		// trying: asking the same credential once per repository owner under a
+		// shared App installation cannot produce a different answer, and turns
+		// one failure into one request per owner. A route with no known
+		// credential key counts as its own source.
+		attemptedCredentials := make(map[string]struct{}, len(candidates[bucket]))
+		attemptedClients := make(map[Client]struct{}, len(candidates[bucket]))
 		for _, candidate := range candidates[bucket] {
 			if candidate.tracker == nil || candidate.client == nil {
 				continue
 			}
-			if _, seen := attempted[candidate.client]; seen {
+			if candidate.credential != "" {
+				if _, seen := attemptedCredentials[candidate.credential]; seen {
+					continue
+				}
+				attemptedCredentials[candidate.credential] = struct{}{}
+			} else if _, seen := attemptedClients[candidate.client]; seen {
 				continue
 			}
-			attempted[candidate.client] = struct{}{}
+			attemptedClients[candidate.client] = struct{}{}
 			snapshotRoute := &Route{
 				Client: candidate.client, Fetcher: candidate.fetcher,
 			}

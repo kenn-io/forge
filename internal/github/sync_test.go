@@ -15999,6 +15999,60 @@ func TestRunOnceStopsDrainsWhenTheOnlyRepositoryExhaustsItsCredential(t *testing
 		"the detail drain must not spend a credential the index sync exhausted")
 }
 
+// A drain can be many items long, so the reserve is re-read per item: a
+// credential with headroom when the drain started can reach it partway
+// through, and the remaining items must stop.
+func TestDetailDrainStopsAtTheReserveItCrossesPartway(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	identity := IdentityKey{Host: "github.com", Principal: "user:7"}
+	registry := NewQuotaRegistry()
+	reset := time.Now().UTC().Add(time.Hour)
+	registry.UpdateSnapshot(identity, QuotaResourceREST, Rate{
+		Limit: 5000, Remaining: 4000, Reset: reset,
+	})
+	mc := &detailTrackingClient{}
+	mc.openPRs = []*gh.PullRequest{
+		buildOpenPR(1, now), buildOpenPR(2, now), buildOpenPR(3, now),
+	}
+	mc.comments = []*gh.IssueComment{}
+	mc.reviews = []*gh.PullRequestReview{}
+	mc.commits = []*gh.RepositoryCommit{}
+	// The drain's first item takes the credential to its reserve. The rest of
+	// the queue must not follow it.
+	mc.getPullRequestFn = func(
+		_ context.Context, _, _ string, _ int,
+	) (*gh.PullRequest, error) {
+		registry.UpdateSnapshot(identity, QuotaResourceREST, Rate{
+			Limit: 5000, Remaining: RateReserveBuffer, Reset: reset,
+		})
+		return buildOpenPR(1, now), nil
+	}
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil, []RepoRef{repo},
+		time.Minute, nil,
+		map[string]*SyncBudget{
+			RateBucketKey("github", "github.com", "user:7"): NewSyncBudget(500),
+		},
+	)
+	router, err := NewHostRouter("github.com", &Route{
+		Key: RouteKey{Host: "github.com", Owner: "owner"}, Client: mc,
+		ReadIdentity: identity, WriteIdentity: identity,
+	})
+	require.NoError(err)
+	syncer.SetGitHubRouters(map[string]*HostRouter{"github.com": router})
+	syncer.SetQuotaRegistry(registry)
+
+	syncer.RunOnce(ctx)
+
+	assert.LessOrEqual(int(mc.getPRCalls.Load()), 1,
+		"the drain must stop at the reserve rather than finish its queue")
+}
+
 func TestRunOnceSkipsSyncWhenRESTPoolExhausted(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

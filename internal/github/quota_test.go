@@ -381,3 +381,27 @@ func TestQuotaRegistryHeadersFromAnOlderWindowDoNotRewindThePool(t *testing.T) {
 	assert.True(pool.ResetAt.Equal(newReset),
 		"the pool must not rewind to a window that has already reset")
 }
+
+// A delayed /rate_limit response can land after the window it describes has
+// closed. Rewinding to it would make the pool read as expired, and expired
+// reads as unobserved.
+func TestQuotaRegistrySnapshotFromAnOlderWindowDoesNotRewindThePool(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	registry := NewQuotaRegistry()
+	identity := IdentityKey{Host: "github.com", Principal: "user:7"}
+	oldReset := time.Now().UTC().Add(time.Minute).Truncate(time.Second)
+	newReset := oldReset.Add(time.Hour)
+
+	registry.UpdateSnapshot(identity, QuotaResourceREST, Rate{
+		Limit: 5000, Remaining: 300, Reset: newReset,
+	})
+	registry.UpdateSnapshot(identity, QuotaResourceREST, Rate{
+		Limit: 5000, Remaining: 4800, Reset: oldReset,
+	})
+
+	pool, ok := registry.Get(identity, QuotaResourceREST)
+	require.True(ok)
+	assert.Equal(300, pool.Remaining)
+	assert.True(pool.ResetAt.Equal(newReset))
+}

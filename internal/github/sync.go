@@ -6617,6 +6617,13 @@ func (s *Syncer) drainPendingCommentSyncs(
 		if err != nil || !eligibleHosts[bucket] {
 			continue
 		}
+		// Re-read the reserve per item: this loop can be long, so a credential
+		// with headroom when the drain started can reach its reserve partway
+		// through. Revoking the bucket stops the rest of its items too.
+		if s.backgroundQuotaAvailability(item.repo, 1).Exhausted {
+			eligibleHosts[bucket] = false
+			continue
+		}
 		client, err := s.clientFor(item.repo)
 		if err != nil {
 			slog.Warn("comment refresh: resolve client failed",
@@ -9320,6 +9327,19 @@ func (s *Syncer) drainDetailQueue(
 			exhausted[bucket] = true
 			continue
 		}
+		// The provider reserve is re-read per item alongside the local
+		// ceiling. A drain can be many items long, so a credential that had
+		// headroom when the drain started can reach its reserve partway
+		// through.
+		if s.backgroundQuotaAvailability(repo, worstCase).Exhausted {
+			probe.abandon()
+			exhausted[bucket] = true
+			continue
+		}
+		// The provider reserve is re-read per item alongside the local
+		// ceiling. A drain can be many items long, so a credential that had
+		// headroom when the drain started can reach its reserve partway
+		// through.
 		repoID, err := s.db.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
 		if err != nil {
 			probe.abandon()

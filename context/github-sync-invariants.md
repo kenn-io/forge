@@ -384,10 +384,16 @@ response never overwrites an App installation pool
   dropped, an equal window may only lower `Remaining`, a later window replaces
   the pool. Rewinding `ResetAt` makes the pool read as expired, which reads as
   unobserved, which admits work the newer observation ruled out.
+  A `/rate_limit` snapshot obeys the same older-window rule but is
+  authoritative in both directions inside its own window: refreshes are claimed
+  so only one is in flight per credential, and it is how a pool that headers
+  clamped too low recovers before the window rolls.
 - Bucket eligibility is recomputed after the workers finish and again before
   each drain (`internal/github/sync.go::revokeExhaustedBuckets`). Worker markers
   alone are not enough: the last repository on a credential can spend its
-  headroom with no later worker left to observe it.
+  headroom with no later worker left to observe it. Each drain also re-reads the
+  reserve per item, next to the local ceiling check it already had, because a
+  drain long enough to cross the reserve must stop rather than finish its queue.
 - A reserve gate inside a per-credential loop stops only its own bucket: mark
   that bucket exhausted, retain the error, and keep processing, or one exhausted
   credential silently defers work every other credential could still do

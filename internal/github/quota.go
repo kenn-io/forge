@@ -101,15 +101,32 @@ func (r *QuotaRegistry) UpdateSnapshot(
 		return
 	}
 	key := newQuotaKey(identity, resource)
+	reset := rate.Reset.UTC()
+	known := rate.Limit >= 0 && rate.Remaining >= 0 && !rate.Reset.IsZero()
 	r.mu.Lock()
 	pool := r.pools[key]
 	pool.Identity = key.identity
 	pool.Resource = key.resource
+	// A delayed /rate_limit response can land after the window it describes has
+	// closed. Rewinding ResetAt to it would make the pool read as expired, and
+	// an expired pool reads as unobserved, which admits background work the
+	// current window may have already ruled out.
+	//
+	// Within its own window a snapshot is authoritative in both directions,
+	// unlike a response header. It is the endpoint whose whole job is to state
+	// the truth, refreshes are claimed so only one is in flight per credential,
+	// and it is how a pool that headers clamped too low recovers before the
+	// window rolls.
+	if pool.Known && known && reset.Before(pool.ResetAt) {
+		r.pools[key] = pool
+		r.mu.Unlock()
+		return
+	}
 	pool.Limit = rate.Limit
 	pool.Remaining = rate.Remaining
-	pool.ResetAt = rate.Reset.UTC()
+	pool.ResetAt = reset
 	pool.UpdatedAt = r.now().UTC()
-	pool.Known = rate.Limit >= 0 && rate.Remaining >= 0 && !rate.Reset.IsZero()
+	pool.Known = known
 	r.pools[key] = pool
 	r.mu.Unlock()
 }

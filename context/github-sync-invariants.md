@@ -358,6 +358,11 @@ response never overwrites an App installation pool
   (`internal/github/graphql.go::backgroundReserveGuard`). Aborting is safe
   because a bulk-fetch error falls back to the REST index; only a successful
   fetch persists.
+- Snapshot refresh claims its cadence window before the attempt, not after
+  success, or a credential whose `/rate_limit` call keeps failing re-attempts
+  every pass. Routes sharing a credential may hold distinct clients, so the
+  fallback to a healthy route stays, but only distinct clients are tried
+  (`internal/github/sync.go::RefreshRateLimitSnapshots`).
 - A reserve gate inside a per-credential loop stops only its own bucket: mark
   that bucket exhausted, retain the error, and keep processing, or one exhausted
   credential silently defers work every other credential could still do

@@ -4254,17 +4254,37 @@ func (s *Syncer) refreshRateLimitSnapshots(ctx context.Context) map[string]struc
 		}
 	}
 	for _, bucket := range slices.Sorted(maps.Keys(candidates)) {
-		if !s.canRefreshRateLimitSnapshot(bucket, time.Now().UTC()) {
+		// Claim the refresh window before the attempt, not after it succeeds.
+		// Recording it only on success let a credential whose /rate_limit call
+		// keeps failing re-attempt on every pass, so a broken App installation
+		// produced a steady stream of failing requests instead of one per
+		// window. A failure now leaves the previous snapshot in place and
+		// waits for the next window.
+		if !s.claimRateLimitSnapshotRefresh(bucket, time.Now().UTC()) {
 			continue
 		}
+		// Routes sharing a credential may still hold distinct clients, so a
+		// route whose token is broken must not stop the credential from being
+		// refreshed through a healthy one. Only distinct clients are worth
+		// trying: repeating the identical client once per repository owner
+		// under a shared App installation cannot produce a different answer,
+		// and turns one failure into one request per owner.
+		attempted := make(map[Client]struct{}, len(candidates[bucket]))
 		for _, candidate := range candidates[bucket] {
-			if candidate.tracker == nil {
+			if candidate.tracker == nil || candidate.client == nil {
 				continue
 			}
-			snapshotRoute := &Route{Client: candidate.client, Fetcher: candidate.fetcher}
+			if _, seen := attempted[candidate.client]; seen {
+				continue
+			}
+			attempted[candidate.client] = struct{}{}
+			snapshotRoute := &Route{
+				Client: candidate.client, Fetcher: candidate.fetcher,
+			}
 			snapshotCtx := tokenauth.WithGitHubOwner(ctx, candidate.owner)
-			if s.refreshRateLimitSnapshotForRoute(snapshotCtx, snapshotRoute, candidate.tracker) {
-				s.markRateLimitSnapshotRefreshed(bucket, time.Now().UTC())
+			if s.refreshRateLimitSnapshotForRoute(
+				snapshotCtx, snapshotRoute, candidate.tracker,
+			) {
 				refreshed[bucket] = struct{}{}
 				break
 			}

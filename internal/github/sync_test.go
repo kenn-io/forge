@@ -14521,6 +14521,69 @@ func TestRunOnceRefreshesGitHubRateLimitSnapshotOutsideSyncBudget(t *testing.T) 
 	}
 }
 
+// failingSnapshotClient always fails the snapshot call, standing in for a
+// credential whose /rate_limit request is rejected or times out.
+type failingSnapshotClient struct {
+	*mockClient
+	calls atomic.Int32
+}
+
+func (m *failingSnapshotClient) GetRateLimitSnapshot(
+	_ context.Context,
+) (*RateLimitSnapshot, error) {
+	m.calls.Add(1)
+	return nil, errors.New("rate limit snapshot unavailable")
+}
+
+// Every route in a credential bucket authenticates as the same principal, so a
+// failing snapshot must cost one request per window, not one per repository
+// owner sharing the installation and not a fresh burst on the next pass.
+func TestRefreshRateLimitSnapshotsSpendsOneRequestPerCredentialWhenRefreshFails(
+	t *testing.T,
+) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := openTestDB(t)
+	registry := NewQuotaRegistry()
+	appIdentity := IdentityKey{Host: "github.com", Principal: "installation:42"}
+	client := &failingSnapshotClient{mockClient: &mockClient{}}
+	appREST := NewRateTracker(database, "github.com", "installation:42", "rest")
+	routes := make([]*Route, 0, 5)
+	for _, owner := range []string{"acme", "other", "third", "fourth", "fifth"} {
+		routes = append(routes, &Route{
+			Key: RouteKey{Host: "github.com", Owner: owner}, Client: client,
+			ReadIdentity: appIdentity, WriteIdentity: appIdentity,
+		})
+	}
+	router, err := NewHostRouter("github.com", routes...)
+	require.NoError(err)
+	// A pre-observed pool proves a failed refresh leaves the last known facts
+	// alone instead of blanking the credential's quota.
+	reset := time.Now().UTC().Add(time.Hour)
+	registry.UpdateSnapshot(appIdentity, QuotaResourceREST, Rate{
+		Limit: 15000, Remaining: 14900, Reset: reset,
+	})
+	syncer := &Syncer{
+		clients: registryFromGitHubClients(map[string]Client{"github.com": client}),
+		routers: map[string]*HostRouter{"github.com": router},
+		rateTrackers: map[string]*RateTracker{
+			RateBucketKey("github", "github.com", "installation:42"): appREST,
+		},
+		quotaRegistry:            registry,
+		rateLimitSnapshotRefresh: make(map[string]time.Time),
+		now:                      time.Now,
+	}
+
+	syncer.RefreshRateLimitSnapshots(t.Context())
+	syncer.RefreshRateLimitSnapshots(t.Context())
+
+	assert.Equal(int32(1), client.calls.Load(),
+		"a failed snapshot must not retry once per route, nor again next pass")
+	pool, ok := registry.Get(appIdentity, QuotaResourceREST)
+	require.True(ok, "the last known pool must survive a failed refresh")
+	assert.Equal(14900, pool.Remaining)
+}
+
 func TestRefreshRateLimitSnapshotsReconcilesEachCredentialEveryThreeMinutes(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

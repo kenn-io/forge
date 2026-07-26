@@ -185,3 +185,53 @@ func TestCreateAdHocWorkspaceReusesExistingBranchWhenAsked(t *testing.T) {
 	)
 	assert.Equal(branch, checkedOut)
 }
+
+// Renaming the branch from inside the worktree is a shell action middleman does
+// not observe, so the workspace keeps its creation-time identity: the old name
+// still resolves to it, and the new name cannot be turned into a second
+// workspace while this worktree holds the branch.
+func TestCreateAdHocWorkspaceAfterInWorktreeBranchRename(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	fixture := setupWorkspaceServerFixture(t, nil)
+	original := "spike/rate-limits"
+	renamed := "spike/rate-limits-v2"
+
+	created, err := fixture.client.HTTP.CreateRepoWorkspaceWithResponse(
+		t.Context(), "gh", "acme", "widget",
+		generated.CreateRepoWorkspaceJSONRequestBody{Branch: &original},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, created.StatusCode(), string(created.Body))
+	require.NotNil(created.JSON202)
+	ready := waitForWorkspaceReady(t, t.Context(), fixture.client, created.JSON202.Id)
+
+	runGit(t, ready.WorktreePath, "branch", "-m", original, renamed)
+
+	// Old name: still this workspace, because item_key is the creation-time
+	// branch and is never rewritten.
+	again, err := fixture.client.HTTP.CreateRepoWorkspaceWithResponse(
+		t.Context(), "gh", "acme", "widget",
+		generated.CreateRepoWorkspaceJSONRequestBody{Branch: &original},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, again.StatusCode(), string(again.Body))
+	require.NotNil(again.JSON202)
+	assert.Equal(created.JSON202.Id, again.JSON202.Id)
+
+	// New name: the renamed branch exists locally, so this is the ordinary
+	// branch conflict with a suggested alternative, not a second worktree on the
+	// same branch.
+	conflict, err := fixture.client.HTTP.CreateRepoWorkspaceWithResponse(
+		t.Context(), "gh", "acme", "widget",
+		generated.CreateRepoWorkspaceJSONRequestBody{Branch: &renamed},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusConflict, conflict.StatusCode(), string(conflict.Body))
+	problem := conflict.ApplicationproblemJSONDefault
+	require.NotNil(problem)
+	assert.Equal(generated.BranchConflict, problem.Code)
+	require.NotNil(problem.Details)
+	assert.Equal(renamed+"-2", (*problem.Details)["suggestedBranch"])
+}

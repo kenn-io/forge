@@ -22,11 +22,11 @@ Non-goals: this is not a generic worktree browser, does not accept an arbitrary
 base ref, and stores no task title or description — the branch name is the only
 user-supplied label.
 
-`origin/HEAD` is the base for every branch middleman creates.
-`reuse_existing_branch` is the one explicit exception: it checks out a branch the
-user already has at whatever commit that branch points to, which may be
-unrelated to `origin/HEAD`. Reuse is opt-in per request precisely because it
-trades the default-branch guarantee for the user's own starting point.
+`origin/HEAD` is the base in every case, including `reuse_existing_branch`.
+Reuse adopts a branch the user already has instead of creating one, but setup
+still refuses it unless that branch already points at `origin/HEAD`
+(`preferred branch %q points at %s, not %s`) and is not checked out in another
+worktree. So reuse changes who created the branch, never where work starts.
 
 ## Storage
 
@@ -39,12 +39,16 @@ workspace uniqueness is already
 - `item_key = "adhoc:" + <requested branch>` — the branch is the workspace
   identity, so two ad-hoc workspaces for the same branch in the same repo
   collide on the existing unique index and the second create reuses the first.
-  The key is the creation-time branch and is never rewritten: renaming the
-  branch inside the worktree does not re-key the workspace, so a later create
-  for the old name still returns this workspace and one for the new name makes a
-  separate worktree. Renames are a shell action middleman does not observe;
-  reconciling identity with the live branch would mean watching every worktree's
-  HEAD, so identity stays immutable instead.
+  The key is the creation-time branch and is never rewritten. Renaming the
+  branch inside the worktree is a shell action middleman does not observe, so
+  after a rename: a create for the old name still returns this workspace, and a
+  create for the new name hits the ordinary local-branch conflict (`409` with a
+  suggested alternative) because the renamed branch now exists locally —
+  `reuse_existing_branch` does not help either, since setup refuses a branch
+  checked out in another worktree. A renamed branch therefore stays bound to its
+  original workspace until that workspace is deleted or the branch is renamed
+  back; there is no second worktree for the same branch and no reconciliation
+  pass, which would require watching every worktree's HEAD.
 - `workspaceItemKeyForInsert` and `scanWorkspace` must require an explicit
   `item_key` for ad-hoc rows, exactly as they do for Kata rows. Falling back to
   `strconv.Itoa(item_number)` would give every ad-hoc workspace in a repo the
@@ -54,7 +58,8 @@ workspace uniqueness is already
 
 `Manager.CreateAdHoc(ctx, provider, platformHost, owner, name, CreateAdHocOptions)`:
 
-- Repository must already be tracked; otherwise `not tracked`.
+- Repository must already be tracked; otherwise `ErrWorkspaceNotFound` wrapping
+  `repository not tracked`.
 - Branch: trimmed caller input, or generated `middleman/work-<8 hex>` from the
   new workspace ID when empty.
 - Branch name validated through the existing `validateLocalBranchName`.
@@ -140,7 +145,8 @@ marker, and untrusted-text rules are unchanged.
   rendering.
 - `internal/db`: ad-hoc `item_key` requirement and per-branch uniqueness.
 - `internal/server`: wire-level create through the generated client — success,
-  reuse, untracked repo, invalid branch, conflict envelope.
+  reuse, untracked repo, invalid branch, conflict envelope, and old-name vs
+  new-name creates after an in-worktree branch rename.
 - Vitest: dialog behavior (auto branch vs explicit, error surface, navigation),
   sidebar button opens the dialog, palette action visibility, sidebar rendering
   of an ad-hoc row.

@@ -15892,6 +15892,9 @@ func TestRunOnceSkipsMidPassExhaustionWithoutHoldingAWorker(t *testing.T) {
 	// The first repository's own sync spends the credential down to its
 	// reserve, so the second is admitted at dispatch and only discovers the
 	// exhaustion once a worker picks it up.
+	mc.comments = []*gh.IssueComment{}
+	mc.reviews = []*gh.PullRequestReview{}
+	mc.commits = []*gh.RepositoryCommit{}
 	mc.listOpenPRsFn = func(
 		_ context.Context, _, _ string,
 	) ([]*gh.PullRequest, error) {
@@ -15904,8 +15907,14 @@ func TestRunOnceSkipsMidPassExhaustionWithoutHoldingAWorker(t *testing.T) {
 		{Owner: "owner", Name: "first", PlatformHost: "github.com"},
 		{Owner: "owner", Name: "second", PlatformHost: "github.com"},
 	}
+	// A budget lets the detail drain run, which is where the leak shows: the
+	// first repository's own PRs queue detail work against the same credential
+	// the second repository was just skipped for.
 	syncer := NewSyncer(
-		map[string]Client{"github.com": mc}, d, nil, repos, time.Minute, nil, nil,
+		map[string]Client{"github.com": mc}, d, nil, repos, time.Minute, nil,
+		map[string]*SyncBudget{
+			RateBucketKey("github", "github.com", "user:7"): NewSyncBudget(500),
+		},
 	)
 	syncer.SetParallelism(1)
 	router, err := NewHostRouter("github.com", &Route{
@@ -15932,6 +15941,11 @@ func TestRunOnceSkipsMidPassExhaustionWithoutHoldingAWorker(t *testing.T) {
 	require.Len(results, 2)
 	assert.Empty(results[0].Error)
 	assert.Equal("skipped: rate limit throttled", results[1].Error)
+	// Eligibility was computed before the pass, so the drains that run after
+	// the workers must be told the credential ran out, or they would spend the
+	// reserve the workers just stopped at.
+	assert.Zero(mc.getPRCalls.Load(),
+		"the detail drain must not keep spending an exhausted credential")
 }
 
 func TestRunOnceSkipsSyncWhenRESTPoolExhausted(t *testing.T) {

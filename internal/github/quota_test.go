@@ -281,3 +281,72 @@ func TestBackgroundAdmissionIgnoresPersistedTrackerPastItsResetWindow(t *testing
 	assert.True(availability.AllowedOrUnobserved(),
 		"an elapsed persisted window cannot speak for the current quota")
 }
+
+// The GraphQL restart fallback must apply the reserve, not just backoff:
+// backoff blocks only a pool at zero, so a persisted pool inside the reserve
+// but above zero would otherwise admit bulk work after a restart.
+func TestBulkGraphQLPersistedFallbackAppliesTheBackgroundReserve(t *testing.T) {
+	assert := assert.New(t)
+	database := openTestDB(t)
+	tracker := NewRateTracker(database, "github.com", "user:7", "graphql")
+	tracker.UpdateFromSnapshot(Rate{
+		Limit: 5000, Remaining: RateReserveBuffer,
+		Reset: time.Now().UTC().Add(time.Hour),
+	})
+	fetcher := NewGraphQLFetcherWithClient(nil, tracker)
+
+	assert.False(persistedGraphQLAllowed(WithSyncBudget(t.Context()), fetcher),
+		"background work must respect the persisted reserve after a restart")
+	assert.True(persistedGraphQLAllowed(t.Context(), fetcher),
+		"foreground work is what the reserve is held for")
+}
+
+// An elapsed persisted window describes a quota that has since reset.
+func TestBulkGraphQLPersistedFallbackIgnoresAnElapsedWindow(t *testing.T) {
+	assert := assert.New(t)
+	database := openTestDB(t)
+	tracker := NewRateTracker(database, "github.com", "user:7", "graphql")
+	tracker.UpdateFromSnapshot(Rate{
+		Limit: 5000, Remaining: RateReserveBuffer,
+		Reset: time.Now().UTC().Add(time.Hour),
+	})
+	tracker.SetResetAtForTesting(time.Now().UTC().Add(-time.Minute))
+	fetcher := NewGraphQLFetcherWithClient(nil, tracker)
+
+	assert.True(persistedGraphQLAllowed(WithSyncBudget(t.Context()), fetcher))
+}
+
+// Concurrent responses complete out of order, so a header issued earlier can
+// arrive after a later one. Within one reset window the provider's remaining
+// only falls, and a stale header must not hand back quota already spent.
+func TestQuotaRegistryHeadersNeverRaiseRemainingWithinAWindow(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	registry := NewQuotaRegistry()
+	identity := IdentityKey{Host: "github.com", Principal: "user:7"}
+	reset := time.Now().UTC().Add(time.Hour).Truncate(time.Second)
+	header := func(remaining int, at time.Time) http.Header {
+		h := http.Header{}
+		h.Set("X-RateLimit-Limit", "5000")
+		h.Set("X-RateLimit-Remaining", strconv.Itoa(remaining))
+		h.Set("X-RateLimit-Reset", strconv.FormatInt(at.Unix(), 10))
+		return h
+	}
+
+	registry.ObserveHeaders(identity, QuotaResourceREST, header(4000, reset))
+	// The straggler was issued before the one above and reports more headroom.
+	registry.ObserveHeaders(identity, QuotaResourceREST, header(4200, reset))
+
+	pool, ok := registry.Get(identity, QuotaResourceREST)
+	require.True(ok)
+	assert.Equal(4000, pool.Remaining,
+		"a late-arriving older header must not restore spent quota")
+
+	// A new window is a different quota and replaces the pool outright.
+	nextReset := reset.Add(time.Hour)
+	registry.ObserveHeaders(identity, QuotaResourceREST, header(5000, nextReset))
+	pool, ok = registry.Get(identity, QuotaResourceREST)
+	require.True(ok)
+	assert.Equal(5000, pool.Remaining)
+	assert.True(pool.ResetAt.Equal(nextReset))
+}

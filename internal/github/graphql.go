@@ -924,11 +924,21 @@ func (g *GraphQLFetcher) FetchRepoPRs(
 		)
 		g.nativeStacksRejected.Store(true)
 		includeNativeStacks = false
+		if guardErr := g.backgroundReserveGuard(ctx); guardErr != nil {
+			return result, guardErr
+		}
 		result, err = g.fetchRepoPRsWithPageSize(
 			ctx, owner, name, topLevelPageSize, false,
 		)
 	}
 	if err != nil && !errors.Is(err, errGraphQLBackgroundReserve) {
+		// The retry restarts from page one, so its cursor is nil and the
+		// per-page guard would wave it through. Admission covered the first
+		// attempt, not this one: the failed attempt may have been what took
+		// the credential to its reserve.
+		if guardErr := g.backgroundReserveGuard(ctx); guardErr != nil {
+			return result, guardErr
+		}
 		slog.Warn("GraphQL query failed, retrying with smaller page",
 			"owner", owner, "name", name,
 			"err", err, "retryPageSize", retryPageSize,
@@ -1045,6 +1055,11 @@ func (g *GraphQLFetcher) FetchRepoIssues(
 		ctx, owner, name, topLevelPageSize,
 	)
 	if err != nil && !errors.Is(err, errGraphQLBackgroundReserve) {
+		// Same reason as the pull-request retry: a fresh attempt starts at a
+		// nil cursor, which the per-page guard deliberately lets through.
+		if guardErr := g.backgroundReserveGuard(ctx); guardErr != nil {
+			return result, guardErr
+		}
 		slog.Warn("GraphQL issue query failed, retrying with smaller page",
 			"owner", owner, "name", name,
 			"err", err, "retryPageSize", retryPageSize,

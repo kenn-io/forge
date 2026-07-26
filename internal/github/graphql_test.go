@@ -863,6 +863,48 @@ func TestGraphQLFetcherStopsBackgroundPaginationAtGraphQLReserve(t *testing.T) {
 			"reserve must not trigger the smaller-page retry")
 }
 
+// The smaller-page retry restarts from a nil cursor, which the per-page guard
+// deliberately lets through. Admission covered the first attempt only, and that
+// attempt may have been what took the credential to its reserve.
+func TestGraphQLFetcherDoesNotRetryPastTheReserveWithASmallerPage(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	identity := IdentityKey{Host: "github.com", Principal: "user:7"}
+	registry := NewQuotaRegistry()
+	reset := time.Now().UTC().Add(time.Hour)
+	registry.UpdateSnapshot(identity, QuotaResourceGraphQL, Rate{
+		Limit: 5000, Remaining: RateReserveBuffer + 1, Reset: reset,
+	})
+
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(
+		w http.ResponseWriter, _ *http.Request,
+	) {
+		calls.Add(1)
+		// The attempt fails, and spending it puts the credential on its
+		// reserve. The retry must not go out.
+		registry.UpdateSnapshot(identity, QuotaResourceGraphQL, Rate{
+			Limit: 5000, Remaining: RateReserveBuffer, Reset: reset,
+		})
+		http.Error(w, "query complexity exceeded", http.StatusBadRequest)
+	}))
+	defer srv.Close()
+
+	fetcher := NewGraphQLFetcherWithClient(
+		githubv4.NewEnterpriseClient(srv.URL, srv.Client()), nil,
+	)
+	fetcher.quotaRegistry = registry
+	fetcher.readIdentity = identity
+
+	_, err := fetcher.FetchRepoPRs(
+		WithSyncBudget(t.Context()), "acme", "widgets", false,
+	)
+
+	require.ErrorIs(err, errGraphQLBackgroundReserve)
+	assert.Equal(int32(1), calls.Load(),
+		"the retry must be gated on the reserve the first attempt just crossed")
+}
+
 // Issue pagination spends the same GraphQL pool as pull-request pagination, so
 // it must stop at the reserve too.
 func TestGraphQLFetcherStopsBackgroundIssuePaginationAtGraphQLReserve(t *testing.T) {

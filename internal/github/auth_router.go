@@ -28,7 +28,12 @@ type Route struct {
 	// credential from the "same account, different token" case where a broken
 	// route must not stop the credential from refreshing through a healthy
 	// one. Empty means unknown, and each route is then treated as distinct.
-	CredentialKey       string
+	CredentialKey string
+	// WriteCredentialKey names the token source behind WriteSnapshotClient.
+	// Mutations skip App candidates, so two routes on different Apps that fall
+	// back to one PAT share a write credential even though their read chains
+	// differ; the read key cannot stand in for it.
+	WriteCredentialKey  string
 	Client              Client
 	DiscoveryClient     Client
 	WriteSnapshotClient Client

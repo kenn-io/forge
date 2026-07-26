@@ -64,9 +64,19 @@ func (r *QuotaRegistry) ObserveHeaders(
 	pool.Resource = key.resource
 	pool.Requests++
 	if rate, ok := rateFromQuotaHeaders(header); ok {
+		reset := rate.Reset.UTC()
+		// Responses complete out of order, so a header issued earlier can
+		// arrive after a later one. Within one reset window the provider's
+		// remaining only falls, so a stale header must not hand back quota
+		// that has already been spent. A new window replaces the pool
+		// outright, and /rate_limit snapshots still reconcile it either way.
+		if pool.Known && reset.Equal(pool.ResetAt) &&
+			rate.Remaining > pool.Remaining {
+			rate.Remaining = pool.Remaining
+		}
 		pool.Limit = rate.Limit
 		pool.Remaining = rate.Remaining
-		pool.ResetAt = rate.Reset.UTC()
+		pool.ResetAt = reset
 		pool.UpdatedAt = r.now().UTC()
 		pool.Known = true
 	}

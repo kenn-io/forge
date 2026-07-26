@@ -558,6 +558,28 @@ func hasExplicitGitHubFallback(cfg *config.Config, host string) bool {
 	return false
 }
 
+// writeCredentialKey names the credential a route's mutations authenticate as.
+// Token resolution skips App candidates under mutation auth, so the write chain
+// is the descriptor's non-App candidates: two routes on different Apps that
+// fall back to the same PAT must agree on it even though their read chains do
+// not.
+func writeCredentialKey(desc tokenauth.Descriptor) string {
+	parts := make([]string, 0, len(desc.Candidates))
+	seen := make(map[string]struct{}, len(desc.Candidates))
+	for _, candidate := range desc.Candidates {
+		if candidate.InstallationID != 0 {
+			continue
+		}
+		part := candidate.SafeString()
+		if _, dup := seen[part]; dup {
+			continue
+		}
+		seen[part] = struct{}{}
+		parts = append(parts, part)
+	}
+	return strings.Join(parts, " -> ")
+}
+
 func buildGitHubRouteClients(startup *providerStartup) error {
 	if startup == nil || len(startup.githubRoutes) == 0 {
 		return nil
@@ -642,11 +664,13 @@ func buildGitHubRouteClients(startup *providerStartup) error {
 		// that happen to resolve to the same account. The canonical source
 		// string names the candidate chain rather than the route scope, so
 		// owner routes sharing one PAT or App installation agree on it.
-		credentialKey := configured.source.Descriptor().CanonicalSourceString()
+		descriptor := configured.source.Descriptor()
+		credentialKey := descriptor.CanonicalSourceString()
 		byHost[key.Host] = append(byHost[key.Host], &github.Route{
-			Key:           github.RouteKey{Host: key.Host, Owner: owner, Name: name},
-			CredentialKey: credentialKey,
-			Client:        client, DiscoveryClient: discoveryClient,
+			Key:                github.RouteKey{Host: key.Host, Owner: owner, Name: name},
+			CredentialKey:      credentialKey,
+			WriteCredentialKey: writeCredentialKey(descriptor),
+			Client:             client, DiscoveryClient: discoveryClient,
 			WriteSnapshotClient: writeSnapshotClient,
 			Fetcher:             fetcher, ReadIdentity: configured.readIdentity,
 			WriteIdentity: configured.writeIdentity,

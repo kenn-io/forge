@@ -282,6 +282,69 @@ func TestProviderStartupGivesRoutesSharingOnePATOneCredentialKey(t *testing.T) {
 		"each route still gets its own client, which is why the key is needed")
 }
 
+// Mutations skip App candidates, so two owner routes on different App
+// installations that fall back to the same PAT write as one credential even
+// though their read chains differ. Snapshot refresh dedupes write buckets on
+// the write key, so the read key cannot stand in for it.
+func TestProviderStartupSeparatesWriteCredentialKeyFromReadChain(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	database := dbtest.Open(t)
+	t.Setenv("SHARED_PAT", "shared-token")
+	cfg := &config.Config{
+		SyncInterval: "5m", Host: "127.0.0.1", Port: 8091, BasePath: "/",
+		Activity:       config.Activity{ViewMode: "flat", TimeRange: "7d"},
+		GitHubTokenEnv: "SHARED_PAT",
+		GitHubOwnerTokens: []config.GitHubOwnerTokenConfig{
+			{Host: "github.com", Owner: "org-a", TokenEnv: "SHARED_PAT"},
+			{Host: "github.com", Owner: "org-b", TokenEnv: "SHARED_PAT"},
+		},
+		GitHubApps: []config.GitHubAppConfig{
+			{
+				Host: "github.com", AppID: 7, PrivateKeyPath: "/keys/a.pem",
+				InstallationID: 701, InstallationAccount: "org-a",
+				RepositorySelection: "all",
+			},
+			{
+				Host: "github.com", AppID: 8, PrivateKeyPath: "/keys/b.pem",
+				InstallationID: 802, InstallationAccount: "org-b",
+				RepositorySelection: "all",
+			},
+		},
+	}
+	require.NoError(cfg.Validate())
+	set := tokenauth.NewSourceSet(tokenauth.Options{
+		GitHubApp: func(context.Context, tokenauth.Candidate) (string, time.Time, error) {
+			return "app-token", time.Now().Add(time.Hour), nil
+		},
+	})
+	sources, err := collectProviderTokenSources(t.Context(), cfg, set)
+	require.NoError(err)
+
+	startup, err := buildProviderStartup(
+		t.Context(), database, cfg, set, sources, defaultProviderFactories(),
+		fakeGitHubIdentityResolver{byEnv: map[string]github.GitHubIdentity{
+			"SHARED_PAT": {Key: github.IdentityKey{Host: "github.com", Principal: "user:123"}},
+		}},
+	)
+	require.NoError(err)
+
+	router := startup.githubRouters["github.com"]
+	require.NotNil(router)
+	orgA, err := router.RouteForRepo("org-a", "first")
+	require.NoError(err)
+	orgB, err := router.RouteForRepo("org-b", "second")
+	require.NoError(err)
+
+	assert.NotEqual(orgA.CredentialKey, orgB.CredentialKey,
+		"different App installations are different read credentials")
+	assert.NotEmpty(orgA.WriteCredentialKey)
+	assert.Equal(orgA.WriteCredentialKey, orgB.WriteCredentialKey,
+		"both routes mutate through the same PAT")
+	assert.NotContains(orgA.WriteCredentialKey, "github_app",
+		"the write chain must not carry App candidates mutations never use")
+}
+
 func TestBuildProviderStartupRoutesUntrackedOwnerAndKeepsFallbackUnscoped(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

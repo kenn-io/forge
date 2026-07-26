@@ -3832,8 +3832,31 @@ func (s *Syncer) bulkGraphQLAllowed(
 			}
 		}
 	}
-	backoff, _ := fetcher.ShouldBackoff()
-	return !backoff
+	return persistedGraphQLAllowed(ctx, fetcher)
+}
+
+// persistedGraphQLAllowed answers from the fetcher's SQLite-backed tracker when
+// the registry has never observed this credential's GraphQL pool. Backoff alone
+// is not enough: it only blocks a pool at zero, so after a restart a persisted
+// pool sitting inside the reserve but above zero would still admit bulk work.
+func persistedGraphQLAllowed(ctx context.Context, fetcher *GraphQLFetcher) bool {
+	if backoff, _ := fetcher.ShouldBackoff(); backoff {
+		return false
+	}
+	tracker := fetcher.RateTracker()
+	if tracker == nil || !tracker.Known() {
+		return true
+	}
+	// An elapsed window describes a quota that has since reset.
+	resetAt := tracker.ResetAt()
+	if resetAt == nil || !time.Now().UTC().Before(*resetAt) {
+		return true
+	}
+	reserve := 0
+	if IsSyncBudgetContext(ctx) {
+		reserve = RateReserveBuffer
+	}
+	return tracker.Remaining()-1 >= reserve
 }
 
 func (s *Syncer) syncWatchedMRs(ctx context.Context) {
@@ -4295,7 +4318,7 @@ func (s *Syncer) refreshRateLimitSnapshots(ctx context.Context) map[string]struc
 					client:  route.WriteSnapshotClient,
 					tracker: s.writeRateTrackers[writeBucket],
 					fetcher: writeFetcher, owner: route.Key.Owner,
-					credential: route.CredentialKey,
+					credential: route.WriteCredentialKey,
 				})
 			}
 		}
@@ -4480,6 +4503,12 @@ type runState struct {
 	// regardless of worker completion order. Each index is written
 	// by exactly one worker, so no mutex is needed.
 	results []RepoSyncResult
+	// exhausted collects buckets that crossed their reserve while the pass
+	// was running. Eligibility is computed once before dispatch, so without
+	// this the detail and comment drains would keep spending a credential the
+	// workers had already stopped using. Written by every worker, so it is a
+	// sync.Map rather than the plain eligibility map.
+	exhausted *sync.Map
 }
 
 // repoWork pairs a repo with its index in the configured repo list
@@ -4535,6 +4564,9 @@ func (s *Syncer) runWorker(
 		// credentials wait behind it. The next pass re-admits this one.
 		if availability := s.backgroundQuotaAvailability(repo, 1); availability.Exhausted {
 			state.results[item.index].Error = "skipped: rate limit throttled"
+			if state.exhausted != nil {
+				state.exhausted.Store(bucket, struct{}{})
+			}
 			done := state.completed.Add(1)
 			s.publishMonotonicProgress(state, done)
 			continue
@@ -4748,6 +4780,7 @@ func (s *Syncer) runOnce(
 		canceled:  &canceled,
 		total:     total,
 		results:   results,
+		exhausted: &sync.Map{},
 	}
 	for range workers {
 		wg.Go(func() {
@@ -4794,6 +4827,13 @@ dispatch:
 	// Detail drain: fetch full details for highest-priority items
 	// within the per-host budget. Runs after index scan completes.
 	if !canceled.Load() && ctx.Err() == nil {
+		// A credential that ran out while the pass was in flight is no longer
+		// eligible, even though the map predates that. Without this the drains
+		// would immediately spend the reserve the workers just stopped at.
+		state.exhausted.Range(func(key, _ any) bool {
+			eligibleBuckets[key.(string)] = false
+			return true
+		})
 		s.drainDetailQueue(ctx, eligibleBuckets, repos)
 	}
 

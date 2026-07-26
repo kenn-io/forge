@@ -376,7 +376,13 @@ response never overwrites an App installation pool
   Startup builds one client per route, so dedupe on `Route.CredentialKey` (the
   token source's canonical string, not its scope) — client identity would let a
   shared App installation issue one request per owner
-  (`internal/github/sync.go::RefreshRateLimitSnapshots`).
+  (`internal/github/sync.go::RefreshRateLimitSnapshots`). Write buckets dedupe
+  on `Route.WriteCredentialKey`, the non-App candidates, because mutations skip
+  App candidates and two Apps can fall back to one PAT.
+- Response headers only lower a pool inside one reset window
+  (`internal/github/quota.go::QuotaRegistry.ObserveHeaders`). Concurrent
+  responses finish out of order, so a blind write lets a stale header hand back
+  quota that was already spent. A new reset window replaces the pool outright.
 - A reserve gate inside a per-credential loop stops only its own bucket: mark
   that bucket exhausted, retain the error, and keep processing, or one exhausted
   credential silently defers work every other credential could still do

@@ -4639,6 +4639,36 @@ func (s *Syncer) runWorker(
 	}
 }
 
+// revokeExhaustedBuckets clears eligibility for credentials that have reached
+// their reserve since eligibility was computed. It folds in the markers workers
+// recorded and re-reads the current pools, because a credential can cross its
+// reserve on the very last repository that uses it, leaving no later worker to
+// notice.
+func (s *Syncer) revokeExhaustedBuckets(
+	eligibleBuckets map[string]bool, state *runState, repos []RepoRef,
+) {
+	if state != nil && state.exhausted != nil {
+		state.exhausted.Range(func(key, _ any) bool {
+			eligibleBuckets[key.(string)] = false
+			return true
+		})
+	}
+	checked := make(map[string]struct{}, len(eligibleBuckets))
+	for _, repo := range repos {
+		bucket, err := s.bucketKeyForRepo(repo, false)
+		if err != nil || !eligibleBuckets[bucket] {
+			continue
+		}
+		if _, seen := checked[bucket]; seen {
+			continue
+		}
+		checked[bucket] = struct{}{}
+		if s.backgroundQuotaAvailability(repo, 1).Exhausted {
+			eligibleBuckets[bucket] = false
+		}
+	}
+}
+
 // publishMonotonicProgress publishes a progress update only if done
 // is the highest value seen so far. Skips the final "total/total"
 // because detail drain still runs after index completes.
@@ -4827,17 +4857,20 @@ dispatch:
 	// Detail drain: fetch full details for highest-priority items
 	// within the per-host budget. Runs after index scan completes.
 	if !canceled.Load() && ctx.Err() == nil {
-		// A credential that ran out while the pass was in flight is no longer
-		// eligible, even though the map predates that. Without this the drains
-		// would immediately spend the reserve the workers just stopped at.
-		state.exhausted.Range(func(key, _ any) bool {
-			eligibleBuckets[key.(string)] = false
-			return true
-		})
+		// Eligibility was computed before the pass, so it cannot know which
+		// credentials ran out while the pass was in flight. Re-check every
+		// bucket rather than trusting only the workers' markers: the last
+		// repository on a credential can spend the headroom with no later
+		// repository left to observe it.
+		s.revokeExhaustedBuckets(eligibleBuckets, state, repos)
 		s.drainDetailQueue(ctx, eligibleBuckets, repos)
 	}
 
 	if !canceled.Load() && ctx.Err() == nil {
+		// The detail drain spends the same credentials, so re-check again
+		// before the comment drain rather than reusing a map the drain that
+		// just ran may have invalidated.
+		s.revokeExhaustedBuckets(eligibleBuckets, state, repos)
 		s.drainPendingCommentSyncs(ctx, eligibleBuckets)
 	}
 

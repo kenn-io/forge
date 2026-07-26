@@ -365,9 +365,9 @@ response never overwrites an App installation pool
   restart admits background work against a reserve the persisted state says is
   already spent (`internal/github/sync.go::persistedQuotaAvailability`). An
   elapsed persisted reset window says nothing and must not gate.
-- Crossing the reserve inside a worker skips the repository; it must never
-  sleep the worker until reset, or one spent credential occupies the pool while
-  repositories on healthy credentials queue behind it
+- Crossing the reserve inside a worker skips the repository and records the
+  bucket; it must never sleep the worker until reset, or one spent credential
+  occupies the pool while repositories on healthy credentials queue behind it
   (`internal/github/sync.go::runWorker`).
 - Snapshot refresh claims its cadence window before the attempt, not after
   success, or a credential whose `/rate_limit` call keeps failing re-attempts
@@ -379,10 +379,15 @@ response never overwrites an App installation pool
   (`internal/github/sync.go::RefreshRateLimitSnapshots`). Write buckets dedupe
   on `Route.WriteCredentialKey`, the non-App candidates, because mutations skip
   App candidates and two Apps can fall back to one PAT.
-- Response headers only lower a pool inside one reset window
-  (`internal/github/quota.go::QuotaRegistry.ObserveHeaders`). Concurrent
-  responses finish out of order, so a blind write lets a stale header hand back
-  quota that was already spent. A new reset window replaces the pool outright.
+- The reset timestamp orders out-of-order header observations
+  (`internal/github/quota.go::QuotaRegistry.ObserveHeaders`): an older window is
+  dropped, an equal window may only lower `Remaining`, a later window replaces
+  the pool. Rewinding `ResetAt` makes the pool read as expired, which reads as
+  unobserved, which admits work the newer observation ruled out.
+- Bucket eligibility is recomputed after the workers finish and again before
+  each drain (`internal/github/sync.go::revokeExhaustedBuckets`). Worker markers
+  alone are not enough: the last repository on a credential can spend its
+  headroom with no later worker left to observe it.
 - A reserve gate inside a per-credential loop stops only its own bucket: mark
   that bucket exhausted, retain the error, and keep processing, or one exhausted
   credential silently defers work every other credential could still do

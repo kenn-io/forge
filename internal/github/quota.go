@@ -66,19 +66,27 @@ func (r *QuotaRegistry) ObserveHeaders(
 	if rate, ok := rateFromQuotaHeaders(header); ok {
 		reset := rate.Reset.UTC()
 		// Responses complete out of order, so a header issued earlier can
-		// arrive after a later one. Within one reset window the provider's
-		// remaining only falls, so a stale header must not hand back quota
-		// that has already been spent. A new window replaces the pool
-		// outright, and /rate_limit snapshots still reconcile it either way.
-		if pool.Known && reset.Equal(pool.ResetAt) &&
-			rate.Remaining > pool.Remaining {
-			rate.Remaining = pool.Remaining
+		// arrive after a later one. The reset timestamp orders them: an older
+		// window says nothing about the current one and is dropped, an equal
+		// window may only lower the count because the provider's remaining
+		// only falls inside a window, and a later window is a fresh quota that
+		// replaces the pool. /rate_limit snapshots still reconcile either way.
+		switch {
+		case pool.Known && reset.Before(pool.ResetAt):
+			// Drop the observation, but the request itself still happened.
+		case pool.Known && reset.Equal(pool.ResetAt):
+			if rate.Remaining < pool.Remaining {
+				pool.Remaining = rate.Remaining
+			}
+			pool.Limit = rate.Limit
+			pool.UpdatedAt = r.now().UTC()
+		default:
+			pool.Limit = rate.Limit
+			pool.Remaining = rate.Remaining
+			pool.ResetAt = reset
+			pool.UpdatedAt = r.now().UTC()
+			pool.Known = true
 		}
-		pool.Limit = rate.Limit
-		pool.Remaining = rate.Remaining
-		pool.ResetAt = reset
-		pool.UpdatedAt = r.now().UTC()
-		pool.Known = true
 	}
 	r.pools[key] = pool
 	r.mu.Unlock()

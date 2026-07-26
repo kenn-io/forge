@@ -350,3 +350,34 @@ func TestQuotaRegistryHeadersNeverRaiseRemainingWithinAWindow(t *testing.T) {
 	assert.Equal(5000, pool.Remaining)
 	assert.True(pool.ResetAt.Equal(nextReset))
 }
+
+// A response from the previous reset window can arrive after a new-window
+// response. Rewinding ResetAt to the old window would make the pool look
+// expired -- and an expired pool reads as unobserved, which admits background
+// work the newer observation had already ruled out.
+func TestQuotaRegistryHeadersFromAnOlderWindowDoNotRewindThePool(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	registry := NewQuotaRegistry()
+	identity := IdentityKey{Host: "github.com", Principal: "user:7"}
+	oldReset := time.Now().UTC().Add(time.Minute).Truncate(time.Second)
+	newReset := oldReset.Add(time.Hour)
+	header := func(remaining int, at time.Time) http.Header {
+		h := http.Header{}
+		h.Set("X-RateLimit-Limit", "5000")
+		h.Set("X-RateLimit-Remaining", strconv.Itoa(remaining))
+		h.Set("X-RateLimit-Reset", strconv.FormatInt(at.Unix(), 10))
+		return h
+	}
+
+	registry.ObserveHeaders(identity, QuotaResourceREST, header(300, newReset))
+	// The straggler belongs to the window that has already closed.
+	registry.ObserveHeaders(identity, QuotaResourceREST, header(4800, oldReset))
+
+	pool, ok := registry.Get(identity, QuotaResourceREST)
+	require.True(ok)
+	assert.Equal(300, pool.Remaining,
+		"a closed window must not overwrite the current one")
+	assert.True(pool.ResetAt.Equal(newReset),
+		"the pool must not rewind to a window that has already reset")
+}

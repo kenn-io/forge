@@ -15948,6 +15948,57 @@ func TestRunOnceSkipsMidPassExhaustionWithoutHoldingAWorker(t *testing.T) {
 		"the detail drain must not keep spending an exhausted credential")
 }
 
+// The last repository on a credential can spend its headroom with no later
+// worker left to notice, so eligibility must be re-read after the workers
+// finish rather than trusting only the markers they recorded.
+func TestRunOnceStopsDrainsWhenTheOnlyRepositoryExhaustsItsCredential(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	identity := IdentityKey{Host: "github.com", Principal: "user:7"}
+	registry := NewQuotaRegistry()
+	reset := time.Now().UTC().Add(time.Hour)
+	registry.UpdateSnapshot(identity, QuotaResourceREST, Rate{
+		Limit: 5000, Remaining: 4000, Reset: reset,
+	})
+	mc := &detailTrackingClient{}
+	mc.comments = []*gh.IssueComment{}
+	mc.reviews = []*gh.PullRequestReview{}
+	mc.commits = []*gh.RepositoryCommit{}
+	// The single repository's own index sync spends the credential down to its
+	// reserve. No second repository follows it, so nothing marks the bucket.
+	mc.listOpenPRsFn = func(
+		_ context.Context, _, _ string,
+	) ([]*gh.PullRequest, error) {
+		registry.UpdateSnapshot(identity, QuotaResourceREST, Rate{
+			Limit: 5000, Remaining: RateReserveBuffer, Reset: reset,
+		})
+		return []*gh.PullRequest{buildOpenPR(1, now)}, nil
+	}
+	repo := RepoRef{Owner: "owner", Name: "only", PlatformHost: "github.com"}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil, []RepoRef{repo},
+		time.Minute, nil,
+		map[string]*SyncBudget{
+			RateBucketKey("github", "github.com", "user:7"): NewSyncBudget(500),
+		},
+	)
+	router, err := NewHostRouter("github.com", &Route{
+		Key: RouteKey{Host: "github.com", Owner: "owner"}, Client: mc,
+		ReadIdentity: identity, WriteIdentity: identity,
+	})
+	require.NoError(err)
+	syncer.SetGitHubRouters(map[string]*HostRouter{"github.com": router})
+	syncer.SetQuotaRegistry(registry)
+
+	syncer.RunOnce(ctx)
+
+	assert.Zero(mc.getPRCalls.Load(),
+		"the detail drain must not spend a credential the index sync exhausted")
+}
+
 func TestRunOnceSkipsSyncWhenRESTPoolExhausted(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

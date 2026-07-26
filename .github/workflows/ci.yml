@@ -50,6 +50,8 @@ jobs:
               - package.json
               - bun.lock
               - vite.config.ts
+              - scripts/frontend_unit_ci.py
+              - scripts/test_frontend_unit_ci.py
             rust:
               - Cargo.toml
               - Cargo.lock

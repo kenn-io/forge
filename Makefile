@@ -185,6 +185,7 @@ playwright-version-check: check-vite-plus-bin
 # Run lightweight script regression tests
 script-tests: check-vite-plus-bin
 	$(VITE_PLUS_BIN) exec -- node --test scripts/*.test.mjs scripts/*.test.ts
+	python3 -m unittest discover -s scripts -p 'test_*.py'
 
 # Run lightweight generated-client/Huma guardrails.
 # Guard on vite-plus being present (check-vite-plus-bin) rather than running

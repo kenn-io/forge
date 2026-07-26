@@ -354,10 +354,21 @@ response never overwrites an App installation pool
   `bulkGraphQLAllowed` the only place the GraphQL reserve is applied: it must
   hold the reserve for background work and waive it for foreground syncs.
 - Admission is once per fetch, but bulk GraphQL pagination is unbounded, so a
-  background fetch must also re-check the reserve between pages
+  background fetch must also re-check the reserve between pages -- on every
+  paginated GraphQL path, pull requests and issues alike
   (`internal/github/graphql.go::backgroundReserveGuard`). Aborting is safe
   because a bulk-fetch error falls back to the REST index; only a successful
-  fetch persists.
+  fetch persists. The abort must bypass the smaller-page retry, which would
+  otherwise restart pagination.
+- The quota registry is in-memory, so admission falls back to the rate
+  tracker's SQLite-backed state when a credential is unobserved. Without it a
+  restart admits background work against a reserve the persisted state says is
+  already spent (`internal/github/sync.go::persistedQuotaAvailability`). An
+  elapsed persisted reset window says nothing and must not gate.
+- Crossing the reserve inside a worker skips the repository; it must never
+  sleep the worker until reset, or one spent credential occupies the pool while
+  repositories on healthy credentials queue behind it
+  (`internal/github/sync.go::runWorker`).
 - Snapshot refresh claims its cadence window before the attempt, not after
   success, or a credential whose `/rate_limit` call keeps failing re-attempts
   every pass. Routes sharing a credential may hold distinct clients, so the

@@ -15872,6 +15872,68 @@ func TestRunOnceSyncsOverRESTWhenOnlyGraphQLIsExhausted(t *testing.T) {
 
 // The mirror case: an exhausted REST pool stops the sync before any upstream
 // call, so nothing is persisted.
+// A credential that crosses its reserve mid-pass must not hold a worker until
+// reset: repositories on healthy credentials queued behind it would wait too,
+// and with enough exhausted repositories one spent credential could occupy
+// every worker for the rest of the window.
+func TestRunOnceSkipsMidPassExhaustionWithoutHoldingAWorker(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	identity := IdentityKey{Host: "github.com", Principal: "user:7"}
+	registry := NewQuotaRegistry()
+	reset := time.Now().UTC().Add(time.Hour)
+	registry.UpdateSnapshot(identity, QuotaResourceREST, Rate{
+		Limit: 5000, Remaining: 4000, Reset: reset,
+	})
+	mc := &detailTrackingClient{}
+	// The first repository's own sync spends the credential down to its
+	// reserve, so the second is admitted at dispatch and only discovers the
+	// exhaustion once a worker picks it up.
+	mc.listOpenPRsFn = func(
+		_ context.Context, _, _ string,
+	) ([]*gh.PullRequest, error) {
+		registry.UpdateSnapshot(identity, QuotaResourceREST, Rate{
+			Limit: 5000, Remaining: RateReserveBuffer, Reset: reset,
+		})
+		return []*gh.PullRequest{buildOpenPR(1, now)}, nil
+	}
+	repos := []RepoRef{
+		{Owner: "owner", Name: "first", PlatformHost: "github.com"},
+		{Owner: "owner", Name: "second", PlatformHost: "github.com"},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil, repos, time.Minute, nil, nil,
+	)
+	syncer.SetParallelism(1)
+	router, err := NewHostRouter("github.com", &Route{
+		Key: RouteKey{Host: "github.com", Owner: "owner"}, Client: mc,
+		ReadIdentity: identity, WriteIdentity: identity,
+	})
+	require.NoError(err)
+	syncer.SetGitHubRouters(map[string]*HostRouter{"github.com": router})
+	syncer.SetQuotaRegistry(registry)
+	var results []RepoSyncResult
+	syncer.SetOnSyncCompleted(func(got []RepoSyncResult) { results = got })
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		syncer.RunOnce(ctx)
+	}()
+	select {
+	case <-done:
+	case <-time.After(30 * time.Second):
+		require.Fail("RunOnce held a worker instead of skipping the repository")
+	}
+
+	require.Len(results, 2)
+	assert.Empty(results[0].Error)
+	assert.Equal("skipped: rate limit throttled", results[1].Error)
+}
+
 func TestRunOnceSkipsSyncWhenRESTPoolExhausted(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

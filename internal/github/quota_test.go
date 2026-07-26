@@ -212,3 +212,72 @@ func TestQuotaAvailabilityFullyUnobservedAllowsBackgroundWork(t *testing.T) {
 	assert.False(availability.Exhausted)
 	assert.True(availability.AllowedOrUnobserved())
 }
+
+// The quota registry lives only in memory, so a restart starts it empty while
+// the rate tracker rehydrates the same credential's pool from SQLite. Treating
+// that as unobserved would admit background work against a reserve the
+// persisted state already says is spent -- and the /rate_limit refresh that
+// would repopulate the registry is exactly what fails when a credential is in
+// trouble.
+func TestBackgroundAdmissionUsesPersistedTrackerWhenRegistryIsEmpty(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := openTestDB(t)
+	identity := IdentityKey{Host: "github.com", Principal: "user:7"}
+	bucket := RateBucketKey("github", "github.com", "user:7")
+	tracker := NewRateTracker(database, "github.com", "user:7", "rest")
+	tracker.UpdateFromSnapshot(Rate{
+		Limit: 5000, Remaining: RateReserveBuffer,
+		Reset: time.Now().UTC().Add(time.Hour),
+	})
+	repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
+	router, err := NewHostRouter("github.com", &Route{
+		Key: RouteKey{Host: "github.com", Owner: "acme"}, Client: &mockClient{},
+		ReadIdentity: identity, WriteIdentity: identity,
+	})
+	require.NoError(err)
+	syncer := &Syncer{
+		routers:       map[string]*HostRouter{"github.com": router},
+		rateTrackers:  map[string]*RateTracker{bucket: tracker},
+		quotaRegistry: NewQuotaRegistry(),
+	}
+
+	availability := syncer.backgroundQuotaAvailability(repo, 1)
+
+	assert.True(availability.Exhausted,
+		"a persisted pool at its reserve must not read as unobserved")
+	assert.False(availability.AllowedOrUnobserved())
+}
+
+// A persisted window that has already elapsed describes a quota that has since
+// reset, so it must not hold back work the provider would now accept.
+func TestBackgroundAdmissionIgnoresPersistedTrackerPastItsResetWindow(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := openTestDB(t)
+	identity := IdentityKey{Host: "github.com", Principal: "user:7"}
+	bucket := RateBucketKey("github", "github.com", "user:7")
+	tracker := NewRateTracker(database, "github.com", "user:7", "rest")
+	tracker.UpdateFromSnapshot(Rate{
+		Limit: 5000, Remaining: RateReserveBuffer,
+		Reset: time.Now().UTC().Add(time.Hour),
+	})
+	tracker.SetResetAtForTesting(time.Now().UTC().Add(-time.Minute))
+	repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
+	router, err := NewHostRouter("github.com", &Route{
+		Key: RouteKey{Host: "github.com", Owner: "acme"}, Client: &mockClient{},
+		ReadIdentity: identity, WriteIdentity: identity,
+	})
+	require.NoError(err)
+	syncer := &Syncer{
+		routers:       map[string]*HostRouter{"github.com": router},
+		rateTrackers:  map[string]*RateTracker{bucket: tracker},
+		quotaRegistry: NewQuotaRegistry(),
+	}
+
+	availability := syncer.backgroundQuotaAvailability(repo, 1)
+
+	assert.False(availability.Exhausted)
+	assert.True(availability.AllowedOrUnobserved(),
+		"an elapsed persisted window cannot speak for the current quota")
+}

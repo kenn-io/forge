@@ -3698,12 +3698,46 @@ func (s *Syncer) backgroundQuotaAvailability(
 	if err != nil {
 		return QuotaAvailability{Allowed: true, Known: false}
 	}
-	return s.quotaRegistry.CheckReserve(
+	availability := s.quotaRegistry.CheckReserve(
 		identity,
 		[]QuotaResource{QuotaResourceREST},
 		cost,
 		RateReserveBuffer,
 	)
+	if availability.Known {
+		return availability
+	}
+	return s.persistedQuotaAvailability(repo, cost, availability)
+}
+
+// persistedQuotaAvailability answers from the rate tracker when the registry
+// has never observed this credential. The registry lives only in memory, so a
+// restart starts it empty even though the tracker rehydrates the same
+// credential's last observed pool from SQLite. Treating that as unobserved
+// would admit background work against a reserve the persisted state already
+// says is spent -- and the /rate_limit refresh that would repopulate the
+// registry is exactly what fails when a credential is in trouble.
+func (s *Syncer) persistedQuotaAvailability(
+	repo RepoRef, cost int, unobserved QuotaAvailability,
+) QuotaAvailability {
+	bucket, err := s.bucketKeyForRepo(repo, false)
+	if err != nil {
+		return unobserved
+	}
+	tracker := s.rateTrackers[bucket]
+	if tracker == nil || !tracker.Known() {
+		return unobserved
+	}
+	// A persisted window that has already elapsed describes a quota that has
+	// since reset, so it cannot speak for the current one.
+	resetAt := tracker.ResetAt()
+	if resetAt == nil || !time.Now().UTC().Before(*resetAt) {
+		return unobserved
+	}
+	if tracker.Remaining()-cost < RateReserveBuffer {
+		return QuotaAvailability{Known: true, Exhausted: true, ResetAt: resetAt}
+	}
+	return QuotaAvailability{Allowed: true, Known: true, ResetAt: resetAt}
 }
 
 // repoEligibility computes which credential buckets may sync now. Buckets are
@@ -3789,7 +3823,13 @@ func (s *Syncer) bulkGraphQLAllowed(
 				1,
 				reserve,
 			)
-			return availability.AllowedOrUnobserved()
+			// An unobserved pool falls through to the fetcher's persisted
+			// tracker rather than counting as permission, for the same reason
+			// REST admission does: after a restart the registry is empty while
+			// the tracker still remembers the credential's last state.
+			if availability.Known {
+				return availability.Allowed
+			}
 		}
 	}
 	backoff, _ := fetcher.ShouldBackoff()
@@ -4486,26 +4526,18 @@ func (s *Syncer) runWorker(
 		// Provider reserve first: this credential's own GitHub pool. The
 		// tracker backoff below is a separate signal (secondary limits and
 		// Retry-After), so both gates apply.
+		//
+		// Crossing the reserve mid-pass skips the repository rather than
+		// sleeping the worker until reset. Dispatch already reports the same
+		// result for buckets that were over their reserve before the pass
+		// began, and holding a worker for up to an hour would let one spent
+		// credential occupy the whole pool while repositories on healthy
+		// credentials wait behind it. The next pass re-admits this one.
 		if availability := s.backgroundQuotaAvailability(repo, 1); availability.Exhausted {
-			wait := time.Minute
-			if availability.ResetAt != nil {
-				wait = time.Until(*availability.ResetAt)
-				if wait <= 0 {
-					wait = time.Minute
-				}
-			}
-			s.publishStatus(&SyncStatus{
-				Running: true,
-				Progress: fmt.Sprintf(
-					"rate limited, waiting %s", formatRateLimitWait(wait),
-				),
-			})
-			select {
-			case <-time.After(wait):
-			case <-ctx.Done():
-				state.canceled.Store(true)
-				return
-			}
+			state.results[item.index].Error = "skipped: rate limit throttled"
+			done := state.completed.Add(1)
+			s.publishMonotonicProgress(state, done)
+			continue
 		}
 		if rt := s.rateTrackers[bucket]; rt != nil {
 			if backoff, wait := rt.ShouldBackoff(); backoff {

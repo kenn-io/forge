@@ -1044,7 +1044,7 @@ func (g *GraphQLFetcher) FetchRepoIssues(
 	result, err := g.fetchRepoIssuesWithPageSize(
 		ctx, owner, name, topLevelPageSize,
 	)
-	if err != nil {
+	if err != nil && !errors.Is(err, errGraphQLBackgroundReserve) {
 		slog.Warn("GraphQL issue query failed, retrying with smaller page",
 			"owner", owner, "name", name,
 			"err", err, "retryPageSize", retryPageSize,
@@ -1068,6 +1068,13 @@ func (g *GraphQLFetcher) fetchRepoIssuesWithPageSize(
 	gqlIssues, err := fetchAllPagesWithProgress(ctx, func(
 		ctx context.Context, cursor *string,
 	) ([]gqlIssue, pageInfo, error) {
+		// Issue pagination spends the same GraphQL pool as pull requests, so
+		// it needs the same between-page reserve check.
+		if cursor != nil {
+			if err := g.backgroundReserveGuard(ctx); err != nil {
+				return nil, pageInfo{}, err
+			}
+		}
 		var q gqlIssueQuery
 		vars := map[string]any{
 			"owner":    githubv4.String(owner),

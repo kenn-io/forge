@@ -863,6 +863,63 @@ func TestGraphQLFetcherStopsBackgroundPaginationAtGraphQLReserve(t *testing.T) {
 			"reserve must not trigger the smaller-page retry")
 }
 
+// Issue pagination spends the same GraphQL pool as pull-request pagination, so
+// it must stop at the reserve too.
+func TestGraphQLFetcherStopsBackgroundIssuePaginationAtGraphQLReserve(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	now := time.Date(2026, 5, 20, 12, 0, 0, 0, time.UTC).Format(time.RFC3339)
+	identity := IdentityKey{Host: "github.com", Principal: "user:7"}
+	registry := NewQuotaRegistry()
+	reset := time.Now().UTC().Add(time.Hour)
+	registry.UpdateSnapshot(identity, QuotaResourceGraphQL, Rate{
+		Limit: 5000, Remaining: RateReserveBuffer + 1, Reset: reset,
+	})
+
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(
+		w http.ResponseWriter, _ *http.Request,
+	) {
+		call := int(calls.Add(1))
+		registry.UpdateSnapshot(identity, QuotaResourceGraphQL, Rate{
+			Limit: 5000, Remaining: RateReserveBuffer, Reset: reset,
+		})
+		w.Header().Set("Content-Type", "application/json")
+		// Bounded so a regression fails the call count instead of hanging.
+		resp := map[string]any{
+			"data": map[string]any{
+				"repository": map[string]any{
+					"issues": map[string]any{
+						"totalCount": 30,
+						"nodes":      testGQLIssueNodes(((call-1)*10)+1, 10, now),
+						"pageInfo": map[string]any{
+							"hasNextPage": call < 3,
+							"endCursor":   fmt.Sprintf("cursor-%d", call),
+						},
+					},
+				},
+			},
+		}
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}))
+	defer srv.Close()
+
+	fetcher := NewGraphQLFetcherWithClient(
+		githubv4.NewEnterpriseClient(srv.URL, srv.Client()), nil,
+	)
+	fetcher.quotaRegistry = registry
+	fetcher.readIdentity = identity
+
+	_, err := fetcher.FetchRepoIssues(WithSyncBudget(t.Context()), "acme", "widgets")
+
+	require.ErrorIs(err, errGraphQLBackgroundReserve)
+	assert.Equal(int32(1), calls.Load(),
+		"issue pagination must stop at the reserve without a smaller-page retry")
+}
+
 // Foreground syncs are explicit user work, so the reserve exists to protect
 // them rather than to stop them.
 func TestGraphQLFetcherPaginatesForegroundFetchThroughTheReserve(t *testing.T) {

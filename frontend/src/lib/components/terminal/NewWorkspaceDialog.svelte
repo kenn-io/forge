@@ -167,7 +167,7 @@
   }
 </script>
 
-<Modal {open} title="New workspace" width={520} frameId="new-workspace" {onClose}>
+<Modal {open} title="New workspace" width={440} frameId="new-workspace" {onClose}>
   <form
     class="new-workspace-form"
     onsubmit={(event) => {
@@ -175,7 +175,7 @@
       void submit();
     }}
   >
-    <div class="field">
+    <div class="field repo-field">
       <span class="field-label">Repository</span>
       <Typeahead
         options={repoRows}
@@ -245,6 +245,13 @@
     display: flex;
     flex-direction: column;
     gap: 4px;
+  }
+
+  /* The picker defaults to a 300px cap, which reads as a misaligned control
+     next to the full-width branch input. */
+  .repo-field {
+    --typeahead-min-width: 0;
+    --typeahead-max-width: 100%;
   }
 
   .field-label {

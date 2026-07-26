@@ -20,7 +20,7 @@ const IMAGE_REF_RE = /mcr\.microsoft\.com\/playwright[:@]/;
 const BUN_IMAGE_REF_RE = /^ARG BUN_IMAGE=oven\/bun:(\d+\.\d+\.\d+)@sha256:[a-f0-9]{64}$/;
 const VITE_PLUS_VERSION_RE = /^ARG VITE_PLUS_VERSION=(\d+\.\d+\.\d+)$/;
 const EXACT_VERSION_RE = /^\d+\.\d+\.\d+$/;
-const SETUP_VP_USE_RE = /^\s*(?:-\s*)?uses:\s*voidzero-dev\/setup-vp@[^\s#]+(?:\s+#.*)?$/;
+const USES_RE = /^\s*(?:-\s*)?uses:\s*(?:"([^"]+)"|'([^']+)'|([^\s#]+))(?:\s+#.*)?$/;
 // The version lives either in the tag (:v1.60.0-noble) or, for a digest pin, in
 // the trailing "# v1.60.0-noble" comment. Either way it is the v<semver> token;
 // a 64-hex sha256 digest carries no such token, so it cannot match by accident.
@@ -55,6 +55,12 @@ function indentation(line) {
   return line.length - line.trimStart().length;
 }
 
+function isSetupVpUse(line) {
+  const match = line.match(USES_RE);
+  const action = match?.[1] ?? match?.[2] ?? match?.[3];
+  return action?.startsWith("voidzero-dev/setup-vp@");
+}
+
 function setupVpVersion(lines, actionIndex) {
   const actionIndent = indentation(lines[actionIndex]);
   let stepIndent = actionIndent;
@@ -67,6 +73,7 @@ function setupVpVersion(lines, actionIndex) {
   }
 
   let withIndent = null;
+  let withEntryIndent = null;
   for (let index = actionIndex + 1; index < lines.length; index += 1) {
     const line = lines[index];
     const lineIndent = indentation(line);
@@ -77,6 +84,10 @@ function setupVpVersion(lines, actionIndex) {
       continue;
     }
     if (line.trim() !== "" && lineIndent <= withIndent) break;
+    if (line.trimStart().startsWith("#")) continue;
+
+    if (withEntryIndent === null) withEntryIndent = lineIndent;
+    if (lineIndent !== withEntryIndent) continue;
 
     const versionMatch = line.match(/^\s*version:\s*(.*?)\s*(?:#.*)?$/);
     if (versionMatch && lineIndent > withIndent) {
@@ -90,7 +101,7 @@ function setupVpVersion(lines, actionIndex) {
 
 function checkSetupVpVersions(lines, expected, findings) {
   lines.forEach((line, index) => {
-    if (!SETUP_VP_USE_RE.test(line)) return;
+    if (!isSetupVpUse(line)) return;
 
     const version = setupVpVersion(lines, index);
     if (!version) {

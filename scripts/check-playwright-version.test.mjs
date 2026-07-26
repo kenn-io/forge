@@ -79,6 +79,27 @@ test("reports a setup-vp version that differs from the root Vite+ pin", async (t
   ]);
 });
 
+test("reports a version mismatch for a quoted setup-vp action", async (t) => {
+  const root = await writeFixture(
+    t,
+    "jobs:\n" +
+      "  unit:\n" +
+      "    steps:\n" +
+      "      - name: Setup Vite+\n" +
+      '        uses: "voidzero-dev/setup-vp@abcdef"\n' +
+      "        with:\n" +
+      '          version: "0.2.4"\n',
+  );
+
+  assert.deepEqual(await checkPlaywrightVersion({ root }), [
+    {
+      file: ".github/workflows/ci.yml",
+      line: 7,
+      message: "setup-vp version is 0.2.4 but package.json pins vite-plus 0.2.3.",
+    },
+  ]);
+});
+
 test("reports a setup-vp step without a version input", async (t) => {
   const root = await writeFixture(
     t,
@@ -89,6 +110,28 @@ test("reports a setup-vp step without a version input", async (t) => {
       "        uses: voidzero-dev/setup-vp@abcdef\n" +
       "        with:\n" +
       "          node-version-file: package.json\n",
+  );
+
+  assert.deepEqual(await checkPlaywrightVersion({ root }), [
+    {
+      file: ".github/workflows/ci.yml",
+      line: 5,
+      message: "setup-vp must set with.version to the exact package.json vite-plus pin.",
+    },
+  ]);
+});
+
+test("does not treat a block scalar descendant as a setup-vp version input", async (t) => {
+  const root = await writeFixture(
+    t,
+    "jobs:\n" +
+      "  unit:\n" +
+      "    steps:\n" +
+      "      - name: Setup Vite+\n" +
+      "        uses: voidzero-dev/setup-vp@abcdef\n" +
+      "        with:\n" +
+      "          node-version-file: |\n" +
+      "            version: 0.2.3\n",
   );
 
   assert.deepEqual(await checkPlaywrightVersion({ root }), [

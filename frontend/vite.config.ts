@@ -144,7 +144,9 @@ export function resolveBrowserTestWorkers(env: Record<string, string | undefined
 }
 
 export function resolveUnitTestWorkers(env: Record<string, string | undefined> = process.env): number | undefined {
-  return env.CI ? 14 : undefined;
+  if (!env.CI) return undefined;
+  const configured = Number.parseInt(env.MIDDLEMAN_CI_WORKERS ?? "", 10);
+  return configured > 0 ? configured : 14;
 }
 
 function terminalWebSocketProxy(url: string): ProxyOptions {
@@ -167,9 +169,8 @@ const unitTestProject = {
   extends: true,
   test: {
     name: "unit",
-    // Match the runner's guaranteed cores now that CI has enough memory for
-    // concurrent jsdom workers. Node's global Web Storage must stay disabled
-    // in workers so jsdom owns localStorage.
+    // Match the workflow-selected runner profile. Node's global Web Storage
+    // must stay disabled in workers so jsdom owns localStorage.
     pool: "threads",
     execArgv: ["--no-experimental-webstorage"],
     ...(unitTestMaxWorkers ? { maxWorkers: unitTestMaxWorkers } : {}),

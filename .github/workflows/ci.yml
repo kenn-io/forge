@@ -5,6 +5,10 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+
+env:
+  MIDDLEMAN_CI_WORKERS: ${{ github.repository == 'kenn-io/middleman' && (github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && '14' || '2' }}
+
 permissions:
   checks: write
   contents: read
@@ -198,13 +202,11 @@ jobs:
   test_go:
     name: Go tests
     runs-on: ${{ github.repository == 'kenn-io/middleman' && (github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && 'kenn-linux-x64-public' || 'ubuntu-latest' }}
-    # The runner guarantees 14 cores and can burst to 32. Seven four-thread
-    # package processes can use 28 burst cores while leaving headroom for the
-    # runner and compiler. The 28 GiB job does not need an artificial Go heap
-    # limit; package fan-out remains bounded by GOFLAGS.
+    # Preserve the managed runner's package fan-out while keeping hosted fork
+    # jobs within their smaller CPU allocation.
     env:
-      GOMAXPROCS: "4"
-      GOFLAGS: "-p=7"
+      GOMAXPROCS: ${{ github.repository == 'kenn-io/middleman' && (github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && '4' || '2' }}
+      GOFLAGS: ${{ github.repository == 'kenn-io/middleman' && (github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && '-p=7' || '-p=2' }}
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true'
     steps:

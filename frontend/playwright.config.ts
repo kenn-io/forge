@@ -7,10 +7,9 @@ process.env.PLAYWRIGHT_PORT = String(port);
 const baseURL = `http://${host}:${port}`;
 
 function ciWorkers(): number | undefined {
-  // Mock tests share one Vite dev server. At 28 Chromium workers, concurrent
-  // navigation and reload bursts can starve that server past the 30s test
-  // timeout; the runner's guaranteed 14 cores complete the suite cleanly.
-  return process.env.CI ? 14 : undefined;
+  if (!process.env.CI) return undefined;
+  const configured = Number.parseInt(process.env.MIDDLEMAN_CI_WORKERS ?? "", 10);
+  return configured > 0 ? configured : 14;
 }
 
 const workers = ciWorkers();

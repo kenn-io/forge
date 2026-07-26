@@ -55,7 +55,8 @@ class FrontendUnitCITest(unittest.TestCase):
         warnings = io.StringIO()
         with contextlib.redirect_stdout(output), contextlib.redirect_stderr(warnings):
             status = run_frontend_unit(**options)
-        return status, output.getvalue(), warnings.getvalue()
+        captured_output = "" if output.closed else output.getvalue()
+        return status, captured_output, warnings.getvalue()
 
     def full_destination(self, name: str) -> Path:
         self.diagnostics.mkdir(parents=True)
@@ -96,6 +97,16 @@ class FrontendUnitCITest(unittest.TestCase):
         status, _, _ = self.run_child(
             "print('child output'); import sys; sys.exit(23)",
             output=FailingConsole(),
+        )
+        self.assertEqual(23, status)
+        self.assertIn("child output", (self.diagnostics / "vitest.log").read_text())
+
+    def test_closed_console_preserves_status_and_log(self) -> None:
+        output = io.StringIO()
+        output.close()
+        status, _, _ = self.run_child(
+            "print('child output'); import sys; sys.exit(23)",
+            output=output,
         )
         self.assertEqual(23, status)
         self.assertIn("child output", (self.diagnostics / "vitest.log").read_text())

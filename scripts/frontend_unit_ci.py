@@ -162,7 +162,7 @@ def run_frontend_unit(
                     try:
                         sys.stdout.write(line)
                         sys.stdout.flush()
-                    except (OSError, UnicodeError):
+                    except (OSError, UnicodeError, ValueError):
                         console_available = False
                 if log_file is not None:
                     try:

@@ -16053,6 +16053,66 @@ func TestDetailDrainStopsAtTheReserveItCrossesPartway(t *testing.T) {
 		"the drain must stop at the reserve rather than finish its queue")
 }
 
+// Issue comment refreshes spend the same credential as pull-request refreshes,
+// so an issue-only queue must stop at the reserve too.
+func TestCommentDrainStopsIssueRefreshesAtTheReserve(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	identity := IdentityKey{Host: "github.com", Principal: "user:7"}
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+	repoID, err := d.UpsertRepo(
+		ctx, db.GitHubRepoIdentity("github.com", repo.Owner, repo.Name),
+	)
+	require.NoError(err)
+	now := time.Now().UTC().Truncate(time.Second)
+	_, err = d.UpsertIssue(ctx, &db.Issue{
+		RepoID: repoID, PlatformID: 2001, Number: 11,
+		URL:   "https://github.com/owner/repo/issues/11",
+		Title: "needs comments", Author: "grace", State: "open",
+		CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+	})
+	require.NoError(err)
+
+	var listed atomic.Int32
+	mc := &mockClient{}
+	mc.listIssueCommentsFn = func(
+		_ context.Context, _, _ string, _ int,
+	) ([]*gh.IssueComment, error) {
+		listed.Add(1)
+		return nil, nil
+	}
+	registry := NewQuotaRegistry()
+	registry.UpdateSnapshot(identity, QuotaResourceREST, Rate{
+		Limit: 5000, Remaining: RateReserveBuffer,
+		Reset: time.Now().UTC().Add(time.Hour),
+	})
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil, []RepoRef{repo},
+		time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	router, err := NewHostRouter("github.com", &Route{
+		Key: RouteKey{Host: "github.com", Owner: "owner"}, Client: mc,
+		ReadIdentity: identity, WriteIdentity: identity,
+	})
+	require.NoError(err)
+	syncer.SetGitHubRouters(map[string]*HostRouter{"github.com": router})
+	syncer.SetQuotaRegistry(registry)
+	syncer.queueIssueCommentSync(repo, 11)
+
+	bucket := RateBucketKey("github", "github.com", "user:7")
+	eligible := map[string]bool{bucket: true}
+	syncer.drainPendingCommentSyncs(ctx, eligible)
+
+	assert.Zero(listed.Load(),
+		"an issue-only comment queue must not reach upstream at the reserve")
+	assert.False(eligible[bucket],
+		"the issue loop must revoke the exhausted credential, as the "+
+			"pull-request loop does, so its remaining items stop too")
+}
+
 func TestRunOnceSkipsSyncWhenRESTPoolExhausted(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

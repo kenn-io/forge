@@ -6598,6 +6598,14 @@ func (s *Syncer) queueIssueCommentSync(repo RepoRef, number int) {
 	})
 }
 
+// commentRefreshWorstCaseRequests is the admission cost of one queued comment
+// refresh. A thread is fetched through paginated list calls, so admitting at
+// one request would let a single busy item spend several before the next
+// per-item check runs. This is a soft estimate, not a lease: the transport
+// counts what actually goes out, and the point is that admission not be
+// obviously smaller than the work it admits.
+const commentRefreshWorstCaseRequests = 3
+
 func (s *Syncer) drainPendingCommentSyncs(
 	ctx context.Context,
 	eligibleHosts map[string]bool,
@@ -6620,7 +6628,9 @@ func (s *Syncer) drainPendingCommentSyncs(
 		// Re-read the reserve per item: this loop can be long, so a credential
 		// with headroom when the drain started can reach its reserve partway
 		// through. Revoking the bucket stops the rest of its items too.
-		if s.backgroundQuotaAvailability(item.repo, 1).Exhausted {
+		if s.backgroundQuotaAvailability(
+			item.repo, commentRefreshWorstCaseRequests,
+		).Exhausted {
 			eligibleHosts[bucket] = false
 			continue
 		}
@@ -6675,6 +6685,15 @@ func (s *Syncer) drainPendingCommentSyncs(
 		}
 		bucket, err := s.bucketKeyForRepo(item.repo, false)
 		if err != nil || !eligibleHosts[bucket] {
+			continue
+		}
+		// Issue refreshes spend the same credential as the pull-request loop
+		// above and need the same per-item reserve check: an issue-only queue
+		// would otherwise keep going after the credential reaches its reserve.
+		if s.backgroundQuotaAvailability(
+			item.repo, commentRefreshWorstCaseRequests,
+		).Exhausted {
+			eligibleHosts[bucket] = false
 			continue
 		}
 		client, err := s.clientFor(item.repo)

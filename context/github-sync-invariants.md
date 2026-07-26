@@ -394,6 +394,8 @@ response never overwrites an App installation pool
   headroom with no later worker left to observe it. Each drain also re-reads the
   reserve per item, next to the local ceiling check it already had, because a
   drain long enough to cross the reserve must stop rather than finish its queue.
+  Comment refresh has a pull-request loop and an issue loop; both spend the same
+  credential and both need the check.
 - A reserve gate inside a per-credential loop stops only its own bucket: mark
   that bucket exhausted, retain the error, and keep processing, or one exhausted
   credential silently defers work every other credential could still do

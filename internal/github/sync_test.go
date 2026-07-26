@@ -16113,6 +16113,42 @@ func TestCommentDrainStopsIssueRefreshesAtTheReserve(t *testing.T) {
 			"pull-request loop does, so its remaining items stop too")
 }
 
+// After a restart the quota registry is empty while the write tracker still
+// remembers the notification credential's pool. A three-request acknowledgement
+// must not start on 201 remaining just because the registry is silent.
+func TestNotificationBudgetUsesPersistedWriteTrackerAfterRestart(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	identity := IdentityKey{Host: "github.com", Principal: "user:7"}
+	bucket := RateBucketKey("github", "github.com", "user:7")
+	tracker := NewRateTracker(d, "github.com", "user:7", "rest")
+	tracker.UpdateFromSnapshot(Rate{
+		Limit: 5000, Remaining: RateReserveBuffer + 2,
+		Reset: time.Now().UTC().Add(time.Hour),
+	})
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+	mc := &mockClient{}
+	router, err := NewHostRouter("github.com", &Route{
+		Key: RouteKey{Host: "github.com", Owner: "owner"}, Client: mc,
+		ReadIdentity: identity, WriteIdentity: identity,
+	})
+	require.NoError(err)
+	syncer := &Syncer{
+		routers:           map[string]*HostRouter{"github.com": router},
+		writeRateTrackers: map[string]*RateTracker{bucket: tracker},
+		quotaRegistry:     NewQuotaRegistry(),
+	}
+
+	err = syncer.ensureNotificationBudget(
+		repo, mc, notificationAckWorstCaseRequests,
+	)
+
+	require.Error(err,
+		"a three-request ack must not start two requests above the reserve")
+	assert.Contains(err.Error(), "user rate reserve exhausted")
+}
+
 func TestRunOnceSkipsSyncWhenRESTPoolExhausted(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

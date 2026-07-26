@@ -364,7 +364,9 @@ response never overwrites an App installation pool
   tracker's SQLite-backed state when a credential is unobserved. Without it a
   restart admits background work against a reserve the persisted state says is
   already spent (`internal/github/sync.go::persistedQuotaAvailability`). An
-  elapsed persisted reset window says nothing and must not gate.
+  elapsed persisted reset window says nothing and must not gate. Notification
+  admission needs the same fallback against the write tracker
+  (`internal/github/notifications_sync.go::persistedWriteQuotaAvailability`).
 - Crossing the reserve inside a worker skips the repository and records the
   bucket; it must never sleep the worker until reset, or one spent credential
   occupies the pool while repositories on healthy credentials queue behind it

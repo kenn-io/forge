@@ -17,5 +17,3 @@ permissions:
 jobs:
   run:
     uses: kenn-io/middleman/.github/workflows/ci.yml@main
-    with:
-      checkout_ref: ${{ github.sha }}

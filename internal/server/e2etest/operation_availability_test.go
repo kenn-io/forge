@@ -21,14 +21,14 @@ func TestPullDetailReportsPausedRateTrackerE2E(t *testing.T) {
 	require := require.New(t)
 
 	database := dbtest.Open(t)
-	tracker := ghclient.NewRateTracker(database, "github.com", "rest")
+	tracker := ghclient.NewRateTracker(database, "github.com", "host", "rest")
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": &mockGH{}},
 		database,
 		nil,
 		[]ghclient.RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
 		time.Minute,
-		map[string]*ghclient.RateTracker{ghclient.RateBucketKey("github", "github.com"): tracker},
+		map[string]*ghclient.RateTracker{ghclient.RateBucketKey("github", "github.com", "host"): tracker},
 		nil,
 	)
 	t.Cleanup(syncer.Stop)

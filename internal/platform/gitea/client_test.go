@@ -54,7 +54,9 @@ func TestClientRecordsRateLimitHeaders(t *testing.T) {
 	}))
 	defer server.Close()
 	database := dbtest.Open(t)
-	tracker := ratelimit.NewPlatformRateTracker(database, "gitea", "gitea.test", "rest")
+	tracker := ratelimit.NewPlatformRateTracker(
+		database, "gitea", "gitea.test", "host", "rest",
+	)
 	client, err := NewClient(
 		"gitea.test",
 		testTokenSource("token"),
@@ -66,7 +68,7 @@ func TestClientRecordsRateLimitHeaders(t *testing.T) {
 
 	_, err = client.GetRepository(t.Context(), platform.RepoRef{Owner: "owner", Name: "repo"})
 	require.NoError(err)
-	row, err := database.GetPlatformRateLimit("gitea", "gitea.test", "rest")
+	row, err := database.GetPlatformRateLimit("gitea", "gitea.test", "host", "rest")
 	require.NoError(err)
 	require.NotNil(row)
 	assert.Equal(1, row.RequestsHour)

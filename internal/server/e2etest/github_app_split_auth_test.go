@@ -203,7 +203,9 @@ repository_selection = "all"
 			}
 			require.NoError(err)
 		}
-		if plan.Descriptor.Key == (tokenauth.Key{Platform: "github", Host: "github.com"}) {
+		if plan.Descriptor.Key == (tokenauth.Key{
+			Platform: "github", Host: "github.com", Scope: "owner:kenn-io",
+		}) {
 			source = src
 		}
 	}
@@ -517,7 +519,9 @@ repository_selection = "all"
 			}
 			require.NoError(err)
 		}
-		if plan.Descriptor.Key == (tokenauth.Key{Platform: "github", Host: "github.com"}) {
+		if plan.Descriptor.Key == (tokenauth.Key{
+			Platform: "github", Host: "github.com", Scope: "owner:mariusvniekerk",
+		}) {
 			source = src
 		}
 	}
@@ -684,11 +688,15 @@ repository_selection = "all"
 			}
 			require.NoError(err)
 		}
-		if plan.Descriptor.Key == (tokenauth.Key{Platform: "github", Host: "github.com"}) {
+		if plan.Descriptor.Key == (tokenauth.Key{
+			Platform: "github",
+			Host:     "github.com",
+			Scope:    "owner:kenn-io",
+		}) {
 			source = src
 		}
 	}
-	require.NotNil(source, "the app candidate alone must keep the host's read chain alive")
+	require.NotNil(source, "the app candidate alone must keep the owner's read chain alive")
 
 	client, err := ghclient.NewClient(
 		source, "github.com", nil, nil,
@@ -739,6 +747,13 @@ repository_selection = "all"
 		registry, database, nil, []ghclient.RepoRef{ref}, time.Minute, nil, nil,
 	)
 	t.Cleanup(syncer.Stop)
+	router, err := ghclient.NewHostRouter("github.com", &ghclient.Route{
+		Key:          ghclient.RouteKey{Host: "github.com", Owner: "kenn-io"},
+		Client:       client,
+		ReadIdentity: ghclient.IdentityKey{Host: "github.com", Principal: "installation:11"},
+	})
+	require.NoError(err)
+	syncer.SetGitHubRouters(map[string]*ghclient.HostRouter{"github.com": router})
 	srv := servertest.NewWithConfig(t,
 		database, syncer, nil, nil, cfg, cfgPath,
 		server.ServerOptions{

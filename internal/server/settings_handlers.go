@@ -433,7 +433,7 @@ func (s *Server) getSettings(
 }
 
 func (s *Server) updateSettings(
-	_ context.Context, input *updateSettingsInput,
+	ctx context.Context, input *updateSettingsInput,
 ) (*settingsOutput, error) {
 	if s.cfgPath == "" {
 		return nil, httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
@@ -503,10 +503,13 @@ func (s *Server) updateSettings(
 			s.cfg.Activity.DefaultBranchMaxCommits,
 		)
 	}
+	nativeStacksEnabled := s.cfg.PullRequests.PreferGitHubNativeStacks
+	nativeStacksPrevious := s.swapGitHubNativeStackPreferenceLocked(nativeStacksEnabled)
 	s.refreshRuntimeTargetsLocked()
 	s.applyWorkspaceConfigLocked()
 	s.applyPullConfigLocked()
 	s.cfgMu.Unlock()
+	s.reconcileGitHubNativeStackProjection(nativeStacksPrevious, nativeStacksEnabled)
 
 	return &settingsOutput{Body: s.buildLocalSettingsResponse()}, nil
 }

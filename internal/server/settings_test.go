@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -22,6 +23,7 @@ import (
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/platform"
 	"go.kenn.io/middleman/internal/platform/gitealike"
+	"go.kenn.io/middleman/internal/stacks"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
 	"go.kenn.io/middleman/internal/workspace/localruntime"
 )
@@ -547,6 +549,59 @@ func TestHandleUpdateSettings(t *testing.T) {
 	assert.True(cfg2.Terminal.HideTmuxStatus)
 }
 
+func TestHandleUpdateSettingsDisablesNativeStackProjectionImmediately(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, database, _ := setupTestServerWithConfigContent(t, `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "widget"
+
+[pull_requests]
+prefer_github_native_stacks = true
+`, &mockGH{})
+	ctx := t.Context()
+	seedStackedPR(t, database, "acme", "widget", 10, "feat/base", "main", db.MergeRequestStateOpen, "", "")
+	seedStackedPR(t, database, "acme", "widget", 11, "feat/tip", "feat/base", db.MergeRequestStateOpen, "", "")
+	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	require.NotNil(repo)
+	now := time.Now().UTC()
+	require.NoError(database.ReplaceGitHubNativeStack(ctx, db.GitHubNativeStack{
+		RepoID: repo.ID, GitHubID: 9001, Number: 42, Size: 2,
+		BaseRef: "main", IsOpen: true, GitHubCreatedAt: now,
+		ContentFingerprint: "native", LastObservedAt: now,
+		Members: []db.GitHubNativeStackMember{
+			{Position: 1, PullRequestNumber: 11, State: "open", HeadRef: "feat/tip", HeadSHA: "sha11"},
+			{Position: 2, PullRequestNumber: 10, State: "open", HeadRef: "feat/base", HeadSHA: "sha10"},
+		},
+	}))
+	require.NoError(stacks.RunDetectionWithNativeStacks(ctx, database, repo.ID, []int{42}))
+	client := setupTestClientWithBaseURL(t, srv, "http://127.0.0.1:8091")
+
+	before, err := client.HTTP.GetPullStackWithResponse(ctx, "gh", "acme", "widget", 10)
+	require.NoError(err)
+	require.NotNil(before.JSON200)
+	require.NotNil(before.JSON200.Members)
+	assert.Equal([]int64{11, 10}, stackMemberNumbers(*before.JSON200.Members))
+
+	disabled := config.PullRequests{}
+	rr := doJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
+		PullRequests: &disabled,
+	})
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	after, err := client.HTTP.GetPullStackWithResponse(ctx, "gh", "acme", "widget", 10)
+	require.NoError(err)
+	require.NotNil(after.JSON200)
+	require.NotNil(after.JSON200.Members)
+	assert.Equal([]int64{10, 11}, stackMemberNumbers(*after.JSON200.Members))
+}
+
 func TestHandleUpdateTerminalSettingsPreservesActivity(t *testing.T) {
 	assert := assert.New(t)
 	srv, _, cfgPath := setupTestServerWithConfigContent(t, `
@@ -760,7 +815,7 @@ name = "widget"
 	mock := &mockGH{}
 	trackers := map[string]*ghclient.RateTracker{
 		"github.com": ghclient.NewRateTracker(
-			database, "github.com", "rest",
+			database, "github.com", "host", "rest",
 		),
 	}
 	syncer := ghclient.NewSyncer(
@@ -1665,6 +1720,108 @@ name = "widget-*"
 	assert.NotContains(rr.Body.String(), "other")
 }
 
+func TestHandlePreviewReposRoutesGitHubByOwner(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ownerClient := func(expected, repoName string) *mockGH {
+		return &mockGH{listReposByOwnerFn: func(_ context.Context, owner string) ([]*gh.Repository, error) {
+			if !strings.EqualFold(owner, expected) {
+				return nil, fmt.Errorf("wrong owner route: %s", owner)
+			}
+			return []*gh.Repository{{
+				Name: new(repoName), Owner: &gh.User{Login: new(expected)},
+				Archived: new(false),
+			}}, nil
+		}}
+	}
+	router, err := ghclient.NewHostRouter(
+		"github.com",
+		&ghclient.Route{Key: ghclient.RouteKey{Host: "github.com"}, Client: &mockGH{}},
+		&ghclient.Route{Key: ghclient.RouteKey{Host: "github.com", Owner: "org-a"}, Client: ownerClient("org-a", "repo-a")},
+		&ghclient.Route{Key: ghclient.RouteKey{Host: "github.com", Owner: "org-b"}, Client: ownerClient("org-b", "repo-b")},
+	)
+	require.NoError(err)
+	routed, err := ghclient.NewRoutedClient(router)
+	require.NoError(err)
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	require.NoError(os.WriteFile(cfgPath, []byte(`
+sync_interval = "5m"
+host = "127.0.0.1"
+port = 8091
+`), 0o644))
+	cfg, err := config.Load(cfgPath)
+	require.NoError(err)
+	database := dbtest.Open(t)
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": routed}, database, nil,
+		nil, time.Minute, nil, nil,
+	)
+	syncer.SetGitHubRouters(map[string]*ghclient.HostRouter{"github.com": router})
+	t.Cleanup(syncer.Stop)
+	srv := NewWithConfig(database, syncer, nil, nil, cfg, cfgPath,
+		ServerOptions{HostCheckAllowLoopbackAnyPort: true})
+
+	preview := func(owner string) repoPreviewResponse {
+		rr := doJSON(t, srv, http.MethodPost, "/api/v1/repos/preview", map[string]string{
+			"provider": "github", "host": "github.com",
+			"owner": owner, "pattern": "*",
+		})
+		require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+		var resp repoPreviewResponse
+		require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+		return resp
+	}
+
+	orgA := preview("org-a")
+	require.Len(orgA.Repos, 1)
+	assert.Equal("repo-a", orgA.Repos[0].Name)
+	orgB := preview("org-b")
+	require.Len(orgB.Repos, 1)
+	assert.Equal("repo-b", orgB.Repos[0].Name)
+}
+
+func TestHandlePreviewReposReportsMissingOwnerRoute(t *testing.T) {
+	require := require.New(t)
+	router, err := ghclient.NewHostRouter(
+		"github.com",
+		&ghclient.Route{
+			Key:    ghclient.RouteKey{Host: "github.com", Owner: "org-a"},
+			Client: &mockGH{},
+		},
+	)
+	require.NoError(err)
+	routed, err := ghclient.NewRoutedClient(router)
+	require.NoError(err)
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	require.NoError(os.WriteFile(cfgPath, []byte(`
+sync_interval = "5m"
+host = "127.0.0.1"
+port = 8091
+`), 0o644))
+	cfg, err := config.Load(cfgPath)
+	require.NoError(err)
+	database := dbtest.Open(t)
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": routed}, database, nil,
+		nil, time.Minute, nil, nil,
+	)
+	syncer.SetGitHubRouters(map[string]*ghclient.HostRouter{"github.com": router})
+	t.Cleanup(syncer.Stop)
+	srv := NewWithConfig(database, syncer, nil, nil, cfg, cfgPath,
+		ServerOptions{HostCheckAllowLoopbackAnyPort: true})
+
+	rr := doJSON(t, srv, http.MethodPost, "/api/v1/repos/preview", map[string]string{
+		"provider": "github", "host": "github.com",
+		"owner": "org-b", "pattern": "*",
+	})
+	require.Equal(http.StatusBadGateway, rr.Code, rr.Body.String())
+	assert.Contains(t, rr.Body.String(), "org-b")
+	assert.Contains(t, rr.Body.String(), "github.com")
+	assert.NotContains(t, rr.Body.String(), "org-a")
+}
+
 func TestHandlePreviewReposFallsBackToListWhenExactLookupFails(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -2489,4 +2646,248 @@ func TestFleetSSHPeerSettingsRoutes(t *testing.T) {
 	defer bad.Body.Close()
 	require.Equal(http.StatusBadRequest, bad.StatusCode)
 	require.Len(get().SSHPeers, 1, "failed update must not persist")
+}
+
+// TestHandleUpdateSettingsRestoresProjectionAfterRequestCancellation covers the
+// window after the setting is persisted and the syncer has already switched: the
+// committed state must be reconciled even if the client is gone, or native
+// ordering would keep driving the UI and the merge safeguard until some later
+// sync happened to re-detect.
+func TestHandleUpdateSettingsRestoresProjectionAfterRequestCancellation(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, database, _ := setupTestServerWithConfigContent(t, `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "widget"
+
+[pull_requests]
+prefer_github_native_stacks = true
+`, &mockGH{})
+	ctx := t.Context()
+	seedStackedPR(t, database, "acme", "widget", 10, "feat/base", "main", db.MergeRequestStateOpen, "", "")
+	seedStackedPR(t, database, "acme", "widget", 11, "feat/tip", "feat/base", db.MergeRequestStateOpen, "", "")
+	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	require.NotNil(repo)
+	now := time.Now().UTC()
+	require.NoError(database.ReplaceGitHubNativeStack(ctx, db.GitHubNativeStack{
+		RepoID: repo.ID, GitHubID: 9001, Number: 42, Size: 2,
+		BaseRef: "main", IsOpen: true, GitHubCreatedAt: now,
+		ContentFingerprint: "native", LastObservedAt: now,
+		Members: []db.GitHubNativeStackMember{
+			{Position: 1, PullRequestNumber: 11, State: "open", HeadRef: "feat/tip", HeadSHA: "sha11"},
+			{Position: 2, PullRequestNumber: 10, State: "open", HeadRef: "feat/base", HeadSHA: "sha10"},
+		},
+	}))
+	require.NoError(stacks.RunDetectionWithNativeStacks(ctx, database, repo.ID, []int{42}))
+	client := setupTestClientWithBaseURL(t, srv, "http://127.0.0.1:8091")
+	before, err := client.HTTP.GetPullStackWithResponse(ctx, "gh", "acme", "widget", 10)
+	require.NoError(err)
+	require.NotNil(before.JSON200)
+	require.NotNil(before.JSON200.Members)
+	require.Equal([]int64{11, 10}, stackMemberNumbers(*before.JSON200.Members))
+
+	var buf bytes.Buffer
+	require.NoError(json.NewEncoder(&buf).Encode(updateSettingsRequest{
+		PullRequests: &config.PullRequests{},
+	}))
+	reqCtx, cancel := context.WithCancel(ctx)
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/settings", &buf).WithContext(reqCtx)
+	req.Host = "127.0.0.1:8091"
+	req.Header.Set("Content-Type", "application/json")
+	// The client disconnects while the request is being served.
+	cancel()
+	srv.ServeHTTP(httptest.NewRecorder(), req)
+
+	after, err := client.HTTP.GetPullStackWithResponse(ctx, "gh", "acme", "widget", 10)
+	require.NoError(err)
+	require.NotNil(after.JSON200)
+	require.NotNil(after.JSON200.Members)
+	assert.Equal([]int64{10, 11}, stackMemberNumbers(*after.JSON200.Members),
+		"committed-state reconciliation must not depend on the request context")
+}
+
+// TestReconcileNativeStackProjectionSkipsSupersededDisable covers the window
+// between the swap and the projection lock. A disable that lost the race to a
+// later enable must not replay: the enable has already published native
+// ordering, and replaying branch inference over it would leave the projection
+// disagreeing with the preference until another sync.
+func TestReconcileNativeStackProjectionSkipsSupersededDisable(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, database, _ := setupTestServerWithConfigContent(t, `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "widget"
+
+[pull_requests]
+prefer_github_native_stacks = true
+`, &mockGH{})
+	ctx := t.Context()
+	seedStackedPR(t, database, "acme", "widget", 10, "feat/base", "main", db.MergeRequestStateOpen, "", "")
+	seedStackedPR(t, database, "acme", "widget", 11, "feat/tip", "feat/base", db.MergeRequestStateOpen, "", "")
+	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	require.NotNil(repo)
+	now := time.Now().UTC()
+	require.NoError(database.ReplaceGitHubNativeStack(ctx, db.GitHubNativeStack{
+		RepoID: repo.ID, GitHubID: 9001, Number: 42, Size: 2,
+		BaseRef: "main", IsOpen: true, GitHubCreatedAt: now,
+		ContentFingerprint: "native", LastObservedAt: now,
+		Members: []db.GitHubNativeStackMember{
+			{Position: 1, PullRequestNumber: 11, State: "open", HeadRef: "feat/tip", HeadSHA: "sha11"},
+			{Position: 2, PullRequestNumber: 10, State: "open", HeadRef: "feat/base", HeadSHA: "sha10"},
+		},
+	}))
+	require.NoError(stacks.RunDetectionWithNativeStacks(ctx, database, repo.ID, []int{42}))
+	client := setupTestClientWithBaseURL(t, srv, "http://127.0.0.1:8091")
+	require.True(srv.syncer.PrefersGitHubNativeStacks())
+
+	// A disable observed the enabled value, but by the time it reaches
+	// reconciliation a later enable has already won the swap.
+	srv.reconcileGitHubNativeStackProjection(true, false)
+
+	after, err := client.HTTP.GetPullStackWithResponse(ctx, "gh", "acme", "widget", 10)
+	require.NoError(err)
+	require.NotNil(after.JSON200)
+	require.NotNil(after.JSON200.Members)
+	assert.Equal([]int64{11, 10}, stackMemberNumbers(*after.JSON200.Members),
+		"a superseded disable must not overwrite the projection the current preference produced")
+}
+
+// TestHandleUpdateSettingsRestoresProjectionForUntrackedRepo covers a
+// repository dropped from config before the preview is disabled. Nothing will
+// sync it again, so if reconciliation only walked the tracked set its stored
+// pull requests would keep serving native ordering forever.
+func TestHandleUpdateSettingsRestoresProjectionForUntrackedRepo(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, database, _ := setupTestServerWithConfigContent(t, `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "widget"
+
+[pull_requests]
+prefer_github_native_stacks = true
+`, &mockGH{})
+	ctx := t.Context()
+	// "removed" is absent from config, so the syncer never tracked it.
+	seedStackedPR(t, database, "acme", "removed", 10, "feat/base", "main", db.MergeRequestStateOpen, "", "")
+	seedStackedPR(t, database, "acme", "removed", 11, "feat/tip", "feat/base", db.MergeRequestStateOpen, "", "")
+	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "removed"))
+	require.NoError(err)
+	require.NotNil(repo)
+	now := time.Now().UTC()
+	require.NoError(database.ReplaceGitHubNativeStack(ctx, db.GitHubNativeStack{
+		RepoID: repo.ID, GitHubID: 9001, Number: 42, Size: 2,
+		BaseRef: "main", IsOpen: true, GitHubCreatedAt: now,
+		ContentFingerprint: "native", LastObservedAt: now,
+		Members: []db.GitHubNativeStackMember{
+			{Position: 1, PullRequestNumber: 11, State: "open", HeadRef: "feat/tip", HeadSHA: "sha11"},
+			{Position: 2, PullRequestNumber: 10, State: "open", HeadRef: "feat/base", HeadSHA: "sha10"},
+		},
+	}))
+	require.NoError(stacks.RunDetectionWithNativeStacks(ctx, database, repo.ID, []int{42}))
+	// The cache row is gone but the projection it produced remains, so the
+	// native ordering cannot be found by looking for native rows.
+	require.NoError(database.DeleteGitHubNativeStacks(ctx, repo.ID, []int{42}))
+	client := setupTestClientWithBaseURL(t, srv, "http://127.0.0.1:8091")
+	before, err := client.HTTP.GetPullStackWithResponse(ctx, "gh", "acme", "removed", 10)
+	require.NoError(err)
+	require.NotNil(before.JSON200)
+	require.NotNil(before.JSON200.Members)
+	require.Equal([]int64{11, 10}, stackMemberNumbers(*before.JSON200.Members))
+
+	disabled := config.PullRequests{}
+	rr := doJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
+		PullRequests: &disabled,
+	})
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+	after, err := client.HTTP.GetPullStackWithResponse(ctx, "gh", "acme", "removed", 10)
+	require.NoError(err)
+	require.NotNil(after.JSON200)
+	require.NotNil(after.JSON200.Members)
+	assert.Equal([]int64{10, 11}, stackMemberNumbers(*after.JSON200.Members),
+		"a repository no longer tracked must still lose native ordering when the preview is disabled")
+}
+
+// TestNewServerRestoresProjectionWhenNativeStacksBootDisabled covers a daemon
+// that starts with the preview already off. The setting can be edited while the
+// daemon is stopped, or a previous run can save it and exit before reconciling,
+// so binding the syncer preference is not enough: stored native ordering would
+// drive the merge safeguard until each repository next synced, and forever for
+// repositories no longer tracked.
+func TestNewServerRestoresProjectionWhenNativeStacksBootDisabled(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	dir := t.TempDir()
+	database := dbtest.Open(t)
+	seedStackedPR(t, database, "acme", "widget", 10, "feat/base", "main", db.MergeRequestStateOpen, "", "")
+	seedStackedPR(t, database, "acme", "widget", 11, "feat/tip", "feat/base", db.MergeRequestStateOpen, "", "")
+	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	require.NotNil(repo)
+	now := time.Now().UTC()
+	require.NoError(database.ReplaceGitHubNativeStack(ctx, db.GitHubNativeStack{
+		RepoID: repo.ID, GitHubID: 9001, Number: 42, Size: 2,
+		BaseRef: "main", IsOpen: true, GitHubCreatedAt: now,
+		ContentFingerprint: "native", LastObservedAt: now,
+		Members: []db.GitHubNativeStackMember{
+			{Position: 1, PullRequestNumber: 11, State: "open", HeadRef: "feat/tip", HeadSHA: "sha11"},
+			{Position: 2, PullRequestNumber: 10, State: "open", HeadRef: "feat/base", HeadSHA: "sha10"},
+		},
+	}))
+	// The last run left native ordering behind.
+	require.NoError(stacks.RunDetectionWithNativeStacks(ctx, database, repo.ID, []int{42}))
+
+	// This run boots with the preview off.
+	cfgPath := filepath.Join(dir, "config.toml")
+	require.NoError(os.WriteFile(cfgPath, []byte(`
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "widget"
+
+[pull_requests]
+prefer_github_native_stacks = false
+`), 0o644))
+	cfg, err := config.Load(cfgPath)
+	require.NoError(err)
+	clients := map[string]ghclient.Client{"github.com": &mockGH{}}
+	syncer := ghclient.NewSyncer(clients, database, nil, nil, time.Minute, nil, nil)
+	t.Cleanup(syncer.Stop)
+	srv := NewWithConfig(database, syncer, nil, nil, cfg, cfgPath,
+		ServerOptions{HostCheckAllowLoopbackAnyPort: true})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	client := setupTestClientWithBaseURL(t, srv, "http://127.0.0.1:8091")
+
+	// No sync has run, and the repository is not even tracked.
+	resp, err := client.HTTP.GetPullStackWithResponse(ctx, "gh", "acme", "widget", 10)
+	require.NoError(err)
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.Members)
+	assert.Equal([]int64{10, 11}, stackMemberNumbers(*resp.JSON200.Members),
+		"a server booting with the preview disabled must not serve native ordering")
 }

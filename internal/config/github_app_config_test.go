@@ -253,7 +253,7 @@ selected_repos = ["kenn-io/middleman"]
 `,
 		},
 		{
-			name: "same-owner repo outside the selected set fails",
+			name: "same-owner repo outside the selected set uses the PAT route",
 			toml: `
 [[repos]]
 owner = "kenn-io"
@@ -271,10 +271,9 @@ installation_account = "kenn-io"
 repository_selection = "selected"
 selected_repos = ["kenn-io/middleman"]
 `,
-			wantErr: "kenn-io/added-later is not in the \"Only select repositories\" installation",
 		},
 		{
-			name: "glob repo with a selected install fails",
+			name: "glob repo with a selected install uses the PAT route",
 			toml: `
 [[repos]]
 owner = "kenn-io"
@@ -288,7 +287,6 @@ installation_account = "kenn-io"
 repository_selection = "selected"
 selected_repos = ["kenn-io/widget-a"]
 `,
-			wantErr: "glob pattern",
 		},
 		{
 			name: "all-repositories install skips the selected check",
@@ -331,7 +329,7 @@ repository_selection = "some"
 			wantErr: "repository_selection must be",
 		},
 		{
-			name: "whitespace and case in repository_selection cannot bypass the selected check",
+			name: "whitespace and case in repository_selection still selects the PAT route",
 			toml: `
 [[repos]]
 owner = "kenn-io"
@@ -345,7 +343,6 @@ installation_account = "kenn-io"
 repository_selection = " Selected "
 selected_repos = ["kenn-io/middleman"]
 `,
-			wantErr: "kenn-io/added-later is not in the \"Only select repositories\" installation",
 		},
 	}
 	for _, tt := range tests {
@@ -361,29 +358,9 @@ selected_repos = ["kenn-io/middleman"]
 	}
 }
 
-func TestLoadForGitHubAppRepairRelaxesOnlyCoverage(t *testing.T) {
-	staleSnapshot := `
-[[repos]]
-owner = "kenn-io"
-name = "added-later"
-
-[[github_apps]]
-app_id = 1
-private_key_path = "a.pem"
-installation_id = 9
-installation_account = "kenn-io"
-repository_selection = "selected"
-selected_repos = ["kenn-io/middleman"]
-`
+func TestLoadForGitHubAppRepairKeepsStructuralValidation(t *testing.T) {
 	require := require.New(t)
-	_, err := Load(writeConfig(t, staleSnapshot))
-	require.Error(err, "the strict loader must keep rejecting stale snapshots")
-	cfg, err := LoadForGitHubAppRepair(writeConfig(t, staleSnapshot))
-	require.NoError(err, "the repair loader exists exactly for this failure")
-	require.Len(cfg.GitHubApps, 1)
-
-	// Every other validation rule still applies.
-	_, err = LoadForGitHubAppRepair(writeConfig(t, `
+	_, err := LoadForGitHubAppRepair(writeConfig(t, `
 [[github_apps]]
 app_id = 0
 private_key_path = "a.pem"
@@ -408,12 +385,8 @@ installation_account = "kenn-io"
 	require.ErrorContains(err, "repository_selection is required")
 }
 
-func TestGitHubAppMixedOverrideAndCoveredReposRejected(t *testing.T) {
-	// middleman resolves one credential chain per (platform, host), so
-	// a repo-level override on one repo cannot coexist with an app
-	// chain on another repo of the same host. The coverage error must
-	// not suggest that configuration; this pins that it is rejected.
-	_, err := Load(writeConfig(t, `
+func TestGitHubAppMixedOverrideAndCoveredReposUseSeparateRoutes(t *testing.T) {
+	cfg, err := Load(writeConfig(t, `
 [[repos]]
 owner = "kenn-io"
 name = "middleman"
@@ -432,8 +405,68 @@ installation_id = 99
 installation_account = "kenn-io"
 repository_selection = "all"
 `))
-	require.Error(t, err)
-	assert.ErrorContains(t, err, "conflicting token source")
+	require.NoError(t, err)
+
+	covered := cfg.ResolveGitHubRepoTokenSource(cfg.Repos[0])
+	overridden := cfg.ResolveGitHubRepoTokenSource(cfg.Repos[1])
+	assert := assert.New(t)
+	assert.True(covered.HasActiveGitHubAppForOwner("kenn-io"))
+	assert.False(overridden.HasActiveGitHubApp())
+	assert.Equal("repo:other-org/tool", overridden.Key.Scope)
+}
+
+func TestSelectedGitHubAppBuildsExactCoveredRouteAndOwnerPATFallback(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	cfg, err := Load(writeConfig(t, `
+github_token_env = "DEFAULT_PAT"
+
+[[github_owner_tokens]]
+owner = "acme"
+token_env = "ACME_PAT"
+
+[[github_apps]]
+app_id = 42
+private_key_path = "app.pem"
+installation_id = 99
+installation_account = "acme"
+repository_selection = "selected"
+selected_repos = ["acme/covered"]
+
+[[repos]]
+owner = "acme"
+name = "covered"
+
+[[repos]]
+owner = "acme"
+name = "uncovered"
+`))
+	require.NoError(err)
+
+	covered := cfg.ResolveGitHubRepoTokenSource(cfg.Repos[0])
+	uncovered := cfg.ResolveGitHubRepoTokenSource(cfg.Repos[1])
+	assert.Equal("repo:acme/covered", covered.Key.Scope)
+	assert.True(covered.HasActiveGitHubAppForOwner("acme"))
+	assert.Equal("owner:acme", uncovered.Key.Scope)
+	assert.False(uncovered.HasActiveGitHubApp())
+	assert.Equal([]string{
+		"env:ACME_PAT", "env:DEFAULT_PAT", "github_cli:github.com",
+	}, candidateSafeStrings(uncovered))
+
+	plans := cfg.ProviderTokenSources()
+	var coveredPlan, ownerPlan *ProviderTokenSource
+	for i := range plans {
+		switch plans[i].Descriptor.Key.Scope {
+		case "repo:acme/covered":
+			coveredPlan = &plans[i]
+		case "owner:acme":
+			ownerPlan = &plans[i]
+		}
+	}
+	require.NotNil(coveredPlan)
+	require.NotNil(ownerPlan)
+	assert.True(coveredPlan.Descriptor.HasActiveGitHubAppForOwner("acme"))
+	assert.False(ownerPlan.Descriptor.HasActiveGitHubApp())
 }
 
 func TestGitHubAppHostDefaultsToPublicHost(t *testing.T) {
@@ -447,7 +480,7 @@ private_key_path = "key.pem"
 	assert.Equal(t, "github.com", cfg.GitHubApps[0].Host)
 }
 
-func TestTokenSourceChainPrefersGitHubAppOverPATs(t *testing.T) {
+func TestRepoTokenSourceChainPrefersGitHubAppOverPATs(t *testing.T) {
 	cfg, err := Load(writeConfig(t, `
 github_token_env = "MY_PAT"
 
@@ -465,7 +498,7 @@ repository_selection = "all"
 `))
 	require.NoError(t, err)
 
-	desc := cfg.TokenSourceForPlatformHost("github", "github.com", "", "")
+	desc := cfg.ResolveGitHubRepoTokenSource(cfg.Repos[0])
 	kinds := make([]tokenauth.SourceKind, 0, len(desc.Candidates))
 	for _, cand := range desc.Candidates {
 		kinds = append(kinds, cand.Kind)
@@ -487,7 +520,7 @@ repository_selection = "all"
 	assert.Equal("MY_PAT", desc.Candidates[1].EnvName)
 }
 
-func TestTokenSourceChainIncludesGitHubAppsForEachInstalledAccount(t *testing.T) {
+func TestFallbackTokenSourceExcludesAccountScopedGitHubApps(t *testing.T) {
 	cfg, err := Load(writeConfig(t, `
 github_token_env = "MY_PAT"
 
@@ -519,13 +552,14 @@ repository_selection = "all"
 	require.NoError(t, err)
 
 	desc := cfg.TokenSourceForPlatformHost("github", "github.com", "", "")
-	var appAccounts []string
-	for _, cand := range desc.Candidates {
-		if cand.Kind == tokenauth.SourceKindGitHubApp {
-			appAccounts = append(appAccounts, cand.InstallationAccount)
-		}
+	kinds := make([]tokenauth.SourceKind, 0, len(desc.Candidates))
+	for _, candidate := range desc.Candidates {
+		kinds = append(kinds, candidate.Kind)
 	}
-	assert.Equal(t, []string{"kenn-io", "other-org"}, appAccounts)
+	assert.Equal(t, []tokenauth.SourceKind{
+		tokenauth.SourceKindEnv,
+		tokenauth.SourceKindGitHubCLI,
+	}, kinds)
 }
 
 func TestTokenSourceChainRepoOverrideExcludesGitHubApp(t *testing.T) {
@@ -547,11 +581,9 @@ repository_selection = "all"
 `))
 	require.NoError(t, err)
 
-	// Installation coverage validation exempts repos with their own
-	// token_env/token_file. That exemption is only sound if the
-	// override is terminal: were the app candidate still appended, an
-	// unset override env var would fall through to the installation
-	// token and reopen the cross-account 404 the validation prevents.
+	// A repo token_env/token_file override is terminal: an unset override
+	// must not fall through to the installation token and silently change
+	// which credential route owns the repository.
 	desc := cfg.TokenSourceForPlatformHost("github", "github.com", "OTHER_ORG_PAT", "")
 	for _, cand := range desc.Candidates {
 		assert.NotEqual(t, tokenauth.SourceKindGitHubApp, cand.Kind,

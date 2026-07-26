@@ -997,12 +997,16 @@ type NotificationSummary struct {
 	ByRepo      map[string]int
 }
 
+// NotificationSyncWatermark tracks notification sync progress per repository
+// identity so one unavailable credential route cannot block watermark
+// advancement for healthy repositories sharing the host.
 type NotificationSyncWatermark struct {
 	Platform             string
+	PlatformHost         string
+	RepoOwner            string
+	RepoName             string
 	LastSuccessfulSyncAt time.Time
 	LastFullSyncAt       *time.Time
-	SyncCursor           string
-	TrackedReposKey      string
 }
 
 // WorktreeLink associates a merge request with an external worktree.
@@ -1020,6 +1024,7 @@ type RateLimit struct {
 	ID            int64
 	Platform      string
 	PlatformHost  string
+	RatePrincipal string
 	APIType       string
 	RequestsHour  int
 	HourStart     time.Time
@@ -1106,6 +1111,34 @@ type StackMemberWithPR struct {
 	IsDraft        bool
 	BaseBranch     string
 	MergeableState string
+}
+
+// GitHubNativeStack is a cached GitHub stack resource. It remains separate
+// from Stack, which is the provider-neutral projection served to the UI.
+type GitHubNativeStack struct {
+	ID                 int64
+	RepoID             int64
+	GitHubID           int64
+	Number             int
+	Size               int
+	BaseRef            string
+	IsOpen             bool
+	GitHubCreatedAt    time.Time
+	ContentFingerprint string
+	LastObservedAt     time.Time
+	Members            []GitHubNativeStackMember
+}
+
+// GitHubNativeStackMember is one bottom-to-top member of a cached native stack.
+type GitHubNativeStackMember struct {
+	StackID           int64
+	Position          int
+	PullRequestNumber int
+	State             string
+	Draft             bool
+	MergedAt          *time.Time
+	HeadRef           string
+	HeadSHA           string
 }
 
 const (

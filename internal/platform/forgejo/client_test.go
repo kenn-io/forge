@@ -52,7 +52,9 @@ func TestClientRecordsRateLimitHeaders(t *testing.T) {
 	}))
 	defer server.Close()
 	database := dbtest.Open(t)
-	tracker := ratelimit.NewPlatformRateTracker(database, "forgejo", "forgejo.test", "rest")
+	tracker := ratelimit.NewPlatformRateTracker(
+		database, "forgejo", "forgejo.test", "host", "rest",
+	)
 	client, err := NewClient(
 		"forgejo.test",
 		testTokenSource("token"),
@@ -63,7 +65,7 @@ func TestClientRecordsRateLimitHeaders(t *testing.T) {
 
 	_, err = client.GetRepository(t.Context(), platform.RepoRef{Owner: "owner", Name: "repo"})
 	require.NoError(err)
-	row, err := database.GetPlatformRateLimit("forgejo", "forgejo.test", "rest")
+	row, err := database.GetPlatformRateLimit("forgejo", "forgejo.test", "host", "rest")
 	require.NoError(err)
 	require.NotNil(row)
 	assert.Equal(1, row.RequestsHour)

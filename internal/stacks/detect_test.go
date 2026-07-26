@@ -316,6 +316,236 @@ func TestRunDetection(t *testing.T) {
 	assert.Equal(100, members[0].Number)
 }
 
+func TestRunDetectionWithNativeStacksClaimsMembersBeforeInference(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := openTestDB(t)
+	ctx := t.Context()
+	repoID, err := database.UpsertRepo(ctx, realdb.GitHubRepoIdentity("", "org", "repo"))
+	require.NoError(err)
+	require.NoError(database.UpdateRepoProviderMetadata(ctx, repoID, realdb.RepoProviderMetadata{
+		CloneURL: testRepoCloneURL, DefaultBranch: "main",
+	}))
+	now := time.Now().UTC()
+	prs := []struct {
+		number     int
+		head, base string
+	}{
+		{100, "feature/a", "main"},
+		{101, "feature/b", "feature/a"},
+		{102, "feature/c", "feature/b"},
+		{200, "other/a", "main"},
+		{201, "other/b", "other/a"},
+	}
+	for i, pr := range prs {
+		_, err := database.UpsertMergeRequest(ctx, &realdb.MergeRequest{
+			RepoID: repoID, PlatformID: int64(i + 1), Number: pr.number,
+			Title: "PR " + pr.head, Author: "a", State: prOpen,
+			HeadBranch: pr.head, BaseBranch: pr.base,
+			HeadRepoCloneURL: testRepoCloneURL,
+			CreatedAt:        now, UpdatedAt: now, LastActivityAt: now,
+		})
+		require.NoError(err)
+	}
+	require.NoError(database.ReplaceGitHubNativeStack(ctx, realdb.GitHubNativeStack{
+		RepoID: repoID, GitHubID: 9001, Number: 42, Size: 2,
+		BaseRef: "main", IsOpen: true, GitHubCreatedAt: now,
+		ContentFingerprint: "native", LastObservedAt: now,
+		Members: []realdb.GitHubNativeStackMember{
+			{Position: 1, PullRequestNumber: 102, State: "open", HeadRef: "feature/c", HeadSHA: "ccc"},
+			{Position: 2, PullRequestNumber: 101, State: "open", HeadRef: "feature/b", HeadSHA: "bbb"},
+		},
+	}))
+
+	require.NoError(RunDetectionWithNativeStacks(ctx, database, repoID, []int{42}))
+
+	nativeStack, nativeMembers, err := database.GetStackForPRByRepoID(ctx, repoID, 101)
+	require.NoError(err)
+	require.NotNil(nativeStack)
+	assert.Equal(102, nativeStack.BaseNumber)
+	assert.Equal([]int{102, 101}, stackNumbersFromMembers(nativeMembers))
+	_, inferredMembers, err := database.GetStackForPRByRepoID(ctx, repoID, 200)
+	require.NoError(err)
+	assert.Equal([]int{200, 201}, stackNumbersFromMembers(inferredMembers))
+	stack, _, err := database.GetStackForPRByRepoID(ctx, repoID, 100)
+	require.NoError(err)
+	assert.Nil(stack)
+}
+
+func TestRunDetectionWithNativeStacksKeepsStackWithClosedMember(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := openTestDB(t)
+	ctx := t.Context()
+	repoID, err := database.UpsertRepo(ctx, realdb.GitHubRepoIdentity("", "org", "repo"))
+	require.NoError(err)
+	require.NoError(database.UpdateRepoProviderMetadata(ctx, repoID, realdb.RepoProviderMetadata{
+		CloneURL: testRepoCloneURL, DefaultBranch: "main",
+	}))
+	now := time.Now().UTC()
+	prs := []struct {
+		number     int
+		head, base string
+		state      realdb.MergeRequestState
+	}{
+		{100, "feature/a", "main", prOpen},
+		{101, "feature/b", "feature/a", realdb.MergeRequestStateClosed},
+		{102, "feature/c", "feature/b", prOpen},
+	}
+	for i, pr := range prs {
+		_, err := database.UpsertMergeRequest(ctx, &realdb.MergeRequest{
+			RepoID: repoID, PlatformID: int64(i + 1), Number: pr.number,
+			Title: "PR " + pr.head, Author: "a", State: pr.state,
+			HeadBranch: pr.head, BaseBranch: pr.base,
+			HeadRepoCloneURL: testRepoCloneURL,
+			CreatedAt:        now, UpdatedAt: now, LastActivityAt: now,
+		})
+		require.NoError(err)
+	}
+	require.NoError(database.ReplaceGitHubNativeStack(ctx, realdb.GitHubNativeStack{
+		RepoID: repoID, GitHubID: 9001, Number: 42, Size: 3,
+		BaseRef: "main", IsOpen: true, GitHubCreatedAt: now,
+		ContentFingerprint: "native", LastObservedAt: now,
+		Members: []realdb.GitHubNativeStackMember{
+			{Position: 1, PullRequestNumber: 100, State: "open", HeadRef: "feature/a", HeadSHA: "aaa"},
+			{Position: 2, PullRequestNumber: 101, State: "closed", HeadRef: "feature/b", HeadSHA: "bbb"},
+			{Position: 3, PullRequestNumber: 102, State: "open", HeadRef: "feature/c", HeadSHA: "ccc"},
+		},
+	}))
+
+	require.NoError(RunDetectionWithNativeStacks(ctx, database, repoID, []int{42}))
+
+	stack, members, err := database.GetStackForPRByRepoID(ctx, repoID, 102)
+	require.NoError(err)
+	require.NotNil(stack)
+	assert.Equal(100, stack.BaseNumber)
+	assert.Equal([]int{100, 101, 102}, stackNumbersFromMembers(members))
+}
+
+func TestRunDetectionWithNativeStacksFallsBackWhenStacksOverlap(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := openTestDB(t)
+	ctx := t.Context()
+	repoID, err := database.UpsertRepo(ctx, realdb.GitHubRepoIdentity("", "org", "repo"))
+	require.NoError(err)
+	require.NoError(database.UpdateRepoProviderMetadata(ctx, repoID, realdb.RepoProviderMetadata{
+		CloneURL: testRepoCloneURL, DefaultBranch: "main",
+	}))
+	now := time.Now().UTC()
+	prs := []struct {
+		number     int
+		head, base string
+		state      realdb.MergeRequestState
+	}{
+		{100, "feature/a", "main", prOpen},
+		{101, "feature/b", "feature/a", prMerged},
+		{102, "feature/c", "feature/b", prOpen},
+	}
+	for i, pr := range prs {
+		_, err := database.UpsertMergeRequest(ctx, &realdb.MergeRequest{
+			RepoID: repoID, PlatformID: int64(i + 1), Number: pr.number,
+			Title: "PR " + pr.head, Author: "a", State: pr.state,
+			HeadBranch: pr.head, BaseBranch: pr.base,
+			HeadRepoCloneURL: testRepoCloneURL,
+			CreatedAt:        now, UpdatedAt: now, LastActivityAt: now,
+		})
+		require.NoError(err)
+	}
+	// Both stacks claim merged PR 101, which no open-PR observation can
+	// arbitrate. Persisting both would evict 101 from whichever stack was
+	// written first, and projecting only one of them would strip the other's
+	// members of their preceding merge blockers.
+	require.NoError(database.ReplaceGitHubNativeStack(ctx, realdb.GitHubNativeStack{
+		RepoID: repoID, GitHubID: 9043, Number: 43, Size: 2,
+		BaseRef: "main", IsOpen: true, GitHubCreatedAt: now,
+		ContentFingerprint: "native-43", LastObservedAt: now,
+		Members: []realdb.GitHubNativeStackMember{
+			{Position: 1, PullRequestNumber: 101, State: "merged", HeadRef: "feature/b", HeadSHA: "bbb"},
+			{Position: 2, PullRequestNumber: 102, State: "open", HeadRef: "feature/c", HeadSHA: "ccc"},
+		},
+	}))
+	require.NoError(database.ReplaceGitHubNativeStack(ctx, realdb.GitHubNativeStack{
+		RepoID: repoID, GitHubID: 9042, Number: 42, Size: 2,
+		BaseRef: "main", IsOpen: true, GitHubCreatedAt: now,
+		ContentFingerprint: "native-42", LastObservedAt: now,
+		Members: []realdb.GitHubNativeStackMember{
+			{Position: 1, PullRequestNumber: 100, State: "open", HeadRef: "feature/a", HeadSHA: "aaa"},
+			{Position: 2, PullRequestNumber: 101, State: "merged", HeadRef: "feature/b", HeadSHA: "bbb"},
+		},
+	}))
+
+	require.NoError(RunDetectionWithNativeStacks(ctx, database, repoID, []int{42, 43}))
+
+	// Branch inference owns the repository, so PR 102 keeps every preceding
+	// member instead of losing the ones the dropped native stack held.
+	stack, members, err := database.GetStackForPRByRepoID(ctx, repoID, 102)
+	require.NoError(err)
+	require.NotNil(stack)
+	assert.Equal([]int{100, 101, 102}, stackNumbersFromMembers(members))
+}
+
+func TestRunDetectionWithNativeStacksDetectsOverlapAfterUnresolvedMember(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := openTestDB(t)
+	ctx := t.Context()
+	repoID, err := database.UpsertRepo(ctx, realdb.GitHubRepoIdentity("", "org", "repo"))
+	require.NoError(err)
+	require.NoError(database.UpdateRepoProviderMetadata(ctx, repoID, realdb.RepoProviderMetadata{
+		CloneURL: testRepoCloneURL, DefaultBranch: "main",
+	}))
+	now := time.Now().UTC()
+	prs := []struct {
+		number     int
+		head, base string
+		state      realdb.MergeRequestState
+	}{
+		{100, "feature/a", "main", prOpen},
+		{101, "feature/b", "feature/a", prMerged},
+		{102, "feature/c", "feature/b", prOpen},
+	}
+	for i, pr := range prs {
+		_, err := database.UpsertMergeRequest(ctx, &realdb.MergeRequest{
+			RepoID: repoID, PlatformID: int64(i + 1), Number: pr.number,
+			Title: "PR " + pr.head, Author: "a", State: pr.state,
+			HeadBranch: pr.head, BaseBranch: pr.base,
+			HeadRepoCloneURL: testRepoCloneURL,
+			CreatedAt:        now, UpdatedAt: now, LastActivityAt: now,
+		})
+		require.NoError(err)
+	}
+	require.NoError(database.ReplaceGitHubNativeStack(ctx, realdb.GitHubNativeStack{
+		RepoID: repoID, GitHubID: 9043, Number: 43, Size: 2,
+		BaseRef: "main", IsOpen: true, GitHubCreatedAt: now,
+		ContentFingerprint: "native-43", LastObservedAt: now,
+		Members: []realdb.GitHubNativeStackMember{
+			{Position: 1, PullRequestNumber: 101, State: "merged", HeadRef: "feature/b", HeadSHA: "bbb"},
+			{Position: 2, PullRequestNumber: 102, State: "open", HeadRef: "feature/c", HeadSHA: "ccc"},
+		},
+	}))
+	// PR 900 has no row yet, and it precedes the member shared with stack 43.
+	// Resolution stops at the missing row, so the overlap has to be found from
+	// declared membership instead.
+	require.NoError(database.ReplaceGitHubNativeStack(ctx, realdb.GitHubNativeStack{
+		RepoID: repoID, GitHubID: 9042, Number: 42, Size: 2,
+		BaseRef: "main", IsOpen: true, GitHubCreatedAt: now,
+		ContentFingerprint: "native-42", LastObservedAt: now,
+		Members: []realdb.GitHubNativeStackMember{
+			{Position: 1, PullRequestNumber: 900, State: "open", HeadRef: "feature/z", HeadSHA: "zzz"},
+			{Position: 2, PullRequestNumber: 101, State: "merged", HeadRef: "feature/b", HeadSHA: "bbb"},
+		},
+	}))
+
+	require.NoError(RunDetectionWithNativeStacks(ctx, database, repoID, []int{42, 43}))
+
+	stack, members, err := database.GetStackForPRByRepoID(ctx, repoID, 102)
+	require.NoError(err)
+	require.NotNil(stack)
+	assert.Equal([]int{100, 101, 102}, stackNumbersFromMembers(members),
+		"an overlap hidden behind an unresolved member must still force branch inference")
+}
+
 func TestRunDetection_ForkBranchNameDoesNotShadowUpstreamStackBranch(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

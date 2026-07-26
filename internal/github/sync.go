@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/url"
 	"slices"
@@ -22,6 +23,7 @@ import (
 	"go.kenn.io/middleman/internal/gitclone"
 	"go.kenn.io/middleman/internal/platform"
 	platformgithub "go.kenn.io/middleman/internal/platform/github"
+	"go.kenn.io/middleman/internal/tokenauth"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -296,6 +298,9 @@ type RepoSyncResult struct {
 	// partial per-item failure; nil on success and on hard repository
 	// failures.
 	PartialFailure *PartialSyncError
+	// GitHubNativeStacks is non-nil only when the preview setting participated
+	// in this repository sync. Completion hooks may project only these numbers.
+	GitHubNativeStacks *GitHubNativeStackSyncResult
 }
 
 // WatchedMR identifies a merge request to sync on a fast interval.
@@ -471,7 +476,9 @@ type Syncer struct {
 	writeRateTrackers        map[string]*RateTracker    // provider/host bucket -> mutation-credential REST tracker
 	writeGQLRateTrackers     map[string]*RateTracker    // provider/host bucket -> mutation-credential GraphQL tracker
 	budgets                  map[string]*SyncBudget     // provider/host bucket -> budget
-	fetchers                 map[string]*GraphQLFetcher // host -> GraphQL fetcher
+	fetchers                 map[string]*GraphQLFetcher // host -> fallback GraphQL fetcher
+	routers                  map[string]*HostRouter     // GitHub host -> credential router
+	ratePrincipalLabels      map[string]string
 	rateLimitSnapshotMu      sync.Mutex
 	rateLimitSnapshotRefresh map[string]time.Time
 	repos                    []RepoRef
@@ -484,6 +491,7 @@ type Syncer struct {
 	branchActivityMu         sync.RWMutex
 	branchActivityRetention  time.Duration
 	branchActivityMaxCommits int
+	preferGitHubNativeStacks atomic.Bool
 	parallelism              atomic.Int32
 	runMu                    sync.Mutex
 	running                  atomic.Bool
@@ -537,6 +545,21 @@ type Syncer struct {
 	// instead of being skipped by a silent 304. Keyed by
 	// "host/owner/name". Cleared on the next successful sync.
 	failedRepos sync.Map
+	// nativeStackResults transfers per-repository preview confirmation from the
+	// index sync to the ordered completion hook without persisting run state.
+	nativeStackResults sync.Map // map[string]*GitHubNativeStackSyncResult
+	// nativeStackConfirmations pairs the in-memory PR-list ETag lifecycle with
+	// the last native stack set confirmed from that exact representation.
+	nativeStackConfirmations sync.Map // map[string][]int
+	// nativeStackGeneration advances on every native-stack preference change.
+	// A sync that captured an older generation must not project its native
+	// result, or an in-flight run could reinstate native ordering after the
+	// user turned the preview off.
+	nativeStackGeneration atomic.Uint64
+	// stackProjectionMu serializes stack projection between the sync
+	// completion hook and preference-change reconciliation so the last write
+	// always reflects the current preference.
+	stackProjectionMu sync.Mutex
 
 	featureCooldowns repositoryFeatureCooldowns
 
@@ -884,7 +907,17 @@ func (s *Syncer) Admit(
 		retryAt := now.Add(time.Second)
 		return archive.AdmissionResult{RetryAt: &retryAt, Detail: "normal sync is active"}, nil
 	}
-	key := rateBucketKeyFor(ref.Platform, ref.Host)
+	key, err := s.bucketKeyForRepo(RepoRef{
+		Platform:       ref.Platform,
+		PlatformHost:   ref.Host,
+		Owner:          ref.Owner,
+		Name:           ref.Name,
+		RepoPath:       ref.RepoPath,
+		PlatformRepoID: ref.PlatformID,
+	}, false)
+	if err != nil {
+		return archive.AdmissionResult{}, err
+	}
 	if s.higherPriorityProviderWorkActive(key, archive.PriorityFullArchive) {
 		probe.abandon()
 		retryAt := now.Add(time.Second)
@@ -1284,7 +1317,7 @@ func (p *gitHubClientProvider) GetMarkdownImage(
 	if !ok {
 		return platform.MarkdownImage{}, platform.UnsupportedCapability(platform.KindGitHub, p.host, "read_markdown_images")
 	}
-	return reader.GetMarkdownImage(ctx, ref.Owner, sourceURL)
+	return reader.GetMarkdownImage(ctx, ref.Owner, ref.Name, sourceURL)
 }
 
 func (p *gitHubClientProvider) OperationRateLimitBuckets(
@@ -1311,15 +1344,19 @@ func (p *gitHubClientProvider) ViewerAuthoredMergeRequest(
 	if author == "" {
 		return false, nil
 	}
-	viewer, err := p.authenticatedViewerLogin(ctx)
+	viewer, err := p.authenticatedViewerLoginForRepo(
+		ctx, mr.Repo.Owner, mr.Repo.Name,
+	)
 	if err != nil {
 		return false, err
 	}
 	return strings.EqualFold(viewer, author), nil
 }
 
-func (p *gitHubClientProvider) authenticatedViewerLogin(ctx context.Context) (string, error) {
-	cacheKey := p.authenticatedViewerCacheKey()
+func (p *gitHubClientProvider) authenticatedViewerLoginForRepo(
+	ctx context.Context, owner, name string,
+) (string, error) {
+	cacheKey := p.authenticatedViewerCacheKeyForRepo(owner, name)
 	now := time.Now()
 	p.viewerMu.Lock()
 	defer p.viewerMu.Unlock()
@@ -1329,11 +1366,19 @@ func (p *gitHubClientProvider) authenticatedViewerLogin(ctx context.Context) (st
 		return p.viewerLogin, nil
 	}
 
-	client, ok := p.client.(authenticatedViewerLoginClient)
-	if !ok {
-		return "", fmt.Errorf("github client does not resolve authenticated viewer")
+	var login string
+	var err error
+	if routed, ok := p.client.(interface {
+		AuthenticatedViewerLoginForRepo(context.Context, string, string) (string, error)
+	}); ok {
+		login, err = routed.AuthenticatedViewerLoginForRepo(ctx, owner, name)
+	} else {
+		client, ok := p.client.(authenticatedViewerLoginClient)
+		if !ok {
+			return "", fmt.Errorf("github client does not resolve authenticated viewer")
+		}
+		login, err = client.AuthenticatedViewerLogin(ctx)
 	}
-	login, err := client.AuthenticatedViewerLogin(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -1347,7 +1392,12 @@ func (p *gitHubClientProvider) authenticatedViewerLogin(ctx context.Context) (st
 	return login, nil
 }
 
-func (p *gitHubClientProvider) authenticatedViewerCacheKey() string {
+func (p *gitHubClientProvider) authenticatedViewerCacheKeyForRepo(owner, name string) string {
+	if routed, ok := p.client.(interface {
+		AuthenticatedViewerCacheKeyForRepo(string, string) string
+	}); ok {
+		return routed.AuthenticatedViewerCacheKeyForRepo(owner, name)
+	}
 	client, ok := p.client.(authenticatedViewerCacheKeyClient)
 	if !ok {
 		return ""
@@ -1366,6 +1416,32 @@ func (p *gitHubClientProvider) MarkNotificationThreadRead(
 	ctx context.Context,
 	threadID string,
 ) error {
+	return p.client.MarkNotificationThreadRead(ctx, threadID)
+}
+
+func (p *gitHubClientProvider) GetNotificationThreadForRepo(
+	ctx context.Context, owner, name, threadID string,
+) (NotificationThread, error) {
+	if routed, ok := p.client.(routedNotificationThreadGetter); ok {
+		return routed.GetNotificationThreadForRepo(ctx, owner, name, threadID)
+	}
+	getter, ok := notificationThreadGetterFor(p.client)
+	if !ok {
+		return NotificationThread{}, fmt.Errorf(
+			"github client does not fetch notification threads",
+		)
+	}
+	return getter.GetNotificationThread(ctx, threadID)
+}
+
+func (p *gitHubClientProvider) MarkNotificationThreadReadForRepo(
+	ctx context.Context, owner, name, threadID string,
+) error {
+	if routed, ok := p.client.(routedNotificationReadMarker); ok {
+		return routed.MarkNotificationThreadReadForRepo(
+			ctx, owner, name, threadID,
+		)
+	}
 	return p.client.MarkNotificationThreadRead(ctx, threadID)
 }
 
@@ -1486,6 +1562,40 @@ func (p *gitHubClientProvider) ListOpenMergeRequests(
 		out = append(out, mr)
 	}
 	return out, nil
+}
+
+func (p *gitHubClientProvider) ListOpenMergeRequestsWithNativeStackHints(
+	ctx context.Context,
+	ref platform.RepoRef,
+) ([]platform.MergeRequest, map[int]*NativeStackHint, error) {
+	nativeClient, ok := p.client.(NativeStackClient)
+	if !ok {
+		mrs, err := p.ListOpenMergeRequests(ctx, ref)
+		return mrs, nil, err
+	}
+	prs, hints, err := nativeClient.ListOpenPullRequestsWithNativeStackHints(
+		ctx, ref.Owner, ref.Name,
+	)
+	if err != nil {
+		// Same classification as ListOpenMergeRequests: a repository with pull
+		// requests disabled must enter the feature cooldown, not be retried as a
+		// hard failure every cycle just because the preview is enabled.
+		if disabledErr := githubRepositoryFeatureDisabled(
+			p.host, platform.RepositoryFeatureMergeRequests, err,
+		); disabledErr != nil {
+			return nil, nil, disabledErr
+		}
+		return nil, nil, err
+	}
+	out := make([]platform.MergeRequest, 0, len(prs))
+	for _, pr := range prs {
+		mr, err := platformgithub.NormalizePullRequest(ref, pr)
+		if err != nil {
+			return nil, nil, err
+		}
+		out = append(out, mr)
+	}
+	return out, hints, nil
 }
 
 func (p *gitHubClientProvider) GetMergeRequest(
@@ -2551,6 +2661,44 @@ func (s *Syncer) SetActiveMRWindow(d time.Duration) {
 	s.activeMRWindow = d
 }
 
+// SetPreferGitHubNativeStacks enables GitHub's read-only preview metadata for
+// subsequent repository syncs. Existing branch inference remains the fallback.
+// It returns the previous value so a caller reconciles on the transition it
+// actually performed: two concurrent config writers reading the preference from
+// their own config snapshots could otherwise both believe they turned it off.
+func (s *Syncer) SetPreferGitHubNativeStacks(enabled bool) bool {
+	// The swap takes the projection lock so a transition cannot land while a
+	// reconciliation or a sync hook is mid-projection. Rechecking the preference
+	// inside that lock is only sound if no swap can interleave with the check.
+	s.stackProjectionMu.Lock()
+	defer s.stackProjectionMu.Unlock()
+	previous := s.preferGitHubNativeStacks.Swap(enabled)
+	if previous != enabled {
+		// Invalidate results captured under the old preference before any
+		// caller reconciles projections.
+		s.nativeStackGeneration.Add(1)
+	}
+	if !enabled || previous {
+		return previous
+	}
+	s.nativeStackConfirmations.Range(func(key, _ any) bool {
+		s.nativeStackConfirmations.Delete(key)
+		return true
+	})
+	// A cached validator may describe a PR response fetched before native
+	// metadata was enabled. Force one fresh list response so the first enabled
+	// sync can seed hints; later syncs retain the normal ETag optimization.
+	for _, repo := range s.TrackedRepos() {
+		if repoPlatform(repo) != platform.KindGitHub {
+			continue
+		}
+		if client, ok := s.optionalGitHubClientFor(repo); ok {
+			client.InvalidateListETagsForRepo(repo.Owner, repo.Name, "pulls")
+		}
+	}
+	return previous
+}
+
 func (s *Syncer) watchSettings() (time.Duration, time.Duration) {
 	s.watchMu.Lock()
 	defer s.watchMu.Unlock()
@@ -2675,21 +2823,52 @@ func (s *Syncer) SetOnNotificationSyncComplete(fn func()) {
 	s.onNotificationSyncComplete = fn
 }
 
-// SetFetchers registers GitHub GraphQL fetchers keyed by platform host.
+// SetFetchers registers fallback GitHub GraphQL fetchers keyed by platform host.
 func (s *Syncer) SetFetchers(fetchers map[string]*GraphQLFetcher) {
 	s.fetchers = fetchers
 }
 
-// fetcherFor returns the GitHub GraphQL fetcher for a repo's host,
-// or nil if none is configured.
-func (s *Syncer) fetcherFor(repo RepoRef) *GraphQLFetcher {
-	if s.fetchers == nil {
-		return nil
+// PrefersGitHubNativeStacks reports the preference currently in force. Callers
+// reconciling a past transition recheck it under the projection lock: a newer
+// transition may have already landed and projected, and replaying the older
+// decision would overwrite it.
+func (s *Syncer) PrefersGitHubNativeStacks() bool {
+	return s.preferGitHubNativeStacks.Load()
+}
+
+// SetClock replaces the syncer's time source. Cache aging bounds -- notably the
+// native-stack observation window -- span hours, so callers that need to observe
+// those transitions inject a clock instead of waiting. The field is read without
+// synchronization on the sync path, so this must not be called while a sync is
+// running.
+func (s *Syncer) SetClock(now func() time.Time) {
+	if now == nil {
+		return
 	}
+	s.now = now
+}
+
+// SetGitHubRouters registers configuration-bounded credential routers keyed by
+// GitHub host. Route-specific GraphQL fetchers take precedence over legacy
+// host fallback fetchers.
+func (s *Syncer) SetGitHubRouters(routers map[string]*HostRouter) {
+	s.routers = routers
+}
+
+// fetcherFor returns the GitHub GraphQL fetcher selected for a repository's
+// credential route, or the host fallback fetcher when no router is configured.
+func (s *Syncer) fetcherFor(repo RepoRef) *GraphQLFetcher {
 	if repoPlatform(repo) != platform.KindGitHub {
 		return nil
 	}
 	host := repoHost(repo)
+	if router := s.routers[host]; router != nil {
+		route, err := router.RouteForRepo(repo.Owner, repo.Name)
+		if err == nil {
+			return route.Fetcher
+		}
+		return nil
+	}
 	return s.fetchers[host]
 }
 
@@ -2767,16 +2946,180 @@ func repoHost(repo RepoRef) string {
 	return platform.DefaultGitHubHost
 }
 
-func rateBucketKeyFor(kind platform.Kind, host string) string {
-	return RateBucketKey(string(kind), host)
+func (s *Syncer) identityForRepo(repo RepoRef, write bool) (IdentityKey, error) {
+	if repoPlatform(repo) != platform.KindGitHub {
+		return IdentityKey{Host: repoHost(repo), Principal: "host"}, nil
+	}
+	host := repoHost(repo)
+	router := s.routers[host]
+	if router == nil {
+		return IdentityKey{Host: host, Principal: "host"}, nil
+	}
+	if write {
+		return router.WriteIdentityForRepo(repo.Owner, repo.Name)
+	}
+	return router.ReadIdentityForRepo(repo.Owner, repo.Name)
 }
 
-func repoRateBucketKey(repo RepoRef) string {
-	return rateBucketKeyFor(repoPlatform(repo), repoHost(repo))
+func (s *Syncer) bucketKeyForRepo(repo RepoRef, write bool) (string, error) {
+	identity, err := s.identityForRepo(repo, write)
+	if err != nil {
+		return "", err
+	}
+	return RateBucketKey(
+		string(repoPlatform(repo)), identity.Host, identity.Principal,
+	), nil
 }
 
-func watchedMRRateBucketKey(mr WatchedMR) string {
-	return rateBucketKeyFor(watchedMRPlatform(mr), watchedMRHost(mr))
+// RateTrackerForRepo returns the identity-scoped read tracker for apiType.
+func (s *Syncer) RateTrackerForRepo(repo RepoRef, apiType string) (*RateTracker, bool) {
+	bucket, err := s.bucketKeyForRepo(repo, false)
+	if err != nil {
+		return nil, false
+	}
+	if apiType == "graphql" {
+		if fetcher := s.fetcherFor(repo); fetcher != nil && fetcher.RateTracker() != nil {
+			return fetcher.RateTracker(), true
+		}
+		if rt := s.GQLRateTrackers()[bucket]; rt != nil {
+			return rt, true
+		}
+	}
+	rt := s.rateTrackers[bucket]
+	if rt == nil {
+		return nil, false
+	}
+	return rt, true
+}
+
+// ReadIdentityForRepo returns the restart-bound read identity selected for
+// repo when a GitHub route router is configured.
+func (s *Syncer) ReadIdentityForRepo(repo RepoRef) (IdentityKey, bool) {
+	if repoPlatform(repo) != platform.KindGitHub {
+		return IdentityKey{}, false
+	}
+	router := s.routers[repoHost(repo)]
+	if router == nil {
+		return IdentityKey{}, false
+	}
+	identity, err := router.ReadIdentityForRepo(repo.Owner, repo.Name)
+	return identity, err == nil && identity.Principal != ""
+}
+
+// HasGitHubRouter reports whether startup configured route selection for the
+// repository's GitHub host. A configured router can still reject a repository
+// with MissingRouteError when no exact, owner, or fallback route matches.
+func (s *Syncer) HasGitHubRouter(repo RepoRef) bool {
+	if s == nil || repoPlatform(repo) != platform.KindGitHub {
+		return false
+	}
+	return s.routers[repoHost(repo)] != nil
+}
+
+// WriteIdentityForRepo returns the restart-bound mutation identity selected
+// for repo. App-only routes have no write identity and remain mutation-disabled
+// until restart establishes one.
+func (s *Syncer) WriteIdentityForRepo(repo RepoRef) (IdentityKey, bool) {
+	identity, err := s.identityForRepo(repo, true)
+	return identity, err == nil && identity.Principal != ""
+}
+
+type writeCredentialProber interface {
+	ProbeWriteCredential(context.Context) error
+}
+
+func (s *Syncer) writeCredentialProberForRepo(
+	repo RepoRef,
+) (*Route, writeCredentialProber, error) {
+	if repoPlatform(repo) != platform.KindGitHub {
+		return nil, nil, nil
+	}
+	router := s.routers[repoHost(repo)]
+	if router == nil {
+		return nil, nil, nil
+	}
+	route, err := router.RouteForRepo(repo.Owner, repo.Name)
+	if err != nil {
+		return nil, nil, err
+	}
+	client := route.Client
+	if route.WriteSnapshotClient != nil {
+		client = route.WriteSnapshotClient
+	}
+	prober, ok := client.(writeCredentialProber)
+	if !ok {
+		return route, nil, nil
+	}
+	return route, prober, nil
+}
+
+// WriteCredentialProbeKeyForRepo identifies the routed mutation credential
+// whose live availability is probed. Owner routes share one key across their
+// repositories, while selected-installation routes remain repository-exact.
+func (s *Syncer) WriteCredentialProbeKeyForRepo(repo RepoRef) (string, error) {
+	route, prober, err := s.writeCredentialProberForRepo(repo)
+	if err != nil || route == nil || prober == nil {
+		return "", err
+	}
+	return fmt.Sprintf(
+		"%s\x00%s\x00%s\x00%s",
+		route.Key.Host, route.Key.Owner, route.Key.Name, route.WriteIdentity.String(),
+	), nil
+}
+
+// ProbeWriteCredentialForRepo resolves the live mutation-bound credential for
+// repo. The route identity is fixed at startup, but the underlying token file,
+// environment, or gh CLI source can disappear or rotate afterwards.
+func (s *Syncer) ProbeWriteCredentialForRepo(
+	ctx context.Context, repo RepoRef,
+) error {
+	_, prober, err := s.writeCredentialProberForRepo(repo)
+	if err != nil {
+		return err
+	}
+	if prober == nil {
+		return nil
+	}
+	return prober.ProbeWriteCredential(ctx)
+}
+
+// WriteRateTrackerForRepo returns the tracker for the credential that
+// authenticates repository mutations.
+func (s *Syncer) WriteRateTrackerForRepo(repo RepoRef, apiType string) (*RateTracker, bool) {
+	identity, ok := s.WriteIdentityForRepo(repo)
+	if !ok {
+		return nil, false
+	}
+	bucket := RateBucketKey(string(repoPlatform(repo)), identity.Host, identity.Principal)
+	trackers := s.writeRateTrackers
+	if apiType == "graphql" {
+		trackers = s.writeGQLRateTrackers
+	}
+	if rt := trackers[bucket]; rt != nil {
+		return rt, true
+	}
+	return s.RateTrackerForRepo(repo, apiType)
+}
+
+// BudgetForRepo returns the background sync budget owned by the repository's
+// effective read identity.
+func (s *Syncer) BudgetForRepo(repo RepoRef) (*SyncBudget, bool) {
+	bucket, err := s.bucketKeyForRepo(repo, false)
+	if err != nil {
+		return nil, false
+	}
+	budget := s.budgets[bucket]
+	if budget == nil {
+		return nil, false
+	}
+	return budget, true
+}
+
+func (s *Syncer) readBucketKeyForWatchedMR(mr WatchedMR) (string, error) {
+	return s.bucketKeyForRepo(RepoRef{
+		Owner: mr.Owner, Name: mr.Name,
+		Platform: mr.Platform, PlatformHost: mr.PlatformHost,
+	}, false)
 }
 
 func platformRepoRef(repo RepoRef) platform.RepoRef {
@@ -3388,7 +3731,11 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 	watchInt, _ := s.watchSettings()
 	watchBuckets := make([]string, len(mrs))
 	for i, mr := range mrs {
-		watchBuckets[i] = watchedMRRateBucketKey(mr)
+		bucket, err := s.readBucketKeyForWatchedMR(mr)
+		if err != nil {
+			continue
+		}
+		watchBuckets[i] = bucket
 	}
 	eligibleBuckets := s.hostEligibility(
 		watchBuckets, s.nextWatchSyncAfter,
@@ -3397,7 +3744,10 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 	// Check backoff once per provider/host bucket to avoid redundant checks.
 	blockedBuckets := make(map[string]bool)
 	for _, mr := range mrs {
-		bucket := watchedMRRateBucketKey(mr)
+		bucket, err := s.readBucketKeyForWatchedMR(mr)
+		if err != nil {
+			continue
+		}
 		if _, checked := blockedBuckets[bucket]; checked {
 			continue
 		}
@@ -3413,7 +3763,16 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 	syncedAny := false
 	for _, mr := range mrs {
 		host := watchedMRHost(mr)
-		bucket := watchedMRRateBucketKey(mr)
+		bucket, bucketErr := s.readBucketKeyForWatchedMR(mr)
+		if bucketErr != nil {
+			slog.Warn("resolve fast-sync credential route",
+				"host", host,
+				"owner", mr.Owner,
+				"name", mr.Name,
+				"err", bucketErr,
+			)
+			continue
+		}
 		repo := RepoRef{
 			Platform:     watchedMRPlatform(mr),
 			PlatformHost: host,
@@ -3683,6 +4042,16 @@ func (s *Syncer) Status() *SyncStatus {
 	return s.status.Load().(*SyncStatus)
 }
 
+// SetRatePrincipalLabels registers safe display labels keyed by rate bucket.
+func (s *Syncer) SetRatePrincipalLabels(labels map[string]string) {
+	s.ratePrincipalLabels = labels
+}
+
+// RatePrincipalLabels returns safe display labels keyed by rate bucket.
+func (s *Syncer) RatePrincipalLabels() map[string]string {
+	return s.ratePrincipalLabels
+}
+
 // RateTrackers returns the per-host rate trackers map.
 func (s *Syncer) RateTrackers() map[string]*RateTracker {
 	return s.rateTrackers
@@ -3732,12 +4101,20 @@ func (s *Syncer) Budgets() map[string]*SyncBudget {
 // nil fetchers or trackers are skipped.
 func (s *Syncer) GQLRateTrackers() map[string]*RateTracker {
 	result := make(map[string]*RateTracker, len(s.fetchers))
-	for _, f := range s.fetchers {
+	add := func(f *GraphQLFetcher) {
 		if f == nil {
-			continue
+			return
 		}
 		if rt := f.RateTracker(); rt != nil {
 			result[rt.BucketKey()] = rt
+		}
+	}
+	for _, f := range s.fetchers {
+		add(f)
+	}
+	for _, router := range s.routers {
+		for _, route := range router.Routes() {
+			add(route.Fetcher)
 		}
 	}
 	return result
@@ -3760,8 +4137,63 @@ func (s *Syncer) refreshRateLimitSnapshots(ctx context.Context) map[string]struc
 	if s == nil || s.clients == nil {
 		return refreshed
 	}
+	type snapshotCandidate struct {
+		client  Client
+		tracker *RateTracker
+		fetcher *GraphQLFetcher
+		owner   string
+	}
+	candidates := make(map[string][]snapshotCandidate)
+	for _, router := range s.routers {
+		for _, route := range router.Routes() {
+			readBucket := RateBucketKey(
+				string(platform.KindGitHub), route.ReadIdentity.Host,
+				route.ReadIdentity.Principal,
+			)
+			candidates[readBucket] = append(candidates[readBucket], snapshotCandidate{
+				client: route.Client, tracker: s.rateTrackers[readBucket],
+				fetcher: route.Fetcher, owner: route.Key.Owner,
+			})
+			if route.WriteIdentity.Principal != "" && route.WriteIdentity != route.ReadIdentity {
+				writeBucket := RateBucketKey(
+					string(platform.KindGitHub), route.WriteIdentity.Host,
+					route.WriteIdentity.Principal,
+				)
+				writeGQL := s.writeGQLRateTrackers[writeBucket]
+				var writeFetcher *GraphQLFetcher
+				if writeGQL != nil {
+					writeFetcher = &GraphQLFetcher{rateTracker: writeGQL}
+				}
+				candidates[writeBucket] = append(candidates[writeBucket], snapshotCandidate{
+					client:  route.WriteSnapshotClient,
+					tracker: s.writeRateTrackers[writeBucket],
+					fetcher: writeFetcher, owner: route.Key.Owner,
+				})
+			}
+		}
+	}
+	for _, bucket := range slices.Sorted(maps.Keys(candidates)) {
+		if !s.canRefreshRateLimitSnapshot(bucket, time.Now().UTC()) {
+			continue
+		}
+		for _, candidate := range candidates[bucket] {
+			if candidate.tracker == nil {
+				continue
+			}
+			snapshotRoute := &Route{Client: candidate.client, Fetcher: candidate.fetcher}
+			snapshotCtx := tokenauth.WithGitHubOwner(ctx, candidate.owner)
+			if s.refreshRateLimitSnapshotForRoute(snapshotCtx, snapshotRoute, candidate.tracker) {
+				s.markRateLimitSnapshotRefreshed(bucket, time.Now().UTC())
+				refreshed[bucket] = struct{}{}
+				break
+			}
+		}
+	}
 	for _, rt := range s.rateTrackers {
 		if rt == nil || rt.Provider() != string(platform.KindGitHub) || rt.APIType() != "rest" {
+			continue
+		}
+		if rt.Principal() != "host" {
 			continue
 		}
 		key := rt.BucketKey()
@@ -3769,61 +4201,74 @@ func (s *Syncer) refreshRateLimitSnapshots(ctx context.Context) map[string]struc
 			continue
 		}
 		client, err := s.clientFor(RepoRef{
-			Platform:     platform.KindGitHub,
-			PlatformHost: rt.PlatformHost(),
+			Platform: platform.KindGitHub, PlatformHost: rt.PlatformHost(),
 		})
 		if err != nil {
 			continue
 		}
-		snapshotter, ok := client.(rateLimitSnapshotter)
-		if !ok {
-			continue
+		route := &Route{
+			Client:  client,
+			Fetcher: s.fetchers[canonicalRepoHost(rt.PlatformHost())],
 		}
-		snapshot, err := snapshotter.GetRateLimitSnapshot(ctx)
-		if err != nil {
-			slog.Warn("refresh GitHub rate limit snapshot failed",
-				"host", rt.PlatformHost(), "err", err)
-			continue
-		}
-		if snapshot == nil {
-			continue
-		}
-		if snapshot.Core != nil {
-			rt.UpdateFromSnapshot(*snapshot.Core)
+		if s.refreshRateLimitSnapshotForRoute(ctx, route, rt) {
 			refreshed[key] = struct{}{}
-		}
-		if snapshot.GraphQL != nil {
-			if gqlRT := s.graphQLRateTrackerForHost(rt.PlatformHost()); gqlRT != nil {
-				gqlRT.UpdateFromSnapshot(*snapshot.GraphQL)
-			}
 		}
 	}
 	return refreshed
 }
 
-func (s *Syncer) claimRateLimitSnapshotRefresh(key string, now time.Time) bool {
+func (s *Syncer) refreshRateLimitSnapshotForRoute(
+	ctx context.Context, route *Route, rt *RateTracker,
+) bool {
+	if route == nil || route.Client == nil {
+		return false
+	}
+	snapshotter, ok := route.Client.(rateLimitSnapshotter)
+	if !ok {
+		return false
+	}
+	snapshot, err := snapshotter.GetRateLimitSnapshot(ctx)
+	if err != nil {
+		slog.Warn("refresh GitHub rate limit snapshot failed",
+			"host", rt.PlatformHost(), "principal", rt.Principal(), "err", err)
+		return false
+	}
+	if snapshot == nil {
+		return false
+	}
+	updated := false
+	if snapshot.Core != nil {
+		rt.UpdateFromSnapshot(*snapshot.Core)
+		updated = true
+	}
+	if snapshot.GraphQL != nil && route.Fetcher != nil && route.Fetcher.RateTracker() != nil {
+		route.Fetcher.RateTracker().UpdateFromSnapshot(*snapshot.GraphQL)
+	}
+	return updated
+}
+
+func (s *Syncer) canRefreshRateLimitSnapshot(key string, now time.Time) bool {
 	s.rateLimitSnapshotMu.Lock()
 	defer s.rateLimitSnapshotMu.Unlock()
+	last := s.rateLimitSnapshotRefresh[key]
+	return last.IsZero() || now.Sub(last) >= rateLimitSnapshotRefreshInterval
+}
+
+func (s *Syncer) markRateLimitSnapshotRefreshed(key string, now time.Time) {
+	s.rateLimitSnapshotMu.Lock()
 	if s.rateLimitSnapshotRefresh == nil {
 		s.rateLimitSnapshotRefresh = make(map[string]time.Time)
 	}
-	last := s.rateLimitSnapshotRefresh[key]
-	if !last.IsZero() && now.Sub(last) < rateLimitSnapshotRefreshInterval {
-		return false
-	}
 	s.rateLimitSnapshotRefresh[key] = now
-	return true
+	s.rateLimitSnapshotMu.Unlock()
 }
 
-func (s *Syncer) graphQLRateTrackerForHost(platformHost string) *RateTracker {
-	if s.fetchers == nil {
-		return nil
+func (s *Syncer) claimRateLimitSnapshotRefresh(key string, now time.Time) bool {
+	if !s.canRefreshRateLimitSnapshot(key, now) {
+		return false
 	}
-	fetcher := s.fetchers[canonicalRepoHost(platformHost)]
-	if fetcher == nil {
-		return nil
-	}
-	return fetcher.RateTracker()
+	s.markRateLimitSnapshotRefreshed(key, now)
+	return true
 }
 
 func (s *Syncer) clearRecoveredRateLimitGates(
@@ -3907,7 +4352,15 @@ func (s *Syncer) runWorker(
 			state.canceled.Store(true)
 			return
 		}
-		if rt := s.rateTrackers[repoRateBucketKey(repo)]; rt != nil {
+		bucket, bucketErr := s.bucketKeyForRepo(repo, false)
+		if bucketErr != nil {
+			state.errMu.Lock()
+			*state.lastErr = bucketErr.Error()
+			state.errMu.Unlock()
+			state.results[item.index].Error = bucketErr.Error()
+			continue
+		}
+		if rt := s.rateTrackers[bucket]; rt != nil {
 			if backoff, wait := rt.ShouldBackoff(); backoff {
 				s.publishStatus(&SyncStatus{
 					Running: true,
@@ -3925,7 +4378,12 @@ func (s *Syncer) runWorker(
 		}
 		repoName := repo.Owner + "/" + repo.Name
 		slog.Info("syncing repo", "repo", repoName)
+		nativeResultKey := repoFailKey(repo)
+		s.nativeStackResults.Delete(nativeResultKey)
 		err := s.syncRepo(ctx, repo)
+		if nativeResult, ok := s.nativeStackResults.LoadAndDelete(nativeResultKey); ok {
+			state.results[item.index].GitHubNativeStacks = nativeResult.(*GitHubNativeStackSyncResult)
+		}
 		if err != nil {
 			// Bail without counting this repo only when the
 			// *run* context itself is canceled and the error
@@ -4086,7 +4544,10 @@ func (s *Syncer) runOnce(
 
 	repoBuckets := make([]string, len(repos))
 	for i, r := range repos {
-		repoBuckets[i] = repoRateBucketKey(r)
+		bucket, err := s.bucketKeyForRepo(r, false)
+		if err == nil {
+			repoBuckets[i] = bucket
+		}
 	}
 	nextAfter := s.nextSyncAfter
 	if bypassNextSyncAfter {
@@ -4124,7 +4585,13 @@ func (s *Syncer) runOnce(
 
 dispatch:
 	for i, r := range repos {
-		bucket := repoRateBucketKey(r)
+		bucket, err := s.bucketKeyForRepo(r, false)
+		if err != nil {
+			results[i].Error = err.Error()
+			done := completed.Add(1)
+			s.publishMonotonicProgress(state, done)
+			continue
+		}
 		if !eligibleBuckets[bucket] {
 			results[i].Error = "skipped: rate limit throttled"
 			done := completed.Add(1)
@@ -4197,7 +4664,10 @@ dispatch:
 	slog.Info("sync complete", "repos", total)
 
 	if s.onSyncCompleted != nil {
-		s.onSyncCompleted(results)
+		s.RunUnderStackProjection(func() {
+			s.dropStaleNativeStackResults(results)
+			s.onSyncCompleted(results)
+		})
 	}
 
 	s.publishStatus(&SyncStatus{
@@ -4305,10 +4775,24 @@ func (s *Syncer) markClosedLinkedNotificationsDone(ctx context.Context) error {
 }
 
 func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
-	releaseProviderWork := s.beginProviderWork(
-		repoRateBucketKey(repo), archive.PriorityNormalIndex,
-	)
+	bucket, err := s.bucketKeyForRepo(repo, false)
+	if err != nil {
+		return fmt.Errorf("resolve sync credential route for %s/%s: %w", repo.Owner, repo.Name, err)
+	}
+	releaseProviderWork := s.beginProviderWork(bucket, archive.PriorityNormalIndex)
 	defer releaseProviderWork()
+	// Split-auth repository sync also issues a viewer-permission request on
+	// the write identity; register that principal too so an archive sharing
+	// the write PAT is preempted rather than running concurrently.
+	if writeIdentity, idErr := s.identityForRepo(repo, true); idErr == nil &&
+		writeIdentity.Principal != "" {
+		writeBucket := RateBucketKey(
+			string(repoPlatform(repo)), writeIdentity.Host, writeIdentity.Principal,
+		)
+		if writeBucket != bucket {
+			defer s.beginProviderWork(writeBucket, archive.PriorityNormalIndex)()
+		}
+	}
 
 	repoIdentity, resolvedRepo, err := s.syncRepoIdentity(ctx, repo)
 	if err != nil {
@@ -4343,7 +4827,7 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 		}
 	}
 	if s.clones != nil {
-		if err := s.clones.EnsureClone(ctx, host, repo.Owner, repo.Name, cloneRemoteURL(repo)); err != nil {
+		if err := s.clones.EnsureClone(ctx, string(repoPlatform(repo)), host, repo.Owner, repo.Name, cloneRemoteURL(repo)); err != nil {
 			slog.Warn("bare clone fetch failed",
 				"repo", repo.Owner+"/"+repo.Name, "err", err,
 			)
@@ -4410,7 +4894,7 @@ func (s *Syncer) syncDefaultBranchActivity(
 	host := repoHost(repo)
 	branch, currentTip, err := s.clones.ResolveDefaultBranch(
 		ctx,
-		host,
+		string(repoPlatform(repo)), host,
 		repo.Owner,
 		repo.Name,
 		preferredBranch,
@@ -4454,7 +4938,7 @@ func (s *Syncer) syncDefaultBranchActivity(
 		if previousTip.TipSHA != currentTip {
 			ancestor, err := s.clones.IsAncestor(
 				ctx,
-				host,
+				string(repoPlatform(repo)), host,
 				repo.Owner,
 				repo.Name,
 				previousTip.TipSHA,
@@ -4474,7 +4958,7 @@ func (s *Syncer) syncDefaultBranchActivity(
 
 	gitCommits, err := s.clones.ListBranchCommitsSince(
 		ctx,
-		host,
+		string(repoPlatform(repo)), host,
 		repo.Owner,
 		repo.Name,
 		branch,
@@ -4898,7 +5382,7 @@ func (s *Syncer) addRepoOverviewTimeline(
 	}
 	latestTag := tags[0]
 	count, _, countErr := s.clones.CommitTimelineSinceTag(
-		ctx, host, repo.Owner, repo.Name, latestTag, 1,
+		ctx, string(repoPlatform(repo)), host, repo.Owner, repo.Name, latestTag, 1,
 	)
 	if countErr != nil {
 		slog.Warn("count commits since latest version failed",
@@ -4911,7 +5395,7 @@ func (s *Syncer) addRepoOverviewTimeline(
 
 	timelineTag := tags[len(tags)-1]
 	_, points, err := s.clones.CommitTimelineSinceTag(
-		ctx, host, repo.Owner, repo.Name,
+		ctx, string(repoPlatform(repo)), host, repo.Owner, repo.Name,
 		timelineTag, repoOverviewTimelineLimit,
 	)
 	if err != nil {
@@ -5104,6 +5588,10 @@ func (s *Syncer) indexSyncRepo(
 	var failedScope failScope
 	var disabledScope failScope
 
+	preferNativeStacks := s.preferGitHubNativeStacks.Load() &&
+		repoPlatform(repo) == platform.KindGitHub
+	var nativeStackHints map[int]*NativeStackHint
+
 	prListUnchanged := false
 	var mrProbe repositoryFeatureProbe
 	mrProbeDue := false
@@ -5127,7 +5615,16 @@ func (s *Syncer) indexSyncRepo(
 			return fmt.Errorf("resolve merge request reader for %s/%s: %w", repo.Owner, repo.Name, err)
 		}
 		mrProviderAttempted = true
-		openMRs, err := mrReader.ListOpenMergeRequests(ctx, platformRef)
+		var openMRs []platform.MergeRequest
+		if nativeReader, ok := mrReader.(interface {
+			ListOpenMergeRequestsWithNativeStackHints(
+				context.Context, platform.RepoRef,
+			) ([]platform.MergeRequest, map[int]*NativeStackHint, error)
+		}); preferNativeStacks && ok {
+			openMRs, nativeStackHints, err = nativeReader.ListOpenMergeRequestsWithNativeStackHints(ctx, platformRef)
+		} else {
+			openMRs, err = mrReader.ListOpenMergeRequests(ctx, platformRef)
+		}
 		mrListBlocked := false
 		if err != nil {
 			// 304 Not Modified means the open-PR list is byte-identical
@@ -5163,7 +5660,7 @@ func (s *Syncer) indexSyncRepo(
 				s.shouldUseBulkGraphQLForMRs(ctx, repo, repoID, len(openMRs)) {
 				if backoff, _ := fetcher.ShouldBackoff(); !backoff {
 					result, gqlErr := fetcher.FetchRepoPRs(
-						ctx, repo.Owner, repo.Name,
+						ctx, repo.Owner, repo.Name, preferNativeStacks,
 					)
 					if gqlErr != nil {
 						if s.recordRepositoryFeatureDisabled(
@@ -5178,6 +5675,12 @@ func (s *Syncer) indexSyncRepo(
 							)
 						}
 					} else {
+						// Only a query that asked for the preview fields can
+						// speak for stack membership. A GraphQL fallback that
+						// dropped them must leave REST-derived hints intact.
+						if preferNativeStacks && result.NativeStacksQueried {
+							nativeStackHints = nativeStackHintsFromBulk(result)
+						}
 						if err := s.doSyncRepoGraphQL(
 							ctx, repo, repoID, result, cloneFetchOK,
 						); err != nil {
@@ -5214,6 +5717,12 @@ func (s *Syncer) indexSyncRepo(
 				}
 			}
 		}
+	}
+	if preferNativeStacks && failedScope&failMR == 0 {
+		nativeResult := s.refreshGitHubNativeStackCache(
+			ctx, repo, repoID, nativeStackHints, prListUnchanged,
+		)
+		s.nativeStackResults.Store(repoFailKey(repo), nativeResult)
 	}
 
 	// Index issues — ETag-gated, with GraphQL when available.
@@ -5551,7 +6060,7 @@ func (s *Syncer) indexUpsertMergeRequest(
 		normalized.AuthorDisplayName == "" {
 		if client, ok := s.optionalGitHubClientFor(repo); ok {
 			if name, found := s.resolveDisplayName(
-				ctx, client, repoHost(repo), normalized.Author,
+				ctx, client, repo, normalized.Author,
 			); found {
 				normalized.AuthorDisplayName = name
 			}
@@ -5665,12 +6174,8 @@ func (s *Syncer) indexUpsertMR(
 
 	if normalized.Author != "" &&
 		normalized.AuthorDisplayName == "" {
-		host := repo.PlatformHost
-		if host == "" {
-			host = "github.com"
-		}
 		if name, ok := s.resolveDisplayName(
-			ctx, client, host, normalized.Author,
+			ctx, client, repo, normalized.Author,
 		); ok {
 			normalized.AuthorDisplayName = name
 		} else if existing != nil {
@@ -5863,8 +6368,8 @@ func (s *Syncer) drainPendingCommentSyncs(
 		if ctx.Err() != nil {
 			return
 		}
-		bucket := repoRateBucketKey(item.repo)
-		if !eligibleHosts[bucket] {
+		bucket, err := s.bucketKeyForRepo(item.repo, false)
+		if err != nil || !eligibleHosts[bucket] {
 			continue
 		}
 		client, err := s.clientFor(item.repo)
@@ -5916,8 +6421,8 @@ func (s *Syncer) drainPendingCommentSyncs(
 		if ctx.Err() != nil {
 			return
 		}
-		bucket := repoRateBucketKey(item.repo)
-		if !eligibleHosts[bucket] {
+		bucket, err := s.bucketKeyForRepo(item.repo, false)
+		if err != nil || !eligibleHosts[bucket] {
 			continue
 		}
 		client, err := s.clientFor(item.repo)
@@ -6284,14 +6789,10 @@ func (s *Syncer) syncOpenMRFromBulk(
 	// Resolve display name if missing.
 	if normalized.Author != "" &&
 		normalized.AuthorDisplayName == "" {
-		host := repo.PlatformHost
-		if host == "" {
-			host = "github.com"
-		}
 		client, clientErr := s.clientFor(repo)
 		if clientErr == nil {
 			if name, ok := s.resolveDisplayName(
-				ctx, client, host, normalized.Author,
+				ctx, client, repo, normalized.Author,
 			); ok {
 				normalized.AuthorDisplayName = name
 			}
@@ -6340,7 +6841,7 @@ func (s *Syncer) syncOpenMRFromBulk(
 		baseSHA := normalized.PlatformBaseSHA
 		if headSHA != "" && baseSHA != "" {
 			mb, mbErr := s.clones.MergeBase(
-				ctx, repoHost, repo.Owner,
+				ctx, string(repoPlatform(repo)), repoHost, repo.Owner,
 				repo.Name, baseSHA, headSHA,
 			)
 			if mbErr != nil {
@@ -6625,12 +7126,8 @@ func (s *Syncer) fetchMRDetail(
 
 	if normalized.Author != "" &&
 		normalized.AuthorDisplayName == "" {
-		host := repo.PlatformHost
-		if host == "" {
-			host = "github.com"
-		}
 		if name, ok := s.resolveDisplayName(
-			ctx, client, host, normalized.Author,
+			ctx, client, repo, normalized.Author,
 		); ok {
 			normalized.AuthorDisplayName = name
 		}
@@ -6663,7 +7160,7 @@ func (s *Syncer) fetchMRDetail(
 		baseSHA := normalized.PlatformBaseSHA
 		if headSHA != "" && baseSHA != "" {
 			mb, mbErr := s.clones.MergeBase(
-				ctx, cloneRepoHost, repo.Owner,
+				ctx, string(repoPlatform(repo)), cloneRepoHost, repo.Owner,
 				repo.Name, baseSHA, headSHA,
 			)
 			if mbErr != nil {
@@ -7875,10 +8372,15 @@ func (s *Syncer) replaceIssueCommentEvents(
 //
 // Bot logins (ending with "[bot]") are returned as-is since bot
 // accounts have no display name on the GitHub API.
+//
+// The lookup is routed by repo so a configuration with no host
+// fallback route still resolves names, and so the request is
+// billed to the identity serving that repository. A display name
+// does not vary by credential, so the cache stays host-keyed.
 func (s *Syncer) resolveDisplayName(
-	ctx context.Context, client Client, host, login string,
+	ctx context.Context, client Client, repo RepoRef, login string,
 ) (string, bool) {
-	key := host + "\x00" + login
+	key := repoHost(repo) + "\x00" + login
 	if cached, fresh := s.displayNames.get(key); fresh {
 		return cached.name, cached.ok
 	}
@@ -7894,7 +8396,7 @@ func (s *Syncer) resolveDisplayName(
 		if cached, fresh := s.displayNames.get(key); fresh {
 			return cached, nil
 		}
-		user, err := client.GetUser(ctx, login)
+		user, err := s.getUserForRepo(ctx, client, repo, login)
 		if err != nil {
 			return displayNameEntry{}, err
 		}
@@ -7923,6 +8425,19 @@ func (s *Syncer) resolveDisplayName(
 	}
 	result := v.(displayNameEntry)
 	return result.name, result.ok
+}
+
+// getUserForRepo prefers a repository-routed user lookup so routed hosts pick
+// the repository's credential. A client without repository routing, or a repo
+// ref missing owner/name, falls back to the plain host lookup.
+func (s *Syncer) getUserForRepo(
+	ctx context.Context, client Client, repo RepoRef, login string,
+) (*gh.User, error) {
+	if reader, ok := client.(repoUserClient); ok &&
+		repo.Owner != "" && repo.Name != "" {
+		return reader.GetUserForRepo(ctx, repo.Owner, repo.Name, login)
+	}
+	return client.GetUser(ctx, login)
 }
 
 // --- Issue sync ---
@@ -8356,13 +8871,13 @@ func (s *Syncer) refreshRepoIssueComments(
 }
 
 func (s *Syncer) canSpendCommentRefresh(repo RepoRef) bool {
-	budget := s.budgets[repoRateBucketKey(repo)]
-	return budget == nil || budget.CanSpend(1)
+	budget, ok := s.BudgetForRepo(repo)
+	return !ok || budget == nil || budget.CanSpend(1)
 }
 
 func (s *Syncer) canSpendWorkflowApprovalRefresh(repo RepoRef) bool {
-	budget := s.budgets[repoRateBucketKey(repo)]
-	return budget == nil || budget.CanSpend(1)
+	budget, ok := s.BudgetForRepo(repo)
+	return !ok || budget == nil || budget.CanSpend(1)
 }
 
 func (s *Syncer) persistPRComments(
@@ -8513,21 +9028,19 @@ func (s *Syncer) drainDetailQueue(
 			return
 		}
 		qi := &queue[i]
-		host := qi.PlatformHost
-		if host == "" {
-			host = "github.com"
+		repo := RepoRef{
+			Owner: qi.RepoOwner, Name: qi.RepoName,
+			Platform: qi.Platform, PlatformHost: qi.PlatformHost,
 		}
-		bucket := rateBucketKeyFor(qi.Platform, host)
+		bucket, err := s.bucketKeyForRepo(repo, false)
+		if err != nil {
+			continue
+		}
 
 		if !eligibleBuckets[bucket] {
 			continue
 		}
-		repo := RepoRef{
-			Platform:     qi.Platform,
-			Owner:        qi.RepoOwner,
-			Name:         qi.RepoName,
-			PlatformHost: qi.PlatformHost,
-		}
+		host := repoHost(repo)
 		if tracked, ok := s.trackedRepoByIdentity(qi.Platform, qi.RepoOwner, qi.RepoName, host); ok {
 			repo = tracked
 			repo.Owner = qi.RepoOwner
@@ -8577,7 +9090,7 @@ func (s *Syncer) drainDetailQueue(
 		cloneFetchOK := false
 		if s.clones != nil {
 			if cloneErr := s.clones.EnsureClone(
-				ctx, host, qi.RepoOwner, qi.RepoName,
+				ctx, string(repoPlatform(repo)), host, qi.RepoOwner, qi.RepoName,
 				cloneRemoteURL(repo),
 			); cloneErr != nil {
 				slog.Warn("detail drain: bare clone failed",
@@ -8899,9 +9412,11 @@ func (s *Syncer) syncMRForRepo(
 	providerAttempted *bool,
 ) error {
 	if !IsArchiveSyncBudgetContext(ctx) {
-		releaseProviderWork := s.beginProviderWork(
-			repoRateBucketKey(repo), archive.PriorityActiveDetail,
-		)
+		bucket, err := s.bucketKeyForRepo(repo, false)
+		if err != nil {
+			return fmt.Errorf("resolve detail credential route for %s/%s: %w", repo.Owner, repo.Name, err)
+		}
+		releaseProviderWork := s.beginProviderWork(bucket, archive.PriorityActiveDetail)
 		defer releaseProviderWork()
 	}
 
@@ -9017,7 +9532,7 @@ func (s *Syncer) syncMRForRepo(
 		// Resolve directly instead of using s.resolveDisplayName to
 		// preserve existing display names on failure.
 		if client, ok := s.optionalGitHubClientFor(repo); ok {
-			if displayName, found := s.resolveDisplayName(ctx, client, repo.PlatformHost, normalized.Author); found {
+			if displayName, found := s.resolveDisplayName(ctx, client, repo, normalized.Author); found {
 				normalized.AuthorDisplayName = displayName
 			}
 		}
@@ -9290,7 +9805,7 @@ func (s *Syncer) syncMRDiff(
 		return nil
 	}
 	host := repoHost(repo)
-	if err := s.clones.EnsureClone(ctx, host, repo.Owner, repo.Name, cloneRemoteURL(repo)); err != nil {
+	if err := s.clones.EnsureClone(ctx, string(repoPlatform(repo)), host, repo.Owner, repo.Name, cloneRemoteURL(repo)); err != nil {
 		return &DiffSyncError{
 			Code: DiffSyncCodeCloneUnavailable,
 			Err:  fmt.Errorf("ensure bare clone for #%d: %w", number, err),
@@ -9310,7 +9825,7 @@ func (s *Syncer) syncMRDiff(
 	if normalized.PlatformHeadSHA == "" || normalized.PlatformBaseSHA == "" {
 		return nil
 	}
-	mb, err := s.clones.MergeBase(ctx, host, repo.Owner, repo.Name, normalized.PlatformBaseSHA, normalized.PlatformHeadSHA)
+	mb, err := s.clones.MergeBase(ctx, string(repoPlatform(repo)), host, repo.Owner, repo.Name, normalized.PlatformBaseSHA, normalized.PlatformHeadSHA)
 	if err != nil {
 		return &DiffSyncError{
 			Code: DiffSyncCodeMergeBaseFailed,
@@ -9360,14 +9875,14 @@ func (s *Syncer) syncProviderMRDiff(
 	// round-trips. Per-MR detail syncs have no prior fetch and pass
 	// ensureClone.
 	if ensureClone {
-		if err := s.clones.EnsureClone(ctx, host, repo.Owner, repo.Name, cloneRemoteURL(repo)); err != nil {
+		if err := s.clones.EnsureClone(ctx, string(repoPlatform(repo)), host, repo.Owner, repo.Name, cloneRemoteURL(repo)); err != nil {
 			return &DiffSyncError{
 				Code: DiffSyncCodeCloneUnavailable,
 				Err:  fmt.Errorf("ensure bare clone for #%d: %w", number, err),
 			}
 		}
 	}
-	mb, err := s.clones.MergeBase(ctx, host, repo.Owner, repo.Name, normalized.PlatformBaseSHA, normalized.PlatformHeadSHA)
+	mb, err := s.clones.MergeBase(ctx, string(repoPlatform(repo)), host, repo.Owner, repo.Name, normalized.PlatformBaseSHA, normalized.PlatformHeadSHA)
 	if err != nil {
 		return &DiffSyncError{
 			Code: DiffSyncCodeMergeBaseFailed,
@@ -9469,9 +9984,11 @@ func (s *Syncer) syncIssueForRepo(
 	providerAttempted *bool,
 ) error {
 	if !IsArchiveSyncBudgetContext(ctx) {
-		releaseProviderWork := s.beginProviderWork(
-			repoRateBucketKey(repo), archive.PriorityActiveDetail,
-		)
+		bucket, err := s.bucketKeyForRepo(repo, false)
+		if err != nil {
+			return fmt.Errorf("resolve issue credential route for %s/%s: %w", repo.Owner, repo.Name, err)
+		}
+		releaseProviderWork := s.beginProviderWork(bucket, archive.PriorityActiveDetail)
 		defer releaseProviderWork()
 	}
 
@@ -9554,9 +10071,11 @@ func (s *Syncer) SyncItemByNumber(
 	repo.Owner = owner
 	repo.Name = name
 	repo.PlatformHost = repoHost(repo)
-	releaseProviderWork := s.beginProviderWork(
-		repoRateBucketKey(repo), archive.PriorityActiveDetail,
-	)
+	bucket, err := s.bucketKeyForRepo(repo, false)
+	if err != nil {
+		return "", fmt.Errorf("resolve item credential route for %s/%s: %w", owner, name, err)
+	}
+	releaseProviderWork := s.beginProviderWork(bucket, archive.PriorityActiveDetail)
 	defer releaseProviderWork()
 
 	if repoPlatform(repo) != platform.KindGitHub {
@@ -9701,7 +10220,7 @@ func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID 
 				)
 			}
 		} else if headSHA != "" && baseSHA != "" {
-			mb, err := s.clones.MergeBase(ctx, closedHost, repo.Owner, repo.Name, baseSHA, headSHA)
+			mb, err := s.clones.MergeBase(ctx, string(repoPlatform(repo)), closedHost, repo.Owner, repo.Name, baseSHA, headSHA)
 			if err != nil {
 				slog.Warn("merge-base for closed PR failed",
 					"repo", repo.Owner+"/"+repo.Name,
@@ -9902,7 +10421,7 @@ func (s *Syncer) computeMergedMRDiffSHAs(
 		mergedHost = "github.com"
 	}
 	pullRef := fmt.Sprintf("refs/pull/%d/head", number)
-	prHead, err := s.clones.RevParse(ctx, mergedHost, repo.Owner, repo.Name, pullRef)
+	prHead, err := s.clones.RevParse(ctx, string(repoPlatform(repo)), mergedHost, repo.Owner, repo.Name, pullRef)
 	if err != nil {
 		return &DiffSyncError{
 			Code: DiffSyncCodeCommitUnreachable,
@@ -9913,7 +10432,7 @@ func (s *Syncer) computeMergedMRDiffSHAs(
 	// Use the merge commit's first parent as the base for merge-base.
 	// This avoids the post-merge ancestor problem where prHead is reachable
 	// from the current base branch tip (making merge-base return prHead).
-	preMergeBase, err := s.clones.RevParse(ctx, mergedHost, repo.Owner, repo.Name, mergeCommitSHA+"^1")
+	preMergeBase, err := s.clones.RevParse(ctx, string(repoPlatform(repo)), mergedHost, repo.Owner, repo.Name, mergeCommitSHA+"^1")
 	if err != nil {
 		return &DiffSyncError{
 			Code: DiffSyncCodeCommitUnreachable,
@@ -9921,7 +10440,7 @@ func (s *Syncer) computeMergedMRDiffSHAs(
 		}
 	}
 
-	mb, err := s.clones.MergeBase(ctx, mergedHost, repo.Owner, repo.Name, preMergeBase, prHead)
+	mb, err := s.clones.MergeBase(ctx, string(repoPlatform(repo)), mergedHost, repo.Owner, repo.Name, preMergeBase, prHead)
 	if err != nil {
 		return &DiffSyncError{
 			Code: DiffSyncCodeMergeBaseFailed,

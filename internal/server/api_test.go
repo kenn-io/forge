@@ -201,6 +201,15 @@ func runtimeSessionKeyForTest(
 }
 
 // mockGH implements ghclient.Client for testing.
+type mockGHNativeStackAPI struct {
+	listOpenPullRequests func(
+		context.Context, string, string,
+	) ([]*gh.PullRequest, map[int]*ghclient.NativeStackHint, error)
+	listStackPage func(
+		context.Context, string, string, int,
+	) (ghclient.NativeStackPage, error)
+}
+
 type mockGH struct {
 	getRepositoryFn            func(context.Context, string, string) (*gh.Repository, error)
 	getPullRequestFn           func(context.Context, string, string, int) (*gh.PullRequest, error)
@@ -231,6 +240,7 @@ type mockGH struct {
 	listReleasesFn             func(context.Context, string, string, int) ([]*gh.RepositoryRelease, error)
 	listTagsFn                 func(context.Context, string, string, int) ([]*gh.RepositoryTag, error)
 	listOpenPullRequestsFn     func(context.Context, string, string) ([]*gh.PullRequest, error)
+	nativeStackAPI             *mockGHNativeStackAPI
 	listPullRequestsPageFn     func(context.Context, string, string, string, int) ([]*gh.PullRequest, bool, error)
 	listIssuesPageFn           func(context.Context, string, string, string, int) ([]*gh.Issue, bool, error)
 	listCheckRunsForRefFn      func(context.Context, string, string, string) ([]*gh.CheckRun, error)
@@ -245,7 +255,7 @@ type mockGH struct {
 	listIssueCommentsErr       error
 	listNotificationsFn        func(context.Context, ghclient.NotificationListOptions) ([]ghclient.NotificationThread, bool, error)
 	markNotificationReadFn     func(context.Context, string) error
-	getMarkdownImageFn         func(context.Context, string, string) (platform.MarkdownImage, error)
+	getMarkdownImageFn         func(context.Context, string, string, string) (platform.MarkdownImage, error)
 }
 
 func (m *mockGH) ListOpenPullRequests(ctx context.Context, owner, repo string) ([]*gh.PullRequest, error) {
@@ -256,6 +266,25 @@ func (m *mockGH) ListOpenPullRequests(ctx context.Context, owner, repo string) (
 		return nil, m.listOpenPRsErr
 	}
 	return nil, nil
+}
+
+func (m *mockGH) ListOpenPullRequestsWithNativeStackHints(
+	ctx context.Context, owner, repo string,
+) ([]*gh.PullRequest, map[int]*ghclient.NativeStackHint, error) {
+	if m.nativeStackAPI != nil && m.nativeStackAPI.listOpenPullRequests != nil {
+		return m.nativeStackAPI.listOpenPullRequests(ctx, owner, repo)
+	}
+	prs, err := m.ListOpenPullRequests(ctx, owner, repo)
+	return prs, nil, err
+}
+
+func (m *mockGH) ListNativeStacksPage(
+	ctx context.Context, owner, repo string, page int,
+) (ghclient.NativeStackPage, error) {
+	if m.nativeStackAPI != nil && m.nativeStackAPI.listStackPage != nil {
+		return m.nativeStackAPI.listStackPage(ctx, owner, repo, page)
+	}
+	return ghclient.NativeStackPage{}, nil
 }
 
 func (m *mockGH) ListOpenIssues(ctx context.Context, owner, repo string) ([]*gh.Issue, error) {
@@ -712,10 +741,10 @@ func (m *mockGH) MarkNotificationThreadRead(ctx context.Context, threadID string
 
 func (m *mockGH) GetMarkdownImage(
 	ctx context.Context,
-	owner, sourceURL string,
+	owner, repo, sourceURL string,
 ) (platform.MarkdownImage, error) {
 	if m.getMarkdownImageFn != nil {
-		return m.getMarkdownImageFn(ctx, owner, sourceURL)
+		return m.getMarkdownImageFn(ctx, owner, repo, sourceURL)
 	}
 	return platform.MarkdownImage{}, nil
 }
@@ -4762,7 +4791,7 @@ func TestAPIGitHubSyncReadsCloneTokenFileAfterRotation(t *testing.T) {
 	database := dbtest.Open(t)
 	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
-	clones := gitclone.New(filepath.Join(dir, "clones"), map[string]tokenauth.Source{
+	clones := gitclone.New(filepath.Join(dir, "clones"), gitclone.HostSources{
 		"github.com": source,
 	})
 	syncer := ghclient.NewSyncer(
@@ -4905,7 +4934,7 @@ func TestAPISharedHostCloneFetchFollowsReloadedHostToken(t *testing.T) {
 	require.NoError(err)
 
 	database := dbtest.Open(t)
-	clones := gitclone.New(filepath.Join(dir, "clones"), map[string]tokenauth.Source{
+	clones := gitclone.New(filepath.Join(dir, "clones"), gitclone.HostSources{
 		"code.example.com": cloneSrc,
 	})
 	syncer := ghclient.NewSyncerWithRegistry(
@@ -5464,7 +5493,7 @@ func TestAPISyncRefreshesStaleCachedChecksWhenAggregateCIChanges(t *testing.T) {
 		time.Minute,
 		nil,
 		map[string]*ghclient.SyncBudget{
-			ghclient.RateBucketKey("gitlab", ref.Host): ghclient.NewSyncBudget(100),
+			ghclient.RateBucketKey("gitlab", ref.Host, "host"): ghclient.NewSyncBudget(100),
 		},
 	)
 	t.Cleanup(syncer.Stop)
@@ -5582,7 +5611,7 @@ func TestAPISyncRefreshesCachedPendingChecksThroughDetailDrain(t *testing.T) {
 		time.Minute,
 		nil,
 		map[string]*ghclient.SyncBudget{
-			ghclient.RateBucketKey("gitlab", ref.Host): ghclient.NewSyncBudget(100),
+			ghclient.RateBucketKey("gitlab", ref.Host, "host"): ghclient.NewSyncBudget(100),
 		},
 	)
 	t.Cleanup(syncer.Stop)
@@ -6076,7 +6105,7 @@ func TestAPIListRepoSummariesIncludesSyncedReleaseTimeline(t *testing.T) {
 	runGit(t, work, "push", "--tags", "origin", "main")
 
 	clones := gitclone.New(filepath.Join(dir, "clones"), nil)
-	clonePath, err := clones.ClonePath("github.com", "acme", "widgets")
+	clonePath, err := clones.ClonePath("github", "github.com", "acme", "widgets")
 	require.NoError(err)
 	require.NoError(os.MkdirAll(filepath.Dir(clonePath), 0o755))
 	runGit(t, dir, "clone", "--bare", remote, clonePath)
@@ -7698,7 +7727,7 @@ func TestAPITriggerSyncBypassesNextSyncAfter(t *testing.T) {
 	}
 	trackers := map[string]*ghclient.RateTracker{
 		"github.com": ghclient.NewRateTracker(
-			database, "github.com", "rest",
+			database, "github.com", "host", "rest",
 		),
 	}
 	syncer := ghclient.NewSyncer(
@@ -17730,8 +17759,8 @@ func TestAPIApplyReviewSuggestionRejectsRateLimitedOperationBeforeProviderCall(t
 	provider.rateLimitBuckets = map[platform.OperationName][]platform.RateLimitBucket{
 		platform.OperationApplyReviewSuggestion: {platform.RateLimitBucketREST},
 	}
-	rt := ghclient.NewPlatformRateTracker(database, "gitlab", "gitlab.example.com", "rest")
-	srv.syncer.RateTrackers()[ghclient.RateBucketKey("gitlab", "gitlab.example.com")] = rt
+	rt := ghclient.NewPlatformRateTracker(database, "gitlab", "gitlab.example.com", "host", "rest")
+	srv.syncer.RateTrackers()[ghclient.RateBucketKey("gitlab", "gitlab.example.com", "host")] = rt
 	rt.UpdateFromRate(ghclient.Rate{
 		Limit:     5000,
 		Remaining: 0,
@@ -20488,7 +20517,7 @@ func TestAPILocalReadEndpointsServeDuringTokenRotationE2E(t *testing.T) {
 		}, tokenauth.Options{}),
 	}
 
-	clones := gitclone.New(bareDir, map[string]tokenauth.Source{"github.com": source})
+	clones := gitclone.New(bareDir, gitclone.HostSources{"github.com": source})
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": &mockGH{}},
 		database, nil, defaultTestRepos, time.Minute, nil, nil,
@@ -20572,7 +20601,7 @@ func TestAPIRateLimits(t *testing.T) {
 
 	database := dbtest.Open(t)
 
-	rt := ghclient.NewRateTracker(database, "github.com", "rest")
+	rt := ghclient.NewRateTracker(database, "github.com", "host", "rest")
 
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": &mockGH{}},
@@ -20620,7 +20649,7 @@ func TestAPISyncPRIncrementsRequestCount(t *testing.T) {
 
 	database := dbtest.Open(t)
 
-	rt := ghclient.NewRateTracker(database, "github.com", "rest")
+	rt := ghclient.NewRateTracker(database, "github.com", "host", "rest")
 
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": &mockGH{}},
@@ -20678,7 +20707,7 @@ func TestAPIRateLimitsWithBudget(t *testing.T) {
 
 	database := dbtest.Open(t)
 
-	rt := ghclient.NewRateTracker(database, "github.com", "rest")
+	rt := ghclient.NewRateTracker(database, "github.com", "host", "rest")
 
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": &mockGH{}},
@@ -20722,7 +20751,7 @@ func TestAPIRateLimitsResetExpiredBudgetWindow(t *testing.T) {
 
 	database := dbtest.Open(t)
 
-	rt := ghclient.NewRateTracker(database, "github.com", "rest")
+	rt := ghclient.NewRateTracker(database, "github.com", "host", "rest")
 	budget := ghclient.NewSyncBudget(500)
 
 	syncer := ghclient.NewSyncer(
@@ -20766,13 +20795,85 @@ func TestAPIRateLimitsResetExpiredBudgetWindow(t *testing.T) {
 	assert.Equal(500, gh.BudgetRemaining)
 }
 
+func TestAPIRateLimitsUsesSafeIdentityKeyAndResolvedPrincipalLabel(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	database := dbtest.Open(t)
+	identity := ghclient.IdentityKey{Host: "github.com", Principal: "user:123"}
+	restRT := ghclient.NewRateTracker(database, "github.com", "user:123", "rest")
+	bucket := ghclient.RateBucketKey("github", "github.com", "user:123")
+	router, err := ghclient.NewHostRouter(
+		"github.com",
+		&ghclient.Route{
+			Key:          ghclient.RouteKey{Host: "github.com", Owner: "acme"},
+			ReadIdentity: identity, WriteIdentity: identity,
+		},
+	)
+	require.NoError(err)
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": &mockGH{}},
+		database, nil,
+		[]ghclient.RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
+		time.Minute,
+		map[string]*ghclient.RateTracker{bucket: restRT}, nil,
+	)
+	syncer.SetGitHubRouters(map[string]*ghclient.HostRouter{"github.com": router})
+	syncer.SetRatePrincipalLabels(map[string]string{bucket: "GitHub user maintainer"})
+
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/api/v1/rate-limits")
+	require.NoError(err)
+	defer resp.Body.Close()
+	require.Equal(http.StatusOK, resp.StatusCode)
+	var body rateLimitsResponse
+	require.NoError(json.NewDecoder(resp.Body).Decode(&body))
+	require.Len(body.Hosts, 1)
+	for key, status := range body.Hosts {
+		assert.NotContains(key, "\x00")
+		assert.Equal("github:github.com:user:123", key)
+		assert.Equal("user:123", status.RatePrincipal)
+		assert.Equal("GitHub user maintainer", status.PrincipalLabel)
+	}
+}
+
+func TestAPIRateLimitsIncludesWriteOnlyGraphQLState(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	database := dbtest.Open(t)
+	bucket := ghclient.RateBucketKey("github", "github.com", "user:123")
+	restRT := ghclient.NewRateTracker(database, "github.com", "user:123", "rest")
+	gqlRT := ghclient.NewRateTracker(database, "github.com", "user:123", "graphql")
+	gqlRT.UpdateFromRate(ghclient.Rate{Limit: 5000, Remaining: 4300, Reset: time.Now().Add(time.Hour)})
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": &mockGH{}}, database, nil,
+		nil, time.Minute,
+		map[string]*ghclient.RateTracker{bucket: restRT}, nil,
+	)
+	syncer.SetWriteGQLRateTrackers(map[string]*ghclient.RateTracker{bucket: gqlRT})
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/api/v1/rate-limits")
+	require.NoError(err)
+	defer resp.Body.Close()
+	var body rateLimitsResponse
+	require.NoError(json.NewDecoder(resp.Body).Decode(&body))
+	status := body.Hosts["github:github.com:user:123"]
+	assert.True(status.GQLKnown)
+	assert.Equal(4300, status.GQLRemaining)
+}
+
 func TestAPIRateLimitsWithGQL(t *testing.T) {
 	assert := assert.New(t)
 
 	database := dbtest.Open(t)
 
-	restRT := ghclient.NewRateTracker(database, "github.com", "rest")
-	gqlRT := ghclient.NewRateTracker(database, "github.com", "graphql")
+	restRT := ghclient.NewRateTracker(database, "github.com", "host", "rest")
+	gqlRT := ghclient.NewRateTracker(database, "github.com", "host", "graphql")
 
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": &mockGH{}},
@@ -20815,6 +20916,8 @@ func TestAPIRateLimitsWithGQL(t *testing.T) {
 	assert.True(ok)
 
 	// GQL fields should be populated.
+	assert.Equal("host", host.RatePrincipal)
+	assert.Equal("Host credential", host.PrincipalLabel)
 	assert.Equal(4800, host.GQLRemaining)
 	assert.Equal(5000, host.GQLLimit)
 	assert.True(host.GQLKnown)
@@ -20831,8 +20934,8 @@ func TestAPIRateLimitsReadsLocalStateWithoutRefreshingGitHubRateLimit(t *testing
 	gitHubRestReset := now.Add(time.Hour)
 	gitHubGQLReset := now.Add(90 * time.Minute)
 
-	restRT := ghclient.NewRateTracker(database, "github.com", "rest")
-	gqlRT := ghclient.NewRateTracker(database, "github.com", "graphql")
+	restRT := ghclient.NewRateTracker(database, "github.com", "host", "rest")
+	gqlRT := ghclient.NewRateTracker(database, "github.com", "host", "graphql")
 	restRT.UpdateFromRate(ghclient.Rate{
 		Limit:     5000,
 		Remaining: 3000,
@@ -20914,7 +21017,7 @@ func TestAPIRateLimitsGQLDefaultsUnknown(t *testing.T) {
 
 	database := dbtest.Open(t)
 
-	rt := ghclient.NewRateTracker(database, "github.com", "rest")
+	rt := ghclient.NewRateTracker(database, "github.com", "host", "rest")
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": &mockGH{}},
 		database, nil,
@@ -20954,9 +21057,9 @@ func TestAPIRateLimitsMultiHostMixed(t *testing.T) {
 	database := dbtest.Open(t)
 
 	// Two hosts: github.com has GQL data, ghe.example.com does not.
-	ghRT := ghclient.NewRateTracker(database, "github.com", "rest")
-	gheRT := ghclient.NewRateTracker(database, "ghe.example.com", "rest")
-	gqlRT := ghclient.NewRateTracker(database, "github.com", "graphql")
+	ghRT := ghclient.NewRateTracker(database, "github.com", "host", "rest")
+	gheRT := ghclient.NewRateTracker(database, "ghe.example.com", "host", "rest")
+	gqlRT := ghclient.NewRateTracker(database, "github.com", "host", "graphql")
 	gqlRT.UpdateFromRate(ghclient.Rate{
 		Limit:     5000,
 		Remaining: 4500,
@@ -21021,8 +21124,8 @@ func TestAPIRateLimitsScopesSameHostByProvider(t *testing.T) {
 	database := dbtest.Open(t)
 
 	host := "code.example.com"
-	ghRT := ghclient.NewPlatformRateTracker(database, "github", host, "rest")
-	glRT := ghclient.NewPlatformRateTracker(database, "gitlab", host, "rest")
+	ghRT := ghclient.NewPlatformRateTracker(database, "github", host, "host", "rest")
+	glRT := ghclient.NewPlatformRateTracker(database, "gitlab", host, "host", "rest")
 	ghRT.RecordRequest()
 	glRT.RecordRequest()
 	glRT.RecordRequest()
@@ -21036,8 +21139,8 @@ func TestAPIRateLimitsScopesSameHostByProvider(t *testing.T) {
 		},
 		time.Minute,
 		map[string]*ghclient.RateTracker{
-			ghclient.RateBucketKey("github", host): ghRT,
-			ghclient.RateBucketKey("gitlab", host): glRT,
+			ghclient.RateBucketKey("github", host, "host"): ghRT,
+			ghclient.RateBucketKey("gitlab", host, "host"): glRT,
 		},
 		nil,
 	)
@@ -21428,7 +21531,7 @@ func TestAPIGetRepoCommitDiffRejectsOptionLikeSHA(t *testing.T) {
 	require := require.New(t)
 
 	_, _, _, _, _, srv := setupTestServerWithClonesAndServer(t)
-	clonePath, err := srv.clones.ClonePath("github.com", "acme", "widget")
+	clonePath, err := srv.clones.ClonePath("github", "github.com", "acme", "widget")
 	require.NoError(err)
 	configPath := filepath.Join(clonePath, "config")
 	before, err := os.ReadFile(configPath)
@@ -22726,6 +22829,81 @@ func TestAPIStacks_DetectionViaSyncHook(t *testing.T) {
 	require.NotNil(ctxResp.JSON200)
 	assert.Equal("hook", ctxResp.JSON200.StackName)
 	assert.Equal(int64(2), ctxResp.JSON200.Size)
+}
+
+func TestAPIStacks_DetectionViaSyncHookPrefersGitHubNativeOrder(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Second)
+	repoCloneURL := "https://github.com/acme/widget.git"
+	makeGHPR := func(id int64, number int, head, base string) *gh.PullRequest {
+		sha := fmt.Sprintf("sha%d", number)
+		title := fmt.Sprintf("PR #%d", number)
+		return &gh.PullRequest{
+			ID: &id, Number: &number, State: new("open"), Title: &title,
+			Body: new(""), User: &gh.User{Login: new("testuser")},
+			CreatedAt: &gh.Timestamp{Time: now}, UpdatedAt: &gh.Timestamp{Time: now},
+			Head: &gh.PullRequestBranch{
+				Ref: &head, SHA: &sha,
+				Repo: &gh.Repository{CloneURL: &repoCloneURL},
+			},
+			Base: &gh.PullRequestBranch{Ref: &base, SHA: new("basesha")},
+		}
+	}
+	prs := []*gh.PullRequest{
+		makeGHPR(1001, 10, "feat/base", "main"),
+		makeGHPR(1011, 11, "feat/tip", "feat/base"),
+	}
+	mock := &mockGH{
+		getRepositoryFn: func(_ context.Context, owner, repo string) (*gh.Repository, error) {
+			nodeID := "repo-" + owner + "-" + repo
+			return &gh.Repository{
+				Name: &repo, NodeID: &nodeID, Owner: &gh.User{Login: &owner},
+				CloneURL: &repoCloneURL, Archived: new(false),
+			}, nil
+		},
+		nativeStackAPI: &mockGHNativeStackAPI{
+			listOpenPullRequests: func(
+				context.Context, string, string,
+			) ([]*gh.PullRequest, map[int]*ghclient.NativeStackHint, error) {
+				return prs, map[int]*ghclient.NativeStackHint{
+					10: {Number: 42, Size: 2, Position: 2, BaseRef: "main"},
+					11: {Number: 42, Size: 2, Position: 1, BaseRef: "main"},
+				}, nil
+			},
+			listStackPage: func(
+				context.Context, string, string, int,
+			) (ghclient.NativeStackPage, error) {
+				return ghclient.NativeStackPage{Stacks: []ghclient.NativeStack{{
+					ID: 9001, Number: 42, BaseRef: "main", Open: true, CreatedAt: now,
+					Members: []ghclient.NativeStackMember{
+						{Position: 1, PullRequestNumber: 11, State: "open", HeadRef: "feat/tip", HeadSHA: "sha11"},
+						{Position: 2, PullRequestNumber: 10, State: "open", HeadRef: "feat/base", HeadSHA: "sha10"},
+					},
+				}}}, nil
+			},
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	client := setupTestClient(t, srv)
+	srv.syncer.SetPreferGitHubNativeStacks(true)
+	srv.syncer.SetOnSyncCompleted(stacks.SyncCompletedHook(ctx, database, nil))
+	srv.syncer.RunOnce(ctx)
+
+	stackResp, err := client.HTTP.GetPullStackWithResponse(ctx, "gh", "acme", "widget", 10)
+	require.NoError(err)
+	require.Equal(http.StatusOK, stackResp.StatusCode(), string(stackResp.Body))
+	require.NotNil(stackResp.JSON200)
+	require.NotNil(stackResp.JSON200.Members)
+	assert.Equal([]int64{11, 10}, stackMemberNumbers(*stackResp.JSON200.Members))
+
+	detailResp, err := client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", 10)
+	require.NoError(err)
+	require.Equal(http.StatusOK, detailResp.StatusCode(), string(detailResp.Body))
+	require.NotNil(detailResp.JSON200)
+	require.NotNil(detailResp.JSON200.Stack)
+	assert.Equal(int64(2), detailResp.JSON200.Stack.Position)
 }
 
 func TestAPIStacks_DetectionViaSyncHookIgnoresForkHeadBranchCollision(t *testing.T) {
@@ -29589,4 +29767,304 @@ func TestAPIEditIssueMissing404(t *testing.T) {
 		"/api/v1/issues/gh/acme/widget/999",
 		map[string]string{"body": "anything"})
 	require.Equal(http.StatusNotFound, rr.Code)
+}
+
+// TestMergeBlocksPredecessorPreservedByNativeStackOverlapFallback closes the
+// seam between stack detection and the merge safeguard. Detection tests prove
+// the projection and pullapi tests prove the guard blocks on hand-seeded rows;
+// neither proves the rows detection writes for an overlap actually preserve the
+// preceding blocker the guard reads.
+func TestMergeBlocksPredecessorPreservedByNativeStackOverlapFallback(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	merged := false
+	mock := &mockGH{
+		mergePullRequestFn: func(_ context.Context, _, _ string, _ int, _, _, _ string) (*gh.PullRequestMergeResult, error) {
+			merged = true
+			return &gh.PullRequestMergeResult{}, nil
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	ctx := t.Context()
+	seedStackedPR(t, database, "acme", "widget", 100, "feature/a", "main", db.MergeRequestStateOpen, "", "")
+	seedStackedPR(t, database, "acme", "widget", 101, "feature/b", "feature/a", db.MergeRequestStateMerged, "", "")
+	tipHeadSHA := "sha102"
+	seedStackedPR(t, database, "acme", "widget", 102, "feature/c", "feature/b", db.MergeRequestStateOpen, "", "")
+	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	require.NotNil(repo)
+	now := time.Now().UTC()
+	// Two confirmed stacks share merged PR 101, and stack 42's leading member
+	// has no row yet, so the overlap is only visible from declared membership.
+	require.NoError(database.ReplaceGitHubNativeStack(ctx, db.GitHubNativeStack{
+		RepoID: repo.ID, GitHubID: 9043, Number: 43, Size: 2,
+		BaseRef: "main", IsOpen: true, GitHubCreatedAt: now,
+		ContentFingerprint: "native-43", LastObservedAt: now,
+		Members: []db.GitHubNativeStackMember{
+			{Position: 1, PullRequestNumber: 101, State: "merged", HeadRef: "feature/b", HeadSHA: "sha101"},
+			{Position: 2, PullRequestNumber: 102, State: "open", HeadRef: "feature/c", HeadSHA: tipHeadSHA},
+		},
+	}))
+	require.NoError(database.ReplaceGitHubNativeStack(ctx, db.GitHubNativeStack{
+		RepoID: repo.ID, GitHubID: 9042, Number: 42, Size: 2,
+		BaseRef: "main", IsOpen: true, GitHubCreatedAt: now,
+		ContentFingerprint: "native-42", LastObservedAt: now,
+		Members: []db.GitHubNativeStackMember{
+			{Position: 1, PullRequestNumber: 900, State: "open", HeadRef: "feature/z", HeadSHA: "sha900"},
+			{Position: 2, PullRequestNumber: 101, State: "merged", HeadRef: "feature/b", HeadSHA: "sha101"},
+		},
+	}))
+	require.NoError(stacks.RunDetectionWithNativeStacks(ctx, database, repo.ID, []int{42, 43}))
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.MergePullWithResponse(
+		ctx, "gh", "acme", "widget", 102,
+		generated.MergePRInputBody{
+			Method:          "squash",
+			ExpectedHeadSha: &tipHeadSHA,
+		},
+	)
+	require.NoError(err)
+
+	assert.Equal(http.StatusConflict, resp.StatusCode())
+	assert.Contains(string(resp.Body), `"reason":"mid_stack_merge_disallowed"`)
+	assert.Contains(string(resp.Body), `"blocking_number":100`)
+	assert.False(merged, "the provider must not be asked to merge past an open predecessor")
+}
+
+// TestMergeBlocksPredecessorRestoredWhenNativeStackAgesOut is the full-stack
+// consequence of the observation-based aging bound. Cache aging spans hours, so
+// the syncer clock is injected rather than waited on. Under the stale native
+// projection PR 101 follows a merged predecessor and would merge; once the
+// observation ages out the projection returns to branch inference, which
+// restores the open predecessor the merge safeguard must block on.
+func TestMergeBlocksPredecessorRestoredWhenNativeStackAgesOut(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	observed := time.Now().UTC().Add(-24 * time.Hour).Truncate(time.Second)
+	repoCloneURL := "https://github.com/acme/widget.git"
+	makeGHPR := func(id int64, number int, head, base string) *gh.PullRequest {
+		sha := fmt.Sprintf("sha%d", number)
+		title := fmt.Sprintf("PR #%d", number)
+		return &gh.PullRequest{
+			ID: &id, Number: &number, State: new("open"), Title: &title,
+			Body: new(""), User: &gh.User{Login: new("testuser")},
+			CreatedAt: &gh.Timestamp{Time: observed}, UpdatedAt: &gh.Timestamp{Time: observed},
+			Head: &gh.PullRequestBranch{
+				Ref: &head, SHA: &sha,
+				Repo: &gh.Repository{CloneURL: &repoCloneURL},
+			},
+			Base: &gh.PullRequestBranch{Ref: &base, SHA: new("basesha")},
+		}
+	}
+	prs := []*gh.PullRequest{
+		makeGHPR(1000, 100, "feature/a", "main"),
+		makeGHPR(1001, 101, "feature/b", "feature/a"),
+	}
+	var listCalls atomic.Int32
+	merged := false
+	mock := &mockGH{
+		getRepositoryFn: func(_ context.Context, owner, repo string) (*gh.Repository, error) {
+			nodeID := "repo-" + owner + "-" + repo
+			return &gh.Repository{
+				Name: &repo, NodeID: &nodeID, Owner: &gh.User{Login: &owner},
+				CloneURL: &repoCloneURL, Archived: new(false),
+			}, nil
+		},
+		mergePullRequestFn: func(_ context.Context, _, _ string, _ int, _, _, _ string) (*gh.PullRequestMergeResult, error) {
+			merged = true
+			return &gh.PullRequestMergeResult{}, nil
+		},
+		nativeStackAPI: &mockGHNativeStackAPI{
+			listOpenPullRequests: func(
+				context.Context, string, string,
+			) ([]*gh.PullRequest, map[int]*ghclient.NativeStackHint, error) {
+				if listCalls.Add(1) > 1 {
+					// The open-PR list is byte-identical on the later sync, which
+					// is the path a stale confirmation would survive on.
+					return nil, nil, &gh.ErrorResponse{Response: &http.Response{
+						StatusCode: http.StatusNotModified,
+						Request: &http.Request{
+							Method: http.MethodGet,
+							URL:    &url.URL{Scheme: "https", Host: "api.github.com", Path: "/pulls"},
+						},
+					}}
+				}
+				// Only the tip is claimed by the stack, so no hint can attest to the
+				// leading member the cached row names.
+				return prs, map[int]*ghclient.NativeStackHint{
+					101: {Number: 42, Size: 2, Position: 2, BaseRef: "main"},
+				}, nil
+			},
+			listStackPage: func(
+				context.Context, string, string, int,
+			) (ghclient.NativeStackPage, error) {
+				return ghclient.NativeStackPage{}, errors.New("catalog must not be refetched while confirmed")
+			},
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	// PR 900 is merged, so the stale native chain shows PR 101 following a
+	// finished predecessor.
+	seedStackedPR(t, database, "acme", "widget", 900, "feature/z", "main", db.MergeRequestStateMerged, "", "")
+	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	require.NotNil(repo)
+	require.NoError(database.ReplaceGitHubNativeStack(ctx, db.GitHubNativeStack{
+		RepoID: repo.ID, GitHubID: 9042, Number: 42, Size: 2,
+		BaseRef: "main", IsOpen: true, GitHubCreatedAt: observed,
+		ContentFingerprint: "native-42", LastObservedAt: observed,
+		Members: []db.GitHubNativeStackMember{
+			{Position: 1, PullRequestNumber: 900, State: "merged", HeadRef: "feature/z", HeadSHA: "sha900"},
+			{Position: 2, PullRequestNumber: 101, State: "open", HeadRef: "feature/b", HeadSHA: "sha101"},
+		},
+	}))
+	clock := observed.Add(11 * time.Hour)
+	srv.syncer.SetClock(func() time.Time { return clock })
+	srv.syncer.SetPreferGitHubNativeStacks(true)
+	srv.syncer.SetOnSyncCompleted(stacks.SyncCompletedHook(ctx, database, nil))
+	client := setupTestClient(t, srv)
+
+	srv.syncer.RunOnce(ctx)
+
+	stackResp, err := client.HTTP.GetPullStackWithResponse(ctx, "gh", "acme", "widget", 101)
+	require.NoError(err)
+	require.Equal(http.StatusOK, stackResp.StatusCode(), string(stackResp.Body))
+	require.NotNil(stackResp.JSON200)
+	require.NotNil(stackResp.JSON200.Members)
+	require.Equal([]int64{900, 101}, stackMemberNumbers(*stackResp.JSON200.Members),
+		"inside its observation window the cached stack still owns the projection")
+
+	// Two hours later the cached stack is past its own 12h window.
+	clock = observed.Add(13 * time.Hour)
+	srv.syncer.RunOnce(ctx)
+
+	stackResp, err = client.HTTP.GetPullStackWithResponse(ctx, "gh", "acme", "widget", 101)
+	require.NoError(err)
+	require.Equal(http.StatusOK, stackResp.StatusCode(), string(stackResp.Body))
+	require.NotNil(stackResp.JSON200)
+	require.NotNil(stackResp.JSON200.Members)
+	assert.Equal([]int64{100, 101}, stackMemberNumbers(*stackResp.JSON200.Members),
+		"an aged observation must hand the repository back to branch inference")
+
+	tipHeadSHA := "sha101"
+	mergeResp, err := client.HTTP.MergePullWithResponse(
+		ctx, "gh", "acme", "widget", 101,
+		generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &tipHeadSHA},
+	)
+	require.NoError(err)
+
+	assert.Equal(http.StatusConflict, mergeResp.StatusCode(), string(mergeResp.Body))
+	assert.Contains(string(mergeResp.Body), `"reason":"mid_stack_merge_disallowed"`)
+	assert.Contains(string(mergeResp.Body), `"blocking_number":100`)
+	assert.False(merged, "the provider must not be asked to merge past an open predecessor")
+}
+
+// TestMergeBlocksPredecessorWhenNativeStackRefreshIsPartial is the full-stack
+// consequence of refusing to project a partial refresh. Stack 42 is confirmable
+// from cache and would place PR 101 behind a merged predecessor; stack 43 is
+// hinted but its catalog row is rejected, so nothing about it -- including
+// whether it also claims PR 101 -- is known. The pass must fall back to branch
+// inference, which restores the open predecessor the safeguard blocks on.
+func TestMergeBlocksPredecessorWhenNativeStackRefreshIsPartial(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Second)
+	repoCloneURL := "https://github.com/acme/widget.git"
+	makeGHPR := func(id int64, number int, head, base string) *gh.PullRequest {
+		sha := fmt.Sprintf("sha%d", number)
+		title := fmt.Sprintf("PR #%d", number)
+		return &gh.PullRequest{
+			ID: &id, Number: &number, State: new("open"), Title: &title,
+			Body: new(""), User: &gh.User{Login: new("testuser")},
+			CreatedAt: &gh.Timestamp{Time: now}, UpdatedAt: &gh.Timestamp{Time: now},
+			Head: &gh.PullRequestBranch{
+				Ref: &head, SHA: &sha,
+				Repo: &gh.Repository{CloneURL: &repoCloneURL},
+			},
+			Base: &gh.PullRequestBranch{Ref: &base, SHA: new("basesha")},
+		}
+	}
+	prs := []*gh.PullRequest{
+		makeGHPR(1000, 100, "feature/a", "main"),
+		makeGHPR(1001, 101, "feature/b", "feature/a"),
+		makeGHPR(1003, 103, "feature/c", "main"),
+	}
+	merged := false
+	mock := &mockGH{
+		getRepositoryFn: func(_ context.Context, owner, repo string) (*gh.Repository, error) {
+			nodeID := "repo-" + owner + "-" + repo
+			return &gh.Repository{
+				Name: &repo, NodeID: &nodeID, Owner: &gh.User{Login: &owner},
+				CloneURL: &repoCloneURL, Archived: new(false),
+			}, nil
+		},
+		mergePullRequestFn: func(_ context.Context, _, _ string, _ int, _, _, _ string) (*gh.PullRequestMergeResult, error) {
+			merged = true
+			return &gh.PullRequestMergeResult{}, nil
+		},
+		nativeStackAPI: &mockGHNativeStackAPI{
+			listOpenPullRequests: func(
+				context.Context, string, string,
+			) ([]*gh.PullRequest, map[int]*ghclient.NativeStackHint, error) {
+				return prs, map[int]*ghclient.NativeStackHint{
+					101: {Number: 42, Size: 2, Position: 2, BaseRef: "main"},
+					103: {Number: 43, Size: 1, Position: 1, BaseRef: "main"},
+				}, nil
+			},
+			listStackPage: func(
+				context.Context, string, string, int,
+			) (ghclient.NativeStackPage, error) {
+				// Stack 43 comes back naming a different pull request than the hint,
+				// so the row is rejected and the target stays unresolved.
+				return ghclient.NativeStackPage{Stacks: []ghclient.NativeStack{{
+					ID: 9043, Number: 43, BaseRef: "main", Open: true, CreatedAt: now,
+					Members: []ghclient.NativeStackMember{
+						{Position: 1, PullRequestNumber: 999, State: "open", HeadRef: "feature/x", HeadSHA: "sha999"},
+					},
+				}}}, nil
+			},
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	seedStackedPR(t, database, "acme", "widget", 900, "feature/z", "main", db.MergeRequestStateMerged, "", "")
+	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	require.NotNil(repo)
+	require.NoError(database.ReplaceGitHubNativeStack(ctx, db.GitHubNativeStack{
+		RepoID: repo.ID, GitHubID: 9042, Number: 42, Size: 2,
+		BaseRef: "main", IsOpen: true, GitHubCreatedAt: now,
+		ContentFingerprint: "native-42", LastObservedAt: now,
+		Members: []db.GitHubNativeStackMember{
+			{Position: 1, PullRequestNumber: 900, State: "merged", HeadRef: "feature/z", HeadSHA: "sha900"},
+			{Position: 2, PullRequestNumber: 101, State: "open", HeadRef: "feature/b", HeadSHA: "sha101"},
+		},
+	}))
+	srv.syncer.SetPreferGitHubNativeStacks(true)
+	srv.syncer.SetOnSyncCompleted(stacks.SyncCompletedHook(ctx, database, nil))
+	client := setupTestClient(t, srv)
+
+	srv.syncer.RunOnce(ctx)
+
+	stackResp, err := client.HTTP.GetPullStackWithResponse(ctx, "gh", "acme", "widget", 101)
+	require.NoError(err)
+	require.Equal(http.StatusOK, stackResp.StatusCode(), string(stackResp.Body))
+	require.NotNil(stackResp.JSON200)
+	require.NotNil(stackResp.JSON200.Members)
+	assert.Equal([]int64{100, 101}, stackMemberNumbers(*stackResp.JSON200.Members),
+		"a pass that could not resolve every stack must project none of them")
+
+	tipHeadSHA := "sha101"
+	mergeResp, err := client.HTTP.MergePullWithResponse(
+		ctx, "gh", "acme", "widget", 101,
+		generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &tipHeadSHA},
+	)
+	require.NoError(err)
+
+	assert.Equal(http.StatusConflict, mergeResp.StatusCode(), string(mergeResp.Body))
+	assert.Contains(string(mergeResp.Body), `"reason":"mid_stack_merge_disallowed"`)
+	assert.Contains(string(mergeResp.Body), `"blocking_number":100`)
+	assert.False(merged, "the provider must not be asked to merge past an open predecessor")
 }

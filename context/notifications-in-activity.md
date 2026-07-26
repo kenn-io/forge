@@ -42,7 +42,7 @@ Rules:
 - Show notifications only for current monitored repo set from config/syncer repo refs.
 - Historical notifications for removed repos may stay in SQLite but must not appear in `unread`, `active`, `read`, `done`, or `all` unless future explicit `include_unmonitored` contract exists.
 - `repo_id` is enrichment/optimization, not visibility authority.
-- Tracked repo keys and sync watermarks must include provider identity, not host alone.
+- Sync watermarks are keyed by full repository identity `(platform, platform_host, repo_owner, repo_name)`, never by host alone.
 - Repo facets and filters must be host-qualified when host ambiguity is possible, e.g. `github.com/acme/widget`.
 
 ## Persistence Shape
@@ -62,15 +62,12 @@ Current provider-owned fields:
 - `source_updated_at`
 - `source_last_acknowledged_at`
 - `source_ack_*`
-- `sync_cursor`
-- `tracked_repos_key`
 
 Rules:
 
 - `done_at` and `done_reason` remain middleman-local triage state.
 - `source_*` fields track provider-side activity and acknowledgement propagation state.
-- `sync_cursor` is opaque provider-owned watermark state. GitHub currently leaves it empty.
-- The notification schema ships as a single migration, `000035_notifications.*`; do not split future assumptions across deleted branch-only migrations. Branch databases that already applied the abandoned notification migration at version 34 are repaired at startup by ensuring the current `000034_fleet_integration` artifacts exist before the database is accepted.
+- The notification schema ships as a single migration, `000035_notifications.*`; do not split future assumptions across deleted branch-only migrations. Branch databases that already applied the abandoned notification migration at version 34 are repaired at startup by ensuring the current `000034_fleet_integration` artifacts exist before the database is accepted. Migration `000040` rebuilt the watermark table to per-repository identity and retired the host-wide `sync_cursor`/`tracked_repos_key` columns; old host-wide rows are dropped because they cannot be attributed to a repository.
 
 ## Triage State Model
 
@@ -132,10 +129,9 @@ Rules:
 - Notification sync failures should update notification sync status so UI can surface them.
 - Top-level manual sync also triggers notification sync.
 - `/notifications/sync` triggers only notification sync and returns `202` once accepted.
-- Sync watermark identity is `(platform, platform_host)`.
-- First host sync may need GitHub `All: true`; later syncs should use persisted watermark/overlap to avoid full backlog scans.
+- Sync watermark identity is per repository: `(platform, platform_host, repo_owner, repo_name)`, with owner/name lowercased to match `notificationRepoKey`. One repository's failing or unroutable credential route must not hold back watermark advancement for healthy repositories on the same host.
+- A repository with no watermark yet full-syncs (GitHub `All: true`) without resetting siblings; later syncs use its persisted watermark/overlap to avoid full backlog scans.
 - GitHub notification pagination must run until the provider reports no next page; do not use a fixed page cap for either the primary repo notification list or the participating-only annotation scan. A fixed cap can pin the watermark forever on large backlogs. The guardrail is the shared sync budget/rate reserve (`internal/github/notifications_sync.go::ensureNotificationPageBudget`), which should stop sync explicitly when upstream budget is exhausted (`internal/github/sync_test.go::TestSyncNotificationsReadsAllRepositoryNotificationPages`, `internal/github/sync_test.go::TestSyncNotificationsReadsAllParticipatingNotificationPages`).
-- `tracked_repos_key` must include provider-qualified tracked repo identity so watermark reuse does not cross providers sharing same host.
 - Notification sync and read propagation should stop with server lifecycle before shared services are torn down.
 - Closed/merged linked notification completion must run after repo/detail/list paths that persist closed PR or issue state, not only after notification sync.
 

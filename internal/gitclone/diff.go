@@ -18,9 +18,9 @@ var ErrTooLarge = errors.New("git blob too large")
 // than a full patch diff for large PRs.
 func (m *Manager) DiffFiles(
 	ctx context.Context,
-	host, owner, name, mergeBase, headSHA string,
+	platform, host, owner, name, mergeBase, headSHA string,
 ) ([]DiffFile, error) {
-	clonePath, err := m.ClonePath(host, owner, name)
+	clonePath, err := m.ClonePath(platform, host, owner, name)
 	if err != nil {
 		return nil, err
 	}
@@ -145,10 +145,10 @@ func parseNumstatInt(value string) int {
 // structured diff data. If hideWhitespace is true, passes -w to git diff.
 func (m *Manager) Diff(
 	ctx context.Context,
-	host, owner, name, mergeBase, headSHA string,
+	platform, host, owner, name, mergeBase, headSHA string,
 	hideWhitespace bool,
 ) (*DiffResult, error) {
-	clonePath, err := m.ClonePath(host, owner, name)
+	clonePath, err := m.ClonePath(platform, host, owner, name)
 	if err != nil {
 		return nil, err
 	}
@@ -337,10 +337,10 @@ func AddDiffWhitespaceFlag(args []string, hideWhitespace bool) []string {
 // callers from accidentally loading very large assets into memory.
 func (m *Manager) FileContent(
 	ctx context.Context,
-	host, owner, name, ref, filePath string,
+	platform, host, owner, name, ref, filePath string,
 	maxBytes int64,
 ) (*FileContent, error) {
-	clonePath, err := m.ClonePath(host, owner, name)
+	clonePath, err := m.ClonePath(platform, host, owner, name)
 	if err != nil {
 		return nil, err
 	}

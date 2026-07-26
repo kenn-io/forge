@@ -350,7 +350,7 @@ func TestRunOnceCancelDuringBackoffDoesNotReportSuccess(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
 
-	rt := ghclient.NewRateTracker(d, "github.com", "rest")
+	rt := ghclient.NewRateTracker(d, "github.com", "host", "rest")
 	resetAt := time.Now().Add(time.Hour)
 	rt.UpdateFromRate(ghclient.Rate{
 		Remaining: 0,

@@ -143,7 +143,7 @@ func TestGitLabProviderSyncPersistsAndRetainsInaccessibleItems(t *testing.T) {
 	// buckets, mirroring the production provider startup wiring.
 	budgets := func() map[string]*ghclient.SyncBudget {
 		return map[string]*ghclient.SyncBudget{
-			ghclient.RateBucketKey("gitlab", "gitlab.example.com"): ghclient.NewSyncBudget(1000),
+			ghclient.RateBucketKey("gitlab", "gitlab.example.com", "host"): ghclient.NewSyncBudget(1000),
 		}
 	}
 

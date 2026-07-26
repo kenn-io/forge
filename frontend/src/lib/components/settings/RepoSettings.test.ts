@@ -183,7 +183,7 @@ describe("RepoSettings", () => {
     mockAddRepo.mockResolvedValue({
       repos: [],
       kata_projects: [],
-      pull_requests: { allow_mid_stack_merges: false },
+      pull_requests: { allow_mid_stack_merges: false, prefer_github_native_stacks: false },
       issues: { hide_bots: false },
       activity: {
         view_mode: "threaded",
@@ -214,7 +214,7 @@ describe("RepoSettings", () => {
     mockRefreshRepo.mockResolvedValue({
       repos: [],
       kata_projects: [],
-      pull_requests: { allow_mid_stack_merges: false },
+      pull_requests: { allow_mid_stack_merges: false, prefer_github_native_stacks: false },
       issues: { hide_bots: false },
       activity: {
         view_mode: "threaded",
@@ -293,7 +293,7 @@ describe("RepoSettings", () => {
     mockUpdateRepoWorktreeBasePath.mockResolvedValue({
       repos: updatedRepos,
       kata_projects: [],
-      pull_requests: { allow_mid_stack_merges: false },
+      pull_requests: { allow_mid_stack_merges: false, prefer_github_native_stacks: false },
       issues: { hide_bots: false },
       activity: {
         view_mode: "threaded",
@@ -410,7 +410,7 @@ describe("RepoSettings", () => {
     mockBulkAddRepos.mockResolvedValue({
       repos: addedRepos,
       kata_projects: [],
-      pull_requests: { allow_mid_stack_merges: false },
+      pull_requests: { allow_mid_stack_merges: false, prefer_github_native_stacks: false },
       issues: { hide_bots: false },
       activity: {
         view_mode: "threaded",
@@ -438,7 +438,7 @@ describe("RepoSettings", () => {
     mockUpdateRepoWorktreeBasePath.mockResolvedValue({
       repos: promotedRepos,
       kata_projects: [],
-      pull_requests: { allow_mid_stack_merges: false },
+      pull_requests: { allow_mid_stack_merges: false, prefer_github_native_stacks: false },
       issues: { hide_bots: false },
       activity: {
         view_mode: "threaded",
@@ -615,7 +615,7 @@ describe("RepoSettings", () => {
     mockBulkAddRepos.mockResolvedValue({
       repos: addedRepos,
       kata_projects: [],
-      pull_requests: { allow_mid_stack_merges: false },
+      pull_requests: { allow_mid_stack_merges: false, prefer_github_native_stacks: false },
       issues: { hide_bots: false },
       activity: {
         view_mode: "threaded",
@@ -715,7 +715,7 @@ describe("RepoSettings", () => {
     mockBulkAddRepos.mockResolvedValue({
       repos: importedRepos,
       kata_projects: [],
-      pull_requests: { allow_mid_stack_merges: false },
+      pull_requests: { allow_mid_stack_merges: false, prefer_github_native_stacks: false },
       issues: { hide_bots: false },
       activity: {
         view_mode: "threaded",

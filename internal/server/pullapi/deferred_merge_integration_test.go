@@ -279,7 +279,7 @@ func newDeferredMergeRouteServer(
 		time.Minute,
 		nil,
 		map[string]*ghclient.SyncBudget{
-			ghclient.RateBucketKey("gitlab", ref.Host): ghclient.NewSyncBudget(100),
+			ghclient.RateBucketKey("gitlab", ref.Host, "host"): ghclient.NewSyncBudget(100),
 		},
 	)
 	t.Cleanup(syncer.Stop)
@@ -384,7 +384,7 @@ func TestDeferMergeEndpointQueuesMergeAndBroadcastsCompletion(t *testing.T) {
 		time.Minute,
 		nil,
 		map[string]*ghclient.SyncBudget{
-			ghclient.RateBucketKey("gitlab", ref.Host): ghclient.NewSyncBudget(100),
+			ghclient.RateBucketKey("gitlab", ref.Host, "host"): ghclient.NewSyncBudget(100),
 		},
 	)
 	t.Cleanup(syncer.Stop)

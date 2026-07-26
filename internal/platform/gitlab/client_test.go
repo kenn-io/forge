@@ -338,7 +338,7 @@ func TestClientRecordsRateLimitRequests(t *testing.T) {
 	}))
 	defer server.Close()
 
-	rt := ratelimit.NewPlatformRateTracker(database, "gitlab", "gitlab.example.com", "rest")
+	rt := ratelimit.NewPlatformRateTracker(database, "gitlab", "gitlab.example.com", "host", "rest")
 	client := newTestClient(t, server.URL, WithRateTracker(rt))
 	_, err := client.GetRepository(context.Background(), platform.RepoRef{
 		Platform: platform.KindGitLab,
@@ -347,7 +347,7 @@ func TestClientRecordsRateLimitRequests(t *testing.T) {
 	})
 	require.NoError(err)
 
-	row, err := database.GetPlatformRateLimit("gitlab", "gitlab.example.com", "rest")
+	row, err := database.GetPlatformRateLimit("gitlab", "gitlab.example.com", "host", "rest")
 	require.NoError(err)
 	require.NotNil(row)
 	assert.Equal("gitlab", row.Platform)
@@ -377,7 +377,7 @@ func TestClientDoesNotSynthesizeRateLimitResetWhenHeaderMissing(t *testing.T) {
 	}))
 	defer server.Close()
 
-	rt := ratelimit.NewPlatformRateTracker(database, "gitlab", "gitlab.example.com", "rest")
+	rt := ratelimit.NewPlatformRateTracker(database, "gitlab", "gitlab.example.com", "host", "rest")
 	client := newTestClient(t, server.URL, WithRateTracker(rt))
 	_, err := client.GetRepository(context.Background(), platform.RepoRef{
 		Platform: platform.KindGitLab,

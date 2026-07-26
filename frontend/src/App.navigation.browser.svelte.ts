@@ -134,7 +134,7 @@ function flatSettings(): MockRouteOverride {
         },
       ],
       activity: { view_mode: "flat", time_range: "7d", hide_closed: false, hide_bots: false, collapse_threads: false },
-      pull_requests: { allow_mid_stack_merges: false },
+      pull_requests: { allow_mid_stack_merges: false, prefer_github_native_stacks: false },
       terminal: {
         font_family: "",
         font_size: 14,

@@ -6471,6 +6471,7 @@ export interface components {
         };
         PullRequests: {
             allow_mid_stack_merges: boolean;
+            prefer_github_native_stacks: boolean;
         };
         PullResponse: {
             /**
@@ -6501,9 +6502,11 @@ export interface components {
             hour_start: string;
             known: boolean;
             platform_host: string;
+            principal_label: string;
             provider: string;
             /** Format: int64 */
             rate_limit: number;
+            rate_principal: string;
             /** Format: int64 */
             rate_remaining: number;
             rate_reset_at: string;

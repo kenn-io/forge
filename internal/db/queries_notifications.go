@@ -664,33 +664,43 @@ func scanReturnedNotificationIDs(rows *sql.Rows, action string) ([]int64, error)
 	return ids, nil
 }
 
-func (d *DB) GetNotificationSyncWatermark(ctx context.Context, platform, host string, trackedReposKey string) (*NotificationSyncWatermark, error) {
+func canonicalizeNotificationRepo(owner, name string) (string, string, error) {
+	owner = strings.ToLower(strings.TrimSpace(owner))
+	name = strings.ToLower(strings.TrimSpace(name))
+	if owner == "" || name == "" {
+		return "", "", fmt.Errorf("notification sync watermark requires repository owner and name")
+	}
+	return owner, name, nil
+}
+
+func (d *DB) GetNotificationSyncWatermark(ctx context.Context, platform, host, owner, name string) (*NotificationSyncWatermark, error) {
 	var err error
 	platform, host, err = canonicalizeNotificationPlatformHost(platform, host)
 	if err != nil {
 		return nil, err
 	}
+	owner, name, err = canonicalizeNotificationRepo(owner, name)
+	if err != nil {
+		return nil, err
+	}
 	var rawLastSuccessful string
 	var rawLastFull sql.NullString
-	var syncCursor string
-	var storedTrackedReposKey string
 	err = d.ro.QueryRowContext(ctx, `
-		SELECT last_successful_sync_at, last_full_sync_at, sync_cursor, tracked_repos_key
+		SELECT last_successful_sync_at, last_full_sync_at
 		FROM middleman_notification_sync_watermarks
-		WHERE platform = ? AND platform_host = ?`, platform, host).Scan(&rawLastSuccessful, &rawLastFull, &syncCursor, &storedTrackedReposKey)
+		WHERE platform = ? AND platform_host = ? AND repo_owner = ? AND repo_name = ?`,
+		platform, host, owner, name).Scan(&rawLastSuccessful, &rawLastFull)
 	if err == nil {
-		if storedTrackedReposKey != trackedReposKey {
-			return nil, nil
-		}
 		lastSuccessful, parseErr := parseDBTime(rawLastSuccessful)
 		if parseErr != nil {
 			return nil, fmt.Errorf("parse notification sync watermark: %w", parseErr)
 		}
 		state := NotificationSyncWatermark{
 			Platform:             platform,
+			PlatformHost:         host,
+			RepoOwner:            owner,
+			RepoName:             name,
 			LastSuccessfulSyncAt: canonicalUTCTime(lastSuccessful),
-			SyncCursor:           syncCursor,
-			TrackedReposKey:      storedTrackedReposKey,
 		}
 		if rawLastFull.Valid && rawLastFull.String != "" {
 			lastFull, parseErr := parseDBTime(rawLastFull.String)
@@ -708,22 +718,25 @@ func (d *DB) GetNotificationSyncWatermark(ctx context.Context, platform, host st
 	return nil, fmt.Errorf("get notification sync watermark: %w", err)
 }
 
-func (d *DB) UpdateNotificationSyncWatermark(ctx context.Context, platform, host string, syncedAt time.Time, lastFullSyncedAt *time.Time, syncCursor string, trackedReposKey string) error {
+func (d *DB) UpdateNotificationSyncWatermark(ctx context.Context, platform, host, owner, name string, syncedAt time.Time, lastFullSyncedAt *time.Time) error {
 	var err error
 	platform, host, err = canonicalizeNotificationPlatformHost(platform, host)
+	if err != nil {
+		return err
+	}
+	owner, name, err = canonicalizeNotificationRepo(owner, name)
 	if err != nil {
 		return err
 	}
 	syncedAt = canonicalUTCTime(syncedAt)
 	lastFullValue := nullableNotificationTime(lastFullSyncedAt)
 	_, err = d.rw.ExecContext(ctx, `
-		INSERT INTO middleman_notification_sync_watermarks (platform, platform_host, last_successful_sync_at, last_full_sync_at, sync_cursor, tracked_repos_key)
+		INSERT INTO middleman_notification_sync_watermarks (platform, platform_host, repo_owner, repo_name, last_successful_sync_at, last_full_sync_at)
 		VALUES (?, ?, ?, ?, ?, ?)
-		ON CONFLICT(platform, platform_host) DO UPDATE SET
+		ON CONFLICT(platform, platform_host, repo_owner, repo_name) DO UPDATE SET
 			last_successful_sync_at = excluded.last_successful_sync_at,
-			last_full_sync_at = excluded.last_full_sync_at,
-			sync_cursor = excluded.sync_cursor,
-			tracked_repos_key = excluded.tracked_repos_key`, platform, host, syncedAt, lastFullValue, syncCursor, trackedReposKey)
+			last_full_sync_at = excluded.last_full_sync_at`,
+		platform, host, owner, name, syncedAt, lastFullValue)
 	if err != nil {
 		return fmt.Errorf("update notification sync watermark: %w", err)
 	}
@@ -854,7 +867,28 @@ func (d *DB) ReopenNotificationAckPropagation(ctx context.Context, id int64, que
 	return nil
 }
 
-func (d *DB) DeferQueuedNotificationAcks(ctx context.Context, platform, host string, nextAttemptAt time.Time, errText string) error {
+// NotificationRepoRef identifies one repository whose queued acknowledgements
+// share a credential.
+type NotificationRepoRef struct {
+	Owner string
+	Name  string
+}
+
+// DeferQueuedNotificationAcksForRepos defers queued acknowledgements for the
+// listed repositories only. A rate limit belongs to the credential that hit it,
+// and a host can carry several credentials, so deferring the whole host would
+// stall repositories whose credentials still have quota. An empty list defers
+// nothing.
+func (d *DB) DeferQueuedNotificationAcksForRepos(
+	ctx context.Context,
+	platform, host string,
+	repos []NotificationRepoRef,
+	nextAttemptAt time.Time,
+	errText string,
+) error {
+	if len(repos) == 0 {
+		return nil
+	}
 	var err error
 	platform, host, err = canonicalizeNotificationPlatformHost(platform, host)
 	if err != nil {
@@ -862,6 +896,12 @@ func (d *DB) DeferQueuedNotificationAcks(ctx context.Context, platform, host str
 	}
 	now := time.Now().UTC()
 	nextAttemptAt = canonicalUTCTime(nextAttemptAt)
+	args := []any{errText, now, nextAttemptAt, nextAttemptAt, platform, host}
+	placeholders := make([]string, 0, len(repos))
+	for _, repo := range repos {
+		placeholders = append(placeholders, "(LOWER(?), LOWER(?))")
+		args = append(args, repo.Owner, repo.Name)
+	}
 	_, err = d.rw.ExecContext(ctx, `UPDATE middleman_notification_items
 		SET source_ack_error = ?, source_ack_last_attempt_at = ?,
 		    source_ack_next_attempt_at = CASE
@@ -872,9 +912,11 @@ func (d *DB) DeferQueuedNotificationAcks(ctx context.Context, platform, host str
 		  AND platform_host = ?
 		  AND source_ack_queued_at IS NOT NULL
 		  AND source_ack_synced_at IS NULL
-		  AND source_ack_error != 'max_attempts_exceeded'`, errText, now, nextAttemptAt, nextAttemptAt, platform, host)
+		  AND source_ack_error != 'max_attempts_exceeded'
+		  AND (LOWER(repo_owner), LOWER(repo_name)) IN (`+
+		strings.Join(placeholders, ", ")+`)`, args...)
 	if err != nil {
-		return fmt.Errorf("defer queued notification acks: %w", err)
+		return fmt.Errorf("defer queued notification acks for repos: %w", err)
 	}
 	return nil
 }

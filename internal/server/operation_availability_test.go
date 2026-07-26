@@ -332,13 +332,13 @@ func TestRepoOperationsWireShape(t *testing.T) {
 func newServerWithRateTracker(t *testing.T) (*Server, *db.DB, *ratelimit.RateTracker) {
 	t.Helper()
 	database := dbtest.Open(t)
-	rt := ghclient.NewRateTracker(database, "github.com", "rest")
+	rt := ghclient.NewRateTracker(database, "github.com", "host", "rest")
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": &mockGH{}},
 		database, nil,
 		[]ghclient.RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
 		time.Minute,
-		map[string]*ghclient.RateTracker{ratelimit.RateBucketKey("github", "github.com"): rt},
+		map[string]*ghclient.RateTracker{ratelimit.RateBucketKey("github", "github.com", "host"): rt},
 		nil,
 	)
 	t.Cleanup(syncer.Stop)
@@ -407,14 +407,14 @@ func TestAPIRepoResponseIncludesOperationsGraphQLPauseDoesNotBlockREST(t *testin
 	// the earlier behavior that treated either tracker's pause as
 	// blocking every operation.
 	database := dbtest.Open(t)
-	restRT := ghclient.NewRateTracker(database, "github.com", "rest")
-	gqlRT := ghclient.NewRateTracker(database, "github.com", "graphql")
+	restRT := ghclient.NewRateTracker(database, "github.com", "host", "rest")
+	gqlRT := ghclient.NewRateTracker(database, "github.com", "host", "graphql")
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": &mockGH{}},
 		database, nil,
 		[]ghclient.RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
 		time.Minute,
-		map[string]*ghclient.RateTracker{ratelimit.RateBucketKey("github", "github.com"): restRT},
+		map[string]*ghclient.RateTracker{ratelimit.RateBucketKey("github", "github.com", "host"): restRT},
 		nil,
 	)
 	syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{
@@ -454,15 +454,15 @@ func TestAPIRepoResponseApplySuggestionRateBucketsFollowProvider(t *testing.T) {
 		require := require.New(t)
 		assert := assert.New(t)
 		database := dbtest.Open(t)
-		gqlRT := ghclient.NewRateTracker(database, "github.com", "graphql")
-		key := ratelimit.RateBucketKey("github", "github.com")
+		gqlRT := ghclient.NewRateTracker(database, "github.com", "host", "graphql")
+		key := ratelimit.RateBucketKey("github", "github.com", "host")
 		syncer := ghclient.NewSyncer(
 			map[string]ghclient.Client{"github.com": &mockGH{}},
 			database, nil,
 			[]ghclient.RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
 			time.Minute,
 			map[string]*ghclient.RateTracker{
-				key: ghclient.NewRateTracker(database, "github.com", "rest"),
+				key: ghclient.NewRateTracker(database, "github.com", "host", "rest"),
 			},
 			nil,
 		)
@@ -493,7 +493,7 @@ func TestAPIRepoResponseApplySuggestionRateBucketsFollowProvider(t *testing.T) {
 		require := require.New(t)
 		assert := assert.New(t)
 		database := dbtest.Open(t)
-		gqlRT := ghclient.NewPlatformRateTracker(database, "gitlab", "gitlab.example.com", "graphql")
+		gqlRT := ghclient.NewPlatformRateTracker(database, "gitlab", "gitlab.example.com", "host", "graphql")
 		provider := &apiTestGitLabProvider{
 			ref: platform.RepoRef{
 				Platform: platform.KindGitLab,
@@ -635,10 +635,10 @@ func TestAPIRepoResponseOperationsGateOnWriteTrackerWhenSplit(t *testing.T) {
 	// app tracker must not disable PAT-backed writes, and an exhausted
 	// write tracker must disable them even while reads still flow.
 	database := dbtest.Open(t)
-	restRT := ghclient.NewRateTracker(database, "github.com", "rest")
-	writeRT := ghclient.NewRateTracker(database, "github.com", "rest_write")
-	writeGQLRT := ghclient.NewRateTracker(database, "github.com", "graphql_write")
-	key := ratelimit.RateBucketKey("github", "github.com")
+	restRT := ghclient.NewRateTracker(database, "github.com", "host", "rest")
+	writeRT := ghclient.NewRateTracker(database, "github.com", "user:1", "rest_write")
+	writeGQLRT := ghclient.NewRateTracker(database, "github.com", "user:1", "graphql_write")
+	key := ratelimit.RateBucketKey("github", "github.com", "host")
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": &mockGH{}},
 		database, nil,
@@ -716,6 +716,17 @@ func TestAPIRepoResponseOperationsRequireWriteCredentialWhenSplit(t *testing.T) 
 	srv, set := newSplitTestServer(t, tokenauth.Candidate{
 		Kind: tokenauth.SourceKindEnv, EnvName: "SPLIT_WRITE_CRED_PAT",
 	})
+	router, err := ghclient.NewHostRouter(
+		"github.com",
+		&ghclient.Route{
+			Key: ghclient.RouteKey{Host: "github.com", Owner: "acme"},
+			ReadIdentity: ghclient.IdentityKey{
+				Host: "github.com", Principal: "installation:11",
+			},
+		},
+	)
+	require.NoError(err)
+	srv.syncer.SetGitHubRouters(map[string]*ghclient.HostRouter{"github.com": router})
 
 	rr := doJSON(t, srv, http.MethodGet, "/api/v1/repo/github/acme/widget", nil)
 	require.Equal(http.StatusOK, rr.Code)
@@ -729,10 +740,9 @@ func TestAPIRepoResponseOperationsRequireWriteCredentialWhenSplit(t *testing.T) 
 	assert.False(comment.Available, "every operation is a mutation; all must gate")
 	assert.Equal(availabilityCodeMissingWriteCredential, comment.Code)
 
-	// A config reload that re-points the chain at a resolvable
-	// credential must take effect immediately: the probe cache is
-	// keyed by the canonical chain, not just the host, so the stale
-	// missing-credential verdict cannot outlive the chain it probed.
+	// Identity assignment is restart-bound. A token appearing behind an
+	// App-only route cannot silently move writes onto a new user principal in
+	// the running process, even though the source itself reloads successfully.
 	set.Upsert(splitTestDescriptor(tokenauth.Candidate{
 		Kind: tokenauth.SourceKindEnv, EnvName: "SPLIT_WRITE_CRED_PAT_NEW",
 	}))
@@ -740,9 +750,9 @@ func TestAPIRepoResponseOperationsRequireWriteCredentialWhenSplit(t *testing.T) 
 	require.Equal(http.StatusOK, rr.Code)
 	resp = repoResponse{}
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
-	assert.True(resp.Operations.MergePR.Available,
-		"a re-pointed chain must bypass the cached verdict without waiting out the TTL")
-	assert.True(resp.Operations.AddComment.Available)
+	assert.False(resp.Operations.MergePR.Available)
+	assert.Equal(availabilityCodeMissingWriteCredential, resp.Operations.MergePR.Code)
+	assert.False(resp.Operations.AddComment.Available)
 }
 
 func TestAPIRepoResponseOperationsDistinguishWriteCredentialErrors(t *testing.T) {
@@ -768,6 +778,90 @@ func TestAPIRepoResponseOperationsDistinguishWriteCredentialErrors(t *testing.T)
 	assert.Contains(merge.UnavailableReason, "github.com")
 	assert.NotContains(merge.UnavailableReason, "does-not-exist.token",
 		"the reason must stay redacted; no raw resolver error in the wire response")
+}
+
+type writeCredentialProbeClient struct {
+	*mockGH
+	err   error
+	calls int
+}
+
+func (c *writeCredentialProbeClient) ProbeWriteCredential(context.Context) error {
+	c.calls++
+	return c.err
+}
+
+func TestAPIRepoResponseProbesRestartBoundWriteCredential(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	database := dbtest.Open(t)
+	client := &writeCredentialProbeClient{mockGH: &mockGH{}, err: ghclient.ErrIdentityChanged}
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": client}, database, nil,
+		[]ghclient.RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
+		time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	router, err := ghclient.NewHostRouter("github.com", &ghclient.Route{
+		Key: ghclient.RouteKey{Host: "github.com", Owner: "acme"}, Client: client,
+		ReadIdentity:  ghclient.IdentityKey{Host: "github.com", Principal: "installation:11"},
+		WriteIdentity: ghclient.IdentityKey{Host: "github.com", Principal: "user:22"},
+	})
+	require.NoError(err)
+	syncer.SetGitHubRouters(map[string]*ghclient.HostRouter{"github.com": router})
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	_, err = database.UpsertRepo(
+		t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+
+	rr := doJSON(t, srv, http.MethodGet, "/api/v1/repo/github/acme/widget", nil)
+	require.Equal(http.StatusOK, rr.Code)
+	var resp repoResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+	merge := resp.Operations.MergePR
+	assert.False(merge.Available)
+	assert.Equal(availabilityCodeWriteCredentialError, merge.Code)
+	assert.Contains(merge.UnavailableReason, "restart")
+
+	rr = doJSON(t, srv, http.MethodGet, "/api/v1/repo/github/acme/widget", nil)
+	require.Equal(http.StatusOK, rr.Code)
+	assert.Equal(1, client.calls, "routed write credential probes must use the TTL cache")
+}
+
+func TestAPIRepoResponseDisablesWritesWhenConfiguredRouterHasNoRoute(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	database := dbtest.Open(t)
+	client := &mockGH{}
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": client}, database, nil,
+		[]ghclient.RepoRef{{Owner: "other", Name: "widget", PlatformHost: "github.com"}},
+		time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	router, err := ghclient.NewHostRouter("github.com", &ghclient.Route{
+		Key: ghclient.RouteKey{Host: "github.com", Owner: "acme"}, Client: client,
+		ReadIdentity:  ghclient.IdentityKey{Host: "github.com", Principal: "user:11"},
+		WriteIdentity: ghclient.IdentityKey{Host: "github.com", Principal: "user:11"},
+	})
+	require.NoError(err)
+	syncer.SetGitHubRouters(map[string]*ghclient.HostRouter{"github.com": router})
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	_, err = database.UpsertRepo(
+		t.Context(), db.GitHubRepoIdentity("github.com", "other", "widget"),
+	)
+	require.NoError(err)
+
+	rr := doJSON(t, srv, http.MethodGet, "/api/v1/repo/github/other/widget", nil)
+	require.Equal(http.StatusOK, rr.Code)
+	var resp repoResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+
+	assert.False(resp.Operations.MergePR.Available)
+	assert.Equal(availabilityCodeMissingWriteCredential, resp.Operations.MergePR.Code)
 }
 
 // splitTestDescriptor builds the github.com chain of a split host:

@@ -148,6 +148,75 @@ change what a field means. Provider-neutral persistence should receive the same
 semantic shape regardless of whether data came from GraphQL, REST, tags, or
 fallback repository listing.
 
+## Native Stack Rules
+
+- Confirmed native stacks claim and order their PRs first; branch inference always
+  runs afterward on every unclaimed PR, including when the preview is disabled,
+  incomplete, or failing. (`internal/stacks/detect.go::RunDetectionWithNativeStacks`)
+- Compare current PR hints with cached stack rows; scan `/stacks` newest-first
+  and stop once every target is found or passed.
+  (`internal/github/native_stack_sync.go::refreshGitHubNativeStackCache`)
+- Native projections use the bottom PR number as the neutral stack key; GitHub's
+  independent stack number remains cache-only.
+  (`internal/stacks/detect.go::persistStackChain`)
+- Disabling the preference synchronously restores branch-derived projections;
+  cached native rows remain dormant. The syncer's preference is the transition
+  authority — every server binds it to the boot config and reconciles on the
+  swap's own previous value, never on a separately read config snapshot, so
+  concurrent writers cannot reconcile twice or not at all. The swap happens under
+  cfgMu so the preference order matches the persisted order, and the
+  reconciliation that follows the unlock is committed-state work: it runs on the
+  server-lifecycle context, never the request's, and rechecks the current
+  preference under the projection lock so a disable that lost to a later enable
+  cannot replay over it. That recheck is only sound because the swap itself
+  takes the projection lock. Reconciliation covers every repository holding
+  cached native stacks, not just tracked ones: a repository dropped from config
+  still serves its stored pull requests and no sync will revisit it. Boot with
+  the preference off reconciles the same way, since the setting can change while
+  the daemon is stopped.
+  (`internal/server/native_stack_settings.go::reconcileGitHubNativeStackProjection`,
+  `internal/github/sync.go::SetPreferGitHubNativeStacks`)
+- The preview must not widen the blast radius of the list it rides on. The REST
+  hint decodes separately from the pull request, so a changed field shape costs
+  that hint and not the list, and hint-listing errors get the same
+  feature-disabled classification as the plain list so a repository with pull
+  requests off still enters the cooldown.
+  (`internal/github/native_stacks.go::decodeNativeStackHint`,
+  `internal/github/sync.go::ListOpenMergeRequestsWithNativeStackHints`)
+- Preview-only GraphQL fields must be absent from disabled query shapes;
+  `@include(false)` does not bypass schema validation on servers without those
+  fields. Schema rejection drops the fields for that host instead of abandoning
+  bulk fetch. (`internal/github/graphql.go::isNativeStackSchemaRejection`)
+- Confirmation reconciles against currently observed open-PR hints, never cached
+  or payload member state. Hints cannot attest to merged or closed members, so a
+  stack holding one is refetched on a bounded schedule and its confirmation ages
+  out rather than surviving every 304. The deadline is anchored to each stack's
+  own observation time and the earliest one wins, so re-confirming an old stack
+  during an unrelated refresh cannot extend its window.
+  (`internal/github/native_stack_sync.go::cachedStackMatchesCurrentHints`,
+  `internal/github/native_stack_sync.go::nativeStackObservationExpired`)
+- A pull request may belong to at most one projected stack. Member eviction
+  would silently shorten the stack written first and hide a preceding merge
+  blocker, and projecting one side of an overlap does the same to the other, so
+  an overlap makes the whole native projection ambiguous and branch inference
+  owns the repository for that pass.
+  (`internal/stacks/detect.go::RunDetectionWithNativeStacks`)
+- Only a query that requested the preview fields may replace stack hints;
+  a GraphQL shape that dropped them says nothing about membership and must leave
+  REST-derived hints intact. (`internal/github/graphql.go::RepoBulkResult`)
+- Only a refresh that resolved every target seeds the confirmation a later 304
+  reuses; an incomplete refresh evicts the pull-request list ETag so the next
+  sync retries. It also projects nothing for that pass, not the subset it did
+  confirm: an unresolved stack is invisible to the overlap scan, so a confirmed
+  stack could claim a pull request the unresolved one holds and hide its
+  predecessor. A target dropped without being persisted -- fetch failure,
+  malformed row, or disagreement with current hints -- makes the pass partial.
+  (`internal/github/native_stack_sync.go::refreshGitHubNativeStackCache`)
+- Native results carry the preference generation and project under the shared
+  stack-projection lock, so a sync that began while the preview was enabled
+  cannot reinstate it afterward.
+  (`internal/github/sync.go::dropStaleNativeStackResults`)
+
 ## Historical Archive Rules
 
 - The legacy closed-item backfill is retired; configured repositories seed durable archive discovery before sync cutover, with no cursor translation. (`internal/github/sync.go::SetReposWithContext`)
@@ -159,6 +228,114 @@ fallback repository listing.
 - Archive requests use shared sync budgets above `archiveLiveFloor`: provider reset signals release quadratic surplus, while headerless Gitealike hosts use configured local hourly surplus. The transport attributes every attempt, and live work preempts the archive lease. (`internal/github/budget.go::LocalArchiveSpendAvailable`, `internal/github/sync.go::Admit`)
 - A GitHub issue without `updated_at` uses `created_at` as both its freshness and initial activity boundary; zero timestamps must not bypass monotonic snapshot acceptance. (`internal/platform/github/normalize.go::NormalizeIssue`)
 
+## Owner Routes And Identity Accounting
+
+GitHub authorization is selected by `(host, repository owner)`, with exact
+repository overrides ahead of owner mappings and the host fallback. Rate state,
+sync budgets, cadence, and snapshots are selected separately by `(host,
+authenticated identity)`. Different PATs resolving to the same GitHub user ID
+must share one runtime; App reads use their installation identity.
+
+- Startup PAT identity discovery must use a bounded per-request context
+  (`internal/github/identity.go::HTTPIdentityResolver.ResolvePAT`).
+- When required scoped routes cover configured repositories, the implicit
+  ownerless fallback is probed best-effort: a resolvable token keeps ownerless
+  APIs routed, while a missing or invalid one is skipped with a warning instead
+  of failing startup. Only an explicitly configured host fallback fails hard; a
+  `github_token_env` equal to the built-in default does not count as explicit
+  because Load, Save, and the sample config all materialize that name
+  (`internal/config/config.go::Config.HasExplicitGitHubTokenEnv`,
+  `cmd/middleman/provider_startup.go::buildGitHubIdentityRuntimes`).
+- A configured router with no exact, owner, or fallback route is a routing
+  failure; operation availability must fail closed instead of treating it as an
+  unrouted legacy host (`internal/github/auth_router.go::MissingRouteError`,
+  `internal/server/operation_availability.go::writeCredentialGateForRepo`).
+- Background requests on the write credential (viewer-permission overlay,
+  notifications, queued read propagation) charge the write identity's sync
+  budget — the transport's context gate keeps foreground mutations uncharged —
+  and live work registers provider work for every principal it will touch,
+  read and write, so a shared-PAT archive is preempted
+  (`internal/github/client.go::NewClient`, `internal/github/sync.go::syncRepo`,
+  `internal/github/notifications_sync.go::ProcessQueuedNotificationReads`).
+- Reload probes share one fresh installation-token cache per validation batch:
+  per-route caches would multiply minting, while reusing the live cache lets a
+  revoked installation or replaced private key pass validation until the cached
+  token expires (`internal/tokenauth/source.go::SourceSet.NewProbeBatch`).
+
+Repository `token_file` and `token_env` overrides are exact-only; reject them on
+name globs rather than creating a literal route that discovered repositories
+cannot select (`internal/config/config.go::Config.validate`).
+
+Repository preview must select the entered owner's route even before that owner
+has a tracked repository. Ownerless APIs may use only the host fallback; never
+borrow an arbitrary owner PAT. Repository notifications use the user/write
+identity. App-only routes may read, but notifications and mutations remain
+disabled until restart establishes a stable user identity.
+
+Notification sync watermarks are per repository identity, never host-wide: a
+repository whose credential route is unavailable or exhausted reports its error
+without holding back watermark advancement for healthy repositories on the same
+host (`internal/github/notifications_sync.go::Syncer.syncNotificationsForRepo`).
+
+Queued read-acknowledgement backoff is scoped the same way. A rate limit belongs
+to the credential that hit it — on either refetch leg or the mark-read — so
+defer only that identity's repositories and keep propagating the batch's other
+identities; the pass still returns the rate limit so the host records its error
+(`internal/github/notifications_sync.go::Syncer.ProcessQueuedNotificationReads`,
+`internal/db/queries_notifications.go::DB.DeferQueuedNotificationAcksForRepos`).
+
+Selected-repository App routes may expose installation-repository listing as an
+owner-scoped discovery route, but that route must never become a fallback for
+other repository operations. Owner discovery unions the PAT route's listing
+with the selected-App listing and dedupes by repository ID — a PAT lists
+everything it can access but misses selection-only grants, while the App client
+lists only its selection — and fails closed if either configured source fails
+rather than silently narrowing coverage
+(`internal/github/auth_router.go::RoutedClient.listRepositoriesByOwnerAcrossRoutes`).
+
+`RoutedClient` embeds the `Client` interface, so any optional capability
+interface it does not re-declare disappears from behind the wrapper and
+`gitHubClientProvider.Capabilities()` silently reports that capability as
+unsupported on every routed host. When adding an optional GitHub client
+interface, give `RoutedClient` a repository-routed method and add its
+`_ iface = (*RoutedClient)(nil)` assertion; carry owner and repository name in
+the interface so exact `repo:` routes pick their own credential
+(`internal/github/auth_router.go::RoutedClient.GetMarkdownImage`). List each
+optional interface in the routing guard so an unrouted owner-bearing method
+fails a test instead of silently disabling the feature
+(`internal/github/public_api_guard_test.go::TestRoutedClientExplicitlyImplementsOwnerBearingClientMethods`).
+
+A wire call issued during repository sync routes by repository even when the
+endpoint itself is host-scoped (`/users/{login}` for author display names).
+Owner-only and App-only configurations have no host fallback route, so a
+fallback-only lookup fails for every repository and, where a fallback does
+exist, spends the wrong identity's budget. Such a call must also pass
+`tokenauth.WithGitHubOwner`: the transport derives the owner from the request
+path, so an ownerless path silently skips the App candidate and pays with the
+PAT for a read the route's tracker bills to the installation
+(`internal/github/auth_router.go::RoutedClient.GetUserForRepo`).
+
+Managed Git uses exact-repository or owner PAT routes with mutation context and
+must never expose an App installation token to smart HTTP. Thread full provider,
+host, owner, and repository identity through clone/fetch and local reads, passing
+the normalized platform (`repoPlatform(repo)`) so an unqualified GitHub ref still
+picks its credential route instead of none;
+partition non-GitHub clone storage by provider on shared hosts. Before injecting
+a PAT into workspace fetch or push, require the branch upstream to be `origin`,
+reject repository-local URL rewrites, and validate every origin fetch/push URL.
+
+A nil `tokenauth.Source` is not fail-closed: `gitclone` reads it as permission to
+run git with no credential, which succeeds against any public repository and
+spends no identity's budget. A route resolver that cannot serve a repository must
+return a source whose `Token` reports the missing route
+(`cmd/middleman/provider_startup.go::missingRouteTokenSource`).
+
+Token-file rotation within the same GitHub user is hot-reloadable. Changing the
+authenticated user, adding a write identity to an App-only route, or adding or
+removing a bounded route requires restart. Added, removed, or descriptor-changed scoped routes require restart. The live
+bounded router keeps its boot descriptor until restart so it cannot lose auth or
+move to a different identity while retaining the old trackers and budget.
+
 ## GitHub App Manifest Flow
 
 `middleman-github-app create` uses GitHub's App Manifest flow so sync can read
@@ -169,6 +346,15 @@ GitHub's live manifest validator can report the missing hook URL as a generic
 `internal/githubapp/manifest.go::NewManifest`; keep
 `cmd/middleman-github-app/e2e_test.go::TestCreateFlowEndToEnd` asserting the
 serialized manifest shape so the fake cannot accept a payload GitHub rejects.
+
+A covering App installation leads every read chain, including on a repository
+that configures its own `token_env`/`token_file`: installation tokens carry
+their own rate-limit budget, so reads always prefer them and a repository
+override must never displace one. That override is still the first PAT, so it
+signs that repository's writes — mutation resolution skips App candidates
+(`internal/config/config.go::Config.ResolveGitHubRepoTokenSource`,
+`internal/tokenauth/source.go::WithMutationAuth`). Dropping the App candidate
+also costs the owner its only selection-only discovery credential.
 
 GitHub App installation tokens are account-scoped, not host-scoped. An app
 installation for one owner must not authenticate reads for another owner just
@@ -190,7 +376,14 @@ app owner/installation account or app id, and duplicate installation accounts on
 the same host are invalid. Selected-repository coverage applies only to repos
 owned by that row's `installation_account`, and the install CLI must not warn
 that an installation on one account "cannot reach" repos owned by another
-account. Re-running `install` after a coverage failure (or against a restored
+account. The recorded selected-repository list is a startup routing snapshot:
+expanded access remains on the PAT route and narrowed access may return 404
+until `middleman-github-app install` refreshes the snapshot and middleman is
+restarted. Do not retry PAT credentials after an App-backed repository 404;
+GitHub uses the same response for absent, private, and inaccessible repositories,
+so automatic fallback would hide stale or revoked App access.
+
+Re-running `install` after a coverage failure (or against a restored
 config) reconfigures the existing installation instead of minting a new
 installation id, so on a clean install-poll timeout the flow adopts an
 already-present installation rather than only ever waiting for a newly created

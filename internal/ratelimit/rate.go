@@ -38,6 +38,7 @@ type RateTracker struct {
 	db            *db.DB
 	platform      string
 	platformHost  string
+	ratePrincipal string
 	apiType       string
 	count         int
 	hourStart     time.Time
@@ -51,24 +52,28 @@ type RateTracker struct {
 // NewPlatformRateTracker creates a tracker for the given provider, host, and API type.
 // It hydrates from DB if a row exists for the current hour.
 func NewPlatformRateTracker(
-	database *db.DB, platformName string, platformHost string, apiType string,
+	database *db.DB,
+	platformName, platformHost, ratePrincipal, apiType string,
 ) *RateTracker {
 	platformName = normalizedRatePlatform(platformName)
 	rt := &RateTracker{
-		db:           database,
-		platform:     platformName,
-		platformHost: platformHost,
-		apiType:      apiType,
-		remaining:    -1,
-		limit:        -1,
-		hourStart:    truncateHour(time.Now().UTC()),
+		db:            database,
+		platform:      platformName,
+		platformHost:  platformHost,
+		ratePrincipal: strings.TrimSpace(ratePrincipal),
+		apiType:       apiType,
+		remaining:     -1,
+		limit:         -1,
+		hourStart:     truncateHour(time.Now().UTC()),
 	}
 	rt.hydrate()
 	return rt
 }
 
 func (rt *RateTracker) hydrate() {
-	row, err := rt.db.GetPlatformRateLimit(rt.platform, rt.platformHost, rt.apiType)
+	row, err := rt.db.GetPlatformRateLimit(
+		rt.platform, rt.platformHost, rt.ratePrincipal, rt.apiType,
+	)
 	if err != nil || row == nil {
 		return
 	}
@@ -103,6 +108,13 @@ func (rt *RateTracker) PlatformHost() string {
 	return rt.platformHost
 }
 
+// Principal returns the identity whose capacity this tracker represents.
+func (rt *RateTracker) Principal() string {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	return rt.ratePrincipal
+}
+
 // APIType returns the API bucket type this tracker is scoped to.
 func (rt *RateTracker) APIType() string {
 	rt.mu.Lock()
@@ -114,7 +126,7 @@ func (rt *RateTracker) APIType() string {
 func (rt *RateTracker) BucketKey() string {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
-	return RateBucketKey(rt.platform, rt.platformHost)
+	return RateBucketKey(rt.platform, rt.platformHost, rt.ratePrincipal)
 }
 
 // RecordRequest increments the hourly request counter and
@@ -352,6 +364,7 @@ func (rt *RateTracker) persist() {
 	err := rt.db.UpsertPlatformRateLimit(
 		rt.platform,
 		rt.platformHost,
+		rt.ratePrincipal,
 		rt.apiType,
 		rt.count,
 		rt.hourStart,
@@ -379,12 +392,18 @@ func normalizedRatePlatform(platformName string) string {
 	return platformName
 }
 
-// RateBucketKey returns the process-local map key for provider/host rate buckets.
-func RateBucketKey(platformName, platformHost string) string {
+// RateBucketKey returns the process-local key for a provider identity bucket.
+func RateBucketKey(platformName, platformHost, ratePrincipal string) string {
 	platformName = normalizedRatePlatform(platformName)
 	platformHost = strings.ToLower(strings.TrimSpace(platformHost))
-	if platformName == "github" {
-		return platformHost
+	ratePrincipal = strings.TrimSpace(ratePrincipal)
+	if ratePrincipal == "host" {
+		if platformName == "github" {
+			return platformHost
+		}
+		return platformName + ":" + platformHost
 	}
-	return platformName + ":" + platformHost
+	return strings.Join([]string{
+		platformName, platformHost, ratePrincipal,
+	}, "\x00")
 }

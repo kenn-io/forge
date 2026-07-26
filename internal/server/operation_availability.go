@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"go.kenn.io/middleman/internal/db"
+	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/platform"
-	"go.kenn.io/middleman/internal/ratelimit"
 	"go.kenn.io/middleman/internal/server/httpapi"
 	"go.kenn.io/middleman/internal/tokenauth"
 )
@@ -406,17 +406,14 @@ func (s *Server) mutationRateLimitedReason(
 		return rateLimitAvailability{}
 	}
 	host := httpapi.ProviderHost(repo)
-	key := ratelimit.RateBucketKey(string(httpapi.ProviderKind(repo)), host)
-	var writeTrackers map[string]*ratelimit.RateTracker
-	switch bucket {
-	case apiBucketREST:
-		writeTrackers = s.syncer.WriteRateTrackers()
-	case apiBucketGraphQL:
-		writeTrackers = s.syncer.WriteGQLRateTrackers()
-	default:
+	apiType := "rest"
+	if bucket == apiBucketGraphQL {
+		apiType = "graphql"
+	} else if bucket != apiBucketREST {
 		return rateLimitAvailability{}
 	}
-	if wt, ok := writeTrackers[key]; ok && wt != nil {
+	ref := operationRepoRef(repo)
+	if wt, ok := s.syncer.WriteRateTrackerForRepo(ref, apiType); ok && wt != nil {
 		if wt.IsPaused() {
 			return formatRateLimit(host, wt.ResetAt())
 		}
@@ -430,22 +427,24 @@ func (s *Server) rateLimitedReason(repo db.Repo, bucket apiBucket) rateLimitAvai
 		return rateLimitAvailability{}
 	}
 	host := httpapi.ProviderHost(repo)
-	providerName := string(httpapi.ProviderKind(repo))
-	key := ratelimit.RateBucketKey(providerName, host)
-
-	var trackers map[string]*ratelimit.RateTracker
-	switch bucket {
-	case apiBucketREST:
-		trackers = s.syncer.RateTrackers()
-	case apiBucketGraphQL:
-		trackers = s.syncer.GQLRateTrackers()
-	default:
+	apiType := "rest"
+	if bucket == apiBucketGraphQL {
+		apiType = "graphql"
+	} else if bucket != apiBucketREST {
 		return rateLimitAvailability{}
 	}
-	if rt, ok := trackers[key]; ok && rt != nil && rt.IsPaused() {
+	if rt, ok := s.syncer.RateTrackerForRepo(operationRepoRef(repo), apiType); ok &&
+		rt != nil && rt.IsPaused() {
 		return formatRateLimit(host, rt.ResetAt())
 	}
 	return rateLimitAvailability{}
+}
+
+func operationRepoRef(repo db.Repo) ghclient.RepoRef {
+	return ghclient.RepoRef{
+		Platform: httpapi.ProviderKind(repo), PlatformHost: httpapi.ProviderHost(repo),
+		Owner: repo.Owner, Name: repo.Name, RepoPath: repo.RepoPath,
+	}
 }
 
 // writeCredentialProbeTTL bounds how often availability computation
@@ -503,7 +502,48 @@ func (p writeCredentialProbe) fresh(now time.Time) bool {
 // probes are single-flighted so concurrent list requests share one
 // resolution instead of each shelling out to the gh CLI.
 func (s *Server) writeCredentialGateForRepo(repo db.Repo) writeCredentialGate {
-	if s == nil || s.tokenSources == nil {
+	if s == nil {
+		return writeCredentialGate{}
+	}
+	if httpapi.ProviderKind(repo) == platform.KindGitHub && s.syncer != nil {
+		ref := operationRepoRef(repo)
+		if routerIdentityRequired(s.syncer, ref) {
+			if _, ok := s.syncer.WriteIdentityForRepo(ref); !ok {
+				return writeCredentialGate{
+					code: availabilityCodeMissingWriteCredential,
+					reason: fmt.Sprintf(
+						"No startup-resolved user credential for writes on %s. Configure a PAT or gh CLI auth, then restart middleman.",
+						httpapi.ProviderHost(repo),
+					),
+				}
+			}
+			cacheKey, err := s.syncer.WriteCredentialProbeKeyForRepo(ref)
+			if err != nil {
+				return writeCredentialGateFromError(httpapi.ProviderHost(repo), err)
+			}
+			if cacheKey == "" {
+				return writeCredentialGate{}
+			}
+			return s.cachedWriteCredentialGate(
+				"routed\x00"+cacheKey,
+				func() writeCredentialGate {
+					parent := s.bgCtx
+					if parent == nil {
+						parent = context.Background()
+					}
+					ctx, cancel := context.WithTimeout(
+						parent, writeCredentialProbeTimeout,
+					)
+					defer cancel()
+					return writeCredentialGateFromError(
+						httpapi.ProviderHost(repo),
+						s.syncer.ProbeWriteCredentialForRepo(ctx, ref),
+					)
+				},
+			)
+		}
+	}
+	if s.tokenSources == nil {
 		return writeCredentialGate{}
 	}
 	key := tokenauth.Key{
@@ -519,7 +559,15 @@ func (s *Server) writeCredentialGateForRepo(repo db.Repo) writeCredentialGate {
 		return writeCredentialGate{}
 	}
 	cacheKey := key.String() + "\x00" + desc.CanonicalSourceString()
+	return s.cachedWriteCredentialGate(cacheKey, func() writeCredentialGate {
+		return s.probeWriteCredential(src, key.Host)
+	})
+}
 
+func (s *Server) cachedWriteCredentialGate(
+	cacheKey string,
+	probe func() writeCredentialGate,
+) writeCredentialGate {
 	for {
 		s.writeCredProbeMu.Lock()
 		if probe, ok := s.writeCredProbes[cacheKey]; ok && probe.fresh(s.now()) {
@@ -546,7 +594,7 @@ func (s *Server) writeCredentialGateForRepo(repo db.Repo) writeCredentialGate {
 		close(done)
 	}()
 
-	gate := s.probeWriteCredential(src, key.Host)
+	gate := probe()
 
 	s.writeCredProbeMu.Lock()
 	if s.writeCredProbes == nil {
@@ -558,6 +606,10 @@ func (s *Server) writeCredentialGateForRepo(repo db.Repo) writeCredentialGate {
 	}
 	s.writeCredProbeMu.Unlock()
 	return gate
+}
+
+func routerIdentityRequired(syncer *ghclient.Syncer, repo ghclient.RepoRef) bool {
+	return syncer.HasGitHubRouter(repo)
 }
 
 // probeWriteCredential resolves the mutation-marked chain once and
@@ -575,9 +627,21 @@ func (s *Server) probeWriteCredential(
 	ctx, cancel := context.WithTimeout(parent, writeCredentialProbeTimeout)
 	defer cancel()
 	_, err := src.Token(tokenauth.WithMutationAuth(ctx))
+	return writeCredentialGateFromError(host, err)
+}
+
+func writeCredentialGateFromError(host string, err error) writeCredentialGate {
 	switch {
 	case err == nil:
 		return writeCredentialGate{}
+	case errors.Is(err, ghclient.ErrIdentityChanged):
+		return writeCredentialGate{
+			code: availabilityCodeWriteCredentialError,
+			reason: fmt.Sprintf(
+				"The GitHub write credential for %s changed identity; restart middleman to bind the route to the new user.",
+				host,
+			),
+		}
 	case errors.Is(err, tokenauth.ErrMissingToken):
 		return writeCredentialGate{
 			code: availabilityCodeMissingWriteCredential,

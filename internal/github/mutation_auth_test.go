@@ -154,7 +154,7 @@ func TestMutationsUseUserPATWhileReadsUseAppToken(t *testing.T) {
 		},
 	})
 	c := newSplitAuthTestClient(t, srv, source)
-	writeGQLRT := NewRateTracker(openTestDB(t), "github.example.com", "graphql_write")
+	writeGQLRT := NewRateTracker(openTestDB(t), "github.example.com", "user:1", "graphql_write")
 	c.SetWriteGraphQLRateTracker(writeGQLRT)
 
 	_, err := c.ListReleases(t.Context(), "acme", "widgets", 10)
@@ -271,20 +271,21 @@ func TestNotificationAPIsUseUserAuthAndBackgroundBudget(t *testing.T) {
 		},
 	})
 	database := openTestDB(t)
-	readRT := NewRateTracker(database, "github.example.com", "rest")
-	writeRT := NewRateTracker(database, "github.example.com", "rest_write")
-	budget := NewSyncBudget(100)
+	readRT := NewRateTracker(database, "github.example.com", "installation:11", "rest")
+	writeRT := NewRateTracker(database, "github.example.com", "user:1", "rest")
+	readBudget := NewSyncBudget(100)
+	writeBudget := NewSyncBudget(100)
 	client, err := NewClient(
 		source,
 		"github.example.com",
 		readRT,
-		budget,
+		readBudget,
 		WithBaseURLForTesting(srv.URL),
+		WithNotificationAccounting(writeRT, writeBudget),
 	)
 	require.NoError(err)
 	c, ok := client.(*liveClient)
 	require.True(ok)
-	c.SetWriteRateTracker(writeRT)
 
 	syncCtx := WithSyncBudget(t.Context())
 	threads, hasNext, err := c.ListNotifications(syncCtx, NotificationListOptions{
@@ -308,14 +309,112 @@ func TestNotificationAPIsUseUserAuthAndBackgroundBudget(t *testing.T) {
 	assert.Equal(0, readRT.RequestsThisHour())
 	assert.Equal(-1, readRT.Remaining(),
 		"PAT notification responses must not overwrite the app-token read tracker")
-	assert.Equal(0, writeRT.RequestsThisHour())
-	assert.Equal(-1, writeRT.Remaining())
-	assert.Equal(3, budget.Spent())
+	assert.Equal(3, writeRT.RequestsThisHour())
+	assert.Equal(4988, writeRT.Remaining())
+	assert.Equal(0, readBudget.Spent())
+	assert.Equal(3, writeBudget.Spent())
+}
+
+// TestViewerPermissionOverlayChargesWriteBudget pins background split-auth
+// accounting: the GetRepository viewer overlay runs on the write credential
+// during sync, so it must spend the write identity's sync budget, while
+// foreground mutations on the same transport stay uncharged.
+func TestViewerPermissionOverlayChargesWriteBudget(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	t.Setenv("TEST_OVERLAY_BUDGET_PAT", "user-pat")
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/v3/repos/acme/widgets",
+		func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			if r.Header.Get("Authorization") == "Bearer user-pat" {
+				_, _ = w.Write([]byte(`{"id":1,"name":"widgets","permissions":{"push":true}}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"id":1,"name":"widgets","permissions":{"push":false}}`))
+		})
+	mux.HandleFunc("POST /api/v3/repos/acme/widgets/issues/5/comments",
+		func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"id":1}`))
+		})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	source := tokenauth.NewManagedSource(tokenauth.Descriptor{
+		Key: tokenauth.Key{Platform: "github", Host: "github.example.com"},
+		Candidates: []tokenauth.Candidate{
+			{
+				Kind:           tokenauth.SourceKindGitHubApp,
+				Host:           "github.example.com",
+				FilePath:       "/keys/app.pem",
+				AppID:          7,
+				InstallationID: 11,
+			},
+			{Kind: tokenauth.SourceKindEnv, EnvName: "TEST_OVERLAY_BUDGET_PAT"},
+		},
+	}, tokenauth.Options{
+		GitHubApp: func(context.Context, tokenauth.Candidate) (string, time.Time, error) {
+			return "ghs_app_token", time.Now().Add(time.Hour), nil
+		},
+	})
+	readBudget := NewSyncBudget(100)
+	writeBudget := NewSyncBudget(100)
+	client, err := NewClient(
+		source, "github.example.com", nil, readBudget,
+		WithBaseURLForTesting(srv.URL),
+		WithNotificationAccounting(nil, writeBudget),
+	)
+	require.NoError(err)
+
+	repo, err := client.GetRepository(WithSyncBudget(t.Context()), "acme", "widgets")
+	require.NoError(err)
+	assert.True(repo.GetPermissions().GetPush())
+	assert.Equal(1, readBudget.Spent())
+	assert.Equal(1, writeBudget.Spent(),
+		"the background viewer overlay must spend the write identity's budget")
+
+	_, err = client.CreateIssueComment(t.Context(), "acme", "widgets", 5, "lgtm")
+	require.NoError(err)
+	assert.Equal(1, writeBudget.Spent(), "foreground mutations stay uncharged")
+	assert.Equal(1, readBudget.Spent())
+
+	// Archive requests hold leases for the read identity only: the viewer
+	// overlay is skipped so the write credential is never spent, and the
+	// app's permissions are cleared rather than persisted.
+	repo, err = client.GetRepository(WithArchiveSyncBudget(t.Context()), "acme", "widgets")
+	require.NoError(err)
+	assert.Nil(repo.Permissions)
+	assert.Equal(1, writeBudget.Spent(),
+		"archive repository reads must not spend the write identity")
+	assert.Equal(2, readBudget.Spent())
 }
 
 // TestMutationAuthFallsBackToReadClientWhenUnsplit pins the hand-built
 // client shape used across this package's tests: without a dedicated
 // write client, mutations flow through the read client unchanged.
+func TestNewClientRejectsMutationsWithoutStartupWriteIdentity(t *testing.T) {
+	require := require.New(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer server.Close()
+	client, err := NewClient(
+		testTokenSource("late-pat"), "github.example.com", nil, nil,
+		WithBaseURLForTesting(server.URL), WithMutationsDisabled(),
+	)
+	require.NoError(err)
+
+	_, err = client.CreateIssueComment(t.Context(), "acme", "widget", 1, "body")
+	require.ErrorIs(err, ErrMissingWriteIdentity)
+	_, _, err = client.ListNotifications(t.Context(), NotificationListOptions{
+		RepoOwner: "acme", RepoName: "widget",
+	})
+	require.ErrorIs(err, ErrMissingWriteIdentity)
+}
+
 func TestMutationAuthFallsBackToReadClientWhenUnsplit(t *testing.T) {
 	var gotAuth string
 	mux := http.NewServeMux()

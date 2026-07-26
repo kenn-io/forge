@@ -46,7 +46,10 @@ Check these in order:
 5. The provider rate limit is not exhausted.
 
 For GitHub, `gh auth token` can supply the token when `MIDDLEMAN_GITHUB_TOKEN`
-is not set.
+is not set. With `[[github_owner_tokens]]`, confirm the entered owner matches the
+mapping exactly after case folding and restart after changing the PAT to one
+issued by a different GitHub user. A missing owner route reports the GitHub host
+and owner without exposing token material.
 
 ## Mutating actions are disabled
 
@@ -66,7 +69,14 @@ middleman-github-app list
 ```
 
 Mutating actions still use the user credential chain so comments, approvals, and
-merges are attributed to you.
+merges are attributed to you. Multiple PAT entries issued to the same GitHub
+user do not create additional capacity: they share one rate limit and one
+middleman sync budget. Distinct users and App installations have separate
+identity-scoped budgets.
+
+If App-backed reads work but mutations or notifications are disabled, restart
+middleman after adding the user PAT. App-only routes intentionally remain
+read-only until startup establishes a stable write identity.
 
 ## Docs mode has no folders
 

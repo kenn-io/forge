@@ -102,7 +102,10 @@ vi.mock("@middleman/ui/stores/settings", () => ({
   createSettingsStore: () => ({
     getConfiguredRepos: () => [],
     setConfiguredRepos: vi.fn(),
-    getPullRequestSettings: () => ({ allow_mid_stack_merges: false }),
+    getPullRequestSettings: () => ({
+      allow_mid_stack_merges: false,
+      prefer_github_native_stacks: false,
+    }),
     setPullRequestSettings: vi.fn(),
     getModeVisibility: () => ({
       activity: true,

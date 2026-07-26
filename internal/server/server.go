@@ -660,6 +660,12 @@ func fleetConfigSnapshot(cfg *config.Config, tmuxCommand []string) fleetapi.Conf
 		DefaultPlatformHost: cfg.DefaultPlatformHost,
 		Repos:               slices.Clone(cfg.Repos),
 		Platforms:           slices.Clone(cfg.Platforms),
+		// Owner PATs and App installations are credential routes in their
+		// own right: without them a repository served only by an owner
+		// token resolves to no credential and Fleet reports the platform
+		// backend as unauthenticated while sync and mutations work.
+		GitHubOwnerTokens: slices.Clone(cfg.GitHubOwnerTokens),
+		GitHubApps:        slices.Clone(cfg.GitHubApps),
 	}
 	sshSocketDir := ""
 	if cfg.DataDir != "" {
@@ -1045,6 +1051,23 @@ func newServer(
 	if clones != nil && !options.DisableWorkspaceBackgroundMonitors {
 		s.repoBrowserAPI.SeedRefreshRepos(context.Background())
 		s.runWorkspaceDependent(s.repoBrowserAPI.RunRefreshLoop)
+	}
+
+	// The syncer's native-stack preference is the transition authority for
+	// later settings changes, so every server binds it to the boot config
+	// rather than relying on the caller that assembled the syncer. This runs
+	// before the config watcher so the boot value cannot race a reload that
+	// swaps the preference and reconciles from its own snapshot.
+	if syncer != nil && cfg != nil {
+		syncer.SetPreferGitHubNativeStacks(cfg.PullRequests.PreferGitHubNativeStacks)
+		if !cfg.PullRequests.PreferGitHubNativeStacks {
+			// Boot is a transition point too: the setting may have been edited
+			// while the daemon was stopped, or a previous run may have saved it and
+			// exited before reconciling. Stored native ordering would otherwise
+			// keep driving the merge safeguard until each repository next synced,
+			// and forever for repositories no longer tracked.
+			s.restoreBranchDerivedStackProjections()
+		}
 	}
 
 	// Watch the config file so an external edit (vim, dotfiles deploy,

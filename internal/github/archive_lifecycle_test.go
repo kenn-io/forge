@@ -244,8 +244,8 @@ func TestArchivePreemptedItemRecordsNoFailureAndCompletesOnNextPass(t *testing.T
 	require.NoError(err)
 
 	now := time.Now().UTC()
-	key := RateBucketKey("github", ref.Host)
-	tracker := NewPlatformRateTracker(database, "github", ref.Host, "rest")
+	key := RateBucketKey("github", ref.Host, "host")
+	tracker := NewPlatformRateTracker(database, "github", ref.Host, "host", "rest")
 	tracker.UpdateFromRate(Rate{Limit: 5000, Remaining: 4999, Reset: now.Add(time.Minute)})
 	budget := NewSyncBudget(5000)
 	syncer := NewSyncerWithRegistry(registry, database, nil, []RepoRef{{
@@ -343,7 +343,7 @@ func TestArchiveDisabledIssueInventorySharesCooldownWithoutBlockingMergeRequests
 			return nil, false, nil
 		},
 	}
-	tracker := NewPlatformRateTracker(database, "github", "github.com", "rest")
+	tracker := NewPlatformRateTracker(database, "github", "github.com", "host", "rest")
 	tracker.UpdateFromRate(Rate{
 		Limit: 5000, Remaining: 4999, Reset: now.Add(time.Minute),
 	})
@@ -442,7 +442,7 @@ func newDisabledArchiveHydrationFixture(t *testing.T) *disabledArchiveHydrationF
 		},
 	}
 	fixture.tracker = NewPlatformRateTracker(
-		fixture.database, "github", "github.com", "rest",
+		fixture.database, "github", "github.com", "host", "rest",
 	)
 	fixture.tracker.UpdateFromRate(Rate{
 		Limit: 5000, Remaining: 4999, Reset: fixture.now.Add(time.Minute),
@@ -500,7 +500,7 @@ func TestArchiveDisabledIssueHydrationRecoversImmediatelyAfterRestart(t *testing
 	fixture.disabled.Store(false)
 	fixture.now = fixture.now.Add(time.Minute)
 	restartedTracker := NewPlatformRateTracker(
-		fixture.database, "github", "github.com", "rest",
+		fixture.database, "github", "github.com", "host", "rest",
 	)
 	restartedTracker.UpdateFromRate(Rate{
 		Limit: 5000, Remaining: 4999, Reset: fixture.now.Add(time.Minute),
@@ -663,9 +663,9 @@ func TestArchiveAdmissionSharesSyncBudgetAndProviderReserve(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
-	key := RateBucketKey("github", "github.test")
+	key := RateBucketKey("github", "github.test", "host")
 	budget := NewSyncBudget(100)
-	tracker := NewPlatformRateTracker(database, "github", "github.test", "rest")
+	tracker := NewPlatformRateTracker(database, "github", "github.test", "host", "rest")
 	now := time.Now().UTC()
 	reset := now.Add(time.Minute)
 	tracker.UpdateFromRate(Rate{Limit: 5000, Remaining: 4999, Reset: reset})
@@ -690,12 +690,12 @@ func TestArchiveAdmissionSharesSyncBudgetAndProviderReserve(t *testing.T) {
 	assert.Equal(reset, *denied.RetryAt)
 
 	budget.Reset()
-	reserveTracker := NewPlatformRateTracker(database, "github", "reserve.test", "rest")
+	reserveTracker := NewPlatformRateTracker(database, "github", "reserve.test", "host", "rest")
 	reserveTracker.UpdateFromRate(Rate{Limit: 5000, Remaining: RateReserveBuffer, Reset: reset})
 	reserveRef := platform.RepoRef{
 		Platform: platform.KindGitHub, Host: "reserve.test", Owner: "acme", Name: "widget",
 	}
-	reserveKey := RateBucketKey("github", reserveRef.Host)
+	reserveKey := RateBucketKey("github", reserveRef.Host, "host")
 	syncer.rateTrackers[reserveKey] = reserveTracker
 	syncer.budgets[reserveKey] = NewSyncBudget(100)
 	denied, err = syncer.Admit(t.Context(), reserveRef, db.ArchiveItemTypeIssue, 1)
@@ -714,9 +714,9 @@ func TestArchiveAdmissionAttemptAllowanceUsesAvailableSurplus(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
-	key := RateBucketKey("github", "github.test")
+	key := RateBucketKey("github", "github.test", "host")
 	budget := NewSyncBudget(100)
-	tracker := NewPlatformRateTracker(database, "github", "github.test", "rest")
+	tracker := NewPlatformRateTracker(database, "github", "github.test", "host", "rest")
 	now := time.Now().UTC()
 	tracker.UpdateFromRate(Rate{Limit: 5000, Remaining: 4999, Reset: now.Add(time.Minute)})
 	syncer := NewSyncerWithRegistry(
@@ -740,8 +740,8 @@ func TestGitealikeArchiveAdmissionDoesNotTruncateAdmittedMergeRequest(t *testing
 	require := require.New(t)
 	database := dbtest.Open(t)
 	budget := NewSyncBudget(50)
-	giteaKey := RateBucketKey("gitea", "gitea.test")
-	giteaTracker := NewPlatformRateTracker(database, "gitea", "gitea.test", "rest")
+	giteaKey := RateBucketKey("gitea", "gitea.test", "host")
+	giteaTracker := NewPlatformRateTracker(database, "gitea", "gitea.test", "host", "rest")
 	giteaTracker.RecordRequest()
 	syncer := NewSyncerWithRegistry(
 		nil, database, nil, nil, time.Hour,
@@ -762,8 +762,8 @@ func TestGitealikeArchiveAdmissionDoesNotTruncateAdmittedMergeRequest(t *testing
 		assert.True(ConsumeArchiveAttemptAllowance(admission.Context))
 	}
 
-	githubKey := RateBucketKey("github", "github.test")
-	githubTracker := NewPlatformRateTracker(database, "github", "github.test", "rest")
+	githubKey := RateBucketKey("github", "github.test", "host")
+	githubTracker := NewPlatformRateTracker(database, "github", "github.test", "host", "rest")
 	githubTracker.RecordRequest()
 	githubSyncer := NewSyncerWithRegistry(
 		nil, database, nil, nil, time.Hour,
@@ -784,10 +784,10 @@ func TestArchiveAdmissionPreservesProviderReserveForDeclaredCost(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
-	key := RateBucketKey("github", "github.test")
+	key := RateBucketKey("github", "github.test", "host")
 	now := time.Now().UTC()
 	reset := now.Add(time.Minute)
-	tracker := NewPlatformRateTracker(database, "github", "github.test", "rest")
+	tracker := NewPlatformRateTracker(database, "github", "github.test", "host", "rest")
 	// Every wire attempt, including an authentication retry, is counted
 	// against admission, so archive.archiveAttemptCost declares twice the
 	// logical request count. Remaining sits exactly at the reserve margin
@@ -820,10 +820,10 @@ func TestArchiveRampDenialRetriesWithinCurrentWindow(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
-	key := RateBucketKey("github", "github.test")
+	key := RateBucketKey("github", "github.test", "host")
 	now := time.Now().UTC()
 	reset := now.Add(59 * time.Minute)
-	tracker := NewPlatformRateTracker(database, "github", "github.test", "rest")
+	tracker := NewPlatformRateTracker(database, "github", "github.test", "host", "rest")
 	tracker.UpdateFromRate(Rate{Limit: 5000, Remaining: 4999, Reset: reset})
 	syncer := NewSyncerWithRegistry(
 		nil, database, nil, nil, time.Hour,
@@ -845,9 +845,9 @@ func TestArchiveAdmissionDefersToNotificationAndActiveDetailWork(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
-	key := RateBucketKey("github", "github.test")
+	key := RateBucketKey("github", "github.test", "host")
 	now := time.Now().UTC()
-	tracker := NewPlatformRateTracker(database, "github", "github.test", "rest")
+	tracker := NewPlatformRateTracker(database, "github", "github.test", "host", "rest")
 	tracker.UpdateFromRate(Rate{Limit: 5000, Remaining: 4999, Reset: now.Add(time.Minute)})
 	syncer := NewSyncerWithRegistry(
 		nil, database, nil, nil, time.Hour,
@@ -878,7 +878,7 @@ func TestArchiveAdmissionDenialAbandonsExpiredFeatureProbeReservation(t *testing
 	require := require.New(t)
 	database := dbtest.Open(t)
 	now := time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC)
-	key := RateBucketKey("github", "github.test")
+	key := RateBucketKey("github", "github.test", "host")
 	syncer := NewSyncerWithRegistry(
 		nil, database, nil, nil, time.Hour,
 		nil, map[string]*SyncBudget{key: NewSyncBudget(100)},
@@ -920,8 +920,8 @@ func TestArchiveCompletionWithoutProviderAttemptAbandonsExpiredFeatureProbeReser
 	require := require.New(t)
 	database := dbtest.Open(t)
 	now := time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC)
-	key := RateBucketKey("github", "github.test")
-	tracker := NewPlatformRateTracker(database, "github", "github.test", "rest")
+	key := RateBucketKey("github", "github.test", "host")
+	tracker := NewPlatformRateTracker(database, "github", "github.test", "host", "rest")
 	tracker.UpdateFromRate(Rate{
 		Limit: 5000, Remaining: 4999,
 		Reset: now.Add(repositoryFeatureProbeInterval + time.Minute),
@@ -973,9 +973,9 @@ func TestArchiveAdmissionLeaseSerializesProviderRequests(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
-	key := RateBucketKey("github", "github.test")
+	key := RateBucketKey("github", "github.test", "host")
 	now := time.Now().UTC()
-	tracker := NewPlatformRateTracker(database, "github", "github.test", "rest")
+	tracker := NewPlatformRateTracker(database, "github", "github.test", "host", "rest")
 	tracker.UpdateFromRate(Rate{Limit: 5000, Remaining: 4999, Reset: now.Add(time.Minute)})
 	syncer := NewSyncerWithRegistry(
 		nil, database, nil, nil, time.Hour,
@@ -1009,7 +1009,7 @@ func TestArchiveAdmissionLeaseSerializesProviderRequests(t *testing.T) {
 func TestLiveProviderWorkCancelsAndWaitsForArchiveRequest(t *testing.T) {
 	require := require.New(t)
 	syncer := NewSyncerWithRegistry(nil, dbtest.Open(t), nil, nil, time.Hour, nil, nil)
-	key := RateBucketKey("github", "github.test")
+	key := RateBucketKey("github", "github.test", "host")
 	archiveCtx, releaseArchive, allowed := syncer.tryBeginArchiveProviderRequest(t.Context(), key)
 	require.True(allowed)
 
@@ -1081,7 +1081,7 @@ func TestArchiveAdmissionDefersToForegroundSyncEntryPoints(t *testing.T) {
 			}
 			registry, err := platform.NewRegistry(provider)
 			require.NoError(err)
-			key := RateBucketKey(string(ref.Platform), ref.Host)
+			key := RateBucketKey(string(ref.Platform), ref.Host, "host")
 			syncer := NewSyncerWithRegistry(
 				registry, database, nil, []RepoRef{{
 					Platform: ref.Platform, PlatformHost: ref.Host,
@@ -1107,6 +1107,127 @@ func TestArchiveAdmissionDefersToForegroundSyncEntryPoints(t *testing.T) {
 			require.NoError(<-done)
 		})
 	}
+}
+
+func TestSyncRepoRegistersReadAndWriteIdentityProviderWork(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	database := dbtest.Open(t)
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var once sync.Once
+	mc := &mockClient{getRepositoryFn: func(context.Context, string, string) (*gh.Repository, error) {
+		once.Do(func() { close(started) })
+		<-release
+		return nil, errors.New("stop after identity resolution")
+	}}
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, database, nil, nil, time.Hour, nil, nil)
+	t.Cleanup(syncer.Stop)
+	router, err := NewHostRouter("github.com", &Route{
+		Key:           RouteKey{Host: "github.com", Owner: "acme"},
+		Client:        mc,
+		ReadIdentity:  IdentityKey{Host: "github.com", Principal: "installation:11"},
+		WriteIdentity: IdentityKey{Host: "github.com", Principal: "user:9"},
+	})
+	require.NoError(err)
+	syncer.SetGitHubRouters(map[string]*HostRouter{"github.com": router})
+	repo := RepoRef{
+		Platform: platform.KindGitHub, PlatformHost: "github.com",
+		Owner: "acme", Name: "widget",
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- syncer.syncRepo(t.Context(), repo) }()
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		require.Fail("repository sync did not reach the provider")
+	}
+	readBucket := RateBucketKey("github", "github.com", "installation:11")
+	writeBucket := RateBucketKey("github", "github.com", "user:9")
+	assert.True(
+		syncer.higherPriorityProviderWorkActive(readBucket, archive.PriorityFullArchive),
+		"read identity work must preempt archives during repository sync",
+	)
+	assert.True(
+		syncer.higherPriorityProviderWorkActive(writeBucket, archive.PriorityFullArchive),
+		"write identity work must preempt archives while the viewer permission overlay can run",
+	)
+	close(release)
+	require.Error(<-done)
+	assert.False(syncer.higherPriorityProviderWorkActive(readBucket, archive.PriorityFullArchive))
+	assert.False(syncer.higherPriorityProviderWorkActive(writeBucket, archive.PriorityFullArchive))
+}
+
+func TestProcessQueuedNotificationReadsHoldsWriteIdentityProviderWork(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	database := dbtest.Open(t)
+	repoID, err := database.UpsertRepo(
+		t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
+	queuedAt := now.Add(time.Minute)
+	number := 7
+	require.NoError(database.UpsertNotifications(t.Context(), []db.Notification{{
+		Platform:                 "github",
+		PlatformHost:             "github.com",
+		PlatformNotificationID:   "thread-1",
+		RepoID:                   &repoID,
+		RepoOwner:                "acme",
+		RepoName:                 "widget",
+		SubjectType:              "PullRequest",
+		SubjectTitle:             "Please review",
+		WebURL:                   "https://github.com/acme/widget/pull/7",
+		ItemNumber:               &number,
+		ItemType:                 "pr",
+		Reason:                   "mention",
+		SourceUpdatedAt:          now,
+		SyncedAt:                 now,
+		SourceAckQueuedAt:        &queuedAt,
+		SourceLastAcknowledgedAt: &queuedAt,
+	}}))
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var once sync.Once
+	mc := &mockClient{
+		getNotificationThreadFn: func(context.Context, string) (NotificationThread, error) {
+			once.Do(func() { close(started) })
+			<-release
+			return NotificationThread{}, errors.New("refetch failed")
+		},
+	}
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, database, nil, nil, time.Hour, nil, nil)
+	t.Cleanup(syncer.Stop)
+	router, err := NewHostRouter("github.com", &Route{
+		Key:           RouteKey{Host: "github.com", Owner: "acme"},
+		Client:        mc,
+		ReadIdentity:  IdentityKey{Host: "github.com", Principal: "installation:11"},
+		WriteIdentity: IdentityKey{Host: "github.com", Principal: "user:9"},
+	})
+	require.NoError(err)
+	syncer.SetGitHubRouters(map[string]*HostRouter{"github.com": router})
+
+	done := make(chan error, 1)
+	go func() {
+		done <- syncer.ProcessQueuedNotificationReads(
+			t.Context(), platform.KindGitHub, "github.com", 10,
+		)
+	}()
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		require.Fail("queued read propagation did not reach the provider")
+	}
+	writeBucket := RateBucketKey("github", "github.com", "user:9")
+	assert.True(
+		syncer.higherPriorityProviderWorkActive(writeBucket, archive.PriorityFullArchive),
+		"queued acknowledgment propagation must preempt archives on the write identity",
+	)
+	close(release)
+	require.NoError(<-done)
+	assert.False(syncer.higherPriorityProviderWorkActive(writeBucket, archive.PriorityFullArchive))
 }
 
 func TestSyncerConfiguredRepositoriesCarryFullProviderIdentity(t *testing.T) {

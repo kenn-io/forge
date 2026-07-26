@@ -44,11 +44,9 @@ func TestBranchActivityWalksDefaultBranchFirstParent(t *testing.T) {
 	mergeSHA := gitSHA(t, work, "HEAD")
 
 	mgr := New(filepath.Join(dir, "clones"), nil)
-	require.NoError(mgr.EnsureClone(t.Context(), "github.com", "acme", "widgets", remote))
+	require.NoError(mgr.EnsureClone(t.Context(), "github", "github.com", "acme", "widgets", remote))
 
-	commits, err := mgr.ListBranchCommitsSince(
-		t.Context(), "github.com", "acme", "widgets", "main", time.Unix(0, 0).UTC(), "", 0,
-	)
+	commits, err := mgr.ListBranchCommitsSince(t.Context(), "github", "github.com", "acme", "widgets", "main", time.Unix(0, 0).UTC(), "", 0)
 	require.NoError(err)
 	require.Len(commits, 3)
 
@@ -87,8 +85,8 @@ func TestBranchActivityDetectsForcePush(t *testing.T) {
 	commitTestRun(t, work, "git", "push", "origin", "main")
 
 	mgr := New(filepath.Join(dir, "clones"), nil)
-	require.NoError(mgr.EnsureClone(t.Context(), "github.com", "acme", "widgets", remote))
-	oldTip, err := mgr.ResolveRef(t.Context(), "github.com", "acme", "widgets", "main")
+	require.NoError(mgr.EnsureClone(t.Context(), "github", "github.com", "acme", "widgets", remote))
+	oldTip, err := mgr.ResolveRef(t.Context(), "github", "github.com", "acme", "widgets", "main")
 	require.NoError(err)
 
 	commitTestRun(t, work, "git", "checkout", "--orphan", "rewrite")
@@ -98,11 +96,11 @@ func TestBranchActivityDetectsForcePush(t *testing.T) {
 	commitTestRun(t, work, "git", "commit", "-m", "commit B")
 	commitTestRun(t, work, "git", "push", "--force", "origin", "HEAD:main")
 
-	require.NoError(mgr.EnsureClone(t.Context(), "github.com", "acme", "widgets", remote))
-	newTip, err := mgr.ResolveRef(t.Context(), "github.com", "acme", "widgets", "main")
+	require.NoError(mgr.EnsureClone(t.Context(), "github", "github.com", "acme", "widgets", remote))
+	newTip, err := mgr.ResolveRef(t.Context(), "github", "github.com", "acme", "widgets", "main")
 	require.NoError(err)
 
-	isAncestor, err := mgr.IsAncestor(t.Context(), "github.com", "acme", "widgets", oldTip, newTip)
+	isAncestor, err := mgr.IsAncestor(t.Context(), "github", "github.com", "acme", "widgets", oldTip, newTip)
 	require.NoError(err)
 	assert.False(isAncestor)
 	assert.NotEqual(oldTip, newTip)
@@ -125,10 +123,10 @@ func TestResolveRefRejectsNonCommitObjects(t *testing.T) {
 	commitTestRun(t, work, "git", "push", "origin", "main")
 
 	mgr := New(filepath.Join(dir, "clones"), nil)
-	require.NoError(mgr.EnsureClone(t.Context(), "github.com", "acme", "widgets", remote))
+	require.NoError(mgr.EnsureClone(t.Context(), "github", "github.com", "acme", "widgets", remote))
 
 	blobSHA := gitSHA(t, work, "HEAD:file.txt")
-	_, err := mgr.ResolveRef(t.Context(), "github.com", "acme", "widgets", blobSHA)
+	_, err := mgr.ResolveRef(t.Context(), "github", "github.com", "acme", "widgets", blobSHA)
 	require.Error(err)
 	require.ErrorIs(err, ErrNotFound)
 }
@@ -159,11 +157,9 @@ func TestListBranchCommitsSinceAfterSHATakesPrecedence(t *testing.T) {
 	commitTestRun(t, work, "git", "push", "origin", "main")
 
 	mgr := New(filepath.Join(dir, "clones"), nil)
-	require.NoError(mgr.EnsureClone(t.Context(), "github.com", "acme", "widgets", remote))
+	require.NoError(mgr.EnsureClone(t.Context(), "github", "github.com", "acme", "widgets", remote))
 
-	commits, err := mgr.ListBranchCommitsSince(
-		t.Context(), "github.com", "acme", "widgets", "main", time.Now().Add(24*time.Hour).UTC(), afterSHA, 0,
-	)
+	commits, err := mgr.ListBranchCommitsSince(t.Context(), "github", "github.com", "acme", "widgets", "main", time.Now().Add(24*time.Hour).UTC(), afterSHA, 0)
 	require.NoError(err)
 
 	var subjects []string
@@ -194,11 +190,9 @@ func TestListBranchCommitsSinceHonorsMaxCount(t *testing.T) {
 	commitTestRun(t, work, "git", "push", "origin", "main")
 
 	mgr := New(filepath.Join(dir, "clones"), nil)
-	require.NoError(mgr.EnsureClone(t.Context(), "github.com", "acme", "widgets", remote))
+	require.NoError(mgr.EnsureClone(t.Context(), "github", "github.com", "acme", "widgets", remote))
 
-	commits, err := mgr.ListBranchCommitsSince(
-		t.Context(), "github.com", "acme", "widgets", "main", time.Unix(0, 0).UTC(), "", 2,
-	)
+	commits, err := mgr.ListBranchCommitsSince(t.Context(), "github", "github.com", "acme", "widgets", "main", time.Unix(0, 0).UTC(), "", 2)
 	require.NoError(err)
 
 	var subjects []string
@@ -226,9 +220,9 @@ func TestResolveDefaultBranchFallsBackToOriginHEAD(t *testing.T) {
 	commitTestRun(t, work, "git", "push", "origin", "main")
 
 	mgr := New(filepath.Join(dir, "clones"), nil)
-	require.NoError(mgr.EnsureClone(t.Context(), "github.com", "acme", "widgets", remote))
+	require.NoError(mgr.EnsureClone(t.Context(), "github", "github.com", "acme", "widgets", remote))
 
-	branch, ref, err := mgr.ResolveDefaultBranch(t.Context(), "github.com", "acme", "widgets", "stale")
+	branch, ref, err := mgr.ResolveDefaultBranch(t.Context(), "github", "github.com", "acme", "widgets", "stale")
 	require.NoError(err)
 	assert.Equal("main", branch)
 	assert.Equal(gitSHA(t, work, "main"), ref)
@@ -259,9 +253,9 @@ func TestResolveDefaultBranchStripsOriginPrefixBeforeOriginHEADFallback(t *testi
 	commitTestRun(t, work, "git", "push", "origin", "release")
 
 	mgr := New(filepath.Join(dir, "clones"), nil)
-	require.NoError(mgr.EnsureClone(t.Context(), "github.com", "acme", "widgets", remote))
+	require.NoError(mgr.EnsureClone(t.Context(), "github", "github.com", "acme", "widgets", remote))
 
-	branch, ref, err := mgr.ResolveDefaultBranch(t.Context(), "github.com", "acme", "widgets", "origin/release")
+	branch, ref, err := mgr.ResolveDefaultBranch(t.Context(), "github", "github.com", "acme", "widgets", "origin/release")
 	require.NoError(err)
 	assert.Equal("release", branch)
 	assert.Equal(releaseSHA, ref)
@@ -292,9 +286,9 @@ func TestResolveDefaultBranchPrefersLiteralOriginPrefixedBranch(t *testing.T) {
 	commitTestRun(t, work, "git", "push", "origin", "HEAD:refs/heads/origin/main")
 
 	mgr := New(filepath.Join(dir, "clones"), nil)
-	require.NoError(mgr.EnsureClone(t.Context(), "github.com", "acme", "widgets", remote))
+	require.NoError(mgr.EnsureClone(t.Context(), "github", "github.com", "acme", "widgets", remote))
 
-	branch, ref, err := mgr.ResolveDefaultBranch(t.Context(), "github.com", "acme", "widgets", "origin/main")
+	branch, ref, err := mgr.ResolveDefaultBranch(t.Context(), "github", "github.com", "acme", "widgets", "origin/main")
 	require.NoError(err)
 	assert.Equal("origin/main", branch)
 	assert.Equal(literalSHA, ref)

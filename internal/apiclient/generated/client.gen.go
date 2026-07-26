@@ -2890,7 +2890,8 @@ type PublishResponse struct {
 
 // PullRequests defines model for PullRequests.
 type PullRequests struct {
-	AllowMidStackMerges bool `json:"allow_mid_stack_merges"`
+	AllowMidStackMerges      bool `json:"allow_mid_stack_merges"`
+	PreferGithubNativeStacks bool `json:"prefer_github_native_stacks"`
 }
 
 // PullResponse defines model for PullResponse.
@@ -2916,8 +2917,10 @@ type RateLimitHostStatus struct {
 	HourStart          string `json:"hour_start"`
 	Known              bool   `json:"known"`
 	PlatformHost       string `json:"platform_host"`
+	PrincipalLabel     string `json:"principal_label"`
 	Provider           string `json:"provider"`
 	RateLimit          int64  `json:"rate_limit"`
+	RatePrincipal      string `json:"rate_principal"`
 	RateRemaining      int64  `json:"rate_remaining"`
 	RateResetAt        string `json:"rate_reset_at"`
 	RequestsHour       int64  `json:"requests_hour"`

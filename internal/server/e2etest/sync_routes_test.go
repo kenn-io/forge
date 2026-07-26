@@ -83,7 +83,7 @@ func TestSyncListNotModifiedDoesNotChangeRateLimitBudgetE2E(t *testing.T) {
 	defer githubAPI.Close()
 
 	database := dbtest.Open(t)
-	restTracker := ghclient.NewRateTracker(database, "github.com", "rest")
+	restTracker := ghclient.NewRateTracker(database, "github.com", "host", "rest")
 	budget := ghclient.NewSyncBudget(2)
 	client, err := ghclient.NewClient(
 		staticTokenSource("token"),

@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -26,6 +27,7 @@ import (
 	"go.kenn.io/middleman/internal/gitclone"
 	"go.kenn.io/middleman/internal/platform"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
+	"go.kenn.io/middleman/internal/tokenauth"
 )
 
 // openTestDB opens a temporary SQLite database for the duration of the test.
@@ -459,6 +461,103 @@ func requireSyncActivityRepoRow(t *testing.T, d *db.DB) db.Repo {
 	return *repoRow
 }
 
+// recordingCloneRoutes records the platform every managed-Git credential
+// lookup is made with, so tests can prove clone calls route by the same
+// normalized identity the rest of sync uses.
+type recordingCloneRoutes struct {
+	mu        sync.Mutex
+	platforms []string
+}
+
+func (r *recordingCloneRoutes) SourceForRepo(
+	platformName, _, _, _ string,
+) tokenauth.Source {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.platforms = append(r.platforms, platformName)
+	return nil
+}
+
+func (r *recordingCloneRoutes) FallbackSource(string) tokenauth.Source {
+	return nil
+}
+
+func (r *recordingCloneRoutes) seen() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.platforms)
+}
+
+// A RepoRef may carry no platform: every other sync path normalizes that to
+// GitHub, so the clone manager must too. Handing it the empty string instead
+// picks no credential route, which drops private fetches and lets public ones
+// run outside identity routing.
+func TestSyncRepoRoutesCloneCredentialsForUnqualifiedGitHubRepoRef(t *testing.T) {
+	require := require.New(t)
+	check := assert.New(t)
+	dir := t.TempDir()
+	remote := filepath.Join(dir, "remote.git")
+	syncActivityGitRun(t, dir, "init", "--bare", "--initial-branch=main", remote)
+	work := filepath.Join(dir, "work")
+	syncActivityGitRun(t, dir, "clone", remote, work)
+	syncActivityGitRun(t, work, "config", "user.email", "alice@example.com")
+	syncActivityGitRun(t, work, "config", "user.name", "Alice")
+	syncActivityCommitAndPush(
+		t, work, "direct.txt", "direct work\n", "direct work", "main",
+	)
+
+	d := openTestDB(t)
+	routes := &recordingCloneRoutes{}
+	clones := gitclone.New(t.TempDir(), routes)
+	repo := RepoRef{
+		PlatformHost:       "github.com",
+		Owner:              "acme",
+		Name:               "widget",
+		RepoPath:           "acme/widget",
+		PlatformExternalID: "R_unqualified_ref",
+		CloneURL:           remote,
+		DefaultBranch:      "main",
+	}
+	provider := &syncTestRepositoryReadProvider{
+		syncTestReadProvider: &syncTestReadProvider{
+			syncTestProvider: syncTestProvider{
+				kind: platform.KindGitHub,
+				host: "github.com",
+			},
+		},
+		repository: platform.Repository{
+			Ref: platform.RepoRef{
+				Platform:           platform.KindGitHub,
+				Host:               "github.com",
+				Owner:              "acme",
+				Name:               "widget",
+				RepoPath:           "acme/widget",
+				PlatformExternalID: "R_unqualified_ref",
+				CloneURL:           remote,
+				DefaultBranch:      "main",
+			},
+			PlatformExternalID: "R_unqualified_ref",
+			CloneURL:           remote,
+			DefaultBranch:      "main",
+		},
+	}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	syncer := NewSyncerWithRegistry(
+		registry, d, clones, []RepoRef{repo}, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+
+	require.NoError(syncer.syncRepo(t.Context(), repo))
+
+	seen := routes.seen()
+	require.NotEmpty(seen, "managed Git resolved a credential for the clone")
+	for _, platformName := range seen {
+		check.Equal(string(platform.KindGitHub), platformName,
+			"an unqualified GitHub ref must not bypass credential routing")
+	}
+}
+
 func TestSyncRepoRecordsDefaultBranchCommits(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -659,7 +758,7 @@ esac
 		PlatformHost: "github.com",
 		CloneURL:     "https://github.com/acme/widgets.git",
 	}
-	clonePath, err := clones.ClonePath("github.com", repo.Owner, repo.Name)
+	clonePath, err := clones.ClonePath("github", "github.com", repo.Owner, repo.Name)
 	require.NoError(err)
 	require.NoError(os.MkdirAll(clonePath, 0o755))
 	require.NoError(os.WriteFile(
@@ -1945,6 +2044,135 @@ func TestSyncNotificationsContinuesAfterHostError(t *testing.T) {
 	check.Equal("thread-ok", items[0].PlatformNotificationID)
 }
 
+func TestSyncNotificationsContinuesAfterRepoErrorOnSameHost(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	database := openTestDB(t)
+	for _, name := range []string{"broken", "widget"} {
+		_, err := database.UpsertRepo(
+			t.Context(), db.GitHubRepoIdentity("github.com", "acme", name),
+		)
+		require.NoError(err)
+	}
+	boom := errors.New("bad scoped credential")
+	number := 7
+	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
+	client := &mockClient{
+		listNotificationsFn: func(
+			_ context.Context, opts NotificationListOptions,
+		) ([]NotificationThread, bool, error) {
+			if opts.RepoName == "broken" {
+				return nil, false, boom
+			}
+			if opts.Participating {
+				return nil, false, nil
+			}
+			return []NotificationThread{{
+				ID: "thread-ok", RepoOwner: "acme", RepoName: "widget",
+				SubjectType: "PullRequest", SubjectTitle: "Review requested",
+				WebURL:     "https://github.com/acme/widget/pull/7",
+				ItemNumber: &number, ItemType: "pr", Reason: "mention",
+				Unread: true, UpdatedAt: now,
+			}}, false, nil
+		},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client}, database, nil,
+		[]RepoRef{
+			{Owner: "acme", Name: "broken", PlatformHost: "github.com"},
+			{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
+		},
+		time.Minute, nil, nil,
+	)
+
+	err := syncer.SyncNotifications(t.Context())
+	require.ErrorIs(err, boom)
+	items, listErr := database.ListNotifications(
+		t.Context(), db.ListNotificationsOpts{State: "all"},
+	)
+	require.NoError(listErr)
+	require.Len(items, 1)
+	assert.Equal("thread-ok", items[0].PlatformNotificationID)
+
+	brokenWatermark, watermarkErr := database.GetNotificationSyncWatermark(
+		t.Context(), "github", "github.com", "acme", "broken",
+	)
+	require.NoError(watermarkErr)
+	assert.Nil(brokenWatermark, "a failing repository must not advance its own watermark")
+	widgetWatermark, watermarkErr := database.GetNotificationSyncWatermark(
+		t.Context(), "github", "github.com", "acme", "widget",
+	)
+	require.NoError(watermarkErr)
+	require.NotNil(widgetWatermark,
+		"a healthy repository must advance its watermark despite a failing sibling on the host")
+	assert.False(widgetWatermark.LastSuccessfulSyncAt.IsZero())
+}
+
+func TestSyncNotificationsSkipsUnroutedRepoAndAdvancesRoutedSibling(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	database := openTestDB(t)
+	for _, identity := range []db.RepoIdentity{
+		db.GitHubRepoIdentity("github.com", "acme", "widget"),
+		db.GitHubRepoIdentity("github.com", "unrouted", "thing"),
+	} {
+		_, err := database.UpsertRepo(t.Context(), identity)
+		require.NoError(err)
+	}
+	number := 7
+	client := &mockClient{
+		listNotificationsFn: func(_ context.Context, opts NotificationListOptions) ([]NotificationThread, bool, error) {
+			if opts.Participating || opts.RepoName != "widget" {
+				return nil, false, nil
+			}
+			return []NotificationThread{{
+				ID: "thread-ok", RepoOwner: "acme", RepoName: "widget",
+				SubjectType: "PullRequest", SubjectTitle: "Review requested",
+				WebURL:     "https://github.com/acme/widget/pull/7",
+				ItemNumber: &number, ItemType: "pr", Reason: "mention",
+				Unread: true, UpdatedAt: time.Now().UTC(),
+			}}, false, nil
+		},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client}, database, nil,
+		[]RepoRef{
+			{Platform: platform.KindGitHub, Owner: "acme", Name: "widget", PlatformHost: "github.com"},
+			{Platform: platform.KindGitHub, Owner: "unrouted", Name: "thing", PlatformHost: "github.com"},
+		},
+		time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	router, err := NewHostRouter("github.com", &Route{
+		Key:           RouteKey{Host: "github.com", Owner: "acme"},
+		Client:        client,
+		ReadIdentity:  IdentityKey{Host: "github.com", Principal: "user:9"},
+		WriteIdentity: IdentityKey{Host: "github.com", Principal: "user:9"},
+	})
+	require.NoError(err)
+	syncer.SetGitHubRouters(map[string]*HostRouter{"github.com": router})
+
+	err = syncer.SyncNotifications(t.Context())
+	require.Error(err, "the unrouted repository must surface its failure")
+	widgetWatermark, wmErr := database.GetNotificationSyncWatermark(
+		t.Context(), "github", "github.com", "acme", "widget",
+	)
+	require.NoError(wmErr)
+	require.NotNil(widgetWatermark,
+		"a routed sibling must sync and advance despite an unroutable repository on the host")
+	unroutedWatermark, wmErr := database.GetNotificationSyncWatermark(
+		t.Context(), "github", "github.com", "unrouted", "thing",
+	)
+	require.NoError(wmErr)
+	assert.Nil(unroutedWatermark)
+	items, listErr := database.ListNotifications(
+		t.Context(), db.ListNotificationsOpts{State: "all"},
+	)
+	require.NoError(listErr)
+	require.Len(items, 1)
+	assert.Equal("thread-ok", items[0].PlatformNotificationID)
+}
+
 func TestSyncNotificationsIgnoresReadRateReserveWhenNotificationClientBypassesReserve(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -1953,7 +2181,7 @@ func TestSyncNotificationsIgnoresReadRateReserveWhenNotificationClientBypassesRe
 	require.NoError(err)
 	number := 7
 	now := time.Now().UTC()
-	rt := NewRateTracker(d, "github.com", "rest")
+	rt := NewRateTracker(d, "github.com", "host", "rest")
 	rt.UpdateFromRate(Rate{
 		Limit:     5000,
 		Remaining: RateReserveBuffer,
@@ -2006,7 +2234,7 @@ func TestSyncNotificationsStopsBeforeListingWhenSharedReadRateReserveExhausted(t
 	d := openTestDB(t)
 	_, err := d.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
-	rt := NewRateTracker(d, "github.com", "rest")
+	rt := NewRateTracker(d, "github.com", "host", "rest")
 	rt.UpdateFromRate(Rate{
 		Limit:     5000,
 		Remaining: RateReserveBuffer,
@@ -3238,26 +3466,6 @@ func TestProcessQueuedNotificationReadsReopensAfterPostAckRefetchError(t *testin
 	check.Empty(unread[0].SourceAckError)
 }
 
-func TestNotificationTrackedReposKeyIncludesPlatform(t *testing.T) {
-	require := require.New(t)
-	tracked := map[string]RepoRef{}
-	tracked[notificationRepoKey("github", "github.com", "acme", "widget")] = RepoRef{
-		Platform:     platform.KindGitHub,
-		PlatformHost: "github.com",
-		Owner:        "acme",
-		Name:         "widget",
-	}
-	tracked[notificationRepoKey("gitlab", "code.example.com", "acme", "widget")] = RepoRef{
-		Platform:     platform.KindGitLab,
-		PlatformHost: "code.example.com",
-		Owner:        "acme",
-		Name:         "widget",
-	}
-
-	require.Equal("github/github.com/acme/widget", notificationTrackedReposKey("github", "github.com", tracked))
-	require.Equal("gitlab/code.example.com/acme/widget", notificationTrackedReposKey("gitlab", "code.example.com", tracked))
-}
-
 func TestSyncNotificationsSkipsHostsWithoutTrackedRepos(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
@@ -3291,8 +3499,7 @@ func TestSyncNotificationsUsesPersistedSinceWatermark(t *testing.T) {
 	require.NoError(err)
 	watermark := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
 	lastFullSyncAt := time.Now().UTC()
-	watermarkKey := notificationRepoKey("github", "github.com", "acme", "widget")
-	require.NoError(d.UpdateNotificationSyncWatermark(t.Context(), "github", "github.com", watermark, &lastFullSyncAt, "", watermarkKey))
+	require.NoError(d.UpdateNotificationSyncWatermark(t.Context(), "github", "github.com", "acme", "widget", watermark, &lastFullSyncAt))
 	var seen []NotificationListOptions
 	syncer := NewSyncer(
 		map[string]Client{
@@ -3339,8 +3546,7 @@ func TestSyncNotificationsDoesPeriodicFullSyncForReadState(t *testing.T) {
 	require.NoError(err)
 	watermark := time.Now().UTC().Add(-2 * notificationFullSyncInterval)
 	lastFullSyncAt := watermark
-	watermarkKey := notificationRepoKey("github", "github.com", "acme", "widget")
-	require.NoError(d.UpdateNotificationSyncWatermark(t.Context(), "github", "github.com", watermark, &lastFullSyncAt, "", watermarkKey))
+	require.NoError(d.UpdateNotificationSyncWatermark(t.Context(), "github", "github.com", "acme", "widget", watermark, &lastFullSyncAt))
 	var seen []NotificationListOptions
 	syncer := NewSyncer(
 		map[string]Client{
@@ -3375,7 +3581,7 @@ func TestSyncNotificationsDoesPeriodicFullSyncForReadState(t *testing.T) {
 	assert.Nil(seen[1].Since)
 }
 
-func TestSyncNotificationsClearsSinceWhenTrackedReposChange(t *testing.T) {
+func TestSyncNotificationsNewRepoFullSyncsWithoutResettingSiblings(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -3385,8 +3591,7 @@ func TestSyncNotificationsClearsSinceWhenTrackedReposChange(t *testing.T) {
 	require.NoError(err)
 	watermark := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
 	lastFullSyncAt := time.Now().UTC()
-	oldKey := notificationRepoKey("github", "github.com", "acme", "widget")
-	require.NoError(d.UpdateNotificationSyncWatermark(t.Context(), "github", "github.com", watermark, &lastFullSyncAt, "", oldKey))
+	require.NoError(d.UpdateNotificationSyncWatermark(t.Context(), "github", "github.com", "acme", "widget", watermark, &lastFullSyncAt))
 	var seen []NotificationListOptions
 	syncer := NewSyncer(
 		map[string]Client{
@@ -3410,6 +3615,10 @@ func TestSyncNotificationsClearsSinceWhenTrackedReposChange(t *testing.T) {
 
 	require.NoError(syncer.SyncNotifications(t.Context()))
 	require.Len(seen, 4)
+	// Repos scan in sorted order: the newly tracked repository has no
+	// watermark and full-syncs, while the established sibling keeps its
+	// incremental since window instead of being reset by the tracked-set
+	// change.
 	assert.True(seen[0].All)
 	assert.True(seen[0].Participating)
 	assert.Equal(1, seen[0].Page)
@@ -3417,23 +3626,27 @@ func TestSyncNotificationsClearsSinceWhenTrackedReposChange(t *testing.T) {
 	assert.Equal("new-repo", seen[0].RepoName)
 	assert.Nil(seen[0].Since)
 	assert.True(seen[1].All)
-	assert.True(seen[1].Participating)
+	assert.False(seen[1].Participating)
 	assert.Equal(1, seen[1].Page)
 	assert.Equal("acme", seen[1].RepoOwner)
-	assert.Equal("widget", seen[1].RepoName)
+	assert.Equal("new-repo", seen[1].RepoName)
 	assert.Nil(seen[1].Since)
 	assert.True(seen[2].All)
-	assert.False(seen[2].Participating)
+	assert.True(seen[2].Participating)
 	assert.Equal(1, seen[2].Page)
 	assert.Equal("acme", seen[2].RepoOwner)
-	assert.Equal("new-repo", seen[2].RepoName)
-	assert.Nil(seen[2].Since)
+	assert.Equal("widget", seen[2].RepoName)
+	if assert.NotNil(seen[2].Since) {
+		assert.True(watermark.Add(-notificationSyncSinceOverlap).Equal(*seen[2].Since))
+	}
 	assert.True(seen[3].All)
 	assert.False(seen[3].Participating)
 	assert.Equal(1, seen[3].Page)
 	assert.Equal("acme", seen[3].RepoOwner)
 	assert.Equal("widget", seen[3].RepoName)
-	assert.Nil(seen[3].Since)
+	if assert.NotNil(seen[3].Since) {
+		assert.True(watermark.Add(-notificationSyncSinceOverlap).Equal(*seen[3].Since))
+	}
 }
 
 func TestRepoSyncMarksClosedLinkedNotificationsDone(t *testing.T) {
@@ -6058,7 +6271,7 @@ func TestSyncRepoUsesProviderCloneURLForNestedGitLabRepo(t *testing.T) {
 	syncer := NewSyncerWithRegistry(registry, d, clones, []RepoRef{repo}, time.Minute, nil, nil)
 
 	require.NoError(syncer.syncRepo(ctx, repo))
-	clonePath, err := clones.ClonePath("gitlab.example.com", "group/subgroup", "project")
+	clonePath, err := clones.ClonePath("gitlab", "gitlab.example.com", "group/subgroup", "project")
 	require.NoError(err)
 	require.FileExists(filepath.Join(clonePath, "HEAD"))
 }
@@ -6118,7 +6331,7 @@ func TestDetailDrainUsesProviderCloneURLForNestedGitLabRepo(t *testing.T) {
 	}
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
-	rateKey := RateBucketKey("gitlab", "gitlab.example.com")
+	rateKey := RateBucketKey("gitlab", "gitlab.example.com", "host")
 	syncer := NewSyncerWithRegistry(registry, d, clones, []RepoRef{repo}, time.Minute, nil, map[string]*SyncBudget{
 		rateKey: NewSyncBudget(100),
 	})
@@ -6126,7 +6339,7 @@ func TestDetailDrainUsesProviderCloneURLForNestedGitLabRepo(t *testing.T) {
 	syncer.drainDetailQueue(ctx, map[string]bool{rateKey: true}, syncer.TrackedRepos())
 
 	assert.Equal(int32(1), provider.getMRCalls.Load())
-	clonePath, err := clones.ClonePath("gitlab.example.com", "group/subgroup", "project")
+	clonePath, err := clones.ClonePath("gitlab", "gitlab.example.com", "group/subgroup", "project")
 	require.NoError(err)
 	require.FileExists(filepath.Join(clonePath, "HEAD"))
 }
@@ -6202,7 +6415,7 @@ func TestDetailDrainCompletesWhenProviderExceedsAdmittedCost(t *testing.T) {
 	}
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
-	rateKey := RateBucketKey("gitea", "gitea.example.com")
+	rateKey := RateBucketKey("gitea", "gitea.example.com", "host")
 	syncer := NewSyncerWithRegistry(
 		registry, database, nil, []RepoRef{repo}, time.Minute, nil,
 		map[string]*SyncBudget{rateKey: NewSyncBudget(100)},
@@ -8449,7 +8662,7 @@ func TestWatchedMRsSkipRateLimitedHost(t *testing.T) {
 		commits:  []*gh.RepositoryCommit{},
 	}
 
-	rt := NewRateTracker(d, "github.com", "rest")
+	rt := NewRateTracker(d, "github.com", "host", "rest")
 	// Exhaust the rate limit with a future reset.
 	futureReset := time.Now().Add(30 * time.Minute)
 	rt.UpdateFromRate(Rate{
@@ -8611,7 +8824,7 @@ func TestRunOnceSkipsThrottledHosts(t *testing.T) {
 	}
 
 	// Set up GHE tracker with remaining below reserve buffer.
-	gheTracker := NewRateTracker(d, "ghe.corp.com", "rest")
+	gheTracker := NewRateTracker(d, "ghe.corp.com", "host", "rest")
 	gheTracker.UpdateFromRate(Rate{
 		Limit:     5000,
 		Remaining: 100, // below RateReserveBuffer (200)
@@ -9642,7 +9855,7 @@ func TestDetailDrainUsesProviderReadersForNonGitHub(t *testing.T) {
 	}
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
-	rateKey := RateBucketKey("gitlab", "gitlab.com")
+	rateKey := RateBucketKey("gitlab", "gitlab.com", "host")
 	syncer := NewSyncer(nil, d, nil, []RepoRef{repo}, time.Minute, nil, map[string]*SyncBudget{
 		rateKey: NewSyncBudget(100),
 	})
@@ -9739,7 +9952,7 @@ func TestDetailDrainDisambiguatesSameHostOwnerNameAcrossProviders(t *testing.T) 
 		gitlabProvider,
 	)
 	require.NoError(err)
-	rateKey := RateBucketKey("gitlab", host)
+	rateKey := RateBucketKey("gitlab", host, "host")
 	syncer := NewSyncer(nil, d, nil, []RepoRef{
 		githubRepo,
 		gitlabRepo,
@@ -9997,6 +10210,7 @@ func TestScopedRunDrainsDetailsOnlyForSelectedRepos(t *testing.T) {
 func TestScopedRunDoesNotDelayNextFullRunOnSameHost(t *testing.T) {
 	ctx := t.Context()
 	d := openTestDB(t)
+	bucket := RateBucketKey("github", "github.com", "host")
 	repos := []RepoRef{
 		{Owner: "owner", Name: "selected", PlatformHost: "github.com"},
 		{Owner: "owner", Name: "unrelated", PlatformHost: "github.com"},
@@ -10014,7 +10228,7 @@ func TestScopedRunDoesNotDelayNextFullRunOnSameHost(t *testing.T) {
 	syncer := NewSyncer(
 		map[string]Client{"github.com": mc}, d, nil, repos,
 		time.Hour,
-		map[string]*RateTracker{"github.com": NewRateTracker(d, "github.com", "rest")},
+		map[string]*RateTracker{bucket: NewRateTracker(d, "github.com", "host", "rest")},
 		nil,
 	)
 	syncer.SetParallelism(1)
@@ -10042,6 +10256,7 @@ func TestScheduledFullRunRetriesAfterOverlappingScopedRun(t *testing.T) {
 			require := require.New(t)
 			ctx := t.Context()
 			d := openTestDB(t)
+			bucket := RateBucketKey("github", "github.com", "host")
 			repos := []RepoRef{
 				{Owner: "owner", Name: "selected", PlatformHost: "github.com"},
 				{Owner: "owner", Name: "unrelated", PlatformHost: "github.com"},
@@ -10071,7 +10286,7 @@ func TestScheduledFullRunRetriesAfterOverlappingScopedRun(t *testing.T) {
 			var rateTrackers map[string]*RateTracker
 			if tt.cadenceGated {
 				rateTrackers = map[string]*RateTracker{
-					"github.com": NewRateTracker(d, "github.com", "rest"),
+					bucket: NewRateTracker(d, "github.com", "host", "rest"),
 				}
 			}
 			syncer := NewSyncer(
@@ -10079,7 +10294,7 @@ func TestScheduledFullRunRetriesAfterOverlappingScopedRun(t *testing.T) {
 				time.Hour, rateTrackers, nil,
 			)
 			if tt.cadenceGated {
-				syncer.nextSyncAfter["github.com"] = time.Now().Add(time.Hour)
+				syncer.nextSyncAfter[bucket] = time.Now().Add(time.Hour)
 			}
 			syncer.SetParallelism(1)
 			t.Cleanup(syncer.Stop)
@@ -10122,7 +10337,7 @@ func TestBudgetResetOnRateWindowReset(t *testing.T) {
 	assert := assert.New(t)
 	d := openTestDB(t)
 
-	rt := NewRateTracker(d, "github.com", "rest")
+	rt := NewRateTracker(d, "github.com", "host", "rest")
 	budget := NewSyncBudget(100)
 	rt.SetOnWindowReset(budget.Reset)
 
@@ -10456,7 +10671,7 @@ func TestSyncerRateLimitProgressUsesMinuteScaleWaits(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
 
-	rt := NewRateTracker(d, "github.com", "rest")
+	rt := NewRateTracker(d, "github.com", "host", "rest")
 	rt.UpdateFromRate(Rate{
 		Remaining: 0,
 		Reset:     time.Now().Add(25*time.Minute + 38*time.Second + 364*time.Millisecond),
@@ -12901,6 +13116,13 @@ func TestSyncRepoGraphQLIssues(t *testing.T) {
 	assert.NotNil(issue.DetailFetchedAt)
 }
 
+// displayNameTestRepo is the repository whose credential display-name lookups
+// are routed through.
+var displayNameTestRepo = RepoRef{
+	Platform: platform.KindGitHub, PlatformHost: "github.com",
+	Owner: "acme", Name: "widget",
+}
+
 func TestResolveDisplayName(t *testing.T) {
 	ctx := t.Context()
 
@@ -12978,7 +13200,7 @@ func TestResolveDisplayName(t *testing.T) {
 				map[string]Client{"github.com": mc}, nil, nil, nil,
 				time.Minute, nil, nil,
 			)
-			name, ok := syncer.resolveDisplayName(ctx, mc, "github.com", tt.login)
+			name, ok := syncer.resolveDisplayName(ctx, mc, displayNameTestRepo, tt.login)
 			assert.Equal(tt.wantName, name)
 			assert.Equal(tt.wantOK, ok)
 			assert.Equal(tt.wantAPICalled, apiCalled, "GetUser call expectation")
@@ -13003,13 +13225,13 @@ func TestResolveDisplayName_CachesNegativeResult(t *testing.T) {
 	)
 
 	// First call: hits API, returns failure.
-	name1, ok1 := syncer.resolveDisplayName(ctx, mc, "github.com", "renovate")
+	name1, ok1 := syncer.resolveDisplayName(ctx, mc, displayNameTestRepo, "renovate")
 	assert.Empty(name1)
 	assert.False(ok1)
 	assert.Equal(1, callCount)
 
 	// Second call: should use cache, no additional API call.
-	name2, ok2 := syncer.resolveDisplayName(ctx, mc, "github.com", "renovate")
+	name2, ok2 := syncer.resolveDisplayName(ctx, mc, displayNameTestRepo, "renovate")
 	assert.Empty(name2)
 	assert.False(ok2)
 	assert.Equal(1, callCount, "GetUser should not be called again for cached failure")
@@ -13032,13 +13254,13 @@ func TestResolveDisplayName_CachesSuccessfulEmptyName(t *testing.T) {
 	)
 
 	// First call: hits API, succeeds with empty name.
-	name1, ok1 := syncer.resolveDisplayName(ctx, mc, "github.com", "no-profile")
+	name1, ok1 := syncer.resolveDisplayName(ctx, mc, displayNameTestRepo, "no-profile")
 	assert.Empty(name1)
 	assert.True(ok1, "successful lookup of empty name should return ok=true")
 	assert.Equal(1, callCount)
 
 	// Second call: cache hit must still return ok=true, not flip to false.
-	name2, ok2 := syncer.resolveDisplayName(ctx, mc, "github.com", "no-profile")
+	name2, ok2 := syncer.resolveDisplayName(ctx, mc, displayNameTestRepo, "no-profile")
 	assert.Empty(name2)
 	assert.True(ok2, "cached empty name must remain ok=true")
 	assert.Equal(1, callCount, "GetUser should not be called again for cached success")
@@ -14127,8 +14349,8 @@ func TestSyncerGQLRateTrackers(t *testing.T) {
 	assert := assert.New(t)
 	d := openTestDB(t)
 
-	rt := NewRateTracker(d, "github.com", "rest")
-	gqlRT := NewRateTracker(d, "github.com", "graphql")
+	rt := NewRateTracker(d, "github.com", "host", "rest")
+	gqlRT := NewRateTracker(d, "github.com", "host", "graphql")
 
 	syncer := NewSyncer(
 		map[string]Client{"github.com": &mockClient{}},
@@ -14154,8 +14376,8 @@ func TestRunOnceRefreshesGitHubRateLimitSnapshotOutsideSyncBudget(t *testing.T) 
 	now := time.Now().UTC().Truncate(time.Second)
 	restReset := now.Add(time.Hour)
 	gqlReset := now.Add(90 * time.Minute)
-	restRT := NewRateTracker(d, "github.com", "rest")
-	gqlRT := NewRateTracker(d, "github.com", "graphql")
+	restRT := NewRateTracker(d, "github.com", "host", "rest")
+	gqlRT := NewRateTracker(d, "github.com", "host", "graphql")
 	budget := NewSyncBudget(100)
 	client := &rateLimitSnapshotMockClient{
 		mockClient: &mockClient{},
@@ -14211,7 +14433,7 @@ func TestRunOnceSnapshotWindowResetResetsSyncBudget(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	oldReset := now.Add(time.Hour)
 	newReset := now.Add(2 * time.Hour)
-	restRT := NewRateTracker(d, "github.com", "rest")
+	restRT := NewRateTracker(d, "github.com", "host", "rest")
 	restRT.UpdateFromRate(Rate{
 		Limit:     5000,
 		Remaining: 4999,
@@ -14260,7 +14482,7 @@ func TestRunOnceRecoveredRateLimitSnapshotClearsStaleThrottleGate(t *testing.T) 
 
 	now := time.Now().UTC().Truncate(time.Second)
 	resetAt := now.Add(time.Hour)
-	rt := NewRateTracker(d, "github.com", "rest")
+	rt := NewRateTracker(d, "github.com", "host", "rest")
 	rt.UpdateFromRate(Rate{
 		Limit:     5000,
 		Remaining: 400,
@@ -14326,7 +14548,7 @@ func TestSyncerGQLRateTrackersMixed(t *testing.T) {
 	assert := assert.New(t)
 	d := openTestDB(t)
 
-	validRT := NewRateTracker(d, "github.com", "graphql")
+	validRT := NewRateTracker(d, "github.com", "host", "graphql")
 
 	syncer := NewSyncer(
 		map[string]Client{"github.com": &mockClient{}},
@@ -14454,7 +14676,7 @@ func TestResolveDisplayName_StaleWhileErrorBacksOff(t *testing.T) {
 	syncer.displayNames.now = func() time.Time { return fakeNow }
 
 	// Warm the cache with a successful lookup.
-	name, ok := syncer.resolveDisplayName(ctx, mc, "github.com", "alice")
+	name, ok := syncer.resolveDisplayName(ctx, mc, displayNameTestRepo, "alice")
 	assert.Equal("Alice Smith", name)
 	assert.True(ok)
 	assert.Equal(1, callCount)
@@ -14464,7 +14686,7 @@ func TestResolveDisplayName_StaleWhileErrorBacksOff(t *testing.T) {
 	fakeNow = fakeNow.Add(displayNameSuccessTTL + time.Second)
 
 	// First refresh: API hit fails, stale name is returned.
-	name, ok = syncer.resolveDisplayName(ctx, mc, "github.com", "alice")
+	name, ok = syncer.resolveDisplayName(ctx, mc, displayNameTestRepo, "alice")
 	assert.Equal("Alice Smith", name,
 		"stale name must be returned on refresh failure")
 	assert.True(ok)
@@ -14473,7 +14695,7 @@ func TestResolveDisplayName_StaleWhileErrorBacksOff(t *testing.T) {
 	// Second refresh inside failureTTL: no API call, still
 	// serves stale name.
 	fakeNow = fakeNow.Add(displayNameFailureTTL / 2)
-	name, ok = syncer.resolveDisplayName(ctx, mc, "github.com", "alice")
+	name, ok = syncer.resolveDisplayName(ctx, mc, displayNameTestRepo, "alice")
 	assert.Equal("Alice Smith", name)
 	assert.True(ok)
 	assert.Equal(2, callCount,
@@ -14482,7 +14704,7 @@ func TestResolveDisplayName_StaleWhileErrorBacksOff(t *testing.T) {
 
 	// Past failureTTL: one more API attempt is allowed.
 	fakeNow = fakeNow.Add(displayNameFailureTTL + time.Second)
-	name, ok = syncer.resolveDisplayName(ctx, mc, "github.com", "alice")
+	name, ok = syncer.resolveDisplayName(ctx, mc, displayNameTestRepo, "alice")
 	assert.Equal("Alice Smith", name)
 	assert.True(ok)
 	assert.Equal(3, callCount,
@@ -14492,7 +14714,7 @@ func TestResolveDisplayName_StaleWhileErrorBacksOff(t *testing.T) {
 	// Recovered upstream: next call refreshes successfully.
 	shouldFail = false
 	fakeNow = fakeNow.Add(displayNameFailureTTL + time.Second)
-	name, ok = syncer.resolveDisplayName(ctx, mc, "github.com", "alice")
+	name, ok = syncer.resolveDisplayName(ctx, mc, displayNameTestRepo, "alice")
 	assert.Equal("Alice Smith", name)
 	assert.True(ok)
 	assert.Equal(4, callCount)
@@ -14531,3 +14753,369 @@ func TestIsGitHubHeadModified(t *testing.T) {
 }
 
 var errOther = fmt.Errorf("transport down")
+
+// A rate limit belongs to the credential that hit it. With two owners on one
+// host routed to different PATs, exhausting one must not stall the other: the
+// exhausted owner's queued acks defer, while the healthy owner's ack still
+// propagates in the same pass.
+func TestProcessQueuedNotificationReadsDefersOnlyRateLimitedIdentity(t *testing.T) {
+	require := require.New(t)
+	check := assert.New(t)
+	d := openTestDB(t)
+	limitedRepo, err := d.UpsertRepo(
+		t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	healthyRepo, err := d.UpsertRepo(
+		t.Context(), db.GitHubRepoIdentity("github.com", "other", "thing"),
+	)
+	require.NoError(err)
+	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
+	limitedNumber := 7
+	healthyNumber := 8
+	require.NoError(d.UpsertNotifications(t.Context(), []db.Notification{
+		{
+			Platform: "github", PlatformHost: "github.com",
+			PlatformNotificationID: "limited-thread", RepoID: &limitedRepo,
+			RepoOwner: "acme", RepoName: "widget", SubjectType: "PullRequest",
+			SubjectTitle: "Exhausted owner", ItemNumber: &limitedNumber,
+			ItemType: "pr", Reason: "mention", Unread: true,
+			SourceUpdatedAt: now, SyncedAt: now,
+		},
+		{
+			Platform: "github", PlatformHost: "github.com",
+			PlatformNotificationID: "healthy-thread", RepoID: &healthyRepo,
+			RepoOwner: "other", RepoName: "thing", SubjectType: "PullRequest",
+			SubjectTitle: "Healthy owner", ItemNumber: &healthyNumber,
+			ItemType: "pr", Reason: "mention", Unread: true,
+			SourceUpdatedAt: now, SyncedAt: now,
+		},
+	}))
+	items, err := d.ListNotifications(
+		t.Context(), db.ListNotificationsOpts{State: "all", Sort: "updated"},
+	)
+	require.NoError(err)
+	require.Len(items, 2)
+	ids := make([]int64, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, item.ID)
+	}
+	_, err = d.QueueNotificationIDsRead(t.Context(), ids, now.Add(time.Minute))
+	require.NoError(err)
+
+	resetAt := time.Now().UTC().Add(time.Hour).Round(0)
+	var marked []string
+	mc := &mockClient{markNotificationThreadReadFn: func(
+		_ context.Context, threadID string,
+	) error {
+		marked = append(marked, threadID)
+		if threadID != "limited-thread" {
+			return nil
+		}
+		return &gh.RateLimitError{
+			Rate: gh.Rate{Reset: gh.Timestamp{Time: resetAt}},
+			Response: &http.Response{
+				StatusCode: http.StatusForbidden,
+				Request: httptest.NewRequest(
+					http.MethodPatch,
+					"https://api.github.com/notifications/threads/"+threadID, nil,
+				),
+			},
+			Message: "API rate limit exceeded",
+		}
+	}}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil, nil, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	router, err := NewHostRouter("github.com",
+		&Route{
+			Key: RouteKey{Host: "github.com", Owner: "acme"}, Client: mc,
+			ReadIdentity:  IdentityKey{Host: "github.com", Principal: "user:1"},
+			WriteIdentity: IdentityKey{Host: "github.com", Principal: "user:1"},
+		},
+		&Route{
+			Key: RouteKey{Host: "github.com", Owner: "other"}, Client: mc,
+			ReadIdentity:  IdentityKey{Host: "github.com", Principal: "user:2"},
+			WriteIdentity: IdentityKey{Host: "github.com", Principal: "user:2"},
+		},
+	)
+	require.NoError(err)
+	syncer.SetGitHubRouters(map[string]*HostRouter{"github.com": router})
+
+	err = syncer.ProcessQueuedNotificationReads(
+		t.Context(), platform.KindGitHub, "github.com", 10,
+	)
+	require.Error(err, "the rate limit is still reported for the host")
+
+	items, err = d.ListNotifications(
+		t.Context(), db.ListNotificationsOpts{State: "all", Sort: "updated"},
+	)
+	require.NoError(err)
+	byThread := map[string]db.Notification{}
+	for _, item := range items {
+		byThread[item.PlatformNotificationID] = item
+	}
+	check.ElementsMatch([]string{"limited-thread", "healthy-thread"}, marked,
+		"the healthy owner's ack is still attempted")
+	check.Equal("rate_limited", byThread["limited-thread"].SourceAckError)
+	check.Nil(byThread["limited-thread"].SourceAckSyncedAt,
+		"the exhausted owner's ack stays queued")
+	check.Empty(byThread["healthy-thread"].SourceAckError,
+		"another owner's exhausted PAT must not defer this ack")
+	check.NotNil(byThread["healthy-thread"].SourceAckSyncedAt,
+		"the healthy owner's ack propagated in the same pass")
+}
+
+// Deferral must be scoped even for queued rows this pass never reaches. With a
+// batch that holds only the exhausted owner's ack, the other owner's queued row
+// must stay due: a host-wide deferral would push it out by the exhausted
+// credential's reset window even though its own PAT has quota.
+func TestProcessQueuedNotificationReadsLeavesOtherIdentityQueuedRowsDue(t *testing.T) {
+	require := require.New(t)
+	check := assert.New(t)
+	d := openTestDB(t)
+	limitedRepo, err := d.UpsertRepo(
+		t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	healthyRepo, err := d.UpsertRepo(
+		t.Context(), db.GitHubRepoIdentity("github.com", "other", "thing"),
+	)
+	require.NoError(err)
+	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
+	limitedNumber := 7
+	healthyNumber := 8
+	require.NoError(d.UpsertNotifications(t.Context(), []db.Notification{
+		{
+			Platform: "github", PlatformHost: "github.com",
+			PlatformNotificationID: "limited-thread", RepoID: &limitedRepo,
+			RepoOwner: "acme", RepoName: "widget", SubjectType: "PullRequest",
+			SubjectTitle: "Exhausted owner", ItemNumber: &limitedNumber,
+			ItemType: "pr", Reason: "mention", Unread: true,
+			SourceUpdatedAt: now, SyncedAt: now,
+		},
+		{
+			Platform: "github", PlatformHost: "github.com",
+			PlatformNotificationID: "healthy-thread", RepoID: &healthyRepo,
+			RepoOwner: "other", RepoName: "thing", SubjectType: "PullRequest",
+			SubjectTitle: "Healthy owner", ItemNumber: &healthyNumber,
+			ItemType: "pr", Reason: "mention", Unread: true,
+			SourceUpdatedAt: now, SyncedAt: now,
+		},
+	}))
+	items, err := d.ListNotifications(
+		t.Context(), db.ListNotificationsOpts{State: "all", Sort: "updated"},
+	)
+	require.NoError(err)
+	require.Len(items, 2)
+	ids := make([]int64, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, item.ID)
+	}
+	_, err = d.QueueNotificationIDsRead(t.Context(), ids, now.Add(time.Minute))
+	require.NoError(err)
+
+	resetAt := time.Now().UTC().Add(time.Hour).Round(0)
+	mc := &mockClient{markNotificationThreadReadFn: func(
+		_ context.Context, threadID string,
+	) error {
+		return &gh.RateLimitError{
+			Rate: gh.Rate{Reset: gh.Timestamp{Time: resetAt}},
+			Response: &http.Response{
+				StatusCode: http.StatusForbidden,
+				Request: httptest.NewRequest(
+					http.MethodPatch,
+					"https://api.github.com/notifications/threads/"+threadID, nil,
+				),
+			},
+			Message: "API rate limit exceeded",
+		}
+	}}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil, nil, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	router, err := NewHostRouter("github.com",
+		&Route{
+			Key: RouteKey{Host: "github.com", Owner: "acme"}, Client: mc,
+			ReadIdentity:  IdentityKey{Host: "github.com", Principal: "user:1"},
+			WriteIdentity: IdentityKey{Host: "github.com", Principal: "user:1"},
+		},
+		&Route{
+			Key: RouteKey{Host: "github.com", Owner: "other"}, Client: mc,
+			ReadIdentity:  IdentityKey{Host: "github.com", Principal: "user:2"},
+			WriteIdentity: IdentityKey{Host: "github.com", Principal: "user:2"},
+		},
+	)
+	require.NoError(err)
+	syncer.SetGitHubRouters(map[string]*HostRouter{"github.com": router})
+
+	// Batch of one: only the exhausted owner's ack is due this pass.
+	err = syncer.ProcessQueuedNotificationReads(
+		t.Context(), platform.KindGitHub, "github.com", 1,
+	)
+	require.Error(err)
+
+	items, err = d.ListNotifications(
+		t.Context(), db.ListNotificationsOpts{State: "all", Sort: "updated"},
+	)
+	require.NoError(err)
+	byThread := map[string]db.Notification{}
+	for _, item := range items {
+		byThread[item.PlatformNotificationID] = item
+	}
+	check.Equal("rate_limited", byThread["limited-thread"].SourceAckError)
+	check.Empty(byThread["healthy-thread"].SourceAckError,
+		"an untouched owner's queued ack must not inherit the deferral")
+	check.Nil(byThread["healthy-thread"].SourceAckNextAttemptAt,
+		"the healthy owner's ack stays due instead of waiting for another reset")
+}
+
+// The post-ack reconciliation refetch spends the same credential's budget, so a
+// rate limit there is also owned by one identity. The exhausted owner's queued
+// acks defer, while the healthy owner's queued row must still be reached and
+// propagated in the same pass.
+func TestProcessQueuedNotificationReadsScopesPostAckRefetchRateLimit(t *testing.T) {
+	require := require.New(t)
+	check := assert.New(t)
+	d := openTestDB(t)
+	limitedRepo, err := d.UpsertRepo(
+		t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	siblingRepo, err := d.UpsertRepo(
+		t.Context(), db.GitHubRepoIdentity("github.com", "acme", "gadget"),
+	)
+	require.NoError(err)
+	healthyRepo, err := d.UpsertRepo(
+		t.Context(), db.GitHubRepoIdentity("github.com", "other", "thing"),
+	)
+	require.NoError(err)
+	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
+	limitedNumber := 7
+	siblingNumber := 9
+	healthyNumber := 8
+	require.NoError(d.UpsertNotifications(t.Context(), []db.Notification{
+		{
+			Platform: "github", PlatformHost: "github.com",
+			PlatformNotificationID: "limited-thread", RepoID: &limitedRepo,
+			RepoOwner: "acme", RepoName: "widget", SubjectType: "PullRequest",
+			SubjectTitle: "Exhausted owner", ItemNumber: &limitedNumber,
+			ItemType: "pr", Reason: "mention", Unread: true,
+			SourceUpdatedAt: now, SyncedAt: now,
+		},
+		{
+			Platform: "github", PlatformHost: "github.com",
+			PlatformNotificationID: "sibling-thread", RepoID: &siblingRepo,
+			RepoOwner: "acme", RepoName: "gadget", SubjectType: "PullRequest",
+			SubjectTitle: "Same credential", ItemNumber: &siblingNumber,
+			ItemType: "pr", Reason: "mention", Unread: true,
+			SourceUpdatedAt: now, SyncedAt: now,
+		},
+		{
+			Platform: "github", PlatformHost: "github.com",
+			PlatformNotificationID: "healthy-thread", RepoID: &healthyRepo,
+			RepoOwner: "other", RepoName: "thing", SubjectType: "PullRequest",
+			SubjectTitle: "Healthy owner", ItemNumber: &healthyNumber,
+			ItemType: "pr", Reason: "mention", Unread: true,
+			SourceUpdatedAt: now, SyncedAt: now,
+		},
+	}))
+	items, err := d.ListNotifications(
+		t.Context(), db.ListNotificationsOpts{State: "all", Sort: "updated"},
+	)
+	require.NoError(err)
+	require.Len(items, 3)
+	ids := make([]int64, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, item.ID)
+	}
+	queuedAt := now.Add(time.Minute)
+	_, err = d.QueueNotificationIDsRead(t.Context(), ids, queuedAt)
+	require.NoError(err)
+
+	resetAt := time.Now().UTC().Add(time.Hour).Round(0)
+	getCalls := map[string]int{}
+	var marked []string
+	mc := &mockClient{
+		getNotificationThreadFn: func(
+			_ context.Context, threadID string,
+		) (NotificationThread, error) {
+			getCalls[threadID]++
+			// Only the exhausted owner's reconciliation refetch is rate
+			// limited; both pre-ack refetches report an unadvanced thread.
+			if threadID == "limited-thread" && getCalls[threadID] == 2 {
+				return NotificationThread{}, &gh.RateLimitError{
+					Rate: gh.Rate{Reset: gh.Timestamp{Time: resetAt}},
+					Response: &http.Response{
+						StatusCode: http.StatusForbidden,
+						Request: httptest.NewRequest(
+							http.MethodGet,
+							"https://api.github.com/notifications/threads/"+threadID,
+							nil,
+						),
+					},
+					Message: "API rate limit exceeded",
+				}
+			}
+			return NotificationThread{
+				ID: threadID, SubjectType: "PullRequest",
+				Reason: "mention", UpdatedAt: now, LastReadAt: &queuedAt,
+			}, nil
+		},
+		markNotificationThreadReadFn: func(
+			_ context.Context, threadID string,
+		) error {
+			marked = append(marked, threadID)
+			return nil
+		},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil, nil, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	router, err := NewHostRouter("github.com",
+		&Route{
+			Key: RouteKey{Host: "github.com", Owner: "acme"}, Client: mc,
+			ReadIdentity:  IdentityKey{Host: "github.com", Principal: "user:1"},
+			WriteIdentity: IdentityKey{Host: "github.com", Principal: "user:1"},
+		},
+		&Route{
+			Key: RouteKey{Host: "github.com", Owner: "other"}, Client: mc,
+			ReadIdentity:  IdentityKey{Host: "github.com", Principal: "user:2"},
+			WriteIdentity: IdentityKey{Host: "github.com", Principal: "user:2"},
+		},
+	)
+	require.NoError(err)
+	syncer.SetGitHubRouters(map[string]*HostRouter{"github.com": router})
+
+	err = syncer.ProcessQueuedNotificationReads(
+		t.Context(), platform.KindGitHub, "github.com", 10,
+	)
+	require.Error(err, "the rate limit is still reported for the host")
+
+	items, err = d.ListNotifications(
+		t.Context(), db.ListNotificationsOpts{State: "all", Sort: "updated"},
+	)
+	require.NoError(err)
+	byThread := map[string]db.Notification{}
+	for _, item := range items {
+		byThread[item.PlatformNotificationID] = item
+	}
+	check.ElementsMatch([]string{"limited-thread", "healthy-thread"}, marked,
+		"the healthy owner's ack is still attempted after the other's limit")
+	check.Nil(byThread["limited-thread"].SourceAckSyncedAt,
+		"the exhausted owner's ack reopens instead of clearing")
+	check.True(byThread["limited-thread"].Unread,
+		"the reconciliation refetch could not prove the thread was unchanged")
+	check.Equal("rate_limited", byThread["sibling-thread"].SourceAckError,
+		"the exhausted credential's other queued acks back off")
+	check.NotNil(byThread["sibling-thread"].SourceAckNextAttemptAt)
+	check.Empty(byThread["healthy-thread"].SourceAckError,
+		"another owner's exhausted PAT must not defer this ack")
+	check.Nil(byThread["healthy-thread"].SourceAckNextAttemptAt,
+		"the healthy owner's ack is not pushed out by another reset window")
+	check.NotNil(byThread["healthy-thread"].SourceAckSyncedAt,
+		"the healthy owner's ack propagated in the same pass")
+}

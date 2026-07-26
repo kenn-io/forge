@@ -55,13 +55,20 @@ func (s *Handler) revealWorkspace(
 func (s *Handler) runWorkspaceBranchAction(
 	ctx context.Context,
 	id string,
-	action func(ctx context.Context, platformHost, dir string) error,
+	action func(
+		ctx context.Context,
+		platformName, platformHost, owner, name, dir string,
+	) error,
 ) (*workspaceBranchActionOutput, error) {
 	summary, err := s.getWorkspaceActionSummary(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	if err := action(ctx, summary.PlatformHost, summary.WorktreePath); err != nil {
+	if err := action(
+		ctx, summary.Platform, summary.PlatformHost,
+		summary.RepoOwner, summary.RepoName,
+		summary.WorktreePath,
+	); err != nil {
 		return nil, workspaceBranchActionProblem(err)
 	}
 	refreshed, err := s.workspaces.GetSummary(ctx, id)

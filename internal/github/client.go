@@ -170,8 +170,24 @@ type Client interface {
 	InvalidateListETagsForRepo(owner, repo string, endpoints ...string)
 }
 
+// repoUserClient resolves a login with the credential serving a repository.
+// User lookups are host-scoped on the wire, but they happen during repository
+// sync, so an owner-scoped or App-only configuration with no host fallback
+// route must still be able to reach /users through the repository's own
+// credential rather than failing every display-name enrichment.
+type repoUserClient interface {
+	GetUserForRepo(
+		ctx context.Context, owner, repo, login string,
+	) (*gh.User, error)
+}
+
+// markdownImageClient carries the full repository identity even though the
+// attachment URL is host-scoped: credential selection is per repository, so a
+// repo-scoped route must be able to pick its own token for the fetch.
 type markdownImageClient interface {
-	GetMarkdownImage(ctx context.Context, owner, sourceURL string) (platform.MarkdownImage, error)
+	GetMarkdownImage(
+		ctx context.Context, owner, repo, sourceURL string,
+	) (platform.MarkdownImage, error)
 }
 
 const maxMarkdownImageBytes = 25 << 20
@@ -187,7 +203,7 @@ var allowedMarkdownImageTypes = map[string]struct{}{
 
 func (c *liveClient) GetMarkdownImage(
 	ctx context.Context,
-	owner, sourceURL string,
+	owner, _, sourceURL string,
 ) (platform.MarkdownImage, error) {
 	parsed, err := url.Parse(sourceURL)
 	if err != nil || parsed.Scheme != "https" || parsed.User != nil ||
@@ -299,7 +315,10 @@ func graphQLEndpointForHost(platformHost string) string {
 type ClientOption func(*clientOptions)
 
 type clientOptions struct {
-	baseURLOverride string
+	baseURLOverride         string
+	notificationRateTracker *RateTracker
+	notificationBudget      *SyncBudget
+	mutationsDisabled       bool
 }
 
 // WithBaseURLForTesting points the client's REST and GraphQL traffic
@@ -310,6 +329,32 @@ type clientOptions struct {
 func WithBaseURLForTesting(base string) ClientOption {
 	return func(o *clientOptions) {
 		o.baseURLOverride = strings.TrimRight(base, "/")
+	}
+}
+
+// ErrMissingWriteIdentity is returned when startup established an App-only
+// read route without a user identity for mutations. A token that appears later
+// cannot be used until restart assigns its stable accounting identity.
+var ErrMissingWriteIdentity = errors.New("missing startup-resolved GitHub write identity")
+
+// WithMutationsDisabled prevents mutation and notification transports from
+// sending requests for an App-only route without a startup-resolved user.
+func WithMutationsDisabled() ClientOption {
+	return func(o *clientOptions) {
+		o.mutationsDisabled = true
+	}
+}
+
+// WithNotificationAccounting binds user-scoped notification traffic to the
+// identity that authenticates it. GitHub App routes use installation tokens
+// for reads but PATs for notifications, so those requests must spend the PAT
+// budget and update the PAT rate tracker.
+func WithNotificationAccounting(
+	rateTracker *RateTracker, budget *SyncBudget,
+) ClientOption {
+	return func(o *clientOptions) {
+		o.notificationRateTracker = rateTracker
+		o.notificationBudget = budget
 	}
 }
 
@@ -343,19 +388,42 @@ func NewClient(
 	}
 	et := &etagTransport{base: authRT}
 	httpClient := &http.Client{Transport: wrapPublicGitHubAPIGuard(et)}
+	writeBudget := budget
+	if options.notificationBudget != nil {
+		writeBudget = options.notificationBudget
+	}
+	mutationAuthRT := authRT
+	// The write path also serves background reads (the viewer-permission
+	// overlay in GetRepository), so it charges the write identity's sync
+	// budget. The budget transport is context-gated: foreground mutations
+	// stay uncharged.
+	mutationAuthRT.Base = WrapSyncBudgetTransport(http.DefaultTransport, writeBudget)
+	var mutationBase http.RoundTripper = mutationAuthTransport{base: mutationAuthRT}
+	if options.mutationsDisabled {
+		mutationBase = errorTransport{err: ErrMissingWriteIdentity}
+	}
 	// Mutations resolve auth with the mutation marker so a configured
 	// GitHub App is skipped and writes stay attributed to the user's
 	// own credential. The write path is a separate gh.Client because
 	// go-github caches rate limits per client instance: sharing one
 	// client would let an exhausted PAT (reported by a write response)
 	// preemptively block app-token reads until the PAT window resets.
-	// No etag or sync-budget transports: those exist for sync reads.
+	// No etag transport: etags exist for sync reads.
 	writeHTTPClient := &http.Client{Transport: wrapPublicGitHubAPIGuard(
-		mutationAuthTransport{base: authRT},
+		mutationBase,
 	)}
-	notificationTransport := mutationAuthTransport{base: authRT}
+	notificationAuthRT := authRT
+	notificationAuthRT.Base = WrapSyncBudgetTransport(
+		http.DefaultTransport, writeBudget,
+	)
+	var notificationRoundTripper http.RoundTripper = mutationAuthTransport{
+		base: notificationAuthRT,
+	}
+	if options.mutationsDisabled {
+		notificationRoundTripper = errorTransport{err: ErrMissingWriteIdentity}
+	}
 	notificationHTTPClient := &http.Client{Transport: wrapPublicGitHubAPIGuard(
-		notificationTransport,
+		notificationRoundTripper,
 	)}
 
 	newGHClient := func(hc *http.Client) (*gh.Client, error) {
@@ -402,6 +470,7 @@ func NewClient(
 		httpNotificationClient:  notificationHTTPClient,
 		markdownImageHTTPClient: &http.Client{Transport: wrapPublicGitHubAPIGuard(http.DefaultTransport)},
 		rateTracker:             rateTracker,
+		notificationRateTracker: options.notificationRateTracker,
 		platformHost:            normalizedPlatformHost(platformHost),
 		graphQLEndpoint:         graphQLEndpoint,
 		etag:                    et,
@@ -449,6 +518,14 @@ func githubOwnerFromPath(path string) string {
 // mutationAuthTransport marks every request's context with
 // tokenauth.WithMutationAuth before auth resolution, steering token
 // selection away from github_app installation tokens.
+type errorTransport struct {
+	err error
+}
+
+func (t errorTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, t.err
+}
+
 type mutationAuthTransport struct {
 	base http.RoundTripper
 }
@@ -497,6 +574,7 @@ type liveClient struct {
 	markdownImageHTTPClient *http.Client
 	rateTracker             *RateTracker
 	writeRateTracker        *RateTracker
+	notificationRateTracker *RateTracker
 	graphQLRateTracker      *RateTracker
 	writeGraphQLRateTracker *RateTracker
 	platformHost            string
@@ -571,6 +649,17 @@ func (c *liveClient) splitAuthActiveForOwner(owner string) bool {
 		return false
 	}
 	return c.source.Descriptor().HasActiveGitHubAppForOwner(owner)
+}
+
+// ProbeWriteCredential resolves the mutation side of the route without
+// sending a request. Identity-bound sources use this to detect a removed PAT
+// or a token that rotated to another GitHub user before the UI offers writes.
+func (c *liveClient) ProbeWriteCredential(ctx context.Context) error {
+	if c.source == nil {
+		return tokenauth.ErrMissingToken
+	}
+	_, err := c.source.Token(tokenauth.WithMutationAuth(ctx))
+	return err
 }
 
 func (c *liveClient) bypassNotificationReadRateReserve() bool {
@@ -1272,6 +1361,14 @@ func (c *liveClient) trackWriteRate(resp *gh.Response) {
 // split-auth mode, reads use an installation token while notifications use
 // the user's PAT, so PAT headers cannot update the installation read tracker.
 func (c *liveClient) trackNotificationRate(resp *gh.Response) {
+	if c.notificationRateTracker != nil {
+		if resp == nil {
+			return
+		}
+		c.notificationRateTracker.RecordRequest()
+		c.notificationRateTracker.UpdateFromRate(rateFromGitHub(resp.Rate))
+		return
+	}
 	if c.splitAuthActive() {
 		return
 	}
@@ -2401,6 +2498,15 @@ func (c *liveClient) GetRepository(
 		return nil, fmt.Errorf("getting repository %s/%s: %w", owner, repo, err)
 	}
 	if !c.splitAuthActive() {
+		return r, nil
+	}
+	if IsArchiveSyncBudgetContext(ctx) {
+		// Archive requests hold admission and provider-work leases for the
+		// read identity only, so they must not spend the write credential on
+		// the viewer overlay. Archive classification does not need viewer
+		// permissions; clear the app's instead of persisting the wrong
+		// viewer's.
+		r.Permissions = nil
 		return r, nil
 	}
 	viewerRepo, viewerResp, viewerErr := c.writeGH().Repositories.Get(ctx, owner, repo)

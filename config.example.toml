@@ -2,6 +2,13 @@ sync_interval = "5m"
 # Environment variable containing your GitHub personal access token.
 # Required scopes: repo (private repos) or public_repo (public only).
 github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+
+# Advanced: fine-grained PATs can be selected by exact GitHub owner. These
+# entries are configured in TOML only; token_file is checked before token_env.
+# [[github_owner_tokens]]
+# owner = "my-organization"
+# token_env = "MIDDLEMAN_GITHUB_TOKEN_MY_ORGANIZATION"
+
 # Host treated as implicit in repository UI labels
 default_platform_host = "github.com"
 host = "127.0.0.1"

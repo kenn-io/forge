@@ -36,9 +36,9 @@ type CommitTimelinePoint struct {
 // sentinel (parentless root), all commits up to headSHA are returned.
 func (m *Manager) ListCommits(
 	ctx context.Context,
-	host, owner, name, mergeBase, headSHA string,
+	platform, host, owner, name, mergeBase, headSHA string,
 ) ([]Commit, error) {
-	dir, err := m.ClonePath(host, owner, name)
+	dir, err := m.ClonePath(platform, host, owner, name)
 	if err != nil {
 		return nil, err
 	}
@@ -120,7 +120,7 @@ func truncateCommitText(s string, maxBytes int) string {
 // commits up to limit for compact UI timelines.
 func (m *Manager) CommitTimelineSinceTag(
 	ctx context.Context,
-	host, owner, name, tagName string,
+	platform, host, owner, name, tagName string,
 	limit int,
 ) (int, []CommitTimelinePoint, error) {
 	if tagName == "" {
@@ -130,11 +130,13 @@ func (m *Manager) CommitTimelineSinceTag(
 		limit = 1
 	}
 
-	dir, err := m.ClonePath(host, owner, name)
+	dir, err := m.ClonePath(platform, host, owner, name)
 	if err != nil {
 		return 0, nil, err
 	}
-	if err := m.fetchTimelineTag(ctx, host, dir, tagName); err != nil {
+	if err := m.fetchTimelineTag(
+		ctx, platform, host, owner, name, dir, tagName,
+	); err != nil {
 		return 0, nil, err
 	}
 	defaultRef := m.defaultTimelineRef(ctx, dir)
@@ -189,7 +191,9 @@ func (m *Manager) CommitTimelineSinceTag(
 	return count, points, nil
 }
 
-func (m *Manager) fetchTimelineTag(ctx context.Context, host, dir, tagName string) error {
+func (m *Manager) fetchTimelineTag(
+	ctx context.Context, platform, host, owner, name, dir, tagName string,
+) error {
 	tagName = strings.TrimSpace(tagName)
 	if tagName == "" {
 		return nil
@@ -199,7 +203,10 @@ func (m *Manager) fetchTimelineTag(ctx context.Context, host, dir, tagName strin
 		return fmt.Errorf("validate release tag %q: %w", tagName, err)
 	}
 	_, err := retryTransient(ctx, "git fetch release tag", func() ([]byte, error) {
-		return m.gitNetworked(ctx, host, dir, nil, "fetch", "origin", "+"+ref+":"+ref)
+		return m.gitNetworked(
+			ctx, m.sourceForRepo(platform, host, owner, name), host, dir, nil,
+			"fetch", "origin", "+"+ref+":"+ref,
+		)
 	})
 	if err != nil {
 		return fmt.Errorf("fetch release tag %s: %w", tagName, err)
@@ -244,9 +251,9 @@ func (m *Manager) defaultTimelineRef(
 // is a genuine server-side error, not a client-input issue.
 func (m *Manager) ParentOf(
 	ctx context.Context,
-	host, owner, name, sha string,
+	platform, host, owner, name, sha string,
 ) (string, error) {
-	dir, err := m.ClonePath(host, owner, name)
+	dir, err := m.ClonePath(platform, host, owner, name)
 	if err != nil {
 		return "", err
 	}

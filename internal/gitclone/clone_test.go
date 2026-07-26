@@ -59,7 +59,7 @@ func TestIntegrationEnsureClone(t *testing.T) {
 	mgr := New(clonesDir, nil)
 
 	ctx := t.Context()
-	err := mgr.EnsureClone(ctx, "github.com", "testowner", "testrepo", remote)
+	err := mgr.EnsureClone(ctx, "github", "github.com", "testowner", "testrepo", remote)
 	require.NoError(t, err)
 
 	clonePath := filepath.Join(
@@ -67,7 +67,7 @@ func TestIntegrationEnsureClone(t *testing.T) {
 	assert.DirExists(t, clonePath)
 
 	// Second call should be a no-op fetch, not re-clone.
-	err = mgr.EnsureClone(ctx, "github.com", "testowner", "testrepo", remote)
+	err = mgr.EnsureClone(ctx, "github", "github.com", "testowner", "testrepo", remote)
 	require.NoError(t, err)
 }
 
@@ -78,7 +78,8 @@ func TestIntegrationEnsureCloneInNamespacePartitionsStorage(t *testing.T) {
 
 	ctx := t.Context()
 	err := mgr.EnsureCloneInNamespace(
-		ctx, "gitlab", "github.com", "testowner", "testrepo", remote,
+		ctx, "gitlab", "gitlab", "github.com",
+		"testowner", "testrepo", remote,
 	)
 	require.NoError(t, err)
 
@@ -107,7 +108,7 @@ func TestIntegrationEnsureCloneShortCircuitsCanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
-	err := mgr.EnsureClone(ctx, "github.com", "testowner", "testrepo", remote)
+	err := mgr.EnsureClone(ctx, "github", "github.com", "testowner", "testrepo", remote)
 	require.ErrorIs(err, context.Canceled)
 
 	clonePath := filepath.Join(
@@ -140,7 +141,7 @@ func TestIntegrationEnsureCloneSweepsPartialClone(t *testing.T) {
 		filepath.Join(clonePath, "stray"), []byte("junk"), 0o644))
 
 	require.NoError(mgr.EnsureClone(
-		t.Context(), "github.com", "testowner", "testrepo", remote))
+		t.Context(), "github", "github.com", "testowner", "testrepo", remote))
 
 	// Verify the partial state was cleaned out and replaced with a
 	// real bare clone.
@@ -161,9 +162,9 @@ func TestIntegrationEnsureCloneInstallsDefaultRefspecs(t *testing.T) {
 	mgr := New(clonesDir, nil)
 
 	require.NoError(mgr.EnsureClone(
-		t.Context(), "github.com", "testowner", "testrepo", remote))
+		t.Context(), "github", "github.com", "testowner", "testrepo", remote))
 
-	clonePath, err := mgr.ClonePath("github.com", "testowner", "testrepo")
+	clonePath, err := mgr.ClonePath("github", "github.com", "testowner", "testrepo")
 	require.NoError(err)
 	refspecs := getFetchRefspecs(t, clonePath)
 	assert.Contains(refspecs, remoteTrackingRefspec)
@@ -185,16 +186,16 @@ func TestIntegrationEnsureCloneFetchesNewBranchCommits(t *testing.T) {
 
 	ctx := t.Context()
 	require.NoError(mgr.EnsureClone(
-		ctx, "github.com", "testowner", "testrepo", remote))
+		ctx, "github", "github.com", "testowner", "testrepo", remote))
 
 	// Push a new commit to the remote after the initial clone.
 	newSHA := commitAndPush(t, work, "second.go", "package main\n", "second")
 
 	// Re-run EnsureClone and verify the new commit is now reachable.
 	require.NoError(mgr.EnsureClone(
-		ctx, "github.com", "testowner", "testrepo", remote))
+		ctx, "github", "github.com", "testowner", "testrepo", remote))
 
-	got, err := mgr.RevParse(ctx, "github.com", "testowner", "testrepo", newSHA)
+	got, err := mgr.RevParse(ctx, "github", "github.com", "testowner", "testrepo", newSHA)
 	require.NoError(err)
 	assert.Equal(newSHA, got)
 }
@@ -212,19 +213,19 @@ func TestIntegrationEnsureCloneDoesNotRefreshMovedRemoteTags(t *testing.T) {
 
 	ctx := t.Context()
 	require.NoError(mgr.EnsureClone(
-		ctx, "github.com", "testowner", "testrepo", remote))
+		ctx, "github", "github.com", "testowner", "testrepo", remote))
 
 	movedSHA := commitAndPush(t, work, "retag.go", "package main\n", "retag target")
 	run(t, work, "git", "tag", "-f", "v1.0.0", movedSHA)
 	run(t, work, "git", "push", "--force", "origin", "refs/tags/v1.0.0")
 
 	require.NoError(mgr.EnsureClone(
-		ctx, "github.com", "testowner", "testrepo", remote))
+		ctx, "github", "github.com", "testowner", "testrepo", remote))
 
-	got, err := mgr.RevParse(ctx, "github.com", "testowner", "testrepo", "refs/tags/v1.0.0")
+	got, err := mgr.RevParse(ctx, "github", "github.com", "testowner", "testrepo", "refs/tags/v1.0.0")
 	require.NoError(err)
 	assert.Equal(initialSHA, got)
-	_, err = mgr.RevParse(ctx, "github.com", "testowner", "testrepo", movedSHA)
+	_, err = mgr.RevParse(ctx, "github", "github.com", "testowner", "testrepo", movedSHA)
 	require.NoError(err)
 }
 
@@ -238,7 +239,7 @@ func TestIntegrationEnsureCloneDoesNotFetchGitLabMergeRequestHeadsByDefault(t *t
 
 	ctx := t.Context()
 	require.NoError(mgr.EnsureClone(
-		ctx, "gitlab.com", "testowner", "testrepo", remote))
+		ctx, "gitlab", "gitlab.com", "testowner", "testrepo", remote))
 
 	require.NoError(os.WriteFile(
 		filepath.Join(work, "gitlab-mr.go"), []byte("package main\n"), 0o644,
@@ -251,9 +252,9 @@ func TestIntegrationEnsureCloneDoesNotFetchGitLabMergeRequestHeadsByDefault(t *t
 	run(t, work, "git", "push", "origin", "HEAD:refs/merge-requests/17/head")
 
 	require.NoError(mgr.EnsureClone(
-		ctx, "gitlab.com", "testowner", "testrepo", remote))
+		ctx, "gitlab", "gitlab.com", "testowner", "testrepo", remote))
 
-	clonePath, err := mgr.ClonePath("gitlab.com", "testowner", "testrepo")
+	clonePath, err := mgr.ClonePath("gitlab", "gitlab.com", "testowner", "testrepo")
 	require.NoError(err)
 	got, err := gitcmd.New().Output(
 		t.Context(), clonePath, "rev-parse", "refs/merge-requests/17/head",
@@ -276,12 +277,12 @@ func TestIntegrationEnsureCloneMigratesBrokenClone(t *testing.T) {
 
 	ctx := t.Context()
 	require.NoError(mgr.EnsureClone(
-		ctx, "github.com", "testowner", "testrepo", remote))
+		ctx, "github", "github.com", "testowner", "testrepo", remote))
 
 	// Simulate a pre-fix clone: unset all fetch refspecs, then add only
 	// the pull refspec back. This matches the state created by the old
 	// cloneBare which never installed a branch refspec.
-	clonePath, err := mgr.ClonePath("github.com", "testowner", "testrepo")
+	clonePath, err := mgr.ClonePath("github", "github.com", "testowner", "testrepo")
 	require.NoError(err)
 	run(t, clonePath, "git", "config", "--unset-all", "remote.origin.fetch")
 	run(t, clonePath, "git", "config", "--add",
@@ -297,7 +298,7 @@ func TestIntegrationEnsureCloneMigratesBrokenClone(t *testing.T) {
 	// Next EnsureClone should re-add the remote-tracking refspec and fetch
 	// the commit.
 	require.NoError(mgr.EnsureClone(
-		ctx, "github.com", "testowner", "testrepo", remote))
+		ctx, "github", "github.com", "testowner", "testrepo", remote))
 
 	refspecs = getFetchRefspecs(t, clonePath)
 	assert.Contains(refspecs, remoteTrackingRefspec)
@@ -305,7 +306,7 @@ func TestIntegrationEnsureCloneMigratesBrokenClone(t *testing.T) {
 	assert.NotContains(refspecs, gitlabMergeRequestRefspec)
 	assert.NotContains(refspecs, legacyBranchRefspec)
 
-	got, err := mgr.RevParse(ctx, "github.com", "testowner", "testrepo", newSHA)
+	got, err := mgr.RevParse(ctx, "github", "github.com", "testowner", "testrepo", newSHA)
 	require.NoError(err)
 	assert.Equal(newSHA, got)
 }
@@ -323,9 +324,9 @@ func TestIntegrationEnsureCloneRemovesLegacyBranchRefspec(t *testing.T) {
 
 	ctx := t.Context()
 	require.NoError(mgr.EnsureClone(
-		ctx, "github.com", "testowner", "testrepo", remote))
+		ctx, "github", "github.com", "testowner", "testrepo", remote))
 
-	clonePath, err := mgr.ClonePath("github.com", "testowner", "testrepo")
+	clonePath, err := mgr.ClonePath("github", "github.com", "testowner", "testrepo")
 	require.NoError(err)
 	run(t, clonePath, "git", "config", "--add",
 		"remote.origin.fetch", legacyBranchRefspec)
@@ -336,7 +337,7 @@ func TestIntegrationEnsureCloneRemovesLegacyBranchRefspec(t *testing.T) {
 	require.Contains(refspecs, gitlabMergeRequestRefspec)
 
 	require.NoError(mgr.EnsureClone(
-		ctx, "github.com", "testowner", "testrepo", remote))
+		ctx, "github", "github.com", "testowner", "testrepo", remote))
 
 	refspecs = getFetchRefspecs(t, clonePath)
 	assert.Contains(refspecs, remoteTrackingRefspec)
@@ -360,12 +361,12 @@ func TestIntegrationEnsureCloneMigratesCloneWithNoRefspec(t *testing.T) {
 
 	ctx := t.Context()
 	require.NoError(mgr.EnsureClone(
-		ctx, "github.com", "testowner", "testrepo", remote))
+		ctx, "github", "github.com", "testowner", "testrepo", remote))
 
 	// Remove every fetch refspec so the key is entirely unset, matching
 	// the state of a clone that was created by an older code path which
 	// did not install any refspec.
-	clonePath, err := mgr.ClonePath("github.com", "testowner", "testrepo")
+	clonePath, err := mgr.ClonePath("github", "github.com", "testowner", "testrepo")
 	require.NoError(err)
 	run(t, clonePath, "git", "config", "--unset-all", "remote.origin.fetch")
 	refspecs := getFetchRefspecs(t, clonePath)
@@ -377,7 +378,7 @@ func TestIntegrationEnsureCloneMigratesCloneWithNoRefspec(t *testing.T) {
 
 	// Next EnsureClone should install both refspecs and fetch the commit.
 	require.NoError(mgr.EnsureClone(
-		ctx, "github.com", "testowner", "testrepo", remote))
+		ctx, "github", "github.com", "testowner", "testrepo", remote))
 
 	refspecs = getFetchRefspecs(t, clonePath)
 	assert.Contains(refspecs, remoteTrackingRefspec)
@@ -385,7 +386,7 @@ func TestIntegrationEnsureCloneMigratesCloneWithNoRefspec(t *testing.T) {
 	assert.NotContains(refspecs, gitlabMergeRequestRefspec)
 	assert.NotContains(refspecs, legacyBranchRefspec)
 
-	got, err := mgr.RevParse(ctx, "github.com", "testowner", "testrepo", newSHA)
+	got, err := mgr.RevParse(ctx, "github", "github.com", "testowner", "testrepo", newSHA)
 	require.NoError(err)
 	assert.Equal(newSHA, got)
 }
@@ -404,16 +405,16 @@ func TestIntegrationEnsureCloneRestoresOriginHead(t *testing.T) {
 
 	ctx := t.Context()
 	require.NoError(mgr.EnsureClone(
-		ctx, "github.com", "testowner", "testrepo", remote))
+		ctx, "github", "github.com", "testowner", "testrepo", remote))
 
-	clonePath, err := mgr.ClonePath("github.com", "testowner", "testrepo")
+	clonePath, err := mgr.ClonePath("github", "github.com", "testowner", "testrepo")
 	require.NoError(err)
 	run(t, clonePath, "git", "symbolic-ref", "--delete", "refs/remotes/origin/HEAD")
 	_, err = gitcmd.New().Output(t.Context(), clonePath, "symbolic-ref", "refs/remotes/origin/HEAD")
 	require.Error(err)
 
 	require.NoError(mgr.EnsureClone(
-		ctx, "github.com", "testowner", "testrepo", remote))
+		ctx, "github", "github.com", "testowner", "testrepo", remote))
 
 	headRef := gitSymbolicRef(
 		t, clonePath, "refs/remotes/origin/HEAD",
@@ -431,9 +432,9 @@ func TestIntegrationEnsureCloneRepairsStaleOriginHead(t *testing.T) {
 
 	ctx := t.Context()
 	require.NoError(mgr.EnsureClone(
-		ctx, "github.com", "testowner", "testrepo", remote))
+		ctx, "github", "github.com", "testowner", "testrepo", remote))
 
-	clonePath, err := mgr.ClonePath("github.com", "testowner", "testrepo")
+	clonePath, err := mgr.ClonePath("github", "github.com", "testowner", "testrepo")
 	require.NoError(err)
 	run(t, clonePath, "git", "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/master")
 	assert.Equal("refs/remotes/origin/master", gitSymbolicRef(
@@ -441,7 +442,7 @@ func TestIntegrationEnsureCloneRepairsStaleOriginHead(t *testing.T) {
 	))
 
 	require.NoError(mgr.EnsureClone(
-		ctx, "github.com", "testowner", "testrepo", remote))
+		ctx, "github", "github.com", "testowner", "testrepo", remote))
 
 	headRef := gitSymbolicRef(
 		t, clonePath, "refs/remotes/origin/HEAD",
@@ -458,12 +459,12 @@ func TestIntegrationEnsureCloneToleratesUnresolvedRemoteHead(t *testing.T) {
 
 	ctx := t.Context()
 	require.NoError(mgr.EnsureClone(
-		ctx, "github.com", "testowner", "testrepo", remote))
+		ctx, "github", "github.com", "testowner", "testrepo", remote))
 
 	run(t, remote, "git", "symbolic-ref", "HEAD", "refs/heads/missing")
 
 	require.NoError(mgr.EnsureClone(
-		ctx, "github.com", "testowner", "testrepo", remote))
+		ctx, "github", "github.com", "testowner", "testrepo", remote))
 }
 
 // getFetchRefspecs returns the current fetch refspecs configured for the
@@ -518,7 +519,7 @@ func TestIntegrationEnsureCloneIgnoresInheritedGitEnv(t *testing.T) {
 	t.Setenv("GIT_SSH_COMMAND", "/bin/false")
 	t.Setenv("SSH_ASKPASS", "/bin/false")
 
-	err := mgr.EnsureClone(t.Context(), "github.com", "testowner", "testrepo", remote)
+	err := mgr.EnsureClone(t.Context(), "github", "github.com", "testowner", "testrepo", remote)
 	require.NoError(t, err)
 }
 
@@ -532,10 +533,10 @@ func TestIntegrationMergeBase(t *testing.T) {
 
 	ctx := t.Context()
 	require.NoError(mgr.EnsureClone(
-		ctx, "github.com", "testowner", "testrepo", remote))
+		ctx, "github", "github.com", "testowner", "testrepo", remote))
 
 	// Get the HEAD SHA.
-	clonePath, err := mgr.ClonePath("github.com", "testowner", "testrepo")
+	clonePath, err := mgr.ClonePath("github", "github.com", "testowner", "testrepo")
 	require.NoError(err)
 	out, err := gitcmd.New().Output(t.Context(), clonePath, "rev-parse", "HEAD")
 	require.NoError(err)
@@ -543,7 +544,7 @@ func TestIntegrationMergeBase(t *testing.T) {
 
 	// Merge base of HEAD with itself is HEAD.
 	mb, err := mgr.MergeBase(
-		ctx, "github.com", "testowner", "testrepo", headSHA, headSHA)
+		ctx, "github", "github.com", "testowner", "testrepo", headSHA, headSHA)
 	require.NoError(err)
 	assert.Equal(headSHA, mb)
 }

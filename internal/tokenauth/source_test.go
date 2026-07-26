@@ -2,9 +2,11 @@ package tokenauth
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -122,6 +124,69 @@ func TestSourceSetUpsertReusesExistingSource(t *testing.T) {
 
 	assert.Same(t, first, second)
 	assert.Equal(t, "env:NEW_TOKEN", second.Descriptor().SafeString())
+}
+
+func TestSourceSetKeepsScopedSourcesSeparate(t *testing.T) {
+	set := NewSourceSet(Options{})
+	first := set.Upsert(Descriptor{
+		Key: Key{
+			Platform: "github",
+			Host:     "github.com",
+			Scope:    "owner:acme",
+		},
+		Candidates: []Candidate{{Kind: SourceKindEnv, EnvName: "ACME_TOKEN"}},
+	})
+	second := set.Upsert(Descriptor{
+		Key: Key{
+			Platform: "github",
+			Host:     "github.com",
+			Scope:    "owner:example",
+		},
+		Candidates: []Candidate{{Kind: SourceKindEnv, EnvName: "EXAMPLE_TOKEN"}},
+	})
+
+	assert.NotSame(t, first, second)
+	assert.Equal(t, []Key{
+		{Platform: "github", Host: "github.com", Scope: "owner:acme"},
+		{Platform: "github", Host: "github.com", Scope: "owner:example"},
+	}, set.Keys())
+}
+
+func TestProbeBatchMintsFreshInstallationTokens(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	var mints int
+	set := NewSourceSet(Options{
+		GitHubApp: func(context.Context, Candidate) (string, time.Time, error) {
+			mints++
+			return fmt.Sprintf("token-%d", mints), time.Now().Add(time.Hour), nil
+		},
+	})
+	desc := Descriptor{
+		Key: Key{Platform: "github", Host: "github.com", Scope: "owner:acme"},
+		Candidates: []Candidate{{
+			Kind: SourceKindGitHubApp, Host: "github.com",
+			AppID: 7, InstallationID: 11, InstallationAccount: "acme",
+		}},
+	}
+	source := set.Upsert(desc)
+	ctx := WithGitHubOwner(context.Background(), "acme")
+	token, err := source.Token(ctx)
+	require.NoError(err)
+	require.Equal("token-1", token)
+
+	batch := set.NewProbeBatch()
+	probed, err := batch.ProbeToken(ctx, desc)
+	require.NoError(err)
+	assert.Equal("token-2", probed,
+		"a probe batch must re-mint instead of trusting the live cache")
+	again, err := batch.ProbeToken(ctx, desc)
+	require.NoError(err)
+	assert.Equal("token-2", again, "one mint is shared within the batch")
+
+	live, err := source.Token(ctx)
+	require.NoError(err)
+	assert.Equal("token-1", live, "probes must not overwrite the live cache")
 }
 
 func TestMissingTokenErrorIsDetectable(t *testing.T) {

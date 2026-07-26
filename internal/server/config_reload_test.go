@@ -683,11 +683,11 @@ func TestConfigReload_TokenSourceChangeForExistingHostUpdatesSource(t *testing.T
 
 	ev := waitForConfigEvent(t, stream, 2*time.Second)
 	assert.True(ev.Valid)
-	assert.False(ev.RestartRequired,
-		"repo token_env change for a known provider host should hot-update")
-	newToken, err := src.Token(t.Context())
+	assert.True(ev.RestartRequired,
+		"adding an exact-repository route requires rebuilding the client pool")
+	currentToken, err := src.Token(t.Context())
 	require.NoError(err)
-	assert.Equal("new", newToken)
+	assert.Equal("old", currentToken)
 }
 
 func TestConfigReload_GitHubTokenEnvChangeUpdatesConfigSnapshot(t *testing.T) {
@@ -717,10 +717,11 @@ func TestConfigReload_GitHubTokenEnvChangeUpdatesConfigSnapshot(t *testing.T) {
 
 	ev := waitForConfigEvent(t, stream, 2*time.Second)
 	assert.True(ev.Valid)
-	assert.False(ev.RestartRequired)
+	assert.True(ev.RestartRequired,
+		"changing a bounded GitHub route descriptor requires identity re-resolution")
 	newToken, err := src.Token(t.Context())
 	require.NoError(err)
-	assert.Equal("new", newToken)
+	assert.Equal("old", newToken)
 
 	srv.cfgMu.Lock()
 	currentTokenEnv := srv.cfg.GitHubTokenEnv
@@ -854,6 +855,29 @@ token_env = "REPO_TOKEN"
 	require.NoError(t, validateReloadCloneTokenSources(cfg))
 }
 
+func TestValidateReloadCloneTokenSourcesAllowsDifferentProviderFallbacksOnSharedHost(t *testing.T) {
+	// Credentials are provider-scoped, so providers sharing one hostname may
+	// carry different fallback tokens; the ownerless host fallback is
+	// disabled in that case rather than the reload being rejected.
+	cfg := &config.Config{Platforms: []config.PlatformConfig{
+		{Type: "github", Host: "code.example.com", TokenEnv: "GITHUB_PAT"},
+		{Type: "forgejo", Host: "code.example.com", TokenEnv: "FORGEJO_PAT"},
+	}}
+
+	require.NoError(t, validateReloadCloneTokenSources(cfg))
+}
+
+func TestValidateReloadCloneTokenSourcesRejectsConflictingRepoOverrides(t *testing.T) {
+	cfg := &config.Config{Repos: []config.Repo{
+		{Platform: "gitlab", PlatformHost: "gitlab.com", Owner: "group", Name: "one", TokenEnv: "TOKEN_A"},
+		{Platform: "gitlab", PlatformHost: "gitlab.com", Owner: "group", Name: "two", TokenEnv: "TOKEN_B"},
+	}}
+
+	err := validateReloadCloneTokenSources(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "conflicting token source")
+}
+
 func TestValidateReloadCloneTokenSourcesAllowsEquivalentChainsOnSameHost(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "config.toml")
 	// Two providers share a self-hosted host. The forgejo repo's token_env
@@ -936,6 +960,90 @@ func reloadTestTokenSources(
 	src, ok := sourceSet.Get(key)
 	require.True(t, ok, "no source registered for %v", key)
 	return sourceSet, src
+}
+
+func TestConfigReload_RemovingGitHubOwnerTokenClearsLiveRoute(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	t.Setenv("OWNER_PAT", "owner-token")
+	withOwner := `
+sync_interval = "5m"
+host = "127.0.0.1"
+port = 8091
+
+[[github_owner_tokens]]
+owner = "acme"
+token_env = "OWNER_PAT"
+`
+	withoutOwner := `
+sync_interval = "5m"
+host = "127.0.0.1"
+port = 8091
+`
+	srv, _, cfgPath := setupTestServerWithConfigContent(t, withOwner, &mockGH{})
+	key := tokenauth.Key{
+		Platform: "github", Host: "github.com", Scope: "owner:acme",
+	}
+	sourceSet, src := reloadTestTokenSources(t, cfgPath, key)
+	srv.tokenSources = sourceSet
+	bootCfg, err := config.Load(cfgPath)
+	require.NoError(err)
+	srv.bootCfgSnapshot = snapshotStartupConfig(bootCfg)
+	token, err := src.Token(t.Context())
+	require.NoError(err)
+	require.Equal("owner-token", token)
+
+	waitForConfigWatcher(t, srv, 2*time.Second)
+	stream := streamConfigEvents(t, srv)
+	defer stream.Close()
+	writeConfigToml(t, cfgPath, withoutOwner)
+
+	ev := waitForConfigEvent(t, stream, 2*time.Second)
+	assert.True(ev.Valid, "reload error: %s", ev.Error)
+	assert.True(ev.RestartRequired, "removing a bounded route requires restart")
+	token, err = src.Token(t.Context())
+	require.NoError(err)
+	assert.Equal("owner-token", token,
+		"the live bounded router keeps its boot credential until restart")
+}
+
+func TestConfigReload_ChangingGitHubOwnerSourceFreezesBootRoute(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	t.Setenv("OWNER_PAT", "owner-token")
+	t.Setenv("NEW_OWNER_PAT", "new-owner-token")
+	bootConfig := `
+sync_interval = "5m"
+host = "127.0.0.1"
+port = 8091
+
+[[github_owner_tokens]]
+owner = "acme"
+token_env = "OWNER_PAT"
+`
+	changedConfig := strings.ReplaceAll(bootConfig, "OWNER_PAT", "NEW_OWNER_PAT")
+	srv, _, cfgPath := setupTestServerWithConfigContent(t, bootConfig, &mockGH{})
+	key := tokenauth.Key{
+		Platform: "github", Host: "github.com", Scope: "owner:acme",
+	}
+	sourceSet, src := reloadTestTokenSources(t, cfgPath, key)
+	srv.tokenSources = sourceSet
+	bootCfg, err := config.Load(cfgPath)
+	require.NoError(err)
+	srv.bootCfgSnapshot = snapshotStartupConfig(bootCfg)
+
+	waitForConfigWatcher(t, srv, 2*time.Second)
+	stream := streamConfigEvents(t, srv)
+	defer stream.Close()
+	writeConfigToml(t, cfgPath, changedConfig)
+
+	ev := waitForConfigEvent(t, stream, 2*time.Second)
+	assert.True(ev.Valid, "reload error: %s", ev.Error)
+	assert.True(ev.RestartRequired)
+	token, err := src.Token(t.Context())
+	require.NoError(err)
+	assert.Equal("owner-token", token,
+		"identity-changing descriptors remain frozen until restart")
 }
 
 const reloadPlatformTokenConfig = `
@@ -1078,7 +1186,7 @@ repository_selection = "all"
 	assert.Equal(int64(4242), apps[0].AppID)
 }
 
-func TestValidateReloadProviderTokenSourcesScopesGitHubAppByOwner(t *testing.T) {
+func TestValidateReloadProviderTokenSourcesReusesGitHubAppTokenAcrossRoutes(t *testing.T) {
 	require := require.New(t)
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.toml")
@@ -1089,7 +1197,11 @@ github_token_env = "UNUSED_RELOAD_GITHUB_TOKEN"
 
 [[repos]]
 owner = "acme"
-name = "widget"
+name = "widget-one"
+
+[[repos]]
+owner = "acme"
+name = "widget-two"
 
 [[github_apps]]
 host = "github.com"
@@ -1097,7 +1209,8 @@ app_id = 4242
 private_key_path = "app.pem"
 installation_id = 7
 installation_account = "acme"
-repository_selection = "all"
+repository_selection = "selected"
+selected_repos = ["acme/widget-one", "acme/widget-two"]
 `)
 	cfg, err := config.Load(cfgPath)
 	require.NoError(err)
@@ -1152,6 +1265,9 @@ func TestConfigReloadFreezesGitHubChainOnSplitTopologyChange(t *testing.T) {
 	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "github-token")
 
 	githubKey := tokenauth.Key{Platform: "github", Host: "github.com"}
+	ownerKey := tokenauth.Key{
+		Platform: "github", Host: "github.com", Scope: "owner:acme",
+	}
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "app.pem"), []byte("pem"), 0o600))
 	withApp := validReloadConfig + `
@@ -1203,14 +1319,18 @@ repository_selection = "all"
 		assert.True(srv.bootCfgSnapshot.restartRequiredFor(newCfg),
 			"removing an app changes split topology and must flag a restart")
 		srv.updateTokenSourcesForReload(newCfg)
-		src, ok := set.Get(githubKey)
+		src, ok := set.Get(ownerKey)
 		require.True(t, ok)
 		assert.True(src.Descriptor().HasActiveGitHubApp(),
-			"a reload that removes an app must not drop the chain the write trackers were built for")
+			"a reload that removes an app must not drop the owner route the write trackers were built for")
+		fallbackSrc, ok := set.Get(githubKey)
+		require.True(t, ok)
+		assert.False(fallbackSrc.Descriptor().HasActiveGitHubApp(),
+			"the ownerless fallback must remain PAT-only")
 		cloneSrc, ok := set.Get(tokenauth.CloneKey("github.com"))
 		require.True(t, ok)
-		assert.True(cloneSrc.Descriptor().HasActiveGitHubApp(),
-			"clone auth must keep the boot app chain until restart")
+		assert.False(cloneSrc.Descriptor().HasActiveGitHubApp(),
+			"ownerless clone auth must remain PAT-only")
 	})
 
 	t.Run("non-topology token change still hot-applies", func(t *testing.T) {
@@ -1387,10 +1507,11 @@ func TestConfigReload_RepoTokenOverrideWithPlatformFallbackUpdatesSource(t *test
 
 	ev := waitForConfigEvent(t, stream, 2*time.Second)
 	assert.True(ev.Valid)
-	assert.False(ev.RestartRequired)
-	newToken, err := src.Token(t.Context())
+	assert.True(ev.RestartRequired,
+		"adding an exact-repository route requires rebuilding the client pool")
+	currentToken, err := src.Token(t.Context())
 	require.NoError(err)
-	assert.Equal("repo-token", newToken)
+	assert.Equal("platform-token", currentToken)
 }
 
 type fakeRuntimeOwner struct {
@@ -1498,10 +1619,10 @@ command = ["/bin/echo"]
 
 	ev := waitForConfigEvent(t, stream, 2*time.Second)
 	require.True(ev.Valid)
-	// Token env changes hot-reload through the token sources, so the
-	// rename alone must not demand a restart — but both the boot-bound
-	// and the reloaded env names must be stripped from future launches.
-	assert.False(ev.RestartRequired)
+	// A bounded GitHub route descriptor rename requires restart so the
+	// authenticated identity can be re-resolved. Both names are still stripped
+	// from future launches while the boot descriptor remains active.
+	assert.True(ev.RestartRequired)
 
 	_, err := srv.runtime.Launch(context.Background(), "ws-1", t.TempDir(), "helper")
 	require.NoError(err)

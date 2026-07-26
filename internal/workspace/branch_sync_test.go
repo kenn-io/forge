@@ -42,7 +42,7 @@ func TestPushWorktreeBranchPushesAheadCommitsAndRunsHooks(t *testing.T) {
 	runWorkspaceTestGit(t, work, "add", ".")
 	runWorkspaceTestGit(t, work, "commit", "-m", "ahead")
 
-	require.NoError(branchSyncTestManager(t).PushWorktreeBranch(t.Context(), "", work))
+	require.NoError(branchSyncTestManager(t).PushWorktreeBranch(t.Context(), "github", "", "", "", work))
 
 	div, ok, err := WorktreeDivergence(t.Context(), work)
 	require.NoError(err)
@@ -68,7 +68,7 @@ func TestPullWorktreeBranchFastForwardsBehindBranch(t *testing.T) {
 	runWorkspaceTestGit(t, other, "commit", "-m", "remote extra")
 	runWorkspaceTestGit(t, other, "push", "origin", "feature")
 
-	require.NoError(branchSyncTestManager(t).PullWorktreeBranch(t.Context(), "", work))
+	require.NoError(branchSyncTestManager(t).PullWorktreeBranch(t.Context(), "github", "", "", "", work))
 
 	contents, err := os.ReadFile(filepath.Join(work, "f.txt"))
 	require.NoError(err)
@@ -101,10 +101,24 @@ func TestPushWorktreeBranchRejectsDivergedBranch(t *testing.T) {
 	runWorkspaceTestGit(t, other, "commit", "-m", "remote")
 	runWorkspaceTestGit(t, other, "push", "origin", "feature")
 
-	err := branchSyncTestManager(t).PushWorktreeBranch(t.Context(), "", work)
+	err := branchSyncTestManager(t).PushWorktreeBranch(t.Context(), "github", "", "", "", work)
 
 	require.Error(err)
 	assert.New(t).ErrorIs(err, ErrWorktreeDiverged)
+}
+
+func TestPushWorktreeBranchRejectsNonOriginUpstream(t *testing.T) {
+	work := setupDivergenceWorktree(t)
+	runWorkspaceTestGit(t, work, "remote", "add", "other", "https://github.com/other/repo.git")
+	runWorkspaceTestGit(t, work, "config", "branch.feature.remote", "other")
+
+	err := branchSyncTestManager(t).PushWorktreeBranch(
+		t.Context(), "github", "github.com", "acme", "widgets", work,
+	)
+
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrWorktreeNoUpstream)
+	assert.ErrorContains(t, err, "unsupported remote other")
 }
 
 func TestPullWorktreeBranchRejectsDirtyWorktree(t *testing.T) {
@@ -114,7 +128,7 @@ func TestPullWorktreeBranchRejectsDirtyWorktree(t *testing.T) {
 		filepath.Join(work, "dirty.txt"), []byte("dirty\n"), 0o644,
 	))
 
-	err := branchSyncTestManager(t).PullWorktreeBranch(t.Context(), "", work)
+	err := branchSyncTestManager(t).PullWorktreeBranch(t.Context(), "github", "", "", "", work)
 
 	require.Error(err)
 	assert.New(t).ErrorIs(err, ErrWorktreeDirty)
@@ -202,10 +216,10 @@ exec "$real" "$@"
 	)
 	mgr := NewManager(nil, t.TempDir())
 	mgr.SetClones(gitclone.New(
-		t.TempDir(), map[string]tokenauth.Source{"github.com": source},
+		t.TempDir(), gitclone.HostSources{"github.com": source},
 	))
 
-	require.NoError(mgr.PushWorktreeBranch(t.Context(), "github.com", work))
+	require.NoError(mgr.PushWorktreeBranch(t.Context(), "github", "github.com", "acme", "widgets", work))
 
 	data, err := os.ReadFile(capturePath)
 	require.NoError(err)

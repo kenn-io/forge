@@ -55,19 +55,19 @@ func TestBuildProviderStartupScopesWriteTrackersToAppChains(t *testing.T) {
 	})
 
 	startup, err := buildProviderStartup(
-		database,
+		t.Context(), database,
 		&config.Config{SyncBudgetPerHour: 200},
 		set,
 		map[string]tokenauth.Source{
 			providerHostKey("github", "github.com"):      appChain,
 			providerHostKey("github", "ghe.example.com"): envChain,
 		},
-		defaultProviderFactories(),
+		defaultProviderFactories(), nil,
 	)
 	require.NoError(err)
 
-	appKey := github.RateBucketKey(string(platform.KindGitHub), "github.com")
-	envKey := github.RateBucketKey(string(platform.KindGitHub), "ghe.example.com")
+	appKey := github.RateBucketKey(string(platform.KindGitHub), "github.com", "host")
+	envKey := github.RateBucketKey(string(platform.KindGitHub), "ghe.example.com", "host")
 	assert.Contains(startup.writeRateTrackers, appKey)
 	assert.Contains(startup.writeGQLRateTrackers, appKey)
 	assert.NotContains(startup.writeRateTrackers, envKey,

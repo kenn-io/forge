@@ -614,6 +614,28 @@ name = "https://github.com/acme/widgets"
 	require.Contains(t, err.Error(), "glob syntax in owner")
 }
 
+func TestLoadRejectsGitHubRepoCredentialOnNameGlob(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		credential string
+	}{
+		{name: "token env", credential: `token_env = "ACME_TOKEN"`},
+		{name: "token file", credential: `token_file = "tokens/acme"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := writeConfig(t, `
+[[repos]]
+owner = "acme"
+name = "widgets-*"
+`+tc.credential)
+
+			_, err := Load(path)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "GitHub repo token override requires an exact repository name")
+		})
+	}
+}
+
 func TestRepoHasNameGlob(t *testing.T) {
 	assert := assert.New(t)
 
@@ -1261,11 +1283,12 @@ func TestConfigProviderTokenSourcesKeepsCredentiallessPlatformHosts(t *testing.T
 func TestConfigCloneTokenDescriptorsUseFirstNonEmptyHostChain(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	// Clone auth is host-scoped. The credential-less forgejo entry comes
-	// first, so the host descriptor must carry the first non-empty plan
-	// chain (gitlab's), not the first plan's; a host whose providers are
-	// all credential-less keeps an empty chain so reload clears a
-	// previously tokened clone source instead of leaving it active.
+	// The ownerless host fallback carries the chain every tokened provider
+	// on the host agrees on. The credential-less forgejo entry does not
+	// conflict, so the host descriptor carries the only non-empty chain
+	// (gitlab's); a host whose providers are all credential-less keeps an
+	// empty chain so reload clears a previously tokened clone source
+	// instead of leaving it active.
 	cfg := &Config{
 		Platforms: []PlatformConfig{
 			{Type: "forgejo", Host: "code.example.com"},
@@ -1316,17 +1339,24 @@ func TestConfigProviderTokenSourcesPlansEffectiveDescriptors(t *testing.T) {
 
 	plans := cfg.ProviderTokenSources()
 
-	require.Len(t, plans, 3)
+	require.Len(t, plans, 4)
 	assert.True(plans[0].Required)
-	assert.Equal(tokenauth.Key{Platform: "github", Host: "github.com"}, plans[0].Descriptor.Key)
+	assert.Equal(tokenauth.Key{
+		Platform: "github",
+		Host:     "github.com",
+		Scope:    "repo:acme/widget",
+	}, plans[0].Descriptor.Key)
 	assert.Equal("REPO_GITHUB_TOKEN", plans[0].Descriptor.Candidates[0].EnvName)
 	assert.Equal("PLATFORM_GITHUB_TOKEN", plans[0].Descriptor.Candidates[1].EnvName)
 	assert.True(plans[1].Required)
 	assert.Equal(tokenauth.Key{Platform: "gitlab", Host: "gitlab.com"}, plans[1].Descriptor.Key)
 	assert.Empty(plans[1].Descriptor.Candidates)
 	assert.False(plans[2].Required)
-	assert.Equal(tokenauth.Key{Platform: "forgejo", Host: "codeberg.org"}, plans[2].Descriptor.Key)
-	assert.Equal("PLATFORM_FORGEJO_TOKEN", plans[2].Descriptor.Candidates[0].EnvName)
+	assert.Equal(tokenauth.Key{Platform: "github", Host: "github.com"}, plans[2].Descriptor.Key)
+	assert.Equal("PLATFORM_GITHUB_TOKEN", plans[2].Descriptor.Candidates[0].EnvName)
+	assert.False(plans[3].Required)
+	assert.Equal(tokenauth.Key{Platform: "forgejo", Host: "codeberg.org"}, plans[3].Descriptor.Key)
+	assert.Equal("PLATFORM_FORGEJO_TOKEN", plans[3].Descriptor.Candidates[0].EnvName)
 }
 
 func TestConfigProviderTokenSourcesIncludesOptionalDefaultGitHub(t *testing.T) {
@@ -1345,20 +1375,41 @@ func TestConfigProviderTokenSourcesIncludesOptionalDefaultGitHub(t *testing.T) {
 	assert.Equal("github.com", plans[0].Descriptor.Candidates[1].Host)
 }
 
-func TestValidateRejectsConflictingTokenSources(t *testing.T) {
-	assert := assert.New(t)
-	cfg := &Config{
-		GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN",
-		Repos: []Repo{
-			{Owner: "acme", Name: "one", Platform: "github", PlatformHost: "ghe.example.com", TokenFile: "/tokens/a"},
-			{Owner: "acme", Name: "two", Platform: "github", PlatformHost: "ghe.example.com", TokenFile: "/tokens/b"},
-		},
-	}
+func TestValidateAllowsDistinctGitHubRepoTokenSources(t *testing.T) {
+	_, err := Load(writeConfig(t, `
+[[repos]]
+owner = "acme"
+name = "one"
+platform_host = "ghe.example.com"
+token_file = "/tokens/a"
 
-	err := cfg.Validate()
+[[repos]]
+owner = "acme"
+name = "two"
+platform_host = "ghe.example.com"
+token_file = "/tokens/b"
+`))
+
+	require.NoError(t, err)
+}
+
+func TestValidateRejectsConflictingRepoTokenSourcesOnSharedHost(t *testing.T) {
+	_, err := Load(writeConfig(t, `
+[[repos]]
+platform = "gitlab"
+owner = "group"
+name = "one"
+token_env = "GITLAB_TOKEN_A"
+
+[[repos]]
+platform = "gitlab"
+owner = "group"
+name = "two"
+token_env = "GITLAB_TOKEN_B"
+`))
+
 	require.Error(t, err)
-	assert.Contains(err.Error(), "conflicting token source")
-	assert.NotContains(err.Error(), "ghp_")
+	assert.Contains(t, err.Error(), `conflicting token source for gitlab host "gitlab.com"`)
 }
 
 func TestValidateAllowsRepoTokenEnvMatchingPlatformFallback(t *testing.T) {
@@ -1696,6 +1747,37 @@ token_env = "GITLAB_TOKEN_B"
 	_, err := Load(path)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "conflicting token_env")
+}
+
+func TestLoadAllowsDifferentProviderFallbacksOnSharedHostAndDisablesOwnerlessFallback(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	cfg, err := Load(writeConfig(t, `
+[[platforms]]
+type = "github"
+host = "code.example.com"
+token_env = "GITHUB_PAT"
+
+[[platforms]]
+type = "forgejo"
+host = "code.example.com"
+token_env = "FORGEJO_PAT"
+`))
+	require.NoError(err,
+		"credentials are provider-scoped; providers sharing a hostname may differ")
+
+	// Ownerless host operations cannot select a provider safely when the
+	// providers' chains disagree, so the host clone fallback is disabled
+	// instead of borrowing whichever provider came first.
+	var hostChain *tokenauth.Descriptor
+	for _, desc := range cfg.CloneTokenDescriptors() {
+		if desc.Key == tokenauth.CloneKey("code.example.com") {
+			d := desc
+			hostChain = &d
+		}
+	}
+	require.NotNil(hostChain)
+	assert.Empty(hostChain.Candidates)
 }
 
 func TestLoadGitLabNestedNamespaceURL(t *testing.T) {
@@ -2065,7 +2147,7 @@ name = "ssh://git@gitlab.example.com:2222/group/project.git"
 	assert.Equal("project", cfg.Repos[0].Name)
 }
 
-func TestValidateRejectsConflictingTokenEnv(t *testing.T) {
+func TestValidateAllowsGitHubTokenEnvPerRepo(t *testing.T) {
 	path := writeConfig(t, `
 [[repos]]
 owner = "org1"
@@ -2080,8 +2162,7 @@ platform_host = "github.example.com"
 token_env = "GHE_TOKEN_B"
 `)
 	_, err := Load(path)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "conflicting token_env")
+	require.NoError(t, err)
 }
 
 func TestValidateScopesTokenEnvConflictsByPlatformHost(t *testing.T) {
@@ -2342,10 +2423,12 @@ name = "b"
 
 [pull_requests]
 allow_mid_stack_merges = true
+prefer_github_native_stacks = true
 `)
 	cfg, err := Load(path)
 	require.NoError(t, err)
 	assert.True(cfg.PullRequests.AllowMidStackMerges)
+	assert.True(cfg.PullRequests.PreferGitHubNativeStacks)
 
 	savePath := filepath.Join(t.TempDir(), "saved.toml")
 	require.NoError(t, cfg.Save(savePath))
@@ -2353,6 +2436,7 @@ allow_mid_stack_merges = true
 	cfg2, err := Load(savePath)
 	require.NoError(t, err)
 	assert.True(cfg2.PullRequests.AllowMidStackMerges)
+	assert.True(cfg2.PullRequests.PreferGitHubNativeStacks)
 }
 
 func TestTerminalConfigRoundTrip(t *testing.T) {

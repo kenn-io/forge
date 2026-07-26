@@ -35,7 +35,9 @@ type networkedBranchGit func(ctx context.Context, dir string, args ...string) er
 // raw git remote output is redacted out of returned errors. Without clone
 // management (unmanaged local checkouts and unit tests) it falls back to plain
 // git, which carries no injected credential.
-func (m *Manager) branchSyncGit(platformHost string) networkedBranchGit {
+func (m *Manager) branchSyncGit(
+	platformName, platformHost, owner, name string,
+) networkedBranchGit {
 	if m.clones == nil {
 		return func(ctx context.Context, dir string, args ...string) error {
 			_, err := gitCombinedOutput(ctx, dir, args...)
@@ -43,7 +45,9 @@ func (m *Manager) branchSyncGit(platformHost string) networkedBranchGit {
 		}
 	}
 	return func(ctx context.Context, dir string, args ...string) error {
-		if _, err := m.clones.RunGit(ctx, platformHost, dir, args...); err != nil {
+		if _, err := m.clones.RunGitForRepo(
+			ctx, platformName, platformHost, owner, name, dir, args...,
+		); err != nil {
 			return err
 		}
 		return nil
@@ -57,8 +61,12 @@ func (m *Manager) branchSyncGit(platformHost string) networkedBranchGit {
 // so managed HTTPS workspaces inject the provider credential, and the push is
 // marked as a mutation so it stays on the user's own PAT chain rather than a
 // GitHub App installation token.
-func (m *Manager) PushWorktreeBranch(ctx context.Context, platformHost, dir string) error {
-	return pushWorktreeBranch(ctx, m.branchSyncGit(platformHost), dir)
+func (m *Manager) PushWorktreeBranch(
+	ctx context.Context, platformName, platformHost, owner, name, dir string,
+) error {
+	return pushWorktreeBranch(
+		ctx, m.branchSyncGit(platformName, platformHost, owner, name), dir,
+	)
 }
 
 // PullWorktreeBranch fast-forwards the current branch from its configured
@@ -66,8 +74,12 @@ func (m *Manager) PushWorktreeBranch(ctx context.Context, platformHost, dir stri
 // silently merge, rebase, or overwrite local work. The upstream refresh is
 // networked and runs through the host's authenticated git runner; the merge
 // itself is local against the already-fetched tracking ref.
-func (m *Manager) PullWorktreeBranch(ctx context.Context, platformHost, dir string) error {
-	return pullWorktreeBranch(ctx, m.branchSyncGit(platformHost), dir)
+func (m *Manager) PullWorktreeBranch(
+	ctx context.Context, platformName, platformHost, owner, name, dir string,
+) error {
+	return pullWorktreeBranch(
+		ctx, m.branchSyncGit(platformName, platformHost, owner, name), dir,
+	)
 }
 
 func pushWorktreeBranch(ctx context.Context, run networkedBranchGit, dir string) error {
@@ -167,6 +179,12 @@ func currentBranchUpstream(ctx context.Context, dir string) (branchUpstream, err
 	}
 	if upstream.remote == "" || upstream.branch == "" {
 		return branchUpstream{}, fmt.Errorf("%w: branch %s", ErrWorktreeNoUpstream, branch)
+	}
+	if upstream.remote != "origin" {
+		return branchUpstream{}, fmt.Errorf(
+			"%w: branch %s tracks unsupported remote %s",
+			ErrWorktreeNoUpstream, branch, upstream.remote,
+		)
 	}
 	return upstream, nil
 }

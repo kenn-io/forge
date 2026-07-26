@@ -69,7 +69,7 @@
 >
   <div class="popover-header">API Budget</div>
 
-  {#each hostEntries() as [hostname, h], i (hostname)}
+  {#each hostEntries() as [entryKey, h], i (entryKey)}
     {#if i > 0}
       <div class="popover-divider"></div>
     {/if}
@@ -82,7 +82,10 @@
             class:health-dot--unknown={!isHostFresh(h)}
             style:background={hostHealthColor(h)}
           ></span>
-          {hostname}
+          <span class="host-identity">
+            <span>{h.platform_host}</span>
+            <span class="principal-label">{h.principal_label}</span>
+          </span>
         </div>
       {/if}
 
@@ -196,6 +199,17 @@
     display: flex;
     align-items: center;
     gap: 6px;
+  }
+  .host-identity {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 1px;
+  }
+  .principal-label {
+    color: var(--text-muted);
+    font-size: var(--font-size-2xs);
+    font-weight: 400;
   }
   .health-dot {
     width: 8px;

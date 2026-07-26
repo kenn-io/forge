@@ -2,8 +2,10 @@ package main
 
 import (
 	"bytes"
+	"encoding/pem"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -28,6 +30,27 @@ func TestArchiveCommandE2E(t *testing.T) {
 	root := t.TempDir()
 	dataDir := filepath.Join(root, "data")
 	require.NoError(os.MkdirAll(dataDir, 0o700))
+	api := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		projectPath := "/api/v4/projects/owner%2Farchive"
+		if r.Method == http.MethodGet &&
+			(r.URL.EscapedPath() == projectPath || r.URL.Path == "/api/v4/projects/owner/archive") {
+			_, _ = fmt.Fprint(w, `{
+				"id":1,"path":"archive","path_with_namespace":"owner/archive",
+				"name":"archive","default_branch":"main",
+				"web_url":"https://example.invalid/owner/archive",
+				"http_url_to_repo":"https://example.invalid/owner/archive.git"
+			}`)
+			return
+		}
+		_, _ = fmt.Fprint(w, `[]`)
+	}))
+	t.Cleanup(api.Close)
+	host := api.Listener.Addr().String()
+	certPath := filepath.Join(root, "provider-cert.pem")
+	require.NoError(os.WriteFile(certPath, pem.EncodeToMemory(&pem.Block{
+		Type: "CERTIFICATE", Bytes: api.Certificate().Raw,
+	}), 0o600))
 	cfgPath := filepath.Join(root, "config.toml")
 	port := reserveFreePort(t)
 	writeMinimalConfig(t, cfgPath, dataDir, port)
@@ -35,23 +58,23 @@ func TestArchiveCommandE2E(t *testing.T) {
 	require.NoError(err)
 	require.NoError(os.WriteFile(cfgPath, append(
 		[]byte("base_path = \"/archive-e2e\"\n"),
-		append(existing, []byte(`
+		append(existing, fmt.Appendf(nil, `
 [api]
 require_auth = true
 
 [[repos]]
-platform = "github"
-platform_host = "127.0.0.1:1"
+platform = "gitlab"
+platform_host = %q
 owner = "owner"
 name = "archive"
 token_env = "MIDDLEMAN_ARCHIVE_E2E_TOKEN"
-`)...)...,
+`, host)...)...,
 	), 0o600))
 
 	now := time.Now().UTC().Truncate(time.Second)
 	database := dbtest.OpenAt(t, filepath.Join(dataDir, "middleman.db"))
 	ref := platform.RepoRef{
-		Platform: platform.KindGitHub, Host: "127.0.0.1:1", Owner: "owner",
+		Platform: platform.KindGitLab, Host: host, Owner: "owner",
 		Name: "archive", RepoPath: "owner/archive",
 	}
 	repoID, err := database.UpsertRepo(t.Context(), platform.DBRepoIdentity(ref))
@@ -74,7 +97,11 @@ token_env = "MIDDLEMAN_ARCHIVE_E2E_TOKEN"
 	daemon := procutil.Command(bin, "--config", cfgPath)
 	daemon.Stdout = os.Stderr
 	daemon.Stderr = os.Stderr
-	daemon.Env = append(os.Environ(), "MIDDLEMAN_LOG_LEVEL=warn", "MIDDLEMAN_ARCHIVE_E2E_TOKEN=archive-e2e-token")
+	daemon.Env = append(os.Environ(),
+		"MIDDLEMAN_LOG_LEVEL=warn",
+		"MIDDLEMAN_ARCHIVE_E2E_TOKEN=archive-e2e-token",
+		"SSL_CERT_FILE="+certPath,
+	)
 	require.NoError(daemon.Start())
 	daemonStopped := false
 	t.Cleanup(func() {
@@ -140,7 +167,7 @@ token_env = "MIDDLEMAN_ARCHIVE_E2E_TOKEN"
 
 	stdout, stderr, code = run(
 		"report", "--config", cfgPath, "--days", "1",
-		"--repo", "github|127.0.0.1:1/owner/missing",
+		"--repo", "gitlab|"+host+"/owner/missing",
 	)
 	assert.Equal(1, code)
 	assert.Empty(stdout)

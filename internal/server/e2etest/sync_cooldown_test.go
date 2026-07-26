@@ -466,7 +466,7 @@ func startSyncCooldownE2EServerWithSyncer(
 	trackers := make(map[string]*ghclient.RateTracker, len(clients))
 	for host := range clients {
 		trackers[host] = ghclient.NewRateTracker(
-			database, host, "rest",
+			database, host, "host", "rest",
 		)
 	}
 	syncer := ghclient.NewSyncer(

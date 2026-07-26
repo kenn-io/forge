@@ -33,14 +33,12 @@ type Source interface {
 }
 
 type ManagedSource struct {
-	mu       sync.Mutex
-	desc     Descriptor
-	options  Options
-	ghToken  string
-	ghCached bool
-	// App tokens are scoped to one installation candidate; a host source may
-	// carry several app candidates for different owners on the same GitHub host.
-	appTokens map[Candidate]githubAppTokenCache
+	mu        sync.Mutex
+	desc      Descriptor
+	options   Options
+	ghToken   string
+	ghCached  bool
+	appTokens *githubAppTokenStore
 }
 
 type githubAppTokenCache struct {
@@ -48,8 +46,61 @@ type githubAppTokenCache struct {
 	exp   time.Time
 }
 
+// githubAppTokenStore is shared by every managed source in one SourceSet.
+// Repository-exact authorization routes can therefore reuse the one-hour token
+// minted for their common App installation without weakening route selection.
+type githubAppTokenStore struct {
+	mu     sync.Mutex
+	tokens map[Candidate]githubAppTokenCache
+}
+
+func newGitHubAppTokenStore() *githubAppTokenStore {
+	return &githubAppTokenStore{tokens: make(map[Candidate]githubAppTokenCache)}
+}
+
+func (s *githubAppTokenStore) get(candidate Candidate) githubAppTokenCache {
+	if s == nil {
+		return githubAppTokenCache{}
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.tokens[canonicalCandidate(candidate)]
+}
+
+func (s *githubAppTokenStore) put(
+	candidate Candidate, cached githubAppTokenCache,
+) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.tokens[canonicalCandidate(candidate)] = cached
+	s.mu.Unlock()
+}
+
+func (s *githubAppTokenStore) invalidate(candidates []Candidate) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	for _, candidate := range candidates {
+		if candidate.Kind == SourceKindGitHubApp {
+			delete(s.tokens, canonicalCandidate(candidate))
+		}
+	}
+	s.mu.Unlock()
+}
+
 func NewManagedSource(desc Descriptor, options Options) *ManagedSource {
-	return &ManagedSource{desc: cloneDescriptor(desc), options: options}
+	return newManagedSource(desc, options, newGitHubAppTokenStore())
+}
+
+func newManagedSource(
+	desc Descriptor, options Options, appTokens *githubAppTokenStore,
+) *ManagedSource {
+	return &ManagedSource{
+		desc: cloneDescriptor(desc), options: options, appTokens: appTokens,
+	}
 }
 
 func (s *ManagedSource) Descriptor() Descriptor {
@@ -64,7 +115,7 @@ func (s *ManagedSource) Update(desc Descriptor) {
 	if !s.desc.EqualSource(desc) {
 		s.ghToken = ""
 		s.ghCached = false
-		s.appTokens = nil
+		s.appTokens.invalidate(s.desc.Candidates)
 	}
 	s.desc = cloneDescriptor(desc)
 }
@@ -73,7 +124,7 @@ func (s *ManagedSource) Invalidate() {
 	s.mu.Lock()
 	s.ghToken = ""
 	s.ghCached = false
-	s.appTokens = nil
+	s.appTokens.invalidate(s.desc.Candidates)
 	s.mu.Unlock()
 }
 
@@ -183,11 +234,12 @@ func (s *ManagedSource) githubAppToken(
 	cacheKey := canonicalCandidate(candidate)
 	s.mu.Lock()
 	minter := s.options.GitHubApp
-	cached := s.appTokens[cacheKey]
+	store := s.appTokens
 	s.mu.Unlock()
 	if minter == nil {
 		return "", false, nil
 	}
+	cached := store.get(cacheKey)
 	if cached.token != "" && time.Until(cached.exp) > githubAppTokenRefreshSkew {
 		return cached.token, true, nil
 	}
@@ -203,12 +255,7 @@ func (s *ManagedSource) githubAppToken(
 	if token == "" {
 		return "", true, nil
 	}
-	s.mu.Lock()
-	if s.appTokens == nil {
-		s.appTokens = make(map[Candidate]githubAppTokenCache)
-	}
-	s.appTokens[cacheKey] = githubAppTokenCache{token: token, exp: exp}
-	s.mu.Unlock()
+	store.put(cacheKey, githubAppTokenCache{token: token, exp: exp})
 	return token, true, nil
 }
 
@@ -250,13 +297,17 @@ func missingTokenError(desc Descriptor) error {
 }
 
 type SourceSet struct {
-	mu      sync.Mutex
-	options Options
-	sources map[Key]*ManagedSource
+	mu        sync.Mutex
+	options   Options
+	sources   map[Key]*ManagedSource
+	appTokens *githubAppTokenStore
 }
 
 func NewSourceSet(options Options) *SourceSet {
-	return &SourceSet{options: options, sources: make(map[Key]*ManagedSource)}
+	return &SourceSet{
+		options: options, sources: make(map[Key]*ManagedSource),
+		appTokens: newGitHubAppTokenStore(),
+	}
 }
 
 func (s *SourceSet) Upsert(desc Descriptor) *ManagedSource {
@@ -266,7 +317,7 @@ func (s *SourceSet) Upsert(desc Descriptor) *ManagedSource {
 		existing.Update(desc)
 		return existing
 	}
-	src := NewManagedSource(desc, s.options)
+	src := newManagedSource(desc, s.options, s.appTokens)
 	s.sources[desc.Key] = src
 	return src
 }
@@ -278,15 +329,32 @@ func (s *SourceSet) Get(key Key) (*ManagedSource, bool) {
 	return src, ok
 }
 
-// ProbeToken resolves desc with this set's options without mutating live sources.
-func (s *SourceSet) ProbeToken(ctx context.Context, desc Descriptor) (string, error) {
-	if s == nil {
-		return NewManagedSource(desc, Options{}).Token(ctx)
+// ProbeBatch resolves descriptors with a SourceSet's options but a fresh
+// installation-token cache scoped to one validation pass. Probes within the
+// batch share mints, so multiple scoped routes covered by one GitHub App
+// installation do not mint duplicates, while the first probe of each
+// installation always re-mints: validation must observe a revoked
+// installation or replaced private key instead of accepting a still-unexpired
+// token from the live cache.
+type ProbeBatch struct {
+	options   Options
+	appTokens *githubAppTokenStore
+}
+
+func (s *SourceSet) NewProbeBatch() *ProbeBatch {
+	batch := &ProbeBatch{appTokens: newGitHubAppTokenStore()}
+	if s != nil {
+		s.mu.Lock()
+		batch.options = s.options
+		s.mu.Unlock()
 	}
-	s.mu.Lock()
-	options := s.options
-	s.mu.Unlock()
-	return NewManagedSource(desc, options).Token(ctx)
+	return batch
+}
+
+// ProbeToken resolves desc without mutating live sources or the live
+// installation-token cache.
+func (b *ProbeBatch) ProbeToken(ctx context.Context, desc Descriptor) (string, error) {
+	return newManagedSource(desc, b.options, b.appTokens).Token(ctx)
 }
 
 func (s *SourceSet) Keys() []Key {
@@ -300,7 +368,10 @@ func (s *SourceSet) Keys() []Key {
 		if cmp := strings.Compare(a.Platform, b.Platform); cmp != 0 {
 			return cmp
 		}
-		return strings.Compare(a.Host, b.Host)
+		if cmp := strings.Compare(a.Host, b.Host); cmp != 0 {
+			return cmp
+		}
+		return strings.Compare(a.Scope, b.Scope)
 	})
 	return keys
 }

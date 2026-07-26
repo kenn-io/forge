@@ -2080,7 +2080,10 @@ func (s *Handler) getCommits(ctx context.Context, input *repoNumberInput) (*getC
 	}
 
 	host := repoProviderHost(*repo)
-	commits, err := s.clones.ListCommits(ctx, host, repo.Owner, repo.Name, shas.MergeBaseSHA, shas.DiffHeadSHA)
+	commits, err := s.clones.ListCommits(
+		ctx, string(repoProviderKind(*repo)), host, repo.Owner, repo.Name,
+		shas.MergeBaseSHA, shas.DiffHeadSHA,
+	)
 	if err != nil {
 		if errors.Is(err, gitclone.ErrNotFound) {
 			return nil, httpapi.NotFound(httpapi.CodeNotFound, "commits not available: referenced commit not found", nil)
@@ -2120,6 +2123,7 @@ type getDiffInput struct {
 type getDiffOutput = httpapi.BodyOutput[diffResponse]
 
 type resolvedDiffRange struct {
+	platform string
 	host     string
 	owner    string
 	name     string
@@ -2162,10 +2166,14 @@ func (s *Handler) resolveDiffRange(
 		// Default: full PR diff. diffFrom/diffTo already set.
 
 	case hasCommit && !hasFrom && !hasTo:
-		if _, err := s.validateSHAs(ctx, host, input, shas, input.Commit); err != nil {
+		if _, err := s.validateSHAs(
+			ctx, string(repoProviderKind(*repo)), host, input, shas, input.Commit,
+		); err != nil {
 			return nil, err
 		}
-		parent, err := s.clones.ParentOf(ctx, host, repo.Owner, repo.Name, input.Commit)
+		parent, err := s.clones.ParentOf(
+			ctx, string(repoProviderKind(*repo)), host, repo.Owner, repo.Name, input.Commit,
+		)
 		if err != nil {
 			return nil, httpapi.Internal("failed to resolve parent: " + err.Error())
 		}
@@ -2173,7 +2181,10 @@ func (s *Handler) resolveDiffRange(
 		diffTo = input.Commit
 
 	case !hasCommit && hasFrom && hasTo:
-		indexMap, err := s.validateSHAs(ctx, host, input, shas, input.From, input.To)
+		indexMap, err := s.validateSHAs(
+			ctx, string(repoProviderKind(*repo)), host, input, shas,
+			input.From, input.To,
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -2181,7 +2192,9 @@ func (s *Handler) resolveDiffRange(
 		if indexMap[input.From] <= indexMap[input.To] {
 			return nil, httpapi.Validation("query", "invalid range: 'from' must be older than 'to'")
 		}
-		parent, err := s.clones.ParentOf(ctx, host, repo.Owner, repo.Name, input.From)
+		parent, err := s.clones.ParentOf(
+			ctx, string(repoProviderKind(*repo)), host, repo.Owner, repo.Name, input.From,
+		)
 		if err != nil {
 			return nil, httpapi.Internal("failed to resolve parent: " + err.Error())
 		}
@@ -2193,6 +2206,7 @@ func (s *Handler) resolveDiffRange(
 	}
 
 	return &resolvedDiffRange{
+		platform: string(repoProviderKind(*repo)),
 		host:     host,
 		owner:    repo.Owner,
 		name:     repo.Name,
@@ -2213,7 +2227,10 @@ func (s *Handler) getDiff(ctx context.Context, input *getDiffInput) (*getDiffOut
 	}
 
 	hideWhitespace := input.Whitespace == "hide"
-	result, err := s.clones.Diff(ctx, resolved.host, resolved.owner, resolved.name, resolved.fromSHA, resolved.toSHA, hideWhitespace)
+	result, err := s.clones.Diff(
+		ctx, resolved.platform, resolved.host, resolved.owner, resolved.name,
+		resolved.fromSHA, resolved.toSHA, hideWhitespace,
+	)
 	if err != nil {
 		if errors.Is(err, gitclone.ErrNotFound) {
 			return nil, httpapi.NotFound(httpapi.CodeNotFound, "diff not available: referenced commit not found", nil)
@@ -2279,6 +2296,7 @@ func (s *Handler) getFilePreview(ctx context.Context, input *getFilePreviewInput
 	previewPath := input.Path
 	files, err := s.clones.DiffFiles(
 		ctx,
+		resolved.platform,
 		resolved.host,
 		resolved.owner,
 		resolved.name,
@@ -2328,6 +2346,7 @@ func (s *Handler) getFilePreview(ctx context.Context, input *getFilePreviewInput
 
 	content, err := s.clones.FileContent(
 		ctx,
+		resolved.platform,
 		resolved.host,
 		resolved.owner,
 		resolved.name,
@@ -2411,7 +2430,10 @@ func (s *Handler) getFiles(ctx context.Context, input *getFilesInput) (*getFiles
 	}
 
 	host := repoProviderHost(*repo)
-	files, err := s.clones.DiffFiles(ctx, host, repo.Owner, repo.Name, shas.MergeBaseSHA, shas.DiffHeadSHA)
+	files, err := s.clones.DiffFiles(
+		ctx, string(repoProviderKind(*repo)), host, repo.Owner, repo.Name,
+		shas.MergeBaseSHA, shas.DiffHeadSHA,
+	)
 	if err != nil {
 		if errors.Is(err, gitclone.ErrNotFound) {
 			return nil, httpapi.NotFound(httpapi.CodeNotFound, "file list not available: referenced commit not found", nil)
@@ -2430,12 +2452,15 @@ func (s *Handler) getFiles(ctx context.Context, input *getFilesInput) (*getFiles
 // Returns a SHA -> index map (newest-first order) so callers can check range ordering.
 func (s *Handler) validateSHAs(
 	ctx context.Context,
-	host string,
+	platformName, host string,
 	input *getDiffInput,
 	shas *db.DiffSHAs,
 	userSHAs ...string,
 ) (map[string]int, error) {
-	commits, err := s.clones.ListCommits(ctx, host, input.Owner, input.Name, shas.MergeBaseSHA, shas.DiffHeadSHA)
+	commits, err := s.clones.ListCommits(
+		ctx, platformName, host, input.Owner, input.Name,
+		shas.MergeBaseSHA, shas.DiffHeadSHA,
+	)
 	if err != nil {
 		return nil, httpapi.Internal("failed to list commits for validation: " + err.Error())
 	}

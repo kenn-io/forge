@@ -804,6 +804,44 @@ func TestSetupReusesExistingWorkspaceWorktree(t *testing.T) {
 	assert.Contains(argvs[0], ws.WorktreePath)
 }
 
+// A retried setup must recognize the uniquified synthetic branch as its own,
+// otherwise the workspace whose first attempt hit a name collision can never be
+// set up again.
+func TestSetupReusesExistingUniquifiedSyntheticPRWorktree(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	wtDir := t.TempDir()
+
+	localRepo, _, platformHost := setupHTTPWorktreeBaseForWorkspaceGitTest(
+		t, "feature/thing",
+	)
+	repoID := seedRepo(t, d, platformHost, "acme", "widget")
+	seedMR(t, d, repoID, 42, "feature/thing")
+
+	tmuxScript, _ := writeRecorderScript(t)
+
+	mgr := NewManager(d, wtDir)
+	mgr.SetTmuxCommand([]string{tmuxScript})
+	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
+
+	ws, err := mgr.Create(t.Context(), "github", platformHost, "acme", "widget", 42)
+	require.NoError(err)
+	existingBranch := syntheticPRWorktreeBranch(42) + "-2"
+	runWorkspaceTestGit(
+		t, localRepo,
+		"worktree", "add", ws.WorktreePath, "-b", existingBranch, "HEAD",
+	)
+
+	require.NoError(mgr.Setup(t.Context(), ws))
+
+	got, err := d.GetWorkspace(t.Context(), ws.ID)
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Equal("ready", got.Status)
+	assert.Equal(existingBranch, got.WorkspaceBranch)
+}
+
 func TestSetupDoesNotReuseUnconfiguredMatchingOriginWorktree(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -1509,7 +1547,7 @@ func TestSetupUsesManagedCloneForForkPRWithConfiguredWorktreeBasePath(t *testing
 		t, branch, prNumber,
 	)
 	clones := gitclone.New(cloneBaseDir, nil)
-	cloneDir, err := clones.ClonePath(host, owner, name)
+	cloneDir, err := clones.ClonePath("github", host, owner, name)
 	require.NoError(err)
 	require.NoError(os.MkdirAll(filepath.Dir(cloneDir), 0o755))
 	runWorkspaceTestGit(t, cloneBaseDir, "clone", "--bare", remote, cloneDir)
@@ -1928,7 +1966,7 @@ func TestCleanupFallsBackToManagedCloneWhenConfiguredBaseInvalid(t *testing.T) {
 	const branch = "middleman/pr-99"
 	cloneBaseDir := t.TempDir()
 	clones := gitclone.New(cloneBaseDir, nil)
-	cloneDir, err := clones.ClonePath("github.com", "acme", "widget")
+	cloneDir, err := clones.ClonePath("github", "github.com", "acme", "widget")
 	require.NoError(err)
 	require.NoError(os.MkdirAll(filepath.Dir(cloneDir), 0o755))
 	runWorkspaceTestGit(
@@ -2277,6 +2315,152 @@ func TestAddWorktreeFallbackBranchTracksPRHeadBranch(t *testing.T) {
 	require.True(ok, "divergence probe must resolve @{upstream}")
 	assert.Equal(0, div.Ahead)
 	assert.Equal(0, div.Behind)
+}
+
+// divergentCommitForWorkspaceGitTest creates a commit that is not the PR head so
+// a branch pointing at it makes addPreferredWorktree reject the preferred name.
+func divergentCommitForWorkspaceGitTest(
+	t *testing.T, cloneDir, parentSHA string,
+) string {
+	t.Helper()
+	treeOut, err := gitOutput(t.Context(), cloneDir, "rev-parse", "main^{tree}")
+	require.NoError(t, err)
+	sha, err := gitOutput(
+		t.Context(), cloneDir,
+		"commit-tree", strings.TrimSpace(treeOut),
+		"-p", parentSHA, "-m", "divergent local branch",
+	)
+	require.NoError(t, err)
+	require.NotEqual(t, parentSHA, strings.TrimSpace(sha))
+	return strings.TrimSpace(sha)
+}
+
+// A stale local branch with the PR head name plus a leftover synthetic branch
+// used to leave workspace creation with no usable branch name at all, and the
+// maintainer with a permanent error and nothing to retry into.
+func TestAddWorktreeUniquifiesFallbackBranchWhenSyntheticNameTaken(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	cloneDir := setupBareCloneForWorkspaceGitTest(t)
+	runWorkspaceTestGit(
+		t, cloneDir, "config", "remote.origin.fetch",
+		"+refs/heads/*:refs/remotes/origin/*",
+	)
+	const prNumber = 746
+	const headBranch = "fix/credential-rate-accounting"
+	headSHA := configureSameRepoPRRefs(t, cloneDir, headBranch, prNumber)
+
+	divergentSHA := divergentCommitForWorkspaceGitTest(t, cloneDir, headSHA)
+	runWorkspaceTestGit(
+		t, cloneDir, "update-ref", "refs/heads/"+headBranch, divergentSHA,
+	)
+	takenBranch := syntheticPRWorktreeBranch(prNumber)
+	runWorkspaceTestGit(
+		t, cloneDir, "update-ref", "refs/heads/"+takenBranch, divergentSHA,
+	)
+
+	ws := &Workspace{
+		ID:              "ws-uniquified-fallback",
+		Platform:        "github",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		ItemType:        db.WorkspaceItemTypePullRequest,
+		ItemNumber:      prNumber,
+		GitHeadRef:      headBranch,
+		WorkspaceBranch: workspaceBranchUnknown,
+		WorktreePath:    filepath.Join(t.TempDir(), "worktree"),
+		TmuxSession:     "ws-uniquified-fallback",
+		Status:          "creating",
+	}
+	mgr := NewManager(openTestDB(t), t.TempDir())
+
+	branch, err := mgr.addWorktreeLocked(t.Context(), cloneDir, false, ws)
+
+	require.NoError(err)
+	assert.Equal(takenBranch+"-2", branch)
+	gotSHA, err := gitHeadSHA(t.Context(), ws.WorktreePath)
+	require.NoError(err)
+	assert.Equal(headSHA, gotSHA)
+	// Neither pre-existing branch may be moved or deleted to make room.
+	for _, existing := range []string{headBranch, takenBranch} {
+		sha, ok, err := gitRefSHA(t.Context(), cloneDir, "refs/heads/"+existing)
+		require.NoError(err)
+		require.True(ok, "pre-existing branch %q must survive", existing)
+		assert.Equal(divergentSHA, sha)
+	}
+	remote, err := gitConfigValue(
+		t.Context(), ws.WorktreePath, "branch."+branch+".remote",
+	)
+	require.NoError(err, "uniquified fallback branch must track the PR head branch")
+	assert.Equal("origin", remote)
+	mergeRef, err := gitConfigValue(
+		t.Context(), ws.WorktreePath, "branch."+branch+".merge",
+	)
+	require.NoError(err)
+	assert.Equal("refs/heads/"+headBranch, mergeRef)
+}
+
+// The guarantee behind the uniquified fallback: no branch-name state in the
+// repository can stop a workspace from being created. With every derived name
+// taken, the worktree is checked out detached rather than failing.
+func TestAddWorktreeFallsBackToDetachedWorktreeWhenBranchNamesExhausted(
+	t *testing.T,
+) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	cloneDir := setupBareCloneForWorkspaceGitTest(t)
+	const prNumber = 747
+	const headBranch = "fix/exhausted-branch-names"
+	headSHA := configureSameRepoPRRefs(t, cloneDir, headBranch, prNumber)
+	divergentSHA := divergentCommitForWorkspaceGitTest(t, cloneDir, headSHA)
+	runWorkspaceTestGit(
+		t, cloneDir, "update-ref", "refs/heads/"+headBranch, divergentSHA,
+	)
+
+	base := syntheticPRWorktreeBranch(prNumber)
+	var refUpdates strings.Builder
+	fmt.Fprintf(&refUpdates, "create refs/heads/%s %s\n", base, divergentSHA)
+	for i := 2; i < 1000; i++ {
+		fmt.Fprintf(
+			&refUpdates, "create refs/heads/%s-%d %s\n", base, i, divergentSHA,
+		)
+	}
+	_, stderr, err := gitcmd.New().Run(
+		t.Context(), cloneDir,
+		strings.NewReader(refUpdates.String()), "update-ref", "--stdin",
+	)
+	require.NoError(err, string(stderr))
+
+	ws := &Workspace{
+		ID:              "ws-detached-last-resort",
+		Platform:        "github",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		ItemType:        db.WorkspaceItemTypePullRequest,
+		ItemNumber:      prNumber,
+		GitHeadRef:      headBranch,
+		WorkspaceBranch: workspaceBranchUnknown,
+		WorktreePath:    filepath.Join(t.TempDir(), "worktree"),
+		TmuxSession:     "ws-detached-last-resort",
+		Status:          "creating",
+	}
+	mgr := NewManager(openTestDB(t), t.TempDir())
+
+	branch, err := mgr.addWorktreeLocked(t.Context(), cloneDir, false, ws)
+
+	require.NoError(err)
+	// No managed branch: cleanup and delete must not remove anyone else's.
+	assert.Empty(branch)
+	gotSHA, err := gitHeadSHA(t.Context(), ws.WorktreePath)
+	require.NoError(err)
+	assert.Equal(headSHA, gotSHA)
+	current, err := worktreeCurrentBranch(t.Context(), ws.WorktreePath)
+	require.NoError(err)
+	assert.Empty(current, "last-resort worktree must be detached")
 }
 
 func TestAddWorktreeUnknownHeadRepoDoesNotTrackMatchingOriginBranch(t *testing.T) {
@@ -4572,7 +4756,7 @@ func TestIssueRetryCleansLeakedUnknownBranchAndUsesIssueBranch(t *testing.T) {
 	mgr := NewManager(openTestDB(t), t.TempDir())
 	mgr.SetClones(gitclone.New(baseDir, nil))
 
-	cloneDir, err := mgr.clones.ClonePath(host, owner, name)
+	cloneDir, err := mgr.clones.ClonePath("github", host, owner, name)
 	require.NoError(err)
 	seedWorkspaceBareCloneAt(t, cloneDir)
 	configureOriginHeadForIssueWorkspace(t, cloneDir)

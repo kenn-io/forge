@@ -278,6 +278,7 @@ export const mockSettings = {
   },
   pull_requests: {
     allow_mid_stack_merges: false,
+    prefer_github_native_stacks: false,
   },
   modes: {
     kata: true,

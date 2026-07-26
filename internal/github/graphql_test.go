@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -199,7 +201,7 @@ func TestAdaptCheckRunURLSanitization(t *testing.T) {
 func TestGraphqlRateTransport(t *testing.T) {
 	assert := assert.New(t)
 	d := openTestDB(t)
-	rt := NewRateTracker(d, "github.com", "graphql")
+	rt := NewRateTracker(d, "github.com", "host", "graphql")
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-RateLimit-Remaining", "4999")
@@ -230,7 +232,7 @@ func TestGraphqlRateTransport(t *testing.T) {
 
 func TestGraphQLFetcherRateTracker(t *testing.T) {
 	d := openTestDB(t)
-	rt := NewRateTracker(d, "github.com", "graphql")
+	rt := NewRateTracker(d, "github.com", "host", "graphql")
 	f := NewGraphQLFetcher(testTokenSource("fake-token"), "github.com", rt, nil)
 	require.Same(t, rt, f.RateTracker())
 }
@@ -275,12 +277,98 @@ func TestConvertGQLPRCompleteness(t *testing.T) {
 	assert.False(bulk.TimelineComplete)
 }
 
+func TestConvertGQLPRNativeStackHint(t *testing.T) {
+	gql := gqlPRWithNativeStacks{
+		gqlPR: gqlPR{Number: 42},
+		Stack: &gqlNativeStack{
+			Number: 7, Size: 3, BaseRefName: "main",
+		},
+		StackEntry: &struct{ Position int }{Position: 2},
+	}
+
+	bulk := convertGQLPRWithNativeStacks(&gql)
+	require.NotNil(t, bulk.NativeStack)
+	assert.Equal(t, NativeStackHint{
+		Number: 7, Size: 3, Position: 2, BaseRef: "main",
+	}, *bulk.NativeStack)
+}
+
+func TestGraphQLFetcherOmitsNativeStackFieldsWhenDisabled(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	var requestBody []byte
+	var requestErr error
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestBody, requestErr = io.ReadAll(r.Body)
+		if requestErr != nil {
+			http.Error(w, requestErr.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"data":{"repository":{"pullRequests":{"totalCount":0,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}`)
+	}))
+	defer srv.Close()
+
+	fetcher := NewGraphQLFetcherWithClient(
+		githubv4.NewEnterpriseClient(srv.URL, srv.Client()), nil,
+	)
+	_, err := fetcher.FetchRepoPRs(t.Context(), "owner", "repo", false)
+	require.NoError(err)
+	require.NoError(requestErr)
+	assert.NotContains(string(requestBody), "stackEntry")
+	assert.NotContains(string(requestBody), "stack{")
+}
+
+func TestGraphQLFetcherDropsNativeStackFieldsRejectedBySchema(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	var mu sync.Mutex
+	var bodies []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		mu.Lock()
+		bodies = append(bodies, string(body))
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		if strings.Contains(string(body), "stackEntry") {
+			_, _ = io.WriteString(w, `{"errors":[{"message":"Field 'stackEntry' doesn't exist on type 'PullRequest'"}]}`)
+			return
+		}
+		_, _ = io.WriteString(w, `{"data":{"repository":{"pullRequests":{"totalCount":0,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}`)
+	}))
+	defer srv.Close()
+
+	fetcher := NewGraphQLFetcherWithClient(
+		githubv4.NewEnterpriseClient(srv.URL, srv.Client()), nil,
+	)
+
+	first, err := fetcher.FetchRepoPRs(t.Context(), "owner", "repo", true)
+	require.NoError(err, "a host without the preview schema must still bulk fetch")
+	require.NotNil(first)
+	second, err := fetcher.FetchRepoPRs(t.Context(), "owner", "repo", true)
+	require.NoError(err)
+	require.NotNil(second)
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.Len(bodies, 3)
+	assert.Contains(bodies[0], "stackEntry")
+	assert.NotContains(bodies[1], "stackEntry")
+	assert.NotContains(bodies[2], "stackEntry",
+		"the rejected shape must not be resent on later cycles")
+}
+
 func TestGraphQLFetcherFetchRepoPRsIncludesTimelineEvents(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	now := time.Date(2024, 6, 3, 15, 0, 0, 0, time.UTC).Format(time.RFC3339)
 
 	var sawTimelineItems bool
+	var sawNativeStackFields bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
@@ -288,6 +376,7 @@ func TestGraphQLFetcherFetchRepoPRsIncludesTimelineEvents(t *testing.T) {
 			return
 		}
 		sawTimelineItems = bytes.Contains(body, []byte("timelineItems"))
+		sawNativeStackFields = bytes.Contains(body, []byte("stackEntry"))
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -312,6 +401,8 @@ func TestGraphQLFetcherFetchRepoPRsIncludesTimelineEvents(t *testing.T) {
 			"baseRefName":"main",
 			"headRefOid":"abc123",
 			"baseRefOid":"def456",
+			"stack":{"id":"STACK_7","number":7,"size":2,"baseRefName":"main"},
+			"stackEntry":{"position":1},
 			"headRepository":{"url":"https://github.com/owner/repo"},
 			"labels":{"nodes":[]},
 			"comments":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}},
@@ -369,12 +460,15 @@ func TestGraphQLFetcherFetchRepoPRsIncludesTimelineEvents(t *testing.T) {
 		githubv4.NewEnterpriseClient(srv.URL, srv.Client()), nil,
 	)
 
-	result, err := fetcher.FetchRepoPRs(t.Context(), "owner", "repo")
+	result, err := fetcher.FetchRepoPRs(t.Context(), "owner", "repo", true)
 	require.NoError(err)
 	require.NotNil(result)
 	require.Len(result.PullRequests, 1)
 	require.True(sawTimelineItems)
+	require.True(sawNativeStackFields)
 	require.Len(result.PullRequests[0].TimelineEvents, 7)
+	require.NotNil(result.PullRequests[0].NativeStack)
+	assert.Equal(7, result.PullRequests[0].NativeStack.Number)
 
 	event := result.PullRequests[0].TimelineEvents[0]
 	assert.Equal("force_push", event.EventType)
@@ -684,7 +778,7 @@ func TestGraphQLFetcherFetchRepoPRsLogsFetchProgressForPaginatedPullRequestSet(t
 		githubv4.NewEnterpriseClient(srv.URL, srv.Client()), nil,
 	)
 
-	result, err := fetcher.FetchRepoPRs(t.Context(), "conda-forge", "staged-recipes")
+	result, err := fetcher.FetchRepoPRs(t.Context(), "conda-forge", "staged-recipes", false)
 	require.NoError(err)
 	require.NotNil(result)
 	require.Len(result.PullRequests, 51)

@@ -2,6 +2,7 @@ package stacks
 
 import (
 	"context"
+	"log/slog"
 	"net/url"
 	"slices"
 	"strings"
@@ -225,6 +226,17 @@ func commonPrefix(a, b string) string {
 
 // RunDetection detects stacks for a single repo and persists results.
 func RunDetection(ctx context.Context, database *db.DB, repoID int64) error {
+	return RunDetectionWithNativeStacks(ctx, database, repoID, nil)
+}
+
+// RunDetectionWithNativeStacks projects confirmed GitHub-native stacks first,
+// then runs branch inference across only the merge requests left unclaimed.
+func RunDetectionWithNativeStacks(
+	ctx context.Context,
+	database *db.DB,
+	repoID int64,
+	confirmedNativeNumbers []int,
+) error {
 	repo, err := database.GetRepoByID(ctx, repoID)
 	if err != nil {
 		return err
@@ -238,34 +250,135 @@ func RunDetection(ctx context.Context, database *db.DB, repoID int64) error {
 		return err
 	}
 
-	chains := DetectChains(prs, repo.CloneURL)
+	activeIDs := make([]int64, 0)
+	claimed := make(map[int64]bool)
+	if len(confirmedNativeNumbers) > 0 {
+		confirmed := make(map[int]bool, len(confirmedNativeNumbers))
+		for _, number := range confirmedNativeNumbers {
+			confirmed[number] = true
+		}
+		nativeStacks, err := database.ListGitHubNativeStacks(ctx, repoID)
+		if err != nil {
+			return err
+		}
+		// Native membership is authoritative and can include a closed,
+		// unmerged pull request. Resolving members against the
+		// branch-inference row set would drop that member and discard the
+		// whole confirmed stack.
+		memberRows, err := database.ListPRsForNativeStackMembers(ctx, repoID)
+		if err != nil {
+			return err
+		}
+		prsByNumber := make(map[int]db.MergeRequest, len(memberRows))
+		for _, pr := range memberRows {
+			prsByNumber[pr.Number] = pr
+		}
+		// A pull request can belong to only one persisted stack. Persisting an
+		// overlap would evict the shared member from whichever stack was
+		// written first, silently shortening it and hiding a preceding merge
+		// blocker, and projecting only one side does the same to the side that
+		// loses. Overlap therefore makes the whole native projection ambiguous
+		// and branch inference owns the repository for this pass.
+		//
+		// This scan runs over declared membership before rows are resolved: a
+		// member missing from the database must not stop the search and let a
+		// later duplicate through.
+		usableStacks := make([]db.GitHubNativeStack, 0, len(nativeStacks))
+		claimedBy := make(map[int]int, len(memberRows))
+		overlapping := false
+		for _, nativeStack := range nativeStacks {
+			if !confirmed[nativeStack.Number] || !nativeStack.IsOpen ||
+				len(nativeStack.Members) != nativeStack.Size || len(nativeStack.Members) < 2 {
+				continue
+			}
+			usableStacks = append(usableStacks, nativeStack)
+			for _, member := range nativeStack.Members {
+				other, duplicate := claimedBy[member.PullRequestNumber]
+				if duplicate {
+					slog.Warn("native stacks overlap; falling back to branch inference",
+						"repo_id", repoID, "stack_number", nativeStack.Number,
+						"other_stack_number", other,
+						"pull_request", member.PullRequestNumber)
+					overlapping = true
+					continue
+				}
+				claimedBy[member.PullRequestNumber] = nativeStack.Number
+			}
+		}
 
-	var activeIDs []int64
+		chains := make([][]db.MergeRequest, 0, len(usableStacks))
+		for _, nativeStack := range usableStacks {
+			if overlapping {
+				break
+			}
+			chain := make([]db.MergeRequest, 0, len(nativeStack.Members))
+			usable := true
+			for _, member := range nativeStack.Members {
+				pr, ok := prsByNumber[member.PullRequestNumber]
+				if !ok {
+					usable = false
+					break
+				}
+				chain = append(chain, pr)
+			}
+			if !usable || !hasOpenMember(chain) {
+				continue
+			}
+			chains = append(chains, chain)
+		}
+		if !overlapping {
+			for _, chain := range chains {
+				stackID, err := persistStackChain(ctx, database, repoID, chain)
+				if err != nil {
+					return err
+				}
+				activeIDs = append(activeIDs, stackID)
+				for _, pr := range chain {
+					claimed[pr.ID] = true
+				}
+			}
+		}
+	}
+
+	unclaimed := slices.DeleteFunc(slices.Clone(prs), func(pr db.MergeRequest) bool {
+		return claimed[pr.ID]
+	})
+	chains := DetectChains(unclaimed, repo.CloneURL)
 	for _, chain := range chains {
 		// Skip fully-merged chains — no open PRs means the stack is done.
 		if !hasOpenMember(chain) {
 			continue
 		}
-		name := DeriveStackName(chain)
-		baseNumber := chain[0].Number
-		stackID, err := database.UpsertStack(ctx, repoID, baseNumber, name)
+		stackID, err := persistStackChain(ctx, database, repoID, chain)
 		if err != nil {
 			return err
 		}
 		activeIDs = append(activeIDs, stackID)
-
-		members := make([]db.StackMember, len(chain))
-		for i, pr := range chain {
-			members[i] = db.StackMember{
-				StackID:        stackID,
-				MergeRequestID: pr.ID,
-				Position:       i + 1,
-			}
-		}
-		if err := database.ReplaceStackMembers(ctx, stackID, members); err != nil {
-			return err
-		}
 	}
 
 	return database.DeleteStaleStacks(ctx, repoID, activeIDs)
+}
+
+func persistStackChain(
+	ctx context.Context,
+	database *db.DB,
+	repoID int64,
+	chain []db.MergeRequest,
+) (int64, error) {
+	stackID, err := database.UpsertStack(
+		ctx, repoID, chain[0].Number, DeriveStackName(chain),
+	)
+	if err != nil {
+		return 0, err
+	}
+	members := make([]db.StackMember, len(chain))
+	for i, pr := range chain {
+		members[i] = db.StackMember{
+			StackID: stackID, MergeRequestID: pr.ID, Position: i + 1,
+		}
+	}
+	if err := database.ReplaceStackMembers(ctx, stackID, members); err != nil {
+		return 0, err
+	}
+	return stackID, nil
 }

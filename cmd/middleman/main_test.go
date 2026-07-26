@@ -369,122 +369,6 @@ func TestResolveStartupReposUsesProviderRegistryForGitLab(t *testing.T) {
 	}}, repos)
 }
 
-func TestValidateProviderHostKeysRejectsMixedProvidersOnSameHostWithDifferentTokens(t *testing.T) {
-	assert := assert.New(t)
-	err := validateProviderHostKeys(map[string]string{
-		providerHostKey("github", "code.example.com"): "github-token",
-		providerHostKey("gitlab", "code.example.com"): "gitlab-token",
-	})
-
-	require.Error(t, err)
-	assert.Contains(err.Error(), "code.example.com")
-}
-
-func TestValidateProviderHostKeysAllowsMixedProvidersOnSameHostWithSameToken(t *testing.T) {
-	err := validateProviderHostKeys(map[string]string{
-		providerHostKey("github", "code.example.com"): "shared-token",
-		providerHostKey("gitlab", "code.example.com"): "shared-token",
-	})
-
-	require.NoError(t, err)
-}
-
-func TestValidateProviderHostKeysRejectsMixedProviderSourcesOnSameHost(t *testing.T) {
-	assert := assert.New(t)
-	host := "code.example.com"
-	err := validateProviderHostKeys(map[string]tokenauth.Source{
-		providerHostKey("github", host): tokenauth.NewManagedSource(
-			tokenauth.Descriptor{
-				Key: tokenauth.Key{Platform: "github", Host: host},
-				Candidates: []tokenauth.Candidate{{
-					Kind:    tokenauth.SourceKindEnv,
-					EnvName: "GITHUB_TOKEN",
-				}},
-			},
-			tokenauth.Options{},
-		),
-		providerHostKey("gitlab", host): tokenauth.NewManagedSource(
-			tokenauth.Descriptor{
-				Key: tokenauth.Key{Platform: "gitlab", Host: host},
-				Candidates: []tokenauth.Candidate{{
-					Kind:    tokenauth.SourceKindEnv,
-					EnvName: "GITLAB_TOKEN",
-				}},
-			},
-			tokenauth.Options{},
-		),
-	})
-
-	require.Error(t, err)
-	assert.Contains(err.Error(), host)
-}
-
-func TestValidateProviderHostKeysAllowsMixedProviderSourcesOnSameHostWithSameDescriptor(t *testing.T) {
-	host := "code.example.com"
-	githubSource := tokenauth.NewManagedSource(
-		tokenauth.Descriptor{
-			Key: tokenauth.Key{Platform: "github", Host: host},
-			Candidates: []tokenauth.Candidate{{
-				Kind:    tokenauth.SourceKindEnv,
-				EnvName: "SHARED_TOKEN",
-			}},
-		},
-		tokenauth.Options{},
-	)
-	gitlabSource := tokenauth.NewManagedSource(
-		tokenauth.Descriptor{
-			Key: tokenauth.Key{Platform: "gitlab", Host: host},
-			Candidates: []tokenauth.Candidate{{
-				Kind:    tokenauth.SourceKindEnv,
-				EnvName: "SHARED_TOKEN",
-			}},
-		},
-		tokenauth.Options{},
-	)
-
-	err := validateProviderHostKeys(map[string]tokenauth.Source{
-		providerHostKey("github", host): githubSource,
-		providerHostKey("gitlab", host): gitlabSource,
-	})
-
-	require.NoError(t, err)
-}
-
-func TestValidateProviderHostKeysAllowsEquivalentSourceChainsOnSameHost(t *testing.T) {
-	host := "code.example.com"
-	// A repo-level override that repeats the platform fallback yields the
-	// chain env:SHARED -> env:SHARED, which resolves identically to a plain
-	// env:SHARED. The canonical comparison must treat them as the same clone
-	// token instead of reporting a spurious conflict.
-	repeated := tokenauth.NewManagedSource(
-		tokenauth.Descriptor{
-			Key: tokenauth.Key{Platform: "github", Host: host},
-			Candidates: []tokenauth.Candidate{
-				{Kind: tokenauth.SourceKindEnv, EnvName: "SHARED_TOKEN"},
-				{Kind: tokenauth.SourceKindEnv, EnvName: "SHARED_TOKEN"},
-			},
-		},
-		tokenauth.Options{},
-	)
-	single := tokenauth.NewManagedSource(
-		tokenauth.Descriptor{
-			Key: tokenauth.Key{Platform: "gitlab", Host: host},
-			Candidates: []tokenauth.Candidate{{
-				Kind:    tokenauth.SourceKindEnv,
-				EnvName: "SHARED_TOKEN",
-			}},
-		},
-		tokenauth.Options{},
-	)
-
-	err := validateProviderHostKeys(map[string]tokenauth.Source{
-		providerHostKey("github", host): repeated,
-		providerHostKey("gitlab", host): single,
-	})
-
-	require.NoError(t, err)
-}
-
 func TestDefaultProviderFactoriesRegisterForgejoAndGitea(t *testing.T) {
 	factories := defaultProviderFactories()
 
@@ -523,7 +407,7 @@ func TestBuildProviderStartupKeepsForgeProviderHostsDistinct(t *testing.T) {
 
 	set := tokenauth.NewSourceSet(tokenauth.Options{})
 	startup, err := buildProviderStartup(
-		database,
+		t.Context(), database,
 		&config.Config{SyncBudgetPerHour: 200},
 		set,
 		map[string]tokenauth.Source{
@@ -534,7 +418,7 @@ func TestBuildProviderStartupKeepsForgeProviderHostsDistinct(t *testing.T) {
 				t, string(platform.KindGitea), "gitea.example.com", "GITEA_TEST_TOKEN", "gitea-token",
 			),
 		},
-		factories,
+		factories, nil,
 	)
 	require.NoError(err)
 
@@ -600,7 +484,7 @@ func TestBuildProviderStartupUsesRegisteredFactoryForFutureProvider(t *testing.T
 		t, "codeberg", "codeberg.org", "CODEBERG_TEST_TOKEN", "codeberg-token",
 	)
 	startup, err := buildProviderStartup(
-		database,
+		t.Context(), database,
 		&config.Config{},
 		set,
 		map[string]tokenauth.Source{
@@ -620,7 +504,7 @@ func TestBuildProviderStartupUsesRegisteredFactoryForFutureProvider(t *testing.T
 					},
 				}, nil
 			},
-		},
+		}, nil,
 	)
 	require.NoError(err)
 	assert.True(called)
@@ -685,7 +569,7 @@ func TestBuildProviderStartupSharedHostCloneAuthUsesHostLevelSource(t *testing.T
 			}}, nil
 		},
 	}
-	startup, err := buildProviderStartup(database, cfg, set, providerSources, factories)
+	startup, err := buildProviderStartup(t.Context(), database, cfg, set, providerSources, factories, nil)
 	require.NoError(err)
 
 	// Clone auth must be the host-level source under tokenauth.CloneKey,

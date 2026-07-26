@@ -95,6 +95,15 @@ type PlatformConfig struct {
 	TokenFile string `toml:"token_file,omitempty" json:"token_file,omitempty"`
 }
 
+// GitHubOwnerTokenConfig maps one exact GitHub resource owner to a PAT
+// source. The host defaults to github.com during validation.
+type GitHubOwnerTokenConfig struct {
+	Host      string `toml:"host,omitempty" json:"host,omitempty"`
+	Owner     string `toml:"owner" json:"owner"`
+	TokenEnv  string `toml:"token_env,omitempty" json:"token_env,omitempty"`
+	TokenFile string `toml:"token_file,omitempty" json:"token_file,omitempty"`
+}
+
 // GitHubAppConfig registers a GitHub App created by the
 // middleman-github-app CLI. Installation tokens minted from the app's
 // private key carry their own rate-limit budget, taking sync traffic
@@ -102,16 +111,11 @@ type PlatformConfig struct {
 //
 // Scope decision: one app per GitHub host with one recorded
 // installation, and one active credential chain per host. An
-// installation token only reaches repos the installation covers, so
-// every same-host repo must be covered by that installation — Validate
-// enforces this so uncovered repos fail loudly at load instead of
-// 404ing during sync. There is no per-repo escape hatch: repo-level
-// token_env/token_file overrides are terminal credentials that cannot
-// be mixed with an app chain on the same host (the same-host conflict
-// check rejects that), so the remedies are installing the app on the
-// owning account, extending the installation's repository selection,
-// or removing the [[github_apps]] entry. An entry without an
-// installation_id is dormant and the PAT chain stays in effect.
+// installation token only reaches repos the installation covers. "All
+// repositories" installations build owner routes; "Only select repositories"
+// installations build exact routes for the recorded selected set, while
+// uncovered repos fall through to the owner or host PAT chain. An entry without
+// an installation_id is dormant and the PAT chain stays in effect.
 type GitHubAppConfig struct {
 	Host                string `toml:"host" json:"host"`
 	AppID               int64  `toml:"app_id" json:"app_id"`
@@ -127,10 +131,11 @@ type GitHubAppConfig struct {
 	RepositorySelection string `toml:"repository_selection,omitempty" json:"repository_selection,omitempty"`
 	// SelectedRepos lists the full names (owner/name) an "Only select
 	// repositories" installation could reach when the CLI recorded it.
-	// This is a snapshot: middleman does not detect selection changes
-	// made on GitHub afterwards — an out-of-band narrowing surfaces as
-	// sync 404s until "middleman-github-app install" is re-run to
-	// refresh the recorded list.
+	// This is a startup routing snapshot: middleman does not detect selection
+	// changes made on GitHub afterwards. Narrowed access can surface as sync
+	// 404s, while newly granted repositories keep using PAT fallback. Re-run
+	// "middleman-github-app install" and restart middleman to load either
+	// change into the bounded route table.
 	SelectedRepos []string `toml:"selected_repos,omitempty" json:"selected_repos,omitempty"`
 }
 
@@ -255,6 +260,14 @@ func (r *Repo) normalize(defaultGitHubHost string) error {
 
 func (r Repo) ownerHasGlob() bool {
 	return strings.ContainsAny(r.Owner, "*?[")
+}
+
+// nameHasGlob reports whether the entry names a pattern rather than one
+// repository. A pattern's members are discovered at runtime, so its own
+// credential route is a discovery aid rather than the credential that serves
+// any particular repository.
+func (r Repo) nameHasGlob() bool {
+	return strings.ContainsAny(r.Name, "*?[")
 }
 
 type parsedRepoRef struct {
@@ -555,6 +568,9 @@ type PullRequests struct {
 	// AllowMidStackMerges permits merging a stack member while an earlier
 	// member remains unmerged. The default is deliberately false.
 	AllowMidStackMerges bool `toml:"allow_mid_stack_merges,omitempty" json:"allow_mid_stack_merges"`
+	// PreferGitHubNativeStacks opts into GitHub's read-only stack preview.
+	// Branch-based detection remains the fallback when native data is unusable.
+	PreferGitHubNativeStacks bool `toml:"prefer_github_native_stacks,omitempty" json:"prefer_github_native_stacks"`
 }
 
 // Issues configures issue-list presentation preferences.
@@ -764,6 +780,7 @@ type Config struct {
 	Repos             []Repo                   `toml:"repos"`
 	KataProjects      []KataProjectRepoMapping `toml:"kata_projects"`
 	Platforms         []PlatformConfig         `toml:"platforms"`
+	GitHubOwnerTokens []GitHubOwnerTokenConfig `toml:"github_owner_tokens"`
 	GitHubApps        []GitHubAppConfig        `toml:"github_apps"`
 	Activity          Activity                 `toml:"activity"`
 	PullRequests      PullRequests             `toml:"pull_requests"`
@@ -1074,11 +1091,10 @@ func Load(path string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	return cfg, cfg.validate(false)
+	return cfg, cfg.validate()
 }
 
-// load reads and normalizes path without running validation; Load and
-// LoadForGitHubAppRepair pick the validation strictness.
+// load reads and normalizes path without running validation.
 func load(path string) (*Config, error) {
 	cfg := &Config{
 		SyncInterval:            defaultSyncInterval,
@@ -1169,17 +1185,14 @@ func load(path string) (*Config, error) {
 	return cfg, nil
 }
 
-// LoadForGitHubAppRepair loads path with GitHub App installation
-// coverage validation skipped. The middleman-github-app CLI uses it so
-// a config that is invalid only because the recorded installation no
-// longer covers the configured repos can still be loaded to repair
-// exactly that; every other validation rule still applies.
+// LoadForGitHubAppRepair loads path for GitHub App management commands while
+// retaining the ordinary structural validation rules.
 func LoadForGitHubAppRepair(path string) (*Config, error) {
 	cfg, err := load(path)
 	if err != nil {
 		return nil, err
 	}
-	return cfg, cfg.validate(true)
+	return cfg, cfg.validate()
 }
 
 func rejectDeprecatedConfigKeys(meta toml.MetaData) error {
@@ -1192,12 +1205,11 @@ func rejectDeprecatedConfigKeys(meta toml.MetaData) error {
 }
 
 func (c *Config) Validate() error {
-	return c.validate(false)
+	return c.validate()
 }
 
-// validate runs every config rule; skipAppCoverage relaxes only the
-// GitHub App installation coverage check for the CLI's repair path.
-func (c *Config) validate(skipAppCoverage bool) error {
+// validate runs every config rule.
+func (c *Config) validate() error {
 	var err error
 	if err := c.Fleet.Validate(); err != nil {
 		return err
@@ -1231,6 +1243,9 @@ func (c *Config) validate(skipAppCoverage bool) error {
 	if err := c.validatePlatforms(); err != nil {
 		return err
 	}
+	if err := c.validateGitHubOwnerTokens(); err != nil {
+		return err
+	}
 	if err := c.validateGitHubApps(); err != nil {
 		return err
 	}
@@ -1250,6 +1265,13 @@ func (c *Config) validate(skipAppCoverage bool) error {
 		}
 		c.Repos[i].TokenEnv = strings.TrimSpace(c.Repos[i].TokenEnv)
 		c.Repos[i].TokenFile = strings.TrimSpace(c.Repos[i].TokenFile)
+		if c.Repos[i].PlatformOrDefault() == defaultPlatform &&
+			c.Repos[i].HasNameGlob() &&
+			(c.Repos[i].TokenEnv != "" || c.Repos[i].TokenFile != "") {
+			return fmt.Errorf(
+				"config: repos[%d]: GitHub repo token override requires an exact repository name", i,
+			)
+		}
 	}
 
 	// Reject duplicate repository identities.
@@ -1268,28 +1290,8 @@ func (c *Config) validate(skipAppCoverage bool) error {
 		return err
 	}
 
-	if !skipAppCoverage {
-		if err := c.validateGitHubAppCoverage(); err != nil {
-			return err
-		}
-	}
-
-	// Reject conflicting token source descriptors for the same host.
-	// Empty repo-level fields mean "use platform/default token sources".
-	hostToken := make(map[string]tokenauth.Descriptor, len(c.Repos))
-	for _, r := range c.Repos {
-		key := r.PlatformOrDefault() + "\x00" + r.PlatformHostOrDefault()
-		effective := c.ResolveRepoTokenSource(r)
-		if prev, ok := hostToken[key]; ok {
-			if !prev.EqualSource(effective) {
-				return fmt.Errorf(
-					"config: conflicting token source for %s host %q (conflicting token_env): %s vs %s",
-					r.PlatformOrDefault(), r.PlatformHostOrDefault(), prev.SafeString(), effective.SafeString(),
-				)
-			}
-		} else {
-			hostToken[key] = effective
-		}
+	if err := c.ValidateRepoTokenSourceConsistency(); err != nil {
+		return fmt.Errorf("config: %w", err)
 	}
 
 	if _, err := time.ParseDuration(c.SyncInterval); err != nil {
@@ -1651,6 +1653,46 @@ func (c *Config) validatePlatforms() error {
 	return nil
 }
 
+func (c *Config) validateGitHubOwnerTokens() error {
+	seen := make(map[string]struct{}, len(c.GitHubOwnerTokens))
+	for i := range c.GitHubOwnerTokens {
+		item := &c.GitHubOwnerTokens[i]
+		item.Owner = strings.TrimSpace(item.Owner)
+		item.TokenEnv = strings.TrimSpace(item.TokenEnv)
+		item.TokenFile = strings.TrimSpace(item.TokenFile)
+		if item.Owner == "" {
+			return fmt.Errorf(
+				"config: github_owner_tokens[%d]: owner is required", i,
+			)
+		}
+		if strings.Contains(item.Owner, "/") || strings.ContainsAny(item.Owner, "*?[") {
+			return fmt.Errorf(
+				"config: github_owner_tokens[%d]: owner must be one exact GitHub owner", i,
+			)
+		}
+		host, err := normalizePlatformHost(defaultPlatform, item.Host)
+		if err != nil {
+			return fmt.Errorf("config: github_owner_tokens[%d]: %w", i, err)
+		}
+		item.Host = host
+		if item.TokenFile == "" && item.TokenEnv == "" {
+			return fmt.Errorf(
+				"config: github_owner_tokens[%d]: token_file or token_env is required", i,
+			)
+		}
+		owner := strings.ToLower(item.Owner)
+		key := strings.ToLower(host) + "\x00" + owner
+		if _, ok := seen[key]; ok {
+			return fmt.Errorf(
+				"config: github_owner_tokens[%d]: duplicate github owner token for host %q and owner %q",
+				i, host, owner,
+			)
+		}
+		seen[key] = struct{}{}
+	}
+	return nil
+}
+
 func (c *Config) validateGitHubApps() error {
 	seenOwners := make(map[string]struct{}, len(c.GitHubApps))
 	seenInstallations := make(map[string]struct{}, len(c.GitHubApps))
@@ -1676,9 +1718,8 @@ func (c *Config) validateGitHubApps() error {
 				"config: github_apps[%d]: private_key_path is required", i,
 			)
 		}
-		// An installation without its account would activate the app
-		// token source while silently skipping installation coverage
-		// validation, so miscovered repos would only fail at sync time.
+		// An installation without its account cannot be scoped to repository
+		// owners safely.
 		if app.InstallationID != 0 && app.InstallationAccount == "" {
 			return fmt.Errorf(
 				"config: github_apps[%d]: installation_account is required when "+
@@ -1731,73 +1772,6 @@ func (c *Config) validateGitHubApps() error {
 		}
 	}
 	return nil
-}
-
-// validateGitHubAppCoverage rejects github repos that would resolve
-// to an app installation token without being reachable by it.
-// Installation tokens are scoped to the installed account, not the
-// host. Only repos owned by that account use the app candidate; other
-// owners on the same host fall through to the PAT/gh credential chain.
-// Runs after repo normalization so owners are canonical.
-func (c *Config) validateGitHubAppCoverage() error {
-	for _, app := range c.GitHubApps {
-		if app.InstallationID == 0 || app.InstallationAccount == "" {
-			continue
-		}
-		for i, r := range c.Repos {
-			if r.PlatformOrDefault() != defaultPlatform ||
-				r.PlatformHostOrDefault() != app.Host {
-				continue
-			}
-			if r.TokenEnv != "" || r.TokenFile != "" {
-				continue
-			}
-			if !strings.EqualFold(r.Owner, app.InstallationAccount) {
-				continue
-			}
-			if err := validateSelectedRepoCoverage(i, r, app); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-// validateSelectedRepoCoverage rejects a same-account repo that an
-// "Only select repositories" installation cannot reach. The reachable
-// set is recorded by middleman-github-app at install time; account
-// ownership alone is not enough because the installation token only
-// reaches the chosen repos and everything else 404s during sync.
-func validateSelectedRepoCoverage(i int, r Repo, app GitHubAppConfig) error {
-	if !strings.EqualFold(app.RepositorySelection, "selected") {
-		return nil
-	}
-	remedy := fmt.Sprintf(
-		"Add it to the installation's repository access on %s (or switch the "+
-			"installation to \"All repositories\") and re-run "+
-			"\"middleman-github-app install\" to refresh the recorded selection",
-		app.Host,
-	)
-	if r.HasNameGlob() {
-		return fmt.Errorf(
-			"config: repos[%d]: %s/%s is a glob pattern, but the github app for %s is "+
-				"installed with \"Only select repositories\": globs expand to an open-ended "+
-				"set only an \"All repositories\" install can satisfy. %s",
-			i, r.Owner, r.Name, app.Host, remedy,
-		)
-	}
-	full := strings.ToLower(r.Owner + "/" + r.Name)
-	for _, name := range app.SelectedRepos {
-		if strings.ToLower(name) == full {
-			return nil
-		}
-	}
-	return fmt.Errorf(
-		"config: repos[%d]: %s/%s is not in the \"Only select repositories\" "+
-			"installation recorded for the github app on %s, so its installation token "+
-			"would 404 during sync. %s",
-		i, r.Owner, r.Name, app.Host, remedy,
-	)
 }
 
 // GitHubAppsForHost returns the configured GitHub App installations for host.
@@ -2078,13 +2052,256 @@ func (c *Config) ResolveRepoToken(r Repo) string {
 	)
 }
 
+// ConfiguredCredentialAvailable reports whether any credential route this
+// config declares resolves to a credential right now. It walks the same plans
+// provider startup registers, so it sees standalone owner PAT and App
+// installation routes that no [[repos]] entry names — those routes still serve
+// owner discovery and repository import.
+//
+// A readable App private key counts, since it mints installation tokens on
+// demand. The `gh` CLI candidate is deliberately excluded: it shells out and is
+// host-scoped, so pollers resolve it once per host through TokenForPlatformHost
+// instead of once per route here.
+// selectedRepoUnderAccount splits one selected_repos entry and reports whether
+// it names a repository the installation account owns. App route generation and
+// coverage checks must agree on this predicate: an entry with a blank repository
+// name (for example "acme/") creates no route, so it must not count as coverage
+// either.
+func selectedRepoUnderAccount(
+	entry, installationAccount string,
+) (string, string, bool) {
+	owner, name, ok := strings.Cut(strings.TrimSpace(entry), "/")
+	if !ok || strings.TrimSpace(name) == "" ||
+		!strings.EqualFold(owner, installationAccount) {
+		return "", "", false
+	}
+	return owner, name, true
+}
+
+// globServedBySelectedApp reports whether repo is a name pattern whose
+// repositories a selected-repository App installation already covers. Such a
+// pattern gets an owner-scoped route because the App cannot cover the literal
+// pattern name, and requiring that route would fail startup for an App-only
+// configuration even though the App's own exact routes serve every repository
+// the pattern expands to. The route stays in the plan list so a PAT still
+// broadens discovery when one is configured; it simply must not be mandatory.
+func (c *Config) globServedBySelectedApp(repo Repo) bool {
+	if c == nil || !repo.nameHasGlob() {
+		return false
+	}
+	host := repo.PlatformHostOrDefault()
+	if repo.PlatformOrDefault() != defaultPlatform {
+		return false
+	}
+	for _, app := range c.GitHubAppsForHost(host) {
+		if app.AppID <= 0 || app.InstallationID <= 0 ||
+			app.PrivateKeyPath == "" ||
+			!strings.EqualFold(app.InstallationAccount, repo.Owner) ||
+			!strings.EqualFold(strings.TrimSpace(app.RepositorySelection), "selected") {
+			continue
+		}
+		for _, selected := range app.SelectedRepos {
+			if _, _, ok := selectedRepoUnderAccount(selected, repo.Owner); ok {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (c *Config) ConfiguredCredentialAvailable() bool {
+	if c == nil {
+		return false
+	}
+	for _, plan := range c.ProviderTokenSources() {
+		if descriptorCredentialAvailable(plan.Descriptor) {
+			return true
+		}
+	}
+	return false
+}
+
+func descriptorCredentialAvailable(desc tokenauth.Descriptor) bool {
+	for _, candidate := range desc.Candidates {
+		switch candidate.Kind {
+		case tokenauth.SourceKindEnv:
+			if os.Getenv(candidate.EnvName) != "" {
+				return true
+			}
+		case tokenauth.SourceKindFile, tokenauth.SourceKindGitHubApp:
+			data, err := os.ReadFile(candidate.FilePath)
+			if err == nil && len(bytes.TrimSpace(data)) > 0 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (c *Config) ResolveRepoTokenSource(r Repo) tokenauth.Descriptor {
 	if c == nil {
 		return tokenauth.Descriptor{}
 	}
+	if r.PlatformOrDefault() == defaultPlatform {
+		return c.ResolveGitHubRepoTokenSource(r)
+	}
 	return c.TokenSourceForPlatformHost(
 		r.PlatformOrDefault(), r.PlatformHostOrDefault(), r.TokenEnv, r.TokenFile,
 	)
+}
+
+// HasExplicitGitHubTokenEnv reports whether github_token_env names a
+// deliberately configured github.com fallback credential rather than
+// middleman's built-in default. Load defaults the field, and Save and the
+// sample config both materialize the default name into the file, so the
+// value itself is the only durable signal: only a non-default name is an
+// explicit fallback choice.
+func (c *Config) HasExplicitGitHubTokenEnv() bool {
+	if c == nil {
+		return false
+	}
+	env := strings.TrimSpace(c.GitHubTokenEnv)
+	return env != "" && env != defaultGitHubTokenEnv
+}
+
+// GitHubOwnerTokenFor returns the exact owner PAT mapping for host and owner.
+func (c *Config) GitHubOwnerTokenFor(
+	host, owner string,
+) (GitHubOwnerTokenConfig, bool) {
+	if c == nil {
+		return GitHubOwnerTokenConfig{}, false
+	}
+	h, err := normalizePlatformHost(defaultPlatform, host)
+	if err != nil {
+		return GitHubOwnerTokenConfig{}, false
+	}
+	for _, item := range c.GitHubOwnerTokens {
+		if strings.EqualFold(item.Host, h) && strings.EqualFold(item.Owner, owner) {
+			return item, true
+		}
+	}
+	return GitHubOwnerTokenConfig{}, false
+}
+
+// ResolveGitHubRepoTokenSource builds the credential route for one GitHub
+// repository. Repository overrides and selected-installation coverage are
+// exact routes; otherwise repositories under one owner share the owner route.
+//
+// A covering App installation always leads the chain, including on a repository
+// that also configures its own PAT. Installation tokens carry their own
+// rate-limit budget, so reads prefer them in every case; a repository PAT is
+// still the credential that serves that repository's writes, because mutation
+// resolution skips App candidates to keep writes attributed to the user
+// (tokenauth.WithMutationAuth). One ordered chain therefore expresses both:
+// App-first for reads, override-first among the PATs for writes.
+func (c *Config) ResolveGitHubRepoTokenSource(r Repo) tokenauth.Descriptor {
+	if c == nil {
+		return tokenauth.Descriptor{}
+	}
+	host := r.PlatformHostOrDefault()
+	overridden := r.TokenFile != "" || r.TokenEnv != ""
+	app, appCoversRepo := c.gitHubAppForRepo(host, r.Owner, r.Name)
+	exact := overridden || (appCoversRepo &&
+		strings.EqualFold(app.RepositorySelection, "selected"))
+	desc := tokenauth.Descriptor{Key: tokenauth.Key{
+		Platform: defaultPlatform,
+		Host:     host,
+		Scope:    githubCredentialScope(r.Owner, r.Name, exact),
+	}}
+	if appCoversRepo {
+		desc.Candidates = append(desc.Candidates, tokenauth.Candidate{
+			Kind:                tokenauth.SourceKindGitHubApp,
+			Host:                host,
+			FilePath:            app.PrivateKeyPath,
+			AppID:               app.AppID,
+			InstallationID:      app.InstallationID,
+			InstallationAccount: app.InstallationAccount,
+		})
+	}
+	appendTokenFileEnvCandidates(&desc, r.TokenFile, r.TokenEnv)
+	if ownerToken, ok := c.GitHubOwnerTokenFor(host, r.Owner); ok {
+		appendTokenFileEnvCandidates(
+			&desc, ownerToken.TokenFile, ownerToken.TokenEnv,
+		)
+	}
+	c.appendPlatformTokenCandidates(&desc, defaultPlatform, host)
+	c.appendGitHubDefaultCandidates(&desc, host)
+	return desc
+}
+
+func (c *Config) gitHubAppForRepo(
+	host, owner, name string,
+) (GitHubAppConfig, bool) {
+	for _, app := range c.GitHubAppsForHost(host) {
+		if app.AppID <= 0 || app.InstallationID <= 0 ||
+			app.PrivateKeyPath == "" ||
+			!strings.EqualFold(app.InstallationAccount, owner) {
+			continue
+		}
+		switch strings.ToLower(strings.TrimSpace(app.RepositorySelection)) {
+		case "all":
+			return app, true
+		case "selected":
+			fullName := strings.ToLower(strings.TrimSpace(owner)) + "/" +
+				strings.ToLower(strings.TrimSpace(name))
+			if strings.TrimSpace(name) == "" {
+				continue
+			}
+			for _, selected := range app.SelectedRepos {
+				if strings.EqualFold(strings.TrimSpace(selected), fullName) {
+					return app, true
+				}
+			}
+		}
+	}
+	return GitHubAppConfig{}, false
+}
+
+func githubCredentialScope(owner, name string, exact bool) string {
+	owner = strings.ToLower(strings.TrimSpace(owner))
+	if exact {
+		return "repo:" + owner + "/" + strings.ToLower(strings.TrimSpace(name))
+	}
+	return "owner:" + owner
+}
+
+func appendTokenFileEnvCandidates(
+	desc *tokenauth.Descriptor, tokenFile, tokenEnv string,
+) {
+	if tokenFile != "" {
+		desc.Candidates = append(desc.Candidates, tokenauth.Candidate{
+			Kind: tokenauth.SourceKindFile, FilePath: tokenFile,
+		})
+	}
+	if tokenEnv != "" {
+		desc.Candidates = append(desc.Candidates, tokenauth.Candidate{
+			Kind: tokenauth.SourceKindEnv, EnvName: tokenEnv,
+		})
+	}
+}
+
+func (c *Config) appendPlatformTokenCandidates(
+	desc *tokenauth.Descriptor, platform, host string,
+) {
+	for _, pc := range c.Platforms {
+		if pc.Type == platform && pc.Host == host {
+			appendTokenFileEnvCandidates(desc, pc.TokenFile, pc.TokenEnv)
+			return
+		}
+	}
+}
+
+func (c *Config) appendGitHubDefaultCandidates(
+	desc *tokenauth.Descriptor, host string,
+) {
+	if c.GitHubTokenEnv != "" && host == platformpkg.DefaultGitHubHost {
+		desc.Candidates = append(desc.Candidates, tokenauth.Candidate{
+			Kind: tokenauth.SourceKindEnv, EnvName: c.GitHubTokenEnv,
+		})
+	}
+	desc.Candidates = append(desc.Candidates, tokenauth.Candidate{
+		Kind: tokenauth.SourceKindGitHubCLI, Host: host,
+	})
 }
 
 type ProviderTokenSource struct {
@@ -2120,7 +2337,7 @@ func (c *Config) ProviderTokenSources() []ProviderTokenSource {
 	for _, repo := range c.Repos {
 		plan := ProviderTokenSource{
 			Descriptor: c.ResolveRepoTokenSource(repo),
-			Required:   true,
+			Required:   !c.globServedBySelectedApp(repo),
 		}
 		if repo.PlatformOrDefault() == defaultPlatform {
 			plan.GitHubOwner = repo.Owner
@@ -2140,6 +2357,66 @@ func (c *Config) ProviderTokenSources() []ProviderTokenSource {
 			out = append(out, plan)
 		}
 	}
+	for _, app := range c.GitHubApps {
+		if app.InstallationID <= 0 || strings.TrimSpace(app.InstallationAccount) == "" {
+			continue
+		}
+		if strings.EqualFold(app.RepositorySelection, "selected") {
+			for _, fullName := range app.SelectedRepos {
+				owner, name, ok := selectedRepoUnderAccount(
+					fullName, app.InstallationAccount,
+				)
+				if !ok {
+					continue
+				}
+				repo := Repo{
+					Platform: defaultPlatform, PlatformHost: app.Host,
+					Owner: owner, Name: name,
+				}
+				desc := c.ResolveGitHubRepoTokenSource(repo)
+				if _, ok := seen[desc.Key]; ok {
+					continue
+				}
+				seen[desc.Key] = struct{}{}
+				out = append(out, ProviderTokenSource{
+					Descriptor: desc, Required: true, GitHubOwner: owner,
+				})
+			}
+			continue
+		}
+		repo := Repo{
+			Platform:     defaultPlatform,
+			PlatformHost: app.Host,
+			Owner:        app.InstallationAccount,
+		}
+		desc := c.ResolveGitHubRepoTokenSource(repo)
+		if _, ok := seen[desc.Key]; ok {
+			continue
+		}
+		seen[desc.Key] = struct{}{}
+		out = append(out, ProviderTokenSource{
+			Descriptor:  desc,
+			Required:    true,
+			GitHubOwner: app.InstallationAccount,
+		})
+	}
+	for _, ownerToken := range c.GitHubOwnerTokens {
+		repo := Repo{
+			Platform:     defaultPlatform,
+			PlatformHost: ownerToken.Host,
+			Owner:        ownerToken.Owner,
+		}
+		desc := c.ResolveGitHubRepoTokenSource(repo)
+		if _, ok := seen[desc.Key]; ok {
+			continue
+		}
+		seen[desc.Key] = struct{}{}
+		out = append(out, ProviderTokenSource{
+			Descriptor:  desc,
+			Required:    true,
+			GitHubOwner: ownerToken.Owner,
+		})
+	}
 	for _, p := range c.Platforms {
 		add(c.TokenSourceForPlatformHost(p.Type, p.Host, "", ""), false)
 	}
@@ -2150,33 +2427,87 @@ func (c *Config) ProviderTokenSources() []ProviderTokenSource {
 }
 
 // CloneTokenDescriptors returns one descriptor per platform host carrying the
-// host's effective git clone/fetch credential chain under
-// tokenauth.CloneKey(host). Git transport auth is host-scoped: every provider
-// sharing a host must use a canonically identical chain (enforced at startup
-// and by reload validation), so the host chain is the first non-empty plan
-// chain in ProviderTokenSources order. Hosts whose plans are all
-// credential-less keep an empty chain so a reload clears a previously tokened
-// live clone source instead of leaving the removed credential active.
+// host's ownerless git fallback chain under tokenauth.CloneKey(host).
+// Repository-scoped Git operations select credentials by (provider, host,
+// owner, name) and never consult this fallback; it exists only for genuinely
+// ownerless host operations. When every tokened provider on a hostname agrees
+// on one canonical chain, that chain is the fallback; when providers disagree,
+// the fallback is disabled (empty chain) because an ownerless operation cannot
+// select a provider safely. Hosts whose plans are all credential-less also
+// keep an empty chain so a reload clears a previously tokened live clone
+// source instead of leaving the removed credential active.
 func (c *Config) CloneTokenDescriptors() []tokenauth.Descriptor {
 	plans := c.ProviderTokenSources()
 	indexByHost := make(map[string]int, len(plans))
+	chainByHost := make(map[string]string, len(plans))
 	out := make([]tokenauth.Descriptor, 0, len(plans))
 	for _, plan := range plans {
 		host := plan.Descriptor.Key.Host
 		idx, ok := indexByHost[host]
 		if !ok {
 			indexByHost[host] = len(out)
-			out = append(out, tokenauth.Descriptor{
-				Key:        tokenauth.CloneKey(host),
-				Candidates: plan.Descriptor.Candidates,
-			})
+			out = append(out, tokenauth.Descriptor{Key: tokenauth.CloneKey(host)})
+			idx = len(out) - 1
+		}
+		// Managed Git selects scoped GitHub routes by repository identity;
+		// only unscoped provider chains participate in the host fallback.
+		if plan.Descriptor.Key.Platform == defaultPlatform &&
+			plan.Descriptor.Key.Scope != "" {
 			continue
 		}
-		if len(out[idx].Candidates) == 0 {
+		if len(plan.Descriptor.Candidates) == 0 {
+			continue
+		}
+		chain := plan.Descriptor.CanonicalSourceString()
+		existing, seen := chainByHost[host]
+		if !seen {
+			chainByHost[host] = chain
 			out[idx].Candidates = plan.Descriptor.Candidates
+			continue
+		}
+		if existing != chain {
+			out[idx].Candidates = nil
 		}
 	}
 	return out
+}
+
+// ValidateRepoTokenSourceConsistency requires repositories sharing one
+// non-GitHub (provider, host) to declare the same effective token chain,
+// because those providers resolve API and clone credentials per provider-host
+// pair. The check must use each repository's own descriptor:
+// ProviderTokenSources deduplicates by key and keeps only the first same-host
+// plan, which would hide the conflict. Distinct providers sharing a hostname
+// may carry different chains; ownerless host operations lose their fallback
+// in that case (see CloneTokenDescriptors) instead of failing validation.
+func (c *Config) ValidateRepoTokenSourceConsistency() error {
+	if c == nil {
+		return nil
+	}
+	repoSources := make(map[tokenauth.Key]tokenauth.Descriptor, len(c.Repos))
+	for _, r := range c.Repos {
+		if r.PlatformOrDefault() == defaultPlatform {
+			continue
+		}
+		effective := c.ResolveRepoTokenSource(r)
+		if effective.Key.Host == "" {
+			continue
+		}
+		prev, ok := repoSources[effective.Key]
+		if !ok {
+			repoSources[effective.Key] = effective
+			continue
+		}
+		if prev.EqualSource(effective) {
+			continue
+		}
+		return fmt.Errorf(
+			"conflicting token source for %s host %q (conflicting token_env): %s vs %s",
+			r.PlatformOrDefault(), r.PlatformHostOrDefault(),
+			prev.SafeString(), effective.SafeString(),
+		)
+	}
+	return nil
 }
 
 func (c *Config) TokenSourceForPlatformHost(
@@ -2194,57 +2525,12 @@ func (c *Config) TokenSourceForPlatformHost(
 		return tokenauth.Descriptor{}
 	}
 	desc := tokenauth.Descriptor{Key: tokenauth.Key{Platform: p, Host: h}}
-	if repoTokenFile != "" {
-		desc.Candidates = append(desc.Candidates, tokenauth.Candidate{
-			Kind:     tokenauth.SourceKindFile,
-			FilePath: repoTokenFile,
-		})
-	}
-	if repoTokenEnv != "" {
-		desc.Candidates = append(desc.Candidates, tokenauth.Candidate{
-			Kind:    tokenauth.SourceKindEnv,
-			EnvName: repoTokenEnv,
-		})
-	}
-	// A configured GitHub App outranks platform and default PAT
-	// candidates: installation tokens exist to take sync traffic off
-	// the PAT budget. Repo-level overrides are terminal with respect
-	// to the app: a repo that names its own credential must never fall
-	// through to the installation token, because installation coverage
-	// validation exempts overridden repos and a fall-through would
-	// reopen the cross-account 404 hole when the override is unset.
-	if p == defaultPlatform && repoTokenEnv == "" && repoTokenFile == "" {
-		for _, app := range c.GitHubAppsForHost(h) {
-			if app.AppID <= 0 || app.PrivateKeyPath == "" {
-				continue
-			}
-			desc.Candidates = append(desc.Candidates, tokenauth.Candidate{
-				Kind:                tokenauth.SourceKindGitHubApp,
-				Host:                h,
-				FilePath:            app.PrivateKeyPath,
-				AppID:               app.AppID,
-				InstallationID:      app.InstallationID,
-				InstallationAccount: app.InstallationAccount,
-			})
-		}
-	}
-	for _, pc := range c.Platforms {
-		if pc.Type == p && pc.Host == h {
-			if pc.TokenFile != "" {
-				desc.Candidates = append(desc.Candidates, tokenauth.Candidate{
-					Kind:     tokenauth.SourceKindFile,
-					FilePath: pc.TokenFile,
-				})
-			}
-			if pc.TokenEnv != "" {
-				desc.Candidates = append(desc.Candidates, tokenauth.Candidate{
-					Kind:    tokenauth.SourceKindEnv,
-					EnvName: pc.TokenEnv,
-				})
-			}
-			break
-		}
-	}
+	appendTokenFileEnvCandidates(&desc, repoTokenFile, repoTokenEnv)
+	// GitHub App installations are account-scoped and therefore belong only
+	// on repository or owner routes built by ResolveGitHubRepoTokenSource.
+	// An ownerless host fallback must remain PAT/gh-only so its authenticated
+	// credential and identity-scoped rate accounting cannot disagree.
+	c.appendPlatformTokenCandidates(&desc, p, h)
 	if defaultTokenEnv, ok := defaultTokenEnvForPlatformHost(p, h); ok {
 		desc.Candidates = append(desc.Candidates, tokenauth.Candidate{
 			Kind:    tokenauth.SourceKindEnv,
@@ -2290,9 +2576,14 @@ func (c *Config) TokenEnvNames() []string {
 	if c == nil {
 		return nil
 	}
-	names := make([]string, 0, 1+len(c.Repos)+len(c.Platforms))
+	names := make(
+		[]string, 0, 1+len(c.Repos)+len(c.Platforms)+len(c.GitHubOwnerTokens),
+	)
 	if c.GitHubTokenEnv != "" {
 		names = appendTokenEnvName(names, c.GitHubTokenEnv)
+	}
+	for _, item := range c.GitHubOwnerTokens {
+		names = appendTokenEnvName(names, item.TokenEnv)
 	}
 	for _, p := range c.Platforms {
 		names = appendTokenEnvNamesFromDescriptor(
@@ -2330,6 +2621,11 @@ func appendTokenEnvNamesFromDescriptor(
 }
 
 func (c *Config) normalizeTokenFilePaths(configDir string) {
+	for i := range c.GitHubOwnerTokens {
+		c.GitHubOwnerTokens[i].TokenFile = normalizeTokenFilePath(
+			configDir, c.GitHubOwnerTokens[i].TokenFile,
+		)
+	}
 	for i := range c.Platforms {
 		c.Platforms[i].TokenFile = normalizeTokenFilePath(configDir, c.Platforms[i].TokenFile)
 	}
@@ -2556,6 +2852,7 @@ type configFile struct {
 	Repos                     []Repo                   `toml:"repos"`
 	KataProjects              []KataProjectRepoMapping `toml:"kata_projects,omitempty"`
 	Platforms                 []PlatformConfig         `toml:"platforms,omitempty"`
+	GitHubOwnerTokens         []GitHubOwnerTokenConfig `toml:"github_owner_tokens,omitempty"`
 	GitHubApps                []GitHubAppConfig        `toml:"github_apps,omitempty"`
 	Activity                  Activity                 `toml:"activity"`
 	Notifications             Notifications            `toml:"notifications,omitempty"`
@@ -2591,6 +2888,7 @@ func (c *Config) Save(path string) error {
 		Repos:                   reposForSave(cfg.Repos),
 		KataProjects:            slices.Clone(cfg.KataProjects),
 		Platforms:               cfg.Platforms,
+		GitHubOwnerTokens:       cfg.GitHubOwnerTokens,
 		GitHubApps:              cfg.GitHubApps,
 		Activity:                cfg.Activity,
 		Notifications:           cfg.Notifications,
@@ -2677,6 +2975,7 @@ func (c *Config) copyForSave() Config {
 	cfg.KataProjects = slices.Clone(c.KataProjects)
 	cfg.Platforms = slices.Clone(c.Platforms)
 	cfg.AllowedHosts = slices.Clone(c.AllowedHosts)
+	cfg.GitHubOwnerTokens = slices.Clone(c.GitHubOwnerTokens)
 	cfg.GitHubApps = slices.Clone(c.GitHubApps)
 	for i := range cfg.GitHubApps {
 		cfg.GitHubApps[i].SelectedRepos = slices.Clone(cfg.GitHubApps[i].SelectedRepos)

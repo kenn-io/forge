@@ -36,7 +36,20 @@ events must be scoped by persisted repo ID or full provider identity.
 
 ## Provider Hosts And Tokens
 
-Each configured provider host may have its own token source.
+Each configured provider-host pair may have its own fallback token source;
+providers sharing one hostname may carry different chains. When their chains
+disagree, the ownerless host clone fallback is disabled rather than borrowing
+one provider's credential, because an ownerless operation cannot select a
+provider safely; providers with no credential chain of their own do not veto
+the fallback, and runtime route resolution must honor the disabled state
+instead of falling through to another provider's unscoped route
+(`internal/config/config.go::Config.CloneTokenDescriptors`,
+`cmd/middleman/provider_startup.go::providerStartup.FallbackSource`).
+Non-GitHub repositories on one (provider, host) must declare equivalent
+effective chains, checked against each repository's own descriptor —
+`ProviderTokenSources` deduplicates by key and would hide the conflict
+(`internal/config/config.go::Config.ValidateRepoTokenSourceConsistency`).
+GitHub may additionally define exact-repository and owner authorization routes.
 
 - Legacy GitHub config still defaults to `github` on `github.com`.
 - GitLab public config defaults to `gitlab.com`.
@@ -45,27 +58,35 @@ Each configured provider host may have its own token source.
 - Self-hosted hosts are hostnames with optional ports, not URL paths.
 - A missing token should fail only the provider host that needs it.
 
-Provider clients must be registered by `(platform, platform_host)`. Provider
-startup builds host-scoped rate trackers, budgets, clone token sources, GitHub
-GraphQL fetchers where applicable, and a `platform.Registry`. A third provider
-should add metadata, a factory, and an implementation; it should not masquerade
-as GitHub, GitLab, Forgejo, or Gitea.
+Provider clients must be registered by `(platform, platform_host)`. GitHub rate
+trackers and sync budgets are keyed by `(host, authenticated identity)`: PATs
+resolve to `user:<numeric-id>` and App reads use `installation:<id>`. PAT routes
+for the same user share trackers and one budget. Non-GitHub providers remain
+host-scoped unless their provider model later proves otherwise. Startup also
+builds clone routes, GitHub GraphQL fetchers where applicable, and a
+`platform.Registry`. A third provider should add metadata, a factory, and an
+implementation; it should not masquerade as another provider.
 
-Token lookup is also scoped by `(provider, platform_host)`. Lookup checks repo
-`token_file`, repo `token_env`, platform `token_file`, platform `token_env`,
-then exact public-host defaults. GitHub `github.com` uses `github_token_env`,
-which defaults to `MIDDLEMAN_GITHUB_TOKEN`, then the GitHub CLI fallback. GitLab
+Fallback token lookup is scoped by `(provider, platform_host)`. GitHub
+authorization routes may be exact-repository, owner, or host fallback. Lookup
+checks repo `token_file`, repo `token_env`, a covered App installation for
+reads, owner PAT, platform token, public-host default, then GitHub CLI. GitLab
 `gitlab.com` has no implicit default env var. Forgejo `codeberg.org` uses
 `MIDDLEMAN_FORGEJO_TOKEN`, and Gitea `gitea.com` uses `MIDDLEMAN_GITEA_TOKEN`.
 Token files are read lazily so atomic replacement rotates credentials without
-rebuilding provider clients. Provider token caches and auth transports must stay
-keyed by `(platform, platform_host)`.
+rebuilding provider clients. Route descriptors and auth transports stay keyed
+by full route, while GitHub App installation-token caches are shared by
+canonical App credential across routes; reload probes must reuse that shared
+cache (`internal/tokenauth/source.go::githubAppTokenStore`,
+`internal/tokenauth/source.go::SourceSet.ProbeToken`).
 
-Git clone credentials are selected by URL host. Startup must reject same-host
-provider entries unless their effective clone token-source descriptors match
-before passing a host-keyed source map to the clone manager. Do not let a token
-for one provider host leak into another host with the same hostname string under
-a different provider kind.
+Managed Git authorization is selected by full `(platform, platform_host, owner,
+name)` identity. GitHub smart HTTP uses mutation/user candidates and never an
+App installation token. Exact repository routes beat owner routes, which beat
+the unscoped host fallback. Non-GitHub providers use their provider-host
+fallback. Clone storage and singleflight keys must partition providers sharing a
+host, and authenticated workspace operations must validate the effective origin
+fetch and push destinations before resolving a credential.
 
 Minimum read scope should cover repository metadata, merge requests or pull
 requests, issues, comments, commits, tags, releases, and CI/status data. Write

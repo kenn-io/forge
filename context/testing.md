@@ -22,6 +22,14 @@ When changing structs, fields, aliases, fragments, pagination arguments, or nest
 
 CI runs the live GraphQL validation as a separate Go test step using the workflow `GITHUB_TOKEN` only in trusted contexts, such as pushes to `main`, manual `workflow_dispatch` runs, and same-repository pull requests. The general pull request Go test step does not receive a GitHub token.
 
+A GraphQL stub must answer pull-request and issue queries with only that
+query's field: `githubv4` fails the whole query on an unexpected response key,
+and sync then falls back to the REST index, so a test meant to exercise the
+GraphQL path passes without ever reaching it. Assert on a value only the
+GraphQL path can produce, or confirm the branch runs, before trusting such a
+test. Note `go test` hides a passing package's stdout, so instrumentation
+needs `-v` to be visible.
+
 Integration-tagged top-level tests must use the `TestIntegration...` prefix;
 Go build tags are additive, so the dedicated lane relies on its matching run
 filter to avoid rerunning ordinary tests (`Makefile::test-integration`).

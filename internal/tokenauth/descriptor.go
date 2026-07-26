@@ -18,10 +18,11 @@ const (
 type Key struct {
 	Platform string
 	Host     string
+	Scope    string
 }
 
 func (k Key) String() string {
-	return k.Platform + "\x00" + k.Host
+	return strings.Join([]string{k.Platform, k.Host, k.Scope}, "\x00")
 }
 
 // clonePlatform is the synthetic Key.Platform under which a host's git

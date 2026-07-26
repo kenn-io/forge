@@ -529,6 +529,21 @@ func run(opts serve.Options) error {
 		return nil
 	}
 
+	profilerSrv, err = profiler.Start(opts.ProfilerAddr)
+	if err != nil {
+		return err
+	}
+	if profilerSrv != nil {
+		profilerAddr := ""
+		if addr := profilerSrv.Addr(); addr != nil {
+			profilerAddr = addr.String()
+		}
+		slog.Info(
+			"starting profiler listener",
+			"addr", profilerAddr,
+		)
+	}
+
 	database, err = db.Open(cfg.DBPath())
 	if err != nil {
 		return fmt.Errorf("open database: %w", err)
@@ -551,9 +566,14 @@ func run(opts serve.Options) error {
 	}
 
 	startup, err := buildProviderStartup(
-		database, cfg, tokenSources, providerSources, defaultProviderFactories(),
+		ctx, database, cfg, tokenSources, providerSources,
+		defaultProviderFactories(), ghclient.HTTPIdentityResolver{},
 	)
 	if err != nil {
+		if ctx.Err() != nil && errors.Is(err, context.Canceled) {
+			slog.Info("shutting down")
+			return nil
+		}
 		return err
 	}
 
@@ -568,7 +588,7 @@ func run(opts serve.Options) error {
 	}
 
 	cloneMgr := gitclone.New(
-		filepath.Join(cfg.DataDir, "clones"), startup.cloneAuth,
+		filepath.Join(cfg.DataDir, "clones"), &startup,
 	)
 
 	syncer = ghclient.NewSyncerWithRegistry(
@@ -581,7 +601,10 @@ func run(opts serve.Options) error {
 	)
 	syncer.SetWatchInterval(cfg.ActivePRRefreshDuration())
 	syncer.SetActiveMRWindow(cfg.ActivePRWindowDuration())
+	syncer.SetPreferGitHubNativeStacks(cfg.PullRequests.PreferGitHubNativeStacks)
 	syncer.SetFetchers(startup.fetchers)
+	syncer.SetGitHubRouters(startup.githubRouters)
+	syncer.SetRatePrincipalLabels(startup.ratePrincipalLabels)
 	syncer.SetWriteRateTrackers(startup.writeRateTrackers)
 	syncer.SetWriteGQLRateTrackers(startup.writeGQLRateTrackers)
 	archiveService, err := archive.NewService(
@@ -690,21 +713,6 @@ func run(opts serve.Options) error {
 			slog.Warn("telemetry shutdown failed", "err", err)
 		}
 	}()
-
-	profilerSrv, err = profiler.Start(opts.ProfilerAddr)
-	if err != nil {
-		return err
-	}
-	if profilerSrv != nil {
-		profilerAddr := ""
-		if addr := profilerSrv.Addr(); addr != nil {
-			profilerAddr = addr.String()
-		}
-		slog.Info(
-			"starting profiler listener",
-			"addr", profilerAddr,
-		)
-	}
 
 	srv.SetBuildInfo(server.BuildInfo{
 		Name:      "middleman",
@@ -877,40 +885,6 @@ func splitProviderHostKey(key string) (string, string) {
 		return key, ""
 	}
 	return platformName, host
-}
-
-func validateProviderHostKeys[T any](providerTokens map[string]T) error {
-	type hostToken struct {
-		platform string
-		token    string
-	}
-	byHost := make(map[string]hostToken, len(providerTokens))
-	for key, token := range providerTokens {
-		platformName, host := splitProviderHostKey(key)
-		tokenID := providerHostTokenID(token)
-		if existing, ok := byHost[host]; ok {
-			if existing.token != tokenID {
-				return fmt.Errorf(
-					"host %s is configured for both %s and %s with different clone tokens; use identical tokens or separate hosts",
-					host, existing.platform, platformName,
-				)
-			}
-			continue
-		}
-		byHost[host] = hostToken{platform: platformName, token: tokenID}
-	}
-	return nil
-}
-
-func providerHostTokenID[T any](token T) string {
-	switch typed := any(token).(type) {
-	case string:
-		return typed
-	case tokenauth.Source:
-		return typed.Descriptor().CanonicalSourceString()
-	default:
-		return ""
-	}
 }
 
 func repoPlatform(repo ghclient.RepoRef) platform.Kind {

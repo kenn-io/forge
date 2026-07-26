@@ -1,6 +1,7 @@
 name: CI
 
 on:
+  workflow_call:
   push:
     branches: [main]
   pull_request:
@@ -20,7 +21,7 @@ concurrency:
 jobs:
   detect_changes:
     name: Detect changed paths
-    runs-on: kenn-linux-x64
+    runs-on: ubuntu-latest
     outputs:
       backend: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.backend == 'true' || steps.filter.outputs.ci == 'true' }}
       frontend: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.frontend == 'true' || steps.filter.outputs.ci == 'true' }}
@@ -70,7 +71,7 @@ jobs:
 
   ensure_playwright_image:
     name: Ensure Playwright CI image
-    runs-on: kenn-linux-x64
+    runs-on: ubuntu-latest
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true'
     permissions:
@@ -146,7 +147,7 @@ jobs:
           echo "image=${PLAYWRIGHT_CI_IMAGE}@${manifest_digest}" >> "$GITHUB_OUTPUT"
 
   lint:
-    runs-on: kenn-linux-x64
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -198,11 +199,7 @@ jobs:
 
   test_go:
     name: Go tests
-    runs-on: kenn-linux-x64
-    # The runner guarantees 14 cores and can burst to 32. Seven four-thread
-    # package processes can use 28 burst cores while leaving headroom for the
-    # runner and compiler. The 28 GiB job does not need an artificial Go heap
-    # limit; package fan-out remains bounded by GOFLAGS.
+    runs-on: ubuntu-latest
     env:
       GOMAXPROCS: "4"
       GOFLAGS: "-p=7"
@@ -271,7 +268,7 @@ jobs:
 
   test_frontend:
     name: Frontend unit tests
-    runs-on: kenn-linux-x64
+    runs-on: ubuntu-latest
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true'
     steps:
@@ -330,7 +327,7 @@ jobs:
 
   race:
     name: go test -race
-    runs-on: kenn-linux-x64
+    runs-on: ubuntu-latest
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true'
     steps:
@@ -401,7 +398,7 @@ jobs:
           retention-days: 7
 
   build:
-    runs-on: kenn-linux-x64
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -437,7 +434,7 @@ jobs:
         run: go build -o middleman ./cmd/middleman
 
   e2e-mock:
-    runs-on: kenn-linux-x64
+    runs-on: ubuntu-latest
     needs: [detect_changes, ensure_playwright_image]
     if: needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true'
     permissions:
@@ -485,7 +482,7 @@ jobs:
           retention-days: 7
 
   e2e:
-    runs-on: kenn-linux-x64
+    runs-on: ubuntu-latest
     needs: [detect_changes, ensure_playwright_image]
     if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true'
     permissions:
@@ -577,7 +574,7 @@ jobs:
           retention-days: 7
 
   e2e-roborev:
-    runs-on: kenn-linux-x64
+    runs-on: ubuntu-latest
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true'
     env:
@@ -629,7 +626,7 @@ jobs:
 
   test_browser:
     name: frontend browser tests
-    runs-on: kenn-linux-x64
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     needs: [detect_changes, ensure_playwright_image]
     if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true'

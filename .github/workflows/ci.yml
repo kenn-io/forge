@@ -7,6 +7,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+env:
+  MIDDLEMAN_CI_WORKERS: "2"
+
 permissions:
   checks: write
   contents: read
@@ -201,8 +204,8 @@ jobs:
     name: Go tests
     runs-on: ubuntu-latest
     env:
-      GOMAXPROCS: "4"
-      GOFLAGS: "-p=7"
+      GOMAXPROCS: "2"
+      GOFLAGS: "-p=2"
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true'
     steps:

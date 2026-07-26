@@ -18,6 +18,7 @@ describe("vite config", () => {
   it("uses the guaranteed CI cores for unit tests", () => {
     expect(resolveUnitTestWorkers({})).toBeUndefined();
     expect(resolveUnitTestWorkers({ CI: "1" })).toBe(14);
+    expect(resolveUnitTestWorkers({ CI: "1", MIDDLEMAN_CI_WORKERS: "2" })).toBe(2);
   });
 
   it("runs unit tests in worker threads", () => {

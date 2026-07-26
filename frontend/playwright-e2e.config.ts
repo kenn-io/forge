@@ -3,14 +3,17 @@ import { ensureE2EServer } from "./tests/e2e-full/support/e2eServer";
 
 const serverInfo = await ensureE2EServer();
 
-// Chromium can use 28 of the runner's 32 burst cores. Firefox's heavier
-// per-worker processes degrade past about 50% of available cores (measured
-// locally: 9 workers beat both 6 and 13), so CI caps it at the guaranteed
-// 14-core baseline.
+// Chromium can use twice the configured CI baseline. Firefox's heavier
+// per-worker processes stay at the baseline so both managed and hosted
+// runners can select concurrency that matches their available resources.
 function configuredWorkers(): number | string {
   const args = process.argv.join(" ");
   const firefox = /--project[= ]firefox/.test(args);
-  if (process.env.CI) return firefox ? 14 : 28;
+  if (process.env.CI) {
+    const configured = Number.parseInt(process.env.MIDDLEMAN_CI_WORKERS ?? "", 10);
+    const baseline = configured > 0 ? configured : 14;
+    return firefox ? baseline : baseline * 2;
+  }
   return firefox ? "50%" : "75%";
 }
 

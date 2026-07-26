@@ -209,6 +209,58 @@ describe("NewWorkspaceDialog", () => {
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 
+  it("abandons the navigation when the dialog is dismissed mid-create", async () => {
+    let resolvePost: (value: unknown) => void = () => {};
+    mockPost.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvePost = resolve;
+        }),
+    );
+    const { rerender } = await renderDialog();
+    await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
+    await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
+    await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(1));
+
+    // Escape and backdrop clicks close the shared modal even while a create is
+    // in flight, so the created workspace must not yank the user away.
+    await rerender({ open: false });
+    resolvePost({ data: { id: "ws-new" } });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it("cannot submit against the previous selection while a reopen reloads", async () => {
+    const { rerender } = await renderDialog();
+    await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
+    await rerender({ open: false });
+
+    let resolveGet: (value: unknown) => void = () => {};
+    mockGet.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveGet = resolve;
+        }),
+    );
+    await rerender({ open: true });
+
+    await waitFor(() => expect(repoPicker().textContent).toContain("Loading repositories"));
+    expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(true);
+
+    resolveGet({ data: [repoFixture("acme", "gadget")] });
+    await waitFor(() => expect(repoPicker().textContent).toContain("acme/gadget"));
+    expect(mockPost).not.toHaveBeenCalled();
+  });
+
+  it("cannot submit when the repository list fails to load", async () => {
+    mockGet.mockResolvedValue({ error: { detail: "repositories unavailable" } });
+    await renderDialog();
+
+    await waitFor(() => expect(repoPicker().textContent).toContain("No tracked repositories yet"));
+    expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
   it("cannot submit when no repository is tracked", async () => {
     mockGet.mockResolvedValue({ data: [] });
     await renderDialog();

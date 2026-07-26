@@ -64,7 +64,9 @@
   }
 
   // Each open starts a fresh request and fresh form state; a stale response
-  // from a previous open must not repopulate the list.
+  // from a previous open must not repopulate the list. The previous list and
+  // selection are dropped up front so a reopen cannot submit against the repo
+  // picked last time while the new list is still in flight, or if it fails.
   $effect(() => {
     if (!open) return;
     const version = ++repoFetchVersion;
@@ -72,6 +74,8 @@
     error = null;
     suggestedBranch = null;
     submitting = false;
+    repos = [];
+    selectedKey = "";
     reposError = null;
     reposLoading = true;
     void client.GET("/repos").then(({ data, error: requestError }) => {
@@ -122,6 +126,10 @@
       return;
     }
     const requested = branch.trim();
+    // Escape and backdrop clicks dismiss the dialog even mid-request, and a
+    // reopen starts a new form; either way this create must stop influencing
+    // the UI once its own dialog session is gone.
+    const version = repoFetchVersion;
     error = null;
     suggestedBranch = null;
     submitting = true;
@@ -140,17 +148,23 @@
           body: requested ? { branch: requested } : {},
         },
       );
+      const current = open && version === repoFetchVersion;
       if (requestError) {
+        if (!current) return;
         suggestedBranch = conflictValue(requestError, "body.suggested_branch");
         error = apiErrorMessage(requestError, "Could not create workspace");
         return;
       }
       if (!data?.id) {
+        if (!current) return;
         error = "Could not create workspace";
         return;
       }
       const workspaceId = data.id;
+      // The workspace exists either way, so it stays the last-used repo; only
+      // the navigation is abandoned when the user moved on.
       rememberNewWorkspaceRepoKey(repo.key);
+      if (!current) return;
       onClose();
       if (onCreated) onCreated(workspaceId);
       else navigate(`/terminal/${workspaceId}`);

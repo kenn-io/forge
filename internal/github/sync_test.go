@@ -15364,6 +15364,122 @@ func TestSyncNotificationsProceedsWhenUserRESTPoolUnknown(t *testing.T) {
 
 // Queued acknowledgement propagation spends the user credential too, so it must
 // stop at the reserve instead of discovering it as a per-row rate-limit error.
+// The reserve gate is scoped to the credential that would spend it. One
+// credential sitting at its reserve must not stop queued acknowledgements
+// belonging to a healthy credential on the same host, matching how an actual
+// rate-limit response is handled.
+func TestProcessQueuedNotificationReadsReserveStopsOnlyItsOwnCredential(t *testing.T) {
+	require := require.New(t)
+	check := assert.New(t)
+	d := openTestDB(t)
+	limitedRepo, err := d.UpsertRepo(
+		t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	healthyRepo, err := d.UpsertRepo(
+		t.Context(), db.GitHubRepoIdentity("github.com", "other", "thing"),
+	)
+	require.NoError(err)
+	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
+	limitedNumber := 7
+	healthyNumber := 8
+	require.NoError(d.UpsertNotifications(t.Context(), []db.Notification{
+		{
+			Platform: "github", PlatformHost: "github.com",
+			PlatformNotificationID: "limited-thread", RepoID: &limitedRepo,
+			RepoOwner: "acme", RepoName: "widget", SubjectType: "PullRequest",
+			SubjectTitle: "Exhausted credential", ItemNumber: &limitedNumber,
+			ItemType: "pr", Reason: "mention", Unread: true,
+			SourceUpdatedAt: now, SyncedAt: now,
+		},
+		{
+			Platform: "github", PlatformHost: "github.com",
+			PlatformNotificationID: "healthy-thread", RepoID: &healthyRepo,
+			RepoOwner: "other", RepoName: "thing", SubjectType: "PullRequest",
+			SubjectTitle: "Healthy credential", ItemNumber: &healthyNumber,
+			ItemType: "pr", Reason: "mention", Unread: true,
+			SourceUpdatedAt: now, SyncedAt: now,
+		},
+	}))
+	items, err := d.ListNotifications(
+		t.Context(), db.ListNotificationsOpts{State: "all", Sort: "updated"},
+	)
+	require.NoError(err)
+	require.Len(items, 2)
+	ids := make([]int64, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, item.ID)
+	}
+	queuedAt := now.Add(time.Minute)
+	_, err = d.QueueNotificationIDsRead(t.Context(), ids, queuedAt)
+	require.NoError(err)
+
+	var marked []string
+	mc := &mockClient{
+		getNotificationThreadFn: func(
+			_ context.Context, threadID string,
+		) (NotificationThread, error) {
+			return NotificationThread{
+				ID: threadID, SubjectType: "PullRequest",
+				Reason: "mention", UpdatedAt: now, LastReadAt: &queuedAt,
+			}, nil
+		},
+		markNotificationThreadReadFn: func(
+			_ context.Context, threadID string,
+		) error {
+			marked = append(marked, threadID)
+			return nil
+		},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil, nil, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	limitedIdentity := IdentityKey{Host: "github.com", Principal: "user:1"}
+	healthyIdentity := IdentityKey{Host: "github.com", Principal: "user:2"}
+	router, err := NewHostRouter("github.com",
+		&Route{
+			Key: RouteKey{Host: "github.com", Owner: "acme"}, Client: mc,
+			ReadIdentity: limitedIdentity, WriteIdentity: limitedIdentity,
+		},
+		&Route{
+			Key: RouteKey{Host: "github.com", Owner: "other"}, Client: mc,
+			ReadIdentity: healthyIdentity, WriteIdentity: healthyIdentity,
+		},
+	)
+	require.NoError(err)
+	syncer.SetGitHubRouters(map[string]*HostRouter{"github.com": router})
+	registry := NewQuotaRegistry()
+	reset := time.Now().UTC().Add(time.Hour)
+	registry.UpdateSnapshot(limitedIdentity, QuotaResourceREST, Rate{
+		Limit: 5000, Remaining: RateReserveBuffer, Reset: reset,
+	})
+	registry.UpdateSnapshot(healthyIdentity, QuotaResourceREST, Rate{
+		Limit: 5000, Remaining: 4000, Reset: reset,
+	})
+	syncer.SetQuotaRegistry(registry)
+
+	err = syncer.ProcessQueuedNotificationReads(
+		t.Context(), platform.KindGitHub, "github.com", 10,
+	)
+
+	require.Error(err, "the exhausted credential is still reported")
+	check.Equal([]string{"healthy-thread"}, marked,
+		"only the healthy credential's ack may reach upstream")
+	items, err = d.ListNotifications(
+		t.Context(), db.ListNotificationsOpts{State: "all", Sort: "updated"},
+	)
+	require.NoError(err)
+	byThread := map[string]db.Notification{}
+	for _, item := range items {
+		byThread[item.PlatformNotificationID] = item
+	}
+	check.Nil(byThread["limited-thread"].SourceAckSyncedAt,
+		"the exhausted credential's ack stays queued")
+	check.NotNil(byThread["healthy-thread"].SourceAckSyncedAt,
+		"another credential's reserve must not hold back this ack")
+}
+
 func TestProcessQueuedNotificationReadsStopsWhenUserRESTPoolAtReserve(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -15510,9 +15626,9 @@ func TestBulkGraphQLAllowedIsolatesCredentialGraphQLPools(t *testing.T) {
 	backoff, _ := fetcher.ShouldBackoff()
 	assert.True(backoff, "host-wide tracker should report exhaustion")
 
-	assert.False(syncer.bulkGraphQLAllowed(appRepo, fetcher),
+	assert.False(syncer.bulkGraphQLAllowed(t.Context(), appRepo, fetcher),
 		"exhausted App credential must back off")
-	assert.True(syncer.bulkGraphQLAllowed(userRepo, fetcher),
+	assert.True(syncer.bulkGraphQLAllowed(t.Context(), userRepo, fetcher),
 		"healthy user credential must not inherit the App pool's exhaustion")
 }
 
@@ -15588,6 +15704,140 @@ func TestRepoEligibilityStopsOnExhaustedRESTWithUnobservedGraphQL(t *testing.T) 
 		"an exhausted REST reserve must stop scheduling regardless of GraphQL")
 }
 
+// Background admission gates on REST alone, so bulkGraphQLAllowed is the only
+// place the GraphQL reserve is applied. A background sync holding GraphQL
+// headroom inside the reserve must fall back to REST rather than spend the
+// capacity held for foreground work, while the same pool stays usable for an
+// explicit foreground sync.
+func TestBulkGraphQLAllowedAppliesReserveOnlyToBackgroundSyncs(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
+	client := &credentialRateLimitSnapshotMockClient{mockClient: &mockClient{}}
+	identity := IdentityKey{Host: "github.com", Principal: "user:7"}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client},
+		d, nil, []RepoRef{repo}, time.Minute, nil, nil,
+	)
+	router, err := NewHostRouter("github.com", &Route{
+		Key: RouteKey{Host: "github.com", Owner: "acme"}, Client: client,
+		ReadIdentity: identity, WriteIdentity: identity,
+	})
+	require.NoError(err)
+	syncer.SetGitHubRouters(map[string]*HostRouter{"github.com": router})
+	registry := NewQuotaRegistry()
+	// Inside the reserve but not empty.
+	registry.UpdateSnapshot(identity, QuotaResourceGraphQL, Rate{
+		Limit: 5000, Remaining: RateReserveBuffer / 2,
+		Reset: time.Now().UTC().Add(time.Hour),
+	})
+	syncer.SetQuotaRegistry(registry)
+	fetcher := &GraphQLFetcher{}
+
+	assert.False(
+		syncer.bulkGraphQLAllowed(WithSyncBudget(t.Context()), repo, fetcher),
+		"background bulk GraphQL must not spend the foreground reserve")
+	assert.True(
+		syncer.bulkGraphQLAllowed(t.Context(), repo, fetcher),
+		"an explicit foreground sync may use GraphQL headroom inside the reserve")
+}
+
+// End-to-end through the syncer and SQLite: a credential whose GraphQL pool is
+// exhausted but whose REST pool has capacity must still complete a real sync
+// and persist its results. The eligibility unit tests above cover the decision;
+// this covers the outcome the decision exists for.
+func TestRunOnceSyncsOverRESTWhenOnlyGraphQLIsExhausted(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	mc := &detailTrackingClient{}
+	mc.openPRs = []*gh.PullRequest{buildOpenPR(1, now), buildOpenPR(2, now)}
+
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+	identity := IdentityKey{Host: "github.com", Principal: "user:7"}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil,
+		[]RepoRef{repo}, time.Minute, nil, nil,
+	)
+	router, err := NewHostRouter("github.com", &Route{
+		Key: RouteKey{Host: "github.com", Owner: "owner"}, Client: mc,
+		ReadIdentity: identity, WriteIdentity: identity,
+	})
+	require.NoError(err)
+	syncer.SetGitHubRouters(map[string]*HostRouter{"github.com": router})
+	registry := NewQuotaRegistry()
+	reset := time.Now().UTC().Add(time.Hour)
+	registry.UpdateSnapshot(identity, QuotaResourceREST, Rate{
+		Limit: 5000, Remaining: 4000, Reset: reset,
+	})
+	registry.UpdateSnapshot(identity, QuotaResourceGraphQL, Rate{
+		Limit: 5000, Remaining: 0, Reset: reset,
+	})
+	syncer.SetQuotaRegistry(registry)
+	var results []RepoSyncResult
+	syncer.SetOnSyncCompleted(func(got []RepoSyncResult) { results = got })
+
+	syncer.RunOnce(ctx)
+
+	require.Len(results, 1)
+	assert.Empty(results[0].Error,
+		"exhausted GraphQL must not skip a repository with REST capacity")
+	assert.True(mc.listOpenPRsCalled.Load(),
+		"the sync must reach upstream over REST")
+	for _, number := range []int{1, 2} {
+		pr, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", number)
+		require.NoError(err)
+		require.NotNil(pr, "pull request %d must be persisted", number)
+		assert.Equal(number, pr.Number)
+	}
+}
+
+// The mirror case: an exhausted REST pool stops the sync before any upstream
+// call, so nothing is persisted.
+func TestRunOnceSkipsSyncWhenRESTPoolExhausted(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	mc := &detailTrackingClient{}
+	mc.openPRs = []*gh.PullRequest{buildOpenPR(1, now)}
+
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+	identity := IdentityKey{Host: "github.com", Principal: "user:7"}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil,
+		[]RepoRef{repo}, time.Minute, nil, nil,
+	)
+	router, err := NewHostRouter("github.com", &Route{
+		Key: RouteKey{Host: "github.com", Owner: "owner"}, Client: mc,
+		ReadIdentity: identity, WriteIdentity: identity,
+	})
+	require.NoError(err)
+	syncer.SetGitHubRouters(map[string]*HostRouter{"github.com": router})
+	registry := NewQuotaRegistry()
+	registry.UpdateSnapshot(identity, QuotaResourceREST, Rate{
+		Limit: 5000, Remaining: RateReserveBuffer,
+		Reset: time.Now().UTC().Add(time.Hour),
+	})
+	syncer.SetQuotaRegistry(registry)
+	var results []RepoSyncResult
+	syncer.SetOnSyncCompleted(func(got []RepoSyncResult) { results = got })
+
+	syncer.RunOnce(ctx)
+
+	require.Len(results, 1)
+	assert.Equal("skipped: rate limit throttled", results[0].Error)
+	assert.False(mc.listOpenPRsCalled.Load(),
+		"an exhausted REST reserve must stop work before the wire")
+	pr, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
+	require.NoError(err)
+	assert.Nil(pr, "nothing may be persisted when the sync was skipped")
+}
+
 // Without a registry the host-wide tracker remains authoritative.
 func TestBulkGraphQLAllowedFallsBackToHostTracker(t *testing.T) {
 	assert := assert.New(t)
@@ -15602,6 +15852,6 @@ func TestBulkGraphQLAllowedFallsBackToHostTracker(t *testing.T) {
 		Limit: 5000, Remaining: 0, Reset: time.Now().UTC().Add(time.Hour),
 	})
 
-	assert.False(syncer.bulkGraphQLAllowed(repo, &GraphQLFetcher{rateTracker: exhausted}))
-	assert.True(syncer.bulkGraphQLAllowed(repo, &GraphQLFetcher{}))
+	assert.False(syncer.bulkGraphQLAllowed(t.Context(), repo, &GraphQLFetcher{rateTracker: exhausted}))
+	assert.True(syncer.bulkGraphQLAllowed(t.Context(), repo, &GraphQLFetcher{}))
 }

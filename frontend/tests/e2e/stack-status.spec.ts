@@ -345,7 +345,7 @@ async function mockStackedPR(
     }
 
     if (method === "GET" && pathname === "/api/v1/rate-limits") {
-      await fulfillJson(route, { hosts: {} });
+      await fulfillJson(route, { provider_pools: {}, local_ceilings: {} });
       return;
     }
 

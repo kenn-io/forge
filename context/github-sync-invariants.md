@@ -350,7 +350,13 @@ response never overwrites an App installation pool
   quota (`internal/github/sync.go::backgroundQuotaAvailability`).
 - Gate background eligibility on REST only. Bulk GraphQL is an optimization with
   a REST fallback, so requiring GraphQL capacity stops repositories that could
-  still sync (`internal/github/sync.go::backgroundQuotaAvailability`).
+  still sync (`internal/github/sync.go::backgroundQuotaAvailability`). That makes
+  `bulkGraphQLAllowed` the only place the GraphQL reserve is applied: it must
+  hold the reserve for background work and waive it for foreground syncs.
+- A reserve gate inside a per-credential loop stops only its own bucket: mark
+  that bucket exhausted, retain the error, and keep processing, or one exhausted
+  credential silently defers work every other credential could still do
+  (`internal/github/notifications_sync.go::ProcessQueuedNotificationReads`).
 - Unknown and exhausted are independent: callers that treat unknown quota as
   permission to proceed must check `Exhausted`, or an unobserved resource
   silently admits work a known reserve forbids

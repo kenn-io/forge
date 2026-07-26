@@ -630,11 +630,19 @@ func (s *Syncer) ProcessQueuedNotificationReads(ctx context.Context, kind platfo
 		// reconciliation refetch on this row's credential. Stop before
 		// crossing that credential's reserve instead of discovering it as a
 		// per-row rate-limit error partway through the acknowledgement.
+		//
+		// Exhausting one credential's headroom stops only that bucket. Other
+		// credentials on this host keep propagating, matching how an actual
+		// rate-limit response is handled below.
 		if err := s.ensureNotificationBudget(RepoRef{
 			Platform: kind, PlatformHost: host,
 			Owner: notification.RepoOwner, Name: notification.RepoName,
 		}, client, notificationAckWorstCaseRequests); err != nil {
-			return err
+			exhausted[bucket] = struct{}{}
+			if rateLimitErr == nil {
+				rateLimitErr = err
+			}
+			continue
 		}
 		current, err := s.db.NotificationAckPropagationCurrent(ctx, notification.ID, notification.SourceAckQueuedAt, notification.SourceUpdatedAt)
 		if err != nil {

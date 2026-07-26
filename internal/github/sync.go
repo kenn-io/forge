@@ -3766,18 +3766,28 @@ func (s *Syncer) advanceNextSync(
 // In quota-registry mode the decision reads the repository credential's own
 // GraphQL pool: the fetcher's tracker is host-wide, so one credential reaching
 // zero would otherwise suppress bulk fetches for a healthy credential and push
-// that work onto REST. The threshold stays the legacy exhaustion point rather
-// than the 200-request reserve, because this decision also runs on foreground
-// syncs, where the reserve must not block explicit work; background scheduling
-// applies the reserve earlier in repoEligibility and Admit.
-func (s *Syncer) bulkGraphQLAllowed(repo RepoRef, fetcher *GraphQLFetcher) bool {
+// that work onto REST.
+//
+// This is the only place the GraphQL reserve is enforced. Background admission
+// deliberately gates on REST alone, because bulk GraphQL is optional and falls
+// back to REST — so the reserve has to be applied here or background work would
+// spend the GraphQL headroom held for foreground requests. Foreground syncs are
+// explicit user work and keep the legacy exhaustion threshold, where only a
+// genuinely empty pool sends them down the REST path.
+func (s *Syncer) bulkGraphQLAllowed(
+	ctx context.Context, repo RepoRef, fetcher *GraphQLFetcher,
+) bool {
 	if repoPlatform(repo) == platform.KindGitHub && s.quotaRegistry != nil {
 		if identity, err := s.identityForRepo(repo, false); err == nil {
+			reserve := 0
+			if IsSyncBudgetContext(ctx) {
+				reserve = RateReserveBuffer
+			}
 			availability := s.quotaRegistry.CheckReserve(
 				identity,
 				[]QuotaResource{QuotaResourceGraphQL},
 				1,
-				0,
+				reserve,
 			)
 			return availability.AllowedOrUnobserved()
 		}
@@ -5754,7 +5764,7 @@ func (s *Syncer) indexSyncRepo(
 			graphQLDone := false
 			if fetcher := s.fetcherFor(repo); fetcher != nil &&
 				s.shouldUseBulkGraphQLForMRs(ctx, repo, repoID, len(openMRs)) {
-				if s.bulkGraphQLAllowed(repo, fetcher) {
+				if s.bulkGraphQLAllowed(ctx, repo, fetcher) {
 					result, gqlErr := fetcher.FetchRepoPRs(
 						ctx, repo.Owner, repo.Name, preferNativeStacks,
 					)
@@ -5891,7 +5901,7 @@ func (s *Syncer) indexSyncRepo(
 			graphQLIssuesDone := false
 			if fetcher := s.fetcherFor(repo); fetcher != nil &&
 				s.shouldUseBulkGraphQLForIssues(ctx, repo, repoID, len(openIssues)+len(ghIssues)) {
-				if s.bulkGraphQLAllowed(repo, fetcher) {
+				if s.bulkGraphQLAllowed(ctx, repo, fetcher) {
 					issueResult, gqlErr := fetcher.FetchRepoIssues(
 						ctx, repo.Owner, repo.Name,
 					)

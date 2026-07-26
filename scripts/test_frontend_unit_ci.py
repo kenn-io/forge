@@ -107,7 +107,7 @@ class FrontendUnitCITest(unittest.TestCase):
             (self.root / "tmp" / "frontend-unit-diagnostics" / "vitest.log").read_text(),
         )
 
-    def test_missing_time_preserves_other_diagnostics(self) -> None:
+    def test_collects_diagnostics_without_external_time(self) -> None:
         cgroup_root = self.root / "cgroup"
         cgroup_root.mkdir()
         for metric in ("memory.current", "memory.peak", "memory.max", "memory.events"):
@@ -118,7 +118,6 @@ class FrontendUnitCITest(unittest.TestCase):
             "import sys; "
             "print(os.environ.get('NODE_OPTIONS', '')); "
             "sys.exit(23)",
-            time_binary=self.root / "missing-time",
             cgroup_root=cgroup_root,
             version_commands=((sys.executable, "-c", "print('controlled version')"),),
         )
@@ -133,15 +132,33 @@ class FrontendUnitCITest(unittest.TestCase):
                 (self.diagnostics / name).read_text(),
             )
         self.assertTrue((self.diagnostics / "node-reports").is_dir())
-        self.assertFalse((self.diagnostics / "time.txt").exists())
+        timing = (self.diagnostics / "time.txt").read_text()
+        self.assertIn("Elapsed wall time (seconds):", timing)
+        self.assertIn("Child user CPU time (seconds):", timing)
+        self.assertIn("Child system CPU time (seconds):", timing)
         self.assertNotIn("running tests directly", warnings)
+
+    def test_time_output_failure_cannot_prevent_tests(self) -> None:
+        self.diagnostics.mkdir(parents=True)
+        (self.diagnostics / "time.txt").mkdir()
+
+        status, output, _ = self.run_child(
+            "print('child output'); import sys; sys.exit(23)"
+        )
+
+        self.assertEqual(23, status)
+        self.assertIn("child output", output)
+        self.assertIn("child output", (self.diagnostics / "vitest.log").read_text())
 
     def test_streams_output_and_preserves_success(self) -> None:
         status, output, _ = self.run_child("print('child output')")
         self.assertEqual(0, status)
         self.assertIn("child output", output)
         self.assertIn("child output", (self.diagnostics / "vitest.log").read_text())
-        self.assertTrue((self.diagnostics / "time.txt").read_text())
+        self.assertIn(
+            "Elapsed wall time (seconds):",
+            (self.diagnostics / "time.txt").read_text(),
+        )
 
     def test_preserves_failure_status(self) -> None:
         status, _, _ = self.run_child("import sys; print('failed'); sys.exit(23)")
@@ -245,7 +262,7 @@ class FrontendUnitCITest(unittest.TestCase):
         self.assertIn("--report-exclude-env", log)
         self.assertIn(str((self.diagnostics / "node-reports").resolve()), log)
 
-    def test_version_report_write_failure_preserves_child_status_on_timed_path(self) -> None:
+    def test_version_report_write_failure_preserves_child_status(self) -> None:
         destination = self.diagnostics / "versions.txt"
         original_open = Path.open
         opened = False
@@ -283,7 +300,7 @@ class FrontendUnitCITest(unittest.TestCase):
         self.assertEqual(23, status)
         self.assertIn("child output", output)
 
-    def test_log_write_failure_preserves_status_and_streams_output_on_timed_path(self) -> None:
+    def test_log_write_failure_preserves_status_and_streams_output(self) -> None:
         destination = self.diagnostics / "vitest.log"
         original_open = Path.open
         opened = False

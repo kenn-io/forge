@@ -3,13 +3,13 @@
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Sequence
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CGROUP_ROOT = Path("/sys/fs/cgroup")
-TIME_BINARY = Path("/usr/bin/time")
 TEST_COMMAND = ("../node_modules/.bin/vp", "test", "run", "--project", "unit")
 VERSION_COMMANDS = (
     ("node", "--version"),
@@ -92,6 +92,41 @@ def _capture_cgroup_metrics(cgroup_root: Path, destination: Path) -> None:
         return
 
 
+def _timing_snapshot() -> tuple[float, float, float] | None:
+    try:
+        process_times = os.times()
+        return (
+            time.monotonic(),
+            process_times.children_user,
+            process_times.children_system,
+        )
+    except (AttributeError, OSError):
+        return None
+
+
+def _record_timing(
+    destination: Path, started: tuple[float, float, float] | None
+) -> None:
+    if started is None:
+        return
+    finished = _timing_snapshot()
+    if finished is None:
+        return
+    try:
+        destination.write_text(
+            "\n".join(
+                (
+                    f"Elapsed wall time (seconds): {finished[0] - started[0]:.3f}",
+                    f"Child user CPU time (seconds): {finished[1] - started[1]:.3f}",
+                    f"Child system CPU time (seconds): {finished[2] - started[2]:.3f}",
+                    "",
+                )
+            )
+        )
+    except OSError:
+        return
+
+
 def _diagnostic_node_options(node_reports: Path) -> str:
     return " ".join(
         (
@@ -108,7 +143,6 @@ def run_frontend_unit(
     repo_root: Path = REPO_ROOT,
     diagnostics_dir: Path | None = None,
     cgroup_root: Path = CGROUP_ROOT,
-    time_binary: Path = TIME_BINARY,
     test_command: Sequence[str] = TEST_COMMAND,
     version_commands: Sequence[Sequence[str]] = VERSION_COMMANDS,
 ) -> int:
@@ -136,20 +170,10 @@ def run_frontend_unit(
     )
 
     try:
-        child_command: Sequence[str] = test_command
-        if time_binary.is_file() and os.access(time_binary, os.X_OK):
-            time_file = diagnostics_dir / "time.txt"
-            child_command = [
-                str(time_binary),
-                "-v",
-                "-o",
-                str(time_file),
-                "--",
-                *test_command,
-            ]
+        timing_started = _timing_snapshot()
         try:
             process = subprocess.Popen(
-                child_command,
+                test_command,
                 cwd=frontend_dir,
                 env=environment,
                 stdout=subprocess.PIPE,
@@ -196,6 +220,7 @@ def run_frontend_unit(
                 except OSError:
                     pass
             returncode = process.wait()
+            _record_timing(diagnostics_dir / "time.txt", timing_started)
         return _status(returncode)
     finally:
         _capture_cgroup_metrics(cgroup_root, diagnostics_dir / "cgroup-after.txt")

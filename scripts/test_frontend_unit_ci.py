@@ -1,5 +1,7 @@
 import contextlib
 import io
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -63,6 +65,76 @@ class FrontendUnitCITest(unittest.TestCase):
         destination = self.diagnostics / name
         destination.symlink_to("/dev/full")
         return destination
+
+    def test_process_exit_status_survives_closed_output_pipe(self) -> None:
+        scripts_dir = self.root / "scripts"
+        scripts_dir.mkdir()
+        shutil.copy2(
+            Path(__file__).with_name("frontend_unit_ci.py"),
+            scripts_dir / "frontend_unit_ci.py",
+        )
+        vp = self.root / "node_modules" / ".bin" / "vp"
+        vp.parent.mkdir(parents=True)
+        marker = self.root / "release-child"
+        vp.write_text(
+            f"#!{sys.executable}\n"
+            "import pathlib\n"
+            "import sys\n"
+            "import time\n"
+            f"marker = pathlib.Path({str(marker)!r})\n"
+            "while not marker.exists():\n"
+            "    time.sleep(0.01)\n"
+            "print('child output', flush=True)\n"
+            "sys.exit(23)\n"
+        )
+        vp.chmod(0o755)
+
+        process = subprocess.Popen(
+            (sys.executable, "scripts/frontend_unit_ci.py"),
+            cwd=self.root,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        assert process.stdout is not None
+        process.stdout.close()
+        marker.touch()
+        self.assertEqual(23, process.wait(timeout=10))
+        assert process.stderr is not None
+        process.stderr.close()
+        self.assertIn(
+            "child output",
+            (self.root / "tmp" / "frontend-unit-diagnostics" / "vitest.log").read_text(),
+        )
+
+    def test_missing_time_preserves_other_diagnostics(self) -> None:
+        cgroup_root = self.root / "cgroup"
+        cgroup_root.mkdir()
+        for metric in ("memory.current", "memory.peak", "memory.max", "memory.events"):
+            (cgroup_root / metric).write_text(f"controlled {metric}\n")
+
+        status, output, warnings = self.run_child(
+            "import os; "
+            "import sys; "
+            "print(os.environ.get('NODE_OPTIONS', '')); "
+            "sys.exit(23)",
+            time_binary=self.root / "missing-time",
+            cgroup_root=cgroup_root,
+            version_commands=((sys.executable, "-c", "print('controlled version')"),),
+        )
+
+        self.assertEqual(23, status)
+        self.assertIn("--report-exclude-env", output)
+        self.assertIn("--report-exclude-env", (self.diagnostics / "vitest.log").read_text())
+        self.assertIn("controlled version", (self.diagnostics / "versions.txt").read_text())
+        for name in ("cgroup-before.txt", "cgroup-after.txt"):
+            self.assertIn(
+                "== memory.current ==\ncontrolled memory.current",
+                (self.diagnostics / name).read_text(),
+            )
+        self.assertTrue((self.diagnostics / "node-reports").is_dir())
+        self.assertFalse((self.diagnostics / "time.txt").exists())
+        self.assertNotIn("running tests directly", warnings)
 
     def test_streams_output_and_preserves_success(self) -> None:
         status, output, _ = self.run_child("print('child output')")

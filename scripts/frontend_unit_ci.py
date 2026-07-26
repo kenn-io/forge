@@ -23,6 +23,18 @@ def _status(returncode: int) -> int:
     return 128 - returncode if returncode < 0 else returncode
 
 
+def _disable_console_output() -> None:
+    try:
+        stdout_fd = sys.stdout.fileno()
+        null_fd = os.open(os.devnull, os.O_WRONLY)
+        try:
+            os.dup2(null_fd, stdout_fd)
+        finally:
+            os.close(null_fd)
+    except (AttributeError, OSError, ValueError):
+        sys.stdout = None
+
+
 def _run_direct(command: Sequence[str], cwd: Path) -> int:
     try:
         returncode = subprocess.run(command, cwd=cwd, check=False).returncode
@@ -33,20 +45,15 @@ def _run_direct(command: Sequence[str], cwd: Path) -> int:
         return 126
 
 
-def _prepare_diagnostics(time_binary: Path, diagnostics_dir: Path) -> tuple[Path, Path, Path]:
-    if not time_binary.is_file() or not os.access(time_binary, os.X_OK):
-        raise OSError(f"{time_binary} is not executable")
-
+def _prepare_diagnostics(diagnostics_dir: Path) -> tuple[Path, Path, Path]:
     diagnostics_dir.mkdir(parents=True, exist_ok=True)
     node_reports = diagnostics_dir / "node-reports"
     node_reports.mkdir(exist_ok=True)
-    time_file = diagnostics_dir / "time.txt"
     vitest_log = diagnostics_dir / "vitest.log"
     versions_file = diagnostics_dir / "versions.txt"
-    time_file.touch()
     vitest_log.touch()
     versions_file.touch()
-    return node_reports, time_file, vitest_log
+    return node_reports, vitest_log, versions_file
 
 
 def _record_versions(commands: Sequence[Sequence[str]], cwd: Path, destination: Path) -> None:
@@ -109,9 +116,7 @@ def run_frontend_unit(
     diagnostics_dir = diagnostics_dir or repo_root / "tmp" / "frontend-unit-diagnostics"
 
     try:
-        node_reports, time_file, vitest_log = _prepare_diagnostics(
-            time_binary, diagnostics_dir
-        )
+        node_reports, vitest_log, versions_file = _prepare_diagnostics(diagnostics_dir)
     except OSError as error:
         print(
             f"warning: frontend diagnostics unavailable ({error}); running tests directly",
@@ -119,7 +124,7 @@ def run_frontend_unit(
         )
         return _run_direct(test_command, frontend_dir)
 
-    _record_versions(version_commands, frontend_dir, diagnostics_dir / "versions.txt")
+    _record_versions(version_commands, frontend_dir, versions_file)
     _capture_cgroup_metrics(cgroup_root, diagnostics_dir / "cgroup-before.txt")
 
     environment = os.environ.copy()
@@ -131,9 +136,20 @@ def run_frontend_unit(
     )
 
     try:
+        child_command: Sequence[str] = test_command
+        if time_binary.is_file() and os.access(time_binary, os.X_OK):
+            time_file = diagnostics_dir / "time.txt"
+            child_command = [
+                str(time_binary),
+                "-v",
+                "-o",
+                str(time_file),
+                "--",
+                *test_command,
+            ]
         try:
             process = subprocess.Popen(
-                [str(time_binary), "-v", "-o", str(time_file), "--", *test_command],
+                child_command,
                 cwd=frontend_dir,
                 env=environment,
                 stdout=subprocess.PIPE,
@@ -142,12 +158,10 @@ def run_frontend_unit(
                 encoding="utf-8",
                 errors="replace",
             )
-        except OSError as error:
-            print(
-                f"warning: frontend diagnostics unavailable ({error}); running tests directly",
-                file=sys.stderr,
-            )
-            return _run_direct(test_command, frontend_dir)
+        except FileNotFoundError:
+            return 127
+        except PermissionError:
+            return 126
 
         try:
             log_file = vitest_log.open("w", encoding="utf-8")
@@ -163,6 +177,7 @@ def run_frontend_unit(
                         sys.stdout.write(line)
                         sys.stdout.flush()
                     except (OSError, UnicodeError, ValueError):
+                        _disable_console_output()
                         console_available = False
                 if log_file is not None:
                     try:

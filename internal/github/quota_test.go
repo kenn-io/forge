@@ -171,3 +171,44 @@ func quotaTestHeaders(limit, remaining int, reset time.Time) http.Header {
 		"X-Ratelimit-Reset":     []string{strconv.FormatInt(reset.Unix(), 10)},
 	}
 }
+
+// An unknown resource must not hide a known-exhausted one. Background callers
+// treat unknown quota as permission to proceed, so if REST is at its reserve
+// while GraphQL has never been observed, admitting the work would spend REST
+// past the reserve held for foreground mutations.
+func TestQuotaAvailabilityUnknownResourceDoesNotMaskExhaustedResource(t *testing.T) {
+	assert := assert.New(t)
+	registry := NewQuotaRegistry()
+	registry.UpdateSnapshot(quotaTestUser, QuotaResourceREST, Rate{
+		Limit: 5000, Remaining: 200, Reset: time.Now().UTC().Add(time.Hour),
+	})
+
+	availability := registry.CheckReserve(
+		quotaTestUser,
+		[]QuotaResource{QuotaResourceREST, QuotaResourceGraphQL},
+		1,
+		200,
+	)
+
+	assert.False(availability.Allowed)
+	assert.False(availability.Known, "the GraphQL pool has not been observed")
+	assert.True(availability.Exhausted, "the REST pool is known to be at its reserve")
+	assert.False(availability.AllowedOrUnobserved(),
+		"an unobserved GraphQL pool must not admit work the REST reserve forbids")
+}
+
+// With nothing observed at all, background work still proceeds: response
+// headers are what populate the registry in the first place.
+func TestQuotaAvailabilityFullyUnobservedAllowsBackgroundWork(t *testing.T) {
+	assert := assert.New(t)
+	registry := NewQuotaRegistry()
+
+	availability := registry.CheckReserve(
+		quotaTestUser, []QuotaResource{QuotaResourceREST}, 1, 200,
+	)
+
+	assert.False(availability.Allowed)
+	assert.False(availability.Known)
+	assert.False(availability.Exhausted)
+	assert.True(availability.AllowedOrUnobserved())
+}

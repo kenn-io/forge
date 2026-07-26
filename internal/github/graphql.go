@@ -813,7 +813,7 @@ func NewGraphQLFetcher(
 	// above authRT would let a 401-then-retry count as a single spend
 	// since AuthTransport's retry never becomes visible to a wrapper
 	// above it.
-	var readBase http.RoundTripper = WrapSyncBudgetTransport(
+	var readBase = WrapSyncBudgetTransport(
 		http.DefaultTransport, budget,
 	)
 	if resolvedOptions.quotaRegistry != nil &&

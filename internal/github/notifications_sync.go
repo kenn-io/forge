@@ -465,7 +465,7 @@ func (s *Syncer) ensureNotificationBudget(
 			)
 			// An unknown pool does not pause notification work: ordinary
 			// response headers are what establish it in the first place.
-			if availability.Known && !availability.Allowed {
+			if availability.Exhausted {
 				return fmt.Errorf(
 					"notification sync paused for %s: user rate reserve exhausted", host,
 				)

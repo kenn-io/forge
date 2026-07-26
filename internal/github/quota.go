@@ -131,10 +131,23 @@ func (r *QuotaRegistry) Snapshot() []QuotaPool {
 	return pools
 }
 
+// QuotaAvailability reports one credential's headroom across the requested
+// resources. Known and Exhausted are tracked independently: a resource whose
+// pool has never been observed makes the answer unknown, but it must not hide
+// a different resource that is known to be at its reserve. Callers that treat
+// unknown as permission to proceed must therefore also check Exhausted.
 type QuotaAvailability struct {
-	Allowed bool
-	Known   bool
-	ResetAt *time.Time
+	Allowed   bool
+	Known     bool
+	Exhausted bool
+	ResetAt   *time.Time
+}
+
+// AllowedOrUnobserved reports whether background work may proceed. Unknown
+// quota is permission to proceed — ordinary response headers are what populate
+// the registry — but only while no observed resource sits at its reserve.
+func (a QuotaAvailability) AllowedOrUnobserved() bool {
+	return a.Allowed || (!a.Known && !a.Exhausted)
 }
 
 func (r *QuotaRegistry) CheckReserve(
@@ -154,6 +167,7 @@ func (r *QuotaRegistry) CheckReserve(
 		}
 		if pool.Remaining-cost < reserve {
 			availability.Allowed = false
+			availability.Exhausted = true
 			if !pool.ResetAt.IsZero() &&
 				(availability.ResetAt == nil || pool.ResetAt.After(*availability.ResetAt)) {
 				reset := pool.ResetAt

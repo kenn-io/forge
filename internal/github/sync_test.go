@@ -15516,6 +15516,78 @@ func TestBulkGraphQLAllowedIsolatesCredentialGraphQLPools(t *testing.T) {
 		"healthy user credential must not inherit the App pool's exhaustion")
 }
 
+// Bulk GraphQL is an optional optimization with a REST fallback, so a
+// credential whose GraphQL pool is exhausted must keep syncing over REST
+// instead of being held out of background scheduling entirely.
+func TestRepoEligibilityIgnoresExhaustedGraphQLWhenRESTHasCapacity(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
+	client := &credentialRateLimitSnapshotMockClient{mockClient: &mockClient{}}
+	identity := IdentityKey{Host: "github.com", Principal: "user:7"}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client},
+		d, nil, []RepoRef{repo}, time.Minute, nil, nil,
+	)
+	router, err := NewHostRouter("github.com", &Route{
+		Key: RouteKey{Host: "github.com", Owner: "acme"}, Client: client,
+		ReadIdentity: identity, WriteIdentity: identity,
+	})
+	require.NoError(err)
+	syncer.SetGitHubRouters(map[string]*HostRouter{"github.com": router})
+	registry := NewQuotaRegistry()
+	reset := time.Now().UTC().Add(time.Hour)
+	registry.UpdateSnapshot(identity, QuotaResourceREST, Rate{
+		Limit: 5000, Remaining: 4000, Reset: reset,
+	})
+	registry.UpdateSnapshot(identity, QuotaResourceGraphQL, Rate{
+		Limit: 5000, Remaining: 0, Reset: reset,
+	})
+	syncer.SetQuotaRegistry(registry)
+
+	bucket, err := syncer.bucketKeyForRepo(repo, false)
+	require.NoError(err)
+	eligible := syncer.repoEligibility([]RepoRef{repo}, map[string]time.Time{})
+
+	assert.True(eligible[bucket],
+		"REST capacity must keep the repository schedulable despite exhausted GraphQL")
+}
+
+// An exhausted REST pool still stops background scheduling even when the
+// GraphQL pool has never been observed: unknown quota must not mask it.
+func TestRepoEligibilityStopsOnExhaustedRESTWithUnobservedGraphQL(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
+	client := &credentialRateLimitSnapshotMockClient{mockClient: &mockClient{}}
+	identity := IdentityKey{Host: "github.com", Principal: "user:7"}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client},
+		d, nil, []RepoRef{repo}, time.Minute, nil, nil,
+	)
+	router, err := NewHostRouter("github.com", &Route{
+		Key: RouteKey{Host: "github.com", Owner: "acme"}, Client: client,
+		ReadIdentity: identity, WriteIdentity: identity,
+	})
+	require.NoError(err)
+	syncer.SetGitHubRouters(map[string]*HostRouter{"github.com": router})
+	registry := NewQuotaRegistry()
+	registry.UpdateSnapshot(identity, QuotaResourceREST, Rate{
+		Limit: 5000, Remaining: RateReserveBuffer,
+		Reset: time.Now().UTC().Add(time.Hour),
+	})
+	syncer.SetQuotaRegistry(registry)
+
+	bucket, err := syncer.bucketKeyForRepo(repo, false)
+	require.NoError(err)
+	eligible := syncer.repoEligibility([]RepoRef{repo}, map[string]time.Time{})
+
+	assert.False(eligible[bucket],
+		"an exhausted REST reserve must stop scheduling regardless of GraphQL")
+}
+
 // Without a registry the host-wide tracker remains authoritative.
 func TestBulkGraphQLAllowedFallsBackToHostTracker(t *testing.T) {
 	assert := assert.New(t)

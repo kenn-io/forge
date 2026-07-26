@@ -3138,13 +3138,6 @@ func (s *Syncer) BudgetForRepo(repo RepoRef) (*SyncBudget, bool) {
 	return budget, true
 }
 
-func (s *Syncer) readBucketKeyForWatchedMR(mr WatchedMR) (string, error) {
-	return s.bucketKeyForRepo(RepoRef{
-		Owner: mr.Owner, Name: mr.Name,
-		Platform: mr.Platform, PlatformHost: mr.PlatformHost,
-	}, false)
-}
-
 func platformRepoRef(repo RepoRef) platform.RepoRef {
 	repoPath := repo.RepoPath
 	if repoPath == "" {
@@ -3690,6 +3683,11 @@ func (s *Syncer) runArchiveLoop(ctx context.Context, ready <-chan struct{}) {
 // backgroundQuotaAvailability reports the repository's routed credential
 // capacity for background work. Non-GitHub repositories and unconfigured
 // registries report unknown, which callers treat as no provider gate.
+//
+// Only REST is required. Bulk GraphQL is an optional optimization with a REST
+// fallback, and bulkGraphQLAllowed checks the GraphQL pool where it is actually
+// spent, so an exhausted GraphQL pool must not stop a repository that can still
+// sync over REST.
 func (s *Syncer) backgroundQuotaAvailability(
 	repo RepoRef, cost int,
 ) QuotaAvailability {
@@ -3702,7 +3700,7 @@ func (s *Syncer) backgroundQuotaAvailability(
 	}
 	return s.quotaRegistry.CheckReserve(
 		identity,
-		[]QuotaResource{QuotaResourceREST, QuotaResourceGraphQL},
+		[]QuotaResource{QuotaResourceREST},
 		cost,
 		RateReserveBuffer,
 	)
@@ -3730,11 +3728,11 @@ func (s *Syncer) repoEligibility(
 			continue
 		}
 		if repoPlatform(repo) == platform.KindGitHub && s.quotaRegistry != nil {
-			availability := s.backgroundQuotaAvailability(repo, 1)
 			// Ordinary background sync may establish an unknown pool from
-			// response headers. Archive admission is stricter and waits for
-			// both pools to be known before spending surplus.
-			eligible[key] = availability.Allowed || !availability.Known
+			// response headers, so unknown quota is not a stop. Archive
+			// admission is stricter and waits for both pools to be known
+			// before spending surplus.
+			eligible[key] = s.backgroundQuotaAvailability(repo, 1).AllowedOrUnobserved()
 			continue
 		}
 		tracker := s.rateTrackers[key]
@@ -3781,7 +3779,7 @@ func (s *Syncer) bulkGraphQLAllowed(repo RepoRef, fetcher *GraphQLFetcher) bool 
 				1,
 				0,
 			)
-			return availability.Allowed || !availability.Known
+			return availability.AllowedOrUnobserved()
 		}
 	}
 	backoff, _ := fetcher.ShouldBackoff()
@@ -4169,12 +4167,6 @@ func (s *Syncer) QuotaRegistry() *QuotaRegistry {
 	return s.quotaRegistry
 }
 
-func (s *Syncer) reposSnapshot() []RepoRef {
-	s.reposMu.Lock()
-	defer s.reposMu.Unlock()
-	return slices.Clone(s.repos)
-}
-
 // GQLRateTrackers returns per-provider/host GraphQL rate trackers
 // extracted from the registered GraphQL fetchers. Hosts with
 // nil fetchers or trackers are skipped.
@@ -4450,8 +4442,7 @@ func (s *Syncer) runWorker(
 		// Provider reserve first: this credential's own GitHub pool. The
 		// tracker backoff below is a separate signal (secondary limits and
 		// Retry-After), so both gates apply.
-		if availability := s.backgroundQuotaAvailability(repo, 1); availability.Known &&
-			!availability.Allowed {
+		if availability := s.backgroundQuotaAvailability(repo, 1); availability.Exhausted {
 			wait := time.Minute
 			if availability.ResetAt != nil {
 				wait = time.Until(*availability.ResetAt)

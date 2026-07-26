@@ -348,6 +348,13 @@ response never overwrites an App installation pool
 - Background admission gates on the routed credential's own reserve; the local
   `sync_budget_per_hour` ceiling is separate and is reported apart from provider
   quota (`internal/github/sync.go::backgroundQuotaAvailability`).
+- Gate background eligibility on REST only. Bulk GraphQL is an optimization with
+  a REST fallback, so requiring GraphQL capacity stops repositories that could
+  still sync (`internal/github/sync.go::backgroundQuotaAvailability`).
+- Unknown and exhausted are independent: callers that treat unknown quota as
+  permission to proceed must check `Exhausted`, or an unobserved resource
+  silently admits work a known reserve forbids
+  (`internal/github/quota.go::QuotaAvailability.AllowedOrUnobserved`).
 - The local ceiling rolls its hourly window on its own clock and must never need
   a provider response to reset: an exhausted ceiling refuses counted requests
   before any wire attempt, so a reset driven only by response headers or

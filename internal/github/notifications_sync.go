@@ -428,39 +428,12 @@ func (s *Syncer) listParticipatingNotificationIDs(
 }
 
 // ensureNotificationBudget checks both ceilings for an operation that can spend
-// up to cost requests on the repository's notification credential. Callers pass
+// up to cost requests against the local hourly ceiling, which is the hard
+// guard and keeps a real per-operation cost. The provider reserve beside it is
+// the shared cadence-cached check and does not vary by caller. Callers pass
 // the operation's worst case, not one request, so a multi-request
 // acknowledgement cannot start with only enough headroom for its first call and
 // cross a ceiling partway through.
-// persistedWriteQuotaAvailability answers from the notification credential's
-// SQLite-backed tracker when the registry has never observed it, mirroring what
-// repository admission does for reads. Notifications resolve to the write
-// identity, so it reads the write tracker.
-func (s *Syncer) persistedWriteQuotaAvailability(
-	repo RepoRef, cost int, unobserved QuotaAvailability,
-) QuotaAvailability {
-	bucket, err := s.bucketKeyForRepo(repo, true)
-	if err != nil {
-		return unobserved
-	}
-	tracker := s.writeRateTrackers[bucket]
-	if tracker == nil {
-		tracker = s.rateTrackers[bucket]
-	}
-	if tracker == nil || !tracker.Known() {
-		return unobserved
-	}
-	// An elapsed window describes a quota that has since reset.
-	resetAt := tracker.ResetAt()
-	if resetAt == nil || !time.Now().UTC().Before(*resetAt) {
-		return unobserved
-	}
-	if tracker.Remaining()-cost < RateReserveBuffer {
-		return QuotaAvailability{Known: true, Exhausted: true, ResetAt: resetAt}
-	}
-	return QuotaAvailability{Allowed: true, Known: true, ResetAt: resetAt}
-}
-
 func (s *Syncer) ensureNotificationBudget(
 	repo RepoRef, client notificationClient, cost int,
 ) error {
@@ -487,28 +460,13 @@ func (s *Syncer) ensureNotificationBudget(
 	// the shared read tracker. Without this, split-auth hosts would let
 	// background notification work spend the user credential below the reserve
 	// held for foreground mutations.
-	if repoPlatform(repo) == platform.KindGitHub && s.quotaRegistry != nil {
-		if identity, idErr := s.identityForRepo(repo, writeIdentity); idErr == nil {
-			availability := s.quotaRegistry.CheckReserve(
-				identity, []QuotaResource{QuotaResourceREST}, cost, RateReserveBuffer,
-			)
-			// An unknown pool does not pause notification work: ordinary
-			// response headers are what establish it in the first place. But
-			// the registry is in-memory, so after a restart it is silent while
-			// the write tracker still remembers this credential's pool -- and a
-			// failed /rate_limit refresh is exactly when that happens. Fall
-			// back to the persisted state rather than reading silence as room.
-			if !availability.Known {
-				availability = s.persistedWriteQuotaAvailability(
-					repo, cost, availability,
-				)
-			}
-			if availability.Exhausted {
-				return fmt.Errorf(
-					"notification sync paused for %s: user rate reserve exhausted", host,
-				)
-			}
-		}
+	// Notifications resolve to the write identity, so they gate on that
+	// credential -- through the same cadence-cached reserve check every other
+	// background path uses.
+	if s.backgroundReserveExhausted(repo, QuotaResourceREST, writeIdentity) {
+		return fmt.Errorf(
+			"notification sync paused for %s: user rate reserve exhausted", host,
+		)
 	}
 	bypassReserve := notificationBypassesReadRateReserve(client)
 	if s.routers[host] != nil {

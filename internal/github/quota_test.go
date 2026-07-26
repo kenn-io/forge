@@ -242,11 +242,9 @@ func TestBackgroundAdmissionUsesPersistedTrackerWhenRegistryIsEmpty(t *testing.T
 		quotaRegistry: NewQuotaRegistry(),
 	}
 
-	availability := syncer.backgroundQuotaAvailability(repo, 1)
-
-	assert.True(availability.Exhausted,
+	assert.True(
+		syncer.backgroundReserveExhausted(repo, QuotaResourceREST, false),
 		"a persisted pool at its reserve must not read as unobserved")
-	assert.False(availability.AllowedOrUnobserved())
 }
 
 // A persisted window that has already elapsed describes a quota that has since
@@ -275,45 +273,9 @@ func TestBackgroundAdmissionIgnoresPersistedTrackerPastItsResetWindow(t *testing
 		quotaRegistry: NewQuotaRegistry(),
 	}
 
-	availability := syncer.backgroundQuotaAvailability(repo, 1)
-
-	assert.False(availability.Exhausted)
-	assert.True(availability.AllowedOrUnobserved(),
+	assert.False(
+		syncer.backgroundReserveExhausted(repo, QuotaResourceREST, false),
 		"an elapsed persisted window cannot speak for the current quota")
-}
-
-// The GraphQL restart fallback must apply the reserve, not just backoff:
-// backoff blocks only a pool at zero, so a persisted pool inside the reserve
-// but above zero would otherwise admit bulk work after a restart.
-func TestBulkGraphQLPersistedFallbackAppliesTheBackgroundReserve(t *testing.T) {
-	assert := assert.New(t)
-	database := openTestDB(t)
-	tracker := NewRateTracker(database, "github.com", "user:7", "graphql")
-	tracker.UpdateFromSnapshot(Rate{
-		Limit: 5000, Remaining: RateReserveBuffer,
-		Reset: time.Now().UTC().Add(time.Hour),
-	})
-	fetcher := NewGraphQLFetcherWithClient(nil, tracker)
-
-	assert.False(persistedGraphQLAllowed(WithSyncBudget(t.Context()), fetcher),
-		"background work must respect the persisted reserve after a restart")
-	assert.True(persistedGraphQLAllowed(t.Context(), fetcher),
-		"foreground work is what the reserve is held for")
-}
-
-// An elapsed persisted window describes a quota that has since reset.
-func TestBulkGraphQLPersistedFallbackIgnoresAnElapsedWindow(t *testing.T) {
-	assert := assert.New(t)
-	database := openTestDB(t)
-	tracker := NewRateTracker(database, "github.com", "user:7", "graphql")
-	tracker.UpdateFromSnapshot(Rate{
-		Limit: 5000, Remaining: RateReserveBuffer,
-		Reset: time.Now().UTC().Add(time.Hour),
-	})
-	tracker.SetResetAtForTesting(time.Now().UTC().Add(-time.Minute))
-	fetcher := NewGraphQLFetcherWithClient(nil, tracker)
-
-	assert.True(persistedGraphQLAllowed(WithSyncBudget(t.Context()), fetcher))
 }
 
 // Concurrent responses complete out of order, so a header issued earlier can
@@ -404,4 +366,95 @@ func TestQuotaRegistrySnapshotFromAnOlderWindowDoesNotRewindThePool(t *testing.T
 	require.True(ok)
 	assert.Equal(300, pool.Remaining)
 	assert.True(pool.ResetAt.Equal(newReset))
+}
+
+// The reserve is evaluated on the snapshot cadence, not per repository, per
+// queue item, or per page. Inside one window every consumer answers from the
+// same decision, so a pool that moves mid-window is not observed until the
+// window turns.
+func TestBackgroundReserveIsEvaluatedOncePerCadenceWindow(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	identity := IdentityKey{Host: "github.com", Principal: "user:7"}
+	registry := NewQuotaRegistry()
+	reset := time.Now().UTC().Add(time.Hour)
+	registry.UpdateSnapshot(identity, QuotaResourceREST, Rate{
+		Limit: 5000, Remaining: 4000, Reset: reset,
+	})
+	repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
+	router, err := NewHostRouter("github.com", &Route{
+		Key: RouteKey{Host: "github.com", Owner: "acme"}, Client: &mockClient{},
+		ReadIdentity: identity, WriteIdentity: identity,
+	})
+	require.NoError(err)
+	clock := time.Now().UTC()
+	syncer := &Syncer{
+		routers:       map[string]*HostRouter{"github.com": router},
+		quotaRegistry: registry,
+		now:           func() time.Time { return clock },
+	}
+
+	assert.False(syncer.backgroundReserveExhausted(
+		repo, QuotaResourceREST, false))
+
+	registry.UpdateSnapshot(identity, QuotaResourceREST, Rate{
+		Limit: 5000, Remaining: RateReserveBuffer, Reset: reset,
+	})
+	assert.False(
+		syncer.backgroundReserveExhausted(repo, QuotaResourceREST, false),
+		"the verdict holds for the window rather than being re-derived")
+
+	clock = clock.Add(rateLimitSnapshotRefreshInterval)
+	assert.True(
+		syncer.backgroundReserveExhausted(repo, QuotaResourceREST, false),
+		"the window turning is what picks up the new pool")
+}
+
+// A snapshot refresh replaces the numbers the cached verdict was computed from,
+// so the refresh itself must drop the verdict rather than leave it to age out.
+// This is what puts the reserve on the snapshot's cadence rather than merely on
+// the same interval.
+func TestSnapshotRefreshDropsTheCachedReserveVerdict(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := openTestDB(t)
+	identity := IdentityKey{Host: "github.com", Principal: "user:7"}
+	bucket := RateBucketKey("github", "github.com", "user:7")
+	tracker := NewRateTracker(database, "github.com", "user:7", "rest")
+	registry := NewQuotaRegistry()
+	reset := time.Now().UTC().Add(time.Hour)
+	registry.UpdateSnapshot(identity, QuotaResourceREST, Rate{
+		Limit: 5000, Remaining: 4000, Reset: reset,
+	})
+	repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
+	// The refresh reports a credential that has reached its reserve.
+	client := &credentialRateLimitSnapshotMockClient{
+		mockClient: &mockClient{},
+		appSnapshot: &RateLimitSnapshot{
+			Core: &Rate{Limit: 5000, Remaining: RateReserveBuffer, Reset: reset},
+		},
+	}
+	router, err := NewHostRouter("github.com", &Route{
+		Key: RouteKey{Host: "github.com", Owner: "acme"}, Client: client,
+		ReadIdentity: identity, WriteIdentity: identity,
+	})
+	require.NoError(err)
+	syncer := &Syncer{
+		clients:                  registryFromGitHubClients(map[string]Client{"github.com": client}),
+		routers:                  map[string]*HostRouter{"github.com": router},
+		rateTrackers:             map[string]*RateTracker{bucket: tracker},
+		quotaRegistry:            registry,
+		rateLimitSnapshotRefresh: make(map[string]time.Time),
+		now:                      time.Now,
+	}
+	require.False(
+		syncer.backgroundReserveExhausted(repo, QuotaResourceREST, false),
+		"the credential starts with headroom",
+	)
+
+	syncer.RefreshRateLimitSnapshots(t.Context())
+
+	assert.True(
+		syncer.backgroundReserveExhausted(repo, QuotaResourceREST, false),
+		"a fresh snapshot must take effect without waiting out the window")
 }

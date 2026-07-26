@@ -348,64 +348,31 @@ response never overwrites an App installation pool
 - Background admission gates on the routed credential's own reserve; the local
   `sync_budget_per_hour` ceiling is separate and is reported apart from provider
   quota (`internal/github/sync.go::backgroundQuotaAvailability`).
+- There is one background reserve check, and it runs on the snapshot cadence
+  (`internal/github/sync.go::backgroundReserveExhausted`). The verdict is cached
+  per credential, resource, and foreground/background mode, recomputed at most
+  once per `rateLimitSnapshotRefreshInterval`, and dropped when a `/rate_limit`
+  refresh replaces the numbers it was derived from. Repository admission,
+  workers, both drains, bulk GraphQL, and notification acknowledgements all read
+  that one verdict. Do not add per-repository, per-queue-item, or per-page
+  reserve checks: the provider quota only moves when the snapshot refresh moves
+  it, so re-deriving more often mostly re-reads the same numbers, and the
+  divergent costs and fallbacks that grew up around those sites were the bug.
+- A credential that crosses its reserve inside a cadence window keeps spending
+  until the window turns. That is deliberate: the reserve is a soft buffer held
+  for foreground work, and the hard guard is the local hourly ceiling, enforced
+  per wire attempt in `budgetTransport`.
 - Gate background eligibility on REST only. Bulk GraphQL is an optimization with
   a REST fallback, so requiring GraphQL capacity stops repositories that could
-  still sync (`internal/github/sync.go::backgroundQuotaAvailability`). That makes
-  `bulkGraphQLAllowed` the only place the GraphQL reserve is applied: it must
-  hold the reserve for background work and waive it for foreground syncs.
-- Admission is once per fetch, but bulk GraphQL pagination is unbounded, so a
-  background fetch must also re-check the reserve between pages -- on every
-  paginated GraphQL path, pull requests and issues alike
-  (`internal/github/graphql.go::backgroundReserveGuard`). Aborting is safe
-  because a bulk-fetch error falls back to the REST index; only a successful
-  fetch persists. The abort must bypass the smaller-page retry, which would
-  otherwise restart pagination.
-- The quota registry is in-memory, so admission falls back to the rate
-  tracker's SQLite-backed state when a credential is unobserved. Without it a
-  restart admits background work against a reserve the persisted state says is
-  already spent (`internal/github/sync.go::persistedQuotaAvailability`). An
-  elapsed persisted reset window says nothing and must not gate. Notification
-  admission needs the same fallback against the write tracker
-  (`internal/github/notifications_sync.go::persistedWriteQuotaAvailability`).
-- Crossing the reserve inside a worker skips the repository and records the
-  bucket; it must never sleep the worker until reset, or one spent credential
-  occupies the pool while repositories on healthy credentials queue behind it
-  (`internal/github/sync.go::runWorker`).
-- Snapshot refresh claims its cadence window before the attempt, not after
-  success, or a credential whose `/rate_limit` call keeps failing re-attempts
-  every pass. Routes sharing a credential may hold distinct clients, so the
-  fallback to a healthy route stays, but only distinct credentials are tried.
-  Startup builds one client per route, so dedupe on `Route.CredentialKey` (the
-  token source's canonical string, not its scope) — client identity would let a
-  shared App installation issue one request per owner
-  (`internal/github/sync.go::RefreshRateLimitSnapshots`). Write buckets dedupe
-  on `Route.WriteCredentialKey`, the non-App candidates, because mutations skip
-  App candidates and two Apps can fall back to one PAT.
-- The reset timestamp orders out-of-order header observations
-  (`internal/github/quota.go::QuotaRegistry.ObserveHeaders`): an older window is
-  dropped, an equal window may only lower `Remaining`, a later window replaces
-  the pool. Rewinding `ResetAt` makes the pool read as expired, which reads as
-  unobserved, which admits work the newer observation ruled out.
-  A `/rate_limit` snapshot obeys the same older-window rule but is
-  authoritative in both directions inside its own window: refreshes are claimed
-  so only one is in flight per credential, and it is how a pool that headers
-  clamped too low recovers before the window rolls.
-- Bucket eligibility is recomputed after the workers finish and again before
-  each drain (`internal/github/sync.go::revokeExhaustedBuckets`). Worker markers
-  alone are not enough: the last repository on a credential can spend its
-  headroom with no later worker left to observe it. Each drain also re-reads the
-  reserve per item, next to the local ceiling check it already had, because a
-  drain long enough to cross the reserve must stop rather than finish its queue.
-  Comment refresh has a pull-request loop and an issue loop; both spend the same
-  credential and both need the check.
-- A reserve gate inside a per-credential loop stops only its own bucket: mark
-  that bucket exhausted, retain the error, and keep processing, or one exhausted
-  credential silently defers work every other credential could still do
-  (`internal/github/notifications_sync.go::ProcessQueuedNotificationReads`).
-- Unknown and exhausted are independent: callers that treat unknown quota as
-  permission to proceed must check `Exhausted`, or an unobserved resource
-  silently admits work a known reserve forbids
-  (`internal/github/quota.go::QuotaAvailability.AllowedOrUnobserved`).
+  still sync (`internal/github/sync.go::repoEligibility`). `bulkGraphQLAllowed`
+  applies the GraphQL reserve where it is spent, and answers from the credential
+  verdict whenever that pool is known — falling through to the fetcher's tracker
+  would consult a host-wide signal both credentials on a split-auth host feed.
+- The quota registry is in-memory, so the check falls back to the rate tracker's
+  SQLite-backed state when a credential is unobserved; otherwise a restart
+  admits background work against a reserve the persisted state says is spent
+  (`internal/github/sync.go::persistedReserve`). An elapsed persisted reset
+  window says nothing and must not gate.
 - The local ceiling rolls its hourly window on its own clock and must never need
   a provider response to reset: an exhausted ceiling refuses counted requests
   before any wire attempt, so a reset driven only by response headers or

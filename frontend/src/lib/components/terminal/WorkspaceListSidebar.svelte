@@ -612,21 +612,31 @@
     return title || "Working";
   }
 
-  function agentStatePresentation(ws: Workspace): {
-    label: "Working" | "Approval" | "Input";
-    status: StatusDotStatus;
-    tone: "working" | "approval" | "input";
-  } | null {
-    switch (ws.agent_state) {
-      case "working":
-        return { label: "Working", status: "working", tone: "working" };
-      case "approval":
-        return { label: "Approval", status: "waiting", tone: "approval" };
-      case "input":
-        return { label: "Input", status: "waiting", tone: "input" };
-      default:
-        return null;
-    }
+  interface AgentStateBadge {
+    label: string;
+    dot: StatusDotStatus;
+    /** Suffixes the accessible description and picks the badge colour. */
+    tone: string;
+  }
+
+  // Idle has no badge on purpose: a hook report that the agent is idle means the
+  // row should stay quiet, which is what suppresses the tmux dot below.
+  const agentStateBadges: Partial<
+    Record<NonNullable<Workspace["agent_state"]>, AgentStateBadge>
+  > = {
+    working: { label: "Working", dot: "working", tone: "working" },
+    approval: { label: "Approval", dot: "waiting", tone: "approval" },
+    input: { label: "Input", dot: "waiting", tone: "input" },
+  };
+
+  function agentStateBadge(ws: Workspace): AgentStateBadge | null {
+    return (ws.agent_state && agentStateBadges[ws.agent_state]) || null;
+  }
+
+  // Hook reports are authoritative while they last, so tmux output only speaks
+  // for a workspace no agent session is reporting on.
+  function showsTmuxWorking(ws: Workspace): boolean {
+    return ws.tmux_working === true && ws.agent_state == null;
   }
 
   function itemStateClass(ws: Workspace): string {
@@ -1201,7 +1211,7 @@
           {@const ahead = ws.commits_ahead ?? 0}
           {@const behind = ws.commits_behind ?? 0}
           {@const showPush = ahead > 0 || behind > 0}
-          {@const agentState = agentStatePresentation(ws)}
+          {@const agentBadge = agentStateBadge(ws)}
           <div
             class={["ws-row", { selected: isSelectedWorkspace(ws) }]}
             onclick={(e) => {
@@ -1241,21 +1251,18 @@
                   size={6}
                 />
                 <span class="ws-name">{displayName(ws)}</span>
-                {#if agentState}
+                {#if agentBadge}
+                  {@const description = `Agent ${agentBadge.tone}`}
                   <span
-                    class={["agent-state", `agent-state--${agentState.tone}`]}
-                    title={`Agent ${agentState.label.toLowerCase()}`}
+                    class={["agent-state", `agent-state--${agentBadge.tone}`]}
+                    title={description}
                   >
-                    <StatusDot
-                      status={agentState.status}
-                      label={`Agent ${agentState.label.toLowerCase()}`}
-                      size={6}
-                    />
-                    <span>{agentState.label}</span>
+                    <StatusDot status={agentBadge.dot} label={description} size={6} />
+                    <span>{agentBadge.label}</span>
                   </span>
                 {:else if workspaceActionMatches(ws)}
                   <StatusDot status="working" label={workspaceBusyLabel(ws)} size={6} />
-                {:else if ws.agent_state == null && ws.tmux_working}
+                {:else if showsTmuxWorking(ws)}
                   <StatusDot status="working" label={workingTitle(ws)} size={6} />
                 {/if}
               </div>
@@ -1840,7 +1847,6 @@
     color: var(--accent-purple);
     --status-waiting: var(--accent-purple);
   }
-
 
   .repo-context {
     /* Flat sorts drop the per-repo group headers, so each row

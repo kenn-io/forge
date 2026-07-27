@@ -175,14 +175,3 @@ func (h *Handler) HandleRuntimeSessionExit(info localruntime.SessionInfo) {
 		}
 	})
 }
-
-func (h *Handler) removeAgentActivityRuntimeSession(sessionKey string) {
-	if h == nil || h.agentActivity == nil || sessionKey == "" {
-		return
-	}
-	if err := h.agentActivity.RemoveRuntimeSession(sessionKey); err != nil {
-		slog.Warn("remove agent activity report",
-			"session_key", sessionKey,
-			"err", err)
-	}
-}

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	gopty "github.com/aymanbagabas/go-pty"
+	"go.kenn.io/middleman/internal/procutil"
 )
 
 const maxOutputReplay = 64 * 1024
@@ -87,7 +88,7 @@ func RunOwner(ctx context.Context, opts Options) error {
 
 	cmd := p.Command(command[0], command[1:]...)
 	cmd.Dir = opts.Cwd
-	cmd.Env = mergeEnvironment(
+	cmd.Env = procutil.MergeEnv(
 		sessionEnvironment(os.Environ(), opts.StripEnvVars), opts.ExtraEnv,
 	)
 	configureOwnerCommand(cmd)

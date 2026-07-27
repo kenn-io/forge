@@ -1487,36 +1487,9 @@ func (s *Handler) toWorkspaceResponse(
 	ctx context.Context,
 	summary *db.WorkspaceSummary,
 ) workspaceResponse {
-	resp := s.workspaceResponseWithEnrichment(ctx, summary).response
-	s.applyAgentActivity(&resp, summary)
-	return resp
-}
-
-func (s *Handler) applyAgentActivity(
-	resp *workspaceResponse,
-	summary *db.WorkspaceSummary,
-) {
-	if s.agentActivity == nil || s.runtime == nil || resp == nil || summary == nil {
-		return
-	}
-	liveSessionKeys := make([]string, 0)
-	for _, session := range s.runtime.ListSessions(summary.ID) {
-		if session.Kind == localruntime.LaunchTargetAgent &&
-			(session.Status == localruntime.SessionStatusRunning ||
-				session.Status == localruntime.SessionStatusStarting) {
-			liveSessionKeys = append(liveSessionKeys, session.Key)
-		}
-	}
-	snapshot, ok := s.agentActivity.SnapshotForWorkspace(
-		summary.WorktreePath, liveSessionKeys,
+	return s.withAgentActivity(
+		s.workspaceResponseWithEnrichment(ctx, summary).response, summary,
 	)
-	if !ok {
-		return
-	}
-	state := string(snapshot.State)
-	updatedAt := snapshot.UpdatedAt.UTC().Format(time.RFC3339)
-	resp.AgentState = &state
-	resp.AgentStateUpdatedAt = &updatedAt
 }
 
 // Response returns the cached public DTO for a persisted workspace summary.

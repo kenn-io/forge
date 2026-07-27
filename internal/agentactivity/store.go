@@ -30,6 +30,11 @@ const RuntimeSessionKeyEnv = "MIDDLEMAN_RUNTIME_SESSION_KEY"
 // without another lifecycle event confirming it.
 const ReportFreshness = 30 * time.Minute
 
+const (
+	maxHookInputBytes = 1 << 20
+	maxReportBytes    = 64 << 10
+)
+
 type Report struct {
 	SessionID         string    `json:"session_id"`
 	RuntimeSessionKey string    `json:"runtime_session_key"`
@@ -66,66 +71,69 @@ func NewStore(root string) *Store {
 	return &Store{root: root, now: time.Now}
 }
 
+// StateDir names the report directory under a middleman data dir. Installed
+// hooks and the server must agree on it, so both derive it from here.
+func StateDir(dataDir string) string {
+	return filepath.Join(dataDir, "agent-activity")
+}
+
+// enabled reports whether the store has a state directory to read and write.
+// Callers hold a nil store when agent activity is not configured.
+func (s *Store) enabled() bool {
+	return s != nil && strings.TrimSpace(s.root) != ""
+}
+
 func (s *Store) HandleHook(input io.Reader, runtimeSessionKey string) error {
-	if s == nil || strings.TrimSpace(s.root) == "" {
+	if !s.enabled() {
 		return nil
 	}
 	var hook hookInput
-	if err := json.NewDecoder(io.LimitReader(input, 1<<20)).Decode(&hook); err != nil {
+	if err := json.NewDecoder(io.LimitReader(input, maxHookInputBytes)).Decode(&hook); err != nil {
 		return fmt.Errorf("decode agent hook: %w", err)
 	}
+	// Only the top-level session reports workspace state; subagent payloads
+	// carry an agent ID and would otherwise overwrite it.
 	if hook.AgentID != "" {
 		return nil
 	}
-	hook.SessionID = strings.TrimSpace(hook.SessionID)
+	sessionID := strings.TrimSpace(hook.SessionID)
 	runtimeSessionKey = strings.TrimSpace(runtimeSessionKey)
-	if hook.SessionID == "" || runtimeSessionKey == "" {
+	if sessionID == "" || runtimeSessionKey == "" {
 		return nil
 	}
 
-	state, remove, ok := stateForHook(hook)
-	if !ok {
+	outcome, state := hookEventOutcome(hook)
+	switch outcome {
+	case hookIgnored:
 		return nil
-	}
-	if remove {
-		err := os.Remove(s.reportPath(hook.SessionID))
-		if errors.Is(err, os.ErrNotExist) {
-			return nil
-		}
-		if err == nil {
-			s.invalidateCache()
-		}
-		return err
+	case hookEndsSession:
+		return s.removeReport(sessionID)
 	}
 
 	cwd, err := canonicalWorkspacePath(hook.CWD)
 	if err != nil {
 		return nil
 	}
-	report := Report{
-		SessionID:         hook.SessionID,
+	return s.writeReport(Report{
+		SessionID:         sessionID,
 		RuntimeSessionKey: runtimeSessionKey,
 		CWD:               cwd,
 		State:             state,
 		UpdatedAt:         s.now().UTC(),
-	}
-	return s.writeReport(report)
+	})
 }
 
+// SnapshotForWorkspace returns the most urgent state reported by any live
+// runtime session working in cwd.
 func (s *Store) SnapshotForWorkspace(cwd string, liveSessionKeys []string) (Snapshot, bool) {
-	if s == nil || strings.TrimSpace(s.root) == "" || len(liveSessionKeys) == 0 {
+	if !s.enabled() {
 		return Snapshot{}, false
 	}
 	target, err := canonicalWorkspacePath(cwd)
 	if err != nil {
 		return Snapshot{}, false
 	}
-	live := make(map[string]struct{}, len(liveSessionKeys))
-	for _, key := range liveSessionKeys {
-		if key = strings.TrimSpace(key); key != "" {
-			live[key] = struct{}{}
-		}
-	}
+	live := liveSessionKeySet(liveSessionKeys)
 	if len(live) == 0 {
 		return Snapshot{}, false
 	}
@@ -143,35 +151,14 @@ func (s *Store) SnapshotForWorkspace(cwd string, liveSessionKeys []string) (Snap
 	if len(reports) == 0 {
 		return Snapshot{}, false
 	}
-	slices.SortFunc(reports, func(a, b Report) int {
-		if priority := statePriority(b.State) - statePriority(a.State); priority != 0 {
-			return priority
-		}
-		return b.UpdatedAt.Compare(a.UpdatedAt)
-	})
-	return Snapshot{State: reports[0].State, UpdatedAt: reports[0].UpdatedAt}, true
-}
-
-func canonicalWorkspacePath(path string) (string, error) {
-	path = strings.TrimSpace(path)
-	if path == "" {
-		return "", errors.New("workspace path is required")
-	}
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		return "", err
-	}
-	clean := filepath.Clean(abs)
-	if resolved, resolveErr := filepath.EvalSymlinks(clean); resolveErr == nil {
-		return filepath.Clean(resolved), nil
-	}
-	return clean, nil
+	best := slices.MaxFunc(reports, compareReportUrgency)
+	return Snapshot{State: best.State, UpdatedAt: best.UpdatedAt}, true
 }
 
 // RemoveRuntimeSession removes every agent report owned by one launched
 // runtime session.
 func (s *Store) RemoveRuntimeSession(runtimeSessionKey string) error {
-	if s == nil || strings.TrimSpace(s.root) == "" {
+	if !s.enabled() {
 		return nil
 	}
 	runtimeSessionKey = strings.TrimSpace(runtimeSessionKey)
@@ -192,68 +179,138 @@ func (s *Store) RemoveRuntimeSession(runtimeSessionKey string) error {
 	return errors.Join(errs...)
 }
 
+func liveSessionKeySet(keys []string) map[string]struct{} {
+	live := make(map[string]struct{}, len(keys))
+	for _, key := range keys {
+		if key = strings.TrimSpace(key); key != "" {
+			live[key] = struct{}{}
+		}
+	}
+	return live
+}
+
+// compareReportUrgency orders reports by state priority, then by recency, so
+// an approval prompt outranks background work from another session.
+func compareReportUrgency(a, b Report) int {
+	if priority := statePriority(a.State) - statePriority(b.State); priority != 0 {
+		return priority
+	}
+	return a.UpdatedAt.Compare(b.UpdatedAt)
+}
+
+func canonicalWorkspacePath(path string) (string, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return "", errors.New("workspace path is required")
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	clean := filepath.Clean(abs)
+	if resolved, resolveErr := filepath.EvalSymlinks(clean); resolveErr == nil {
+		return filepath.Clean(resolved), nil
+	}
+	return clean, nil
+}
+
+// reportDirListing is one view of the state directory: the report files to read
+// plus the metadata used to notice writes from other middleman processes.
+type reportDirListing struct {
+	names    []string
+	metadata map[string]os.FileInfo
+	// metadataComplete is false when a file's metadata could not be read, which
+	// makes the cache unusable because changes to it would go unnoticed.
+	metadataComplete bool
+}
+
+// reportScan is the result of reading every report file in one listing.
+type reportScan struct {
+	reports []Report
+	// validUntil is when the earliest-expiring report goes stale.
+	validUntil time.Time
+	// cleanupComplete is false when an expired report could not be deleted.
+	cleanupComplete bool
+}
+
 func (s *Store) reports() []Report {
 	s.cacheMu.Lock()
 	defer s.cacheMu.Unlock()
 
-	entries, err := os.ReadDir(s.root)
-	if err != nil {
+	listing, ok := s.listReportDir()
+	if !ok {
 		s.clearCacheLocked()
 		return nil
 	}
 	now := s.now().UTC()
-	files := make(map[string]os.FileInfo)
-	metadataComplete := true
-	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
-			continue
-		}
-		info, infoErr := entry.Info()
-		if infoErr != nil {
-			metadataComplete = false
-			continue
-		}
-		files[entry.Name()] = info
-	}
-	if metadataComplete && sameReportFiles(files, s.cacheFiles) &&
+	if listing.metadataComplete && sameReportFiles(listing.metadata, s.cacheFiles) &&
 		(s.cacheValidUntil.IsZero() || now.Before(s.cacheValidUntil)) {
 		return slices.Clone(s.cacheReports)
 	}
 
-	reports := make([]Report, 0, len(entries))
-	validUntil := time.Time{}
-	cleanupPending := false
+	scan := s.scanReports(listing, now)
+	s.cacheFiles = listing.metadata
+	if !scan.cleanupComplete || !listing.metadataComplete {
+		s.cacheFiles = nil
+	}
+	s.cacheValidUntil = scan.validUntil
+	s.cacheReports = slices.Clone(scan.reports)
+	return scan.reports
+}
+
+func (s *Store) listReportDir() (reportDirListing, bool) {
+	entries, err := os.ReadDir(s.root)
+	if err != nil {
+		return reportDirListing{}, false
+	}
+	listing := reportDirListing{
+		metadata:         make(map[string]os.FileInfo),
+		metadataComplete: true,
+	}
 	for _, entry := range entries {
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
 			continue
 		}
-		path := filepath.Join(s.root, entry.Name())
+		listing.names = append(listing.names, entry.Name())
+		info, infoErr := entry.Info()
+		if infoErr != nil {
+			listing.metadataComplete = false
+			continue
+		}
+		listing.metadata[entry.Name()] = info
+	}
+	return listing, true
+}
+
+// scanReports reads every listed report, deleting the ones that have expired.
+// Deleted names are dropped from listing.metadata so it still describes the
+// directory once the scan finishes.
+func (s *Store) scanReports(listing reportDirListing, now time.Time) reportScan {
+	scan := reportScan{
+		reports:         make([]Report, 0, len(listing.names)),
+		cleanupComplete: true,
+	}
+	for _, name := range listing.names {
+		path := filepath.Join(s.root, name)
 		report, ok := s.readReport(path)
 		if !ok {
 			continue
 		}
 		expiresAt := report.UpdatedAt.Add(ReportFreshness)
 		if !now.Before(expiresAt) {
-			if removeErr := os.Remove(path); removeErr == nil ||
-				errors.Is(removeErr, os.ErrNotExist) {
-				delete(files, entry.Name())
+			if err := os.Remove(path); err == nil || errors.Is(err, os.ErrNotExist) {
+				delete(listing.metadata, name)
 			} else {
-				cleanupPending = true
+				scan.cleanupComplete = false
 			}
 			continue
 		}
-		if validUntil.IsZero() || expiresAt.Before(validUntil) {
-			validUntil = expiresAt
+		if scan.validUntil.IsZero() || expiresAt.Before(scan.validUntil) {
+			scan.validUntil = expiresAt
 		}
-		reports = append(reports, report)
+		scan.reports = append(scan.reports, report)
 	}
-	s.cacheFiles = files
-	if cleanupPending || !metadataComplete {
-		s.cacheFiles = nil
-	}
-	s.cacheValidUntil = validUntil
-	s.cacheReports = slices.Clone(reports)
-	return reports
+	return scan
 }
 
 func (s *Store) invalidateCache() {
@@ -283,37 +340,56 @@ func sameReportFiles(current, cached map[string]os.FileInfo) bool {
 	return true
 }
 
-func stateForHook(input hookInput) (State, bool, bool) {
+// hookOutcome says what a hook event means for the session's stored report.
+type hookOutcome int
+
+const (
+	// hookIgnored covers events that carry no state signal.
+	hookIgnored hookOutcome = iota
+	hookReportsState
+	hookEndsSession
+)
+
+// hookEventStates holds the events whose state does not depend on the payload.
+var hookEventStates = map[string]State{
+	"SessionStart":       StateIdle,
+	"UserPromptSubmit":   StateWorking,
+	"PostToolUse":        StateWorking,
+	"PostToolUseFailure": StateWorking,
+	"PreCompact":         StateWorking,
+	"PostCompact":        StateWorking,
+	"PermissionRequest":  StateApproval,
+	"Stop":               StateIdle,
+	"Interrupt":          StateIdle,
+}
+
+// notificationStates holds the notification kinds that mean the agent is
+// blocked on the user. Other notifications say nothing about the session.
+var notificationStates = map[string]State{
+	"permission_prompt":  StateApproval,
+	"idle_prompt":        StateInput,
+	"elicitation_dialog": StateInput,
+}
+
+func hookEventOutcome(input hookInput) (hookOutcome, State) {
 	switch input.HookEventName {
-	case "SessionStart":
-		return StateIdle, false, true
-	case "UserPromptSubmit":
-		return StateWorking, false, true
+	case "SessionEnd":
+		return hookEndsSession, ""
 	case "PreToolUse":
 		if isUserInputTool(input.ToolName) {
-			return StateInput, false, true
+			return hookReportsState, StateInput
 		}
-		return StateWorking, false, true
-	case "PostToolUse", "PostToolUseFailure", "PreCompact", "PostCompact":
-		return StateWorking, false, true
-	case "PermissionRequest":
-		return StateApproval, false, true
+		return hookReportsState, StateWorking
 	case "Notification":
-		switch input.NotificationType {
-		case "permission_prompt":
-			return StateApproval, false, true
-		case "idle_prompt", "elicitation_dialog":
-			return StateInput, false, true
-		default:
-			return "", false, false
+		if state, ok := notificationStates[input.NotificationType]; ok {
+			return hookReportsState, state
 		}
-	case "Stop", "Interrupt":
-		return StateIdle, false, true
-	case "SessionEnd":
-		return "", true, true
-	default:
-		return "", false, false
+		return hookIgnored, ""
 	}
+	if state, ok := hookEventStates[input.HookEventName]; ok {
+		return hookReportsState, state
+	}
+	return hookIgnored, ""
 }
 
 func isUserInputTool(tool string) bool {
@@ -341,35 +417,28 @@ func statePriority(state State) int {
 }
 
 func (s *Store) writeReport(report Report) error {
-	if err := os.MkdirAll(s.root, 0o700); err != nil {
-		return err
-	}
 	data, err := json.Marshal(report)
 	if err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(s.root, ".agent-activity-*")
-	if err != nil {
-		return err
-	}
-	tmpPath := tmp.Name()
-	defer os.Remove(tmpPath)
-	if err := tmp.Chmod(0o600); err != nil {
-		tmp.Close()
-		return err
-	}
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(tmpPath, s.reportPath(report.SessionID)); err != nil {
+	if err := writeFileAtomic(
+		s.reportPath(report.SessionID), ".agent-activity-*", data,
+	); err != nil {
 		return err
 	}
 	s.invalidateCache()
 	return nil
+}
+
+func (s *Store) removeReport(sessionID string) error {
+	err := os.Remove(s.reportPath(sessionID))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err == nil {
+		s.invalidateCache()
+	}
+	return err
 }
 
 func (s *Store) readReport(path string) (Report, bool) {
@@ -379,7 +448,7 @@ func (s *Store) readReport(path string) (Report, bool) {
 	}
 	defer file.Close()
 	var report Report
-	if err := json.NewDecoder(io.LimitReader(file, 64<<10)).Decode(&report); err != nil {
+	if err := json.NewDecoder(io.LimitReader(file, maxReportBytes)).Decode(&report); err != nil {
 		return Report{}, false
 	}
 	if statePriority(report.State) == 0 || report.RuntimeSessionKey == "" ||

@@ -48,27 +48,9 @@ func (p tmuxEnvPolicy) paneEnvironmentWithExtra(
 	extraStripVars []string,
 	extraEnv map[string]string,
 ) tmuxPaneEnvironment {
-	env := p.environment(baseEnv, extraStripVars)
-	filtered := env[:0]
-	for _, value := range env {
-		key, _, found := strings.Cut(value, "=")
-		if found {
-			if _, replaced := extraEnv[key]; replaced {
-				continue
-			}
-		}
-		filtered = append(filtered, value)
-	}
-	env = filtered
-	keys := make([]string, 0, len(extraEnv))
-	for key := range extraEnv {
-		keys = append(keys, key)
-	}
-	slices.Sort(keys)
-	for _, key := range keys {
-		env = append(env, key+"="+extraEnv[key])
-	}
-	return paneEnvironmentFromEnv(env, command)
+	return paneEnvironmentFromEnv(
+		procutil.MergeEnv(p.environment(baseEnv, extraStripVars), extraEnv), command,
+	)
 }
 
 func paneEnvironmentFromEnv(

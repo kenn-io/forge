@@ -1,6 +1,7 @@
 package agentactivity
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,7 +21,14 @@ const (
 	IntegrationCodex  Integration = "codex"
 )
 
-const hookCommandMarker = "--source middleman-agent-activity"
+// HookSource marks middleman's own hook invocations. The receiver refuses input
+// without it, and uninstall recognizes installed handlers by it.
+const HookSource = "middleman-agent-activity"
+
+const (
+	hookCommandMarker  = "--source " + HookSource
+	hookTimeoutSeconds = 2
+)
 
 var integrationHookEvents = map[Integration][]string{
 	IntegrationClaude: {
@@ -54,34 +62,17 @@ func Install(integration Integration, executable, stateDir string) (InstallResul
 	if err != nil {
 		return InstallResult{}, err
 	}
+	// Installing is idempotent: drop any handler from an earlier install, which
+	// may point at a stale binary path, before adding the current one.
 	removeMiddlemanHooks(hooks)
 
-	command := shellquote.Join(
-		executable, "agent-hook", "run", "--state-dir", stateDir,
-		"--source", "middleman-agent-activity",
-	)
-	commandWindows := windowsCommand(
-		executable, "agent-hook", "run", "--state-dir", stateDir,
-		"--source", "middleman-agent-activity",
-	)
-	if runtime.GOOS == "windows" {
-		command = commandWindows
-	}
+	command, commandWindows := hookCommands(executable, stateDir)
 	for _, event := range integrationHookEvents[integration] {
-		handler := map[string]any{
-			"type":    "command",
-			"command": command,
-			"timeout": 2,
-		}
-		if integration == IntegrationCodex {
-			handler["commandWindows"] = commandWindows
-		}
-		entry := map[string]any{"hooks": []any{handler}}
 		existing, err := arrayField(hooks, event, configPath)
 		if err != nil {
 			return InstallResult{}, err
 		}
-		hooks[event] = append(existing, entry)
+		hooks[event] = append(existing, hookEntry(integration, command, commandWindows))
 	}
 	if err := writeJSONObject(configPath, root); err != nil {
 		return InstallResult{}, err
@@ -124,32 +115,55 @@ func ParseIntegration(raw string) (Integration, error) {
 	return integration, nil
 }
 
+// hookCommands renders the receiver invocation for the running platform and,
+// separately, for Windows. Codex configs carry both.
+func hookCommands(executable, stateDir string) (command, commandWindows string) {
+	args := []string{
+		executable, "agent-hook", "run",
+		"--state-dir", stateDir,
+		"--source", HookSource,
+	}
+	commandWindows = windowsCommand(args...)
+	if runtime.GOOS == "windows" {
+		return commandWindows, commandWindows
+	}
+	return shellquote.Join(args...), commandWindows
+}
+
+// hookEntry builds one config entry that runs the middleman receiver.
+func hookEntry(integration Integration, command, commandWindows string) map[string]any {
+	handler := map[string]any{
+		"type":    "command",
+		"command": command,
+		"timeout": hookTimeoutSeconds,
+	}
+	if integration == IntegrationCodex {
+		handler["commandWindows"] = commandWindows
+	}
+	return map[string]any{"hooks": []any{handler}}
+}
+
 func integrationConfigPath(integration Integration) (string, error) {
-	dir := ""
 	switch integration {
 	case IntegrationClaude:
-		dir = strings.TrimSpace(os.Getenv("CLAUDE_CONFIG_DIR"))
-		if dir == "" {
-			home, err := os.UserHomeDir()
-			if err != nil {
-				return "", err
-			}
-			dir = filepath.Join(home, ".claude")
-		}
-		return filepath.Join(dir, "settings.json"), nil
+		return agentConfigPath("CLAUDE_CONFIG_DIR", ".claude", "settings.json")
 	case IntegrationCodex:
-		dir = strings.TrimSpace(os.Getenv("CODEX_HOME"))
-		if dir == "" {
-			home, err := os.UserHomeDir()
-			if err != nil {
-				return "", err
-			}
-			dir = filepath.Join(home, ".codex")
-		}
-		return filepath.Join(dir, "hooks.json"), nil
+		return agentConfigPath("CODEX_HOME", ".codex", "hooks.json")
 	default:
 		return "", fmt.Errorf("unsupported agent hook integration %q", integration)
 	}
+}
+
+func agentConfigPath(dirEnv, homeDirName, fileName string) (string, error) {
+	dir := strings.TrimSpace(os.Getenv(dirEnv))
+	if dir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		dir = filepath.Join(home, homeDirName)
+	}
+	return filepath.Join(dir, fileName), nil
 }
 
 func removeMiddlemanHooks(hooks map[string]any) {
@@ -160,37 +174,50 @@ func removeMiddlemanHooks(hooks map[string]any) {
 		}
 		keptEntries := make([]any, 0, len(entries))
 		for _, rawEntry := range entries {
-			entry, ok := rawEntry.(map[string]any)
-			if !ok {
-				keptEntries = append(keptEntries, rawEntry)
-				continue
+			if entry, keep := entryWithoutMiddlemanHandlers(rawEntry); keep {
+				keptEntries = append(keptEntries, entry)
 			}
-			rawHandlers, ok := entry["hooks"].([]any)
-			if !ok {
-				keptEntries = append(keptEntries, rawEntry)
-				continue
-			}
-			keptHandlers := make([]any, 0, len(rawHandlers))
-			for _, rawHandler := range rawHandlers {
-				handler, ok := rawHandler.(map[string]any)
-				command, _ := handler["command"].(string)
-				if ok && strings.Contains(command, hookCommandMarker) {
-					continue
-				}
-				keptHandlers = append(keptHandlers, rawHandler)
-			}
-			if len(keptHandlers) == 0 {
-				continue
-			}
-			entry["hooks"] = keptHandlers
-			keptEntries = append(keptEntries, entry)
 		}
 		if len(keptEntries) == 0 {
 			delete(hooks, event)
-		} else {
-			hooks[event] = keptEntries
+			continue
+		}
+		hooks[event] = keptEntries
+	}
+}
+
+// entryWithoutMiddlemanHandlers strips middleman handlers from one hook entry.
+// Entries middleman does not recognize are kept verbatim, and an entry that
+// held nothing but middleman handlers is dropped instead of left empty.
+func entryWithoutMiddlemanHandlers(rawEntry any) (any, bool) {
+	entry, ok := rawEntry.(map[string]any)
+	if !ok {
+		return rawEntry, true
+	}
+	handlers, ok := entry["hooks"].([]any)
+	if !ok {
+		return rawEntry, true
+	}
+	keptHandlers := make([]any, 0, len(handlers))
+	for _, handler := range handlers {
+		if !isMiddlemanHandler(handler) {
+			keptHandlers = append(keptHandlers, handler)
 		}
 	}
+	if len(keptHandlers) == 0 {
+		return nil, false
+	}
+	entry["hooks"] = keptHandlers
+	return entry, true
+}
+
+func isMiddlemanHandler(rawHandler any) bool {
+	handler, ok := rawHandler.(map[string]any)
+	if !ok {
+		return false
+	}
+	command, _ := handler["command"].(string)
+	return strings.Contains(command, hookCommandMarker)
 }
 
 func readJSONObject(path string) (map[string]any, error) {
@@ -202,7 +229,9 @@ func readJSONObject(path string) (map[string]any, error) {
 		return nil, err
 	}
 	var root map[string]any
-	decoder := json.NewDecoder(strings.NewReader(string(data)))
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	// Agent configs may hold integers past float64 precision, and rewriting the
+	// file must not round values middleman does not own.
 	decoder.UseNumber()
 	if err := decoder.Decode(&root); err != nil {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
@@ -258,18 +287,8 @@ func arrayField(root map[string]any, key, path string) ([]any, error) {
 }
 
 func writeJSONObject(path string, value map[string]any) error {
-	writePath := path
-	info, err := os.Lstat(path)
-	if err == nil && info.Mode()&os.ModeSymlink != 0 {
-		resolved, resolveErr := filepath.EvalSymlinks(path)
-		if resolveErr != nil {
-			return fmt.Errorf("resolve agent hook config symlink: %w", resolveErr)
-		}
-		writePath = resolved
-	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("inspect agent hook config path: %w", err)
-	}
-	if err := os.MkdirAll(filepath.Dir(writePath), 0o700); err != nil {
+	writePath, err := resolvedConfigWritePath(path)
+	if err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(value, "", "  ")
@@ -277,24 +296,27 @@ func writeJSONObject(path string, value map[string]any) error {
 		return err
 	}
 	data = append(data, '\n')
-	tmp, err := os.CreateTemp(filepath.Dir(writePath), ".middleman-hooks-*")
+	return writeFileAtomic(writePath, ".middleman-hooks-*", data)
+}
+
+// resolvedConfigWritePath follows a symlinked agent config to its target so an
+// install rewrites the file the user linked to instead of replacing the link.
+func resolvedConfigWritePath(path string) (string, error) {
+	info, err := os.Lstat(path)
 	if err != nil {
-		return err
+		if errors.Is(err, os.ErrNotExist) {
+			return path, nil
+		}
+		return "", fmt.Errorf("inspect agent hook config path: %w", err)
 	}
-	tmpPath := tmp.Name()
-	defer os.Remove(tmpPath)
-	if err := tmp.Chmod(0o600); err != nil {
-		tmp.Close()
-		return err
+	if info.Mode()&os.ModeSymlink == 0 {
+		return path, nil
 	}
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return err
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", fmt.Errorf("resolve agent hook config symlink: %w", err)
 	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmpPath, writePath)
+	return resolved, nil
 }
 
 func windowsCommand(args ...string) string {

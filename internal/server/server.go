@@ -938,9 +938,9 @@ func newServer(
 		Config:     workspaceConfigSnapshot(cfg, tmuxCmd),
 		Workspaces: s.workspaces,
 		Runtime:    s.runtime,
-		AgentActivity: agentactivity.NewStore(filepath.Join(
-			filepath.Dir(options.WorktreeDir), "agent-activity",
-		)),
+		AgentActivity: agentactivity.NewStore(
+			agentactivity.StateDir(filepath.Dir(options.WorktreeDir)),
+		),
 		TmuxCommand:        tmuxCmd,
 		Now:                workspaceNow,
 		EnrichmentDisabled: options.DisableWorkspaceEnrichment,

@@ -44,7 +44,7 @@ func TestAgentHookInstallRejectsRelativeDataDirectory(t *testing.T) {
 	configDir := filepath.Join(dir, "codex")
 	t.Setenv("CODEX_HOME", configDir)
 
-	err := runAgentHookInstall("install", []string{
+	err := runAgentHookInstall([]string{
 		"--config", configPath,
 		"--agent", "codex",
 		"--binary", "/opt/middleman",

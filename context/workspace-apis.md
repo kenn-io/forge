@@ -240,9 +240,11 @@ visible to Git, the write fails.
 - Matching live runtime/worktree reports use approval, input, working, idle priority;
   latest state expires after 30 minutes or session exit, then tmux resumes (`internal/agentactivity/`, `internal/server/workspaceapi/lifecycle.go::Handler.HandleRuntimeSessionExit`).
 - Hook installs require absolute data roots and update symlink targets instead of replacing
-  config links; report/worktree matching uses canonical filesystem paths (`cmd/middleman/main.go::runAgentHookInstall`,
-  `internal/agentactivity/integration.go::writeJSONObject`, `internal/agentactivity/store.go::canonicalWorkspacePath`).
-- The active sidebar polls every five seconds, and hook receipt fails open (`frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte::onMount`, `cmd/middleman/main.go::runAgentHookReceiver`).
+  config links; report/worktree matching uses canonical filesystem paths (`cmd/middleman/agent_hook_cli.go::agentHookStateDir`,
+  `internal/agentactivity/integration.go::resolvedConfigWritePath`, `internal/agentactivity/store.go::canonicalWorkspacePath`).
+- Installed hooks and the server must resolve the same report directory, so both go
+  through `internal/agentactivity/store.go::StateDir`.
+- The active sidebar polls every five seconds, and hook receipt fails open (`frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte::onMount`, `cmd/middleman/agent_hook_cli.go::runAgentHookReceiver`).
 
 ## Diff Scopes
 

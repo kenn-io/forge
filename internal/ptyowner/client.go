@@ -11,7 +11,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -480,35 +479,9 @@ func ownerHelperEnvironment(env []string) []string {
 }
 
 func (c Client) ownerHelperEnvironment(env []string) []string {
-	return mergeEnvironment(
+	return procutil.MergeEnv(
 		sessionEnvironment(env, c.StripEnvVars), c.ExtraEnv,
 	)
-}
-
-func mergeEnvironment(env []string, extra map[string]string) []string {
-	if len(extra) == 0 {
-		return env
-	}
-	filtered := env[:0]
-	for _, value := range env {
-		key, _, found := strings.Cut(value, "=")
-		if found {
-			if _, replaced := extra[key]; replaced {
-				continue
-			}
-		}
-		filtered = append(filtered, value)
-	}
-	env = filtered
-	keys := make([]string, 0, len(extra))
-	for key := range extra {
-		keys = append(keys, key)
-	}
-	slices.Sort(keys)
-	for _, key := range keys {
-		env = append(env, key+"="+extra[key])
-	}
-	return env
 }
 
 func applyRPCDeadline(ctx context.Context, conn net.Conn) func() {

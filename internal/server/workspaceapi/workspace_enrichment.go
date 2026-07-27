@@ -49,17 +49,22 @@ type workspaceEnrichmentProbeResult struct {
 
 func (s *Handler) toCachedWorkspaceResponse(
 	summary *db.WorkspaceSummary,
-) (resp workspaceResponse) {
-	resp = toWorkspaceResponse(summary)
-	defer s.applyAgentActivity(&resp, summary)
+) workspaceResponse {
+	return s.withAgentActivity(s.cachedEnrichedResponse(summary), summary)
+}
+
+func (s *Handler) cachedEnrichedResponse(
+	summary *db.WorkspaceSummary,
+) workspaceResponse {
+	resp := toWorkspaceResponse(summary)
 	resp.Repo = s.repoRefFromParts(
 		summary.Platform, summary.PlatformHost, summary.RepoOwner, summary.RepoName,
 	)
 	if s.workspaceEnrichmentDisabled {
-		return
+		return resp
 	}
 	if s.workspaces == nil || summary.Status != "ready" {
-		return
+		return resp
 	}
 
 	entry, refreshDue := s.cachedWorkspaceEnrichment(summary.ID)
@@ -67,7 +72,7 @@ func (s *Handler) toCachedWorkspaceResponse(
 	if refreshDue {
 		s.scheduleWorkspaceEnrichment(*summary)
 	}
-	return
+	return resp
 }
 
 func (s *Handler) workspaceResponseFromEnrichmentCacheEntry(
@@ -164,21 +169,25 @@ func (s *Handler) cachedWorkspaceEnrichment(
 func (s *Handler) refreshWorkspaceResponse(
 	ctx context.Context,
 	summary *db.WorkspaceSummary,
-) (resp workspaceResponse) {
-	defer s.applyAgentActivity(&resp, summary)
+) workspaceResponse {
+	return s.withAgentActivity(s.refreshedEnrichedResponse(ctx, summary), summary)
+}
+
+func (s *Handler) refreshedEnrichedResponse(
+	ctx context.Context,
+	summary *db.WorkspaceSummary,
+) workspaceResponse {
 	generation := s.supersedeWorkspaceEnrichment(summary.ID)
 	result := s.workspaceResponseWithEnrichment(ctx, summary)
-	if summary.Status == "ready" {
-		entry, recorded, _ := s.recordWorkspaceEnrichmentResult(
-			summary.ID, generation, result,
-		)
-		resp = s.workspaceResponseAfterEnrichmentAttempt(
-			summary, result, entry, recorded,
-		)
-		return
+	if summary.Status != "ready" {
+		return result.response
 	}
-	resp = result.response
-	return
+	entry, recorded, _ := s.recordWorkspaceEnrichmentResult(
+		summary.ID, generation, result,
+	)
+	return s.workspaceResponseAfterEnrichmentAttempt(
+		summary, result, entry, recorded,
+	)
 }
 
 func (s *Handler) workspaceResponseAfterEnrichmentAttempt(

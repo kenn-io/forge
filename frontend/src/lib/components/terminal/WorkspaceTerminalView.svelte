@@ -556,6 +556,19 @@
     return isPromoted(session) ? null : session;
   });
 
+  /**
+   * Its registry key, derived rather than computed where it is rendered.
+   *
+   * The slot's prop is its own derived, so it re-runs on the flush that clears this
+   * session (the host left the pane for the Workspaces tab) BEFORE the block
+   * rendering it is torn down. Computing the key from the session down there threw
+   * on null, and a throw mid-flush takes the whole app's render with it: the host
+   * stayed in its parking node and the workspace tab came up empty.
+   */
+  const soleEmbeddedSessionHostKey = $derived(
+    soleEmbeddedSession === null ? null : sessionHostKeyFor(soleEmbeddedSession),
+  );
+
   // The two directions of the cross-tree drag: a session tab carries its pane key
   // out, and a promoted pane's key resolves back to the tab it belongs to. Both
   // reject anything that is not a live session of THIS workspace on this host — a
@@ -737,7 +750,13 @@
   // A workflow tab wins because it fills the pane, and the dock's active tab only
   // counts while the dock is open - a collapsed dock shows no terminal at all.
   const currentSessionKey = $derived(
-    sessionKeyFromWorkflowTab(activeTabKey) ??
+    // A chrome-free pane shows its one session whatever region it belongs to and
+    // whether or not that region's dock is collapsed, so it is the current one by
+    // definition. Deriving "current" from the layout alone left a terminal the user
+    // is looking at reported as inactive, which took the promote command away from
+    // the only session there was to promote.
+    soleEmbeddedSession?.key ??
+      sessionKeyFromWorkflowTab(activeTabKey) ??
       (terminalLayout.open ? terminalLayout.activeSessionKey : null),
   );
 
@@ -3632,10 +3651,10 @@
                     <span>Loading workspace runtime...</span>
                   </div>
                 {:else}
-                  {#if soleEmbeddedSession !== null}
+                  {#if soleEmbeddedSessionHostKey !== null}
                     <div class="sole-embedded-session">
                       <SessionTerminalSlot
-                        hostKey={sessionHostKeyFor(soleEmbeddedSession)}
+                        hostKey={soleEmbeddedSessionHostKey}
                         visible={hostVisible}
                       />
                     </div>
@@ -4007,16 +4026,38 @@
     }}
   />
   {#if launcherMode}
-    {#if workspace}
-      <code class="workspace-control-branch">{workspace.git_head_ref}</code>
+    {#if soleEmbeddedSession !== null}
+      <!-- The chrome that carried these is gone in this state, and only in this
+           state: with the header bar or the session strip on screen they already
+           have an owner there, and a second Delete with its own disabled and
+           pending behaviour is worse than none. -->
       <Button
         size="sm"
         surface="soft"
-        tone="danger"
-        label="Delete"
+        tone="neutral"
+        label="Rename session"
         disabled={actionsBlocked}
-        onclick={(event) => void handleDelete(event.currentTarget as HTMLElement)}
+        onclick={() => renameSession(soleEmbeddedSession)}
       />
+      <Button
+        size="sm"
+        surface="soft"
+        tone="neutral"
+        label="Stop session"
+        disabled={actionsBlocked}
+        onclick={() => closeSession(soleEmbeddedSession)}
+      />
+      {#if workspace}
+        <code class="workspace-control-branch">{workspace.git_head_ref}</code>
+        <Button
+          size="sm"
+          surface="soft"
+          tone="danger"
+          label="Delete"
+          disabled={actionsBlocked}
+          onclick={(event) => void handleDelete(event.currentTarget as HTMLElement)}
+        />
+      {/if}
     {/if}
     <!-- One opener rather than the menu: the overlay is the launch surface in a
          pane, and a second copy of the target list inside a popover inside a tab

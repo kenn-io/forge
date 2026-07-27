@@ -175,7 +175,14 @@
 
   .controls-popover {
     position: fixed;
-    z-index: var(--z-popover);
+    /*
+     * Below the modal layer, not level with it. This popover's own controls open
+     * modals (rename, stop, the font picker) and it deliberately stays open
+     * underneath them, but portalling put it after every in-tree modal in document
+     * order -- so at an equal z-index it painted over the dialog it had just
+     * opened and swallowed the clicks meant for it.
+     */
+    z-index: calc(var(--z-overlay) - 1);
     display: flex;
     align-items: center;
     gap: 4px;

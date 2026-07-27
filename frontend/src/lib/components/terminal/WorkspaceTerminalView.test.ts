@@ -2647,6 +2647,55 @@ describe("WorkspaceTerminalView", () => {
     expect(document.querySelector(".header-bar")).not.toBeNull();
   });
 
+  it("offers the sole session's own rename and stop from the pane controls", async () => {
+    claimForPrs();
+
+    render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+        paneSurface: "prs" as const,
+      },
+    });
+
+    await waitFor(() => expect(hostedWorkspaceControls()).not.toBeNull());
+    render(WorkspacePaneControls);
+    await fireEvent.click(screen.getByRole("button", { name: "Workspace controls" }));
+
+    // Dropping the chrome took the session's own tab actions with it, so without
+    // these a single-session workspace has no route to rename or stop the one thing
+    // it is running.
+    const controls = within(screen.getByRole("dialog", { name: "Workspace controls" }));
+    await fireEvent.click(controls.getByRole("button", { name: "Rename session" }));
+    expect(await screen.findByRole("dialog", { name: /Rename/ })).toBeTruthy();
+  });
+
+  it("leaves session and workspace actions to the chrome that already owns them", async () => {
+    localStorage.setItem(
+      "middleman-workspace-terminal-layout:ws-1",
+      persistedTwoSessionWorkflowLayout("ws-1:helper", "ws-1:reviewer"),
+    );
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoWorkflowSessions());
+    claimForPrs();
+
+    render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+        paneSurface: "prs" as const,
+      },
+    });
+
+    await waitFor(() => expect(hostedWorkspaceControls()).not.toBeNull());
+    render(WorkspacePaneControls);
+    await fireEvent.click(screen.getByRole("button", { name: "Workspace controls" }));
+
+    // Two sessions means the header bar and the session strip are both on screen
+    // with their own Delete and per-session actions. A second copy in here would be
+    // a destructive action with two owners whose disabled and pending states drift.
+    const controls = within(screen.getByRole("dialog", { name: "Workspace controls" }));
+    expect(controls.queryByRole("button", { name: "Delete" })).toBeNull();
+    expect(controls.queryByRole("button", { name: "Rename session" })).toBeNull();
+  });
+
   it("offers the branch and delete action from embedded workspace controls", async () => {
     claimForPrs();
 
@@ -3061,7 +3110,7 @@ describe("WorkspaceTerminalView", () => {
     );
   });
 
-  it("publishes no session while the dock holding it is collapsed", async () => {
+  it("shows a sole session whose dock was collapsed, and treats it as current", async () => {
     localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
     localStorage.setItem(
       "middleman-workspace-terminal-layout:ws-1",
@@ -3080,12 +3129,49 @@ describe("WorkspaceTerminalView", () => {
       },
     });
 
-    // Published, so the surface can offer the pane...
-    await waitFor(() => expect(getInlineWorkspaceController("prs").promotableSessions()).toHaveLength(1));
-    // ...but not as the current one. The dock still names an active session, and a
-    // collapsed dock renders none of it, so promoting it by keyboard would move a
-    // terminal the user cannot see.
-    expect(activeHostedSession("prs")).toBeNull();
+    // A pane with one session shows it whatever region it was parked in: the
+    // alternative is a pane rendering nothing but a collapsed dock bar.
+    await waitFor(() => expect(document.querySelector(".sole-embedded-session")).not.toBeNull());
+    // And it must be the current one, or the keyboard commands report no session to
+    // promote while the user is looking straight at it.
+    await waitFor(() => expect(activeHostedSession("prs")?.label).toBe("Shell"));
+  });
+
+  it("publishes a collapsed dock's session without making it current", async () => {
+    localStorage.setItem("middleman-workspace-active-tab:ws-1", "session:ws-1:helper");
+    localStorage.setItem(
+      "middleman-workspace-terminal-layout:ws-1",
+      JSON.stringify({
+        version: 1,
+        open: false,
+        dock: "bottom",
+        height: 300,
+        activeSessionKey: "ws-1_shell_a",
+        tree: { type: "leaf", id: "dock-leaf", sessionKey: "ws-1_shell_a" },
+        sessionRegions: { "ws-1:helper": "workflow", "ws-1_shell_a": "terminal" },
+        workflowMode: "tabs",
+        workflowTree: { type: "leaf", id: "wf-leaf", tabKey: "session:ws-1:helper" },
+      }),
+    );
+    mocks.getWorkspaceRuntime.mockResolvedValue({
+      launch_targets: [],
+      sessions: [runningSession, runningShellSession],
+    });
+    claimForPrs();
+
+    render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+        paneSurface: "prs" as const,
+      },
+    });
+
+    // Two sessions, so the pane keeps its chrome and the collapsed dock really does
+    // render nothing: promoting its session by keyboard would move a terminal the
+    // user cannot see. Its pane is still offered, since promoting from the strip is
+    // a different, deliberate act.
+    await waitFor(() => expect(getInlineWorkspaceController("prs").promotableSessions()).toHaveLength(2));
+    expect(activeHostedSession("prs")?.label).toBe("Helper");
   });
 
   describe("promoted sessions", () => {

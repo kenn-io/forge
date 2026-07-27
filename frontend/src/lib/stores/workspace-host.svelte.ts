@@ -702,9 +702,20 @@ function promotableSessionsFor(surface: InlineWorkspaceSurface): readonly Promot
   return hosted.sessions.map((session) => ({ paneKey: session.paneKey, label: session.label }));
 }
 
+/**
+ * What the container pane's tab is called: its sole session, when it is showing one
+ * and nothing else.
+ *
+ * "Workspace" whenever the view keeps its own chrome, and it must agree with the
+ * view about when that is - a tab named for the session above a header bar naming
+ * the workspace is two answers to the same question. So a flattened surface, where
+ * the view keeps its toolbar because the surface suppresses per-leaf actions, keeps
+ * the neutral name too.
+ */
 function workspacePaneLabelFor(surface: InlineWorkspaceSurface): string {
   const sessions = promotableSessionsFor(surface);
   if (sessions.length !== 1) return "Workspace";
+  if (getPaneLayoutStore(surface).paneRender()?.flattened === true) return "Workspace";
   const session = sessions[0]!;
   return workspacePaneKeysFor(surface).includes(session.paneKey) ? "Workspace" : session.label;
 }

@@ -830,6 +830,22 @@ describe("promotable sessions", () => {
     expect(promoteSessionBesideWorkspace(layout, sessions[0]!.paneKey)).toBe(true);
     expect(prs.workspacePaneLabel()).toBe("Workspace");
   });
+
+  it("keeps the neutral label while the surface is flattened", () => {
+    const prs = getInlineWorkspaceController("prs");
+    prs.claim(identityA, refA);
+    publishHostedSessions({ workspaceId: "ws-a", hostKey: undefined }, [{ ...sessions[0]!, label: "codex (proxy)" }]);
+    getPaneLayoutStore("prs").notePaneRender({
+      editableTabs: ["conversation", "workspace"],
+      onScreenTabs: ["conversation", "workspace"],
+      flattened: true,
+    });
+
+    // A flattened surface suppresses per-leaf actions, so the view keeps its own
+    // chrome there - and a tab named for the session above a header bar naming the
+    // workspace is two answers to the same question.
+    expect(prs.workspacePaneLabel()).toBe("Workspace");
+  });
 });
 
 describe("a workspace spread across several panes", () => {

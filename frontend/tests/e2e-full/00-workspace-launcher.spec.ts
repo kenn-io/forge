@@ -206,4 +206,71 @@ test.describe("embedded workspace launcher", () => {
       await isolatedServer?.stop();
     }
   });
+
+  test("renames and stops a chrome-free pane's session from the pane controls", async ({ page }) => {
+    // A pane holding one session renders no chrome, which took that session's own
+    // tab actions with it. These are the replacements, and only the real backend
+    // shows the rename reaching the runtime and the stop actually ending the shell.
+    test.skip(
+      !hasCommand("git") || !hasCommand("tmux", ["-V"]),
+      "git and tmux are required for the real workspace flow",
+    );
+
+    let isolatedServer: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    try {
+      isolatedServer = await startIsolatedWorkspaceE2EServer();
+      api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
+      const workspace = await createIssueWorkspace(api, 10);
+
+      await page.goto(`${isolatedServer.info.base_url}/issues/github/acme/widgets/10`);
+      await expect(page.locator(".detail-pane-workspace-slot .workspace-host-wrapper")).toBeVisible();
+      const launcher = page.getByRole("dialog", { name: "Launch a session" });
+      await expect(launcher).toBeVisible();
+      await launcher.locator("button.launch-card", { hasText: "Shell" }).first().click();
+      await expect(launcher).toBeHidden();
+
+      const terminal = page.locator(".detail-pane-workspace-slot .terminal-container");
+      await expect(terminal).toBeVisible();
+      await typeMarkerCommand(page, terminal, workspace.worktree_path, "sole-session-marker");
+      await expect(page.getByRole("tab", { name: "Shell" })).toBeVisible();
+
+      async function openControls(): Promise<void> {
+        await page.getByRole("button", { name: "Workspace controls" }).first().click();
+        await expect(page.getByRole("dialog", { name: "Workspace controls" })).toBeVisible();
+      }
+
+      await openControls();
+      await page
+        .getByRole("dialog", { name: "Workspace controls" })
+        .getByRole("button", { name: "Rename session" })
+        .click();
+      const rename = page.getByRole("dialog", { name: "Rename tab" });
+      await expect(rename).toBeVisible();
+      await rename.getByRole("textbox").fill("Reviewer shell");
+      await rename.getByRole("button", { name: "Save" }).click();
+      await expect(rename).toBeHidden();
+
+      // The pane's own tab is named after the session, so a rename has to reach it.
+      await expect(page.getByRole("tab", { name: "Reviewer shell" })).toBeVisible();
+      await typeMarkerCommand(page, terminal, workspace.worktree_path, "sole-session-marker-renamed");
+
+      await openControls();
+      await page
+        .getByRole("dialog", { name: "Workspace controls" })
+        .getByRole("button", { name: "Stop session" })
+        .click();
+      const confirm = page.getByRole("dialog", { name: /Stop Reviewer shell/ });
+      await expect(confirm).toBeVisible();
+      await confirm.getByRole("button", { name: "Stop session" }).click();
+
+      // Nothing running: the pane goes back to offering a launch rather than a
+      // terminal, which is the only state left that a workspace can be in.
+      await expect(page.getByRole("tab", { name: "Workspace" })).toBeVisible();
+      await expect(page.locator(".detail-pane-workspace-slot .terminal-container")).toHaveCount(0);
+    } finally {
+      await api?.dispose();
+      await isolatedServer?.stop();
+    }
+  });
 });

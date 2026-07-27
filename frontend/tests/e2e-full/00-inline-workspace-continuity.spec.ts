@@ -418,10 +418,13 @@ test.describe("inline workspace pane continuity", () => {
 
       await runPaletteCommand(page, "Return terminal session to the workspace pane");
 
-      // Home again, in the dock it came from rather than wherever normalization
-      // would have put a session the layout had never seen.
-      await expect(page.locator(".terminal-panel.open .terminal-container")).toBeVisible();
-      await typeMarkerCommand(page, dockContainer, workspace.worktree_path, "promote-marker-redocked");
+      // Home again, back inside the workspace pane rather than left in a pane
+      // nothing renders. It is the workspace's only session, so the pane hands the
+      // whole box to the terminal and there is no dock bar to come back to - which
+      // is why this asserts on where the session landed, not on dock chrome.
+      const redocked = page.locator(".detail-pane-workspace-slot .sole-embedded-session .terminal-container");
+      await expect(redocked).toBeVisible();
+      await typeMarkerCommand(page, redocked, workspace.worktree_path, "promote-marker-redocked");
     } finally {
       await api?.dispose();
       await isolatedServer?.stop();
@@ -702,8 +705,11 @@ test.describe("inline workspace pane continuity", () => {
 
       // 1. Tabbed behind a sibling: drag the workspace into the conversation's
       //    leaf, then switch away from it. Neither hidden nor maximized.
+      //    Found through its leaf rather than by name: the pane holds one session,
+      //    so its tab carries that session's name instead of "Workspace".
       await workspaceLeaf
-        .getByRole("tab", { name: "Workspace" })
+        .getByRole("tab")
+        .first()
         .dragTo(conversationLeaf.getByRole("tab", { name: "Conversation" }));
       await page.getByRole("tab", { name: "Conversation" }).click();
       await expect(page.locator(".detail-pane-workspace-slot")).toHaveCount(0);

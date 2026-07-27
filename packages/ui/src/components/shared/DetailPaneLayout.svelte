@@ -129,8 +129,14 @@
     // writing: reading it here would make this effect both a reader and a writer
     // of the same state and it would re-run itself forever.
     untrack(() => layout.notePaneRender(report));
-    return () => untrack(() => layout.notePaneRender(null));
   });
+
+  // Separate and dependency-free so it only runs when this renderer goes away.
+  // Clearing the report from the publishing effect's own cleanup would blank it
+  // before every republish, and a caller that names a pane from the report — the
+  // workspace pane's tab takes its sole session's name — would see that null,
+  // change the tab list, and drive the publishing effect around forever.
+  $effect(() => () => untrack(() => layout.notePaneRender(null)));
 
   const hiddenButAvailable = $derived(
     tabs.filter((tab) => tab.available && layout.hiddenTabKeys().includes(tab.key)),

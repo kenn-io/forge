@@ -327,6 +327,22 @@ Keyboard handlers must have one clear owner for each key press.
   it is clamped under xterm's canvas layers, which compete one level up - every click
   lands on the terminal instead
   (`frontend/src/lib/components/terminal/WorkspacePaneControls.svelte::portalToBody`).
+- A portalled popover whose own actions open modals sits BELOW the modal layer
+  (`calc(var(--z-overlay) - 1)`), not level with it. Portalling puts it after every
+  in-tree modal in document order, so an equal z-index paints it over the dialog it
+  just opened.
+- A renderer publishing what it shows must not clear that report from the
+  publishing effect's cleanup. Cleanup runs before every re-run, so a consumer that
+  feeds the report back into the renderer's inputs (the pane tab named from it) sees
+  a null on each republish, changes the inputs, and the effect never settles. Clear
+  it from a separate dependency-free effect, which only runs at unmount
+  (`packages/ui/src/components/shared/DetailPaneLayout.svelte`).
+- A slot key computed from a session that can disappear is derived, and nullable.
+  Child props are their own deriveds: they re-run on the flush that clears the
+  session, before the `{#if}` guarding them is torn down, and a throw there aborts
+  the app's whole render - the host stayed parked and its tab came up empty. Only the
+  real-backend lane reproduces it; jsdom's flush ordering does not
+  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::soleEmbeddedSessionHostKey`).
 - One embedded workspace view serves every selection on its surface, so anything
   it hands to a detail pane - the controls snippet, a mid-save busy flag, the
   launcher overlay's open state - is keyed by `(workspaceId, hostKey)`. An unkeyed

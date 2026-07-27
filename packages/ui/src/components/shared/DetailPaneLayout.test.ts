@@ -189,6 +189,19 @@ describe("detail pane layout", () => {
     expect(layout.paneRender()).toBeNull();
   });
 
+  it("keeps the report published while republishing it", () => {
+    // A caller may name a pane from the report — the workspace pane's tab takes
+    // its sole session's name — so that label is a tab list input as well as a
+    // report output. Clearing the report before each republish flips the label,
+    // which changes the tab list, which republishes: the effect never settles and
+    // Svelte aborts the whole tree, leaving the surface unresponsive.
+    const layout = store(mergedTree());
+    render(DetailPaneLayoutTestHarness, { layout, labelFromRender: true });
+
+    expect(screen.getByRole("tab", { name: "Session" })).toBeTruthy();
+    expect(layout.paneRender()?.flattened).toBe(false);
+  });
+
   it("renders caller chrome in each leaf's action area", () => {
     // The tab strip is a pane's only chrome, and the structural controls occupy
     // the snippet TabbedPanelTree offers, so a caller with its own control for a

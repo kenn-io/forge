@@ -4,6 +4,10 @@
 // has no layout, so it cannot tell a usable popover from one clipped to a sliver.
 import { createRawSnippet, mount, unmount } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+// The real z-index tokens: this popover's layer is defined relative to the modal
+// layer, and the browser project loads no app stylesheet, so without the theme
+// both sides of that comparison would collapse to `auto`.
+import "@kenn-io/kit-ui/theme.css";
 
 import WorkspacePaneControls from "./WorkspacePaneControls.svelte";
 import { registerWorkspaceControls, resetWorkspaceHostForTest } from "../../stores/workspace-host.svelte.ts";
@@ -132,5 +136,40 @@ describe("workspace controls popover in a real tab strip", () => {
     const rect = popover.getBoundingClientRect();
     const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
     expect(popover.contains(hit)).toBe(true);
+  });
+
+  it("yields to a modal opened from inside it", async () => {
+    // Rename session, Stop session and the font picker all open a modal from these
+    // controls, and the popover stays open beneath one on purpose. But it is
+    // portalled to the end of `<body>`, which puts it after every in-tree modal in
+    // document order, so at an equal z-index it covered the dialog it had just
+    // opened and every click on Save landed on the popover.
+    registerWorkspaceControls({ snippet: controls, workspaceKey: "ws-1" });
+    const leaf = mountInPaneLeaf();
+    mounted = { host: leaf.host, strip: leaf.actions, app: leaf.app };
+
+    const trigger = leaf.actions.querySelector<HTMLButtonElement>("button[aria-label='Workspace controls']");
+    trigger!.click();
+
+    const popover = await vi.waitFor(() => {
+      const el = document.querySelector<HTMLElement>("[role='dialog'][aria-label='Workspace controls']");
+      expect(el!.getBoundingClientRect().width).toBeGreaterThan(0);
+      return el!;
+    });
+
+    // The modal layer as kit-ui's Modal builds it: full-viewport backdrop at
+    // --z-overlay, inserted before the portalled popover so document order alone
+    // cannot save it.
+    const modal = document.createElement("div");
+    modal.style.cssText = "position: fixed; inset: 0; z-index: var(--z-overlay); background: rgba(0, 0, 0, 0.4);";
+    popover.before(modal);
+
+    try {
+      const rect = popover.getBoundingClientRect();
+      const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+      expect(hit).toBe(modal);
+    } finally {
+      modal.remove();
+    }
   });
 });

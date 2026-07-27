@@ -204,7 +204,12 @@
   const paneTabs = $derived<PaneTabSpec[]>([
     { key: "conversation", label: "Conversation", available: true },
     { key: "files", label: "Files changed", available: true },
-    { key: "workspace", label: "Workspace", available: workspaceClaim.ref() !== null, hideable: true },
+    {
+      key: "workspace",
+      label: inlineWorkspace?.workspacePaneLabel() ?? "Workspace",
+      available: workspaceClaim.ref() !== null,
+      hideable: true,
+    },
     ...sessionTabs,
   ]);
 

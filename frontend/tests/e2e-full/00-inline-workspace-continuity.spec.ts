@@ -115,9 +115,18 @@ async function dismissWorkspaceLauncher(page: Page): Promise<void> {
   await expect(launcher).toBeHidden();
 }
 
+/**
+ * Open the dock and return its terminal.
+ *
+ * In a detail pane a workspace running exactly one session drops its chrome, dock
+ * included, and renders that session on its own - so the container to wait for
+ * depends on how many sessions the workspace has, not on which control opened it.
+ */
 async function openTerminalPanel(page: Page): Promise<Locator> {
   await page.getByRole("button", { name: "Open terminal panel" }).click();
-  const container = page.locator(".terminal-panel.open .terminal-container");
+  const container = page
+    .locator(".terminal-panel.open .terminal-container, .sole-embedded-session .terminal-container")
+    .first();
   await expect(container).toBeVisible();
   // xterm.js only paints a canvas when its WebGL addon activates. Without WebGL
   // (headless Firefox) it silently falls back to the DOM renderer, which
@@ -334,7 +343,9 @@ test.describe("inline workspace pane continuity", () => {
       await workspaceLeaf.locator('[data-testid="pane-hide-workspace"]').click();
       await expect(page.locator(".detail-pane-workspace-slot")).toHaveCount(0);
 
-      await page.getByRole("button", { name: "Show Workspace" }).click();
+      // Named for the session, not the container: a pane holding one terminal takes
+      // that terminal's name, and the reopen strip has to agree with the tab.
+      await page.getByRole("button", { name: "Show Shell" }).click();
       await expect(paneContainer).toHaveAttribute("data-continuity", "witness");
       // A torn-down or wedged session cannot run this.
       await typeMarkerCommand(page, paneContainer, workspace.worktree_path, "pane-marker-reopened");

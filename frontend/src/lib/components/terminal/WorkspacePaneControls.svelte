@@ -83,6 +83,22 @@
     });
   }
 
+  /**
+   * Rendered at the end of `<body>`, not where it is declared.
+   *
+   * The pane's leaf actions container is `position: relative; z-index: 2`, which
+   * makes it a stacking context - so this popover's own z-index is clamped inside
+   * it and loses to xterm's canvas layers, which compete one level up. Before the
+   * terminal filled the pane that overlap never happened; now the popover paints
+   * under the terminal and every click on it lands on the canvas instead. It is
+   * already positioned against the viewport, so moving the node changes nothing
+   * else.
+   */
+  function portalToBody(node: HTMLElement): () => void {
+    document.body.appendChild(node);
+    return () => node.remove();
+  }
+
   async function toggle(): Promise<void> {
     if (open) {
       close();
@@ -120,6 +136,7 @@
         role="dialog"
         aria-label="Workspace controls"
         style={panelStyle}
+        {@attach portalToBody}
       >
         {@render controls.snippet()}
       </div>

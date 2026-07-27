@@ -540,6 +540,22 @@
     return promotedSessionKeys.has(session.key);
   }
 
+  /**
+   * The one session this view is embedded to show, or null.
+   *
+   * A pane whose only content is a single terminal needs no chrome of its own: the
+   * pane's tab strip already names it and carries its controls, so the header bar
+   * and the one-tab strip under it were two bars saying what the tab above them
+   * says. Null unless the surface actually gives this view that strip - a flattened
+   * surface suppresses per-leaf chrome, so there the toolbar is the only thing left
+   * to carry the controls.
+   */
+  const soleEmbeddedSession = $derived.by(() => {
+    if (!controlsInPane || runtimeSessions.length !== 1) return null;
+    const session = runtimeSessions[0]!;
+    return isPromoted(session) ? null : session;
+  });
+
   // The two directions of the cross-tree drag: a session tab carries its pane key
   // out, and a promoted pane's key resolves back to the tab it belongs to. Both
   // reject anything that is not a live session of THIS workspace on this host — a
@@ -688,7 +704,6 @@
   // the toolbar is the only thing left that can carry them.
   const paneFlattened = $derived(surfaceLayout?.paneRender()?.flattened ?? false);
   const controlsInPane = $derived(paneSurface !== undefined && !paneFlattened);
-
   // Handed to the detail pane's controls popover, which is where the controls live
   // once this view is embedded. Registered with the workspace it acts on, because
   // one embedded view serves every selection on its surface: the snippet is the
@@ -711,7 +726,9 @@
   // them, which is where their feedback is.
   $effect(() => {
     const workspaceKey = viewWorkspaceKey;
-    const busy = terminalOptionsSaving || terminalZoomSaving || applyingWorkflowPreset;
+    // Only what a pane's popover can actually start. Presets are not offered there,
+    // so a preset apply cannot be the write that must not be interrupted.
+    const busy = terminalOptionsSaving || terminalZoomSaving;
     untrack(() => setWorkspaceControlsBusy(workspaceKey, controlsInPane && busy));
     return () => untrack(() => setWorkspaceControlsBusy(workspaceKey, false));
   });
@@ -1157,6 +1174,7 @@
       // generation, and whether actions are blocked.
       const onScreen =
         isPromoted(session) ||
+        soleEmbeddedSession?.key === session.key ||
         (sessionRegion(session) === "workflow"
           ? mountedSessionKeys.includes(session.key)
           : dockedSessionKeys.has(session.key));
@@ -3455,129 +3473,131 @@
           {@render inlineCollapseControl()}
         </div>
       {:else}
-        <div class="header-bar">
-          <div class="header-start">
-            <span class="header-name">
-              {displayName(workspace)}
-            </span>
-            <code class="header-branch">
-              {workspace.git_head_ref}
-            </code>
-          </div>
-          <div class="header-end">
-            {#if !hideRightSidebar}
-              <div class="panel-toggle-group">
-                <button
-                  class="panel-toggle-btn"
-                  class:active={sidebarOpen && sidebarTab === "diff"}
-                  disabled={actionsBlocked}
-                  onclick={() => handleSidebarToggleClick("diff")}
+        {#if soleEmbeddedSession === null}
+          <div class="header-bar">
+            <div class="header-start">
+              <span class="header-name">
+                {displayName(workspace)}
+              </span>
+              <code class="header-branch">
+                {workspace.git_head_ref}
+              </code>
+            </div>
+            <div class="header-end">
+              {#if !hideRightSidebar}
+                <div class="panel-toggle-group">
+                  <button
+                    class="panel-toggle-btn"
+                    class:active={sidebarOpen && sidebarTab === "diff"}
+                    disabled={actionsBlocked}
+                    onclick={() => handleSidebarToggleClick("diff")}
+                  >
+                    Diff
+                  </button>
+                  {#if workspace.item_type === "issue"}
+                    <button
+                      class="panel-toggle-btn"
+                      class:active={sidebarOpen && sidebarTab === "issue"}
+                      disabled={actionsBlocked}
+                      onclick={() => handleSidebarToggleClick("issue")}
+                    >
+                      Issue
+                    </button>
+                  {/if}
+                  {#if workspace.item_type === "kata_task"}
+                    <button
+                      class="panel-toggle-btn"
+                      class:active={sidebarOpen && sidebarTab === "kata_task"}
+                      disabled={actionsBlocked}
+                      onclick={() => handleSidebarToggleClick("kata_task")}
+                    >
+                      Kata task
+                    </button>
+                  {/if}
+                  {#if getWorkspacePRNumber(workspace) !== null}
+                    <button
+                      class="panel-toggle-btn"
+                      class:active={sidebarOpen && sidebarTab === "pr"}
+                      disabled={actionsBlocked}
+                      onclick={() => handleSidebarToggleClick("pr")}
+                    >
+                      PR
+                    </button>
+                  {/if}
+                  {#if workspace.item_type === "pull_request"}
+                    <button
+                      class="panel-toggle-btn"
+                      class:active={sidebarOpen && sidebarTab === "reviews"}
+                      disabled={actionsBlocked}
+                      onclick={() => handleSidebarToggleClick("reviews")}
+                    >
+                      Reviews
+                    </button>
+                  {/if}
+                </div>
+                <IconButton
+                  class="workspace-refresh-button"
+                  size="sm"
+                  disabled={actionsBlocked || refreshingWorkspace}
+                  ariaLabel="Refresh workspace details"
+                  onclick={() => void handleRefreshWorkspace()}
                 >
-                  Diff
+                  {#if refreshingWorkspace}
+                    <Spinner size={14} label="Refreshing workspace" />
+                  {:else}
+                    <RefreshIcon
+                      class="header-icon"
+                      size="14"
+                      strokeWidth="2.2"
+                      aria-hidden="true"
+                    />
+                  {/if}
+                </IconButton>
+              {/if}
+              {#if inlineDock && inlineDockMode !== null}
+                <!-- Dock mode changes are pure local UI: they must stay
+                     available while server-side actions are blocked
+                     (deletes in flight), or the dock cannot be collapsed
+                     out of the way. Only the modal guard applies, and only
+                     to the expand direction. -->
+                <button
+                  class="header-btn"
+                  disabled={inlineDockMode !== "expanded" && inlineDockExpandBlocked}
+                  title={
+                    inlineDockMode !== "expanded" && inlineDockExpandBlocked
+                      ? "Close the open dialog first."
+                      : undefined
+                  }
+                  onclick={() =>
+                    inlineDock?.setMode(inlineDockMode === "expanded" ? "split" : "expanded")}
+                >
+                  {#if inlineDockMode === "expanded"}
+                    <ChevronsDownIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+                    Show Details
+                  {:else}
+                    <ChevronsUpIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+                    Expand Terminal
+                  {/if}
                 </button>
-                {#if workspace.item_type === "issue"}
-                  <button
-                    class="panel-toggle-btn"
-                    class:active={sidebarOpen && sidebarTab === "issue"}
-                    disabled={actionsBlocked}
-                    onclick={() => handleSidebarToggleClick("issue")}
-                  >
-                    Issue
-                  </button>
-                {/if}
-                {#if workspace.item_type === "kata_task"}
-                  <button
-                    class="panel-toggle-btn"
-                    class:active={sidebarOpen && sidebarTab === "kata_task"}
-                    disabled={actionsBlocked}
-                    onclick={() => handleSidebarToggleClick("kata_task")}
-                  >
-                    Kata task
-                  </button>
-                {/if}
-                {#if getWorkspacePRNumber(workspace) !== null}
-                  <button
-                    class="panel-toggle-btn"
-                    class:active={sidebarOpen && sidebarTab === "pr"}
-                    disabled={actionsBlocked}
-                    onclick={() => handleSidebarToggleClick("pr")}
-                  >
-                    PR
-                  </button>
-                {/if}
-                {#if workspace.item_type === "pull_request"}
-                  <button
-                    class="panel-toggle-btn"
-                    class:active={sidebarOpen && sidebarTab === "reviews"}
-                    disabled={actionsBlocked}
-                    onclick={() => handleSidebarToggleClick("reviews")}
-                  >
-                    Reviews
-                  </button>
-                {/if}
-              </div>
-              <IconButton
-                class="workspace-refresh-button"
-                size="sm"
-                disabled={actionsBlocked || refreshingWorkspace}
-                ariaLabel="Refresh workspace details"
-                onclick={() => void handleRefreshWorkspace()}
-              >
-                {#if refreshingWorkspace}
-                  <Spinner size={14} label="Refreshing workspace" />
-                {:else}
-                  <RefreshIcon
-                    class="header-icon"
-                    size="14"
-                    strokeWidth="2.2"
-                    aria-hidden="true"
-                  />
-                {/if}
-              </IconButton>
-            {/if}
-            {#if inlineDock && inlineDockMode !== null}
-              <!-- Dock mode changes are pure local UI: they must stay
-                   available while server-side actions are blocked
-                   (deletes in flight), or the dock cannot be collapsed
-                   out of the way. Only the modal guard applies, and only
-                   to the expand direction. -->
+                <button
+                  class="header-btn"
+                  onclick={() => inlineDock?.setMode("collapsed")}
+                >
+                  <PanelBottomCloseIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+                  Collapse Terminal
+                </button>
+              {/if}
               <button
-                class="header-btn"
-                disabled={inlineDockMode !== "expanded" && inlineDockExpandBlocked}
-                title={
-                  inlineDockMode !== "expanded" && inlineDockExpandBlocked
-                    ? "Close the open dialog first."
-                    : undefined
-                }
-                onclick={() =>
-                  inlineDock?.setMode(inlineDockMode === "expanded" ? "split" : "expanded")}
+                class="header-btn danger"
+                disabled={actionsBlocked}
+                onclick={(event) =>
+                  void handleDelete(event.currentTarget)}
               >
-                {#if inlineDockMode === "expanded"}
-                  <ChevronsDownIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-                  Show Details
-                {:else}
-                  <ChevronsUpIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-                  Expand Terminal
-                {/if}
+                Delete
               </button>
-              <button
-                class="header-btn"
-                onclick={() => inlineDock?.setMode("collapsed")}
-              >
-                <PanelBottomCloseIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-                Collapse Terminal
-              </button>
-            {/if}
-            <button
-              class="header-btn danger"
-              disabled={actionsBlocked}
-              onclick={(event) =>
-                void handleDelete(event.currentTarget)}
-            >
-              Delete
-            </button>
+            </div>
           </div>
-        </div>
+        {/if}
         <div
           class="terminal-and-sidebar"
           bind:this={containerEl}
@@ -3612,7 +3632,14 @@
                     <span>Loading workspace runtime...</span>
                   </div>
                 {:else}
-                  {#if renderedWorkflowTree}
+                  {#if soleEmbeddedSession !== null}
+                    <div class="sole-embedded-session">
+                      <SessionTerminalSlot
+                        hostKey={sessionHostKeyFor(soleEmbeddedSession)}
+                        visible={hostVisible}
+                      />
+                    </div>
+                  {:else if renderedWorkflowTree}
                     <WorkflowSplitTree
                       {workspaceId}
                       dragScope={surfaceLayout?.dragScope}
@@ -3713,7 +3740,7 @@
                   {/if}
                 {/if}
               </div>
-              {#if terminalLayout.dock === "bottom"}
+              {#if terminalLayout.dock === "bottom" && soleEmbeddedSession === null}
                 <DockedTerminalPanel
                   {workspaceId}
                   {workspaceHostKey}
@@ -3948,17 +3975,23 @@
      to this view's state. In a detail pane the pane's popover renders this, so the
      controls follow the workspace without the state leaving the view. -->
 {#snippet workspaceControls()}
-  <WorkflowPresetMenu
-    presets={workflowPresets}
-    selectedPresetId={selectedWorkflowPresetId}
-    applying={applyingWorkflowPreset}
-    onSaveNew={saveWorkflowPreset}
-    onUpdate={updateWorkflowPreset}
-    onApply={(presetId) => void applyWorkflowPreset(presetId)}
-    onDelete={deleteWorkflowPreset}
-    disabled={actionsBlocked}
-    {hostVisible}
-  />
+  {#if !launcherMode}
+    <!-- Presets compose a whole multi-session workflow, which is what the standalone
+         Workspaces tab is for. A PR or issue pane hosts one workspace beside the
+         thing being reviewed, so saving and applying layouts there is a surface the
+         maintainer never asked that pane for. -->
+    <WorkflowPresetMenu
+      presets={workflowPresets}
+      selectedPresetId={selectedWorkflowPresetId}
+      applying={applyingWorkflowPreset}
+      onSaveNew={saveWorkflowPreset}
+      onUpdate={updateWorkflowPreset}
+      onApply={(presetId) => void applyWorkflowPreset(presetId)}
+      onDelete={deleteWorkflowPreset}
+      disabled={actionsBlocked}
+      {hostVisible}
+    />
+  {/if}
   <TerminalZoomControl
     fontSize={terminalFontSize}
     disabled={actionsBlocked || !terminalSettingsReady || terminalOptionsSaving}
@@ -3974,12 +4007,22 @@
     }}
   />
   {#if launcherMode}
+    {#if workspace}
+      <code class="workspace-control-branch">{workspace.git_head_ref}</code>
+      <Button
+        size="sm"
+        surface="soft"
+        tone="danger"
+        label="Delete"
+        disabled={actionsBlocked}
+        onclick={(event) => void handleDelete(event.currentTarget as HTMLElement)}
+      />
+    {/if}
     <!-- One opener rather than the menu: the overlay is the launch surface in a
          pane, and a second copy of the target list inside a popover inside a tab
          strip is the stacking this mode exists to remove. -->
     <Button size="sm" surface="soft" tone="neutral" label="Launch session" onclick={openLauncher}>
       <PlayIcon size="13" strokeWidth="2" aria-hidden="true" />
-      Launch
     </Button>
   {:else}
     <LaunchMenu
@@ -4336,6 +4379,24 @@
     min-height: 0;
     overflow: hidden;
     background: var(--bg-primary);
+  }
+
+  .sole-embedded-session {
+    display: flex;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  .workspace-control-branch {
+    max-width: 240px;
+    overflow: hidden;
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-sm);
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .panel-toggle-group {

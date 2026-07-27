@@ -451,6 +451,19 @@ describe("PRListView inline workspace", () => {
     }
   });
 
+  it("uses the workspace label supplied by the inline controller", () => {
+    const { controller } = createClaimTestController("prs", {
+      workspacePaneLabel: "codex (proxy)",
+    });
+
+    renderPRListView({
+      inlineWorkspace: controller,
+      detail: pullDetailFixture({ id: "ws-1", status: "ready" }),
+    });
+
+    expect(screen.getByRole("tab", { name: "codex (proxy)" })).toBeTruthy();
+  });
+
   it("refetches the detail when the claimed identity is invalidated by deletion", async () => {
     const { controller, notifyInvalidated } = createClaimTestController();
     const detail = pullDetailFixture({ id: "ws-1", status: "ready" });

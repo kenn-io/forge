@@ -796,6 +796,40 @@ describe("promotable sessions", () => {
     expect(prs.promotableSessions()).toHaveLength(1);
     expect(activeHostedSession("prs")).toBeNull();
   });
+
+  it("uses only an unpromoted sole session as the workspace pane label", () => {
+    const prs = getInlineWorkspaceController("prs");
+    prs.claim(identityA, refA);
+
+    expect(prs.workspacePaneLabel()).toBe("Workspace");
+
+    publishHostedSessions({ workspaceId: "ws-a", hostKey: undefined }, [{ ...sessions[0]!, label: "codex (proxy)" }]);
+    expect(prs.workspacePaneLabel()).toBe("codex (proxy)");
+
+    publishHostedSessions({ workspaceId: "ws-a", hostKey: undefined }, []);
+    expect(prs.workspacePaneLabel()).toBe("Workspace");
+
+    publishHostedSessions({ workspaceId: "ws-a", hostKey: undefined }, [
+      sessions[0]!,
+      {
+        paneKey: "session:ws-a//ws-a%3Areviewer",
+        label: "Reviewer",
+        hostKey: "ws-a//ws-a%3Areviewer/gen-1",
+        active: false,
+      },
+    ]);
+    expect(prs.workspacePaneLabel()).toBe("Workspace");
+
+    publishHostedSessions({ workspaceId: "ws-a", hostKey: undefined }, [{ ...sessions[0]!, label: "codex (proxy)" }]);
+    const layout = getPaneLayoutStore("prs");
+    layout.notePaneRender({
+      editableTabs: ["conversation", "workspace"],
+      onScreenTabs: ["conversation", "workspace"],
+      flattened: false,
+    });
+    expect(promoteSessionBesideWorkspace(layout, sessions[0]!.paneKey)).toBe(true);
+    expect(prs.workspacePaneLabel()).toBe("Workspace");
+  });
 });
 
 describe("a workspace spread across several panes", () => {

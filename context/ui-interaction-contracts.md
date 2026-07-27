@@ -311,6 +311,22 @@ Keyboard handlers must have one clear owner for each key press.
   `InlineWorkspaceController` snippet: views get `{paneKey, label}` and pass
   their own `visible` back, and the generation-carrying registry key stays in
   `frontend/` (`frontend/src/lib/stores/workspace-host.svelte.ts`).
+- A workspace pane holding exactly ONE session renders no chrome of its own: no
+  header bar, no one-tab workflow strip, no dock bar. The pane's own tab takes that
+  session's name (supplied through `InlineWorkspaceController`, since only the
+  frontend knows the sessions), and its reopen strip follows. Two sessions, none, or
+  a promoted sole session bring the chrome and the "Workspace" label back. A
+  flattened surface keeps the chrome: it suppresses per-leaf strips, so the toolbar
+  is the only thing left to carry the controls
+  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::soleEmbeddedSession`).
+- Workflow presets are a standalone-Workspaces-tab surface only. A PR or issue pane
+  hosts one workspace beside the thing being reviewed, so composing multi-session
+  layouts there is chrome that pane was never asked for.
+- The pane controls popover is portalled to `<body>`. The leaf's action container is
+  a stacking context (`position: relative; z-index: 2`), so a popover parented inside
+  it is clamped under xterm's canvas layers, which compete one level up - every click
+  lands on the terminal instead
+  (`frontend/src/lib/components/terminal/WorkspacePaneControls.svelte::portalToBody`).
 - One embedded workspace view serves every selection on its surface, so anything
   it hands to a detail pane - the controls snippet, a mid-save busy flag, the
   launcher overlay's open state - is keyed by `(workspaceId, hostKey)`. An unkeyed

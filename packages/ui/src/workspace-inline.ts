@@ -109,6 +109,8 @@ export interface InlineWorkspaceController {
    * same workspace.
    */
   promotableSessions(): readonly PromotableSession[];
+  /** Label for the workspace container pane, narrowed to its sole unpromoted session when possible. */
+  workspacePaneLabel(): string;
   /**
    * The whole pane body for a promoted session, supplied by the frontend, or null
    * before it has been.

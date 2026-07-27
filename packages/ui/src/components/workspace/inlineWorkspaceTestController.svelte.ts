@@ -40,6 +40,7 @@ export function createTestController(
     slotAttachment: vi.fn((_element: HTMLElement) => {}) satisfies Attachment<HTMLElement>,
     // These components thread the controller through without rendering panes.
     promotableSessions: () => [],
+    workspacePaneLabel: () => "Workspace",
     sessionPane: () => null,
   };
 }

@@ -283,7 +283,12 @@
     { key: "conversation", label: "Conversation", available: activeDrawer !== null },
     { key: "files", label: "Files changed", available: isPRSelection },
     { key: "commit", label: "Commit", available: commitDrawer !== null },
-    { key: "workspace", label: "Workspace", available: workspaceClaim.ref() !== null, hideable: true },
+    {
+      key: "workspace",
+      label: inlineWorkspace?.workspacePaneLabel() ?? "Workspace",
+      available: workspaceClaim.ref() !== null,
+      hideable: true,
+    },
     ...sessionTabs,
   ]);
 

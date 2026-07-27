@@ -33,6 +33,34 @@ function mountInTabStrip(): { host: HTMLElement; strip: HTMLElement; app: Record
   return { host, strip, app };
 }
 
+/**
+ * The stacking the pane actually builds, which the strip alone does not reproduce:
+ * the leaf's action container is `position: relative; z-index: 2` (it has to sit
+ * above the strip's bottom-border pseudo-element), and the pane body next to it
+ * holds a terminal whose xterm canvases carry their own z-indexes. Both compete one
+ * level up, so a popover parented inside the actions container is clamped under the
+ * canvas no matter how high its own z-index goes.
+ */
+function mountInPaneLeaf(): { host: HTMLElement; actions: HTMLElement; app: Record<string, unknown> } {
+  const host = document.createElement("div");
+  host.style.cssText = "position: fixed; left: 40px; top: 120px; width: 500px; height: 400px; overflow: hidden;";
+  const strip = document.createElement("div");
+  strip.style.cssText = "position: relative; display: flex; min-height: 30px; height: 30px; overflow-x: auto;";
+  const actions = document.createElement("div");
+  actions.style.cssText = "display: inline-flex; margin-left: auto; position: relative; z-index: 2;";
+  strip.append(actions);
+  const body = document.createElement("div");
+  body.style.cssText = "position: relative; height: 370px;";
+  const canvas = document.createElement("canvas");
+  canvas.className = "xterm-link-layer";
+  canvas.style.cssText = "position: absolute; inset: 0; z-index: 3;";
+  body.append(canvas);
+  host.append(strip, body);
+  document.body.append(host);
+  const app = mount(WorkspacePaneControls, { target: actions });
+  return { host, actions, app };
+}
+
 describe("workspace controls popover in a real tab strip", () => {
   let mounted: { host: HTMLElement; strip: HTMLElement; app: Record<string, unknown> } | null = null;
 
@@ -82,5 +110,27 @@ describe("workspace controls popover in a real tab strip", () => {
       buttonRect.top + buttonRect.height / 2,
     );
     expect(optionsButton!.contains(buttonHit) || optionsButton === buttonHit).toBe(true);
+  });
+
+  it("stays clickable over the terminal that fills the pane below it", async () => {
+    registerWorkspaceControls({ snippet: controls, workspaceKey: "ws-1" });
+    const leaf = mountInPaneLeaf();
+    mounted = { host: leaf.host, strip: leaf.actions, app: leaf.app };
+
+    const trigger = leaf.actions.querySelector<HTMLButtonElement>("button[aria-label='Workspace controls']");
+    trigger!.click();
+
+    const popover = await vi.waitFor(() => {
+      const el = document.querySelector<HTMLElement>("[role='dialog'][aria-label='Workspace controls']");
+      expect(el).not.toBeNull();
+      expect(el!.getBoundingClientRect().width).toBeGreaterThan(0);
+      return el!;
+    });
+
+    // A single-session pane has no chrome left, so the terminal reaches right up
+    // under this popover. Every click on it landed on the canvas instead.
+    const rect = popover.getBoundingClientRect();
+    const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+    expect(popover.contains(hit)).toBe(true);
   });
 });

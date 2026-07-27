@@ -2602,60 +2602,75 @@ describe("WorkspaceTerminalView", () => {
     await waitFor(() => expect(hostedWorkspaceControls()).toBeNull());
   });
 
-  it("does not report the next workspace busy for a write the previous one started", async () => {
-    // The bug this guards: a preset apply hanging on workspace A, the user switches
-    // to B, and B's controls are reported busy - which disables them and pins their
-    // popover open with nothing left to clear it, since A's apply only clears its
-    // own flag.
-    serveAnyWorkspace();
-    localStorage.setItem(
-      "middleman-workspace-layout-presets",
-      JSON.stringify([
-        {
-          id: "preset-1",
-          name: "Pair",
-          createdAt: "2026-04-29T00:00:00Z",
-          updatedAt: "2026-04-29T00:00:00Z",
-          sessions: [{ sourceKey: "s1", targetKey: "helper", region: "workflow", label: "Helper" }],
-          layout: JSON.parse(persistedSplitWorkflowLayout("s1")),
-        },
-      ]),
-    );
-    const launch = deferred<ReturnType<typeof runtimeWithStaleSession>["sessions"][number]>();
-    mocks.launchWorkspaceSession.mockReturnValue(launch.promise);
-    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
+  it("renders a sole embedded session without workspace, workflow, or dock chrome", async () => {
     claimForPrs();
 
-    const { rerender } = render(WorkspaceTerminalView, {
+    render(WorkspaceTerminalView, {
       props: {
         workspaceId: "ws-1",
         paneSurface: "prs" as const,
       },
     });
 
-    // The controls live in the pane's popover once embedded, so that is where the
-    // preset menu can be reached at all - and driving the real control is the point:
-    // the previous test of this rule set the busy flag by hand and passed against
-    // the bug.
+    await waitFor(() => expect(activeHostedSession("prs")?.label).toBe("Helper"));
+    expect(document.querySelector(".header-bar")).toBeNull();
+    expect(screen.queryByRole("tablist", { name: "Workflow group tabs" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Terminal panel" })).toBeNull();
+  });
+
+  it("keeps the workflow strip for two embedded sessions", async () => {
+    localStorage.setItem(
+      "middleman-workspace-terminal-layout:ws-1",
+      persistedTwoSessionWorkflowLayout("ws-1:helper", "ws-1:reviewer"),
+    );
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoWorkflowSessions());
+    claimForPrs();
+
+    render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+        paneSurface: "prs" as const,
+      },
+    });
+
+    expect(await screen.findAllByRole("tablist", { name: "Workflow group tabs" })).not.toHaveLength(0);
+  });
+
+  it("keeps the workspace header for a sole standalone session", async () => {
+    render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+      },
+    });
+
+    await waitFor(() => expect(mocks.mockTerminalInstances.length).toBeGreaterThanOrEqual(1));
+    expect(document.querySelector(".header-bar")).not.toBeNull();
+  });
+
+  it("offers the branch and delete action from embedded workspace controls", async () => {
+    claimForPrs();
+
+    render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+        paneSurface: "prs" as const,
+      },
+    });
+
     await waitFor(() => expect(hostedWorkspaceControls()).not.toBeNull());
     render(WorkspacePaneControls);
     await fireEvent.click(screen.getByRole("button", { name: "Workspace controls" }));
-    await fireEvent.click(screen.getByRole("button", { name: "Workflow presets" }));
-    await fireEvent.click(screen.getAllByRole("button", { name: /Pair/ })[0]!);
-    await waitFor(() => expect(workspaceControlsBusy()).toBe(true));
 
-    await rerender({ workspaceId: "ws-2", paneSurface: "prs" as const });
-
-    await waitFor(() => expect(hostedWorkspaceControls()?.workspaceKey).toContain("ws-2"));
-    expect(workspaceControlsBusy()).toBe(false);
-
-    launch.resolve(runningSession);
+    const controls = within(screen.getByRole("dialog", { name: "Workspace controls" }));
+    expect(controls.getByText("feature/session-exit").closest("code")).not.toBeNull();
+    expect(controls.getByRole("button", { name: "Delete" })).toBeTruthy();
   });
 
   it("keeps each workspace's own preset apply pending while another one runs", async () => {
     // Two applies in flight at once. With a single owner slot, B's apply overwrote
     // A's and B finishing re-enabled A's control while A's sessions were still being
-    // launched - which is an invitation to launch the whole preset twice.
+    // launched - which is an invitation to launch the whole preset twice. Driven on
+    // the standalone tab, which is the only place presets are offered.
     serveAnyWorkspace();
     localStorage.setItem(
       "middleman-workspace-layout-presets",
@@ -2674,40 +2689,53 @@ describe("WorkspaceTerminalView", () => {
     const launchB = deferred<typeof runningSession>();
     mocks.launchWorkspaceSession.mockReturnValueOnce(launchA.promise).mockReturnValueOnce(launchB.promise);
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
+
+    const { rerender } = render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+
+    const presetTrigger = () => screen.getByRole("button", { name: "Workflow presets" });
+    async function applyPreset(): Promise<void> {
+      await fireEvent.click(presetTrigger());
+      await fireEvent.click(screen.getAllByRole("button", { name: /Pair/ })[0]!);
+    }
+
+    await waitFor(() => expect(presetTrigger()).toBeTruthy());
+    await applyPreset();
+    await waitFor(() => expect(presetTrigger().hasAttribute("disabled")).toBe(true));
+
+    await rerender({ workspaceId: "ws-2" });
+    await waitFor(() => expect(presetTrigger().hasAttribute("disabled")).toBe(false));
+    await applyPreset();
+    await waitFor(() => expect(presetTrigger().hasAttribute("disabled")).toBe(true));
+
+    // B finishes first.
+    launchB.resolve(runningSession);
+    await waitFor(() => expect(presetTrigger().hasAttribute("disabled")).toBe(false));
+
+    await rerender({ workspaceId: "ws-1" });
+    await waitFor(() => expect(presetTrigger().hasAttribute("disabled")).toBe(true));
+
+    launchA.resolve(runningSession);
+  });
+
+  it("leaves workflow presets out of an embedded workspace's controls", async () => {
     claimForPrs();
 
-    const { rerender } = render(WorkspaceTerminalView, {
+    render(WorkspaceTerminalView, {
       props: {
         workspaceId: "ws-1",
         paneSurface: "prs" as const,
       },
     });
+
     await waitFor(() => expect(hostedWorkspaceControls()).not.toBeNull());
     render(WorkspacePaneControls);
+    await fireEvent.click(screen.getByRole("button", { name: "Workspace controls" }));
 
-    async function applyPresetThroughControls(): Promise<void> {
-      await fireEvent.click(screen.getByRole("button", { name: "Workspace controls" }));
-      await fireEvent.click(screen.getByRole("button", { name: "Workflow presets" }));
-      await fireEvent.click(screen.getAllByRole("button", { name: /Pair/ })[0]!);
-    }
-
-    await applyPresetThroughControls();
-    await waitFor(() => expect(workspaceControlsBusy()).toBe(true));
-
-    await rerender({ workspaceId: "ws-2", paneSurface: "prs" as const });
-    await waitFor(() => expect(hostedWorkspaceControls()?.workspaceKey).toContain("ws-2"));
-    await applyPresetThroughControls();
-    await waitFor(() => expect(workspaceControlsBusy()).toBe(true));
-
-    // B finishes first.
-    launchB.resolve(runningSession);
-    await waitFor(() => expect(workspaceControlsBusy()).toBe(false));
-
-    await rerender({ workspaceId: "ws-1", paneSurface: "prs" as const });
-    await waitFor(() => expect(hostedWorkspaceControls()?.workspaceKey).toContain("ws-1"));
-    expect(workspaceControlsBusy()).toBe(true);
-
-    launchA.resolve(runningSession);
+    // Presets compose a whole multi-session workflow, which is the standalone tab's
+    // job; a pane hosts one workspace beside the thing being reviewed.
+    const controls = within(screen.getByRole("dialog", { name: "Workspace controls" }));
+    expect(controls.queryByRole("button", { name: "Workflow presets" })).toBeNull();
+    expect(controls.getByRole("button", { name: "Launch session" })).toBeTruthy();
   });
 
   it("keeps a terminal settings save busy across a workspace switch", async () => {
@@ -2789,10 +2817,9 @@ describe("WorkspaceTerminalView", () => {
         },
       });
 
-      // A docked session is not a workflow tab, so the strip is empty - but the
-      // terminal is on screen, and a launcher over it would cover the thing the
-      // user came for.
-      await waitFor(() => expect(document.querySelector(".terminal-panel.open")).not.toBeNull());
+      // The sole-session surface replaces the dock panel without changing the
+      // launcher's rule: the terminal is on screen, so the overlay stays away.
+      await waitFor(() => expect(document.querySelector(".sole-embedded-session")).not.toBeNull());
       expect(screen.queryByRole("dialog", { name: /Launch a session/ })).toBeNull();
     });
 
@@ -2824,8 +2851,8 @@ describe("WorkspaceTerminalView", () => {
       });
 
       // A remembered Home tab names a tab that does not exist here, so the session
-      // takes its place rather than the overlay covering a live terminal.
-      expect(await screen.findByRole("tab", { name: /Helper/ })).toBeTruthy();
+      // takes its place directly rather than the overlay covering a live terminal.
+      await waitFor(() => expect(document.querySelector(".sole-embedded-session")).not.toBeNull());
       expect(screen.queryByRole("dialog", { name: /Launch a session/ })).toBeNull();
     });
 
@@ -2854,7 +2881,7 @@ describe("WorkspaceTerminalView", () => {
       await fireEvent.click(within(dialog).getByRole("button", { name: /Helper/ }));
 
       await waitFor(() => expect(screen.queryByRole("dialog", { name: /Launch a session/ })).toBeNull());
-      expect(await screen.findByRole("tab", { name: /Helper/ })).toBeTruthy();
+      await waitFor(() => expect(document.querySelector(".sole-embedded-session")).not.toBeNull());
     });
 
     it("takes back an auto-opened launcher once a session shows up", async () => {
@@ -2886,7 +2913,7 @@ describe("WorkspaceTerminalView", () => {
       mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithStaleSession());
       eventListeners["reconnect.stale"]?.();
 
-      expect(await screen.findByRole("tab", { name: /Helper/ })).toBeTruthy();
+      await waitFor(() => expect(document.querySelector(".sole-embedded-session")).not.toBeNull());
       await waitFor(() => expect(screen.queryByRole("dialog", { name: /Launch a session/ })).toBeNull());
     });
 
@@ -2990,16 +3017,16 @@ describe("WorkspaceTerminalView", () => {
     });
   });
 
-  it("keeps its toolbar while the detail surface is flattened", async () => {
+  it("keeps its toolbar when the detail surface is flattened", async () => {
     claimForPrs();
     // What a narrow detail surface reports: one strip for every pane, per-leaf
-    // chrome suppressed, so the pane has nowhere to hang a controls button.
+    // chrome suppressed, so the pane has nowhere to hang a controls button and no
+    // tab of its own to name the session.
     getPaneLayoutStore("prs").notePaneRender({
       flattened: true,
       editableTabs: [],
       onScreenTabs: ["workspace"],
     });
-
     render(WorkspaceTerminalView, {
       props: {
         workspaceId: "ws-1",
@@ -3007,9 +3034,10 @@ describe("WorkspaceTerminalView", () => {
       },
     });
 
-    // Without this the controls vanish entirely below the flatten width.
+    // Even with a single session, dropping the chrome here would strip the only
+    // route to presets, zoom, terminal options, launch and delete.
     await waitFor(() => expect(document.querySelector(".workspace-toolbar")).not.toBeNull());
-    expect(hostedWorkspaceControls()).toBeNull();
+    expect(document.querySelector(".header-bar")).not.toBeNull();
   });
 
   it("publishes the dock's session while the dock is open", async () => {
@@ -3169,7 +3197,7 @@ describe("WorkspaceTerminalView", () => {
       await waitFor(() => expect(screen.queryByRole("button", { name: "Move Shell to a pane" })).toBeNull());
     });
 
-    it("promotes the only docked session from the panel header", async () => {
+    it("keeps the only docked session available to pane commands without dock chrome", async () => {
       localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
       localStorage.setItem(
         "middleman-workspace-terminal-layout:ws-1",
@@ -3186,16 +3214,12 @@ describe("WorkspaceTerminalView", () => {
         },
       });
 
-      // One docked terminal is the common arrangement and renders no per-session
-      // leaf header, so the panel's own actions are the only place its promote
-      // control can live.
-      const promote = await screen.findByRole("button", { name: "Move Shell to a pane" });
-      await fireEvent.click(promote);
-
-      const layout = getPaneLayoutStore("prs");
       const paneKey = sessionPaneKey("ws-1", undefined, "ws-1_shell_a");
-      expect(layout.hasTab(paneKey)).toBe(true);
-      expect(layout.leafIDForTab(paneKey)).not.toBe(layout.leafIDForTab("workspace"));
+      await waitFor(() =>
+        expect(getInlineWorkspaceController("prs").promotableSessions()).toEqual([{ paneKey, label: "Shell" }]),
+      );
+      expect(screen.queryByRole("button", { name: "Move Shell to a pane" })).toBeNull();
+      expect(screen.queryByRole("region", { name: "Terminal panel" })).toBeNull();
     });
 
     it("offers no promote control on the standalone Workspaces tab", async () => {

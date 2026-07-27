@@ -702,6 +702,13 @@ function promotableSessionsFor(surface: InlineWorkspaceSurface): readonly Promot
   return hosted.sessions.map((session) => ({ paneKey: session.paneKey, label: session.label }));
 }
 
+function workspacePaneLabelFor(surface: InlineWorkspaceSurface): string {
+  const sessions = promotableSessionsFor(surface);
+  if (sessions.length !== 1) return "Workspace";
+  const session = sessions[0]!;
+  return workspacePaneKeysFor(surface).includes(session.paneKey) ? "Workspace" : session.label;
+}
+
 /**
  * The session a keyboard command promotes on `surface`: the one the workspace
  * pane is showing there.
@@ -895,6 +902,7 @@ export function getInlineWorkspaceController(surface: InlineWorkspaceSurface): I
     },
     slotAttachment: slotAttachmentFor(surface),
     promotableSessions: () => promotableSessionsFor(surface),
+    workspacePaneLabel: () => workspacePaneLabelFor(surface),
     sessionPane: () => sessionPaneSnippet,
   };
   controllers.set(surface, controller);

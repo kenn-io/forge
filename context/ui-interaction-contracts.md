@@ -265,6 +265,16 @@ Keyboard handlers must have one clear owner for each key press.
   clickable tab header. The URL wins over stored layout state on load: it
   activates the pane it names and drops a zoom held elsewhere
   (`packages/ui/src/views/PRListView.svelte::routePanesSplitApart`).
+- The stored pane tree is intent, not what is on screen: below the flatten width
+  one pane renders however the tree is split, and hidden panes stay in the tree.
+  Anything acting on the arrangement — palette split/zoom/close commands, the
+  push-vs-replace history rule — reads the renderer's report of editable tabs and
+  flattened state, and is unavailable until the host has been measured
+  (`packages/ui/src/stores/paneLayout.svelte.ts::PaneRenderReport`).
+- Tab drag scopes are namespaced `<kind>:<id>` and matched by string equality, so
+  an un-namespaced scope silently lets two unrelated trees exchange tabs. The
+  primitive that moves tabs rejects one rather than trusting call sites
+  (`packages/ui/src/components/shared/tabbed-panel-drag.ts::assertNamespacedDragScope`).
 - Pane availability must be derived at render time, not read back from an effect's
   result: a claim made in an effect lags one tick, and one tick of an unavailable
   pane prunes it out, collapses a split into a bare leaf, and remounts the whole

@@ -3,6 +3,7 @@
   import type { Snippet } from "svelte";
   import Self from "./TabbedPanelTree.svelte";
   import {
+    assertNamespacedDragScope,
     clearActiveTabbedPanelDrag,
     readTabbedPanelTabDrag,
     startTabbedPanelTabDrag,
@@ -116,6 +117,13 @@
     targetTabKey: string;
     placement: "before" | "after";
   } | null>(null);
+
+  // Checked here rather than trusted at each call site: this primitive is what
+  // makes two scopes exchange tabs, so it is the only place that can guarantee a
+  // caller cannot hand it an un-namespaced one.
+  $effect(() => {
+    assertNamespacedDragScope(dragScope);
+  });
 
   function tabForKey(tabKey: string): TabbedPanelDescriptor | null {
     return tabs.find((tab) => tab.key === tabKey) ?? null;

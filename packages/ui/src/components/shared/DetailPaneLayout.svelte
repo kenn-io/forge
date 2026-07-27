@@ -67,7 +67,11 @@
 
   // Measured rather than media-queried: these surfaces are embedded at several
   // widths (focus presentation, activity drawer) inside the same viewport.
-  const flattened = $derived(hostWidth > 0 && hostWidth < flattenBelowPx);
+  const measured = $derived(hostWidth > 0);
+  const flattened = $derived(measured && hostWidth < flattenBelowPx);
+  // Available minus hidden: a hidden pane is still available, since that is what
+  // lets it be reopened, but it renders nothing.
+  const editableTabs = $derived(availableTabs.filter((key) => !layout.hiddenTabKeys().includes(key)));
 
   const activeTree = $derived.by(() => {
     const tree = renderTree;
@@ -87,7 +91,10 @@
   // fallback has flattened it (where every structural edit is disabled, so a
   // palette command must not quietly rearrange a tree nobody can see).
   $effect(() => {
-    const report = { availableTabs, flattened };
+    // Null until the host has been measured. Width decides whether structural
+    // edits are allowed at all, and an unmeasured host defaulting to "not
+    // flattened" exposes those commands for a frame on a narrow layout.
+    const report = measured ? { editableTabs, flattened } : null;
     // Untracked because the store compares against the previous report before
     // writing: reading it here would make this effect both a reader and a writer
     // of the same state and it would re-run itself forever.

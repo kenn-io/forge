@@ -329,6 +329,70 @@ test.describe("inline workspace pane continuity", () => {
     }
   });
 
+  test("Focus Terminal reveals the workspace from behind a tab, a zoom, and a close", async ({ page }) => {
+    // Three ways to be invisible without being "collapsed", each of which left
+    // the terminal parked while the store reported it visible. Only a real
+    // backend proves the reveal actually lands on a live session rather than a
+    // rebuilt one.
+    test.skip(
+      !hasCommand("git") || !hasCommand("tmux", ["-V"]),
+      "git and tmux are required for the real workspace flow",
+    );
+
+    let isolatedServer: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    try {
+      isolatedServer = await startIsolatedWorkspaceE2EServer();
+      api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
+      const workspace = await createIssueWorkspace(api, 10);
+
+      await page.goto(`${isolatedServer.info.base_url}/issues/github/acme/widgets/10`);
+      await expect(page.locator(".detail-pane-workspace-slot .workspace-host-wrapper")).toBeVisible();
+      const paneContainer = await openTerminalPanel(page);
+      await paneContainer.evaluate((el) => el.setAttribute("data-continuity", "reveal"));
+
+      const workspaceLeaf = page.locator(".tabbed-panel-leaf").filter({
+        has: page.locator(".detail-pane-workspace-slot"),
+      });
+      const conversationLeaf = page.locator(".tabbed-panel-leaf").filter({
+        has: page.getByRole("tab", { name: "Conversation" }),
+      });
+      const focusTerminal = page.getByRole("button", { name: "Focus Terminal" });
+
+      // 1. Tabbed behind a sibling: drag the workspace into the conversation's
+      //    leaf, then switch away from it. Neither hidden nor maximized.
+      await workspaceLeaf
+        .getByRole("tab", { name: "Workspace" })
+        .dragTo(conversationLeaf.getByRole("tab", { name: "Conversation" }));
+      await page.getByRole("tab", { name: "Conversation" }).click();
+      await expect(page.locator(".detail-pane-workspace-slot")).toHaveCount(0);
+
+      await focusTerminal.click();
+      await expect(paneContainer).toHaveAttribute("data-continuity", "reveal");
+      await typeMarkerCommand(page, paneContainer, workspace.worktree_path, "reveal-from-tab");
+
+      // 2. Buried under another leaf's zoom.
+      await page.getByRole("tab", { name: "Conversation" }).click();
+      await conversationLeaf.locator('[data-testid="pane-toggle-zoom"]').click();
+      await expect(page.locator(".detail-pane-workspace-slot")).toHaveCount(0);
+
+      await focusTerminal.click();
+      await expect(paneContainer).toHaveAttribute("data-continuity", "reveal");
+      await typeMarkerCommand(page, paneContainer, workspace.worktree_path, "reveal-from-zoom");
+
+      // 3. Closed outright.
+      await page.locator('[data-testid="pane-hide-workspace"]').click();
+      await expect(page.locator(".detail-pane-workspace-slot")).toHaveCount(0);
+
+      await focusTerminal.click();
+      await expect(paneContainer).toHaveAttribute("data-continuity", "reveal");
+      await typeMarkerCommand(page, paneContainer, workspace.worktree_path, "reveal-from-closed");
+    } finally {
+      await api?.dispose();
+      await isolatedServer?.stop();
+    }
+  });
+
   test("tab flip preserves the live terminal (xterm)", async ({ browserName, page }) => {
     test.skip(
       !hasCommand("git") || !hasCommand("tmux", ["-V"]),

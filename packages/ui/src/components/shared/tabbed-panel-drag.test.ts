@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  assertNamespacedDragScope,
   clearActiveTabbedPanelDrag,
   readTabbedPanelTabDrag,
   startTabbedPanelTabDrag,
@@ -46,6 +47,14 @@ describe("tabbed panel tab drag scope", () => {
         expect(workspaceTabDragScope(id)).not.toBe(scope);
       }
     }
+  });
+
+  it("rejects an un-namespaced scope", () => {
+    // The guard the primitive enforces, so a caller cannot pass a raw workspace
+    // id or surface key and quietly share a scope with another tree.
+    expect(() => assertNamespacedDragScope("ws-1")).toThrow(/namespaced/);
+    expect(() => assertNamespacedDragScope("")).toThrow(/namespaced/);
+    expect(assertNamespacedDragScope(workspaceTabDragScope("ws-1"))).toBe("workspace:ws-1");
   });
 
   it("accepts a drop only in the scope the drag started in", () => {

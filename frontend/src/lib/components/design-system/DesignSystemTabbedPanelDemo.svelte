@@ -55,7 +55,7 @@
 
 <div class="tabbed-panel-demo" data-testid="design-system-tabbed-panel-demo">
   <TabbedPanelTree
-    dragScope="design-system-panel-demo"
+    dragScope="design-system:panel-demo"
     {node}
     {tabs}
     {activeTabKey}

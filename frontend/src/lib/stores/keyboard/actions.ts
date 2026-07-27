@@ -391,7 +391,10 @@ interface PaneCommandTarget {
  *
  * A page can be a pane surface with nothing on screen (a list with no selection),
  * and below the flatten width every structural edit is disabled — a command that
- * ignored either would rearrange a persisted tree the user cannot see.
+ * ignored either would rearrange a persisted tree the user cannot see. The same
+ * goes for the target: the last-focused pane may since have been hidden, and
+ * maximizing a hidden pane is a dead command while splitting one moves it behind
+ * the user's back.
  */
 function mountedPaneLayout(ctx: Context): { layout: PaneLayoutStore; render: PaneRenderReport } | null {
   const surface = paneSurfaceFor(ctx);
@@ -413,7 +416,7 @@ function paneCommandTarget(ctx: Context): PaneCommandTarget | null {
   if (mounted === null) return null;
   const { layout, render } = mounted;
   const preferred = layout.lastFocusedTabKey() ?? (paneSurfaceFor(ctx) === "issues" ? "conversation" : ctx.detailTab);
-  const tabKey = render.availableTabs.includes(preferred) ? preferred : render.availableTabs[0];
+  const tabKey = render.editableTabs.includes(preferred) ? preferred : render.editableTabs[0];
   if (tabKey === undefined) return null;
   const leafID = layout.leafIDForTab(tabKey);
   if (leafID === null) return null;

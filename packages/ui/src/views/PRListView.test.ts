@@ -3,7 +3,7 @@ import { tick } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { NAVIGATE_KEY, SIDEBAR_KEY, STORES_KEY } from "../context.js";
 import { resetModalStack } from "../stores/keyboard/modal-stack.svelte.js";
-import { resetPaneLayoutStoresForTest } from "../stores/paneLayout.svelte.js";
+import { getPaneLayoutStore, resetPaneLayoutStoresForTest } from "../stores/paneLayout.svelte.js";
 import type { PullRequestRouteRef } from "../routes.js";
 import type { InlineWorkspaceController } from "../workspace-inline.js";
 import { createClaimTestController, createReactiveValue } from "./viewWorkspaceTestDoubles.svelte.js";
@@ -206,6 +206,26 @@ describe("PRListView detail panes", () => {
     // Replace, not push: walking between two panes on screen at once must not
     // fill the Back stack.
     expect(navigate).toHaveBeenCalledWith("/pulls/github/acme/widgets/12/files", { replace: true });
+  });
+
+  it("pushes history in a flattened layout even when the stored panes are split apart", async () => {
+    // Flattening shows one pane in one strip, so a tab click is a navigation
+    // again. Reading the stored leaf ids alone said "split apart" and replaced
+    // history, silently emptying the Back stack on a narrow window.
+    // Arranged through the store rather than the split control, because the
+    // control is suppressed once flattened and the ResizeObserver double only
+    // reports width at observe() time.
+    const layout = getPaneLayoutStore("prs");
+    layout.splitTab("files", layout.leafIDForTab("files")!, "horizontal", "after");
+    observedWidth.value = 600;
+
+    const navigate = vi.fn();
+    renderPRListView({ navigate });
+    await tick();
+
+    await fireEvent.click(screen.getByRole("tab", { name: "Files changed" }));
+
+    expect(navigate).toHaveBeenCalledWith("/pulls/github/acme/widgets/12/files", { replace: false });
   });
 
   it("keeps the diff pane scroll offset across a pane switch", async () => {

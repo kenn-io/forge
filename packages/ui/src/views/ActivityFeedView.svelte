@@ -268,7 +268,10 @@
   // what decides that moving between them is a focus change rather than a
   // navigation. Same arrangement rule as PRs mode.
   const routePanesSplitApart = $derived(
-    paneLayout.leafIDForTab("conversation") !== paneLayout.leafIDForTab("files"),
+    // Flattened means one strip showing one pane, whatever the stored tree says,
+    // so nothing is "visible at once" and a tab change is a navigation again.
+    paneLayout.paneRender()?.flattened === false &&
+      paneLayout.leafIDForTab("conversation") !== paneLayout.leafIDForTab("files"),
   );
 
   function handlePaneSelect(tabKey: string): void {

@@ -77,7 +77,10 @@
    * panes different Back-stack behavior depending on where the pointer landed.
    */
   const routePanesSplitApart = $derived(
-    paneLayout.leafIDForTab("conversation") !== paneLayout.leafIDForTab("files"),
+    // Flattened means one strip showing one pane, whatever the stored tree says,
+    // so nothing is "visible at once" and a tab change is a navigation again.
+    paneLayout.paneRender()?.flattened === false &&
+      paneLayout.leafIDForTab("conversation") !== paneLayout.leafIDForTab("files"),
   );
 
   function selectDetailTab(tab: DetailTab): void {

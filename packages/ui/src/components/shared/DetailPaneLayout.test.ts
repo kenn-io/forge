@@ -100,6 +100,29 @@ describe("detail pane layout", () => {
     expect(screen.getByRole("button", { name: "Restore pane size" })).toBeTruthy();
   });
 
+  it("reports only panes a structural edit may target", () => {
+    // A hidden pane stays available — that is what makes it reopenable — but it
+    // renders nothing, so maximizing it is a dead command and splitting it moves
+    // a pane the user cannot see.
+    const layout = store(splitTree());
+    render(DetailPaneLayoutTestHarness, { layout });
+    expect([...(layout.paneRender()?.editableTabs ?? [])].sort()).toEqual(["conversation", "files", "workspace"]);
+
+    fireEvent.click(screen.getByTestId("pane-hide-workspace"));
+    expect(layout.paneRender()?.editableTabs).not.toContain("workspace");
+  });
+
+  it("publishes no report until the host has been measured", () => {
+    // Width decides whether structural edits are allowed at all; defaulting an
+    // unmeasured host to "not flattened" offers those commands for a frame on a
+    // narrow layout.
+    mockWidth(0);
+    const layout = store(splitTree());
+    render(DetailPaneLayoutTestHarness, { layout });
+
+    expect(layout.paneRender()).toBeNull();
+  });
+
   it("suppresses every structural control while flattened", () => {
     // A flat leaf merges tabs from several stored leaves, so any structural edit
     // would move panes the user cannot currently see.

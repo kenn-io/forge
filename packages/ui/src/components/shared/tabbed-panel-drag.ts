@@ -12,6 +12,21 @@ export function workspaceTabDragScope(workspaceId: string): string {
   return `workspace:${workspaceId}`;
 }
 
+/**
+ * Reject a scope that is not namespaced.
+ *
+ * Scope comparison is plain string equality, so a bare id — a workspace id, a
+ * surface key — is one collision away from making two unrelated trees mutually
+ * droppable. Throwing is deliberate: the alternative is a silent cross-tree drop
+ * that only shows up as a pane landing somewhere impossible.
+ */
+export function assertNamespacedDragScope(scope: string): string {
+  if (!/^[a-z-]+:.+/.test(scope)) {
+    throw new Error(`tabbed panel drag scope must be namespaced as "<kind>:<id>", got ${JSON.stringify(scope)}`);
+  }
+  return scope;
+}
+
 export interface TabbedPanelTabDragPayload {
   scope: string;
   tabKey: string;

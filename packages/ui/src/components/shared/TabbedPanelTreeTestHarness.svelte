@@ -57,7 +57,7 @@
 </script>
 
 <TabbedPanelTree
-  dragScope="test-workspace"
+  dragScope="test:workspace"
   {node}
   {tabs}
   {activeTabKey}

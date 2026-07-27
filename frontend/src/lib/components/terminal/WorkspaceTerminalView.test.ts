@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { createDiffStore } from "@middleman/ui/stores/diff";
+import { getPaneLayoutStore, resetPaneLayoutStoresForTest, sessionPaneKey } from "@middleman/ui";
 import {
   consumeWorkspaceLaunch,
   queueWorkspaceLaunch,
@@ -318,6 +319,42 @@ function persistedTerminalLayout(workflowMode: "tabs" | "grid") {
   });
 }
 
+/** Home and one session tab in leaves of their own, so a demotion has a
+ *  placement it could plausibly lose. */
+function persistedSplitWorkflowLayout(sessionKey: string, region: "workflow" | "terminal" = "workflow") {
+  return JSON.stringify({
+    version: 1,
+    open: region === "terminal",
+    dock: "bottom",
+    height: 300,
+    activeSessionKey: region === "terminal" ? sessionKey : null,
+    tree: region === "terminal" ? { type: "leaf", id: "dock-leaf", sessionKey } : null,
+    sessionRegions: { [sessionKey]: region },
+    workflowMode: "tabs",
+    workflowTree: {
+      type: "split",
+      id: "wf-split",
+      direction: "horizontal",
+      ratio: 0.5,
+      first: { type: "leaf", id: "wf-home", tabs: ["home"], activeTabKey: "home" },
+      second:
+        region === "workflow"
+          ? { type: "leaf", id: "wf-session", tabs: [`session:${sessionKey}`], activeTabKey: `session:${sessionKey}` }
+          : { type: "leaf", id: "wf-session", tabs: ["home"], activeTabKey: "home" },
+    },
+    customSessionLabels: {},
+  });
+}
+
+function promoteSession(surface: "prs" | "issues" | "activity", sessionKey: string): string {
+  const layout = getPaneLayoutStore(surface);
+  const paneKey = sessionPaneKey("ws-1", undefined, sessionKey);
+  const leafID = layout.leafIDForTab("conversation");
+  if (leafID === null) throw new Error("surface default tree has no conversation leaf");
+  if (!layout.promoteTab(paneKey, { kind: "tab", leafID })) throw new Error("promotion refused");
+  return paneKey;
+}
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((r) => {
@@ -344,6 +381,7 @@ describe("WorkspaceTerminalView", () => {
     delete window.__BASE_PATH__;
     localStorage.clear();
     resetSessionHostForTest();
+    resetPaneLayoutStoresForTest();
     localStorage.setItem("middleman-workspace-active-tab:ws-1", "session:ws-1:helper");
     sockets = [];
     resetWorkspaceCreatePendingForTest();
@@ -2250,7 +2288,6 @@ describe("WorkspaceTerminalView", () => {
     deleteRequest.resolve(new Response(null, { status: 204 }));
     await waitFor(() => expect(window.location.pathname).toBe("/workspaces"));
   });
-
   it("launches an explicitly queued target without a confirmation modal", async () => {
     queueWorkspaceLaunch("ws-1", "codex");
     mocks.getWorkspaceRuntime
@@ -2375,5 +2412,95 @@ describe("WorkspaceTerminalView", () => {
     expect(mocks.launchWorkspaceSession).not.toHaveBeenCalled();
     expect(mocks.showFlash).not.toHaveBeenCalled();
     expect(consumeWorkspaceLaunch("ws-1")).toBeNull();
+  });
+
+  describe("promoted sessions", () => {
+    it("masks a promoted session out of the workflow strip and gives back its placement on demote", async () => {
+      localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+      localStorage.setItem("middleman-workspace-terminal-layout:ws-1", persistedSplitWorkflowLayout("ws-1:helper"));
+      const paneKey = promoteSession("prs", "ws-1:helper");
+
+      render(WorkspaceTerminalView, {
+        props: {
+          workspaceId: "ws-1",
+          paneSurface: "prs" as const,
+        },
+      });
+
+      await screen.findByRole("tab", { name: "Home" });
+      // The detail pane is showing this session, so the container must not show it
+      // too: two slots for one terminal race for it and one renders empty.
+      expect(screen.queryByRole("tab", { name: /Helper/ })).toBeNull();
+
+      getPaneLayoutStore("prs").demoteTab(paneKey);
+
+      const helperTab = await screen.findByRole("tab", { name: /Helper/ });
+      // Its own leaf, not merged into Home's. Masking must not prune the stored
+      // tree, or a demotion returns the session to the region and loses the place
+      // the user put it in.
+      expect(helperTab.closest('[role="tablist"]')).not.toBe(
+        screen.getByRole("tab", { name: "Home" }).closest('[role="tablist"]'),
+      );
+    });
+
+    it("keeps a promoted session's terminal live without a tab of its own", async () => {
+      localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+      localStorage.setItem("middleman-workspace-terminal-layout:ws-1", persistedSplitWorkflowLayout("ws-1:helper"));
+      promoteSession("prs", "ws-1:helper");
+
+      render(WorkspaceTerminalView, {
+        props: {
+          workspaceId: "ws-1",
+          paneSurface: "prs" as const,
+        },
+      });
+
+      // Nothing in the container renders it, so only the pool can: a promoted
+      // session that is not mounted leaves the detail pane's slot empty.
+      await waitFor(() =>
+        expect(sockets.some((socket) => socket.url.includes("/sessions/ws-1:helper/terminal"))).toBe(true),
+      );
+    });
+
+    it("masks a promoted session out of the terminal dock too", async () => {
+      localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+      localStorage.setItem(
+        "middleman-workspace-terminal-layout:ws-1",
+        persistedSplitWorkflowLayout("ws-1_shell_a", "terminal"),
+      );
+      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTerminalSession());
+      const paneKey = promoteSession("prs", "ws-1_shell_a");
+
+      render(WorkspaceTerminalView, {
+        props: {
+          workspaceId: "ws-1",
+          paneSurface: "prs" as const,
+        },
+      });
+
+      // A masked leaf must be pruned, not left rendering the dock's
+      // session-unavailable placeholder for a session that is alive elsewhere.
+      await waitFor(() => expect(screen.getByText("No terminals")).toBeTruthy());
+      expect(screen.queryByText("Session unavailable")).toBeNull();
+
+      getPaneLayoutStore("prs").demoteTab(paneKey);
+      await waitFor(() => expect(screen.queryByText("No terminals")).toBeNull());
+    });
+
+    it("masks nothing on the standalone Workspaces tab, which has no detail panes", async () => {
+      localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+      localStorage.setItem("middleman-workspace-terminal-layout:ws-1", persistedSplitWorkflowLayout("ws-1:helper"));
+      promoteSession("prs", "ws-1:helper");
+
+      render(WorkspaceTerminalView, {
+        props: {
+          workspaceId: "ws-1",
+        },
+      });
+
+      // Promotion is per surface. A session promoted in the PRs surface is still
+      // at home here, and hiding it would leave it unreachable.
+      expect(await screen.findByRole("tab", { name: /Helper/ })).toBeTruthy();
+    });
   });
 });

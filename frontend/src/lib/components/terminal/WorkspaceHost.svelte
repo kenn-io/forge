@@ -55,6 +55,12 @@
   // never for the Workspaces tab or the parked (slot === null) case.
   const inlineDock = $derived(inlineDockForSlot(slot));
 
+  // The surface whose pane layout records which of this workspace's sessions the
+  // user promoted out of the workspace pane. Same slots as `inlineDock`: the
+  // Workspaces tab has no detail panes, and a parked host is claimed by nobody,
+  // so no promotion applies to what it renders.
+  const paneSurface = $derived(slot === null || slot === "tab" ? undefined : slot);
+
   $effect(() => {
     registerHostElement(hostWrapper);
     registerParkingElement(parkingNode);
@@ -164,6 +170,7 @@
     isSidebarToggleEnabled={embedded ? false : isSidebarToggleEnabled}
     onToggleSidebar={embedded ? undefined : onToggleSidebar}
     {inlineDock}
+    {paneSurface}
   />
 </div>
 

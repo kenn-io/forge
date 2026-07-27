@@ -62,6 +62,8 @@
     normalizeTerminalLayout,
     normalizeWorkflowTree,
     parseTerminalLayout,
+    pruneTree,
+    pruneWorkflowTreeToAvailable,
     splitPane,
     splitSessionIntoPane,
     splitWorkflowTabIntoLeaf,
@@ -88,10 +90,13 @@
   } from "./terminal-drag";
   import { shouldRetryFleetDiffWatch } from "./fleet-diff-watch.js";
   import { Button, CollapsibleSidebar,
+    getPaneLayoutStore,
     getStores,
+    sessionPaneKey,
     SplitResizeHandle,
     WorkspaceRightSidebar,
     type InlineDockMode,
+    type PaneSurfaceKey,
     type SplitResizeEvent,
     type WorkspaceItemIdentity, } from "@middleman/ui";
   import { getStackDepth } from "@middleman/ui/stores/keyboard/modal-stack";
@@ -180,6 +185,13 @@
     // Backs the toolbar's expand/show-details/collapse controls, which
     // replace the inline dock's own removed header bar.
     inlineDock?: { getMode(): InlineDockMode; setMode(mode: InlineDockMode): void } | null;
+    // The detail surface this instance is embedded in, if any. Its pane layout is
+    // the only record of which of this workspace's sessions have been promoted
+    // out of here into a top-level pane, so it is also what tells this view which
+    // sessions NOT to render. Unset on the Workspaces tab and the embed routes,
+    // which have no detail panes: a session promoted in one surface is still at
+    // home in every other place the workspace is shown.
+    paneSurface?: PaneSurfaceKey | undefined;
     terminalSettingsReady?: boolean;
   }
 
@@ -196,6 +208,7 @@
     hostVisible = true,
     onWorkspaceDeleted = undefined,
     inlineDock = null,
+    paneSurface = undefined,
     terminalSettingsReady = true,
   }: Props = $props();
 
@@ -479,11 +492,46 @@
     }
     return labels;
   });
-  const terminalSessions = $derived(
-    runtimeSessions.filter(
-      (session) => sessionRegion(session) === "terminal",
+  // The surface this view is embedded in, whose stored pane tree is the sole
+  // record of which sessions have been promoted out of this container.
+  const surfaceLayout = $derived(paneSurface ? getPaneLayoutStore(paneSurface) : null);
+
+  function sessionPaneKeyFor(session: RuntimeSession): string {
+    return sessionPaneKey(workspaceId, workspaceHostKey, session.key);
+  }
+
+  const promotedSessionKeys = $derived(
+    new Set(
+      surfaceLayout === null
+        ? []
+        : runtimeSessions
+            .filter((session) => surfaceLayout.hasTab(sessionPaneKeyFor(session)))
+            .map((session) => session.key),
     ),
   );
+
+  function isPromoted(session: RuntimeSession): boolean {
+    return promotedSessionKeys.has(session.key);
+  }
+
+  const terminalSessions = $derived(
+    runtimeSessions.filter(
+      (session) => sessionRegion(session) === "terminal" && !isPromoted(session),
+    ),
+  );
+
+  // Masked, not pruned: the stored trees keep a promoted session's tab and leaf so
+  // demotion hands back the placement the user chose, rather than dropping it back
+  // wherever normalization would put a session it has never seen.
+  const dockTree = $derived(
+    promotedSessionKeys.size === 0
+      ? terminalLayout.tree
+      : pruneTree(
+          terminalLayout.tree,
+          terminalSessions.map((session) => session.key),
+        ),
+  );
+
   function upsertRuntimeSession(session: RuntimeSession): RuntimeSession[] {
     const sessions = [
       ...runtimeSessions.filter((candidate) => candidate.key !== session.key),
@@ -504,7 +552,7 @@
   const currentTerminalGroup = $derived(activeTerminalGroup(terminalLayout));
   const workflowSessions = $derived(
     runtimeSessions.filter(
-      (session) => sessionRegion(session) === "workflow",
+      (session) => sessionRegion(session) === "workflow" && !isPromoted(session),
     ),
   );
   function workflowSessionStatus(
@@ -556,6 +604,15 @@
     }
     return tabs;
   });
+  const renderedWorkflowTree = $derived(
+    promotedSessionKeys.size === 0
+      ? terminalLayout.workflowTree
+      : pruneWorkflowTreeToAvailable(
+          terminalLayout.workflowTree,
+          workflowTabDescriptors.map((tab) => tab.key),
+        ),
+  );
+
   const terminalPanelInStage = $derived(
     terminalLayout.open && terminalLayout.dock === "top",
   );
@@ -827,9 +884,7 @@
   // while the panel is open. A terminal-region session with no leaf has no
   // terminal today and must not gain one just because the pool could park it.
   const dockedSessionKeys = $derived(
-    terminalLayout.open
-      ? new Set(collectSessionKeys(terminalLayout.tree))
-      : new Set<string>(),
+    terminalLayout.open ? new Set(collectSessionKeys(dockTree)) : new Set<string>(),
   );
 
   // Mirror the sessions this workspace puts on screen into the app-level pool,
@@ -844,10 +899,14 @@
     const prefix = sessionHostPrefix(workspaceId, workspaceHostKey);
     const desired = new Map<SessionHostKey, MountedSession>();
     for (const session of runtimeSessions) {
+      // A promoted session is on screen in a detail pane, which renders its slot
+      // but cannot mount it: only this view knows the websocket path, the
+      // generation, and whether actions are blocked.
       const onScreen =
-        sessionRegion(session) === "workflow"
+        isPromoted(session) ||
+        (sessionRegion(session) === "workflow"
           ? mountedSessionKeys.includes(session.key)
-          : dockedSessionKeys.has(session.key);
+          : dockedSessionKeys.has(session.key));
       if (!onScreen) continue;
       const hostKey = sessionHostKeyFor(session);
       desired.set(hostKey, {
@@ -3307,10 +3366,10 @@
                     <span>Loading workspace runtime...</span>
                   </div>
                 {:else}
-                  {#if terminalLayout.workflowTree}
+                  {#if renderedWorkflowTree}
                     <WorkflowSplitTree
                       {workspaceId}
-                      node={terminalLayout.workflowTree}
+                      node={renderedWorkflowTree}
                       tabs={workflowTabDescriptors}
                       {activeTabKey}
                       disabled={actionsBlocked}
@@ -3359,7 +3418,7 @@
                             {workspaceHostKey}
                             sessions={terminalSessions}
                             displayLabels={sessionDisplayLabels}
-                            tree={terminalLayout.tree}
+                            tree={dockTree}
                             activeSessionKey={terminalLayout.activeSessionKey}
                             open={terminalLayout.open}
                             dock={terminalLayout.dock}
@@ -3411,7 +3470,7 @@
                   {workspaceHostKey}
                   sessions={terminalSessions}
                   displayLabels={sessionDisplayLabels}
-                  tree={terminalLayout.tree}
+                  tree={dockTree}
                   activeSessionKey={terminalLayout.activeSessionKey}
                   open={terminalLayout.open}
                   dock={terminalLayout.dock}

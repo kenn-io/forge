@@ -417,6 +417,20 @@ export function updateWorkflowSplitRatio(
   };
 }
 
+/**
+ * Drop tabs the caller is not showing, inserting nothing.
+ *
+ * `normalizeWorkflowTree` also reinserts every available tab that is missing,
+ * which is right for the stored tree and wrong for a render-time mask: a promoted
+ * session must keep its stored placement so demotion can give it back.
+ */
+export function pruneWorkflowTreeToAvailable(
+  node: WorkflowNode | null,
+  availableTabKeys: readonly WorkflowTabKey[],
+): WorkflowNode | null {
+  return pruneWorkflowNode(node, new Set(availableTabKeys));
+}
+
 export function normalizeWorkflowTree(
   node: WorkflowNode | null,
   availableTabKeys: readonly WorkflowTabKey[],

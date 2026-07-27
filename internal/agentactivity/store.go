@@ -46,12 +46,13 @@ type Snapshot struct {
 // HookEvent is the agent-neutral lifecycle payload shared by hook integrations.
 // Agent-specific payload fields are ignored unless they affect activity state.
 type HookEvent struct {
-	SessionID        string `json:"session_id"`
-	CWD              string `json:"cwd"`
-	HookEventName    string `json:"hook_event_name"`
-	ToolName         string `json:"tool_name"`
-	NotificationType string `json:"notification_type"`
-	AgentID          string `json:"agent_id"`
+	SessionID        string   `json:"session_id"`
+	CWD              string   `json:"cwd"`
+	HookEventName    string   `json:"hook_event_name"`
+	ToolName         string   `json:"tool_name,omitempty"`
+	NotificationType string   `json:"notification_type,omitempty"`
+	AgentID          string   `json:"agent_id,omitempty"`
+	_                struct{} `json:"-" additionalProperties:"true"`
 }
 
 type Store struct {

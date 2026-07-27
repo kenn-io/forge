@@ -29,17 +29,19 @@ const (
 
 type apiRequester func(context.Context, cliConfig, string, string, []string) ([]byte, error)
 
+type APIRequest func(context.Context, string, string, url.Values, []string) error
+
 type Options struct {
-	Stdout     io.Writer
-	Stderr     io.Writer
-	APICommand *cobra.Command
+	Stdout            io.Writer
+	Stderr            io.Writer
+	APICommandFactory func(APIRequest) *cobra.Command
 }
 
 type commandDeps struct {
-	Stdout     io.Writer
-	Stderr     io.Writer
-	Request    apiRequester
-	APICommand *cobra.Command
+	Stdout            io.Writer
+	Stderr            io.Writer
+	Request           apiRequester
+	APICommandFactory func(APIRequest) *cobra.Command
 }
 
 type cliConfig struct {
@@ -50,17 +52,17 @@ type cliConfig struct {
 
 func NewCommand(opts Options) *cobra.Command {
 	return newCommand(commandDeps{
-		Stdout:     opts.Stdout,
-		Stderr:     opts.Stderr,
-		APICommand: opts.APICommand,
+		Stdout:            opts.Stdout,
+		Stderr:            opts.Stderr,
+		APICommandFactory: opts.APICommandFactory,
 	})
 }
 
 func RegisterCommands(root *cobra.Command, opts Options) {
 	registerCommands(root, commandDeps{
-		Stdout:     opts.Stdout,
-		Stderr:     opts.Stderr,
-		APICommand: opts.APICommand,
+		Stdout:            opts.Stdout,
+		Stderr:            opts.Stderr,
+		APICommandFactory: opts.APICommandFactory,
 	})
 }
 
@@ -156,9 +158,9 @@ func registerCommands(root *cobra.Command, deps commandDeps) {
 		return encodeStructured(deps.Stdout, current.output, operations)
 	}
 
-	apiCommand := deps.APICommand
-	if apiCommand == nil {
-		apiCommand = newAPICommand(request)
+	apiCommand := newAPICommand(request)
+	if deps.APICommandFactory != nil {
+		apiCommand = deps.APICommandFactory(APIRequest(request))
 	}
 	apiCommand.AddCommand(newAPIListCommand(listOperations))
 	root.AddCommand(newQuickstartCommand(cfg, deps.Stdout))

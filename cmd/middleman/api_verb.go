@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -47,15 +49,19 @@ type apiVerbOptions struct {
 	includeStatus bool
 }
 
-func newAPIVerbCommand(stdin io.Reader, stdout io.Writer) *cobra.Command {
+func newAPIVerbCommand(
+	stdin io.Reader,
+	stdout io.Writer,
+	controlRequest func(context.Context, string, string, url.Values, []string) error,
+) *cobra.Command {
 	opts := apiVerbOptions{}
 	cmd := &cobra.Command{
-		Use:   "api METHOD PATH",
+		Use:   "api METHOD PATH [body...]",
 		Short: "Relay one request to the running daemon",
 		Long: "Relay one request to the running daemon. Use `middleman api list` " +
 			"to discover available operations.",
 		Args: func(cmd *cobra.Command, args []string) error {
-			if len(args) != 2 {
+			if len(args) < 2 {
 				return &apiVerbError{apiVerbExitNoRequest, fmt.Errorf(
 					"usage: middleman api [flags] METHOD PATH",
 				)}
@@ -63,6 +69,9 @@ func newAPIVerbCommand(stdin io.Reader, stdout io.Writer) *cobra.Command {
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if useControlAPIMode(cmd, args) {
+				return controlRequest(cmd.Context(), args[0], args[1], nil, args[2:])
+			}
 			return runAPIVerb(args[0], args[1], opts, stdout, stdin)
 		},
 	}
@@ -80,6 +89,14 @@ func newAPIVerbCommand(stdin io.Reader, stdout io.Writer) *cobra.Command {
 		"prefix output with an HTTP status line and a blank line",
 	)
 	return cmd
+}
+
+func useControlAPIMode(cmd *cobra.Command, args []string) bool {
+	if len(args) > 2 {
+		return true
+	}
+	flags := cmd.Root().PersistentFlags()
+	return flags.Changed("server") || flags.Changed("output") || flags.Changed("timeout")
 }
 
 func runAPIVerb(method, requestPath string, opts apiVerbOptions, stdout io.Writer, stdin io.Reader) error {

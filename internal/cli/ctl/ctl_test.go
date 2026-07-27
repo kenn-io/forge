@@ -341,12 +341,14 @@ func TestAPIListCommandDiscoversOpenAPIOperations(t *testing.T) {
 	cmd := newCommand(commandDeps{
 		Stdout: &stdout,
 		Stderr: &bytes.Buffer{},
-		APICommand: &cobra.Command{
-			Use:  "api METHOD PATH",
-			Args: cobra.ExactArgs(2),
-			RunE: func(cmd *cobra.Command, args []string) error {
-				return errors.New("raw API relay should not handle api list")
-			},
+		APICommandFactory: func(APIRequest) *cobra.Command {
+			return &cobra.Command{
+				Use:  "api METHOD PATH",
+				Args: cobra.ExactArgs(2),
+				RunE: func(cmd *cobra.Command, args []string) error {
+					return errors.New("raw API relay should not handle api list")
+				},
+			}
 		},
 		Request: func(_ context.Context, _ cliConfig, method, requestURL string, bodyArgs []string) ([]byte, error) {
 			got.method = method

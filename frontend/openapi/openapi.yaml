@@ -2321,7 +2321,7 @@ components:
         - score
       type: object
     HookEvent:
-      additionalProperties: false
+      additionalProperties: true
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
@@ -2346,9 +2346,6 @@ components:
         - session_id
         - cwd
         - hook_event_name
-        - tool_name
-        - notification_type
-        - agent_id
       type: object
     HostDiagnostic:
       additionalProperties: false

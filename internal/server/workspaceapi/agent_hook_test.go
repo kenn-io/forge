@@ -55,13 +55,9 @@ func TestReceiveAgentHookRecordsActivityAndGeneratesClaudeContext(t *testing.T) 
 	)
 	handler.Register(api)
 
-	post := func(agent, runtimeKey, event string) *httptest.ResponseRecorder {
+	post := func(agent, runtimeKey string, payload map[string]any) *httptest.ResponseRecorder {
 		t.Helper()
-		body, err := json.Marshal(agentactivity.HookEvent{
-			SessionID:     "agent-1",
-			CWD:           worktree,
-			HookEventName: event,
-		})
+		body, err := json.Marshal(payload)
 		require.NoError(err)
 		req := httptest.NewRequest(
 			http.MethodPost, "/api/v1/agent-hooks/"+agent,
@@ -74,13 +70,24 @@ func TestReceiveAgentHookRecordsActivityAndGeneratesClaudeContext(t *testing.T) 
 		return rec
 	}
 
-	working := post("codex", "runtime-1", "UserPromptSubmit")
+	working := post("codex", "runtime-1", map[string]any{
+		"session_id":      "agent-1",
+		"cwd":             worktree,
+		"hook_event_name": "UserPromptSubmit",
+		"transcript_path": "/tmp/agent-transcript.jsonl",
+		"permission_mode": "default",
+	})
 	require.Equal(http.StatusOK, working.Code, working.Body.String())
 	snapshot, ok := activity.SnapshotForWorkspace(worktree, []string{"runtime-1"})
 	require.True(ok)
 	assert.Equal(agentactivity.StateWorking, snapshot.State)
 
-	started := post("claude", "runtime-1", "SessionStart")
+	started := post("claude", "runtime-1", map[string]any{
+		"session_id":      "agent-1",
+		"cwd":             worktree,
+		"hook_event_name": "SessionStart",
+		"source":          "startup",
+	})
 	require.Equal(http.StatusOK, started.Code, started.Body.String())
 	var response struct {
 		HookOutput *struct {

@@ -57,11 +57,12 @@ func newRootCommand(opts cliOptions) *cobra.Command {
 		"address for optional net/http/pprof listener (empty disables)",
 	)
 
-	apiCommand := newAPIVerbCommand(opts.Stdin, opts.Stdout)
 	ctl.RegisterCommands(root, ctl.Options{
-		Stdout:     opts.Stdout,
-		Stderr:     opts.Stderr,
-		APICommand: apiCommand,
+		Stdout: opts.Stdout,
+		Stderr: opts.Stderr,
+		APICommandFactory: func(request ctl.APIRequest) *cobra.Command {
+			return newAPIVerbCommand(opts.Stdin, opts.Stdout, request)
+		},
 	})
 
 	root.AddCommand(

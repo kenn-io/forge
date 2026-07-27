@@ -5409,12 +5409,14 @@ export interface components {
              * @example /api/v1/schemas/HookEvent.json
              */
             readonly $schema?: string;
-            agent_id: string;
+            agent_id?: string;
             cwd: string;
             hook_event_name: string;
-            notification_type: string;
+            notification_type?: string;
             session_id: string;
-            tool_name: string;
+            tool_name?: string;
+        } & {
+            [key: string]: unknown;
         };
         HostDiagnostic: {
             blocksOperations: string[] | null;

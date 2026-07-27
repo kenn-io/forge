@@ -1931,13 +1931,14 @@ type Hit struct {
 // HookEvent defines model for HookEvent.
 type HookEvent struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema           *string `json:"$schema,omitempty"`
-	AgentId          string  `json:"agent_id"`
-	Cwd              string  `json:"cwd"`
-	HookEventName    string  `json:"hook_event_name"`
-	NotificationType string  `json:"notification_type"`
-	SessionId        string  `json:"session_id"`
-	ToolName         string  `json:"tool_name"`
+	Schema               *string                `json:"$schema,omitempty"`
+	AgentId              *string                `json:"agent_id,omitempty"`
+	Cwd                  string                 `json:"cwd"`
+	HookEventName        string                 `json:"hook_event_name"`
+	NotificationType     *string                `json:"notification_type,omitempty"`
+	SessionId            string                 `json:"session_id"`
+	ToolName             *string                `json:"tool_name,omitempty"`
+	AdditionalProperties map[string]interface{} `json:"-"`
 }
 
 // HostDiagnostic defines model for HostDiagnostic.
@@ -5098,6 +5099,158 @@ type RenameWorkspaceRuntimeSessionJSONRequestBody = RenameWorkspaceRuntimeSessio
 
 // RemoveStaleWorktreeJSONRequestBody defines body for RemoveStaleWorktree for application/json ContentType.
 type RemoveStaleWorktreeJSONRequestBody = RemoveStaleWorktreeInputBody
+
+// Getter for additional properties for HookEvent. Returns the specified
+// element and whether it was found
+func (a HookEvent) Get(fieldName string) (value interface{}, found bool) {
+	if a.AdditionalProperties != nil {
+		value, found = a.AdditionalProperties[fieldName]
+	}
+	return
+}
+
+// Setter for additional properties for HookEvent
+func (a *HookEvent) Set(fieldName string, value interface{}) {
+	if a.AdditionalProperties == nil {
+		a.AdditionalProperties = make(map[string]interface{})
+	}
+	a.AdditionalProperties[fieldName] = value
+}
+
+// Override default JSON handling for HookEvent to handle AdditionalProperties
+func (a *HookEvent) UnmarshalJSON(b []byte) error {
+	object := make(map[string]json.RawMessage)
+	err := json.Unmarshal(b, &object)
+	if err != nil {
+		return err
+	}
+
+	if raw, found := object["$schema"]; found {
+		err = json.Unmarshal(raw, &a.Schema)
+		if err != nil {
+			return fmt.Errorf("error reading '$schema': %w", err)
+		}
+		delete(object, "$schema")
+	}
+
+	if raw, found := object["agent_id"]; found {
+		err = json.Unmarshal(raw, &a.AgentId)
+		if err != nil {
+			return fmt.Errorf("error reading 'agent_id': %w", err)
+		}
+		delete(object, "agent_id")
+	}
+
+	if raw, found := object["cwd"]; found {
+		err = json.Unmarshal(raw, &a.Cwd)
+		if err != nil {
+			return fmt.Errorf("error reading 'cwd': %w", err)
+		}
+		delete(object, "cwd")
+	}
+
+	if raw, found := object["hook_event_name"]; found {
+		err = json.Unmarshal(raw, &a.HookEventName)
+		if err != nil {
+			return fmt.Errorf("error reading 'hook_event_name': %w", err)
+		}
+		delete(object, "hook_event_name")
+	}
+
+	if raw, found := object["notification_type"]; found {
+		err = json.Unmarshal(raw, &a.NotificationType)
+		if err != nil {
+			return fmt.Errorf("error reading 'notification_type': %w", err)
+		}
+		delete(object, "notification_type")
+	}
+
+	if raw, found := object["session_id"]; found {
+		err = json.Unmarshal(raw, &a.SessionId)
+		if err != nil {
+			return fmt.Errorf("error reading 'session_id': %w", err)
+		}
+		delete(object, "session_id")
+	}
+
+	if raw, found := object["tool_name"]; found {
+		err = json.Unmarshal(raw, &a.ToolName)
+		if err != nil {
+			return fmt.Errorf("error reading 'tool_name': %w", err)
+		}
+		delete(object, "tool_name")
+	}
+
+	if len(object) != 0 {
+		a.AdditionalProperties = make(map[string]interface{})
+		for fieldName, fieldBuf := range object {
+			var fieldVal interface{}
+			err := json.Unmarshal(fieldBuf, &fieldVal)
+			if err != nil {
+				return fmt.Errorf("error unmarshaling field %s: %w", fieldName, err)
+			}
+			a.AdditionalProperties[fieldName] = fieldVal
+		}
+	}
+	return nil
+}
+
+// Override default JSON handling for HookEvent to handle AdditionalProperties
+func (a HookEvent) MarshalJSON() ([]byte, error) {
+	var err error
+	object := make(map[string]json.RawMessage)
+
+	if a.Schema != nil {
+		object["$schema"], err = json.Marshal(a.Schema)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling '$schema': %w", err)
+		}
+	}
+
+	if a.AgentId != nil {
+		object["agent_id"], err = json.Marshal(a.AgentId)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'agent_id': %w", err)
+		}
+	}
+
+	object["cwd"], err = json.Marshal(a.Cwd)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'cwd': %w", err)
+	}
+
+	object["hook_event_name"], err = json.Marshal(a.HookEventName)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'hook_event_name': %w", err)
+	}
+
+	if a.NotificationType != nil {
+		object["notification_type"], err = json.Marshal(a.NotificationType)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'notification_type': %w", err)
+		}
+	}
+
+	object["session_id"], err = json.Marshal(a.SessionId)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'session_id': %w", err)
+	}
+
+	if a.ToolName != nil {
+		object["tool_name"], err = json.Marshal(a.ToolName)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'tool_name': %w", err)
+		}
+	}
+
+	for fieldName, field := range a.AdditionalProperties {
+		object[fieldName], err = json.Marshal(field)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling '%s': %w", fieldName, err)
+		}
+	}
+	return json.Marshal(object)
+}
 
 // RequestEditorFn  is the function signature for the RequestEditor callback function
 type RequestEditorFn func(ctx context.Context, req *http.Request) error

@@ -838,6 +838,45 @@ func TestRootNestedHelpExposesCommandFlags(t *testing.T) {
 	}
 }
 
+func TestRootAPIUsesControlModeForExplicitServer(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	var receivedMethod, receivedPath string
+	var receivedBody []byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedMethod = r.Method
+		receivedPath = r.URL.Path
+		var err error
+		receivedBody, err = io.ReadAll(r.Body)
+		assert.NoError(err)
+		w.Header().Set("Content-Type", "application/json")
+		_, err = io.WriteString(w, `{"ok":true}`)
+		assert.NoError(err)
+	}))
+	t.Cleanup(server.Close)
+	var stdout bytes.Buffer
+	cmd := newRootCommand(cliOptions{
+		Stdin:  strings.NewReader(""),
+		Stdout: &stdout,
+		Stderr: io.Discard,
+		RunServer: func(serve.Options) error {
+			return errors.New("serve should not start")
+		},
+	})
+	cmd.SetArgs([]string{
+		"--server", server.URL,
+		"--output", "yaml",
+		"api", "POST", "/widgets", "name: sample",
+	})
+
+	require.NoError(cmd.Execute())
+
+	assert.Equal(http.MethodPost, receivedMethod)
+	assert.Equal("/api/v1/widgets", receivedPath)
+	assert.JSONEq(`{"name":"sample"}`, string(receivedBody))
+	assert.Contains(stdout.String(), "ok: true")
+}
+
 func TestRunCLIVersionPreservesHumanOutput(t *testing.T) {
 	originalVersion, originalCommit, originalBuildDate := version, commit, buildDate
 	version, commit, buildDate = "1.2.3", "abc1234", "2026-07-12T12:00:00Z"

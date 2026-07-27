@@ -329,13 +329,18 @@ test.describe("inline workspace pane continuity", () => {
     }
   });
 
-  test("a pooled workflow session keeps its live tmux shell across a reparent", async ({ page }) => {
+  test("a pooled workflow session keeps its live tmux shell while its host is reparented", async ({ page }) => {
     // Workflow-region session terminals no longer live in the workspace view's
     // own subtree: they are rendered once by the app-level pool and reparented
-    // into whichever slot shows them, which is what will let one be promoted
-    // into a detail pane of its own. Everything else here already proves the
-    // WHOLE workspace subtree survives a reparent; this proves a single pooled
-    // session does, against a real tmux shell rather than an exited stub.
+    // into whichever slot shows them.
+    //
+    // Scope, precisely: the workspace host moves, carrying the session's slot
+    // element with it, so the pool never sees a DIFFERENT slot and its own
+    // transfer path is not what is under test here. What is under test is that
+    // a terminal living outside the moved subtree survives the move at all —
+    // the regression pooling introduces today. The pool's source-to-destination
+    // transfer gets full-stack coverage in Task 10, once promotion exists to
+    // produce two real slots.
     test.skip(
       !hasCommand("git") || !hasCommand("tmux", ["-V"]),
       "git and tmux are required for the real workspace flow",
@@ -390,6 +395,42 @@ test.describe("inline workspace pane continuity", () => {
       await expect(page).toHaveURL(new RegExp(`/terminal/${workspace.id}$`));
       await expect(witness).toBeVisible();
       await typeMarkerCommand(page, workflowContainer, workspace.worktree_path, "pooled-marker-back-in-tab");
+    } finally {
+      await api?.dispose();
+      await isolatedServer?.stop();
+    }
+  });
+
+  test("an embedded terminal route renders a live pooled session", async ({ page }) => {
+    // The embed routes replace the whole app shell, so they never mount
+    // WorkspaceHost — and therefore never got the pool that now owns every
+    // session terminal. Every session pane on this route rendered an empty
+    // portal slot until the embed shell mounted its own.
+    test.skip(
+      !hasCommand("git") || !hasCommand("tmux", ["-V"]),
+      "git and tmux are required for the real workspace flow",
+    );
+
+    let isolatedServer: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    try {
+      isolatedServer = await startIsolatedWorkspaceE2EServer();
+      api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
+      const workspace = await createIssueWorkspace(api, 10);
+
+      await page.goto(`${isolatedServer.info.base_url}/workspaces/embed/terminal/${workspace.id}`);
+      const dockContainer = await openTerminalPanel(page);
+      await page.getByRole("button", { name: "New terminal" }).click();
+      const moveSession = page.getByRole("button", { name: /^Move (?!terminal panel).+ to workflow$/ }).first();
+      await expect(moveSession).toBeVisible();
+      await moveSession.click();
+      await page.getByRole("button", { name: "Close terminal panel", exact: true }).nth(1).click();
+
+      const workflowContainer = page.locator(".session-terminal-slot .terminal-container");
+      await expect(workflowContainer).toBeVisible();
+      // A slot with no pool behind it is an empty div: this cannot pass without
+      // a terminal attached to the real tmux session.
+      await typeMarkerCommand(page, workflowContainer, workspace.worktree_path, "embed-pooled-marker");
     } finally {
       await api?.dispose();
       await isolatedServer?.stop();

@@ -178,6 +178,14 @@ Intent:
 
 If a new repeated button treatment is needed, extend `ActionButton` rather than creating another local button pattern.
 
+### Comment composers
+
+Every comment composer insets its submit button at the bottom-right *inside* the input
+and reserves that footprint as the input's bottom padding — never a button in a column
+beside the field. Three surfaces repeat this shell today (`CommentBox.svelte`,
+`IssueCommentBox.svelte`, `roborev/ResponseList.svelte`); extract it into a shared
+component instead of adding a fourth copy.
+
 ### Modal primitives
 
 - `Modal`

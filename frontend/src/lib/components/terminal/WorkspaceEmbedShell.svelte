@@ -32,6 +32,7 @@
     invokeAction,
   } from "../../stores/embed-config.svelte.js";
   import { getGlobalRepo } from "../../stores/filter.svelte.js";
+  import SessionTerminalPool from "./SessionTerminalPool.svelte";
   import WorkspaceTerminalView from "./WorkspaceTerminalView.svelte";
   import WorkspaceListSidebar from "./WorkspaceListSidebar.svelte";
   import WorkspaceEmbedEmptyState from "./WorkspaceEmbedEmptyState.svelte";
@@ -191,6 +192,12 @@
       <WorkspaceListSidebar selectedId="" />
     {:else if r.page === "embed-workspace-terminal"}
       {#if terminalSettingsReady}
+        <!-- The view renders portal slots, not terminals. In the full app shell
+             WorkspaceHost mounts the pool; this branch replaces that shell
+             entirely, so without its own pool every session pane is blank.
+             Safe to mount here precisely because the two branches are
+             exclusive — two pools would render one session twice. -->
+        <SessionTerminalPool />
         <WorkspaceTerminalView
           workspaceId={r.workspaceId}
           hideWorkspaceList={true}

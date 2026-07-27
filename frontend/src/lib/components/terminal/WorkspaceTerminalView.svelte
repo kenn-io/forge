@@ -807,6 +807,22 @@
     );
   }
 
+  // Prefixes this view has ever mounted terminals under, so moving to another
+  // workspace can take the previous one's down. Nothing else would: the pool
+  // outlives this view, and every parked terminal holds a live websocket, so
+  // browsing ten workspaces would otherwise leave ten attachments open.
+  const ownedSessionPrefixes = new Set<string>();
+
+  function releaseOwnedSessions(except?: string): void {
+    for (const prefix of [...ownedSessionPrefixes]) {
+      if (prefix === except) continue;
+      for (const session of mountedSessions()) {
+        if (session.hostKey.startsWith(prefix)) noteSessionUnmounted(session.hostKey);
+      }
+      ownedSessionPrefixes.delete(prefix);
+    }
+  }
+
   // Mirror this workspace's mounted workflow sessions into the app-level pool,
   // which owns the live terminals. Reconciled from state rather than pushed from
   // each mount/unmount call site: a session moved into the terminal dock still
@@ -831,6 +847,8 @@
       });
     }
     untrack(() => {
+      releaseOwnedSessions(prefix);
+      if (desired.size > 0) ownedSessionPrefixes.add(prefix);
       for (const session of desired.values()) noteSessionMounted(session);
       // Only this workspace's entries. Another surface's claimed workspace keeps
       // its parked terminals until it stops being claimed.
@@ -841,6 +859,10 @@
       }
     });
   });
+
+  // The pool is app-level, so a destroyed view leaves its terminals running
+  // forever unless it hands them back.
+  $effect(() => () => untrack(() => releaseOwnedSessions()));
 
   // Pooled terminals report an exit by key; only this view can map that back to
   // a runtime session, and the generation in the key keeps a relaunched session

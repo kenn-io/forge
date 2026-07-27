@@ -154,6 +154,7 @@ vi.mock("@middleman/ui/stores/flash", () => ({
 // mounts in the app. Terminals live in the pool now, so the view on its own
 // renders portal slots and no terminal would ever appear.
 import WorkspaceTerminalView from "./WorkspaceTerminalViewTestHarness.svelte";
+import { mountedSessions, resetSessionHostForTest, sessionHostPrefix } from "../../stores/session-host.svelte.ts";
 
 const runningSession = {
   key: "ws-1:helper",
@@ -342,6 +343,7 @@ describe("WorkspaceTerminalView", () => {
   beforeEach(() => {
     delete window.__BASE_PATH__;
     localStorage.clear();
+    resetSessionHostForTest();
     localStorage.setItem("middleman-workspace-active-tab:ws-1", "session:ws-1:helper");
     sockets = [];
     resetWorkspaceCreatePendingForTest();
@@ -1300,6 +1302,37 @@ describe("WorkspaceTerminalView", () => {
     expect(sockets.filter((socket) => socket.url.includes("ws-1_shell_b"))).toHaveLength(1);
     setIntervalSpy.mockRestore();
     clearIntervalSpy.mockRestore();
+  });
+
+  it("hands back the previous workspace's pooled terminals when the selection moves on", async () => {
+    // The pool outlives this view, so nothing else would take them down. Every
+    // parked terminal holds a live websocket; browsing ten workspaces must not
+    // leave ten attachments open.
+    const { rerender } = render(WorkspaceTerminalView, {
+      props: { workspaceId: "ws-1" },
+    });
+
+    await screen.findByRole("tab", { name: /Helper/ });
+    await waitFor(() => expect(mountedSessions()).toHaveLength(1));
+    const firstPrefix = sessionHostPrefix("ws-1", undefined);
+    expect(mountedSessions()[0]?.hostKey.startsWith(firstPrefix)).toBe(true);
+
+    await rerender({ workspaceId: "ws-2" });
+
+    await waitFor(() => {
+      expect(mountedSessions().some((session) => session.hostKey.startsWith(firstPrefix))).toBe(false);
+    });
+  });
+
+  it("hands back its pooled terminals when the view itself goes away", async () => {
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+
+    await screen.findByRole("tab", { name: /Helper/ });
+    await waitFor(() => expect(mountedSessions()).toHaveLength(1));
+
+    cleanup();
+
+    expect(mountedSessions()).toHaveLength(0);
   });
 
   it("shows a relaunched agent with the same key and a new generation", async () => {

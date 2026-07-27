@@ -24,7 +24,8 @@ import (
 )
 
 const (
-	apiPrefix = "/api/v1"
+	apiPrefix            = "/api/v1"
+	controlCommandMarker = "middleman.io/control-command"
 )
 
 type apiRequester func(context.Context, cliConfig, string, string, []string) ([]byte, error)
@@ -117,6 +118,7 @@ func registerCommands(root *cobra.Command, deps commandDeps) {
 	mustBind(cfg, root.PersistentFlags().Lookup("server"), "server")
 	mustBind(cfg, root.PersistentFlags().Lookup("output"), "output")
 	mustBind(cfg, root.PersistentFlags().Lookup("timeout"), "timeout")
+	installControlFlagValidation(root)
 
 	fetch := func(ctx context.Context, method, path string, query url.Values, bodyArgs []string) (cliConfig, []byte, error) {
 		current, err := readConfig(cfg)
@@ -163,18 +165,57 @@ func registerCommands(root *cobra.Command, deps commandDeps) {
 		apiCommand = deps.APICommandFactory(APIRequest(request))
 	}
 	apiCommand.AddCommand(newAPIListCommand(listOperations))
-	root.AddCommand(newQuickstartCommand(cfg, deps.Stdout))
-	root.AddCommand(apiCommand)
-	root.AddCommand(newSimpleGetCommand("repos", "List configured repositories", "/repos", nil, request))
-	root.AddCommand(newSimpleGetCommand("repo-summaries", "List repository summaries", "/repos/summary", nil, request))
-	root.AddCommand(newPullsCommand(request))
-	root.AddCommand(newIssuesCommand(request))
-	root.AddCommand(newSyncCommand(request))
-	root.AddCommand(newSimpleGetCommand("stacks", "List detected pull request stacks", "/stacks", nil, request))
-	root.AddCommand(newWorkspacesCommand(request))
-	root.AddCommand(newSimpleGetCommand("rate-limits", "Show provider rate limit status", "/rate-limits", nil, request))
-	root.AddCommand(newActivityCommand(request))
+	controlCommands := []*cobra.Command{
+		newQuickstartCommand(cfg, deps.Stdout),
+		apiCommand,
+		newSimpleGetCommand("repos", "List configured repositories", "/repos", nil, request),
+		newSimpleGetCommand("repo-summaries", "List repository summaries", "/repos/summary", nil, request),
+		newPullsCommand(request),
+		newIssuesCommand(request),
+		newSyncCommand(request),
+		newSimpleGetCommand("stacks", "List detected pull request stacks", "/stacks", nil, request),
+		newWorkspacesCommand(request),
+		newSimpleGetCommand("rate-limits", "Show provider rate limit status", "/rate-limits", nil, request),
+		newActivityCommand(request),
+	}
+	for _, command := range controlCommands {
+		if command.Annotations == nil {
+			command.Annotations = make(map[string]string)
+		}
+		command.Annotations[controlCommandMarker] = "true"
+		root.AddCommand(command)
+	}
+}
 
+func installControlFlagValidation(root *cobra.Command) {
+	previousE := root.PersistentPreRunE
+	previous := root.PersistentPreRun
+	root.PersistentPreRun = nil
+	root.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		if !isControlCommand(cmd) {
+			for _, name := range []string{"server", "output", "timeout"} {
+				if root.PersistentFlags().Changed(name) {
+					return fmt.Errorf("--%s can only be used with API control commands", name)
+				}
+			}
+		}
+		if previousE != nil {
+			return previousE(cmd, args)
+		}
+		if previous != nil {
+			previous(cmd, args)
+		}
+		return nil
+	}
+}
+
+func isControlCommand(cmd *cobra.Command) bool {
+	for current := cmd; current != nil; current = current.Parent() {
+		if current.Annotations[controlCommandMarker] == "true" {
+			return true
+		}
+	}
+	return false
 }
 
 func mustBind(cfg *viper.Viper, flag *pflag.Flag, key string) {

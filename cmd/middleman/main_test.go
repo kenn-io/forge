@@ -877,6 +877,97 @@ func TestRootAPIUsesControlModeForExplicitServer(t *testing.T) {
 	assert.Contains(stdout.String(), "ok: true")
 }
 
+func TestRootAPIRejectsRelayFlagsInControlMode(t *testing.T) {
+	var requests int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{}`)
+	}))
+	t.Cleanup(server.Close)
+	tests := []struct {
+		name     string
+		args     []string
+		wantFlag string
+	}{
+		{
+			name:     "data",
+			args:     []string{"--server", server.URL, "api", "-d", `{"x":1}`, "POST", "/widgets"},
+			wantFlag: "--data",
+		},
+		{
+			name:     "include",
+			args:     []string{"--server", server.URL, "api", "-i", "POST", "/widgets"},
+			wantFlag: "--include",
+		},
+		{
+			name:     "config",
+			args:     []string{"--server", server.URL, "api", "--config", filepath.Join(t.TempDir(), "config.toml"), "POST", "/widgets"},
+			wantFlag: "--config",
+		},
+		{
+			name:     "local timeout",
+			args:     []string{"--server", server.URL, "api", "--timeout", "1s", "POST", "/widgets", "name: sample"},
+			wantFlag: "--timeout",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			requests = 0
+			cmd := newRootCommand(cliOptions{
+				Stdin:     strings.NewReader(""),
+				Stdout:    io.Discard,
+				Stderr:    io.Discard,
+				RunServer: func(serve.Options) error { return errors.New("serve should not start") },
+			})
+			cmd.SetArgs(tt.args)
+
+			err := cmd.Execute()
+
+			require.Error(err)
+			assert.Contains(err.Error(), tt.wantFlag)
+			assert.Zero(requests)
+		})
+	}
+}
+
+func TestRootRejectsControlFlagsForNonControlCommands(t *testing.T) {
+	tests := []struct {
+		name     string
+		args     []string
+		wantFlag string
+	}{
+		{name: "bare server", args: []string{"--server", "http://middleman.test"}, wantFlag: "--server"},
+		{name: "version output", args: []string{"--output", "yaml", "version"}, wantFlag: "--output"},
+		{name: "version timeout", args: []string{"--timeout", "1s", "version"}, wantFlag: "--timeout"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			started := false
+			cmd := newRootCommand(cliOptions{
+				Stdin:  strings.NewReader(""),
+				Stdout: io.Discard,
+				Stderr: io.Discard,
+				RunServer: func(serve.Options) error {
+					started = true
+					return nil
+				},
+			})
+			cmd.SetArgs(tt.args)
+
+			err := cmd.Execute()
+
+			require.Error(err)
+			assert.Contains(err.Error(), tt.wantFlag)
+			assert.False(started)
+		})
+	}
+}
+
 func TestRunCLIVersionPreservesHumanOutput(t *testing.T) {
 	originalVersion, originalCommit, originalBuildDate := version, commit, buildDate
 	version, commit, buildDate = "1.2.3", "abc1234", "2026-07-12T12:00:00Z"

@@ -70,6 +70,9 @@ func newAPIVerbCommand(
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if useControlAPIMode(cmd, args) {
+				if err := rejectRelayFlagsInControlMode(cmd); err != nil {
+					return err
+				}
 				return controlRequest(cmd.Context(), args[0], args[1], nil, args[2:])
 			}
 			return runAPIVerb(args[0], args[1], opts, stdout, stdin)
@@ -89,6 +92,18 @@ func newAPIVerbCommand(
 		"prefix output with an HTTP status line and a blank line",
 	)
 	return cmd
+}
+
+func rejectRelayFlagsInControlMode(cmd *cobra.Command) error {
+	for _, name := range []string{"config", "data", "include", "timeout"} {
+		if cmd.Flags().Changed(name) {
+			return &apiVerbError{
+				code: apiVerbExitNoRequest,
+				err:  fmt.Errorf("--%s cannot be used with API control mode", name),
+			}
+		}
+	}
+	return nil
 }
 
 func useControlAPIMode(cmd *cobra.Command, args []string) bool {

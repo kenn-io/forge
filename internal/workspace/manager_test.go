@@ -618,6 +618,161 @@ func TestCreateIssueReuseLocalBaseBranchCheckedOutReturnsConflict(t *testing.T) 
 	assert.Equal(branch+"-2", conflict.SuggestedBranch)
 }
 
+func TestCreateIssueRecoversExpectedExistingDirectory(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	d := openTestDB(t)
+	worktreeRoot := t.TempDir()
+	localRepo, _, platformHost := setupHTTPWorktreeBaseForWorkspaceGitTest(
+		t, "feature/base",
+	)
+	repoID := seedRepo(t, d, platformHost, "acme", "widget")
+	seedIssue(t, d, repoID, 7, "")
+
+	const branch = "middleman/issue-7"
+	expectedPath := filepath.Join(
+		worktreeRoot, "github", platformHost, "acme", "widget", "issue-7",
+	)
+	runWorkspaceTestGit(
+		t, localRepo,
+		"worktree", "add", expectedPath, "-b", branch, "HEAD",
+	)
+	require.NoError(os.WriteFile(
+		filepath.Join(expectedPath, "base.txt"), []byte("dirty\n"), 0o644,
+	))
+	require.NoError(os.WriteFile(
+		filepath.Join(expectedPath, "untracked.txt"), []byte("keep\n"), 0o644,
+	))
+	wantHead := strings.TrimSpace(string(runWorkspaceTestGit(
+		t, expectedPath, "rev-parse", "HEAD",
+	)))
+
+	mgr := NewManager(d, worktreeRoot)
+	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
+	ws, err := mgr.CreateIssue(
+		t.Context(), platformHost, "acme", "widget", 7,
+		CreateIssueOptions{
+			Provider:               "github",
+			GitHeadRef:             branch,
+			ReuseExistingDirectory: true,
+		},
+	)
+
+	require.NoError(err)
+	require.NotNil(ws)
+	assert.Equal(expectedPath, ws.WorktreePath)
+	assert.Equal(branch, ws.WorkspaceBranch)
+	assert.Equal(wantHead, strings.TrimSpace(string(runWorkspaceTestGit(
+		t, expectedPath, "rev-parse", "HEAD",
+	))))
+	assert.FileExists(filepath.Join(expectedPath, "untracked.txt"))
+	status := strings.TrimSpace(string(runWorkspaceTestGit(
+		t, expectedPath, "status", "--short",
+	)))
+	assert.Contains(status, "M base.txt")
+	assert.Contains(status, "?? untracked.txt")
+}
+
+func TestCreateIssueRecoveryRejectsInvalidExpectedDirectory(t *testing.T) {
+	tests := []struct {
+		name       string
+		prepare    func(t *testing.T, localRepo, expectedPath, branch string)
+		wantReason WorkspaceDirectoryRecoveryReason
+	}{
+		{
+			name:       "missing",
+			prepare:    func(*testing.T, string, string, string) {},
+			wantReason: WorkspaceDirectoryMissing,
+		},
+		{
+			name: "ordinary directory",
+			prepare: func(t *testing.T, _, expectedPath, _ string) {
+				require.NoError(t, os.MkdirAll(expectedPath, 0o755))
+			},
+			wantReason: WorkspaceDirectoryNotLinkedWorktree,
+		},
+		{
+			name: "wrong branch",
+			prepare: func(t *testing.T, localRepo, expectedPath, _ string) {
+				runWorkspaceTestGit(
+					t, localRepo,
+					"worktree", "add", expectedPath, "-b", "other/branch", "HEAD",
+				)
+			},
+			wantReason: WorkspaceDirectoryBranchMismatch,
+		},
+		{
+			name: "wrong repository",
+			prepare: func(t *testing.T, _, expectedPath, branch string) {
+				otherRepo := filepath.Join(t.TempDir(), "other")
+				runWorkspaceTestGit(
+					t, filepath.Dir(otherRepo),
+					"init", "--initial-branch=main", otherRepo,
+				)
+				runWorkspaceTestGit(
+					t, otherRepo, "config", "user.email", "test@test.com",
+				)
+				runWorkspaceTestGit(
+					t, otherRepo, "config", "user.name", "Test",
+				)
+				require.NoError(t, os.WriteFile(
+					filepath.Join(otherRepo, "base.txt"), []byte("base\n"), 0o644,
+				))
+				runWorkspaceTestGit(t, otherRepo, "add", ".")
+				runWorkspaceTestGit(t, otherRepo, "commit", "-m", "base")
+				runWorkspaceTestGit(
+					t, otherRepo,
+					"worktree", "add", expectedPath, "-b", branch, "HEAD",
+				)
+			},
+			wantReason: WorkspaceDirectoryRepositoryMismatch,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+
+			d := openTestDB(t)
+			worktreeRoot := t.TempDir()
+			localRepo, _, platformHost := setupHTTPWorktreeBaseForWorkspaceGitTest(
+				t, "feature/base",
+			)
+			repoID := seedRepo(t, d, platformHost, "acme", "widget")
+			seedIssue(t, d, repoID, 7, "")
+			const branch = "middleman/issue-7"
+			expectedPath := filepath.Join(
+				worktreeRoot, "github", platformHost, "acme", "widget", "issue-7",
+			)
+			tt.prepare(t, localRepo, expectedPath, branch)
+
+			mgr := NewManager(d, worktreeRoot)
+			mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
+			ws, err := mgr.CreateIssue(
+				t.Context(), platformHost, "acme", "widget", 7,
+				CreateIssueOptions{
+					Provider:               "github",
+					GitHeadRef:             branch,
+					ReuseExistingDirectory: true,
+				},
+			)
+
+			require.Nil(ws)
+			var recoveryErr *WorkspaceDirectoryRecoveryError
+			require.ErrorAs(err, &recoveryErr)
+			require.NotNil(recoveryErr)
+			assert.Equal(tt.wantReason, recoveryErr.Reason)
+			stored, getErr := d.GetWorkspaceByIssueForProvider(
+				t.Context(), "github", platformHost, "acme", "widget", 7,
+			)
+			require.NoError(getErr)
+			assert.Nil(stored)
+		})
+	}
+}
+
 func TestCreateRepoNotTracked(t *testing.T) {
 	d := openTestDB(t)
 	mgr := NewManager(d, t.TempDir())

@@ -1,11 +1,11 @@
 <script lang="ts">
   import { EmptyState, IconButton, Spinner } from "@kenn-io/kit-ui";
-  import { onDestroy, tick } from "svelte";
+  import { onDestroy, tick, untrack } from "svelte";
   import { navigate } from "../../stores/router.svelte.ts";
   import { isNarrow } from "../../stores/container.svelte.js";
   import WorkspaceListSidebar from "./WorkspaceListSidebar.svelte";
   import KataWorkspaceSidebarPane from "./KataWorkspaceSidebarPane.svelte";
-  import TerminalPane from "./TerminalPane.svelte";
+  import SessionTerminalSlot from "./SessionTerminalSlot.svelte";
   import Modal from "../shared/Modal.svelte";
   import ConfirmDialog from "../shared/ConfirmDialog.svelte";
   import DialogButton from "../shared/DialogButton.svelte";
@@ -31,6 +31,16 @@
     workspaceSessionWebSocketPath,
     type WorkspaceRuntimeState,
   } from "../../api/workspace-runtime.js";
+  import {
+    mountedSessions,
+    noteSessionMounted,
+    noteSessionUnmounted,
+    onSessionExited,
+    sessionHostKey,
+    sessionHostPrefix,
+    type MountedSession,
+    type SessionHostKey,
+  } from "../../stores/session-host.svelte.ts";
   import {
     beginWorkspaceSwitch,
     cancelWorkspaceSwitch,
@@ -787,6 +797,62 @@
       (key) => key !== sessionKey,
     );
   }
+
+  function sessionHostKeyFor(session: RuntimeSession): SessionHostKey {
+    return sessionHostKey(
+      workspaceId,
+      workspaceHostKey,
+      session.key,
+      session.created_at,
+    );
+  }
+
+  // Mirror this workspace's mounted workflow sessions into the app-level pool,
+  // which owns the live terminals. Reconciled from state rather than pushed from
+  // each mount/unmount call site: a session moved into the terminal dock still
+  // sits in mountedSessionKeys, and the dock renders its own pane, so a missed
+  // call would leave two sockets attached to one tmux session.
+  $effect(() => {
+    const prefix = sessionHostPrefix(workspaceId, workspaceHostKey);
+    const desired = new Map<SessionHostKey, MountedSession>();
+    for (const session of runtimeSessions) {
+      if (!mountedSessionKeys.includes(session.key)) continue;
+      if (sessionRegion(session) !== "workflow") continue;
+      const hostKey = sessionHostKeyFor(session);
+      desired.set(hostKey, {
+        hostKey,
+        websocketPath: workspaceSessionWebSocketPath(
+          workspaceId,
+          session.key,
+          workspaceHostKey,
+        ),
+        status: session.status,
+        disabled: actionsBlocked,
+      });
+    }
+    untrack(() => {
+      for (const session of desired.values()) noteSessionMounted(session);
+      // Only this workspace's entries. Another surface's claimed workspace keeps
+      // its parked terminals until it stops being claimed.
+      for (const session of mountedSessions()) {
+        if (!session.hostKey.startsWith(prefix)) continue;
+        if (desired.has(session.hostKey)) continue;
+        noteSessionUnmounted(session.hostKey);
+      }
+    });
+  });
+
+  // Pooled terminals report an exit by key; only this view can map that back to
+  // a runtime session, and the generation in the key keeps a relaunched session
+  // from being mistaken for the dead one.
+  $effect(() =>
+    onSessionExited((hostKey) => {
+      const session = runtimeSessions.find(
+        (candidate) => sessionHostKeyFor(candidate) === hostKey,
+      );
+      if (session) handleSessionExit(session);
+    }),
+  );
 
   function sessionGenerationMatches(
     closed: ClosedRuntimeSession,
@@ -3292,20 +3358,10 @@
                             (candidate) => candidate.key === sessionKey,
                           )}
                           {#if session && isSessionTerminalMounted(session.key)}
-                            {#key session.key}
-                              <TerminalPane
-                                websocketPath={workspaceSessionWebSocketPath(
-                                  workspaceId,
-                                  session.key,
-                                  workspaceHostKey,
-                                )}
-                                reconnectOnExit={false}
-                                disabled={actionsBlocked}
-                                active={active && hostVisible}
-                                onExit={() => handleSessionExit(session)}
-                                initialStatus={session.status}
-                              />
-                            {/key}
+                            <SessionTerminalSlot
+                              hostKey={sessionHostKeyFor(session)}
+                              visible={active && hostVisible}
+                            />
                           {/if}
                         {/if}
                       {/snippet}

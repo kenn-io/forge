@@ -267,12 +267,14 @@
   // Whether the drawer's two route-bound panes are on screen at once, which is
   // what decides that moving between them is a focus change rather than a
   // navigation. Same arrangement rule as PRs mode.
-  const routePanesSplitApart = $derived(
-    // Flattened means one strip showing one pane, whatever the stored tree says,
-    // so nothing is "visible at once" and a tab change is a navigation again.
-    paneLayout.paneRender()?.flattened === false &&
-      paneLayout.leafIDForTab("conversation") !== paneLayout.leafIDForTab("files"),
-  );
+  const routePanesSplitApart = $derived.by(() => {
+    // Straight from the renderer, never inferred from the stored tree: flatten,
+    // a zoom over the other leaf, and a pane tabbed behind a sibling all show
+    // one pane while the tree still reads as split.
+    const render = paneLayout.paneRender();
+    if (render === null || render.flattened) return false;
+    return render.onScreenTabs.includes("conversation") && render.onScreenTabs.includes("files");
+  });
 
   function handlePaneSelect(tabKey: string): void {
     // Only the PR's two panes are bound to the drawer's tab state; commit and

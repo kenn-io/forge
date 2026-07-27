@@ -45,8 +45,11 @@ sessions is already unusual; nothing here needs to scale past that.
 every known tab that is missing. Session panes are dynamic, so both halves need
 qualifying:
 
-- A pane key of the form `session:<workspaceId>:<hostKey>:<sessionKey>` is
-  **accepted** by the parser regardless of the surface's static list. The
+- A pane key naming a workspace, a fleet host, and a session is **accepted** by
+  the parser regardless of the surface's static list. Its three parts are
+  percent-encoded and `/`-joined rather than colon-separated, because session
+  keys are opaque and routinely contain colons (`ws-1:helper`) — a colon form
+  could not be parsed back, and two different sessions could spell one key. The
   vocabulary becomes "the static list, plus anything matching the session
   prefix". The workspace and fleet host are part of the key because a session
   key is only unique within a workspace on a host: two workspaces both having an
@@ -127,8 +130,13 @@ Consequences to hold onto:
   mean the terminal is on screen; a session's terminal is active exactly when its
   slot reports visible. A terminal left active behind a hidden tab claims focus
   and competes for keystrokes with the visible one.
-- Parking, the geometry-gated reveal, and the focus-reclaim behaviour are per
-  entry, not global.
+- Parking, the reveal, and the focus-reclaim behaviour are per entry, not global.
+- **Last registration wins, and only the owner may release.** Two surfaces can
+  claim the same workspace at once (PRs and Activity showing the same item), and
+  promotion registers the destination slot while the source is still unmounting.
+  A slot that has been superseded may neither clear the registration nor change
+  the visibility of the key it no longer owns, or the departing half of a
+  promotion strands the terminal in the parking area.
 - Registry entries are keyed by workspace, fleet host, session, and the session's
   `created_at` generation. Without the generation, a session relaunched under a
   reused key would adopt the dead session's subtree and its closed socket.
@@ -180,6 +188,10 @@ workspace container:
 - reopened from the popover's launch action, from a palette command, and by
   Focus Terminal when there is nothing to focus;
 - dismissed when a session launches, on Escape, and on a click outside.
+
+A launch that fails or times out leaves the overlay open with the error, because
+dismissing on the attempt rather than on the session would strand a maintainer on
+an empty workspace with no visible way back. Cancelling is the same as Escape.
 
 It participates in the modal stack like every other overlay, so the pane
 controls that refuse to act while a modal frame is open keep refusing.

@@ -76,12 +76,16 @@
    * "click pushes, focus replaces" would give the same move between two visible
    * panes different Back-stack behavior depending on where the pointer landed.
    */
-  const routePanesSplitApart = $derived(
-    // Flattened means one strip showing one pane, whatever the stored tree says,
-    // so nothing is "visible at once" and a tab change is a navigation again.
-    paneLayout.paneRender()?.flattened === false &&
-      paneLayout.leafIDForTab("conversation") !== paneLayout.leafIDForTab("files"),
-  );
+  const routePanesSplitApart = $derived.by(() => {
+    // Straight from the renderer, never inferred from the stored tree. Flattened
+    // shows one strip whatever the tree says; a zoom covers every other leaf;
+    // and a pane tabbed behind a sibling is not on screen either. All three
+    // stored-as-split arrangements show one pane, so a tab change is a
+    // navigation again.
+    const render = paneLayout.paneRender();
+    if (render === null || render.flattened) return false;
+    return render.onScreenTabs.includes("conversation") && render.onScreenTabs.includes("files");
+  });
 
   function selectDetailTab(tab: DetailTab): void {
     // Replace while both panes are on screen: moving between them is not a

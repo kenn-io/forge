@@ -33,6 +33,15 @@ export function sessionHostKey(
   return [workspaceId, hostKey ?? "", sessionKey, generation].map(encodeURIComponent).join("/");
 }
 
+/**
+ * The `sessionHostKey` prefix shared by every session of one workspace on one
+ * host, so a view can reconcile its own workspace's entries without disturbing
+ * terminals another surface is keeping alive.
+ */
+export function sessionHostPrefix(workspaceId: string, hostKey: string | undefined): string {
+  return [workspaceId, hostKey ?? ""].map(encodeURIComponent).join("/") + "/";
+}
+
 /** What the pool needs to render one session's terminal. */
 export interface MountedSession {
   hostKey: SessionHostKey;
@@ -53,7 +62,21 @@ export function registerSessionSlot(key: SessionHostKey, el: HTMLElement | null)
   // that depends on itself (effect_update_depth_exceeded). The targeted form
   // still invalidates fine-grained readers of `slotEls[key]`.
   slotEls[key] = el;
-  if (el === null) slotVisible[key] = false;
+  slotVisible[key] = false;
+}
+
+/**
+ * Give up a slot, but only if it is still the registered one.
+ *
+ * Promotion mounts the destination slot and unmounts the source slot in the same
+ * flush, in whichever order Svelte picks. An unconditional clear would let the
+ * departing slot's cleanup wipe the arriving slot's registration and leave the
+ * terminal parked with nowhere to go.
+ */
+export function releaseSessionSlot(key: SessionHostKey, el: HTMLElement): void {
+  if (slotEls[key] !== el) return;
+  slotEls[key] = null;
+  slotVisible[key] = false;
 }
 
 /**
@@ -62,8 +85,13 @@ export function registerSessionSlot(key: SessionHostKey, el: HTMLElement | null)
  * Separate from element registration because they change independently: an
  * inactive tab panel keeps its slot mounted under `visibility: hidden`, so
  * presence in the DOM says nothing about whether the user can see the terminal.
+ *
+ * Scoped to the owning element for the same reason as `releaseSessionSlot`: a
+ * superseded slot must not be able to hide, or reveal, the terminal now shown
+ * somewhere else.
  */
-export function setSessionSlotVisible(key: SessionHostKey, visible: boolean): void {
+export function setSessionSlotVisible(key: SessionHostKey, el: HTMLElement, visible: boolean): void {
+  if (slotEls[key] !== el) return;
   slotVisible[key] = visible;
 }
 
@@ -85,11 +113,15 @@ export function sessionSlotAttachment(key: SessionHostKey): Attachment<HTMLEleme
     registerSessionSlot(key, node);
     return () => {
       // Safety net: park the subtree before this slot leaves the DOM, or it is
-      // removed along with the slot and the websocket dies with it.
-      const parking = parkingEl;
-      const wrapper = node.firstElementChild;
-      if (parking !== null && wrapper !== null) parking.appendChild(wrapper);
-      registerSessionSlot(key, null);
+      // removed along with the slot and the websocket dies with it. Only when
+      // this slot still owns the key — during a promotion the terminal may
+      // already have moved to the destination slot.
+      if (slotEls[key] === node) {
+        const parking = parkingEl;
+        const wrapper = node.firstElementChild;
+        if (parking !== null && wrapper !== null) parking.appendChild(wrapper);
+      }
+      releaseSessionSlot(key, node);
     };
   };
 }

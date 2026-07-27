@@ -150,7 +150,10 @@ vi.mock("@middleman/ui/stores/flash", () => ({
   showFlash: mocks.showFlash,
 }));
 
-import WorkspaceTerminalView from "./WorkspaceTerminalView.svelte";
+// The harness pairs the view with the session terminal pool, which WorkspaceHost
+// mounts in the app. Terminals live in the pool now, so the view on its own
+// renders portal slots and no terminal would ever appear.
+import WorkspaceTerminalView from "./WorkspaceTerminalViewTestHarness.svelte";
 
 const runningSession = {
   key: "ws-1:helper",

@@ -7,6 +7,7 @@ import {
   noteSessionMounted,
   noteSessionUnmounted,
   registerSessionSlot,
+  releaseSessionSlot,
   resetSessionHostForTest,
   sessionHostKey,
   setSessionSlotVisible,
@@ -45,31 +46,67 @@ describe("session host registry", () => {
   it("reports a mounted-but-hidden slot as not visible", () => {
     // An inactive tab panel keeps its slot in the DOM under visibility:hidden. A
     // terminal that stays active there fights the visible one for keystrokes.
-    registerSessionSlot(agentOnA, document.createElement("div"));
-    setSessionSlotVisible(agentOnA, false);
+    const el = document.createElement("div");
+    registerSessionSlot(agentOnA, el);
+    setSessionSlotVisible(agentOnA, el, false);
     expect(getSessionSlotElement(agentOnA)).not.toBeNull();
     expect(isSessionSlotVisible(agentOnA)).toBe(false);
 
-    setSessionSlotVisible(agentOnA, true);
+    setSessionSlotVisible(agentOnA, el, true);
     expect(isSessionSlotVisible(agentOnA)).toBe(true);
   });
 
   it("reports a session with no slot as not visible", () => {
     expect(isSessionSlotVisible(agentOnA)).toBe(false);
-    // A slot that unregisters while still marked visible must not leave the
-    // terminal active in the parking area.
-    setSessionSlotVisible(agentOnA, true);
+    // A slot element that never registered must not be able to mark the session
+    // visible and leave the terminal active in the parking area.
+    setSessionSlotVisible(agentOnA, document.createElement("div"), true);
     expect(isSessionSlotVisible(agentOnA)).toBe(false);
   });
 
-  it("clears visibility when the slot unregisters", () => {
-    registerSessionSlot(agentOnA, document.createElement("div"));
-    setSessionSlotVisible(agentOnA, true);
-    registerSessionSlot(agentOnA, null);
+  it("clears visibility when the slot is replaced", () => {
+    const first = document.createElement("div");
+    registerSessionSlot(agentOnA, first);
+    setSessionSlotVisible(agentOnA, first, true);
     registerSessionSlot(agentOnA, document.createElement("div"));
     // Re-registering must not resurrect the previous visibility: the new slot
     // says whether it is on screen.
     expect(isSessionSlotVisible(agentOnA)).toBe(false);
+  });
+
+  it("ignores a superseded slot releasing the key", () => {
+    // Promotion mounts the destination slot and unmounts the source in one
+    // flush, in whichever order Svelte picks. The departing slot's cleanup must
+    // not wipe the arriving slot and leave the terminal parked.
+    const source = document.createElement("div");
+    const destination = document.createElement("div");
+    registerSessionSlot(agentOnA, source);
+    registerSessionSlot(agentOnA, destination);
+    setSessionSlotVisible(agentOnA, destination, true);
+
+    releaseSessionSlot(agentOnA, source);
+
+    expect(getSessionSlotElement(agentOnA)).toBe(destination);
+    expect(isSessionSlotVisible(agentOnA)).toBe(true);
+  });
+
+  it("ignores a superseded slot changing visibility", () => {
+    const source = document.createElement("div");
+    const destination = document.createElement("div");
+    registerSessionSlot(agentOnA, source);
+    registerSessionSlot(agentOnA, destination);
+    setSessionSlotVisible(agentOnA, destination, true);
+
+    setSessionSlotVisible(agentOnA, source, false);
+
+    expect(isSessionSlotVisible(agentOnA)).toBe(true);
+  });
+
+  it("lets the owning slot release the key", () => {
+    const el = document.createElement("div");
+    registerSessionSlot(agentOnA, el);
+    releaseSessionSlot(agentOnA, el);
+    expect(getSessionSlotElement(agentOnA)).toBeNull();
   });
 
   it("tracks mounted sessions and updates a changed status in place", () => {

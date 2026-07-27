@@ -31,8 +31,7 @@ const settingsStore = {
 };
 
 // The placement effect parks synchronously, defers the real move by a tick, then
-// reveals once the wrapper reports non-zero geometry via a rAF poll. Two frames
-// clear both, matching WorkspaceHost.browser.svelte.ts.
+// activates on the next animation frame. Two frames comfortably clear both.
 function waitForReparent(): Promise<void> {
   return new Promise((resolve) => {
     requestAnimationFrame(() => requestAnimationFrame(() => resolve(undefined)));
@@ -91,7 +90,7 @@ describe("SessionTerminalPool", () => {
 
   function showIn(hostKey: string, slot: HTMLElement | null): void {
     registerSessionSlot(hostKey, slot);
-    setSessionSlotVisible(hostKey, slot !== null);
+    if (slot !== null) setSessionSlotVisible(hostKey, slot, true);
     flushSync();
   }
 
@@ -164,7 +163,7 @@ describe("SessionTerminalPool", () => {
 
     // Two sessions tabbed into one leaf: the inactive tab's panel stays mounted
     // under visibility:hidden, so its slot is still registered.
-    setSessionSlotVisible(agent, false);
+    setSessionSlotVisible(agent, slotA, false);
     flushSync();
 
     expect(wrapper.parentElement).toBe(slotA);

@@ -6,6 +6,8 @@
   import PaneLeafActions from "./PaneLeafActions.svelte";
   import TabbedPanelTree from "./TabbedPanelTree.svelte";
   import {
+    collectTabbedPanelLeafIDs,
+    findTabbedPanelLeafByID,
     flattenTabbedPanelTree,
     type TabbedPanelDescriptor,
     type TabbedPanelLeaf,
@@ -69,10 +71,6 @@
   // widths (focus presentation, activity drawer) inside the same viewport.
   const measured = $derived(hostWidth > 0);
   const flattened = $derived(measured && hostWidth < flattenBelowPx);
-  // Available minus hidden: a hidden pane is still available, since that is what
-  // lets it be reopened, but it renders nothing.
-  const editableTabs = $derived(availableTabs.filter((key) => !layout.hiddenTabKeys().includes(key)));
-
   const activeTree = $derived.by(() => {
     const tree = renderTree;
     if (!tree) return null;
@@ -86,15 +84,38 @@
     return flattenTabbedPanelTree(tree, layout.lastFocusedTabKey() ?? routeTabKey ?? undefined);
   });
 
+  // Leaves that render at all: everything when nothing holds the zoom, and only
+  // the zoomed leaf when something does. A zoom covers its siblings entirely, so
+  // their panes are as absent from the screen as a hidden one.
+  const renderedLeaves = $derived.by(() => {
+    const tree = activeTree;
+    if (!tree) return [];
+    const leaves = collectTabbedPanelLeafIDs(tree)
+      .map((id) => findTabbedPanelLeafByID(tree, id))
+      .filter((leaf): leaf is TabbedPanelLeaf => leaf !== null);
+    if (flattened || zoomedLeafID === null) return leaves;
+    return leaves.filter((leaf) => leaf.id === zoomedLeafID);
+  });
+
+  const editableTabs = $derived(renderedLeaves.flatMap((leaf) => leaf.tabs));
+  // One per rendered leaf. A tab sitting behind a sibling tab is a click away,
+  // which is enough to be a command target, but it is not on screen.
+  const onScreenTabs = $derived(
+    renderedLeaves
+      .map((leaf) => leaf.activeTabKey)
+      .filter((key): key is string => key !== null && key !== undefined),
+  );
+
   // Publish the renderer-only facts the command layer needs: that a layout is
-  // mounted here at all, which panes it offers, and whether the narrow-width
-  // fallback has flattened it (where every structural edit is disabled, so a
-  // palette command must not quietly rearrange a tree nobody can see).
+  // mounted here at all, which panes it offers, which are on screen, and whether
+  // the narrow-width fallback has flattened it (where every structural edit is
+  // disabled, so a palette command must not quietly rearrange a tree nobody can
+  // see).
   $effect(() => {
     // Null until the host has been measured. Width decides whether structural
     // edits are allowed at all, and an unmeasured host defaulting to "not
     // flattened" exposes those commands for a frame on a narrow layout.
-    const report = measured ? { editableTabs, flattened } : null;
+    const report = measured ? { editableTabs, onScreenTabs, flattened } : null;
     // Untracked because the store compares against the previous report before
     // writing: reading it here would make this effect both a reader and a writer
     // of the same state and it would re-run itself forever.

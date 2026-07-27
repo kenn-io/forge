@@ -14,14 +14,20 @@
   let { session, parking, slotEl, active, onExit }: Props = $props();
 
   let wrapper = $state<HTMLElement | null>(null);
-  // Revealed only once the wrapper sits in its destination with non-zero
-  // geometry, the same gate WorkspaceHost uses: terminal panes size themselves
-  // on activation and a zero-height reveal renders a one-row terminal.
+  // True only once the wrapper actually sits in its destination and the browser
+  // has laid it out. Activating a terminal earlier makes the fit addon measure
+  // the parking node and resize the real tmux pane to one row.
   let attached = $state(false);
 
-  // Placement, mirroring WorkspaceHost's: park first, attach after a tick, then
-  // reveal on real geometry. Parking rather than leaving the wrapper in place
-  // matters because the previous slot may be unmounting in this same flush.
+  // Placement, mirroring WorkspaceHost's: park first, attach after a tick.
+  // Parking rather than leaving the wrapper in place matters because the
+  // previous slot may be unmounting in this same flush.
+  //
+  // Unlike WorkspaceHost this does not poll for non-zero geometry. The host has
+  // to, because it moves a subtree into slots it knows nothing about, including
+  // a display:none parking node. Here the slot itself reports whether it is on
+  // screen, so waiting for pixels would only add a failure mode: a destination
+  // that legitimately measures zero would keep the terminal inert forever.
   $effect(() => {
     const destination = slotEl;
     const node = wrapper;
@@ -35,15 +41,10 @@
       await tick();
       if (cancelled) return;
       destination.appendChild(node);
-      const reveal = () => {
+      requestAnimationFrame(() => {
         if (cancelled) return;
-        if (node.getBoundingClientRect().height > 0) {
-          attached = true;
-          return;
-        }
-        requestAnimationFrame(reveal);
-      };
-      requestAnimationFrame(reveal);
+        attached = true;
+      });
     })();
     return () => {
       cancelled = true;

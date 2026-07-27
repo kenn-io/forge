@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
+import { flushSync } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import DetailPaneLayoutTestHarness from "./DetailPaneLayoutTestHarness.svelte";
 import type { TabbedPanelNode } from "./tabbed-panel-layout";
@@ -110,6 +111,44 @@ describe("detail pane layout", () => {
 
     fireEvent.click(screen.getByTestId("pane-hide-workspace"));
     expect(layout.paneRender()?.editableTabs).not.toContain("workspace");
+  });
+
+  it("drops panes covered by another leaf's zoom from the report", () => {
+    // A zoom covers its siblings entirely, so their panes are as absent from the
+    // screen as a hidden one: maximizing or splitting them rearranges a tree the
+    // user cannot see.
+    const layout = store(splitTree());
+    render(DetailPaneLayoutTestHarness, { layout });
+
+    flushSync(() => layout.toggleZoom("leaf-detail"));
+    expect([...(layout.paneRender()?.editableTabs ?? [])].sort()).toEqual(["conversation", "files"]);
+    expect(layout.paneRender()?.onScreenTabs).toEqual(["conversation"]);
+
+    flushSync(() => layout.clearZoom());
+    expect([...(layout.paneRender()?.editableTabs ?? [])].sort()).toEqual(["conversation", "files", "workspace"]);
+  });
+
+  it("reports one on-screen tab per rendered leaf", () => {
+    // A tab behind a sibling in the same leaf is one click away, so it stays a
+    // legitimate command target, but it is not on screen — which is the question
+    // the push-vs-replace history rule asks.
+    const layout = store(splitTree());
+    render(DetailPaneLayoutTestHarness, { layout });
+
+    expect(layout.paneRender()?.onScreenTabs).toEqual(["conversation", "workspace"]);
+    expect(layout.paneRender()?.editableTabs).toContain("files");
+
+    flushSync(() => layout.activateTab("files"));
+    expect(layout.paneRender()?.onScreenTabs).toEqual(["files", "workspace"]);
+  });
+
+  it("reports the single flat tab as the only one on screen", () => {
+    mockWidth(600);
+    const layout = store(splitTree());
+    render(DetailPaneLayoutTestHarness, { layout });
+
+    // Whatever the stored tree says, a flat strip shows exactly one pane.
+    expect(layout.paneRender()?.onScreenTabs).toHaveLength(1);
   });
 
   it("publishes no report until the host has been measured", () => {

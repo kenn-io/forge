@@ -34,14 +34,25 @@ export const PANE_LAYOUT_STORAGE_PREFIX = "middleman-pane-layout-v1:";
 /** The state only the renderer knows, published for consumers outside the tree. */
 export interface PaneRenderReport {
   /**
-   * Tabs a structural edit may target: available, not hidden, and therefore
-   * present in the rendered tree.
+   * Tabs a structural edit may target: present in the rendered tree and not
+   * masked out of it.
    *
    * Not merely "available". A hidden pane is still available — that is what
-   * makes it reopenable — but it renders nothing, so a command that maximized
-   * or split it would rearrange a tree the user cannot see.
+   * makes it reopenable — but it renders nothing. Neither does a pane whose leaf
+   * sits behind another leaf's zoom. In both cases a command that maximized or
+   * split it would rearrange a tree the user cannot see.
    */
   editableTabs: readonly string[];
+  /**
+   * Tabs actually on screen: the active tab of every rendered leaf that no other
+   * leaf's zoom is covering.
+   *
+   * Distinct from `editableTabs`, which includes tabs sitting behind a sibling
+   * tab in the same leaf — reachable in one click, and a legitimate command
+   * target, but not visible. Only this answers "are both of these on screen at
+   * once", which is what the push-vs-replace history rule turns on.
+   */
+  onScreenTabs: readonly string[];
   /** True while the narrow-width fallback shows one flat strip and disables edits. */
   flattened: boolean;
 }
@@ -91,6 +102,10 @@ export interface PaneLayoutStore {
   clearZoom(): void;
   setHidden(tabKey: string, hidden: boolean): void;
   reset(): void;
+}
+
+function sameTabList(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((tab, index) => tab === b[index]);
 }
 
 function storageKey(surface: PaneSurfaceKey): string {
@@ -172,12 +187,16 @@ export function createPaneLayoutStore(
       if (
         current !== null &&
         current.flattened === report.flattened &&
-        current.editableTabs.length === report.editableTabs.length &&
-        current.editableTabs.every((tab, index) => tab === report.editableTabs[index])
+        sameTabList(current.editableTabs, report.editableTabs) &&
+        sameTabList(current.onScreenTabs, report.onScreenTabs)
       ) {
         return;
       }
-      render = { editableTabs: [...report.editableTabs], flattened: report.flattened };
+      render = {
+        editableTabs: [...report.editableTabs],
+        onScreenTabs: [...report.onScreenTabs],
+        flattened: report.flattened,
+      };
     },
 
     canSplitTab: (tabKey) => (findTabbedPanelLeafByTab(state.tree, tabKey)?.tabs.length ?? 0) > 1,

@@ -11,12 +11,13 @@
 ## Global Constraints
 
 - Design source of truth: `docs/superpowers/specs/2026-07-26-session-panes-design.md`. Its predecessor `2026-07-25-generalized-pane-layout-design.md` still governs the detail pane tree.
-- Session pane keys are `session:<workspaceId>:<hostKey>:<sessionKey>`. `WorkspaceTerminalView`'s existing `workflowTabKeyForSession` (`:841`) mints the workspace-local `session:<sessionKey>` for its own tree; the detail-tree key must carry workspace and host too, because a session key is unique only within a workspace on a host. Provide one builder and one parser, and use them on both sides.
+- Session pane keys are `session:` followed by `encodeURIComponent(workspaceId)`, `encodeURIComponent(hostKey ?? "")`, and `encodeURIComponent(sessionKey)` joined with `/`, matching `sessionHostKey`'s encoding minus the generation. **Percent-encoding is not decorative:** session keys are opaque and routinely contain colons (`ws-1:helper`), so a plain `session:<workspaceId>:<hostKey>:<sessionKey>` cannot be parsed back. The empty local host encodes as the empty segment. The parser rejects anything with the wrong segment count or an undecodable segment. `WorkspaceTerminalView`'s existing `workflowTabKeyForSession` (`:841`) mints the workspace-local `session:<sessionKey>` for its own tree; provide one builder and one parser for the detail-tree form and use them on both sides.
 - Registry keys additionally carry the session's `created_at` generation; layout keys deliberately do not. A relaunched session reappears where the user put it, without inheriting the dead generation's subtree.
 - Optimize for one to three sessions per item. Do not add pooling, eviction, or virtualization for more.
 - Exactly one slot may be mounted per session key at a time, exactly as the existing host allows one slot per surface.
 - A slot registers its **visibility**, not just its element. An inactive tab panel stays mounted with `visibility: hidden` (`TabbedPanelTree`), so element presence does not mean the terminal is on screen. `TerminalPane.active` for a pooled session is derived from the registered visibility of its slot and from nothing else; a terminal left `active` behind a hidden tab steals focus and fights the visible one for keystrokes.
 - Every `@lucide/svelte/icons/<name>` import added anywhere must also be added to `optimizeDeps.include` in `frontend/vite.config.ts`.
+- **`packages/ui` cannot import from `frontend/`.** The registry, the pool, and every terminal component live under `frontend/`, while the three detail views live in `packages/ui`. Anything a view needs from the terminal side crosses through `InlineWorkspaceController` (declared in `packages/ui/src/workspace-inline.ts`, implemented in `frontend/src/lib/stores/workspace-host.svelte.ts`) — the same seam the existing workspace pane already uses for its slot attachment. Tasks 6 and 7 extend that interface rather than reaching across the boundary.
 - Run frontend tests from `frontend/` with `../node_modules/.bin/vp`. Never `npm`. Never bare `vp fmt` — name the files.
 - Commit every task through the `kenn:commit` skill, after `context-sync --commit`.
 
@@ -183,35 +184,54 @@ Expected: PASS. (15 tests.)
 
 **Files:**
 
-- Modify: `frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte` (`:3259`, the session branch of `renderTab`)
-- Test: `frontend/src/lib/components/terminal/WorkspaceTerminalView.sessionSlots.browser.svelte.ts`
+- Create: `frontend/src/lib/components/terminal/SessionTerminalSlot.svelte`
+- Create: `frontend/src/lib/components/terminal/WorkspaceTerminalViewTestHarness.svelte`
+- Modify: `frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte` (the session branch of `renderTab`)
+- Modify: `frontend/src/lib/components/terminal/WorkspaceTerminalView.test.ts` (mount through the harness)
 
-Replace the inline `TerminalPane` with the pool's slot:
+The inline `TerminalPane` becomes a slot. `SessionTerminalSlot` owns both halves
+of registration — the element via an attachment, the visibility via its own
+effect scoped to that element — so no call site can register one without the
+other:
 
 ```svelte
 {#if session && isSessionTerminalMounted(session.key)}
-  <!-- Portal target. The terminal itself lives in the app-level pool so it
-       survives being promoted out of this tree and back. `visible` is the
-       renderTab/renderPane argument both tab strips already pass: an inactive
-       tab keeps this slot mounted, and only visibility says the terminal is on
-       screen. -->
-  <div
-    class="session-terminal-slot"
-    {@attach sessionSlotAttachment(sessionHostKey(workspaceId, workspaceHostKey, session.key), () => visible)}
-  ></div>
+  <SessionTerminalSlot hostKey={sessionHostKeyFor(session)} visible={active && hostVisible} />
 {/if}
 ```
 
-`mountedSessionKeys` (`:774`) stops owning DOM and becomes the pool's input.
-Task 6's promoted-pane slot passes the same `visible` argument from
-`DetailPaneLayout`'s `renderPane(tabKey, visible)`, so a promoted session behind
-an inactive detail tab is inactive for the same reason.
+`visible` is `renderTab`'s own argument ANDed with `hostVisible`, so a session
+behind an inactive tab, or inside a parked workspace host, is inert. Task 6's
+promoted pane passes `DetailPaneLayout`'s `renderPane(tabKey, visible)` for the
+same reason.
 
-- [ ] **Step 1** Write the failing browser test: switching between two session tabs keeps both terminal subtrees alive and moves neither.
-- [ ] **Step 2** Run `../node_modules/.bin/vp test --project browser WorkspaceTerminalView.sessionSlots`. Expected FAIL.
-- [ ] **Step 3** Implement, including the `DockedTerminalPanel` path so the bottom dock uses the same slots.
-- [ ] **Step 4** Run `../node_modules/.bin/vp test --project browser WorkspaceTerminalView` and `--project unit WorkspaceTerminalView`. Expected PASS.
-- [ ] **Step 5** Commit.
+Two things the view keeps owning:
+
+- **The registry mirror is reconciled from state, not pushed per call site.** A
+  session moved into the terminal dock stays in `mountedSessionKeys` while the
+  dock renders its own pane, so a missed `noteSessionUnmounted` would leave two
+  sockets on one tmux session. One effect derives the desired set (mounted AND
+  workflow-region) and syncs only this workspace's prefix, leaving other
+  surfaces' parked terminals alone.
+- **Exit routing.** The pool reports an exit by registry key; only this view can
+  map that back to a `RuntimeSession`, and the generation in the key keeps a
+  relaunched session from being taken for the dead one.
+
+**The terminal dock is out of scope.** Terminal-region sessions are rendered by
+`TerminalSplitTree` with its own split machinery and are not promotable, so
+pooling them would be a large change for no part of this feature. The reconcile
+filter above is what keeps the two paths from both attaching.
+
+- [x] **Step 1** Write the failing browser test — covered by Task 2's
+      `SessionTerminalPool.browser.svelte.ts`, which exercises the slot contract
+      the view now implements.
+- [x] **Step 2** Implement the slot component and the view changes.
+- [x] **Step 3** Point `WorkspaceTerminalView.test.ts` at a harness that mounts
+      the pool alongside the view. Terminals no longer live in the view's own
+      subtree, so mounting it alone yields slots and no terminal — five tests
+      caught exactly that.
+- [x] **Step 4** Run `../node_modules/.bin/vp test --project unit WorkspaceTerminalView session-host` and `--project browser SessionTerminalPool WorkspaceHost`. Expected PASS. (65 + 11 + 15.)
+- [x] **Step 5** Commit.
 
 ---
 
@@ -235,21 +255,56 @@ export function normalizeTabbedPanelTree(
 ): TabbedPanelNode;
 ```
 
-`PANE_SURFACES` grows `keepIfStored: (key) => key.startsWith("session:")`.
+`PANE_SURFACES` grows `keepIfStored: isSessionPaneKey`, where `isSessionPaneKey`
+is the strict parser from the Global Constraints — a prefix check would accept a
+malformed key from an older build and keep it in the tree forever.
+
+Add the builder and parser beside it:
+
+```ts
+/** `session:` + encoded workspace / host / session, joined with `/`. */
+export function sessionPaneKey(workspaceId: string, hostKey: string | undefined, sessionKey: string): string;
+/** Null unless every segment decodes and the count is exactly three. */
+export function parseSessionPaneKey(
+  key: string,
+): { workspaceId: string; hostKey: string | undefined; sessionKey: string } | null;
+export function isSessionPaneKey(key: string): boolean;
+```
 
 - [ ] **Step 1: Write the failing tests**
 
 ```ts
+const agentPane = sessionPaneKey("ws-1", undefined, "ws-1:helper");
+
+it("round-trips a session key that contains the separator characters", () => {
+  // Session keys are opaque and routinely contain colons, and workspace ids
+  // could contain slashes: two different sessions must never spell one key.
+  expect(parseSessionPaneKey(agentPane)).toEqual({
+    workspaceId: "ws-1",
+    hostKey: undefined,
+    sessionKey: "ws-1:helper",
+  });
+  expect(sessionPaneKey("a/b", undefined, "s")).not.toBe(sessionPaneKey("a", "b", "s"));
+  expect(parseSessionPaneKey("session:only-two/parts")).toBeNull();
+  expect(parseSessionPaneKey("session:ws-1//%zz")).toBeNull();
+});
+
 it("keeps a stored session pane and never reinserts one", () => {
-  const stored = { type: "leaf", id: "l", tabs: ["conversation", "session:agent"], activeTabKey: "conversation" };
+  const stored = { type: "leaf", id: "l", tabs: ["conversation", agentPane], activeTabKey: "conversation" };
   const kept = normalizeTabbedPanelTree(stored, ["conversation", "files"], "conversation", isSessionPaneKey);
-  expect(collectTabbedPanelTabKeys(kept)).toContain("session:agent");
+  expect(collectTabbedPanelTabKeys(kept)).toContain(agentPane);
 
   // Removing it must stick: reinsertion is for new static panes, and a session
   // pane exists only because the user promoted it.
   const without = { type: "leaf", id: "l", tabs: ["conversation"], activeTabKey: "conversation" };
   const still = normalizeTabbedPanelTree(without, ["conversation", "files"], "conversation", isSessionPaneKey);
-  expect(collectTabbedPanelTabKeys(still)).not.toContain("session:agent");
+  expect(collectTabbedPanelTabKeys(still)).not.toContain(agentPane);
+});
+
+it("prunes a malformed session key rather than keeping it forever", () => {
+  const stored = { type: "leaf", id: "l", tabs: ["conversation", "session:bogus"], activeTabKey: "conversation" };
+  const kept = normalizeTabbedPanelTree(stored, ["conversation"], "conversation", isSessionPaneKey);
+  expect(collectTabbedPanelTabKeys(kept)).not.toContain("session:bogus");
 });
 ```
 
@@ -290,16 +345,38 @@ export interface TabbedPanelTabDragPayload {
 
 // paneLayout.svelte.ts
 /**
- * Insert a tab this tree does not have, reporting whether it landed.
+ * Compute — do not commit — the tree this drop would produce.
  *
- * The caller removes it from the source tree only on `true`, and both writes
- * happen in one update: a tab rendered by two trees at once means two portal
- * slots racing for one live terminal.
+ * Returns null when the drop is refused. A `commit` that mutated the
+ * destination and left the caller to remove the source is not atomic: nothing
+ * rolls the destination back if the source's removal is the half that fails,
+ * and Svelte's batching hides the intermediate paint without preventing the
+ * inconsistent state.
  */
-acceptTransferredTab(tabKey: string, leafID: string, placement: TabbedPanelTransferPlacement): boolean;
+planTransferIn(tabKey: string, leafID: string, placement: TabbedPanelTransferPlacement): TabbedPanelNode | null;
+/** The same for the source side: the tree with the tab gone, or null if it has none. */
+planTransferOut(tabKey: string): TabbedPanelNode | null;
+/** Replace this tree wholesale. Only ever called by the coordinator below. */
+commitTree(tree: TabbedPanelNode): void;
 ```
 
-- [ ] **Step 1** Failing tests: dropping a session on the detail tree adds the pane and removes the workflow tab in the same flush; dropping it back reverses both; a destination that rejects the drop leaves both trees byte-identical; a promoted pane dropped on the Workspaces tab's tree is rejected on scope; a session that disappears mid-drag cancels rather than half-applying.
+Both plans are computed first; only if **neither** is null does the coordinator
+call `commitTree` on each. Either half returning null aborts with no write at
+all, so a refused or impossible transfer cannot leave the tab in both trees or
+in neither.
+
+```ts
+/** Nothing is written until both sides have produced a tree. */
+export function transferTab(args: {
+  from: { planTransferOut(tabKey: string): TabbedPanelNode | null; commitTree(tree: TabbedPanelNode): void };
+  to: { planTransferIn(...): TabbedPanelNode | null; commitTree(tree: TabbedPanelNode): void };
+  tabKey: string;
+  leafID: string;
+  placement: TabbedPanelTransferPlacement;
+}): boolean;
+```
+
+- [ ] **Step 1** Failing tests: dropping a session on the detail tree adds the pane and removes the workflow tab in the same flush; dropping it back reverses both; a destination that refuses the drop leaves both trees byte-identical; a **source** that cannot produce a removal leaves the destination byte-identical too; a promoted pane dropped on the Workspaces tab's tree is rejected on scope; a session that disappears mid-drag cancels rather than half-applying.
 - [ ] **Step 2** Run `../node_modules/.bin/vp test --project unit paneLayout WorkspaceTerminalView`. Expected FAIL.
 - [ ] **Step 3** Implement.
 - [ ] **Step 4** Same command. Expected PASS.
@@ -315,21 +392,45 @@ acceptTransferredTab(tabKey: string, leafID: string, placement: TabbedPanelTrans
 - Modify: `packages/ui/src/workspace-inline.ts` (the controller exposes the claimed workspace's sessions)
 - Test: the three views' unit tests
 
-`paneTabs` gains one entry per session of the claimed workspace that the stored tree already contains:
+**The boundary.** A view in `packages/ui` cannot import the registry, the slot
+component, or anything else under `frontend/`. `InlineWorkspaceController` is the
+existing seam — it already hands the workspace pane its `slotAttachment` — so it
+grows the session equivalents, keeping the terminal side entirely in `frontend/`:
+
+```ts
+// packages/ui/src/workspace-inline.ts
+export interface PromotableSession {
+  /** The layout key: `session:` + encoded workspace / host / session. */
+  paneKey: string;
+  label: string;
+}
+
+export interface InlineWorkspaceController {
+  // ...existing members
+  /** Sessions of the currently claimed workspace, or [] when nothing is claimed. */
+  promotableSessions(): readonly PromotableSession[];
+  /** Portal attachment for one promoted session's pane body. */
+  sessionSlotAttachment(paneKey: string): Attachment<HTMLElement>;
+  /** Publish whether that pane is on screen; the pool gates `active` on it. */
+  noteSessionPaneVisible(paneKey: string, visible: boolean): void;
+}
+```
+
+`paneTabs` then gains one entry per session the stored tree already contains:
 
 ```ts
 const sessionTabs = $derived<PaneTabSpec[]>(
-  (workspaceClaim.sessions() ?? []).map((session) => ({
-    key: sessionPaneKey(session.key),
+  (inlineWorkspace?.promotableSessions() ?? []).map((session) => ({
+    key: session.paneKey,
     label: session.label,
     // Only panes the user promoted; availability never conjures one.
-    available: paneLayout.hasTab(sessionPaneKey(session.key)),
+    available: paneLayout.hasTab(session.paneKey),
     hideable: true,
   })),
 );
 ```
 
-- [ ] **Step 1** Failing tests: a promoted session pane renders its slot for the claimed workspace; selecting an item with a different workspace prunes it while the stored tree keeps it; returning restores it.
+- [ ] **Step 1** Failing tests: a promoted session pane renders its slot for the claimed workspace; selecting an item with a different workspace prunes it while the stored tree keeps it; returning restores it; the pane reports its visibility so a session tabbed behind a sibling goes inert.
 - [ ] **Step 2** Run `../node_modules/.bin/vp test --project unit PRListView IssueListView ActivityFeedView`. Expected FAIL.
 - [ ] **Step 3** Implement.
 - [ ] **Step 4** Same command. Expected PASS.
@@ -367,6 +468,11 @@ paneLeafExtras?: Snippet<[TabbedPanelLeaf]> | undefined;
   <!-- existing split / zoom / close buttons -->
 {/snippet}
 ```
+
+`WorkspacePaneControls` lives under `frontend/`, so the three views cannot render
+it directly. Each view receives it as a snippet prop supplied by the frontend App
+shell — the same direction as the controller: `packages/ui` declares the hole,
+`frontend/` fills it.
 
 It follows the structural controls' own rule: `leafActions` is already suppressed
 while flattened (`:223`), so the button disappears with them and nothing extra is
@@ -406,7 +512,21 @@ The overlay wraps today's `WorkspaceHome` body, pushes a modal frame, auto-opens
 **Files:**
 
 - Modify: `frontend/src/lib/stores/workspace-host.svelte.ts`
-- Test: `frontend/src/lib/stores/workspace-host.test.ts`
+- Modify: `packages/ui/src/stores/paneLayout.svelte.ts` (`noteFocused` accepts validated dynamic keys)
+- Modify: `packages/ui/src/views/{PRListView,IssueListView,ActivityFeedView}.svelte` (report a focused session pane back through the controller)
+- Test: `frontend/src/lib/stores/workspace-host.test.ts`, `packages/ui/src/stores/paneLayout.svelte.test.ts`, the three views' tests
+
+**Two wiring gaps this task has to close, not assume.**
+
+- `noteFocused` drops any key outside its static `knownTabs`, so a promoted
+  session pane could never become last-focused and every rule below would key off
+  a stale value. It must accept a key that parses as a session pane for this
+  surface, on the same "keep if stored, never reinsert" footing as the tree.
+- Focus originates in `DetailPaneLayout`, which reports it to the view via
+  `onFocusPane`. Last-focused **session** is per workspace, and only the frontend
+  host knows which workspace a claim belongs to, so the views forward a focused
+  session pane through `InlineWorkspaceController` rather than tracking it
+  themselves.
 
 "The workspace pane" is no longer one leaf:
 
@@ -417,7 +537,7 @@ The overlay wraps today's `WorkspaceHome` body, pushes a modal frame, auto-opens
 - On session end or workspace deletion, drop that session's pane from every surface's stored tree.
 - Dispose registry entries for a workspace that no surface claims and the Workspaces tab is not showing: parked terminals hold live websockets, so browsing past ten items must not leave ten connections open.
 
-- [ ] **Step 1** Failing tests, one per bullet, including: deleting a workspace with two promoted panes leaves no session keys in any surface's stored tree; collapsing and expanding a workspace with one promoted pane restores that pane rather than the default tree; selecting three items in turn leaves only the current workspace's terminals in the registry.
+- [ ] **Step 1** Failing tests, one per bullet, including: deleting a workspace with two promoted panes leaves no session keys in any surface's stored tree; collapsing and expanding a workspace with one promoted pane restores that pane rather than the default tree; selecting three items in turn leaves only the current workspace's terminals in the registry; `noteFocused` accepts a well-formed session pane key and still rejects a malformed one; focusing a promoted pane and focusing the container both update the workspace's last-focused session.
 - [ ] **Step 2** Run `../node_modules/.bin/vp test --project unit workspace-host`. Expected FAIL.
 - [ ] **Step 3** Implement.
 - [ ] **Step 4** Same command. Expected PASS.

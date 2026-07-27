@@ -641,6 +641,12 @@
    * the Launch button in the pane's controls.
    */
   function autoOpenLauncher(): void {
+    // Never over a broken workspace, on any automatic path. A worktree whose setup
+    // failed, or whose tmux server dropped the session out from under it, reports
+    // zero sessions for the same reason it reports an error - and the launcher
+    // answered that by covering the error message, and its Retry and Delete, with an
+    // invitation to start an agent inside something that cannot run one.
+    if (workspace?.status === "error") return;
     if (launcherAutoOpenedFor.includes(viewWorkspaceKey)) return;
     launcherAutoOpenedFor = [...launcherAutoOpenedFor, viewWorkspaceKey];
     launcherState = { workspaceKey: viewWorkspaceKey, auto: true };
@@ -688,6 +694,17 @@
   // session is there, and open the launcher when there is none.
   $effect(() => {
     if (!launcherMode || !runtimeLive) return;
+    // A workspace that turns out to be broken takes its launcher back. The runtime
+    // load lands before the workspace record does, so the overlay is already up by
+    // the time the error is known - and the guard in autoOpenLauncher cannot undo
+    // what it did not do.
+    if (workspace?.status === "error") {
+      const opened = launcherState;
+      untrack(() => {
+        if (opened?.workspaceKey === viewWorkspaceKey && opened.auto) closeLauncher();
+      });
+      return;
+    }
     const tabs = workflowTabDescriptors;
     const activeMissing = !tabs.some((tab) => tab.key === activeTabKey);
     const workspaceKey = viewWorkspaceKey;

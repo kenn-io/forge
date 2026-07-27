@@ -2850,6 +2850,42 @@ describe("WorkspaceTerminalView", () => {
       expect(screen.queryByRole("tab", { name: "Home" })).toBeNull();
     });
 
+    it("leaves a broken workspace's error on screen instead of covering it with the launcher", async () => {
+      // A worktree whose setup failed, or whose tmux server dropped its session,
+      // reports zero sessions for the same reason it reports an error. Auto-opening
+      // the launcher there covered the error message - and its Retry and Delete, the
+      // only two useful actions - with an invitation to start an agent inside
+      // something that cannot run one.
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockImplementation((input: Request | URL | string) => {
+          const { pathname } = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
+          if (/\/workspaces\/[^/]+$/.test(pathname)) {
+            return Promise.resolve(
+              Response.json({
+                ...workspaceResponse,
+                status: "error",
+                error_message: "tmux session is no longer running: middleman-ws-1",
+              }),
+            );
+          }
+          return Promise.resolve(Response.json({}));
+        }),
+      );
+      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
+      claimForPrs();
+
+      render(WorkspaceTerminalView, {
+        props: {
+          workspaceId: "ws-1",
+          paneSurface: "prs" as const,
+        },
+      });
+
+      await waitFor(() => expect(screen.getByText(/tmux session is no longer running/)).toBeTruthy());
+      expect(screen.queryByRole("dialog", { name: /Launch a session/ })).toBeNull();
+    });
+
     it("leaves a docked terminal alone instead of covering it with the launcher", async () => {
       localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
       localStorage.setItem(

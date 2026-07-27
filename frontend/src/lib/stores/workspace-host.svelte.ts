@@ -98,10 +98,16 @@ let sessionPaneSnippet = $state<Snippet<[{ paneKey: string; visible: boolean }]>
 // view hands over the rendered chrome rather than the state behind it. Null while
 // no view is embedded, which is what tells a detail pane not to offer the button.
 let hostedControls = $state<HostedWorkspaceControls | null>(null);
-// Set by the view while one of those controls has a write in flight. The popover
+// The workspace key whose controls have a write in flight, or null. The popover
 // holding them must not be dismissed mid-save: it owns the pending feedback, and
 // unmounting it would strand the user with no idea whether the save landed.
-let hostedControlsBusy = $state(false);
+//
+// Keyed rather than a bare flag: one embedded view serves every selection on its
+// surface, and a write it started for one workspace can outlive the switch to the
+// next (the view only clears its own pending flag when the identity still matches).
+// A global flag would then be stuck on and hold the NEXT workspace's popover open
+// forever, which is worse than the dismissal it was protecting.
+let hostedControlsBusy = $state<string | null>(null);
 // Opens the hosted view's launcher overlay. Registered by the embedded view, which
 // owns the overlay: a palette command or a Focus Terminal with nothing to focus can
 // only reach it through the store.
@@ -467,19 +473,35 @@ export function registerWorkspaceLauncher(open: (() => void) | null): void {
   launcherOpener = open;
 }
 
-/** The hosted workspace's launcher, or null when this surface is not hosting one. */
+/**
+ * The hosted workspace's launcher, or null when this surface is not hosting one.
+ *
+ * Reveals the workspace pane before opening: the overlay is rendered by the
+ * embedded view, so a pane that is collapsed, tabbed behind a sibling, or covered
+ * by another leaf's zoom has nowhere to draw it, and the command would report
+ * success while producing no UI at all.
+ */
 export function hostedWorkspaceLauncher(surface: InlineWorkspaceSurface): (() => void) | null {
   if (desiredSlot() !== surface) return null;
-  return launcherOpener;
+  const open = launcherOpener;
+  if (open === null) return null;
+  return () => {
+    revealWorkspacePane(surface);
+    open();
+  };
 }
 
-export function setWorkspaceControlsBusy(busy: boolean): void {
-  hostedControlsBusy = busy;
+export function setWorkspaceControlsBusy(workspaceKey: string, busy: boolean): void {
+  if (busy) {
+    hostedControlsBusy = workspaceKey;
+    return;
+  }
+  if (hostedControlsBusy === workspaceKey) hostedControlsBusy = null;
 }
 
-/** True while one of the hosted controls has a write in flight. */
+/** True while one of the CURRENTLY registered controls has a write in flight. */
 export function workspaceControlsBusy(): boolean {
-  return hostedControlsBusy;
+  return hostedControlsBusy !== null && hostedControlsBusy === hostedControls?.workspaceKey;
 }
 
 function promotableSessionsFor(surface: InlineWorkspaceSurface): readonly PromotableSession[] {
@@ -666,6 +688,6 @@ export function resetWorkspaceHostForTest(): void {
   hostedSessions = { key: { workspaceId: "", hostKey: undefined }, sessions: [] };
   sessionPaneSnippet = null;
   hostedControls = null;
-  hostedControlsBusy = false;
+  hostedControlsBusy = null;
   launcherOpener = null;
 }

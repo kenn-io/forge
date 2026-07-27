@@ -17,6 +17,7 @@ import {
   desiredSlot,
   getInlineWorkspaceController,
   publishHostedSessions,
+  hostedWorkspaceLauncher,
   registerWorkspaceLauncher,
   hostedSessionRegistryKey,
   isHostVisible,
@@ -622,6 +623,21 @@ describe("workspace host store", () => {
 
     // There is no terminal to focus, so revealing the pane alone would land the
     // user on an empty surface and look like the command did nothing.
+    expect(openLauncher).toHaveBeenCalled();
+    expect(prs.getDockMode()).toBe("split");
+  });
+
+  it("reveals the pane before opening the launcher the palette asked for", () => {
+    const prs = getInlineWorkspaceController("prs");
+    const openLauncher = vi.fn();
+    registerWorkspaceLauncher(openLauncher);
+    prs.claim(identityA, refA);
+    prs.setDockMode("collapsed");
+
+    hostedWorkspaceLauncher("prs")?.();
+
+    // The overlay is rendered by the embedded view, so a collapsed pane has
+    // nowhere to draw it: the command would report success and produce no UI.
     expect(openLauncher).toHaveBeenCalled();
     expect(prs.getDockMode()).toBe("split");
   });

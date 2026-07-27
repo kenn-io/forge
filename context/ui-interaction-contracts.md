@@ -311,6 +311,17 @@ Keyboard handlers must have one clear owner for each key press.
   `InlineWorkspaceController` snippet: views get `{paneKey, label}` and pass
   their own `visible` back, and the generation-carrying registry key stays in
   `frontend/` (`frontend/src/lib/stores/workspace-host.svelte.ts`).
+- One embedded workspace view serves every selection on its surface, so anything
+  it hands to a detail pane - the controls snippet, a mid-save busy flag, the
+  launcher overlay's open state - is keyed by `(workspaceId, hostKey)`. An unkeyed
+  flag survives the switch and acts on the next workspace: a popover pinned open by
+  a write that will never report done, or a launcher covering a live terminal
+  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte`).
+- Promoting a session into a pane requires the workspace pane to be ON SCREEN, and
+  that is enforced in `promoteSessionBesideWorkspace`, not per caller: holding a
+  leaf in the stored tree says nothing about being visible, and the view keeps
+  publishing its sessions from a parked host
+  (`packages/ui/src/stores/paneLayout.svelte.ts`).
 - The desktop `.app-main` clips overflow but must never become a scroll
   container; focus-driven scrolling there shifts every mode rail and creates
   matching chrome gaps (`frontend/src/App.svelte::.app-main`).

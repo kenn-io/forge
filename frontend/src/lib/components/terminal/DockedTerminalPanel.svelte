@@ -6,6 +6,7 @@
   import TerminalIcon from "@lucide/svelte/icons/terminal";
   import PanelBottomIcon from "@lucide/svelte/icons/panel-bottom";
   import PanelTopIcon from "@lucide/svelte/icons/panel-top";
+  import PanelRightIcon from "@lucide/svelte/icons/panel-right";
   import Columns2Icon from "@lucide/svelte/icons/columns-2";
   import Rows2Icon from "@lucide/svelte/icons/rows-2";
   import MoveIcon from "@lucide/svelte/icons/move";
@@ -101,6 +102,16 @@
     open && sessions.length > 0 && countLeaves(tree) < MAX_TERMINAL_LEAVES,
   );
   const showSelector = $derived(sessions.length > 1);
+  /**
+   * The session a panel-level "move to a pane" acts on.
+   *
+   * Only for a single docked session: with more than one, every leaf carries its own
+   * header and offers this per session, and a panel-level button would be ambiguous
+   * about which terminal it moves. A single docked terminal has no leaf header at
+   * all, and that is the common case - without this it is the one arrangement with
+   * no way to promote from the dock.
+   */
+  const soleSession = $derived(sessions.length === 1 ? (sessions[0] ?? null) : null);
 
   function labelFor(session: RuntimeSession): string {
     return displayLabels[session.key] ?? session.label;
@@ -208,6 +219,20 @@
       >
         <Rows2Icon size="13" strokeWidth="2" aria-hidden="true" />
       </button>
+      {#if onPromoteSession && soleSession !== null}
+        <button
+          class="panel-action"
+          title="Move to a pane"
+          aria-label={`Move ${labelFor(soleSession)} to a pane`}
+          disabled={disabled}
+          onclick={() => {
+            if (disabled) return;
+            onPromoteSession?.(soleSession.key);
+          }}
+        >
+          <PanelRightIcon size="13" strokeWidth="2" aria-hidden="true" />
+        </button>
+      {/if}
       <button
         class="panel-action"
         title={dock === "bottom" ? "Move to workflow" : "Move to bottom"}

@@ -1,7 +1,11 @@
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 import type { TabbedPanelNode } from "../components/shared/tabbed-panel-layout.js";
 import { pushModalFrame, resetModalStack } from "./keyboard/modal-stack.svelte.js";
-import { PANE_LAYOUT_STORAGE_PREFIX, createPaneLayoutStore } from "./paneLayout.svelte.js";
+import {
+  PANE_LAYOUT_STORAGE_PREFIX,
+  createPaneLayoutStore,
+  promoteSessionBesideWorkspace,
+} from "./paneLayout.svelte.js";
 import { isSessionPaneKey, sessionPaneKey } from "./session-pane-key.js";
 
 const TABS = ["conversation", "files", "workspace"];
@@ -252,6 +256,32 @@ describe("promoted session panes", () => {
     // The pane it split off from is still there: promotion adds a pane, it does
     // not move one.
     expect(layout.hasTab("conversation")).toBe(true);
+  });
+
+  it("promotes beside the workspace pane only while that pane is on screen", () => {
+    const layout = store();
+    const onScreen = { editableTabs: TABS, onScreenTabs: TABS, flattened: false };
+
+    // Nothing rendered yet, so there is no evidence the split would land anywhere
+    // the user can see it.
+    expect(promoteSessionBesideWorkspace(layout, AGENT_PANE)).toBe(false);
+
+    // Present in the tree but not on screen: tabbed behind a sibling, hidden, or
+    // under another leaf's zoom. The view keeps publishing its sessions from the
+    // parked host either way, so this is the only thing that can tell them apart.
+    layout.notePaneRender({ ...onScreen, onScreenTabs: ["conversation"] });
+    expect(promoteSessionBesideWorkspace(layout, AGENT_PANE)).toBe(false);
+
+    // Flattened: one strip for the whole surface, where structural edits are off.
+    layout.notePaneRender({ ...onScreen, flattened: true });
+    expect(promoteSessionBesideWorkspace(layout, AGENT_PANE)).toBe(false);
+    expect(layout.hasTab(AGENT_PANE)).toBe(false);
+
+    layout.notePaneRender(onScreen);
+    expect(promoteSessionBesideWorkspace(layout, AGENT_PANE)).toBe(true);
+    // Its own leaf, not a tab stacked behind the workspace pane, which would look
+    // like the command did nothing.
+    expect(layout.leafIDForTab(AGENT_PANE)).not.toBe("leaf-workspace");
   });
 
   it("refuses to promote a key the surface would prune, or one already in the tree", () => {

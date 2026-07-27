@@ -3,11 +3,7 @@ import { createRawSnippet, type Snippet } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { STORES_KEY } from "../context.js";
 import { resetModalStack } from "../stores/keyboard/modal-stack.svelte.js";
-import {
-  getPaneLayoutStore,
-  promoteSessionBesideWorkspace,
-  resetPaneLayoutStoresForTest,
-} from "../stores/paneLayout.svelte.js";
+import { getPaneLayoutStore, resetPaneLayoutStoresForTest } from "../stores/paneLayout.svelte.js";
 import { sessionPaneKey } from "../stores/session-pane-key.js";
 import { createClaimTestController, createReactiveValue } from "./viewWorkspaceTestDoubles.svelte.js";
 import type { InlineWorkspaceController } from "../workspace-inline.js";
@@ -186,7 +182,15 @@ describe("ActivityFeedView detail panes", () => {
   it("offers the workspace controls in the leaf holding a promoted session", () => {
     const layout = getPaneLayoutStore("activity");
     const paneKey = sessionPaneKey("ws-1", undefined, "ws-1:helper");
-    promoteSessionBesideWorkspace(layout, paneKey);
+    // Placed directly rather than through promoteSessionBesideWorkspace: that
+    // helper refuses until a container has reported the workspace pane on screen,
+    // and this test is about what the view renders once the pane exists.
+    layout.promoteTab(paneKey, {
+      kind: "split",
+      leafID: layout.leafIDForTab("workspace")!,
+      direction: "horizontal",
+      placement: "after",
+    });
     const { controller } = createClaimTestController("activity", {
       sessions: [{ paneKey, label: "Helper" }],
     });

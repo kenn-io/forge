@@ -91,7 +91,7 @@ describe("WorkspacePaneControls", () => {
     hostControls();
     render(WorkspacePaneControls);
     await fireEvent.click(trigger()!);
-    flushSync(() => setWorkspaceControlsBusy(true));
+    flushSync(() => setWorkspaceControlsBusy("ws-1", true));
 
     await fireEvent.pointerDown(document.body);
     await fireEvent.keyDown(window, { key: "Escape" });
@@ -100,8 +100,25 @@ describe("WorkspacePaneControls", () => {
     // popover under it would strand the user not knowing whether it landed.
     expect(screen.getByRole("dialog", { name: "Workspace controls" })).toBeTruthy();
 
-    flushSync(() => setWorkspaceControlsBusy(false));
+    flushSync(() => setWorkspaceControlsBusy("ws-1", false));
     await fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Workspace controls" })).toBeNull();
+  });
+
+  it("is dismissable while another workspace's save is still in flight", async () => {
+    hostControls("ws-1");
+    render(WorkspacePaneControls);
+    await fireEvent.click(trigger()!);
+    // A preset apply started on ws-1 clears its pending flag only while ws-1 is
+    // still the hosted workspace, so a switch mid-save leaves that write reported
+    // forever. Held against the workspace it belongs to, it cannot pin ws-2's
+    // popover open.
+    flushSync(() => setWorkspaceControlsBusy("ws-1", true));
+    flushSync(() => hostControls("ws-2"));
+
+    await fireEvent.click(trigger()!);
+    await fireEvent.keyDown(window, { key: "Escape" });
+
     expect(screen.queryByRole("dialog", { name: "Workspace controls" })).toBeNull();
   });
 

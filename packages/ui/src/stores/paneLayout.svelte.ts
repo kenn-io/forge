@@ -351,11 +351,17 @@ export function createPaneLayoutStore(
  * What every entry point that is not a drag means by "move to a pane": the point
  * of promoting is to see the session next to the work it belongs to, and a tab
  * stacked behind the workspace pane looks like the command did nothing. Shared so
- * the palette command and the dock's own control cannot drift apart. False when
- * the workspace pane is not on screen, which leaves nothing to grow the split
- * from.
+ * the palette command and the dock's own control cannot drift apart.
+ *
+ * The visibility rule is enforced HERE rather than left to each caller: holding a
+ * leaf in the stored tree is not the same as being on screen, and a pane that is
+ * closed, tabbed behind a sibling, or covered by another leaf's zoom would have
+ * the split grow off screen while the view keeps publishing its sessions. False
+ * in all of those, and while flattened, where structural edits are disabled.
  */
 export function promoteSessionBesideWorkspace(layout: PaneLayoutStore, tabKey: string): boolean {
+  const render = layout.paneRender();
+  if (render === null || render.flattened || !render.onScreenTabs.includes("workspace")) return false;
   const leafID = layout.leafIDForTab("workspace");
   if (leafID === null) return false;
   return layout.promoteTab(tabKey, { kind: "split", leafID, direction: "horizontal", placement: "after" });

@@ -441,6 +441,11 @@ function paneIsZoomed(ctx: Context): boolean {
  * sibling, or covered by another leaf's zoom still has one, while the view keeps
  * publishing its sessions from the parked host, so the command would move a
  * terminal the user cannot see. The split also needs a rendered leaf to grow from.
+ *
+ * `promoteSessionBesideWorkspace` refuses on the same grounds, which is what covers
+ * the dock's own control. The check is repeated here because this decides whether
+ * the command is OFFERED: a palette row that does nothing when chosen is worse than
+ * one that is absent.
  */
 function sessionPromotionTarget(ctx: Context): { layout: PaneLayoutStore; paneKey: string } | null {
   const mounted = mountedPaneLayout(ctx);

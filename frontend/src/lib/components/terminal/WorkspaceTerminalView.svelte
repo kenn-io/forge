@@ -567,7 +567,17 @@
   // surface rather than the flatten width: unlike the controls, the overlay is a
   // modal and needs no chrome of its own to live in.
   const launcherMode = $derived(paneSurface !== undefined);
-  let launcherOpen = $state(false);
+  // Launcher and controls state is keyed by workspace identity rather than held as a
+  // bare flag: one embedded view serves every selection on its surface, so a switch
+  // to another workspace would otherwise inherit the previous one's open overlay -
+  // and the once-per-workspace auto-open guard would then refuse to open the one the
+  // new workspace actually needs.
+  const viewWorkspaceKey = $derived(`${workspaceId}\u0000${workspaceHostKey ?? ""}`);
+  // `auto` records who opened it: an overlay the view raised over an empty pane is
+  // its own to take back once there is something to show, while one the user asked
+  // for stays until they dismiss it - they may be picking a second session.
+  let launcherState = $state<{ workspaceKey: string; auto: boolean } | null>(null);
+  const launcherOpen = $derived(launcherState?.workspaceKey === viewWorkspaceKey);
   // Which workspace the overlay auto-opened for, so selecting the same item twice
   // does not reopen a launcher the user dismissed, while a different workspace with
   // no session still gets one.
@@ -578,11 +588,17 @@
       selectWorkspaceTab("home");
       return;
     }
-    launcherOpen = true;
+    launcherState = { workspaceKey: viewWorkspaceKey, auto: false };
+  }
+
+  /** The view's own fallback when a pane has nothing left to render. */
+  function autoOpenLauncher(): void {
+    launcherAutoOpenedFor = viewWorkspaceKey;
+    launcherState = { workspaceKey: viewWorkspaceKey, auto: true };
   }
 
   function closeLauncher(): void {
-    launcherOpen = false;
+    launcherState = null;
   }
 
   /**
@@ -606,7 +622,7 @@
     // The dock counts as something to show: its sessions are not workflow tabs, so
     // a workspace whose only terminal is docked has an empty strip and nothing
     // missing.
-    if (runtimeSessions.length === 0) openLauncher();
+    if (runtimeSessions.length === 0) autoOpenLauncher();
   }
 
   // Reachable from outside the view: the palette command, and a Focus Terminal that
@@ -622,24 +638,29 @@
   // names a tab that no longer exists here. Both resolve the same way: show whatever
   // session is there, and open the launcher when there is none.
   $effect(() => {
-    if (!launcherMode || launcherOpen || !runtimeLive) return;
+    if (!launcherMode || !runtimeLive) return;
     const tabs = workflowTabDescriptors;
     const activeMissing = !tabs.some((tab) => tab.key === activeTabKey);
-    const workspaceKey = `${workspaceId}\u0000${workspaceHostKey ?? ""}`;
+    const workspaceKey = viewWorkspaceKey;
     const anySession = runtimeSessions.length > 0;
+    const openState = launcherState;
+    const autoOpened = launcherAutoOpenedFor === workspaceKey;
     untrack(() => {
-      if (tabs.length > 0) {
-        if (activeMissing) selectWorkspaceTab(tabs[0]!.key);
-        return;
-      }
+      if (tabs.length > 0 && activeMissing) selectWorkspaceTab(tabs[0]!.key);
       // A docked terminal is not a workflow tab but is very much on screen, so an
       // empty strip alone does not mean the workspace has nothing to show.
-      if (anySession) return;
+      if (tabs.length > 0 || anySession) {
+        // Take back what the view opened, and only that: a reconnect, a relaunch,
+        // or a first runtime load that lands before its sessions do all report zero
+        // sessions for a moment, and an auto-opened launcher left over that gap
+        // would then cover the terminal it was standing in for.
+        if (openState?.workspaceKey === workspaceKey && openState.auto) closeLauncher();
+        return;
+      }
       // Once per workspace: reopening a launcher the user dismissed would trap them
       // in it, while a different session-less workspace still gets one.
-      if (launcherAutoOpenedFor === workspaceKey) return;
-      launcherAutoOpenedFor = workspaceKey;
-      launcherOpen = true;
+      if (openState?.workspaceKey === workspaceKey || autoOpened) return;
+      autoOpenLauncher();
     });
   });
 
@@ -656,7 +677,7 @@
   // subject changed.
   $effect(() => {
     if (!controlsInPane) return;
-    const workspaceKey = `${workspaceId}\u0000${workspaceHostKey ?? ""}`;
+    const workspaceKey = viewWorkspaceKey;
     // Untracked because the store compares against what is already registered:
     // reading that inside a tracked effect that also writes it is the read-write
     // loop Svelte aborts with effect_update_depth_exceeded.
@@ -664,9 +685,15 @@
     return () => untrack(() => registerWorkspaceControls(null));
   });
 
+  // Reported against the workspace the controls act on, and released on the way out:
+  // a write started for one workspace only clears its pending flag while that
+  // workspace is still current, so an unkeyed flag could stay set after a switch and
+  // pin the next workspace's popover open for good.
   $effect(() => {
+    const workspaceKey = viewWorkspaceKey;
     const busy = terminalOptionsSaving || terminalZoomSaving || applyingWorkflowPreset;
-    untrack(() => setWorkspaceControlsBusy(controlsInPane && busy));
+    untrack(() => setWorkspaceControlsBusy(workspaceKey, controlsInPane && busy));
+    return () => untrack(() => setWorkspaceControlsBusy(workspaceKey, false));
   });
 
   // The session a keyboard promote acts on: whichever one the user is looking at.
@@ -1705,16 +1732,23 @@
         region: "workflow",
       });
       if (!isCurrentWorkspace(id, hostKey)) return;
-      await fetchRuntime({ force: true });
+      const refreshed = await fetchRuntime({ force: true });
       if (!isCurrentWorkspace(id, hostKey)) return;
       clearClosedSession(session);
       moveSessionToWorkflow(session.key);
       mountSessionTerminal(session.key);
       selectWorkspaceTab(workflowTabKeyForSession(session.key));
-      // Only on success: a failed or cancelled launch has to leave the overlay up
-      // with its error, or the user lands on a pane with nothing in it and no
-      // explanation.
-      closeLauncher();
+      // The launch succeeding is not enough to close on: the pane can only render
+      // what the refreshed runtime reports, so a failed refresh would drop the user
+      // on an empty pane with no explanation. The tab selection above stands either
+      // way, so the session appears as soon as a later refresh finds it.
+      if (refreshed?.sessions.some((candidate) => candidate.key === session.key) === true) {
+        closeLauncher();
+      } else {
+        showFlash("Session launched, but the workspace could not be reloaded", {
+          tone: "danger",
+        });
+      }
     } catch (err) {
       if (!isCurrentWorkspace(id, hostKey)) return;
       showFlash(err instanceof Error ? err.message : "Launch failed", {

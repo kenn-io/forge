@@ -615,7 +615,7 @@ because the overlay does not exist yet.
 - Create: `frontend/src/lib/components/terminal/WorkspaceLauncherOverlay.svelte`
 - Modify: `WorkspaceTerminalView.svelte` (drop `home` from `workflowTabDescriptors:511` **in embedded mode only**, and retarget every `selectWorkspaceTab("home")` for that mode)
 - Modify: `frontend/src/lib/stores/keyboard/actions.ts` (palette command)
-- Test: `frontend/src/lib/components/terminal/WorkspaceLauncherOverlay.test.ts`, `WorkspaceTerminalView.test.ts`
+- Test: `frontend/src/lib/components/terminal/WorkspaceLauncherOverlay.test.ts`, `WorkspaceTerminalView.test.ts`, `frontend/tests/e2e-full/00-workspace-launcher.spec.ts`
 
 The overlay wraps today's `WorkspaceHome` body, pushes a modal frame, auto-opens when the workspace has no sessions, and closes when one launches.
 
@@ -625,6 +625,27 @@ being perfectly visible. Auto-open, and the fallback when the active tab vanishe
 both key off `runtimeSessions`, not off the tab list - an overlay over a live
 terminal covers the thing the user came for.
 
+**Acceptance coverage lands here, not in Task 10.** Deleting the `Home` tab makes
+this overlay the only route to a first session, so "a launch from the overlay
+produces a live terminal" is this task's deliverable rather than a later e2e sweep.
+The unit lane cannot prove it: it mocks the launch call and the runtime refresh, so
+a launch that never reaches tmux passes there. The real-backend spec covers the
+round trip a maintainer takes - a session-less workspace auto-opens the overlay,
+launching a shell closes it and leaves a shell that executes a command, and the
+pane controls popover reopens it afterwards without disturbing that terminal.
+
+**Closing the overlay is gated on the refreshed runtime**, not on the launch call
+resolving. The pane can only render what the runtime reports, so closing on a
+failed reload would drop the user on an empty pane with the error out of sight.
+
+**The overlay belongs to a workspace, not to the view.** One embedded view serves
+every selection on its surface, so both the open state and the once-per-workspace
+auto-open guard are keyed by `(workspaceId, hostKey)`; a bare flag carries an open
+launcher onto the next workspace's live terminal and then refuses to open the one
+that workspace needs. An overlay the VIEW raised over an empty pane also closes
+itself once a session appears - a reconnect or a slow first load reports zero
+sessions for a moment - while one the user asked for stays until they dismiss it.
+
 **A modal blocks pane zoom** (`toggleZoom` refuses while a frame is open), so every
 test that maximizes or expands a pane in a session-less workspace has to dismiss the
 launcher first. That is the app's own rule, not test scaffolding.
@@ -632,7 +653,7 @@ launcher first. That is the app's own rule, not test scaffolding.
 - [x] **Step 1** Failing tests: embedded mode has no `Home` tab while the standalone Workspaces tab still does; the overlay auto-opens for a session-less workspace, and not while a docked terminal is on screen; a successful launch closes it; a failed launch leaves it open with the error rather than stranding the user on an empty workspace; the palette gets an opener only while a pane hosts the workspace; `Focus Terminal` opens it when there is nothing to focus.
 - [x] **Step 2** Run `../node_modules/.bin/vp test --project unit WorkspaceLauncherOverlay WorkspaceTerminalView workspace-host actions.test`. Expected FAIL.
 - [x] **Step 3** Implement. Every current `selectWorkspaceTab("home")` becomes `selectFallbackTab()`: the first remaining workflow tab, else the launcher when the workspace has nothing running at all.
-- [x] **Step 4** Same command, plus `--project browser WorkspaceHost.browser` and the affected real-backend specs (continuity, detail-action-buttons). Expected PASS.
+- [x] **Step 4** Same command, plus `--project browser WorkspaceHost.browser`, the new `00-workspace-launcher` real-backend spec, and the affected existing ones (continuity, detail-action-buttons). Expected PASS.
 - [x] **Step 5** Commit.
 
 ---
@@ -666,11 +687,12 @@ launcher first. That is the app's own rule, not test scaffolding.
 - Last-focused session is tracked per workspace and survives promotion, demotion, and selection changes.
 - On session **deletion** or workspace deletion, drop that session's pane from every surface's stored tree. An exit or a stop does **not**: it disposes that generation's live subtree and leaves the placement alone, which is what lets a relaunch reappear in the pane the user put it in.
 - Dispose registry entries for a workspace that no surface claims and the Workspaces tab is not showing: parked terminals hold live websockets, so browsing past ten items must not leave ten connections open.
-- Purge boundary for records the deletion path could not reach: when a workspace is next hosted, drop stored session panes whose key is absent from its runtime. A session deleted while no surface was mounted would otherwise leave a pane record forever, and recreating a session of that name would inherit a placement the user set for a different one.
-- Between generations - a relaunch, a reconnect - the pane renders nothing for that flush and keeps its tab: the pool hands over the new subtree within the same update, so a spinner would flicker. Permanently gone is the purge rule above, not an indefinitely blank pane.
+- Purge only on an authoritative deletion signal: the session-delete and workspace-delete paths the frontend drives, and a workspace whose load comes back 404. Absence from the runtime is **not** that signal, and the retention rule above depends on the difference - a stop, an exit, a reconnect gap, and a runtime load that failed outright all present as the same absence, so purging on it would throw away exactly the placements a relaunch is supposed to return to. Before treating a successful load as authoritative, verify against `/workspaces/{id}/runtime` whether stopped and exited sessions stay listed; only if they do is absence from a load that **succeeded** equivalent to deletion, and absence while the load failed never is.
+- What deletion cannot reach stays: a session deleted while no surface was mounted leaves its pane in the stored tree until the user demotes it or resets the surface. That is bounded by what the user promoted by hand, so it does not need a cap - and a cap would silently remove a pane the user placed, which is worse than a stale one they can drag away.
+- Between generations - a relaunch, a reconnect - the pane renders nothing for that flush and keeps its tab: the pool hands over the new subtree within the same update, so a spinner would flicker. Permanently gone means deleted, not an indefinitely blank pane.
 
-- [ ] **Step 1** Failing tests, one per bullet, including: a stored pane whose session is missing from the hosted workspace's runtime is purged on the next host; deleting a workspace with two promoted panes leaves no session keys in any surface's stored tree; collapsing and expanding a workspace with one promoted pane restores that pane rather than the default tree; selecting three items in turn leaves only the current workspace's terminals in the registry; `noteFocused` accepts a well-formed session pane key and still rejects a malformed one; focusing a promoted pane and focusing the container both update the workspace's last-focused session.
-- [ ] **Step 2** Run `../node_modules/.bin/vp test --project unit workspace-host paneLayout PRListView IssueListView ActivityFeedView`. Expected FAIL. (This task spans the store, the pane layout, and all three views; `workspace-host` alone would miss most of it.)
+- [ ] **Step 1** Failing tests, one per bullet. Deletion and retention need pairs, because a test for the destructive half alone passes just as well against a rule that throws away every placement: deleting a session drops its pane from every surface's stored tree, and deleting a workspace with two promoted panes leaves no session keys behind - while stopping a session, exiting one, a reconnect that briefly reports no sessions, and a runtime load that fails all keep the pane, and a session relaunched under a reused name lands back in it. Then: collapsing and expanding a workspace with one promoted pane restores that pane rather than the default tree; selecting three items in turn leaves only the current workspace's terminals in the registry; `noteFocused` accepts a well-formed session pane key and still rejects a malformed one; focusing a promoted pane and focusing the container both update the workspace's last-focused session.
+- [ ] **Step 2** Run `../node_modules/.bin/vp test --project unit workspace-host paneLayout WorkspaceTerminalView PRListView IssueListView ActivityFeedView`. Expected FAIL. (This task spans the store, the pane layout, the view that owns the runtime and the deletion paths, and all three views; `workspace-host` alone would miss most of it.)
 - [ ] **Step 3** Implement.
 - [ ] **Step 4** Same command. Expected PASS.
 - [ ] **Step 5** Commit.
@@ -682,7 +704,6 @@ launcher first. That is the app's own rule, not test scaffolding.
 **Files:**
 
 - Modify: `frontend/tests/e2e-full/00-inline-workspace-continuity.spec.ts`
-- Create: `frontend/tests/e2e-full/00-workspace-launcher.spec.ts`
 - Modify: `frontend/src/App.pane-commands.browser.svelte.ts` (the owed push-vs-replace history cases)
 - Modify: `context/ui-interaction-contracts.md`, `context/ui-design-system.md`
 - Modify: `docs/superpowers/plans/2026-07-26-session-panes.md` (check the boxes)
@@ -691,15 +712,11 @@ The real-backend spec is the only place that proves liveness against a real tmux
 
 The first of these landed early, with Task 3: "a pooled workflow session keeps its live tmux shell while its host is reparented" moves a real shell out of the dock and follows it through the Workspaces-tab-to-detail-pane reparent and back. Once the dock was pooled that same move became a real slot-to-slot transfer, so the test now also asserts the moved terminal's registry key reappears inside the destination slot — the coverage this task was holding for want of two live slots. Pooling changed how every workflow session renders, so it needed real-backend proof then rather than at the end — the browser-tier pool tests all mount exited sessions and cannot show a websocket surviving.
 
-**The launcher needs the real backend too.** Deleting the `Home` tab makes the
-overlay the only route to a first session, and the mock lane cannot prove a
-launch produces one: today's full-stack launch coverage is
-`00-workspace-sidebar.spec.ts:135`, which only asserts that the example surface's
-buttons are disabled. Add a spec covering the round trip a maintainer actually
-takes — a workspace with no sessions auto-opens the overlay, launching a shell
-from it closes the overlay and leaves a live terminal, and the controls popover
-reopens the overlay from inside that shell. Without it the mode has a reachable
-dead end: no tab, and an overlay whose only opener is untested.
+**The launcher's own spec landed with Task 8**, as
+`frontend/tests/e2e-full/00-workspace-launcher.spec.ts`: deleting the `Home` tab is
+what makes that overlay the only route to a first session, so proving the launch
+round trip was that task's deliverable rather than a later sweep. Nothing about it
+is owed here.
 
 Context edits, terse per `context-guide.md`:
 
@@ -715,9 +732,9 @@ covers command availability, not Back-stack behaviour. The tabbed-behind case
 needs a third pane in the leaf, so it wants a claimed workspace: schedule it after
 Task 6, when a promoted session gives the views a third pane without one.
 
-- [ ] **Step 1** Update the continuity spec's selectors, add its three promotion cases, and write `00-workspace-launcher.spec.ts`.
+- [ ] **Step 1** Update the continuity spec's selectors and add its three promotion cases.
 - [ ] **Step 1b** Add the two owed history cases to `frontend/src/App.pane-commands.browser.svelte.ts` (renaming it if it outgrows the name): with the route panes split apart, maximizing one leaf makes moving to the other push rather than replace; and with a promoted session tabbed in beside the conversation and active, clicking the Files tab pushes. Assert on `window.history.length` or a Back that returns to the previous pane, not on the store.
-- [ ] **Step 2** Run `../node_modules/.bin/vp exec playwright test --config playwright-e2e.config.ts --project=chromium tests/e2e-full/00-inline-workspace-continuity.spec.ts tests/e2e-full/00-workspace-launcher.spec.ts`. Expected PASS.
+- [ ] **Step 2** Run `../node_modules/.bin/vp exec playwright test --config playwright-e2e.config.ts --project=chromium tests/e2e-full/00-inline-workspace-continuity.spec.ts tests/e2e-full/00-workspace-launcher.spec.ts`. Expected PASS. (The launcher spec is included even though it landed earlier: the promotion cases share its pane layout and serial page.)
 - [ ] **Step 3** Full gate: `../node_modules/.bin/vp test`, both Playwright configs whole, `svelte-check`, `make lint`.
 - [ ] **Step 4** Capture a screenshot of a promoted session pane with the `capture-playwright` skill for the PR body.
 - [ ] **Step 5** Commit.

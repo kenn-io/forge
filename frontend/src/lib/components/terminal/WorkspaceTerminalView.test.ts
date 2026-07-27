@@ -418,6 +418,23 @@ function persistedTwoSessionWorkflowLayout(firstKey: string, secondKey: string) 
  * embedded view exists: the session publication is surface-scoped, so a command
  * cannot reach a terminal rendered on a page the user is not looking at.
  */
+/**
+ * What the surface's container reports while the workspace pane is on screen.
+ *
+ * Promotion refuses without it, because a pane can hold a leaf in the stored tree
+ * while rendering nothing (closed, tabbed behind a sibling, under another leaf's
+ * zoom), and growing a split off screen looks to the user like the control failed.
+ * The container notes this from its own render; a view rendered on its own here has
+ * to stand in for it.
+ */
+function noteWorkspacePaneRendered(surface: "prs" | "issues" | "activity"): void {
+  getPaneLayoutStore(surface).notePaneRender({
+    editableTabs: ["conversation", "workspace"],
+    onScreenTabs: ["conversation", "workspace"],
+    flattened: false,
+  });
+}
+
 function claimForPrs(): void {
   navigate("/pulls");
   getInlineWorkspaceController("prs").claim(
@@ -2672,6 +2689,84 @@ describe("WorkspaceTerminalView", () => {
       expect(await screen.findByRole("tab", { name: /Helper/ })).toBeTruthy();
     });
 
+    it("takes back an auto-opened launcher once a session shows up", async () => {
+      const eventListeners: Record<string, () => void> = {};
+      vi.stubGlobal(
+        "EventSource",
+        class {
+          addEventListener(type: string, callback: () => void): void {
+            eventListeners[type] = callback;
+          }
+          close(): void {}
+        },
+      );
+      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
+      claimForPrs();
+
+      render(WorkspaceTerminalView, {
+        props: {
+          workspaceId: "ws-1",
+          paneSurface: "prs" as const,
+        },
+      });
+
+      await screen.findByRole("dialog", { name: /Launch a session/ });
+
+      // A reconnect (or a first runtime load that lands before its sessions do)
+      // reports zero sessions for a moment. The launcher opened over that gap is
+      // ours to take back, or it sits on top of the terminal it stood in for.
+      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithStaleSession());
+      eventListeners["reconnect.stale"]?.();
+
+      expect(await screen.findByRole("tab", { name: /Helper/ })).toBeTruthy();
+      await waitFor(() => expect(screen.queryByRole("dialog", { name: /Launch a session/ })).toBeNull());
+    });
+
+    it("keeps the launcher up when the reload after a launch fails", async () => {
+      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
+      claimForPrs();
+
+      render(WorkspaceTerminalView, {
+        props: {
+          workspaceId: "ws-1",
+          paneSurface: "prs" as const,
+        },
+      });
+
+      const dialog = await screen.findByRole("dialog", { name: /Launch a session/ });
+      mocks.launchWorkspaceSession.mockResolvedValueOnce(runningSession);
+      mocks.getWorkspaceRuntime.mockRejectedValueOnce(new Error("runtime unavailable"));
+      await fireEvent.click(within(dialog).getByRole("button", { name: /Helper/ }));
+
+      // The session did start, but the pane can only render what the runtime
+      // reports: closing here would leave an empty pane and no explanation.
+      await waitFor(() => expect(mocks.showFlash).toHaveBeenCalled());
+      expect(screen.getByRole("dialog", { name: /Launch a session/ })).toBeTruthy();
+    });
+
+    it("does not carry an open launcher into the next workspace", async () => {
+      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
+      claimForPrs();
+
+      const { rerender } = render(WorkspaceTerminalView, {
+        props: {
+          workspaceId: "ws-1",
+          paneSurface: "prs" as const,
+        },
+      });
+
+      await screen.findByRole("dialog", { name: /Launch a session/ });
+
+      // One embedded view serves every selection on the surface, so the overlay
+      // has to belong to the workspace it was opened for - otherwise it covers the
+      // next one's live terminal, and the once-per-workspace guard would refuse to
+      // open the launcher that workspace actually needs.
+      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithStaleSession());
+      await rerender({ workspaceId: "ws-2", paneSurface: "prs" as const });
+
+      await waitFor(() => expect(screen.queryByRole("dialog", { name: /Launch a session/ })).toBeNull());
+    });
+
     it("hands the palette an opener only while a pane is hosting the workspace", async () => {
       mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithStaleSession());
       claimForPrs();
@@ -2848,6 +2943,7 @@ describe("WorkspaceTerminalView", () => {
       // once the dock holds more than one session.
       mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoTerminalSessions());
       claimForPrs();
+      noteWorkspacePaneRendered("prs");
 
       render(WorkspaceTerminalView, {
         props: {
@@ -2869,6 +2965,35 @@ describe("WorkspaceTerminalView", () => {
       // And masked out of the dock it came from; where the dock puts what is left
       // is the masking tests' subject, not this one's.
       await waitFor(() => expect(screen.queryByRole("button", { name: "Move Shell to a pane" })).toBeNull());
+    });
+
+    it("promotes the only docked session from the panel header", async () => {
+      localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+      localStorage.setItem(
+        "middleman-workspace-terminal-layout:ws-1",
+        persistedSplitWorkflowLayout("ws-1_shell_a", "terminal"),
+      );
+      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTerminalSession());
+      claimForPrs();
+      noteWorkspacePaneRendered("prs");
+
+      render(WorkspaceTerminalView, {
+        props: {
+          workspaceId: "ws-1",
+          paneSurface: "prs" as const,
+        },
+      });
+
+      // One docked terminal is the common arrangement and renders no per-session
+      // leaf header, so the panel's own actions are the only place its promote
+      // control can live.
+      const promote = await screen.findByRole("button", { name: "Move Shell to a pane" });
+      await fireEvent.click(promote);
+
+      const layout = getPaneLayoutStore("prs");
+      const paneKey = sessionPaneKey("ws-1", undefined, "ws-1_shell_a");
+      expect(layout.hasTab(paneKey)).toBe(true);
+      expect(layout.leafIDForTab(paneKey)).not.toBe(layout.leafIDForTab("workspace"));
     });
 
     it("offers no promote control on the standalone Workspaces tab", async () => {

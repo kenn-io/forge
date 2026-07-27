@@ -84,11 +84,12 @@ type CreateAdHocOptions struct {
 }
 
 // WorkspaceBranchConflictError reports that the requested workspace branch
-// already exists locally, so the caller must either reuse it or choose a
-// different name before a new middleman workspace can be created.
+// already exists locally. ExistingDirectory means the deterministic workspace
+// path is occupied, so choosing another branch cannot resolve the conflict.
 type WorkspaceBranchConflictError struct {
-	Branch          string
-	SuggestedBranch string
+	Branch            string
+	SuggestedBranch   string
+	ExistingDirectory bool
 }
 
 func (e *WorkspaceBranchConflictError) Error() string {
@@ -138,7 +139,7 @@ const (
 	workspaceSetupStageWorktree    = "worktree"
 	workspaceSetupStageTmuxSession = "tmux_session"
 	workspaceBranchUnknown         = "__middleman_unknown__"
-	workspaceBranchRecoveryPending = "__middleman_recovery_pending__"
+	workspaceBranchRecoveryPending = "__middleman_recovery_pending__..state"
 	tmuxCaptureScrollbackLines     = 160
 )
 
@@ -442,9 +443,17 @@ func (m *Manager) CreateIssue(
 	)
 	if directoryErr == nil {
 		if !opts.ReuseExistingDirectory {
-			return nil, workspaceBranchConflict(
+			suggested, err := nextAvailableBranchName(
 				ctx, ws.WorktreePath, existingDirectoryBranch,
 			)
+			if err != nil {
+				return nil, fmt.Errorf("suggest branch name: %w", err)
+			}
+			return nil, &WorkspaceBranchConflictError{
+				Branch:            existingDirectoryBranch,
+				SuggestedBranch:   suggested,
+				ExistingDirectory: true,
+			}
 		}
 		if existingDirectoryBranch != gitHeadRef {
 			return nil, &WorkspaceDirectoryRecoveryError{

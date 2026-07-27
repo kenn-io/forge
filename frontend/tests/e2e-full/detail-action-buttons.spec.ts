@@ -364,12 +364,14 @@ test.describe("detail action buttons", () => {
       branch: "middleman/issue-10",
       button: "Use Existing Branch",
       reusePayload: { reuse_existing_branch: true },
+      existingDirectory: false,
     },
     {
       name: "recover the existing Middleman directory",
       branch: "middleman/issue-10-original-title",
       button: "Use Existing Directory",
       reusePayload: { reuse_existing_directory: true },
+      existingDirectory: true,
     },
   ] as const) {
     test(`issue workspace conflict dialog can ${scenario.name}`, async ({ page }) => {
@@ -393,6 +395,7 @@ test.describe("detail action buttons", () => {
         title: "Issue workspace branch conflict",
         status: 409,
         detail: "A local branch with the requested name already exists.",
+        details: { existingDirectory: scenario.existingDirectory },
         errors: [
           {
             message: "Requested branch already exists",
@@ -483,11 +486,17 @@ test.describe("detail action buttons", () => {
       await page.locator(".btn--workspace").click();
 
       const dialog = page.getByRole("dialog", {
-        name: "Branch Name Conflict",
+        name: scenario.existingDirectory ? "Existing Workspace Directory" : "Branch Name Conflict",
       });
       await expect(dialog).toBeVisible();
       await expect(dialog).toContainText(scenario.branch);
-      await expect(dialog.locator("#issue-workspace-branch-name")).toHaveValue(`${scenario.branch}-2`);
+      if (scenario.existingDirectory) {
+        await expect(dialog.getByRole("button", { name: "Use Existing Branch" })).toHaveCount(0);
+        await expect(dialog.getByRole("button", { name: "Create New Branch" })).toHaveCount(0);
+        await expect(dialog.locator("#issue-workspace-branch-name")).toHaveCount(0);
+      } else {
+        await expect(dialog.locator("#issue-workspace-branch-name")).toHaveValue(`${scenario.branch}-2`);
+      }
 
       await dialog.getByRole("button", { name: scenario.button }).click();
 

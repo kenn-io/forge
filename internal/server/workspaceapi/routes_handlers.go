@@ -439,8 +439,9 @@ func (s *Handler) createIssueWorkspace(
 				httpapi.CodeBranchConflict,
 				"A local branch with the requested name already exists.",
 				map[string]any{
-					"branch":          branchConflict.Branch,
-					"suggestedBranch": branchConflict.SuggestedBranch,
+					"branch":            branchConflict.Branch,
+					"suggestedBranch":   branchConflict.SuggestedBranch,
+					"existingDirectory": branchConflict.ExistingDirectory,
 				},
 			)
 			conflict.Type = issueWorkspaceBranchConflictType

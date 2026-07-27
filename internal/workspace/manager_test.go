@@ -674,6 +674,65 @@ func TestCreateIssueRecoversExpectedExistingDirectory(t *testing.T) {
 	assert.Contains(status, "?? untracked.txt")
 }
 
+func TestIssueWorkspaceBranchDoesNotCollideWithRecoveryState(t *testing.T) {
+	require.Error(t, validateLocalBranchName(
+		t.Context(), "", workspaceBranchRecoveryPending,
+	))
+
+	for _, recoverExisting := range []bool{false, true} {
+		name := "new workspace"
+		if recoverExisting {
+			name = "recovered workspace"
+		}
+		t.Run(name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+
+			d := openTestDB(t)
+			worktreeRoot := t.TempDir()
+			localRepo, _, platformHost := setupHTTPWorktreeBaseForWorkspaceGitTest(
+				t, "feature/base",
+			)
+			repoID := seedRepo(t, d, platformHost, "acme", "widget")
+			seedIssue(t, d, repoID, 7, "")
+
+			const branch = "__middleman_recovery_pending__"
+			expectedPath := filepath.Join(
+				worktreeRoot, "github", platformHost, "acme", "widget", "issue-7",
+			)
+			if recoverExisting {
+				runWorkspaceTestGit(
+					t, localRepo,
+					"worktree", "add", expectedPath, "-b", branch, "HEAD",
+				)
+			}
+
+			mgr := NewManager(d, worktreeRoot)
+			mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
+			tmuxScript, _ := writeRecorderScript(t)
+			mgr.SetTmuxCommand([]string{tmuxScript})
+			ws, err := mgr.CreateIssue(
+				t.Context(), platformHost, "acme", "widget", 7,
+				CreateIssueOptions{
+					Provider:               "github",
+					GitHeadRef:             branch,
+					ReuseExistingDirectory: recoverExisting,
+				},
+			)
+			require.NoError(err)
+			require.NoError(mgr.Setup(t.Context(), ws))
+			assert.Equal(branch, ws.WorkspaceBranch)
+			assert.Equal("ready", ws.Status)
+			assert.False(workspaceRequiresExistingDirectory(ws))
+
+			dirty, err := mgr.Delete(t.Context(), ws.ID, true, nil)
+			require.NoError(err)
+			assert.Empty(dirty)
+			assert.NoDirExists(expectedPath)
+		})
+	}
+}
+
 func TestCreateIssueRecoveryRejectsInvalidExpectedDirectory(t *testing.T) {
 	tests := []struct {
 		name       string

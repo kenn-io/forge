@@ -197,7 +197,7 @@ func TestIssueWorkspaceDirectoryRecoveryReasons(t *testing.T) {
 	}
 }
 
-func TestIssueWorkspaceConflictReportsRecoverableDirectoryBranch(t *testing.T) {
+func TestIssueWorkspaceConflictRejectsAlternateBranchForExistingDirectory(t *testing.T) {
 	t.Parallel()
 	acquireWorkspaceGitSlot(t)
 
@@ -222,6 +222,8 @@ func TestIssueWorkspaceConflictReportsRecoverableDirectoryBranch(t *testing.T) {
 	problem := resp.ApplicationproblemJSONDefault
 	require.NotNil(problem)
 	assert.Equal(generated.BranchConflict, problem.Code)
+	require.NotNil(problem.Details)
+	assert.Equal(true, (*problem.Details)["existingDirectory"])
 	require.NotNil(problem.Errors)
 	locations := map[string]any{}
 	for _, detail := range *problem.Errors {
@@ -230,6 +232,25 @@ func TestIssueWorkspaceConflictReportsRecoverableDirectoryBranch(t *testing.T) {
 		}
 	}
 	assert.Equal(branch, locations["body.git_head_ref"])
+
+	alternateBranch := branch + "-2"
+	resp, err = fixture.client.HTTP.CreateIssueWorkspaceWithResponse(
+		t.Context(), "gh", "acme", "widget", 7,
+		generated.CreateIssueWorkspaceInputBody{GitHeadRef: &alternateBranch},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusConflict, resp.StatusCode(), string(resp.Body))
+	problem = resp.ApplicationproblemJSONDefault
+	require.NotNil(problem)
+	assert.Equal(generated.BranchConflict, problem.Code)
+	require.NotNil(problem.Details)
+	assert.Equal(true, (*problem.Details)["existingDirectory"])
+
+	workspace, getErr := fixture.database.GetWorkspaceByIssueForProvider(
+		t.Context(), "github", "github.com", "acme", "widget", 7,
+	)
+	require.NoError(getErr)
+	assert.Nil(workspace)
 }
 
 func TestIssueWorkspaceRejectsConflictingReuseOptions(t *testing.T) {

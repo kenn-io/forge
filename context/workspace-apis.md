@@ -32,14 +32,14 @@ embedder protocol for arbitrary host state.
   issue-backed workspace; these start from the repo's current `origin/HEAD`,
   not from a PR head branch.
   - Directory recovery accepts no path and applies only when the workspace row
-    is absent; a valid deterministic worktree conflicts with its actual branch
-    (`internal/workspace/manager.go::Manager.CreateIssue`).
+    is absent; an occupied deterministic path conflicts with its actual branch,
+    and choosing another branch cannot relocate it (`internal/workspace/manager.go::Manager.CreateIssue`).
   - Recovery validates repository provenance before persistence and again during
     setup; the managed clone's deterministic path is not identity without a
     matching origin (`internal/workspace/manager.go::Manager.existingWorktreeUsesManagedClone`).
-  - Pending recovery must adopt that directory without create/cleanup fallback;
-    retry/delete preserve it until setup atomically publishes branch and ready
-    status (`internal/workspace/manager.go::workspaceRequiresExistingDirectory`).
+  - Pending recovery uses a Git-invalid branch marker and must adopt that
+    directory without create/cleanup fallback; retry/delete preserve it until setup
+    publishes the real branch and ready status (`internal/workspace/manager.go::workspaceRequiresExistingDirectory`).
 - `POST /repo/{provider}/{owner}/{name}/workspaces`: create or reuse an ad-hoc
   workspace for new work with no source item. Its branch is its identity: the
   item key is `adhoc:<branch>` and `item_number` stays 0, so item-key fallbacks

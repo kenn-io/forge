@@ -659,6 +659,30 @@ func (e WorkflowStateMetaResponseStatus) Valid() bool {
 	}
 }
 
+// Defines values for WorkspaceResponseAgentState.
+const (
+	Approval WorkspaceResponseAgentState = "approval"
+	Idle     WorkspaceResponseAgentState = "idle"
+	Input    WorkspaceResponseAgentState = "input"
+	Working  WorkspaceResponseAgentState = "working"
+)
+
+// Valid indicates whether the value is a known member of the WorkspaceResponseAgentState enum.
+func (e WorkspaceResponseAgentState) Valid() bool {
+	switch e {
+	case Approval:
+		return true
+	case Idle:
+		return true
+	case Input:
+		return true
+	case Working:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for WorkspaceResponseEnrichmentStatus.
 const (
 	Failed        WorkspaceResponseEnrichmentStatus = "failed"
@@ -3928,11 +3952,15 @@ type WorkspaceRef struct {
 // WorkspaceResponse defines model for WorkspaceResponse.
 type WorkspaceResponse struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema             *string `json:"$schema,omitempty"`
-	AssociatedPrNumber *int64  `json:"associated_pr_number,omitempty"`
-	CommitsAhead       *int64  `json:"commits_ahead,omitempty"`
-	CommitsBehind      *int64  `json:"commits_behind,omitempty"`
-	CreatedAt          string  `json:"created_at"`
+	Schema *string `json:"$schema,omitempty"`
+
+	// AgentState Hook-reported aggregate state for live agent sessions. Omitted when no live session has reported lifecycle state.
+	AgentState          *WorkspaceResponseAgentState `json:"agent_state,omitempty"`
+	AgentStateUpdatedAt *string                      `json:"agent_state_updated_at,omitempty"`
+	AssociatedPrNumber  *int64                       `json:"associated_pr_number,omitempty"`
+	CommitsAhead        *int64                       `json:"commits_ahead,omitempty"`
+	CommitsBehind       *int64                       `json:"commits_behind,omitempty"`
+	CreatedAt           string                       `json:"created_at"`
 
 	// EnrichmentError Combined error from the most recent reconciliation attempt; populated component fields may still contain last-known-good values.
 	EnrichmentError *string `json:"enrichment_error,omitempty"`
@@ -3969,6 +3997,9 @@ type WorkspaceResponse struct {
 	TmuxWorking        bool                              `json:"tmux_working"`
 	WorktreePath       string                            `json:"worktree_path"`
 }
+
+// WorkspaceResponseAgentState Hook-reported aggregate state for live agent sessions. Omitted when no live session has reported lifecycle state.
+type WorkspaceResponseAgentState string
 
 // WorkspaceResponseEnrichmentStatus Aggregate git-divergence and tmux-activity reconciliation status. Failed responses retain last-known-good component fields when available.
 type WorkspaceResponseEnrichmentStatus string

@@ -67,6 +67,17 @@ func TestTmuxLauncherAgentOperationsKeepEnvValuesOutOfArgv(t *testing.T) {
 	assert.NotContains(scriptText, "secret-value")
 }
 
+func TestTmuxPaneEnvironmentExtraReplacesInheritedValue(t *testing.T) {
+	pane := tmuxAgentEnvPolicy.paneEnvironmentWithExtra(
+		[]string{"PATH=/usr/bin", "MIDDLEMAN_RUNTIME_SESSION_KEY=parent"},
+		[]string{"/bin/sh"}, nil,
+		map[string]string{"MIDDLEMAN_RUNTIME_SESSION_KEY": "child"},
+	)
+
+	assert.Contains(t, pane.commandEnv, "MIDDLEMAN_RUNTIME_SESSION_KEY=child")
+	assert.NotContains(t, pane.commandEnv, "MIDDLEMAN_RUNTIME_SESSION_KEY=parent")
+}
+
 func TestTmuxLauncherCanHideStatusOnNewSessions(t *testing.T) {
 	assert := assert.New(t)
 

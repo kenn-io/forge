@@ -49,16 +49,17 @@ type workspaceEnrichmentProbeResult struct {
 
 func (s *Handler) toCachedWorkspaceResponse(
 	summary *db.WorkspaceSummary,
-) workspaceResponse {
-	resp := toWorkspaceResponse(summary)
+) (resp workspaceResponse) {
+	resp = toWorkspaceResponse(summary)
+	defer s.applyAgentActivity(&resp, summary)
 	resp.Repo = s.repoRefFromParts(
 		summary.Platform, summary.PlatformHost, summary.RepoOwner, summary.RepoName,
 	)
 	if s.workspaceEnrichmentDisabled {
-		return resp
+		return
 	}
 	if s.workspaces == nil || summary.Status != "ready" {
-		return resp
+		return
 	}
 
 	entry, refreshDue := s.cachedWorkspaceEnrichment(summary.ID)
@@ -66,7 +67,7 @@ func (s *Handler) toCachedWorkspaceResponse(
 	if refreshDue {
 		s.scheduleWorkspaceEnrichment(*summary)
 	}
-	return resp
+	return
 }
 
 func (s *Handler) workspaceResponseFromEnrichmentCacheEntry(

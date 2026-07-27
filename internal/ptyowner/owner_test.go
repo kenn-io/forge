@@ -396,17 +396,22 @@ func TestOwnerHelperEnvironmentStripsCredentials(t *testing.T) {
 	}, out)
 }
 
-func TestClientOwnerHelperEnvironmentStripsConfiguredVariables(t *testing.T) {
-	client := Client{StripEnvVars: []string{"WORKSPACE_TOKEN"}}
+func TestClientOwnerHelperEnvironmentAppliesSessionEnvironmentPolicy(t *testing.T) {
+	client := Client{
+		StripEnvVars: []string{"WORKSPACE_TOKEN"},
+		ExtraEnv:     map[string]string{"MIDDLEMAN_RUNTIME_SESSION_KEY": "runtime-1"},
+	}
 	out := client.ownerHelperEnvironment([]string{
 		"PATH=/usr/bin",
 		"WORKSPACE_TOKEN=secret",
+		"MIDDLEMAN_RUNTIME_SESSION_KEY=stale-runtime",
 		"KEEP=value",
 	})
 
 	require.ElementsMatch(t, []string{
 		"PATH=/usr/bin",
 		"KEEP=value",
+		"MIDDLEMAN_RUNTIME_SESSION_KEY=runtime-1",
 	}, out)
 }
 

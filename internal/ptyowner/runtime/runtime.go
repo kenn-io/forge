@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"go.kenn.io/middleman/internal/agentactivity"
 	"go.kenn.io/middleman/internal/ptyowner"
 )
 
@@ -102,6 +103,9 @@ func (o owner) Start(
 	client := *o.client
 	client.ExeArgs = append([]string(nil), o.client.ExeArgs...)
 	client.Command = resolvedCommand
+	client.ExtraEnv = map[string]string{
+		agentactivity.RuntimeSessionKeyEnv: session,
+	}
 	client.StripEnvVars = append(
 		append([]string(nil), o.client.StripEnvVars...),
 		stripEnvVars...,

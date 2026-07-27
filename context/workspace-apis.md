@@ -233,6 +233,18 @@ Before writing, middleman ignores the generated path through the worktree's
 private exclude file, not tracked `.gitignore`. If the path would remain
 visible to Git, the write fails.
 
+## Agent Activity Hooks
+
+- `middleman agent-hook install` merges user-level Claude/Codex hooks, and
+  uninstall removes only its handlers; Codex hook trust stays explicit
+  (`internal/agentactivity/integration.go::Install`).
+- Reports apply only when the runtime-session key and worktree match a live
+  agent. Priority is approval, input, working, idle; reported idle overrides
+  tmux inference, while missing reports retain it
+  (`internal/server/workspaceapi/routes_handlers.go::applyAgentActivity`).
+- Hook errors fail open, and session end removes its report
+  (`internal/agentactivity/store.go::Store.HandleHook`).
+
 ## Diff Scopes
 
 Workspace diffs compare against local `HEAD`, the pushed branch, or a merge

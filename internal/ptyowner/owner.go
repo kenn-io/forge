@@ -34,6 +34,7 @@ type Options struct {
 	Cwd          string
 	Command      []string
 	StripEnvVars []string
+	ExtraEnv     map[string]string
 }
 
 type owner struct {
@@ -86,7 +87,9 @@ func RunOwner(ctx context.Context, opts Options) error {
 
 	cmd := p.Command(command[0], command[1:]...)
 	cmd.Dir = opts.Cwd
-	cmd.Env = sessionEnvironment(os.Environ(), opts.StripEnvVars)
+	cmd.Env = mergeEnvironment(
+		sessionEnvironment(os.Environ(), opts.StripEnvVars), opts.ExtraEnv,
+	)
 	configureOwnerCommand(cmd)
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start pty command: %w", err)

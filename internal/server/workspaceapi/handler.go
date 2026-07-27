@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
+	"go.kenn.io/middleman/internal/agentactivity"
 	"go.kenn.io/middleman/internal/db"
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/server/httpapi"
@@ -78,6 +79,7 @@ type Deps struct {
 	Config             ConfigSnapshot
 	Workspaces         *workspace.Manager
 	Runtime            *localruntime.Manager
+	AgentActivity      *agentactivity.Store
 	TmuxCommand        []string
 	Now                func() time.Time
 	EnrichmentDisabled bool
@@ -97,18 +99,19 @@ type Deps struct {
 // Handler implements both the workspace and local-project services so their
 // Git-heavy tests and process limits remain in one package and test binary.
 type Handler struct {
-	db         *db.DB
-	resolver   *httpapi.RepositoryResolver
-	syncer     *ghclient.Syncer
-	configMu   sync.RWMutex
-	config     ConfigSnapshot
-	workspaces *workspace.Manager
-	runtime    *localruntime.Manager
-	tmuxCmd    []string
-	now        func() time.Time
-	broadcast  func(Event) uint64
-	subscribe  func(context.Context, bool) (<-chan RecordedEvent, <-chan struct{})
-	generation func() uint64
+	db            *db.DB
+	resolver      *httpapi.RepositoryResolver
+	syncer        *ghclient.Syncer
+	configMu      sync.RWMutex
+	config        ConfigSnapshot
+	workspaces    *workspace.Manager
+	runtime       *localruntime.Manager
+	agentActivity *agentactivity.Store
+	tmuxCmd       []string
+	now           func() time.Time
+	broadcast     func(Event) uint64
+	subscribe     func(context.Context, bool) (<-chan RecordedEvent, <-chan struct{})
+	generation    func() uint64
 
 	recomputeWorktreeLinks         func(context.Context)
 	refreshWorktreeStats           func(context.Context, string, string) error
@@ -154,6 +157,7 @@ func New(deps Deps) *Handler {
 		config:                         cloneConfigSnapshot(deps.Config),
 		workspaces:                     deps.Workspaces,
 		runtime:                        deps.Runtime,
+		agentActivity:                  deps.AgentActivity,
 		tmuxCmd:                        slices.Clone(deps.TmuxCommand),
 		now:                            now,
 		broadcast:                      deps.Broadcast,

@@ -67,6 +67,7 @@ interface WorkspaceFixtureOptions {
   tmuxWorking?: boolean;
   tmuxPaneTitle?: string | null;
   tmuxActivitySource?: string;
+  agentState?: "idle" | "working" | "input" | "approval" | null;
   status?: string;
 }
 
@@ -93,6 +94,7 @@ function workspaceFixture({
   tmuxWorking = false,
   tmuxPaneTitle = null,
   tmuxActivitySource = "unknown",
+  agentState = null,
   status = "ready",
 }: WorkspaceFixtureOptions) {
   // Kata and ad-hoc workspaces carry no joined provider item metadata.
@@ -119,6 +121,7 @@ function workspaceFixture({
     tmux_working: tmuxWorking,
     tmux_pane_title: tmuxPaneTitle,
     tmux_activity_source: tmuxActivitySource,
+    agent_state: agentState,
     status,
     created_at: createdAt,
     tmux_last_output_at: tmuxLastOutputAt,
@@ -1443,6 +1446,59 @@ describe("WorkspaceListSidebar", () => {
     });
 
     expect(await screen.findByLabelText("Working (title): Running focused tests")).toBeTruthy();
+  });
+
+  it.each([
+    ["working", "Working", "Agent working"],
+    ["approval", "Approval", "Agent approval"],
+    ["input", "Input", "Agent input"],
+  ] as const)("shows hook-reported agent %s state", async (agentState, label, ariaLabel) => {
+    mockGet.mockResolvedValue({
+      data: {
+        workspaces: [
+          workspaceFixture({
+            id: `ws-${agentState}`,
+            provider: "github",
+            platformHost: "github.com",
+            owner: "acme",
+            name: "widget",
+            number: 9,
+            agentState,
+          }),
+        ],
+      },
+    });
+
+    render(WorkspaceListSidebar, { props: { selectedId: `ws-${agentState}` } });
+
+    expect(await screen.findByText(label)).toBeTruthy();
+    expect(screen.getByLabelText(ariaLabel)).toBeTruthy();
+  });
+
+  it("lets hook-reported idle override recent tmux output", async () => {
+    mockGet.mockResolvedValue({
+      data: {
+        workspaces: [
+          workspaceFixture({
+            id: "ws-idle-agent",
+            provider: "github",
+            platformHost: "github.com",
+            owner: "acme",
+            name: "widget",
+            number: 9,
+            agentState: "idle",
+            tmuxWorking: true,
+            tmuxPaneTitle: "stale output",
+            tmuxActivitySource: "output",
+          }),
+        ],
+      },
+    });
+
+    render(WorkspaceListSidebar, { props: { selectedId: "ws-idle-agent" } });
+
+    await screen.findByText("PR 9");
+    expect(screen.queryByLabelText("Working (output): stale output")).toBeNull();
   });
 
   it("pushes an ahead workspace branch and shows a busy state while pending", async () => {

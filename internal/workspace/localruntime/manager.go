@@ -20,6 +20,7 @@ import (
 
 	"github.com/creack/pty/v2"
 
+	"go.kenn.io/middleman/internal/agentactivity"
 	"go.kenn.io/middleman/internal/procutil"
 	ptyownerruntime "go.kenn.io/middleman/internal/ptyowner/runtime"
 )
@@ -1467,8 +1468,10 @@ func (m *Manager) launchCommand(
 
 	tmuxSession := tmuxSessionName(workspaceID, sessionKey)
 
-	paneEnv := tmuxAgentEnvPolicy.paneEnvironment(
-		os.Environ(), resolvedAgentCommand, m.currentStripEnvVars(),
+	paneEnv := tmuxAgentEnvPolicy.paneEnvironmentWithExtra(
+		os.Environ(), resolvedAgentCommand, m.currentStripEnvVars(), map[string]string{
+			agentactivity.RuntimeSessionKeyEnv: sessionKey,
+		},
 	)
 	prepared, err := tmuxLauncher{
 		TmuxCommand: tmuxCommand,

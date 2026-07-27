@@ -22,6 +22,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
+	"go.kenn.io/middleman/internal/agentactivity"
 	"go.kenn.io/middleman/internal/archive"
 	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/configwatch"
@@ -931,12 +932,15 @@ func newServer(
 		})
 	}
 	s.workspaceAPI = workspaceapi.New(workspaceapi.Deps{
-		DB:                 database,
-		Resolver:           repoResolver,
-		Syncer:             syncer,
-		Config:             workspaceConfigSnapshot(cfg, tmuxCmd),
-		Workspaces:         s.workspaces,
-		Runtime:            s.runtime,
+		DB:         database,
+		Resolver:   repoResolver,
+		Syncer:     syncer,
+		Config:     workspaceConfigSnapshot(cfg, tmuxCmd),
+		Workspaces: s.workspaces,
+		Runtime:    s.runtime,
+		AgentActivity: agentactivity.NewStore(filepath.Join(
+			filepath.Dir(options.WorktreeDir), "agent-activity",
+		)),
 		TmuxCommand:        tmuxCmd,
 		Now:                workspaceNow,
 		EnrichmentDisabled: options.DisableWorkspaceEnrichment,

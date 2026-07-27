@@ -44,6 +44,8 @@ type workspaceResponse struct {
 	TmuxWorking           bool                      `json:"tmux_working"`
 	TmuxActivitySource    string                    `json:"tmux_activity_source"`
 	TmuxLastOutputAt      *string                   `json:"tmux_last_output_at"`
+	AgentState            *string                   `json:"agent_state,omitempty" enum:"idle,working,input,approval" doc:"Hook-reported aggregate state for live agent sessions. Omitted when no live session has reported lifecycle state."`
+	AgentStateUpdatedAt   *string                   `json:"agent_state_updated_at,omitempty"`
 	Status                string                    `json:"status"`
 	ErrorMessage          *string                   `json:"error_message,omitempty"`
 	CreatedAt             string                    `json:"created_at"`

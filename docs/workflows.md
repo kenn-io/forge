@@ -85,6 +85,10 @@ picker preselects the repository you last started work in. Name the
 branch or leave it empty and middleman generates one; either way the worktree
 branches from the repository's default branch.
 
+Run `middleman agent-hook install` once to show Claude and Codex activity in
+workspace rows. The rows distinguish active work, approval requests, and user
+input; Codex asks you to review the installed command through `/hooks` once.
+
 ## Use Kata tasks
 
 Enable Kata mode when your work is tracked in Kata. middleman discovers Kata

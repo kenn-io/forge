@@ -74,6 +74,8 @@
       | "unknown"
       | null;
     tmux_last_output_at?: string | null;
+    agent_state?: "idle" | "working" | "input" | "approval" | null;
+    agent_state_updated_at?: string | null;
     status: string;
     error_message?: string | null;
     created_at: string;
@@ -608,6 +610,23 @@
       return `Working (${source})`;
     }
     return title || "Working";
+  }
+
+  function agentStatePresentation(ws: Workspace): {
+    label: "Working" | "Approval" | "Input";
+    status: StatusDotStatus;
+    tone: "working" | "approval" | "input";
+  } | null {
+    switch (ws.agent_state) {
+      case "working":
+        return { label: "Working", status: "working", tone: "working" };
+      case "approval":
+        return { label: "Approval", status: "waiting", tone: "approval" };
+      case "input":
+        return { label: "Input", status: "waiting", tone: "input" };
+      default:
+        return null;
+    }
   }
 
   function itemStateClass(ws: Workspace): string {
@@ -1182,6 +1201,7 @@
           {@const ahead = ws.commits_ahead ?? 0}
           {@const behind = ws.commits_behind ?? 0}
           {@const showPush = ahead > 0 || behind > 0}
+          {@const agentState = agentStatePresentation(ws)}
           <div
             class={["ws-row", { selected: isSelectedWorkspace(ws) }]}
             onclick={(e) => {
@@ -1221,10 +1241,22 @@
                   size={6}
                 />
                 <span class="ws-name">{displayName(ws)}</span>
-                {#if ws.tmux_working}
-                  <StatusDot status="working" label={workingTitle(ws)} size={6} />
+                {#if agentState}
+                  <span
+                    class={["agent-state", `agent-state--${agentState.tone}`]}
+                    title={`Agent ${agentState.label.toLowerCase()}`}
+                  >
+                    <StatusDot
+                      status={agentState.status}
+                      label={`Agent ${agentState.label.toLowerCase()}`}
+                      size={6}
+                    />
+                    <span>{agentState.label}</span>
+                  </span>
                 {:else if workspaceActionMatches(ws)}
                   <StatusDot status="working" label={workspaceBusyLabel(ws)} size={6} />
+                {:else if ws.agent_state == null && ws.tmux_working}
+                  <StatusDot status="working" label={workingTitle(ws)} size={6} />
                 {/if}
               </div>
               <div class="ws-row-meta">
@@ -1783,6 +1815,30 @@
 
   .ws-row.selected .ws-name {
     font-weight: 600;
+  }
+
+  .agent-state {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+    line-height: 1;
+  }
+
+  .agent-state--working {
+    color: var(--accent-green);
+  }
+
+  .agent-state--approval {
+    color: var(--accent-amber);
+    --status-waiting: var(--accent-amber);
+  }
+
+  .agent-state--input {
+    color: var(--accent-purple);
+    --status-waiting: var(--accent-purple);
   }
 
 

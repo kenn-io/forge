@@ -20,6 +20,7 @@ import (
 	"time"
 
 	oteltelemetry "go.kenn.io/kit/telemetry"
+	"go.kenn.io/middleman/internal/agentactivity"
 	"go.kenn.io/middleman/internal/archive"
 	"go.kenn.io/middleman/internal/cli/ctl"
 	"go.kenn.io/middleman/internal/cli/serve"
@@ -214,6 +215,8 @@ func runCLI(args []string, stdout io.Writer) error {
 			return nil
 		case "archive":
 			return runArchiveCLI(args[1:], stdout)
+		case "agent-hook":
+			return runAgentHookCLI(args[1:], os.Stdin, stdout)
 		case "serve":
 			return serve.Run(args[1:], runServer)
 		}
@@ -227,6 +230,104 @@ func runCLI(args []string, stdout io.Writer) error {
 	}
 
 	return serve.Run(args, runServer)
+}
+
+func runAgentHookCLI(args []string, stdin io.Reader, stdout io.Writer) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: middleman agent-hook <run|install|uninstall>")
+	}
+	switch args[0] {
+	case "run":
+		return runAgentHookReceiver(args[1:], stdin)
+	case "install", "uninstall":
+		return runAgentHookInstall(args[0], args[1:], stdout)
+	default:
+		return fmt.Errorf("unknown agent-hook subcommand %q", args[0])
+	}
+}
+
+func runAgentHookReceiver(args []string, stdin io.Reader) error {
+	fs := flag.NewFlagSet("middleman agent-hook run", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	stateDir := fs.String("state-dir", "", "agent activity state directory")
+	source := fs.String("source", "", "hook source marker")
+	if err := fs.Parse(args); err != nil {
+		return nil
+	}
+	if *source != "middleman-agent-activity" {
+		return nil
+	}
+	store := agentactivity.NewStore(*stateDir)
+	_ = store.HandleHook(
+		stdin, os.Getenv(agentactivity.RuntimeSessionKeyEnv),
+	)
+	return nil
+}
+
+func runAgentHookInstall(action string, args []string, stdout io.Writer) error {
+	fs := flag.NewFlagSet("middleman agent-hook "+action, flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	configPath := fs.String("config", config.DefaultConfigPath(), "middleman config path")
+	agent := fs.String("agent", "", "agent integration (claude or codex; empty installs both)")
+	binary := fs.String("binary", "", "middleman binary path used by installed hooks")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	integrations := []agentactivity.Integration{
+		agentactivity.IntegrationClaude,
+		agentactivity.IntegrationCodex,
+	}
+	if strings.TrimSpace(*agent) != "" {
+		integration, err := agentactivity.ParseIntegration(*agent)
+		if err != nil {
+			return err
+		}
+		integrations = []agentactivity.Integration{integration}
+	}
+
+	if action == "uninstall" {
+		for _, integration := range integrations {
+			result, err := agentactivity.Uninstall(integration)
+			if err != nil {
+				return err
+			}
+			if _, err := fmt.Fprintf(stdout, "Removed middleman %s hooks from %s\n", integration, result.ConfigPath); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	cfg, err := config.Load(*configPath)
+	if err != nil {
+		return err
+	}
+	executable := strings.TrimSpace(*binary)
+	if executable == "" {
+		executable, err = os.Executable()
+		if err != nil {
+			return fmt.Errorf("resolve middleman executable: %w", err)
+		}
+	}
+	for _, integration := range integrations {
+		result, err := agentactivity.Install(
+			integration,
+			executable,
+			filepath.Join(cfg.DataDir, "agent-activity"),
+		)
+		if err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(stdout, "Installed middleman %s hooks in %s\n", integration, result.ConfigPath); err != nil {
+			return err
+		}
+		if integration == agentactivity.IntegrationCodex {
+			if _, err := fmt.Fprintln(stdout, "Open /hooks in Codex once to review and trust the new hook commands."); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func runVersionCLI(args []string, stdout io.Writer) error {

@@ -3137,6 +3137,27 @@ describe("WorkspaceTerminalView", () => {
     await waitFor(() => expect(activeHostedSession("prs")?.label).toBe("Shell"));
   });
 
+  it("mounts a session the workflow tree is already showing, with no click first", async () => {
+    // Opening a PR whose workspace already has an agent running: its session is the
+    // active tab of a workflow leaf before the user touches anything. Mounting used
+    // to happen only in the tab strip's select handler, so that pane came up empty
+    // and stayed empty until something re-selected the tab -- which read as a broken
+    // pane rather than one that needed a click.
+    localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+    localStorage.setItem("middleman-workspace-terminal-layout:ws-1", persistedSplitWorkflowLayout("ws-1:helper"));
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithStaleSession());
+    claimForPrs();
+
+    render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+        paneSurface: "prs" as const,
+      },
+    });
+
+    await waitFor(() => expect(document.querySelectorAll(".session-terminal-slot").length).toBe(1));
+  });
+
   it("publishes a collapsed dock's session without making it current", async () => {
     localStorage.setItem("middleman-workspace-active-tab:ws-1", "session:ws-1:helper");
     localStorage.setItem(

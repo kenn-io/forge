@@ -319,6 +319,15 @@ Keyboard handlers must have one clear owner for each key press.
   flattened surface keeps the chrome: it suppresses per-leaf strips, so the toolbar
   is the only thing left to carry the controls
   (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::soleEmbeddedSession`).
+- A detail pane NEVER shows the workspace's own header bar (name, branch, Expand and
+  Collapse Terminal, Delete). The pane's tab strip already names the workspace and
+  carries its controls, and Expand/Collapse duplicate the leaf's maximize and close.
+  A flattened surface keeps the chrome, since it has no per-leaf strip to carry any
+  of it (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte`).
+- A session the workflow tree is SHOWING mounts its terminal without a click: one per
+  rendered leaf's active tab. Mounting only from the tab strip's select handler left
+  every workspace opened with an agent already running showing an empty pane, which
+  reads as broken rather than as one click away.
 - Workflow presets are a standalone-Workspaces-tab surface only. A PR or issue pane
   hosts one workspace beside the thing being reviewed, so composing multi-session
   layouts there is chrome that pane was never asked for.

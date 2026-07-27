@@ -85,6 +85,7 @@
     type TerminalGroup,
     type TerminalDock,
     type TerminalLayoutState,
+    type WorkflowNode,
     type WorkflowTabKey,
   } from "./terminal-layout";
   import {
@@ -901,6 +902,42 @@
           workflowTabDescriptors.map((tab) => tab.key),
         ),
   );
+
+  /**
+   * Session tabs the workflow tree is showing right now: one per rendered leaf.
+   *
+   * A leaf shows its active tab and nothing else, so this is what needs a terminal
+   * on screen -- the other tabs in the leaf are a click away and stay unmounted.
+   */
+  function activeWorkflowSessionKeys(node: WorkflowNode | null): string[] {
+    if (node === null) return [];
+    if (node.type === "leaf") {
+      const sessionKey = sessionKeyFromWorkflowTab(node.activeTabKey);
+      return sessionKey === null ? [] : [sessionKey];
+    }
+    return [...activeWorkflowSessionKeys(node.first), ...activeWorkflowSessionKeys(node.second)];
+  }
+
+  /**
+   * Mount whatever the workflow tree is showing, without waiting for a click.
+   *
+   * Mounting used to happen only in the tab strip's select handler, so a workspace
+   * whose session was ALREADY the active tab -- every workspace the user opens with
+   * an agent running in it -- rendered an empty pane. Nothing in the view said the
+   * terminal was one click away, so it read as a broken pane rather than a closed
+   * one, and any interaction that re-selected the tab fixed it by accident.
+   */
+  $effect(() => {
+    if (!runtimeLive) return;
+    const live = new Set(runtimeSessions.map((session) => session.key));
+    const showing = activeWorkflowSessionKeys(renderedWorkflowTree).filter((key) => live.has(key));
+    // Untracked: mountSessionTerminal writes the mounted list that the tree's own
+    // descriptors read, and it is a no-op for a session already mounted, so this
+    // settles instead of re-running itself.
+    untrack(() => {
+      for (const key of showing) mountSessionTerminal(key);
+    });
+  });
 
   const terminalPanelInStage = $derived(
     terminalLayout.open && terminalLayout.dock === "top",
@@ -3492,7 +3529,13 @@
           {@render inlineCollapseControl()}
         </div>
       {:else}
-        {#if soleEmbeddedSession === null}
+        <!-- Never in a detail pane, whatever it holds. The pane's tab strip already
+             names the workspace and carries its controls, so this bar only ever
+             repeated them - and its Expand/Collapse Terminal pair duplicated the
+             leaf's own maximize and close. A flattened surface is the exception it
+             has always been: no per-leaf strip exists there, so the chrome is the
+             only thing left to carry these. -->
+        {#if !controlsInPane}
           <div class="header-bar">
             <div class="header-start">
               <span class="header-name">

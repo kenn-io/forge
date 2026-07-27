@@ -12,6 +12,7 @@ import {
   setSessionSlotVisible,
 } from "../../stores/session-host.svelte.ts";
 import SessionTerminalPool from "./SessionTerminalPool.svelte";
+import SessionTerminalSlotTransferHarness from "./SessionTerminalSlotTransferHarness.svelte";
 
 const WAIT = 10_000;
 
@@ -169,6 +170,50 @@ describe("SessionTerminalPool", () => {
     expect(wrapper.parentElement).toBe(slotA);
     expect(wrapper.inert).toBe(true);
   });
+
+  // The tests above drive the registry directly. These go through the real
+  // SessionTerminalSlot instead, so the attachment, the visibility effect, and
+  // the pool's placement all take part in one same-flush transfer.
+  //
+  // They do NOT prove the ownership guard in releaseSessionSlot: Svelte tears
+  // down removed blocks before creating new ones whichever way the template is
+  // ordered, so the destination always registers last here and an unconditional
+  // release passes too. The guard's regression coverage is the store-level
+  // "ignores a superseded slot" tests, which can produce the other order.
+  for (const order of ["source-first", "destination-first"] as const) {
+    it(`moves the terminal to the destination slot when the template is ${order}`, async () => {
+      mountSession(agent);
+      mountPool();
+      const harnessTarget = document.createElement("div");
+      document.body.append(harnessTarget);
+      // A state proxy, not a plain object: Svelte 5 reads mount() props
+      // reactively only through one, and a plain object would leave the
+      // transfer below a no-op that passes for the wrong reason.
+      const props = $state({ hostKey: agent, showSource: true, showDestination: false, order });
+      const harness = mount(SessionTerminalSlotTransferHarness, { target: harnessTarget, props });
+      await waitForReparent();
+
+      const wrapper = wrapperFor(agent) as HTMLElement;
+      expect(wrapper.parentElement?.parentElement?.dataset.slot).toBe("source");
+
+      // Both in one update, exactly as a promotion does it: the source's cleanup
+      // and the destination's registration land in the same flush.
+      flushSync(() => {
+        props.showSource = false;
+        props.showDestination = true;
+      });
+      await waitForReparent();
+
+      expect(wrapperFor(agent)).toBe(wrapper);
+      expect(wrapper.parentElement?.parentElement?.dataset.slot).toBe("destination");
+      // A superseded slot clearing the key would leave the terminal parked and
+      // inert with no way back.
+      await vi.waitFor(() => expect(wrapper.inert).toBe(false), WAIT);
+
+      flushSync(() => unmount(harness as never));
+      harnessTarget.remove();
+    });
+  }
 
   it("removes a terminal whose session unmounts, wherever it was parented", async () => {
     mountSession(agent);

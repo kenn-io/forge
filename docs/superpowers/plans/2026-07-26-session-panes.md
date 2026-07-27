@@ -556,6 +556,8 @@ The overlay wraps today's `WorkspaceHome` body, pushes a modal frame, auto-opens
 
 The real-backend spec is the only place that proves liveness against a real tmux session. Add: promote a session to a top-level pane and confirm the marker text survives; demote it and confirm the same; change the selected item and come back.
 
+The first of these landed early, with Task 3: "a pooled workflow session keeps its live tmux shell across a reparent" moves a real shell into the workflow region and follows it through the Workspaces-tab-to-detail-pane reparent and back. Pooling changed how every workflow session renders, so it needed real-backend proof then rather than at the end — the browser-tier pool tests all mount exited sessions and cannot show a websocket surviving.
+
 **The launcher needs the real backend too.** Deleting the `Home` tab makes the
 overlay the only route to a first session, and the mock lane cannot prove a
 launch produces one: today's full-stack launch coverage is

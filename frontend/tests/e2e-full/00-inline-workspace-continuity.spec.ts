@@ -329,6 +329,73 @@ test.describe("inline workspace pane continuity", () => {
     }
   });
 
+  test("a pooled workflow session keeps its live tmux shell across a reparent", async ({ page }) => {
+    // Workflow-region session terminals no longer live in the workspace view's
+    // own subtree: they are rendered once by the app-level pool and reparented
+    // into whichever slot shows them, which is what will let one be promoted
+    // into a detail pane of its own. Everything else here already proves the
+    // WHOLE workspace subtree survives a reparent; this proves a single pooled
+    // session does, against a real tmux shell rather than an exited stub.
+    test.skip(
+      !hasCommand("git") || !hasCommand("tmux", ["-V"]),
+      "git and tmux are required for the real workspace flow",
+    );
+
+    let isolatedServer: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    try {
+      isolatedServer = await startIsolatedWorkspaceE2EServer();
+      api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
+      const workspace = await createIssueWorkspace(api, 10);
+
+      await page.goto(`${isolatedServer.info.base_url}/terminal/${workspace.id}`);
+      const dockContainer = await openTerminalPanel(page);
+      // Readiness, not continuity: the session moved below may be either shell.
+      await typeMarkerCommand(page, dockContainer, workspace.worktree_path, "pooled-marker-in-dock");
+
+      // A second shell, because the per-session header carrying the move
+      // control only renders once the dock has more than one session.
+      await page.getByRole("button", { name: "New terminal" }).click();
+
+      // Move a session out of the terminal dock, which renders its own panes,
+      // into the workflow region, which is the pooled path. This is the
+      // SESSION's own control, not the dock's "Move terminal panel to
+      // workflow" — that one only redocks the panel.
+      const moveSession = page.getByRole("button", { name: /^Move (?!terminal panel).+ to workflow$/ }).first();
+      await expect(moveSession).toBeVisible();
+      await moveSession.click();
+
+      // The bottom dock still holds the other shell and takes the whole height,
+      // leaving the workflow area a 1px sliver. Close it so the moved session
+      // has somewhere to render.
+      await page.getByRole("button", { name: "Close terminal panel", exact: true }).nth(1).click();
+      const workflowContainer = page.locator(".session-terminal-slot .terminal-container");
+      await expect(workflowContainer).toBeVisible();
+      await workflowContainer.evaluate((el) => el.setAttribute("data-continuity", "pooled"));
+      const witness = page.locator('[data-continuity="pooled"]');
+      await typeMarkerCommand(page, workflowContainer, workspace.worktree_path, "pooled-marker-in-workflow");
+
+      // Selecting the issue reparents the whole workspace host into the detail
+      // pane. The pooled terminal has to travel with its slot: the pool sits
+      // OUTSIDE the reparented wrapper, so a wrong placement here parks it.
+      await selectIssueByTitle(page, SAFARI_ISSUE_TITLE);
+      await expect(page.locator(".detail-pane-workspace-slot .workspace-host-wrapper")).toBeVisible();
+      await expect(witness).toBeVisible();
+      await expect(workflowContainer).toHaveAttribute("data-continuity", "pooled");
+      // The same node AND a working input path: a parked or rebuilt terminal
+      // cannot create this file.
+      await typeMarkerCommand(page, workflowContainer, workspace.worktree_path, "pooled-marker-in-pane");
+
+      await selectTopBarTab(page, "Workspaces");
+      await expect(page).toHaveURL(new RegExp(`/terminal/${workspace.id}$`));
+      await expect(witness).toBeVisible();
+      await typeMarkerCommand(page, workflowContainer, workspace.worktree_path, "pooled-marker-back-in-tab");
+    } finally {
+      await api?.dispose();
+      await isolatedServer?.stop();
+    }
+  });
+
   test("Focus Terminal reveals the workspace from behind a tab, a zoom, and a close", async ({ page }) => {
     // Three ways to be invisible without being "collapsed", each of which left
     // the terminal parked while the store reported it visible. Only a real

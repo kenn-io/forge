@@ -505,6 +505,25 @@ describe("PRListView promoted session panes", () => {
     expect(screen.getByRole("tab", { name: "Helper" })).toBeTruthy();
   });
 
+  it("reports a focused pane to the workspace host", () => {
+    const layout = getPaneLayoutStore("prs");
+    layout.promoteTab(AGENT_PANE, { kind: "tab", leafID: layout.leafIDForTab("workspace")! });
+    const { controller } = createClaimTestController("prs", {
+      sessions: [{ paneKey: AGENT_PANE, label: "Helper" }],
+    });
+
+    renderPRListView({ inlineWorkspace: controller, detail: pullDetailFixture({ id: "ws-1", status: "ready" }) });
+
+    document
+      .querySelector(`[data-pane-key="${AGENT_PANE}"]`)
+      ?.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+
+    // This view's own focus handler only cares about route-bound panes, so the
+    // report has to happen before that filter or the host never hears about the
+    // pane the user is actually working in.
+    expect(controller.notePaneFocused).toHaveBeenCalledWith(AGENT_PANE);
+  });
+
   it("reports a promoted pane hidden while the route pane owns their shared leaf", () => {
     const layout = getPaneLayoutStore("prs");
     layout.promoteTab(AGENT_PANE, { kind: "tab", leafID: layout.leafIDForTab("conversation")! });

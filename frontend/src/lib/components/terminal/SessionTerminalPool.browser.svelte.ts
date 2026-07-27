@@ -119,6 +119,27 @@ describe("SessionTerminalPool", () => {
     await vi.waitFor(() => expect(wrapper.inert).toBe(false), WAIT);
   });
 
+  it("gives a mounted session's terminal somewhere for focus to land", async () => {
+    mountSession(agent);
+    mountPool();
+    showIn(agent, slotA);
+    await waitForReparent();
+
+    const wrapper = await vi.waitFor(() => {
+      const el = wrapperFor(agent);
+      expect(el).not.toBeNull();
+      return el as HTMLElement;
+    }, WAIT);
+    await vi.waitFor(() => expect(wrapper.inert).toBe(false), WAIT);
+
+    wrapper.focus();
+
+    // Focus Terminal on a promoted session reaches this wrapper and nothing else:
+    // the pool renders it outside the workspace host, so without a focusable
+    // wrapper the command silently leaves the keyboard where it was.
+    expect(document.activeElement).toBe(wrapper);
+  });
+
   it("keeps two sessions live at once", async () => {
     mountSession(agent);
     mountSession(shell);

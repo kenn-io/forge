@@ -85,6 +85,15 @@ export interface InlineWorkspaceController {
   /** Dock UI state (persisted height lives in the dock; mode lives here so detail buttons can drive it). */
   getDockMode(): InlineDockMode;
   setDockMode(mode: InlineDockMode): void;
+  /**
+   * Report which pane of this surface the user focused.
+   *
+   * The host files it under the WORKSPACE, not the surface: an expand or a Focus
+   * Terminal has to act on the terminal the user was last in, and that must survive
+   * promoting it, demoting it, and visiting another item in between. Views forward
+   * every focused pane; the host keeps only the ones that name a workspace.
+   */
+  notePaneFocused(tabKey: string): void;
   /** Expand the dock and move focus into the terminal host. */
   focusTerminal(): void;
   /** Navigate to /terminal/{id} (the secondary "Open in Workspaces" action). */

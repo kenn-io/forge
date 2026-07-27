@@ -120,6 +120,10 @@
   }
 
   function handlePaneFocus(tabKey: string): void {
+    // Every pane, before the route-bound filter below: the host decides which keys
+    // name a workspace, and it needs the container and the promoted session panes
+    // that this branch would otherwise drop.
+    inlineWorkspace?.notePaneFocused(tabKey);
     if (!isRouteBoundPane(tabKey) || tabKey === detailTab) return;
     // Focus only owns the route where there is no tab to click, i.e. where both
     // panes are already visible.

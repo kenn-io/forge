@@ -57,10 +57,14 @@
   $effect(() => () => wrapper?.remove());
 </script>
 
+<!-- tabindex, like the workspace host's own wrapper: Focus Terminal on a session
+     the user promoted has to put the keyboard somewhere inside its terminal, and
+     this wrapper is the only node the store can reach for a pooled session. -->
 <div
   class="session-host-wrapper"
   data-session-host={session.hostKey}
   bind:this={wrapper}
+  tabindex="-1"
   inert={!active || !attached}
 >
   <TerminalPane

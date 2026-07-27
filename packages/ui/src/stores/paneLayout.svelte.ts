@@ -3,6 +3,7 @@ import {
   appendTabbedPanelTabToLeaf,
   insertTabbedPanelTab,
   collectTabbedPanelLeafIDs,
+  collectTabbedPanelTabKeys,
   findTabbedPanelLeafByID,
   findTabbedPanelLeafByTab,
   moveTabbedPanelTabBefore,
@@ -75,6 +76,14 @@ export interface PaneLayoutStore {
   /** Zoom filtered to leaves that actually render — what the view should use. */
   effectiveZoomedLeafID(availableTabs: readonly string[]): string | null;
   hiddenTabKeys(): readonly string[];
+  /**
+   * Every tab the stored tree holds, in tree order.
+   *
+   * For callers that have to act on panes they cannot name in advance: a promoted
+   * session's key carries the session name, so dropping a deleted workspace's panes
+   * means reading back what is stored rather than reconstructing keys.
+   */
+  storedTabKeys(): readonly string[];
   lastFocusedTabKey(): string | null;
   leafIDForTab(tabKey: string): string | null;
   /** Whether this tab is the active one in its own leaf. */
@@ -198,6 +207,7 @@ export function createPaneLayoutStore(
     },
 
     hiddenTabKeys: () => state.hiddenTabKeys,
+    storedTabKeys: () => collectTabbedPanelTabKeys(state.tree),
     lastFocusedTabKey: () => state.lastFocusedTabKey,
 
     leafIDForTab: (tabKey) => findTabbedPanelLeafByTab(state.tree, tabKey)?.id ?? null,

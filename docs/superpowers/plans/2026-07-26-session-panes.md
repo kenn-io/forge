@@ -673,11 +673,28 @@ launcher first. That is the app's own rule, not test scaffolding.
   session pane could never become last-focused and every rule below would key off
   a stale value. It must accept a key that parses as a session pane for this
   surface, on the same "keep if stored, never reinsert" footing as the tree.
+  (Closed with Task 4, which needed it to persist a promoted pane at all.)
 - Focus originates in `DetailPaneLayout`, which reports it to the view via
   `onFocusPane`. Last-focused **session** is per workspace, and only the frontend
   host knows which workspace a claim belongs to, so the views forward a focused
   session pane through `InlineWorkspaceController` rather than tracking it
   themselves.
+
+**Forward every focused pane, and filter in the host.** Two of the three views
+already had an `onFocusPane` handler that returns early for anything but its own
+route-bound panes, and `IssueListView` had none at all - so a filter on the view
+side is three chances to drop the pane the rule depends on, and three places to
+teach about session pane keys. The views call `notePaneFocused` first and
+unconditionally; the host keeps only the container and the session panes whose key
+names a workspace, and files each under the workspace the KEY names rather than the
+one currently hosted, so a focus event arriving mid-selection-switch cannot be
+filed against the wrong workspace.
+
+**A promoted session's terminal is focused through the pool, not the host.** The
+workspace host's parked-focus handshake covers the container only; a promoted
+session's live subtree is rendered by the app-level pool outside that wrapper, so
+Focus Terminal reaches it through the registry key the view published and focuses
+the pool's own wrapper (which needs `tabindex="-1"` for that to land at all).
 
 "The workspace pane" is no longer one leaf:
 
@@ -686,16 +703,16 @@ launcher first. That is the app's own rule, not test scaffolding.
 - Focus Terminal focuses the pane holding the last-focused session when it is on screen, reveals it when it is not, and opens the launcher when the workspace has no session at all.
 - Last-focused session is tracked per workspace and survives promotion, demotion, and selection changes.
 - On session **deletion** or workspace deletion, drop that session's pane from every surface's stored tree. An exit or a stop does **not**: it disposes that generation's live subtree and leaves the placement alone, which is what lets a relaunch reappear in the pane the user put it in.
-- Dispose registry entries for a workspace that no surface claims and the Workspaces tab is not showing: parked terminals hold live websockets, so browsing past ten items must not leave ten connections open.
+- Dispose registry entries for a workspace that no surface claims and the Workspaces tab is not showing: parked terminals hold live websockets, so browsing past ten items must not leave ten connections open. (Landed with Task 3's pooling, which is where the hazard appeared; covered by the view's own release-on-switch and release-on-unmount tests.)
 - Purge only on an authoritative deletion signal: the session-delete and workspace-delete paths the frontend drives, and a workspace whose load comes back 404. Absence from the runtime is **not** that signal, and the retention rule above depends on the difference - a stop, an exit, a reconnect gap, and a runtime load that failed outright all present as the same absence, so purging on it would throw away exactly the placements a relaunch is supposed to return to. Before treating a successful load as authoritative, verify against `/workspaces/{id}/runtime` whether stopped and exited sessions stay listed; only if they do is absence from a load that **succeeded** equivalent to deletion, and absence while the load failed never is.
 - What deletion cannot reach stays: a session deleted while no surface was mounted leaves its pane in the stored tree until the user demotes it or resets the surface. That is bounded by what the user promoted by hand, so it does not need a cap - and a cap would silently remove a pane the user placed, which is worse than a stale one they can drag away.
 - Between generations - a relaunch, a reconnect - the pane renders nothing for that flush and keeps its tab: the pool hands over the new subtree within the same update, so a spinner would flicker. Permanently gone means deleted, not an indefinitely blank pane.
 
-- [ ] **Step 1** Failing tests, one per bullet. Deletion and retention need pairs, because a test for the destructive half alone passes just as well against a rule that throws away every placement: deleting a session drops its pane from every surface's stored tree, and deleting a workspace with two promoted panes leaves no session keys behind - while stopping a session, exiting one, a reconnect that briefly reports no sessions, and a runtime load that fails all keep the pane, and a session relaunched under a reused name lands back in it. Then: collapsing and expanding a workspace with one promoted pane restores that pane rather than the default tree; selecting three items in turn leaves only the current workspace's terminals in the registry; `noteFocused` accepts a well-formed session pane key and still rejects a malformed one; focusing a promoted pane and focusing the container both update the workspace's last-focused session.
-- [ ] **Step 2** Run `../node_modules/.bin/vp test --project unit workspace-host paneLayout WorkspaceTerminalView PRListView IssueListView ActivityFeedView`. Expected FAIL. (This task spans the store, the pane layout, the view that owns the runtime and the deletion paths, and all three views; `workspace-host` alone would miss most of it.)
-- [ ] **Step 3** Implement.
-- [ ] **Step 4** Same command. Expected PASS.
-- [ ] **Step 5** Commit.
+- [x] **Step 1** Failing tests, one per bullet. Deletion and retention need pairs, because a test for the destructive half alone passes just as well against a rule that throws away every placement: deleting a session drops its pane from every surface's stored tree, and deleting a workspace with two promoted panes leaves no session keys behind - while stopping a session, exiting one, a reconnect that briefly reports no sessions, and a runtime load that fails all keep the pane, and a session relaunched under a reused name lands back in it. Then: collapsing and expanding a workspace with one promoted pane restores that pane rather than the default tree; selecting three items in turn leaves only the current workspace's terminals in the registry; `noteFocused` accepts a well-formed session pane key and still rejects a malformed one; focusing a promoted pane and focusing the container both update the workspace's last-focused session.
+- [x] **Step 2** Run `../node_modules/.bin/vp test --project unit workspace-host paneLayout WorkspaceTerminalView PRListView IssueListView ActivityFeedView`. Expected FAIL. (This task spans the store, the pane layout, the view that owns the runtime and the deletion paths, and all three views; `workspace-host` alone would miss most of it.)
+- [x] **Step 3** Implement.
+- [x] **Step 4** Same command, plus `--project browser SessionTerminalPool.browser` for the pooled wrapper's focusability - jsdom will focus anything, so only the browser lane can show that the production wrapper is a focus target at all. Expected PASS.
+- [x] **Step 5** Commit.
 
 ---
 

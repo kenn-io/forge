@@ -86,6 +86,10 @@
     refresh: () => void refreshSelectedDetail(),
   });
 
+  function handlePaneFocus(tabKey: string): void {
+    inlineWorkspace?.notePaneFocused(tabKey);
+  }
+
   // One entry per session the surface's stored tree already holds. `available`
   // never conjures a pane: a session pane exists only because the user promoted
   // it, so a workspace whose sessions were never promoted adds nothing here.
@@ -127,6 +131,7 @@
         tablistLabel="Issue detail panes"
         leafLabel="Issue detail pane group"
         paneLeafExtras={workspacePaneControls ? workspaceLeafExtras : undefined}
+        onFocusPane={handlePaneFocus}
       >
         {#snippet renderPane(tabKey, visible)}
           {#if tabKey === "conversation"}

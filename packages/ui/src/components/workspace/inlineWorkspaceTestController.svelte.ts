@@ -33,6 +33,7 @@ export function createTestController(
     setDockMode: vi.fn((next: InlineDockMode) => {
       mode = next;
     }),
+    notePaneFocused: vi.fn(),
     focusTerminal: vi.fn(),
     openInWorkspaces: vi.fn(),
     onIdentityInvalidated: () => () => {},

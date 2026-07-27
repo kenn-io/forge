@@ -314,6 +314,10 @@
    * a leaf means the invisible sibling can still take focus programmatically.
    */
   function handlePaneFocus(tabKey: string): void {
+    // Every pane, before the detail-tab filter below: the host decides which keys
+    // name a workspace, and it needs the container and the promoted session panes
+    // that this branch would otherwise drop.
+    inlineWorkspace?.notePaneFocused(tabKey);
     if (tabKey !== "conversation" && tabKey !== "files") return;
     if (!isPRSelection || tabKey === effectiveDetailTab) return;
     if (!routePanesSplitApart) return;

@@ -322,6 +322,18 @@ Keyboard handlers must have one clear owner for each key press.
   leaf in the stored tree says nothing about being visible, and the view keeps
   publishing its sessions from a parked host
   (`packages/ui/src/stores/paneLayout.svelte.ts`).
+- The inline dock mode covers EVERY pane of the hosted workspace - the container
+  plus the sessions promoted out of it - so a container hidden while a promoted
+  terminal is on screen is "split", not "collapsed", and collapsing hides exactly
+  the panes it later restores. Which pane an expand or a Focus Terminal acts on is
+  the workspace's last-focused one, recorded per WORKSPACE (views forward every
+  focused pane; the host keeps the ones whose key names a workspace) so it survives
+  promotion, demotion, and a visit to another item
+  (`frontend/src/lib/stores/workspace-host.svelte.ts`).
+- A promoted session pane is dropped from a surface's stored tree only on an
+  authoritative deletion of its workspace. A stopped, exited, or reconnecting
+  session is absent from the runtime in exactly the same way, and keeping the
+  placement is what lets a relaunch reappear where the user put it.
 - The desktop `.app-main` clips overflow but must never become a scroll
   container; focus-driven scrolling there shifts every mode rail and creates
   matching chrome gaps (`frontend/src/App.svelte::.app-main`).

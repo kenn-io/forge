@@ -1,6 +1,7 @@
 import { describe, expect, it, beforeEach, vi } from "vite-plus/test";
-import { getPaneLayoutStore } from "@middleman/ui/stores/paneLayout";
+import { getPaneLayoutStore, promoteSessionBesideWorkspace } from "@middleman/ui/stores/paneLayout";
 import { pushModalFrame } from "@middleman/ui/stores/keyboard/modal-stack";
+import { registerSessionSlot, resetSessionHostForTest } from "./session-host.svelte.ts";
 import {
   createdWorkspaceRef,
   markWorkspaceIdDeleted,
@@ -794,5 +795,202 @@ describe("promotable sessions", () => {
 
     expect(prs.promotableSessions()).toHaveLength(1);
     expect(activeHostedSession("prs")).toBeNull();
+  });
+});
+
+describe("a workspace spread across several panes", () => {
+  beforeEach(() => {
+    resetWorkspaceHostForTest();
+    resetWorkspaceCreatePendingForTest();
+    resetSessionHostForTest();
+    navigate("/pulls");
+  });
+
+  const helperPane = "session:ws-a//ws-a%3Ahelper";
+  const shellPane = "session:ws-a//ws-a%3Ashell";
+  const sessions = [
+    { paneKey: helperPane, label: "Helper", hostKey: "ws-a//ws-a%3Ahelper/gen-1", active: true },
+    { paneKey: shellPane, label: "Shell", hostKey: "ws-a//ws-a%3Ashell/gen-1", active: false },
+  ];
+
+  /** A claimed workspace with `promoted` of its sessions in panes of their own. */
+  function hostWithPromoted(promoted: readonly string[]): {
+    prs: ReturnType<typeof getInlineWorkspaceController>;
+    layout: ReturnType<typeof getPaneLayoutStore>;
+  } {
+    const prs = getInlineWorkspaceController("prs");
+    prs.claim(identityA, refA);
+    publishHostedSessions({ workspaceId: "ws-a", hostKey: undefined }, sessions);
+    const layout = getPaneLayoutStore("prs");
+    layout.notePaneRender({
+      editableTabs: ["conversation", "files", "workspace"],
+      onScreenTabs: ["conversation", "files", "workspace"],
+      flattened: false,
+    });
+    for (const paneKey of promoted) {
+      expect(promoteSessionBesideWorkspace(layout, paneKey)).toBe(true);
+    }
+    return { prs, layout };
+  }
+
+  it("is not collapsed while one of its terminals holds a pane of its own", () => {
+    const { prs, layout } = hostWithPromoted([helperPane]);
+
+    layout.setHidden("workspace", true);
+
+    // The workspace is right there in the promoted pane, so reporting "collapsed"
+    // would offer a Show Terminal button for something already on screen.
+    expect(prs.getDockMode()).toBe("split");
+  });
+
+  it("collapses every pane of the workspace and restores exactly that set", () => {
+    const { prs, layout } = hostWithPromoted([helperPane, shellPane]);
+    // One promoted pane the user closed by hand before collapsing.
+    layout.setHidden(shellPane, true);
+
+    prs.setDockMode("collapsed");
+
+    expect(prs.getDockMode()).toBe("collapsed");
+    expect([...layout.hiddenTabKeys()].sort()).toEqual([helperPane, shellPane, "workspace"].sort());
+
+    prs.setDockMode("split");
+
+    // Expanding restores what the collapse hid, not the pane the user had already
+    // put away: reappearing panes would undo their arrangement.
+    expect(layout.hiddenTabKeys()).toEqual([shellPane]);
+    expect(prs.getDockMode()).toBe("split");
+  });
+
+  it("maximizes the pane holding the session the user was last in", () => {
+    const { prs, layout } = hostWithPromoted([helperPane]);
+    prs.notePaneFocused(helperPane);
+
+    prs.setDockMode("expanded");
+
+    // Zooming the container would cover the very terminal the user asked to see.
+    expect(prs.getDockMode()).toBe("expanded");
+    expect(layout.zoomedLeafID()).toBe(layout.leafIDForTab(helperPane));
+  });
+
+  it("maximizes the container when the last-focused pane is the container", () => {
+    const { prs, layout } = hostWithPromoted([helperPane]);
+    prs.notePaneFocused(helperPane);
+    prs.notePaneFocused("workspace");
+
+    prs.setDockMode("expanded");
+
+    expect(layout.zoomedLeafID()).toBe(layout.leafIDForTab("workspace"));
+  });
+
+  it("files a focused pane under the workspace it names, not the one on screen", () => {
+    // A focus event that lands while the surface is switching selections: the pane
+    // names ws-a, the surface is already showing ws-b. Filing it under whatever is
+    // hosted would give ws-b an expand target from ws-a's terminal, and lose ws-a's.
+    const prs = getInlineWorkspaceController("prs");
+    prs.claim(identityB, { id: "ws-b", status: "ready" });
+    prs.notePaneFocused(helperPane);
+
+    const { layout } = hostWithPromoted([helperPane]);
+    prs.setDockMode("expanded");
+
+    expect(layout.zoomedLeafID()).toBe(layout.leafIDForTab(helperPane));
+  });
+
+  it("keeps the last-focused session across a demotion and a visit elsewhere", () => {
+    const { prs, layout } = hostWithPromoted([helperPane]);
+    prs.notePaneFocused(helperPane);
+
+    // Another item, then back: the surface's own last-focused tab moves with every
+    // click, so only a per-workspace record survives this.
+    const issues = getInlineWorkspaceController("issues");
+    navigate("/issues");
+    issues.claim(identityB, { id: "ws-b", status: "ready" });
+    navigate("/pulls");
+
+    prs.setDockMode("expanded");
+    expect(layout.zoomedLeafID()).toBe(layout.leafIDForTab(helperPane));
+
+    // And a demotion falls back to the container rather than to a pane that is gone.
+    prs.setDockMode("split");
+    layout.demoteTab(helperPane);
+    prs.setDockMode("expanded");
+    expect(layout.zoomedLeafID()).toBe(layout.leafIDForTab("workspace"));
+  });
+
+  it("focusTerminal reveals the promoted pane holding the last-focused session", () => {
+    const { prs, layout } = hostWithPromoted([helperPane]);
+    prs.notePaneFocused(helperPane);
+    layout.setHidden(helperPane, true);
+
+    prs.focusTerminal();
+
+    // Focus Terminal means "the terminal I was working in", which is no longer the
+    // container: revealing that instead would leave the promoted pane closed.
+    expect(layout.hiddenTabKeys()).not.toContain(helperPane);
+    expect(layout.lastFocusedTabKey()).toBe(helperPane);
+  });
+
+  it("focusTerminal puts the keyboard in the promoted session's own terminal", () => {
+    const { prs, layout } = hostWithPromoted([helperPane]);
+    prs.notePaneFocused(helperPane);
+    // What the pane renders: the slot, with the pool's wrapper reparented into it.
+    const slot = document.createElement("div");
+    const wrapper = document.createElement("div");
+    wrapper.setAttribute("data-session-host", sessions[0]!.hostKey);
+    wrapper.tabIndex = -1;
+    slot.appendChild(wrapper);
+    document.body.appendChild(slot);
+    registerSessionSlot(sessions[0]!.hostKey, slot);
+
+    prs.focusTerminal();
+
+    // The pool renders a promoted session outside the workspace host, so focusing
+    // the host would land on the container the session was promoted out of.
+    expect(document.activeElement).toBe(wrapper);
+    expect(layout.hiddenTabKeys()).not.toContain(helperPane);
+    slot.remove();
+  });
+
+  it("drops a deleted workspace's panes from every surface", () => {
+    const { layout } = hostWithPromoted([helperPane]);
+    // A pane for another workspace on another surface, which the deletion must not
+    // touch, and one for the doomed workspace, which it must.
+    const issuesLayout = getPaneLayoutStore("issues");
+    issuesLayout.notePaneRender({
+      editableTabs: ["conversation", "workspace"],
+      onScreenTabs: ["conversation", "workspace"],
+      flattened: false,
+    });
+    expect(promoteSessionBesideWorkspace(issuesLayout, helperPane)).toBe(true);
+    const survivor = "session:ws-b//ws-b%3Ahelper";
+    expect(promoteSessionBesideWorkspace(issuesLayout, survivor)).toBe(true);
+
+    notifyWorkspaceDeleted("ws-a");
+
+    // The ID can never come back, so a stored pane for it is a pane that renders
+    // nothing forever. Every surface, not just the claiming one: promotion is per
+    // surface and the deletion arrives once.
+    expect(layout.hasTab(helperPane)).toBe(false);
+    expect(issuesLayout.hasTab(helperPane)).toBe(false);
+    expect(issuesLayout.hasTab(survivor)).toBe(true);
+  });
+
+  it("keeps a stopped session's pane so a relaunch lands back in it", () => {
+    const { prs, layout } = hostWithPromoted([helperPane]);
+
+    // What a stop, an exit, or a reconnect gap looks like from here: the session is
+    // simply absent from the published list. Purging on that would throw away the
+    // placement the user chose every time a shell exited.
+    publishHostedSessions({ workspaceId: "ws-a", hostKey: undefined }, [sessions[1]!]);
+
+    expect(layout.hasTab(helperPane)).toBe(true);
+    // The pane is still stored but no longer counts as one of the workspace's, so
+    // the dock stops treating it as somewhere the workspace is on screen.
+    layout.setHidden("workspace", true);
+    layout.setHidden(shellPane, true);
+    expect(prs.getDockMode()).toBe("collapsed");
+
+    publishHostedSessions({ workspaceId: "ws-a", hostKey: undefined }, sessions);
+    expect(layout.hasTab(helperPane)).toBe(true);
   });
 });

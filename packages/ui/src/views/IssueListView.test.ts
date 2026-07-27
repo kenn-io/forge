@@ -142,6 +142,26 @@ describe("IssueListView inline workspace", () => {
     expect(screen.getByRole("tab", { name: "Helper" })).toBeTruthy();
   });
 
+  it("reports a focused pane to the workspace host", () => {
+    const layout = getPaneLayoutStore("issues");
+    const paneKey = sessionPaneKey("ws-1", undefined, "ws-1:helper");
+    layout.promoteTab(paneKey, { kind: "tab", leafID: layout.leafIDForTab("workspace")! });
+    const { controller } = createClaimTestController("issues", {
+      sessions: [{ paneKey, label: "Helper" }],
+    });
+
+    renderIssueListView({
+      inlineWorkspace: controller,
+      detail: issueDetailFixture({ id: "ws-1", status: "ready" }),
+    });
+
+    document.querySelector(`[data-pane-key="${paneKey}"]`)?.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+
+    // Focus is the host's only report of which pane the user is working in, and an
+    // expand or a Focus Terminal has to act on that one rather than the container.
+    expect(controller.notePaneFocused).toHaveBeenCalledWith(paneKey);
+  });
+
   it("offers the workspace controls in the leaf holding a promoted session", () => {
     const layout = getPaneLayoutStore("issues");
     const paneKey = sessionPaneKey("ws-1", undefined, "ws-1:helper");

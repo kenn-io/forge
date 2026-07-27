@@ -179,6 +179,27 @@ describe("ActivityFeedView detail panes", () => {
     expect(screen.getByRole("tab", { name: "Helper" })).toBeTruthy();
   });
 
+  it("reports a focused pane to the workspace host", () => {
+    const layout = getPaneLayoutStore("activity");
+    const paneKey = sessionPaneKey("ws-1", undefined, "ws-1:helper");
+    layout.promoteTab(paneKey, { kind: "tab", leafID: layout.leafIDForTab("workspace")! });
+    const { controller } = createClaimTestController("activity", {
+      sessions: [{ paneKey, label: "Helper" }],
+    });
+
+    renderActivity({
+      drawerItem: prDrawer(),
+      inlineWorkspace: controller,
+      pullDetail: pullDetailFixture(12, { id: "ws-1", status: "ready" }),
+    });
+
+    document.querySelector(`[data-pane-key="${paneKey}"]`)?.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+
+    // The drawer's own handler only tracks its conversation and files tabs, so the
+    // report has to happen before that filter.
+    expect(controller.notePaneFocused).toHaveBeenCalledWith(paneKey);
+  });
+
   it("offers the workspace controls in the leaf holding a promoted session", () => {
     const layout = getPaneLayoutStore("activity");
     const paneKey = sessionPaneKey("ws-1", undefined, "ws-1:helper");

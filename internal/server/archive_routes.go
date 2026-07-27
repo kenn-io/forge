@@ -152,7 +152,13 @@ type archiveReportResponse struct {
 }
 
 func (*archiveReportResponse) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {
+	if schema == nil {
+		return nil
+	}
 	property := schema.Properties["schema"]
+	if property == nil {
+		return schema
+	}
 	if property.Extensions == nil {
 		property.Extensions = map[string]any{}
 	}

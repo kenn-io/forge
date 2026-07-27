@@ -7,6 +7,7 @@ import {
   waitForReviewsReady,
   waitForJobRows,
   openDrawer,
+  reviewAction,
   countRoborevDaemonEventStreams,
 } from "./support/roborev-helpers.js";
 
@@ -860,29 +861,21 @@ test.describe.serial("Roborev", () => {
       await openDrawer(page, 71);
 
       // Find and click the close review button
-      const closeReviewBtn = page.locator(".review-dock-footer .action-btn", {
-        hasText: "Close Review",
-      });
+      const closeReviewBtn = reviewAction(page, "Close Review");
       await expect(closeReviewBtn).toBeVisible({
         timeout: 10_000,
       });
       await closeReviewBtn.click();
 
       // After close, button should change to "Reopen"
-      await expect(
-        page.locator(".review-dock-footer .action-btn", {
-          hasText: "Reopen",
-        }),
-      ).toBeVisible({ timeout: 10_000 });
+      await expect(reviewAction(page, "Reopen")).toBeVisible({ timeout: 10_000 });
     });
 
     test("rerun job action on job 73", async ({ page }) => {
       await openDrawer(page, 73);
 
       // Click the rerun button
-      const rerunBtn = page.locator(".review-dock-footer .action-btn", {
-        hasText: "Rerun",
-      });
+      const rerunBtn = reviewAction(page, "Rerun");
       await expect(rerunBtn).toBeVisible({
         timeout: 10_000,
       });
@@ -899,17 +892,13 @@ test.describe.serial("Roborev", () => {
 
       // Job 70 is failed (daemon processed it), so
       // Cancel button should NOT be visible.
-      const cancelBtn = page.locator(".review-dock-footer .action-btn-danger", {
-        hasText: "Cancel",
-      });
+      const cancelBtn = reviewAction(page, "Cancel");
       await expect(cancelBtn).not.toBeVisible({
         timeout: 5_000,
       });
 
       // Rerun button should still be available
-      const rerunBtn = page.locator(".review-dock-footer .action-btn", {
-        hasText: "Rerun",
-      });
+      const rerunBtn = reviewAction(page, "Rerun");
       await expect(rerunBtn).toBeVisible({
         timeout: 10_000,
       });
@@ -919,9 +908,7 @@ test.describe.serial("Roborev", () => {
       // Open a done job with review content
       await openDrawer(page, 72);
 
-      const copyBtn = page.locator(".review-dock-footer .action-btn", {
-        hasText: "Copy Output",
-      });
+      const copyBtn = reviewAction(page, "Copy Output");
       await expect(copyBtn).toBeVisible({
         timeout: 10_000,
       });

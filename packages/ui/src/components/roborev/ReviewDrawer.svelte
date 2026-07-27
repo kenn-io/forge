@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { BottomDock, copyToClipboard } from "@kenn-io/kit-ui";
+  import { BottomDock, Button, copyToClipboard } from "@kenn-io/kit-ui";
   import { getStores } from "../../context.js";
   import StatusBadge from "./StatusBadge.svelte";
   import VerdictBadge from "./VerdictBadge.svelte";
@@ -12,6 +12,11 @@
     isTerminalStatus,
     panelReviewHeader,
   } from "../../utils/roborev-panel.js";
+  import {
+    parseTokenUsage,
+    tokenUsageDetail,
+    tokenUsageStats,
+  } from "../../utils/roborev-usage.js";
 
   interface Props {
     activeTab?: "review" | "log" | "prompt";
@@ -87,6 +92,11 @@
   const reviewIsClosed = $derived(
     stores.roborevReview?.isClosed() ?? false,
   );
+
+  const tokenUsage = $derived(
+    parseTokenUsage(selectedJob?.token_usage),
+  );
+
   let interestedPanelRun: string | undefined;
 
   const selectedPanelRun = $derived(
@@ -271,45 +281,50 @@
 
   {#snippet footer()}
     <div class="review-dock-footer">
-      <div class="footer-actions">
+      <div class="footer-actions" role="group" aria-label="Review actions">
         {#if hasReview}
-          <button
-            class="action-btn"
+          <Button
+            size="sm"
             onclick={handleCloseReview}
             title={reviewIsClosed
               ? "Reopen review"
               : "Close review"}
-          >
-            {reviewIsClosed ? "Reopen" : "Close Review"}
-          </button>
+            label={reviewIsClosed ? "Reopen" : "Close Review"}
+          />
         {/if}
-        <button
-          class="action-btn"
+        <Button
+          size="sm"
           onclick={handleRerun}
           title="Rerun this job"
-        >
-          Rerun
-        </button>
+          label="Rerun"
+        />
         {#if canCancel}
-          <button
-            class="action-btn action-btn-danger"
+          <Button
+            size="sm"
+            tone="danger"
             onclick={handleCancel}
             title="Cancel this job"
-          >
-            Cancel
-          </button>
+            label="Cancel"
+          />
         {/if}
-        <button
-          class="action-btn"
+        <Button
+          size="sm"
           onclick={() => void copyOutput()}
           title="Copy review output"
-        >
-          Copy Output
-        </button>
+          label="Copy Output"
+        />
       </div>
-      {#if selectedJob?.token_usage}
-        <span class="token-usage">
-          {selectedJob.token_usage}
+      {#if tokenUsage}
+        <span
+          class="token-usage"
+          title={tokenUsageDetail(tokenUsage)}
+        >
+          {#each tokenUsageStats(tokenUsage) as stat (stat.label)}
+            <span class="usage-stat">
+              <span class="usage-label">{stat.label}</span>
+              <span class="usage-value">{stat.value}</span>
+            </span>
+          {/each}
         </span>
       {/if}
     </div>
@@ -454,46 +469,42 @@
     justify-content: space-between;
     gap: 12px;
     width: 100%;
-  }
-
-  .footer-actions {
-    display: flex;
-    gap: 6px;
     flex-wrap: wrap;
   }
 
-  .action-btn {
-    padding: 4px 12px;
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-sm);
-    background: var(--bg-surface);
-    color: var(--text-primary);
-    font-size: var(--font-size-sm);
-    cursor: pointer;
-    white-space: nowrap;
-  }
-
-  .action-btn:hover {
-    background: var(--bg-surface-hover);
-  }
-
-  .action-btn-danger {
-    color: var(--review-failed);
-    border-color: var(--review-failed);
-  }
-
-  .action-btn-danger:hover {
-    background: color-mix(
-      in srgb,
-      var(--review-failed) 8%,
-      var(--bg-surface)
-    );
+  /* The actions stay one horizontal group; when the footer runs out of room
+   * the usage summary wraps below instead of stacking the buttons. */
+  .footer-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 0 0 auto;
+    min-width: 0;
   }
 
   .token-usage {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+    overflow: hidden;
     font-size: var(--font-size-xs);
-    font-family: var(--font-mono);
     color: var(--text-muted);
     white-space: nowrap;
+  }
+
+  .usage-stat {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 4px;
+  }
+
+  .usage-label {
+    color: var(--text-muted);
+  }
+
+  .usage-value {
+    font-family: var(--font-mono);
+    color: var(--text-secondary);
   }
 </style>

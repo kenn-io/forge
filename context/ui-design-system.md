@@ -348,6 +348,12 @@ Default color intent:
 - blue: focus, active controls, informational emphasis
 - teal: workspace/worktree-linked state
 
+## Serialized payload fields
+
+Never render a serialized payload string (JSON blob, opaque struct dump) as UI text.
+Parse it in a named util, show labeled human-readable stats, and keep full precision in
+a `title` (`packages/ui/src/utils/roborev-usage.ts` for roborev `token_usage`).
+
 ## Implementation guidance
 
 When editing Svelte components, use the Svelte skills `skills/svelte-core-bestpractices/` (`svelte-core-bestpractices`) and `skills/svelte-code-writer/` (`svelte-code-writer`) alongside this document.

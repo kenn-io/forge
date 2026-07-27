@@ -4846,6 +4846,26 @@ func (d *DB) UpdateWorkspaceBranch(
 	return nil
 }
 
+// CompleteRecoveredWorkspaceSetup publishes the recovered branch and ready
+// status atomically so a failed persistence attempt leaves the recovery marker
+// available to retry without cleaning the pre-existing worktree.
+func (d *DB) CompleteRecoveredWorkspaceSetup(
+	ctx context.Context, id, branch string,
+) error {
+	_, err := d.rw.ExecContext(ctx, `
+		UPDATE middleman_workspaces
+		SET workspace_branch = ?,
+		    status = 'ready',
+		    error_message = NULL
+		WHERE id = ?`,
+		branch, id,
+	)
+	if err != nil {
+		return fmt.Errorf("complete recovered workspace setup: %w", err)
+	}
+	return nil
+}
+
 // StartWorkspaceRetry atomically transitions an errored workspace
 // into setup state. It returns false when the workspace exists but
 // was not in error status at the instant of the update.

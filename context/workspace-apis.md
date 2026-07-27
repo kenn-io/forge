@@ -31,11 +31,12 @@ embedder protocol for arbitrary host state.
 - `POST /repos/{owner}/{name}/issues/{number}/workspace`: create or reuse an
   issue-backed workspace; these start from the repo's current `origin/HEAD`,
   not from a PR head branch.
-  Explicit directory recovery accepts no caller-supplied path: it may only
-  recreate a missing row for that issue's deterministic Middleman worktree
-  after validating linked-worktree ownership, repository provenance, and the
-  requested branch. Preflight preserves the checkout's contents, and normal
-  setup repeats the validation before adopting it.
+  - Directory recovery accepts no path and applies only when the workspace row
+    is absent; a valid deterministic worktree conflicts with its actual branch
+    (`internal/workspace/manager.go::Manager.CreateIssue`).
+  - Pending recovery must adopt that directory without create/cleanup fallback;
+    retry/delete preserve it until setup atomically publishes branch and ready
+    status (`internal/workspace/manager.go::workspaceRequiresExistingDirectory`).
 - `POST /repo/{provider}/{owner}/{name}/workspaces`: create or reuse an ad-hoc
   workspace for new work with no source item. Its branch is its identity: the
   item key is `adhoc:<branch>` and `item_number` stays 0, so item-key fallbacks

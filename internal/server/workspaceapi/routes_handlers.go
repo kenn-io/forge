@@ -38,8 +38,9 @@ type createIssueWorkspaceInput struct {
 	Name         string `path:"name"`
 	Number       int    `path:"number"`
 	Body         struct {
-		GitHeadRef          *string `json:"git_head_ref,omitempty"`
-		ReuseExistingBranch bool    `json:"reuse_existing_branch,omitempty"`
+		GitHeadRef             *string `json:"git_head_ref,omitempty"`
+		ReuseExistingBranch    bool    `json:"reuse_existing_branch,omitempty"`
+		ReuseExistingDirectory bool    `json:"reuse_existing_directory,omitempty"`
 	}
 }
 
@@ -358,6 +359,12 @@ func (s *Handler) createIssueWorkspace(
 	if s.workspaces == nil {
 		return nil, httpapi.ServiceUnavailable("workspace manager not configured")
 	}
+	if input.Body.ReuseExistingBranch && input.Body.ReuseExistingDirectory {
+		return nil, httpapi.Validation(
+			"body.reuse_existing_directory",
+			"reuse_existing_branch and reuse_existing_directory are mutually exclusive",
+		)
+	}
 	repo, err := s.lookupRepoByProviderRoute(
 		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
 	)
@@ -397,13 +404,29 @@ func (s *Handler) createIssueWorkspace(
 		repo.Name,
 		input.Number,
 		workspace.CreateIssueOptions{
-			Provider:            input.Provider,
-			GitHeadRef:          strings.TrimSpace(derefString(input.Body.GitHeadRef)),
-			ReuseExistingBranch: input.Body.ReuseExistingBranch,
+			Provider:               input.Provider,
+			GitHeadRef:             strings.TrimSpace(derefString(input.Body.GitHeadRef)),
+			ReuseExistingBranch:    input.Body.ReuseExistingBranch,
+			ReuseExistingDirectory: input.Body.ReuseExistingDirectory,
 		},
 	)
 	if err != nil {
 		msg := err.Error()
+		var recoveryErr *workspace.WorkspaceDirectoryRecoveryError
+		if errors.As(err, &recoveryErr) {
+			details := map[string]any{
+				"reason": string(recoveryErr.Reason),
+			}
+			if recoveryErr.Reason == workspace.WorkspaceDirectoryBranchMismatch {
+				details["expectedBranch"] = recoveryErr.ExpectedBranch
+				details["actualBranch"] = recoveryErr.ActualBranch
+			}
+			return nil, httpapi.Conflict(
+				httpapi.CodeWorkspaceDirectoryNotReusable,
+				recoveryErr.Error(),
+				details,
+			)
+		}
 		var branchConflict *workspace.WorkspaceBranchConflictError
 		if errors.As(err, &branchConflict) {
 			// Branch-conflict gets the typed problem envelope with

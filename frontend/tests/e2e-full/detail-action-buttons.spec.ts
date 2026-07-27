@@ -358,141 +358,156 @@ test.describe("detail action buttons", () => {
     await expect(page.locator(".workspace-dock-slot .workspace-host-wrapper")).toBeVisible();
   });
 
-  test("issue workspace conflict dialog can reuse the existing branch", async ({ page }) => {
-    const createdWorkspace = {
-      id: "ws-issue-10",
-      platform_host: "github.com",
-      repo_owner: "acme",
-      repo_name: "widgets",
-      item_type: "issue",
-      item_number: 10,
-      git_head_ref: "middleman/issue-10",
-      worktree_path: "/tmp/workspaces/issue-10",
-      tmux_session: "middleman-ws-issue-10",
-      status: "ready",
-      created_at: "2026-04-20T12:00:00Z",
-      mr_title: "Add keyboard shortcut docs",
-      mr_state: "open",
-    };
-    const conflict = {
-      type: "urn:middleman:error:issue-workspace-branch-conflict",
-      title: "Issue workspace branch conflict",
-      status: 409,
-      detail: "A local branch with the requested name already exists.",
-      errors: [
-        {
-          message: "Requested branch already exists",
-          location: "body.git_head_ref",
-          value: "middleman/issue-10",
-        },
-        {
-          message: "Suggested alternative branch name",
-          location: "body.suggested_git_head_ref",
-          value: "middleman/issue-10-2",
-        },
-      ],
-    };
+  for (const scenario of [
+    {
+      name: "reuse the existing branch",
+      branch: "middleman/issue-10",
+      button: "Use Existing Branch",
+      reusePayload: { reuse_existing_branch: true },
+    },
+    {
+      name: "recover the existing Middleman directory",
+      branch: "middleman/issue-10-original-title",
+      button: "Use Existing Directory",
+      reusePayload: { reuse_existing_directory: true },
+    },
+  ] as const) {
+    test(`issue workspace conflict dialog can ${scenario.name}`, async ({ page }) => {
+      const createdWorkspace = {
+        id: "ws-issue-10",
+        platform_host: "github.com",
+        repo_owner: "acme",
+        repo_name: "widgets",
+        item_type: "issue",
+        item_number: 10,
+        git_head_ref: scenario.branch,
+        worktree_path: "/tmp/workspaces/issue-10",
+        tmux_session: "middleman-ws-issue-10",
+        status: "ready",
+        created_at: "2026-04-20T12:00:00Z",
+        mr_title: "Add keyboard shortcut docs",
+        mr_state: "open",
+      };
+      const conflict = {
+        type: "urn:middleman:error:issue-workspace-branch-conflict",
+        title: "Issue workspace branch conflict",
+        status: 409,
+        detail: "A local branch with the requested name already exists.",
+        errors: [
+          {
+            message: "Requested branch already exists",
+            location: "body.git_head_ref",
+            value: scenario.branch,
+          },
+          {
+            message: "Suggested alternative branch name",
+            location: "body.suggested_git_head_ref",
+            value: `${scenario.branch}-2`,
+          },
+        ],
+      };
 
-    const payloads: Record<string, unknown>[] = [];
-    let workspaceCreated = false;
-    await page.route("**/api/v1/issues/github/acme/widgets/10/workspace", async (route) => {
-      payloads.push(JSON.parse(route.request().postData() ?? "{}") as Record<string, unknown>);
-      if (payloads.length === 1) {
-        await route.fulfill({
-          status: 409,
-          contentType: "application/problem+json",
-          body: JSON.stringify(conflict),
-        });
-        return;
-      }
-      workspaceCreated = true;
-      await route.fulfill({
-        status: 202,
-        contentType: "application/json",
-        body: JSON.stringify(createdWorkspace),
-      });
-    });
-    // The real create inserts the workspace row before returning 202, so a
-    // real detail fetch after creation always carries the workspace ref.
-    // The mocked create must keep the detail envelope consistent: the
-    // client rightly treats a post-create envelope WITHOUT the workspace
-    // as authoritative absence (deleted elsewhere) and drops the ref.
-    await page.route(
-      (url) => url.pathname === "/api/v1/issues/github/acme/widgets/10",
-      async (route) => {
-        if (route.request().method() !== "GET" || !workspaceCreated) {
-          await route.fallback();
+      const payloads: Record<string, unknown>[] = [];
+      let workspaceCreated = false;
+      await page.route("**/api/v1/issues/github/acme/widgets/10/workspace", async (route) => {
+        payloads.push(JSON.parse(route.request().postData() ?? "{}") as Record<string, unknown>);
+        if (payloads.length === 1) {
+          await route.fulfill({
+            status: 409,
+            contentType: "application/problem+json",
+            body: JSON.stringify(conflict),
+          });
           return;
         }
-        try {
-          const response = await route.fetch();
-          const body = (await response.json()) as Record<string, unknown>;
-          body.workspace = { id: createdWorkspace.id, status: createdWorkspace.status };
-          await route.fulfill({ response, body: JSON.stringify(body) });
-        } catch {
-          // Page teardown can dispose the fetched response while a
-          // polling refetch is mid-handler; the request no longer
-          // matters then.
-          await route.continue().catch(() => {});
-        }
-      },
-    );
-    await page.route("**/api/v1/workspaces/ws-issue-10", async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify(createdWorkspace),
+        workspaceCreated = true;
+        await route.fulfill({
+          status: 202,
+          contentType: "application/json",
+          body: JSON.stringify(createdWorkspace),
+        });
       });
-    });
-    await page.route("**/api/v1/workspaces", async (route) => {
-      if (route.request().method() !== "GET") {
-        await route.continue();
-        return;
-      }
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ workspaces: [createdWorkspace] }),
-      });
-    });
-    await page.route("**/api/v1/events", async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: "text/event-stream",
-        body: "",
-      });
-    });
-
-    await page.goto("/issues/github/acme/widgets/10");
-    await expect(page.locator(".issue-detail")).toBeVisible();
-
-    await page.locator(".btn--workspace").click();
-
-    const dialog = page.getByRole("dialog", {
-      name: "Branch Name Conflict",
-    });
-    await expect(dialog).toBeVisible();
-    await expect(dialog).toContainText("middleman/issue-10");
-    await expect(dialog.locator("#issue-workspace-branch-name")).toHaveValue("middleman/issue-10-2");
-
-    await dialog.getByRole("button", { name: "Use Existing Branch" }).click();
-
-    await expect
-      .poll(() => payloads)
-      .toEqual([
-        {},
-        {
-          git_head_ref: "middleman/issue-10",
-          reuse_existing_branch: true,
+      // The real create inserts the workspace row before returning 202, so a
+      // real detail fetch after creation always carries the workspace ref.
+      // The mocked create must keep the detail envelope consistent: the
+      // client rightly treats a post-create envelope WITHOUT the workspace
+      // as authoritative absence (deleted elsewhere) and drops the ref.
+      await page.route(
+        (url) => url.pathname === "/api/v1/issues/github/acme/widgets/10",
+        async (route) => {
+          if (route.request().method() !== "GET" || !workspaceCreated) {
+            await route.fallback();
+            return;
+          }
+          try {
+            const response = await route.fetch();
+            const body = (await response.json()) as Record<string, unknown>;
+            body.workspace = { id: createdWorkspace.id, status: createdWorkspace.status };
+            await route.fulfill({ response, body: JSON.stringify(body) });
+          } catch {
+            // Page teardown can dispose the fetched response while a
+            // polling refetch is mid-handler; the request no longer
+            // matters then.
+            await route.continue().catch(() => {});
+          }
         },
-      ]);
-    // The workspace lands in the inline dock; the issue stays selected.
-    await expect(page).toHaveURL(/\/issues\/github\/acme\/widgets\/10$/);
-    // The dock panel div renders before any claim; the slot (and the
-    // reparented workspace host inside it) exists only once the created
-    // workspace actually claims and hosts the inline dock.
-    await expect(page.locator(".workspace-dock-slot .workspace-host-wrapper")).toBeVisible();
-  });
+      );
+      await page.route("**/api/v1/workspaces/ws-issue-10", async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(createdWorkspace),
+        });
+      });
+      await page.route("**/api/v1/workspaces", async (route) => {
+        if (route.request().method() !== "GET") {
+          await route.continue();
+          return;
+        }
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ workspaces: [createdWorkspace] }),
+        });
+      });
+      await page.route("**/api/v1/events", async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "text/event-stream",
+          body: "",
+        });
+      });
+
+      await page.goto("/issues/github/acme/widgets/10");
+      await expect(page.locator(".issue-detail")).toBeVisible();
+
+      await page.locator(".btn--workspace").click();
+
+      const dialog = page.getByRole("dialog", {
+        name: "Branch Name Conflict",
+      });
+      await expect(dialog).toBeVisible();
+      await expect(dialog).toContainText(scenario.branch);
+      await expect(dialog.locator("#issue-workspace-branch-name")).toHaveValue(`${scenario.branch}-2`);
+
+      await dialog.getByRole("button", { name: scenario.button }).click();
+
+      await expect
+        .poll(() => payloads)
+        .toEqual([
+          {},
+          {
+            git_head_ref: scenario.branch,
+            ...scenario.reusePayload,
+          },
+        ]);
+      // The workspace lands in the inline dock; the issue stays selected.
+      await expect(page).toHaveURL(/\/issues\/github\/acme\/widgets\/10$/);
+      // The dock panel div renders before any claim; the slot (and the
+      // reparented workspace host inside it) exists only once the created
+      // workspace actually claims and hosts the inline dock.
+      await expect(page.locator(".workspace-dock-slot .workspace-host-wrapper")).toBeVisible();
+    });
+  }
 
   test("issue workspace conflict dialog can create a new suggested branch", async ({ page }) => {
     const createdWorkspace = {

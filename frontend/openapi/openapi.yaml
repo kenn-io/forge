@@ -1114,6 +1114,8 @@ components:
           type: string
         reuse_existing_branch:
           type: boolean
+        reuse_existing_directory:
+          type: boolean
       type: object
     CreateIssueWorkspaceInputBody:
       additionalProperties: false
@@ -1128,6 +1130,8 @@ components:
         git_head_ref:
           type: string
         reuse_existing_branch:
+          type: boolean
+        reuse_existing_directory:
           type: boolean
       type: object
     CreateWorkspaceInputBody:
@@ -4695,6 +4699,7 @@ components:
             - unsupportedCapability
             - upstreamError
             - validationError
+            - workspaceDirectoryNotReusable
             - workspaceNotFound
             - worktreeDirty
           examples:

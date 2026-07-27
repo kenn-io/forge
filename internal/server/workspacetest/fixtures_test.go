@@ -32,6 +32,7 @@ type workspaceServerFixture struct {
 	bare             string
 	remote           string
 	agentActivityDir string
+	worktreeDir      string
 }
 
 func setupWorkspaceServerFixture(
@@ -124,6 +125,7 @@ func setupWorkspaceServerFixture(
 		bare:             bare,
 		remote:           remote,
 		agentActivityDir: filepath.Join(dir, "agent-activity"),
+		worktreeDir:      worktreeDir,
 	}
 }
 

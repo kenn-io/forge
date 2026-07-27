@@ -654,6 +654,7 @@
   type CreateWorkspaceOptions = {
     gitHeadRef?: string;
     reuseExistingBranch?: boolean;
+    reuseExistingDirectory?: boolean;
     fromConflictDialog?: boolean;
   };
 
@@ -729,6 +730,11 @@
                   reuse_existing_branch: true,
                 }
               : {}),
+            ...(options.reuseExistingDirectory
+              ? {
+                  reuse_existing_directory: true,
+                }
+              : {}),
           },
         },
       );
@@ -740,6 +746,15 @@
           requestError as APIError,
         );
         if (conflict) {
+          if (
+            options.fromConflictDialog
+            && options.reuseExistingBranch
+            && branchConflict
+          ) {
+            branchConflict.error =
+              "This branch is already checked out in another worktree. Use the existing Middleman directory or create a new branch.";
+            return;
+          }
           branchConflict = conflict;
           return;
         }
@@ -748,6 +763,10 @@
           requestError.detail
           ?? requestError.title
           ?? "failed to create workspace";
+        if (options.fromConflictDialog && branchConflict) {
+          branchConflict.error = message;
+          return;
+        }
         throw new Error(
           message,
         );
@@ -1465,6 +1484,31 @@
                 size="sm"
               >
                 {workspaceCreating ? "Creating..." : "Use Existing Branch"}
+              </Button>
+            </div>
+
+            <div class="branch-conflict-option">
+              <div>
+                <div class="branch-conflict-heading">
+                  Use the existing Middleman directory
+                </div>
+                <div class="branch-conflict-copy">
+                  Recover the worktree already present at the directory Middleman expects for this issue.
+                </div>
+              </div>
+              <Button
+                class="btn btn--primary"
+                onclick={() => void createWorkspace({
+                  gitHeadRef: conflict.existingBranch,
+                  reuseExistingDirectory: true,
+                  fromConflictDialog: true,
+                })}
+                disabled={workspaceCreating}
+                tone="neutral"
+                surface="outline"
+                size="sm"
+              >
+                {workspaceCreating ? "Creating..." : "Use Existing Directory"}
               </Button>
             </div>
 

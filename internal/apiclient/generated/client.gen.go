@@ -526,33 +526,34 @@ func (e MergeRequestResponseState) Valid() bool {
 
 // Defines values for ProblemErrorCode.
 const (
-	BadRequest            ProblemErrorCode = "badRequest"
-	BranchConflict        ProblemErrorCode = "branchConflict"
-	BranchInUse           ProblemErrorCode = "branchInUse"
-	BranchProtected       ProblemErrorCode = "branchProtected"
-	CommentNotFound       ProblemErrorCode = "commentNotFound"
-	Conflict              ProblemErrorCode = "conflict"
-	DestinationExists     ProblemErrorCode = "destinationExists"
-	Forbidden             ProblemErrorCode = "forbidden"
-	HookFailed            ProblemErrorCode = "hookFailed"
-	InternalError         ProblemErrorCode = "internalError"
-	IssueNotFound         ProblemErrorCode = "issueNotFound"
-	NotFound              ProblemErrorCode = "notFound"
-	PayloadTooLarge       ProblemErrorCode = "payloadTooLarge"
-	ProjectNotFound       ProblemErrorCode = "projectNotFound"
-	PullNotFound          ProblemErrorCode = "pullNotFound"
-	RateLimited           ProblemErrorCode = "rateLimited"
-	RepoNotFound          ProblemErrorCode = "repoNotFound"
-	ServiceUnavailable    ProblemErrorCode = "serviceUnavailable"
-	SettingsUnavailable   ProblemErrorCode = "settingsUnavailable"
-	ToolMissing           ProblemErrorCode = "toolMissing"
-	ToolUnauthenticated   ProblemErrorCode = "toolUnauthenticated"
-	Unauthorized          ProblemErrorCode = "unauthorized"
-	UnsupportedCapability ProblemErrorCode = "unsupportedCapability"
-	UpstreamError         ProblemErrorCode = "upstreamError"
-	ValidationError       ProblemErrorCode = "validationError"
-	WorkspaceNotFound     ProblemErrorCode = "workspaceNotFound"
-	WorktreeDirty         ProblemErrorCode = "worktreeDirty"
+	BadRequest                    ProblemErrorCode = "badRequest"
+	BranchConflict                ProblemErrorCode = "branchConflict"
+	BranchInUse                   ProblemErrorCode = "branchInUse"
+	BranchProtected               ProblemErrorCode = "branchProtected"
+	CommentNotFound               ProblemErrorCode = "commentNotFound"
+	Conflict                      ProblemErrorCode = "conflict"
+	DestinationExists             ProblemErrorCode = "destinationExists"
+	Forbidden                     ProblemErrorCode = "forbidden"
+	HookFailed                    ProblemErrorCode = "hookFailed"
+	InternalError                 ProblemErrorCode = "internalError"
+	IssueNotFound                 ProblemErrorCode = "issueNotFound"
+	NotFound                      ProblemErrorCode = "notFound"
+	PayloadTooLarge               ProblemErrorCode = "payloadTooLarge"
+	ProjectNotFound               ProblemErrorCode = "projectNotFound"
+	PullNotFound                  ProblemErrorCode = "pullNotFound"
+	RateLimited                   ProblemErrorCode = "rateLimited"
+	RepoNotFound                  ProblemErrorCode = "repoNotFound"
+	ServiceUnavailable            ProblemErrorCode = "serviceUnavailable"
+	SettingsUnavailable           ProblemErrorCode = "settingsUnavailable"
+	ToolMissing                   ProblemErrorCode = "toolMissing"
+	ToolUnauthenticated           ProblemErrorCode = "toolUnauthenticated"
+	Unauthorized                  ProblemErrorCode = "unauthorized"
+	UnsupportedCapability         ProblemErrorCode = "unsupportedCapability"
+	UpstreamError                 ProblemErrorCode = "upstreamError"
+	ValidationError               ProblemErrorCode = "validationError"
+	WorkspaceDirectoryNotReusable ProblemErrorCode = "workspaceDirectoryNotReusable"
+	WorkspaceNotFound             ProblemErrorCode = "workspaceNotFound"
+	WorktreeDirty                 ProblemErrorCode = "worktreeDirty"
 )
 
 // Valid indicates whether the value is a known member of the ProblemErrorCode enum.
@@ -607,6 +608,8 @@ func (e ProblemErrorCode) Valid() bool {
 	case UpstreamError:
 		return true
 	case ValidationError:
+		return true
+	case WorkspaceDirectoryNotReusable:
 		return true
 	case WorkspaceNotFound:
 		return true
@@ -1392,17 +1395,19 @@ type CreateIssueInputBody struct {
 // CreateIssueWorkspaceHostInputBody defines model for CreateIssueWorkspaceHostInputBody.
 type CreateIssueWorkspaceHostInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema              *string `json:"$schema,omitempty"`
-	GitHeadRef          *string `json:"git_head_ref,omitempty"`
-	ReuseExistingBranch *bool   `json:"reuse_existing_branch,omitempty"`
+	Schema                 *string `json:"$schema,omitempty"`
+	GitHeadRef             *string `json:"git_head_ref,omitempty"`
+	ReuseExistingBranch    *bool   `json:"reuse_existing_branch,omitempty"`
+	ReuseExistingDirectory *bool   `json:"reuse_existing_directory,omitempty"`
 }
 
 // CreateIssueWorkspaceInputBody defines model for CreateIssueWorkspaceInputBody.
 type CreateIssueWorkspaceInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema              *string `json:"$schema,omitempty"`
-	GitHeadRef          *string `json:"git_head_ref,omitempty"`
-	ReuseExistingBranch *bool   `json:"reuse_existing_branch,omitempty"`
+	Schema                 *string `json:"$schema,omitempty"`
+	GitHeadRef             *string `json:"git_head_ref,omitempty"`
+	ReuseExistingBranch    *bool   `json:"reuse_existing_branch,omitempty"`
+	ReuseExistingDirectory *bool   `json:"reuse_existing_directory,omitempty"`
 }
 
 // CreateWorkspaceInputBody defines model for CreateWorkspaceInputBody.

@@ -13,7 +13,12 @@
 - Recovery accepts no path and considers only the deterministic Middleman issue-worktree directory.
 - The directory must be an owned linked worktree for the same provider, host, owner, repository, and requested branch.
 - Recovery must not move a branch, reset `HEAD`, clean files, remove directories, or modify dirty/untracked contents.
+- Recovery intent is persisted until setup atomically publishes the actual branch and ready status.
+- Pending recovery never falls back to worktree creation; retry and delete preserve the existing directory.
+- An existing workspace row wins idempotently. Recovery applies only when the row is absent.
+- A valid deterministic worktree on an older/custom branch must produce the conflict dialog with that actual branch.
 - `Use Existing Branch` remains separate and unchanged for branches Git can check out into a new worktree.
+- `reuse_existing_branch` and `reuse_existing_directory` are mutually exclusive.
 - Invalid directories fail before database insertion with a stable machine-readable problem.
 - Default-host and explicit-host provider routes expose identical request fields.
 - Regenerate API artifacts with `make api-generate`.
@@ -81,7 +86,7 @@ ws, err := mgr.CreateIssue(
 require.NoError(err)
 require.NotNil(ws)
 assert.Equal(expectedPath, ws.WorktreePath)
-assert.Equal(branch, ws.WorkspaceBranch)
+assert.Equal(workspaceBranchRecoveryPending, ws.WorkspaceBranch)
 assert.FileExists(filepath.Join(expectedPath, "untracked.txt"))
 assert.Contains(
 	strings.TrimSpace(string(runWorkspaceTestGit(t, expectedPath, "status", "--short"))),
@@ -276,7 +281,15 @@ func (m *Manager) validateExistingWorkspaceDirectory(
 }
 ~~~
 
-In `CreateIssue`, retain ordinary branch-conflict logic only when recovery is false. Construct the normal issue workspace and deterministic path, call the validator when recovery is true, then insert. Never fall back to creating a new path from this action.
+In `CreateIssue`, inspect the deterministic path before ordinary local-branch
+handling. A valid worktree at that path produces `WorkspaceBranchConflictError`
+with its actual branch unless recovery was explicitly selected. On recovery,
+validate that actual branch against the submitted branch and insert the row with
+`workspaceBranchRecoveryPending`. Existing rows retain the method's idempotent
+precedence. During setup, the persisted marker requires directory reuse, blocks
+all add-worktree fallback, and is replaced with the real branch only in the same
+database update that marks the workspace ready. Retry/delete cleanup preserves
+the worktree while the marker is pending.
 
 - [ ] **Step 7: Verify GREEN and regression safety**
 
@@ -423,12 +436,10 @@ if errors.As(err, &recoveryErr) {
 	details := map[string]any{
 		"reason": string(recoveryErr.Reason),
 	}
-	if recoveryErr.ExpectedBranch != "" {
-		details["expectedBranch"] = recoveryErr.ExpectedBranch
-	}
-	if recoveryErr.ActualBranch != "" {
-		details["actualBranch"] = recoveryErr.ActualBranch
-	}
+if recoveryErr.Reason == workspace.WorkspaceDirectoryBranchMismatch {
+	details["expectedBranch"] = recoveryErr.ExpectedBranch
+	details["actualBranch"] = recoveryErr.ActualBranch
+}
 	return nil, httpapi.Conflict(
 		httpapi.CodeWorkspaceDirectoryNotReusable,
 		recoveryErr.Error(),
@@ -641,7 +652,7 @@ Alongside the branch-reuse test, route the first POST to the branch conflict and
 [
   {},
   {
-    git_head_ref: "middleman/issue-10",
+    git_head_ref: "middleman/issue-10-original-title",
     reuse_existing_directory: true,
   },
 ]

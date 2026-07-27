@@ -38,33 +38,34 @@ type ProblemCode string
 // ProblemError.Code must list these in the same order, and the
 // allProblemCodes test asserts the two stay in sync.
 const (
-	CodeBadRequest            ProblemCode = "badRequest"
-	CodeBranchConflict        ProblemCode = "branchConflict"
-	CodeBranchInUse           ProblemCode = "branchInUse"
-	CodeBranchProtected       ProblemCode = "branchProtected"
-	CodeCommentNotFound       ProblemCode = "commentNotFound"
-	CodeConflict              ProblemCode = "conflict"
-	CodeDestinationExists     ProblemCode = "destinationExists"
-	CodeForbidden             ProblemCode = "forbidden"
-	CodeHookFailed            ProblemCode = "hookFailed"
-	CodeInternalError         ProblemCode = "internalError"
-	CodeIssueNotFound         ProblemCode = "issueNotFound"
-	CodeNotFound              ProblemCode = "notFound"
-	CodePayloadTooLarge       ProblemCode = "payloadTooLarge"
-	CodeProjectNotFound       ProblemCode = "projectNotFound"
-	CodePullNotFound          ProblemCode = "pullNotFound"
-	CodeRateLimited           ProblemCode = "rateLimited"
-	CodeRepoNotFound          ProblemCode = "repoNotFound"
-	CodeServiceUnavailable    ProblemCode = "serviceUnavailable"
-	CodeSettingsUnavailable   ProblemCode = "settingsUnavailable"
-	CodeToolMissing           ProblemCode = "toolMissing"
-	CodeToolUnauthenticated   ProblemCode = "toolUnauthenticated"
-	CodeUnauthorized          ProblemCode = "unauthorized"
-	CodeUnsupportedCapability ProblemCode = "unsupportedCapability"
-	CodeUpstreamError         ProblemCode = "upstreamError"
-	CodeValidationError       ProblemCode = "validationError"
-	CodeWorkspaceNotFound     ProblemCode = "workspaceNotFound"
-	CodeWorktreeDirty         ProblemCode = "worktreeDirty"
+	CodeBadRequest                    ProblemCode = "badRequest"
+	CodeBranchConflict                ProblemCode = "branchConflict"
+	CodeBranchInUse                   ProblemCode = "branchInUse"
+	CodeBranchProtected               ProblemCode = "branchProtected"
+	CodeCommentNotFound               ProblemCode = "commentNotFound"
+	CodeConflict                      ProblemCode = "conflict"
+	CodeDestinationExists             ProblemCode = "destinationExists"
+	CodeForbidden                     ProblemCode = "forbidden"
+	CodeHookFailed                    ProblemCode = "hookFailed"
+	CodeInternalError                 ProblemCode = "internalError"
+	CodeIssueNotFound                 ProblemCode = "issueNotFound"
+	CodeNotFound                      ProblemCode = "notFound"
+	CodePayloadTooLarge               ProblemCode = "payloadTooLarge"
+	CodeProjectNotFound               ProblemCode = "projectNotFound"
+	CodePullNotFound                  ProblemCode = "pullNotFound"
+	CodeRateLimited                   ProblemCode = "rateLimited"
+	CodeRepoNotFound                  ProblemCode = "repoNotFound"
+	CodeServiceUnavailable            ProblemCode = "serviceUnavailable"
+	CodeSettingsUnavailable           ProblemCode = "settingsUnavailable"
+	CodeToolMissing                   ProblemCode = "toolMissing"
+	CodeToolUnauthenticated           ProblemCode = "toolUnauthenticated"
+	CodeUnauthorized                  ProblemCode = "unauthorized"
+	CodeUnsupportedCapability         ProblemCode = "unsupportedCapability"
+	CodeUpstreamError                 ProblemCode = "upstreamError"
+	CodeValidationError               ProblemCode = "validationError"
+	CodeWorkspaceDirectoryNotReusable ProblemCode = "workspaceDirectoryNotReusable"
+	CodeWorkspaceNotFound             ProblemCode = "workspaceNotFound"
+	CodeWorktreeDirty                 ProblemCode = "worktreeDirty"
 )
 
 // allProblemCodes returns every declared ProblemCode in alphabetical order.
@@ -97,6 +98,7 @@ func allProblemCodes() []ProblemCode {
 		CodeUnsupportedCapability,
 		CodeUpstreamError,
 		CodeValidationError,
+		CodeWorkspaceDirectoryNotReusable,
 		CodeWorkspaceNotFound,
 		CodeWorktreeDirty,
 	}
@@ -138,7 +140,7 @@ type ProblemError struct {
 
 	// Code is the machine-readable error code drawn from the closed enum
 	// in allProblemCodes(). Frontend logic branches on this value.
-	Code ProblemCode `json:"code" enum:"badRequest,branchConflict,branchInUse,branchProtected,commentNotFound,conflict,destinationExists,forbidden,hookFailed,internalError,issueNotFound,notFound,payloadTooLarge,projectNotFound,pullNotFound,rateLimited,repoNotFound,serviceUnavailable,settingsUnavailable,toolMissing,toolUnauthenticated,unauthorized,unsupportedCapability,upstreamError,validationError,workspaceNotFound,worktreeDirty" example:"badRequest" doc:"Machine-readable error code. Stable across occurrences."`
+	Code ProblemCode `json:"code" enum:"badRequest,branchConflict,branchInUse,branchProtected,commentNotFound,conflict,destinationExists,forbidden,hookFailed,internalError,issueNotFound,notFound,payloadTooLarge,projectNotFound,pullNotFound,rateLimited,repoNotFound,serviceUnavailable,settingsUnavailable,toolMissing,toolUnauthenticated,unauthorized,unsupportedCapability,upstreamError,validationError,workspaceDirectoryNotReusable,workspaceNotFound,worktreeDirty" example:"badRequest" doc:"Machine-readable error code. Stable across occurrences."`
 
 	// Details is a free-form map of machine-readable context for this
 	// occurrence (e.g. {capability: "merge_mutation"} or

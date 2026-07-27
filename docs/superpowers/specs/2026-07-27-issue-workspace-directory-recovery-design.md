@@ -53,6 +53,7 @@ dialog with an identical error-free state.
 The issue-workspace request body gains the optional boolean
 `reuse_existing_directory`. The provider-aware default-host and explicit-host
 routes expose the same field through the generated OpenAPI clients.
+`reuse_existing_directory` and `reuse_existing_branch` are mutually exclusive.
 
 `workspace.CreateIssueOptions` gains the corresponding option. When selected,
 the manager constructs the ordinary issue workspace identity and deterministic
@@ -70,15 +71,25 @@ Recovery succeeds only when all of these conditions hold:
 - its current branch is the branch submitted with the recovery request.
 
 The existing worktree-provenance and branch-validation machinery remains the
-authority for these checks. Recovery does not move the branch, reset `HEAD`,
-clean files, remove directories, or alter the worktree before the workspace row
-is safely persisted.
+authority for these checks. When no workspace row exists but the deterministic
+path contains a valid linked worktree, ordinary creation reports a branch
+conflict using the branch actually checked out there. This includes an older or
+custom issue branch whose name no longer matches the current title-derived
+default. An already-existing database row still wins idempotently; directory
+recovery only applies when that row is absent.
 
-After insertion, normal workspace setup adopts the validated worktree, starts a
-fresh terminal session, records the actual workspace branch, and marks the
-workspace ready. Dirty and untracked files remain untouched. The new database
-row and terminal session receive new workspace identities; recovering an old
-terminal process is out of scope.
+Recovery does not move the branch, reset `HEAD`, clean files, remove
+directories, or alter the worktree before the workspace row is safely
+persisted.
+
+The inserted row persists a recovery-pending marker instead of publishing the
+real workspace branch early. Setup treats that marker as durable recovery
+intent: it revalidates and adopts the exact existing worktree, never falls back
+to creating a replacement, and starts a fresh terminal session. Only after all
+setup steps succeed does one database update atomically replace the marker with
+the actual branch and mark the workspace ready. Dirty and untracked files
+remain untouched. The new database row and terminal session receive new
+workspace identities; recovering an old terminal process is out of scope.
 
 ## Errors and atomicity
 
@@ -88,14 +99,23 @@ render inside the conflict dialog. The detail distinguishes at least these
 operator-actionable cases:
 
 - the expected directory does not exist;
-- the path is not a linked worktree for the repository; or
+- the path is not a linked worktree;
+- the linked worktree belongs to a different repository; or
 - the worktree checks out a different branch.
+
+The response code is `workspaceDirectoryNotReusable`. Its stable `reason` is
+`missing`, `not_linked_worktree`, `repository_mismatch`, or `branch_mismatch`.
+Branch mismatches always include `expectedBranch` and `actualBranch`; a
+detached `HEAD` is represented by an empty `actualBranch`.
 
 Validation and insertion cannot be perfectly atomic with external filesystem
 changes. Setup repeats the existing ownership and branch checks before adopting
 the directory. If the worktree changes after preflight, setup records the
 workspace as errored without deleting or rewriting the pre-existing directory.
-The ordinary workspace recovery/delete controls then govern the persisted row.
+While the recovery marker remains pending, retry cleans only the terminal
+session and delete removes only Middleman's database/session state; neither
+operation removes the pre-existing worktree. Once recovery completes, the
+ordinary workspace lifecycle governs the ready row.
 
 ## Testing
 
@@ -109,8 +129,8 @@ The ordinary workspace recovery/delete controls then govern the persisted row.
 - A component test proves the dialog submits the recovery flag, completes the
   existing inline handoff on success, and keeps the dialog open with an
   actionable error on rejection.
-- The existing Playwright test continues to prove successful branch reuse. The
-  affected issue-workspace browser workflow is rerun after the final UI edit.
+- Playwright proves directory recovery from an older/custom conflicting branch,
+  including the exact request payload and inline-workspace handoff.
 
 ## Non-goals
 

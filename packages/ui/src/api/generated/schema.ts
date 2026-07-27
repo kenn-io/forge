@@ -4780,6 +4780,7 @@ export interface components {
             readonly $schema?: string;
             git_head_ref?: string;
             reuse_existing_branch?: boolean;
+            reuse_existing_directory?: boolean;
         };
         CreateIssueWorkspaceInputBody: {
             /**
@@ -4790,6 +4791,7 @@ export interface components {
             readonly $schema?: string;
             git_head_ref?: string;
             reuse_existing_branch?: boolean;
+            reuse_existing_directory?: boolean;
         };
         CreateWorkspaceInputBody: {
             /**
@@ -6366,7 +6368,7 @@ export interface components {
              * @example badRequest
              * @enum {string}
              */
-            code: "badRequest" | "branchConflict" | "branchInUse" | "branchProtected" | "commentNotFound" | "conflict" | "destinationExists" | "forbidden" | "hookFailed" | "internalError" | "issueNotFound" | "notFound" | "payloadTooLarge" | "projectNotFound" | "pullNotFound" | "rateLimited" | "repoNotFound" | "serviceUnavailable" | "settingsUnavailable" | "toolMissing" | "toolUnauthenticated" | "unauthorized" | "unsupportedCapability" | "upstreamError" | "validationError" | "workspaceNotFound" | "worktreeDirty";
+            code: "badRequest" | "branchConflict" | "branchInUse" | "branchProtected" | "commentNotFound" | "conflict" | "destinationExists" | "forbidden" | "hookFailed" | "internalError" | "issueNotFound" | "notFound" | "payloadTooLarge" | "projectNotFound" | "pullNotFound" | "rateLimited" | "repoNotFound" | "serviceUnavailable" | "settingsUnavailable" | "toolMissing" | "toolUnauthenticated" | "unauthorized" | "unsupportedCapability" | "upstreamError" | "validationError" | "workspaceDirectoryNotReusable" | "workspaceNotFound" | "worktreeDirty";
             /**
              * @description A human-readable explanation specific to this occurrence of the problem.
              * @example Property foo is required but is missing.
@@ -17607,7 +17609,7 @@ export const mergeRequestKanbanStatusValues: ReadonlyArray<FlattenedDeepRequired
 export const mergeRequestStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MergeRequest"]["State"]> = ["open", "closed", "merged"];
 export const mergeRequestResponseKanbanStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MergeRequestResponse"]["KanbanStatus"]> = ["new", "reviewing", "waiting", "awaiting_merge"];
 export const mergeRequestResponseStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MergeRequestResponse"]["State"]> = ["open", "closed", "merged"];
-export const problemErrorCodeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ProblemError"]["code"]> = ["badRequest", "branchConflict", "branchInUse", "branchProtected", "commentNotFound", "conflict", "destinationExists", "forbidden", "hookFailed", "internalError", "issueNotFound", "notFound", "payloadTooLarge", "projectNotFound", "pullNotFound", "rateLimited", "repoNotFound", "serviceUnavailable", "settingsUnavailable", "toolMissing", "toolUnauthenticated", "unauthorized", "unsupportedCapability", "upstreamError", "validationError", "workspaceNotFound", "worktreeDirty"];
+export const problemErrorCodeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ProblemError"]["code"]> = ["badRequest", "branchConflict", "branchInUse", "branchProtected", "commentNotFound", "conflict", "destinationExists", "forbidden", "hookFailed", "internalError", "issueNotFound", "notFound", "payloadTooLarge", "projectNotFound", "pullNotFound", "rateLimited", "repoNotFound", "serviceUnavailable", "settingsUnavailable", "toolMissing", "toolUnauthenticated", "unauthorized", "unsupportedCapability", "upstreamError", "validationError", "workspaceDirectoryNotReusable", "workspaceNotFound", "worktreeDirty"];
 export const terminalRendererValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Terminal"]["renderer"]> = ["xterm", "ghostty-web"];
 export const workflowStateMetaResponseStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["WorkflowStateMetaResponse"]["status"]> = ["new", "reviewing", "waiting", "awaiting_merge"];
 export const workspaceResponseAgent_stateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["WorkspaceResponse"]["agent_state"]> = ["idle", "working", "input", "approval"];

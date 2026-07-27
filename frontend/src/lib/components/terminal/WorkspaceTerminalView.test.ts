@@ -1797,6 +1797,61 @@ describe("WorkspaceTerminalView", () => {
     expect(screen.getByRole("button", { name: "Focus Shell" })).toBeTruthy();
   });
 
+  it("keeps one live terminal while a shell moves between the terminal panel and the workflow area", async () => {
+    localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoTerminalSessions());
+
+    render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+      },
+    });
+
+    await fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Open terminal panel",
+      }),
+    );
+    await waitFor(() => expect(sockets).toHaveLength(1));
+    const socket = sockets[0]!;
+    expect(socket.url).toContain("ws-1_shell_a");
+
+    await fireEvent.click(screen.getByRole("button", { name: "Move Shell to workflow" }));
+    await screen.findByRole("tab", { name: /Shell/ });
+    await fireEvent.click(screen.getByRole("button", { name: "Move Shell to terminal" }));
+    await waitFor(() => expect(screen.queryByRole("tab", { name: /Shell/ })).toBeNull());
+
+    // One tmux attachment from start to finish. Both regions render the same
+    // pooled terminal, so moving between them reparents it instead of tearing
+    // the shell down and reattaching to a scrollback-less new one.
+    expect(sockets.filter((candidate) => candidate.url.includes("ws-1_shell_a"))).toHaveLength(1);
+    expect(socket.close).not.toHaveBeenCalled();
+  });
+
+  it("hands a docked terminal back when the terminal panel closes", async () => {
+    localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoTerminalSessions());
+
+    render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+      },
+    });
+
+    await fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Open terminal panel",
+      }),
+    );
+    await waitFor(() => expect(sockets).toHaveLength(1));
+
+    await fireEvent.click(screen.getAllByRole("button", { name: "Close terminal panel" })[0]!);
+
+    // A closed panel renders nothing, and a pooled terminal nothing renders
+    // would otherwise sit parked with its socket open forever.
+    await waitFor(() => expect(sockets[0]!.close).toHaveBeenCalled());
+  });
+
   it("shows a workspace sidebar collapse button", async () => {
     const onToggleSidebar = vi.fn();
 

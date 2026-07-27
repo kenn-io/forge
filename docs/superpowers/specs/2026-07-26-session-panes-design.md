@@ -27,6 +27,7 @@ maintainer uses once per workspace.
 | Question                            | Decision                                                                     |
 | ----------------------------------- | ---------------------------------------------------------------------------- |
 | Session ↔ detail tree               | One tree. A session can be promoted to a top-level detail pane.              |
+| Which sessions are promotable       | All of them. A terminal tab promotes exactly like a workflow tab.            |
 | Does a workspace pane still exist   | Yes, as the default container sessions start in and return to.               |
 | `Home` tab                          | Deleted **in embedded mode only**; the launcher becomes a transient overlay. |
 | Workspace-level controls            | One button, top right of the workspace pane's tab strip, opening a popover.  |
@@ -74,25 +75,39 @@ qualifying:
 ### Promotion and demotion
 
 Dragging a session tab out of the workspace container and dropping it on the
-detail tree promotes it: the session leaves `terminalLayout.workflowTree` and
-becomes a session pane in the surface's `PaneLayoutStore`. Dragging it back
-demotes it. It reads as an ordinary tab drag, but it cannot be implemented as
-one: every existing layout mutation rejects a source tab the destination tree
-does not already contain, and the drag payload does not say which tree the tab
-came from.
+detail tree promotes it. Dragging it back demotes it. Both containers can be the
+source — a workflow tab and a terminal tab in the dock promote identically —
+because both render pooled slots and neither owns the terminal.
 
-So the payload gains an origin — `{ scope, tabKey, origin: "detail" | "workspace" }`
-— and the drop runs a **transfer**, not an insert:
+**The detail tree is the only record of a promotion.** A session is promoted in a
+surface when that surface's stored pane tree contains its pane key; nothing else
+is written. `sessionRegions` keeps owning the session's home container, so
+demotion has nothing to remember and nothing to restore.
 
-1. the destination computes the tree it would produce;
-2. the source computes the tree it would produce with the tab removed;
-3. both are committed together, or neither is.
+The workspace containers then **mask** the promoted session at render time: their
+rendered trees are derived from the stored trees with promoted entries pruned.
+Pruning the stored trees instead would return a demoted session to the right
+region but lose its tab order, split, group, and active position — the placement
+the user is expecting back.
 
-A rejected transfer (the destination refuses the drop, the session vanished
-mid-drag) leaves both trees untouched, and the drag ends with no visible change
-rather than a tab that exists in both trees or in neither. The transitional flush
-matters: the session's portal slot must never be rendered by both trees at once,
-so the source's removal and the destination's insert land in the same update.
+Two consequences worth stating, because they read as bugs otherwise:
+
+- Promotion is **per surface**, not global. A session promoted in the PRs surface
+  still sits in its home container on the Activity surface and on the standalone
+  Workspaces tab. Those are two surface-local placements of one session, not two
+  representations of one promotion.
+- One session still has one live terminal, so if two surfaces were ever visible
+  at once one of their slots would be blank. Nothing about promotion changes
+  that, and no promotion model could.
+
+The drag still cannot be an ordinary tab move: every existing layout mutation
+rejects a source tab the destination tree does not already contain, and the
+payload does not say which tree the tab came from. So the payload gains an origin
+— `{ scope, tabKey, origin: "detail" | "workspace" }` — and the destination
+inserts a tab it has never seen. What it does not need is a two-phase commit:
+there is exactly one authoritative write, validated against the current claim and
+session list before it lands. A refused drop writes nothing, and the pool's
+owner-scoped registration makes the one-frame handoff safe on its own.
 
 The container stays even when empty, because it is where the launcher lives and
 where a newly launched session lands. An empty container renders the launcher
@@ -128,7 +143,9 @@ Two trees now exchange tabs, and one must stay isolated:
 registered portal slots, which is why exactly one slot may be mounted at a time.
 With N session panes that becomes a registry: one live subtree per session,
 each reparented into whichever slot renders it and parked in the hidden host
-when no slot does. The invariant weakens from "one live subtree" to "one live
+when no slot does. Every container renders slots, the terminal dock included, so
+no container owns a terminal and a session can move between any two of them
+without losing its tmux attachment. The invariant weakens from "one live subtree" to "one live
 subtree **per session key**, and one mounted slot per session key".
 
 Consequences to hold onto:
@@ -156,7 +173,9 @@ Consequences to hold onto:
   gone, but keeps its placement in the stored tree: relaunching under the same
   key must bring it back where the user put it, which is the whole reason layout
   keys omit the generation. Only deleting the session, or its workspace, removes
-  the placement. A closed pane disposes nothing at all — that is what the parking
+  the placement — and then from every surface's tree, along with any zoom or
+  focus metadata naming it, because promotion is surface-local and a reused
+  session key would otherwise resurrect a placement nobody asked for. A closed pane disposes nothing at all — that is what the parking
   area is for.
 - It is also disposed when its workspace stops being claimed by any surface and
   is not the one the Workspaces tab is showing. Parked terminals hold live

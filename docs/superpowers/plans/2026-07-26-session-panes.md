@@ -211,19 +211,29 @@ same reason.
 Two things the view keeps owning:
 
 - **The registry mirror is reconciled from state, not pushed per call site.** A
-  session moved into the terminal dock stays in `mountedSessionKeys` while the
-  dock renders its own pane, so a missed `noteSessionUnmounted` would leave two
-  sockets on one tmux session. One effect derives the desired set (mounted AND
-  workflow-region) and syncs only this workspace's prefix, leaving other
-  surfaces' parked terminals alone.
+  session changes region without either container calling anything, so a pushed
+  mount/unmount would drift; a missed `noteSessionUnmounted` leaves a socket
+  attached to nothing. One effect derives the desired set — mounted workflow
+  sessions plus the open dock's leaves — and syncs only this workspace's prefix,
+  leaving other surfaces' parked terminals alone.
 - **Exit routing.** The pool reports an exit by registry key; only this view can
   map that back to a `RuntimeSession`, and the generation in the key keeps a
   relaunched session from being taken for the dead one.
 
-**The terminal dock is out of scope.** Terminal-region sessions are rendered by
-`TerminalSplitTree` with its own split machinery and are not promotable, so
-pooling them would be a large change for no part of this feature. The reconcile
-filter above is what keeps the two paths from both attaching.
+**The terminal dock is pooled too.** Terminal tabs are promotable, so
+`TerminalSplitTree` renders `SessionTerminalSlot` instead of its own
+`TerminalPane` and the reconcile effect covers both regions. Its desired set is
+the dock's tree leaves while the panel is open — a terminal-region session with
+no leaf, or a closed panel, has no terminal today and must not gain one just
+because the pool could park it. Two things follow:
+
+- `onExit` disappears from the dock's prop chain. Exits arrive by registry key
+  through `onSessionExited` like every other session's, and leaving the old prop
+  wired would run `handleSessionExit` twice.
+- Moving a shell between the dock and the workflow area now reparents one pooled
+  terminal instead of destroying one and attaching another, so it keeps its tmux
+  session and its scrollback. That is the behavior the region filter used to make
+  impossible, and it is what makes the dock promotable in Task 5 for free.
 
 - [x] **Step 1** Write the failing browser test — covered by Task 2's
       `SessionTerminalPool.browser.svelte.ts`, which exercises the slot contract
@@ -235,6 +245,14 @@ filter above is what keeps the two paths from both attaching.
       caught exactly that.
 - [x] **Step 4** Run `../node_modules/.bin/vp test --project unit WorkspaceTerminalView session-host` and `--project browser SessionTerminalPool WorkspaceHost`. Expected PASS. (65 + 11 + 15.)
 - [x] **Step 5** Commit.
+- [x] **Step 6** Pool the dock. Failing unit test first: a shell moved from the
+      dock to the workflow area and back opens exactly one socket for that
+      session and never closes it. A second test guards the hazard pooling
+      introduces — a closed panel must hand its terminal back, not park it with
+      the socket open. Then extend the continuity e2e: the dock leaf's
+      `data-session-host` must reappear inside the workflow slot, which proves
+      the pool's own source-to-destination transfer full-stack. That was owed to
+      Task 10 for want of two real slots; the dock provides the second one.
 
 ---
 
@@ -337,8 +355,9 @@ plus a `paneLayout` round-trip test proving a promoted pane survives serialize/p
 
 **Files:**
 
-- Modify: `packages/ui/src/stores/paneLayout.svelte.ts`
-- Modify: `frontend/src/lib/components/terminal/WorkflowSplitTree.svelte` (drag scope), `WorkspaceTerminalView.svelte` (drop handling)
+- Modify: `packages/ui/src/stores/paneLayout.svelte.ts` (insert a tab the tree has never held)
+- Modify: `packages/ui/src/components/shared/tabbed-panel-drag.ts` (payload origin)
+- Modify: `frontend/src/lib/components/terminal/WorkflowSplitTree.svelte` (drag scope), `DockedTerminalPanel.svelte` / `TerminalSplitTree.svelte` (the dock's own promote control), `WorkspaceTerminalView.svelte` (masking and drop handling)
 - Test: `packages/ui/src/stores/paneLayout.svelte.test.ts`, `frontend/src/lib/components/terminal/WorkspaceTerminalView.test.ts`
 
 Inside a detail surface the embedded tree passes `dragScope={surfaceScope}` instead of `workspaceTabDragScope(workspaceId)`; the standalone Workspaces tab keeps the workspace scope. Add a prop rather than branching on a global:
@@ -348,55 +367,70 @@ Inside a detail surface the embedded tree passes `dragScope={surfaceScope}` inst
 dragScope?: string | undefined; // defaults to workspaceTabDragScope(workspaceId)
 ```
 
-Sharing a scope is not enough to move a tab between trees: every mutation rejects a source the destination does not already contain, and the payload does not say where the tab came from. So the payload gains an origin and the drop becomes an atomic transfer.
+Sharing a scope is not enough: every mutation rejects a source the destination does not already contain, and the payload does not say where the tab came from. So the payload gains an origin, and the destination gains a mutation that inserts a tab it has never held.
 
 ```ts
 // tabbed-panel-drag.ts
 export interface TabbedPanelTabDragPayload {
   scope: string;
   tabKey: string;
-  /** Which tree the tab is leaving, so the drop knows whether to transfer. */
+  /** Which tree the tab is leaving, so the drop knows whether to insert. */
   origin: "detail" | "workspace";
 }
-
-// paneLayout.svelte.ts
-/**
- * Compute — do not commit — the tree this drop would produce.
- *
- * Returns null when the drop is refused. A `commit` that mutated the
- * destination and left the caller to remove the source is not atomic: nothing
- * rolls the destination back if the source's removal is the half that fails,
- * and Svelte's batching hides the intermediate paint without preventing the
- * inconsistent state.
- */
-planTransferIn(tabKey: string, leafID: string, placement: TabbedPanelTransferPlacement): TabbedPanelNode | null;
-/** The same for the source side: the tree with the tab gone, or null if it has none. */
-planTransferOut(tabKey: string): TabbedPanelNode | null;
-/** Replace this tree wholesale. Only ever called by the coordinator below. */
-commitTree(tree: TabbedPanelNode): void;
 ```
 
-Both plans are computed first; only if **neither** is null does the coordinator
-call `commitTree` on each. Either half returning null aborts with no write at
-all, so a refused or impossible transfer cannot leave the tab in both trees or
-in neither.
+**One authoritative write.** The surface's stored pane tree is the only record of
+a promotion: the pane key is in it, or the session is home. Nothing writes
+`sessionRegions`, nothing remembers a source container, and there is no second
+tree to keep in step — so there is no two-phase commit and no way to end up with
+the tab in both trees or neither. Validate the claim and the session immediately
+before the write; a refused drop writes nothing at all.
 
 ```ts
-/** Nothing is written until both sides have produced a tree. */
-export function transferTab(args: {
-  from: { planTransferOut(tabKey: string): TabbedPanelNode | null; commitTree(tree: TabbedPanelNode): void };
-  to: { planTransferIn(...): TabbedPanelNode | null; commitTree(tree: TabbedPanelNode): void };
-  tabKey: string;
-  leafID: string;
-  placement: TabbedPanelTransferPlacement;
-}): boolean;
+// PaneLayoutStore
+/** Insert a pane the tree has never held (a promotion). Rejects a key the
+ *  surface would prune, so a malformed session key cannot be written in. */
+promoteTab(tabKey: string, leafID: string, placement: TabbedPanelTransferPlacement): boolean;
+/** Remove a promoted pane (a demotion). No-op when the tree has no such tab. */
+demoteTab(tabKey: string): void;
 ```
 
-Drag cannot be the only way in. Add two palette commands alongside it — promote
-the focused session, demote the focused promoted pane — both running the same
-coordinator, so keyboard users are not locked out of the feature.
+**The containers mask, they do not prune.** Both region trees keep the promoted
+session's stored entry; what the workspace renders is derived with promoted
+entries pruned. Pruning the stored trees would return a demoted session to the
+right region and lose its tab order, split, group, and active position — the
+placement the user expects back.
 
-- [ ] **Step 1** Failing tests: dropping a session on the detail tree adds the pane and removes the workflow tab in the same flush; the promote and demote commands produce the same trees as the equivalent drops, and are unavailable when there is nothing to promote or demote; dropping it back reverses both; a destination that refuses the drop leaves both trees byte-identical; a **source** that cannot produce a removal leaves the destination byte-identical too; a promoted pane dropped on the Workspaces tab's tree is rejected on scope; a session that disappears mid-drag cancels rather than half-applying.
+The view needs to know which surface it is embedded in to ask. `WorkspaceHost`
+already derives `inlineDock` from its `slot` (`prs` | `issues` | `activity` |
+`tab` | null), and the first three are exactly `PaneSurfaceKey`, so it passes a
+`paneSurface` prop the same way and the view reads that surface's store:
+
+```ts
+// WorkspaceTerminalView
+const surfaceLayout = $derived(paneSurface ? getPaneLayoutStore(paneSurface) : null);
+const promotedSessionKeys = $derived(
+  new Set(
+    runtimeSessions
+      .filter((session) => surfaceLayout?.hasTab(sessionPaneKeyFor(session)) ?? false)
+      .map((session) => session.key),
+  ),
+);
+```
+
+`paneSurface` is unset on the standalone Workspaces tab and on the embed routes,
+which have no detail panes: a session promoted in the PRs surface is still at
+home there, which is correct rather than a gap. The workflow tab descriptors and `terminalSessions`
+both subtract `promotedSessionKeys`, the dock's rendered tree prunes leaves whose
+session is promoted, and the pool's desired set treats a promoted session as on
+screen — the detail pane's slot is what renders it.
+
+Drag cannot be the only way in. Add two palette commands alongside it — promote
+the focused session, demote the focused promoted pane — both running the same two
+store calls, so keyboard users are not locked out. The dock's per-session header
+gets a promote control for the same reason its "Move to workflow" exists.
+
+- [ ] **Step 1** Failing tests: dropping a workflow session on the detail tree adds the pane and takes the tab out of the rendered workflow strip in the same flush, while the stored workflow tree keeps its placement; dropping a **dock** session does the same and leaves no orphan leaf; demoting restores the session to its original leaf, split, and order in whichever region it came from; the promote and demote commands produce the same trees as the equivalent drops, and are unavailable when there is nothing to promote or demote; a destination that refuses the drop leaves the tree byte-identical; a session that disappears mid-drag cancels rather than writing; a promoted pane dropped on the Workspaces tab's tree is rejected on scope; a session promoted in one surface is still at home in another.
 - [ ] **Step 2** Run `../node_modules/.bin/vp test --project unit paneLayout WorkspaceTerminalView`. Expected FAIL.
 - [ ] **Step 3** Implement.
 - [ ] **Step 4** Same command. Expected PASS.
@@ -592,9 +626,9 @@ The overlay wraps today's `WorkspaceHome` body, pushes a modal frame, auto-opens
 - Modify: `context/ui-interaction-contracts.md`, `context/ui-design-system.md`
 - Modify: `docs/superpowers/plans/2026-07-26-session-panes.md` (check the boxes)
 
-The real-backend spec is the only place that proves liveness against a real tmux session. Add: promote a session to a top-level pane and confirm the marker text survives; demote it and confirm the same; change the selected item and come back.
+The real-backend spec is the only place that proves liveness against a real tmux session. Add: promote a session to a top-level pane and confirm the marker text survives; demote it and confirm the same; change the selected item and come back. Promote a **dock** session too, since its container is not the one promotion was designed around.
 
-The first of these landed early, with Task 3: "a pooled workflow session keeps its live tmux shell across a reparent" moves a real shell into the workflow region and follows it through the Workspaces-tab-to-detail-pane reparent and back. Pooling changed how every workflow session renders, so it needed real-backend proof then rather than at the end — the browser-tier pool tests all mount exited sessions and cannot show a websocket surviving.
+The first of these landed early, with Task 3: "a pooled workflow session keeps its live tmux shell while its host is reparented" moves a real shell out of the dock and follows it through the Workspaces-tab-to-detail-pane reparent and back. Once the dock was pooled that same move became a real slot-to-slot transfer, so the test now also asserts the moved terminal's registry key reappears inside the destination slot — the coverage this task was holding for want of two live slots. Pooling changed how every workflow session renders, so it needed real-backend proof then rather than at the end — the browser-tier pool tests all mount exited sessions and cannot show a websocket surviving.
 
 **The launcher needs the real backend too.** Deleting the `Home` tab makes the
 overlay the only route to a first session, and the mock lane cannot prove a
@@ -608,7 +642,7 @@ dead end: no tab, and an overlay whose only opener is untested.
 
 Context edits, terse per `context-guide.md`:
 
-- the portal singleton becomes "one live subtree per session key, one mounted slot per key";
+- the portal singleton becomes "one live subtree per session key, one mounted slot per key" — landed with the dock pooling, since a container rendering its own `TerminalPane` was a live hazard from that point on;
 - session pane keys are kept-if-stored, never reinserted;
 - the launcher is an overlay, and `Home` is not a tab in embedded mode.
 
@@ -632,6 +666,6 @@ Task 6, when a promoted session gives the views a third pane without one.
 ## Risks
 
 - **Two portals, one DOM.** A session's terminal is inside the pool, but the container's whole `WorkspaceTerminalView` is itself reparented by `WorkspaceHost`. Task 2's sibling placement is what keeps a promoted terminal from being dragged into the parking node with its container; get that wrong and promoting a session while the container is parked blanks the terminal.
-- **Double slots.** If both `WorkspaceTerminalView`'s tab panel and a promoted pane render a slot for one session, registration order silently decides the winner. The invariant is enforced by promotion removing the workflow tab; Task 5's tests must cover the transitional flush.
+- **Double slots.** If both a workspace container and a promoted pane render a slot for one session, registration order silently decides the winner. The invariant is enforced by the containers masking promoted sessions out of what they render; Task 5's tests must cover the transitional flush, and the mask must be derived at render time rather than applied by an effect that could lag a frame.
 - **Stored-tree growth.** Session keys accumulate per workspace. Task 9's deletion path is the only thing that bounds it.
 - **Connection growth.** Every parked terminal holds a websocket, so Task 9's claim-change disposal is what stops browsing a list from opening one connection per workspace visited.

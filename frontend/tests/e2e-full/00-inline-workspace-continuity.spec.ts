@@ -330,17 +330,15 @@ test.describe("inline workspace pane continuity", () => {
   });
 
   test("a pooled workflow session keeps its live tmux shell while its host is reparented", async ({ page }) => {
-    // Workflow-region session terminals no longer live in the workspace view's
-    // own subtree: they are rendered once by the app-level pool and reparented
-    // into whichever slot shows them.
+    // Session terminals no longer live in the workspace view's own subtree:
+    // they are rendered once by the app-level pool and reparented into
+    // whichever slot shows them.
     //
-    // Scope, precisely: the workspace host moves, carrying the session's slot
-    // element with it, so the pool never sees a DIFFERENT slot and its own
-    // transfer path is not what is under test here. What is under test is that
-    // a terminal living outside the moved subtree survives the move at all —
-    // the regression pooling introduces today. The pool's source-to-destination
-    // transfer gets full-stack coverage in Task 10, once promotion exists to
-    // produce two real slots.
+    // Two distinct moves are under test. First a transfer between two DIFFERENT
+    // slots — the dock leaf hands the shell to a workflow tab — which is the
+    // pool's own source-to-destination path. Then a reparent of the slot itself,
+    // when the workspace host travels into a detail pane: there the pool sees
+    // the same slot at a new place in the document and must not park it.
     test.skip(
       !hasCommand("git") || !hasCommand("tmux", ["-V"]),
       "git and tmux are required for the real workspace flow",
@@ -362,19 +360,28 @@ test.describe("inline workspace pane continuity", () => {
       // control only renders once the dock has more than one session.
       await page.getByRole("button", { name: "New terminal" }).click();
 
-      // Move a session out of the terminal dock, which renders its own panes,
-      // into the workflow region, which is the pooled path. This is the
-      // SESSION's own control, not the dock's "Move terminal panel to
-      // workflow" — that one only redocks the panel.
-      const moveSession = page.getByRole("button", { name: /^Move (?!terminal panel).+ to workflow$/ }).first();
+      // Move a session out of the terminal dock into the workflow region. Both
+      // render pooled slots, so this is a transfer between two different slots.
+      // The control is the SESSION's own, not the dock's "Move terminal panel
+      // to workflow" — that one only redocks the panel.
+      const dockLeaf = page.locator(".terminal-leaf").first();
+      const moveSession = dockLeaf.getByRole("button", { name: /^Move (?!terminal panel).+ to workflow$/ });
       await expect(moveSession).toBeVisible();
+      const dockedHost = dockLeaf.locator("[data-session-host]");
+      await expect(dockedHost).toBeVisible();
+      const movedHostKey = await dockedHost.getAttribute("data-session-host");
       await moveSession.click();
 
       // The bottom dock still holds the other shell and takes the whole height,
       // leaving the workflow area a 1px sliver. Close it so the moved session
       // has somewhere to render.
       await page.getByRole("button", { name: "Close terminal panel", exact: true }).nth(1).click();
-      const workflowContainer = page.locator(".session-terminal-slot .terminal-container");
+      // The same live terminal the dock was showing, now inside a workflow tab:
+      // a rebuilt one would carry a different registry key, and a stranded one
+      // would leave this slot empty.
+      const movedHost = page.locator(`.session-terminal-slot [data-session-host="${movedHostKey}"]`);
+      await expect(movedHost).toBeVisible();
+      const workflowContainer = movedHost.locator(".terminal-container");
       await expect(workflowContainer).toBeVisible();
       await workflowContainer.evaluate((el) => el.setAttribute("data-continuity", "pooled"));
       const witness = page.locator('[data-continuity="pooled"]');

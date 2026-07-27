@@ -823,17 +823,32 @@
     }
   }
 
-  // Mirror this workspace's mounted workflow sessions into the app-level pool,
-  // which owns the live terminals. Reconciled from state rather than pushed from
-  // each mount/unmount call site: a session moved into the terminal dock still
-  // sits in mountedSessionKeys, and the dock renders its own pane, so a missed
-  // call would leave two sockets attached to one tmux session.
+  // Sessions the terminal dock puts on screen: the leaves of its tree, and only
+  // while the panel is open. A terminal-region session with no leaf has no
+  // terminal today and must not gain one just because the pool could park it.
+  const dockedSessionKeys = $derived(
+    terminalLayout.open
+      ? new Set(collectSessionKeys(terminalLayout.tree))
+      : new Set<string>(),
+  );
+
+  // Mirror the sessions this workspace puts on screen into the app-level pool,
+  // which owns the live terminals. Both regions render pooled slots, so a shell
+  // dragged between the dock and the workflow area keeps its tmux attachment
+  // and its scrollback instead of being torn down and reattached.
+  //
+  // Reconciled from state rather than pushed from each mount/unmount call site:
+  // a session changes region without either side calling anything, and a missed
+  // noteSessionUnmounted would leave a socket attached to nothing.
   $effect(() => {
     const prefix = sessionHostPrefix(workspaceId, workspaceHostKey);
     const desired = new Map<SessionHostKey, MountedSession>();
     for (const session of runtimeSessions) {
-      if (!mountedSessionKeys.includes(session.key)) continue;
-      if (sessionRegion(session) !== "workflow") continue;
+      const onScreen =
+        sessionRegion(session) === "workflow"
+          ? mountedSessionKeys.includes(session.key)
+          : dockedSessionKeys.has(session.key);
+      if (!onScreen) continue;
       const hostKey = sessionHostKeyFor(session);
       desired.set(hostKey, {
         hostKey,
@@ -3362,7 +3377,6 @@
                             onDock={dockTerminalPanel}
                             onResize={resizeTerminalPanel}
                             onDropSession={moveSessionToTerminal}
-                            onExit={handleSessionExit}
                             onSplitSession={splitTerminalSessionIntoPane}
                             onRatioChange={(splitId, ratio) => {
                               updateActiveTerminalTree(
@@ -3415,7 +3429,6 @@
                   onDock={dockTerminalPanel}
                   onResize={resizeTerminalPanel}
                   onDropSession={moveSessionToTerminal}
-                  onExit={handleSessionExit}
                   onSplitSession={splitTerminalSessionIntoPane}
                   onRatioChange={(splitId, ratio) => {
                     updateActiveTerminalTree(

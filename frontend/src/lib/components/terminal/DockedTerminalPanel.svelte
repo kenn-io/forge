@@ -54,7 +54,6 @@
     onDock?: ((dock: TerminalDock) => void) | undefined;
     onResize?: ((height: number) => void) | undefined;
     onDropSession?: ((sessionKey: string) => void) | undefined;
-    onExit?: ((session: RuntimeSession) => void) | undefined;
     onRatioChange?: ((splitId: string, ratio: number) => void) | undefined;
     onSplitSession?:
       | ((
@@ -89,7 +88,6 @@
     onDock,
     onResize,
     onDropSession,
-    onExit,
     onRatioChange,
     onSplitSession,
   }: Props = $props();
@@ -250,7 +248,6 @@
             {onClose}
             {onRename}
             {onMoveToWorkflow}
-            {onExit}
             {onRatioChange}
             {onSplitSession}
           />

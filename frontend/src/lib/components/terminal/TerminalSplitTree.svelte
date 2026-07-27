@@ -7,7 +7,7 @@
   import SparklesIcon from "@lucide/svelte/icons/sparkles";
   import TerminalIcon from "@lucide/svelte/icons/terminal";
   import Self from "./TerminalSplitTree.svelte";
-  import TerminalPane from "./TerminalPane.svelte";
+  import SessionTerminalSlot from "./SessionTerminalSlot.svelte";
   import type { PaneNode, SplitDirection, SplitEdge } from "./terminal-layout";
   import {
     clampRatio,
@@ -19,7 +19,7 @@
     readRuntimeSessionDrag,
     startRuntimeSessionDrag,
   } from "./terminal-drag";
-  import { workspaceSessionWebSocketPath } from "../../api/workspace-runtime.js";
+  import { sessionHostKey } from "../../stores/session-host.svelte.ts";
 
   interface BorderTrim {
     top?: boolean;
@@ -47,7 +47,6 @@
     onClose?: ((session: RuntimeSession) => void) | undefined;
     onRename?: ((session: RuntimeSession) => void) | undefined;
     onMoveToWorkflow?: ((sessionKey: string) => void) | undefined;
-    onExit?: ((session: RuntimeSession) => void) | undefined;
     onRatioChange?: ((splitId: string, ratio: number) => void) | undefined;
     onSplitSession?:
       | ((
@@ -73,7 +72,6 @@
     onClose,
     onRename,
     onMoveToWorkflow,
-    onExit,
     onRatioChange,
     onSplitSession,
   }: Props = $props();
@@ -348,17 +346,14 @@
           ondragleave={handleDragLeave}
           ondrop={dropSplit}
         >
-          <TerminalPane
-            websocketPath={workspaceSessionWebSocketPath(
+          <SessionTerminalSlot
+            hostKey={sessionHostKey(
               workspaceId,
-              session.key,
               workspaceHostKey,
+              session.key,
+              session.created_at,
             )}
-            reconnectOnExit={false}
-            active={activeSessionKey === session.key && hostVisible}
-            {disabled}
-            onExit={() => onExit?.(session)}
-            initialStatus={session.status}
+            visible={activeSessionKey === session.key && hostVisible}
           />
           <div
             class={[
@@ -395,7 +390,6 @@
         {onClose}
         {onRename}
         {onMoveToWorkflow}
-        {onExit}
         {onRatioChange}
         {onSplitSession}
       />
@@ -426,7 +420,6 @@
         {onClose}
         {onRename}
         {onMoveToWorkflow}
-        {onExit}
         {onRatioChange}
         {onSplitSession}
       />

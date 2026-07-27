@@ -298,6 +298,12 @@ Keyboard handlers must have one clear owner for each key press.
   second slot: registration order alone decides which one gets the terminal,
   and the loser renders empty
   (`frontend/src/lib/components/terminal/WorkspaceHost.svelte`).
+- Session terminals are one live subtree PER SESSION KEY, owned by the app-level
+  pool: every container — workflow tabs, the terminal dock, a promoted detail
+  pane — renders a `SessionTerminalSlot` and none renders a `TerminalPane` of its
+  own, or one tmux session gets two sockets. A container mounts a session into
+  the pool only while it actually renders it, since a parked terminal keeps its
+  websocket (`frontend/src/lib/stores/session-host.svelte.ts`).
 - The desktop `.app-main` clips overflow but must never become a scroll
   container; focus-driven scrolling there shifts every mode rail and creates
   matching chrome gaps (`frontend/src/App.svelte::.app-main`).

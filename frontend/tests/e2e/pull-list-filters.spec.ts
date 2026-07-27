@@ -102,24 +102,29 @@ test("PR filters stack attributes and allow multiple kanban statuses", async ({ 
   await expect(rows).toHaveCount(4);
 
   await openPrFilters(page);
-  await page.locator(".kit-filter-dropdown__panel").getByRole("button", { name: "Has workspace" }).click();
+  const filterPanel = page.locator(".kit-filter-dropdown__panel");
+  const workspaceGrouping = (
+    await filterPanel.locator(".kit-filter-dropdown__section-title, .kit-filter-dropdown__item").allTextContents()
+  )
+    .map((text) => text.trim())
+    .filter((text) => ["Status", "Has workspace", "Visibility"].includes(text));
+  expect(workspaceGrouping).toEqual(["Status", "Has workspace", "Visibility"]);
+
+  await filterPanel.getByRole("button", { name: "Has workspace" }).click();
   await expect(rows).toHaveText([/Approved review queue/, /Ready failed workflow/]);
-  await page.locator(".kit-filter-dropdown__panel").getByRole("button", { name: "Has workspace" }).click();
+  await filterPanel.getByRole("button", { name: "Has workspace" }).click();
 
-  await page.locator(".kit-filter-dropdown__panel").getByRole("button", { name: "Ready for review" }).click();
-  await page.locator(".kit-filter-dropdown__panel").getByRole("button", { name: "Reviewing" }).click();
-  await page.locator(".kit-filter-dropdown__panel").getByRole("button", { name: "Awaiting merge" }).click();
+  await filterPanel.getByRole("button", { name: "Ready for review" }).click();
+  await filterPanel.getByRole("button", { name: "Reviewing" }).click();
+  await filterPanel.getByRole("button", { name: "Awaiting merge" }).click();
 
   await expect(rows).toHaveText([/Approved review queue/, /Ready failed workflow/]);
 
-  await page.locator(".kit-filter-dropdown__panel").getByRole("button", { name: "Failed CI" }).click();
+  await filterPanel.getByRole("button", { name: "Failed CI" }).click();
   await expect(rows).toHaveText([/Ready failed workflow/]);
 
-  await page
-    .locator(".kit-filter-dropdown__panel")
-    .getByRole("button", { name: /^(Clear filters|Reset view)$/ })
-    .click();
-  await page.locator(".kit-filter-dropdown__panel").getByRole("button", { name: "Merge conflicts" }).click();
+  await filterPanel.getByRole("button", { name: /^(Clear filters|Reset view)$/ }).click();
+  await filterPanel.getByRole("button", { name: "Merge conflicts" }).click();
 
   await expect(rows).toHaveText([/Ready conflict resolver/]);
 });

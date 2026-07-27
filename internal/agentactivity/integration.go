@@ -38,13 +38,13 @@ type InstallResult struct {
 	ConfigPath  string
 }
 
-func Install(integration Integration, executable, stateDir string) (InstallResult, error) {
+func Install(integration Integration, executable, middlemanConfigPath string) (InstallResult, error) {
 	configPath, err := integrationConfigPath(integration)
 	if err != nil {
 		return InstallResult{}, err
 	}
-	if strings.TrimSpace(executable) == "" || strings.TrimSpace(stateDir) == "" {
-		return InstallResult{}, errors.New("agent hook executable and state directory are required")
+	if strings.TrimSpace(executable) == "" || strings.TrimSpace(middlemanConfigPath) == "" {
+		return InstallResult{}, errors.New("agent hook executable and config path are required")
 	}
 	root, err := readJSONObject(configPath)
 	if err != nil {
@@ -57,11 +57,13 @@ func Install(integration Integration, executable, stateDir string) (InstallResul
 	removeMiddlemanHooks(hooks)
 
 	command := shellquote.Join(
-		executable, "agent-hook", "run", "--state-dir", stateDir,
+		executable, "agent-hook", "run", "--agent", string(integration),
+		"--config", middlemanConfigPath,
 		"--source", "middleman-agent-activity",
 	)
 	commandWindows := windowsCommand(
-		executable, "agent-hook", "run", "--state-dir", stateDir,
+		executable, "agent-hook", "run", "--agent", string(integration),
+		"--config", middlemanConfigPath,
 		"--source", "middleman-agent-activity",
 	)
 	if runtime.GOOS == "windows" {

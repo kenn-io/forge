@@ -24,20 +24,25 @@ import (
 )
 
 const (
-	apiPrefix = "/api/v1"
+	apiPrefix            = "/api/v1"
+	controlCommandMarker = "middleman.io/control-command"
 )
 
 type apiRequester func(context.Context, cliConfig, string, string, []string) ([]byte, error)
 
+type APIRequest func(context.Context, string, string, url.Values, []string) error
+
 type Options struct {
-	Stdout io.Writer
-	Stderr io.Writer
+	Stdout            io.Writer
+	Stderr            io.Writer
+	APICommandFactory func(APIRequest) *cobra.Command
 }
 
 type commandDeps struct {
-	Stdout  io.Writer
-	Stderr  io.Writer
-	Request apiRequester
+	Stdout            io.Writer
+	Stderr            io.Writer
+	Request           apiRequester
+	APICommandFactory func(APIRequest) *cobra.Command
 }
 
 type cliConfig struct {
@@ -48,8 +53,17 @@ type cliConfig struct {
 
 func NewCommand(opts Options) *cobra.Command {
 	return newCommand(commandDeps{
-		Stdout: opts.Stdout,
-		Stderr: opts.Stderr,
+		Stdout:            opts.Stdout,
+		Stderr:            opts.Stderr,
+		APICommandFactory: opts.APICommandFactory,
+	})
+}
+
+func RegisterCommands(root *cobra.Command, opts Options) {
+	registerCommands(root, commandDeps{
+		Stdout:            opts.Stdout,
+		Stderr:            opts.Stderr,
+		APICommandFactory: opts.APICommandFactory,
 	})
 }
 
@@ -59,42 +73,26 @@ func Execute(args []string, opts Options) error {
 	return cmd.Execute()
 }
 
-var controlCommands = map[string]struct{}{
-	"activity":       {},
-	"api":            {},
-	"issues":         {},
-	"pulls":          {},
-	"quickstart":     {},
-	"rate-limits":    {},
-	"repo-summaries": {},
-	"repos":          {},
-	"stacks":         {},
-	"sync":           {},
-	"workspaces":     {},
-}
-
-func IsInvocation(args []string) bool {
-	for i := 0; i < len(args); i++ {
-		arg := args[i]
-		if _, ok := controlCommands[arg]; ok {
-			return true
-		}
-		switch {
-		case arg == "--server" || arg == "--output" || arg == "--timeout" || arg == "-o":
-			i++
-		case strings.HasPrefix(arg, "--server="),
-			strings.HasPrefix(arg, "--output="),
-			strings.HasPrefix(arg, "--timeout="),
-			strings.HasPrefix(arg, "-o="):
-		case strings.HasPrefix(arg, "-"):
-		default:
-			return false
-		}
-	}
-	return false
-}
-
 func newCommand(deps commandDeps) *cobra.Command {
+	root := &cobra.Command{
+		Use:   "middleman",
+		Short: "Agent-oriented CLI for the middleman API",
+		Long: strings.TrimSpace(`middleman serves middleman API content for agents.
+
+Start with "middleman quickstart" for the API shape, then use typed shortcuts
+like "middleman pulls" or the raw HTTP escape hatch:
+
+  middleman api METHOD PATH [body...]
+
+Responses are formatted as JSON by default, YAML with --output yaml, and
+newline-delimited JSON with --output jsonl.`),
+		SilenceUsage: true,
+	}
+	registerCommands(root, deps)
+	return root
+}
+
+func registerCommands(root *cobra.Command, deps commandDeps) {
 	if deps.Stdout == nil {
 		deps.Stdout = os.Stdout
 	}
@@ -112,20 +110,6 @@ func newCommand(deps commandDeps) *cobra.Command {
 	cfg.SetDefault("output", "json")
 	cfg.SetDefault("timeout", 30*time.Second)
 
-	root := &cobra.Command{
-		Use:   "middleman",
-		Short: "Agent-oriented CLI for the middleman API",
-		Long: strings.TrimSpace(`middleman serves middleman API content for agents.
-
-Start with "middleman quickstart" for the API shape, then use typed shortcuts
-like "middleman pulls" or the raw HTTP escape hatch:
-
-  middleman api METHOD PATH [body...]
-
-Responses are formatted as JSON by default, YAML with --output yaml, and
-newline-delimited JSON with --output jsonl.`),
-		SilenceUsage: true,
-	}
 	root.SetOut(deps.Stdout)
 	root.SetErr(deps.Stderr)
 	root.PersistentFlags().String("server", "", "middleman server URL (defaults to middleman config host/port)")
@@ -134,6 +118,7 @@ newline-delimited JSON with --output jsonl.`),
 	mustBind(cfg, root.PersistentFlags().Lookup("server"), "server")
 	mustBind(cfg, root.PersistentFlags().Lookup("output"), "output")
 	mustBind(cfg, root.PersistentFlags().Lookup("timeout"), "timeout")
+	installControlFlagValidation(root)
 
 	fetch := func(ctx context.Context, method, path string, query url.Values, bodyArgs []string) (cliConfig, []byte, error) {
 		current, err := readConfig(cfg)
@@ -175,19 +160,62 @@ newline-delimited JSON with --output jsonl.`),
 		return encodeStructured(deps.Stdout, current.output, operations)
 	}
 
-	root.AddCommand(newQuickstartCommand(cfg, deps.Stdout))
-	root.AddCommand(newAPICommand(request, listOperations))
-	root.AddCommand(newSimpleGetCommand("repos", "List configured repositories", "/repos", nil, request))
-	root.AddCommand(newSimpleGetCommand("repo-summaries", "List repository summaries", "/repos/summary", nil, request))
-	root.AddCommand(newPullsCommand(request))
-	root.AddCommand(newIssuesCommand(request))
-	root.AddCommand(newSyncCommand(request))
-	root.AddCommand(newSimpleGetCommand("stacks", "List detected pull request stacks", "/stacks", nil, request))
-	root.AddCommand(newWorkspacesCommand(request))
-	root.AddCommand(newSimpleGetCommand("rate-limits", "Show provider rate limit status", "/rate-limits", nil, request))
-	root.AddCommand(newActivityCommand(request))
+	apiCommand := newAPICommand(request)
+	if deps.APICommandFactory != nil {
+		apiCommand = deps.APICommandFactory(APIRequest(request))
+	}
+	apiCommand.AddCommand(newAPIListCommand(listOperations))
+	controlCommands := []*cobra.Command{
+		newQuickstartCommand(cfg, deps.Stdout),
+		apiCommand,
+		newSimpleGetCommand("repos", "List configured repositories", "/repos", nil, request),
+		newSimpleGetCommand("repo-summaries", "List repository summaries", "/repos/summary", nil, request),
+		newPullsCommand(request),
+		newIssuesCommand(request),
+		newSyncCommand(request),
+		newSimpleGetCommand("stacks", "List detected pull request stacks", "/stacks", nil, request),
+		newWorkspacesCommand(request),
+		newSimpleGetCommand("rate-limits", "Show provider rate limit status", "/rate-limits", nil, request),
+		newActivityCommand(request),
+	}
+	for _, command := range controlCommands {
+		if command.Annotations == nil {
+			command.Annotations = make(map[string]string)
+		}
+		command.Annotations[controlCommandMarker] = "true"
+		root.AddCommand(command)
+	}
+}
 
-	return root
+func installControlFlagValidation(root *cobra.Command) {
+	previousE := root.PersistentPreRunE
+	previous := root.PersistentPreRun
+	root.PersistentPreRun = nil
+	root.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		if !isControlCommand(cmd) {
+			for _, name := range []string{"server", "output", "timeout"} {
+				if root.PersistentFlags().Changed(name) {
+					return fmt.Errorf("--%s can only be used with API control commands", name)
+				}
+			}
+		}
+		if previousE != nil {
+			return previousE(cmd, args)
+		}
+		if previous != nil {
+			previous(cmd, args)
+		}
+		return nil
+	}
+}
+
+func isControlCommand(cmd *cobra.Command) bool {
+	for current := cmd; current != nil; current = current.Parent() {
+		if current.Annotations[controlCommandMarker] == "true" {
+			return true
+		}
+	}
+	return false
 }
 
 func mustBind(cfg *viper.Viper, flag *pflag.Flag, key string) {
@@ -335,8 +363,8 @@ func newQuickstartCommand(cfg *viper.Viper, stdout io.Writer) *cobra.Command {
 	}
 }
 
-func newAPICommand(request func(context.Context, string, string, url.Values, []string) error, listOperations func(context.Context) error) *cobra.Command {
-	cmd := &cobra.Command{
+func newAPICommand(request func(context.Context, string, string, url.Values, []string) error) *cobra.Command {
+	return &cobra.Command{
 		Use:   "api METHOD PATH [body...]",
 		Short: "Call any middleman API path",
 		Long: strings.TrimSpace(`Call any middleman API path.
@@ -347,15 +375,17 @@ Use "middleman api list" to discover available methods and paths.`),
 			return request(cmd.Context(), args[0], args[1], nil, args[2:])
 		},
 	}
-	cmd.AddCommand(&cobra.Command{
+}
+
+func newAPIListCommand(listOperations func(context.Context) error) *cobra.Command {
+	return &cobra.Command{
 		Use:   "list",
 		Short: "List available middleman API operations",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return listOperations(cmd.Context())
 		},
-	})
-	return cmd
+	}
 }
 
 type apiOperationRecord struct {

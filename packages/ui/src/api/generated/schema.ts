@@ -21,6 +21,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/agent-hooks/{agent}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Receive agent lifecycle hook */
+        post: operations["receive-agent-hook"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/archive/pause": {
         parameters: {
             query?: never;
@@ -4368,6 +4385,22 @@ export interface components {
             key: string;
             label: string;
         };
+        AgentHookOutput: {
+            hookSpecificOutput: components["schemas"]["AgentHookSpecificOutput"];
+        };
+        AgentHookResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/AgentHookResponse.json
+             */
+            readonly $schema?: string;
+            hook_output?: components["schemas"]["AgentHookOutput"];
+        };
+        AgentHookSpecificOutput: {
+            additionalContext: string;
+            hookEventName: string;
+        };
         ApplyReviewSuggestionHostInputBody: {
             /**
              * Format: uri
@@ -5393,6 +5426,22 @@ export interface components {
             rel_path: string;
             /** Format: int64 */
             score: number;
+        };
+        HookEvent: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/HookEvent.json
+             */
+            readonly $schema?: string;
+            agent_id?: string;
+            cwd: string;
+            hook_event_name: string;
+            notification_type?: string;
+            session_id: string;
+            tool_name?: string;
+        } & {
+            [key: string]: unknown;
         };
         HostDiagnostic: {
             blocksOperations: string[] | null;
@@ -7870,6 +7919,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ActivityResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "receive-agent-hook": {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Middleman-Runtime-Session-Key"?: string;
+            };
+            path: {
+                agent: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HookEvent"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentHookResponse"];
                 };
             };
             /** @description Error */

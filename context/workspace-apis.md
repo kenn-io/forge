@@ -244,6 +244,10 @@ visible to Git, the write fails.
 
 ## Agent Activity Hooks
 
+- Agent hooks are thin daemon API clients; the daemon owns every activity
+  transition (`internal/server/workspaceapi/agent_hook.go::Handler.receiveAgentHook`).
+- Claude `SessionStart` context is regenerated from persisted workspace metadata,
+  never read from instruction files (`internal/workspace/agent_context.go::Manager.RenderAgentContextForWorktree`).
 - User-level hooks are single-target: install merges, uninstall preserves other
   handlers, and the last install wins (`internal/agentactivity/integration.go::Install`).
 - Matching live runtime/worktree reports use approval, input, working, idle priority;

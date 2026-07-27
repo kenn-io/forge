@@ -105,6 +105,10 @@ real runtime path plus a component or Vitest browser test for presentation. Do
 not require a duplicate full-stack browser test when it would only replay data
 that is already proven at those two boundaries.
 
+Agent lifecycle hooks intentionally have no full agent-launch E2E. Cover hook config,
+CLI relay, and HTTP handling independently because agent-process invocation is external
+and a combined test duplicates those seams (`internal/server/workspaceapi/agent_hook_test.go::TestReceiveAgentHookRecordsActivityAndGeneratesClaudeContext`).
+
 Every `@lucide/svelte/icons/<name>` import added anywhere in `frontend/src` or
 `packages/ui/src` must also be added to the `optimizeDeps.include` list in
 `frontend/vite.config.ts`. A missing entry passes locally on a warm Vite cache

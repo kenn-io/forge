@@ -224,6 +224,13 @@ func (h *Handler) enqueueDetailSyncWithCompletion(
 // Register registers workspace and local-project REST operations.
 func (s *Handler) Register(api huma.API) {
 	huma.Register(api, huma.Operation{
+		OperationID: "receive-agent-hook",
+		Method:      http.MethodPost,
+		Path:        "/agent-hooks/{agent}",
+		Summary:     "Receive agent lifecycle hook",
+		Tags:        []string{"Activity"},
+	}, s.receiveAgentHook)
+	huma.Register(api, huma.Operation{
 		OperationID:   "create-workspace",
 		Method:        http.MethodPost,
 		Path:          "/workspaces",

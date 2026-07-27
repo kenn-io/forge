@@ -241,6 +241,36 @@ func (m *Manager) PrepareAgentLaunchContext(
 	return writeGeneratedFileAtomic(summary.WorktreePath, relPath, content)
 }
 
+// RenderAgentContextForWorktree regenerates context for a persisted workspace
+// without consulting agent instruction files. An unknown worktree returns an
+// empty string.
+func (m *Manager) RenderAgentContextForWorktree(
+	ctx context.Context, worktreePath string,
+) (string, error) {
+	target, err := canonicalFilesystemPath(worktreePath)
+	if err != nil {
+		return "", err
+	}
+	summaries, err := m.ListSummaries(ctx)
+	if err != nil {
+		return "", err
+	}
+	for i := range summaries {
+		candidate, err := canonicalFilesystemPath(summaries[i].WorktreePath)
+		if err != nil || candidate != target {
+			continue
+		}
+		if err := m.refreshWorkspaceHeadRepo(ctx, &summaries[i].Workspace); err != nil {
+			return "", err
+		}
+		rendered := RenderAgentContext(BuildAgentContext(summaries[i]))
+		return strings.TrimSpace(strings.TrimPrefix(
+			rendered, generatedAgentContextMarker,
+		)), nil
+	}
+	return "", nil
+}
+
 func agentContextRelPath(targetKey string) string {
 	targetKey = strings.TrimSpace(targetKey)
 	switch {

@@ -115,6 +115,16 @@ describe("inserting a tab the tree has never held", () => {
     expect(collectTabbedPanelLeafIDs(next)).toContain(firstLeafID);
   });
 
+  it("inserts before an existing tab so a strip drop lands where it was dropped", () => {
+    const { tree, firstLeafID } = splitLayout();
+    const next = insertTabbedPanelTab(tree, AGENT_PANE, { kind: "before", tabKey: "files" });
+
+    const leaf = findTabbedPanelLeafByTab(next, AGENT_PANE);
+    expect(leaf?.id).toBe(firstLeafID);
+    expect(leaf?.tabs).toEqual(["conversation", AGENT_PANE, "files"]);
+    expect(leaf?.activeTabKey).toBe(AGENT_PANE);
+  });
+
   it("hands back the same tree when the insert cannot apply", () => {
     const { tree, firstLeafID } = splitLayout();
     // Already held: inserting again would duplicate a pane, and two leaves
@@ -131,6 +141,7 @@ describe("inserting a tab the tree has never held", () => {
         placement: "after",
       }),
     ).toBe(tree);
+    expect(insertTabbedPanelTab(tree, AGENT_PANE, { kind: "before", tabKey: "no-such-tab" })).toBe(tree);
   });
 });
 

@@ -92,7 +92,9 @@
   import { Button, CollapsibleSidebar,
     getPaneLayoutStore,
     getStores,
+    parseSessionPaneKey,
     sessionPaneKey,
+    sessionPaneKeyMatchesWorkspace,
     SplitResizeHandle,
     WorkspaceRightSidebar,
     type InlineDockMode,
@@ -512,6 +514,39 @@
 
   function isPromoted(session: RuntimeSession): boolean {
     return promotedSessionKeys.has(session.key);
+  }
+
+  // The two directions of the cross-tree drag: a session tab carries its pane key
+  // out, and a promoted pane's key resolves back to the tab it belongs to. Both
+  // reject anything that is not a live session of THIS workspace on this host — a
+  // session key is unique only within one workspace.
+  const workflowPromotion = $derived(
+    surfaceLayout === null
+      ? undefined
+      : {
+          paneKeyFor: (tabKey: WorkflowTabKey) => {
+            const sessionKey = sessionKeyFromWorkflowTab(tabKey);
+            if (sessionKey === null) return null;
+            const session = runtimeSessions.find((candidate) => candidate.key === sessionKey);
+            return session ? sessionPaneKeyFor(session) : null;
+          },
+          tabKeyFor: (paneKey: string) => {
+            if (!sessionPaneKeyMatchesWorkspace(paneKey, workspaceId, workspaceHostKey)) return null;
+            const sessionKey = parseSessionPaneKey(paneKey)?.sessionKey ?? null;
+            if (sessionKey === null) return null;
+            if (!runtimeSessions.some((candidate) => candidate.key === sessionKey)) return null;
+            return workflowTabKeyForSession(sessionKey);
+          },
+        },
+  );
+
+  /** Bring a promoted session home before a container edit places it. */
+  function demoteWorkflowTab(tabKey: WorkflowTabKey): void {
+    const sessionKey = sessionKeyFromWorkflowTab(tabKey);
+    if (sessionKey === null) return;
+    const session = runtimeSessions.find((candidate) => candidate.key === sessionKey);
+    if (!session || !isPromoted(session)) return;
+    surfaceLayout?.demoteTab(sessionPaneKeyFor(session));
   }
 
   const terminalSessions = $derived(
@@ -1813,6 +1848,7 @@
     targetTabKey: WorkflowTabKey,
   ): void {
     if (actionsBlocked) return;
+    demoteWorkflowTab(sourceTabKey);
     if (sourceTabKey === targetTabKey) return;
     const prepared = normalizeLayoutForSessions(
       runtimeSessions,
@@ -1834,6 +1870,7 @@
     leafID: string,
   ): void {
     if (actionsBlocked) return;
+    demoteWorkflowTab(sourceTabKey);
     const prepared = normalizeLayoutForSessions(
       runtimeSessions,
       layoutWithWorkflowTab(sourceTabKey, terminalLayout),
@@ -1856,6 +1893,7 @@
     placement: "before" | "after",
   ): void {
     if (actionsBlocked) return;
+    demoteWorkflowTab(sourceTabKey);
     const prepared = normalizeLayoutForSessions(
       runtimeSessions,
       layoutWithWorkflowTab(sourceTabKey, terminalLayout),
@@ -3369,6 +3407,8 @@
                   {#if renderedWorkflowTree}
                     <WorkflowSplitTree
                       {workspaceId}
+                      dragScope={surfaceLayout?.dragScope}
+                      promotion={workflowPromotion}
                       node={renderedWorkflowTree}
                       tabs={workflowTabDescriptors}
                       {activeTabKey}

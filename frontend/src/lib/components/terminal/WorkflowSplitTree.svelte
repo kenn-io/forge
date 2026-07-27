@@ -6,13 +6,32 @@
   import SparklesIcon from "@lucide/svelte/icons/sparkles";
   import TerminalIcon from "@lucide/svelte/icons/terminal";
   import HouseIcon from "@lucide/svelte/icons/house";
-  import { TabbedPanelTree, workspaceTabDragScope, type TabbedPanelDescriptor } from "@middleman/ui";
+  import {
+    clearActiveTabbedPanelDrag,
+    readTabbedPanelTabDrag,
+    startTabbedPanelTabDrag,
+    TabbedPanelTree,
+    workspaceTabDragScope,
+    type TabbedPanelDescriptor,
+  } from "@middleman/ui";
   import type { SplitDirection, WorkflowNode, WorkflowTabKey } from "./terminal-layout";
   import {
     clearActiveTerminalDrag,
     readWorkflowTabDrag,
     startWorkflowTabDrag,
   } from "./terminal-drag";
+
+  /**
+   * How this tree's session tabs relate to the detail panes they can be promoted
+   * to. Set only while the tree is embedded in a detail surface; the standalone
+   * Workspaces tab has nowhere to promote to.
+   */
+  export interface WorkflowPromotion {
+    /** The detail-pane key this tab takes when promoted, or null if it has none. */
+    paneKeyFor: (tabKey: WorkflowTabKey) => string | null;
+    /** The tab a promoted pane key belongs to, or null if it is not this workspace's. */
+    tabKeyFor: (paneKey: string) => WorkflowTabKey | null;
+  }
 
   export interface WorkflowTabDescriptor extends TabbedPanelDescriptor {
     key: WorkflowTabKey;
@@ -24,6 +43,11 @@
 
   interface Props {
     workspaceId: string;
+    // The surface's scope while embedded, so this tree and the detail tree can
+    // exchange tabs. Defaults to the workspace's own scope, which is deliberately
+    // isolated: the Workspaces tab has no detail panes to trade with.
+    dragScope?: string | undefined;
+    promotion?: WorkflowPromotion | undefined;
     node: WorkflowNode;
     tabs: WorkflowTabDescriptor[];
     activeTabKey: WorkflowTabKey;
@@ -50,6 +74,8 @@
 
   const {
     workspaceId,
+    dragScope = undefined,
+    promotion = undefined,
     node,
     tabs,
     activeTabKey,
@@ -65,8 +91,37 @@
     onRatioChange,
   }: Props = $props();
 
+  const resolvedDragScope = $derived(dragScope ?? workspaceTabDragScope(workspaceId));
+
   function workflowTabFrom(tabKey: string): WorkflowTabKey {
     return tabKey as WorkflowTabKey;
+  }
+
+  // Two payloads, because this tree keeps its own drag module for intra-workspace
+  // drops (the dock reads it too) while the detail tree only understands the
+  // shared one. A promoted pane's key is the canonical cross-tree form, which a
+  // workspace tab key is not.
+  function startTabDrag(event: DragEvent, tab: TabbedPanelDescriptor): void {
+    const tabKey = workflowTabFrom(tab.key);
+    startWorkflowTabDrag(event, { workspaceId, tabKey });
+    const paneKey = promotion?.paneKeyFor(tabKey) ?? null;
+    if (paneKey !== null) {
+      startTabbedPanelTabDrag(event, { scope: resolvedDragScope, tabKey: paneKey }, "Middleman session tab");
+    }
+  }
+
+  function readDraggedTab(event: DragEvent): WorkflowTabKey | null {
+    const own = readWorkflowTabDrag(event, workspaceId);
+    if (own !== null) return own;
+    // A promoted pane coming home. The drop handlers demote it before placing it,
+    // so its stored placement is only overridden when the user names a target.
+    const foreign = readTabbedPanelTabDrag(event, resolvedDragScope);
+    return foreign === null ? null : (promotion?.tabKeyFor(foreign) ?? null);
+  }
+
+  function clearDrag(): void {
+    clearActiveTerminalDrag();
+    clearActiveTabbedPanelDrag();
   }
 
   function splitDirectionFrom(direction: string): SplitDirection {
@@ -90,12 +145,11 @@
   }
 </script>
 
-<!-- The drag scope is namespaced even though the onStartTabDrag/onReadDraggedTab
-     overrides below mean it never reaches a payload today: scope comparison is
-     plain string equality, so a bare workspace id equal to a detail surface key
-     would let a detail pane land here the moment those overrides go away. -->
+<!-- The scope is namespaced because it IS compared: embedded, it is the surface's
+     own scope, and plain string equality is all that keeps an unrelated tree's
+     tab from landing here. -->
 <TabbedPanelTree
-  dragScope={workspaceTabDragScope(workspaceId)}
+  dragScope={resolvedDragScope}
   {node}
   {tabs}
   {activeTabKey}
@@ -121,13 +175,12 @@
     if (disabled) return;
     onRatioChange?.(splitID, ratio);
   }}
-  onStartTabDrag={(event, tab) =>
-    !disabled && startWorkflowTabDrag(event, {
-      workspaceId,
-      tabKey: workflowTabFrom(tab.key),
-    })}
-  onReadDraggedTab={(event) => disabled ? null : readWorkflowTabDrag(event, workspaceId)}
-  onClearDrag={clearActiveTerminalDrag}
+  onStartTabDrag={(event, tab) => {
+    if (disabled) return;
+    startTabDrag(event, tab);
+  }}
+  onReadDraggedTab={(event) => (disabled ? null : readDraggedTab(event))}
+  onClearDrag={clearDrag}
 >
   {#snippet renderTab(tabKey, active)}
     {@render renderWorkflowTab(workflowTabFrom(tabKey), active)}

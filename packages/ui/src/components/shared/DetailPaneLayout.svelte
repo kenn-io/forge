@@ -217,6 +217,10 @@
   });
 </script>
 
+<!-- A dropped tab this tree does not hold is a promotion: the workspace pane and
+     this tree share a drag scope, and the source stays where it is because the
+     stored pane tree is the only record that the session moved. Every ordinary
+     mutation refuses such a source, so the branch has to be here. -->
 <!-- tabindex so the layout can hold focus itself after a pane closes under it. -->
 <div class="detail-pane-layout" bind:this={host} tabindex="-1">
   {#if activeTree}
@@ -236,11 +240,24 @@
         onSelectTab={selectTab}
         onFocusPane={onFocusPane ? focusPane : undefined}
         onRatioChange={flattened ? undefined : (splitID, ratio) => layout.setRatio(splitID, ratio)}
-        onMoveTabBefore={flattened ? undefined : (source, target) => layout.moveTabBefore(source, target)}
-        onAppendTabToLeaf={flattened ? undefined : (source, leafID) => layout.appendTabToLeaf(source, leafID)}
+        onMoveTabBefore={flattened
+          ? undefined
+          : (source, target) =>
+              layout.hasTab(source)
+                ? layout.moveTabBefore(source, target)
+                : layout.promoteTab(source, { kind: "before", tabKey: target })}
+        onAppendTabToLeaf={flattened
+          ? undefined
+          : (source, leafID) =>
+              layout.hasTab(source)
+                ? layout.appendTabToLeaf(source, leafID)
+                : layout.promoteTab(source, { kind: "tab", leafID })}
         onSplitTab={flattened
           ? undefined
-          : (source, leafID, direction, placement) => layout.splitTab(source, leafID, direction, placement)}
+          : (source, leafID, direction, placement) =>
+              layout.hasTab(source)
+                ? layout.splitTab(source, leafID, direction, placement)
+                : layout.promoteTab(source, { kind: "split", leafID, direction, placement })}
         leafActions={flattened ? undefined : leafActions}
       >
         {#snippet renderTab(tabKey, visible)}

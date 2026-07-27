@@ -168,6 +168,7 @@ export function splitTabbedPanelTabIntoLeaf(
 /** Where a tab the tree has never held should land. */
 export type TabbedPanelInsertTarget =
   | { kind: "tab"; leafID: string }
+  | { kind: "before"; tabKey: string }
   | {
       kind: "split";
       leafID: string;
@@ -194,6 +195,13 @@ export function insertTabbedPanelTab(
 ): TabbedPanelNode | null {
   if (!node) return null;
   if (findTabbedPanelLeafByTab(node, tabKey)) return node;
+  if (target.kind === "before") {
+    // Dropping between two tabs in a strip: the position is the point of the
+    // gesture, so landing at the end instead would read as a mis-drop.
+    if (!findTabbedPanelLeafByTab(node, target.tabKey)) return node;
+    const inserted = insertTabbedPanelTabBefore(node, tabKey, target.tabKey);
+    return inserted ? (activateTabbedPanelTab(inserted, tabKey) ?? inserted) : node;
+  }
   if (!findTabbedPanelLeafByID(node, target.leafID)) return node;
   if (target.kind === "tab") {
     return insertTabbedPanelTabIntoLeaf(node, tabKey, target.leafID, "end") ?? node;

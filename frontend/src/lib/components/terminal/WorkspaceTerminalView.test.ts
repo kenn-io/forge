@@ -1,7 +1,13 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { createDiffStore } from "@middleman/ui/stores/diff";
-import { getPaneLayoutStore, resetPaneLayoutStoresForTest, sessionPaneKey } from "@middleman/ui";
+import {
+  clearActiveTabbedPanelDrag,
+  getPaneLayoutStore,
+  resetPaneLayoutStoresForTest,
+  sessionPaneKey,
+  startTabbedPanelTabDrag,
+} from "@middleman/ui";
 import {
   consumeWorkspaceLaunch,
   queueWorkspaceLaunch,
@@ -2502,5 +2508,66 @@ describe("WorkspaceTerminalView", () => {
       // at home here, and hiding it would leave it unreachable.
       expect(await screen.findByRole("tab", { name: /Helper/ })).toBeTruthy();
     });
+  });
+  it("demotes a promoted session dropped back on the workflow strip", async () => {
+    localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+    localStorage.setItem("middleman-workspace-terminal-layout:ws-1", persistedSplitWorkflowLayout("ws-1:helper"));
+    const paneKey = promoteSession("prs", "ws-1:helper");
+
+    render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+        paneSurface: "prs" as const,
+      },
+    });
+
+    const homeTab = await screen.findByRole("tab", { name: "Home" });
+    expect(screen.queryByRole("tab", { name: /Helper/ })).toBeNull();
+
+    // The pane's own drag, arriving from the surface's tree: same scope, and a
+    // key in the canonical form the workspace tab does not use.
+    const dataTransfer = fakeDataTransfer();
+    startTabbedPanelTabDrag({ dataTransfer } as unknown as DragEvent, { scope: "detail:prs", tabKey: paneKey });
+    const homeStrip = homeTab.closest('[role="tablist"]')!;
+    await fireEvent.dragOver(homeStrip, { dataTransfer, clientX: 5 });
+    await fireEvent.drop(homeStrip, { dataTransfer, clientX: 5 });
+    clearActiveTabbedPanelDrag();
+
+    // Demoted, and placed where it was dropped rather than back in the leaf it
+    // came from: the drop names a target, so honoring the stored placement here
+    // would ignore the gesture.
+    const helperTab = await screen.findByRole("tab", { name: /Helper/ });
+    expect(getPaneLayoutStore("prs").hasTab(paneKey)).toBe(false);
+    expect(helperTab.closest('[role="tablist"]')).toBe(homeStrip);
+  });
+
+  it("refuses a session pane dropped from another workspace", async () => {
+    localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+    localStorage.setItem("middleman-workspace-terminal-layout:ws-1", persistedSplitWorkflowLayout("ws-1:helper"));
+
+    render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+        paneSurface: "prs" as const,
+      },
+    });
+
+    const homeTab = await screen.findByRole("tab", { name: "Home" });
+    const helperTab = await screen.findByRole("tab", { name: /Helper/ });
+    const helperStrip = helperTab.closest('[role="tablist"]');
+    // Same session key, another workspace. A session key is unique only within
+    // its own workspace, so this must not move the local session of that name.
+    const dataTransfer = fakeDataTransfer();
+    startTabbedPanelTabDrag({ dataTransfer } as unknown as DragEvent, {
+      scope: "detail:prs",
+      tabKey: sessionPaneKey("ws-2", undefined, "ws-1:helper"),
+    });
+    const homeStrip = homeTab.closest('[role="tablist"]')!;
+    await fireEvent.dragOver(homeStrip, { dataTransfer, clientX: 5 });
+    await fireEvent.drop(homeStrip, { dataTransfer, clientX: 5 });
+    clearActiveTabbedPanelDrag();
+
+    expect(screen.getByRole("tab", { name: /Helper/ }).closest('[role="tablist"]')).toBe(helperStrip);
+    expect(helperStrip).not.toBe(homeStrip);
   });
 });

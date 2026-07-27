@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import DetailPaneLayoutTestHarness from "./DetailPaneLayoutTestHarness.svelte";
 import type { TabbedPanelNode } from "./tabbed-panel-layout";
 import { createPaneLayoutStore, type PaneLayoutStore } from "../../stores/paneLayout.svelte";
+import { isSessionPaneKey, sessionPaneKey } from "../../stores/session-pane-key";
+import { clearActiveTabbedPanelDrag, startTabbedPanelTabDrag } from "./tabbed-panel-drag";
 
 const TABS = ["conversation", "files", "workspace"];
 
@@ -38,6 +40,31 @@ function mockWidth(width: number): void {
 
 function store(tree: TabbedPanelNode): PaneLayoutStore {
   return createPaneLayoutStore("prs", TABS, tree);
+}
+
+/** A surface that accepts promoted session panes, like the real ones do. */
+function promotableStore(tree: TabbedPanelNode): PaneLayoutStore {
+  return createPaneLayoutStore("prs", TABS, tree, isSessionPaneKey);
+}
+
+function fakeDataTransfer(): DataTransfer {
+  const data = new Map<string, string>();
+  return {
+    dropEffect: "none",
+    effectAllowed: "none",
+    getData: (type: string) => data.get(type) ?? "",
+    setData: (type: string, value: string) => {
+      data.set(type, value);
+    },
+    setDragImage: vi.fn(),
+  } as unknown as DataTransfer;
+}
+
+/** Start a drag of a tab this tree has never held, as the workspace pane does. */
+function startForeignTabDrag(scope: string, tabKey: string): DataTransfer {
+  const dataTransfer = fakeDataTransfer();
+  startTabbedPanelTabDrag({ dataTransfer } as unknown as DragEvent, { scope, tabKey });
+  return dataTransfer;
 }
 
 beforeEach(() => {
@@ -309,5 +336,55 @@ describe("detail pane layout", () => {
 
     expect(onSelectTab).toHaveBeenCalledWith("files");
     expect(layout.lastFocusedTabKey()).toBe("files");
+  });
+});
+
+describe("promoting a session pane by drop", () => {
+  const AGENT_PANE = sessionPaneKey("ws-1", undefined, "ws-1:helper");
+
+  afterEach(() => clearActiveTabbedPanelDrag());
+
+  it("adds a dropped session pane to the leaf it landed on", async () => {
+    const layout = promotableStore(splitTree());
+    render(DetailPaneLayoutTestHarness, { layout });
+    const dataTransfer = startForeignTabDrag(layout.dragScope, AGENT_PANE);
+
+    const workspaceStrip = screen.getByRole("tab", { name: "Workspace" }).closest('[role="tablist"]')!;
+    await fireEvent.dragOver(workspaceStrip, { dataTransfer, clientX: 400 });
+    await fireEvent.drop(workspaceStrip, { dataTransfer, clientX: 400 });
+
+    // The surface's own mutations all refuse a source they do not already hold,
+    // so without a promotion path this drop is silently inert.
+    expect(layout.hasTab(AGENT_PANE)).toBe(true);
+    expect(layout.leafIDForTab(AGENT_PANE)).toBe("leaf-workspace");
+  });
+
+  it("splits a session pane off the leaf edge it was dropped on", async () => {
+    const layout = promotableStore(splitTree());
+    render(DetailPaneLayoutTestHarness, { layout });
+    const dataTransfer = startForeignTabDrag(layout.dragScope, AGENT_PANE);
+
+    // mockWidth makes every rect 1600x800 from the origin, so a drop near x=0
+    // lands on the left edge: a split, not a tab.
+    const body = screen.getByTestId("pane-workspace").closest(".tabbed-panel-body")!;
+    await fireEvent.dragOver(body, { dataTransfer, clientX: 2, clientY: 400 });
+    await fireEvent.drop(body, { dataTransfer, clientX: 2, clientY: 400 });
+
+    expect(layout.hasTab(AGENT_PANE)).toBe(true);
+    expect(layout.leafIDForTab(AGENT_PANE)).not.toBe("leaf-workspace");
+  });
+
+  it("refuses a dropped key this surface would prune", async () => {
+    const layout = promotableStore(splitTree());
+    render(DetailPaneLayoutTestHarness, { layout });
+    const dataTransfer = startForeignTabDrag(layout.dragScope, "session:bogus");
+
+    const workspaceStrip = screen.getByRole("tab", { name: "Workspace" }).closest('[role="tablist"]')!;
+    await fireEvent.dragOver(workspaceStrip, { dataTransfer, clientX: 400 });
+    await fireEvent.drop(workspaceStrip, { dataTransfer, clientX: 400 });
+
+    // A malformed key would be pruned on the next load, so accepting it writes a
+    // pane that silently disappears.
+    expect(layout.hasTab("session:bogus")).toBe(false);
   });
 });

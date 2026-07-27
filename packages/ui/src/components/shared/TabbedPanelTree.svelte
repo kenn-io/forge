@@ -1,10 +1,11 @@
 <script lang="ts">
   import { SplitResizeHandle, StatusDot, type SplitResizeEvent } from "@kenn-io/kit-ui";
-  import type { Snippet } from "svelte";
+  import { untrack, type Snippet } from "svelte";
   import Self from "./TabbedPanelTree.svelte";
   import {
     assertNamespacedDragScope,
     clearActiveTabbedPanelDrag,
+    onTabbedPanelDragEnd,
     readTabbedPanelTabDrag,
     startTabbedPanelTabDrag,
   } from "./tabbed-panel-drag.js";
@@ -259,6 +260,13 @@
     draggedTabWidth = 112;
     clearTabSortPreview();
   }
+
+  // Every strip drops its drag state when the drag ends, not only the one whose
+  // dragged tab element survived to receive `dragend`. A drop that moves a tab into
+  // another leaf destroys that element first, and the strip it left behind kept
+  // rendering the gap and the dragging styling - a shadow of a tab that now lives
+  // somewhere else.
+  $effect(() => onTabbedPanelDragEnd(() => untrack(() => clearTabDragState())));
 
   function finishTabDrag(): void {
     hideDropTargets();

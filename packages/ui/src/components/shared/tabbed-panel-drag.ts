@@ -35,6 +35,7 @@ export interface TabbedPanelTabDragPayload {
 let activeTabbedPanelTabDrag: TabbedPanelTabDragPayload | null = null;
 let activeTabbedPanelTabDragToken: string | null = null;
 let dragTokenSequence = 0;
+const dragEndListeners = new Set<() => void>();
 
 export function startTabbedPanelTabDrag(
   event: DragEvent,
@@ -62,6 +63,22 @@ export function readTabbedPanelTabDrag(event: DragEvent, scope: string): string 
 export function clearActiveTabbedPanelDrag(): void {
   activeTabbedPanelTabDrag = null;
   activeTabbedPanelTabDragToken = null;
+  for (const listener of dragEndListeners) listener();
+}
+
+/**
+ * Called when any drag ends, wherever it ended.
+ *
+ * A tab strip clears its own drag state from the dragged tab's `dragend`, which
+ * never fires when the drop moved that tab into another leaf: the element is gone
+ * before the event would reach it, and the strip it left keeps the gap and the
+ * dragging styling. The strip that ACCEPTED the drop also adopts the dragged key to
+ * preview an insertion, so "this leaf no longer holds it" cannot tell a leftover
+ * from a live preview - only the end of the drag can.
+ */
+export function onTabbedPanelDragEnd(listener: () => void): () => void {
+  dragEndListeners.add(listener);
+  return () => dragEndListeners.delete(listener);
 }
 
 function readTabbedPanelTabDragPayload(event: DragEvent): TabbedPanelTabDragPayload | null {

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import { SplitResizeHandle, type SplitResizeEvent } from "@kenn-io/kit-ui";
   import type { RuntimeSession } from "@middleman/ui/api/types";
   import XIcon from "@lucide/svelte/icons/x";
@@ -17,6 +18,7 @@
   } from "./terminal-layout";
   import {
     clearActiveTerminalDrag,
+    onTerminalDragEnd,
     readRuntimeSessionDrag,
     startRuntimeSessionDrag,
   } from "./terminal-drag";
@@ -145,6 +147,11 @@
     dropTargetsVisible = false;
     activeSplitEdge = null;
   }
+
+  // Every split drops its overlay when the drag ends, not only the one that handled
+  // the drop: a drop on a sibling restructures the tree under the pointer, so the
+  // dragleave that would have hidden this one never arrives.
+  $effect(() => onTerminalDragEnd(() => untrack(() => hideDropTargets())));
 
   function handleDragLeave(event: DragEvent): void {
     if (disabled) return;

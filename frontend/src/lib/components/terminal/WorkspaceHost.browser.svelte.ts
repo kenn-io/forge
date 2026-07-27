@@ -301,7 +301,7 @@ describe("WorkspaceHost", () => {
     }
   });
 
-  it("shows the inline dock toolbar controls only while hosted in an inline slot", async () => {
+  it("keeps the workspace's own chrome out of every inline slot", async () => {
     instance = mount(WorkspaceHost, {
       target: hostContainer,
       context: new Map([[STORES_KEY, { settings: settingsStore }]]),
@@ -340,11 +340,15 @@ describe("WorkspaceHost", () => {
       expect(host.inert).toBe(false);
     }, WAIT);
 
+    // A detail pane never gets the workspace's own header: the pane's tab strip
+    // already names it and carries its controls, and Expand/Collapse Terminal only
+    // restated the leaf's own maximize and close.
     const prsScope = page.elementLocator(host);
     await vi.waitFor(() => {
-      expect(prsScope.getByRole("button", { name: "Expand Terminal" }).query()).not.toBeNull();
-      expect(prsScope.getByRole("button", { name: "Collapse Terminal" }).query()).not.toBeNull();
+      expect(host.querySelector(".header-end")).toBeNull();
     }, WAIT);
+    expect(prsScope.getByRole("button", { name: "Expand Terminal" }).query()).toBeNull();
+    expect(prsScope.getByRole("button", { name: "Collapse Terminal" }).query()).toBeNull();
 
     // No claim on the issues page -> parked (slot === null), which is also
     // not an inline dock slot: the buttons must disappear again.

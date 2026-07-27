@@ -13,6 +13,7 @@ interface WorkflowTabDragPayload {
   tabKey: WorkflowTabKey;
 }
 
+const dragEndListeners = new Set<() => void>();
 let activeRuntimeSessionDrag: RuntimeSessionDragPayload | null = null;
 let activeWorkflowTabDrag: WorkflowTabDragPayload | null = null;
 let activeRuntimeSessionDragToken: string | null = null;
@@ -56,6 +57,19 @@ export function clearActiveTerminalDrag(): void {
   activeWorkflowTabDrag = null;
   activeRuntimeSessionDragToken = null;
   activeWorkflowTabDragToken = null;
+  for (const listener of dragEndListeners) listener();
+}
+
+/**
+ * Called when any terminal drag ends, wherever it ended.
+ *
+ * A split's drop-target overlay is hidden by its own drop or dragleave, neither of
+ * which arrives when the drop lands on a sibling and the tree restructures under the
+ * pointer - leaving the overlay painted over a drag that is already over.
+ */
+export function onTerminalDragEnd(listener: () => void): () => void {
+  dragEndListeners.add(listener);
+  return () => dragEndListeners.delete(listener);
 }
 
 export function readRuntimeSessionDrag(event: DragEvent, workspaceId: string): string | null {

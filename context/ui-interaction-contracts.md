@@ -331,6 +331,13 @@ Keyboard handlers must have one clear owner for each key press.
 - Workflow presets are a standalone-Workspaces-tab surface only. A PR or issue pane
   hosts one workspace beside the thing being reviewed, so composing multi-session
   layouts there is chrome that pane was never asked for.
+- Drag state is cleared by a drag-END broadcast, not only by the dragged element's
+  own `dragend`: a drop that moves a tab into another leaf destroys that element
+  first, so the strip it left keeps the gap and the dragging styling. The strip that
+  accepted the drop adopts the dragged key to preview an insertion, so "this leaf no
+  longer holds it" cannot tell a leftover from a live preview
+  (`packages/ui/src/components/shared/tabbed-panel-drag.ts::onTabbedPanelDragEnd`,
+  `frontend/src/lib/components/terminal/terminal-drag.ts::onTerminalDragEnd`).
 - The pane controls popover is portalled to `<body>`. The leaf's action container is
   a stacking context (`position: relative; z-index: 2`), so a popover parented inside
   it is clamped under xterm's canvas layers, which compete one level up - every click

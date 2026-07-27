@@ -451,3 +451,31 @@ describe("promoting a session pane by drop", () => {
     expect(layout.hasTab("session:bogus")).toBe(false);
   });
 });
+
+describe("drag state after a drop", () => {
+  afterEach(() => clearActiveTabbedPanelDrag());
+
+  it("clears the source strip's drag state when the drop moves the tab away", async () => {
+    // The dragged tab's own dragend is what clears this, and a drop into another
+    // leaf destroys that element before it fires - so the strip the drag started in
+    // kept rendering the gap and the dragging styling it left behind, a shadow of a
+    // tab that is now somewhere else.
+    const layout = store(splitTree());
+    render(DetailPaneLayoutTestHarness, { layout, workspaceAvailable: true });
+
+    const source = screen.getByRole("tab", { name: "Conversation" });
+    const sourceStrip = source.closest('[role="tablist"]')!;
+    const dataTransfer = fakeDataTransfer();
+    await fireEvent.dragStart(source, { dataTransfer });
+    expect(sourceStrip.className).toContain("drag-sorting");
+
+    const targetStrip = screen.getByRole("tab", { name: "Workspace" }).closest('[role="tablist"]')!;
+    await fireEvent.dragOver(targetStrip, { dataTransfer, clientX: 400 });
+    await fireEvent.drop(targetStrip, { dataTransfer, clientX: 400 });
+
+    expect(layout.leafIDForTab("conversation")).toBe("leaf-workspace");
+    const remainingStrip = screen.getByRole("tab", { name: "Files" }).closest('[role="tablist"]')!;
+    expect(remainingStrip.className).not.toContain("drag-sorting");
+    expect(document.querySelectorAll('[data-testid="tabbed-panel-tab-drop-placeholder"]')).toHaveLength(0);
+  });
+});

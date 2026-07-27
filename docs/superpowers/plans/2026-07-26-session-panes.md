@@ -53,8 +53,9 @@
 - Consumes: nothing. Deliberately standalone, like `workspace-host.svelte.ts`.
 - Produces:
   - `type SessionHostKey = string` built by `sessionHostKey(workspaceId: string, hostKey: string | undefined, sessionKey: string, generation: string): SessionHostKey`, where `generation` is the session's `created_at`
-  - `registerSessionSlot(key: SessionHostKey, el: HTMLElement | null): void`
-  - `setSessionSlotVisible(key: SessionHostKey, visible: boolean): void`
+  - `registerSessionSlot(key: SessionHostKey, el: HTMLElement | null): void` — the registering element becomes the key's owner
+  - `releaseSessionSlot(key: SessionHostKey, el: HTMLElement): void` — a no-op unless `el` still owns the key
+  - `setSessionSlotVisible(key: SessionHostKey, el: HTMLElement, visible: boolean): void` — owner-scoped for the same reason
   - `getSessionSlotElement(key: SessionHostKey): HTMLElement | null`
   - `isSessionSlotVisible(key: SessionHostKey): boolean` — false when no slot is registered
   - `sessionSlotAttachment(key: SessionHostKey): Attachment<HTMLElement>`
@@ -138,7 +139,9 @@ Expected: PASS. (8 tests.)
 
 The pool is a **sibling** of `.workspace-host-wrapper`, not a child. A promoted session must survive the container being parked, and the wrapper is exactly what gets parked.
 
-Reparenting copies the placement effect from `WorkspaceHost.svelte:82`: park, `await tick()`, append to destination, reveal on non-zero geometry via `requestAnimationFrame`.
+Reparenting copies the placement effect from `WorkspaceHost.svelte:82` — park, `await tick()`, append to destination — but **not** its poll for non-zero geometry. The host has to poll: it moves a subtree into slots it knows nothing about, including a `display: none` parking node, and nothing else tells it when the destination is real. Here the slot itself reports whether it is on screen, so polling would only add a failure mode where a destination that legitimately measures zero keeps the terminal inert forever.
+
+The risk that gate covered is real and not gone: activating a terminal at zero height makes the fit addon resize the tmux pane to one row. Two things bound it — the container's slot is inside the workspace host, which is still geometry-gated, and a promoted pane's slot only reports visible once its leaf renders. If a zero-height activation is ever observed, the fix is to make measurable geometry part of the slot's visibility contract rather than to reinstate a poll in the pool.
 
 Each session's wrapper lives in its own child component so the placement effect
 is per instance rather than a map of effects. Two consequences:
@@ -271,6 +274,19 @@ export function parseSessionPaneKey(
 export function isSessionPaneKey(key: string): boolean;
 ```
 
+Reject **semantically** empty parts too, not just undecodable ones: an empty
+workspace id or session key names nothing, and only the host segment is allowed
+to be empty (that is how the provider default host is spelled).
+
+Task 6 asks the store whether a session pane is already in the tree, so add it
+here rather than inventing it there:
+
+```ts
+// PaneLayoutStore
+/** Whether the STORED tree contains this tab, regardless of availability. */
+hasTab(tabKey: string): boolean;
+```
+
 - [ ] **Step 1: Write the failing tests**
 
 ```ts
@@ -376,7 +392,11 @@ export function transferTab(args: {
 }): boolean;
 ```
 
-- [ ] **Step 1** Failing tests: dropping a session on the detail tree adds the pane and removes the workflow tab in the same flush; dropping it back reverses both; a destination that refuses the drop leaves both trees byte-identical; a **source** that cannot produce a removal leaves the destination byte-identical too; a promoted pane dropped on the Workspaces tab's tree is rejected on scope; a session that disappears mid-drag cancels rather than half-applying.
+Drag cannot be the only way in. Add two palette commands alongside it — promote
+the focused session, demote the focused promoted pane — both running the same
+coordinator, so keyboard users are not locked out of the feature.
+
+- [ ] **Step 1** Failing tests: dropping a session on the detail tree adds the pane and removes the workflow tab in the same flush; the promote and demote commands produce the same trees as the equivalent drops, and are unavailable when there is nothing to promote or demote; dropping it back reverses both; a destination that refuses the drop leaves both trees byte-identical; a **source** that cannot produce a removal leaves the destination byte-identical too; a promoted pane dropped on the Workspaces tab's tree is rejected on scope; a session that disappears mid-drag cancels rather than half-applying.
 - [ ] **Step 2** Run `../node_modules/.bin/vp test --project unit paneLayout WorkspaceTerminalView`. Expected FAIL.
 - [ ] **Step 3** Implement.
 - [ ] **Step 4** Same command. Expected PASS.
@@ -389,8 +409,9 @@ export function transferTab(args: {
 **Files:**
 
 - Modify: `packages/ui/src/views/PRListView.svelte`, `IssueListView.svelte`, `ActivityFeedView.svelte`
-- Modify: `packages/ui/src/workspace-inline.ts` (the controller exposes the claimed workspace's sessions)
-- Test: the three views' unit tests
+- Modify: `packages/ui/src/workspace-inline.ts` (the controller declares the session members)
+- Modify: `frontend/src/lib/stores/workspace-host.svelte.ts` (**where the controller is implemented** — without this the views compile against an interface nothing satisfies)
+- Test: the three views' unit tests, plus `frontend/src/lib/stores/workspace-host.test.ts` for the implementation
 
 **The boundary.** A view in `packages/ui` cannot import the registry, the slot
 component, or anything else under `frontend/`. `InlineWorkspaceController` is the
@@ -409,10 +430,16 @@ export interface InlineWorkspaceController {
   // ...existing members
   /** Sessions of the currently claimed workspace, or [] when nothing is claimed. */
   promotableSessions(): readonly PromotableSession[];
-  /** Portal attachment for one promoted session's pane body. */
-  sessionSlotAttachment(paneKey: string): Attachment<HTMLElement>;
-  /** Publish whether that pane is on screen; the pool gates `active` on it. */
-  noteSessionPaneVisible(paneKey: string, visible: boolean): void;
+  /**
+   * The whole pane body for a promoted session, rendered by the view.
+   *
+   * A snippet rather than an attachment plus a visibility call: splitting them
+   * hands the view a visibility API with no owner token, which is exactly the
+   * race the owner-scoped registry exists to prevent — a superseded source pane
+   * could hide the destination. The frontend supplies `SessionTerminalSlot`,
+   * which owns both halves and cannot be called wrong.
+   */
+  sessionPane: Snippet<[{ paneKey: string; visible: boolean }]>;
 }
 ```
 
@@ -430,7 +457,11 @@ const sessionTabs = $derived<PaneTabSpec[]>(
 );
 ```
 
-- [ ] **Step 1** Failing tests: a promoted session pane renders its slot for the claimed workspace; selecting an item with a different workspace prunes it while the stored tree keeps it; returning restores it; the pane reports its visibility so a session tabbed behind a sibling goes inert.
+The view renders `{@render inlineWorkspace.sessionPane({ paneKey, visible })}` in
+its `renderPane` snippet, passing `DetailPaneLayout`'s own `visible` argument
+straight through.
+
+- [ ] **Step 1** Failing tests: a promoted session pane renders its slot for the claimed workspace; selecting an item with a different workspace prunes it while the stored tree keeps it; returning restores it; the pane reports its visibility so a session tabbed behind a sibling goes inert. In `workspace-host.test.ts`: the controller reports the claimed workspace's sessions and nothing when unclaimed.
 - [ ] **Step 2** Run `../node_modules/.bin/vp test --project unit PRListView IssueListView ActivityFeedView`. Expected FAIL.
 - [ ] **Step 3** Implement.
 - [ ] **Step 4** Same command. Expected PASS.
@@ -445,10 +476,16 @@ const sessionTabs = $derived<PaneTabSpec[]>(
 - Create: `frontend/src/lib/components/terminal/WorkspacePaneControls.svelte`
 - Modify: `packages/ui/src/components/shared/DetailPaneLayout.svelte` (`leafActions:267`)
 - Modify: `packages/ui/src/views/{PRListView,IssueListView,ActivityFeedView}.svelte`
-- Modify: `WorkspaceTerminalView.svelte` (delete `.workspace-toolbar`, `:3125`)
+- Modify: `frontend/src/App.svelte` (**supplies the controls snippet to the views** — a component test can pass with no production wiring at all)
+- Modify: `WorkspaceTerminalView.svelte` (hide `.workspace-toolbar` in embedded mode, `:3125`)
 - Test: `frontend/src/lib/components/terminal/WorkspacePaneControls.test.ts`, `packages/ui/src/components/shared/DetailPaneLayout.test.ts`
 
 One `aria-label="Workspace controls"` button in the tab strip's action area, opening a popover holding `WorkflowPresetMenu`, `TerminalZoomControl`, `TerminalOptionsMenu`, and a launch action. Rendered for the container leaf and for any promoted session leaf.
+
+**Embedded only.** The toolbar is hidden when `WorkspaceTerminalView` renders
+inside a detail pane; the standalone Workspaces tab keeps it, along with its
+`Home` tab, because that tab's chrome is out of scope. Branch on the existing
+embedded signal rather than deleting the toolbar outright.
 
 **The extension point.** `TabbedPanelTree` takes a `leafActions` snippet, but
 `DetailPaneLayout` already occupies it with its own split/zoom/close controls and
@@ -493,13 +530,13 @@ workspace's session panes, and nothing otherwise.
 **Files:**
 
 - Create: `frontend/src/lib/components/terminal/WorkspaceLauncherOverlay.svelte`
-- Modify: `WorkspaceTerminalView.svelte` (drop `home` from `workflowTabDescriptors:511`, and every `selectWorkspaceTab("home")`)
+- Modify: `WorkspaceTerminalView.svelte` (drop `home` from `workflowTabDescriptors:511` **in embedded mode only**, and retarget every `selectWorkspaceTab("home")` for that mode)
 - Modify: `frontend/src/lib/stores/keyboard/actions.ts` (palette command)
 - Test: `frontend/src/lib/components/terminal/WorkspaceLauncherOverlay.test.ts`, `WorkspaceTerminalView.test.ts`
 
 The overlay wraps today's `WorkspaceHome` body, pushes a modal frame, auto-opens when the workspace has no sessions, and closes when one launches.
 
-- [ ] **Step 1** Failing tests: no `Home` tab exists; the overlay auto-opens for a session-less workspace and not otherwise; launching closes it; the palette command and the controls popover both reopen it; `Focus Terminal` opens it when there is nothing to focus.
+- [ ] **Step 1** Failing tests: embedded mode has no `Home` tab while the standalone Workspaces tab still does; the overlay auto-opens for a session-less workspace and not otherwise; a successful launch closes it; a launch that fails, times out, or is cancelled leaves it open showing the error rather than stranding the user on an empty workspace; switching workspaces mid-launch does not carry the overlay's state across; the palette command and the controls popover both reopen it; `Focus Terminal` opens it when there is nothing to focus.
 - [ ] **Step 2** Run `../node_modules/.bin/vp test --project unit WorkspaceLauncherOverlay WorkspaceTerminalView`. Expected FAIL.
 - [ ] **Step 3** Implement. Every current `selectWorkspaceTab("home")` becomes either "open the launcher" or "select the first session", decided per call site — the post-delete and post-close ones want the launcher; the initial-load one wants the remembered session.
 - [ ] **Step 4** Same command. Expected PASS.
@@ -538,7 +575,7 @@ The overlay wraps today's `WorkspaceHome` body, pushes a modal frame, auto-opens
 - Dispose registry entries for a workspace that no surface claims and the Workspaces tab is not showing: parked terminals hold live websockets, so browsing past ten items must not leave ten connections open.
 
 - [ ] **Step 1** Failing tests, one per bullet, including: deleting a workspace with two promoted panes leaves no session keys in any surface's stored tree; collapsing and expanding a workspace with one promoted pane restores that pane rather than the default tree; selecting three items in turn leaves only the current workspace's terminals in the registry; `noteFocused` accepts a well-formed session pane key and still rejects a malformed one; focusing a promoted pane and focusing the container both update the workspace's last-focused session.
-- [ ] **Step 2** Run `../node_modules/.bin/vp test --project unit workspace-host`. Expected FAIL.
+- [ ] **Step 2** Run `../node_modules/.bin/vp test --project unit workspace-host paneLayout PRListView IssueListView ActivityFeedView`. Expected FAIL. (This task spans the store, the pane layout, and all three views; `workspace-host` alone would miss most of it.)
 - [ ] **Step 3** Implement.
 - [ ] **Step 4** Same command. Expected PASS.
 - [ ] **Step 5** Commit.
@@ -572,7 +609,15 @@ Context edits, terse per `context-guide.md`:
 
 - the portal singleton becomes "one live subtree per session key, one mounted slot per key";
 - session pane keys are kept-if-stored, never reinserted;
-- the launcher is an overlay, and `Home` is not a tab.
+- the launcher is an overlay, and `Home` is not a tab in embedded mode.
+
+Also still owed from the pane-visibility work that landed with Task 3: app-level
+coverage for the push-vs-replace history rule in the arrangements the render
+report newly distinguishes — a route pane covered by another leaf's zoom, and one
+tabbed behind a sibling in its own leaf. `App.pane-commands.browser.svelte.ts`
+covers command availability, not Back-stack behaviour. The tabbed-behind case
+needs a third pane in the leaf, so it wants a claimed workspace: schedule it after
+Task 6, when a promoted session gives the views a third pane without one.
 
 - [ ] **Step 1** Update the continuity spec's selectors, add its three cases, and write `00-workspace-launcher.spec.ts`.
 - [ ] **Step 2** Run `../node_modules/.bin/vp exec playwright test --config playwright-e2e.config.ts --project=chromium tests/e2e-full/00-inline-workspace-continuity.spec.ts tests/e2e-full/00-workspace-launcher.spec.ts`. Expected PASS.

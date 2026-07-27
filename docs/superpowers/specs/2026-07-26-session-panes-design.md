@@ -24,17 +24,26 @@ maintainer uses once per workspace.
 
 ## Decisions
 
-| Question                            | Decision                                                                    |
-| ----------------------------------- | --------------------------------------------------------------------------- |
-| Session ↔ detail tree               | One tree. A session can be promoted to a top-level detail pane.             |
-| Does a workspace pane still exist   | Yes, as the default container sessions start in and return to.              |
-| `Home` tab                          | Deleted. The launcher becomes a transient overlay.                          |
-| Workspace-level controls            | One button, top right of the workspace pane's tab strip, opening a popover. |
-| Terminal liveness                   | Today's single reparented subtree becomes a registry keyed by session.      |
-| Session pane identity in the layout | Keyed by session id; the stored intent tree remembers placement.            |
+| Question                            | Decision                                                                     |
+| ----------------------------------- | ---------------------------------------------------------------------------- |
+| Session ↔ detail tree               | One tree. A session can be promoted to a top-level detail pane.              |
+| Does a workspace pane still exist   | Yes, as the default container sessions start in and return to.               |
+| `Home` tab                          | Deleted **in embedded mode only**; the launcher becomes a transient overlay. |
+| Workspace-level controls            | One button, top right of the workspace pane's tab strip, opening a popover.  |
+| Terminal liveness                   | Today's single reparented subtree becomes a registry keyed by session.       |
+| Session pane identity in the layout | Keyed by session id; the stored intent tree remembers placement.             |
+
+Every decision above applies to the **embedded** workspace — the pane inside a
+detail surface. The standalone Workspaces tab keeps its current chrome, `Home`
+tab, and `Workflow` toolbar; its layout is out of scope. Embedded and standalone
+are therefore two modes of `WorkspaceTerminalView`, not one migration.
 
 Optimize for one to three sessions per item. A workspace with four or more
 sessions is already unusual; nothing here needs to scale past that.
+
+Promotion and demotion must also be reachable from the keyboard. Drag is the
+discoverable path, not the only one: a palette command promotes the focused
+session and demotes a promoted pane.
 
 ## Model
 
@@ -124,8 +133,10 @@ subtree **per session key**, and one mounted slot per session key".
 
 Consequences to hold onto:
 
-- A slot registers under `(surface, sessionKey)` rather than `surface`, and it
-  registers its visibility along with its element. An inactive tab panel keeps
+- A slot registers under the registry key — workspace, fleet host, session, and
+  generation — not under a surface. Surfaces do not appear in the identity at
+  all: two surfaces showing one workspace show the same session, and the last
+  slot to register owns it. It registers its visibility along with its element. An inactive tab panel keeps
   its slot mounted under `visibility: hidden`, so presence in the DOM does not
   mean the terminal is on screen; a session's terminal is active exactly when its
   slot reports visible. A terminal left active behind a hidden tab claims focus
@@ -140,9 +151,13 @@ Consequences to hold onto:
 - Registry entries are keyed by workspace, fleet host, session, and the session's
   `created_at` generation. Without the generation, a session relaunched under a
   reused key would adopt the dead session's subtree and its closed socket.
-- A session's subtree is disposed when its session ends or its workspace is
-  deleted — not when its pane closes, since a closed pane is exactly the case
-  the parking area exists for.
+- **Disposing a terminal is not the same as forgetting where its pane was.** A
+  session that exits or is stopped loses its live subtree, because the socket is
+  gone, but keeps its placement in the stored tree: relaunching under the same
+  key must bring it back where the user put it, which is the whole reason layout
+  keys omit the generation. Only deleting the session, or its workspace, removes
+  the placement. A closed pane disposes nothing at all — that is what the parking
+  area is for.
 - It is also disposed when its workspace stops being claimed by any surface and
   is not the one the Workspaces tab is showing. Parked terminals hold live
   websockets, so retaining every workspace a maintainer merely browsed past
@@ -204,8 +219,9 @@ controls that refuse to act while a modal frame is open keep refusing.
   are restated in terms of "the workspace's panes": with sessions promotable,
   "the workspace pane" is no longer a single leaf. Made deterministic:
   - **Collapsed** — the container and every promoted pane of that workspace are
-    hidden. Expanding restores exactly the set that was hidden, so collapse is
-    reversible rather than a reset to the default arrangement.
+    hidden. Expanding restores exactly the set collapse itself hid, so a pane the
+    user had already closed stays closed and collapse remains reversible rather
+    than a reset to the default arrangement.
   - **Expanded** — any one of those panes holds the zoom. Expanding zooms the
     pane holding the workspace's last-focused session, or the container when
     none is promoted.

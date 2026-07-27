@@ -193,6 +193,7 @@ export {
   PANE_LAYOUT_STORAGE_PREFIX,
   createPaneLayoutStore,
   getPaneLayoutStore,
+  promoteSessionBesideWorkspace,
   resetPaneLayoutStoresForTest,
 } from "./stores/paneLayout.svelte.js";
 export type { PaneLayoutStore, PaneSurfaceKey, PaneTabSpec } from "./stores/paneLayout.svelte.js";

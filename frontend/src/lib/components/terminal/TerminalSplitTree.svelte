@@ -3,6 +3,7 @@
   import type { RuntimeSession } from "@middleman/ui/api/types";
   import XIcon from "@lucide/svelte/icons/x";
   import MoveIcon from "@lucide/svelte/icons/move";
+  import PanelRightIcon from "@lucide/svelte/icons/panel-right";
   import PencilIcon from "@lucide/svelte/icons/pencil";
   import SparklesIcon from "@lucide/svelte/icons/sparkles";
   import TerminalIcon from "@lucide/svelte/icons/terminal";
@@ -47,6 +48,8 @@
     onClose?: ((session: RuntimeSession) => void) | undefined;
     onRename?: ((session: RuntimeSession) => void) | undefined;
     onMoveToWorkflow?: ((sessionKey: string) => void) | undefined;
+    /** Absent unless a detail surface is hosting this workspace and can hold a pane. */
+    onPromoteSession?: ((sessionKey: string) => void) | undefined;
     onRatioChange?: ((splitId: string, ratio: number) => void) | undefined;
     onSplitSession?:
       | ((
@@ -72,6 +75,7 @@
     onClose,
     onRename,
     onMoveToWorkflow,
+    onPromoteSession,
     onRatioChange,
     onSplitSession,
   }: Props = $props();
@@ -311,6 +315,20 @@
             >
               <MoveIcon size="12" strokeWidth="2" aria-hidden="true" />
             </button>
+            {#if onPromoteSession}
+              <button
+                class="leaf-action"
+                title="Move to a pane"
+                aria-label={`Move ${labelFor(session)} to a pane`}
+                disabled={disabled}
+                onclick={() => {
+                  if (disabled) return;
+                  onPromoteSession?.(session.key);
+                }}
+              >
+                <PanelRightIcon size="12" strokeWidth="2" aria-hidden="true" />
+              </button>
+            {/if}
             <button
               class="leaf-action"
               title="Close"
@@ -390,6 +408,7 @@
         {onClose}
         {onRename}
         {onMoveToWorkflow}
+        {onPromoteSession}
         {onRatioChange}
         {onSplitSession}
       />
@@ -420,6 +439,7 @@
         {onClose}
         {onRename}
         {onMoveToWorkflow}
+        {onPromoteSession}
         {onRatioChange}
         {onSplitSession}
       />

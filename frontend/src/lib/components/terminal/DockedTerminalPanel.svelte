@@ -51,6 +51,7 @@
     onClose?: ((session: RuntimeSession) => void) | undefined;
     onRename?: ((session: RuntimeSession) => void) | undefined;
     onMoveToWorkflow?: ((sessionKey: string) => void) | undefined;
+    onPromoteSession?: ((sessionKey: string) => void) | undefined;
     onDock?: ((dock: TerminalDock) => void) | undefined;
     onResize?: ((height: number) => void) | undefined;
     onDropSession?: ((sessionKey: string) => void) | undefined;
@@ -85,6 +86,7 @@
     onClose,
     onRename,
     onMoveToWorkflow,
+    onPromoteSession,
     onDock,
     onResize,
     onDropSession,
@@ -248,6 +250,7 @@
             {onClose}
             {onRename}
             {onMoveToWorkflow}
+            {onPromoteSession}
             {onRatioChange}
             {onSplitSession}
           />

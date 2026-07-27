@@ -97,7 +97,11 @@ let sessionPaneSnippet = $state<Snippet<[{ paneKey: string; visible: boolean }]>
 // for the same reason: every one of them is wired to the live view's state, so the
 // view hands over the rendered chrome rather than the state behind it. Null while
 // no view is embedded, which is what tells a detail pane not to offer the button.
-let workspaceControlsSnippetState = $state<Snippet | null>(null);
+let hostedControls = $state<HostedWorkspaceControls | null>(null);
+// Set by the view while one of those controls has a write in flight. The popover
+// holding them must not be dismissed mid-save: it owns the pending feedback, and
+// unmounting it would strand the user with no idea whether the save landed.
+let hostedControlsBusy = $state(false);
 // Claims are released when their view unmounts, but a deletion can arrive
 // later from an unrelated surface (Workspaces tab, terminal tab). Without
 // this map the deletion would find no claim to tombstone, and the stale
@@ -432,13 +436,36 @@ export function registerSessionPaneSnippet(snippet: Snippet<[{ paneKey: string; 
   sessionPaneSnippet = snippet;
 }
 
-export function registerWorkspaceControlsSnippet(snippet: Snippet | null): void {
-  workspaceControlsSnippetState = snippet;
+export interface HostedWorkspaceControls {
+  snippet: Snippet;
+  /**
+   * The workspace these controls act on. One embedded view serves every selection
+   * on its surface, so the snippet identity survives a switch from one workspace
+   * to another - an open popover has to close on this instead, or its buttons
+   * silently start acting on a workspace the user did not open them for.
+   */
+  workspaceKey: string;
+}
+
+export function registerWorkspaceControls(controls: HostedWorkspaceControls | null): void {
+  if (controls?.snippet === hostedControls?.snippet && controls?.workspaceKey === hostedControls?.workspaceKey) {
+    return;
+  }
+  hostedControls = controls;
 }
 
 /** The hosted workspace's controls, or null when no embedded view is hosting one. */
-export function workspaceControlsSnippet(): Snippet | null {
-  return workspaceControlsSnippetState;
+export function hostedWorkspaceControls(): HostedWorkspaceControls | null {
+  return hostedControls;
+}
+
+export function setWorkspaceControlsBusy(busy: boolean): void {
+  hostedControlsBusy = busy;
+}
+
+/** True while one of the hosted controls has a write in flight. */
+export function workspaceControlsBusy(): boolean {
+  return hostedControlsBusy;
 }
 
 function promotableSessionsFor(surface: InlineWorkspaceSurface): readonly PromotableSession[] {
@@ -616,5 +643,6 @@ export function resetWorkspaceHostForTest(): void {
   workspaceIdentityById.clear();
   hostedSessions = { key: { workspaceId: "", hostKey: undefined }, sessions: [] };
   sessionPaneSnippet = null;
-  workspaceControlsSnippetState = null;
+  hostedControls = null;
+  hostedControlsBusy = false;
 }

@@ -640,6 +640,21 @@ describe("session pane commands", () => {
     expect(action.when(context)).toBe(false);
   });
 
+  it("offers no promotion while the workspace pane is not on screen", () => {
+    const layout = getPaneLayoutStore("prs");
+    // Closed, tabbed behind a sibling, or under another leaf's zoom: the leaf is
+    // still in the tree and the parked view keeps publishing its sessions, so only
+    // the render report can say the terminal is not visible.
+    noteRendered(layout, ["conversation", "workspace"]);
+    layout.notePaneRender({
+      flattened: false,
+      editableTabs: ["conversation", "workspace"],
+      onScreenTabs: ["conversation"],
+    });
+
+    expect(command("session.promote").when(ctx("pulls", { selectedPR: selected }))).toBe(false);
+  });
+
   it("offers no promotion while the surface is not hosting the workspace", () => {
     noteRendered(getPaneLayoutStore("issues"), ["conversation", "workspace"]);
     const action = command("session.promote");

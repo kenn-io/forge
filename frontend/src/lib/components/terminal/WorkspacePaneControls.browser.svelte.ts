@@ -1,0 +1,86 @@
+// The controls popover opens from a detail pane's tab strip, and that strip is a
+// 30px horizontal scroll container inside a leaf that clips overflow. Whether the
+// popover survives that is a question about real painting and hit-testing: jsdom
+// has no layout, so it cannot tell a usable popover from one clipped to a sliver.
+import { createRawSnippet, mount, unmount } from "svelte";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+
+import WorkspacePaneControls from "./WorkspacePaneControls.svelte";
+import { registerWorkspaceControls, resetWorkspaceHostForTest } from "../../stores/workspace-host.svelte.ts";
+
+const controls = createRawSnippet(() => ({
+  render: () =>
+    `<div style="display: flex; gap: 4px">
+       <button type="button" style="height: 22px; width: 90px">Save preset</button>
+       <button type="button" style="height: 22px; width: 90px">Terminal options</button>
+     </div>`,
+}));
+
+/**
+ * The clipping ancestors, reproduced from TabbedPanelTree: a tab strip that scrolls
+ * horizontally (which forces vertical clipping too) inside a leaf that hides
+ * overflow. Placed low in the viewport so a popover that fell back to being
+ * clipped by the strip could not be mistaken for a working one.
+ */
+function mountInTabStrip(): { host: HTMLElement; strip: HTMLElement; app: Record<string, unknown> } {
+  const host = document.createElement("div");
+  host.style.cssText = "position: fixed; left: 40px; top: 200px; width: 400px; height: 160px; overflow: hidden;";
+  const strip = document.createElement("div");
+  strip.style.cssText = "position: relative; display: flex; min-height: 30px; height: 30px; overflow-x: auto;";
+  host.append(strip);
+  document.body.append(host);
+  const app = mount(WorkspacePaneControls, { target: strip });
+  return { host, strip, app };
+}
+
+describe("workspace controls popover in a real tab strip", () => {
+  let mounted: { host: HTMLElement; strip: HTMLElement; app: Record<string, unknown> } | null = null;
+
+  afterEach(() => {
+    if (mounted) {
+      unmount(mounted.app);
+      mounted.host.remove();
+      mounted = null;
+    }
+    resetWorkspaceHostForTest();
+  });
+
+  it("opens clear of the strip that clips it, and its controls are clickable", async () => {
+    registerWorkspaceControls({ snippet: controls, workspaceKey: "ws-1" });
+    mounted = mountInTabStrip();
+
+    const trigger = mounted.strip.querySelector<HTMLButtonElement>("button[aria-label='Workspace controls']");
+    expect(trigger).not.toBeNull();
+    trigger!.click();
+
+    const popover = await vi.waitFor(() => {
+      const el = document.querySelector<HTMLElement>("[role='dialog'][aria-label='Workspace controls']");
+      expect(el).not.toBeNull();
+      // Positioned on the frame after opening, so wait for a real placement rather
+      // than the pre-measurement one.
+      expect(el!.getBoundingClientRect().width).toBeGreaterThan(0);
+      return el!;
+    });
+
+    const stripRect = mounted.strip.getBoundingClientRect();
+    const rect = popover.getBoundingClientRect();
+    // Taller than the strip and hanging below it: the strip is 30px and clips, so
+    // a popover confined to it would be a sliver.
+    expect(rect.height).toBeGreaterThan(stripRect.height);
+    expect(rect.bottom).toBeGreaterThan(stripRect.bottom);
+
+    // The real question clipping decides: is anything there to click? A clipped
+    // popover keeps its box but paints nothing, so hit-testing lands on whatever
+    // is behind it.
+    const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+    expect(popover.contains(hit)).toBe(true);
+
+    const optionsButton = popover.querySelector<HTMLButtonElement>("button:last-of-type");
+    const buttonRect = optionsButton!.getBoundingClientRect();
+    const buttonHit = document.elementFromPoint(
+      buttonRect.left + buttonRect.width / 2,
+      buttonRect.top + buttonRect.height / 2,
+    );
+    expect(optionsButton!.contains(buttonHit) || optionsButton === buttonHit).toBe(true);
+  });
+});

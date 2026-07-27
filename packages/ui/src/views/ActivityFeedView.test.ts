@@ -1,8 +1,13 @@
 import { cleanup, render, screen } from "@testing-library/svelte";
+import { createRawSnippet, type Snippet } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { STORES_KEY } from "../context.js";
 import { resetModalStack } from "../stores/keyboard/modal-stack.svelte.js";
-import { getPaneLayoutStore, resetPaneLayoutStoresForTest } from "../stores/paneLayout.svelte.js";
+import {
+  getPaneLayoutStore,
+  promoteSessionBesideWorkspace,
+  resetPaneLayoutStoresForTest,
+} from "../stores/paneLayout.svelte.js";
 import { sessionPaneKey } from "../stores/session-pane-key.js";
 import { createClaimTestController, createReactiveValue } from "./viewWorkspaceTestDoubles.svelte.js";
 import type { InlineWorkspaceController } from "../workspace-inline.js";
@@ -63,7 +68,13 @@ interface RenderOptions {
   inlineWorkspace?: InlineWorkspaceController | null;
   pullDetail?: unknown;
   issueDetail?: unknown;
+  workspacePaneControls?: Snippet | undefined;
 }
+
+/** Stands in for the frontend's workspace controls button. */
+const controlsDouble: Snippet = createRawSnippet(() => ({
+  render: () => `<button type="button" data-testid="workspace-pane-controls">Controls</button>`,
+}));
 
 function renderActivity(options: RenderOptions = {}) {
   const pullBox = createReactiveValue(options.pullDetail ?? null);
@@ -81,6 +92,9 @@ function renderActivity(options: RenderOptions = {}) {
       props: {
         drawerItem: options.drawerItem ?? null,
         ...(options.inlineWorkspace !== undefined ? { inlineWorkspace: options.inlineWorkspace } : {}),
+        ...(options.workspacePaneControls !== undefined
+          ? { workspacePaneControls: options.workspacePaneControls }
+          : {}),
       },
       context: new Map<symbol, unknown>([[STORES_KEY, stores]]),
     }),
@@ -167,6 +181,33 @@ describe("ActivityFeedView detail panes", () => {
 
     expect(document.querySelector(`[data-session-pane="${paneKey}"]`)).not.toBeNull();
     expect(screen.getByRole("tab", { name: "Helper" })).toBeTruthy();
+  });
+
+  it("offers the workspace controls in the leaf holding a promoted session", () => {
+    const layout = getPaneLayoutStore("activity");
+    const paneKey = sessionPaneKey("ws-1", undefined, "ws-1:helper");
+    promoteSessionBesideWorkspace(layout, paneKey);
+    const { controller } = createClaimTestController("activity", {
+      sessions: [{ paneKey, label: "Helper" }],
+    });
+
+    renderActivity({
+      drawerItem: prDrawer(),
+      inlineWorkspace: controller,
+      pullDetail: pullDetailFixture(12, { id: "ws-1", status: "ready" }),
+      workspacePaneControls: controlsDouble,
+    });
+
+    // Each surface wires this separately, so each needs its own proof: the
+    // workspace leaf and the promoted session's leaf get the button, the leaf of
+    // route panes does not.
+    expect(screen.getAllByTestId("workspace-pane-controls")).toHaveLength(2);
+    expect(
+      document
+        .querySelector('[data-pane-key="conversation"]')
+        ?.closest(".tabbed-panel-leaf")
+        ?.querySelector('[data-testid="workspace-pane-controls"]'),
+    ).toBeNull();
   });
 
   it("offers a workspace pane only once the workspace is claimed", () => {

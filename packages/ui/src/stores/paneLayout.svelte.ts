@@ -345,6 +345,22 @@ export function createPaneLayoutStore(
   return store;
 }
 
+/**
+ * Promote a session into its own leaf beside the workspace pane.
+ *
+ * What every entry point that is not a drag means by "move to a pane": the point
+ * of promoting is to see the session next to the work it belongs to, and a tab
+ * stacked behind the workspace pane looks like the command did nothing. Shared so
+ * the palette command and the dock's own control cannot drift apart. False when
+ * the workspace pane is not on screen, which leaves nothing to grow the split
+ * from.
+ */
+export function promoteSessionBesideWorkspace(layout: PaneLayoutStore, tabKey: string): boolean {
+  const leafID = layout.leafIDForTab("workspace");
+  if (leafID === null) return false;
+  return layout.promoteTab(tabKey, { kind: "split", leafID, direction: "horizontal", placement: "after" });
+}
+
 const stores = new Map<PaneSurfaceKey, PaneLayoutStore>();
 
 /**

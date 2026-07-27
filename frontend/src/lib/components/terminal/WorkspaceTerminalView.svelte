@@ -43,7 +43,8 @@
   } from "../../stores/session-host.svelte.ts";
   import {
     publishHostedSessions,
-    registerWorkspaceControlsSnippet,
+    registerWorkspaceControls,
+    setWorkspaceControlsBusy,
   } from "../../stores/workspace-host.svelte.ts";
   import {
     beginWorkspaceSwitch,
@@ -97,6 +98,7 @@
     getPaneLayoutStore,
     getStores,
     parseSessionPaneKey,
+    promoteSessionBesideWorkspace,
     sessionPaneKey,
     sessionPaneKeyMatchesWorkspace,
     SplitResizeHandle,
@@ -558,14 +560,30 @@
     untrack(() => publishHostedSessions(key, sessions));
   });
 
+  // Below the flatten width a detail surface shows one tab strip for every pane and
+  // suppresses per-leaf chrome, so there is nowhere to hang the controls button and
+  // the toolbar is the only thing left that can carry them.
+  const paneFlattened = $derived(surfaceLayout?.paneRender()?.flattened ?? false);
+  const controlsInPane = $derived(paneSurface !== undefined && !paneFlattened);
+
   // Handed to the detail pane's controls popover, which is where the controls live
-  // once this view is embedded. Only while embedded: the standalone tab renders its
-  // own toolbar, and leaving a stale snippet registered would let a pane open the
-  // controls of a workspace no longer hosted there.
+  // once this view is embedded. Registered with the workspace it acts on, because
+  // one embedded view serves every selection on its surface: the snippet is the
+  // same object after a switch, so only the key can tell a popover that its
+  // subject changed.
   $effect(() => {
-    if (paneSurface === undefined) return;
-    registerWorkspaceControlsSnippet(workspaceControls);
-    return () => registerWorkspaceControlsSnippet(null);
+    if (!controlsInPane) return;
+    const workspaceKey = `${workspaceId}\u0000${workspaceHostKey ?? ""}`;
+    // Untracked because the store compares against what is already registered:
+    // reading that inside a tracked effect that also writes it is the read-write
+    // loop Svelte aborts with effect_update_depth_exceeded.
+    untrack(() => registerWorkspaceControls({ snippet: workspaceControls, workspaceKey }));
+    return () => untrack(() => registerWorkspaceControls(null));
+  });
+
+  $effect(() => {
+    const busy = terminalOptionsSaving || terminalZoomSaving || applyingWorkflowPreset;
+    untrack(() => setWorkspaceControlsBusy(controlsInPane && busy));
   });
 
   // The session a keyboard promote acts on: whichever one the user is looking at.
@@ -586,6 +604,21 @@
       for (const sessionKey of promoted) mountSessionTerminal(sessionKey);
     });
   });
+
+  /**
+   * The dock's own way out: give this session a pane of its own on the surface
+   * hosting the workspace. Undefined when nothing is hosting one, which is what
+   * keeps the control off the standalone tab and the embed routes.
+   */
+  const promoteSessionToPane = $derived(
+    surfaceLayout === null
+      ? undefined
+      : (sessionKey: string) => {
+          const session = runtimeSessions.find((candidate) => candidate.key === sessionKey);
+          if (!session) return;
+          promoteSessionBesideWorkspace(surfaceLayout, sessionPaneKeyFor(session));
+        },
+  );
 
   /** Bring a promoted session home before a container edit places it. */
   function demoteWorkflowTab(tabKey: WorkflowTabKey): void {
@@ -3398,11 +3431,12 @@
         >
           <div class="terminal-area">
             <div class="workspace-surface">
-              {#if paneSurface === undefined}
+              {#if !controlsInPane}
                 <!-- Kept for the standalone Workspaces tab, whose panes have no tab
-                     strip to hold the controls. In a detail pane the same controls
-                     render inside that pane's popover instead, so a bar here would
-                     be a second copy of them above the terminal. -->
+                     strip to hold the controls, and for a flattened detail surface,
+                     which suppresses per-leaf chrome. Otherwise the pane's own
+                     popover renders these, and a bar here would be a second copy of
+                     them above the terminal. -->
                 <div class="workspace-toolbar">
                   <div class="workspace-toolbar-title">Workflow</div>
                   <div class="workspace-actions">{@render workspaceControls()}</div>
@@ -3493,6 +3527,7 @@
                             onClose={(session) => void closeSession(session)}
                             onRename={renameSession}
                             onMoveToWorkflow={moveSessionToWorkflow}
+                            onPromoteSession={promoteSessionToPane}
                             onDock={dockTerminalPanel}
                             onResize={resizeTerminalPanel}
                             onDropSession={moveSessionToTerminal}
@@ -3545,6 +3580,7 @@
                   onClose={(session) => void closeSession(session)}
                   onRename={renameSession}
                   onMoveToWorkflow={moveSessionToWorkflow}
+                  onPromoteSession={promoteSessionToPane}
                   onDock={dockTerminalPanel}
                   onResize={resizeTerminalPanel}
                   onDropSession={moveSessionToTerminal}

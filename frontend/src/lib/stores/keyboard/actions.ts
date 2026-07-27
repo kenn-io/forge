@@ -17,6 +17,7 @@ import {
 } from "@middleman/ui/routes";
 import {
   getPaneLayoutStore,
+  promoteSessionBesideWorkspace,
   type PaneLayoutStore,
   type PaneRenderReport,
   type PaneSurfaceKey,
@@ -435,18 +436,21 @@ function paneIsZoomed(ctx: Context): boolean {
  * current session, the leaf it would split off, and the layout to record it in.
  *
  * Null once the session already has a pane — promoting twice would move the tab
- * the user placed by hand — and null when the workspace pane itself is not on
- * screen, since the split needs a leaf to grow from.
+ * the user placed by hand — and null unless the workspace pane is actually ON
+ * SCREEN. Holding a leaf in the tree is not enough: a pane closed, tabbed behind a
+ * sibling, or covered by another leaf's zoom still has one, while the view keeps
+ * publishing its sessions from the parked host, so the command would move a
+ * terminal the user cannot see. The split also needs a rendered leaf to grow from.
  */
-function sessionPromotionTarget(ctx: Context): { layout: PaneLayoutStore; paneKey: string; leafID: string } | null {
+function sessionPromotionTarget(ctx: Context): { layout: PaneLayoutStore; paneKey: string } | null {
   const mounted = mountedPaneLayout(ctx);
   const surface = paneSurfaceFor(ctx);
   if (mounted === null || surface === null) return null;
+  if (!mounted.render.onScreenTabs.includes("workspace")) return null;
   const session = activeHostedSession(surface);
   if (session === null || mounted.layout.hasTab(session.paneKey)) return null;
-  const leafID = mounted.layout.leafIDForTab("workspace");
-  if (leafID === null) return null;
-  return { layout: mounted.layout, paneKey: session.paneKey, leafID };
+  if (mounted.layout.leafIDForTab("workspace") === null) return null;
+  return { layout: mounted.layout, paneKey: session.paneKey };
 }
 
 /** The pane command target when it names a promoted session, for demotion. */
@@ -691,17 +695,9 @@ export const defaultActions: Action[] = [
     binding: null,
     priority: 0,
     when: (ctx) => sessionPromotionTarget(ctx) !== null,
-    // Split rather than stack onto the workspace pane's leaf: promoting exists to
-    // put a session beside the work it belongs to, and a tab hidden behind the
-    // workspace pane would look like the command did nothing.
     handler: (ctx) => {
       const target = sessionPromotionTarget(ctx);
-      target?.layout.promoteTab(target.paneKey, {
-        kind: "split",
-        leafID: target.leafID,
-        direction: "horizontal",
-        placement: "after",
-      });
+      if (target !== null) promoteSessionBesideWorkspace(target.layout, target.paneKey);
     },
   },
   {

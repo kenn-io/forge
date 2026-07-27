@@ -165,8 +165,8 @@ import { mountedSessions, resetSessionHostForTest, sessionHostPrefix } from "../
 import {
   activeHostedSession,
   getInlineWorkspaceController,
+  hostedWorkspaceControls,
   resetWorkspaceHostForTest,
-  workspaceControlsSnippet,
 } from "../../stores/workspace-host.svelte.ts";
 import { navigate } from "../../stores/router.svelte.ts";
 
@@ -2485,13 +2485,13 @@ describe("WorkspaceTerminalView", () => {
 
     // One bar, not three: the pane's tab strip renders these controls, so a
     // toolbar here would be a second copy of them above the terminal.
-    await waitFor(() => expect(workspaceControlsSnippet()).not.toBeNull());
+    await waitFor(() => expect(hostedWorkspaceControls()).not.toBeNull());
     expect(document.querySelector(".workspace-toolbar")).toBeNull();
 
     // Unregistered on the way out, or a pane could open the controls of a
     // workspace no longer hosted there.
     unmount();
-    await waitFor(() => expect(workspaceControlsSnippet()).toBeNull());
+    await waitFor(() => expect(hostedWorkspaceControls()).toBeNull());
   });
 
   it("keeps its own toolbar on the standalone Workspaces tab", async () => {
@@ -2504,7 +2504,29 @@ describe("WorkspaceTerminalView", () => {
     // That tab's panes have no tab strip to hold the controls, so the bar stays
     // and nothing is published for a detail pane to render.
     await waitFor(() => expect(document.querySelector(".workspace-toolbar")).not.toBeNull());
-    expect(workspaceControlsSnippet()).toBeNull();
+    expect(hostedWorkspaceControls()).toBeNull();
+  });
+
+  it("keeps its toolbar while the detail surface is flattened", async () => {
+    claimForPrs();
+    // What a narrow detail surface reports: one strip for every pane, per-leaf
+    // chrome suppressed, so the pane has nowhere to hang a controls button.
+    getPaneLayoutStore("prs").notePaneRender({
+      flattened: true,
+      editableTabs: [],
+      onScreenTabs: ["workspace"],
+    });
+
+    render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+        paneSurface: "prs" as const,
+      },
+    });
+
+    // Without this the controls vanish entirely below the flatten width.
+    await waitFor(() => expect(document.querySelector(".workspace-toolbar")).not.toBeNull());
+    expect(hostedWorkspaceControls()).toBeNull();
   });
 
   it("publishes the dock's session while the dock is open", async () => {
@@ -2626,6 +2648,60 @@ describe("WorkspaceTerminalView", () => {
 
       getPaneLayoutStore("prs").demoteTab(paneKey);
       await waitFor(() => expect(screen.queryByText("No terminals")).toBeNull());
+    });
+
+    it("promotes a docked session from its own control", async () => {
+      localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+      localStorage.setItem(
+        "middleman-workspace-terminal-layout:ws-1",
+        persistedSplitWorkflowLayout("ws-1_shell_a", "terminal"),
+      );
+      // Two, because the per-session header carrying this control only renders
+      // once the dock holds more than one session.
+      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoTerminalSessions());
+      claimForPrs();
+
+      render(WorkspaceTerminalView, {
+        props: {
+          workspaceId: "ws-1",
+          paneSurface: "prs" as const,
+        },
+      });
+
+      const promote = await screen.findByRole("button", { name: "Move Shell to a pane" });
+      await fireEvent.click(promote);
+
+      const layout = getPaneLayoutStore("prs");
+      const paneKey = sessionPaneKey("ws-1", undefined, "ws-1_shell_a");
+      expect(layout.hasTab(paneKey)).toBe(true);
+      // Its own leaf beside the workspace pane, the same placement the palette
+      // command uses: a tab stacked behind the workspace pane would look like the
+      // control did nothing.
+      expect(layout.leafIDForTab(paneKey)).not.toBe(layout.leafIDForTab("workspace"));
+      // And masked out of the dock it came from; where the dock puts what is left
+      // is the masking tests' subject, not this one's.
+      await waitFor(() => expect(screen.queryByRole("button", { name: "Move Shell to a pane" })).toBeNull());
+    });
+
+    it("offers no promote control on the standalone Workspaces tab", async () => {
+      localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+      localStorage.setItem(
+        "middleman-workspace-terminal-layout:ws-1",
+        persistedSplitWorkflowLayout("ws-1_shell_a", "terminal"),
+      );
+      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoTerminalSessions());
+
+      render(WorkspaceTerminalView, {
+        props: {
+          workspaceId: "ws-1",
+        },
+      });
+
+      // The session's other controls are there, so the header rendered; only the
+      // promote one is absent. No detail surface is hosting this workspace, so
+      // there is no tree to promote into and the control would lead nowhere.
+      await screen.findByRole("button", { name: "Move Shell to workflow" });
+      expect(screen.queryByRole("button", { name: "Move Shell to a pane" })).toBeNull();
     });
 
     it("masks nothing on the standalone Workspaces tab, which has no detail panes", async () => {

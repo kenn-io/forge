@@ -3,16 +3,24 @@ import { createRawSnippet, flushSync } from "svelte";
 import { afterEach, beforeEach, describe, expect, it } from "vite-plus/test";
 
 import WorkspacePaneControls from "./WorkspacePaneControls.svelte";
-import { registerWorkspaceControlsSnippet, resetWorkspaceHostForTest } from "../../stores/workspace-host.svelte.ts";
+import {
+  registerWorkspaceControls,
+  resetWorkspaceHostForTest,
+  setWorkspaceControlsBusy,
+} from "../../stores/workspace-host.svelte.ts";
 
 /**
  * Stands in for the live view's controls. The real ones are wired to that view's
  * state, which is the whole reason they arrive as a snippet rather than being
  * rebuilt here.
  */
-const controls = createRawSnippet(() => ({
+const snippet = createRawSnippet(() => ({
   render: () => `<button type="button">Save preset</button>`,
 }));
+
+function hostControls(workspaceKey = "ws-1"): void {
+  registerWorkspaceControls({ snippet, workspaceKey });
+}
 
 function trigger(): HTMLElement | null {
   return screen.queryByRole("button", { name: "Workspace controls" });
@@ -38,7 +46,7 @@ describe("WorkspacePaneControls", () => {
   });
 
   it("opens the hosted view's controls in one popover", async () => {
-    registerWorkspaceControlsSnippet(controls);
+    hostControls();
     render(WorkspacePaneControls);
 
     const button = trigger();
@@ -53,7 +61,7 @@ describe("WorkspacePaneControls", () => {
   });
 
   it("closes on Escape and on a click outside", async () => {
-    registerWorkspaceControlsSnippet(controls);
+    hostControls();
     render(WorkspacePaneControls);
 
     await fireEvent.click(trigger()!);
@@ -65,14 +73,46 @@ describe("WorkspacePaneControls", () => {
     expect(screen.queryByRole("dialog", { name: "Workspace controls" })).toBeNull();
   });
 
+  it("closes when the pane starts hosting a different workspace", async () => {
+    hostControls("ws-1");
+    render(WorkspacePaneControls);
+    await fireEvent.click(trigger()!);
+
+    // The surface keeps rendering while the user selects another item, so one
+    // embedded view hands over the same snippet for a different workspace. Its
+    // buttons would silently act on that one.
+    flushSync(() => hostControls("ws-2"));
+
+    expect(screen.queryByRole("dialog", { name: "Workspace controls" })).toBeNull();
+    expect(trigger()).not.toBeNull();
+  });
+
+  it("stays open while a hosted control is mid-save", async () => {
+    hostControls();
+    render(WorkspacePaneControls);
+    await fireEvent.click(trigger()!);
+    flushSync(() => setWorkspaceControlsBusy(true));
+
+    await fireEvent.pointerDown(document.body);
+    await fireEvent.keyDown(window, { key: "Escape" });
+
+    // The control owns the pending feedback for its own save; dismissing the
+    // popover under it would strand the user not knowing whether it landed.
+    expect(screen.getByRole("dialog", { name: "Workspace controls" })).toBeTruthy();
+
+    flushSync(() => setWorkspaceControlsBusy(false));
+    await fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Workspace controls" })).toBeNull();
+  });
+
   it("closes when the hosted view goes away under it", async () => {
-    registerWorkspaceControlsSnippet(controls);
+    hostControls();
     render(WorkspacePaneControls);
     await fireEvent.click(trigger()!);
 
     // The claim is released, the pane closed, the workspace deleted: the view
     // unregisters, and nothing else would close a popover left behind.
-    flushSync(() => registerWorkspaceControlsSnippet(null));
+    flushSync(() => registerWorkspaceControls(null));
 
     expect(screen.queryByRole("dialog", { name: "Workspace controls" })).toBeNull();
     expect(trigger()).toBeNull();

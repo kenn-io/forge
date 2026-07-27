@@ -533,7 +533,7 @@ demotes it, and proves one attachment survived. It needs a promoted pane driven
 through the real app, which is that task's lane.
 
 - [x] **Step 1** Failing tests: a promoted session pane renders its slot for the claimed workspace; selecting an item with a different workspace prunes it while the stored tree keeps it; returning restores it; the pane reports its visibility so a session tabbed behind a sibling goes inert. In `workspace-host.test.ts`: the controller reports the claimed workspace's sessions and nothing when unclaimed.
-- [x] **Step 2** Run `../node_modules/.bin/vp test --project unit PRListView IssueListView ActivityFeedView`. Expected FAIL.
+- [x] **Step 2** Run `../node_modules/.bin/vp test --project unit PRListView IssueListView ActivityFeedView workspace-host WorkspaceTerminalView actions.test`. Expected FAIL. (The three views are only the render half; publication, registry selection, and the palette commands live in the other three.)
 - [x] **Step 3** Implement.
 - [x] **Step 4** Same command. Expected PASS.
 - [x] **Step 5** Commit.
@@ -599,7 +599,7 @@ which is what keeps the button out of the leaves of surfaces with no workspace.
 - [x] **Step 1** Failing tests: `DetailPaneLayout` renders `paneLeafExtras` inside the leaf action area and omits it while flattened; the popover holds the hosted view's controls; it closes on Escape, on outside click, and when the view unregisters under it; a leaf holding neither the container nor a session pane renders no button. In `WorkspaceTerminalView.test.ts`: embedded publishes the controls and drops the toolbar, the standalone tab does the opposite.
 - [x] **Step 2** Run `../node_modules/.bin/vp test --project unit WorkspacePaneControls DetailPaneLayout`. Expected FAIL.
 - [x] **Step 3** Implement, and hide the toolbar in embedded mode. Do not delete it: the standalone Workspaces tab keeps it.
-- [x] **Step 4** Same command plus `--project unit WorkspaceTerminalView PRListView`. Expected PASS.
+- [x] **Step 4** Same command plus `--project unit WorkspaceTerminalView PRListView IssueListView ActivityFeedView`, and `--project browser WorkspacePaneControls`. Expected PASS. All three views wire this separately, and only a real browser can tell a usable popover from one clipped by the tab strip.
 - [x] **Step 5** Commit.
 
 The launcher action is `LaunchMenu` as it stands; Task 8 replaces it with the
@@ -656,8 +656,10 @@ The overlay wraps today's `WorkspaceHome` body, pushes a modal frame, auto-opens
 - Last-focused session is tracked per workspace and survives promotion, demotion, and selection changes.
 - On session **deletion** or workspace deletion, drop that session's pane from every surface's stored tree. An exit or a stop does **not**: it disposes that generation's live subtree and leaves the placement alone, which is what lets a relaunch reappear in the pane the user put it in.
 - Dispose registry entries for a workspace that no surface claims and the Workspaces tab is not showing: parked terminals hold live websockets, so browsing past ten items must not leave ten connections open.
+- Purge boundary for records the deletion path could not reach: when a workspace is next hosted, drop stored session panes whose key is absent from its runtime. A session deleted while no surface was mounted would otherwise leave a pane record forever, and recreating a session of that name would inherit a placement the user set for a different one.
+- Between generations - a relaunch, a reconnect - the pane renders nothing for that flush and keeps its tab: the pool hands over the new subtree within the same update, so a spinner would flicker. Permanently gone is the purge rule above, not an indefinitely blank pane.
 
-- [ ] **Step 1** Failing tests, one per bullet, including: deleting a workspace with two promoted panes leaves no session keys in any surface's stored tree; collapsing and expanding a workspace with one promoted pane restores that pane rather than the default tree; selecting three items in turn leaves only the current workspace's terminals in the registry; `noteFocused` accepts a well-formed session pane key and still rejects a malformed one; focusing a promoted pane and focusing the container both update the workspace's last-focused session.
+- [ ] **Step 1** Failing tests, one per bullet, including: a stored pane whose session is missing from the hosted workspace's runtime is purged on the next host; deleting a workspace with two promoted panes leaves no session keys in any surface's stored tree; collapsing and expanding a workspace with one promoted pane restores that pane rather than the default tree; selecting three items in turn leaves only the current workspace's terminals in the registry; `noteFocused` accepts a well-formed session pane key and still rejects a malformed one; focusing a promoted pane and focusing the container both update the workspace's last-focused session.
 - [ ] **Step 2** Run `../node_modules/.bin/vp test --project unit workspace-host paneLayout PRListView IssueListView ActivityFeedView`. Expected FAIL. (This task spans the store, the pane layout, and all three views; `workspace-host` alone would miss most of it.)
 - [ ] **Step 3** Implement.
 - [ ] **Step 4** Same command. Expected PASS.

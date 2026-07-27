@@ -166,11 +166,16 @@ func TestFleetSettingsPublishesOnlyCommittedRuntimeSnapshot(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
+	// The peer answers slower than the committed peer timeout but faster than
+	// the "before" timeout still on file, so a probe that survives to a reply
+	// proves the committed timeout never took effect.
+	const peerReplyDelay = time.Second
+
 	var peerRequests atomic.Int32
 	peer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		peerRequests.Add(1)
 		select {
-		case <-time.After(250 * time.Millisecond):
+		case <-time.After(peerReplyDelay):
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"schemaVersion":2,"host":{"hostname":"remote","platform":"linux"}}`))
 		case <-r.Context().Done():
@@ -224,7 +229,11 @@ peer_timeout = "2s"
 		return nil
 	}
 
-	update := putFleet("hub", "40ms", true, []map[string]any{{
+	// The committed timeout doubles as the whole budget for dialling and
+	// writing each probe, so it has to clear scheduling noise on a loaded
+	// runner as well as beat peerReplyDelay. At 40ms it did not: CI saw the
+	// probe abandoned before the peer ever received it.
+	update := putFleet("hub", "300ms", true, []map[string]any{{
 		"key": "remote", "name": "Remote", "base_url": peer.URL,
 	}})
 	defer update.Body.Close()
@@ -233,7 +242,8 @@ peer_timeout = "2s"
 	snapshot, elapsed := readSnapshot()
 	assert.Contains(hostKeys(snapshot), "hub")
 	assert.Contains(hostKeys(snapshot), "remote")
-	assert.Positive(peerRequests.Load())
+	awaitPeerRequest(t, &peerRequests, 0,
+		"the committed peer must be probed on the first read")
 	remote := hostByKey(snapshot, "remote")
 	require.NotNil(remote)
 	assert.False(remote.Reachable,
@@ -254,10 +264,21 @@ peer_timeout = "2s"
 	remote = hostByKey(snapshot, "remote")
 	require.NotNil(remote)
 	assert.False(remote.Reachable)
-	assert.Greater(peerRequests.Load(), requestsBefore,
+	awaitPeerRequest(t, &peerRequests, requestsBefore,
 		"failed persistence must leave the committed peer published")
 	assert.Less(elapsed, 1500*time.Millisecond,
 		"failed persistence must leave the committed timeout published")
+}
+
+// awaitPeerRequest waits for the peer to observe a request beyond the ones
+// already counted. The hub abandons a peer probe the moment the committed
+// peer timeout expires, so a snapshot read can return before the peer server
+// has accepted and dispatched a request that was already put on the wire.
+// Reading the counter synchronously races that dispatch.
+func awaitPeerRequest(t *testing.T, requests *atomic.Int32, seen int32, msg string) {
+	t.Helper()
+	assert.Eventually(t, func() bool { return requests.Load() > seen },
+		5*time.Second, 5*time.Millisecond, msg)
 }
 
 func findSettingsLaunchTarget(

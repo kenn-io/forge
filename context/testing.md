@@ -328,6 +328,12 @@ trigger, treat the HTTP 202 and DB row timestamps as intermediate observations.
 to report `running=false` with a `last_run_at` before issuing the next trigger,
 or the next trigger can race the still-running sync and be skipped.
 
+A production timeout exercised by a test also bounds dialling the outbound
+request, so a sub-100ms value lets a loaded runner abandon the probe before the
+fake server ever receives it. Give such timeouts headroom over scheduling noise
+and await the fake's observation instead of reading its counter synchronously
+(`internal/server/e2etest/settings_test.go::awaitPeerRequest`).
+
 Workspace fixtures with background monitors must seed observer inputs before
 `server.New`; the pushed-head observer runs an immediate first pass and can
 capture transitional fixture state (`internal/server/server.go::runWorkspacePushedHeadObserverLoop`).

@@ -25,19 +25,19 @@
 
 ## File Structure
 
-| File                                                                                | Responsibility                                                                                      |
-| ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `frontend/src/lib/stores/session-host.svelte.ts` (create)                           | Registry of live session terminals: parking, per-key slot registration, slot attachment.            |
-| `frontend/src/lib/components/terminal/SessionTerminalPool.svelte` (create)          | Renders one `TerminalPane` per mounted session into the pool; owns the parking node.                |
-| `frontend/src/lib/components/terminal/WorkspaceHost.svelte` (modify)                | Mounts the pool as a sibling of the reparented wrapper so promoted terminals outlive the container. |
-| `frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte` (modify)        | Renders session slots instead of `TerminalPane`; loses the `Workflow` toolbar and the `Home` tab.   |
-| `frontend/src/lib/components/terminal/WorkspacePaneControls.svelte` (create)        | The single top-right button and its popover (presets, zoom, options, launch).                       |
-| `frontend/src/lib/components/terminal/WorkspaceLauncherOverlay.svelte` (create)     | The launcher, previously the `Home` tab body.                                                       |
-| `packages/ui/src/stores/pane-surfaces.ts` (modify)                                  | Session keys accepted outside the static vocabulary and never reinserted.                           |
-| `packages/ui/src/components/shared/tabbed-panel-layout.ts` (modify)                 | `normalizeTabbedPanelTree` gains a "keep but never reinsert" class of key.                          |
-| `packages/ui/src/stores/paneLayout.svelte.ts` (modify)                              | Promotion/demotion edits; dropping stale session entries.                                           |
-| `packages/ui/src/views/{PRListView,IssueListView,ActivityFeedView}.svelte` (modify) | Promoted session panes in `paneTabs`, availability from the claimed workspace's sessions.           |
-| `frontend/src/lib/stores/workspace-host.svelte.ts` (modify)                         | Dock mode, Focus Terminal, and visibility restated over the container plus promoted panes.          |
+| File                                                                                | Responsibility                                                                                                      |
+| ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `frontend/src/lib/stores/session-host.svelte.ts` (create)                           | Registry of live session terminals: parking, per-key slot registration, slot attachment.                            |
+| `frontend/src/lib/components/terminal/SessionTerminalPool.svelte` (create)          | Renders one `TerminalPane` per mounted session into the pool; owns the parking node.                                |
+| `frontend/src/lib/components/terminal/WorkspaceHost.svelte` (modify)                | Mounts the pool as a sibling of the reparented wrapper so promoted terminals outlive the container.                 |
+| `frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte` (modify)        | Renders session slots instead of `TerminalPane`; hides the `Workflow` toolbar and `Home` tab in embedded mode only. |
+| `frontend/src/lib/components/terminal/WorkspacePaneControls.svelte` (create)        | The single top-right button and its popover (presets, zoom, options, launch).                                       |
+| `frontend/src/lib/components/terminal/WorkspaceLauncherOverlay.svelte` (create)     | The launcher, previously the `Home` tab body.                                                                       |
+| `packages/ui/src/stores/pane-surfaces.ts` (modify)                                  | Session keys accepted outside the static vocabulary and never reinserted.                                           |
+| `packages/ui/src/components/shared/tabbed-panel-layout.ts` (modify)                 | `normalizeTabbedPanelTree` gains a "keep but never reinsert" class of key.                                          |
+| `packages/ui/src/stores/paneLayout.svelte.ts` (modify)                              | Promotion/demotion edits; dropping stale session entries.                                                           |
+| `packages/ui/src/views/{PRListView,IssueListView,ActivityFeedView}.svelte` (modify) | Promoted session panes in `paneTabs`, availability from the claimed workspace's sessions.                           |
+| `frontend/src/lib/stores/workspace-host.svelte.ts` (modify)                         | Dock mode, Focus Terminal, and visibility restated over the container plus promoted panes.                          |
 
 ---
 
@@ -519,7 +519,7 @@ workspace's session panes, and nothing otherwise.
 
 - [ ] **Step 1** Failing tests: `DetailPaneLayout` renders `paneLeafExtras` inside the leaf action area and omits it while flattened; the popover exposes all four groups; it closes on Escape and on outside click; the launch action opens the launcher; a leaf holding neither the container nor a session pane renders no button.
 - [ ] **Step 2** Run `../node_modules/.bin/vp test --project unit WorkspacePaneControls DetailPaneLayout`. Expected FAIL.
-- [ ] **Step 3** Implement and delete the toolbar.
+- [ ] **Step 3** Implement, and hide the toolbar in embedded mode. Do not delete it: the standalone Workspaces tab keeps it.
 - [ ] **Step 4** Same command plus `--project unit WorkspaceTerminalView PRListView`. Expected PASS.
 - [ ] **Step 5** Commit.
 
@@ -571,7 +571,7 @@ The overlay wraps today's `WorkspaceHome` body, pushes a modal frame, auto-opens
 - `expanded` — one of them holds the zoom; expanding zooms the pane holding the workspace's last-focused session, or the container when none is promoted.
 - Focus Terminal focuses the pane holding the last-focused session when it is on screen, reveals it when it is not, and opens the launcher when the workspace has no session at all.
 - Last-focused session is tracked per workspace and survives promotion, demotion, and selection changes.
-- On session end or workspace deletion, drop that session's pane from every surface's stored tree.
+- On session **deletion** or workspace deletion, drop that session's pane from every surface's stored tree. An exit or a stop does **not**: it disposes that generation's live subtree and leaves the placement alone, which is what lets a relaunch reappear in the pane the user put it in.
 - Dispose registry entries for a workspace that no surface claims and the Workspaces tab is not showing: parked terminals hold live websockets, so browsing past ten items must not leave ten connections open.
 
 - [ ] **Step 1** Failing tests, one per bullet, including: deleting a workspace with two promoted panes leaves no session keys in any surface's stored tree; collapsing and expanding a workspace with one promoted pane restores that pane rather than the default tree; selecting three items in turn leaves only the current workspace's terminals in the registry; `noteFocused` accepts a well-formed session pane key and still rejects a malformed one; focusing a promoted pane and focusing the container both update the workspace's last-focused session.
@@ -588,6 +588,7 @@ The overlay wraps today's `WorkspaceHome` body, pushes a modal frame, auto-opens
 
 - Modify: `frontend/tests/e2e-full/00-inline-workspace-continuity.spec.ts`
 - Create: `frontend/tests/e2e-full/00-workspace-launcher.spec.ts`
+- Modify: `frontend/src/App.pane-commands.browser.svelte.ts` (the owed push-vs-replace history cases)
 - Modify: `context/ui-interaction-contracts.md`, `context/ui-design-system.md`
 - Modify: `docs/superpowers/plans/2026-07-26-session-panes.md` (check the boxes)
 
@@ -619,7 +620,8 @@ covers command availability, not Back-stack behaviour. The tabbed-behind case
 needs a third pane in the leaf, so it wants a claimed workspace: schedule it after
 Task 6, when a promoted session gives the views a third pane without one.
 
-- [ ] **Step 1** Update the continuity spec's selectors, add its three cases, and write `00-workspace-launcher.spec.ts`.
+- [ ] **Step 1** Update the continuity spec's selectors, add its three promotion cases, and write `00-workspace-launcher.spec.ts`.
+- [ ] **Step 1b** Add the two owed history cases to `frontend/src/App.pane-commands.browser.svelte.ts` (renaming it if it outgrows the name): with the route panes split apart, maximizing one leaf makes moving to the other push rather than replace; and with a promoted session tabbed in beside the conversation and active, clicking the Files tab pushes. Assert on `window.history.length` or a Back that returns to the previous pane, not on the store.
 - [ ] **Step 2** Run `../node_modules/.bin/vp exec playwright test --config playwright-e2e.config.ts --project=chromium tests/e2e-full/00-inline-workspace-continuity.spec.ts tests/e2e-full/00-workspace-launcher.spec.ts`. Expected PASS.
 - [ ] **Step 3** Full gate: `../node_modules/.bin/vp test`, both Playwright configs whole, `svelte-check`, `make lint`.
 - [ ] **Step 4** Capture a screenshot of a promoted session pane with the `capture-playwright` skill for the PR body.

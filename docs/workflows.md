@@ -85,10 +85,12 @@ picker preselects the repository you last started work in. Name the
 branch or leave it empty and middleman generates one; either way the worktree
 branches from the repository's default branch.
 
-Run `middleman agent-hook install` once to show Claude and Codex activity in
+Run or rerun `middleman agent-hook install` to show Claude and Codex activity in
 workspace rows. The rows distinguish active work, approval requests, and user
 input, refreshing within five seconds while the sidebar is open. Reports expire
-after 30 minutes without another hook event and then fall back to tmux activity;
+after 30 minutes without another hook event and then fall back to tmux activity.
+Claude sessions launched by middleman also receive their generated workspace
+summary at session start; user-owned `CLAUDE.local.md` files are never forwarded.
 Codex asks you to review the installed command through `/hooks` once.
 
 ## Use Kata tasks

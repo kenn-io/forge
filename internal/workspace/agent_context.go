@@ -24,6 +24,7 @@ const (
 
 	untrustedSourceTextTag              = "untrusted-source-text"
 	maxRepositoryAgentInstructionsBytes = 1 << 20
+	maxClaudeSessionStartContextBytes   = 64 << 10
 )
 
 // legacyGeneratedAgentContextMarkers are marker lines written by earlier
@@ -268,6 +269,40 @@ func renderAgentInstructionFile(worktreePath, relPath string, ctx AgentContext) 
 	}
 	content = append(content, '\n')
 	return append(content, repositoryInstructions...)
+}
+
+// ReadClaudeSessionStartContext returns only Middleman-owned generated
+// workspace context. User files, symlinks, and oversized content are ignored
+// so the user-level SessionStart hook cannot expose arbitrary worktree data.
+func ReadClaudeSessionStartContext(worktreePath string) (string, error) {
+	opened, err := openWorktreePath(worktreePath, "CLAUDE.local.md")
+	if errors.Is(err, os.ErrNotExist) || errors.Is(err, errWorktreePathNotRegular) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if opened.file == nil {
+		return "", nil
+	}
+	defer opened.file.Close()
+	if opened.info.Size() > maxClaudeSessionStartContextBytes {
+		return "", nil
+	}
+	content, err := io.ReadAll(io.LimitReader(
+		opened.file, maxClaudeSessionStartContextBytes+1,
+	))
+	if err != nil {
+		return "", err
+	}
+	if len(content) > maxClaudeSessionStartContextBytes {
+		return "", nil
+	}
+	text := string(content)
+	if !strings.HasPrefix(text, generatedAgentContextMarker) {
+		return "", nil
+	}
+	return strings.TrimSpace(strings.TrimPrefix(text, generatedAgentContextMarker)), nil
 }
 
 func readRepositoryAgentInstructions(worktreePath string) []byte {

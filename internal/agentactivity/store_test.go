@@ -147,9 +147,10 @@ func TestInstallLifecyclePreservesOtherHooks(t *testing.T) {
 		integration Integration
 		env         string
 		configName  string
+		agentArg    string
 	}{
-		{name: "Claude", integration: IntegrationClaude, env: "CLAUDE_CONFIG_DIR", configName: "settings.json"},
-		{name: "Codex", integration: IntegrationCodex, env: "CODEX_HOME", configName: "hooks.json"},
+		{name: "Claude", integration: IntegrationClaude, env: "CLAUDE_CONFIG_DIR", configName: "settings.json", agentArg: "--agent claude"},
+		{name: "Codex", integration: IntegrationCodex, env: "CODEX_HOME", configName: "hooks.json", agentArg: "--agent codex"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -199,6 +200,7 @@ func TestInstallLifecyclePreservesOtherHooks(t *testing.T) {
 			require.NoError(err)
 			assert.NotContains(string(startJSON), "old agent-hook")
 			assert.Contains(string(startJSON), "/opt/middleman")
+			assert.Contains(string(startJSON), tt.agentArg)
 
 			_, err = Uninstall(tt.integration)
 			require.NoError(err)

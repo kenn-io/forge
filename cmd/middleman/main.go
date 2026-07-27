@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -39,6 +40,7 @@ import (
 	"go.kenn.io/middleman/internal/telemetry"
 	"go.kenn.io/middleman/internal/tokenauth"
 	"go.kenn.io/middleman/internal/web"
+	"go.kenn.io/middleman/internal/workspace"
 )
 
 type splitLogHandler struct {
@@ -238,7 +240,7 @@ func runAgentHookCLI(args []string, stdin io.Reader, stdout io.Writer) error {
 	}
 	switch args[0] {
 	case "run":
-		return runAgentHookReceiver(args[1:], stdin)
+		return runAgentHookReceiver(args[1:], stdin, stdout)
 	case "install", "uninstall":
 		return runAgentHookInstall(args[0], args[1:], stdout)
 	default:
@@ -246,9 +248,10 @@ func runAgentHookCLI(args []string, stdin io.Reader, stdout io.Writer) error {
 	}
 }
 
-func runAgentHookReceiver(args []string, stdin io.Reader) error {
+func runAgentHookReceiver(args []string, stdin io.Reader, stdout io.Writer) error {
 	fs := flag.NewFlagSet("middleman agent-hook run", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
+	agent := fs.String("agent", "", "agent integration (claude or codex)")
 	stateDir := fs.String("state-dir", "", "agent activity state directory")
 	source := fs.String("source", "", "hook source marker")
 	if err := fs.Parse(args); err != nil {
@@ -257,11 +260,34 @@ func runAgentHookReceiver(args []string, stdin io.Reader) error {
 	if *source != "middleman-agent-activity" {
 		return nil
 	}
+	payload, err := io.ReadAll(io.LimitReader(stdin, (1<<20)+1))
+	if err != nil || len(payload) > 1<<20 {
+		return nil
+	}
 	store := agentactivity.NewStore(*stateDir)
 	_ = store.HandleHook(
-		stdin, os.Getenv(agentactivity.RuntimeSessionKeyEnv),
+		bytes.NewReader(payload), os.Getenv(agentactivity.RuntimeSessionKeyEnv),
 	)
-	return nil
+	if !strings.EqualFold(strings.TrimSpace(*agent), "claude") {
+		return nil
+	}
+	var hook struct {
+		CWD           string `json:"cwd"`
+		HookEventName string `json:"hook_event_name"`
+	}
+	if err := json.Unmarshal(payload, &hook); err != nil || hook.HookEventName != "SessionStart" {
+		return nil
+	}
+	startContext, err := workspace.ReadClaudeSessionStartContext(hook.CWD)
+	if err != nil || startContext == "" {
+		return nil
+	}
+	return json.NewEncoder(stdout).Encode(map[string]any{
+		"hookSpecificOutput": map[string]any{
+			"hookEventName":     "SessionStart",
+			"additionalContext": startContext,
+		},
+	})
 }
 
 func runAgentHookInstall(action string, args []string, stdout io.Writer) error {

@@ -57,11 +57,13 @@ func Install(integration Integration, executable, stateDir string) (InstallResul
 	removeMiddlemanHooks(hooks)
 
 	command := shellquote.Join(
-		executable, "agent-hook", "run", "--state-dir", stateDir,
+		executable, "agent-hook", "run", "--agent", string(integration),
+		"--state-dir", stateDir,
 		"--source", "middleman-agent-activity",
 	)
 	commandWindows := windowsCommand(
-		executable, "agent-hook", "run", "--state-dir", stateDir,
+		executable, "agent-hook", "run", "--agent", string(integration),
+		"--state-dir", stateDir,
 		"--source", "middleman-agent-activity",
 	)
 	if runtime.GOOS == "windows" {

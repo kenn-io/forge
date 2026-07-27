@@ -235,6 +235,8 @@ visible to Git, the write fails.
 
 ## Agent Activity Hooks
 
+- Claude `SessionStart` may forward only bounded Middleman-owned generated context;
+  user files, symlinks, and oversized files remain private (`internal/workspace/agent_context.go::ReadClaudeSessionStartContext`).
 - User-level hooks are single-target: install merges, uninstall preserves other
   handlers, and the last install wins (`internal/agentactivity/integration.go::Install`).
 - Matching live runtime/worktree reports use approval, input, working, idle priority;

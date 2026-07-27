@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
-import { flushSync, tick } from "svelte";
+import { createRawSnippet, flushSync, tick, type Snippet } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { NAVIGATE_KEY, SIDEBAR_KEY, STORES_KEY } from "../context.js";
 import { resetModalStack } from "../stores/keyboard/modal-stack.svelte.js";
@@ -83,7 +83,13 @@ interface RenderPRListViewOptions {
   inlineWorkspace?: InlineWorkspaceController | null;
   detail?: unknown;
   navigate?: (path: string | { path: string }, options?: { replace?: boolean }) => void;
+  workspacePaneControls?: Snippet | undefined;
 }
+
+/** Stands in for the frontend's workspace controls button. */
+const controlsDouble: Snippet = createRawSnippet(() => ({
+  render: () => `<button type="button" data-testid="workspace-pane-controls">Controls</button>`,
+}));
 
 function renderPRListView(options: RenderPRListViewOptions = {}) {
   const detailBox = createReactiveValue(options.detail ?? null);
@@ -101,6 +107,9 @@ function renderPRListView(options: RenderPRListViewOptions = {}) {
         detailTab: options.detailTab ?? "conversation",
         hideSidebar: true,
         ...(options.inlineWorkspace !== undefined ? { inlineWorkspace: options.inlineWorkspace } : {}),
+        ...(options.workspacePaneControls !== undefined
+          ? { workspacePaneControls: options.workspacePaneControls }
+          : {}),
       },
       context: new Map<symbol, unknown>([
         [
@@ -525,6 +534,33 @@ describe("PRListView promoted session panes", () => {
     // exists only because it is already in the stored tree.
     expect(document.querySelector(`[data-session-pane="${AGENT_PANE}"]`)).toBeNull();
     expect(screen.queryByRole("tab", { name: "Helper" })).toBeNull();
+  });
+
+  it("offers the workspace controls only in leaves holding the workspace or a session", () => {
+    const layout = getPaneLayoutStore("prs");
+    // The promoted session gets its own leaf, split off the conversation's, so the
+    // three leaves are: route panes, workspace, promoted session.
+    layout.promoteTab(AGENT_PANE, {
+      kind: "split",
+      leafID: layout.leafIDForTab("conversation")!,
+      direction: "horizontal",
+      placement: "after",
+    });
+    const { controller } = createClaimTestController("prs", {
+      sessions: [{ paneKey: AGENT_PANE, label: "Helper" }],
+    });
+
+    renderPRListView({
+      inlineWorkspace: controller,
+      detail: pullDetailFixture({ id: "ws-1", status: "ready" }),
+      workspacePaneControls: controlsDouble,
+    });
+
+    // One per subject-bearing leaf, and none in the leaf showing only the
+    // conversation and files: controls there would act on nothing.
+    expect(screen.getAllByTestId("workspace-pane-controls")).toHaveLength(2);
+    const conversationLeaf = document.querySelector('[data-pane-key="conversation"]')?.closest(".tabbed-panel-leaf");
+    expect(conversationLeaf?.querySelector('[data-testid="workspace-pane-controls"]')).toBeNull();
   });
 
   it("prunes a promoted pane when the workspace stops offering it, keeping it stored", async () => {

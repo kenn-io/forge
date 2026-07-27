@@ -746,8 +746,13 @@ test.describe("inline workspace pane continuity", () => {
       await typeMarkerCommand(page, paneContainer, workspace.worktree_path, "continuity-marker-two");
       await paneContainer.click({ position: { x: 10, y: 10 } });
       await page.keyboard.press("Control+=");
-      await expect(resetZoom).toHaveText(`${ZOOMED_TERMINAL_FONT_SIZE + 1}px`);
       await expectPersistedTerminalFontSize(api, ZOOMED_TERMINAL_FONT_SIZE + 1);
+      // Embedded, the controls live in the pane's own popover rather than a
+      // toolbar above the terminal, so that is where the readout is now.
+      await page.getByRole("button", { name: "Workspace controls" }).click();
+      await expect(resetZoom).toHaveText(`${ZOOMED_TERMINAL_FONT_SIZE + 1}px`);
+      await page.keyboard.press("Escape");
+      await expect(resetZoom).toBeHidden();
 
       // Flip back to the Workspaces tab: same hostedWorkspaceKey, so the
       // tagged container (and the canvas inside it) must still be the one

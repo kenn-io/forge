@@ -41,7 +41,10 @@
     type MountedSession,
     type SessionHostKey,
   } from "../../stores/session-host.svelte.ts";
-  import { publishHostedSessions } from "../../stores/workspace-host.svelte.ts";
+  import {
+    publishHostedSessions,
+    registerWorkspaceControlsSnippet,
+  } from "../../stores/workspace-host.svelte.ts";
   import {
     beginWorkspaceSwitch,
     cancelWorkspaceSwitch,
@@ -553,6 +556,16 @@
     }));
     const key = { workspaceId, hostKey: workspaceHostKey };
     untrack(() => publishHostedSessions(key, sessions));
+  });
+
+  // Handed to the detail pane's controls popover, which is where the controls live
+  // once this view is embedded. Only while embedded: the standalone tab renders its
+  // own toolbar, and leaving a stale snippet registered would let a pane open the
+  // controls of a workspace no longer hosted there.
+  $effect(() => {
+    if (paneSurface === undefined) return;
+    registerWorkspaceControlsSnippet(workspaceControls);
+    return () => registerWorkspaceControlsSnippet(null);
   });
 
   // The session a keyboard promote acts on: whichever one the user is looking at.
@@ -3385,43 +3398,16 @@
         >
           <div class="terminal-area">
             <div class="workspace-surface">
-              <div class="workspace-toolbar">
-                <div class="workspace-toolbar-title">Workflow</div>
-                <div class="workspace-actions">
-                  <WorkflowPresetMenu
-                    presets={workflowPresets}
-                    selectedPresetId={selectedWorkflowPresetId}
-                    applying={applyingWorkflowPreset}
-                    onSaveNew={saveWorkflowPreset}
-                    onUpdate={updateWorkflowPreset}
-                    onApply={(presetId) => void applyWorkflowPreset(presetId)}
-                    onDelete={deleteWorkflowPreset}
-                    disabled={actionsBlocked}
-                    {hostVisible}
-                  />
-                  <TerminalZoomControl
-                    fontSize={terminalFontSize}
-                    disabled={actionsBlocked || !terminalSettingsReady || terminalOptionsSaving}
-                    onDecrease={terminalZoom.decrease}
-                    onIncrease={terminalZoom.increase}
-                    onReset={terminalZoom.reset}
-                  />
-                  <TerminalOptionsMenu
-                    disabled={actionsBlocked || !terminalSettingsReady || terminalZoomSaving}
-                    {hostVisible}
-                    onSavingChange={(saving) => {
-                      terminalOptionsSaving = saving;
-                    }}
-                  />
-                  <LaunchMenu
-                    launchTargets={launchTargets}
-                    {launchingKey}
-                    disabled={actionsBlocked}
-                    {hostVisible}
-                    onLaunch={(key) => void handleLaunch(key)}
-                  />
+              {#if paneSurface === undefined}
+                <!-- Kept for the standalone Workspaces tab, whose panes have no tab
+                     strip to hold the controls. In a detail pane the same controls
+                     render inside that pane's popover instead, so a bar here would
+                     be a second copy of them above the terminal. -->
+                <div class="workspace-toolbar">
+                  <div class="workspace-toolbar-title">Workflow</div>
+                  <div class="workspace-actions">{@render workspaceControls()}</div>
                 </div>
-              </div>
+              {/if}
               {#if runtimeError}
                 <div class="runtime-error">{runtimeError}</div>
               {/if}
@@ -3749,6 +3735,44 @@
   onCancel={cancelForceDelete}
   onConfirm={() => void confirmForceDelete()}
 />
+
+<!-- The workspace's own controls, defined here because every one of them is wired
+     to this view's state. In a detail pane the pane's popover renders this, so the
+     controls follow the workspace without the state leaving the view. -->
+{#snippet workspaceControls()}
+  <WorkflowPresetMenu
+    presets={workflowPresets}
+    selectedPresetId={selectedWorkflowPresetId}
+    applying={applyingWorkflowPreset}
+    onSaveNew={saveWorkflowPreset}
+    onUpdate={updateWorkflowPreset}
+    onApply={(presetId) => void applyWorkflowPreset(presetId)}
+    onDelete={deleteWorkflowPreset}
+    disabled={actionsBlocked}
+    {hostVisible}
+  />
+  <TerminalZoomControl
+    fontSize={terminalFontSize}
+    disabled={actionsBlocked || !terminalSettingsReady || terminalOptionsSaving}
+    onDecrease={terminalZoom.decrease}
+    onIncrease={terminalZoom.increase}
+    onReset={terminalZoom.reset}
+  />
+  <TerminalOptionsMenu
+    disabled={actionsBlocked || !terminalSettingsReady || terminalZoomSaving}
+    {hostVisible}
+    onSavingChange={(saving) => {
+      terminalOptionsSaving = saving;
+    }}
+  />
+  <LaunchMenu
+    launchTargets={launchTargets}
+    {launchingKey}
+    disabled={actionsBlocked}
+    {hostVisible}
+    onLaunch={(key) => void handleLaunch(key)}
+  />
+{/snippet}
 
 <style>
   .terminal-view {

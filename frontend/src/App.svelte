@@ -37,6 +37,7 @@
   import RepoSummaryPage from "./lib/components/repositories/RepoSummaryPage.svelte";
   import SettingsPage from "./lib/components/settings/SettingsPage.svelte";
   import WorkspaceHost from "./lib/components/terminal/WorkspaceHost.svelte";
+  import WorkspacePaneControls from "./lib/components/terminal/WorkspacePaneControls.svelte";
   import WorkspaceEmbedShell from "./lib/components/terminal/WorkspaceEmbedShell.svelte";
   import WorkspaceFirstRunPanel from "./lib/components/terminal/WorkspaceFirstRunPanel.svelte";
   import DesignSystemPage from "./lib/components/design-system/DesignSystemPage.svelte";
@@ -1159,6 +1160,7 @@
           onDetailTabChange={handleActivityDetailTabChange}
           onDrawerItemChange={handleActivityDrawerItemChange}
           inlineWorkspace={getInlineWorkspaceController("activity")}
+          {workspacePaneControls}
         />
       {:else if getPage() === "repos"}
         <RepoSummaryPage />
@@ -1213,6 +1215,7 @@
           sidebarOverlay={isNarrow()}
           onSidebarResize={handleSidebarResize}
           inlineWorkspace={getInlineWorkspaceController("prs")}
+          {workspacePaneControls}
         />
       {:else if getPage() === "issues"}
         {@const selectedIssue =
@@ -1226,6 +1229,7 @@
           sidebarOverlay={isNarrow()}
           onSidebarResize={handleSidebarResize}
           inlineWorkspace={getInlineWorkspaceController("issues")}
+          {workspacePaneControls}
         />
       {:else if getPage() === "reviews"}
         {@const route = getRoute()}
@@ -1311,6 +1315,13 @@
     />
   </Provider>
 {/if}
+
+<!-- Handed to every detail view: the controls themselves come from the hosted
+     workspace's live view, and this component is the popover that holds them in a
+     pane's tab strip. Declared here because packages/ui cannot import it. -->
+{#snippet workspacePaneControls()}
+  <WorkspacePaneControls />
+{/snippet}
 
 <style>
   .mobile-shell {

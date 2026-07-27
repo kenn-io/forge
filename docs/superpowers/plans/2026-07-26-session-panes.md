@@ -588,11 +588,23 @@ needed for the flattened case. The three views pass a snippet that renders
 `WorkspacePaneControls` when the leaf holds the workspace container or one of that
 workspace's session panes, and nothing otherwise.
 
-- [ ] **Step 1** Failing tests: `DetailPaneLayout` renders `paneLeafExtras` inside the leaf action area and omits it while flattened; the popover exposes all four groups; it closes on Escape and on outside click; the launch action opens the launcher; a leaf holding neither the container nor a session pane renders no button.
-- [ ] **Step 2** Run `../node_modules/.bin/vp test --project unit WorkspacePaneControls DetailPaneLayout`. Expected FAIL.
-- [ ] **Step 3** Implement, and hide the toolbar in embedded mode. Do not delete it: the standalone Workspaces tab keeps it.
-- [ ] **Step 4** Same command plus `--project unit WorkspaceTerminalView PRListView`. Expected PASS.
-- [ ] **Step 5** Commit.
+**How the controls reach the pane.** Every one of the four is wired to the live
+view's state (presets, launch targets, save-in-flight flags, the zoom writer), so
+the view keeps them and hands over the rendered chrome: it declares them as a
+snippet and registers it with the workspace-host store while embedded, exactly as
+it does for a promoted session's pane body. `WorkspacePaneControls` is then only
+the button and the popover, and it renders nothing at all when no view is hosted -
+which is what keeps the button out of the leaves of surfaces with no workspace.
+
+- [x] **Step 1** Failing tests: `DetailPaneLayout` renders `paneLeafExtras` inside the leaf action area and omits it while flattened; the popover holds the hosted view's controls; it closes on Escape, on outside click, and when the view unregisters under it; a leaf holding neither the container nor a session pane renders no button. In `WorkspaceTerminalView.test.ts`: embedded publishes the controls and drops the toolbar, the standalone tab does the opposite.
+- [x] **Step 2** Run `../node_modules/.bin/vp test --project unit WorkspacePaneControls DetailPaneLayout`. Expected FAIL.
+- [x] **Step 3** Implement, and hide the toolbar in embedded mode. Do not delete it: the standalone Workspaces tab keeps it.
+- [x] **Step 4** Same command plus `--project unit WorkspaceTerminalView PRListView`. Expected PASS.
+- [x] **Step 5** Commit.
+
+The launcher action is `LaunchMenu` as it stands; Task 8 replaces it with the
+overlay opener, and the "launch action opens the launcher" case belongs there
+because the overlay does not exist yet.
 
 ---
 

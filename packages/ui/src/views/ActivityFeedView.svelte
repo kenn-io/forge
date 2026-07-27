@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { Snippet } from "svelte";
   import type { ActivityItem } from "../api/types.js";
   import { getStackDepth } from "../stores/keyboard/modal-stack.svelte.js";
   import ActivityFeed from "../components/ActivityFeed.svelte";
@@ -10,6 +11,7 @@
   import PullDetailPane from "../components/detail/PullDetailPane.svelte";
   import { issueDetailMatchesRef, pullDetailMatchesRef } from "../components/detail/detail-match.js";
   import DetailPaneLayout from "../components/shared/DetailPaneLayout.svelte";
+  import type { TabbedPanelLeaf } from "../components/shared/tabbed-panel-layout.js";
   import { getPaneLayoutStore, type PaneTabSpec } from "../stores/paneLayout.svelte.js";
   import { isSessionPaneKey } from "../stores/session-pane-key.js";
   import { getStores } from "../context.js";
@@ -54,6 +56,12 @@
     onDrawerItemChange?: (item: DrawerPRItem) => void;
     phone?: boolean;
     inlineWorkspace?: InlineWorkspaceController | null;
+    /**
+     * The workspace's own controls, rendered in the tab strip of the leaf holding
+     * the workspace pane or one of its promoted sessions. Supplied by the app
+     * shell: the controls live in `frontend/`, next to the state they act on.
+     */
+    workspacePaneControls?: Snippet | undefined;
   }
 
   let {
@@ -65,6 +73,7 @@
     onDrawerItemChange,
     phone = false,
     inlineWorkspace = null,
+    workspacePaneControls = undefined,
   }: Props = $props();
 
   const { detail: detailStore, issues: issuesStore } = getStores();
@@ -519,6 +528,7 @@
         routeTabKey={isPRSelection ? effectiveDetailTab : undefined}
         onSelectTab={handlePaneSelect}
         onFocusPane={handlePaneFocus}
+        paneLeafExtras={workspacePaneControls ? workspaceLeafExtras : undefined}
       >
         {#snippet renderPane(tabKey, visible)}
           {#if tabKey === "commit" && commitDrawer && visible}
@@ -575,6 +585,15 @@
     </section>
   {/if}
 </div>
+
+<!-- Only the leaf actually holding the workspace or one of its promoted sessions:
+     the controls act on that workspace, so offering them from a leaf of unrelated
+     panes would be a control with no subject. -->
+{#snippet workspaceLeafExtras(leaf: TabbedPanelLeaf)}
+  {#if leaf.tabs.some((tabKey) => tabKey === "workspace" || isSessionPaneKey(tabKey))}
+    {@render workspacePaneControls?.()}
+  {/if}
+{/snippet}
 
 <style>
   .activity-shell {

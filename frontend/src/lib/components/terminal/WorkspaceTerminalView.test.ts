@@ -166,6 +166,7 @@ import {
   activeHostedSession,
   getInlineWorkspaceController,
   resetWorkspaceHostForTest,
+  workspaceControlsSnippet,
 } from "../../stores/workspace-host.svelte.ts";
 import { navigate } from "../../stores/router.svelte.ts";
 
@@ -2470,6 +2471,40 @@ describe("WorkspaceTerminalView", () => {
     // Republished as the user moves around: Home fills the pane now, so the
     // session it replaced must stop being offered.
     await waitFor(() => expect(activeHostedSession("prs")).toBeNull());
+  });
+
+  it("hands its controls to the pane instead of a toolbar while embedded", async () => {
+    claimForPrs();
+
+    const { unmount } = render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+        paneSurface: "prs" as const,
+      },
+    });
+
+    // One bar, not three: the pane's tab strip renders these controls, so a
+    // toolbar here would be a second copy of them above the terminal.
+    await waitFor(() => expect(workspaceControlsSnippet()).not.toBeNull());
+    expect(document.querySelector(".workspace-toolbar")).toBeNull();
+
+    // Unregistered on the way out, or a pane could open the controls of a
+    // workspace no longer hosted there.
+    unmount();
+    await waitFor(() => expect(workspaceControlsSnippet()).toBeNull());
+  });
+
+  it("keeps its own toolbar on the standalone Workspaces tab", async () => {
+    render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+      },
+    });
+
+    // That tab's panes have no tab strip to hold the controls, so the bar stays
+    // and nothing is published for a detail pane to render.
+    await waitFor(() => expect(document.querySelector(".workspace-toolbar")).not.toBeNull());
+    expect(workspaceControlsSnippet()).toBeNull();
   });
 
   it("publishes the dock's session while the dock is open", async () => {

@@ -3,6 +3,7 @@
 </script>
 
 <script lang="ts">
+  import type { Snippet } from "svelte";
   import { untrack } from "svelte";
   import { getNavigate, getSidebar, getStores } from "../context.js";
   import { CollapsibleSidebar } from "@kenn-io/kit-ui";
@@ -10,6 +11,7 @@
   import PullDetailPane from "../components/detail/PullDetailPane.svelte";
   import { pullDetailMatchesRef } from "../components/detail/detail-match.js";
   import DetailPaneLayout from "../components/shared/DetailPaneLayout.svelte";
+  import type { TabbedPanelLeaf } from "../components/shared/tabbed-panel-layout.js";
   import { getPaneLayoutStore, type PaneTabSpec } from "../stores/paneLayout.svelte.js";
   import { isSessionPaneKey } from "../stores/session-pane-key.js";
   import type { DetailSyncMode } from "../stores/detail.svelte.js";
@@ -45,6 +47,12 @@
     onDetailTabChange?: (tab: DetailTab, options?: { replace?: boolean }) => void;
     onStackMemberNavigate?: StackMemberNavigate;
     inlineWorkspace?: InlineWorkspaceController | null;
+    /**
+     * The workspace's own controls, rendered in the tab strip of the leaf holding
+     * the workspace pane or one of its promoted sessions. Supplied by the app
+     * shell: the controls live in `frontend/`, next to the state they act on.
+     */
+    workspacePaneControls?: Snippet | undefined;
   }
 
   let {
@@ -62,6 +70,7 @@
     onDetailTabChange,
     onStackMemberNavigate,
     inlineWorkspace = null,
+    workspacePaneControls = undefined,
   }: Props = $props();
 
   function detailTabRoute(tab: DetailTab, ref: PullRequestRouteRef): string {
@@ -221,6 +230,7 @@
         routeTabKey={detailTab}
         onSelectTab={handlePaneSelect}
         onFocusPane={handlePaneFocus}
+        paneLeafExtras={workspacePaneControls ? workspaceLeafExtras : undefined}
       >
         {#snippet renderPane(tabKey, visible)}
           {#if tabKey === "workspace" && inlineWorkspace && visible}
@@ -260,6 +270,15 @@
     </div>
   {/if}
 </CollapsibleSidebar>
+
+<!-- Only the leaf actually holding the workspace or one of its promoted sessions:
+     the controls act on that workspace, so offering them from a leaf of unrelated
+     panes would be a control with no subject. -->
+{#snippet workspaceLeafExtras(leaf: TabbedPanelLeaf)}
+  {#if leaf.tabs.some((tabKey) => tabKey === "workspace" || isSessionPaneKey(tabKey))}
+    {@render workspacePaneControls?.()}
+  {/if}
+{/snippet}
 
 <style>
   .detail-host {

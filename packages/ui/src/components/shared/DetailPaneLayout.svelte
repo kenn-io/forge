@@ -41,6 +41,14 @@
      * clicking a tab is not what moved them.
      */
     onFocusPane?: ((tabKey: string) => void) | undefined;
+    /**
+     * Caller chrome for a leaf, rendered left of the structural controls.
+     *
+     * The tab strip is the only chrome a pane has, and a promoted session pane
+     * needs its workspace's controls there. Suppressed with the structural
+     * controls while flattened, where there is one strip for every pane.
+     */
+    paneLeafExtras?: Snippet<[TabbedPanelLeaf]> | undefined;
   }
 
   const {
@@ -54,6 +62,7 @@
     routeTabKey = undefined,
     onSelectTab = undefined,
     onFocusPane = undefined,
+    paneLeafExtras = undefined,
   }: Props = $props();
 
   let host = $state<HTMLElement | null>(null);
@@ -307,6 +316,7 @@
 {/snippet}
 
 {#snippet leafActions(leaf: TabbedPanelLeaf)}
+  {@render paneLeafExtras?.(leaf)}
   <PaneLeafActions
     {leaf}
     zoomed={zoomedLeafID === leaf.id}

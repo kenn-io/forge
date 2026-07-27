@@ -189,6 +189,28 @@ describe("detail pane layout", () => {
     expect(layout.paneRender()).toBeNull();
   });
 
+  it("renders caller chrome in each leaf's action area", () => {
+    // The tab strip is a pane's only chrome, and the structural controls occupy
+    // the snippet TabbedPanelTree offers, so a caller with its own control for a
+    // pane has nowhere else to put it.
+    const layout = store(splitTree());
+    render(DetailPaneLayoutTestHarness, { layout, withLeafExtras: true });
+
+    expect(screen.getByTestId("leaf-extra-leaf-detail")).toBeTruthy();
+    expect(screen.getByTestId("leaf-extra-leaf-workspace")).toBeTruthy();
+  });
+
+  it("suppresses caller chrome along with the structural controls while flattened", () => {
+    const layout = store(splitTree());
+    mockWidth(600);
+    render(DetailPaneLayoutTestHarness, { layout, withLeafExtras: true });
+
+    // One strip for every pane: chrome that named a leaf would be lying about
+    // which pane it acts on.
+    expect(screen.queryByTestId("leaf-extra-leaf-detail")).toBeNull();
+    expect(screen.queryByTestId("leaf-extra-leaf-workspace")).toBeNull();
+  });
+
   it("suppresses every structural control while flattened", () => {
     // A flat leaf merges tabs from several stored leaves, so any structural edit
     // would move panes the user cannot currently see.

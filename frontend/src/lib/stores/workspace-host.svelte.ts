@@ -93,6 +93,11 @@ let hostedSessions = $state<{ key: HostedWorkspaceKey; sessions: PublishedSessio
 // component: the terminal side stays in the frontend and the views never touch
 // the session registry.
 let sessionPaneSnippet = $state<Snippet<[{ paneKey: string; visible: boolean }]> | null>(null);
+// The hosted workspace's own controls (presets, zoom, terminal options, launch),
+// for the same reason: every one of them is wired to the live view's state, so the
+// view hands over the rendered chrome rather than the state behind it. Null while
+// no view is embedded, which is what tells a detail pane not to offer the button.
+let workspaceControlsSnippetState = $state<Snippet | null>(null);
 // Claims are released when their view unmounts, but a deletion can arrive
 // later from an unrelated surface (Workspaces tab, terminal tab). Without
 // this map the deletion would find no claim to tombstone, and the stale
@@ -427,6 +432,15 @@ export function registerSessionPaneSnippet(snippet: Snippet<[{ paneKey: string; 
   sessionPaneSnippet = snippet;
 }
 
+export function registerWorkspaceControlsSnippet(snippet: Snippet | null): void {
+  workspaceControlsSnippetState = snippet;
+}
+
+/** The hosted workspace's controls, or null when no embedded view is hosting one. */
+export function workspaceControlsSnippet(): Snippet | null {
+  return workspaceControlsSnippetState;
+}
+
 function promotableSessionsFor(surface: InlineWorkspaceSurface): readonly PromotableSession[] {
   // Only the surface actually hosting the workspace: there is one live terminal
   // per session, so a second surface claiming the same workspace could not render
@@ -602,4 +616,5 @@ export function resetWorkspaceHostForTest(): void {
   workspaceIdentityById.clear();
   hostedSessions = { key: { workspaceId: "", hostKey: undefined }, sessions: [] };
   sessionPaneSnippet = null;
+  workspaceControlsSnippetState = null;
 }

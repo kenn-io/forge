@@ -143,6 +143,29 @@ test("does not treat a block scalar descendant as a setup-vp version input", asy
   ]);
 });
 
+test("does not borrow a later job's with.version for a setup-vp step", async (t) => {
+  const root = await writeFixture(
+    t,
+    "jobs:\n" +
+      "  unit:\n" +
+      "    steps:\n" +
+      "      - name: Setup Vite+\n" +
+      "        uses: voidzero-dev/setup-vp@abcdef\n" +
+      "  call:\n" +
+      "    uses: ./.github/workflows/reusable.yml\n" +
+      "    with:\n" +
+      '      version: "0.2.3"\n',
+  );
+
+  assert.deepEqual(await checkPlaywrightVersion({ root }), [
+    {
+      file: ".github/workflows/ci.yml",
+      line: 5,
+      message: "setup-vp must set with.version to the exact package.json vite-plus pin.",
+    },
+  ]);
+});
+
 test("reports a non-exact setup-vp version", async (t) => {
   const root = await writeFixture(
     t,

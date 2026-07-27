@@ -77,7 +77,13 @@ function setupVpVersion(lines, actionIndex) {
   for (let index = actionIndex + 1; index < lines.length; index += 1) {
     const line = lines[index];
     const lineIndent = indentation(line);
-    if (index > actionIndex && /^\s*-\s/.test(line) && lineIndent <= stepIndent) break;
+    const trimmed = line.trim();
+    // A step's own keys are indented past the "- " that opens it. Anything at
+    // or left of that indent belongs to a later step, job, or top-level key, so
+    // the step's inputs have ended. Without this the scan could run past the
+    // step and adopt an unrelated `with: version:` — a later job's reusable
+    // workflow call, say — as if this step had been pinned.
+    if (trimmed !== "" && !trimmed.startsWith("#") && lineIndent <= stepIndent) break;
 
     if (withIndent === null) {
       if (/^\s*with:\s*(?:#.*)?$/.test(line)) withIndent = lineIndent;

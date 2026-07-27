@@ -186,9 +186,22 @@ export function normalizeTabbedPanelTree(
   node: TabbedPanelNode | null,
   availableTabKeys: readonly string[],
   fallbackTabKey = availableTabKeys[0] ?? "panel",
+  /**
+   * Keys kept when already stored, but never inserted — dynamic panes the user
+   * placed themselves.
+   *
+   * Both halves matter. Pruning exists to drop tabs a build no longer knows
+   * about, and a session pane is unknowable in advance. Reinsertion exists so a
+   * newly added static pane shows up for users with a stored layout, and a
+   * session pane must never be conjured into a tree it was removed from.
+   */
+  keepIfStored: (tabKey: string) => boolean = () => false,
 ): TabbedPanelNode {
   const available = uniqueTabbedPanelTabs(availableTabKeys.length > 0 ? [...availableTabKeys] : [fallbackTabKey]);
   const validTabs = new Set<string>(available);
+  for (const tabKey of collectTabbedPanelTabKeys(node)) {
+    if (keepIfStored(tabKey)) validTabs.add(tabKey);
+  }
   let tree = pruneTabbedPanelNode(node, validTabs);
   if (!tree) {
     return createTabbedPanelLeaf(available, available[0] ?? fallbackTabKey);
@@ -294,6 +307,7 @@ export function parseTabbedPanelLayout(
   raw: string | null,
   knownTabs: readonly string[],
   defaultTree?: TabbedPanelNode,
+  keepIfStored?: (tabKey: string) => boolean,
 ): TabbedPanelLayoutState {
   // Surfaces pass their own default tree so a first run reproduces the intended
   // arrangement — conversation and files sharing a leaf above the workspace —
@@ -310,7 +324,7 @@ export function parseTabbedPanelLayout(
     // Normalized against the surface's KNOWN tabs, never its available ones:
     // a tab added since this layout was stored must appear, and a retired one
     // must go, but availability is resolved later at render time.
-    const normalized = normalizeTabbedPanelTree(tree, knownTabs);
+    const normalized = normalizeTabbedPanelTree(tree, knownTabs, undefined, keepIfStored);
     const leafIDs = new Set(collectTabbedPanelLeafIDs(normalized));
     const zoomedLeafID =
       typeof record.zoomedLeafID === "string" && leafIDs.has(record.zoomedLeafID) ? record.zoomedLeafID : null;

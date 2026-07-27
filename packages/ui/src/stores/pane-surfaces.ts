@@ -4,6 +4,7 @@ import {
   type TabbedPanelNode,
 } from "../components/shared/tabbed-panel-layout.js";
 import type { PaneSurfaceKey } from "./paneLayout.svelte.js";
+import { isSessionPaneKey } from "./session-pane-key.js";
 
 /**
  * The pane vocabulary of each detail surface, in one place.
@@ -22,6 +23,11 @@ export interface PaneSurfaceDefinition {
   tabs: readonly string[];
   /** Fresh tree per call: the tree helpers mint new node ids on every call. */
   defaultTree: () => TabbedPanelNode;
+  /**
+   * Dynamic panes this surface accepts outside `tabs`: kept when stored, never
+   * reinserted. A promoted terminal session is the only kind today.
+   */
+  keepIfStored: (tabKey: string) => boolean;
 }
 
 /** Each group becomes one leaf, stacked top to bottom in the order given. */
@@ -45,13 +51,16 @@ export const PANE_SURFACES: Record<PaneSurfaceKey, PaneSurfaceDefinition> = {
   prs: {
     tabs: ["conversation", "files", "workspace"],
     defaultTree: () => stackedTree([["conversation", "files"], ["workspace"]]),
+    keepIfStored: isSessionPaneKey,
   },
   issues: {
     tabs: ["conversation", "workspace"],
     defaultTree: () => stackedTree([["conversation"], ["workspace"]]),
+    keepIfStored: isSessionPaneKey,
   },
   activity: {
     tabs: ["conversation", "files", "commit", "workspace"],
     defaultTree: () => stackedTree([["conversation", "files", "commit"], ["workspace"]]),
+    keepIfStored: isSessionPaneKey,
   },
 };

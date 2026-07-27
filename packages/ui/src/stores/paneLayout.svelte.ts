@@ -77,6 +77,13 @@ export interface PaneLayoutStore {
   /** Whether this tab is the active one in its own leaf. */
   isTabActive(tabKey: string): boolean;
   /**
+   * Whether the STORED tree contains this tab, regardless of availability.
+   *
+   * A promoted session pane is available only because it is already stored —
+   * availability must never conjure one — so the views need to ask.
+   */
+  hasTab(tabKey: string): boolean;
+  /**
    * What the mounted renderer is currently showing, or null when none is mounted.
    *
    * Command-layer consumers cannot derive this: whether a surface has a layout on
@@ -133,8 +140,12 @@ export function createPaneLayoutStore(
   surface: PaneSurfaceKey,
   knownTabs: readonly string[],
   defaultTree: TabbedPanelNode,
+  /** Dynamic panes kept when stored and never reinserted; see PaneSurfaceDefinition. */
+  keepIfStored?: (tabKey: string) => boolean,
 ): PaneLayoutStore {
-  let state = $state<TabbedPanelLayoutState>(parseTabbedPanelLayout(readStored(surface), knownTabs, defaultTree));
+  let state = $state<TabbedPanelLayoutState>(
+    parseTabbedPanelLayout(readStored(surface), knownTabs, defaultTree, keepIfStored),
+  );
   let render = $state<PaneRenderReport | null>(null);
 
   function commit(next: TabbedPanelLayoutState): void {
@@ -176,6 +187,8 @@ export function createPaneLayoutStore(
 
     isTabActive: (tabKey) => findTabbedPanelLeafByTab(state.tree, tabKey)?.activeTabKey === tabKey,
 
+    hasTab: (tabKey) => findTabbedPanelLeafByTab(state.tree, tabKey) !== null,
+
     paneRender: () => render,
 
     notePaneRender: (report) => {
@@ -204,7 +217,10 @@ export function createPaneLayoutStore(
     activateTab: (tabKey) => withTree(activateTabbedPanelTab(state.tree, tabKey)),
 
     noteFocused: (tabKey) => {
-      if (!knownTabs.includes(tabKey)) return;
+      // Dynamic panes count too, or a promoted session could never become
+      // last-focused and every rule keyed off it would read a stale value. Still
+      // validated: an arbitrary string must not be persisted as the winner.
+      if (!knownTabs.includes(tabKey) && !(keepIfStored?.(tabKey) ?? false)) return;
       if (state.lastFocusedTabKey === tabKey) return;
       commit({ ...state, lastFocusedTabKey: tabKey });
     },
@@ -260,7 +276,7 @@ export function createPaneLayoutStore(
       });
     },
 
-    reset: () => commit(parseTabbedPanelLayout(null, knownTabs, defaultTree)),
+    reset: () => commit(parseTabbedPanelLayout(null, knownTabs, defaultTree, keepIfStored)),
   };
 
   return store;
@@ -281,7 +297,7 @@ export function getPaneLayoutStore(surface: PaneSurfaceKey): PaneLayoutStore {
   const cached = stores.get(surface);
   if (cached) return cached;
   const definition = PANE_SURFACES[surface];
-  const created = createPaneLayoutStore(surface, definition.tabs, definition.defaultTree());
+  const created = createPaneLayoutStore(surface, definition.tabs, definition.defaultTree(), definition.keepIfStored);
   stores.set(surface, created);
   return created;
 }

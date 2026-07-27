@@ -192,6 +192,13 @@ export {
   resetPaneLayoutStoresForTest,
 } from "./stores/paneLayout.svelte.js";
 export type { PaneLayoutStore, PaneSurfaceKey, PaneTabSpec } from "./stores/paneLayout.svelte.js";
+export {
+  isSessionPaneKey,
+  parseSessionPaneKey,
+  sessionPaneKey,
+  sessionPaneKeyMatchesWorkspace,
+} from "./stores/session-pane-key.js";
+export type { SessionPaneRef } from "./stores/session-pane-key.js";
 export { default as WorkspaceRightSidebar } from "./components/workspace/WorkspaceRightSidebar.svelte";
 export { default as WorkspaceDiffPanel } from "./components/workspace/WorkspaceDiffPanel.svelte";
 export { default as DiffSidebar } from "./components/diff/DiffSidebar.svelte";

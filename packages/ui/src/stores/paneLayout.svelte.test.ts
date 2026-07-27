@@ -2,8 +2,10 @@ import { beforeEach, describe, expect, it } from "vite-plus/test";
 import type { TabbedPanelNode } from "../components/shared/tabbed-panel-layout.js";
 import { pushModalFrame, resetModalStack } from "./keyboard/modal-stack.svelte.js";
 import { PANE_LAYOUT_STORAGE_PREFIX, createPaneLayoutStore } from "./paneLayout.svelte.js";
+import { isSessionPaneKey, sessionPaneKey } from "./session-pane-key.js";
 
 const TABS = ["conversation", "files", "workspace"];
+const AGENT_PANE = sessionPaneKey("ws-1", undefined, "ws-1:helper");
 
 /**
  * conversation+files in one leaf, workspace split below — the PR default.
@@ -29,7 +31,7 @@ function defaultTree(): TabbedPanelNode {
 }
 
 function store(surface: "prs" | "issues" | "activity" = "prs") {
-  return createPaneLayoutStore(surface, TABS, defaultTree());
+  return createPaneLayoutStore(surface, TABS, defaultTree(), isSessionPaneKey);
 }
 
 beforeEach(() => {
@@ -179,5 +181,61 @@ describe("pane layout store", () => {
 
     const after = store().renderTree(TABS);
     expect(after && after.type === "split" ? after.ratio : 0).toBeCloseTo(0.7);
+  });
+});
+
+describe("promoted session panes", () => {
+  it("reports whether the stored tree holds a tab", () => {
+    const layout = store();
+    expect(layout.hasTab("workspace")).toBe(true);
+    // Availability must never conjure a promoted pane, so the views ask this
+    // instead of assuming.
+    expect(layout.hasTab(AGENT_PANE)).toBe(false);
+  });
+
+  it("keeps a promoted pane across a reload and still refuses to reinsert it", () => {
+    const first = store();
+    first.appendTabToLeaf("workspace", "leaf-detail");
+    // Stand in for a promotion: put the session pane in the tree by hand, the
+    // way Task 5's transfer will.
+    localStorage.setItem(
+      `${PANE_LAYOUT_STORAGE_PREFIX}prs`,
+      JSON.stringify({
+        version: 1,
+        tree: {
+          type: "leaf",
+          id: "leaf-1",
+          tabs: ["conversation", "files", "workspace", AGENT_PANE],
+          activeTabKey: AGENT_PANE,
+        },
+        zoomedLeafID: null,
+        hiddenTabKeys: [],
+        lastFocusedTabKey: AGENT_PANE,
+      }),
+    );
+
+    const reloaded = store();
+    expect(reloaded.hasTab(AGENT_PANE)).toBe(true);
+    expect(reloaded.lastFocusedTabKey()).toBe(AGENT_PANE);
+
+    // Resetting drops it and nothing puts it back: a session pane exists only
+    // because the user promoted it.
+    reloaded.reset();
+    expect(reloaded.hasTab(AGENT_PANE)).toBe(false);
+  });
+
+  it("accepts a well-formed session pane as last-focused and refuses a malformed one", () => {
+    // Without this a promoted pane could never win the last-focused slot, and
+    // every rule keyed off it - the flattened strip, Focus Terminal, the dock
+    // derivation - would read a stale value.
+    const layout = store();
+    layout.noteFocused(AGENT_PANE);
+    expect(layout.lastFocusedTabKey()).toBe(AGENT_PANE);
+
+    layout.noteFocused("session:bogus");
+    expect(layout.lastFocusedTabKey()).toBe(AGENT_PANE);
+
+    layout.noteFocused("not-a-pane-at-all");
+    expect(layout.lastFocusedTabKey()).toBe(AGENT_PANE);
   });
 });

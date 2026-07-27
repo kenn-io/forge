@@ -287,7 +287,7 @@ here rather than inventing it there:
 hasTab(tabKey: string): boolean;
 ```
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```ts
 const agentPane = sessionPaneKey("ws-1", undefined, "ws-1:helper");
@@ -326,10 +326,10 @@ it("prunes a malformed session key rather than keeping it forever", () => {
 
 plus a `paneLayout` round-trip test proving a promoted pane survives serialize/parse.
 
-- [ ] **Step 2** Run `../node_modules/.bin/vp test --project unit tabbed-panel-layout paneLayout`. Expected FAIL.
-- [ ] **Step 3** Implement.
-- [ ] **Step 4** Same command. Expected PASS.
-- [ ] **Step 5** Commit.
+- [x] **Step 2** Run `../node_modules/.bin/vp test --project unit tabbed-panel-layout paneLayout session-pane-key`. Expected FAIL.
+- [x] **Step 3** Implement, in `packages/ui/src/stores/session-pane-key.ts` (builder, strict parser, workspace matcher) plus the `keepIfStored` predicate threaded through `normalizeTabbedPanelTree`, `parseTabbedPanelLayout`, `PANE_SURFACES`, and `createPaneLayoutStore`. `noteFocused` accepts a validated dynamic key for the same reason.
+- [x] **Step 4** Same command. Expected PASS. (24 + 41 + 5.)
+- [x] **Step 5** Commit.
 
 ---
 

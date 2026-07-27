@@ -8,11 +8,15 @@ import {
   parseTabbedPanelLayout,
   pruneTabbedPanelTreeToAvailable,
   serializeTabbedPanelLayout,
+  collectTabbedPanelTabKeys,
+  normalizeTabbedPanelTree,
   splitTabbedPanelTabIntoLeaf,
   type TabbedPanelLayoutState,
 } from "./tabbed-panel-layout";
+import { isSessionPaneKey, sessionPaneKey } from "../../stores/session-pane-key.js";
 
 const TABS = ["conversation", "files", "workspace"];
+const AGENT_PANE = sessionPaneKey("ws-1", undefined, "ws-1:helper");
 
 /** Default layout, then workspace split into its own leaf below the rest. */
 function splitLayout(): { tree: ReturnType<typeof createTabbedPanelLeaf> | never; firstLeafID: string } {
@@ -22,6 +26,65 @@ function splitLayout(): { tree: ReturnType<typeof createTabbedPanelLeaf> | never
   if (!tree) throw new Error("split returned null");
   return { tree: tree as never, firstLeafID };
 }
+
+describe("dynamic panes kept but never reinserted", () => {
+  function leafWith(tabs: string[]) {
+    return { type: "leaf" as const, id: "leaf-1", tabs, activeTabKey: tabs[0]! };
+  }
+
+  it("keeps a stored session pane the surface vocabulary does not list", () => {
+    const kept = normalizeTabbedPanelTree(
+      leafWith(["conversation", AGENT_PANE]),
+      ["conversation", "files"],
+      "conversation",
+      isSessionPaneKey,
+    );
+    expect(collectTabbedPanelTabKeys(kept)).toContain(AGENT_PANE);
+    // Missing static tabs still appear; only the dynamic rule is different.
+    expect(collectTabbedPanelTabKeys(kept)).toContain("files");
+  });
+
+  it("never reinserts one that is not stored", () => {
+    // Reinsertion exists so a newly added static pane shows up for users with a
+    // stored layout. A session pane exists only because the user promoted it,
+    // so removing it has to stick.
+    const still = normalizeTabbedPanelTree(
+      leafWith(["conversation"]),
+      ["conversation", "files"],
+      "conversation",
+      isSessionPaneKey,
+    );
+    expect(collectTabbedPanelTabKeys(still)).not.toContain(AGENT_PANE);
+  });
+
+  it("prunes a malformed session key instead of keeping it forever", () => {
+    const kept = normalizeTabbedPanelTree(
+      leafWith(["conversation", "session:bogus"]),
+      ["conversation"],
+      "conversation",
+      isSessionPaneKey,
+    );
+    expect(collectTabbedPanelTabKeys(kept)).not.toContain("session:bogus");
+  });
+
+  it("prunes every unknown key when no predicate is given", () => {
+    const kept = normalizeTabbedPanelTree(leafWith(["conversation", AGENT_PANE]), ["conversation"], "conversation");
+    expect(collectTabbedPanelTabKeys(kept)).not.toContain(AGENT_PANE);
+  });
+
+  it("survives a serialize and parse round trip", () => {
+    const state: TabbedPanelLayoutState = {
+      version: 1,
+      tree: leafWith(["conversation", AGENT_PANE]),
+      zoomedLeafID: null,
+      hiddenTabKeys: [],
+      lastFocusedTabKey: AGENT_PANE,
+    };
+    const parsed = parseTabbedPanelLayout(serializeTabbedPanelLayout(state), TABS, undefined, isSessionPaneKey);
+    expect(collectTabbedPanelTabKeys(parsed.tree)).toContain(AGENT_PANE);
+    expect(parsed.lastFocusedTabKey).toBe(AGENT_PANE);
+  });
+});
 
 describe("tabbed panel layout persistence", () => {
   it("defaults to one leaf holding every known tab", () => {

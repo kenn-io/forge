@@ -64,6 +64,7 @@ async function mockPulls(page: Page) {
         pull(10, "Approved review queue", {
           ReviewDecision: "APPROVED",
           KanbanStatus: "reviewing",
+          workspace: { id: "ws-10", status: "ready" },
         }),
         pull(11, "Draft parser cleanup", {
           IsDraft: true,
@@ -72,6 +73,7 @@ async function mockPulls(page: Page) {
         pull(12, "Ready failed workflow", {
           CIStatus: "failure",
           KanbanStatus: "awaiting_merge",
+          workspace: { id: "ws-12", status: "ready" },
         }),
         pull(13, "Ready conflict resolver", {
           MergeableState: "dirty",
@@ -100,6 +102,10 @@ test("PR filters stack attributes and allow multiple kanban statuses", async ({ 
   await expect(rows).toHaveCount(4);
 
   await openPrFilters(page);
+  await page.locator(".kit-filter-dropdown__panel").getByRole("button", { name: "Has workspace" }).click();
+  await expect(rows).toHaveText([/Approved review queue/, /Ready failed workflow/]);
+  await page.locator(".kit-filter-dropdown__panel").getByRole("button", { name: "Has workspace" }).click();
+
   await page.locator(".kit-filter-dropdown__panel").getByRole("button", { name: "Ready for review" }).click();
   await page.locator(".kit-filter-dropdown__panel").getByRole("button", { name: "Reviewing" }).click();
   await page.locator(".kit-filter-dropdown__panel").getByRole("button", { name: "Awaiting merge" }).click();

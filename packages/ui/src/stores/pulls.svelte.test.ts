@@ -136,6 +136,20 @@ describe("pulls store display order", () => {
     expect(store.getDisplayOrderPRs().map((pr) => pr.ID)).toEqual([4]);
   });
 
+  it("filters pull requests to entries with a workspace", async () => {
+    const store = createPullsStore({
+      client: clientWithPulls([
+        pull(1, "api", "2026-05-20T15:00:00Z", { workspace: { id: "ws-1", status: "ready" } }),
+        pull(2, "web", "2026-05-20T14:00:00Z"),
+      ]),
+    });
+
+    await store.loadPulls();
+    store.toggleAttributeFilter("has_workspace");
+
+    expect(store.getDisplayOrderPRs().map((pr) => pr.ID)).toEqual([1]);
+  });
+
   it("matches empty, missing, and unknown kanban statuses as New", async () => {
     const store = createPullsStore({
       client: clientWithPulls([

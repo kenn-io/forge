@@ -212,6 +212,12 @@
       title: "Visibility",
       items: [
         {
+          id: "has-workspace",
+          label: "Has workspace",
+          active: pulls.getAttributeFilters().includes("has_workspace"),
+          onSelect: () => pulls.toggleAttributeFilter("has_workspace"),
+        },
+        {
           id: "hide-org-name",
           label: "Hide org name",
           active: grouping.getHideOrgName(),

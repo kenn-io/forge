@@ -36,7 +36,7 @@ type PullsParams = {
   offset?: number;
 };
 
-export type PullAttributeFilter = "approved" | "draft" | "ready" | "merge_conflicts" | "failed_ci";
+export type PullAttributeFilter = "approved" | "draft" | "ready" | "merge_conflicts" | "failed_ci" | "has_workspace";
 
 export interface PullsStoreOptions {
   client: MiddlemanClient;
@@ -422,7 +422,10 @@ export function createPullsStore(opts: PullsStoreOptions) {
     if (filter === "merge_conflicts") {
       return pr.MergeableState === "dirty";
     }
-    return hasFailedCI(pr);
+    if (filter === "failed_ci") {
+      return hasFailedCI(pr);
+    }
+    return pr.workspace !== undefined;
   }
 
   function hasFailedCI(pr: PullRequest): boolean {

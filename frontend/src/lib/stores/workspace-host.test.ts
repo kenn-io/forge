@@ -12,9 +12,12 @@ import {
 } from "@middleman/ui/stores/workspace-create-pending";
 import { getLastWorkspaceRoute, navigate } from "./router.svelte.ts";
 import {
+  activeHostedSession,
   desiredKey,
   desiredSlot,
   getInlineWorkspaceController,
+  publishHostedSessions,
+  hostedSessionRegistryKey,
   isHostVisible,
   notifyWorkspaceDeleted,
   onIdentityInvalidated,
@@ -669,5 +672,75 @@ describe("workspace host store", () => {
     pop();
     prs.focusTerminal();
     expect(prs.getDockMode()).toBe("split");
+  });
+});
+
+describe("promotable sessions", () => {
+  beforeEach(() => {
+    resetWorkspaceHostForTest();
+    resetWorkspaceCreatePendingForTest();
+    navigate("/pulls");
+  });
+
+  const sessions = [
+    { paneKey: "session:ws-a//ws-a%3Ahelper", label: "Helper", hostKey: "ws-a//ws-a%3Ahelper/gen-1", active: true },
+  ];
+
+  it("offers the hosted workspace's sessions to the surface showing it", () => {
+    const prs = getInlineWorkspaceController("prs");
+    prs.claim(identityA, refA);
+    publishHostedSessions({ workspaceId: "ws-a", hostKey: undefined }, sessions);
+
+    expect(prs.promotableSessions()).toEqual([{ paneKey: sessions[0]!.paneKey, label: "Helper" }]);
+    // The registry key, which the pane's slot needs, stays behind the frontend
+    // boundary rather than travelling to the views.
+    expect(hostedSessionRegistryKey(sessions[0]!.paneKey)).toBe(sessions[0]!.hostKey);
+  });
+
+  it("offers nothing to a surface that is not hosting the workspace", () => {
+    const prs = getInlineWorkspaceController("prs");
+    const issues = getInlineWorkspaceController("issues");
+    prs.claim(identityA, refA);
+    publishHostedSessions({ workspaceId: "ws-a", hostKey: undefined }, sessions);
+
+    // One live terminal per session: a second surface claiming the same workspace
+    // could not render it, so offering the pane there would give an empty one.
+    expect(issues.promotableSessions()).toEqual([]);
+
+    // And nothing while parked: no detail pane is rendering any of it.
+    navigate("/activity");
+    expect(prs.promotableSessions()).toEqual([]);
+  });
+
+  it("offers nothing while the published list names another workspace", () => {
+    const prs = getInlineWorkspaceController("prs");
+    prs.claim(identityA, refA);
+    publishHostedSessions({ workspaceId: "ws-other", hostKey: undefined }, sessions);
+
+    // A stale list would offer panes for a workspace the surface stopped showing.
+    expect(prs.promotableSessions()).toEqual([]);
+    expect(hostedSessionRegistryKey(sessions[0]!.paneKey)).toBe(sessions[0]!.hostKey);
+  });
+
+  it("names the session the workspace pane is showing, for keyboard promotion", () => {
+    const prs = getInlineWorkspaceController("prs");
+    prs.claim(identityA, refA);
+    publishHostedSessions({ workspaceId: "ws-a", hostKey: undefined }, sessions);
+
+    expect(activeHostedSession("prs")).toEqual({ paneKey: sessions[0]!.paneKey, label: "Helper" });
+    // Surface-scoped like the pane list: a command must not reach a terminal
+    // rendered on a page the user is not looking at.
+    expect(activeHostedSession("issues")).toBeNull();
+  });
+
+  it("names no session while the workspace pane shows none", () => {
+    const prs = getInlineWorkspaceController("prs");
+    prs.claim(identityA, refA);
+    // What the view publishes when the dock is collapsed and no workflow tab
+    // holds a session: there is a session, but none of it is on screen.
+    publishHostedSessions({ workspaceId: "ws-a", hostKey: undefined }, [{ ...sessions[0]!, active: false }]);
+
+    expect(prs.promotableSessions()).toHaveLength(1);
+    expect(activeHostedSession("prs")).toBeNull();
   });
 });

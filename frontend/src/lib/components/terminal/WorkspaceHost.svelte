@@ -2,12 +2,15 @@
   import { flushSync, tick } from "svelte";
   import type { InlineDockMode } from "@middleman/ui";
   import SessionTerminalPool from "./SessionTerminalPool.svelte";
+  import SessionTerminalSlot from "./SessionTerminalSlot.svelte";
   import WorkspaceTerminalView from "./WorkspaceTerminalView.svelte";
   import { getRoute } from "../../stores/router.svelte.ts";
   import {
     clearPendingHostFocus, consumePendingHostFocus,
     desiredKey, desiredSlot, getInlineWorkspaceController, getSlotElement, isHostVisible,
     notifyWorkspaceDeleted, registerHostElement, registerParkingElement,
+    hostedSessionRegistryKey,
+    registerSessionPaneSnippet,
     rememberTerminalRouteKey,
     type HostSlot,
   } from "../../stores/workspace-host.svelte.ts";
@@ -60,6 +63,12 @@
   // Workspaces tab has no detail panes, and a parked host is claimed by nobody,
   // so no promotion applies to what it renders.
   const paneSurface = $derived(slot === null || slot === "tab" ? undefined : slot);
+
+  // Registered for the lifetime of the host, which the app shell always mounts.
+  $effect(() => {
+    registerSessionPaneSnippet(sessionPane);
+    return () => registerSessionPaneSnippet(null);
+  });
 
   $effect(() => {
     registerHostElement(hostWrapper);
@@ -173,6 +182,17 @@
     {paneSurface}
   />
 </div>
+
+<!-- The pane body a detail surface renders for a promoted session. It lives here,
+     not in the view: the views cannot reach the session registry, and this is the
+     component that already owns the terminal side. The slot owns both halves of
+     registration, so a superseded pane cannot hide the live one. -->
+{#snippet sessionPane({ paneKey, visible }: { paneKey: string; visible: boolean })}
+  {@const registryKey = hostedSessionRegistryKey(paneKey)}
+  {#if registryKey !== null}
+    <SessionTerminalSlot hostKey={registryKey} {visible} />
+  {/if}
+{/snippet}
 
 <style>
   .workspace-host-parking {

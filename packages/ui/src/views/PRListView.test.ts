@@ -1,9 +1,10 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
-import { tick } from "svelte";
+import { flushSync, tick } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { NAVIGATE_KEY, SIDEBAR_KEY, STORES_KEY } from "../context.js";
 import { resetModalStack } from "../stores/keyboard/modal-stack.svelte.js";
 import { getPaneLayoutStore, resetPaneLayoutStoresForTest } from "../stores/paneLayout.svelte.js";
+import { sessionPaneKey } from "../stores/session-pane-key.js";
 import type { PullRequestRouteRef } from "../routes.js";
 import type { InlineWorkspaceController } from "../workspace-inline.js";
 import { createClaimTestController, createReactiveValue } from "./viewWorkspaceTestDoubles.svelte.js";
@@ -454,5 +455,94 @@ describe("PRListView inline workspace", () => {
     // revert this surface to the pre-inline-workspace behavior without failing
     // any other assertion.
     expect(screen.getByTestId("pull-detail").getAttribute("data-has-inline-workspace")).toBe("true");
+  });
+});
+
+describe("PRListView promoted session panes", () => {
+  const AGENT_PANE = sessionPaneKey("ws-1", undefined, "ws-1:helper");
+
+  beforeEach(() => {
+    localStorage.clear();
+    resetModalStack();
+    resetPaneLayoutStoresForTest();
+    observedWidth.value = 1600;
+    vi.stubGlobal("ResizeObserver", ResizeObserverMock);
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(mockElementRect);
+  });
+
+  afterEach(() => {
+    cleanup();
+    resetModalStack();
+    resetPaneLayoutStoresForTest();
+    localStorage.clear();
+    observedWidth.value = 0;
+    vi.restoreAllMocks();
+  });
+
+  it("renders a promoted session's pane and reports it visible", () => {
+    const layout = getPaneLayoutStore("prs");
+    // The workspace pane's own leaf, which the route does not name, so the
+    // promoted session is the tab on screen there.
+    layout.promoteTab(AGENT_PANE, { kind: "tab", leafID: layout.leafIDForTab("workspace")! });
+    const { controller } = createClaimTestController("prs", {
+      sessions: [{ paneKey: AGENT_PANE, label: "Helper" }],
+    });
+
+    renderPRListView({ inlineWorkspace: controller, detail: pullDetailFixture({ id: "ws-1", status: "ready" }) });
+
+    const pane = document.querySelector(`[data-session-pane="${AGENT_PANE}"]`);
+    expect(pane).not.toBeNull();
+    expect(pane?.getAttribute("data-session-pane-visible")).toBe("true");
+    expect(screen.getByRole("tab", { name: "Helper" })).toBeTruthy();
+  });
+
+  it("reports a promoted pane hidden while the route pane owns their shared leaf", () => {
+    const layout = getPaneLayoutStore("prs");
+    layout.promoteTab(AGENT_PANE, { kind: "tab", leafID: layout.leafIDForTab("conversation")! });
+    const { controller } = createClaimTestController("prs", {
+      sessions: [{ paneKey: AGENT_PANE, label: "Helper" }],
+    });
+
+    renderPRListView({ inlineWorkspace: controller, detail: pullDetailFixture({ id: "ws-1", status: "ready" }) });
+
+    // A deep link is authoritative over stored layout, so the conversation takes
+    // the leaf back. The pane still renders - unmounting it would park the
+    // terminal - but it must report itself hidden, or a live terminal sits off
+    // screen resizing itself to a pane nobody can see.
+    const pane = document.querySelector(`[data-session-pane="${AGENT_PANE}"]`);
+    expect(pane).not.toBeNull();
+    expect(pane?.getAttribute("data-session-pane-visible")).toBe("false");
+  });
+
+  it("never conjures a pane for a session the user has not promoted", () => {
+    const { controller } = createClaimTestController("prs", {
+      sessions: [{ paneKey: AGENT_PANE, label: "Helper" }],
+    });
+
+    renderPRListView({ inlineWorkspace: controller, detail: pullDetailFixture({ id: "ws-1", status: "ready" }) });
+
+    // Availability is what the surface offers, not what exists: a session pane
+    // exists only because it is already in the stored tree.
+    expect(document.querySelector(`[data-session-pane="${AGENT_PANE}"]`)).toBeNull();
+    expect(screen.queryByRole("tab", { name: "Helper" })).toBeNull();
+  });
+
+  it("prunes a promoted pane when the workspace stops offering it, keeping it stored", async () => {
+    const layout = getPaneLayoutStore("prs");
+    layout.promoteTab(AGENT_PANE, { kind: "tab", leafID: layout.leafIDForTab("conversation")! });
+    const { controller, setSessions } = createClaimTestController("prs", {
+      sessions: [{ paneKey: AGENT_PANE, label: "Helper" }],
+    });
+
+    renderPRListView({ inlineWorkspace: controller, detail: pullDetailFixture({ id: "ws-1", status: "ready" }) });
+    expect(document.querySelector(`[data-session-pane="${AGENT_PANE}"]`)).not.toBeNull();
+
+    // Selecting an item whose workspace has other sessions: the pane must stop
+    // rendering, but stay stored so it comes back when that workspace returns.
+    setSessions([]);
+    flushSync();
+
+    expect(document.querySelector(`[data-session-pane="${AGENT_PANE}"]`)).toBeNull();
+    expect(layout.hasTab(AGENT_PANE)).toBe(true);
   });
 });

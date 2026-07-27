@@ -304,6 +304,13 @@ Keyboard handlers must have one clear owner for each key press.
   own, or one tmux session gets two sockets. A container mounts a session into
   the pool only while it actually renders it, since a parked terminal keeps its
   websocket (`frontend/src/lib/stores/session-host.svelte.ts`).
+- A promoted session is recorded ONCE, in the detail surface's stored pane tree.
+  Containers mask it out of what they render (derived, not an effect) and never
+  prune their own stored trees, so demoting restores the tab order, split, and
+  group the user chose. The pane body crosses the `packages/ui` boundary as an
+  `InlineWorkspaceController` snippet: views get `{paneKey, label}` and pass
+  their own `visible` back, and the generation-carrying registry key stays in
+  `frontend/` (`frontend/src/lib/stores/workspace-host.svelte.ts`).
 - The desktop `.app-main` clips overflow but must never become a scroll
   container; focus-driven scrolling there shifts every mode rail and creates
   matching chrome gaps (`frontend/src/App.svelte::.app-main`).

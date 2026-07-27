@@ -162,6 +162,12 @@ vi.mock("@middleman/ui/stores/flash", () => ({
 // renders portal slots and no terminal would ever appear.
 import WorkspaceTerminalView from "./WorkspaceTerminalViewTestHarness.svelte";
 import { mountedSessions, resetSessionHostForTest, sessionHostPrefix } from "../../stores/session-host.svelte.ts";
+import {
+  activeHostedSession,
+  getInlineWorkspaceController,
+  resetWorkspaceHostForTest,
+} from "../../stores/workspace-host.svelte.ts";
+import { navigate } from "../../stores/router.svelte.ts";
 
 const runningSession = {
   key: "ws-1:helper",
@@ -352,6 +358,27 @@ function persistedSplitWorkflowLayout(sessionKey: string, region: "workflow" | "
   });
 }
 
+/**
+ * Put the workspace on the PRs detail surface, the way the app does before an
+ * embedded view exists: the session publication is surface-scoped, so a command
+ * cannot reach a terminal rendered on a page the user is not looking at.
+ */
+function claimForPrs(): void {
+  navigate("/pulls");
+  getInlineWorkspaceController("prs").claim(
+    {
+      provider: "github",
+      platformHost: "github.com",
+      owner: "octo",
+      name: "repo",
+      repoPath: "octo/repo",
+      number: 1,
+      itemType: "pull",
+    },
+    { id: "ws-1", status: "ready" },
+  );
+}
+
 function promoteSession(surface: "prs" | "issues" | "activity", sessionKey: string): string {
   const layout = getPaneLayoutStore(surface);
   const paneKey = sessionPaneKey("ws-1", undefined, sessionKey);
@@ -388,6 +415,7 @@ describe("WorkspaceTerminalView", () => {
     localStorage.clear();
     resetSessionHostForTest();
     resetPaneLayoutStoresForTest();
+    resetWorkspaceHostForTest();
     localStorage.setItem("middleman-workspace-active-tab:ws-1", "session:ws-1:helper");
     sockets = [];
     resetWorkspaceCreatePendingForTest();
@@ -2418,6 +2446,78 @@ describe("WorkspaceTerminalView", () => {
     expect(mocks.launchWorkspaceSession).not.toHaveBeenCalled();
     expect(mocks.showFlash).not.toHaveBeenCalled();
     expect(consumeWorkspaceLaunch("ws-1")).toBeNull();
+  });
+
+  it("publishes the session the pane is showing, so a keyboard command can promote it", async () => {
+    localStorage.setItem("middleman-workspace-terminal-layout:ws-1", persistedSplitWorkflowLayout("ws-1:helper"));
+    claimForPrs();
+
+    render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+        paneSurface: "prs" as const,
+      },
+    });
+
+    // The active workflow tab holds this session, so it is the one on screen.
+    // Only the view can decide that; a palette command sees stores alone.
+    await waitFor(() =>
+      expect(activeHostedSession("prs")?.paneKey).toBe(sessionPaneKey("ws-1", undefined, "ws-1:helper")),
+    );
+
+    await fireEvent.click(screen.getByRole("tab", { name: "Home" }));
+
+    // Republished as the user moves around: Home fills the pane now, so the
+    // session it replaced must stop being offered.
+    await waitFor(() => expect(activeHostedSession("prs")).toBeNull());
+  });
+
+  it("publishes the dock's session while the dock is open", async () => {
+    localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+    localStorage.setItem(
+      "middleman-workspace-terminal-layout:ws-1",
+      persistedSplitWorkflowLayout("ws-1_shell_a", "terminal"),
+    );
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTerminalSession());
+    claimForPrs();
+
+    render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+        paneSurface: "prs" as const,
+      },
+    });
+
+    await waitFor(() =>
+      expect(activeHostedSession("prs")?.paneKey).toBe(sessionPaneKey("ws-1", undefined, "ws-1_shell_a")),
+    );
+  });
+
+  it("publishes no session while the dock holding it is collapsed", async () => {
+    localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+    localStorage.setItem(
+      "middleman-workspace-terminal-layout:ws-1",
+      JSON.stringify({
+        ...JSON.parse(persistedSplitWorkflowLayout("ws-1_shell_a", "terminal")),
+        open: false,
+      }),
+    );
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTerminalSession());
+    claimForPrs();
+
+    render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+        paneSurface: "prs" as const,
+      },
+    });
+
+    // Published, so the surface can offer the pane...
+    await waitFor(() => expect(getInlineWorkspaceController("prs").promotableSessions()).toHaveLength(1));
+    // ...but not as the current one. The dock still names an active session, and a
+    // collapsed dock renders none of it, so promoting it by keyboard would move a
+    // terminal the user cannot see.
+    expect(activeHostedSession("prs")).toBeNull();
   });
 
   describe("promoted sessions", () => {

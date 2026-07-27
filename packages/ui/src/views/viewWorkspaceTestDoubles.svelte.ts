@@ -1,7 +1,9 @@
+import { createRawSnippet, type Snippet } from "svelte";
 import type { Attachment } from "svelte/attachments";
 import { vi } from "vite-plus/test";
 import {
   identityEquals,
+  type PromotableSession,
   type InlineDockMode,
   type InlineWorkspaceController,
   type InlineWorkspaceSurface,
@@ -20,12 +22,17 @@ import {
  * here are backed by real `$state` too. This module is a `.svelte.ts` file so
  * runes compile here.
  */
-export function createClaimTestController(surface: InlineWorkspaceSurface = "prs"): {
+export function createClaimTestController(
+  surface: InlineWorkspaceSurface = "prs",
+  options: { sessions?: readonly PromotableSession[] } = {},
+): {
   controller: InlineWorkspaceController;
   notifyInvalidated: (identity: WorkspaceItemIdentity) => void;
+  setSessions: (sessions: readonly PromotableSession[]) => void;
 } {
   let claimed: WorkspaceItemIdentity | null = $state(null);
   let dockMode = $state<InlineDockMode>("split");
+  let sessions = $state<readonly PromotableSession[]>(options.sessions ?? []);
   const invalidationListeners = new Set<(identity: WorkspaceItemIdentity) => void>();
 
   const controller: InlineWorkspaceController = {
@@ -54,6 +61,8 @@ export function createClaimTestController(surface: InlineWorkspaceSurface = "prs
       return () => invalidationListeners.delete(cb);
     }),
     slotAttachment: vi.fn((_element: HTMLElement) => {}) satisfies Attachment<HTMLElement>,
+    promotableSessions: () => sessions,
+    sessionPane: () => sessionPaneDouble,
   };
 
   return {
@@ -61,8 +70,28 @@ export function createClaimTestController(surface: InlineWorkspaceSurface = "prs
     notifyInvalidated: (identity: WorkspaceItemIdentity) => {
       for (const listener of invalidationListeners) listener(identity);
     },
+    setSessions: (next: readonly PromotableSession[]) => {
+      sessions = next;
+    },
   };
 }
+
+/**
+ * Stand-in for the frontend's session-terminal slot, which packages/ui cannot
+ * import. Records the pane key and the visibility the view passed through, which
+ * is the whole contract: a pane that renders but reports itself hidden leaves a
+ * live terminal off screen.
+ */
+const sessionPaneDouble: Snippet<[{ paneKey: string; visible: boolean }]> = createRawSnippet((arg) => ({
+  render: () => `<div></div>`,
+  setup: (node: Element) => {
+    $effect(() => {
+      const { paneKey, visible } = arg();
+      node.setAttribute("data-session-pane", paneKey);
+      node.setAttribute("data-session-pane-visible", String(visible));
+    });
+  },
+}));
 
 /** A `$state`-backed box so a test can mutate a store mock's return value and
  * have a component's `$effect` (which reads it) rerun, the same way a real

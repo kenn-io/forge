@@ -1,6 +1,18 @@
-import { afterEach, describe, expect, it } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it } from "vite-plus/test";
+import {
+  getPaneLayoutStore,
+  resetPaneLayoutStoresForTest,
+  type PaneLayoutStore,
+} from "@middleman/ui/stores/paneLayout";
+import { sessionPaneKey } from "@middleman/ui";
 
 import { defaultActions, setStoreInstances } from "./actions.js";
+import { navigate } from "../router.svelte.ts";
+import {
+  getInlineWorkspaceController,
+  publishHostedSessions,
+  resetWorkspaceHostForTest,
+} from "../workspace-host.svelte.ts";
 import { isSidebarCollapsed, setSidebarCollapsed } from "../sidebar.svelte.js";
 import {
   OPEN_LABEL_PICKER_EVENT,
@@ -575,5 +587,91 @@ describe("defaultActions", () => {
       owner: "acme",
       name: "widgets",
     });
+  });
+});
+
+describe("session pane commands", () => {
+  const identity = {
+    provider: "github",
+    platformHost: "github.com",
+    owner: "octo",
+    name: "repo",
+    repoPath: "octo/repo",
+    number: 1,
+    itemType: "pull",
+  };
+  const paneKey = sessionPaneKey("ws-1", undefined, "ws-1:helper");
+  const hosted = { paneKey, label: "Helper", hostKey: `${paneKey}/gen-1`, active: true };
+
+  beforeEach(() => {
+    localStorage.clear();
+    resetPaneLayoutStoresForTest();
+    resetWorkspaceHostForTest();
+    navigate("/pulls");
+    getInlineWorkspaceController("prs").claim(identity, { id: "ws-1", status: "ready" });
+    publishHostedSessions({ workspaceId: "ws-1", hostKey: undefined }, [hosted]);
+  });
+
+  afterEach(() => {
+    resetPaneLayoutStoresForTest();
+    resetWorkspaceHostForTest();
+    localStorage.clear();
+  });
+
+  /** Stand in for a mounted, unflattened DetailPaneLayout on the PRs surface. */
+  function noteRendered(layout: PaneLayoutStore, tabs: readonly string[]): void {
+    layout.notePaneRender({ flattened: false, editableTabs: [...tabs], onScreenTabs: [...tabs] });
+  }
+
+  it("promotes the shown session beside the workspace pane", () => {
+    const layout = getPaneLayoutStore("prs");
+    noteRendered(layout, ["conversation", "workspace"]);
+    const action = command("session.promote");
+    const context = ctx("pulls", { selectedPR: selected });
+
+    expect(action.when(context)).toBe(true);
+    action.handler(context);
+
+    expect(layout.hasTab(paneKey)).toBe(true);
+    // Its own leaf, not stacked behind the workspace pane: a promotion the user
+    // cannot see reads as a command that did nothing.
+    expect(layout.leafIDForTab(paneKey)).not.toBe(layout.leafIDForTab("workspace"));
+    // Offered once. Repeating it would move the tab the user just placed.
+    expect(action.when(context)).toBe(false);
+  });
+
+  it("offers no promotion while the surface is not hosting the workspace", () => {
+    noteRendered(getPaneLayoutStore("issues"), ["conversation", "workspace"]);
+    const action = command("session.promote");
+
+    // Same claim, different page: the terminal is not on screen here.
+    expect(action.when(ctx("issues", { selectedIssue: selected }))).toBe(false);
+  });
+
+  it("returns a promoted session to the workspace pane", () => {
+    const layout = getPaneLayoutStore("prs");
+    noteRendered(layout, ["conversation", "workspace"]);
+    const promote = command("session.promote");
+    const promoteContext = ctx("pulls", { selectedPR: selected });
+    promote.handler(promoteContext);
+    noteRendered(layout, ["conversation", "workspace", paneKey]);
+    layout.noteFocused(paneKey);
+
+    const demote = command("session.demote");
+    const context = ctx("pulls", { selectedPR: selected });
+    expect(demote.when(context)).toBe(true);
+    demote.handler(context);
+
+    expect(layout.hasTab(paneKey)).toBe(false);
+  });
+
+  it("offers no demotion for a pane that is not a session", () => {
+    const layout = getPaneLayoutStore("prs");
+    noteRendered(layout, ["conversation", "workspace"]);
+    layout.noteFocused("workspace");
+
+    // Demotion is the session pane's own command: the workspace pane has nowhere
+    // to go back to.
+    expect(command("session.demote").when(ctx("pulls", { selectedPR: selected }))).toBe(false);
   });
 });

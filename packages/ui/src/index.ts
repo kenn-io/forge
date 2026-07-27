@@ -60,6 +60,7 @@ export type {
   InlineDockMode,
   InlineWorkspaceController,
   InlineWorkspaceSurface,
+  PromotableSession,
   WorkspaceItemIdentity,
   WorkspaceRefLite,
 } from "./workspace-inline.js";

@@ -3,9 +3,10 @@ import { tick } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { SIDEBAR_KEY, STORES_KEY } from "../context.js";
 import { resetModalStack } from "../stores/keyboard/modal-stack.svelte.js";
-import { resetPaneLayoutStoresForTest } from "../stores/paneLayout.svelte.js";
+import { getPaneLayoutStore, resetPaneLayoutStoresForTest } from "../stores/paneLayout.svelte.js";
 import type { IssueRouteRef } from "../routes.js";
 import type { InlineWorkspaceController } from "../workspace-inline.js";
+import { sessionPaneKey } from "../stores/session-pane-key.js";
 import { createClaimTestController, createReactiveValue } from "./viewWorkspaceTestDoubles.svelte.js";
 
 vi.mock("../components/sidebar/IssueList.svelte", async () => ({
@@ -113,6 +114,23 @@ describe("IssueListView inline workspace", () => {
     localStorage.clear();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+  });
+
+  it("renders a promoted session's pane beside the issue conversation", () => {
+    const layout = getPaneLayoutStore("issues");
+    const paneKey = sessionPaneKey("ws-1", undefined, "ws-1:helper");
+    layout.promoteTab(paneKey, { kind: "tab", leafID: layout.leafIDForTab("workspace")! });
+    const { controller } = createClaimTestController("issues", {
+      sessions: [{ paneKey, label: "Helper" }],
+    });
+
+    renderIssueListView({
+      inlineWorkspace: controller,
+      detail: issueDetailFixture({ id: "ws-1", status: "ready" }),
+    });
+
+    expect(document.querySelector(`[data-session-pane="${paneKey}"]`)).not.toBeNull();
+    expect(screen.getByRole("tab", { name: "Helper" })).toBeTruthy();
   });
 
   it("claims when the loaded detail matches the selection and carries a workspace", () => {

@@ -7,6 +7,7 @@
     from "../components/detail/IssueDetail.svelte";
   import DetailPaneLayout from "../components/shared/DetailPaneLayout.svelte";
   import { getPaneLayoutStore, type PaneTabSpec } from "../stores/paneLayout.svelte.js";
+  import { isSessionPaneKey } from "../stores/session-pane-key.js";
   import type { IssueDetailSyncMode } from "../stores/issues.svelte.js";
   import type { IssueRouteRef } from "../routes.js";
   import { issueDetailMatchesRef } from "../components/detail/detail-match.js";
@@ -76,9 +77,22 @@
     refresh: () => void refreshSelectedDetail(),
   });
 
+  // One entry per session the surface's stored tree already holds. `available`
+  // never conjures a pane: a session pane exists only because the user promoted
+  // it, so a workspace whose sessions were never promoted adds nothing here.
+  const sessionTabs = $derived<PaneTabSpec[]>(
+    (inlineWorkspace?.promotableSessions() ?? []).map((session) => ({
+      key: session.paneKey,
+      label: session.label,
+      available: paneLayout.hasTab(session.paneKey),
+      hideable: true,
+    })),
+  );
+
   const paneTabs = $derived<PaneTabSpec[]>([
     { key: "conversation", label: "Conversation", available: true },
     { key: "workspace", label: "Workspace", available: workspaceClaim.ref() !== null, hideable: true },
+    ...sessionTabs,
   ]);
 </script>
 
@@ -123,6 +137,14 @@
                  that lingered behind another tab or a zoom would stay the registered
                  host and strand the terminal off screen. Unmounting parks it. -->
             <div class="detail-pane-workspace-slot" {@attach inlineWorkspace.slotAttachment}></div>
+          {:else if isSessionPaneKey(tabKey)}
+            {@const sessionPane = inlineWorkspace?.sessionPane() ?? null}
+            {#if sessionPane}
+              <!-- The frontend supplies the body: it owns the session registry, and
+                   the visibility argument travels with it so a pane tabbed behind a
+                   sibling leaves its terminal inert rather than off screen and live. -->
+              {@render sessionPane({ paneKey: tabKey, visible })}
+            {/if}
           {/if}
         {/snippet}
       </DetailPaneLayout>

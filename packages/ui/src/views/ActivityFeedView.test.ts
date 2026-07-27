@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import { STORES_KEY } from "../context.js";
 import { resetModalStack } from "../stores/keyboard/modal-stack.svelte.js";
 import { getPaneLayoutStore, resetPaneLayoutStoresForTest } from "../stores/paneLayout.svelte.js";
+import { sessionPaneKey } from "../stores/session-pane-key.js";
 import { createClaimTestController, createReactiveValue } from "./viewWorkspaceTestDoubles.svelte.js";
 import type { InlineWorkspaceController } from "../workspace-inline.js";
 
@@ -148,6 +149,24 @@ describe("ActivityFeedView detail panes", () => {
     expect(screen.getByRole("tab", { name: "Commit" })).toBeTruthy();
     expect(screen.queryByRole("tab", { name: "Conversation" })).toBeNull();
     expect(screen.getByTestId("commit-diff-panel")).toBeTruthy();
+  });
+
+  it("renders a promoted session's pane in the activity drawer", () => {
+    const layout = getPaneLayoutStore("activity");
+    const paneKey = sessionPaneKey("ws-1", undefined, "ws-1:helper");
+    layout.promoteTab(paneKey, { kind: "tab", leafID: layout.leafIDForTab("workspace")! });
+    const { controller } = createClaimTestController("activity", {
+      sessions: [{ paneKey, label: "Helper" }],
+    });
+
+    renderActivity({
+      drawerItem: prDrawer(),
+      inlineWorkspace: controller,
+      pullDetail: pullDetailFixture(12, { id: "ws-1", status: "ready" }),
+    });
+
+    expect(document.querySelector(`[data-session-pane="${paneKey}"]`)).not.toBeNull();
+    expect(screen.getByRole("tab", { name: "Helper" })).toBeTruthy();
   });
 
   it("offers a workspace pane only once the workspace is claimed", () => {

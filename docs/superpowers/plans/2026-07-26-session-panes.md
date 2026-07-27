@@ -493,8 +493,11 @@ export interface InlineWorkspaceController {
    * race the owner-scoped registry exists to prevent — a superseded source pane
    * could hide the destination. The frontend supplies `SessionTerminalSlot`,
    * which owns both halves and cannot be called wrong.
+   *
+   * A getter, not a property: the snippet can only be written in a component, so
+   * `WorkspaceHost` registers it with the store and it is null until then.
    */
-  sessionPane: Snippet<[{ paneKey: string; visible: boolean }]>;
+  sessionPane(): Snippet<[{ paneKey: string; visible: boolean }]> | null;
 }
 ```
 
@@ -516,17 +519,24 @@ The view renders `{@render inlineWorkspace.sessionPane({ paneKey, visible })}` i
 its `renderPane` snippet, passing `DetailPaneLayout`'s own `visible` argument
 straight through.
 
-Owed from Task 5, because both need what this task adds: the promote/demote
-palette commands (a command can only see stores, so it needs
-`promotableSessions()`), and the full-stack test that promotes a live session,
-demotes it, and proves one attachment survived — there is no in-app promoted pane
-to drive until the views render one.
+Owed from Task 5 and landed here, because it needs what this task adds: the
+`session.promote` / `session.demote` palette commands. A command sees stores, not
+components, so which session is "current" has to be published rather than asked
+for: the view sets `active` on the session filling the pane — the active workflow
+tab, else the open dock's active tab — and `activeHostedSession(surface)` hands
+that to the command. Promotion splits it off the workspace pane's leaf rather
+than stacking onto it; a tab hidden behind the workspace pane reads as a command
+that did nothing.
 
-- [ ] **Step 1** Failing tests: a promoted session pane renders its slot for the claimed workspace; selecting an item with a different workspace prunes it while the stored tree keeps it; returning restores it; the pane reports its visibility so a session tabbed behind a sibling goes inert. In `workspace-host.test.ts`: the controller reports the claimed workspace's sessions and nothing when unclaimed.
-- [ ] **Step 2** Run `../node_modules/.bin/vp test --project unit PRListView IssueListView ActivityFeedView`. Expected FAIL.
-- [ ] **Step 3** Implement.
-- [ ] **Step 4** Same command. Expected PASS.
-- [ ] **Step 5** Commit.
+Still owed and moved to Task 10: the full-stack test that promotes a live session,
+demotes it, and proves one attachment survived. It needs a promoted pane driven
+through the real app, which is that task's lane.
+
+- [x] **Step 1** Failing tests: a promoted session pane renders its slot for the claimed workspace; selecting an item with a different workspace prunes it while the stored tree keeps it; returning restores it; the pane reports its visibility so a session tabbed behind a sibling goes inert. In `workspace-host.test.ts`: the controller reports the claimed workspace's sessions and nothing when unclaimed.
+- [x] **Step 2** Run `../node_modules/.bin/vp test --project unit PRListView IssueListView ActivityFeedView`. Expected FAIL.
+- [x] **Step 3** Implement.
+- [x] **Step 4** Same command. Expected PASS.
+- [x] **Step 5** Commit.
 
 ---
 
@@ -653,7 +663,7 @@ The overlay wraps today's `WorkspaceHome` body, pushes a modal frame, auto-opens
 - Modify: `context/ui-interaction-contracts.md`, `context/ui-design-system.md`
 - Modify: `docs/superpowers/plans/2026-07-26-session-panes.md` (check the boxes)
 
-The real-backend spec is the only place that proves liveness against a real tmux session. Add: promote a session to a top-level pane and confirm the marker text survives; demote it and confirm the same; change the selected item and come back. Promote a **dock** session too, since its container is not the one promotion was designed around.
+The real-backend spec is the only place that proves liveness against a real tmux session. Add: promote a session to a top-level pane and confirm the marker text survives; demote it and confirm the same; change the selected item and come back. Promote a **dock** session too, since its container is not the one promotion was designed around. Drive it through the `session.promote` / `session.demote` palette commands that landed with Task 6 rather than a drag, so the spec exercises the same path a keyboard user takes.
 
 The first of these landed early, with Task 3: "a pooled workflow session keeps its live tmux shell while its host is reparented" moves a real shell out of the dock and follows it through the Workspaces-tab-to-detail-pane reparent and back. Once the dock was pooled that same move became a real slot-to-slot transfer, so the test now also asserts the moved terminal's registry key reappears inside the destination slot — the coverage this task was holding for want of two live slots. Pooling changed how every workflow session renders, so it needed real-backend proof then rather than at the end — the browser-tier pool tests all mount exited sessions and cannot show a websocket surviving.
 

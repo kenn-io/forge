@@ -41,6 +41,7 @@
     type MountedSession,
     type SessionHostKey,
   } from "../../stores/session-host.svelte.ts";
+  import { publishHostedSessions } from "../../stores/workspace-host.svelte.ts";
   import {
     beginWorkspaceSwitch,
     cancelWorkspaceSwitch,
@@ -538,6 +539,28 @@
             return workflowTabKeyForSession(sessionKey);
           },
         },
+  );
+
+  // Publish what a detail surface may promote. Only this view knows the runtime,
+  // the display labels, and each session's generation, and the registry key needs
+  // the generation so a relaunched session is not handed the dead one's terminal.
+  $effect(() => {
+    const sessions = runtimeSessions.map((session) => ({
+      paneKey: sessionPaneKeyFor(session),
+      label: sessionDisplayLabels[session.key] ?? session.label,
+      hostKey: sessionHostKeyFor(session),
+      active: session.key === currentSessionKey,
+    }));
+    const key = { workspaceId, hostKey: workspaceHostKey };
+    untrack(() => publishHostedSessions(key, sessions));
+  });
+
+  // The session a keyboard promote acts on: whichever one the user is looking at.
+  // A workflow tab wins because it fills the pane, and the dock's active tab only
+  // counts while the dock is open - a collapsed dock shows no terminal at all.
+  const currentSessionKey = $derived(
+    sessionKeyFromWorkflowTab(activeTabKey) ??
+      (terminalLayout.open ? terminalLayout.activeSessionKey : null),
   );
 
   // Promotion implies mounted. Demotion hands the session back to the workflow

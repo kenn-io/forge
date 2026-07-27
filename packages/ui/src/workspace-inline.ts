@@ -1,3 +1,4 @@
+import type { Snippet } from "svelte";
 import type { Attachment } from "svelte/attachments";
 import { canonicalProvider, resolvedPlatformHost } from "./api/provider-routes.js";
 
@@ -34,6 +35,13 @@ export function canonicalItemType(itemType: string): string {
 export type InlineWorkspaceSurface = "activity" | "prs" | "issues";
 
 export type InlineDockMode = "split" | "collapsed" | "expanded";
+
+/** A session of the hosted workspace that a detail surface may show as a pane. */
+export interface PromotableSession {
+  /** The layout key: `session:` + encoded workspace / host / session. */
+  paneKey: string;
+  label: string;
+}
 
 export interface InlineWorkspaceController {
   readonly surface: InlineWorkspaceSurface;
@@ -85,6 +93,24 @@ export interface InlineWorkspaceController {
   onIdentityInvalidated(cb: (identity: WorkspaceItemIdentity) => void): () => void;
   /** Attachment for the dock's host-slot element; the frontend host reparents into it. */
   slotAttachment: Attachment<HTMLElement>;
+  /**
+   * Sessions of the workspace this surface is currently hosting, or [] when it
+   * hosts none. Only the hosting surface reports any: there is one live terminal
+   * per session, so a second surface could not render it even while claiming the
+   * same workspace.
+   */
+  promotableSessions(): readonly PromotableSession[];
+  /**
+   * The whole pane body for a promoted session, supplied by the frontend, or null
+   * before it has been.
+   *
+   * A snippet rather than an attachment plus a visibility call: splitting them
+   * hands the view a visibility API with no owner token, which is exactly the race
+   * the owner-scoped session registry exists to prevent — a superseded source pane
+   * could hide the destination. The frontend supplies a slot component that owns
+   * both halves and cannot be called wrong.
+   */
+  sessionPane(): Snippet<[{ paneKey: string; visible: boolean }]> | null;
 }
 
 export function identityEquals(a: WorkspaceItemIdentity, b: WorkspaceItemIdentity): boolean {

@@ -21,6 +21,8 @@ import {
   type PaneRenderReport,
   type PaneSurfaceKey,
 } from "@middleman/ui/stores/paneLayout";
+import { isSessionPaneKey } from "@middleman/ui";
+import { activeHostedSession } from "../workspace-host.svelte.js";
 import type { ConfigRepo } from "@middleman/ui/api/types";
 import type { StoreInstances } from "@middleman/ui";
 import type { Action, Context, PreviewBlock } from "./types.js";
@@ -428,6 +430,31 @@ function paneIsZoomed(ctx: Context): boolean {
   return target !== null && target.layout.zoomedLeafID() === target.leafID;
 }
 
+/**
+ * The promotion a keyboard command can perform here: the workspace pane's
+ * current session, the leaf it would split off, and the layout to record it in.
+ *
+ * Null once the session already has a pane — promoting twice would move the tab
+ * the user placed by hand — and null when the workspace pane itself is not on
+ * screen, since the split needs a leaf to grow from.
+ */
+function sessionPromotionTarget(ctx: Context): { layout: PaneLayoutStore; paneKey: string; leafID: string } | null {
+  const mounted = mountedPaneLayout(ctx);
+  const surface = paneSurfaceFor(ctx);
+  if (mounted === null || surface === null) return null;
+  const session = activeHostedSession(surface);
+  if (session === null || mounted.layout.hasTab(session.paneKey)) return null;
+  const leafID = mounted.layout.leafIDForTab("workspace");
+  if (leafID === null) return null;
+  return { layout: mounted.layout, paneKey: session.paneKey, leafID };
+}
+
+/** The pane command target when it names a promoted session, for demotion. */
+function sessionDemotionTarget(ctx: Context): PaneCommandTarget | null {
+  const target = paneCommandTarget(ctx);
+  return target !== null && isSessionPaneKey(target.tabKey) ? target : null;
+}
+
 function splitActivePane(ctx: Context, direction: "horizontal" | "vertical"): void {
   const target = paneCommandTarget(ctx);
   if (target === null) return;
@@ -656,6 +683,38 @@ export const defaultActions: Action[] = [
     // mounted, unflattened layout for the same reason the splits are.
     when: (ctx) => mountedPaneLayout(ctx) !== null,
     handler: (ctx) => mountedPaneLayout(ctx)?.layout.reset(),
+  },
+  {
+    id: "session.promote",
+    label: "Move terminal session to a pane",
+    scope: "detail",
+    binding: null,
+    priority: 0,
+    when: (ctx) => sessionPromotionTarget(ctx) !== null,
+    // Split rather than stack onto the workspace pane's leaf: promoting exists to
+    // put a session beside the work it belongs to, and a tab hidden behind the
+    // workspace pane would look like the command did nothing.
+    handler: (ctx) => {
+      const target = sessionPromotionTarget(ctx);
+      target?.layout.promoteTab(target.paneKey, {
+        kind: "split",
+        leafID: target.leafID,
+        direction: "horizontal",
+        placement: "after",
+      });
+    },
+  },
+  {
+    id: "session.demote",
+    label: "Return terminal session to the workspace pane",
+    scope: "detail",
+    binding: null,
+    priority: 0,
+    when: (ctx) => sessionDemotionTarget(ctx) !== null,
+    handler: (ctx) => {
+      const target = sessionDemotionTarget(ctx);
+      target?.layout.demoteTab(target.tabKey);
+    },
   },
   {
     id: "sync.repos",

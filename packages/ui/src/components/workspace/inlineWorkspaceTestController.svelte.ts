@@ -37,5 +37,8 @@ export function createTestController(
     openInWorkspaces: vi.fn(),
     onIdentityInvalidated: () => () => {},
     slotAttachment: vi.fn((_element: HTMLElement) => {}) satisfies Attachment<HTMLElement>,
+    // These components thread the controller through without rendering panes.
+    promotableSessions: () => [],
+    sessionPane: () => null,
   };
 }

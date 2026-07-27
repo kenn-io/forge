@@ -105,15 +105,28 @@ export function findTabbedPanelLeafByTab(node: TabbedPanelNode | null, tabKey: s
   return findTabbedPanelLeafByTab(node.first, tabKey) ?? findTabbedPanelLeafByTab(node.second, tabKey);
 }
 
+/**
+ * Identity-stable when the tab is already active, or absent.
+ *
+ * A split tree rebuilt its wrapper nodes on every call, so callers that commit
+ * the result wrote a new tree object each time — and any effect that both reads
+ * the layout and activates a tab (a deep link naming a pane) then re-ran forever.
+ */
 export function activateTabbedPanelTab(node: TabbedPanelNode | null, tabKey: string): TabbedPanelNode | null {
   if (!node) return null;
+  const leaf = findTabbedPanelLeafByTab(node, tabKey);
+  if (leaf === null || leaf.activeTabKey === tabKey) return node;
+  return activateTabbedPanelTabInner(node, tabKey);
+}
+
+function activateTabbedPanelTabInner(node: TabbedPanelNode, tabKey: string): TabbedPanelNode {
   if (node.type === "leaf") {
     return node.tabs.includes(tabKey) ? { ...node, activeTabKey: tabKey } : node;
   }
   return {
     ...node,
-    first: activateTabbedPanelTab(node.first, tabKey) ?? node.first,
-    second: activateTabbedPanelTab(node.second, tabKey) ?? node.second,
+    first: activateTabbedPanelTabInner(node.first, tabKey),
+    second: activateTabbedPanelTabInner(node.second, tabKey),
   };
 }
 

@@ -1,8 +1,10 @@
+import type { Snippet } from "svelte";
 import type { Attachment } from "svelte/attachments";
 import type {
   InlineDockMode,
   InlineWorkspaceController,
   InlineWorkspaceSurface,
+  PromotableSession,
   WorkspaceItemIdentity,
   WorkspaceRefLite,
 } from "@middleman/ui";
@@ -69,6 +71,28 @@ let pendingHostFocus = false;
 // registers/unregisters (page mounts happen after route changes).
 let slotEls = $state<Partial<Record<HostSlot, HTMLElement | null>>>({});
 const invalidationListeners = new Set<(identity: WorkspaceItemIdentity) => void>();
+// The hosted workspace's sessions, published by the live view: only it knows the
+// runtime, the labels, and each session's generation. Scoped to one workspace
+// because there is one host — a stale list would offer a detail surface panes for
+// a workspace it is no longer showing.
+type PublishedSession = PromotableSession & {
+  /** Registry key (carries the generation), which the pane's slot needs. */
+  hostKey: string;
+  /**
+   * The session the workspace pane currently shows, which is the one a keyboard
+   * command promotes. Only the view can decide it: "current" means the active
+   * workflow tab when a session owns it, otherwise the open dock's active tab.
+   */
+  active: boolean;
+};
+let hostedSessions = $state<{ key: HostedWorkspaceKey; sessions: PublishedSession[] }>({
+  key: { workspaceId: "", hostKey: undefined },
+  sessions: [],
+});
+// Supplied by WorkspaceHost, because a snippet can only be written in a
+// component: the terminal side stays in the frontend and the views never touch
+// the session registry.
+let sessionPaneSnippet = $state<Snippet<[{ paneKey: string; visible: boolean }]> | null>(null);
 // Claims are released when their view unmounts, but a deletion can arrive
 // later from an unrelated surface (Workspaces tab, terminal tab). Without
 // this map the deletion would find no claim to tombstone, and the stale
@@ -374,6 +398,63 @@ export function clearPendingHostFocus(): void {
   pendingHostFocus = false;
 }
 
+/** Called by the live view whenever its runtime sessions change. */
+export function publishHostedSessions(key: HostedWorkspaceKey, sessions: readonly PublishedSession[]): void {
+  const current = hostedSessions;
+  if (
+    current.key.workspaceId === key.workspaceId &&
+    current.key.hostKey === key.hostKey &&
+    current.sessions.length === sessions.length &&
+    current.sessions.every(
+      (session, index) =>
+        session.paneKey === sessions[index]?.paneKey &&
+        session.label === sessions[index]?.label &&
+        session.hostKey === sessions[index]?.hostKey &&
+        session.active === sessions[index]?.active,
+    )
+  ) {
+    return;
+  }
+  hostedSessions = { key, sessions: [...sessions] };
+}
+
+/** The registry key of a promoted pane's session, or null when it is not hosted. */
+export function hostedSessionRegistryKey(paneKey: string): string | null {
+  return hostedSessions.sessions.find((session) => session.paneKey === paneKey)?.hostKey ?? null;
+}
+
+export function registerSessionPaneSnippet(snippet: Snippet<[{ paneKey: string; visible: boolean }]> | null): void {
+  sessionPaneSnippet = snippet;
+}
+
+function promotableSessionsFor(surface: InlineWorkspaceSurface): readonly PromotableSession[] {
+  // Only the surface actually hosting the workspace: there is one live terminal
+  // per session, so a second surface claiming the same workspace could not render
+  // it, and offering the pane there would give the user an empty one.
+  if (desiredSlot() !== surface) return [];
+  const key = desiredKey();
+  const hosted = hostedSessions;
+  if (hosted.key.workspaceId !== key.workspaceId || hosted.key.hostKey !== key.hostKey) return [];
+  return hosted.sessions.map((session) => ({ paneKey: session.paneKey, label: session.label }));
+}
+
+/**
+ * The session a keyboard command promotes on `surface`: the one the workspace
+ * pane is showing there.
+ *
+ * A palette command sees stores, not components, so the decision of which
+ * session is current stays with the view that publishes it. Null whenever the
+ * workspace pane is not on this surface, so the command cannot reach a terminal
+ * the user is not looking at.
+ */
+export function activeHostedSession(surface: InlineWorkspaceSurface): PromotableSession | null {
+  const promotable = promotableSessionsFor(surface);
+  if (promotable.length === 0) return null;
+  const active = hostedSessions.sessions.find((session) => session.active);
+  if (active === undefined) return null;
+  return promotable.find((session) => session.paneKey === active.paneKey) ?? null;
+}
+
 function slotAttachmentFor(slot: HostSlot): Attachment<HTMLElement> {
   return (node) => {
     registerSlotElement(slot, node);
@@ -499,6 +580,8 @@ export function getInlineWorkspaceController(surface: InlineWorkspaceSurface): I
       return () => invalidationListeners.delete(wrapped);
     },
     slotAttachment: slotAttachmentFor(surface),
+    promotableSessions: () => promotableSessionsFor(surface),
+    sessionPane: () => sessionPaneSnippet,
   };
   controllers.set(surface, controller);
   return controller;
@@ -517,4 +600,6 @@ export function resetWorkspaceHostForTest(): void {
   for (const key of Object.keys(slotEls) as HostSlot[]) slotEls[key] = null;
   invalidationListeners.clear();
   workspaceIdentityById.clear();
+  hostedSessions = { key: { workspaceId: "", hostKey: undefined }, sessions: [] };
+  sessionPaneSnippet = null;
 }

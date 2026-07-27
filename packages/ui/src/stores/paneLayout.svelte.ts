@@ -168,7 +168,10 @@ export function createPaneLayoutStore(
   }
 
   function withTree(tree: TabbedPanelNode | null): void {
-    if (!tree) return;
+    // A refused or no-op mutation hands back the same node. Committing it anyway
+    // writes storage for nothing and, worse, publishes a new tree object that any
+    // effect reading this layout treats as a change.
+    if (!tree || tree === state.tree) return;
     commit({ ...state, tree });
   }
 

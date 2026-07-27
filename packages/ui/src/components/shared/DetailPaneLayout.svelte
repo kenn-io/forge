@@ -171,6 +171,10 @@
     if (removed) void reclaimFocus();
   });
 
+  // Always tracked, whether or not the host wants the callback: which pane the
+  // user last worked in is what the pane keyboard commands act on, so a surface
+  // that has no route to sync (Issues) still has to record it or its commands
+  // target the route's pane instead of the focused one.
   function focusPane(tabKey: string): void {
     if (layout.lastFocusedTabKey() === tabKey) return;
     layout.noteFocused(tabKey);
@@ -238,7 +242,7 @@
         tabActions={hideableTabKeys.length > 0 ? tabActions : undefined}
         {zoomedLeafID}
         onSelectTab={selectTab}
-        onFocusPane={onFocusPane ? focusPane : undefined}
+        onFocusPane={focusPane}
         onRatioChange={flattened ? undefined : (splitID, ratio) => layout.setRatio(splitID, ratio)}
         onMoveTabBefore={flattened
           ? undefined

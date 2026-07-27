@@ -168,6 +168,18 @@ async function waitForPtyColumnsBelow(
   throw new Error(`tmux PTY columns did not fall below ${maximumCols}`);
 }
 
+/** Run a palette command by its exact label, the way a keyboard user reaches it. */
+async function runPaletteCommand(page: Page, label: string): Promise<void> {
+  await page.keyboard.press(process.platform === "darwin" ? "Meta+K" : "Control+K");
+  const dialog = page.getByRole("dialog", { name: "Command palette" });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("textbox", { name: "Search command palette" }).fill(label);
+  const row = dialog.locator("button.palette-row", { hasText: label }).first();
+  await expect(row).toBeVisible();
+  await row.click();
+  await expect(dialog).toBeHidden();
+}
+
 async function selectTopBarTab(page: Page, label: string): Promise<void> {
   await page.locator(".kit-top-bar__tabs .kit-top-bar__tab", { hasText: label }).click();
 }
@@ -323,6 +335,60 @@ test.describe("inline workspace pane continuity", () => {
       await expect(paneContainer).toHaveAttribute("data-continuity", "witness");
       // A torn-down or wedged session cannot run this.
       await typeMarkerCommand(page, paneContainer, workspace.worktree_path, "pane-marker-reopened");
+    } finally {
+      await api?.dispose();
+      await isolatedServer?.stop();
+    }
+  });
+
+  test("promoting a session to a pane of its own and back keeps the live shell", async ({ page }) => {
+    // Promotion moves a session out of the workspace pane and into a top-level
+    // pane of the detail surface. Nothing but a real backend shows whether the
+    // pooled terminal was reparented or rebuilt: the component lanes mount
+    // exited sessions, so a torn-down shell looks identical there.
+    //
+    // Driven through the palette commands rather than a drag, which is both the
+    // keyboard path and the only one that works without layout geometry.
+    test.skip(
+      !hasCommand("git") || !hasCommand("tmux", ["-V"]),
+      "git and tmux are required for the real workspace flow",
+    );
+
+    let isolatedServer: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    try {
+      isolatedServer = await startIsolatedWorkspaceE2EServer();
+      api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
+      const workspace = await createIssueWorkspace(api, 10);
+
+      await page.goto(`${isolatedServer.info.base_url}/issues/github/acme/widgets/10`);
+      await expect(page.locator(".detail-pane-workspace-slot .workspace-host-wrapper")).toBeVisible();
+      // The dock, so this also covers promoting out of the container promotion
+      // was not designed around.
+      const dockContainer = await openTerminalPanel(page);
+      // Stamped on the live node: the registry key is derived from the workspace,
+      // session, and generation, so a rebuilt terminal would still carry it.
+      await dockContainer.evaluate((el) => el.setAttribute("data-continuity", "promoted-shell"));
+      const witness = page.locator('[data-continuity="promoted-shell"]');
+      await typeMarkerCommand(page, dockContainer, workspace.worktree_path, "promote-marker-docked");
+
+      await runPaletteCommand(page, "Move terminal session to a pane");
+
+      // Out of the workspace pane entirely and into its own, carrying the very
+      // node the dock was showing.
+      await expect(page.locator('.detail-pane-workspace-slot [data-continuity="promoted-shell"]')).toHaveCount(0);
+      await expect(page.locator('.session-terminal-slot [data-continuity="promoted-shell"]')).toBeVisible();
+      // Same shell, still attached to the same tmux session. Focusing it here is
+      // also what makes it the pane commands' target, so the demotion below acts
+      // on the pane the user is working in.
+      await typeMarkerCommand(page, witness, workspace.worktree_path, "promote-marker-in-pane");
+
+      await runPaletteCommand(page, "Return terminal session to the workspace pane");
+
+      // Home again, in the dock it came from rather than wherever normalization
+      // would have put a session the layout had never seen.
+      await expect(page.locator('.terminal-panel.open [data-continuity="promoted-shell"]')).toBeVisible();
+      await typeMarkerCommand(page, dockContainer, workspace.worktree_path, "promote-marker-redocked");
     } finally {
       await api?.dispose();
       await isolatedServer?.stop();

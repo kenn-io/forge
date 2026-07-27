@@ -327,6 +327,18 @@ describe("detail pane layout", () => {
     expect(onFocusPane).not.toHaveBeenCalled();
   });
 
+  it("records the focused pane for a surface that wants no notification", () => {
+    // Issues has no per-pane route and passes no callback. The pane keyboard
+    // commands act on the last focused pane, so not recording it there would aim
+    // them at the route's pane instead of the one the user is working in.
+    const layout = store(splitTree());
+    render(DetailPaneLayoutTestHarness, { layout });
+
+    fireEvent.focusIn(screen.getByTestId("pane-workspace"));
+
+    expect(layout.lastFocusedTabKey()).toBe("workspace");
+  });
+
   it("records the focused tab and notifies the surface on a tab click", () => {
     const layout = store(mergedTree());
     const onSelectTab = vi.fn();

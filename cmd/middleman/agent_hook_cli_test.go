@@ -96,3 +96,16 @@ func TestAgentHookInstallRejectsRelativeDataDirectory(t *testing.T) {
 	_, statErr := os.Stat(filepath.Join(configDir, "hooks.json"))
 	assert.ErrorIs(statErr, os.ErrNotExist)
 }
+
+func TestAgentHookRunIgnoresMalformedHookFlags(t *testing.T) {
+	var stdout bytes.Buffer
+
+	err := runAgentHookCLI(
+		[]string{"run", "--not-a-hook-flag"},
+		strings.NewReader(`{"hook_event_name":"SessionStart"}`),
+		&stdout,
+	)
+
+	require.NoError(t, err)
+	assert.Empty(t, stdout.String())
+}

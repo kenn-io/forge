@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -12,17 +11,17 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spf13/cobra"
 	"go.kenn.io/middleman/internal/apiclient"
 	"go.kenn.io/middleman/internal/apiclient/generated"
 	"go.kenn.io/middleman/internal/archive/report"
 	"go.kenn.io/middleman/internal/config"
 )
 
-const archiveCLIUsage = "usage: middleman archive <start|pause|status|report> [flags]"
-
 type archiveStringList []string
 
 func (v *archiveStringList) String() string { return strings.Join(*v, ",") }
+func (v *archiveStringList) Type() string   { return "repository" }
 func (v *archiveStringList) Set(value string) error {
 	*v = append(*v, value)
 	return nil
@@ -33,60 +32,72 @@ type archiveDaemonFlags struct {
 	timeout    time.Duration
 }
 
-func addArchiveDaemonFlags(fs *flag.FlagSet) *archiveDaemonFlags {
-	flags := &archiveDaemonFlags{}
-	fs.StringVar(&flags.configPath, "config", config.DefaultConfigPath(), "path to config file")
-	fs.DurationVar(&flags.timeout, "timeout", 60*time.Second, "request timeout")
-	return flags
-}
-
-func runArchiveCLI(args []string, stdout io.Writer) error {
-	return runArchiveCLIAt(args, stdout, time.Now)
+func addArchiveDaemonFlags(cmd *cobra.Command, flags *archiveDaemonFlags) {
+	cmd.Flags().StringVar(&flags.configPath, "config", config.DefaultConfigPath(), "path to config file")
+	cmd.Flags().DurationVar(&flags.timeout, "timeout", 60*time.Second, "request timeout")
 }
 
 func runArchiveCLIAt(args []string, stdout io.Writer, now func() time.Time) error {
-	if len(args) == 0 {
-		return errors.New(archiveCLIUsage)
-	}
-	switch args[0] {
-	case "start", "pause":
-		return runArchiveMutation(args[0], args[1:], stdout)
-	case "status":
-		return runArchiveStatus(args[1:], stdout)
-	case "report":
-		return runArchiveReport(args[1:], stdout, now)
-	default:
-		return fmt.Errorf("%s: unknown archive command %q", archiveCLIUsage, args[0])
-	}
+	cmd := newArchiveCommand(stdout, now)
+	cmd.SetOut(stdout)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs(normalizeSingleDashLongFlags(args))
+	cmd.SilenceErrors = true
+	cmd.SilenceUsage = true
+	return cmd.Execute()
 }
 
-func runArchiveMutation(command string, args []string, stdout io.Writer) error {
-	fs := newArchiveFlagSet("middleman archive " + command)
-	daemonFlags := addArchiveDaemonFlags(fs)
-	all := fs.Bool("all", false, "operate on every configured repository")
+func newArchiveCommand(stdout io.Writer, now func() time.Time) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "archive",
+		Short: "Control and report on repository archives",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return cmd.Help()
+		},
+	}
+	cmd.AddCommand(
+		newArchiveMutationCommand("start", stdout),
+		newArchiveMutationCommand("pause", stdout),
+		newArchiveStatusCommand(stdout),
+		newArchiveReportCommand(stdout, now),
+	)
+	return cmd
+}
+
+func newArchiveMutationCommand(action string, stdout io.Writer) *cobra.Command {
+	flags := archiveDaemonFlags{}
+	var all bool
 	var repositories archiveStringList
-	fs.Var(&repositories, "repo", "provider|host/repo_path; repeat for multiple repositories")
-	if err := fs.Parse(args); err != nil {
-		return err
+	cmd := &cobra.Command{
+		Use:   action,
+		Short: action + " repository archiving",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runArchiveMutation(action, flags, all, repositories, stdout)
+		},
 	}
-	if fs.NArg() != 0 {
-		return fmt.Errorf("usage: middleman archive %s [--all | --repo provider|host/repo_path]", command)
-	}
-	if *all && len(repositories) > 0 {
+	addArchiveDaemonFlags(cmd, &flags)
+	cmd.Flags().BoolVar(&all, "all", false, "operate on every configured repository")
+	cmd.Flags().Var(&repositories, "repo", "provider|host/repo_path; repeat for multiple repositories")
+	return cmd
+}
+
+func runArchiveMutation(command string, daemonFlags archiveDaemonFlags, all bool, repositories []string, stdout io.Writer) error {
+	if all && len(repositories) > 0 {
 		return errors.New("--all and --repo are mutually exclusive")
 	}
-	if !*all && len(repositories) == 0 {
+	if !all && len(repositories) == 0 {
 		return errors.New("one of --all or --repo is required")
 	}
 	refs, err := parseArchiveRepositoryRefs(repositories)
 	if err != nil {
 		return err
 	}
-	client, err := newArchiveDaemonClient(daemonFlags)
+	client, err := newArchiveDaemonClient(&daemonFlags)
 	if err != nil {
 		return err
 	}
-	body := generated.ArchiveMutationBody{All: *all}
+	body := generated.ArchiveMutationBody{All: all}
 	if len(refs) > 0 {
 		body.Repositories = &refs
 	}
@@ -115,23 +126,29 @@ func runArchiveMutation(command string, args []string, stdout io.Writer) error {
 	return writeArchiveJSON(stdout, statuses)
 }
 
-func runArchiveStatus(args []string, stdout io.Writer) error {
-	fs := newArchiveFlagSet("middleman archive status")
-	daemonFlags := addArchiveDaemonFlags(fs)
+func newArchiveStatusCommand(stdout io.Writer) *cobra.Command {
+	flags := archiveDaemonFlags{}
 	var repositories archiveStringList
-	_ = fs.Bool("json", false, "emit JSON (status output is always JSON)")
-	fs.Var(&repositories, "repo", "provider|host/repo_path; repeat for multiple repositories")
-	if err := fs.Parse(args); err != nil {
-		return err
+	cmd := &cobra.Command{
+		Use:   "status",
+		Short: "Show repository archive status",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runArchiveStatus(flags, repositories, stdout)
+		},
 	}
-	if fs.NArg() != 0 {
-		return errors.New("usage: middleman archive status [--json] [--repo provider|host/repo_path]")
-	}
+	addArchiveDaemonFlags(cmd, &flags)
+	cmd.Flags().Bool("json", false, "emit JSON (status output is always JSON)")
+	cmd.Flags().Var(&repositories, "repo", "provider|host/repo_path; repeat for multiple repositories")
+	return cmd
+}
+
+func runArchiveStatus(daemonFlags archiveDaemonFlags, repositories []string, stdout io.Writer) error {
 	refs, err := parseArchiveRepositoryRefs(repositories)
 	if err != nil {
 		return err
 	}
-	client, err := newArchiveDaemonClient(daemonFlags)
+	client, err := newArchiveDaemonClient(&daemonFlags)
 	if err != nil {
 		return err
 	}
@@ -152,38 +169,54 @@ func runArchiveStatus(args []string, stdout io.Writer) error {
 	return writeArchiveJSON(stdout, *response.JSON200)
 }
 
-func runArchiveReport(args []string, stdout io.Writer, now func() time.Time) error {
-	fs := newArchiveFlagSet("middleman archive report")
-	daemonFlags := addArchiveDaemonFlags(fs)
-	days := fs.Int("days", 0, "rolling number of 24-hour UTC periods")
-	startValue := fs.String("start", "", "inclusive UTC date or RFC3339 boundary")
-	endValue := fs.String("end", "", "inclusive UTC date or exclusive RFC3339 boundary")
-	format := fs.String("format", "markdown", "output format: markdown or json")
-	verbose := fs.Bool("verbose", false, "include bounded activity details")
-	output := fs.String("output", "", "write output atomically to this file")
-	var repositories archiveStringList
-	fs.Var(&repositories, "repo", "provider|host/repo_path; repeat for multiple repositories")
-	if err := fs.Parse(args); err != nil {
-		return err
+type archiveReportOptions struct {
+	daemonFlags  archiveDaemonFlags
+	days         int
+	startValue   string
+	endValue     string
+	format       string
+	verbose      bool
+	output       string
+	repositories archiveStringList
+}
+
+func newArchiveReportCommand(stdout io.Writer, now func() time.Time) *cobra.Command {
+	opts := archiveReportOptions{}
+	cmd := &cobra.Command{
+		Use:   "report",
+		Short: "Render repository archive activity",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runArchiveReport(opts, cmd.Flags().Changed("days"), stdout, now)
+		},
 	}
-	if fs.NArg() != 0 {
-		return errors.New("usage: middleman archive report (--days N | --start VALUE --end VALUE) [flags]")
-	}
-	if archiveFlagWasSet(fs, "days") && *days <= 0 {
+	addArchiveDaemonFlags(cmd, &opts.daemonFlags)
+	cmd.Flags().IntVar(&opts.days, "days", 0, "rolling number of 24-hour UTC periods")
+	cmd.Flags().StringVar(&opts.startValue, "start", "", "inclusive UTC date or RFC3339 boundary")
+	cmd.Flags().StringVar(&opts.endValue, "end", "", "inclusive UTC date or exclusive RFC3339 boundary")
+	cmd.Flags().StringVar(&opts.format, "format", "markdown", "output format: markdown or json")
+	cmd.Flags().BoolVar(&opts.verbose, "verbose", false, "include bounded activity details")
+	cmd.Flags().StringVar(&opts.output, "output", "", "write output atomically to this file")
+	cmd.Flags().Var(&opts.repositories, "repo", "provider|host/repo_path; repeat for multiple repositories")
+	return cmd
+}
+
+func runArchiveReport(opts archiveReportOptions, daysSet bool, stdout io.Writer, now func() time.Time) error {
+	if daysSet && opts.days <= 0 {
 		return errors.New("--days must be positive")
 	}
-	if *format != "markdown" && *format != "json" {
-		return fmt.Errorf("unsupported archive report format %q; use markdown or json", *format)
+	if opts.format != "markdown" && opts.format != "json" {
+		return fmt.Errorf("unsupported archive report format %q; use markdown or json", opts.format)
 	}
-	start, end, err := parseArchiveReportRange(now().UTC(), *days, *startValue, *endValue)
+	start, end, err := parseArchiveReportRange(now().UTC(), opts.days, opts.startValue, opts.endValue)
 	if err != nil {
 		return err
 	}
-	refs, err := parseArchiveRepositoryRefs(repositories)
+	refs, err := parseArchiveRepositoryRefs(opts.repositories)
 	if err != nil {
 		return err
 	}
-	client, err := newArchiveDaemonClient(daemonFlags)
+	client, err := newArchiveDaemonClient(&opts.daemonFlags)
 	if err != nil {
 		return err
 	}
@@ -194,10 +227,10 @@ func runArchiveReport(args []string, stdout io.Writer, now func() time.Time) err
 		values := archiveRepositoryFilters(refs)
 		params.Repo = &values
 	}
-	if *verbose {
-		params.Verbose = verbose
+	if opts.verbose {
+		params.Verbose = &opts.verbose
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), daemonFlags.timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), opts.daemonFlags.timeout)
 	defer cancel()
 	response, err := client.HTTP.GetArchiveReportWithResponse(ctx, params)
 	if err != nil {
@@ -210,31 +243,15 @@ func runArchiveReport(args []string, stdout io.Writer, now func() time.Time) err
 	if err != nil {
 		return fmt.Errorf("decode archive report: %w", err)
 	}
-	rendered, err := renderArchiveReport(model, *format)
+	rendered, err := renderArchiveReport(model, opts.format)
 	if err != nil {
 		return err
 	}
-	if *output != "" {
-		return writeArchiveOutput(*output, rendered)
+	if opts.output != "" {
+		return writeArchiveOutput(opts.output, rendered)
 	}
 	_, err = io.WriteString(stdout, rendered)
 	return err
-}
-
-func newArchiveFlagSet(name string) *flag.FlagSet {
-	fs := flag.NewFlagSet(name, flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	return fs
-}
-
-func archiveFlagWasSet(fs *flag.FlagSet, name string) bool {
-	found := false
-	fs.Visit(func(item *flag.Flag) {
-		if item.Name == name {
-			found = true
-		}
-	})
-	return found
 }
 
 func newArchiveDaemonClient(flags *archiveDaemonFlags) (*apiclient.Client, error) {

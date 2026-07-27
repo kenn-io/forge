@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -748,6 +750,92 @@ func TestRunCLIConfigReadPort(t *testing.T) {
 	err := runCLI([]string{"config", "read", "-config", cfgPath, "port"}, &stdout)
 	require.NoError(err)
 	assert.Equal("9123\n", stdout.String())
+}
+
+func TestRootHelpListsEveryPublicCommandWithoutStartingServer(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	var stdout bytes.Buffer
+	started := false
+	cmd := newRootCommand(cliOptions{
+		Stdin:  strings.NewReader(""),
+		Stdout: &stdout,
+		Stderr: io.Discard,
+		RunServer: func(serve.Options) error {
+			started = true
+			return nil
+		},
+	})
+	cmd.SetArgs([]string{"--help"})
+
+	require.NoError(cmd.Execute())
+
+	for _, name := range []string{
+		"activity", "agent-hook", "api", "archive", "config", "docs",
+		"issues", "pulls", "quickstart", "rate-limits", "repo-summaries",
+		"repos", "serve", "stacks", "status", "sync", "version", "workspaces",
+	} {
+		assert.Contains(stdout.String(), name)
+	}
+	assert.NotContains(stdout.String(), "pty-owner")
+	assert.NotContains(stdout.String(), "completion")
+	assert.False(started)
+}
+
+func TestRootUnknownCommandDoesNotStartServer(t *testing.T) {
+	require := require.New(t)
+	started := false
+	cmd := newRootCommand(cliOptions{
+		Stdin:  strings.NewReader(""),
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		RunServer: func(serve.Options) error {
+			started = true
+			return nil
+		},
+	})
+	cmd.SetArgs([]string{"not-a-command"})
+
+	err := cmd.Execute()
+
+	require.Error(err)
+	require.False(started)
+}
+
+func TestRootNestedHelpExposesCommandFlags(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want []string
+	}{
+		{name: "version", args: []string{"version", "--help"}, want: []string{"--json"}},
+		{name: "config read", args: []string{"config", "read", "--help"}, want: []string{"--config"}},
+		{name: "docs add", args: []string{"docs", "add-folder", "--help"}, want: []string{"--config", "--id", "--name", "--daemon"}},
+		{name: "archive report", args: []string{"archive", "report", "--help"}, want: []string{"--days", "--start", "--end", "--format", "--repo"}},
+		{name: "agent hook run", args: []string{"agent-hook", "run", "--help"}, want: []string{"--agent", "--config", "--source"}},
+		{name: "status", args: []string{"status", "--help"}, want: []string{"--config", "--json"}},
+		{name: "serve", args: []string{"serve", "--help"}, want: []string{"--config", "--pprof-addr"}},
+		{name: "api", args: []string{"api", "--help"}, want: []string{"list", "--config", "-d", "-i", "--timeout"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			var stdout bytes.Buffer
+			cmd := newRootCommand(cliOptions{
+				Stdin:     strings.NewReader(""),
+				Stdout:    &stdout,
+				Stderr:    io.Discard,
+				RunServer: func(serve.Options) error { return errors.New("serve should not start") },
+			})
+			cmd.SetArgs(tt.args)
+
+			require.NoError(cmd.Execute())
+			for _, value := range tt.want {
+				assert.Contains(stdout.String(), value)
+			}
+		})
+	}
 }
 
 func TestRunCLIVersionPreservesHumanOutput(t *testing.T) {

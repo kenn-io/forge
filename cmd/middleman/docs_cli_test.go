@@ -266,14 +266,13 @@ func TestRunDocsCLIRejectsUnknownSubcommand(t *testing.T) {
 	err := runDocsCLI([]string{"bogus"}, io.Discard)
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "unknown docs subcommand")
+	assert.Contains(t, err.Error(), "unknown command")
 }
 
-func TestRunDocsCLIRejectsMissingSubcommand(t *testing.T) {
+func TestRunDocsCLIShowsHelpForMissingSubcommand(t *testing.T) {
 	err := runDocsCLI(nil, io.Discard)
 
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "missing docs subcommand")
+	require.NoError(t, err)
 }
 
 func TestDocsCLIExpandHome(t *testing.T) {

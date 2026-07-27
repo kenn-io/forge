@@ -10,6 +10,8 @@ import {
   serializeTabbedPanelLayout,
   collectTabbedPanelTabKeys,
   normalizeTabbedPanelTree,
+  insertTabbedPanelTab,
+  findTabbedPanelLeafByTab,
   splitTabbedPanelTabIntoLeaf,
   type TabbedPanelLayoutState,
 } from "./tabbed-panel-layout";
@@ -83,6 +85,52 @@ describe("dynamic panes kept but never reinserted", () => {
     const parsed = parseTabbedPanelLayout(serializeTabbedPanelLayout(state), TABS, undefined, isSessionPaneKey);
     expect(collectTabbedPanelTabKeys(parsed.tree)).toContain(AGENT_PANE);
     expect(parsed.lastFocusedTabKey).toBe(AGENT_PANE);
+  });
+});
+
+describe("inserting a tab the tree has never held", () => {
+  it("appends it to a leaf and makes it that leaf's active tab", () => {
+    const { tree, firstLeafID } = splitLayout();
+    const next = insertTabbedPanelTab(tree, AGENT_PANE, { kind: "tab", leafID: firstLeafID });
+
+    const leaf = findTabbedPanelLeafByTab(next, AGENT_PANE);
+    expect(leaf?.id).toBe(firstLeafID);
+    expect(leaf?.activeTabKey).toBe(AGENT_PANE);
+    // Insertion adds; it must not move or drop what was already there.
+    expect(collectTabbedPanelTabKeys(next)).toEqual(expect.arrayContaining([...TABS, AGENT_PANE]));
+  });
+
+  it("mints a new leaf beside the target when splitting", () => {
+    const { tree, firstLeafID } = splitLayout();
+    const next = insertTabbedPanelTab(tree, AGENT_PANE, {
+      kind: "split",
+      leafID: firstLeafID,
+      direction: "horizontal",
+      placement: "before",
+    });
+
+    const leaf = findTabbedPanelLeafByTab(next, AGENT_PANE);
+    expect(leaf?.id).not.toBe(firstLeafID);
+    expect(leaf?.tabs).toEqual([AGENT_PANE]);
+    expect(collectTabbedPanelLeafIDs(next)).toContain(firstLeafID);
+  });
+
+  it("hands back the same tree when the insert cannot apply", () => {
+    const { tree, firstLeafID } = splitLayout();
+    // Already held: inserting again would duplicate a pane, and two leaves
+    // rendering one session would race for its terminal.
+    const withPane = insertTabbedPanelTab(tree, AGENT_PANE, { kind: "tab", leafID: firstLeafID });
+    expect(insertTabbedPanelTab(withPane, AGENT_PANE, { kind: "tab", leafID: firstLeafID })).toBe(withPane);
+    // Unknown leaf: the caller named a target that is not on screen.
+    expect(insertTabbedPanelTab(tree, AGENT_PANE, { kind: "tab", leafID: "no-such-leaf" })).toBe(tree);
+    expect(
+      insertTabbedPanelTab(tree, AGENT_PANE, {
+        kind: "split",
+        leafID: "no-such-leaf",
+        direction: "vertical",
+        placement: "after",
+      }),
+    ).toBe(tree);
   });
 });
 

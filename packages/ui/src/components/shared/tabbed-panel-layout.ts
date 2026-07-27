@@ -165,6 +165,48 @@ export function splitTabbedPanelTabIntoLeaf(
   );
 }
 
+/** Where a tab the tree has never held should land. */
+export type TabbedPanelInsertTarget =
+  | { kind: "tab"; leafID: string }
+  | {
+      kind: "split";
+      leafID: string;
+      direction: TabbedPanelDirection;
+      placement: "before" | "after";
+    };
+
+/**
+ * Insert a tab the tree does not hold.
+ *
+ * The move primitives beside this one all refuse a source the tree does not
+ * already contain, which is what keeps a stray key from being dropped in. A
+ * promotion is the one legitimate exception, so it gets its own entry point
+ * rather than that guard being relaxed for everyone.
+ *
+ * Hands back the same node when the insert cannot apply — the tab is already
+ * held, or the target leaf is not in this tree — so callers can detect a refusal
+ * by identity, like the other primitives here.
+ */
+export function insertTabbedPanelTab(
+  node: TabbedPanelNode | null,
+  tabKey: string,
+  target: TabbedPanelInsertTarget,
+): TabbedPanelNode | null {
+  if (!node) return null;
+  if (findTabbedPanelLeafByTab(node, tabKey)) return node;
+  if (!findTabbedPanelLeafByID(node, target.leafID)) return node;
+  if (target.kind === "tab") {
+    return insertTabbedPanelTabIntoLeaf(node, tabKey, target.leafID, "end") ?? node;
+  }
+  return splitTabbedPanelLeaf(
+    node,
+    target.leafID,
+    createTabbedPanelLeaf([tabKey], tabKey),
+    target.direction,
+    target.placement,
+  );
+}
+
 export function updateTabbedPanelSplitRatio(
   node: TabbedPanelNode | null,
   splitID: string,
@@ -430,7 +472,13 @@ function pruneTabbedPanelNode(node: TabbedPanelNode | null, validTabs: ReadonlyS
   };
 }
 
-function removeTabbedPanelTab(node: TabbedPanelNode | null, tabKey: string): TabbedPanelNode | null {
+/**
+ * Drop a tab, collapsing any leaf it emptied.
+ *
+ * Null means the tree would have nothing left, which callers must treat as a
+ * refusal rather than commit: a surface with no panes renders blank.
+ */
+export function removeTabbedPanelTab(node: TabbedPanelNode | null, tabKey: string): TabbedPanelNode | null {
   if (!node) return null;
   if (node.type === "leaf") {
     if (!node.tabs.includes(tabKey)) return node;

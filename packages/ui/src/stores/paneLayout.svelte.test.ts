@@ -224,6 +224,96 @@ describe("promoted session panes", () => {
     expect(reloaded.hasTab(AGENT_PANE)).toBe(false);
   });
 
+  it("promotes a session into a leaf, activates it, and persists it", () => {
+    const layout = store();
+    expect(layout.promoteTab(AGENT_PANE, { kind: "tab", leafID: "leaf-detail" })).toBe(true);
+
+    expect(layout.hasTab(AGENT_PANE)).toBe(true);
+    expect(layout.leafIDForTab(AGENT_PANE)).toBe("leaf-detail");
+    // The user just dragged it here; landing behind a sibling would read as a
+    // dropped drag.
+    expect(layout.isTabActive(AGENT_PANE)).toBe(true);
+    expect(localStorage.getItem(`${PANE_LAYOUT_STORAGE_PREFIX}prs`)).toContain(AGENT_PANE);
+  });
+
+  it("promotes a session as a split beside a leaf", () => {
+    const layout = store();
+    expect(
+      layout.promoteTab(AGENT_PANE, {
+        kind: "split",
+        leafID: "leaf-detail",
+        direction: "horizontal",
+        placement: "after",
+      }),
+    ).toBe(true);
+
+    expect(layout.leafIDForTab(AGENT_PANE)).not.toBe("leaf-detail");
+    expect(layout.hasTab(AGENT_PANE)).toBe(true);
+    // The pane it split off from is still there: promotion adds a pane, it does
+    // not move one.
+    expect(layout.hasTab("conversation")).toBe(true);
+  });
+
+  it("refuses to promote a key the surface would prune, or one already in the tree", () => {
+    const layout = store();
+    // A malformed session key would be pruned on the next load, so accepting it
+    // here would write a pane that silently disappears.
+    expect(layout.promoteTab("session:bogus", { kind: "tab", leafID: "leaf-detail" })).toBe(false);
+    // A static pane is never absent from the tree, so promoting one is a bug in
+    // the caller, not a layout the user asked for.
+    expect(layout.promoteTab("conversation", { kind: "tab", leafID: "leaf-detail" })).toBe(false);
+    expect(layout.promoteTab(AGENT_PANE, { kind: "tab", leafID: "no-such-leaf" })).toBe(false);
+    expect(localStorage.getItem(`${PANE_LAYOUT_STORAGE_PREFIX}prs`)).toBeNull();
+
+    expect(layout.promoteTab(AGENT_PANE, { kind: "tab", leafID: "leaf-detail" })).toBe(true);
+    expect(layout.promoteTab(AGENT_PANE, { kind: "tab", leafID: "leaf-workspace" })).toBe(false);
+    expect(layout.leafIDForTab(AGENT_PANE)).toBe("leaf-detail");
+  });
+
+  it("clears a zoom when promoting into a new leaf", () => {
+    const layout = store();
+    layout.toggleZoom("leaf-detail");
+    layout.promoteTab(AGENT_PANE, {
+      kind: "split",
+      leafID: "leaf-detail",
+      direction: "horizontal",
+      placement: "after",
+    });
+
+    // The split mints a leaf the zoom cannot name, so keeping the zoom would
+    // promote a pane straight into invisibility.
+    expect(layout.zoomedLeafID()).toBeNull();
+  });
+
+  it("demotes a promoted pane and forgets everything that named it", () => {
+    const layout = store();
+    layout.promoteTab(AGENT_PANE, {
+      kind: "split",
+      leafID: "leaf-workspace",
+      direction: "vertical",
+      placement: "after",
+    });
+    const promotedLeaf = layout.leafIDForTab(AGENT_PANE);
+    expect(promotedLeaf).not.toBeNull();
+    layout.setHidden(AGENT_PANE, true);
+    layout.toggleZoom(promotedLeaf!);
+
+    layout.demoteTab(AGENT_PANE);
+
+    expect(layout.hasTab(AGENT_PANE)).toBe(false);
+    // A stale hidden entry would bring the session back hidden the next time it
+    // is promoted, and a zoom naming the leaf it lived in alone would blank the
+    // surface.
+    expect(layout.hiddenTabKeys()).not.toContain(AGENT_PANE);
+    expect(layout.zoomedLeafID()).toBeNull();
+  });
+
+  it("leaves the layout untouched when demoting a pane it does not hold", () => {
+    const layout = store();
+    layout.demoteTab(AGENT_PANE);
+    expect(localStorage.getItem(`${PANE_LAYOUT_STORAGE_PREFIX}prs`)).toBeNull();
+  });
+
   it("accepts a well-formed session pane as last-focused and refuses a malformed one", () => {
     // Without this a promoted pane could never win the last-focused slot, and
     // every rule keyed off it - the flattened strip, Focus Terminal, the dock

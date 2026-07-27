@@ -101,13 +101,19 @@ Two consequences worth stating, because they read as bugs otherwise:
   that, and no promotion model could.
 
 The drag still cannot be an ordinary tab move: every existing layout mutation
-rejects a source tab the destination tree does not already contain, and the
-payload does not say which tree the tab came from. So the payload gains an origin
-— `{ scope, tabKey, origin: "detail" | "workspace" }` — and the destination
-inserts a tab it has never seen. What it does not need is a two-phase commit:
-there is exactly one authoritative write, validated against the current claim and
-session list before it lands. A refused drop writes nothing, and the pool's
-owner-scoped registration makes the one-frame handoff safe on its own.
+rejects a source tab the destination tree does not already contain, so the
+destination needs a primitive that inserts a tab it has never held. It does not
+need to be told where the tab came from — "is this key already in my tree" is the
+same question and the tree can answer it. What it does not need either is a
+two-phase commit: there is exactly one authoritative write, validated against the
+current claim and session list before it lands. A refused drop writes nothing, and
+the pool's owner-scoped registration makes the one-frame handoff safe on its own.
+
+What must be canonical is the key. A session's workspace tab is keyed by session
+key alone, which is only unique within a workspace, so the shared drag payload
+carries the full `session:<workspace>/<host>/<session>` form and the workspace
+tree translates back on read — rejecting a key belonging to another workspace, or
+one that is not a session pane at all.
 
 The container stays even when empty, because it is where the launcher lives and
 where a newly launched session lands. An empty container renders the launcher

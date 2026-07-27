@@ -1,16 +1,19 @@
 import {
   activateTabbedPanelTab,
   appendTabbedPanelTabToLeaf,
+  insertTabbedPanelTab,
   collectTabbedPanelLeafIDs,
   findTabbedPanelLeafByID,
   findTabbedPanelLeafByTab,
   moveTabbedPanelTabBefore,
   parseTabbedPanelLayout,
+  removeTabbedPanelTab,
   pruneTabbedPanelTreeToAvailable,
   serializeTabbedPanelLayout,
   splitTabbedPanelTabIntoLeaf,
   updateTabbedPanelSplitRatio,
   type TabbedPanelDirection,
+  type TabbedPanelInsertTarget,
   type TabbedPanelLayoutState,
   type TabbedPanelNode,
 } from "../components/shared/tabbed-panel-layout.js";
@@ -108,6 +111,17 @@ export interface PaneLayoutStore {
   toggleZoom(leafID: string): void;
   clearZoom(): void;
   setHidden(tabKey: string, hidden: boolean): void;
+  /**
+   * Add a dynamic pane the tree has never held, and report whether it landed.
+   *
+   * This tree is the ONLY record that the pane was promoted: nothing else is
+   * written, and the container the session came from masks it out by asking
+   * `hasTab`. So the one write is validated here — a key this surface would
+   * prune on the next load is refused rather than written and silently lost.
+   */
+  promoteTab(tabKey: string, target: TabbedPanelInsertTarget): boolean;
+  /** Remove a promoted pane, along with any zoom or hidden entry naming it. */
+  demoteTab(tabKey: string): void;
   reset(): void;
 }
 
@@ -273,6 +287,44 @@ export function createPaneLayoutStore(
         ...state,
         hiddenTabKeys,
         zoomedLeafID: zoomStillHasContent ? state.zoomedLeafID : null,
+      });
+    },
+
+    promoteTab: (tabKey, target) => {
+      // Only dynamic panes. A static one is never absent from the tree, so
+      // promoting it is a caller bug; an unrecognized key would be pruned on the
+      // next load, making the promotion evaporate rather than fail.
+      if (!(keepIfStored?.(tabKey) ?? false)) return false;
+      const tree = insertTabbedPanelTab(state.tree, tabKey, target);
+      if (!tree || tree === state.tree) return false;
+      // A split mints a leaf no stored zoom can name, so the pane the user just
+      // promoted would land behind the zoom. Same reasoning as splitTab.
+      commit({
+        ...state,
+        tree,
+        zoomedLeafID: target.kind === "split" ? null : state.zoomedLeafID,
+        // Promoting is an explicit request to see it; a hidden entry left from a
+        // previous life in this surface would swallow it.
+        hiddenTabKeys: state.hiddenTabKeys.filter((key) => key !== tabKey),
+      });
+      return true;
+    },
+
+    demoteTab: (tabKey) => {
+      const leaf = findTabbedPanelLeafByTab(state.tree, tabKey);
+      if (leaf === null) return;
+      const tree = removeTabbedPanelTab(state.tree, tabKey);
+      if (!tree) return;
+      // A zoom on the leaf the pane lived in alone now names a leaf that is gone,
+      // which would blank the surface, and a hidden entry would bring the session
+      // back hidden the next time it is promoted.
+      const zoomedStillExists =
+        state.zoomedLeafID === null || findTabbedPanelLeafByID(tree, state.zoomedLeafID) !== null;
+      commit({
+        ...state,
+        tree,
+        zoomedLeafID: zoomedStillExists ? state.zoomedLeafID : null,
+        hiddenTabKeys: state.hiddenTabKeys.filter((key) => key !== tabKey),
       });
     },
 

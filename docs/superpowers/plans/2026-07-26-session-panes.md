@@ -356,7 +356,7 @@ plus a `paneLayout` round-trip test proving a promoted pane survives serialize/p
 **Files:**
 
 - Modify: `packages/ui/src/stores/paneLayout.svelte.ts` (insert a tab the tree has never held)
-- Modify: `packages/ui/src/components/shared/tabbed-panel-drag.ts` (payload origin)
+- Modify: `packages/ui/src/components/shared/tabbed-panel-layout.ts` (insert/remove primitives)
 - Modify: `frontend/src/lib/components/terminal/WorkflowSplitTree.svelte` (drag scope), `DockedTerminalPanel.svelte` / `TerminalSplitTree.svelte` (the dock's own promote control), `WorkspaceTerminalView.svelte` (masking and drop handling)
 - Test: `packages/ui/src/stores/paneLayout.svelte.test.ts`, `frontend/src/lib/components/terminal/WorkspaceTerminalView.test.ts`
 
@@ -367,17 +367,31 @@ Inside a detail surface the embedded tree passes `dragScope={surfaceScope}` inst
 dragScope?: string | undefined; // defaults to workspaceTabDragScope(workspaceId)
 ```
 
-Sharing a scope is not enough: every mutation rejects a source the destination does not already contain, and the payload does not say where the tab came from. So the payload gains an origin, and the destination gains a mutation that inserts a tab it has never held.
+Sharing a scope is not enough: every mutation rejects a source the destination does not already contain. So the layout module gains a primitive that inserts a tab the tree has never held, and the store gains the two writes above it.
 
 ```ts
-// tabbed-panel-drag.ts
-export interface TabbedPanelTabDragPayload {
-  scope: string;
-  tabKey: string;
-  /** Which tree the tab is leaving, so the drop knows whether to insert. */
-  origin: "detail" | "workspace";
-}
+// tabbed-panel-layout.ts
+export type TabbedPanelInsertTarget =
+  | { kind: "tab"; leafID: string }
+  | { kind: "split"; leafID: string; direction: TabbedPanelDirection; placement: "before" | "after" };
+/** Hands back the same node when the tab is already held or the leaf is unknown. */
+export function insertTabbedPanelTab(node, tabKey, target): TabbedPanelNode | null;
+export function removeTabbedPanelTab(node, tabKey): TabbedPanelNode | null;
 ```
+
+The payload needs no `origin` field: "is this key already in my tree" is the same
+question, and both trees can answer it themselves. What the payload does need is a
+canonical key — a workspace tab is keyed by session key alone, unique only within
+a workspace — so the shared payload carries the full
+`session:<workspace>/<host>/<session>` form and the workspace tree translates back
+on read, rejecting another workspace's key or a non-session pane.
+
+The workspace tree has its own drag module with its own MIME types, and
+`WorkflowSplitTree` overrides the shared read/write hooks, so the two payload
+stores are independent today. A session tab dragged while the tree is embedded in a
+surface writes BOTH: its own payload for intra-workspace drops, and the shared one
+for the detail tree. An intra-workflow drop reads its own first, so there is no
+ambiguity.
 
 **One authoritative write.** The surface's stored pane tree is the only record of
 a promotion: the pane key is in it, or the session is home. Nothing writes
@@ -430,11 +444,14 @@ the focused session, demote the focused promoted pane — both running the same 
 store calls, so keyboard users are not locked out. The dock's per-session header
 gets a promote control for the same reason its "Move to workflow" exists.
 
-- [ ] **Step 1** Failing tests: dropping a workflow session on the detail tree adds the pane and takes the tab out of the rendered workflow strip in the same flush, while the stored workflow tree keeps its placement; dropping a **dock** session does the same and leaves no orphan leaf; demoting restores the session to its original leaf, split, and order in whichever region it came from; the promote and demote commands produce the same trees as the equivalent drops, and are unavailable when there is nothing to promote or demote; a destination that refuses the drop leaves the tree byte-identical; a session that disappears mid-drag cancels rather than writing; a promoted pane dropped on the Workspaces tab's tree is rejected on scope; a session promoted in one surface is still at home in another.
-- [ ] **Step 2** Run `../node_modules/.bin/vp test --project unit paneLayout WorkspaceTerminalView`. Expected FAIL.
-- [ ] **Step 3** Implement.
-- [ ] **Step 4** Same command. Expected PASS.
-- [ ] **Step 5** Commit.
+Landing in three parts, each with its own tests and commit, because the store, the
+masking, and the drag wiring fail independently.
+
+- [x] **Step 1 (store)** Failing tests first: promoting adds and activates a pane and persists it; promoting as a split clears a zoom the new leaf could hide behind; a key the surface would prune, a static pane, an unknown leaf, and a duplicate are all refused with no write; demoting drops the pane and every zoom or hidden entry naming it; demoting a pane the tree does not hold writes nothing. Plus the layout primitives: insert into a leaf activates it, insert as a split mints a leaf beside the target, and both hand back the same tree when they cannot apply.
+- [x] **Step 2 (store)** Run `../node_modules/.bin/vp test --project unit paneLayout tabbed-panel-layout`. Expected FAIL, then PASS after implementing `insertTabbedPanelTab`, `removeTabbedPanelTab`, `promoteTab`, `demoteTab`. Commit.
+- [ ] **Step 3 (masking)** Failing tests: with a session's pane key in the surface's tree, the workspace container drops it from its workflow strip and its dock leaf while the STORED trees keep it; the pool still mounts it, because the detail pane is what renders it; clearing the pane key puts it back exactly where it was. `WorkspaceHost` passes `paneSurface`, and the standalone tab passes none, so nothing is masked there.
+- [ ] **Step 4 (drag)** Failing tests: dropping a workflow session tab on the detail tree promotes it; dropping the promoted pane back on the workflow tree demotes it and honors the leaf it was dropped on; a dock session's drag reaches the detail tree too; the promote and demote palette commands produce the same trees, and are unavailable when there is nothing to promote or demote; a key from another workspace and a non-session pane are both refused.
+- [ ] **Step 5** Run `../node_modules/.bin/vp test --project unit paneLayout WorkspaceTerminalView DetailPaneLayout`. Expected PASS. Commit each part.
 
 ---
 

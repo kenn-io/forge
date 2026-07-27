@@ -2710,6 +2710,36 @@ describe("WorkspaceTerminalView", () => {
     launchA.resolve(runningSession);
   });
 
+  it("keeps a terminal settings save busy across a workspace switch", async () => {
+    // Terminal font size is an app setting written through one single-flight
+    // controller, so a save is in flight for every workspace at once. Keying the busy
+    // flag by workspace reported the next one's controls free while the controller was
+    // still refusing input - an enabled button that does nothing.
+    serveAnyWorkspace();
+    const save = deferred<{ terminal: { font_size: number } }>();
+    mocks.mockUpdateSettings.mockReturnValueOnce(save.promise);
+    claimForPrs();
+
+    const { rerender } = render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+        paneSurface: "prs" as const,
+      },
+    });
+    await waitFor(() => expect(hostedWorkspaceControls()).not.toBeNull());
+    render(WorkspacePaneControls);
+    await fireEvent.click(screen.getByRole("button", { name: "Workspace controls" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Increase terminal font size" }));
+    await waitFor(() => expect(workspaceControlsBusy()).toBe(true));
+
+    await rerender({ workspaceId: "ws-2", paneSurface: "prs" as const });
+    await waitFor(() => expect(hostedWorkspaceControls()?.workspaceKey).toContain("ws-2"));
+    expect(workspaceControlsBusy()).toBe(true);
+
+    save.resolve({ terminal: { font_size: 15 } });
+    await waitFor(() => expect(workspaceControlsBusy()).toBe(false));
+  });
+
   it("keeps its own toolbar on the standalone Workspaces tab", async () => {
     render(WorkspaceTerminalView, {
       props: {

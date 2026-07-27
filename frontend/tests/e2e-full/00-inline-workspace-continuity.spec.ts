@@ -601,6 +601,63 @@ test.describe("inline workspace pane continuity", () => {
     }
   });
 
+  test("a workspace put away keeps its panes through another workspace's dock", async ({ page }) => {
+    // The container tab is shared by every workspace on a surface, so the collapse
+    // record is the only thing that knows what a given workspace put away. Only the
+    // real app runs the sequence that breaks it: collapse A, let B unhide the shared
+    // container, then come back to A - where the dock reports "split" while A's
+    // promoted terminal is still hidden.
+    test.skip(
+      !hasCommand("git") || !hasCommand("tmux", ["-V"]),
+      "git and tmux are required for the real workspace flow",
+    );
+
+    let isolatedServer: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    try {
+      isolatedServer = await startIsolatedWorkspaceE2EServer();
+      api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
+      const workspace = await createIssueWorkspace(api, 10);
+      await createIssueWorkspace(api, 11);
+
+      await page.goto(`${isolatedServer.info.base_url}/issues/github/acme/widgets/10`);
+      await expect(page.locator(".detail-pane-workspace-slot .workspace-host-wrapper")).toBeVisible();
+      await dismissWorkspaceLauncher(page);
+      await openTerminalPanel(page);
+      await runPaletteCommand(page, "Move terminal session to a pane");
+      const promoted = page.locator(".session-terminal-slot .terminal-container");
+      await expect(promoted).toBeVisible();
+      await typeMarkerCommand(page, promoted, workspace.worktree_path, "cross-marker-before");
+
+      await page.getByRole("button", { name: "Collapse Terminal" }).click();
+      await expect(page.locator(".session-terminal-slot")).toHaveCount(0);
+
+      // The other issue's workspace, brought back on screen. It has no promoted pane
+      // of its own, so this unhides the container both workspaces share.
+      await selectIssueByTitle(page, DARK_MODE_ISSUE_TITLE);
+      await page.getByRole("button", { name: "Focus Terminal" }).click();
+      await expect(page.locator(".detail-pane-workspace-slot .workspace-host-wrapper")).toBeVisible();
+      await dismissWorkspaceLauncher(page);
+
+      // Back to the first issue: its container is on screen because of the workspace
+      // above, its terminal is not, and putting it away again must not lose the pane
+      // from the record that is the only route back to it.
+      await selectIssueByTitle(page, SAFARI_ISSUE_TITLE);
+      await expect(page.locator(".detail-pane-workspace-slot .workspace-host-wrapper")).toBeVisible();
+      await page.getByRole("button", { name: "Collapse Terminal" }).click();
+      await expect(page.locator(".detail-pane-workspace-slot")).toHaveCount(0);
+      await expect(page.locator(".session-terminal-slot")).toHaveCount(0);
+
+      await page.getByRole("button", { name: "Focus Terminal" }).click();
+      await expect(page.locator(".detail-pane-workspace-slot")).toBeVisible();
+      await expect(promoted).toBeVisible();
+      await typeMarkerCommand(page, promoted, workspace.worktree_path, "cross-marker-after");
+    } finally {
+      await api?.dispose();
+      await isolatedServer?.stop();
+    }
+  });
+
   test("Focus Terminal reveals the workspace from behind a tab, a zoom, and a close", async ({ page }) => {
     // Three ways to be invisible without being "collapsed", each of which left
     // the terminal parked while the store reported it visible. Only a real

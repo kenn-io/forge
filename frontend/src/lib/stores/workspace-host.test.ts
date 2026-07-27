@@ -982,6 +982,26 @@ describe("a workspace spread across several panes", () => {
     expect(layout.hiddenTabKeys()).not.toContain(helperPane);
   });
 
+  it("keeps its collapse record when it is collapsed a second time", () => {
+    const { prs, layout } = hostWithPromoted([helperPane]);
+    prs.notePaneFocused("workspace");
+    prs.setDockMode("collapsed");
+
+    // B's expand puts the shared container back, so A reports "split" again and the
+    // user presses Collapse Terminal a second time - which sees only the container.
+    prs.claim(identityB, { id: "ws-b", status: "ready" });
+    prs.setDockMode("expanded");
+    prs.claim(identityA, refA);
+    publishHostedSessions({ workspaceId: "ws-a", hostKey: undefined }, sessions);
+    prs.setDockMode("collapsed");
+
+    prs.focusTerminal();
+
+    // Replacing the record instead of adding to it loses the promoted pane, and with
+    // it the only route back to a terminal the user never closed.
+    expect(layout.hiddenTabKeys()).toEqual([]);
+  });
+
   it("focusTerminal reveals the promoted pane holding the last-focused session", () => {
     const { prs, layout } = hostWithPromoted([helperPane]);
     prs.notePaneFocused(helperPane);

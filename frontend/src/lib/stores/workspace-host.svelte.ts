@@ -806,7 +806,16 @@ export function getInlineWorkspaceController(surface: InlineWorkspaceSurface): I
         // promoted terminals on screen while the button claims it is hidden.
         const hidden = layout.hiddenTabKeys();
         const hiding = keys.filter((key) => !hidden.includes(key));
-        collapsedPaneKeys.set(collapseLedgerKey(surface), hiding);
+        // Added to any record still outstanding rather than replacing it. The
+        // container tab is shared, so another workspace's expand can put this one's
+        // container back on screen while its promoted panes stay hidden; collapsing
+        // again then only sees the container, and overwriting would drop the promoted
+        // pane from the record that is the only way back to it. A record consumed by
+        // a restore is gone, so a pane the user closed by hand afterwards still stays
+        // closed.
+        const ledgerKey = collapseLedgerKey(surface);
+        const outstanding = collapsedPaneKeys.get(ledgerKey) ?? [];
+        collapsedPaneKeys.set(ledgerKey, [...new Set([...outstanding, ...hiding])]);
         for (const key of hiding) layout.setHidden(key, true);
         return;
       }

@@ -154,11 +154,12 @@ func reportFixture(detailed bool) Model {
 		Name: "widget", RepoPath: "acme/widget",
 	}
 	model := Model{
-		Start: start, End: end,
+		Schema: Schema, Start: start, End: end,
 		Repositories: []Repository{{
 			Repository: ref,
 			Coverage: Coverage{
-				Status: "current", Comments: "supported", Reviews: "supported",
+				Status: "current", Issues: "supported", MergeRequests: "supported",
+				Comments: "supported", Reviews: "supported",
 				InlineComments: "supported",
 			},
 			Counts: Counts{IssuesOpened: 1, OrdinaryComments: 1},

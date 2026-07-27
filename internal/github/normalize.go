@@ -63,6 +63,8 @@ func NormalizePR(repoID int64, ghPR *gh.PullRequest) (*db.MergeRequest, error) {
 		PlatformBaseSHA:    platformMR.BaseSHA,
 		Additions:          platformMR.Additions,
 		Deletions:          platformMR.Deletions,
+		FilesChanged:       platformMR.FilesChanged,
+		MergeCommitSHA:     platformMR.MergeCommitSHA,
 		ReviewDecision:     platformMR.ReviewDecision,
 		CIStatus:           platformMR.CIStatus,
 		CreatedAt:          platformMR.CreatedAt,

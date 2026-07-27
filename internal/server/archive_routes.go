@@ -43,6 +43,8 @@ type archiveReportInput struct {
 }
 
 type archiveCoverageResponse struct {
+	Issues         db.ArchiveCoverage `json:"issues" enum:"unknown,supported,unsupported"`
+	MergeRequests  db.ArchiveCoverage `json:"merge_requests" enum:"unknown,supported,unsupported"`
 	Comments       db.ArchiveCoverage `json:"comments" enum:"unknown,supported,unsupported"`
 	Reviews        db.ArchiveCoverage `json:"reviews" enum:"unknown,supported,unsupported"`
 	InlineComments db.ArchiveCoverage `json:"inline_comments" enum:"unknown,supported,unsupported"`
@@ -82,7 +84,9 @@ type archiveStatusesOutput = httpapi.BodyOutput[[]archiveStatusResponse]
 
 type archiveReportCountsResponse struct {
 	IssuesOpened         int `json:"issues_opened"`
+	IssuesClosed         int `json:"issues_closed"`
 	MergeRequestsOpened  int `json:"merge_requests_opened"`
+	MergeRequestsMerged  int `json:"merge_requests_merged"`
 	OrdinaryComments     int `json:"ordinary_comments"`
 	ReviewsSubmitted     int `json:"reviews_submitted"`
 	InlineReviewComments int `json:"inline_review_comments"`
@@ -93,6 +97,8 @@ type archiveReportCoverageResponse struct {
 	ActivePhases           []string   `json:"active_phases"`
 	CollectionMode         string     `json:"collection_mode" enum:"discovery,full"`
 	OperatorState          string     `json:"operator_state" enum:"active,paused"`
+	Issues                 string     `json:"issues" enum:"unknown,supported,unsupported"`
+	MergeRequests          string     `json:"merge_requests" enum:"unknown,supported,unsupported"`
 	Comments               string     `json:"comments" enum:"unknown,supported,unsupported"`
 	Reviews                string     `json:"reviews" enum:"unknown,supported,unsupported"`
 	InlineComments         string     `json:"inline_comments" enum:"unknown,supported,unsupported"`
@@ -119,23 +125,39 @@ type archiveReportContributorResponse struct {
 
 type archiveReportActivityResponse struct {
 	Repository         archiveRepositoryRef `json:"repository"`
-	Kind               string               `json:"kind" enum:"issue,merge_request,ordinary_comment,review,inline_review_comment"`
+	Kind               string               `json:"kind" enum:"issue,issue_closed,merge_request,merge_request_merged,ordinary_comment,review,inline_review_comment"`
 	ItemNumber         int                  `json:"item_number"`
 	ProviderExternalID string               `json:"provider_external_id"`
 	Title              string               `json:"title"`
 	Author             string               `json:"author"`
+	Actor              string               `json:"actor,omitempty"`
 	OccurredAt         time.Time            `json:"occurred_at"`
 	Body               string               `json:"body"`
 	URL                string               `json:"url"`
+	Comments           int                  `json:"comments,omitempty"`
+	Additions          int                  `json:"additions,omitempty"`
+	Deletions          int                  `json:"deletions,omitempty"`
+	FilesChanged       *int                 `json:"files_changed,omitempty"`
+	MergeCommitSHA     string               `json:"merge_commit_sha,omitempty"`
 }
 
 type archiveReportResponse struct {
+	ReportSchema string                             `json:"schema"`
 	Start        time.Time                          `json:"start"`
 	End          time.Time                          `json:"end"`
 	Repositories []archiveReportRepositoryResponse  `json:"repositories"`
 	Totals       archiveReportCountsResponse        `json:"totals"`
 	Contributors []archiveReportContributorResponse `json:"contributors"`
 	Activity     []archiveReportActivityResponse    `json:"activity,omitempty"`
+}
+
+func (*archiveReportResponse) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {
+	property := schema.Properties["schema"]
+	if property.Extensions == nil {
+		property.Extensions = map[string]any{}
+	}
+	property.Extensions["x-go-name"] = "ReportSchema"
+	return schema
 }
 
 type archiveReportOutput = httpapi.BodyOutput[archiveReportResponse]
@@ -333,7 +355,9 @@ func archiveStatusResponses(statuses []archive.Status) []archiveStatusResponse {
 				InaccessibleItems: counts.InaccessibleItemCount,
 			},
 			Coverage: archiveCoverageResponse{
-				Comments: status.State.CommentsCoverage, Reviews: status.State.ReviewsCoverage,
+				Issues:        status.State.IssuesCoverage,
+				MergeRequests: status.State.MergeRequestsCoverage,
+				Comments:      status.State.CommentsCoverage, Reviews: status.State.ReviewsCoverage,
 				InlineComments: status.State.InlineCommentsCoverage,
 			},
 			BudgetWaitUntil:        status.Progress.BudgetWaitUntil,
@@ -379,7 +403,7 @@ func archiveOperationProblem(err error) error {
 
 func archiveReportModelResponse(model report.Model) archiveReportResponse {
 	response := archiveReportResponse{
-		Start: model.Start, End: model.End,
+		ReportSchema: model.Schema, Start: model.Start, End: model.End,
 		Repositories: make([]archiveReportRepositoryResponse, len(model.Repositories)),
 		Totals:       archiveReportCounts(model.Totals),
 		Contributors: make([]archiveReportContributorResponse, len(model.Contributors)),
@@ -391,6 +415,7 @@ func archiveReportModelResponse(model report.Model) archiveReportResponse {
 			Coverage: archiveReportCoverageResponse{
 				Status: coverage.Status, ActivePhases: coverage.ActivePhases,
 				CollectionMode: coverage.CollectionMode, OperatorState: coverage.OperatorState,
+				Issues: coverage.Issues, MergeRequests: coverage.MergeRequests,
 				Comments: coverage.Comments, Reviews: coverage.Reviews,
 				InlineComments:         coverage.InlineComments,
 				InitialCompletedAt:     coverage.InitialCompletedAt,
@@ -415,7 +440,10 @@ func archiveReportModelResponse(model report.Model) archiveReportResponse {
 				Repository: archiveReportRepository(activity.Repository), Kind: string(activity.Kind),
 				ItemNumber: activity.ItemNumber, ProviderExternalID: activity.ProviderExternalID,
 				Title: activity.Title, Author: activity.Author, OccurredAt: activity.OccurredAt,
-				Body: activity.Body, URL: activity.URL,
+				Actor: activity.Actor, Body: activity.Body, URL: activity.URL,
+				Comments: activity.Comments, Additions: activity.Additions,
+				Deletions: activity.Deletions, FilesChanged: activity.FilesChanged,
+				MergeCommitSHA: activity.MergeCommitSHA,
 			}
 		}
 	}
@@ -431,8 +459,10 @@ func archiveReportRepository(ref report.RepositoryRef) archiveRepositoryRef {
 
 func archiveReportCounts(counts report.Counts) archiveReportCountsResponse {
 	return archiveReportCountsResponse{
-		IssuesOpened: counts.IssuesOpened, MergeRequestsOpened: counts.MergeRequestsOpened,
-		OrdinaryComments: counts.OrdinaryComments, ReviewsSubmitted: counts.ReviewsSubmitted,
+		IssuesOpened: counts.IssuesOpened, IssuesClosed: counts.IssuesClosed,
+		MergeRequestsOpened: counts.MergeRequestsOpened,
+		MergeRequestsMerged: counts.MergeRequestsMerged,
+		OrdinaryComments:    counts.OrdinaryComments, ReviewsSubmitted: counts.ReviewsSubmitted,
 		InlineReviewComments: counts.InlineReviewComments,
 	}
 }

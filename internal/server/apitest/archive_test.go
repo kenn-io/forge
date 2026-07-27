@@ -87,6 +87,7 @@ func TestAPIArchiveStartPauseStatusAndReport(t *testing.T) {
 	})
 	require.NoError(err)
 	require.NotNil(reportResponse.JSON200)
+	assert.Equal(report.Schema, reportResponse.JSON200.ReportSchema)
 	assert.Equal(int64(1), reportResponse.JSON200.Totals.IssuesOpened)
 	require.NotNil(reportResponse.JSON200.Activity)
 	require.Len(*reportResponse.JSON200.Activity, 1)

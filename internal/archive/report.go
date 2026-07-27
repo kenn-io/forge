@@ -102,7 +102,7 @@ func buildArchiveReport(
 	activityRows []db.ArchiveReportActivityRow,
 ) report.Model {
 	model := report.Model{
-		Start: opts.Start, End: opts.End,
+		Schema: report.Schema, Start: opts.Start, End: opts.End,
 		Repositories: make([]report.Repository, len(repositories)),
 		Contributors: []report.Contributor{},
 	}
@@ -155,7 +155,10 @@ func buildArchiveReport(
 				),
 				Kind: report.ActivityKind(row.Kind), ItemNumber: row.ItemNumber,
 				ProviderExternalID: row.ProviderExternalID, Title: row.Title,
-				Author: row.Author, OccurredAt: row.OccurredAt.UTC(), Body: row.Body, URL: row.URL,
+				Author: row.Author, Actor: row.Actor, OccurredAt: row.OccurredAt.UTC(),
+				Body: row.Body, URL: row.URL, Comments: row.Comments,
+				Additions: row.Additions, Deletions: row.Deletions,
+				FilesChanged: row.FilesChanged, MergeCommitSHA: row.MergeCommitSHA,
 			}
 		}
 	}
@@ -170,6 +173,7 @@ func reportCoverage(row db.ArchiveReportRepositoryRow) report.Coverage {
 	return report.Coverage{
 		Status: string(row.Progress.Status), ActivePhases: phases,
 		CollectionMode: string(row.State.CollectionMode), OperatorState: string(row.State.OperatorState),
+		Issues: string(row.State.IssuesCoverage), MergeRequests: string(row.State.MergeRequestsCoverage),
 		Comments: string(row.State.CommentsCoverage), Reviews: string(row.State.ReviewsCoverage),
 		InlineComments:         string(row.State.InlineCommentsCoverage),
 		InitialCompletedAt:     row.State.InitialCompletedAt,
@@ -191,8 +195,12 @@ func addReportCount(counts *report.Counts, kind db.ArchiveReportActivityKind, co
 	switch kind {
 	case db.ArchiveReportActivityIssue:
 		counts.IssuesOpened += count
+	case db.ArchiveReportActivityIssueClosed:
+		counts.IssuesClosed += count
 	case db.ArchiveReportActivityMergeRequest:
 		counts.MergeRequestsOpened += count
+	case db.ArchiveReportActivityMergeRequestMerged:
+		counts.MergeRequestsMerged += count
 	case db.ArchiveReportActivityOrdinaryComment:
 		counts.OrdinaryComments += count
 	case db.ArchiveReportActivityReview:

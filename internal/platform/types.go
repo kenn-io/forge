@@ -118,6 +118,8 @@ type MergeRequest struct {
 	HeadRepoCloneURLUnknown bool
 	Additions               int
 	Deletions               int
+	FilesChanged            *int
+	MergeCommitSHA          string
 	CommentCount            int
 	ReviewDecision          string
 	CIStatus                string

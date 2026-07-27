@@ -101,6 +101,48 @@ func (e ArchiveCoverageResponseInlineComments) Valid() bool {
 	}
 }
 
+// Defines values for ArchiveCoverageResponseIssues.
+const (
+	ArchiveCoverageResponseIssuesSupported   ArchiveCoverageResponseIssues = "supported"
+	ArchiveCoverageResponseIssuesUnknown     ArchiveCoverageResponseIssues = "unknown"
+	ArchiveCoverageResponseIssuesUnsupported ArchiveCoverageResponseIssues = "unsupported"
+)
+
+// Valid indicates whether the value is a known member of the ArchiveCoverageResponseIssues enum.
+func (e ArchiveCoverageResponseIssues) Valid() bool {
+	switch e {
+	case ArchiveCoverageResponseIssuesSupported:
+		return true
+	case ArchiveCoverageResponseIssuesUnknown:
+		return true
+	case ArchiveCoverageResponseIssuesUnsupported:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ArchiveCoverageResponseMergeRequests.
+const (
+	ArchiveCoverageResponseMergeRequestsSupported   ArchiveCoverageResponseMergeRequests = "supported"
+	ArchiveCoverageResponseMergeRequestsUnknown     ArchiveCoverageResponseMergeRequests = "unknown"
+	ArchiveCoverageResponseMergeRequestsUnsupported ArchiveCoverageResponseMergeRequests = "unsupported"
+)
+
+// Valid indicates whether the value is a known member of the ArchiveCoverageResponseMergeRequests enum.
+func (e ArchiveCoverageResponseMergeRequests) Valid() bool {
+	switch e {
+	case ArchiveCoverageResponseMergeRequestsSupported:
+		return true
+	case ArchiveCoverageResponseMergeRequestsUnknown:
+		return true
+	case ArchiveCoverageResponseMergeRequestsUnsupported:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ArchiveCoverageResponseReviews.
 const (
 	ArchiveCoverageResponseReviewsSupported   ArchiveCoverageResponseReviews = "supported"
@@ -126,7 +168,9 @@ func (e ArchiveCoverageResponseReviews) Valid() bool {
 const (
 	ArchiveReportActivityResponseKindInlineReviewComment ArchiveReportActivityResponseKind = "inline_review_comment"
 	ArchiveReportActivityResponseKindIssue               ArchiveReportActivityResponseKind = "issue"
+	ArchiveReportActivityResponseKindIssueClosed         ArchiveReportActivityResponseKind = "issue_closed"
 	ArchiveReportActivityResponseKindMergeRequest        ArchiveReportActivityResponseKind = "merge_request"
+	ArchiveReportActivityResponseKindMergeRequestMerged  ArchiveReportActivityResponseKind = "merge_request_merged"
 	ArchiveReportActivityResponseKindOrdinaryComment     ArchiveReportActivityResponseKind = "ordinary_comment"
 	ArchiveReportActivityResponseKindReview              ArchiveReportActivityResponseKind = "review"
 )
@@ -138,7 +182,11 @@ func (e ArchiveReportActivityResponseKind) Valid() bool {
 		return true
 	case ArchiveReportActivityResponseKindIssue:
 		return true
+	case ArchiveReportActivityResponseKindIssueClosed:
+		return true
 	case ArchiveReportActivityResponseKindMergeRequest:
+		return true
+	case ArchiveReportActivityResponseKindMergeRequestMerged:
 		return true
 	case ArchiveReportActivityResponseKindOrdinaryComment:
 		return true
@@ -203,6 +251,48 @@ func (e ArchiveReportCoverageResponseInlineComments) Valid() bool {
 	case ArchiveReportCoverageResponseInlineCommentsUnknown:
 		return true
 	case ArchiveReportCoverageResponseInlineCommentsUnsupported:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ArchiveReportCoverageResponseIssues.
+const (
+	ArchiveReportCoverageResponseIssuesSupported   ArchiveReportCoverageResponseIssues = "supported"
+	ArchiveReportCoverageResponseIssuesUnknown     ArchiveReportCoverageResponseIssues = "unknown"
+	ArchiveReportCoverageResponseIssuesUnsupported ArchiveReportCoverageResponseIssues = "unsupported"
+)
+
+// Valid indicates whether the value is a known member of the ArchiveReportCoverageResponseIssues enum.
+func (e ArchiveReportCoverageResponseIssues) Valid() bool {
+	switch e {
+	case ArchiveReportCoverageResponseIssuesSupported:
+		return true
+	case ArchiveReportCoverageResponseIssuesUnknown:
+		return true
+	case ArchiveReportCoverageResponseIssuesUnsupported:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ArchiveReportCoverageResponseMergeRequests.
+const (
+	ArchiveReportCoverageResponseMergeRequestsSupported   ArchiveReportCoverageResponseMergeRequests = "supported"
+	ArchiveReportCoverageResponseMergeRequestsUnknown     ArchiveReportCoverageResponseMergeRequests = "unknown"
+	ArchiveReportCoverageResponseMergeRequestsUnsupported ArchiveReportCoverageResponseMergeRequests = "unsupported"
+)
+
+// Valid indicates whether the value is a known member of the ArchiveReportCoverageResponseMergeRequests enum.
+func (e ArchiveReportCoverageResponseMergeRequests) Valid() bool {
+	switch e {
+	case ArchiveReportCoverageResponseMergeRequestsSupported:
+		return true
+	case ArchiveReportCoverageResponseMergeRequestsUnknown:
+		return true
+	case ArchiveReportCoverageResponseMergeRequestsUnsupported:
 		return true
 	default:
 		return false
@@ -1037,6 +1127,8 @@ type ApprovePRInputBody struct {
 type ArchiveCoverageResponse struct {
 	Comments       ArchiveCoverageResponseComments       `json:"comments"`
 	InlineComments ArchiveCoverageResponseInlineComments `json:"inline_comments"`
+	Issues         ArchiveCoverageResponseIssues         `json:"issues"`
+	MergeRequests  ArchiveCoverageResponseMergeRequests  `json:"merge_requests"`
 	Reviews        ArchiveCoverageResponseReviews        `json:"reviews"`
 }
 
@@ -1045,6 +1137,12 @@ type ArchiveCoverageResponseComments string
 
 // ArchiveCoverageResponseInlineComments defines model for ArchiveCoverageResponse.InlineComments.
 type ArchiveCoverageResponseInlineComments string
+
+// ArchiveCoverageResponseIssues defines model for ArchiveCoverageResponse.Issues.
+type ArchiveCoverageResponseIssues string
+
+// ArchiveCoverageResponseMergeRequests defines model for ArchiveCoverageResponse.MergeRequests.
+type ArchiveCoverageResponseMergeRequests string
 
 // ArchiveCoverageResponseReviews defines model for ArchiveCoverageResponse.Reviews.
 type ArchiveCoverageResponseReviews string
@@ -1075,10 +1173,16 @@ type ArchiveProgressCountsResponse struct {
 
 // ArchiveReportActivityResponse defines model for ArchiveReportActivityResponse.
 type ArchiveReportActivityResponse struct {
+	Actor              *string                           `json:"actor,omitempty"`
+	Additions          *int64                            `json:"additions,omitempty"`
 	Author             string                            `json:"author"`
 	Body               string                            `json:"body"`
+	Comments           *int64                            `json:"comments,omitempty"`
+	Deletions          *int64                            `json:"deletions,omitempty"`
+	FilesChanged       *int64                            `json:"files_changed,omitempty"`
 	ItemNumber         int64                             `json:"item_number"`
 	Kind               ArchiveReportActivityResponseKind `json:"kind"`
+	MergeCommitSha     *string                           `json:"merge_commit_sha,omitempty"`
 	OccurredAt         time.Time                         `json:"occurred_at"`
 	ProviderExternalId string                            `json:"provider_external_id"`
 	Repository         ArchiveRepositoryRef              `json:"repository"`
@@ -1100,7 +1204,9 @@ type ArchiveReportContributorResponse struct {
 // ArchiveReportCountsResponse defines model for ArchiveReportCountsResponse.
 type ArchiveReportCountsResponse struct {
 	InlineReviewComments int64 `json:"inline_review_comments"`
+	IssuesClosed         int64 `json:"issues_closed"`
 	IssuesOpened         int64 `json:"issues_opened"`
+	MergeRequestsMerged  int64 `json:"merge_requests_merged"`
 	MergeRequestsOpened  int64 `json:"merge_requests_opened"`
 	OrdinaryComments     int64 `json:"ordinary_comments"`
 	ReviewsSubmitted     int64 `json:"reviews_submitted"`
@@ -1116,7 +1222,9 @@ type ArchiveReportCoverageResponse struct {
 	InaccessibleItems      int64                                       `json:"inaccessible_items"`
 	InitialCompletedAt     *time.Time                                  `json:"initial_completed_at,omitempty"`
 	InlineComments         ArchiveReportCoverageResponseInlineComments `json:"inline_comments"`
+	Issues                 ArchiveReportCoverageResponseIssues         `json:"issues"`
 	MaintenanceSucceededAt *time.Time                                  `json:"maintenance_succeeded_at,omitempty"`
+	MergeRequests          ArchiveReportCoverageResponseMergeRequests  `json:"merge_requests"`
 	OperatorState          ArchiveReportCoverageResponseOperatorState  `json:"operator_state"`
 	Reviews                ArchiveReportCoverageResponseReviews        `json:"reviews"`
 	Status                 ArchiveReportCoverageResponseStatus         `json:"status"`
@@ -1131,6 +1239,12 @@ type ArchiveReportCoverageResponseComments string
 
 // ArchiveReportCoverageResponseInlineComments defines model for ArchiveReportCoverageResponse.InlineComments.
 type ArchiveReportCoverageResponseInlineComments string
+
+// ArchiveReportCoverageResponseIssues defines model for ArchiveReportCoverageResponse.Issues.
+type ArchiveReportCoverageResponseIssues string
+
+// ArchiveReportCoverageResponseMergeRequests defines model for ArchiveReportCoverageResponse.MergeRequests.
+type ArchiveReportCoverageResponseMergeRequests string
 
 // ArchiveReportCoverageResponseOperatorState defines model for ArchiveReportCoverageResponse.OperatorState.
 type ArchiveReportCoverageResponseOperatorState string
@@ -1156,6 +1270,7 @@ type ArchiveReportResponse struct {
 	Contributors *[]ArchiveReportContributorResponse `json:"contributors"`
 	End          time.Time                           `json:"end"`
 	Repositories *[]ArchiveReportRepositoryResponse  `json:"repositories"`
+	ReportSchema string                              `json:"schema"`
 	Start        time.Time                           `json:"start"`
 	Totals       ArchiveReportCountsResponse         `json:"totals"`
 }
@@ -2484,6 +2599,7 @@ type MergeRequest struct {
 	CreatedAt          time.Time                `json:"CreatedAt"`
 	Deletions          int64                    `json:"Deletions"`
 	DetailFetchedAt    *time.Time               `json:"DetailFetchedAt"`
+	FilesChanged       *int64                   `json:"FilesChanged"`
 	HeadBranch         string                   `json:"HeadBranch"`
 	HeadRepoCloneURL   string                   `json:"HeadRepoCloneURL"`
 	ID                 int64                    `json:"ID"`
@@ -2491,6 +2607,7 @@ type MergeRequest struct {
 	IsLocked           bool                     `json:"IsLocked"`
 	KanbanStatus       MergeRequestKanbanStatus `json:"KanbanStatus"`
 	LastActivityAt     time.Time                `json:"LastActivityAt"`
+	MergeCommitSHA     string                   `json:"MergeCommitSHA"`
 	MergeableState     string                   `json:"MergeableState"`
 	MergedAt           *time.Time               `json:"MergedAt"`
 	Number             int64                    `json:"Number"`
@@ -2577,6 +2694,7 @@ type MergeRequestResponse struct {
 	CommentCount       int64                            `json:"CommentCount"`
 	CreatedAt          time.Time                        `json:"CreatedAt"`
 	Deletions          int64                            `json:"Deletions"`
+	FilesChanged       *int64                           `json:"FilesChanged"`
 	HeadBranch         string                           `json:"HeadBranch"`
 	HeadRepoCloneURL   string                           `json:"HeadRepoCloneURL"`
 	ID                 int64                            `json:"ID"`
@@ -2584,6 +2702,7 @@ type MergeRequestResponse struct {
 	IsLocked           bool                             `json:"IsLocked"`
 	KanbanStatus       MergeRequestResponseKanbanStatus `json:"KanbanStatus"`
 	LastActivityAt     time.Time                        `json:"LastActivityAt"`
+	MergeCommitSHA     string                           `json:"MergeCommitSHA"`
 	MergeableState     string                           `json:"MergeableState"`
 	MergedAt           *time.Time                       `json:"MergedAt"`
 	Number             int64                            `json:"Number"`

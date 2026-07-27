@@ -314,6 +314,8 @@ const (
 )
 
 type ArchiveCoverageSet struct {
+	Issues         ArchiveCoverage
+	MergeRequests  ArchiveCoverage
 	Comments       ArchiveCoverage
 	Reviews        ArchiveCoverage
 	InlineComments ArchiveCoverage
@@ -340,6 +342,8 @@ type ArchiveRepoState struct {
 	MaintenanceSucceededAt   *time.Time
 	PromptScanStartedAt      *time.Time
 	PromptSince              *time.Time
+	IssuesCoverage           ArchiveCoverage
+	MergeRequestsCoverage    ArchiveCoverage
 	CommentsCoverage         ArchiveCoverage
 	ReviewsCoverage          ArchiveCoverage
 	InlineCommentsCoverage   ArchiveCoverage
@@ -442,6 +446,7 @@ type ArchiveInventoryCommit struct {
 	InputCursor    string
 	NextCursor     string
 	Exhausted      bool
+	Coverage       ArchiveCoverage
 	Now            time.Time
 }
 
@@ -619,6 +624,8 @@ type MergeRequest struct {
 	HeadRepoCloneURLUnknown bool `json:"-"`
 	Additions               int
 	Deletions               int
+	FilesChanged            *int
+	MergeCommitSHA          string
 	CommentCount            int
 	ReviewDecision          string
 	CIStatus                string

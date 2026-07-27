@@ -2114,6 +2114,8 @@ func TestUpsertAndGetPullRequest(t *testing.T) {
 		BaseBranch:     "main",
 		Additions:      10,
 		Deletions:      3,
+		FilesChanged:   new(17),
+		MergeCommitSHA: "abc123",
 		CommentCount:   2,
 		ReviewDecision: "APPROVED",
 		CIStatus:       "SUCCESS",
@@ -2133,6 +2135,9 @@ func TestUpsertAndGetPullRequest(t *testing.T) {
 	assert.Equal(pr.Title, got.Title)
 	assert.Equal(pr.Author, got.Author)
 	assert.Equal(pr.Additions, got.Additions)
+	require.NotNil(got.FilesChanged)
+	assert.Equal(17, *got.FilesChanged)
+	assert.Equal("abc123", got.MergeCommitSHA)
 	assert.True(got.IsLocked)
 	assert.Empty(got.KanbanStatus)
 

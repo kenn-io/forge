@@ -6,6 +6,7 @@ import (
 )
 
 const (
+	Schema               = "middleman-archive-report/1"
 	MaxDetailedRecords   = 10_000
 	MaxDetailedTextBytes = 32 * 1024 * 1024
 )
@@ -14,7 +15,9 @@ type ActivityKind string
 
 const (
 	ActivityIssue               ActivityKind = "issue"
+	ActivityIssueClosed         ActivityKind = "issue_closed"
 	ActivityMergeRequest        ActivityKind = "merge_request"
+	ActivityMergeRequestMerged  ActivityKind = "merge_request_merged"
 	ActivityOrdinaryComment     ActivityKind = "ordinary_comment"
 	ActivityReview              ActivityKind = "review"
 	ActivityInlineReviewComment ActivityKind = "inline_review_comment"
@@ -30,14 +33,17 @@ type RepositoryRef struct {
 
 type Counts struct {
 	IssuesOpened         int `json:"issues_opened"`
+	IssuesClosed         int `json:"issues_closed"`
 	MergeRequestsOpened  int `json:"merge_requests_opened"`
+	MergeRequestsMerged  int `json:"merge_requests_merged"`
 	OrdinaryComments     int `json:"ordinary_comments"`
 	ReviewsSubmitted     int `json:"reviews_submitted"`
 	InlineReviewComments int `json:"inline_review_comments"`
 }
 
 func (c Counts) TotalActivity() int {
-	return c.IssuesOpened + c.MergeRequestsOpened + c.OrdinaryComments +
+	return c.IssuesOpened + c.IssuesClosed + c.MergeRequestsOpened +
+		c.MergeRequestsMerged + c.OrdinaryComments +
 		c.ReviewsSubmitted + c.InlineReviewComments
 }
 
@@ -46,6 +52,8 @@ type Coverage struct {
 	ActivePhases           []string   `json:"active_phases"`
 	CollectionMode         string     `json:"collection_mode"`
 	OperatorState          string     `json:"operator_state"`
+	Issues                 string     `json:"issues"`
+	MergeRequests          string     `json:"merge_requests"`
 	Comments               string     `json:"comments"`
 	Reviews                string     `json:"reviews"`
 	InlineComments         string     `json:"inline_comments"`
@@ -77,12 +85,19 @@ type Activity struct {
 	ProviderExternalID string        `json:"provider_external_id"`
 	Title              string        `json:"title"`
 	Author             string        `json:"author"`
+	Actor              string        `json:"actor,omitempty"`
 	OccurredAt         time.Time     `json:"occurred_at"`
 	Body               string        `json:"body"`
 	URL                string        `json:"url"`
+	Comments           int           `json:"comments,omitempty"`
+	Additions          int           `json:"additions,omitempty"`
+	Deletions          int           `json:"deletions,omitempty"`
+	FilesChanged       *int          `json:"files_changed,omitempty"`
+	MergeCommitSHA     string        `json:"merge_commit_sha,omitempty"`
 }
 
 type Model struct {
+	Schema       string        `json:"schema"`
 	Start        time.Time     `json:"start"`
 	End          time.Time     `json:"end"`
 	Repositories []Repository  `json:"repositories"`

@@ -27,6 +27,7 @@ func (s *Service) inventoryPage(ctx context.Context, repo resolvedRepository, st
 	}
 	if !archiveInventorySupported(repo, itemType) {
 		commit.Exhausted = true
+		commit.Coverage = db.ArchiveCoverageUnsupported
 	} else {
 		requestCtx, complete, err := s.admit(
 			ctx, repo, itemType, archiveFeatureReadAttemptCost(repo.Ref.Platform),
@@ -53,6 +54,11 @@ func (s *Service) inventoryPage(ctx context.Context, repo resolvedRepository, st
 				if preempted {
 					return errAdmissionDeferred
 				}
+				if archiveInventoryFeatureDisabled(err, itemType) {
+					commit.Exhausted = true
+					commit.Coverage = db.ArchiveCoverageUnsupported
+					break
+				}
 				return s.recordScanFailure(ctx, repo, kind, scan.Generation, fmt.Errorf(
 					"list historical issues for %s: %w", archiveRepoIdentityKey(repo.Ref), err,
 				))
@@ -73,6 +79,11 @@ func (s *Service) inventoryPage(ctx context.Context, repo resolvedRepository, st
 				if preempted {
 					return errAdmissionDeferred
 				}
+				if archiveInventoryFeatureDisabled(err, itemType) {
+					commit.Exhausted = true
+					commit.Coverage = db.ArchiveCoverageUnsupported
+					break
+				}
 				return s.recordScanFailure(ctx, repo, kind, scan.Generation, fmt.Errorf(
 					"list historical merge requests for %s: %w", archiveRepoIdentityKey(repo.Ref), err,
 				))
@@ -88,8 +99,30 @@ func (s *Service) inventoryPage(ctx context.Context, repo resolvedRepository, st
 			return invalidErr
 		}
 	}
+	if commit.Exhausted &&
+		(commit.Coverage == "" || commit.Coverage == db.ArchiveCoverageUnknown) {
+		commit.Coverage = db.ArchiveCoverageSupported
+	}
 	_, err := s.commitInventoryPage(ctx, commit)
 	return err
+}
+
+func archiveInventoryFeatureDisabled(err error, itemType db.ArchiveItemType) bool {
+	if !errors.Is(err, platform.ErrRepositoryFeatureDisabled) {
+		return false
+	}
+	var platformErr *platform.Error
+	if !errors.As(err, &platformErr) {
+		return false
+	}
+	switch itemType {
+	case db.ArchiveItemTypeIssue:
+		return platformErr.Capability == platform.RepositoryFeatureIssues
+	case db.ArchiveItemTypeMergeRequest:
+		return platformErr.Capability == platform.RepositoryFeatureMergeRequests
+	default:
+		return false
+	}
 }
 
 // commitInventoryPage absorbs the typed non-failure outcomes of an inventory

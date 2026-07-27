@@ -33,6 +33,8 @@ func NormalizePullRequest(repo platform.RepoRef, ghPR *gh.PullRequest) (platform
 		Body:               ghPR.GetBody(),
 		Additions:          ghPR.GetAdditions(),
 		Deletions:          ghPR.GetDeletions(),
+		FilesChanged:       ghPR.ChangedFiles,
+		MergeCommitSHA:     ghPR.GetMergeCommitSHA(),
 		CommentCount:       ghPR.GetComments(),
 		MergeableState:     ghPR.GetMergeableState(),
 	}

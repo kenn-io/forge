@@ -51,6 +51,28 @@ func TestNormalizeReviewCommentEventPreservesHTMLURL(t *testing.T) {
 	assert.Equal(t, commentURL, event.DirectURL)
 }
 
+func TestNormalizePullRequestPreservesOptionalMergeMetrics(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	changedFiles := 17
+	mergeCommitSHA := "abc123"
+	pull := &gh.PullRequest{
+		ID: new(int64(123)), Number: new(42), State: new("closed"),
+		ChangedFiles: &changedFiles, MergeCommitSHA: &mergeCommitSHA,
+	}
+
+	normalized, err := NormalizePullRequest(platform.RepoRef{}, pull)
+	require.NoError(err)
+	require.NotNil(normalized.FilesChanged)
+	assert.Equal(changedFiles, *normalized.FilesChanged)
+	assert.Equal(mergeCommitSHA, normalized.MergeCommitSHA)
+
+	unknown, err := NormalizePullRequest(platform.RepoRef{}, &gh.PullRequest{})
+	require.NoError(err)
+	assert.Nil(unknown.FilesChanged)
+	assert.Empty(unknown.MergeCommitSHA)
+}
+
 func TestNormalizeIssueTimelineEventCrossReferenced(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

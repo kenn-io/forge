@@ -128,6 +128,8 @@ func DBMergeRequest(repoID int64, mr MergeRequest) *db.MergeRequest {
 		HeadRepoCloneURLUnknown: mr.HeadRepoCloneURLUnknown,
 		Additions:               mr.Additions,
 		Deletions:               mr.Deletions,
+		FilesChanged:            mr.FilesChanged,
+		MergeCommitSHA:          mr.MergeCommitSHA,
 		CommentCount:            mr.CommentCount,
 		ReviewDecision:          mr.ReviewDecision,
 		CIStatus:                mr.CIStatus,

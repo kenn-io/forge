@@ -252,7 +252,9 @@ func TestBuildArchiveReportKeepsContributorIdentityProviderScoped(t *testing.T) 
 	}
 	counts := []db.ArchiveReportCountRow{
 		{RepoID: 1, Platform: "github", PlatformHost: "github.example", Kind: db.ArchiveReportActivityIssue, Author: "sam", Count: 1},
+		{RepoID: 1, Platform: "github", PlatformHost: "github.example", Kind: db.ArchiveReportActivityIssueClosed, Author: "sam", Count: 6},
 		{RepoID: 1, Platform: "github", PlatformHost: "github.example", Kind: db.ArchiveReportActivityMergeRequest, Author: "sam", Count: 2},
+		{RepoID: 1, Platform: "github", PlatformHost: "github.example", Kind: db.ArchiveReportActivityMergeRequestMerged, Author: "sam", Count: 9},
 		{RepoID: 1, Platform: "github", PlatformHost: "github.example", Kind: db.ArchiveReportActivityOrdinaryComment, Author: "sam", Count: 3},
 		{RepoID: 1, Platform: "github", PlatformHost: "github.example", Kind: db.ArchiveReportActivityReview, Author: "sam", Count: 4},
 		{RepoID: 1, Platform: "github", PlatformHost: "github.example", Kind: db.ArchiveReportActivityInlineReviewComment, Author: "sam", Count: 5},
@@ -261,18 +263,18 @@ func TestBuildArchiveReportKeepsContributorIdentityProviderScoped(t *testing.T) 
 
 	model := buildArchiveReport(ReportOptions{Start: start, End: start.Add(time.Hour)}, repositories, counts, nil)
 	assert.Equal(report.Counts{
-		IssuesOpened: 8, MergeRequestsOpened: 2, OrdinaryComments: 3,
+		IssuesOpened: 8, IssuesClosed: 6, MergeRequestsOpened: 2, MergeRequestsMerged: 9, OrdinaryComments: 3,
 		ReviewsSubmitted: 4, InlineReviewComments: 5,
 	}, model.Totals)
 	assert.Equal(report.Counts{
-		IssuesOpened: 1, MergeRequestsOpened: 2, OrdinaryComments: 3,
+		IssuesOpened: 1, IssuesClosed: 6, MergeRequestsOpened: 2, MergeRequestsMerged: 9, OrdinaryComments: 3,
 		ReviewsSubmitted: 4, InlineReviewComments: 5,
 	}, model.Repositories[0].Counts)
 	assert.Equal(report.Counts{IssuesOpened: 7}, model.Repositories[1].Counts)
 	if assert.Len(model.Contributors, 2) {
 		assert.Equal("github", model.Contributors[0].Provider)
 		assert.Equal("sam", model.Contributors[0].Login)
-		assert.Equal(15, model.Contributors[0].Counts.TotalActivity())
+		assert.Equal(30, model.Contributors[0].Counts.TotalActivity())
 		assert.Equal("gitlab", model.Contributors[1].Provider)
 		assert.Equal("sam", model.Contributors[1].Login)
 		assert.Equal(7, model.Contributors[1].Counts.TotalActivity())

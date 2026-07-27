@@ -117,91 +117,65 @@ Expected: PASS. (8 tests.)
 **Files:**
 
 - Create: `frontend/src/lib/components/terminal/SessionTerminalPool.svelte`
+- Create: `frontend/src/lib/components/terminal/PooledSessionTerminal.svelte`
 - Modify: `frontend/src/lib/components/terminal/WorkspaceHost.svelte`
-- Test: `frontend/src/lib/components/terminal/SessionTerminalPool.browser.svelte.ts`, `SessionTerminalPoolHarness.svelte`
+- Test: `frontend/src/lib/components/terminal/SessionTerminalPool.browser.svelte.ts`
 
 **Interfaces:**
 
 - Consumes: Task 1's registry; `TerminalPane` (`websocketPath`, `active`, `disabled`, `onExit`, `initialStatus`).
-- Produces: `SessionTerminalPool` with props `{ sessions: PoolSession[] }` where
-  `PoolSession = { hostKey: SessionHostKey; websocketPath: string; status: string }`.
-  There is no `active` prop: the pool derives it per session from
-  `isSessionSlotVisible(session.hostKey)`. The caller cannot know it — only the
-  slot that renders the session knows whether its tab panel is the visible one.
+- Produces: `SessionTerminalPool`, which takes **no props**. It renders
+  `mountedSessions()` directly, because the sessions it must keep live are not
+  the ones any single view knows about — a promoted session belongs to no view's
+  tab strip. Per session it renders `PooledSessionTerminal`, whose `active` comes
+  from `isSessionSlotVisible(hostKey)`: only the slot knows whether its tab panel
+  is the visible one.
+- Exits route back through the registry (`noteSessionExited` / `onSessionExited`)
+  rather than a callback on the descriptor. The pool has no access to runtime
+  session records, and a callback captured in a descriptor goes stale the moment
+  the session's status changes.
 
 The pool is a **sibling** of `.workspace-host-wrapper`, not a child. A promoted session must survive the container being parked, and the wrapper is exactly what gets parked.
 
 Reparenting copies the placement effect from `WorkspaceHost.svelte:82`: park, `await tick()`, append to destination, reveal on non-zero geometry via `requestAnimationFrame`.
 
-- [ ] **Step 1: Write the failing browser test**
+Each session's wrapper lives in its own child component so the placement effect
+is per instance rather than a map of effects. Two consequences:
 
-```ts
-// SessionTerminalPool.browser.svelte.ts
-it("moves one live terminal subtree between slots without recreating it", async () => {
-  const harness = mount(SessionTerminalPoolHarness, { target, props: { slot: "a" } });
-  const wrapper = await vi.waitFor(() => {
-    const el = document.querySelector("[data-session-host='ws-1\0\0agent']");
-    expect(el).not.toBeNull();
-    return el as HTMLElement;
-  });
-  expect(wrapper.parentElement).toBe(document.querySelector("[data-slot='a']"));
+- The child's teardown calls `wrapper.remove()`. Svelte cannot remove a node the
+  component reparented out of its own fragment, so an unmounted session would
+  otherwise leave a dead terminal in whatever slot last held it.
+- `mountedSessions()` must stay append-only. A keyed `{#each}` inserts a new item
+  before the next item's first node, and those nodes have been moved into
+  slots — appending keeps the anchor the block's own trailing one.
 
-  await harness.setSlot("b");
+- [x] **Step 1: Write the failing browser test**
 
-  // Same node, not an equal one: a recreated wrapper is a dropped websocket and
-  // a blank terminal.
-  expect(document.querySelector("[data-session-host='ws-1\0\0agent']")).toBe(wrapper);
-  expect(wrapper.parentElement).toBe(document.querySelector("[data-slot='b']"));
-});
+`SessionTerminalPool.browser.svelte.ts`, five cases: one subtree moved between
+slots and still the same node; two sessions live at once; a session parked when
+its slot unregisters; a mounted-but-hidden slot leaving its terminal inert; and
+an unmounted session's wrapper removed from wherever it was parented. Sessions
+are mounted with `status: "exited"` so `TerminalPane` skips the WebSocket connect
+against a backend this tier does not run.
 
-it("keeps two sessions live at once", async () => {
-  /* two slots, two wrappers, both parented */
-});
-
-it("parks a session whose slot unmounts and keeps it alive", async () => {
-  /* slot -> none, wrapper in parking */
-});
-
-it("deactivates a terminal whose slot is mounted but hidden", async () => {
-  /* two session tabs in one leaf: only the active tab's TerminalPane is active,
-     so the hidden one neither claims focus nor resizes to a zero-height box */
-});
-```
-
-- [ ] **Step 2: Run and watch it fail**
+- [x] **Step 2: Run and watch it fail**
 
 Run: `cd frontend && ../node_modules/.bin/vp test --project browser SessionTerminalPool`
 Expected: FAIL, component missing.
 
-- [ ] **Step 3: Implement the pool**
+- [x] **Step 3: Implement the pool**
 
-```svelte
-<!-- SessionTerminalPool.svelte -->
-<div class="session-pool-parking" bind:this={parkingNode} aria-hidden="true"></div>
-{#each sessions as session (session.hostKey)}
-  <div class="session-host-wrapper" data-session-host={session.hostKey} bind:this={wrappers[session.hostKey]}>
-    <TerminalPane
-      websocketPath={session.websocketPath}
-      reconnectOnExit={false}
-      active={isSessionSlotVisible(session.hostKey)}
-      initialStatus={session.status}
-    />
-  </div>
-{/each}
-```
+- [x] **Step 4: Mount it from `WorkspaceHost.svelte`**
 
-with one placement effect per session key, reading `getSessionSlotElement(session.hostKey)`.
+As a sibling of the wrapper. Not fed from the claimed workspace: the pool reads
+the registry, which is what lets a promoted session outlive its container.
 
-- [ ] **Step 4: Mount it from `WorkspaceHost.svelte`**
+- [x] **Step 5: Run the browser tests**
 
-As a sibling of the wrapper, fed from the claimed workspace's mounted sessions.
+Run: `cd frontend && ../node_modules/.bin/vp test --project browser SessionTerminalPool WorkspaceHost InlineWorkspacePane`
+Expected: PASS. (15 tests.)
 
-- [ ] **Step 5: Run the browser tests**
-
-Run: `cd frontend && ../node_modules/.bin/vp test --project browser SessionTerminalPool`
-Expected: PASS.
-
-- [ ] **Step 6: Commit.**
+- [x] **Step 6: Commit.**
 
 ---
 

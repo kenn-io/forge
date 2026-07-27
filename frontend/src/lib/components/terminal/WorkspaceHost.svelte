@@ -1,6 +1,7 @@
 <script lang="ts">
   import { flushSync, tick } from "svelte";
   import type { InlineDockMode } from "@middleman/ui";
+  import SessionTerminalPool from "./SessionTerminalPool.svelte";
   import WorkspaceTerminalView from "./WorkspaceTerminalView.svelte";
   import { getRoute } from "../../stores/router.svelte.ts";
   import {
@@ -126,6 +127,13 @@
 </script>
 
 <div class="workspace-host-parking" bind:this={parkingNode} aria-hidden="true"></div>
+
+<!-- A SIBLING of the wrapper below, never a child. The wrapper is what gets
+     parked when the workspace pane closes or the host moves, and a session
+     promoted to its own detail pane has to outlive that: as a child, every
+     promoted terminal would be dragged into the parking node along with its
+     container and go blank. -->
+<SessionTerminalPool />
 
 <div
   class="workspace-host-wrapper"

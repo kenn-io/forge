@@ -38,6 +38,7 @@ export interface MountedSession {
   hostKey: SessionHostKey;
   websocketPath: string;
   status: string;
+  disabled?: boolean;
 }
 
 let parkingEl: HTMLElement | null = null;
@@ -101,8 +102,17 @@ export function getSessionParking(): HTMLElement | null {
   return parkingEl;
 }
 
-/** Sessions the pool keeps live. Promotion never changes this set: a promoted
- * session is the same session in a different slot. */
+/**
+ * Sessions the pool keeps live. Promotion never changes this set: a promoted
+ * session is the same session in a different slot.
+ *
+ * Append-only ordering is load-bearing. The pool renders these in a keyed
+ * `{#each}` whose wrappers are reparented out of its own fragment, so a new item
+ * is inserted relative to whichever sibling node the block still believes is
+ * next. Appending means that anchor is always the block's own trailing one,
+ * which never moves; reordering this list would insert a wrapper into another
+ * session's slot.
+ */
 export function mountedSessions(): readonly MountedSession[] {
   return mounted;
 }
@@ -114,7 +124,14 @@ export function isSessionMounted(key: SessionHostKey): boolean {
 export function noteSessionMounted(session: MountedSession): void {
   const existing = mounted.find((candidate) => candidate.hostKey === session.hostKey);
   if (existing) {
-    if (existing.websocketPath === session.websocketPath && existing.status === session.status) return;
+    if (
+      existing.websocketPath === session.websocketPath &&
+      existing.status === session.status &&
+      (existing.disabled ?? false) === (session.disabled ?? false)
+    ) {
+      return;
+    }
+    // Replaced in place rather than appended: see the ordering note above.
     mounted = mounted.map((candidate) => (candidate.hostKey === session.hostKey ? session : candidate));
     return;
   }
@@ -127,9 +144,28 @@ export function noteSessionUnmounted(key: SessionHostKey): void {
   registerSessionSlot(key, null);
 }
 
+const exitListeners = new Set<(key: SessionHostKey, code: number) => void>();
+
+/**
+ * A pooled terminal's exit, routed back to whoever mounted the session.
+ *
+ * The pool renders every workspace's terminals and has no access to the runtime
+ * session records, so it reports the key and lets the mounter decide what a exit
+ * means for that session.
+ */
+export function onSessionExited(cb: (key: SessionHostKey, code: number) => void): () => void {
+  exitListeners.add(cb);
+  return () => exitListeners.delete(cb);
+}
+
+export function noteSessionExited(key: SessionHostKey, code: number): void {
+  for (const listener of [...exitListeners]) listener(key, code);
+}
+
 export function resetSessionHostForTest(): void {
   parkingEl = null;
   for (const key of Object.keys(slotEls)) delete slotEls[key];
   for (const key of Object.keys(slotVisible)) delete slotVisible[key];
   mounted = [];
+  exitListeners.clear();
 }

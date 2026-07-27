@@ -186,6 +186,38 @@ func TestCreateAdHocWorkspaceReusesExistingBranchWhenAsked(t *testing.T) {
 	assert.Equal(branch, checkedOut)
 }
 
+// Reuse is the one case where work does not start at origin/HEAD: the existing
+// branch is adopted at its own tip, however far that has diverged.
+func TestCreateAdHocWorkspaceReuseStartsFromDivergedBranchTip(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	fixture := setupWorkspaceServerFixture(t, nil)
+	// The fixture's "feature" branch carries a commit that main does not.
+	branch := "feature"
+	featureSHA := testGitSHA(t, fixture.remote, "refs/heads/"+branch)
+	mainSHA := testGitSHA(t, fixture.remote, "refs/heads/main")
+	require.NotEqual(mainSHA, featureSHA)
+	reuse := true
+
+	resp, err := fixture.client.HTTP.CreateRepoWorkspaceWithResponse(
+		t.Context(), "gh", "acme", "widget",
+		generated.CreateRepoWorkspaceJSONRequestBody{
+			Branch: &branch, ReuseExistingBranch: &reuse,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, resp.StatusCode(), string(resp.Body))
+	require.NotNil(resp.JSON202)
+
+	ready := waitForWorkspaceReady(t, t.Context(), fixture.client, resp.JSON202.Id)
+	assert.Equal(branch, ready.GitHeadRef)
+	assert.Equal(featureSHA, testGitSHA(t, ready.WorktreePath, "HEAD"),
+		"reuse adopts the existing branch tip, not origin/HEAD")
+	_, err = os.Stat(filepath.Join(ready.WorktreePath, "new.txt"))
+	assert.NoError(err, "the diverged commit's file should be checked out")
+}
+
 // Renaming the branch from inside the worktree is a shell action middleman does
 // not observe, so the workspace keeps its creation-time identity: the old name
 // still resolves to it, and the new name cannot be turned into a second

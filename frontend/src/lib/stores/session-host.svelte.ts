@@ -194,10 +194,35 @@ export function noteSessionExited(key: SessionHostKey, code: number): void {
   for (const listener of [...exitListeners]) listener(key, code);
 }
 
+// A Focus Terminal aimed at a promoted session whose terminal is not on screen
+// yet. The pool mounts and reparents across a tick and a frame, so the store
+// cannot focus the wrapper the moment it reveals the pane - and unlike the
+// workspace host, a pooled session has no placement effect of its own to hand the
+// request to. Deliberately a single slot: only one focus request can be
+// outstanding, and a newer one supersedes it.
+let pendingFocusKey: SessionHostKey | null = null;
+
+export function requestSessionFocus(key: SessionHostKey): void {
+  pendingFocusKey = key;
+}
+
+/** Drop an outstanding request, for when focus moves somewhere else entirely. */
+export function clearSessionFocusRequest(): void {
+  pendingFocusKey = null;
+}
+
+/** True when this session owns the outstanding focus request, which it consumes. */
+export function consumeSessionFocus(key: SessionHostKey): boolean {
+  if (pendingFocusKey !== key) return false;
+  pendingFocusKey = null;
+  return true;
+}
+
 export function resetSessionHostForTest(): void {
   parkingEl = null;
   for (const key of Object.keys(slotEls)) delete slotEls[key];
   for (const key of Object.keys(slotVisible)) delete slotVisible[key];
   mounted = [];
+  pendingFocusKey = null;
   exitListeners.clear();
 }

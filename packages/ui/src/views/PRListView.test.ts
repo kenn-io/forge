@@ -218,6 +218,28 @@ describe("PRListView detail panes", () => {
     expect(navigate).toHaveBeenCalledWith("/pulls/github/acme/widgets/12/files", { replace: true });
   });
 
+  it("pushes history when the other route pane is covered by a zoom", async () => {
+    // Split apart, then maximize the files leaf: the stored tree still says two
+    // leaves, but only one pane is on screen, so moving to it is a navigation
+    // again. Reading the tree alone replaced history here and silently emptied the
+    // Back stack for anyone working maximized.
+    const layout = getPaneLayoutStore("prs");
+    layout.splitTab("files", layout.leafIDForTab("files")!, "horizontal", "after");
+
+    const navigate = vi.fn();
+    renderPRListView({ navigate });
+    await tick();
+    // Maximized from the layout rather than before mounting: the host reconciles a
+    // zoom against what it can actually render on the way up, so a zoom set before
+    // the first measurement is dropped as stale.
+    layout.toggleZoom(layout.leafIDForTab("files")!);
+    await tick();
+
+    await fireEvent.click(screen.getByRole("tab", { name: "Files changed" }));
+
+    expect(navigate).toHaveBeenCalledWith("/pulls/github/acme/widgets/12/files", { replace: false });
+  });
+
   it("pushes history in a flattened layout even when the stored panes are split apart", async () => {
     // Flattening shows one pane in one strip, so a tab click is a navigation
     // again. Reading the stored leaf ids alone said "split apart" and replaced
@@ -486,6 +508,33 @@ describe("PRListView promoted session panes", () => {
     localStorage.clear();
     observedWidth.value = 0;
     vi.restoreAllMocks();
+  });
+
+  it("pushes history when a promoted session covers the other route pane", async () => {
+    // The arrangement promotion makes possible: panes split apart, with a promoted
+    // terminal tabbed in beside the conversation and active while the route is on
+    // files. Both leaves render, but the conversation does not - a third pane in a
+    // leaf is another way for a route pane to be off screen, so moving to it is a
+    // navigation rather than a walk between two visible panes.
+    const layout = getPaneLayoutStore("prs");
+    layout.splitTab("files", layout.leafIDForTab("files")!, "horizontal", "after");
+    layout.promoteTab(AGENT_PANE, { kind: "tab", leafID: layout.leafIDForTab("conversation")! });
+    const { controller } = createClaimTestController("prs", {
+      sessions: [{ paneKey: AGENT_PANE, label: "Helper" }],
+    });
+
+    const navigate = vi.fn();
+    renderPRListView({
+      navigate,
+      detailTab: "files",
+      inlineWorkspace: controller,
+      detail: pullDetailFixture({ id: "ws-1", status: "ready" }),
+    });
+    await tick();
+
+    await fireEvent.click(screen.getByRole("tab", { name: "Conversation" }));
+
+    expect(navigate).toHaveBeenCalledWith("/pulls/github/acme/widgets/12", { replace: false });
   });
 
   it("renders a promoted session's pane and reports it visible", () => {

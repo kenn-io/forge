@@ -24,7 +24,13 @@
 
   interface Props {
     dragScope: string;
-    node: TabbedPanelNode;
+    /**
+     * Undefined only transiently, and only for the recursive children below: they
+     * read `node.first`/`node.second` off their parent, so an ancestor that stops
+     * being a split hands them nothing for the rest of that flush while they are
+     * still mounted. See the guards on every read.
+     */
+    node: TabbedPanelNode | undefined;
     tabs: TabbedPanelDescriptor[];
     activeTabKey: string;
     renderTab: Snippet<[string, boolean]>;
@@ -241,7 +247,7 @@
   }
 
   function clearExternalTabDragState(): void {
-    if (draggedTabKey !== null && node.type === "leaf" && !node.tabs.includes(draggedTabKey)) {
+    if (draggedTabKey !== null && node?.type === "leaf" && !node.tabs.includes(draggedTabKey)) {
       clearTabDragState();
       return;
     }
@@ -290,7 +296,7 @@
     targetTabKey: string;
     placement: "before" | "after";
   } | null {
-    if (node.type !== "leaf") return null;
+    if (node?.type !== "leaf") return null;
     let lastTargetKey: string | null = null;
     const tabEls = Array.from(tablist.querySelectorAll<HTMLElement>("[data-tabbed-panel-tab-key]"));
     for (const tabEl of tabEls) {
@@ -314,7 +320,7 @@
   ): void {
     if (!canSortTabs()) return;
     if (sourceTabKey === targetTabKey) return;
-    if (node.type !== "leaf") return;
+    if (node?.type !== "leaf") return;
     if (placement === "before") {
       onMoveTabBefore?.(sourceTabKey, targetTabKey);
       return;
@@ -426,13 +432,15 @@
   }
 
   function measureSplit(): number {
-    if (node.type !== "split" || !splitEl) return 0;
+    // Reached from a ResizeObserver batch, which can be delivered after the
+    // parent stopped being a split.
+    if (node?.type !== "split" || !splitEl) return 0;
     const rect = splitEl.getBoundingClientRect();
     return node.direction === "horizontal" ? rect.width : rect.height;
   }
 
   $effect(() => {
-    if (node.type !== "split" || !splitEl) return;
+    if (node?.type !== "split" || !splitEl) return;
     splitSize = measureSplit();
     if (typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(() => {
@@ -443,14 +451,14 @@
   });
 
   function startResize(): void {
-    if (node.type !== "split") return;
+    if (node?.type !== "split") return;
     resizeStartRatio = node.ratio;
     splitSize = measureSplit();
     resizeStartSize = splitSize;
   }
 
   function handleResize(event: SplitResizeEvent): void {
-    if (node.type !== "split") return;
+    if (node?.type !== "split") return;
     const ratio = resizeStartRatio + event.delta / Math.max(1, resizeStartSize);
     onRatioChange?.(node.id, clampTabbedPanelRatio(ratio));
   }
@@ -468,14 +476,14 @@
    * silently changing ratios the user cannot see.
    */
   const zoomSide = $derived.by<"first" | "second" | null>(() => {
-    if (node.type !== "split" || zoomedLeafID === null) return null;
+    if (node?.type !== "split" || zoomedLeafID === null) return null;
     if (collectTabbedPanelLeafIDs(node.first).includes(zoomedLeafID)) return "first";
     if (collectTabbedPanelLeafIDs(node.second).includes(zoomedLeafID)) return "second";
     return null;
   });
 
   function paneVisible(tabKey: string): boolean {
-    return !ancestorHidden && node.type === "leaf" && node.activeTabKey === tabKey;
+    return !ancestorHidden && node?.type === "leaf" && node.activeTabKey === tabKey;
   }
 
   function canSortTabs(): boolean {
@@ -483,7 +491,10 @@
   }
 </script>
 
-{#if node.type === "leaf"}
+{#if node === undefined}
+  <!-- A branch removed mid-flush: its children are still mounted for the rest of
+       the tick, with nothing left to render. -->
+{:else if node.type === "leaf"}
   <section class="tabbed-panel-leaf" aria-label={leafLabel}>
     <div
       class={["tabbed-panel-tabs", { "drag-sorting": draggedTabKey !== null }]}

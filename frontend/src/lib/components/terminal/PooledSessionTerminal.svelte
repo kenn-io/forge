@@ -1,7 +1,7 @@
 <script lang="ts">
   import { tick } from "svelte";
   import TerminalPane from "./TerminalPane.svelte";
-  import type { MountedSession } from "../../stores/session-host.svelte.ts";
+  import { consumeSessionFocus, type MountedSession } from "../../stores/session-host.svelte.ts";
 
   interface Props {
     session: MountedSession;
@@ -49,6 +49,17 @@
     return () => {
       cancelled = true;
     };
+  });
+
+  // Focus a terminal that was asked for before it existed. Focus Terminal on a
+  // promoted session reveals its pane and the pool mounts the wrapper a tick and a
+  // frame later, by which time the request would otherwise be lost: focusing an
+  // inert, still-parked wrapper does nothing at all.
+  $effect(() => {
+    if (!attached || !active) return;
+    const node = wrapper;
+    if (!node || !consumeSessionFocus(session.hostKey)) return;
+    node.focus();
   });
 
   // The wrapper is reparented out of this component's own fragment, so Svelte

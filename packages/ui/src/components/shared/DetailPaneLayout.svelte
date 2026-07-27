@@ -184,8 +184,17 @@
   // user last worked in is what the pane keyboard commands act on, so a surface
   // that has no route to sync (Issues) still has to record it or its commands
   // target the route's pane instead of the focused one.
+  // Deduped against what this reported last, NOT against the layout's stored value:
+  // `lastFocusedTabKey` is also written by tab activation, a deep link, and a fresh
+  // promotion, so keying off it swallowed the first real focus in a pane the layout
+  // already named - and the host, which keeps its own per-workspace record, has no
+  // other way to learn about it. Repeat focus in the same pane is still silent,
+  // since a surface that rewrites the URL on focus must not do so on every click.
+  let lastReportedFocus: string | null = null;
+
   function focusPane(tabKey: string): void {
-    if (layout.lastFocusedTabKey() === tabKey) return;
+    if (lastReportedFocus === tabKey) return;
+    lastReportedFocus = tabKey;
     layout.noteFocused(tabKey);
     onFocusPane?.(tabKey);
   }

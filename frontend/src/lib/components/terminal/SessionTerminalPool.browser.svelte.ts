@@ -7,6 +7,7 @@ import {
   noteSessionMounted,
   noteSessionUnmounted,
   registerSessionSlot,
+  requestSessionFocus,
   resetSessionHostForTest,
   sessionHostKey,
   setSessionSlotVisible,
@@ -138,6 +139,24 @@ describe("SessionTerminalPool", () => {
     // the pool renders it outside the workspace host, so without a focusable
     // wrapper the command silently leaves the keyboard where it was.
     expect(document.activeElement).toBe(wrapper);
+  });
+
+  it("focuses a session whose terminal was asked for before it existed", async () => {
+    // The production order for Focus Terminal on a promoted session: the request is
+    // made while the pane is still hidden, so nothing is mounted to focus. The pool
+    // mounts and reparents across a tick and a frame, and an unattached wrapper is
+    // inert - focusing it then does nothing.
+    mountSession(agent);
+    requestSessionFocus(agent);
+    mountPool();
+    showIn(agent, slotA);
+    await waitForReparent();
+
+    await vi.waitFor(() => {
+      const wrapper = wrapperFor(agent);
+      expect(wrapper).not.toBeNull();
+      expect(document.activeElement).toBe(wrapper);
+    }, WAIT);
   });
 
   it("keeps two sessions live at once", async () => {

@@ -21,6 +21,7 @@ import {
   type Page,
 } from "@playwright/test";
 import { startIsolatedWorkspaceE2EServer, type IsolatedE2EServer } from "./support/e2eServer";
+import { runPaletteCommand } from "./support/paletteCommands";
 
 type WorkspaceStatusResponse = {
   id: string;
@@ -131,6 +132,75 @@ test.describe("embedded workspace launcher", () => {
       await page.keyboard.press("Escape");
       await expect(launcher).toBeHidden();
       await typeMarkerCommand(page, container, workspace.worktree_path, "launcher-marker-after-dismiss");
+    } finally {
+      await api?.dispose();
+      await isolatedServer?.stop();
+    }
+  });
+
+  test("the palette opens the launcher over a pane the user had put away", async ({ page }) => {
+    // The overlay is drawn by the embedded view, so a pane that is not on screen has
+    // nowhere to draw it: the command would report success and produce no UI. Being
+    // off screen has three shapes, and only the real app arranges them - the store
+    // tests can assert a reveal, not that the overlay ends up visible.
+    test.skip(
+      !hasCommand("git") || !hasCommand("tmux", ["-V"]),
+      "git and tmux are required for the real workspace flow",
+    );
+
+    let isolatedServer: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    try {
+      isolatedServer = await startIsolatedWorkspaceE2EServer();
+      api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
+      await createIssueWorkspace(api, 10);
+
+      await page.goto(`${isolatedServer.info.base_url}/issues/github/acme/widgets/10`);
+      await expect(page.locator(".detail-pane-workspace-slot .workspace-host-wrapper")).toBeVisible();
+
+      // Dismissed by hand: the auto-open happens once per workspace, so everything
+      // below is the maintainer asking for the launcher again.
+      const launcher = page.getByRole("dialog", { name: "Launch a session" });
+      await expect(launcher).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(launcher).toBeHidden();
+
+      const slot = page.locator(".detail-pane-workspace-slot");
+      const conversationLeaf = page.locator(".tabbed-panel-leaf").filter({
+        has: page.getByRole("tab", { name: "Conversation" }),
+      });
+
+      // 1. Collapsed.
+      await page.getByRole("button", { name: "Collapse Terminal" }).click();
+      await expect(slot).toHaveCount(0);
+      await runPaletteCommand(page, "Launch a workspace session");
+      await expect(launcher).toBeVisible();
+      await page.keyboard.press("Escape");
+
+      // 2. Buried under another leaf's zoom.
+      await page.getByRole("tab", { name: "Conversation" }).click();
+      await conversationLeaf.locator('[data-testid="pane-toggle-zoom"]').click();
+      await expect(slot).toHaveCount(0);
+      await runPaletteCommand(page, "Launch a workspace session");
+      await expect(launcher).toBeVisible();
+      await page.keyboard.press("Escape");
+
+      // 3. Tabbed behind a sibling, which leaves it neither hidden nor maximized.
+      await page
+        .locator(".tabbed-panel-leaf")
+        .filter({ has: slot })
+        .getByRole("tab", { name: "Workspace" })
+        .dragTo(conversationLeaf.getByRole("tab", { name: "Conversation" }));
+      await page.getByRole("tab", { name: "Conversation" }).click();
+      await expect(slot).toHaveCount(0);
+      await runPaletteCommand(page, "Launch a workspace session");
+      await expect(launcher).toBeVisible();
+
+      // And it still launches from there, rather than being a visible overlay over a
+      // pane that cannot accept the session.
+      await launcher.getByRole("button", { name: "Shell" }).click();
+      await expect(launcher).toBeHidden();
+      await expect(page.locator(".detail-pane-workspace-slot .terminal-container")).toBeVisible();
     } finally {
       await api?.dispose();
       await isolatedServer?.stop();

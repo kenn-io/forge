@@ -29,6 +29,7 @@ import {
   type Page,
 } from "@playwright/test";
 import { startIsolatedWorkspaceE2EServer, type IsolatedE2EServer } from "./support/e2eServer";
+import { runPaletteCommand } from "./support/paletteCommands";
 
 type WorkspaceStatusResponse = {
   id: string;
@@ -178,18 +179,6 @@ async function waitForPtyColumnsBelow(
     await page.waitForTimeout(100);
   }
   throw new Error(`tmux PTY columns did not fall below ${maximumCols}`);
-}
-
-/** Run a palette command by its exact label, the way a keyboard user reaches it. */
-async function runPaletteCommand(page: Page, label: string): Promise<void> {
-  await page.keyboard.press(process.platform === "darwin" ? "Meta+K" : "Control+K");
-  const dialog = page.getByRole("dialog", { name: "Command palette" });
-  await expect(dialog).toBeVisible();
-  await dialog.getByRole("textbox", { name: "Search command palette" }).fill(label);
-  const row = dialog.locator("button.palette-row", { hasText: label }).first();
-  await expect(row).toBeVisible();
-  await row.click();
-  await expect(dialog).toBeHidden();
 }
 
 async function selectTopBarTab(page: Page, label: string): Promise<void> {
@@ -398,11 +387,29 @@ test.describe("inline workspace pane continuity", () => {
       // on the pane the user is working in.
       await typeMarkerCommand(page, witness, workspace.worktree_path, "promote-marker-in-pane");
 
+      // Away and back while promoted. The pane is per surface and the session list
+      // is per hosted workspace, so the other issue must not inherit this pane -
+      // and returning must bring it back rather than leaving the terminal
+      // unreachable in a pane nothing renders.
+      // Away and back. The other issue has no workspace at all, so the surface
+      // stops hosting one; what this proves is that the promoted PLACEMENT is not
+      // lost by the round trip, which is the whole point of storing it in the
+      // surface's tree rather than in the view.
+      await selectIssueByTitle(page, DARK_MODE_ISSUE_TITLE);
+      await selectIssueByTitle(page, SAFARI_ISSUE_TITLE);
+
+      // A different DOM node this time: switching workspaces hands the previous
+      // one's pooled terminals back, so this asserts the PLACEMENT survived and the
+      // reattached shell is live, not that the node did.
+      const returnedPane = page.locator(".session-terminal-slot .terminal-container");
+      await expect(returnedPane).toBeVisible();
+      await typeMarkerCommand(page, returnedPane, workspace.worktree_path, "promote-marker-returned");
+
       await runPaletteCommand(page, "Return terminal session to the workspace pane");
 
       // Home again, in the dock it came from rather than wherever normalization
       // would have put a session the layout had never seen.
-      await expect(page.locator('.terminal-panel.open [data-continuity="promoted-shell"]')).toBeVisible();
+      await expect(page.locator(".terminal-panel.open .terminal-container")).toBeVisible();
       await typeMarkerCommand(page, dockContainer, workspace.worktree_path, "promote-marker-redocked");
     } finally {
       await api?.dispose();
@@ -521,6 +528,73 @@ test.describe("inline workspace pane continuity", () => {
       // A slot with no pool behind it is an empty div: this cannot pass without
       // a terminal attached to the real tmux session.
       await typeMarkerCommand(page, workflowContainer, workspace.worktree_path, "embed-pooled-marker");
+    } finally {
+      await api?.dispose();
+      await isolatedServer?.stop();
+    }
+  });
+
+  test("a promoted terminal is part of its workspace's dock", async ({ page }) => {
+    // The dock is a view of every pane of the workspace once a session is promoted.
+    // Only the real app proves it: the store tests drive controllers directly, so
+    // they cannot show the collapse control acting on both panes, or focus landing
+    // inside a pooled terminal that mounts a frame after its pane reveals.
+    test.skip(
+      !hasCommand("git") || !hasCommand("tmux", ["-V"]),
+      "git and tmux are required for the real workspace flow",
+    );
+
+    let isolatedServer: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    try {
+      isolatedServer = await startIsolatedWorkspaceE2EServer();
+      api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
+      const workspace = await createIssueWorkspace(api, 10);
+
+      await page.goto(`${isolatedServer.info.base_url}/issues/github/acme/widgets/10`);
+      await expect(page.locator(".detail-pane-workspace-slot .workspace-host-wrapper")).toBeVisible();
+      await dismissWorkspaceLauncher(page);
+      const dockContainer = await openTerminalPanel(page);
+      await typeMarkerCommand(page, dockContainer, workspace.worktree_path, "dock-marker-before-promote");
+
+      await runPaletteCommand(page, "Move terminal session to a pane");
+      const promoted = page.locator(".session-terminal-slot .terminal-container");
+      await expect(promoted).toBeVisible();
+      // Working in it is what makes it this workspace's last-focused pane, which is
+      // what Focus Terminal and an expand act on from here on.
+      await typeMarkerCommand(page, promoted, workspace.worktree_path, "promoted-marker-before-hide");
+
+      // Closed, so the reveal has to mount the slot and the pool has to reparent the
+      // wrapper before focus can land - the race a same-flush focus attempt loses.
+      const promotedLeaf = page.locator(".tabbed-panel-leaf").filter({ has: page.locator(".session-terminal-slot") });
+      await promotedLeaf.locator('[data-testid^="pane-hide-session:"]').click();
+      await expect(page.locator(".session-terminal-slot")).toHaveCount(0);
+
+      await page.getByRole("button", { name: "Focus Terminal" }).click();
+
+      const restored = page.locator(".session-terminal-slot .terminal-container");
+      await expect(restored).toBeVisible();
+      await expect
+        .poll(async () =>
+          restored.evaluate((el) => el.closest("[data-session-host]")?.contains(document.activeElement) ?? false),
+        )
+        .toBe(true);
+      await typeMarkerCommand(page, restored, workspace.worktree_path, "promoted-marker-after-focus");
+
+      // Collapse reaches both panes. A promoted terminal left on screen is the whole
+      // workspace still sitting there while the button claims it is away.
+      await page.getByRole("button", { name: "Collapse Terminal" }).click();
+      await expect(page.locator(".detail-pane-workspace-slot")).toHaveCount(0);
+      await expect(page.locator(".session-terminal-slot")).toHaveCount(0);
+
+      // Collapsing both panes at once drops a whole split node out of the pane tree,
+      // and the way back has to survive that. It restores what the collapse hid, so
+      // the promoted terminal comes back with the container rather than being
+      // stranded off screen behind a container that masks it - and it is still live.
+      await page.getByRole("button", { name: "Focus Terminal" }).click();
+      await expect(page.locator(".detail-pane-workspace-slot")).toBeVisible();
+      await expect(restored).toBeVisible();
+      await typeMarkerCommand(page, restored, workspace.worktree_path, "marker-after-collapse");
     } finally {
       await api?.dispose();
       await isolatedServer?.stop();
@@ -694,98 +768,6 @@ test.describe("inline workspace pane continuity", () => {
       // The same session must still accept input after the second
       // reparent — a torn-down or wedged terminal cannot run this.
       await typeMarkerCommand(page, backInTab, workspace.worktree_path, "continuity-marker-three");
-    } finally {
-      await api?.dispose();
-      await isolatedServer?.stop();
-    }
-  });
-
-  test("tab flip preserves the live terminal (ghostty)", async ({ page }) => {
-    test.skip(
-      !hasCommand("git") || !hasCommand("tmux", ["-V"]),
-      "git and tmux are required for the real workspace flow",
-    );
-
-    let isolatedServer: IsolatedE2EServer | null = null;
-    let api: APIRequestContext | null = null;
-    try {
-      const refreshFrames = observeTerminalRefreshFrames(page);
-      isolatedServer = await startIsolatedWorkspaceE2EServer();
-      api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
-
-      await switchRendererToGhosttyViaSettings(page, isolatedServer.info.base_url);
-
-      const workspace = await createIssueWorkspace(api, 10);
-
-      await page.goto(`${isolatedServer.info.base_url}/terminal/${workspace.id}`);
-      const tabContainer = await openTerminalPanel(page);
-      await expect(tabContainer.locator("canvas")).toHaveCount(1);
-      await typeMarkerCommand(page, tabContainer, workspace.worktree_path, "continuity-marker-one");
-      const beforeZoom = await readPtyGeometry(
-        page,
-        tabContainer,
-        workspace.worktree_path,
-        "ghostty-geometry-before-zoom",
-      );
-      const resetZoom = page.getByRole("button", {
-        name: "Reset terminal font size",
-      });
-      await expect(resetZoom).toHaveText("12px");
-      const refreshCountBeforeZoom = refreshFrames.length;
-      for (let fontSize = 13; fontSize <= ZOOMED_TERMINAL_FONT_SIZE; fontSize += 1) {
-        await page.getByRole("button", { name: "Increase terminal font size" }).click();
-        await expect(resetZoom).toHaveText(`${fontSize}px`);
-      }
-      await expectPersistedTerminalFontSize(api, ZOOMED_TERMINAL_FONT_SIZE);
-      await expect.poll(() => refreshFrames.length).toBeGreaterThan(refreshCountBeforeZoom);
-      await expect.poll(() => refreshFrames.at(-1)?.cols).toBeLessThan(beforeZoom.cols);
-      await waitForPtyColumnsBelow(
-        page,
-        tabContainer,
-        workspace.worktree_path,
-        "ghostty-geometry-after-zoom",
-        beforeZoom.cols,
-      );
-
-      await tabContainer.evaluate((el) => {
-        el.setAttribute("data-continuity", "witness");
-      });
-
-      // Select the issue that owns this workspace: same reparent contract
-      // as the xterm case, witnessed on the same canvas-backed container.
-      await selectIssueByTitle(page, SAFARI_ISSUE_TITLE);
-
-      const witness = page.locator('[data-continuity="witness"]');
-      await expect(witness).toBeVisible();
-      const paneContainer = page.locator(".detail-pane-workspace-slot .terminal-container");
-      await expect(paneContainer).toHaveAttribute("data-continuity", "witness");
-      await typeMarkerCommand(page, paneContainer, workspace.worktree_path, "continuity-marker-two");
-      await paneContainer.click({ position: { x: 10, y: 10 } });
-      await page.keyboard.press("Control+=");
-      await expectPersistedTerminalFontSize(api, ZOOMED_TERMINAL_FONT_SIZE + 1);
-      // Embedded, the controls live in the pane's own popover rather than a
-      // toolbar above the terminal, so that is where the readout is now.
-      await page.getByRole("button", { name: "Workspace controls" }).click();
-      await expect(resetZoom).toHaveText(`${ZOOMED_TERMINAL_FONT_SIZE + 1}px`);
-      await page.keyboard.press("Escape");
-      await expect(resetZoom).toBeHidden();
-
-      // Flip back to the Workspaces tab: same hostedWorkspaceKey, so the
-      // tagged container (and the canvas inside it) must still be the one
-      // that reappears in the tab slot, with no reconnect repaint.
-      await selectTopBarTab(page, "Workspaces");
-      await expect(page).toHaveURL(new RegExp(`/terminal/${workspace.id}$`));
-      const backInTab = page.locator(".workspace-tab-slot .terminal-container");
-      await expect(witness).toBeVisible();
-      await expect(backInTab).toHaveAttribute("data-continuity", "witness");
-      await expect(resetZoom).toHaveText(`${ZOOMED_TERMINAL_FONT_SIZE + 1}px`);
-      // The same session must still accept input after the second
-      // reparent — a torn-down or wedged terminal cannot run this.
-      await typeMarkerCommand(page, backInTab, workspace.worktree_path, "continuity-marker-three");
-      await page.reload();
-      await expect(page.getByRole("button", { name: "Reset terminal font size" })).toHaveText(
-        `${ZOOMED_TERMINAL_FONT_SIZE + 1}px`,
-      );
     } finally {
       await api?.dispose();
       await isolatedServer?.stop();

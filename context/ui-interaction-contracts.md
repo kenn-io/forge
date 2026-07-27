@@ -333,7 +333,19 @@ Keyboard handlers must have one clear owner for each key press.
 - A promoted session pane is dropped from a surface's stored tree only on an
   authoritative deletion of its workspace. A stopped, exited, or reconnecting
   session is absent from the runtime in exactly the same way, and keeping the
-  placement is what lets a relaunch reappear where the user put it.
+  placement is what lets a relaunch reappear where the user put it. There is no
+  session-deletion signal to react to either: the API's only session mutation is
+  `stop-host-runtime-session`, a DELETE that means stop.
+- Getting back to a collapsed dock restores the whole collapsed set, not the
+  remembered pane alone: a container masks the sessions its workspace promoted, so
+  revealing it by itself hands back an empty pane while the terminal the user asked
+  for stays hidden (`frontend/src/lib/stores/workspace-host.svelte.ts::restoreCollapsedPanes`).
+- A pane tree node that leaves the on-screen tree takes its children with it, and
+  those children read the removed node's `first`/`second` for the rest of that
+  flush - `undefined`, while still mounted, including from a `ResizeObserver`
+  batch. Every read of that prop is guarded: throwing there unmounts the whole
+  surface, leaving a detail with no panes and no way back
+  (`packages/ui/src/components/shared/TabbedPanelTree.svelte`).
 - The desktop `.app-main` clips overflow but must never become a scroll
   container; focus-driven scrolling there shifts every mode rail and creates
   matching chrome gaps (`frontend/src/App.svelte::.app-main`).

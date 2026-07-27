@@ -227,8 +227,19 @@
     window.__BASE_PATH__ ?? "/"
   ).replace(/\/$/, "");
   const { settings: settingsStore } = getStores();
-  let terminalZoomSaving = $state(false);
-  let terminalOptionsSaving = $state(false);
+  // Launcher, controls, and pending-write state is keyed by workspace identity
+  // rather than held as bare flags: one embedded view serves every selection on its
+  // surface, so a switch would otherwise inherit the previous workspace's open
+  // overlay and its in-flight writes.
+  const viewWorkspaceKey = $derived(`${workspaceId}\u0000${workspaceHostKey ?? ""}`);
+  // Each pending write remembers the workspace it started for. An operation's
+  // completion can land after the user moved on, and a bare boolean would then
+  // report the NEXT workspace's controls busy - disabling them and pinning their
+  // popover open with nothing left to clear it.
+  let terminalZoomSavingFor = $state<string | null>(null);
+  let terminalOptionsSavingFor = $state<string | null>(null);
+  const terminalZoomSaving = $derived(terminalZoomSavingFor === viewWorkspaceKey);
+  const terminalOptionsSaving = $derived(terminalOptionsSavingFor === viewWorkspaceKey);
   const terminalZoom = createTerminalZoomController({
     store: settingsStore,
     persist: async (terminal) => (await updateSettings({ terminal })).terminal,
@@ -239,7 +250,10 @@
       });
     },
     onPendingChange: (pending) => {
-      terminalZoomSaving = pending;
+      // Single-flight per view, so "no longer pending" is absolute: clearing the
+      // owner outright is what stops a save that finished after a switch from
+      // leaving its originating workspace flagged forever.
+      terminalZoomSavingFor = pending ? viewWorkspaceKey : null;
     },
   });
   const terminalFontSize = $derived(
@@ -345,7 +359,8 @@
 
   let workflowPresets = $state<WorkflowPreset[]>(loadWorkflowPresets());
   let selectedWorkflowPresetId = $state<string | null>(null);
-  let applyingWorkflowPreset = $state(false);
+  let applyingWorkflowPresetFor = $state<string | null>(null);
+  const applyingWorkflowPreset = $derived(applyingWorkflowPresetFor === viewWorkspaceKey);
 
   type SidebarTab = "diff" | "pr" | "issue" | "reviews" | "kata_task";
 
@@ -567,21 +582,16 @@
   // surface rather than the flatten width: unlike the controls, the overlay is a
   // modal and needs no chrome of its own to live in.
   const launcherMode = $derived(paneSurface !== undefined);
-  // Launcher and controls state is keyed by workspace identity rather than held as a
-  // bare flag: one embedded view serves every selection on its surface, so a switch
-  // to another workspace would otherwise inherit the previous one's open overlay -
-  // and the once-per-workspace auto-open guard would then refuse to open the one the
-  // new workspace actually needs.
-  const viewWorkspaceKey = $derived(`${workspaceId}\u0000${workspaceHostKey ?? ""}`);
   // `auto` records who opened it: an overlay the view raised over an empty pane is
   // its own to take back once there is something to show, while one the user asked
   // for stays until they dismiss it - they may be picking a second session.
   let launcherState = $state<{ workspaceKey: string; auto: boolean } | null>(null);
   const launcherOpen = $derived(launcherState?.workspaceKey === viewWorkspaceKey);
-  // Which workspace the overlay auto-opened for, so selecting the same item twice
-  // does not reopen a launcher the user dismissed, while a different workspace with
-  // no session still gets one.
-  let launcherAutoOpenedFor = $state<string | null>(null);
+  // Which workspaces the overlay has auto-opened for, so selecting the same item
+  // twice does not reopen a launcher the user dismissed, while a different workspace
+  // with no session still gets one. A list rather than a single slot: A, then B,
+  // then back to A must not reopen A's launcher.
+  let launcherAutoOpenedFor = $state<string[]>([]);
 
   function openLauncher(): void {
     if (!launcherMode) {
@@ -591,9 +601,18 @@
     launcherState = { workspaceKey: viewWorkspaceKey, auto: false };
   }
 
-  /** The view's own fallback when a pane has nothing left to render. */
+  /**
+   * The view's own fallback when a pane has nothing left to render.
+   *
+   * Once per workspace, for every automatic path: the empty pane on arrival and the
+   * one left behind when the last session goes away are the same situation, and a
+   * launcher that came back each time would trap a user who dismissed it - revisit
+   * the item, close a session, and it is in the way again. Their own route back is
+   * the Launch button in the pane's controls.
+   */
   function autoOpenLauncher(): void {
-    launcherAutoOpenedFor = viewWorkspaceKey;
+    if (launcherAutoOpenedFor.includes(viewWorkspaceKey)) return;
+    launcherAutoOpenedFor = [...launcherAutoOpenedFor, viewWorkspaceKey];
     launcherState = { workspaceKey: viewWorkspaceKey, auto: true };
   }
 
@@ -644,7 +663,7 @@
     const workspaceKey = viewWorkspaceKey;
     const anySession = runtimeSessions.length > 0;
     const openState = launcherState;
-    const autoOpened = launcherAutoOpenedFor === workspaceKey;
+    const autoOpened = launcherAutoOpenedFor.includes(workspaceKey);
     untrack(() => {
       if (tabs.length > 0 && activeMissing) selectWorkspaceTab(tabs[0]!.key);
       // A docked terminal is not a workflow tab but is very much on screen, so an
@@ -2268,7 +2287,8 @@
     if (!preset) return;
     const id = workspaceId;
     const hostKey = workspaceHostKey;
-    applyingWorkflowPreset = true;
+    const presetOwner = viewWorkspaceKey;
+    applyingWorkflowPresetFor = presetOwner;
     try {
       const keyMap: Record<string, string> = {};
       for (const spec of preset.sessions) {
@@ -2308,7 +2328,10 @@
         tone: "danger",
       });
     } finally {
-      if (isCurrentWorkspace(id, hostKey)) applyingWorkflowPreset = false;
+      // Cleared for the workspace it started on, whatever is selected now: keyed on
+      // the current workspace instead, a preset that finished after a switch would
+      // leave its own workspace stuck applying for the rest of the session.
+      if (applyingWorkflowPresetFor === presetOwner) applyingWorkflowPresetFor = null;
     }
   }
 
@@ -3945,7 +3968,10 @@
     disabled={actionsBlocked || !terminalSettingsReady || terminalZoomSaving}
     {hostVisible}
     onSavingChange={(saving) => {
-      terminalOptionsSaving = saving;
+      // Owner-keyed like the other pending writes: single-flight per view, so
+      // "done" clears the owner outright rather than only while its workspace is
+      // still the one selected.
+      terminalOptionsSavingFor = saving ? viewWorkspaceKey : null;
     }}
   />
   {#if launcherMode}

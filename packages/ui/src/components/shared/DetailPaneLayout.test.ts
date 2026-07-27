@@ -349,6 +349,22 @@ describe("detail pane layout", () => {
     expect(onFocusPane).not.toHaveBeenCalled();
   });
 
+  it("reports the first focus in a pane the layout already recorded", async () => {
+    // Tab activation, a deep link, and a fresh promotion all write
+    // `lastFocusedTabKey` without any pane being focused. Deduping against that
+    // value swallowed the first real focus, and the workspace host - which keeps
+    // its own per-workspace record of the pane the user works in - has no other
+    // source for the event.
+    const layout = store(splitTree());
+    layout.noteFocused("workspace");
+    const onFocusPane = vi.fn();
+    render(DetailPaneLayoutTestHarness, { layout, onFocusPane });
+
+    fireEvent.focusIn(screen.getByTestId("pane-workspace"));
+
+    expect(onFocusPane).toHaveBeenCalledWith("workspace");
+  });
+
   it("records the focused pane for a surface that wants no notification", () => {
     // Issues has no per-pane route and passes no callback. The pane keyboard
     // commands act on the last focused pane, so not recording it there would aim

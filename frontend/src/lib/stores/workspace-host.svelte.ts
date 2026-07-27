@@ -20,7 +20,7 @@ import {
 } from "@middleman/ui/stores/workspace-create-pending";
 import { getStackDepth } from "@middleman/ui/stores/keyboard/modal-stack";
 import { getPaneLayoutStore, resetPaneLayoutStoresForTest } from "@middleman/ui/stores/paneLayout";
-import { getSessionSlotElement } from "./session-host.svelte.ts";
+import { clearSessionFocusRequest, getSessionSlotElement, requestSessionFocus } from "./session-host.svelte.ts";
 import { forgetWorkspaceRoute, getRoute, navigate } from "./router.svelte.ts";
 
 export type HostedWorkspaceKey = { workspaceId: string; hostKey: string | undefined };
@@ -118,10 +118,13 @@ let hostedControlsBusy = $state<string | null>(null);
 // selection - the surface's own last-focused tab is whatever pane the user touched
 // most recently, which is just as often the conversation.
 let lastFocusedWorkspacePane = $state<Record<string, string>>({});
-// What a collapse actually hid, per surface. Expanding restores exactly this set:
-// a promoted pane the user had already closed by hand must not reappear just
-// because collapsing the dock swept every pane of that workspace out of sight.
-const collapsedPaneKeys: Partial<Record<InlineWorkspaceSurface, string[]>> = {};
+// What a collapse actually hid, keyed by surface AND workspace. Expanding restores
+// exactly this set: a promoted pane the user had already closed by hand must not
+// reappear just because collapsing the dock swept every pane of that workspace out
+// of sight. Keyed by workspace too, because one surface collapses many of them in
+// turn - a surface-only ledger lets workspace B's expand restore A's panes and
+// consume the record A still needed.
+const collapsedPaneKeys = new Map<string, string[]>();
 // Opens the hosted view's launcher overlay. Registered by the embedded view, which
 // owns the overlay: a palette command or a Focus Terminal with nothing to focus can
 // only reach it through the store.
@@ -136,6 +139,10 @@ const workspaceIdentityById = new Map<string, WorkspaceItemIdentity>();
 
 function workspaceKeyString(key: HostedWorkspaceKey): string {
   return `${key.workspaceId}\u0000${key.hostKey ?? ""}`;
+}
+
+function collapseLedgerKey(surface: InlineWorkspaceSurface): string {
+  return `${surface}\u0000${workspaceKeyString(desiredKey())}`;
 }
 
 function identityKey(identity: WorkspaceItemIdentity): string {
@@ -212,9 +219,15 @@ const WORKSPACE_PANE_KEY = "workspace";
  */
 function workspacePaneKeysFor(surface: InlineWorkspaceSurface): string[] {
   const layout = getPaneLayoutStore(surface);
+  const key = desiredKey();
   const keys = [WORKSPACE_PANE_KEY];
-  for (const session of promotableSessionsFor(surface)) {
-    if (layout.hasTab(session.paneKey)) keys.push(session.paneKey);
+  // From the STORED tree, not from the sessions the view is publishing right now.
+  // A stopped, exited, or reconnecting session keeps its pane so a relaunch lands
+  // back in it, and a pane that dropped out of dock membership over that gap would
+  // escape a collapse and then reappear on relaunch, flipping the dock from
+  // collapsed to split with no user action.
+  for (const tabKey of layout.storedTabKeys()) {
+    if (sessionPaneKeyMatchesWorkspace(tabKey, key.workspaceId, key.hostKey)) keys.push(tabKey);
   }
   return keys;
 }
@@ -229,12 +242,10 @@ function workspacePaneKeysFor(surface: InlineWorkspaceSurface): string[] {
 function dockTargetPaneKey(surface: InlineWorkspaceSurface): string {
   const remembered = lastFocusedWorkspacePane[workspaceKeyString(desiredKey())];
   if (remembered === undefined || remembered === WORKSPACE_PANE_KEY) return WORKSPACE_PANE_KEY;
-  const layout = getPaneLayoutStore(surface);
-  if (!layout.hasTab(remembered)) return WORKSPACE_PANE_KEY;
-  if (!promotableSessionsFor(surface).some((session) => session.paneKey === remembered)) {
-    return WORKSPACE_PANE_KEY;
-  }
-  return remembered;
+  // Stored membership, for the same reason the dock's pane set uses it: a session
+  // between generations is briefly absent from the published list, and falling back
+  // to the container there would maximize over the pane the user was working in.
+  return workspacePaneKeysFor(surface).includes(remembered) ? remembered : WORKSPACE_PANE_KEY;
 }
 
 function dockModeFor(surface: InlineWorkspaceSurface): InlineDockMode {
@@ -244,7 +255,12 @@ function dockModeFor(surface: InlineWorkspaceSurface): InlineDockMode {
   if (keys.every((key) => hidden.includes(key))) return "collapsed";
   const zoomed = layout.zoomedLeafID();
   if (zoomed === null) return "split";
-  return keys.some((key) => !hidden.includes(key) && layout.leafIDForTab(key) === zoomed) ? "expanded" : "split";
+  // Membership in the zoomed leaf is not enough: a workspace pane tabbed behind an
+  // active sibling inside that leaf renders nothing, and reporting "expanded" there
+  // makes the control refuse the expand the user is asking for.
+  return keys.some((key) => !hidden.includes(key) && layout.leafIDForTab(key) === zoomed && layout.isTabActive(key))
+    ? "expanded"
+    : "split";
 }
 
 /**
@@ -288,6 +304,20 @@ function revealPane(surface: InlineWorkspaceSurface, tabKey: string): void {
   if (zoomed !== null && zoomed !== leafID) layout.clearZoom();
 }
 
+/**
+ * Unhide exactly what a collapse of ours hid.
+ *
+ * Everything, when no collapse is on record - a reload, or panes hidden some
+ * other way - but a pane the user closed themselves after collapsing stays
+ * closed.
+ */
+function restoreCollapsedPanes(surface: InlineWorkspaceSurface): void {
+  const layout = getPaneLayoutStore(surface);
+  const ledgerKey = collapseLedgerKey(surface);
+  for (const key of collapsedPaneKeys.get(ledgerKey) ?? workspacePaneKeysFor(surface)) layout.setHidden(key, false);
+  collapsedPaneKeys.delete(ledgerKey);
+}
+
 function revealWorkspacePane(surface: InlineWorkspaceSurface): void {
   revealPane(surface, WORKSPACE_PANE_KEY);
 }
@@ -302,8 +332,17 @@ function revealWorkspacePane(surface: InlineWorkspaceSurface): void {
  */
 function unzoomWorkspacePane(surface: InlineWorkspaceSurface): void {
   const layout = getPaneLayoutStore(surface);
-  const leafID = layout.leafIDForTab(WORKSPACE_PANE_KEY);
-  if (leafID !== null && layout.zoomedLeafID() === leafID) layout.clearZoom();
+  const zoomed = layout.zoomedLeafID();
+  if (zoomed === null) return;
+  // Any pane of this workspace, not just the container: a promoted session can hold
+  // the zoom too, and leaving that one maximized opens the next item's detail behind
+  // a fullscreen terminal belonging to the item the user just left.
+  for (const key of workspacePaneKeysFor(surface)) {
+    if (layout.leafIDForTab(key) === zoomed) {
+      layout.clearZoom();
+      return;
+    }
+  }
 }
 
 export function isHostVisible(): boolean {
@@ -452,6 +491,7 @@ function dropWorkspaceSessionPanes(workspaceId: string, hostKey: string | undefi
     }
   }
   const key = workspaceKeyString({ workspaceId, hostKey });
+  for (const surface of INLINE_SURFACES) collapsedPaneKeys.delete(`${surface}\u0000${key}`);
   if (lastFocusedWorkspacePane[key] === undefined) return;
   const next = { ...lastFocusedWorkspacePane };
   delete next[key];
@@ -605,15 +645,20 @@ function notePaneFocused(surface: InlineWorkspaceSurface, tabKey: string): void 
   if (tabKey === WORKSPACE_PANE_KEY) {
     const key = desiredSlot() === surface ? desiredKey() : null;
     if (key === null || key.workspaceId === "") return;
-    lastFocusedWorkspacePane = { ...lastFocusedWorkspacePane, [workspaceKeyString(key)]: tabKey };
+    recordFocusedPane(workspaceKeyString(key), tabKey);
     return;
   }
   const ref = parseSessionPaneKey(tabKey);
   if (ref === null) return;
-  lastFocusedWorkspacePane = {
-    ...lastFocusedWorkspacePane,
-    [workspaceKeyString({ workspaceId: ref.workspaceId, hostKey: ref.hostKey })]: tabKey,
-  };
+  recordFocusedPane(workspaceKeyString({ workspaceId: ref.workspaceId, hostKey: ref.hostKey }), tabKey);
+}
+
+function recordFocusedPane(workspaceKey: string, tabKey: string): void {
+  // Repeat reports for the same pane are routine - the layout reports focus on
+  // every activation - and rewriting the record would invalidate its readers for
+  // nothing.
+  if (lastFocusedWorkspacePane[workspaceKey] === tabKey) return;
+  lastFocusedWorkspacePane = { ...lastFocusedWorkspacePane, [workspaceKey]: tabKey };
 }
 
 /**
@@ -629,9 +674,16 @@ function focusPromotedSession(paneKey: string): boolean {
   if (hostKey === null) return false;
   const slot = getSessionSlotElement(hostKey);
   const wrapper = slot?.querySelector<HTMLElement>(`[data-session-host="${hostKey}"]`) ?? null;
-  if (wrapper === null) return false;
-  wrapper.focus();
-  return document.activeElement === wrapper;
+  if (wrapper !== null) {
+    wrapper.focus();
+    if (document.activeElement === wrapper) return true;
+  }
+  // Revealing the pane only queues the work: the slot mounts on the next flush and
+  // the pool reparents the wrapper a frame after that, so the terminal is not
+  // focusable yet. Hand the request to the pool, which consumes it the moment that
+  // wrapper is attached and live.
+  requestSessionFocus(hostKey);
+  return false;
 }
 
 function promotableSessionsFor(surface: InlineWorkspaceSurface): readonly PromotableSession[] {
@@ -749,15 +801,11 @@ export function getInlineWorkspaceController(surface: InlineWorkspaceSurface): I
         // promoted terminals on screen while the button claims it is hidden.
         const hidden = layout.hiddenTabKeys();
         const hiding = keys.filter((key) => !hidden.includes(key));
-        collapsedPaneKeys[surface] = hiding;
+        collapsedPaneKeys.set(collapseLedgerKey(surface), hiding);
         for (const key of hiding) layout.setHidden(key, true);
         return;
       }
-      // Exactly what the collapse hid, so a pane the user had closed themselves
-      // stays closed. Everything, when no collapse of ours is on record - a
-      // reload, or a pane hidden some other way.
-      for (const key of collapsedPaneKeys[surface] ?? keys) layout.setHidden(key, false);
-      delete collapsedPaneKeys[surface];
+      restoreCollapsedPanes(surface);
       if (mode === "expanded") {
         const leafID = layout.leafIDForTab(dockTargetPaneKey(surface));
         if (leafID !== null) layout.toggleZoom(leafID);
@@ -773,6 +821,11 @@ export function getInlineWorkspaceController(surface: InlineWorkspaceSurface): I
       // A modal frame is open: leave the layout alone and don't pull
       // focus out of the dialog.
       if (getStackDepth() > 0) return;
+      // The inverse of the Collapse Terminal the user just pressed: the panes it hid
+      // are the panes that come back. Revealing only the remembered one returns an
+      // empty container whenever this workspace's terminals were promoted into panes
+      // of their own, because a container masks the sessions it has promoted.
+      if (dockModeFor(surface) === "collapsed") restoreCollapsedPanes(surface);
       // Nothing to focus. A workspace with no session has no terminal, so revealing
       // its pane lands the user on an empty surface; the launcher is what they
       // actually need next.
@@ -788,6 +841,9 @@ export function getInlineWorkspaceController(surface: InlineWorkspaceSurface): I
       // stays the terminal toolbar's own explicit action.
       const target = dockTargetPaneKey(surface);
       revealPane(surface, target);
+      // An earlier request for some other session must not fire later on a reveal
+      // the user did not ask it for.
+      clearSessionFocusRequest();
       if (target !== WORKSPACE_PANE_KEY) {
         // The user's terminal is in a pane of its own, which the pool renders
         // outside the workspace host: focusing the host would land on the
@@ -843,5 +899,5 @@ export function resetWorkspaceHostForTest(): void {
   hostedControlsBusy = null;
   launcherOpener = null;
   lastFocusedWorkspacePane = {};
-  for (const surface of INLINE_SURFACES) delete collapsedPaneKeys[surface];
+  collapsedPaneKeys.clear();
 }

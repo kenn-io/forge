@@ -161,12 +161,14 @@ vi.mock("@middleman/ui/stores/flash", () => ({
 // mounts in the app. Terminals live in the pool now, so the view on its own
 // renders portal slots and no terminal would ever appear.
 import WorkspaceTerminalView from "./WorkspaceTerminalViewTestHarness.svelte";
+import WorkspacePaneControls from "./WorkspacePaneControls.svelte";
 import { mountedSessions, resetSessionHostForTest, sessionHostPrefix } from "../../stores/session-host.svelte.ts";
 import {
   activeHostedSession,
   getInlineWorkspaceController,
   hostedWorkspaceLauncher,
   hostedWorkspaceControls,
+  workspaceControlsBusy,
   resetWorkspaceHostForTest,
 } from "../../stores/workspace-host.svelte.ts";
 import { navigate } from "../../stores/router.svelte.ts";
@@ -235,6 +237,34 @@ const workspaceResponse = {
   created_at: "2026-04-29T00:00:00Z",
   mr_head_repo_kind: "same_repo",
 };
+
+/**
+ * Serve any workspace id, not just ws-1.
+ *
+ * The default stub answers for ws-1 alone, so a test that switches the view to
+ * another workspace gets a body with no id, the view never reports that workspace
+ * live, and nothing renders - which makes "the overlay is gone" pass for the wrong
+ * reason.
+ */
+function serveAnyWorkspace(): void {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockImplementation((input: Request | URL | string) => {
+      const url = input instanceof Request ? input.url : String(input);
+      const { pathname } = new URL(url, "http://localhost");
+      const match = /\/workspaces\/([^/]+)$/.exec(pathname);
+      if (match) {
+        return Promise.resolve(
+          Response.json({ ...workspaceResponse, id: match[1], tmux_session: `middleman-${match[1]}` }),
+        );
+      }
+      if (pathname.endsWith("/api/v1/workspaces")) {
+        return Promise.resolve(Response.json({ workspaces: [workspaceResponse] }));
+      }
+      return Promise.resolve(Response.json({}));
+    }),
+  );
+}
 
 function runtimeWithSession(createdAt: string) {
   return {
@@ -2572,6 +2602,56 @@ describe("WorkspaceTerminalView", () => {
     await waitFor(() => expect(hostedWorkspaceControls()).toBeNull());
   });
 
+  it("does not report the next workspace busy for a write the previous one started", async () => {
+    // The bug this guards: a preset apply hanging on workspace A, the user switches
+    // to B, and B's controls are reported busy - which disables them and pins their
+    // popover open with nothing left to clear it, since A's apply only clears its
+    // own flag.
+    serveAnyWorkspace();
+    localStorage.setItem(
+      "middleman-workspace-layout-presets",
+      JSON.stringify([
+        {
+          id: "preset-1",
+          name: "Pair",
+          createdAt: "2026-04-29T00:00:00Z",
+          updatedAt: "2026-04-29T00:00:00Z",
+          sessions: [{ sourceKey: "s1", targetKey: "helper", region: "workflow", label: "Helper" }],
+          layout: JSON.parse(persistedSplitWorkflowLayout("s1")),
+        },
+      ]),
+    );
+    const launch = deferred<ReturnType<typeof runtimeWithStaleSession>["sessions"][number]>();
+    mocks.launchWorkspaceSession.mockReturnValue(launch.promise);
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
+    claimForPrs();
+
+    const { rerender } = render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+        paneSurface: "prs" as const,
+      },
+    });
+
+    // The controls live in the pane's popover once embedded, so that is where the
+    // preset menu can be reached at all - and driving the real control is the point:
+    // the previous test of this rule set the busy flag by hand and passed against
+    // the bug.
+    await waitFor(() => expect(hostedWorkspaceControls()).not.toBeNull());
+    render(WorkspacePaneControls);
+    await fireEvent.click(screen.getByRole("button", { name: "Workspace controls" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Workflow presets" }));
+    await fireEvent.click(screen.getAllByRole("button", { name: /Pair/ })[0]!);
+    await waitFor(() => expect(workspaceControlsBusy()).toBe(true));
+
+    await rerender({ workspaceId: "ws-2", paneSurface: "prs" as const });
+
+    await waitFor(() => expect(hostedWorkspaceControls()?.workspaceKey).toContain("ws-2"));
+    expect(workspaceControlsBusy()).toBe(false);
+
+    launch.resolve(runningSession);
+  });
+
   it("keeps its own toolbar on the standalone Workspaces tab", async () => {
     render(WorkspaceTerminalView, {
       props: {
@@ -2745,6 +2825,7 @@ describe("WorkspaceTerminalView", () => {
     });
 
     it("does not carry an open launcher into the next workspace", async () => {
+      serveAnyWorkspace();
       mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
       claimForPrs();
 
@@ -2765,6 +2846,39 @@ describe("WorkspaceTerminalView", () => {
       await rerender({ workspaceId: "ws-2", paneSurface: "prs" as const });
 
       await waitFor(() => expect(screen.queryByRole("dialog", { name: /Launch a session/ })).toBeNull());
+    });
+
+    it("auto-opens again for a workspace visited after another one", async () => {
+      serveAnyWorkspace();
+      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
+      claimForPrs();
+
+      const { rerender } = render(WorkspaceTerminalView, {
+        props: {
+          workspaceId: "ws-1",
+          paneSurface: "prs" as const,
+        },
+      });
+
+      // Dismissed for ws-1, so ws-1 must not get another one...
+      await screen.findByRole("dialog", { name: /Launch a session/ });
+      await fireEvent.keyDown(window, { key: "Escape" });
+      await waitFor(() => expect(screen.queryByRole("dialog", { name: /Launch a session/ })).toBeNull());
+
+      // ...but ws-2 has never been offered one.
+      await rerender({ workspaceId: "ws-2", paneSurface: "prs" as const });
+      await screen.findByRole("dialog", { name: /Launch a session/ });
+      await fireEvent.keyDown(window, { key: "Escape" });
+      await waitFor(() => expect(screen.queryByRole("dialog", { name: /Launch a session/ })).toBeNull());
+
+      await rerender({ workspaceId: "ws-1", paneSurface: "prs" as const });
+
+      // Back on ws-1, whose launcher the user already dismissed. A single-slot
+      // memory forgets ws-1 the moment ws-2 is offered one, and reopening here
+      // traps the user in an overlay they closed.
+      // Settled: the runtime for ws-1 has been applied again and nothing reopened.
+      await waitFor(() => expect(document.querySelector(".terminal-view")).not.toBeNull());
+      expect(screen.queryByRole("dialog", { name: /Launch a session/ })).toBeNull();
     });
 
     it("hands the palette an opener only while a pane is hosting the workspace", async () => {

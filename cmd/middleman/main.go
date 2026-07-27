@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path"
@@ -40,7 +41,6 @@ import (
 	"go.kenn.io/middleman/internal/telemetry"
 	"go.kenn.io/middleman/internal/tokenauth"
 	"go.kenn.io/middleman/internal/web"
-	"go.kenn.io/middleman/internal/workspace"
 )
 
 type splitLogHandler struct {
@@ -252,7 +252,7 @@ func runAgentHookReceiver(args []string, stdin io.Reader, stdout io.Writer) erro
 	fs := flag.NewFlagSet("middleman agent-hook run", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	agent := fs.String("agent", "", "agent integration (claude or codex)")
-	stateDir := fs.String("state-dir", "", "agent activity state directory")
+	configPath := fs.String("config", config.DefaultConfigPath(), "middleman config path")
 	source := fs.String("source", "", "hook source marker")
 	if err := fs.Parse(args); err != nil {
 		return nil
@@ -264,30 +264,51 @@ func runAgentHookReceiver(args []string, stdin io.Reader, stdout io.Writer) erro
 	if err != nil || len(payload) > 1<<20 {
 		return nil
 	}
-	store := agentactivity.NewStore(*stateDir)
-	_ = store.HandleHook(
-		bytes.NewReader(payload), os.Getenv(agentactivity.RuntimeSessionKeyEnv),
+	integration, err := agentactivity.ParseIntegration(*agent)
+	if err != nil {
+		return nil
+	}
+	daemon, err := discoverDaemonHTTP(*configPath, 1500*time.Millisecond)
+	if err != nil {
+		return nil
+	}
+	req, err := http.NewRequest(
+		http.MethodPost,
+		daemon.BaseURL+"/api/v1/agent-hooks/"+url.PathEscape(string(integration)),
+		bytes.NewReader(payload),
 	)
-	if !strings.EqualFold(strings.TrimSpace(*agent), "claude") {
+	if err != nil {
 		return nil
 	}
-	var hook struct {
-		CWD           string `json:"cwd"`
-		HookEventName string `json:"hook_event_name"`
-	}
-	if err := json.Unmarshal(payload, &hook); err != nil || hook.HookEventName != "SessionStart" {
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(
+		"X-Middleman-Runtime-Session-Key",
+		os.Getenv(agentactivity.RuntimeSessionKeyEnv),
+	)
+	resp, err := daemon.Client.Do(req)
+	if err != nil {
 		return nil
 	}
-	startContext, err := workspace.ReadClaudeSessionStartContext(hook.CWD)
-	if err != nil || startContext == "" {
+	defer resp.Body.Close()
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return nil
 	}
-	return json.NewEncoder(stdout).Encode(map[string]any{
-		"hookSpecificOutput": map[string]any{
-			"hookEventName":     "SessionStart",
-			"additionalContext": startContext,
-		},
-	})
+	responseBody, err := io.ReadAll(io.LimitReader(resp.Body, (1<<20)+1))
+	if err != nil || len(responseBody) > 1<<20 {
+		return nil
+	}
+	var output struct {
+		HookOutput json.RawMessage `json:"hook_output"`
+	}
+	if err := json.Unmarshal(responseBody, &output); err != nil ||
+		len(output.HookOutput) == 0 || string(output.HookOutput) == "null" {
+		return nil
+	}
+	if _, err := stdout.Write(output.HookOutput); err != nil {
+		return err
+	}
+	_, err = io.WriteString(stdout, "\n")
+	return err
 }
 
 func runAgentHookInstall(action string, args []string, stdout io.Writer) error {
@@ -331,6 +352,10 @@ func runAgentHookInstall(action string, args []string, stdout io.Writer) error {
 	if !filepath.IsAbs(cfg.DataDir) {
 		return fmt.Errorf("agent hook install requires an absolute data_dir: %q", cfg.DataDir)
 	}
+	absoluteConfigPath, err := filepath.Abs(*configPath)
+	if err != nil {
+		return fmt.Errorf("resolve agent hook config path: %w", err)
+	}
 	executable := strings.TrimSpace(*binary)
 	if executable == "" {
 		executable, err = os.Executable()
@@ -342,7 +367,7 @@ func runAgentHookInstall(action string, args []string, stdout io.Writer) error {
 		result, err := agentactivity.Install(
 			integration,
 			executable,
-			filepath.Join(cfg.DataDir, "agent-activity"),
+			absoluteConfigPath,
 		)
 		if err != nil {
 			return err

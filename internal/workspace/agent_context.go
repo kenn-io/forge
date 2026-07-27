@@ -24,7 +24,6 @@ const (
 
 	untrustedSourceTextTag              = "untrusted-source-text"
 	maxRepositoryAgentInstructionsBytes = 1 << 20
-	maxClaudeSessionStartContextBytes   = 64 << 10
 )
 
 // legacyGeneratedAgentContextMarkers are marker lines written by earlier
@@ -242,6 +241,36 @@ func (m *Manager) PrepareAgentLaunchContext(
 	return writeGeneratedFileAtomic(summary.WorktreePath, relPath, content)
 }
 
+// RenderAgentContextForWorktree regenerates context for a persisted workspace
+// without consulting agent instruction files. An unknown worktree returns an
+// empty string.
+func (m *Manager) RenderAgentContextForWorktree(
+	ctx context.Context, worktreePath string,
+) (string, error) {
+	target, err := canonicalFilesystemPath(worktreePath)
+	if err != nil {
+		return "", err
+	}
+	summaries, err := m.ListSummaries(ctx)
+	if err != nil {
+		return "", err
+	}
+	for i := range summaries {
+		candidate, err := canonicalFilesystemPath(summaries[i].WorktreePath)
+		if err != nil || candidate != target {
+			continue
+		}
+		if err := m.refreshWorkspaceHeadRepo(ctx, &summaries[i].Workspace); err != nil {
+			return "", err
+		}
+		rendered := RenderAgentContext(BuildAgentContext(summaries[i]))
+		return strings.TrimSpace(strings.TrimPrefix(
+			rendered, generatedAgentContextMarker,
+		)), nil
+	}
+	return "", nil
+}
+
 func agentContextRelPath(targetKey string) string {
 	targetKey = strings.TrimSpace(targetKey)
 	switch {
@@ -269,40 +298,6 @@ func renderAgentInstructionFile(worktreePath, relPath string, ctx AgentContext) 
 	}
 	content = append(content, '\n')
 	return append(content, repositoryInstructions...)
-}
-
-// ReadClaudeSessionStartContext returns only Middleman-owned generated
-// workspace context. User files, symlinks, and oversized content are ignored
-// so the user-level SessionStart hook cannot expose arbitrary worktree data.
-func ReadClaudeSessionStartContext(worktreePath string) (string, error) {
-	opened, err := openWorktreePath(worktreePath, "CLAUDE.local.md")
-	if errors.Is(err, os.ErrNotExist) || errors.Is(err, errWorktreePathNotRegular) {
-		return "", nil
-	}
-	if err != nil {
-		return "", err
-	}
-	if opened.file == nil {
-		return "", nil
-	}
-	defer opened.file.Close()
-	if opened.info.Size() > maxClaudeSessionStartContextBytes {
-		return "", nil
-	}
-	content, err := io.ReadAll(io.LimitReader(
-		opened.file, maxClaudeSessionStartContextBytes+1,
-	))
-	if err != nil {
-		return "", err
-	}
-	if len(content) > maxClaudeSessionStartContextBytes {
-		return "", nil
-	}
-	text := string(content)
-	if !strings.HasPrefix(text, generatedAgentContextMarker) {
-		return "", nil
-	}
-	return strings.TrimSpace(strings.TrimPrefix(text, generatedAgentContextMarker)), nil
 }
 
 func readRepositoryAgentInstructions(worktreePath string) []byte {

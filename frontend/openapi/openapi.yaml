@@ -197,6 +197,38 @@ components:
         - key
         - label
       type: object
+    AgentHookOutput:
+      additionalProperties: false
+      properties:
+        hookSpecificOutput:
+          $ref: "#/components/schemas/AgentHookSpecificOutput"
+      required:
+        - hookSpecificOutput
+      type: object
+    AgentHookResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/AgentHookResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        hook_output:
+          $ref: "#/components/schemas/AgentHookOutput"
+      type: object
+    AgentHookSpecificOutput:
+      additionalProperties: false
+      properties:
+        additionalContext:
+          type: string
+        hookEventName:
+          type: string
+      required:
+        - hookEventName
+        - additionalContext
+      type: object
     ApplyReviewSuggestionHostInputBody:
       additionalProperties: false
       properties:
@@ -2287,6 +2319,36 @@ components:
         - name
         - rel_path
         - score
+      type: object
+    HookEvent:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/HookEvent.json
+          format: uri
+          readOnly: true
+          type: string
+        agent_id:
+          type: string
+        cwd:
+          type: string
+        hook_event_name:
+          type: string
+        notification_type:
+          type: string
+        session_id:
+          type: string
+        tool_name:
+          type: string
+      required:
+        - session_id
+        - cwd
+        - hook_event_name
+        - tool_name
+        - notification_type
+        - agent_id
       type: object
     HostDiagnostic:
       additionalProperties: false
@@ -7919,6 +7981,41 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: List activity
+      tags:
+        - Activity
+  /agent-hooks/{agent}:
+    post:
+      operationId: receive-agent-hook
+      parameters:
+        - in: path
+          name: agent
+          required: true
+          schema:
+            type: string
+        - in: header
+          name: X-Middleman-Runtime-Session-Key
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HookEvent"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentHookResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Receive agent lifecycle hook
       tags:
         - Activity
   /archive/pause:

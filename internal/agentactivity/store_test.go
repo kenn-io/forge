@@ -169,7 +169,7 @@ func TestInstallLifecyclePreservesOtherHooks(t *testing.T) {
 }`), 0o600))
 
 			for range 2 {
-				result, err := Install(tt.integration, "/opt/middleman", "/tmp/activity")
+				result, err := Install(tt.integration, "/opt/middleman", "/tmp/middleman.toml")
 				require.NoError(err)
 				assert.Equal(configPath, result.ConfigPath)
 			}
@@ -201,6 +201,8 @@ func TestInstallLifecyclePreservesOtherHooks(t *testing.T) {
 			assert.NotContains(string(startJSON), "old agent-hook")
 			assert.Contains(string(startJSON), "/opt/middleman")
 			assert.Contains(string(startJSON), tt.agentArg)
+			assert.Contains(string(startJSON), "--config /tmp/middleman.toml")
+			assert.NotContains(string(startJSON), "--state-dir")
 
 			_, err = Uninstall(tt.integration)
 			require.NoError(err)
@@ -236,7 +238,7 @@ func TestInstallLifecyclePreservesSymlinkedConfig(t *testing.T) {
 	configPath := filepath.Join(configDir, "hooks.json")
 	require.NoError(os.Symlink(targetPath, configPath))
 
-	_, err := Install(IntegrationCodex, "/opt/middleman", "/tmp/activity")
+	_, err := Install(IntegrationCodex, "/opt/middleman", "/tmp/middleman.toml")
 	require.NoError(err)
 	info, err := os.Lstat(configPath)
 	require.NoError(err)
@@ -254,6 +256,22 @@ func TestInstallLifecyclePreservesSymlinkedConfig(t *testing.T) {
 	require.NoError(err)
 	assert.Contains(string(data), "keep-me")
 	assert.NotContains(string(data), hookCommandMarker)
+}
+
+func TestHandleEventRecordsWorkingState(t *testing.T) {
+	t.Parallel()
+	store := NewStore(t.TempDir())
+	worktree := t.TempDir()
+
+	require.NoError(t, store.HandleEvent(HookEvent{
+		SessionID:     "agent-1",
+		CWD:           worktree,
+		HookEventName: "UserPromptSubmit",
+	}, "runtime-1"))
+
+	snapshot, ok := store.SnapshotForWorkspace(worktree, []string{"runtime-1"})
+	require.True(t, ok)
+	assert.Equal(t, StateWorking, snapshot.State)
 }
 
 func reportHook(t *testing.T, store *Store, runtimeKey string, input map[string]any) {

@@ -981,6 +981,24 @@ type Agent struct {
 	Label   string    `json:"label"`
 }
 
+// AgentHookOutput defines model for AgentHookOutput.
+type AgentHookOutput struct {
+	HookSpecificOutput AgentHookSpecificOutput `json:"hookSpecificOutput"`
+}
+
+// AgentHookResponse defines model for AgentHookResponse.
+type AgentHookResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema     *string          `json:"$schema,omitempty"`
+	HookOutput *AgentHookOutput `json:"hook_output,omitempty"`
+}
+
+// AgentHookSpecificOutput defines model for AgentHookSpecificOutput.
+type AgentHookSpecificOutput struct {
+	AdditionalContext string `json:"additionalContext"`
+	HookEventName     string `json:"hookEventName"`
+}
+
 // ApplyReviewSuggestionHostInputBody defines model for ApplyReviewSuggestionHostInputBody.
 type ApplyReviewSuggestionHostInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -1908,6 +1926,18 @@ type Hit struct {
 	Name    string `json:"name"`
 	RelPath string `json:"rel_path"`
 	Score   int64  `json:"score"`
+}
+
+// HookEvent defines model for HookEvent.
+type HookEvent struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema           *string `json:"$schema,omitempty"`
+	AgentId          string  `json:"agent_id"`
+	Cwd              string  `json:"cwd"`
+	HookEventName    string  `json:"hook_event_name"`
+	NotificationType string  `json:"notification_type"`
+	SessionId        string  `json:"session_id"`
+	ToolName         string  `json:"tool_name"`
 }
 
 // HostDiagnostic defines model for HostDiagnostic.
@@ -4099,6 +4129,11 @@ type ListActivityParams struct {
 	Since  *string   `form:"since,omitempty" json:"since,omitempty"`
 }
 
+// ReceiveAgentHookParams defines parameters for ReceiveAgentHook.
+type ReceiveAgentHookParams struct {
+	XMiddlemanRuntimeSessionKey *string `json:"X-Middleman-Runtime-Session-Key,omitempty"`
+}
+
 // GetArchiveReportParams defines parameters for GetArchiveReport.
 type GetArchiveReportParams struct {
 	// Start Inclusive UTC RFC3339 boundary.
@@ -4743,6 +4778,9 @@ type GetWorkspaceFilesParams struct {
 	To *string `form:"to,omitempty" json:"to,omitempty"`
 }
 
+// ReceiveAgentHookJSONRequestBody defines body for ReceiveAgentHook for application/json ContentType.
+type ReceiveAgentHookJSONRequestBody = HookEvent
+
 // PauseArchivesJSONRequestBody defines body for PauseArchives for application/json ContentType.
 type PauseArchivesJSONRequestBody = ArchiveMutationBody
 
@@ -5136,6 +5174,11 @@ func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
 type ClientInterface interface {
 	// ListActivity request
 	ListActivity(ctx context.Context, params *ListActivityParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ReceiveAgentHookWithBody request with any body
+	ReceiveAgentHookWithBody(ctx context.Context, agent string, params *ReceiveAgentHookParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	ReceiveAgentHook(ctx context.Context, agent string, params *ReceiveAgentHookParams, body ReceiveAgentHookJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// PauseArchivesWithBody request with any body
 	PauseArchivesWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -6204,6 +6247,30 @@ type ClientInterface interface {
 
 func (c *Client) ListActivity(ctx context.Context, params *ListActivityParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListActivityRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ReceiveAgentHookWithBody(ctx context.Context, agent string, params *ReceiveAgentHookParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewReceiveAgentHookRequestWithBody(c.Server, agent, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ReceiveAgentHook(ctx context.Context, agent string, params *ReceiveAgentHookParams, body ReceiveAgentHookJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewReceiveAgentHookRequest(c.Server, agent, params, body)
 	if err != nil {
 		return nil, err
 	}
@@ -10991,6 +11058,68 @@ func NewListActivityRequest(server string, params *ListActivityParams) (*http.Re
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
 	if err != nil {
 		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewReceiveAgentHookRequest calls the generic ReceiveAgentHook builder with application/json body
+func NewReceiveAgentHookRequest(server string, agent string, params *ReceiveAgentHookParams, body ReceiveAgentHookJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewReceiveAgentHookRequestWithBody(server, agent, params, "application/json", bodyReader)
+}
+
+// NewReceiveAgentHookRequestWithBody generates requests for ReceiveAgentHook with any type of body
+func NewReceiveAgentHookRequestWithBody(server string, agent string, params *ReceiveAgentHookParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "agent", agent, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/agent-hooks/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		if params.XMiddlemanRuntimeSessionKey != nil {
+			var headerParam0 string
+
+			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "X-Middleman-Runtime-Session-Key", *params.XMiddlemanRuntimeSessionKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("X-Middleman-Runtime-Session-Key", headerParam0)
+		}
+
 	}
 
 	return req, nil
@@ -28543,6 +28672,11 @@ type ClientWithResponsesInterface interface {
 	// ListActivityWithResponse request
 	ListActivityWithResponse(ctx context.Context, params *ListActivityParams, reqEditors ...RequestEditorFn) (*ListActivityResponse, error)
 
+	// ReceiveAgentHookWithBodyWithResponse request with any body
+	ReceiveAgentHookWithBodyWithResponse(ctx context.Context, agent string, params *ReceiveAgentHookParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ReceiveAgentHookResponse, error)
+
+	ReceiveAgentHookWithResponse(ctx context.Context, agent string, params *ReceiveAgentHookParams, body ReceiveAgentHookJSONRequestBody, reqEditors ...RequestEditorFn) (*ReceiveAgentHookResponse, error)
+
 	// PauseArchivesWithBodyWithResponse request with any body
 	PauseArchivesWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PauseArchivesResponse, error)
 
@@ -29619,6 +29753,29 @@ func (r ListActivityResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r ListActivityResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ReceiveAgentHookResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *AgentHookResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r ReceiveAgentHookResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ReceiveAgentHookResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -36078,6 +36235,23 @@ func (c *ClientWithResponses) ListActivityWithResponse(ctx context.Context, para
 	return ParseListActivityResponse(rsp)
 }
 
+// ReceiveAgentHookWithBodyWithResponse request with arbitrary body returning *ReceiveAgentHookResponse
+func (c *ClientWithResponses) ReceiveAgentHookWithBodyWithResponse(ctx context.Context, agent string, params *ReceiveAgentHookParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ReceiveAgentHookResponse, error) {
+	rsp, err := c.ReceiveAgentHookWithBody(ctx, agent, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseReceiveAgentHookResponse(rsp)
+}
+
+func (c *ClientWithResponses) ReceiveAgentHookWithResponse(ctx context.Context, agent string, params *ReceiveAgentHookParams, body ReceiveAgentHookJSONRequestBody, reqEditors ...RequestEditorFn) (*ReceiveAgentHookResponse, error) {
+	rsp, err := c.ReceiveAgentHook(ctx, agent, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseReceiveAgentHookResponse(rsp)
+}
+
 // PauseArchivesWithBodyWithResponse request with arbitrary body returning *PauseArchivesResponse
 func (c *ClientWithResponses) PauseArchivesWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PauseArchivesResponse, error) {
 	rsp, err := c.PauseArchivesWithBody(ctx, contentType, body, reqEditors...)
@@ -39480,6 +39654,39 @@ func ParseListActivityResponse(rsp *http.Response) (*ListActivityResponse, error
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest ActivityResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseReceiveAgentHookResponse parses an HTTP response from a ReceiveAgentHookWithResponse call
+func ParseReceiveAgentHookResponse(rsp *http.Response) (*ReceiveAgentHookResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ReceiveAgentHookResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AgentHookResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

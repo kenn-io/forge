@@ -43,7 +43,9 @@ type Snapshot struct {
 	UpdatedAt time.Time
 }
 
-type hookInput struct {
+// HookEvent is the agent-neutral lifecycle payload shared by hook integrations.
+// Agent-specific payload fields are ignored unless they affect activity state.
+type HookEvent struct {
 	SessionID        string `json:"session_id"`
 	CWD              string `json:"cwd"`
 	HookEventName    string `json:"hook_event_name"`
@@ -70,9 +72,18 @@ func (s *Store) HandleHook(input io.Reader, runtimeSessionKey string) error {
 	if s == nil || strings.TrimSpace(s.root) == "" {
 		return nil
 	}
-	var hook hookInput
+	var hook HookEvent
 	if err := json.NewDecoder(io.LimitReader(input, 1<<20)).Decode(&hook); err != nil {
 		return fmt.Errorf("decode agent hook: %w", err)
+	}
+	return s.HandleEvent(hook, runtimeSessionKey)
+}
+
+// HandleEvent records one decoded lifecycle event for a launched runtime
+// session. Events that do not map to a visible activity transition are ignored.
+func (s *Store) HandleEvent(hook HookEvent, runtimeSessionKey string) error {
+	if s == nil || strings.TrimSpace(s.root) == "" {
+		return nil
 	}
 	if hook.AgentID != "" {
 		return nil
@@ -283,7 +294,7 @@ func sameReportFiles(current, cached map[string]os.FileInfo) bool {
 	return true
 }
 
-func stateForHook(input hookInput) (State, bool, bool) {
+func stateForHook(input HookEvent) (State, bool, bool) {
 	switch input.HookEventName {
 	case "SessionStart":
 		return StateIdle, false, true

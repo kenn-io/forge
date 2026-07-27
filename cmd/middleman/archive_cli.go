@@ -354,7 +354,11 @@ func parseArchiveReportRange(now time.Time, days int, startValue, endValue strin
 }
 
 func archiveReportFromAPI(input generated.ArchiveReportResponse) (report.Model, error) {
-	model := report.Model{Start: input.Start.UTC(), End: input.End.UTC()}
+	model := report.Model{
+		Schema: input.ReportSchema,
+		Start:  input.Start.UTC(),
+		End:    input.End.UTC(),
+	}
 	if input.Repositories != nil {
 		model.Repositories = make([]report.Repository, len(*input.Repositories))
 		for i, item := range *input.Repositories {
@@ -389,12 +393,39 @@ func archiveReportFromAPI(input generated.ArchiveReportResponse) (report.Model, 
 			model.Activity[i] = report.Activity{
 				Repository: archiveReportRepositoryRefFromAPI(item.Repository), Kind: kind,
 				ItemNumber: int(item.ItemNumber), ProviderExternalID: item.ProviderExternalId,
-				Title: item.Title, Author: item.Author, OccurredAt: item.OccurredAt.UTC(),
-				Body: item.Body, URL: item.Url,
+				Title: item.Title, Author: item.Author, Actor: archiveOptionalString(item.Actor),
+				OccurredAt: item.OccurredAt.UTC(), Body: item.Body, URL: item.Url,
+				Comments:       archiveOptionalInt(item.Comments),
+				Additions:      archiveOptionalInt(item.Additions),
+				Deletions:      archiveOptionalInt(item.Deletions),
+				FilesChanged:   archiveOptionalIntPointer(item.FilesChanged),
+				MergeCommitSHA: archiveOptionalString(item.MergeCommitSha),
 			}
 		}
 	}
 	return model, nil
+}
+
+func archiveOptionalString(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+func archiveOptionalInt(value *int64) int {
+	if value == nil {
+		return 0
+	}
+	return int(*value)
+}
+
+func archiveOptionalIntPointer(value *int64) *int {
+	if value == nil {
+		return nil
+	}
+	converted := int(*value)
+	return &converted
 }
 
 func archiveReportRepositoryRefFromAPI(input generated.ArchiveRepositoryRef) report.RepositoryRef {
@@ -406,8 +437,11 @@ func archiveReportRepositoryRefFromAPI(input generated.ArchiveRepositoryRef) rep
 
 func archiveReportCountsFromAPI(input generated.ArchiveReportCountsResponse) report.Counts {
 	return report.Counts{
-		IssuesOpened: int(input.IssuesOpened), MergeRequestsOpened: int(input.MergeRequestsOpened),
-		OrdinaryComments: int(input.OrdinaryComments), ReviewsSubmitted: int(input.ReviewsSubmitted),
+		IssuesOpened: int(input.IssuesOpened), IssuesClosed: int(input.IssuesClosed),
+		MergeRequestsOpened:  int(input.MergeRequestsOpened),
+		MergeRequestsMerged:  int(input.MergeRequestsMerged),
+		OrdinaryComments:     int(input.OrdinaryComments),
+		ReviewsSubmitted:     int(input.ReviewsSubmitted),
 		InlineReviewComments: int(input.InlineReviewComments),
 	}
 }
@@ -420,6 +454,7 @@ func archiveReportCoverageFromAPI(input generated.ArchiveReportCoverageResponse)
 	return report.Coverage{
 		Status: string(input.Status), ActivePhases: phases,
 		CollectionMode: string(input.CollectionMode), OperatorState: string(input.OperatorState),
+		Issues: string(input.Issues), MergeRequests: string(input.MergeRequests),
 		Comments: string(input.Comments), Reviews: string(input.Reviews),
 		InlineComments: string(input.InlineComments), InitialCompletedAt: input.InitialCompletedAt,
 		MaintenanceSucceededAt: input.MaintenanceSucceededAt,
@@ -430,7 +465,9 @@ func archiveReportCoverageFromAPI(input generated.ArchiveReportCoverageResponse)
 
 func validArchiveActivityKind(kind report.ActivityKind) bool {
 	switch kind {
-	case report.ActivityIssue, report.ActivityMergeRequest, report.ActivityOrdinaryComment,
+	case report.ActivityIssue, report.ActivityIssueClosed,
+		report.ActivityMergeRequest, report.ActivityMergeRequestMerged,
+		report.ActivityOrdinaryComment,
 		report.ActivityReview, report.ActivityInlineReviewComment:
 		return true
 	default:

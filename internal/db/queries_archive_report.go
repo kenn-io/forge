@@ -192,11 +192,17 @@ func LoadArchiveReportCounts(
 		return nil, err
 	}
 	rows, err := tx.QueryContext(ctx, query+`
-		SELECT repo_id, platform, platform_host, kind, author, COUNT(*)
+		SELECT repo_id, platform, platform_host, kind,
+			CASE kind
+				WHEN 'issue_closed' THEN actor
+				WHEN 'merge_request_merged' THEN actor
+				ELSE author
+			END AS contributor,
+			COUNT(*)
 		FROM deduplicated
 		WHERE identity_rank = 1
-		GROUP BY repo_id, platform, platform_host, kind, author
-		ORDER BY platform, platform_host, author, kind, repo_id`, args...)
+		GROUP BY repo_id, platform, platform_host, kind, contributor
+		ORDER BY platform, platform_host, contributor, kind, repo_id`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("load archive report counts: %w", err)
 	}

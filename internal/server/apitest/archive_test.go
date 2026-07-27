@@ -73,12 +73,39 @@ func TestAPIArchiveStartPauseStatusAndReport(t *testing.T) {
 	repo, err := database.GetRepoByIdentity(t.Context(), platform.DBRepoIdentity(ref))
 	require.NoError(err)
 	require.NotNil(repo)
-	_, err = database.WriteDB().ExecContext(t.Context(), `
+	issueResult, err := database.WriteDB().ExecContext(t.Context(), `
 		INSERT INTO middleman_issues (
 			repo_id, platform_id, platform_external_id, number, url, title, author,
-			state, body, created_at, updated_at, last_activity_at
+			state, body, comment_count, created_at, updated_at, last_activity_at, closed_at
 		) VALUES (?, 7, 'issue-7', 7, 'https://github.test/owner/repo/issues/7',
-			'Synthetic issue', 'alice', 'closed', 'body', ?, ?, ?)`, repo.ID, now, now, now)
+			'Synthetic issue', 'alice', 'closed', 'body', 3, ?, ?, ?, ?)`,
+		repo.ID, now, now, now, now.Add(10*time.Minute))
+	require.NoError(err)
+	issueID, err := issueResult.LastInsertId()
+	require.NoError(err)
+	require.NoError(database.UpsertIssueEvents(t.Context(), []db.IssueEvent{{
+		IssueID: issueID, PlatformExternalID: "issue-closed-7", EventType: "closed",
+		Author: "closer", CreatedAt: now.Add(10 * time.Minute), DedupeKey: "closed:7",
+	}}))
+	filesChanged := 5
+	mergedAt := now.Add(20 * time.Minute)
+	mrID, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
+		RepoID: repo.ID, PlatformID: 8, PlatformExternalID: "mr-8", Number: 8,
+		URL: "https://github.test/owner/repo/pull/8", Title: "Synthetic merge request",
+		Author: "bob", State: db.MergeRequestStateMerged, Body: "body",
+		Additions: 20, Deletions: 4, FilesChanged: &filesChanged, MergeCommitSHA: "abc123",
+		CreatedAt: now.Add(-2 * time.Hour), UpdatedAt: mergedAt,
+		LastActivityAt: mergedAt, MergedAt: &mergedAt,
+	})
+	require.NoError(err)
+	require.NoError(database.UpsertMREvents(t.Context(), []db.MREvent{{
+		MergeRequestID: mrID, PlatformExternalID: "mr-merged-8", EventType: "merged",
+		Author: "merger", CreatedAt: mergedAt, DedupeKey: "merged:8",
+	}}))
+	_, err = database.WriteDB().ExecContext(t.Context(), `
+		UPDATE middleman_archive_repos
+		SET issues_coverage = 'supported', merge_requests_coverage = 'supported'
+		WHERE repo_id = ?`, repo.ID)
 	require.NoError(err)
 	verbose := true
 	reportResponse, err := client.HTTP.GetArchiveReportWithResponse(t.Context(), &generated.GetArchiveReportParams{
@@ -89,9 +116,33 @@ func TestAPIArchiveStartPauseStatusAndReport(t *testing.T) {
 	require.NotNil(reportResponse.JSON200)
 	assert.Equal(report.Schema, reportResponse.JSON200.ReportSchema)
 	assert.Equal(int64(1), reportResponse.JSON200.Totals.IssuesOpened)
+	assert.Equal(int64(1), reportResponse.JSON200.Totals.IssuesClosed)
+	assert.Equal(int64(1), reportResponse.JSON200.Totals.MergeRequestsMerged)
+	require.NotNil(reportResponse.JSON200.Repositories)
+	require.Len(*reportResponse.JSON200.Repositories, 1)
+	assert.Equal(generated.ArchiveReportCoverageResponseIssuesSupported,
+		(*reportResponse.JSON200.Repositories)[0].Coverage.Issues)
+	assert.Equal(generated.ArchiveReportCoverageResponseMergeRequestsSupported,
+		(*reportResponse.JSON200.Repositories)[0].Coverage.MergeRequests)
 	require.NotNil(reportResponse.JSON200.Activity)
-	require.Len(*reportResponse.JSON200.Activity, 1)
+	require.Len(*reportResponse.JSON200.Activity, 3)
 	assert.Equal("issue-7", (*reportResponse.JSON200.Activity)[0].ProviderExternalId)
+	assert.Equal(generated.ArchiveReportActivityResponseKindIssueClosed,
+		(*reportResponse.JSON200.Activity)[1].Kind)
+	require.NotNil((*reportResponse.JSON200.Activity)[1].Actor)
+	assert.Equal("closer", *(*reportResponse.JSON200.Activity)[1].Actor)
+	merged := (*reportResponse.JSON200.Activity)[2]
+	assert.Equal(generated.ArchiveReportActivityResponseKindMergeRequestMerged, merged.Kind)
+	require.NotNil(merged.Actor)
+	assert.Equal("merger", *merged.Actor)
+	require.NotNil(merged.Additions)
+	assert.Equal(int64(20), *merged.Additions)
+	require.NotNil(merged.Deletions)
+	assert.Equal(int64(4), *merged.Deletions)
+	require.NotNil(merged.FilesChanged)
+	assert.Equal(int64(5), *merged.FilesChanged)
+	require.NotNil(merged.MergeCommitSha)
+	assert.Equal("abc123", *merged.MergeCommitSha)
 	assert.Zero(provider.calls.Load(), "reports must read SQLite only")
 
 	filter := []string{"github|github.test/owner/repo"}

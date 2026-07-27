@@ -589,7 +589,13 @@ func TestArchiveInventoryRecordsRepositoryFeatureDisabledAsUnsupported(t *testin
 	)
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
-	service := newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, nil, now)
+	admission := &archiveTestAdmission{
+		deferCompletedErrors: true,
+		retryAt:              now.Add(time.Hour),
+	}
+	service := newArchiveTestService(
+		t, database, registry, []platform.RepoRef{ref}, admission, now,
+	)
 	require.NoError(service.EnsureConfigured(t.Context(), []platform.RepoRef{ref}))
 
 	require.NoError(service.RunEligible(t.Context()))
@@ -723,12 +729,13 @@ func (s *archiveMutableSource) ConfiguredRepositories(context.Context) ([]platfo
 }
 
 type archiveTestAdmission struct {
-	mu        sync.Mutex
-	calls     int
-	deny      bool
-	denyAfter int
-	retryAt   time.Time
-	costs     []int
+	mu                   sync.Mutex
+	calls                int
+	deny                 bool
+	denyAfter            int
+	retryAt              time.Time
+	costs                []int
+	deferCompletedErrors bool
 }
 
 type archiveTestRetryClassifier struct{}
@@ -753,7 +760,10 @@ func (a *archiveTestAdmission) Admit(
 	return AdmissionResult{
 		Allowed: true,
 		Context: ctx,
-		Complete: func(error, bool) *FeatureDeferral {
+		Complete: func(err error, _ bool) *FeatureDeferral {
+			if a.deferCompletedErrors && err != nil {
+				return &FeatureDeferral{RetryAt: a.retryAt, Detail: "test feature deferred"}
+			}
 			return nil
 		},
 	}, nil

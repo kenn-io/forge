@@ -313,7 +313,7 @@ func TestArchivePreemptedItemRecordsNoFailureAndCompletesOnNextPass(t *testing.T
 	assert.NotNil(lookup.CompletedAt)
 }
 
-func TestArchiveDisabledIssueInventorySharesCooldownWithoutBlockingMergeRequests(t *testing.T) {
+func TestArchiveDisabledIssueInventoryCompletesUnsupportedWithoutBlockingMergeRequests(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -327,13 +327,17 @@ func TestArchiveDisabledIssueInventorySharesCooldownWithoutBlockingMergeRequests
 		Message:  "Issues are disabled for this repo",
 	})
 	var issueCalls atomic.Int32
+	var issueInventoryCalls atomic.Int32
 	var mergeRequestCalls atomic.Int32
 	client := &archivePageMockClient{
 		mockClient: &mockClient{},
 		listInventoryIssuesPageFn: func(
-			context.Context, string, string, string, string, string,
+			_ context.Context, _, _, sortBy, _, _ string,
 		) ([]*gh.Issue, string, bool, error) {
 			issueCalls.Add(1)
+			if sortBy == "created" {
+				issueInventoryCalls.Add(1)
+			}
 			return nil, "", false, rawDisabled
 		},
 		listInventoryPullRequestsPageFn: func(
@@ -370,22 +374,27 @@ func TestArchiveDisabledIssueInventorySharesCooldownWithoutBlockingMergeRequests
 	require.NoError(service.RunEligible(t.Context()))
 
 	assert.Equal(int32(1), issueCalls.Load())
-	assert.Equal(int32(1), mergeRequestCalls.Load())
+	assert.Equal(int32(1), issueInventoryCalls.Load())
+	assert.GreaterOrEqual(mergeRequestCalls.Load(), int32(1))
 	repo, err := database.GetRepoByIdentity(t.Context(), platform.DBRepoIdentity(ref))
 	require.NoError(err)
 	require.NotNil(repo)
 	states, err := database.ListArchiveRepoStates(t.Context(), []int64{repo.ID})
 	require.NoError(err)
 	require.Len(states, 1)
-	assert.False(states[0].IssueInventory.Complete())
+	assert.True(states[0].IssueInventory.Complete())
 	assert.True(states[0].MergeRequestInventory.Complete())
+	assert.Equal(db.ArchiveCoverageUnsupported, states[0].IssuesCoverage)
+	assert.Equal(db.ArchiveCoverageSupported, states[0].MergeRequestsCoverage)
 
 	now = now.Add(repositoryFeatureProbeInterval)
 	tracker.UpdateFromRate(Rate{
 		Limit: 5000, Remaining: 4999, Reset: now.Add(time.Minute),
 	})
 	require.NoError(service.RunEligible(t.Context()))
-	assert.Equal(int32(2), issueCalls.Load())
+	assert.Equal(int32(1), issueInventoryCalls.Load(), "unsupported inventory must not be retried")
+	assert.Greater(issueCalls.Load(), issueInventoryCalls.Load(),
+		"maintenance may continue probing the independently disabled live feature")
 }
 
 type disabledArchiveHydrationFixture struct {

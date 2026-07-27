@@ -134,6 +134,8 @@ func TestArchiveReportActivityIncludesCurrentCloseAndMergeLifecycle(t *testing.T
 	t.Cleanup(func() { _ = tx.Rollback() })
 	rows, err := LoadArchiveReportActivity(t.Context(), tx, []int64{repoID}, start, end)
 	require.NoError(err)
+	counts, err := LoadArchiveReportCounts(t.Context(), tx, []int64{repoID}, start, end)
+	require.NoError(err)
 	require.NoError(tx.Commit())
 
 	require.Len(rows, 3)
@@ -150,6 +152,13 @@ func TestArchiveReportActivityIncludesCurrentCloseAndMergeLifecycle(t *testing.T
 	require.NotNil(rows[2].FilesChanged)
 	assert.Equal(17, *rows[2].FilesChanged)
 	assert.Equal("abc123", rows[2].MergeCommitSHA)
+	contributorByKind := make(map[ArchiveReportActivityKind]string, len(counts))
+	for _, count := range counts {
+		contributorByKind[count.Kind] = count.Author
+	}
+	assert.Equal("author", contributorByKind[ArchiveReportActivityIssue])
+	assert.Equal("closer", contributorByKind[ArchiveReportActivityIssueClosed])
+	assert.Equal("merger", contributorByKind[ArchiveReportActivityMergeRequestMerged])
 }
 
 func TestArchiveReportRepositoriesAreSnapshotCoverageOrderedByFullIdentity(t *testing.T) {

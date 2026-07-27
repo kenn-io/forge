@@ -46,18 +46,19 @@ func (s *Service) inventoryPage(ctx context.Context, repo resolvedRepository, st
 		case db.ArchiveItemTypeIssue:
 			page, err := repo.Issues.ListIssuesPage(requestCtx, repo.Ref, query)
 			preempted := archivePreempted(ctx, requestCtx)
+			featureDisabled := archiveInventoryFeatureDisabled(err, itemType)
 			deferred := complete(err, true)
+			if featureDisabled {
+				commit.Exhausted = true
+				commit.Coverage = db.ArchiveCoverageUnsupported
+				break
+			}
 			if deferred != nil {
 				return &featureDeferredError{FeatureDeferral: *deferred, providerAttempted: true}
 			}
 			if err != nil {
 				if preempted {
 					return errAdmissionDeferred
-				}
-				if archiveInventoryFeatureDisabled(err, itemType) {
-					commit.Exhausted = true
-					commit.Coverage = db.ArchiveCoverageUnsupported
-					break
 				}
 				return s.recordScanFailure(ctx, repo, kind, scan.Generation, fmt.Errorf(
 					"list historical issues for %s: %w", archiveRepoIdentityKey(repo.Ref), err,
@@ -71,18 +72,19 @@ func (s *Service) inventoryPage(ctx context.Context, repo resolvedRepository, st
 		case db.ArchiveItemTypeMergeRequest:
 			page, err := repo.MergeRequests.ListMergeRequestsPage(requestCtx, repo.Ref, query)
 			preempted := archivePreempted(ctx, requestCtx)
+			featureDisabled := archiveInventoryFeatureDisabled(err, itemType)
 			deferred := complete(err, true)
+			if featureDisabled {
+				commit.Exhausted = true
+				commit.Coverage = db.ArchiveCoverageUnsupported
+				break
+			}
 			if deferred != nil {
 				return &featureDeferredError{FeatureDeferral: *deferred, providerAttempted: true}
 			}
 			if err != nil {
 				if preempted {
 					return errAdmissionDeferred
-				}
-				if archiveInventoryFeatureDisabled(err, itemType) {
-					commit.Exhausted = true
-					commit.Coverage = db.ArchiveCoverageUnsupported
-					break
 				}
 				return s.recordScanFailure(ctx, repo, kind, scan.Generation, fmt.Errorf(
 					"list historical merge requests for %s: %w", archiveRepoIdentityKey(repo.Ref), err,

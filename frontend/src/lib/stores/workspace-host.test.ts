@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeEach, vi } from "vite-plus/test";
 import { getPaneLayoutStore, promoteSessionBesideWorkspace } from "@middleman/ui/stores/paneLayout";
 import { pushModalFrame } from "@middleman/ui/stores/keyboard/modal-stack";
-import { registerSessionSlot, resetSessionHostForTest } from "./session-host.svelte.ts";
+import { consumeSessionFocus, registerSessionSlot, resetSessionHostForTest } from "./session-host.svelte.ts";
 import {
   createdWorkspaceRef,
   markWorkspaceIdDeleted,
@@ -961,6 +961,27 @@ describe("a workspace spread across several panes", () => {
     expect(layout.hiddenTabKeys()).toEqual([]);
   });
 
+  it("restores a collapsed workspace after another one expanded on the same surface", () => {
+    const { prs, layout } = hostWithPromoted([helperPane]);
+    prs.notePaneFocused("workspace");
+    prs.setDockMode("collapsed");
+
+    // Another item, expanded. The container tab is shared by every workspace on the
+    // surface, so B's expand unhides it and A stops reporting "collapsed" while its
+    // promoted terminal is still hidden.
+    prs.claim(identityB, { id: "ws-b", status: "ready" });
+    prs.setDockMode("expanded");
+    prs.claim(identityA, refA);
+    publishHostedSessions({ workspaceId: "ws-a", hostKey: undefined }, sessions);
+
+    prs.focusTerminal();
+
+    // Keying the ledger stopped B from consuming A's record; reading the dock mode
+    // instead of the record left A unable to spend it, which is the same one-way door
+    // by another route.
+    expect(layout.hiddenTabKeys()).not.toContain(helperPane);
+  });
+
   it("focusTerminal reveals the promoted pane holding the last-focused session", () => {
     const { prs, layout } = hostWithPromoted([helperPane]);
     prs.notePaneFocused(helperPane);
@@ -993,6 +1014,21 @@ describe("a workspace spread across several panes", () => {
     expect(document.activeElement).toBe(wrapper);
     expect(layout.hiddenTabKeys()).not.toContain(helperPane);
     slot.remove();
+  });
+
+  it("cancels a deferred session focus when the surface moves to another item", () => {
+    const { prs, layout } = hostWithPromoted([helperPane]);
+    prs.notePaneFocused(helperPane);
+    layout.setHidden(helperPane, true);
+
+    // No slot registered: the pane's terminal has not mounted yet, so the request is
+    // deferred for the pool to consume on attach.
+    prs.focusTerminal();
+    prs.claim(identityB, { id: "ws-b", status: "ready" });
+
+    // The user is looking at another item now. Handing that request to whatever mounts
+    // under the key next pulls the keyboard out of the detail they just opened.
+    expect(consumeSessionFocus(sessions[0]!.hostKey)).toBe(false);
   });
 
   it("un-maximizes a promoted pane when the surface moves to another item", () => {

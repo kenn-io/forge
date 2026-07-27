@@ -397,6 +397,10 @@ function setClaim(surface: InlineWorkspaceSurface, identity: WorkspaceItemIdenti
   // re-asserts (a ref status change on the same workspace) must NOT un-zoom.
   if (existing && !sameIdentity(existing.identity, identity)) {
     unzoomWorkspacePane(surface);
+    // Any deferred focus belonged to the workspace being left. The pool would
+    // otherwise hand it to whatever mounts under that key next, pulling the
+    // keyboard out of the item the user just opened.
+    clearSessionFocusRequest();
   }
   claims = { ...claims, [surface]: { identity, ref } };
   workspaceIdentityById.set(ref.id, identity);
@@ -413,6 +417,7 @@ function clearClaim(surface: InlineWorkspaceSurface): void {
   // open hidden behind a maximized terminal. It also covers the view
   // unmounting outright, where the host component's effects never run at all.
   unzoomWorkspacePane(surface);
+  clearSessionFocusRequest();
   const next = { ...claims };
   delete next[surface];
   claims = next;
@@ -825,7 +830,14 @@ export function getInlineWorkspaceController(surface: InlineWorkspaceSurface): I
       // are the panes that come back. Revealing only the remembered one returns an
       // empty container whenever this workspace's terminals were promoted into panes
       // of their own, because a container masks the sessions it has promoted.
-      if (dockModeFor(surface) === "collapsed") restoreCollapsedPanes(surface);
+      //
+      // A ledger on record is reason enough, without waiting for the dock to still
+      // report collapsed: the container tab is shared by every workspace on the
+      // surface, so another workspace's expand unhides it and leaves this one reading
+      // "split" with its promoted terminal still hidden behind an empty container.
+      if (dockModeFor(surface) === "collapsed" || collapsedPaneKeys.has(collapseLedgerKey(surface))) {
+        restoreCollapsedPanes(surface);
+      }
       // Nothing to focus. A workspace with no session has no terminal, so revealing
       // its pane lands the user on an empty surface; the launcher is what they
       // actually need next.

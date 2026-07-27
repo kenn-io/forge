@@ -2652,6 +2652,64 @@ describe("WorkspaceTerminalView", () => {
     launch.resolve(runningSession);
   });
 
+  it("keeps each workspace's own preset apply pending while another one runs", async () => {
+    // Two applies in flight at once. With a single owner slot, B's apply overwrote
+    // A's and B finishing re-enabled A's control while A's sessions were still being
+    // launched - which is an invitation to launch the whole preset twice.
+    serveAnyWorkspace();
+    localStorage.setItem(
+      "middleman-workspace-layout-presets",
+      JSON.stringify([
+        {
+          id: "preset-1",
+          name: "Pair",
+          createdAt: "2026-04-29T00:00:00Z",
+          updatedAt: "2026-04-29T00:00:00Z",
+          sessions: [{ sourceKey: "s1", targetKey: "helper", region: "workflow", label: "Helper" }],
+          layout: JSON.parse(persistedSplitWorkflowLayout("s1")),
+        },
+      ]),
+    );
+    const launchA = deferred<typeof runningSession>();
+    const launchB = deferred<typeof runningSession>();
+    mocks.launchWorkspaceSession.mockReturnValueOnce(launchA.promise).mockReturnValueOnce(launchB.promise);
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
+    claimForPrs();
+
+    const { rerender } = render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+        paneSurface: "prs" as const,
+      },
+    });
+    await waitFor(() => expect(hostedWorkspaceControls()).not.toBeNull());
+    render(WorkspacePaneControls);
+
+    async function applyPresetThroughControls(): Promise<void> {
+      await fireEvent.click(screen.getByRole("button", { name: "Workspace controls" }));
+      await fireEvent.click(screen.getByRole("button", { name: "Workflow presets" }));
+      await fireEvent.click(screen.getAllByRole("button", { name: /Pair/ })[0]!);
+    }
+
+    await applyPresetThroughControls();
+    await waitFor(() => expect(workspaceControlsBusy()).toBe(true));
+
+    await rerender({ workspaceId: "ws-2", paneSurface: "prs" as const });
+    await waitFor(() => expect(hostedWorkspaceControls()?.workspaceKey).toContain("ws-2"));
+    await applyPresetThroughControls();
+    await waitFor(() => expect(workspaceControlsBusy()).toBe(true));
+
+    // B finishes first.
+    launchB.resolve(runningSession);
+    await waitFor(() => expect(workspaceControlsBusy()).toBe(false));
+
+    await rerender({ workspaceId: "ws-1", paneSurface: "prs" as const });
+    await waitFor(() => expect(hostedWorkspaceControls()?.workspaceKey).toContain("ws-1"));
+    expect(workspaceControlsBusy()).toBe(true);
+
+    launchA.resolve(runningSession);
+  });
+
   it("keeps its own toolbar on the standalone Workspaces tab", async () => {
     render(WorkspaceTerminalView, {
       props: {

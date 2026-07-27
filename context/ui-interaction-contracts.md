@@ -315,7 +315,12 @@ Keyboard handlers must have one clear owner for each key press.
   it hands to a detail pane - the controls snippet, a mid-save busy flag, the
   launcher overlay's open state - is keyed by `(workspaceId, hostKey)`. An unkeyed
   flag survives the switch and acts on the next workspace: a popover pinned open by
-  a write that will never report done, or a launcher covering a live terminal
+  a write that will never report done, or a launcher covering a live terminal. Keyed
+  by WORKSPACE WORK only: terminal font size and terminal options write app
+  settings through one single-flight controller, so those are in flight for every
+  workspace at once and keying them reports a control enabled that the controller
+  is still refusing. Workspace-scoped writes are tracked as a SET of owners, since
+  two workspaces can have one in flight at once
   (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte`).
 - Promoting a session into a pane requires the workspace pane to be ON SCREEN, and
   that is enforced in `promoteSessionBesideWorkspace`, not per caller: holding a
@@ -339,7 +344,13 @@ Keyboard handlers must have one clear owner for each key press.
 - Getting back to a collapsed dock restores the whole collapsed set, not the
   remembered pane alone: a container masks the sessions its workspace promoted, so
   revealing it by itself hands back an empty pane while the terminal the user asked
-  for stays hidden (`frontend/src/lib/stores/workspace-host.svelte.ts::restoreCollapsedPanes`).
+  for stays hidden. A ledger on record is what says a workspace is put away - not
+  the derived dock mode, since the container tab is shared and another workspace's
+  expand unhides it (`frontend/src/lib/stores/workspace-host.svelte.ts::restoreCollapsedPanes`).
+- A deferred session focus is cancelled when its session unmounts and when the
+  surface's claim changes. Left armed it waits for anything to mount under that key
+  and steals the keyboard for a Focus Terminal pressed in a workspace the user has
+  since left (`frontend/src/lib/stores/session-host.svelte.ts`).
 - A pane tree node that leaves the on-screen tree takes its children with it, and
   those children read the removed node's `first`/`second` for the rest of that
   flush - `undefined`, while still mounted, including from a `ResizeObserver`

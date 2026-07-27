@@ -232,14 +232,13 @@
   // surface, so a switch would otherwise inherit the previous workspace's open
   // overlay and its in-flight writes.
   const viewWorkspaceKey = $derived(`${workspaceId}\u0000${workspaceHostKey ?? ""}`);
-  // Each pending write remembers the workspace it started for. An operation's
-  // completion can land after the user moved on, and a bare boolean would then
-  // report the NEXT workspace's controls busy - disabling them and pinning their
-  // popover open with nothing left to clear it.
-  let terminalZoomSavingFor = $state<string | null>(null);
-  let terminalOptionsSavingFor = $state<string | null>(null);
-  const terminalZoomSaving = $derived(terminalZoomSavingFor === viewWorkspaceKey);
-  const terminalOptionsSaving = $derived(terminalOptionsSavingFor === viewWorkspaceKey);
+  // Terminal font size and terminal options are APP settings, not workspace state:
+  // one write, one single-flight controller, and it is in flight for every workspace
+  // at once. So these two are plain booleans that follow the controller. Keying them
+  // by workspace would report the next workspace's control enabled while the shared
+  // controller is still refusing input.
+  let terminalZoomSaving = $state(false);
+  let terminalOptionsSaving = $state(false);
   const terminalZoom = createTerminalZoomController({
     store: settingsStore,
     persist: async (terminal) => (await updateSettings({ terminal })).terminal,
@@ -250,10 +249,7 @@
       });
     },
     onPendingChange: (pending) => {
-      // Single-flight per view, so "no longer pending" is absolute: clearing the
-      // owner outright is what stops a save that finished after a switch from
-      // leaving its originating workspace flagged forever.
-      terminalZoomSavingFor = pending ? viewWorkspaceKey : null;
+      terminalZoomSaving = pending;
     },
   });
   const terminalFontSize = $derived(
@@ -359,8 +355,12 @@
 
   let workflowPresets = $state<WorkflowPreset[]>(loadWorkflowPresets());
   let selectedWorkflowPresetId = $state<string | null>(null);
-  let applyingWorkflowPresetFor = $state<string | null>(null);
-  const applyingWorkflowPreset = $derived(applyingWorkflowPresetFor === viewWorkspaceKey);
+  // A preset apply IS workspace work - it launches that workspace's sessions - so it
+  // is tracked per workspace, and as a set rather than one owner: two workspaces can
+  // have an apply in flight at once, and whichever finishes first must not re-enable
+  // the other's control while its sessions are still being launched.
+  let applyingWorkflowPresetFor = $state<string[]>([]);
+  const applyingWorkflowPreset = $derived(applyingWorkflowPresetFor.includes(viewWorkspaceKey));
 
   type SidebarTab = "diff" | "pr" | "issue" | "reviews" | "kata_task";
 
@@ -704,10 +704,11 @@
     return () => untrack(() => registerWorkspaceControls(null));
   });
 
-  // Reported against the workspace the controls act on, and released on the way out:
-  // a write started for one workspace only clears its pending flag while that
-  // workspace is still current, so an unkeyed flag could stay set after a switch and
-  // pin the next workspace's popover open for good.
+  // Reported against the workspace whose controls are on screen, and released on the
+  // way out. The workspace-scoped half of this (a preset apply) is tracked per
+  // workspace so a write that lands after a switch cannot pin the next workspace's
+  // popover open; the settings writes are global and hold whichever controls show
+  // them, which is where their feedback is.
   $effect(() => {
     const workspaceKey = viewWorkspaceKey;
     const busy = terminalOptionsSaving || terminalZoomSaving || applyingWorkflowPreset;
@@ -2288,7 +2289,7 @@
     const id = workspaceId;
     const hostKey = workspaceHostKey;
     const presetOwner = viewWorkspaceKey;
-    applyingWorkflowPresetFor = presetOwner;
+    applyingWorkflowPresetFor = [...applyingWorkflowPresetFor, presetOwner];
     try {
       const keyMap: Record<string, string> = {};
       for (const spec of preset.sessions) {
@@ -2328,10 +2329,11 @@
         tone: "danger",
       });
     } finally {
-      // Cleared for the workspace it started on, whatever is selected now: keyed on
-      // the current workspace instead, a preset that finished after a switch would
-      // leave its own workspace stuck applying for the rest of the session.
-      if (applyingWorkflowPresetFor === presetOwner) applyingWorkflowPresetFor = null;
+      // Only this apply's own entry, whatever is selected now: keyed on the current
+      // workspace instead, a preset that finished after a switch would leave its own
+      // workspace stuck applying for the rest of the session.
+      const index = applyingWorkflowPresetFor.indexOf(presetOwner);
+      if (index !== -1) applyingWorkflowPresetFor = applyingWorkflowPresetFor.toSpliced(index, 1);
     }
   }
 
@@ -3968,10 +3970,7 @@
     disabled={actionsBlocked || !terminalSettingsReady || terminalZoomSaving}
     {hostVisible}
     onSavingChange={(saving) => {
-      // Owner-keyed like the other pending writes: single-flight per view, so
-      // "done" clears the owner outright rather than only while its workspace is
-      // still the one selected.
-      terminalOptionsSavingFor = saving ? viewWorkspaceKey : null;
+      terminalOptionsSaving = saving;
     }}
   />
   {#if launcherMode}

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 import {
+  consumeSessionFocus,
   getSessionSlotElement,
   isSessionMounted,
   isSessionSlotVisible,
@@ -7,6 +8,7 @@ import {
   noteSessionMounted,
   noteSessionUnmounted,
   registerSessionSlot,
+  requestSessionFocus,
   releaseSessionSlot,
   resetSessionHostForTest,
   sessionHostKey,
@@ -32,6 +34,19 @@ describe("session host registry", () => {
   it("keeps parts that contain the separator distinct", () => {
     // A workspace id is opaque; it must not be able to spell another key.
     expect(sessionHostKey("a/b", undefined, "agent", "g")).not.toBe(sessionHostKey("a", "b", "agent", "g"));
+  });
+
+  it("drops a deferred focus request when its session unmounts", () => {
+    noteSessionMounted({ hostKey: agentOnA, websocketPath: "/ws/agent", status: "running" });
+    requestSessionFocus(agentOnA);
+
+    noteSessionUnmounted(agentOnA);
+
+    // Nothing consumed it, so it would sit armed until something mounted under this
+    // key again - a revisit, or the pane reopening for its own reasons - and take the
+    // keyboard for a Focus Terminal pressed long ago somewhere else.
+    noteSessionMounted({ hostKey: agentOnA, websocketPath: "/ws/agent", status: "running" });
+    expect(consumeSessionFocus(agentOnA)).toBe(false);
   });
 
   it("registers and clears one slot per session key", () => {

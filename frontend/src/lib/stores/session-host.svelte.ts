@@ -172,6 +172,11 @@ export function noteSessionMounted(session: MountedSession): void {
 
 export function noteSessionUnmounted(key: SessionHostKey): void {
   if (!isSessionMounted(key)) return;
+  // A focus request this session never got to consume dies with it. Left armed, it
+  // waits for a subtree under the same key to mount - a revisit, or the pane being
+  // reopened for its own reasons - and steals focus for a Focus Terminal the user
+  // pressed long before, somewhere else.
+  if (pendingFocusKey === key) pendingFocusKey = null;
   mounted = mounted.filter((session) => session.hostKey !== key);
   registerSessionSlot(key, null);
 }

@@ -308,6 +308,27 @@ describe("promoted session panes", () => {
     expect(layout.zoomedLeafID()).toBeNull();
   });
 
+  it("refuses to demote a static pane, which the surface always needs", () => {
+    const layout = store();
+    layout.demoteTab("conversation");
+
+    // Nothing reinserts a static pane, so removing one would persist a layout the
+    // surface cannot describe.
+    expect(layout.hasTab("conversation")).toBe(true);
+  });
+
+  it("gives up the last-focused slot when the pane holding it is demoted", () => {
+    const layout = store();
+    layout.promoteTab(AGENT_PANE, { kind: "tab", leafID: "leaf-detail" });
+    layout.noteFocused(AGENT_PANE);
+
+    layout.demoteTab(AGENT_PANE);
+
+    // A last-focused key naming a pane that is gone sends the pane commands, the
+    // flattened strip, and the dock derivation to the wrong pane rather than none.
+    expect(layout.lastFocusedTabKey()).toBeNull();
+  });
+
   it("leaves the layout untouched when demoting a pane it does not hold", () => {
     const layout = store();
     layout.demoteTab(AGENT_PANE);

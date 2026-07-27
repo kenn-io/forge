@@ -311,6 +311,10 @@ export function createPaneLayoutStore(
     },
 
     demoteTab: (tabKey) => {
+      // Dynamic panes only, like promoteTab. A static pane is part of the surface
+      // and is never absent from the tree, so removing one would persist a layout
+      // the surface cannot describe and no reinsertion would repair.
+      if (!(keepIfStored?.(tabKey) ?? false)) return;
       const leaf = findTabbedPanelLeafByTab(state.tree, tabKey);
       if (leaf === null) return;
       const tree = removeTabbedPanelTab(state.tree, tabKey);
@@ -325,6 +329,10 @@ export function createPaneLayoutStore(
         tree,
         zoomedLeafID: zoomedStillExists ? state.zoomedLeafID : null,
         hiddenTabKeys: state.hiddenTabKeys.filter((key) => key !== tabKey),
+        // A last-focused key naming a pane that is gone sends every rule keyed off
+        // it - the pane commands' target, the flattened strip, the dock
+        // derivation - to the wrong pane rather than to none.
+        lastFocusedTabKey: state.lastFocusedTabKey === tabKey ? null : state.lastFocusedTabKey,
       });
     },
 

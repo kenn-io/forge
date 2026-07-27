@@ -439,10 +439,13 @@ both subtract `promotedSessionKeys`, the dock's rendered tree prunes leaves whos
 session is promoted, and the pool's desired set treats a promoted session as on
 screen — the detail pane's slot is what renders it.
 
-Drag cannot be the only way in. Add two palette commands alongside it — promote
-the focused session, demote the focused promoted pane — both running the same two
-store calls, so keyboard users are not locked out. The dock's per-session header
-gets a promote control for the same reason its "Move to workflow" exists.
+Drag cannot be the only way in, but the keyboard path cannot land here: a palette
+command has to name a session, and the command layer can only see stores — the
+sessions live in the view's local runtime state until Task 6 puts
+`promotableSessions()` on the controller. So the promote/demote commands and the
+dock's per-session promote control move to Tasks 6 and 7, where the list and the
+pane chrome exist. Adding more entry points before Task 6 renders a promoted pane
+would only widen a gesture that currently leads nowhere.
 
 Landing in three parts, each with its own tests and commit, because the store, the
 masking, and the drag wiring fail independently.
@@ -450,8 +453,9 @@ masking, and the drag wiring fail independently.
 - [x] **Step 1 (store)** Failing tests first: promoting adds and activates a pane and persists it; promoting as a split clears a zoom the new leaf could hide behind; a key the surface would prune, a static pane, an unknown leaf, and a duplicate are all refused with no write; demoting drops the pane and every zoom or hidden entry naming it; demoting a pane the tree does not hold writes nothing. Plus the layout primitives: insert into a leaf activates it, insert as a split mints a leaf beside the target, and both hand back the same tree when they cannot apply.
 - [x] **Step 2 (store)** Run `../node_modules/.bin/vp test --project unit paneLayout tabbed-panel-layout`. Expected FAIL, then PASS after implementing `insertTabbedPanelTab`, `removeTabbedPanelTab`, `promoteTab`, `demoteTab`. Commit.
 - [ ] **Step 3 (masking)** Failing tests: with a session's pane key in the surface's tree, the workspace container drops it from its workflow strip and its dock leaf while the STORED trees keep it; the pool still mounts it, because the detail pane is what renders it; clearing the pane key puts it back exactly where it was. `WorkspaceHost` passes `paneSurface`, and the standalone tab passes none, so nothing is masked there.
-- [ ] **Step 4 (drag)** Failing tests: dropping a workflow session tab on the detail tree promotes it; dropping the promoted pane back on the workflow tree demotes it and honors the leaf it was dropped on; a dock session's drag reaches the detail tree too; the promote and demote palette commands produce the same trees, and are unavailable when there is nothing to promote or demote; a key from another workspace and a non-session pane are both refused.
-- [ ] **Step 5** Run `../node_modules/.bin/vp test --project unit paneLayout WorkspaceTerminalView DetailPaneLayout`. Expected PASS. Commit each part.
+- [x] **Step 4 (drag)** Failing tests: dropping a session pane on the detail tree promotes it into the leaf, or splits it off the edge, it was dropped on; a key the surface would prune is refused; dropping a promoted pane back on the workflow strip demotes it AND places it where it was dropped; a pane key naming another workspace's session of the same name does not move the local one.
+- [x] **Step 5** Run `../node_modules/.bin/vp test --project unit paneLayout WorkspaceTerminalView DetailPaneLayout tabbed-panel`. Expected PASS. Commit each part.
+- [ ] **Step 6 (owed to Task 6)** The keyboard path, the dock's promote control, and the full-stack promote/demote continuity test — all three need a rendered promoted pane or the controller's session list. Note in Task 6 rather than leaving them implied here.
 
 ---
 
@@ -511,6 +515,12 @@ const sessionTabs = $derived<PaneTabSpec[]>(
 The view renders `{@render inlineWorkspace.sessionPane({ paneKey, visible })}` in
 its `renderPane` snippet, passing `DetailPaneLayout`'s own `visible` argument
 straight through.
+
+Owed from Task 5, because both need what this task adds: the promote/demote
+palette commands (a command can only see stores, so it needs
+`promotableSessions()`), and the full-stack test that promotes a live session,
+demotes it, and proves one attachment survived — there is no in-app promoted pane
+to drive until the views render one.
 
 - [ ] **Step 1** Failing tests: a promoted session pane renders its slot for the claimed workspace; selecting an item with a different workspace prunes it while the stored tree keeps it; returning restores it; the pane reports its visibility so a session tabbed behind a sibling goes inert. In `workspace-host.test.ts`: the controller reports the claimed workspace's sessions and nothing when unclaimed.
 - [ ] **Step 2** Run `../node_modules/.bin/vp test --project unit PRListView IssueListView ActivityFeedView`. Expected FAIL.

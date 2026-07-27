@@ -2523,6 +2523,10 @@ describe("WorkspaceTerminalView", () => {
 
     const homeTab = await screen.findByRole("tab", { name: "Home" });
     expect(screen.queryByRole("tab", { name: /Helper/ })).toBeNull();
+    await waitFor(() =>
+      expect(sockets.some((socket) => socket.url.includes("/sessions/ws-1:helper/terminal"))).toBe(true),
+    );
+    const socket = sockets.find((candidate) => candidate.url.includes("/sessions/ws-1:helper/terminal"))!;
 
     // The pane's own drag, arriving from the surface's tree: same scope, and a
     // key in the canonical form the workspace tab does not use.
@@ -2539,6 +2543,10 @@ describe("WorkspaceTerminalView", () => {
     const helperTab = await screen.findByRole("tab", { name: /Helper/ });
     expect(getPaneLayoutStore("prs").hasTab(paneKey)).toBe(false);
     expect(helperTab.closest('[role="tablist"]')).toBe(homeStrip);
+    // Same shell, still attached: the drop reparents the pooled terminal into the
+    // workflow slot rather than tearing it down and reattaching.
+    expect(sockets.filter((candidate) => candidate.url.includes("/sessions/ws-1:helper/terminal"))).toHaveLength(1);
+    expect(socket.close).not.toHaveBeenCalled();
   });
 
   it("refuses a session pane dropped from another workspace", async () => {

@@ -540,6 +540,17 @@
         },
   );
 
+  // Promotion implies mounted. Demotion hands the session back to the workflow
+  // region, whose slot only renders for a mounted session, so a session promoted
+  // without ever having been opened here would go dark the instant it came home -
+  // its pool entry dropped in the same flush that gave it a tab.
+  $effect(() => {
+    const promoted = [...promotedSessionKeys];
+    untrack(() => {
+      for (const sessionKey of promoted) mountSessionTerminal(sessionKey);
+    });
+  });
+
   /** Bring a promoted session home before a container edit places it. */
   function demoteWorkflowTab(tabKey: WorkflowTabKey): void {
     const sessionKey = sessionKeyFromWorkflowTab(tabKey);

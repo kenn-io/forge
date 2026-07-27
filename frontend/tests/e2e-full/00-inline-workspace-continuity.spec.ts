@@ -369,17 +369,19 @@ test.describe("inline workspace pane continuity", () => {
       await expect(moveSession).toBeVisible();
       const dockedHost = dockLeaf.locator("[data-session-host]");
       await expect(dockedHost).toBeVisible();
-      const movedHostKey = await dockedHost.getAttribute("data-session-host");
+      // Stamped BEFORE the move, and unique to this node. The registry key alone
+      // would not do: it is derived from the workspace, session, and generation,
+      // so a terminal destroyed and rebuilt carries the same one.
+      await dockedHost.evaluate((el) => el.setAttribute("data-continuity", "moved-from-dock"));
       await moveSession.click();
 
       // The bottom dock still holds the other shell and takes the whole height,
       // leaving the workflow area a 1px sliver. Close it so the moved session
       // has somewhere to render.
       await page.getByRole("button", { name: "Close terminal panel", exact: true }).nth(1).click();
-      // The same live terminal the dock was showing, now inside a workflow tab:
-      // a rebuilt one would carry a different registry key, and a stranded one
-      // would leave this slot empty.
-      const movedHost = page.locator(`.session-terminal-slot [data-session-host="${movedHostKey}"]`);
+      // The very node the dock was showing, now inside a workflow tab. A rebuilt
+      // terminal loses the stamp, and a stranded one never arrives.
+      const movedHost = page.locator('.session-terminal-slot [data-continuity="moved-from-dock"]');
       await expect(movedHost).toBeVisible();
       const workflowContainer = movedHost.locator(".terminal-container");
       await expect(workflowContainer).toBeVisible();

@@ -34,6 +34,9 @@ embedder protocol for arbitrary host state.
   - Directory recovery accepts no path and applies only when the workspace row
     is absent; a valid deterministic worktree conflicts with its actual branch
     (`internal/workspace/manager.go::Manager.CreateIssue`).
+  - Recovery validates repository provenance before persistence and again during
+    setup; the managed clone's deterministic path is not identity without a
+    matching origin (`internal/workspace/manager.go::Manager.existingWorktreeUsesManagedClone`).
   - Pending recovery must adopt that directory without create/cleanup fallback;
     retry/delete preserve it until setup atomically publishes branch and ready
     status (`internal/workspace/manager.go::workspaceRequiresExistingDirectory`).

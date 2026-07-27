@@ -773,6 +773,113 @@ func TestCreateIssueRecoveryRejectsInvalidExpectedDirectory(t *testing.T) {
 	}
 }
 
+func TestCreateIssueRecoveryRejectsManagedCloneWithWrongOrigin(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	d := openTestDB(t)
+	worktreeRoot := t.TempDir()
+	const (
+		host   = "github.com"
+		owner  = "acme"
+		name   = "widget"
+		branch = "middleman/issue-7"
+	)
+	repoID := seedRepo(t, d, host, owner, name)
+	seedIssue(t, d, repoID, 7, "")
+
+	clones := gitclone.New(t.TempDir(), nil)
+	cloneDir, err := clones.ClonePath("github", host, owner, name)
+	require.NoError(err)
+	seedWorkspaceBareCloneAt(t, cloneDir)
+	runWorkspaceTestGit(
+		t, cloneDir, "remote", "set-url", "origin",
+		"https://github.com/other/repository.git",
+	)
+	expectedPath := filepath.Join(
+		worktreeRoot, "github", host, owner, name, "issue-7",
+	)
+	runWorkspaceTestGit(
+		t, cloneDir,
+		"worktree", "add", expectedPath, "-b", branch, "HEAD",
+	)
+
+	mgr := NewManager(d, worktreeRoot)
+	mgr.SetClones(clones)
+	ws, err := mgr.CreateIssue(
+		t.Context(), host, owner, name, 7,
+		CreateIssueOptions{
+			Provider:               "github",
+			GitHeadRef:             branch,
+			ReuseExistingDirectory: true,
+		},
+	)
+
+	require.Nil(ws)
+	var recoveryErr *WorkspaceDirectoryRecoveryError
+	require.ErrorAs(err, &recoveryErr)
+	assert.Equal(WorkspaceDirectoryRepositoryMismatch, recoveryErr.Reason)
+}
+
+func TestSetupRecoveryRejectsManagedCloneWhoseOriginChanged(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	d := openTestDB(t)
+	worktreeRoot := t.TempDir()
+	const (
+		host   = "github.com"
+		owner  = "acme"
+		name   = "widget"
+		branch = "middleman/issue-7"
+	)
+	repoID := seedRepo(t, d, host, owner, name)
+	seedIssue(t, d, repoID, 7, "")
+
+	clones := gitclone.New(t.TempDir(), nil)
+	cloneDir, err := clones.ClonePath("github", host, owner, name)
+	require.NoError(err)
+	seedWorkspaceBareCloneAt(t, cloneDir)
+	runWorkspaceTestGit(
+		t, cloneDir, "remote", "set-url", "origin",
+		"https://github.com/acme/widget.git",
+	)
+	expectedPath := filepath.Join(
+		worktreeRoot, "github", host, owner, name, "issue-7",
+	)
+	runWorkspaceTestGit(
+		t, cloneDir,
+		"worktree", "add", expectedPath, "-b", branch, "HEAD",
+	)
+
+	mgr := NewManager(d, worktreeRoot)
+	mgr.SetClones(clones)
+	ws, err := mgr.CreateIssue(
+		t.Context(), host, owner, name, 7,
+		CreateIssueOptions{
+			Provider:               "github",
+			GitHeadRef:             branch,
+			ReuseExistingDirectory: true,
+		},
+	)
+	require.NoError(err)
+	require.NotNil(ws)
+	runWorkspaceTestGit(
+		t, cloneDir, "remote", "set-url", "origin",
+		"https://github.com/other/repository.git",
+	)
+
+	err = mgr.Setup(t.Context(), ws)
+
+	var recoveryErr *WorkspaceDirectoryRecoveryError
+	require.ErrorAs(err, &recoveryErr)
+	assert.Equal(WorkspaceDirectoryRepositoryMismatch, recoveryErr.Reason)
+	stored, getErr := d.GetWorkspace(t.Context(), ws.ID)
+	require.NoError(getErr)
+	require.NotNil(stored)
+	assert.Equal("error", stored.Status)
+}
+
 func TestCreateIssueReportsRecoverableDirectoryBranch(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

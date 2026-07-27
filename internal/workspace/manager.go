@@ -1099,8 +1099,7 @@ func (m *Manager) reuseExistingWorkspaceWorktree(
 		}
 		return "", false, fmt.Errorf("inspect existing worktree: %w", err)
 	}
-	if !workspaceRequiresExistingDirectory(ws) &&
-		!gitDirMatchesWorkspaceRepo(ctx, commonDir, ws) {
+	if !gitDirMatchesWorkspaceRepo(ctx, commonDir, ws) {
 		return "", false, nil
 	}
 	owned, err := gitDirOwnsLinkedWorktree(ctx, commonDir, ws.WorktreePath)
@@ -1217,7 +1216,7 @@ func (m *Manager) existingWorktreeUsesManagedClone(
 	if err != nil {
 		return false
 	}
-	return actualDir == expectedDir
+	return actualDir == expectedDir && gitDirMatchesWorkspaceRepo(ctx, commonDir, ws)
 }
 
 func (m *Manager) refreshExistingWorkspaceWorktree(

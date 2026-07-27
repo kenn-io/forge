@@ -154,7 +154,11 @@ func (h *Handler) RestoreRuntimeSessions(ctx context.Context) error {
 // HandleRuntimeSessionExit reconciles a workspace runtime exit with persisted
 // session and enrichment state.
 func (h *Handler) HandleRuntimeSessionExit(info localruntime.SessionInfo) {
-	if h == nil || h.workspaces == nil {
+	if h == nil {
+		return
+	}
+	h.removeAgentActivityRuntimeSession(info.Key)
+	if h.workspaces == nil {
 		return
 	}
 	h.invalidateWorkspaceEnrichment(info.WorkspaceID)
@@ -170,4 +174,15 @@ func (h *Handler) HandleRuntimeSessionExit(info localruntime.SessionInfo) {
 				"err", err)
 		}
 	})
+}
+
+func (h *Handler) removeAgentActivityRuntimeSession(sessionKey string) {
+	if h == nil || h.agentActivity == nil || sessionKey == "" {
+		return
+	}
+	if err := h.agentActivity.RemoveRuntimeSession(sessionKey); err != nil {
+		slog.Warn("remove agent activity report",
+			"session_key", sessionKey,
+			"err", err)
+	}
 }

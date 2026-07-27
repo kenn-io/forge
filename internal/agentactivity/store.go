@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -24,6 +25,10 @@ const (
 )
 
 const RuntimeSessionKeyEnv = "MIDDLEMAN_RUNTIME_SESSION_KEY"
+
+// ReportFreshness bounds how long a hook state can override tmux activity
+// without another lifecycle event confirming it.
+const ReportFreshness = 30 * time.Minute
 
 type Report struct {
 	SessionID         string    `json:"session_id"`
@@ -50,6 +55,11 @@ type hookInput struct {
 type Store struct {
 	root string
 	now  func() time.Time
+
+	cacheMu         sync.Mutex
+	cacheDirModTime time.Time
+	cacheValidUntil time.Time
+	cacheReports    []Report
 }
 
 func NewStore(root string) *Store {
@@ -81,6 +91,9 @@ func (s *Store) HandleHook(input io.Reader, runtimeSessionKey string) error {
 		err := os.Remove(s.reportPath(hook.SessionID))
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
+		}
+		if err == nil {
+			s.invalidateCache()
 		}
 		return err
 	}
@@ -117,18 +130,10 @@ func (s *Store) SnapshotForWorkspace(cwd string, liveSessionKeys []string) (Snap
 		return Snapshot{}, false
 	}
 
-	entries, err := os.ReadDir(s.root)
-	if err != nil {
-		return Snapshot{}, false
-	}
 	target := filepath.Clean(absCWD)
 	var reports []Report
-	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
-			continue
-		}
-		report, ok := s.readReport(filepath.Join(s.root, entry.Name()))
-		if !ok || filepath.Clean(report.CWD) != target {
+	for _, report := range s.reports() {
+		if filepath.Clean(report.CWD) != target {
 			continue
 		}
 		if _, ok := live[report.RuntimeSessionKey]; !ok {
@@ -146,6 +151,104 @@ func (s *Store) SnapshotForWorkspace(cwd string, liveSessionKeys []string) (Snap
 		return b.UpdatedAt.Compare(a.UpdatedAt)
 	})
 	return Snapshot{State: reports[0].State, UpdatedAt: reports[0].UpdatedAt}, true
+}
+
+// RemoveRuntimeSession removes every agent report owned by one launched
+// runtime session.
+func (s *Store) RemoveRuntimeSession(runtimeSessionKey string) error {
+	if s == nil || strings.TrimSpace(s.root) == "" {
+		return nil
+	}
+	runtimeSessionKey = strings.TrimSpace(runtimeSessionKey)
+	if runtimeSessionKey == "" {
+		return nil
+	}
+	var errs []error
+	for _, report := range s.reports() {
+		if report.RuntimeSessionKey != runtimeSessionKey {
+			continue
+		}
+		if err := os.Remove(s.reportPath(report.SessionID)); err != nil &&
+			!errors.Is(err, os.ErrNotExist) {
+			errs = append(errs, err)
+		}
+	}
+	s.invalidateCache()
+	return errors.Join(errs...)
+}
+
+func (s *Store) reports() []Report {
+	s.cacheMu.Lock()
+	defer s.cacheMu.Unlock()
+
+	info, err := os.Stat(s.root)
+	if err != nil {
+		s.clearCacheLocked()
+		return nil
+	}
+	now := s.now().UTC()
+	if info.ModTime().Equal(s.cacheDirModTime) &&
+		(s.cacheValidUntil.IsZero() || now.Before(s.cacheValidUntil)) {
+		return slices.Clone(s.cacheReports)
+	}
+
+	entries, err := os.ReadDir(s.root)
+	if err != nil {
+		s.clearCacheLocked()
+		return nil
+	}
+	reports := make([]Report, 0, len(entries))
+	validUntil := time.Time{}
+	removed := false
+	cleanupPending := false
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		path := filepath.Join(s.root, entry.Name())
+		report, ok := s.readReport(path)
+		if !ok {
+			continue
+		}
+		expiresAt := report.UpdatedAt.Add(ReportFreshness)
+		if !now.Before(expiresAt) {
+			if removeErr := os.Remove(path); removeErr == nil ||
+				errors.Is(removeErr, os.ErrNotExist) {
+				removed = true
+			} else {
+				cleanupPending = true
+			}
+			continue
+		}
+		if validUntil.IsZero() || expiresAt.Before(validUntil) {
+			validUntil = expiresAt
+		}
+		reports = append(reports, report)
+	}
+	if removed {
+		if refreshed, statErr := os.Stat(s.root); statErr == nil {
+			info = refreshed
+		}
+	}
+	s.cacheDirModTime = info.ModTime()
+	if cleanupPending {
+		s.cacheDirModTime = time.Time{}
+	}
+	s.cacheValidUntil = validUntil
+	s.cacheReports = slices.Clone(reports)
+	return reports
+}
+
+func (s *Store) invalidateCache() {
+	s.cacheMu.Lock()
+	defer s.cacheMu.Unlock()
+	s.clearCacheLocked()
+}
+
+func (s *Store) clearCacheLocked() {
+	s.cacheDirModTime = time.Time{}
+	s.cacheValidUntil = time.Time{}
+	s.cacheReports = nil
 }
 
 func stateForHook(input hookInput) (State, bool, bool) {
@@ -230,7 +333,11 @@ func (s *Store) writeReport(report Report) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmpPath, s.reportPath(report.SessionID))
+	if err := os.Rename(tmpPath, s.reportPath(report.SessionID)); err != nil {
+		return err
+	}
+	s.invalidateCache()
+	return nil
 }
 
 func (s *Store) readReport(path string) (Report, bool) {
@@ -243,7 +350,8 @@ func (s *Store) readReport(path string) (Report, bool) {
 	if err := json.NewDecoder(io.LimitReader(file, 64<<10)).Decode(&report); err != nil {
 		return Report{}, false
 	}
-	if statePriority(report.State) == 0 || report.RuntimeSessionKey == "" || report.CWD == "" {
+	if statePriority(report.State) == 0 || report.RuntimeSessionKey == "" ||
+		report.CWD == "" || report.UpdatedAt.IsZero() {
 		return Report{}, false
 	}
 	return report, true

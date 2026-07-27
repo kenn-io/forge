@@ -164,18 +164,21 @@ func (s *Handler) cachedWorkspaceEnrichment(
 func (s *Handler) refreshWorkspaceResponse(
 	ctx context.Context,
 	summary *db.WorkspaceSummary,
-) workspaceResponse {
+) (resp workspaceResponse) {
+	defer s.applyAgentActivity(&resp, summary)
 	generation := s.supersedeWorkspaceEnrichment(summary.ID)
 	result := s.workspaceResponseWithEnrichment(ctx, summary)
 	if summary.Status == "ready" {
 		entry, recorded, _ := s.recordWorkspaceEnrichmentResult(
 			summary.ID, generation, result,
 		)
-		return s.workspaceResponseAfterEnrichmentAttempt(
+		resp = s.workspaceResponseAfterEnrichmentAttempt(
 			summary, result, entry, recorded,
 		)
+		return
 	}
-	return result.response
+	resp = result.response
+	return
 }
 
 func (s *Handler) workspaceResponseAfterEnrichmentAttempt(

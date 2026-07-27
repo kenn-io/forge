@@ -7659,6 +7659,10 @@ export interface components {
              * @enum {string}
              */
             agent_state?: "idle" | "working" | "input" | "approval";
+            /**
+             * Format: date-time
+             * @description UTC timestamp of the hook report that produced agent_state.
+             */
             agent_state_updated_at?: string;
             /** Format: int64 */
             associated_pr_number?: number;

@@ -1,7 +1,9 @@
 package workspaceapi
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -11,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	gitcmd "go.kenn.io/kit/git/cmd"
+	"go.kenn.io/middleman/internal/agentactivity"
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
 	"go.kenn.io/middleman/internal/workspace"
@@ -571,7 +574,21 @@ func TestWorkspaceTmuxPruneUsesEnrichmentBackgroundCapacity(t *testing.T) {
 }
 
 func TestWorkspaceRuntimeExitInvalidatesCachedTmuxEnrichment(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	srv := newEnrichmentTestHandler(t, "")
+	activityRoot := t.TempDir()
+	workspace := t.TempDir()
+	srv.agentActivity = agentactivity.NewStore(activityRoot)
+	payload, err := json.Marshal(map[string]string{
+		"session_id":      "agent-session",
+		"cwd":             workspace,
+		"hook_event_name": "UserPromptSubmit",
+	})
+	require.NoError(err)
+	require.NoError(srv.agentActivity.HandleHook(
+		bytes.NewReader(payload), "agent-runtime",
+	))
 	srv.workspaceEnrichmentCache["ws-runtime"] = workspaceEnrichmentCacheEntry{
 		hasTmux:         true,
 		tmuxRefreshedAt: srv.now(),
@@ -579,9 +596,13 @@ func TestWorkspaceRuntimeExitInvalidatesCachedTmuxEnrichment(t *testing.T) {
 
 	srv.HandleRuntimeSessionExit(localruntime.SessionInfo{
 		WorkspaceID: "ws-runtime",
-		Key:         "agent",
+		Key:         "agent-runtime",
 		CreatedAt:   srv.now(),
 	})
 
-	assert.NotContains(t, srv.workspaceEnrichmentCache, "ws-runtime")
+	assert.NotContains(srv.workspaceEnrichmentCache, "ws-runtime")
+	_, ok := srv.agentActivity.SnapshotForWorkspace(
+		workspace, []string{"agent-runtime"},
+	)
+	assert.False(ok)
 }

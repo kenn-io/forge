@@ -3955,12 +3955,14 @@ type WorkspaceResponse struct {
 	Schema *string `json:"$schema,omitempty"`
 
 	// AgentState Hook-reported aggregate state for live agent sessions. Omitted when no live session has reported lifecycle state.
-	AgentState          *WorkspaceResponseAgentState `json:"agent_state,omitempty"`
-	AgentStateUpdatedAt *string                      `json:"agent_state_updated_at,omitempty"`
-	AssociatedPrNumber  *int64                       `json:"associated_pr_number,omitempty"`
-	CommitsAhead        *int64                       `json:"commits_ahead,omitempty"`
-	CommitsBehind       *int64                       `json:"commits_behind,omitempty"`
-	CreatedAt           string                       `json:"created_at"`
+	AgentState *WorkspaceResponseAgentState `json:"agent_state,omitempty"`
+
+	// AgentStateUpdatedAt UTC timestamp of the hook report that produced agent_state.
+	AgentStateUpdatedAt *time.Time `json:"agent_state_updated_at,omitempty"`
+	AssociatedPrNumber  *int64     `json:"associated_pr_number,omitempty"`
+	CommitsAhead        *int64     `json:"commits_ahead,omitempty"`
+	CommitsBehind       *int64     `json:"commits_behind,omitempty"`
+	CreatedAt           string     `json:"created_at"`
 
 	// EnrichmentError Combined error from the most recent reconciliation attempt; populated component fields may still contain last-known-good values.
 	EnrichmentError *string `json:"enrichment_error,omitempty"`

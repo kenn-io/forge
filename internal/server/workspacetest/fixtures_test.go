@@ -26,11 +26,12 @@ import (
 )
 
 type workspaceServerFixture struct {
-	server   *server.Server
-	client   *apiclient.Client
-	database *db.DB
-	bare     string
-	remote   string
+	server           *server.Server
+	client           *apiclient.Client
+	database         *db.DB
+	bare             string
+	remote           string
+	agentActivityDir string
 }
 
 func setupWorkspaceServerFixture(
@@ -117,11 +118,12 @@ func setupWorkspaceServerFixture(
 	}
 	client := setupTestClientWithBaseURL(t, srv, clientBaseURL)
 	return workspaceServerFixture{
-		server:   srv,
-		client:   client,
-		database: database,
-		bare:     bare,
-		remote:   remote,
+		server:           srv,
+		client:           client,
+		database:         database,
+		bare:             bare,
+		remote:           remote,
+		agentActivityDir: filepath.Join(dir, "agent-activity"),
 	}
 }
 

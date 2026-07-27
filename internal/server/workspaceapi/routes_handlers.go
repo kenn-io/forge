@@ -2052,6 +2052,7 @@ func (s *Handler) stopWorkspaceRuntimeSession(
 				)
 			}
 			if stopped {
+				s.removeAgentActivityRuntimeSession(input.SessionKey)
 				s.invalidateWorkspaceEnrichment(summary.ID)
 				return nil, nil
 			}
@@ -2064,6 +2065,7 @@ func (s *Handler) stopWorkspaceRuntimeSession(
 	); err != nil {
 		return nil, httpapi.Internal("forget runtime session: " + err.Error())
 	}
+	s.removeAgentActivityRuntimeSession(input.SessionKey)
 	s.invalidateWorkspaceEnrichment(summary.ID)
 	return nil, nil
 }
@@ -2285,7 +2287,11 @@ func (s *Handler) deleteWorkspace(
 		ctx, input.ID, input.Force,
 		func(stopCtx context.Context) {
 			if s.runtime != nil {
+				sessions := s.runtime.ListSessions(input.ID)
 				s.runtime.StopWorkspace(stopCtx, input.ID)
+				for _, session := range sessions {
+					s.removeAgentActivityRuntimeSession(session.Key)
+				}
 			}
 		},
 	)

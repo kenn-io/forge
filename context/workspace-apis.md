@@ -235,15 +235,11 @@ visible to Git, the write fails.
 
 ## Agent Activity Hooks
 
-- `middleman agent-hook install` merges user-level Claude/Codex hooks, and
-  uninstall removes only its handlers; Codex hook trust stays explicit
-  (`internal/agentactivity/integration.go::Install`).
-- Reports apply only when the runtime-session key and worktree match a live
-  agent. Priority is approval, input, working, idle; reported idle overrides
-  tmux inference, while missing reports retain it
-  (`internal/server/workspaceapi/routes_handlers.go::applyAgentActivity`).
-- Hook errors fail open, and session end removes its report
-  (`internal/agentactivity/store.go::Store.HandleHook`).
+- User-level hooks are single-target: install merges, uninstall preserves other
+  handlers, and the last install wins (`internal/agentactivity/integration.go::Install`).
+- Matching live runtime/worktree reports use approval, input, working, idle priority;
+  latest state expires after 30 minutes or session exit, then tmux resumes (`internal/agentactivity/`, `internal/server/workspaceapi/lifecycle.go::Handler.HandleRuntimeSessionExit`).
+- The active sidebar polls every five seconds, and hook receipt fails open (`frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte::onMount`, `cmd/middleman/main.go::runAgentHookReceiver`).
 
 ## Diff Scopes
 

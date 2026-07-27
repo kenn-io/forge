@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -201,7 +202,16 @@ func readJSONObject(path string) (map[string]any, error) {
 		return nil, err
 	}
 	var root map[string]any
-	if err := json.Unmarshal(data, &root); err != nil {
+	decoder := json.NewDecoder(strings.NewReader(string(data)))
+	decoder.UseNumber()
+	if err := decoder.Decode(&root); err != nil {
+		return nil, fmt.Errorf("parse %s: %w", path, err)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		if err == nil {
+			err = errors.New("multiple JSON values")
+		}
 		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
 	if root == nil {
@@ -248,7 +258,18 @@ func arrayField(root map[string]any, key, path string) ([]any, error) {
 }
 
 func writeJSONObject(path string, value map[string]any) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	writePath := path
+	info, err := os.Lstat(path)
+	if err == nil && info.Mode()&os.ModeSymlink != 0 {
+		resolved, resolveErr := filepath.EvalSymlinks(path)
+		if resolveErr != nil {
+			return fmt.Errorf("resolve agent hook config symlink: %w", resolveErr)
+		}
+		writePath = resolved
+	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("inspect agent hook config path: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(writePath), 0o700); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(value, "", "  ")
@@ -256,7 +277,7 @@ func writeJSONObject(path string, value map[string]any) error {
 		return err
 	}
 	data = append(data, '\n')
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".middleman-hooks-*")
+	tmp, err := os.CreateTemp(filepath.Dir(writePath), ".middleman-hooks-*")
 	if err != nil {
 		return err
 	}
@@ -273,7 +294,7 @@ func writeJSONObject(path string, value map[string]any) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmpPath, path)
+	return os.Rename(tmpPath, writePath)
 }
 
 func windowsCommand(args ...string) string {

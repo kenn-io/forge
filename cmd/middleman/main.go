@@ -302,6 +302,9 @@ func runAgentHookInstall(action string, args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
+	if !filepath.IsAbs(cfg.DataDir) {
+		return fmt.Errorf("agent hook install requires an absolute data_dir: %q", cfg.DataDir)
+	}
 	executable := strings.TrimSpace(*binary)
 	if executable == "" {
 		executable, err = os.Executable()

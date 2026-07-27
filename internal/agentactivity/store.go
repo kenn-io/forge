@@ -57,7 +57,7 @@ type Store struct {
 	now  func() time.Time
 
 	cacheMu         sync.Mutex
-	cacheDirModTime time.Time
+	cacheFiles      map[string]os.FileInfo
 	cacheValidUntil time.Time
 	cacheReports    []Report
 }
@@ -98,14 +98,14 @@ func (s *Store) HandleHook(input io.Reader, runtimeSessionKey string) error {
 		return err
 	}
 
-	cwd, err := filepath.Abs(strings.TrimSpace(hook.CWD))
-	if err != nil || strings.TrimSpace(hook.CWD) == "" {
+	cwd, err := canonicalWorkspacePath(hook.CWD)
+	if err != nil {
 		return nil
 	}
 	report := Report{
 		SessionID:         hook.SessionID,
 		RuntimeSessionKey: runtimeSessionKey,
-		CWD:               filepath.Clean(cwd),
+		CWD:               cwd,
 		State:             state,
 		UpdatedAt:         s.now().UTC(),
 	}
@@ -116,8 +116,8 @@ func (s *Store) SnapshotForWorkspace(cwd string, liveSessionKeys []string) (Snap
 	if s == nil || strings.TrimSpace(s.root) == "" || len(liveSessionKeys) == 0 {
 		return Snapshot{}, false
 	}
-	absCWD, err := filepath.Abs(strings.TrimSpace(cwd))
-	if err != nil || strings.TrimSpace(cwd) == "" {
+	target, err := canonicalWorkspacePath(cwd)
+	if err != nil {
 		return Snapshot{}, false
 	}
 	live := make(map[string]struct{}, len(liveSessionKeys))
@@ -130,10 +130,9 @@ func (s *Store) SnapshotForWorkspace(cwd string, liveSessionKeys []string) (Snap
 		return Snapshot{}, false
 	}
 
-	target := filepath.Clean(absCWD)
 	var reports []Report
 	for _, report := range s.reports() {
-		if filepath.Clean(report.CWD) != target {
+		if report.CWD != target {
 			continue
 		}
 		if _, ok := live[report.RuntimeSessionKey]; !ok {
@@ -151,6 +150,22 @@ func (s *Store) SnapshotForWorkspace(cwd string, liveSessionKeys []string) (Snap
 		return b.UpdatedAt.Compare(a.UpdatedAt)
 	})
 	return Snapshot{State: reports[0].State, UpdatedAt: reports[0].UpdatedAt}, true
+}
+
+func canonicalWorkspacePath(path string) (string, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return "", errors.New("workspace path is required")
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	clean := filepath.Clean(abs)
+	if resolved, resolveErr := filepath.EvalSymlinks(clean); resolveErr == nil {
+		return filepath.Clean(resolved), nil
+	}
+	return clean, nil
 }
 
 // RemoveRuntimeSession removes every agent report owned by one launched
@@ -181,25 +196,32 @@ func (s *Store) reports() []Report {
 	s.cacheMu.Lock()
 	defer s.cacheMu.Unlock()
 
-	info, err := os.Stat(s.root)
-	if err != nil {
-		s.clearCacheLocked()
-		return nil
-	}
-	now := s.now().UTC()
-	if info.ModTime().Equal(s.cacheDirModTime) &&
-		(s.cacheValidUntil.IsZero() || now.Before(s.cacheValidUntil)) {
-		return slices.Clone(s.cacheReports)
-	}
-
 	entries, err := os.ReadDir(s.root)
 	if err != nil {
 		s.clearCacheLocked()
 		return nil
 	}
+	now := s.now().UTC()
+	files := make(map[string]os.FileInfo)
+	metadataComplete := true
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		info, infoErr := entry.Info()
+		if infoErr != nil {
+			metadataComplete = false
+			continue
+		}
+		files[entry.Name()] = info
+	}
+	if metadataComplete && sameReportFiles(files, s.cacheFiles) &&
+		(s.cacheValidUntil.IsZero() || now.Before(s.cacheValidUntil)) {
+		return slices.Clone(s.cacheReports)
+	}
+
 	reports := make([]Report, 0, len(entries))
 	validUntil := time.Time{}
-	removed := false
 	cleanupPending := false
 	for _, entry := range entries {
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
@@ -214,7 +236,7 @@ func (s *Store) reports() []Report {
 		if !now.Before(expiresAt) {
 			if removeErr := os.Remove(path); removeErr == nil ||
 				errors.Is(removeErr, os.ErrNotExist) {
-				removed = true
+				delete(files, entry.Name())
 			} else {
 				cleanupPending = true
 			}
@@ -225,14 +247,9 @@ func (s *Store) reports() []Report {
 		}
 		reports = append(reports, report)
 	}
-	if removed {
-		if refreshed, statErr := os.Stat(s.root); statErr == nil {
-			info = refreshed
-		}
-	}
-	s.cacheDirModTime = info.ModTime()
-	if cleanupPending {
-		s.cacheDirModTime = time.Time{}
+	s.cacheFiles = files
+	if cleanupPending || !metadataComplete {
+		s.cacheFiles = nil
 	}
 	s.cacheValidUntil = validUntil
 	s.cacheReports = slices.Clone(reports)
@@ -246,9 +263,24 @@ func (s *Store) invalidateCache() {
 }
 
 func (s *Store) clearCacheLocked() {
-	s.cacheDirModTime = time.Time{}
+	s.cacheFiles = nil
 	s.cacheValidUntil = time.Time{}
 	s.cacheReports = nil
+}
+
+func sameReportFiles(current, cached map[string]os.FileInfo) bool {
+	if cached == nil || len(current) != len(cached) {
+		return false
+	}
+	for name, currentInfo := range current {
+		cachedInfo, ok := cached[name]
+		if !ok || !os.SameFile(currentInfo, cachedInfo) ||
+			currentInfo.Size() != cachedInfo.Size() ||
+			!currentInfo.ModTime().Equal(cachedInfo.ModTime()) {
+			return false
+		}
+	}
+	return true
 }
 
 func stateForHook(input hookInput) (State, bool, bool) {
@@ -354,6 +386,11 @@ func (s *Store) readReport(path string) (Report, bool) {
 		report.CWD == "" || report.UpdatedAt.IsZero() {
 		return Report{}, false
 	}
+	cwd, err := canonicalWorkspacePath(report.CWD)
+	if err != nil {
+		return Report{}, false
+	}
+	report.CWD = cwd
 	return report, true
 }
 

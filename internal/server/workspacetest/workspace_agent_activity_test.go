@@ -72,6 +72,8 @@ func TestWorkspaceAgentActivityFlowsThroughHTTPResponsesE2E(t *testing.T) {
 	require.NoError(os.WriteFile(
 		filepath.Join(ws.WorktreePath, "activity.txt"), []byte("activity\n"), 0o644,
 	))
+	runGit(t, ws.WorktreePath, "config", "user.email", "agent-activity@example.invalid")
+	runGit(t, ws.WorktreePath, "config", "user.name", "Agent Activity Fixture")
 	runGit(t, ws.WorktreePath, "add", "activity.txt")
 	runGit(t, ws.WorktreePath, "commit", "-m", "add activity fixture")
 	pushResponse, err := fixture.client.HTTP.PushWorkspaceBranchWithResponse(ctx, ws.Id)

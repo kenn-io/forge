@@ -3,6 +3,8 @@ package main
 import (
 	"encoding/json"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -31,4 +33,25 @@ func TestAgentHookRunReceivesLifecyclePayload(t *testing.T) {
 	)
 	require.True(ok)
 	assert.Equal(t, agentactivity.StateWorking, snapshot.State)
+}
+
+func TestAgentHookInstallRejectsRelativeDataDirectory(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.toml")
+	require.NoError(os.WriteFile(configPath, []byte("data_dir = \"relative-data\"\n"), 0o600))
+	configDir := filepath.Join(dir, "codex")
+	t.Setenv("CODEX_HOME", configDir)
+
+	err := runAgentHookInstall("install", []string{
+		"--config", configPath,
+		"--agent", "codex",
+		"--binary", "/opt/middleman",
+	}, io.Discard)
+
+	require.Error(err)
+	assert.Contains(err.Error(), "absolute data_dir")
+	_, statErr := os.Stat(filepath.Join(configDir, "hooks.json"))
+	assert.ErrorIs(statErr, os.ErrNotExist)
 }

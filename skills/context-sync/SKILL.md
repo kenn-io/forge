@@ -62,6 +62,7 @@ knowledge that changes what future agents should do.
 | `config` | `context/config-persistence.md` | `internal/config/` save paths |
 | `platform` | `context/provider-architecture.md`, `context/platform-sync-invariants.md` | `internal/platform/` |
 | `github-sync` | `context/github-sync-invariants.md` | `internal/github/` |
+| `notifications` | `context/notifications-in-activity.md` | notification-owned paths in `internal/github/`, `internal/db/`, `internal/server/`, `frontend/`, and `packages/ui/` |
 | `db` | `context/db-migrations.md` | `internal/db/`, `internal/db/migrations/` |
 | `deferred-merge` | `context/deferred-merge.md` | deferred merge paths in `internal/server/` |
 | `embeds` | `context/embeds.md` | embed routes, shell, and host bridge paths |
@@ -72,14 +73,14 @@ knowledge that changes what future agents should do.
 | `docs-authoring` | `context/docs-authoring.md` | user docs, screenshots, and Zensical configuration |
 | `pull-requests` | `context/pull-request-workflow.md` | push and pull-request delivery workflow |
 | `frontend` | `context/ui-design-system.md`, `context/ui-interaction-contracts.md`, `context/vscode-workflow-panel-interaction-spec.md` | `frontend/src/` |
-| `inline-review` | `context/inline-review-comments.md` | review draft/thread paths in `internal/platform/`, `internal/server/`, and `packages/ui/` |
+| `inline-review` | `context/inline-review-comments.md` | review-owned paths in `internal/db/`, `internal/github/`, `internal/platform/`, `internal/server/`, and `packages/ui/` |
 | `mobile` | `context/mobile-ux.md` | frontend `/m` routes and phone-first components |
 | `kata` | `context/kata-mode.md`, `context/workspace-apis.md` | `internal/kata/`; Kata-owned paths in `internal/server/`, `internal/config/`, and `frontend/`, including shared app and configuration files |
 | `docs` | `context/docs-mode.md` | `internal/docs/`; Docs-owned paths in `internal/server/`, `internal/config/`, and `frontend/`, including shared app and configuration files |
 
-Mode scopes intentionally overlap the generic `server`, `config`, and `frontend` areas.
-For `--changed`, select every matching mode and generic area rather than choosing only
-the broadest or most specific row.
+Mode, notification, and inline-review scopes intentionally overlap generic areas. For
+`--changed`, select every matching focused and generic area rather than choosing only the
+broadest or most specific row.
 
 ## Audit Workflow
 

@@ -136,6 +136,13 @@ Interactive surfaces must agree on which item is selected.
   action atomically from accepted snapshot enrichment; do not merge a prior
   action target or mutation response into a newly accepted snapshot
   (`frontend/src/lib/features/kata/KataWorkspace.svelte::acceptedSnapshot`).
+- Task selection, project scope, and graph source are snapshot request identity;
+  query, owner, and label remain presentation state
+  (`frontend/src/lib/features/kata/kataWorkspaceAuthority.ts::kataWorkspaceAuthorityRequest`).
+- Derive sidebar areas and ordering from project metadata, excluding inbox projects,
+  and render a reachable graph only for the accepted snapshot's current source
+  (`frontend/src/lib/features/kata/kataWorkspaceAuthority.ts::deriveKataAreas`,
+  `frontend/src/lib/features/kata/KataWorkspace.svelte::acceptedGraph`).
 - Cross-surface Kata navigation must carry daemon, project UID, and status authority;
   UID-only sources always resolve an isolated selected-detail read for routing —
   never a shared-snapshot row, which can be stale during invalidation reloads —

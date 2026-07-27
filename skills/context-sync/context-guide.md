@@ -142,6 +142,7 @@ Silencing a failing guard without recording the decision is forbidden.
 | Provider-neutral sync identity, tokens, freshness, route shape | `context/platform-sync-invariants.md` | Cross-provider invariants |
 | New-provider checklist, package layout | `context/provider-architecture.md` | Onboarding a provider |
 | GitHub-only sync behavior (GraphQL, ETag) | `context/github-sync-invariants.md` | Isolated optimization |
+| Activity notification sync, persistence, and presentation | `context/notifications-in-activity.md` | User-scoped notification state |
 | Schema evolution rules | `context/db-migrations.md` | Migrations are the source of truth |
 | Daemon startup, Host validation, SSE replay | `context/server-runtime.md` | Root server lifecycle and request boundary |
 | API error envelopes + frontend branching | `context/error-handling.md` | Stable contract |

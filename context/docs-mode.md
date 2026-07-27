@@ -6,7 +6,8 @@ filesystem operations, search, and git pull/publish behavior.
 ## Ownership And Configuration
 
 - Docs is a non-provider mode. Files remain on disk under explicitly configured
-  folder roots; Kenn Forge stores folder registration, not document content.
+  folder roots; Kenn Forge stores folder registration, not document content
+  (`internal/config/config.go::DocFolder`).
 - Folder IDs are stable URL-segment identities. Paths are normalized to absolute,
   symlink-resolved roots before entering the live registry
   (`internal/docs/folder.go::NewRegistry`).
@@ -34,6 +35,13 @@ filesystem operations, search, and git pull/publish behavior.
 - File writes are atomic and in-process mutations are serialized across folders;
   create and rename never overwrite an existing destination
   (`internal/docs/folder.go::Registry.WriteFile`).
+- Docs mutations retain the origin/CSRF boundary, and file writes stay JSON-wrapped
+  rather than bypassing the mutation content-type gate with raw markdown
+  (`internal/server/server.go::Server.isMutatingDocsAPIRequest`,
+  `internal/server/docsapi/routes.go::docsWriteFileInput`).
+- Public operations use Huma and generated clients; blob responses remain binary
+  rather than being modeled as JSON
+  (`internal/server/docsapi/routes.go::docsBlobOutput`).
 
 ## Git Pull And Publish
 

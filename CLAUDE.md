@@ -44,14 +44,14 @@ only routes to them.
 | Test lanes, provider tests, API contracts, or HTTP tests | `context/testing.md` |
 | Agent hooks, session bootstrap, or dependency installation | `context/agent-bootstrap.md` |
 | User documentation, screenshots, or the Zensical site | `context/docs-authoring.md` |
-| Pushing, opening a pull request, or changing PR metadata | `context/pull-request-workflow.md` |
+| Pushing, opening a pull request, or changing PR metadata, comments, or review threads | `context/pull-request-workflow.md` |
 | Frontend visual design or component conventions | `context/ui-design-system.md` |
 | Frontend interaction, route state, persistence, or input semantics | `context/ui-interaction-contracts.md` |
 | Phone routes, narrow layouts, or touch UX | `context/mobile-ux.md` |
 | Workflow or terminal panel interaction models | `context/vscode-workflow-panel-interaction-spec.md` |
 | Workspace APIs, creation, or item identity | `context/workspace-apis.md` |
 | Workspace deletion, runtime sessions, tmux, or terminal UI | `context/workspace-runtime-lifecycle.md` |
-| Inline diff review comments | `context/inline-review-comments.md` |
+| Inline diff review drafts, comments, or threads | `context/inline-review-comments.md` |
 | Kata task authority, daemon integration, task UI, or Kata workspaces | `context/kata-mode.md`, `context/workspace-apis.md` |
 | Markdown folders, Docs APIs, or git publishing | `context/docs-mode.md` |
 

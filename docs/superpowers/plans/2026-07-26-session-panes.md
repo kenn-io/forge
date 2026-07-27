@@ -52,126 +52,63 @@
 - Consumes: nothing. Deliberately standalone, like `workspace-host.svelte.ts`.
 - Produces:
   - `type SessionHostKey = string` built by `sessionHostKey(workspaceId: string, hostKey: string | undefined, sessionKey: string, generation: string): SessionHostKey`, where `generation` is the session's `created_at`
-  - `registerSessionSlot(key: SessionHostKey, el: HTMLElement | null, visible: boolean): void`
+  - `registerSessionSlot(key: SessionHostKey, el: HTMLElement | null): void`
+  - `setSessionSlotVisible(key: SessionHostKey, visible: boolean): void`
   - `getSessionSlotElement(key: SessionHostKey): HTMLElement | null`
   - `isSessionSlotVisible(key: SessionHostKey): boolean` — false when no slot is registered
-  - `sessionSlotAttachment(key: SessionHostKey, visible: () => boolean): Attachment<HTMLElement>`
+  - `sessionSlotAttachment(key: SessionHostKey): Attachment<HTMLElement>`
   - `registerSessionParking(el: HTMLElement | null): void` / `getSessionParking(): HTMLElement | null`
-  - `mountedSessionHostKeys(): readonly SessionHostKey[]`, `noteSessionMounted(key)`, `noteSessionUnmounted(key)`
+  - `interface MountedSession { hostKey: SessionHostKey; websocketPath: string; status: string }`
+  - `mountedSessions(): readonly MountedSession[]`, `isSessionMounted(key)`, `noteSessionMounted(session)`, `noteSessionUnmounted(key)`
   - `resetSessionHostForTest(): void`
 
 Mirror `registerSlotElement`'s targeted-property-write comment (`workspace-host.svelte.ts:343`): a full-object reassignment inside an attachment effect loops forever.
 
-- [ ] **Step 1: Write the failing test**
+Two decisions the code forced, both departures from the first draft of this task:
 
-```ts
-// frontend/src/lib/stores/session-host.test.ts
-import { beforeEach, describe, expect, it } from "vite-plus/test";
-import {
-  getSessionSlotElement,
-  isSessionSlotVisible,
-  registerSessionSlot,
-  resetSessionHostForTest,
-  sessionHostKey,
-} from "./session-host.svelte.ts";
+- **Visibility is published separately from the element**, not passed to the
+  attachment. An attachment that reads reactive state re-runs through its own
+  cleanup, so folding visibility into it would unregister and re-register the
+  slot on every tab switch — the pool would park and re-adopt a live terminal for
+  a change that moved no DOM.
+- **The mounted set holds descriptors, not keys.** Mount state cannot belong to
+  `WorkspaceTerminalView`: once a session is promoted, that view renders no slot
+  for it and must not unmount it. Whoever reveals a session notes it with the
+  websocket path and status the pool needs, promotion changes nothing, and Task 9
+  owns disposal.
 
-describe("session host registry", () => {
-  beforeEach(() => resetSessionHostForTest());
+Key parts are percent-encoded and joined with `/` rather than separated by a raw
+NUL: opaque ids must not be able to spell each other's keys, and the result stays
+readable in a `data-` attribute.
 
-  it("keys a session by workspace, host, and session", () => {
-    // Two fleet hosts can serve the same workspace id, and two workspaces can
-    // both have a session called "agent": neither may share a live terminal.
-    expect(sessionHostKey("ws-1", undefined, "agent")).not.toBe(sessionHostKey("ws-1", "build", "agent"));
-    expect(sessionHostKey("ws-1", undefined, "agent")).not.toBe(sessionHostKey("ws-2", undefined, "agent"));
-  });
+- [x] **Step 1: Write the failing test**
 
-  it("registers and clears one slot per session key", () => {
-    const key = sessionHostKey("ws-1", undefined, "agent");
-    const el = document.createElement("div");
-    registerSessionSlot(key, el, true);
-    expect(getSessionSlotElement(key)).toBe(el);
-    expect(getSessionSlotElement(sessionHostKey("ws-1", undefined, "shell"))).toBeNull();
-    registerSessionSlot(key, null, false);
-    expect(getSessionSlotElement(key)).toBeNull();
-  });
+`frontend/src/lib/stores/session-host.test.ts` covers: the key separating
+workspace, host, session, and generation (and parts that contain the separator);
+one slot per key; a mounted-but-hidden slot reported as not visible; a session
+with no slot never visible even if marked so; visibility not surviving a slot
+re-registration; the mounted set updating a changed status in place; and
+unmounting dropping the slot, so the pool cannot reparent a subtree that is gone.
 
-  it("reports a mounted-but-hidden slot as not visible", () => {
-    // An inactive tab panel keeps its slot in the DOM under visibility:hidden.
-    // A terminal that stays active there fights the visible one for keystrokes.
-    const key = sessionHostKey("ws-1", undefined, "agent");
-    registerSessionSlot(key, document.createElement("div"), false);
-    expect(getSessionSlotElement(key)).not.toBeNull();
-    expect(isSessionSlotVisible(key)).toBe(false);
-
-    registerSessionSlot(key, document.createElement("div"), true);
-    expect(isSessionSlotVisible(key)).toBe(true);
-  });
-
-  it("reports no slot as not visible", () => {
-    expect(isSessionSlotVisible(sessionHostKey("ws-1", undefined, "agent"))).toBe(false);
-  });
-});
-```
-
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
 Run: `cd frontend && ../node_modules/.bin/vp test --project unit session-host`
 Expected: FAIL, module not found.
 
-- [ ] **Step 3: Implement the registry**
+- [x] **Step 3: Implement the registry**
 
-```ts
-// frontend/src/lib/stores/session-host.svelte.ts
-import type { Attachment } from "svelte/attachments";
+`frontend/src/lib/stores/session-host.svelte.ts`, to the interface above.
+`registerSessionSlot` writes `slotEls[key]` and `slotVisible[key]` as targeted
+properties, never a spread reassignment: it runs from inside an attachment's own
+effect, and reading every key while writing the same binding makes the effect its
+own dependency (`effect_update_depth_exceeded`).
 
-export type SessionHostKey = string;
-
-/** Workspace id, fleet host, and session key together: none identifies a terminal alone. */
-export function sessionHostKey(workspaceId: string, hostKey: string | undefined, sessionKey: string): SessionHostKey {
-  return `${workspaceId}\0${hostKey ?? ""}\0${sessionKey}`;
-}
-
-let parkingEl: HTMLElement | null = null;
-const slotEls = $state<Record<SessionHostKey, HTMLElement | null>>({});
-const slotVisible = $state<Record<SessionHostKey, boolean>>({});
-let mounted = $state<readonly SessionHostKey[]>([]);
-
-export function registerSessionSlot(key: SessionHostKey, el: HTMLElement | null, visible: boolean): void {
-  // Targeted writes, never a spread reassignment: this runs inside an attachment
-  // effect, and reading every key while writing the same binding makes the
-  // effect its own dependency (effect_update_depth_exceeded).
-  slotEls[key] = el;
-  slotVisible[key] = el !== null && visible;
-}
-
-export function getSessionSlotElement(key: SessionHostKey): HTMLElement | null {
-  return slotEls[key] ?? null;
-}
-
-/** Whether the session is on screen, which is what makes its terminal active. */
-export function isSessionSlotVisible(key: SessionHostKey): boolean {
-  return slotVisible[key] === true;
-}
-
-export function sessionSlotAttachment(key: SessionHostKey, visible: () => boolean): Attachment<HTMLElement> {
-  return (node) => {
-    // Re-runs when the tab panel's visibility flips, without remounting the slot.
-    registerSessionSlot(key, node, visible());
-    return () => {
-      registerSessionSlot(key, null, false);
-    };
-  };
-}
-```
-
-Plus `registerSessionParking`, `getSessionParking`, `mountedSessionHostKeys`, `noteSessionMounted`, `noteSessionUnmounted`, and `resetSessionHostForTest` clearing all four.
-
-- [ ] **Step 4: Run the test**
+- [x] **Step 4: Run the test**
 
 Run: `cd frontend && ../node_modules/.bin/vp test --project unit session-host`
-Expected: PASS.
+Expected: PASS. (8 tests.)
 
-- [ ] **Step 5: Commit** via the `kenn:commit` skill.
+- [x] **Step 5: Commit** via the `kenn:commit` skill.
 
 ---
 

@@ -228,3 +228,35 @@ func TestGitHubUpdatedMergeRequestsAcrossPages(t *testing.T) {
 		"GET /api/v3/repos/acme/widget/pulls?direction=desc&page=2&per_page=100&sort=updated&state=all",
 	}, canonicalReqs)
 }
+
+func TestGitHubArchiveMergeRequestInventoryBypassesListETag(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	requests := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		assert.Equal("/api/v3/repos/acme/widget/pulls", r.URL.Path)
+		if r.Header.Get("If-None-Match") != "" {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("ETag", `"archive-page"`)
+		_, _ = w.Write([]byte(`[
+			{"id":201,"node_id":"PR_201","number":41,"title":"archived","state":"closed","html_url":"https://github.com/acme/widget/pull/41","user":{"login":"a"},"created_at":"2025-01-01T00:00:00Z","updated_at":"2026-07-02T00:00:00Z"}
+		]`))
+	}))
+	defer srv.Close()
+	provider := newArchiveTestGitHubProvider(t, srv.URL)
+	ref := pagesTestRef()
+
+	for range 2 {
+		page, err := provider.ListMergeRequestsPage(t.Context(), ref, platform.ItemPageQuery{
+			Order: platform.ItemOrderUpdated,
+		})
+		require.NoError(err)
+		require.Len(page.Items, 1)
+		assert.Equal(41, page.Items[0].Number)
+	}
+	assert.Equal(2, requests)
+}

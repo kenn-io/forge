@@ -504,7 +504,7 @@ func (c *liveClient) ListInventoryPullRequestsPage(
 			Page: page, PerPage: githubPageSize,
 		},
 	}
-	items, resp, err := c.gh.PullRequests.List(ctx, owner, repo, opts)
+	items, resp, err := c.gh.PullRequests.List(withBypassETag(ctx), owner, repo, opts)
 	c.trackRate(resp)
 	if err != nil {
 		return nil, false, fmt.Errorf("list archive pull requests for %s/%s: %w", owner, repo, err)

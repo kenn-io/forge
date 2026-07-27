@@ -745,4 +745,75 @@ test.describe("inline workspace pane continuity", () => {
       await isolatedServer?.stop();
     }
   });
+
+  test("switching workspaces closes the previous workspace's live attachment", async ({ page }) => {
+    // The pool outlives the view, and a parked terminal keeps its websocket, so
+    // nothing hands one back on its own: browsing workspaces would leave a live
+    // tmux attachment per workspace visited. The view's release is the only
+    // thing that closes this one.
+    //
+    // Registry-level unit coverage cannot see a real socket, and an earlier
+    // attempt at this test navigated with page.goto — which closes every socket
+    // on its own and passed with the release removed. This switch is
+    // client-side, so the socket's fate is the behavior under test.
+    test.skip(
+      !hasCommand("git") || !hasCommand("tmux", ["-V"]),
+      "git and tmux are required for the real workspace flow",
+    );
+
+    let isolatedServer: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    try {
+      isolatedServer = await startIsolatedWorkspaceE2EServer();
+      api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
+      const workspaceA = await createIssueWorkspace(api, 10);
+      const workspaceB = await createIssueWorkspace(api, 11);
+
+      // Record every session websocket the app opens and whether it has closed.
+      // The real connection is untouched; only its lifecycle is observed.
+      await page.addInitScript(() => {
+        const log: Array<{ url: string; closed: boolean }> = [];
+        (window as unknown as { __wsLog: typeof log }).__wsLog = log;
+        const Native = window.WebSocket;
+        class TrackedWebSocket extends Native {
+          constructor(url: string | URL, protocols?: string | string[]) {
+            super(url, protocols);
+            const entry = { url: String(url), closed: false };
+            log.push(entry);
+            this.addEventListener("close", () => {
+              entry.closed = true;
+            });
+          }
+        }
+        window.WebSocket = TrackedWebSocket as unknown as typeof WebSocket;
+      });
+
+      const sessionSockets = (workspaceId: string) =>
+        page.evaluate((needle) => {
+          const log = (window as unknown as { __wsLog?: Array<{ url: string; closed: boolean }> }).__wsLog ?? [];
+          return log.filter((entry) => entry.url.includes(needle));
+        }, `/workspaces/${workspaceId}/runtime/sessions/`);
+
+      await page.goto(`${isolatedServer.info.base_url}/terminal/${workspaceA.id}`);
+      const containerA = await openTerminalPanel(page);
+      // Attached, not merely constructed: only a live socket can create this.
+      await typeMarkerCommand(page, containerA, workspaceA.worktree_path, "release-marker-a");
+      expect(await sessionSockets(workspaceA.id)).toHaveLength(1);
+
+      // Client-side switch through the workspace list, so nothing but the view's
+      // own release can close A's socket.
+      await page.locator(".workspace-list-sidebar .ws-row", { hasText: DARK_MODE_ISSUE_TITLE }).click();
+      await expect(page).toHaveURL(new RegExp(`/terminal/${workspaceB.id}$`));
+      await expect
+        .poll(async () => (await sessionSockets(workspaceA.id)).every((entry) => entry.closed), { timeout: 15_000 })
+        .toBe(true);
+
+      // And the workspace switched to is fully live, not collateral damage.
+      const containerB = await openTerminalPanel(page);
+      await typeMarkerCommand(page, containerB, workspaceB.worktree_path, "release-marker-b");
+    } finally {
+      await api?.dispose();
+      await isolatedServer?.stop();
+    }
+  });
 });

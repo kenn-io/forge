@@ -102,6 +102,10 @@ let hostedControls = $state<HostedWorkspaceControls | null>(null);
 // holding them must not be dismissed mid-save: it owns the pending feedback, and
 // unmounting it would strand the user with no idea whether the save landed.
 let hostedControlsBusy = $state(false);
+// Opens the hosted view's launcher overlay. Registered by the embedded view, which
+// owns the overlay: a palette command or a Focus Terminal with nothing to focus can
+// only reach it through the store.
+let launcherOpener = $state<(() => void) | null>(null);
 // Claims are released when their view unmounts, but a deletion can arrive
 // later from an unrelated surface (Workspaces tab, terminal tab). Without
 // this map the deletion would find no claim to tombstone, and the stale
@@ -459,6 +463,16 @@ export function hostedWorkspaceControls(): HostedWorkspaceControls | null {
   return hostedControls;
 }
 
+export function registerWorkspaceLauncher(open: (() => void) | null): void {
+  launcherOpener = open;
+}
+
+/** The hosted workspace's launcher, or null when this surface is not hosting one. */
+export function hostedWorkspaceLauncher(surface: InlineWorkspaceSurface): (() => void) | null {
+  if (desiredSlot() !== surface) return null;
+  return launcherOpener;
+}
+
 export function setWorkspaceControlsBusy(busy: boolean): void {
   hostedControlsBusy = busy;
 }
@@ -596,6 +610,14 @@ export function getInlineWorkspaceController(surface: InlineWorkspaceSurface): I
       // A modal frame is open: leave the layout alone and don't pull
       // focus out of the dialog.
       if (getStackDepth() > 0) return;
+      // Nothing to focus. A workspace with no session has no terminal, so revealing
+      // its pane lands the user on an empty surface; the launcher is what they
+      // actually need next.
+      if (launcherOpener !== null && promotableSessionsFor(surface).length === 0) {
+        revealWorkspacePane(surface);
+        launcherOpener();
+        return;
+      }
       // Reveal without maximizing. "Collapsed" is not the only way to be
       // invisible: the pane can be tabbed behind a sibling or buried under
       // another leaf's zoom, and in both cases its portal slot is unmounted, so
@@ -645,4 +667,5 @@ export function resetWorkspaceHostForTest(): void {
   sessionPaneSnippet = null;
   hostedControls = null;
   hostedControlsBusy = false;
+  launcherOpener = null;
 }

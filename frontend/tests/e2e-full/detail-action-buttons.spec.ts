@@ -113,6 +113,13 @@ test.describe("detail action buttons", () => {
         "middleman/issue-10-widget-rendering-broken-on-safari",
       );
 
+      // A workspace with nothing running opens its launcher overlay in the pane,
+      // and nothing behind a modal is clickable.
+      const launcher = page.getByRole("dialog", { name: "Launch a session" });
+      await expect(launcher).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(launcher).toBeHidden();
+
       // The secondary action still navigates to the full Workspaces view.
       await page.getByRole("button", { name: "Open in Workspaces" }).click();
       await expect(page).toHaveURL(new RegExp(`/terminal/${createdWorkspace.id}$`));
@@ -172,6 +179,13 @@ test.describe("detail action buttons", () => {
       await access(readyWorkspace.worktree_path);
       expect(readyWorkspace.git_head_ref).toBeTruthy();
       expect(gitOutput(readyWorkspace.worktree_path, ["branch", "--show-current"])).toBe(readyWorkspace.git_head_ref);
+
+      // A workspace with nothing running opens its launcher overlay in the pane,
+      // and nothing behind a modal is clickable.
+      const launcher = page.getByRole("dialog", { name: "Launch a session" });
+      await expect(launcher).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(launcher).toBeHidden();
 
       // The secondary action still navigates to the full Workspaces view.
       await page.getByRole("button", { name: "Open in Workspaces" }).click();

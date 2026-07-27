@@ -400,6 +400,14 @@ describe("WorkspaceHost", () => {
       const existingStage = host!.querySelector(".workspace-stage");
       expect(existingStage).not.toBeNull();
 
+      // This workspace is running nothing, so the pane auto-opened its launcher
+      // overlay, and no pane may be maximized over an open dialog. Dismiss it the
+      // way a user would: what is under test here is the reparent, not the
+      // launcher.
+      await vi.waitFor(() => expect(document.querySelector("[role='dialog']")).not.toBeNull(), WAIT);
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      await vi.waitFor(() => expect(document.querySelector("[role='dialog']")).toBeNull(), WAIT);
+
       // Maximizing must reuse the live shell, not rebuild it: a remounted stage
       // means a dropped terminal socket.
       flushSync(() => layout.toggleZoom("leaf-workspace"));

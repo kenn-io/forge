@@ -23,7 +23,7 @@ import {
   type PaneSurfaceKey,
 } from "@middleman/ui/stores/paneLayout";
 import { isSessionPaneKey } from "@middleman/ui";
-import { activeHostedSession } from "../workspace-host.svelte.js";
+import { activeHostedSession, hostedWorkspaceLauncher } from "../workspace-host.svelte.js";
 import type { ConfigRepo } from "@middleman/ui/api/types";
 import type { StoreInstances } from "@middleman/ui";
 import type { Action, Context, PreviewBlock } from "./types.js";
@@ -698,6 +698,23 @@ export const defaultActions: Action[] = [
     handler: (ctx) => {
       const target = sessionPromotionTarget(ctx);
       if (target !== null) promoteSessionBesideWorkspace(target.layout, target.paneKey);
+    },
+  },
+  {
+    id: "workspace.launcher",
+    label: "Launch a workspace session",
+    scope: "detail",
+    binding: null,
+    priority: 0,
+    // The launcher is an overlay, not a pane, so it needs no room in the layout -
+    // only a hosted workspace to launch into.
+    when: (ctx) => {
+      const surface = paneSurfaceFor(ctx);
+      return surface !== null && hostedWorkspaceLauncher(surface) !== null;
+    },
+    handler: (ctx) => {
+      const surface = paneSurfaceFor(ctx);
+      if (surface !== null) hostedWorkspaceLauncher(surface)?.();
     },
   },
   {

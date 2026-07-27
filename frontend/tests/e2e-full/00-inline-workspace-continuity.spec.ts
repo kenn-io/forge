@@ -102,6 +102,18 @@ async function createIssueWorkspace(api: APIRequestContext, issueNumber: number)
   return waitForWorkspaceReady(api, workspace.id);
 }
 
+/**
+ * A workspace running nothing opens its launcher overlay as soon as it lands in a
+ * detail pane, and nothing behind a modal is clickable. Dismiss it the way a user
+ * who wants the dock instead would.
+ */
+async function dismissWorkspaceLauncher(page: Page): Promise<void> {
+  const launcher = page.getByRole("dialog", { name: "Launch a session" });
+  await expect(launcher).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(launcher).toBeHidden();
+}
+
 async function openTerminalPanel(page: Page): Promise<Locator> {
   await page.getByRole("button", { name: "Open terminal panel" }).click();
   const container = page.locator(".terminal-panel.open .terminal-container");
@@ -229,6 +241,7 @@ test.describe("inline workspace pane continuity", () => {
       await createIssueWorkspace(api, 10);
 
       await page.goto(`${isolatedServer.info.base_url}/issues/github/acme/widgets/10`);
+      await dismissWorkspaceLauncher(page);
       const appMain = page.locator(".app-main");
       const itemRail = page.locator(".issue-list");
       const expand = page.getByRole("button", { name: "Expand Terminal" });
@@ -305,6 +318,7 @@ test.describe("inline workspace pane continuity", () => {
 
       await page.goto(`${isolatedServer.info.base_url}/issues/github/acme/widgets/10`);
       await expect(page.locator(".detail-pane-workspace-slot .workspace-host-wrapper")).toBeVisible();
+      await dismissWorkspaceLauncher(page);
       // The hosted shell opens on its workflow panel; the terminal container only
       // exists once that panel is open.
       const paneContainer = await openTerminalPanel(page);
@@ -363,6 +377,7 @@ test.describe("inline workspace pane continuity", () => {
 
       await page.goto(`${isolatedServer.info.base_url}/issues/github/acme/widgets/10`);
       await expect(page.locator(".detail-pane-workspace-slot .workspace-host-wrapper")).toBeVisible();
+      await dismissWorkspaceLauncher(page);
       // The dock, so this also covers promoting out of the container promotion
       // was not designed around.
       const dockContainer = await openTerminalPanel(page);
@@ -531,6 +546,7 @@ test.describe("inline workspace pane continuity", () => {
 
       await page.goto(`${isolatedServer.info.base_url}/issues/github/acme/widgets/10`);
       await expect(page.locator(".detail-pane-workspace-slot .workspace-host-wrapper")).toBeVisible();
+      await dismissWorkspaceLauncher(page);
       const paneContainer = await openTerminalPanel(page);
       await paneContainer.evaluate((el) => el.setAttribute("data-continuity", "reveal"));
 
@@ -800,6 +816,7 @@ test.describe("inline workspace pane continuity", () => {
       // Select issue A: its ready workspace claims the shared host inline,
       // a different hostedWorkspaceKey than the remembered B route.
       await selectIssueByTitle(page, SAFARI_ISSUE_TITLE);
+      await dismissWorkspaceLauncher(page);
       const paneContainer = await openTerminalPanel(page);
       await paneContainer.evaluate((el) => {
         el.setAttribute("data-continuity", "witness-a");

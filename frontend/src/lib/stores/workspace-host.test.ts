@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach } from "vite-plus/test";
+import { describe, expect, it, beforeEach, vi } from "vite-plus/test";
 import { getPaneLayoutStore } from "@middleman/ui/stores/paneLayout";
 import { pushModalFrame } from "@middleman/ui/stores/keyboard/modal-stack";
 import {
@@ -17,6 +17,7 @@ import {
   desiredSlot,
   getInlineWorkspaceController,
   publishHostedSessions,
+  registerWorkspaceLauncher,
   hostedSessionRegistryKey,
   isHostVisible,
   notifyWorkspaceDeleted,
@@ -607,6 +608,41 @@ describe("workspace host store", () => {
     prs.setDockMode("expanded");
     prs.focusTerminal();
     expect(prs.getDockMode()).toBe("expanded");
+  });
+
+  it("focusTerminal opens the launcher when the workspace is running nothing", () => {
+    const prs = getInlineWorkspaceController("prs");
+    const openLauncher = vi.fn();
+    registerWorkspaceLauncher(openLauncher);
+    prs.claim(identityA, refA);
+    prs.setDockMode("collapsed");
+    publishHostedSessions({ workspaceId: "ws-a", hostKey: undefined }, []);
+
+    prs.focusTerminal();
+
+    // There is no terminal to focus, so revealing the pane alone would land the
+    // user on an empty surface and look like the command did nothing.
+    expect(openLauncher).toHaveBeenCalled();
+    expect(prs.getDockMode()).toBe("split");
+  });
+
+  it("focusTerminal focuses a running session rather than the launcher", () => {
+    const prs = getInlineWorkspaceController("prs");
+    const openLauncher = vi.fn();
+    registerWorkspaceLauncher(openLauncher);
+    prs.claim(identityA, refA);
+    publishHostedSessions({ workspaceId: "ws-a", hostKey: undefined }, [
+      {
+        paneKey: "session:ws-a//ws-a%3Ahelper",
+        label: "Helper",
+        hostKey: "ws-a//ws-a%3Ahelper/gen-1",
+        active: true,
+      },
+    ]);
+
+    prs.focusTerminal();
+
+    expect(openLauncher).not.toHaveBeenCalled();
   });
 
   it("reveals a workspace buried under another leaf's zoom", () => {

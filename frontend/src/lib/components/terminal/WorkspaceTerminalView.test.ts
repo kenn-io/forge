@@ -165,6 +165,7 @@ import { mountedSessions, resetSessionHostForTest, sessionHostPrefix } from "../
 import {
   activeHostedSession,
   getInlineWorkspaceController,
+  hostedWorkspaceLauncher,
   hostedWorkspaceControls,
   resetWorkspaceHostForTest,
 } from "../../stores/workspace-host.svelte.ts";
@@ -244,6 +245,22 @@ function runtimeWithSession(createdAt: string) {
         created_at: createdAt,
       },
     ],
+  };
+}
+
+/** A workspace that can launch but is running nothing yet. */
+function runtimeWithLaunchTargetsOnly() {
+  return {
+    launch_targets: [
+      {
+        key: "helper",
+        label: "Helper",
+        kind: "agent",
+        source: "config",
+        available: true,
+      },
+    ],
+    sessions: [],
   };
 }
 
@@ -354,6 +371,43 @@ function persistedSplitWorkflowLayout(sessionKey: string, region: "workflow" | "
         region === "workflow"
           ? { type: "leaf", id: "wf-session", tabs: [`session:${sessionKey}`], activeTabKey: `session:${sessionKey}` }
           : { type: "leaf", id: "wf-session", tabs: ["home"], activeTabKey: "home" },
+    },
+    customSessionLabels: {},
+  });
+}
+
+/**
+ * Two workflow sessions, each in its own leaf. A detail pane has no Home tab, so a
+ * second session is what gives the strip something to render and a demotion
+ * somewhere to land.
+ */
+function persistedTwoSessionWorkflowLayout(firstKey: string, secondKey: string) {
+  return JSON.stringify({
+    version: 1,
+    open: false,
+    dock: "bottom",
+    height: 300,
+    activeSessionKey: null,
+    tree: null,
+    sessionRegions: { [firstKey]: "workflow", [secondKey]: "workflow" },
+    workflowMode: "tabs",
+    workflowTree: {
+      type: "split",
+      id: "wf-split",
+      direction: "horizontal",
+      ratio: 0.5,
+      first: {
+        type: "leaf",
+        id: "wf-first",
+        tabs: [`session:${firstKey}`],
+        activeTabKey: `session:${firstKey}`,
+      },
+      second: {
+        type: "leaf",
+        id: "wf-second",
+        tabs: [`session:${secondKey}`],
+        activeTabKey: `session:${secondKey}`,
+      },
     },
     customSessionLabels: {},
   });
@@ -2450,7 +2504,12 @@ describe("WorkspaceTerminalView", () => {
   });
 
   it("publishes the session the pane is showing, so a keyboard command can promote it", async () => {
-    localStorage.setItem("middleman-workspace-terminal-layout:ws-1", persistedSplitWorkflowLayout("ws-1:helper"));
+    localStorage.setItem("middleman-workspace-active-tab:ws-1", "session:ws-1:helper");
+    localStorage.setItem(
+      "middleman-workspace-terminal-layout:ws-1",
+      persistedTwoSessionWorkflowLayout("ws-1:helper", "ws-1:reviewer"),
+    );
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoWorkflowSessions());
     claimForPrs();
 
     render(WorkspaceTerminalView, {
@@ -2466,11 +2525,13 @@ describe("WorkspaceTerminalView", () => {
       expect(activeHostedSession("prs")?.paneKey).toBe(sessionPaneKey("ws-1", undefined, "ws-1:helper")),
     );
 
-    await fireEvent.click(screen.getByRole("tab", { name: "Home" }));
+    await fireEvent.click(await screen.findByRole("tab", { name: /Reviewer/ }));
 
-    // Republished as the user moves around: Home fills the pane now, so the
-    // session it replaced must stop being offered.
-    await waitFor(() => expect(activeHostedSession("prs")).toBeNull());
+    // Republished as the user moves around: the other session fills the pane now,
+    // so a promote command must act on that one instead.
+    await waitFor(() =>
+      expect(activeHostedSession("prs")?.paneKey).toBe(sessionPaneKey("ws-1", undefined, "ws-1:reviewer")),
+    );
   });
 
   it("hands its controls to the pane instead of a toolbar while embedded", async () => {
@@ -2505,6 +2566,131 @@ describe("WorkspaceTerminalView", () => {
     // and nothing is published for a detail pane to render.
     await waitFor(() => expect(document.querySelector(".workspace-toolbar")).not.toBeNull());
     expect(hostedWorkspaceControls()).toBeNull();
+  });
+
+  describe("launcher overlay", () => {
+    it("drops the Home tab in a pane and opens the launcher when nothing is running", async () => {
+      localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
+      claimForPrs();
+
+      render(WorkspaceTerminalView, {
+        props: {
+          workspaceId: "ws-1",
+          paneSurface: "prs" as const,
+        },
+      });
+
+      // The pane's one slot goes to a terminal, not to a surface only used to start
+      // one; with nothing to show, the launcher is what opens instead of an empty
+      // strip.
+      await waitFor(() => expect(screen.getByRole("dialog", { name: /Launch a session/ })).toBeTruthy());
+      expect(screen.queryByRole("tab", { name: "Home" })).toBeNull();
+    });
+
+    it("leaves a docked terminal alone instead of covering it with the launcher", async () => {
+      localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+      localStorage.setItem(
+        "middleman-workspace-terminal-layout:ws-1",
+        persistedSplitWorkflowLayout("ws-1_shell_a", "terminal"),
+      );
+      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTerminalSession());
+      claimForPrs();
+
+      render(WorkspaceTerminalView, {
+        props: {
+          workspaceId: "ws-1",
+          paneSurface: "prs" as const,
+        },
+      });
+
+      // A docked session is not a workflow tab, so the strip is empty - but the
+      // terminal is on screen, and a launcher over it would cover the thing the
+      // user came for.
+      await waitFor(() => expect(document.querySelector(".terminal-panel.open")).not.toBeNull());
+      expect(screen.queryByRole("dialog", { name: /Launch a session/ })).toBeNull();
+    });
+
+    it("keeps the Home tab on the standalone Workspaces tab", async () => {
+      localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
+
+      render(WorkspaceTerminalView, {
+        props: {
+          workspaceId: "ws-1",
+        },
+      });
+
+      // That tab has room for it, and its chrome is out of scope here.
+      expect(await screen.findByRole("tab", { name: "Home" })).toBeTruthy();
+      expect(screen.queryByRole("dialog", { name: /Launch a session/ })).toBeNull();
+    });
+
+    it("leaves a running workspace's sessions on screen instead of the launcher", async () => {
+      localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+      localStorage.setItem("middleman-workspace-terminal-layout:ws-1", persistedSplitWorkflowLayout("ws-1:helper"));
+      claimForPrs();
+
+      render(WorkspaceTerminalView, {
+        props: {
+          workspaceId: "ws-1",
+          paneSurface: "prs" as const,
+        },
+      });
+
+      // A remembered Home tab names a tab that does not exist here, so the session
+      // takes its place rather than the overlay covering a live terminal.
+      expect(await screen.findByRole("tab", { name: /Helper/ })).toBeTruthy();
+      expect(screen.queryByRole("dialog", { name: /Launch a session/ })).toBeNull();
+    });
+
+    it("closes on a successful launch and stays open when one fails", async () => {
+      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
+      mocks.launchWorkspaceSession.mockRejectedValueOnce(new Error("helper not on PATH"));
+      claimForPrs();
+
+      render(WorkspaceTerminalView, {
+        props: {
+          workspaceId: "ws-1",
+          paneSurface: "prs" as const,
+        },
+      });
+
+      const dialog = await screen.findByRole("dialog", { name: /Launch a session/ });
+      await fireEvent.click(within(dialog).getByRole("button", { name: /Helper/ }));
+
+      // A failed launch leaves nothing to show, so closing the overlay would strand
+      // the user on an empty pane with the error out of sight.
+      await waitFor(() => expect(mocks.showFlash).toHaveBeenCalled());
+      expect(screen.getByRole("dialog", { name: /Launch a session/ })).toBeTruthy();
+
+      mocks.launchWorkspaceSession.mockResolvedValueOnce(runningSession);
+      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithStaleSession());
+      await fireEvent.click(within(dialog).getByRole("button", { name: /Helper/ }));
+
+      await waitFor(() => expect(screen.queryByRole("dialog", { name: /Launch a session/ })).toBeNull());
+      expect(await screen.findByRole("tab", { name: /Helper/ })).toBeTruthy();
+    });
+
+    it("hands the palette an opener only while a pane is hosting the workspace", async () => {
+      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithStaleSession());
+      claimForPrs();
+
+      const { unmount } = render(WorkspaceTerminalView, {
+        props: {
+          workspaceId: "ws-1",
+          paneSurface: "prs" as const,
+        },
+      });
+
+      // A palette command sees stores, not components, and the overlay state lives
+      // in the view.
+      await waitFor(() => expect(hostedWorkspaceLauncher("prs")).not.toBeNull());
+      expect(hostedWorkspaceLauncher("issues")).toBeNull();
+
+      unmount();
+      await waitFor(() => expect(hostedWorkspaceLauncher("prs")).toBeNull());
+    });
   });
 
   it("keeps its toolbar while the detail surface is flattened", async () => {
@@ -2579,8 +2765,12 @@ describe("WorkspaceTerminalView", () => {
 
   describe("promoted sessions", () => {
     it("masks a promoted session out of the workflow strip and gives back its placement on demote", async () => {
-      localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
-      localStorage.setItem("middleman-workspace-terminal-layout:ws-1", persistedSplitWorkflowLayout("ws-1:helper"));
+      localStorage.setItem("middleman-workspace-active-tab:ws-1", "session:ws-1:reviewer");
+      localStorage.setItem(
+        "middleman-workspace-terminal-layout:ws-1",
+        persistedTwoSessionWorkflowLayout("ws-1:reviewer", "ws-1:helper"),
+      );
+      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoWorkflowSessions());
       const paneKey = promoteSession("prs", "ws-1:helper");
 
       render(WorkspaceTerminalView, {
@@ -2590,7 +2780,7 @@ describe("WorkspaceTerminalView", () => {
         },
       });
 
-      await screen.findByRole("tab", { name: "Home" });
+      const reviewerTab = await screen.findByRole("tab", { name: /Reviewer/ });
       // The detail pane is showing this session, so the container must not show it
       // too: two slots for one terminal race for it and one renders empty.
       expect(screen.queryByRole("tab", { name: /Helper/ })).toBeNull();
@@ -2598,12 +2788,10 @@ describe("WorkspaceTerminalView", () => {
       getPaneLayoutStore("prs").demoteTab(paneKey);
 
       const helperTab = await screen.findByRole("tab", { name: /Helper/ });
-      // Its own leaf, not merged into Home's. Masking must not prune the stored
-      // tree, or a demotion returns the session to the region and loses the place
-      // the user put it in.
-      expect(helperTab.closest('[role="tablist"]')).not.toBe(
-        screen.getByRole("tab", { name: "Home" }).closest('[role="tablist"]'),
-      );
+      // Its own leaf, not merged into the other session's. Masking must not prune
+      // the stored tree, or a demotion returns the session to the region and loses
+      // the place the user put it in.
+      expect(helperTab.closest('[role="tablist"]')).not.toBe(reviewerTab.closest('[role="tablist"]'));
     });
 
     it("keeps a promoted session's terminal live without a tab of its own", async () => {
@@ -2721,8 +2909,12 @@ describe("WorkspaceTerminalView", () => {
     });
   });
   it("demotes a promoted session dropped back on the workflow strip", async () => {
-    localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
-    localStorage.setItem("middleman-workspace-terminal-layout:ws-1", persistedSplitWorkflowLayout("ws-1:helper"));
+    localStorage.setItem("middleman-workspace-active-tab:ws-1", "session:ws-1:reviewer");
+    localStorage.setItem(
+      "middleman-workspace-terminal-layout:ws-1",
+      persistedTwoSessionWorkflowLayout("ws-1:reviewer", "ws-1:helper"),
+    );
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoWorkflowSessions());
     const paneKey = promoteSession("prs", "ws-1:helper");
 
     render(WorkspaceTerminalView, {
@@ -2732,7 +2924,9 @@ describe("WorkspaceTerminalView", () => {
       },
     });
 
-    const homeTab = await screen.findByRole("tab", { name: "Home" });
+    // A pane has no Home tab, so the workspace's other session is the strip the
+    // promoted one can be dropped back onto.
+    const reviewerTab = await screen.findByRole("tab", { name: /Reviewer/ });
     expect(screen.queryByRole("tab", { name: /Helper/ })).toBeNull();
     await waitFor(() =>
       expect(sockets.some((socket) => socket.url.includes("/sessions/ws-1:helper/terminal"))).toBe(true),
@@ -2743,9 +2937,9 @@ describe("WorkspaceTerminalView", () => {
     // key in the canonical form the workspace tab does not use.
     const dataTransfer = fakeDataTransfer();
     startTabbedPanelTabDrag({ dataTransfer } as unknown as DragEvent, { scope: "detail:prs", tabKey: paneKey });
-    const homeStrip = homeTab.closest('[role="tablist"]')!;
-    await fireEvent.dragOver(homeStrip, { dataTransfer, clientX: 5 });
-    await fireEvent.drop(homeStrip, { dataTransfer, clientX: 5 });
+    const reviewerStrip = reviewerTab.closest('[role="tablist"]')!;
+    await fireEvent.dragOver(reviewerStrip, { dataTransfer, clientX: 5 });
+    await fireEvent.drop(reviewerStrip, { dataTransfer, clientX: 5 });
     clearActiveTabbedPanelDrag();
 
     // Demoted, and placed where it was dropped rather than back in the leaf it
@@ -2753,7 +2947,7 @@ describe("WorkspaceTerminalView", () => {
     // would ignore the gesture.
     const helperTab = await screen.findByRole("tab", { name: /Helper/ });
     expect(getPaneLayoutStore("prs").hasTab(paneKey)).toBe(false);
-    expect(helperTab.closest('[role="tablist"]')).toBe(homeStrip);
+    expect(helperTab.closest('[role="tablist"]')).toBe(reviewerStrip);
     // Same shell, still attached: the drop reparents the pooled terminal into the
     // workflow slot rather than tearing it down and reattaching.
     expect(sockets.filter((candidate) => candidate.url.includes("/sessions/ws-1:helper/terminal"))).toHaveLength(1);
@@ -2761,8 +2955,12 @@ describe("WorkspaceTerminalView", () => {
   });
 
   it("refuses a session pane dropped from another workspace", async () => {
-    localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
-    localStorage.setItem("middleman-workspace-terminal-layout:ws-1", persistedSplitWorkflowLayout("ws-1:helper"));
+    localStorage.setItem("middleman-workspace-active-tab:ws-1", "session:ws-1:reviewer");
+    localStorage.setItem(
+      "middleman-workspace-terminal-layout:ws-1",
+      persistedTwoSessionWorkflowLayout("ws-1:reviewer", "ws-1:helper"),
+    );
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoWorkflowSessions());
 
     render(WorkspaceTerminalView, {
       props: {
@@ -2771,7 +2969,7 @@ describe("WorkspaceTerminalView", () => {
       },
     });
 
-    const homeTab = await screen.findByRole("tab", { name: "Home" });
+    const reviewerTab = await screen.findByRole("tab", { name: /Reviewer/ });
     const helperTab = await screen.findByRole("tab", { name: /Helper/ });
     const helperStrip = helperTab.closest('[role="tablist"]');
     // Same session key, another workspace. A session key is unique only within
@@ -2781,12 +2979,12 @@ describe("WorkspaceTerminalView", () => {
       scope: "detail:prs",
       tabKey: sessionPaneKey("ws-2", undefined, "ws-1:helper"),
     });
-    const homeStrip = homeTab.closest('[role="tablist"]')!;
-    await fireEvent.dragOver(homeStrip, { dataTransfer, clientX: 5 });
-    await fireEvent.drop(homeStrip, { dataTransfer, clientX: 5 });
+    const reviewerStrip = reviewerTab.closest('[role="tablist"]')!;
+    await fireEvent.dragOver(reviewerStrip, { dataTransfer, clientX: 5 });
+    await fireEvent.drop(reviewerStrip, { dataTransfer, clientX: 5 });
     clearActiveTabbedPanelDrag();
 
     expect(screen.getByRole("tab", { name: /Helper/ }).closest('[role="tablist"]')).toBe(helperStrip);
-    expect(helperStrip).not.toBe(homeStrip);
+    expect(helperStrip).not.toBe(reviewerStrip);
   });
 });

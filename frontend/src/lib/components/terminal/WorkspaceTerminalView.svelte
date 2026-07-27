@@ -1,5 +1,6 @@
 <script lang="ts">
   import { EmptyState, IconButton, Spinner } from "@kenn-io/kit-ui";
+  import PlayIcon from "@lucide/svelte/icons/play";
   import { onDestroy, tick, untrack } from "svelte";
   import { navigate } from "../../stores/router.svelte.ts";
   import { isNarrow } from "../../stores/container.svelte.js";
@@ -10,6 +11,7 @@
   import ConfirmDialog from "../shared/ConfirmDialog.svelte";
   import DialogButton from "../shared/DialogButton.svelte";
   import WorkspaceHome from "./WorkspaceHome.svelte";
+  import WorkspaceLauncherOverlay from "./WorkspaceLauncherOverlay.svelte";
   import LaunchMenu from "./LaunchMenu.svelte";
   import TerminalOptionsMenu from "./TerminalOptionsMenu.svelte";
   import TerminalZoomControl from "./TerminalZoomControl.svelte";
@@ -44,6 +46,7 @@
   import {
     publishHostedSessions,
     registerWorkspaceControls,
+    registerWorkspaceLauncher,
     setWorkspaceControlsBusy,
   } from "../../stores/workspace-host.svelte.ts";
   import {
@@ -560,6 +563,86 @@
     untrack(() => publishHostedSessions(key, sessions));
   });
 
+  // A detail pane trades the Home tab for the launcher overlay. Keyed off the pane
+  // surface rather than the flatten width: unlike the controls, the overlay is a
+  // modal and needs no chrome of its own to live in.
+  const launcherMode = $derived(paneSurface !== undefined);
+  let launcherOpen = $state(false);
+  // Which workspace the overlay auto-opened for, so selecting the same item twice
+  // does not reopen a launcher the user dismissed, while a different workspace with
+  // no session still gets one.
+  let launcherAutoOpenedFor = $state<string | null>(null);
+
+  function openLauncher(): void {
+    if (!launcherMode) {
+      selectWorkspaceTab("home");
+      return;
+    }
+    launcherOpen = true;
+  }
+
+  function closeLauncher(): void {
+    launcherOpen = false;
+  }
+
+  /**
+   * Where to go when the tab the user was on disappears - a session stopped, the
+   * terminal panel closed, a tab moved to the dock.
+   *
+   * Home is that place outside a pane. Inside one there is no Home, so it is
+   * whatever workflow tab is left, and the launcher when the workspace has nothing
+   * left to show: a pane rendering an empty strip is a dead end.
+   */
+  function selectFallbackTab(): void {
+    if (!launcherMode) {
+      selectWorkspaceTab("home");
+      return;
+    }
+    const next = workflowTabDescriptors.find((tab) => tab.key !== activeTabKey);
+    if (next !== undefined) {
+      selectWorkspaceTab(next.key);
+      return;
+    }
+    // The dock counts as something to show: its sessions are not workflow tabs, so
+    // a workspace whose only terminal is docked has an empty strip and nothing
+    // missing.
+    if (runtimeSessions.length === 0) openLauncher();
+  }
+
+  // Reachable from outside the view: the palette command, and a Focus Terminal that
+  // finds no session to focus. Only while embedded, since that is the only mode with
+  // an overlay to open.
+  $effect(() => {
+    if (!launcherMode) return;
+    untrack(() => registerWorkspaceLauncher(openLauncher));
+    return () => untrack(() => registerWorkspaceLauncher(null));
+  });
+
+  // A pane whose only tab was Home has nothing to show, and a remembered Home tab
+  // names a tab that no longer exists here. Both resolve the same way: show whatever
+  // session is there, and open the launcher when there is none.
+  $effect(() => {
+    if (!launcherMode || launcherOpen || !runtimeLive) return;
+    const tabs = workflowTabDescriptors;
+    const activeMissing = !tabs.some((tab) => tab.key === activeTabKey);
+    const workspaceKey = `${workspaceId}\u0000${workspaceHostKey ?? ""}`;
+    const anySession = runtimeSessions.length > 0;
+    untrack(() => {
+      if (tabs.length > 0) {
+        if (activeMissing) selectWorkspaceTab(tabs[0]!.key);
+        return;
+      }
+      // A docked terminal is not a workflow tab but is very much on screen, so an
+      // empty strip alone does not mean the workspace has nothing to show.
+      if (anySession) return;
+      // Once per workspace: reopening a launcher the user dismissed would trap them
+      // in it, while a different session-less workspace still gets one.
+      if (launcherAutoOpenedFor === workspaceKey) return;
+      launcherAutoOpenedFor = workspaceKey;
+      launcherOpen = true;
+    });
+  });
+
   // Below the flatten width a detail surface shows one tab strip for every pane and
   // suppresses per-leaf chrome, so there is nowhere to hang the controls button and
   // the toolbar is the only thing left that can carry them.
@@ -687,13 +770,18 @@
   }
 
   const workflowTabDescriptors = $derived.by<WorkflowTabDescriptor[]>(() => {
-    const tabs: WorkflowTabDescriptor[] = [
-      {
-        key: "home",
-        label: "Home",
-        kind: "home",
-      },
-    ];
+    // No Home tab inside a detail pane: the workspace gets one pane there, and
+    // spending half its height on a surface only used to start something is the
+    // trade this mode exists to undo. The launcher overlay replaces it.
+    const tabs: WorkflowTabDescriptor[] = launcherMode
+      ? []
+      : [
+          {
+            key: "home",
+            label: "Home",
+            kind: "home",
+          },
+        ];
     if (
       terminalLayout.dock === "top" &&
       (terminalLayout.open || terminalSessions.length > 0)
@@ -720,9 +808,12 @@
     return tabs;
   });
   const renderedWorkflowTree = $derived(
-    promotedSessionKeys.size === 0
+    promotedSessionKeys.size === 0 && !launcherMode
       ? terminalLayout.workflowTree
       : pruneWorkflowTreeToAvailable(
+          // Embedded too, not just when something is promoted: the stored tree still
+          // names Home, and a leaf whose only tab has no descriptor renders a strip
+          // with nothing in it.
           terminalLayout.workflowTree,
           workflowTabDescriptors.map((tab) => tab.key),
         ),
@@ -1567,7 +1658,7 @@
               sessionRegion(session) === "workflow",
           )
         ) {
-          selectWorkspaceTab("home");
+          selectFallbackTab();
         }
         mountedSessionKeys = mountedSessionKeys.filter(
           (key) =>
@@ -1620,6 +1711,10 @@
       moveSessionToWorkflow(session.key);
       mountSessionTerminal(session.key);
       selectWorkspaceTab(workflowTabKeyForSession(session.key));
+      // Only on success: a failed or cancelled launch has to leave the overlay up
+      // with its error, or the user lands on a pane with nothing in it and no
+      // explanation.
+      closeLauncher();
     } catch (err) {
       if (!isCurrentWorkspace(id, hostKey)) return;
       showFlash(err instanceof Error ? err.message : "Launch failed", {
@@ -1695,7 +1790,7 @@
         ),
       );
       if (activeTabKey === `session:${session.key}`) {
-        selectWorkspaceTab("home");
+        selectFallbackTab();
       }
     } catch (err) {
       if (!isCurrentWorkspace(id, hostKey)) return;
@@ -1722,7 +1817,7 @@
       ),
     );
     if (activeTabKey === `session:${session.key}`) {
-      selectWorkspaceTab("home");
+      selectFallbackTab();
     }
     void fetchRuntime({ force: true });
   }
@@ -1792,7 +1887,7 @@
         open: false,
       });
       if (activeTabKey === "terminal") {
-        selectWorkspaceTab("home");
+        selectFallbackTab();
       }
       return;
     }
@@ -1865,7 +1960,7 @@
     if (terminalLayout.dock === "top") {
       selectWorkspaceTab("terminal");
     } else if (activeTabKey === `session:${sessionKey}`) {
-      selectWorkspaceTab("home");
+      selectFallbackTab();
     }
   }
 
@@ -1999,7 +2094,7 @@
         open: false,
       });
       if (activeTabKey === "terminal") {
-        selectWorkspaceTab("home");
+        selectFallbackTab();
       }
       return;
     }
@@ -2402,7 +2497,7 @@
     if (dock === "top") {
       selectWorkspaceTab("terminal");
     } else if (activeTabKey === "terminal") {
-      selectWorkspaceTab("home");
+      selectFallbackTab();
     }
   }
 
@@ -3696,6 +3791,24 @@
   </CollapsibleSidebar>
 </div>
 
+{#if launcherMode && workspace !== null}
+  <WorkspaceLauncherOverlay
+    open={launcherOpen && hostVisible}
+    {workspace}
+    launchTargets={launchTargets}
+    sessions={runtimeSessions}
+    displayLabels={sessionDisplayLabels}
+    {launchingKey}
+    readonly={actionsBlocked}
+    onClose={closeLauncher}
+    onLaunch={(key) => void handleLaunch(key)}
+    onOpenSession={(sessionKey) => {
+      closeLauncher();
+      openSession(sessionKey);
+    }}
+  />
+{/if}
+
 {#if renamePrompt !== null && hostVisible}
   <Modal
     open={renamePrompt !== null && hostVisible}
@@ -3801,13 +3914,23 @@
       terminalOptionsSaving = saving;
     }}
   />
-  <LaunchMenu
-    launchTargets={launchTargets}
-    {launchingKey}
-    disabled={actionsBlocked}
-    {hostVisible}
-    onLaunch={(key) => void handleLaunch(key)}
-  />
+  {#if launcherMode}
+    <!-- One opener rather than the menu: the overlay is the launch surface in a
+         pane, and a second copy of the target list inside a popover inside a tab
+         strip is the stacking this mode exists to remove. -->
+    <Button size="sm" surface="soft" tone="neutral" label="Launch session" onclick={openLauncher}>
+      <PlayIcon size="13" strokeWidth="2" aria-hidden="true" />
+      Launch
+    </Button>
+  {:else}
+    <LaunchMenu
+      launchTargets={launchTargets}
+      {launchingKey}
+      disabled={actionsBlocked}
+      {hostVisible}
+      onLaunch={(key) => void handleLaunch(key)}
+    />
+  {/if}
 {/snippet}
 
 <style>

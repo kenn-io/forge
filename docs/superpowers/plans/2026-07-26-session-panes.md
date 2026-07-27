@@ -619,11 +619,21 @@ because the overlay does not exist yet.
 
 The overlay wraps today's `WorkspaceHome` body, pushes a modal frame, auto-opens when the workspace has no sessions, and closes when one launches.
 
-- [ ] **Step 1** Failing tests: embedded mode has no `Home` tab while the standalone Workspaces tab still does; the overlay auto-opens for a session-less workspace and not otherwise; a successful launch closes it; a launch that fails, times out, or is cancelled leaves it open showing the error rather than stranding the user on an empty workspace; switching workspaces mid-launch does not carry the overlay's state across; the palette command and the controls popover both reopen it; `Focus Terminal` opens it when there is nothing to focus.
-- [ ] **Step 2** Run `../node_modules/.bin/vp test --project unit WorkspaceLauncherOverlay WorkspaceTerminalView`. Expected FAIL.
-- [ ] **Step 3** Implement. Every current `selectWorkspaceTab("home")` becomes either "open the launcher" or "select the first session", decided per call site — the post-delete and post-close ones want the launcher; the initial-load one wants the remembered session.
-- [ ] **Step 4** Same command. Expected PASS.
-- [ ] **Step 5** Commit.
+**"Nothing to show" includes the dock.** A docked session is not a workflow tab, so
+an embedded workspace whose only terminal is in the dock has an empty strip while
+being perfectly visible. Auto-open, and the fallback when the active tab vanishes,
+both key off `runtimeSessions`, not off the tab list - an overlay over a live
+terminal covers the thing the user came for.
+
+**A modal blocks pane zoom** (`toggleZoom` refuses while a frame is open), so every
+test that maximizes or expands a pane in a session-less workspace has to dismiss the
+launcher first. That is the app's own rule, not test scaffolding.
+
+- [x] **Step 1** Failing tests: embedded mode has no `Home` tab while the standalone Workspaces tab still does; the overlay auto-opens for a session-less workspace, and not while a docked terminal is on screen; a successful launch closes it; a failed launch leaves it open with the error rather than stranding the user on an empty workspace; the palette gets an opener only while a pane hosts the workspace; `Focus Terminal` opens it when there is nothing to focus.
+- [x] **Step 2** Run `../node_modules/.bin/vp test --project unit WorkspaceLauncherOverlay WorkspaceTerminalView workspace-host actions.test`. Expected FAIL.
+- [x] **Step 3** Implement. Every current `selectWorkspaceTab("home")` becomes `selectFallbackTab()`: the first remaining workflow tab, else the launcher when the workspace has nothing running at all.
+- [x] **Step 4** Same command, plus `--project browser WorkspaceHost.browser` and the affected real-backend specs (continuity, detail-action-buttons). Expected PASS.
+- [x] **Step 5** Commit.
 
 ---
 

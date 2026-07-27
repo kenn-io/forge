@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import {
   getPaneLayoutStore,
   resetPaneLayoutStoresForTest,
@@ -11,6 +11,7 @@ import { navigate } from "../router.svelte.ts";
 import {
   getInlineWorkspaceController,
   publishHostedSessions,
+  registerWorkspaceLauncher,
   resetWorkspaceHostForTest,
 } from "../workspace-host.svelte.ts";
 import { isSidebarCollapsed, setSidebarCollapsed } from "../sidebar.svelte.js";
@@ -678,6 +679,21 @@ describe("session pane commands", () => {
     demote.handler(context);
 
     expect(layout.hasTab(paneKey)).toBe(false);
+  });
+
+  it("opens the hosted workspace's launcher, and nothing when no pane hosts one", () => {
+    const opener = vi.fn();
+    registerWorkspaceLauncher(opener);
+    const action = command("workspace.launcher");
+    const context = ctx("pulls", { selectedPR: selected });
+
+    expect(action.when(context)).toBe(true);
+    action.handler(context);
+    expect(opener).toHaveBeenCalled();
+
+    // Surface-scoped: the same claim on another page must not offer to launch into
+    // a pane that is not rendering the workspace.
+    expect(action.when(ctx("issues", { selectedIssue: selected }))).toBe(false);
   });
 
   it("offers no demotion for a pane that is not a session", () => {

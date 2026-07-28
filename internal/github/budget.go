@@ -40,13 +40,15 @@ func detailWorstCaseAttemptCost(kind platform.Kind, itemType QueueItemType) int 
 // counted requests before any wire attempt, so no provider response — and
 // therefore no provider-driven reset — can arrive to release it.
 type SyncBudget struct {
-	mu           sync.Mutex
-	limit        int
-	spent        int
-	archiveSpent int
-	windowStart  time.Time
-	window       BudgetWindow
-	now          func() time.Time
+	mu                     sync.Mutex
+	limit                  int
+	spent                  int
+	archiveSpent           int
+	providerArchiveSpent   int
+	providerArchiveResetAt time.Time
+	windowStart            time.Time
+	window                 BudgetWindow
+	now                    func() time.Time
 }
 
 // BudgetWindow identifies the hourly window a reservation was made in. Refunds
@@ -172,12 +174,33 @@ func (b *SyncBudget) ProviderArchiveSpendAvailable(
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.rollLocked()
+	providerArchiveSpent := b.providerArchiveSpendLocked(now, resetAt)
 	ceilingRemaining := b.providerArchiveSpendCeiling(
 		now, resetAt, localLiveFloor, providerLimit, providerReserve,
-	) - b.archiveSpent
+	) - providerArchiveSpent
 	localRemaining := b.limit - max(localLiveFloor, 0) - b.spent
 	providerHeadroom := providerRemaining - max(providerReserve, 0)
 	return max(min(ceilingRemaining, localRemaining, providerHeadroom), 0)
+}
+
+// providerArchiveSpendLocked returns attempted archive spend for the selected
+// provider pacing window. Local hourly and individual resource resets may occur
+// before this conservative window ends, so only a new selected reset releases
+// its spend.
+func (b *SyncBudget) providerArchiveSpendLocked(now time.Time, resetAt *time.Time) int {
+	if resetAt == nil {
+		return b.providerArchiveSpent
+	}
+	reset := resetAt.UTC()
+	remaining := reset.Sub(now)
+	if remaining < 0 || remaining > time.Hour {
+		return b.providerArchiveSpent
+	}
+	if b.providerArchiveResetAt.IsZero() || !b.providerArchiveResetAt.Equal(reset) {
+		b.providerArchiveSpent = 0
+		b.providerArchiveResetAt = reset
+	}
+	return b.providerArchiveSpent
 }
 
 func (b *SyncBudget) providerArchiveSpendCeiling(
@@ -240,6 +263,9 @@ func (b *SyncBudget) TrySpendArchive(n int) (BudgetWindow, bool) {
 	}
 	b.spent += n
 	b.archiveSpent += n
+	if !b.providerArchiveResetAt.IsZero() {
+		b.providerArchiveSpent += n
+	}
 	return b.window, true
 }
 
@@ -251,6 +277,9 @@ func (b *SyncBudget) RefundArchive(window BudgetWindow, n int) {
 	}
 	b.spent = max(b.spent-n, 0)
 	b.archiveSpent = max(b.archiveSpent-n, 0)
+	// Provider pacing counts wire attempts, including conditional requests.
+	// Do not return this spend: a late response may belong to an older provider
+	// window even when it still belongs to the current local budget window.
 }
 
 func (b *SyncBudget) ArchiveSpent() int {

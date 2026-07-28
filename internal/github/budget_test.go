@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/platform"
 )
 
@@ -132,6 +133,76 @@ func TestSyncBudgetProviderArchiveAvailabilityPreservesCurrentProviderReserve(t 
 
 	assert.Equal(t, 1, budget.ProviderArchiveSpendAvailable(
 		now, &reset, 24, 5000, 201, 200,
+	))
+}
+
+func TestSyncBudgetProviderArchivePacingSurvivesLocalRollover(t *testing.T) {
+	reset := time.Date(2026, 7, 28, 19, 0, 0, 0, time.UTC)
+	clock := reset.Add(-30 * time.Minute)
+	budget := NewSyncBudget(100000)
+	budget.now = func() time.Time { return clock }
+	budget.windowStart = clock.Add(-55 * time.Minute)
+
+	assert.Equal(t, 1200, budget.ProviderArchiveSpendAvailable(
+		clock, &reset, 24, 5000, 5000, 200,
+	))
+	_, ok := budget.TrySpendArchive(100)
+	require.True(t, ok)
+
+	// The local hour rolls before the provider's conservative pacing window.
+	// That replenishes the local ceiling but must not forget provider attempts
+	// already made against the still-active provider window.
+	clock = clock.Add(5 * time.Minute)
+	assert.Equal(t, 1533, budget.ProviderArchiveSpendAvailable(
+		clock, &reset, 24, 5000, 5000, 200,
+	))
+}
+
+func TestSyncBudgetProviderArchivePacingSurvivesEarlierPoolReset(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	now := time.Date(2026, 7, 28, 18, 30, 0, 0, time.UTC)
+	restReset := now.Add(5 * time.Minute)
+	graphQLReset := now.Add(30 * time.Minute)
+	registry := NewQuotaRegistry()
+	registry.now = func() time.Time { return now }
+	registry.UpdateSnapshot(quotaTestUser, QuotaResourceREST, Rate{
+		Limit: 5000, Remaining: 5000, Reset: restReset,
+	})
+	registry.UpdateSnapshot(quotaTestUser, QuotaResourceGraphQL, Rate{
+		Limit: 5000, Remaining: 5000, Reset: graphQLReset,
+	})
+	window, ok := registry.PacingWindow(
+		quotaTestUser, []QuotaResource{QuotaResourceREST, QuotaResourceGraphQL},
+	)
+	require.True(ok)
+	require.Equal(graphQLReset, window.ResetAt)
+
+	budget := NewSyncBudget(100000)
+	assert.Equal(1200, budget.ProviderArchiveSpendAvailable(
+		now, &window.ResetAt, 24, window.Limit, window.Remaining, 200,
+	))
+	_, ok = budget.TrySpendArchive(100)
+	require.True(ok)
+
+	// A tracker for the earlier REST window invokes Reset while the selected
+	// GraphQL pacing window is unchanged. The 100 provider attempts still
+	// belong to that selected window.
+	budget.Reset()
+	window, ok = registry.PacingWindow(
+		quotaTestUser, []QuotaResource{QuotaResourceREST, QuotaResourceGraphQL},
+	)
+	require.True(ok)
+	assert.Equal(1100, budget.ProviderArchiveSpendAvailable(
+		now, &window.ResetAt, 24, window.Limit, window.Remaining, 200,
+	))
+
+	// Once the selected provider window itself advances, its paced spend starts
+	// fresh independently of the local budget window.
+	nextNow := graphQLReset
+	nextReset := nextNow.Add(30 * time.Minute)
+	assert.Equal(1200, budget.ProviderArchiveSpendAvailable(
+		nextNow, &nextReset, 24, window.Limit, window.Remaining, 200,
 	))
 }
 

@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { DiffLineAnnotation, SelectedLineRange, Virtualizer } from "@pierre/diffs";
-  import { mount, onMount, unmount } from "svelte";
+  import { mount, onDestroy, onMount, unmount } from "svelte";
   import type { DiffFile as DiffFileType } from "../../api/types.js";
   import type { DiffReviewDraftComment } from "../../stores/diff-review-draft.svelte.js";
   import type { DiffReviewLineRange } from "../../stores/diff-review-draft.svelte.js";
@@ -9,7 +9,7 @@
   import DiffReviewDraftInlineComment from "./DiffReviewDraftInlineComment.svelte";
   import DiffReviewThreadInlineComment from "./DiffReviewThreadInlineComment.svelte";
   import DiffRichPreview from "./DiffRichPreview.svelte";
-  import { DiffStats } from "@kenn-io/kit-ui";
+  import { copyToClipboard, DiffStats } from "@kenn-io/kit-ui";
   import {
     reviewThreadTargetLine,
     reviewThreadTargetSide,
@@ -83,6 +83,8 @@
   // fires synchronously for on-screen files.
   let fileEl: HTMLDivElement | undefined = $state();
   let inViewport = $state(false);
+  let copiedPath = $state(false);
+  let copiedPathTimeout: ReturnType<typeof setTimeout> | undefined;
   type MountedAnnotation = {
     component?: object;
     observer?: MutationObserver;
@@ -182,8 +184,22 @@
     };
   });
 
+  onDestroy(() => {
+    if (copiedPathTimeout !== undefined) clearTimeout(copiedPathTimeout);
+  });
+
   function toggle(): void {
     diffStore.toggleFileCollapsed(owner, name, number, file.path);
+  }
+
+  async function copyPath(): Promise<void> {
+    if (!(await copyToClipboard(file.path))) return;
+    copiedPath = true;
+    if (copiedPathTimeout !== undefined) clearTimeout(copiedPathTimeout);
+    copiedPathTimeout = setTimeout(() => {
+      copiedPath = false;
+      copiedPathTimeout = undefined;
+    }, 1500);
   }
 
   async function loadDiffText(side: "old" | "new"): Promise<string> {
@@ -514,13 +530,30 @@
 </script>
 
 <div class="diff-file" data-file-path={file.path} bind:this={fileEl}>
-  <button class="file-header" onclick={toggle} title={collapsed ? "Expand file" : "Collapse file"}>
-    <svg class="collapse-chevron" class:collapse-chevron--collapsed={collapsed} width="12" height="12" viewBox="0 0 12 12" fill="none">
-      <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-    </svg>
-    <span class="file-path" class:file-path--deleted={file.status === "deleted"}>
+  <div class="file-header">
+    <button
+      type="button"
+      class="file-collapse-toggle"
+      onclick={toggle}
+      aria-label={collapsed ? "Expand file" : "Collapse file"}
+      aria-expanded={!collapsed}
+      title={collapsed ? "Expand file" : "Collapse file"}
+    >
+      <svg class="collapse-chevron" class:collapse-chevron--collapsed={collapsed} width="12" height="12" viewBox="0 0 12 12" fill="none">
+        <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </button>
+    <button
+      type="button"
+      class="file-path"
+      class:file-path--copied={copiedPath}
+      class:file-path--deleted={file.status === "deleted"}
+      onclick={copyPath}
+      aria-label={copiedPath ? `Copied file path ${file.path}` : `Copy file path ${file.path}`}
+      title={copiedPath ? "Copied!" : "Copy file path"}
+    >
       {displayPath(file)}
-    </span>
+    </button>
     <span class="file-stats">
       <DiffStats
         additions={file.additions}
@@ -528,7 +561,7 @@
         dimZeros
       />
     </span>
-  </button>
+  </div>
   {#if !collapsed}
     <div class="file-content">
       {#if showRichPreview}
@@ -598,12 +631,32 @@
     border-bottom: 1px solid var(--diff-border);
     font-size: var(--font-size-sm);
     text-align: left;
-    cursor: pointer;
     color: var(--diff-text);
   }
 
   .file-header:hover {
     background: var(--bg-surface-hover);
+  }
+
+  .file-collapse-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    margin: -4px -6px;
+    flex: 0 0 24px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+  }
+
+  .file-collapse-toggle:focus-visible {
+    outline: 1px solid var(--border-strong);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
   }
 
   .collapse-chevron {
@@ -616,14 +669,36 @@
   }
 
   .file-path {
+    appearance: none;
+    padding: 0;
+    border: 0;
+    background: transparent;
     font-family: var(--font-mono);
     font-size: var(--font-size-sm);
     color: var(--diff-text);
+    text-align: left;
+    cursor: copy;
     flex: 1;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .file-path:hover,
+  .file-path:focus-visible {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .file-path:focus-visible {
+    outline: 1px solid var(--border-strong);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
+
+  .file-path--copied {
+    color: var(--accent-green);
   }
 
   .file-path--deleted {

@@ -90,12 +90,18 @@ afterAll(() => {
 
 import DiffFile from "./DiffFile.svelte";
 import diffRichPreviewSource from "./DiffRichPreview.svelte?raw";
+import { copyToClipboard } from "@kenn-io/kit-ui";
 import type { DiffFile as DiffFileType, FilePreview } from "../../api/types.js";
 import { STORES_KEY } from "../../context.js";
 import type { DiffReviewDraftComment, DiffReviewLineRange } from "../../stores/diff-review-draft.svelte.js";
 import { createDiffStore } from "../../stores/diff.svelte.js";
 import { renderedCodeSide } from "./pierre-dom.js";
 import type { ReviewThread } from "./review-thread-context.js";
+
+vi.mock("@kenn-io/kit-ui", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@kenn-io/kit-ui")>()),
+  copyToClipboard: vi.fn(() => Promise.resolve(true)),
+}));
 
 type LoadFilePreview = (
   owner: string,
@@ -343,6 +349,7 @@ function textPreview(path: string, text: string): FilePreview {
 
 describe("DiffFile", () => {
   afterEach(() => {
+    vi.mocked(copyToClipboard).mockClear();
     cleanup();
     localStorage.removeItem("diff-rich-preview");
     localStorage.removeItem("diff-view-mode");
@@ -360,6 +367,15 @@ describe("DiffFile", () => {
 
     expect(screen.getByText("src/foo.ts")).toBeTruthy();
     await expectPierreDiffText(/old linenew line/);
+  });
+
+  it("copies the title-bar file path without collapsing the diff", async () => {
+    renderDiffFile(makeFile());
+
+    await fireEvent.click(screen.getByRole("button", { name: "Copy file path src/foo.ts" }));
+
+    expect(copyToClipboard).toHaveBeenCalledWith("src/foo.ts");
+    expect(document.querySelector(".file-content")).toBeTruthy();
   });
 
   it("exposes stable line targets inside the Pierre shadow root", async () => {
@@ -566,9 +582,11 @@ describe("DiffFile", () => {
     renderDiffFile(makeFile());
 
     const header = screen.getByTitle("Collapse file");
+    expect(header.getAttribute("aria-expanded")).toBe("true");
     await fireEvent.click(header);
 
     expect(document.querySelector(".file-content")).toBeNull();
+    expect(header.getAttribute("aria-expanded")).toBe("false");
   });
 
   it("shows content again after toggling collapse twice", async () => {

@@ -2094,7 +2094,7 @@ test.describe("diff view", () => {
     await expect(page.locator('[data-file-path="src/pkg9/file_49.go"]')).toBeVisible();
 
     const earlierFile = page.locator('[data-file-path="src/pkg5/file_25.go"]');
-    await expect(earlierFile.locator(".file-header")).toHaveAttribute("title", "Collapse file");
+    await expect(earlierFile.locator(".file-collapse-toggle")).toHaveAttribute("title", "Collapse file");
     await expect(earlierFile.locator(".file-content")).toBeAttached();
     await expect
       .poll(async () =>
@@ -2175,26 +2175,30 @@ test.describe("diff view", () => {
     await expect(page).toHaveURL(/\/pulls\/github\/acme\/widgets\/1$/);
   });
 
-  test("clicking a file header collapses and expands its content", async ({ page }) => {
+  test("clicking a file collapse control hides and restores its content", async ({ page }) => {
     await mockDiffApi(page, smallDiff);
     await navigateToDiff(page);
     await waitForDiffLoaded(page);
 
     const firstFile = page.locator(".diff-file").first();
     const header = firstFile.locator(".file-header");
+    const collapseToggle = firstFile.locator(".file-collapse-toggle");
     const content = firstFile.locator(".file-content");
 
     await expect(header.locator(".kit-diff-stats")).toHaveCount(1);
+    const collapseBounds = await collapseToggle.boundingBox();
+    expect(collapseBounds?.width).toBeGreaterThanOrEqual(24);
+    expect(collapseBounds?.height).toBeGreaterThanOrEqual(24);
 
     // Content is initially visible.
     await expect(content).toBeVisible();
 
     // Collapse.
-    await header.click();
+    await collapseToggle.click();
     await expect(content).not.toBeAttached();
 
     // Expand.
-    await header.click();
+    await collapseToggle.click();
     await expect(content).toBeVisible();
   });
 
@@ -2209,13 +2213,13 @@ test.describe("diff view", () => {
     await page.getByRole("button", { name: "Collapse all diffs" }).click();
 
     await expect(page.locator(".diff-file .file-content")).toHaveCount(0);
-    await expect(page.locator(".diff-file .file-header[title='Expand file']")).toHaveCount(4);
+    await expect(page.locator(".diff-file .file-collapse-toggle[title='Expand file']")).toHaveCount(4);
     await expect(page.getByRole("button", { name: "Expand all diffs" })).toBeVisible();
 
     await page.getByRole("button", { name: "Expand all diffs" }).click();
 
     await expect(page.locator(".diff-file .file-content")).toHaveCount(4);
-    await expect(page.locator(".diff-file .file-header[title='Collapse file']")).toHaveCount(4);
+    await expect(page.locator(".diff-file .file-collapse-toggle[title='Collapse file']")).toHaveCount(4);
   });
 
   test("toolbar keeps file filters inline and moves display settings into the menu", async ({ page }) => {
@@ -2928,7 +2932,7 @@ test.describe("diff view", () => {
     expect(headerBounds.y).toBeGreaterThanOrEqual(bannerBounds.y + bannerBounds.height);
 
     await expect(firstContent).toBeAttached();
-    await firstHeader.click();
+    await firstFile.locator(".file-collapse-toggle").click();
     await expect(firstContent).not.toBeAttached();
 
     fixture = smallDiff;
@@ -3948,7 +3952,7 @@ test.describe("diff view performance", () => {
     await expect(firstFile.locator(".file-content")).toBeAttached();
 
     // Collapse.
-    await firstFile.locator(".file-header").click();
+    await firstFile.locator(".file-collapse-toggle").click();
     await expect(firstFile.locator(".file-content")).not.toBeAttached();
 
     // Other files still have their content.

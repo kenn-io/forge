@@ -446,13 +446,45 @@ func NormalizeIssueDiscussions(
 	parentURL string,
 	discussions []*gitlab.Discussion,
 ) []platform.IssueEvent {
+	return normalizeIssueDiscussions(
+		repo, issueNumber, parentURL, discussions, true,
+	)
+}
+
+func normalizeIssueDiscussionComments(
+	repo platform.RepoRef,
+	issueNumber int,
+	parentURL string,
+	discussions []*gitlab.Discussion,
+) []platform.IssueEvent {
+	return normalizeIssueDiscussions(
+		repo, issueNumber, parentURL, discussions, false,
+	)
+}
+
+func normalizeIssueDiscussions(
+	repo platform.RepoRef,
+	issueNumber int,
+	parentURL string,
+	discussions []*gitlab.Discussion,
+	includeSystem bool,
+) []platform.IssueEvent {
 	var events []platform.IssueEvent
 	for _, discussion := range discussions {
 		if discussion == nil {
 			continue
 		}
 		for _, note := range discussion.Notes {
-			if note == nil || note.System {
+			if note == nil {
+				continue
+			}
+			if note.System {
+				if includeSystem {
+					event, ok := normalizeIssueSystemNote(repo, issueNumber, note)
+					if ok {
+						events = append(events, event)
+					}
+				}
 				continue
 			}
 			events = append(events, platform.IssueEvent{
@@ -512,7 +544,10 @@ func normalizeIssueSystemNote(
 ) (platform.IssueEvent, bool) {
 	eventType, ok := gitLabAssignmentEventType(note.Body)
 	if !ok {
-		return platform.IssueEvent{}, false
+		eventType, ok = gitLabLifecycleEventType(note.Body)
+		if !ok || eventType == "merged" {
+			return platform.IssueEvent{}, false
+		}
 	}
 	externalID := strconv.FormatInt(note.ID, 10)
 	return platform.IssueEvent{

@@ -238,6 +238,8 @@ provider identity so equal GitHub/GitLab ids do not collide.
 
 GitLab archive discussions normalize as ordinary or inline comments. Do not synthesize submitted reviews from notes or current approvals; without stable historical actions, that dataset stays unsupported and coverage stays partial. (`internal/platform/gitlab/client.go::Capabilities`)
 
+GitLab issue event hydration preserves authored close and reopen system notes, while ordinary-comment reads exclude system notes. (`internal/platform/gitlab/client.go::Client.ListIssueEvents`, `internal/platform/gitlab/normalize.go::normalizeIssueSystemNote`)
+
 GitLab historical merge-request inventory is unsupported because project merge requests expose only offset pagination and cannot guarantee completeness across equal-`created_at` ties. Coverage remains partial while supported issue history and discussion datasets continue. (`internal/platform/gitlab/client.go::Capabilities`, `internal/platform/gitlab/pages.go::ListMergeRequestsPage`)
 
 GitLab maintenance inventories walk mutable `updated_at` results newest-first. Updates then move toward the consumed prefix; rows that move ahead before consumption remain eligible under the next scan's inclusive watermark. (`internal/platform/gitlab/pages.go::listInventoryIssuesPage`, `internal/platform/gitlab/pages.go::listInventoryMergeRequestsPage`)

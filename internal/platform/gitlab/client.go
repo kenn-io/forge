@@ -540,7 +540,17 @@ func (c *Client) ListIssueEvents(
 	ref platform.RepoRef,
 	number int,
 ) ([]platform.IssueEvent, error) {
-	return c.ListIssueComments(ctx, ref, number)
+	pid, normalizedRef, err := c.projectScopedArg(ctx, ref)
+	if err != nil {
+		return nil, err
+	}
+	discussions, err := c.listIssueDiscussions(ctx, pid, normalizedRef, number)
+	if err != nil {
+		return nil, err
+	}
+	return NormalizeIssueDiscussions(
+		normalizedRef, number, gitLabIssueURL(normalizedRef, number), discussions,
+	), nil
 }
 
 func (c *Client) ListOpenIssues(ctx context.Context, ref platform.RepoRef) ([]platform.Issue, error) {
@@ -595,7 +605,9 @@ func (c *Client) ListIssueComments(ctx context.Context, ref platform.RepoRef, nu
 	if err != nil {
 		return nil, err
 	}
-	return NormalizeIssueDiscussions(normalizedRef, number, gitLabIssueURL(normalizedRef, number), discussions), nil
+	return normalizeIssueDiscussionComments(
+		normalizedRef, number, gitLabIssueURL(normalizedRef, number), discussions,
+	), nil
 }
 
 func (c *Client) listIssueDiscussions(

@@ -199,11 +199,17 @@ describe("review drawer footer layout", () => {
     expect(usage.left).toBeGreaterThanOrEqual(Math.max(...actions.map((r) => r.right)));
   });
 
-  // 260px is below the labelled group's own intrinsic width: wide enough that
-  // the buttons still render, narrow enough that a wrappable group would break
-  // one-per-line. Verified by re-running this against `flex-wrap: wrap` on
-  // .footer-actions, which stacks them and fails the row assertion.
-  it("wraps the usage summary below rather than stacking the actions when space is tight", async () => {
+  // 260px is below the labelled group's intrinsic width, so this pins the
+  // downgrade itself and the summary giving up the row.
+  //
+  // What it no longer pins is stacking. Before FitStages that was this test's
+  // point, falsified against `flex-wrap: wrap` on .footer-actions. Now the
+  // group is never handed less width than the stage it renders -- the fit
+  // host's floor is the compact row's own width, and a richer stage is only
+  // chosen when it already fits -- so wrapping has nothing to act on and that
+  // falsification passes. The row assertion documents the property rather than
+  // guarding a wrap rule; the guard that still bites is the floor, below.
+  it("downgrades to icon-only actions and wraps the usage summary below when space is tight", async () => {
     mounted = mountAt(260);
 
     await vi.waitFor(() => expect(actionButtons().every((el) => el.classList.contains("kit-icon-button"))).toBe(true));

@@ -19,6 +19,7 @@
     repoPath: string;
     count: number;
     size?: "sm" | "md";
+    compactLabel?: boolean;
     disabled?: boolean;
     /** Tooltip override; pass the unavailable_reason when disabling. */
     title?: string | undefined;
@@ -34,6 +35,7 @@
     repoPath,
     count,
     size = "md",
+    compactLabel = false,
     disabled = false,
     title = undefined,
     oncompleted,
@@ -88,8 +90,8 @@
     tone="workflow"
     surface="soft"
     title={title ?? tooltip}
-    label={submitting ? "Approving workflows…" : label}
-    shortLabel={submitting ? "Approving…" : shortLabel}
+    ariaLabel={compactLabel && !submitting ? label : undefined}
+    label={submitting ? "Approving workflows…" : compactLabel ? shortLabel : label}
     {size}
   >
     <WorkflowIcon size="14" strokeWidth="2.2" aria-hidden="true" />

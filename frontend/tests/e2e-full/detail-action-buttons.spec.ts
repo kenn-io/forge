@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { access } from "node:fs/promises";
-import { expect, request as playwrightRequest, test, type APIRequestContext } from "@playwright/test";
+import { expect, request as playwrightRequest, test, type APIRequestContext, type Page } from "@playwright/test";
 import {
   startIsolatedE2EServer,
   startIsolatedE2EServerWithOptions,
@@ -38,6 +38,10 @@ function gitOutput(dir: string, args: string[]): string {
     cwd: dir,
     encoding: "utf8",
   }).trim();
+}
+
+function activePullAction(page: Page, selector: string) {
+  return page.locator(".kit-fit-stages > .actions-row--primary").locator(selector);
 }
 
 async function waitForWorkspaceReady(api: APIRequestContext, workspaceId: string): Promise<WorkspaceStatusResponse> {
@@ -670,9 +674,9 @@ test.describe("detail action buttons", () => {
     await page.locator(".pull-item").filter({ hasText: "Add widget caching layer" }).first().click();
     await expect(page.locator(".pull-detail")).toBeVisible();
 
-    const approve = page.locator(".btn--approve");
-    const merge = page.locator(".btn--merge");
-    const close = page.locator(".btn--close");
+    const approve = activePullAction(page, ".btn--approve");
+    const merge = activePullAction(page, ".btn--merge");
+    const close = activePullAction(page, ".btn--close");
 
     await expect(approve).toBeVisible();
     await expect(merge).toBeVisible();
@@ -1055,8 +1059,8 @@ test.describe("detail action buttons", () => {
         ),
       ).toBeVisible();
       await expect(page.getByText("Could not refresh the pull request. Try again.")).toBeVisible();
-      await expect(page.locator(".btn--approve")).toBeDisabled();
-      await expect(page.locator(".btn--merge")).toBeDisabled();
+      await expect(activePullAction(page, ".btn--approve")).toBeDisabled();
+      await expect(activePullAction(page, ".btn--merge")).toBeDisabled();
 
       await page.unroute("**/api/v1/pulls/github/acme/widgets/1/sync");
       const reopenResponse = await page.request.post(`${baseURL}/__e2e/merge/conflict/open`);
@@ -1067,8 +1071,8 @@ test.describe("detail action buttons", () => {
           "This pull request is no longer open. Its current state is being refreshed before any further action.",
         ),
       ).toHaveCount(0);
-      await expect(page.locator(".btn--approve")).toBeEnabled();
-      await expect(page.locator(".btn--merge")).toBeEnabled();
+      await expect(activePullAction(page, ".btn--approve")).toBeEnabled();
+      await expect(activePullAction(page, ".btn--merge")).toBeEnabled();
     } finally {
       await isolatedServer?.stop();
     }
@@ -1121,8 +1125,8 @@ test.describe("detail action buttons", () => {
         })
         .not.toBe(initialDetail.platform_head_sha);
       await expect(commitSuggestion).toBeDisabled();
-      await expect(page.locator(".btn--approve")).toBeEnabled();
-      await expect(page.locator(".btn--merge")).toBeEnabled();
+      await expect(activePullAction(page, ".btn--approve")).toBeEnabled();
+      await expect(activePullAction(page, ".btn--merge")).toBeEnabled();
 
       await page.reload();
       await expect(page.getByRole("button", { name: "Commit suggestion" })).toBeDisabled();
@@ -1185,7 +1189,7 @@ test.describe("detail action buttons", () => {
       const baseURL = isolatedServer.info.base_url;
       await page.goto(`${baseURL}/pulls/github/acme/widgets/1`);
       await expect(page.locator(".pull-detail")).toBeVisible();
-      await page.locator(".btn--approve").click();
+      await activePullAction(page, ".btn--approve").click();
 
       const popover = page.getByRole("dialog", { name: "Submit pull request review" });
       await expect(popover).toBeVisible();
@@ -1241,10 +1245,10 @@ test.describe("detail action buttons", () => {
     await page.goto("/pulls/github/acme/widgets/6");
     await expect(page.locator(".pull-detail")).toBeVisible();
 
-    const ready = page.locator(".btn--ready");
-    const approve = page.locator(".btn--approve");
-    const merge = page.locator(".btn--merge");
-    const close = page.locator(".btn--close");
+    const ready = activePullAction(page, ".btn--ready");
+    const approve = activePullAction(page, ".btn--approve");
+    const merge = activePullAction(page, ".btn--merge");
+    const close = activePullAction(page, ".btn--close");
 
     for (const btn of [ready, approve, merge, close]) {
       await expect(btn).toBeVisible();
@@ -1275,6 +1279,50 @@ test.describe("detail action buttons", () => {
     );
   });
 
+  test("medium pull detail uses the compact Kit UI fit stage", async ({ page }) => {
+    await page.goto("/pulls/github/acme/widgets/6");
+    const detail = page.locator(".pull-detail-content");
+    await expect(detail).toBeVisible();
+    await detail.evaluate((element) => {
+      element.style.width = "400px";
+      element.style.flex = "0 0 400px";
+    });
+
+    const fitStages = detail.locator(".kit-fit-stages");
+    await expect(fitStages).toBeVisible();
+    const activeRow = fitStages.locator(":scope > .actions-row--primary");
+    await expect(activeRow.locator(".btn--ready .kit-button__label-text")).toHaveText("Ready");
+    await expect(activeRow.locator(".kit-button__short-label")).toHaveCount(0);
+    await expect(detail.locator(".actions-menu-trigger")).toBeHidden();
+
+    const metrics = await activeRow.evaluate((row) => {
+      const selectors = [".btn--ready", ".btn--approve", ".btn--merge", ".btn--close"];
+      return selectors.map((selector) => {
+        const button = row.querySelector<HTMLElement>(selector);
+        const label = button?.querySelector<HTMLElement>(".kit-button__label");
+        const labelText = label?.querySelector<HTMLElement>(".kit-button__label-text");
+        const icon = button?.querySelector<SVGElement>("svg");
+        if (!button || !label || !labelText || !icon) {
+          throw new Error(`incomplete Kit UI action button: ${selector}`);
+        }
+        const buttonRect = button.getBoundingClientRect();
+        const textRect = labelText.getBoundingClientRect();
+        return {
+          selector,
+          labelDisplay: getComputedStyle(label).display,
+          iconDisplay: getComputedStyle(icon).display,
+          centerDelta: Math.abs(textRect.top + textRect.height / 2 - (buttonRect.top + buttonRect.height / 2)),
+        };
+      });
+    });
+
+    for (const metric of metrics) {
+      expect(metric.labelDisplay, metric.selector).not.toBe("none");
+      expect(metric.iconDisplay, metric.selector).not.toBe("none");
+      expect(metric.centerDelta, metric.selector).toBeLessThan(0.5);
+    }
+  });
+
   test("ready for review updates API state and removes the draft action", async ({ page }) => {
     let isolatedServer: IsolatedE2EServer | null = null;
     let api: APIRequestContext | null = null;
@@ -1298,16 +1346,16 @@ test.describe("detail action buttons", () => {
         );
       });
 
-      await page.locator(".btn--ready").click();
+      await activePullAction(page, ".btn--ready").click();
 
       const readyResponse = await readyResponsePromise;
       expect(readyResponse.status()).toBe(200);
       expect((await readyResponse.json()).status).toBe("ready_for_review");
 
       await expect(page.locator(".btn--ready")).toHaveCount(0);
-      await expect(page.locator(".btn--approve")).toBeVisible();
-      await expect(page.locator(".btn--merge")).toBeVisible();
-      await expect(page.locator(".btn--close")).toBeVisible();
+      await expect(activePullAction(page, ".btn--approve")).toBeVisible();
+      await expect(activePullAction(page, ".btn--merge")).toBeVisible();
+      await expect(activePullAction(page, ".btn--close")).toBeVisible();
 
       await expect
         .poll(async () => {

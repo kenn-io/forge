@@ -28,6 +28,7 @@
   import {
     Card,
     CopyButton,
+    FitStages,
     copyToClipboard,
     formatRelativeTime,
   } from "@kenn-io/kit-ui";
@@ -1142,6 +1143,7 @@
   const createWorkspaceDescriptionId =
     "pull-create-workspace-description";
   let actionMenuOpen = $state(false);
+  let primaryActionStage = $state(0);
   let actionMenuWrapEl = $state<HTMLDivElement>();
   let stateMenuOpen = $state(false);
   let stateMenuWrapEl = $state<HTMLSpanElement>();
@@ -2161,7 +2163,7 @@
       {/if}
 
 
-      {#snippet primaryActionButtons()}
+      {#snippet primaryActionButtons(compactLabels = false)}
         {#if pr.State === "open"}
           {#if pr.IsDraft && capabilities.ready_for_review}
             {@const readyGate = operationGate(repoOperations?.mark_ready_for_review)}
@@ -2173,6 +2175,7 @@
               {platformHost}
               {repoPath}
               size="sm"
+              compactLabel={compactLabels}
               disabled={stalePR || readyGate.unavailable}
               title={readyGate.unavailable ? readyGate.reason : undefined}
               oncompleted={closeActionMenu}
@@ -2209,6 +2212,7 @@
               {repoPath}
               count={workflowApproval.count ?? 0}
               size="sm"
+              compactLabel={compactLabels}
               disabled={stalePR || workflowGate.unavailable}
               title={workflowGate.unavailable ? workflowGate.reason : undefined}
               oncompleted={closeActionMenu}
@@ -2245,8 +2249,18 @@
               tone="success"
               surface={deferredMergePending ? "soft" : "solid"}
               size="sm"
-              label={deferredMergePending ? "Merge queued" : mergeActionLabel(mergeSettings)}
-              shortLabel={deferredMergePending ? "Queued" : mergeActionShortLabel(mergeSettings)}
+              ariaLabel={compactLabels
+                ? deferredMergePending
+                  ? "Merge queued"
+                  : mergeActionLabel(mergeSettings)
+                : undefined}
+              label={compactLabels
+                ? deferredMergePending
+                  ? "Queued"
+                  : mergeActionShortLabel(mergeSettings)
+                : deferredMergePending
+                  ? "Merge queued"
+                  : mergeActionLabel(mergeSettings)}
             >
               {#if deferredMergePending}
                 <ClockIcon size="14" strokeWidth="2.2" aria-hidden="true" />
@@ -2275,7 +2289,6 @@
               surface="outline"
               size="sm"
               label={stateSubmitting ? "Closing..." : "Close"}
-              shortLabel={stateSubmitting ? "Closing..." : "Close"}
             >
               <XIcon size="14" strokeWidth="2.2" aria-hidden="true" />
             </Button>
@@ -2296,7 +2309,6 @@
               surface="solid"
               size="sm"
               label={stateSubmitting ? "Reopening..." : "Reopen"}
-              shortLabel={stateSubmitting ? "Reopening..." : "Reopen"}
             >
               <RefreshCwIcon size="14" strokeWidth="2.2" aria-hidden="true" />
             </Button>
@@ -2304,7 +2316,7 @@
         {/if}
       {/snippet}
 
-      {#snippet workspaceActionButton()}
+      {#snippet workspaceActionButton(compactLabels = false)}
         {#if workspace}
           {#if inlineWorkspace}
             <Button
@@ -2318,8 +2330,8 @@
               tone="info"
               surface="soft"
               size="sm"
-              label="Focus Terminal"
-              shortLabel="Terminal"
+              ariaLabel={compactLabels ? "Focus Terminal" : undefined}
+              label={compactLabels ? "Terminal" : "Focus Terminal"}
             >
               <MonitorUpIcon size="14" strokeWidth="2.2" aria-hidden="true" />
             </Button>
@@ -2334,8 +2346,8 @@
               tone="neutral"
               surface="soft"
               size="sm"
-              label="Open in Workspaces"
-              shortLabel="Workspaces"
+              ariaLabel={compactLabels ? "Open in Workspaces" : undefined}
+              label={compactLabels ? "Workspaces" : "Open in Workspaces"}
             >
               <ExternalLinkIcon size="14" strokeWidth="2.2" aria-hidden="true" />
             </Button>
@@ -2351,8 +2363,8 @@
               tone="info"
               surface="soft"
               size="sm"
-              label="Open Workspace"
-              shortLabel="Workspace"
+              ariaLabel={compactLabels ? "Open Workspace" : undefined}
+              label={compactLabels ? "Workspace" : "Open Workspace"}
             >
               <MonitorUpIcon size="14" strokeWidth="2.2" aria-hidden="true" />
             </Button>
@@ -2373,6 +2385,25 @@
         {/if}
       {/snippet}
 
+      {#snippet primaryActionRow(compactLabels = false)}
+        <div class="actions-row actions-row--primary">
+          {@render primaryActionButtons(compactLabels)}
+          {#if !hideWorkspaceAction}
+            <div class="primary-workspace-action">
+              {@render workspaceActionButton(compactLabels)}
+            </div>
+          {/if}
+        </div>
+      {/snippet}
+
+      {#snippet fullPrimaryActions()}
+        {@render primaryActionRow(false)}
+      {/snippet}
+
+      {#snippet compactPrimaryActions()}
+        {@render primaryActionRow(true)}
+      {/snippet}
+
       <!-- Approve / Merge / Close / Reopen actions -->
       {#if !workspace}
         <span id={createWorkspaceDescriptionId} class="kit-sr-only">
@@ -2381,14 +2412,11 @@
       {/if}
       {#if pr.State !== "merged" && !stalePR}
         <div class="primary-actions-wrap">
-          <div class="actions-row actions-row--primary">
-            {@render primaryActionButtons()}
-            {#if !hideWorkspaceAction}
-              <div class="primary-workspace-action">
-                {@render workspaceActionButton()}
-              </div>
-            {/if}
-          </div>
+          <FitStages
+            class="primary-actions-fit"
+            bind:stage={primaryActionStage}
+            stages={[fullPrimaryActions, compactPrimaryActions]}
+          />
           <div class="actions-menu-wrap" bind:this={actionMenuWrapEl}>
             <button
               type="button"
@@ -2460,7 +2488,7 @@
       {#if !hideWorkspaceAction}
         <!-- Workspace actions -->
         <div class="actions-row actions-row--workspace">
-          {@render workspaceActionButton()}
+          {@render workspaceActionButton(primaryActionStage > 0)}
         </div>
       {/if}
 
@@ -3154,6 +3182,14 @@
     min-width: 0;
   }
 
+  .primary-actions-wrap :global(.primary-actions-fit) {
+    width: 100%;
+  }
+
+  .primary-actions-wrap :global(.primary-actions-fit > .actions-row--primary) {
+    flex-wrap: nowrap;
+  }
+
   .actions-row {
     display: flex;
     align-items: flex-start;
@@ -3176,12 +3212,6 @@
   .primary-workspace-action {
     display: none;
     min-width: 0;
-  }
-
-  @container pull-detail (max-width: 560px) {
-    .actions-row--primary :global(.btn--close svg) {
-      display: none;
-    }
   }
 
   .actions-menu-wrap {
@@ -3265,10 +3295,6 @@
     flex-wrap: wrap;
   }
 
-  .actions-menu-popover :global(.kit-button__short-label) {
-    display: none;
-  }
-
   @media (max-width: 640px) {
     .primary-workspace-action {
       display: block;
@@ -3276,18 +3302,6 @@
 
     .pull-detail-content--has-compact-actions .actions-row.actions-row--workspace {
       display: none;
-    }
-  }
-
-  @container pull-detail (max-width: 520px) {
-    .actions-row--primary :global(.kit-button__label),
-    .actions-row--workspace :global(.kit-button__label) {
-      display: none;
-    }
-
-    .actions-row--primary :global(.kit-button__short-label),
-    .actions-row--workspace :global(.kit-button__short-label) {
-      display: inline;
     }
   }
 

@@ -240,7 +240,6 @@
         ? "Close the approval form"
         : title ?? "Open the approval form to submit a code review on this pull request"}
     label="Approve"
-    shortLabel="Approve"
     {size}
   >
     <CheckIcon size="14" strokeWidth="2.4" aria-hidden="true" />

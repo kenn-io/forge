@@ -106,13 +106,15 @@ prebundled: keep it in vite `optimizeDeps.exclude` with transitive deps as
   Provider-mode repo selector visibility must not move the tab row; non-provider
   modes reserve its footprint unless embed config hides it
   (`frontend/src/lib/components/layout/AppHeader.svelte::reserveProviderRepoSelectorSlot`).
-- `FitStages`: how an action row degrades under pressure (labelled `Button`
-  row to `IconButton` row), never a media query or a wrapping group. Inside a
-  `flex-wrap` row the host needs `flex: 1 1 0` *and* a `min-width` at the
+- `FitStages`: how an action row degrades under pressure (richest labelled
+  `Button` row to compact labelled or `IconButton` rows), never a media query,
+  Button-internal overrides, or a wrapping stage. Inside a `flex-wrap` parent
+  the host needs `flex: 1 1 0` *and* a `min-width` at the
   compact stage's intrinsic width: grow otherwise leaves the host narrower
   than that stage, and the icons paint over the sibling that should have
   wrapped instead. Every stage must expose the same accessible names
-  (`packages/ui/src/components/roborev/ReviewDrawer.svelte::.footer-actions-fit`).
+  (`packages/ui/src/components/roborev/ReviewDrawer.svelte::.footer-actions-fit`,
+  `packages/ui/src/components/detail/PullDetail.svelte::compactPrimaryActions`).
 - Flash: one shared store (`@middleman/ui/stores/flash`); kit `FlashBanner`
   mounts once per shell in a page-level fixed layer below measured shell chrome
   and above modal backdrops, never inside feature containers; headerless shells

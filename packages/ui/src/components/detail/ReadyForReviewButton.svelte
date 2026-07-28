@@ -16,6 +16,7 @@
     platformHost?: string | undefined;
     repoPath: string;
     size?: "sm" | "md";
+    compactLabel?: boolean;
     disabled?: boolean;
     /** Tooltip; pass the unavailable_reason when disabling the action. */
     title?: string | undefined;
@@ -30,6 +31,7 @@
     platformHost,
     repoPath,
     size = "md",
+    compactLabel = false,
     disabled = false,
     title = undefined,
     oncompleted,
@@ -75,8 +77,8 @@
     tone="info"
     surface="soft"
     {title}
-    label={submitting ? "Publishing…" : "Ready for review"}
-    shortLabel={submitting ? "Publishing…" : "Ready"}
+    ariaLabel={compactLabel && !submitting ? "Ready for review" : undefined}
+    label={submitting ? "Publishing…" : compactLabel ? "Ready" : "Ready for review"}
     {size}
   >
     <SendHorizontalIcon size="14" strokeWidth="2.2" aria-hidden="true" />

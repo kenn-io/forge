@@ -57,6 +57,7 @@ export function createTerminalClipboardWriter(port: TerminalClipboardPort): Term
   let expirationTimer: ReturnType<typeof setTimeout> | null = null;
   let pointerGestureTimer: ReturnType<typeof setTimeout> | null = null;
   let pointerGestureActive = false;
+  let pointerAuthorizationPending = false;
   let pointerGestureAuthorizationConsumed = false;
   let disposed = false;
 
@@ -76,6 +77,7 @@ export function createTerminalClipboardWriter(port: TerminalClipboardPort): Term
     clearExpiration();
     const expired = pending;
     pending = null;
+    pointerAuthorizationPending = false;
     expired?.reject(new DOMException("Terminal clipboard authorization expired", "AbortError"));
   }
 
@@ -131,11 +133,11 @@ export function createTerminalClipboardWriter(port: TerminalClipboardPort): Term
   }
 
   function cancelPointerGesture(): void {
-    if (!pointerGestureActive) return;
+    if (!pointerGestureActive && !pointerAuthorizationPending) return;
     clearPointerGestureTimer();
     pointerGestureActive = false;
     pointerGestureAuthorizationConsumed = false;
-    expirePending();
+    if (pointerAuthorizationPending) expirePending();
   }
 
   return {
@@ -146,6 +148,7 @@ export function createTerminalClipboardWriter(port: TerminalClipboardPort): Term
       pointerGestureAuthorizationConsumed = false;
       clearExpiration();
       arm();
+      pointerAuthorizationPending = pending !== null;
       pointerGestureTimer = setTimeout(cancelPointerGesture, POINTER_GESTURE_WATCHDOG_MS);
     },
     cancelPointerGesture,
@@ -156,6 +159,7 @@ export function createTerminalClipboardWriter(port: TerminalClipboardPort): Term
       if (!pointerGestureAuthorizationConsumed) {
         arm();
       }
+      pointerAuthorizationPending = pending !== null;
       pointerGestureAuthorizationConsumed = false;
       if (pending) scheduleExpiration(POINTER_RELEASE_GRACE_MS);
     },
@@ -163,6 +167,7 @@ export function createTerminalClipboardWriter(port: TerminalClipboardPort): Term
       if (disposed) return;
       arm();
       if (!pointerGestureActive && pending) {
+        pointerAuthorizationPending = false;
         scheduleExpiration(KEYBOARD_AUTHORIZATION_MS);
       }
     },
@@ -173,9 +178,10 @@ export function createTerminalClipboardWriter(port: TerminalClipboardPort): Term
       const authorized = pending;
       pending = null;
       if (!authorized) return "unauthorized";
-      if (pointerGestureActive) {
+      if (pointerGestureActive && pointerAuthorizationPending) {
         pointerGestureAuthorizationConsumed = true;
       }
+      pointerAuthorizationPending = false;
 
       authorized.resolve(text);
       if (await authorized.outcome) return "written";
@@ -187,6 +193,7 @@ export function createTerminalClipboardWriter(port: TerminalClipboardPort): Term
       disposed = true;
       clearPointerGestureTimer();
       pointerGestureActive = false;
+      pointerAuthorizationPending = false;
       pointerGestureAuthorizationConsumed = false;
       expirePending();
     },

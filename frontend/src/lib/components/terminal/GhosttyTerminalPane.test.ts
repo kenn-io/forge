@@ -379,7 +379,7 @@ describe("GhosttyTerminalPane", () => {
     expect(clipboardWriterAuthorizeKeyboardGesture).not.toHaveBeenCalled();
   });
 
-  it("removes accepted OSC 52 output and forwards its text to the clipboard writer", async () => {
+  it("replaces accepted OSC 52 output with CAN and forwards its text to the clipboard writer", async () => {
     clipboardWriterWrite.mockResolvedValue("written");
     await renderStarted({ workspaceId: "ws-123" });
     const socket = socketAt(0);
@@ -388,7 +388,7 @@ describe("GhosttyTerminalPane", () => {
     expect(socket.onmessage).not.toBeNull();
     socket.onmessage?.({ data } as MessageEvent);
 
-    expect(writtenText(terminalWrite.mock.calls[0]?.[0])).toBe("visible-beforevisible-after");
+    expect(writtenText(terminalWrite.mock.calls[0]?.[0])).toBe("visible-before\x18visible-after");
     expect(clipboardWriterWrite).toHaveBeenCalledWith("copied text");
   });
 

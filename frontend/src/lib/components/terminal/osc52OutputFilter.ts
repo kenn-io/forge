@@ -12,6 +12,7 @@ interface Osc52OutputFilterOptions {
 type ParserState = "normal" | "escape" | "osc-command" | "osc52" | "osc52-escape";
 
 const ESC = 0x1b;
+const CAN = 0x18;
 const BEL = 0x07;
 const C1_OSC = 0x9d;
 const C1_ST = 0x9c;
@@ -98,6 +99,7 @@ export function createOsc52OutputFilter(
               command = [];
             } else if (byte === SEMICOLON) {
               if (command.length === 2 && command[0] === 0x35 && command[1] === 0x32) {
+                output.push(CAN);
                 candidate = [];
                 command = [];
                 osc52Data = [];

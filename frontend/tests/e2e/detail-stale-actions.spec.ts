@@ -688,14 +688,12 @@ test.describe("PR detail stale-action gating", () => {
     const closeBtn = page.locator(".btn--close").first();
     await expect(closeBtn).toHaveCount(0);
 
-    // Both Create Workspace segments must be disabled. A force-click must
-    // not fire POST /workspaces or open the launch-target menu.
+    // Workspace creation is withheld until the newly routed detail has loaded.
     const createWs = page.getByRole("button", { name: "Create Workspace", exact: true });
     const createWsOptions = page.getByRole("button", { name: "Create Workspace options" });
-    await expect(createWs).toBeDisabled();
-    await expect(createWsOptions).toBeDisabled();
-    await createWs.click({ force: true }).catch(() => {});
-    await createWsOptions.click({ force: true }).catch(() => {});
+    await expect(createWs).toHaveCount(0);
+    await expect(createWsOptions).toHaveCount(0);
+    await expect(page.getByText("Refresh details before creating a workspace.")).toBeVisible();
 
     // Comment submit: disabled.
     const commentSubmit = page.locator(".comment-box .submit-btn").first();
@@ -734,15 +732,14 @@ test.describe("PR detail stale-action gating", () => {
     await expect(page.locator(".detail-title")).toContainText(prWithWorkspace.Title);
 
     // Workspace resolution follows the newly routed identity, not the stale
-    // detail envelope that is still painted. Never expose A's workspace while
-    // B is loading; offer only B's disabled create controls.
+    // detail envelope that is still painted. Never expose A's workspace or
+    // offer B's create controls until B has loaded.
     await expect(page.getByRole("button", { name: "Open Workspace", exact: true })).toHaveCount(0);
     const createWs = page.getByRole("button", { name: "Create Workspace", exact: true });
     const createWsOptions = page.getByRole("button", { name: "Create Workspace options" });
-    await expect(createWs).toBeDisabled();
-    await expect(createWsOptions).toBeDisabled();
-    await createWs.click({ force: true }).catch(() => {});
-    await createWsOptions.click({ force: true }).catch(() => {});
+    await expect(createWs).toHaveCount(0);
+    await expect(createWsOptions).toHaveCount(0);
+    await expect(page.getByText("Refresh details before creating a workspace.")).toBeVisible();
     await expect(page).not.toHaveURL(/\/terminal\/ws-pr-a/);
 
     release();

@@ -141,22 +141,37 @@ describe("SessionTerminalPool", () => {
     expect(document.activeElement).toBe(wrapper);
   });
 
-  it("focuses a session whose terminal was asked for before it existed", async () => {
-    // The production order for Focus Terminal on a promoted session: the request is
-    // made while the pane is still hidden, so nothing is mounted to focus. The pool
-    // mounts and reparents across a tick and a frame, and an unattached wrapper is
-    // inert - focusing it then does nothing.
+  it("focuses an existing session whose hidden pane is revealed", async () => {
     mountSession(agent);
-    requestSessionFocus(agent);
     mountPool();
     showIn(agent, slotA);
     await waitForReparent();
 
+    const wrapper = await vi.waitFor(() => {
+      const el = wrapperFor(agent);
+      expect(el).not.toBeNull();
+      return el as HTMLElement;
+    }, WAIT);
+    await vi.waitFor(() => expect(wrapper.inert).toBe(false), WAIT);
+
+    showIn(agent, null);
+    await waitForReparent();
+    const button = document.createElement("button");
+    document.body.append(button);
+    button.focus();
+
+    // The production order for Focus Terminal on a promoted session: the
+    // request is made while its pane is still hidden, then the pool reparents
+    // the existing terminal across a tick and a frame. Focusing its inert,
+    // still-parked wrapper immediately would do nothing.
+    requestSessionFocus(agent);
+    showIn(agent, slotB);
+    await waitForReparent();
+
     await vi.waitFor(() => {
-      const wrapper = wrapperFor(agent);
-      expect(wrapper).not.toBeNull();
       expect(document.activeElement).toBe(wrapper);
     }, WAIT);
+    button.remove();
   });
 
   it("keeps two sessions live at once", async () => {

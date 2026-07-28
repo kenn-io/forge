@@ -18,6 +18,12 @@
   // has laid it out. Activating a terminal earlier makes the fit addon measure
   // the parking node and resize the real tmux pane to one row.
   let attached = $state(false);
+  // A terminal renderer focuses only when it is first created. The pool itself
+  // mounts while this wrapper is still parked and inactive, so constructing the
+  // renderer immediately would spend that one focus opportunity off-screen.
+  // Latch this once the session first reaches a visible slot, then keep the
+  // renderer mounted through every later park, promotion, and demotion.
+  let terminalReady = $state(false);
 
   // Placement, mirroring WorkspaceHost's: park first, attach after a tick.
   // Parking rather than leaving the wrapper in place matters because the
@@ -62,6 +68,10 @@
     node.focus();
   });
 
+  $effect(() => {
+    if (attached && active) terminalReady = true;
+  });
+
   // The wrapper is reparented out of this component's own fragment, so Svelte
   // cannot remove it on destroy. Without this an unmounted session leaves a dead
   // terminal sitting in whatever slot last held it.
@@ -78,14 +88,16 @@
   tabindex="-1"
   inert={!active || !attached}
 >
-  <TerminalPane
-    websocketPath={session.websocketPath}
-    reconnectOnExit={false}
-    disabled={session.disabled ?? false}
-    active={active && attached}
-    initialStatus={session.status}
-    onExit={(code) => onExit(code)}
-  />
+  {#if terminalReady}
+    <TerminalPane
+      websocketPath={session.websocketPath}
+      reconnectOnExit={false}
+      disabled={session.disabled ?? false}
+      active={active && attached}
+      initialStatus={session.status}
+      onExit={(code) => onExit(code)}
+    />
+  {/if}
 </div>
 
 <style>

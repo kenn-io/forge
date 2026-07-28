@@ -1,8 +1,8 @@
 import { expect, type Page } from "@playwright/test";
 
-/** Run a palette command by its exact label, the way a keyboard user reaches it. */
+/** Run a palette command by its exact label without depending on the current focus owner. */
 export async function runPaletteCommand(page: Page, label: string): Promise<void> {
-  await page.keyboard.press(process.platform === "darwin" ? "Meta+K" : "Control+K");
+  await page.getByRole("button", { name: "Open command palette" }).click();
   const dialog = page.getByRole("dialog", { name: "Command palette" });
   await expect(dialog).toBeVisible();
   await dialog.getByRole("textbox", { name: "Search command palette" }).fill(label);

@@ -143,7 +143,9 @@ test.describe("workspace create-and-launch full stack", () => {
       const reused = (await reuseResponse.json()) as WorkspaceResponse;
       expect(reused.created).toBeUndefined();
       await waitForWorkspaceReady(api, reused.id);
-      await expect(page.locator(".workspace-dock-slot").getByRole("button", { name: agentLabel })).toBeVisible();
+      const launcher = page.getByRole("dialog", { name: "Launch a session" });
+      await expect(launcher).toBeVisible();
+      await expect(launcher.getByRole("button", { name: agentLabel })).toBeVisible();
       await page.evaluate(
         () =>
           new Promise<void>((resolve) => {

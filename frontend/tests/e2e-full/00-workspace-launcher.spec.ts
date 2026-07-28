@@ -219,10 +219,9 @@ test.describe("embedded workspace launcher", () => {
     }
   });
 
-  test("renames and stops a chrome-free pane's session from the pane controls", async ({ page }) => {
-    // A pane holding one session renders no chrome, which took that session's own
-    // tab actions with it. These are the replacements, and only the real backend
-    // shows the rename reaching the runtime and the stop actually ending the shell.
+  test("renames and stops a pane session from its tab controls", async ({ page }) => {
+    // The session keeps its own tab actions inside the workspace pane, and only
+    // the real backend shows the rename reaching the runtime and stop ending it.
     test.skip(
       !hasCommand("git") || !hasCommand("tmux", ["-V"]),
       "git and tmux are required for the real workspace flow",
@@ -247,18 +246,9 @@ test.describe("embedded workspace launcher", () => {
       await typeMarkerCommand(page, terminal, workspace.worktree_path, "sole-session-marker");
       // Alone in its leaf the pane draws no tab; the floating grip carries the
       // session's name instead, so it is where a rename has to show up.
-      await expect(page.getByRole("button", { name: "Move Shell" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Move Shell", exact: true })).toBeVisible();
 
-      async function openControls(): Promise<void> {
-        await page.getByRole("button", { name: "Workspace controls" }).first().click();
-        await expect(page.getByRole("dialog", { name: "Workspace controls" })).toBeVisible();
-      }
-
-      await openControls();
-      await page
-        .getByRole("dialog", { name: "Workspace controls" })
-        .getByRole("button", { name: "Rename session" })
-        .click();
+      await page.getByRole("button", { name: "Rename Shell", exact: true }).click();
       const rename = page.getByRole("dialog", { name: "Rename tab" });
       await expect(rename).toBeVisible();
       await rename.getByRole("textbox").fill("Reviewer shell");
@@ -266,14 +256,10 @@ test.describe("embedded workspace launcher", () => {
       await expect(rename).toBeHidden();
 
       // The pane's grip is named after the session, so a rename has to reach it.
-      await expect(page.getByRole("button", { name: "Move Reviewer shell" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Move Reviewer shell", exact: true })).toBeVisible();
       await typeMarkerCommand(page, terminal, workspace.worktree_path, "sole-session-marker-renamed");
 
-      await openControls();
-      await page
-        .getByRole("dialog", { name: "Workspace controls" })
-        .getByRole("button", { name: "Stop session" })
-        .click();
+      await page.getByRole("button", { name: "Close Reviewer shell", exact: true }).click();
       const confirm = page.getByRole("dialog", { name: /Stop Reviewer shell/ });
       await expect(confirm).toBeVisible();
       await confirm.getByRole("button", { name: "Stop session" }).click();

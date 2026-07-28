@@ -21,30 +21,21 @@ test.describe("focus mode", () => {
     await expect(page.locator(".kit-status-bar")).not.toBeAttached();
   });
 
-  test("narrow PR focus route shows actions only inside the actions menu", async ({ page }) => {
+  test("narrow PR focus route keeps actions available in the compact layout", async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 720 });
     await page.goto("/focus/pulls/github/acme/widgets/1");
     await page.locator(".focus-layout .pull-detail").waitFor({ state: "visible", timeout: 10_000 });
 
-    await expect(page.locator(".actions-row--primary")).toBeHidden();
-    await expect(page.locator(".label-editor-anchor--inline")).toBeHidden();
-    await expect(page.locator(".actions-row--workspace")).toBeHidden();
-    await expect(page.locator(".actions-menu-trigger")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Actions", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Approve", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Merge", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Close", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Create Workspace", exact: true })).toBeVisible();
+    const labels = page.locator(".label-editor-anchor--inline").getByRole("button", { name: "Labels" });
+    await expect(labels).toBeVisible();
 
-    await page.locator(".actions-menu-trigger").click();
-
-    await expect(page.locator(".actions-row--primary .btn--approve")).toBeHidden();
-    await expect(page.locator(".actions-menu-popover .btn--approve")).toBeVisible();
-    await expect(page.locator(".actions-menu-popover .btn--merge")).toBeVisible();
-    await expect(page.locator(".actions-menu-popover .btn--close")).toBeVisible();
-    await expect(page.locator(".actions-menu-popover").getByRole("button", { name: "Labels" })).toBeVisible();
-    await expect(
-      page.locator(".actions-menu-popover").getByRole("button", { name: "Create Workspace", exact: true }),
-    ).toBeVisible();
-
-    await page.locator(".actions-menu-popover").getByRole("button", { name: "Labels" }).click();
+    await labels.click();
     await expect(page.locator(".label-picker")).toBeVisible();
-    await expect(page.locator(".actions-menu-popover")).toBeHidden();
     await expect(page.locator(".label-editor-backdrop")).toHaveCount(0);
     await expect(page.locator(".focus-layout .pull-detail")).toBeVisible();
 
@@ -62,22 +53,16 @@ test.describe("focus mode", () => {
     await expect(page.locator(".label-picker")).toBeHidden();
   });
 
-  test("narrow PR focus route closes actions menu when Labels toggles an open picker", async ({ page }) => {
+  test("narrow PR focus route closes the label picker when Labels toggles it", async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 720 });
     await page.goto("/focus/pulls/github/acme/widgets/1");
     await page.locator(".focus-layout .pull-detail").waitFor({ state: "visible", timeout: 10_000 });
 
-    await page.locator(".actions-menu-trigger").click();
-    await page.locator(".actions-menu-popover").getByRole("button", { name: "Labels" }).click();
+    const labels = page.locator(".label-editor-anchor--inline").getByRole("button", { name: "Labels" });
+    await labels.click();
     await expect(page.locator(".label-picker")).toBeVisible();
-    await expect(page.locator(".actions-menu-popover")).toBeHidden();
-
-    await page.locator(".actions-menu-trigger").click();
-    await expect(page.locator(".actions-menu-popover")).toBeVisible();
-
-    await page.locator(".actions-menu-popover").getByRole("button", { name: "Labels" }).click();
+    await labels.click();
     await expect(page.locator(".label-picker")).toBeHidden();
-    await expect(page.locator(".actions-menu-popover")).toBeHidden();
   });
 
   test("PR focus route dismisses the inline label picker on outside click", async ({ page }) => {
@@ -92,7 +77,7 @@ test.describe("focus mode", () => {
     await expect(page.locator(".label-picker")).toBeHidden();
   });
 
-  test("PR focus route keeps workspace inside the mid-narrow action grid", async ({ page }) => {
+  test("PR focus route keeps workspace creation available in the mid-narrow layout", async ({ page }) => {
     await page.route("**/api/v1/workspaces", async (route) => {
       if (route.request().method() !== "POST") {
         await route.continue();
@@ -112,12 +97,10 @@ test.describe("focus mode", () => {
     await page.goto("/focus/pulls/github/acme/widgets/1");
     await page.locator(".focus-layout .pull-detail").waitFor({ state: "visible", timeout: 10_000 });
 
-    await expect(page.locator(".actions-menu-trigger")).toBeHidden();
-    const createWorkspace = page
-      .locator(".actions-row--primary .primary-workspace-action")
-      .getByRole("button", { name: "Create Workspace", exact: true });
+    await expect(page.getByRole("button", { name: "Actions", exact: true })).toHaveCount(0);
+    const createWorkspace = page.getByRole("button", { name: "Create Workspace", exact: true });
     await expect(createWorkspace).toBeVisible();
-    await expect(page.locator(".actions-row--workspace")).toBeHidden();
+    await expect(page.locator(".actions-row--workspace")).toBeVisible();
 
     const copyNumberHeight = await page
       .locator(".meta-row .copy-number-btn")
@@ -130,16 +113,14 @@ test.describe("focus mode", () => {
     await expect(page.locator(".kit-flash-stack").getByRole("status")).toContainText("workspace setup failed");
   });
 
-  test("narrow merged PR focus route keeps labels and workspace actions available", async ({ page }) => {
+  test("narrow merged PR focus route keeps labels available without workspace creation", async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 720 });
     await page.goto("/focus/pulls/github/acme/widgets/3");
     await page.locator(".focus-layout .pull-detail").waitFor({ state: "visible", timeout: 10_000 });
 
-    await expect(page.locator(".actions-menu-trigger")).toBeHidden();
+    await expect(page.getByRole("button", { name: "Actions", exact: true })).toHaveCount(0);
     await expect(page.locator(".label-editor-anchor--inline").getByRole("button", { name: "Labels" })).toBeVisible();
-    await expect(
-      page.locator(".actions-row--workspace").getByRole("button", { name: "Create Workspace", exact: true }),
-    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "Create Workspace", exact: true })).toHaveCount(0);
   });
 
   test("browser back/forward works between focus routes", async ({ page }) => {

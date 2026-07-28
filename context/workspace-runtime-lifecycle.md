@@ -103,11 +103,17 @@ stale tabs.
 - Treat terminal processes as native-terminal-equivalent, but accept bounded, write-only OSC 52 writes only after one
   recent one-shot trusted DOM gesture; terminal data callbacks are not input provenance, and browser denial falls back
   through CSRF-protected loopback (`frontend/src/lib/components/terminal/GhosttyTerminalPane.svelte::handleTerminalKeyDown`).
+- Pointer clipboard authority must use capture and be revoked on capture loss, focus or visibility loss, and a bounded
+  watchdog; a missing release must never leave authorization active
+  (`frontend/src/lib/components/terminal/terminalClipboardWriter.ts::createTerminalClipboardWriter`).
 - OSC 52 filtering must restart at nested 7-bit or C1 OSC introducers instead of forwarding them; forwarding an
   introducer from an incomplete command bypasses the gesture gate
   (`frontend/src/lib/components/terminal/osc52OutputFilter.ts::createOsc52OutputFilter`).
 - During active tmux SGR drags outside xterm bounds, add only clamped edge wheel, drag, and release reports; forward
-  all other mouse reports unchanged (`frontend/src/lib/components/terminal/tmuxMouseDragAutoscroll.ts::createTmuxMouseDragAutoscroll`).
+  all other mouse reports unchanged, and never retain unsent drag state across a WebSocket boundary
+  (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::connect`).
+- Windows loopback clipboard fallback must send UTF-16LE to `clip.exe`; UTF-8 stdin is code-page-dependent and corrupts
+  non-ASCII text (`internal/systemclipboard/systemclipboard.go::encodeUTF16LE`).
 - The frontend may react immediately to terminal exit events, but should then
   reconcile with a runtime refresh.
 - Only the active terminal pane may publish cell geometry; font-metric changes

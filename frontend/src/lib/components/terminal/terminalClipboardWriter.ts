@@ -1,6 +1,7 @@
 import { writeTerminalClipboardThroughServer } from "./terminalClipboardFallback.js";
 
 const KEYBOARD_AUTHORIZATION_MS = 10_000;
+const POINTER_GESTURE_WATCHDOG_MS = 60_000;
 const POINTER_RELEASE_GRACE_MS = 1_000;
 
 export interface TerminalClipboardPort {
@@ -11,6 +12,7 @@ export interface TerminalClipboardPort {
 
 export interface TerminalClipboardWriter {
   beginPointerGesture(): void;
+  cancelPointerGesture(): void;
   endPointerGesture(): void;
   authorizeKeyboardGesture(): void;
   write(text: string): Promise<TerminalClipboardWriteResult>;
@@ -53,6 +55,7 @@ export function createBrowserTerminalClipboardPort(): TerminalClipboardPort {
 export function createTerminalClipboardWriter(port: TerminalClipboardPort): TerminalClipboardWriter {
   let pending: PendingClipboardWrite | null = null;
   let expirationTimer: ReturnType<typeof setTimeout> | null = null;
+  let pointerGestureTimer: ReturnType<typeof setTimeout> | null = null;
   let pointerGestureActive = false;
   let pointerGestureAuthorizationConsumed = false;
   let disposed = false;
@@ -61,6 +64,12 @@ export function createTerminalClipboardWriter(port: TerminalClipboardPort): Term
     if (expirationTimer === null) return;
     clearTimeout(expirationTimer);
     expirationTimer = null;
+  }
+
+  function clearPointerGestureTimer(): void {
+    if (pointerGestureTimer === null) return;
+    clearTimeout(pointerGestureTimer);
+    pointerGestureTimer = null;
   }
 
   function expirePending(): void {
@@ -121,16 +130,28 @@ export function createTerminalClipboardWriter(port: TerminalClipboardPort): Term
     }
   }
 
+  function cancelPointerGesture(): void {
+    if (!pointerGestureActive) return;
+    clearPointerGestureTimer();
+    pointerGestureActive = false;
+    pointerGestureAuthorizationConsumed = false;
+    expirePending();
+  }
+
   return {
     beginPointerGesture() {
       if (disposed) return;
+      clearPointerGestureTimer();
       pointerGestureActive = true;
       pointerGestureAuthorizationConsumed = false;
       clearExpiration();
       arm();
+      pointerGestureTimer = setTimeout(cancelPointerGesture, POINTER_GESTURE_WATCHDOG_MS);
     },
+    cancelPointerGesture,
     endPointerGesture() {
       if (disposed || !pointerGestureActive) return;
+      clearPointerGestureTimer();
       pointerGestureActive = false;
       if (!pointerGestureAuthorizationConsumed) {
         arm();
@@ -164,6 +185,7 @@ export function createTerminalClipboardWriter(port: TerminalClipboardPort): Term
     dispose() {
       if (disposed) return;
       disposed = true;
+      clearPointerGestureTimer();
       pointerGestureActive = false;
       pointerGestureAuthorizationConsumed = false;
       expirePending();

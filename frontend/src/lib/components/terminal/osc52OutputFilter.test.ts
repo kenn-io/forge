@@ -71,6 +71,16 @@ describe("OSC 52 output filter", () => {
     expect(onOsc52).toHaveBeenCalledWith("c;Y29waWVkIHRleHQ=");
   });
 
+  it("recognizes C1 OSC immediately after an ESC prefix", () => {
+    const onOsc52 = vi.fn();
+    const filter = createOsc52OutputFilter(onOsc52);
+
+    const output = filter.write(Uint8Array.from([0x1b, 0x9d, ...bytes("52;c;Y29waWVkIHRleHQ=\x07visible")]));
+
+    expect(Array.from(output)).toEqual([0x1b, ...bytes("visible")]);
+    expect(onOsc52).toHaveBeenCalledWith("c;Y29waWVkIHRleHQ=");
+  });
+
   it("consumes oversized OSC 52 without retaining or dispatching it", () => {
     const onOsc52 = vi.fn();
     const filter = createOsc52OutputFilter(onOsc52, { maxDataBytes: 8 });

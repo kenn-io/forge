@@ -70,6 +70,11 @@ export function createOsc52OutputFilter(
               candidate = [ESC, byte];
               command = [];
               state = "osc-command";
+            } else if (byte === C1_OSC) {
+              output.push(ESC);
+              candidate = [byte];
+              command = [];
+              state = "osc-command";
             } else {
               output.push(ESC);
               if (byte === ESC) {

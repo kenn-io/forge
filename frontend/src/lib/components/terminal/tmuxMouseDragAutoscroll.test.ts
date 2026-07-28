@@ -162,4 +162,23 @@ describe("tmux mouse drag autoscroll", () => {
 
     expect(send).not.toHaveBeenCalled();
   });
+
+  it("resets an active edge drag without sending through a disconnected socket", async () => {
+    vi.useFakeTimers();
+    const send = vi.fn();
+    const autoscroll = createTmuxMouseDragAutoscroll({ send });
+
+    autoscroll.observeTerminalData(leftDown);
+    autoscroll.updatePointer({
+      clientX: 500,
+      clientY: 180,
+      bounds,
+      cols: 80,
+      rows: 24,
+    });
+    autoscroll.reset();
+    await vi.advanceTimersByTimeAsync(240);
+
+    expect(send).not.toHaveBeenCalled();
+  });
 });

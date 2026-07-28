@@ -70,6 +70,7 @@
   let exited = false;
   let sawFirstBytes = false;
   let clipboardFailureReported = false;
+  let activePointerId: number | null = null;
   const encoder = new TextEncoder();
   const clipboardWriter = createTerminalClipboardWriter(
     createBrowserTerminalClipboardPort(),
@@ -115,12 +116,63 @@
 
   function handleTerminalPointerDown(event: PointerEvent): void {
     if (disposed || disabled || event.button !== 0 || !event.isTrusted) return;
+    if (activePointerId !== null) {
+      cancelTerminalPointerGesture();
+    }
+    activePointerId = event.pointerId;
     clipboardWriter.beginPointerGesture();
+    try {
+      containerEl.setPointerCapture(event.pointerId);
+    } catch {
+      // The watchdog and global cancellation handlers still bound the gesture.
+    }
   }
 
   function handleTerminalPointerEnd(event: PointerEvent): void {
-    if (!event.isTrusted) return;
+    if (!event.isTrusted || activePointerId !== event.pointerId) return;
+    activePointerId = null;
+    releaseTerminalPointerCapture(event.pointerId);
     clipboardWriter.endPointerGesture();
+  }
+
+  function releaseTerminalPointerCapture(pointerId: number): void {
+    try {
+      if (containerEl.hasPointerCapture(pointerId)) {
+        containerEl.releasePointerCapture(pointerId);
+      }
+    } catch {
+      // Capture may already be gone after focus or visibility loss.
+    }
+  }
+
+  function cancelTerminalPointerGesture(pointerId?: number): void {
+    if (pointerId !== undefined && activePointerId !== pointerId) return;
+    const capturedPointerId = activePointerId;
+    activePointerId = null;
+    if (capturedPointerId !== null) {
+      releaseTerminalPointerCapture(capturedPointerId);
+    }
+    clipboardWriter.cancelPointerGesture();
+  }
+
+  function handleTerminalPointerCancel(event: PointerEvent): void {
+    cancelTerminalPointerGesture(event.pointerId);
+  }
+
+  function handleTerminalLostPointerCapture(event: PointerEvent): void {
+    if (activePointerId !== event.pointerId) return;
+    activePointerId = null;
+    clipboardWriter.cancelPointerGesture();
+  }
+
+  function handleWindowBlur(): void {
+    cancelTerminalPointerGesture();
+  }
+
+  function handleDocumentVisibilityChange(): void {
+    if (document.visibilityState !== "visible") {
+      cancelTerminalPointerGesture();
+    }
   }
 
   function handleTerminalKeyDown(event: KeyboardEvent): void {
@@ -554,14 +606,17 @@
 </script>
 
 <svelte:window
+  onblur={handleWindowBlur}
   onpointerup={handleTerminalPointerEnd}
-  onpointercancel={handleTerminalPointerEnd}
+  onpointercancel={handleTerminalPointerCancel}
 />
+<svelte:document onvisibilitychange={handleDocumentVisibilityChange} />
 
 <div
   class="terminal-container"
   bind:this={containerEl}
   onpointerdowncapture={handleTerminalPointerDown}
+  onlostpointercapture={handleTerminalLostPointerCapture}
   onkeydowncapture={handleTerminalKeyDown}
 ></div>
 

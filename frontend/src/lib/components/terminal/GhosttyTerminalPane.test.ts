@@ -2,13 +2,19 @@ import { cleanup, render, waitFor } from "@testing-library/svelte";
 import type { ComponentProps } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-const { clipboardWriterAuthorizeKeyboardGesture, clipboardWriterDispose, clipboardWriterWrite, mockShowFlash } =
-  vi.hoisted(() => ({
-    clipboardWriterAuthorizeKeyboardGesture: vi.fn(),
-    clipboardWriterDispose: vi.fn(),
-    clipboardWriterWrite: vi.fn(),
-    mockShowFlash: vi.fn(),
-  }));
+const {
+  clipboardWriterAuthorizeKeyboardGesture,
+  clipboardWriterCancelPointerGesture,
+  clipboardWriterDispose,
+  clipboardWriterWrite,
+  mockShowFlash,
+} = vi.hoisted(() => ({
+  clipboardWriterAuthorizeKeyboardGesture: vi.fn(),
+  clipboardWriterCancelPointerGesture: vi.fn(),
+  clipboardWriterDispose: vi.fn(),
+  clipboardWriterWrite: vi.fn(),
+  mockShowFlash: vi.fn(),
+}));
 
 const mockFit = vi.fn();
 const mockFocus = vi.fn();
@@ -72,6 +78,7 @@ vi.mock("./terminalClipboardWriter.js", () => ({
   createBrowserTerminalClipboardPort: vi.fn(() => ({})),
   createTerminalClipboardWriter: vi.fn(() => ({
     beginPointerGesture: vi.fn(),
+    cancelPointerGesture: clipboardWriterCancelPointerGesture,
     endPointerGesture: vi.fn(),
     authorizeKeyboardGesture: clipboardWriterAuthorizeKeyboardGesture,
     write: clipboardWriterWrite,
@@ -130,6 +137,7 @@ describe("GhosttyTerminalPane", () => {
     mockShowFlash.mockReset();
     terminalWrite.mockReset();
     clipboardWriterAuthorizeKeyboardGesture.mockReset();
+    clipboardWriterCancelPointerGesture.mockReset();
     clipboardWriterDispose.mockReset();
     clipboardWriterWrite.mockReset().mockResolvedValue("unauthorized");
     sockets = [];

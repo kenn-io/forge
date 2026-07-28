@@ -18,6 +18,7 @@ export interface TmuxMouseDragAutoscroll {
   observeTerminalData(data: string): void;
   updatePointer(update: TmuxMousePointerUpdate): void;
   endPointerGesture(): void;
+  reset(): void;
   dispose(): void;
 }
 
@@ -96,6 +97,10 @@ export function createTmuxMouseDragAutoscroll(options: TmuxMouseDragAutoscrollOp
       if (dragActive && edgeReport) {
         options.send(`\x1b[<0;${edgeReport.column};${edgeReport.row}m`);
       }
+      dragActive = false;
+      stop();
+    },
+    reset() {
       dragActive = false;
       stop();
     },

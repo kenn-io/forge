@@ -76,6 +76,7 @@
   let exited = false;
   let sawFirstBytes = false;
   let clipboardFailureReported = false;
+  let activePointerId: number | null = null;
   const encoder = new TextEncoder();
   const clipboardWriter = createTerminalClipboardWriter(
     createBrowserTerminalClipboardPort(),
@@ -125,13 +126,66 @@
 
   function handleTerminalPointerDown(event: PointerEvent): void {
     if (disposed || disabled || event.button !== 0 || !event.isTrusted) return;
+    if (activePointerId !== null) {
+      cancelTerminalPointerGesture();
+    }
+    activePointerId = event.pointerId;
     clipboardWriter.beginPointerGesture();
+    try {
+      containerEl.setPointerCapture(event.pointerId);
+    } catch {
+      // The watchdog and global cancellation handlers still bound the gesture.
+    }
   }
 
   function handleTerminalPointerEnd(event: PointerEvent): void {
-    if (!event.isTrusted) return;
+    if (!event.isTrusted || activePointerId !== event.pointerId) return;
+    activePointerId = null;
+    releaseTerminalPointerCapture(event.pointerId);
     clipboardWriter.endPointerGesture();
     mouseDragAutoscroll.endPointerGesture();
+  }
+
+  function releaseTerminalPointerCapture(pointerId: number): void {
+    try {
+      if (containerEl.hasPointerCapture(pointerId)) {
+        containerEl.releasePointerCapture(pointerId);
+      }
+    } catch {
+      // Capture may already be gone after focus or visibility loss.
+    }
+  }
+
+  function cancelTerminalPointerGesture(pointerId?: number): void {
+    if (pointerId !== undefined && activePointerId !== pointerId) return;
+    const capturedPointerId = activePointerId;
+    activePointerId = null;
+    if (capturedPointerId !== null) {
+      releaseTerminalPointerCapture(capturedPointerId);
+    }
+    clipboardWriter.cancelPointerGesture();
+    mouseDragAutoscroll.endPointerGesture();
+  }
+
+  function handleTerminalPointerCancel(event: PointerEvent): void {
+    cancelTerminalPointerGesture(event.pointerId);
+  }
+
+  function handleTerminalLostPointerCapture(event: PointerEvent): void {
+    if (activePointerId !== event.pointerId) return;
+    activePointerId = null;
+    clipboardWriter.cancelPointerGesture();
+    mouseDragAutoscroll.endPointerGesture();
+  }
+
+  function handleWindowBlur(): void {
+    cancelTerminalPointerGesture();
+  }
+
+  function handleDocumentVisibilityChange(): void {
+    if (document.visibilityState !== "visible") {
+      cancelTerminalPointerGesture();
+    }
   }
 
   function handleTerminalKeyDown(event: KeyboardEvent): void {
@@ -386,6 +440,7 @@
   function connect(): void {
     if (disposed || !terminal) return;
 
+    mouseDragAutoscroll.reset();
     const cols = terminal.cols;
     const rows = terminal.rows;
     const url = buildWsUrl(cols, rows);
@@ -453,6 +508,7 @@
     };
 
     socket.onclose = () => {
+      mouseDragAutoscroll.reset();
       scheduleReconnect();
     };
 
@@ -652,10 +708,10 @@
       if (active && !disabled && focusIntent.shouldFocus()) term.focus();
 
       term.onData((data: string) => {
-        mouseDragAutoscroll.observeTerminalData(data);
         if (disabled) return;
         if (ws?.readyState === WebSocket.OPEN) {
           ws.send(encoder.encode(data));
+          mouseDragAutoscroll.observeTerminalData(data);
         }
       });
 
@@ -747,15 +803,18 @@
 </script>
 
 <svelte:window
+  onblur={handleWindowBlur}
   onpointermove={handleWindowPointerMove}
   onpointerup={handleTerminalPointerEnd}
-  onpointercancel={handleTerminalPointerEnd}
+  onpointercancel={handleTerminalPointerCancel}
 />
+<svelte:document onvisibilitychange={handleDocumentVisibilityChange} />
 
 <div
   class="terminal-container"
   bind:this={containerEl}
   onpointerdowncapture={handleTerminalPointerDown}
+  onlostpointercapture={handleTerminalLostPointerCapture}
   onkeydowncapture={handleTerminalKeyDown}
 ></div>
 

@@ -51,7 +51,7 @@ describe("terminal clipboard writer", () => {
     const writer = createTerminalClipboardWriter(port);
 
     writer.beginPointerGesture();
-    await vi.advanceTimersByTimeAsync(60_000);
+    await vi.advanceTimersByTimeAsync(30_000);
     expect(deferredWrites).toHaveLength(1);
     writer.endPointerGesture();
     const copied = writer.write("pointer selection");
@@ -76,6 +76,33 @@ describe("terminal clipboard writer", () => {
 
     await expect(writer.write("second write")).resolves.toBe("unauthorized");
     await expect(deferredWrites[0]).resolves.toBe("first write");
+    expect(writeText).not.toHaveBeenCalled();
+    expect(writeLocalText).not.toHaveBeenCalled();
+  });
+
+  it("revokes an active pointer authorization when the gesture is canceled", async () => {
+    const { port, deferredWrites, writeLocalText, writeText } = createPort();
+    const writer = createTerminalClipboardWriter(port);
+
+    writer.beginPointerGesture();
+    writer.cancelPointerGesture();
+
+    await expect(writer.write("late write")).resolves.toBe("unauthorized");
+    await expect(deferredWrites[0]).rejects.toMatchObject({ name: "AbortError" });
+    expect(writeText).not.toHaveBeenCalled();
+    expect(writeLocalText).not.toHaveBeenCalled();
+  });
+
+  it("revokes a pointer authorization when its watchdog expires", async () => {
+    vi.useFakeTimers();
+    const { port, deferredWrites, writeLocalText, writeText } = createPort();
+    const writer = createTerminalClipboardWriter(port);
+
+    writer.beginPointerGesture();
+    await vi.advanceTimersByTimeAsync(60_001);
+
+    await expect(writer.write("late write")).resolves.toBe("unauthorized");
+    await expect(deferredWrites[0]).rejects.toMatchObject({ name: "AbortError" });
     expect(writeText).not.toHaveBeenCalled();
     expect(writeLocalText).not.toHaveBeenCalled();
   });

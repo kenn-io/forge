@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 
 const {
   clipboardWriteText,
+  clipboardWriterCancelPointerGesture,
   clipboardWriterDispose,
   clipboardWriterWrite,
   ghosttyTerminalCtor,
@@ -11,6 +12,9 @@ const {
   mockGhosttyInit,
   mockShowFlash,
   mockWebglCtor,
+  mouseDragEndPointerGesture,
+  mouseDragObserveTerminalData,
+  mouseDragReset,
   resizeObserverCallbacks,
   xtermFitAddons,
   xtermInstances,
@@ -20,6 +24,7 @@ const {
   xtermOpen,
 } = vi.hoisted(() => ({
   clipboardWriteText: vi.fn(),
+  clipboardWriterCancelPointerGesture: vi.fn(),
   clipboardWriterDispose: vi.fn(),
   clipboardWriterWrite: vi.fn(),
   ghosttyTerminalCtor: vi.fn(),
@@ -27,6 +32,9 @@ const {
   mockGhosttyInit: vi.fn().mockResolvedValue(undefined),
   mockShowFlash: vi.fn(),
   mockWebglCtor: vi.fn(),
+  mouseDragEndPointerGesture: vi.fn(),
+  mouseDragObserveTerminalData: vi.fn(),
+  mouseDragReset: vi.fn(),
   resizeObserverCallbacks: [] as ResizeObserverCallback[],
   xtermFitAddons: [] as Array<{ fit: ReturnType<typeof vi.fn> }>,
   xtermInstances: [] as Array<{
@@ -124,10 +132,21 @@ vi.mock("./terminalClipboardWriter.js", () => ({
   createBrowserTerminalClipboardPort: vi.fn(() => ({})),
   createTerminalClipboardWriter: vi.fn(() => ({
     beginPointerGesture: vi.fn(),
+    cancelPointerGesture: clipboardWriterCancelPointerGesture,
     endPointerGesture: vi.fn(),
     authorizeKeyboardGesture: vi.fn(),
     write: clipboardWriterWrite,
     dispose: clipboardWriterDispose,
+  })),
+}));
+
+vi.mock("./tmuxMouseDragAutoscroll.js", () => ({
+  createTmuxMouseDragAutoscroll: vi.fn(() => ({
+    observeTerminalData: mouseDragObserveTerminalData,
+    updatePointer: vi.fn(),
+    endPointerGesture: mouseDragEndPointerGesture,
+    reset: mouseDragReset,
+    dispose: vi.fn(),
   })),
 }));
 
@@ -228,11 +247,15 @@ describe("TerminalPane", () => {
     ghosttyTerminalCtor.mockReset();
     ligaturesAddonCtor.mockReset();
     clipboardWriteText.mockReset();
+    clipboardWriterCancelPointerGesture.mockReset();
     clipboardWriterDispose.mockReset();
     clipboardWriterWrite.mockReset().mockResolvedValue("unauthorized");
     mockGhosttyInit.mockClear();
     mockShowFlash.mockReset();
     mockWebglCtor.mockReset();
+    mouseDragEndPointerGesture.mockReset();
+    mouseDragObserveTerminalData.mockReset();
+    mouseDragReset.mockReset();
     resizeObserverCallbacks.length = 0;
     xtermFitAddons.length = 0;
     xtermInstances.length = 0;
@@ -683,11 +706,63 @@ describe("TerminalPane", () => {
     socket.sent = [];
 
     xtermOnDataHandlers[0]!("\x1b[<0;10;5M");
+    expect(mouseDragObserveTerminalData).not.toHaveBeenCalled();
     socket.readyState = MockWebSocket.OPEN;
     xtermOnDataHandlers[0]!("\x1b[<32;12;5M");
 
     expect(sentText(socket, 0)).toBe("\x1b[<32;12;5M");
+    expect(mouseDragObserveTerminalData).toHaveBeenCalledTimes(1);
+    expect(mouseDragObserveTerminalData).toHaveBeenCalledWith("\x1b[<32;12;5M");
   });
+
+  it("resets tmux drag state when the terminal socket closes", async () => {
+    render(TerminalPane, { props: { workspaceId: "ws-123" } });
+
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
+    mouseDragReset.mockClear();
+
+    mockSockets[0]!.onclose?.();
+
+    expect(mouseDragReset).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["xterm", "ghostty-web"] as const)(
+    "revokes %s pointer clipboard authorization when the window loses focus",
+    async (renderer) => {
+      configuredRenderer = renderer;
+      render(TerminalPane, { props: { workspaceId: "ws-123" } });
+      if (renderer === "xterm") {
+        await waitFor(() => expect(xtermTerminalCtor).toHaveBeenCalled());
+      } else {
+        await waitFor(() => expect(ghosttyTerminalCtor).toHaveBeenCalled());
+      }
+      clipboardWriterCancelPointerGesture.mockClear();
+
+      window.dispatchEvent(new Event("blur"));
+
+      expect(clipboardWriterCancelPointerGesture).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each(["xterm", "ghostty-web"] as const)(
+    "revokes %s pointer clipboard authorization when the document is hidden",
+    async (renderer) => {
+      configuredRenderer = renderer;
+      render(TerminalPane, { props: { workspaceId: "ws-123" } });
+      if (renderer === "xterm") {
+        await waitFor(() => expect(xtermTerminalCtor).toHaveBeenCalled());
+      } else {
+        await waitFor(() => expect(ghosttyTerminalCtor).toHaveBeenCalled());
+      }
+      clipboardWriterCancelPointerGesture.mockClear();
+      const visibilityState = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+
+      document.dispatchEvent(new Event("visibilitychange"));
+
+      expect(clipboardWriterCancelPointerGesture).toHaveBeenCalledTimes(1);
+      visibilityState.mockRestore();
+    },
+  );
 
   it("does not attach xterm sessions with unavailable initial status", async () => {
     render(TerminalPane, {

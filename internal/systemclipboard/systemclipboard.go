@@ -3,12 +3,14 @@ package systemclipboard
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"runtime"
 	"strings"
+	"unicode/utf16"
 
 	"go.kenn.io/middleman/internal/procutil"
 )
@@ -55,10 +57,23 @@ func (w nativeWriter) WriteText(
 	if err != nil {
 		return err
 	}
-	if err := w.run(ctx, command.name, command.args, text); err != nil {
+	input := text
+	if w.goos == "windows" {
+		input = encodeUTF16LE(text)
+	}
+	if err := w.run(ctx, command.name, command.args, input); err != nil {
 		return fmt.Errorf("write system clipboard: %w", err)
 	}
 	return nil
+}
+
+func encodeUTF16LE(text string) string {
+	codeUnits := utf16.Encode([]rune(text))
+	encoded := make([]byte, len(codeUnits)*2)
+	for index, codeUnit := range codeUnits {
+		binary.LittleEndian.PutUint16(encoded[index*2:], codeUnit)
+	}
+	return string(encoded)
 }
 
 func (w nativeWriter) resolveCommand() (clipboardCommand, error) {

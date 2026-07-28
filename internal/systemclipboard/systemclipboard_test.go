@@ -11,12 +11,14 @@ import (
 
 func TestNativeWriterSelectsPlatformClipboardCommand(t *testing.T) {
 	tests := []struct {
-		name     string
-		goos     string
-		env      map[string]string
-		paths    map[string]string
-		wantName string
-		wantArgs []string
+		name      string
+		goos      string
+		env       map[string]string
+		paths     map[string]string
+		wantName  string
+		wantArgs  []string
+		text      string
+		wantInput string
 	}{
 		{
 			name:     "macOS",
@@ -51,13 +53,19 @@ func TestNativeWriterSelectsPlatformClipboardCommand(t *testing.T) {
 				"clip.exe": `C:\Windows\System32\clip.exe`,
 			},
 			wantName: `C:\Windows\System32\clip.exe`,
+			text:     "Hé😀",
+			wantInput: string([]byte{
+				0x48, 0x00,
+				0xe9, 0x00,
+				0x3d, 0xd8, 0x00, 0xde,
+			}),
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			assert := assert.New(t)
-			var gotText string
+			var gotInput string
 			writer := nativeWriter{
 				goos: tt.goos,
 				getenv: func(name string) string {
@@ -78,18 +86,26 @@ func TestNativeWriterSelectsPlatformClipboardCommand(t *testing.T) {
 				) error {
 					assert.Equal(tt.wantName, name)
 					assert.Equal(tt.wantArgs, args)
-					gotText = text
+					gotInput = text
 					return nil
 				},
 			}
 
+			text := tt.text
+			if text == "" {
+				text = "copied through the native clipboard"
+			}
+			wantInput := tt.wantInput
+			if wantInput == "" {
+				wantInput = text
+			}
 			err := writer.WriteText(
 				context.Background(),
-				"copied through the native clipboard",
+				text,
 			)
 
 			require.NoError(t, err)
-			assert.Equal("copied through the native clipboard", gotText)
+			assert.Equal(wantInput, gotInput)
 		})
 	}
 }

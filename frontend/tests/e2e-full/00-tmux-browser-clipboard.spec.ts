@@ -359,9 +359,32 @@ async function dragTerminalCells(page: Page, container: Locator, cellCount: numb
   }, cellCount);
 
   await page.mouse.move(points.start.x, points.start.y);
-  await page.mouse.down();
+  await beginCapturedPointerGesture(page, container);
   await page.mouse.move(points.end.x, points.end.y, { steps: 10 });
   await page.mouse.up();
+}
+
+async function beginCapturedPointerGesture(page: Page, container: Locator): Promise<void> {
+  await container.evaluate((element) => {
+    const target = element as HTMLElement;
+    target.addEventListener(
+      "pointerdown",
+      (event) => {
+        target.dataset.playwrightPointerId = String(event.pointerId);
+      },
+      { capture: true, once: true },
+    );
+  });
+  await page.mouse.down();
+  await expect
+    .poll(() =>
+      container.evaluate((element) => {
+        const target = element as HTMLElement;
+        const pointerId = Number(target.dataset.playwrightPointerId);
+        return Number.isInteger(pointerId) && target.hasPointerCapture(pointerId);
+      }),
+    )
+    .toBe(true);
 }
 
 async function renderScrollMarkers(
@@ -478,6 +501,11 @@ test("Firefox Ghostty clipboard denial falls back to the local Middleman server"
 
     await page.goto(`${isolatedServer.info.base_url}/terminal/${workspace.id}`);
     const terminal = await openTerminalPanel(page);
+    const terminalBounds = await terminal.boundingBox();
+    expect(terminalBounds).not.toBeNull();
+    await page.mouse.move(terminalBounds!.x + 10, terminalBounds!.y + 10);
+    await beginCapturedPointerGesture(page, terminal);
+    await page.mouse.up();
     const marker = "firefox local clipboard fallback";
     await copyMarkerWithTmuxKeys(page, terminal, output, marker);
 

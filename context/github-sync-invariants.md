@@ -238,12 +238,10 @@ fallback repository listing.
 - GitHub archive code owns historical identity inventory only; hydration must invoke ordinary item sync instead of adding archive-specific lookup, normalization, or persistence. (`internal/github/pages.go::ListIssuesPage`, `internal/github/sync.go::SyncArchiveItem`)
 - Archive item hydration bypasses persisted parent-detail ETags; an unchanged parent representation does not prove that legacy lifecycle timelines are complete. (`internal/github/sync.go::SyncArchiveItem`)
 - Archive issue hydration treats timeline failures as hard errors; ordinary issue refresh remains best-effort for that optional dataset. (`internal/github/sync.go::refreshIssueTimeline`)
-- Archive requests use shared sync budgets above `archiveLiveFloor`: GitHub's
-  provider-paced quota-unit spend is keyed to the full required-resource reset
-  vector and survives earlier local or individual-pool resets until every prior
-  resource window advances, while headerless Gitealike hosts use configured
-  local hourly surplus. The transport attributes every attempt, and live work
-  preempts the archive lease.
+- Archive requests use shared sync budgets above `archiveLiveFloor`: GitHub uses
+  the credential-aware provider pacing below, while headerless Gitealike hosts
+  use configured local hourly surplus. The transport attributes every attempt,
+  and live work preempts the archive lease.
   (`internal/github/budget.go::ProviderArchiveSpendAvailable`,
   `internal/github/budget.go::LocalArchiveSpendAvailable`,
   `internal/github/sync.go::Admit`)
@@ -372,28 +370,26 @@ response never overwrites an App installation pool
 - Archive pacing uses the smaller of the local hourly surplus, the routed
   credential's paced required-resource quota, and its current remaining
   headroom after the provider reserve; a high local ceiling must not enlarge
-  the provider envelope. Every GitHub archive wire attempt rechecks all required
-  live pools, reserves the resource's largest observed same-window response
-  cost, and reconciles larger quota deltas into both the request allowance and
-  persistent pacing spend before another admission. A resource's new window
-  starts cost observation at one, but provider-paced spend clears only after
-  every required resource window in the prior pacing epoch advances
+  the provider envelope. Each archive attempt atomically reserves live headroom;
+  an unobserved reservation remains deducted until a current header accounts
+  for it or that resource window rolls. Persistent spend is keyed by resource
+  and reset window, so staggered resets cannot erase newer-window charges
   (`internal/github/sync.go::Admit`,
   `internal/github/quota.go::quotaTransport`).
-- There is one background reserve check, and it runs on the snapshot cadence
+- Outside the archive attempt guard above, there is one background reserve
+  check, and it runs on the snapshot cadence
   (`internal/github/sync.go::backgroundReserveExhausted`). The verdict is cached
   per credential, resource, and foreground/background mode, recomputed at most
   once per `rateLimitSnapshotRefreshInterval`, and dropped when a `/rate_limit`
   refresh replaces the numbers it was derived from. Repository admission,
   workers, both drains, bulk GraphQL, and notification acknowledgements all read
   that one verdict. Do not add per-repository, per-queue-item, or per-page
-  reserve checks: the provider quota only moves when the snapshot refresh moves
-  it, so re-deriving more often mostly re-reads the same numbers, and the
+  reserve checks: ordinary provider quota only moves when the snapshot refresh
+  moves it, so re-deriving more often mostly re-reads the same numbers, and the
   divergent costs and fallbacks that grew up around those sites were the bug.
-- A credential that crosses its reserve inside a cadence window keeps spending
-  until the window turns. That is deliberate: the reserve is a soft buffer held
-  for foreground work, and the hard guard is the local hourly ceiling, enforced
-  per wire attempt in `budgetTransport`.
+- Outside archive hydration, a credential that crosses its reserve inside a
+  cadence window keeps spending until the window turns. That reserve is a soft
+  foreground buffer; the local hourly ceiling remains the hard per-wire guard.
 - Gate background eligibility on REST only. Bulk GraphQL is an optimization with
   a REST fallback, so requiring GraphQL capacity stops repositories that could
   still sync (`internal/github/sync.go::repoEligibility`). `bulkGraphQLAllowed`

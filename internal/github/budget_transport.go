@@ -35,6 +35,7 @@ type archiveProviderAttemptReservation struct {
 	allowance *archiveAttemptAllowance
 	before    QuotaPool
 	cost      int
+	quota     quotaReservation
 }
 
 // WithArchiveAttemptAllowance attaches a per-request wire-attempt allowance to
@@ -124,27 +125,19 @@ func reserveArchiveProviderAttempt(
 	if identity == config.identity {
 		resources = config.resources
 	}
-	now := registry.now().UTC()
-	var current QuotaPool
-	for _, required := range resources {
-		pool, known := registry.Get(identity, required)
-		if !known || !pool.Known || pool.ResetAt.IsZero() || !pool.ResetAt.After(now) {
-			return req, archiveProviderAttemptReservation{}, false
-		}
-		if required == resource {
-			current = pool
-			continue
-		}
-		if pool.Remaining <= config.reserve {
-			return req, archiveProviderAttemptReservation{}, false
-		}
+	quota, allowed := registry.reserveArchiveAttempt(
+		identity, resources, resource, config.reserve,
+	)
+	if !allowed {
+		return req, archiveProviderAttemptReservation{}, false
 	}
-	cost := max(current.AttemptCost, 1)
-	if current.Remaining-cost < config.reserve || !allowance.consume(cost) {
+	cost := quota.cost
+	if !allowance.consume(cost) {
+		registry.releaseArchiveReservation(quota)
 		return req, archiveProviderAttemptReservation{}, false
 	}
 	reservation := archiveProviderAttemptReservation{
-		allowance: allowance, before: current, cost: cost,
+		allowance: allowance, before: quota.pool, cost: cost, quota: quota,
 	}
 	ctx := context.WithValue(
 		req.Context(), archiveProviderAttemptReservationKey{}, allowance,
@@ -155,34 +148,37 @@ func reserveArchiveProviderAttempt(
 func reconcileArchiveProviderAttempt(
 	reservation archiveProviderAttemptReservation,
 	registry *QuotaRegistry,
-	identity IdentityKey,
 	resource QuotaResource,
+	header http.Header,
 ) {
 	if reservation.allowance == nil {
 		return
 	}
-	after, ok := registry.Get(identity, resource)
-	if !ok || !reservation.before.Known || !after.Known ||
-		!after.ResetAt.Equal(reservation.before.ResetAt) ||
-		after.Remaining >= reservation.before.Remaining {
-		return
+	actualCost := reservation.cost
+	spendReset := reservation.before.ResetAt
+	if observed, ok := rateFromQuotaHeaders(header); ok {
+		observedReset := observed.Reset.UTC()
+		if observedReset.After(reservation.before.ResetAt) ||
+			(observedReset.Equal(reservation.before.ResetAt) &&
+				observed.Remaining <= reservation.before.Remaining) {
+			registry.reconcileArchiveReservation(reservation.quota, observedReset)
+		}
+		switch {
+		case observedReset.Equal(reservation.before.ResetAt) &&
+			observed.Remaining < reservation.before.Remaining:
+			actualCost = max(
+				actualCost,
+				reservation.before.Remaining-observed.Remaining,
+			)
+		case observedReset.After(reservation.before.ResetAt):
+			spendReset = observedReset
+		}
 	}
-	actualCost := reservation.before.Remaining - after.Remaining
-	if budget := reservation.allowance.provider.budget; budget != nil &&
-		actualCost > reservation.cost {
-		budget.addProviderArchiveSpend(actualCost - reservation.cost)
+	if budget := reservation.allowance.provider.budget; budget != nil {
+		budget.addProviderArchiveSpend(resource, spendReset, actualCost)
 	}
 	if actualCost > reservation.cost {
 		reservation.allowance.debit(actualCost - reservation.cost)
-	}
-}
-
-func persistArchiveProviderReservation(reservation archiveProviderAttemptReservation) {
-	if reservation.allowance == nil || reservation.cost <= 1 {
-		return
-	}
-	if budget := reservation.allowance.provider.budget; budget != nil {
-		budget.addProviderArchiveSpend(reservation.cost - 1)
 	}
 }
 

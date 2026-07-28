@@ -40,15 +40,19 @@ func detailWorstCaseAttemptCost(kind platform.Kind, itemType QueueItemType) int 
 // counted requests before any wire attempt, so no provider response — and
 // therefore no provider-driven reset — can arrive to release it.
 type SyncBudget struct {
-	mu                    sync.Mutex
-	limit                 int
-	spent                 int
-	archiveSpent          int
-	providerArchiveSpent  int
-	providerArchiveResets map[QuotaResource]time.Time
-	windowStart           time.Time
-	window                BudgetWindow
-	now                   func() time.Time
+	mu                   sync.Mutex
+	limit                int
+	spent                int
+	archiveSpent         int
+	providerArchiveSpent map[providerArchiveWindow]int
+	windowStart          time.Time
+	window               BudgetWindow
+	now                  func() time.Time
+}
+
+type providerArchiveWindow struct {
+	resource QuotaResource
+	resetAt  time.Time
 }
 
 // BudgetWindow identifies the hourly window a reservation was made in. Refunds
@@ -181,47 +185,24 @@ func (b *SyncBudget) ProviderArchiveSpendAvailable(
 	return max(min(ceilingRemaining, localRemaining, providerHeadroom), 0)
 }
 
-// providerArchiveSpendLocked returns attempted provider quota-unit spend for
-// the active set of resource windows. A staggered resource reset cannot release
-// spend while another resource still belongs to the previous pacing epoch.
+// providerArchiveSpendLocked returns provider quota-unit spend belonging to
+// each resource's current window. Staggered resets expire only the spend for
+// the resource that advanced, preserving charges already made in another
+// resource's newer window.
 func (b *SyncBudget) providerArchiveSpendLocked(
 	resourceResets map[QuotaResource]time.Time,
 ) int {
-	if len(resourceResets) == 0 {
-		return b.providerArchiveSpent
-	}
-	if len(b.providerArchiveResets) == 0 {
-		b.providerArchiveResets = cloneQuotaResourceResets(resourceResets)
-		return b.providerArchiveSpent
-	}
-	if everyQuotaResourceWindowAdvanced(b.providerArchiveResets, resourceResets) {
-		b.providerArchiveSpent = 0
-		b.providerArchiveResets = cloneQuotaResourceResets(resourceResets)
-	}
-	return b.providerArchiveSpent
-}
-
-func cloneQuotaResourceResets(
-	resourceResets map[QuotaResource]time.Time,
-) map[QuotaResource]time.Time {
-	cloned := make(map[QuotaResource]time.Time, len(resourceResets))
-	for resource, reset := range resourceResets {
-		cloned[resource] = reset.UTC()
-	}
-	return cloned
-}
-
-func everyQuotaResourceWindowAdvanced(
-	previous map[QuotaResource]time.Time,
-	current map[QuotaResource]time.Time,
-) bool {
-	for resource, previousReset := range previous {
-		currentReset, ok := current[resource]
-		if !ok || !currentReset.After(previousReset) {
-			return false
+	spent := 0
+	for window, amount := range b.providerArchiveSpent {
+		currentReset, current := resourceResets[window.resource]
+		switch {
+		case current && currentReset.Equal(window.resetAt):
+			spent += amount
+		case current && currentReset.After(window.resetAt):
+			delete(b.providerArchiveSpent, window)
 		}
 	}
-	return len(previous) > 0
+	return spent
 }
 
 func (b *SyncBudget) providerArchiveSpendCeiling(
@@ -284,24 +265,27 @@ func (b *SyncBudget) TrySpendArchive(n int) (BudgetWindow, bool) {
 	}
 	b.spent += n
 	b.archiveSpent += n
-	if len(b.providerArchiveResets) > 0 {
-		b.providerArchiveSpent += n
-	}
 	return b.window, true
 }
 
-// addProviderArchiveSpend records quota units beyond the one wire-call unit
-// already charged by TrySpendArchive. It intentionally does not affect the
-// independent local wire-call ceiling.
-func (b *SyncBudget) addProviderArchiveSpend(n int) {
-	if n <= 0 {
+// addProviderArchiveSpend records provider quota units independently from the
+// local wire-call ceiling and keys them to the resource window that incurred
+// them so staggered resets cannot clear newer-window spend.
+func (b *SyncBudget) addProviderArchiveSpend(
+	resource QuotaResource,
+	resetAt time.Time,
+	n int,
+) {
+	if resource == "" || resetAt.IsZero() || n <= 0 {
 		return
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if len(b.providerArchiveResets) > 0 {
-		b.providerArchiveSpent += n
+	if b.providerArchiveSpent == nil {
+		b.providerArchiveSpent = make(map[providerArchiveWindow]int)
 	}
+	window := providerArchiveWindow{resource: resource, resetAt: resetAt.UTC()}
+	b.providerArchiveSpent[window] += n
 }
 
 func (b *SyncBudget) RefundArchive(window BudgetWindow, n int) {

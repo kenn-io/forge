@@ -1,6 +1,9 @@
 package github
 
 import (
+	"io"
+	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -159,8 +162,7 @@ func TestSyncBudgetProviderArchivePacingSurvivesLocalRollover(t *testing.T) {
 	assert.Equal(t, 1200, budget.ProviderArchiveSpendAvailable(
 		clock, providerPacingWindowForTest(5000, 5000, reset), 24, 200,
 	))
-	_, ok := budget.TrySpendArchive(100)
-	require.True(t, ok)
+	budget.addProviderArchiveSpend(QuotaResourceREST, reset, 100)
 
 	// The local hour rolls before the provider's conservative pacing window.
 	// That replenishes the local ceiling but must not forget provider attempts
@@ -195,8 +197,7 @@ func TestSyncBudgetProviderArchivePacingSurvivesEarlierPoolReset(t *testing.T) {
 	assert.Equal(1200, budget.ProviderArchiveSpendAvailable(
 		now, window, 24, 200,
 	))
-	_, ok = budget.TrySpendArchive(100)
-	require.True(ok)
+	budget.addProviderArchiveSpend(QuotaResourceGraphQL, graphQLReset, 100)
 
 	// A tracker for the earlier REST window invokes Reset while the selected
 	// GraphQL pacing window is unchanged. The 100 provider attempts still
@@ -245,8 +246,7 @@ func TestSyncBudgetProviderArchivePacingWaitsForEveryPoolReset(t *testing.T) {
 	assert.Equal(1200, budget.ProviderArchiveSpendAvailable(
 		now, window, 24, 200,
 	))
-	_, ok = budget.TrySpendArchive(100)
-	require.True(ok)
+	budget.addProviderArchiveSpend(QuotaResourceGraphQL, graphQLReset, 100)
 
 	// Only REST advances. The combined latest reset changes, but GraphQL still
 	// represents the original pacing epoch, so its existing spend must remain.
@@ -278,6 +278,90 @@ func TestSyncBudgetProviderArchivePacingWaitsForEveryPoolReset(t *testing.T) {
 	)
 	assert.Equal(ceiling, budget.ProviderArchiveSpendAvailable(
 		now, window, 24, 200,
+	))
+}
+
+func TestSyncBudgetProviderArchivePacingRetainsSpendFromNewerResourceWindow(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	now := time.Date(2026, 7, 28, 18, 30, 0, 0, time.UTC)
+	registry := NewQuotaRegistry()
+	registry.now = func() time.Time { return now }
+	identity := IdentityKey{Host: "github.com", Principal: "user:7"}
+	resources := []QuotaResource{QuotaResourceREST, QuotaResourceGraphQL}
+	restReset := now.Add(5 * time.Minute)
+	graphQLReset := now.Add(30 * time.Minute)
+	registry.UpdateSnapshot(identity, QuotaResourceREST, Rate{
+		Limit: 5000, Remaining: 5000, Reset: restReset,
+	})
+	registry.UpdateSnapshot(identity, QuotaResourceGraphQL, Rate{
+		Limit: 5000, Remaining: 5000, Reset: graphQLReset,
+	})
+	window, ok := registry.PacingWindow(identity, resources)
+	require.True(ok)
+	budget := NewSyncBudget(100000)
+	assert.Equal(1200, budget.ProviderArchiveSpendAvailable(
+		now, window, 24, RateReserveBuffer,
+	))
+
+	transportFor := func(
+		resource QuotaResource,
+		remaining int,
+		reset time.Time,
+	) http.RoundTripper {
+		base := roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader("{}")),
+				Header:     quotaTestHeaders(5000, remaining, reset),
+				Request:    req,
+			}, nil
+		})
+		return &quotaTransport{
+			base: WrapSyncBudgetTransport(base, budget), registry: registry,
+			identity: identity, resource: resource,
+		}
+	}
+	request := func(transport http.RoundTripper) {
+		ctx := WithArchiveProviderAttemptAllowance(
+			WithArchiveSyncBudget(t.Context()),
+			1000,
+			identity,
+			resources,
+			RateReserveBuffer,
+			budget,
+		)
+		req, err := http.NewRequestWithContext(
+			ctx, http.MethodGet, "https://api.github.test/repos/o/r", nil,
+		)
+		require.NoError(err)
+		_, err = transport.RoundTrip(req)
+		require.NoError(err)
+	}
+
+	// Spend 100 GraphQL units in the original epoch.
+	request(transportFor(QuotaResourceGraphQL, 4900, graphQLReset))
+
+	// REST rolls first, then spends 25 units in its new window while GraphQL
+	// still belongs to the original epoch.
+	nextRESTReset := now.Add(31 * time.Minute)
+	registry.UpdateSnapshot(identity, QuotaResourceREST, Rate{
+		Limit: 5000, Remaining: 5000, Reset: nextRESTReset,
+	})
+	request(transportFor(QuotaResourceREST, 4975, nextRESTReset))
+
+	// GraphQL rolls afterward. Its old 100-unit spend expires, but the 25 REST
+	// units belong to the current REST window and must remain paced.
+	registry.UpdateSnapshot(identity, QuotaResourceGraphQL, Rate{
+		Limit: 5000, Remaining: 5000, Reset: now.Add(32 * time.Minute),
+	})
+	window, ok = registry.PacingWindow(identity, resources)
+	require.True(ok)
+	ceiling := budget.ProviderArchiveSpendCeiling(
+		now, &window.ResetAt, 24, window.Limit, RateReserveBuffer,
+	)
+	assert.Equal(ceiling-25, budget.ProviderArchiveSpendAvailable(
+		now, window, 24, RateReserveBuffer,
 	))
 }
 

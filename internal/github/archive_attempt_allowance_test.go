@@ -160,6 +160,11 @@ func TestArchiveProviderAttemptAllowanceUsesObservedQuotaCost(t *testing.T) {
 	require.True(ok)
 	assert.Equal(201, pool.Remaining)
 	assert.Equal(2, pool.AttemptCost)
+	window, ok := registry.PacingWindow(
+		identity, []QuotaResource{QuotaResourceREST, QuotaResourceGraphQL},
+	)
+	require.True(ok)
+	assert.Equal(201, window.Remaining)
 }
 
 func TestArchiveProviderQuotaCostPersistsAcrossAdmissions(t *testing.T) {
@@ -244,6 +249,68 @@ func TestArchiveProviderQuotaCostPersistsAcrossAdmissions(t *testing.T) {
 	assert.Equal(1196, budget.ProviderArchiveSpendAvailable(
 		now, window, 24, RateReserveBuffer,
 	))
+}
+
+func TestArchiveProviderHeaderlessReservationsProtectReserveAcrossAdmissions(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	now := time.Date(2026, 7, 28, 18, 30, 0, 0, time.UTC)
+	reset := now.Add(30 * time.Minute)
+	registry := NewQuotaRegistry()
+	registry.now = func() time.Time { return now }
+	identity := IdentityKey{Host: "github.com", Principal: "user:7"}
+	resources := []QuotaResource{QuotaResourceREST, QuotaResourceGraphQL}
+	for _, resource := range resources {
+		registry.UpdateSnapshot(identity, resource, Rate{
+			Limit: 5000, Remaining: RateReserveBuffer + 1, Reset: reset,
+		})
+	}
+	window, ok := registry.PacingWindow(identity, resources)
+	require.True(ok)
+	budget := NewSyncBudget(100000)
+	assert.Equal(1, budget.ProviderArchiveSpendAvailable(
+		now, window, 24, RateReserveBuffer,
+	))
+
+	var calls atomic.Int32
+	base := roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		calls.Add(1)
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader("{}")),
+			Header:     http.Header{},
+			Request:    req,
+		}, nil
+	})
+	transport := &quotaTransport{
+		base: WrapSyncBudgetTransport(base, budget), registry: registry,
+		identity: identity, resource: QuotaResourceREST,
+	}
+	request := func() error {
+		ctx := WithArchiveProviderAttemptAllowance(
+			WithArchiveSyncBudget(t.Context()),
+			1,
+			identity,
+			resources,
+			RateReserveBuffer,
+			budget,
+		)
+		req, err := http.NewRequestWithContext(
+			ctx, http.MethodGet, "https://api.github.test/repos/o/r", nil,
+		)
+		require.NoError(err)
+		_, err = transport.RoundTrip(req)
+		return err
+	}
+
+	require.NoError(request())
+	window, ok = registry.PacingWindow(identity, resources)
+	require.True(ok)
+	assert.Zero(budget.ProviderArchiveSpendAvailable(
+		now, window, 24, RateReserveBuffer,
+	))
+	require.ErrorIs(request(), platform.ErrArchiveAttemptBudget)
+	assert.Equal(int32(1), calls.Load())
 }
 
 func TestArchiveProviderAttemptAllowanceResetsObservedCostWithQuotaWindow(t *testing.T) {

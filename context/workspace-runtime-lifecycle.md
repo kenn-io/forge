@@ -108,8 +108,9 @@ stale tabs.
 - Pointer clipboard authority and keyboard authority created during it must remain timed and revocable through release
   grace on capture, focus, or visibility loss; a watchdog bounds missing releases
   (`frontend/src/lib/components/terminal/terminalClipboardWriter.ts::createTerminalClipboardWriter`).
-- Host clipboard writes are direct-loopback only and must be rejected when reverse-proxy trust is active; a proxy's
-  loopback `RemoteAddr` does not establish browser locality (`internal/server/server.go::Server.ServeHTTP`).
+- Host clipboard writes require a local browser; trusted loopback proxies must report exactly one client IP assigned
+  to the host, because the proxy's loopback `RemoteAddr` alone does not establish browser locality
+  (`internal/server/terminal_clipboard_access.go::isLocalTerminalClipboardRequest`).
 - During active tmux SGR drags outside xterm bounds, add only clamped edge wheel, drag, and release reports; forward
   all other mouse reports unchanged, and never retain unsent drag state across a WebSocket boundary
   (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::connect`).

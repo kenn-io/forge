@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -88,32 +89,117 @@ func TestTerminalClipboardWriteRequiresLoopbackAndCSRF(t *testing.T) {
 	}
 }
 
-func TestTerminalClipboardWriteRejectsTrustedReverseProxy(t *testing.T) {
-	clipboard := &recordingTerminalClipboard{}
-	srv := New(
-		openTestDB(t), nil, nil, "/", nil,
-		ServerOptions{
-			TerminalClipboard: clipboard,
-			HostCheck: HostCheckOptions{
-				Bind:              config.HostKey{Host: "127.0.0.1", Port: "8091"},
-				Allowed:           []config.HostKey{{Host: "middleman.example"}},
-				TrustReverseProxy: true,
-			},
+func TestTerminalClipboardWriteThroughTrustedReverseProxyRequiresLocalClient(
+	t *testing.T,
+) {
+	tests := []struct {
+		name         string
+		remoteAddr   string
+		forwardedFor string
+		wantStatus   int
+		wantTexts    []string
+	}{
+		{
+			name:         "local client",
+			remoteAddr:   "127.0.0.1:54321",
+			forwardedFor: "127.0.0.1",
+			wantStatus:   http.StatusNoContent,
+			wantTexts:    []string{"proxied copy"},
 		},
-	)
-	body := strings.NewReader(`{"text":"proxied copy"}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/terminal/clipboard", body)
-	req.Host = "127.0.0.1:8091"
+		{
+			name:         "spoofed local client from remote peer",
+			remoteAddr:   "203.0.113.8:54321",
+			forwardedFor: "127.0.0.1",
+			wantStatus:   http.StatusForbidden,
+		},
+		{
+			name:         "remote client",
+			remoteAddr:   "127.0.0.1:54321",
+			forwardedFor: "203.0.113.7",
+			wantStatus:   http.StatusForbidden,
+		},
+		{
+			name:       "missing forwarded client",
+			remoteAddr: "127.0.0.1:54321",
+			wantStatus: http.StatusForbidden,
+		},
+		{
+			name:         "multiple forwarded clients",
+			remoteAddr:   "127.0.0.1:54321",
+			forwardedFor: "127.0.0.1, 203.0.113.7",
+			wantStatus:   http.StatusForbidden,
+		},
+		{
+			name:         "malformed forwarded client",
+			remoteAddr:   "127.0.0.1:54321",
+			forwardedFor: "not-an-ip",
+			wantStatus:   http.StatusForbidden,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			clipboard := &recordingTerminalClipboard{}
+			srv := New(
+				openTestDB(t), nil, nil, "/", nil,
+				ServerOptions{
+					TerminalClipboard: clipboard,
+					HostCheck: HostCheckOptions{
+						Bind: config.HostKey{
+							Host: "127.0.0.1",
+							Port: "8091",
+						},
+						Allowed: []config.HostKey{
+							{Host: "middleman.example"},
+						},
+						TrustReverseProxy: true,
+					},
+				},
+			)
+			body := strings.NewReader(`{"text":"proxied copy"}`)
+			req := httptest.NewRequest(
+				http.MethodPost,
+				"/api/v1/terminal/clipboard",
+				body,
+			)
+			req.Host = "127.0.0.1:8091"
+			req.RemoteAddr = tt.remoteAddr
+			req.Header.Set("X-Forwarded-Host", "middleman.example")
+			if tt.forwardedFor != "" {
+				req.Header.Set("X-Forwarded-For", tt.forwardedFor)
+			}
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Sec-Fetch-Site", "same-origin")
+			rr := httptest.NewRecorder()
+
+			srv.ServeHTTP(rr, req)
+
+			assert.Equal(t, tt.wantStatus, rr.Code, rr.Body.String())
+			assert.Equal(t, tt.wantTexts, clipboard.texts)
+		})
+	}
+}
+
+func TestLocalTerminalClipboardRequestRecognizesNonLoopbackInterface(
+	t *testing.T,
+) {
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/terminal/clipboard", nil)
 	req.RemoteAddr = "127.0.0.1:54321"
-	req.Header.Set("X-Forwarded-Host", "middleman.example")
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Sec-Fetch-Site", "same-origin")
-	rr := httptest.NewRecorder()
+	req.Header.Set("X-Forwarded-For", "192.0.2.10")
+	interfaceAddrs := func() ([]net.Addr, error) {
+		return []net.Addr{
+			&net.IPNet{
+				IP:   net.ParseIP("192.0.2.10"),
+				Mask: net.CIDRMask(24, 32),
+			},
+		}, nil
+	}
 
-	srv.ServeHTTP(rr, req)
-
-	assert.Equal(t, http.StatusForbidden, rr.Code, rr.Body.String())
-	assert.Empty(t, clipboard.texts)
+	assert.True(t, isLocalTerminalClipboardRequestWithAddrs(
+		req,
+		true,
+		interfaceAddrs,
+	))
 }
 
 func TestTerminalClipboardWriteRejectsOversizedText(t *testing.T) {

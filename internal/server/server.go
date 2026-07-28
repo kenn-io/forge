@@ -1305,11 +1305,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if s.isTerminalClipboardAPIRequest(r) &&
-			(!isLoopbackRemoteAddr(r.RemoteAddr) || hostOpts.TrustReverseProxy) {
+			!isLocalTerminalClipboardRequest(r, hostOpts.TrustReverseProxy) {
 			writeProblemResponse(w, httpapi.NewProblem(
 				http.StatusForbidden,
 				httpapi.CodeForbidden,
-				"terminal clipboard writes require a loopback client",
+				"terminal clipboard writes require a local client",
 				map[string]any{"reason": "loopbackOnly"},
 			))
 			return

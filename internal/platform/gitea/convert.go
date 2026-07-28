@@ -48,32 +48,50 @@ func convertPullRequest(pr *giteasdk.PullRequest, mergeable *bool) gitealike.Pul
 		return gitealike.PullRequestDTO{}
 	}
 	return gitealike.PullRequestDTO{
-		ID:        pr.ID,
-		Index:     int(pr.Index),
-		HTMLURL:   pr.HTMLURL,
-		Title:     pr.Title,
-		User:      convertUser(pr.Poster),
-		State:     string(pr.State),
-		Draft:     pr.Draft,
-		IsLocked:  pr.IsLocked,
-		Body:      pr.Body,
-		Head:      convertBranch(pr.Head),
-		Base:      convertBranch(pr.Base),
-		Labels:    convertLabels(pr.Labels),
-		Comments:  pr.Comments,
-		Mergeable: mergeable,
-		Created:   timeValue(pr.Created),
-		Updated:   timeValue(pr.Updated),
-		Merged:    pr.HasMerged,
-		MergedAt:  timePtrValue(pr.Merged),
-		MergedBy:  convertUser(pr.MergedBy),
-		Closed:    timePtrValue(pr.Closed),
+		ID:           pr.ID,
+		Index:        int(pr.Index),
+		HTMLURL:      pr.HTMLURL,
+		Title:        pr.Title,
+		User:         convertUser(pr.Poster),
+		State:        string(pr.State),
+		Draft:        pr.Draft,
+		IsLocked:     pr.IsLocked,
+		Body:         pr.Body,
+		Head:         convertBranch(pr.Head),
+		Base:         convertBranch(pr.Base),
+		Labels:       convertLabels(pr.Labels),
+		Comments:     pr.Comments,
+		Mergeable:    mergeable,
+		Additions:    intValue(pr.Additions),
+		Deletions:    intValue(pr.Deletions),
+		FilesChanged: cloneInt(pr.ChangedFiles),
+		Created:      timeValue(pr.Created),
+		Updated:      timeValue(pr.Updated),
+		Merged:       pr.HasMerged,
+		MergedAt:     timePtrValue(pr.Merged),
+		MergedBy:     convertUser(pr.MergedBy),
+		Closed:       timePtrValue(pr.Closed),
 		// convertUsers never returns nil, so both fields read as
 		// provider-confirmed sets: the Gitea API always serializes
 		// assignees and requested reviewers on pull requests.
 		Assignees:          convertUsers(pr.Assignees),
 		RequestedReviewers: convertUsers(pr.RequestedReviewers),
 	}
+}
+
+func intValue(value *int) int {
+	if value == nil {
+		return 0
+	}
+	return *value
+}
+
+func cloneInt(value *int) *int {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
 }
 
 func convertIssue(issue *giteasdk.Issue) gitealike.IssueDTO {

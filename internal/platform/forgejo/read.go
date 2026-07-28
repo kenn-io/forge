@@ -85,7 +85,9 @@ func (t *transport) ListOpenPullRequests(
 	if err != nil {
 		return nil, gitealike.Page{}, forgejoHTTPError(resp, err)
 	}
-	return convertPullRequests(prs, t.mergeableForPullRequest), forgejoPage(resp), nil
+	return convertPullRequests(
+		prs, t.mergeableForPullRequest, t.metricsForPullRequest,
+	), forgejoPage(resp), nil
 }
 
 func (t *transport) GetPullRequest(
@@ -103,7 +105,9 @@ func (t *transport) GetPullRequest(
 	if err != nil {
 		return gitealike.PullRequestDTO{}, forgejoHTTPError(resp, err)
 	}
-	return convertPullRequest(pr, t.mergeableForPullRequest(pr)), nil
+	return convertPullRequest(
+		pr, t.mergeableForPullRequest(pr), t.metricsForPullRequest(pr),
+	), nil
 }
 
 func (t *transport) mergeableForPullRequest(pr *forgejosdk.PullRequest) *bool {
@@ -116,6 +120,20 @@ func (t *transport) mergeableForPullRequest(pr *forgejosdk.PullRequest) *bool {
 		prBranchSHA(pr.Base),
 	)
 	return mergeable
+}
+
+func (t *transport) metricsForPullRequest(
+	pr *forgejosdk.PullRequest,
+) gitealike.PullRequestMetrics {
+	if pr == nil {
+		return gitealike.PullRequestMetrics{}
+	}
+	metrics, _ := t.mergeability.MetricsForPullRequest(
+		pr.HTMLURL,
+		prBranchSHA(pr.Head),
+		prBranchSHA(pr.Base),
+	)
+	return metrics
 }
 
 func prBranchSHA(branch *forgejosdk.PRBranchInfo) string {
@@ -240,7 +258,9 @@ func (t *transport) ListPullRequestsPage(ctx context.Context, ref platform.RepoR
 	if err != nil {
 		return nil, gitealike.Page{}, forgejoHTTPError(resp, err)
 	}
-	return convertPullRequests(prs, t.mergeableForPullRequest), forgejoPage(resp), nil
+	return convertPullRequests(
+		prs, t.mergeableForPullRequest, t.metricsForPullRequest,
+	), forgejoPage(resp), nil
 }
 
 func (t *transport) GetIssue(

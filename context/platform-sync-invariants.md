@@ -257,6 +257,10 @@ Codeberg is Forgejo's public host. gitea.com is Gitea's public host.
 Self-hosted Forgejo and Gitea instances are separate provider-host entries even
 when they have the same owner/name pairs as public repos.
 
+Forgejo pull-request JSON is authoritative for merge metrics: its SDK drops
+those fields, so raw-response capture must preserve them with head/base binding
+before neutral normalization (`internal/platform/gitealike/mergeable_capture.go::MetricsForPullRequest`).
+
 Actions/CI parity is provider-specific. Forgejo reads Actions runs through the
 shared gitealike provider. Gitea reads repository workflow runs only when the
 pinned SDK and server version expose the Gitea 1.26+ `/actions/runs` API; older

@@ -146,6 +146,62 @@ func (b *SyncBudget) ArchiveSpendCeiling(now time.Time, resetAt *time.Time, live
 	return b.archiveSpendCeiling(now, resetAt, liveFloor)
 }
 
+func (b *SyncBudget) ProviderArchiveSpendCeiling(
+	now time.Time,
+	resetAt *time.Time,
+	localLiveFloor int,
+	providerLimit int,
+	providerReserve int,
+) int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.rollLocked()
+	return b.providerArchiveSpendCeiling(
+		now, resetAt, localLiveFloor, providerLimit, providerReserve,
+	)
+}
+
+func (b *SyncBudget) ProviderArchiveSpendAvailable(
+	now time.Time,
+	resetAt *time.Time,
+	localLiveFloor int,
+	providerLimit int,
+	providerReserve int,
+) int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.rollLocked()
+	ceilingRemaining := b.providerArchiveSpendCeiling(
+		now, resetAt, localLiveFloor, providerLimit, providerReserve,
+	) - b.archiveSpent
+	localRemaining := b.limit - max(localLiveFloor, 0) - b.spent
+	return max(min(ceilingRemaining, localRemaining), 0)
+}
+
+func (b *SyncBudget) providerArchiveSpendCeiling(
+	now time.Time,
+	resetAt *time.Time,
+	localLiveFloor int,
+	providerLimit int,
+	providerReserve int,
+) int {
+	if resetAt == nil || providerLimit <= providerReserve {
+		return 0
+	}
+	remaining := resetAt.Sub(now)
+	if remaining < 0 || remaining > time.Hour {
+		return 0
+	}
+	elapsedFraction := 1 - float64(remaining)/float64(time.Hour)
+	localSurplus := b.limit - max(localLiveFloor, 0)
+	providerSurplus := providerLimit - max(providerReserve, 0)
+	surplus := min(localSurplus, providerSurplus)
+	if surplus <= 0 {
+		return 0
+	}
+	return int(math.Floor(float64(surplus) * elapsedFraction * elapsedFraction))
+}
+
 func (b *SyncBudget) CanSpendArchive(n int, now time.Time, resetAt *time.Time, liveFloor int) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()

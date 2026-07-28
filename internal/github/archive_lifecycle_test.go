@@ -799,6 +799,54 @@ func TestGitHubArchiveAdmissionUsesCredentialRESTAndGraphQLPools(t *testing.T) {
 	userAllowed.Complete(nil, false)
 }
 
+func TestGitHubArchiveAdmissionCapsAttemptAllowanceByProviderQuota(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	now := time.Date(2026, 7, 28, 18, 30, 0, 0, time.UTC)
+	reset := now.Add(30 * time.Minute)
+	registry := NewQuotaRegistry()
+	registry.now = func() time.Time { return now }
+	client := &credentialRateLimitSnapshotMockClient{mockClient: &mockClient{}}
+	identity := IdentityKey{Host: "github.test", Principal: "user:7"}
+	bucket := RateBucketKey("github", "github.test", "user:7")
+	syncer := NewSyncer(
+		map[string]Client{"github.test": client},
+		database, nil,
+		[]RepoRef{{
+			Platform: platform.KindGitHub, PlatformHost: "github.test",
+			Owner: "acme", Name: "widget",
+		}},
+		time.Hour, nil,
+		map[string]*SyncBudget{bucket: NewSyncBudget(100000)},
+	)
+	router, err := NewHostRouter("github.test", &Route{
+		Key: RouteKey{Host: "github.test", Owner: "acme"}, Client: client,
+		ReadIdentity: identity, WriteIdentity: identity,
+	})
+	require.NoError(err)
+	syncer.SetGitHubRouters(map[string]*HostRouter{"github.test": router})
+	syncer.SetQuotaRegistry(registry)
+	syncer.now = func() time.Time { return now }
+	registry.UpdateSnapshot(identity, QuotaResourceREST,
+		Rate{Limit: 5000, Remaining: 4500, Reset: reset})
+	registry.UpdateSnapshot(identity, QuotaResourceGraphQL,
+		Rate{Limit: 5000, Remaining: 4500, Reset: reset})
+	ref := platform.RepoRef{
+		Platform: platform.KindGitHub, Host: "github.test",
+		Owner: "acme", Name: "widget",
+	}
+
+	admission, err := syncer.Admit(t.Context(), ref, db.ArchiveItemTypeIssue, 1)
+	require.NoError(err)
+	require.True(admission.Allowed)
+	t.Cleanup(func() { admission.Complete(nil, false) })
+	for range 1200 {
+		assert.True(ConsumeArchiveAttemptAllowance(admission.Context))
+	}
+	assert.False(ConsumeArchiveAttemptAllowance(admission.Context))
+}
+
 func TestArchiveAdmissionAttemptAllowanceUsesAvailableSurplus(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

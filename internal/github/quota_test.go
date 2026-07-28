@@ -113,6 +113,53 @@ func TestQuotaRegistryTreatsExpiredProviderWindowAsUnknown(t *testing.T) {
 	assert.Nil(t, availability.ResetAt)
 }
 
+func TestQuotaRegistryPacingWindowUsesSmallestLimitAndLatestReset(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	now := time.Date(2026, 7, 28, 18, 0, 0, 0, time.UTC)
+	registry := NewQuotaRegistry()
+	registry.now = func() time.Time { return now }
+	restReset := now.Add(55 * time.Minute)
+	graphQLReset := now.Add(50 * time.Minute)
+	registry.UpdateSnapshot(quotaTestUser, QuotaResourceREST, Rate{
+		Limit: 5000, Remaining: 4500, Reset: restReset,
+	})
+	registry.UpdateSnapshot(quotaTestUser, QuotaResourceGraphQL, Rate{
+		Limit: 10000, Remaining: 9000, Reset: graphQLReset,
+	})
+
+	window, ok := registry.PacingWindow(
+		quotaTestUser, []QuotaResource{QuotaResourceREST, QuotaResourceGraphQL},
+	)
+
+	require.True(ok)
+	assert.Equal(5000, window.Limit)
+	assert.Equal(restReset, window.ResetAt)
+}
+
+func TestQuotaRegistryPacingWindowRequiresEveryCurrentPool(t *testing.T) {
+	assert := assert.New(t)
+	now := time.Date(2026, 7, 28, 18, 0, 0, 0, time.UTC)
+	registry := NewQuotaRegistry()
+	registry.now = func() time.Time { return now }
+	registry.UpdateSnapshot(quotaTestUser, QuotaResourceREST, Rate{
+		Limit: 5000, Remaining: 4500, Reset: now.Add(time.Hour),
+	})
+
+	_, ok := registry.PacingWindow(
+		quotaTestUser, []QuotaResource{QuotaResourceREST, QuotaResourceGraphQL},
+	)
+	assert.False(ok)
+
+	registry.UpdateSnapshot(quotaTestUser, QuotaResourceGraphQL, Rate{
+		Limit: 5000, Remaining: 4500, Reset: now.Add(-time.Second),
+	})
+	_, ok = registry.PacingWindow(
+		quotaTestUser, []QuotaResource{QuotaResourceREST, QuotaResourceGraphQL},
+	)
+	assert.False(ok)
+}
+
 // TestQuotaTransportAttributesEachChainToItsBoundIdentity pins the split-auth
 // attribution rule: a route's read chain spends its App installation pool
 // while its mutation/notification chain spends the user's, so one credential's

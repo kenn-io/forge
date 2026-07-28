@@ -178,6 +178,36 @@ type QuotaAvailability struct {
 	ResetAt   *time.Time
 }
 
+type QuotaPacingWindow struct {
+	Limit   int
+	ResetAt time.Time
+}
+
+func (r *QuotaRegistry) PacingWindow(
+	identity IdentityKey,
+	resources []QuotaResource,
+) (QuotaPacingWindow, bool) {
+	if r == nil || len(resources) == 0 {
+		return QuotaPacingWindow{}, false
+	}
+	now := r.now().UTC()
+	var window QuotaPacingWindow
+	for _, resource := range resources {
+		pool, ok := r.Get(identity, resource)
+		if !ok || !pool.Known || pool.Limit <= 0 ||
+			pool.ResetAt.IsZero() || !pool.ResetAt.After(now) {
+			return QuotaPacingWindow{}, false
+		}
+		if window.Limit == 0 || pool.Limit < window.Limit {
+			window.Limit = pool.Limit
+		}
+		if pool.ResetAt.After(window.ResetAt) {
+			window.ResetAt = pool.ResetAt
+		}
+	}
+	return window, true
+}
+
 // AllowedOrUnobserved reports whether background work may proceed. Unknown
 // quota is permission to proceed — ordinary response headers are what populate
 // the registry — but only while no observed resource sits at its reserve.

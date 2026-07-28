@@ -89,6 +89,42 @@ func TestSyncBudgetArchiveAdmissionRampsTowardReset(t *testing.T) {
 	assert.Equal(20, budget.Remaining())
 }
 
+func TestSyncBudgetProviderArchivePacingUsesConservativeEnvelope(t *testing.T) {
+	reset := time.Date(2026, 7, 28, 19, 0, 0, 0, time.UTC)
+	now := reset.Add(-30 * time.Minute)
+
+	tests := []struct {
+		name            string
+		localLimit      int
+		localFloor      int
+		providerLimit   int
+		providerReserve int
+		want            int
+	}{
+		{
+			name:       "provider quota caps high local guard",
+			localLimit: 100000, localFloor: 24,
+			providerLimit: 5000, providerReserve: 200,
+			want: 1200,
+		},
+		{
+			name:       "lower local guard remains authoritative",
+			localLimit: 3000, localFloor: 24,
+			providerLimit: 5000, providerReserve: 200,
+			want: 744,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			budget := NewSyncBudget(test.localLimit)
+			assert.Equal(t, test.want, budget.ProviderArchiveSpendCeiling(
+				now, &reset, test.localFloor, test.providerLimit, test.providerReserve,
+			))
+		})
+	}
+}
+
 func TestSyncBudgetArchiveAdmissionPreservesLiveFloor(t *testing.T) {
 	assert := assert.New(t)
 	budget := NewSyncBudget(50)

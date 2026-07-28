@@ -932,24 +932,27 @@ func (s *Syncer) Admit(
 	}
 	tracker := s.rateTrackers[key]
 	var providerResetAt *time.Time
+	var providerPacingWindow *QuotaPacingWindow
 	identity, identityErr := s.identityForRepo(repo, false)
 	if ref.Platform == platform.KindGitHub && s.quotaRegistry != nil && identityErr == nil {
 		resources := []QuotaResource{QuotaResourceREST, QuotaResourceGraphQL}
 		availability := s.quotaRegistry.CheckReserve(
 			identity, resources, cost, RateReserveBuffer,
 		)
-		providerResetAt = s.quotaRegistry.EarliestReset(identity, resources)
-		if !availability.Allowed {
+		pacingWindow, pacingKnown := s.quotaRegistry.PacingWindow(identity, resources)
+		if !availability.Allowed || !pacingKnown {
 			probe.abandon()
 			retryAt := now.Add(time.Minute)
 			detail := "provider rate reserve reached"
-			if !availability.Known {
+			if !availability.Known || !pacingKnown {
 				detail = "provider quota unknown"
 			} else if availability.ResetAt != nil && availability.ResetAt.After(now) {
 				retryAt = availability.ResetAt.UTC()
 			}
 			return archive.AdmissionResult{RetryAt: &retryAt, Detail: detail}, nil
 		}
+		providerPacingWindow = &pacingWindow
+		providerResetAt = &providerPacingWindow.ResetAt
 	} else if tracker != nil && (tracker.IsPaused() ||
 		tracker.Known() && tracker.Remaining()-cost < RateReserveBuffer) {
 		probe.abandon()
@@ -967,7 +970,16 @@ func (s *Syncer) Admit(
 	available := 0
 	if budget != nil {
 		liveFloor := archiveLiveFloor(ref.Platform)
-		if resetAt == nil && (ref.Platform == platform.KindGitea || ref.Platform == platform.KindForgejo) {
+		if providerPacingWindow != nil {
+			available = budget.ProviderArchiveSpendAvailable(
+				now,
+				resetAt,
+				liveFloor,
+				providerPacingWindow.Limit,
+				RateReserveBuffer,
+			)
+		} else if resetAt == nil &&
+			(ref.Platform == platform.KindGitea || ref.Platform == platform.KindForgejo) {
 			available = budget.LocalArchiveSpendAvailable(liveFloor)
 		} else {
 			available = budget.ArchiveSpendAvailable(now, resetAt, liveFloor)

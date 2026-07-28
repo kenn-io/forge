@@ -361,6 +361,10 @@ response never overwrites an App installation pool
 - Background admission gates on the routed credential's own reserve; the local
   `sync_budget_per_hour` ceiling is separate and is reported apart from provider
   quota (`internal/github/sync.go::backgroundQuotaAvailability`).
+- Archive pacing uses the smaller of the local hourly surplus and the routed
+  credential's required-resource quota after its provider reserve; a high local
+  emergency ceiling must not enlarge the provider envelope
+  (`internal/github/sync.go::Admit`).
 - There is one background reserve check, and it runs on the snapshot cadence
   (`internal/github/sync.go::backgroundReserveExhausted`). The verdict is cached
   per credential, resource, and foreground/background mode, recomputed at most

@@ -214,13 +214,6 @@ its files appearing in the diff. Terminal-readiness assertions must be
 renderer-agnostic (`canvas, .xterm-screen`): without WebGL — headless
 Firefox — xterm.js silently falls back to its DOM renderer, which never
 creates a canvas (`frontend/tests/e2e-full/00-inline-workspace-continuity.spec.ts:80`).
-Derive xterm pointer coordinates from rendered cell geometry, not terminal
-WebSocket dimensions; resize frames can lag an inline pane's rendered size
-(`frontend/tests/e2e-full/00-tmux-browser-clipboard.spec.ts::dragTerminalCells`).
-When a real-tmux browser test moves one session between terminal hosts, close
-the old WebSocket before mounting the next host and reassert mouse mode; concurrent
-clients change tmux sizing and mode delivery (`frontend/tests/e2e-full/00-tmux-browser-clipboard.spec.ts:524`).
-
 A full-stack test claiming a user-triggered mutation works must drive the actual
 control and observe its request or visible result; `page.request` proves only the
 API contract (`frontend/tests/e2e-full/detail-action-buttons.spec.ts:925`).

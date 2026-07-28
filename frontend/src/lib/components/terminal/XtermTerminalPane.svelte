@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { getStores } from "@middleman/ui";
-  import { showFlash } from "@middleman/ui/stores/flash";
+  import { ClipboardAddon } from "@xterm/addon-clipboard";
   import { Terminal } from "@xterm/xterm";
   import { FitAddon } from "@xterm/addon-fit";
   import { LigaturesAddon } from "@xterm/addon-ligatures/lib/addon-ligatures.mjs";
@@ -15,17 +15,11 @@
     isMultilinePaste,
   } from "./bracketedPaste.js";
   import { embeddedWebSocketUrl } from "./embeddedWebSocket.js";
-  import { parseOsc52ClipboardWrite } from "./osc52Clipboard.js";
-  import {
-    createBrowserTerminalClipboardPort,
-    createTerminalClipboardWriter,
-  } from "./terminalClipboardWriter.js";
   import {
     buildTerminalFontFamily,
     primaryTerminalFontFamily,
   } from "./terminalFontFamily.js";
   import { createInitialFocusIntent } from "./terminal-focus.js";
-  import { createTmuxMouseDragAutoscroll } from "./tmuxMouseDragAutoscroll.js";
 
   interface TerminalPaneProps {
     workspaceId?: string | undefined;
@@ -82,19 +76,8 @@
   let disposed = false;
   let exited = false;
   let sawFirstBytes = false;
-  let clipboardFailureReported = false;
-  let activePointerId: number | null = null;
   let explicitFocusRequested = false;
   const encoder = new TextEncoder();
-  const clipboardWriter = createTerminalClipboardWriter(
-    createBrowserTerminalClipboardPort(),
-  );
-  const mouseDragAutoscroll = createTmuxMouseDragAutoscroll({
-    send(data) {
-      if (disabled || ws?.readyState !== WebSocket.OPEN) return;
-      ws.send(encoder.encode(data));
-    },
-  });
   // Binds this pane to the workspace switch that was live at creation;
   // panes surviving from a previous workspace record nothing.
   const switchTimer = createWorkspaceSwitchPaneTimer();
@@ -116,115 +99,9 @@
   const TERMINAL_MINIMUM_CONTRAST_RATIO = 4.5;
   const TERMINAL_FONT_WAIT_MS = 300;
   const TERMINAL_FONT_LOAD_GLYPHS = "0MWim@#";
-  const TERMINAL_SEQUENCE_CANCEL = "\x18";
 
   function isAttachableInitialStatus(status: string | undefined): boolean {
     return status === undefined || status === "running" || status === "starting";
-  }
-
-  function reportClipboardFailure(): void {
-    if (disposed || clipboardFailureReported) return;
-    clipboardFailureReported = true;
-    showFlash("Could not write the terminal selection to the clipboard.", {
-      tone: "danger",
-    });
-  }
-
-  function cancelPendingTerminalSequence(): void {
-    terminal?.write(TERMINAL_SEQUENCE_CANCEL);
-  }
-
-  function handleOsc52Clipboard(data: string): boolean {
-    const result = parseOsc52ClipboardWrite(data);
-    if (result.status === "rejected") return true;
-    if (disposed || disabled || ws?.readyState !== WebSocket.OPEN) return true;
-
-    void clipboardWriter.write(result.text).then((outcome) => {
-      if (outcome === "blocked") reportClipboardFailure();
-    });
-    return true;
-  }
-
-  function handleTerminalPointerDown(event: PointerEvent): void {
-    if (disposed || disabled || event.button !== 0 || !event.isTrusted) return;
-    if (activePointerId !== null) {
-      cancelTerminalPointerGesture();
-    }
-    activePointerId = event.pointerId;
-    clipboardWriter.beginPointerGesture();
-    try {
-      containerEl.setPointerCapture(event.pointerId);
-    } catch {
-      // The watchdog and global cancellation handlers still bound the gesture.
-    }
-  }
-
-  function handleTerminalPointerEnd(event: PointerEvent): void {
-    if (!event.isTrusted || activePointerId !== event.pointerId) return;
-    activePointerId = null;
-    releaseTerminalPointerCapture(event.pointerId);
-    clipboardWriter.endPointerGesture();
-    mouseDragAutoscroll.endPointerGesture();
-  }
-
-  function releaseTerminalPointerCapture(pointerId: number): void {
-    try {
-      if (containerEl.hasPointerCapture(pointerId)) {
-        containerEl.releasePointerCapture(pointerId);
-      }
-    } catch {
-      // Capture may already be gone after focus or visibility loss.
-    }
-  }
-
-  function cancelTerminalPointerGesture(pointerId?: number): void {
-    if (pointerId !== undefined && activePointerId !== pointerId) return;
-    const capturedPointerId = activePointerId;
-    activePointerId = null;
-    if (capturedPointerId !== null) {
-      releaseTerminalPointerCapture(capturedPointerId);
-    }
-    clipboardWriter.cancelPointerGesture();
-    mouseDragAutoscroll.endPointerGesture();
-  }
-
-  function handleTerminalPointerCancel(event: PointerEvent): void {
-    cancelTerminalPointerGesture(event.pointerId);
-  }
-
-  function handleTerminalLostPointerCapture(event: PointerEvent): void {
-    if (activePointerId !== event.pointerId) return;
-    activePointerId = null;
-    clipboardWriter.cancelPointerGesture();
-    mouseDragAutoscroll.endPointerGesture();
-  }
-
-  function handleWindowBlur(): void {
-    cancelTerminalPointerGesture();
-  }
-
-  function handleDocumentVisibilityChange(): void {
-    if (document.visibilityState !== "visible") {
-      cancelTerminalPointerGesture();
-    }
-  }
-
-  function handleTerminalKeyDown(event: KeyboardEvent): void {
-    if (disposed || disabled || event.isComposing || !event.isTrusted) return;
-    clipboardWriter.authorizeKeyboardGesture();
-  }
-
-  function handleWindowPointerMove(event: PointerEvent): void {
-    if (disposed || disabled || !terminal) return;
-    const screen = containerEl.querySelector<HTMLElement>(".xterm-screen");
-    const bounds = (screen ?? containerEl).getBoundingClientRect();
-    mouseDragAutoscroll.updatePointer({
-      clientX: event.clientX,
-      clientY: event.clientY,
-      bounds,
-      cols: terminal.cols,
-      rows: terminal.rows,
-    });
   }
 
   function initialStatusMessage(status: string | undefined): string {
@@ -517,7 +394,6 @@
   function connect(): void {
     if (disposed || !terminal) return;
 
-    mouseDragAutoscroll.reset();
     const cols = terminal.cols;
     const rows = terminal.rows;
     const url = buildWsUrl(cols, rows);
@@ -566,7 +442,6 @@
             code?: number;
           };
           if (msg.type === "exited") {
-            cancelPendingTerminalSequence();
             onExit?.(msg.code ?? 0);
             exited = true;
             if (reconnectOnExit) {
@@ -587,8 +462,6 @@
     };
 
     socket.onclose = () => {
-      cancelPendingTerminalSequence();
-      mouseDragAutoscroll.reset();
       scheduleReconnect();
     };
 
@@ -606,7 +479,6 @@
       // Close stale socket so its onclose handler
       // cannot schedule a duplicate reconnect.
       if (ws) {
-        cancelPendingTerminalSequence();
         ws.onclose = null;
         ws.onerror = null;
         ws.onmessage = null;
@@ -633,8 +505,6 @@
 
   function cleanup(): void {
     disposed = true;
-    clipboardWriter.dispose();
-    mouseDragAutoscroll.dispose();
     if (resizeObserver) {
       resizeObserver.disconnect();
       resizeObserver = null;
@@ -759,9 +629,10 @@
       terminal = term;
 
       term.open(containerEl);
-      term.parser.registerOscHandler(52, handleOsc52Clipboard);
       switchTimer.record("terminal-constructed");
       containerEl.addEventListener("paste", handleTerminalPaste, true);
+
+      term.loadAddon(new ClipboardAddon());
 
       const fit = new FitAddon();
       fitAddon = fit;
@@ -795,7 +666,6 @@
         if (disabled) return;
         if (ws?.readyState === WebSocket.OPEN) {
           ws.send(encoder.encode(data));
-          mouseDragAutoscroll.observeTerminalData(data);
         }
       });
 
@@ -887,21 +757,7 @@
   });
 </script>
 
-<svelte:window
-  onblur={handleWindowBlur}
-  onpointermove={handleWindowPointerMove}
-  onpointerup={handleTerminalPointerEnd}
-  onpointercancel={handleTerminalPointerCancel}
-/>
-<svelte:document onvisibilitychange={handleDocumentVisibilityChange} />
-
-<div
-  class="terminal-container"
-  bind:this={containerEl}
-  onpointerdowncapture={handleTerminalPointerDown}
-  onlostpointercapture={handleTerminalLostPointerCapture}
-  onkeydowncapture={handleTerminalKeyDown}
-></div>
+<div class="terminal-container" bind:this={containerEl}></div>
 
 <style>
   .terminal-container {

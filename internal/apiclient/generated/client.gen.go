@@ -3962,11 +3962,6 @@ type Terminal struct {
 	Scrollback     int64   `json:"scrollback"`
 }
 
-// TerminalClipboardInputBody defines model for TerminalClipboardInputBody.
-type TerminalClipboardInputBody struct {
-	Text string `json:"text"`
-}
-
 // TmuxSessionInfo defines model for TmuxSessionInfo.
 type TmuxSessionInfo struct {
 	CreatedAt        *string           `json:"createdAt,omitempty"`

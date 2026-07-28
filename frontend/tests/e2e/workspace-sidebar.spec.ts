@@ -1941,6 +1941,70 @@ test.describe("workspace launch home", () => {
     await expect(page.locator(".terminal-container")).toBeVisible();
   });
 
+  test("xterm applies OSC 52 writes to the browser clipboard", async ({ page, context, browserName }) => {
+    test.skip(browserName !== "chromium", "clipboard permission grants are only available in Chromium");
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    await page.addInitScript(() => {
+      const NativeWebSocket = window.WebSocket;
+
+      class MockTerminalWebSocket extends EventTarget {
+        static CONNECTING = 0;
+        static OPEN = 1;
+        static CLOSING = 2;
+        static CLOSED = 3;
+
+        binaryType = "arraybuffer";
+        extensions = "";
+        onclose: ((event: CloseEvent) => void) | null = null;
+        onerror: ((event: Event) => void) | null = null;
+        onmessage: ((event: MessageEvent) => void) | null = null;
+        onopen: ((event: Event) => void) | null = null;
+        protocol = "";
+        readyState = MockTerminalWebSocket.OPEN;
+        readonly url: string;
+
+        constructor(url: string | URL, protocols?: string | string[]) {
+          super();
+          this.url = String(url);
+          if (!this.url.includes("/ws/v1/workspaces/")) {
+            return new NativeWebSocket(url, protocols);
+          }
+          queueMicrotask(() => {
+            const open = new Event("open");
+            this.dispatchEvent(open);
+            this.onopen?.(open);
+
+            const text = "copied through xterm";
+            const osc52 = `\x1b]52;c;${btoa(text)}\x07`;
+            const message = new MessageEvent("message", {
+              data: new TextEncoder().encode(osc52).buffer,
+            });
+            this.dispatchEvent(message);
+            this.onmessage?.(message);
+          });
+        }
+
+        close(): void {
+          this.readyState = MockTerminalWebSocket.CLOSED;
+          const event = new CloseEvent("close");
+          this.dispatchEvent(event);
+          this.onclose?.(event);
+        }
+
+        send(): void {}
+      }
+
+      window.WebSocket = MockTerminalWebSocket as unknown as typeof WebSocket;
+    });
+
+    await page.goto("/terminal/ws-123", { waitUntil: "domcontentloaded" });
+    await page.evaluate(() => navigator.clipboard.writeText(""));
+    await page.getByRole("button", { name: "Codex" }).click();
+    await expect(page.locator(".terminal-container .xterm")).toBeVisible();
+
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe("copied through xterm");
+  });
+
   test("xterm workspace terminal sends resize frames after viewport changes", async ({ page }) => {
     test.setTimeout(60_000);
     await page.addInitScript(() => {

@@ -3,47 +3,34 @@ import { tick } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 const {
-  clipboardWriteText,
-  clipboardWriterCancelPointerGesture,
-  clipboardWriterDispose,
-  clipboardWriterWrite,
+  clipboardAddon,
+  clipboardAddonCtor,
   ligaturesAddonCtor,
-  mockShowFlash,
   mockWebglCtor,
-  mouseDragEndPointerGesture,
-  mouseDragObserveTerminalData,
-  mouseDragReset,
   resizeObserverCallbacks,
   xtermFitAddons,
   xtermInstances,
   xtermOnDataHandlers,
-  xtermOscHandlers,
   xtermTerminalCtor,
   xtermOpen,
 } = vi.hoisted(() => ({
-  clipboardWriteText: vi.fn(),
-  clipboardWriterCancelPointerGesture: vi.fn(),
-  clipboardWriterDispose: vi.fn(),
-  clipboardWriterWrite: vi.fn(),
+  clipboardAddon: { dispose: vi.fn() },
+  clipboardAddonCtor: vi.fn(),
   ligaturesAddonCtor: vi.fn(),
-  mockShowFlash: vi.fn(),
   mockWebglCtor: vi.fn(),
-  mouseDragEndPointerGesture: vi.fn(),
-  mouseDragObserveTerminalData: vi.fn(),
-  mouseDragReset: vi.fn(),
   resizeObserverCallbacks: [] as ResizeObserverCallback[],
   xtermFitAddons: [] as Array<{ fit: ReturnType<typeof vi.fn>; proposeDimensions: ReturnType<typeof vi.fn> }>,
   xtermInstances: [] as Array<{
     clearTextureAtlas: ReturnType<typeof vi.fn>;
     cols: number;
     focus: ReturnType<typeof vi.fn>;
+    loadAddon: ReturnType<typeof vi.fn>;
     modes: { bracketedPasteMode: boolean };
     refresh: ReturnType<typeof vi.fn>;
     rows: number;
     write: ReturnType<typeof vi.fn>;
   }>,
   xtermOnDataHandlers: [] as Array<(data: string) => void>,
-  xtermOscHandlers: new Map<number, (data: string) => boolean | Promise<boolean>>(),
   xtermTerminalCtor: vi.fn(),
   xtermOpen: vi.fn(),
 }));
@@ -60,20 +47,13 @@ let mockSockets: MockWebSocket[] = [];
 // no content box (a parked terminal), for which the real addon proposes nothing.
 let fitDimensions: { cols: number; rows: number } | undefined = { cols: 80, rows: 24 };
 const originalDocumentFonts = Object.getOwnPropertyDescriptor(document, "fonts");
-const originalNavigatorClipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard");
 
-function deferred<T>(): {
-  promise: Promise<T>;
-  resolve: (value: T) => void;
-  reject: (reason?: unknown) => void;
-} {
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
   let resolve!: (value: T) => void;
-  let reject!: (reason?: unknown) => void;
-  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+  const promise = new Promise<T>((promiseResolve) => {
     resolve = promiseResolve;
-    reject = promiseReject;
   });
-  return { promise, resolve, reject };
+  return { promise, resolve };
 }
 
 function stubFontLoad(promise: Promise<FontFace[]>): ReturnType<typeof vi.fn> {
@@ -121,32 +101,6 @@ vi.mock("@middleman/ui", () => ({
   }),
 }));
 
-vi.mock("@middleman/ui/stores/flash", () => ({
-  showFlash: mockShowFlash,
-}));
-
-vi.mock("./terminalClipboardWriter.js", () => ({
-  createBrowserTerminalClipboardPort: vi.fn(() => ({})),
-  createTerminalClipboardWriter: vi.fn(() => ({
-    beginPointerGesture: vi.fn(),
-    cancelPointerGesture: clipboardWriterCancelPointerGesture,
-    endPointerGesture: vi.fn(),
-    authorizeKeyboardGesture: vi.fn(),
-    write: clipboardWriterWrite,
-    dispose: clipboardWriterDispose,
-  })),
-}));
-
-vi.mock("./tmuxMouseDragAutoscroll.js", () => ({
-  createTmuxMouseDragAutoscroll: vi.fn(() => ({
-    observeTerminalData: mouseDragObserveTerminalData,
-    updatePointer: vi.fn(),
-    endPointerGesture: mouseDragEndPointerGesture,
-    reset: mouseDragReset,
-    dispose: vi.fn(),
-  })),
-}));
-
 vi.mock("@xterm/xterm", () => ({
   Terminal: vi.fn().mockImplementation(function (options) {
     xtermTerminalCtor(options);
@@ -165,12 +119,6 @@ vi.mock("@xterm/xterm", () => ({
         return { dispose: vi.fn() };
       }),
       open: xtermOpen,
-      parser: {
-        registerOscHandler: vi.fn((identifier: number, handler: (data: string) => boolean | Promise<boolean>) => {
-          xtermOscHandlers.set(identifier, handler);
-          return { dispose: vi.fn() };
-        }),
-      },
       refresh: vi.fn(),
       write: vi.fn(),
     };
@@ -187,6 +135,13 @@ vi.mock("@xterm/addon-fit", () => ({
     const addon = { fit: vi.fn(), proposeDimensions: vi.fn(() => fitDimensions) };
     xtermFitAddons.push(addon);
     return addon;
+  }),
+}));
+
+vi.mock("@xterm/addon-clipboard", () => ({
+  ClipboardAddon: vi.fn().mockImplementation(function () {
+    clipboardAddonCtor();
+    return clipboardAddon;
   }),
 }));
 
@@ -225,29 +180,17 @@ describe("TerminalPane", () => {
     configuredCursorBlink = true;
     configuredFontLigatures = false;
     fitDimensions = { cols: 80, rows: 24 };
+    clipboardAddon.dispose.mockReset();
+    clipboardAddonCtor.mockReset();
     ligaturesAddonCtor.mockReset();
-    clipboardWriteText.mockReset();
-    clipboardWriterCancelPointerGesture.mockReset();
-    clipboardWriterDispose.mockReset();
-    clipboardWriterWrite.mockReset().mockResolvedValue("unauthorized");
-    mockShowFlash.mockReset();
     mockWebglCtor.mockReset();
-    mouseDragEndPointerGesture.mockReset();
-    mouseDragObserveTerminalData.mockReset();
-    mouseDragReset.mockReset();
     resizeObserverCallbacks.length = 0;
     xtermFitAddons.length = 0;
     xtermInstances.length = 0;
     xtermTerminalCtor.mockReset();
     xtermOpen.mockReset();
     xtermOnDataHandlers.length = 0;
-    xtermOscHandlers.clear();
     mockSockets = [];
-
-    Object.defineProperty(navigator, "clipboard", {
-      configurable: true,
-      value: { writeText: clipboardWriteText },
-    });
 
     vi.stubGlobal(
       "ResizeObserver",
@@ -277,11 +220,6 @@ describe("TerminalPane", () => {
     } else {
       Reflect.deleteProperty(document, "fonts");
     }
-    if (originalNavigatorClipboard) {
-      Object.defineProperty(navigator, "clipboard", originalNavigatorClipboard);
-    } else {
-      Reflect.deleteProperty(navigator, "clipboard");
-    }
   });
 
   it("uses xterm.js", async () => {
@@ -290,103 +228,13 @@ describe("TerminalPane", () => {
     await waitFor(() => expect(xtermTerminalCtor).toHaveBeenCalled());
   });
 
-  it("forwards accepted tmux OSC 52 text to the authorized clipboard writer", async () => {
-    clipboardWriterWrite.mockResolvedValue("written");
+  it("loads the clipboard addon into xterm", async () => {
     render(TerminalPane, { props: { workspaceId: "ws-123" } });
-    await waitFor(() => expect(xtermOscHandlers.has(52)).toBe(true));
 
-    const handled = await xtermOscHandlers.get(52)!("c;Y29waWVkIHRleHQ=");
+    await waitFor(() => expect(xtermTerminalCtor).toHaveBeenCalled());
 
-    expect(handled).toBe(true);
-    expect(clipboardWriterWrite).toHaveBeenCalledWith("copied text");
-  });
-
-  it("consumes OSC 52 writes synchronously while the clipboard write is pending", async () => {
-    const clipboardWrite = deferred<"written">();
-    clipboardWriterWrite.mockReturnValue(clipboardWrite.promise);
-    render(TerminalPane, { props: { workspaceId: "ws-123" } });
-    await waitFor(() => expect(xtermOscHandlers.has(52)).toBe(true));
-
-    const handled = xtermOscHandlers.get(52)!("c;Y29waWVkIHRleHQ=");
-
-    expect(handled).toBe(true);
-    expect(clipboardWriterWrite).toHaveBeenCalledWith("copied text");
-    clipboardWrite.resolve("written");
-    await clipboardWrite.promise;
-  });
-
-  it("consumes OSC 52 reads without exposing the browser clipboard", async () => {
-    render(TerminalPane, { props: { workspaceId: "ws-123" } });
-    await waitFor(() => expect(xtermOscHandlers.has(52)).toBe(true));
-
-    const handled = await xtermOscHandlers.get(52)!("c;?");
-
-    expect(handled).toBe(true);
-    expect(clipboardWriterWrite).not.toHaveBeenCalled();
-  });
-
-  it("reports blocked terminal clipboard writes once per pane", async () => {
-    clipboardWriterWrite.mockResolvedValue("blocked");
-    render(TerminalPane, { props: { workspaceId: "ws-123" } });
-    await waitFor(() => expect(xtermOscHandlers.has(52)).toBe(true));
-    const handler = xtermOscHandlers.get(52)!;
-
-    await handler("c;b25l");
-    await handler("c;dHdv");
-
-    expect(mockShowFlash).toHaveBeenCalledTimes(1);
-    expect(mockShowFlash).toHaveBeenCalledWith("Could not write the terminal selection to the clipboard.", {
-      tone: "danger",
-    });
-  });
-
-  it("does not report a pending clipboard failure after pane disposal", async () => {
-    const clipboardWrite = deferred<"blocked">();
-    clipboardWriterWrite.mockReturnValue(clipboardWrite.promise);
-    const view = render(TerminalPane, { props: { workspaceId: "ws-123" } });
-    await waitFor(() => expect(xtermOscHandlers.has(52)).toBe(true));
-
-    xtermOscHandlers.get(52)!("c;Y29waWVkIHRleHQ=");
-    view.unmount();
-    clipboardWrite.resolve("blocked");
-    await clipboardWrite.promise;
-
-    expect(mockShowFlash).not.toHaveBeenCalled();
-  });
-
-  it("does not write OSC 52 text from a disconnected pane", async () => {
-    render(TerminalPane, { props: { workspaceId: "ws-123" } });
-    await waitFor(() => expect(xtermOscHandlers.has(52)).toBe(true));
-    expect(mockSockets).toHaveLength(1);
-    mockSockets[0]!.readyState = WebSocket.CLOSED;
-
-    const handled = xtermOscHandlers.get(52)!("c;Y29waWVkIHRleHQ=");
-
-    expect(handled).toBe(true);
-    expect(clipboardWriterWrite).not.toHaveBeenCalled();
-  });
-
-  it("does not write OSC 52 text through a retained handler after unmount", async () => {
-    const view = render(TerminalPane, { props: { workspaceId: "ws-123" } });
-    await waitFor(() => expect(xtermOscHandlers.has(52)).toBe(true));
-    const handler = xtermOscHandlers.get(52)!;
-    view.unmount();
-
-    const handled = handler("c;Y29waWVkIHRleHQ=");
-
-    expect(handled).toBe(true);
-    expect(clipboardWriterWrite).not.toHaveBeenCalled();
-  });
-
-  it("does not write OSC 52 text from a disabled pane", async () => {
-    render(TerminalPane, {
-      props: { workspaceId: "ws-123", disabled: true },
-    });
-    await waitFor(() => expect(xtermOscHandlers.has(52)).toBe(true));
-
-    await xtermOscHandlers.get(52)!("c;Y29waWVkIHRleHQ=");
-
-    expect(clipboardWriterWrite).not.toHaveBeenCalled();
+    expect(clipboardAddonCtor).toHaveBeenCalledTimes(1);
+    expect(xtermInstances[0]!.loadAddon).toHaveBeenCalledWith(clipboardAddon);
   });
 
   it("matches VS Code's stable xterm rendering defaults", async () => {
@@ -769,17 +617,16 @@ describe("TerminalPane", () => {
     expect(terminal.refresh).toHaveBeenCalledWith(0, 23);
   });
 
-  it("forwards complete tmux mouse drags without a local threshold", async () => {
+  it("forwards tmux mouse input unchanged", async () => {
     render(TerminalPane, { props: { workspaceId: "ws-123" } });
 
     await waitFor(() => expect(xtermOnDataHandlers).toHaveLength(1));
     expect(mockSockets).toHaveLength(1);
-    const drag = "\x1b[<0;10;5M" + "\x1b[<32;12;5M" + "\x1b[<32;13;5M" + "\x1b[<0;13;5m";
 
-    xtermOnDataHandlers[0]!(drag);
+    const input = "\x1b[<0;10;5M\x1b[<32;12;5M\x1b[<0;12;5m";
+    xtermOnDataHandlers[0]!(input);
 
-    const socket = mockSockets[0]!;
-    expect(sentText(socket, socket.sent.length - 1)).toBe(drag);
+    expect(sentText(mockSockets[0]!, mockSockets[0]!.sent.length - 1)).toBe(input);
   });
 
   it("does not replay input received while disconnected", async () => {
@@ -791,74 +638,10 @@ describe("TerminalPane", () => {
     socket.sent = [];
 
     xtermOnDataHandlers[0]!("\x1b[<0;10;5M");
-    expect(mouseDragObserveTerminalData).not.toHaveBeenCalled();
     socket.readyState = MockWebSocket.OPEN;
     xtermOnDataHandlers[0]!("\x1b[<32;12;5M");
 
     expect(sentText(socket, 0)).toBe("\x1b[<32;12;5M");
-    expect(mouseDragObserveTerminalData).toHaveBeenCalledTimes(1);
-    expect(mouseDragObserveTerminalData).toHaveBeenCalledWith("\x1b[<32;12;5M");
-  });
-
-  it("resets tmux drag state when the terminal socket closes", async () => {
-    render(TerminalPane, { props: { workspaceId: "ws-123" } });
-
-    await waitFor(() => expect(mockSockets).toHaveLength(1));
-    mouseDragReset.mockClear();
-
-    mockSockets[0]!.onclose?.();
-
-    expect(mouseDragReset).toHaveBeenCalledTimes(1);
-  });
-
-  it("aborts a partial OSC sequence before writing output from a reconnected socket", async () => {
-    render(TerminalPane, { props: { workspaceId: "ws-123" } });
-
-    await waitFor(() => expect(mockSockets).toHaveLength(1));
-    const terminal = xtermInstances[0]!;
-    const firstSocket = mockSockets[0]!;
-    terminal.write.mockClear();
-    vi.useFakeTimers();
-    const binaryMessage = (text: string): MessageEvent => {
-      const encoded = new TextEncoder().encode(text);
-      const data = new Uint8Array(new window.ArrayBuffer(encoded.byteLength));
-      data.set(encoded);
-      return new MessageEvent("message", { data: data.buffer });
-    };
-
-    firstSocket.onmessage?.(binaryMessage("\x1b]52;c;cGFydGlhbA=="));
-    firstSocket.onclose?.();
-    await vi.advanceTimersByTimeAsync(1_000);
-    expect(mockSockets).toHaveLength(2);
-
-    mockSockets[1]!.onmessage?.(binaryMessage("fresh session output"));
-
-    const writtenChunks = terminal.write.mock.calls.map(([data]) =>
-      typeof data === "string" ? data : new TextDecoder().decode(data),
-    );
-    expect(writtenChunks).toEqual(["\x1b]52;c;cGFydGlhbA==", "\x18", "fresh session output"]);
-  });
-
-  it("revokes pointer clipboard authorization when the window loses focus", async () => {
-    render(TerminalPane, { props: { workspaceId: "ws-123" } });
-    await waitFor(() => expect(xtermTerminalCtor).toHaveBeenCalled());
-    clipboardWriterCancelPointerGesture.mockClear();
-
-    window.dispatchEvent(new Event("blur"));
-
-    expect(clipboardWriterCancelPointerGesture).toHaveBeenCalledTimes(1);
-  });
-
-  it("revokes pointer clipboard authorization when the document is hidden", async () => {
-    render(TerminalPane, { props: { workspaceId: "ws-123" } });
-    await waitFor(() => expect(xtermTerminalCtor).toHaveBeenCalled());
-    clipboardWriterCancelPointerGesture.mockClear();
-    const visibilityState = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
-
-    document.dispatchEvent(new Event("visibilitychange"));
-
-    expect(clipboardWriterCancelPointerGesture).toHaveBeenCalledTimes(1);
-    visibilityState.mockRestore();
   });
 
   it("does not attach xterm sessions with unavailable initial status", async () => {

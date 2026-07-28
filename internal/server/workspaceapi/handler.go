@@ -13,7 +13,6 @@ import (
 	"go.kenn.io/middleman/internal/db"
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/server/httpapi"
-	"go.kenn.io/middleman/internal/systemclipboard"
 	"go.kenn.io/middleman/internal/workspace"
 	"go.kenn.io/middleman/internal/workspace/localruntime"
 )
@@ -80,7 +79,6 @@ type Deps struct {
 	Config             ConfigSnapshot
 	Workspaces         *workspace.Manager
 	Runtime            *localruntime.Manager
-	TerminalClipboard  systemclipboard.Writer
 	AgentActivity      *agentactivity.Store
 	TmuxCommand        []string
 	Now                func() time.Time
@@ -108,7 +106,6 @@ type Handler struct {
 	config        ConfigSnapshot
 	workspaces    *workspace.Manager
 	runtime       *localruntime.Manager
-	clipboard     systemclipboard.Writer
 	agentActivity *agentactivity.Store
 	tmuxCmd       []string
 	now           func() time.Time
@@ -160,7 +157,6 @@ func New(deps Deps) *Handler {
 		config:                         cloneConfigSnapshot(deps.Config),
 		workspaces:                     deps.Workspaces,
 		runtime:                        deps.Runtime,
-		clipboard:                      deps.TerminalClipboard,
 		agentActivity:                  deps.AgentActivity,
 		tmuxCmd:                        slices.Clone(deps.TmuxCommand),
 		now:                            now,
@@ -227,7 +223,6 @@ func (h *Handler) enqueueDetailSyncWithCompletion(
 
 // Register registers workspace and local-project REST operations.
 func (s *Handler) Register(api huma.API) {
-	s.registerTerminalClipboard(api)
 	huma.Register(api, huma.Operation{
 		OperationID: "receive-agent-hook",
 		Method:      http.MethodPost,

@@ -30,6 +30,7 @@
     "@middleman/ui": "workspace:*",
     "@pierre/diffs": "1.2.12",
     "@pierre/trees": "1.0.0-beta.5",
+    "@xterm/addon-clipboard": "^0.2.0",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-ligatures": "^0.10.0",
     "@xterm/addon-webgl": "^0.19.0",

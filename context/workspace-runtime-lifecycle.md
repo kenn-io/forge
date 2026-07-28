@@ -102,20 +102,9 @@ stale tabs.
   backend view of live launched sessions.
 - Workspace terminals use xterm.js exclusively; there is no renderer setting
   or alternate renderer path (`frontend/src/lib/components/terminal/TerminalPane.svelte`).
-- Treat terminal processes as native-terminal-equivalent, but accept bounded, write-only OSC 52 writes only after one
-  recent one-shot trusted DOM gesture; terminal data callbacks are not input provenance, and browser denial falls back
-  through CSRF-protected loopback (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::handleTerminalKeyDown`).
-- Pointer clipboard authority and keyboard authority created during it must remain timed and revocable through release
-  grace on capture, focus, or visibility loss; a watchdog bounds missing releases
-  (`frontend/src/lib/components/terminal/terminalClipboardWriter.ts::createTerminalClipboardWriter`).
-- Host clipboard writes require a local browser; trusted loopback proxies must report exactly one client IP assigned
-  to the host, because the proxy's loopback `RemoteAddr` alone does not establish browser locality
-  (`internal/server/terminal_clipboard_access.go::isLocalTerminalClipboardRequest`).
-- During active tmux SGR drags outside xterm bounds, add only clamped edge wheel, drag, and release reports; forward
-  all other mouse reports unchanged, and never retain unsent drag state across a WebSocket boundary
-  (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::connect`).
-- Windows loopback clipboard fallback must send UTF-16LE to `clip.exe`; UTF-8 stdin is code-page-dependent and corrupts
-  non-ASCII text (`internal/systemclipboard/systemclipboard.go::encodeUTF16LE`).
+- Forward xterm input to tmux unchanged; its clipboard addon owns OSC 52 under
+  browser permissions. Do not add gesture authorization, native bridges, or
+  server fallbacks (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::onMount`).
 - The frontend may react immediately to terminal exit events, but should then
   reconcile with a runtime refresh.
 - Only the active terminal pane may publish cell geometry; font-metric changes

@@ -23,11 +23,16 @@ import (
 	"go.kenn.io/middleman/internal/procutil"
 	"go.kenn.io/middleman/internal/ptyowner"
 	ptyownerruntime "go.kenn.io/middleman/internal/ptyowner/runtime"
+	"go.kenn.io/middleman/internal/testutil/processjob"
 )
 
 func TestMain(m *testing.M) {
 	if os.Getenv("MIDDLEMAN_LOCALRUNTIME_HELPER") == "1" {
 		os.Exit(m.Run())
+	}
+	if err := processjob.ContainCurrentProcessTree(); err != nil {
+		fmt.Fprintf(os.Stderr, "contain local runtime test process tree: %v\n", err)
+		os.Exit(1)
 	}
 	envDir, err := os.MkdirTemp("", "middleman-localruntime-tmux-env-*")
 	if err == nil {

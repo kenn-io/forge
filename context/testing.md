@@ -291,6 +291,10 @@ resource pressure rather than correctness, keep `t.Parallel()` and gate the
 expensive section with a package-level `golang.org/x/sync/semaphore.Weighted`
 instead of serializing the whole test.
 
+Windows test binaries that launch restart-durable PTY processes must contain
+their descendants in a kill-on-close Job Object; test timeouts bypass normal
+Go cleanup (`internal/testutil/processjob/processjob_windows.go::ContainCurrentProcessTree`).
+
 Keep splitting new high-volume tests into the existing black-box packages when
 they do not need unexported internals:
 

@@ -60,6 +60,7 @@ import (
 	"go.kenn.io/middleman/internal/testutil"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
 	"go.kenn.io/middleman/internal/testutil/gitfake"
+	"go.kenn.io/middleman/internal/testutil/processjob"
 	"go.kenn.io/middleman/internal/tokenauth"
 	"go.kenn.io/middleman/internal/workspace"
 	"go.kenn.io/middleman/internal/workspace/localruntime"
@@ -79,6 +80,10 @@ var (
 func TestMain(m *testing.M) {
 	if isServerHelperProcess() {
 		os.Exit(m.Run())
+	}
+	if err := processjob.ContainCurrentProcessTree(); err != nil {
+		fmt.Fprintf(os.Stderr, "contain server test process tree: %v\n", err)
+		os.Exit(1)
 	}
 	envDir, envDirErr := os.MkdirTemp("", "middleman-server-tmux-env-*")
 	if envDirErr == nil {

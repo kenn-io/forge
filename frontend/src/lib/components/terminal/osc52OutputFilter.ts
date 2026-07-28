@@ -82,7 +82,16 @@ export function createOsc52OutputFilter(
             break;
 
           case "osc-command":
-            if (byte === SEMICOLON) {
+            if (byte === ESC) {
+              output.push(...candidate);
+              candidate = [];
+              command = [];
+              state = "escape";
+            } else if (byte === C1_OSC) {
+              output.push(...candidate);
+              candidate = [byte];
+              command = [];
+            } else if (byte === SEMICOLON) {
               if (command.length === 2 && command[0] === 0x35 && command[1] === 0x32) {
                 candidate = [];
                 command = [];

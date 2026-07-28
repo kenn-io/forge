@@ -54,6 +54,23 @@ describe("OSC 52 output filter", () => {
     expect(onOsc52).toHaveBeenCalledWith("c;Y29waWVkIHRleHQ=");
   });
 
+  it.each([
+    { introducer: [0x1b, 0x5d], name: "ESC", prefix: "5" },
+    { introducer: [0x1b, 0x5d], name: "ESC", prefix: "52" },
+    { introducer: [0x9d], name: "C1", prefix: "5" },
+    { introducer: [0x9d], name: "C1", prefix: "52" },
+  ])("recognizes nested $name OSC 52 after command prefix $prefix", ({ introducer, prefix }) => {
+    const onOsc52 = vi.fn();
+    const filter = createOsc52OutputFilter(onOsc52);
+
+    const output = filter.write(
+      Uint8Array.from([...bytes(`\x1b]${prefix}`), ...introducer, ...bytes("52;c;Y29waWVkIHRleHQ=\x07visible")]),
+    );
+
+    expect(text(output)).toBe(`\x1b]${prefix}visible`);
+    expect(onOsc52).toHaveBeenCalledWith("c;Y29waWVkIHRleHQ=");
+  });
+
   it("consumes oversized OSC 52 without retaining or dispatching it", () => {
     const onOsc52 = vi.fn();
     const filter = createOsc52OutputFilter(onOsc52, { maxDataBytes: 8 });

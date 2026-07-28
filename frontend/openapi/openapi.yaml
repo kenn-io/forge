@@ -7341,6 +7341,14 @@ components:
         - renderer
         - hide_tmux_status
       type: object
+    TerminalClipboardInputBody:
+      additionalProperties: false
+      properties:
+        text:
+          type: string
+      required:
+        - text
+      type: object
     TmuxSessionInfo:
       additionalProperties: false
       properties:

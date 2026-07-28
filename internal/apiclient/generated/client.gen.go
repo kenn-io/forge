@@ -3979,6 +3979,11 @@ type Terminal struct {
 // TerminalRenderer defines model for Terminal.Renderer.
 type TerminalRenderer string
 
+// TerminalClipboardInputBody defines model for TerminalClipboardInputBody.
+type TerminalClipboardInputBody struct {
+	Text string `json:"text"`
+}
+
 // TmuxSessionInfo defines model for TmuxSessionInfo.
 type TmuxSessionInfo struct {
 	CreatedAt        *string           `json:"createdAt,omitempty"`

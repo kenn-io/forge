@@ -894,6 +894,8 @@ func instanceTmuxCommand() []string {
 	}
 	return []string{
 		"tmux",
+		"-f",
+		"/dev/null",
 		"-L",
 		fmt.Sprintf(
 			"mm-e2e-%d-%d-%s",

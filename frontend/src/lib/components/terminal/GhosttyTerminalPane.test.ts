@@ -2,6 +2,14 @@ import { cleanup, render, waitFor } from "@testing-library/svelte";
 import type { ComponentProps } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
+const { clipboardWriterAuthorizeKeyboardGesture, clipboardWriterDispose, clipboardWriterWrite, mockShowFlash } =
+  vi.hoisted(() => ({
+    clipboardWriterAuthorizeKeyboardGesture: vi.fn(),
+    clipboardWriterDispose: vi.fn(),
+    clipboardWriterWrite: vi.fn(),
+    mockShowFlash: vi.fn(),
+  }));
+
 const mockFit = vi.fn();
 const mockFocus = vi.fn();
 const mockOpen = vi.fn();
@@ -56,6 +64,21 @@ vi.mock("@middleman/ui", () => ({
   }),
 }));
 
+vi.mock("@middleman/ui/stores/flash", () => ({
+  showFlash: mockShowFlash,
+}));
+
+vi.mock("./terminalClipboardWriter.js", () => ({
+  createBrowserTerminalClipboardPort: vi.fn(() => ({})),
+  createTerminalClipboardWriter: vi.fn(() => ({
+    beginPointerGesture: vi.fn(),
+    endPointerGesture: vi.fn(),
+    authorizeKeyboardGesture: clipboardWriterAuthorizeKeyboardGesture,
+    write: clipboardWriterWrite,
+    dispose: clipboardWriterDispose,
+  })),
+}));
+
 vi.mock("ghostty-web", () => ({
   init: (...args: []) => mockInit(...args),
   FitAddon: vi.fn().mockImplementation(function () {
@@ -104,7 +127,11 @@ describe("GhosttyTerminalPane", () => {
     });
     mockDispose.mockReset();
     mockInit.mockClear();
+    mockShowFlash.mockReset();
     terminalWrite.mockReset();
+    clipboardWriterAuthorizeKeyboardGesture.mockReset();
+    clipboardWriterDispose.mockReset();
+    clipboardWriterWrite.mockReset().mockResolvedValue("unauthorized");
     sockets = [];
 
     vi.stubGlobal(
@@ -323,15 +350,63 @@ describe("GhosttyTerminalPane", () => {
     }
   });
 
-  it("filters tiny tmux mouse drags before sending terminal input", async () => {
+  it("forwards complete tmux mouse drags without a local threshold", async () => {
     await renderStarted({ workspaceId: "ws-123" });
     const dataHandler = mockOnData.mock.calls[0]?.[0] as ((data: string) => void) | undefined;
     expect(dataHandler).toBeDefined();
+    const drag = "\x1b[<0;10;5M" + "\x1b[<32;12;5M" + "\x1b[<32;13;5M" + "\x1b[<0;13;5m";
 
     socketAt(0).sent = [];
-    dataHandler?.("\x1b[<0;10;5M\x1b[<32;12;5M\x1b[<0;12;5m");
+    dataHandler?.(drag);
 
-    expect(sentText(socketAt(0), 0)).toBe("\x1b[<0;10;5M\x1b[<0;12;5m");
+    expect(sentText(socketAt(0), 0)).toBe(drag);
+  });
+
+  it("does not authorize clipboard writes from untrusted Ghostty terminal data", async () => {
+    await renderStarted({ workspaceId: "ws-123" });
+    const dataHandler = mockOnData.mock.calls[0]?.[0] as ((data: string) => void) | undefined;
+
+    dataHandler?.("a");
+
+    expect(clipboardWriterAuthorizeKeyboardGesture).not.toHaveBeenCalled();
+  });
+
+  it("removes accepted OSC 52 output and forwards its text to the clipboard writer", async () => {
+    clipboardWriterWrite.mockResolvedValue("written");
+    await renderStarted({ workspaceId: "ws-123" });
+    const socket = socketAt(0);
+    const data = messageBuffer("visible-before\x1b]52;c;Y29waWVkIHRleHQ=\x07visible-after");
+
+    expect(socket.onmessage).not.toBeNull();
+    socket.onmessage?.({ data } as MessageEvent);
+
+    expect(writtenText(terminalWrite.mock.calls[0]?.[0])).toBe("visible-beforevisible-after");
+    expect(clipboardWriterWrite).toHaveBeenCalledWith("copied text");
+  });
+
+  it("reports blocked OSC 52 clipboard writes once per pane", async () => {
+    clipboardWriterWrite.mockResolvedValue("blocked");
+    await renderStarted({ workspaceId: "ws-123" });
+    const socket = socketAt(0);
+
+    for (const payload of ["b25l", "dHdv"]) {
+      socket.onmessage?.({
+        data: messageBuffer(`\x1b]52;c;${payload}\x07`),
+      } as MessageEvent);
+    }
+    await waitFor(() => expect(mockShowFlash).toHaveBeenCalledTimes(1));
+
+    expect(mockShowFlash).toHaveBeenCalledWith("Could not write the terminal selection to the clipboard.", {
+      tone: "danger",
+    });
+  });
+
+  it("disposes clipboard handling with the Ghostty pane", async () => {
+    const view = await renderStarted({ workspaceId: "ws-123" });
+
+    view.unmount();
+
+    expect(clipboardWriterDispose).toHaveBeenCalledTimes(1);
   });
 
   it("sends terminal byte payloads as raw WebSocket bytes", async () => {
@@ -475,4 +550,16 @@ function sentText(socket: MockWebSocket, index: number): string {
     return new TextDecoder().decode(value);
   }
   return new TextDecoder().decode(value as ArrayBufferView);
+}
+
+function writtenText(value: unknown): string {
+  if (typeof value === "string") return value;
+  return new TextDecoder().decode(value as ArrayBufferView);
+}
+
+function messageBuffer(value: string): ArrayBuffer {
+  const encoded = new TextEncoder().encode(value);
+  const buffer = new ArrayBuffer(encoded.byteLength);
+  new Uint8Array(buffer).set(encoded);
+  return buffer;
 }

@@ -100,6 +100,11 @@ stale tabs.
 
 - Runtime lists returned by `/workspaces/{id}/runtime` are the authoritative
   backend view of live launched sessions.
+- Treat terminal processes as native-terminal-equivalent, but accept bounded, write-only OSC 52 writes only after one
+  recent one-shot trusted DOM gesture; terminal data callbacks are not input provenance, and browser denial falls back
+  through CSRF-protected loopback (`frontend/src/lib/components/terminal/GhosttyTerminalPane.svelte::handleTerminalKeyDown`).
+- During active tmux SGR drags outside xterm bounds, add only clamped edge wheel, drag, and release reports; forward
+  all other mouse reports unchanged (`frontend/src/lib/components/terminal/tmuxMouseDragAutoscroll.ts::createTmuxMouseDragAutoscroll`).
 - The frontend may react immediately to terminal exit events, but should then
   reconcile with a runtime refresh.
 - Only the active terminal pane may publish cell geometry; font-metric changes

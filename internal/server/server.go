@@ -41,6 +41,7 @@ import (
 	"go.kenn.io/middleman/internal/server/pullapi"
 	"go.kenn.io/middleman/internal/server/repobrowserapi"
 	"go.kenn.io/middleman/internal/server/workspaceapi"
+	"go.kenn.io/middleman/internal/systemclipboard"
 	"go.kenn.io/middleman/internal/telemetry"
 	"go.kenn.io/middleman/internal/tokenauth"
 	"go.kenn.io/middleman/internal/workspace"
@@ -80,6 +81,8 @@ type ServerOptions struct {
 	Telemetry                          telemetry.Client
 	TokenSources                       *tokenauth.SourceSet
 	Archive                            archive.Controller
+	// TerminalClipboard overrides native clipboard integration in tests.
+	TerminalClipboard systemclipboard.Writer
 	// HostCheck overrides the Host validation middleware options.
 	// When Valid(), the override wins over any cfg-derived options.
 	// Used by wire-level tests that want to control the bind /
@@ -725,6 +728,10 @@ func newServer(
 		options.HostCheckAllowLoopbackAnyPort,
 	)
 	deferredMergeMaxWait := options.deferredMergeMaxWait
+	terminalClipboard := options.TerminalClipboard
+	if terminalClipboard == nil {
+		terminalClipboard = systemclipboard.NewWriter()
+	}
 	markdownImageDataDir := ""
 	if cfg != nil {
 		markdownImageDataDir = cfg.DataDir
@@ -932,12 +939,13 @@ func newServer(
 		})
 	}
 	s.workspaceAPI = workspaceapi.New(workspaceapi.Deps{
-		DB:         database,
-		Resolver:   repoResolver,
-		Syncer:     syncer,
-		Config:     workspaceConfigSnapshot(cfg, tmuxCmd),
-		Workspaces: s.workspaces,
-		Runtime:    s.runtime,
+		DB:                database,
+		Resolver:          repoResolver,
+		Syncer:            syncer,
+		Config:            workspaceConfigSnapshot(cfg, tmuxCmd),
+		Workspaces:        s.workspaces,
+		Runtime:           s.runtime,
+		TerminalClipboard: terminalClipboard,
 		AgentActivity: agentactivity.NewStore(filepath.Join(
 			filepath.Dir(options.WorktreeDir), "agent-activity",
 		)),
@@ -1295,6 +1303,16 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			))
 			return
 		}
+		if s.isTerminalClipboardAPIRequest(r) &&
+			!isLoopbackRemoteAddr(r.RemoteAddr) {
+			writeProblemResponse(w, httpapi.NewProblem(
+				http.StatusForbidden,
+				httpapi.CodeForbidden,
+				"terminal clipboard writes require a loopback client",
+				map[string]any{"reason": "loopbackOnly"},
+			))
+			return
+		}
 	}
 	if r.Method == http.MethodGet && s.isDocsBrowseAPIRequest(r) && !isLoopbackRemoteAddr(r.RemoteAddr) {
 		writeProblemResponse(w, httpapi.NewProblem(
@@ -1371,6 +1389,15 @@ func (s *Server) isMutatingDocsAPIRequest(r *http.Request) bool {
 		path = strings.TrimPrefix(path, prefix)
 	}
 	return strings.HasPrefix(path, "/api/v1/docs/")
+}
+
+func (s *Server) isTerminalClipboardAPIRequest(r *http.Request) bool {
+	path := r.URL.Path
+	if s.basePath != "/" {
+		prefix := strings.TrimSuffix(s.basePath, "/")
+		path = strings.TrimPrefix(path, prefix)
+	}
+	return path == "/api/v1/terminal/clipboard"
 }
 
 func (s *Server) isDocsBrowseAPIRequest(r *http.Request) bool {

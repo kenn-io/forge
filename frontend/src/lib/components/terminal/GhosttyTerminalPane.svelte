@@ -12,6 +12,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { getStores } from "@middleman/ui";
+  import { showFlash } from "@middleman/ui/stores/flash";
   import { FitAddon, Terminal } from "ghostty-web";
   import { workspaceTmuxWebSocketPath } from "../../api/workspace-runtime.js";
   import { createWorkspaceSwitchPaneTimer } from "../../instrumentation/workspaceSwitchTiming.js";
@@ -21,9 +22,14 @@
     sanitizeTerminalPasteText,
   } from "./bracketedPaste.js";
   import { embeddedWebSocketUrl } from "./embeddedWebSocket.js";
+  import { parseOsc52ClipboardWrite } from "./osc52Clipboard.js";
+  import { createOsc52OutputFilter } from "./osc52OutputFilter.js";
+  import {
+    createBrowserTerminalClipboardPort,
+    createTerminalClipboardWriter,
+  } from "./terminalClipboardWriter.js";
   import { buildTerminalFontFamily } from "./terminalFontFamily.js";
   import { createInitialFocusIntent } from "./terminal-focus.js";
-  import { createTmuxMouseDragFilter } from "./tmuxMouseDragFilter.js";
 
   interface TerminalPaneProps {
     workspaceId?: string | undefined;
@@ -63,8 +69,12 @@
   let disposed = false;
   let exited = false;
   let sawFirstBytes = false;
+  let clipboardFailureReported = false;
   const encoder = new TextEncoder();
-  const tmuxMouseDragFilter = createTmuxMouseDragFilter();
+  const clipboardWriter = createTerminalClipboardWriter(
+    createBrowserTerminalClipboardPort(),
+  );
+  const osc52OutputFilter = createOsc52OutputFilter(handleOsc52Clipboard);
   // Binds this pane to the workspace switch that was live at creation;
   // panes surviving from a previous workspace record nothing.
   const switchTimer = createWorkspaceSwitchPaneTimer();
@@ -83,6 +93,39 @@
 
   function initialStatusMessage(status: string | undefined): string {
     return status === "exited" ? "Process exited" : "Session unavailable";
+  }
+
+  function reportClipboardFailure(): void {
+    if (disposed || clipboardFailureReported) return;
+    clipboardFailureReported = true;
+    showFlash("Could not write the terminal selection to the clipboard.", {
+      tone: "danger",
+    });
+  }
+
+  function handleOsc52Clipboard(data: string): void {
+    const result = parseOsc52ClipboardWrite(data);
+    if (result.status === "rejected") return;
+    if (disposed || disabled || ws?.readyState !== WebSocket.OPEN) return;
+
+    void clipboardWriter.write(result.text).then((outcome) => {
+      if (outcome === "blocked") reportClipboardFailure();
+    });
+  }
+
+  function handleTerminalPointerDown(event: PointerEvent): void {
+    if (disposed || disabled || event.button !== 0 || !event.isTrusted) return;
+    clipboardWriter.beginPointerGesture();
+  }
+
+  function handleTerminalPointerEnd(event: PointerEvent): void {
+    if (!event.isTrusted) return;
+    clipboardWriter.endPointerGesture();
+  }
+
+  function handleTerminalKeyDown(event: KeyboardEvent): void {
+    if (disposed || disabled || event.isComposing || !event.isTrusted) return;
+    clipboardWriter.authorizeKeyboardGesture();
   }
 
   function defaultTerminalFontFamily(): string {
@@ -203,10 +246,7 @@
     if (ws?.readyState !== WebSocket.OPEN) return;
 
     if (typeof data === "string") {
-      const filteredData = tmuxMouseDragFilter.filter(data);
-      if (filteredData) {
-        ws.send(encoder.encode(filteredData));
-      }
+      ws.send(encoder.encode(data));
       return;
     }
     if (data instanceof ArrayBuffer) {
@@ -264,6 +304,7 @@
   function connect(): void {
     if (disposed || !terminal) return;
 
+    osc52OutputFilter.reset();
     const cols = terminal.cols;
     const rows = terminal.rows;
     const url = buildWsUrl(cols, rows);
@@ -283,6 +324,8 @@
       if (!terminal) return;
       if (ev.data instanceof ArrayBuffer) {
         const bytes = new Uint8Array(ev.data);
+        const terminalBytes = osc52OutputFilter.write(bytes);
+        if (terminalBytes.byteLength === 0) return;
         if (!sawFirstBytes) {
           sawFirstBytes = true;
           // first-paint must describe the same pane as first-bytes, so
@@ -290,8 +333,8 @@
           // the paint measurement. The write callback fires once the
           // payload is parsed; the double animation frame lands after
           // the frame showing that content has painted.
-          if (switchTimer.record("first-bytes", { byteLength: bytes.byteLength })) {
-            terminal.write(bytes, () => {
+          if (switchTimer.record("first-bytes", { byteLength: terminalBytes.byteLength })) {
+            terminal.write(terminalBytes, () => {
               requestAnimationFrame(() => {
                 requestAnimationFrame(() => {
                   switchTimer.record("first-paint");
@@ -299,10 +342,10 @@
               });
             });
           } else {
-            terminal.write(bytes);
+            terminal.write(terminalBytes);
           }
         } else {
-          terminal.write(bytes);
+          terminal.write(terminalBytes);
         }
       } else if (typeof ev.data === "string") {
         try {
@@ -374,6 +417,8 @@
 
   function cleanup(): void {
     disposed = true;
+    clipboardWriter.dispose();
+    osc52OutputFilter.reset();
     if (resizeObserver) {
       resizeObserver.disconnect();
       resizeObserver = null;
@@ -470,6 +515,7 @@
       if (active && !disabled && focusIntent.shouldFocus()) term.focus();
 
       term.onData((data: string) => {
+        if (disabled) return;
         sendTerminalInput(data as TerminalInputData);
       });
 
@@ -507,7 +553,17 @@
   });
 </script>
 
-<div class="terminal-container" bind:this={containerEl}></div>
+<svelte:window
+  onpointerup={handleTerminalPointerEnd}
+  onpointercancel={handleTerminalPointerEnd}
+/>
+
+<div
+  class="terminal-container"
+  bind:this={containerEl}
+  onpointerdowncapture={handleTerminalPointerDown}
+  onkeydowncapture={handleTerminalKeyDown}
+></div>
 
 <style>
   .terminal-container {

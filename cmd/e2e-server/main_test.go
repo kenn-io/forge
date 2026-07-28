@@ -53,6 +53,18 @@ func TestCleanupServerInfoFileRemovesFile(t *testing.T) {
 	assert.ErrorIs(err, os.ErrNotExist)
 }
 
+func TestInstanceTmuxCommandUsesPrivateSocketAndDefaultConfig(t *testing.T) {
+	command := instanceTmuxCommand()
+
+	require.Len(t, command, 5)
+	assert := assert.New(t)
+	assert.Equal("tmux", command[0])
+	assert.Equal("-f", command[1])
+	assert.Equal("/dev/null", command[2])
+	assert.Equal("-L", command[3])
+	assert.Regexp(`^mm-e2e-\d+-\d+-[0-9a-f]{8}$`, command[4])
+}
+
 func TestPatchFixturePRSHAsUpdatesOpenPRs(t *testing.T) {
 	openPR := &gh.PullRequest{
 		Number: new(1),

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { getStores } from "@middleman/ui";
+  import { showFlash } from "@middleman/ui/stores/flash";
   import { Terminal } from "@xterm/xterm";
   import { FitAddon } from "@xterm/addon-fit";
   import { LigaturesAddon } from "@xterm/addon-ligatures/lib/addon-ligatures.mjs";
@@ -14,12 +15,17 @@
     isMultilinePaste,
   } from "./bracketedPaste.js";
   import { embeddedWebSocketUrl } from "./embeddedWebSocket.js";
+  import { parseOsc52ClipboardWrite } from "./osc52Clipboard.js";
+  import {
+    createBrowserTerminalClipboardPort,
+    createTerminalClipboardWriter,
+  } from "./terminalClipboardWriter.js";
   import {
     buildTerminalFontFamily,
     primaryTerminalFontFamily,
   } from "./terminalFontFamily.js";
   import { createInitialFocusIntent } from "./terminal-focus.js";
-  import { createTmuxMouseDragFilter } from "./tmuxMouseDragFilter.js";
+  import { createTmuxMouseDragAutoscroll } from "./tmuxMouseDragAutoscroll.js";
 
   interface TerminalPaneProps {
     workspaceId?: string | undefined;
@@ -69,8 +75,17 @@
   let disposed = false;
   let exited = false;
   let sawFirstBytes = false;
+  let clipboardFailureReported = false;
   const encoder = new TextEncoder();
-  const tmuxMouseDragFilter = createTmuxMouseDragFilter();
+  const clipboardWriter = createTerminalClipboardWriter(
+    createBrowserTerminalClipboardPort(),
+  );
+  const mouseDragAutoscroll = createTmuxMouseDragAutoscroll({
+    send(data) {
+      if (disabled || ws?.readyState !== WebSocket.OPEN) return;
+      ws.send(encoder.encode(data));
+    },
+  });
   // Binds this pane to the workspace switch that was live at creation;
   // panes surviving from a previous workspace record nothing.
   const switchTimer = createWorkspaceSwitchPaneTimer();
@@ -87,6 +102,54 @@
 
   function isAttachableInitialStatus(status: string | undefined): boolean {
     return status === undefined || status === "running" || status === "starting";
+  }
+
+  function reportClipboardFailure(): void {
+    if (disposed || clipboardFailureReported) return;
+    clipboardFailureReported = true;
+    showFlash("Could not write the terminal selection to the clipboard.", {
+      tone: "danger",
+    });
+  }
+
+  function handleOsc52Clipboard(data: string): boolean {
+    const result = parseOsc52ClipboardWrite(data);
+    if (result.status === "rejected") return true;
+    if (disposed || disabled || ws?.readyState !== WebSocket.OPEN) return true;
+
+    void clipboardWriter.write(result.text).then((outcome) => {
+      if (outcome === "blocked") reportClipboardFailure();
+    });
+    return true;
+  }
+
+  function handleTerminalPointerDown(event: PointerEvent): void {
+    if (disposed || disabled || event.button !== 0 || !event.isTrusted) return;
+    clipboardWriter.beginPointerGesture();
+  }
+
+  function handleTerminalPointerEnd(event: PointerEvent): void {
+    if (!event.isTrusted) return;
+    clipboardWriter.endPointerGesture();
+    mouseDragAutoscroll.endPointerGesture();
+  }
+
+  function handleTerminalKeyDown(event: KeyboardEvent): void {
+    if (disposed || disabled || event.isComposing || !event.isTrusted) return;
+    clipboardWriter.authorizeKeyboardGesture();
+  }
+
+  function handleWindowPointerMove(event: PointerEvent): void {
+    if (disposed || disabled || !terminal) return;
+    const screen = containerEl.querySelector<HTMLElement>(".xterm-screen");
+    const bounds = (screen ?? containerEl).getBoundingClientRect();
+    mouseDragAutoscroll.updatePointer({
+      clientX: event.clientX,
+      clientY: event.clientY,
+      bounds,
+      cols: terminal.cols,
+      rows: terminal.rows,
+    });
   }
 
   function initialStatusMessage(status: string | undefined): string {
@@ -433,6 +496,8 @@
 
   function cleanup(): void {
     disposed = true;
+    clipboardWriter.dispose();
+    mouseDragAutoscroll.dispose();
     if (resizeObserver) {
       resizeObserver.disconnect();
       resizeObserver = null;
@@ -554,6 +619,7 @@
       terminal = term;
 
       term.open(containerEl);
+      term.parser.registerOscHandler(52, handleOsc52Clipboard);
       switchTimer.record("terminal-constructed");
       containerEl.addEventListener("paste", handleTerminalPaste, true);
 
@@ -586,12 +652,10 @@
       if (active && !disabled && focusIntent.shouldFocus()) term.focus();
 
       term.onData((data: string) => {
+        mouseDragAutoscroll.observeTerminalData(data);
         if (disabled) return;
-        if (ws?.readyState !== WebSocket.OPEN) return;
-
-        const filteredData = tmuxMouseDragFilter.filter(data);
-        if (filteredData) {
-          ws.send(encoder.encode(filteredData));
+        if (ws?.readyState === WebSocket.OPEN) {
+          ws.send(encoder.encode(data));
         }
       });
 
@@ -682,7 +746,18 @@
   });
 </script>
 
-<div class="terminal-container" bind:this={containerEl}></div>
+<svelte:window
+  onpointermove={handleWindowPointerMove}
+  onpointerup={handleTerminalPointerEnd}
+  onpointercancel={handleTerminalPointerEnd}
+/>
+
+<div
+  class="terminal-container"
+  bind:this={containerEl}
+  onpointerdowncapture={handleTerminalPointerDown}
+  onkeydowncapture={handleTerminalKeyDown}
+></div>
 
 <style>
   .terminal-container {

@@ -409,6 +409,8 @@ describe("DiffFile", () => {
     ["control character", "\n", "\\n"],
     ["format character", "\u202e", "\\u202e"],
     ["unpaired surrogate", "\ud800", "\\ud800"],
+    ["variation selector", "\ufe0f", "\\ufe0f"],
+    ["supplementary variation selector", "\u{e0100}", "\\u{e0100}"],
     ["line separator", "\u2028", "\\u2028"],
     ["paragraph separator", "\u2029", "\\u2029"],
   ])("refuses to copy paths with a concealed %s", async (_description, character, escapedCharacter) => {

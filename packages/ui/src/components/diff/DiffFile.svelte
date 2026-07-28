@@ -268,7 +268,7 @@
   }
 
   function isConcealedCharacter(character: string): boolean {
-    return /[\p{Cc}\p{Cf}\p{Cs}\u2028\u2029]/u.test(character);
+    return /[\p{Cc}\p{Cf}\p{Cs}\p{Default_Ignorable_Code_Point}\u2028\u2029]/u.test(character);
   }
 
   function supportsRichPreview(path: string): boolean {
@@ -775,6 +775,11 @@
 
   .file-path--deleted {
     text-decoration: line-through;
+  }
+
+  .file-path--deleted:hover,
+  .file-path--deleted:focus-visible {
+    text-decoration: line-through underline;
   }
 
   .file-stats {

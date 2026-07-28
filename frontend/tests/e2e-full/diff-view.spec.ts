@@ -2269,6 +2269,50 @@ test.describe("diff view", () => {
     await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(path);
   });
 
+  test("concealed path characters remain escaped and cannot reach the clipboard", async ({
+    page,
+    context,
+    browserName,
+  }) => {
+    test.skip(browserName !== "chromium", "Clipboard read assertions require Chromium permissions");
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    const path = "src/safe\ufe0fpayload.ts";
+    const concealedDiff: DiffResult = {
+      ...smallDiff,
+      files: smallDiff.files.map((file, index) => (index === 0 ? { ...file, path, old_path: path } : file)),
+    };
+    await mockDiffApi(page, concealedDiff);
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+    await page.evaluate(() => navigator.clipboard.writeText("unchanged"));
+
+    const pathButton = page.locator(`.diff-file[data-file-path="${path}"] .file-path`);
+    await expect(pathButton).toHaveText("src/safe\\ufe0fpayload.ts");
+    await expect(pathButton).toHaveAttribute("aria-disabled", "true");
+
+    await pathButton.click({ force: true });
+
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe("unchanged");
+  });
+
+  test("deleted file paths retain line-through while hovered and focused", async ({ page }) => {
+    await mockDiffApi(page, smallDiff);
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+
+    const pathButton = page.locator('.diff-file[data-file-path="internal/legacy/old_handler.go"] .file-path');
+    const decorations = () => pathButton.evaluate((element) => getComputedStyle(element).textDecorationLine.split(" "));
+
+    await pathButton.hover();
+    await expect.poll(decorations).toContain("line-through");
+    await expect.poll(decorations).toContain("underline");
+
+    await page.mouse.move(0, 0);
+    await pathButton.focus();
+    await expect.poll(decorations).toContain("line-through");
+    await expect.poll(decorations).toContain("underline");
+  });
+
   test("more menu collapses and expands all visible diffs", async ({ page }) => {
     await mockDiffApi(page, smallDiff);
     await navigateToDiff(page);

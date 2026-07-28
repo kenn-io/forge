@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"go.kenn.io/middleman/internal/db"
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/platform"
 	"go.kenn.io/middleman/internal/platform/gitlab"
@@ -57,6 +58,7 @@ func TestGitLabProviderSyncPersistsAndRetainsInaccessibleItems(t *testing.T) {
 	}`
 	var issueOpen atomic.Bool
 	issueOpen.Store(true)
+	var mrMerged atomic.Bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.EscapedPath() {
@@ -72,6 +74,19 @@ func TestGitLabProviderSyncPersistsAndRetainsInaccessibleItems(t *testing.T) {
 				"created_at": "2026-06-01T00:00:00Z", "updated_at": "2026-06-02T00:00:00Z"
 			}]`))
 		case "/api/v4/projects/42/merge_requests/8":
+			if mrMerged.Load() {
+				_, _ = w.Write([]byte(`{
+					"id": 1001, "iid": 8, "project_id": 42,
+					"title": "merged MR", "state": "merged",
+					"author": {"username": "lin"}, "merge_user": {"username": "maintainer"},
+					"source_branch": "feature", "target_branch": "main", "sha": "abc123",
+					"merged_at": "2026-06-03T00:00:00Z",
+					"merge_commit_sha": "merge-sha", "squash_commit_sha": "squash-sha",
+					"web_url": "https://gitlab.example.com/group/project/-/merge_requests/8",
+					"created_at": "2026-06-01T00:00:00Z", "updated_at": "2026-06-03T00:00:00Z"
+				}`))
+				return
+			}
 			_, _ = w.Write([]byte(`{
 				"id": 1001, "iid": 8, "project_id": 42,
 				"title": "open MR", "state": "opened",
@@ -191,6 +206,46 @@ func TestGitLabProviderSyncPersistsAndRetainsInaccessibleItems(t *testing.T) {
 	require.NotEmpty(threads, "inline review threads must persist through the neutral path")
 	assert.Equal("inline", threads[0].ProviderThreadID)
 
+	repoRow, err := d.GetRepoByIdentity(ctx, platform.DBRepoIdentity(platform.RepoRef{
+		Platform: repo.Platform, Host: repo.PlatformHost, Owner: repo.Owner,
+		Name: repo.Name, RepoPath: repo.RepoPath,
+	}))
+	require.NoError(err)
+	require.NotNil(repoRow)
+	mrMerged.Store(true)
+	mergedMR, err := client.GetMergeRequest(ctx, platform.RepoRef{
+		Platform: repo.Platform, Host: repo.PlatformHost, Owner: repo.Owner,
+		Name: repo.Name, RepoPath: repo.RepoPath, PlatformID: 42,
+	}, 8)
+	require.NoError(err)
+	_, err = d.UpsertMergeRequest(ctx, platform.DBMergeRequest(repoRow.ID, mergedMR))
+	require.NoError(err)
+	storedMergedMR, err := d.GetMergeRequest(
+		ctx, "gitlab", "gitlab.example.com", "group", "project", 8,
+	)
+	require.NoError(err)
+	require.NotNil(storedMergedMR)
+	assert.Equal("merge-sha", storedMergedMR.MergeCommitSHA)
+
+	tx, err := d.ReadDB().BeginTx(ctx, nil)
+	require.NoError(err)
+	activity, err := db.LoadArchiveReportActivity(
+		ctx, tx, []int64{repoRow.ID},
+		time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC),
+		time.Date(2026, 6, 4, 0, 0, 0, 0, time.UTC),
+	)
+	require.NoError(err)
+	require.NoError(tx.Commit())
+	var mergedActivity *db.ArchiveReportActivityRow
+	for i := range activity {
+		if activity[i].Kind == db.ArchiveReportActivityMergeRequestMerged {
+			mergedActivity = &activity[i]
+			break
+		}
+	}
+	require.NotNil(mergedActivity)
+	assert.Equal("merge-sha", mergedActivity.MergeCommitSHA)
+
 	// Second cycle: the issue leaves the open inventory and its item fetch
 	// turns 404 while the project stays readable. The canonical lookup
 	// classifies this as inaccessible; the sync must retain the cached row
@@ -220,4 +275,106 @@ func TestGitLabProviderSyncPersistsAndRetainsInaccessibleItems(t *testing.T) {
 		"the cached row must keep its content")
 	assert.Equal("open", retained.State,
 		"the cached row must not be flipped by an inaccessible refresh")
+}
+
+func TestGitLabArchiveIssueLifecyclePersistsCloseActorInReport(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	closedAt := time.Date(2026, 6, 3, 12, 0, 0, 0, time.UTC)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.EscapedPath() {
+		case "/api/v4/projects/42/issues/7":
+			_, _ = w.Write([]byte(`{
+				"id": 2001, "iid": 7, "project_id": 42,
+				"title": "closed issue", "state": "closed",
+				"author": {"username": "author"},
+				"closed_at": "2026-06-03T12:00:00Z",
+				"web_url": "https://gitlab.example.com/group/project/-/issues/7",
+				"created_at": "2026-06-01T00:00:00Z",
+				"updated_at": "2026-06-03T12:00:00Z"
+			}`))
+		case "/api/v4/projects/42/issues/7/discussions":
+			_, _ = w.Write([]byte(`[
+				{"id": "ordinary", "notes": [{
+					"id": 301, "body": "ordinary comment", "author": {"username": "commenter"},
+					"created_at": "2026-06-02T10:00:00Z"
+				}]},
+				{"id": "lifecycle", "notes": [{
+					"id": 302, "body": "closed", "system": true,
+					"author": {"username": "closer"},
+					"created_at": "2026-06-03T12:00:00Z"
+				}]}
+			]`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client, err := gitlab.NewClient(
+		"gitlab.example.com", staticGitLabToken("token"),
+		gitlab.WithBaseURLForTesting(server.URL+"/api/v4"),
+		gitlab.WithoutRetriesForTesting(),
+	)
+	require.NoError(err)
+	registry, err := ghclient.NewProviderRegistry(nil, client)
+	require.NoError(err)
+	repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
+		Platform: "gitlab", PlatformHost: "gitlab.example.com",
+		PlatformRepoID: "42", Owner: "group", Name: "project",
+		RepoPath: "group/project",
+	})
+	require.NoError(err)
+	repo := ghclient.RepoRef{
+		Platform: platform.KindGitLab, PlatformHost: "gitlab.example.com",
+		PlatformRepoID: 42, PlatformExternalID: "42", RepoID: repoID,
+		Owner: "group", Name: "project", RepoPath: "group/project",
+	}
+	syncer := ghclient.NewSyncerWithRegistry(
+		registry, database, nil, []ghclient.RepoRef{repo},
+		time.Minute, nil, nil,
+	)
+
+	providerAttempted, err := syncer.SyncArchiveItem(
+		ghclient.WithArchiveSyncBudget(ctx),
+		platform.RepoRef{
+			Platform: platform.KindGitLab, Host: "gitlab.example.com",
+			PlatformID: 42, PlatformExternalID: "42",
+			Owner: "group", Name: "project", RepoPath: "group/project",
+		},
+		db.ArchiveItemTypeIssue, 7,
+	)
+	require.NoError(err)
+	assert.True(providerAttempted)
+
+	issue, err := database.GetIssue(
+		ctx, "gitlab", "gitlab.example.com", "group", "project", 7,
+	)
+	require.NoError(err)
+	require.NotNil(issue)
+	require.NotNil(issue.ClosedAt)
+	assert.Equal(closedAt, *issue.ClosedAt)
+
+	events, err := database.ListIssueEvents(ctx, issue.ID)
+	require.NoError(err)
+	require.Len(events, 2)
+	assert.Equal("closed", events[0].EventType)
+	assert.Equal("closer", events[0].Author)
+
+	tx, err := database.ReadDB().BeginTx(ctx, nil)
+	require.NoError(err)
+	activity, err := db.LoadArchiveReportActivity(
+		ctx, tx, []int64{repoID},
+		time.Date(2026, 6, 3, 0, 0, 0, 0, time.UTC),
+		time.Date(2026, 6, 4, 0, 0, 0, 0, time.UTC),
+	)
+	require.NoError(err)
+	require.NoError(tx.Commit())
+	require.Len(activity, 1)
+	assert.Equal(db.ArchiveReportActivityIssueClosed, activity[0].Kind)
+	assert.Equal("closer", activity[0].Actor)
 }

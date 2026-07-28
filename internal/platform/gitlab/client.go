@@ -275,6 +275,7 @@ func (c *Client) Capabilities() platform.Capabilities {
 		ReadCI:                 true,
 		ReadLabels:             true,
 		ReadMarkdownImages:     true,
+		ReadAuthenticatedUser:  true,
 		CommentMutation:        true,
 		StateMutation:          true,
 		MergeMutation:          true,
@@ -302,6 +303,20 @@ func (c *Client) Capabilities() platform.Capabilities {
 			platform.ReviewActionApprove,
 		},
 	}
+}
+
+func (c *Client) AuthenticatedUser(
+	ctx context.Context,
+	_ platform.RepoRef,
+) (string, error) {
+	user, _, err := c.api.Users.CurrentUser(gitlab.WithContext(ctx))
+	if err != nil {
+		return "", c.mapGitLabError("read_authenticated_user", err)
+	}
+	if user == nil || strings.TrimSpace(user.Username) == "" {
+		return "", errors.New("authenticated GitLab username is empty")
+	}
+	return strings.TrimSpace(user.Username), nil
 }
 
 func (c *Client) GetRepository(ctx context.Context, ref platform.RepoRef) (platform.Repository, error) {
@@ -540,7 +555,17 @@ func (c *Client) ListIssueEvents(
 	ref platform.RepoRef,
 	number int,
 ) ([]platform.IssueEvent, error) {
-	return c.ListIssueComments(ctx, ref, number)
+	pid, normalizedRef, err := c.projectScopedArg(ctx, ref)
+	if err != nil {
+		return nil, err
+	}
+	discussions, err := c.listIssueDiscussions(ctx, pid, normalizedRef, number)
+	if err != nil {
+		return nil, err
+	}
+	return NormalizeIssueDiscussions(
+		normalizedRef, number, gitLabIssueURL(normalizedRef, number), discussions,
+	), nil
 }
 
 func (c *Client) ListOpenIssues(ctx context.Context, ref platform.RepoRef) ([]platform.Issue, error) {
@@ -595,7 +620,9 @@ func (c *Client) ListIssueComments(ctx context.Context, ref platform.RepoRef, nu
 	if err != nil {
 		return nil, err
 	}
-	return NormalizeIssueDiscussions(normalizedRef, number, gitLabIssueURL(normalizedRef, number), discussions), nil
+	return normalizeIssueDiscussionComments(
+		normalizedRef, number, gitLabIssueURL(normalizedRef, number), discussions,
+	), nil
 }
 
 func (c *Client) listIssueDiscussions(

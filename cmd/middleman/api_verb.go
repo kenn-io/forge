@@ -1,14 +1,16 @@
 package main
 
 import (
+	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
+	"github.com/spf13/cobra"
 	"go.kenn.io/middleman/internal/config"
 )
 
@@ -40,51 +42,96 @@ type apiVerbError struct {
 
 func (e *apiVerbError) Error() string { return e.err.Error() }
 
-func runAPICLI(args []string, stdout io.Writer, stdin io.Reader) error {
-	fs := flag.NewFlagSet("middleman api", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	configPath := fs.String(
-		"config", config.DefaultConfigPath(),
-		"path to config file",
-	)
-	data := fs.String(
-		"d", "",
-		"request body; use @- to read the body from stdin",
-	)
-	timeout := fs.Duration(
-		"timeout", 60*time.Second,
-		"request timeout",
-	)
-	includeStatus := fs.Bool(
-		"i", false,
-		"prefix the output with an HTTP status line and a blank line,"+
-			" so relays can recover the exact status code",
-	)
-	if err := fs.Parse(args); err != nil {
+type apiVerbOptions struct {
+	configPath    string
+	data          string
+	timeout       time.Duration
+	includeStatus bool
+}
+
+func newAPIVerbCommand(
+	stdin io.Reader,
+	stdout io.Writer,
+	controlRequest func(context.Context, string, string, url.Values, []string) error,
+) *cobra.Command {
+	opts := apiVerbOptions{}
+	cmd := &cobra.Command{
+		Use:   "api METHOD PATH [body...]",
+		Short: "Relay one request to the running daemon",
+		Long: "Relay one request to the running daemon. Use `middleman api list` " +
+			"to discover available operations.",
+		Args: func(cmd *cobra.Command, args []string) error {
+			if len(args) < 2 {
+				return &apiVerbError{apiVerbExitNoRequest, fmt.Errorf(
+					"usage: middleman api [flags] METHOD PATH",
+				)}
+			}
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if useControlAPIMode(cmd, args) {
+				if err := rejectRelayFlagsInControlMode(cmd); err != nil {
+					return err
+				}
+				return controlRequest(cmd.Context(), args[0], args[1], nil, args[2:])
+			}
+			return runAPIVerb(args[0], args[1], opts, stdout, stdin)
+		},
+	}
+	cmd.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
 		return &apiVerbError{apiVerbExitNoRequest, err}
+	})
+	cmd.Flags().StringVar(&opts.configPath, "config", config.DefaultConfigPath(), "path to config file")
+	cmd.Flags().StringVarP(&opts.data, "data", "d", "", "request body; use @- to read the body from stdin")
+	cmd.Flags().DurationVar(&opts.timeout, "timeout", 60*time.Second, "request timeout")
+	cmd.Flags().BoolVarP(
+		&opts.includeStatus,
+		"include",
+		"i",
+		false,
+		"prefix output with an HTTP status line and a blank line",
+	)
+	return cmd
+}
+
+func rejectRelayFlagsInControlMode(cmd *cobra.Command) error {
+	for _, name := range []string{"config", "data", "include", "timeout"} {
+		if cmd.Flags().Changed(name) {
+			return &apiVerbError{
+				code: apiVerbExitNoRequest,
+				err:  fmt.Errorf("--%s cannot be used with API control mode", name),
+			}
+		}
 	}
-	if fs.NArg() != 2 {
-		return &apiVerbError{apiVerbExitNoRequest, fmt.Errorf(
-			"usage: middleman api [flags] METHOD PATH",
-		)}
+	return nil
+}
+
+func useControlAPIMode(cmd *cobra.Command, args []string) bool {
+	if len(args) > 2 {
+		return true
 	}
-	method := strings.ToUpper(fs.Arg(0))
-	path := fs.Arg(1)
+	flags := cmd.Root().PersistentFlags()
+	return flags.Changed("server") || flags.Changed("output") || flags.Changed("timeout")
+}
+
+func runAPIVerb(method, requestPath string, opts apiVerbOptions, stdout io.Writer, stdin io.Reader) error {
+	method = strings.ToUpper(method)
+	path := requestPath
 	if !strings.HasPrefix(path, "/") {
 		path = "/" + path
 	}
 
-	daemon, err := discoverDaemonHTTP(*configPath, *timeout)
+	daemon, err := discoverDaemonHTTP(opts.configPath, opts.timeout)
 	if err != nil {
 		return &apiVerbError{apiVerbExitNoRequest, err}
 	}
 
 	var body io.Reader
 	switch {
-	case *data == "@-":
+	case opts.data == "@-":
 		body = stdin
-	case *data != "":
-		body = strings.NewReader(*data)
+	case opts.data != "":
+		body = strings.NewReader(opts.data)
 	}
 
 	url := daemon.BaseURL + path
@@ -105,7 +152,7 @@ func runAPICLI(args []string, stdout io.Writer, stdin io.Reader) error {
 			fmt.Errorf("request failed: %w", err)}
 	}
 	defer resp.Body.Close()
-	if *includeStatus {
+	if opts.includeStatus {
 		if _, err := fmt.Fprintf(
 			stdout, "%s %s\r\n\r\n", resp.Proto, resp.Status,
 		); err != nil {

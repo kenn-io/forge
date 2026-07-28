@@ -55,12 +55,18 @@ vi.mock("@middleman/ui", async () => {
   const Stub = (await import("./lib/testing/AppViewStub.svelte")).default;
   return {
     Provider,
+    WorkspaceCreateSplitButton: Stub,
     PRListView: Stub,
     IssueListView: Stub,
     ActivityFeedView: Stub,
     MobileActivityView: Stub,
     ReviewsView: Stub,
     FocusListView: Stub,
+    getStores: () => ({
+      settings: {
+        getLaunchTargets: () => [],
+      },
+    }),
     normalizeRepoFilterSelection: (repo: string | undefined) => repo,
   };
 });

@@ -106,6 +106,13 @@ prebundled: keep it in vite `optimizeDeps.exclude` with transitive deps as
   Provider-mode repo selector visibility must not move the tab row; non-provider
   modes reserve its footprint unless embed config hides it
   (`frontend/src/lib/components/layout/AppHeader.svelte::reserveProviderRepoSelectorSlot`).
+- `FitStages`: how an action row degrades under pressure (labelled `Button`
+  row to `IconButton` row), never a media query or a wrapping group. Inside a
+  `flex-wrap` row the host needs `flex: 1 1 0` *and* a `min-width` at the
+  compact stage's intrinsic width: grow otherwise leaves the host narrower
+  than that stage, and the icons paint over the sibling that should have
+  wrapped instead. Every stage must expose the same accessible names
+  (`packages/ui/src/components/roborev/ReviewDrawer.svelte::.footer-actions-fit`).
 - Flash: one shared store (`@middleman/ui/stores/flash`); kit `FlashBanner`
   mounts once per shell in a page-level fixed layer below measured shell chrome
   and above modal backdrops, never inside feature containers; headerless shells
@@ -177,6 +184,14 @@ Intent:
 - semantic action styling instead of per-screen button CSS
 
 If a new repeated button treatment is needed, extend `ActionButton` rather than creating another local button pattern.
+
+### Comment composers
+
+Every comment composer insets its submit button at the bottom-right *inside* the input
+and reserves that footprint as the input's bottom padding — never a button in a column
+beside the field. Three surfaces repeat this shell today (`CommentBox.svelte`,
+`IssueCommentBox.svelte`, `roborev/ResponseList.svelte`); extract it into a shared
+component instead of adding a fourth copy.
 
 ### Modal primitives
 
@@ -347,6 +362,14 @@ Default color intent:
 - red: failure, conflict, destructive status
 - blue: focus, active controls, informational emphasis
 - teal: workspace/worktree-linked state
+
+## Serialized payload fields
+
+Never render a serialized payload string (JSON blob, opaque struct dump) as UI text.
+Parse it in a named util and show labeled human-readable stats, with the unabbreviated
+values in a `title`. Abbreviate the hover values by significant digits, not fixed
+decimals — a fixed scale rounds small magnitudes to a meaningless zero
+(`packages/ui/src/utils/roborev-usage.ts` for roborev `token_usage`).
 
 ## Implementation guidance
 

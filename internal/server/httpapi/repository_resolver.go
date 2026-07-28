@@ -295,6 +295,7 @@ func ProviderCapabilitiesFromPlatform(caps platform.Capabilities) ProviderCapabi
 		ReadCI:                      caps.ReadCI,
 		ReadLabels:                  caps.ReadLabels,
 		ReadMarkdownImages:          caps.ReadMarkdownImages,
+		ReadAuthenticatedUser:       caps.ReadAuthenticatedUser,
 		CommentMutation:             caps.CommentMutation,
 		StateMutation:               caps.StateMutation,
 		MergeMutation:               caps.MergeMutation,

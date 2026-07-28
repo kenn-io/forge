@@ -21,6 +21,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/agent-hooks/{agent}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Receive agent lifecycle hook */
+        post: operations["receive-agent-hook"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/archive/pause": {
         parameters: {
             query?: never;
@@ -4368,6 +4385,22 @@ export interface components {
             key: string;
             label: string;
         };
+        AgentHookOutput: {
+            hookSpecificOutput: components["schemas"]["AgentHookSpecificOutput"];
+        };
+        AgentHookResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/AgentHookResponse.json
+             */
+            readonly $schema?: string;
+            hook_output?: components["schemas"]["AgentHookOutput"];
+        };
+        AgentHookSpecificOutput: {
+            additionalContext: string;
+            hookEventName: string;
+        };
         ApplyReviewSuggestionHostInputBody: {
             /**
              * Format: uri
@@ -4431,6 +4464,10 @@ export interface components {
             /** @enum {string} */
             inline_comments: "unknown" | "supported" | "unsupported";
             /** @enum {string} */
+            issues: "unknown" | "supported" | "unsupported";
+            /** @enum {string} */
+            merge_requests: "unknown" | "supported" | "unsupported";
+            /** @enum {string} */
             reviews: "unknown" | "supported" | "unsupported";
         };
         ArchiveFailureResponse: {
@@ -4463,12 +4500,22 @@ export interface components {
             unsupported_items: number;
         };
         ArchiveReportActivityResponse: {
+            actor?: string;
+            /** Format: int64 */
+            additions?: number;
             author: string;
             body: string;
             /** Format: int64 */
+            comments?: number;
+            /** Format: int64 */
+            deletions?: number;
+            /** Format: int64 */
+            files_changed?: number;
+            /** Format: int64 */
             item_number: number;
             /** @enum {string} */
-            kind: "issue" | "merge_request" | "ordinary_comment" | "review" | "inline_review_comment";
+            kind: "issue" | "issue_closed" | "merge_request" | "merge_request_merged" | "ordinary_comment" | "review" | "inline_review_comment";
+            merge_commit_sha?: string;
             /** Format: date-time */
             occurred_at: string;
             provider_external_id: string;
@@ -4486,7 +4533,11 @@ export interface components {
             /** Format: int64 */
             inline_review_comments: number;
             /** Format: int64 */
+            issues_closed: number;
+            /** Format: int64 */
             issues_opened: number;
+            /** Format: int64 */
+            merge_requests_merged: number;
             /** Format: int64 */
             merge_requests_opened: number;
             /** Format: int64 */
@@ -4510,8 +4561,12 @@ export interface components {
             initial_completed_at?: string;
             /** @enum {string} */
             inline_comments: "unknown" | "supported" | "unsupported";
+            /** @enum {string} */
+            issues: "unknown" | "supported" | "unsupported";
             /** Format: date-time */
             maintenance_succeeded_at?: string;
+            /** @enum {string} */
+            merge_requests: "unknown" | "supported" | "unsupported";
             /** @enum {string} */
             operator_state: "active" | "paused";
             /** @enum {string} */
@@ -4538,6 +4593,7 @@ export interface components {
             /** Format: date-time */
             end: string;
             repositories: components["schemas"]["ArchiveReportRepositoryResponse"][] | null;
+            schema: string;
             /** Format: date-time */
             start: string;
             totals: components["schemas"]["ArchiveReportCountsResponse"];
@@ -5371,6 +5427,22 @@ export interface components {
             /** Format: int64 */
             score: number;
         };
+        HookEvent: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/HookEvent.json
+             */
+            readonly $schema?: string;
+            agent_id?: string;
+            cwd: string;
+            hook_event_name: string;
+            notification_type?: string;
+            session_id: string;
+            tool_name?: string;
+        } & {
+            [key: string]: unknown;
+        };
         HostDiagnostic: {
             blocksOperations: string[] | null;
             code: string;
@@ -6018,6 +6090,8 @@ export interface components {
             Deletions: number;
             /** Format: date-time */
             DetailFetchedAt: string | null;
+            /** Format: int64 */
+            FilesChanged: number | null;
             HeadBranch: string;
             HeadRepoCloneURL: string;
             /** Format: int64 */
@@ -6028,6 +6102,7 @@ export interface components {
             KanbanStatus: "new" | "reviewing" | "waiting" | "awaiting_merge";
             /** Format: date-time */
             LastActivityAt: string;
+            MergeCommitSHA: string;
             MergeableState: string;
             /** Format: date-time */
             MergedAt: string | null;
@@ -6125,6 +6200,8 @@ export interface components {
             CreatedAt: string;
             /** Format: int64 */
             Deletions: number;
+            /** Format: int64 */
+            FilesChanged: number | null;
             HeadBranch: string;
             HeadRepoCloneURL: string;
             /** Format: int64 */
@@ -6135,6 +6212,7 @@ export interface components {
             KanbanStatus: "new" | "reviewing" | "waiting" | "awaiting_merge";
             /** Format: date-time */
             LastActivityAt: string;
+            MergeCommitSHA: string;
             MergeableState: string;
             /** Format: date-time */
             MergedAt: string | null;
@@ -6479,6 +6557,7 @@ export interface components {
             merge_mutation: boolean;
             mutation_head_binding: boolean;
             native_multiline_ranges: boolean;
+            read_authenticated_user: boolean;
             read_ci: boolean;
             read_comments: boolean;
             read_issues: boolean;
@@ -7372,6 +7451,7 @@ export interface components {
             pull_requests: components["schemas"]["PullRequests"];
             repos: components["schemas"]["ConfiguredRepoStatus"][];
             terminal: components["schemas"]["Terminal"];
+            workspaces: components["schemas"]["Workspaces"];
         };
         Snapshot: {
             /**
@@ -7591,6 +7671,7 @@ export interface components {
             modes?: components["schemas"]["ModeVisibility"];
             pull_requests?: components["schemas"]["PullRequests"];
             terminal?: components["schemas"]["Terminal"];
+            workspaces?: components["schemas"]["Workspaces"];
         };
         UserRepository: {
             default_branch?: string;
@@ -7660,7 +7741,7 @@ export interface components {
              * @description Hook-reported aggregate state for live agent sessions. Omitted when no live session has reported lifecycle state.
              * @enum {string}
              */
-            agent_state?: "idle" | "working" | "input" | "approval";
+            agent_state?: "idle" | "working" | "input" | "approval" | "done";
             /**
              * Format: date-time
              * @description UTC timestamp of the hook report that produced agent_state.
@@ -7672,6 +7753,8 @@ export interface components {
             commits_ahead?: number;
             /** Format: int64 */
             commits_behind?: number;
+            /** @description True when this response represents a workspace newly created by this request; absent when an existing workspace was returned or on reads. */
+            created?: boolean;
             created_at: string;
             /** @description Combined error from the most recent reconciliation attempt; populated component fields may still contain last-known-good values. */
             enrichment_error?: string;
@@ -7696,6 +7779,11 @@ export interface components {
             mr_ci_status?: string;
             /** Format: int64 */
             mr_deletions?: number;
+            /**
+             * @description Set only for pull_request workspaces: same_repo when the PR head is confirmed to be in the base repo, fork when it is a confirmed fork clone, unknown when repository identity could not be resolved.
+             * @enum {string}
+             */
+            mr_head_repo_kind?: "same_repo" | "fork" | "unknown";
             mr_is_draft?: boolean;
             mr_review_decision?: string;
             mr_state?: string;
@@ -7721,6 +7809,9 @@ export interface components {
             readonly $schema?: string;
             launch_targets: components["schemas"]["LaunchTarget"][] | null;
             sessions: components["schemas"]["SessionInfo"][] | null;
+        };
+        Workspaces: {
+            auto_assign_on_create: boolean;
         };
         WorktreeFromMergeRequestResponse: {
             /**
@@ -7841,6 +7932,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ActivityResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "receive-agent-hook": {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Middleman-Runtime-Session-Key"?: string;
+            };
+            path: {
+                agent: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HookEvent"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentHookResponse"];
                 };
             };
             /** @description Error */
@@ -17590,11 +17718,15 @@ export const activityTime_rangeValues: ReadonlyArray<FlattenedDeepRequired<compo
 export const activityView_modeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Activity"]["view_mode"]> = ["flat", "threaded"];
 export const archiveCoverageResponseCommentsValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArchiveCoverageResponse"]["comments"]> = ["unknown", "supported", "unsupported"];
 export const archiveCoverageResponseInline_commentsValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArchiveCoverageResponse"]["inline_comments"]> = ["unknown", "supported", "unsupported"];
+export const archiveCoverageResponseIssuesValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArchiveCoverageResponse"]["issues"]> = ["unknown", "supported", "unsupported"];
+export const archiveCoverageResponseMerge_requestsValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArchiveCoverageResponse"]["merge_requests"]> = ["unknown", "supported", "unsupported"];
 export const archiveCoverageResponseReviewsValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArchiveCoverageResponse"]["reviews"]> = ["unknown", "supported", "unsupported"];
-export const archiveReportActivityResponseKindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArchiveReportActivityResponse"]["kind"]> = ["issue", "merge_request", "ordinary_comment", "review", "inline_review_comment"];
+export const archiveReportActivityResponseKindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArchiveReportActivityResponse"]["kind"]> = ["issue", "issue_closed", "merge_request", "merge_request_merged", "ordinary_comment", "review", "inline_review_comment"];
 export const archiveReportCoverageResponseCollection_modeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArchiveReportCoverageResponse"]["collection_mode"]> = ["discovery", "full"];
 export const archiveReportCoverageResponseCommentsValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArchiveReportCoverageResponse"]["comments"]> = ["unknown", "supported", "unsupported"];
 export const archiveReportCoverageResponseInline_commentsValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArchiveReportCoverageResponse"]["inline_comments"]> = ["unknown", "supported", "unsupported"];
+export const archiveReportCoverageResponseIssuesValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArchiveReportCoverageResponse"]["issues"]> = ["unknown", "supported", "unsupported"];
+export const archiveReportCoverageResponseMerge_requestsValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArchiveReportCoverageResponse"]["merge_requests"]> = ["unknown", "supported", "unsupported"];
 export const archiveReportCoverageResponseOperator_stateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArchiveReportCoverageResponse"]["operator_state"]> = ["active", "paused"];
 export const archiveReportCoverageResponseReviewsValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArchiveReportCoverageResponse"]["reviews"]> = ["unknown", "supported", "unsupported"];
 export const archiveReportCoverageResponseStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArchiveReportCoverageResponse"]["status"]> = ["running", "waiting_for_budget", "current", "partial", "paused", "blocked"];
@@ -17612,5 +17744,6 @@ export const mergeRequestResponseStateValues: ReadonlyArray<FlattenedDeepRequire
 export const problemErrorCodeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ProblemError"]["code"]> = ["badRequest", "branchConflict", "branchInUse", "branchProtected", "commentNotFound", "conflict", "destinationExists", "forbidden", "hookFailed", "internalError", "issueNotFound", "notFound", "payloadTooLarge", "projectNotFound", "pullNotFound", "rateLimited", "repoNotFound", "serviceUnavailable", "settingsUnavailable", "toolMissing", "toolUnauthenticated", "unauthorized", "unsupportedCapability", "upstreamError", "validationError", "workspaceDirectoryNotReusable", "workspaceNotFound", "worktreeDirty"];
 export const terminalRendererValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Terminal"]["renderer"]> = ["xterm", "ghostty-web"];
 export const workflowStateMetaResponseStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["WorkflowStateMetaResponse"]["status"]> = ["new", "reviewing", "waiting", "awaiting_merge"];
-export const workspaceResponseAgent_stateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["WorkspaceResponse"]["agent_state"]> = ["idle", "working", "input", "approval"];
+export const workspaceResponseAgent_stateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["WorkspaceResponse"]["agent_state"]> = ["idle", "working", "input", "approval", "done"];
 export const workspaceResponseEnrichment_statusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["WorkspaceResponse"]["enrichment_status"]> = ["not_applicable", "pending", "fresh", "stale", "failed"];
+export const workspaceResponseMr_head_repo_kindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["WorkspaceResponse"]["mr_head_repo_kind"]> = ["same_repo", "fork", "unknown"];

@@ -28,15 +28,26 @@ func (f *fakeTelemetry) Close() error { return nil }
 
 func (f *fakeTelemetry) Enabled() bool { return f.enabled }
 
+func newTelemetryTestServer(t *testing.T, telemetry *fakeTelemetry) *Server {
+	t.Helper()
+	options := ServerOptions{}
+	if telemetry != nil {
+		options.Telemetry = telemetry
+	}
+	srv := New(
+		openTestDB(t), nil, nil, "/", nil,
+		options,
+	)
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	return srv
+}
+
 func TestCaptureTelemetryEvent_QueuesEvent(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
 	telemetry := &fakeTelemetry{enabled: true}
-	srv := New(
-		openTestDB(t), nil, nil, "/", nil,
-		ServerOptions{Telemetry: telemetry},
-	)
+	srv := newTelemetryTestServer(t, telemetry)
 
 	req := httptest.NewRequest(
 		http.MethodPost,
@@ -64,7 +75,7 @@ func TestCaptureTelemetryEvent_ReturnsDisabledWhenTelemetryUnavailable(t *testin
 	assert := assert.New(t)
 	require := require.New(t)
 
-	srv := New(openTestDB(t), nil, nil, "/", nil, ServerOptions{})
+	srv := newTelemetryTestServer(t, nil)
 	req := httptest.NewRequest(
 		http.MethodPost,
 		"/api/v1/telemetry/events",
@@ -86,7 +97,7 @@ func TestCaptureTelemetryEvent_ReturnsDisabledWhenTelemetryUnavailable(t *testin
 func TestCaptureTelemetryEvent_RejectsMissingEvent(t *testing.T) {
 	assert := assert.New(t)
 
-	srv := New(openTestDB(t), nil, nil, "/", nil, ServerOptions{})
+	srv := newTelemetryTestServer(t, nil)
 	req := httptest.NewRequest(
 		http.MethodPost,
 		"/api/v1/telemetry/events",
@@ -104,7 +115,7 @@ func TestCaptureTelemetryEvent_RejectsMissingEvent(t *testing.T) {
 func TestCaptureTelemetryEvent_RejectsUnsupportedEvent(t *testing.T) {
 	assert := assert.New(t)
 
-	srv := New(openTestDB(t), nil, nil, "/", nil, ServerOptions{})
+	srv := newTelemetryTestServer(t, nil)
 	req := httptest.NewRequest(
 		http.MethodPost,
 		"/api/v1/telemetry/events",

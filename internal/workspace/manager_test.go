@@ -376,7 +376,7 @@ func TestRefreshWorkspaceHeadRepo(t *testing.T) {
 			}
 			mgr := NewManager(d, t.TempDir())
 
-			err := mgr.refreshWorkspaceHeadRepo(t.Context(), ws)
+			err := mgr.RefreshWorkspaceHeadRepo(t.Context(), ws)
 
 			require.NoError(err)
 			switch {
@@ -391,6 +391,305 @@ func TestRefreshWorkspaceHeadRepo(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestRefreshWorkspaceHeadRepoPersistsUnknownWhenRepoIsMissing(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	ws := &Workspace{
+		ID:           "ws-missing-repo",
+		Platform:     "github",
+		PlatformHost: "github.com",
+		RepoOwner:    "acme",
+		RepoName:     "missing",
+		ItemType:     db.WorkspaceItemTypePullRequest,
+		ItemNumber:   42,
+		GitHeadRef:   "feature/thing",
+		WorktreePath: t.TempDir(),
+		Status:       "ready",
+	}
+	require.NoError(d.InsertWorkspace(t.Context(), ws))
+	mgr := NewManager(d, t.TempDir())
+
+	require.NoError(mgr.RefreshWorkspaceHeadRepo(t.Context(), ws))
+
+	require.NotNil(ws.MRHeadRepo)
+	assert.Empty(*ws.MRHeadRepo)
+	stored, err := d.GetWorkspace(t.Context(), ws.ID)
+	require.NoError(err)
+	require.NotNil(stored)
+	require.NotNil(stored.MRHeadRepo)
+	assert.Empty(*stored.MRHeadRepo)
+}
+
+func TestRefreshWorkspaceHeadRepoPreservesTrustAfterRepositoryRename(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	providerRepoID := "gid://gitlab/Project/42"
+	repoID, err := d.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+		Platform:       "gitlab",
+		PlatformHost:   "gitlab.com",
+		PlatformRepoID: providerRepoID,
+		Owner:          "old-group",
+		Name:           "old-name",
+	})
+	require.NoError(err)
+	oldSameRepoURL := "https://gitlab.com/old-group/old-name.git"
+	seedMRWithHeadRepo(t, d, repoID, 42, "feature/thing", oldSameRepoURL)
+	ws := &Workspace{
+		ID:           "ws-renamed-repo",
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.com",
+		RepoOwner:    "old-group",
+		RepoName:     "old-name",
+		ItemType:     db.WorkspaceItemTypePullRequest,
+		ItemNumber:   42,
+		GitHeadRef:   "feature/thing",
+		WorktreePath: t.TempDir(),
+		Status:       "ready",
+	}
+	require.NoError(d.InsertWorkspace(ctx, ws))
+
+	_, err = d.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+		Platform:       "gitlab",
+		PlatformHost:   "gitlab.com",
+		PlatformRepoID: providerRepoID,
+		Owner:          "new-group",
+		Name:           "new-name",
+	})
+	require.NoError(err)
+
+	mgr := NewManager(d, t.TempDir())
+	require.NoError(mgr.RefreshWorkspaceHeadRepo(ctx, ws))
+
+	assert.Equal("new-group", ws.RepoOwner)
+	assert.Equal("new-name", ws.RepoName)
+	assert.Nil(ws.MRHeadRepo)
+	stored, err := d.GetWorkspace(ctx, ws.ID)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal("new-group", stored.RepoOwner)
+	assert.Equal("new-name", stored.RepoName)
+	assert.Nil(stored.MRHeadRepo)
+}
+
+func TestRefreshWorkspaceHeadRepoBlocksRepositoryReconciliation(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	providerRepoID := "gid://gitlab/Project/42"
+	sourceID, err := d.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+		Platform:       "gitlab",
+		PlatformHost:   "gitlab.com",
+		PlatformRepoID: providerRepoID,
+		Owner:          "old-group",
+		Name:           "old-name",
+	})
+	require.NoError(err)
+	forkURL := "https://gitlab.com/contributor/widget.git"
+	seedMRWithHeadRepo(t, d, sourceID, 42, "feature/thing", forkURL)
+	_, err = d.UpsertRepo(ctx, db.RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.com",
+		Owner:        "new-group",
+		Name:         "new-name",
+	})
+	require.NoError(err)
+	ws := &Workspace{
+		ID:           "ws-reconciliation-barrier",
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.com",
+		RepoOwner:    "old-group",
+		RepoName:     "old-name",
+		ItemType:     db.WorkspaceItemTypePullRequest,
+		ItemNumber:   42,
+		GitHeadRef:   "feature/thing",
+		WorktreePath: t.TempDir(),
+		Status:       "ready",
+	}
+	require.NoError(d.InsertWorkspace(ctx, ws))
+
+	snapshotRead := make(chan struct{})
+	continueRefresh := make(chan struct{})
+	var signalSnapshot sync.Once
+	mgr := NewManager(d, t.TempDir())
+	mgr.afterHeadRepoSnapshotRead = func() {
+		signalSnapshot.Do(func() { close(snapshotRead) })
+		<-continueRefresh
+	}
+	refreshDone := make(chan error, 1)
+	go func() {
+		refreshDone <- mgr.RefreshWorkspaceHeadRepo(ctx, ws)
+	}()
+	select {
+	case <-snapshotRead:
+	case <-time.After(5 * time.Second):
+		require.Fail("head-repository refresh did not reach snapshot read")
+	}
+
+	writeLockAttempted := make(chan struct{})
+	restoreWriteLockHook := d.SetBeforeRepositoryReconciliationWriteLockForTest(
+		func() { close(writeLockAttempted) },
+	)
+	defer restoreWriteLockHook()
+	reconciliationDone := make(chan error, 1)
+	go func() {
+		_, upsertErr := d.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+			Platform:       "gitlab",
+			PlatformHost:   "gitlab.com",
+			PlatformRepoID: providerRepoID,
+			Owner:          "new-group",
+			Name:           "new-name",
+		})
+		reconciliationDone <- upsertErr
+	}()
+	select {
+	case <-writeLockAttempted:
+	case <-time.After(5 * time.Second):
+		require.Fail("repository reconciliation did not attempt its write lock")
+	}
+	select {
+	case upsertErr := <-reconciliationDone:
+		require.NoError(upsertErr)
+		require.Fail("repository reconciliation bypassed the active refresh barrier")
+	default:
+	}
+
+	close(continueRefresh)
+	select {
+	case refreshErr := <-refreshDone:
+		require.NoError(refreshErr)
+	case <-time.After(5 * time.Second):
+		require.Fail("head-repository refresh did not finish")
+	}
+	select {
+	case upsertErr := <-reconciliationDone:
+		require.NoError(upsertErr)
+	case <-time.After(5 * time.Second):
+		require.Fail("repository reconciliation did not resume")
+	}
+
+	stored, err := d.GetWorkspace(ctx, ws.ID)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal("new-group", stored.RepoOwner)
+	assert.Equal("new-name", stored.RepoName)
+	require.NotNil(stored.MRHeadRepo)
+	assert.Equal(forkURL, *stored.MRHeadRepo)
+}
+
+func TestRefreshWorkspaceHeadRepoRetriesWhenMissingRepoAppears(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	ws := &Workspace{
+		ID:           "ws-repo-appears",
+		Platform:     "github",
+		PlatformHost: "github.com",
+		RepoOwner:    "acme",
+		RepoName:     "widget",
+		ItemType:     db.WorkspaceItemTypePullRequest,
+		ItemNumber:   42,
+		GitHeadRef:   "feature/thing",
+		WorktreePath: t.TempDir(),
+		Status:       "ready",
+	}
+	require.NoError(d.InsertWorkspace(t.Context(), ws))
+	mgr := NewManager(d, t.TempDir())
+	forkURL := "https://github.com/contributor/widget.git"
+	var repoCreated bool
+	mgr.afterHeadRepoSnapshotRead = func() {
+		if repoCreated {
+			return
+		}
+		repoCreated = true
+		repoID := seedRepo(t, d, "github.com", "acme", "widget")
+		seedMRWithHeadRepo(
+			t, d, repoID, ws.ItemNumber, ws.GitHeadRef, forkURL,
+		)
+	}
+
+	require.NoError(mgr.RefreshWorkspaceHeadRepo(t.Context(), ws))
+
+	assert.True(repoCreated)
+	require.NotNil(ws.MRHeadRepo)
+	assert.Equal(forkURL, *ws.MRHeadRepo)
+	stored, err := d.GetWorkspace(t.Context(), ws.ID)
+	require.NoError(err)
+	require.NotNil(stored)
+	require.NotNil(stored.MRHeadRepo)
+	assert.Equal(forkURL, *stored.MRHeadRepo)
+}
+
+func TestRefreshWorkspaceHeadRepoSnapshotRetriesAfterRevisionChange(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	repoID := seedRepo(t, d, "github.com", "acme", "widget")
+	seedMRWithHeadRepo(
+		t,
+		d,
+		repoID,
+		42,
+		"feature/thing",
+		"https://github.com/acme/widget.git",
+	)
+	ws := &Workspace{
+		ID:           "ws-refresh-head-repo-race",
+		Platform:     "github",
+		PlatformHost: "github.com",
+		RepoOwner:    "acme",
+		RepoName:     "widget",
+		ItemType:     db.WorkspaceItemTypePullRequest,
+		ItemNumber:   42,
+		GitHeadRef:   "feature/thing",
+		WorktreePath: t.TempDir(),
+		Status:       "ready",
+	}
+	require.NoError(d.InsertWorkspace(t.Context(), ws))
+
+	mgr := NewManager(d, t.TempDir())
+	var advanced bool
+	mgr.afterHeadRepoSnapshotRead = func() {
+		if advanced {
+			return
+		}
+		advanced = true
+		current, err := d.GetMergeRequestByRepoIDAndNumber(
+			t.Context(), repoID, ws.ItemNumber,
+		)
+		require.NoError(err)
+		require.NotNil(current)
+		updated := *current
+		updated.HeadRepoCloneURL = "https://github.com/forker/widget.git"
+		updated.UpdatedAt = updated.UpdatedAt.Add(time.Minute)
+		updated.LastActivityAt = updated.UpdatedAt
+		_, accepted, err := d.UpsertMergeRequestSnapshot(t.Context(), &updated)
+		require.NoError(err)
+		require.True(accepted)
+	}
+
+	snapshot, err := mgr.RefreshWorkspaceHeadRepoSnapshot(t.Context(), ws)
+
+	require.NoError(err)
+	require.NotNil(snapshot)
+	require.NotNil(snapshot.MRHeadRepo)
+	assert.Equal("https://github.com/forker/widget.git", *snapshot.MRHeadRepo)
+	latest, err := d.GetMergeRequestByRepoIDAndNumber(
+		t.Context(), repoID, ws.ItemNumber,
+	)
+	require.NoError(err)
+	require.NotNil(latest)
+	assert.Equal(latest.SnapshotRevision, snapshot.SnapshotRevision)
+	stored, err := d.GetWorkspace(t.Context(), ws.ID)
+	require.NoError(err)
+	require.NotNil(stored)
+	require.NotNil(stored.MRHeadRepo)
+	assert.Equal("https://github.com/forker/widget.git", *stored.MRHeadRepo)
 }
 
 func TestCreateIssueDefaultBranchSluggified(t *testing.T) {

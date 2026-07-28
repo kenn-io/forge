@@ -65,6 +65,13 @@ type MergeRequestViewerResolver interface {
 	ViewerAuthoredMergeRequest(ctx context.Context, mr MergeRequest) (bool, error)
 }
 
+// AuthenticatedUserResolver returns the username attached to the provider
+// credential used for a repository. The repository matters for providers
+// whose credential routing can vary by owner or repository.
+type AuthenticatedUserResolver interface {
+	AuthenticatedUser(ctx context.Context, ref RepoRef) (string, error)
+}
+
 type IssueReader interface {
 	ListOpenIssues(ctx context.Context, ref RepoRef) ([]Issue, error)
 	GetIssue(ctx context.Context, ref RepoRef, number int) (Issue, error)

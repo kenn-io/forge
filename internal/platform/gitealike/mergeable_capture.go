@@ -55,6 +55,31 @@ func (c *MergeableCache) MergeableForPullRequest(htmlURL, headSHA, baseSHA strin
 	return &value, true
 }
 
+type PullRequestMetrics struct {
+	Additions      int
+	AdditionsKnown bool
+	Deletions      int
+	DeletionsKnown bool
+	FilesChanged   *int
+}
+
+func (c *MergeableCache) MetricsForPullRequest(
+	htmlURL, headSHA, baseSHA string,
+) (PullRequestMetrics, bool) {
+	if c == nil || htmlURL == "" {
+		return PullRequestMetrics{}, false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	entry, ok := c.byHTMLURL[htmlURL]
+	if !ok || !entry.matches(headSHA, baseSHA) || entry.metrics == nil {
+		return PullRequestMetrics{}, false
+	}
+	metrics := *entry.metrics
+	metrics.FilesChanged = cloneIntPointer(metrics.FilesChanged)
+	return metrics, true
+}
+
 func (c *MergeableCache) capturePullRequest(item mergeableCaptureItem) {
 	if item.HTMLURL == "" {
 		return
@@ -64,6 +89,7 @@ func (c *MergeableCache) capturePullRequest(item mergeableCaptureItem) {
 	defer c.mu.Unlock()
 	c.byHTMLURL[item.HTMLURL] = mergeableCacheEntry{
 		mergeable: item.mergeableValue(),
+		metrics:   item.metricsValue(),
 		headSHA:   item.Head.SHA,
 		baseSHA:   item.Base.SHA,
 	}
@@ -74,6 +100,9 @@ type mergeableCaptureItem struct {
 	Mergeable json.RawMessage        `json:"mergeable"`
 	Head      mergeableCaptureBranch `json:"head"`
 	Base      mergeableCaptureBranch `json:"base"`
+	Additions *int                   `json:"additions"`
+	Deletions *int                   `json:"deletions"`
+	Changed   *int                   `json:"changed_files"`
 }
 
 type mergeableCaptureBranch struct {
@@ -91,8 +120,37 @@ func (item mergeableCaptureItem) mergeableValue() *bool {
 	return &value
 }
 
+func (item mergeableCaptureItem) metricsValue() *PullRequestMetrics {
+	if item.Additions == nil && item.Deletions == nil && item.Changed == nil {
+		return nil
+	}
+	return &PullRequestMetrics{
+		Additions:      intPointerValue(item.Additions),
+		AdditionsKnown: item.Additions != nil,
+		Deletions:      intPointerValue(item.Deletions),
+		DeletionsKnown: item.Deletions != nil,
+		FilesChanged:   cloneIntPointer(item.Changed),
+	}
+}
+
+func intPointerValue(value *int) int {
+	if value == nil {
+		return 0
+	}
+	return *value
+}
+
+func cloneIntPointer(value *int) *int {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
+}
+
 type mergeableCacheEntry struct {
 	mergeable *bool
+	metrics   *PullRequestMetrics
 	headSHA   string
 	baseSHA   string
 }

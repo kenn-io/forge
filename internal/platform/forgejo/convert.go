@@ -44,31 +44,40 @@ func convertRepository(repo *forgejosdk.Repository) (gitealike.RepositoryDTO, er
 	}, nil
 }
 
-func convertPullRequest(pr *forgejosdk.PullRequest, mergeable *bool) gitealike.PullRequestDTO {
+func convertPullRequest(
+	pr *forgejosdk.PullRequest,
+	mergeable *bool,
+	metrics gitealike.PullRequestMetrics,
+) gitealike.PullRequestDTO {
 	if pr == nil {
 		return gitealike.PullRequestDTO{}
 	}
 	return gitealike.PullRequestDTO{
-		ID:        pr.ID,
-		Index:     int(pr.Index),
-		HTMLURL:   pr.HTMLURL,
-		Title:     pr.Title,
-		User:      convertUser(pr.Poster),
-		State:     string(pr.State),
-		Draft:     forgejoDraftFromTitle(pr.Title),
-		IsLocked:  pr.IsLocked,
-		Body:      pr.Body,
-		Head:      convertBranch(pr.Head),
-		Base:      convertBranch(pr.Base),
-		Labels:    convertLabels(pr.Labels),
-		Comments:  pr.Comments,
-		Mergeable: mergeable,
-		Created:   timeValue(pr.Created),
-		Updated:   timeValue(pr.Updated),
-		Merged:    pr.HasMerged,
-		MergedAt:  timePtrValue(pr.Merged),
-		MergedBy:  convertUser(pr.MergedBy),
-		Closed:    timePtrValue(pr.Closed),
+		ID:             pr.ID,
+		Index:          int(pr.Index),
+		HTMLURL:        pr.HTMLURL,
+		Title:          pr.Title,
+		User:           convertUser(pr.Poster),
+		State:          string(pr.State),
+		Draft:          forgejoDraftFromTitle(pr.Title),
+		IsLocked:       pr.IsLocked,
+		Body:           pr.Body,
+		Head:           convertBranch(pr.Head),
+		Base:           convertBranch(pr.Base),
+		Labels:         convertLabels(pr.Labels),
+		Comments:       pr.Comments,
+		Mergeable:      mergeable,
+		Additions:      metrics.Additions,
+		AdditionsKnown: metrics.AdditionsKnown,
+		Deletions:      metrics.Deletions,
+		DeletionsKnown: metrics.DeletionsKnown,
+		FilesChanged:   metrics.FilesChanged,
+		Created:        timeValue(pr.Created),
+		Updated:        timeValue(pr.Updated),
+		Merged:         pr.HasMerged,
+		MergedAt:       timePtrValue(pr.Merged),
+		MergedBy:       convertUser(pr.MergedBy),
+		Closed:         timePtrValue(pr.Closed),
 		// The Forgejo SDK pull request has no requested-reviewers
 		// field, so RequestedReviewers stays nil (unknown) and
 		// persistence keeps the last value middleman recorded.
@@ -240,14 +249,19 @@ func convertRepositories(
 func convertPullRequests(
 	prs []*forgejosdk.PullRequest,
 	mergeableFor func(*forgejosdk.PullRequest) *bool,
+	metricsFor func(*forgejosdk.PullRequest) gitealike.PullRequestMetrics,
 ) []gitealike.PullRequestDTO {
 	out := make([]gitealike.PullRequestDTO, 0, len(prs))
 	for _, pr := range prs {
 		var mergeable *bool
+		var metrics gitealike.PullRequestMetrics
 		if mergeableFor != nil {
 			mergeable = mergeableFor(pr)
 		}
-		out = append(out, convertPullRequest(pr, mergeable))
+		if metricsFor != nil {
+			metrics = metricsFor(pr)
+		}
+		out = append(out, convertPullRequest(pr, mergeable, metrics))
 	}
 	return out
 }

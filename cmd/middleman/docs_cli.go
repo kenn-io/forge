@@ -2,71 +2,76 @@ package main
 
 import (
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/spf13/cobra"
 	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/docs"
 )
 
 func runDocsCLI(args []string, stdout io.Writer) error {
-	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
-		printDocsCLIUsage(stdout)
-		if len(args) == 0 {
-			return fmt.Errorf("missing docs subcommand")
-		}
-		return nil
-	}
-	switch args[0] {
-	case "list-folders":
-		return runDocsListFolders(args[1:], stdout)
-	case "add-folder":
-		return runDocsAddFolder(args[1:], stdout)
-	case "remove-folder":
-		return runDocsRemoveFolder(args[1:], stdout)
-	default:
-		printDocsCLIUsage(stdout)
-		return fmt.Errorf("unknown docs subcommand %q", args[0])
-	}
+	cmd := newDocsCommand(stdout)
+	cmd.SetOut(stdout)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs(normalizeSingleDashLongFlags(args))
+	cmd.SilenceErrors = true
+	cmd.SilenceUsage = true
+	return cmd.Execute()
 }
 
-func printDocsCLIUsage(w io.Writer) {
-	_, _ = fmt.Fprintln(w, "Usage: middleman docs <subcommand> [flags]")
-	_, _ = fmt.Fprintln(w)
-	_, _ = fmt.Fprintln(w, "Subcommands:")
-	_, _ = fmt.Fprintln(w, "  list-folders            List configured docs folders")
-	_, _ = fmt.Fprintln(w, "  add-folder <path>       Register a docs folder rooted at path")
-	_, _ = fmt.Fprintln(w, "  remove-folder <id>      Drop a docs folder from the config")
-	_, _ = fmt.Fprintln(w)
-	_, _ = fmt.Fprintln(w, "Global flags:")
-	_, _ = fmt.Fprintln(w, "  -config <path>      Override config file")
+func newDocsCommand(out io.Writer) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "docs",
+		Short: "Manage documentation folders",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return cmd.Help()
+		},
+	}
+	cmd.AddCommand(
+		newDocsListFoldersCommand(out),
+		newDocsAddFolderCommand(out),
+		newDocsRemoveFolderCommand(out),
+	)
+	return cmd
 }
 
 func runDocsListFolders(args []string, out io.Writer) error {
-	fs := flag.NewFlagSet("middleman docs list-folders", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	configPath := fs.String("config", config.DefaultConfigPath(), "path to config file")
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-	if fs.NArg() > 0 {
-		return fmt.Errorf("docs list-folders takes no positional args")
-	}
+	cmd := newDocsListFoldersCommand(out)
+	cmd.SetArgs(normalizeSingleDashLongFlags(args))
+	cmd.SilenceErrors = true
+	cmd.SilenceUsage = true
+	return cmd.Execute()
+}
 
-	cfg, err := config.Load(*configPath)
+func newDocsListFoldersCommand(out io.Writer) *cobra.Command {
+	var configPath string
+	cmd := &cobra.Command{
+		Use:   "list-folders",
+		Short: "List configured documentation folders",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return listDocsFolders(configPath, out)
+		},
+	}
+	cmd.Flags().StringVar(&configPath, "config", config.DefaultConfigPath(), "path to config file")
+	return cmd
+}
+
+func listDocsFolders(configPath string, out io.Writer) error {
+	cfg, err := config.Load(configPath)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) && *configPath == config.DefaultConfigPath() {
+		if errors.Is(err, os.ErrNotExist) && configPath == config.DefaultConfigPath() {
 			_, _ = fmt.Fprintln(out, "(no config file found)")
 			_, _ = fmt.Fprintln(out, "(no folders configured)")
 			return nil
 		}
 		return fmt.Errorf("load config: %w", err)
 	}
-	_, _ = fmt.Fprintf(out, "config: %s\n", *configPath)
+	_, _ = fmt.Fprintf(out, "config: %s\n", configPath)
 	if len(cfg.DocFolders) == 0 {
 		_, _ = fmt.Fprintln(out, "(no folders configured)")
 		return nil
@@ -82,20 +87,32 @@ func runDocsListFolders(args []string, out io.Writer) error {
 }
 
 func runDocsAddFolder(args []string, out io.Writer) error {
-	fs := flag.NewFlagSet("middleman docs add-folder", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	configPath := fs.String("config", config.DefaultConfigPath(), "path to config file")
-	id := fs.String("id", "", "folder id")
-	name := fs.String("name", "", "display name")
-	daemon := fs.String("daemon", "", "bind to a specific Kata daemon id")
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-	if fs.NArg() != 1 {
-		return fmt.Errorf("usage: middleman docs add-folder [flags] <path>")
-	}
+	cmd := newDocsAddFolderCommand(out)
+	cmd.SetArgs(normalizeSingleDashLongFlags(args))
+	cmd.SilenceErrors = true
+	cmd.SilenceUsage = true
+	return cmd.Execute()
+}
 
-	rawPath, err := expandDocsHome(fs.Arg(0))
+func newDocsAddFolderCommand(out io.Writer) *cobra.Command {
+	var configPath, id, name, daemon string
+	cmd := &cobra.Command{
+		Use:   "add-folder PATH",
+		Short: "Register a documentation folder",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return addDocsFolder(configPath, id, name, daemon, args[0], out)
+		},
+	}
+	cmd.Flags().StringVar(&configPath, "config", config.DefaultConfigPath(), "path to config file")
+	cmd.Flags().StringVar(&id, "id", "", "folder id")
+	cmd.Flags().StringVar(&name, "name", "", "display name")
+	cmd.Flags().StringVar(&daemon, "daemon", "", "bind to a specific Kata daemon id")
+	return cmd
+}
+
+func addDocsFolder(configPath, id, name, daemon, path string, out io.Writer) error {
+	rawPath, err := expandDocsHome(path)
 	if err != nil {
 		return fmt.Errorf("expand path: %w", err)
 	}
@@ -111,15 +128,15 @@ func runDocsAddFolder(args []string, out io.Writer) error {
 		return fmt.Errorf("%s is not a directory", abs)
 	}
 
-	if err := config.EnsureDefault(*configPath); err != nil {
+	if err := config.EnsureDefault(configPath); err != nil {
 		return fmt.Errorf("ensure config: %w", err)
 	}
-	cfg, err := config.Load(*configPath)
+	cfg, err := config.Load(configPath)
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
 
-	folderID := strings.TrimSpace(*id)
+	folderID := strings.TrimSpace(id)
 	if folderID == "" {
 		folderID = docs.DeriveFolderID(abs, cfg.DocFolders)
 	}
@@ -128,7 +145,7 @@ func runDocsAddFolder(args []string, out io.Writer) error {
 			return fmt.Errorf("folder id %q already exists; pass --id to choose another", folderID)
 		}
 	}
-	folderName := strings.TrimSpace(*name)
+	folderName := strings.TrimSpace(name)
 	if folderName == "" {
 		folderName = filepath.Base(abs)
 	}
@@ -137,32 +154,43 @@ func runDocsAddFolder(args []string, out io.Writer) error {
 		ID:     folderID,
 		Name:   folderName,
 		Path:   abs,
-		Daemon: strings.TrimSpace(*daemon),
+		Daemon: strings.TrimSpace(daemon),
 	})
-	if err := cfg.Save(*configPath); err != nil {
+	if err := cfg.Save(configPath); err != nil {
 		return fmt.Errorf("save config: %w", err)
 	}
 	_, _ = fmt.Fprintf(out, "added folder %q (%s) at %s\n", folderID, folderName, abs)
-	_, _ = fmt.Fprintf(out, "config saved to %s\n", *configPath)
+	_, _ = fmt.Fprintf(out, "config saved to %s\n", configPath)
 	return nil
 }
 
 func runDocsRemoveFolder(args []string, out io.Writer) error {
-	fs := flag.NewFlagSet("middleman docs remove-folder", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	configPath := fs.String("config", config.DefaultConfigPath(), "path to config file")
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-	if fs.NArg() != 1 {
-		return fmt.Errorf("usage: middleman docs remove-folder [flags] <id>")
-	}
+	cmd := newDocsRemoveFolderCommand(out)
+	cmd.SetArgs(normalizeSingleDashLongFlags(args))
+	cmd.SilenceErrors = true
+	cmd.SilenceUsage = true
+	return cmd.Execute()
+}
 
-	cfg, err := config.Load(*configPath)
+func newDocsRemoveFolderCommand(out io.Writer) *cobra.Command {
+	var configPath string
+	cmd := &cobra.Command{
+		Use:   "remove-folder ID",
+		Short: "Remove a documentation folder",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return removeDocsFolder(configPath, args[0], out)
+		},
+	}
+	cmd.Flags().StringVar(&configPath, "config", config.DefaultConfigPath(), "path to config file")
+	return cmd
+}
+
+func removeDocsFolder(configPath, id string, out io.Writer) error {
+	cfg, err := config.Load(configPath)
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
-	id := fs.Arg(0)
 	idx := -1
 	for i, folder := range cfg.DocFolders {
 		if folder.ID == id {
@@ -171,15 +199,15 @@ func runDocsRemoveFolder(args []string, out io.Writer) error {
 		}
 	}
 	if idx < 0 {
-		return fmt.Errorf("folder %q not found in %s", id, *configPath)
+		return fmt.Errorf("folder %q not found in %s", id, configPath)
 	}
 	removed := cfg.DocFolders[idx]
 	cfg.DocFolders = append(cfg.DocFolders[:idx], cfg.DocFolders[idx+1:]...)
-	if err := cfg.Save(*configPath); err != nil {
+	if err := cfg.Save(configPath); err != nil {
 		return fmt.Errorf("save config: %w", err)
 	}
 	_, _ = fmt.Fprintf(out, "removed folder %q (%s)\n", removed.ID, removed.Path)
-	_, _ = fmt.Fprintf(out, "config saved to %s\n", *configPath)
+	_, _ = fmt.Fprintf(out, "config saved to %s\n", configPath)
 	return nil
 }
 

@@ -39,12 +39,10 @@ func discoverDaemonHTTP(configPath string, timeout time.Duration) (daemonHTTPCli
 	if err != nil {
 		return daemonHTTPClient{}, err
 	}
-	transport := http.RoundTripper(http.DefaultTransport)
 	baseURL := fmt.Sprintf("http://%s%s", status.Metadata.ListenAddr, prefix)
-	if token != "" {
-		transport = bearerTransport{
-			token: token, origin: "http://" + status.Metadata.ListenAddr, base: transport,
-		}
+	transport := daemonOriginTransport{
+		token: token, origin: "http://" + status.Metadata.ListenAddr,
+		forwardedHost: status.Metadata.ListenAddr, base: http.DefaultTransport,
 	}
 	return daemonHTTPClient{
 		BaseURL: baseURL,
@@ -52,20 +50,27 @@ func discoverDaemonHTTP(configPath string, timeout time.Duration) (daemonHTTPCli
 	}, nil
 }
 
-type bearerTransport struct {
-	token  string
-	origin string
-	base   http.RoundTripper
+type daemonOriginTransport struct {
+	token         string
+	origin        string
+	forwardedHost string
+	base          http.RoundTripper
 }
 
-func (t bearerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+func (t daemonOriginTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	request := req.Clone(req.Context())
 	request.Header = req.Header.Clone()
 	requestOrigin := request.URL.Scheme + "://" + request.URL.Host
 	if strings.EqualFold(requestOrigin, t.origin) {
-		request.Header.Set("Authorization", "Bearer "+t.token)
+		if t.token != "" {
+			request.Header.Set("Authorization", "Bearer "+t.token)
+		}
+		if t.forwardedHost != "" {
+			request.Header.Set("X-Forwarded-Host", t.forwardedHost)
+		}
 	} else {
 		request.Header.Del("Authorization")
+		request.Header.Del("X-Forwarded-Host")
 	}
 	return t.base.RoundTrip(request)
 }

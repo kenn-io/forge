@@ -142,7 +142,17 @@ func (s *Service) EnsureConfigured(ctx context.Context, refs []platform.RepoRef)
 		return err
 	}
 	ids := resolvedRepoIDs(resolved)
-	return s.db.ReconcileDiscoveryArchives(ctx, ids, s.now())
+	if err := s.db.ReconcileDiscoveryArchives(ctx, ids, s.now()); err != nil {
+		return err
+	}
+	for _, repo := range resolved {
+		if err := s.db.ReconcileArchiveCoverage(
+			ctx, repo.ID, archiveCoverage(repo.Capabilities), s.now(),
+		); err != nil {
+			return err
+		}
+	}
+	return s.db.RequeueArchiveLifecycleDetails(ctx, ids, s.now())
 }
 
 // RetryAuthentication makes credential-blocked repositories eligible after a
@@ -171,7 +181,7 @@ func (s *Service) Start(ctx context.Context, refs []platform.RepoRef) ([]Status,
 		return nil, err
 	}
 	for _, repo := range resolved {
-		if err := s.db.SetArchiveCoverage(ctx, repo.ID, archiveCoverage(repo.Capabilities), s.now()); err != nil {
+		if err := s.db.ReconcileArchiveCoverage(ctx, repo.ID, archiveCoverage(repo.Capabilities), s.now()); err != nil {
 			return nil, err
 		}
 	}
@@ -380,6 +390,8 @@ func resolvedRepoIDs(repos []resolvedRepository) []int64 {
 
 func archiveCoverage(caps platform.ArchiveCapabilities) db.ArchiveCoverageSet {
 	return db.ArchiveCoverageSet{
+		Issues:         coverageValue(caps.HistoricalIssues),
+		MergeRequests:  coverageValue(caps.HistoricalMergeRequests),
 		Comments:       coverageValue(caps.OrdinaryComments),
 		Reviews:        coverageValue(caps.SubmittedReviews),
 		InlineComments: coverageValue(caps.InlineReviewComments),

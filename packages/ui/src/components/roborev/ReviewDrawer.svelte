@@ -1,5 +1,16 @@
 <script lang="ts">
-  import { BottomDock, copyToClipboard } from "@kenn-io/kit-ui";
+  import {
+    BottomDock,
+    Button,
+    FitStages,
+    IconButton,
+    copyToClipboard,
+  } from "@kenn-io/kit-ui";
+  import BanIcon from "@lucide/svelte/icons/ban";
+  import CircleCheckIcon from "@lucide/svelte/icons/circle-check";
+  import CopyIcon from "@lucide/svelte/icons/copy";
+  import RefreshIcon from "@lucide/svelte/icons/refresh-cw";
+  import Undo2Icon from "@lucide/svelte/icons/undo-2";
   import { getStores } from "../../context.js";
   import StatusBadge from "./StatusBadge.svelte";
   import VerdictBadge from "./VerdictBadge.svelte";
@@ -12,6 +23,11 @@
     isTerminalStatus,
     panelReviewHeader,
   } from "../../utils/roborev-panel.js";
+  import {
+    parseTokenUsage,
+    tokenUsageDetail,
+    tokenUsageStats,
+  } from "../../utils/roborev-usage.js";
 
   interface Props {
     activeTab?: "review" | "log" | "prompt";
@@ -87,6 +103,20 @@
   const reviewIsClosed = $derived(
     stores.roborevReview?.isClosed() ?? false,
   );
+
+  // Shared by both footer stages so the accessible name of an action never
+  // depends on how much room the drawer happens to have.
+  const closeLabel = $derived(
+    reviewIsClosed ? "Reopen" : "Close Review",
+  );
+  const closeTitle = $derived(
+    reviewIsClosed ? "Reopen review" : "Close review",
+  );
+
+  const tokenUsage = $derived(
+    parseTokenUsage(selectedJob?.token_usage),
+  );
+
   let interestedPanelRun: string | undefined;
 
   const selectedPanelRun = $derived(
@@ -270,46 +300,100 @@
   {/snippet}
 
   {#snippet footer()}
-    <div class="review-dock-footer">
-      <div class="footer-actions">
+    {#snippet labelledActions()}
+      <div class="footer-actions" role="group" aria-label="Review actions">
         {#if hasReview}
-          <button
-            class="action-btn"
+          <Button
+            size="sm"
             onclick={handleCloseReview}
-            title={reviewIsClosed
-              ? "Reopen review"
-              : "Close review"}
-          >
-            {reviewIsClosed ? "Reopen" : "Close Review"}
-          </button>
+            title={closeTitle}
+            label={closeLabel}
+          />
         {/if}
-        <button
-          class="action-btn"
+        <Button
+          size="sm"
           onclick={handleRerun}
           title="Rerun this job"
-        >
-          Rerun
-        </button>
+          label="Rerun"
+        />
         {#if canCancel}
-          <button
-            class="action-btn action-btn-danger"
+          <Button
+            size="sm"
+            tone="danger"
             onclick={handleCancel}
             title="Cancel this job"
-          >
-            Cancel
-          </button>
+            label="Cancel"
+          />
         {/if}
-        <button
-          class="action-btn"
+        <Button
+          size="sm"
           onclick={() => void copyOutput()}
           title="Copy review output"
-        >
-          Copy Output
-        </button>
+          label="Copy Output"
+        />
       </div>
-      {#if selectedJob?.token_usage}
-        <span class="token-usage">
-          {selectedJob.token_usage}
+    {/snippet}
+    {#snippet iconActions()}
+      <div class="footer-actions" role="group" aria-label="Review actions">
+        {#if hasReview}
+          <IconButton
+            size="sm"
+            ariaLabel={closeLabel}
+            title={closeTitle}
+            onclick={handleCloseReview}
+          >
+            {#if reviewIsClosed}
+              <Undo2Icon size={14} aria-hidden="true" />
+            {:else}
+              <CircleCheckIcon size={14} aria-hidden="true" />
+            {/if}
+          </IconButton>
+        {/if}
+        <IconButton
+          size="sm"
+          ariaLabel="Rerun"
+          title="Rerun this job"
+          onclick={handleRerun}
+        >
+          <RefreshIcon size={14} aria-hidden="true" />
+        </IconButton>
+        {#if canCancel}
+          <IconButton
+            size="sm"
+            tone="danger"
+            ariaLabel="Cancel"
+            title="Cancel this job"
+            onclick={handleCancel}
+          >
+            <BanIcon size={14} aria-hidden="true" />
+          </IconButton>
+        {/if}
+        <IconButton
+          size="sm"
+          ariaLabel="Copy Output"
+          title="Copy review output"
+          onclick={() => void copyOutput()}
+        >
+          <CopyIcon size={14} aria-hidden="true" />
+        </IconButton>
+      </div>
+    {/snippet}
+    <div class="review-dock-footer">
+      <FitStages
+        class="footer-actions-fit"
+        stages={[labelledActions, iconActions]}
+      />
+      {#if tokenUsage}
+        <span
+          class="token-usage"
+          title={tokenUsageDetail(tokenUsage)}
+        >
+          {#each tokenUsageStats(tokenUsage) as stat (stat.label)}
+            <span class="usage-stat">
+              <span class="usage-label">{stat.label}</span>
+              <span class="usage-value">{stat.value}</span>
+            </span>
+          {/each}
         </span>
       {/if}
     </div>
@@ -454,46 +538,53 @@
     justify-content: space-between;
     gap: 12px;
     width: 100%;
+    flex-wrap: wrap;
+  }
+
+  /* The actions stay one horizontal group; when the footer runs out of room
+   * the usage summary wraps below instead of stacking the buttons, and past
+   * that the group downgrades to icon-only rather than spilling out of the
+   * drawer. FitStages owns that swap by measurement, so its host must be
+   * sized by the footer and never by the stage it currently renders -- hence
+   * a zero flex basis. The floor is the icon row's own intrinsic width (four
+   * 24px controls plus their 8px gaps): declaring it makes a long usage
+   * summary wrap to a second line instead of squeezing the actions narrower
+   * than the most compact stage can draw. */
+  .review-dock-footer :global(.footer-actions-fit) {
+    flex: 1 1 0;
+    min-width: 120px;
   }
 
   .footer-actions {
     display: flex;
-    gap: 6px;
-    flex-wrap: wrap;
-  }
-
-  .action-btn {
-    padding: 4px 12px;
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-sm);
-    background: var(--bg-surface);
-    color: var(--text-primary);
-    font-size: var(--font-size-sm);
-    cursor: pointer;
-    white-space: nowrap;
-  }
-
-  .action-btn:hover {
-    background: var(--bg-surface-hover);
-  }
-
-  .action-btn-danger {
-    color: var(--review-failed);
-    border-color: var(--review-failed);
-  }
-
-  .action-btn-danger:hover {
-    background: color-mix(
-      in srgb,
-      var(--review-failed) 8%,
-      var(--bg-surface)
-    );
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
   }
 
   .token-usage {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+    overflow: hidden;
     font-size: var(--font-size-xs);
-    font-family: var(--font-mono);
     color: var(--text-muted);
     white-space: nowrap;
+  }
+
+  .usage-stat {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 4px;
+  }
+
+  .usage-label {
+    color: var(--text-muted);
+  }
+
+  .usage-value {
+    font-family: var(--font-mono);
+    color: var(--text-secondary);
   }
 </style>

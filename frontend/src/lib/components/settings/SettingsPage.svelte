@@ -14,6 +14,7 @@
   import FleetSettings from "./FleetSettings.svelte";
   import KataProjectMappingsSettings from "./KataProjectMappingsSettings.svelte";
   import PullRequestSettings from "./PullRequestSettings.svelte";
+  import WorkspaceSettings from "./WorkspaceSettings.svelte";
   import {
     beginTerminalSettingsHydration,
     hydrateTerminalSettings,
@@ -65,6 +66,7 @@
       settingsStore.setModeVisibility(settings.modes);
       hydrateTerminalSettings(terminalHydration, settings.terminal);
       settingsStore.setPullRequestSettings(settings.pull_requests);
+      settingsStore.setLaunchTargets(settings.launch_targets ?? []);
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -139,6 +141,13 @@
                 settingsStore.setPullRequestSettings(pull_requests);
               }}
             />
+          {:else if meta.id === "settings-workspaces"}
+            <WorkspaceSettings
+              workspaces={loaded.workspaces}
+              onUpdate={(workspaces) => {
+                settings = { ...settings!, workspaces };
+              }}
+            />
           {:else if meta.id === "settings-terminal"}
             <TerminalSettings
               terminal={loaded.terminal}
@@ -166,8 +175,14 @@
           {:else if meta.id === "settings-agents"}
             <AgentSettings
               agents={loaded.agents}
-              onUpdate={(agents) => {
-                settings = { ...settings!, agents };
+              launchTargets={loaded.launch_targets ?? []}
+              onUpdate={(agents, launchTargets) => {
+                settings = {
+                  ...settings!,
+                  agents,
+                  launch_targets: launchTargets,
+                };
+                settingsStore.setLaunchTargets(settings.launch_targets ?? []);
               }}
             />
           {:else if meta.id === "settings-fleet"}

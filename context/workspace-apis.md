@@ -242,12 +242,71 @@ Before writing, middleman ignores the generated path through the worktree's
 private exclude file, not tracked `.gitignore`. If the path would remain
 visible to Git, the write fails.
 
+The recomputed head-repo trust classification must be persisted back to the
+workspace row, not just held on the in-memory struct: a sync that turns a
+same-repo PR into a fork must not leave a stale same-repo row readable over
+the API. Setup/retry fails rather than reaching "ready" on a persist error
+(`internal/workspace/manager.go::RefreshWorkspaceHeadRepo`). The
+provider-neutral sync engine also funnels every accepted provider MR snapshot,
+including action responses, through one choke point that reclassifies tracking
+workspaces from the post-upsert stored row, so an unknown-head snapshot cannot
+downgrade an already-known fork classification. Unlike setup/retry, this path
+is best-effort — failures log and do not fail the sync
+(`internal/github/sync.go::CommitMergeRequestParentSnapshot` calls
+`reclassifyWorkspaceHeadRepoTrust`; exported classifier at
+`internal/workspace/manager.go::WorkspaceHeadRepo`).
+
+Head-repo classification writes retry under an MR revision guard, or an
+absence-aware repository guard when the repository row is missing. Parent
+snapshot commits use the per-MR snapshot lock; repository-ID reconciliation
+holds the exclusive side of the stable barrier that every snapshot lock holds
+shared, so moving an MR cannot change its lock identity during a snapshot
+commit (`internal/db/db.go::LockMergeRequestSnapshot`,
+`internal/db/queries.go::UpdateWorkspaceMRHeadRepoForMissingRepo`).
+Persisted-workspace refreshes reload by workspace ID while holding that same
+barrier through classification persistence, so repository renames cannot turn
+a known head into `unknown` (`internal/workspace/manager.go::RefreshWorkspaceHeadRepoSnapshot`).
+
+Workspace creation launches an agent only after an explicit target choice on
+the create split button. The one-shot target is reactive session state keyed by
+workspace ID; primary creation never launches, while an explicit fork-PR choice
+shares the ordinary manual Launch-menu trust boundary
+(`packages/ui/src/stores/workspace-create-pending.svelte.ts::queueWorkspaceLaunch`).
+The launch API accepts only the target and display region. Agent launches
+refresh and persist head-repository classification while preparing generated
+context, but classification does not authorize or block the launch
+(`internal/server/workspaceapi/routes_handlers.go::Handler.launchWorkspaceRuntimeSession`,
+`internal/workspace/agent_context.go::Manager.PrepareAgentLaunchContext`).
+Agent settings use the `agents` and `launch_targets` fields from `GET /settings`;
+the shared create split control consumes agent targets from the hydrated store
+(`packages/ui/src/components/workspace/WorkspaceCreateSplitButton.svelte::agentTargets`).
+A save replaces both fields from its response so command fixes update
+availability without a reload
+(`frontend/src/lib/components/settings/AgentSettings.svelte::save`).
+Startup (`frontend/src/lib/utils/appStartup.ts`) and a
+`config_changed` SSE hot reload (`packages/ui/src/Provider.svelte::reloadSettingsAfterConfigChange`,
+via `packages/ui/src/stores/settings-hydration.ts::applySettingsHydration`)
+both hydrate the same `GET /settings` fields into the settings/activity/issues
+stores from two separate call sites — a field added to one path and not the
+other silently goes stale after a config edit until the next full page load.
+
+Workspace create endpoints may return 202 with a pre-existing workspace
+(`internal/server/workspaceapi/routes_handlers.go::createIssueWorkspace`).
+
+- Automatic self-assignment is opt-in and applies only after a new PR/issue
+  workspace is persisted; preserve current assignees and never roll back the
+  workspace on upstream failure (`internal/server/workspaceapi/auto_assign.go::Handler.autoAssignWorkspaceItem`).
+
 ## Agent Activity Hooks
 
+- Agent hooks are thin daemon API clients; the daemon owns every activity
+  transition (`internal/server/workspaceapi/agent_hook.go::Handler.receiveAgentHook`).
+- Claude `SessionStart` context is regenerated from persisted workspace metadata,
+  never read from instruction files (`internal/workspace/agent_context.go::Manager.RenderAgentContextForWorktree`).
 - User-level hooks are single-target: install merges, uninstall preserves other
   handlers, and the last install wins (`internal/agentactivity/integration.go::Install`).
-- Matching live runtime/worktree reports use approval, input, working, idle priority;
-  latest state expires after 30 minutes or session exit, then tmux resumes (`internal/agentactivity/`, `internal/server/workspaceapi/lifecycle.go::Handler.HandleRuntimeSessionExit`).
+- Matching live runtime/worktree reports prioritize approval, input, working, done, then idle.
+  Stop/Interrupt stays `done` for the 30-minute report window; row activation acknowledges a versioned completion for the browser-tab session, while a new timestamp resurfaces (`internal/agentactivity/store.go::statePriority`, `frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte::openWorkspace`).
 - Hook installs require absolute data roots and update symlink targets instead of replacing
   config links; report/worktree matching uses canonical filesystem paths (`cmd/middleman/main.go::runAgentHookInstall`,
   `internal/agentactivity/integration.go::writeJSONObject`, `internal/agentactivity/store.go::canonicalWorkspacePath`).

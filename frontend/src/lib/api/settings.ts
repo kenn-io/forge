@@ -28,6 +28,7 @@ function normalizeUpdateRequest(settings: {
   activity?: Settings["activity"];
   issues?: Settings["issues"];
   pull_requests?: Settings["pull_requests"];
+  workspaces?: Settings["workspaces"];
   modes?: Settings["modes"];
   terminal?: Settings["terminal"];
   agents?: Settings["agents"];
@@ -42,6 +43,9 @@ function normalizeUpdateRequest(settings: {
   }
   if (settings.pull_requests) {
     request.pull_requests = settings.pull_requests;
+  }
+  if (settings.workspaces) {
+    request.workspaces = settings.workspaces;
   }
   if (settings.modes) {
     request.modes = settings.modes;
@@ -70,6 +74,7 @@ export async function updateSettings(settings: {
   activity?: Settings["activity"];
   issues?: Settings["issues"];
   pull_requests?: Settings["pull_requests"];
+  workspaces?: Settings["workspaces"];
   modes?: Settings["modes"];
   terminal?: Settings["terminal"];
   agents?: Settings["agents"];

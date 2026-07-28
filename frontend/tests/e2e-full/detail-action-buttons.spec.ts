@@ -88,7 +88,7 @@ test.describe("detail action buttons", () => {
         );
       });
 
-      await page.locator(".btn--workspace").click();
+      await page.getByRole("button", { name: "Create Workspace", exact: true }).click();
 
       const createResponse = await createResponsePromise;
       expect(createResponse.status()).toBe(202);
@@ -150,7 +150,7 @@ test.describe("detail action buttons", () => {
 
       // PullDetail renders the workspace action in both its wide and
       // narrow action layouts; only one is visible at a time.
-      await page.locator(".btn--workspace").filter({ visible: true }).click();
+      await page.getByRole("button", { name: "Create Workspace", exact: true }).filter({ visible: true }).click();
 
       const createResponse = await createResponsePromise;
       expect(createResponse.status()).toBe(202);
@@ -215,7 +215,7 @@ test.describe("detail action buttons", () => {
       const createResponsePromise = page.waitForResponse((response) => {
         return response.request().method() === "POST" && response.url() === `${server.info.base_url}/api/v1/workspaces`;
       });
-      await page.locator(".btn--workspace").filter({ visible: true }).click();
+      await page.getByRole("button", { name: "Create Workspace", exact: true }).filter({ visible: true }).click();
       const createResponse = await createResponsePromise;
       expect(createResponse.status()).toBe(202);
       const createdWorkspace = (await createResponse.json()) as WorkspaceStatusResponse;
@@ -346,7 +346,7 @@ test.describe("detail action buttons", () => {
     expect(syncResponse.status()).toBe(202);
     expect(new URL(syncResponse.url()).searchParams.has("platform_host")).toBe(false);
 
-    await page.locator(".btn--workspace").click();
+    await page.getByRole("button", { name: "Create Workspace", exact: true }).click();
     const createResponse = await createResponsePromise;
     expect(createResponse.status()).toBe(202);
     expect(createCalls).toBe(1);
@@ -483,7 +483,7 @@ test.describe("detail action buttons", () => {
       await page.goto("/issues/github/acme/widgets/10");
       await expect(page.locator(".issue-detail")).toBeVisible();
 
-      await page.locator(".btn--workspace").click();
+      await page.getByRole("button", { name: "Create Workspace", exact: true }).click();
 
       const dialog = page.getByRole("dialog", {
         name: scenario.existingDirectory ? "Existing Workspace Directory" : "Branch Name Conflict",
@@ -626,7 +626,7 @@ test.describe("detail action buttons", () => {
     await page.goto("/issues/github/acme/widgets/10");
     await expect(page.locator(".issue-detail")).toBeVisible();
 
-    await page.locator(".btn--workspace").click();
+    await page.getByRole("button", { name: "Create Workspace", exact: true }).click();
 
     const dialog = page.getByRole("dialog", {
       name: "Branch Name Conflict",

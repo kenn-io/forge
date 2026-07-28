@@ -24,6 +24,7 @@ import (
 	"go.kenn.io/middleman/internal/platform"
 	platformgithub "go.kenn.io/middleman/internal/platform/github"
 	"go.kenn.io/middleman/internal/tokenauth"
+	"go.kenn.io/middleman/internal/workspace"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -581,6 +582,9 @@ type Syncer struct {
 	commentRefreshMu         sync.Mutex
 	pendingPRCommentSyncs    []queuedPRCommentSync
 	pendingIssueCommentSyncs []queuedIssueCommentSync
+
+	afterMergeRequestParentSnapshotCommit func()
+	afterHeadRepoSnapshotRead             func()
 }
 
 type archiveProviderRequest struct {
@@ -1128,12 +1132,36 @@ func (s *Syncer) commitIssueParentSnapshot(
 	return s.db.UpsertIssueSnapshotWithLabels(ctx, issue)
 }
 
-func (s *Syncer) commitMergeRequestParentSnapshot(
+// CommitMergeRequestParentSnapshot is the single choke point every accepted
+// provider MR snapshot funnels through. Reclassifying workspace head-repo trust
+// here guarantees every path that can change an MR's head_repo_clone_url fans
+// that change out to a tracking workspace's mr_head_repo — see
+// reclassifyWorkspaceHeadRepoTrust.
+func (s *Syncer) CommitMergeRequestParentSnapshot(
 	ctx context.Context,
-	_ RepoRef,
+	repo RepoRef,
 	mr *db.MergeRequest,
 ) (int64, int64, bool, error) {
-	return s.db.UpsertMergeRequestSnapshotWithLabels(ctx, mr)
+	releaseReconciliation, err := s.db.LockRepositoryReconciliationRead(ctx)
+	if err != nil {
+		return 0, 0, false, err
+	}
+	defer releaseReconciliation()
+
+	mrID, revision, accepted, err :=
+		s.db.UpsertMergeRequestSnapshotWithLabelsUnderRepositoryReconciliationRead(
+			ctx, mr,
+		)
+	if err != nil || !accepted {
+		return mrID, revision, accepted, err
+	}
+	if s.afterMergeRequestParentSnapshotCommit != nil {
+		s.afterMergeRequestParentSnapshotCommit()
+	}
+	s.reclassifyWorkspaceHeadRepoTrustUnderRepositoryReconciliationRead(
+		ctx, repo, mr.RepoID, mr.Number,
+	)
+	return mrID, revision, accepted, err
 }
 
 func (s *Syncer) commitIssueCommentsSnapshot(
@@ -1290,6 +1318,10 @@ func (p *gitHubClientProvider) Capabilities() platform.Capabilities {
 	_, reviewers := p.client.(githubReviewerClient)
 	_, archivePages := p.client.(pageClient)
 	_, markdownImages := p.client.(markdownImageClient)
+	_, directViewer := p.client.(authenticatedViewerLoginClient)
+	_, routedViewer := p.client.(interface {
+		AuthenticatedViewerLoginForRepo(context.Context, string, string) (string, error)
+	})
 	return platform.Capabilities{
 		ReadRepositories:            true,
 		ReadMergeRequests:           true,
@@ -1299,6 +1331,7 @@ func (p *gitHubClientProvider) Capabilities() platform.Capabilities {
 		ReadCI:                      true,
 		ReadLabels:                  labels,
 		ReadMarkdownImages:          markdownImages,
+		ReadAuthenticatedUser:       directViewer || routedViewer,
 		ReadNotifications:           true,
 		CommentMutation:             true,
 		StateMutation:               true,
@@ -1331,6 +1364,13 @@ func (p *gitHubClientProvider) Capabilities() platform.Capabilities {
 			platform.ReviewActionRequestChanges,
 		},
 	}
+}
+
+func (p *gitHubClientProvider) AuthenticatedUser(
+	ctx context.Context,
+	ref platform.RepoRef,
+) (string, error) {
+	return p.authenticatedViewerLoginForRepo(ctx, ref.Owner, ref.Name)
 }
 
 func (p *gitHubClientProvider) GetMarkdownImage(
@@ -6399,8 +6439,12 @@ func (s *Syncer) indexUpsertMergeRequest(
 	// Preserve fields list endpoints commonly omit.
 	needsCIDetailRefresh := false
 	if existing != nil {
-		normalized.Additions = existing.Additions
-		normalized.Deletions = existing.Deletions
+		if !mr.AdditionsKnown {
+			normalized.Additions = existing.Additions
+		}
+		if !mr.DeletionsKnown {
+			normalized.Deletions = existing.Deletions
+		}
 		preservePlatformBaseSHAIfOmitted(normalized, existing)
 		preserveReviewDecisionIfOmitted(normalized, existing)
 		preserveMergeableStateIfOmitted(normalized, existing)
@@ -6422,7 +6466,7 @@ func (s *Syncer) indexUpsertMergeRequest(
 		}
 	}
 
-	mrID, revision, accepted, err := s.commitMergeRequestParentSnapshot(ctx, repo, normalized)
+	mrID, revision, accepted, err := s.CommitMergeRequestParentSnapshot(ctx, repo, normalized)
 	if err != nil {
 		return fmt.Errorf(
 			"upsert MR #%d: %w", mr.Number, err,
@@ -6431,6 +6475,7 @@ func (s *Syncer) indexUpsertMergeRequest(
 	if !accepted {
 		return nil
 	}
+
 	if needsCIDetailRefresh {
 		detailCleared, err := s.db.ClearMRDetailFetchedSnapshot(ctx, mrID, revision)
 		if err != nil {
@@ -6487,6 +6532,111 @@ func (s *Syncer) indexUpsertMergeRequest(
 	return nil
 }
 
+// reclassifyWorkspaceHeadRepoTrust recomputes and persists the head-repo
+// trust classification for a workspace tracking this merge request, after a
+// sync upsert may have changed head_repo_clone_url. It is called only from
+// CommitMergeRequestParentSnapshot, so it runs for every MR-upsert path in
+// this file (REST list sync, GraphQL bulk fetch, detail refresh, and
+// closed-MR refresh) rather than just one of them. Without this fan-out, a
+// workspace created (or last refreshed) while a PR was same-repo never
+// learns that the PR's head was later retargeted to a fork until another
+// workspace setup, retry, or agent-context refresh. Reads the just-upserted
+// MR row rather than the incoming provider snapshot so a list sync that
+// reports an unknown head (platform.MergeRequest.HeadRepoCloneURLUnknown)
+// cannot downgrade a classification the stored row already resolved. The
+// workspace lookup runs first and is a cheap no-op for the common case of no
+// tracking workspace, since this now runs on every accepted MR upsert in
+// every sync cycle. Failures are logged, not returned: like other non-fatal
+// per-item persistence steps in this sync path (for example
+// syncProviderMRDiff), a missed reclassification only delays the workspace
+// catching up, so it must not fail the sync.
+func (s *Syncer) reclassifyWorkspaceHeadRepoTrust(
+	ctx context.Context, repo RepoRef, repoID int64, mrNumber int,
+) {
+	releaseReconciliation, err := s.db.LockRepositoryReconciliationRead(ctx)
+	if err != nil {
+		slog.Error("lock repository reconciliation for head-repo trust reclassification failed",
+			"repo", repo.Owner+"/"+repo.Name,
+			"number", mrNumber, "err", err,
+		)
+		return
+	}
+	defer releaseReconciliation()
+
+	s.reclassifyWorkspaceHeadRepoTrustUnderRepositoryReconciliationRead(
+		ctx, repo, repoID, mrNumber,
+	)
+}
+
+func (s *Syncer) reclassifyWorkspaceHeadRepoTrustUnderRepositoryReconciliationRead(
+	ctx context.Context, repo RepoRef, repoID int64, mrNumber int,
+) {
+	ws, err := s.db.GetWorkspaceByMRForProvider(
+		ctx, string(repoPlatform(repo)), repoHost(repo), repo.Owner, repo.Name, mrNumber,
+	)
+	if err != nil {
+		slog.Error("look up workspace for head-repo trust reclassification failed",
+			"repo", repo.Owner+"/"+repo.Name,
+			"number", mrNumber, "err", err,
+		)
+		return
+	}
+	if ws == nil {
+		return
+	}
+
+	for {
+		stored, err := s.db.GetMergeRequestByRepoIDAndNumber(
+			ctx, repoID, mrNumber,
+		)
+		if err != nil {
+			slog.Error("look up stored merge request for head-repo trust reclassification failed",
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", mrNumber, "err", err,
+			)
+			return
+		}
+		cloneURL := ""
+		var snapshotRevision int64
+		if stored != nil {
+			cloneURL = stored.HeadRepoCloneURL
+			snapshotRevision = stored.SnapshotRevision
+			if stored.HeadRepoIdentityStale {
+				return
+			}
+		}
+
+		refreshed := workspace.WorkspaceHeadRepo(
+			ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName, cloneURL,
+		)
+		if s.afterHeadRepoSnapshotRead != nil {
+			s.afterHeadRepoSnapshotRead()
+		}
+		applied, updateErr := s.db.UpdateWorkspaceMRHeadRepoForSnapshot(
+			ctx,
+			ws.ID,
+			repoID,
+			mrNumber,
+			snapshotRevision,
+			refreshed,
+		)
+		if updateErr != nil {
+			slog.Error("persist reclassified workspace head-repo trust failed",
+				"workspace_id", ws.ID,
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", mrNumber, "err", updateErr,
+			)
+			return
+		}
+		if applied {
+			return
+		}
+		if ctx.Err() != nil {
+			return
+		}
+	}
+}
+
 // indexUpsertMR upserts a PR from list endpoint data only. No
 // GetPullRequest, no timeline, no CI. Preserves fields that the
 // list endpoint does not return (additions, deletions,
@@ -6535,7 +6685,7 @@ func (s *Syncer) indexUpsertMR(
 		}
 	}
 
-	mrID, revision, accepted, err := s.commitMergeRequestParentSnapshot(ctx, repo, normalized)
+	mrID, revision, accepted, err := s.CommitMergeRequestParentSnapshot(ctx, repo, normalized)
 	if err != nil {
 		return fmt.Errorf(
 			"upsert MR #%d: %w", ghPR.GetNumber(), err,
@@ -7164,7 +7314,7 @@ func (s *Syncer) syncOpenMRFromBulk(
 		}
 	}
 
-	mrID, revision, accepted, err := s.commitMergeRequestParentSnapshot(ctx, repo, normalized)
+	mrID, revision, accepted, err := s.CommitMergeRequestParentSnapshot(ctx, repo, normalized)
 	if err != nil {
 		return fmt.Errorf("upsert MR #%d: %w", number, err)
 	}
@@ -7499,7 +7649,7 @@ func (s *Syncer) fetchMRDetail(
 		calls++ // GetUser
 	}
 
-	mrID, revision, accepted, err := s.commitMergeRequestParentSnapshot(ctx, repo, normalized)
+	mrID, revision, accepted, err := s.CommitMergeRequestParentSnapshot(ctx, repo, normalized)
 	if err != nil {
 		return calls, fmt.Errorf(
 			"upsert MR #%d: %w", number, err,
@@ -7761,7 +7911,7 @@ func (s *Syncer) fetchProviderMRDetail(
 	}
 	preserveMergeableStateIfOmitted(normalized, existing)
 
-	mrID, revision, accepted, err := s.commitMergeRequestParentSnapshot(ctx, repo, normalized)
+	mrID, revision, accepted, err := s.CommitMergeRequestParentSnapshot(ctx, repo, normalized)
 	if err != nil {
 		return calls, fmt.Errorf(
 			"upsert MR #%d: %w", number, err,
@@ -8085,6 +8235,10 @@ func (s *Syncer) getIssueForDetail(
 	repo RepoRef,
 	number int,
 ) (*gh.Issue, string, bool, error) {
+	if IsArchiveSyncBudgetContext(ctx) {
+		issue, err := client.GetIssue(ctx, repo.Owner, repo.Name, number)
+		return issue, "", false, err
+	}
 	conditional, ok := client.(conditionalIssueGetter)
 	if !ok {
 		issue, err := client.GetIssue(ctx, repo.Owner, repo.Name, number)
@@ -9088,6 +9242,11 @@ func (s *Syncer) refreshIssueTimeline(
 			); disabledErr != nil {
 				return disabledErr
 			}
+			if IsArchiveSyncBudgetContext(ctx) {
+				return fmt.Errorf(
+					"list timeline events for issue #%d: %w", number, err,
+				)
+			}
 			slog.Warn("issue timeline event fetch failed during timeline refresh",
 				"repo", repo.Owner+"/"+repo.Name,
 				"number", number,
@@ -9918,7 +10077,7 @@ func (s *Syncer) syncMRForRepo(
 		}
 	}
 
-	mrID, revision, accepted, err := s.commitMergeRequestParentSnapshot(ctx, repo, normalized)
+	mrID, revision, accepted, err := s.CommitMergeRequestParentSnapshot(ctx, repo, normalized)
 	if err != nil {
 		return fmt.Errorf("upsert MR #%d: %w", number, err)
 	}
@@ -10553,7 +10712,7 @@ func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID 
 		normalized.CIHadPending = existing.CIHadPending
 		normalized.DetailFetchedAt = existing.DetailFetchedAt
 	}
-	mrID, revision, accepted, err := s.commitMergeRequestParentSnapshot(ctx, repo, normalized)
+	mrID, revision, accepted, err := s.CommitMergeRequestParentSnapshot(ctx, repo, normalized)
 	if err != nil {
 		return fmt.Errorf("commit closed MR #%d: %w", number, err)
 	}
@@ -10740,7 +10899,7 @@ func (s *Syncer) fetchAndUpdateClosedMergeRequest(
 		return fmt.Errorf("get closed MR #%d: %w", number, err)
 	}
 	normalized := platform.DBMergeRequest(repoID, mr)
-	mrID, revision, accepted, err := s.commitMergeRequestParentSnapshot(ctx, repo, normalized)
+	mrID, revision, accepted, err := s.CommitMergeRequestParentSnapshot(ctx, repo, normalized)
 	if err != nil {
 		return fmt.Errorf("upsert closed MR #%d: %w", number, err)
 	}

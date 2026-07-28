@@ -231,6 +231,33 @@ func (s *Handler) createWorkspace(
 		return nil, httpapi.Internal("create workspace: " + err.Error())
 	}
 
+	if s.configSnapshot().AutoAssignOnCreate {
+		repo, lookupErr := s.lookupRepoByProviderRoute(
+			ctx, provider, input.Body.PlatformHost, input.Body.Owner, input.Body.Name,
+		)
+		if lookupErr != nil {
+			slog.Warn("lookup pull request for automatic workspace assignment",
+				"provider", provider,
+				"platform_host", input.Body.PlatformHost,
+				"owner", input.Body.Owner,
+				"name", input.Body.Name,
+				"number", input.Body.MRNumber,
+				"err", lookupErr,
+			)
+		} else if assignErr := s.autoAssignWorkspaceItem(
+			ctx, *repo, input.Body.MRNumber, false,
+		); assignErr != nil {
+			slog.Warn("automatically assign pull request workspace",
+				"provider", repo.Platform,
+				"platform_host", repo.PlatformHost,
+				"owner", repo.Owner,
+				"name", repo.Name,
+				"number", input.Body.MRNumber,
+				"err", assignErr,
+			)
+		}
+	}
+
 	s.runWorkspaceSetup(ws)
 
 	summary, err := s.workspaces.GetSummary(ctx, ws.ID)
@@ -240,9 +267,11 @@ func (s *Handler) createWorkspace(
 	if summary == nil {
 		return nil, httpapi.Internal("workspace summary missing after create")
 	}
+	resp := s.toWorkspaceResponse(ctx, summary)
+	resp.Created = true
 	return &createWorkspaceOutput{
 		Status: http.StatusAccepted,
-		Body:   s.toWorkspaceResponse(ctx, summary),
+		Body:   resp,
 	}, nil
 }
 
@@ -491,6 +520,17 @@ func (s *Handler) createIssueWorkspace(
 		return nil, httpapi.Internal("create issue workspace: " + msg)
 	}
 
+	createdBranch := ws.WorkspaceBranch != ""
+	if assignErr := s.autoAssignWorkspaceItem(ctx, *repo, input.Number, true); assignErr != nil {
+		slog.Warn("automatically assign issue workspace",
+			"provider", repo.Platform,
+			"platform_host", repo.PlatformHost,
+			"owner", repo.Owner,
+			"name", repo.Name,
+			"number", input.Number,
+			"err", assignErr,
+		)
+	}
 	s.runWorkspaceSetup(ws)
 
 	summary, err := s.workspaces.GetSummary(ctx, ws.ID)
@@ -501,9 +541,11 @@ func (s *Handler) createIssueWorkspace(
 		return nil, httpapi.Internal("workspace summary missing after create")
 	}
 
+	resp := s.toWorkspaceResponse(ctx, summary)
+	resp.Created = createdBranch
 	return &createWorkspaceOutput{
 		Status: http.StatusAccepted,
-		Body:   s.toWorkspaceResponse(ctx, summary),
+		Body:   resp,
 	}, nil
 }
 
@@ -562,6 +604,7 @@ func (s *Handler) createAdHocWorkspace(
 		return s.adHocWorkspaceCreateError(ctx, repo, itemKey, err)
 	}
 
+	createdBranch := ws.WorkspaceBranch != ""
 	s.runWorkspaceSetup(ws)
 
 	summary, err := s.workspaces.GetSummary(ctx, ws.ID)
@@ -571,9 +614,11 @@ func (s *Handler) createAdHocWorkspace(
 	if summary == nil {
 		return nil, httpapi.Internal("workspace summary missing after create")
 	}
+	response := s.toWorkspaceResponse(ctx, summary)
+	response.Created = createdBranch
 	return &createWorkspaceOutput{
 		Status: http.StatusAccepted,
-		Body:   s.toWorkspaceResponse(ctx, summary),
+		Body:   response,
 	}, nil
 }
 
@@ -1538,9 +1583,13 @@ func (s *Handler) applyAgentActivity(
 		return
 	}
 	state := string(snapshot.State)
-	updatedAt := snapshot.UpdatedAt.UTC().Format(time.RFC3339)
+	updatedAt := formatAgentActivityUpdatedAt(snapshot.UpdatedAt)
 	resp.AgentState = &state
 	resp.AgentStateUpdatedAt = &updatedAt
+}
+
+func formatAgentActivityUpdatedAt(value time.Time) string {
+	return value.UTC().Format(time.RFC3339Nano)
 }
 
 // Response returns the cached public DTO for a persisted workspace summary.
@@ -1924,10 +1973,13 @@ func (s *Handler) launchWorkspaceRuntimeSession(
 		return nil, httpapi.Validation("body.target_key", "target_key is required")
 	}
 	if workspaceRuntimeTargetIsAgent(s.runtime, targetKey) {
-		if err := s.workspaces.PrepareAgentLaunchContext(ctx, workspace.PrepareAgentLaunchContextOptions{
-			WorkspaceID: summary.ID,
-			TargetKey:   targetKey,
-		}); err != nil {
+		if err := s.workspaces.PrepareAgentLaunchContext(
+			ctx,
+			workspace.PrepareAgentLaunchContextOptions{
+				WorkspaceID: summary.ID,
+				TargetKey:   targetKey,
+			},
+		); err != nil {
 			return nil, httpapi.Internal("prepare agent context: " + err.Error())
 		}
 	}

@@ -83,7 +83,7 @@ describe("workspace-runtime api", () => {
       )
       .mockResolvedValueOnce(new Response(null, { status: 204 }));
 
-    await launchWorkspaceSession("ws-1", "helper", fetchMock);
+    await launchWorkspaceSession("ws-1", "helper", { fetch: fetchMock });
     await renameWorkspaceSession("ws-1", "ws-1:helper", "Review helper", fetchMock);
     await stopWorkspaceSession("ws-1", "ws-1:helper", fetchMock);
 
@@ -126,7 +126,7 @@ describe("workspace-runtime api", () => {
         ),
     );
 
-    await launchWorkspaceSession("ws-1", "plain_shell", undefined, "workflow", fetchMock);
+    await launchWorkspaceSession("ws-1", "plain_shell", { region: "workflow", fetch: fetchMock });
 
     const request = capturedRequest(fetchMock.mock.calls[0]);
     expect(new URL(request.url).pathname).toBe("/api/v1/workspaces/ws-1/runtime/sessions");
@@ -163,7 +163,7 @@ describe("workspace-runtime api", () => {
 
     const traceId = beginInteractionTrace("workspace-switch", { "workspace.id": "ws-1" });
     await getWorkspaceRuntime("ws-1", fetchMock);
-    await launchWorkspaceSession("ws-1", "helper", fetchMock);
+    await launchWorkspaceSession("ws-1", "helper", { fetch: fetchMock });
     await renameWorkspaceSession("ws-1", "ws-1:helper", "Review helper", fetchMock);
     await stopWorkspaceSession("ws-1", "ws-1:helper", fetchMock);
 

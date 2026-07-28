@@ -37,12 +37,14 @@ func (d *DB) EnsureDiscoveryArchives(ctx context.Context, repoIDs []int64, now t
 					repo_id, collection_mode, operator_state,
 					initial_started_at, initial_completed_at,
 					maintenance_watermark, maintenance_succeeded_at,
+					issues_coverage, merge_requests_coverage,
 					comments_coverage, reviews_coverage, inline_comments_coverage,
 					last_error_code, last_error_detail, next_retry_at,
 					created_at, updated_at
 				) VALUES (
 					?, 'discovery', 'active',
 					NULL, NULL, NULL, NULL,
+					'unknown', 'unknown',
 					'unknown', 'unknown', 'unknown',
 					NULL, NULL, NULL, ?, ?
 				)
@@ -196,35 +198,204 @@ func (d *DB) PauseArchives(ctx context.Context, repoIDs []int64, now time.Time) 
 	})
 }
 
-// SetArchiveCoverage records provider capability coverage independently of
-// work rows so unsupported datasets remain an honest repository-level partial.
-func (d *DB) SetArchiveCoverage(ctx context.Context, repoID int64, coverage ArchiveCoverageSet, now time.Time) error {
+// ReconcileArchiveCoverage records current provider capabilities and reopens
+// inventory that can now replace a previously unsupported result.
+func (d *DB) ReconcileArchiveCoverage(ctx context.Context, repoID int64, coverage ArchiveCoverageSet, now time.Time) error {
 	if repoID <= 0 {
-		return fmt.Errorf("set archive coverage: repository ID is required")
+		return fmt.Errorf("reconcile archive coverage: repository ID is required")
 	}
 	for name, value := range map[string]ArchiveCoverage{
+		"issues": coverage.Issues, "merge_requests": coverage.MergeRequests,
 		"comments": coverage.Comments, "reviews": coverage.Reviews,
 		"inline_comments": coverage.InlineComments,
 	} {
 		if value != ArchiveCoverageSupported && value != ArchiveCoverageUnsupported {
-			return fmt.Errorf("set archive coverage: invalid %s coverage %q", name, value)
+			return fmt.Errorf("reconcile archive coverage: invalid %s coverage %q", name, value)
 		}
 	}
-	result, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_archive_repos
-		SET comments_coverage = ?, reviews_coverage = ?, inline_comments_coverage = ?,
-			updated_at = ?
-		WHERE repo_id = ?`, coverage.Comments, coverage.Reviews,
-		coverage.InlineComments, now.UTC(), repoID)
+	now = now.UTC()
+	return d.Tx(ctx, func(tx *sql.Tx) error {
+		if err := requireArchiveRepoIDs(ctx, tx, "middleman_archive_repos", []int64{repoID}); err != nil {
+			return err
+		}
+		for _, inventory := range []struct {
+			desired ArchiveCoverage
+			scan    ArchiveScanKind
+			column  string
+		}{
+			{desired: coverage.Issues, scan: ArchiveScanIssueInventory, column: "issues_coverage"},
+			{desired: coverage.MergeRequests, scan: ArchiveScanMergeRequestInventory, column: "merge_requests_coverage"},
+		} {
+			if inventory.desired != ArchiveCoverageSupported {
+				continue
+			}
+			result, err := tx.ExecContext(ctx, `
+				UPDATE middleman_archive_repo_scans
+				SET scan_generation = `+nextEvenScanGenerationSQL+`,
+					next_cursor = NULL, last_input_cursor = NULL,
+					page_count = 0, status = 'pending',
+					last_error_code = NULL, last_error_detail = NULL,
+					updated_at = ?
+				WHERE repo_id = ? AND scan = ? AND status = 'complete'
+				  AND EXISTS (
+					SELECT 1 FROM middleman_archive_repos
+					WHERE repo_id = ? AND `+inventory.column+` = 'unsupported'
+				  )`, now, repoID, inventory.scan, repoID)
+			if err != nil {
+				return fmt.Errorf("reopen %s archive inventory: %w", inventory.scan, err)
+			}
+			reopened, err := result.RowsAffected()
+			if err != nil {
+				return fmt.Errorf("reopen %s archive inventory rows affected: %w", inventory.scan, err)
+			}
+			if reopened == 0 {
+				continue
+			}
+			itemType := ArchiveItemTypeIssue
+			if inventory.scan == ArchiveScanMergeRequestInventory {
+				itemType = ArchiveItemTypeMergeRequest
+			}
+			if err := requeueArchiveKnownItemLookupsTx(
+				ctx, tx, repoID, itemType, now,
+			); err != nil {
+				return err
+			}
+			if _, err := tx.ExecContext(ctx, `
+				UPDATE middleman_archive_repos
+				SET `+inventory.column+` = 'unknown',
+					initial_completed_at = NULL,
+					updated_at = MAX(updated_at, ?)
+				WHERE repo_id = ?`, now, repoID); err != nil {
+				return fmt.Errorf("reset %s archive coverage: %w", inventory.scan, err)
+			}
+		}
+		_, err := tx.ExecContext(ctx, `
+			UPDATE middleman_archive_repos
+			SET issues_coverage = CASE WHEN EXISTS (
+				SELECT 1 FROM middleman_archive_repo_scans
+					WHERE repo_id = ? AND scan = 'issue_inventory' AND status = 'complete'
+				) THEN CASE WHEN issues_coverage = 'unknown'
+					THEN ?
+					ELSE issues_coverage END
+				ELSE issues_coverage END,
+				merge_requests_coverage = CASE WHEN EXISTS (
+					SELECT 1 FROM middleman_archive_repo_scans
+					WHERE repo_id = ? AND scan = 'merge_request_inventory' AND status = 'complete'
+				) THEN CASE WHEN merge_requests_coverage = 'unknown'
+					THEN ?
+					ELSE merge_requests_coverage END
+				ELSE merge_requests_coverage END,
+				comments_coverage = ?, reviews_coverage = ?, inline_comments_coverage = ?,
+				updated_at = ?
+			WHERE repo_id = ?`, repoID, coverage.Issues, repoID, coverage.MergeRequests,
+			coverage.Comments, coverage.Reviews,
+			coverage.InlineComments, now, repoID)
+		if err != nil {
+			return fmt.Errorf("reconcile archive coverage: %w", err)
+		}
+		return nil
+	})
+}
+
+func requeueArchiveKnownItemLookupsTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	repoID int64,
+	itemType ArchiveItemType,
+	now time.Time,
+) error {
+	_, err := tx.ExecContext(ctx, `
+		UPDATE middleman_archive_dataset_progress
+		SET scan_generation = `+nextEvenScanGenerationSQL+`,
+			next_cursor = NULL, last_input_cursor = NULL,
+			page_count = 0, observed_count = 0,
+			status = 'pending', attempt_count = 0, next_retry_at = NULL,
+			last_error_code = NULL, last_error_detail = NULL,
+			started_at = NULL, completed_at = NULL, updated_at = ?
+		WHERE repo_id = ? AND item_type = ? AND dataset = 'lookup'
+		  AND status = 'complete'
+		  AND EXISTS (
+			SELECT 1 FROM middleman_archive_items ai
+			WHERE ai.repo_id = middleman_archive_dataset_progress.repo_id
+			  AND ai.item_type = middleman_archive_dataset_progress.item_type
+			  AND ai.item_number = middleman_archive_dataset_progress.item_number
+			  AND ai.lifecycle_state = 'active'
+		  )`, now, repoID, itemType)
 	if err != nil {
-		return fmt.Errorf("set archive coverage: %w", err)
+		return fmt.Errorf(
+			"requeue known %s archive lookups: %w", itemType, err,
+		)
 	}
-	rows, err := result.RowsAffected()
+	return nil
+}
+
+// RequeueArchiveLifecycleDetails reopens completed provider lookups whose
+// persisted rows predate lifecycle actors or merge metrics. The normal archive
+// hydration path owns the provider read and persistence.
+func (d *DB) RequeueArchiveLifecycleDetails(
+	ctx context.Context,
+	repoIDs []int64,
+	now time.Time,
+) error {
+	repoIDs = normalizedArchiveRepoIDs(repoIDs)
+	if len(repoIDs) == 0 {
+		return nil
+	}
+	args := []any{archiveLifecycleDetailsGeneration, formatDatasetProgressTime(now)}
+	args = append(args, archiveRepoIDArgs(repoIDs)...)
+	args = append(args, archiveLifecycleDetailsGeneration)
+	_, err := d.rw.ExecContext(ctx, fmt.Sprintf(`
+		UPDATE middleman_archive_dataset_progress
+		SET scan_generation = ?,
+			next_cursor = NULL, last_input_cursor = NULL,
+			page_count = 0, observed_count = 0,
+			status = 'pending', attempt_count = 0, next_retry_at = NULL,
+			last_error_code = NULL, last_error_detail = NULL,
+			started_at = NULL, completed_at = NULL, updated_at = ?
+		WHERE repo_id IN (%s)
+		  AND item_type IN ('issue', 'merge_request') AND dataset = 'lookup'
+		  AND status = 'complete'
+		  AND scan_generation < ?
+		  AND EXISTS (
+			SELECT 1
+			FROM middleman_archive_items ai
+			JOIN middleman_archive_repos ar ON ar.repo_id = ai.repo_id
+			WHERE ai.repo_id = middleman_archive_dataset_progress.repo_id
+			  AND ai.item_type = middleman_archive_dataset_progress.item_type
+			  AND ai.item_number = middleman_archive_dataset_progress.item_number
+			  AND ai.lifecycle_state = 'active'
+			  AND ar.collection_mode = 'full'
+			  AND (
+				(ai.item_type = 'issue' AND EXISTS (
+					SELECT 1 FROM middleman_issues i
+					WHERE i.repo_id = ai.repo_id AND i.number = ai.item_number
+					  AND i.closed_at IS NOT NULL
+					  AND (
+						SELECT e.created_at
+						FROM middleman_issue_events e
+						WHERE e.issue_id = i.id AND e.event_type = 'closed' AND e.author <> ''
+						ORDER BY e.created_at DESC, e.id DESC
+						LIMIT 1
+					  ) IS DISTINCT FROM i.closed_at
+				))
+				OR
+				(ai.item_type = 'merge_request' AND EXISTS (
+					SELECT 1 FROM middleman_merge_requests mr
+					WHERE mr.repo_id = ai.repo_id AND mr.number = ai.item_number
+					  AND mr.merged_at IS NOT NULL
+					  AND (
+						mr.files_changed IS NULL OR mr.merge_commit_sha = ''
+						OR NOT EXISTS (
+							SELECT 1 FROM middleman_mr_events e
+							WHERE e.merge_request_id = mr.id
+							  AND e.event_type = 'merged' AND e.author <> ''
+						)
+					  )
+				))
+			  )
+		  )`, sqlPlaceholders(len(repoIDs))), args...)
 	if err != nil {
-		return fmt.Errorf("set archive coverage rows affected: %w", err)
-	}
-	if rows != 1 {
-		return &ArchiveRepoStateNotFoundError{RepoIDs: []int64{repoID}}
+		return fmt.Errorf("requeue archive lifecycle details: %w", err)
 	}
 	return nil
 }
@@ -527,6 +698,7 @@ func listArchiveRepoStates(
 			initial_started_at, initial_completed_at,
 			maintenance_watermark, maintenance_succeeded_at,
 			prompt_scan_started_at, prompt_since,
+			issues_coverage, merge_requests_coverage,
 			comments_coverage, reviews_coverage, inline_comments_coverage,
 			last_error_code, last_error_detail, next_retry_at,
 			created_at, updated_at
@@ -574,6 +746,7 @@ func scanArchiveRepoState(row archiveRowScanner, state *ArchiveRepoState) error 
 		&state.InitialStartedAt, &state.InitialCompletedAt,
 		&state.MaintenanceWatermark, &state.MaintenanceSucceededAt,
 		&state.PromptScanStartedAt, &state.PromptSince,
+		&state.IssuesCoverage, &state.MergeRequestsCoverage,
 		&state.CommentsCoverage, &state.ReviewsCoverage, &state.InlineCommentsCoverage,
 		&state.LastErrorCode, &state.LastErrorDetail, &state.NextRetryAt,
 		&state.CreatedAt, &state.UpdatedAt,
@@ -970,7 +1143,9 @@ func archiveMaintenanceOutstanding(state ArchiveRepoState) bool {
 }
 
 func archiveHasPartialCoverage(state ArchiveRepoState, counts ArchiveProgressCounts) bool {
-	return state.CommentsCoverage == ArchiveCoverageUnsupported ||
+	return state.IssuesCoverage == ArchiveCoverageUnsupported ||
+		state.MergeRequestsCoverage == ArchiveCoverageUnsupported ||
+		state.CommentsCoverage == ArchiveCoverageUnsupported ||
 		state.ReviewsCoverage == ArchiveCoverageUnsupported ||
 		state.InlineCommentsCoverage == ArchiveCoverageUnsupported ||
 		counts.UnsupportedItemCount > 0 || counts.InaccessibleItemCount > 0
@@ -1068,6 +1243,9 @@ func (d *DB) CommitArchiveInventoryPage(ctx context.Context, commit ArchiveInven
 	if commit.ScanGeneration == 0 {
 		commit.ScanGeneration = 1
 	}
+	if commit.Coverage == "" {
+		commit.Coverage = ArchiveCoverageUnknown
+	}
 	if err := validateInventoryCommit(commit); err != nil {
 		return err
 	}
@@ -1100,6 +1278,18 @@ func (d *DB) CommitArchiveInventoryPage(ctx context.Context, commit ArchiveInven
 		}
 		if err := advanceArchiveScanTx(ctx, tx, commit, kind, outcome.newPageCount, commit.Now); err != nil {
 			return err
+		}
+		if commit.Exhausted && commit.Coverage != ArchiveCoverageUnknown {
+			column := "issues_coverage"
+			if commit.ItemType == ArchiveItemTypeMergeRequest {
+				column = "merge_requests_coverage"
+			}
+			if _, err := tx.ExecContext(ctx, `
+				UPDATE middleman_archive_repos
+				SET `+column+` = ?, updated_at = MAX(updated_at, ?)
+				WHERE repo_id = ?`, commit.Coverage, commit.Now, commit.RepoID); err != nil {
+				return fmt.Errorf("record archive inventory coverage: %w", err)
+			}
 		}
 		if err := clearArchiveRepositoryFailureTx(ctx, tx, commit.RepoID, commit.Now); err != nil {
 			return err
@@ -1183,6 +1373,15 @@ func validateInventoryCommit(commit ArchiveInventoryCommit) error {
 	case ArchiveRefreshReasonInitial, ArchiveRefreshReasonPrompt:
 	default:
 		return fmt.Errorf("commit archive inventory: invalid refresh reason %q", commit.RefreshReason)
+	}
+	if commit.Coverage != ArchiveCoverageUnknown &&
+		commit.Coverage != ArchiveCoverageSupported &&
+		commit.Coverage != ArchiveCoverageUnsupported {
+		return fmt.Errorf("commit archive inventory: invalid coverage %q", commit.Coverage)
+	}
+	if commit.Coverage != ArchiveCoverageUnknown &&
+		(commit.RefreshReason != ArchiveRefreshReasonInitial || !commit.Exhausted) {
+		return errors.New("commit archive inventory: coverage requires exhausted initial inventory")
 	}
 	return nil
 }

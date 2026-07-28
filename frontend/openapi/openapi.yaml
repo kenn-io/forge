@@ -197,6 +197,38 @@ components:
         - key
         - label
       type: object
+    AgentHookOutput:
+      additionalProperties: false
+      properties:
+        hookSpecificOutput:
+          $ref: "#/components/schemas/AgentHookSpecificOutput"
+      required:
+        - hookSpecificOutput
+      type: object
+    AgentHookResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/AgentHookResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        hook_output:
+          $ref: "#/components/schemas/AgentHookOutput"
+      type: object
+    AgentHookSpecificOutput:
+      additionalProperties: false
+      properties:
+        additionalContext:
+          type: string
+        hookEventName:
+          type: string
+      required:
+        - hookEventName
+        - additionalContext
+      type: object
     ApplyReviewSuggestionHostInputBody:
       additionalProperties: false
       properties:
@@ -322,6 +354,18 @@ components:
             - supported
             - unsupported
           type: string
+        issues:
+          enum:
+            - unknown
+            - supported
+            - unsupported
+          type: string
+        merge_requests:
+          enum:
+            - unknown
+            - supported
+            - unsupported
+          type: string
         reviews:
           enum:
             - unknown
@@ -329,6 +373,8 @@ components:
             - unsupported
           type: string
       required:
+        - issues
+        - merge_requests
         - comments
         - reviews
         - inline_comments
@@ -397,20 +443,38 @@ components:
     ArchiveReportActivityResponse:
       additionalProperties: false
       properties:
+        actor:
+          type: string
+        additions:
+          format: int64
+          type: integer
         author:
           type: string
         body:
           type: string
+        comments:
+          format: int64
+          type: integer
+        deletions:
+          format: int64
+          type: integer
+        files_changed:
+          format: int64
+          type: integer
         item_number:
           format: int64
           type: integer
         kind:
           enum:
             - issue
+            - issue_closed
             - merge_request
+            - merge_request_merged
             - ordinary_comment
             - review
             - inline_review_comment
+          type: string
+        merge_commit_sha:
           type: string
         occurred_at:
           format: date-time
@@ -457,7 +521,13 @@ components:
         inline_review_comments:
           format: int64
           type: integer
+        issues_closed:
+          format: int64
+          type: integer
         issues_opened:
+          format: int64
+          type: integer
+        merge_requests_merged:
           format: int64
           type: integer
         merge_requests_opened:
@@ -471,7 +541,9 @@ components:
           type: integer
       required:
         - issues_opened
+        - issues_closed
         - merge_requests_opened
+        - merge_requests_merged
         - ordinary_comments
         - reviews_submitted
         - inline_review_comments
@@ -514,8 +586,20 @@ components:
             - supported
             - unsupported
           type: string
+        issues:
+          enum:
+            - unknown
+            - supported
+            - unsupported
+          type: string
         maintenance_succeeded_at:
           format: date-time
+          type: string
+        merge_requests:
+          enum:
+            - unknown
+            - supported
+            - unsupported
           type: string
         operator_state:
           enum:
@@ -545,6 +629,8 @@ components:
         - active_phases
         - collection_mode
         - operator_state
+        - issues
+        - merge_requests
         - comments
         - reviews
         - inline_comments
@@ -597,12 +683,16 @@ components:
           type:
             - array
             - "null"
+        schema:
+          type: string
+          x-go-name: ReportSchema
         start:
           format: date-time
           type: string
         totals:
           $ref: "#/components/schemas/ArchiveReportCountsResponse"
       required:
+        - schema
         - start
         - end
         - repositories
@@ -2292,6 +2382,33 @@ components:
         - rel_path
         - score
       type: object
+    HookEvent:
+      additionalProperties: true
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/HookEvent.json
+          format: uri
+          readOnly: true
+          type: string
+        agent_id:
+          type: string
+        cwd:
+          type: string
+        hook_event_name:
+          type: string
+        notification_type:
+          type: string
+        session_id:
+          type: string
+        tool_name:
+          type: string
+      required:
+        - session_id
+        - cwd
+        - hook_event_name
+      type: object
     HostDiagnostic:
       additionalProperties: false
       properties:
@@ -3798,6 +3915,11 @@ components:
           type:
             - string
             - "null"
+        FilesChanged:
+          format: int64
+          type:
+            - integer
+            - "null"
         HeadBranch:
           type: string
         HeadRepoCloneURL:
@@ -3818,6 +3940,8 @@ components:
           type: string
         LastActivityAt:
           format: date-time
+          type: string
+        MergeCommitSHA:
           type: string
         MergeableState:
           type: string
@@ -3893,6 +4017,8 @@ components:
         - HeadRepoCloneURL
         - Additions
         - Deletions
+        - FilesChanged
+        - MergeCommitSHA
         - CommentCount
         - ReviewDecision
         - CIStatus
@@ -4092,6 +4218,11 @@ components:
         Deletions:
           format: int64
           type: integer
+        FilesChanged:
+          format: int64
+          type:
+            - integer
+            - "null"
         HeadBranch:
           type: string
         HeadRepoCloneURL:
@@ -4112,6 +4243,8 @@ components:
           type: string
         LastActivityAt:
           format: date-time
+          type: string
+        MergeCommitSHA:
           type: string
         MergeableState:
           type: string
@@ -4213,6 +4346,8 @@ components:
         - HeadRepoCloneURL
         - Additions
         - Deletions
+        - FilesChanged
+        - MergeCommitSHA
         - CommentCount
         - ReviewDecision
         - CIStatus
@@ -4911,6 +5046,8 @@ components:
           type: boolean
         native_multiline_ranges:
           type: boolean
+        read_authenticated_user:
+          type: boolean
         read_ci:
           type: boolean
         read_comments:
@@ -4964,6 +5101,7 @@ components:
         - read_ci
         - read_labels
         - read_markdown_images
+        - read_authenticated_user
         - comment_mutation
         - state_mutation
         - merge_mutation
@@ -6893,10 +7031,13 @@ components:
           type: array
         terminal:
           $ref: "#/components/schemas/Terminal"
+        workspaces:
+          $ref: "#/components/schemas/Workspaces"
       required:
         - repos
         - activity
         - pull_requests
+        - workspaces
         - issues
         - notifications
         - terminal
@@ -7387,6 +7528,8 @@ components:
           $ref: "#/components/schemas/PullRequests"
         terminal:
           $ref: "#/components/schemas/Terminal"
+        workspaces:
+          $ref: "#/components/schemas/Workspaces"
       type: object
     UserRepository:
       additionalProperties: false
@@ -7531,6 +7674,7 @@ components:
             - working
             - input
             - approval
+            - done
           type: string
         agent_state_updated_at:
           description: UTC timestamp of the hook report that produced agent_state.
@@ -7545,6 +7689,9 @@ components:
         commits_behind:
           format: int64
           type: integer
+        created:
+          description: True when this response represents a workspace newly created by this request; absent when an existing workspace was returned or on reads.
+          type: boolean
         created_at:
           type: string
         enrichment_error:
@@ -7587,6 +7734,13 @@ components:
         mr_deletions:
           format: int64
           type: integer
+        mr_head_repo_kind:
+          description: "Set only for pull_request workspaces: same_repo when the PR head is confirmed to be in the base repo, fork when it is a confirmed fork clone, unknown when repository identity could not be resolved."
+          enum:
+            - same_repo
+            - fork
+            - unknown
+          type: string
         mr_is_draft:
           type: boolean
         mr_review_decision:
@@ -7663,6 +7817,14 @@ components:
       required:
         - launch_targets
         - sessions
+      type: object
+    Workspaces:
+      additionalProperties: false
+      properties:
+        auto_assign_on_create:
+          type: boolean
+      required:
+        - auto_assign_on_create
       type: object
     WorktreeFromMergeRequestResponse:
       additionalProperties: false
@@ -7924,6 +8086,41 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: List activity
+      tags:
+        - Activity
+  /agent-hooks/{agent}:
+    post:
+      operationId: receive-agent-hook
+      parameters:
+        - in: path
+          name: agent
+          required: true
+          schema:
+            type: string
+        - in: header
+          name: X-Middleman-Runtime-Session-Key
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HookEvent"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentHookResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Receive agent lifecycle hook
       tags:
         - Activity
   /archive/pause:

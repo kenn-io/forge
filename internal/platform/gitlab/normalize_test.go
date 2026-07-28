@@ -208,6 +208,38 @@ func TestNormalizeMergeRequestUsesIIDAndPipelineStatus(t *testing.T) {
 	assert.Equal("bug", mr.Labels[0].Name)
 }
 
+func TestNormalizeDetailedMergeRequestPreservesResultCommitSHA(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		mergeSHA  string
+		squashSHA string
+		want      string
+	}{
+		{
+			name:     "merge commit takes precedence",
+			mergeSHA: "merge-sha", squashSHA: "squash-sha", want: "merge-sha",
+		},
+		{
+			name:      "squash commit is the fallback",
+			squashSHA: "squash-sha", want: "squash-sha",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			mr := NormalizeDetailedMergeRequest(testGitLabRepoRef(), &gitlab.MergeRequest{
+				BasicMergeRequest: gitlab.BasicMergeRequest{
+					ID: 1001, IID: 7, State: "merged",
+					MergeCommitSHA: tt.mergeSHA, SquashCommitSHA: tt.squashSHA,
+				},
+			})
+
+			assert.Equal(t, tt.want, mr.MergeCommitSHA)
+		})
+	}
+}
+
 func TestNormalizeMergeRequestLeavesMergedByEmptyWhenGitLabOmitsMergeUser(t *testing.T) {
 	mr := NormalizeMergeRequest(testGitLabRepoRef(), &gitlab.BasicMergeRequest{
 		ID:       1001,
@@ -420,13 +452,17 @@ func TestNormalizeNotesKeepsAssignmentSystemNotes(t *testing.T) {
 	assert.Equal("opener", mrEvents[4].Author)
 
 	issueEvents := NormalizeIssueNotes(testGitLabRepoRef(), 5, "", notes)
-	require.Len(issueEvents, 2)
+	require.Len(issueEvents, 4)
 	assert.Equal("issue_comment", issueEvents[0].EventType)
 	assert.Equal("visible", issueEvents[0].Body)
 	assert.Equal("gitlab:gitlab.example.com:group/project:issue:5:note:1", issueEvents[0].DedupeKey)
 	assert.Equal("assigned", issueEvents[1].EventType)
 	assert.Equal("assigned to @bob", issueEvents[1].Summary)
 	assert.Equal("gitlab:gitlab.example.com:group/project:issue:5:system_note:2", issueEvents[1].DedupeKey)
+	assert.Equal("closed", issueEvents[2].EventType)
+	assert.Equal("closer", issueEvents[2].Author)
+	assert.Equal("reopened", issueEvents[3].EventType)
+	assert.Equal("opener", issueEvents[3].Author)
 }
 
 func TestNormalizeNotesBuildsDirectNoteURLFromParentURL(t *testing.T) {

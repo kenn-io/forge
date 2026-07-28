@@ -1,8 +1,10 @@
 <script lang="ts">
+  import { getStores, WorkspaceCreateSplitButton } from "@middleman/ui";
   import { Button, TextInput, Typeahead, type TypeaheadOption } from "@kenn-io/kit-ui";
   import GitBranchIcon from "@lucide/svelte/icons/git-branch";
   import { canonicalProvider, providerRepoPath, providerRouteParams } from "@middleman/ui/api/provider-routes";
   import type { Repo } from "@middleman/ui/api/types";
+  import { queueWorkspaceLaunch } from "@middleman/ui/stores/workspace-create-pending";
   import Modal from "../shared/Modal.svelte";
   import { apiErrorMessage, client } from "../../api/runtime.js";
   import { navigate } from "../../stores/router.svelte.js";
@@ -26,6 +28,7 @@
   }
 
   const { open, onClose, seedRepo = null, onCreated = undefined }: Props = $props();
+  const { settings } = getStores();
 
   type RepoOption = {
     key: string;
@@ -44,6 +47,7 @@
   let submitting = $state(false);
   let error = $state<string | null>(null);
   let suggestedBranch = $state<string | null>(null);
+  let pendingLaunchTargetKey = $state<string | null>(null);
   let repoFetchVersion = 0;
 
   function repoOption(repo: Repo): RepoOption {
@@ -73,6 +77,7 @@
     branch = "";
     error = null;
     suggestedBranch = null;
+    pendingLaunchTargetKey = null;
     submitting = false;
     repos = [];
     selectedKey = "";
@@ -128,7 +133,11 @@
     return typeof value === "string" && value ? value : null;
   }
 
-  async function submit(): Promise<void> {
+  async function submit(selectedTargetKey?: string): Promise<void> {
+    if (selectedTargetKey !== undefined) {
+      pendingLaunchTargetKey = selectedTargetKey;
+    }
+    const launchTargetKey = pendingLaunchTargetKey;
     if (submitting) return;
     const repo = selected;
     if (!repo) {
@@ -171,10 +180,14 @@
         return;
       }
       const workspaceId = data.id;
+      if (launchTargetKey) {
+        queueWorkspaceLaunch(workspaceId, launchTargetKey);
+      }
       // The workspace exists either way, so it stays the last-used repo; only
       // the navigation is abandoned when the user moved on.
       rememberNewWorkspaceRepoKey(repo.key);
       if (!current) return;
+      pendingLaunchTargetKey = null;
       onClose();
       if (onCreated) onCreated(workspaceId);
       else navigate(`/terminal/${workspaceId}`);
@@ -253,14 +266,17 @@
 
     <div class="form-actions">
       <Button onclick={onClose} disabled={submitting}>Cancel</Button>
-      <Button
-        type="submit"
-        tone="info"
+      <WorkspaceCreateSplitButton
+        label="Create workspace"
+        busyLabel="Creating…"
+        launchTargets={settings.getLaunchTargets()}
+        busy={submitting}
+        disabled={selected === null}
+        disabledReason={selected === null ? "Pick a repository." : ""}
         surface="solid"
-        disabled={submitting || selected === null}
-      >
-        {submitting ? "Creating…" : "Create workspace"}
-      </Button>
+        primaryType="submit"
+        onCreate={submit}
+      />
     </div>
   </form>
 </Modal>

@@ -22,6 +22,7 @@
   import EventTimeline from "./EventTimeline.svelte";
   import DetailActivityViewMenu from "./DetailActivityViewMenu.svelte";
   import IssueCommentBox from "./IssueCommentBox.svelte";
+  import WorkspaceCreateSplitButton from "../workspace/WorkspaceCreateSplitButton.svelte";
     import { Button, Chip, Modal } from "@kenn-io/kit-ui";
   import { Spinner } from "@kenn-io/kit-ui";
   import LabelRow from "../shared/LabelRow.svelte";
@@ -39,7 +40,6 @@
   import CopyItemNumber from "./CopyItemNumber.svelte";
   import ExternalLinkIcon from "@lucide/svelte/icons/external-link";
   import MonitorUpIcon from "@lucide/svelte/icons/monitor-up";
-  import PackagePlusIcon from "@lucide/svelte/icons/package-plus";
   import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw";
   import TagsIcon from "@lucide/svelte/icons/tags";
   import UsersIcon from "@lucide/svelte/icons/users";
@@ -49,6 +49,7 @@
     beginWorkspaceCreate,
     endWorkspaceCreate,
     isWorkspaceCreatePending,
+    queueWorkspaceLaunch,
     reconcileWorkspaceCreated,
     recordWorkspaceCreated,
     resolveControllerlessWorkspaceRef,
@@ -56,7 +57,7 @@
 
   const CLEAR_LABELS_PENDING = "__clear-label-selection__";
 
-  const { issues, activity, detailActivityView } = getStores();
+  const { issues, activity, detailActivityView, settings } = getStores();
   const client = getClient();
   const actions = getActions();
   const uiConfig = getUIConfig();
@@ -71,6 +72,7 @@
     read_ci: true,
     read_labels: false,
     read_markdown_images: false,
+    read_authenticated_user: false,
     comment_mutation: true,
     state_mutation: true,
     merge_mutation: true,
@@ -266,6 +268,7 @@
     lastResetIdentity = current;
     workspaceRequestGen += 1;
     branchConflict = null;
+    pendingWorkspaceLaunchTarget = null;
     workspaceCreating = false;
     labelPickerOpen = false;
     labelPickerError = null;
@@ -513,6 +516,7 @@
   }
 
   let workspaceCreating = $state(false);
+  let pendingWorkspaceLaunchTarget = $state<string | null>(null);
   // The shared pending store outlives this component and its local flag:
   // route resets and remounts clear workspaceCreating while the POST is
   // still in flight, and a round-trip back to this issue must keep the
@@ -660,6 +664,7 @@
     reuseExistingBranch?: boolean;
     reuseExistingDirectory?: boolean;
     fromConflictDialog?: boolean;
+    launchTargetKey?: string;
   };
 
   // Re-checks the identity at call time (not just at the caller's check)
@@ -681,6 +686,11 @@
     const detail = issues.getIssueDetail();
     if (!detail) return;
     const requestIdentity = $state.snapshot(itemIdentity);
+    if (!options.fromConflictDialog) {
+      pendingWorkspaceLaunchTarget = options.launchTargetKey ?? null;
+    }
+    const launchTargetKey =
+      options.launchTargetKey ?? pendingWorkspaceLaunchTarget ?? undefined;
 
     if (!options.fromConflictDialog) {
       branchConflict = null;
@@ -792,6 +802,9 @@
           status: data.status ?? "provisioning",
         };
         recordWorkspaceCreated(requestIdentity, createdRef);
+        if (launchTargetKey) {
+          queueWorkspaceLaunch(createdRef.id, launchTargetKey);
+        }
         inlineWorkspace?.recordCreated(requestIdentity, createdRef);
       }
       // Everything below is presentation owned by this live component
@@ -802,6 +815,7 @@
       // override above is enough — a replacement component loads its
       // own detail on mount.
       if (responseIsStale()) return;
+      pendingWorkspaceLaunchTarget = null;
       if (data?.id) {
         if (inlineWorkspace) {
           void refetchDetailForIdentity(requestIdentity);
@@ -827,6 +841,7 @@
   function closeBranchConflictDialog(): void {
     if (workspaceCreating) return;
     branchConflict = null;
+    pendingWorkspaceLaunchTarget = null;
   }
 
   // Task-list checkbox clicks update the body locally for instant
@@ -1321,22 +1336,20 @@
             </Button>
           {/if}
         {:else}
-          <Button
-            class="btn--workspace"
-            disabled={workspaceCreateBlocked || staleIssue}
-            onclick={() => void createWorkspace()}
-            tone="info"
-            surface="soft"
-            size="sm"
-            title={staleIssue
+          <WorkspaceCreateSplitButton
+            label="Create Workspace"
+            busyLabel="Creating..."
+            launchTargets={settings.getLaunchTargets()}
+            busy={workspaceCreateBlocked}
+            disabled={staleIssue}
+            disabledReason={staleIssue
               ? "Refresh details before creating a workspace."
               : createWorkspaceTitle}
-            ariaDescribedby={createWorkspaceDescriptionId}
-            label={workspaceCreateBlocked ? "Creating..." : "Create Workspace"}
-            shortLabel={workspaceCreateBlocked ? "Creating..." : "Create Workspace"}
-          >
-            <PackagePlusIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-          </Button>
+            descriptionId={createWorkspaceDescriptionId}
+            onCreate={(targetKey) => void createWorkspace(
+              targetKey === undefined ? {} : { launchTargetKey: targetKey },
+            )}
+          />
         {/if}
         {#if !workspace}
           <span id={createWorkspaceDescriptionId} class="kit-sr-only">

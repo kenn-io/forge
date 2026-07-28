@@ -27,6 +27,7 @@ func (s *Service) inventoryPage(ctx context.Context, repo resolvedRepository, st
 	}
 	if !archiveInventorySupported(repo, itemType) {
 		commit.Exhausted = true
+		commit.Coverage = db.ArchiveCoverageUnsupported
 	} else {
 		requestCtx, complete, err := s.admit(
 			ctx, repo, itemType, archiveFeatureReadAttemptCost(repo.Ref.Platform),
@@ -45,7 +46,13 @@ func (s *Service) inventoryPage(ctx context.Context, repo resolvedRepository, st
 		case db.ArchiveItemTypeIssue:
 			page, err := repo.Issues.ListIssuesPage(requestCtx, repo.Ref, query)
 			preempted := archivePreempted(ctx, requestCtx)
+			featureDisabled := archiveInventoryFeatureDisabled(err, itemType)
 			deferred := complete(err, true)
+			if featureDisabled {
+				commit.Exhausted = true
+				commit.Coverage = db.ArchiveCoverageUnsupported
+				break
+			}
 			if deferred != nil {
 				return &featureDeferredError{FeatureDeferral: *deferred, providerAttempted: true}
 			}
@@ -65,7 +72,13 @@ func (s *Service) inventoryPage(ctx context.Context, repo resolvedRepository, st
 		case db.ArchiveItemTypeMergeRequest:
 			page, err := repo.MergeRequests.ListMergeRequestsPage(requestCtx, repo.Ref, query)
 			preempted := archivePreempted(ctx, requestCtx)
+			featureDisabled := archiveInventoryFeatureDisabled(err, itemType)
 			deferred := complete(err, true)
+			if featureDisabled {
+				commit.Exhausted = true
+				commit.Coverage = db.ArchiveCoverageUnsupported
+				break
+			}
 			if deferred != nil {
 				return &featureDeferredError{FeatureDeferral: *deferred, providerAttempted: true}
 			}
@@ -88,8 +101,30 @@ func (s *Service) inventoryPage(ctx context.Context, repo resolvedRepository, st
 			return invalidErr
 		}
 	}
+	if commit.Exhausted &&
+		(commit.Coverage == "" || commit.Coverage == db.ArchiveCoverageUnknown) {
+		commit.Coverage = db.ArchiveCoverageSupported
+	}
 	_, err := s.commitInventoryPage(ctx, commit)
 	return err
+}
+
+func archiveInventoryFeatureDisabled(err error, itemType db.ArchiveItemType) bool {
+	if !errors.Is(err, platform.ErrRepositoryFeatureDisabled) {
+		return false
+	}
+	var platformErr *platform.Error
+	if !errors.As(err, &platformErr) {
+		return false
+	}
+	switch itemType {
+	case db.ArchiveItemTypeIssue:
+		return platformErr.Capability == platform.RepositoryFeatureIssues
+	case db.ArchiveItemTypeMergeRequest:
+		return platformErr.Capability == platform.RepositoryFeatureMergeRequests
+	default:
+		return false
+	}
 }
 
 // commitInventoryPage absorbs the typed non-failure outcomes of an inventory

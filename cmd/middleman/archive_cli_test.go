@@ -126,7 +126,7 @@ func TestArchiveReportFromAPIPreservesTransportOrdering(t *testing.T) {
 		},
 	}
 	transport := generated.ArchiveReportResponse{
-		Start: start, End: end,
+		ReportSchema: report.Schema, Start: start, End: end,
 		Repositories: &[]generated.ArchiveReportRepositoryResponse{{
 			Repository: archiveGeneratedCLIRef("github", "github.example", "owner", "repo"),
 			Coverage: generated.ArchiveReportCoverageResponse{
@@ -158,6 +158,88 @@ func TestArchiveReportFromAPIPreservesTransportOrdering(t *testing.T) {
 	assert.Equal("https://example.test/1", model.Activity[1].URL)
 }
 
+func TestArchiveReportFromAPIPreservesLifecycleContract(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+	start := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
+	end := start.Add(24 * time.Hour)
+	actor := "merger"
+	additions := int64(12)
+	deletions := int64(4)
+	filesChanged := int64(3)
+	comments := int64(2)
+	mergeCommitSHA := "abc123"
+	activities := []generated.ArchiveReportActivityResponse{{
+		Repository: archiveGeneratedCLIRef("github", "github.example", "owner", "repo"),
+		Kind:       generated.ArchiveReportActivityResponseKind("merge_request_merged"),
+		ItemNumber: 7, ProviderExternalId: "pr-7", Author: "author", Actor: &actor,
+		Title: "Merged", OccurredAt: start.Add(time.Hour), Url: "https://example.test/7",
+		Comments: &comments, Additions: &additions, Deletions: &deletions,
+		FilesChanged: &filesChanged, MergeCommitSha: &mergeCommitSHA,
+	}}
+	transport := generated.ArchiveReportResponse{
+		ReportSchema: report.Schema, Start: start, End: end,
+		Repositories: &[]generated.ArchiveReportRepositoryResponse{{
+			Repository: archiveGeneratedCLIRef("github", "github.example", "owner", "repo"),
+			Coverage: generated.ArchiveReportCoverageResponse{
+				Status: "current", CollectionMode: "full", OperatorState: "active",
+				Issues: "supported", MergeRequests: "supported", Comments: "supported",
+				Reviews: "supported", InlineComments: "supported",
+			},
+			Counts: generated.ArchiveReportCountsResponse{
+				IssuesClosed: 1, MergeRequestsMerged: 1,
+			},
+		}},
+		Totals: generated.ArchiveReportCountsResponse{
+			IssuesClosed: 1, MergeRequestsMerged: 1,
+		},
+		Activity: &activities,
+	}
+
+	model, err := archiveReportFromAPI(transport)
+	require.NoError(err)
+	assert.Equal(report.Schema, model.Schema)
+	require.Len(model.Repositories, 1)
+	assert.Equal("supported", model.Repositories[0].Coverage.Issues)
+	assert.Equal("supported", model.Repositories[0].Coverage.MergeRequests)
+	assert.Equal(1, model.Repositories[0].Counts.IssuesClosed)
+	assert.Equal(1, model.Repositories[0].Counts.MergeRequestsMerged)
+	assert.Equal(1, model.Totals.IssuesClosed)
+	assert.Equal(1, model.Totals.MergeRequestsMerged)
+	require.Len(model.Activity, 1)
+	activity := model.Activity[0]
+	assert.Equal(report.ActivityMergeRequestMerged, activity.Kind)
+	assert.Equal("merger", activity.Actor)
+	assert.Equal(2, activity.Comments)
+	assert.Equal(12, activity.Additions)
+	assert.Equal(4, activity.Deletions)
+	require.NotNil(activity.FilesChanged)
+	assert.Equal(3, *activity.FilesChanged)
+	assert.Equal("abc123", activity.MergeCommitSHA)
+}
+
+func TestArchiveReportFromAPIRejectsIncompatibleSchema(t *testing.T) {
+	t.Parallel()
+	for _, testCase := range []struct {
+		name   string
+		schema string
+	}{
+		{name: "missing", schema: ""},
+		{name: "future", schema: "middleman-archive-report/2"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := archiveReportFromAPI(generated.ArchiveReportResponse{
+				ReportSchema: testCase.schema,
+			})
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "archive report schema")
+			assert.Contains(t, err.Error(), report.Schema)
+		})
+	}
+}
+
 func TestArchiveCLISubcommandsUseGeneratedDaemonContract(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -178,10 +260,18 @@ func TestArchiveCLISubcommandsUseGeneratedDaemonContract(t *testing.T) {
 			_, _ = w.Write([]byte(`[]`))
 		case "/base/api/v1/archive/report":
 			_, _ = w.Write([]byte(`{
+				"schema":"middleman-archive-report/1",
 				"start":"2026-07-11T15:30:00Z","end":"2026-07-13T15:30:00Z",
 				"repositories":[],
-				"totals":{"issues_opened":0,"merge_requests_opened":0,"ordinary_comments":0,"reviews_submitted":0,"inline_review_comments":0},
-				"contributors":[]
+				"totals":{"issues_opened":0,"issues_closed":0,"merge_requests_opened":0,"merge_requests_merged":1,"ordinary_comments":0,"reviews_submitted":0,"inline_review_comments":0},
+				"contributors":[],
+				"activity":[{
+					"repository":{"provider":"github","platform_host":"github.example","owner":"owner","name":"repo","repo_path":"owner/repo"},
+					"kind":"merge_request_merged","item_number":7,"provider_external_id":"pr-7",
+					"title":"Merged","author":"author","actor":"merger",
+					"occurred_at":"2026-07-12T15:30:00Z","body":"","url":"https://example.test/7",
+					"comments":2,"additions":12,"deletions":4,"files_changed":3,"merge_commit_sha":"abc123"
+				}]
 			}`))
 		default:
 			http.NotFound(w, r)
@@ -219,7 +309,7 @@ func TestArchiveCLISubcommandsUseGeneratedDaemonContract(t *testing.T) {
 			wantQuery: url.Values{
 				"start": {"2026-07-11T15:30:00Z"}, "end": {"2026-07-13T15:30:00Z"}, "verbose": {"true"},
 			},
-			wantOut: `"start": "2026-07-11T15:30:00Z"`,
+			wantOut: `"merge_commit_sha": "abc123"`,
 		},
 	}
 	for _, tt := range tests {
@@ -306,6 +396,7 @@ func TestArchiveCLIAtomicOutputSuccess(t *testing.T) {
 	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
+			"schema":"middleman-archive-report/1",
 			"start":"2026-07-12T15:30:00Z","end":"2026-07-13T15:30:00Z",
 			"repositories":[],
 			"totals":{"issues_opened":1,"merge_requests_opened":0,"ordinary_comments":0,"reviews_submitted":0,"inline_review_comments":0},

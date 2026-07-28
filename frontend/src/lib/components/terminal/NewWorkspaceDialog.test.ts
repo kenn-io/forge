@@ -1,11 +1,27 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
+import {
+  consumeWorkspaceLaunch,
+  resetWorkspaceCreatePendingForTest,
+} from "@middleman/ui/stores/workspace-create-pending";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { STORES_KEY } from "../../../../../packages/ui/src/context.js";
 
 import NewWorkspaceDialog from "./NewWorkspaceDialog.svelte";
 
 const mockGet = vi.fn();
 const mockPost = vi.fn();
 const mockNavigate = vi.fn();
+const launchTargets = [
+  {
+    key: "codex",
+    label: "Codex",
+    kind: "agent" as const,
+    source: "builtin" as const,
+    command: ["codex"],
+    available: true,
+    disabled_reason: "",
+  },
+];
 
 vi.mock("../../api/runtime.js", () => ({
   apiErrorMessage: (error: { detail?: string; title?: string } | undefined, fallback: string) =>
@@ -33,6 +49,14 @@ function repoFixture(owner: string, name: string, platformHost = "github.com", p
 async function renderDialog(props: Record<string, unknown> = {}) {
   const view = render(NewWorkspaceDialog, {
     props: { open: true, onClose: vi.fn(), ...props },
+    context: new Map([
+      [
+        STORES_KEY,
+        {
+          settings: { getLaunchTargets: () => launchTargets },
+        },
+      ],
+    ]),
   });
   await waitFor(() => expect(mockGet).toHaveBeenCalledWith("/repos"));
   return view;
@@ -51,6 +75,7 @@ async function pickRepo(label: string): Promise<void> {
 
 describe("NewWorkspaceDialog", () => {
   beforeEach(() => {
+    resetWorkspaceCreatePendingForTest();
     localStorage.clear();
     mockGet.mockReset();
     mockPost.mockReset();
@@ -62,6 +87,7 @@ describe("NewWorkspaceDialog", () => {
   });
 
   afterEach(() => {
+    resetWorkspaceCreatePendingForTest();
     cleanup();
   });
 
@@ -82,6 +108,58 @@ describe("NewWorkspaceDialog", () => {
     expect(options.body).toEqual({});
     expect(mockNavigate).toHaveBeenCalledWith("/terminal/ws-new");
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it("keeps a native submit control so Enter submits the form", async () => {
+    await renderDialog();
+    await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
+
+    const primary = screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement;
+    expect(primary.type).toBe("submit");
+    const form = screen.getByLabelText("Branch name").closest("form");
+    expect(form).not.toBeNull();
+
+    await fireEvent.submit(form!);
+
+    await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(1));
+  });
+
+  it("creates only from the primary action", async () => {
+    await renderDialog();
+    await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
+    await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
+    await waitFor(() => expect(mockPost).toHaveBeenCalled());
+    expect(consumeWorkspaceLaunch("ws-new")).toBeNull();
+  });
+
+  it("retains an agent choice through suggested-branch retry", async () => {
+    mockPost
+      .mockResolvedValueOnce({
+        error: {
+          code: "branchConflict",
+          detail: "branch exists",
+          details: {
+            branch: "spike/thing",
+            suggestedBranch: "spike/thing-2",
+          },
+        },
+      })
+      .mockResolvedValueOnce({ data: { id: "ws-second" } });
+    await renderDialog();
+    await fireEvent.click(
+      screen.getByRole("button", {
+        name: "Create workspace options",
+      }),
+    );
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Codex" }));
+    await fireEvent.click(
+      await screen.findByRole("button", {
+        name: /Use spike\/thing-2/,
+      }),
+    );
+    await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
+    await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(2));
+    expect(consumeWorkspaceLaunch("ws-second")).toBe("codex");
   });
 
   it("sends the typed branch name", async () => {
@@ -228,6 +306,37 @@ describe("NewWorkspaceDialog", () => {
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 
+  it("publishes an agent choice from a stale dialog session without affecting the fresh session", async () => {
+    let resolveStale: (value: unknown) => void = () => {};
+    mockPost.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveStale = resolve;
+        }),
+    );
+    const onCreated = vi.fn();
+    const { rerender } = await renderDialog({ onCreated });
+    await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
+    await fireEvent.click(screen.getByRole("button", { name: "Create workspace options" }));
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Codex" }));
+    await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(1));
+
+    await rerender({ open: false, onCreated });
+    await rerender({ open: true, onCreated });
+    await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
+
+    resolveStale({ data: { id: "ws-stale" } });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(onCreated).not.toHaveBeenCalled();
+    expect(consumeWorkspaceLaunch("ws-stale")).toBe("codex");
+
+    await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith("ws-new"));
+    expect(consumeWorkspaceLaunch("ws-new")).toBeNull();
+  });
+
   it("keeps the form locked when a stale create resolves under a newer one", async () => {
     const resolvers: ((value: unknown) => void)[] = [];
     mockPost.mockImplementation(
@@ -254,7 +363,7 @@ describe("NewWorkspaceDialog", () => {
 
     // The second create still owns the dialog, so the form stays locked (the
     // submit button still reads "Creating…") and no third request can fire.
-    const submit = screen.getByRole("button", { name: /Creating|Create workspace/ }) as HTMLButtonElement;
+    const submit = screen.getByRole("button", { name: "Creating…" }) as HTMLButtonElement;
     expect(submit.disabled).toBe(true);
     await fireEvent.click(submit);
     expect(mockPost).toHaveBeenCalledTimes(2);

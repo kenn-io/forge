@@ -1220,11 +1220,13 @@ repo_path = "acme/widget"
 	require.Equal(http.StatusAccepted, first.Code, first.Body.String())
 	var created workspaceapi.WorkspaceResponse
 	require.NoError(json.NewDecoder(first.Body).Decode(&created))
+	assert.True(created.Created, "the fresh create response must mark itself as newly created")
 
 	second := doJSON(t, srv, http.MethodPost, "/api/v1/kata/workspaces", body)
 	require.Equal(http.StatusAccepted, second.Code, second.Body.String())
 	var reused workspaceapi.WorkspaceResponse
 	require.NoError(json.NewDecoder(second.Body).Decode(&reused))
+	assert.False(reused.Created, "a reused existing workspace must not be marked as newly created")
 
 	assert.Equal(created.ID, reused.ID)
 	assert.Equal(created.ItemKey, reused.ItemKey)

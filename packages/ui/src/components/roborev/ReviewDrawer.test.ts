@@ -38,7 +38,14 @@ const job: ReviewJob = {
   retry_count: 0,
   started_at: "2026-07-15T00:00:10Z",
   status: "done",
-  token_usage: "12k tokens",
+  token_usage: JSON.stringify({
+    input_tokens: 231582,
+    cached_input_tokens: 189952,
+    total_output_tokens: 2542,
+    peak_context_tokens: 47248,
+    cost_usd: 0.347212,
+    has_cost: true,
+  }),
 };
 
 vi.mock("../../context.js", () => ({
@@ -117,10 +124,33 @@ describe("ReviewDrawer", () => {
     expect(dock.classList.contains("kit-bottom-dock")).toBe(true);
     expect(dock.querySelector(".review-dock-header")).toBeTruthy();
     expect(dock.querySelector(".review-dock-footer")).toBeTruthy();
-    expect(screen.getByText("12k tokens")).toBeTruthy();
 
     await fireEvent.click(screen.getByRole("button", { name: "Close review details" }));
     expect(state.deselectJob).toHaveBeenCalledTimes(1);
+  });
+
+  it("summarizes token usage instead of rendering the raw JSON blob", () => {
+    render(ReviewDrawer);
+
+    const usage = document.querySelector(".token-usage");
+    expect(usage).toBeTruthy();
+    expect(usage?.textContent).not.toContain("input_tokens");
+    expect(
+      [...(usage?.querySelectorAll(".usage-stat") ?? [])].map((el) => el.textContent?.replace(/\s+/g, " ").trim()),
+    ).toEqual(["cost ~$0.35", "in 232k", "out 2.5k", "peak 47k"]);
+    expect(usage?.getAttribute("title")).toBe(
+      "input 231,582 · cached input 189,952 · output 2,542 · peak context 47,248 · cost $0.347212",
+    );
+  });
+
+  it("groups the footer actions as sibling shared buttons", () => {
+    render(ReviewDrawer);
+
+    const group = screen.getByRole("group", { name: "Review actions" });
+    const buttons = [...group.children] as HTMLElement[];
+    expect(buttons.map((el) => el.tagName)).toEqual(["BUTTON", "BUTTON", "BUTTON"]);
+    expect(buttons.every((el) => el.classList.contains("kit-button"))).toBe(true);
+    expect(buttons.map((el) => el.textContent?.trim())).toEqual(["Close Review", "Rerun", "Copy Output"]);
   });
 
   it("keeps review tabs and actions application-owned", async () => {

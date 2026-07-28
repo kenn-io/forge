@@ -344,6 +344,8 @@ command = ["codex", "--full-auto"]
 
 	rr := doJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	assert.NotContains(rr.Body.String(), `"default_agent"`)
+	assert.Contains(rr.Body.String(), `"launch_targets"`)
 
 	var resp settingsResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
@@ -515,6 +517,7 @@ func TestHandleUpdateSettings(t *testing.T) {
 		HideBots:   true,
 	}
 	issues := config.Issues{HideBots: true}
+	workspaces := config.Workspaces{AutoAssignOnCreate: true}
 	terminal := config.Terminal{
 		FontFamily:     "\"Fira Code\", monospace",
 		FontSize:       16,
@@ -526,9 +529,10 @@ func TestHandleUpdateSettings(t *testing.T) {
 		HideTmuxStatus: true,
 	}
 	body := updateSettingsRequest{
-		Activity: &activity,
-		Issues:   &issues,
-		Terminal: &terminal,
+		Activity:   &activity,
+		Issues:     &issues,
+		Workspaces: &workspaces,
+		Terminal:   &terminal,
 	}
 	rr := doJSON(
 		t, srv, http.MethodPut, "/api/v1/settings", body,
@@ -541,6 +545,7 @@ func TestHandleUpdateSettings(t *testing.T) {
 	assert.Equal("threaded", cfg2.Activity.ViewMode)
 	assert.Equal("30d", cfg2.Activity.TimeRange)
 	assert.True(cfg2.Issues.HideBots)
+	assert.True(cfg2.Workspaces.AutoAssignOnCreate)
 	assert.Equal("\"Fira Code\", monospace", cfg2.Terminal.FontFamily)
 	assert.Equal(16, cfg2.Terminal.FontSize)
 	assert.Equal(5000, cfg2.Terminal.Scrollback)

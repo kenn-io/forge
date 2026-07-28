@@ -1453,6 +1453,128 @@ func buildAppState(
 	var failNextRepoBrowserTree atomic.Bool
 	var failNextNotificationRead atomic.Bool
 	rootHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost &&
+			r.URL.Path == "/__e2e/issue-workspace/reused-branch" {
+			clonePath, err := diffRepo.Manager.ClonePath(
+				"github", "github.com", "acme", "widgets",
+			)
+			if err != nil {
+				http.Error(w, "resolve fixture clone", http.StatusInternalServerError)
+				return
+			}
+			const branch = "middleman/issue-10-widget-rendering-broken-on-safari"
+			_, stderr, err := gitcmd.New().Run(
+				r.Context(), clonePath, nil,
+				"update-ref", "refs/heads/"+branch, diffRepo.BaseSHA,
+			)
+			if err != nil {
+				http.Error(
+					w,
+					"create reused issue branch: "+string(stderr),
+					http.StatusInternalServerError,
+				)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if r.Method == http.MethodPost &&
+			r.URL.Path == "/__e2e/pr-head-repo/fork" {
+			mr, err := database.GetMergeRequest(
+				r.Context(), "github", "github.com", "acme", "widgets", 1,
+			)
+			if err != nil {
+				http.Error(w, "read pull request", http.StatusInternalServerError)
+				return
+			}
+			if mr == nil {
+				http.Error(w, "pull request not found", http.StatusNotFound)
+				return
+			}
+			forkSnapshot := *mr
+			forkSnapshot.HeadRepoCloneURL = "https://github.com/forker/widgets.git"
+			forkSnapshot.UpdatedAt = time.Now().UTC()
+			clonePath, err := diffRepo.Manager.ClonePath(
+				"github", "github.com", "acme", "widgets",
+			)
+			if err != nil {
+				http.Error(w, "resolve fixture clone", http.StatusInternalServerError)
+				return
+			}
+			originOutput, err := gitcmd.New().Output(
+				r.Context(), clonePath,
+				"config", "--get", "remote.origin.url",
+			)
+			if err != nil {
+				http.Error(w, "resolve fixture origin", http.StatusInternalServerError)
+				return
+			}
+			originPath := strings.TrimSpace(string(originOutput))
+			_, stderr, err := gitcmd.New().Run(
+				r.Context(), originPath, nil,
+				"update-ref", "refs/pull/1/head", diffRepo.HeadSHA,
+			)
+			if err != nil {
+				http.Error(
+					w,
+					"create fixture pull ref: "+string(stderr),
+					http.StatusInternalServerError,
+				)
+				return
+			}
+			_, accepted, err := database.UpsertMergeRequestSnapshot(
+				r.Context(), &forkSnapshot,
+			)
+			if err != nil {
+				http.Error(w, "persist fork snapshot", http.StatusInternalServerError)
+				return
+			}
+			if !accepted {
+				http.Error(w, "fork snapshot rejected", http.StatusConflict)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		const persistedRuntimePrefix = "/__e2e/workspaces/"
+		const persistedRuntimeSuffix = "/persisted-runtime-sessions"
+		if r.Method == http.MethodGet &&
+			strings.HasPrefix(r.URL.Path, persistedRuntimePrefix) &&
+			strings.HasSuffix(r.URL.Path, persistedRuntimeSuffix) {
+			workspaceID := strings.TrimSuffix(
+				strings.TrimPrefix(r.URL.Path, persistedRuntimePrefix),
+				persistedRuntimeSuffix,
+			)
+			if workspaceID == "" || strings.Contains(workspaceID, "/") {
+				http.Error(w, "workspace id required", http.StatusBadRequest)
+				return
+			}
+			sessions, err := database.ListWorkspaceRuntimeSessions(
+				r.Context(), workspaceID,
+			)
+			if err != nil {
+				http.Error(
+					w,
+					"read persisted runtime sessions",
+					http.StatusInternalServerError,
+				)
+				return
+			}
+			targetKeys := make([]string, 0, len(sessions))
+			for _, session := range sessions {
+				targetKeys = append(targetKeys, session.TargetKey)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(w).Encode(map[string]any{
+				"target_keys": targetKeys,
+			}); err != nil {
+				slog.Warn(
+					"write persisted runtime session fixture response",
+					"err", err,
+				)
+			}
+			return
+		}
 		if r.Method == http.MethodPost && r.URL.Path == "/__e2e/activity/pr-comment" {
 			if srv.SubscriberCount() == 0 {
 				http.Error(w, "event stream not connected", http.StatusConflict)

@@ -57,7 +57,7 @@ func TestArchiveCommandE2E(t *testing.T) {
 	existing, err := os.ReadFile(cfgPath)
 	require.NoError(err)
 	require.NoError(os.WriteFile(cfgPath, append(
-		[]byte("base_path = \"/archive-e2e\"\n"),
+		[]byte("base_path = \"/archive-e2e\"\ntrust_reverse_proxy = true\n"),
 		append(existing, fmt.Appendf(nil, `
 [api]
 require_auth = true
@@ -80,7 +80,8 @@ token_env = "MIDDLEMAN_ARCHIVE_E2E_TOKEN"
 	repoID, err := database.UpsertRepo(t.Context(), platform.DBRepoIdentity(ref))
 	require.NoError(err)
 	require.NoError(database.EnsureDiscoveryArchives(t.Context(), []int64{repoID}, now))
-	require.NoError(database.SetArchiveCoverage(t.Context(), repoID, db.ArchiveCoverageSet{
+	require.NoError(database.ReconcileArchiveCoverage(t.Context(), repoID, db.ArchiveCoverageSet{
+		Issues: db.ArchiveCoverageSupported, MergeRequests: db.ArchiveCoverageSupported,
 		Comments: db.ArchiveCoverageSupported, Reviews: db.ArchiveCoverageSupported,
 		InlineComments: db.ArchiveCoverageSupported,
 	}, now))
@@ -113,7 +114,16 @@ token_env = "MIDDLEMAN_ARCHIVE_E2E_TOKEN"
 	waitForFile(t, runtimelock.MetadataPath(dataDir), 10*time.Second)
 	waitForFile(t, runtimelock.AuthTokenPath(dataDir), 10*time.Second)
 	require.Eventually(func() bool {
-		resp, requestErr := http.Get(fmt.Sprintf("http://127.0.0.1:%d/archive-e2e/api/v1/health", port))
+		request, requestErr := http.NewRequest(
+			http.MethodGet,
+			fmt.Sprintf("http://127.0.0.1:%d/archive-e2e/api/v1/health", port),
+			nil,
+		)
+		if requestErr != nil {
+			return false
+		}
+		request.Header.Set("X-Forwarded-Host", fmt.Sprintf("127.0.0.1:%d", port))
+		resp, requestErr := http.DefaultClient.Do(request)
 		if requestErr != nil {
 			return false
 		}
@@ -138,6 +148,21 @@ token_env = "MIDDLEMAN_ARCHIVE_E2E_TOKEN"
 	}
 
 	stdout, stderr, code := run("status", "--json", "--config", cfgPath)
+	assert.Equal(0, code)
+	assert.Empty(stderr)
+	assert.Contains(stdout, `"repo_path": "owner/archive"`)
+
+	configAfterStartup, err := os.ReadFile(cfgPath)
+	require.NoError(err)
+	configAfterStartup = bytes.Replace(
+		configAfterStartup,
+		[]byte("trust_reverse_proxy = true"),
+		[]byte("trust_reverse_proxy = false"),
+		1,
+	)
+	require.NoError(os.WriteFile(cfgPath, configAfterStartup, 0o600))
+
+	stdout, stderr, code = run("status", "--json", "--config", cfgPath)
 	assert.Equal(0, code)
 	assert.Empty(stderr)
 	assert.Contains(stdout, `"repo_path": "owner/archive"`)

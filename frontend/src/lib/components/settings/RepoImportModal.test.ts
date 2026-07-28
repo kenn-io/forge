@@ -126,6 +126,7 @@ describe("RepoImportModal", () => {
       repos: [],
       kata_projects: [],
       pull_requests: { allow_mid_stack_merges: false, prefer_github_native_stacks: false },
+      workspaces: { auto_assign_on_create: false },
       issues: { hide_bots: false },
       activity: {
         view_mode: "threaded",
@@ -205,6 +206,7 @@ describe("RepoImportModal", () => {
       repos: [],
       kata_projects: [],
       pull_requests: { allow_mid_stack_merges: false, prefer_github_native_stacks: false },
+      workspaces: { auto_assign_on_create: false },
       issues: { hide_bots: false },
       activity: {
         view_mode: "threaded",

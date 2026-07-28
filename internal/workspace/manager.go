@@ -36,23 +36,24 @@ import (
 // intentionally not a generic host worktree browser or arbitrary Git
 // automation layer.
 type Manager struct {
-	db                     *db.DB
-	worktreeDir            string
-	clones                 *gitclone.Manager
-	locks                  *FileLockManager
-	tmuxCmd                []string
-	hideTmuxStatusMu       sync.RWMutex
-	hideTmuxStatus         bool
-	ptyOwner               PtyOwnerClient
-	preferPtyOwner         bool
-	retryMu                sync.Mutex
-	retryQueued            map[string]bool
-	runtimeTmuxMu          sync.Mutex
-	issueBranchSlugEnabled bool
-	summaryCacheMu         sync.RWMutex
-	summaryCache           []WorkspaceSummary
-	deletedSummaryIDs      map[string]bool
-	worktreeBaseResolver   WorktreeBasePathResolver
+	db                        *db.DB
+	worktreeDir               string
+	clones                    *gitclone.Manager
+	locks                     *FileLockManager
+	tmuxCmd                   []string
+	hideTmuxStatusMu          sync.RWMutex
+	hideTmuxStatus            bool
+	ptyOwner                  PtyOwnerClient
+	preferPtyOwner            bool
+	retryMu                   sync.Mutex
+	retryQueued               map[string]bool
+	runtimeTmuxMu             sync.Mutex
+	issueBranchSlugEnabled    bool
+	summaryCacheMu            sync.RWMutex
+	summaryCache              []WorkspaceSummary
+	deletedSummaryIDs         map[string]bool
+	worktreeBaseResolver      WorktreeBasePathResolver
+	afterHeadRepoSnapshotRead func()
 }
 
 // WorktreeBasePathResolver resolves a tracked remote repository to a
@@ -348,7 +349,7 @@ func (m *Manager) Create(
 		ItemType:     db.WorkspaceItemTypePullRequest,
 		ItemNumber:   mrNumber,
 		GitHeadRef:   mr.HeadBranch,
-		MRHeadRepo: workspaceHeadRepo(
+		MRHeadRepo: WorkspaceHeadRepo(
 			repo.Platform, platformHost, owner, name, mr.HeadRepoCloneURL,
 		),
 		WorkspaceBranch: workspaceBranchUnknown,
@@ -877,7 +878,13 @@ func workspaceBranchConflict(
 	}
 }
 
-func workspaceHeadRepo(provider, platformHost, owner, name, cloneURL string) *string {
+// WorkspaceHeadRepo classifies a pull-request head repository against its
+// base repository identity: nil means confirmed same-repo, a non-nil empty
+// string means the head repository identity could not be determined from
+// cloneURL, and a non-nil clone URL means the head lives in a fork. Exported
+// so the sync engine can reclassify workspace trust rows when a later sync
+// changes an MR's head_repo_clone_url, without duplicating this logic.
+func WorkspaceHeadRepo(provider, platformHost, owner, name, cloneURL string) *string {
 	// MRHeadRepo means "this PR head must be resolved through fork-safe refs"
 	// in setup. GitHub also fills head.repo.clone_url for same-repo PRs, so
 	// compare clone identities before treating a non-empty URL as fork metadata.
@@ -920,7 +927,7 @@ func (m *Manager) SetupWithWorktreeBasePath(
 		ws.ID, workspaceSetupStageSetup, "started",
 		"starting workspace setup",
 	)
-	if err := m.refreshWorkspaceHeadRepo(ctx, ws); err != nil {
+	if err := m.RefreshWorkspaceHeadRepo(ctx, ws); err != nil {
 		return m.failSetup(
 			ctx, ws.ID, workspaceSetupStageSetup,
 			fmt.Errorf("refresh workspace head repository: %w", err),
@@ -1058,34 +1065,163 @@ func workspaceRequiresExistingDirectory(ws *Workspace) bool {
 	return ws != nil && ws.WorkspaceBranch == workspaceBranchRecoveryPending
 }
 
-func (m *Manager) refreshWorkspaceHeadRepo(
+// WorkspaceHeadRepoSnapshot binds a workspace's head-repository trust
+// classification to the merge-request snapshot from which it was derived.
+type WorkspaceHeadRepoSnapshot struct {
+	SnapshotRevision int64
+	MRHeadRepo       *string
+}
+
+// RefreshWorkspaceHeadRepo recomputes a pull-request workspace's head-repo
+// trust classification from the current merge request row and persists it
+// when it differs from the stored value, mutating ws.MRHeadRepo in place.
+func (m *Manager) RefreshWorkspaceHeadRepo(
 	ctx context.Context, ws *Workspace,
 ) error {
+	_, err := m.RefreshWorkspaceHeadRepoSnapshot(ctx, ws)
+	return err
+}
+
+// RefreshWorkspaceHeadRepoSnapshot refreshes the persisted trust
+// classification and returns the merge-request snapshot revision used to
+// compute it. Non-pull-request workspaces do not have an MR snapshot.
+func (m *Manager) RefreshWorkspaceHeadRepoSnapshot(
+	ctx context.Context, ws *Workspace,
+) (*WorkspaceHeadRepoSnapshot, error) {
+	if ws == nil {
+		return nil, ErrWorkspaceNotFound
+	}
+	if ws.ID != "" {
+		releaseReconciliation, err :=
+			m.db.LockRepositoryReconciliationRead(ctx)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"lock repository reconciliation for head classification: %w",
+				err,
+			)
+		}
+		defer releaseReconciliation()
+
+		current, err := m.db.GetWorkspace(ctx, ws.ID)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"reload workspace for head classification: %w", err,
+			)
+		}
+		if current == nil {
+			return nil, ErrWorkspaceNotFound
+		}
+		*ws = *current
+	}
 	if ws.ItemType != db.WorkspaceItemTypePullRequest {
-		return nil
+		return nil, nil
 	}
-	repo, err := m.workspaceRepo(
-		ctx, ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
-	)
-	if err != nil {
-		return fmt.Errorf("look up workspace repo: %w", err)
-	}
-	cloneURL := ""
-	if repo != nil {
+	for {
+		repo, err := m.workspaceRepo(
+			ctx, ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("look up workspace repo: %w", err)
+		}
+		if repo == nil {
+			refreshed := WorkspaceHeadRepo(
+				ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName, "",
+			)
+			if m.afterHeadRepoSnapshotRead != nil {
+				m.afterHeadRepoSnapshotRead()
+			}
+			if ws.ID == "" {
+				ws.MRHeadRepo = refreshed
+				return &WorkspaceHeadRepoSnapshot{
+					MRHeadRepo: refreshed,
+				}, nil
+			}
+			applied, updateErr :=
+				m.db.UpdateWorkspaceMRHeadRepoForMissingRepo(
+					ctx,
+					ws.ID,
+					db.RepoIdentity{
+						Platform:     ws.Platform,
+						PlatformHost: ws.PlatformHost,
+						Owner:        ws.RepoOwner,
+						Name:         ws.RepoName,
+						RepoPath:     ws.RepoOwner + "/" + ws.RepoName,
+					},
+					refreshed,
+				)
+			if updateErr != nil {
+				return nil, fmt.Errorf(
+					"persist missing-repo head classification: %w",
+					updateErr,
+				)
+			}
+			if !applied {
+				if err := ctx.Err(); err != nil {
+					return nil, err
+				}
+				continue
+			}
+			ws.MRHeadRepo = refreshed
+			return &WorkspaceHeadRepoSnapshot{
+				MRHeadRepo: refreshed,
+			}, nil
+		}
 		mr, lookupErr := m.db.GetMergeRequestByRepoIDAndNumber(
 			ctx, repo.ID, ws.ItemNumber,
 		)
 		if lookupErr != nil {
-			return fmt.Errorf("look up workspace merge request: %w", lookupErr)
+			return nil, fmt.Errorf("look up workspace merge request: %w", lookupErr)
 		}
+		cloneURL := ""
+		var snapshotRevision int64
 		if mr != nil {
 			cloneURL = mr.HeadRepoCloneURL
+			snapshotRevision = mr.SnapshotRevision
+			if mr.HeadRepoIdentityStale {
+				return &WorkspaceHeadRepoSnapshot{
+					SnapshotRevision: snapshotRevision,
+					MRHeadRepo:       ws.MRHeadRepo,
+				}, nil
+			}
 		}
+		refreshed := WorkspaceHeadRepo(
+			ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName, cloneURL,
+		)
+		if m.afterHeadRepoSnapshotRead != nil {
+			m.afterHeadRepoSnapshotRead()
+		}
+		if ws.ID == "" {
+			ws.MRHeadRepo = refreshed
+			return &WorkspaceHeadRepoSnapshot{
+				SnapshotRevision: snapshotRevision,
+				MRHeadRepo:       refreshed,
+			}, nil
+		}
+		applied, updateErr := m.db.UpdateWorkspaceMRHeadRepoForSnapshot(
+			ctx,
+			ws.ID,
+			repo.ID,
+			ws.ItemNumber,
+			snapshotRevision,
+			refreshed,
+		)
+		if updateErr != nil {
+			return nil, fmt.Errorf(
+				"persist refreshed head repository: %w", updateErr,
+			)
+		}
+		if !applied {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		ws.MRHeadRepo = refreshed
+		return &WorkspaceHeadRepoSnapshot{
+			SnapshotRevision: snapshotRevision,
+			MRHeadRepo:       refreshed,
+		}, nil
 	}
-	ws.MRHeadRepo = workspaceHeadRepo(
-		ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName, cloneURL,
-	)
-	return nil
 }
 
 func (m *Manager) reuseExistingWorkspaceWorktree(

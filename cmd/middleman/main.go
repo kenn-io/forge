@@ -1,15 +1,16 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path"
@@ -22,7 +23,6 @@ import (
 	oteltelemetry "go.kenn.io/kit/telemetry"
 	"go.kenn.io/middleman/internal/agentactivity"
 	"go.kenn.io/middleman/internal/archive"
-	"go.kenn.io/middleman/internal/cli/ctl"
 	"go.kenn.io/middleman/internal/cli/serve"
 	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/db"
@@ -110,6 +110,12 @@ func main() {
 	}()
 
 	if err := runCLI(os.Args[1:], os.Stdout); err != nil {
+		var apiErr *apiVerbError
+		if errors.As(err, &apiErr) {
+			_, _ = fmt.Fprintln(os.Stderr, err)
+			os.Exit(exitCodeForAPIVerb(err))
+			return
+		}
 		slog.Error("fatal", "err", err)
 		os.Exit(1)
 	}
@@ -194,91 +200,84 @@ func parseLogLevel(raw string) (slog.Level, error) {
 	}
 }
 
-func runCLI(args []string, stdout io.Writer) error {
-	if len(args) > 0 {
-		switch args[0] {
-		case "version":
-			return runVersionCLI(args[1:], stdout)
-		case "config":
-			return runConfigCLI(args[1:], stdout)
-		case "docs":
-			return runDocsCLI(args[1:], stdout)
-		case "pty-owner":
-			return runPtyOwnerCLI(args[1:])
-		case "status":
-			return runStatusCLI(args[1:], stdout)
-		case "api":
-			if err := runAPICLI(args[1:], stdout, os.Stdin); err != nil {
-				_, _ = fmt.Fprintln(os.Stderr, err)
-				os.Exit(exitCodeForAPIVerb(err))
-			}
-			return nil
-		case "archive":
-			return runArchiveCLI(args[1:], stdout)
-		case "agent-hook":
-			return runAgentHookCLI(args[1:], os.Stdin, stdout)
-		case "serve":
-			return serve.Run(args[1:], runServer)
-		}
-	}
-
-	if ctl.IsInvocation(args) {
-		return ctl.Execute(args, ctl.Options{
-			Stdout: stdout,
-			Stderr: os.Stderr,
-		})
-	}
-
-	return serve.Run(args, runServer)
-}
-
 func runAgentHookCLI(args []string, stdin io.Reader, stdout io.Writer) error {
-	if len(args) == 0 {
-		return fmt.Errorf("usage: middleman agent-hook <run|install|uninstall>")
-	}
-	switch args[0] {
-	case "run":
-		return runAgentHookReceiver(args[1:], stdin)
-	case "install", "uninstall":
-		return runAgentHookInstall(args[0], args[1:], stdout)
-	default:
-		return fmt.Errorf("unknown agent-hook subcommand %q", args[0])
-	}
+	cmd := newAgentHookCommand(stdin, stdout)
+	cmd.SetArgs(normalizeSingleDashLongFlags(args))
+	cmd.SilenceErrors = true
+	cmd.SilenceUsage = true
+	return cmd.Execute()
 }
 
-func runAgentHookReceiver(args []string, stdin io.Reader) error {
-	fs := flag.NewFlagSet("middleman agent-hook run", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	stateDir := fs.String("state-dir", "", "agent activity state directory")
-	source := fs.String("source", "", "hook source marker")
-	if err := fs.Parse(args); err != nil {
+func receiveAgentHook(agent, configPath, source string, stdin io.Reader, stdout io.Writer) error {
+	if source != "middleman-agent-activity" {
 		return nil
 	}
-	if *source != "middleman-agent-activity" {
+	payload, err := io.ReadAll(io.LimitReader(stdin, (1<<20)+1))
+	if err != nil || len(payload) > 1<<20 {
 		return nil
 	}
-	store := agentactivity.NewStore(*stateDir)
-	_ = store.HandleHook(
-		stdin, os.Getenv(agentactivity.RuntimeSessionKeyEnv),
+	integration, err := agentactivity.ParseIntegration(agent)
+	if err != nil {
+		return nil
+	}
+	daemon, err := discoverDaemonHTTP(configPath, 1500*time.Millisecond)
+	if err != nil {
+		return nil
+	}
+	req, err := http.NewRequest(
+		http.MethodPost,
+		daemon.BaseURL+"/api/v1/agent-hooks/"+url.PathEscape(string(integration)),
+		bytes.NewReader(payload),
 	)
-	return nil
+	if err != nil {
+		return nil
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(
+		"X-Middleman-Runtime-Session-Key",
+		os.Getenv(agentactivity.RuntimeSessionKeyEnv),
+	)
+	resp, err := daemon.Client.Do(req)
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return nil
+	}
+	responseBody, err := io.ReadAll(io.LimitReader(resp.Body, (1<<20)+1))
+	if err != nil || len(responseBody) > 1<<20 {
+		return nil
+	}
+	var output struct {
+		HookOutput json.RawMessage `json:"hook_output"`
+	}
+	if err := json.Unmarshal(responseBody, &output); err != nil ||
+		len(output.HookOutput) == 0 || string(output.HookOutput) == "null" {
+		return nil
+	}
+	if _, err := stdout.Write(output.HookOutput); err != nil {
+		return err
+	}
+	_, err = io.WriteString(stdout, "\n")
+	return err
 }
 
 func runAgentHookInstall(action string, args []string, stdout io.Writer) error {
-	fs := flag.NewFlagSet("middleman agent-hook "+action, flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	configPath := fs.String("config", config.DefaultConfigPath(), "middleman config path")
-	agent := fs.String("agent", "", "agent integration (claude or codex; empty installs both)")
-	binary := fs.String("binary", "", "middleman binary path used by installed hooks")
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
+	cmd := newAgentHookCommand(strings.NewReader(""), stdout)
+	cmd.SetArgs(normalizeSingleDashLongFlags(append([]string{action}, args...)))
+	cmd.SilenceErrors = true
+	cmd.SilenceUsage = true
+	return cmd.Execute()
+}
+
+func installAgentHooks(action, configPath, agent, binary string, stdout io.Writer) error {
 	integrations := []agentactivity.Integration{
 		agentactivity.IntegrationClaude,
 		agentactivity.IntegrationCodex,
 	}
-	if strings.TrimSpace(*agent) != "" {
-		integration, err := agentactivity.ParseIntegration(*agent)
+	if strings.TrimSpace(agent) != "" {
+		integration, err := agentactivity.ParseIntegration(agent)
 		if err != nil {
 			return err
 		}
@@ -298,14 +297,18 @@ func runAgentHookInstall(action string, args []string, stdout io.Writer) error {
 		return nil
 	}
 
-	cfg, err := config.Load(*configPath)
+	cfg, err := config.Load(configPath)
 	if err != nil {
 		return err
 	}
 	if !filepath.IsAbs(cfg.DataDir) {
 		return fmt.Errorf("agent hook install requires an absolute data_dir: %q", cfg.DataDir)
 	}
-	executable := strings.TrimSpace(*binary)
+	absoluteConfigPath, err := filepath.Abs(configPath)
+	if err != nil {
+		return fmt.Errorf("resolve agent hook config path: %w", err)
+	}
+	executable := strings.TrimSpace(binary)
 	if executable == "" {
 		executable, err = os.Executable()
 		if err != nil {
@@ -316,7 +319,7 @@ func runAgentHookInstall(action string, args []string, stdout io.Writer) error {
 		result, err := agentactivity.Install(
 			integration,
 			executable,
-			filepath.Join(cfg.DataDir, "agent-activity"),
+			absoluteConfigPath,
 		)
 		if err != nil {
 			return err
@@ -333,8 +336,8 @@ func runAgentHookInstall(action string, args []string, stdout io.Writer) error {
 	return nil
 }
 
-func runVersionCLI(args []string, stdout io.Writer) error {
-	if len(args) == 0 {
+func writeVersion(stdout io.Writer, asJSON bool) error {
+	if !asJSON {
 		_, err := fmt.Fprintf(
 			stdout,
 			"middleman %s (%s) built %s\n",
@@ -342,10 +345,6 @@ func runVersionCLI(args []string, stdout io.Writer) error {
 		)
 		return err
 	}
-	if len(args) != 1 || args[0] != "--json" {
-		return fmt.Errorf("usage: middleman version [--json]")
-	}
-
 	return json.NewEncoder(stdout).Encode(versionOutput{
 		Name:      "middleman",
 		Version:   version,
@@ -354,99 +353,53 @@ func runVersionCLI(args []string, stdout io.Writer) error {
 	})
 }
 
-func runPtyOwnerCLI(args []string) error {
-	fs := flag.NewFlagSet("middleman pty-owner", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	root := fs.String("root", "", "pty owner state root")
-	session := fs.String("session", "", "session name")
-	cwd := fs.String("cwd", "", "working directory")
-	commandJSON := fs.String("command-json", "", "JSON command argv")
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-	if *session == "" {
+func runPtyOwner(root, session, cwd, commandJSON string) error {
+	if session == "" {
 		return fmt.Errorf("pty-owner session is required")
 	}
-	if *root == "" {
+	if root == "" {
 		return fmt.Errorf("pty-owner root is required")
 	}
-	if *cwd == "" {
+	if cwd == "" {
 		return fmt.Errorf("pty-owner cwd is required")
 	}
 	var command []string
-	if *commandJSON != "" {
-		if err := json.Unmarshal([]byte(*commandJSON), &command); err != nil {
+	if commandJSON != "" {
+		if err := json.Unmarshal([]byte(commandJSON), &command); err != nil {
 			return fmt.Errorf("parse pty-owner command-json: %w", err)
 		}
 	}
 	return ptyowner.RunOwner(context.Background(), ptyowner.Options{
-		Root:    *root,
-		Session: *session,
-		Cwd:     *cwd,
+		Root:    root,
+		Session: session,
+		Cwd:     cwd,
 		Command: command,
 	})
 }
 
-func runConfigCLI(args []string, stdout io.Writer) error {
-	if len(args) == 0 {
-		return fmt.Errorf("config command requires subcommand")
-	}
-
-	switch args[0] {
-	case "read":
-		return runConfigRead(args[1:], stdout)
-	default:
-		return fmt.Errorf("unknown config subcommand %q", args[0])
-	}
-}
-
-func runConfigRead(args []string, stdout io.Writer) error {
-	fs := flag.NewFlagSet("middleman config read", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	configPath := fs.String(
-		"config", config.DefaultConfigPath(),
-		"path to config file",
-	)
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-	if fs.NArg() != 1 {
-		return fmt.Errorf("config read requires exactly one key")
-	}
-
-	if err := config.EnsureDefault(*configPath); err != nil {
+func readConfigValue(configPath, key string, stdout io.Writer) error {
+	if err := config.EnsureDefault(configPath); err != nil {
 		return fmt.Errorf("ensure config: %w", err)
 	}
-	cfg, err := config.Load(*configPath)
+	cfg, err := config.Load(configPath)
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
 
-	switch fs.Arg(0) {
+	switch key {
 	case "port":
 		_, err := fmt.Fprintf(stdout, "%d\n", cfg.Port)
 		return err
 	default:
-		return fmt.Errorf("unsupported config key %q", fs.Arg(0))
+		return fmt.Errorf("unsupported config key %q", key)
 	}
 }
 
-func runStatusCLI(args []string, stdout io.Writer) error {
-	fs := flag.NewFlagSet("middleman status", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	configPath := fs.String(
-		"config", config.DefaultConfigPath(),
-		"path to config file",
-	)
-	asJSON := fs.Bool("json", false, "render output as JSON")
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-
-	if err := config.EnsureDefault(*configPath); err != nil {
+func writeStatus(configPath string, asJSON bool, stdout io.Writer) error {
+	if err := config.EnsureDefault(configPath); err != nil {
 		return fmt.Errorf("ensure config: %w", err)
 	}
-	cfg, err := config.Load(*configPath)
+	cfg, err := config.Load(configPath)
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
@@ -462,7 +415,7 @@ func runStatusCLI(args []string, stdout io.Writer) error {
 		return fmt.Errorf("read runtime status: %w", err)
 	}
 
-	return runtimelock.FormatStatus(stdout, st, *asJSON)
+	return runtimelock.FormatStatus(stdout, st, asJSON)
 }
 
 func run(opts serve.Options) error {

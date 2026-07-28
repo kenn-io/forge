@@ -193,14 +193,25 @@ registry helpers return typed errors for missing providers or capabilities.
 - Only parent lookups explicitly classified as removed, moved, or inaccessible are terminal. Generic and child-dataset not-found responses remain retries; a successful non-GitHub feature-metadata confirmation doubles as repository-accessibility evidence and must not be repeated before marking the parent absent. Canonical item content stays untouched. (`internal/archive/hydrate.go::archiveTerminalSyncOutcome`, `internal/platform/gitealike/feature_disabled.go::Provider.repositoryItemLookupError`,
   `internal/platform/gitlab/feature_disabled.go::Client.repositoryItemLookupError`)
 - Maintenance rediscovery reopens terminal item progress for hydration; unsupported and blocked items remain excluded. (`internal/db/queries_dataset_progress.go::reopenArchiveItemProgressTx`)
+- Issue and merge-request inventory coverage is explicit and independent from child-dataset coverage. Exhausted supported scans record `supported`; declared or repository-specific feature absence records `unsupported` and completes only that stream. (`internal/archive/inventory.go::inventoryPage`, `internal/db/queries_archive.go::CommitArchiveInventoryPage`)
+- Repository-specific feature absence also exhausts the current maintenance stream without replacing established historical coverage. (`internal/archive/maintenance.go::promptPages`)
+- Capability reconciliation reopens an unsupported inventory with unknown
+  coverage and requeues completed known-item lookups in a fresh generation when
+  the provider advertises that stream again. (`internal/db/queries_archive.go::ReconcileArchiveCoverage`)
 - A bare optional `DiffSyncError` does not block archive historical-activity completion; wrapped or joined hard failures still retry. (`internal/github/sync.go::SyncArchiveItem`)
 - Every configured repository starts provider-neutral discovery; do not restore provider-specific closed-item cursors or translate legacy formats. (`internal/archive/service.go::EnsureConfigured`)
 - Configuration reconciliation pauses omitted repositories with a durable `configuration_removed` reason while retaining archive content and progress. Re-adding the same full identity clears only that automatic pause; an operator pause stays paused. (`internal/db/queries_archive.go::ReconcileDiscoveryArchives`, `internal/db/queries_archive.go::EnsureDiscoveryArchives`)
 - Reconcile configured repositories only at startup or configuration reload; idle scheduler polls must remain read-only unless they claim actual work. (`internal/github/sync.go::SetReposWithContext`, `internal/archive/scheduler.go::RunEligible`)
+- Startup reconciliation reopens completed legacy known-item lookups once when
+  lifecycle details are missing, independent of historical inventory coverage;
+  a close actor is current only when the latest authored close event matches
+  `closed_at`. (`internal/db/queries_archive.go::RequeueArchiveLifecycleDetails`)
+- Successful canonical hydration durably marks lifecycle details checked even when a provider omits them, preventing repeated backfill reads. (`internal/db/queries_dataset_progress.go::CommitArchiveItemSync`)
 - Authentication and repository-blocked errors defer every archive work class, including already-pending hydration, until an explicit retry clears the repository error. (`internal/archive/scheduler.go::archiveRepoDeferred`)
 - Archive admission is provider-host scoped. Normal index, notification, and active-detail work outrank archive requests; live work registers first, cancels the active archive request context, and waits for that request lease to release before provider I/O. Archive leases are released before SQLite commits. Register repo index and item detail work inside their shared execution functions so periodic, watched, manual, API, and item-number entry points cannot bypass admission. (`internal/github/sync.go::beginProviderWork`, `internal/github/sync.go::tryBeginArchiveProviderRequest`, `internal/github/sync.go::Admit`, `internal/archive/scheduler.go::admit`)
 - Archive admission requires the declared minimum cost and normally bounds wire attempts above the live floor. Gitealike merge-request reads remain preemptible but may exceed the estimate to complete their atomic dataset. (`internal/github/budget.go::LocalArchiveSpendAvailable`,
   `internal/archive/scheduler.go::archiveFeatureReadAttemptCost`, `internal/github/sync.go::Admit`)
+- Detailed reports use schema `middleman-archive-report/1` and half-open UTC windows. They expose opened items, current close/merge lifecycle projections, comments, reviews, and inline comments; a reopened issue has no close row. Issue close actors must match the current `closed_at`; merge metrics come from the normalized merge-request row. Daemon CLI JSON must reject any other schema before conversion and round-trip every recognized report kind and field. (`internal/db/queries_archive_report.go::archiveReportActivityQuery`, `cmd/middleman/archive_cli.go::archiveReportFromAPI`)
 
 ## Label Catalogs And Mutations
 
@@ -232,9 +243,13 @@ provider identity so equal GitHub/GitLab ids do not collide.
 
 GitLab archive discussions normalize as ordinary or inline comments. Do not synthesize submitted reviews from notes or current approvals; without stable historical actions, that dataset stays unsupported and coverage stays partial. (`internal/platform/gitlab/client.go::Capabilities`)
 
+GitLab issue event hydration preserves authored close and reopen system notes, while ordinary-comment reads exclude system notes. (`internal/platform/gitlab/client.go::Client.ListIssueEvents`, `internal/platform/gitlab/normalize.go::normalizeIssueSystemNote`)
+
 GitLab historical merge-request inventory is unsupported because project merge requests expose only offset pagination and cannot guarantee completeness across equal-`created_at` ties. Coverage remains partial while supported issue history and discussion datasets continue. (`internal/platform/gitlab/client.go::Capabilities`, `internal/platform/gitlab/pages.go::ListMergeRequestsPage`)
 
 GitLab maintenance inventories walk mutable `updated_at` results newest-first. Updates then move toward the consumed prefix; rows that move ahead before consumption remain eligible under the next scan's inclusive watermark. (`internal/platform/gitlab/pages.go::listInventoryIssuesPage`, `internal/platform/gitlab/pages.go::listInventoryMergeRequestsPage`)
+
+GitLab merge reports use `merge_commit_sha`, falling back to `squash_commit_sha` when no merge commit exists. (`internal/platform/gitlab/normalize.go::normalizeMergeRequest`)
 
 ## Forgejo And Gitea Shape
 
@@ -246,6 +261,12 @@ IDs when available, but route and config identity should remain
 Codeberg is Forgejo's public host. gitea.com is Gitea's public host.
 Self-hosted Forgejo and Gitea instances are separate provider-host entries even
 when they have the same owner/name pairs as public repos.
+
+Forgejo pull-request JSON is authoritative for merge metrics: its SDK drops
+those fields, so raw-response capture must preserve values and field presence
+with head/base binding before neutral normalization; omitted counters preserve
+stored values while explicit zero replaces them
+(`internal/platform/gitealike/mergeable_capture.go::MetricsForPullRequest`).
 
 Actions/CI parity is provider-specific. Forgejo reads Actions runs through the
 shared gitealike provider. Gitea reads repository workflow runs only when the

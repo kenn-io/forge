@@ -84,6 +84,16 @@ For pull requests, that means:
   `internal/server/huma_routes.go::syncPR`). Cadence control is still required
   because changed PRs correctly fall through to comments, reviews, commits, CI,
   and workflow approval refreshes.
+- MR snapshot publication and workspace head-repository reclassification share
+  one reconciliation barrier. Provider-ID collisions preserve the destination
+  MR ID and merge its dependent review data before applying the newest provider
+  snapshot. A snapshot moved from the old repository identity carries a durable
+  stale-identity marker while its revision continues to advance; manual refresh
+  preserves the workspace's prior trust classification until a post-move
+  provider snapshot with authoritative head-repository data clears that marker
+  (`internal/github/sync.go::CommitMergeRequestParentSnapshot`,
+  `internal/db/queries.go::UpsertRepoByProviderID`,
+  `internal/workspace/manager.go::RefreshWorkspaceHeadRepoSnapshot`).
 
 ## Timeline Event Rules
 
@@ -222,9 +232,12 @@ fallback repository listing.
 - The legacy closed-item backfill is retired; configured repositories seed durable archive discovery before sync cutover, with no cursor translation. (`internal/github/sync.go::SetReposWithContext`)
 - Initial issue and pull-request inventory includes all states in stable created-time ascending order; issue enumeration excludes PR-shaped rows. (`internal/github/pages.go::ListIssuesPage`, `internal/github/pages.go::ListMergeRequestsPage`)
 - Updated issue scans query one second before the durable watermark while keeping cursor identity bound to the original boundary. Updated pull-request scans run newest-first across the same overlap. (`internal/github/pages.go::ListIssuesPage`, `internal/github/pages.go::ListMergeRequestsPage`)
+- Durable pull-request inventory bypasses the process-local list ETag cache. Archive cursors require response bodies, so a bodyless `304 Not Modified` must not turn an unchanged maintenance scan into a retryable failure. (`internal/github/pages.go::liveClient.ListInventoryPullRequestsPage`)
 - Repository probes classify only authentication/access/not-found responses; transient probe failures remain retryable and non-destructive. Issue and pull-request lookups compare the response repository with the requested source identity so transfers become moved outcomes instead of source-owned snapshots. (`internal/github/pages.go::archiveRepositoryProbeError`, `internal/github/pages.go::githubArchiveDestination`)
 - Archive REST and GraphQL failures must preserve typed authentication and reset-aware rate-limit errors so scheduling defers rather than hot-looping generic retries. (`internal/github/pages.go::archiveTransportError`)
 - GitHub archive code owns historical identity inventory only; hydration must invoke ordinary item sync instead of adding archive-specific lookup, normalization, or persistence. (`internal/github/pages.go::ListIssuesPage`, `internal/github/sync.go::SyncArchiveItem`)
+- Archive item hydration bypasses persisted parent-detail ETags; an unchanged parent representation does not prove that legacy lifecycle timelines are complete. (`internal/github/sync.go::SyncArchiveItem`)
+- Archive issue hydration treats timeline failures as hard errors; ordinary issue refresh remains best-effort for that optional dataset. (`internal/github/sync.go::refreshIssueTimeline`)
 - Archive requests use shared sync budgets above `archiveLiveFloor`: provider reset signals release quadratic surplus, while headerless Gitealike hosts use configured local hourly surplus. The transport attributes every attempt, and live work preempts the archive lease. (`internal/github/budget.go::LocalArchiveSpendAvailable`, `internal/github/sync.go::Admit`)
 - A GitHub issue without `updated_at` uses `created_at` as both its freshness and initial activity boundary; zero timestamps must not bypass monotonic snapshot acceptance. (`internal/platform/github/normalize.go::NormalizeIssue`)
 

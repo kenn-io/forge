@@ -32,7 +32,11 @@ func NormalizePullRequest(repo platform.RepoRef, ghPR *gh.PullRequest) (platform
 		IsLocked:           ghPR.GetLocked(),
 		Body:               ghPR.GetBody(),
 		Additions:          ghPR.GetAdditions(),
+		AdditionsKnown:     ghPR.Additions != nil,
 		Deletions:          ghPR.GetDeletions(),
+		DeletionsKnown:     ghPR.Deletions != nil,
+		FilesChanged:       ghPR.ChangedFiles,
+		MergeCommitSHA:     ghPR.GetMergeCommitSHA(),
 		CommentCount:       ghPR.GetComments(),
 		MergeableState:     ghPR.GetMergeableState(),
 	}

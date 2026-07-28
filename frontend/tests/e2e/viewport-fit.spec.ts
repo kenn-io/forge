@@ -108,6 +108,7 @@ test("settings sidebar lists every panel in declaration order under group headin
       "Pull requests",
       "Activity",
       "Workspace",
+      "Workspaces",
       "Terminal",
       "Kata mappings",
       "Workspace agents",

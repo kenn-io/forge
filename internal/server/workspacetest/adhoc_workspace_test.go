@@ -28,6 +28,8 @@ func TestCreateAdHocWorkspaceMaterializesRequestedBranch(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusAccepted, resp.StatusCode(), string(resp.Body))
 	require.NotNil(resp.JSON202)
+	require.NotNil(resp.JSON202.Created)
+	assert.True(*resp.JSON202.Created)
 	assert.Equal("adhoc", resp.JSON202.ItemType)
 	assert.EqualValues(0, resp.JSON202.ItemNumber)
 	assert.Equal(branch, resp.JSON202.GitHeadRef)
@@ -88,6 +90,7 @@ func TestCreateAdHocWorkspaceReusesWorkspaceForSameBranch(t *testing.T) {
 	require.Equal(http.StatusAccepted, second.StatusCode(), string(second.Body))
 	require.NotNil(second.JSON202)
 	assert.Equal(first.JSON202.Id, second.JSON202.Id)
+	assert.Nil(second.JSON202.Created)
 
 	listResp, err := fixture.client.HTTP.ListWorkspacesWithResponse(t.Context())
 	require.NoError(err)
@@ -177,6 +180,7 @@ func TestCreateAdHocWorkspaceReusesExistingBranchWhenAsked(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusAccepted, resp.StatusCode(), string(resp.Body))
 	require.NotNil(resp.JSON202)
+	assert.Nil(resp.JSON202.Created)
 
 	ready := waitForWorkspaceReady(t, t.Context(), fixture.client, resp.JSON202.Id)
 	assert.Equal(branch, ready.GitHeadRef)
@@ -184,6 +188,27 @@ func TestCreateAdHocWorkspaceReusesExistingBranchWhenAsked(t *testing.T) {
 		t, ready.WorktreePath, "rev-parse", "--abbrev-ref", "HEAD",
 	)
 	assert.Equal(branch, checkedOut)
+}
+
+func TestCreateAdHocWorkspaceReuseMissingBranchReportsCreated(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	fixture := setupWorkspaceServerFixture(t, nil)
+	branch := "spike/rate-limits"
+	reuse := true
+
+	resp, err := fixture.client.HTTP.CreateRepoWorkspaceWithResponse(
+		t.Context(), "gh", "acme", "widget",
+		generated.CreateRepoWorkspaceJSONRequestBody{
+			Branch: &branch, ReuseExistingBranch: &reuse,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, resp.StatusCode(), string(resp.Body))
+	require.NotNil(resp.JSON202)
+	require.NotNil(resp.JSON202.Created)
+	assert.True(*resp.JSON202.Created)
 }
 
 // Reuse is the one case where work does not start at origin/HEAD: the existing

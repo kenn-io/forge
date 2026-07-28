@@ -1,6 +1,11 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { createDiffStore } from "@middleman/ui/stores/diff";
+import {
+  consumeWorkspaceLaunch,
+  queueWorkspaceLaunch,
+  resetWorkspaceCreatePendingForTest,
+} from "@middleman/ui/stores/workspace-create-pending";
 import { STORES_KEY } from "../../../../../packages/ui/src/context.js";
 
 const mocks = vi.hoisted(() => ({
@@ -12,7 +17,10 @@ const mocks = vi.hoisted(() => ({
   mockOnData: vi.fn(),
   mockOpen: vi.fn(),
   mockSetTerminalSettings: vi.fn(),
-  mockTerminalInstances: [] as Array<{ options: Record<string, unknown> }>,
+  mockTerminalInstances: [] as Array<{
+    focus: ReturnType<typeof vi.fn>;
+    options: Record<string, unknown>;
+  }>,
   mockUpdateSettings: vi.fn(),
   renameWorkspaceSession: vi.fn(),
   showFlash: vi.fn(),
@@ -47,6 +55,7 @@ vi.mock("@xterm/xterm", () => ({
       rows: 24,
       clearTextureAtlas: vi.fn(),
       dispose: mocks.mockDispose,
+      focus: vi.fn(),
       loadAddon: mocks.mockLoadAddon,
       onBinary: vi.fn(),
       onData: mocks.mockOnData,
@@ -91,6 +100,7 @@ vi.mock("ghostty-web", () => ({
       cols: 80,
       rows: 24,
       open: mocks.mockOpen,
+      focus: vi.fn(),
       loadAddon: mocks.mockLoadAddon,
       onData: mocks.mockOnData,
       dispose: mocks.mockDispose,
@@ -226,6 +236,7 @@ const workspaceResponse = {
   status: "ready",
   enrichment_status: "fresh",
   created_at: "2026-04-29T00:00:00Z",
+  mr_head_repo_kind: "same_repo",
 };
 
 function runtimeWithSession(createdAt: string) {
@@ -252,6 +263,22 @@ function runtimeWithStaleSession() {
       },
     ],
     sessions: [runningSession],
+  };
+}
+
+function runtimeWithCodexTarget(available = true, sessions: Array<Record<string, unknown>> = []) {
+  return {
+    launch_targets: [
+      {
+        key: "codex",
+        label: "Codex",
+        kind: "agent",
+        source: "builtin",
+        available,
+        ...(available ? {} : { disabled_reason: "Codex is not configured" }),
+      },
+    ],
+    sessions,
   };
 }
 
@@ -336,6 +363,7 @@ describe("WorkspaceTerminalView", () => {
     localStorage.clear();
     localStorage.setItem("middleman-workspace-active-tab:ws-1", "session:ws-1:helper");
     sockets = [];
+    resetWorkspaceCreatePendingForTest();
     mocks.diffStore = createDiffStore();
     mocks.getWorkspaceRuntime.mockReset();
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithStaleSession());
@@ -2152,5 +2180,131 @@ describe("WorkspaceTerminalView", () => {
 
     deleteRequest.resolve(new Response(null, { status: 204 }));
     await waitFor(() => expect(window.location.pathname).toBe("/workspaces"));
+  });
+
+  it("launches an explicitly queued target without a confirmation modal", async () => {
+    queueWorkspaceLaunch("ws-1", "codex");
+    mocks.getWorkspaceRuntime
+      .mockResolvedValueOnce(runtimeWithCodexTarget())
+      .mockResolvedValue(runtimeWithCodexTarget(true, [runningSession]));
+    mocks.launchWorkspaceSession.mockResolvedValue(runningSession);
+
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+
+    await waitFor(() => {
+      expect(mocks.launchWorkspaceSession).toHaveBeenCalledWith("ws-1", "codex", {
+        hostKey: undefined,
+        region: "workflow",
+      });
+    });
+    expect(
+      screen.queryByRole("dialog", {
+        name: /Launch default agent/,
+      }),
+    ).toBeNull();
+  });
+
+  it("reacts when intent is queued after an already-ready workspace renders", async () => {
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget());
+    mocks.launchWorkspaceSession.mockResolvedValue(runningSession);
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+    await screen.findByRole("tab", { name: "Home" });
+
+    queueWorkspaceLaunch("ws-1", "codex");
+
+    await waitFor(() => {
+      expect(mocks.launchWorkspaceSession).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("allows an explicit fork-workspace launch", async () => {
+    queueWorkspaceLaunch("ws-1", "codex");
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget());
+    mocks.launchWorkspaceSession.mockResolvedValue(runningSession);
+    const forkWorkspaceResponse = { ...workspaceResponse, mr_head_repo_kind: "fork" };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: Request | URL | string) => {
+        const url = input instanceof Request ? input.url : String(input);
+        const { pathname } = new URL(url, "http://localhost");
+        if (pathname.endsWith("/workspaces/ws-1")) {
+          return Promise.resolve(Response.json(forkWorkspaceResponse));
+        }
+        if (pathname.endsWith("/api/v1/workspaces")) {
+          return Promise.resolve(Response.json({ workspaces: [forkWorkspaceResponse] }));
+        }
+        return Promise.resolve(Response.json({}));
+      }),
+    );
+
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+    await waitFor(() => expect(mocks.launchWorkspaceSession).toHaveBeenCalled());
+    expect(mocks.launchWorkspaceSession.mock.calls[0]?.[2]).toEqual({
+      hostKey: undefined,
+      region: "workflow",
+    });
+  });
+
+  it("launches manually with only workspace display options", async () => {
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget());
+    mocks.launchWorkspaceSession.mockResolvedValue({
+      ...runningSession,
+      key: "ws-1:codex",
+      target_key: "codex",
+      label: "Codex",
+    });
+
+    render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+      },
+    });
+
+    await screen.findByRole("tab", { name: "Home" });
+    await fireEvent.click(screen.getByRole("button", { name: "Launch" }));
+    const popover = document.querySelector(".launch-popover");
+    if (!popover) throw new Error("expected launch popover to open");
+    await fireEvent.click(within(popover as HTMLElement).getByRole("button", { name: "Codex" }));
+
+    await waitFor(() => {
+      expect(mocks.launchWorkspaceSession).toHaveBeenCalledWith("ws-1", "codex", {
+        hostKey: undefined,
+        region: "workflow",
+      });
+    });
+  });
+
+  it("consumes unavailable explicit intent and flashes its reason", async () => {
+    queueWorkspaceLaunch("ws-1", "codex");
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget(false));
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+    await screen.findByRole("tab", { name: "Home" });
+    expect(mocks.launchWorkspaceSession).not.toHaveBeenCalled();
+    expect(mocks.showFlash).toHaveBeenCalledWith(expect.stringContaining("Codex is not configured"), {
+      tone: "danger",
+    });
+    expect(consumeWorkspaceLaunch("ws-1")).toBeNull();
+  });
+
+  it("consumes missing explicit intent and flashes a generic reason", async () => {
+    queueWorkspaceLaunch("ws-1", "missing");
+    mocks.getWorkspaceRuntime.mockResolvedValue({ launch_targets: [], sessions: [] });
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+    await screen.findByRole("tab", { name: "Home" });
+    expect(mocks.launchWorkspaceSession).not.toHaveBeenCalled();
+    expect(mocks.showFlash).toHaveBeenCalledWith(expect.stringContaining("is not available in this workspace"), {
+      tone: "danger",
+    });
+    expect(consumeWorkspaceLaunch("ws-1")).toBeNull();
+  });
+
+  it("consumes explicit intent without launching when a session exists", async () => {
+    queueWorkspaceLaunch("ws-1", "codex");
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget(true, [runningSession]));
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+    await screen.findByRole("tab", { name: /Helper/ });
+    expect(mocks.launchWorkspaceSession).not.toHaveBeenCalled();
+    expect(mocks.showFlash).not.toHaveBeenCalled();
+    expect(consumeWorkspaceLaunch("ws-1")).toBeNull();
   });
 });

@@ -362,7 +362,10 @@ func TestGitLabLiveIssueEventsCollectCanonicalCommentPages(t *testing.T) {
 		pages = append(pages, r.URL.Query().Get("page"))
 		if r.URL.Query().Get("page") == "1" {
 			w.Header().Set("X-Next-Page", "2")
-			writeJSON(w, `[{"id":"first","notes":[{"id":301,"body":"first comment","author":{"username":"ivy"},"created_at":"2026-07-01T00:00:00Z"}]}]`)
+			writeJSON(w, `[{"id":"first","notes":[
+				{"id":301,"body":"first comment","author":{"username":"ivy"},"created_at":"2026-07-01T00:00:00Z"},
+				{"id":303,"body":"closed","system":true,"author":{"username":"closer"},"created_at":"2026-07-01T12:00:00Z"}
+			]}]`)
 			return
 		}
 		writeJSON(w, `[{"id":"second","notes":[{"id":302,"body":"second comment","author":{"username":"joe"},"created_at":"2026-07-02T00:00:00Z"}]}]`)
@@ -373,15 +376,19 @@ func TestGitLabLiveIssueEventsCollectCanonicalCommentPages(t *testing.T) {
 
 	events, err := client.ListIssueEvents(t.Context(), ref, 7)
 	require.NoError(err)
-	require.Len(events, 2)
+	require.Len(events, 3)
 	assert.Equal("first comment", events[0].Body)
-	assert.Equal("second comment", events[1].Body)
+	assert.Equal("closed", events[1].EventType)
+	assert.Equal("closer", events[1].Author)
+	assert.Equal("second comment", events[2].Body)
 	assert.Equal([]string{"1", "2"}, pages)
 
 	pages = nil
 	comments, err := client.ListIssueComments(t.Context(), ref, 7)
 	require.NoError(err)
-	assert.Equal(events, comments)
+	require.Len(comments, 2)
+	assert.Equal("first comment", comments[0].Body)
+	assert.Equal("second comment", comments[1].Body)
 	assert.Equal([]string{"1", "2"}, pages)
 }
 func TestGitLabArchiveCapabilities(t *testing.T) {

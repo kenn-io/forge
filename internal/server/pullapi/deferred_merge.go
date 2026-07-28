@@ -279,7 +279,7 @@ func (s *Handler) refreshDeferredMergeCI(
 	}
 	warnings, err := s.syncer.RefreshMRCIStatusOnProvider(
 		ctx,
-		deferredMergeRepoRef(repo),
+		mergeRequestRepoRef(repo),
 		repo.ID,
 		number,
 		queuedTarget.HeadSHA,
@@ -328,7 +328,7 @@ func (s *Handler) refreshPendingDeferredMergeCheckKeys(
 ) (*db.MergeRequest, []deferredMergeCheckKey, error) {
 	warnings, err := s.syncer.RefreshMRCIStatusOnProvider(
 		ctx,
-		deferredMergeRepoRef(repo),
+		mergeRequestRepoRef(repo),
 		repo.ID,
 		number,
 		queuedTarget.HeadSHA,
@@ -368,7 +368,7 @@ func (s *Handler) refreshPendingDeferredMergeCheckKeys(
 	return refreshed, keys, nil
 }
 
-func deferredMergeRepoRef(repo db.Repo) ghclient.RepoRef {
+func mergeRequestRepoRef(repo db.Repo) ghclient.RepoRef {
 	return ghclient.RepoRef{
 		Platform:           repoProviderKind(repo),
 		Owner:              repo.Owner,

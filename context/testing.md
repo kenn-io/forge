@@ -92,7 +92,14 @@ owner:
 - Use Vitest browser tests (`*.browser.svelte.ts` with `vitest-browser-svelte`)
   when the behavior needs a real browser DOM, native focus or keyboard behavior,
   computed styles, layout, localStorage, matchMedia, or other browser primitives,
-  but does not need an external server or Playwright navigation flow.
+  but does not need an external server or Playwright navigation flow. A browser
+  test that mounts a component directly (not via `mountBrowserApp`, which loads
+  it) must `import "./app.css"` before measuring geometry, or it measures
+  content-box sizing and fallback tokens the app never ships. Text-dependent
+  layout thresholds move between the CI container's fonts and a developer
+  machine's, so assert the invariant that holds either side of a wrap boundary,
+  never which side a chosen width lands on
+  (`frontend/src/RoborevReviewDrawer.footer-layout.browser.svelte.ts`).
 - Use Playwright mock e2e when the regression is specifically about a
   multi-step browser workflow, viewport behavior, screenshots/video, drag,
   scroll/sticky/overflow geometry, canvas/xterm rendering, or browser navigation.
@@ -104,6 +111,10 @@ A UI regression can be sufficiently covered by a backend/server test for the
 real runtime path plus a component or Vitest browser test for presentation. Do
 not require a duplicate full-stack browser test when it would only replay data
 that is already proven at those two boundaries.
+
+Agent lifecycle hooks intentionally have no full agent-launch E2E. Cover hook config,
+CLI relay, and HTTP handling independently because agent-process invocation is external
+and a combined test duplicates those seams (`internal/server/workspaceapi/agent_hook_test.go::TestReceiveAgentHookRecordsActivityAndGeneratesClaudeContext`).
 
 Every `@lucide/svelte/icons/<name>` import added anywhere in `frontend/src` or
 `packages/ui/src` must also be added to the `optimizeDeps.include` list in
@@ -265,9 +276,10 @@ clones its own bare repo and worktree root. Keep tests serial when they call
 resources, or intentionally verify ordering against another test-visible shared
 resource.
 
-Black-box tests should construct servers through `internal/testutil/servertest`;
-closing only an `httptest.Server` leaves background monitors able to race SQLite
-`t.TempDir` removal (`internal/testutil/servertest/servertest.go::New`).
+DB-backed server fixtures must drain `Server.Shutdown` before SQLite `t.TempDir`
+removal. Black-box tests use `internal/testutil/servertest`; same-package tests
+register shutdown cleanup after DB creation (`internal/testutil/servertest/servertest.go::New`,
+`internal/server/api_test.go::gracefulShutdown`).
 
 Disable Git auto-GC and auto-maintenance in synthetic repositories under
 `t.TempDir`; detached maintenance can recreate files during fixture cleanup

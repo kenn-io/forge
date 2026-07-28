@@ -70,7 +70,6 @@
           bind:value={commentText}
           onkeydown={handleKeydown}
           disabled={submitting}
-          rows="2"
         ></textarea>
         <button
           class="submit-btn"
@@ -136,17 +135,19 @@
     text-align: center;
   }
 
+  /* Submit sits inside the field, matching the pull request and issue
+   * comment boxes; the textarea reserves its footprint as bottom padding. */
   .comment-input {
-    display: flex;
-    gap: 8px;
-    align-items: flex-end;
+    position: relative;
     padding-top: 8px;
     border-top: 1px solid var(--border-muted);
   }
 
   .comment-textarea {
-    flex: 1;
-    padding: 6px 10px;
+    display: block;
+    width: 100%;
+    padding: 6px 10px
+      calc(var(--focus-detail-hit-target, 39.5px) + var(--focus-detail-space-sm, 7.5px));
     border: 1px solid var(--border-default);
     border-radius: var(--radius-sm);
     background: var(--bg-surface);
@@ -156,7 +157,8 @@
     line-height: 1.4;
     resize: vertical;
     outline: none;
-    min-height: 36px;
+    min-height: 80px;
+    max-height: 200px;
   }
 
   .comment-textarea::placeholder {
@@ -172,7 +174,10 @@
   }
 
   .submit-btn {
-    padding: 6px 14px;
+    position: absolute;
+    right: var(--focus-detail-space-sm, 8px);
+    bottom: var(--focus-detail-space-sm, 8px);
+    padding: var(--focus-detail-space-xs, 6px) var(--focus-detail-space-md, 14px);
     border: 1px solid var(--border-default);
     border-radius: var(--radius-sm);
     background: var(--accent-blue);
@@ -181,15 +186,16 @@
     font-weight: 500;
     cursor: pointer;
     white-space: nowrap;
-    flex-shrink: 0;
+    z-index: 1;
+    transition: opacity 0.15s;
   }
 
   .submit-btn:hover:not(:disabled) {
-    opacity: 0.9;
+    opacity: 0.85;
   }
 
   .submit-btn:disabled {
-    opacity: 0.5;
-    cursor: default;
+    opacity: 0.45;
+    cursor: not-allowed;
   }
 </style>

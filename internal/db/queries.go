@@ -909,6 +909,11 @@ func (d *DB) loadLabelsForIssues(ctx context.Context, ids []int64) (map[int64][]
 // than keepHost. Deletes in FK-dependency order so it works
 // on existing DBs where CASCADE may not be retrofitted.
 func (d *DB) PurgeOtherHosts(ctx context.Context, keepHost string) error {
+	releaseReconciliation := d.lockRepositoryReconciliationWrite()
+	defer releaseReconciliation()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	return d.Tx(ctx, func(tx *sql.Tx) error {
 		queries := []string{
 			`DELETE FROM middleman_starred_items WHERE repo_id IN (SELECT id FROM middleman_repos WHERE platform_host != ?)`,
@@ -999,6 +1004,14 @@ func (d *DB) UpsertRepoByProviderID(ctx context.Context, identity RepoIdentity) 
 	identity = canonicalRepoIdentity(identity)
 	if identity.PlatformRepoID == "" {
 		return 0, fmt.Errorf("upsert repo by provider id: platform repo id is required")
+	}
+	// Provider-ID reconciliation may move or delete MR rows between repository
+	// IDs. The exclusive side of the snapshot barrier keeps that identity
+	// rewrite outside every parent snapshot commit.
+	releaseReconciliation := d.lockRepositoryReconciliationWrite()
+	defer releaseReconciliation()
+	if err := ctx.Err(); err != nil {
+		return 0, err
 	}
 
 	var id int64
@@ -1154,6 +1167,30 @@ func updateRepoIdentityTx(
 	repoID int64,
 	identity RepoIdentity,
 ) error {
+	identity = canonicalRepoIdentity(identity)
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE middleman_merge_requests
+		SET head_repo_identity_stale = 1,
+		    snapshot_revision = snapshot_revision + 1
+		WHERE repo_id = ?
+		  AND EXISTS (
+		      SELECT 1
+		      FROM middleman_repos
+		      WHERE id = ?
+		        AND (
+		            platform <> ?
+		            OR platform_host <> ?
+		            OR repo_path_key <> ?
+		        )
+		  )`,
+		repoID,
+		repoID,
+		identity.Platform,
+		identity.PlatformHost,
+		identity.RepoPathKey,
+	); err != nil {
+		return fmt.Errorf("mark renamed repo merge request identities stale: %w", err)
+	}
 	_, err := tx.ExecContext(ctx,
 		`UPDATE middleman_repos
 		 SET platform_repo_id = CASE
@@ -1357,9 +1394,344 @@ func mergeRepoLabelNameConflictsTx(ctx context.Context, tx *sql.Tx, fromRepoID, 
 	return nil
 }
 
+func mergeRepoMergeRequestDraftsTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	sourceMRID, targetMRID int64,
+) error {
+	var sourceDraftID int64
+	var sourceUpdatedAt string
+	err := tx.QueryRowContext(ctx, `
+		SELECT id, updated_at
+		FROM middleman_mr_review_drafts
+		WHERE merge_request_id = ?`,
+		sourceMRID,
+	).Scan(&sourceDraftID, &sourceUpdatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("look up source review draft: %w", err)
+	}
+
+	var targetDraftID int64
+	var targetUpdatedAt string
+	err = tx.QueryRowContext(ctx, `
+		SELECT id, updated_at
+		FROM middleman_mr_review_drafts
+		WHERE merge_request_id = ?`,
+		targetMRID,
+	).Scan(&targetDraftID, &targetUpdatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE middleman_mr_review_drafts
+			SET merge_request_id = ?
+			WHERE id = ?`,
+			targetMRID, sourceDraftID,
+		); err != nil {
+			return fmt.Errorf("move source review draft: %w", err)
+		}
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("look up target review draft: %w", err)
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE middleman_mr_review_draft_comments
+		SET draft_id = ?
+		WHERE draft_id = ?`,
+		targetDraftID, sourceDraftID,
+	); err != nil {
+		return fmt.Errorf("merge source review draft comments: %w", err)
+	}
+	if sourceUpdatedAt > targetUpdatedAt {
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE middleman_mr_review_drafts
+			SET body = source.body,
+			    action = source.action,
+			    updated_at = source.updated_at
+			FROM middleman_mr_review_drafts AS source
+			WHERE middleman_mr_review_drafts.id = ?
+			  AND source.id = ?`,
+			targetDraftID, sourceDraftID,
+		); err != nil {
+			return fmt.Errorf("copy newer source review draft: %w", err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM middleman_mr_review_drafts WHERE id = ?`,
+		sourceDraftID,
+	); err != nil {
+		return fmt.Errorf("delete merged source review draft: %w", err)
+	}
+	return nil
+}
+
+func mergeRepoMergeRequestChildrenTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	sourceMRID, targetMRID int64,
+) error {
+	if err := mergeRepoMergeRequestDraftsTx(
+		ctx, tx, sourceMRID, targetMRID,
+	); err != nil {
+		return err
+	}
+
+	steps := []struct {
+		name string
+		sql  string
+		args []any
+	}{
+		{
+			name: "merge merge request labels",
+			sql: `INSERT OR IGNORE INTO middleman_merge_request_labels (
+			          merge_request_id, label_id
+			      )
+			      SELECT ?, label_id
+			      FROM middleman_merge_request_labels
+			      WHERE merge_request_id = ?`,
+			args: []any{targetMRID, sourceMRID},
+		},
+		{
+			name: "drop duplicate source merge request events",
+			sql: `DELETE FROM middleman_mr_events AS source
+			      WHERE source.merge_request_id = ?
+			        AND EXISTS (
+			            SELECT 1
+			            FROM middleman_mr_events AS target
+			            WHERE target.merge_request_id = ?
+			              AND (
+			                  target.dedupe_key = source.dedupe_key
+			                  OR (
+			                      source.platform_external_id <> ''
+			                      AND target.event_type = source.event_type
+			                      AND target.platform_external_id = source.platform_external_id
+			                  )
+			              )
+			        )`,
+			args: []any{sourceMRID, targetMRID},
+		},
+		{
+			name: "move merge request events",
+			sql:  `UPDATE middleman_mr_events SET merge_request_id = ? WHERE merge_request_id = ?`,
+			args: []any{targetMRID, sourceMRID},
+		},
+		{
+			name: "move merge request worktree links",
+			sql:  `UPDATE middleman_mr_worktree_links SET merge_request_id = ? WHERE merge_request_id = ?`,
+			args: []any{targetMRID, sourceMRID},
+		},
+		{
+			name: "drop source stack membership when target is already stacked",
+			sql: `DELETE FROM middleman_stack_members
+			      WHERE merge_request_id = ?
+			        AND EXISTS (
+			            SELECT 1
+			            FROM middleman_stack_members
+			            WHERE merge_request_id = ?
+			        )`,
+			args: []any{sourceMRID, targetMRID},
+		},
+		{
+			name: "move merge request stack membership",
+			sql:  `UPDATE middleman_stack_members SET merge_request_id = ? WHERE merge_request_id = ?`,
+			args: []any{targetMRID, sourceMRID},
+		},
+		{
+			name: "copy newer duplicate review threads",
+			sql: `UPDATE middleman_mr_review_threads AS target
+			      SET provider_review_id = source.provider_review_id,
+			          provider_comment_id = source.provider_comment_id,
+			          path = source.path,
+			          old_path = source.old_path,
+			          side = source.side,
+			          start_side = source.start_side,
+			          start_line = source.start_line,
+			          line = source.line,
+			          old_line = source.old_line,
+			          new_line = source.new_line,
+			          line_type = source.line_type,
+			          diff_head_sha = source.diff_head_sha,
+			          commit_sha = source.commit_sha,
+			          body = source.body,
+			          author_login = source.author_login,
+			          resolved = source.resolved,
+			          created_at = source.created_at,
+			          updated_at = source.updated_at,
+			          resolved_at = source.resolved_at,
+			          metadata_json = source.metadata_json
+			      FROM middleman_mr_review_threads AS source
+			      WHERE target.merge_request_id = ?
+			        AND source.merge_request_id = ?
+			        AND target.provider_thread_id = source.provider_thread_id
+			        AND source.updated_at >= target.updated_at`,
+			args: []any{targetMRID, sourceMRID},
+		},
+		{
+			name: "drop duplicate source review threads",
+			sql: `DELETE FROM middleman_mr_review_threads AS source
+			      WHERE source.merge_request_id = ?
+			        AND EXISTS (
+			            SELECT 1
+			            FROM middleman_mr_review_threads AS target
+			            WHERE target.merge_request_id = ?
+			              AND target.provider_thread_id = source.provider_thread_id
+			        )`,
+			args: []any{sourceMRID, targetMRID},
+		},
+		{
+			name: "move merge request review threads",
+			sql:  `UPDATE middleman_mr_review_threads SET merge_request_id = ? WHERE merge_request_id = ?`,
+			args: []any{targetMRID, sourceMRID},
+		},
+	}
+	for _, step := range steps {
+		if _, err := tx.ExecContext(ctx, step.sql, step.args...); err != nil {
+			return fmt.Errorf("%s: %w", step.name, err)
+		}
+	}
+	return nil
+}
+
+func copyMergeRequestSnapshotTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	sourceMRID, targetMRID int64,
+) error {
+	_, err := tx.ExecContext(ctx, `
+		UPDATE middleman_merge_requests AS target
+		SET (
+		    platform_id, platform_external_id, number, url, title, author,
+		    author_display_name, state, is_draft, is_locked, body,
+		    head_branch, base_branch, additions, deletions, files_changed,
+		    merge_commit_sha, comment_count,
+		    review_decision, ci_status, ci_checks_json, platform_head_sha,
+		    platform_base_sha, diff_head_sha, diff_base_sha, merge_base_sha,
+		    head_repo_clone_url, mergeable_state, created_at, updated_at,
+		    last_activity_at, merged_at, closed_at, detail_fetched_at,
+		    ci_had_pending, workflow_approval_checked_at,
+		    workflow_approval_head_sha, workflow_approval_required,
+		    workflow_approval_count, assignees_json, reviewers_json,
+		    head_repo_identity_stale, snapshot_revision
+		) = (
+		    SELECT
+		        platform_id, platform_external_id, number, url, title, author,
+		        author_display_name, state, is_draft, is_locked, body,
+		        head_branch, base_branch, additions, deletions, files_changed,
+		        merge_commit_sha, comment_count,
+		        review_decision, ci_status, ci_checks_json, platform_head_sha,
+		        platform_base_sha, diff_head_sha, diff_base_sha, merge_base_sha,
+		        head_repo_clone_url, mergeable_state, created_at, updated_at,
+		        last_activity_at, merged_at, closed_at, detail_fetched_at,
+		        ci_had_pending, workflow_approval_checked_at,
+		        workflow_approval_head_sha, workflow_approval_required,
+		        workflow_approval_count, assignees_json, reviewers_json,
+		        1, MAX(source.snapshot_revision, target.snapshot_revision) + 1
+		    FROM middleman_merge_requests AS source
+		    WHERE source.id = ?
+		)
+		WHERE target.id = ?`,
+		sourceMRID, targetMRID,
+	)
+	if err != nil {
+		return fmt.Errorf("copy winning merge request snapshot: %w", err)
+	}
+	return nil
+}
+
+func mergeRepoMergeRequestCollisionsTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	fromRepoID, toRepoID int64,
+) error {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT source.id, target.id, source.updated_at >= target.updated_at
+		FROM middleman_merge_requests AS source
+		JOIN middleman_merge_requests AS target
+		  ON target.repo_id = ?
+		 AND (
+		     target.number = source.number
+		     OR target.platform_id = source.platform_id
+		 )
+		WHERE source.repo_id = ?
+		ORDER BY source.id, target.id`,
+		toRepoID, fromRepoID,
+	)
+	if err != nil {
+		return fmt.Errorf("list merge request reconciliation collisions: %w", err)
+	}
+	type collision struct {
+		sourceID   int64
+		targetID   int64
+		sourceWins bool
+	}
+	var collisions []collision
+	sourceTargets := make(map[int64]int64)
+	targetSources := make(map[int64]int64)
+	for rows.Next() {
+		var c collision
+		if err := rows.Scan(&c.sourceID, &c.targetID, &c.sourceWins); err != nil {
+			_ = rows.Close()
+			return fmt.Errorf("scan merge request reconciliation collision: %w", err)
+		}
+		if prior, ok := sourceTargets[c.sourceID]; ok && prior != c.targetID {
+			_ = rows.Close()
+			return fmt.Errorf(
+				"ambiguous merge request reconciliation: source %d matches targets %d and %d",
+				c.sourceID, prior, c.targetID,
+			)
+		}
+		if prior, ok := targetSources[c.targetID]; ok && prior != c.sourceID {
+			_ = rows.Close()
+			return fmt.Errorf(
+				"ambiguous merge request reconciliation: target %d matches sources %d and %d",
+				c.targetID, prior, c.sourceID,
+			)
+		}
+		sourceTargets[c.sourceID] = c.targetID
+		targetSources[c.targetID] = c.sourceID
+		collisions = append(collisions, c)
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("close merge request reconciliation collisions: %w", err)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate merge request reconciliation collisions: %w", err)
+	}
+
+	for _, c := range collisions {
+		if err := mergeRepoMergeRequestChildrenTx(
+			ctx, tx, c.sourceID, c.targetID,
+		); err != nil {
+			return err
+		}
+		if c.sourceWins {
+			if err := copyMergeRequestSnapshotTx(
+				ctx, tx, c.sourceID, c.targetID,
+			); err != nil {
+				return err
+			}
+		}
+		if _, err := tx.ExecContext(ctx,
+			`DELETE FROM middleman_merge_requests WHERE id = ?`,
+			c.sourceID,
+		); err != nil {
+			return fmt.Errorf("delete merged source merge request: %w", err)
+		}
+	}
+	return nil
+}
+
 func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64) error {
 	if fromRepoID == toRepoID {
 		return nil
+	}
+	if err := mergeRepoMergeRequestCollisionsTx(
+		ctx, tx, fromRepoID, toRepoID,
+	); err != nil {
+		return err
 	}
 
 	steps := []struct {
@@ -1424,23 +1796,11 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 		{
 			name: "move merge requests",
 			sql: `UPDATE middleman_merge_requests
-			      SET repo_id = ?
-			      WHERE repo_id = ?
-			        AND NOT EXISTS (
-			            SELECT 1
-			            FROM middleman_merge_requests AS target
-			            WHERE target.repo_id = ?
-			              AND (
-			                  target.number = middleman_merge_requests.number
-			                  OR target.platform_id = middleman_merge_requests.platform_id
-			              )
-			        )`,
-			args: []any{toRepoID, fromRepoID, toRepoID},
-		},
-		{
-			name: "drop duplicate merge requests",
-			sql:  `DELETE FROM middleman_merge_requests WHERE repo_id = ?`,
-			args: []any{fromRepoID},
+			      SET repo_id = ?,
+			          head_repo_identity_stale = 1,
+			          snapshot_revision = snapshot_revision + 1
+			      WHERE repo_id = ?`,
+			args: []any{toRepoID, fromRepoID},
 		},
 		{
 			name: "move issues",
@@ -2189,10 +2549,34 @@ func (d *DB) UpsertMergeRequestSnapshotWithLabels(
 	ctx context.Context,
 	mr *MergeRequest,
 ) (int64, int64, bool, error) {
+	release, err := d.LockRepositoryReconciliationRead(ctx)
+	if err != nil {
+		return 0, 0, false, err
+	}
+	defer release()
+	return d.UpsertMergeRequestSnapshotWithLabelsUnderRepositoryReconciliationRead(
+		ctx, mr,
+	)
+}
+
+// UpsertMergeRequestSnapshotWithLabelsUnderRepositoryReconciliationRead applies
+// a parent snapshot while its caller holds LockRepositoryReconciliationRead.
+func (d *DB) UpsertMergeRequestSnapshotWithLabelsUnderRepositoryReconciliationRead(
+	ctx context.Context,
+	mr *MergeRequest,
+) (int64, int64, bool, error) {
+	release, err := d.lockMergeRequestSnapshotUnderRepositoryReconciliationRead(
+		ctx, mr.RepoID, mr.Number,
+	)
+	if err != nil {
+		return 0, 0, false, err
+	}
+	defer release()
+
 	var id int64
 	var revision int64
 	var accepted bool
-	err := d.Tx(ctx, func(tx *sql.Tx) error {
+	err = d.Tx(ctx, func(tx *sql.Tx) error {
 		var err error
 		id, revision, accepted, err = commitMergeRequestParentSnapshotTx(ctx, tx, mr, mr.Labels)
 		return err
@@ -2207,9 +2591,15 @@ func (d *DB) UpsertMergeRequestSnapshot(
 	ctx context.Context,
 	mr *MergeRequest,
 ) (int64, bool, error) {
+	release, err := d.LockMergeRequestSnapshot(ctx, mr.RepoID, mr.Number)
+	if err != nil {
+		return 0, false, err
+	}
+	defer release()
+
 	var id int64
 	var accepted bool
-	err := d.Tx(ctx, func(tx *sql.Tx) error {
+	err = d.Tx(ctx, func(tx *sql.Tx) error {
 		var err error
 		id, _, accepted, err = upsertMergeRequestParentTx(ctx, tx, mr)
 		return err
@@ -2232,13 +2622,14 @@ func upsertMergeRequestSnapshot(
 		    (repo_id, platform_id, platform_external_id, number, url, title, author, author_display_name,
 		     state, is_draft, is_locked, body, head_branch, base_branch,
 		     platform_head_sha, platform_base_sha, head_repo_clone_url,
-		     additions, deletions, comment_count,
+		     additions, deletions, files_changed, merge_commit_sha, comment_count,
 		     review_decision, ci_status, ci_checks_json,
 		     detail_fetched_at, ci_had_pending,
 		     created_at, updated_at,
 		     last_activity_at, merged_at, closed_at, mergeable_state,
-		     assignees_json, reviewers_json, snapshot_revision)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+		     assignees_json, reviewers_json, head_repo_identity_stale,
+		     snapshot_revision)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1)
 		ON CONFLICT(repo_id, number) DO UPDATE SET
 		    platform_id          = excluded.platform_id,
 		    platform_external_id = COALESCE(NULLIF(excluded.platform_external_id, ''), middleman_merge_requests.platform_external_id),
@@ -2257,8 +2648,20 @@ func upsertMergeRequestSnapshot(
 		    head_repo_clone_url  = CASE WHEN ?
 		                                THEN middleman_merge_requests.head_repo_clone_url
 		                                ELSE excluded.head_repo_clone_url END,
-		    additions            = excluded.additions,
-		    deletions            = excluded.deletions,
+		    head_repo_identity_stale = CASE
+		                                   WHEN middleman_merge_requests.head_repo_identity_stale
+		                                        AND ?
+		                                   THEN 1
+		                                   ELSE 0
+		                               END,
+		    additions            = CASE WHEN ?
+		                                THEN excluded.additions
+		                                ELSE middleman_merge_requests.additions END,
+		    deletions            = CASE WHEN ?
+		                                THEN excluded.deletions
+		                                ELSE middleman_merge_requests.deletions END,
+		    files_changed        = COALESCE(excluded.files_changed, middleman_merge_requests.files_changed),
+		    merge_commit_sha     = COALESCE(NULLIF(excluded.merge_commit_sha, ''), middleman_merge_requests.merge_commit_sha),
 		    comment_count        = excluded.comment_count,
 		    review_decision      = excluded.review_decision,
 		    ci_status            = excluded.ci_status,
@@ -2282,13 +2685,16 @@ func upsertMergeRequestSnapshot(
 		mr.Author, mr.AuthorDisplayName,
 		mr.State, mr.IsDraft, mr.IsLocked, mr.Body, mr.HeadBranch, mr.BaseBranch,
 		mr.PlatformHeadSHA, mr.PlatformBaseSHA, mr.HeadRepoCloneURL,
-		mr.Additions, mr.Deletions, mr.CommentCount, mr.ReviewDecision,
+		mr.Additions, mr.Deletions, mr.FilesChanged, mr.MergeCommitSHA,
+		mr.CommentCount, mr.ReviewDecision,
 		mr.CIStatus, mr.CIChecksJSON,
 		mr.DetailFetchedAt, mr.CIHadPending,
 		mr.CreatedAt, mr.UpdatedAt,
 		mr.LastActivityAt, mr.MergedAt, mr.ClosedAt, mr.MergeableState,
 		mr.AssigneesJSON, mr.ReviewersJSON,
 		mr.HeadRepoCloneURLUnknown,
+		mr.HeadRepoCloneURLUnknown,
+		mr.AdditionsKnown, mr.DeletionsKnown,
 	)
 	if err != nil {
 		return 0, 0, false, fmt.Errorf("upsert merge request: %w", err)
@@ -2370,8 +2776,9 @@ func (d *DB) GetMergeRequest(
 		       p.body, p.head_branch, p.base_branch,
 		       p.platform_head_sha, p.platform_base_sha,
 		       p.diff_head_sha, p.diff_base_sha, p.merge_base_sha,
-		       p.head_repo_clone_url,
-		       p.additions, p.deletions, p.comment_count, p.review_decision,
+		       p.head_repo_clone_url, p.head_repo_identity_stale,
+		       p.additions, p.deletions, p.files_changed, p.merge_commit_sha,
+		       p.comment_count, p.review_decision,
 		       p.ci_status, p.ci_checks_json,
 		       p.created_at, p.updated_at, p.last_activity_at,
 		       p.merged_at, p.closed_at, p.mergeable_state,
@@ -2397,8 +2804,9 @@ func (d *DB) GetMergeRequest(
 		&mr.Body, &mr.HeadBranch, &mr.BaseBranch,
 		&mr.PlatformHeadSHA, &mr.PlatformBaseSHA,
 		&mr.DiffHeadSHA, &mr.DiffBaseSHA, &mr.MergeBaseSHA,
-		&mr.HeadRepoCloneURL,
-		&mr.Additions, &mr.Deletions, &mr.CommentCount, &mr.ReviewDecision,
+		&mr.HeadRepoCloneURL, &mr.HeadRepoIdentityStale,
+		&mr.Additions, &mr.Deletions, &mr.FilesChanged, &mr.MergeCommitSHA,
+		&mr.CommentCount, &mr.ReviewDecision,
 		&mr.CIStatus, &mr.CIChecksJSON,
 		&mr.CreatedAt, &mr.UpdatedAt, &mr.LastActivityAt,
 		&mr.MergedAt, &mr.ClosedAt, &mr.MergeableState,
@@ -2432,8 +2840,9 @@ func (d *DB) GetMergeRequestByRepoIDAndNumber(ctx context.Context, repoID int64,
 		       p.body, p.head_branch, p.base_branch,
 		       p.platform_head_sha, p.platform_base_sha,
 		       p.diff_head_sha, p.diff_base_sha, p.merge_base_sha,
-		       p.head_repo_clone_url,
-		       p.additions, p.deletions, p.comment_count, p.review_decision,
+		       p.head_repo_clone_url, p.head_repo_identity_stale,
+		       p.additions, p.deletions, p.files_changed, p.merge_commit_sha,
+		       p.comment_count, p.review_decision,
 		       p.ci_status, p.ci_checks_json,
 		       p.created_at, p.updated_at, p.last_activity_at,
 		       p.merged_at, p.closed_at, p.mergeable_state,
@@ -2456,8 +2865,9 @@ func (d *DB) GetMergeRequestByRepoIDAndNumber(ctx context.Context, repoID int64,
 		&mr.Body, &mr.HeadBranch, &mr.BaseBranch,
 		&mr.PlatformHeadSHA, &mr.PlatformBaseSHA,
 		&mr.DiffHeadSHA, &mr.DiffBaseSHA, &mr.MergeBaseSHA,
-		&mr.HeadRepoCloneURL,
-		&mr.Additions, &mr.Deletions, &mr.CommentCount, &mr.ReviewDecision,
+		&mr.HeadRepoCloneURL, &mr.HeadRepoIdentityStale,
+		&mr.Additions, &mr.Deletions, &mr.FilesChanged, &mr.MergeCommitSHA,
+		&mr.CommentCount, &mr.ReviewDecision,
 		&mr.CIStatus, &mr.CIChecksJSON,
 		&mr.CreatedAt, &mr.UpdatedAt, &mr.LastActivityAt,
 		&mr.MergedAt, &mr.ClosedAt, &mr.MergeableState,
@@ -2557,8 +2967,9 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 		       p.body, p.head_branch, p.base_branch,
 		       p.platform_head_sha, p.platform_base_sha,
 		       p.diff_head_sha, p.diff_base_sha, p.merge_base_sha,
-		       p.head_repo_clone_url,
-		       p.additions, p.deletions, p.comment_count, p.review_decision,
+		       p.head_repo_clone_url, p.head_repo_identity_stale,
+		       p.additions, p.deletions, p.files_changed, p.merge_commit_sha,
+		       p.comment_count, p.review_decision,
 		       p.ci_status, p.ci_checks_json,
 		       p.created_at, p.updated_at, p.last_activity_at,
 		       p.merged_at, p.closed_at, p.mergeable_state,
@@ -2592,8 +3003,9 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 			&mr.Body, &mr.HeadBranch, &mr.BaseBranch,
 			&mr.PlatformHeadSHA, &mr.PlatformBaseSHA,
 			&mr.DiffHeadSHA, &mr.DiffBaseSHA, &mr.MergeBaseSHA,
-			&mr.HeadRepoCloneURL,
-			&mr.Additions, &mr.Deletions, &mr.CommentCount, &mr.ReviewDecision,
+			&mr.HeadRepoCloneURL, &mr.HeadRepoIdentityStale,
+			&mr.Additions, &mr.Deletions, &mr.FilesChanged, &mr.MergeCommitSHA,
+			&mr.CommentCount, &mr.ReviewDecision,
 			&mr.CIStatus, &mr.CIChecksJSON,
 			&mr.CreatedAt, &mr.UpdatedAt, &mr.LastActivityAt,
 			&mr.MergedAt, &mr.ClosedAt, &mr.MergeableState,
@@ -4864,6 +5276,144 @@ func (d *DB) CompleteRecoveredWorkspaceSetup(
 		return fmt.Errorf("complete recovered workspace setup: %w", err)
 	}
 	return nil
+}
+
+// UpdateWorkspaceMRHeadRepo persists a refreshed pull-request head-repo
+// trust classification (nil for same-repo, empty string for unknown, or a
+// clone URL for a fork) so a stale row from workspace creation cannot
+// outlive a sync that reveals the true classification.
+func (d *DB) UpdateWorkspaceMRHeadRepo(
+	ctx context.Context, id string, mrHeadRepo *string,
+) error {
+	_, err := d.rw.ExecContext(ctx, `
+		UPDATE middleman_workspaces
+		SET mr_head_repo = ?
+		WHERE id = ?`,
+		mrHeadRepo, id,
+	)
+	if err != nil {
+		return fmt.Errorf("update workspace mr head repo: %w", err)
+	}
+	return nil
+}
+
+// UpdateWorkspaceMRHeadRepoForMissingRepo persists an unknown classification
+// only while the repository identity used to derive that absence is still
+// missing. A false result tells the caller to reread and retry after the
+// repository appeared concurrently.
+func (d *DB) UpdateWorkspaceMRHeadRepoForMissingRepo(
+	ctx context.Context,
+	id string,
+	identity RepoIdentity,
+	mrHeadRepo *string,
+) (bool, error) {
+	identity = canonicalRepoIdentity(identity)
+	result, err := d.rw.ExecContext(ctx, `
+		UPDATE middleman_workspaces
+		SET mr_head_repo = ?
+		WHERE id = ?
+		  AND NOT EXISTS (
+		      SELECT 1
+		      FROM middleman_repos
+		      WHERE platform = ?
+		        AND platform_host = ?
+		        AND repo_path_key = ?
+		  )`,
+		mrHeadRepo,
+		id,
+		identity.Platform,
+		identity.PlatformHost,
+		identity.RepoPathKey,
+	)
+	if err != nil {
+		return false, fmt.Errorf(
+			"update workspace mr head repo for missing repo: %w", err,
+		)
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf(
+			"read missing-repo head classification update result: %w", err,
+		)
+	}
+	if rowsAffected > 0 {
+		return true, nil
+	}
+	var workspaceExists bool
+	if err := d.ro.QueryRowContext(
+		ctx,
+		`SELECT EXISTS(
+		    SELECT 1 FROM middleman_workspaces WHERE id = ?
+		)`,
+		id,
+	).Scan(&workspaceExists); err != nil {
+		return false, fmt.Errorf(
+			"check workspace after missing-repo head classification update: %w",
+			err,
+		)
+	}
+	if !workspaceExists {
+		return false, fmt.Errorf("workspace %q not found", id)
+	}
+	return false, nil
+}
+
+// UpdateWorkspaceMRHeadRepoForSnapshot persists a classification only while
+// the merge-request revision that produced it remains current. A false result
+// tells the caller to reread and retry against the newer snapshot.
+func (d *DB) UpdateWorkspaceMRHeadRepoForSnapshot(
+	ctx context.Context,
+	id string,
+	repoID int64,
+	mrNumber int,
+	expectedRevision int64,
+	mrHeadRepo *string,
+) (bool, error) {
+	result, err := d.rw.ExecContext(ctx, `
+		UPDATE middleman_workspaces
+		SET mr_head_repo = ?
+		WHERE id = ?
+		  AND COALESCE((
+		      SELECT snapshot_revision
+		      FROM middleman_merge_requests
+		      WHERE repo_id = ? AND number = ?
+		  ), 0) = ?`,
+		mrHeadRepo,
+		id,
+		repoID,
+		mrNumber,
+		expectedRevision,
+	)
+	if err != nil {
+		return false, fmt.Errorf(
+			"update workspace mr head repo for snapshot: %w", err,
+		)
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf(
+			"read workspace mr head repo snapshot update result: %w", err,
+		)
+	}
+	if rowsAffected > 0 {
+		return true, nil
+	}
+	var workspaceExists bool
+	if err := d.ro.QueryRowContext(
+		ctx,
+		`SELECT EXISTS(
+		    SELECT 1 FROM middleman_workspaces WHERE id = ?
+		)`,
+		id,
+	).Scan(&workspaceExists); err != nil {
+		return false, fmt.Errorf(
+			"check workspace after mr head repo snapshot update: %w", err,
+		)
+	}
+	if !workspaceExists {
+		return false, fmt.Errorf("workspace %q not found", id)
+	}
+	return false, nil
 }
 
 // StartWorkspaceRetry atomically transitions an errored workspace

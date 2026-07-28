@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { DiffResult, PullDetail } from "../../api/types.js";
 import { ACTIONS_KEY, API_CLIENT_KEY, NAVIGATE_KEY, STORES_KEY, UI_CONFIG_KEY } from "../../context.js";
@@ -6,6 +6,7 @@ import { createDetailActivityViewStore } from "../../stores/detail-activity-view
 import { createDetailStore } from "../../stores/detail.svelte.js";
 import { dismissFlash, getFlashes } from "../../stores/flash.svelte.js";
 import {
+  consumeWorkspaceLaunch,
   markWorkspaceIdDeleted,
   nextWorkspaceLifecycleTick,
   recordWorkspaceCreated,
@@ -15,6 +16,18 @@ import type { MiddlemanClient } from "../../types.js";
 import type { InlineWorkspaceController, WorkspaceItemIdentity } from "../../workspace-inline.js";
 import { openLabelPickerFor } from "./labelPickerCommand.js";
 import { createTestController } from "../workspace/WorkspaceDockPanelTestController.svelte.js";
+
+const launchTargets = [
+  {
+    key: "codex",
+    label: "Codex",
+    kind: "agent",
+    source: "builtin",
+    command: ["codex"],
+    available: true,
+    disabled_reason: "",
+  },
+];
 
 // The pending-create store is module-scoped so it can survive component
 // remounts; tests that leave a deferred create unresolved must not leak
@@ -239,6 +252,9 @@ function renderPullDetail(
           pulls: { loadPulls: vi.fn() },
           activity: { loadActivity: vi.fn() },
           detailActivityView: createDetailActivityViewStore(),
+          settings: {
+            getLaunchTargets: () => launchTargets,
+          },
         },
       ],
       [ACTIONS_KEY, actions],
@@ -433,12 +449,13 @@ describe("PullDetail approvals", () => {
     const buttons = screen.getAllByRole("button", { name: "Create Workspace" });
     expect(buttons.length).toBeGreaterThan(0);
     for (const button of buttons) {
+      expect(button.getAttribute("aria-describedby")).toBe("pull-create-workspace-description");
       expect(button.getAttribute("title")).toContain("PR head worktree");
       expect(button.getAttribute("title")).toContain("launch agents");
       expect(button.getAttribute("title")).toContain("local review sessions");
-      const descriptionId = button.getAttribute("aria-describedby");
-      expect(descriptionId).toBeTruthy();
-      expect(document.getElementById(descriptionId ?? "")?.textContent).toContain(button.getAttribute("title"));
+      expect(document.getElementById("pull-create-workspace-description")?.textContent).toContain(
+        button.getAttribute("title"),
+      );
     }
   });
 
@@ -1454,8 +1471,8 @@ describe("PullDetail inline workspace handoff", () => {
   };
 
   function deferredWorkspaceApiClient() {
-    let resolvePost!: (value: { data?: { id: string; status: string } }) => void;
-    const postPromise = new Promise<{ data?: { id: string; status: string } }>((resolve) => {
+    let resolvePost!: (value: { data?: { id: string; status: string; created?: boolean } }) => void;
+    const postPromise = new Promise<{ data?: { id: string; status: string; created?: boolean } }>((resolve) => {
       resolvePost = resolve;
     });
     const apiClient = {
@@ -1550,6 +1567,39 @@ describe("PullDetail inline workspace handoff", () => {
     await fireEvent.click(screen.getAllByRole("button", { name: "Create Workspace" })[0]!);
 
     expect(apiClient.POST).toHaveBeenCalled();
+  });
+
+  it("keeps the primary workspace create action launch-free", async () => {
+    const { apiClient, resolvePost } = deferredWorkspaceApiClient();
+    const { navigate } = renderPullDetail(pullDetail(), undefined, apiClient, {
+      hideWorkspaceAction: false,
+    });
+
+    await fireEvent.click(screen.getAllByRole("button", { name: "Create Workspace" })[0]!);
+    await waitFor(() => expect(apiClient.POST).toHaveBeenCalled());
+    resolvePost({ data: { id: "ws-new", status: "creating", created: true } });
+
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith("/terminal/ws-new"));
+    expect(consumeWorkspaceLaunch("ws-new")).toBeNull();
+  });
+
+  it("queues the agent selected from Create Workspace options", async () => {
+    const { apiClient, resolvePost } = deferredWorkspaceApiClient();
+    const { navigate } = renderPullDetail(pullDetail(), undefined, apiClient, {
+      hideWorkspaceAction: false,
+    });
+
+    await fireEvent.click(
+      screen.getAllByRole("button", {
+        name: "Create Workspace options",
+      })[0]!,
+    );
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Codex" }));
+    await waitFor(() => expect(apiClient.POST).toHaveBeenCalled());
+    resolvePost({ data: { id: "ws-new", status: "creating" } });
+
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith("/terminal/ws-new"));
+    expect(consumeWorkspaceLaunch("ws-new")).toBe("codex");
   });
 
   it("publishes a confirmed creation even after the selection changed", async () => {

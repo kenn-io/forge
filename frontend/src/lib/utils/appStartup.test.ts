@@ -3,8 +3,21 @@ import { runAppStartup } from "./appStartup.js";
 import type { StoreInstances } from "@middleman/ui";
 import { DEFAULT_TERMINAL_SETTINGS, type Settings, type TerminalSettings } from "@middleman/ui/api/types";
 
+type LaunchTargets = NonNullable<Settings["launch_targets"]>;
+
+const codexTarget = {
+  key: "codex",
+  label: "Codex",
+  kind: "agent",
+  source: "builtin",
+  command: ["codex"],
+  available: true,
+  disabled_reason: "",
+} satisfies LaunchTargets[number];
+
 function makeStores(): StoreInstances {
   let terminalSettings = { ...DEFAULT_TERMINAL_SETTINGS };
+  let launchTargets: LaunchTargets = [];
   return {
     settings: {
       setConfiguredRepos: vi.fn(),
@@ -16,6 +29,10 @@ function makeStores(): StoreInstances {
       setPullRequestSettings: vi.fn(),
       setTerminalFontFamily: vi.fn(),
       setTerminalRenderer: vi.fn(),
+      getLaunchTargets: () => launchTargets,
+      setLaunchTargets: vi.fn((targets: LaunchTargets) => {
+        launchTargets = [...targets];
+      }),
     },
     activity: {
       hydrateDefaults: vi.fn(),
@@ -44,6 +61,7 @@ function makeSettings(): Settings {
   return {
     repos: [],
     pull_requests: { allow_mid_stack_merges: false, prefer_github_native_stacks: false },
+    workspaces: { auto_assign_on_create: false },
     issues: { hide_bots: true },
     kata_projects: [],
     fleet: {
@@ -85,6 +103,7 @@ function makeSettings(): Settings {
     },
     notifications: { enabled: true },
     agents: [],
+    launch_targets: [codexTarget],
   };
 }
 
@@ -124,6 +143,7 @@ describe("runAppStartup", () => {
     expect(stores.settings.setConfiguredRepos).toHaveBeenCalledWith(settings.repos);
     expect(stores.settings.setModeVisibility).toHaveBeenCalledWith(settings.modes);
     expect(stores.settings.setTerminalSettings).toHaveBeenCalledWith(settings.terminal);
+    expect(stores.settings.setLaunchTargets).toHaveBeenCalledWith(settings.launch_targets);
     expect(stores.activity.hydrateDefaults).toHaveBeenCalledWith(settings.activity);
     expect(stores.issues.hydrateDefaults).toHaveBeenCalledWith(settings.issues);
     expect(onReady).toHaveBeenCalledTimes(1);
@@ -131,6 +151,23 @@ describe("runAppStartup", () => {
     expect(stores.pulls.loadPulls).toHaveBeenCalledTimes(1);
     expect(stores.issues.loadIssues).toHaveBeenCalledTimes(1);
     expect(stores.events.connect).toHaveBeenCalledTimes(1);
+  });
+
+  it("clears stale launch targets when startup receives an empty inventory", async () => {
+    const stores = makeStores();
+    stores.settings.setLaunchTargets([codexTarget]);
+    const settings = makeSettings();
+    settings.launch_targets = [];
+
+    runAppStartup({
+      getSettings: () => Promise.resolve(settings),
+      getStores: () => stores,
+      onReady: vi.fn(),
+    });
+
+    await flushMicrotasks();
+
+    expect(stores.settings.getLaunchTargets()).toEqual([]);
   });
 
   it("waits for backend readiness before fetching settings or loading data", async () => {

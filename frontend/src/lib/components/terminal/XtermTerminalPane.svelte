@@ -18,6 +18,7 @@
     buildTerminalFontFamily,
     primaryTerminalFontFamily,
   } from "./terminalFontFamily.js";
+  import { createInitialFocusIntent } from "./terminal-focus.js";
   import { createTmuxMouseDragFilter } from "./tmuxMouseDragFilter.js";
 
   interface TerminalPaneProps {
@@ -73,6 +74,10 @@
   // Binds this pane to the workspace switch that was live at creation;
   // panes surviving from a previous workspace record nothing.
   const switchTimer = createWorkspaceSwitchPaneTimer();
+  // Captured at mount, before the async font-load race in start() below,
+  // so a later focus steal is detected even though start() itself cannot
+  // observe when focus moved during the wait.
+  const focusIntent = createInitialFocusIntent();
 
   const MAX_RECONNECT_DELAY = 30000;
   const TERMINAL_SMOOTH_SCROLL_DURATION = 0;
@@ -570,6 +575,15 @@
       appliedCursorBlink = terminalCursorBlink;
       appliedFontLigatures = terminalFontLigatures;
       fit.fit();
+
+      // Focus only at terminal creation: launching/opening a session mounts a
+      // fresh pane, which is the one moment focus is unambiguously intended.
+      // Reveal- or enable-driven re-runs of the active effect must not steal
+      // focus from controls managed by WorkspaceHost/WorkspaceDockPanel. The
+      // font-load wait above is async, so focus only moves if the mount-time
+      // focus context is still current and isn't a dialog/menu/input — a
+      // live renderer swap under an open settings popover must not steal it.
+      if (active && !disabled && focusIntent.shouldFocus()) term.focus();
 
       term.onData((data: string) => {
         if (disabled) return;

@@ -1728,6 +1728,47 @@ func TestSessionWatchClosesPTYAfterPostExitDrainTimeout(t *testing.T) {
 	}, time.Second, 10*time.Millisecond)
 }
 
+func TestSessionWatchPtyOwnerWaitsForFinalOutputDrain(t *testing.T) {
+	require := require.New(t)
+	ownedPTY := &fakeRuntimePTY{
+		output: make(chan []byte, 1),
+		done:   make(chan struct{}),
+	}
+	s := &session{
+		pty:         ownedPTY,
+		done:        make(chan struct{}),
+		outputDone:  make(chan struct{}),
+		subscribers: make(map[chan []byte]struct{}),
+	}
+	output, unsubscribe := s.subscribe()
+	defer unsubscribe()
+
+	go s.drainOutput()
+	watchDone := make(chan struct{})
+	go func() {
+		s.watchPtyOwner()
+		close(watchDone)
+	}()
+
+	close(ownedPTY.done)
+	time.Sleep(50 * time.Millisecond)
+	ownedPTY.output <- []byte("final output")
+	close(ownedPTY.output)
+
+	select {
+	case got, ok := <-output:
+		require.True(ok)
+		require.Equal("final output", string(got))
+	case <-time.After(time.Second):
+		require.Fail("final PTY-owner output was not delivered")
+	}
+	select {
+	case <-watchDone:
+	case <-time.After(time.Second):
+		require.Fail("PTY-owner watcher did not finish after output drained")
+	}
+}
+
 func TestManagerRemovesNaturallyExitedSession(t *testing.T) {
 	ctx := context.Background()
 	exited := make(chan SessionInfo, 1)

@@ -72,25 +72,22 @@ export async function getWorkspaceRuntime(
   };
 }
 
+export interface LaunchWorkspaceSessionOptions {
+  hostKey?: string | undefined;
+  region?: "workflow" | "terminal";
+  fetch?: RuntimeFetch;
+}
+
 export async function launchWorkspaceSession(
   workspaceId: string,
   targetKey: string,
-  hostKeyOrRegionOrFetch?: string | RuntimeFetch,
-  regionOrFetch?: "workflow" | "terminal" | RuntimeFetch,
-  fetchFn: RuntimeFetch = fetch,
+  options: LaunchWorkspaceSessionOptions = {},
 ): Promise<RuntimeSession> {
-  const hostKey = typeof hostKeyOrRegionOrFetch === "string" ? hostKeyOrRegionOrFetch : undefined;
-  const displayRegion = regionOrFetch === "workflow" || regionOrFetch === "terminal" ? regionOrFetch : undefined;
-  const fetchImpl =
-    typeof hostKeyOrRegionOrFetch === "function"
-      ? hostKeyOrRegionOrFetch
-      : typeof regionOrFetch === "function"
-        ? regionOrFetch
-        : fetchFn;
+  const { hostKey, region, fetch: fetchImpl = fetch } = options;
   const client = workspaceRuntimeClient(fetchImpl);
   const body = {
     target_key: targetKey,
-    ...(displayRegion ? { display_region: displayRegion } : {}),
+    ...(region ? { display_region: region } : {}),
   };
   const result = hostKey
     ? await client.POST("/fleet/hosts/{host_key}/workspaces/{id}/runtime/sessions", {

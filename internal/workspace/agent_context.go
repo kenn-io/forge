@@ -209,10 +209,6 @@ func (m *Manager) PrepareAgentLaunchContext(
 	ctx context.Context,
 	opts PrepareAgentLaunchContextOptions,
 ) error {
-	relPath := agentContextRelPath(opts.TargetKey)
-	if relPath == "" {
-		return nil
-	}
 	summary, err := m.GetSummary(ctx, opts.WorkspaceID)
 	if err != nil {
 		return fmt.Errorf("get workspace summary: %w", err)
@@ -220,8 +216,13 @@ func (m *Manager) PrepareAgentLaunchContext(
 	if summary == nil {
 		return ErrWorkspaceNotFound
 	}
-	if err := m.refreshWorkspaceHeadRepo(ctx, &summary.Workspace); err != nil {
+	if err := m.RefreshWorkspaceHeadRepo(ctx, &summary.Workspace); err != nil {
 		return fmt.Errorf("refresh workspace head repository: %w", err)
+	}
+
+	relPath := agentContextRelPath(opts.TargetKey)
+	if relPath == "" {
+		return nil
 	}
 
 	writable, err := generatedFileWritable(summary.WorktreePath, relPath)
@@ -238,7 +239,40 @@ func (m *Manager) PrepareAgentLaunchContext(
 	content := renderAgentInstructionFile(
 		summary.WorktreePath, relPath, BuildAgentContext(*summary),
 	)
-	return writeGeneratedFileAtomic(summary.WorktreePath, relPath, content)
+	if err := writeGeneratedFileAtomic(summary.WorktreePath, relPath, content); err != nil {
+		return err
+	}
+	return nil
+}
+
+// RenderAgentContextForWorktree regenerates context for a persisted workspace
+// without consulting agent instruction files. An unknown worktree returns an
+// empty string.
+func (m *Manager) RenderAgentContextForWorktree(
+	ctx context.Context, worktreePath string,
+) (string, error) {
+	target, err := canonicalFilesystemPath(worktreePath)
+	if err != nil {
+		return "", err
+	}
+	summaries, err := m.ListSummaries(ctx)
+	if err != nil {
+		return "", err
+	}
+	for i := range summaries {
+		candidate, err := canonicalFilesystemPath(summaries[i].WorktreePath)
+		if err != nil || candidate != target {
+			continue
+		}
+		if err := m.RefreshWorkspaceHeadRepo(ctx, &summaries[i].Workspace); err != nil {
+			return "", err
+		}
+		rendered := RenderAgentContext(BuildAgentContext(summaries[i]))
+		return strings.TrimSpace(strings.TrimPrefix(
+			rendered, generatedAgentContextMarker,
+		)), nil
+	}
+	return "", nil
 }
 
 func agentContextRelPath(targetKey string) string {

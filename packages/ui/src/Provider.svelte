@@ -76,20 +76,11 @@
   import {
     createSettingsStore,
   } from "./stores/settings.svelte.js";
-  import {
-    beginTerminalSettingsHydration,
-    hydrateTerminalSettings,
-    type TerminalSettingsHydration,
-  } from "./stores/terminal-settings-persistence.js";
+  import { beginTerminalSettingsHydration } from "./stores/terminal-settings-persistence.js";
+  import { applySettingsHydration } from "./stores/settings-hydration.js";
   import {
     createEventsStore,
   } from "./stores/events.svelte.js";
-  import type {
-    ActivitySettings,
-    ConfigRepo,
-    Settings,
-    TerminalSettings,
-  } from "./api/types.js";
   import type { RoutedItemRef } from "./routes.js";
 
   interface Props {
@@ -239,35 +230,22 @@
       },
     });
 
-    function hydrateSettings(
-      repos: ConfigRepo[],
-      activity: ActivitySettings,
-      issues: Settings["issues"],
-      terminal: TerminalSettings,
-      terminalHydration: TerminalSettingsHydration,
-      modes: Settings["modes"],
-      pullRequests: Settings["pull_requests"],
-    ): void {
-      settingsStore.setConfiguredRepos(repos);
-      hydrateTerminalSettings(terminalHydration, terminal);
-      settingsStore.setModeVisibility(modes);
-      settingsStore.setPullRequestSettings(pullRequests);
-      activityStore.hydrateDefaults(activity);
-      issuesStore.hydrateDefaults(issues);
-    }
-
     async function reloadSettingsAfterConfigChange(): Promise<void> {
       const terminalHydration = beginTerminalSettingsHydration(settingsStore);
       const { data } = await cl.GET("/settings");
       if (!data) return;
-      hydrateSettings(
-        data.repos,
-        data.activity,
-        data.issues,
-        data.terminal,
+      applySettingsHydration(
+        { settings: settingsStore, activity: activityStore, issues: issuesStore },
+        {
+          repos: data.repos,
+          activity: data.activity,
+          issues: data.issues,
+          terminal: data.terminal,
+          modes: data.modes,
+          pullRequests: data.pull_requests,
+          launchTargets: data.launch_targets ?? [],
+        },
         terminalHydration,
-        data.modes,
-        data.pull_requests,
       );
     }
 

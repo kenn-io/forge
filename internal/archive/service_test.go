@@ -571,7 +571,61 @@ func TestArchiveDiscoverySkipsUnsupportedInventoryStream(t *testing.T) {
 	require.NoError(err)
 	assert.True(states[0].IssueInventory.Complete())
 	assert.True(states[0].MergeRequestInventory.Complete())
+	assert.Equal(db.ArchiveCoverageSupported, states[0].IssuesCoverage)
+	assert.Equal(db.ArchiveCoverageUnsupported, states[0].MergeRequestsCoverage)
 	assert.Equal([]string{"issues"}, provider.calls)
+}
+
+func TestArchiveInventoryReopensRepositoryFeatureAfterReenable(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	now := time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC)
+	ref := archiveServiceRef(platform.KindGitHub, "github.test", "repo")
+	repoID := archiveServiceSeedRepo(t, database, ref)
+	provider := newArchiveServiceProvider(ref.Platform, ref.Host)
+	provider.issueInventoryErr = platform.RepositoryFeatureDisabled(
+		ref.Platform, ref.Host, platform.RepositoryFeatureIssues, errors.New("issues disabled"),
+	)
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	admission := &archiveTestAdmission{
+		deferCompletedErrors: true,
+		retryAt:              now.Add(time.Hour),
+	}
+	service := newArchiveTestService(
+		t, database, registry, []platform.RepoRef{ref}, admission, now,
+	)
+	require.NoError(service.EnsureConfigured(t.Context(), []platform.RepoRef{ref}))
+
+	require.NoError(service.RunEligible(t.Context()))
+	require.NoError(service.RunEligible(t.Context()))
+
+	states, err := database.ListArchiveRepoStates(t.Context(), []int64{repoID})
+	require.NoError(err)
+	require.Len(states, 1)
+	assert.True(states[0].IssueInventory.Complete())
+	assert.True(states[0].MergeRequestInventory.Complete())
+	assert.Equal(db.ArchiveCoverageUnsupported, states[0].IssuesCoverage)
+	assert.Equal(db.ArchiveCoverageSupported, states[0].MergeRequestsCoverage)
+	assert.Nil(states[0].LastErrorCode)
+	unsupportedGeneration := states[0].IssueInventory.Generation
+
+	provider.issueInventoryErr = nil
+	require.NoError(service.EnsureConfigured(t.Context(), []platform.RepoRef{ref}))
+	states, err = database.ListArchiveRepoStates(t.Context(), []int64{repoID})
+	require.NoError(err)
+	require.Len(states, 1)
+	assert.False(states[0].IssueInventory.Complete())
+	assert.Greater(states[0].IssueInventory.Generation, unsupportedGeneration)
+	assert.Equal(db.ArchiveCoverageUnknown, states[0].IssuesCoverage)
+
+	require.NoError(service.RunEligible(t.Context()))
+	states, err = database.ListArchiveRepoStates(t.Context(), []int64{repoID})
+	require.NoError(err)
+	require.Len(states, 1)
+	assert.True(states[0].IssueInventory.Complete())
+	assert.Equal(db.ArchiveCoverageSupported, states[0].IssuesCoverage)
 }
 
 func TestDefaultArchiveRetryClassifierDistinguishesTerminalProviderErrors(t *testing.T) {
@@ -686,12 +740,13 @@ func (s *archiveMutableSource) ConfiguredRepositories(context.Context) ([]platfo
 }
 
 type archiveTestAdmission struct {
-	mu        sync.Mutex
-	calls     int
-	deny      bool
-	denyAfter int
-	retryAt   time.Time
-	costs     []int
+	mu                   sync.Mutex
+	calls                int
+	deny                 bool
+	denyAfter            int
+	retryAt              time.Time
+	costs                []int
+	deferCompletedErrors bool
 }
 
 type archiveTestRetryClassifier struct{}
@@ -716,7 +771,10 @@ func (a *archiveTestAdmission) Admit(
 	return AdmissionResult{
 		Allowed: true,
 		Context: ctx,
-		Complete: func(error, bool) *FeatureDeferral {
+		Complete: func(err error, _ bool) *FeatureDeferral {
+			if a.deferCompletedErrors && err != nil {
+				return &FeatureDeferral{RetryAt: a.retryAt, Detail: "test feature deferred"}
+			}
 			return nil
 		},
 	}, nil

@@ -504,3 +504,34 @@ func TestPrepareAgentLaunchContextPreservesUserFileAndRefreshesMarkedFile(t *tes
 	assert.NotContains(string(refreshed), "stale")
 	assertGitIgnored(t, worktree, "AGENTS.override.md")
 }
+
+func TestRenderAgentContextForWorktreeUsesPersistedWorkspace(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	assert := assert.New(t)
+	database := openTestDB(t)
+	worktree := t.TempDir()
+	require.NoError(database.InsertWorkspace(t.Context(), &db.Workspace{
+		ID:              "ws-hook-context",
+		Platform:        "github",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		ItemType:        db.WorkspaceItemTypeIssue,
+		ItemNumber:      42,
+		GitHeadRef:      "middleman/issue-42",
+		WorkspaceBranch: "middleman/issue-42",
+		WorktreePath:    worktree,
+		TmuxSession:     "middleman-ws-hook-context",
+		Status:          "ready",
+	}))
+	manager := NewManager(database, t.TempDir())
+
+	rendered, err := manager.RenderAgentContextForWorktree(t.Context(), worktree)
+	require.NoError(err)
+	assert.Contains(rendered, "Workspace ID: ws-hook-context")
+	assert.Contains(rendered, "Source kind: provider issue")
+	assert.Contains(rendered, "Issue: #42")
+	assert.NotContains(rendered, generatedAgentContextMarker)
+	assert.NoFileExists(filepath.Join(worktree, "CLAUDE.local.md"))
+}

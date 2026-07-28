@@ -92,6 +92,8 @@ func TestWorkspaceCreateSameRepoHeadCloneURLTracksOriginBranchE2E(t *testing.T) 
 	require.NotNil(createResp.JSON202)
 
 	ws := waitForWorkspaceReady(t, ctx, client, createResp.JSON202.Id)
+	require.NotNil(ws.MrHeadRepoKind)
+	assert.Equal(generated.SameRepo, *ws.MrHeadRepoKind)
 	stored, err := database.GetWorkspace(ctx, ws.Id)
 	require.NoError(err)
 	require.NotNil(stored)
@@ -152,6 +154,21 @@ func TestWorkspaceRetryLegacyUnknownHeadRepoLeavesBranchUntrackedE2E(t *testing.
 
 	ready := waitForWorkspaceReady(t, ctx, fixture.client, workspaceID)
 	assert.Equal(headSHA, testGitSHA(t, ready.WorktreePath, "HEAD"))
+
+	// The workspace row was inserted with a stale MRHeadRepo of nil (the
+	// legacy shape from before refreshWorkspaceHeadRepo persisted its
+	// result). Retry recomputes "unknown" from the seeded PR's empty
+	// HeadRepoCloneURL and must persist that reclassification: the stored
+	// row and the wire response must both reflect it rather than the
+	// stale same_repo classification the nil default implies.
+	require.NotNil(ready.MrHeadRepoKind)
+	assert.Equal(generated.Unknown, *ready.MrHeadRepoKind)
+	stored, err := fixture.database.GetWorkspace(ctx, workspaceID)
+	require.NoError(err)
+	require.NotNil(stored)
+	require.NotNil(stored.MRHeadRepo)
+	assert.Empty(*stored.MRHeadRepo)
+
 	branch := workspaceGitOutput(t, ready.WorktreePath, "branch", "--show-current")
 	remoteOut, remoteErrOut, upstreamErr := gitcmd.New().Run(
 		ctx, ready.WorktreePath, nil,

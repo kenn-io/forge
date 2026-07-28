@@ -101,6 +101,48 @@ func (e ArchiveCoverageResponseInlineComments) Valid() bool {
 	}
 }
 
+// Defines values for ArchiveCoverageResponseIssues.
+const (
+	ArchiveCoverageResponseIssuesSupported   ArchiveCoverageResponseIssues = "supported"
+	ArchiveCoverageResponseIssuesUnknown     ArchiveCoverageResponseIssues = "unknown"
+	ArchiveCoverageResponseIssuesUnsupported ArchiveCoverageResponseIssues = "unsupported"
+)
+
+// Valid indicates whether the value is a known member of the ArchiveCoverageResponseIssues enum.
+func (e ArchiveCoverageResponseIssues) Valid() bool {
+	switch e {
+	case ArchiveCoverageResponseIssuesSupported:
+		return true
+	case ArchiveCoverageResponseIssuesUnknown:
+		return true
+	case ArchiveCoverageResponseIssuesUnsupported:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ArchiveCoverageResponseMergeRequests.
+const (
+	ArchiveCoverageResponseMergeRequestsSupported   ArchiveCoverageResponseMergeRequests = "supported"
+	ArchiveCoverageResponseMergeRequestsUnknown     ArchiveCoverageResponseMergeRequests = "unknown"
+	ArchiveCoverageResponseMergeRequestsUnsupported ArchiveCoverageResponseMergeRequests = "unsupported"
+)
+
+// Valid indicates whether the value is a known member of the ArchiveCoverageResponseMergeRequests enum.
+func (e ArchiveCoverageResponseMergeRequests) Valid() bool {
+	switch e {
+	case ArchiveCoverageResponseMergeRequestsSupported:
+		return true
+	case ArchiveCoverageResponseMergeRequestsUnknown:
+		return true
+	case ArchiveCoverageResponseMergeRequestsUnsupported:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ArchiveCoverageResponseReviews.
 const (
 	ArchiveCoverageResponseReviewsSupported   ArchiveCoverageResponseReviews = "supported"
@@ -126,7 +168,9 @@ func (e ArchiveCoverageResponseReviews) Valid() bool {
 const (
 	ArchiveReportActivityResponseKindInlineReviewComment ArchiveReportActivityResponseKind = "inline_review_comment"
 	ArchiveReportActivityResponseKindIssue               ArchiveReportActivityResponseKind = "issue"
+	ArchiveReportActivityResponseKindIssueClosed         ArchiveReportActivityResponseKind = "issue_closed"
 	ArchiveReportActivityResponseKindMergeRequest        ArchiveReportActivityResponseKind = "merge_request"
+	ArchiveReportActivityResponseKindMergeRequestMerged  ArchiveReportActivityResponseKind = "merge_request_merged"
 	ArchiveReportActivityResponseKindOrdinaryComment     ArchiveReportActivityResponseKind = "ordinary_comment"
 	ArchiveReportActivityResponseKindReview              ArchiveReportActivityResponseKind = "review"
 )
@@ -138,7 +182,11 @@ func (e ArchiveReportActivityResponseKind) Valid() bool {
 		return true
 	case ArchiveReportActivityResponseKindIssue:
 		return true
+	case ArchiveReportActivityResponseKindIssueClosed:
+		return true
 	case ArchiveReportActivityResponseKindMergeRequest:
+		return true
+	case ArchiveReportActivityResponseKindMergeRequestMerged:
 		return true
 	case ArchiveReportActivityResponseKindOrdinaryComment:
 		return true
@@ -203,6 +251,48 @@ func (e ArchiveReportCoverageResponseInlineComments) Valid() bool {
 	case ArchiveReportCoverageResponseInlineCommentsUnknown:
 		return true
 	case ArchiveReportCoverageResponseInlineCommentsUnsupported:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ArchiveReportCoverageResponseIssues.
+const (
+	ArchiveReportCoverageResponseIssuesSupported   ArchiveReportCoverageResponseIssues = "supported"
+	ArchiveReportCoverageResponseIssuesUnknown     ArchiveReportCoverageResponseIssues = "unknown"
+	ArchiveReportCoverageResponseIssuesUnsupported ArchiveReportCoverageResponseIssues = "unsupported"
+)
+
+// Valid indicates whether the value is a known member of the ArchiveReportCoverageResponseIssues enum.
+func (e ArchiveReportCoverageResponseIssues) Valid() bool {
+	switch e {
+	case ArchiveReportCoverageResponseIssuesSupported:
+		return true
+	case ArchiveReportCoverageResponseIssuesUnknown:
+		return true
+	case ArchiveReportCoverageResponseIssuesUnsupported:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ArchiveReportCoverageResponseMergeRequests.
+const (
+	ArchiveReportCoverageResponseMergeRequestsSupported   ArchiveReportCoverageResponseMergeRequests = "supported"
+	ArchiveReportCoverageResponseMergeRequestsUnknown     ArchiveReportCoverageResponseMergeRequests = "unknown"
+	ArchiveReportCoverageResponseMergeRequestsUnsupported ArchiveReportCoverageResponseMergeRequests = "unsupported"
+)
+
+// Valid indicates whether the value is a known member of the ArchiveReportCoverageResponseMergeRequests enum.
+func (e ArchiveReportCoverageResponseMergeRequests) Valid() bool {
+	switch e {
+	case ArchiveReportCoverageResponseMergeRequestsSupported:
+		return true
+	case ArchiveReportCoverageResponseMergeRequestsUnknown:
+		return true
+	case ArchiveReportCoverageResponseMergeRequestsUnsupported:
 		return true
 	default:
 		return false
@@ -665,6 +755,7 @@ func (e WorkflowStateMetaResponseStatus) Valid() bool {
 // Defines values for WorkspaceResponseAgentState.
 const (
 	Approval WorkspaceResponseAgentState = "approval"
+	Done     WorkspaceResponseAgentState = "done"
 	Idle     WorkspaceResponseAgentState = "idle"
 	Input    WorkspaceResponseAgentState = "input"
 	Working  WorkspaceResponseAgentState = "working"
@@ -674,6 +765,8 @@ const (
 func (e WorkspaceResponseAgentState) Valid() bool {
 	switch e {
 	case Approval:
+		return true
+	case Done:
 		return true
 	case Idle:
 		return true
@@ -707,6 +800,27 @@ func (e WorkspaceResponseEnrichmentStatus) Valid() bool {
 	case Pending:
 		return true
 	case Stale:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WorkspaceResponseMrHeadRepoKind.
+const (
+	Fork     WorkspaceResponseMrHeadRepoKind = "fork"
+	SameRepo WorkspaceResponseMrHeadRepoKind = "same_repo"
+	Unknown  WorkspaceResponseMrHeadRepoKind = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the WorkspaceResponseMrHeadRepoKind enum.
+func (e WorkspaceResponseMrHeadRepoKind) Valid() bool {
+	switch e {
+	case Fork:
+		return true
+	case SameRepo:
+		return true
+	case Unknown:
 		return true
 	default:
 		return false
@@ -984,6 +1098,24 @@ type Agent struct {
 	Label   string    `json:"label"`
 }
 
+// AgentHookOutput defines model for AgentHookOutput.
+type AgentHookOutput struct {
+	HookSpecificOutput AgentHookSpecificOutput `json:"hookSpecificOutput"`
+}
+
+// AgentHookResponse defines model for AgentHookResponse.
+type AgentHookResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema     *string          `json:"$schema,omitempty"`
+	HookOutput *AgentHookOutput `json:"hook_output,omitempty"`
+}
+
+// AgentHookSpecificOutput defines model for AgentHookSpecificOutput.
+type AgentHookSpecificOutput struct {
+	AdditionalContext string `json:"additionalContext"`
+	HookEventName     string `json:"hookEventName"`
+}
+
 // ApplyReviewSuggestionHostInputBody defines model for ApplyReviewSuggestionHostInputBody.
 type ApplyReviewSuggestionHostInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -1037,6 +1169,8 @@ type ApprovePRInputBody struct {
 type ArchiveCoverageResponse struct {
 	Comments       ArchiveCoverageResponseComments       `json:"comments"`
 	InlineComments ArchiveCoverageResponseInlineComments `json:"inline_comments"`
+	Issues         ArchiveCoverageResponseIssues         `json:"issues"`
+	MergeRequests  ArchiveCoverageResponseMergeRequests  `json:"merge_requests"`
 	Reviews        ArchiveCoverageResponseReviews        `json:"reviews"`
 }
 
@@ -1045,6 +1179,12 @@ type ArchiveCoverageResponseComments string
 
 // ArchiveCoverageResponseInlineComments defines model for ArchiveCoverageResponse.InlineComments.
 type ArchiveCoverageResponseInlineComments string
+
+// ArchiveCoverageResponseIssues defines model for ArchiveCoverageResponse.Issues.
+type ArchiveCoverageResponseIssues string
+
+// ArchiveCoverageResponseMergeRequests defines model for ArchiveCoverageResponse.MergeRequests.
+type ArchiveCoverageResponseMergeRequests string
 
 // ArchiveCoverageResponseReviews defines model for ArchiveCoverageResponse.Reviews.
 type ArchiveCoverageResponseReviews string
@@ -1075,10 +1215,16 @@ type ArchiveProgressCountsResponse struct {
 
 // ArchiveReportActivityResponse defines model for ArchiveReportActivityResponse.
 type ArchiveReportActivityResponse struct {
+	Actor              *string                           `json:"actor,omitempty"`
+	Additions          *int64                            `json:"additions,omitempty"`
 	Author             string                            `json:"author"`
 	Body               string                            `json:"body"`
+	Comments           *int64                            `json:"comments,omitempty"`
+	Deletions          *int64                            `json:"deletions,omitempty"`
+	FilesChanged       *int64                            `json:"files_changed,omitempty"`
 	ItemNumber         int64                             `json:"item_number"`
 	Kind               ArchiveReportActivityResponseKind `json:"kind"`
+	MergeCommitSha     *string                           `json:"merge_commit_sha,omitempty"`
 	OccurredAt         time.Time                         `json:"occurred_at"`
 	ProviderExternalId string                            `json:"provider_external_id"`
 	Repository         ArchiveRepositoryRef              `json:"repository"`
@@ -1100,7 +1246,9 @@ type ArchiveReportContributorResponse struct {
 // ArchiveReportCountsResponse defines model for ArchiveReportCountsResponse.
 type ArchiveReportCountsResponse struct {
 	InlineReviewComments int64 `json:"inline_review_comments"`
+	IssuesClosed         int64 `json:"issues_closed"`
 	IssuesOpened         int64 `json:"issues_opened"`
+	MergeRequestsMerged  int64 `json:"merge_requests_merged"`
 	MergeRequestsOpened  int64 `json:"merge_requests_opened"`
 	OrdinaryComments     int64 `json:"ordinary_comments"`
 	ReviewsSubmitted     int64 `json:"reviews_submitted"`
@@ -1116,7 +1264,9 @@ type ArchiveReportCoverageResponse struct {
 	InaccessibleItems      int64                                       `json:"inaccessible_items"`
 	InitialCompletedAt     *time.Time                                  `json:"initial_completed_at,omitempty"`
 	InlineComments         ArchiveReportCoverageResponseInlineComments `json:"inline_comments"`
+	Issues                 ArchiveReportCoverageResponseIssues         `json:"issues"`
 	MaintenanceSucceededAt *time.Time                                  `json:"maintenance_succeeded_at,omitempty"`
+	MergeRequests          ArchiveReportCoverageResponseMergeRequests  `json:"merge_requests"`
 	OperatorState          ArchiveReportCoverageResponseOperatorState  `json:"operator_state"`
 	Reviews                ArchiveReportCoverageResponseReviews        `json:"reviews"`
 	Status                 ArchiveReportCoverageResponseStatus         `json:"status"`
@@ -1131,6 +1281,12 @@ type ArchiveReportCoverageResponseComments string
 
 // ArchiveReportCoverageResponseInlineComments defines model for ArchiveReportCoverageResponse.InlineComments.
 type ArchiveReportCoverageResponseInlineComments string
+
+// ArchiveReportCoverageResponseIssues defines model for ArchiveReportCoverageResponse.Issues.
+type ArchiveReportCoverageResponseIssues string
+
+// ArchiveReportCoverageResponseMergeRequests defines model for ArchiveReportCoverageResponse.MergeRequests.
+type ArchiveReportCoverageResponseMergeRequests string
 
 // ArchiveReportCoverageResponseOperatorState defines model for ArchiveReportCoverageResponse.OperatorState.
 type ArchiveReportCoverageResponseOperatorState string
@@ -1156,6 +1312,7 @@ type ArchiveReportResponse struct {
 	Contributors *[]ArchiveReportContributorResponse `json:"contributors"`
 	End          time.Time                           `json:"end"`
 	Repositories *[]ArchiveReportRepositoryResponse  `json:"repositories"`
+	ReportSchema string                              `json:"schema"`
 	Start        time.Time                           `json:"start"`
 	Totals       ArchiveReportCountsResponse         `json:"totals"`
 }
@@ -1915,6 +2072,19 @@ type Hit struct {
 	Score   int64  `json:"score"`
 }
 
+// HookEvent defines model for HookEvent.
+type HookEvent struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema               *string                `json:"$schema,omitempty"`
+	AgentId              *string                `json:"agent_id,omitempty"`
+	Cwd                  string                 `json:"cwd"`
+	HookEventName        string                 `json:"hook_event_name"`
+	NotificationType     *string                `json:"notification_type,omitempty"`
+	SessionId            string                 `json:"session_id"`
+	ToolName             *string                `json:"tool_name,omitempty"`
+	AdditionalProperties map[string]interface{} `json:"-"`
+}
+
 // HostDiagnostic defines model for HostDiagnostic.
 type HostDiagnostic struct {
 	BlocksOperations   *[]string `json:"blocksOperations"`
@@ -2484,6 +2654,7 @@ type MergeRequest struct {
 	CreatedAt          time.Time                `json:"CreatedAt"`
 	Deletions          int64                    `json:"Deletions"`
 	DetailFetchedAt    *time.Time               `json:"DetailFetchedAt"`
+	FilesChanged       *int64                   `json:"FilesChanged"`
 	HeadBranch         string                   `json:"HeadBranch"`
 	HeadRepoCloneURL   string                   `json:"HeadRepoCloneURL"`
 	ID                 int64                    `json:"ID"`
@@ -2491,6 +2662,7 @@ type MergeRequest struct {
 	IsLocked           bool                     `json:"IsLocked"`
 	KanbanStatus       MergeRequestKanbanStatus `json:"KanbanStatus"`
 	LastActivityAt     time.Time                `json:"LastActivityAt"`
+	MergeCommitSHA     string                   `json:"MergeCommitSHA"`
 	MergeableState     string                   `json:"MergeableState"`
 	MergedAt           *time.Time               `json:"MergedAt"`
 	Number             int64                    `json:"Number"`
@@ -2577,6 +2749,7 @@ type MergeRequestResponse struct {
 	CommentCount       int64                            `json:"CommentCount"`
 	CreatedAt          time.Time                        `json:"CreatedAt"`
 	Deletions          int64                            `json:"Deletions"`
+	FilesChanged       *int64                           `json:"FilesChanged"`
 	HeadBranch         string                           `json:"HeadBranch"`
 	HeadRepoCloneURL   string                           `json:"HeadRepoCloneURL"`
 	ID                 int64                            `json:"ID"`
@@ -2584,6 +2757,7 @@ type MergeRequestResponse struct {
 	IsLocked           bool                             `json:"IsLocked"`
 	KanbanStatus       MergeRequestResponseKanbanStatus `json:"KanbanStatus"`
 	LastActivityAt     time.Time                        `json:"LastActivityAt"`
+	MergeCommitSHA     string                           `json:"MergeCommitSHA"`
 	MergeableState     string                           `json:"MergeableState"`
 	MergedAt           *time.Time                       `json:"MergedAt"`
 	Number             int64                            `json:"Number"`
@@ -2891,6 +3065,7 @@ type ProviderCapabilitiesResponse struct {
 	MergeMutation               bool      `json:"merge_mutation"`
 	MutationHeadBinding         bool      `json:"mutation_head_binding"`
 	NativeMultilineRanges       bool      `json:"native_multiline_ranges"`
+	ReadAuthenticatedUser       bool      `json:"read_authenticated_user"`
 	ReadCi                      bool      `json:"read_ci"`
 	ReadComments                bool      `json:"read_comments"`
 	ReadIssues                  bool      `json:"read_issues"`
@@ -3695,6 +3870,7 @@ type SettingsResponse struct {
 	PullRequests  PullRequests                  `json:"pull_requests"`
 	Repos         []ConfiguredRepoStatus        `json:"repos"`
 	Terminal      Terminal                      `json:"terminal"`
+	Workspaces    Workspaces                    `json:"workspaces"`
 }
 
 // Snapshot defines model for Snapshot.
@@ -3887,6 +4063,7 @@ type UpdateSettingsRequest struct {
 	Modes        *ModeVisibility           `json:"modes,omitempty"`
 	PullRequests *PullRequests             `json:"pull_requests,omitempty"`
 	Terminal     *Terminal                 `json:"terminal,omitempty"`
+	Workspaces   *Workspaces               `json:"workspaces,omitempty"`
 }
 
 // UserRepository defines model for UserRepository.
@@ -3967,7 +4144,10 @@ type WorkspaceResponse struct {
 	AssociatedPrNumber  *int64     `json:"associated_pr_number,omitempty"`
 	CommitsAhead        *int64     `json:"commits_ahead,omitempty"`
 	CommitsBehind       *int64     `json:"commits_behind,omitempty"`
-	CreatedAt           string     `json:"created_at"`
+
+	// Created True when this response represents a workspace newly created by this request; absent when an existing workspace was returned or on reads.
+	Created   *bool  `json:"created,omitempty"`
+	CreatedAt string `json:"created_at"`
 
 	// EnrichmentError Combined error from the most recent reconciliation attempt; populated component fields may still contain last-known-good values.
 	EnrichmentError *string `json:"enrichment_error,omitempty"`
@@ -3988,21 +4168,24 @@ type WorkspaceResponse struct {
 	MrAdditions        *int64                            `json:"mr_additions,omitempty"`
 	MrCiStatus         *string                           `json:"mr_ci_status,omitempty"`
 	MrDeletions        *int64                            `json:"mr_deletions,omitempty"`
-	MrIsDraft          *bool                             `json:"mr_is_draft,omitempty"`
-	MrReviewDecision   *string                           `json:"mr_review_decision,omitempty"`
-	MrState            *string                           `json:"mr_state,omitempty"`
-	MrTitle            *string                           `json:"mr_title,omitempty"`
-	PlatformHost       string                            `json:"platform_host"`
-	Repo               RepoRefResponse                   `json:"repo"`
-	RepoName           string                            `json:"repo_name"`
-	RepoOwner          string                            `json:"repo_owner"`
-	Status             string                            `json:"status"`
-	TmuxActivitySource string                            `json:"tmux_activity_source"`
-	TmuxLastOutputAt   *string                           `json:"tmux_last_output_at"`
-	TmuxPaneTitle      *string                           `json:"tmux_pane_title,omitempty"`
-	TmuxSession        string                            `json:"tmux_session"`
-	TmuxWorking        bool                              `json:"tmux_working"`
-	WorktreePath       string                            `json:"worktree_path"`
+
+	// MrHeadRepoKind Set only for pull_request workspaces: same_repo when the PR head is confirmed to be in the base repo, fork when it is a confirmed fork clone, unknown when repository identity could not be resolved.
+	MrHeadRepoKind     *WorkspaceResponseMrHeadRepoKind `json:"mr_head_repo_kind,omitempty"`
+	MrIsDraft          *bool                            `json:"mr_is_draft,omitempty"`
+	MrReviewDecision   *string                          `json:"mr_review_decision,omitempty"`
+	MrState            *string                          `json:"mr_state,omitempty"`
+	MrTitle            *string                          `json:"mr_title,omitempty"`
+	PlatformHost       string                           `json:"platform_host"`
+	Repo               RepoRefResponse                  `json:"repo"`
+	RepoName           string                           `json:"repo_name"`
+	RepoOwner          string                           `json:"repo_owner"`
+	Status             string                           `json:"status"`
+	TmuxActivitySource string                           `json:"tmux_activity_source"`
+	TmuxLastOutputAt   *string                          `json:"tmux_last_output_at"`
+	TmuxPaneTitle      *string                          `json:"tmux_pane_title,omitempty"`
+	TmuxSession        string                           `json:"tmux_session"`
+	TmuxWorking        bool                             `json:"tmux_working"`
+	WorktreePath       string                           `json:"worktree_path"`
 }
 
 // WorkspaceResponseAgentState Hook-reported aggregate state for live agent sessions. Omitted when no live session has reported lifecycle state.
@@ -4011,12 +4194,20 @@ type WorkspaceResponseAgentState string
 // WorkspaceResponseEnrichmentStatus Aggregate git-divergence and tmux-activity reconciliation status. Failed responses retain last-known-good component fields when available.
 type WorkspaceResponseEnrichmentStatus string
 
+// WorkspaceResponseMrHeadRepoKind Set only for pull_request workspaces: same_repo when the PR head is confirmed to be in the base repo, fork when it is a confirmed fork clone, unknown when repository identity could not be resolved.
+type WorkspaceResponseMrHeadRepoKind string
+
 // WorkspaceRuntimeResponse defines model for WorkspaceRuntimeResponse.
 type WorkspaceRuntimeResponse struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema        *string         `json:"$schema,omitempty"`
 	LaunchTargets *[]LaunchTarget `json:"launch_targets"`
 	Sessions      *[]SessionInfo  `json:"sessions"`
+}
+
+// Workspaces defines model for Workspaces.
+type Workspaces struct {
+	AutoAssignOnCreate bool `json:"auto_assign_on_create"`
 }
 
 // WorktreeFromMergeRequestResponse defines model for WorktreeFromMergeRequestResponse.
@@ -4102,6 +4293,11 @@ type ListActivityParams struct {
 	Search *string   `form:"search,omitempty" json:"search,omitempty"`
 	After  *string   `form:"after,omitempty" json:"after,omitempty"`
 	Since  *string   `form:"since,omitempty" json:"since,omitempty"`
+}
+
+// ReceiveAgentHookParams defines parameters for ReceiveAgentHook.
+type ReceiveAgentHookParams struct {
+	XMiddlemanRuntimeSessionKey *string `json:"X-Middleman-Runtime-Session-Key,omitempty"`
 }
 
 // GetArchiveReportParams defines parameters for GetArchiveReport.
@@ -4748,6 +4944,9 @@ type GetWorkspaceFilesParams struct {
 	To *string `form:"to,omitempty" json:"to,omitempty"`
 }
 
+// ReceiveAgentHookJSONRequestBody defines body for ReceiveAgentHook for application/json ContentType.
+type ReceiveAgentHookJSONRequestBody = HookEvent
+
 // PauseArchivesJSONRequestBody defines body for PauseArchives for application/json ContentType.
 type PauseArchivesJSONRequestBody = ArchiveMutationBody
 
@@ -5066,6 +5265,158 @@ type RenameWorkspaceRuntimeSessionJSONRequestBody = RenameWorkspaceRuntimeSessio
 // RemoveStaleWorktreeJSONRequestBody defines body for RemoveStaleWorktree for application/json ContentType.
 type RemoveStaleWorktreeJSONRequestBody = RemoveStaleWorktreeInputBody
 
+// Getter for additional properties for HookEvent. Returns the specified
+// element and whether it was found
+func (a HookEvent) Get(fieldName string) (value interface{}, found bool) {
+	if a.AdditionalProperties != nil {
+		value, found = a.AdditionalProperties[fieldName]
+	}
+	return
+}
+
+// Setter for additional properties for HookEvent
+func (a *HookEvent) Set(fieldName string, value interface{}) {
+	if a.AdditionalProperties == nil {
+		a.AdditionalProperties = make(map[string]interface{})
+	}
+	a.AdditionalProperties[fieldName] = value
+}
+
+// Override default JSON handling for HookEvent to handle AdditionalProperties
+func (a *HookEvent) UnmarshalJSON(b []byte) error {
+	object := make(map[string]json.RawMessage)
+	err := json.Unmarshal(b, &object)
+	if err != nil {
+		return err
+	}
+
+	if raw, found := object["$schema"]; found {
+		err = json.Unmarshal(raw, &a.Schema)
+		if err != nil {
+			return fmt.Errorf("error reading '$schema': %w", err)
+		}
+		delete(object, "$schema")
+	}
+
+	if raw, found := object["agent_id"]; found {
+		err = json.Unmarshal(raw, &a.AgentId)
+		if err != nil {
+			return fmt.Errorf("error reading 'agent_id': %w", err)
+		}
+		delete(object, "agent_id")
+	}
+
+	if raw, found := object["cwd"]; found {
+		err = json.Unmarshal(raw, &a.Cwd)
+		if err != nil {
+			return fmt.Errorf("error reading 'cwd': %w", err)
+		}
+		delete(object, "cwd")
+	}
+
+	if raw, found := object["hook_event_name"]; found {
+		err = json.Unmarshal(raw, &a.HookEventName)
+		if err != nil {
+			return fmt.Errorf("error reading 'hook_event_name': %w", err)
+		}
+		delete(object, "hook_event_name")
+	}
+
+	if raw, found := object["notification_type"]; found {
+		err = json.Unmarshal(raw, &a.NotificationType)
+		if err != nil {
+			return fmt.Errorf("error reading 'notification_type': %w", err)
+		}
+		delete(object, "notification_type")
+	}
+
+	if raw, found := object["session_id"]; found {
+		err = json.Unmarshal(raw, &a.SessionId)
+		if err != nil {
+			return fmt.Errorf("error reading 'session_id': %w", err)
+		}
+		delete(object, "session_id")
+	}
+
+	if raw, found := object["tool_name"]; found {
+		err = json.Unmarshal(raw, &a.ToolName)
+		if err != nil {
+			return fmt.Errorf("error reading 'tool_name': %w", err)
+		}
+		delete(object, "tool_name")
+	}
+
+	if len(object) != 0 {
+		a.AdditionalProperties = make(map[string]interface{})
+		for fieldName, fieldBuf := range object {
+			var fieldVal interface{}
+			err := json.Unmarshal(fieldBuf, &fieldVal)
+			if err != nil {
+				return fmt.Errorf("error unmarshaling field %s: %w", fieldName, err)
+			}
+			a.AdditionalProperties[fieldName] = fieldVal
+		}
+	}
+	return nil
+}
+
+// Override default JSON handling for HookEvent to handle AdditionalProperties
+func (a HookEvent) MarshalJSON() ([]byte, error) {
+	var err error
+	object := make(map[string]json.RawMessage)
+
+	if a.Schema != nil {
+		object["$schema"], err = json.Marshal(a.Schema)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling '$schema': %w", err)
+		}
+	}
+
+	if a.AgentId != nil {
+		object["agent_id"], err = json.Marshal(a.AgentId)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'agent_id': %w", err)
+		}
+	}
+
+	object["cwd"], err = json.Marshal(a.Cwd)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'cwd': %w", err)
+	}
+
+	object["hook_event_name"], err = json.Marshal(a.HookEventName)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'hook_event_name': %w", err)
+	}
+
+	if a.NotificationType != nil {
+		object["notification_type"], err = json.Marshal(a.NotificationType)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'notification_type': %w", err)
+		}
+	}
+
+	object["session_id"], err = json.Marshal(a.SessionId)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'session_id': %w", err)
+	}
+
+	if a.ToolName != nil {
+		object["tool_name"], err = json.Marshal(a.ToolName)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'tool_name': %w", err)
+		}
+	}
+
+	for fieldName, field := range a.AdditionalProperties {
+		object[fieldName], err = json.Marshal(field)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling '%s': %w", fieldName, err)
+		}
+	}
+	return json.Marshal(object)
+}
+
 // RequestEditorFn  is the function signature for the RequestEditor callback function
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
 
@@ -5141,6 +5492,11 @@ func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
 type ClientInterface interface {
 	// ListActivity request
 	ListActivity(ctx context.Context, params *ListActivityParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ReceiveAgentHookWithBody request with any body
+	ReceiveAgentHookWithBody(ctx context.Context, agent string, params *ReceiveAgentHookParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	ReceiveAgentHook(ctx context.Context, agent string, params *ReceiveAgentHookParams, body ReceiveAgentHookJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// PauseArchivesWithBody request with any body
 	PauseArchivesWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -6209,6 +6565,30 @@ type ClientInterface interface {
 
 func (c *Client) ListActivity(ctx context.Context, params *ListActivityParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListActivityRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ReceiveAgentHookWithBody(ctx context.Context, agent string, params *ReceiveAgentHookParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewReceiveAgentHookRequestWithBody(c.Server, agent, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ReceiveAgentHook(ctx context.Context, agent string, params *ReceiveAgentHookParams, body ReceiveAgentHookJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewReceiveAgentHookRequest(c.Server, agent, params, body)
 	if err != nil {
 		return nil, err
 	}
@@ -10996,6 +11376,68 @@ func NewListActivityRequest(server string, params *ListActivityParams) (*http.Re
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
 	if err != nil {
 		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewReceiveAgentHookRequest calls the generic ReceiveAgentHook builder with application/json body
+func NewReceiveAgentHookRequest(server string, agent string, params *ReceiveAgentHookParams, body ReceiveAgentHookJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewReceiveAgentHookRequestWithBody(server, agent, params, "application/json", bodyReader)
+}
+
+// NewReceiveAgentHookRequestWithBody generates requests for ReceiveAgentHook with any type of body
+func NewReceiveAgentHookRequestWithBody(server string, agent string, params *ReceiveAgentHookParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "agent", agent, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/agent-hooks/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		if params.XMiddlemanRuntimeSessionKey != nil {
+			var headerParam0 string
+
+			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "X-Middleman-Runtime-Session-Key", *params.XMiddlemanRuntimeSessionKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("X-Middleman-Runtime-Session-Key", headerParam0)
+		}
+
 	}
 
 	return req, nil
@@ -28548,6 +28990,11 @@ type ClientWithResponsesInterface interface {
 	// ListActivityWithResponse request
 	ListActivityWithResponse(ctx context.Context, params *ListActivityParams, reqEditors ...RequestEditorFn) (*ListActivityResponse, error)
 
+	// ReceiveAgentHookWithBodyWithResponse request with any body
+	ReceiveAgentHookWithBodyWithResponse(ctx context.Context, agent string, params *ReceiveAgentHookParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ReceiveAgentHookResponse, error)
+
+	ReceiveAgentHookWithResponse(ctx context.Context, agent string, params *ReceiveAgentHookParams, body ReceiveAgentHookJSONRequestBody, reqEditors ...RequestEditorFn) (*ReceiveAgentHookResponse, error)
+
 	// PauseArchivesWithBodyWithResponse request with any body
 	PauseArchivesWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PauseArchivesResponse, error)
 
@@ -29624,6 +30071,29 @@ func (r ListActivityResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r ListActivityResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ReceiveAgentHookResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *AgentHookResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r ReceiveAgentHookResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ReceiveAgentHookResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -36083,6 +36553,23 @@ func (c *ClientWithResponses) ListActivityWithResponse(ctx context.Context, para
 	return ParseListActivityResponse(rsp)
 }
 
+// ReceiveAgentHookWithBodyWithResponse request with arbitrary body returning *ReceiveAgentHookResponse
+func (c *ClientWithResponses) ReceiveAgentHookWithBodyWithResponse(ctx context.Context, agent string, params *ReceiveAgentHookParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ReceiveAgentHookResponse, error) {
+	rsp, err := c.ReceiveAgentHookWithBody(ctx, agent, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseReceiveAgentHookResponse(rsp)
+}
+
+func (c *ClientWithResponses) ReceiveAgentHookWithResponse(ctx context.Context, agent string, params *ReceiveAgentHookParams, body ReceiveAgentHookJSONRequestBody, reqEditors ...RequestEditorFn) (*ReceiveAgentHookResponse, error) {
+	rsp, err := c.ReceiveAgentHook(ctx, agent, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseReceiveAgentHookResponse(rsp)
+}
+
 // PauseArchivesWithBodyWithResponse request with arbitrary body returning *PauseArchivesResponse
 func (c *ClientWithResponses) PauseArchivesWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PauseArchivesResponse, error) {
 	rsp, err := c.PauseArchivesWithBody(ctx, contentType, body, reqEditors...)
@@ -39485,6 +39972,39 @@ func ParseListActivityResponse(rsp *http.Response) (*ListActivityResponse, error
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest ActivityResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseReceiveAgentHookResponse parses an HTTP response from a ReceiveAgentHookWithResponse call
+func ParseReceiveAgentHookResponse(rsp *http.Response) (*ReceiveAgentHookResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ReceiveAgentHookResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AgentHookResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

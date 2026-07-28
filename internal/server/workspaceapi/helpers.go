@@ -123,6 +123,34 @@ func normalizeRouteProvider(raw string) (string, error) {
 	return string(kind), nil
 }
 
+// mrHeadRepoKindSameRepo, mrHeadRepoKindFork, and mrHeadRepoKindUnknown are
+// the tri-state values exposed on workspaceResponse.MRHeadRepoKind for
+// pull_request workspaces, mirroring db.Workspace.MRHeadRepo's nil/empty/set
+// states. Non-pull_request workspaces get the zero value ("") so the field
+// is omitted from the wire response.
+const (
+	mrHeadRepoKindSameRepo = "same_repo"
+	mrHeadRepoKindFork     = "fork"
+	mrHeadRepoKindUnknown  = "unknown"
+)
+
+// mrHeadRepoKind exposes informational head-repository classification to API
+// clients. It does not authorize launches; an explicit user-selected launch
+// goes through the ordinary manual launch boundary for every classification.
+func mrHeadRepoKind(itemType string, mrHeadRepo *string) string {
+	if itemType != db.WorkspaceItemTypePullRequest {
+		return ""
+	}
+	switch {
+	case mrHeadRepo == nil:
+		return mrHeadRepoKindSameRepo
+	case *mrHeadRepo == "":
+		return mrHeadRepoKindUnknown
+	default:
+		return mrHeadRepoKindFork
+	}
+}
+
 func toWorkspaceResponse(summary *db.WorkspaceSummary) workspaceResponse {
 	var itemLastActivityAt *string
 	if summary.ItemLastActivityAt != nil {
@@ -160,6 +188,7 @@ func toWorkspaceResponse(summary *db.WorkspaceSummary) workspaceResponse {
 		MRDeletions:        summary.MRDeletions,
 		AssociatedPRNumber: summary.AssociatedPRNumber,
 		Kata:               summary.KataMetadata,
+		MRHeadRepoKind:     mrHeadRepoKind(summary.ItemType, summary.MRHeadRepo),
 	}
 }
 

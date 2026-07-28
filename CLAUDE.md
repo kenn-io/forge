@@ -155,11 +155,16 @@ Coverage of real behavior is non-negotiable; the lane is chosen by the behavior 
 ## Conventions
 
 - Prefer stdlib over external dependencies
+- The `middleman` binary has one Cobra root command. Register every public command on that tree; do not add a second parser, manual dispatcher, or command-facing `flag.FlagSet`. (`cmd/middleman/cli.go::newRootCommand`)
+- CLI flags must affect execution or fail validation; reject shared persistent flags outside the commands that consume them instead of silently ignoring user input. (`internal/cli/ctl/ctl.go::installControlFlagValidation`)
 - Do the task requested, not the task imagined. Do not widen scope without explicitly confirming with the user first
 - When a backwards compatibility adapter, shim, alias, fallback wrapper, or legacy translation layer seems useful, ask the user for EXPRESS permission before introducing it. These shims carry very high maintenance cost because they preserve old paths, multiply edge cases, and make future changes harder to reason about; explain the compatibility benefit and why direct migration or removal is not the better choice.
 - Use `huma` for the web framework and OpenAPI generation
 - Regenerate API artifacts with `make api-generate`; the Go client also supports `go generate ./internal/apiclient/generated`
 - User-facing docs should be concise and workflow-oriented: state the UI capabilities and the maintainer workflows middleman enables, avoid overexplaining internals, and treat the HTTP API as an internal/thin-client concern rather than regular user guidance.
+- Local thin clients must not infer startup-bound daemon middleware policy from
+  reloadable config; derive required request metadata from the runtime record or
+  send it safely when the middleware ignores it (`cmd/middleman/daemon_client.go::discoverDaemonHTTP`).
 - User-facing workflow screenshots are generated into a staged docs tree by the docs build and must not be tracked in Git; the Playwright captures in `docs/screenshots/` use the real seeded e2e backend, not mocked API fixtures or a developer daemon.
 - Verify Zensical screenshot asset-path findings against rendered `site/` output; raw HTML source paths can be rewritten when `use_directory_urls` is enabled.
 - Zensical resolves `docs_dir`/`site_dir` relative to the config file's directory, so `uvx zensical build` cannot run in place against the checked-in `docs/zensical.toml`; stage a scratch project root containing a copy of the config beside a copy of `docs/`, then build there.

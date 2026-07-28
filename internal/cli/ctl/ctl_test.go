@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	configpkg "go.kenn.io/middleman/internal/config"
@@ -340,6 +341,15 @@ func TestAPIListCommandDiscoversOpenAPIOperations(t *testing.T) {
 	cmd := newCommand(commandDeps{
 		Stdout: &stdout,
 		Stderr: &bytes.Buffer{},
+		APICommandFactory: func(APIRequest) *cobra.Command {
+			return &cobra.Command{
+				Use:  "api METHOD PATH",
+				Args: cobra.ExactArgs(2),
+				RunE: func(cmd *cobra.Command, args []string) error {
+					return errors.New("raw API relay should not handle api list")
+				},
+			}
+		},
 		Request: func(_ context.Context, _ cliConfig, method, requestURL string, bodyArgs []string) ([]byte, error) {
 			got.method = method
 			got.url = requestURL

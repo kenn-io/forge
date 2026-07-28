@@ -1541,7 +1541,9 @@ func (s *Handler) readyForReview(ctx context.Context, input *repoNumberInput) (*
 	}
 
 	normalized := platform.DBMergeRequest(repo.ID, pr)
-	if mrID, accepted, upsertErr := s.db.UpsertMergeRequestSnapshot(ctx, normalized); upsertErr == nil && accepted {
+	if mrID, _, accepted, upsertErr := s.syncer.CommitMergeRequestParentSnapshot(
+		ctx, mergeRequestRepoRef(*repo), normalized,
+	); upsertErr == nil && accepted {
 		_ = s.db.EnsureKanbanState(ctx, mrID)
 	}
 
@@ -2008,7 +2010,9 @@ func (s *Handler) setPRGitHubState(
 							string(repoProviderKind(*repo)), repoProviderHost(*repo),
 						)
 					}
-					_, _, _ = s.db.UpsertMergeRequestSnapshot(ctx, normalized)
+					_, _, _, _ = s.syncer.CommitMergeRequestParentSnapshot(
+						ctx, mergeRequestRepoRef(*repo), normalized,
+					)
 					s.markClosedLinkedNotificationsDone(ctx)
 					if ghPR.GetMerged() {
 						return nil, httpapi.Conflict(

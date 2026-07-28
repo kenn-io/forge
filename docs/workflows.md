@@ -76,7 +76,9 @@ opening the forge.
 
 Use **Workspaces** to launch and attach to shell or agent sessions tied to local
 repositories. tmux-backed sessions let middleman keep a durable attach point for
-ongoing work.
+ongoing work. The primary **Create Workspace** action creates only; choose an
+agent from its dropdown to create and launch immediately without another modal.
+The choice is per-creation, session-scoped intent, not a persistent default.
 
 New work does not need an existing pull request, issue, or Kata task. Use **New
 workspace** in the Workspaces sidebar, or the same command in the palette
@@ -85,10 +87,13 @@ picker preselects the repository you last started work in. Name the
 branch or leave it empty and middleman generates one; either way the worktree
 branches from the repository's default branch.
 
-Run `middleman agent-hook install` once to show Claude and Codex activity in
+Run or rerun `middleman agent-hook install` to show Claude and Codex activity in
 workspace rows. The rows distinguish active work, approval requests, and user
 input, refreshing within five seconds while the sidebar is open. Reports expire
-after 30 minutes without another hook event and then fall back to tmux activity;
+after 30 minutes without another hook event and then fall back to tmux activity.
+Installed hooks forward lifecycle events to the running middleman daemon.
+Claude sessions also receive a workspace summary regenerated from persisted
+workspace metadata at session start; `CLAUDE.local.md` is never read for it.
 Codex asks you to review the installed command through `/hooks` once.
 
 ## Use Kata tasks

@@ -15,6 +15,18 @@ import {
   resetKataWorkspaceTestState,
 } from "./test/KataWorkspaceSupport.js";
 
+vi.mock("@middleman/ui", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@middleman/ui")>();
+  return {
+    ...actual,
+    getStores: () => ({
+      settings: {
+        getLaunchTargets: () => [],
+      },
+    }),
+  };
+});
+
 type SnapshotIssue = NonNullable<KataWorkspaceSnapshotResponse["issues"]>[number];
 type SnapshotProject = NonNullable<KataWorkspaceSnapshotResponse["projects"]>[number];
 

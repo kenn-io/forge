@@ -1,6 +1,6 @@
 import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { expect } from "@playwright/test";
 
 function readEnvFile(): Record<string, string> {
@@ -246,4 +246,8 @@ export async function openDrawer(page: Page, jobId: number): Promise<void> {
   await expect(page.getByRole("region", { name: "Review details" })).toBeVisible({
     timeout: 10_000,
   });
+}
+
+export function reviewAction(page: Page, name: string): Locator {
+  return page.getByRole("group", { name: "Review actions" }).getByRole("button", { name });
 }

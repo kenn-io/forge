@@ -44,7 +44,7 @@ type workspaceResponse struct {
 	TmuxWorking           bool                      `json:"tmux_working"`
 	TmuxActivitySource    string                    `json:"tmux_activity_source"`
 	TmuxLastOutputAt      *string                   `json:"tmux_last_output_at"`
-	AgentState            *string                   `json:"agent_state,omitempty" enum:"idle,working,input,approval" doc:"Hook-reported aggregate state for live agent sessions. Omitted when no live session has reported lifecycle state."`
+	AgentState            *string                   `json:"agent_state,omitempty" enum:"idle,working,input,approval,done" doc:"Hook-reported aggregate state for live agent sessions. Omitted when no live session has reported lifecycle state."`
 	AgentStateUpdatedAt   *string                   `json:"agent_state_updated_at,omitempty" format:"date-time" doc:"UTC timestamp of the hook report that produced agent_state."`
 	Status                string                    `json:"status"`
 	ErrorMessage          *string                   `json:"error_message,omitempty"`
@@ -64,6 +64,8 @@ type workspaceResponse struct {
 	EnrichmentError       *string                   `json:"enrichment_error,omitempty" doc:"Combined error from the most recent reconciliation attempt; populated component fields may still contain last-known-good values."`
 	AssociatedPRNumber    *int                      `json:"associated_pr_number,omitempty"`
 	Kata                  *db.WorkspaceKataMetadata `json:"kata,omitempty"`
+	MRHeadRepoKind        string                    `json:"mr_head_repo_kind,omitempty" enum:"same_repo,fork,unknown" doc:"Set only for pull_request workspaces: same_repo when the PR head is confirmed to be in the base repo, fork when it is a confirmed fork clone, unknown when repository identity could not be resolved."`
+	Created               bool                      `json:"created,omitempty" doc:"True when this response represents a workspace newly created by this request; absent when an existing workspace was returned or on reads."`
 }
 
 // WorkspaceResponse is the stable workspace DTO shared with dependent server

@@ -23,6 +23,7 @@ const {
   xtermInstances: [] as Array<{
     clearTextureAtlas: ReturnType<typeof vi.fn>;
     cols: number;
+    focus: ReturnType<typeof vi.fn>;
     modes: { bracketedPasteMode: boolean };
     refresh: ReturnType<typeof vi.fn>;
     rows: number;
@@ -108,6 +109,7 @@ vi.mock("@xterm/xterm", () => ({
       options: { ...options },
       clearTextureAtlas: vi.fn(),
       dispose: vi.fn(),
+      focus: vi.fn(),
       loadAddon: vi.fn(),
       onBinary: vi.fn(),
       onData: vi.fn((handler: (data: string) => void) => {
@@ -164,6 +166,7 @@ vi.mock("ghostty-web", () => ({
       rows: 24,
       options: { ...options },
       dispose: vi.fn(),
+      focus: vi.fn(),
       loadAddon: vi.fn(),
       onData: vi.fn(),
       open: vi.fn(),
@@ -445,6 +448,35 @@ describe("TerminalPane", () => {
 
     await rerender({ workspaceId: "ws-123", active: true });
     expect(mockSockets[0]!.sent).toContain(JSON.stringify({ type: "resize_active", active: true }));
+  });
+
+  it("focuses the xterm terminal once it initializes while active", async () => {
+    render(TerminalPane, { props: { workspaceId: "ws-123" } });
+
+    await waitFor(() => expect(xtermInstances.length).toBe(1));
+    expect(xtermInstances[0]!.focus).toHaveBeenCalled();
+  });
+
+  it("does not steal focus when an existing terminal becomes active", async () => {
+    const { rerender } = render(TerminalPane, {
+      props: { workspaceId: "ws-123", active: false },
+    });
+
+    await waitFor(() => expect(xtermInstances.length).toBe(1));
+    expect(xtermInstances[0]!.focus).not.toHaveBeenCalled();
+
+    await rerender({ workspaceId: "ws-123", active: true });
+    await tick();
+    expect(xtermInstances[0]!.focus).not.toHaveBeenCalled();
+  });
+
+  it("does not focus a disabled terminal", async () => {
+    render(TerminalPane, {
+      props: { workspaceId: "ws-123", active: true, disabled: true },
+    });
+
+    await waitFor(() => expect(xtermInstances.length).toBe(1));
+    expect(xtermInstances[0]!.focus).not.toHaveBeenCalled();
   });
 
   it("repaints after container resize without rebuilding the WebGL atlas", async () => {

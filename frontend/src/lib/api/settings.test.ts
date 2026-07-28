@@ -161,6 +161,16 @@ describe("settings api", () => {
     });
   });
 
+  it("posts workspace assignment settings updates", async () => {
+    await updateSettings({ workspaces: { auto_assign_on_create: true } });
+
+    const request = vi.mocked(fetch).mock.calls[0]?.[0];
+    expect(request).toBeInstanceOf(Request);
+    await expect((request as Request).clone().json()).resolves.toEqual({
+      workspaces: { auto_assign_on_create: true },
+    });
+  });
+
   it("updates a repo worktree base path", async () => {
     await updateRepoWorktreeBasePath(
       "acme",

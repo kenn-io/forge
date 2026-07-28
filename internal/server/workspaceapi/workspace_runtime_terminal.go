@@ -29,7 +29,10 @@ type runtimeTerminalControlMsg struct {
 // RuntimeTerminalControlMsg is shared with Fleet's websocket relay.
 type RuntimeTerminalControlMsg = runtimeTerminalControlMsg
 
-const runtimeTerminalSetupStepTimeout = 2 * time.Second
+const (
+	runtimeTerminalSetupStepTimeout = 2 * time.Second
+	runtimeTerminalExitDrainTimeout = time.Second
+)
 
 func (s *Handler) handleWorkspaceRuntimeSessionTerminal(
 	w http.ResponseWriter,
@@ -347,7 +350,7 @@ func bridgeRuntimeAttachment(
 		// session exit frame forever.
 		select {
 		case <-outputDone:
-		case <-time.After(100 * time.Millisecond):
+		case <-time.After(runtimeTerminalExitDrainTimeout):
 		}
 		// Write the frame BEFORE cancel: coder/websocket tears down
 		// the underlying connection when the input goroutine's

@@ -152,6 +152,44 @@ func TestPromptMaintenanceAdmissionReservesProviderConfirmationAttempts(t *testi
 	assert.Equal(t, 4, admission.costs[0])
 }
 
+func TestPromptMaintenanceCompletesDisabledRepositoryFeature(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	now := time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC)
+	ref := archiveServiceRef(platform.KindGitHub, "github.test", "repo")
+	repoID := archiveServiceSeedRepo(t, database, ref)
+	provider := newArchiveServiceProvider(ref.Platform, ref.Host)
+	service := archiveMaintenanceService(t, database, provider, ref, now)
+	completeArchiveInitial(t, service)
+
+	maintenanceAt := now.Add(time.Hour)
+	provider.updatedIssueErrors = map[string]error{
+		"": platform.RepositoryFeatureDisabled(
+			ref.Platform, ref.Host, platform.RepositoryFeatureIssues,
+			errors.New("issues disabled"),
+		),
+	}
+	service.admission = &archiveTestAdmission{
+		deferCompletedErrors: true,
+		retryAt:              maintenanceAt.Add(time.Hour),
+	}
+	service.clock = fixedClock{value: maintenanceAt}
+	service.SetMaintenanceInterval(time.Minute)
+
+	require.NoError(service.RunEligible(t.Context()))
+
+	states, err := database.ListArchiveRepoStates(t.Context(), []int64{repoID})
+	require.NoError(err)
+	require.Len(states, 1)
+	assert.Nil(states[0].PromptScanStartedAt)
+	require.NotNil(states[0].MaintenanceWatermark)
+	assert.Equal(maintenanceAt, *states[0].MaintenanceWatermark)
+	require.NotNil(states[0].MaintenanceSucceededAt)
+	assert.Equal(maintenanceAt, *states[0].MaintenanceSucceededAt)
+	assert.Equal(db.ArchiveCoverageSupported, states[0].IssuesCoverage)
+}
+
 func archiveMaintenanceService(
 	t *testing.T,
 	database *db.DB,

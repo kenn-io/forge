@@ -22,6 +22,7 @@ const (
 	StateWorking  State = "working"
 	StateInput    State = "input"
 	StateApproval State = "approval"
+	StateDone     State = "done"
 )
 
 const RuntimeSessionKeyEnv = "MIDDLEMAN_RUNTIME_SESSION_KEY"
@@ -43,13 +44,16 @@ type Snapshot struct {
 	UpdatedAt time.Time
 }
 
-type hookInput struct {
-	SessionID        string `json:"session_id"`
-	CWD              string `json:"cwd"`
-	HookEventName    string `json:"hook_event_name"`
-	ToolName         string `json:"tool_name"`
-	NotificationType string `json:"notification_type"`
-	AgentID          string `json:"agent_id"`
+// HookEvent is the agent-neutral lifecycle payload shared by hook integrations.
+// Agent-specific payload fields are ignored unless they affect activity state.
+type HookEvent struct {
+	SessionID        string   `json:"session_id"`
+	CWD              string   `json:"cwd"`
+	HookEventName    string   `json:"hook_event_name"`
+	ToolName         string   `json:"tool_name,omitempty"`
+	NotificationType string   `json:"notification_type,omitempty"`
+	AgentID          string   `json:"agent_id,omitempty"`
+	_                struct{} `json:"-" additionalProperties:"true"`
 }
 
 type Store struct {
@@ -70,9 +74,18 @@ func (s *Store) HandleHook(input io.Reader, runtimeSessionKey string) error {
 	if s == nil || strings.TrimSpace(s.root) == "" {
 		return nil
 	}
-	var hook hookInput
+	var hook HookEvent
 	if err := json.NewDecoder(io.LimitReader(input, 1<<20)).Decode(&hook); err != nil {
 		return fmt.Errorf("decode agent hook: %w", err)
+	}
+	return s.HandleEvent(hook, runtimeSessionKey)
+}
+
+// HandleEvent records one decoded lifecycle event for a launched runtime
+// session. Events that do not map to a visible activity transition are ignored.
+func (s *Store) HandleEvent(hook HookEvent, runtimeSessionKey string) error {
+	if s == nil || strings.TrimSpace(s.root) == "" {
+		return nil
 	}
 	if hook.AgentID != "" {
 		return nil
@@ -283,7 +296,7 @@ func sameReportFiles(current, cached map[string]os.FileInfo) bool {
 	return true
 }
 
-func stateForHook(input hookInput) (State, bool, bool) {
+func stateForHook(input HookEvent) (State, bool, bool) {
 	switch input.HookEventName {
 	case "SessionStart":
 		return StateIdle, false, true
@@ -308,7 +321,7 @@ func stateForHook(input hookInput) (State, bool, bool) {
 			return "", false, false
 		}
 	case "Stop", "Interrupt":
-		return StateIdle, false, true
+		return StateDone, false, true
 	case "SessionEnd":
 		return "", true, true
 	default:
@@ -328,10 +341,12 @@ func isUserInputTool(tool string) bool {
 func statePriority(state State) int {
 	switch state {
 	case StateApproval:
-		return 4
+		return 5
 	case StateInput:
-		return 3
+		return 4
 	case StateWorking:
+		return 3
+	case StateDone:
 		return 2
 	case StateIdle:
 		return 1

@@ -28,6 +28,7 @@ import (
 	"go.kenn.io/middleman/internal/platform"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
 	"go.kenn.io/middleman/internal/tokenauth"
+	"go.kenn.io/middleman/internal/workspace"
 )
 
 // openTestDB opens a temporary SQLite database for the duration of the test.
@@ -311,7 +312,7 @@ func TestCommitMergeRequestParentSnapshotRollsBackParentWhenLabelsFail(t *testin
 		RepoID: repoID, PlatformID: 2, Name: "new", Color: "000000", UpdatedAt: updated.UpdatedAt,
 	}}
 	syncer := &Syncer{db: database}
-	_, _, _, err = syncer.commitMergeRequestParentSnapshot(ctx, RepoRef{}, &updated)
+	_, _, _, err = syncer.CommitMergeRequestParentSnapshot(ctx, RepoRef{}, &updated)
 	require.Error(err)
 
 	result, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)
@@ -5055,6 +5056,76 @@ func TestIndexUpsertMergeRequestUpdatesKnownMergeableState(t *testing.T) {
 	assert.Equal("dirty", stored.MergeableState)
 }
 
+func TestIndexUpsertMergeRequestUpdatesKnownDiffMetricsAcrossSyncs(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	now := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
+	ref := platform.RepoRef{
+		Platform: platform.KindGitea, Host: "gitea.example.com",
+		Owner: "owner", Name: "repo",
+	}
+	repoID, err := d.UpsertRepo(ctx, platform.DBRepoIdentity(ref))
+	require.NoError(err)
+	filesChanged := 2
+	baseMR := platform.MergeRequest{
+		PlatformID: 1001, Number: 1, URL: "https://gitea.example.com/owner/repo/pulls/1",
+		Title: "Metrics", State: "open", HeadBranch: "feature", BaseBranch: "main",
+		HeadSHA: "head", BaseSHA: "base", Additions: 10, Deletions: 5,
+		FilesChanged: &filesChanged, CreatedAt: now, UpdatedAt: now,
+		LastActivityAt: now,
+	}
+	_, err = d.UpsertMergeRequest(ctx, platform.DBMergeRequest(repoID, baseMR))
+	require.NoError(err)
+	syncer := NewSyncer(nil, d, nil, nil, time.Minute, nil, nil)
+	repo := RepoRef{
+		Platform: platform.KindGitea, PlatformHost: ref.Host,
+		Owner: ref.Owner, Name: ref.Name,
+	}
+
+	filesChanged = 4
+	incoming := baseMR
+	incoming.Additions = 21
+	incoming.AdditionsKnown = true
+	incoming.Deletions = 7
+	incoming.DeletionsKnown = true
+	incoming.FilesChanged = &filesChanged
+	incoming.UpdatedAt = now.Add(time.Minute)
+	incoming.LastActivityAt = incoming.UpdatedAt
+	require.NoError(syncer.indexUpsertMergeRequest(
+		ctx, repo, repoID, incoming, false,
+	))
+	stored, err := d.GetMergeRequest(
+		ctx, string(ref.Platform), ref.Host, ref.Owner, ref.Name, 1,
+	)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal(21, stored.Additions)
+	assert.Equal(7, stored.Deletions)
+	require.NotNil(stored.FilesChanged)
+	assert.Equal(4, *stored.FilesChanged)
+
+	filesChanged = 0
+	incoming.Additions = 0
+	incoming.Deletions = 0
+	incoming.FilesChanged = &filesChanged
+	incoming.UpdatedAt = now.Add(2 * time.Minute)
+	incoming.LastActivityAt = incoming.UpdatedAt
+	require.NoError(syncer.indexUpsertMergeRequest(
+		ctx, repo, repoID, incoming, false,
+	))
+	stored, err = d.GetMergeRequest(
+		ctx, string(ref.Platform), ref.Host, ref.Owner, ref.Name, 1,
+	)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Zero(stored.Additions)
+	assert.Zero(stored.Deletions)
+	require.NotNil(stored.FilesChanged)
+	assert.Zero(*stored.FilesChanged)
+}
+
 func TestIndexUpsertMergeRequestPreservesCachedCIForSameHead(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -5165,6 +5236,491 @@ func TestIndexUpsertMergeRequestPreservesReviewDecisionWhenOmitted(t *testing.T)
 	require.NoError(err)
 	require.NotNil(stored)
 	assert.Equal("APPROVED", stored.ReviewDecision)
+}
+
+func TestIndexUpsertMergeRequestReclassifiesWorkspaceHeadRepoOnForkRetarget(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
+	require.NoError(err)
+
+	baseMR := platform.MergeRequest{
+		PlatformID:     1001,
+		Number:         1,
+		URL:            "https://github.com/owner/repo/pull/1",
+		Title:          "Same-repo PR",
+		State:          "open",
+		HeadBranch:     "feature",
+		BaseBranch:     "main",
+		HeadSHA:        "abc123",
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		LastActivityAt: now,
+	}
+	_, err = d.UpsertMergeRequest(ctx, platform.DBMergeRequest(repoID, baseMR))
+	require.NoError(err)
+
+	ws := &db.Workspace{
+		ID:           "ws-fork-reclassify",
+		Platform:     "github",
+		PlatformHost: "github.com",
+		RepoOwner:    "owner",
+		RepoName:     "repo",
+		ItemType:     db.WorkspaceItemTypePullRequest,
+		ItemNumber:   1,
+		GitHeadRef:   "abc123",
+		MRHeadRepo:   nil, // classified same-repo when the workspace was created
+		WorktreePath: t.TempDir(),
+		TmuxSession:  "session",
+		Status:       "ready",
+	}
+	require.NoError(d.InsertWorkspace(ctx, ws))
+
+	syncer := NewSyncer(nil, d, nil, nil, time.Minute, nil, testBudget(500))
+	incoming := baseMR
+	incoming.UpdatedAt = now.Add(time.Minute)
+	incoming.LastActivityAt = now.Add(time.Minute)
+	incoming.HeadRepoCloneURL = "https://github.com/forker/repo.git"
+	err = syncer.indexUpsertMergeRequest(
+		ctx,
+		RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"},
+		repoID,
+		incoming,
+		false,
+	)
+	require.NoError(err)
+
+	reclassified, err := d.GetWorkspace(ctx, ws.ID)
+	require.NoError(err)
+	require.NotNil(reclassified)
+	require.NotNil(reclassified.MRHeadRepo)
+	assert.Equal("https://github.com/forker/repo.git", *reclassified.MRHeadRepo)
+}
+
+func TestIndexUpsertMergeRequestKeepsKnownWorkspaceHeadRepoOnUnknownSnapshot(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
+	require.NoError(err)
+
+	baseMR := platform.MergeRequest{
+		PlatformID:       1001,
+		Number:           1,
+		URL:              "https://github.com/owner/repo/pull/1",
+		Title:            "Fork PR",
+		State:            "open",
+		HeadBranch:       "feature",
+		BaseBranch:       "main",
+		HeadSHA:          "abc123",
+		HeadRepoCloneURL: "https://github.com/forker/repo.git",
+		CreatedAt:        now,
+		UpdatedAt:        now,
+		LastActivityAt:   now,
+	}
+	_, err = d.UpsertMergeRequest(ctx, platform.DBMergeRequest(repoID, baseMR))
+	require.NoError(err)
+
+	forkURL := "https://github.com/forker/repo.git"
+	ws := &db.Workspace{
+		ID:           "ws-fork-known",
+		Platform:     "github",
+		PlatformHost: "github.com",
+		RepoOwner:    "owner",
+		RepoName:     "repo",
+		ItemType:     db.WorkspaceItemTypePullRequest,
+		ItemNumber:   1,
+		GitHeadRef:   "abc123",
+		MRHeadRepo:   &forkURL,
+		WorktreePath: t.TempDir(),
+		TmuxSession:  "session",
+		Status:       "ready",
+	}
+	require.NoError(d.InsertWorkspace(ctx, ws))
+
+	// A later list-page sync that cannot determine the head repo (e.g. a
+	// GitLab list endpoint) must not downgrade an already-known fork
+	// classification back to "unknown".
+	syncer := NewSyncer(nil, d, nil, nil, time.Minute, nil, testBudget(500))
+	incoming := baseMR
+	incoming.UpdatedAt = now.Add(time.Minute)
+	incoming.LastActivityAt = now.Add(time.Minute)
+	incoming.HeadRepoCloneURL = ""
+	incoming.HeadRepoCloneURLUnknown = true
+	err = syncer.indexUpsertMergeRequest(
+		ctx,
+		RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"},
+		repoID,
+		incoming,
+		false,
+	)
+	require.NoError(err)
+
+	reclassified, err := d.GetWorkspace(ctx, ws.ID)
+	require.NoError(err)
+	require.NotNil(reclassified)
+	require.NotNil(reclassified.MRHeadRepo)
+	assert.Equal(forkURL, *reclassified.MRHeadRepo)
+}
+
+// TestCommitMergeRequestParentSnapshotReclassifiesWorkspaceHeadRepo proves
+// the reclassification fan-out lives in CommitMergeRequestParentSnapshot
+// itself, not just in the indexUpsertMergeRequest (list sync) caller. It
+// calls CommitMergeRequestParentSnapshot directly, the same way the GraphQL
+// bulk path (syncOpenMRFromBulk), detail refresh (fetchMRDetail,
+// fetchProviderMRDetail, syncMRForRepo), and closed-MR refresh
+// (fetchAndUpdateClosed, fetchAndUpdateClosedMergeRequest) all reach it, so
+// a fork retarget discovered through any of those paths reclassifies a
+// tracking workspace exactly like a plain list sync does.
+func TestCommitMergeRequestParentSnapshotReclassifiesWorkspaceHeadRepo(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
+	require.NoError(err)
+
+	stored := &db.MergeRequest{
+		RepoID: repoID, PlatformID: 1001, PlatformExternalID: "mr-1", Number: 1,
+		Title: "Same-repo PR", State: db.MergeRequestStateOpen,
+		HeadBranch: "feature", BaseBranch: "main", PlatformHeadSHA: "abc123",
+		CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+	}
+	_, err = d.UpsertMergeRequest(ctx, stored)
+	require.NoError(err)
+
+	ws := &db.Workspace{
+		ID:           "ws-choke-point-reclassify",
+		Platform:     "github",
+		PlatformHost: "github.com",
+		RepoOwner:    "owner",
+		RepoName:     "repo",
+		ItemType:     db.WorkspaceItemTypePullRequest,
+		ItemNumber:   1,
+		GitHeadRef:   "abc123",
+		MRHeadRepo:   nil, // classified same-repo when the workspace was created
+		WorktreePath: t.TempDir(),
+		TmuxSession:  "session",
+		Status:       "ready",
+	}
+	require.NoError(d.InsertWorkspace(ctx, ws))
+
+	updated := *stored
+	updated.UpdatedAt = now.Add(time.Minute)
+	updated.LastActivityAt = updated.UpdatedAt
+	updated.HeadRepoCloneURL = "https://github.com/forker/repo.git"
+
+	syncer := &Syncer{db: d}
+	_, _, accepted, err := syncer.CommitMergeRequestParentSnapshot(
+		ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, &updated,
+	)
+	require.NoError(err)
+	require.True(accepted)
+
+	reclassified, err := d.GetWorkspace(ctx, ws.ID)
+	require.NoError(err)
+	require.NotNil(reclassified)
+	require.NotNil(reclassified.MRHeadRepo)
+	assert.Equal("https://github.com/forker/repo.git", *reclassified.MRHeadRepo)
+}
+
+func TestCommitMergeRequestParentSnapshotBlocksRepositoryReconciliationThroughReclassification(
+	t *testing.T,
+) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	sourceID, err := d.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+		Platform:       "gitlab",
+		PlatformHost:   "gitlab.com",
+		PlatformRepoID: "gid://gitlab/Project/42",
+		Owner:          "old-group",
+		Name:           "old-name",
+	})
+	require.NoError(err)
+	destinationID, err := d.UpsertRepo(ctx, db.RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.com",
+		Owner:        "new-group",
+		Name:         "new-name",
+	})
+	require.NoError(err)
+
+	now := time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC)
+	stored := &db.MergeRequest{
+		RepoID: sourceID, PlatformID: 1001, PlatformExternalID: "mr-1", Number: 1,
+		Title: "Same-repo MR", State: db.MergeRequestStateOpen,
+		HeadBranch: "feature", BaseBranch: "main",
+		HeadRepoCloneURL: "https://gitlab.com/old-group/old-name.git",
+		CreatedAt:        now, UpdatedAt: now, LastActivityAt: now,
+	}
+	_, err = d.UpsertMergeRequest(ctx, stored)
+	require.NoError(err)
+
+	ws := &db.Workspace{
+		ID:           "ws-parent-snapshot-repository-reconciliation",
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.com",
+		RepoOwner:    "old-group",
+		RepoName:     "old-name",
+		ItemType:     db.WorkspaceItemTypePullRequest,
+		ItemNumber:   stored.Number,
+		WorktreePath: t.TempDir(),
+		Status:       "ready",
+	}
+	require.NoError(d.InsertWorkspace(ctx, ws))
+
+	writerQueued := make(chan struct{})
+	restoreWriteLockHook := d.SetBeforeRepositoryReconciliationWriteLockForTest(
+		func() { close(writerQueued) },
+	)
+	defer restoreWriteLockHook()
+
+	reconciliationDone := make(chan error, 1)
+	syncer := &Syncer{db: d}
+	syncer.afterMergeRequestParentSnapshotCommit = func() {
+		go func() {
+			_, upsertErr := d.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+				Platform:       "gitlab",
+				PlatformHost:   "gitlab.com",
+				PlatformRepoID: "gid://gitlab/Project/42",
+				Owner:          "new-group",
+				Name:           "new-name",
+			})
+			reconciliationDone <- upsertErr
+		}()
+		<-writerQueued
+	}
+
+	forkURL := "https://gitlab.com/forker/repo.git"
+	updated := *stored
+	updated.HeadRepoCloneURL = forkURL
+	updated.UpdatedAt = now.Add(time.Minute)
+	updated.LastActivityAt = updated.UpdatedAt
+	_, _, accepted, err := syncer.CommitMergeRequestParentSnapshot(
+		ctx,
+		RepoRef{
+			Platform: platform.KindGitLab, PlatformHost: "gitlab.com",
+			Owner: "old-group", Name: "old-name",
+		},
+		&updated,
+	)
+	require.NoError(err)
+	require.True(accepted)
+	require.NoError(<-reconciliationDone)
+
+	reclassified, err := d.GetWorkspace(ctx, ws.ID)
+	require.NoError(err)
+	require.NotNil(reclassified)
+	assert.Equal("new-group", reclassified.RepoOwner)
+	assert.Equal("new-name", reclassified.RepoName)
+	require.NotNil(reclassified.MRHeadRepo)
+	assert.Equal(forkURL, *reclassified.MRHeadRepo)
+
+	moved, err := d.GetMergeRequestByRepoIDAndNumber(
+		ctx, destinationID, stored.Number,
+	)
+	require.NoError(err)
+	require.NotNil(moved)
+	assert.Equal(forkURL, moved.HeadRepoCloneURL)
+}
+
+func TestReclassifyWorkspaceHeadRepoTrustRetriesAfterRevisionChange(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	now := time.Date(2026, 7, 26, 12, 0, 0, 0, time.UTC)
+	repoID, err := d.UpsertRepo(
+		ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"),
+	)
+	require.NoError(err)
+	stored := &db.MergeRequest{
+		RepoID: repoID, PlatformID: 1001, PlatformExternalID: "mr-1", Number: 1,
+		Title: "Same-repo PR", State: db.MergeRequestStateOpen,
+		HeadBranch: "feature", BaseBranch: "main",
+		HeadRepoCloneURL: "https://github.com/owner/repo.git",
+		CreatedAt:        now, UpdatedAt: now, LastActivityAt: now,
+	}
+	_, err = d.UpsertMergeRequest(ctx, stored)
+	require.NoError(err)
+
+	ws := &db.Workspace{
+		ID:           "ws-reclassify-revision-race",
+		Platform:     "github",
+		PlatformHost: "github.com",
+		RepoOwner:    "owner",
+		RepoName:     "repo",
+		ItemType:     db.WorkspaceItemTypePullRequest,
+		ItemNumber:   1,
+		WorktreePath: t.TempDir(),
+		Status:       "ready",
+	}
+	require.NoError(d.InsertWorkspace(ctx, ws))
+
+	repo := RepoRef{
+		Owner: "owner", Name: "repo", PlatformHost: "github.com",
+	}
+	syncer := &Syncer{db: d}
+	var advanced bool
+	syncer.afterHeadRepoSnapshotRead = func() {
+		if advanced {
+			return
+		}
+		advanced = true
+		updated := *stored
+		updated.HeadRepoCloneURL = "https://github.com/forker/repo.git"
+		updated.UpdatedAt = now.Add(time.Minute)
+		updated.LastActivityAt = updated.UpdatedAt
+		_, accepted, err := d.UpsertMergeRequestSnapshot(ctx, &updated)
+		require.NoError(err)
+		require.True(accepted)
+	}
+
+	syncer.reclassifyWorkspaceHeadRepoTrust(ctx, repo, repoID, stored.Number)
+
+	reclassified, err := d.GetWorkspace(ctx, ws.ID)
+	require.NoError(err)
+	require.NotNil(reclassified)
+	require.NotNil(reclassified.MRHeadRepo)
+	assert.Equal("https://github.com/forker/repo.git", *reclassified.MRHeadRepo)
+}
+
+func TestReclassifyWorkspaceHeadRepoTrustBlocksRepositoryReconciliation(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	sourceID, err := d.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+		Platform:       "gitlab",
+		PlatformHost:   "gitlab.com",
+		PlatformRepoID: "gid://gitlab/Project/42",
+		Owner:          "old-group",
+		Name:           "old-name",
+	})
+	require.NoError(err)
+	destinationID, err := d.UpsertRepo(ctx, db.RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.com",
+		Owner:        "new-group",
+		Name:         "new-name",
+	})
+	require.NoError(err)
+
+	now := time.Date(2026, 7, 26, 12, 0, 0, 0, time.UTC)
+	forkURL := "https://gitlab.com/forker/repo.git"
+	stored := &db.MergeRequest{
+		RepoID: sourceID, PlatformID: 1001, PlatformExternalID: "mr-1", Number: 1,
+		Title: "Fork MR", State: db.MergeRequestStateOpen,
+		HeadBranch: "feature", BaseBranch: "main",
+		HeadRepoCloneURL: forkURL,
+		CreatedAt:        now, UpdatedAt: now, LastActivityAt: now,
+	}
+	_, err = d.UpsertMergeRequest(ctx, stored)
+	require.NoError(err)
+
+	ws := &db.Workspace{
+		ID:           "ws-reclassify-repository-reconciliation",
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.com",
+		RepoOwner:    "old-group",
+		RepoName:     "old-name",
+		ItemType:     db.WorkspaceItemTypePullRequest,
+		ItemNumber:   stored.Number,
+		MRHeadRepo:   &forkURL,
+		WorktreePath: t.TempDir(),
+		Status:       "ready",
+	}
+	require.NoError(d.InsertWorkspace(ctx, ws))
+
+	repo := RepoRef{
+		Platform: platform.KindGitLab, PlatformHost: "gitlab.com",
+		Owner: "old-group", Name: "old-name",
+	}
+	syncer := &Syncer{db: d}
+	snapshotRead := make(chan struct{})
+	continueReclassification := make(chan struct{})
+	writeLockAttempted := make(chan struct{})
+	restoreWriteLockHook := d.SetBeforeRepositoryReconciliationWriteLockForTest(
+		func() { close(writeLockAttempted) },
+	)
+	defer restoreWriteLockHook()
+	var snapshotHook sync.Once
+	syncer.afterHeadRepoSnapshotRead = func() {
+		snapshotHook.Do(func() {
+			close(snapshotRead)
+			<-continueReclassification
+		})
+	}
+
+	reclassificationDone := make(chan struct{})
+	go func() {
+		syncer.reclassifyWorkspaceHeadRepoTrust(
+			ctx, repo, sourceID, stored.Number,
+		)
+		close(reclassificationDone)
+	}()
+	<-snapshotRead
+
+	reconciliationDone := make(chan error, 1)
+	go func() {
+		_, upsertErr := d.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+			Platform:       "gitlab",
+			PlatformHost:   "gitlab.com",
+			PlatformRepoID: "gid://gitlab/Project/42",
+			Owner:          "new-group",
+			Name:           "new-name",
+		})
+		reconciliationDone <- upsertErr
+	}()
+	<-writeLockAttempted
+	select {
+	case upsertErr := <-reconciliationDone:
+		require.NoError(upsertErr)
+		require.Fail("repository reconciliation bypassed the active read barrier")
+	default:
+	}
+	close(continueReclassification)
+
+	select {
+	case <-reclassificationDone:
+	case <-time.After(5 * time.Second):
+		require.Fail("head-repository reclassification did not finish")
+	}
+	select {
+	case upsertErr := <-reconciliationDone:
+		require.NoError(upsertErr)
+	case <-time.After(5 * time.Second):
+		require.Fail("repository reconciliation did not resume after reclassification")
+	}
+
+	reclassified, err := d.GetWorkspace(ctx, ws.ID)
+	require.NoError(err)
+	require.NotNil(reclassified)
+	assert.Equal("new-group", reclassified.RepoOwner)
+	assert.Equal("new-name", reclassified.RepoName)
+	require.NotNil(reclassified.MRHeadRepo)
+	assert.Equal(forkURL, *reclassified.MRHeadRepo)
+
+	moved, err := d.GetMergeRequestByRepoIDAndNumber(
+		ctx, destinationID, stored.Number,
+	)
+	require.NoError(err)
+	require.NotNil(moved)
+	assert.Equal("Fork MR", moved.Title)
 }
 
 func TestPreserveMergeableStateSkipsChangedOrUnknownHeadOrBase(t *testing.T) {
@@ -6059,6 +6615,157 @@ func TestSyncRepoUsesProviderIDToPreserveRenamedRepo(t *testing.T) {
 	assert.Equal("new-group", repos[0].Owner)
 	assert.Equal("new-project", repos[0].Name)
 	assert.Equal("new-group/new-project", repos[0].RepoPath)
+}
+
+func TestRepoReconciliationDefersTrustUntilPostRenameSnapshot(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	now := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
+
+	sourceID, err := d.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+		Platform:       "gitlab",
+		PlatformHost:   "gitlab.example.com",
+		PlatformRepoID: "gid://gitlab/Project/42",
+		Owner:          "old-group",
+		Name:           "old-project",
+		RepoPath:       "old-group/old-project",
+	})
+	require.NoError(err)
+	source := &db.MergeRequest{
+		RepoID: sourceID, PlatformID: 7007, PlatformExternalID: "mr-7007", Number: 7,
+		Title: "newer old-identity snapshot", State: db.MergeRequestStateOpen,
+		HeadBranch: "feature", BaseBranch: "main",
+		HeadRepoCloneURL: "https://gitlab.example.com/old-group/old-project.git",
+		CreatedAt:        now, UpdatedAt: now.Add(time.Minute), LastActivityAt: now.Add(time.Minute),
+	}
+	_, err = d.UpsertMergeRequest(ctx, source)
+	require.NoError(err)
+
+	destinationID, err := d.UpsertRepo(ctx, db.RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.example.com",
+		Owner:        "new-group",
+		Name:         "new-project",
+		RepoPath:     "new-group/new-project",
+	})
+	require.NoError(err)
+	forkURL := "https://gitlab.example.com/forker/old-project.git"
+	destination := *source
+	destination.RepoID = destinationID
+	destination.Title = "stale fork snapshot"
+	destination.HeadRepoCloneURL = forkURL
+	destination.UpdatedAt = now
+	destination.LastActivityAt = destination.UpdatedAt
+	_, err = d.UpsertMergeRequest(ctx, &destination)
+	require.NoError(err)
+
+	require.NoError(d.InsertWorkspace(ctx, &db.Workspace{
+		ID:           "ws-colliding-repo-reconciliation",
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.example.com",
+		RepoOwner:    "old-group",
+		RepoName:     "old-project",
+		ItemType:     db.WorkspaceItemTypePullRequest,
+		ItemNumber:   7,
+		MRHeadRepo:   nil,
+		WorktreePath: t.TempDir(),
+		Status:       "ready",
+	}))
+
+	reconciledID, err := d.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+		Platform:       "gitlab",
+		PlatformHost:   "gitlab.example.com",
+		PlatformRepoID: "gid://gitlab/Project/42",
+		Owner:          "new-group",
+		Name:           "new-project",
+		RepoPath:       "new-group/new-project",
+	})
+	require.NoError(err)
+	assert.Equal(destinationID, reconciledID)
+
+	merged, err := d.GetMergeRequestByRepoIDAndNumber(ctx, destinationID, 7)
+	require.NoError(err)
+	require.NotNil(merged)
+	assert.Equal("newer old-identity snapshot", merged.Title)
+	assert.Equal(
+		"https://gitlab.example.com/old-group/old-project.git",
+		merged.HeadRepoCloneURL,
+	)
+
+	reclassified, err := d.GetWorkspace(ctx, "ws-colliding-repo-reconciliation")
+	require.NoError(err)
+	require.NotNil(reclassified)
+	assert.Equal("new-group", reclassified.RepoOwner)
+	assert.Equal("new-project", reclassified.RepoName)
+	assert.Nil(reclassified.MRHeadRepo)
+
+	manager := workspace.NewManager(d, t.TempDir())
+	snapshot, err := manager.RefreshWorkspaceHeadRepoSnapshot(ctx, reclassified)
+	require.NoError(err)
+	require.NotNil(snapshot)
+	assert.Equal(merged.SnapshotRevision, snapshot.SnapshotRevision)
+	assert.Nil(snapshot.MRHeadRepo)
+
+	reclassified, err = d.GetWorkspace(ctx, "ws-colliding-repo-reconciliation")
+	require.NoError(err)
+	require.NotNil(reclassified)
+	assert.Nil(reclassified.MRHeadRepo)
+
+	syncer := &Syncer{db: d}
+	unknownPostRename := *merged
+	unknownPostRename.UpdatedAt = now.Add(2 * time.Minute)
+	unknownPostRename.LastActivityAt = unknownPostRename.UpdatedAt
+	unknownPostRename.HeadRepoCloneURL = ""
+	unknownPostRename.HeadRepoCloneURLUnknown = true
+	_, revision, accepted, err := syncer.CommitMergeRequestParentSnapshot(
+		ctx,
+		RepoRef{
+			Platform: platform.KindGitLab, PlatformHost: "gitlab.example.com",
+			Owner: "new-group", Name: "new-project",
+		},
+		&unknownPostRename,
+	)
+	require.NoError(err)
+	require.True(accepted)
+	assert.Greater(revision, merged.SnapshotRevision)
+
+	merged, err = d.GetMergeRequestByRepoIDAndNumber(ctx, destinationID, 7)
+	require.NoError(err)
+	require.NotNil(merged)
+	assert.True(merged.HeadRepoIdentityStale)
+
+	reclassified, err = d.GetWorkspace(ctx, "ws-colliding-repo-reconciliation")
+	require.NoError(err)
+	require.NotNil(reclassified)
+	assert.Nil(reclassified.MRHeadRepo)
+
+	postRename := *merged
+	postRename.HeadRepoCloneURL = "https://gitlab.example.com/new-group/new-project.git"
+	postRename.UpdatedAt = now.Add(3 * time.Minute)
+	postRename.LastActivityAt = postRename.UpdatedAt
+	_, revision, accepted, err = syncer.CommitMergeRequestParentSnapshot(
+		ctx,
+		RepoRef{
+			Platform: platform.KindGitLab, PlatformHost: "gitlab.example.com",
+			Owner: "new-group", Name: "new-project",
+		},
+		&postRename,
+	)
+	require.NoError(err)
+	require.True(accepted)
+	assert.Positive(revision)
+
+	merged, err = d.GetMergeRequestByRepoIDAndNumber(ctx, destinationID, 7)
+	require.NoError(err)
+	require.NotNil(merged)
+	assert.False(merged.HeadRepoIdentityStale)
+
+	reclassified, err = d.GetWorkspace(ctx, "ws-colliding-repo-reconciliation")
+	require.NoError(err)
+	require.NotNil(reclassified)
+	assert.Nil(reclassified.MRHeadRepo)
 }
 
 func TestSyncRepoUpdatesViewerCanMergeWithoutMergeSettings(t *testing.T) {
@@ -9078,6 +9785,29 @@ type conditionalIssueTrackingClient struct {
 	nextETag         string
 }
 
+type conditionalIssueLifecycleClient struct {
+	conditionalIssueTrackingClient
+	unconditionalCalls atomic.Int32
+	timelineCalls      atomic.Int32
+	timelineEvents     []PullRequestTimelineEvent
+}
+
+func (c *conditionalIssueLifecycleClient) GetIssue(
+	ctx context.Context,
+	owner, repo string,
+	number int,
+) (*gh.Issue, error) {
+	c.unconditionalCalls.Add(1)
+	return c.mockClient.GetIssue(ctx, owner, repo, number)
+}
+
+func (c *conditionalIssueLifecycleClient) ListIssueTimelineEvents(
+	context.Context, string, string, int,
+) ([]PullRequestTimelineEvent, error) {
+	c.timelineCalls.Add(1)
+	return c.timelineEvents, nil
+}
+
 func (c *conditionalIssueTrackingClient) GetIssueIfChanged(
 	ctx context.Context,
 	owner, repo string,
@@ -9614,6 +10344,110 @@ func TestFetchIssueDetailUsesPersistedIssueETag(t *testing.T) {
 	assert.Equal(`"issue-etag-v1"`, mc.receivedETag)
 	assert.Zero(int(mc.listIssueCommentsCalled.Load()),
 		"304 should skip issue comment refresh")
+}
+
+func TestSyncArchiveIssueBypassesPersistedETagForLifecycleBackfill(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+	repoID, err := database.UpsertRepo(
+		ctx, db.GitHubRepoIdentity("github.com", repo.Owner, repo.Name),
+	)
+	require.NoError(err)
+	closedAt := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
+	issue := buildOpenIssue(7, closedAt)
+	closedState := "closed"
+	issue.State = &closedState
+	issue.ClosedAt = makeTimestamp(closedAt)
+	normalized, err := NormalizeIssue(repoID, issue)
+	require.NoError(err)
+	_, err = database.UpsertIssue(ctx, normalized)
+	require.NoError(err)
+	require.NoError(database.UpsertHTTPEtag(
+		ctx, "github", "github.com", "owner", "repo",
+		"issue", 7, `"legacy-etag"`,
+	))
+
+	client := &conditionalIssueLifecycleClient{
+		conditionalIssueTrackingClient: conditionalIssueTrackingClient{
+			mockClient: mockClient{
+				getIssueFn: func(context.Context, string, string, int) (*gh.Issue, error) {
+					return issue, nil
+				},
+				comments: []*gh.IssueComment{},
+			},
+			notModified: true,
+		},
+		timelineEvents: []PullRequestTimelineEvent{{
+			NodeID: "closed-7", EventType: "closed",
+			Actor: "closer", CreatedAt: closedAt,
+		}},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client}, database, nil,
+		[]RepoRef{repo}, time.Minute, nil, testBudget(1000),
+	)
+
+	providerAttempted, err := syncer.SyncArchiveItem(
+		WithArchiveSyncBudget(ctx),
+		platform.RepoRef{
+			Platform: platform.KindGitHub, Host: "github.com",
+			Owner: repo.Owner, Name: repo.Name,
+		},
+		db.ArchiveItemTypeIssue, 7,
+	)
+	require.NoError(err)
+	assert.True(providerAttempted)
+	assert.Zero(int(client.conditionalCalls.Load()))
+	assert.Equal(int32(1), client.unconditionalCalls.Load())
+	assert.Equal(int32(1), client.timelineCalls.Load())
+
+	stored, err := database.GetIssueByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(stored)
+	events, err := database.ListIssueEvents(ctx, stored.ID)
+	require.NoError(err)
+	require.Len(events, 1)
+	assert.Equal("closed", events[0].EventType)
+	assert.Equal("closer", events[0].Author)
+}
+
+func TestSyncArchiveIssuePropagatesTimelineFailure(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+	issue := buildOpenIssue(7, time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC))
+	timelineErr := errors.New("timeline temporarily unavailable")
+	client := &issueTimelineMockClient{
+		mockClient: mockClient{
+			getIssueFn: func(context.Context, string, string, int) (*gh.Issue, error) {
+				return issue, nil
+			},
+			comments: []*gh.IssueComment{},
+		},
+		issueTimelineErr: timelineErr,
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client}, database, nil,
+		[]RepoRef{repo}, time.Minute, nil, testBudget(1000),
+	)
+
+	providerAttempted, err := syncer.SyncArchiveItem(
+		WithArchiveSyncBudget(ctx),
+		platform.RepoRef{
+			Platform: platform.KindGitHub, Host: "github.com",
+			Owner: repo.Owner, Name: repo.Name,
+		},
+		db.ArchiveItemTypeIssue, 7,
+	)
+
+	require.ErrorIs(err, timelineErr)
+	assert.True(providerAttempted)
+	assert.Equal(int32(1), client.issueTimelineCalls.Load())
 }
 
 func TestFetchIssueDetailPersistsIssueETag(t *testing.T) {

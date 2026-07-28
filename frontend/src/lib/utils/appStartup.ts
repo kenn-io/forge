@@ -75,6 +75,7 @@ export function runAppStartup(deps: AppStartupDeps): () => void {
           hydrateTerminalSettings(currentHydration, settings.terminal);
         }
         stores.settings.setPullRequestSettings(settings.pull_requests);
+        stores.settings.setLaunchTargets(settings.launch_targets ?? []);
         stores.activity.hydrateDefaults(settings.activity);
         stores.issues.hydrateDefaults(settings.issues);
       }

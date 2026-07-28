@@ -689,11 +689,14 @@ test.describe("PR detail stale-action gating", () => {
     const closeBtn = page.locator(".btn--close").first();
     await expect(closeBtn).toHaveCount(0);
 
-    // Create Workspace button must be disabled. A force-click must
-    // not fire POST /workspaces.
-    const createWs = page.locator("button.btn--workspace");
+    // Both Create Workspace segments must be disabled. A force-click must
+    // not fire POST /workspaces or open the launch-target menu.
+    const createWs = page.getByRole("button", { name: "Create Workspace", exact: true });
+    const createWsOptions = page.getByRole("button", { name: "Create Workspace options" });
     await expect(createWs).toBeDisabled();
+    await expect(createWsOptions).toBeDisabled();
     await createWs.click({ force: true }).catch(() => {});
+    await createWsOptions.click({ force: true }).catch(() => {});
 
     // Comment submit: disabled.
     const commentSubmit = page.locator(".comment-box .submit-btn").first();
@@ -709,7 +712,7 @@ test.describe("PR detail stale-action gating", () => {
     expect(userMutations).toEqual([]);
   });
 
-  test("existing workspace navigation is inert while the new PR is loading", async ({ page }) => {
+  test("the stale PR workspace is hidden while the new PR is loading", async ({ page }) => {
     const prWithWorkspace = {
       ...prA,
       workspace: { id: "ws-pr-a" },
@@ -731,9 +734,16 @@ test.describe("PR detail stale-action gating", () => {
 
     await expect(page.locator(".detail-title")).toContainText(prWithWorkspace.Title);
 
-    const openWs = page.locator("button.btn--workspace");
-    await expect(openWs).toBeDisabled();
-    await openWs.click({ force: true }).catch(() => {});
+    // Workspace resolution follows the newly routed identity, not the stale
+    // detail envelope that is still painted. Never expose A's workspace while
+    // B is loading; offer only B's disabled create controls.
+    await expect(page.getByRole("button", { name: "Open Workspace", exact: true })).toHaveCount(0);
+    const createWs = page.getByRole("button", { name: "Create Workspace", exact: true });
+    const createWsOptions = page.getByRole("button", { name: "Create Workspace options" });
+    await expect(createWs).toBeDisabled();
+    await expect(createWsOptions).toBeDisabled();
+    await createWs.click({ force: true }).catch(() => {});
+    await createWsOptions.click({ force: true }).catch(() => {});
     await expect(page).not.toHaveURL(/\/terminal\/ws-pr-a/);
 
     release();
@@ -767,9 +777,12 @@ test.describe("issue detail stale-action gating", () => {
     await expect(closeBtn).toBeDisabled();
     await closeBtn.click({ force: true }).catch(() => {});
 
-    const createWs = page.locator(".issue-detail button.btn--workspace");
+    const createWs = page.locator(".issue-detail").getByRole("button", { name: "Create Workspace", exact: true });
+    const createWsOptions = page.locator(".issue-detail").getByRole("button", { name: "Create Workspace options" });
     await expect(createWs).toBeDisabled();
+    await expect(createWsOptions).toBeDisabled();
     await createWs.click({ force: true }).catch(() => {});
+    await createWsOptions.click({ force: true }).catch(() => {});
 
     const commentSubmit = page.locator(".issue-detail .comment-box .submit-btn").first();
     await expect(commentSubmit).toBeDisabled();
@@ -781,7 +794,7 @@ test.describe("issue detail stale-action gating", () => {
     expect(userMutations).toEqual([]);
   });
 
-  test("existing workspace navigation is inert while the new issue is loading", async ({ page }) => {
+  test("the stale issue workspace is hidden while the new issue is loading", async ({ page }) => {
     const issueWithWorkspace = {
       ...issueX,
       workspace: { id: "ws-issue-x" },
@@ -803,9 +816,18 @@ test.describe("issue detail stale-action gating", () => {
 
     await expect(page.locator(".issue-detail .detail-title")).toContainText(issueWithWorkspace.Title);
 
-    const openWs = page.locator(".issue-detail button.btn--workspace");
-    await expect(openWs).toBeDisabled();
-    await openWs.click({ force: true }).catch(() => {});
+    // Workspace resolution follows the newly routed identity, not the stale
+    // detail envelope that is still painted. Never expose X's workspace while
+    // Y is loading; offer only Y's disabled create controls.
+    await expect(
+      page.locator(".issue-detail").getByRole("button", { name: "Open Workspace", exact: true }),
+    ).toHaveCount(0);
+    const createWs = page.locator(".issue-detail").getByRole("button", { name: "Create Workspace", exact: true });
+    const createWsOptions = page.locator(".issue-detail").getByRole("button", { name: "Create Workspace options" });
+    await expect(createWs).toBeDisabled();
+    await expect(createWsOptions).toBeDisabled();
+    await createWs.click({ force: true }).catch(() => {});
+    await createWsOptions.click({ force: true }).catch(() => {});
     await expect(page).not.toHaveURL(/\/terminal\/ws-issue-x/);
 
     release();

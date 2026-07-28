@@ -113,7 +113,12 @@ func (s *Service) promptPages(
 		case db.ArchiveItemTypeIssue:
 			page, err := repo.Issues.ListIssuesPage(requestCtx, repo.Ref, query)
 			preempted := archivePreempted(ctx, requestCtx)
+			featureDisabled := archiveInventoryFeatureDisabled(err, itemType)
 			deferred := complete(err, true)
+			if featureDisabled {
+				commit.Exhausted = true
+				break
+			}
 			if deferred != nil {
 				return &featureDeferredError{FeatureDeferral: *deferred, providerAttempted: true}
 			}
@@ -133,7 +138,12 @@ func (s *Service) promptPages(
 		case db.ArchiveItemTypeMergeRequest:
 			page, err := repo.MergeRequests.ListMergeRequestsPage(requestCtx, repo.Ref, query)
 			preempted := archivePreempted(ctx, requestCtx)
+			featureDisabled := archiveInventoryFeatureDisabled(err, itemType)
 			deferred := complete(err, true)
+			if featureDisabled {
+				commit.Exhausted = true
+				break
+			}
 			if deferred != nil {
 				return &featureDeferredError{FeatureDeferral: *deferred, providerAttempted: true}
 			}

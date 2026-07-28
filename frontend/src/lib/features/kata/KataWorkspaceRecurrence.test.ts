@@ -11,6 +11,18 @@ import {
   resetKataWorkspaceTestState,
 } from "./test/KataWorkspaceSupport.js";
 
+vi.mock("@middleman/ui", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@middleman/ui")>();
+  return {
+    ...actual,
+    getStores: () => ({
+      settings: {
+        getLaunchTargets: () => [],
+      },
+    }),
+  };
+});
+
 async function waitForWorkspaceWritable(): Promise<void> {
   await waitFor(() =>
     expect((screen.getByRole("button", { name: "New task" }) as HTMLButtonElement).disabled).toBe(false),

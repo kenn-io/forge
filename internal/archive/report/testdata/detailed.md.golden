@@ -5,7 +5,9 @@ UTC range: 2026-06-01T00:00:00Z to 2026-06-02T00:00:00Z (exclusive)
 ## Totals
 
 - Issues opened: 1
+- Issues closed: 0
 - Pull or merge requests opened: 0
+- Pull or merge requests merged: 0
 - Ordinary comments added: 1
 - Reviews submitted: 0
 - Inline review comments added: 0
@@ -18,21 +20,25 @@ UTC range: 2026-06-01T00:00:00Z to 2026-06-02T00:00:00Z (exclusive)
 Status: current
 
 - Issues opened: 1
+- Issues closed: 0
 - Pull or merge requests opened: 0
+- Pull or merge requests merged: 0
 - Ordinary comments added: 1
 - Reviews submitted: 0
 - Inline review comments added: 0
 - Total activity: 2
+- Issue coverage: supported
+- Pull or merge request coverage: supported
 - Comment coverage: supported
 - Review coverage: supported
 - Inline comment coverage: supported
 
 ## Contributors
 
-| Provider | Host | Login | Issues | Pull/Merge Requests | Comments | Reviews | Inline Comments | Total |
-| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| github | github.example | alice | 1 | 0 | 0 | 0 | 0 | 1 |
-| github | github.example | (unknown) | 0 | 0 | 1 | 0 | 0 | 1 |
+| Provider | Host | Login | Issues Opened | Issues Closed | Pull/Merge Requests Opened | Pull/Merge Requests Merged | Comments | Reviews | Inline Comments | Total |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| github | github.example | alice | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 1 |
+| github | github.example | (unknown) | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 1 |
 
 ## Activity
 

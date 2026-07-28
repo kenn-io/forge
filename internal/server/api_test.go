@@ -8227,6 +8227,67 @@ func TestAPIReadyForReview(t *testing.T) {
 	require.False(pr.IsDraft)
 }
 
+func TestAPIReadyForReviewReclassifiesWorkspaceHeadRepo(t *testing.T) {
+	require := require.New(t)
+	const forkURL = "https://github.com/contributor/widget.git"
+
+	mock := &mockGH{
+		markReadyForReviewFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+			id := int64(1001)
+			title := "Ready PR"
+			state := "open"
+			url := "https://github.com/acme/widget/pull/1"
+			author := "octocat"
+			draft := false
+			now := gh.Timestamp{Time: time.Now().UTC().Add(time.Minute)}
+			return &gh.PullRequest{
+				ID:        &id,
+				Number:    &number,
+				Title:     &title,
+				State:     &state,
+				HTMLURL:   &url,
+				Draft:     &draft,
+				CreatedAt: &now,
+				UpdatedAt: &now,
+				User:      &gh.User{Login: &author},
+				Head: &gh.PullRequestBranch{
+					Ref:  new("feature"),
+					Repo: &gh.Repository{CloneURL: new(forkURL)},
+				},
+				Base: &gh.PullRequestBranch{Ref: new("main")},
+			}, nil
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	seedPR(t, database, "acme", "widget", 1)
+	require.NoError(database.InsertWorkspace(t.Context(), &db.Workspace{
+		ID:           "readyfork0000001",
+		Platform:     "github",
+		PlatformHost: "github.com",
+		RepoOwner:    "acme",
+		RepoName:     "widget",
+		ItemType:     db.WorkspaceItemTypePullRequest,
+		ItemNumber:   1,
+		GitHeadRef:   "feature",
+		WorktreePath: filepath.Join(t.TempDir(), "workspace"),
+		TmuxSession:  "middleman-readyfork0000001",
+		Status:       "ready",
+	}))
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.MarkPullReadyForReviewWithResponse(
+		t.Context(), "gh", "acme", "widget", 1,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+
+	stored, err := database.GetWorkspace(t.Context(), "readyfork0000001")
+	require.NoError(err)
+	require.NotNil(stored)
+	require.NotNil(stored.MRHeadRepo)
+	require.Equal(forkURL, *stored.MRHeadRepo)
+}
+
 func TestAPISetStarred(t *testing.T) {
 	require := require.New(t)
 	srv, database := setupTestServer(t)
@@ -29183,6 +29244,8 @@ func TestWorkspaceCreateGitLabUsesSpecificMergeRequestHeadRefE2E(
 	require.NotNil(createResp.JSON202)
 
 	ready := waitForWorkspaceReady(t, ctx, fixture.client, createResp.JSON202.Id)
+	require.NotNil(ready.MrHeadRepoKind)
+	assert.Equal(generated.Fork, *ready.MrHeadRepoKind)
 	stored, err := fixture.database.GetWorkspace(ctx, ready.Id)
 	require.NoError(err)
 	require.NotNil(stored)

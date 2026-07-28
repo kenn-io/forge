@@ -121,6 +121,27 @@ function footerRect(): DOMRect {
   return document.querySelector<HTMLElement>(".kit-bottom-dock__footer")!.getBoundingClientRect();
 }
 
+// FitStages picks its stage from a ResizeObserver measurement, so first paint
+// shows the labelled row at every width. A stage-agnostic settle -- two
+// consecutive reads with identical geometry -- is what lets a width sweep
+// assert on the stage the user actually ends up with.
+async function settleActions(): Promise<void> {
+  const geometry = (): string =>
+    JSON.stringify(
+      [...document.querySelectorAll<HTMLElement>(".footer-actions button")].map((el) => {
+        const r = el.getBoundingClientRect();
+        return [r.left, r.top, r.width];
+      }),
+    );
+  let previous = "";
+  await vi.waitFor(() => {
+    const current = geometry();
+    const settled = current !== "[]" && current === previous;
+    previous = current;
+    expect(settled).toBe(true);
+  });
+}
+
 describe("review drawer footer layout", () => {
   let mounted: { unmount: () => void } | null = null;
 
@@ -143,6 +164,20 @@ describe("review drawer footer layout", () => {
   // Every action has to be inside the footer's own box: the drawer sits in a
   // pane that clips its overflow, so anything past the edge is unreachable
   // rather than merely ugly.
+  // The actions and the usage summary share the footer row until it runs out of
+  // room. Neither may end up painted on top of the other, whichever of them
+  // gives way.
+  function assertActionsClearOfUsage(actions: DOMRect[], usage: DOMRect): void {
+    for (const action of actions) {
+      const overlaps =
+        action.left < usage.right - 0.5 &&
+        action.right > usage.left + 0.5 &&
+        action.top < usage.bottom - 0.5 &&
+        action.bottom > usage.top + 0.5;
+      expect(overlaps).toBe(false);
+    }
+  }
+
   function assertActionsInsideFooter(actions: DOMRect[]): void {
     const footer = footerRect();
     expect(actions[0]!.left).toBeGreaterThanOrEqual(footer.left - 0.5);
@@ -181,23 +216,31 @@ describe("review drawer footer layout", () => {
     expect(usage.top).toBeGreaterThanOrEqual(actionsBottom);
   });
 
-  // The band between the two cases above is what the fit host's min-width
-  // floor protects. Here the usage summary is still narrow enough to claim the
-  // first row, leaving the actions less room than even the icon stage needs --
-  // without a floor they render over the usage text instead of the summary
-  // moving out of the way. Verified by re-running this with the host's
-  // min-width removed, which overlaps them and fails.
-  it("moves the usage summary out of the way instead of letting the actions render over it", async () => {
-    mounted = mountAt(380);
+  // The band between the two cases above is what the fit host's min-width floor
+  // protects: without it the grow leaves the host narrower than even the icon
+  // stage needs, and the icons paint over the usage text instead of the summary
+  // moving out of the way.
+  //
+  // Assert non-overlap rather than "the summary wrapped to the next row".
+  // Whether the summary answers the pressure by wrapping below or by shrinking
+  // beside the actions depends on text metrics, and those differ between a
+  // developer machine and the CI container -- pinning the row made this pass
+  // locally and fail in CI at the same width. Non-overlap is the invariant in
+  // either arrangement, and the band is swept because the wrap boundary itself
+  // moves with those metrics.
+  // 280 is the workspace right sidebar's own MIN_SIDEBAR_WIDTH, the narrowest
+  // box the drawer is ever handed in the real app
+  // (frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte).
+  for (const width of [280, 300, 340, 380, 420, 460]) {
+    it(`keeps the actions clear of the usage summary at ${width}px`, async () => {
+      mounted = mountAt(width);
+      await settleActions();
 
-    await vi.waitFor(() => expect(actionButtons()).toHaveLength(3));
-
-    const actions = assertActionsOnOneRow();
-    assertActionsInsideFooter(actions);
-    const usage = usageRect();
-
-    expect(usage.top).toBeGreaterThanOrEqual(Math.max(...actions.map((r) => r.bottom)));
-  });
+      const actions = assertActionsOnOneRow();
+      assertActionsInsideFooter(actions);
+      assertActionsClearOfUsage(actions, usageRect());
+    });
+  }
 
   // The compact stage is a rendering of the same actions, not a reduced set:
   // the accessible names must not change with the drawer's width, or a

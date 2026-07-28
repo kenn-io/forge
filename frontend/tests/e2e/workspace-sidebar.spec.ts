@@ -89,6 +89,13 @@ const roborevJobs = {
   stats: { done: 1, closed: 0, open: 0 },
 };
 
+const roborevReview = {
+  id: 1,
+  job_id: 1,
+  output: "No issues found. Code follows project conventions.",
+  closed: false,
+};
+
 const roborevStatus = {
   available: true,
   version: "0.52.0",
@@ -173,6 +180,7 @@ async function setupTerminalMocks(
     roborevRepos?: typeof roborevRepos;
     roborevJobs?: typeof roborevJobs;
     roborevStatus?: typeof roborevStatus;
+    roborevReview?: typeof roborevReview;
     workspaceDetailResponses?: Array<{
       status: number;
       body?: unknown;
@@ -196,6 +204,7 @@ async function setupTerminalMocks(
   const rrRepos = opts?.roborevRepos ?? roborevRepos;
   const rrJobs = opts?.roborevJobs ?? roborevJobs;
   const rrStatus = opts?.roborevStatus ?? roborevStatus;
+  const rrReview = opts?.roborevReview ?? roborevReview;
   const detailResponses = [...(opts?.workspaceDetailResponses ?? [])];
   const deleteResponses = [...(opts?.workspaceDeleteResponses ?? [])];
   const commitResponses = [
@@ -508,6 +517,24 @@ async function setupTerminalMocks(
           status: 200,
           contentType: "application/json",
           body: JSON.stringify(rrStatus),
+        });
+        return;
+      }
+      // A fetched review is what makes the drawer offer Close Review, so the
+      // footer can be exercised with its full action set.
+      if (url.pathname.endsWith("/api/review")) {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(rrReview),
+        });
+        return;
+      }
+      if (url.pathname.endsWith("/api/comments")) {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ comments: [] }),
         });
         return;
       }
@@ -2697,6 +2724,56 @@ test.describe("sidebar toggle behavior", () => {
     await prBtn.click();
     await expect(page.locator(".right-sidebar")).toHaveCount(0);
     await expect(prBtn).not.toHaveClass(/active/);
+  });
+
+  // The review drawer's own footer geometry is covered in the browser lane
+  // (RoborevReviewDrawer.footer-layout.browser.svelte.ts). What only the real
+  // app can answer is whether this pane actually hands the footer that width:
+  // .right-sidebar clips its overflow, so an action past its edge is
+  // unreachable rather than merely clipped-looking. Width comes from seeded
+  // localStorage because loadSidebarWidth() clamps up to MIN_SIDEBAR_WIDTH,
+  // which pins the exact production floor without a flaky pointer drag.
+  test("review actions stay reachable in a minimum-width sidebar", async ({ page }) => {
+    // A running job that already has a review is the widest the footer gets:
+    // Close Review, Rerun, Cancel, and Copy Output all present at once. That
+    // is the set the narrow sidebar has to survive.
+    await setupTerminalMocks(page, {
+      roborevJobs: {
+        ...roborevJobs,
+        jobs: [{ ...roborevJobs.jobs[0]!, status: "running", verdict: "" }],
+      },
+    });
+    await page.addInitScript(() => {
+      localStorage.setItem("middleman-workspace-sidebar-width", "0");
+    });
+    await page.goto("/terminal/ws-123");
+
+    await page.locator(".panel-toggle-btn", { hasText: "Reviews" }).click();
+    const sidebar = page.locator(".right-sidebar");
+    await expect(sidebar).toBeVisible();
+    expect((await sidebar.boundingBox())!.width).toBe(280);
+
+    // Open the drawer on the seeded job so the footer renders.
+    await sidebar.locator(".job-row").first().click();
+    // FitStages keeps hidden measurement copies of the row; the first group in
+    // document order is the stage actually on screen.
+    const actions = sidebar.locator("[aria-label='Review actions']").first().locator("button");
+    await expect(actions.first()).toBeVisible();
+
+    const sidebarBox = (await sidebar.boundingBox())!;
+    const count = await actions.count();
+    expect(count).toBeGreaterThan(0);
+    for (let i = 0; i < count; i++) {
+      const action = actions.nth(i);
+      await expect(action).toBeVisible();
+      const box = (await action.boundingBox())!;
+      expect(box.width).toBeGreaterThan(0);
+      expect(box.x).toBeGreaterThanOrEqual(sidebarBox.x - 0.5);
+      expect(box.x + box.width).toBeLessThanOrEqual(sidebarBox.x + sidebarBox.width + 0.5);
+    }
+
+    // Reachable, not merely within bounds: a clipped control is not hittable.
+    await actions.last().click({ trial: true });
   });
 
   test("clicking Reviews switches tab without closing", async ({ page }) => {

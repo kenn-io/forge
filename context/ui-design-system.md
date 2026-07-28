@@ -366,8 +366,10 @@ Default color intent:
 ## Serialized payload fields
 
 Never render a serialized payload string (JSON blob, opaque struct dump) as UI text.
-Parse it in a named util, show labeled human-readable stats, and keep full precision in
-a `title` (`packages/ui/src/utils/roborev-usage.ts` for roborev `token_usage`).
+Parse it in a named util and show labeled human-readable stats, with the unabbreviated
+values in a `title`. Abbreviate the hover values by significant digits, not fixed
+decimals — a fixed scale rounds small magnitudes to a meaningless zero
+(`packages/ui/src/utils/roborev-usage.ts` for roborev `token_usage`).
 
 ## Implementation guidance
 

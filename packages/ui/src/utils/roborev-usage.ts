@@ -84,8 +84,10 @@ export function tokenUsageDetail(usage: JobTokenUsage): string {
     parts.push(`peak context ${group(usage.peakContextTokens)}`);
   }
   if (usage.costUsd !== null) {
-    // Significant digits, not fixed decimals: a sub-cent job must not read
-    // as $0.0000 in the one place that promises the exact number.
+    // Significant digits rather than fixed decimals, so a sub-cent job reads as
+    // $0.000023 instead of toFixed(4)'s $0.0000. Six of them, not the raw
+    // double: that is finer than any real per-job cost, and String() would
+    // surface float artifacts ($0.30000000000000004) or exponent notation.
     const cost = usage.costUsd.toLocaleString("en-US", { maximumSignificantDigits: 6 });
     parts.push(`cost $${cost}`);
   }

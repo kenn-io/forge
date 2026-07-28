@@ -375,7 +375,31 @@ describe("DiffFile", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Copy file path src/foo.ts" }));
 
     expect(copyToClipboard).toHaveBeenCalledWith("src/foo.ts");
+    const copyStatus = document.querySelector(".file-path-copy-status");
+    expect(copyStatus?.textContent).toBe("Copied");
+    expect(copyStatus?.getAttribute("role")).toBe("status");
+    expect(copyStatus?.getAttribute("aria-live")).toBe("polite");
     expect(document.querySelector(".file-content")).toBeTruthy();
+  });
+
+  it.each([
+    ["control character", "\n", "\\n"],
+    ["format character", "\u202e", "\\u202e"],
+    ["unpaired surrogate", "\ud800", "\\ud800"],
+    ["line separator", "\u2028", "\\u2028"],
+    ["paragraph separator", "\u2029", "\\u2029"],
+  ])("refuses to copy paths with a concealed %s", async (_description, character, escapedCharacter) => {
+    const path = `src/safe.ts${character}payload`;
+    renderDiffFile(makeFile({ path, old_path: path }));
+
+    const pathButton = screen.getByRole("button", {
+      name: `Cannot copy file path containing concealed characters: src/safe.ts${escapedCharacter}payload`,
+    });
+    await fireEvent.click(pathButton);
+
+    expect(pathButton.textContent?.trim()).toBe(`src/safe.ts${escapedCharacter}payload`);
+    expect(pathButton.getAttribute("aria-disabled")).toBe("true");
+    expect(copyToClipboard).not.toHaveBeenCalled();
   });
 
   it("exposes stable line targets inside the Pierre shadow root", async () => {

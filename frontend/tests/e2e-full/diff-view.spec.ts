@@ -2202,6 +2202,22 @@ test.describe("diff view", () => {
     await expect(content).toBeVisible();
   });
 
+  test("clicking a file path writes the exact path to the clipboard", async ({ page, context, browserName }) => {
+    test.skip(browserName !== "chromium", "Clipboard read assertions require Chromium permissions");
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    await mockDiffApi(page, smallDiff);
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+
+    const path = "internal/server/handler.go";
+    const pathButton = page.locator(`.diff-file[data-file-path="${path}"] .file-path`);
+    await pathButton.click();
+
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(path);
+    await expect(pathButton).toHaveAttribute("title", "Copied!");
+    await expect(page.locator(".file-path-copy-status")).toHaveText("Copied");
+  });
+
   test("more menu collapses and expands all visible diffs", async ({ page }) => {
     await mockDiffApi(page, smallDiff);
     await navigateToDiff(page);

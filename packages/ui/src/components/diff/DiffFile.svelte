@@ -85,6 +85,8 @@
   let inViewport = $state(false);
   let copiedPath = $state(false);
   let copiedPathTimeout: ReturnType<typeof setTimeout> | undefined;
+  const pathContainsConcealedCharacters = $derived(containsConcealedCharacters(file.path));
+  const displayedPath = $derived(displayPath(file));
   type MountedAnnotation = {
     component?: object;
     observer?: MutationObserver;
@@ -193,6 +195,7 @@
   }
 
   async function copyPath(): Promise<void> {
+    if (pathContainsConcealedCharacters) return;
     if (!(await copyToClipboard(file.path))) return;
     copiedPath = true;
     if (copiedPathTimeout !== undefined) clearTimeout(copiedPathTimeout);
@@ -217,10 +220,44 @@
   }
 
   function displayPath(f: DiffFileType): string {
+    const path = escapeConcealedCharacters(f.path);
     if (f.status === "renamed" && f.old_path !== f.path) {
-      return `${f.old_path} -> ${f.path}`;
+      return `${escapeConcealedCharacters(f.old_path)} -> ${path}`;
     }
-    return f.path;
+    return path;
+  }
+
+  function containsConcealedCharacters(path: string): boolean {
+    return Array.from(path).some((character) => isConcealedCharacter(character));
+  }
+
+  function escapeConcealedCharacters(path: string): string {
+    return Array.from(path, (character) => {
+      if (!isConcealedCharacter(character)) return character;
+      switch (character) {
+        case "\0":
+          return "\\0";
+        case "\b":
+          return "\\b";
+        case "\t":
+          return "\\t";
+        case "\n":
+          return "\\n";
+        case "\v":
+          return "\\v";
+        case "\f":
+          return "\\f";
+        case "\r":
+          return "\\r";
+      }
+      const codePoint = character.codePointAt(0) ?? 0;
+      const hex = codePoint.toString(16).padStart(4, "0");
+      return codePoint <= 0xffff ? `\\u${hex}` : `\\u{${hex}}`;
+    }).join("");
+  }
+
+  function isConcealedCharacter(character: string): boolean {
+    return /[\p{Cc}\p{Cf}\p{Cs}\u2028\u2029]/u.test(character);
   }
 
   function supportsRichPreview(path: string): boolean {
@@ -548,12 +585,25 @@
       class="file-path"
       class:file-path--copied={copiedPath}
       class:file-path--deleted={file.status === "deleted"}
+      class:file-path--unsafe={pathContainsConcealedCharacters}
       onclick={copyPath}
-      aria-label={copiedPath ? `Copied file path ${file.path}` : `Copy file path ${file.path}`}
-      title={copiedPath ? "Copied!" : "Copy file path"}
+      aria-disabled={pathContainsConcealedCharacters}
+      aria-label={pathContainsConcealedCharacters
+        ? `Cannot copy file path containing concealed characters: ${displayedPath}`
+        : copiedPath
+          ? `Copied file path ${file.path}`
+          : `Copy file path ${file.path}`}
+      title={pathContainsConcealedCharacters
+        ? "Cannot copy a path containing concealed characters"
+        : copiedPath
+          ? "Copied!"
+          : "Copy file path"}
     >
-      {displayPath(file)}
+      {displayedPath}
     </button>
+    {#if copiedPath}
+      <span class="file-path-copy-status" role="status" aria-live="polite">Copied</span>
+    {/if}
     <span class="file-stats">
       <DiffStats
         additions={file.additions}
@@ -699,6 +749,17 @@
 
   .file-path--copied {
     color: var(--accent-green);
+  }
+
+  .file-path--unsafe {
+    color: var(--text-muted);
+    cursor: not-allowed;
+  }
+
+  .file-path-copy-status {
+    flex-shrink: 0;
+    color: var(--accent-green);
+    font-size: var(--font-size-xs);
   }
 
   .file-path--deleted {

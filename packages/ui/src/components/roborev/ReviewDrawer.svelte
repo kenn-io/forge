@@ -1,5 +1,16 @@
 <script lang="ts">
-  import { BottomDock, Button, copyToClipboard } from "@kenn-io/kit-ui";
+  import {
+    BottomDock,
+    Button,
+    FitStages,
+    IconButton,
+    copyToClipboard,
+  } from "@kenn-io/kit-ui";
+  import BanIcon from "@lucide/svelte/icons/ban";
+  import CircleCheckIcon from "@lucide/svelte/icons/circle-check";
+  import CopyIcon from "@lucide/svelte/icons/copy";
+  import RefreshIcon from "@lucide/svelte/icons/refresh-cw";
+  import Undo2Icon from "@lucide/svelte/icons/undo-2";
   import { getStores } from "../../context.js";
   import StatusBadge from "./StatusBadge.svelte";
   import VerdictBadge from "./VerdictBadge.svelte";
@@ -91,6 +102,15 @@
 
   const reviewIsClosed = $derived(
     stores.roborevReview?.isClosed() ?? false,
+  );
+
+  // Shared by both footer stages so the accessible name of an action never
+  // depends on how much room the drawer happens to have.
+  const closeLabel = $derived(
+    reviewIsClosed ? "Reopen" : "Close Review",
+  );
+  const closeTitle = $derived(
+    reviewIsClosed ? "Reopen review" : "Close review",
   );
 
   const tokenUsage = $derived(
@@ -280,16 +300,14 @@
   {/snippet}
 
   {#snippet footer()}
-    <div class="review-dock-footer">
+    {#snippet labelledActions()}
       <div class="footer-actions" role="group" aria-label="Review actions">
         {#if hasReview}
           <Button
             size="sm"
             onclick={handleCloseReview}
-            title={reviewIsClosed
-              ? "Reopen review"
-              : "Close review"}
-            label={reviewIsClosed ? "Reopen" : "Close Review"}
+            title={closeTitle}
+            label={closeLabel}
           />
         {/if}
         <Button
@@ -314,6 +332,57 @@
           label="Copy Output"
         />
       </div>
+    {/snippet}
+    {#snippet iconActions()}
+      <div class="footer-actions" role="group" aria-label="Review actions">
+        {#if hasReview}
+          <IconButton
+            size="sm"
+            ariaLabel={closeLabel}
+            title={closeTitle}
+            onclick={handleCloseReview}
+          >
+            {#if reviewIsClosed}
+              <Undo2Icon size={14} aria-hidden="true" />
+            {:else}
+              <CircleCheckIcon size={14} aria-hidden="true" />
+            {/if}
+          </IconButton>
+        {/if}
+        <IconButton
+          size="sm"
+          ariaLabel="Rerun"
+          title="Rerun this job"
+          onclick={handleRerun}
+        >
+          <RefreshIcon size={14} aria-hidden="true" />
+        </IconButton>
+        {#if canCancel}
+          <IconButton
+            size="sm"
+            tone="danger"
+            ariaLabel="Cancel"
+            title="Cancel this job"
+            onclick={handleCancel}
+          >
+            <BanIcon size={14} aria-hidden="true" />
+          </IconButton>
+        {/if}
+        <IconButton
+          size="sm"
+          ariaLabel="Copy Output"
+          title="Copy review output"
+          onclick={() => void copyOutput()}
+        >
+          <CopyIcon size={14} aria-hidden="true" />
+        </IconButton>
+      </div>
+    {/snippet}
+    <div class="review-dock-footer">
+      <FitStages
+        class="footer-actions-fit"
+        stages={[labelledActions, iconActions]}
+      />
       {#if tokenUsage}
         <span
           class="token-usage"
@@ -473,12 +542,23 @@
   }
 
   /* The actions stay one horizontal group; when the footer runs out of room
-   * the usage summary wraps below instead of stacking the buttons. */
+   * the usage summary wraps below instead of stacking the buttons, and past
+   * that the group downgrades to icon-only rather than spilling out of the
+   * drawer. FitStages owns that swap by measurement, so its host must be
+   * sized by the footer and never by the stage it currently renders -- hence
+   * a zero flex basis. The floor is the icon row's own intrinsic width (four
+   * 24px controls plus their 8px gaps): declaring it makes a long usage
+   * summary wrap to a second line instead of squeezing the actions narrower
+   * than the most compact stage can draw. */
+  .review-dock-footer :global(.footer-actions-fit) {
+    flex: 1 1 0;
+    min-width: 120px;
+  }
+
   .footer-actions {
     display: flex;
     align-items: center;
     gap: 8px;
-    flex: 0 0 auto;
     min-width: 0;
   }
 

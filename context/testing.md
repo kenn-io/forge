@@ -291,6 +291,10 @@ Disable Git auto-GC and auto-maintenance in synthetic repositories under
 `t.TempDir`; detached maintenance can recreate files during fixture cleanup
 (`internal/gitclone/commits_test.go::commitTestRun`).
 
+Real-Git test packages use `gitsafe.RunIsolatedMain` in `TestMain`: one empty config per binary.
+Use `Runner` where code strips Git variables, and `MutableRunner` only for global config
+mutations (`internal/testutil/gitsafe/gitsafe.go::RunIsolatedMain`).
+
 Real tmux and PTY tests can still run in parallel when each test owns its
 session names, temp dirs, sockets, and cleanup. If the bottleneck is external
 resource pressure rather than correctness, keep `t.Parallel()` and gate the

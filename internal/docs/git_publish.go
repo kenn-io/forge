@@ -207,18 +207,18 @@ func (r *Registry) GitChanges(ctx context.Context, folderID string) (GitChangesR
 	// once the user submits. Command-bearing config does not execute
 	// during the status read itself (unlike filter attributes), so this
 	// gate is for signal parity, not read-time safety.
-	if err := assertSafeToPublish(ctx, v.Path); err != nil {
+	if err := r.assertSafeToPublish(ctx, v.Path); err != nil {
 		return GitChangesResponse{}, err
 	}
-	branch, err := currentBranch(ctx, v.Path)
+	branch, err := r.currentBranch(ctx, v.Path)
 	if err != nil {
 		return GitChangesResponse{}, err
 	}
-	upstream, _ := currentUpstream(ctx, v.Path, branch)
-	if err := assertWorktreeAttributesSafe(ctx, v.Path); err != nil {
+	upstream, _ := r.currentUpstream(ctx, v.Path, branch)
+	if err := r.assertWorktreeAttributesSafe(ctx, v.Path); err != nil {
 		return GitChangesResponse{}, err
 	}
-	records, err := readPorcelain(ctx, v.Path)
+	records, err := r.readPorcelain(ctx, v.Path)
 	if err != nil {
 		return GitChangesResponse{}, err
 	}
@@ -237,36 +237,36 @@ func (r *Registry) GitChanges(ctx context.Context, folderID string) (GitChangesR
 	}, nil
 }
 
-func currentBranch(ctx context.Context, root string) (string, error) {
-	out, err := runDocsGit(ctx, root, nil, "symbolic-ref", "--short", "HEAD")
+func (r *Registry) currentBranch(ctx context.Context, root string) (string, error) {
+	out, err := r.runGit(ctx, root, nil, "symbolic-ref", "--short", "HEAD")
 	if err != nil {
 		return "", fmt.Errorf("git symbolic-ref: %w", err)
 	}
 	return strings.TrimSpace(string(out)), nil
 }
 
-func currentUpstream(ctx context.Context, root, branch string) (string, error) {
-	out, err := runDocsGit(ctx, root, nil, "rev-parse", "--abbrev-ref", branch+"@{upstream}")
+func (r *Registry) currentUpstream(ctx context.Context, root, branch string) (string, error) {
+	out, err := r.runGit(ctx, root, nil, "rev-parse", "--abbrev-ref", branch+"@{upstream}")
 	if err != nil {
 		return "", err
 	}
 	return strings.TrimSpace(string(out)), nil
 }
 
-func currentUpstreamPushTarget(ctx context.Context, root, branch string) (remote, mergeRef string, err error) {
-	remoteOut, err := runDocsGit(ctx, root, nil, "config", "--get", "branch."+branch+".remote")
+func (r *Registry) currentUpstreamPushTarget(ctx context.Context, root, branch string) (remote, mergeRef string, err error) {
+	remoteOut, err := r.runGit(ctx, root, nil, "config", "--get", "branch."+branch+".remote")
 	if err != nil {
 		return "", "", err
 	}
-	mergeOut, err := runDocsGit(ctx, root, nil, "config", "--get", "branch."+branch+".merge")
+	mergeOut, err := r.runGit(ctx, root, nil, "config", "--get", "branch."+branch+".merge")
 	if err != nil {
 		return "", "", err
 	}
 	return strings.TrimSpace(string(remoteOut)), strings.TrimSpace(string(mergeOut)), nil
 }
 
-func readPorcelain(ctx context.Context, root string) ([]PorcelainRecord, error) {
-	out, err := runDocsGit(ctx, root, nil,
+func (r *Registry) readPorcelain(ctx context.Context, root string) ([]PorcelainRecord, error) {
+	out, err := r.runGit(ctx, root, nil,
 		"-c", "color.status=false",
 		"status", "--porcelain=v1", "-z",
 		"--untracked-files=all",
@@ -331,16 +331,16 @@ func (r *Registry) GitPublish(ctx context.Context, folderID, message string) (Pu
 	if strings.TrimSpace(message) == "" {
 		return PublishResponse{}, ErrEmptyMessage
 	}
-	if err := assertSafeToPublish(ctx, v.Path); err != nil {
+	if err := r.assertSafeToPublish(ctx, v.Path); err != nil {
 		return PublishResponse{}, err
 	}
 	// Gate attributes before git status: status rehashes modified tracked
 	// files through any configured filter, so a repo-controlled filter
 	// attribute must be rejected before status runs, not after.
-	if err := assertWorktreeAttributesSafe(ctx, v.Path); err != nil {
+	if err := r.assertWorktreeAttributesSafe(ctx, v.Path); err != nil {
 		return PublishResponse{}, err
 	}
-	records, err := readPorcelain(ctx, v.Path)
+	records, err := r.readPorcelain(ctx, v.Path)
 	if err != nil {
 		return PublishResponse{}, err
 	}
@@ -355,18 +355,18 @@ func (r *Registry) GitPublish(ctx context.Context, folderID, message string) (Pu
 	if len(publishable) == 0 {
 		return PublishResponse{}, ErrNoMarkdownChanges
 	}
-	branch, err := currentBranch(ctx, v.Path)
+	branch, err := r.currentBranch(ctx, v.Path)
 	if err != nil {
 		return PublishResponse{}, err
 	}
-	upstream, err := currentUpstream(ctx, v.Path, branch)
+	upstream, err := r.currentUpstream(ctx, v.Path, branch)
 	if err != nil || upstream == "" {
 		return PublishResponse{}, &NoUpstreamError{
 			Branch:           branch,
 			SuggestedCommand: fmt.Sprintf("git push -u origin %s", branch),
 		}
 	}
-	upstreamRemote, upstreamMergeRef, err := currentUpstreamPushTarget(ctx, v.Path, branch)
+	upstreamRemote, upstreamMergeRef, err := r.currentUpstreamPushTarget(ctx, v.Path, branch)
 	if err != nil || upstreamRemote == "" || upstreamMergeRef == "" {
 		return PublishResponse{}, &NoUpstreamError{
 			Branch:           branch,
@@ -376,18 +376,18 @@ func (r *Registry) GitPublish(ctx context.Context, folderID, message string) (Pu
 	// Validate where the push will land before staging or committing, so
 	// an unsafe push target cannot leave a half-finished publish (commit
 	// created, push refused) behind.
-	pushTarget, err := assertPushTargetSafe(ctx, v.Path, upstreamRemote)
+	pushTarget, err := r.assertPushTargetSafe(ctx, v.Path, upstreamRemote)
 	if err != nil {
 		return PublishResponse{}, err
 	}
-	if err := stagePublishSet(ctx, v.Path, publishable); err != nil {
+	if err := r.stagePublishSet(ctx, v.Path, publishable); err != nil {
 		return PublishResponse{}, fmt.Errorf("git add: %w", err)
 	}
-	commitSHA, err := runCommit(ctx, v.Path, message)
+	commitSHA, err := r.runCommit(ctx, v.Path, message)
 	if err != nil {
 		return PublishResponse{}, err
 	}
-	if stderr, err := runPush(ctx, v.Path, upstreamRemote, upstreamMergeRef, pushTarget); err != nil {
+	if stderr, err := r.runPush(ctx, v.Path, upstreamRemote, upstreamMergeRef, pushTarget); err != nil {
 		return PublishResponse{}, &PushFailedAfterCommitError{
 			Commit: commitSHA,
 			Stderr: stderr,
@@ -421,7 +421,7 @@ func filterPublishable(changes []PublishChange, unmerged []string) []PublishChan
 	return out
 }
 
-func stagePublishSet(ctx context.Context, root string, changes []PublishChange) error {
+func (r *Registry) stagePublishSet(ctx context.Context, root string, changes []PublishChange) error {
 	args := []string{"--literal-pathspecs", "add", "-A", "--"}
 	for _, c := range changes {
 		args = append(args, c.Path)
@@ -439,13 +439,13 @@ func stagePublishSet(ctx context.Context, root string, changes []PublishChange) 
 			return fmt.Errorf("stat old path %s: %w", c.OldPath, statErr)
 		}
 	}
-	if _, err := runDocsGit(ctx, root, nil, args...); err != nil {
+	if _, err := r.runGit(ctx, root, nil, args...); err != nil {
 		return err
 	}
 	return nil
 }
 
-func runCommit(ctx context.Context, root, message string) (string, error) {
+func (r *Registry) runCommit(ctx context.Context, root, message string) (string, error) {
 	messageFile, err := os.CreateTemp("", "middleman-docs-commit-message-*")
 	if err != nil {
 		return "", err
@@ -460,17 +460,17 @@ func runCommit(ctx context.Context, root, message string) (string, error) {
 		return "", err
 	}
 
-	if _, err := runDocsGit(ctx, root, nil, "commit", "-F", messagePath); err != nil {
+	if _, err := r.runGit(ctx, root, nil, "commit", "-F", messagePath); err != nil {
 		return "", &CommitFailedError{Stderr: gitStderr(err)}
 	}
-	headOut, err := runDocsGit(ctx, root, nil, "rev-parse", "HEAD")
+	headOut, err := r.runGit(ctx, root, nil, "rev-parse", "HEAD")
 	if err != nil {
 		return "", err
 	}
 	return strings.TrimSpace(string(headOut)), nil
 }
 
-func runPush(ctx context.Context, root, remote, mergeRef string, target pushTargetClass) (string, error) {
+func (r *Registry) runPush(ctx context.Context, root, remote, mergeRef string, target pushTargetClass) (string, error) {
 	args := []string{"push"}
 	if target == pushTargetLocal {
 		receivePack, err := localReceivePack()
@@ -480,7 +480,7 @@ func runPush(ctx context.Context, root, remote, mergeRef string, target pushTarg
 		args = append(args, "--receive-pack="+receivePack)
 	}
 	args = append(args, remote, "HEAD:"+mergeRef)
-	if _, err := runDocsGit(ctx, root, nil, args...); err != nil {
+	if _, err := r.runGit(ctx, root, nil, args...); err != nil {
 		return gitStderr(err), err
 	}
 	return "", nil

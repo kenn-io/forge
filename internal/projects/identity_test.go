@@ -1,7 +1,6 @@
 package projects
 
 import (
-	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	gitcmd "go.kenn.io/kit/git/cmd"
+	"go.kenn.io/middleman/internal/testutil/gitsafe"
 )
 
 func TestParseRemoteURL_GitHubFormats(t *testing.T) {
@@ -144,7 +144,9 @@ func TestResolveIdentityFromPath_NoOriginRemote(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(runGit(t, dir, "init", "-q"))
 
-	identity, err := ResolveIdentityFromPath(context.Background(), dir)
+	identity, err := resolveIdentityFromPathWithGitEnv(
+		t.Context(), dir, nil, gitsafe.Runner().Env,
+	)
 	require.NoError(err)
 	assert.Nil(identity)
 }
@@ -160,7 +162,9 @@ func TestResolveIdentityFromPath_UnrecognizableRemote(t *testing.T) {
 	require.NoError(runGit(t, dir, "init", "-q"))
 	require.NoError(runGit(t, dir, "remote", "add", "origin", "/local/only/repo"))
 
-	identity, err := ResolveIdentityFromPath(context.Background(), dir)
+	identity, err := resolveIdentityFromPathWithGitEnv(
+		t.Context(), dir, nil, gitsafe.Runner().Env,
+	)
 	require.NoError(err)
 	assert.Nil(identity)
 }
@@ -176,7 +180,9 @@ func TestResolveIdentityFromPath_RecognizedRemote(t *testing.T) {
 	require.NoError(runGit(t, dir, "init", "-q"))
 	require.NoError(runGit(t, dir, "remote", "add", "origin", "git@github.com:wesm/examplerepo.git"))
 
-	identity, err := ResolveIdentityFromPath(context.Background(), dir)
+	identity, err := resolveIdentityFromPathWithGitEnv(
+		t.Context(), dir, nil, gitsafe.Runner().Env,
+	)
 	require.NoError(err)
 	require.NotNil(identity)
 	assert.Equal("github.com", identity.Host)
@@ -196,14 +202,16 @@ func TestResolveIdentityFromPath_NotAGitRepoIsTreatedAsNoIdentity(t *testing.T) 
 	// returns (nil, nil) and lets registration validation reject the
 	// non-repo separately.
 	dir := t.TempDir()
-	identity, err := ResolveIdentityFromPath(context.Background(), dir)
+	identity, err := resolveIdentityFromPathWithGitEnv(
+		t.Context(), dir, nil, gitsafe.Runner().Env,
+	)
 	require.NoError(err)
 	assert.Nil(identity)
 }
 
 func TestResolveIdentityFromPath_RequiresPath(t *testing.T) {
 	require := require.New(t)
-	_, err := ResolveIdentityFromPath(context.Background(), "")
+	_, err := ResolveIdentityFromPath(t.Context(), "")
 	require.Error(err)
 }
 
@@ -236,7 +244,9 @@ func TestResolveIdentityFromPath_ResolvesRelativePaths(t *testing.T) {
 
 	rel, err := filepath.Rel(cwd, dir)
 	require.NoError(err)
-	identity, err := ResolveIdentityFromPath(context.Background(), filepath.Join(cwd, rel))
+	identity, err := resolveIdentityFromPathWithGitEnv(
+		t.Context(), filepath.Join(cwd, rel), nil, gitsafe.Runner().Env,
+	)
 	require.NoError(err)
 	require.NotNil(identity)
 	assert.Equal("github.com", identity.Host)

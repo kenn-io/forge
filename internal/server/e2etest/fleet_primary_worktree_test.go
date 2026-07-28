@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/middleman/internal/fleet"
-	"go.kenn.io/middleman/internal/procutil"
+	"go.kenn.io/middleman/internal/testutil/gitsafe"
 )
 
 // gitInitRepoWithWorktree creates a real git repo with one empty commit and a
@@ -34,9 +34,8 @@ func gitInitRepoWithWorktree(t *testing.T, worktreeName string) (string, string)
 
 func gitRun(t *testing.T, dir string, args ...string) {
 	t.Helper()
-	cmd := procutil.Command("git", append([]string{"-C", dir}, args...)...)
-	out, err := cmd.CombinedOutput()
-	require.NoError(t, err, "git %v: %s", args, out)
+	_, stderr, err := gitsafe.Runner().Run(t.Context(), dir, nil, args...)
+	require.NoError(t, err, "git %v: %s", args, stderr)
 }
 
 // registerProjectE2E registers a local checkout over HTTP and returns its

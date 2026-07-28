@@ -1,49 +1,137 @@
-// Package gitsafe strips inherited git location/identity environment
-// variables (GIT_DIR, GIT_WORK_TREE, GIT_CONFIG*, GIT_AUTHOR_*, ...)
-// from the current process the moment it is imported.
-//
-// The repository's pre-commit hook runs `go test` with GIT_DIR and
-// GIT_WORK_TREE set, pointing at the host repository. Git gives those
-// variables precedence over a child command's working directory, so a
-// test fixture that shells out to bare `git init` / `git config` /
-// `git clone` re-initializes and reconfigures the REAL repo — writing
-// core.worktree and a fixture identity into its config and corrupting
-// how Git resolves the user's working tree.
-//
-// Per-command wrappers like gitcmd.New() already strip these, but a raw
-// exec/procutil git call does not. This package neutralizes the entire
-// class at the process level, before any test or fixture runs, so it is
-// safe even if a fixture forgets the wrapper. Blank-import it from every
-// test package that runs git:
-//
-//	import _ "go.kenn.io/middleman/internal/testutil/gitsafe"
+// Package gitsafe isolates test binaries from developer and system Git state.
 package gitsafe
 
 import (
+	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
+	"testing"
 
+	"github.com/stretchr/testify/require"
+	gitcmd "go.kenn.io/kit/git/cmd"
 	gitenv "go.kenn.io/kit/git/env"
 )
 
-func init() {
-	UnsetInheritedGitEnv()
+// RunIsolatedMain runs a package's tests with one portable, empty Git config.
+// The setup is shared by the test binary so Git-heavy suites do not create a
+// new config directory for every test or command, which is costly on Windows.
+func RunIsolatedMain(m *testing.M) int {
+	root, err := os.MkdirTemp("", "middleman-git-test-*")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "create isolated Git test directory: %v\n", err)
+		return 1
+	}
+	defer func() { _ = os.RemoveAll(root) }()
+
+	if err := configureGitForTests(root); err != nil {
+		fmt.Fprintf(os.Stderr, "configure isolated Git test environment: %v\n", err)
+		return 1
+	}
+	return m.Run()
 }
 
-// UnsetInheritedGitEnv removes from the live process environment every
-// variable that gitenv.StripInherited filters — the canonical set that
-// can bind a child git process to an inherited parent repository,
-// config, or identity. Reusing gitenv keeps that list in one place.
-func UnsetInheritedGitEnv() {
+func configureGitForTests(root string) error {
+	unsetInheritedGitEnv()
+
+	// Git for Windows cannot reliably use NUL as GIT_CONFIG_GLOBAL. A regular,
+	// empty file is a valid no-op config on every platform.
+	globalConfig := filepath.Join(root, "global.gitconfig")
+	if err := os.WriteFile(globalConfig, nil, 0o600); err != nil {
+		return fmt.Errorf("create empty global config: %w", err)
+	}
+	xdgConfigHome := filepath.Join(root, "xdg")
+	if err := os.MkdirAll(xdgConfigHome, 0o755); err != nil {
+		return fmt.Errorf("create XDG config directory: %w", err)
+	}
+
+	for key, value := range map[string]string{
+		"GIT_CONFIG_GLOBAL":   globalConfig,
+		"GIT_CONFIG_NOSYSTEM": "1",
+		"GIT_TERMINAL_PROMPT": "0",
+		"HOME":                root,
+		"XDG_CONFIG_HOME":     xdgConfigHome,
+	} {
+		if err := os.Setenv(key, value); err != nil {
+			return fmt.Errorf("set %s: %w", key, err)
+		}
+	}
+	return nil
+}
+
+// Runner returns a real Git runner bound to the test binary's shared isolated
+// config. It creates no files or directories; RunIsolatedMain owns that setup.
+func Runner() gitcmd.Runner {
+	return gitcmd.Runner{
+		Env:                         isolatedCommandEnv(os.Environ()),
+		DisableSafeDirectoryForward: true,
+	}
+}
+
+// MutableRunner returns a runner with a per-test writable global config. Use
+// it only when the behavior under test intentionally changes global config;
+// ordinary Git tests should use the package-shared Runner.
+func MutableRunner(t testing.TB) gitcmd.Runner {
+	t.Helper()
+	root := t.TempDir()
+	globalConfig := filepath.Join(root, "global.gitconfig")
+	require.NoError(t, os.WriteFile(globalConfig, nil, 0o600))
+	xdgConfigHome := filepath.Join(root, "xdg")
+	require.NoError(t, os.Mkdir(xdgConfigHome, 0o755))
+
+	return gitcmd.Runner{
+		Env: replaceEnvValues(gitenv.StripAll(os.Environ()), map[string]string{
+			"GIT_CONFIG_GLOBAL":   globalConfig,
+			"GIT_CONFIG_NOSYSTEM": "1",
+			"GIT_TERMINAL_PROMPT": "0",
+			"HOME":                root,
+			"XDG_CONFIG_HOME":     xdgConfigHome,
+		}),
+		DisableSafeDirectoryForward: true,
+	}
+}
+
+func isolatedCommandEnv(base []string) []string {
+	replacements := make(map[string]string)
+	for _, key := range []string{
+		"GIT_CONFIG_GLOBAL",
+		"GIT_CONFIG_NOSYSTEM",
+		"GIT_TERMINAL_PROMPT",
+		"HOME",
+		"XDG_CONFIG_HOME",
+	} {
+		if value, ok := os.LookupEnv(key); ok {
+			replacements[key] = value
+		}
+	}
+	return replaceEnvValues(gitenv.StripAll(base), replacements)
+}
+
+func replaceEnvValues(base []string, replacements map[string]string) []string {
+	out := make([]string, 0, len(base)+len(replacements))
+	for _, entry := range base {
+		key, _, _ := strings.Cut(entry, "=")
+		if _, replaced := replacements[strings.ToUpper(key)]; replaced {
+			continue
+		}
+		out = append(out, entry)
+	}
+	for key, value := range replacements {
+		out = append(out, key+"="+value)
+	}
+	return out
+}
+
+func unsetInheritedGitEnv() {
 	full := os.Environ()
 	kept := make(map[string]struct{}, len(full))
-	for _, kv := range gitenv.StripInherited(full) {
-		if name, _, ok := strings.Cut(kv, "="); ok {
+	for _, entry := range gitenv.StripAll(full) {
+		if name, _, ok := strings.Cut(entry, "="); ok {
 			kept[name] = struct{}{}
 		}
 	}
-	for _, kv := range full {
-		name, _, ok := strings.Cut(kv, "=")
+	for _, entry := range full {
+		name, _, ok := strings.Cut(entry, "=")
 		if !ok {
 			continue
 		}

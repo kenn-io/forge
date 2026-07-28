@@ -39,8 +39,8 @@ const (
 // Local paths outside the folder stay allowed — pushing to a personal
 // bare mirror is a real workflow — because runPush neutralizes the
 // target's command surfaces with localReceivePack.
-func assertPushTargetSafe(ctx context.Context, root, remote string) (pushTargetClass, error) {
-	urls, err := remotePushURLs(ctx, root, remote)
+func (r *Registry) assertPushTargetSafe(ctx context.Context, root, remote string) (pushTargetClass, error) {
+	urls, err := r.remotePushURLs(ctx, root, remote)
 	if err != nil {
 		return 0, err
 	}
@@ -78,8 +78,8 @@ func assertPushTargetSafe(ctx context.Context, root, remote string) (pushTargetC
 // upstream may also name a bare URL or path instead of a configured
 // remote; get-url fails for those and the string itself is the one push
 // target.
-func remotePushURLs(ctx context.Context, root, remote string) ([]string, error) {
-	out, err := runDocsGit(ctx, root, nil, "remote", "get-url", "--push", "--all", remote)
+func (r *Registry) remotePushURLs(ctx context.Context, root, remote string) ([]string, error) {
+	out, err := r.runGit(ctx, root, nil, "remote", "get-url", "--push", "--all", remote)
 	if err != nil {
 		return []string{remote}, nil
 	}

@@ -60,6 +60,7 @@ import (
 	"go.kenn.io/middleman/internal/testutil"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
 	"go.kenn.io/middleman/internal/testutil/gitfake"
+	"go.kenn.io/middleman/internal/testutil/gitsafe"
 	"go.kenn.io/middleman/internal/testutil/processjob"
 	"go.kenn.io/middleman/internal/tokenauth"
 	"go.kenn.io/middleman/internal/workspace"
@@ -89,7 +90,7 @@ func TestMain(m *testing.M) {
 	if envDirErr == nil {
 		_ = os.Setenv("MIDDLEMAN_TMUX_ENV_DIR", envDir)
 	}
-	code := m.Run()
+	code := gitsafe.RunIsolatedMain(m)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	if err := cleanupMiddlemanTestTmuxSessionsWithContext(ctx); err != nil {
 		fmt.Fprintf(os.Stderr, "cleanup middleman test tmux sessions: %v\n", err)

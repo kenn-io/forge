@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 
+	gitcmd "go.kenn.io/kit/git/cmd"
 	"go.kenn.io/middleman/internal/config"
 )
 
@@ -109,13 +110,23 @@ type Registry struct {
 	folders []config.DocFolder
 	byID    map[string]config.DocFolder
 	writeMu sync.Mutex
+	gitBase gitcmd.Runner
+}
+
+type RegistryOption func(*Registry)
+
+// WithGitRunner overrides the Git environment used by this registry.
+func WithGitRunner(runner gitcmd.Runner) RegistryOption {
+	return func(registry *Registry) {
+		registry.gitBase = runner
+	}
 }
 
 // NewRegistry returns a Registry over the given folders. Paths are
 // resolved through filepath.EvalSymlinks so that path-safety checks
 // compare apples to apples on platforms (macOS) where the TempDir and
 // real path differ via a top-level symlink.
-func NewRegistry(folders []config.DocFolder) *Registry {
+func NewRegistry(folders []config.DocFolder, options ...RegistryOption) *Registry {
 	resolved := make([]config.DocFolder, 0, len(folders))
 	byID := make(map[string]config.DocFolder, len(folders))
 	for _, v := range folders {
@@ -125,14 +136,22 @@ func NewRegistry(folders []config.DocFolder) *Registry {
 		resolved = append(resolved, v)
 		byID[v.ID] = v
 	}
-	return &Registry{folders: resolved, byID: byID}
+	registry := &Registry{
+		folders: resolved,
+		byID:    byID,
+		gitBase: docsGitBase(),
+	}
+	for _, option := range options {
+		option(registry)
+	}
+	return registry
 }
 
 // Replace swaps the registered folder snapshot in place. Readers keep a
 // consistent view through the registry mutex, and ongoing file operations
 // that already resolved a folder continue against that resolved path.
 func (r *Registry) Replace(folders []config.DocFolder) {
-	next := NewRegistry(folders)
+	next := NewRegistry(folders, WithGitRunner(r.gitBase))
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.folders = next.folders

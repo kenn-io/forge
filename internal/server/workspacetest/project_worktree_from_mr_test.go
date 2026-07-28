@@ -15,15 +15,14 @@ import (
 	gh "github.com/google/go-github/v89/github"
 	"github.com/stretchr/testify/assert"
 	Require "github.com/stretchr/testify/require"
-	gitenv "go.kenn.io/kit/git/env"
 
 	"go.kenn.io/middleman/internal/db"
 	ghclient "go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/procutil"
 	"go.kenn.io/middleman/internal/server"
 	"go.kenn.io/middleman/internal/server/httpapi"
 	"go.kenn.io/middleman/internal/testutil"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
+	"go.kenn.io/middleman/internal/testutil/gitsafe"
 	"go.kenn.io/middleman/internal/testutil/servertest"
 )
 
@@ -301,10 +300,7 @@ func TestCreateWorktreeFromRelativeForkRoutePersistsAbsoluteTracking(t *testing.
 
 func worktreeConfigForRoute(t *testing.T, dir, key string) string {
 	t.Helper()
-	cmd := procutil.Command("git", "config", "--get", key)
-	cmd.Dir = dir
-	cmd.Env = gitenv.StripAll(os.Environ())
-	out, err := cmd.Output()
+	out, err := gitsafe.Runner().Output(t.Context(), dir, "config", "--get", key)
 	if err != nil {
 		return ""
 	}

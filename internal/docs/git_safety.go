@@ -33,8 +33,8 @@ func (e *UnsafeGitConfigError) Error() string {
 // untrusted repo never reaches an executing git command. Attribute-driven
 // filter/diff drivers are checked separately, before git status runs, by
 // assertWorktreeAttributesSafe.
-func assertSafeToPublish(ctx context.Context, root string) error {
-	entries, err := unsafeGitConfigEntries(ctx, root)
+func (r *Registry) assertSafeToPublish(ctx context.Context, root string) error {
+	entries, err := r.unsafeGitConfigEntries(ctx, root)
 	if err != nil {
 		return err
 	}
@@ -52,19 +52,19 @@ func assertSafeToPublish(ctx context.Context, root string) error {
 // the publish set computed from git status output. Path enumeration (git
 // ls-files) and attribute resolution (git check-attr) never run a filter
 // program, so the gate itself is safe to call first.
-func assertWorktreeAttributesSafe(ctx context.Context, root string) error {
-	paths, err := worktreePaths(ctx, root)
+func (r *Registry) assertWorktreeAttributesSafe(ctx context.Context, root string) error {
+	paths, err := r.worktreePaths(ctx, root)
 	if err != nil {
 		return err
 	}
-	return assertPathsAttributesSafe(ctx, root, paths)
+	return r.assertPathsAttributesSafe(ctx, root, paths)
 }
 
 // worktreePaths lists every tracked and untracked (non-ignored) path in the
 // docs repo. git ls-files reads the index and directory listing only; it
 // never runs a filter, so it is safe to call before the attribute gate.
-func worktreePaths(ctx context.Context, root string) ([]string, error) {
-	out, err := runDocsGit(ctx, root, nil, "ls-files", "-z", "--cached", "--others", "--exclude-standard")
+func (r *Registry) worktreePaths(ctx context.Context, root string) ([]string, error) {
+	out, err := r.runGit(ctx, root, nil, "ls-files", "-z", "--cached", "--others", "--exclude-standard")
 	if err != nil {
 		return nil, fmt.Errorf("listing docs worktree paths: %w", err)
 	}
@@ -83,12 +83,12 @@ func worktreePaths(ctx context.Context, root string) ([]string, error) {
 // .gitattributes, .git/info/attributes, core.attributesFile) and runs no
 // filter program. Paths are fed on stdin so a large worktree cannot blow
 // the command-line argument limit.
-func assertPathsAttributesSafe(ctx context.Context, root string, paths []string) error {
+func (r *Registry) assertPathsAttributesSafe(ctx context.Context, root string, paths []string) error {
 	if len(paths) == 0 {
 		return nil
 	}
 	stdin := strings.NewReader(strings.Join(paths, "\x00") + "\x00")
-	out, err := runDocsGit(ctx, root, stdin, "check-attr", "-z", "--stdin", "filter", "diff")
+	out, err := r.runGit(ctx, root, stdin, "check-attr", "-z", "--stdin", "filter", "diff")
 	if err != nil {
 		return fmt.Errorf("checking docs git attributes: %w", err)
 	}
@@ -118,8 +118,8 @@ func attributeValueIsDriver(value string) bool {
 	}
 }
 
-func unsafeGitConfigEntries(ctx context.Context, root string) ([]string, error) {
-	out, err := runDocsGit(ctx, root, nil, "config", "--local", "--list", "-z")
+func (r *Registry) unsafeGitConfigEntries(ctx context.Context, root string) ([]string, error) {
+	out, err := r.runGit(ctx, root, nil, "config", "--local", "--list", "-z")
 	if err != nil {
 		// A repo with no local config still exits 0 with empty output, so a
 		// non-zero exit is a real failure worth surfacing.

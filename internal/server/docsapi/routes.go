@@ -25,6 +25,7 @@ type Deps struct {
 	Config              *config.Config
 	BeginConfigMutation func() func()
 	SaveFolders         func([]config.DocFolder) error
+	Registry            *docs.Registry
 }
 
 type Handler struct {
@@ -40,10 +41,14 @@ func New(deps Deps) *Handler {
 	if deps.Config != nil {
 		folders = deps.Config.DocFolders
 	}
+	registry := deps.Registry
+	if registry == nil {
+		registry = docs.NewRegistry(folders)
+	}
 	return &Handler{
 		beginConfigMutation: deps.BeginConfigMutation,
 		saveFolders:         deps.SaveFolders,
-		docsRegistry:        docs.NewRegistry(folders),
+		docsRegistry:        registry,
 		docsPublishLocks:    NewPublishLockSet(),
 	}
 }

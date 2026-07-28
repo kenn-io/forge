@@ -26,9 +26,12 @@ import (
 // supported customization surface is gitconfig (core.sshCommand,
 // user.name/user.email, credential.helper). Unlike gitcmd.New(), global
 // and system config stay readable: docs commits rely on the maintainer's
-// identity, filters, and credential helpers. A package variable so tests
-// can substitute fully isolated config.
-var docsGitBase = gitcmd.Runner{Env: stripDocsSecretEnv(os.Environ()), StripEnv: true}
+// identity, filters, and credential helpers. Build it when a command runs so
+// package TestMain isolation is visible instead of snapshotting the host
+// environment during package initialization.
+func docsGitBase() gitcmd.Runner {
+	return gitcmd.Runner{Env: stripDocsSecretEnv(os.Environ()), StripEnv: true}
+}
 
 // emptyHooksDir is an empty directory used as core.hooksPath so that
 // hooks shipped inside a docs folder's .git/hooks (or pointed to by a
@@ -58,12 +61,12 @@ var emptyHooksDir = sync.OnceValues(func() (string, error) {
 // gpg.program for signed commits, credential.helper, core.sshCommand) is
 // left intact because disabling it would break real workflows; treat
 // such repos as trusted before registering them as docs folders.
-func docsGitRunner() (gitcmd.Runner, error) {
+func docsGitRunner(base gitcmd.Runner) (gitcmd.Runner, error) {
 	hooksDir, err := emptyHooksDir()
 	if err != nil {
 		return gitcmd.Runner{}, fmt.Errorf("creating empty git hooks dir: %w", err)
 	}
-	return docsGitBase.
+	return base.
 		WithConfig("core.hooksPath", hooksDir).
 		WithConfig("core.fsmonitor", "false").
 		WithConfig("protocol.allow", "never").
@@ -77,8 +80,10 @@ func docsGitRunner() (gitcmd.Runner, error) {
 // runDocsGit runs one git command against a docs folder root under the
 // shared subprocess limiter. Failures unwrap to *gitcmd.GitError, whose
 // message and Stderr field carry git's trimmed stderr.
-func runDocsGit(ctx context.Context, root string, stdin io.Reader, args ...string) ([]byte, error) {
-	runner, err := docsGitRunner()
+func (r *Registry) runGit(
+	ctx context.Context, root string, stdin io.Reader, args ...string,
+) ([]byte, error) {
+	runner, err := docsGitRunner(r.gitBase)
 	if err != nil {
 		return nil, err
 	}
@@ -170,10 +175,10 @@ func (r *Registry) GitStatus(ctx context.Context, folderID string) (GitStatusRes
 	if !isGitRepo(v.Path) {
 		return GitStatusResponse{IsRepo: false, Entries: []GitStatusEntry{}}, nil
 	}
-	if err := assertWorktreeAttributesSafe(ctx, v.Path); err != nil {
+	if err := r.assertWorktreeAttributesSafe(ctx, v.Path); err != nil {
 		return GitStatusResponse{}, err
 	}
-	entries, err := runGitStatus(ctx, v.Path)
+	entries, err := r.runGitStatus(ctx, v.Path)
 	if err != nil {
 		return GitStatusResponse{}, err
 	}
@@ -185,8 +190,8 @@ func isGitRepo(root string) bool {
 	return err == nil
 }
 
-func runGitStatus(ctx context.Context, root string) ([]GitStatusEntry, error) {
-	out, err := runDocsGit(ctx, root, nil,
+func (r *Registry) runGitStatus(ctx context.Context, root string) ([]GitStatusEntry, error) {
+	out, err := r.runGit(ctx, root, nil,
 		"-c", "color.status=false",
 		"status", "--porcelain=v1", "-z",
 		"--untracked-files=all",

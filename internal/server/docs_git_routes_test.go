@@ -14,11 +14,11 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	gitenv "go.kenn.io/kit/git/env"
+	gitcmd "go.kenn.io/kit/git/cmd"
 	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/docs"
-	"go.kenn.io/middleman/internal/procutil"
 	"go.kenn.io/middleman/internal/server/httpapi"
+	"go.kenn.io/middleman/internal/testutil/gitsafe"
 )
 
 type docsGitRepo struct {
@@ -28,7 +28,7 @@ type docsGitRepo struct {
 
 func newDocsGitRepo(t *testing.T, upstream bool) docsGitRepo {
 	t.Helper()
-	if err := procutil.Command("git", "--version").Run(); err != nil {
+	if _, err := gitcmd.New().Output(t.Context(), "", "--version"); err != nil {
 		t.Skip("git binary unavailable")
 	}
 	dir := t.TempDir()
@@ -52,36 +52,9 @@ func newDocsGitRepo(t *testing.T, upstream bool) docsGitRepo {
 
 func runDocsGit(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	cmd := procutil.Command("git", args...)
-	cmd.Dir = dir
-	cmd.Env = cleanDocsGitEnv(os.Environ())
-	out, err := cmd.CombinedOutput()
-	require.NoError(t, err, "git %v: %s", args, string(out))
+	out, stderr, err := gitcmd.New().Run(t.Context(), dir, nil, args...)
+	require.NoError(t, err, "git %v: %s", args, string(stderr))
 	return string(out)
-}
-
-func cleanDocsGitEnv(env []string) []string {
-	return gitenv.StripAll(env)
-}
-
-func TestDocsGitFixtureDoesNotLeakIntoInheritedGitConfig(t *testing.T) {
-	require := require.New(t)
-
-	host := t.TempDir()
-	runDocsGit(t, host, "init", "-q", "-b", "main")
-	hostConfig := filepath.Join(host, ".git", "config")
-	before, err := os.ReadFile(hostConfig)
-	require.NoError(err)
-
-	t.Setenv("GIT_CONFIG", hostConfig)
-	t.Setenv("GIT_DIR", filepath.Join(host, ".git"))
-	t.Setenv("GIT_WORK_TREE", host)
-
-	_ = newDocsGitRepo(t, false)
-
-	after, err := os.ReadFile(hostConfig)
-	require.NoError(err)
-	require.Equal(string(before), string(after))
 }
 
 func (g docsGitRepo) write(t *testing.T, rel, body string) {
@@ -96,7 +69,8 @@ func setupDocsGitRouteServer(t *testing.T, root string) *Server {
 	cfg := &config.Config{
 		DocFolders: []config.DocFolder{{ID: "f", Name: "F", Path: root}},
 	}
-	srv := New(openTestDB(t), nil, nil, "/", cfg, ServerOptions{})
+	registry := docs.NewRegistry(cfg.DocFolders, docs.WithGitRunner(gitsafe.Runner()))
+	srv := New(openTestDB(t), nil, nil, "/", cfg, ServerOptions{DocsRegistry: registry})
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	return srv
 }
@@ -473,10 +447,9 @@ func TestDocsGitPublishEndpointProblemMappings(t *testing.T) {
 				runDocsGit(t, repo.dir, "checkout", "main")
 				repo.write(t, "seed.md", "main version\n")
 				runDocsGit(t, repo.dir, "commit", "-am", "main")
-				cmd := procutil.Command("git", "merge", "side")
-				cmd.Dir = repo.dir
-				cmd.Env = cleanDocsGitEnv(os.Environ())
-				out, mergeErr := cmd.CombinedOutput()
+				out, _, mergeErr := gitcmd.New().Run(
+					t.Context(), repo.dir, nil, "merge", "side",
+				)
 				require.Error(t, mergeErr, "expected merge conflict, got clean merge: %s", out)
 				return setupDocsGitRouteServer(t, repo.dir)
 			},
@@ -534,12 +507,14 @@ func TestDocsGitPublishEndpointRejectsConcurrentInFlightPublish(t *testing.T) {
 	require := require.New(t)
 	repo := newDocsGitRepo(t, true)
 	repo.write(t, "blocked.md", "# blocked\n")
-	srv := New(openTestDB(t), nil, nil, "/", &config.Config{
+	cfg := &config.Config{
 		DocFolders: []config.DocFolder{
 			{ID: "f", Name: "F", Path: repo.dir},
 			{ID: "alias", Name: "Alias", Path: repo.dir},
 		},
-	}, ServerOptions{})
+	}
+	registry := docs.NewRegistry(cfg.DocFolders, docs.WithGitRunner(gitsafe.Runner()))
+	srv := New(openTestDB(t), nil, nil, "/", cfg, ServerOptions{DocsRegistry: registry})
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 
 	// The publish safety gate forbids command-bearing config, so hold the

@@ -27,6 +27,7 @@ import (
 	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/configwatch"
 	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/middleman/internal/docs"
 	"go.kenn.io/middleman/internal/gitclone"
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/platform"
@@ -81,6 +82,7 @@ type ServerOptions struct {
 	Telemetry                          telemetry.Client
 	TokenSources                       *tokenauth.SourceSet
 	Archive                            archive.Controller
+	DocsRegistry                       *docs.Registry
 	// TerminalClipboard overrides native clipboard integration in tests.
 	TerminalClipboard systemclipboard.Writer
 	// HostCheck overrides the Host validation middleware options.
@@ -782,7 +784,8 @@ func newServer(
 		workspaceNow = options.WorkspaceNow
 	}
 	s.docsAPI = docsapi.New(docsapi.Deps{
-		Config: cfg,
+		Config:   cfg,
+		Registry: options.DocsRegistry,
 		BeginConfigMutation: func() func() {
 			s.configReloadMu.Lock()
 			return s.configReloadMu.Unlock

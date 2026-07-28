@@ -12,10 +12,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	gitcmd "go.kenn.io/kit/git/cmd"
-	"go.kenn.io/kit/git/env"
 	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/procutil"
+	"go.kenn.io/middleman/internal/testutil/gitsafe"
 )
 
 type gitRepo struct {
@@ -27,7 +26,6 @@ type gitRepo struct {
 
 func newGitRepo(t *testing.T) *gitRepo {
 	t.Helper()
-	useIsolatedGitEnv(t)
 	if err := procutil.Command("git", "--version").Run(); err != nil {
 		t.Skip("git binary unavailable")
 	}
@@ -44,13 +42,12 @@ func newGitRepo(t *testing.T) *gitRepo {
 	runGit(t, dir, "push", "-u", "origin", "main")
 	reg := NewRegistry([]config.DocFolder{
 		{ID: "f", Name: "F", Path: dir},
-	})
+	}, WithGitRunner(gitsafe.Runner()))
 	return &gitRepo{dir: dir, remote: remote, registry: reg, folderID: "f"}
 }
 
 func newGitRepoNoUpstream(t *testing.T) *gitRepo {
 	t.Helper()
-	useIsolatedGitEnv(t)
 	if err := procutil.Command("git", "--version").Run(); err != nil {
 		t.Skip("git binary unavailable")
 	}
@@ -63,7 +60,7 @@ func newGitRepoNoUpstream(t *testing.T) *gitRepo {
 	runGit(t, dir, "commit", "-m", "seed")
 	reg := NewRegistry([]config.DocFolder{
 		{ID: "f", Name: "F", Path: dir},
-	})
+	}, WithGitRunner(gitsafe.Runner()))
 	return &gitRepo{dir: dir, registry: reg, folderID: "f"}
 }
 
@@ -84,42 +81,9 @@ func runGit(t *testing.T, dir string, args ...string) string {
 	t.Helper()
 	cmd := procutil.Command("git", args...)
 	cmd.Dir = dir
-	cmd.Env = fixtureGitEnv
 	out, err := cmd.CombinedOutput()
 	require.NoError(t, err, "git %s: %s", strings.Join(args, " "), string(out))
 	return string(out)
-}
-
-// fixtureGitEnv is the environment for git commands run directly by test
-// fixtures (repo setup, out-of-band asserts). useIsolatedGitEnv replaces it
-// alongside the production runner so fixtures and code under test share the
-// same isolated global/system config.
-var fixtureGitEnv = append(gitenv.StripAll(os.Environ()), "GIT_CONFIG_NOSYSTEM=1")
-
-func useIsolatedGitEnv(t *testing.T) {
-	t.Helper()
-	oldBase := docsGitBase
-	oldFixture := fixtureGitEnv
-	home := t.TempDir()
-	xdgConfig := t.TempDir()
-	env := append(gitenv.StripAll(os.Environ()),
-		"HOME="+home,
-		"XDG_CONFIG_HOME="+xdgConfig,
-	)
-	docsGitBase = gitcmd.Runner{
-		Env:              env,
-		StripEnv:         true,
-		NullGlobalConfig: true,
-		NoSystemConfig:   true,
-	}
-	fixtureGitEnv = append(append([]string(nil), env...),
-		"GIT_CONFIG_NOSYSTEM=1",
-		"GIT_CONFIG_GLOBAL="+filepath.Join(home, ".gitconfig"),
-	)
-	t.Cleanup(func() {
-		docsGitBase = oldBase
-		fixtureGitEnv = oldFixture
-	})
 }
 
 func gitOutput(t *testing.T, dir string, args ...string) string {
@@ -131,7 +95,10 @@ func TestIntegrationGitChangesNotARepo(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	dir := t.TempDir()
-	reg := NewRegistry([]config.DocFolder{{ID: "f", Name: "F", Path: dir}})
+	reg := NewRegistry(
+		[]config.DocFolder{{ID: "f", Name: "F", Path: dir}},
+		WithGitRunner(gitsafe.Runner()),
+	)
 
 	res, err := reg.GitChanges(context.Background(), "f")
 
@@ -289,7 +256,6 @@ func TestIntegrationGitPublishRefusesConflict(t *testing.T) {
 	runGit(t, g.dir, "commit", "-am", "main")
 	cmd := procutil.Command("git", "merge", "side")
 	cmd.Dir = g.dir
-	cmd.Env = fixtureGitEnv
 	out, mergeErr := cmd.CombinedOutput()
 	require.Error(t, mergeErr, "expected merge conflict, got clean merge: %s", out)
 
@@ -605,12 +571,23 @@ func TestIntegrationGitPublishGatesAttributesBeforeStatusRunsFilter(t *testing.T
 	assert := assert.New(t)
 	require := require.New(t)
 	g := newGitRepo(t)
+	runner := gitsafe.MutableRunner(t)
+	g.registry = NewRegistry(
+		[]config.DocFolder{{ID: g.folderID, Name: "F", Path: g.dir}},
+		WithGitRunner(runner),
+	)
 	marker := filepath.Join(t.TempDir(), "filter-ran")
 	// Simulate a globally-installed clean filter, as git-lfs would be on a
 	// victim's machine. The repo only chooses to route paths through it.
-	runGit(t, g.dir, "config", "--global", "filter.evil.clean",
-		"sh -c 'echo ran > \""+marker+"\"; cat'")
-	runGit(t, g.dir, "config", "--global", "filter.evil.smudge", "cat")
+	_, stderr, err := runner.Run(
+		t.Context(), g.dir, nil, "config", "--global", "filter.evil.clean",
+		"sh -c 'echo ran > \""+marker+"\"; cat'",
+	)
+	require.NoError(err, string(stderr))
+	_, stderr, err = runner.Run(
+		t.Context(), g.dir, nil, "config", "--global", "filter.evil.smudge", "cat",
+	)
+	require.NoError(err, string(stderr))
 	// Attacker-controlled repo attributes opt markdown into that filter.
 	g.writeFile(t, ".gitattributes", "*.md filter=evil\n")
 	// Modify a tracked markdown to the same byte length as the committed
@@ -620,7 +597,7 @@ func TestIntegrationGitPublishGatesAttributesBeforeStatusRunsFilter(t *testing.T
 	old := time.Unix(1_000_000_000, 0)
 	require.NoError(os.Chtimes(filepath.Join(g.dir, "seed.md"), old, old))
 
-	_, err := g.registry.GitPublish(context.Background(), g.folderID, "docs: x")
+	_, err = g.registry.GitPublish(context.Background(), g.folderID, "docs: x")
 
 	var unsafe *UnsafeGitConfigError
 	require.ErrorAs(err, &unsafe)

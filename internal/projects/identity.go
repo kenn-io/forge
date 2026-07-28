@@ -41,6 +41,17 @@ func ResolveIdentityFromPathWithKnownPlatforms(
 	path string,
 	known []KnownPlatformHost,
 ) (*db.PlatformIdentity, error) {
+	return resolveIdentityFromPathWithGitEnv(
+		ctx, path, known, gitenv.StripAll(os.Environ()),
+	)
+}
+
+func resolveIdentityFromPathWithGitEnv(
+	ctx context.Context,
+	path string,
+	known []KnownPlatformHost,
+	gitEnv []string,
+) (*db.PlatformIdentity, error) {
 	if strings.TrimSpace(path) == "" {
 		return nil, fmt.Errorf("path is required")
 	}
@@ -50,7 +61,7 @@ func ResolveIdentityFromPathWithKnownPlatforms(
 	}
 	cmd := procutil.CommandContext(ctx, "git", "remote", "get-url", "origin")
 	cmd.Dir = abs
-	cmd.Env = gitenv.StripAll(os.Environ())
+	cmd.Env = gitEnv
 	out, err := cmd.Output()
 	if err != nil {
 		var exitErr *exec.ExitError

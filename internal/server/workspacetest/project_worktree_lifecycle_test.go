@@ -14,17 +14,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	Require "github.com/stretchr/testify/require"
 
-	gitenv "go.kenn.io/kit/git/env"
-	"go.kenn.io/middleman/internal/procutil"
+	"go.kenn.io/middleman/internal/testutil/gitsafe"
 )
 
 func lifecycleRouteGit(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	cmd := procutil.Command("git", args...)
-	cmd.Dir = dir
-	cmd.Env = gitenv.StripAll(os.Environ())
-	out, err := cmd.CombinedOutput()
-	Require.NoError(t, err, "git %v: %s", args, out)
+	out, stderr, err := gitsafe.Runner().Run(t.Context(), dir, nil, args...)
+	Require.NoError(t, err, "git %v: %s", args, stderr)
 	return strings.TrimSpace(string(out))
 }
 
@@ -242,11 +238,11 @@ func TestWorktreeDeleteFromDiskRoute(t *testing.T) {
 
 	_, statErr := os.Stat(created.Path)
 	assert.True(os.IsNotExist(statErr))
-	cmd := procutil.Command(
-		"git", "show-ref", "--verify", "--quiet", "refs/heads/feature")
-	cmd.Dir = repo
-	cmd.Env = gitenv.StripAll(os.Environ())
-	require.Error(cmd.Run(), "branch deleted with remove_branch")
+	_, err := gitsafe.Runner().Output(
+		t.Context(), repo,
+		"show-ref", "--verify", "--quiet", "refs/heads/feature",
+	)
+	require.Error(err, "branch deleted with remove_branch")
 	rows := listWorktreeRows(t, ts, projectID)
 	require.Len(rows, 1, "only the root checkout row remains")
 	assert.Nil(worktreeRowByBranch(rows, "feature"),

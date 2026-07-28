@@ -65,7 +65,7 @@ func (r *Registry) GitPull(ctx context.Context, folderID string) (PullResponse, 
 	if !isGitRepo(v.Path) {
 		return PullResponse{}, ErrNotAGitRepo
 	}
-	branch, err := currentBranch(ctx, v.Path)
+	branch, err := r.currentBranch(ctx, v.Path)
 	if err != nil {
 		return PullResponse{}, err
 	}
@@ -73,11 +73,11 @@ func (r *Registry) GitPull(ctx context.Context, folderID string) (PullResponse, 
 		Branch:           branch,
 		SuggestedCommand: fmt.Sprintf("git branch --set-upstream-to=origin/%s %s", branch, branch),
 	}
-	upstream, err := currentUpstream(ctx, v.Path, branch)
+	upstream, err := r.currentUpstream(ctx, v.Path, branch)
 	if err != nil || upstream == "" {
 		return PullResponse{}, noUpstream
 	}
-	remote, mergeRef, err := currentUpstreamPushTarget(ctx, v.Path, branch)
+	remote, mergeRef, err := r.currentUpstreamPushTarget(ctx, v.Path, branch)
 	if err != nil || remote == "" || mergeRef == "" {
 		return PullResponse{}, noUpstream
 	}
@@ -85,19 +85,19 @@ func (r *Registry) GitPull(ctx context.Context, folderID string) (PullResponse, 
 	// opportunistically writes refs/remotes/<remote>/<branch> whenever the
 	// command-line ref matches the configured fetch refspec, so origin/main
 	// does not go stale after this fetch (asserted in the integration test).
-	if _, err := runDocsGit(ctx, v.Path, nil, "fetch", remote, mergeRef); err != nil {
+	if _, err := r.runGit(ctx, v.Path, nil, "fetch", remote, mergeRef); err != nil {
 		return PullResponse{}, &PullFailedError{Stderr: gitStderr(err)}
 	}
-	head, err := revParse(ctx, v.Path, "HEAD")
+	head, err := r.revParse(ctx, v.Path, "HEAD")
 	if err != nil {
 		return PullResponse{}, err
 	}
-	fetchHead, err := revParse(ctx, v.Path, "FETCH_HEAD")
+	fetchHead, err := r.revParse(ctx, v.Path, "FETCH_HEAD")
 	if err != nil {
 		return PullResponse{}, err
 	}
 	res := PullResponse{Branch: branch, Upstream: upstream}
-	upToDate, err := isAncestor(ctx, v.Path, fetchHead, head)
+	upToDate, err := r.isAncestor(ctx, v.Path, fetchHead, head)
 	if err != nil {
 		return PullResponse{}, err
 	}
@@ -107,14 +107,14 @@ func (r *Registry) GitPull(ctx context.Context, folderID string) (PullResponse, 
 		res.ShortCommit = head[:7]
 		return res, nil
 	}
-	canFastForward, err := isAncestor(ctx, v.Path, head, fetchHead)
+	canFastForward, err := r.isAncestor(ctx, v.Path, head, fetchHead)
 	if err != nil {
 		return PullResponse{}, err
 	}
 	if !canFastForward {
 		return PullResponse{}, ErrDiverged
 	}
-	if _, err := runDocsGit(ctx, v.Path, nil, "merge", "--ff-only", "FETCH_HEAD"); err != nil {
+	if _, err := r.runGit(ctx, v.Path, nil, "merge", "--ff-only", "FETCH_HEAD"); err != nil {
 		return PullResponse{}, &PullFailedError{Stderr: gitStderr(err)}
 	}
 	res.Commit = fetchHead
@@ -122,8 +122,8 @@ func (r *Registry) GitPull(ctx context.Context, folderID string) (PullResponse, 
 	return res, nil
 }
 
-func revParse(ctx context.Context, root, rev string) (string, error) {
-	out, err := runDocsGit(ctx, root, nil, "rev-parse", rev)
+func (r *Registry) revParse(ctx context.Context, root, rev string) (string, error) {
+	out, err := r.runGit(ctx, root, nil, "rev-parse", rev)
 	if err != nil {
 		return "", fmt.Errorf("git rev-parse %s: %w", rev, err)
 	}
@@ -133,8 +133,8 @@ func revParse(ctx context.Context, root, rev string) (string, error) {
 // isAncestor reports whether ancestor is reachable from descendant. git
 // merge-base --is-ancestor signals its answer through the exit code: 0 for
 // yes, 1 for no, anything else is a real failure.
-func isAncestor(ctx context.Context, root, ancestor, descendant string) (bool, error) {
-	_, err := runDocsGit(ctx, root, nil, "merge-base", "--is-ancestor", ancestor, descendant)
+func (r *Registry) isAncestor(ctx context.Context, root, ancestor, descendant string) (bool, error) {
+	_, err := r.runGit(ctx, root, nil, "merge-base", "--is-ancestor", ancestor, descendant)
 	if err == nil {
 		return true, nil
 	}

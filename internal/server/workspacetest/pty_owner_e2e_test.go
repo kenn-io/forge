@@ -25,6 +25,7 @@ import (
 	"go.kenn.io/middleman/internal/procutil"
 	"go.kenn.io/middleman/internal/ptyowner"
 	"go.kenn.io/middleman/internal/server"
+	"go.kenn.io/middleman/internal/testutil/gitsafe"
 	"go.kenn.io/middleman/internal/testutil/processjob"
 	"go.kenn.io/middleman/internal/workspace"
 	"go.kenn.io/middleman/internal/workspace/localruntime"
@@ -47,7 +48,7 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "contain workspace test process tree: %v\n", err)
 		os.Exit(1)
 	}
-	os.Exit(m.Run())
+	os.Exit(gitsafe.RunIsolatedMain(m))
 }
 
 func TestWorkspaceCreatesRustPtyManagerSessionE2E(t *testing.T) {

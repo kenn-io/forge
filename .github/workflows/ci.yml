@@ -331,6 +331,9 @@ jobs:
           New-Item -ItemType Directory -Force internal/web/dist | Out-Null
           Set-Content -Path internal/web/dist/stub.html -Value ok
 
+      - name: Run Windows process cleanup tests
+        run: go test ./internal/testutil/processjob -shuffle=on
+
       - name: Run Go PTY owner tests
         run: go test ./internal/ptyowner/... -shuffle=on
 

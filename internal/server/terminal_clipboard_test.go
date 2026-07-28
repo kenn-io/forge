@@ -12,6 +12,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"go.kenn.io/middleman/internal/config"
 )
 
 type recordingTerminalClipboard struct {
@@ -84,6 +86,34 @@ func TestTerminalClipboardWriteRequiresLoopbackAndCSRF(t *testing.T) {
 			assert.Equal(t, tt.wantTexts, clipboard.texts)
 		})
 	}
+}
+
+func TestTerminalClipboardWriteRejectsTrustedReverseProxy(t *testing.T) {
+	clipboard := &recordingTerminalClipboard{}
+	srv := New(
+		openTestDB(t), nil, nil, "/", nil,
+		ServerOptions{
+			TerminalClipboard: clipboard,
+			HostCheck: HostCheckOptions{
+				Bind:              config.HostKey{Host: "127.0.0.1", Port: "8091"},
+				Allowed:           []config.HostKey{{Host: "middleman.example"}},
+				TrustReverseProxy: true,
+			},
+		},
+	)
+	body := strings.NewReader(`{"text":"proxied copy"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/terminal/clipboard", body)
+	req.Host = "127.0.0.1:8091"
+	req.RemoteAddr = "127.0.0.1:54321"
+	req.Header.Set("X-Forwarded-Host", "middleman.example")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	rr := httptest.NewRecorder()
+
+	srv.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusForbidden, rr.Code, rr.Body.String())
+	assert.Empty(t, clipboard.texts)
 }
 
 func TestTerminalClipboardWriteRejectsOversizedText(t *testing.T) {

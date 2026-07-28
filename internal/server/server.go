@@ -1276,7 +1276,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			slog.Debug("http request completed", args...)
 		}
 	}()
-	if !checkHost(w, r, *s.hostOpts.Load()) {
+	hostOpts := *s.hostOpts.Load()
+	if !checkHost(w, r, hostOpts) {
 		return
 	}
 	if !s.checkHost(w, r) {
@@ -1304,7 +1305,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if s.isTerminalClipboardAPIRequest(r) &&
-			!isLoopbackRemoteAddr(r.RemoteAddr) {
+			(!isLoopbackRemoteAddr(r.RemoteAddr) || hostOpts.TrustReverseProxy) {
 			writeProblemResponse(w, httpapi.NewProblem(
 				http.StatusForbidden,
 				httpapi.CodeForbidden,

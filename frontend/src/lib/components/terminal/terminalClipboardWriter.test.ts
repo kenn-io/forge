@@ -107,6 +107,20 @@ describe("terminal clipboard writer", () => {
     expect(writeLocalText).not.toHaveBeenCalled();
   });
 
+  it("revokes keyboard authorization created inside a canceled pointer gesture", async () => {
+    const { port, writeLocalText, writeText } = createPort();
+    const writer = createTerminalClipboardWriter(port);
+
+    writer.beginPointerGesture();
+    await expect(writer.write("pointer write")).resolves.toBe("written");
+    writer.authorizeKeyboardGesture();
+    writer.cancelPointerGesture();
+
+    await expect(writer.write("late write")).resolves.toBe("unauthorized");
+    expect(writeText).not.toHaveBeenCalled();
+    expect(writeLocalText).not.toHaveBeenCalled();
+  });
+
   it("revokes a pointer authorization when its watchdog expires", async () => {
     vi.useFakeTimers();
     const { port, deferredWrites, writeLocalText, writeText } = createPort();

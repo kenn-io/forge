@@ -83,6 +83,19 @@ describe("OSC 52 output filter", () => {
   });
 
   it.each([
+    { name: "7-bit", introducer: [0x1b, 0x5d] },
+    { name: "C1", introducer: [0x9d] },
+  ])("filters leading-zero OSC 52 with the $name introducer", ({ introducer }) => {
+    const onOsc52 = vi.fn();
+    const filter = createOsc52OutputFilter(onOsc52);
+
+    const output = filter.write(Uint8Array.from([...introducer, ...bytes("052;c;Y29waWVk\x07visible")]));
+
+    expect(text(output)).toBe(`${CAN}visible`);
+    expect(onOsc52).toHaveBeenCalledWith("c;Y29waWVk");
+  });
+
+  it.each([
     { name: "5", prefix: "\x1b]5", suffix: "2;c;b3V0ZXI=\x07" },
     { name: "52", prefix: "\x1b]52", suffix: ";c;b3V0ZXI=\x07" },
     { name: "ESC", prefix: "\x1b", suffix: "]52;c;b3V0ZXI=\x07" },

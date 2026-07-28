@@ -103,12 +103,14 @@ stale tabs.
 - Treat terminal processes as native-terminal-equivalent, but accept bounded, write-only OSC 52 writes only after one
   recent one-shot trusted DOM gesture; terminal data callbacks are not input provenance, and browser denial falls back
   through CSRF-protected loopback (`frontend/src/lib/components/terminal/GhosttyTerminalPane.svelte::handleTerminalKeyDown`).
-- Pointer clipboard authority must use capture and remain revocable through release grace on capture, focus, or
-  visibility loss; a bounded watchdog prevents a missing release from leaving authorization active
+- Pointer clipboard authority and keyboard authority created during it must remain timed and revocable through release
+  grace on capture, focus, or visibility loss; a watchdog bounds missing releases
   (`frontend/src/lib/components/terminal/terminalClipboardWriter.ts::createTerminalClipboardWriter`).
-- OSC 52 filtering must restart at nested 7-bit or C1 introducers and replace removed sequences with a parser-cancel
-  boundary; empty removal can splice preserved prefixes and suffixes into an unfiltered clipboard command
+- OSC 52 filtering must recognize numeric equivalents, restart at nested 7-bit or C1 introducers, and replace removed
+  sequences with a parser-cancel boundary; empty removal can splice an unfiltered clipboard command
   (`frontend/src/lib/components/terminal/osc52OutputFilter.ts::createOsc52OutputFilter`).
+- Host clipboard writes are direct-loopback only and must be rejected when reverse-proxy trust is active; a proxy's
+  loopback `RemoteAddr` does not establish browser locality (`internal/server/server.go::Server.ServeHTTP`).
 - During active tmux SGR drags outside xterm bounds, add only clamped edge wheel, drag, and release reports; forward
   all other mouse reports unchanged, and never retain unsent drag state across a WebSocket boundary
   (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::connect`).

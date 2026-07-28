@@ -18,6 +18,7 @@ const C1_OSC = 0x9d;
 const C1_ST = 0x9c;
 const BACKSLASH = 0x5c;
 const SEMICOLON = 0x3b;
+const MAX_COMMAND_DIGITS = 32;
 const DEFAULT_MAX_DATA_BYTES = 2 + Math.ceil(MAX_OSC52_CLIPBOARD_BYTES / 3) * 4;
 
 export function createOsc52OutputFilter(
@@ -98,7 +99,8 @@ export function createOsc52OutputFilter(
               candidate = [byte];
               command = [];
             } else if (byte === SEMICOLON) {
-              if (command.length === 2 && command[0] === 0x35 && command[1] === 0x32) {
+              const significantCommand = command.slice(command.findIndex((digit) => digit !== 0x30));
+              if (significantCommand.length === 2 && significantCommand[0] === 0x35 && significantCommand[1] === 0x32) {
                 output.push(CAN);
                 candidate = [];
                 command = [];
@@ -114,13 +116,19 @@ export function createOsc52OutputFilter(
               command = [];
               state = "normal";
             } else {
-              candidate.push(byte);
-              command.push(byte);
-              if (
-                command.length > 2 ||
-                (command.length === 1 && command[0] !== 0x35) ||
-                (command.length === 2 && command[1] !== 0x32)
-              ) {
+              if (byte >= 0x30 && byte <= 0x39) {
+                candidate.push(byte);
+                command.push(byte);
+                if (command.length > MAX_COMMAND_DIGITS) {
+                  output.push(CAN);
+                  candidate = [];
+                  command = [];
+                  osc52Data = [];
+                  discardOsc52 = true;
+                  state = "osc52";
+                }
+              } else {
+                candidate.push(byte);
                 rejectCandidate(output);
               }
             }

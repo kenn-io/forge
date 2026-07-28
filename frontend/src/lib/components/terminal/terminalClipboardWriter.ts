@@ -166,8 +166,8 @@ export function createTerminalClipboardWriter(port: TerminalClipboardPort): Term
     authorizeKeyboardGesture() {
       if (disposed) return;
       arm();
-      if (!pointerGestureActive && pending) {
-        pointerAuthorizationPending = false;
+      if (pending) {
+        pointerAuthorizationPending = pointerGestureActive;
         scheduleExpiration(KEYBOARD_AUTHORIZATION_MS);
       }
     },

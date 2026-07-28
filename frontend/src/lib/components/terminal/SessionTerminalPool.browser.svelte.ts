@@ -22,7 +22,6 @@ const shell = sessionHostKey("ws-1", undefined, "shell", "2026-04-29T00:00:00Z")
 
 const settingsStore = {
   getTerminalSettings: () => DEFAULT_TERMINAL_SETTINGS,
-  getTerminalRenderer: () => DEFAULT_TERMINAL_SETTINGS.renderer,
   getTerminalFontFamily: () => DEFAULT_TERMINAL_SETTINGS.font_family,
   getTerminalFontSize: () => DEFAULT_TERMINAL_SETTINGS.font_size,
   getTerminalScrollback: () => DEFAULT_TERMINAL_SETTINGS.scrollback,

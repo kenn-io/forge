@@ -2602,7 +2602,7 @@ describe("WorkspaceTerminalView", () => {
     await waitFor(() => expect(hostedWorkspaceControls()).toBeNull());
   });
 
-  it("renders a sole embedded session without workspace, workflow, or dock chrome", async () => {
+  it("renders a sole embedded session without workspace or workflow chrome, but keeps its dock", async () => {
     claimForPrs();
 
     render(WorkspaceTerminalView, {
@@ -2615,7 +2615,13 @@ describe("WorkspaceTerminalView", () => {
     await waitFor(() => expect(activeHostedSession("prs")?.label).toBe("Helper"));
     expect(document.querySelector(".header-bar")).toBeNull();
     expect(screen.queryByRole("tablist", { name: "Workflow group tabs" })).toBeNull();
-    expect(screen.queryByRole("region", { name: "Terminal panel" })).toBeNull();
+
+    // The header bar and the one-tab strip only restated what the pane's own tab
+    // already said. The dock is not chrome: collapsed to a row it is the only route
+    // to a shell beside the agent, and without it a one-session workspace is a dead
+    // end -- the user cannot get a second terminal at all.
+    expect(screen.getByRole("region", { name: "Terminal panel" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Open terminal panel" })).toBeTruthy();
   });
 
   it("keeps the workflow strip for two embedded sessions", async () => {
@@ -3505,6 +3511,10 @@ describe("WorkspaceTerminalView", () => {
         expect(getInlineWorkspaceController("prs").promotableSessions()).toEqual([{ paneKey, label: "Shell" }]),
       );
       expect(screen.queryByRole("button", { name: "Move Shell to a pane" })).toBeNull();
+      // The dock stays on screen in a chrome-free pane, except here: the sole session
+      // IS the dock's, so the stage is already showing it. A dock underneath would
+      // aim a second slot at the same registry key, and one terminal host cannot be
+      // in two places at once.
       expect(screen.queryByRole("region", { name: "Terminal panel" })).toBeNull();
     });
 

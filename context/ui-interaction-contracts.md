@@ -312,13 +312,18 @@ Keyboard handlers must have one clear owner for each key press.
   their own `visible` back, and the generation-carrying registry key stays in
   `frontend/` (`frontend/src/lib/stores/workspace-host.svelte.ts`).
 - A workspace pane holding exactly ONE session renders no chrome of its own: no
-  header bar, no one-tab workflow strip, no dock bar. The pane's own tab takes that
-  session's name (supplied through `InlineWorkspaceController`, since only the
-  frontend knows the sessions), and its reopen strip follows. Two sessions, none, or
-  a promoted sole session bring the chrome and the "Workspace" label back. A
-  flattened surface keeps the chrome: it suppresses per-leaf strips, so the toolbar
-  is the only thing left to carry the controls
+  header bar, no one-tab workflow strip. The pane's own tab takes that session's name
+  (supplied through `InlineWorkspaceController`, since only the frontend knows the
+  sessions), and its reopen strip follows. Two sessions, none, or a promoted sole
+  session bring the chrome and the "Workspace" label back. A flattened surface keeps
+  the chrome: it suppresses per-leaf strips, so the toolbar is the only thing left to
+  carry the controls
   (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::soleEmbeddedSession`).
+- The bottom dock is NOT part of that chrome and stays, collapsed to its row, in a
+  chrome-free pane: it is the only route to a second session, so dropping it made a
+  one-session workspace a dead end. The one exception is a sole session that lives in
+  the dock itself -- the stage is already showing it, and a dock underneath would aim
+  a second slot at the same terminal host.
 - A detail pane NEVER shows the workspace's own header bar (name, branch, Expand and
   Collapse Terminal, Delete). The pane's tab strip already names the workspace and
   carries its controls. A flattened surface keeps the chrome, since it has no

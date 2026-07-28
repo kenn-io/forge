@@ -570,6 +570,18 @@
     soleEmbeddedSession === null ? null : sessionHostKeyFor(soleEmbeddedSession),
   );
 
+  /**
+   * Whether the one session filling a chrome-free pane is the dock's own.
+   *
+   * The dock otherwise stays on screen in a chrome-free pane, but a docked sole
+   * session is already what the stage is showing - rendering the dock under it would
+   * point a second slot at the same registry key, and one terminal host cannot be in
+   * two places at once.
+   */
+  const soleEmbeddedSessionIsDocked = $derived(
+    soleEmbeddedSession !== null && sessionRegion(soleEmbeddedSession) === "terminal",
+  );
+
   // The two directions of the cross-tree drag: a session tab carries its pane key
   // out, and a promoted pane's key resolves back to the tab it belongs to. Both
   // reject anything that is not a live session of THIS workspace on this host — a
@@ -3831,7 +3843,12 @@
                   {/if}
                 {/if}
               </div>
-              {#if terminalLayout.dock === "bottom" && soleEmbeddedSession === null}
+              <!-- Kept even in a chrome-free pane. The header bar and the one-tab
+                   workflow strip are chrome that only restated what the pane's own tab
+                   already said, but the dock is a surface: it is the only route to a
+                   second session, and a workspace running one agent with no way to
+                   open a shell beside it is a dead end, not a simplification. -->
+              {#if terminalLayout.dock === "bottom" && !soleEmbeddedSessionIsDocked}
                 <DockedTerminalPanel
                   {workspaceId}
                   {workspaceHostKey}

@@ -24,7 +24,7 @@ import (
 	"syscall"
 	"time"
 
-	gh "github.com/google/go-github/v88/github"
+	gh "github.com/google/go-github/v89/github"
 	gitcmd "go.kenn.io/kit/git/cmd"
 	oteltelemetry "go.kenn.io/kit/telemetry"
 	"go.kenn.io/middleman/internal/config"

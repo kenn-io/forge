@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	gh "github.com/google/go-github/v88/github"
+	gh "github.com/google/go-github/v89/github"
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/middleman/internal/db"

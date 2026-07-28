@@ -18,7 +18,7 @@ import (
 	"testing"
 	"time"
 
-	gh "github.com/google/go-github/v88/github"
+	gh "github.com/google/go-github/v89/github"
 	"github.com/shurcooL/githubv4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -3972,14 +3972,12 @@ func TestSyncRepoOverviewPreservesTimelineWhenCloneUnavailable(t *testing.T) {
 	})
 	require.NoError(err)
 
-	tagName := "v1.0.0"
 	releaseName := "Version 1.0.0"
-	releaseURL := "https://github.com/owner/repo/releases/tag/v1.0.0"
 	client := &mockClient{
 		listReleases: []*gh.RepositoryRelease{{
-			TagName:     &tagName,
+			TagName:     "v1.0.0",
 			Name:        &releaseName,
-			HTMLURL:     &releaseURL,
+			HTMLURL:     "https://github.com/owner/repo/releases/tag/v1.0.0",
 			PublishedAt: &gh.Timestamp{Time: oldPublishedAt},
 		}},
 	}

@@ -13,7 +13,7 @@ import (
 	"slices"
 	"time"
 
-	gh "github.com/google/go-github/v88/github"
+	gh "github.com/google/go-github/v89/github"
 )
 
 // NativeStackHint is the compact stack membership GitHub includes on a pull

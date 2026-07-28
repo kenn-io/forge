@@ -4,7 +4,7 @@ import (
 	"regexp"
 	"strings"
 
-	gh "github.com/google/go-github/v88/github"
+	gh "github.com/google/go-github/v89/github"
 )
 
 // WorkflowApprovalState describes whether workflow approval is needed for a PR.

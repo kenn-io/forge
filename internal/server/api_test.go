@@ -33,7 +33,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/creack/pty/v2"
-	gh "github.com/google/go-github/v88/github"
+	gh "github.com/google/go-github/v89/github"
 	shellquote "github.com/kballard/go-shellquote"
 	"github.com/shurcooL/githubv4"
 	"github.com/stretchr/testify/assert"
@@ -6114,16 +6114,13 @@ func TestAPIListRepoSummariesIncludesSyncedReleaseTimeline(t *testing.T) {
 		t.Helper()
 		name := "Release " + tag
 		url := "https://github.com/acme/widgets/releases/tag/" + tag
-		targetCommitish := "main"
-		prerelease := false
-		draft := false
 		return &gh.RepositoryRelease{
-			TagName:         &tag,
+			TagName:         tag,
 			Name:            &name,
-			HTMLURL:         &url,
-			TargetCommitish: &targetCommitish,
-			Prerelease:      &prerelease,
-			Draft:           &draft,
+			HTMLURL:         url,
+			TargetCommitish: "main",
+			Prerelease:      false,
+			Draft:           false,
 			PublishedAt:     &gh.Timestamp{Time: publishedAt},
 		}
 	}

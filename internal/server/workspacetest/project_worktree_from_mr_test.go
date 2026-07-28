@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	gh "github.com/google/go-github/v88/github"
+	gh "github.com/google/go-github/v89/github"
 	"github.com/stretchr/testify/assert"
 	Require "github.com/stretchr/testify/require"
 	gitenv "go.kenn.io/kit/git/env"

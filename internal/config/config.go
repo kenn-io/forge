@@ -573,6 +573,13 @@ type PullRequests struct {
 	PreferGitHubNativeStacks bool `toml:"prefer_github_native_stacks,omitempty" json:"prefer_github_native_stacks"`
 }
 
+// Workspaces configures behavior shared by PR- and issue-backed workspaces.
+type Workspaces struct {
+	// AutoAssignOnCreate adds the authenticated provider user to the source
+	// PR or issue when middleman creates its workspace.
+	AutoAssignOnCreate bool `toml:"auto_assign_on_create,omitempty" json:"auto_assign_on_create"`
+}
+
 // Issues configures issue-list presentation preferences.
 type Issues struct {
 	HideBots bool `toml:"hide_bots,omitempty" json:"hide_bots"`
@@ -784,6 +791,7 @@ type Config struct {
 	GitHubApps        []GitHubAppConfig        `toml:"github_apps"`
 	Activity          Activity                 `toml:"activity"`
 	PullRequests      PullRequests             `toml:"pull_requests"`
+	Workspaces        Workspaces               `toml:"workspaces"`
 	Issues            Issues                   `toml:"issues"`
 	Notifications     Notifications            `toml:"notifications"`
 	Terminal          Terminal                 `toml:"terminal"`
@@ -2862,6 +2870,7 @@ type configFile struct {
 	DocFolders                []DocFolder              `toml:"doc_folders,omitempty"`
 	Roborev                   Roborev                  `toml:"roborev,omitempty"`
 	PullRequests              PullRequests             `toml:"pull_requests,omitempty"`
+	Workspaces                Workspaces               `toml:"workspaces,omitempty"`
 	Issues                    Issues                   `toml:"issues,omitempty"`
 	Tmux                      Tmux                     `toml:"tmux,omitempty"`
 	Shell                     Shell                    `toml:"shell,omitempty"`
@@ -2898,6 +2907,7 @@ func (c *Config) Save(path string) error {
 		DocFolders:              cfg.DocFolders,
 		Roborev:                 cfg.Roborev,
 		PullRequests:            cfg.PullRequests,
+		Workspaces:              cfg.Workspaces,
 		Issues:                  cfg.Issues,
 		Tmux:                    cfg.Tmux,
 		Shell:                   cfg.Shell,

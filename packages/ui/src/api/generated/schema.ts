@@ -6557,6 +6557,7 @@ export interface components {
             merge_mutation: boolean;
             mutation_head_binding: boolean;
             native_multiline_ranges: boolean;
+            read_authenticated_user: boolean;
             read_ci: boolean;
             read_comments: boolean;
             read_issues: boolean;
@@ -7450,6 +7451,7 @@ export interface components {
             pull_requests: components["schemas"]["PullRequests"];
             repos: components["schemas"]["ConfiguredRepoStatus"][];
             terminal: components["schemas"]["Terminal"];
+            workspaces: components["schemas"]["Workspaces"];
         };
         Snapshot: {
             /**
@@ -7669,6 +7671,7 @@ export interface components {
             modes?: components["schemas"]["ModeVisibility"];
             pull_requests?: components["schemas"]["PullRequests"];
             terminal?: components["schemas"]["Terminal"];
+            workspaces?: components["schemas"]["Workspaces"];
         };
         UserRepository: {
             default_branch?: string;
@@ -7806,6 +7809,9 @@ export interface components {
             readonly $schema?: string;
             launch_targets: components["schemas"]["LaunchTarget"][] | null;
             sessions: components["schemas"]["SessionInfo"][] | null;
+        };
+        Workspaces: {
+            auto_assign_on_create: boolean;
         };
         WorktreeFromMergeRequestResponse: {
             /**

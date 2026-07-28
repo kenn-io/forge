@@ -5046,6 +5046,8 @@ components:
           type: boolean
         native_multiline_ranges:
           type: boolean
+        read_authenticated_user:
+          type: boolean
         read_ci:
           type: boolean
         read_comments:
@@ -5099,6 +5101,7 @@ components:
         - read_ci
         - read_labels
         - read_markdown_images
+        - read_authenticated_user
         - comment_mutation
         - state_mutation
         - merge_mutation
@@ -7028,10 +7031,13 @@ components:
           type: array
         terminal:
           $ref: "#/components/schemas/Terminal"
+        workspaces:
+          $ref: "#/components/schemas/Workspaces"
       required:
         - repos
         - activity
         - pull_requests
+        - workspaces
         - issues
         - notifications
         - terminal
@@ -7522,6 +7528,8 @@ components:
           $ref: "#/components/schemas/PullRequests"
         terminal:
           $ref: "#/components/schemas/Terminal"
+        workspaces:
+          $ref: "#/components/schemas/Workspaces"
       type: object
     UserRepository:
       additionalProperties: false
@@ -7808,6 +7816,14 @@ components:
       required:
         - launch_targets
         - sessions
+      type: object
+    Workspaces:
+      additionalProperties: false
+      properties:
+        auto_assign_on_create:
+          type: boolean
+      required:
+        - auto_assign_on_create
       type: object
     WorktreeFromMergeRequestResponse:
       additionalProperties: false

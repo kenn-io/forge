@@ -35,6 +35,14 @@ export const SETTINGS_PANELS: SettingsPanelMeta[] = [
     keywords: "activity feed defaults filters time range closed bots",
   },
   {
+    id: "settings-workspaces",
+    label: "Workspaces",
+    title: "Workspace creation",
+    group: "Workspace",
+    description: "Behavior when creating workspaces from provider items",
+    keywords: "workspace create pull request issue assign self assignee ownership",
+  },
+  {
     id: "settings-terminal",
     label: "Terminal",
     title: "Workspace terminal",

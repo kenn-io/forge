@@ -275,6 +275,7 @@ func (c *Client) Capabilities() platform.Capabilities {
 		ReadCI:                 true,
 		ReadLabels:             true,
 		ReadMarkdownImages:     true,
+		ReadAuthenticatedUser:  true,
 		CommentMutation:        true,
 		StateMutation:          true,
 		MergeMutation:          true,
@@ -302,6 +303,20 @@ func (c *Client) Capabilities() platform.Capabilities {
 			platform.ReviewActionApprove,
 		},
 	}
+}
+
+func (c *Client) AuthenticatedUser(
+	ctx context.Context,
+	_ platform.RepoRef,
+) (string, error) {
+	user, _, err := c.api.Users.CurrentUser(gitlab.WithContext(ctx))
+	if err != nil {
+		return "", c.mapGitLabError("read_authenticated_user", err)
+	}
+	if user == nil || strings.TrimSpace(user.Username) == "" {
+		return "", errors.New("authenticated GitLab username is empty")
+	}
+	return strings.TrimSpace(user.Username), nil
 }
 
 func (c *Client) GetRepository(ctx context.Context, ref platform.RepoRef) (platform.Repository, error) {

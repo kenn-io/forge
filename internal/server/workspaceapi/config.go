@@ -14,6 +14,7 @@ type ConfigSnapshot struct {
 	KnownPlatformHosts []projects.KnownPlatformHost
 	Agents             []config.Agent
 	TmuxCommand        []string
+	AutoAssignOnCreate bool
 }
 
 func cloneConfigSnapshot(snapshot ConfigSnapshot) ConfigSnapshot {
@@ -21,6 +22,7 @@ func cloneConfigSnapshot(snapshot ConfigSnapshot) ConfigSnapshot {
 		KnownPlatformHosts: slices.Clone(snapshot.KnownPlatformHosts),
 		Agents:             make([]config.Agent, len(snapshot.Agents)),
 		TmuxCommand:        slices.Clone(snapshot.TmuxCommand),
+		AutoAssignOnCreate: snapshot.AutoAssignOnCreate,
 	}
 	for i := range snapshot.Agents {
 		out.Agents[i] = snapshot.Agents[i]

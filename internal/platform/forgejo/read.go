@@ -27,6 +27,22 @@ func (t *transport) GetRepository(
 	return convertRepository(repository)
 }
 
+func (t *transport) GetAuthenticatedUser(
+	ctx context.Context,
+) (gitealike.UserDTO, error) {
+	var user *forgejosdk.User
+	var resp *forgejosdk.Response
+	err := t.withRequestContext(ctx, func() error {
+		var err error
+		user, resp, err = t.api.GetMyUserInfo()
+		return err
+	})
+	if err != nil {
+		return gitealike.UserDTO{}, forgejoHTTPError(resp, err)
+	}
+	return convertUser(user), nil
+}
+
 func (t *transport) ListUserRepositories(
 	ctx context.Context,
 	owner string,

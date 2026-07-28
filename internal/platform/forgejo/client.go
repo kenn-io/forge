@@ -151,6 +151,13 @@ func (c *Client) Capabilities() platform.Capabilities {
 	return caps
 }
 
+func (c *Client) AuthenticatedUser(
+	ctx context.Context,
+	ref platform.RepoRef,
+) (string, error) {
+	return c.provider.AuthenticatedUser(ctx, ref)
+}
+
 type transport struct {
 	api                *forgejosdk.Client
 	mergeability       *gitealike.MergeableCache

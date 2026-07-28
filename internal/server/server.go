@@ -611,6 +611,7 @@ func workspaceConfigSnapshot(
 		return snapshot
 	}
 	snapshot.Agents = cloneConfigAgents(cfg.Agents)
+	snapshot.AutoAssignOnCreate = cfg.Workspaces.AutoAssignOnCreate
 	snapshot.KnownPlatformHosts = make(
 		[]projects.KnownPlatformHost, 0, len(cfg.Platforms)+len(cfg.Repos)+1,
 	)

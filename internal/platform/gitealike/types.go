@@ -33,6 +33,10 @@ type TimelineTransport interface {
 	ListIssueTimeline(ctx context.Context, ref platform.RepoRef, number int, opts PageOptions) ([]TimelineEventDTO, Page, error)
 }
 
+type AuthenticatedUserTransport interface {
+	GetAuthenticatedUser(ctx context.Context) (UserDTO, error)
+}
+
 // ArchiveTransport is the bounded, one-round-trip transport surface used by
 // historical archive enumeration. ListIssuesPage exposes the API's
 // updated-time filters; ListPullRequestsPage exposes its stable sort modes.

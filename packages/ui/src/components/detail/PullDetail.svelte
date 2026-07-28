@@ -131,6 +131,7 @@
     read_ci: true,
     read_labels: false,
     read_markdown_images: false,
+    read_authenticated_user: false,
     comment_mutation: true,
     state_mutation: true,
     merge_mutation: true,

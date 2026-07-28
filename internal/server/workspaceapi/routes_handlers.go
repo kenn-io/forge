@@ -231,6 +231,33 @@ func (s *Handler) createWorkspace(
 		return nil, httpapi.Internal("create workspace: " + err.Error())
 	}
 
+	if s.configSnapshot().AutoAssignOnCreate {
+		repo, lookupErr := s.lookupRepoByProviderRoute(
+			ctx, provider, input.Body.PlatformHost, input.Body.Owner, input.Body.Name,
+		)
+		if lookupErr != nil {
+			slog.Warn("lookup pull request for automatic workspace assignment",
+				"provider", provider,
+				"platform_host", input.Body.PlatformHost,
+				"owner", input.Body.Owner,
+				"name", input.Body.Name,
+				"number", input.Body.MRNumber,
+				"err", lookupErr,
+			)
+		} else if assignErr := s.autoAssignWorkspaceItem(
+			ctx, *repo, input.Body.MRNumber, false,
+		); assignErr != nil {
+			slog.Warn("automatically assign pull request workspace",
+				"provider", repo.Platform,
+				"platform_host", repo.PlatformHost,
+				"owner", repo.Owner,
+				"name", repo.Name,
+				"number", input.Body.MRNumber,
+				"err", assignErr,
+			)
+		}
+	}
+
 	s.runWorkspaceSetup(ws)
 
 	summary, err := s.workspaces.GetSummary(ctx, ws.ID)
@@ -494,6 +521,16 @@ func (s *Handler) createIssueWorkspace(
 	}
 
 	createdBranch := ws.WorkspaceBranch != ""
+	if assignErr := s.autoAssignWorkspaceItem(ctx, *repo, input.Number, true); assignErr != nil {
+		slog.Warn("automatically assign issue workspace",
+			"provider", repo.Platform,
+			"platform_host", repo.PlatformHost,
+			"owner", repo.Owner,
+			"name", repo.Name,
+			"number", input.Number,
+			"err", assignErr,
+		)
+	}
 	s.runWorkspaceSetup(ws)
 
 	summary, err := s.workspaces.GetSummary(ctx, ws.ID)

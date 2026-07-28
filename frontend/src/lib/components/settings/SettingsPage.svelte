@@ -14,6 +14,7 @@
   import FleetSettings from "./FleetSettings.svelte";
   import KataProjectMappingsSettings from "./KataProjectMappingsSettings.svelte";
   import PullRequestSettings from "./PullRequestSettings.svelte";
+  import WorkspaceSettings from "./WorkspaceSettings.svelte";
   import {
     beginTerminalSettingsHydration,
     hydrateTerminalSettings,
@@ -138,6 +139,13 @@
               onUpdate={(pull_requests) => {
                 settings = { ...settings!, pull_requests };
                 settingsStore.setPullRequestSettings(pull_requests);
+              }}
+            />
+          {:else if meta.id === "settings-workspaces"}
+            <WorkspaceSettings
+              workspaces={loaded.workspaces}
+              onUpdate={(workspaces) => {
+                settings = { ...settings!, workspaces };
               }}
             />
           {:else if meta.id === "settings-terminal"}

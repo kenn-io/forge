@@ -107,6 +107,7 @@ func TestSettingsAPIE2EReadUpdateAndValidation(t *testing.T) {
 		t, ts.Client(), http.MethodPut,
 		ts.URL+"/api/v1/settings",
 		generated.UpdateSettingsRequest{
+			Workspaces: &generated.Workspaces{AutoAssignOnCreate: true},
 			Activity: &generated.Activity{
 				ViewMode:        "flat",
 				TimeRange:       "30d",
@@ -132,6 +133,7 @@ func TestSettingsAPIE2EReadUpdateAndValidation(t *testing.T) {
 	var updated generated.SettingsResponse
 	require.NoError(json.NewDecoder(updateResp.Body).Decode(&updated))
 	assert.True(updated.Activity.CollapseThreads)
+	assert.True(updated.Workspaces.AutoAssignOnCreate)
 
 	cfgAfterUpdate, err := config.Load(cfgPath)
 	require.NoError(err)
@@ -140,6 +142,7 @@ func TestSettingsAPIE2EReadUpdateAndValidation(t *testing.T) {
 	assert.True(cfgAfterUpdate.Activity.HideClosed)
 	assert.True(cfgAfterUpdate.Activity.HideBots)
 	assert.True(cfgAfterUpdate.Activity.CollapseThreads)
+	assert.True(cfgAfterUpdate.Workspaces.AutoAssignOnCreate)
 	assert.Equal(
 		"\"Iosevka Term\", monospace",
 		cfgAfterUpdate.Terminal.FontFamily,
@@ -159,6 +162,7 @@ func TestSettingsAPIE2EReadUpdateAndValidation(t *testing.T) {
 	var reGet generated.SettingsResponse
 	require.NoError(json.NewDecoder(reGetResp.Body).Decode(&reGet))
 	assert.True(reGet.Activity.CollapseThreads)
+	assert.True(reGet.Workspaces.AutoAssignOnCreate)
 	assert.True(reGet.Terminal.HideTmuxStatus)
 }
 

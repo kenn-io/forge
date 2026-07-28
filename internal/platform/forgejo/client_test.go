@@ -378,6 +378,7 @@ func TestClientProviderIdentityExposesReadCapabilities(t *testing.T) {
 		ReadReleases:          true,
 		ReadCI:                true,
 		ReadLabels:            true,
+		ReadAuthenticatedUser: true,
 		CommentMutation:       true,
 		StateMutation:         true,
 		MergeMutation:         true,

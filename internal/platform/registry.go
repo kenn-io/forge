@@ -121,6 +121,22 @@ func (r *Registry) MergeRequestViewerResolver(
 	return resolver, nil
 }
 
+func (r *Registry) AuthenticatedUserResolver(
+	kind Kind,
+	host string,
+) (AuthenticatedUserResolver, error) {
+	provider, err := r.Provider(kind, host)
+	if err != nil {
+		return nil, err
+	}
+
+	resolver, ok := provider.(AuthenticatedUserResolver)
+	if !ok || !provider.Capabilities().ReadAuthenticatedUser {
+		return nil, UnsupportedCapability(kind, host, "read_authenticated_user")
+	}
+	return resolver, nil
+}
+
 func (r *Registry) IssueReader(kind Kind, host string) (IssueReader, error) {
 	provider, err := r.Provider(kind, host)
 	if err != nil {

@@ -293,6 +293,10 @@ other silently goes stale after a config edit until the next full page load.
 Workspace create endpoints may return 202 with a pre-existing workspace
 (`internal/server/workspaceapi/routes_handlers.go::createIssueWorkspace`).
 
+- Automatic self-assignment is opt-in and applies only after a new PR/issue
+  workspace is persisted; preserve current assignees and never roll back the
+  workspace on upstream failure (`internal/server/workspaceapi/auto_assign.go::Handler.autoAssignWorkspaceItem`).
+
 ## Agent Activity Hooks
 
 - Agent hooks are thin daemon API clients; the daemon owns every activity

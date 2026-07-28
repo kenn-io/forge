@@ -184,6 +184,7 @@ describe("RepoSettings", () => {
       repos: [],
       kata_projects: [],
       pull_requests: { allow_mid_stack_merges: false, prefer_github_native_stacks: false },
+      workspaces: { auto_assign_on_create: false },
       issues: { hide_bots: false },
       activity: {
         view_mode: "threaded",
@@ -215,6 +216,7 @@ describe("RepoSettings", () => {
       repos: [],
       kata_projects: [],
       pull_requests: { allow_mid_stack_merges: false, prefer_github_native_stacks: false },
+      workspaces: { auto_assign_on_create: false },
       issues: { hide_bots: false },
       activity: {
         view_mode: "threaded",
@@ -294,6 +296,7 @@ describe("RepoSettings", () => {
       repos: updatedRepos,
       kata_projects: [],
       pull_requests: { allow_mid_stack_merges: false, prefer_github_native_stacks: false },
+      workspaces: { auto_assign_on_create: false },
       issues: { hide_bots: false },
       activity: {
         view_mode: "threaded",
@@ -411,6 +414,7 @@ describe("RepoSettings", () => {
       repos: addedRepos,
       kata_projects: [],
       pull_requests: { allow_mid_stack_merges: false, prefer_github_native_stacks: false },
+      workspaces: { auto_assign_on_create: false },
       issues: { hide_bots: false },
       activity: {
         view_mode: "threaded",
@@ -439,6 +443,7 @@ describe("RepoSettings", () => {
       repos: promotedRepos,
       kata_projects: [],
       pull_requests: { allow_mid_stack_merges: false, prefer_github_native_stacks: false },
+      workspaces: { auto_assign_on_create: false },
       issues: { hide_bots: false },
       activity: {
         view_mode: "threaded",
@@ -616,6 +621,7 @@ describe("RepoSettings", () => {
       repos: addedRepos,
       kata_projects: [],
       pull_requests: { allow_mid_stack_merges: false, prefer_github_native_stacks: false },
+      workspaces: { auto_assign_on_create: false },
       issues: { hide_bots: false },
       activity: {
         view_mode: "threaded",
@@ -716,6 +722,7 @@ describe("RepoSettings", () => {
       repos: importedRepos,
       kata_projects: [],
       pull_requests: { allow_mid_stack_merges: false, prefer_github_native_stacks: false },
+      workspaces: { auto_assign_on_create: false },
       issues: { hide_bots: false },
       activity: {
         view_mode: "threaded",

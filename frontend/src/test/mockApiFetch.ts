@@ -18,6 +18,8 @@ const defaultProviderCapabilities = {
   read_releases: true,
   read_ci: true,
   read_labels: true,
+  read_markdown_images: true,
+  read_authenticated_user: true,
   comment_mutation: true,
   state_mutation: true,
   merge_mutation: true,
@@ -279,6 +281,9 @@ export const mockSettings = {
   pull_requests: {
     allow_mid_stack_merges: false,
     prefer_github_native_stacks: false,
+  },
+  workspaces: {
+    auto_assign_on_create: false,
   },
   modes: {
     kata: true,

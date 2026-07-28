@@ -79,6 +79,7 @@ func (p *Provider) Capabilities() platform.Capabilities {
 	}
 	_, hasLabels := p.transport.(LabelTransport)
 	caps.ReadLabels = hasLabels
+	_, caps.ReadAuthenticatedUser = p.transport.(AuthenticatedUserTransport)
 	if p.options.Mutations {
 		caps.CommentMutation = true
 		caps.StateMutation = true
@@ -100,6 +101,25 @@ func (p *Provider) Capabilities() platform.Capabilities {
 		}
 	}
 	return caps
+}
+
+func (p *Provider) AuthenticatedUser(
+	ctx context.Context,
+	_ platform.RepoRef,
+) (string, error) {
+	transport, ok := p.transport.(AuthenticatedUserTransport)
+	if !ok {
+		return "", platform.UnsupportedCapability(p.kind, p.host, "read_authenticated_user")
+	}
+	user, err := transport.GetAuthenticatedUser(ctx)
+	if err != nil {
+		return "", err
+	}
+	username := strings.TrimSpace(user.UserName)
+	if username == "" {
+		return "", fmt.Errorf("authenticated %s username is empty", p.kind)
+	}
+	return username, nil
 }
 
 func (p *Provider) GetRepository(

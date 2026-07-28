@@ -1318,6 +1318,10 @@ func (p *gitHubClientProvider) Capabilities() platform.Capabilities {
 	_, reviewers := p.client.(githubReviewerClient)
 	_, archivePages := p.client.(pageClient)
 	_, markdownImages := p.client.(markdownImageClient)
+	_, directViewer := p.client.(authenticatedViewerLoginClient)
+	_, routedViewer := p.client.(interface {
+		AuthenticatedViewerLoginForRepo(context.Context, string, string) (string, error)
+	})
 	return platform.Capabilities{
 		ReadRepositories:            true,
 		ReadMergeRequests:           true,
@@ -1327,6 +1331,7 @@ func (p *gitHubClientProvider) Capabilities() platform.Capabilities {
 		ReadCI:                      true,
 		ReadLabels:                  labels,
 		ReadMarkdownImages:          markdownImages,
+		ReadAuthenticatedUser:       directViewer || routedViewer,
 		ReadNotifications:           true,
 		CommentMutation:             true,
 		StateMutation:               true,
@@ -1359,6 +1364,13 @@ func (p *gitHubClientProvider) Capabilities() platform.Capabilities {
 			platform.ReviewActionRequestChanges,
 		},
 	}
+}
+
+func (p *gitHubClientProvider) AuthenticatedUser(
+	ctx context.Context,
+	ref platform.RepoRef,
+) (string, error) {
+	return p.authenticatedViewerLoginForRepo(ctx, ref.Owner, ref.Name)
 }
 
 func (p *gitHubClientProvider) GetMarkdownImage(

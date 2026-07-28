@@ -4546,7 +4546,11 @@ test.describe("issue workspace sidebar", () => {
     await page.locator(".panel-toggle-btn", { hasText: "PR" }).click();
 
     await expect(page.locator(".right-sidebar .detail-title")).toContainText("Add browser regression coverage");
-    await expect(page.locator(".right-sidebar .btn--workspace")).toHaveCount(0);
+    await expect(
+      page.locator(".right-sidebar").getByRole("button", {
+        name: /^(Create|Open) Workspace/,
+      }),
+    ).toHaveCount(0);
   });
 
   test("issue workspace gains PR tab after workspace_status refetch and keeps manual PR selection", async ({

@@ -1078,7 +1078,12 @@ func TestUpsertRepoByProviderIDUpdatesRenamedRepoWorkspaces(t *testing.T) {
 		RepoPath:       "Old-Group/Old-Name",
 	})
 	require.NoError(err)
-	insertTestMRWithOptions(t, d, testMR(originalID, 7, withMRTitle("renamed PR")))
+	originalMR := testMR(originalID, 7, withMRTitle("renamed PR"))
+	originalMR.HeadRepoCloneURL = "https://gitlab.com/Old-Group/Old-Name.git"
+	insertTestMRWithOptions(t, d, originalMR)
+	beforeRename, err := d.GetMergeRequestByRepoIDAndNumber(ctx, originalID, 7)
+	require.NoError(err)
+	require.NotNil(beforeRename)
 	require.NoError(d.InsertWorkspace(ctx, &Workspace{
 		ID:           "renamed-workspace",
 		PlatformHost: "gitlab.com",
@@ -1108,6 +1113,12 @@ func TestUpsertRepoByProviderIDUpdatesRenamedRepoWorkspaces(t *testing.T) {
 	assert.Equal("renamed-workspace", workspace.ID)
 	assert.Equal("New-Group/SubGroup", workspace.RepoOwner)
 	assert.Equal("New-Name", workspace.RepoName)
+
+	renamedMR, err := d.GetMergeRequestByRepoIDAndNumber(ctx, renamedID, 7)
+	require.NoError(err)
+	require.NotNil(renamedMR)
+	assert.True(renamedMR.HeadRepoIdentityStale)
+	assert.Greater(renamedMR.SnapshotRevision, beforeRename.SnapshotRevision)
 
 	summary, err := d.GetWorkspaceSummary(ctx, "renamed-workspace")
 	require.NoError(err)
@@ -1180,6 +1191,191 @@ func TestUpsertRepoByProviderIDMergesExistingDestinationPathRow(t *testing.T) {
 	).Scan(&issueRepoID)
 	require.NoError(err)
 	assert.Equal(destinationID, issueRepoID)
+}
+
+func TestUpsertRepoByProviderIDPreservesNewerCollidingMergeRequest(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := baseTime()
+
+	sourceID, err := d.UpsertRepoByProviderID(ctx, RepoIdentity{
+		Platform:       "gitlab",
+		PlatformHost:   "gitlab.com",
+		PlatformRepoID: "gid://gitlab/Project/42",
+		Owner:          "old-group",
+		Name:           "old-name",
+	})
+	require.NoError(err)
+	source := testMR(
+		sourceID,
+		7,
+		withMRTitle("new provider snapshot"),
+		withMRActivity(now.Add(time.Minute)),
+	)
+	source.PlatformID = 7007
+	source.PlatformExternalID = "gid://gitlab/MergeRequest/7007"
+	source.HeadRepoCloneURL = "https://gitlab.com/old-group/old-name.git"
+	insertTestMRWithOptions(t, d, source)
+
+	destinationID, err := d.UpsertRepo(ctx, RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.com",
+		Owner:        "new-group",
+		Name:         "new-name",
+	})
+	require.NoError(err)
+	destination := testMR(
+		destinationID,
+		7,
+		withMRTitle("stale destination snapshot"),
+		withMRActivity(now),
+	)
+	destination.PlatformID = source.PlatformID
+	destination.PlatformExternalID = source.PlatformExternalID
+	destination.HeadRepoCloneURL = "https://gitlab.com/forker/old-name.git"
+	insertTestMRWithOptions(t, d, destination)
+
+	sourceMR, err := d.GetMergeRequestByRepoIDAndNumber(ctx, sourceID, 7)
+	require.NoError(err)
+	require.NotNil(sourceMR)
+	destinationMR, err := d.GetMergeRequestByRepoIDAndNumber(ctx, destinationID, 7)
+	require.NoError(err)
+	require.NotNil(destinationMR)
+
+	draft, err := d.GetOrCreateMRReviewDraft(ctx, destinationMR.ID)
+	require.NoError(err)
+	require.NotNil(draft)
+	_, err = d.rw.ExecContext(ctx, `
+		UPDATE middleman_mr_review_drafts
+		SET body = 'destination draft'
+		WHERE id = ?`,
+		draft.ID,
+	)
+	require.NoError(err)
+
+	destinationThread := MRReviewThread{
+		MergeRequestID:   destinationMR.ID,
+		ProviderThreadID: "destination-thread",
+		Body:             "destination review thread",
+		Range:            testReviewLineRange(),
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	}
+	require.NoError(d.UpsertMRReviewThreads(
+		ctx, destinationMR.ID, []MRReviewThread{destinationThread},
+	))
+	sourceThread := destinationThread
+	sourceThread.MergeRequestID = sourceMR.ID
+	sourceThread.ProviderThreadID = "source-thread"
+	sourceThread.Body = "source review thread"
+	require.NoError(d.UpsertMRReviewThreads(
+		ctx, sourceMR.ID, []MRReviewThread{sourceThread},
+	))
+
+	gotID, err := d.UpsertRepoByProviderID(ctx, RepoIdentity{
+		Platform:       "gitlab",
+		PlatformHost:   "gitlab.com",
+		PlatformRepoID: "gid://gitlab/Project/42",
+		Owner:          "new-group",
+		Name:           "new-name",
+	})
+	require.NoError(err)
+	assert.Equal(destinationID, gotID)
+
+	merged, err := d.GetMergeRequestByRepoIDAndNumber(ctx, destinationID, 7)
+	require.NoError(err)
+	require.NotNil(merged)
+	assert.Equal(destinationMR.ID, merged.ID)
+	assert.Equal("new provider snapshot", merged.Title)
+	assert.Equal("https://gitlab.com/old-group/old-name.git", merged.HeadRepoCloneURL)
+	assert.Equal(now.Add(time.Minute), merged.UpdatedAt)
+	assert.True(merged.HeadRepoIdentityStale)
+	assert.Positive(merged.SnapshotRevision)
+
+	preservedDraft, err := d.GetMRReviewDraft(ctx, destinationMR.ID)
+	require.NoError(err)
+	require.NotNil(preservedDraft)
+	assert.Equal(draft.ID, preservedDraft.ID)
+	assert.Equal("destination draft", preservedDraft.Body)
+
+	preservedThreads, err := d.ListMRReviewThreads(ctx, destinationMR.ID)
+	require.NoError(err)
+	require.Len(preservedThreads, 2)
+	assert.ElementsMatch(
+		[]string{"destination-thread", "source-thread"},
+		[]string{
+			preservedThreads[0].ProviderThreadID,
+			preservedThreads[1].ProviderThreadID,
+		},
+	)
+}
+
+func TestUpsertRepoByProviderIDWaitsForMergeRequestSnapshotReconciliation(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+
+	sourceID, err := d.UpsertRepoByProviderID(ctx, RepoIdentity{
+		Platform:       "gitlab",
+		PlatformHost:   "gitlab.com",
+		PlatformRepoID: "gid://gitlab/Project/42",
+		Owner:          "old-group",
+		Name:           "old-name",
+	})
+	require.NoError(err)
+	insertTestMRWithOptions(t, d, testMR(sourceID, 7, withMRTitle("source PR")))
+
+	destinationID, err := d.UpsertRepo(ctx, RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.com",
+		Owner:        "new-group",
+		Name:         "new-name",
+	})
+	require.NoError(err)
+
+	release, err := d.LockMergeRequestSnapshot(ctx, sourceID, 7)
+	require.NoError(err)
+
+	writeLockAttempted := make(chan struct{})
+	restoreWriteLockHook := d.SetBeforeRepositoryReconciliationWriteLockForTest(
+		func() { close(writeLockAttempted) },
+	)
+	defer restoreWriteLockHook()
+	done := make(chan error, 1)
+	go func() {
+		_, upsertErr := d.UpsertRepoByProviderID(ctx, RepoIdentity{
+			Platform:       "gitlab",
+			PlatformHost:   "gitlab.com",
+			PlatformRepoID: "gid://gitlab/Project/42",
+			Owner:          "new-group",
+			Name:           "new-name",
+		})
+		done <- upsertErr
+	}()
+
+	<-writeLockAttempted
+	select {
+	case upsertErr := <-done:
+		require.NoError(upsertErr)
+		require.Fail("repository reconciliation bypassed the active snapshot read barrier")
+	default:
+	}
+
+	release()
+	select {
+	case upsertErr := <-done:
+		require.NoError(upsertErr)
+	case <-time.After(5 * time.Second):
+		assert.Fail("repository reconciliation did not resume after snapshot read barrier released")
+	}
+
+	mr, err := d.GetMergeRequestByRepoIDAndNumber(ctx, destinationID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	assert.Equal("source PR", mr.Title)
 }
 
 func TestUpsertRepoByProviderIDMergesExistingDestinationPathRowWorkspaces(t *testing.T) {
@@ -4467,6 +4663,133 @@ func TestWorkspaceCRUD(t *testing.T) {
 	noSuch, err := d.GetWorkspace(ctx, "nonexistent")
 	require.NoError(err)
 	assert.Nil(noSuch)
+}
+
+func TestUpdateWorkspaceMRHeadRepo(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+
+	ws := &Workspace{
+		ID:           "ws-head-repo",
+		PlatformHost: "github.com",
+		RepoOwner:    "acme",
+		RepoName:     "widget",
+		ItemType:     WorkspaceItemTypePullRequest,
+		ItemNumber:   7,
+		WorktreePath: "/tmp/ws-head-repo",
+		TmuxSession:  "ws-head-repo",
+		Status:       "creating",
+	}
+	require.NoError(d.InsertWorkspace(ctx, ws))
+
+	got, err := d.GetWorkspace(ctx, "ws-head-repo")
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Nil(got.MRHeadRepo)
+
+	forkURL := "https://github.com/fork-owner/widget.git"
+	require.NoError(d.UpdateWorkspaceMRHeadRepo(ctx, "ws-head-repo", &forkURL))
+	got, err = d.GetWorkspace(ctx, "ws-head-repo")
+	require.NoError(err)
+	require.NotNil(got)
+	require.NotNil(got.MRHeadRepo)
+	assert.Equal(forkURL, *got.MRHeadRepo)
+
+	unknown := ""
+	require.NoError(d.UpdateWorkspaceMRHeadRepo(ctx, "ws-head-repo", &unknown))
+	got, err = d.GetWorkspace(ctx, "ws-head-repo")
+	require.NoError(err)
+	require.NotNil(got)
+	require.NotNil(got.MRHeadRepo)
+	assert.Empty(*got.MRHeadRepo)
+
+	require.NoError(d.UpdateWorkspaceMRHeadRepo(ctx, "ws-head-repo", nil))
+	got, err = d.GetWorkspace(ctx, "ws-head-repo")
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Nil(got.MRHeadRepo)
+}
+
+func TestUpdateWorkspaceMRHeadRepoForSnapshotRejectsStaleRevision(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+
+	repoID := insertTestRepo(t, d, "acme", "widget")
+	now := time.Date(2026, 7, 26, 12, 0, 0, 0, time.UTC)
+	mr := &MergeRequest{
+		RepoID:           repoID,
+		PlatformID:       7001,
+		Number:           7,
+		Title:            "Same-repo PR",
+		State:            MergeRequestStateOpen,
+		HeadBranch:       "feature",
+		BaseBranch:       "main",
+		HeadRepoCloneURL: "https://github.com/acme/widget.git",
+		CreatedAt:        now,
+		UpdatedAt:        now,
+		LastActivityAt:   now,
+	}
+	_, accepted, err := d.UpsertMergeRequestSnapshot(ctx, mr)
+	require.NoError(err)
+	require.True(accepted)
+	stale, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, mr.Number)
+	require.NoError(err)
+	require.NotNil(stale)
+
+	forkURL := "https://github.com/forker/widget.git"
+	require.NoError(d.InsertWorkspace(ctx, &Workspace{
+		ID:           "ws-stale-head-repo-write",
+		Platform:     "github",
+		PlatformHost: "github.com",
+		RepoOwner:    "acme",
+		RepoName:     "widget",
+		ItemType:     WorkspaceItemTypePullRequest,
+		ItemNumber:   mr.Number,
+		MRHeadRepo:   &forkURL,
+		WorktreePath: t.TempDir(),
+		Status:       "ready",
+	}))
+
+	updated := *mr
+	updated.Title = "Newer fork snapshot"
+	updated.HeadRepoCloneURL = forkURL
+	updated.UpdatedAt = now.Add(time.Minute)
+	updated.LastActivityAt = updated.UpdatedAt
+	_, accepted, err = d.UpsertMergeRequestSnapshot(ctx, &updated)
+	require.NoError(err)
+	require.True(accepted)
+
+	applied, err := d.UpdateWorkspaceMRHeadRepoForSnapshot(
+		ctx,
+		"ws-stale-head-repo-write",
+		repoID,
+		mr.Number,
+		stale.SnapshotRevision,
+		nil,
+	)
+	require.NoError(err)
+	assert.False(applied)
+
+	stored, err := d.GetWorkspace(ctx, "ws-stale-head-repo-write")
+	require.NoError(err)
+	require.NotNil(stored)
+	require.NotNil(stored.MRHeadRepo)
+	assert.Equal(forkURL, *stored.MRHeadRepo)
+
+	_, err = d.UpdateWorkspaceMRHeadRepoForSnapshot(
+		ctx,
+		"missing-workspace",
+		repoID,
+		mr.Number,
+		updated.SnapshotRevision,
+		nil,
+	)
+	require.Error(err)
+	assert.Contains(err.Error(), "workspace \"missing-workspace\" not found")
 }
 
 func TestWorkspaceItemKeyDefaultsFromItemNumber(t *testing.T) {

@@ -2,8 +2,10 @@ import { cleanup, render } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import type { EventsStoreOptions } from "@middleman/ui/stores/events";
-import type { SyncStatus } from "@middleman/ui/api/types";
+import type { Settings, SyncStatus } from "@middleman/ui/api/types";
 import type { MiddlemanClient } from "@middleman/ui";
+
+type LaunchTargets = NonNullable<Settings["launch_targets"]>;
 
 interface CapturedEventsStore {
   options: EventsStoreOptions;
@@ -12,8 +14,17 @@ interface CapturedEventsStore {
   isConnected: ReturnType<typeof vi.fn>;
 }
 
-const captured: { store: CapturedEventsStore | null } = {
+interface CapturedSettingsStore {
+  getLaunchTargets: () => LaunchTargets;
+  setLaunchTargets: (targets: LaunchTargets) => void;
+}
+
+const captured: {
+  store: CapturedEventsStore | null;
+  settings: CapturedSettingsStore | null;
+} = {
   store: null,
+  settings: null,
 };
 
 vi.mock("@middleman/ui/stores/events", () => ({
@@ -49,6 +60,7 @@ vi.mock("@middleman/ui/stores/pulls", () => ({
 vi.mock("@middleman/ui/stores/issues", () => ({
   createIssuesStore: () => ({
     loadIssues,
+    hydrateDefaults: vi.fn(),
     getIssues: () => [],
     isLoading: () => false,
   }),
@@ -57,6 +69,7 @@ vi.mock("@middleman/ui/stores/issues", () => ({
 vi.mock("@middleman/ui/stores/activity", () => ({
   createActivityStore: () => ({
     loadActivity,
+    hydrateDefaults: vi.fn(),
     getActivity: () => [],
     isLoading: () => false,
   }),
@@ -99,37 +112,59 @@ vi.mock("@middleman/ui/stores/grouping", () => ({
 }));
 
 vi.mock("@middleman/ui/stores/settings", () => ({
-  createSettingsStore: () => ({
-    getConfiguredRepos: () => [],
-    setConfiguredRepos: vi.fn(),
-    getPullRequestSettings: () => ({
-      allow_mid_stack_merges: false,
-      prefer_github_native_stacks: false,
-    }),
-    setPullRequestSettings: vi.fn(),
-    getModeVisibility: () => ({
-      activity: true,
-      repos: true,
-      kata: false,
-      docs: false,
-      pulls: true,
-      issues: true,
-      reviews: true,
-      workspaces: true,
-    }),
-    setModeVisibility: vi.fn(),
-    isModeVisible: vi.fn(() => true),
-    getTerminalFontFamily: () => "",
-    setTerminalFontFamily: vi.fn(),
-    hasConfiguredRepos: () => false,
-    isSettingsLoaded: () => true,
-  }),
+  createSettingsStore: () => {
+    let launchTargets: LaunchTargets = [];
+    const store = {
+      getConfiguredRepos: () => [],
+      setConfiguredRepos: vi.fn(),
+      getPullRequestSettings: () => ({
+        allow_mid_stack_merges: false,
+        prefer_github_native_stacks: false,
+      }),
+      setPullRequestSettings: vi.fn(),
+      getModeVisibility: () => ({
+        activity: true,
+        repos: true,
+        kata: false,
+        docs: false,
+        pulls: true,
+        issues: true,
+        reviews: true,
+        workspaces: true,
+      }),
+      setModeVisibility: vi.fn(),
+      isModeVisible: vi.fn(() => true),
+      getTerminalSettings: () => ({
+        font_family: "",
+        font_size: 12,
+        scrollback: 1000,
+        line_height: 1,
+        letter_spacing: 0,
+        cursor_blink: false,
+        font_ligatures: false,
+        renderer: "xterm",
+        hide_tmux_status: false,
+      }),
+      setTerminalSettings: vi.fn(),
+      getTerminalFontFamily: () => "",
+      setTerminalFontFamily: vi.fn(),
+      getLaunchTargets: () => launchTargets,
+      setLaunchTargets: vi.fn((targets: LaunchTargets) => {
+        launchTargets = [...targets];
+      }),
+      hasConfiguredRepos: () => false,
+      isSettingsLoaded: () => true,
+    };
+    captured.settings = store;
+    return store;
+  },
 }));
 
 import Provider from "../../packages/ui/src/Provider.svelte";
 
+const getSettings = vi.fn();
 const stubClient = {
-  GET: vi.fn(),
+  GET: getSettings,
   POST: vi.fn(),
   PUT: vi.fn(),
   DELETE: vi.fn(),
@@ -137,6 +172,8 @@ const stubClient = {
 
 beforeEach(() => {
   captured.store = null;
+  captured.settings = null;
+  getSettings.mockReset();
   loadPulls.mockClear();
   loadIssues.mockClear();
   loadActivity.mockClear();
@@ -150,6 +187,68 @@ afterEach(() => {
 });
 
 describe("Provider events store wiring", () => {
+  it("replaces stale launch targets after a valid config reload", async () => {
+    const codexTarget = {
+      key: "codex",
+      label: "Codex",
+      kind: "agent",
+      source: "builtin",
+      command: ["codex"],
+      available: true,
+      disabled_reason: "",
+    } satisfies LaunchTargets[number];
+    const staleTarget = { ...codexTarget, key: "claude", label: "Claude", command: ["claude"] };
+    const settings = {
+      repos: [],
+      activity: {
+        view_mode: "threaded",
+        time_range: "7d",
+        hide_closed: false,
+        hide_bots: false,
+        collapse_threads: false,
+        default_branch_retention_days: 90,
+        default_branch_max_commits: 5000,
+      },
+      issues: { hide_bots: true },
+      terminal: {
+        font_family: "",
+        font_size: 12,
+        scrollback: 1000,
+        line_height: 1,
+        letter_spacing: 0,
+        cursor_blink: false,
+        font_ligatures: false,
+        renderer: "xterm",
+        hide_tmux_status: false,
+      },
+      modes: {
+        activity: true,
+        repos: true,
+        kata: false,
+        docs: false,
+        pulls: true,
+        issues: true,
+        reviews: true,
+        workspaces: true,
+      },
+      pull_requests: { allow_mid_stack_merges: false, prefer_github_native_stacks: false },
+      launch_targets: [codexTarget],
+    } satisfies Pick<
+      Settings,
+      "repos" | "activity" | "issues" | "terminal" | "modes" | "pull_requests" | "launch_targets"
+    >;
+    getSettings.mockResolvedValue({ data: settings });
+
+    render(Provider, { props: { client: stubClient } });
+    captured.settings?.setLaunchTargets([staleTarget]);
+
+    captured.store?.options.onConfigChanged?.({ valid: true, restart_required: false });
+
+    await vi.waitFor(() => {
+      expect(captured.settings?.getLaunchTargets()).toEqual([codexTarget]);
+    });
+  });
+
   it.each([
     { route: "pulls", pulls: 1, issues: 0, activity: 0 },
     { route: "mobile-pulls", pulls: 1, issues: 0, activity: 0 },

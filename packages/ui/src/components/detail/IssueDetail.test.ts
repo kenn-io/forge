@@ -5,6 +5,7 @@ import { ACTIONS_KEY, API_CLIENT_KEY, NAVIGATE_KEY, STORES_KEY, UI_CONFIG_KEY } 
 import { createDetailActivityViewStore } from "../../stores/detail-activity-view.svelte.js";
 import { dismissFlash, getFlashes } from "../../stores/flash.svelte.js";
 import {
+  consumeWorkspaceLaunch,
   markWorkspaceIdDeleted,
   nextWorkspaceLifecycleTick,
   recordWorkspaceCreated,
@@ -13,6 +14,18 @@ import {
 import type { InlineWorkspaceController, WorkspaceItemIdentity } from "../../workspace-inline.js";
 import { openLabelPickerFor } from "./labelPickerCommand.js";
 import { createTestController } from "../workspace/WorkspaceDockPanelTestController.svelte.js";
+
+const launchTargets = [
+  {
+    key: "codex",
+    label: "Codex",
+    kind: "agent",
+    source: "builtin",
+    command: ["codex"],
+    available: true,
+    disabled_reason: "",
+  },
+];
 
 // The pending-create store is module-scoped so it can survive component
 // remounts; tests that leave a deferred create unresolved must not leak
@@ -194,6 +207,9 @@ function renderIssueDetail(
           issues: issuesStore,
           activity: { loadActivity: vi.fn() },
           detailActivityView: createDetailActivityViewStore(),
+          settings: {
+            getLaunchTargets: () => launchTargets,
+          },
         },
       ],
       [ACTIONS_KEY, { issue: [] }],
@@ -241,12 +257,13 @@ describe("IssueDetail activity view", () => {
     renderIssueDetail(issueDetail());
 
     const button = screen.getByRole("button", { name: "Create Workspace" });
+    expect(button.getAttribute("aria-describedby")).toBe("issue-create-workspace-description");
     expect(button.getAttribute("title")).toContain("issue worktree");
     expect(button.getAttribute("title")).toContain("launch agents");
     expect(button.getAttribute("title")).toContain("shells");
-    const descriptionId = button.getAttribute("aria-describedby");
-    expect(descriptionId).toBeTruthy();
-    expect(document.getElementById(descriptionId ?? "")?.textContent).toContain(button.getAttribute("title"));
+    expect(document.getElementById("issue-create-workspace-description")?.textContent).toContain(
+      button.getAttribute("title"),
+    );
   });
 
   it("labels an active stale-detail refresh", () => {
@@ -311,8 +328,8 @@ describe("IssueDetail inline workspace handoff", () => {
   };
 
   function deferredWorkspaceApiClient() {
-    let resolvePost!: (value: { data?: { id: string; status: string } }) => void;
-    const postPromise = new Promise<{ data?: { id: string; status: string } }>((resolve) => {
+    let resolvePost!: (value: { data?: { id: string; status: string; created?: boolean } }) => void;
+    const postPromise = new Promise<{ data?: { id: string; status: string; created?: boolean } }>((resolve) => {
       resolvePost = resolve;
     });
     const apiClient = {
@@ -500,6 +517,64 @@ describe("IssueDetail inline workspace handoff", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Create Workspace" }));
 
     expect(apiClient.POST).toHaveBeenCalled();
+  });
+
+  it("keeps the primary workspace create action launch-free", async () => {
+    const controller = createTestController("split");
+    const { apiClient, resolvePost } = deferredWorkspaceApiClient();
+    renderIssueDetail(issueDetail(), undefined, { inlineWorkspace: controller }, apiClient);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Create Workspace" }));
+    await waitFor(() => expect(apiClient.POST).toHaveBeenCalled());
+    resolvePost({ data: { id: "ws-new", status: "creating", created: true } });
+
+    await waitFor(() => expect(controller.recordCreated).toHaveBeenCalled());
+    expect(consumeWorkspaceLaunch("ws-new")).toBeNull();
+  });
+
+  it("queues the agent selected from Create Workspace options", async () => {
+    const controller = createTestController("split");
+    const { apiClient, resolvePost } = deferredWorkspaceApiClient();
+    renderIssueDetail(issueDetail(), undefined, { inlineWorkspace: controller }, apiClient);
+
+    await fireEvent.click(
+      screen.getByRole("button", {
+        name: "Create Workspace options",
+      }),
+    );
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Codex" }));
+    await waitFor(() => expect(apiClient.POST).toHaveBeenCalled());
+    resolvePost({ data: { id: "ws-new", status: "creating" } });
+
+    await waitFor(() => expect(controller.recordCreated).toHaveBeenCalled());
+    expect(consumeWorkspaceLaunch("ws-new")).toBe("codex");
+  });
+
+  it("retains the selected agent when reusing an existing branch", async () => {
+    const controller = createTestController("split");
+    const apiClient = {
+      GET: vi.fn(),
+      POST: vi
+        .fn()
+        .mockResolvedValueOnce({ error: workspaceBranchConflict() })
+        .mockResolvedValueOnce({ data: { id: "ws-existing", status: "ready" } }),
+    };
+    renderIssueDetail(issueDetail(), undefined, { inlineWorkspace: controller }, apiClient);
+
+    await fireEvent.click(
+      screen.getByRole("button", {
+        name: "Create Workspace options",
+      }),
+    );
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Codex" }));
+    await fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Use Existing Branch",
+      }),
+    );
+    await waitFor(() => expect(apiClient.POST).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(controller.recordCreated).toHaveBeenCalled());
+    expect(consumeWorkspaceLaunch("ws-existing")).toBe("codex");
   });
 
   it("publishes a confirmed creation even after the selection changed", async () => {

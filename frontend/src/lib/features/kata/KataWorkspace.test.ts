@@ -2,6 +2,10 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { tick } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
+import {
+  consumeWorkspaceLaunch,
+  resetWorkspaceCreatePendingForTest,
+} from "@middleman/ui/stores/workspace-create-pending";
 import type { KataTaskLink } from "../../api/kata/taskTypes.js";
 import KataWorkspace from "./KataWorkspace.svelte";
 import { KATA_WORKSPACE_STATE_STORAGE_KEY } from "./kataWorkspacePersistence.js";
@@ -30,6 +34,28 @@ vi.mock("../../api/kata/workspaces.js", async (importOriginal) => {
 });
 
 vi.mock("../../stores/router.svelte.js", () => ({ navigate: mockNavigate }));
+
+vi.mock("@middleman/ui", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@middleman/ui")>();
+  return {
+    ...actual,
+    getStores: () => ({
+      settings: {
+        getLaunchTargets: () => [
+          {
+            key: "codex",
+            label: "Codex",
+            kind: "agent",
+            source: "builtin",
+            command: ["codex"],
+            available: true,
+            disabled_reason: "",
+          },
+        ],
+      },
+    }),
+  };
+});
 
 vi.mock("./KataReachableGraph.svelte", async () => ({
   default: (await import("./KataReachableGraphTestStub.svelte")).default,
@@ -67,6 +93,7 @@ describe("KataWorkspace snapshot authority", () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+    resetWorkspaceCreatePendingForTest();
   });
 
   it("renders selected detail, bounded history, workspace target, and mutation ETag from one accepted snapshot", async () => {
@@ -146,6 +173,75 @@ describe("KataWorkspace snapshot authority", () => {
       ),
     );
     expect(screen.queryByRole("heading", { name: "Mutation response title" })).toBeNull();
+  });
+
+  it("queues an explicitly selected agent for a reused Kata workspace", async () => {
+    acceptHomeDaemon();
+    const selected = initialIssues[0]!;
+    const { api } = createWorkspaceAPI(initialIssues, {
+      snapshot: (_request, snapshot) => ({
+        ...snapshot,
+        enrichment: {
+          ...snapshot.enrichment,
+          selected_detail: {
+            detail: detail(selected.uid, initialIssues),
+            workspace_target: {
+              available: true,
+              item_type: "kata_task",
+              item_key: selected.uid,
+            },
+          },
+        },
+      }),
+    });
+    mockCreateKataWorkspaceForTask.mockResolvedValue({
+      id: "workspace-1",
+      status: "ready",
+      item_type: "kata_task",
+    });
+
+    render(KataWorkspace, { props: { api, selectedIssueUID: selected.uid } });
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Create workspace options" }));
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Codex" }));
+
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/terminal/workspace-1"));
+    expect(consumeWorkspaceLaunch("workspace-1")).toBe("codex");
+  });
+
+  it("does not queue a launch for the standard create action", async () => {
+    // The default create action navigates to the returned workspace without
+    // publishing an explicit launch target.
+    acceptHomeDaemon();
+    const selected = initialIssues[0]!;
+    const { api } = createWorkspaceAPI(initialIssues, {
+      snapshot: (_request, snapshot) => ({
+        ...snapshot,
+        enrichment: {
+          ...snapshot.enrichment,
+          selected_detail: {
+            detail: detail(selected.uid, initialIssues),
+            workspace_target: {
+              available: true,
+              item_type: "kata_task",
+              item_key: selected.uid,
+            },
+          },
+        },
+      }),
+    });
+    mockCreateKataWorkspaceForTask.mockResolvedValue({
+      id: "workspace-existing",
+      status: "ready",
+      item_type: "kata_task",
+    });
+
+    render(KataWorkspace, { props: { api, selectedIssueUID: selected.uid } });
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Create workspace" }));
+
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/terminal/workspace-existing"));
+    expect(consumeWorkspaceLaunch("workspace-existing")).toBeNull();
   });
 
   it("renders canonical catalog identity when selected detail protocol omits summary-only fields", async () => {

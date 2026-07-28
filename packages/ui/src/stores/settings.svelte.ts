@@ -3,6 +3,7 @@ import {
   DEFAULT_PULL_REQUEST_SETTINGS,
   DEFAULT_TERMINAL_SETTINGS,
   type ConfigRepo,
+  type LaunchTarget,
   type ModeVisibility,
   type PullRequestSettings,
   type TerminalRenderer,
@@ -20,6 +21,7 @@ export function createSettingsStore() {
   let pullRequestSettings = $state<PullRequestSettings>({
     ...DEFAULT_PULL_REQUEST_SETTINGS,
   });
+  let launchTargets = $state<LaunchTarget[]>([]);
   let loaded = $state(false);
 
   function getConfiguredRepos(): ConfigRepo[] {
@@ -63,6 +65,14 @@ export function createSettingsStore() {
       ...DEFAULT_PULL_REQUEST_SETTINGS,
       ...(settings ?? {}),
     };
+  }
+
+  function getLaunchTargets(): LaunchTarget[] {
+    return launchTargets;
+  }
+
+  function setLaunchTargets(targets: LaunchTarget[] | null | undefined): void {
+    launchTargets = [...(targets ?? [])];
   }
 
   function getTerminalFontFamily(): string {
@@ -129,6 +139,8 @@ export function createSettingsStore() {
     isModeVisible,
     getPullRequestSettings,
     setPullRequestSettings,
+    getLaunchTargets,
+    setLaunchTargets,
     getTerminalFontFamily,
     setTerminalFontFamily,
     getTerminalFontSize,

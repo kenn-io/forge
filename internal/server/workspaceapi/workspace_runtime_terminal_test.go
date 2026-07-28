@@ -152,6 +152,52 @@ func TestServeRuntimeTerminalClosedOutputStillReportsSessionExit(t *testing.T) {
 	}
 }
 
+func TestServeRuntimeTerminalDrainsDelayedFinalOutputBeforeSessionExit(t *testing.T) {
+	require := require.New(t)
+	output := make(chan []byte, 1)
+	done := make(chan struct{})
+	attachment := localruntime.NewAttachmentForTesting(
+		localruntime.AttachmentForTestingOptions{
+			Output: output,
+			Done:   done,
+		},
+	)
+	wsURL, handlerDone := runtimeTerminalTestServer(t, attachment)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	require.NoError(err)
+	defer conn.Close(websocket.StatusNormalClosure, "done")
+
+	close(done)
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		output <- []byte("final terminal output")
+		close(output)
+	}()
+
+	typ, data, err := conn.Read(ctx)
+	require.NoError(err)
+	require.Equal(websocket.MessageBinary, typ)
+	require.Equal("final terminal output", string(data))
+
+	typ, data, err = conn.Read(ctx)
+	require.NoError(err)
+	require.Equal(websocket.MessageText, typ)
+	var msg struct {
+		Type string `json:"type"`
+	}
+	require.NoError(json.Unmarshal(data, &msg))
+	require.Equal("exited", msg.Type)
+
+	select {
+	case <-handlerDone:
+	case <-ctx.Done():
+		require.Fail("terminal handler did not return after session exit")
+	}
+}
+
 func runtimeTerminalTestServer(
 	t *testing.T,
 	attachment *localruntime.Attachment,

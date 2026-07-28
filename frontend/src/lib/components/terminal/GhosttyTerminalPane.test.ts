@@ -3,6 +3,7 @@ import type { ComponentProps } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 const mockFit = vi.fn();
+const mockFocus = vi.fn();
 const mockOpen = vi.fn();
 const mockLoadAddon = vi.fn();
 const mockOnData = vi.fn();
@@ -67,6 +68,7 @@ vi.mock("ghostty-web", () => ({
     return {
       cols: 80,
       rows: 24,
+      focus: mockFocus,
       open: mockOpen,
       loadAddon: mockLoadAddon,
       onData: mockOnData,
@@ -91,6 +93,7 @@ describe("GhosttyTerminalPane", () => {
     window.__MIDDLEMAN_DEV_API_URL__ = "http://127.0.0.1:8091";
     terminalCtor.mockReset();
     mockFit.mockReset();
+    mockFocus.mockReset();
     mockOpen.mockReset();
     mockLoadAddon.mockReset();
     mockOnData.mockReset();
@@ -257,6 +260,67 @@ describe("GhosttyTerminalPane", () => {
 
     expect(mockFit).toHaveBeenCalled();
     expect(socketAt(0).sent).toContain(JSON.stringify({ type: "refresh", cols: 80, rows: 24 }));
+  });
+
+  it("focuses the ghostty terminal once it initializes while active", async () => {
+    await renderStarted({ workspaceId: "ws-123" });
+
+    expect(mockFocus).toHaveBeenCalled();
+  });
+
+  it("does not steal focus when an existing terminal becomes active", async () => {
+    const { rerender } = await renderStarted({
+      websocketPath: "/ws/v1/workspaces/ws-123/runtime/sessions/ws-123%3Ahelper/terminal",
+      active: false,
+    });
+
+    expect(mockFocus).not.toHaveBeenCalled();
+
+    await rerender({
+      websocketPath: "/ws/v1/workspaces/ws-123/runtime/sessions/ws-123%3Ahelper/terminal",
+      active: true,
+    });
+
+    expect(mockFocus).not.toHaveBeenCalled();
+  });
+
+  it("does not focus when focus moves to a button during the async ghostty init window", async () => {
+    const button = document.createElement("button");
+    document.body.appendChild(button);
+
+    try {
+      // The focus intent is captured at mount, before ensureGhosttyInitialized()
+      // resolves. Focusing the button in that gap — before terminalCtor is
+      // called — mirrors focus moving elsewhere during the async init window.
+      render(GhosttyTerminalPane, { props: { workspaceId: "ws-123" } });
+      button.focus();
+      expect(document.activeElement).toBe(button);
+      await waitFor(() => expect(terminalCtor).toHaveBeenCalled());
+
+      expect(mockFocus).not.toHaveBeenCalled();
+      expect(document.activeElement).toBe(button);
+    } finally {
+      button.remove();
+    }
+  });
+
+  it("does not focus when the mount-time active element is inside an open dialog", async () => {
+    const dialog = document.createElement("div");
+    dialog.setAttribute("role", "dialog");
+    const dialogInput = document.createElement("input");
+    dialog.appendChild(dialogInput);
+    document.body.appendChild(dialog);
+    dialogInput.focus();
+    expect(document.activeElement).toBe(dialogInput);
+
+    try {
+      await renderStarted({ workspaceId: "ws-123" });
+
+      expect(mockFocus).not.toHaveBeenCalled();
+      expect(document.activeElement).toBe(dialogInput);
+    } finally {
+      dialog.remove();
+    }
   });
 
   it("filters tiny tmux mouse drags before sending terminal input", async () => {

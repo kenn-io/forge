@@ -80,6 +80,58 @@ func TestIssueWorkspaceConflictExposesTyped409ThroughGeneratedClient(t *testing.
 	)
 }
 
+func TestIssueWorkspaceReuseExistingBranchDoesNotReportCreated(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	fixture := setupWorkspaceServerFixture(t, nil)
+	seedIssue(t, fixture.database, "acme", "widget", 7, "open")
+
+	branch := "middleman/issue-7"
+	mainSHA := testGitSHA(t, fixture.remote, "refs/heads/main")
+	runGit(
+		t,
+		fixture.bare,
+		"update-ref", "refs/heads/"+branch, mainSHA,
+	)
+	reuse := true
+
+	resp, err := fixture.client.HTTP.CreateIssueWorkspaceWithResponse(
+		t.Context(), "gh", "acme", "widget", 7,
+		generated.CreateIssueWorkspaceInputBody{
+			GitHeadRef:          &branch,
+			ReuseExistingBranch: &reuse,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, resp.StatusCode(), string(resp.Body))
+	require.NotNil(resp.JSON202)
+	assert.Nil(resp.JSON202.Created)
+}
+
+func TestIssueWorkspaceReuseMissingBranchReportsCreated(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	fixture := setupWorkspaceServerFixture(t, nil)
+	seedIssue(t, fixture.database, "acme", "widget", 7, "open")
+
+	branch := "middleman/issue-7"
+	reuse := true
+	resp, err := fixture.client.HTTP.CreateIssueWorkspaceWithResponse(
+		t.Context(), "gh", "acme", "widget", 7,
+		generated.CreateIssueWorkspaceInputBody{
+			GitHeadRef:          &branch,
+			ReuseExistingBranch: &reuse,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, resp.StatusCode(), string(resp.Body))
+	require.NotNil(resp.JSON202)
+	require.NotNil(resp.JSON202.Created)
+	assert.True(*resp.JSON202.Created)
+}
+
 func TestIssueWorkspaceCreateIgnoresBrokenCallerCwdForBranchValidation(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

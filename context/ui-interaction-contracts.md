@@ -90,6 +90,12 @@ Interactive surfaces must agree on which item is selected.
   begun controller-less must surface on an inline surface after a layout
   switch, where no recordCreated override ever ran
   (`frontend/src/lib/stores/workspace-host.svelte.ts::effectiveRef`).
+- An explicit create-and-launch intent must be published before presentation
+  liveness checks and remain reactive after a workspace is already ready; layout
+  churn or branch reuse must not silently discard the command
+  (`packages/ui/src/components/workspace/WorkspaceCreateSplitButton.svelte::selectTarget`,
+  `packages/ui/src/stores/workspace-create-pending.svelte.ts::queueWorkspaceLaunch`,
+  `frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::pendingWorkspaceLaunchTarget`).
 - Inline surface claims come only from live selection effects (the list
   views' claim effects, which react to recorded overrides); async responses
   record overrides and tombstones but never claim a surface themselves, and
@@ -238,6 +244,19 @@ Keyboard handlers must have one clear owner for each key press.
   toolbar's explicit action. A collapsed dock also keeps its own reopen
   affordance at the bottom of the pane
   (`frontend/src/lib/stores/workspace-host.svelte.ts::focusTerminal`).
+- Terminal panes (xterm and Ghostty) call `.focus()` only once, at terminal
+  creation, and only when a focus-intent guard captured at mount still holds:
+  `document.activeElement` must be unchanged since mount and not "sacred"
+  (inside `[role="dialog"|"menu"|"listbox"]`, or a form control/
+  contenteditable). This covers the async font-load/WASM-init window before
+  `.focus()` runs, during which a live renderer swap (e.g. changing the
+  terminal renderer from an open settings popover) can remount the pane while
+  something else holds focus. Re-running the active/disabled effect on a
+  reveal or an enable flip must never call `.focus()` again — that would
+  fight the opt-in focus contracts above (`pendingHostFocus`,
+  `shouldReclaimFocus`)
+  (`frontend/src/lib/components/terminal/terminal-focus.ts`,
+  `frontend/src/lib/components/terminal/XtermTerminalPane.svelte::start`).
 - Expanded inline workspaces reuse the live hosted shell and fill the pane
   edge-to-edge; never add outer chrome or mutate the shell's workflow/terminal
   layout state (`packages/ui/src/components/workspace/WorkspaceDockPanel.svelte::expanded`).

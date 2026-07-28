@@ -64,6 +64,8 @@ type workspaceResponse struct {
 	EnrichmentError       *string                   `json:"enrichment_error,omitempty" doc:"Combined error from the most recent reconciliation attempt; populated component fields may still contain last-known-good values."`
 	AssociatedPRNumber    *int                      `json:"associated_pr_number,omitempty"`
 	Kata                  *db.WorkspaceKataMetadata `json:"kata,omitempty"`
+	MRHeadRepoKind        string                    `json:"mr_head_repo_kind,omitempty" enum:"same_repo,fork,unknown" doc:"Set only for pull_request workspaces: same_repo when the PR head is confirmed to be in the base repo, fork when it is a confirmed fork clone, unknown when repository identity could not be resolved."`
+	Created               bool                      `json:"created,omitempty" doc:"True when this response represents a workspace newly created by this request; absent when an existing workspace was returned or on reads."`
 }
 
 // WorkspaceResponse is the stable workspace DTO shared with dependent server

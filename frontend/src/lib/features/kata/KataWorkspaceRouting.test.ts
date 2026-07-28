@@ -11,6 +11,18 @@ import {
   resetKataWorkspaceTestState,
 } from "./test/KataWorkspaceSupport.js";
 
+vi.mock("@middleman/ui", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@middleman/ui")>();
+  return {
+    ...actual,
+    getStores: () => ({
+      settings: {
+        getLaunchTargets: () => [],
+      },
+    }),
+  };
+});
+
 function acceptHomeDaemon(): void {
   vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
     Response.json({

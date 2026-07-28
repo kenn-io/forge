@@ -344,6 +344,8 @@ command = ["codex", "--full-auto"]
 
 	rr := doJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	assert.NotContains(rr.Body.String(), `"default_agent"`)
+	assert.Contains(rr.Body.String(), `"launch_targets"`)
 
 	var resp settingsResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))

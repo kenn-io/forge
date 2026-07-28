@@ -51,6 +51,7 @@ vi.mock("@xterm/xterm", () => ({
       cols: 80,
       rows: 24,
       open: vi.fn(),
+      focus: vi.fn(),
       loadAddon: vi.fn(),
       onData: vi.fn(),
       onBinary: vi.fn(),

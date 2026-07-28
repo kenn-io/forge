@@ -4,7 +4,7 @@
   import PlusIcon from "@lucide/svelte/icons/plus";
   import RotateCcwIcon from "@lucide/svelte/icons/rotate-ccw";
   import TrashIcon from "@lucide/svelte/icons/trash-2";
-  import type { AgentSettings as AgentSettingsType } from "@middleman/ui/api/types";
+  import type { AgentSettings as AgentSettingsType, LaunchTarget } from "@middleman/ui/api/types";
   import { showFlash } from "@middleman/ui/stores/flash";
   import { slide } from "svelte/transition";
   import { updateSettings } from "../../api/settings.js";
@@ -12,7 +12,11 @@
 
   interface Props {
     agents: AgentSettingsType[];
-    onUpdate: (agents: AgentSettingsType[]) => void;
+    launchTargets?: LaunchTarget[];
+    onUpdate: (
+      agents: AgentSettingsType[],
+      launchTargets: LaunchTarget[],
+    ) => void;
   }
 
   interface BuiltinAgent {
@@ -40,7 +44,7 @@
     { key: "aider", label: "aider", binary: "aider" },
   ];
 
-  let { agents, onUpdate }: Props = $props();
+  let { agents, launchTargets = [], onUpdate }: Props = $props();
 
   const embedded = isEmbedded();
   let customID = 0;
@@ -213,11 +217,15 @@
     if (!canSave) return;
     saving = true;
     try {
-      const settings = await updateSettings({ agents: serializedAgents });
+      const settings = await updateSettings({
+        agents: serializedAgents,
+      });
       const nextAgents = settings.agents ?? [];
+      const nextLaunchTargets = settings.launch_targets ?? [];
       agents = nextAgents;
+      launchTargets = nextLaunchTargets;
       drafts = initialDrafts(nextAgents);
-      onUpdate(nextAgents);
+      onUpdate(nextAgents, nextLaunchTargets);
     } catch (err) {
       showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
     } finally {
@@ -381,7 +389,6 @@
       </div>
     {/each}
   </div>
-
 
   <div class="settings-actions">
     <button

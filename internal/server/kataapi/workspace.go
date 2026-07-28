@@ -201,7 +201,7 @@ func (h *Handler) createKataWorkspace(
 		return nil, httpapi.Internal("lookup existing Kata workspace: " + err.Error())
 	}
 	if existing != nil {
-		return h.kataWorkspaceCreateOutput(ctx, existing.ID)
+		return h.kataWorkspaceCreateOutput(ctx, existing.ID, false)
 	}
 
 	ws, err := h.workspaces.CreateKataTask(
@@ -224,7 +224,7 @@ func (h *Handler) createKataWorkspace(
 				db.KataWorkspaceItemKey(metadata),
 			)
 			if getErr == nil && existing != nil {
-				return h.kataWorkspaceCreateOutput(ctx, existing.ID)
+				return h.kataWorkspaceCreateOutput(ctx, existing.ID, false)
 			}
 			return nil, httpapi.Conflict(httpapi.CodeConflict, "workspace already exists for this Kata task", nil)
 		}
@@ -238,11 +238,11 @@ func (h *Handler) createKataWorkspace(
 	}
 
 	h.workspaceAPI.RunWorkspaceSetupWithBasePath(ws, target.BasePath)
-	return h.kataWorkspaceCreateOutput(ctx, ws.ID)
+	return h.kataWorkspaceCreateOutput(ctx, ws.ID, true)
 }
 
 func (h *Handler) kataWorkspaceCreateOutput(
-	ctx context.Context, workspaceID string,
+	ctx context.Context, workspaceID string, created bool,
 ) (*workspaceapi.CreateWorkspaceOutput, error) {
 	summary, err := h.workspaces.GetSummary(ctx, workspaceID)
 	if err != nil {
@@ -251,9 +251,11 @@ func (h *Handler) kataWorkspaceCreateOutput(
 	if summary == nil {
 		return nil, httpapi.Internal("workspace summary missing after create")
 	}
+	resp := h.workspaceAPI.Response(ctx, summary)
+	resp.Created = created
 	return &workspaceapi.CreateWorkspaceOutput{
 		Status: httpStatusAccepted,
-		Body:   h.workspaceAPI.Response(ctx, summary),
+		Body:   resp,
 	}, nil
 }
 

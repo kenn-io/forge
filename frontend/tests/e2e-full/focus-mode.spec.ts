@@ -38,7 +38,9 @@ test.describe("focus mode", () => {
     await expect(page.locator(".actions-menu-popover .btn--merge")).toBeVisible();
     await expect(page.locator(".actions-menu-popover .btn--close")).toBeVisible();
     await expect(page.locator(".actions-menu-popover").getByRole("button", { name: "Labels" })).toBeVisible();
-    await expect(page.locator(".actions-menu-popover .btn--workspace")).toBeVisible();
+    await expect(
+      page.locator(".actions-menu-popover").getByRole("button", { name: "Create Workspace", exact: true }),
+    ).toBeVisible();
 
     await page.locator(".actions-menu-popover").getByRole("button", { name: "Labels" }).click();
     await expect(page.locator(".label-picker")).toBeVisible();
@@ -111,7 +113,10 @@ test.describe("focus mode", () => {
     await page.locator(".focus-layout .pull-detail").waitFor({ state: "visible", timeout: 10_000 });
 
     await expect(page.locator(".actions-menu-trigger")).toBeHidden();
-    await expect(page.locator(".actions-row--primary .primary-workspace-action .btn--workspace")).toBeVisible();
+    const createWorkspace = page
+      .locator(".actions-row--primary .primary-workspace-action")
+      .getByRole("button", { name: "Create Workspace", exact: true });
+    await expect(createWorkspace).toBeVisible();
     await expect(page.locator(".actions-row--workspace")).toBeHidden();
 
     const copyNumberHeight = await page
@@ -121,7 +126,7 @@ test.describe("focus mode", () => {
     await expect(page.locator(".meta-sep--branch")).toBeHidden();
     await expect(page.locator(".meta-sep--sync")).toBeHidden();
 
-    await page.locator(".actions-row--primary .primary-workspace-action .btn--workspace").click();
+    await createWorkspace.click();
     await expect(page.locator(".kit-flash-stack").getByRole("status")).toContainText("workspace setup failed");
   });
 
@@ -132,7 +137,9 @@ test.describe("focus mode", () => {
 
     await expect(page.locator(".actions-menu-trigger")).toBeHidden();
     await expect(page.locator(".label-editor-anchor--inline").getByRole("button", { name: "Labels" })).toBeVisible();
-    await expect(page.locator(".actions-row--workspace .btn--workspace")).toBeVisible();
+    await expect(
+      page.locator(".actions-row--workspace").getByRole("button", { name: "Create Workspace", exact: true }),
+    ).toBeVisible();
   });
 
   test("browser back/forward works between focus routes", async ({ page }) => {

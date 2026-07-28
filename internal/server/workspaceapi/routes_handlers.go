@@ -240,9 +240,11 @@ func (s *Handler) createWorkspace(
 	if summary == nil {
 		return nil, httpapi.Internal("workspace summary missing after create")
 	}
+	resp := s.toWorkspaceResponse(ctx, summary)
+	resp.Created = true
 	return &createWorkspaceOutput{
 		Status: http.StatusAccepted,
-		Body:   s.toWorkspaceResponse(ctx, summary),
+		Body:   resp,
 	}, nil
 }
 
@@ -491,6 +493,7 @@ func (s *Handler) createIssueWorkspace(
 		return nil, httpapi.Internal("create issue workspace: " + msg)
 	}
 
+	createdBranch := ws.WorkspaceBranch != ""
 	s.runWorkspaceSetup(ws)
 
 	summary, err := s.workspaces.GetSummary(ctx, ws.ID)
@@ -501,9 +504,11 @@ func (s *Handler) createIssueWorkspace(
 		return nil, httpapi.Internal("workspace summary missing after create")
 	}
 
+	resp := s.toWorkspaceResponse(ctx, summary)
+	resp.Created = createdBranch
 	return &createWorkspaceOutput{
 		Status: http.StatusAccepted,
-		Body:   s.toWorkspaceResponse(ctx, summary),
+		Body:   resp,
 	}, nil
 }
 
@@ -562,6 +567,7 @@ func (s *Handler) createAdHocWorkspace(
 		return s.adHocWorkspaceCreateError(ctx, repo, itemKey, err)
 	}
 
+	createdBranch := ws.WorkspaceBranch != ""
 	s.runWorkspaceSetup(ws)
 
 	summary, err := s.workspaces.GetSummary(ctx, ws.ID)
@@ -571,9 +577,11 @@ func (s *Handler) createAdHocWorkspace(
 	if summary == nil {
 		return nil, httpapi.Internal("workspace summary missing after create")
 	}
+	response := s.toWorkspaceResponse(ctx, summary)
+	response.Created = createdBranch
 	return &createWorkspaceOutput{
 		Status: http.StatusAccepted,
-		Body:   s.toWorkspaceResponse(ctx, summary),
+		Body:   response,
 	}, nil
 }
 
@@ -1924,10 +1932,13 @@ func (s *Handler) launchWorkspaceRuntimeSession(
 		return nil, httpapi.Validation("body.target_key", "target_key is required")
 	}
 	if workspaceRuntimeTargetIsAgent(s.runtime, targetKey) {
-		if err := s.workspaces.PrepareAgentLaunchContext(ctx, workspace.PrepareAgentLaunchContextOptions{
-			WorkspaceID: summary.ID,
-			TargetKey:   targetKey,
-		}); err != nil {
+		if err := s.workspaces.PrepareAgentLaunchContext(
+			ctx,
+			workspace.PrepareAgentLaunchContextOptions{
+				WorkspaceID: summary.ID,
+				TargetKey:   targetKey,
+			},
+		); err != nil {
 			return nil, httpapi.Internal("prepare agent context: " + err.Error())
 		}
 	}

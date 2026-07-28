@@ -1702,6 +1702,15 @@ func (s *session) watchPtyOwner() SessionInfo {
 	info.TmuxSession = s.tmuxSession
 	s.mu.Unlock()
 
+	// The owner can report process exit before its output reader publishes the
+	// final PTY chunk and closes Output. Keep subscribers alive for that bounded
+	// drain; closing them immediately loses fast-exit command output.
+	if s.outputDone != nil {
+		select {
+		case <-s.outputDone:
+		case <-time.After(postExitPTYDrainTimeout):
+		}
+	}
 	s.closeSubscribers()
 	close(s.done)
 	slog.Debug(

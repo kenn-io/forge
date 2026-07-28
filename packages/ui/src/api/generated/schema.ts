@@ -7750,6 +7750,8 @@ export interface components {
             commits_ahead?: number;
             /** Format: int64 */
             commits_behind?: number;
+            /** @description True when this response represents a workspace newly created by this request; absent when an existing workspace was returned or on reads. */
+            created?: boolean;
             created_at: string;
             /** @description Combined error from the most recent reconciliation attempt; populated component fields may still contain last-known-good values. */
             enrichment_error?: string;
@@ -7774,6 +7776,11 @@ export interface components {
             mr_ci_status?: string;
             /** Format: int64 */
             mr_deletions?: number;
+            /**
+             * @description Set only for pull_request workspaces: same_repo when the PR head is confirmed to be in the base repo, fork when it is a confirmed fork clone, unknown when repository identity could not be resolved.
+             * @enum {string}
+             */
+            mr_head_repo_kind?: "same_repo" | "fork" | "unknown";
             mr_is_draft?: boolean;
             mr_review_decision?: string;
             mr_state?: string;
@@ -17733,3 +17740,4 @@ export const terminalRendererValues: ReadonlyArray<FlattenedDeepRequired<compone
 export const workflowStateMetaResponseStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["WorkflowStateMetaResponse"]["status"]> = ["new", "reviewing", "waiting", "awaiting_merge"];
 export const workspaceResponseAgent_stateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["WorkspaceResponse"]["agent_state"]> = ["idle", "working", "input", "approval"];
 export const workspaceResponseEnrichment_statusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["WorkspaceResponse"]["enrichment_status"]> = ["not_applicable", "pending", "fresh", "stale", "failed"];
+export const workspaceResponseMr_head_repo_kindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["WorkspaceResponse"]["mr_head_repo_kind"]> = ["same_repo", "fork", "unknown"];

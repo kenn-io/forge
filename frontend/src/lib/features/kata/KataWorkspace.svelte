@@ -1,8 +1,10 @@
 <script lang="ts">
   import { onMount, untrack } from "svelte";
   import { SvelteSet } from "svelte/reactivity";
+  import { getStores } from "@middleman/ui";
   import { IconButton, type TypeaheadOption } from "@kenn-io/kit-ui";
   import { showFlash } from "@middleman/ui/stores/flash";
+  import { queueWorkspaceLaunch } from "@middleman/ui/stores/workspace-create-pending";
   import LayoutPanelLeftIcon from "@lucide/svelte/icons/layout-panel-left";
   import LayoutPanelTopIcon from "@lucide/svelte/icons/layout-panel-top";
   import PlusIcon from "@lucide/svelte/icons/plus";
@@ -70,6 +72,8 @@
   import { createKataAuthorityStore } from "../../stores/kata-authority.svelte.js";
   import { createKataWorkspaceAuthorityController } from "./kataWorkspaceAuthorityController.svelte.js";
   import type { KataGraphLayoutDirection } from "./kataReachableGraph.js";
+
+  const { settings } = getStores();
 
   interface Props {
     api?: KataTaskAPI | undefined;
@@ -1593,7 +1597,9 @@
     navigate(`/terminal/${encodeURIComponent(id)}`);
   }
 
-  async function createWorkspaceForSelectedIssue(): Promise<void> {
+  async function createWorkspaceForSelectedIssue(
+    launchTargetKey?: string,
+  ): Promise<void> {
     const selected = acceptedSelectedIssue?.issue;
     if (mutationActionsBlocked || !selected || workspaceActionBusy) return;
     workspaceActionBusy = true;
@@ -1605,6 +1611,9 @@
           projectNameForIssue(selected),
         ),
       );
+      if (launchTargetKey) {
+        queueWorkspaceLaunch(created.id, launchTargetKey);
+      }
       openWorkspace(created.id);
     } catch (err) {
       showFlash(kataRequestErrorMessage(err), { tone: "danger" });
@@ -1613,9 +1622,7 @@
     }
   }
 
-  function selectedWorkspaceAction():
-    | { label: string; busy?: boolean; disabled?: boolean; onClick: () => void | Promise<void> }
-    | undefined {
+  function selectedWorkspaceAction() {
     if (!workspaceTarget?.available) return undefined;
     if (workspaceTarget.existing_workspace) {
       const id = workspaceTarget.existing_workspace.id;
@@ -1628,7 +1635,8 @@
       label: "Create workspace",
       busy: workspaceActionBusy,
       disabled: mutationActionsBlocked,
-      onClick: createWorkspaceForSelectedIssue,
+      launchTargets: settings.getLaunchTargets(),
+      onCreate: createWorkspaceForSelectedIssue,
     };
   }
 

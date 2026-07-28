@@ -167,6 +167,21 @@ workspaces = true
 Set a mode to `false` to hide it from the app. Kata and Docs default to hidden
 because they depend on external or local sources.
 
+## Workspace agents
+
+Workspace launch cards include the built-in agents (Codex, Claude, Gemini,
+opencode, aider) that are found on `PATH`. Add custom agents or override a
+built-in command with `[[agents]]` entries:
+
+```toml
+[[agents]]
+key = "review"
+label = "Review Agent"
+command = ["review-agent", "--fast"]
+```
+
+Custom agents are also editable in the app under Settings → Agents.
+
 ## Docs folders
 
 Register markdown folders from the CLI:

@@ -42,6 +42,9 @@ Natural process exit should collapse stale runtime state quickly.
 - When the shell drawer process exits, close or collapse the drawer, forget any
   persisted runtime tmux row once the backing tmux session is gone, and require
   a fresh launch on reopen.
+- PTY-owner process exit may precede final output; keep subscribers alive for a
+  bounded drain or loaded runners lose the last repaint
+  (`internal/workspace/localruntime/manager.go::watchPtyOwner`).
 
 The base workspace `tmux` tab is the exception:
 

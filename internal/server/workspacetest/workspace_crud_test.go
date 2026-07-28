@@ -30,6 +30,7 @@ type rawWorkspaceStatusResponse struct {
 	GitHeadRef   string  `json:"git_head_ref"`
 	Status       string  `json:"status"`
 	ErrorMessage *string `json:"error_message"`
+	Created      bool    `json:"created"`
 }
 
 type rawIssueWorkspaceRef struct {
@@ -644,6 +645,7 @@ func TestWorkspaceCreateIssueIsIdempotent(t *testing.T) {
 	var first rawWorkspaceStatusResponse
 	require.NoError(json.NewDecoder(firstRR.Body).Decode(&first))
 	require.NotEmpty(first.ID)
+	assert.True(first.Created, "the fresh create response must mark itself as newly created")
 
 	secondRR := doJSON(
 		t, fixture.server, http.MethodPost, path, map[string]string{},
@@ -655,6 +657,7 @@ func TestWorkspaceCreateIssueIsIdempotent(t *testing.T) {
 	assert.Equal(first.ID, second.ID)
 	assert.Equal("issue", second.ItemType)
 	assert.Equal(7, second.ItemNumber)
+	assert.False(second.Created, "a reused existing workspace must not be marked as newly created")
 
 	waitForWorkspaceReady(t, ctx, fixture.client, second.ID)
 }

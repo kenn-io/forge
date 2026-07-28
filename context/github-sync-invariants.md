@@ -84,6 +84,16 @@ For pull requests, that means:
   `internal/server/huma_routes.go::syncPR`). Cadence control is still required
   because changed PRs correctly fall through to comments, reviews, commits, CI,
   and workflow approval refreshes.
+- MR snapshot publication and workspace head-repository reclassification share
+  one reconciliation barrier. Provider-ID collisions preserve the destination
+  MR ID and merge its dependent review data before applying the newest provider
+  snapshot. A snapshot moved from the old repository identity carries a durable
+  stale-identity marker while its revision continues to advance; manual refresh
+  preserves the workspace's prior trust classification until a post-move
+  provider snapshot with authoritative head-repository data clears that marker
+  (`internal/github/sync.go::CommitMergeRequestParentSnapshot`,
+  `internal/db/queries.go::UpsertRepoByProviderID`,
+  `internal/workspace/manager.go::RefreshWorkspaceHeadRepoSnapshot`).
 
 ## Timeline Event Rules
 

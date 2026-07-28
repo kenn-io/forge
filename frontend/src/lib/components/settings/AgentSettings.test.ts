@@ -74,14 +74,17 @@ describe("AgentSettings", () => {
         ],
       });
     });
-    expect(onUpdate).toHaveBeenCalledWith([
-      {
-        key: "codex",
-        label: "Codex",
-        command: ["/opt/codex", "--full-auto"],
-        enabled: true,
-      },
-    ]);
+    expect(onUpdate).toHaveBeenCalledWith(
+      [
+        {
+          key: "codex",
+          label: "Codex",
+          command: ["/opt/codex", "--full-auto"],
+          enabled: true,
+        },
+      ],
+      [],
+    );
   });
 
   it("preserves quoted empty arguments when saving", async () => {
@@ -317,13 +320,68 @@ describe("AgentSettings", () => {
         ],
       });
     });
-    expect(onUpdate).toHaveBeenCalledWith([
+    expect(onUpdate).toHaveBeenCalledWith(
+      [
+        {
+          key: "review",
+          label: "Review Agent",
+          command: ["review-agent", "--strict"],
+          enabled: true,
+        },
+      ],
+      [],
+    );
+  });
+
+  it("uses launch targets returned by save without requiring a reload", async () => {
+    const launchTargets = [
       {
-        key: "review",
-        label: "Review Agent",
-        command: ["review-agent", "--strict"],
+        key: "codex",
+        label: "Codex",
+        kind: "agent" as const,
+        source: "configured" as const,
+        available: true,
+      },
+    ];
+    const agents = [
+      {
+        key: "codex",
+        label: "Codex",
+        command: ["/opt/codex"],
         enabled: true,
       },
-    ]);
+    ];
+    mockUpdateSettings.mockResolvedValue({
+      agents,
+      launch_targets: launchTargets,
+    });
+    const onUpdate = vi.fn();
+
+    render(AgentSettings, {
+      props: {
+        agents: [],
+        launchTargets: [
+          {
+            key: "codex",
+            label: "Codex",
+            kind: "agent",
+            source: "builtin",
+            available: false,
+            disabled_reason: "codex not found on PATH",
+          },
+        ],
+        onUpdate,
+      },
+    });
+
+    await expandAgent("Codex");
+    await fireEvent.input(screen.getByLabelText("Codex binary"), {
+      target: { value: "/opt/codex" },
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Save workspace agents" }));
+
+    await waitFor(() => {
+      expect(onUpdate).toHaveBeenCalledWith(agents, launchTargets);
+    });
   });
 });

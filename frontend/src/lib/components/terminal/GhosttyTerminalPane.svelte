@@ -22,6 +22,7 @@
   } from "./bracketedPaste.js";
   import { embeddedWebSocketUrl } from "./embeddedWebSocket.js";
   import { buildTerminalFontFamily } from "./terminalFontFamily.js";
+  import { createInitialFocusIntent } from "./terminal-focus.js";
   import { createTmuxMouseDragFilter } from "./tmuxMouseDragFilter.js";
 
   interface TerminalPaneProps {
@@ -67,6 +68,10 @@
   // Binds this pane to the workspace switch that was live at creation;
   // panes surviving from a previous workspace record nothing.
   const switchTimer = createWorkspaceSwitchPaneTimer();
+  // Captured at mount, before the async ghostty-web WASM init in start()
+  // below, so a later focus steal is detected even though start() itself
+  // cannot observe when focus moved during the wait.
+  const focusIntent = createInitialFocusIntent();
 
   type TerminalInputData = string | ArrayBuffer | ArrayBufferView;
 
@@ -454,6 +459,15 @@
       term.loadAddon(fit);
 
       fit.fit();
+
+      // Focus only at terminal creation: launching/opening a session mounts a
+      // fresh pane, which is the one moment focus is unambiguously intended.
+      // Reveal- or enable-driven re-runs of the active effect must not steal
+      // focus from controls managed by WorkspaceHost/WorkspaceDockPanel. The
+      // WASM init above is async, so focus only moves if the mount-time
+      // focus context is still current and isn't a dialog/menu/input — a
+      // live renderer swap under an open settings popover must not steal it.
+      if (active && !disabled && focusIntent.shouldFocus()) term.focus();
 
       term.onData((data: string) => {
         sendTerminalInput(data as TerminalInputData);

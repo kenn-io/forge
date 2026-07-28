@@ -96,6 +96,10 @@
   import { updateSettings } from "../../api/settings.js";
   import type { KataWorkspaceMetadata } from "../../api/kata/workspaces.js";
   import { showFlash } from "@middleman/ui/stores/flash";
+  import {
+    consumeWorkspaceLaunch,
+    pendingWorkspaceLaunchTarget,
+  } from "@middleman/ui/stores/workspace-create-pending";
   import { createTerminalZoomController } from "./terminalZoom";
 
   interface Workspace {
@@ -124,6 +128,7 @@
     mr_state?: string | null;
     mr_is_draft?: boolean | null;
     associated_pr_number?: number | null;
+    mr_head_repo_kind?: string | null;
     kata?: KataWorkspaceMetadata | null;
     fleet_host_key?: string;
   }
@@ -1327,12 +1332,10 @@
     const hostKey = workspaceHostKey;
     launchingKey = targetKey;
     try {
-      const session = await launchWorkspaceSession(
-        id,
-        targetKey,
+      const session = await launchWorkspaceSession(id, targetKey, {
         hostKey,
-        "workflow",
-      );
+        region: "workflow",
+      });
       if (!isCurrentWorkspace(id, hostKey)) return;
       await fetchRuntime({ force: true });
       if (!isCurrentWorkspace(id, hostKey)) return;
@@ -1455,12 +1458,10 @@
     const hostKey = workspaceHostKey;
     terminalLaunching = true;
     try {
-      const session = await launchWorkspaceSession(
-        id,
-        PLAIN_SHELL_TARGET,
+      const session = await launchWorkspaceSession(id, PLAIN_SHELL_TARGET, {
         hostKey,
-        "terminal",
-      );
+        region: "terminal",
+      });
       if (!isCurrentWorkspace(id, hostKey)) return null;
       const sessionsWithLaunch = upsertRuntimeSession(session);
       if (!insertIntoTree) {
@@ -1862,12 +1863,10 @@
     try {
       const keyMap: Record<string, string> = {};
       for (const spec of preset.sessions) {
-        let session = await launchWorkspaceSession(
-          id,
-          spec.targetKey,
+        let session = await launchWorkspaceSession(id, spec.targetKey, {
           hostKey,
-          spec.region,
-        );
+          region: spec.region,
+        });
         if (!isCurrentWorkspace(id, hostKey)) return;
         if (spec.label.trim() && spec.label !== session.label) {
           session = await renameWorkspaceSession(
@@ -2819,6 +2818,31 @@
       return;
     }
     void loadEmptyLaunchTargets();
+  });
+
+  $effect(() => {
+    if (!workspaceId || !runtimeLive || workspace?.status !== "ready") return;
+    if (actionsBlocked || launchingKey !== null) return;
+    const targetKey = pendingWorkspaceLaunchTarget(workspaceId);
+    if (targetKey === null) return;
+    if (runtimeSessions.length > 0) {
+      consumeWorkspaceLaunch(workspaceId);
+      return;
+    }
+    const target = launchTargets.find(
+      (candidate) => candidate.key === targetKey,
+    );
+    if (!target || target.kind !== "agent" || !target.available) {
+      consumeWorkspaceLaunch(workspaceId);
+      const reason =
+        target?.disabled_reason ?? "is not available in this workspace";
+      showFlash(`Agent "${targetKey}" could not launch: ${reason}`, {
+        tone: "danger",
+      });
+      return;
+    }
+    if (consumeWorkspaceLaunch(workspaceId) === null) return;
+    void handleLaunch(targetKey);
   });
 </script>
 

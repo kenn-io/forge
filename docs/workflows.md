@@ -76,7 +76,9 @@ opening the forge.
 
 Use **Workspaces** to launch and attach to shell or agent sessions tied to local
 repositories. tmux-backed sessions let middleman keep a durable attach point for
-ongoing work.
+ongoing work. The primary **Create Workspace** action creates only; choose an
+agent from its dropdown to create and launch immediately without another modal.
+The choice is per-creation, session-scoped intent, not a persistent default.
 
 New work does not need an existing pull request, issue, or Kata task. Use **New
 workspace** in the Workspaces sidebar, or the same command in the palette

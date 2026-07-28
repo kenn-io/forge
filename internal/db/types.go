@@ -622,24 +622,28 @@ type MergeRequest struct {
 	// the upsert preserves the previously stored value instead of clearing
 	// it. An authoritative empty HeadRepoCloneURL leaves it false.
 	HeadRepoCloneURLUnknown bool `json:"-"`
-	Additions               int
-	AdditionsKnown          bool `json:"-"`
-	Deletions               int
-	DeletionsKnown          bool `json:"-"`
-	FilesChanged            *int
-	MergeCommitSHA          string
-	CommentCount            int
-	ReviewDecision          string
-	CIStatus                string
-	CIChecksJSON            string
-	CreatedAt               time.Time
-	UpdatedAt               time.Time
-	LastActivityAt          time.Time
-	MergedAt                *time.Time
-	ClosedAt                *time.Time
-	MergeableState          string
-	DetailFetchedAt         *time.Time
-	CIHadPending            bool
+	// HeadRepoIdentityStale marks a persisted clone URL observed before its
+	// repository row moved to a new provider identity. Best-effort snapshots
+	// that cannot observe the head repository leave it set.
+	HeadRepoIdentityStale bool `json:"-"`
+	Additions             int
+	AdditionsKnown        bool `json:"-"`
+	Deletions             int
+	DeletionsKnown        bool `json:"-"`
+	FilesChanged          *int
+	MergeCommitSHA        string
+	CommentCount          int
+	ReviewDecision        string
+	CIStatus              string
+	CIChecksJSON          string
+	CreatedAt             time.Time
+	UpdatedAt             time.Time
+	LastActivityAt        time.Time
+	MergedAt              *time.Time
+	ClosedAt              *time.Time
+	MergeableState        string
+	DetailFetchedAt       *time.Time
+	CIHadPending          bool
 	// WorkflowApprovalCheckedAt is when middleman last reconciled the
 	// workflow-approval state for this merge request. Nil means never
 	// checked; the GET path treats persisted state as authoritative

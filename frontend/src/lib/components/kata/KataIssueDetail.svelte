@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { WorkspaceCreateSplitButton } from "@middleman/ui";
+  import type { LaunchTarget } from "@middleman/ui/api/types";
   import type { TypeaheadOption } from "@kenn-io/kit-ui";
   import NetworkIcon from "@lucide/svelte/icons/network";
   import PencilIcon from "@lucide/svelte/icons/pencil";
@@ -28,9 +30,11 @@
 
   interface WorkspaceAction {
     label: string;
-    busy?: boolean | undefined;
-    disabled?: boolean | undefined;
-    onClick: () => void | Promise<void>;
+    busy?: boolean;
+    disabled?: boolean;
+    onClick?: () => void | Promise<void>;
+    launchTargets?: LaunchTarget[];
+    onCreate?: (targetKey?: string) => void | Promise<void>;
   }
 
   interface Props {
@@ -327,13 +331,22 @@
       <time class="detail-created-at" datetime={issue.issue.created_at} title={localDateTimeLabel(issue.issue.created_at)}>
         {timeAgo(issue.issue.created_at)}
       </time>
-      {#if workspaceAction}
+      {#if workspaceAction?.onCreate && workspaceAction.launchTargets}
+        <WorkspaceCreateSplitButton
+          label={workspaceAction.label}
+          busyLabel="Working..."
+          launchTargets={workspaceAction.launchTargets}
+          busy={workspaceAction.busy ?? false}
+          disabled={workspaceAction.disabled ?? false}
+          onCreate={workspaceAction.onCreate}
+        />
+      {:else if workspaceAction?.onClick}
         <button
           type="button"
           class="workspace-action"
           disabled={workspaceAction.disabled || workspaceAction.busy}
           onclick={() => {
-            void workspaceAction?.onClick();
+            void workspaceAction.onClick?.();
           }}
         >
           {workspaceAction.busy ? "Working..." : workspaceAction.label}

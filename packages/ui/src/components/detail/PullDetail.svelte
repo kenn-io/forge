@@ -49,7 +49,6 @@
   import ExternalLinkIcon from "@lucide/svelte/icons/external-link";
   import GitMergeIcon from "@lucide/svelte/icons/git-merge";
   import MonitorUpIcon from "@lucide/svelte/icons/monitor-up";
-  import PackagePlusIcon from "@lucide/svelte/icons/package-plus";
   import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw";
   import TagsIcon from "@lucide/svelte/icons/tags";
   import UserCheckIcon from "@lucide/svelte/icons/user-check";
@@ -58,6 +57,7 @@
   import { Button, Chip } from "@kenn-io/kit-ui";
   import { Spinner } from "@kenn-io/kit-ui";
   import LabelRow from "../shared/LabelRow.svelte";
+  import WorkspaceCreateSplitButton from "../workspace/WorkspaceCreateSplitButton.svelte";
   import { ScrollBox } from "@kenn-io/kit-ui";
   import LabelPicker from "./LabelPicker.svelte";
   import UserListEditor from "./UserListEditor.svelte";
@@ -106,6 +106,7 @@
     beginWorkspaceCreate,
     endWorkspaceCreate,
     isWorkspaceCreatePending,
+    queueWorkspaceLaunch,
     reconcileWorkspaceCreated,
     recordWorkspaceCreated,
     resolveControllerlessWorkspaceRef,
@@ -1403,7 +1404,7 @@
     });
   }
 
-  async function createWorkspace(): Promise<void> {
+  async function createWorkspace(launchTargetKey?: string): Promise<void> {
     if (stalePR) return;
     const detail = detailStore.getDetail();
     if (!detail) return;
@@ -1460,6 +1461,9 @@
           status: data.status ?? "provisioning",
         };
         recordWorkspaceCreated(requestIdentity, createdRef);
+        if (launchTargetKey) {
+          queueWorkspaceLaunch(createdRef.id, launchTargetKey);
+        }
         inlineWorkspace?.recordCreated(requestIdentity, createdRef);
       }
       // Everything below is presentation owned by this live component
@@ -2353,22 +2357,18 @@
             </Button>
           {/if}
         {:else}
-          <Button
-            class="btn--workspace"
-            disabled={wsCreateBlocked || stalePR}
-            onclick={() => void createWorkspace()}
-            tone="info"
-            surface="soft"
-            size="sm"
-            title={stalePR
+          <WorkspaceCreateSplitButton
+            label="Create Workspace"
+            busyLabel="Creating..."
+            launchTargets={settings.getLaunchTargets()}
+            busy={wsCreateBlocked}
+            disabled={stalePR}
+            disabledReason={stalePR
               ? "Refresh details before creating a workspace."
               : createWorkspaceTitle}
-            ariaDescribedby={createWorkspaceDescriptionId}
-            label={wsCreateBlocked ? "Creating..." : "Create Workspace"}
-            shortLabel={wsCreateBlocked ? "Creating..." : "Create Workspace"}
-          >
-            <PackagePlusIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-          </Button>
+            descriptionId={createWorkspaceDescriptionId}
+            onCreate={createWorkspace}
+          />
         {/if}
       {/snippet}
 

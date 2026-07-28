@@ -37,6 +37,13 @@ export function nextWorkspaceLifecycleTick(): number {
 // deletion must invalidate views currently showing the dead workspace.
 let deletedIds = $state<ReadonlySet<string>>(new Set());
 
+type PendingWorkspaceLaunch = {
+  workspaceId: string;
+  targetKey: string;
+};
+
+let pendingWorkspaceLaunches = $state<PendingWorkspaceLaunch[]>([]);
+
 export function markWorkspaceIdDeleted(workspaceId: string): void {
   if (deletedIds.has(workspaceId)) return;
   const next = new Set(deletedIds);
@@ -46,6 +53,26 @@ export function markWorkspaceIdDeleted(workspaceId: string): void {
 
 export function isWorkspaceIdDeleted(workspaceId: string): boolean {
   return deletedIds.has(workspaceId);
+}
+
+export function queueWorkspaceLaunch(workspaceId: string, targetKey: string): void {
+  const normalized = targetKey.trim();
+  if (!workspaceId || !normalized) return;
+  pendingWorkspaceLaunches = [
+    ...pendingWorkspaceLaunches.filter((entry) => entry.workspaceId !== workspaceId),
+    { workspaceId, targetKey: normalized },
+  ];
+}
+
+export function pendingWorkspaceLaunchTarget(workspaceId: string): string | null {
+  return pendingWorkspaceLaunches.find((entry) => entry.workspaceId === workspaceId)?.targetKey ?? null;
+}
+
+export function consumeWorkspaceLaunch(workspaceId: string): string | null {
+  const targetKey = pendingWorkspaceLaunchTarget(workspaceId);
+  if (targetKey === null) return null;
+  pendingWorkspaceLaunches = pendingWorkspaceLaunches.filter((entry) => entry.workspaceId !== workspaceId);
+  return targetKey;
 }
 
 export function beginWorkspaceCreate(identity: WorkspaceItemIdentity): void {
@@ -138,4 +165,5 @@ export function resetWorkspaceCreatePendingForTest(): void {
   created = [];
   lifecycleClock = 0;
   deletedIds = new Set();
+  pendingWorkspaceLaunches = [];
 }

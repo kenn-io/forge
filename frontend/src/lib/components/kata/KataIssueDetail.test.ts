@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/svelte";
 import type { ComponentProps } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import type { LaunchTarget } from "@middleman/ui/api/types";
 import type {
   KataProjectSummary,
   KataRecurrence,
@@ -12,6 +13,18 @@ import { createKataLinkFilters } from "../../features/kata/kataLinkFilters.js";
 import KataIssueDetail from "./KataIssueDetail.svelte";
 
 type KataIssueDetailProps = ComponentProps<typeof KataIssueDetail>;
+
+const launchTargets: LaunchTarget[] = [
+  {
+    key: "codex",
+    label: "Codex",
+    kind: "agent",
+    source: "builtin",
+    command: ["codex"],
+    available: true,
+    disabled_reason: "",
+  },
+];
 
 function makeIssue(overrides: Partial<KataTaskDetail["issue"]> = {}): KataTaskDetail {
   return {
@@ -133,6 +146,41 @@ describe("KataIssueDetail", () => {
     expect(within(detail).getByRole("region", { name: "Checklist" })).toBeTruthy();
     expect(within(detail).getByRole("heading", { name: "Recurring" })).toBeTruthy();
     expect(within(detail).getByRole("heading", { name: "Comments" })).toBeTruthy();
+  });
+
+  it("keeps the Kata primary workspace action create-only", async () => {
+    const onCreate = vi.fn();
+    renderDetail({
+      workspaceAction: {
+        label: "Create workspace",
+        launchTargets,
+        onCreate,
+      },
+    });
+    await fireEvent.click(
+      screen.getByRole("button", {
+        name: "Create workspace",
+      }),
+    );
+    expect(onCreate).toHaveBeenCalledWith(undefined);
+  });
+
+  it("passes the chosen agent through the Kata workspace action", async () => {
+    const onCreate = vi.fn();
+    renderDetail({
+      workspaceAction: {
+        label: "Create workspace",
+        launchTargets,
+        onCreate,
+      },
+    });
+    await fireEvent.click(
+      screen.getByRole("button", {
+        name: "Create workspace options",
+      }),
+    );
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Codex" }));
+    expect(onCreate).toHaveBeenCalledWith("codex");
   });
 
   it("edits title and description through the issue edit callback", async () => {

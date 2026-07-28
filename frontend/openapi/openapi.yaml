@@ -7680,6 +7680,9 @@ components:
         commits_behind:
           format: int64
           type: integer
+        created:
+          description: True when this response represents a workspace newly created by this request; absent when an existing workspace was returned or on reads.
+          type: boolean
         created_at:
           type: string
         enrichment_error:
@@ -7722,6 +7725,13 @@ components:
         mr_deletions:
           format: int64
           type: integer
+        mr_head_repo_kind:
+          description: "Set only for pull_request workspaces: same_repo when the PR head is confirmed to be in the base repo, fork when it is a confirmed fork clone, unknown when repository identity could not be resolved."
+          enum:
+            - same_repo
+            - fork
+            - unknown
+          type: string
         mr_is_draft:
           type: boolean
         mr_review_decision:

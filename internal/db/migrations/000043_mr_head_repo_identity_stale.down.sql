@@ -1,0 +1,1 @@
+ALTER TABLE middleman_merge_requests DROP COLUMN head_repo_identity_stale;

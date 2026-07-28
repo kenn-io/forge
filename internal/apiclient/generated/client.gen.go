@@ -803,6 +803,27 @@ func (e WorkspaceResponseEnrichmentStatus) Valid() bool {
 	}
 }
 
+// Defines values for WorkspaceResponseMrHeadRepoKind.
+const (
+	Fork     WorkspaceResponseMrHeadRepoKind = "fork"
+	SameRepo WorkspaceResponseMrHeadRepoKind = "same_repo"
+	Unknown  WorkspaceResponseMrHeadRepoKind = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the WorkspaceResponseMrHeadRepoKind enum.
+func (e WorkspaceResponseMrHeadRepoKind) Valid() bool {
+	switch e {
+	case Fork:
+		return true
+	case SameRepo:
+		return true
+	case Unknown:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for GetPullFilePreviewOnHostParamsSide.
 const (
 	GetPullFilePreviewOnHostParamsSideNew GetPullFilePreviewOnHostParamsSide = "new"
@@ -4117,7 +4138,10 @@ type WorkspaceResponse struct {
 	AssociatedPrNumber  *int64     `json:"associated_pr_number,omitempty"`
 	CommitsAhead        *int64     `json:"commits_ahead,omitempty"`
 	CommitsBehind       *int64     `json:"commits_behind,omitempty"`
-	CreatedAt           string     `json:"created_at"`
+
+	// Created True when this response represents a workspace newly created by this request; absent when an existing workspace was returned or on reads.
+	Created   *bool  `json:"created,omitempty"`
+	CreatedAt string `json:"created_at"`
 
 	// EnrichmentError Combined error from the most recent reconciliation attempt; populated component fields may still contain last-known-good values.
 	EnrichmentError *string `json:"enrichment_error,omitempty"`
@@ -4138,21 +4162,24 @@ type WorkspaceResponse struct {
 	MrAdditions        *int64                            `json:"mr_additions,omitempty"`
 	MrCiStatus         *string                           `json:"mr_ci_status,omitempty"`
 	MrDeletions        *int64                            `json:"mr_deletions,omitempty"`
-	MrIsDraft          *bool                             `json:"mr_is_draft,omitempty"`
-	MrReviewDecision   *string                           `json:"mr_review_decision,omitempty"`
-	MrState            *string                           `json:"mr_state,omitempty"`
-	MrTitle            *string                           `json:"mr_title,omitempty"`
-	PlatformHost       string                            `json:"platform_host"`
-	Repo               RepoRefResponse                   `json:"repo"`
-	RepoName           string                            `json:"repo_name"`
-	RepoOwner          string                            `json:"repo_owner"`
-	Status             string                            `json:"status"`
-	TmuxActivitySource string                            `json:"tmux_activity_source"`
-	TmuxLastOutputAt   *string                           `json:"tmux_last_output_at"`
-	TmuxPaneTitle      *string                           `json:"tmux_pane_title,omitempty"`
-	TmuxSession        string                            `json:"tmux_session"`
-	TmuxWorking        bool                              `json:"tmux_working"`
-	WorktreePath       string                            `json:"worktree_path"`
+
+	// MrHeadRepoKind Set only for pull_request workspaces: same_repo when the PR head is confirmed to be in the base repo, fork when it is a confirmed fork clone, unknown when repository identity could not be resolved.
+	MrHeadRepoKind     *WorkspaceResponseMrHeadRepoKind `json:"mr_head_repo_kind,omitempty"`
+	MrIsDraft          *bool                            `json:"mr_is_draft,omitempty"`
+	MrReviewDecision   *string                          `json:"mr_review_decision,omitempty"`
+	MrState            *string                          `json:"mr_state,omitempty"`
+	MrTitle            *string                          `json:"mr_title,omitempty"`
+	PlatformHost       string                           `json:"platform_host"`
+	Repo               RepoRefResponse                  `json:"repo"`
+	RepoName           string                           `json:"repo_name"`
+	RepoOwner          string                           `json:"repo_owner"`
+	Status             string                           `json:"status"`
+	TmuxActivitySource string                           `json:"tmux_activity_source"`
+	TmuxLastOutputAt   *string                          `json:"tmux_last_output_at"`
+	TmuxPaneTitle      *string                          `json:"tmux_pane_title,omitempty"`
+	TmuxSession        string                           `json:"tmux_session"`
+	TmuxWorking        bool                             `json:"tmux_working"`
+	WorktreePath       string                           `json:"worktree_path"`
 }
 
 // WorkspaceResponseAgentState Hook-reported aggregate state for live agent sessions. Omitted when no live session has reported lifecycle state.
@@ -4160,6 +4187,9 @@ type WorkspaceResponseAgentState string
 
 // WorkspaceResponseEnrichmentStatus Aggregate git-divergence and tmux-activity reconciliation status. Failed responses retain last-known-good component fields when available.
 type WorkspaceResponseEnrichmentStatus string
+
+// WorkspaceResponseMrHeadRepoKind Set only for pull_request workspaces: same_repo when the PR head is confirmed to be in the base repo, fork when it is a confirmed fork clone, unknown when repository identity could not be resolved.
+type WorkspaceResponseMrHeadRepoKind string
 
 // WorkspaceRuntimeResponse defines model for WorkspaceRuntimeResponse.
 type WorkspaceRuntimeResponse struct {

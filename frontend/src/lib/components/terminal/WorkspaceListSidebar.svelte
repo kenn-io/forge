@@ -149,6 +149,8 @@
   const basePath = (
     window.__BASE_PATH__ ?? "/"
   ).replace(/\/$/, "");
+  const doneAcknowledgementsStorageKey =
+    "middleman:workspace-agent-done-acknowledgements/v1";
 
   let workspaces = $state.raw<Workspace[]>([]);
   let fleetHosts = $state.raw<HostSummary[]>([]);
@@ -172,7 +174,9 @@
   } | null>(null);
   let contextMenuEl = $state<HTMLDivElement | null>(null);
   let contextMenuStyle = $state("");
-  let acknowledgedDoneStates = $state<string[]>([]);
+  let acknowledgedDoneStates = $state.raw<Record<string, string>>(
+    loadDoneAcknowledgements(),
+  );
 
   const workspaceListLoadTimeoutMs = 10_000;
   let displayOptions = $state<WorkspaceListDisplayOptions>(
@@ -416,10 +420,12 @@
       const remote = fleetLoaded && !fleetError && hasRemoteFleetHosts
         ? await fetchPeerWorkspaces(abortController.signal)
         : [];
-      workspaces = [
+      const nextWorkspaces = [
         ...local,
         ...(hasRemoteFleetHosts ? remote : []),
       ];
+      reconcileDoneAcknowledgements(nextWorkspaces);
+      workspaces = nextWorkspaces;
       workspaceListStatus = "loaded";
     } catch {
       // Network error; keep stale list.
@@ -625,24 +631,77 @@
         return { label: "Approval", status: "waiting", tone: "approval" };
       case "input":
         return { label: "Input", status: "waiting", tone: "input" };
-      case "done":
-        if (acknowledgedDoneStates.includes(doneStateKey(ws))) return null;
+      case "done": {
+        const version = doneStateVersion(ws);
+        if (version !== null && acknowledgedDoneStates[workspaceRowKey(ws)] === version) {
+          return null;
+        }
         return { label: "Done", status: "idle", tone: "done" };
+      }
       default:
         return null;
     }
   }
 
-  function doneStateKey(ws: Workspace): string {
-    return `${workspaceRowKey(ws)}:${ws.agent_state_updated_at ?? "unknown"}`;
+  function loadDoneAcknowledgements(): Record<string, string> {
+    try {
+      const stored = window.sessionStorage.getItem(doneAcknowledgementsStorageKey);
+      if (!stored) return {};
+      const parsed: unknown = JSON.parse(stored);
+      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+        return {};
+      }
+      const acknowledgements: Record<string, string> = {};
+      for (const [workspaceKey, version] of Object.entries(parsed)) {
+        if (typeof version === "string" && version.trim()) {
+          acknowledgements[workspaceKey] = version;
+        }
+      }
+      return acknowledgements;
+    } catch {
+      return {};
+    }
+  }
+
+  function saveDoneAcknowledgements(value: Record<string, string>): void {
+    try {
+      if (Object.keys(value).length === 0) {
+        window.sessionStorage.removeItem(doneAcknowledgementsStorageKey);
+      } else {
+        window.sessionStorage.setItem(doneAcknowledgementsStorageKey, JSON.stringify(value));
+      }
+    } catch {
+      // Storage is optional; the in-memory acknowledgement still applies.
+    }
+  }
+
+  function doneStateVersion(ws: Workspace): string | null {
+    if (ws.agent_state !== "done") return null;
+    return ws.agent_state_updated_at?.trim() || null;
+  }
+
+  function reconcileDoneAcknowledgements(items: Workspace[]): void {
+    let next = acknowledgedDoneStates;
+    for (const ws of items) {
+      const workspaceKey = workspaceRowKey(ws);
+      const acknowledgedVersion = next[workspaceKey];
+      if (!acknowledgedVersion || acknowledgedVersion === doneStateVersion(ws)) continue;
+      if (next === acknowledgedDoneStates) next = { ...acknowledgedDoneStates };
+      delete next[workspaceKey];
+    }
+    if (next === acknowledgedDoneStates) return;
+    acknowledgedDoneStates = next;
+    saveDoneAcknowledgements(next);
   }
 
   function openWorkspace(ws: Workspace): void {
-    if (ws.agent_state === "done") {
-      const stateKey = doneStateKey(ws);
-      if (!acknowledgedDoneStates.includes(stateKey)) {
-        acknowledgedDoneStates = [...acknowledgedDoneStates, stateKey];
-      }
+    const doneVersion = doneStateVersion(ws);
+    if (doneVersion !== null) {
+      acknowledgedDoneStates = {
+        ...acknowledgedDoneStates,
+        [workspaceRowKey(ws)]: doneVersion,
+      };
+      saveDoneAcknowledgements(acknowledgedDoneStates);
     }
     navigate(workspaceRoute(ws));
   }

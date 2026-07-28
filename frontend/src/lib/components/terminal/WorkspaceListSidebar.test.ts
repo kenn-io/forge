@@ -201,6 +201,7 @@ describe("WorkspaceListSidebar", () => {
     MockEventSource.instances.length = 0;
     resetNewWorkspaceDialogState();
     localStorage.clear();
+    sessionStorage.clear();
     vi.stubGlobal("EventSource", MockEventSource);
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
@@ -1479,36 +1480,77 @@ describe("WorkspaceListSidebar", () => {
   });
 
   it("keeps a completed agent visible until its workspace row is opened", async () => {
-    mockGet.mockResolvedValue({
-      data: {
-        workspaces: [
-          workspaceFixture({
-            id: "ws-done",
-            provider: "github",
-            platformHost: "github.com",
-            owner: "acme",
-            name: "widget",
-            number: 9,
-            agentState: "done",
-            agentStateUpdatedAt: "2026-07-28T12:00:00Z",
-          }),
-        ],
-      },
-    });
+    let agentStateUpdatedAt = "2026-07-28T12:00:00.000000001Z";
+    mockGet.mockImplementation(() =>
+      Promise.resolve({
+        data: {
+          workspaces: [
+            workspaceFixture({
+              id: "ws-done",
+              provider: "github",
+              platformHost: "github.com",
+              owner: "acme",
+              name: "widget",
+              number: 9,
+              agentState: "done",
+              agentStateUpdatedAt,
+            }),
+          ],
+        },
+      }),
+    );
 
-    const { container } = render(WorkspaceListSidebar, {
+    const first = render(WorkspaceListSidebar, {
       props: { selectedId: "" },
     });
 
     expect(await screen.findByText("Done")).toBeTruthy();
     expect(screen.getByLabelText("Agent done")).toBeTruthy();
 
-    const row = container.querySelector<HTMLElement>(".ws-row");
+    const row = first.container.querySelector<HTMLElement>(".ws-row");
     expect(row).toBeTruthy();
     await fireEvent.click(row!);
 
     expect(screen.queryByText("Done")).toBeNull();
     expect(mockNavigate).toHaveBeenCalledWith("/terminal/ws-done");
+
+    first.unmount();
+    const remounted = render(WorkspaceListSidebar, { props: { selectedId: "" } });
+    await screen.findByText("PR 9");
+    expect(screen.queryByText("Done")).toBeNull();
+
+    remounted.unmount();
+    agentStateUpdatedAt = "2026-07-28T12:00:00.000000002Z";
+    render(WorkspaceListSidebar, { props: { selectedId: "" } });
+    expect(await screen.findByText("Done")).toBeTruthy();
+  });
+
+  it("does not dismiss an unversioned completed agent state", async () => {
+    mockGet.mockResolvedValue({
+      data: {
+        workspaces: [
+          workspaceFixture({
+            id: "ws-unversioned-done",
+            provider: "github",
+            platformHost: "github.com",
+            owner: "acme",
+            name: "widget",
+            number: 10,
+            agentState: "done",
+          }),
+        ],
+      },
+    });
+
+    const { container } = render(WorkspaceListSidebar, { props: { selectedId: "" } });
+    expect(await screen.findByText("Done")).toBeTruthy();
+
+    const row = container.querySelector<HTMLElement>(".ws-row");
+    expect(row).toBeTruthy();
+    await fireEvent.click(row!);
+
+    expect(screen.getByText("Done")).toBeTruthy();
+    expect(mockNavigate).toHaveBeenCalledWith("/terminal/ws-unversioned-done");
   });
 
   it("lets hook-reported idle override recent tmux output", async () => {

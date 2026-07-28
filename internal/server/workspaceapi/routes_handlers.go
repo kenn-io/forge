@@ -1546,9 +1546,13 @@ func (s *Handler) applyAgentActivity(
 		return
 	}
 	state := string(snapshot.State)
-	updatedAt := snapshot.UpdatedAt.UTC().Format(time.RFC3339)
+	updatedAt := formatAgentActivityUpdatedAt(snapshot.UpdatedAt)
 	resp.AgentState = &state
 	resp.AgentStateUpdatedAt = &updatedAt
+}
+
+func formatAgentActivityUpdatedAt(value time.Time) string {
+	return value.UTC().Format(time.RFC3339Nano)
 }
 
 // Response returns the cached public DTO for a persisted workspace summary.

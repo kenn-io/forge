@@ -50,6 +50,13 @@ func runGit(t *testing.T, dir string, args ...string) {
 	require.NoError(t, err, "git %v failed: %s", args, stderr)
 }
 
+func TestFormatAgentActivityUpdatedAtPreservesSubsecondPrecision(t *testing.T) {
+	t.Parallel()
+	updatedAt := time.Date(2026, 7, 28, 12, 0, 0, 123456789, time.UTC)
+
+	assert.Equal(t, "2026-07-28T12:00:00.123456789Z", formatAgentActivityUpdatedAt(updatedAt))
+}
+
 func TestWorkspaceEnrichmentRestoresDivergenceAfterObserverHealsUpstream(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

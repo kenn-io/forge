@@ -384,7 +384,6 @@ test("repository import can hide forks and private repositories before adding", 
           letter_spacing: 0,
           cursor_blink: true,
           font_ligatures: false,
-          renderer: "xterm",
         },
       }),
     });

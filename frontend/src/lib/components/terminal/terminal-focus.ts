@@ -1,9 +1,7 @@
-// Guards terminal panes against stealing focus during their async init
-// window (font loading for xterm, WASM init for ghostty-web). A pane can
-// be (re)mounted while a settings popover is open above it (changing the
-// terminal renderer live-remounts every mounted pane) or while the user is
-// typing in an unrelated field, so focus must only move into the terminal
-// when nothing else has claimed it in the meantime.
+// Guards terminal panes against stealing focus during async font loading.
+// A pane can be mounted while a settings popover is open above it or while
+// the user is typing in an unrelated field, so focus must only move into the
+// terminal when nothing else has claimed it in the meantime.
 
 // kit-ui-check-ignore -- CSS selector for closest()/matches() detection, not rendered markup.
 const SACRED_CONTAINER_SELECTOR = '[role="dialog"], [role="menu"], [role="listbox"]';

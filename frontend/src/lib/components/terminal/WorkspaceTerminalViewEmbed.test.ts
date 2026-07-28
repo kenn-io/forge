@@ -90,7 +90,6 @@ vi.mock("@middleman/ui", async (importOriginal) => {
           letter_spacing: 0,
           cursor_blink: true,
           font_ligatures: false,
-          renderer: "xterm",
         }),
         setTerminalSettings: vi.fn(),
         getModeVisibility: () => ({
@@ -111,7 +110,6 @@ vi.mock("@middleman/ui", async (importOriginal) => {
         getTerminalLetterSpacing: () => 0,
         getTerminalCursorBlink: () => true,
         getTerminalFontLigatures: () => false,
-        getTerminalRenderer: () => "xterm",
       },
     }),
   };

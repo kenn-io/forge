@@ -142,7 +142,6 @@ vi.mock("@middleman/ui/stores/settings", () => ({
         letter_spacing: 0,
         cursor_blink: false,
         font_ligatures: false,
-        renderer: "xterm",
         hide_tmux_status: false,
       }),
       setTerminalSettings: vi.fn(),
@@ -218,7 +217,6 @@ describe("Provider events store wiring", () => {
         letter_spacing: 0,
         cursor_blink: false,
         font_ligatures: false,
-        renderer: "xterm",
         hide_tmux_status: false,
       },
       modes: {

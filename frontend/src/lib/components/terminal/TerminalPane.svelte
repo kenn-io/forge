@@ -1,7 +1,4 @@
 <script lang="ts">
-  import { getStores } from "@middleman/ui";
-  import type { TerminalRenderer } from "@middleman/ui/api/types";
-  import GhosttyTerminalPane from "./GhosttyTerminalPane.svelte";
   import XtermTerminalPane from "./XtermTerminalPane.svelte";
 
   interface TerminalPaneProps {
@@ -26,35 +23,14 @@
     onExit = undefined,
     initialStatus = undefined,
   }: TerminalPaneProps = $props();
-  const { settings: settingsStore } = getStores();
-
-  function normalizeRenderer(renderer: string | null | undefined): TerminalRenderer {
-    return renderer === "ghostty-web" ? "ghostty-web" : "xterm";
-  }
-
-  const terminalRenderer = $derived(
-    normalizeRenderer(settingsStore.getTerminalRenderer()),
-  );
 </script>
 
-{#if terminalRenderer === "ghostty-web"}
-  <GhosttyTerminalPane
-    {workspaceId}
-    {websocketPath}
-    {reconnectOnExit}
-    {active}
-    {disabled}
-    {onExit}
-    {initialStatus}
-  />
-{:else}
-  <XtermTerminalPane
-    {workspaceId}
-    {websocketPath}
-    {reconnectOnExit}
-    {active}
-    {disabled}
-    {onExit}
-    {initialStatus}
-  />
-{/if}
+<XtermTerminalPane
+  {workspaceId}
+  {websocketPath}
+  {reconnectOnExit}
+  {active}
+  {disabled}
+  {onExit}
+  {initialStatus}
+/>

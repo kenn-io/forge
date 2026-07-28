@@ -96,7 +96,7 @@ describe("terminal settings response races", () => {
     terminalButton!.click();
     const terminalPanel = await vi.waitFor(() => {
       const panel = document.querySelector<HTMLElement>(".settings-panel:not([hidden])");
-      expect(panel?.textContent).toContain("Terminal");
+      expect(panel?.textContent).toContain("Workspace terminal");
       return panel!;
     }, WAIT);
     const fontInput = terminalPanel.querySelector<HTMLInputElement>("#terminal-font-family")!;

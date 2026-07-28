@@ -21,8 +21,6 @@ port = 8091
 # issue_workspace_branch_style = "slug"
 
 [terminal]
-# Terminal renderer: "xterm" (default) or "ghostty-web"
-renderer = "xterm"
 
 [activity]
 view_mode = "threaded"

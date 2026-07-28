@@ -144,7 +144,6 @@ describe("RepoImportModal", () => {
         letter_spacing: 0,
         cursor_blink: true,
         font_ligatures: false,
-        renderer: "xterm",
         hide_tmux_status: false,
       },
       notifications: {
@@ -223,7 +222,6 @@ describe("RepoImportModal", () => {
         letter_spacing: 0,
         cursor_blink: true,
         font_ligatures: false,
-        renderer: "xterm",
         hide_tmux_status: false,
       },
       notifications: {

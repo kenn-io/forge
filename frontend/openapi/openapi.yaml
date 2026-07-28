@@ -7322,11 +7322,6 @@ components:
         line_height:
           format: double
           type: number
-        renderer:
-          enum:
-            - xterm
-            - ghostty-web
-          type: string
         scrollback:
           format: int64
           type: integer
@@ -7338,7 +7333,6 @@ components:
         - letter_spacing
         - cursor_blink
         - font_ligatures
-        - renderer
         - hide_tmux_status
       type: object
     TerminalClipboardInputBody:

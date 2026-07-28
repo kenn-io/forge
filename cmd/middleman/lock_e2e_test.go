@@ -74,7 +74,6 @@ view_mode = "threaded"
 time_range = "7d"
 
 [terminal]
-renderer = "xterm"
 `, port, dataDir)
 	require.NoError(t, os.WriteFile(configPath, []byte(body), 0o600))
 }

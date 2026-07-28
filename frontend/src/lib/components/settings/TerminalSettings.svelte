@@ -2,11 +2,7 @@
   import { Checkbox } from "@kenn-io/kit-ui";
   import Modal from "../shared/Modal.svelte";
   import { onDestroy, untrack } from "svelte";
-  import {
-    DEFAULT_TERMINAL_SETTINGS,
-    getStores,
-    SelectDropdown,
-  } from "@middleman/ui";
+  import { DEFAULT_TERMINAL_SETTINGS, getStores } from "@middleman/ui";
   import { showFlash } from "@middleman/ui/stores/flash";
   import type { TerminalSettings as TerminalSettingsType } from "@middleman/ui/api/types";
   import { updateSettings } from "../../api/settings.js";
@@ -56,11 +52,6 @@
     "Consolas",
     "Courier New",
   ];
-  const rendererOptions = [
-    { value: "xterm", label: "xterm.js" },
-    { value: "ghostty-web", label: "ghostty-web" },
-  ];
-
   let draftReady = $state(false);
   let saving = $state(false);
   let fontFamilyDraft = $state("");
@@ -82,7 +73,6 @@
   let fontLigaturesDraft = $state(
     DEFAULT_TERMINAL_SETTINGS.font_ligatures,
   );
-  let rendererDraft = $state<TerminalSettingsType["renderer"]>("xterm");
   let hideTmuxStatusDraft = $state(
     DEFAULT_TERMINAL_SETTINGS.hide_tmux_status,
   );
@@ -159,7 +149,6 @@
         letterSpacingDraft ?? DEFAULT_TERMINAL_SETTINGS.letter_spacing,
       cursor_blink: cursorBlinkDraft,
       font_ligatures: fontLigaturesDraft,
-      renderer: rendererDraft,
       hide_tmux_status: hideTmuxStatusDraft,
     };
   }
@@ -177,7 +166,6 @@
       pendingTerminal.letter_spacing !== currentTerminal.letter_spacing ||
       pendingTerminal.cursor_blink !== currentTerminal.cursor_blink ||
       pendingTerminal.font_ligatures !== currentTerminal.font_ligatures ||
-      pendingTerminal.renderer !== currentTerminal.renderer ||
       pendingTerminal.hide_tmux_status !== currentTerminal.hide_tmux_status
   );
   const isDefaultDraft = $derived(
@@ -191,11 +179,9 @@
         DEFAULT_TERMINAL_SETTINGS.cursor_blink &&
       pendingTerminal.font_ligatures ===
         DEFAULT_TERMINAL_SETTINGS.font_ligatures &&
-      pendingTerminal.renderer === DEFAULT_TERMINAL_SETTINGS.renderer &&
       pendingTerminal.hide_tmux_status ===
         DEFAULT_TERMINAL_SETTINGS.hide_tmux_status
   );
-  const xtermOnlyControlsEnabled = $derived(rendererDraft === "xterm");
   const canSave = $derived(!saving && isDirty);
   const localMonospaceFonts = $derived.by(() => {
     if (!localFonts) return [];
@@ -224,7 +210,6 @@
     letterSpacingDraft = value.letter_spacing;
     cursorBlinkDraft = value.cursor_blink;
     fontLigaturesDraft = value.font_ligatures;
-    rendererDraft = value.renderer;
     hideTmuxStatusDraft = value.hide_tmux_status;
   }
 
@@ -368,7 +353,7 @@
         max="2"
         step="0.05"
         bind:value={lineHeightDraft}
-        disabled={saving || !xtermOnlyControlsEnabled}
+        disabled={saving}
       />
     </label>
 
@@ -396,23 +381,10 @@
         max="8"
         step="1"
         bind:value={letterSpacingDraft}
-        disabled={saving || !xtermOnlyControlsEnabled}
+        disabled={saving}
       />
     </label>
 
-    <div class="renderer-field">
-      <span class="setting-label">Terminal renderer</span>
-      <SelectDropdown
-        class="renderer-dropdown"
-        value={rendererDraft}
-        options={rendererOptions}
-        onchange={(value) => {
-          rendererDraft = value as TerminalSettingsType["renderer"];
-        }}
-        title="Terminal renderer"
-        disabled={saving}
-      />
-    </div>
   </div>
 
   <Checkbox
@@ -425,7 +397,7 @@
   <Checkbox
     class="toggle-field"
     bind:checked={fontLigaturesDraft}
-    disabled={saving || !xtermOnlyControlsEnabled}
+    disabled={saving}
     label="Font ligatures"
   />
 
@@ -438,11 +410,7 @@
 
   <div class="setting-actions">
     <p class="setting-help">
-      {#if xtermOnlyControlsEnabled}
-        Leave the font blank to use the app default monospace stack.
-      {:else}
-        ghostty-web does not expose line height, letter spacing, or ligature controls.
-      {/if}
+      Leave the font blank to use the app default monospace stack.
     </p>
     <div class="button-row">
       <button
@@ -541,7 +509,6 @@
   }
 
   .font-field,
-  .renderer-field,
   .control-field {
     display: flex;
     flex-direction: column;
@@ -581,11 +548,6 @@
 
   .font-input {
     font-family: var(--font-mono);
-  }
-
-  .renderer-field :global(.renderer-dropdown) {
-    width: 100%;
-    min-width: 0;
   }
 
   :global(.toggle-field .kit-checkbox__label) {

@@ -6,7 +6,6 @@ import {
   type LaunchTarget,
   type ModeVisibility,
   type PullRequestSettings,
-  type TerminalRenderer,
   type TerminalSettings,
 } from "../api/types.js";
 
@@ -110,17 +109,6 @@ export function createSettingsStore() {
     return terminalSettings.font_ligatures;
   }
 
-  function getTerminalRenderer(): TerminalRenderer {
-    return terminalSettings.renderer;
-  }
-
-  function setTerminalRenderer(renderer: TerminalSettings["renderer"] | null | undefined): void {
-    terminalSettings = {
-      ...terminalSettings,
-      renderer: renderer === "ghostty-web" ? "ghostty-web" : "xterm",
-    };
-  }
-
   function hasConfiguredRepos(): boolean {
     return repos.length > 0;
   }
@@ -149,8 +137,6 @@ export function createSettingsStore() {
     getTerminalLetterSpacing,
     getTerminalCursorBlink,
     getTerminalFontLigatures,
-    getTerminalRenderer,
-    setTerminalRenderer,
     hasConfiguredRepos,
     isSettingsLoaded,
   };

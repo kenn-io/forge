@@ -65,8 +65,7 @@ describe("workspace host startup gating (browser)", () => {
     // Startup polls /healthz every 750ms; give it more than one full cycle
     // while unready. The workspace host must hold off with the rest of the
     // shell — an early workspace fetch would park a failure in the error
-    // state until manual retry, and settings arriving later would replace
-    // an already-active terminal renderer.
+    // state until manual retry.
     await new Promise((resolve) => setTimeout(resolve, 1600));
     expect(workspaceRequests()).toBe(0);
 

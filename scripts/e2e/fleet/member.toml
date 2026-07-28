@@ -13,7 +13,6 @@ view_mode = "threaded"
 time_range = "7d"
 
 [terminal]
-renderer = "xterm"
 
 [fleet]
 key = "member"

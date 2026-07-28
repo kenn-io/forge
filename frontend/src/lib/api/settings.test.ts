@@ -26,7 +26,6 @@ describe("settings api", () => {
             letter_spacing: 0,
             cursor_blink: true,
             font_ligatures: false,
-            renderer: "xterm",
           },
           repos: [],
           owner: "acme",

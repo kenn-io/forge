@@ -71,7 +71,6 @@ function activitySettings(viewMode: "flat" | "threaded"): MockRouteOverride {
         letter_spacing: 0,
         cursor_blink: true,
         font_ligatures: false,
-        renderer: "xterm",
       },
       agents: [],
     });

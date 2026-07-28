@@ -10,7 +10,6 @@ const { mockGetTerminalSettings, mockSetTerminalSettings, mockTerminalStore, moc
     letter_spacing: 0,
     cursor_blink: true,
     font_ligatures: false,
-    renderer: "xterm" as const,
     hide_tmux_status: false,
   };
   const store = { terminal: { ...defaultTerminal } };
@@ -36,7 +35,6 @@ vi.mock("@middleman/ui", async (importOriginal) => {
       letter_spacing: 0,
       cursor_blink: true,
       font_ligatures: false,
-      renderer: "xterm",
       hide_tmux_status: false,
     },
     getStores: () => ({
@@ -82,7 +80,6 @@ describe("TerminalSettings", () => {
         letter_spacing: 0,
         cursor_blink: true,
         font_ligatures: false,
-        renderer: "xterm",
         hide_tmux_status: false,
       },
     });
@@ -98,7 +95,6 @@ describe("TerminalSettings", () => {
           letter_spacing: 0,
           cursor_blink: true,
           font_ligatures: false,
-          renderer: "xterm",
           hide_tmux_status: false,
         },
         onUpdate,
@@ -128,7 +124,6 @@ describe("TerminalSettings", () => {
           letter_spacing: 0,
           cursor_blink: true,
           font_ligatures: false,
-          renderer: "xterm",
           hide_tmux_status: false,
         },
       });
@@ -142,7 +137,6 @@ describe("TerminalSettings", () => {
         letter_spacing: 0,
         cursor_blink: true,
         font_ligatures: false,
-        renderer: "xterm",
         hide_tmux_status: false,
       });
     });
@@ -154,89 +148,6 @@ describe("TerminalSettings", () => {
       letter_spacing: 0,
       cursor_blink: true,
       font_ligatures: false,
-      renderer: "xterm",
-      hide_tmux_status: false,
-    });
-  });
-
-  it("persists the selected terminal renderer", async () => {
-    mockUpdateSettings.mockResolvedValue({
-      terminal: {
-        font_family: "",
-        font_size: 14,
-        scrollback: 1000,
-        line_height: 1,
-        letter_spacing: 0,
-        cursor_blink: true,
-        font_ligatures: false,
-        renderer: "ghostty-web",
-        hide_tmux_status: false,
-      },
-    });
-    const onUpdate = vi.fn();
-
-    render(TerminalSettings, {
-      props: {
-        terminal: {
-          font_family: "",
-          font_size: 14,
-          scrollback: 1000,
-          line_height: 1,
-          letter_spacing: 0,
-          cursor_blink: true,
-          font_ligatures: false,
-          renderer: "xterm",
-          hide_tmux_status: false,
-        },
-        onUpdate,
-      },
-    });
-
-    expect(document.querySelector("select#terminal-renderer")).toBeNull();
-    const rendererDropdown = screen.getByRole("combobox", {
-      name: "Terminal renderer: xterm.js",
-    });
-    await fireEvent.click(rendererDropdown);
-    await fireEvent.click(screen.getByRole("option", { name: "ghostty-web" }));
-    await fireEvent.click(screen.getByRole("button", { name: "Save" }));
-
-    await waitFor(() => {
-      expect(mockUpdateSettings).toHaveBeenCalledWith({
-        terminal: {
-          font_family: "",
-          font_size: 14,
-          scrollback: 1000,
-          line_height: 1,
-          letter_spacing: 0,
-          cursor_blink: true,
-          font_ligatures: false,
-          renderer: "ghostty-web",
-          hide_tmux_status: false,
-        },
-      });
-    });
-    await waitFor(() => {
-      expect(onUpdate).toHaveBeenCalledWith({
-        font_family: "",
-        font_size: 14,
-        scrollback: 1000,
-        line_height: 1,
-        letter_spacing: 0,
-        cursor_blink: true,
-        font_ligatures: false,
-        renderer: "ghostty-web",
-        hide_tmux_status: false,
-      });
-    });
-    expect(mockSetTerminalSettings).toHaveBeenCalledWith({
-      font_family: "",
-      font_size: 14,
-      scrollback: 1000,
-      line_height: 1,
-      letter_spacing: 0,
-      cursor_blink: true,
-      font_ligatures: false,
-      renderer: "ghostty-web",
       hide_tmux_status: false,
     });
   });
@@ -251,7 +162,6 @@ describe("TerminalSettings", () => {
         letter_spacing: 1,
         cursor_blink: false,
         font_ligatures: false,
-        renderer: "xterm",
         hide_tmux_status: false,
       },
     });
@@ -267,7 +177,6 @@ describe("TerminalSettings", () => {
           letter_spacing: 0,
           cursor_blink: true,
           font_ligatures: false,
-          renderer: "xterm",
           hide_tmux_status: false,
         },
         onUpdate,
@@ -299,7 +208,6 @@ describe("TerminalSettings", () => {
           letter_spacing: 1,
           cursor_blink: false,
           font_ligatures: false,
-          renderer: "xterm",
           hide_tmux_status: false,
         },
       });
@@ -316,7 +224,6 @@ describe("TerminalSettings", () => {
         letter_spacing: 0,
         cursor_blink: true,
         font_ligatures: true,
-        renderer: "xterm",
         hide_tmux_status: false,
       },
     });
@@ -332,7 +239,6 @@ describe("TerminalSettings", () => {
           letter_spacing: 0,
           cursor_blink: true,
           font_ligatures: false,
-          renderer: "xterm",
           hide_tmux_status: false,
         },
         onUpdate,
@@ -352,7 +258,6 @@ describe("TerminalSettings", () => {
           letter_spacing: 0,
           cursor_blink: true,
           font_ligatures: true,
-          renderer: "xterm",
           hide_tmux_status: false,
         },
       });
@@ -369,7 +274,6 @@ describe("TerminalSettings", () => {
         letter_spacing: 0,
         cursor_blink: true,
         font_ligatures: false,
-        renderer: "xterm",
         hide_tmux_status: true,
       },
     });
@@ -384,7 +288,6 @@ describe("TerminalSettings", () => {
           letter_spacing: 0,
           cursor_blink: true,
           font_ligatures: false,
-          renderer: "xterm",
           hide_tmux_status: false,
         },
         onUpdate: vi.fn(),
@@ -404,37 +307,10 @@ describe("TerminalSettings", () => {
           letter_spacing: 0,
           cursor_blink: true,
           font_ligatures: false,
-          renderer: "xterm",
           hide_tmux_status: true,
         },
       });
     });
-  });
-
-  it("disables xterm-only controls for ghostty-web", async () => {
-    render(TerminalSettings, {
-      props: {
-        terminal: {
-          font_family: "",
-          font_size: 14,
-          scrollback: 1000,
-          line_height: 1,
-          letter_spacing: 0,
-          cursor_blink: true,
-          font_ligatures: false,
-          renderer: "ghostty-web",
-          hide_tmux_status: false,
-        },
-        onUpdate: vi.fn(),
-      },
-    });
-
-    expect((screen.getByLabelText("Line height") as HTMLInputElement).disabled).toBe(true);
-    expect((screen.getByLabelText("Letter spacing") as HTMLInputElement).disabled).toBe(true);
-    expect((screen.getByLabelText("Font ligatures") as HTMLInputElement).disabled).toBe(true);
-    expect(
-      screen.getByText("ghostty-web does not expose line height, letter spacing, or ligature controls."),
-    ).toBeTruthy();
   });
 
   it("does not update when saving terminal settings fails", async () => {
@@ -453,7 +329,6 @@ describe("TerminalSettings", () => {
             letter_spacing: 0,
             cursor_blink: true,
             font_ligatures: false,
-            renderer: "xterm",
             hide_tmux_status: false,
           },
           onUpdate,
@@ -484,7 +359,6 @@ describe("TerminalSettings", () => {
         letter_spacing: 0,
         cursor_blink: true,
         font_ligatures: false,
-        renderer: "xterm",
         hide_tmux_status: false,
       },
     });
@@ -499,7 +373,6 @@ describe("TerminalSettings", () => {
           letter_spacing: 1,
           cursor_blink: true,
           font_ligatures: false,
-          renderer: "xterm",
           hide_tmux_status: false,
         },
         onUpdate: vi.fn(),
@@ -530,7 +403,6 @@ describe("TerminalSettings", () => {
           letter_spacing: 0,
           cursor_blink: true,
           font_ligatures: false,
-          renderer: "xterm",
           hide_tmux_status: false,
         },
       });
@@ -548,7 +420,6 @@ describe("TerminalSettings", () => {
           letter_spacing: 0,
           cursor_blink: true,
           font_ligatures: false,
-          renderer: "xterm",
           hide_tmux_status: false,
         },
         livePreview: true,
@@ -568,7 +439,6 @@ describe("TerminalSettings", () => {
       letter_spacing: 0,
       cursor_blink: true,
       font_ligatures: false,
-      renderer: "xterm",
       hide_tmux_status: false,
     });
 
@@ -582,7 +452,6 @@ describe("TerminalSettings", () => {
       letter_spacing: 0,
       cursor_blink: true,
       font_ligatures: false,
-      renderer: "xterm",
       hide_tmux_status: false,
     });
   });
@@ -597,7 +466,6 @@ describe("TerminalSettings", () => {
         letter_spacing: 0,
         cursor_blink: true,
         font_ligatures: false,
-        renderer: "xterm",
         hide_tmux_status: false,
       },
     });
@@ -611,7 +479,6 @@ describe("TerminalSettings", () => {
           letter_spacing: 0,
           cursor_blink: true,
           font_ligatures: false,
-          renderer: "xterm",
           hide_tmux_status: false,
         },
         livePreview: true,
@@ -639,7 +506,6 @@ describe("TerminalSettings", () => {
       letter_spacing: 0,
       cursor_blink: true,
       font_ligatures: false,
-      renderer: "xterm",
       hide_tmux_status: false,
     });
   });
@@ -655,7 +521,6 @@ describe("TerminalSettings", () => {
           letter_spacing: 0,
           cursor_blink: true,
           font_ligatures: false,
-          renderer: "xterm",
           hide_tmux_status: false,
         },
         livePreview: true,
@@ -676,7 +541,6 @@ describe("TerminalSettings", () => {
       letter_spacing: 0,
       cursor_blink: true,
       font_ligatures: false,
-      renderer: "xterm",
       hide_tmux_status: false,
     });
   });
@@ -692,7 +556,6 @@ describe("TerminalSettings", () => {
           letter_spacing: 0,
           cursor_blink: true,
           font_ligatures: false,
-          renderer: "xterm",
           hide_tmux_status: false,
         },
         onUpdate: vi.fn(),
@@ -716,7 +579,6 @@ describe("TerminalSettings", () => {
           letter_spacing: 0,
           cursor_blink: true,
           font_ligatures: false,
-          renderer: "xterm",
           hide_tmux_status: false,
         },
         onUpdate: vi.fn(),

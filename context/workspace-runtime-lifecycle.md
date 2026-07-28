@@ -100,15 +100,14 @@ stale tabs.
 
 - Runtime lists returned by `/workspaces/{id}/runtime` are the authoritative
   backend view of live launched sessions.
+- Workspace terminals use xterm.js exclusively; there is no renderer setting
+  or alternate renderer path (`frontend/src/lib/components/terminal/TerminalPane.svelte`).
 - Treat terminal processes as native-terminal-equivalent, but accept bounded, write-only OSC 52 writes only after one
   recent one-shot trusted DOM gesture; terminal data callbacks are not input provenance, and browser denial falls back
-  through CSRF-protected loopback (`frontend/src/lib/components/terminal/GhosttyTerminalPane.svelte::handleTerminalKeyDown`).
+  through CSRF-protected loopback (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::handleTerminalKeyDown`).
 - Pointer clipboard authority and keyboard authority created during it must remain timed and revocable through release
   grace on capture, focus, or visibility loss; a watchdog bounds missing releases
   (`frontend/src/lib/components/terminal/terminalClipboardWriter.ts::createTerminalClipboardWriter`).
-- OSC 52 filtering must cancel downstream state before retaining nested introducers, honor CAN/SUB aborts, and replace
-  removed numeric equivalents with a parser-cancel boundary; partial forwarding can splice across reconnects
-  (`frontend/src/lib/components/terminal/osc52OutputFilter.ts::createOsc52OutputFilter`).
 - Host clipboard writes are direct-loopback only and must be rejected when reverse-proxy trust is active; a proxy's
   loopback `RemoteAddr` does not establish browser locality (`internal/server/server.go::Server.ServeHTTP`).
 - During active tmux SGR drags outside xterm bounds, add only clamped edge wheel, drag, and release reports; forward

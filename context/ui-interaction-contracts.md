@@ -244,14 +244,12 @@ Keyboard handlers must have one clear owner for each key press.
   toolbar's explicit action. A collapsed dock also keeps its own reopen
   affordance at the bottom of the pane
   (`frontend/src/lib/stores/workspace-host.svelte.ts::focusTerminal`).
-- Terminal panes (xterm and Ghostty) call `.focus()` only once, at terminal
+- Terminal panes call `.focus()` only once, at terminal
   creation, and only when a focus-intent guard captured at mount still holds:
   `document.activeElement` must be unchanged since mount and not "sacred"
   (inside `[role="dialog"|"menu"|"listbox"]`, or a form control/
-  contenteditable). This covers the async font-load/WASM-init window before
-  `.focus()` runs, during which a live renderer swap (e.g. changing the
-  terminal renderer from an open settings popover) can remount the pane while
-  something else holds focus. Re-running the active/disabled effect on a
+  contenteditable). This covers the async font-load window before `.focus()`
+  runs, during which something else can claim focus. Re-running the active/disabled effect on a
   reveal or an enable flip must never call `.focus()` again — that would
   fight the opt-in focus contracts above (`pendingHostFocus`,
   `shouldReclaimFocus`)

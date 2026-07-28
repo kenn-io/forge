@@ -63,7 +63,6 @@ async function mockMobileRepoSettings(page: Page): Promise<string[]> {
           letter_spacing: 0,
           cursor_blink: true,
           font_ligatures: false,
-          renderer: "xterm",
         },
         agents: [],
       }),

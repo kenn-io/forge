@@ -1273,8 +1273,7 @@
            appReady like the pages: a direct /terminal/{id} load must not
            start workspace/runtime requests before the backend readiness
            poll and settings initialization complete — early failures
-           would sit in the error state until a manual retry, and late
-           settings would replace an already-active terminal renderer.
+           would sit in the error state until a manual retry.
            appReady only resets when the whole shell tears down, so this
            still never remounts across page switches. -->
       {#if appReady}

@@ -438,9 +438,6 @@ test.describe("workspace switch profiling", () => {
               commit: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
               browserVersion: browser.version(),
               platform: `${process.platform}/${process.arch}`,
-              // The harness runs middleman's default renderer; ghostty
-              // emits the same timing names but is not exercised here.
-              terminalRenderer: "xterm",
             },
             measurements,
           },

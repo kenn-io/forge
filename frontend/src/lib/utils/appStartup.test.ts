@@ -28,7 +28,6 @@ function makeStores(): StoreInstances {
       }),
       setPullRequestSettings: vi.fn(),
       setTerminalFontFamily: vi.fn(),
-      setTerminalRenderer: vi.fn(),
       getLaunchTargets: () => launchTargets,
       setLaunchTargets: vi.fn((targets: LaunchTargets) => {
         launchTargets = [...targets];
@@ -87,7 +86,6 @@ function makeSettings(): Settings {
       letter_spacing: 0,
       cursor_blink: true,
       font_ligatures: false,
-      renderer: "xterm",
       hide_tmux_status: false,
     },
     modes: {

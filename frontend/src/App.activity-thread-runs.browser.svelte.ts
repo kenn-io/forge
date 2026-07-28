@@ -75,7 +75,6 @@ const settingsOverride: MockRouteOverride = (req) => {
       letter_spacing: 0,
       cursor_blink: true,
       font_ligatures: false,
-      renderer: "xterm",
     },
     agents: [],
   });

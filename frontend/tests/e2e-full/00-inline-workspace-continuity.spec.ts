@@ -15,8 +15,7 @@
 // evidence the session is live — unlike a screenshot-hash diff, which
 // cursor blinking or the tmux status clock can change even when terminal
 // input is broken (and canvas readback is unavailable anyway: xterm.js's
-// WebGL renderer owns the canvas GL context, and ghostty-web's readback
-// proved unreliable under this harness's headless GPU path).
+// WebGL renderer owns the canvas GL context).
 
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
@@ -30,7 +29,6 @@ import {
   type Page,
 } from "@playwright/test";
 import { startIsolatedWorkspaceE2EServer, type IsolatedE2EServer } from "./support/e2eServer";
-import { openSettingsPanel } from "./support/settingsPanel";
 
 type WorkspaceStatusResponse = {
   id: string;
@@ -108,8 +106,7 @@ async function openTerminalPanel(page: Page): Promise<Locator> {
   await page.getByRole("button", { name: "Open terminal panel" }).click();
   const container = page.locator(".terminal-panel.open .terminal-container");
   await expect(container).toBeVisible();
-  // Renderer-agnostic readiness: ghostty-web always paints a canvas, but
-  // xterm.js only does when its WebGL addon activates — without WebGL
+  // xterm.js only paints a canvas when its WebGL addon activates. Without WebGL
   // (headless Firefox) it silently falls back to the DOM renderer, which
   // renders .xterm-screen rows and never creates a canvas.
   await expect(container.locator("canvas, .xterm-screen").first()).toBeVisible();
@@ -178,19 +175,6 @@ async function selectTopBarTab(page: Page, label: string): Promise<void> {
 async function selectIssueByTitle(page: Page, title: string): Promise<void> {
   await selectTopBarTab(page, "Issues");
   await page.locator(".issue-item").filter({ hasText: title }).first().click();
-}
-
-async function switchRendererToGhosttyViaSettings(page: Page, baseURL: string): Promise<void> {
-  await page.goto(`${baseURL}/settings`);
-  await openSettingsPanel(page, "Terminal");
-  const renderer = page.getByRole("combobox", { name: "Terminal renderer: xterm.js" });
-  await renderer.click();
-  await page.getByRole("option", { name: "ghostty-web" }).click();
-  const saveResponsePromise = page.waitForResponse(
-    (response) => response.url().endsWith("/api/v1/settings") && response.request().method() === "PUT",
-  );
-  await page.getByRole("button", { name: "Save", exact: true }).click();
-  expect((await saveResponsePromise).ok()).toBe(true);
 }
 
 async function expectPersistedTerminalFontSize(api: APIRequestContext, fontSize: number): Promise<void> {
@@ -381,93 +365,6 @@ test.describe("inline workspace dock continuity", () => {
       // The same session must still accept input after the second
       // reparent — a torn-down or wedged terminal cannot run this.
       await typeMarkerCommand(page, backInTab, workspace.worktree_path, "continuity-marker-three");
-    } finally {
-      await api?.dispose();
-      await isolatedServer?.stop();
-    }
-  });
-
-  test("tab flip preserves the live terminal (ghostty)", async ({ page }) => {
-    test.skip(
-      !hasCommand("git") || !hasCommand("tmux", ["-V"]),
-      "git and tmux are required for the real workspace flow",
-    );
-
-    let isolatedServer: IsolatedE2EServer | null = null;
-    let api: APIRequestContext | null = null;
-    try {
-      const refreshFrames = observeTerminalRefreshFrames(page);
-      isolatedServer = await startIsolatedWorkspaceE2EServer();
-      api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
-
-      await switchRendererToGhosttyViaSettings(page, isolatedServer.info.base_url);
-
-      const workspace = await createIssueWorkspace(api, 10);
-
-      await page.goto(`${isolatedServer.info.base_url}/terminal/${workspace.id}`);
-      const tabContainer = await openTerminalPanel(page);
-      await expect(tabContainer.locator("canvas")).toHaveCount(1);
-      await typeMarkerCommand(page, tabContainer, workspace.worktree_path, "continuity-marker-one");
-      const beforeZoom = await readPtyGeometry(
-        page,
-        tabContainer,
-        workspace.worktree_path,
-        "ghostty-geometry-before-zoom",
-      );
-      const resetZoom = page.getByRole("button", {
-        name: "Reset terminal font size",
-      });
-      await expect(resetZoom).toHaveText("12px");
-      const refreshCountBeforeZoom = refreshFrames.length;
-      for (let fontSize = 13; fontSize <= ZOOMED_TERMINAL_FONT_SIZE; fontSize += 1) {
-        await page.getByRole("button", { name: "Increase terminal font size" }).click();
-        await expect(resetZoom).toHaveText(`${fontSize}px`);
-      }
-      await expectPersistedTerminalFontSize(api, ZOOMED_TERMINAL_FONT_SIZE);
-      await expect.poll(() => refreshFrames.length).toBeGreaterThan(refreshCountBeforeZoom);
-      await expect.poll(() => refreshFrames.at(-1)?.cols).toBeLessThan(beforeZoom.cols);
-      await waitForPtyColumnsBelow(
-        page,
-        tabContainer,
-        workspace.worktree_path,
-        "ghostty-geometry-after-zoom",
-        beforeZoom.cols,
-      );
-
-      await tabContainer.evaluate((el) => {
-        el.setAttribute("data-continuity", "witness");
-      });
-
-      // Select the issue that owns this workspace: same reparent contract
-      // as the xterm case, witnessed on the same canvas-backed container.
-      await selectIssueByTitle(page, SAFARI_ISSUE_TITLE);
-
-      const witness = page.locator('[data-continuity="witness"]');
-      await expect(witness).toBeVisible();
-      const dockContainer = page.locator(".workspace-dock-panel .workspace-dock-slot .terminal-container");
-      await expect(dockContainer).toHaveAttribute("data-continuity", "witness");
-      await typeMarkerCommand(page, dockContainer, workspace.worktree_path, "continuity-marker-two");
-      await dockContainer.click({ position: { x: 10, y: 10 } });
-      await page.keyboard.press("Control+=");
-      await expect(resetZoom).toHaveText(`${ZOOMED_TERMINAL_FONT_SIZE + 1}px`);
-      await expectPersistedTerminalFontSize(api, ZOOMED_TERMINAL_FONT_SIZE + 1);
-
-      // Flip back to the Workspaces tab: same hostedWorkspaceKey, so the
-      // tagged container (and the canvas inside it) must still be the one
-      // that reappears in the tab slot, with no reconnect repaint.
-      await selectTopBarTab(page, "Workspaces");
-      await expect(page).toHaveURL(new RegExp(`/terminal/${workspace.id}$`));
-      const backInTab = page.locator(".workspace-tab-slot .terminal-container");
-      await expect(witness).toBeVisible();
-      await expect(backInTab).toHaveAttribute("data-continuity", "witness");
-      await expect(resetZoom).toHaveText(`${ZOOMED_TERMINAL_FONT_SIZE + 1}px`);
-      // The same session must still accept input after the second
-      // reparent — a torn-down or wedged terminal cannot run this.
-      await typeMarkerCommand(page, backInTab, workspace.worktree_path, "continuity-marker-three");
-      await page.reload();
-      await expect(page.getByRole("button", { name: "Reset terminal font size" })).toHaveText(
-        `${ZOOMED_TERMINAL_FONT_SIZE + 1}px`,
-      );
     } finally {
       await api?.dispose();
       await isolatedServer?.stop();

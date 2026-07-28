@@ -67,7 +67,6 @@ export type ActivitySettings = components["schemas"]["Activity"];
 export type IssueSettings = components["schemas"]["Issues"];
 export type PullRequestSettings = components["schemas"]["PullRequests"];
 export type TerminalSettings = components["schemas"]["Terminal"];
-export type TerminalRenderer = TerminalSettings["renderer"];
 export type ModeVisibility = components["schemas"]["ModeVisibility"];
 
 export const DEFAULT_TERMINAL_SETTINGS: TerminalSettings = {
@@ -78,7 +77,6 @@ export const DEFAULT_TERMINAL_SETTINGS: TerminalSettings = {
   letter_spacing: 0,
   cursor_blink: true,
   font_ligatures: false,
-  renderer: "xterm",
   hide_tmux_status: false,
 };
 

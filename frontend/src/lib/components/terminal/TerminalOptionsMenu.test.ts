@@ -9,7 +9,6 @@ type TerminalSettings = {
   letter_spacing: number;
   cursor_blink: boolean;
   font_ligatures: boolean;
-  renderer: "xterm" | "ghostty-web";
   hide_tmux_status: boolean;
 };
 
@@ -41,7 +40,6 @@ const {
     letter_spacing: 0,
     cursor_blink: true,
     font_ligatures: false,
-    renderer: "xterm",
     hide_tmux_status: false,
   };
   const modes: ModeVisibility = {
@@ -91,7 +89,6 @@ vi.mock("@middleman/ui", async (importOriginal) => {
       letter_spacing: 0,
       cursor_blink: true,
       font_ligatures: false,
-      renderer: "xterm",
       hide_tmux_status: false,
     },
     getStores: () => ({

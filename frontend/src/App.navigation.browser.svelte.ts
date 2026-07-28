@@ -143,7 +143,6 @@ function flatSettings(): MockRouteOverride {
         letter_spacing: 0,
         cursor_blink: true,
         font_ligatures: false,
-        renderer: "xterm",
       },
       agents: [],
       // The settings-gear case routes to /settings, which renders FleetSettings;

@@ -288,7 +288,6 @@ describe("terminal settings persistence", () => {
       ...DEFAULT_TERMINAL_SETTINGS,
       font_family: '"Iosevka Term", monospace',
       font_size: 17,
-      renderer: "ghostty-web",
     });
 
     await saveTerminalSettings({
@@ -302,7 +301,6 @@ describe("terminal settings persistence", () => {
       ...DEFAULT_TERMINAL_SETTINGS,
       font_family: '"Iosevka Term", monospace',
       font_size: 17,
-      renderer: "ghostty-web",
       scrollback: 2000,
     });
   });

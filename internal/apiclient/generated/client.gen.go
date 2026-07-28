@@ -710,24 +710,6 @@ func (e ProblemErrorCode) Valid() bool {
 	}
 }
 
-// Defines values for TerminalRenderer.
-const (
-	GhosttyWeb TerminalRenderer = "ghostty-web"
-	Xterm      TerminalRenderer = "xterm"
-)
-
-// Valid indicates whether the value is a known member of the TerminalRenderer enum.
-func (e TerminalRenderer) Valid() bool {
-	switch e {
-	case GhosttyWeb:
-		return true
-	case Xterm:
-		return true
-	default:
-		return false
-	}
-}
-
 // Defines values for WorkflowStateMetaResponseStatus.
 const (
 	WorkflowStateMetaResponseStatusAwaitingMerge WorkflowStateMetaResponseStatus = "awaiting_merge"
@@ -3965,19 +3947,15 @@ type TelemetryEventResponse struct {
 
 // Terminal defines model for Terminal.
 type Terminal struct {
-	CursorBlink    bool             `json:"cursor_blink"`
-	FontFamily     string           `json:"font_family"`
-	FontLigatures  bool             `json:"font_ligatures"`
-	FontSize       int64            `json:"font_size"`
-	HideTmuxStatus bool             `json:"hide_tmux_status"`
-	LetterSpacing  int64            `json:"letter_spacing"`
-	LineHeight     float64          `json:"line_height"`
-	Renderer       TerminalRenderer `json:"renderer"`
-	Scrollback     int64            `json:"scrollback"`
+	CursorBlink    bool    `json:"cursor_blink"`
+	FontFamily     string  `json:"font_family"`
+	FontLigatures  bool    `json:"font_ligatures"`
+	FontSize       int64   `json:"font_size"`
+	HideTmuxStatus bool    `json:"hide_tmux_status"`
+	LetterSpacing  int64   `json:"letter_spacing"`
+	LineHeight     float64 `json:"line_height"`
+	Scrollback     int64   `json:"scrollback"`
 }
-
-// TerminalRenderer defines model for Terminal.Renderer.
-type TerminalRenderer string
 
 // TerminalClipboardInputBody defines model for TerminalClipboardInputBody.
 type TerminalClipboardInputBody struct {

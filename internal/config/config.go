@@ -579,9 +579,6 @@ type Issues struct {
 }
 
 const (
-	TerminalRendererXterm   = "xterm"
-	TerminalRendererGhostty = "ghostty-web"
-
 	DefaultTerminalFontSize      = 12
 	DefaultTerminalScrollback    = 1000
 	DefaultTerminalLineHeight    = 1.0
@@ -598,7 +595,6 @@ type Terminal struct {
 	LetterSpacing  int     `toml:"letter_spacing,omitempty" json:"letter_spacing"`
 	CursorBlink    *bool   `toml:"cursor_blink,omitempty" json:"cursor_blink" nullable:"false"`
 	FontLigatures  bool    `toml:"font_ligatures,omitempty" json:"font_ligatures"`
-	Renderer       string  `toml:"renderer,omitempty" json:"renderer" enum:"xterm,ghostty-web"`
 	HideTmuxStatus bool    `toml:"hide_tmux_status,omitempty" json:"hide_tmux_status"`
 }
 
@@ -1014,7 +1010,6 @@ default_branch_retention_days = 90
 default_branch_max_commits = 5000
 
 [terminal]
-renderer = "xterm"
 
 [modes]
 activity = true
@@ -1480,20 +1475,6 @@ func (c *Config) validate() error {
 		cursorBlink := DefaultTerminalCursorBlink
 		c.Terminal.CursorBlink = &cursorBlink
 	}
-	c.Terminal.Renderer = strings.TrimSpace(c.Terminal.Renderer)
-	if c.Terminal.Renderer == "" {
-		c.Terminal.Renderer = TerminalRendererXterm
-	}
-	if c.Terminal.Renderer != TerminalRendererXterm &&
-		c.Terminal.Renderer != TerminalRendererGhostty {
-		return fmt.Errorf(
-			"config: invalid terminal.renderer %q: must be %q or %q",
-			c.Terminal.Renderer,
-			TerminalRendererXterm,
-			TerminalRendererGhostty,
-		)
-	}
-
 	if err := c.validateAgents(); err != nil {
 		return err
 	}

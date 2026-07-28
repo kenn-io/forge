@@ -57,9 +57,13 @@ vi.mock("@xterm/xterm", () => ({
       dispose: mocks.mockDispose,
       focus: vi.fn(),
       loadAddon: mocks.mockLoadAddon,
+      modes: { bracketedPasteMode: false },
       onBinary: vi.fn(),
       onData: mocks.mockOnData,
       open: mocks.mockOpen,
+      parser: {
+        registerOscHandler: vi.fn(() => ({ dispose: vi.fn() })),
+      },
       refresh: vi.fn(),
       write: mocks.terminalWrite,
       options: { ...options },
@@ -88,30 +92,6 @@ vi.mock("@xterm/addon-webgl", () => ({
 
 vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
 
-vi.mock("ghostty-web", () => ({
-  init: vi.fn().mockResolvedValue(undefined),
-  FitAddon: vi.fn().mockImplementation(function () {
-    return {
-      fit: mocks.mockFit,
-    };
-  }),
-  Terminal: vi.fn().mockImplementation(function (options) {
-    const terminal = {
-      cols: 80,
-      rows: 24,
-      open: mocks.mockOpen,
-      focus: vi.fn(),
-      loadAddon: mocks.mockLoadAddon,
-      onData: mocks.mockOnData,
-      dispose: mocks.mockDispose,
-      write: mocks.terminalWrite,
-      options: { ...options },
-    };
-    mocks.mockTerminalInstances.push(terminal);
-    return terminal;
-  }),
-}));
-
 vi.mock("@middleman/ui", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@middleman/ui")>();
   return {
@@ -126,7 +106,6 @@ vi.mock("@middleman/ui", async (importOriginal) => {
           letter_spacing: 0,
           cursor_blink: true,
           font_ligatures: false,
-          renderer: "ghostty-web",
         }),
         setTerminalSettings: mocks.mockSetTerminalSettings,
         getModeVisibility: () => ({
@@ -147,7 +126,6 @@ vi.mock("@middleman/ui", async (importOriginal) => {
         getTerminalLetterSpacing: () => 0,
         getTerminalCursorBlink: () => true,
         getTerminalFontLigatures: () => false,
-        getTerminalRenderer: () => "ghostty-web",
       },
       diff: mocks.diffStore,
     }),

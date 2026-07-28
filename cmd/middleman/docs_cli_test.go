@@ -26,7 +26,7 @@ func writeDocsCLIConfig(t *testing.T, dir string, folders []config.DocFolder) st
 			ViewMode:  "threaded",
 			TimeRange: "7d",
 		},
-		Terminal: config.Terminal{Renderer: "xterm"},
+		Terminal: config.Terminal{},
 	}
 	require.NoError(t, cfg.Save(path))
 	return path

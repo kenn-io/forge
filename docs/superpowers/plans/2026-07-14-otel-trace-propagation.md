@@ -473,7 +473,6 @@ export function traceHeadersForRequest(): { traceparent: string; baggage: string
 - Modify: `frontend/src/lib/instrumentation/workspaceSwitchTiming.ts` (interaction lifecycle + traceId in details)
 - Modify: `frontend/src/lib/instrumentation/workspaceSwitchTiming.test.ts` (traceId assertions)
 - Modify: `frontend/src/lib/components/terminal/XtermTerminalPane.svelte` (`appendSizeParams` lines ~117-125)
-- Modify: `frontend/src/lib/components/terminal/GhosttyTerminalPane.svelte` (`appendSizeParams` lines ~107-115)
 
 **Interfaces:**
 - Consumes: Task 5's `traceHeadersForRequest`, `beginInteractionTrace`, `endInteractionTrace`.

@@ -524,7 +524,6 @@ func TestHandleUpdateSettings(t *testing.T) {
 		LineHeight:     1.15,
 		CursorBlink:    new(true),
 		FontLigatures:  true,
-		Renderer:       config.TerminalRendererXterm,
 		HideTmuxStatus: true,
 	}
 	body := updateSettingsRequest{
@@ -632,7 +631,6 @@ docs = false
 		Scrollback:    2000,
 		LetterSpacing: 1,
 		CursorBlink:   new(true),
-		Renderer:      config.TerminalRendererXterm,
 	}
 	body := updateSettingsRequest{
 		Terminal: &terminal,

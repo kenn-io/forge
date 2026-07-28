@@ -39,8 +39,8 @@ export const SETTINGS_PANELS: SettingsPanelMeta[] = [
     label: "Terminal",
     title: "Workspace terminal",
     group: "Workspace",
-    description: "Workspace terminal rendering and behavior",
-    keywords: "workspace terminal font renderer cursor scrollback ligatures",
+    description: "Workspace terminal appearance and behavior",
+    keywords: "workspace terminal font cursor scrollback ligatures",
   },
   {
     id: "settings-kata-projects",

@@ -703,8 +703,7 @@
       // Reveal- or enable-driven re-runs of the active effect must not steal
       // focus from controls managed by WorkspaceHost/WorkspaceDockPanel. The
       // font-load wait above is async, so focus only moves if the mount-time
-      // focus context is still current and isn't a dialog/menu/input — a
-      // live renderer swap under an open settings popover must not steal it.
+      // focus context is still current and isn't a dialog/menu/input.
       if (active && !disabled && focusIntent.shouldFocus()) term.focus();
 
       term.onData((data: string) => {

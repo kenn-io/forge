@@ -53,23 +53,6 @@ async function createIssueWorkspace(api: APIRequestContext, issueNumber: number)
   return waitForWorkspaceReady(api, workspace.id);
 }
 
-async function selectTerminalRenderer(api: APIRequestContext, renderer: "xterm" | "ghostty-web"): Promise<void> {
-  const currentResponse = await api.get("/api/v1/settings");
-  expect(currentResponse.ok()).toBe(true);
-  const current = (await currentResponse.json()) as {
-    terminal: Record<string, unknown>;
-  };
-  const updateResponse = await api.put("/api/v1/settings", {
-    data: {
-      terminal: {
-        ...current.terminal,
-        renderer,
-      },
-    },
-  });
-  expect(updateResponse.ok()).toBe(true);
-}
-
 async function openTerminalPanel(page: Page): Promise<Locator> {
   await page.getByRole("button", { name: "Open terminal panel" }).click();
   const container = page.locator(".terminal-panel.open .terminal-container");
@@ -476,41 +459,6 @@ test("tmux blocks application OSC 52 while keyboard copy reaches the clipboard",
       await copyMarkerWithTmuxKeys(page, tabTerminal, output, keyboardMarker);
       await expect.poll(() => readBrowserClipboard(page), { timeout: 15_000 }).toBe(keyboardMarker);
     }
-  } finally {
-    await api?.dispose();
-    await isolatedServer?.stop();
-  }
-});
-
-test("Firefox Ghostty clipboard denial falls back to the local Middleman server", async ({ page, browserName }) => {
-  test.skip(browserName !== "firefox", "Firefox uniquely requires the local fallback");
-  test.skip(!hasCommand("git") || !hasCommand("tmux", ["-V"]), "git and tmux are required for the real workspace flow");
-
-  const fallbackWrites = await interceptDeniedBrowserClipboard(page);
-
-  let isolatedServer: IsolatedE2EServer | null = null;
-  let api: APIRequestContext | null = null;
-  try {
-    isolatedServer = await startIsolatedWorkspaceE2EServer();
-    api = await playwrightRequest.newContext({
-      baseURL: isolatedServer.info.base_url,
-    });
-    await selectTerminalRenderer(api, "ghostty-web");
-    const workspace = await createIssueWorkspace(api, 10);
-    const output = observeTerminalOutput(page);
-
-    await page.goto(`${isolatedServer.info.base_url}/terminal/${workspace.id}`);
-    const terminal = await openTerminalPanel(page);
-    const terminalBounds = await terminal.boundingBox();
-    expect(terminalBounds).not.toBeNull();
-    await page.mouse.move(terminalBounds!.x + 10, terminalBounds!.y + 10);
-    await beginCapturedPointerGesture(page, terminal);
-    await page.mouse.up();
-    const marker = "firefox local clipboard fallback";
-    await copyMarkerWithTmuxKeys(page, terminal, output, marker);
-
-    await expect.poll(() => output.includes("\x1b]52;"), { timeout: 10_000 }).toBe(true);
-    await expect.poll(() => fallbackWrites).toContain(marker);
   } finally {
     await api?.dispose();
     await isolatedServer?.stop();

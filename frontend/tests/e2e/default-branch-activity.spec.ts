@@ -187,7 +187,6 @@ async function mockDefaultBranchActivity(page: Page): Promise<void> {
           letter_spacing: 0,
           cursor_blink: true,
           font_ligatures: false,
-          renderer: "xterm",
         },
         agents: [],
       }),

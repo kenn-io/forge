@@ -2455,7 +2455,6 @@ line_height = 1.2
 letter_spacing = 1
 cursor_blink = false
 font_ligatures = true
-renderer = "ghostty-web"
 `)
 	cfg, err := Load(path)
 	require.NoError(err)
@@ -2467,7 +2466,6 @@ renderer = "ghostty-web"
 	require.NotNil(cfg.Terminal.CursorBlink)
 	assert.False(*cfg.Terminal.CursorBlink)
 	assert.True(cfg.Terminal.FontLigatures)
-	assert.Equal("ghostty-web", cfg.Terminal.Renderer)
 
 	savePath := filepath.Join(t.TempDir(), "saved.toml")
 	require.NoError(cfg.Save(savePath))
@@ -2482,10 +2480,9 @@ renderer = "ghostty-web"
 	require.NotNil(cfg2.Terminal.CursorBlink)
 	assert.False(*cfg2.Terminal.CursorBlink)
 	assert.True(cfg2.Terminal.FontLigatures)
-	assert.Equal("ghostty-web", cfg2.Terminal.Renderer)
 }
 
-func TestTerminalRendererDefaultsToXterm(t *testing.T) {
+func TestTerminalSettingsDefaults(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	path := writeConfig(t, `
@@ -2496,7 +2493,6 @@ name = "b"
 	cfg, err := Load(path)
 	require.NoError(err)
 
-	assert.Equal("xterm", cfg.Terminal.Renderer)
 	assert.Equal(12, cfg.Terminal.FontSize)
 	assert.Equal(1000, cfg.Terminal.Scrollback)
 	assert.InDelta(1.0, cfg.Terminal.LineHeight, 0.001)
@@ -2666,20 +2662,6 @@ repo_path = "acme/other"
 	require.NoError(t, err)
 	require.Len(t, cfg.KataProjects, 1)
 	assert.Equal(t, "acme/other", cfg.KataProjects[0].RepoPath)
-}
-
-func TestTerminalRendererRejectsInvalidValue(t *testing.T) {
-	path := writeConfig(t, `
-[[repos]]
-owner = "a"
-name = "b"
-
-[terminal]
-renderer = "vt100"
-`)
-	_, err := Load(path)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid terminal.renderer")
 }
 
 func TestSyncBudgetPerHour(t *testing.T) {

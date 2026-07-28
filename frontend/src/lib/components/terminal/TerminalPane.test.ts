@@ -7,9 +7,7 @@ const {
   clipboardWriterCancelPointerGesture,
   clipboardWriterDispose,
   clipboardWriterWrite,
-  ghosttyTerminalCtor,
   ligaturesAddonCtor,
-  mockGhosttyInit,
   mockShowFlash,
   mockWebglCtor,
   mouseDragEndPointerGesture,
@@ -27,9 +25,7 @@ const {
   clipboardWriterCancelPointerGesture: vi.fn(),
   clipboardWriterDispose: vi.fn(),
   clipboardWriterWrite: vi.fn(),
-  ghosttyTerminalCtor: vi.fn(),
   ligaturesAddonCtor: vi.fn(),
-  mockGhosttyInit: vi.fn().mockResolvedValue(undefined),
   mockShowFlash: vi.fn(),
   mockWebglCtor: vi.fn(),
   mouseDragEndPointerGesture: vi.fn(),
@@ -52,7 +48,6 @@ const {
   xtermOpen: vi.fn(),
 }));
 
-let configuredRenderer: "xterm" | "ghostty-web" = "xterm";
 let configuredFontFamily = "";
 let configuredFontSize = 14;
 let configuredScrollback = 1000;
@@ -119,7 +114,6 @@ vi.mock("@middleman/ui", () => ({
       getTerminalLetterSpacing: () => configuredLetterSpacing,
       getTerminalCursorBlink: () => configuredCursorBlink,
       getTerminalFontLigatures: () => configuredFontLigatures,
-      getTerminalRenderer: () => configuredRenderer,
     },
   }),
 }));
@@ -209,34 +203,10 @@ vi.mock("@xterm/addon-webgl", () => ({
 
 vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
 
-vi.mock("ghostty-web", () => ({
-  init: (...args: []) => mockGhosttyInit(...args),
-  FitAddon: vi.fn().mockImplementation(function () {
-    return {
-      fit: vi.fn(),
-    };
-  }),
-  Terminal: vi.fn().mockImplementation(function (options) {
-    ghosttyTerminalCtor(options);
-    return {
-      cols: 80,
-      rows: 24,
-      options: { ...options },
-      dispose: vi.fn(),
-      focus: vi.fn(),
-      loadAddon: vi.fn(),
-      onData: vi.fn(),
-      open: vi.fn(),
-      write: vi.fn(),
-    };
-  }),
-}));
-
 import TerminalPane from "./TerminalPane.svelte";
 
 describe("TerminalPane", () => {
   beforeEach(() => {
-    configuredRenderer = "xterm";
     configuredFontFamily = "";
     configuredFontSize = 14;
     configuredScrollback = 1000;
@@ -244,13 +214,11 @@ describe("TerminalPane", () => {
     configuredLetterSpacing = 0;
     configuredCursorBlink = true;
     configuredFontLigatures = false;
-    ghosttyTerminalCtor.mockReset();
     ligaturesAddonCtor.mockReset();
     clipboardWriteText.mockReset();
     clipboardWriterCancelPointerGesture.mockReset();
     clipboardWriterDispose.mockReset();
     clipboardWriterWrite.mockReset().mockResolvedValue("unauthorized");
-    mockGhosttyInit.mockClear();
     mockShowFlash.mockReset();
     mockWebglCtor.mockReset();
     mouseDragEndPointerGesture.mockReset();
@@ -305,13 +273,10 @@ describe("TerminalPane", () => {
     }
   });
 
-  it("uses xterm.js by default", async () => {
+  it("uses xterm.js", async () => {
     render(TerminalPane, { props: { workspaceId: "ws-123" } });
 
     await waitFor(() => expect(xtermTerminalCtor).toHaveBeenCalled());
-
-    expect(ghosttyTerminalCtor).not.toHaveBeenCalled();
-    expect(mockGhosttyInit).not.toHaveBeenCalled();
   });
 
   it("forwards accepted tmux OSC 52 text to the authorized clipboard writer", async () => {
@@ -673,17 +638,6 @@ describe("TerminalPane", () => {
     expect(mockSockets[0]!.sent).toContain(JSON.stringify({ type: "resize", cols: 80, rows: 24 }));
   });
 
-  it("uses ghostty-web when selected", async () => {
-    configuredRenderer = "ghostty-web";
-
-    render(TerminalPane, { props: { workspaceId: "ws-123" } });
-
-    await waitFor(() => expect(ghosttyTerminalCtor).toHaveBeenCalled());
-
-    expect(xtermTerminalCtor).not.toHaveBeenCalled();
-    expect(mockGhosttyInit).toHaveBeenCalledTimes(1);
-  });
-
   it("forwards complete tmux mouse drags without a local threshold", async () => {
     render(TerminalPane, { props: { workspaceId: "ws-123" } });
 
@@ -726,43 +680,27 @@ describe("TerminalPane", () => {
     expect(mouseDragReset).toHaveBeenCalledTimes(1);
   });
 
-  it.each(["xterm", "ghostty-web"] as const)(
-    "revokes %s pointer clipboard authorization when the window loses focus",
-    async (renderer) => {
-      configuredRenderer = renderer;
-      render(TerminalPane, { props: { workspaceId: "ws-123" } });
-      if (renderer === "xterm") {
-        await waitFor(() => expect(xtermTerminalCtor).toHaveBeenCalled());
-      } else {
-        await waitFor(() => expect(ghosttyTerminalCtor).toHaveBeenCalled());
-      }
-      clipboardWriterCancelPointerGesture.mockClear();
+  it("revokes pointer clipboard authorization when the window loses focus", async () => {
+    render(TerminalPane, { props: { workspaceId: "ws-123" } });
+    await waitFor(() => expect(xtermTerminalCtor).toHaveBeenCalled());
+    clipboardWriterCancelPointerGesture.mockClear();
 
-      window.dispatchEvent(new Event("blur"));
+    window.dispatchEvent(new Event("blur"));
 
-      expect(clipboardWriterCancelPointerGesture).toHaveBeenCalledTimes(1);
-    },
-  );
+    expect(clipboardWriterCancelPointerGesture).toHaveBeenCalledTimes(1);
+  });
 
-  it.each(["xterm", "ghostty-web"] as const)(
-    "revokes %s pointer clipboard authorization when the document is hidden",
-    async (renderer) => {
-      configuredRenderer = renderer;
-      render(TerminalPane, { props: { workspaceId: "ws-123" } });
-      if (renderer === "xterm") {
-        await waitFor(() => expect(xtermTerminalCtor).toHaveBeenCalled());
-      } else {
-        await waitFor(() => expect(ghosttyTerminalCtor).toHaveBeenCalled());
-      }
-      clipboardWriterCancelPointerGesture.mockClear();
-      const visibilityState = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+  it("revokes pointer clipboard authorization when the document is hidden", async () => {
+    render(TerminalPane, { props: { workspaceId: "ws-123" } });
+    await waitFor(() => expect(xtermTerminalCtor).toHaveBeenCalled());
+    clipboardWriterCancelPointerGesture.mockClear();
+    const visibilityState = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
 
-      document.dispatchEvent(new Event("visibilitychange"));
+    document.dispatchEvent(new Event("visibilitychange"));
 
-      expect(clipboardWriterCancelPointerGesture).toHaveBeenCalledTimes(1);
-      visibilityState.mockRestore();
-    },
-  );
+    expect(clipboardWriterCancelPointerGesture).toHaveBeenCalledTimes(1);
+    visibilityState.mockRestore();
+  });
 
   it("does not attach xterm sessions with unavailable initial status", async () => {
     render(TerminalPane, {

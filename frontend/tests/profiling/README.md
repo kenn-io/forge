@@ -63,10 +63,7 @@ switch — the first pane to reach a phase wins, and each measure's
 is always recorded by the same pane as `first-bytes`, so
 `firstBytesToFirstPaint` describes one real terminal.
 
-Both terminal renderers (xterm and ghostty-web) emit the same names,
-but the profiling harness exercises only the default xterm renderer;
-treat ghostty numbers from live sessions as informative, not
-harness-verified. Derived values in the output answer the usual
+The xterm terminal emits these names. Derived values in the output answer the usual
 questions directly: time before terminal creation
 (`routeToTerminalConstructed`), before socket connection
 (`routeToSocketOpen`), and between first bytes and visible paint
@@ -87,7 +84,7 @@ navigation-start timeline.
 - `summary.txt` — the per-switch table also printed to the console.
 - `timings.json` — every scenario/iteration with raw entries, derived
   metrics, `timeOriginEpochMs` for wall-clock alignment, and an
-  `environment` block (commit, browser version, platform, renderer)
+  `environment` block (commit, browser version, platform)
   for comparing runs. Written before the harness's own assertions, so
   a failed run still leaves its evidence. The harness also verifies
   the alternate-screen scenario is real by asking the e2e server's

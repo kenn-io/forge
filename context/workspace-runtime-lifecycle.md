@@ -106,8 +106,8 @@ stale tabs.
 - Pointer clipboard authority and keyboard authority created during it must remain timed and revocable through release
   grace on capture, focus, or visibility loss; a watchdog bounds missing releases
   (`frontend/src/lib/components/terminal/terminalClipboardWriter.ts::createTerminalClipboardWriter`).
-- OSC 52 filtering must recognize numeric equivalents, restart at nested 7-bit or C1 introducers, and replace removed
-  sequences with a parser-cancel boundary; empty removal can splice an unfiltered clipboard command
+- OSC 52 filtering must cancel downstream state before retaining nested introducers, honor CAN/SUB aborts, and replace
+  removed numeric equivalents with a parser-cancel boundary; partial forwarding can splice across reconnects
   (`frontend/src/lib/components/terminal/osc52OutputFilter.ts::createOsc52OutputFilter`).
 - Host clipboard writes are direct-loopback only and must be rejected when reverse-proxy trust is active; a proxy's
   loopback `RemoteAddr` does not establish browser locality (`internal/server/server.go::Server.ServeHTTP`).

@@ -13,6 +13,7 @@ type ParserState = "normal" | "escape" | "osc-command" | "osc52" | "osc52-escape
 
 const ESC = 0x1b;
 const CAN = 0x18;
+const SUB = 0x1a;
 const BEL = 0x07;
 const C1_OSC = 0x9d;
 const C1_ST = 0x9c;
@@ -36,6 +37,12 @@ export function createOsc52OutputFilter(
     if (!discardOsc52) {
       onOsc52(new TextDecoder().decode(Uint8Array.from(osc52Data)));
     }
+    osc52Data = [];
+    discardOsc52 = false;
+    state = "normal";
+  }
+
+  function abortOsc52(): void {
     osc52Data = [];
     discardOsc52 = false;
     state = "normal";
@@ -73,13 +80,14 @@ export function createOsc52OutputFilter(
               command = [];
               state = "osc-command";
             } else if (byte === C1_OSC) {
-              output.push(ESC);
+              output.push(ESC, CAN);
               candidate = [byte];
               command = [];
               state = "osc-command";
             } else {
               output.push(ESC);
               if (byte === ESC) {
+                output.push(CAN);
                 state = "escape";
               } else {
                 output.push(byte);
@@ -90,12 +98,12 @@ export function createOsc52OutputFilter(
 
           case "osc-command":
             if (byte === ESC) {
-              output.push(...candidate);
+              output.push(...candidate, CAN);
               candidate = [];
               command = [];
               state = "escape";
             } else if (byte === C1_OSC) {
-              output.push(...candidate);
+              output.push(...candidate, CAN);
               candidate = [byte];
               command = [];
             } else if (byte === SEMICOLON) {
@@ -135,7 +143,9 @@ export function createOsc52OutputFilter(
             break;
 
           case "osc52":
-            if (byte === BEL || byte === C1_ST) {
+            if (byte === CAN || byte === SUB) {
+              abortOsc52();
+            } else if (byte === BEL || byte === C1_ST) {
               finishOsc52();
             } else if (byte === ESC) {
               state = "osc52-escape";
@@ -150,7 +160,9 @@ export function createOsc52OutputFilter(
             break;
 
           case "osc52-escape":
-            if (byte === BACKSLASH) {
+            if (byte === CAN || byte === SUB) {
+              abortOsc52();
+            } else if (byte === BACKSLASH) {
               finishOsc52();
             } else {
               osc52Data = [];

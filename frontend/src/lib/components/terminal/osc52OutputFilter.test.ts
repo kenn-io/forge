@@ -68,7 +68,7 @@ describe("OSC 52 output filter", () => {
       Uint8Array.from([...bytes(`\x1b]${prefix}`), ...introducer, ...bytes("52;c;Y29waWVkIHRleHQ=\x07visible")]),
     );
 
-    expect(text(output)).toBe(`\x1b]${prefix}${CAN}visible`);
+    expect(text(output)).toBe(`\x1b]${prefix}${CAN}${CAN}visible`);
     expect(onOsc52).toHaveBeenCalledWith("c;Y29waWVkIHRleHQ=");
   });
 
@@ -78,7 +78,7 @@ describe("OSC 52 output filter", () => {
 
     const output = filter.write(Uint8Array.from([0x1b, 0x9d, ...bytes("52;c;Y29waWVkIHRleHQ=\x07visible")]));
 
-    expect(Array.from(output)).toEqual([0x1b, 0x18, ...bytes("visible")]);
+    expect(Array.from(output)).toEqual([0x1b, 0x18, 0x18, ...bytes("visible")]);
     expect(onOsc52).toHaveBeenCalledWith("c;Y29waWVkIHRleHQ=");
   });
 
@@ -123,6 +123,34 @@ describe("OSC 52 output filter", () => {
     downstream.write(filter.write(bytes("2;c;b3V0ZXI=\x07")));
 
     expect(downstreamOsc52).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { name: "7-bit ESC", introducer: [0x1b] },
+    { name: "C1 OSC", introducer: [0x9d] },
+  ])("cancels a preserved prefix before reset after a nested $name", ({ introducer }) => {
+    const filter = createOsc52OutputFilter(vi.fn());
+    const downstreamOsc52 = vi.fn();
+    const downstream = createOsc52OutputFilter(downstreamOsc52);
+
+    downstream.write(filter.write(Uint8Array.from([...bytes("\x1b]5"), ...introducer])));
+    filter.reset();
+    downstream.write(filter.write(bytes("2;c;b3V0ZXI=\x07")));
+
+    expect(downstreamOsc52).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { name: "CAN", abort: 0x18 },
+    { name: "SUB", abort: 0x1a },
+  ])("resumes visible output after $name aborts buffered OSC 52", ({ abort }) => {
+    const onOsc52 = vi.fn();
+    const filter = createOsc52OutputFilter(onOsc52);
+
+    const output = filter.write(Uint8Array.from([...bytes("\x1b]52;c;Y29w"), abort, ...bytes("visible")]));
+
+    expect(text(output)).toBe(`${CAN}visible`);
+    expect(onOsc52).not.toHaveBeenCalled();
   });
 
   it("consumes oversized OSC 52 without retaining or dispatching it", () => {

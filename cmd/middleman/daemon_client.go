@@ -39,17 +39,10 @@ func discoverDaemonHTTP(configPath string, timeout time.Duration) (daemonHTTPCli
 	if err != nil {
 		return daemonHTTPClient{}, err
 	}
-	transport := http.RoundTripper(http.DefaultTransport)
 	baseURL := fmt.Sprintf("http://%s%s", status.Metadata.ListenAddr, prefix)
-	forwardedHost := ""
-	if cfg.TrustReverseProxy {
-		forwardedHost = status.Metadata.ListenAddr
-	}
-	if token != "" || forwardedHost != "" {
-		transport = daemonOriginTransport{
-			token: token, origin: "http://" + status.Metadata.ListenAddr,
-			forwardedHost: forwardedHost, base: transport,
-		}
+	transport := daemonOriginTransport{
+		token: token, origin: "http://" + status.Metadata.ListenAddr,
+		forwardedHost: status.Metadata.ListenAddr, base: http.DefaultTransport,
 	}
 	return daemonHTTPClient{
 		BaseURL: baseURL,

@@ -338,9 +338,10 @@ fixture.
 ### Sleep And Timer Tests
 
 Do not add sleeps as a synchronization mechanism. Prefer a channel closed by
-the fake or callback that observed the exact event under test. If the behavior
-is inherently observable only by polling, check once immediately, then poll with
-a short ticker bounded by a context deadline.
+the fake or callback that observed the exact event, then await it with
+`require.Eventually` and scheduling headroom under `-race`. If the behavior is
+inherently observable only by polling, check immediately, then use a short ticker
+bounded by a context deadline. (`internal/github/syncertest/syncer_test.go::TestSyncerTriggerRunRunsRunOnce`)
 
 When server e2e tests chain `POST /api/v1/sync` with another ad-hoc sync
 trigger, treat the HTTP 202 and DB row timestamps as intermediate observations.

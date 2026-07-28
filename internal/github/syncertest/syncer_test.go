@@ -628,12 +628,15 @@ func TestSyncerTriggerRunRunsRunOnce(t *testing.T) {
 
 	s.TriggerRun(t.Context())
 
-	select {
-	case <-done:
-	case <-time.After(time.Second):
-		require.FailNow(t,
-			"TriggerRun did not complete RunOnce within 1s")
-	}
+	require.Eventually(t, func() bool {
+		select {
+		case <-done:
+			return true
+		default:
+			return false
+		}
+	}, 5*time.Second, 10*time.Millisecond,
+		"TriggerRun did not complete RunOnce")
 	s.Stop()
 	assert.True(mock.listOpenPRsCalled,
 		"TriggerRun should invoke ListOpenPullRequests")
@@ -778,11 +781,15 @@ func TestSyncerTriggerRunForReposSyncsOnlySelectedRepos(t *testing.T) {
 		PlatformHost: "github.com",
 	}})
 
-	select {
-	case <-done:
-	case <-time.After(time.Second):
-		require.FailNow("scoped TriggerRun did not complete within 1s")
-	}
+	require.Eventually(func() bool {
+		select {
+		case <-done:
+			return true
+		default:
+			return false
+		}
+	}, 5*time.Second, 10*time.Millisecond,
+		"scoped TriggerRun did not complete")
 	s.Stop()
 
 	mu.Lock()

@@ -32,6 +32,7 @@
     websocketPath?: string | undefined;
     reconnectOnExit?: boolean | undefined;
     active?: boolean | undefined;
+    autoFocus?: boolean | undefined;
     disabled?: boolean;
     onExit?: ((code: number) => void) | undefined;
     // When the session is not attachable at mount time, skip the
@@ -45,6 +46,7 @@
     websocketPath,
     reconnectOnExit = true,
     active = true,
+    autoFocus = true,
     disabled = false,
     onExit,
     initialStatus,
@@ -712,7 +714,7 @@
       // focus from controls managed by WorkspaceHost/WorkspaceDockPanel. The
       // font-load wait above is async, so focus only moves if the mount-time
       // focus context is still current and isn't a dialog/menu/input.
-      if (active && !disabled && focusIntent.shouldFocus()) term.focus();
+      if (autoFocus && active && !disabled && focusIntent.shouldFocus()) term.focus();
 
       term.onData((data: string) => {
         if (disabled) return;

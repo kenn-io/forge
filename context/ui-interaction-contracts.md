@@ -304,10 +304,10 @@ Keyboard handlers must have one clear owner for each key press.
   own, or one tmux session gets two sockets. A container mounts a session into
   the pool only while it actually renders it, since a parked terminal keeps its
   websocket (`frontend/src/lib/stores/session-host.svelte.ts`).
-- A pooled terminal's first construction waits for an attached, visible slot:
-  renderer autofocus is creation-only, so constructing in the parking node loses
-  launch focus. After first visibility it stays mounted across every later move
-  (`frontend/src/lib/components/terminal/PooledSessionTerminal.svelte::terminalReady`).
+- A pooled terminal constructs immediately, even in parking, so every mounted
+  session keeps its websocket; it opts out of renderer autofocus and the pool
+  focuses only explicit requests after attachment
+  (`frontend/src/lib/components/terminal/PooledSessionTerminal.svelte`).
 - A promoted session is recorded ONCE, in the detail surface's stored pane tree.
   Containers mask it out of what they render (derived, not an effect) and never
   prune their own stored trees, so demoting restores the tab order, split, and

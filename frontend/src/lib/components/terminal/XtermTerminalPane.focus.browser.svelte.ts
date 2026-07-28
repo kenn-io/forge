@@ -32,6 +32,36 @@ describe("XtermTerminalPane focus", () => {
     }
   });
 
+  it("constructs without stealing focus when autofocus is disabled", async () => {
+    const target = document.createElement("div");
+    target.style.width = "600px";
+    target.style.height = "400px";
+    document.body.appendChild(target);
+    const button = document.createElement("button");
+    document.body.appendChild(button);
+    button.focus();
+    const props = $state({
+      websocketPath: "/api/v1/workspaces/ws-1/runtime/sessions/s1/attach",
+      active: true,
+      autoFocus: false,
+    });
+    const component = mount(XtermTerminalPane, {
+      target,
+      props,
+      context: new Map([[STORES_KEY, { settings: createSettingsStore() }]]),
+    });
+    try {
+      await vi.waitFor(() => {
+        expect(target.querySelector(".xterm-helper-textarea")).not.toBeNull();
+      });
+      expect(document.activeElement).toBe(button);
+    } finally {
+      unmount(component);
+      target.remove();
+      button.remove();
+    }
+  });
+
   it("does not steal focus when an already-mounted terminal becomes active", async () => {
     const target = document.createElement("div");
     target.style.width = "600px";

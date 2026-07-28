@@ -253,7 +253,7 @@ func (d *DB) SetArchiveCoverage(ctx context.Context, repoID int64, coverage Arch
 	return nil
 }
 
-// RequeueArchiveLifecycleDetails reopens completed GitHub lookups whose
+// RequeueArchiveLifecycleDetails reopens completed provider lookups whose
 // persisted rows predate lifecycle actors or merge metrics. The normal archive
 // hydration path owns the provider read and persistence.
 func (d *DB) RequeueArchiveLifecycleDetails(
@@ -265,11 +265,12 @@ func (d *DB) RequeueArchiveLifecycleDetails(
 	if len(repoIDs) == 0 {
 		return nil
 	}
-	args := []any{formatDatasetProgressTime(now)}
+	args := []any{archiveLifecycleDetailsGeneration, formatDatasetProgressTime(now)}
 	args = append(args, archiveRepoIDArgs(repoIDs)...)
+	args = append(args, archiveLifecycleDetailsGeneration)
 	_, err := d.rw.ExecContext(ctx, fmt.Sprintf(`
 		UPDATE middleman_archive_dataset_progress
-		SET scan_generation = %s,
+		SET scan_generation = ?,
 			next_cursor = NULL, last_input_cursor = NULL,
 			page_count = 0, observed_count = 0,
 			status = 'pending', attempt_count = 0, next_retry_at = NULL,
@@ -278,6 +279,7 @@ func (d *DB) RequeueArchiveLifecycleDetails(
 		WHERE repo_id IN (%s)
 		  AND item_type IN ('issue', 'merge_request') AND dataset = 'lookup'
 		  AND status = 'complete'
+		  AND scan_generation < ?
 		  AND EXISTS (
 			SELECT 1
 			FROM middleman_archive_items ai
@@ -288,7 +290,7 @@ func (d *DB) RequeueArchiveLifecycleDetails(
 			  AND ai.item_number = middleman_archive_dataset_progress.item_number
 			  AND ai.lifecycle_state = 'active'
 			  AND ar.collection_mode = 'full'
-			  AND r.platform = 'github'
+			  AND r.platform IN ('github', 'gitlab')
 			  AND (
 				(ai.item_type = 'issue' AND EXISTS (
 					SELECT 1 FROM middleman_issues i
@@ -314,7 +316,7 @@ func (d *DB) RequeueArchiveLifecycleDetails(
 					  )
 				))
 			  )
-		  )`, nextEvenScanGenerationSQL, sqlPlaceholders(len(repoIDs))), args...)
+		  )`, sqlPlaceholders(len(repoIDs))), args...)
 	if err != nil {
 		return fmt.Errorf("requeue archive lifecycle details: %w", err)
 	}

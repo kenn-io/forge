@@ -208,6 +208,38 @@ func TestNormalizeMergeRequestUsesIIDAndPipelineStatus(t *testing.T) {
 	assert.Equal("bug", mr.Labels[0].Name)
 }
 
+func TestNormalizeDetailedMergeRequestPreservesResultCommitSHA(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		mergeSHA  string
+		squashSHA string
+		want      string
+	}{
+		{
+			name:     "merge commit takes precedence",
+			mergeSHA: "merge-sha", squashSHA: "squash-sha", want: "merge-sha",
+		},
+		{
+			name:      "squash commit is the fallback",
+			squashSHA: "squash-sha", want: "squash-sha",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			mr := NormalizeDetailedMergeRequest(testGitLabRepoRef(), &gitlab.MergeRequest{
+				BasicMergeRequest: gitlab.BasicMergeRequest{
+					ID: 1001, IID: 7, State: "merged",
+					MergeCommitSHA: tt.mergeSHA, SquashCommitSHA: tt.squashSHA,
+				},
+			})
+
+			assert.Equal(t, tt.want, mr.MergeCommitSHA)
+		})
+	}
+}
+
 func TestNormalizeMergeRequestLeavesMergedByEmptyWhenGitLabOmitsMergeUser(t *testing.T) {
 	mr := NormalizeMergeRequest(testGitLabRepoRef(), &gitlab.BasicMergeRequest{
 		ID:       1001,

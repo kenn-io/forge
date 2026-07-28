@@ -9,6 +9,7 @@ import (
 )
 
 const nextEvenScanGenerationSQL = "scan_generation + 2 - (scan_generation % 2)"
+const archiveLifecycleDetailsGeneration int64 = 1 << 32
 const maxScanPages = 10_000
 
 const (
@@ -124,13 +125,15 @@ func (d *DB) CommitArchiveItemSync(ctx context.Context, commit ArchiveItemSyncCo
 			nowText := formatDatasetProgressTime(commit.Now)
 			if _, err := tx.ExecContext(ctx, `
 				UPDATE middleman_archive_dataset_progress
-				SET parent_revision = ?, status = 'complete',
+				SET parent_revision = ?,
+					scan_generation = MAX(scan_generation, ?),
+					status = 'complete',
 					next_cursor = NULL, last_input_cursor = NULL,
 					attempt_count = 0, next_retry_at = NULL,
 					last_error_code = NULL, last_error_detail = NULL,
 					completed_at = ?, updated_at = ?
 				WHERE repo_id = ? AND item_type = ? AND item_number = ? AND dataset = 'lookup'`,
-				revision, nowText, nowText,
+				revision, archiveLifecycleDetailsGeneration, nowText, nowText,
 				commit.RepoID, commit.ItemType, commit.ItemNumber,
 			); err != nil {
 				return fmt.Errorf("complete archive item sync: %w", err)

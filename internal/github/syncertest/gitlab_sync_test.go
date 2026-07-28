@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"go.kenn.io/middleman/internal/db"
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/platform"
 	"go.kenn.io/middleman/internal/platform/gitlab"
@@ -57,6 +58,7 @@ func TestGitLabProviderSyncPersistsAndRetainsInaccessibleItems(t *testing.T) {
 	}`
 	var issueOpen atomic.Bool
 	issueOpen.Store(true)
+	var mrMerged atomic.Bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.EscapedPath() {
@@ -72,6 +74,19 @@ func TestGitLabProviderSyncPersistsAndRetainsInaccessibleItems(t *testing.T) {
 				"created_at": "2026-06-01T00:00:00Z", "updated_at": "2026-06-02T00:00:00Z"
 			}]`))
 		case "/api/v4/projects/42/merge_requests/8":
+			if mrMerged.Load() {
+				_, _ = w.Write([]byte(`{
+					"id": 1001, "iid": 8, "project_id": 42,
+					"title": "merged MR", "state": "merged",
+					"author": {"username": "lin"}, "merge_user": {"username": "maintainer"},
+					"source_branch": "feature", "target_branch": "main", "sha": "abc123",
+					"merged_at": "2026-06-03T00:00:00Z",
+					"merge_commit_sha": "merge-sha", "squash_commit_sha": "squash-sha",
+					"web_url": "https://gitlab.example.com/group/project/-/merge_requests/8",
+					"created_at": "2026-06-01T00:00:00Z", "updated_at": "2026-06-03T00:00:00Z"
+				}`))
+				return
+			}
 			_, _ = w.Write([]byte(`{
 				"id": 1001, "iid": 8, "project_id": 42,
 				"title": "open MR", "state": "opened",
@@ -190,6 +205,46 @@ func TestGitLabProviderSyncPersistsAndRetainsInaccessibleItems(t *testing.T) {
 	require.NoError(err)
 	require.NotEmpty(threads, "inline review threads must persist through the neutral path")
 	assert.Equal("inline", threads[0].ProviderThreadID)
+
+	repoRow, err := d.GetRepoByIdentity(ctx, platform.DBRepoIdentity(platform.RepoRef{
+		Platform: repo.Platform, Host: repo.PlatformHost, Owner: repo.Owner,
+		Name: repo.Name, RepoPath: repo.RepoPath,
+	}))
+	require.NoError(err)
+	require.NotNil(repoRow)
+	mrMerged.Store(true)
+	mergedMR, err := client.GetMergeRequest(ctx, platform.RepoRef{
+		Platform: repo.Platform, Host: repo.PlatformHost, Owner: repo.Owner,
+		Name: repo.Name, RepoPath: repo.RepoPath, PlatformID: 42,
+	}, 8)
+	require.NoError(err)
+	_, err = d.UpsertMergeRequest(ctx, platform.DBMergeRequest(repoRow.ID, mergedMR))
+	require.NoError(err)
+	storedMergedMR, err := d.GetMergeRequest(
+		ctx, "gitlab", "gitlab.example.com", "group", "project", 8,
+	)
+	require.NoError(err)
+	require.NotNil(storedMergedMR)
+	assert.Equal("merge-sha", storedMergedMR.MergeCommitSHA)
+
+	tx, err := d.ReadDB().BeginTx(ctx, nil)
+	require.NoError(err)
+	activity, err := db.LoadArchiveReportActivity(
+		ctx, tx, []int64{repoRow.ID},
+		time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC),
+		time.Date(2026, 6, 4, 0, 0, 0, 0, time.UTC),
+	)
+	require.NoError(err)
+	require.NoError(tx.Commit())
+	var mergedActivity *db.ArchiveReportActivityRow
+	for i := range activity {
+		if activity[i].Kind == db.ArchiveReportActivityMergeRequestMerged {
+			mergedActivity = &activity[i]
+			break
+		}
+	}
+	require.NotNil(mergedActivity)
+	assert.Equal("merge-sha", mergedActivity.MergeCommitSHA)
 
 	// Second cycle: the issue leaves the open inventory and its item fetch
 	// turns 404 while the project stays readable. The canonical lookup

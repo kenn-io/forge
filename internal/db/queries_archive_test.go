@@ -697,6 +697,87 @@ func TestRequeueArchiveLifecycleDetailsOnlyReopensIncompleteGitHubRows(t *testin
 	assert.Equal(ArchiveDatasetProgressComplete, issueProgress.Status)
 }
 
+func TestRequeueArchiveLifecycleDetailsChecksUnavailableDataOnlyOnce(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := openTestDB(t)
+	ctx := t.Context()
+	now := archiveTestTime()
+	repoID := insertTestRepo(t, database, "acme", "unavailable")
+	require.NoError(database.EnsureDiscoveryArchives(ctx, []int64{repoID}, now))
+	require.NoError(database.StartFullArchives(ctx, []int64{repoID}, now))
+	mergedAt := now.Add(-time.Hour)
+	_, err := database.UpsertMergeRequest(ctx, &MergeRequest{
+		RepoID: repoID, PlatformID: 7, Number: 7, State: "merged",
+		CreatedAt: mergedAt.Add(-time.Hour), UpdatedAt: mergedAt,
+		LastActivityAt: mergedAt, MergedAt: &mergedAt,
+	})
+	require.NoError(err)
+	insertArchiveItemForTest(
+		t, database, repoID, ArchiveItemTypeMergeRequest, 7, mergedAt,
+	)
+	insertArchiveProgressForTest(
+		t, database, repoID, ArchiveItemTypeMergeRequest, 7,
+		ArchiveDatasetLookup, ArchiveDatasetProgressComplete,
+	)
+
+	require.NoError(database.RequeueArchiveLifecycleDetails(ctx, []int64{repoID}, now))
+	progress, err := database.GetDatasetProgress(
+		ctx, repoID, ArchiveItemTypeMergeRequest, 7, ArchiveDatasetLookup,
+	)
+	require.NoError(err)
+	require.Equal(ArchiveDatasetProgressPending, progress.Status)
+	require.NoError(database.CommitArchiveItemSync(ctx, ArchiveItemSyncCommit{
+		RepoID: repoID, ItemType: ArchiveItemTypeMergeRequest, ItemNumber: 7,
+		ScanGeneration: progress.ScanGeneration, Outcome: ArchiveLookupPresent,
+		Now: now.Add(time.Minute),
+	}))
+
+	require.NoError(database.RequeueArchiveLifecycleDetails(
+		ctx, []int64{repoID}, now.Add(2*time.Minute),
+	))
+	progress, err = database.GetDatasetProgress(
+		ctx, repoID, ArchiveItemTypeMergeRequest, 7, ArchiveDatasetLookup,
+	)
+	require.NoError(err)
+	assert.Equal(ArchiveDatasetProgressComplete, progress.Status)
+}
+
+func TestRequeueArchiveLifecycleDetailsIncludesGitLabRows(t *testing.T) {
+	require := require.New(t)
+	database := openTestDB(t)
+	ctx := t.Context()
+	now := archiveTestTime()
+	repoID, err := database.UpsertRepo(ctx, RepoIdentity{
+		Platform: "gitlab", PlatformHost: "gitlab.example.com",
+		Owner: "acme", Name: "metrics",
+	})
+	require.NoError(err)
+	require.NoError(database.EnsureDiscoveryArchives(ctx, []int64{repoID}, now))
+	require.NoError(database.StartFullArchives(ctx, []int64{repoID}, now))
+	mergedAt := now.Add(-time.Hour)
+	_, err = database.UpsertMergeRequest(ctx, &MergeRequest{
+		RepoID: repoID, PlatformID: 7, Number: 7, State: "merged",
+		CreatedAt: mergedAt.Add(-time.Hour), UpdatedAt: mergedAt,
+		LastActivityAt: mergedAt, MergedAt: &mergedAt,
+	})
+	require.NoError(err)
+	insertArchiveItemForTest(
+		t, database, repoID, ArchiveItemTypeMergeRequest, 7, mergedAt,
+	)
+	insertArchiveProgressForTest(
+		t, database, repoID, ArchiveItemTypeMergeRequest, 7,
+		ArchiveDatasetLookup, ArchiveDatasetProgressComplete,
+	)
+
+	require.NoError(database.RequeueArchiveLifecycleDetails(ctx, []int64{repoID}, now))
+	progress, err := database.GetDatasetProgress(
+		ctx, repoID, ArchiveItemTypeMergeRequest, 7, ArchiveDatasetLookup,
+	)
+	require.NoError(err)
+	require.Equal(ArchiveDatasetProgressPending, progress.Status)
+}
+
 func TestArchiveClaimItemExcludesDiscoveryAndEmptyEligibility(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

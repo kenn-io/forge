@@ -189,6 +189,7 @@ func normalizeMergeRequest(
 		HeadBranch:         mr.SourceBranch,
 		BaseBranch:         mr.TargetBranch,
 		HeadSHA:            mr.SHA,
+		MergeCommitSHA:     firstNonEmpty(mr.MergeCommitSHA, mr.SquashCommitSHA),
 		CommentCount:       int(mr.UserNotesCount),
 		MergeableState:     normalizeMergeableState(mr.DetailedMergeStatus, mr.HasConflicts),
 		CIStatus:           pipelineStatusFromInfo(pipeline),

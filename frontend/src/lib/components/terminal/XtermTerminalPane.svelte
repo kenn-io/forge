@@ -100,6 +100,7 @@
   const TERMINAL_MINIMUM_CONTRAST_RATIO = 4.5;
   const TERMINAL_FONT_WAIT_MS = 300;
   const TERMINAL_FONT_LOAD_GLYPHS = "0MWim@#";
+  const TERMINAL_SEQUENCE_CANCEL = "\x18";
 
   function isAttachableInitialStatus(status: string | undefined): boolean {
     return status === undefined || status === "running" || status === "starting";
@@ -111,6 +112,10 @@
     showFlash("Could not write the terminal selection to the clipboard.", {
       tone: "danger",
     });
+  }
+
+  function cancelPendingTerminalSequence(): void {
+    terminal?.write(TERMINAL_SEQUENCE_CANCEL);
   }
 
   function handleOsc52Clipboard(data: string): boolean {
@@ -488,6 +493,7 @@
             code?: number;
           };
           if (msg.type === "exited") {
+            cancelPendingTerminalSequence();
             onExit?.(msg.code ?? 0);
             exited = true;
             if (reconnectOnExit) {
@@ -508,6 +514,7 @@
     };
 
     socket.onclose = () => {
+      cancelPendingTerminalSequence();
       mouseDragAutoscroll.reset();
       scheduleReconnect();
     };
@@ -526,6 +533,7 @@
       // Close stale socket so its onclose handler
       // cannot schedule a duplicate reconnect.
       if (ws) {
+        cancelPendingTerminalSequence();
         ws.onclose = null;
         ws.onerror = null;
         ws.onmessage = null;

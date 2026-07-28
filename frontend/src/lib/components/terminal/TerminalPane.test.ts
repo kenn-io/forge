@@ -680,6 +680,34 @@ describe("TerminalPane", () => {
     expect(mouseDragReset).toHaveBeenCalledTimes(1);
   });
 
+  it("aborts a partial OSC sequence before writing output from a reconnected socket", async () => {
+    render(TerminalPane, { props: { workspaceId: "ws-123" } });
+
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
+    const terminal = xtermInstances[0]!;
+    const firstSocket = mockSockets[0]!;
+    terminal.write.mockClear();
+    vi.useFakeTimers();
+    const binaryMessage = (text: string): MessageEvent => {
+      const encoded = new TextEncoder().encode(text);
+      const data = new Uint8Array(new window.ArrayBuffer(encoded.byteLength));
+      data.set(encoded);
+      return new MessageEvent("message", { data: data.buffer });
+    };
+
+    firstSocket.onmessage?.(binaryMessage("\x1b]52;c;cGFydGlhbA=="));
+    firstSocket.onclose?.();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(mockSockets).toHaveLength(2);
+
+    mockSockets[1]!.onmessage?.(binaryMessage("fresh session output"));
+
+    const writtenChunks = terminal.write.mock.calls.map(([data]) =>
+      typeof data === "string" ? data : new TextDecoder().decode(data),
+    );
+    expect(writtenChunks).toEqual(["\x1b]52;c;cGFydGlhbA==", "\x18", "fresh session output"]);
+  });
+
   it("revokes pointer clipboard authorization when the window loses focus", async () => {
     render(TerminalPane, { props: { workspaceId: "ws-123" } });
     await waitFor(() => expect(xtermTerminalCtor).toHaveBeenCalled());

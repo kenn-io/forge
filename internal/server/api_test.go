@@ -28117,19 +28117,12 @@ func TestWorkspaceRuntimeSessionTerminalTmuxBackedWebSocketE2E(
 		return conn.Write(ctx, websocket.MessageBinary, []byte("probe\n"))
 	}
 	require.NoError(probeSize())
-	deadline := time.Now().Add(8 * time.Second)
+	readCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
 	var got strings.Builder
-	for time.Now().Before(deadline) {
-		readCtx, cancel := context.WithTimeout(ctx, 250*time.Millisecond)
+	for {
 		typ, data, readErr := conn.Read(readCtx)
-		cancel()
 		if readErr != nil {
-			if errors.Is(readErr, context.DeadlineExceeded) {
-				if err := probeSize(); err != nil {
-					break
-				}
-				continue
-			}
 			break
 		}
 		if typ != websocket.MessageBinary {

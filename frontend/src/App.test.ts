@@ -1,5 +1,8 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+// Compile the root component during collection so Vite transform work is not
+// charged against the first lazy-feature test's behavioral timeout.
+import "./App.svelte";
 
 const featureImports = vi.hoisted(() => ({
   docs: 0,

@@ -2728,6 +2728,44 @@ describe("WorkspaceTerminalView", () => {
     expect(controls.queryByRole("button", { name: "Delete" })).toBeNull();
   });
 
+  it("leaves the strip Delete off a broken workspace, whose error panel owns one", async () => {
+    // The strip action is the single owner only while the workspace is ready. A
+    // failed setup renders its own Delete beside the Retry the user is already
+    // looking at, so a second one in the strip would be two Deletes with their own
+    // disabled and pending states -- exactly what moving it out of the popover
+    // avoided.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: Request | URL | string) => {
+        const { pathname } = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
+        if (/\/workspaces\/[^/]+$/.test(pathname)) {
+          return Promise.resolve(
+            Response.json({
+              ...workspaceResponse,
+              status: "error",
+              error_message: "tmux session is no longer running: middleman-ws-1",
+            }),
+          );
+        }
+        return Promise.resolve(Response.json({}));
+      }),
+    );
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
+    claimForPrs();
+
+    render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+        paneSurface: "prs" as const,
+      },
+    });
+    render(WorkspacePaneControls);
+
+    await waitFor(() => expect(screen.getByText(/tmux session is no longer running/)).toBeTruthy());
+    expect(screen.getByRole("button", { name: "Delete" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^Delete workspace / })).toBeNull();
+  });
+
   it("carries the dock modes into the pane controls, since the header that held them is gone", async () => {
     // Collapse is the only control that puts the whole workspace away: the pane's own
     // close button hides one pane and leaves a promoted session on screen. Hiding the

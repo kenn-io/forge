@@ -4207,7 +4207,11 @@
      click. It is the only strip action for that reason: everything else here is
      either rare or lives with the thing it acts on. -->
 {#snippet workspaceStripActions()}
-  {#if workspace}
+  <!-- Ready only. A workspace whose setup failed renders its own Delete beside the
+       Retry in the error panel, which is where the user is already looking, and one
+       still being created has nothing to delete yet - the strip action there would
+       be the second owner this snippet exists to avoid. -->
+  {#if workspaceLive && workspace?.status === "ready"}
     <IconButton
       size="sm"
       tone="danger"

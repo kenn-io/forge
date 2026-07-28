@@ -2259,6 +2259,8 @@ test.describe("diff view", () => {
     await pathButton.click();
 
     expect(confirmationMessage).toContain(path);
+    expect(confirmationMessage).toContain("Quote or escape the entire path for your shell");
+    expect(confirmationMessage).not.toContain("place -- before it");
     await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe("unchanged");
 
     page.once("dialog", async (dialog) => {
@@ -2296,7 +2298,42 @@ test.describe("diff view", () => {
     await pathButton.click();
 
     expect(confirmationMessage).toContain(path);
-    expect(confirmationMessage).toContain("pass -- before the path or prefix it with ./");
+    expect(confirmationMessage).toContain("place -- before it or prefix it with ./");
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe("unchanged");
+
+    page.once("dialog", async (dialog) => {
+      await dialog.accept();
+    });
+    await pathButton.click();
+
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(path);
+  });
+
+  test("confirms an augmented assignment-shaped path before copying it", async ({ page, context, browserName }) => {
+    test.skip(browserName !== "chromium", "Clipboard read assertions require Chromium permissions");
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    const path = "PROMPT_COMMAND+=src/payload";
+    const assignmentShapedDiff: DiffResult = {
+      ...smallDiff,
+      files: smallDiff.files.map((file, index) => (index === 0 ? { ...file, path, old_path: path } : file)),
+    };
+    await mockDiffApi(page, assignmentShapedDiff);
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+    await page.evaluate(() => navigator.clipboard.writeText("unchanged"));
+
+    const pathButton = page.locator(`.diff-file[data-file-path="${path}"] .file-path`);
+    let confirmationMessage = "";
+    page.once("dialog", async (dialog) => {
+      confirmationMessage = dialog.message();
+      await dialog.dismiss();
+    });
+
+    await pathButton.click();
+
+    expect(confirmationMessage).toContain(path);
+    expect(confirmationMessage).toContain("pass it as an argument after the command");
+    expect(confirmationMessage).not.toContain("place -- before it");
     await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe("unchanged");
 
     page.once("dialog", async (dialog) => {

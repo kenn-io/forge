@@ -233,16 +233,34 @@
   }
 
   function pathContainsShellUnsafeCharacters(path: string): boolean {
-    return (
-      path.startsWith("-") ||
-      /^[\p{L}_][\p{L}\p{M}\p{N}_]*=/u.test(path) ||
-      /[^\p{L}\p{M}\p{N}._@:+,=/-]/u.test(path)
-    );
+    return path.startsWith("-") || pathLooksLikeShellAssignment(path) || pathContainsShellSyntaxCharacters(path);
+  }
+
+  function pathLooksLikeShellAssignment(path: string): boolean {
+    return /^[\p{L}_][\p{L}\p{M}\p{N}_]*(?:\+)?=/u.test(path);
+  }
+
+  function pathContainsShellSyntaxCharacters(path: string): boolean {
+    return /[^\p{L}\p{M}\p{N}._@:+,=/-]/u.test(path);
   }
 
   function confirmShellUnsafePathCopy(path: string): boolean {
+    const guidance: string[] = [];
+    if (pathContainsShellSyntaxCharacters(path)) {
+      guidance.push("Quote or escape the entire path for your shell before using it in a terminal.");
+    }
+    if (path.startsWith("-")) {
+      guidance.push(
+        "When passing this path to a command, place -- before it or prefix it with ./ so it is treated as a file operand.",
+      );
+    }
+    if (pathLooksLikeShellAssignment(path)) {
+      guidance.push(
+        "Do not paste this path before a command name; pass it as an argument after the command instead.",
+      );
+    }
     return window.confirm(
-      `This file path contains characters that may be unsafe to paste into a terminal.\n\nReview the full path before copying:\n${escapeConcealedCharacters(path)}\n\nWhen using a terminal, pass -- before the path or prefix it with ./ so it is treated as a file operand.\n\nCopy it anyway?`,
+      `This file path contains characters that may be unsafe to paste into a terminal.\n\nReview the full path before copying:\n${escapeConcealedCharacters(path)}\n\n${guidance.join("\n\n")}\n\nCopy it anyway?`,
     );
   }
 

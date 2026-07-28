@@ -392,7 +392,7 @@ describe("DiffFile", () => {
       await fireEvent.click(pathButton);
 
       expect(confirmSpy).toHaveBeenCalledWith(
-        `This file path contains characters that may be unsafe to paste into a terminal.\n\nReview the full path before copying:\n${path}\n\nWhen using a terminal, pass -- before the path or prefix it with ./ so it is treated as a file operand.\n\nCopy it anyway?`,
+        `This file path contains characters that may be unsafe to paste into a terminal.\n\nReview the full path before copying:\n${path}\n\nQuote or escape the entire path for your shell before using it in a terminal.\n\nCopy it anyway?`,
       );
       expect(copyToClipboard).not.toHaveBeenCalled();
 
@@ -405,8 +405,8 @@ describe("DiffFile", () => {
     }
   });
 
-  it.each(["-rf", "--output=.git/config", "CONFIG=payload"])(
-    "requires confirmation before copying an option- or assignment-shaped path: %s",
+  it.each(["-rf", "--output=.git/config"])(
+    "requires confirmation before copying an option-shaped path: %s",
     async (path) => {
       const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
       try {
@@ -416,7 +416,27 @@ describe("DiffFile", () => {
         await fireEvent.click(pathButton);
 
         expect(confirmSpy).toHaveBeenCalledWith(
-          `This file path contains characters that may be unsafe to paste into a terminal.\n\nReview the full path before copying:\n${path}\n\nWhen using a terminal, pass -- before the path or prefix it with ./ so it is treated as a file operand.\n\nCopy it anyway?`,
+          `This file path contains characters that may be unsafe to paste into a terminal.\n\nReview the full path before copying:\n${path}\n\nWhen passing this path to a command, place -- before it or prefix it with ./ so it is treated as a file operand.\n\nCopy it anyway?`,
+        );
+        expect(copyToClipboard).not.toHaveBeenCalled();
+      } finally {
+        confirmSpy.mockRestore();
+      }
+    },
+  );
+
+  it.each(["CONFIG=payload", "PROMPT_COMMAND+=src/payload"])(
+    "requires confirmation before copying an assignment-shaped path: %s",
+    async (path) => {
+      const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+      try {
+        renderDiffFile(makeFile({ path, old_path: path }));
+        const pathButton = screen.getByRole("button", { name: `Copy file path ${path}` });
+
+        await fireEvent.click(pathButton);
+
+        expect(confirmSpy).toHaveBeenCalledWith(
+          `This file path contains characters that may be unsafe to paste into a terminal.\n\nReview the full path before copying:\n${path}\n\nDo not paste this path before a command name; pass it as an argument after the command instead.\n\nCopy it anyway?`,
         );
         expect(copyToClipboard).not.toHaveBeenCalled();
       } finally {

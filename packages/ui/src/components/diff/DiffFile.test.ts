@@ -382,6 +382,29 @@ describe("DiffFile", () => {
     expect(document.querySelector(".file-content")).toBeTruthy();
   });
 
+  it("requires confirmation before copying a shell-unsafe path", async () => {
+    const path = `src/${"a".repeat(180)};$(hidden-command).ts`;
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    try {
+      renderDiffFile(makeFile({ path, old_path: path }));
+      const pathButton = screen.getByRole("button", { name: `Copy file path ${path}` });
+
+      await fireEvent.click(pathButton);
+
+      expect(confirmSpy).toHaveBeenCalledWith(
+        `This file path contains characters that may be unsafe to paste into a terminal.\n\nReview the full path before copying:\n${path}\n\nCopy it anyway?`,
+      );
+      expect(copyToClipboard).not.toHaveBeenCalled();
+
+      confirmSpy.mockReturnValue(true);
+      await fireEvent.click(pathButton);
+
+      expect(copyToClipboard).toHaveBeenCalledWith(path);
+    } finally {
+      confirmSpy.mockRestore();
+    }
+  });
+
   it.each([
     ["control character", "\n", "\\n"],
     ["format character", "\u202e", "\\u202e"],

@@ -2218,6 +2218,57 @@ test.describe("diff view", () => {
     await expect(page.locator(".file-path-copy-status")).toHaveText("Copied");
   });
 
+  test("confirms a truncated shell-unsafe path before copying it", async ({ page, context, browserName }) => {
+    test.skip(browserName !== "chromium", "Clipboard read assertions require Chromium permissions");
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    const path = `src/${"a".repeat(240)};$(hidden-command).ts`;
+    const unsafeDiff: DiffResult = {
+      ...smallDiff,
+      files: smallDiff.files.map((file, index) => (index === 0 ? { ...file, path, old_path: path } : file)),
+    };
+    await mockDiffApi(page, unsafeDiff);
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+    await page.evaluate(() => navigator.clipboard.writeText("unchanged"));
+
+    const pathButton = page.locator(`.diff-file[data-file-path="${path}"] .file-path`);
+    await expect
+      .poll(() =>
+        pathButton.evaluate((element) => {
+          const style = getComputedStyle(element);
+          return {
+            overflowing: element.scrollWidth > element.clientWidth,
+            overflow: style.overflow,
+            textOverflow: style.textOverflow,
+            whiteSpace: style.whiteSpace,
+          };
+        }),
+      )
+      .toEqual({
+        overflowing: true,
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+      });
+
+    let confirmationMessage = "";
+    page.once("dialog", async (dialog) => {
+      confirmationMessage = dialog.message();
+      await dialog.dismiss();
+    });
+    await pathButton.click();
+
+    expect(confirmationMessage).toContain(path);
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe("unchanged");
+
+    page.once("dialog", async (dialog) => {
+      await dialog.accept();
+    });
+    await pathButton.click();
+
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(path);
+  });
+
   test("more menu collapses and expands all visible diffs", async ({ page }) => {
     await mockDiffApi(page, smallDiff);
     await navigateToDiff(page);

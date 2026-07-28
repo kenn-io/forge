@@ -196,6 +196,7 @@
 
   async function copyPath(): Promise<void> {
     if (pathContainsConcealedCharacters) return;
+    if (pathContainsShellUnsafeCharacters(file.path) && !confirmShellUnsafePathCopy(file.path)) return;
     if (!(await copyToClipboard(file.path))) return;
     copiedPath = true;
     if (copiedPathTimeout !== undefined) clearTimeout(copiedPathTimeout);
@@ -229,6 +230,16 @@
 
   function containsConcealedCharacters(path: string): boolean {
     return Array.from(path).some((character) => isConcealedCharacter(character));
+  }
+
+  function pathContainsShellUnsafeCharacters(path: string): boolean {
+    return /[^\p{L}\p{M}\p{N}._@:+,=/-]/u.test(path);
+  }
+
+  function confirmShellUnsafePathCopy(path: string): boolean {
+    return window.confirm(
+      `This file path contains characters that may be unsafe to paste into a terminal.\n\nReview the full path before copying:\n${escapeConcealedCharacters(path)}\n\nCopy it anyway?`,
+    );
   }
 
   function escapeConcealedCharacters(path: string): string {

@@ -335,8 +335,6 @@
   <PaneLeafActions
     {leaf}
     zoomed={zoomedLeafID === leaf.id}
-    onSplit={(tabKey, leafID, direction, placement) =>
-      layout.splitTab(tabKey, leafID, direction, placement)}
     onToggleZoom={(leafID) => layout.toggleZoom(leafID)}
   />
 {/snippet}

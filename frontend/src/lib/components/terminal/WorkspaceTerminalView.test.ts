@@ -2702,7 +2702,7 @@ describe("WorkspaceTerminalView", () => {
     expect(controls.queryByRole("button", { name: "Rename session" })).toBeNull();
   });
 
-  it("offers the branch and delete action from embedded workspace controls", async () => {
+  it("names the branch in the popover and puts delete one click away in the strip", async () => {
     claimForPrs();
 
     render(WorkspaceTerminalView, {
@@ -2714,11 +2714,18 @@ describe("WorkspaceTerminalView", () => {
 
     await waitFor(() => expect(hostedWorkspaceControls()).not.toBeNull());
     render(WorkspacePaneControls);
-    await fireEvent.click(screen.getByRole("button", { name: "Workspace controls" }));
 
+    // Deleting the worktree is what a maintainer reaches for once a PR is done, and
+    // behind the popover it cost a click to open, a target to find, and a second
+    // click. It sits in the strip beside the trigger now, and only there: two
+    // Deletes with their own disabled and pending states is worse than one.
+    const strip = await screen.findByRole("button", { name: /^Delete workspace / });
+    expect(strip.closest("[role='dialog']")).toBeNull();
+
+    await fireEvent.click(screen.getByRole("button", { name: "Workspace controls" }));
     const controls = within(screen.getByRole("dialog", { name: "Workspace controls" }));
     expect(controls.getByText("feature/session-exit").closest("code")).not.toBeNull();
-    expect(controls.getByRole("button", { name: "Delete" })).toBeTruthy();
+    expect(controls.queryByRole("button", { name: "Delete" })).toBeNull();
   });
 
   it("carries the dock modes into the pane controls, since the header that held them is gone", async () => {

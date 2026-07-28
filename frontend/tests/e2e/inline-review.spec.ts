@@ -1,6 +1,7 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 
 import { mockApi } from "./support/mockApi";
+import { splitFocusedPane } from "./support/paneCommands";
 
 async function fulfillJson(route: Route, body: unknown, status = 200): Promise<void> {
   await route.fulfill({
@@ -704,7 +705,7 @@ test("a loaded draft becomes unpublishable when review_draft flips unavailable",
   await page.clock.install();
   await page.setViewportSize({ width: 2200, height: 1000 });
   await page.goto("/pulls/github/acme/widgets/42");
-  await page.getByRole("button", { name: "Split active pane right" }).click();
+  await splitFocusedPane(page, "right");
   await expect(page.getByText("1 draft comment")).toBeVisible();
   await expect(page.getByRole("button", { name: "Publish review" })).toBeVisible();
 

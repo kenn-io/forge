@@ -329,6 +329,16 @@ Keyboard handlers must have one clear owner for each key press.
   carries its controls. A flattened surface keeps the chrome, since it has no
   per-leaf strip to carry any of it
   (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte`).
+- A pane's tab strip carries ONE structural control, Maximize. Split right and Split
+  down were removed: a single-tab leaf cannot split, so on the panes that most need
+  it they were permanently greyed, and elsewhere they duplicated the two routes that
+  remain -- dragging a tab to a pane edge, and the `pane.splitRight`/`pane.splitDown`
+  palette commands. Tests split through the palette or the layout store, never a
+  button.
+- Deleting a workspace is a strip action, not a popover one: it is registered as
+  `HostedWorkspaceControls.stripActions` and renders beside the controls trigger. It
+  lives in exactly one place -- two Deletes with independent disabled and pending
+  states is worse than one behind a menu.
 - The dock modes (Expand Terminal / Show Details / Collapse Terminal) move into the
   pane's controls popover wherever the header bar is hidden, gated on exactly the
   complement of the header's own condition so neither state shows two copies. The

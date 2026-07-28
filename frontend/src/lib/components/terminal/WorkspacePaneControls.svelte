@@ -117,6 +117,7 @@
 
 {#if controls}
   <div class="workspace-pane-controls">
+    {@render controls.stripActions?.()}
     <button
       bind:this={triggerEl}
       class="controls-trigger"
@@ -147,6 +148,8 @@
 <style>
   .workspace-pane-controls {
     display: inline-flex;
+    align-items: center;
+    gap: 2px;
   }
 
   .controls-trigger {

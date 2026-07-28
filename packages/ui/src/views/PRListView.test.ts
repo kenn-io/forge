@@ -177,7 +177,11 @@ describe("PRListView detail panes", () => {
     renderPRListView({ navigate });
     await tick();
 
-    await fireEvent.click(screen.getByTestId("pane-split-right"));
+    // Split through the store: the per-leaf split buttons are gone, and dragging a
+    // tab to a pane edge is the user-facing route -- neither of which is this
+    // test's subject.
+    const layout = getPaneLayoutStore("prs");
+    layout.splitTab("files", layout.leafIDForTab("files")!, "horizontal", "after");
     await tick();
     navigate.mockClear();
 
@@ -207,7 +211,8 @@ describe("PRListView detail panes", () => {
 
     // Split the panes apart: both are visible now, so there is no tab to click
     // and the route has to follow focus instead.
-    await fireEvent.click(screen.getByTestId("pane-split-right"));
+    const layout = getPaneLayoutStore("prs");
+    layout.splitTab("files", layout.leafIDForTab("files")!, "horizontal", "after");
     await tick();
 
     const filesPane = screen.getByTestId("diff-files").closest(".tabbed-panel-tab-panel");
@@ -284,10 +289,8 @@ describe("PRListView detail panes", () => {
     renderPRListView();
     await tick();
 
-    // One leaf, so no divider and no per-leaf split controls: rearranging panes
-    // is not offered where there is no room for two of them.
+    // One leaf, so no divider: there is no second pane to resize against.
     expect(screen.queryByRole("separator", { name: "Resize detail panes" })).toBeNull();
-    expect(screen.queryByTestId("pane-split-right")).toBeNull();
     expect(screen.getAllByRole("tablist")).toHaveLength(1);
   });
 });

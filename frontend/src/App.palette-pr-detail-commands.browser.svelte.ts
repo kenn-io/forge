@@ -288,7 +288,7 @@ describe("pane layout palette commands", () => {
     mounted = await mountBrowserApp("/pulls/github/acme/widgets/42");
     await expect.element(page.getByText("Adds Playwright smoke tests")).toBeVisible();
     await page.viewport(560, 900);
-    await vi.waitFor(() => expect(document.querySelector("[data-testid='pane-split-right']")).toBeNull());
+    await vi.waitFor(() => expect(document.querySelector("[data-testid='pane-toggle-zoom']")).toBeNull());
 
     await openPaletteWith("pane");
 

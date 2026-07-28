@@ -89,36 +89,6 @@ describe("detail pane layout", () => {
     expect(screen.queryByTestId("pane-workspace")).toBeNull();
   });
 
-  it("dispatches horizontal for Split right and vertical for Split down", () => {
-    // The whole point of the icon choice. Lucide's horizontal/vertical suffix
-    // names the arrangement axis, so the names read as inverted; without this
-    // the suite would pass with the two icons transposed.
-    const layout = store(mergedTree());
-    // Stubbed, not merely observed: letting the real split run would restructure
-    // the tree mid-test and render a second control cluster.
-    const splitTab = vi.spyOn(layout, "splitTab").mockImplementation(() => {});
-    render(DetailPaneLayoutTestHarness, { layout });
-
-    fireEvent.click(screen.getByTestId("pane-split-right"));
-    expect(splitTab).toHaveBeenLastCalledWith("conversation", "leaf-all", "horizontal", "after");
-
-    fireEvent.click(screen.getByTestId("pane-split-down"));
-    expect(splitTab).toHaveBeenLastCalledWith("conversation", "leaf-all", "vertical", "after");
-  });
-
-  it("disables both split buttons on a single-tab leaf", () => {
-    // Splitting the only tab out of its own leaf is a no-op in the tree model.
-    render(DetailPaneLayoutTestHarness, {
-      layout: store(splitTree()),
-      workspaceAvailable: true,
-    });
-
-    const rightButtons = screen.getAllByTestId("pane-split-right");
-    const workspaceLeafButton = rightButtons[1];
-    expect(workspaceLeafButton?.hasAttribute("disabled")).toBe(true);
-    expect(rightButtons[0]?.hasAttribute("disabled")).toBe(false);
-  });
-
   it("flips the maximize control to Restore for the zoomed leaf", () => {
     const layout = store(mergedTree());
     render(DetailPaneLayoutTestHarness, { layout });

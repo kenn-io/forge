@@ -1,53 +1,24 @@
 <script lang="ts">
   import MaximizeIcon from "@lucide/svelte/icons/maximize";
   import MinimizeIcon from "@lucide/svelte/icons/minimize";
-  import SquareSplitHorizontalIcon from "@lucide/svelte/icons/square-split-horizontal";
-  import SquareSplitVerticalIcon from "@lucide/svelte/icons/square-split-vertical";
-  import type { TabbedPanelDirection, TabbedPanelLeaf } from "./tabbed-panel-layout.js";
+  import type { TabbedPanelLeaf } from "./tabbed-panel-layout.js";
 
   interface Props {
     leaf: TabbedPanelLeaf;
     zoomed: boolean;
-    onSplit: (
-      tabKey: string,
-      leafID: string,
-      direction: TabbedPanelDirection,
-      placement: "before" | "after",
-    ) => void;
     onToggleZoom: (leafID: string) => void;
   }
 
-  const { leaf, zoomed, onSplit, onToggleZoom }: Props = $props();
-
-  // Splitting the only tab out of its own leaf is a no-op in the tree model, so
-  // an enabled button here would be a dead control.
-  const canSplit = $derived(leaf.tabs.length > 1);
+  const { leaf, zoomed, onToggleZoom }: Props = $props();
 </script>
 
-<button
-  class="tabbed-panel-tab-tool"
-  type="button"
-  title="Split right"
-  aria-label="Split active pane right"
-  disabled={!canSplit}
-  data-testid="pane-split-right"
-  onclick={() => onSplit(leaf.activeTabKey, leaf.id, "horizontal", "after")}
->
-  <SquareSplitHorizontalIcon size="12" strokeWidth="2.2" aria-hidden="true" />
-</button>
-
-<button
-  class="tabbed-panel-tab-tool"
-  type="button"
-  title="Split down"
-  aria-label="Split active pane down"
-  disabled={!canSplit}
-  data-testid="pane-split-down"
-  onclick={() => onSplit(leaf.activeTabKey, leaf.id, "vertical", "after")}
->
-  <SquareSplitVerticalIcon size="12" strokeWidth="2.2" aria-hidden="true" />
-</button>
-
+<!--
+  Zoom only. Split right and Split down used to sit here and split the leaf's ACTIVE
+  tab out of its own leaf, which is a no-op when the leaf holds one tab - so on the
+  panes that need splitting least they were two permanently greyed controls, and on
+  the rest they duplicated dragging a tab to a pane edge, which is how splitting
+  actually gets done.
+-->
 <button
   class="tabbed-panel-tab-tool"
   type="button"

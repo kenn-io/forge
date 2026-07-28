@@ -580,6 +580,13 @@ export function registerSessionPaneSnippet(snippet: Snippet<[{ paneKey: string; 
 export interface HostedWorkspaceControls {
   snippet: Snippet;
   /**
+   * The few controls that sit in the tab strip itself rather than behind the
+   * popover. Deleting a workspace is the one thing a maintainer does often enough
+   * that a click to open a menu first is a click too many, and it is the same
+   * action either way - so it lives here instead of in `snippet`, not in both.
+   */
+  stripActions?: Snippet;
+  /**
    * The workspace these controls act on. One embedded view serves every selection
    * on its surface, so the snippet identity survives a switch from one workspace
    * to another - an open popover has to close on this instead, or its buttons
@@ -589,7 +596,11 @@ export interface HostedWorkspaceControls {
 }
 
 export function registerWorkspaceControls(controls: HostedWorkspaceControls | null): void {
-  if (controls?.snippet === hostedControls?.snippet && controls?.workspaceKey === hostedControls?.workspaceKey) {
+  if (
+    controls?.snippet === hostedControls?.snippet &&
+    controls?.stripActions === hostedControls?.stripActions &&
+    controls?.workspaceKey === hostedControls?.workspaceKey
+  ) {
     return;
   }
   hostedControls = controls;

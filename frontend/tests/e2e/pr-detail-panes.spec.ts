@@ -1,6 +1,7 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 
 import { mockApi } from "./support/mockApi";
+import { splitFocusedPane } from "./support/paneCommands";
 
 const capabilities = {
   read_repositories: true,
@@ -194,7 +195,7 @@ test("splits the PR detail panes apart and remembers the dragged ratio", async (
   await expect(page.locator(".tabbed-panel-split-child")).toHaveCount(0);
   await expect(page.locator(".files-layout")).toHaveCount(0);
 
-  await page.getByRole("button", { name: "Split active pane right" }).click();
+  await splitFocusedPane(page, "right");
 
   await expect(page.locator(".tabbed-panel-split-child")).toHaveCount(2);
   await expect(page.locator(".pull-detail")).toBeVisible();
@@ -244,9 +245,9 @@ test("keeps the arrangement at an ordinary window width and flattens below 720px
   const ordinaryWidth = await detailPaneHostWidth(page);
   expect(ordinaryWidth).toBeLessThan(1280);
   expect(ordinaryWidth).toBeGreaterThanOrEqual(720);
-  await expect(page.getByRole("button", { name: "Split active pane right" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Maximize pane" })).toBeVisible();
 
-  await page.getByRole("button", { name: "Split active pane right" }).click();
+  await splitFocusedPane(page, "right");
   await expect(page.locator(".tabbed-panel-split-child")).toHaveCount(2);
   await expect(page.getByRole("separator", { name: "Resize detail panes" })).toBeVisible();
 
@@ -255,7 +256,6 @@ test("keeps the arrangement at an ordinary window width and flattens below 720px
   await page.setViewportSize({ width: 700, height: 900 });
   await expect.poll(async () => detailPaneHostWidth(page)).toBeLessThan(720);
   await expect(page.locator(".tabbed-panel-split-child")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Split active pane right" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Maximize pane" })).toHaveCount(0);
   await expect(page.getByRole("separator", { name: "Resize detail panes" })).toHaveCount(0);
   await expect(page.getByRole("tab", { name: "Files changed" })).toBeVisible();

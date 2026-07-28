@@ -115,6 +115,7 @@
   import ChevronsDownIcon from "@lucide/svelte/icons/chevrons-down";
   import ChevronsUpIcon from "@lucide/svelte/icons/chevrons-up";
   import PanelBottomCloseIcon from "@lucide/svelte/icons/panel-bottom-close";
+  import Trash2Icon from "@lucide/svelte/icons/trash-2";
   import {
     AlertIcon,
     RefreshIcon,
@@ -770,7 +771,13 @@
     // Untracked because the store compares against what is already registered:
     // reading that inside a tracked effect that also writes it is the read-write
     // loop Svelte aborts with effect_update_depth_exceeded.
-    untrack(() => registerWorkspaceControls({ snippet: workspaceControls, workspaceKey }));
+    untrack(() =>
+      registerWorkspaceControls({
+        snippet: workspaceControls,
+        stripActions: workspaceStripActions,
+        workspaceKey,
+      }),
+    );
     return () => untrack(() => registerWorkspaceControls(null));
   });
 
@@ -4154,8 +4161,9 @@
     {#if soleEmbeddedSession !== null}
       <!-- The chrome that carried these is gone in this state, and only in this
            state: with the header bar or the session strip on screen they already
-           have an owner there, and a second Delete with its own disabled and
-           pending behaviour is worse than none. -->
+           have an owner there, and a second copy with its own disabled and pending
+           behaviour is worse than none. Delete is not among them - it moved to the
+           strip, where it is one click in every pane. -->
       <Button
         size="sm"
         surface="soft"
@@ -4172,17 +4180,9 @@
         disabled={actionsBlocked}
         onclick={() => closeSession(soleEmbeddedSession)}
       />
-      {#if workspace}
-        <code class="workspace-control-branch">{workspace.git_head_ref}</code>
-        <Button
-          size="sm"
-          surface="soft"
-          tone="danger"
-          label="Delete"
-          disabled={actionsBlocked}
-          onclick={(event) => void handleDelete(event.currentTarget as HTMLElement)}
-        />
-      {/if}
+    {/if}
+    {#if workspace}
+      <code class="workspace-control-branch">{workspace.git_head_ref}</code>
     {/if}
     <!-- One opener rather than the menu: the overlay is the launch surface in a
          pane, and a second copy of the target list inside a popover inside a tab
@@ -4198,6 +4198,26 @@
       {hostVisible}
       onLaunch={(key) => void handleLaunch(key)}
     />
+  {/if}
+{/snippet}
+
+<!-- Sits in the tab strip beside the controls trigger, not inside the popover.
+     Deleting the worktree is the action a maintainer reaches for most once a PR is
+     done, and behind a menu it costs a click to open, a target to find, and a second
+     click. It is the only strip action for that reason: everything else here is
+     either rare or lives with the thing it acts on. -->
+{#snippet workspaceStripActions()}
+  {#if workspace}
+    <IconButton
+      size="sm"
+      tone="danger"
+      disabled={actionsBlocked}
+      ariaLabel={`Delete workspace ${workspace.git_head_ref}`}
+      title={`Delete workspace ${workspace.git_head_ref}`}
+      onclick={(event) => void handleDelete(event.currentTarget as HTMLElement)}
+    >
+      <Trash2Icon size="13" strokeWidth="2" aria-hidden="true" />
+    </IconButton>
   {/if}
 {/snippet}
 

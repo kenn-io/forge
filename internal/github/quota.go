@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"go.kenn.io/middleman/internal/platform"
 )
 
 type QuotaResource string
@@ -21,14 +23,15 @@ const (
 // GitHub meters REST and GraphQL separately per principal, so a route's App
 // installation and the user's PAT hold independent pools on the same host.
 type QuotaPool struct {
-	Identity  IdentityKey
-	Resource  QuotaResource
-	Limit     int
-	Remaining int
-	ResetAt   time.Time
-	UpdatedAt time.Time
-	Requests  int
-	Known     bool
+	Identity    IdentityKey
+	Resource    QuotaResource
+	Limit       int
+	Remaining   int
+	ResetAt     time.Time
+	UpdatedAt   time.Time
+	Requests    int
+	AttemptCost int // largest observed Remaining decrease per response in this window
+	Known       bool
 }
 
 type quotaKey struct {
@@ -76,6 +79,7 @@ func (r *QuotaRegistry) ObserveHeaders(
 			// Drop the observation, but the request itself still happened.
 		case pool.Known && reset.Equal(pool.ResetAt):
 			if rate.Remaining < pool.Remaining {
+				pool.AttemptCost = max(pool.AttemptCost, pool.Remaining-rate.Remaining)
 				pool.Remaining = rate.Remaining
 			}
 			pool.Limit = rate.Limit
@@ -85,6 +89,7 @@ func (r *QuotaRegistry) ObserveHeaders(
 			pool.Remaining = rate.Remaining
 			pool.ResetAt = reset
 			pool.UpdatedAt = r.now().UTC()
+			pool.AttemptCost = 1
 			pool.Known = true
 		}
 	}
@@ -121,6 +126,9 @@ func (r *QuotaRegistry) UpdateSnapshot(
 		r.pools[key] = pool
 		r.mu.Unlock()
 		return
+	}
+	if !pool.Known || !known || !reset.Equal(pool.ResetAt) {
+		pool.AttemptCost = 1
 	}
 	pool.Limit = rate.Limit
 	pool.Remaining = rate.Remaining
@@ -322,14 +330,22 @@ type quotaTransport struct {
 }
 
 func (t *quotaTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	resp, err := t.base.RoundTrip(req)
+	resource := quotaResourceFromContext(req.Context(), t.resource)
+	guardedReq, reservation, allowed := reserveArchiveProviderAttempt(
+		req, t.registry, t.identity, resource,
+	)
+	if !allowed {
+		return nil, platform.ErrArchiveAttemptBudget
+	}
+	resp, err := t.base.RoundTrip(guardedReq)
 	if resp == nil || t.registry == nil || t.identity.Principal == "" {
 		return resp, err
 	}
 	t.registry.ObserveHeaders(
 		t.identity,
-		quotaResourceFromContext(req.Context(), t.resource),
+		resource,
 		resp.Header,
 	)
+	reconcileArchiveProviderAttempt(reservation, t.registry, t.identity, resource)
 	return resp, err
 }

@@ -371,7 +371,12 @@ response never overwrites an App installation pool
 - Archive pacing uses the smaller of the local hourly surplus, the routed
   credential's paced required-resource quota, and its current remaining
   headroom after the provider reserve; a high local ceiling must not enlarge
-  the provider envelope (`internal/github/sync.go::Admit`).
+  the provider envelope. Every GitHub archive wire attempt rechecks all required
+  live pools, reserves the resource's largest observed same-window response
+  cost, and reconciles larger quota deltas before another attempt; a new
+  provider reset starts cost observation at one without enlarging an in-flight
+  allowance (`internal/github/sync.go::Admit`,
+  `internal/github/quota.go::quotaTransport`).
 - There is one background reserve check, and it runs on the snapshot cadence
   (`internal/github/sync.go::backgroundReserveExhausted`). The verdict is cached
   per credential, resource, and foreground/background mode, recomputed at most

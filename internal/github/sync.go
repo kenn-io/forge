@@ -933,13 +933,14 @@ func (s *Syncer) Admit(
 	tracker := s.rateTrackers[key]
 	var providerResetAt *time.Time
 	var providerPacingWindow *QuotaPacingWindow
+	var providerResources []QuotaResource
 	identity, identityErr := s.identityForRepo(repo, false)
 	if ref.Platform == platform.KindGitHub && s.quotaRegistry != nil && identityErr == nil {
-		resources := []QuotaResource{QuotaResourceREST, QuotaResourceGraphQL}
+		providerResources = []QuotaResource{QuotaResourceREST, QuotaResourceGraphQL}
 		availability := s.quotaRegistry.CheckReserve(
-			identity, resources, cost, RateReserveBuffer,
+			identity, providerResources, cost, RateReserveBuffer,
 		)
-		pacingWindow, pacingKnown := s.quotaRegistry.PacingWindow(identity, resources)
+		pacingWindow, pacingKnown := s.quotaRegistry.PacingWindow(identity, providerResources)
 		if !availability.Allowed || !pacingKnown {
 			probe.abandon()
 			retryAt := now.Add(time.Minute)
@@ -1004,7 +1005,13 @@ func (s *Syncer) Admit(
 	completeGitealikeMR := itemType == db.ArchiveItemTypeMergeRequest &&
 		(ref.Platform == platform.KindGitea || ref.Platform == platform.KindForgejo)
 	if !completeGitealikeMR {
-		requestCtx = WithArchiveAttemptAllowance(requestCtx, available)
+		if providerPacingWindow != nil {
+			requestCtx = WithArchiveProviderAttemptAllowance(
+				requestCtx, available, identity, providerResources, RateReserveBuffer,
+			)
+		} else {
+			requestCtx = WithArchiveAttemptAllowance(requestCtx, available)
+		}
 	}
 	var completeOnce sync.Once
 	var featureDeferred *archive.FeatureDeferral

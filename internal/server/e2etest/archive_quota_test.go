@@ -51,7 +51,7 @@ func (s archiveQuotaBurstSource) SyncArchiveItem(
 	return attempted, nil
 }
 
-func TestArchiveAPIStopsProviderBurstAtCurrentQuotaHeadroomE2E(t *testing.T) {
+func TestArchiveAPIStopsProviderBurstAtObservedQuotaHeadroomE2E(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	now := time.Now().UTC()
@@ -61,7 +61,7 @@ func TestArchiveAPIStopsProviderBurstAtCurrentQuotaHeadroomE2E(t *testing.T) {
 	upstreamRemaining.Store(203)
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		call := upstreamCalls.Add(1)
-		remaining := upstreamRemaining.Add(-1)
+		remaining := upstreamRemaining.Add(-2)
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("X-RateLimit-Limit", "5000")
 		w.Header().Set("X-RateLimit-Remaining", fmt.Sprint(remaining))
@@ -182,11 +182,11 @@ func TestArchiveAPIStopsProviderBurstAtCurrentQuotaHeadroomE2E(t *testing.T) {
 
 	runErr := archiveService.RunEligible(t.Context())
 	require.ErrorIs(runErr, platform.ErrArchiveAttemptBudget)
-	assert.Equal(int32(3), upstreamCalls.Load())
-	assert.Equal(3, budget.ArchiveSpent())
+	assert.Equal(int32(1), upstreamCalls.Load())
+	assert.Equal(1, budget.ArchiveSpent())
 	pool, ok := quotaRegistry.Get(identity, ghclient.QuotaResourceREST)
 	require.True(ok)
-	assert.Equal(200, pool.Remaining)
+	assert.Equal(201, pool.Remaining)
 	progress, err := database.GetDatasetProgress(
 		t.Context(), repo.ID, db.ArchiveItemTypeIssue, 1, db.ArchiveDatasetLookup,
 	)

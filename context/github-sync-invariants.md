@@ -239,10 +239,11 @@ fallback repository listing.
 - Archive item hydration bypasses persisted parent-detail ETags; an unchanged parent representation does not prove that legacy lifecycle timelines are complete. (`internal/github/sync.go::SyncArchiveItem`)
 - Archive issue hydration treats timeline failures as hard errors; ordinary issue refresh remains best-effort for that optional dataset. (`internal/github/sync.go::refreshIssueTimeline`)
 - Archive requests use shared sync budgets above `archiveLiveFloor`: GitHub's
-  provider-paced attempt spend is keyed to the conservative combined quota
-  reset and survives earlier local or individual-pool resets, while headerless
-  Gitealike hosts use configured local hourly surplus. The transport attributes
-  every attempt, and live work preempts the archive lease.
+  provider-paced quota-unit spend is keyed to the full required-resource reset
+  vector and survives earlier local or individual-pool resets until every prior
+  resource window advances, while headerless Gitealike hosts use configured
+  local hourly surplus. The transport attributes every attempt, and live work
+  preempts the archive lease.
   (`internal/github/budget.go::ProviderArchiveSpendAvailable`,
   `internal/github/budget.go::LocalArchiveSpendAvailable`,
   `internal/github/sync.go::Admit`)
@@ -373,9 +374,11 @@ response never overwrites an App installation pool
   headroom after the provider reserve; a high local ceiling must not enlarge
   the provider envelope. Every GitHub archive wire attempt rechecks all required
   live pools, reserves the resource's largest observed same-window response
-  cost, and reconciles larger quota deltas before another attempt; a new
-  provider reset starts cost observation at one without enlarging an in-flight
-  allowance (`internal/github/sync.go::Admit`,
+  cost, and reconciles larger quota deltas into both the request allowance and
+  persistent pacing spend before another admission. A resource's new window
+  starts cost observation at one, but provider-paced spend clears only after
+  every required resource window in the prior pacing epoch advances
+  (`internal/github/sync.go::Admit`,
   `internal/github/quota.go::quotaTransport`).
 - There is one background reserve check, and it runs on the snapshot cadence
   (`internal/github/sync.go::backgroundReserveExhausted`). The verdict is cached

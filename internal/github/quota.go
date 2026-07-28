@@ -187,9 +187,10 @@ type QuotaAvailability struct {
 }
 
 type QuotaPacingWindow struct {
-	Limit     int
-	Remaining int
-	ResetAt   time.Time
+	Limit          int
+	Remaining      int
+	ResetAt        time.Time
+	ResourceResets map[QuotaResource]time.Time
 }
 
 func (r *QuotaRegistry) PacingWindow(
@@ -200,7 +201,9 @@ func (r *QuotaRegistry) PacingWindow(
 		return QuotaPacingWindow{}, false
 	}
 	now := r.now().UTC()
-	var window QuotaPacingWindow
+	window := QuotaPacingWindow{
+		ResourceResets: make(map[QuotaResource]time.Time, len(resources)),
+	}
 	for index, resource := range resources {
 		pool, ok := r.Get(identity, resource)
 		if !ok || !pool.Known || pool.Limit <= 0 || pool.Remaining < 0 ||
@@ -216,6 +219,7 @@ func (r *QuotaRegistry) PacingWindow(
 		if pool.ResetAt.After(window.ResetAt) {
 			window.ResetAt = pool.ResetAt
 		}
+		window.ResourceResets[resource] = pool.ResetAt
 	}
 	return window, true
 }
@@ -338,6 +342,7 @@ func (t *quotaTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return nil, platform.ErrArchiveAttemptBudget
 	}
 	resp, err := t.base.RoundTrip(guardedReq)
+	persistArchiveProviderReservation(reservation)
 	if resp == nil || t.registry == nil || t.identity.Principal == "" {
 		return resp, err
 	}

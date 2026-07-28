@@ -974,10 +974,8 @@ func (s *Syncer) Admit(
 		if providerPacingWindow != nil {
 			available = budget.ProviderArchiveSpendAvailable(
 				now,
-				resetAt,
+				*providerPacingWindow,
 				liveFloor,
-				providerPacingWindow.Limit,
-				providerPacingWindow.Remaining,
 				RateReserveBuffer,
 			)
 		} else if resetAt == nil &&
@@ -1007,7 +1005,7 @@ func (s *Syncer) Admit(
 	if !completeGitealikeMR {
 		if providerPacingWindow != nil {
 			requestCtx = WithArchiveProviderAttemptAllowance(
-				requestCtx, available, identity, providerResources, RateReserveBuffer,
+				requestCtx, available, identity, providerResources, RateReserveBuffer, budget,
 			)
 		} else {
 			requestCtx = WithArchiveAttemptAllowance(requestCtx, available)

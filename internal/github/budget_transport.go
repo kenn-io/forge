@@ -28,6 +28,7 @@ type archiveProviderAttemptConfig struct {
 	identity  IdentityKey
 	resources []QuotaResource
 	reserve   int
+	budget    *SyncBudget
 }
 
 type archiveProviderAttemptReservation struct {
@@ -55,10 +56,12 @@ func WithArchiveProviderAttemptAllowance(
 	identity IdentityKey,
 	resources []QuotaResource,
 	reserve int,
+	budget *SyncBudget,
 ) context.Context {
 	allowance := &archiveAttemptAllowance{
 		provider: &archiveProviderAttemptConfig{
 			identity: identity, resources: slices.Clone(resources), reserve: max(reserve, 0),
+			budget: budget,
 		},
 	}
 	allowance.remaining.Store(int64(attempts))
@@ -165,8 +168,21 @@ func reconcileArchiveProviderAttempt(
 		return
 	}
 	actualCost := reservation.before.Remaining - after.Remaining
+	if budget := reservation.allowance.provider.budget; budget != nil &&
+		actualCost > reservation.cost {
+		budget.addProviderArchiveSpend(actualCost - reservation.cost)
+	}
 	if actualCost > reservation.cost {
 		reservation.allowance.debit(actualCost - reservation.cost)
+	}
+}
+
+func persistArchiveProviderReservation(reservation archiveProviderAttemptReservation) {
+	if reservation.allowance == nil || reservation.cost <= 1 {
+		return
+	}
+	if budget := reservation.allowance.provider.budget; budget != nil {
+		budget.addProviderArchiveSpend(reservation.cost - 1)
 	}
 }
 

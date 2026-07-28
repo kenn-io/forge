@@ -138,6 +138,43 @@ func TestQuotaRegistryPacingWindowUsesSmallestLimitAndLatestReset(t *testing.T) 
 	assert.Equal(restReset, window.ResetAt)
 }
 
+func TestQuotaRegistryPacingWindowTracksStaggeredResourceResets(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	now := time.Date(2026, 7, 28, 18, 0, 0, 0, time.UTC)
+	registry := NewQuotaRegistry()
+	registry.now = func() time.Time { return now }
+	restReset := now.Add(5 * time.Minute)
+	graphQLReset := now.Add(30 * time.Minute)
+	registry.UpdateSnapshot(quotaTestUser, QuotaResourceREST, Rate{
+		Limit: 5000, Remaining: 4500, Reset: restReset,
+	})
+	registry.UpdateSnapshot(quotaTestUser, QuotaResourceGraphQL, Rate{
+		Limit: 5000, Remaining: 4500, Reset: graphQLReset,
+	})
+
+	window, ok := registry.PacingWindow(
+		quotaTestUser, []QuotaResource{QuotaResourceREST, QuotaResourceGraphQL},
+	)
+	require.True(ok)
+	assert.Equal(restReset, window.ResourceResets[QuotaResourceREST])
+	assert.Equal(graphQLReset, window.ResourceResets[QuotaResourceGraphQL])
+
+	// Advancing only the earlier REST pool changes the combined maximum while
+	// GraphQL still belongs to its original window.
+	nextRESTReset := now.Add(31 * time.Minute)
+	registry.UpdateSnapshot(quotaTestUser, QuotaResourceREST, Rate{
+		Limit: 5000, Remaining: 5000, Reset: nextRESTReset,
+	})
+	window, ok = registry.PacingWindow(
+		quotaTestUser, []QuotaResource{QuotaResourceREST, QuotaResourceGraphQL},
+	)
+	require.True(ok)
+	assert.Equal(nextRESTReset, window.ResetAt)
+	assert.Equal(nextRESTReset, window.ResourceResets[QuotaResourceREST])
+	assert.Equal(graphQLReset, window.ResourceResets[QuotaResourceGraphQL])
+}
+
 func TestQuotaRegistryPacingWindowRequiresEveryCurrentPool(t *testing.T) {
 	assert := assert.New(t)
 	now := time.Date(2026, 7, 28, 18, 0, 0, 0, time.UTC)

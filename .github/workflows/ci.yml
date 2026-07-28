@@ -338,7 +338,7 @@ jobs:
         run: go test ./internal/workspace/localruntime -run TestManagerLaunchUsesPtyOwnerWhenConfigured -shuffle=on
 
       - name: Run Rust PTY manager server e2e tests
-        run: go test ./internal/server -run 'TestWorkspaceCreatesRustPtyManagerSessionE2E|TestWorkspaceRuntimeLaunchesRustPtyManagerSessionE2E' -shuffle=on
+        run: go test ./internal/server/workspacetest -run 'TestWorkspaceCreatesRustPtyManagerSessionE2E|TestWorkspaceRuntimeLaunchesRustPtyManagerSessionE2E' -shuffle=on
 
       - name: Run Rust PTY manager tests
         run: cargo test -p middleman-pty-manager

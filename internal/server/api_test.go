@@ -24532,138 +24532,6 @@ func TestWorkspacePtyOwnerTitleMarksWorkspaceWorkingE2E(t *testing.T) {
 	assert.Equal("⠴ t3code-b5014b03", *got.TmuxPaneTitle)
 }
 
-func TestWorkspaceCreatesRustPtyManagerSessionE2E(t *testing.T) {
-	if runtime.GOOS != "windows" {
-		requirePTYAvailable(t)
-	}
-	releasePTYSlot := acquirePTYE2ESlot(t)
-	t.Cleanup(releasePTYSlot)
-
-	require := require.New(t)
-	assert := assert.New(t)
-
-	managerPath := buildRustPtyManagerForTest(t)
-	ptyOwnerDir := longRustPtyOwnerDirForTest(t)
-	setLongUnixTempDirForTest(t)
-	cfg := &config.Config{
-		Tmux: config.Tmux{
-			Command: []string{filepath.Join(t.TempDir(), "missing-tmux")},
-		},
-		Shell: config.Shell{Command: rustPtyManagerShellCommandForTest(t)},
-	}
-	fixture := setupWorkspaceServerFixtureWithOptions(t, cfg, ServerOptions{
-		PtyOwnerDir:         ptyOwnerDir,
-		PtyOwnerManagerPath: managerPath,
-	})
-	ctx := context.Background()
-	ws := createReadyWorkspace(t, ctx, fixture.client)
-	cleanupPtyOwnerWorkspace(t, ptyOwnerDir, ws.TmuxSession)
-
-	stored, err := fixture.database.GetWorkspace(ctx, ws.Id)
-	require.NoError(err)
-	require.NotNil(stored)
-	assert.Equal(workspace.TerminalBackendPtyOwner, stored.TerminalBackend)
-
-	ts := httptest.NewServer(fixture.server)
-	t.Cleanup(ts.Close)
-	conn, _, err := workspaceTerminalDialWithQuery(
-		ctx, ts.URL, ws.Id, "cols=120&rows=30",
-	)
-	require.NoError(err)
-	defer conn.Close(websocket.StatusNormalClosure, "done")
-
-	if runtime.GOOS == "windows" {
-		workspaceTerminalConnWriteRead(
-			t, ctx, conn, "echo rust-owner-one\r", "rust-owner-one",
-		)
-	} else {
-		workspaceTerminalConnWriteRead(
-			t, ctx, conn, "printf 'rust-owner-one\n'\r", "rust-owner-one",
-		)
-		require.NoError(conn.Write(
-			ctx,
-			websocket.MessageText,
-			[]byte(`{"type":"resize","cols":133,"rows":37}`),
-		))
-		workspaceTerminalConnWriteRead(
-			t, ctx, conn, "printf 'size:'; stty size\r", "size:37 133",
-		)
-	}
-
-	require.NoError(conn.Close(websocket.StatusNormalClosure, "done"))
-	force := true
-	delResp, err := fixture.client.HTTP.DeleteWorkspaceWithResponse(
-		ctx, ws.Id, &generated.DeleteWorkspaceParams{Force: &force},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusNoContent, delResp.StatusCode())
-
-	_, err = os.Stat(filepath.Join(ptyOwnerDir, ws.TmuxSession))
-	assert.True(os.IsNotExist(err))
-}
-
-func TestWorkspaceRuntimeLaunchesRustPtyManagerSessionE2E(t *testing.T) {
-	if runtime.GOOS != "windows" {
-		requirePTYAvailable(t)
-	}
-	releasePTYSlot := acquirePTYE2ESlot(t)
-	t.Cleanup(releasePTYSlot)
-
-	require := require.New(t)
-	assert := assert.New(t)
-
-	managerPath := buildRustPtyManagerForTest(t)
-	ptyOwnerDir := longRustPtyOwnerDirForTest(t)
-	setLongUnixTempDirForTest(t)
-	disableTmuxAgentSessions := false
-	cfg := &config.Config{
-		Agents: []config.Agent{{
-			Key:     "helper",
-			Label:   "Helper",
-			Command: serverRuntimeHelperCommand("echo"),
-		}},
-		Tmux: config.Tmux{
-			Command:       []string{filepath.Join(t.TempDir(), "missing-tmux")},
-			AgentSessions: &disableTmuxAgentSessions,
-		},
-	}
-	fixture := setupWorkspaceServerFixtureWithOptions(t, cfg, ServerOptions{
-		PtyOwnerDir:         ptyOwnerDir,
-		PtyOwnerManagerPath: managerPath,
-	})
-	ctx := context.Background()
-	ws := createReadyWorkspace(t, ctx, fixture.client)
-
-	launchResp, err := fixture.client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id,
-		generated.LaunchWorkspaceRuntimeSessionInputBody{TargetKey: "helper"},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusOK, launchResp.StatusCode(), string(launchResp.Body))
-	require.NotNil(launchResp.JSON200)
-	session := launchResp.JSON200
-	cleanupPtyOwnerWorkspace(t, ptyOwnerDir, session.Key)
-	assert.Equal("helper", session.TargetKey)
-	assert.Equal(string(localruntime.SessionStatusRunning), session.Status)
-
-	ts := httptest.NewServer(fixture.server)
-	t.Cleanup(ts.Close)
-	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
-		"/ws/v1/workspaces/" + ws.Id +
-		"/runtime/sessions/" + session.Key + "/terminal?cols=80&rows=24"
-	conn, _, err := websocket.Dial(ctx, wsURL, nil)
-	require.NoError(err)
-	defer conn.Close(websocket.StatusNormalClosure, "done")
-
-	workspaceTerminalConnWriteRead(t, ctx, conn, "ping\r", "echo:ping")
-
-	stopResp, err := fixture.client.HTTP.StopWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id, session.Key,
-	)
-	require.NoError(err)
-	require.Equal(http.StatusNoContent, stopResp.StatusCode())
-}
-
 func TestWorkspaceRuntimePlainShellUsesPtyOwnerWhenTmuxUnavailableE2E(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("test fixture uses /bin/sh")
@@ -25190,14 +25058,6 @@ func gitLocalRemoteURL(path string) string {
 	return (&url.URL{Scheme: "file", Path: slashPath}).String()
 }
 
-func rustPtyManagerShellCommandForTest(t *testing.T) []string {
-	t.Helper()
-	if runtime.GOOS == "windows" {
-		return serverRuntimeHelperCommand("echo")
-	}
-	return []string{"/bin/sh"}
-}
-
 func buildRustPtyManagerForTest(t *testing.T) string {
 	t.Helper()
 
@@ -25233,16 +25093,6 @@ func longRustPtyOwnerDirForTest(t *testing.T) string {
 	dir := filepath.Join(t.TempDir(), strings.Repeat("long-owner-root-", 8))
 	require.NoError(t, os.MkdirAll(dir, 0o755))
 	return dir
-}
-
-func setLongUnixTempDirForTest(t *testing.T) {
-	t.Helper()
-	if runtime.GOOS == "windows" {
-		return
-	}
-	dir := filepath.Join(t.TempDir(), strings.Repeat("long-temp-root-", 8))
-	require.NoError(t, os.MkdirAll(dir, 0o755))
-	t.Setenv("TMPDIR", dir)
 }
 
 func cleanupPtyOwnerWorkspace(

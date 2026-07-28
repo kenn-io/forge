@@ -623,7 +623,9 @@ type MergeRequest struct {
 	// it. An authoritative empty HeadRepoCloneURL leaves it false.
 	HeadRepoCloneURLUnknown bool `json:"-"`
 	Additions               int
+	AdditionsKnown          bool `json:"-"`
 	Deletions               int
+	DeletionsKnown          bool `json:"-"`
 	FilesChanged            *int
 	MergeCommitSHA          string
 	CommentCount            int

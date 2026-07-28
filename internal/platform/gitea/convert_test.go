@@ -76,6 +76,8 @@ func TestConvertGiteaSDKRecords(t *testing.T) {
 	assert.False(*repo.CanAdmin)
 
 	mergeable := true
+	additions := 0
+	deletions := 5
 	pr := convertPullRequest(&giteasdk.PullRequest{
 		ID:        3,
 		Index:     4,
@@ -87,6 +89,8 @@ func TestConvertGiteaSDKRecords(t *testing.T) {
 		IsLocked:  true,
 		Comments:  5,
 		Mergeable: true,
+		Additions: &additions,
+		Deletions: &deletions,
 		HTMLURL:   "https://gitea.com/gitea/tea/pulls/4",
 		Head: &giteasdk.PRBranchInfo{
 			Ref:        "feature",
@@ -112,6 +116,10 @@ func TestConvertGiteaSDKRecords(t *testing.T) {
 	assert.True(pr.Draft)
 	assert.NotNil(pr.Mergeable)
 	assert.True(*pr.Mergeable)
+	assert.True(pr.AdditionsKnown)
+	assert.Zero(pr.Additions)
+	assert.True(pr.DeletionsKnown)
+	assert.Equal(5, pr.Deletions)
 	assert.Equal("feature", pr.Head.Ref)
 	assert.Equal("abc", pr.Head.SHA)
 	assert.Equal("https://example/head.git", pr.Head.RepoCloneURL)

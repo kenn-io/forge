@@ -96,23 +96,26 @@ func TestNormalizeMergeRequestIssueEventsAndArtifacts(t *testing.T) {
 	}
 
 	pr := NormalizePullRequest(repo, PullRequestDTO{
-		ID:        100,
-		Index:     7,
-		HTMLURL:   "https://gitea.com/gitea/tea/pulls/7",
-		Title:     "Add tea",
-		User:      UserDTO{UserName: "alice", FullName: "Alice"},
-		State:     "closed",
-		Body:      "body",
-		Head:      BranchDTO{Ref: "feature", SHA: "abc123", RepoCloneURL: "https://example/head.git"},
-		Base:      BranchDTO{Ref: "main", SHA: "def456"},
-		Labels:    []LabelDTO{{ID: 1, Name: "kind/feature", Color: "00ff00", Description: "feature", IsDefault: true}},
-		Created:   base,
-		Updated:   base.Add(time.Hour),
-		Mergeable: &mergeable,
-		Merged:    true,
-		MergedAt:  &closed,
-		MergedBy:  UserDTO{UserName: "merge-admin"},
-		Closed:    &closed,
+		ID:             100,
+		Index:          7,
+		HTMLURL:        "https://gitea.com/gitea/tea/pulls/7",
+		Title:          "Add tea",
+		User:           UserDTO{UserName: "alice", FullName: "Alice"},
+		State:          "closed",
+		Body:           "body",
+		Head:           BranchDTO{Ref: "feature", SHA: "abc123", RepoCloneURL: "https://example/head.git"},
+		Base:           BranchDTO{Ref: "main", SHA: "def456"},
+		Labels:         []LabelDTO{{ID: 1, Name: "kind/feature", Color: "00ff00", Description: "feature", IsDefault: true}},
+		Created:        base,
+		Updated:        base.Add(time.Hour),
+		Mergeable:      &mergeable,
+		AdditionsKnown: true,
+		Deletions:      5,
+		DeletionsKnown: true,
+		Merged:         true,
+		MergedAt:       &closed,
+		MergedBy:       UserDTO{UserName: "merge-admin"},
+		Closed:         &closed,
 	})
 	assert.Equal("merged", pr.State)
 	assert.Equal(7, pr.Number)
@@ -120,6 +123,10 @@ func TestNormalizeMergeRequestIssueEventsAndArtifacts(t *testing.T) {
 	assert.Equal("merge-admin", pr.MergedBy)
 	assert.Equal("Alice", pr.AuthorDisplayName)
 	assert.Equal("clean", pr.MergeableState)
+	assert.True(pr.AdditionsKnown)
+	assert.Zero(pr.Additions)
+	assert.True(pr.DeletionsKnown)
+	assert.Equal(5, pr.Deletions)
 	assert.Equal("feature", pr.HeadBranch)
 	assert.Equal("abc123", pr.HeadSHA)
 	assert.False(pr.IsDraft)

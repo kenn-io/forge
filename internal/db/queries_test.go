@@ -2113,7 +2113,9 @@ func TestUpsertAndGetPullRequest(t *testing.T) {
 		HeadBranch:     "fix/something",
 		BaseBranch:     "main",
 		Additions:      10,
+		AdditionsKnown: true,
 		Deletions:      3,
+		DeletionsKnown: true,
 		FilesChanged:   new(17),
 		MergeCommitSHA: "abc123",
 		CommentCount:   2,
@@ -2158,6 +2160,28 @@ func TestUpsertAndGetPullRequest(t *testing.T) {
 	assert.True(got2.IsLocked)
 	// created_at must not change.
 	assert.True(got2.CreatedAt.Equal(now))
+
+	// Omitted metrics preserve the last provider-confirmed value, while an
+	// explicit zero remains authoritative.
+	pr.Additions = 999
+	pr.AdditionsKnown = false
+	pr.UpdatedAt = now.Add(2 * time.Hour)
+	_, err = d.UpsertMergeRequest(ctx, pr)
+	require.NoError(err)
+	preserved, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 7)
+	require.NoError(err)
+	require.NotNil(preserved)
+	assert.Equal(20, preserved.Additions)
+
+	pr.Additions = 0
+	pr.AdditionsKnown = true
+	pr.UpdatedAt = now.Add(3 * time.Hour)
+	_, err = d.UpsertMergeRequest(ctx, pr)
+	require.NoError(err)
+	zeroed, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 7)
+	require.NoError(err)
+	require.NotNil(zeroed)
+	assert.Zero(zeroed.Additions)
 
 	// Missing PR returns nil.
 	missing, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 999)

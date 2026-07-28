@@ -5057,6 +5057,76 @@ func TestIndexUpsertMergeRequestUpdatesKnownMergeableState(t *testing.T) {
 	assert.Equal("dirty", stored.MergeableState)
 }
 
+func TestIndexUpsertMergeRequestUpdatesKnownDiffMetricsAcrossSyncs(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	now := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
+	ref := platform.RepoRef{
+		Platform: platform.KindGitea, Host: "gitea.example.com",
+		Owner: "owner", Name: "repo",
+	}
+	repoID, err := d.UpsertRepo(ctx, platform.DBRepoIdentity(ref))
+	require.NoError(err)
+	filesChanged := 2
+	baseMR := platform.MergeRequest{
+		PlatformID: 1001, Number: 1, URL: "https://gitea.example.com/owner/repo/pulls/1",
+		Title: "Metrics", State: "open", HeadBranch: "feature", BaseBranch: "main",
+		HeadSHA: "head", BaseSHA: "base", Additions: 10, Deletions: 5,
+		FilesChanged: &filesChanged, CreatedAt: now, UpdatedAt: now,
+		LastActivityAt: now,
+	}
+	_, err = d.UpsertMergeRequest(ctx, platform.DBMergeRequest(repoID, baseMR))
+	require.NoError(err)
+	syncer := NewSyncer(nil, d, nil, nil, time.Minute, nil, nil)
+	repo := RepoRef{
+		Platform: platform.KindGitea, PlatformHost: ref.Host,
+		Owner: ref.Owner, Name: ref.Name,
+	}
+
+	filesChanged = 4
+	incoming := baseMR
+	incoming.Additions = 21
+	incoming.AdditionsKnown = true
+	incoming.Deletions = 7
+	incoming.DeletionsKnown = true
+	incoming.FilesChanged = &filesChanged
+	incoming.UpdatedAt = now.Add(time.Minute)
+	incoming.LastActivityAt = incoming.UpdatedAt
+	require.NoError(syncer.indexUpsertMergeRequest(
+		ctx, repo, repoID, incoming, false,
+	))
+	stored, err := d.GetMergeRequest(
+		ctx, string(ref.Platform), ref.Host, ref.Owner, ref.Name, 1,
+	)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal(21, stored.Additions)
+	assert.Equal(7, stored.Deletions)
+	require.NotNil(stored.FilesChanged)
+	assert.Equal(4, *stored.FilesChanged)
+
+	filesChanged = 0
+	incoming.Additions = 0
+	incoming.Deletions = 0
+	incoming.FilesChanged = &filesChanged
+	incoming.UpdatedAt = now.Add(2 * time.Minute)
+	incoming.LastActivityAt = incoming.UpdatedAt
+	require.NoError(syncer.indexUpsertMergeRequest(
+		ctx, repo, repoID, incoming, false,
+	))
+	stored, err = d.GetMergeRequest(
+		ctx, string(ref.Platform), ref.Host, ref.Owner, ref.Name, 1,
+	)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Zero(stored.Additions)
+	assert.Zero(stored.Deletions)
+	require.NotNil(stored.FilesChanged)
+	assert.Zero(*stored.FilesChanged)
+}
+
 func TestIndexUpsertMergeRequestPreservesCachedCIForSameHead(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

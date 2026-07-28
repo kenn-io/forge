@@ -56,9 +56,11 @@ func (c *MergeableCache) MergeableForPullRequest(htmlURL, headSHA, baseSHA strin
 }
 
 type PullRequestMetrics struct {
-	Additions    int
-	Deletions    int
-	FilesChanged *int
+	Additions      int
+	AdditionsKnown bool
+	Deletions      int
+	DeletionsKnown bool
+	FilesChanged   *int
 }
 
 func (c *MergeableCache) MetricsForPullRequest(
@@ -123,9 +125,11 @@ func (item mergeableCaptureItem) metricsValue() *PullRequestMetrics {
 		return nil
 	}
 	return &PullRequestMetrics{
-		Additions:    intPointerValue(item.Additions),
-		Deletions:    intPointerValue(item.Deletions),
-		FilesChanged: cloneIntPointer(item.Changed),
+		Additions:      intPointerValue(item.Additions),
+		AdditionsKnown: item.Additions != nil,
+		Deletions:      intPointerValue(item.Deletions),
+		DeletionsKnown: item.Deletions != nil,
+		FilesChanged:   cloneIntPointer(item.Changed),
 	}
 }
 

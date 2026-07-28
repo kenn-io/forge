@@ -77,6 +77,11 @@ func TestConvertForgejoSDKRecords(t *testing.T) {
 	assert.False(*repo.CanAdmin)
 
 	mergeable := true
+	metrics := gitealike.PullRequestMetrics{
+		AdditionsKnown: true,
+		Deletions:      5,
+		DeletionsKnown: true,
+	}
 	pr := convertPullRequest(&forgejosdk.PullRequest{
 		ID:        3,
 		Index:     4,
@@ -103,7 +108,7 @@ func TestConvertForgejoSDKRecords(t *testing.T) {
 			UserName: "merge-admin",
 			FullName: "Merge Admin",
 		},
-	}, &mergeable, gitealike.PullRequestMetrics{})
+	}, &mergeable, metrics)
 	assert.Equal(4, pr.Index)
 	assert.Equal("alice", pr.User.UserName)
 	assert.Equal("merge-admin", pr.MergedBy.UserName)
@@ -112,6 +117,10 @@ func TestConvertForgejoSDKRecords(t *testing.T) {
 	assert.False(pr.Draft)
 	assert.NotNil(pr.Mergeable)
 	assert.True(*pr.Mergeable)
+	assert.True(pr.AdditionsKnown)
+	assert.Zero(pr.Additions)
+	assert.True(pr.DeletionsKnown)
+	assert.Equal(5, pr.Deletions)
 	assert.Equal("feature", pr.Head.Ref)
 	assert.Equal("abc", pr.Head.SHA)
 	assert.Equal("https://example/head.git", pr.Head.RepoCloneURL)

@@ -152,7 +152,11 @@ type PullRequestDTO struct {
 	Comments  int
 	Mergeable *bool
 	Additions int
-	Deletions int
+	// AdditionsKnown and DeletionsKnown distinguish explicit zero values from
+	// fields omitted by the provider response.
+	AdditionsKnown bool
+	Deletions      int
+	DeletionsKnown bool
 	// FilesChanged is nil when the provider response did not expose the
 	// count and non-nil when the provider reported it, including zero.
 	FilesChanged *int

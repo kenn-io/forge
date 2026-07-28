@@ -6399,8 +6399,12 @@ func (s *Syncer) indexUpsertMergeRequest(
 	// Preserve fields list endpoints commonly omit.
 	needsCIDetailRefresh := false
 	if existing != nil {
-		normalized.Additions = existing.Additions
-		normalized.Deletions = existing.Deletions
+		if !mr.AdditionsKnown {
+			normalized.Additions = existing.Additions
+		}
+		if !mr.DeletionsKnown {
+			normalized.Deletions = existing.Deletions
+		}
 		preservePlatformBaseSHAIfOmitted(normalized, existing)
 		preserveReviewDecisionIfOmitted(normalized, existing)
 		preserveMergeableStateIfOmitted(normalized, existing)

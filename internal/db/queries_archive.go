@@ -251,6 +251,15 @@ func (d *DB) ReconcileArchiveCoverage(ctx context.Context, repoID int64, coverag
 			if reopened == 0 {
 				continue
 			}
+			itemType := ArchiveItemTypeIssue
+			if inventory.scan == ArchiveScanMergeRequestInventory {
+				itemType = ArchiveItemTypeMergeRequest
+			}
+			if err := requeueArchiveKnownItemLookupsTx(
+				ctx, tx, repoID, itemType, now,
+			); err != nil {
+				return err
+			}
 			if _, err := tx.ExecContext(ctx, `
 				UPDATE middleman_archive_repos
 				SET `+inventory.column+` = 'unknown',
@@ -286,6 +295,38 @@ func (d *DB) ReconcileArchiveCoverage(ctx context.Context, repoID int64, coverag
 		}
 		return nil
 	})
+}
+
+func requeueArchiveKnownItemLookupsTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	repoID int64,
+	itemType ArchiveItemType,
+	now time.Time,
+) error {
+	_, err := tx.ExecContext(ctx, `
+		UPDATE middleman_archive_dataset_progress
+		SET scan_generation = `+nextEvenScanGenerationSQL+`,
+			next_cursor = NULL, last_input_cursor = NULL,
+			page_count = 0, observed_count = 0,
+			status = 'pending', attempt_count = 0, next_retry_at = NULL,
+			last_error_code = NULL, last_error_detail = NULL,
+			started_at = NULL, completed_at = NULL, updated_at = ?
+		WHERE repo_id = ? AND item_type = ? AND dataset = 'lookup'
+		  AND status = 'complete'
+		  AND EXISTS (
+			SELECT 1 FROM middleman_archive_items ai
+			WHERE ai.repo_id = middleman_archive_dataset_progress.repo_id
+			  AND ai.item_type = middleman_archive_dataset_progress.item_type
+			  AND ai.item_number = middleman_archive_dataset_progress.item_number
+			  AND ai.lifecycle_state = 'active'
+		  )`, now, repoID, itemType)
+	if err != nil {
+		return fmt.Errorf(
+			"requeue known %s archive lookups: %w", itemType, err,
+		)
+	}
+	return nil
 }
 
 // RequeueArchiveLifecycleDetails reopens completed provider lookups whose
@@ -325,7 +366,7 @@ func (d *DB) RequeueArchiveLifecycleDetails(
 			  AND ai.lifecycle_state = 'active'
 			  AND ar.collection_mode = 'full'
 			  AND (
-				(ai.item_type = 'issue' AND ar.issues_coverage = 'supported' AND EXISTS (
+				(ai.item_type = 'issue' AND EXISTS (
 					SELECT 1 FROM middleman_issues i
 					WHERE i.repo_id = ai.repo_id AND i.number = ai.item_number
 					  AND i.closed_at IS NOT NULL
@@ -338,7 +379,7 @@ func (d *DB) RequeueArchiveLifecycleDetails(
 					  ) IS DISTINCT FROM i.closed_at
 				))
 				OR
-				(ai.item_type = 'merge_request' AND ar.merge_requests_coverage = 'supported' AND EXISTS (
+				(ai.item_type = 'merge_request' AND EXISTS (
 					SELECT 1 FROM middleman_merge_requests mr
 					WHERE mr.repo_id = ai.repo_id AND mr.number = ai.item_number
 					  AND mr.merged_at IS NOT NULL

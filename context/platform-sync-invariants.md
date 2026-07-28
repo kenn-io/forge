@@ -195,15 +195,17 @@ registry helpers return typed errors for missing providers or capabilities.
 - Maintenance rediscovery reopens terminal item progress for hydration; unsupported and blocked items remain excluded. (`internal/db/queries_dataset_progress.go::reopenArchiveItemProgressTx`)
 - Issue and merge-request inventory coverage is explicit and independent from child-dataset coverage. Exhausted supported scans record `supported`; declared or repository-specific feature absence records `unsupported` and completes only that stream. (`internal/archive/inventory.go::inventoryPage`, `internal/db/queries_archive.go::CommitArchiveInventoryPage`)
 - Repository-specific feature absence also exhausts the current maintenance stream without replacing established historical coverage. (`internal/archive/maintenance.go::promptPages`)
-- Capability reconciliation reopens an unsupported inventory as a fresh generation with unknown coverage when the provider advertises that stream again. (`internal/db/queries_archive.go::ReconcileArchiveCoverage`)
+- Capability reconciliation reopens an unsupported inventory with unknown
+  coverage and requeues completed known-item lookups in a fresh generation when
+  the provider advertises that stream again. (`internal/db/queries_archive.go::ReconcileArchiveCoverage`)
 - A bare optional `DiffSyncError` does not block archive historical-activity completion; wrapped or joined hard failures still retry. (`internal/github/sync.go::SyncArchiveItem`)
 - Every configured repository starts provider-neutral discovery; do not restore provider-specific closed-item cursors or translate legacy formats. (`internal/archive/service.go::EnsureConfigured`)
 - Configuration reconciliation pauses omitted repositories with a durable `configuration_removed` reason while retaining archive content and progress. Re-adding the same full identity clears only that automatic pause; an operator pause stays paused. (`internal/db/queries_archive.go::ReconcileDiscoveryArchives`, `internal/db/queries_archive.go::EnsureDiscoveryArchives`)
 - Reconcile configured repositories only at startup or configuration reload; idle scheduler polls must remain read-only unless they claim actual work. (`internal/github/sync.go::SetReposWithContext`, `internal/archive/scheduler.go::RunEligible`)
-- Startup reconciliation reopens completed legacy archive lookups once when
-  lifecycle details are missing and the corresponding inventory capability is
-  supported; a close actor is current only when the latest authored close event
-  matches `closed_at`. (`internal/db/queries_archive.go::RequeueArchiveLifecycleDetails`)
+- Startup reconciliation reopens completed legacy known-item lookups once when
+  lifecycle details are missing, independent of historical inventory coverage;
+  a close actor is current only when the latest authored close event matches
+  `closed_at`. (`internal/db/queries_archive.go::RequeueArchiveLifecycleDetails`)
 - Successful canonical hydration durably marks lifecycle details checked even when a provider omits them, preventing repeated backfill reads. (`internal/db/queries_dataset_progress.go::CommitArchiveItemSync`)
 - Authentication and repository-blocked errors defer every archive work class, including already-pending hydration, until an explicit retry clears the repository error. (`internal/archive/scheduler.go::archiveRepoDeferred`)
 - Archive admission is provider-host scoped. Normal index, notification, and active-detail work outrank archive requests; live work registers first, cancels the active archive request context, and waits for that request lease to release before provider I/O. Archive leases are released before SQLite commits. Register repo index and item detail work inside their shared execution functions so periodic, watched, manual, API, and item-number entry points cannot bypass admission. (`internal/github/sync.go::beginProviderWork`, `internal/github/sync.go::tryBeginArchiveProviderRequest`, `internal/github/sync.go::Admit`, `internal/archive/scheduler.go::admit`)
@@ -261,8 +263,10 @@ Self-hosted Forgejo and Gitea instances are separate provider-host entries even
 when they have the same owner/name pairs as public repos.
 
 Forgejo pull-request JSON is authoritative for merge metrics: its SDK drops
-those fields, so raw-response capture must preserve them with head/base binding
-before neutral normalization (`internal/platform/gitealike/mergeable_capture.go::MetricsForPullRequest`).
+those fields, so raw-response capture must preserve values and field presence
+with head/base binding before neutral normalization; omitted counters preserve
+stored values while explicit zero replaces them
+(`internal/platform/gitealike/mergeable_capture.go::MetricsForPullRequest`).
 
 Actions/CI parity is provider-specific. Forgejo reads Actions runs through the
 shared gitealike provider. Gitea reads repository workflow runs only when the

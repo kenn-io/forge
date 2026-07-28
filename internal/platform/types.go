@@ -116,21 +116,25 @@ type MergeRequest struct {
 	// preserves the previously stored value instead of clearing it.
 	HeadRepoCloneURL        string
 	HeadRepoCloneURLUnknown bool
-	Additions               int
-	Deletions               int
-	FilesChanged            *int
-	MergeCommitSHA          string
-	CommentCount            int
-	ReviewDecision          string
-	CIStatus                string
-	MergeableState          string
-	CreatedAt               time.Time
-	UpdatedAt               time.Time
-	LastActivityAt          time.Time
-	MergedAt                *time.Time
-	MergedBy                string
-	ClosedAt                *time.Time
-	Labels                  []Label
+	// AdditionsKnown and DeletionsKnown distinguish an explicit zero from a
+	// provider response that omitted the corresponding diff metric.
+	Additions      int
+	AdditionsKnown bool
+	Deletions      int
+	DeletionsKnown bool
+	FilesChanged   *int
+	MergeCommitSHA string
+	CommentCount   int
+	ReviewDecision string
+	CIStatus       string
+	MergeableState string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+	LastActivityAt time.Time
+	MergedAt       *time.Time
+	MergedBy       string
+	ClosedAt       *time.Time
+	Labels         []Label
 	// Assignees and RequestedReviewers carry usernames. nil means the
 	// provider response did not include the field (unknown), while an
 	// empty non-nil slice means the provider reported none. Persistence

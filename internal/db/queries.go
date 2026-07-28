@@ -2257,8 +2257,12 @@ func upsertMergeRequestSnapshot(
 		    head_repo_clone_url  = CASE WHEN ?
 		                                THEN middleman_merge_requests.head_repo_clone_url
 		                                ELSE excluded.head_repo_clone_url END,
-		    additions            = excluded.additions,
-		    deletions            = excluded.deletions,
+		    additions            = CASE WHEN ?
+		                                THEN excluded.additions
+		                                ELSE middleman_merge_requests.additions END,
+		    deletions            = CASE WHEN ?
+		                                THEN excluded.deletions
+		                                ELSE middleman_merge_requests.deletions END,
 		    files_changed        = COALESCE(excluded.files_changed, middleman_merge_requests.files_changed),
 		    merge_commit_sha     = COALESCE(NULLIF(excluded.merge_commit_sha, ''), middleman_merge_requests.merge_commit_sha),
 		    comment_count        = excluded.comment_count,
@@ -2292,6 +2296,7 @@ func upsertMergeRequestSnapshot(
 		mr.LastActivityAt, mr.MergedAt, mr.ClosedAt, mr.MergeableState,
 		mr.AssigneesJSON, mr.ReviewersJSON,
 		mr.HeadRepoCloneURLUnknown,
+		mr.AdditionsKnown, mr.DeletionsKnown,
 	)
 	if err != nil {
 		return 0, 0, false, fmt.Errorf("upsert merge request: %w", err)

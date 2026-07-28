@@ -86,6 +86,27 @@ func TestMergeableCacheCapturesKnownAndUnknownValues(t *testing.T) {
 	assert.False(ok)
 }
 
+func TestMergeableCachePreservesDiffMetricPresence(t *testing.T) {
+	assert := assert.New(t)
+	require := Require.New(t)
+	cache := NewMergeableCache()
+	cache.CapturePullRequestJSON([]byte(`{
+		"html_url":"https://gitea.test/owner/repo/pulls/1",
+		"head":{"sha":"head-a"},"base":{"sha":"base-a"},
+		"additions":0,"deletions":5
+	}`))
+
+	metrics, ok := cache.MetricsForPullRequest(
+		"https://gitea.test/owner/repo/pulls/1", "head-a", "base-a",
+	)
+	require.True(ok)
+	assert.True(metrics.AdditionsKnown)
+	assert.Zero(metrics.Additions)
+	assert.True(metrics.DeletionsKnown)
+	assert.Equal(5, metrics.Deletions)
+	assert.Nil(metrics.FilesChanged)
+}
+
 func TestShouldCaptureMergeable(t *testing.T) {
 	tests := []struct {
 		name        string

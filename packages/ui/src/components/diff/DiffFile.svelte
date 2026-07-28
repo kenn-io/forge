@@ -233,12 +233,16 @@
   }
 
   function pathContainsShellUnsafeCharacters(path: string): boolean {
-    return /[^\p{L}\p{M}\p{N}._@:+,=/-]/u.test(path);
+    return (
+      path.startsWith("-") ||
+      /^[\p{L}_][\p{L}\p{M}\p{N}_]*=/u.test(path) ||
+      /[^\p{L}\p{M}\p{N}._@:+,=/-]/u.test(path)
+    );
   }
 
   function confirmShellUnsafePathCopy(path: string): boolean {
     return window.confirm(
-      `This file path contains characters that may be unsafe to paste into a terminal.\n\nReview the full path before copying:\n${escapeConcealedCharacters(path)}\n\nCopy it anyway?`,
+      `This file path contains characters that may be unsafe to paste into a terminal.\n\nReview the full path before copying:\n${escapeConcealedCharacters(path)}\n\nWhen using a terminal, pass -- before the path or prefix it with ./ so it is treated as a file operand.\n\nCopy it anyway?`,
     );
   }
 

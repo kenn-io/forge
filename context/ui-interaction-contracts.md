@@ -350,8 +350,8 @@ Rows that contain buttons, links, or toggles need clear event ownership.
 - Focus-visible states matter for controls that are visually subtle, such as tab
   close buttons or compact action affordances.
 - Clipboard actions over provider- or repository-supplied text must refuse
-  concealed or default-ignorable characters, require full-value confirmation for
-  shell-unsafe text, and preserve safe text exactly (`packages/ui/src/components/diff/DiffFile.svelte::copyPath`).
+  concealed/default-ignorable characters and confirm shell-unsafe text, including option-
+  or assignment-shaped allowlisted values; show the full value, recommend explicit operand syntax, and preserve confirmed text exactly (`packages/ui/src/components/diff/DiffFile.svelte::copyPath`).
 - If a component claims menu-like behavior, it must honor the keyboard and focus
   contract of that role. Otherwise, use simpler semantics honestly.
 - Gate unavailable menu actions at the items when the menu remains safe to

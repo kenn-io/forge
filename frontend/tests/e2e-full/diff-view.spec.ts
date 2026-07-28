@@ -2269,6 +2269,44 @@ test.describe("diff view", () => {
     await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(path);
   });
 
+  test("confirms an option-shaped path before preserving it on the clipboard", async ({
+    page,
+    context,
+    browserName,
+  }) => {
+    test.skip(browserName !== "chromium", "Clipboard read assertions require Chromium permissions");
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    const path = "--output=.git/config";
+    const optionShapedDiff: DiffResult = {
+      ...smallDiff,
+      files: smallDiff.files.map((file, index) => (index === 0 ? { ...file, path, old_path: path } : file)),
+    };
+    await mockDiffApi(page, optionShapedDiff);
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+    await page.evaluate(() => navigator.clipboard.writeText("unchanged"));
+
+    const pathButton = page.locator(`.diff-file[data-file-path="${path}"] .file-path`);
+    let confirmationMessage = "";
+    page.once("dialog", async (dialog) => {
+      confirmationMessage = dialog.message();
+      await dialog.dismiss();
+    });
+
+    await pathButton.click();
+
+    expect(confirmationMessage).toContain(path);
+    expect(confirmationMessage).toContain("pass -- before the path or prefix it with ./");
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe("unchanged");
+
+    page.once("dialog", async (dialog) => {
+      await dialog.accept();
+    });
+    await pathButton.click();
+
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(path);
+  });
+
   test("concealed path characters remain escaped and cannot reach the clipboard", async ({
     page,
     context,

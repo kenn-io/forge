@@ -28,6 +28,7 @@ export function createClaimTestController(
     sessions?: readonly PromotableSession[];
     workspacePaneLabel?: string;
     workspacePaneEmpty?: boolean;
+    workspacePaneRowOnly?: boolean;
     dockRow?: Snippet<[]>;
   } = {},
 ): {
@@ -70,6 +71,7 @@ export function createClaimTestController(
     promotableSessions: () => sessions,
     workspacePaneLabel: () => options.workspacePaneLabel ?? "Workspace",
     workspacePaneEmpty: () => options.workspacePaneEmpty ?? false,
+    workspacePaneRowOnly: () => options.workspacePaneRowOnly ?? false,
     dockRow: () => options.dockRow ?? null,
     sessionPane: () => sessionPaneDouble,
   };

@@ -346,6 +346,9 @@ Keyboard handlers must have one clear owner for each key press.
   one-session workspace a dead end. The one exception is a sole session that lives in
   the dock itself -- the stage is already showing it, and a dock underneath would aim
   a second slot at the same terminal host.
+- An empty workflow stage yields its saved height to a sibling while retaining only
+  the bottom dock's own height. This is transient render state: demoting a session
+  restores the saved split ratio (`packages/ui/src/components/shared/TabbedPanelTree.svelte::contentSizedSide`).
 - A detail pane NEVER shows the workspace's own header bar (name, branch, Expand and
   Collapse Terminal, Delete). The pane's tab strip already names the workspace and
   carries its controls. A flattened surface keeps the chrome, since it has no

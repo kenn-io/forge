@@ -3528,6 +3528,52 @@ describe("WorkspaceTerminalView", () => {
   });
 
   describe("promoted sessions", () => {
+    it("reports a row-only workspace while its workflow session is promoted and its dock remains", async () => {
+      localStorage.setItem(
+        "middleman-workspace-terminal-layout:ws-1",
+        JSON.stringify({
+          version: 1,
+          open: true,
+          dock: "bottom",
+          height: 300,
+          activeSessionKey: "ws-1_shell_a",
+          tree: { type: "leaf", id: "dock-leaf", sessionKey: "ws-1_shell_a" },
+          sessionRegions: {
+            "ws-1:helper": "workflow",
+            "ws-1_shell_a": "terminal",
+          },
+          workflowMode: "tabs",
+          workflowTree: {
+            type: "leaf",
+            id: "wf-session",
+            tabs: ["session:ws-1:helper"],
+            activeTabKey: "session:ws-1:helper",
+          },
+          customSessionLabels: {},
+        }),
+      );
+      mocks.getWorkspaceRuntime.mockResolvedValue({
+        launch_targets: [],
+        sessions: [runningSession, runningShellSession],
+      });
+      claimForPrs();
+      noteWorkspacePaneRendered("prs");
+      const paneKey = promoteSession("prs", "ws-1:helper");
+
+      render(WorkspaceTerminalView, {
+        props: {
+          workspaceId: "ws-1",
+          paneSurface: "prs" as const,
+        },
+      });
+
+      const controller = getInlineWorkspaceController("prs");
+      await waitFor(() => expect(controller.workspacePaneRowOnly()).toBe(true));
+
+      getPaneLayoutStore("prs").demoteTab(paneKey);
+      await waitFor(() => expect(controller.workspacePaneRowOnly()).toBe(false));
+    });
+
     it("masks a promoted session out of the workflow strip and gives back its placement on demote", async () => {
       localStorage.setItem("middleman-workspace-active-tab:ws-1", "session:ws-1:reviewer");
       localStorage.setItem(

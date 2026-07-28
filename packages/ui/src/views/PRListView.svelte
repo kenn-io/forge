@@ -241,6 +241,7 @@
         routeTabKey={detailTab}
         onSelectTab={handlePaneSelect}
         onFocusPane={handlePaneFocus}
+        contentSizedTabKeys={inlineWorkspace?.workspacePaneRowOnly() === true ? ["workspace"] : []}
         paneLeafExtras={workspacePaneControls ? workspaceLeafExtras : undefined}
       >
         {#snippet renderPane(tabKey, visible)}

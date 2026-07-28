@@ -597,6 +597,13 @@ export interface HostedWorkspaceControls {
    */
   dockRow?: Snippet;
   /**
+   * Whether the container has only its bottom dock left to render.
+   *
+   * The surface uses this transient fact to give the empty workflow stage's
+   * height to its sibling without changing the user's saved pane ratio.
+   */
+  workspacePaneRowOnly?: boolean;
+  /**
    * The workspace these controls act on. One embedded view serves every selection
    * on its surface, so the snippet identity survives a switch from one workspace
    * to another - an open popover has to close on this instead, or its buttons
@@ -610,6 +617,7 @@ export function registerWorkspaceControls(controls: HostedWorkspaceControls | nu
     controls?.snippet === hostedControls?.snippet &&
     controls?.stripActions === hostedControls?.stripActions &&
     controls?.dockRow === hostedControls?.dockRow &&
+    controls?.workspacePaneRowOnly === hostedControls?.workspacePaneRowOnly &&
     controls?.workspaceKey === hostedControls?.workspaceKey
   ) {
     return;
@@ -738,6 +746,13 @@ function workspacePaneEmptyFor(surface: InlineWorkspaceSurface): boolean {
   if (sessions.length === 0) return false;
   const layout = getPaneLayoutStore(surface);
   return sessions.every((session) => layout.hasTab(session.paneKey));
+}
+
+function workspacePaneRowOnlyFor(surface: InlineWorkspaceSurface): boolean {
+  if (desiredSlot() !== surface) return false;
+  const key = desiredKey();
+  const workspaceKey = `${key.workspaceId}\u0000${key.hostKey ?? ""}`;
+  return hostedControls?.workspaceKey === workspaceKey && hostedControls.workspacePaneRowOnly === true;
 }
 
 /**
@@ -953,6 +968,7 @@ export function getInlineWorkspaceController(surface: InlineWorkspaceSurface): I
     promotableSessions: () => promotableSessionsFor(surface),
     workspacePaneLabel: () => workspacePaneLabelFor(surface),
     workspacePaneEmpty: () => workspacePaneEmptyFor(surface),
+    workspacePaneRowOnly: () => workspacePaneRowOnlyFor(surface),
     // Only while the container pane is retired: otherwise the dock is already on
     // screen inside it, and a second copy here would be two rows for one dock.
     dockRow: () =>

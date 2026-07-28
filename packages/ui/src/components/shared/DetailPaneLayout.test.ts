@@ -339,6 +339,24 @@ describe("detail pane layout", () => {
     expect(screen.getByRole("tab", { name: "Conversation" })).toBeTruthy();
   });
 
+  it("content-sizes a row-only workspace without changing its saved split ratio", async () => {
+    const layout = store(splitTree());
+    const { rerender } = render(DetailPaneLayoutTestHarness, {
+      layout,
+      workspaceRowOnly: true,
+    });
+
+    const workspaceChild = screen.getByTestId("pane-workspace").closest(".tabbed-panel-split-child");
+    expect(workspaceChild?.classList.contains("content-sized")).toBe(true);
+
+    await rerender({ layout, workspaceRowOnly: false });
+
+    expect(workspaceChild?.classList.contains("content-sized")).toBe(false);
+    const storedTree = layout.renderTree(TABS);
+    expect(storedTree?.type).toBe("split");
+    expect(storedTree?.type === "split" ? storedTree.ratio : null).toBe(0.5);
+  });
+
   it("brings the strip back when a second tab lands in the workspace leaf", () => {
     // Two panes in a leaf need a row to choose between them, so the suppression is
     // about the leaf's contents, not about the workspace pane being special.

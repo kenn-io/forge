@@ -774,27 +774,6 @@
   // the toolbar is the only thing left that can carry them.
   const paneFlattened = $derived(surfaceLayout?.paneRender()?.flattened ?? false);
   const controlsInPane = $derived(paneSurface !== undefined && !paneFlattened);
-  // Handed to the detail pane's controls popover, which is where the controls live
-  // once this view is embedded. Registered with the workspace it acts on, because
-  // one embedded view serves every selection on its surface: the snippet is the
-  // same object after a switch, so only the key can tell a popover that its
-  // subject changed.
-  $effect(() => {
-    if (!controlsInPane) return;
-    const workspaceKey = viewWorkspaceKey;
-    // Untracked because the store compares against what is already registered:
-    // reading that inside a tracked effect that also writes it is the read-write
-    // loop Svelte aborts with effect_update_depth_exceeded.
-    untrack(() =>
-      registerWorkspaceControls({
-        snippet: workspaceControls,
-        stripActions: workspaceStripActions,
-        workspaceKey,
-      }),
-    );
-    return () => untrack(() => registerWorkspaceControls(null));
-  });
-
   // Reported against the workspace whose controls are on screen, and released on the
   // way out. The workspace-scoped half of this (a preset apply) is tracked per
   // workspace so a write that lands after a switch cannot pin the next workspace's
@@ -981,6 +960,38 @@
           workflowTabDescriptors.map((tab) => tab.key),
         ),
   );
+  const workspacePaneRowOnly = $derived(
+    controlsInPane &&
+      runtimeLive &&
+      soleEmbeddedSessionHostKey === null &&
+      renderedWorkflowTree === null &&
+      terminalLayout.dock === "bottom" &&
+      terminalSessions.length > 0,
+  );
+
+  // Handed to the detail pane's controls popover, which is where the controls live
+  // once this view is embedded. Registered with the workspace it acts on, because
+  // one embedded view serves every selection on its surface: the snippet is the
+  // same object after a switch, so only the key can tell a popover that its
+  // subject changed. The row-only fact rides the same lifecycle so it cannot leak
+  // from a parked or previously selected workspace.
+  $effect(() => {
+    if (!controlsInPane) return;
+    const workspaceKey = viewWorkspaceKey;
+    const rowOnly = workspacePaneRowOnly;
+    // Untracked because the store compares against what is already registered:
+    // reading that inside a tracked effect that also writes it is the read-write
+    // loop Svelte aborts with effect_update_depth_exceeded.
+    untrack(() =>
+      registerWorkspaceControls({
+        snippet: workspaceControls,
+        stripActions: workspaceStripActions,
+        workspacePaneRowOnly: rowOnly,
+        workspaceKey,
+      }),
+    );
+    return () => untrack(() => registerWorkspaceControls(null));
+  });
 
   /**
    * Session tabs the workflow tree is showing right now: one per rendered leaf.
@@ -3460,7 +3471,7 @@
 </script>
 
 <div
-  class="terminal-view"
+  class={["terminal-view", { "workspace-pane-row-only": workspacePaneRowOnly }]}
   inert={modalOpen}
   onkeydowncapture={(event) => {
     if (terminalSettingsReady && !terminalOptionsSaving) {
@@ -4309,6 +4320,26 @@
     width: 100%;
     height: 100%;
     background: var(--bg-primary);
+  }
+
+  /* Once every workflow session is promoted, the bottom dock is the container
+     pane's whole content. Let that dock contribute its own row/saved height while
+     the absent stage contributes none; the surface split then gives the remainder
+     to the detail pane above. */
+  .terminal-view.workspace-pane-row-only {
+    height: auto;
+  }
+
+  .workspace-pane-row-only .terminal-and-sidebar {
+    flex: 0 0 auto;
+  }
+
+  .workspace-pane-row-only .workspace-surface {
+    height: auto;
+  }
+
+  .workspace-pane-row-only .workspace-stage {
+    display: none;
   }
 
   .terminal-main {

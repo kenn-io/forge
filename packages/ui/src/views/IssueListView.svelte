@@ -137,6 +137,7 @@
         tabs={paneTabs}
         tablistLabel="Issue detail panes"
         leafLabel="Issue detail pane group"
+        contentSizedTabKeys={inlineWorkspace?.workspacePaneRowOnly() === true ? ["workspace"] : []}
         paneLeafExtras={workspacePaneControls ? workspaceLeafExtras : undefined}
         onFocusPane={handlePaneFocus}
       >

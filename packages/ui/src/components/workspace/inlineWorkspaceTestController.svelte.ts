@@ -42,6 +42,7 @@ export function createTestController(
     promotableSessions: () => [],
     workspacePaneLabel: () => "Workspace",
     workspacePaneEmpty: () => false,
+    workspacePaneRowOnly: () => false,
     dockRow: () => null,
     sessionPane: () => null,
   };

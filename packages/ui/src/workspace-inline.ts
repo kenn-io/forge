@@ -122,6 +122,14 @@ export interface InlineWorkspaceController {
    */
   workspacePaneEmpty(): boolean;
   /**
+   * Whether the container pane has only its bottom dock left to render.
+   *
+   * Its leaf should release the empty stage's saved share to the sibling above,
+   * while the dock keeps its own height. This is transient: restoring a workflow
+   * session must also restore the user's saved split ratio.
+   */
+  workspacePaneRowOnly(): boolean;
+  /**
    * The workspace's collapsed terminal dock when the surface must render it
    * itself, or null.
    *

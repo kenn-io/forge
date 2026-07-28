@@ -386,6 +386,27 @@ describe("detail pane layout", () => {
     expect(screen.getByRole("tab", { name: "Files" }).getAttribute("aria-selected")).toBe("true");
   });
 
+  it("keeps a zoom on a non-route leaf when the tab list re-derives", async () => {
+    // Route authority is a transition, not an invariant. The deep-link effect
+    // also tracks `tabs`, whose identity changes on unrelated store state — the
+    // zoom itself re-derives the pane-render report — and re-asserting the route
+    // there cleared every Expand Terminal / Maximize the moment it was made.
+    const layout = store(splitTree());
+    const { rerender } = render(DetailPaneLayoutTestHarness, {
+      layout,
+      routeTabKey: "conversation",
+      tabsNonce: 0,
+    });
+
+    fireEvent.click(screen.getAllByTestId("pane-toggle-zoom")[1]!);
+    expect(layout.zoomedLeafID()).toBe("leaf-workspace");
+
+    await rerender({ layout, routeTabKey: "conversation", tabsNonce: 1 });
+
+    expect(layout.zoomedLeafID()).toBe("leaf-workspace");
+    expect(screen.getByTestId("pane-workspace").getAttribute("data-visible")).toBe("true");
+  });
+
   it("notifies the surface when focus moves into a different pane body", async () => {
     const layout = store(splitTree());
     const onFocusPane = vi.fn();
@@ -522,5 +543,30 @@ describe("drag state after a drop", () => {
     const remainingStrip = screen.getByRole("tab", { name: "Files" }).closest('[role="tablist"]')!;
     expect(remainingStrip.className).not.toContain("drag-sorting");
     expect(document.querySelectorAll('[data-testid="tabbed-panel-tab-drop-placeholder"]')).toHaveLength(0);
+  });
+
+  it("hides a leaf's drop preview when the drag ends elsewhere", async () => {
+    // A dragover bubbles through nested trees (the workflow tree lives inside a
+    // detail leaf), so this leaf can be previewing a drag whose drop the inner
+    // tree consumes. That drop clears the shared payload, so this leaf's own drop
+    // handler reads null and returns - only the end-of-drag broadcast can tell it
+    // the preview is stale.
+    const layout = store(splitTree());
+    render(DetailPaneLayoutTestHarness, { layout });
+
+    const source = screen.getByRole("tab", { name: "Conversation" });
+    const dataTransfer = fakeDataTransfer();
+    await fireEvent.dragStart(source, { dataTransfer });
+
+    const body = screen.getByTestId("pane-workspace").closest(".tabbed-panel-body")!;
+    // Near the left edge, so the split preview (not a centre append) is active.
+    fireDragEvent(body, "dragover", { dataTransfer, clientX: 10, clientY: 400 });
+    expect(body.className).toContain("show-drop-targets");
+
+    clearActiveTabbedPanelDrag();
+    flushSync();
+
+    expect(body.className).not.toContain("show-drop-targets");
+    expect(document.querySelectorAll(".tabbed-panel-split-preview.active")).toHaveLength(0);
   });
 });

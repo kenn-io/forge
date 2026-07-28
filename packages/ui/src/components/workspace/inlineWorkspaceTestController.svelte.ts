@@ -41,6 +41,8 @@ export function createTestController(
     // These components thread the controller through without rendering panes.
     promotableSessions: () => [],
     workspacePaneLabel: () => "Workspace",
+    workspacePaneEmpty: () => false,
+    dockRow: () => null,
     sessionPane: () => null,
   };
 }

@@ -1319,8 +1319,8 @@
 <!-- Handed to every detail view: the controls themselves come from the hosted
      workspace's live view, and this component is the popover that holds them in a
      pane's tab strip. Declared here because packages/ui cannot import it. -->
-{#snippet workspacePaneControls()}
-  <WorkspacePaneControls />
+{#snippet workspacePaneControls(showStripActions: boolean)}
+  <WorkspacePaneControls {showStripActions} />
 {/snippet}
 
 <style>

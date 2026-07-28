@@ -148,6 +148,7 @@ export { default as DetailPaneLayout } from "./components/shared/DetailPaneLayou
 export { default as PaneLeafActions } from "./components/shared/PaneLeafActions.svelte";
 export {
   clearActiveTabbedPanelDrag,
+  onTabbedPanelDragEnd,
   readTabbedPanelTabDrag,
   startTabbedPanelTabDrag,
 } from "./components/shared/tabbed-panel-drag.js";

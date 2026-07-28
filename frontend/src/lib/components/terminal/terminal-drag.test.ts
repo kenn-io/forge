@@ -1,3 +1,4 @@
+import { clearActiveTabbedPanelDrag } from "@middleman/ui";
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 import {
   RUNTIME_SESSION_DRAG_MIME,
@@ -60,6 +61,24 @@ describe("terminal drag payloads", () => {
     });
 
     expect(readRuntimeSessionDrag(fakeDragEvent({ exposeGetData: false }), "workspace-2")).toBeNull();
+  });
+
+  it("clears its payloads when the shared tabbed-panel drag ends elsewhere", () => {
+    // A workflow tab drag starts two payloads: this module's and the shared
+    // tabbed-panel one. A drop in a detail pane clears only the shared payload
+    // and destroys the source tab, so its dragend - the only other clear - never
+    // fires, and the next unrelated drag would read the stale session through
+    // the active-payload fallback.
+    startWorkflowTabDrag(fakeDragEvent(), {
+      workspaceId: "workspace-1",
+      tabKey: "session:session-1",
+    });
+    expect(readRuntimeSessionDrag(fakeDragEvent({ exposeGetData: false }), "workspace-1")).toBe("session-1");
+
+    clearActiveTabbedPanelDrag();
+
+    expect(readRuntimeSessionDrag(fakeDragEvent({ exposeGetData: false }), "workspace-1")).toBeNull();
+    expect(readWorkflowTabDrag(fakeDragEvent({ exposeGetData: false }), "workspace-1")).toBeNull();
   });
 });
 

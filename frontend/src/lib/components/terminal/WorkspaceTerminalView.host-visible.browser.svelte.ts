@@ -134,10 +134,11 @@ describe("WorkspaceTerminalView hostVisible", () => {
         expect(el).not.toBeNull();
       }, WAIT);
 
-      // Opens the force-delete confirmation dialog (the DELETE mock
-      // responds 409).
+      // Delete now confirms first; confirming issues the DELETE, whose 409
+      // opens the force-delete dialog — the state this test hides and restores.
       await page.getByRole("button", { name: "Delete" }).click();
-      await expect.element(page.getByRole("dialog")).toBeVisible();
+      await page.getByRole("button", { name: "Delete workspace", exact: true }).click();
+      await expect.element(page.getByRole("dialog", { name: "Force delete workspace?" })).toBeVisible();
 
       hostVisible = false;
       flushSync();

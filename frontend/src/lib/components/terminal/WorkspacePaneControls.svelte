@@ -8,6 +8,20 @@
     workspaceControlsBusy,
   } from "../../stores/workspace-host.svelte.ts";
 
+  interface Props {
+    /**
+     * Whether this instance renders the strip actions (Delete). One popover per
+     * related leaf is fine - it acts on the workspace wherever it opens - but the
+     * strip actions are visible destructive controls, and a workspace split across
+     * leaves (its pane in one, a promoted session in another) must not grow one
+     * Delete per leaf. The surface passes true only for the leaf holding the
+     * workspace pane itself.
+     */
+    showStripActions?: boolean;
+  }
+
+  const { showStripActions = true }: Props = $props();
+
   // One button in a pane's tab strip, replacing the three bars that used to stack
   // above an embedded terminal. The contents come from the live view, which owns
   // every piece of state they act on.
@@ -117,7 +131,9 @@
 
 {#if controls}
   <div class="workspace-pane-controls">
-    {@render controls.stripActions?.()}
+    {#if showStripActions}
+      {@render controls.stripActions?.()}
+    {/if}
     <button
       bind:this={triggerEl}
       class="controls-trigger"
@@ -156,8 +172,10 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 22px;
-    height: 20px;
+    /* kit IconButton sm geometry, because the Delete rendered beside this trigger
+       is one: the row reads as one set only if every member shares the box. */
+    width: 24px;
+    height: 24px;
     border: 1px solid transparent;
     border-radius: 3px;
     background: transparent;
@@ -194,6 +212,17 @@
      * replaced. A few short rows read as a menu instead.
      */
     max-width: min(440px, calc(100vw - 24px));
+    /* Explicit, not inherited from a global reset: this is portalled to <body>,
+       and the cap has to mean the whole box or padding and border push it past
+       the width it was capped to. */
+    box-sizing: border-box;
+    /*
+     * A branch name is one unbreakable word, and a long one sets a min-content
+     * width the cap above cannot beat - the popover grew past 440px and back to
+     * the pane-wide bar this replaced. `anywhere` (not `break-word`) is what
+     * actually lowers min-content.
+     */
+    overflow-wrap: anywhere;
     display: flex;
     flex-wrap: wrap;
     align-items: center;

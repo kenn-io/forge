@@ -52,7 +52,7 @@
      * the workspace pane or one of its promoted sessions. Supplied by the app
      * shell: the controls live in `frontend/`, next to the state they act on.
      */
-    workspacePaneControls?: Snippet | undefined;
+    workspacePaneControls?: Snippet<[boolean]> | undefined;
   }
 
   let {
@@ -207,7 +207,9 @@
     {
       key: "workspace",
       label: inlineWorkspace?.workspacePaneLabel() ?? "Workspace",
-      available: workspaceClaim.ref() !== null,
+      // Unavailable while every session sits in a promoted pane: the container
+      // would render an empty body, which is a hole in the surface, not a pane.
+      available: workspaceClaim.ref() !== null && inlineWorkspace?.workspacePaneEmpty() !== true,
       hideable: true,
     },
     ...sessionTabs,
@@ -271,6 +273,11 @@
           {/if}
         {/snippet}
       </DetailPaneLayout>
+      <!-- The collapsed terminal dock, anchored at this surface's bottom edge.
+           Non-null only while the container pane has retired (every session
+           promoted into a pane of its own): the dock lives inside that pane, and
+           losing the row with it left no way to open a terminal at all. -->
+      {@render inlineWorkspace?.dockRow()?.()}
     </div>
   {:else}
     <div class="placeholder-content">
@@ -285,7 +292,7 @@
      panes would be a control with no subject. -->
 {#snippet workspaceLeafExtras(leaf: TabbedPanelLeaf)}
   {#if leaf.tabs.some((tabKey) => tabKey === "workspace" || isSessionPaneKey(tabKey))}
-    {@render workspacePaneControls?.()}
+    {@render workspacePaneControls?.(leaf.tabs.includes("workspace"))}
   {/if}
 {/snippet}
 

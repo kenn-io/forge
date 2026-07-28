@@ -40,9 +40,10 @@ function importedIcons(): Set<string> {
 describe("vite optimizeDeps lucide coverage", () => {
   it("pre-bundles every lucide icon the frontend and packages/ui import", () => {
     const config = readFileSync(path.join(frontendDir, "vite.config.ts"), "utf8");
-    const listed = new Set(
-      [...config.matchAll(/"(?:[^"]* > )?(@lucide\/svelte\/icons\/[a-z0-9-]+)"/g)].map((match) => match[1]!),
-    );
+    // Bare entries only: Vite registers `"pkg > icon"` and `"icon"` under
+    // different module IDs, so a nested kit-ui entry does not pre-bundle the
+    // same icon imported directly from frontend or packages/ui source.
+    const listed = new Set([...config.matchAll(/"(@lucide\/svelte\/icons\/[a-z0-9-]+)"/g)].map((match) => match[1]!));
 
     const missing = [...importedIcons()].filter((icon) => !listed.has(icon)).sort();
     expect(missing).toEqual([]);

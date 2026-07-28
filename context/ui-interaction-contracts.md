@@ -319,6 +319,10 @@ Keyboard handlers must have one clear owner for each key press.
   the chrome: it suppresses per-leaf strips, so the toolbar is the only thing left to
   carry the controls
   (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::soleEmbeddedSession`).
+  The bare render also requires the surface's strip to actually name the session:
+  in a solo-chrome leaf that strip is gone, so a sole WORKFLOW session keeps its
+  inner one-tab strip (the only bar naming the agent), read from the render
+  report's `soloChromeTabs`. A sole DOCKED session stays bare either way.
 - A leaf holding ONLY the workspace pane renders no outer tab strip at all
   (`TabbedPanelTree`'s `soloChromeTabKeys`, wired in `DetailPaneLayout`): the pane
   draws its own strip inside, and an outer row saying "Workspace" named the same
@@ -331,6 +335,12 @@ Keyboard handlers must have one clear owner for each key press.
   context) - below that, the scrollbar silently swallows clicks on the rightmost
   button while everything looks fine, and only Playwright's hit-target check
   ("intercepts pointer events") names the interceptor.
+- The workspace container pane's tab goes away once EVERY session of that workspace
+  sits in a promoted pane: its body would render nothing, and a pane with an empty
+  body is a hole in the surface, not a pane. The workspace stays claimed and its
+  controls stay hosted, so Launch is one click away from the promoted pane, and
+  demoting any session brings the tab back
+  (`frontend/src/lib/stores/workspace-host.svelte.ts::workspacePaneEmptyFor`).
 - The bottom dock is NOT part of that chrome and stays, collapsed to its row, in a
   chrome-free pane: it is the only route to a second session, so dropping it made a
   one-session workspace a dead end. The one exception is a sole session that lives in
@@ -350,7 +360,17 @@ Keyboard handlers must have one clear owner for each key press.
 - Deleting a workspace is a strip action, not a popover one: it is registered as
   `HostedWorkspaceControls.stripActions` and renders beside the controls trigger. It
   lives in exactly one place -- two Deletes with independent disabled and pending
-  states is worse than one behind a menu.
+  states is worse than one behind a menu -- and the surface passes
+  `showStripActions` true only for the leaf holding the workspace pane itself, so a
+  workspace split across leaves cannot grow one Delete per leaf.
+- Every Delete entry point (strip icon, header bar, error panel) opens the same
+  ConfirmDialog before any request is issued; the 409 force-delete prompt is a
+  second, separate gate. Delete removes a worktree whose unpushed commits go with
+  it, one click from a strip
+  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::handleDelete`).
+- Buttons that share a row with a kit `IconButton --sm` (the solo cluster, the strip
+  actions, the controls trigger) share its 24x24 box and 13px glyph. Three
+  near-miss geometries in one row read as three unrelated controls.
 - The dock modes (Expand Terminal / Show Details / Collapse Terminal) move into the
   pane's controls popover wherever the header bar is hidden, gated on exactly the
   complement of the header's own condition so neither state shows two copies. The
@@ -370,6 +390,15 @@ Keyboard handlers must have one clear owner for each key press.
   longer holds it" cannot tell a leftover from a live preview
   (`packages/ui/src/components/shared/tabbed-panel-drag.ts::onTabbedPanelDragEnd`,
   `frontend/src/lib/components/terminal/terminal-drag.ts::onTerminalDragEnd`).
+  The broadcast also hides body drop previews: trees nest (workflow tree inside a
+  detail leaf) and a dragover bubbles through both, so both preview the same drag,
+  but only the inner one consumes the drop - the outer's own drop handler reads
+  the already-cleared payload as null and would leave its preview painted.
+- Route authority over pane layout (`DetailPaneLayout`'s `routeTabKey` effect) is a
+  TRANSITION, not an invariant: it activates the route's pane and drops foreign
+  zooms only when the route names a different pane than last applied. The effect
+  also tracks `tabs`, whose identity changes as a consequence of a zoom itself;
+  re-asserting on every change silently undid Expand Terminal and Maximize.
 - The pane controls popover is portalled to `<body>`. The leaf's action container is
   a stacking context (`position: relative; z-index: 2`), so a popover parented inside
   it is clamped under xterm's canvas layers, which compete one level up - every click

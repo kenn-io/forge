@@ -79,6 +79,12 @@ test.describe("workspace force-delete", () => {
 
       await page.locator(".header-bar").getByRole("button", { name: "Delete" }).click();
 
+      // Every Delete confirms first; the dirty 409 arrives only after that.
+      await page
+        .getByRole("dialog", { name: "Delete workspace?" })
+        .getByRole("button", { name: "Delete workspace" })
+        .click();
+
       const dialog = page.getByRole("dialog", {
         name: "Force delete workspace?",
       });

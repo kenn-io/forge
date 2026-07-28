@@ -302,6 +302,7 @@
   let forcePromptIdentity: WorkspaceItemIdentity | undefined;
   let forceDeleting = $state(false);
   let stopPromptSession = $state<RuntimeSession | null>(null);
+  let deletePromptOpen = $state(false);
   let stopSessionStopping = $state(false);
   let renamePrompt = $state<{
     sessionKey: string;
@@ -555,7 +556,20 @@
   const soleEmbeddedSession = $derived.by(() => {
     if (!controlsInPane || runtimeSessions.length !== 1) return null;
     const session = runtimeSessions[0]!;
-    return isPromoted(session) ? null : session;
+    if (isPromoted(session)) return null;
+    // Only while the surface's strip actually names this session: a leaf holding
+    // the workspace alone drops that strip (solo chrome), and rendering a
+    // workflow session bare there leaves NOTHING on screen naming it - the inner
+    // session strip is the one bar that pane has. The dock's own sole session
+    // stays bare: its pane renders as a plain terminal, and the workflow tree it
+    // would otherwise mount has no tab for a docked session anyway.
+    if (
+      sessionRegion(session) !== "terminal" &&
+      surfaceLayout?.paneRender()?.soloChromeTabs.includes("workspace")
+    ) {
+      return null;
+    }
+    return session;
   });
 
   /**
@@ -850,6 +864,23 @@
     ),
   );
 
+  // An open dock with nothing in it is a saved-height hole in the stage: the last
+  // docked session exiting (or moving to the workflow) leaves open=true behind, and
+  // the collapsed row is the only honest rendering of "no terminals here". Not
+  // while a launch is in flight - toggling the panel open auto-launches, and
+  // closing it under that race would flicker the dock shut on its own opening.
+  $effect(() => {
+    if (!runtimeLive || terminalLaunching) return;
+    // Bottom only. Docked to the top the dock is a workflow TAB, and an empty one
+    // is the drop target for moving a session into the terminal region - closing
+    // it there takes away the affordance instead of a hole.
+    if (terminalLayout.dock !== "bottom") return;
+    if (!terminalLayout.open || terminalSessions.length > 0) return;
+    untrack(() => {
+      terminalLayout = { ...terminalLayout, open: false };
+    });
+  });
+
   // Masked, not pruned: the stored trees keep a promoted session's tab and leaf so
   // demotion hands back the placement the user chose, rather than dropping it back
   // wherever normalization would put a session it has never seen.
@@ -1014,6 +1045,7 @@
   const modalOpen = $derived(
     forcePromptMessage !== null ||
       stopPromptSession !== null ||
+      deletePromptOpen ||
       renamePrompt !== null,
   );
 
@@ -2898,7 +2930,32 @@
     };
   }
 
-  async function handleDelete(
+  /**
+   * Every workspace Delete confirms first. The strip's trash is a 13px icon beside
+   * the controls trigger, one slip from firing, and the backend refuses only a
+   * DIRTY worktree - a clean workspace with unpushed commits deletes silently. One
+   * uniform gate rather than a per-button one: the same action must not be safe
+   * from one button and instant from another.
+   */
+  function handleDelete(triggerEl: HTMLElement | null = null): void {
+    if (actionsBlocked) return;
+    previouslyFocusedEl =
+      triggerEl ??
+      (document.activeElement instanceof HTMLElement ? document.activeElement : null);
+    deletePromptOpen = true;
+  }
+
+  function cancelDeletePrompt(): void {
+    deletePromptOpen = false;
+  }
+
+  function confirmDeletePrompt(): void {
+    const triggerEl = previouslyFocusedEl;
+    deletePromptOpen = false;
+    void performDelete(triggerEl);
+  }
+
+  async function performDelete(
     triggerEl: HTMLElement | null = null,
   ): Promise<void> {
     if (actionsBlocked) return;
@@ -3856,41 +3913,7 @@
                    second session, and a workspace running one agent with no way to
                    open a shell beside it is a dead end, not a simplification. -->
               {#if terminalLayout.dock === "bottom" && !soleEmbeddedSessionIsDocked}
-                <DockedTerminalPanel
-                  {workspaceId}
-                  {workspaceHostKey}
-                  sessions={terminalSessions}
-                  displayLabels={sessionDisplayLabels}
-                  tree={dockTree}
-                  activeSessionKey={terminalLayout.activeSessionKey}
-                  open={terminalLayout.open}
-                  dock={terminalLayout.dock}
-                  height={terminalLayout.height}
-                  loading={terminalLaunching}
-                  disabled={actionsBlocked}
-                  {hostVisible}
-                  onToggle={() => void toggleTerminalPanel()}
-                  onNewTerminal={() => void launchTerminalSession()}
-                  onSplit={(direction) => void splitTerminal(direction)}
-                  onSelect={selectTerminalSession}
-                  onClose={(session) => void closeSession(session)}
-                  onRename={renameSession}
-                  onMoveToWorkflow={moveSessionToWorkflow}
-                  onPromoteSession={promoteSessionToPane}
-                  onDock={dockTerminalPanel}
-                  onResize={resizeTerminalPanel}
-                  onDropSession={moveSessionToTerminal}
-                  onSplitSession={splitTerminalSessionIntoPane}
-                  onRatioChange={(splitId, ratio) => {
-                    updateActiveTerminalTree(
-                      updateSplitRatio(
-                        terminalLayout.tree,
-                        splitId,
-                        ratio,
-                      ),
-                    );
-                  }}
-                />
+                {@render workspaceDockRow()}
               {/if}
             </div>
           </div>
@@ -4073,6 +4096,20 @@
 />
 
 <ConfirmDialog
+  open={deletePromptOpen && hostVisible}
+  title="Delete workspace?"
+  message={workspace
+    ? `This removes the worktree and tmux session for ${workspace.git_head_ref}.`
+    : "This removes the worktree and tmux session."}
+  hint="Commits that exist nowhere but this worktree are lost with it. Uncommitted changes are refused and prompt again."
+  confirmLabel="Delete workspace"
+  tone="danger"
+  frameId="workspace-delete"
+  onCancel={cancelDeletePrompt}
+  onConfirm={confirmDeletePrompt}
+/>
+
+<ConfirmDialog
   open={forcePromptMessage !== null && hostVisible}
   title="Force delete workspace?"
   message={forcePromptMessage ?? ""}
@@ -4086,11 +4123,52 @@
   onConfirm={() => void confirmForceDelete()}
 />
 
+<!-- The dock, as a snippet so the surface can anchor it at its own bottom edge
+     when the container pane retires (every session promoted). One definition, so
+     the row the user sees there is the row they see in the pane. -->
+{#snippet workspaceDockRow()}
+  <DockedTerminalPanel
+                {workspaceId}
+                {workspaceHostKey}
+                sessions={terminalSessions}
+                displayLabels={sessionDisplayLabels}
+                tree={dockTree}
+                activeSessionKey={terminalLayout.activeSessionKey}
+                open={terminalLayout.open}
+                dock={terminalLayout.dock}
+                height={terminalLayout.height}
+                loading={terminalLaunching}
+                disabled={actionsBlocked}
+                {hostVisible}
+                onToggle={() => void toggleTerminalPanel()}
+                onNewTerminal={() => void launchTerminalSession()}
+                onSplit={(direction) => void splitTerminal(direction)}
+                onSelect={selectTerminalSession}
+                onClose={(session) => void closeSession(session)}
+                onRename={renameSession}
+                onMoveToWorkflow={moveSessionToWorkflow}
+                onPromoteSession={promoteSessionToPane}
+                onDock={dockTerminalPanel}
+                onResize={resizeTerminalPanel}
+                onDropSession={moveSessionToTerminal}
+                onSplitSession={splitTerminalSessionIntoPane}
+                onRatioChange={(splitId, ratio) => {
+                  updateActiveTerminalTree(
+                    updateSplitRatio(
+                      terminalLayout.tree,
+                      splitId,
+                      ratio,
+                    ),
+                  );
+                }}
+              />
+{/snippet}
+
 <!-- The workspace's own controls, defined here because every one of them is wired
      to this view's state. In a detail pane the pane's popover renders this, so the
      controls follow the workspace without the state leaving the view. -->
 {#snippet workspaceControls()}
-  {#if controlsInPane && inlineDock && inlineDockMode !== null}
+  {#if controlsInPane && inlineDock && inlineDockMode !== null && workspaceLive && workspace?.status === "ready"}
     <!-- The dock's own modes, which the header bar carries everywhere it still
          renders - so this copy is gated on exactly the case that hides it. A detail
          pane's close button is not a replacement: it puts one pane away, while a

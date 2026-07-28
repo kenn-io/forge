@@ -317,6 +317,62 @@ test.describe("inline workspace pane continuity", () => {
     }
   });
 
+  test("the popover's dock modes expand and restore, and its Delete destroys the workspace", async ({ page }) => {
+    // Both halves of this only exist against a real surface. Expand Terminal drives
+    // a zoom the pane layout can silently undo (route authority once re-asserted on
+    // every tab-list re-derive, which the zoom itself triggers), and the strip
+    // Delete is the destructive path a jsdom placement assertion cannot prove
+    // reaches the API.
+    test.skip(
+      !hasCommand("git") || !hasCommand("tmux", ["-V"]),
+      "git and tmux are required for the real workspace flow",
+    );
+
+    let isolatedServer: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    try {
+      isolatedServer = await startIsolatedWorkspaceE2EServer();
+      api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
+      const created = await createIssueWorkspace(api, 10);
+
+      await page.goto(`${isolatedServer.info.base_url}/issues/github/acme/widgets/10`);
+      await dismissWorkspaceLauncher(page);
+
+      const detail = page.locator(".detail-pane-conversation, [data-testid='pane-conversation']").first();
+      const controls = page.getByRole("button", { name: "Workspace controls" }).first();
+      await expect(controls).toBeVisible();
+
+      await controls.click();
+      const popover = page.getByRole("dialog", { name: "Workspace controls" });
+      await popover.getByRole("button", { name: "Expand Terminal" }).click();
+
+      // Expanded: the workspace covers the surface, so the detail pane it shared it
+      // with is gone rather than merely narrower.
+      await expect(page.locator(".tabbed-panel-split-child.zoomed")).toHaveCount(1);
+      await expect(detail).toHaveCount(0);
+
+      // The popover stays open across its own actions on purpose, and the same
+      // button flips to the inverse mode.
+      await popover.getByRole("button", { name: "Show Details" }).click();
+      await expect(page.locator(".tabbed-panel-split-child.zoomed")).toHaveCount(0);
+      await controls.click();
+      await expect(popover).toBeHidden();
+
+      // The strip Delete: one click, then the confirmation every entry point shows.
+      await page.getByRole("button", { name: /^Delete workspace / }).click();
+      await page
+        .getByRole("dialog", { name: "Delete workspace?" })
+        .getByRole("button", { name: "Delete workspace" })
+        .click();
+
+      await expect(page.locator(".detail-pane-workspace-slot")).toHaveCount(0);
+      await expect.poll(async () => (await api!.get(`/api/v1/workspaces/${created.id}`)).status()).toBe(404);
+    } finally {
+      await api?.dispose();
+      await isolatedServer?.stop();
+    }
+  });
+
   test("the pane's own maximize and close controls keep the live terminal", async ({ page }) => {
     // The frame-geometry side of maximizing is covered above. This is the same pair
     // of pane-native controls driven for a different question: that the single hosted

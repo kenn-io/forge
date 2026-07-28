@@ -475,6 +475,25 @@ describe("PRListView inline workspace", () => {
     expect(screen.getByRole("tab", { name: "codex (proxy)" })).toBeTruthy();
   });
 
+  it("anchors the workspace dock row at the surface bottom when its pane retires", () => {
+    // Every session promoted into a pane of its own retires the container pane,
+    // and the dock lives inside it - so without this the row the user opens a
+    // terminal from disappears with the pane, leaving no route to one at all.
+    const dockRow = createRawSnippet(() => ({
+      render: () => `<div data-testid="dock-row">Terminal</div>`,
+    }));
+    const { controller } = createClaimTestController("prs", { workspacePaneEmpty: true, dockRow });
+
+    renderPRListView({
+      inlineWorkspace: controller,
+      detail: pullDetailFixture({ id: "ws-1", status: "ready" }),
+    });
+
+    expect(screen.getByTestId("dock-row")).toBeTruthy();
+    // The pane itself is gone: its body would have rendered nothing.
+    expect(document.querySelector(".detail-pane-workspace-slot")).toBeNull();
+  });
+
   it("refetches the detail when the claimed identity is invalidated by deletion", async () => {
     const { controller, notifyInvalidated } = createClaimTestController();
     const detail = pullDetailFixture({ id: "ws-1", status: "ready" });

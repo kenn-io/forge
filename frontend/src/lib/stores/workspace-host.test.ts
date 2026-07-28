@@ -826,6 +826,7 @@ describe("promotable sessions", () => {
       editableTabs: ["conversation", "workspace"],
       onScreenTabs: ["conversation", "workspace"],
       flattened: false,
+      soloChromeTabs: [],
     });
     expect(promoteSessionBesideWorkspace(layout, sessions[0]!.paneKey)).toBe(true);
     expect(prs.workspacePaneLabel()).toBe("Workspace");
@@ -839,6 +840,7 @@ describe("promotable sessions", () => {
       editableTabs: ["conversation", "workspace"],
       onScreenTabs: ["conversation", "workspace"],
       flattened: true,
+      soloChromeTabs: [],
     });
 
     // A flattened surface suppresses per-leaf actions, so the view keeps its own
@@ -876,12 +878,27 @@ describe("a workspace spread across several panes", () => {
       editableTabs: ["conversation", "files", "workspace"],
       onScreenTabs: ["conversation", "files", "workspace"],
       flattened: false,
+      soloChromeTabs: [],
     });
     for (const paneKey of promoted) {
       expect(promoteSessionBesideWorkspace(layout, paneKey)).toBe(true);
     }
     return { prs, layout };
   }
+
+  it("reports the container empty only once every session has a pane of its own", () => {
+    // Dragging the last session out otherwise leaves the container behind with
+    // nothing in its body - a hole in the surface where a pane used to be.
+    const { prs } = hostWithPromoted([helperPane]);
+    expect(prs.workspacePaneEmpty()).toBe(false);
+
+    expect(promoteSessionBesideWorkspace(getPaneLayoutStore("prs"), shellPane)).toBe(true);
+    expect(prs.workspacePaneEmpty()).toBe(true);
+
+    // Demoting one brings the container back: it has something to render again.
+    getPaneLayoutStore("prs").demoteTab(shellPane);
+    expect(prs.workspacePaneEmpty()).toBe(false);
+  });
 
   it("is not collapsed while one of its terminals holds a pane of its own", () => {
     const { prs, layout } = hostWithPromoted([helperPane]);
@@ -1137,6 +1154,7 @@ describe("a workspace spread across several panes", () => {
       editableTabs: ["conversation", "workspace"],
       onScreenTabs: ["conversation", "workspace"],
       flattened: false,
+      soloChromeTabs: [],
     });
     expect(promoteSessionBesideWorkspace(issuesLayout, helperPane)).toBe(true);
     const survivor = "session:ws-b//ws-b%3Ahelper";

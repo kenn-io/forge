@@ -621,7 +621,7 @@ describe("session pane commands", () => {
 
   /** Stand in for a mounted, unflattened DetailPaneLayout on the PRs surface. */
   function noteRendered(layout: PaneLayoutStore, tabs: readonly string[]): void {
-    layout.notePaneRender({ flattened: false, editableTabs: [...tabs], onScreenTabs: [...tabs] });
+    layout.notePaneRender({ flattened: false, editableTabs: [...tabs], onScreenTabs: [...tabs], soloChromeTabs: [] });
   }
 
   it("promotes the shown session beside the workspace pane", () => {
@@ -651,6 +651,7 @@ describe("session pane commands", () => {
       flattened: false,
       editableTabs: ["conversation", "workspace"],
       onScreenTabs: ["conversation"],
+      soloChromeTabs: [],
     });
 
     expect(command("session.promote").when(ctx("pulls", { selectedPR: selected }))).toBe(false);

@@ -260,7 +260,7 @@ describe("promoted session panes", () => {
 
   it("promotes beside the workspace pane only while that pane is on screen", () => {
     const layout = store();
-    const onScreen = { editableTabs: TABS, onScreenTabs: TABS, flattened: false };
+    const onScreen = { editableTabs: TABS, onScreenTabs: TABS, flattened: false, soloChromeTabs: [] };
 
     // Nothing rendered yet, so there is no evidence the split would land anywhere
     // the user can see it.

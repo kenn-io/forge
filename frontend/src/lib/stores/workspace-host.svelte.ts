@@ -587,6 +587,16 @@ export interface HostedWorkspaceControls {
    */
   stripActions?: Snippet;
   /**
+   * The workspace's collapsed terminal dock, for surfaces to anchor at their own
+   * bottom edge.
+   *
+   * The dock normally lives inside the container pane, but that pane retires once
+   * every session is promoted - and the dock going with it takes away the row the
+   * user opens a terminal from. Rendered by the surface only in exactly that case
+   * (`InlineWorkspaceController.dockRow`), so it is never on screen twice.
+   */
+  dockRow?: Snippet;
+  /**
    * The workspace these controls act on. One embedded view serves every selection
    * on its surface, so the snippet identity survives a switch from one workspace
    * to another - an open popover has to close on this instead, or its buttons
@@ -599,6 +609,7 @@ export function registerWorkspaceControls(controls: HostedWorkspaceControls | nu
   if (
     controls?.snippet === hostedControls?.snippet &&
     controls?.stripActions === hostedControls?.stripActions &&
+    controls?.dockRow === hostedControls?.dockRow &&
     controls?.workspaceKey === hostedControls?.workspaceKey
   ) {
     return;
@@ -711,6 +722,22 @@ function promotableSessionsFor(surface: InlineWorkspaceSurface): readonly Promot
   const hosted = hostedSessions;
   if (hosted.key.workspaceId !== key.workspaceId || hosted.key.hostKey !== key.hostKey) return [];
   return hosted.sessions.map((session) => ({ paneKey: session.paneKey, label: session.label }));
+}
+
+/**
+ * Whether the container pane has nothing left to render: it has sessions, and every
+ * one of them is promoted into a pane of its own.
+ *
+ * Uses the same predicate the view masks with (a promoted pane in the stored tree,
+ * hidden or not), so the tab and the container agree about what the container is
+ * showing. Without this the surface keeps a pane whose whole body is empty - the
+ * hole the user is left staring at after dragging the last session out.
+ */
+function workspacePaneEmptyFor(surface: InlineWorkspaceSurface): boolean {
+  const sessions = promotableSessionsFor(surface);
+  if (sessions.length === 0) return false;
+  const layout = getPaneLayoutStore(surface);
+  return sessions.every((session) => layout.hasTab(session.paneKey));
 }
 
 /**
@@ -925,6 +952,11 @@ export function getInlineWorkspaceController(surface: InlineWorkspaceSurface): I
     slotAttachment: slotAttachmentFor(surface),
     promotableSessions: () => promotableSessionsFor(surface),
     workspacePaneLabel: () => workspacePaneLabelFor(surface),
+    workspacePaneEmpty: () => workspacePaneEmptyFor(surface),
+    // Only while the container pane is retired: otherwise the dock is already on
+    // screen inside it, and a second copy here would be two rows for one dock.
+    dockRow: () =>
+      desiredSlot() === surface && workspacePaneEmptyFor(surface) ? (hostedControls?.dockRow ?? null) : null,
     sessionPane: () => sessionPaneSnippet,
   };
   controllers.set(surface, controller);

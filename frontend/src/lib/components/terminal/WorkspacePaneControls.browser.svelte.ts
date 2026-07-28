@@ -4,6 +4,7 @@
 // has no layout, so it cannot tell a usable popover from one clipped to a sliver.
 import { createRawSnippet, mount, unmount } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { page } from "vite-plus/test/browser";
 // The real z-index tokens: this popover's layer is defined relative to the modal
 // layer, and the browser project loads no app stylesheet, so without the theme
 // both sides of that comparison would collapse to `auto`.
@@ -139,6 +140,10 @@ describe("workspace controls popover in a real tab strip", () => {
   });
 
   it("wraps a full control set into rows instead of one pane-wide bar", async () => {
+    // Wider than the 440px cap, or the default 414px viewport forces wrapping
+    // through the 100vw fallback and the cap could regress unnoticed.
+    await page.viewport(900, 700);
+
     // What a workspace running an agent actually hands over: two dock modes, zoom,
     // options, rename, stop, the branch, Delete, Launch. In one row that is a bar as
     // wide as the pane -- the stacked chrome this popover was built to replace.

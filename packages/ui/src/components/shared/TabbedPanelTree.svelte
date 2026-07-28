@@ -278,7 +278,21 @@
   // another leaf destroys that element first, and the strip it left behind kept
   // rendering the gap and the dragging styling - a shadow of a tab that now lives
   // somewhere else.
-  $effect(() => onTabbedPanelDragEnd(() => untrack(() => clearTabDragState())));
+  //
+  // The body overlay hides here too, not only in the instance that took the drop.
+  // Trees nest (the workflow tree lives inside a detail pane's leaf) and a dragover
+  // bubbles through both, so both paint a split preview for the same drag - but the
+  // drop is consumed by the inner one, whose finish clears the shared payload, and
+  // the outer instance's own drop handler then reads null and leaves its preview
+  // painted over a drag that is already over.
+  $effect(() =>
+    onTabbedPanelDragEnd(() =>
+      untrack(() => {
+        hideDropTargets();
+        clearTabDragState();
+      }),
+    ),
+  );
 
   function finishTabDrag(): void {
     hideDropTargets();
@@ -878,6 +892,47 @@
     background: var(--bg-surface);
   }
 
+  /*
+   * The shared tool geometry and states, restated for this container: the rules
+   * above are scoped under the strip and the leaf-actions wrapper, and a leaf that
+   * renders neither leaves these buttons on the browser reset - shrunk to their
+   * icons, with no hover, focus, or disabled treatment. No hover-reveal here: this
+   * cluster is the ONLY chrome a strip-less pane has, and chrome that cannot be
+   * seen cannot be found.
+   */
+  .tabbed-panel-solo-actions :global(.tabbed-panel-tab-tool) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    /* kit IconButton sm is 24x24 with a 13px glyph, and the Delete beside these IS
+       one - matching it is what makes the cluster read as one control row instead
+       of five buttons from five sources. */
+    width: 24px;
+    height: 24px;
+    border: 0;
+    border-radius: 3px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+
+  .tabbed-panel-solo-actions :global(.tabbed-panel-tab-tool svg) {
+    width: 13px;
+    height: 13px;
+  }
+
+  .tabbed-panel-solo-actions :global(.tabbed-panel-tab-tool:hover:not(:disabled)),
+  .tabbed-panel-solo-actions :global(.tabbed-panel-tab-tool:focus-visible) {
+    background: var(--bg-surface-hover);
+    color: var(--text-primary);
+    outline: none;
+  }
+
+  .tabbed-panel-solo-actions :global(.tabbed-panel-tab-tool:disabled) {
+    cursor: default;
+    opacity: 0.3;
+  }
+
   .tabbed-panel-solo-grip {
     cursor: grab;
   }
@@ -1030,14 +1085,21 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 20px;
-    height: 22px;
+    /* Same 24x24/13px geometry as kit IconButton sm; the workspace leaf renders
+       one of those (Delete) in this same row. */
+    width: 24px;
+    height: 24px;
     border: 0;
     border-radius: 3px;
     background: transparent;
     color: var(--text-muted);
     cursor: pointer;
     opacity: 0;
+  }
+
+  .tabbed-panel-leaf-actions :global(.tabbed-panel-tab-tool svg) {
+    width: 13px;
+    height: 13px;
   }
 
   .tabbed-panel-leaf:hover .tabbed-panel-leaf-actions :global(.tabbed-panel-tab-tool),

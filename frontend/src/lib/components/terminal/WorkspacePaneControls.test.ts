@@ -60,6 +60,23 @@ describe("WorkspacePaneControls", () => {
     expect(button!.getAttribute("aria-expanded")).toBe("true");
   });
 
+  it("renders the strip actions only for the leaf that owns them", () => {
+    // The popover follows the workspace to any leaf hosting one of its panes, but
+    // the strip actions carry Delete: a workspace split across leaves must not
+    // grow one visible Delete per leaf.
+    const stripActions = createRawSnippet(() => ({
+      render: () => `<button type="button">Delete workspace main</button>`,
+    }));
+    registerWorkspaceControls({ snippet, stripActions, workspaceKey: "ws-1" });
+
+    render(WorkspacePaneControls, { props: { showStripActions: false } });
+    expect(screen.queryByRole("button", { name: "Delete workspace main" })).toBeNull();
+    cleanup();
+
+    render(WorkspacePaneControls);
+    expect(screen.getByRole("button", { name: "Delete workspace main" })).toBeTruthy();
+  });
+
   it("closes on Escape and on a click outside", async () => {
     hostControls();
     render(WorkspacePaneControls);

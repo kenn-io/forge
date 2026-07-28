@@ -118,6 +118,15 @@
   });
 
   const editableTabs = $derived(renderedLeaves.flatMap((leaf) => leaf.tabs));
+  // Mirrors the strip's own decision below (soloChromeTabKeys is emptied while
+  // flattened), so the report and the rendered chrome cannot disagree.
+  const soloChromeTabs = $derived(
+    flattened
+      ? []
+      : renderedLeaves
+          .filter((leaf) => leaf.tabs.length === 1 && (SOLO_CHROME_TAB_KEYS as readonly string[]).includes(leaf.tabs[0]!))
+          .map((leaf) => leaf.tabs[0]!),
+  );
   // One per rendered leaf. A tab sitting behind a sibling tab is a click away,
   // which is enough to be a command target, but it is not on screen.
   const onScreenTabs = $derived(
@@ -135,7 +144,7 @@
     // Null until the host has been measured. Width decides whether structural
     // edits are allowed at all, and an unmeasured host defaulting to "not
     // flattened" exposes those commands for a frame on a narrow layout.
-    const report = measured ? { editableTabs, onScreenTabs, flattened } : null;
+    const report = measured ? { editableTabs, onScreenTabs, flattened, soloChromeTabs } : null;
     // Untracked because the store compares against the previous report before
     // writing: reading it here would make this effect both a reader and a writer
     // of the same state and it would re-run itself forever.
@@ -229,9 +238,22 @@
   // A deep link is authoritative over stored layout state: it must activate the
   // pane it names, and drop a zoom held by any other leaf, or the URL and the
   // screen disagree with no way for the user to tell why.
+  //
+  // Authority is a transition, not an invariant. This effect also tracks `tabs`,
+  // whose identity changes whenever the pane-render report re-derives the list -
+  // including as a consequence of a zoom being placed. Re-asserting on every such
+  // change silently undid any zoom on a non-route leaf the moment it was made
+  // (Expand Terminal, Maximize pane), so it applies only when the route names a
+  // different pane than last applied, or names one that just became available.
+  let appliedRouteTabKey: string | null = null;
   $effect(() => {
     const key = routeTabKey;
-    if (!key || !tabs.some((tab) => tab.key === key && tab.available)) return;
+    if (!key || !tabs.some((tab) => tab.key === key && tab.available)) {
+      appliedRouteTabKey = null;
+      return;
+    }
+    if (appliedRouteTabKey === key) return;
+    appliedRouteTabKey = key;
     untrack(() => {
       layout.activateTab(key);
       layout.noteFocused(key);

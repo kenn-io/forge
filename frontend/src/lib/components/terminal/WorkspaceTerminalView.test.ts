@@ -462,6 +462,7 @@ function noteWorkspacePaneRendered(surface: "prs" | "issues" | "activity"): void
     editableTabs: ["conversation", "workspace"],
     onScreenTabs: ["conversation", "workspace"],
     flattened: false,
+    soloChromeTabs: [],
   });
 }
 
@@ -496,6 +497,14 @@ function deferred<T>() {
     resolve = r;
   });
   return { promise, resolve };
+}
+
+// Every Delete entry point opens the same confirmation dialog before any
+// request goes out; "Delete workspace" is that dialog's confirm button.
+async function clickDeleteAndConfirm(trigger?: HTMLElement): Promise<void> {
+  await fireEvent.click(trigger ?? screen.getByRole("button", { name: "Delete" }));
+  const confirmButton = await screen.findByRole("button", { name: "Delete workspace" });
+  await fireEvent.click(confirmButton);
 }
 
 function fakeDataTransfer(): DataTransfer {
@@ -1478,6 +1487,35 @@ describe("WorkspaceTerminalView", () => {
     clearIntervalSpy.mockRestore();
   });
 
+  it("collapses a dock persisted open when no terminal session is left in it", async () => {
+    // The last docked session exiting leaves open=true behind; an open dock with
+    // nothing in it is a saved-height hole in the stage.
+    localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+    localStorage.setItem(
+      "middleman-workspace-terminal-layout:ws-1",
+      JSON.stringify({
+        version: 1,
+        open: true,
+        dock: "bottom",
+        height: 300,
+        activeSessionKey: null,
+        tree: null,
+        sessionRegions: {},
+        workflowMode: "tabs",
+        workflowTree: null,
+        customSessionLabels: {},
+      }),
+    );
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
+
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+
+    // The toggle's label flips with `open`, so waiting for "Open terminal
+    // panel" is waiting for the reconcile to have closed the dock.
+    await screen.findByRole("button", { name: "Open terminal panel" });
+    expect(document.querySelector(".terminal-panel.open")).toBeNull();
+  });
+
   it("hands back the previous workspace's pooled terminals when the selection moves on", async () => {
     // The pool outlives this view, so nothing else would take them down. Every
     // parked terminal holds a live websocket; browsing ten workspaces must not
@@ -1593,7 +1631,10 @@ describe("WorkspaceTerminalView", () => {
       }),
     );
 
-    await waitFor(() => expect(screen.getByText("No terminals")).toBeTruthy());
+    // The dock does not sit open and empty behind the exit: the reconcile
+    // collapses it, and the toggle's label is the collapse signal.
+    await screen.findByRole("button", { name: "Open terminal panel" });
+    expect(document.querySelector(".terminal-panel.open")).toBeNull();
   });
 
   it("uses an in-app modal when stopping a running shell", async () => {
@@ -1764,7 +1805,7 @@ describe("WorkspaceTerminalView", () => {
         data: JSON.stringify({ type: "exited", code: 0 }),
       }),
     );
-    await waitFor(() => expect(screen.getByText("No terminals")).toBeTruthy());
+    await screen.findByRole("button", { name: "Open terminal panel" });
     expect(sockets).toHaveLength(1);
   });
 
@@ -1932,7 +1973,7 @@ describe("WorkspaceTerminalView", () => {
         data: JSON.stringify({ type: "exited", code: 0 }),
       }),
     );
-    await waitFor(() => expect(screen.getByText("No terminals")).toBeTruthy());
+    await screen.findByRole("button", { name: "Open terminal panel" });
 
     await fireEvent.click(screen.getAllByRole("button", { name: "New terminal" })[0]!);
     freshRefresh.resolve(runtimeWithTerminalSession(relaunchedShellSession));
@@ -2102,7 +2143,7 @@ describe("WorkspaceTerminalView", () => {
     const shellPaneButton = await screen.findByRole("button", { name: "Focus Shell" });
     expect(shellPaneButton.getAttribute("draggable")).toBe("true");
 
-    await fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    await clickDeleteAndConfirm();
     await waitFor(() => {
       expect(
         fetchMock.mock.calls.some(([input]) => {
@@ -2142,7 +2183,7 @@ describe("WorkspaceTerminalView", () => {
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Delete" }).hasAttribute("disabled")).toBe(false);
     });
-    await fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    await clickDeleteAndConfirm();
     await waitFor(() => {
       expect(
         fetchMock.mock.calls.some(([input]) => {
@@ -2167,6 +2208,41 @@ describe("WorkspaceTerminalView", () => {
     otherDeleteRequest.resolve(new Response(null, { status: 204 }));
     deleteRequest.resolve(new Response(null, { status: 204 }));
     await waitFor(() => expect(window.location.pathname).toBe("/workspaces"));
+  });
+
+  it("issues no delete until the confirmation is accepted, and none on cancel", async () => {
+    // Delete removes a worktree whose unpushed commits go with it, from a
+    // one-click strip button — so every entry point confirms first.
+    localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+    const fetchMock = vi.fn().mockImplementation((input: Request | URL | string) => {
+      const pathname = fetchPath(input);
+      if (pathname.endsWith("/workspaces/ws-1")) {
+        return Promise.resolve(Response.json(workspaceResponse));
+      }
+      if (pathname.endsWith("/api/v1/workspaces")) {
+        return Promise.resolve(Response.json({ workspaces: [workspaceResponse] }));
+      }
+      return Promise.resolve(Response.json({}));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    window.history.pushState({}, "", "/terminal/ws-1");
+
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+
+    await screen.findByRole("button", { name: "Delete" });
+    await fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+
+    await screen.findByRole("button", { name: "Delete workspace" });
+    const deleteIssued = () =>
+      fetchMock.mock.calls.some(([input]) => input instanceof Request && input.method === "DELETE");
+    expect(deleteIssued()).toBe(false);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "Delete workspace" })).toBeNull();
+    });
+    expect(deleteIssued()).toBe(false);
+    expect(screen.getByRole("button", { name: "Delete" }).hasAttribute("disabled")).toBe(false);
   });
 
   it("drops a failed delete response after unmounting and remounting the workspace", async () => {
@@ -2197,7 +2273,7 @@ describe("WorkspaceTerminalView", () => {
     });
 
     await screen.findByRole("button", { name: "Delete" });
-    await fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    await clickDeleteAndConfirm();
     await waitFor(() => {
       expect(fetchMock.mock.calls.some(([input]) => input instanceof Request && input.method === "DELETE")).toBe(true);
     });
@@ -2255,7 +2331,7 @@ describe("WorkspaceTerminalView", () => {
     });
 
     await screen.findByRole("button", { name: "Delete" });
-    await fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    await clickDeleteAndConfirm();
     await waitFor(() => {
       expect(
         fetchMock.mock.calls.some(([input]) => {
@@ -2331,7 +2407,7 @@ describe("WorkspaceTerminalView", () => {
     });
 
     await screen.findByRole("button", { name: "Delete" });
-    await fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    await clickDeleteAndConfirm();
 
     // The 409 opens the force-delete confirmation; confirming issues the
     // forced DELETE that stays in flight while the user switches away.
@@ -2404,7 +2480,7 @@ describe("WorkspaceTerminalView", () => {
     const terminalDataHandler = mocks.mockOnData.mock.calls.at(-1)?.[0] as ((data: string) => void) | undefined;
     expect(terminalDataHandler).toBeTypeOf("function");
 
-    await fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    await clickDeleteAndConfirm();
     await waitFor(() => {
       expect(
         fetchMock.mock.calls.some(([input]) => {
@@ -2622,6 +2698,31 @@ describe("WorkspaceTerminalView", () => {
     // end -- the user cannot get a second terminal at all.
     expect(screen.getByRole("region", { name: "Terminal panel" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Open terminal panel" })).toBeTruthy();
+  });
+
+  it("keeps the inner session strip when the pane's own strip is dropped", async () => {
+    claimForPrs();
+    // The surface reports the workspace leaf as solo-chrome: its strip is gone,
+    // so no tab above the terminal names the agent. Rendering the session bare
+    // here leaves nothing on screen naming it - the inner strip is the one bar
+    // that pane has.
+    getPaneLayoutStore("prs").notePaneRender({
+      editableTabs: ["conversation", "workspace"],
+      onScreenTabs: ["conversation", "workspace"],
+      flattened: false,
+      soloChromeTabs: ["workspace"],
+    });
+
+    render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+        paneSurface: "prs" as const,
+      },
+    });
+
+    expect(await screen.findAllByRole("tablist", { name: "Workflow group tabs" })).not.toHaveLength(0);
+    expect(screen.getByRole("tab", { name: /Helper/ })).toBeTruthy();
+    expect(document.querySelector(".sole-embedded-session")).toBeNull();
   });
 
   it("keeps the workflow strip for two embedded sessions", async () => {
@@ -3268,6 +3369,7 @@ describe("WorkspaceTerminalView", () => {
       flattened: true,
       editableTabs: [],
       onScreenTabs: ["workspace"],
+      soloChromeTabs: [],
     });
     render(WorkspaceTerminalView, {
       props: {
@@ -3492,12 +3594,18 @@ describe("WorkspaceTerminalView", () => {
       });
 
       // A masked leaf must be pruned, not left rendering the dock's
-      // session-unavailable placeholder for a session that is alive elsewhere.
-      await waitFor(() => expect(screen.getByText("No terminals")).toBeTruthy());
+      // session-unavailable placeholder for a session that is alive elsewhere -
+      // and an emptied dock collapses rather than sitting open on nothing.
+      await screen.findByRole("button", { name: "Open terminal panel" });
       expect(screen.queryByText("Session unavailable")).toBeNull();
 
       getPaneLayoutStore("prs").demoteTab(paneKey);
-      await waitFor(() => expect(screen.queryByText("No terminals")).toBeNull());
+      // Back in the dock as the embedded pane's sole session, which renders
+      // chrome-free: no dock row at all, and still no placeholder.
+      await waitFor(() => {
+        expect(document.querySelector(".terminal-panel")).toBeNull();
+      });
+      expect(screen.queryByText("Session unavailable")).toBeNull();
     });
 
     it("promotes a docked session from its own control", async () => {

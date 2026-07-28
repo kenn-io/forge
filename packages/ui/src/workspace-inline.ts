@@ -112,6 +112,25 @@ export interface InlineWorkspaceController {
   /** Label for the workspace container pane, narrowed to its sole unpromoted session when possible. */
   workspacePaneLabel(): string;
   /**
+   * Whether the container pane would render nothing: it has sessions, and the
+   * user promoted every one of them into a pane of its own.
+   *
+   * Its tab must go away while that holds, or dragging the last session out
+   * leaves the container behind as an empty hole in the surface. The workspace
+   * is still claimed and its controls still hosted, so Launch stays one click
+   * away from the promoted pane, and demoting a session brings the tab back.
+   */
+  workspacePaneEmpty(): boolean;
+  /**
+   * The workspace's collapsed terminal dock when the surface must render it
+   * itself, or null.
+   *
+   * Non-null only while the container pane is retired: the dock lives inside that
+   * pane, and losing it with the pane leaves no row to open a terminal from. The
+   * surface anchors this at its own bottom edge, where the dock always sits.
+   */
+  dockRow(): Snippet<[]> | null;
+  /**
    * The whole pane body for a promoted session, supplied by the frontend, or null
    * before it has been.
    *

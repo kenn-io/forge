@@ -1,3 +1,4 @@
+import { onTabbedPanelDragEnd } from "@middleman/ui";
 import type { WorkflowTabKey } from "./terminal-layout";
 
 export const WORKFLOW_TAB_DRAG_MIME = "application/x-middleman-workflow-tab";
@@ -51,6 +52,22 @@ export function startWorkflowTabDrag(event: DragEvent, payload: WorkflowTabDragP
     event.dataTransfer.effectAllowed = "move";
   }
 }
+
+export function hasActiveTerminalDrag(): boolean {
+  return activeRuntimeSessionDrag !== null || activeWorkflowTabDrag !== null;
+}
+
+// A workflow tab drag starts TWO payloads - this module's, for intra-workspace
+// drops, and the shared tabbed-panel one, for detail panes. A drop in a detail
+// pane clears only the shared payload, and the drop destroys the source tab, so
+// its dragend (the only other clear) never fires: the stale session here would
+// then be read by the next unrelated drag through the active-payload fallback.
+// One mouse means one drag, so any shared drag ending while this module holds a
+// payload ended THIS drag. Guarded to keep WorkflowSplitTree's own clear (which
+// calls both modules) from broadcasting twice.
+onTabbedPanelDragEnd(() => {
+  if (hasActiveTerminalDrag()) clearActiveTerminalDrag();
+});
 
 export function clearActiveTerminalDrag(): void {
   activeRuntimeSessionDrag = null;

@@ -589,6 +589,10 @@ test.describe("workspace sidebar full-stack", () => {
       await expect(page.locator(".workspace-list-sidebar .ws-row")).toHaveCount(2);
 
       await page.locator(".header-bar").getByRole("button", { name: "Delete" }).click();
+      await page
+        .getByRole("dialog", { name: "Delete workspace?" })
+        .getByRole("button", { name: "Delete workspace" })
+        .click();
       await deleteStarted;
 
       const deleteButton = page.locator(".header-bar").getByRole("button", { name: "Delete" });
@@ -600,6 +604,10 @@ test.describe("workspace sidebar full-stack", () => {
       await expect(page).toHaveURL(new RegExp(`/terminal/${otherWorkspace.id}$`));
 
       await page.locator(".header-bar").getByRole("button", { name: "Delete" }).click();
+      await page
+        .getByRole("dialog", { name: "Delete workspace?" })
+        .getByRole("button", { name: "Delete workspace" })
+        .click();
       await otherDeleteStarted;
       await expect(page.locator(".header-bar").getByRole("button", { name: "Delete" })).toBeDisabled();
 

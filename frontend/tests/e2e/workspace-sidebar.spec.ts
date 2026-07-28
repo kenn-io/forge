@@ -1055,6 +1055,10 @@ test.describe("terminal state icons", () => {
     await expect(stateMessage).toContainText("ensure clone failed");
 
     await stateMessage.getByRole("button", { name: "Delete" }).click();
+    await page
+      .getByRole("dialog", { name: "Delete workspace?" })
+      .getByRole("button", { name: "Delete workspace" })
+      .click();
 
     await expect(page).toHaveURL(/\/workspaces$/);
   });
@@ -1082,6 +1086,10 @@ test.describe("terminal state icons", () => {
     await page.goto("/terminal/ws-123");
 
     await page.locator(".header-bar").getByRole("button", { name: "Delete" }).click();
+    await page
+      .getByRole("dialog", { name: "Delete workspace?" })
+      .getByRole("button", { name: "Delete workspace" })
+      .click();
 
     const dialog = page.getByRole("dialog", {
       name: "Force delete workspace?",
@@ -1126,6 +1134,10 @@ test.describe("terminal state icons", () => {
     await page.goto("/terminal/ws-123");
 
     await page.locator(".header-bar").getByRole("button", { name: "Delete" }).click();
+    await page
+      .getByRole("dialog", { name: "Delete workspace?" })
+      .getByRole("button", { name: "Delete workspace" })
+      .click();
 
     const dialog = page.getByRole("dialog", {
       name: "Force delete workspace?",
@@ -1165,6 +1177,10 @@ test.describe("terminal state icons", () => {
     await page.goto("/terminal/ws-123");
 
     await page.locator(".header-bar").getByRole("button", { name: "Delete" }).click();
+    await page
+      .getByRole("dialog", { name: "Delete workspace?" })
+      .getByRole("button", { name: "Delete workspace" })
+      .click();
 
     const dialog = page.getByRole("dialog", {
       name: "Force delete workspace?",
@@ -1194,6 +1210,10 @@ test.describe("terminal state icons", () => {
 
     const headerDelete = page.locator(".header-bar").getByRole("button", { name: "Delete" });
     await headerDelete.click();
+    await page
+      .getByRole("dialog", { name: "Delete workspace?" })
+      .getByRole("button", { name: "Delete workspace" })
+      .click();
 
     const dialog = page.getByRole("dialog", {
       name: "Force delete workspace?",
@@ -1248,6 +1268,10 @@ test.describe("terminal state icons", () => {
     await page.goto("/terminal/ws-123");
 
     await page.locator(".header-bar").getByRole("button", { name: "Delete" }).click();
+    await page
+      .getByRole("dialog", { name: "Delete workspace?" })
+      .getByRole("button", { name: "Delete workspace" })
+      .click();
 
     const dialog = page.getByRole("dialog", {
       name: "Force delete workspace?",
@@ -1299,6 +1323,10 @@ test.describe("terminal state icons", () => {
     // The DELETE handler in handleDelete is async, so this is the
     // exact race condition the post-await guard exists to handle.
     await page.locator(".header-bar").getByRole("button", { name: "Delete" }).click();
+    await page
+      .getByRole("dialog", { name: "Delete workspace?" })
+      .getByRole("button", { name: "Delete workspace" })
+      .click();
     await page.evaluate(() => {
       history.pushState(null, "", "/workspaces");
       window.dispatchEvent(new PopStateEvent("popstate"));
@@ -1342,6 +1370,10 @@ test.describe("terminal state icons", () => {
     await page.goto("/terminal/ws-123");
 
     await page.locator(".header-bar").getByRole("button", { name: "Delete" }).click();
+    await page
+      .getByRole("dialog", { name: "Delete workspace?" })
+      .getByRole("button", { name: "Delete workspace" })
+      .click();
 
     // A round-trip back to the same workspace would defeat an
     // id-only guard: the captured targetId matches the current
@@ -1388,6 +1420,10 @@ test.describe("terminal state icons", () => {
     await page.goto("/terminal/ws-123");
 
     await page.locator(".header-bar").getByRole("button", { name: "Delete" }).click();
+    await page
+      .getByRole("dialog", { name: "Delete workspace?" })
+      .getByRole("button", { name: "Delete workspace" })
+      .click();
 
     // Without the post-await guard in handleDelete, the stale
     // 204 would call navigate("/workspaces") and the user would
@@ -1420,6 +1456,10 @@ test.describe("terminal state icons", () => {
     await page.goto("/terminal/ws-123");
 
     await page.locator(".header-bar").getByRole("button", { name: "Delete" }).click();
+    await page
+      .getByRole("dialog", { name: "Delete workspace?" })
+      .getByRole("button", { name: "Delete workspace" })
+      .click();
 
     // Round-trip back to the same workspace before the 204 lands.
     // The generation token has advanced, but the workspace the

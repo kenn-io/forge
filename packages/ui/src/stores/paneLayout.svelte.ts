@@ -59,6 +59,13 @@ export interface PaneRenderReport {
   onScreenTabs: readonly string[];
   /** True while the narrow-width fallback shows one flat strip and disables edits. */
   flattened: boolean;
+  /**
+   * Tabs rendered in a strip-less leaf (the leaf holds only this tab and it is a
+   * solo-chrome key, so its strip is dropped and only the floating cluster
+   * remains). The view inside such a pane is the only thing left that can name
+   * its content — the workspace pane keeps its inner session strip exactly here.
+   */
+  soloChromeTabs: readonly string[];
 }
 
 export interface PaneLayoutStore {
@@ -228,7 +235,8 @@ export function createPaneLayoutStore(
         current !== null &&
         current.flattened === report.flattened &&
         sameTabList(current.editableTabs, report.editableTabs) &&
-        sameTabList(current.onScreenTabs, report.onScreenTabs)
+        sameTabList(current.onScreenTabs, report.onScreenTabs) &&
+        sameTabList(current.soloChromeTabs, report.soloChromeTabs)
       ) {
         return;
       }
@@ -236,6 +244,7 @@ export function createPaneLayoutStore(
         editableTabs: [...report.editableTabs],
         onScreenTabs: [...report.onScreenTabs],
         flattened: report.flattened,
+        soloChromeTabs: [...report.soloChromeTabs],
       };
     },
 

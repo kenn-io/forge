@@ -24,7 +24,12 @@ import {
  */
 export function createClaimTestController(
   surface: InlineWorkspaceSurface = "prs",
-  options: { sessions?: readonly PromotableSession[]; workspacePaneLabel?: string } = {},
+  options: {
+    sessions?: readonly PromotableSession[];
+    workspacePaneLabel?: string;
+    workspacePaneEmpty?: boolean;
+    dockRow?: Snippet<[]>;
+  } = {},
 ): {
   controller: InlineWorkspaceController;
   notifyInvalidated: (identity: WorkspaceItemIdentity) => void;
@@ -64,6 +69,8 @@ export function createClaimTestController(
     slotAttachment: vi.fn((_element: HTMLElement) => {}) satisfies Attachment<HTMLElement>,
     promotableSessions: () => sessions,
     workspacePaneLabel: () => options.workspacePaneLabel ?? "Workspace",
+    workspacePaneEmpty: () => options.workspacePaneEmpty ?? false,
+    dockRow: () => options.dockRow ?? null,
     sessionPane: () => sessionPaneDouble,
   };
 

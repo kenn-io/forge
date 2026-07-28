@@ -3569,9 +3569,11 @@ describe("WorkspaceTerminalView", () => {
 
       const controller = getInlineWorkspaceController("prs");
       await waitFor(() => expect(controller.workspacePaneRowOnly()).toBe(true));
+      expect(controller.dockRow()).not.toBeNull();
 
       getPaneLayoutStore("prs").demoteTab(paneKey);
       await waitFor(() => expect(controller.workspacePaneRowOnly()).toBe(false));
+      expect(controller.dockRow()).toBeNull();
     });
 
     it("masks a promoted session out of the workflow strip and gives back its placement on demote", async () => {
@@ -3631,6 +3633,8 @@ describe("WorkspaceTerminalView", () => {
       );
       mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTerminalSession());
       const paneKey = promoteSession("prs", "ws-1_shell_a");
+      claimForPrs();
+      noteWorkspacePaneRendered("prs");
 
       render(WorkspaceTerminalView, {
         props: {
@@ -3798,6 +3802,73 @@ describe("WorkspaceTerminalView", () => {
     // workflow slot rather than tearing it down and reattaching.
     expect(sockets.filter((candidate) => candidate.url.includes("/sessions/ws-1:helper/terminal"))).toHaveLength(1);
     expect(socket.close).not.toHaveBeenCalled();
+  });
+
+  it("demotes a promoted session dropped into a terminal split", async () => {
+    const persisted = JSON.parse(persistedTwoSessionWorkflowLayout("ws-1:reviewer", "ws-1:helper")) as Record<
+      string,
+      unknown
+    >;
+    persisted.open = true;
+    persisted.activeSessionKey = "ws-1_shell_a";
+    persisted.tree = {
+      type: "leaf",
+      id: "dock-leaf",
+      sessionKey: "ws-1_shell_a",
+    };
+    persisted.sessionRegions = {
+      "ws-1:reviewer": "workflow",
+      "ws-1:helper": "workflow",
+      "ws-1_shell_a": "terminal",
+    };
+    localStorage.setItem("middleman-workspace-terminal-layout:ws-1", JSON.stringify(persisted));
+    mocks.getWorkspaceRuntime.mockResolvedValue({
+      launch_targets: [],
+      sessions: [reviewerSession, runningSession, runningShellSession],
+    });
+    claimForPrs();
+    noteWorkspacePaneRendered("prs");
+    const paneKey = promoteSession("prs", "ws-1:helper");
+
+    render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+        paneSurface: "prs" as const,
+      },
+    });
+
+    const terminalTarget = await screen.findByRole("group", {
+      name: "Shell split drop targets",
+    });
+    vi.spyOn(terminalTarget, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      top: 0,
+      left: 0,
+      right: 400,
+      bottom: 300,
+      width: 400,
+      height: 300,
+      toJSON: () => ({}),
+    });
+
+    const dataTransfer = fakeDataTransfer();
+    startTabbedPanelTabDrag({ dataTransfer } as unknown as DragEvent, { scope: "detail:prs", tabKey: paneKey });
+    await fireEvent.dragOver(terminalTarget, {
+      dataTransfer,
+      clientX: 200,
+      clientY: 150,
+    });
+    await fireEvent.drop(terminalTarget, {
+      dataTransfer,
+      clientX: 200,
+      clientY: 150,
+    });
+    clearActiveTabbedPanelDrag();
+
+    expect(getPaneLayoutStore("prs").hasTab(paneKey)).toBe(false);
+    expect(await screen.findByRole("button", { name: "Move Helper to workflow" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: /Reviewer/ })).toBeTruthy();
   });
 
   it("refuses a session pane dropped from another workspace", async () => {

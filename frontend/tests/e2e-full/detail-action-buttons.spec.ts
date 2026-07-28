@@ -41,7 +41,7 @@ function gitOutput(dir: string, args: string[]): string {
 }
 
 function activePullAction(page: Page, selector: string) {
-  return page.locator(".kit-fit-stages > .actions-row--primary").locator(selector);
+  return page.locator(".primary-actions-live > .actions-row--primary").locator(selector);
 }
 
 async function waitForWorkspaceReady(api: APIRequestContext, workspaceId: string): Promise<WorkspaceStatusResponse> {
@@ -264,6 +264,17 @@ test.describe("detail action buttons", () => {
       await expect(page.getByRole("button", { name: "Approve workflows" })).toBeVisible({
         timeout: 10_000,
       });
+
+      const detail = page.locator(".pull-detail-content");
+      await detail.evaluate((element) => {
+        element.style.width = "350px";
+        element.style.flex = "0 0 350px";
+      });
+
+      const actions = detail.getByRole("button", { name: "Actions" });
+      await expect(actions).toBeVisible();
+      await actions.click();
+      await expect(detail.getByRole("button", { name: "Approve workflows" })).toBeVisible();
     } finally {
       await server.stop();
     }
@@ -1137,19 +1148,22 @@ test.describe("detail action buttons", () => {
 
   test("narrow actions menu closes when clicking outside", async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 720 });
-    await page.goto("/pulls/github/acme/widgets/1");
+    await page.goto("/pulls/github/acme/widgets/6");
     await expect(page.locator(".pull-detail")).toBeVisible();
 
-    await page.locator(".actions-menu-trigger").click();
-    await expect(page.locator(".actions-menu-popover")).toBeVisible();
+    const actionsTrigger = page.getByRole("button", { name: "Actions", exact: true });
+    const actionsMenu = page.locator(".actions-menu-popover");
+    await actionsTrigger.click();
+    await expect(actionsMenu).toBeVisible();
 
     await page.locator(".detail-title").click();
-    await expect(page.locator(".actions-menu-popover")).toHaveCount(0);
+    await expect(actionsMenu).toBeHidden();
+    await expect(actionsTrigger).toHaveAttribute("aria-expanded", "false");
   });
 
   test("narrow actions menu shows state change failures after closing", async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 720 });
-    await page.route("**/api/v1/pulls/github/acme/widgets/1/github-state", async (route) => {
+    await page.route("**/api/v1/pulls/github/acme/widgets/6/github-state", async (route) => {
       await route.fulfill({
         status: 500,
         contentType: "application/json",
@@ -1157,22 +1171,25 @@ test.describe("detail action buttons", () => {
       });
     });
 
-    await page.goto("/pulls/github/acme/widgets/1");
+    await page.goto("/pulls/github/acme/widgets/6");
     await expect(page.locator(".pull-detail")).toBeVisible();
 
-    await page.locator(".actions-menu-trigger").click();
+    const actionsTrigger = page.getByRole("button", { name: "Actions", exact: true });
+    const actionsMenu = page.locator(".actions-menu-popover");
+    await actionsTrigger.click();
     await page.locator(".actions-menu-popover .btn--close").click();
 
-    await expect(page.locator(".actions-menu-popover")).toHaveCount(0);
+    await expect(actionsMenu).toBeHidden();
+    await expect(actionsTrigger).toHaveAttribute("aria-expanded", "false");
     await expect(page.locator(".kit-flash-stack").getByRole("status")).toContainText("backend down");
   });
 
   test("narrow actions menu includes supported approve action", async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 720 });
-    await page.goto("/pulls/github/acme/widgets/1");
+    await page.goto("/pulls/github/acme/widgets/6");
     await expect(page.locator(".pull-detail")).toBeVisible();
 
-    await page.locator(".actions-menu-trigger").click();
+    await page.getByRole("button", { name: "Actions", exact: true }).click();
     const menu = page.locator(".actions-menu-popover");
     await expect(menu).toBeVisible();
 
@@ -1224,7 +1241,7 @@ test.describe("detail action buttons", () => {
       await page.goto(`${baseURL}/pulls/github/acme/widgets/6`);
       await expect(page.locator(".pull-detail")).toBeVisible();
 
-      await page.locator(".actions-menu-trigger").click();
+      await page.getByRole("button", { name: "Actions", exact: true }).click();
       await expect(page.locator(".actions-menu-popover")).toBeVisible();
 
       const readyResponse = page.waitForResponse((response) => {
@@ -1279,6 +1296,20 @@ test.describe("detail action buttons", () => {
     );
   });
 
+  test("primary and workspace action rows keep their vertical gap", async ({ page }) => {
+    await page.goto("/pulls/github/acme/widgets/1");
+    const liveActions = page.locator(".primary-actions-live");
+    const primaryRow = liveActions.locator(".actions-row--primary");
+    const workspaceRow = liveActions.locator(".actions-row--workspace");
+    await expect(primaryRow).toBeVisible();
+    await expect(workspaceRow).toBeVisible();
+
+    const [primaryBox, workspaceBox] = await Promise.all([primaryRow.boundingBox(), workspaceRow.boundingBox()]);
+    expect(primaryBox).not.toBeNull();
+    expect(workspaceBox).not.toBeNull();
+    expect(workspaceBox!.y - (primaryBox!.y + primaryBox!.height)).toBeGreaterThanOrEqual(8);
+  });
+
   test("medium pull detail uses the compact Kit UI fit stage", async ({ page }) => {
     await page.goto("/pulls/github/acme/widgets/6");
     const detail = page.locator(".pull-detail-content");
@@ -1289,11 +1320,11 @@ test.describe("detail action buttons", () => {
     });
 
     const fitStages = detail.locator(".kit-fit-stages");
-    await expect(fitStages).toBeVisible();
-    const activeRow = fitStages.locator(":scope > .actions-row--primary");
+    await expect(fitStages).toHaveCount(1);
+    const activeRow = detail.locator(".primary-actions-live > .actions-row--primary");
     await expect(activeRow.locator(".btn--ready .kit-button__label-text")).toHaveText("Ready");
     await expect(activeRow.locator(".kit-button__short-label")).toHaveCount(0);
-    await expect(detail.locator(".actions-menu-trigger")).toBeHidden();
+    await expect(detail.locator(".actions-menu-wrap > .actions-menu-trigger")).toBeHidden();
 
     const metrics = await activeRow.evaluate((row) => {
       const selectors = [".btn--ready", ".btn--approve", ".btn--merge", ".btn--close"];
@@ -1321,6 +1352,31 @@ test.describe("detail action buttons", () => {
       expect(metric.iconDisplay, metric.selector).not.toBe("none");
       expect(metric.centerDelta, metric.selector).toBeLessThan(0.5);
     }
+  });
+
+  test("pull action state survives a measured stage change", async ({ page }) => {
+    await page.goto("/pulls/github/acme/widgets/1");
+    const detail = page.locator(".pull-detail-content");
+    await expect(detail).toBeVisible();
+    await detail.evaluate((element) => {
+      element.style.width = "800px";
+      element.style.flex = "0 0 800px";
+    });
+
+    await expect(detail.locator(".kit-fit-stages .approve-section")).toHaveCount(0);
+    await activePullAction(page, ".btn--approve").click();
+    const dialog = page.getByRole("dialog", { name: "Submit pull request review" });
+    const comment = dialog.getByPlaceholder("Leave an optional comment…");
+    await comment.fill("Keep this review draft while the pane resizes.");
+
+    await detail.evaluate((element) => {
+      element.style.width = "400px";
+      element.style.flex = "0 0 400px";
+    });
+
+    await expect(dialog).toBeVisible();
+    await expect(comment).toHaveValue("Keep this review draft while the pane resizes.");
+    await expect(activePullAction(page, ".btn--approve")).toHaveCount(1);
   });
 
   test("ready for review updates API state and removes the draft action", async ({ page }) => {

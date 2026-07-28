@@ -494,6 +494,24 @@ describe("PRListView inline workspace", () => {
     expect(document.querySelector(".detail-pane-workspace-slot")).toBeNull();
   });
 
+  it("retires a row-only workspace pane behind its surface dock", () => {
+    const dockRow = createRawSnippet(() => ({
+      render: () => `<div data-testid="dock-row">Terminal</div>`,
+    }));
+    const { controller } = createClaimTestController("prs", {
+      workspacePaneRowOnly: true,
+      dockRow,
+    });
+
+    renderPRListView({
+      inlineWorkspace: controller,
+      detail: pullDetailFixture({ id: "ws-1", status: "ready" }),
+    });
+
+    expect(screen.getByTestId("dock-row")).toBeTruthy();
+    expect(document.querySelector(".detail-pane-workspace-slot")).toBeNull();
+  });
+
   it("refetches the detail when the claimed identity is invalidated by deletion", async () => {
     const { controller, notifyInvalidated } = createClaimTestController();
     const detail = pullDetailFixture({ id: "ws-1", status: "ready" });

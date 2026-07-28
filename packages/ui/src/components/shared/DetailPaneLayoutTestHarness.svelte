@@ -11,8 +11,6 @@
     onFocusPane?: ((tabKey: string) => void) | undefined;
     /** Stands in for the app's workspace controls button. */
     withLeafExtras?: boolean;
-    /** Stands in for a workspace whose only remaining content is its bottom dock. */
-    workspaceRowOnly?: boolean;
     /** Names a tab from the render report, as the workspace pane's tab does. */
     labelFromRender?: boolean;
     /**
@@ -30,7 +28,6 @@
     onSelectTab = undefined,
     onFocusPane = undefined,
     withLeafExtras = false,
-    workspaceRowOnly = false,
     labelFromRender = false,
     tabsNonce = 0,
   }: Props = $props();
@@ -59,7 +56,6 @@
   {routeTabKey}
   {onSelectTab}
   {onFocusPane}
-  contentSizedTabKeys={workspaceRowOnly ? ["workspace"] : []}
   paneLeafExtras={withLeafExtras ? leafExtras : undefined}
 >
   {#snippet renderPane(tabKey, visible)}

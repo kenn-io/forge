@@ -49,14 +49,6 @@
      * controls while flattened, where there is one strip for every pane.
      */
     paneLeafExtras?: Snippet<[TabbedPanelLeaf]> | undefined;
-    /**
-     * Tabs whose sole-tab vertical leaf should take only its rendered height.
-     *
-     * This is transient view state, not layout state: persisting the resulting
-     * ratio would leave the pane stranded at row height when its full content
-     * returns.
-     */
-    contentSizedTabKeys?: readonly string[];
   }
 
   const {
@@ -71,7 +63,6 @@
     onSelectTab = undefined,
     onFocusPane = undefined,
     paneLeafExtras = undefined,
-    contentSizedTabKeys = [],
   }: Props = $props();
 
   /**
@@ -330,7 +321,6 @@
                 : layout.promoteTab(source, { kind: "split", leafID, direction, placement })}
         leafActions={flattened ? undefined : leafActions}
         soloChromeTabKeys={flattened ? [] : SOLO_CHROME_TAB_KEYS}
-        contentSizedTabKeys={flattened ? [] : contentSizedTabKeys}
       >
         {#snippet renderTab(tabKey, visible)}
           {@render renderPane(tabKey, visible)}

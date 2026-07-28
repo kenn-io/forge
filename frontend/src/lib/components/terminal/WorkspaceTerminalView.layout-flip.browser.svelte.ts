@@ -1,7 +1,6 @@
 import { render } from "vitest-browser-svelte";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { DEFAULT_TERMINAL_SETTINGS } from "@middleman/ui";
-import type { RuntimeSession } from "@middleman/ui/api/types";
 
 import { STORES_KEY } from "../../../../../packages/ui/src/context.js";
 import { createMockApiFetch, jsonResponse, type MockRouteOverride } from "../../../test/mockApiFetch.js";
@@ -110,87 +109,6 @@ describe("WorkspaceTerminalView layout flip", () => {
       expect(before.isConnected).toBe(true);
     } finally {
       await screen.unmount();
-      globalThis.fetch = originalFetch;
-      globalThis.EventSource = originalEventSource;
-    }
-  });
-
-  it("keeps a terminal-only workspace row as wide as its pane", async () => {
-    const shell: RuntimeSession = {
-      key: "ws-1_shell_a",
-      workspace_id: "ws-1",
-      target_key: "plain_shell",
-      label: "Shell",
-      kind: "plain_shell",
-      status: "running",
-      display_region: "terminal",
-      created_at: "2026-04-29T00:00:00Z",
-    };
-    const secondShell = {
-      ...shell,
-      key: "ws-1_shell_b",
-      label: "Shell 2",
-      created_at: "2026-04-29T00:01:00Z",
-    };
-    const api = createMockApiFetch([workspaceRoutes({ launch_targets: [], sessions: [shell, secondShell] })]);
-    const originalFetch = globalThis.fetch;
-    const originalEventSource = globalThis.EventSource;
-    globalThis.fetch = api.fetch;
-    globalThis.EventSource = NoopEventSource as unknown as typeof EventSource;
-    localStorage.setItem(
-      "middleman-workspace-terminal-layout:ws-1",
-      JSON.stringify({
-        version: 1,
-        open: true,
-        dock: "bottom",
-        height: 300,
-        activeSessionKey: shell.key,
-        tree: { type: "leaf", id: "dock-leaf", sessionKey: shell.key },
-        sessionRegions: {
-          [shell.key]: "terminal",
-          [secondShell.key]: "terminal",
-        },
-        workflowMode: "tabs",
-        workflowTree: { type: "leaf", id: "home-leaf", tabs: ["home"], activeTabKey: "home" },
-        terminalGroups: [],
-        customSessionLabels: {},
-      }),
-    );
-
-    const settingsStore = {
-      getTerminalFontSize: () => DEFAULT_TERMINAL_SETTINGS.font_size,
-      getTerminalSettings: () => DEFAULT_TERMINAL_SETTINGS,
-    };
-    const host = document.createElement("div");
-    host.style.cssText = "width: 800px; height: 500px;";
-    document.body.append(host);
-    const screen = render(WorkspaceTerminalView, {
-      target: host,
-      props: {
-        workspaceId: "ws-1",
-        paneSurface: "prs",
-        hideWorkspaceList: true,
-        hideRightSidebar: true,
-      },
-      context: new Map([[STORES_KEY, { settings: settingsStore }]]),
-    });
-
-    try {
-      const terminalArea = await vi.waitFor(() => {
-        const row = host.querySelector<HTMLElement>(".terminal-view.workspace-pane-row-only .terminal-and-sidebar");
-        const area = host.querySelector<HTMLElement>(".terminal-view.workspace-pane-row-only .terminal-area");
-        expect(row).not.toBeNull();
-        expect(area).not.toBeNull();
-        expect(row!.getBoundingClientRect().width).toBeGreaterThan(0);
-        return area!;
-      }, WAIT);
-      const row = host.querySelector<HTMLElement>(".terminal-and-sidebar")!;
-
-      expect(terminalArea.getBoundingClientRect().width).toBeCloseTo(row.getBoundingClientRect().width, 0);
-    } finally {
-      await screen.unmount();
-      host.remove();
-      localStorage.removeItem("middleman-workspace-terminal-layout:ws-1");
       globalThis.fetch = originalFetch;
       globalThis.EventSource = originalEventSource;
     }

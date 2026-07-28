@@ -53,13 +53,6 @@
      * landing in the leaf brings the strip back - there are two things to name then.
      */
     soloChromeTabKeys?: readonly string[];
-    /**
-     * Tabs whose sole-tab vertical leaf should give unused height to its sibling.
-     *
-     * The override is render-only so the split resumes its saved ratio when the
-     * pane grows full-height content again.
-     */
-    contentSizedTabKeys?: readonly string[];
     /** Leaf rendered at full size; every other subtree is hidden but stays mounted. */
     zoomedLeafID?: string | null;
     /**
@@ -108,7 +101,6 @@
     tabActions = undefined,
     leafActions = undefined,
     soloChromeTabKeys = [],
-    contentSizedTabKeys = [],
     zoomedLeafID = null,
     ancestorHidden = false,
     scrollPanels = false,
@@ -524,29 +516,6 @@
     return null;
   });
 
-  function isContentSizedLeaf(candidate: TabbedPanelNode): boolean {
-    return (
-      candidate.type === "leaf" &&
-      candidate.tabs.length === 1 &&
-      contentSizedTabKeys.includes(candidate.tabs[0]!)
-    );
-  }
-
-  /**
-   * Which direct child is a row-sized leaf, if exactly one is.
-   *
-   * Only vertical splits participate: a bottom dock is a row that should release
-   * height to content above it, not a request to collapse the workspace's width
-   * after the user has arranged panes side by side.
-   */
-  const contentSizedSide = $derived.by<"first" | "second" | null>(() => {
-    if (node?.type !== "split" || node.direction !== "vertical") return null;
-    const first = isContentSizedLeaf(node.first);
-    const second = isContentSizedLeaf(node.second);
-    if (first === second) return null;
-    return first ? "first" : "second";
-  });
-
   function paneVisible(tabKey: string): boolean {
     return !ancestorHidden && node?.type === "leaf" && node.activeTabKey === tabKey;
   }
@@ -718,11 +687,7 @@
       class={[
         "tabbed-panel-split-child",
         "first",
-        {
-          zoomed: zoomSide === "first",
-          "content-sized": contentSizedSide === "first",
-          "content-sized-sibling": contentSizedSide === "second",
-        },
+        { zoomed: zoomSide === "first" },
       ]}
       hidden={zoomSide === "second"}
       inert={zoomSide === "second"}
@@ -737,7 +702,6 @@
         {tabActions}
         {leafActions}
         {soloChromeTabKeys}
-        {contentSizedTabKeys}
         {zoomedLeafID}
         ancestorHidden={ancestorHidden || zoomSide === "second"}
         {scrollPanels}
@@ -775,11 +739,7 @@
       class={[
         "tabbed-panel-split-child",
         "second",
-        {
-          zoomed: zoomSide === "second",
-          "content-sized": contentSizedSide === "second",
-          "content-sized-sibling": contentSizedSide === "first",
-        },
+        { zoomed: zoomSide === "second" },
       ]}
       hidden={zoomSide === "first"}
       inert={zoomSide === "first"}
@@ -794,7 +754,6 @@
         {tabActions}
         {leafActions}
         {soloChromeTabKeys}
-        {contentSizedTabKeys}
         {zoomedLeafID}
         ancestorHidden={ancestorHidden || zoomSide === "first"}
         {scrollPanels}
@@ -852,33 +811,6 @@
 
   .tabbed-panel-split-child.second {
     flex: var(--second-ratio) 1 0;
-  }
-
-  .tabbed-panel-split-child.content-sized {
-    flex: 0 0 auto;
-  }
-
-  .tabbed-panel-split-child.content-sized-sibling {
-    flex: 1 1 0;
-  }
-
-  /* Normal pane bodies are absolute so every tab fills the leaf without its
-     content affecting the saved split. A content-sized leaf is the deliberate
-     exception: its active pane must participate in intrinsic height or `auto`
-     would collapse to zero instead of the dock row it contains. */
-  .tabbed-panel-split-child.content-sized > :global(.tabbed-panel-leaf) {
-    height: auto;
-  }
-
-  .tabbed-panel-split-child.content-sized
-    > :global(.tabbed-panel-leaf > .tabbed-panel-body) {
-    flex: 0 0 auto;
-  }
-
-  .tabbed-panel-split-child.content-sized
-    > :global(.tabbed-panel-leaf > .tabbed-panel-body > .tabbed-panel-tab-panel) {
-    position: relative;
-    inset: auto;
   }
 
   /* A zoomed branch takes the whole split, overriding its stored ratio. Its

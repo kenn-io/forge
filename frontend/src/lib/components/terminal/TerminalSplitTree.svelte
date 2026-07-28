@@ -1,6 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import { SplitResizeHandle, type SplitResizeEvent } from "@kenn-io/kit-ui";
+  import { clearActiveTabbedPanelDrag } from "@middleman/ui";
   import type { RuntimeSession } from "@middleman/ui/api/types";
   import XIcon from "@lucide/svelte/icons/x";
   import MoveIcon from "@lucide/svelte/icons/move";
@@ -50,6 +51,8 @@
     onClose?: ((session: RuntimeSession) => void) | undefined;
     onRename?: ((session: RuntimeSession) => void) | undefined;
     onMoveToWorkflow?: ((sessionKey: string) => void) | undefined;
+    /** Reads local runtime drags plus promoted detail-pane sessions when embedded. */
+    readSessionDrag?: ((event: DragEvent) => string | null) | undefined;
     /** Absent unless a detail surface is hosting this workspace and can hold a pane. */
     onPromoteSession?: ((sessionKey: string) => void) | undefined;
     onRatioChange?: ((splitId: string, ratio: number) => void) | undefined;
@@ -77,6 +80,7 @@
     onClose,
     onRename,
     onMoveToWorkflow,
+    readSessionDrag,
     onPromoteSession,
     onRatioChange,
     onSplitSession,
@@ -113,11 +117,13 @@
 
   function readDroppedSession(event: DragEvent): string | null {
     if (disabled) return null;
-    const sessionKey = readRuntimeSessionDrag(event, workspaceId);
+    const sessionKey = readSessionDrag
+      ? readSessionDrag(event)
+      : readRuntimeSessionDrag(event, workspaceId);
     if (
       sessionKey === null ||
       (node.type === "leaf" && sessionKey === node.sessionKey) ||
-      !sessionForKey(sessionKey)
+      (readSessionDrag === undefined && !sessionForKey(sessionKey))
     ) {
       return null;
     }
@@ -179,6 +185,7 @@
     const { direction, placement } = splitPlacementForEdge(edge);
     onSplitSession?.(sessionKey, node.id, direction, placement);
     clearActiveTerminalDrag();
+    clearActiveTabbedPanelDrag();
   }
 
   function measureSplit(): number {
@@ -415,6 +422,7 @@
         {onClose}
         {onRename}
         {onMoveToWorkflow}
+        {readSessionDrag}
         {onPromoteSession}
         {onRatioChange}
         {onSplitSession}
@@ -446,6 +454,7 @@
         {onClose}
         {onRename}
         {onMoveToWorkflow}
+        {readSessionDrag}
         {onPromoteSession}
         {onRatioChange}
         {onSplitSession}

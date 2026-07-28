@@ -99,10 +99,12 @@
   } from "./terminal-drag";
   import { shouldRetryFleetDiffWatch } from "./fleet-diff-watch.js";
   import { Button, CollapsibleSidebar,
+    clearActiveTabbedPanelDrag,
     getPaneLayoutStore,
     getStores,
     parseSessionPaneKey,
     promoteSessionBesideWorkspace,
+    readTabbedPanelTabDrag,
     sessionPaneKey,
     sessionPaneKeyMatchesWorkspace,
     SplitResizeHandle,
@@ -958,7 +960,12 @@
           // with nothing in it.
           terminalLayout.workflowTree,
           workflowTabDescriptors.map((tab) => tab.key),
-        ),
+      ),
+  );
+  const workspacePaneEmpty = $derived(
+    controlsInPane &&
+      runtimeSessions.length > 0 &&
+      promotedSessionKeys.size === runtimeSessions.length,
   );
   const workspacePaneRowOnly = $derived(
     controlsInPane &&
@@ -986,6 +993,7 @@
       registerWorkspaceControls({
         snippet: workspaceControls,
         stripActions: workspaceStripActions,
+        dockRow: workspaceDockRow,
         workspacePaneRowOnly: rowOnly,
         workspaceKey,
       }),
@@ -2161,6 +2169,7 @@
     if (actionsBlocked) return;
     const session = runtimeSessions.find((s) => s.key === sessionKey);
     if (!session) return;
+    if (isPromoted(session)) surfaceLayout?.demoteTab(sessionPaneKeyFor(session));
     const groups = addTerminalGroup(terminalLayout.terminalGroups, sessionKey);
     terminalLayout = normalizeLayoutForSessions(runtimeSessions, {
       ...layoutWithTerminalGroups(
@@ -2185,6 +2194,9 @@
 
   function moveSessionToWorkflow(sessionKey: string): void {
     if (actionsBlocked) return;
+    const session = runtimeSessions.find((candidate) => candidate.key === sessionKey);
+    if (!session) return;
+    if (isPromoted(session)) surfaceLayout?.demoteTab(sessionPaneKeyFor(session));
     const terminalGroups = closeSessionInTerminalGroups(
       terminalLayout.terminalGroups,
       sessionKey,
@@ -2657,6 +2669,7 @@
     const groupID = terminalLayout.activeTerminalGroupID;
     const group = currentTerminalGroup;
     if (!session || !groupID || !group) return;
+    if (isPromoted(session)) surfaceLayout?.demoteTab(sessionPaneKeyFor(session));
     const sourceLeaf = findLeafBySession(group.tree, sessionKey);
     if (sourceLeaf?.id === targetLeafID) {
       selectTerminalSession(sessionKey);
@@ -2750,7 +2763,21 @@
   }
 
   function readDroppedSession(event: DragEvent): string | null {
-    return readRuntimeSessionDrag(event, workspaceId);
+    const runtimeSessionKey = readRuntimeSessionDrag(event, workspaceId);
+    if (runtimeSessionKey !== null) return runtimeSessionKey;
+    if (surfaceLayout === null) return null;
+    const paneKey = readTabbedPanelTabDrag(event, surfaceLayout.dragScope);
+    if (
+      paneKey === null ||
+      !sessionPaneKeyMatchesWorkspace(paneKey, workspaceId, workspaceHostKey)
+    ) {
+      return null;
+    }
+    const sessionKey = parseSessionPaneKey(paneKey)?.sessionKey ?? null;
+    return sessionKey !== null &&
+      runtimeSessions.some((session) => session.key === sessionKey)
+      ? sessionKey
+      : null;
   }
 
   function handleWorkflowDragOver(event: DragEvent): void {
@@ -2767,8 +2794,10 @@
     const sessionKey = readDroppedSession(event);
     if (sessionKey === null) return;
     event.preventDefault();
+    event.stopPropagation();
     moveSessionToWorkflow(sessionKey);
     clearActiveTerminalDrag();
+    clearActiveTabbedPanelDrag();
   }
 
   function startPolling(): void {
@@ -3471,7 +3500,7 @@
 </script>
 
 <div
-  class={["terminal-view", { "workspace-pane-row-only": workspacePaneRowOnly }]}
+  class="terminal-view"
   inert={modalOpen}
   onkeydowncapture={(event) => {
     if (terminalSettingsReady && !terminalOptionsSaving) {
@@ -3886,6 +3915,7 @@
                             onClose={(session) => void closeSession(session)}
                             onRename={renameSession}
                             onMoveToWorkflow={moveSessionToWorkflow}
+                            readSessionDrag={readDroppedSession}
                             onPromoteSession={promoteSessionToPane}
                             onDock={dockTerminalPanel}
                             onResize={resizeTerminalPanel}
@@ -3923,8 +3953,11 @@
                    already said, but the dock is a surface: it is the only route to a
                    second session, and a workspace running one agent with no way to
                    open a shell beside it is a dead end, not a simplification. -->
-              {#if terminalLayout.dock === "bottom" && !soleEmbeddedSessionIsDocked}
-                {@render workspaceDockRow()}
+              {#if terminalLayout.dock === "bottom" &&
+                !soleEmbeddedSessionIsDocked &&
+                !workspacePaneEmpty &&
+                !workspacePaneRowOnly}
+                {@render workspaceDockRowBody(hostVisible)}
               {/if}
             </div>
           </div>
@@ -4134,10 +4167,10 @@
   onConfirm={() => void confirmForceDelete()}
 />
 
-<!-- The dock, as a snippet so the surface can anchor it at its own bottom edge
-     when the container pane retires (every session promoted). One definition, so
-     the row the user sees there is the row they see in the pane. -->
-{#snippet workspaceDockRow()}
+<!-- The dock body has one definition for its internal and surface-hosted placements.
+     The internal copy follows the workspace host's visibility; the external copy is
+     visible even while that host is parked because the container pane retired. -->
+{#snippet workspaceDockRowBody(dockHostVisible: boolean)}
   <DockedTerminalPanel
                 {workspaceId}
                 {workspaceHostKey}
@@ -4150,7 +4183,7 @@
                 height={terminalLayout.height}
                 loading={terminalLaunching}
                 disabled={actionsBlocked}
-                {hostVisible}
+                hostVisible={dockHostVisible}
                 onToggle={() => void toggleTerminalPanel()}
                 onNewTerminal={() => void launchTerminalSession()}
                 onSplit={(direction) => void splitTerminal(direction)}
@@ -4158,6 +4191,7 @@
                 onClose={(session) => void closeSession(session)}
                 onRename={renameSession}
                 onMoveToWorkflow={moveSessionToWorkflow}
+                readSessionDrag={readDroppedSession}
                 onPromoteSession={promoteSessionToPane}
                 onDock={dockTerminalPanel}
                 onResize={resizeTerminalPanel}
@@ -4173,6 +4207,13 @@
                   );
                 }}
               />
+{/snippet}
+
+<!-- Registered with the surface, which only renders it while the container pane is
+     retired. Its own visible placement, not the parked host wrapper, owns whether
+     terminal slots may attach. -->
+{#snippet workspaceDockRow()}
+  {@render workspaceDockRowBody(true)}
 {/snippet}
 
 <!-- The workspace's own controls, defined here because every one of them is wired
@@ -4320,26 +4361,6 @@
     width: 100%;
     height: 100%;
     background: var(--bg-primary);
-  }
-
-  /* Once every workflow session is promoted, the bottom dock is the container
-     pane's whole content. Let that dock contribute its own row/saved height while
-     the absent stage contributes none; the surface split then gives the remainder
-     to the detail pane above. */
-  .terminal-view.workspace-pane-row-only {
-    height: auto;
-  }
-
-  .workspace-pane-row-only .terminal-and-sidebar {
-    flex: 0 0 auto;
-  }
-
-  .workspace-pane-row-only .workspace-surface {
-    height: auto;
-  }
-
-  .workspace-pane-row-only .workspace-stage {
-    display: none;
   }
 
   .terminal-main {

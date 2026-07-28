@@ -36,7 +36,9 @@
   let trigger = $state<HTMLButtonElement>();
   let menu = $state<HTMLUListElement>();
   let menuStyle = $state("");
-  const agentTargets = $derived(launchTargets.filter((target) => target.kind === "agent"));
+  const agentTargets = $derived(
+    launchTargets.filter((target) => target.kind === "agent" && target.available),
+  );
   const blocked = $derived(disabled || busy);
 
   function enabledItems(): HTMLButtonElement[] {

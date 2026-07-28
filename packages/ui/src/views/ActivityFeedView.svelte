@@ -286,9 +286,12 @@
     {
       key: "workspace",
       label: inlineWorkspace?.workspacePaneLabel() ?? "Workspace",
-      // Unavailable while every session sits in a promoted pane: the container
-      // would render an empty body, which is a hole in the surface, not a pane.
-      available: workspaceClaim.ref() !== null && inlineWorkspace?.workspacePaneEmpty() !== true,
+      // Retire an empty workflow container behind the surface-hosted dock. A
+      // promoted session then fills the branch beside it without a blank stage.
+      available:
+        workspaceClaim.ref() !== null &&
+        inlineWorkspace?.workspacePaneEmpty() !== true &&
+        inlineWorkspace?.workspacePaneRowOnly() !== true,
       hideable: true,
     },
     ...sessionTabs,
@@ -539,7 +542,6 @@
         routeTabKey={isPRSelection ? effectiveDetailTab : undefined}
         onSelectTab={handlePaneSelect}
         onFocusPane={handlePaneFocus}
-        contentSizedTabKeys={inlineWorkspace?.workspacePaneRowOnly() === true ? ["workspace"] : []}
         paneLeafExtras={workspacePaneControls ? workspaceLeafExtras : undefined}
       >
         {#snippet renderPane(tabKey, visible)}
@@ -594,10 +596,9 @@
           {/if}
         {/snippet}
       </DetailPaneLayout>
-      <!-- The collapsed terminal dock, anchored at this surface's bottom edge.
-           Non-null only while the container pane has retired (every session
-           promoted into a pane of its own): the dock lives inside that pane, and
-           losing the row with it left no way to open a terminal at all. -->
+      <!-- The terminal dock, anchored at this surface's bottom edge while the
+           container pane has retired because it is empty or row-only. The dock
+           normally lives inside that pane, and must remain reachable outside it. -->
       {@render inlineWorkspace?.dockRow()?.()}
     </section>
   {/if}

@@ -94,7 +94,7 @@ describe("WorkspaceCreateSplitButton", () => {
     expect(onCreate).toHaveBeenCalledWith("codex");
   });
 
-  it("shows unavailable agents disabled with their reason", async () => {
+  it("hides unavailable agents from the create-and-launch menu", async () => {
     render(WorkspaceCreateSplitButton, {
       props: {
         label: "Create Workspace",
@@ -105,9 +105,7 @@ describe("WorkspaceCreateSplitButton", () => {
 
     await fireEvent.click(screen.getByRole("button", { name: "Create Workspace options" }));
 
-    const review = screen.getByRole("menuitem", { name: "Review Agent" });
-    expect((review as HTMLButtonElement).disabled).toBe(true);
-    expect(review.getAttribute("title")).toBe("review-agent not found on PATH");
+    expect(screen.queryByRole("menuitem", { name: "Review Agent" })).toBeNull();
   });
 
   it("blocks both segments and exposes the blocking reason", () => {
@@ -215,7 +213,7 @@ describe("WorkspaceCreateSplitButton", () => {
     expect(screen.queryByRole("menu")).toBeNull();
   });
 
-  it("keeps focus on the trigger and dismisses on Tab when every agent is unavailable", async () => {
+  it("disables create-and-launch options when every agent is unavailable", async () => {
     const unavailableTargets = targets.map((target) =>
       target.kind === "agent" ? { ...target, available: false } : target,
     );
@@ -229,15 +227,9 @@ describe("WorkspaceCreateSplitButton", () => {
     const trigger = screen.getByRole("button", {
       name: "Create Workspace options",
     });
-    trigger.focus();
 
+    expect((trigger as HTMLButtonElement).disabled).toBe(true);
     await fireEvent.click(trigger);
-
-    expect(screen.getByRole("menu")).not.toBeNull();
-    expect(document.activeElement).toBe(trigger);
-
-    await fireEvent.keyDown(trigger, { key: "Tab" });
-
     expect(screen.queryByRole("menu")).toBeNull();
   });
 });

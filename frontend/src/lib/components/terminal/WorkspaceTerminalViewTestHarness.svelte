@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { ComponentProps } from "svelte";
+  import { getInlineWorkspaceController } from "../../stores/workspace-host.svelte.ts";
   import SessionTerminalPool from "./SessionTerminalPool.svelte";
   import WorkspaceTerminalView from "./WorkspaceTerminalView.svelte";
 
@@ -10,7 +11,13 @@
   type ViewProps = ComponentProps<typeof WorkspaceTerminalView>;
 
   let props: ViewProps = $props();
+  const externalDock = $derived(
+    props.paneSurface
+      ? getInlineWorkspaceController(props.paneSurface).dockRow()
+      : null,
+  );
 </script>
 
 <SessionTerminalPool />
 <WorkspaceTerminalView {...props} />
+{@render externalDock?.()}

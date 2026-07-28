@@ -1,5 +1,6 @@
 <script lang="ts">
   import { SplitResizeHandle, type SplitResizeEvent } from "@kenn-io/kit-ui";
+  import { clearActiveTabbedPanelDrag } from "@middleman/ui";
   import type { RuntimeSession } from "@middleman/ui/api/types";
   import PlusIcon from "@lucide/svelte/icons/plus";
   import XIcon from "@lucide/svelte/icons/x";
@@ -52,6 +53,8 @@
     onClose?: ((session: RuntimeSession) => void) | undefined;
     onRename?: ((session: RuntimeSession) => void) | undefined;
     onMoveToWorkflow?: ((sessionKey: string) => void) | undefined;
+    /** Reads local runtime drags plus promoted detail-pane sessions when embedded. */
+    readSessionDrag?: ((event: DragEvent) => string | null) | undefined;
     onPromoteSession?: ((sessionKey: string) => void) | undefined;
     onDock?: ((dock: TerminalDock) => void) | undefined;
     onResize?: ((height: number) => void) | undefined;
@@ -87,6 +90,7 @@
     onClose,
     onRename,
     onMoveToWorkflow,
+    readSessionDrag,
     onPromoteSession,
     onDock,
     onResize,
@@ -129,7 +133,9 @@
   }
 
   function readDroppedSession(event: DragEvent): string | null {
-    return readRuntimeSessionDrag(event, workspaceId);
+    return readSessionDrag
+      ? readSessionDrag(event)
+      : readRuntimeSessionDrag(event, workspaceId);
   }
 
   function handleDragOver(event: DragEvent): void {
@@ -146,8 +152,10 @@
     const sessionKey = readDroppedSession(event);
     if (sessionKey === null) return;
     event.preventDefault();
+    event.stopPropagation();
     onDropSession?.(sessionKey);
     clearActiveTerminalDrag();
+    clearActiveTabbedPanelDrag();
   }
 
   function startPanelResize(): void {
@@ -275,6 +283,7 @@
             {onClose}
             {onRename}
             {onMoveToWorkflow}
+            {readSessionDrag}
             {onPromoteSession}
             {onRatioChange}
             {onSplitSession}

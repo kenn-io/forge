@@ -4,7 +4,7 @@
 
 **Goal:** Replace PullDetail's hand-written medium-width Button overrides with Kit UI's measurement-driven `FitStages`.
 
-**Architecture:** PullDetail renders full-label and compact-label action stages through `FitStages`. Both stages use Button's normal `label` prop, while the existing 340px Actions-menu fallback handles the narrowest width.
+**Architecture:** PullDetail gives `FitStages` stateless full-label, compact-label, and Actions-trigger measurement probes. The stateful action controls render once outside the probes and change presentation from the selected stage, so dialog drafts and pending state survive resizing. The measured Actions stage replaces the old fixed-width menu fallback.
 
 **Tech Stack:** Svelte 5, Kit UI `Button` and `FitStages`, Playwright
 
@@ -13,7 +13,7 @@
 - Use the currently pinned `@kenn-io/kit-ui` unchanged.
 - Do not style `.kit-button__label`, `.kit-button__short-label`, or Button icons from PullDetail.
 - Preserve independent command-button semantics; use `FitStages`, not the radio-group `SegmentedControl`.
-- Preserve the existing 340px Actions-menu fallback.
+- Use the measured Actions trigger as the final fit stage; do not use a fixed-width menu fallback.
 
 ---
 
@@ -63,10 +63,10 @@ Button's normal `label` prop.
 
 - [ ] **Step 2: Render FitStages**
 
-Render full and compact primary action rows through `FitStages`, bind its
-selected stage so the separate workspace row uses the matching label variant,
-and remove the legacy 560px/520px Button-internal overrides. Keep the 340px
-whole-row/menu transition.
+Give `FitStages` stateless full-label, compact-label, and Actions-trigger probes,
+and bind its selected stage. Render the real stateful controls once outside the
+measurement host, changing only their labels/layout from that stage. Remove the
+legacy Button-internal overrides and the fixed 340px whole-row/menu transition.
 
 - [ ] **Step 3: Run focused tests**
 

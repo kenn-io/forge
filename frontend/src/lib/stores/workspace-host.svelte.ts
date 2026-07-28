@@ -599,8 +599,8 @@ export interface HostedWorkspaceControls {
   /**
    * Whether the container has only its bottom dock left to render.
    *
-   * The surface uses this transient fact to give the empty workflow stage's
-   * height to its sibling without changing the user's saved pane ratio.
+   * The surface uses this transient fact to retire the container pane and render
+   * the dock at its own bottom edge without changing the user's saved pane tree.
    */
   workspacePaneRowOnly?: boolean;
   /**
@@ -972,7 +972,9 @@ export function getInlineWorkspaceController(surface: InlineWorkspaceSurface): I
     // Only while the container pane is retired: otherwise the dock is already on
     // screen inside it, and a second copy here would be two rows for one dock.
     dockRow: () =>
-      desiredSlot() === surface && workspacePaneEmptyFor(surface) ? (hostedControls?.dockRow ?? null) : null,
+      desiredSlot() === surface && (workspacePaneEmptyFor(surface) || workspacePaneRowOnlyFor(surface))
+        ? (hostedControls?.dockRow ?? null)
+        : null,
     sessionPane: () => sessionPaneSnippet,
   };
   controllers.set(surface, controller);

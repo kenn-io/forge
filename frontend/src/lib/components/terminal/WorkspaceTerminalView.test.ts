@@ -2715,6 +2715,34 @@ describe("WorkspaceTerminalView", () => {
     expect(controls.getByRole("button", { name: "Delete" })).toBeTruthy();
   });
 
+  it("carries the dock modes into the pane controls, since the header that held them is gone", async () => {
+    // Collapse is the only control that puts the whole workspace away: the pane's own
+    // close button hides one pane and leaves a promoted session on screen. Hiding the
+    // header bar in a pane took collapse with it, so the popover has to carry it.
+    const setMode = vi.fn();
+    claimForPrs();
+
+    render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+        paneSurface: "prs" as const,
+        inlineDock: { getMode: () => "split" as const, setMode },
+      },
+    });
+
+    await waitFor(() => expect(hostedWorkspaceControls()).not.toBeNull());
+    expect(document.querySelector(".header-bar")).toBeNull();
+    render(WorkspacePaneControls);
+    await fireEvent.click(screen.getByRole("button", { name: "Workspace controls" }));
+
+    const controls = within(screen.getByRole("dialog", { name: "Workspace controls" }));
+    await fireEvent.click(controls.getByRole("button", { name: "Expand Terminal" }));
+    expect(setMode).toHaveBeenCalledWith("expanded");
+
+    await fireEvent.click(controls.getByRole("button", { name: "Collapse Terminal" }));
+    expect(setMode).toHaveBeenCalledWith("collapsed");
+  });
+
   it("keeps each workspace's own preset apply pending while another one runs", async () => {
     // Two applies in flight at once. With a single owner slot, B's apply overwrote
     // A's and B finishing re-enabled A's control while A's sessions were still being
@@ -2884,6 +2912,84 @@ describe("WorkspaceTerminalView", () => {
 
       await waitFor(() => expect(screen.getByText(/tmux session is no longer running/)).toBeTruthy());
       expect(screen.queryByRole("dialog", { name: /Launch a session/ })).toBeNull();
+    });
+
+    it("stays away while a workspace is still being created", async () => {
+      // Retry leaves the workspace "creating" while the runtime the view still holds
+      // -- zero sessions, from before the failure -- says it has nothing to show.
+      // Refusing only "error" would put the launcher over a half-built worktree.
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockImplementation((input: Request | URL | string) => {
+          const { pathname } = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
+          if (/\/workspaces\/[^/]+$/.test(pathname)) {
+            return Promise.resolve(Response.json({ ...workspaceResponse, status: "creating" }));
+          }
+          return Promise.resolve(Response.json({}));
+        }),
+      );
+      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
+      claimForPrs();
+
+      render(WorkspaceTerminalView, {
+        props: { workspaceId: "ws-1", paneSurface: "prs" as const },
+      });
+
+      await waitFor(() => expect(mocks.getWorkspaceRuntime).toHaveBeenCalled());
+      await waitFor(() => expect(screen.queryByRole("dialog", { name: /Launch a session/ })).toBeNull());
+    });
+
+    it("gives a recovered workspace its launcher back", async () => {
+      // The view withdrew the launcher itself when the workspace broke under it, so
+      // the once-per-workspace marker has to come off with it. Kept, it would spend
+      // the workspace's one automatic launcher on a state that refused to show it,
+      // and the workspace that recovers -- setup finished, still nothing running --
+      // would come back with nothing on screen and no way to know why.
+      const eventListeners: Record<string, () => void> = {};
+      vi.stubGlobal(
+        "EventSource",
+        class {
+          addEventListener(type: string, callback: () => void): void {
+            eventListeners[type] = callback;
+          }
+          close(): void {}
+        },
+      );
+      let status = "ready";
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockImplementation((input: Request | URL | string) => {
+          const { pathname } = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
+          if (/\/workspaces\/[^/]+$/.test(pathname)) {
+            return Promise.resolve(
+              Response.json({
+                ...workspaceResponse,
+                status,
+                error_message: status === "error" ? "tmux session is no longer running: middleman-ws-1" : null,
+              }),
+            );
+          }
+          return Promise.resolve(Response.json({}));
+        }),
+      );
+      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
+      claimForPrs();
+
+      render(WorkspaceTerminalView, {
+        props: { workspaceId: "ws-1", paneSurface: "prs" as const },
+      });
+      await waitFor(() => expect(screen.getByRole("dialog", { name: /Launch a session/ })).toBeTruthy());
+
+      // The tmux server drops the session out from under a workspace the view is
+      // already showing a launcher for.
+      status = "error";
+      eventListeners["reconnect.stale"]?.();
+      await waitFor(() => expect(screen.getByText(/tmux session is no longer running/)).toBeTruthy());
+      expect(screen.queryByRole("dialog", { name: /Launch a session/ })).toBeNull();
+
+      status = "ready";
+      eventListeners["reconnect.stale"]?.();
+      await waitFor(() => expect(screen.getByRole("dialog", { name: /Launch a session/ })).toBeTruthy());
     });
 
     it("leaves a docked terminal alone instead of covering it with the launcher", async () => {
@@ -3179,9 +3285,44 @@ describe("WorkspaceTerminalView", () => {
     // to happen only in the tab strip's select handler, so that pane came up empty
     // and stayed empty until something re-selected the tab -- which read as a broken
     // pane rather than one that needed a click.
+    //
+    // TWO sessions on purpose. With one, the pane renders it through the sole-session
+    // path, which goes nowhere near the workflow tree - so a single session would pass
+    // this whether the mounting effect exists or not.
     localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
-    localStorage.setItem("middleman-workspace-terminal-layout:ws-1", persistedSplitWorkflowLayout("ws-1:helper"));
-    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithStaleSession());
+    localStorage.setItem(
+      "middleman-workspace-terminal-layout:ws-1",
+      JSON.stringify({
+        version: 1,
+        open: false,
+        dock: "bottom",
+        height: 300,
+        activeSessionKey: null,
+        tree: null,
+        sessionRegions: { "ws-1:helper": "workflow", "ws-1:reviewer": "workflow" },
+        workflowMode: "tabs",
+        workflowTree: {
+          type: "split",
+          id: "wf-split",
+          direction: "horizontal",
+          ratio: 0.5,
+          first: {
+            type: "leaf",
+            id: "wf-helper",
+            tabs: ["session:ws-1:helper"],
+            activeTabKey: "session:ws-1:helper",
+          },
+          second: {
+            type: "leaf",
+            id: "wf-reviewer",
+            tabs: ["session:ws-1:reviewer"],
+            activeTabKey: "session:ws-1:reviewer",
+          },
+        },
+        terminalGroups: [],
+      }),
+    );
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoWorkflowSessions());
     claimForPrs();
 
     render(WorkspaceTerminalView, {
@@ -3191,7 +3332,9 @@ describe("WorkspaceTerminalView", () => {
       },
     });
 
-    await waitFor(() => expect(document.querySelectorAll(".session-terminal-slot").length).toBe(1));
+    // One per rendered leaf: what the tree shows is what has a terminal.
+    await waitFor(() => expect(document.querySelectorAll(".session-terminal-slot").length).toBe(2));
+    expect(document.querySelector(".sole-embedded-session")).toBeNull();
   });
 
   it("publishes a collapsed dock's session without making it current", async () => {

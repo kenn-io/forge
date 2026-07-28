@@ -135,6 +135,18 @@ async function openTerminalPanel(page: Page): Promise<Locator> {
   return container;
 }
 
+/**
+ * Put the whole workspace away.
+ *
+ * A detail pane hides the workspace's own header bar, so collapse now lives in the
+ * pane's controls popover. The pane's close button is not a substitute: it hides one
+ * pane, while collapse reaches the container and every promoted session with it.
+ */
+async function collapseTerminal(page: Page): Promise<void> {
+  await page.getByRole("button", { name: "Workspace controls" }).first().click();
+  await page.getByRole("button", { name: "Collapse Terminal" }).click();
+}
+
 async function typeIntoTerminal(page: Page, container: Locator, command: string): Promise<void> {
   await container.click({ position: { x: 10, y: 10 } });
   await page.keyboard.type(command);
@@ -225,7 +237,7 @@ test.describe("inline workspace pane continuity", () => {
     });
   });
 
-  test("expanding an inline workspace keeps the app frame fixed and its controls reachable", async ({ page }) => {
+  test("maximizing an inline workspace keeps the app frame fixed and its controls reachable", async ({ page }) => {
     test.skip(
       !hasCommand("git") || !hasCommand("tmux", ["-V"]),
       "git and tmux are required for the real workspace flow",
@@ -242,8 +254,15 @@ test.describe("inline workspace pane continuity", () => {
       await dismissWorkspaceLauncher(page);
       const appMain = page.locator(".app-main");
       const itemRail = page.locator(".issue-list");
-      const expand = page.getByRole("button", { name: "Expand Terminal" });
-      await expect(expand).toBeVisible();
+      // The pane's own controls, in its tab strip: a detail pane never shows the
+      // workspace's header bar, so maximize and close are what expand and collapse
+      // the inline dock now.
+      const workspaceLeaf = page.locator(".tabbed-panel-leaf").filter({
+        has: page.locator(".detail-pane-workspace-slot"),
+      });
+      const zoom = workspaceLeaf.locator('[data-testid="pane-toggle-zoom"]');
+      const close = workspaceLeaf.locator('[data-testid="pane-hide-workspace"]');
+      await expect(zoom).toBeVisible();
       const overflowMetrics = await appMain.evaluate((element) => {
         const overflowProbe = document.createElement("div");
         overflowProbe.dataset.testOverflowProbe = "true";
@@ -256,16 +275,17 @@ test.describe("inline workspace pane continuity", () => {
       await expect(appMain).toHaveJSProperty("scrollTop", 0);
       await appMain.locator("[data-test-overflow-probe]").evaluate((element) => element.remove());
 
-      await expand.click();
+      await zoom.click();
 
-      const collapse = page.getByRole("button", { name: "Collapse Terminal" });
-      const showDetails = page.getByRole("button", { name: "Show Details" });
-      await expect(showDetails).toBeVisible();
-      await expect(collapse).toBeVisible();
-      await showDetails.click();
-      await expect(expand).toBeVisible();
-      await expand.click();
-      await expect(showDetails).toBeVisible();
+      // Maximized: the control flips to Restore, and the pane's close is still there
+      // to put the workspace away entirely.
+      const restore = workspaceLeaf.getByRole("button", { name: "Restore pane size" });
+      await expect(restore).toBeVisible();
+      await expect(close).toBeVisible();
+      await restore.click();
+      await expect(workspaceLeaf.getByRole("button", { name: "Maximize pane" })).toBeVisible();
+      await zoom.click();
+      await expect(restore).toBeVisible();
       await expect(appMain).toHaveJSProperty("scrollTop", 0);
       await expect
         .poll(async () => {
@@ -289,7 +309,7 @@ test.describe("inline workspace pane continuity", () => {
           panelBottomDelta: 0,
         });
 
-      await collapse.click();
+      await close.click();
       await expect(page.locator(".detail-pane-workspace-slot")).toHaveCount(0);
     } finally {
       await api?.dispose();
@@ -298,10 +318,9 @@ test.describe("inline workspace pane continuity", () => {
   });
 
   test("the pane's own maximize and close controls keep the live terminal", async ({ page }) => {
-    // The terminal toolbar's Expand/Collapse are covered above. These are the
-    // pane-native controls that replaced the dock's chrome, and they drive the
-    // same layout state through a different path, so they need their own proof
-    // that the single hosted terminal is reparented rather than rebuilt.
+    // The frame-geometry side of maximizing is covered above. This is the same pair
+    // of pane-native controls driven for a different question: that the single hosted
+    // terminal is reparented across the layout change rather than rebuilt.
     test.skip(
       !hasCommand("git") || !hasCommand("tmux", ["-V"]),
       "git and tmux are required for the real workspace flow",
@@ -597,7 +616,7 @@ test.describe("inline workspace pane continuity", () => {
 
       // Collapse reaches both panes. A promoted terminal left on screen is the whole
       // workspace still sitting there while the button claims it is away.
-      await page.getByRole("button", { name: "Collapse Terminal" }).click();
+      await collapseTerminal(page);
       await expect(page.locator(".detail-pane-workspace-slot")).toHaveCount(0);
       await expect(page.locator(".session-terminal-slot")).toHaveCount(0);
 
@@ -643,7 +662,7 @@ test.describe("inline workspace pane continuity", () => {
       await expect(promoted).toBeVisible();
       await typeMarkerCommand(page, promoted, workspace.worktree_path, "cross-marker-before");
 
-      await page.getByRole("button", { name: "Collapse Terminal" }).click();
+      await collapseTerminal(page);
       await expect(page.locator(".session-terminal-slot")).toHaveCount(0);
 
       // The other issue's workspace, brought back on screen. It has no promoted pane
@@ -658,7 +677,7 @@ test.describe("inline workspace pane continuity", () => {
       // from the record that is the only route back to it.
       await selectIssueByTitle(page, SAFARI_ISSUE_TITLE);
       await expect(page.locator(".detail-pane-workspace-slot .workspace-host-wrapper")).toBeVisible();
-      await page.getByRole("button", { name: "Collapse Terminal" }).click();
+      await collapseTerminal(page);
       await expect(page.locator(".detail-pane-workspace-slot")).toHaveCount(0);
       await expect(page.locator(".session-terminal-slot")).toHaveCount(0);
 

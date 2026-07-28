@@ -641,18 +641,33 @@
    * the Launch button in the pane's controls.
    */
   function autoOpenLauncher(): void {
-    // Never over a broken workspace, on any automatic path. A worktree whose setup
-    // failed, or whose tmux server dropped the session out from under it, reports
-    // zero sessions for the same reason it reports an error - and the launcher
-    // answered that by covering the error message, and its Retry and Delete, with an
-    // invitation to start an agent inside something that cannot run one.
-    if (workspace?.status === "error") return;
+    // Only over a workspace that can actually host a session, on every automatic
+    // path. A worktree still being created, or one whose setup failed - or whose tmux
+    // server dropped the session out from under it - reports zero sessions for the
+    // same reason it reports its state, and the launcher answered that by covering the
+    // state message, and the Retry and Delete beside it, with an invitation to start
+    // an agent inside something that cannot run one.
+    if (workspace?.status !== "ready") return;
     if (launcherAutoOpenedFor.includes(viewWorkspaceKey)) return;
     launcherAutoOpenedFor = [...launcherAutoOpenedFor, viewWorkspaceKey];
     launcherState = { workspaceKey: viewWorkspaceKey, auto: true };
   }
 
   function closeLauncher(): void {
+    launcherState = null;
+  }
+
+  /**
+   * Withdraw an automatic launcher the view should never have shown.
+   *
+   * The marker goes with it, unlike a dismissal: it exists to stop a launcher the
+   * USER closed from coming back, and holding it for one the view took back itself
+   * would mean a workspace that recovers - Retry, setup finishes, still no sessions -
+   * never gets the launcher it should have had.
+   */
+  function withdrawAutoLauncher(): void {
+    if (launcherState?.workspaceKey !== viewWorkspaceKey || !launcherState.auto) return;
+    launcherAutoOpenedFor = launcherAutoOpenedFor.filter((key) => key !== viewWorkspaceKey);
     launcherState = null;
   }
 
@@ -694,15 +709,12 @@
   // session is there, and open the launcher when there is none.
   $effect(() => {
     if (!launcherMode || !runtimeLive) return;
-    // A workspace that turns out to be broken takes its launcher back. The runtime
-    // load lands before the workspace record does, so the overlay is already up by
-    // the time the error is known - and the guard in autoOpenLauncher cannot undo
-    // what it did not do.
-    if (workspace?.status === "error") {
-      const opened = launcherState;
-      untrack(() => {
-        if (opened?.workspaceKey === viewWorkspaceKey && opened.auto) closeLauncher();
-      });
+    // A workspace that turns out not to be ready takes its launcher back. The runtime
+    // load lands before the workspace record does, so the overlay is already up by the
+    // time the state is known - and the guard in autoOpenLauncher cannot undo what it
+    // did not do.
+    if (workspace !== null && workspace.status !== "ready") {
+      untrack(() => withdrawAutoLauncher());
       return;
     }
     const tabs = workflowTabDescriptors;
@@ -4054,6 +4066,42 @@
      to this view's state. In a detail pane the pane's popover renders this, so the
      controls follow the workspace without the state leaving the view. -->
 {#snippet workspaceControls()}
+  {#if controlsInPane && inlineDock && inlineDockMode !== null}
+    <!-- The dock's own modes, which the header bar carries everywhere it still
+         renders - so this copy is gated on exactly the case that hides it. A detail
+         pane's close button is not a replacement: it puts one pane away, while a
+         session the user promoted into a sibling pane stays on screen, so the
+         workspace is still there while the button claims it is gone. Collapse is
+         the only control that reaches every pane the workspace occupies. -->
+    <Button
+      size="sm"
+      surface="soft"
+      tone="neutral"
+      label={inlineDockMode === "expanded" ? "Show Details" : "Expand Terminal"}
+      disabled={inlineDockMode !== "expanded" && inlineDockExpandBlocked}
+      title={
+        inlineDockMode !== "expanded" && inlineDockExpandBlocked
+          ? "Close the open dialog first."
+          : undefined
+      }
+      onclick={() => inlineDock?.setMode(inlineDockMode === "expanded" ? "split" : "expanded")}
+    >
+      {#if inlineDockMode === "expanded"}
+        <ChevronsDownIcon size="13" strokeWidth="2" aria-hidden="true" />
+      {:else}
+        <ChevronsUpIcon size="13" strokeWidth="2" aria-hidden="true" />
+      {/if}
+    </Button>
+    <Button
+      size="sm"
+      surface="soft"
+      tone="neutral"
+      label="Collapse Terminal"
+      onclick={() => inlineDock?.setMode("collapsed")}
+    >
+      <PanelBottomCloseIcon size="13" strokeWidth="2" aria-hidden="true" />
+    </Button>
+  {/if}
   {#if !launcherMode}
     <!-- Presets compose a whole multi-session workflow, which is what the standalone
          Workspaces tab is for. A PR or issue pane hosts one workspace beside the

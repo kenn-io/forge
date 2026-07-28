@@ -131,6 +131,13 @@ test.describe("embedded workspace launcher", () => {
       // untouched rather than reopening over it.
       await page.keyboard.press("Escape");
       await expect(launcher).toBeHidden();
+
+      // The popover deliberately stays open under a dialog it opened, and it floats
+      // over the terminal, so it has to come down before the keystrokes below can
+      // reach it. Its own trigger, not Escape: with the launcher gone Escape belongs
+      // to the detail view, which would deselect the issue and take the pane with it.
+      await page.getByRole("button", { name: "Workspace controls" }).first().click();
+      await expect(controls).toBeHidden();
       await typeMarkerCommand(page, container, workspace.worktree_path, "launcher-marker-after-dismiss");
     } finally {
       await api?.dispose();
@@ -170,7 +177,9 @@ test.describe("embedded workspace launcher", () => {
         has: page.getByRole("tab", { name: "Conversation" }),
       });
 
-      // 1. Collapsed.
+      // 1. Collapsed. A detail pane hides the workspace's header bar, so the collapse
+      //    the maintainer reaches for is the one in the pane's controls popover.
+      await page.getByRole("button", { name: "Workspace controls" }).first().click();
       await page.getByRole("button", { name: "Collapse Terminal" }).click();
       await expect(slot).toHaveCount(0);
       await runPaletteCommand(page, "Launch a workspace session");

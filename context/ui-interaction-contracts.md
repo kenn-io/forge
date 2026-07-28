@@ -321,9 +321,14 @@ Keyboard handlers must have one clear owner for each key press.
   (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::soleEmbeddedSession`).
 - A detail pane NEVER shows the workspace's own header bar (name, branch, Expand and
   Collapse Terminal, Delete). The pane's tab strip already names the workspace and
-  carries its controls, and Expand/Collapse duplicate the leaf's maximize and close.
-  A flattened surface keeps the chrome, since it has no per-leaf strip to carry any
-  of it (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte`).
+  carries its controls. A flattened surface keeps the chrome, since it has no
+  per-leaf strip to carry any of it
+  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte`).
+- The dock modes (Expand Terminal / Show Details / Collapse Terminal) move into the
+  pane's controls popover wherever the header bar is hidden, gated on exactly the
+  complement of the header's own condition so neither state shows two copies. The
+  leaf's close button is NOT a substitute for Collapse: it hides one pane, while
+  collapse reaches the container and every session promoted out of it.
 - A session the workflow tree is SHOWING mounts its terminal without a click: one per
   rendered leaf's active tab. Mounting only from the tab strip's select handler left
   every workspace opened with an agent already running showing an empty pane, which

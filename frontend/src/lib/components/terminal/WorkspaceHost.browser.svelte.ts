@@ -341,8 +341,8 @@ describe("WorkspaceHost", () => {
     }, WAIT);
 
     // A detail pane never gets the workspace's own header: the pane's tab strip
-    // already names it and carries its controls, and Expand/Collapse Terminal only
-    // restated the leaf's own maximize and close.
+    // already names it, and the dock modes move into the pane's controls popover,
+    // which the surface renders outside this host.
     const prsScope = page.elementLocator(host);
     await vi.waitFor(() => {
       expect(host.querySelector(".header-end")).toBeNull();

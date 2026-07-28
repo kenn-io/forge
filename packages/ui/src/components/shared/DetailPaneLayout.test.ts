@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/svelte";
 import { flushSync } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import DetailPaneLayoutTestHarness from "./DetailPaneLayoutTestHarness.svelte";
@@ -65,6 +65,27 @@ function startForeignTabDrag(scope: string, tabKey: string): DataTransfer {
   const dataTransfer = fakeDataTransfer();
   startTabbedPanelTabDrag({ dataTransfer } as unknown as DragEvent, { scope, tabKey });
   return dataTransfer;
+}
+
+/**
+ * Fire a drag event that actually carries a pointer position.
+ *
+ * `fireEvent.dragOver`/`fireEvent.drop` drop clientX/clientY here, so the edge
+ * maths ran on NaN -- and `NaN > threshold` is false, which made every drop read
+ * as the first edge in the list. A centre drop, which is how a tab is appended to
+ * a leaf, was impossible to express.
+ */
+function fireDragEvent(
+  target: Element,
+  type: "dragover" | "drop",
+  init: { dataTransfer: DataTransfer; clientX: number; clientY: number },
+): void {
+  const event = new Event(type, { bubbles: true, cancelable: true });
+  Object.assign(event, init);
+  target.dispatchEvent(event);
+  // fireEvent awaits a tick for us; a bare dispatch does not, and every assertion
+  // here reads rendered DOM.
+  flushSync();
 }
 
 beforeEach(() => {
@@ -273,13 +294,62 @@ describe("detail pane layout", () => {
   });
 
   it("marks each leaf's own tab selected so a split has no unselected tablist", () => {
-    render(DetailPaneLayoutTestHarness, { layout: store(splitTree()) });
+    // Both leaves hold two tabs, so both still draw a strip: a leaf holding only
+    // the workspace draws none, and a tablist that is not rendered cannot be the
+    // one reporting nothing selected.
+    render(DetailPaneLayoutTestHarness, {
+      layout: store({
+        type: "split",
+        id: "split-root",
+        direction: "vertical",
+        ratio: 0.5,
+        first: { type: "leaf", id: "leaf-detail", tabs: ["conversation", "files"], activeTabKey: "conversation" },
+        second: { type: "leaf", id: "leaf-workspace", tabs: ["workspace"], activeTabKey: "workspace" },
+      }),
+    });
 
-    // Keying this to one tree-wide value would leave the workspace leaf's
-    // tablist reporting nothing selected.
+    // Keying this to one tree-wide value would leave the second leaf's tablist
+    // reporting nothing selected.
     expect(screen.getByRole("tab", { name: "Conversation" }).getAttribute("aria-selected")).toBe("true");
-    expect(screen.getByRole("tab", { name: "Workspace" }).getAttribute("aria-selected")).toBe("true");
     expect(screen.getByRole("tab", { name: "Files" }).getAttribute("aria-selected")).toBe("false");
+  });
+
+  it("drops the strip for a leaf that holds only the workspace, keeping its controls", () => {
+    // The workspace pane draws its own strip inside - one tab per session, plus the
+    // dock - so a leaf holding it alone stacked two rows to name one thing, and the
+    // outer one said only "Workspace". The controls move onto the pane instead, with
+    // a grip standing in for the tab as the drag source.
+    render(DetailPaneLayoutTestHarness, { layout: store(splitTree()), withLeafExtras: true });
+
+    const workspaceBody = screen.getByTestId("pane-workspace").closest(".tabbed-panel-body")!;
+    expect(workspaceBody.parentElement?.querySelector('[role="tablist"]')).toBeNull();
+
+    // Anchored to the leaf, not the body: a pane that resizes itself (a terminal
+    // refitting) would otherwise drag the cluster around with it.
+    const cluster = screen.getByTestId("tabbed-panel-solo-actions");
+    expect(workspaceBody.contains(cluster)).toBe(false);
+    expect(workspaceBody.closest(".tabbed-panel-leaf")?.contains(cluster)).toBe(true);
+    expect(within(cluster).getByRole("button", { name: "Move Workspace" })).toBeTruthy();
+    expect(within(cluster).getByTestId("pane-hide-workspace")).toBeTruthy();
+    expect(within(cluster).getByTestId("pane-toggle-zoom")).toBeTruthy();
+    expect(within(cluster).getByTestId("leaf-extra-leaf-workspace")).toBeTruthy();
+
+    // The detail leaf holds two tabs, so it keeps the strip it needs to tell them
+    // apart.
+    expect(screen.getByRole("tab", { name: "Conversation" })).toBeTruthy();
+  });
+
+  it("brings the strip back when a second tab lands in the workspace leaf", () => {
+    // Two panes in a leaf need a row to choose between them, so the suppression is
+    // about the leaf's contents, not about the workspace pane being special.
+    const layout = store(splitTree());
+    render(DetailPaneLayoutTestHarness, { layout });
+    expect(screen.queryByRole("tab", { name: "Workspace" })).toBeNull();
+
+    flushSync(() => layout.appendTabToLeaf("files", "leaf-workspace"));
+
+    expect(screen.getByRole("tab", { name: "Workspace" })).toBeTruthy();
+    expect(screen.queryByTestId("tabbed-panel-solo-actions")).toBeNull();
   });
 
   it("drops a stored zoom once the maximized pane stops being available", async () => {
@@ -382,9 +452,12 @@ describe("promoting a session pane by drop", () => {
     render(DetailPaneLayoutTestHarness, { layout });
     const dataTransfer = startForeignTabDrag(layout.dragScope, AGENT_PANE);
 
-    const workspaceStrip = screen.getByRole("tab", { name: "Workspace" }).closest('[role="tablist"]')!;
-    await fireEvent.dragOver(workspaceStrip, { dataTransfer, clientX: 400 });
-    await fireEvent.drop(workspaceStrip, { dataTransfer, clientX: 400 });
+    // Onto the middle of the body, not a strip: a leaf holding only the workspace
+    // draws no strip of its own, so the body's centre is the append target and its
+    // edges are the splits.
+    const body = screen.getByTestId("pane-workspace").closest(".tabbed-panel-body")!;
+    fireDragEvent(body, "dragover", { dataTransfer, clientX: 800, clientY: 400 });
+    fireDragEvent(body, "drop", { dataTransfer, clientX: 800, clientY: 400 });
 
     // The surface's own mutations all refuse a source they do not already hold,
     // so without a promotion path this drop is silently inert.
@@ -400,8 +473,8 @@ describe("promoting a session pane by drop", () => {
     // mockWidth makes every rect 1600x800 from the origin, so a drop near x=0
     // lands on the left edge: a split, not a tab.
     const body = screen.getByTestId("pane-workspace").closest(".tabbed-panel-body")!;
-    await fireEvent.dragOver(body, { dataTransfer, clientX: 2, clientY: 400 });
-    await fireEvent.drop(body, { dataTransfer, clientX: 2, clientY: 400 });
+    fireDragEvent(body, "dragover", { dataTransfer, clientX: 2, clientY: 400 });
+    fireDragEvent(body, "drop", { dataTransfer, clientX: 2, clientY: 400 });
 
     expect(layout.hasTab(AGENT_PANE)).toBe(true);
     expect(layout.leafIDForTab(AGENT_PANE)).not.toBe("leaf-workspace");
@@ -412,9 +485,9 @@ describe("promoting a session pane by drop", () => {
     render(DetailPaneLayoutTestHarness, { layout });
     const dataTransfer = startForeignTabDrag(layout.dragScope, "session:bogus");
 
-    const workspaceStrip = screen.getByRole("tab", { name: "Workspace" }).closest('[role="tablist"]')!;
-    await fireEvent.dragOver(workspaceStrip, { dataTransfer, clientX: 400 });
-    await fireEvent.drop(workspaceStrip, { dataTransfer, clientX: 400 });
+    const body = screen.getByTestId("pane-workspace").closest(".tabbed-panel-body")!;
+    fireDragEvent(body, "dragover", { dataTransfer, clientX: 800, clientY: 400 });
+    fireDragEvent(body, "drop", { dataTransfer, clientX: 800, clientY: 400 });
 
     // A malformed key would be pruned on the next load, so accepting it writes a
     // pane that silently disappears.
@@ -439,9 +512,11 @@ describe("drag state after a drop", () => {
     await fireEvent.dragStart(source, { dataTransfer });
     expect(sourceStrip.className).toContain("drag-sorting");
 
-    const targetStrip = screen.getByRole("tab", { name: "Workspace" }).closest('[role="tablist"]')!;
-    await fireEvent.dragOver(targetStrip, { dataTransfer, clientX: 400 });
-    await fireEvent.drop(targetStrip, { dataTransfer, clientX: 400 });
+    // Onto the centre of the workspace pane's body: that leaf holds the workspace
+    // alone, so it draws no strip and its body is the whole drop surface.
+    const target = screen.getByTestId("pane-workspace").closest(".tabbed-panel-body")!;
+    fireDragEvent(target, "dragover", { dataTransfer, clientX: 800, clientY: 400 });
+    fireDragEvent(target, "drop", { dataTransfer, clientX: 800, clientY: 400 });
 
     expect(layout.leafIDForTab("conversation")).toBe("leaf-workspace");
     const remainingStrip = screen.getByRole("tab", { name: "Files" }).closest('[role="tablist"]')!;

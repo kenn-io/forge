@@ -257,8 +257,10 @@ describe("ActivityFeedView detail panes", () => {
         pullDetail: pullDetailFixture(12, { id: "ws-1", status: "ready" }),
       });
       expect(controller.claim).toHaveBeenCalled();
-      expect(screen.getByRole("tab", { name: "Workspace" })).toBeTruthy();
+      // The slot, not a tab: a leaf holding the workspace alone draws no strip,
+      // because the workspace pane already draws one of its own inside.
       expect(document.querySelector(".detail-pane-workspace-slot")).toBeTruthy();
+      expect(screen.queryByRole("tab", { name: "Workspace" })).toBeNull();
       cleanup();
     }
   });

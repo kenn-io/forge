@@ -346,7 +346,6 @@ test.describe("inline workspace pane continuity", () => {
         has: page.locator(".detail-pane-workspace-slot"),
       });
       const zoom = workspaceLeaf.locator('[data-testid="pane-toggle-zoom"]');
-
       await zoom.click();
       await expect(page.locator(".tabbed-panel-split-child.zoomed")).toBeVisible();
       // Maximizing must not rebuild the shell: the tagged node is the live one.
@@ -723,12 +722,10 @@ test.describe("inline workspace pane continuity", () => {
       const focusTerminal = page.getByRole("button", { name: "Focus Terminal" });
 
       // 1. Tabbed behind a sibling: drag the workspace into the conversation's
-      //    leaf, then switch away from it. Neither hidden nor maximized.
-      //    Found through its leaf rather than by name: the pane holds one session,
-      //    so its tab carries that session's name instead of "Workspace".
+      //    leaf, then switch away from it. Neither hidden nor maximized. Alone in
+      //    its leaf the pane has no tab; the floating grip is its drag source.
       await workspaceLeaf
-        .getByRole("tab")
-        .first()
+        .getByRole("button", { name: /^Move / })
         .dragTo(conversationLeaf.getByRole("tab", { name: "Conversation" }));
       await page.getByRole("tab", { name: "Conversation" }).click();
       await expect(page.locator(".detail-pane-workspace-slot")).toHaveCount(0);

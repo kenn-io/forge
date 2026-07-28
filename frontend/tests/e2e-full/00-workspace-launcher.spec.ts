@@ -195,10 +195,13 @@ test.describe("embedded workspace launcher", () => {
       await page.keyboard.press("Escape");
 
       // 3. Tabbed behind a sibling, which leaves it neither hidden nor maximized.
+      //    Alone in its leaf the workspace pane has no tab to drag - the floating
+      //    grip is its drag source - and dropping on the conversation strip files
+      //    it as a tab behind Conversation.
       await page
         .locator(".tabbed-panel-leaf")
         .filter({ has: slot })
-        .getByRole("tab", { name: "Workspace" })
+        .getByRole("button", { name: "Move Workspace" })
         .dragTo(conversationLeaf.getByRole("tab", { name: "Conversation" }));
       await page.getByRole("tab", { name: "Conversation" }).click();
       await expect(slot).toHaveCount(0);
@@ -242,7 +245,9 @@ test.describe("embedded workspace launcher", () => {
       const terminal = page.locator(".detail-pane-workspace-slot .terminal-container");
       await expect(terminal).toBeVisible();
       await typeMarkerCommand(page, terminal, workspace.worktree_path, "sole-session-marker");
-      await expect(page.getByRole("tab", { name: "Shell" })).toBeVisible();
+      // Alone in its leaf the pane draws no tab; the floating grip carries the
+      // session's name instead, so it is where a rename has to show up.
+      await expect(page.getByRole("button", { name: "Move Shell" })).toBeVisible();
 
       async function openControls(): Promise<void> {
         await page.getByRole("button", { name: "Workspace controls" }).first().click();
@@ -260,8 +265,8 @@ test.describe("embedded workspace launcher", () => {
       await rename.getByRole("button", { name: "Save" }).click();
       await expect(rename).toBeHidden();
 
-      // The pane's own tab is named after the session, so a rename has to reach it.
-      await expect(page.getByRole("tab", { name: "Reviewer shell" })).toBeVisible();
+      // The pane's grip is named after the session, so a rename has to reach it.
+      await expect(page.getByRole("button", { name: "Move Reviewer shell" })).toBeVisible();
       await typeMarkerCommand(page, terminal, workspace.worktree_path, "sole-session-marker-renamed");
 
       await openControls();
@@ -275,7 +280,7 @@ test.describe("embedded workspace launcher", () => {
 
       // Nothing running: the pane goes back to offering a launch rather than a
       // terminal, which is the only state left that a workspace can be in.
-      await expect(page.getByRole("tab", { name: "Workspace" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Move Workspace" })).toBeVisible();
       await expect(page.locator(".detail-pane-workspace-slot .terminal-container")).toHaveCount(0);
     } finally {
       await api?.dispose();

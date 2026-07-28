@@ -1,4 +1,5 @@
 <script lang="ts">
+  import GripVerticalIcon from "@lucide/svelte/icons/grip-vertical";
   import { SplitResizeHandle, StatusDot, type SplitResizeEvent } from "@kenn-io/kit-ui";
   import { untrack, type Snippet } from "svelte";
   import Self from "./TabbedPanelTree.svelte";
@@ -42,6 +43,16 @@
      * so callers can act on its id (split, maximize) rather than on a tab.
      */
     leafActions?: Snippet<[TabbedPanelLeaf]> | undefined;
+    /**
+     * Tabs that draw their own tab strip inside the pane body.
+     *
+     * A leaf holding one of these and nothing else renders no strip of its own: the
+     * pane below already has one, and two rows stacked to name the same thing is
+     * chrome. Its leaf actions float at the top-right of the body instead, which is
+     * where the pane's own strip ends, so the two read as one bar. A second tab
+     * landing in the leaf brings the strip back - there are two things to name then.
+     */
+    soloChromeTabKeys?: readonly string[];
     /** Leaf rendered at full size; every other subtree is hidden but stays mounted. */
     zoomedLeafID?: string | null;
     /**
@@ -89,6 +100,7 @@
     tabIcon = undefined,
     tabActions = undefined,
     leafActions = undefined,
+    soloChromeTabKeys = [],
     zoomedLeafID = null,
     ancestorHidden = false,
     scrollPanels = false,
@@ -503,7 +515,9 @@
   <!-- A branch removed mid-flush: its children are still mounted for the rest of
        the tick, with nothing left to render. -->
 {:else if node.type === "leaf"}
-  <section class="tabbed-panel-leaf" aria-label={leafLabel}>
+  {@const soloChrome = node.tabs.length === 1 && soloChromeTabKeys.includes(node.tabs[0]!)}
+  <section class={["tabbed-panel-leaf", { "solo-chrome": soloChrome }]} aria-label={leafLabel}>
+    {#if !soloChrome}
     <div
       class={["tabbed-panel-tabs", { "drag-sorting": draggedTabKey !== null }]}
       role="tablist"
@@ -590,6 +604,7 @@
         </div>
       {/if}
     </div>
+    {/if}
     <div
       class={["tabbed-panel-body", { "show-drop-targets": dropTargetsVisible }]}
       role="group"
@@ -622,6 +637,31 @@
         aria-hidden="true"
       ></div>
     </div>
+    {#if soloChrome}
+      {@const soloTab = tabForKey(node.tabs[0]!)}
+      {#if soloTab}
+        <!-- The strip's contents with the strip taken away: they float at the top
+             right of the body, which is where the pane's own strip ends, so the two
+             read as one bar. The grip is the drag source the tab button used to be -
+             without it a pane with no strip could never be moved. -->
+        <div class="tabbed-panel-solo-actions" data-testid="tabbed-panel-solo-actions">
+          <button
+            class="tabbed-panel-tab-tool tabbed-panel-solo-grip"
+            type="button"
+            draggable={tabDragEnabled()}
+            disabled={disabled}
+            title={`Move ${soloTab.label}`}
+            aria-label={`Move ${soloTab.label}`}
+            ondragstart={(event) => startTabDrag(event, soloTab)}
+            ondragend={finishTabDrag}
+          >
+            <GripVerticalIcon size="12" strokeWidth="2.2" aria-hidden="true" />
+          </button>
+          {@render tabActions?.(soloTab)}
+          {@render leafActions?.(node)}
+        </div>
+    {/if}
+    {/if}
   </section>
 {:else}
   <div
@@ -643,6 +683,7 @@
         {tabIcon}
         {tabActions}
         {leafActions}
+        {soloChromeTabKeys}
         {zoomedLeafID}
         ancestorHidden={ancestorHidden || zoomSide === "second"}
         {scrollPanels}
@@ -690,6 +731,7 @@
         {tabIcon}
         {tabActions}
         {leafActions}
+        {soloChromeTabKeys}
         {zoomedLeafID}
         ancestorHidden={ancestorHidden || zoomSide === "first"}
         {scrollPanels}
@@ -716,6 +758,7 @@
 <style>
   .tabbed-panel-split,
   .tabbed-panel-leaf {
+    position: relative;
     min-width: 0;
     min-height: 0;
     height: 100%;
@@ -806,6 +849,37 @@
     border: var(--chrome-border-width) solid var(--border-default);
     border-top: 0;
     background: var(--bg-surface);
+  }
+
+  /*
+   * Over the pane, not beside it: a strip-less leaf gives its whole height to the
+   * pane, so these have nowhere to sit in flow. The z-index is the same fight the
+   * controls popover had -- a terminal's canvas layers compete inside this body, and
+   * without it the cluster paints under them and every click lands on the terminal.
+   */
+  .tabbed-panel-solo-actions {
+    position: absolute;
+    top: 4px;
+    right: 6px;
+    /*
+     * Above every layer a hosted terminal paints. xterm's internal z-indexes run
+     * to 11 (its overlay scrollbar's slider), the body between us is not a
+     * stacking context, and this cluster hugs the same right edge that scrollbar
+     * does - at 5 the scrollbar sat over the rightmost button and swallowed its
+     * clicks while everything LOOKED fine, because the buttons further left were
+     * clear of it.
+     */
+    z-index: 20;
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 1px 2px;
+    border-radius: 4px;
+    background: var(--bg-surface);
+  }
+
+  .tabbed-panel-solo-grip {
+    cursor: grab;
   }
 
   .tabbed-panel-tabs {

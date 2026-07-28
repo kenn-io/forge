@@ -447,8 +447,10 @@ describe("PRListView inline workspace", () => {
         detail: pullDetailFixture({ id: "ws-1", status: "ready" }),
       });
       expect(controller.claim).toHaveBeenCalled();
-      expect(screen.getByRole("tab", { name: "Workspace" })).toBeTruthy();
+      // The slot, not a tab: a leaf holding the workspace alone draws no strip,
+      // because the workspace pane already draws one of its own inside.
       expect(document.querySelector(".detail-pane-workspace-slot")).toBeTruthy();
+      expect(screen.queryByRole("tab", { name: "Workspace" })).toBeNull();
       expect(controller.slotAttachment).toHaveBeenCalled();
       cleanup();
     }
@@ -458,6 +460,12 @@ describe("PRListView inline workspace", () => {
     const { controller } = createClaimTestController("prs", {
       workspacePaneLabel: "codex (proxy)",
     });
+
+    // Sharing a leaf with the conversation, which is where an outer tab still names
+    // the workspace: alone in a leaf it draws no outer strip, because the pane
+    // already draws one of its own inside.
+    const layout = getPaneLayoutStore("prs");
+    layout.appendTabToLeaf("workspace", layout.leafIDForTab("conversation")!);
 
     renderPRListView({
       inlineWorkspace: controller,

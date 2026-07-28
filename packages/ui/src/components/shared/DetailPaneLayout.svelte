@@ -65,6 +65,17 @@
     paneLeafExtras = undefined,
   }: Props = $props();
 
+  /**
+   * The workspace pane draws its own tab strip: one tab per session, plus the dock.
+   * A leaf holding it alone therefore stacked two rows to name one thing, and the
+   * outer one said only "Workspace" - which the strip below already implies. It is
+   * dropped there, and its controls float over the body instead.
+   *
+   * Flattened is exempt: that mode collapses every pane into ONE strip, so there is
+   * no per-leaf row to remove and nothing for a floating cluster to line up with.
+   */
+  const SOLO_CHROME_TAB_KEYS = ["workspace"] as const;
+
   let host = $state<HTMLElement | null>(null);
   let hostWidth = $state(0);
 
@@ -287,6 +298,7 @@
                 ? layout.splitTab(source, leafID, direction, placement)
                 : layout.promoteTab(source, { kind: "split", leafID, direction, placement })}
         leafActions={flattened ? undefined : leafActions}
+        soloChromeTabKeys={flattened ? [] : SOLO_CHROME_TAB_KEYS}
       >
         {#snippet renderTab(tabKey, visible)}
           {@render renderPane(tabKey, visible)}

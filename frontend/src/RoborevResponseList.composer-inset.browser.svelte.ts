@@ -11,6 +11,10 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { cleanup, render } from "vitest-browser-svelte";
 
+// The measurement is only meaningful under the production reset and tokens:
+// without app.css the field is content-box and the reserved padding resolves
+// against different spacing variables than the app actually ships.
+import "./app.css";
 import { STORES_KEY } from "../../packages/ui/src/context.js";
 import ResponseList from "../../packages/ui/src/components/roborev/ResponseList.svelte";
 

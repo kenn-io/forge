@@ -139,7 +139,7 @@ describe("ReviewDrawer", () => {
       [...(usage?.querySelectorAll(".usage-stat") ?? [])].map((el) => el.textContent?.replace(/\s+/g, " ").trim()),
     ).toEqual(["cost ~$0.35", "in 232k", "out 2.5k", "peak 47k"]);
     expect(usage?.getAttribute("title")).toBe(
-      "input 231,582 · cached input 189,952 · output 2,542 · peak context 47,248 · cost $0.3472",
+      "input 231,582 · cached input 189,952 · output 2,542 · peak context 47,248 · cost $0.347212",
     );
   });
 

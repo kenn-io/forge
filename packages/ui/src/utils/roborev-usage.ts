@@ -83,6 +83,11 @@ export function tokenUsageDetail(usage: JobTokenUsage): string {
   if (usage.peakContextTokens !== null) {
     parts.push(`peak context ${group(usage.peakContextTokens)}`);
   }
-  if (usage.costUsd !== null) parts.push(`cost $${usage.costUsd.toFixed(4)}`);
+  if (usage.costUsd !== null) {
+    // Significant digits, not fixed decimals: a sub-cent job must not read
+    // as $0.0000 in the one place that promises the exact number.
+    const cost = usage.costUsd.toLocaleString("en-US", { maximumSignificantDigits: 6 });
+    parts.push(`cost $${cost}`);
+  }
   return parts.join(" · ");
 }

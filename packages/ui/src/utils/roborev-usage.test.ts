@@ -88,7 +88,12 @@ describe("tokenUsageDetail", () => {
       }),
     );
     expect(tokenUsageDetail(usage!)).toBe(
-      "input 231,582 · cached input 189,952 · output 2,542 · peak context 47,248 · cost $0.3472",
+      "input 231,582 · cached input 189,952 · output 2,542 · peak context 47,248 · cost $0.347212",
     );
+  });
+
+  it("keeps sub-cent costs legible instead of rounding them to zero", () => {
+    const usage = parseTokenUsage(JSON.stringify({ cost_usd: 0.000023, has_cost: true }));
+    expect(tokenUsageDetail(usage!)).toBe("cost $0.000023");
   });
 });

@@ -976,6 +976,7 @@ func (s *Syncer) Admit(
 				resetAt,
 				liveFloor,
 				providerPacingWindow.Limit,
+				providerPacingWindow.Remaining,
 				RateReserveBuffer,
 			)
 		} else if resetAt == nil &&

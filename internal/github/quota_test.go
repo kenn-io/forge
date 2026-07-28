@@ -134,6 +134,7 @@ func TestQuotaRegistryPacingWindowUsesSmallestLimitAndLatestReset(t *testing.T) 
 
 	require.True(ok)
 	assert.Equal(5000, window.Limit)
+	assert.Equal(4500, window.Remaining)
 	assert.Equal(restReset, window.ResetAt)
 }
 

@@ -179,8 +179,9 @@ type QuotaAvailability struct {
 }
 
 type QuotaPacingWindow struct {
-	Limit   int
-	ResetAt time.Time
+	Limit     int
+	Remaining int
+	ResetAt   time.Time
 }
 
 func (r *QuotaRegistry) PacingWindow(
@@ -192,14 +193,17 @@ func (r *QuotaRegistry) PacingWindow(
 	}
 	now := r.now().UTC()
 	var window QuotaPacingWindow
-	for _, resource := range resources {
+	for index, resource := range resources {
 		pool, ok := r.Get(identity, resource)
-		if !ok || !pool.Known || pool.Limit <= 0 ||
+		if !ok || !pool.Known || pool.Limit <= 0 || pool.Remaining < 0 ||
 			pool.ResetAt.IsZero() || !pool.ResetAt.After(now) {
 			return QuotaPacingWindow{}, false
 		}
 		if window.Limit == 0 || pool.Limit < window.Limit {
 			window.Limit = pool.Limit
+		}
+		if index == 0 || pool.Remaining < window.Remaining {
+			window.Remaining = pool.Remaining
 		}
 		if pool.ResetAt.After(window.ResetAt) {
 			window.ResetAt = pool.ResetAt

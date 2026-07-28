@@ -125,6 +125,16 @@ func TestSyncBudgetProviderArchivePacingUsesConservativeEnvelope(t *testing.T) {
 	}
 }
 
+func TestSyncBudgetProviderArchiveAvailabilityPreservesCurrentProviderReserve(t *testing.T) {
+	reset := time.Date(2026, 7, 28, 19, 0, 0, 0, time.UTC)
+	now := reset.Add(-30 * time.Minute)
+	budget := NewSyncBudget(100000)
+
+	assert.Equal(t, 1, budget.ProviderArchiveSpendAvailable(
+		now, &reset, 24, 5000, 201, 200,
+	))
+}
+
 func TestSyncBudgetArchiveAdmissionPreservesLiveFloor(t *testing.T) {
 	assert := assert.New(t)
 	budget := NewSyncBudget(50)

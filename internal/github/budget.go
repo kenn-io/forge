@@ -166,6 +166,7 @@ func (b *SyncBudget) ProviderArchiveSpendAvailable(
 	resetAt *time.Time,
 	localLiveFloor int,
 	providerLimit int,
+	providerRemaining int,
 	providerReserve int,
 ) int {
 	b.mu.Lock()
@@ -175,7 +176,8 @@ func (b *SyncBudget) ProviderArchiveSpendAvailable(
 		now, resetAt, localLiveFloor, providerLimit, providerReserve,
 	) - b.archiveSpent
 	localRemaining := b.limit - max(localLiveFloor, 0) - b.spent
-	return max(min(ceilingRemaining, localRemaining), 0)
+	providerHeadroom := providerRemaining - max(providerReserve, 0)
+	return max(min(ceilingRemaining, localRemaining, providerHeadroom), 0)
 }
 
 func (b *SyncBudget) providerArchiveSpendCeiling(

@@ -319,15 +319,13 @@ func (d *DB) RequeueArchiveLifecycleDetails(
 			SELECT 1
 			FROM middleman_archive_items ai
 			JOIN middleman_archive_repos ar ON ar.repo_id = ai.repo_id
-			JOIN middleman_repos r ON r.id = ai.repo_id
 			WHERE ai.repo_id = middleman_archive_dataset_progress.repo_id
 			  AND ai.item_type = middleman_archive_dataset_progress.item_type
 			  AND ai.item_number = middleman_archive_dataset_progress.item_number
 			  AND ai.lifecycle_state = 'active'
 			  AND ar.collection_mode = 'full'
-			  AND r.platform IN ('github', 'gitlab')
 			  AND (
-				(ai.item_type = 'issue' AND EXISTS (
+				(ai.item_type = 'issue' AND ar.issues_coverage = 'supported' AND EXISTS (
 					SELECT 1 FROM middleman_issues i
 					WHERE i.repo_id = ai.repo_id AND i.number = ai.item_number
 					  AND i.closed_at IS NOT NULL
@@ -340,7 +338,7 @@ func (d *DB) RequeueArchiveLifecycleDetails(
 					  ) IS DISTINCT FROM i.closed_at
 				))
 				OR
-				(ai.item_type = 'merge_request' AND EXISTS (
+				(ai.item_type = 'merge_request' AND ar.merge_requests_coverage = 'supported' AND EXISTS (
 					SELECT 1 FROM middleman_merge_requests mr
 					WHERE mr.repo_id = ai.repo_id AND mr.number = ai.item_number
 					  AND mr.merged_at IS NOT NULL

@@ -126,7 +126,7 @@ func TestArchiveReportFromAPIPreservesTransportOrdering(t *testing.T) {
 		},
 	}
 	transport := generated.ArchiveReportResponse{
-		Start: start, End: end,
+		ReportSchema: report.Schema, Start: start, End: end,
 		Repositories: &[]generated.ArchiveReportRepositoryResponse{{
 			Repository: archiveGeneratedCLIRef("github", "github.example", "owner", "repo"),
 			Coverage: generated.ArchiveReportCoverageResponse{
@@ -217,6 +217,27 @@ func TestArchiveReportFromAPIPreservesLifecycleContract(t *testing.T) {
 	require.NotNil(activity.FilesChanged)
 	assert.Equal(3, *activity.FilesChanged)
 	assert.Equal("abc123", activity.MergeCommitSHA)
+}
+
+func TestArchiveReportFromAPIRejectsIncompatibleSchema(t *testing.T) {
+	t.Parallel()
+	for _, testCase := range []struct {
+		name   string
+		schema string
+	}{
+		{name: "missing", schema: ""},
+		{name: "future", schema: "middleman-archive-report/2"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := archiveReportFromAPI(generated.ArchiveReportResponse{
+				ReportSchema: testCase.schema,
+			})
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "archive report schema")
+			assert.Contains(t, err.Error(), report.Schema)
+		})
+	}
 }
 
 func TestArchiveCLISubcommandsUseGeneratedDaemonContract(t *testing.T) {
@@ -375,6 +396,7 @@ func TestArchiveCLIAtomicOutputSuccess(t *testing.T) {
 	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
+			"schema":"middleman-archive-report/1",
 			"start":"2026-07-12T15:30:00Z","end":"2026-07-13T15:30:00Z",
 			"repositories":[],
 			"totals":{"issues_opened":1,"merge_requests_opened":0,"ordinary_comments":0,"reviews_submitted":0,"inline_review_comments":0},

@@ -354,6 +354,12 @@ func parseArchiveReportRange(now time.Time, days int, startValue, endValue strin
 }
 
 func archiveReportFromAPI(input generated.ArchiveReportResponse) (report.Model, error) {
+	if input.ReportSchema != report.Schema {
+		return report.Model{}, fmt.Errorf(
+			"unsupported archive report schema %q (want %q)",
+			input.ReportSchema, report.Schema,
+		)
+	}
 	model := report.Model{
 		Schema: input.ReportSchema,
 		Start:  input.Start.UTC(),

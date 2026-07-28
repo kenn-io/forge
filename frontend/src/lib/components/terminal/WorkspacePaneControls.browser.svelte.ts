@@ -138,6 +138,45 @@ describe("workspace controls popover in a real tab strip", () => {
     expect(popover.contains(hit)).toBe(true);
   });
 
+  it("wraps a full control set into rows instead of one pane-wide bar", async () => {
+    // What a workspace running an agent actually hands over: two dock modes, zoom,
+    // options, rename, stop, the branch, Delete, Launch. In one row that is a bar as
+    // wide as the pane -- the stacked chrome this popover was built to replace.
+    const wide = createRawSnippet(() => ({
+      render: () =>
+        `<div style="display: contents">${[
+          "Expand Terminal",
+          "Collapse Terminal",
+          "13px",
+          "Options",
+          "Rename session",
+          "Stop session",
+          "pr/1264-duckdb-daemon-tilde-path",
+          "Delete",
+          "Launch session",
+        ]
+          .map((label) => `<button type="button" style="height: 22px">${label}</button>`)
+          .join("")}</div>`,
+    }));
+    registerWorkspaceControls({ snippet: wide, workspaceKey: "ws-1" });
+    const leaf = mountInPaneLeaf();
+    mounted = { host: leaf.host, strip: leaf.actions, app: leaf.app };
+
+    leaf.actions.querySelector<HTMLButtonElement>("button[aria-label='Workspace controls']")!.click();
+
+    const popover = await vi.waitFor(() => {
+      const el = document.querySelector<HTMLElement>("[role='dialog'][aria-label='Workspace controls']");
+      expect(el!.getBoundingClientRect().width).toBeGreaterThan(0);
+      return el!;
+    });
+
+    expect(popover.getBoundingClientRect().width).toBeLessThanOrEqual(440);
+    const rows = new Set(
+      Array.from(popover.querySelectorAll("button")).map((button) => Math.round(button.getBoundingClientRect().top)),
+    );
+    expect(rows.size).toBeGreaterThan(1);
+  });
+
   it("yields to a modal opened from inside it", async () => {
     // Rename session, Stop session and the font picker all open a modal from these
     // controls, and the popover stays open beneath one on purpose. But it is

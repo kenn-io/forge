@@ -183,9 +183,18 @@
      * opened and swallowed the clicks meant for it.
      */
     z-index: calc(var(--z-overlay) - 1);
+    /*
+     * Wraps rather than growing. The contents are whatever the hosted view hands
+     * over -- with a workspace running an agent that is two dock modes, zoom, the
+     * options menu, rename, stop, the branch, Delete and Launch -- and in one row
+     * that is a bar the width of the pane, which is the stacked chrome this popover
+     * replaced. A few short rows read as a menu instead.
+     */
+    max-width: min(440px, calc(100vw - 24px));
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 4px;
+    gap: 6px 4px;
     padding: 6px;
     border: 1px solid var(--border-default);
     border-radius: 4px;

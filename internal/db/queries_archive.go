@@ -331,10 +331,13 @@ func (d *DB) RequeueArchiveLifecycleDetails(
 					SELECT 1 FROM middleman_issues i
 					WHERE i.repo_id = ai.repo_id AND i.number = ai.item_number
 					  AND i.closed_at IS NOT NULL
-					  AND NOT EXISTS (
-						SELECT 1 FROM middleman_issue_events e
+					  AND (
+						SELECT e.created_at
+						FROM middleman_issue_events e
 						WHERE e.issue_id = i.id AND e.event_type = 'closed' AND e.author <> ''
-					  )
+						ORDER BY e.created_at DESC, e.id DESC
+						LIMIT 1
+					  ) IS DISTINCT FROM i.closed_at
 				))
 				OR
 				(ai.item_type = 'merge_request' AND EXISTS (

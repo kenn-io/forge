@@ -161,6 +161,77 @@ func TestArchiveReportActivityIncludesCurrentCloseAndMergeLifecycle(t *testing.T
 	assert.Equal("merger", contributorByKind[ArchiveReportActivityMergeRequestMerged])
 }
 
+func TestArchiveReportActivityOmitsActorFromEarlierCloseCycle(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := openTestDB(t)
+	start := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	end := start.Add(24 * time.Hour)
+	repoID := insertArchiveReportRepo(t, database, RepoIdentity{
+		Platform: "github", PlatformHost: "github.example", Owner: "acme", Name: "widget",
+	})
+	issueID := insertArchiveReportIssue(
+		t, database, repoID, 1, "issue-1", "Issue", "author", start.Add(-time.Hour),
+	)
+	closedAt := start.Add(2 * time.Hour)
+	_, err := database.WriteDB().ExecContext(t.Context(), `
+		UPDATE middleman_issues SET state = 'closed', closed_at = ? WHERE id = ?`,
+		closedAt, issueID)
+	require.NoError(err)
+	insertArchiveReportIssueEvent(
+		t, database, issueID, "closed", "old-close", "", "old-closer",
+		start.Add(time.Hour),
+	)
+
+	tx, err := database.ReadDB().BeginTx(t.Context(), &sql.TxOptions{ReadOnly: true})
+	require.NoError(err)
+	t.Cleanup(func() { _ = tx.Rollback() })
+	rows, err := LoadArchiveReportActivity(t.Context(), tx, []int64{repoID}, start, end)
+	require.NoError(err)
+	require.NoError(tx.Commit())
+
+	require.Len(rows, 1)
+	assert.Equal(ArchiveReportActivityIssueClosed, rows[0].Kind)
+	assert.Empty(rows[0].Actor)
+}
+
+func TestArchiveReportActivityOmitsActorWhenNewestCloseDoesNotMatch(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := openTestDB(t)
+	start := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	end := start.Add(24 * time.Hour)
+	repoID := insertArchiveReportRepo(t, database, RepoIdentity{
+		Platform: "github", PlatformHost: "github.example", Owner: "acme", Name: "widget",
+	})
+	issueID := insertArchiveReportIssue(
+		t, database, repoID, 1, "issue-1", "Issue", "author", start.Add(-time.Hour),
+	)
+	closedAt := start.Add(2 * time.Hour)
+	_, err := database.WriteDB().ExecContext(t.Context(), `
+		UPDATE middleman_issues SET state = 'closed', closed_at = ? WHERE id = ?`,
+		closedAt, issueID)
+	require.NoError(err)
+	insertArchiveReportIssueEvent(
+		t, database, issueID, "closed", "current-close", "", "current-closer", closedAt,
+	)
+	insertArchiveReportIssueEvent(
+		t, database, issueID, "closed", "newer-mismatch", "", "newer-closer",
+		closedAt.Add(time.Hour),
+	)
+
+	tx, err := database.ReadDB().BeginTx(t.Context(), &sql.TxOptions{ReadOnly: true})
+	require.NoError(err)
+	t.Cleanup(func() { _ = tx.Rollback() })
+	rows, err := LoadArchiveReportActivity(t.Context(), tx, []int64{repoID}, start, end)
+	require.NoError(err)
+	require.NoError(tx.Commit())
+
+	require.Len(rows, 1)
+	assert.Equal(ArchiveReportActivityIssueClosed, rows[0].Kind)
+	assert.Empty(rows[0].Actor)
+}
+
 func TestArchiveReportRepositoriesAreSnapshotCoverageOrderedByFullIdentity(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

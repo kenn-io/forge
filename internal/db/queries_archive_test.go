@@ -650,6 +650,10 @@ func TestRequeueArchiveLifecycleDetailsOnlyReopensIncompleteGitHubRows(t *testin
 		t, database, repoID, ArchiveItemTypeIssue, 8,
 		ArchiveDatasetLookup, ArchiveDatasetProgressComplete,
 	)
+	insertArchiveReportIssueEvent(
+		t, database, issueID, "closed", "closed-8-old", "", "old-closer",
+		mergedAt.Add(-time.Hour),
+	)
 
 	require.NoError(database.RequeueArchiveLifecycleDetails(ctx, []int64{repoID}, now))
 	progress, err := database.GetDatasetProgress(

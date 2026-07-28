@@ -9092,6 +9092,11 @@ func (s *Syncer) refreshIssueTimeline(
 			); disabledErr != nil {
 				return disabledErr
 			}
+			if IsArchiveSyncBudgetContext(ctx) {
+				return fmt.Errorf(
+					"list timeline events for issue #%d: %w", number, err,
+				)
+			}
 			slog.Warn("issue timeline event fetch failed during timeline refresh",
 				"repo", repo.Owner+"/"+repo.Name,
 				"number", number,

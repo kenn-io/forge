@@ -9709,6 +9709,42 @@ func TestSyncArchiveIssueBypassesPersistedETagForLifecycleBackfill(t *testing.T)
 	assert.Equal("closer", events[0].Author)
 }
 
+func TestSyncArchiveIssuePropagatesTimelineFailure(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+	issue := buildOpenIssue(7, time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC))
+	timelineErr := errors.New("timeline temporarily unavailable")
+	client := &issueTimelineMockClient{
+		mockClient: mockClient{
+			getIssueFn: func(context.Context, string, string, int) (*gh.Issue, error) {
+				return issue, nil
+			},
+			comments: []*gh.IssueComment{},
+		},
+		issueTimelineErr: timelineErr,
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client}, database, nil,
+		[]RepoRef{repo}, time.Minute, nil, testBudget(1000),
+	)
+
+	providerAttempted, err := syncer.SyncArchiveItem(
+		WithArchiveSyncBudget(ctx),
+		platform.RepoRef{
+			Platform: platform.KindGitHub, Host: "github.com",
+			Owner: repo.Owner, Name: repo.Name,
+		},
+		db.ArchiveItemTypeIssue, 7,
+	)
+
+	require.ErrorIs(err, timelineErr)
+	assert.True(providerAttempted)
+	assert.Equal(int32(1), client.issueTimelineCalls.Load())
+}
+
 func TestFetchIssueDetailPersistsIssueETag(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

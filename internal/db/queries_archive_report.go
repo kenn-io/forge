@@ -288,7 +288,7 @@ func archiveReportActivityQuery(
 				COALESCE(NULLIF(i.platform_external_id, ''), 'issue:number:' || i.number),
 				i.title, i.author,
 				COALESCE((
-					SELECT e.author
+					SELECT CASE WHEN e.created_at = i.closed_at THEN e.author ELSE '' END
 					FROM middleman_issue_events e
 					WHERE e.issue_id = i.id AND e.event_type = 'closed' AND e.author <> ''
 					ORDER BY e.created_at DESC, e.id DESC

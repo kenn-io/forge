@@ -194,6 +194,7 @@
   const taskAPI = untrack(() => api) ?? createKataTaskAPI();
   let connection = $state.raw<KataConnectionState>({ status: "offline" });
   let bootstrapDaemonId = $state<string | undefined>(undefined);
+  let sidebarCatalog = $state.raw<{ daemonID: string; projects: KataProjectSummary[] } | null>(null);
   let pendingCreatedProjectScope: PendingCreatedProjectScope | null = null;
   let supersededRouteSelectionUID: string | null = null;
   let rowNavigationSelection: PendingRecoveredSelection | null = null;
@@ -240,6 +241,10 @@
   const authorityController = createKataWorkspaceAuthorityController({
     resetIssueExpansion,
     onSnapshotAccepted: (snapshot) => {
+      sidebarCatalog = {
+        daemonID: snapshot.daemon_id,
+        projects: structuredClone(snapshot.projects) as KataProjectSummary[],
+      };
       const requestedIssueUID = selectedIssueUID?.trim() ?? "";
       const recoveredSelection = pendingRecoveredSelection?.uid === snapshot.selected_issue_uid
         ? pendingRecoveredSelection
@@ -357,7 +362,6 @@
   const acceptedProjects = $derived(
     acceptedSnapshot ? structuredClone(acceptedSnapshot.projects) as KataProjectSummary[] : [],
   );
-  const acceptedAreas = $derived(deriveKataAreas([...acceptedProjects]));
   const acceptedCurrentView = $derived.by(() => {
     if (!acceptedSnapshot) return { name: currentViewName, groups: [] };
     const projected = projectKataWorkspaceView({
@@ -416,8 +420,13 @@
   );
   // A daemon switch is transactional. Catalog data loaded while the target
   // is still provisional must not repaint either daemon's project controls.
-  const visibleProjects = $derived(switchingDaemon ? [] : acceptedProjects);
-  const visibleAreas = $derived(switchingDaemon ? [] : acceptedAreas);
+  const visibleProjects = $derived.by(() => {
+    if (switchingDaemon || routedDaemonError || authorityStore.state.phase === "abandoned") return [];
+    const requestedDaemonID = authorityStore.state.intent?.daemon_id ?? activeKataDaemonId;
+    if (!sidebarCatalog || (requestedDaemonID && requestedDaemonID !== sidebarCatalog.daemonID)) return [];
+    return sidebarCatalog.projects;
+  });
+  const visibleAreas = $derived(deriveKataAreas([...visibleProjects]));
 
   const systemViews = [
     { name: "inbox", label: "Inbox" },

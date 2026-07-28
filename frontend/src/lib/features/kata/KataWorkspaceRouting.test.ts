@@ -243,6 +243,38 @@ describe("KataWorkspace snapshot routing", () => {
     expect(onSelectedIssueChange).not.toHaveBeenCalledWith(initialIssues[0]!.uid);
   });
 
+  it("keeps the project sidebar stable while a project scope loads", async () => {
+    acceptHomeDaemon();
+    const pendingProject = deferred<KataWorkspaceSnapshotResponse>();
+    let requestCount = 0;
+    let projectSnapshot: KataWorkspaceSnapshotResponse | null = null;
+    const { api } = createWorkspaceAPI(initialIssues, {
+      snapshot: async (_request, snapshot) => {
+        requestCount += 1;
+        if (requestCount === 2) {
+          projectSnapshot = snapshot;
+          return pendingProject.promise;
+        }
+        return snapshot;
+      },
+    });
+
+    render(KataWorkspace, { props: { api } });
+    const finances = await screen.findByRole("button", { name: /^Finances\s+1$/ });
+
+    await fireEvent.click(finances);
+    await waitFor(() => expect(requestCount).toBe(2));
+
+    expect(screen.getByRole("button", { name: /^Kata\s+1$/ })).toBeTruthy();
+    expect(
+      screen
+        .getByRole("button", { name: /^Kata\s+1$/ })
+        .compareDocumentPosition(screen.getByRole("button", { name: "New project" })),
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+
+    pendingProject.resolve(projectSnapshot!);
+  });
+
   it("publishes only the latest route when project and system navigation loads finish out of order", async () => {
     acceptHomeDaemon();
     const pendingProject = deferred<KataWorkspaceSnapshotResponse>();

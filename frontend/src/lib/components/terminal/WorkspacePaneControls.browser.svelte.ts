@@ -156,7 +156,7 @@ describe("workspace controls popover in a real tab strip", () => {
           "Options",
           "Rename session",
           "Stop session",
-          "pr/1264-duckdb-daemon-tilde-path",
+          "feature/long-branch-name-that-wraps",
           "Delete",
           "Launch session",
         ]

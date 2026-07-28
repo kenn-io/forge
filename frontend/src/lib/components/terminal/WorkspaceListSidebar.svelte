@@ -74,7 +74,7 @@
       | "unknown"
       | null;
     tmux_last_output_at?: string | null;
-    agent_state?: "idle" | "working" | "input" | "approval" | null;
+    agent_state?: "idle" | "working" | "input" | "approval" | "done" | null;
     agent_state_updated_at?: string | null;
     status: string;
     error_message?: string | null;
@@ -172,6 +172,7 @@
   } | null>(null);
   let contextMenuEl = $state<HTMLDivElement | null>(null);
   let contextMenuStyle = $state("");
+  let acknowledgedDoneStates = $state<string[]>([]);
 
   const workspaceListLoadTimeoutMs = 10_000;
   let displayOptions = $state<WorkspaceListDisplayOptions>(
@@ -613,9 +614,9 @@
   }
 
   function agentStatePresentation(ws: Workspace): {
-    label: "Working" | "Approval" | "Input";
+    label: "Working" | "Approval" | "Input" | "Done";
     status: StatusDotStatus;
-    tone: "working" | "approval" | "input";
+    tone: "working" | "approval" | "input" | "done";
   } | null {
     switch (ws.agent_state) {
       case "working":
@@ -624,9 +625,26 @@
         return { label: "Approval", status: "waiting", tone: "approval" };
       case "input":
         return { label: "Input", status: "waiting", tone: "input" };
+      case "done":
+        if (acknowledgedDoneStates.includes(doneStateKey(ws))) return null;
+        return { label: "Done", status: "idle", tone: "done" };
       default:
         return null;
     }
+  }
+
+  function doneStateKey(ws: Workspace): string {
+    return `${workspaceRowKey(ws)}:${ws.agent_state_updated_at ?? "unknown"}`;
+  }
+
+  function openWorkspace(ws: Workspace): void {
+    if (ws.agent_state === "done") {
+      const stateKey = doneStateKey(ws);
+      if (!acknowledgedDoneStates.includes(stateKey)) {
+        acknowledgedDoneStates = [...acknowledgedDoneStates, stateKey];
+      }
+    }
+    navigate(workspaceRoute(ws));
   }
 
   function itemStateClass(ws: Workspace): string {
@@ -1213,7 +1231,7 @@
                 e.target.closest(".item-bubble")) {
                 return;
               }
-              navigate(workspaceRoute(ws));
+              openWorkspace(ws);
             }}
             onkeydown={(e) => {
               // Ignore keydowns that originate inside a nested
@@ -1224,7 +1242,7 @@
               if (e.target !== e.currentTarget) return;
               if (e.key === "Enter" || e.key === " ") {
                 e.preventDefault();
-                navigate(workspaceRoute(ws));
+                openWorkspace(ws);
               }
             }}
             oncontextmenu={(e) => {
@@ -1839,6 +1857,10 @@
   .agent-state--input {
     color: var(--accent-purple);
     --status-waiting: var(--accent-purple);
+  }
+
+  .agent-state--done {
+    color: var(--accent-green);
   }
 
 

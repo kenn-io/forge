@@ -301,8 +301,8 @@ Workspace create endpoints may return 202 with a pre-existing workspace
   never read from instruction files (`internal/workspace/agent_context.go::Manager.RenderAgentContextForWorktree`).
 - User-level hooks are single-target: install merges, uninstall preserves other
   handlers, and the last install wins (`internal/agentactivity/integration.go::Install`).
-- Matching live runtime/worktree reports use approval, input, working, idle priority;
-  latest state expires after 30 minutes or session exit, then tmux resumes (`internal/agentactivity/`, `internal/server/workspaceapi/lifecycle.go::Handler.HandleRuntimeSessionExit`).
+- Matching live runtime/worktree reports prioritize approval, input, working, done, then idle.
+  Stop/Interrupt stays `done` until row activation acknowledges that exact timestamp; reports expire after 30 minutes or session exit, then tmux resumes (`internal/agentactivity/store.go::statePriority`, `frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte::openWorkspace`).
 - Hook installs require absolute data roots and update symlink targets instead of replacing
   config links; report/worktree matching uses canonical filesystem paths (`cmd/middleman/main.go::runAgentHookInstall`,
   `internal/agentactivity/integration.go::writeJSONObject`, `internal/agentactivity/store.go::canonicalWorkspacePath`).

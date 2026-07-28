@@ -755,6 +755,7 @@ func (e WorkflowStateMetaResponseStatus) Valid() bool {
 // Defines values for WorkspaceResponseAgentState.
 const (
 	Approval WorkspaceResponseAgentState = "approval"
+	Done     WorkspaceResponseAgentState = "done"
 	Idle     WorkspaceResponseAgentState = "idle"
 	Input    WorkspaceResponseAgentState = "input"
 	Working  WorkspaceResponseAgentState = "working"
@@ -764,6 +765,8 @@ const (
 func (e WorkspaceResponseAgentState) Valid() bool {
 	switch e {
 	case Approval:
+		return true
+	case Done:
 		return true
 	case Idle:
 		return true

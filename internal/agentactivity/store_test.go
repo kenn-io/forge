@@ -46,7 +46,7 @@ func TestStoreTracksHookLifecycleByRuntimeSession(t *testing.T) {
 	})
 	snapshot, ok = store.SnapshotForWorkspace(workspace, []string{"runtime-a"})
 	require.True(ok)
-	assert.Equal(StateIdle, snapshot.State)
+	assert.Equal(StateDone, snapshot.State)
 
 	reportHook(t, store, "runtime-a", map[string]any{
 		"session_id": "agent-a", "cwd": workspace,

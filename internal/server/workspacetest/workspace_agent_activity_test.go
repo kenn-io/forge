@@ -97,7 +97,7 @@ func TestWorkspaceAgentActivityFlowsThroughHTTPResponsesE2E(t *testing.T) {
 	require.Equal(http.StatusOK, getResponse.StatusCode())
 	require.NotNil(getResponse.JSON200)
 	require.NotNil(getResponse.JSON200.AgentState)
-	assert.Equal(generated.Idle, *getResponse.JSON200.AgentState)
+	assert.Equal(generated.Done, *getResponse.JSON200.AgentState)
 
 	stopResponse, err := fixture.client.HTTP.StopWorkspaceRuntimeSessionWithResponse(
 		ctx, ws.Id, launch.JSON200.Key,

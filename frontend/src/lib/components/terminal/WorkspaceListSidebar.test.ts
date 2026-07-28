@@ -67,7 +67,8 @@ interface WorkspaceFixtureOptions {
   tmuxWorking?: boolean;
   tmuxPaneTitle?: string | null;
   tmuxActivitySource?: string;
-  agentState?: "idle" | "working" | "input" | "approval" | null;
+  agentState?: "idle" | "working" | "input" | "approval" | "done" | null;
+  agentStateUpdatedAt?: string | null;
   status?: string;
 }
 
@@ -95,6 +96,7 @@ function workspaceFixture({
   tmuxPaneTitle = null,
   tmuxActivitySource = "unknown",
   agentState = null,
+  agentStateUpdatedAt = null,
   status = "ready",
 }: WorkspaceFixtureOptions) {
   // Kata and ad-hoc workspaces carry no joined provider item metadata.
@@ -122,6 +124,7 @@ function workspaceFixture({
     tmux_pane_title: tmuxPaneTitle,
     tmux_activity_source: tmuxActivitySource,
     agent_state: agentState,
+    agent_state_updated_at: agentStateUpdatedAt,
     status,
     created_at: createdAt,
     tmux_last_output_at: tmuxLastOutputAt,
@@ -1473,6 +1476,39 @@ describe("WorkspaceListSidebar", () => {
 
     expect(await screen.findByText(label)).toBeTruthy();
     expect(screen.getByLabelText(ariaLabel)).toBeTruthy();
+  });
+
+  it("keeps a completed agent visible until its workspace row is opened", async () => {
+    mockGet.mockResolvedValue({
+      data: {
+        workspaces: [
+          workspaceFixture({
+            id: "ws-done",
+            provider: "github",
+            platformHost: "github.com",
+            owner: "acme",
+            name: "widget",
+            number: 9,
+            agentState: "done",
+            agentStateUpdatedAt: "2026-07-28T12:00:00Z",
+          }),
+        ],
+      },
+    });
+
+    const { container } = render(WorkspaceListSidebar, {
+      props: { selectedId: "" },
+    });
+
+    expect(await screen.findByText("Done")).toBeTruthy();
+    expect(screen.getByLabelText("Agent done")).toBeTruthy();
+
+    const row = container.querySelector<HTMLElement>(".ws-row");
+    expect(row).toBeTruthy();
+    await fireEvent.click(row!);
+
+    expect(screen.queryByText("Done")).toBeNull();
+    expect(mockNavigate).toHaveBeenCalledWith("/terminal/ws-done");
   });
 
   it("lets hook-reported idle override recent tmux output", async () => {

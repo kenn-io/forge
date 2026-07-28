@@ -22,6 +22,7 @@ const (
 	StateWorking  State = "working"
 	StateInput    State = "input"
 	StateApproval State = "approval"
+	StateDone     State = "done"
 )
 
 const RuntimeSessionKeyEnv = "MIDDLEMAN_RUNTIME_SESSION_KEY"
@@ -320,7 +321,7 @@ func stateForHook(input HookEvent) (State, bool, bool) {
 			return "", false, false
 		}
 	case "Stop", "Interrupt":
-		return StateIdle, false, true
+		return StateDone, false, true
 	case "SessionEnd":
 		return "", true, true
 	default:
@@ -340,10 +341,12 @@ func isUserInputTool(tool string) bool {
 func statePriority(state State) int {
 	switch state {
 	case StateApproval:
-		return 4
+		return 5
 	case StateInput:
-		return 3
+		return 4
 	case StateWorking:
+		return 3
+	case StateDone:
 		return 2
 	case StateIdle:
 		return 1

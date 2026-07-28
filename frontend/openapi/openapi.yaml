@@ -7666,6 +7666,7 @@ components:
             - working
             - input
             - approval
+            - done
           type: string
         agent_state_updated_at:
           description: UTC timestamp of the hook report that produced agent_state.

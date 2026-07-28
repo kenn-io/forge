@@ -58,6 +58,7 @@
     read_releases: true,
     read_labels: true,
     read_markdown_images: false,
+    read_authenticated_user: false,
     read_ci: true,
     comment_mutation: true,
     thread_reply: false,

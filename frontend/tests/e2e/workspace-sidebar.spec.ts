@@ -2760,9 +2760,22 @@ test.describe("sidebar toggle behavior", () => {
     const actions = sidebar.locator("[aria-label='Review actions']").first().locator("button");
     await expect(actions.first()).toBeVisible();
 
+    // Pin the whole set, not just "some buttons exist": the point of seeding a
+    // running job with a review is that all four are present, so losing one
+    // must fail here rather than quietly shrink what the geometry covers. The
+    // icon stage carries its names on aria-label.
+    await expect
+      .poll(async () =>
+        Promise.all(
+          (await actions.all()).map(
+            async (a) => (await a.getAttribute("aria-label")) ?? (await a.textContent())!.trim(),
+          ),
+        ),
+      )
+      .toEqual(["Close Review", "Rerun", "Cancel", "Copy Output"]);
+
     const sidebarBox = (await sidebar.boundingBox())!;
     const count = await actions.count();
-    expect(count).toBeGreaterThan(0);
     for (let i = 0; i < count; i++) {
       const action = actions.nth(i);
       await expect(action).toBeVisible();

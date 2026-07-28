@@ -8085,6 +8085,10 @@ func (s *Syncer) getIssueForDetail(
 	repo RepoRef,
 	number int,
 ) (*gh.Issue, string, bool, error) {
+	if IsArchiveSyncBudgetContext(ctx) {
+		issue, err := client.GetIssue(ctx, repo.Owner, repo.Name, number)
+		return issue, "", false, err
+	}
 	conditional, ok := client.(conditionalIssueGetter)
 	if !ok {
 		issue, err := client.GetIssue(ctx, repo.Owner, repo.Name, number)

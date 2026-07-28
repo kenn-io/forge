@@ -9080,6 +9080,29 @@ type conditionalIssueTrackingClient struct {
 	nextETag         string
 }
 
+type conditionalIssueLifecycleClient struct {
+	conditionalIssueTrackingClient
+	unconditionalCalls atomic.Int32
+	timelineCalls      atomic.Int32
+	timelineEvents     []PullRequestTimelineEvent
+}
+
+func (c *conditionalIssueLifecycleClient) GetIssue(
+	ctx context.Context,
+	owner, repo string,
+	number int,
+) (*gh.Issue, error) {
+	c.unconditionalCalls.Add(1)
+	return c.mockClient.GetIssue(ctx, owner, repo, number)
+}
+
+func (c *conditionalIssueLifecycleClient) ListIssueTimelineEvents(
+	context.Context, string, string, int,
+) ([]PullRequestTimelineEvent, error) {
+	c.timelineCalls.Add(1)
+	return c.timelineEvents, nil
+}
+
 func (c *conditionalIssueTrackingClient) GetIssueIfChanged(
 	ctx context.Context,
 	owner, repo string,
@@ -9616,6 +9639,74 @@ func TestFetchIssueDetailUsesPersistedIssueETag(t *testing.T) {
 	assert.Equal(`"issue-etag-v1"`, mc.receivedETag)
 	assert.Zero(int(mc.listIssueCommentsCalled.Load()),
 		"304 should skip issue comment refresh")
+}
+
+func TestSyncArchiveIssueBypassesPersistedETagForLifecycleBackfill(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+	repoID, err := database.UpsertRepo(
+		ctx, db.GitHubRepoIdentity("github.com", repo.Owner, repo.Name),
+	)
+	require.NoError(err)
+	closedAt := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
+	issue := buildOpenIssue(7, closedAt)
+	closedState := "closed"
+	issue.State = &closedState
+	issue.ClosedAt = makeTimestamp(closedAt)
+	normalized, err := NormalizeIssue(repoID, issue)
+	require.NoError(err)
+	_, err = database.UpsertIssue(ctx, normalized)
+	require.NoError(err)
+	require.NoError(database.UpsertHTTPEtag(
+		ctx, "github", "github.com", "owner", "repo",
+		"issue", 7, `"legacy-etag"`,
+	))
+
+	client := &conditionalIssueLifecycleClient{
+		conditionalIssueTrackingClient: conditionalIssueTrackingClient{
+			mockClient: mockClient{
+				getIssueFn: func(context.Context, string, string, int) (*gh.Issue, error) {
+					return issue, nil
+				},
+				comments: []*gh.IssueComment{},
+			},
+			notModified: true,
+		},
+		timelineEvents: []PullRequestTimelineEvent{{
+			NodeID: "closed-7", EventType: "closed",
+			Actor: "closer", CreatedAt: closedAt,
+		}},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client}, database, nil,
+		[]RepoRef{repo}, time.Minute, nil, testBudget(1000),
+	)
+
+	providerAttempted, err := syncer.SyncArchiveItem(
+		WithArchiveSyncBudget(ctx),
+		platform.RepoRef{
+			Platform: platform.KindGitHub, Host: "github.com",
+			Owner: repo.Owner, Name: repo.Name,
+		},
+		db.ArchiveItemTypeIssue, 7,
+	)
+	require.NoError(err)
+	assert.True(providerAttempted)
+	assert.Zero(int(client.conditionalCalls.Load()))
+	assert.Equal(int32(1), client.unconditionalCalls.Load())
+	assert.Equal(int32(1), client.timelineCalls.Load())
+
+	stored, err := database.GetIssueByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(stored)
+	events, err := database.ListIssueEvents(ctx, stored.ID)
+	require.NoError(err)
+	require.Len(events, 1)
+	assert.Equal("closed", events[0].EventType)
+	assert.Equal("closer", events[0].Author)
 }
 
 func TestFetchIssueDetailPersistsIssueETag(t *testing.T) {

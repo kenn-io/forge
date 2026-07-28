@@ -576,7 +576,7 @@ func TestArchiveDiscoverySkipsUnsupportedInventoryStream(t *testing.T) {
 	assert.Equal([]string{"issues"}, provider.calls)
 }
 
-func TestArchiveInventoryRecordsRepositoryFeatureDisabledAsUnsupported(t *testing.T) {
+func TestArchiveInventoryReopensRepositoryFeatureAfterReenable(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -609,12 +609,23 @@ func TestArchiveInventoryRecordsRepositoryFeatureDisabledAsUnsupported(t *testin
 	assert.Equal(db.ArchiveCoverageUnsupported, states[0].IssuesCoverage)
 	assert.Equal(db.ArchiveCoverageSupported, states[0].MergeRequestsCoverage)
 	assert.Nil(states[0].LastErrorCode)
+	unsupportedGeneration := states[0].IssueInventory.Generation
 
+	provider.issueInventoryErr = nil
 	require.NoError(service.EnsureConfigured(t.Context(), []platform.RepoRef{ref}))
 	states, err = database.ListArchiveRepoStates(t.Context(), []int64{repoID})
 	require.NoError(err)
-	assert.Equal(db.ArchiveCoverageUnsupported, states[0].IssuesCoverage,
-		"startup capability reconciliation must preserve repository-specific absence")
+	require.Len(states, 1)
+	assert.False(states[0].IssueInventory.Complete())
+	assert.Greater(states[0].IssueInventory.Generation, unsupportedGeneration)
+	assert.Equal(db.ArchiveCoverageUnknown, states[0].IssuesCoverage)
+
+	require.NoError(service.RunEligible(t.Context()))
+	states, err = database.ListArchiveRepoStates(t.Context(), []int64{repoID})
+	require.NoError(err)
+	require.Len(states, 1)
+	assert.True(states[0].IssueInventory.Complete())
+	assert.Equal(db.ArchiveCoverageSupported, states[0].IssuesCoverage)
 }
 
 func TestDefaultArchiveRetryClassifierDistinguishesTerminalProviderErrors(t *testing.T) {

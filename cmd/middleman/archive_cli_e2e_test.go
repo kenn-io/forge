@@ -80,7 +80,8 @@ token_env = "MIDDLEMAN_ARCHIVE_E2E_TOKEN"
 	repoID, err := database.UpsertRepo(t.Context(), platform.DBRepoIdentity(ref))
 	require.NoError(err)
 	require.NoError(database.EnsureDiscoveryArchives(t.Context(), []int64{repoID}, now))
-	require.NoError(database.SetArchiveCoverage(t.Context(), repoID, db.ArchiveCoverageSet{
+	require.NoError(database.ReconcileArchiveCoverage(t.Context(), repoID, db.ArchiveCoverageSet{
+		Issues: db.ArchiveCoverageSupported, MergeRequests: db.ArchiveCoverageSupported,
 		Comments: db.ArchiveCoverageSupported, Reviews: db.ArchiveCoverageSupported,
 		InlineComments: db.ArchiveCoverageSupported,
 	}, now))

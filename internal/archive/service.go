@@ -146,7 +146,7 @@ func (s *Service) EnsureConfigured(ctx context.Context, refs []platform.RepoRef)
 		return err
 	}
 	for _, repo := range resolved {
-		if err := s.db.SetArchiveCoverage(
+		if err := s.db.ReconcileArchiveCoverage(
 			ctx, repo.ID, archiveCoverage(repo.Capabilities), s.now(),
 		); err != nil {
 			return err
@@ -181,7 +181,7 @@ func (s *Service) Start(ctx context.Context, refs []platform.RepoRef) ([]Status,
 		return nil, err
 	}
 	for _, repo := range resolved {
-		if err := s.db.SetArchiveCoverage(ctx, repo.ID, archiveCoverage(repo.Capabilities), s.now()); err != nil {
+		if err := s.db.ReconcileArchiveCoverage(ctx, repo.ID, archiveCoverage(repo.Capabilities), s.now()); err != nil {
 			return nil, err
 		}
 	}

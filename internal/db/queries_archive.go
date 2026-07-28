@@ -198,59 +198,94 @@ func (d *DB) PauseArchives(ctx context.Context, repoIDs []int64, now time.Time) 
 	})
 }
 
-// SetArchiveCoverage records provider capability coverage independently of
-// work rows so unsupported datasets remain an honest repository-level partial.
-func (d *DB) SetArchiveCoverage(ctx context.Context, repoID int64, coverage ArchiveCoverageSet, now time.Time) error {
+// ReconcileArchiveCoverage records current provider capabilities and reopens
+// inventory that can now replace a previously unsupported result.
+func (d *DB) ReconcileArchiveCoverage(ctx context.Context, repoID int64, coverage ArchiveCoverageSet, now time.Time) error {
 	if repoID <= 0 {
-		return fmt.Errorf("set archive coverage: repository ID is required")
+		return fmt.Errorf("reconcile archive coverage: repository ID is required")
 	}
 	for name, value := range map[string]ArchiveCoverage{
+		"issues": coverage.Issues, "merge_requests": coverage.MergeRequests,
 		"comments": coverage.Comments, "reviews": coverage.Reviews,
 		"inline_comments": coverage.InlineComments,
 	} {
 		if value != ArchiveCoverageSupported && value != ArchiveCoverageUnsupported {
-			return fmt.Errorf("set archive coverage: invalid %s coverage %q", name, value)
+			return fmt.Errorf("reconcile archive coverage: invalid %s coverage %q", name, value)
 		}
 	}
-	for name, value := range map[string]ArchiveCoverage{
-		"issues": coverage.Issues, "merge_requests": coverage.MergeRequests,
-	} {
-		if value != "" && value != ArchiveCoverageSupported && value != ArchiveCoverageUnsupported {
-			return fmt.Errorf("set archive coverage: invalid %s coverage %q", name, value)
+	now = now.UTC()
+	return d.Tx(ctx, func(tx *sql.Tx) error {
+		if err := requireArchiveRepoIDs(ctx, tx, "middleman_archive_repos", []int64{repoID}); err != nil {
+			return err
 		}
-	}
-	result, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_archive_repos
-		SET issues_coverage = CASE WHEN EXISTS (
+		for _, inventory := range []struct {
+			desired ArchiveCoverage
+			scan    ArchiveScanKind
+			column  string
+		}{
+			{desired: coverage.Issues, scan: ArchiveScanIssueInventory, column: "issues_coverage"},
+			{desired: coverage.MergeRequests, scan: ArchiveScanMergeRequestInventory, column: "merge_requests_coverage"},
+		} {
+			if inventory.desired != ArchiveCoverageSupported {
+				continue
+			}
+			result, err := tx.ExecContext(ctx, `
+				UPDATE middleman_archive_repo_scans
+				SET scan_generation = `+nextEvenScanGenerationSQL+`,
+					next_cursor = NULL, last_input_cursor = NULL,
+					page_count = 0, status = 'pending',
+					last_error_code = NULL, last_error_detail = NULL,
+					updated_at = ?
+				WHERE repo_id = ? AND scan = ? AND status = 'complete'
+				  AND EXISTS (
+					SELECT 1 FROM middleman_archive_repos
+					WHERE repo_id = ? AND `+inventory.column+` = 'unsupported'
+				  )`, now, repoID, inventory.scan, repoID)
+			if err != nil {
+				return fmt.Errorf("reopen %s archive inventory: %w", inventory.scan, err)
+			}
+			reopened, err := result.RowsAffected()
+			if err != nil {
+				return fmt.Errorf("reopen %s archive inventory rows affected: %w", inventory.scan, err)
+			}
+			if reopened == 0 {
+				continue
+			}
+			if _, err := tx.ExecContext(ctx, `
+				UPDATE middleman_archive_repos
+				SET `+inventory.column+` = 'unknown',
+					initial_completed_at = NULL,
+					updated_at = MAX(updated_at, ?)
+				WHERE repo_id = ?`, now, repoID); err != nil {
+				return fmt.Errorf("reset %s archive coverage: %w", inventory.scan, err)
+			}
+		}
+		_, err := tx.ExecContext(ctx, `
+			UPDATE middleman_archive_repos
+			SET issues_coverage = CASE WHEN EXISTS (
 				SELECT 1 FROM middleman_archive_repo_scans
-				WHERE repo_id = ? AND scan = 'issue_inventory' AND status = 'complete'
-			) THEN CASE WHEN issues_coverage = 'unknown'
-				THEN COALESCE(NULLIF(?, ''), issues_coverage)
-				ELSE issues_coverage END
-			ELSE issues_coverage END,
-			merge_requests_coverage = CASE WHEN EXISTS (
-				SELECT 1 FROM middleman_archive_repo_scans
-				WHERE repo_id = ? AND scan = 'merge_request_inventory' AND status = 'complete'
-			) THEN CASE WHEN merge_requests_coverage = 'unknown'
-				THEN COALESCE(NULLIF(?, ''), merge_requests_coverage)
-				ELSE merge_requests_coverage END
-			ELSE merge_requests_coverage END,
-			comments_coverage = ?, reviews_coverage = ?, inline_comments_coverage = ?,
-			updated_at = ?
-		WHERE repo_id = ?`, repoID, coverage.Issues, repoID, coverage.MergeRequests,
-		coverage.Comments, coverage.Reviews,
-		coverage.InlineComments, now.UTC(), repoID)
-	if err != nil {
-		return fmt.Errorf("set archive coverage: %w", err)
-	}
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("set archive coverage rows affected: %w", err)
-	}
-	if rows != 1 {
-		return &ArchiveRepoStateNotFoundError{RepoIDs: []int64{repoID}}
-	}
-	return nil
+					WHERE repo_id = ? AND scan = 'issue_inventory' AND status = 'complete'
+				) THEN CASE WHEN issues_coverage = 'unknown'
+					THEN ?
+					ELSE issues_coverage END
+				ELSE issues_coverage END,
+				merge_requests_coverage = CASE WHEN EXISTS (
+					SELECT 1 FROM middleman_archive_repo_scans
+					WHERE repo_id = ? AND scan = 'merge_request_inventory' AND status = 'complete'
+				) THEN CASE WHEN merge_requests_coverage = 'unknown'
+					THEN ?
+					ELSE merge_requests_coverage END
+				ELSE merge_requests_coverage END,
+				comments_coverage = ?, reviews_coverage = ?, inline_comments_coverage = ?,
+				updated_at = ?
+			WHERE repo_id = ?`, repoID, coverage.Issues, repoID, coverage.MergeRequests,
+			coverage.Comments, coverage.Reviews,
+			coverage.InlineComments, now, repoID)
+		if err != nil {
+			return fmt.Errorf("reconcile archive coverage: %w", err)
+		}
+		return nil
+	})
 }
 
 // RequeueArchiveLifecycleDetails reopens completed provider lookups whose

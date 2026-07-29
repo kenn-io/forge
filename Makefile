@@ -46,8 +46,10 @@ DEV_CLONE_FRONTEND_PORT ?= 5175
 # gotestsum prints package names on success and full output on failure,
 # while persisting raw `go test -json` events for downstream reporters.
 GOTESTSUM := go tool gotestsum --format pkgname-and-test-fails --jsonfile
-GO_TEST_P ?=
+GO_TEST_P ?= 7
+GO_TEST_PARALLEL ?= 4
 GO_TEST_P_FLAG := $(if $(GO_TEST_P),-p $(GO_TEST_P),)
+GO_TEST_PARALLEL_FLAG := $(if $(GO_TEST_PARALLEL),-parallel $(GO_TEST_PARALLEL),)
 
 # Ensure go:embed has at least one file (no-op if frontend is built)
 ensure-embed-dir:
@@ -269,22 +271,22 @@ dev-ephemeral-stop:
 
 # Run tests
 test: ensure-embed-dir ensure-tmp-dir
-	$(GOTESTSUM)=tmp/test-output.json -- $(GO_TEST_P_FLAG) ./... -shuffle=on
+	$(GOTESTSUM)=tmp/test-output.json -- $(GO_TEST_P_FLAG) $(GO_TEST_PARALLEL_FLAG) ./... -shuffle=on
 
 # Run fast tests only
 test-short: ensure-embed-dir ensure-tmp-dir
-	$(GOTESTSUM)=tmp/test-short-output.json -- $(GO_TEST_P_FLAG) ./... -short -shuffle=on
+	$(GOTESTSUM)=tmp/test-short-output.json -- $(GO_TEST_P_FLAG) $(GO_TEST_PARALLEL_FLAG) ./... -short -shuffle=on
 
 # Pre-commit lane for test-short. Deliberately no -shuffle=on: shuffle is not a
 # cacheable go-test flag, so it forces a full re-run of every package on every
 # commit. Unshuffled runs let unchanged packages hit the Go test result cache;
 # CI and make test/test-short keep shuffled ordering to catch test coupling.
 test-short-precommit: ensure-embed-dir ensure-tmp-dir
-	$(GOTESTSUM)=tmp/test-short-precommit-output.json -- $(GO_TEST_P_FLAG) ./... -short
+	$(GOTESTSUM)=tmp/test-short-precommit-output.json -- $(GO_TEST_P_FLAG) $(GO_TEST_PARALLEL_FLAG) ./... -short
 
 # Run integration tests that execute real git commands (excluded from test-short)
 test-integration: ensure-embed-dir ensure-tmp-dir
-	$(GOTESTSUM)=tmp/test-integration-output.json -- $(GO_TEST_P_FLAG) -tags integration ./... -run '^TestIntegration' -shuffle=on
+	$(GOTESTSUM)=tmp/test-integration-output.json -- $(GO_TEST_P_FLAG) $(GO_TEST_PARALLEL_FLAG) -tags integration ./... -run '^TestIntegration' -shuffle=on
 
 # Report per-package wall time for the slow race-test packages.
 race-times: ensure-embed-dir

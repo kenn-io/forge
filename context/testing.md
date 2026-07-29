@@ -1,5 +1,11 @@
 # Testing
 
+## Local Go suite concurrency
+
+Run the full local suite through `make test`; its bounded package and test
+concurrency mirrors CI and avoids process-launch exhaustion on high-core hosts
+without serializing the suite (`Makefile::test`).
+
 ## Go assertion style
 
 Go tests use `testify` consistently. Import

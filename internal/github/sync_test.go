@@ -7137,6 +7137,199 @@ func TestReconcileRepoIdentityResetsLiveRenameOnlyOnce(t *testing.T) {
 	)
 }
 
+func TestReconcileRepoIdentityMergesOfflineConfiguredPlaceholder(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	configured := RepoRef{
+		Platform:     platform.KindGitHub,
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		RepoPath:     "acme/widget",
+	}
+	authoritative := RepoRef{
+		Platform:           platform.KindGitHub,
+		PlatformHost:       "github.com",
+		Owner:              "acme",
+		Name:               "renamed-widget",
+		RepoPath:           "acme/renamed-widget",
+		PlatformExternalID: "R_widget",
+		CredentialOwner:    configured.Owner,
+		CredentialName:     configured.Name,
+	}
+	placeholderID, err := d.UpsertRepo(
+		ctx,
+		platform.DBRepoIdentity(platformRepoRef(configured)),
+	)
+	require.NoError(err)
+	require.NoError(d.ReconcileDiscoveryArchives(
+		ctx,
+		[]int64{placeholderID},
+		time.Now().UTC(),
+	))
+	seededID, err := d.UpsertRepoByProviderID(
+		ctx,
+		platform.DBRepoIdentity(platformRepoRef(authoritative)),
+	)
+	require.NoError(err)
+	require.NoError(d.ReconcileDiscoveryArchives(
+		ctx,
+		[]int64{seededID},
+		time.Now().UTC(),
+	))
+	client := &mockClient{getRepositoryFn: func(
+		context.Context, string, string,
+	) (*gh.Repository, error) {
+		return &gh.Repository{
+			NodeID: new(authoritative.PlatformExternalID),
+			Name:   new(authoritative.Name),
+			Owner:  &gh.User{Login: new(authoritative.Owner)},
+		}, nil
+	}}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client},
+		d,
+		nil,
+		[]RepoRef{authoritative},
+		time.Minute,
+		nil,
+		nil,
+	)
+
+	_, repoID, _, _, err := syncer.reconcileRepoIdentity(ctx, authoritative)
+	require.NoError(err)
+
+	repos, err := d.ListRepos(ctx)
+	require.NoError(err)
+	require.Len(repos, 1)
+	assert.Equal(repoID, repos[0].ID)
+	assert.Equal(authoritative.Name, repos[0].Name)
+	assert.Equal(authoritative.PlatformExternalID, repos[0].PlatformRepoID)
+	states, err := d.ListArchiveRepoStates(ctx, []int64{repoID})
+	require.NoError(err)
+	require.Len(states, 1)
+	assert.Equal(db.ArchiveOperatorStateActive, states[0].OperatorState)
+}
+
+func TestReconcileRepoIdentityRejectsAliasedPathTakeover(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	configured := RepoRef{
+		Platform:     platform.KindGitHub,
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		RepoPath:     "acme/widget",
+	}
+	const trustedID = "R_widget"
+	var takeover atomic.Bool
+	client := &mockClient{getRepositoryFn: func(
+		_ context.Context, owner, name string,
+	) (*gh.Repository, error) {
+		if !takeover.Load() {
+			return &gh.Repository{
+				NodeID: new(trustedID),
+				Name:   new("renamed-widget"),
+				Owner:  &gh.User{Login: new("acme")},
+			}, nil
+		}
+		if owner == configured.Owner && name == configured.Name {
+			return nil, errors.New("configured repository no longer resolves")
+		}
+		return &gh.Repository{
+			NodeID: new("R_takeover"),
+			Name:   new("renamed-widget"),
+			Owner:  &gh.User{Login: new("acme")},
+		}, nil
+	}}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client},
+		d,
+		nil,
+		[]RepoRef{configured},
+		time.Minute,
+		nil,
+		nil,
+	)
+
+	authoritative, _, _, _, err := syncer.reconcileRepoIdentity(
+		ctx,
+		configured,
+	)
+	require.NoError(err)
+	require.Equal("renamed-widget", authoritative.Name)
+	takeover.Store(true)
+
+	_, _, _, _, err = syncer.reconcileRepoIdentity(ctx, authoritative)
+	require.Error(err)
+	require.ErrorContains(err, "configured repository identity changed")
+
+	repos, err := d.ListRepos(ctx)
+	require.NoError(err)
+	require.Len(repos, 1)
+	assert.Equal(trustedID, repos[0].PlatformRepoID)
+	assert.Equal("renamed-widget", repos[0].Name)
+	assert.False(syncer.IsTrackedRepo("acme", "renamed-widget"))
+	assert.True(syncer.IsTrackedRepo("acme", "widget"))
+
+	err = syncer.SetReposWithContext(ctx, []RepoRef{{
+		Platform:           platform.KindGitHub,
+		PlatformHost:       "github.com",
+		Owner:              "acme",
+		Name:               "widget",
+		RepoPath:           "acme/widget",
+		PlatformExternalID: "R_takeover",
+	}}, false)
+	require.ErrorIs(err, ErrConfiguredRepoIdentityChanged)
+	require.Len(syncer.repos, 1)
+	assert.Equal(trustedID, syncer.repos[0].PlatformExternalID)
+}
+
+func TestConfigReloadRejectsAliasedPathTakeover(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	trusted := RepoRef{
+		Platform:           platform.KindGitHub,
+		PlatformHost:       "github.com",
+		Owner:              "acme",
+		Name:               "renamed-widget",
+		RepoPath:           "acme/renamed-widget",
+		PlatformExternalID: "R_widget",
+		CredentialOwner:    "acme",
+		CredentialName:     "widget",
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": &mockClient{}},
+		openTestDB(t),
+		nil,
+		[]RepoRef{trusted},
+		time.Minute,
+		nil,
+		nil,
+	)
+
+	err := syncer.SetReposWithContext(t.Context(), []RepoRef{{
+		Platform:           platform.KindGitHub,
+		PlatformHost:       "github.com",
+		Owner:              "acme",
+		Name:               "renamed-widget",
+		RepoPath:           "acme/renamed-widget",
+		PlatformExternalID: "R_takeover",
+		CredentialOwner:    "acme",
+		CredentialName:     "widget",
+	}}, false)
+
+	require.ErrorIs(err, ErrConfiguredRepoIdentityChanged)
+	assert.False(syncer.IsTrackedRepo("acme", "renamed-widget"))
+	assert.True(syncer.IsTrackedRepo("acme", "widget"))
+	require.Len(syncer.repos, 1)
+	assert.Equal("R_widget", syncer.repos[0].PlatformExternalID)
+}
+
 func TestSyncRepoSerializesRepositoryIdentityResolution(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

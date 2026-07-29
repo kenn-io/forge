@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	gh "github.com/google/go-github/v89/github"
 	"github.com/stretchr/testify/assert"
@@ -165,6 +166,67 @@ func TestResolveConfiguredReposCasefoldsResolvedRepoRefs(t *testing.T) {
 		PlatformHost: "github.com",
 		RepoPath:     "org/foo",
 	}}, result.Expanded)
+}
+
+func TestResolveConfiguredReposPreservesExactCredentialRouteAcrossRename(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	exactClient := &mockClient{
+		getRepositoryFn: func(
+			_ context.Context, _, _ string,
+		) (*gh.Repository, error) {
+			return &gh.Repository{
+				NodeID: new("R_widget"),
+				Name:   new("renamed-widget"),
+				Owner:  &gh.User{Login: new("acme")},
+			}, nil
+		},
+	}
+	router, err := NewHostRouter("github.com", &Route{
+		Key: RouteKey{
+			Host: "github.com", Owner: "acme", Name: "widget",
+		},
+		Client: exactClient,
+	})
+	require.NoError(err)
+	routed, err := NewRoutedClient(router)
+	require.NoError(err)
+
+	result := ResolveConfiguredRepos(
+		t.Context(),
+		map[string]Client{"github.com": routed},
+		[]config.Repo{{Owner: "acme", Name: "widget"}},
+	)
+
+	require.Empty(result.Warnings)
+	require.Len(result.Expanded, 1)
+	resolved := result.Expanded[0]
+	assert.Equal("renamed-widget", resolved.Name)
+	assert.Equal("acme", resolved.CredentialOwner)
+	assert.Equal("widget", resolved.CredentialName)
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": routed},
+		openTestDB(t),
+		nil,
+		result.Expanded,
+		time.Minute,
+		nil,
+		nil,
+	)
+	syncer.SetGitHubRouters(map[string]*HostRouter{"github.com": router})
+	selected, err := router.RouteForRepo("acme", "renamed-widget")
+	require.NoError(err)
+	assert.Same(exactClient, selected.Client)
+
+	require.NoError(syncer.SetReposWithContext(
+		t.Context(),
+		result.Expanded,
+		false,
+	))
+	selected, err = router.RouteForRepo("acme", "renamed-widget")
+	require.NoError(err)
+	assert.Same(exactClient, selected.Client)
 }
 
 func TestResolveConfiguredRepos_ReportsZeroCountOnStartupWarning(t *testing.T) {
@@ -368,6 +430,27 @@ func TestFallbackConfiguredRepoRefsPreservesProviderIdentity(t *testing.T) {
 		Owner:        "acme",
 		Name:         "widget",
 	}}, got)
+}
+
+func TestFallbackConfiguredRepoRefsPreservesResolvedRenameAlias(t *testing.T) {
+	renamed := RepoRef{
+		Platform:           platform.KindGitHub,
+		PlatformHost:       "github.com",
+		Owner:              "acme",
+		Name:               "renamed-widget",
+		RepoPath:           "acme/renamed-widget",
+		PlatformExternalID: "R_widget",
+		CredentialOwner:    "acme",
+		CredentialName:     "widget",
+	}
+
+	got := FallbackConfiguredRepoRefs([]RepoRef{renamed}, config.Repo{
+		Platform: "github",
+		Owner:    "acme",
+		Name:     "widget",
+	})
+
+	assert.Equal(t, []RepoRef{renamed}, got)
 }
 
 func TestFallbackConfiguredRepoRefsSynthesizesNonGitHubProvider(t *testing.T) {

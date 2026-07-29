@@ -64,10 +64,13 @@ what "current" means.
   union through that sync; reset an occupied destination even when the source
   row survives, and let cutover during handoff supersede the older observation
   (`internal/github/sync.go::reconcileRepoIdentityWithIncarnationGate`).
-- A provider-resolved live rename publishes the authoritative path into tracked
-  state while retaining the configured exact credential route; reloads preserve
-  that alias, and path-keyed state resets only on a real persisted move
-  (`internal/github/sync.go::publishAuthoritativeRepoAlias`).
+- A live rename retains the configured route and stable provider ID as its trust
+  anchor; reloads preserve it, and an unconfirmed path takeover quarantines the
+  alias until configuration changes
+  (`internal/github/sync.go::revalidateAliasedRepoIdentity`).
+- Fold offline-seeded configured-path rows into the authoritative provider-ID
+  row instead of leaving duplicate repository or archive state
+  (`internal/db/queries.go::DB.ReconcileRepoByProviderID`).
 - Feature probes retain the gate through release or abandonment, fencing
   fast/detail/archive cooldown publication without serializing concurrent reads
   (`internal/github/feature_cooldown.go::Syncer.beginRepositoryFeatureProbe`).

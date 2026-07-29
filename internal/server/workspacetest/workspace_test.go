@@ -1,10 +1,12 @@
 package workspacetest
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -16,8 +18,36 @@ import (
 	"go.kenn.io/middleman/internal/apiclient/generated"
 	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/middleman/internal/procutil"
 	"go.kenn.io/middleman/internal/workspace/localruntime"
 )
+
+func TestWorkspaceFixtureUsesIsolatedTmuxServer(t *testing.T) {
+	tmuxPath, err := exec.LookPath("tmux")
+	if err != nil {
+		t.Skip("tmux not available")
+	}
+
+	fixture := setupWorkspaceServerFixture(t, nil)
+	ctx := t.Context()
+	ws := createReadyWorkspace(t, ctx, fixture.client)
+	t.Cleanup(func() {
+		cleanupCtx, cancel := context.WithTimeout(
+			context.WithoutCancel(ctx), 5*time.Second,
+		)
+		defer cancel()
+		deleteWorkspaceForPtyOwnerTest(t, cleanupCtx, fixture, ws.Id)
+	})
+
+	err = procutil.Run(
+		ctx,
+		procutil.CommandContext(
+			ctx, tmuxPath, "has-session", "-t", ws.TmuxSession,
+		),
+		"inspect default test tmux server",
+	)
+	assert.Error(t, err, "workspace session leaked into the default tmux server")
+}
 
 func TestWorkspaceRuntimeTargetsE2E(t *testing.T) {
 	require := require.New(t)

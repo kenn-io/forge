@@ -25,8 +25,6 @@ import (
 	"go.kenn.io/middleman/internal/procutil"
 	"go.kenn.io/middleman/internal/ptyowner"
 	"go.kenn.io/middleman/internal/server"
-	"go.kenn.io/middleman/internal/testutil/gitsafe"
-	"go.kenn.io/middleman/internal/testutil/processjob"
 	"go.kenn.io/middleman/internal/workspace"
 	"go.kenn.io/middleman/internal/workspace/localruntime"
 )
@@ -38,17 +36,6 @@ var rustPtyManagerBuild struct {
 	path string
 	out  []byte
 	err  error
-}
-
-func TestMain(m *testing.M) {
-	if slices.Contains(os.Args, workspaceRuntimeHelperMarker) {
-		os.Exit(m.Run())
-	}
-	if err := processjob.ContainCurrentProcessTree(); err != nil {
-		fmt.Fprintf(os.Stderr, "contain workspace test process tree: %v\n", err)
-		os.Exit(1)
-	}
-	os.Exit(gitsafe.RunIsolatedMain(m))
 }
 
 func TestWorkspaceCreatesRustPtyManagerSessionE2E(t *testing.T) {

@@ -45,6 +45,15 @@ func setupWorkspaceServerFixture(
 	if testing.Short() {
 		t.Skip("workspace e2e tests skipped in short mode")
 	}
+	if cfg == nil {
+		cfg = &config.Config{}
+	} else {
+		clone := *cfg
+		cfg = &clone
+	}
+	if len(cfg.Tmux.Command) == 0 {
+		cfg.Tmux.Command = append([]string(nil), workspaceTestTmuxCommand...)
+	}
 
 	dir := t.TempDir()
 	database := dbtest.Open(t)

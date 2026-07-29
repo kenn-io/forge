@@ -31,25 +31,20 @@ func canonicalRepoHost(host string) string {
 func canonicalRepoRef(repo RepoRef) RepoRef {
 	kind := repoPlatform(repo)
 	out := RepoRef{
-		Platform:               kind,
-		Owner:                  strings.TrimSpace(repo.Owner),
-		Name:                   strings.TrimSpace(repo.Name),
-		PlatformHost:           canonicalRepoHost(repo.PlatformHost),
-		RepoPath:               strings.TrimSpace(repo.RepoPath),
-		PlatformRepoID:         repo.PlatformRepoID,
-		PlatformExternalID:     strings.TrimSpace(repo.PlatformExternalID),
-		WebURL:                 strings.TrimSpace(repo.WebURL),
-		CloneURL:               strings.TrimSpace(repo.CloneURL),
-		DefaultBranch:          strings.TrimSpace(repo.DefaultBranch),
-		CredentialOwner:        strings.TrimSpace(repo.CredentialOwner),
-		CredentialName:         strings.TrimSpace(repo.CredentialName),
-		credentialAliasBlocked: repo.credentialAliasBlocked,
+		Platform:           kind,
+		Owner:              strings.TrimSpace(repo.Owner),
+		Name:               strings.TrimSpace(repo.Name),
+		PlatformHost:       canonicalRepoHost(repo.PlatformHost),
+		RepoPath:           strings.TrimSpace(repo.RepoPath),
+		PlatformRepoID:     repo.PlatformRepoID,
+		PlatformExternalID: strings.TrimSpace(repo.PlatformExternalID),
+		WebURL:             strings.TrimSpace(repo.WebURL),
+		CloneURL:           strings.TrimSpace(repo.CloneURL),
+		DefaultBranch:      strings.TrimSpace(repo.DefaultBranch),
 	}
 	if kind == platform.KindGitHub {
 		out.Owner = canonicalRepoOwner(out.Owner)
 		out.Name = canonicalRepoName(out.Name)
-		out.CredentialOwner = canonicalRepoOwner(out.CredentialOwner)
-		out.CredentialName = canonicalRepoName(out.CredentialName)
 		if out.RepoPath != "" {
 			out.RepoPath = canonicalRepoName(out.RepoPath)
 		}
@@ -92,11 +87,7 @@ func FallbackConfiguredRepoRefs(
 		for _, repo := range previous {
 			if repoPlatform(repo) == kind &&
 				sameConfiguredRepoHost(repoHost(repo), host) &&
-				(strings.EqualFold(repoPathOrFullName(repo), repoPath) ||
-					strings.EqualFold(
-						repoPathOrFullName(repoCredentialRef(repo)),
-						repoPath,
-					)) {
+				strings.EqualFold(repoPathOrFullName(repo), repoPath) {
 				return []RepoRef{repo}
 			}
 		}
@@ -241,8 +232,24 @@ func resolveConfiguredRepo(
 				ErrConfiguredRepoArchived, raw.Owner, raw.Name,
 			)
 		}
+		resolved := repoRefFromRepository(raw, kind, host, repo)
+		if !strings.EqualFold(resolved.Owner, raw.Owner) ||
+			!strings.EqualFold(resolved.Name, raw.Name) ||
+			!strings.EqualFold(
+				repoPathOrFullName(resolved),
+				configuredRepoPath(raw),
+			) {
+			return status, nil, fmt.Errorf(
+				"%w: configured %s/%s resolved to %s/%s",
+				ErrConfiguredRepoIdentityChanged,
+				raw.Owner,
+				raw.Name,
+				resolved.Owner,
+				resolved.Name,
+			)
+		}
 		status.MatchedRepoCount = 1
-		return status, []RepoRef{repoRefFromRepository(raw, kind, host, repo)}, nil
+		return status, []RepoRef{resolved}, nil
 	}
 
 	repos, err := reader.ListRepositories(ctx, raw.Owner, platform.RepositoryListOptions{})
@@ -340,21 +347,9 @@ func repoRefFromRepository(
 		ref.Owner = canonicalRepoOwner(ref.Owner)
 		ref.Name = canonicalRepoName(ref.Name)
 		ref.RepoPath = canonicalRepoName(ref.RepoPath)
-		ref.CredentialOwner = canonicalRepoOwner(ref.CredentialOwner)
-		ref.CredentialName = canonicalRepoName(ref.CredentialName)
 	}
 	if ref.RepoPath == "" {
 		ref.RepoPath = ref.Owner + "/" + ref.Name
-	}
-	if !raw.HasNameGlob() &&
-		(!strings.EqualFold(ref.Owner, raw.Owner) ||
-			!strings.EqualFold(ref.Name, raw.Name)) {
-		ref.CredentialOwner = strings.TrimSpace(raw.Owner)
-		ref.CredentialName = strings.TrimSpace(raw.Name)
-		if kind == platform.KindGitHub {
-			ref.CredentialOwner = canonicalRepoOwner(ref.CredentialOwner)
-			ref.CredentialName = canonicalRepoName(ref.CredentialName)
-		}
 	}
 	return ref
 }

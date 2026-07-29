@@ -1248,12 +1248,6 @@ func (m *mockClient) InvalidateListETagsForRepo(owner, repo string, _ ...string)
 	m.invalidateMu.Unlock()
 }
 
-func (m *mockClient) invalidatedRepoSnapshot() []string {
-	m.invalidateMu.Lock()
-	defer m.invalidateMu.Unlock()
-	return slices.Clone(m.invalidatedRepos)
-}
-
 func (m *mockClient) ListOpenPullRequests(ctx context.Context, owner, repo string) ([]*gh.PullRequest, error) {
 	m.trackCall()
 	m.listOpenPRsCalled.Store(true)
@@ -3777,6 +3771,56 @@ func TestSyncNotificationsNewRepoFullSyncsWithoutResettingSiblings(t *testing.T)
 	if assert.NotNil(seen[3].Since) {
 		assert.True(watermark.Add(-notificationSyncSinceOverlap).Equal(*seen[3].Since))
 	}
+}
+
+func TestSyncNotificationsForRepoSkipsRemovedConfiguration(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	repo := RepoRef{
+		Platform:     platform.KindGitHub,
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		RepoPath:     "acme/widget",
+	}
+	var calls atomic.Int32
+	client := &mockClient{
+		listNotificationsFn: func(
+			context.Context,
+			NotificationListOptions,
+		) ([]NotificationThread, bool, error) {
+			calls.Add(1)
+			return nil, false, nil
+		},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client},
+		d,
+		nil,
+		[]RepoRef{repo},
+		time.Minute,
+		nil,
+		nil,
+	)
+	t.Cleanup(syncer.Stop)
+	require.NoError(syncer.SetReposWithContext(t.Context(), nil, false))
+
+	err := syncer.syncNotificationsForRepo(
+		t.Context(),
+		platform.KindGitHub,
+		"github.com",
+		client,
+		map[string]RepoRef{},
+		repo,
+		time.Now().UTC(),
+	)
+
+	require.NoError(err)
+	assert.Zero(calls.Load())
+	repos, err := d.ListRepos(t.Context())
+	require.NoError(err)
+	assert.Empty(repos)
 }
 
 func TestRepoSyncMarksClosedLinkedNotificationsDone(t *testing.T) {
@@ -7024,7 +7068,7 @@ func TestSyncRepoPersistsGitHubProviderMetadataWhenIdentityPrefilled(t *testing.
 	assert.Equal("R_kgDOexample", repos[0].PlatformRepoID)
 }
 
-func TestSyncRepoLiveRenameKeepsConfiguredCredentialRoute(t *testing.T) {
+func TestSyncRepoRejectsLiveRenameUntilConfigurationChanges(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -7037,11 +7081,13 @@ func TestSyncRepoLiveRenameKeepsConfiguredCredentialRoute(t *testing.T) {
 		RepoPath:           "acme/widgets",
 		PlatformExternalID: "R_widgets",
 	}
-	var syncedOwner, syncedName string
-	exactClient := &mockClient{
+	var listCalls atomic.Int32
+	client := &mockClient{
 		getRepositoryFn: func(
-			context.Context, string, string,
+			_ context.Context, owner, name string,
 		) (*gh.Repository, error) {
+			require.Equal("acme", owner)
+			require.Contains([]string{"widgets", "renamed-widgets"}, name)
 			return &gh.Repository{
 				NodeID: new("R_widgets"),
 				Name:   new("renamed-widgets"),
@@ -7049,26 +7095,14 @@ func TestSyncRepoLiveRenameKeepsConfiguredCredentialRoute(t *testing.T) {
 			}, nil
 		},
 		listOpenPRsFn: func(
-			_ context.Context, owner, name string,
+			context.Context, string, string,
 		) ([]*gh.PullRequest, error) {
-			syncedOwner, syncedName = owner, name
+			listCalls.Add(1)
 			return nil, nil
 		},
 	}
-	route := &Route{
-		Key: RouteKey{
-			Host: "github.com", Owner: configured.Owner, Name: configured.Name,
-		},
-		Client:        exactClient,
-		ReadIdentity:  IdentityKey{Host: "github.com", Principal: "exact"},
-		WriteIdentity: IdentityKey{Host: "github.com", Principal: "exact"},
-	}
-	router, err := NewHostRouter("github.com", route)
-	require.NoError(err)
-	routed, err := NewRoutedClient(router)
-	require.NoError(err)
 	syncer := NewSyncer(
-		map[string]Client{"github.com": routed},
+		map[string]Client{"github.com": client},
 		d,
 		nil,
 		[]RepoRef{configured},
@@ -7076,258 +7110,27 @@ func TestSyncRepoLiveRenameKeepsConfiguredCredentialRoute(t *testing.T) {
 		nil,
 		nil,
 	)
-	syncer.SetGitHubRouters(map[string]*HostRouter{"github.com": router})
 
-	require.NoError(syncer.syncRepo(ctx, configured))
-	assert.Equal("acme", syncedOwner)
-	assert.Equal("renamed-widgets", syncedName)
-	assert.Contains(
-		exactClient.invalidatedRepoSnapshot(),
-		"acme/renamed-widgets",
-		"initial enrollment must invalidate the authoritative path",
-	)
-}
+	for range 2 {
+		err := syncer.syncRepo(ctx, configured)
+		require.ErrorIs(err, ErrConfiguredRepoIdentityChanged)
+	}
+	assert.Zero(listCalls.Load())
+	repos, err := d.ListRepos(ctx)
+	require.NoError(err)
+	assert.Empty(repos)
 
-func TestReconcileRepoIdentityResetsLiveRenameOnlyOnce(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	ctx := t.Context()
-	d := openTestDB(t)
-	configured := RepoRef{
+	renamed := RepoRef{
 		Platform:           platform.KindGitHub,
 		PlatformHost:       "github.com",
 		Owner:              "acme",
-		Name:               "widgets",
-		RepoPath:           "acme/widgets",
+		Name:               "renamed-widgets",
+		RepoPath:           "acme/renamed-widgets",
 		PlatformExternalID: "R_widgets",
 	}
-	_, err := d.UpsertRepoByProviderID(
-		ctx,
-		platform.DBRepoIdentity(platformRepoRef(configured)),
-	)
-	require.NoError(err)
-	client := &mockClient{getRepositoryFn: func(
-		context.Context, string, string,
-	) (*gh.Repository, error) {
-		return &gh.Repository{
-			NodeID: new("R_widgets"),
-			Name:   new("renamed-widgets"),
-			Owner:  &gh.User{Login: new("acme")},
-		}, nil
-	}}
-	syncer := NewSyncer(
-		map[string]Client{"github.com": client},
-		d,
-		nil,
-		[]RepoRef{configured},
-		time.Minute,
-		nil,
-		nil,
-	)
-
-	_, _, _, _, err = syncer.reconcileRepoIdentity(ctx, configured)
-	require.NoError(err)
-	_, _, _, _, err = syncer.reconcileRepoIdentity(ctx, configured)
-	require.NoError(err)
-
-	assert.Equal(
-		int32(1),
-		client.invalidateCalls.Load(),
-		"a stable post-rename identity must not reset path state again",
-	)
-}
-
-func TestReconcileRepoIdentityMergesOfflineConfiguredPlaceholder(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	ctx := t.Context()
-	d := openTestDB(t)
-	configured := RepoRef{
-		Platform:     platform.KindGitHub,
-		PlatformHost: "github.com",
-		Owner:        "acme",
-		Name:         "widget",
-		RepoPath:     "acme/widget",
-	}
-	authoritative := RepoRef{
-		Platform:           platform.KindGitHub,
-		PlatformHost:       "github.com",
-		Owner:              "acme",
-		Name:               "renamed-widget",
-		RepoPath:           "acme/renamed-widget",
-		PlatformExternalID: "R_widget",
-		CredentialOwner:    configured.Owner,
-		CredentialName:     configured.Name,
-	}
-	placeholderID, err := d.UpsertRepo(
-		ctx,
-		platform.DBRepoIdentity(platformRepoRef(configured)),
-	)
-	require.NoError(err)
-	require.NoError(d.ReconcileDiscoveryArchives(
-		ctx,
-		[]int64{placeholderID},
-		time.Now().UTC(),
-	))
-	seededID, err := d.UpsertRepoByProviderID(
-		ctx,
-		platform.DBRepoIdentity(platformRepoRef(authoritative)),
-	)
-	require.NoError(err)
-	require.NoError(d.ReconcileDiscoveryArchives(
-		ctx,
-		[]int64{seededID},
-		time.Now().UTC(),
-	))
-	client := &mockClient{getRepositoryFn: func(
-		context.Context, string, string,
-	) (*gh.Repository, error) {
-		return &gh.Repository{
-			NodeID: new(authoritative.PlatformExternalID),
-			Name:   new(authoritative.Name),
-			Owner:  &gh.User{Login: new(authoritative.Owner)},
-		}, nil
-	}}
-	syncer := NewSyncer(
-		map[string]Client{"github.com": client},
-		d,
-		nil,
-		[]RepoRef{authoritative},
-		time.Minute,
-		nil,
-		nil,
-	)
-
-	_, repoID, _, _, err := syncer.reconcileRepoIdentity(ctx, authoritative)
-	require.NoError(err)
-
-	repos, err := d.ListRepos(ctx)
-	require.NoError(err)
-	require.Len(repos, 1)
-	assert.Equal(repoID, repos[0].ID)
-	assert.Equal(authoritative.Name, repos[0].Name)
-	assert.Equal(authoritative.PlatformExternalID, repos[0].PlatformRepoID)
-	states, err := d.ListArchiveRepoStates(ctx, []int64{repoID})
-	require.NoError(err)
-	require.Len(states, 1)
-	assert.Equal(db.ArchiveOperatorStateActive, states[0].OperatorState)
-}
-
-func TestReconcileRepoIdentityRejectsAliasedPathTakeover(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	ctx := t.Context()
-	d := openTestDB(t)
-	configured := RepoRef{
-		Platform:     platform.KindGitHub,
-		PlatformHost: "github.com",
-		Owner:        "acme",
-		Name:         "widget",
-		RepoPath:     "acme/widget",
-	}
-	const trustedID = "R_widget"
-	var takeover atomic.Bool
-	client := &mockClient{getRepositoryFn: func(
-		_ context.Context, owner, name string,
-	) (*gh.Repository, error) {
-		if !takeover.Load() {
-			return &gh.Repository{
-				NodeID: new(trustedID),
-				Name:   new("renamed-widget"),
-				Owner:  &gh.User{Login: new("acme")},
-			}, nil
-		}
-		if owner == configured.Owner && name == configured.Name {
-			return nil, errors.New("configured repository no longer resolves")
-		}
-		return &gh.Repository{
-			NodeID: new("R_takeover"),
-			Name:   new("renamed-widget"),
-			Owner:  &gh.User{Login: new("acme")},
-		}, nil
-	}}
-	syncer := NewSyncer(
-		map[string]Client{"github.com": client},
-		d,
-		nil,
-		[]RepoRef{configured},
-		time.Minute,
-		nil,
-		nil,
-	)
-
-	authoritative, _, _, _, err := syncer.reconcileRepoIdentity(
-		ctx,
-		configured,
-	)
-	require.NoError(err)
-	require.Equal("renamed-widget", authoritative.Name)
-	takeover.Store(true)
-
-	_, _, _, _, err = syncer.reconcileRepoIdentity(ctx, authoritative)
-	require.Error(err)
-	require.ErrorContains(err, "configured repository identity changed")
-
-	repos, err := d.ListRepos(ctx)
-	require.NoError(err)
-	require.Len(repos, 1)
-	assert.Equal(trustedID, repos[0].PlatformRepoID)
-	assert.Equal("renamed-widget", repos[0].Name)
-	assert.False(syncer.IsTrackedRepo("acme", "renamed-widget"))
-	assert.True(syncer.IsTrackedRepo("acme", "widget"))
-
-	err = syncer.SetReposWithContext(ctx, []RepoRef{{
-		Platform:           platform.KindGitHub,
-		PlatformHost:       "github.com",
-		Owner:              "acme",
-		Name:               "widget",
-		RepoPath:           "acme/widget",
-		PlatformExternalID: "R_takeover",
-	}}, false)
-	require.ErrorIs(err, ErrConfiguredRepoIdentityChanged)
-	require.Len(syncer.repos, 1)
-	assert.Equal(trustedID, syncer.repos[0].PlatformExternalID)
-}
-
-func TestConfigReloadRejectsAliasedPathTakeover(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	trusted := RepoRef{
-		Platform:           platform.KindGitHub,
-		PlatformHost:       "github.com",
-		Owner:              "acme",
-		Name:               "renamed-widget",
-		RepoPath:           "acme/renamed-widget",
-		PlatformExternalID: "R_widget",
-		CredentialOwner:    "acme",
-		CredentialName:     "widget",
-	}
-	syncer := NewSyncer(
-		map[string]Client{"github.com": &mockClient{}},
-		openTestDB(t),
-		nil,
-		[]RepoRef{trusted},
-		time.Minute,
-		nil,
-		nil,
-	)
-
-	err := syncer.SetReposWithContext(t.Context(), []RepoRef{{
-		Platform:           platform.KindGitHub,
-		PlatformHost:       "github.com",
-		Owner:              "acme",
-		Name:               "renamed-widget",
-		RepoPath:           "acme/renamed-widget",
-		PlatformExternalID: "R_takeover",
-		CredentialOwner:    "acme",
-		CredentialName:     "widget",
-	}}, false)
-
-	require.ErrorIs(err, ErrConfiguredRepoIdentityChanged)
-	assert.False(syncer.IsTrackedRepo("acme", "renamed-widget"))
-	assert.True(syncer.IsTrackedRepo("acme", "widget"))
-	require.Len(syncer.repos, 1)
-	assert.Equal("R_widget", syncer.repos[0].PlatformExternalID)
+	require.NoError(syncer.SetReposWithContext(ctx, []RepoRef{renamed}, false))
+	require.NoError(syncer.syncRepo(ctx, renamed))
+	assert.Positive(listCalls.Load())
 }
 
 func TestSyncRepoSerializesRepositoryIdentityResolution(t *testing.T) {
@@ -7939,7 +7742,7 @@ func TestReconcileRepoIdentityDrainsActiveIncarnationBeforeReplacement(t *testin
 	assert.Equal("R_new", repos[0].PlatformRepoID)
 }
 
-func TestReconcileRepoIdentityLocksAndResetsOccupiedResolvedPath(t *testing.T) {
+func TestReconcileRepoIdentityRejectsRedirectIntoOccupiedPath(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -7987,65 +7790,22 @@ func TestReconcileRepoIdentityLocksAndResetsOccupiedResolvedPath(t *testing.T) {
 		nil,
 	)
 	t.Cleanup(syncer.Stop)
-	syncer.featureCooldowns.deferUntil(
-		destinationRepo,
-		platform.RepositoryFeatureIssues,
-		time.Now().UTC().Add(time.Hour),
-	)
-	activeProbe, due := syncer.beginRepositoryFeatureProbe(
+
+	_, _, _, _, err = syncer.reconcileRepoIdentity(
 		t.Context(),
-		destinationRepo,
-		platform.RepositoryFeatureMergeRequests,
+		sourceRepo,
 	)
-	require.True(due)
-
-	type reconciliationResult struct {
-		repoID int64
-		err    error
-	}
-	reconcileDone := make(chan reconciliationResult, 1)
-	go func() {
-		_, repoID, _, _, err := syncer.reconcileRepoIdentity(
-			t.Context(),
-			sourceRepo,
-		)
-		reconcileDone <- reconciliationResult{repoID: repoID, err: err}
-	}()
-
-	var result reconciliationResult
-	completedWhileDestinationActive := false
-	select {
-	case result = <-reconcileDone:
-		require.NoError(result.err)
-		completedWhileDestinationActive = true
-	case <-time.After(100 * time.Millisecond):
-	}
-	activeProbe.abandon()
-	if !completedWhileDestinationActive {
-		result = <-reconcileDone
-		require.NoError(result.err)
-	}
+	require.ErrorIs(err, ErrConfiguredRepoIdentityChanged)
 
 	repos, err := d.ListRepos(t.Context())
 	require.NoError(err)
-	require.Len(repos, 1)
-	assert.False(
-		completedWhileDestinationActive,
-		"reconciliation did not drain the occupied destination path",
-	)
-	assert.Equal(sourceID, result.repoID)
-	assert.Equal(sourceID, repos[0].ID)
-	assert.NotEqual(destinationID, repos[0].ID)
-	assert.Equal(destinationRepo.RepoPath, repos[0].RepoPath)
-	assert.Equal(sourceRepo.PlatformExternalID, repos[0].PlatformRepoID)
-
-	probe, due := syncer.beginRepositoryFeatureProbe(
-		t.Context(),
-		destinationRepo,
-		platform.RepositoryFeatureIssues,
-	)
-	assert.True(due, "replaced destination retained its feature cooldown")
-	probe.abandon()
+	require.Len(repos, 2)
+	byID := map[int64]db.Repo{
+		repos[0].ID: repos[0],
+		repos[1].ID: repos[1],
+	}
+	assert.Equal(sourceRepo.PlatformExternalID, byID[sourceID].PlatformRepoID)
+	assert.Equal(destinationRepo.PlatformExternalID, byID[destinationID].PlatformRepoID)
 }
 
 func TestReconcileRepoIdentityUsesLatestConfiguredIDWithoutRepositoryReader(t *testing.T) {

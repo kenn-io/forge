@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"testing"
-	"time"
 
 	gh "github.com/google/go-github/v89/github"
 	"github.com/stretchr/testify/assert"
@@ -168,10 +167,10 @@ func TestResolveConfiguredReposCasefoldsResolvedRepoRefs(t *testing.T) {
 	}}, result.Expanded)
 }
 
-func TestResolveConfiguredReposPreservesExactCredentialRouteAcrossRename(t *testing.T) {
+func TestResolveConfiguredReposRejectsProviderRename(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	exactClient := &mockClient{
+	client := &mockClient{
 		getRepositoryFn: func(
 			_ context.Context, _, _ string,
 		) (*gh.Repository, error) {
@@ -182,51 +181,17 @@ func TestResolveConfiguredReposPreservesExactCredentialRouteAcrossRename(t *test
 			}, nil
 		},
 	}
-	router, err := NewHostRouter("github.com", &Route{
-		Key: RouteKey{
-			Host: "github.com", Owner: "acme", Name: "widget",
-		},
-		Client: exactClient,
-	})
-	require.NoError(err)
-	routed, err := NewRoutedClient(router)
-	require.NoError(err)
 
 	result := ResolveConfiguredRepos(
 		t.Context(),
-		map[string]Client{"github.com": routed},
+		map[string]Client{"github.com": client},
 		[]config.Repo{{Owner: "acme", Name: "widget"}},
 	)
 
-	require.Empty(result.Warnings)
-	require.Len(result.Expanded, 1)
-	resolved := result.Expanded[0]
-	assert.Equal("renamed-widget", resolved.Name)
-	assert.Equal("acme", resolved.CredentialOwner)
-	assert.Equal("widget", resolved.CredentialName)
-
-	syncer := NewSyncer(
-		map[string]Client{"github.com": routed},
-		openTestDB(t),
-		nil,
-		result.Expanded,
-		time.Minute,
-		nil,
-		nil,
-	)
-	syncer.SetGitHubRouters(map[string]*HostRouter{"github.com": router})
-	selected, err := router.RouteForRepo("acme", "renamed-widget")
-	require.NoError(err)
-	assert.Same(exactClient, selected.Client)
-
-	require.NoError(syncer.SetReposWithContext(
-		t.Context(),
-		result.Expanded,
-		false,
-	))
-	selected, err = router.RouteForRepo("acme", "renamed-widget")
-	require.NoError(err)
-	assert.Same(exactClient, selected.Client)
+	require.Len(result.Warnings, 1)
+	require.ErrorIs(result.Warnings[0], ErrConfiguredRepoIdentityChanged)
+	assert.Empty(result.Expanded)
+	assert.Zero(result.Configured[0].MatchedRepoCount)
 }
 
 func TestResolveConfiguredRepos_ReportsZeroCountOnStartupWarning(t *testing.T) {
@@ -432,7 +397,7 @@ func TestFallbackConfiguredRepoRefsPreservesProviderIdentity(t *testing.T) {
 	}}, got)
 }
 
-func TestFallbackConfiguredRepoRefsPreservesResolvedRenameAlias(t *testing.T) {
+func TestFallbackConfiguredRepoRefsDoesNotPreserveResolvedRename(t *testing.T) {
 	renamed := RepoRef{
 		Platform:           platform.KindGitHub,
 		PlatformHost:       "github.com",
@@ -440,8 +405,6 @@ func TestFallbackConfiguredRepoRefsPreservesResolvedRenameAlias(t *testing.T) {
 		Name:               "renamed-widget",
 		RepoPath:           "acme/renamed-widget",
 		PlatformExternalID: "R_widget",
-		CredentialOwner:    "acme",
-		CredentialName:     "widget",
 	}
 
 	got := FallbackConfiguredRepoRefs([]RepoRef{renamed}, config.Repo{
@@ -450,7 +413,13 @@ func TestFallbackConfiguredRepoRefsPreservesResolvedRenameAlias(t *testing.T) {
 		Name:     "widget",
 	})
 
-	assert.Equal(t, []RepoRef{renamed}, got)
+	assert.Equal(t, []RepoRef{{
+		Platform:     platform.KindGitHub,
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		RepoPath:     "acme/widget",
+	}}, got)
 }
 
 func TestFallbackConfiguredRepoRefsSynthesizesNonGitHubProvider(t *testing.T) {

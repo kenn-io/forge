@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"sync"
 
 	gh "github.com/google/go-github/v89/github"
 	"go.kenn.io/middleman/internal/platform"
@@ -71,8 +70,6 @@ type HostRouter struct {
 	owners          map[string]*Route
 	repos           map[string]*Route
 	discoveryOwners map[string]Client
-	aliasesMu       sync.RWMutex
-	aliases         map[string]credentialRoute
 }
 
 func NewHostRouter(host string, routes ...*Route) (*HostRouter, error) {
@@ -172,15 +169,6 @@ func (r *HostRouter) RouteForRepo(owner, name string) (*Route, error) {
 		if route := r.repos[repoRouteMapKey(owner, name)]; route != nil {
 			return route, nil
 		}
-		r.aliasesMu.RLock()
-		alias, aliased := r.aliases[repoRouteMapKey(owner, name)]
-		r.aliasesMu.RUnlock()
-		if aliased {
-			if route := r.repos[repoRouteMapKey(alias.owner, alias.name)]; route != nil {
-				return route, nil
-			}
-			return r.RouteForOwner(alias.owner)
-		}
 	}
 	route, err := r.RouteForOwner(owner)
 	if err != nil {
@@ -189,17 +177,6 @@ func (r *HostRouter) RouteForRepo(owner, name string) (*Route, error) {
 		}
 	}
 	return route, err
-}
-
-func (r *HostRouter) replaceCredentialAliases(
-	aliases map[string]credentialRoute,
-) {
-	if r == nil {
-		return
-	}
-	r.aliasesMu.Lock()
-	r.aliases = aliases
-	r.aliasesMu.Unlock()
 }
 
 func (r *HostRouter) ReadIdentityForRepo(owner, name string) (IdentityKey, error) {

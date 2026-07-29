@@ -241,13 +241,6 @@ type RepoRef struct {
 	WebURL             string
 	CloneURL           string
 	DefaultBranch      string
-	// CredentialOwner and CredentialName preserve the configured authorization
-	// route when the provider reports a live rename. Provider requests use the
-	// authoritative Owner and Name while route selection stays configuration
-	// bounded.
-	CredentialOwner        string
-	CredentialName         string
-	credentialAliasBlocked bool
 }
 
 var ErrConfiguredRepoIdentityChanged = errors.New(
@@ -255,28 +248,7 @@ var ErrConfiguredRepoIdentityChanged = errors.New(
 )
 
 func repoCredentialRoute(repo RepoRef) (string, string) {
-	owner := strings.TrimSpace(repo.CredentialOwner)
-	name := strings.TrimSpace(repo.CredentialName)
-	if owner == "" {
-		owner = repo.Owner
-	}
-	if name == "" {
-		name = repo.Name
-	}
-	return owner, name
-}
-
-func repoCredentialRef(repo RepoRef) RepoRef {
-	owner, name := repoCredentialRoute(repo)
-	ref := repo
-	ref.Owner = owner
-	ref.Name = name
-	ref.RepoPath = strings.Trim(owner, "/") + "/" + strings.Trim(name, "/")
-	return ref
-}
-
-func repoCredentialPriorityKey(repo RepoRef) string {
-	return repoPriorityKey(repoCredentialRef(repo))
+	return repo.Owner, repo.Name
 }
 
 func repoRefMatchesIdentity(
@@ -291,13 +263,8 @@ func repoRefMatchesIdentity(
 		!strings.EqualFold(repoHost(repo), host) {
 		return false
 	}
-	if strings.EqualFold(repo.Owner, owner) &&
-		strings.EqualFold(repo.Name, name) {
-		return true
-	}
-	credentialOwner, credentialName := repoCredentialRoute(repo)
-	return strings.EqualFold(credentialOwner, owner) &&
-		strings.EqualFold(credentialName, name)
+	return strings.EqualFold(repo.Owner, owner) &&
+		strings.EqualFold(repo.Name, name)
 }
 
 // PartialSyncError reports a repo sync cycle whose index scan completed but
@@ -3017,9 +2984,6 @@ func (s *Syncer) SetClock(now func() time.Time) {
 // host fallback fetchers.
 func (s *Syncer) SetGitHubRouters(routers map[string]*HostRouter) {
 	s.routers = routers
-	s.reposMu.Lock()
-	s.replaceGitHubCredentialAliasesLocked()
-	s.reposMu.Unlock()
 }
 
 // fetcherFor returns the GitHub GraphQL fetcher selected for a repository's
@@ -3370,11 +3334,8 @@ func (s *Syncer) ClientForRepo(
 	s.reposMu.Lock()
 	defer s.reposMu.Unlock()
 	for _, r := range s.repos {
-		credentialOwner, credentialName := repoCredentialRoute(r)
-		if (strings.EqualFold(r.Owner, owner) &&
-			strings.EqualFold(r.Name, name)) ||
-			(strings.EqualFold(credentialOwner, owner) &&
-				strings.EqualFold(credentialName, name)) {
+		if strings.EqualFold(r.Owner, owner) &&
+			strings.EqualFold(r.Name, name) {
 			return s.clientFor(r)
 		}
 	}
@@ -3585,11 +3546,8 @@ func (s *Syncer) trackedRepo(owner, name string) (RepoRef, bool, error) {
 	var matched RepoRef
 	count := 0
 	for _, r := range s.repos {
-		credentialOwner, credentialName := repoCredentialRoute(r)
-		if (strings.EqualFold(r.Owner, owner) &&
-			strings.EqualFold(r.Name, name)) ||
-			(strings.EqualFold(credentialOwner, owner) &&
-				strings.EqualFold(credentialName, name)) {
+		if strings.EqualFold(r.Owner, owner) &&
+			strings.EqualFold(r.Name, name) {
 			matched = r
 			count++
 		}
@@ -3670,11 +3628,8 @@ func (s *Syncer) hostFor(owner, name string) string {
 	s.reposMu.Lock()
 	defer s.reposMu.Unlock()
 	for _, r := range s.repos {
-		credentialOwner, credentialName := repoCredentialRoute(r)
-		if (strings.EqualFold(r.Owner, owner) &&
-			strings.EqualFold(r.Name, name)) ||
-			(strings.EqualFold(credentialOwner, owner) &&
-				strings.EqualFold(credentialName, name)) {
+		if strings.EqualFold(r.Owner, owner) &&
+			strings.EqualFold(r.Name, name) {
 			if r.PlatformHost != "" {
 				return r.PlatformHost
 			}
@@ -3690,136 +3645,15 @@ func (s *Syncer) HostForRepo(owner, name string) string {
 	return s.hostFor(owner, name)
 }
 
-func trackedRepoAliasCompatible(configured, authoritative RepoRef) bool {
-	if configured.PlatformExternalID != "" &&
-		authoritative.PlatformExternalID != "" &&
-		configured.PlatformExternalID != authoritative.PlatformExternalID {
-		return false
-	}
-	return configured.PlatformRepoID == 0 ||
-		authoritative.PlatformRepoID == 0 ||
-		configured.PlatformRepoID == authoritative.PlatformRepoID
-}
-
-func carryTrackedRepoAlias(configured, authoritative RepoRef) RepoRef {
-	ref := configured
-	ref.RepoID = authoritative.RepoID
-	ref.Platform = authoritative.Platform
-	ref.PlatformHost = authoritative.PlatformHost
-	ref.Owner = authoritative.Owner
-	ref.Name = authoritative.Name
-	ref.RepoPath = authoritative.RepoPath
-	ref.PlatformRepoID = authoritative.PlatformRepoID
-	ref.PlatformExternalID = authoritative.PlatformExternalID
-	ref.WebURL = authoritative.WebURL
-	ref.CloneURL = authoritative.CloneURL
-	ref.DefaultBranch = authoritative.DefaultBranch
-	ref.CredentialOwner = configured.Owner
-	ref.CredentialName = configured.Name
-	return ref
-}
-
-func (s *Syncer) mergeTrackedRepoAliases(repos []RepoRef) []RepoRef {
-	s.reposMu.Lock()
-	current := slices.Clone(s.repos)
-	s.reposMu.Unlock()
-
-	merged := slices.Clone(repos)
-	for i, configured := range merged {
-		configuredKey := repoPriorityKey(configured)
-		for _, authoritative := range current {
-			if configuredKey == repoPriorityKey(authoritative) {
-				break
-			}
-			if configuredKey != repoCredentialPriorityKey(authoritative) ||
-				!trackedRepoAliasCompatible(configured, authoritative) {
-				continue
-			}
-			merged[i] = carryTrackedRepoAlias(configured, authoritative)
-			break
-		}
-	}
-	return merged
-}
-
-func (s *Syncer) rejectRepoAliasTakeovers(repos []RepoRef) error {
-	s.reposMu.Lock()
-	defer s.reposMu.Unlock()
-	for i, tracked := range s.repos {
-		if !tracked.credentialAliasBlocked &&
-			repoPriorityKey(tracked) == repoCredentialPriorityKey(tracked) {
-			continue
-		}
-		for _, incoming := range repos {
-			if repoCredentialPriorityKey(incoming) !=
-				repoCredentialPriorityKey(tracked) {
-				continue
-			}
-			if trackedRepoAliasCompatible(incoming, tracked) {
-				continue
-			}
-			s.repos[i] = quarantinedConfiguredRepo(tracked)
-			s.reposGeneration++
-			s.replaceGitHubCredentialAliasesLocked()
-			return fmt.Errorf(
-				"%w for %s/%s",
-				ErrConfiguredRepoIdentityChanged,
-				s.repos[i].Owner,
-				s.repos[i].Name,
-			)
-		}
-	}
-	return nil
-}
-
-func quarantinedConfiguredRepo(repo RepoRef) RepoRef {
-	configured := repoCredentialRef(repo)
-	configured.CredentialOwner = ""
-	configured.CredentialName = ""
-	configured.RepoID = 0
-	configured.WebURL = ""
-	configured.CloneURL = ""
-	configured.DefaultBranch = ""
-	configured.credentialAliasBlocked = true
-	return configured
-}
-
-func (s *Syncer) replaceGitHubCredentialAliasesLocked() {
-	for host, router := range s.routers {
-		aliases := make(map[string]credentialRoute)
-		for _, repo := range s.repos {
-			if repoPlatform(repo) != platform.KindGitHub ||
-				!strings.EqualFold(repoHost(repo), host) {
-				continue
-			}
-			credentialOwner, credentialName := repoCredentialRoute(repo)
-			if strings.EqualFold(repo.Owner, credentialOwner) &&
-				strings.EqualFold(repo.Name, credentialName) {
-				continue
-			}
-			aliases[repoRouteMapKey(repo.Owner, repo.Name)] = credentialRoute{
-				owner: credentialOwner,
-				name:  credentialName,
-			}
-		}
-		router.replaceCredentialAliases(aliases)
-	}
-}
-
 // SetRepos atomically replaces the list of repositories to sync.
 func (s *Syncer) SetRepos(repos []RepoRef) {
 	unlockCutover := s.lockRepoConfigurationCutover(repos)
 	defer unlockCutover()
 	if err := s.setReposWithContextLocked(context.Background(), repos, false); err != nil {
 		slog.Warn("update archive repositories", "err", err)
-		if errors.Is(err, ErrConfiguredRepoIdentityChanged) {
-			return
-		}
-		repos = s.mergeTrackedRepoAliases(repos)
 		s.reposMu.Lock()
 		s.repos = slices.Clone(repos)
 		s.reposGeneration++
-		s.replaceGitHubCredentialAliasesLocked()
 		s.reposMu.Unlock()
 		s.WakeArchive()
 	}
@@ -3839,10 +3673,6 @@ func (s *Syncer) setReposWithContextLocked(
 	repos []RepoRef,
 	retryAuthentication bool,
 ) error {
-	if err := s.rejectRepoAliasTakeovers(repos); err != nil {
-		return err
-	}
-	repos = s.mergeTrackedRepoAliases(repos)
 	refs := make([]platform.RepoRef, 0, len(repos))
 	for _, repo := range repos {
 		refs = append(refs, platformRepoRef(repo))
@@ -3875,7 +3705,6 @@ func (s *Syncer) setReposWithContextLocked(
 	s.reposMu.Lock()
 	s.repos = slices.Clone(repos)
 	s.reposGeneration++
-	s.replaceGitHubCredentialAliasesLocked()
 	s.reposMu.Unlock()
 	s.WakeArchive()
 	return nil
@@ -5357,13 +5186,7 @@ func prioritizeRepos(repos, priorityRepos []RepoRef) []RepoRef {
 	out := slices.Clone(repos)
 	slices.SortStableFunc(out, func(a, b RepoRef) int {
 		ai, aOK := priorityKeys[repoPriorityKey(a)]
-		if !aOK {
-			ai, aOK = priorityKeys[repoCredentialPriorityKey(a)]
-		}
 		bi, bOK := priorityKeys[repoPriorityKey(b)]
-		if !bOK {
-			bi, bOK = priorityKeys[repoCredentialPriorityKey(b)]
-		}
 		switch {
 		case aOK && bOK:
 			return ai - bi
@@ -5388,9 +5211,7 @@ func selectRepos(repos, selectedRepos []RepoRef) []RepoRef {
 
 	out := make([]RepoRef, 0, len(selectedKeys))
 	for _, repo := range repos {
-		_, current := selectedKeys[repoPriorityKey(repo)]
-		_, configured := selectedKeys[repoCredentialPriorityKey(repo)]
-		if current || configured {
+		if _, ok := selectedKeys[repoPriorityKey(repo)]; ok {
 			out = append(out, repo)
 		}
 	}
@@ -5538,101 +5359,11 @@ func (s *Syncer) configuredRepo(repo RepoRef) (RepoRef, uint64, bool) {
 	s.reposMu.Lock()
 	defer s.reposMu.Unlock()
 	for _, configured := range s.repos {
-		if repoPriorityKey(configured) == key ||
-			repoCredentialPriorityKey(configured) == key {
+		if repoPriorityKey(configured) == key {
 			return configured, s.reposGeneration, true
 		}
 	}
 	return RepoRef{}, s.reposGeneration, false
-}
-
-func (s *Syncer) publishAuthoritativeRepoAlias(
-	configured RepoRef,
-	generation uint64,
-	authoritative RepoRef,
-) {
-	configuredKey := repoPriorityKey(configured)
-	s.reposMu.Lock()
-	defer s.reposMu.Unlock()
-	if generation != s.reposGeneration {
-		return
-	}
-	for i, tracked := range s.repos {
-		if repoPriorityKey(tracked) != configuredKey &&
-			repoCredentialPriorityKey(tracked) != configuredKey {
-			continue
-		}
-		s.repos[i] = authoritative
-		s.replaceGitHubCredentialAliasesLocked()
-		return
-	}
-}
-
-func (s *Syncer) quarantineAuthoritativeRepoAlias(
-	repo RepoRef,
-	generation uint64,
-) {
-	repoKey := repoPriorityKey(repo)
-	credentialKey := repoCredentialPriorityKey(repo)
-	s.reposMu.Lock()
-	defer s.reposMu.Unlock()
-	if generation != s.reposGeneration {
-		return
-	}
-	for i, tracked := range s.repos {
-		if repoPriorityKey(tracked) != repoKey &&
-			repoCredentialPriorityKey(tracked) != credentialKey {
-			continue
-		}
-		s.repos[i] = quarantinedConfiguredRepo(tracked)
-		s.reposGeneration++
-		s.replaceGitHubCredentialAliasesLocked()
-		return
-	}
-}
-
-func (s *Syncer) revalidateAliasedRepoIdentity(
-	ctx context.Context,
-	repo RepoRef,
-	generation uint64,
-	observed db.RepoIdentity,
-	resolved *platform.Repository,
-) (db.RepoIdentity, *platform.Repository, error) {
-	if repoPriorityKey(repo) == repoCredentialPriorityKey(repo) {
-		return observed, resolved, nil
-	}
-	trusted := platform.DBRepoIdentity(platformRepoRef(repo)).PlatformRepoID
-	if trusted == "" || observed.PlatformRepoID == trusted {
-		return observed, resolved, nil
-	}
-
-	configuredRef := repoCredentialRef(repo)
-	configuredIdentity, configuredRepo, err := s.syncRepoIdentity(
-		ctx,
-		configuredRef,
-	)
-	if err == nil && configuredIdentity.PlatformRepoID == trusted {
-		return configuredIdentity, configuredRepo, nil
-	}
-
-	s.quarantineAuthoritativeRepoAlias(repo, generation)
-	if err != nil {
-		return db.RepoIdentity{}, nil, fmt.Errorf(
-			"%w for %s/%s: %v",
-			ErrConfiguredRepoIdentityChanged,
-			configuredRef.Owner,
-			configuredRef.Name,
-			err,
-		)
-	}
-	return db.RepoIdentity{}, nil, fmt.Errorf(
-		"%w for %s/%s: expected provider id %q, got %q",
-		ErrConfiguredRepoIdentityChanged,
-		configuredRef.Owner,
-		configuredRef.Name,
-		trusted,
-		configuredIdentity.PlatformRepoID,
-	)
 }
 
 func (s *Syncer) syncRepoIdentity(ctx context.Context, repo RepoRef) (db.RepoIdentity, *platform.Repository, error) {
@@ -5653,6 +5384,18 @@ func (s *Syncer) syncRepoIdentity(ctx context.Context, repo RepoRef) (db.RepoIde
 	if identity.PlatformRepoID == "" {
 		return db.RepoIdentity{}, nil, fmt.Errorf("provider returned no repo id")
 	}
+	configuredPath := platform.DBRepoIdentity(platformRepoRef(repo))
+	if repoPriorityKey(repo) !=
+		repoPriorityKey(repoRefFromIdentity(identity)) {
+		return db.RepoIdentity{}, nil, fmt.Errorf(
+			"%w: configured %s/%s resolved to %s/%s",
+			ErrConfiguredRepoIdentityChanged,
+			configuredPath.Owner,
+			configuredPath.Name,
+			identity.Owner,
+			identity.Name,
+		)
+	}
 	return identity, &resolved, nil
 }
 
@@ -5672,7 +5415,6 @@ type repoIdentityResolution struct {
 	repo            RepoRef
 	generation      uint64
 	previousRepo    *db.Repo
-	configuredRepo  *db.Repo
 	destinationRepo *db.Repo
 	identity        db.RepoIdentity
 	resolvedRepo    *platform.Repository
@@ -5730,7 +5472,6 @@ func (s *Syncer) reconcileRepoIdentityWithIncarnationGate(
 		}
 		releaseGate = s.lockRepoIncarnationPaths([]RepoRef{
 			resolution.repo,
-			repoCredentialRef(resolution.repo),
 			repoRefFromIdentity(resolution.identity),
 		})
 		resolution, err = s.refreshRepoIdentityResolutionRows(ctx, resolution)
@@ -5767,16 +5508,6 @@ func (s *Syncer) resolveRepoIdentity(
 			err,
 		)
 	}
-	repoIdentity, resolvedRepo, err = s.revalidateAliasedRepoIdentity(
-		ctx,
-		repo,
-		generation,
-		repoIdentity,
-		resolvedRepo,
-	)
-	if err != nil {
-		return repoIdentityResolution{}, err
-	}
 	resolution := repoIdentityResolution{
 		repo:         repo,
 		generation:   generation,
@@ -5803,11 +5534,6 @@ func repoIdentityResolutionNeedsExclusiveGate(resolution repoIdentityResolution)
 	if repoPriorityKey(resolution.repo) != repoPriorityKey(resolvedRepo) {
 		return true
 	}
-	if resolution.configuredRepo != nil &&
-		(resolution.previousRepo == nil ||
-			resolution.configuredRepo.ID != resolution.previousRepo.ID) {
-		return true
-	}
 	return resolution.previousRepo != nil &&
 		resolution.previousRepo.PlatformRepoID != "" &&
 		resolution.previousRepo.PlatformRepoID != resolution.identity.PlatformRepoID
@@ -5829,18 +5555,6 @@ func (s *Syncer) refreshRepoIdentityResolutionRows(
 			err,
 		)
 	}
-	configuredIdentity := platform.DBRepoIdentity(
-		platformRepoRef(repoCredentialRef(resolution.repo)),
-	)
-	configuredRepo, err := s.db.GetRepoByIdentity(ctx, configuredIdentity)
-	if err != nil {
-		return repoIdentityResolution{}, fmt.Errorf(
-			"read configured repo %s/%s before identity reconciliation: %w",
-			configuredIdentity.Owner,
-			configuredIdentity.Name,
-			err,
-		)
-	}
 	destinationRepo, err := s.db.GetRepoByIdentity(ctx, resolution.identity)
 	if err != nil {
 		return repoIdentityResolution{}, fmt.Errorf(
@@ -5851,7 +5565,6 @@ func (s *Syncer) refreshRepoIdentityResolutionRows(
 		)
 	}
 	resolution.previousRepo = previousRepo
-	resolution.configuredRepo = configuredRepo
 	resolution.destinationRepo = destinationRepo
 	return resolution, nil
 }
@@ -5885,20 +5598,7 @@ func (s *Syncer) persistRepoIdentityResolution(
 	ctx context.Context,
 	resolution repoIdentityResolution,
 ) (RepoRef, int64, *platform.Repository, *db.Repo, error) {
-	var repoID int64
-	var err error
-	if repoPriorityKey(resolution.repo) !=
-		repoCredentialPriorityKey(resolution.repo) {
-		repoID, err = s.db.ReconcileRepoByProviderID(
-			ctx,
-			platform.DBRepoIdentity(
-				platformRepoRef(repoCredentialRef(resolution.repo)),
-			),
-			resolution.identity,
-		)
-	} else {
-		repoID, err = s.db.UpsertRepoByProviderID(ctx, resolution.identity)
-	}
+	repoID, err := s.db.UpsertRepoByProviderID(ctx, resolution.identity)
 	if err != nil {
 		return RepoRef{}, 0, nil, nil, fmt.Errorf(
 			"upsert repo %s/%s by provider id: %w",
@@ -5925,8 +5625,6 @@ func (s *Syncer) persistRepoIdentityResolution(
 	}
 	resetPaths := make(map[string]RepoRef)
 	resolvedPath := repoRefFromIdentity(resolution.identity)
-	resolvedPath.CredentialOwner, resolvedPath.CredentialName =
-		repoCredentialRoute(resolution.repo)
 	pathChanged := repoPriorityKey(resolution.repo) !=
 		repoPriorityKey(resolvedPath)
 	firstResolvedEnrollment := resolution.previousRepo == nil &&
@@ -5945,11 +5643,6 @@ func (s *Syncer) persistRepoIdentityResolution(
 	}
 	if resolution.previousRepo != nil && resolution.previousRepo.ID != repoID {
 		resetPaths[repoPriorityKey(resolution.repo)] = resolution.repo
-	}
-	if resolution.configuredRepo != nil &&
-		resolution.configuredRepo.ID != repoID {
-		configuredPath := repoCredentialRef(resolution.repo)
-		resetPaths[repoPriorityKey(configuredPath)] = configuredPath
 	}
 	if resolution.previousRepo == nil &&
 		resolution.destinationRepo == nil &&
@@ -5970,11 +5663,6 @@ func (s *Syncer) persistRepoIdentityResolution(
 		persistedRepo,
 		resolution.resolvedRepo,
 	)
-	s.publishAuthoritativeRepoAlias(
-		resolution.repo,
-		resolution.generation,
-		repo,
-	)
 	return repo, repoID, resolution.resolvedRepo, persistedRepo, nil
 }
 
@@ -5985,12 +5673,6 @@ func authoritativeRepoRef(
 	resolved *platform.Repository,
 ) RepoRef {
 	ref := configured
-	if ref.CredentialOwner == "" {
-		ref.CredentialOwner = configured.Owner
-	}
-	if ref.CredentialName == "" {
-		ref.CredentialName = configured.Name
-	}
 	ref.RepoID = repoID
 	ref.Platform = platform.Kind(persisted.Platform)
 	ref.PlatformHost = persisted.PlatformHost
@@ -10676,11 +10358,8 @@ func (s *Syncer) IsTrackedRepo(owner, name string) bool {
 	repos := slices.Clone(s.repos)
 	s.reposMu.Unlock()
 	for _, r := range repos {
-		credentialOwner, credentialName := repoCredentialRoute(r)
-		if (strings.EqualFold(r.Owner, owner) &&
-			strings.EqualFold(r.Name, name)) ||
-			(strings.EqualFold(credentialOwner, owner) &&
-				strings.EqualFold(credentialName, name)) {
+		if strings.EqualFold(r.Owner, owner) &&
+			strings.EqualFold(r.Name, name) {
 			return true
 		}
 	}
@@ -10725,8 +10404,6 @@ func (s *Syncer) SyncRepoOnProvider(
 			owner, name, kind, host,
 		)
 	}
-	repo.Owner = owner
-	repo.Name = name
 	repo.PlatformHost = repoHost(repo)
 	return s.syncRepo(withRepositoryFeatureCooldownBypass(
 		ctx, s.featureCooldowns.currentGeneration(),
@@ -10756,8 +10433,6 @@ func (s *Syncer) SyncMROnProvider(
 			owner, name, kind, host,
 		)
 	}
-	repo.Owner = owner
-	repo.Name = name
 	repo.PlatformHost = repoHost(repo)
 	return s.syncMRForRepo(ctx, repo, number, false, nil)
 }
@@ -10794,8 +10469,6 @@ func (s *Syncer) syncMRWithHost(
 			"repo %s/%s on %s is not tracked", owner, name, host,
 		)
 	}
-	repo.Owner = owner
-	repo.Name = name
 	repo.PlatformHost = repoHost(repo)
 	return s.syncMRForRepo(ctx, repo, number, false, nil)
 }
@@ -11363,8 +11036,6 @@ func (s *Syncer) SyncIssueOnProvider(
 			owner, name, kind, host,
 		)
 	}
-	repo.Owner = owner
-	repo.Name = name
 	repo.PlatformHost = repoHost(repo)
 	return s.syncIssueForRepo(ctx, repo, number, nil)
 }
@@ -11397,8 +11068,6 @@ func (s *Syncer) syncIssueWithHost(
 			"repo %s/%s on %s is not tracked", owner, name, host,
 		)
 	}
-	repo.Owner = owner
-	repo.Name = name
 	repo.PlatformHost = repoHost(repo)
 	return s.syncIssueForRepo(ctx, repo, number, nil)
 }
@@ -11464,8 +11133,6 @@ func (s *Syncer) SyncArchiveItem(
 			ref.Owner, ref.Name, ref.Platform, ref.Host,
 		)
 	}
-	repo.Owner = ref.Owner
-	repo.Name = ref.Name
 	repo.PlatformHost = repoHost(repo)
 	switch itemType {
 	case db.ArchiveItemTypeIssue:
@@ -11498,9 +11165,9 @@ func (s *Syncer) SyncItemByNumber(
 	if !ok {
 		return "", fmt.Errorf("repo %s/%s is not tracked", owner, name)
 	}
-	repo.Owner = owner
-	repo.Name = name
 	repo.PlatformHost = repoHost(repo)
+	owner = repo.Owner
+	name = repo.Name
 	bucket, err := s.bucketKeyForRepo(repo, false)
 	if err != nil {
 		return "", fmt.Errorf("resolve item credential route for %s/%s: %w", owner, name, err)

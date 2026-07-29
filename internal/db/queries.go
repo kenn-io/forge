@@ -1001,27 +1001,6 @@ func upsertRepoIdentityTx(ctx context.Context, tx *sql.Tx, identity RepoIdentity
 }
 
 func (d *DB) UpsertRepoByProviderID(ctx context.Context, identity RepoIdentity) (int64, error) {
-	return d.upsertRepoByProviderID(ctx, nil, identity)
-}
-
-// ReconcileRepoByProviderID records a provider identity while folding an
-// explicitly configured path for the same repository into the authoritative
-// row. The configured row may have been seeded while the provider was
-// unavailable and therefore have no provider ID of its own.
-func (d *DB) ReconcileRepoByProviderID(
-	ctx context.Context,
-	configured RepoIdentity,
-	identity RepoIdentity,
-) (int64, error) {
-	configured = canonicalRepoIdentity(configured)
-	return d.upsertRepoByProviderID(ctx, &configured, identity)
-}
-
-func (d *DB) upsertRepoByProviderID(
-	ctx context.Context,
-	configured *RepoIdentity,
-	identity RepoIdentity,
-) (int64, error) {
 	identity = canonicalRepoIdentity(identity)
 	if identity.PlatformRepoID == "" {
 		return 0, fmt.Errorf("upsert repo by provider id: platform repo id is required")
@@ -1045,95 +1024,6 @@ func (d *DB) upsertRepoByProviderID(
 		targetID, targetFound, err := lookupRepoIDByIdentityTx(ctx, tx, identity)
 		if err != nil {
 			return err
-		}
-
-		if configured != nil {
-			configuredID, configuredFound, err := lookupRepoIDByIdentityTx(
-				ctx, tx, *configured,
-			)
-			if err != nil {
-				return err
-			}
-			if configuredFound &&
-				configuredID != sourceID &&
-				configuredID != targetID {
-				configuredIdentity, err := lookupRepoIdentityByIDTx(
-					ctx, tx, configuredID,
-				)
-				if err != nil {
-					return err
-				}
-				if configuredIdentity.PlatformRepoID != "" &&
-					configuredIdentity.PlatformRepoID != identity.PlatformRepoID {
-					return fmt.Errorf(
-						"configured repo %s/%s has provider id %q, not %q",
-						configuredIdentity.Owner,
-						configuredIdentity.Name,
-						configuredIdentity.PlatformRepoID,
-						identity.PlatformRepoID,
-					)
-				}
-
-				mergeTargetID := sourceID
-				if !sourceFound {
-					mergeTargetID = targetID
-				}
-				if !sourceFound && !targetFound {
-					if err := updateRepoIdentityTx(
-						ctx, tx, configuredID, identity,
-					); err != nil {
-						return err
-					}
-					if err := updateWorkspaceRepoIdentityTx(
-						ctx, tx, configuredIdentity, identity,
-					); err != nil {
-						return err
-					}
-					id = configuredID
-					return nil
-				}
-
-				archiveEnrolled, err := archiveRepositoryEnrolledTx(
-					ctx, tx, configuredID,
-				)
-				if err != nil {
-					return err
-				}
-				if _, err := tx.ExecContext(ctx,
-					`UPDATE middleman_projects SET repo_id = ? WHERE repo_id = ?`,
-					mergeTargetID,
-					configuredID,
-				); err != nil {
-					return fmt.Errorf(
-						"relink projects from configured repo alias: %w",
-						err,
-					)
-				}
-				if err := updateWorkspaceRepoIdentityTx(
-					ctx, tx, configuredIdentity, identity,
-				); err != nil {
-					return err
-				}
-				if err := mergeRepoRowsTx(
-					ctx, tx, configuredID, mergeTargetID,
-				); err != nil {
-					return err
-				}
-				if archiveEnrolled {
-					if err := ensureDiscoveryArchiveTx(
-						ctx, tx, mergeTargetID, time.Now().UTC(),
-					); err != nil {
-						return err
-					}
-					if sourceFound && targetFound {
-						if err := ensureDiscoveryArchiveTx(
-							ctx, tx, targetID, time.Now().UTC(),
-						); err != nil {
-							return err
-						}
-					}
-				}
-			}
 		}
 
 		if sourceFound && targetFound && sourceID != targetID {

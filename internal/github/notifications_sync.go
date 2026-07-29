@@ -294,10 +294,18 @@ func (s *Syncer) syncNotificationsForRepo(
 	identityLock := s.repoIdentityLock(repo)
 	identityLock.Lock()
 	defer identityLock.Unlock()
+
+	s.repoConfigMu.Lock()
+	configured, _, ok := s.configuredRepo(repo)
+	if !ok {
+		s.repoConfigMu.Unlock()
+		return nil
+	}
+	repo = configured
 	incarnationGate := s.repoIncarnationGate(repo)
 	incarnationGate.RLock()
+	s.repoConfigMu.Unlock()
 	defer incarnationGate.RUnlock()
-	repo = s.latestConfiguredRepo(repo)
 
 	platformName := string(kind)
 	persistedRepo, err := s.db.GetRepoByIdentity(

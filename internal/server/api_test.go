@@ -8232,7 +8232,7 @@ func TestAPIReadyForReview(t *testing.T) {
 	require.False(pr.IsDraft)
 }
 
-func TestAPILiveRepositoryRenameRemainsTrackedForListingAndMutation(t *testing.T) {
+func TestAPILiveRepositoryRenameRequiresConfigurationChange(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -8241,28 +8241,7 @@ func TestAPILiveRepositoryRenameRemainsTrackedForListingAndMutation(t *testing.T
 		configuredName = "widget"
 		renamedName    = "renamed-widget"
 	)
-	buildPR := func(draft bool) *gh.PullRequest {
-		now := gh.Timestamp{Time: time.Now().UTC().Truncate(time.Second)}
-		return &gh.PullRequest{
-			ID:        new(int64(1001)),
-			NodeID:    new("PR_renamed"),
-			Number:    new(1),
-			Title:     new("Renamed repository PR"),
-			State:     new("open"),
-			HTMLURL:   new("https://github.com/acme/" + renamedName + "/pull/1"),
-			Draft:     &draft,
-			CreatedAt: &now,
-			UpdatedAt: &now,
-			User:      &gh.User{Login: new("octocat")},
-			Head: &gh.PullRequestBranch{
-				Ref: new("feature"), SHA: new("head-sha"),
-			},
-			Base: &gh.PullRequestBranch{
-				Ref: new("main"), SHA: new("base-sha"),
-			},
-		}
-	}
-	var mutationOwner, mutationName string
+	var mutationCalls atomic.Int32
 	exactClient := &mockGH{
 		getRepositoryFn: func(
 			context.Context, string, string,
@@ -8273,43 +8252,15 @@ func TestAPILiveRepositoryRenameRemainsTrackedForListingAndMutation(t *testing.T
 				Owner:  &gh.User{Login: new("acme")},
 			}, nil
 		},
-		listOpenPullRequestsFn: func(
-			_ context.Context, owner, name string,
-		) ([]*gh.PullRequest, error) {
-			require.Equal("acme", owner)
-			require.Equal(renamedName, name)
-			return []*gh.PullRequest{buildPR(true)}, nil
-		},
-		getPullRequestFn: func(
-			_ context.Context, owner, name string, number int,
-		) (*gh.PullRequest, error) {
-			require.Equal("acme", owner)
-			require.Equal(renamedName, name)
-			require.Equal(1, number)
-			return buildPR(true), nil
-		},
 		markReadyForReviewFn: func(
-			_ context.Context, owner, name string, number int,
+			context.Context, string, string, int,
 		) (*gh.PullRequest, error) {
-			mutationOwner, mutationName = owner, name
-			require.Equal(1, number)
-			return buildPR(false), nil
+			mutationCalls.Add(1)
+			return nil, errors.New("unexpected mutation")
 		},
 	}
-	route := &ghclient.Route{
-		Key: ghclient.RouteKey{
-			Host: "github.com", Owner: "acme", Name: configuredName,
-		},
-		Client:        exactClient,
-		ReadIdentity:  ghclient.IdentityKey{Host: "github.com", Principal: "exact"},
-		WriteIdentity: ghclient.IdentityKey{Host: "github.com", Principal: "exact"},
-	}
-	router, err := ghclient.NewHostRouter("github.com", route)
-	require.NoError(err)
-	routed, err := ghclient.NewRoutedClient(router)
-	require.NoError(err)
 	syncer := ghclient.NewSyncer(
-		map[string]ghclient.Client{"github.com": routed},
+		map[string]ghclient.Client{"github.com": exactClient},
 		database,
 		nil,
 		[]ghclient.RepoRef{{
@@ -8320,7 +8271,6 @@ func TestAPILiveRepositoryRenameRemainsTrackedForListingAndMutation(t *testing.T
 		nil,
 		nil,
 	)
-	syncer.SetGitHubRouters(map[string]*ghclient.HostRouter{"github.com": router})
 	t.Cleanup(syncer.Stop)
 	srv := New(database, syncer, nil, "/", &config.Config{
 		Repos: []config.Repo{{
@@ -8331,42 +8281,22 @@ func TestAPILiveRepositoryRenameRemainsTrackedForListingAndMutation(t *testing.T
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	client := setupTestClient(t, srv)
 
-	require.NoError(syncer.SyncRepoOnProvider(
+	err := syncer.SyncRepoOnProvider(
 		ctx, platform.KindGitHub, "github.com", "acme", configuredName,
-	))
-	require.NoError(syncer.SetReposWithContext(
-		ctx,
-		[]ghclient.RepoRef{{
-			Platform: platform.KindGitHub, PlatformHost: "github.com",
-			Owner: "acme", Name: configuredName,
-		}},
-		false,
-	))
-	assert.True(
-		syncer.IsTrackedRepo("acme", renamedName),
-		"the authoritative path must survive a configuration reload",
 	)
-
-	listResp, err := client.HTTP.ListReposWithResponse(ctx)
+	require.ErrorIs(err, ghclient.ErrConfiguredRepoIdentityChanged)
+	assert.True(syncer.IsTrackedRepo("acme", configuredName))
+	assert.False(syncer.IsTrackedRepo("acme", renamedName))
+	repos, err := database.ListRepos(ctx)
 	require.NoError(err)
-	require.Equal(http.StatusOK, listResp.StatusCode())
-	require.NotNil(listResp.JSON200)
-	require.Len(*listResp.JSON200, 1)
-	assert.Equal(renamedName, (*listResp.JSON200)[0].Name)
-
-	syncResp, err := client.HTTP.SyncPullWithResponse(
-		ctx, "gh", "acme", renamedName, 1,
-	)
-	require.NoError(err)
-	require.Equal(http.StatusOK, syncResp.StatusCode())
+	assert.Empty(repos)
 
 	actionResp, err := client.HTTP.MarkPullReadyForReviewWithResponse(
 		ctx, "gh", "acme", renamedName, 1,
 	)
 	require.NoError(err)
-	require.Equal(http.StatusOK, actionResp.StatusCode())
-	assert.Equal("acme", mutationOwner)
-	assert.Equal(renamedName, mutationName)
+	assert.Equal(http.StatusNotFound, actionResp.StatusCode())
+	assert.Zero(mutationCalls.Load())
 }
 
 func TestAPIReadyForReviewReclassifiesWorkspaceHeadRepo(t *testing.T) {

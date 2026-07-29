@@ -60,17 +60,20 @@ what "current" means.
 - On-demand MR and issue detail syncs hold the incarnation gate through their
   provider reads and persistence
   (`internal/github/feature_cooldown.go::Syncer.holdRepoIncarnationRead`).
-- Provider-ID replacement or a resolved path move locks the configured/resolved
-  union through that sync; reset an occupied destination even when the source
-  row survives, and let cutover during handoff supersede the older observation
+- Provider-ID replacement at a configured path holds the incarnation gate
+  exclusively through reconciliation, and configuration cutover supersedes an
+  older provider observation
   (`internal/github/sync.go::reconcileRepoIdentityWithIncarnationGate`).
-- A live rename retains the configured route and stable provider ID as its trust
-  anchor; reloads preserve it, and an unconfirmed path takeover quarantines the
-  alias until configuration changes
-  (`internal/github/sync.go::revalidateAliasedRepoIdentity`).
-- Fold offline-seeded configured-path rows into the authoritative provider-ID
-  row instead of leaving duplicate repository or archive state
-  (`internal/db/queries.go::DB.ReconcileRepoByProviderID`).
+- A configured repository path is an authorization boundary. If provider
+  resolution returns a different path, startup and scheduled sync fail closed
+  with `ErrConfiguredRepoIdentityChanged`; the new path becomes eligible only
+  after an explicit configuration change
+  (`internal/github/repo_config_resolver.go::resolveConfiguredRepo`,
+  `internal/github/sync.go::Syncer.syncRepoIdentity`).
+- Notification work revalidates configuration membership under the
+  configuration barrier before taking the authoritative incarnation gate, so a
+  queued snapshot cannot publish after repository removal or cutover
+  (`internal/github/notifications_sync.go::Syncer.syncNotificationsForRepo`).
 - Feature probes retain the gate through release or abandonment, fencing
   fast/detail/archive cooldown publication without serializing concurrent reads
   (`internal/github/feature_cooldown.go::Syncer.beginRepositoryFeatureProbe`).

@@ -1030,12 +1030,12 @@ test.describe("inline workspace pane continuity", () => {
       });
       const focusTerminal = page.getByRole("button", { name: "Focus Terminal" });
 
-      // 1. Tabbed behind a sibling: drag the workspace into the conversation's
-      //    leaf, then switch away from it. Neither hidden nor maximized. Alone in
-      //    its leaf the pane has no tab; the floating grip is its drag source.
-      await workspaceLeaf
-        .getByRole("button", { name: /^Move / })
-        .dragTo(conversationLeaf.getByRole("tab", { name: "Conversation" }));
+      // 1. Tabbed behind a sibling: move the ordinary Conversation tab into the
+      //    strip-less workspace leaf, then switch away from the workspace. This
+      //    leaves it neither hidden nor maximized without restoring a solo grip.
+      await conversationLeaf
+        .getByRole("tab", { name: "Conversation" })
+        .dragTo(workspaceLeaf.getByRole("group", { name: "Detail pane drop targets" }));
       await page.getByRole("tab", { name: "Conversation" }).click();
       await expect(page.locator(".detail-pane-workspace-slot")).toHaveCount(0);
 

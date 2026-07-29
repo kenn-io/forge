@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
+	"go.kenn.io/kit/agenthook"
 	"go.kenn.io/middleman/internal/agentactivity"
 )
 
@@ -35,7 +36,7 @@ type receiveAgentHookOutput struct {
 func (s *Handler) receiveAgentHook(
 	ctx context.Context, input *receiveAgentHookInput,
 ) (*receiveAgentHookOutput, error) {
-	integration, err := agentactivity.ParseIntegration(input.Agent)
+	integration, err := agenthook.ParseAgent(input.Agent)
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
@@ -44,7 +45,7 @@ func (s *Handler) receiveAgentHook(
 	}
 
 	output := &receiveAgentHookOutput{}
-	if integration != agentactivity.IntegrationClaude ||
+	if integration != agenthook.AgentClaude ||
 		input.Body.HookEventName != "SessionStart" || s.workspaces == nil {
 		return output, nil
 	}

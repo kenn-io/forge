@@ -118,9 +118,9 @@ real runtime path plus a component or Vitest browser test for presentation. Do
 not require a duplicate full-stack browser test when it would only replay data
 that is already proven at those two boundaries.
 
-Agent lifecycle hooks intentionally have no full agent-launch E2E. Cover hook config,
-CLI relay, and HTTP handling independently because agent-process invocation is external
-and a combined test duplicates those seams (`internal/server/workspaceapi/agent_hook_test.go::TestReceiveAgentHookRecordsActivityAndGeneratesClaudeContext`).
+Agent lifecycle hooks have no full agent-launch E2E: kit covers config formats and
+profile mappings, while Middleman tests all-profile selection, normalized relay, and HTTP
+handling as independent external seams (`cmd/middleman/agent_hook_cli_test.go::TestAgentHookRunNormalizesGeminiLifecyclePayload`, `internal/server/workspaceapi/agent_hook_test.go::TestReceiveAgentHookRecordsActivityAndGeneratesClaudeContext`).
 
 A leaf renders a body per tab and hides the inactive ones, so which bodies exist
 depends on the caller's `visible` gating, not on which tab is active: the

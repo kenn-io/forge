@@ -146,11 +146,11 @@ func newAgentHookCommand(stdin io.Reader, stdout io.Writer) *cobra.Command {
 		Short: "Receive one agent lifecycle hook",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return receiveAgentHook(agent, configPath, source, stdin, stdout)
+			return receiveAgentHook(cmd.Context(), agent, configPath, source, stdin, stdout)
 		},
 	}
 	run.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error { return nil })
-	run.Flags().StringVar(&agent, "agent", "", "agent integration (claude or codex)")
+	run.Flags().StringVar(&agent, "agent", "", "agent hook integration")
 	run.Flags().StringVar(&configPath, "config", config.DefaultConfigPath(), "middleman config path")
 	run.Flags().StringVar(&source, "source", "", "hook source marker")
 	cmd.AddCommand(run)
@@ -166,7 +166,7 @@ func newAgentHookCommand(stdin io.Reader, stdout io.Writer) *cobra.Command {
 			},
 		}
 		leaf.Flags().StringVar(&actionConfigPath, "config", config.DefaultConfigPath(), "middleman config path")
-		leaf.Flags().StringVar(&actionAgent, "agent", "", "agent integration (claude or codex; empty selects both)")
+		leaf.Flags().StringVar(&actionAgent, "agent", "", "agent hook integration (empty selects all)")
 		leaf.Flags().StringVar(&binary, "binary", "", "middleman binary path used by installed hooks")
 		cmd.AddCommand(leaf)
 	}

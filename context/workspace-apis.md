@@ -299,18 +299,20 @@ Workspace create endpoints may return 202 with a pre-existing workspace
 
 ## Agent Activity Hooks
 
-- Agent hooks are thin daemon API clients; the daemon owns every activity
-  transition (`internal/server/workspaceapi/agent_hook.go::Handler.receiveAgentHook`).
+- Kit owns hook profiles, config mutation, payload normalization, and native responses;
+  thin clients relay normalized events and the daemon owns activity transitions
+  (`cmd/middleman/agent_hook.go::agentHookRelay`, `internal/server/workspaceapi/agent_hook.go::Handler.receiveAgentHook`).
 - Claude `SessionStart` context is regenerated from persisted workspace metadata,
   never read from instruction files (`internal/workspace/agent_context.go::Manager.RenderAgentContextForWorktree`).
-- User-level hooks are single-target: install merges, uninstall preserves other
-  handlers, and the last install wins (`internal/agentactivity/integration.go::Install`).
+- User-level install and uninstall target all kit profiles by default or one
+  profile with `--agent`; kit preserves unrelated handlers and never enables
+  agent consent or auto-approval (`cmd/middleman/agent_hook.go::installAgentHooks`).
 - Matching live runtime/worktree reports prioritize approval, input, working, done, then idle.
   Stop/Interrupt stays `done` for the 30-minute report window; row activation acknowledges a versioned completion for the browser-tab session, while a new timestamp resurfaces (`internal/agentactivity/store.go::statePriority`, `frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte::openWorkspace`).
-- Hook installs require absolute data roots and update symlink targets instead of replacing
-  config links; report/worktree matching uses canonical filesystem paths (`cmd/middleman/main.go::runAgentHookInstall`,
-  `internal/agentactivity/integration.go::writeJSONObject`, `internal/agentactivity/store.go::canonicalWorkspacePath`).
-- The active sidebar polls every five seconds, and hook receipt fails open (`frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte::onMount`, `cmd/middleman/main.go::runAgentHookReceiver`).
+- Hook installs require absolute data roots; kit preserves config symlinks, while
+  report/worktree matching uses canonical paths (`cmd/middleman/agent_hook.go::installAgentHooks`,
+  `internal/agentactivity/store.go::canonicalWorkspacePath`).
+- The active sidebar polls every five seconds, and hook receipt fails open (`frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte::onMount`, `cmd/middleman/agent_hook.go::receiveAgentHook`).
 
 ## Diff Scopes
 

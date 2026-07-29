@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -10,7 +9,6 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"os/signal"
 	"path"
@@ -21,7 +19,6 @@ import (
 	"time"
 
 	oteltelemetry "go.kenn.io/kit/telemetry"
-	"go.kenn.io/middleman/internal/agentactivity"
 	"go.kenn.io/middleman/internal/archive"
 	"go.kenn.io/middleman/internal/cli/serve"
 	"go.kenn.io/middleman/internal/config"
@@ -198,142 +195,6 @@ func parseLogLevel(raw string) (slog.Level, error) {
 			"unsupported MIDDLEMAN_LOG_LEVEL %q", raw,
 		)
 	}
-}
-
-func runAgentHookCLI(args []string, stdin io.Reader, stdout io.Writer) error {
-	cmd := newAgentHookCommand(stdin, stdout)
-	cmd.SetArgs(normalizeSingleDashLongFlags(args))
-	cmd.SilenceErrors = true
-	cmd.SilenceUsage = true
-	return cmd.Execute()
-}
-
-func receiveAgentHook(agent, configPath, source string, stdin io.Reader, stdout io.Writer) error {
-	if source != "middleman-agent-activity" {
-		return nil
-	}
-	payload, err := io.ReadAll(io.LimitReader(stdin, (1<<20)+1))
-	if err != nil || len(payload) > 1<<20 {
-		return nil
-	}
-	integration, err := agentactivity.ParseIntegration(agent)
-	if err != nil {
-		return nil
-	}
-	daemon, err := discoverDaemonHTTP(configPath, 1500*time.Millisecond)
-	if err != nil {
-		return nil
-	}
-	req, err := http.NewRequest(
-		http.MethodPost,
-		daemon.BaseURL+"/api/v1/agent-hooks/"+url.PathEscape(string(integration)),
-		bytes.NewReader(payload),
-	)
-	if err != nil {
-		return nil
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set(
-		"X-Middleman-Runtime-Session-Key",
-		os.Getenv(agentactivity.RuntimeSessionKeyEnv),
-	)
-	resp, err := daemon.Client.Do(req)
-	if err != nil {
-		return nil
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return nil
-	}
-	responseBody, err := io.ReadAll(io.LimitReader(resp.Body, (1<<20)+1))
-	if err != nil || len(responseBody) > 1<<20 {
-		return nil
-	}
-	var output struct {
-		HookOutput json.RawMessage `json:"hook_output"`
-	}
-	if err := json.Unmarshal(responseBody, &output); err != nil ||
-		len(output.HookOutput) == 0 || string(output.HookOutput) == "null" {
-		return nil
-	}
-	if _, err := stdout.Write(output.HookOutput); err != nil {
-		return err
-	}
-	_, err = io.WriteString(stdout, "\n")
-	return err
-}
-
-func runAgentHookInstall(action string, args []string, stdout io.Writer) error {
-	cmd := newAgentHookCommand(strings.NewReader(""), stdout)
-	cmd.SetArgs(normalizeSingleDashLongFlags(append([]string{action}, args...)))
-	cmd.SilenceErrors = true
-	cmd.SilenceUsage = true
-	return cmd.Execute()
-}
-
-func installAgentHooks(action, configPath, agent, binary string, stdout io.Writer) error {
-	integrations := []agentactivity.Integration{
-		agentactivity.IntegrationClaude,
-		agentactivity.IntegrationCodex,
-	}
-	if strings.TrimSpace(agent) != "" {
-		integration, err := agentactivity.ParseIntegration(agent)
-		if err != nil {
-			return err
-		}
-		integrations = []agentactivity.Integration{integration}
-	}
-
-	if action == "uninstall" {
-		for _, integration := range integrations {
-			result, err := agentactivity.Uninstall(integration)
-			if err != nil {
-				return err
-			}
-			if _, err := fmt.Fprintf(stdout, "Removed middleman %s hooks from %s\n", integration, result.ConfigPath); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-
-	cfg, err := config.Load(configPath)
-	if err != nil {
-		return err
-	}
-	if !filepath.IsAbs(cfg.DataDir) {
-		return fmt.Errorf("agent hook install requires an absolute data_dir: %q", cfg.DataDir)
-	}
-	absoluteConfigPath, err := filepath.Abs(configPath)
-	if err != nil {
-		return fmt.Errorf("resolve agent hook config path: %w", err)
-	}
-	executable := strings.TrimSpace(binary)
-	if executable == "" {
-		executable, err = os.Executable()
-		if err != nil {
-			return fmt.Errorf("resolve middleman executable: %w", err)
-		}
-	}
-	for _, integration := range integrations {
-		result, err := agentactivity.Install(
-			integration,
-			executable,
-			absoluteConfigPath,
-		)
-		if err != nil {
-			return err
-		}
-		if _, err := fmt.Fprintf(stdout, "Installed middleman %s hooks in %s\n", integration, result.ConfigPath); err != nil {
-			return err
-		}
-		if integration == agentactivity.IntegrationCodex {
-			if _, err := fmt.Fprintln(stdout, "Open /hooks in Codex once to review and trust the new hook commands."); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
 }
 
 func writeVersion(stdout io.Writer, asJSON bool) error {

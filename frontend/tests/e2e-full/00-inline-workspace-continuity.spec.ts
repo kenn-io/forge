@@ -237,6 +237,59 @@ test.describe("inline workspace pane continuity", () => {
     });
   });
 
+  test("a dock resize grows both the pooled terminal and its PTY rows", async ({ page }) => {
+    test.skip(
+      !hasCommand("git") || !hasCommand("tmux", ["-V"]),
+      "git and tmux are required for the real workspace flow",
+    );
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    let isolatedServer: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    try {
+      isolatedServer = await startIsolatedWorkspaceE2EServer();
+      api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
+      const workspace = await createIssueWorkspace(api, 10);
+      for (let index = 0; index < 2; index += 1) {
+        const launch = await api.post(`/api/v1/workspaces/${workspace.id}/runtime/sessions`, {
+          data: { target_key: "plain_shell", display_region: "terminal" },
+        });
+        expect(launch.status(), await launch.text()).toBe(200);
+      }
+
+      await page.goto(`${isolatedServer.info.base_url}/issues/github/acme/widgets/10`);
+      const terminal = await openTerminalPanel(page);
+      const panel = page.locator(".terminal-panel.open");
+      const handle = panel.getByRole("separator", { name: "Resize terminal panel" });
+
+      const beforeHeight = await terminal.evaluate((element) => element.getBoundingClientRect().height);
+      const beforePty = await readPtyGeometry(page, terminal, workspace.worktree_path, "dock-resize-before");
+
+      await handle.press("ArrowUp");
+      await handle.press("ArrowUp");
+
+      await expect
+        .poll(() => terminal.evaluate((element) => element.getBoundingClientRect().height))
+        .toBeGreaterThan(beforeHeight + 20);
+      const afterGeometry = await terminal.evaluate((element) => {
+        const leafBody = element.closest(".terminal-leaf-body");
+        if (!(leafBody instanceof HTMLElement)) return null;
+        return {
+          leafHeight: leafBody.getBoundingClientRect().height,
+          terminalHeight: element.getBoundingClientRect().height,
+        };
+      });
+      expect(afterGeometry).not.toBeNull();
+      expect(Math.abs(afterGeometry!.leafHeight - afterGeometry!.terminalHeight)).toBeLessThan(2);
+
+      const afterPty = await readPtyGeometry(page, terminal, workspace.worktree_path, "dock-resize-after");
+      expect(afterPty.rows).toBeGreaterThan(beforePty.rows);
+    } finally {
+      await api?.dispose();
+      await isolatedServer?.stop();
+    }
+  });
+
   test("maximizing an inline workspace keeps the app frame fixed and its controls reachable", async ({ page }) => {
     test.skip(
       !hasCommand("git") || !hasCommand("tmux", ["-V"]),

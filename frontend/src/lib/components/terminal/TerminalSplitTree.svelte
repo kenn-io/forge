@@ -593,6 +593,7 @@
 
   .terminal-leaf-body {
     position: relative;
+    display: flex;
     flex: 1;
     min-height: 0;
     overflow: hidden;

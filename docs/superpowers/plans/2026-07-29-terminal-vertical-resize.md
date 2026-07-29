@@ -137,7 +137,8 @@ Expected: PASS. The xterm fills the resized leaf and `stty size` reports more ro
 Run from the repository root:
 
 ```bash
-make webui-verify
+make frontend-check-no-deps
+cd frontend && ../node_modules/.bin/vp test run --project unit
 ```
 
 Then run the complete affected Playwright spec from `frontend/`:

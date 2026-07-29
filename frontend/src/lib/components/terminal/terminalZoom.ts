@@ -14,7 +14,6 @@ interface TerminalZoomControllerOptions {
 
 export interface TerminalZoomController {
   decrease: () => void;
-  handleKeydown: (event: KeyboardEvent) => boolean;
   increase: () => void;
   reset: () => void;
   setFontSize: (fontSize: number) => void;
@@ -23,21 +22,6 @@ export interface TerminalZoomController {
 
 function clampFontSize(fontSize: number): number {
   return Math.min(MAX_TERMINAL_FONT_SIZE, Math.max(MIN_TERMINAL_FONT_SIZE, Math.round(fontSize)));
-}
-
-type TerminalZoomAction = "decrease" | "increase" | "reset";
-
-function terminalShortcutAction(event: KeyboardEvent): TerminalZoomAction | null {
-  if ((!event.metaKey && !event.ctrlKey) || event.altKey) return null;
-  if (!(event.target instanceof Element) || !event.target.closest(".terminal-container")) return null;
-  if (event.key === "0" || event.code === "Digit0" || event.code === "Numpad0") return "reset";
-  if (event.key === "+" || event.key === "=" || event.code === "Equal" || event.code === "NumpadAdd") {
-    return "increase";
-  }
-  if (event.key === "-" || event.key === "_" || event.code === "Minus" || event.code === "NumpadSubtract") {
-    return "decrease";
-  }
-  return null;
 }
 
 export function createTerminalZoomController({
@@ -87,25 +71,8 @@ export function createTerminalZoomController({
     setFontSize(RESET_TERMINAL_FONT_SIZE);
   }
 
-  function handleKeydown(event: KeyboardEvent): boolean {
-    const action = terminalShortcutAction(event);
-    if (!action) return false;
-    event.preventDefault();
-    event.stopPropagation();
-
-    if (action === "reset") {
-      reset();
-    } else if (action === "increase") {
-      increase();
-    } else {
-      decrease();
-    }
-    return true;
-  }
-
   return {
     decrease,
-    handleKeydown,
     increase,
     reset,
     setFontSize,

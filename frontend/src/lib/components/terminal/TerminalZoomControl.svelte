@@ -27,7 +27,7 @@
   <button
     type="button"
     aria-label="Decrease terminal font size"
-    title="Decrease terminal font size (Cmd/Ctrl+-)"
+    title="Decrease terminal font size"
     disabled={disabled || fontSize <= MIN_TERMINAL_FONT_SIZE}
     onclick={onDecrease}
   >
@@ -37,7 +37,7 @@
     class="font-size"
     type="button"
     aria-label="Reset terminal font size"
-    title="Reset terminal font size (Cmd/Ctrl+0)"
+    title="Reset terminal font size"
     {disabled}
     onclick={onReset}
   >
@@ -46,7 +46,7 @@
   <button
     type="button"
     aria-label="Increase terminal font size"
-    title="Increase terminal font size (Cmd/Ctrl++)"
+    title="Increase terminal font size"
     disabled={disabled || fontSize >= MAX_TERMINAL_FONT_SIZE}
     onclick={onIncrease}
   >

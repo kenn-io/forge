@@ -98,43 +98,4 @@ describe("terminal zoom controller", () => {
     expect(harness.getSettings().font_size).toBe(RESET_TERMINAL_FONT_SIZE);
     expect(harness.reportError).toHaveBeenCalledWith(expect.objectContaining({ message: "settings unavailable" }));
   });
-
-  it("handles browser zoom shortcuts only from a focused terminal", async () => {
-    const harness = createHarness();
-    const terminal = document.createElement("div");
-    terminal.className = "terminal-container";
-    const input = document.createElement("textarea");
-    terminal.append(input);
-    const outside = document.createElement("button");
-
-    const outsideEvent = new KeyboardEvent("keydown", { key: "+", metaKey: true, cancelable: true });
-    Object.defineProperty(outsideEvent, "target", { value: outside });
-    expect(harness.controller.handleKeydown(outsideEvent)).toBe(false);
-    expect(outsideEvent.defaultPrevented).toBe(false);
-
-    const increaseEvent = new KeyboardEvent("keydown", { key: "=", metaKey: true, cancelable: true });
-    Object.defineProperty(increaseEvent, "target", { value: input });
-    expect(harness.controller.handleKeydown(increaseEvent)).toBe(true);
-    expect(increaseEvent.defaultPrevented).toBe(true);
-    expect(harness.getSettings().font_size).toBe(13);
-
-    const browserSpecificIncreaseEvent = new KeyboardEvent("keydown", {
-      code: "Equal",
-      ctrlKey: true,
-      key: "Unidentified",
-      cancelable: true,
-    });
-    Object.defineProperty(browserSpecificIncreaseEvent, "target", {
-      value: input,
-    });
-    expect(harness.controller.handleKeydown(browserSpecificIncreaseEvent)).toBe(true);
-    expect(harness.getSettings().font_size).toBe(14);
-
-    const resetEvent = new KeyboardEvent("keydown", { key: "0", ctrlKey: true, cancelable: true });
-    Object.defineProperty(resetEvent, "target", { value: input });
-    expect(harness.controller.handleKeydown(resetEvent)).toBe(true);
-    expect(harness.getSettings().font_size).toBe(RESET_TERMINAL_FONT_SIZE);
-
-    await harness.controller.whenIdle();
-  });
 });

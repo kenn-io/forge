@@ -3548,11 +3548,6 @@
 <div
   class="terminal-view"
   inert={modalOpen}
-  onkeydowncapture={(event) => {
-    if (terminalSettingsReady && !terminalOptionsSaving) {
-      terminalZoom.handleKeydown(event);
-    }
-  }}
 >
   {#snippet inlineCollapseControl()}
     <!-- Collapsing the inline dock is pure local UI and must stay

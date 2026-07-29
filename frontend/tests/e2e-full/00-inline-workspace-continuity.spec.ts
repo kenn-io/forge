@@ -38,9 +38,11 @@ type WorkspaceStatusResponse = {
   error_message?: string | null;
 };
 
-type TerminalGeometryFrame = {
-  cols: number;
-  rows: number;
+type TerminalControlFrame = {
+  active: boolean | undefined;
+  cols: number | undefined;
+  rows: number | undefined;
+  type: "refresh" | "resize" | "resize_active";
 };
 
 const lockedWorkspaceTestTimeoutMs = 120_000;
@@ -57,19 +59,25 @@ function hasCommand(command: string, args: string[] = ["--version"]): boolean {
   }
 }
 
-function observeTerminalRefreshFrames(page: Page): TerminalGeometryFrame[] {
-  const frames: TerminalGeometryFrame[] = [];
+function observeTerminalControlFrames(page: Page): TerminalControlFrame[] {
+  const frames: TerminalControlFrame[] = [];
   page.on("websocket", (socket) => {
     socket.on("framesent", ({ payload }) => {
       if (typeof payload !== "string") return;
       try {
         const message = JSON.parse(payload) as {
           type?: string;
+          active?: boolean;
           cols?: number;
           rows?: number;
         };
-        if (message.type !== "refresh" || message.cols === undefined || message.rows === undefined) return;
-        frames.push({ cols: message.cols, rows: message.rows });
+        if (message.type !== "refresh" && message.type !== "resize" && message.type !== "resize_active") return;
+        frames.push({
+          active: message.active,
+          cols: message.cols,
+          rows: message.rows,
+          type: message.type,
+        });
       } catch {
         // Terminal input uses binary frames; ignore non-control payloads.
       }
@@ -237,7 +245,7 @@ test.describe("inline workspace pane continuity", () => {
     });
   });
 
-  test("a dock resize grows both the pooled terminal and its PTY rows", async ({ page }) => {
+  test("a dock resize grows both split terminals and their PTY rows", async ({ page }) => {
     test.skip(
       !hasCommand("git") || !hasCommand("tmux", ["-V"]),
       "git and tmux are required for the real workspace flow",
@@ -258,32 +266,109 @@ test.describe("inline workspace pane continuity", () => {
       }
 
       await page.goto(`${isolatedServer.info.base_url}/issues/github/acme/widgets/10`);
-      const terminal = await openTerminalPanel(page);
+      await openTerminalPanel(page);
       const panel = page.locator(".terminal-panel.open");
       const handle = panel.getByRole("separator", { name: "Resize terminal panel" });
+      await panel.getByRole("button", { name: "Split terminal right" }).click();
+      const terminals = panel.locator(".terminal-container");
+      await expect(terminals).toHaveCount(2);
 
-      const beforeHeight = await terminal.evaluate((element) => element.getBoundingClientRect().height);
-      const beforePty = await readPtyGeometry(page, terminal, workspace.worktree_path, "dock-resize-before");
+      const beforeHeights = await terminals.evaluateAll((elements) =>
+        elements.map((element) => element.getBoundingClientRect().height),
+      );
+      const beforePtys: Array<{ rows: number; cols: number }> = [];
+      for (const index of [0, 1]) {
+        beforePtys.push(
+          await readPtyGeometry(page, terminals.nth(index), workspace.worktree_path, `dock-resize-before-${index}`),
+        );
+      }
 
       await handle.press("ArrowUp");
       await handle.press("ArrowUp");
 
+      for (const index of [0, 1]) {
+        await expect
+          .poll(() => terminals.nth(index).evaluate((element) => element.getBoundingClientRect().height))
+          .toBeGreaterThan(beforeHeights[index]! + 20);
+        const afterGeometry = await terminals.nth(index).evaluate((element) => {
+          const leafBody = element.closest(".terminal-leaf-body");
+          if (!(leafBody instanceof HTMLElement)) return null;
+          return {
+            leafHeight: leafBody.getBoundingClientRect().height,
+            terminalHeight: element.getBoundingClientRect().height,
+          };
+        });
+        expect(afterGeometry).not.toBeNull();
+        expect(Math.abs(afterGeometry!.leafHeight - afterGeometry!.terminalHeight)).toBeLessThan(2);
+
+        const afterPty = await readPtyGeometry(
+          page,
+          terminals.nth(index),
+          workspace.worktree_path,
+          `dock-resize-after-${index}`,
+        );
+        expect(afterPty.rows).toBeGreaterThan(beforePtys[index]!.rows);
+      }
+    } finally {
+      await api?.dispose();
+      await isolatedServer?.stop();
+    }
+  });
+
+  test("a hidden workflow terminal revokes authority and sends no geometry frames", async ({ page }) => {
+    test.skip(
+      !hasCommand("git") || !hasCommand("tmux", ["-V"]),
+      "git and tmux are required for the real workspace flow",
+    );
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    let isolatedServer: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    try {
+      const controlFrames = observeTerminalControlFrames(page);
+      isolatedServer = await startIsolatedWorkspaceE2EServer();
+      api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
+      const workspace = await createIssueWorkspace(api, 10);
+
+      await page.goto(`${isolatedServer.info.base_url}/terminal/${workspace.id}`);
+      const terminalPanel = page.getByRole("region", { name: "Terminal panel" });
+      await terminalPanel.getByRole("button", { name: "New terminal" }).click();
+      const moveToWorkflow = terminalPanel.getByRole("button", { name: "Move terminal panel to workflow" });
+      await expect(moveToWorkflow).toBeVisible();
+      await moveToWorkflow.click();
+
+      const workflow = page.getByRole("region", { name: "Workflow panes" });
+      const homeTab = workflow.getByRole("tab", { name: "Home" });
+      const terminalTab = workflow.getByRole("tab", { name: "Terminal" });
+      await expect(terminalTab).toHaveAttribute("aria-selected", "true");
+      const revocationsBeforeHide = controlFrames.filter(
+        (frame) => frame.type === "resize_active" && frame.active === false,
+      ).length;
+
+      await homeTab.click();
+      await expect(homeTab).toHaveAttribute("aria-selected", "true");
       await expect
-        .poll(() => terminal.evaluate((element) => element.getBoundingClientRect().height))
-        .toBeGreaterThan(beforeHeight + 20);
-      const afterGeometry = await terminal.evaluate((element) => {
-        const leafBody = element.closest(".terminal-leaf-body");
-        if (!(leafBody instanceof HTMLElement)) return null;
-        return {
-          leafHeight: leafBody.getBoundingClientRect().height,
-          terminalHeight: element.getBoundingClientRect().height,
-        };
-      });
-      expect(afterGeometry).not.toBeNull();
-      expect(Math.abs(afterGeometry!.leafHeight - afterGeometry!.terminalHeight)).toBeLessThan(2);
+        .poll(() => controlFrames.filter((frame) => frame.type === "resize_active" && frame.active === false).length)
+        .toBe(revocationsBeforeHide + 1);
+      const geometryFramesAfterHide = controlFrames.filter(
+        (frame) => frame.type === "resize" || frame.type === "refresh",
+      ).length;
+      const widthBeforeResize = await workflow.evaluate((element) => element.getBoundingClientRect().width);
 
-      const afterPty = await readPtyGeometry(page, terminal, workspace.worktree_path, "dock-resize-after");
-      expect(afterPty.rows).toBeGreaterThan(beforePty.rows);
+      await page.setViewportSize({ width: 1200, height: 760 });
+      await expect
+        .poll(() => workflow.evaluate((element) => element.getBoundingClientRect().width))
+        .toBeLessThan(widthBeforeResize - 100);
+      await page.evaluate(
+        () =>
+          new Promise<void>((resolve) => {
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+          }),
+      );
+
+      expect(controlFrames.filter((frame) => frame.type === "resize" || frame.type === "refresh")).toHaveLength(
+        geometryFramesAfterHide,
+      );
     } finally {
       await api?.dispose();
       await isolatedServer?.stop();
@@ -989,7 +1074,8 @@ test.describe("inline workspace pane continuity", () => {
     let isolatedServer: IsolatedE2EServer | null = null;
     let api: APIRequestContext | null = null;
     try {
-      const refreshFrames = observeTerminalRefreshFrames(page);
+      const controlFrames = observeTerminalControlFrames(page);
+      const refreshFrames = () => controlFrames.filter((frame) => frame.type === "refresh");
       isolatedServer = await startIsolatedWorkspaceE2EServer();
       api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
 
@@ -1023,14 +1109,14 @@ test.describe("inline workspace pane continuity", () => {
         name: "Reset terminal font size",
       });
       await expect(resetZoom).toHaveText("12px");
-      const refreshCountBeforeZoom = refreshFrames.length;
+      const refreshCountBeforeZoom = refreshFrames().length;
       for (let fontSize = 13; fontSize <= ZOOMED_TERMINAL_FONT_SIZE; fontSize += 1) {
         await page.getByRole("button", { name: "Increase terminal font size" }).click();
         await expect(resetZoom).toHaveText(`${fontSize}px`);
       }
       await expectPersistedTerminalFontSize(api, ZOOMED_TERMINAL_FONT_SIZE);
-      await expect.poll(() => refreshFrames.length).toBeGreaterThan(refreshCountBeforeZoom);
-      await expect.poll(() => refreshFrames.at(-1)?.cols).toBeLessThan(beforeZoom.cols);
+      await expect.poll(() => refreshFrames().length).toBeGreaterThan(refreshCountBeforeZoom);
+      await expect.poll(() => refreshFrames().at(-1)?.cols).toBeLessThan(beforeZoom.cols);
       await waitForPtyColumnsBelow(
         page,
         tabContainer,

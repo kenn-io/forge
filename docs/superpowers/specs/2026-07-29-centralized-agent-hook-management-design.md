@@ -33,6 +33,11 @@ selected profile. Kit supplies each profile's supported event set and native
 timeout units. Reinstallation replaces only Middleman-owned registrations;
 uninstallation preserves unrelated hooks and configuration.
 
+Legacy Claude and Codex registrations carry the same ownership marker, so kit
+replaces them directly without a compatibility path. Multi-profile operations
+are fail-fast across separate config files: profiles completed before an error
+remain changed, and rerunning the idempotent command completes the operation.
+
 With no `--agent`, install and uninstall iterate `agenthook.Profiles()` in kit's
 stable order. A selected agent affects only that profile. Install output uses
 kit's display name and resolved config path. Codex retains its one-time `/hooks`
@@ -52,6 +57,10 @@ with the agent name and runtime-session key. This keeps the daemon API and
 activity store agent-neutral while ensuring native event and tool names are
 translated once by kit.
 
+The daemon route validates the path parameter with `agenthook.ParseAgent`, so
+every kit profile can reach activity persistence. The agent-specific branch is
+limited to deciding whether a `SessionStart` may receive Claude context.
+
 The daemon continues to own activity transitions. It returns generated
 workspace context only for Claude `SessionStart`; the relay maps that response
 to `agenthook.SessionStartOutput.AdditionalContext`. Other events and agents
@@ -65,6 +74,11 @@ Malformed flags, unsupported agents, payload normalization errors, daemon
 discovery failures, request failures, non-success responses, oversized or
 malformed daemon responses, and context decoding failures produce no hook
 control output and must not block the coding agent.
+
+The loopback request uses a 1.5-second client timeout within the installed
+two-second hook timeout. Runtime relay failures remain silent because diagnostic
+output could corrupt an agent's native hook response; install errors remain the
+actionable recovery surface.
 
 Install and uninstall remain ordinary CLI operations and return actionable
 errors. They continue to require an absolute Middleman data directory before
@@ -87,8 +101,8 @@ Focused tests will prove the boundaries independently:
 - Claude `SessionStart` context is mapped through the typed handler and encoded
   in Claude's native response;
 - malformed hook input and daemon failures remain fail-open;
-- the server still records normalized events and generates context only for
-  Claude sessions.
+- the real server route accepts a newly supported agent, records normalized
+  events, and generates context only for Claude sessions.
 
 The affected Go package tests and the full short test suite provide the runtime
 verification. No agent-launch end-to-end test is added because agent-process

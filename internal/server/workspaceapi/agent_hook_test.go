@@ -70,7 +70,7 @@ func TestReceiveAgentHookRecordsActivityAndGeneratesClaudeContext(t *testing.T) 
 		return rec
 	}
 
-	working := post("codex", "runtime-1", map[string]any{
+	working := post("gemini", "runtime-1", map[string]any{
 		"session_id":      "agent-1",
 		"cwd":             worktree,
 		"hook_event_name": "UserPromptSubmit",

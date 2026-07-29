@@ -67,14 +67,14 @@ what "current" means.
   older provider observation
   (`internal/github/sync.go::reconcileRepoIdentityWithIncarnationGate`).
 - A configured repository path is an authorization boundary. If provider
-  resolution returns a different path, startup and scheduled sync fail closed
-  with `ErrConfiguredRepoIdentityChanged`; the new path becomes eligible only
-  after an explicit configuration change
+  resolution returns a different path, all provider reads and mutations for
+  that path fail closed until configuration selects a different path
   (`internal/github/repo_config_resolver.go::resolveConfiguredRepo`,
-  `internal/github/sync.go::Syncer.syncRepoIdentity`).
+  `internal/github/sync.go::Syncer.blockRepoIdentity`).
 - Notification work revalidates configuration membership under the
-  configuration barrier before taking the authoritative incarnation gate, so a
-  queued snapshot cannot publish after repository removal or cutover
+  configuration barrier and requires the configured provider ID to match its
+  persisted row, so a queued snapshot cannot publish across an incarnation
+  cutover
   (`internal/github/notifications_sync.go::Syncer.syncNotificationsForRepo`).
 - Feature probes retain the gate through release or abandonment, fencing
   fast/detail/archive cooldown publication without serializing concurrent reads

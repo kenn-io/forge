@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/db"
 	ghclient "go.kenn.io/middleman/internal/github"
+	"go.kenn.io/middleman/internal/platform"
 )
 
 func seedServerNotification(t *testing.T, database *db.DB) int64 {
@@ -423,6 +425,85 @@ func TestNotificationsAPIExposesBackgroundSyncStatus(t *testing.T) {
 		}
 		return !body.Sync.Running && strings.Contains(body.Sync.LastError, "notification API unavailable")
 	}, 2*time.Second, 20*time.Millisecond)
+}
+
+func TestNotificationsAPIFailsClosedAcrossProviderIDCutover(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	oldRepo := ghclient.RepoRef{
+		Platform: platform.KindGitHub, PlatformHost: "github.com",
+		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+		PlatformExternalID: "repo-old",
+	}
+	newRepo := oldRepo
+	newRepo.PlatformExternalID = "repo-new"
+	_, err := database.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+		PlatformRepoID: oldRepo.PlatformExternalID,
+	})
+	require.NoError(err)
+	var providerCalls atomic.Int32
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{
+			"github.com": &mockGH{
+				listNotificationsFn: func(
+					context.Context,
+					ghclient.NotificationListOptions,
+				) ([]ghclient.NotificationThread, bool, error) {
+					providerCalls.Add(1)
+					return nil, false, nil
+				},
+			},
+		},
+		database,
+		nil,
+		[]ghclient.RepoRef{newRepo},
+		time.Minute,
+		nil,
+		nil,
+	)
+	t.Cleanup(syncer.Stop)
+	s := New(database, syncer, nil, "/", notificationsEnabledConfig(), ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, s) })
+	ts := httptest.NewServer(s)
+	defer ts.Close()
+
+	resp, err := http.Post(ts.URL+"/api/v1/notifications/sync", "application/json", nil)
+	require.NoError(err)
+	defer resp.Body.Close()
+	require.Equal(http.StatusAccepted, resp.StatusCode)
+
+	require.Eventually(func() bool {
+		listResp, requestErr := http.Get(ts.URL + "/api/v1/notifications?state=all")
+		if requestErr != nil {
+			return false
+		}
+		defer listResp.Body.Close()
+		if listResp.StatusCode != http.StatusOK {
+			return false
+		}
+		var body struct {
+			Items []json.RawMessage `json:"items"`
+			Sync  struct {
+				Running   bool   `json:"running"`
+				LastError string `json:"last_error"`
+			} `json:"sync"`
+		}
+		if decodeErr := json.NewDecoder(listResp.Body).Decode(&body); decodeErr != nil {
+			return false
+		}
+		return !body.Sync.Running &&
+			strings.Contains(body.Sync.LastError, "configured repository identity changed") &&
+			len(body.Items) == 0
+	}, 2*time.Second, 20*time.Millisecond)
+	assert.Zero(providerCalls.Load())
+	repos, err := database.ListRepos(ctx)
+	require.NoError(err)
+	require.Len(repos, 1)
+	assert.Equal(oldRepo.PlatformExternalID, repos[0].PlatformRepoID)
 }
 
 func TestGlobalSyncExposesNotificationSyncFailure(t *testing.T) {

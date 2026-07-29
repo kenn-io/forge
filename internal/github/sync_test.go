@@ -3843,6 +3843,61 @@ func TestSyncNotificationsForRepoSkipsRemovedConfiguration(t *testing.T) {
 	assert.Empty(repos)
 }
 
+func TestSyncNotificationsForRepoRejectsConfiguredProviderIDMismatch(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	oldRepo := RepoRef{
+		Platform: platform.KindGitHub, PlatformHost: "github.com",
+		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+		PlatformExternalID: "repo-old",
+	}
+	newRepo := oldRepo
+	newRepo.PlatformExternalID = "repo-new"
+	_, err := d.UpsertRepoByProviderID(
+		t.Context(),
+		platform.DBRepoIdentity(platformRepoRef(oldRepo)),
+	)
+	require.NoError(err)
+	var calls atomic.Int32
+	client := &mockClient{
+		listNotificationsFn: func(
+			context.Context,
+			NotificationListOptions,
+		) ([]NotificationThread, bool, error) {
+			calls.Add(1)
+			return nil, false, nil
+		},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client},
+		d,
+		nil,
+		[]RepoRef{newRepo},
+		time.Minute,
+		nil,
+		nil,
+	)
+	t.Cleanup(syncer.Stop)
+
+	err = syncer.syncNotificationsForRepo(
+		t.Context(),
+		platform.KindGitHub,
+		"github.com",
+		client,
+		map[string]RepoRef{},
+		oldRepo,
+		time.Now().UTC(),
+	)
+
+	require.ErrorIs(err, ErrConfiguredRepoIdentityChanged)
+	assert.Zero(calls.Load())
+	repos, err := d.ListRepos(t.Context())
+	require.NoError(err)
+	require.Len(repos, 1)
+	assert.Equal(oldRepo.PlatformExternalID, repos[0].PlatformRepoID)
+}
+
 func TestRepoSyncMarksClosedLinkedNotificationsDone(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

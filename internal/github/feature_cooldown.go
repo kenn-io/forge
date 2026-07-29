@@ -247,6 +247,14 @@ func (s *Syncer) holdCurrentRepoIncarnationRead(
 				repo.Name,
 			)
 		}
+		if s.repoIdentityBlocked(configured) {
+			return ctx, RepoRef{}, func() {}, fmt.Errorf(
+				"%w: configured repository %s/%s requires a configuration change",
+				ErrConfiguredRepoIdentityChanged,
+				configured.Owner,
+				configured.Name,
+			)
+		}
 		return ctx, configured, func() {}, nil
 	}
 	gate := s.repoIncarnationGate(repo)
@@ -258,6 +266,15 @@ func (s *Syncer) holdCurrentRepoIncarnationRead(
 			"repo %s/%s is no longer configured",
 			repo.Owner,
 			repo.Name,
+		)
+	}
+	if s.repoIdentityBlocked(configured) {
+		gate.RUnlock()
+		return ctx, RepoRef{}, func() {}, fmt.Errorf(
+			"%w: configured repository %s/%s requires a configuration change",
+			ErrConfiguredRepoIdentityChanged,
+			configured.Owner,
+			configured.Name,
 		)
 	}
 	return withRepoIncarnationGateHeld(ctx, configured),

@@ -302,6 +302,10 @@ func (s *Syncer) syncNotificationsForRepo(
 		return nil
 	}
 	repo = configured
+	if s.repoIdentityBlocked(repo) {
+		s.repoConfigMu.Unlock()
+		return nil
+	}
 	incarnationGate := s.repoIncarnationGate(repo)
 	incarnationGate.RLock()
 	s.repoConfigMu.Unlock()
@@ -319,6 +323,20 @@ func (s *Syncer) syncNotificationsForRepo(
 			repo.Name,
 			host,
 			err,
+		)
+	}
+	configuredIdentity := platform.DBRepoIdentity(platformRepoRef(repo))
+	if persistedRepo != nil &&
+		configuredIdentity.PlatformRepoID != "" &&
+		persistedRepo.PlatformRepoID != "" &&
+		persistedRepo.PlatformRepoID != configuredIdentity.PlatformRepoID {
+		return fmt.Errorf(
+			"%w: configured provider id %q does not match persisted provider id %q for %s/%s",
+			ErrConfiguredRepoIdentityChanged,
+			configuredIdentity.PlatformRepoID,
+			persistedRepo.PlatformRepoID,
+			repo.Owner,
+			repo.Name,
 		)
 	}
 	if persistedRepo == nil {

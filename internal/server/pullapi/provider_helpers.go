@@ -63,7 +63,12 @@ func (s *Handler) capabilitiesForRepo(repo db.Repo) httpapi.ProviderCapabilities
 }
 
 func (s *Handler) requireSyncerCapability(repo db.Repo, capability string) error {
-	if s.syncer == nil {
+	if s.syncer == nil || !s.syncer.IsTrackedRepoOnProvider(
+		repoProviderKind(repo),
+		repoProviderHost(repo),
+		repo.Owner,
+		repo.Name,
+	) {
 		return httpapi.UnsupportedCapability(repo, capability)
 	}
 	return nil

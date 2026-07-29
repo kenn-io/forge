@@ -8280,22 +8280,23 @@ func TestAPILiveRepositoryRenameRequiresConfigurationChange(t *testing.T) {
 	}, ServerOptions{})
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	client := setupTestClient(t, srv)
+	seedPR(t, database, "acme", configuredName, 1)
 
 	err := syncer.SyncRepoOnProvider(
 		ctx, platform.KindGitHub, "github.com", "acme", configuredName,
 	)
 	require.ErrorIs(err, ghclient.ErrConfiguredRepoIdentityChanged)
-	assert.True(syncer.IsTrackedRepo("acme", configuredName))
+	assert.False(syncer.IsTrackedRepo("acme", configuredName))
 	assert.False(syncer.IsTrackedRepo("acme", renamedName))
 	repos, err := database.ListRepos(ctx)
 	require.NoError(err)
-	assert.Empty(repos)
+	require.Len(repos, 1)
 
 	actionResp, err := client.HTTP.MarkPullReadyForReviewWithResponse(
-		ctx, "gh", "acme", renamedName, 1,
+		ctx, "gh", "acme", configuredName, 1,
 	)
 	require.NoError(err)
-	assert.Equal(http.StatusNotFound, actionResp.StatusCode())
+	assert.Equal(http.StatusConflict, actionResp.StatusCode())
 	assert.Zero(mutationCalls.Load())
 }
 

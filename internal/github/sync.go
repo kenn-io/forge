@@ -512,6 +512,7 @@ type Syncer struct {
 	repos                    []RepoRef
 	reposMu                  sync.Mutex
 	reposGeneration          uint64
+	repoIdentityBlocks       map[string]struct{}
 	repoConfigMu             sync.Mutex
 	repoIdentityLocksMu      sync.Mutex
 	repoIdentityLocks        map[string]*sync.Mutex
@@ -835,6 +836,7 @@ func NewSyncerWithRegistry(
 		budgets:                  budgets,
 		repos:                    repos,
 		reposGeneration:          1,
+		repoIdentityBlocks:       make(map[string]struct{}),
 		interval:                 interval,
 		rateLimitSnapshotRefresh: make(map[string]time.Time),
 		branchActivityRetention:  defaultBranchActivityRetention,
@@ -902,7 +904,12 @@ func (s *Syncer) SetArchivePollIntervalForTesting(interval time.Duration) {
 
 func (s *Syncer) ConfiguredRepositories(context.Context) ([]platform.RepoRef, error) {
 	s.reposMu.Lock()
-	repos := slices.Clone(s.repos)
+	repos := make([]RepoRef, 0, len(s.repos))
+	for _, repo := range s.repos {
+		if !s.repoIdentityBlockedLocked(repo) {
+			repos = append(repos, repo)
+		}
+	}
 	s.reposMu.Unlock()
 	refs := make([]platform.RepoRef, 0, len(repos))
 	for _, repo := range repos {
@@ -3530,6 +3537,9 @@ func (s *Syncer) trackedRepoOnHost(owner, name, host string) (RepoRef, bool) {
 	s.reposMu.Lock()
 	defer s.reposMu.Unlock()
 	for _, r := range s.repos {
+		if s.repoIdentityBlockedLocked(r) {
+			continue
+		}
 		if repoRefMatchesIdentity(
 			r, repoPlatform(r), canonicalRepoHost(host), owner, name,
 		) {
@@ -3546,6 +3556,9 @@ func (s *Syncer) trackedRepo(owner, name string) (RepoRef, bool, error) {
 	var matched RepoRef
 	count := 0
 	for _, r := range s.repos {
+		if s.repoIdentityBlockedLocked(r) {
+			continue
+		}
 		if strings.EqualFold(r.Owner, owner) &&
 			strings.EqualFold(r.Name, name) {
 			matched = r
@@ -3576,6 +3589,9 @@ func (s *Syncer) trackedRepoOnHostUnique(
 	var matched RepoRef
 	count := 0
 	for _, r := range s.repos {
+		if s.repoIdentityBlockedLocked(r) {
+			continue
+		}
 		if repoRefMatchesIdentity(
 			r, repoPlatform(r), canonicalRepoHost(host), owner, name,
 		) {
@@ -3606,6 +3622,9 @@ func (s *Syncer) trackedRepoByIdentity(
 	s.reposMu.Lock()
 	defer s.reposMu.Unlock()
 	for _, r := range s.repos {
+		if s.repoIdentityBlockedLocked(r) {
+			continue
+		}
 		if repoRefMatchesIdentity(r, kind, host, owner, name) {
 			return r, true
 		}
@@ -3652,8 +3671,7 @@ func (s *Syncer) SetRepos(repos []RepoRef) {
 	if err := s.setReposWithContextLocked(context.Background(), repos, false); err != nil {
 		slog.Warn("update archive repositories", "err", err)
 		s.reposMu.Lock()
-		s.repos = slices.Clone(repos)
-		s.reposGeneration++
+		s.replaceConfiguredReposLocked(repos)
 		s.reposMu.Unlock()
 		s.WakeArchive()
 	}
@@ -3703,11 +3721,24 @@ func (s *Syncer) setReposWithContextLocked(
 		}
 	}
 	s.reposMu.Lock()
-	s.repos = slices.Clone(repos)
-	s.reposGeneration++
+	s.replaceConfiguredReposLocked(repos)
 	s.reposMu.Unlock()
 	s.WakeArchive()
 	return nil
+}
+
+func (s *Syncer) replaceConfiguredReposLocked(repos []RepoRef) {
+	s.repos = slices.Clone(repos)
+	configuredKeys := make(map[string]struct{}, len(repos))
+	for _, repo := range repos {
+		configuredKeys[repoPriorityKey(repo)] = struct{}{}
+	}
+	for key := range s.repoIdentityBlocks {
+		if _, configured := configuredKeys[key]; !configured {
+			delete(s.repoIdentityBlocks, key)
+		}
+	}
+	s.reposGeneration++
 }
 
 // Start runs an immediate sync then launches a background ticker.
@@ -5366,6 +5397,26 @@ func (s *Syncer) configuredRepo(repo RepoRef) (RepoRef, uint64, bool) {
 	return RepoRef{}, s.reposGeneration, false
 }
 
+func (s *Syncer) repoIdentityBlockedLocked(repo RepoRef) bool {
+	_, blocked := s.repoIdentityBlocks[repoPriorityKey(repo)]
+	return blocked
+}
+
+func (s *Syncer) repoIdentityBlocked(repo RepoRef) bool {
+	s.reposMu.Lock()
+	defer s.reposMu.Unlock()
+	return s.repoIdentityBlockedLocked(repo)
+}
+
+func (s *Syncer) blockRepoIdentity(repo RepoRef) {
+	s.reposMu.Lock()
+	if s.repoIdentityBlocks == nil {
+		s.repoIdentityBlocks = make(map[string]struct{})
+	}
+	s.repoIdentityBlocks[repoPriorityKey(repo)] = struct{}{}
+	s.reposMu.Unlock()
+}
+
 func (s *Syncer) syncRepoIdentity(ctx context.Context, repo RepoRef) (db.RepoIdentity, *platform.Repository, error) {
 	identity := platform.DBRepoIdentity(platformRepoRef(repo))
 	reader, err := s.clients.RepositoryReader(repoPlatform(repo), repoHost(repo))
@@ -5504,8 +5555,19 @@ func (s *Syncer) resolveRepoIdentity(
 		)
 	}
 	repo = configuredRepo
+	if s.repoIdentityBlocked(repo) {
+		return repoIdentityResolution{}, fmt.Errorf(
+			"%w: configured repository %s/%s requires a configuration change",
+			ErrConfiguredRepoIdentityChanged,
+			repo.Owner,
+			repo.Name,
+		)
+	}
 	repoIdentity, resolvedRepo, err := s.syncRepoIdentity(ctx, repo)
 	if err != nil {
+		if errors.Is(err, ErrConfiguredRepoIdentityChanged) {
+			s.blockRepoIdentity(repo)
+		}
 		return repoIdentityResolution{}, fmt.Errorf(
 			"resolve repo identity %s/%s: %w",
 			repo.Owner,
@@ -10360,9 +10422,11 @@ func (s *Syncer) buildDetailQueueItems(
 // IsTrackedRepo checks whether the given repo is in the configured list.
 func (s *Syncer) IsTrackedRepo(owner, name string) bool {
 	s.reposMu.Lock()
-	repos := slices.Clone(s.repos)
-	s.reposMu.Unlock()
-	for _, r := range repos {
+	defer s.reposMu.Unlock()
+	for _, r := range s.repos {
+		if s.repoIdentityBlockedLocked(r) {
+			continue
+		}
 		if strings.EqualFold(r.Owner, owner) &&
 			strings.EqualFold(r.Name, name) {
 			return true
@@ -10376,7 +10440,13 @@ func (s *Syncer) TrackedRepos() []RepoRef {
 	s.reposMu.Lock()
 	defer s.reposMu.Unlock()
 
-	return slices.Clone(s.repos)
+	repos := make([]RepoRef, 0, len(s.repos))
+	for _, repo := range s.repos {
+		if !s.repoIdentityBlockedLocked(repo) {
+			repos = append(repos, repo)
+		}
+	}
+	return repos
 }
 
 // isTrackedRepoOnHost checks whether the given repo on a specific host
@@ -10391,6 +10461,16 @@ func (s *Syncer) isTrackedRepoOnHost(owner, name, host string) bool {
 // is in the configured list.
 func (s *Syncer) IsTrackedRepoOnHost(owner, name, host string) bool {
 	return s.isTrackedRepoOnHost(owner, name, host)
+}
+
+// IsTrackedRepoOnProvider checks whether the repository identity is currently
+// eligible for provider operations.
+func (s *Syncer) IsTrackedRepoOnProvider(
+	kind platform.Kind,
+	host, owner, name string,
+) bool {
+	_, ok := s.trackedRepoByIdentity(kind, owner, name, host)
+	return ok
 }
 
 // SyncRepoOnProvider performs the index sync for one configured repository.

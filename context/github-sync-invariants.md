@@ -57,16 +57,17 @@ what "current" means.
   writes and use the authoritative configured provider reference after
   reconciliation (`internal/github/sync.go::syncRepo`,
   `internal/github/notifications_sync.go::Syncer.syncNotificationsForRepo`).
+- On-demand MR and issue detail syncs hold the incarnation gate through their
+  provider reads and persistence
+  (`internal/github/feature_cooldown.go::Syncer.holdRepoIncarnationRead`).
 - Provider-ID replacement or a resolved path move locks the configured/resolved
   union through that sync; reset an occupied destination even when the source
   row survives, and let cutover during handoff supersede the older observation
   (`internal/github/sync.go::reconcileRepoIdentityWithIncarnationGate`).
-- A provider-resolved live rename separates two identities for the rest of the
-  sync: API requests use the authoritative resolved path, while credential
-  selection keeps the configured exact-repository route. Reset path-keyed state
-  only when the persisted row actually moves, not on every later resolution of
-  the unchanged rename (`internal/github/sync.go::authoritativeRepoRef`,
-  `internal/github/auth_router.go::RoutedClient.routeForRepoContext`).
+- A provider-resolved live rename publishes the authoritative path into tracked
+  state while retaining the configured exact credential route; reloads preserve
+  that alias, and path-keyed state resets only on a real persisted move
+  (`internal/github/sync.go::publishAuthoritativeRepoAlias`).
 - Feature probes retain the gate through release or abandonment, fencing
   fast/detail/archive cooldown publication without serializing concurrent reads
   (`internal/github/feature_cooldown.go::Syncer.beginRepositoryFeatureProbe`).

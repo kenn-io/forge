@@ -233,6 +233,18 @@ func repoIncarnationGateHeld(ctx context.Context, repo RepoRef) bool {
 	return key == repoPriorityKey(repo)
 }
 
+func (s *Syncer) holdRepoIncarnationRead(
+	ctx context.Context,
+	repo RepoRef,
+) (context.Context, func()) {
+	if repoIncarnationGateHeld(ctx, repo) {
+		return ctx, func() {}
+	}
+	gate := s.repoIncarnationGate(repo)
+	gate.RLock()
+	return withRepoIncarnationGateHeld(ctx, repo), gate.RUnlock
+}
+
 func (s *Syncer) beginRepositoryFeatureProbe(
 	ctx context.Context,
 	repo RepoRef,

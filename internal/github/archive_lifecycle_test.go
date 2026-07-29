@@ -1294,6 +1294,96 @@ func TestArchiveAdmissionDefersToForegroundSyncEntryPoints(t *testing.T) {
 	}
 }
 
+func TestOnDemandDetailSyncHoldsRepositoryIncarnationGate(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		operation priorityWorkOperation
+		run       func(context.Context, *Syncer, platform.RepoRef) error
+	}{
+		{
+			name: "merge request", operation: priorityWorkMR,
+			run: func(ctx context.Context, syncer *Syncer, ref platform.RepoRef) error {
+				return syncer.SyncMROnProvider(
+					ctx, ref.Platform, ref.Host, ref.Owner, ref.Name, 7,
+				)
+			},
+		},
+		{
+			name: "issue", operation: priorityWorkIssue,
+			run: func(ctx context.Context, syncer *Syncer, ref platform.RepoRef) error {
+				return syncer.SyncIssueOnProvider(
+					ctx, ref.Platform, ref.Host, ref.Owner, ref.Name, 8,
+				)
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require := require.New(t)
+			database := dbtest.Open(t)
+			ref := platform.RepoRef{
+				Platform: platform.KindGitLab, Host: "gitlab.test",
+				Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+				PlatformExternalID: "repo-old",
+			}
+			provider := &blockingPriorityProvider{
+				syncTestProvider: syncTestProvider{
+					kind: ref.Platform,
+					host: ref.Host,
+				},
+				ref:       ref,
+				operation: tc.operation,
+				started:   make(chan struct{}),
+				release:   make(chan struct{}),
+			}
+			registry, err := platform.NewRegistry(provider)
+			require.NoError(err)
+			tracked := RepoRef{
+				Platform: ref.Platform, PlatformHost: ref.Host,
+				Owner: ref.Owner, Name: ref.Name, RepoPath: ref.RepoPath,
+				PlatformExternalID: ref.PlatformExternalID,
+			}
+			syncer := NewSyncerWithRegistry(
+				registry, database, nil, []RepoRef{tracked},
+				time.Hour, nil, nil,
+			)
+			t.Cleanup(syncer.Stop)
+
+			syncDone := make(chan error, 1)
+			go func() {
+				syncDone <- tc.run(t.Context(), syncer, ref)
+			}()
+			select {
+			case <-provider.started:
+			case <-time.After(5 * time.Second):
+				require.Fail("on-demand provider call did not start")
+			}
+
+			replacement := tracked
+			replacement.PlatformExternalID = "repo-new"
+			cutoverDone := make(chan error, 1)
+			go func() {
+				cutoverDone <- syncer.SetReposWithContext(
+					t.Context(), []RepoRef{replacement}, false,
+				)
+			}()
+			select {
+			case err := <-cutoverDone:
+				close(provider.release)
+				require.NoError(<-syncDone)
+				require.NoError(err)
+				require.Fail(
+					"configuration cutover completed before detail persistence",
+				)
+			case <-time.After(100 * time.Millisecond):
+			}
+
+			close(provider.release)
+			require.NoError(<-syncDone)
+			require.NoError(<-cutoverDone)
+		})
+	}
+}
+
 func TestSyncRepoRegistersReadAndWriteIdentityProviderWork(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

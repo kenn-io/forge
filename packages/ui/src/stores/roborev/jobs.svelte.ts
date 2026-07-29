@@ -98,7 +98,7 @@ export function createJobsStore(opts: JobsStoreOptions) {
       filterSearch ||
       filterHideClosed ||
       filterJobType ||
-      filterShowAutoDesign,
+      !filterShowAutoDesign,
     );
   }
 

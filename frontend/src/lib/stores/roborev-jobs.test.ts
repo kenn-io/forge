@@ -180,7 +180,7 @@ describe("createJobsStore event stream", () => {
     bodyController?.enqueue(encoder.encode('{"type":"review.com'));
     bodyController?.enqueue(encoder.encode('pleted","job_id":42}\n'));
 
-    await vi.waitFor(() => expect(client.GET).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(client.GET).toHaveBeenCalledTimes(2));
     store.disconnectEventStream();
 
     await vi.waitFor(() => expect(bodyCancelled).toBe(true));
@@ -272,6 +272,34 @@ describe("createJobsStore auto-design filter", () => {
 });
 
 describe("createJobsStore filtered status counts", () => {
+  it("uses filtered counts while auto-design classifier jobs are hidden by default", async () => {
+    const client = {
+      GET: vi.fn().mockResolvedValue({
+        data: { jobs: [makeJob(1)], has_more: false },
+        error: undefined,
+      }),
+    };
+    const store = createJobsStore({ client: client as never, navigate: vi.fn() });
+
+    await store.loadJobs();
+
+    expect(store.getFilteredStatusCounts()).toEqual({
+      queued: 0,
+      running: 0,
+      done: 1,
+      failed: 0,
+    });
+    expect(client.GET).toHaveBeenCalledWith("/api/jobs", {
+      params: {
+        query: expect.objectContaining({
+          hide_classify_jobs: "true",
+          limit: 0,
+          omit_prompt: "true",
+        }),
+      },
+    });
+  });
+
   it("counts the complete filtered result instead of the paginated rows", async () => {
     const client = {
       GET: vi.fn().mockImplementation((_path: string, opts: { params: { query: Record<string, unknown> } }) => {

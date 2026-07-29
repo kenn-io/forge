@@ -11,6 +11,7 @@ import {
   recordWorkspaceCreated,
   resetWorkspaceCreatePendingForTest,
 } from "../../stores/workspace-create-pending.svelte.js";
+import type { ActionRegistry } from "../../types.js";
 import type { InlineWorkspaceController, WorkspaceItemIdentity } from "../../workspace-inline.js";
 import { openLabelPickerFor } from "./labelPickerCommand.js";
 import { createTestController } from "../workspace/inlineWorkspaceTestController.svelte.js";
@@ -159,7 +160,11 @@ function issueDetail(): IssueDetail {
 function renderIssueDetail(
   detail: IssueDetail,
   deleteIssueComment = vi.fn(async () => true),
-  options: { staleRefreshing?: boolean; inlineWorkspace?: InlineWorkspaceController | null } = {},
+  options: {
+    staleRefreshing?: boolean;
+    inlineWorkspace?: InlineWorkspaceController | null;
+    actions?: ActionRegistry;
+  } = {},
   apiClient: { GET: ReturnType<typeof vi.fn>; POST: ReturnType<typeof vi.fn> } = {
     GET: vi.fn(),
     POST: vi.fn(),
@@ -212,7 +217,7 @@ function renderIssueDetail(
           },
         },
       ],
-      [ACTIONS_KEY, { issue: [] }],
+      [ACTIONS_KEY, options.actions ?? { issue: [] }],
       [UI_CONFIG_KEY, { hideStar: true }],
       [NAVIGATE_KEY, navigate],
     ]),
@@ -264,6 +269,32 @@ describe("IssueDetail activity view", () => {
     expect(document.getElementById("issue-create-workspace-description")?.textContent).toContain(
       button.getAttribute("title"),
     );
+  });
+
+  it("places all issue actions before the description", () => {
+    const detail = issueDetail();
+    detail.issue.Body = "Action placement marker";
+
+    renderIssueDetail(detail, undefined, {
+      actions: {
+        issue: [
+          {
+            id: "extension-action",
+            label: "Extension action",
+            handler: vi.fn(),
+          },
+        ],
+      },
+    });
+
+    const description = screen.getByText("Description");
+    for (const action of [
+      screen.getByRole("button", { name: "Create Workspace" }),
+      screen.getByRole("button", { name: "Close issue" }),
+      screen.getByRole("button", { name: "Extension action" }),
+    ]) {
+      expect(action.compareDocumentPosition(description) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
   });
 
   it("labels an active stale-detail refresh", () => {

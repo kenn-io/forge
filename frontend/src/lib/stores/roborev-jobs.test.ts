@@ -271,6 +271,55 @@ describe("createJobsStore auto-design filter", () => {
   });
 });
 
+describe("createJobsStore filtered status counts", () => {
+  it("counts the complete filtered result instead of the paginated rows", async () => {
+    const client = {
+      GET: vi.fn().mockImplementation((_path: string, opts: { params: { query: Record<string, unknown> } }) => {
+        if (opts.params.query.limit === 0) {
+          return Promise.resolve({
+            data: {
+              jobs: [
+                { ...makeJob(1), status: "queued" },
+                { ...makeJob(2), status: "running" },
+                makeJob(3),
+                makeJob(4),
+                { ...makeJob(5), status: "failed" },
+              ],
+              has_more: false,
+            },
+            error: undefined,
+          });
+        }
+        return Promise.resolve({
+          data: { jobs: [makeJob(4)], has_more: true },
+          error: undefined,
+        });
+      }),
+    };
+    const store = createJobsStore({ client: client as never, navigate: vi.fn() });
+
+    store.setFilter("repo", "/workspace/repo");
+    await vi.waitFor(() => {
+      expect(store.getFilteredStatusCounts()).toEqual({
+        queued: 1,
+        running: 1,
+        done: 2,
+        failed: 1,
+      });
+    });
+
+    expect(client.GET).toHaveBeenCalledWith("/api/jobs", {
+      params: {
+        query: expect.objectContaining({
+          repo: ["/workspace/repo"],
+          limit: 0,
+          omit_prompt: "true",
+        }),
+      },
+    });
+  });
+});
+
 describe("createJobsStore panel expansion", () => {
   function deferred<T>() {
     let resolve!: (value: T) => void;

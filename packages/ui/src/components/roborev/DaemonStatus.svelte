@@ -4,6 +4,8 @@
   const stores = getStores();
   const daemon = stores.roborevDaemon;
 
+  const counts = $derived(stores.roborevJobs?.getFilteredStatusCounts());
+
   function formatVersion(version: string): string {
     if (version.startsWith("v")) return version;
     return `v${version}`;
@@ -40,16 +42,16 @@
 
       <span class="status-counts">
         <span class="count count-queued" title="Queued">
-          {daemon.getQueuedJobs()} queued
+          {counts?.queued ?? daemon.getQueuedJobs()} queued
         </span>
         <span class="count count-running" title="Running">
-          {daemon.getRunningJobs()} running
+          {counts?.running ?? daemon.getRunningJobs()} running
         </span>
         <span class="count count-done" title="Done">
-          {daemon.getCompletedJobs()} done
+          {counts?.done ?? daemon.getCompletedJobs()} done
         </span>
         <span class="count count-failed" title="Failed">
-          {daemon.getFailedJobs()} failed
+          {counts?.failed ?? daemon.getFailedJobs()} failed
         </span>
       </span>
     {:else}

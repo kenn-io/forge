@@ -1606,6 +1606,35 @@ func buildAppState(
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
+		if r.Method == http.MethodPost &&
+			r.URL.Path == "/__e2e/activity/default-branch-commit" {
+			repo, err := database.GetRepoByIdentity(
+				r.Context(),
+				db.GitHubRepoIdentity("github.com", "acme", "widgets"),
+			)
+			if err != nil || repo == nil {
+				http.Error(w, "repository not found", http.StatusNotFound)
+				return
+			}
+			committedAt := time.Now().UTC().Add(-time.Minute)
+			if err := database.UpsertBranchCommits(r.Context(), []db.BranchCommit{{
+				RepoID:         repo.ID,
+				BranchName:     "main",
+				CommitSHA:      "1234567890abcdef1234567890abcdef12345678",
+				AuthorName:     "Fixture Maintainer",
+				AuthorEmail:    "maintainer@example.invalid",
+				AuthoredAt:     committedAt.Add(-time.Minute),
+				CommitterName:  "Fixture Maintainer",
+				CommitterEmail: "maintainer@example.invalid",
+				CommittedAt:    committedAt,
+				Subject:        "Repository maintenance commit",
+			}}); err != nil {
+				http.Error(w, "persist default branch commit", http.StatusInternalServerError)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		if r.Method == http.MethodPost && r.URL.Path == "/__e2e/repo-browser/tree/fail-next" {
 			failNextRepoBrowserTree.Store(true)
 			w.WriteHeader(http.StatusNoContent)

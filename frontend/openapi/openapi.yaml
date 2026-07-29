@@ -8059,6 +8059,17 @@ paths:
             type:
               - array
               - "null"
+        - description: "Item scopes included before limiting activity results: pr, issue, or repo."
+          explode: false
+          in: query
+          name: item_types
+          schema:
+            description: "Item scopes included before limiting activity results: pr, issue, or repo."
+            items:
+              type: string
+            type:
+              - array
+              - "null"
         - explode: false
           in: query
           name: search

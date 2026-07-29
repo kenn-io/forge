@@ -52,6 +52,20 @@ func (d *DB) ListActivity(
 			"activity_type IN ("+strings.Join(placeholders, ",")+")")
 	}
 
+	if len(opts.ItemTypes) > 0 {
+		itemTypeClauses := make([]string, 0, len(opts.ItemTypes))
+		for _, itemType := range opts.ItemTypes {
+			if itemType == "repo" {
+				itemTypeClauses = append(itemTypeClauses, "item_type = ''")
+				continue
+			}
+			itemTypeClauses = append(itemTypeClauses, "item_type = ?")
+			args = append(args, itemType)
+		}
+		whereClauses = append(whereClauses,
+			"("+strings.Join(itemTypeClauses, " OR ")+")")
+	}
+
 	if opts.Search != "" {
 		pattern := "%" + strings.ToLower(opts.Search) + "%"
 		whereClauses = append(whereClauses,

@@ -175,6 +175,43 @@ test.describe("activity feed filters", () => {
   });
 });
 
+test.describe("activity repository-only filtering", () => {
+  let isolatedServer: IsolatedE2EServer | undefined;
+
+  test.beforeAll(async () => {
+    isolatedServer = await startIsolatedE2EServer();
+  });
+
+  test.afterAll(async () => {
+    await isolatedServer?.stop();
+  });
+
+  test("hides all item threads while retaining repository commits", async ({ page }) => {
+    const seeded = await page.request.post(`${isolatedServer!.info.base_url}/__e2e/activity/default-branch-commit`);
+    expect(seeded.status()).toBe(204);
+
+    await page.goto(isolatedServer!.info.base_url);
+    await waitForTable(page);
+    await selectActivityFilterItem(page, "Threaded");
+    await expect(page.locator(".threaded-view .item-row:not(.branch-activity-row)").first()).toBeVisible();
+    await page.getByRole("switch", { name: "PRs" }).click();
+    const repoOnlyResponse = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      const itemTypes = url.searchParams.getAll("item_types");
+      return url.pathname === "/api/v1/activity" && itemTypes.length === 1 && itemTypes[0] === "repo";
+    });
+    await page.getByRole("switch", { name: "Issues" }).click();
+    await repoOnlyResponse;
+
+    await expect(page.locator(".threaded-view .item-row:not(.branch-activity-row)")).toHaveCount(0);
+    await expect(
+      page.locator(".threaded-view .branch-activity-row", {
+        hasText: "Repository maintenance commit",
+      }),
+    ).toBeVisible();
+  });
+});
+
 test.describe("activity UTC timestamp presentation", () => {
   let isolatedServer: IsolatedE2EServer | undefined;
 

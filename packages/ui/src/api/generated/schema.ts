@@ -7916,6 +7916,8 @@ export interface operations {
                 /** @description Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories. */
                 repo?: string;
                 types?: string[] | null;
+                /** @description Item scopes included before limiting activity results: pr, issue, or repo. */
+                item_types?: string[] | null;
                 search?: string;
                 after?: string;
                 since?: string;

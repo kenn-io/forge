@@ -119,11 +119,12 @@ type streamEventsInput struct {
 }
 
 type listActivityInput struct {
-	Repo   string   `query:"repo" doc:"Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories."`
-	Types  []string `query:"types"`
-	Search string   `query:"search"`
-	After  string   `query:"after"`
-	Since  string   `query:"since"`
+	Repo      string   `query:"repo" doc:"Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories."`
+	Types     []string `query:"types"`
+	ItemTypes []string `query:"item_types" doc:"Item scopes included before limiting activity results: pr, issue, or repo."`
+	Search    string   `query:"search"`
+	After     string   `query:"after"`
+	Since     string   `query:"since"`
 }
 
 type triggerSyncInput struct {
@@ -1213,6 +1214,7 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 		Repo:        input.Repo,
 		RepoFilters: parseRepoFilters(input.Repo),
 		Types:       input.Types,
+		ItemTypes:   input.ItemTypes,
 		Search:      input.Search,
 		// Notifications are always on; this only drops notification rows in
 		// SQL when no config is loaded (the nil-config safety guard), so the

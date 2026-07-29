@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { ActivityItem, ActivitySettings } from "../api/types.js";
 import {
+  buildActivityItemTypeFilter,
   buildActivityFilterTypes,
   createActivityStore,
   DEFAULT_ACTIVITY_ITEM_TYPES,
@@ -213,6 +214,17 @@ describe("buildActivityFilterTypes", () => {
       "commit",
     ]);
   });
+
+  it("encodes a fully empty selection as an explicit nonmatching filter", () => {
+    expect(buildActivityFilterTypes(new Set(), new Set(), true, false)).toEqual(["none"]);
+  });
+});
+
+describe("buildActivityItemTypeFilter", () => {
+  it("keeps repository activity eligible while filtering item-scoped rows before the cap", () => {
+    expect(buildActivityItemTypeFilter(new Set(["issue"]))).toEqual(["issue", "repo"]);
+    expect(buildActivityItemTypeFilter(new Set())).toEqual(["repo"]);
+  });
 });
 
 describe("isActivityItemTypeEnabled", () => {
@@ -286,6 +298,19 @@ describe("activity store URL hydration", () => {
     s.initializeFromMount();
     expect([...s.getEnabledItemTypes()]).toEqual(expected);
     expect(new URLSearchParams(window.location.search).get("types")).toBe(normalized);
+  });
+
+  it("round trips a fully empty selection without restoring defaults", () => {
+    window.history.replaceState(null, "", "/?types=none&notif=0&hide_branch=1");
+    const s = makeStore();
+    s.initializeFromMount();
+
+    expect([...s.getEnabledItemTypes()]).toEqual([]);
+    expect([...s.getEnabledEvents()]).toEqual([]);
+    expect(s.getShowNotifications()).toBe(false);
+    expect(s.getHideDefaultBranchActivity()).toBe(true);
+    expect(s.getActivityFilterTypes()).toEqual(["none"]);
+    expect(new URLSearchParams(window.location.search).get("types")).toBe("none");
   });
 });
 

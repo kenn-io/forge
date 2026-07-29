@@ -176,6 +176,36 @@ func TestListActivity(t *testing.T) {
 		}
 	})
 
+	t.Run("item type filter applies before the result limit", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+		d := openTestDB(t)
+		ctx := t.Context()
+		base := baseTime()
+		repoID := insertTestRepo(t, d, "alice", "alpha")
+		prID := insertTestMR(t, d, repoID, 1, "Busy pull request", base)
+		require.NoError(d.UpsertMREvents(ctx, []MREvent{{
+			MergeRequestID: prID,
+			EventType:      "commit",
+			Author:         "alice",
+			CreatedAt:      base.Add(2 * time.Minute),
+			DedupeKey:      "newer-pr-commit",
+		}}))
+		require.NoError(d.UpsertBranchCommits(ctx, []BranchCommit{
+			testBranchCommit(repoID, "main", "repo-sha", "repository commit", base.Add(time.Minute)),
+		}))
+
+		items, err := d.ListActivity(ctx, ListActivityOpts{
+			Types:     []string{"commit", "default_branch_commit"},
+			ItemTypes: []string{"repo"},
+			Limit:     1,
+		})
+		require.NoError(err)
+		require.Len(items, 1)
+		assert.Equal("default_branch_commit", items[0].ActivityType)
+		assert.Equal("repository commit", items[0].BodyPreview)
+	})
+
 	t.Run("force push events appear in the activity feed", func(t *testing.T) {
 		assert := assert.New(t)
 		d := openTestDB(t)

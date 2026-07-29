@@ -1281,7 +1281,10 @@ type ListActivityOpts struct {
 	Repo        string       // "owner/name" filter
 	RepoFilters []RepoFilter // one or more repository filters
 	Types       []string     // activity type filter
-	Search      string       // title/body search
+	// ItemTypes filters item-scoped rows before ordering and limiting.
+	// "repo" selects rows without a PR or issue parent.
+	ItemTypes []string
+	Search    string // title/body search
 	// ExcludeNotifications drops notification rows from the union before
 	// ordering/limit. Notifications are always enabled in normal operation;
 	// the server only sets this when no config is loaded (nil-config

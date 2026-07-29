@@ -5,9 +5,11 @@ import { showFlash } from "./flash.svelte.js";
 export type TimeRange = "24h" | "7d" | "30d" | "90d";
 export type ViewMode = "flat" | "threaded";
 export type ActivityItemType = "pr" | "issue";
+export type ActivityAPIItemType = ActivityItemType | "repo";
 
 export const DEFAULT_ACTIVITY_ITEM_TYPES = ["pr", "issue"] as const;
 export const DEFAULT_EVENT_TYPES = ["comment", "review", "commit", "force_push"] as const;
+const NO_ACTIVITY_FILTER_TYPE = "none";
 
 // Default-branch activity rows render as "Commit"/"Force-pushed" just like
 // their PR counterparts, so the event-type toggles must govern both kinds.
@@ -46,7 +48,11 @@ export function buildActivityFilterTypes(
     if (enabledEvents.has(evt)) types.push(evt);
   }
   if (showNotifications) types.push("notification");
-  return types;
+  return types.length > 0 ? types : [NO_ACTIVITY_FILTER_TYPE];
+}
+
+export function buildActivityItemTypeFilter(enabledItemTypes: ReadonlySet<ActivityItemType>): ActivityAPIItemType[] {
+  return [...DEFAULT_ACTIVITY_ITEM_TYPES.filter((itemType) => enabledItemTypes.has(itemType)), "repo"];
 }
 
 export function isActivityItemTypeEnabled(itemType: string, enabledItemTypes: ReadonlySet<ActivityItemType>): boolean {
@@ -261,6 +267,10 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     const repo = getGlobalRepo();
     if (repo) p.repo = repo;
     if (filterTypes.length > 0) p.types = filterTypes;
+    const itemTypes = buildActivityItemTypeFilter(enabledItemTypes);
+    if (itemTypes.length < DEFAULT_ACTIVITY_ITEM_TYPES.length + 1) {
+      p.item_types = itemTypes;
+    }
     if (searchQuery) p.search = searchQuery;
     return p;
   }

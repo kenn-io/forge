@@ -4271,11 +4271,14 @@ type WorktreeSummary struct {
 // ListActivityParams defines parameters for ListActivity.
 type ListActivityParams struct {
 	// Repo Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories.
-	Repo   *string   `form:"repo,omitempty" json:"repo,omitempty"`
-	Types  *[]string `form:"types,omitempty" json:"types,omitempty"`
-	Search *string   `form:"search,omitempty" json:"search,omitempty"`
-	After  *string   `form:"after,omitempty" json:"after,omitempty"`
-	Since  *string   `form:"since,omitempty" json:"since,omitempty"`
+	Repo  *string   `form:"repo,omitempty" json:"repo,omitempty"`
+	Types *[]string `form:"types,omitempty" json:"types,omitempty"`
+
+	// ItemTypes Item scopes included before limiting activity results: pr, issue, or repo.
+	ItemTypes *[]string `form:"item_types,omitempty" json:"item_types,omitempty"`
+	Search    *string   `form:"search,omitempty" json:"search,omitempty"`
+	After     *string   `form:"after,omitempty" json:"after,omitempty"`
+	Since     *string   `form:"since,omitempty" json:"since,omitempty"`
 }
 
 // ReceiveAgentHookParams defines parameters for ReceiveAgentHook.
@@ -11305,6 +11308,18 @@ func NewListActivityRequest(server string, params *ListActivityParams) (*http.Re
 		if params.Types != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "types", *params.Types, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "array", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.ItemTypes != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "item_types", *params.ItemTypes, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "array", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {

@@ -209,3 +209,76 @@ describe("dispatchKeydown — in-flight de-dup", () => {
     expect(handler).toHaveBeenCalledTimes(2);
   });
 });
+
+describe("dispatchKeydown — a focused terminal owns the keyboard", () => {
+  beforeEach(() => {
+    resetRegistry();
+    resetModalStack();
+    document.body.replaceChildren();
+  });
+
+  afterEach(() => {
+    document.body.replaceChildren();
+  });
+
+  // The real chain, and both places focus actually lands: xterm parks it in a
+  // hidden textarea, but a pane focused without a click into the grid holds it
+  // on the session wrapper — which no editable selector matches.
+  function terminalTargets(): { textarea: HTMLElement; wrapper: HTMLElement } {
+    const wrapper = document.createElement("div");
+    wrapper.dataset.sessionHost = "ws-1/agent";
+    const container = document.createElement("div");
+    container.className = "terminal-container";
+    const xterm = document.createElement("div");
+    xterm.className = "xterm";
+    const textarea = document.createElement("textarea");
+    textarea.className = "xterm-helper-textarea";
+    xterm.append(textarea);
+    container.append(xterm);
+    wrapper.append(container);
+    document.body.append(wrapper);
+    return { textarea, wrapper };
+  }
+
+  function register(id: string, binding: Action["binding"]): ReturnType<typeof vi.fn> {
+    const handler = vi.fn();
+    registerScopedActions(id, [{ id, label: id, scope: "global", binding, priority: 0, when: () => true, handler }]);
+    return handler;
+  }
+
+  it("leaves Escape, function keys, and Ctrl chords to the terminal", () => {
+    const escape = register("escape.list", { key: "Escape" });
+    const fnKey = register("help", { key: "F1" });
+    const chord = register("palette", { key: "p", ctrlOrMeta: true });
+    const { textarea, wrapper } = terminalTargets();
+
+    for (const target of [textarea, wrapper]) {
+      for (const init of [{ key: "Escape" }, { key: "F1" }, { key: "p", ctrlKey: true }]) {
+        const e = event(init);
+        Object.defineProperty(e, "target", { value: target });
+        dispatchKeydown(e, () => ctx);
+        expect(e.preventDefault, `${init.key} on ${target.tagName}`).not.toHaveBeenCalled();
+      }
+    }
+
+    expect(escape).not.toHaveBeenCalled();
+    expect(fnKey).not.toHaveBeenCalled();
+    expect(chord).not.toHaveBeenCalled();
+  });
+
+  it("still dispatches the same keys away from a terminal", () => {
+    const escape = register("escape.list", { key: "Escape" });
+    const chord = register("palette", { key: "p", ctrlOrMeta: true });
+    const outside = document.createElement("div");
+    document.body.append(outside);
+
+    for (const init of [{ key: "Escape" }, { key: "p", ctrlKey: true }]) {
+      const e = event(init);
+      Object.defineProperty(e, "target", { value: outside });
+      dispatchKeydown(e, () => ctx);
+    }
+
+    expect(escape).toHaveBeenCalled();
+    expect(chord).toHaveBeenCalled();
+  });
+});

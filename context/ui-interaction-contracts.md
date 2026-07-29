@@ -211,9 +211,15 @@ Whenever a control persists, document and test:
 
 Keyboard handlers must have one clear owner for each key press.
 
-- Input fields, textareas, contenteditable elements, and terminal surfaces own
-  printable keys while focused. Global shortcuts must not reinterpret those
-  keystrokes.
+- Input fields, textareas, and contenteditable elements own printable keys while
+  focused. Global shortcuts must not reinterpret those keystrokes, though
+  modified bindings still dispatch.
+- A focused TERMINAL owns every key, modified ones included, and the global
+  registry dispatches nothing: a TUI binds Escape, function keys, and Ctrl/Alt
+  chords, so any key the app reserves is a key the terminal loses. Ownership is
+  matched from the terminal surface, not from xterm's hidden textarea alone —
+  focus also rests on the session wrapper
+  (`frontend/src/lib/utils/keyboardShortcuts.ts::isTerminalKeyboardTarget`).
 - Modal frames outrank page-level shortcuts. When a modal, drawer, popover, or
   command surface is active, route and list navigation should run only through
   actions explicitly registered for that active surface.

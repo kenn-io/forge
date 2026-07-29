@@ -1,7 +1,7 @@
 import { getStack } from "@middleman/ui/stores/keyboard/modal-stack";
 import { showFlash } from "@middleman/ui/stores/flash";
 import { getAllActions } from "./registry.svelte.js";
-import { shouldIgnoreGlobalShortcutTarget } from "../../utils/keyboardShortcuts.js";
+import { isTerminalKeyboardTarget, shouldIgnoreGlobalShortcutTarget } from "../../utils/keyboardShortcuts.js";
 import type { Action, Context, KeySpec } from "./types.js";
 
 const RESERVED_WHILE_MODAL_OPEN: KeySpec[] = [
@@ -38,6 +38,13 @@ export function dispatchKeydown(event: KeyboardEvent, contextProvider: () => Con
     }
     return;
   }
+
+  // A focused terminal owns EVERY key, modified ones included. Anything less
+  // and the app quietly steals whatever the TUI inside it binds — Escape, the
+  // function keys, Ctrl chords — and the terminal is only as usable as the set
+  // of keys this app happens not to want. No preventDefault: the keystroke is
+  // xterm's, and stopping the default is how it would fail to arrive.
+  if (isTerminalKeyboardTarget(event.target)) return;
 
   const editable = shouldIgnoreGlobalShortcutTarget(event.target);
   const ctx = contextProvider();

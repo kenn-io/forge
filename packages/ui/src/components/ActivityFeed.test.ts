@@ -594,10 +594,10 @@ describe("ActivityFeed compact mode", () => {
     await fireEvent.click(screen.getByRole("button", { name: "View" }));
     await fireEvent.click(screen.getByRole("button", { name: "Comments" }));
 
-    // Item types and event types are independent: removing the last content
-    // event leaves PR/issue opening rows and notifications enabled.
+    // Removing the last content event preserves the established
+    // notification-only view without leaking PR/issue opening rows.
     expect(enabledEvents.value.size).toBe(0);
-    expect(setActivityFilterTypes).toHaveBeenCalledWith(["new_pr", "new_issue", "notification"]);
+    expect(setActivityFilterTypes).toHaveBeenCalledWith(["notification"]);
   });
 
   it("hides notifications on merged PRs even in a notifications-only feed", () => {

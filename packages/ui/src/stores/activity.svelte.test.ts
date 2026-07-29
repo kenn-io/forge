@@ -208,11 +208,20 @@ describe("buildActivityFilterTypes", () => {
     ]);
   });
 
+  it("preserves notification-only filtering for the default item scope", () => {
+    expect(buildActivityFilterTypes(allItemTypes, new Set(), false, true)).toEqual(["notification"]);
+  });
+
   it("supports repository-level commits with both item types hidden", () => {
     expect(buildActivityFilterTypes(new Set(), new Set(["commit"]), false, false)).toEqual([
+      "none",
       "default_branch_commit",
       "commit",
     ]);
+  });
+
+  it("marks an empty item scope when notifications remain enabled", () => {
+    expect(buildActivityFilterTypes(new Set(), new Set(), true, true)).toEqual(["none", "notification"]);
   });
 
   it("encodes a fully empty selection as an explicit nonmatching filter", () => {
@@ -290,7 +299,7 @@ describe("activity store URL hydration", () => {
       name: "neither item type",
       types: "default_branch_commit,commit",
       expected: [],
-      normalized: "default_branch_commit,commit,notification",
+      normalized: "none,default_branch_commit,commit,notification",
     },
   ])("hydrates $name from the types parameter", ({ types, expected, normalized }) => {
     window.history.replaceState(null, "", `/?types=${types}`);
@@ -298,6 +307,17 @@ describe("activity store URL hydration", () => {
     s.initializeFromMount();
     expect([...s.getEnabledItemTypes()]).toEqual(expected);
     expect(new URLSearchParams(window.location.search).get("types")).toBe(normalized);
+  });
+
+  it("hydrates notification-only URLs with the default item scope", () => {
+    window.history.replaceState(null, "", "/?types=notification");
+    const s = makeStore();
+    s.initializeFromMount();
+
+    expect([...s.getEnabledItemTypes()]).toEqual(DEFAULT_ACTIVITY_ITEM_TYPES);
+    expect([...s.getEnabledEvents()]).toEqual([]);
+    expect(s.getActivityFilterTypes()).toEqual(["notification"]);
+    expect(new URLSearchParams(window.location.search).get("types")).toBe("notification");
   });
 
   it("round trips a fully empty selection without restoring defaults", () => {

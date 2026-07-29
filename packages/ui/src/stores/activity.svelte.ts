@@ -35,7 +35,14 @@ export function buildActivityFilterTypes(
   // to build the explicit list that omits "notification".
   if (allSelected) return [];
 
+  // Keep the established notification-only representation free of opening
+  // events when both item scopes remain at their default.
+  if (enabledItemTypes.size === DEFAULT_ACTIVITY_ITEM_TYPES.length && enabledEvents.size === 0 && showNotifications) {
+    return ["notification"];
+  }
+
   const types: string[] = [];
+  if (enabledItemTypes.size === 0) types.push(NO_ACTIVITY_FILTER_TYPE);
   if (enabledItemTypes.has("pr")) types.push("new_pr");
   if (enabledItemTypes.has("issue")) types.push("new_issue");
   if (!hideDefaultBranchActivity) {
@@ -434,11 +441,14 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       enabledItemTypes = new Set(DEFAULT_ACTIVITY_ITEM_TYPES);
       enabledEvents = new Set(DEFAULT_EVENT_TYPES);
     } else {
-      enabledItemTypes = new Set(
-        DEFAULT_ACTIVITY_ITEM_TYPES.filter((itemType) =>
-          filterTypes.includes(itemType === "pr" ? "new_pr" : "new_issue"),
-        ),
-      );
+      const notificationOnly = filterTypes.length === 1 && filterTypes[0] === "notification";
+      enabledItemTypes = notificationOnly
+        ? new Set(DEFAULT_ACTIVITY_ITEM_TYPES)
+        : new Set(
+            DEFAULT_ACTIVITY_ITEM_TYPES.filter((itemType) =>
+              filterTypes.includes(itemType === "pr" ? "new_pr" : "new_issue"),
+            ),
+          );
       enabledEvents = new Set(DEFAULT_EVENT_TYPES.filter((t) => filterTypes.includes(t)));
     }
     // Rebuild so the request matches the filter state the dropdown

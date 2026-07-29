@@ -68,6 +68,22 @@ test.describe("activity feed filters", () => {
     });
   });
 
+  test("notification-only URLs retain the default item scope", async ({ page }) => {
+    const notificationResponse = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.pathname === "/api/v1/activity" && url.searchParams.getAll("types").includes("notification");
+    });
+
+    await page.goto("/?types=notification");
+    const requestURL = new URL((await notificationResponse).url());
+
+    expect(requestURL.searchParams.getAll("item_types")).toEqual([]);
+    await expect(page.getByRole("switch", { name: "PRs" })).toBeChecked();
+    await expect(page.getByRole("switch", { name: "Issues" })).toBeChecked();
+    await expect(page.locator(".activity-row .evt-label.evt-notification").first()).toBeVisible();
+    await expect(page.locator(".activity-row .evt-label:not(.evt-notification)")).toHaveCount(0);
+  });
+
   test("Threaded item toggles hide the complete matching threads", async ({ page }) => {
     await selectActivityFilterItem(page, "Threaded");
     await expect(page.locator(".threaded-view .chip--kind-pr").first()).toBeVisible();

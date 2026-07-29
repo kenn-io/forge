@@ -19,8 +19,9 @@ reconciliation when available.
 - `platform_repo_id` / provider external IDs are stable provider identities;
   prefer them for rename reconciliation, but never drop human-readable fields.
 - A different non-empty provider ID at an existing path is a replacement, not
-  a rename: discard provider-owned snapshots and path-keyed notification
-  progress while preserving local project links
+  a rename: allocate a fresh internal repo ID, discard provider-owned snapshots
+  and path-keyed caches, retire destination workspaces, and preserve local
+  project links
   (`internal/db/queries.go::UpsertRepoByProviderID`).
 
 GitLab nested namespaces make `repo_path` mandatory for reliable addressing:

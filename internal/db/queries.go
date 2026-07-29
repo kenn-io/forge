@@ -1042,6 +1042,11 @@ func (d *DB) UpsertRepoByProviderID(ctx context.Context, identity RepoIdentity) 
 				); err != nil {
 					return err
 				}
+				if err := retireWorkspaceRepoIncarnationTx(
+					ctx, tx, targetIdentity,
+				); err != nil {
+					return err
+				}
 				if _, err := tx.ExecContext(ctx,
 					`UPDATE middleman_projects SET repo_id = ? WHERE repo_id = ?`,
 					sourceID,
@@ -1058,10 +1063,17 @@ func (d *DB) UpsertRepoByProviderID(ctx context.Context, identity RepoIdentity) 
 				if err := updateRepoIdentityTx(ctx, tx, sourceID, identity); err != nil {
 					return err
 				}
-				if err := updateWorkspaceRepoIdentityTx(ctx, tx, sourceIdentity, identity); err != nil {
-					return err
+				if _, err := tx.ExecContext(ctx, `
+					UPDATE middleman_repos
+					SET last_sync_started_at = NULL,
+					    last_sync_completed_at = NULL,
+					    last_sync_error = ''
+					WHERE id = ?`,
+					sourceID,
+				); err != nil {
+					return fmt.Errorf("reset sync freshness for replacement destination: %w", err)
 				}
-				if err := updateWorkspaceRepoIdentityTx(ctx, tx, targetIdentity, identity); err != nil {
+				if err := updateWorkspaceRepoIdentityTx(ctx, tx, sourceIdentity, identity); err != nil {
 					return err
 				}
 				id = sourceID
@@ -1105,10 +1117,13 @@ func (d *DB) UpsertRepoByProviderID(ctx context.Context, identity RepoIdentity) 
 			}
 			if targetIdentity.PlatformRepoID != "" &&
 				targetIdentity.PlatformRepoID != identity.PlatformRepoID {
-				if err := replaceRepoIncarnationTx(ctx, tx, targetID, identity); err != nil {
+				replacementID, err := replaceRepoIncarnationTx(
+					ctx, tx, targetID, identity,
+				)
+				if err != nil {
 					return err
 				}
-				id = targetID
+				id = replacementID
 				return nil
 			}
 			if err := updateRepoIdentityTx(ctx, tx, targetID, identity); err != nil {
@@ -1135,16 +1150,21 @@ func replaceRepoIncarnationTx(
 	tx *sql.Tx,
 	repoID int64,
 	identity RepoIdentity,
-) error {
+) (int64, error) {
 	identity = canonicalRepoIdentity(identity)
 	currentIdentity, err := lookupRepoIdentityByIDTx(ctx, tx, repoID)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if err := clearRepoIncarnationNotificationStateTx(
 		ctx, tx, repoID, currentIdentity,
 	); err != nil {
-		return err
+		return 0, err
+	}
+	if err := retireWorkspaceRepoIncarnationTx(
+		ctx, tx, currentIdentity,
+	); err != nil {
+		return 0, err
 	}
 
 	rows, err := tx.QueryContext(ctx,
@@ -1152,37 +1172,36 @@ func replaceRepoIncarnationTx(
 		repoID,
 	)
 	if err != nil {
-		return fmt.Errorf("list projects linked to replaced repo: %w", err)
+		return 0, fmt.Errorf("list projects linked to replaced repo: %w", err)
 	}
 	var projectIDs []string
 	for rows.Next() {
 		var projectID string
 		if err := rows.Scan(&projectID); err != nil {
 			_ = rows.Close()
-			return fmt.Errorf("scan project linked to replaced repo: %w", err)
+			return 0, fmt.Errorf("scan project linked to replaced repo: %w", err)
 		}
 		projectIDs = append(projectIDs, projectID)
 	}
 	if err := rows.Close(); err != nil {
-		return fmt.Errorf("close projects linked to replaced repo: %w", err)
+		return 0, fmt.Errorf("close projects linked to replaced repo: %w", err)
 	}
 	if err := rows.Err(); err != nil {
-		return fmt.Errorf("iterate projects linked to replaced repo: %w", err)
+		return 0, fmt.Errorf("iterate projects linked to replaced repo: %w", err)
 	}
 
 	if _, err := tx.ExecContext(ctx,
 		`DELETE FROM middleman_repos WHERE id = ?`,
 		repoID,
 	); err != nil {
-		return fmt.Errorf("clear replaced repo incarnation: %w", err)
+		return 0, fmt.Errorf("clear replaced repo incarnation: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, `
+	result, err := tx.ExecContext(ctx, `
 		INSERT INTO middleman_repos (
-			id, platform, platform_host, platform_repo_id,
+			platform, platform_host, platform_repo_id,
 			owner, name, repo_path,
 			owner_key, name_key, repo_path_key
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		repoID,
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		identity.Platform,
 		identity.PlatformHost,
 		identity.PlatformRepoID,
@@ -1192,19 +1211,24 @@ func replaceRepoIncarnationTx(
 		identity.OwnerKey,
 		identity.NameKey,
 		identity.RepoPathKey,
-	); err != nil {
-		return fmt.Errorf("insert replaced repo incarnation: %w", err)
+	)
+	if err != nil {
+		return 0, fmt.Errorf("insert replaced repo incarnation: %w", err)
+	}
+	replacementID, err := result.LastInsertId()
+	if err != nil {
+		return 0, fmt.Errorf("read replaced repo incarnation id: %w", err)
 	}
 	for _, projectID := range projectIDs {
 		if _, err := tx.ExecContext(ctx,
 			`UPDATE middleman_projects SET repo_id = ? WHERE id = ?`,
-			repoID,
+			replacementID,
 			projectID,
 		); err != nil {
-			return fmt.Errorf("relink project to replaced repo: %w", err)
+			return 0, fmt.Errorf("relink project to replaced repo: %w", err)
 		}
 	}
-	return nil
+	return replacementID, nil
 }
 
 func clearRepoIncarnationNotificationStateTx(
@@ -1243,6 +1267,44 @@ func clearRepoIncarnationNotificationStateTx(
 		identity.NameKey,
 	); err != nil {
 		return fmt.Errorf("clear replaced repo notification watermark: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM middleman_http_etags
+		WHERE platform = ?
+		  AND platform_host = ?
+		  AND owner_key = ?
+		  AND name_key = ?`,
+		identity.Platform,
+		identity.PlatformHost,
+		identity.OwnerKey,
+		identity.NameKey,
+	); err != nil {
+		return fmt.Errorf("clear replaced repo HTTP ETags: %w", err)
+	}
+	return nil
+}
+
+func retireWorkspaceRepoIncarnationTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	identity RepoIdentity,
+) error {
+	identity = canonicalRepoIdentity(identity)
+	_, err := tx.ExecContext(ctx, `
+		UPDATE middleman_workspaces
+		SET status = 'error',
+		    error_message = 'source repository was replaced',
+		    retired_at = datetime('now')
+		WHERE platform = ?
+		  AND platform_host = ?
+		  AND repo_path_key = ?
+		  AND retired_at IS NULL`,
+		identity.Platform,
+		identity.PlatformHost,
+		identity.RepoPathKey,
+	)
+	if err != nil {
+		return fmt.Errorf("retire replaced repository workspaces: %w", err)
 	}
 	return nil
 }
@@ -1385,7 +1447,8 @@ func updateWorkspaceRepoIdentityTx(
 ) error {
 	from = canonicalRepoIdentity(from)
 	to = canonicalRepoIdentity(to)
-	if from.PlatformHost == to.PlatformHost &&
+	if from.Platform == to.Platform &&
+		from.PlatformHost == to.PlatformHost &&
 		from.RepoPathKey == to.RepoPathKey &&
 		from.Owner == to.Owner &&
 		from.Name == to.Name &&
@@ -1400,20 +1463,25 @@ func updateWorkspaceRepoIdentityTx(
 
 	_, err := tx.ExecContext(ctx,
 		`UPDATE middleman_workspaces
-		 SET platform_host = ?,
+		 SET platform = ?,
+		     platform_host = ?,
 		     repo_owner = ?,
 		     repo_name = ?,
 		     repo_owner_key = ?,
 		     repo_name_key = ?,
 		     repo_path_key = ?
-		 WHERE platform_host = ?
-		   AND repo_path_key = ?`,
+		 WHERE platform = ?
+		   AND platform_host = ?
+		   AND repo_path_key = ?
+		   AND retired_at IS NULL`,
+		to.Platform,
 		to.PlatformHost,
 		to.Owner,
 		to.Name,
 		to.OwnerKey,
 		to.NameKey,
 		to.RepoPathKey,
+		from.Platform,
 		from.PlatformHost,
 		from.RepoPathKey,
 	)
@@ -1432,15 +1500,21 @@ func mergeWorkspaceRowsForIdentityChangeTx(
 		`SELECT source.id, target.id
 		 FROM middleman_workspaces AS source
 		 JOIN middleman_workspaces AS target
-		   ON target.platform_host = ?
+		   ON target.platform = ?
+		  AND target.platform_host = ?
 		  AND target.repo_path_key = ?
 		  AND target.item_type = source.item_type
 		  AND target.item_key = source.item_key
-		 WHERE source.platform_host = ?
+		  AND target.retired_at IS NULL
+		 WHERE source.platform = ?
+		   AND source.platform_host = ?
 		   AND source.repo_path_key = ?
+		   AND source.retired_at IS NULL
 		   AND source.id <> target.id`,
+		to.Platform,
 		to.PlatformHost,
 		to.RepoPathKey,
+		from.Platform,
 		from.PlatformHost,
 		from.RepoPathKey,
 	)
@@ -5252,7 +5326,8 @@ func (d *DB) getWorkspaceByMR(
 			FROM middleman_workspaces
 			WHERE platform_host = ? AND repo_owner_key = ?
 			  AND repo_name_key = ? AND item_type = ? AND item_number = ?
-			  AND (? = '' OR platform = ?)`,
+			  AND (? = '' OR platform = ?)
+			  AND retired_at IS NULL`,
 		platformHost, owner, name, WorkspaceItemTypePullRequest, mrNumber,
 		provider, provider,
 	))
@@ -5303,7 +5378,8 @@ func (d *DB) getWorkspaceByIssue(
 		FROM middleman_workspaces
 		WHERE platform_host = ? AND repo_owner_key = ?
 		  AND repo_name_key = ? AND item_type = ? AND item_number = ?
-		  AND (? = '' OR platform = ?)`,
+		  AND (? = '' OR platform = ?)
+		  AND retired_at IS NULL`,
 		platformHost, owner, name, WorkspaceItemTypeIssue, issueNumber,
 		provider, provider,
 	))
@@ -5336,7 +5412,8 @@ func (d *DB) GetWorkspaceByItemKeyForProvider(
 		FROM middleman_workspaces
 		WHERE platform_host = ? AND repo_owner_key = ?
 		  AND repo_name_key = ? AND item_type = ? AND item_key = ?
-		  AND (? = '' OR platform = ?)`,
+		  AND (? = '' OR platform = ?)
+		  AND retired_at IS NULL`,
 		platformHost, owner, name, itemType, itemKey, provider, provider,
 	))
 	if errors.Is(err, sql.ErrNoRows) {
@@ -5388,7 +5465,8 @@ func (d *DB) UpdateWorkspaceStatus(
 	_, err := d.rw.ExecContext(ctx, `
 		UPDATE middleman_workspaces
 		SET status = ?, error_message = ?
-		WHERE id = ?`,
+		WHERE id = ?
+		  AND retired_at IS NULL`,
 		status, errMsg, id,
 	)
 	if err != nil {
@@ -5406,7 +5484,8 @@ func (d *DB) UpdateWorkspaceBranch(
 	_, err := d.rw.ExecContext(ctx, `
 		UPDATE middleman_workspaces
 		SET workspace_branch = ?
-		WHERE id = ?`,
+		WHERE id = ?
+		  AND retired_at IS NULL`,
 		branch, id,
 	)
 	if err != nil {
@@ -5426,7 +5505,8 @@ func (d *DB) CompleteRecoveredWorkspaceSetup(
 		SET workspace_branch = ?,
 		    status = 'ready',
 		    error_message = NULL
-		WHERE id = ?`,
+		WHERE id = ?
+		  AND retired_at IS NULL`,
 		branch, id,
 	)
 	if err != nil {
@@ -5445,7 +5525,8 @@ func (d *DB) UpdateWorkspaceMRHeadRepo(
 	_, err := d.rw.ExecContext(ctx, `
 		UPDATE middleman_workspaces
 		SET mr_head_repo = ?
-		WHERE id = ?`,
+		WHERE id = ?
+		  AND retired_at IS NULL`,
 		mrHeadRepo, id,
 	)
 	if err != nil {
@@ -5469,6 +5550,7 @@ func (d *DB) UpdateWorkspaceMRHeadRepoForMissingRepo(
 		UPDATE middleman_workspaces
 		SET mr_head_repo = ?
 		WHERE id = ?
+		  AND retired_at IS NULL
 		  AND NOT EXISTS (
 		      SELECT 1
 		      FROM middleman_repos
@@ -5530,6 +5612,7 @@ func (d *DB) UpdateWorkspaceMRHeadRepoForSnapshot(
 		UPDATE middleman_workspaces
 		SET mr_head_repo = ?
 		WHERE id = ?
+		  AND retired_at IS NULL
 		  AND COALESCE((
 		      SELECT snapshot_revision
 		      FROM middleman_merge_requests
@@ -5583,7 +5666,9 @@ func (d *DB) StartWorkspaceRetry(
 		UPDATE middleman_workspaces
 		SET status = 'creating',
 		    error_message = NULL
-		WHERE id = ? AND status = 'error'`, id,
+		WHERE id = ?
+		  AND status = 'error'
+		  AND retired_at IS NULL`, id,
 	)
 	if err != nil {
 		return false, fmt.Errorf("start workspace retry: %w", err)
@@ -5605,7 +5690,9 @@ func (d *DB) SetWorkspaceAssociatedPRNumberIfNull(
 	res, err := d.rw.ExecContext(ctx, `
 		UPDATE middleman_workspaces
 		SET associated_pr_number = ?
-		WHERE id = ? AND associated_pr_number IS NULL`,
+		WHERE id = ?
+		  AND associated_pr_number IS NULL
+		  AND retired_at IS NULL`,
 		prNumber, id,
 	)
 	if err != nil {
@@ -5942,6 +6029,7 @@ const workspaceSummaryJoins = `
 	   AND r.platform_host = w.platform_host
 	   AND r.owner_key = w.repo_owner_key
 	   AND r.name_key = w.repo_name_key
+	   AND w.retired_at IS NULL
 	LEFT JOIN middleman_merge_requests m
 	    ON m.repo_id = r.id
 	   AND m.number = w.item_number

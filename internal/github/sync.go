@@ -5211,6 +5211,18 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 	if err != nil {
 		return fmt.Errorf("upsert repo %s/%s by provider id: %w", repo.Owner, repo.Name, err)
 	}
+	persistedRepo, err := s.db.GetRepoByID(ctx, repoID)
+	if err != nil {
+		return fmt.Errorf("read repo %s/%s after identity reconciliation: %w", repo.Owner, repo.Name, err)
+	}
+	if persistedRepo == nil {
+		return fmt.Errorf("repo %s/%s missing after identity reconciliation", repo.Owner, repo.Name)
+	}
+	if persistedRepo.LastSyncCompletedAt == nil {
+		if client, ok := s.optionalGitHubClientFor(repo); ok {
+			client.InvalidateListETagsForRepo(repo.Owner, repo.Name)
+		}
+	}
 
 	s.refreshRepoSettings(ctx, repo, repoID, resolvedRepo)
 

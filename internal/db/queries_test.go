@@ -1086,6 +1086,23 @@ func TestUpsertRepoByProviderIDResetsRecreatedRepositoryAtSamePath(t *testing.T)
 	require.NoError(d.UpdateNotificationSyncWatermark(
 		ctx, "github", "github.com", "acme", "widget", baseTime(), nil,
 	))
+	require.NoError(d.UpsertHTTPEtag(
+		ctx, "github", "github.com", "acme", "widget",
+		"pull_request", 1, `"old-etag"`,
+	))
+	require.NoError(d.InsertWorkspace(ctx, &Workspace{
+		ID:           "old-incarnation-workspace",
+		Platform:     "github",
+		PlatformHost: "github.com",
+		RepoOwner:    "acme",
+		RepoName:     "widget",
+		ItemType:     WorkspaceItemTypePullRequest,
+		ItemNumber:   1,
+		GitHeadRef:   "old-feature",
+		WorktreePath: "/tmp/old-incarnation-workspace",
+		TmuxSession:  "old-incarnation-workspace",
+		Status:       "ready",
+	}))
 	project, err := d.CreateProject(ctx, CreateProjectInput{
 		DisplayName:   "Widget",
 		LocalPath:     "/tmp/widget",
@@ -1103,11 +1120,21 @@ func TestUpsertRepoByProviderIDResetsRecreatedRepositoryAtSamePath(t *testing.T)
 	})
 	require.NoError(err)
 
-	assert.Equal(repoID, recreatedID)
+	assert.NotEqual(repoID, recreatedID)
 	repo, err := d.GetRepoByID(ctx, recreatedID)
 	require.NoError(err)
 	require.NotNil(repo)
 	assert.Equal("R_new", repo.PlatformRepoID)
+	replacedRepo, err := d.GetRepoByID(ctx, repoID)
+	require.NoError(err)
+	assert.Nil(replacedRepo)
+
+	staleSnapshot := testMR(repoID, 2, withMRTitle("late old-incarnation snapshot"))
+	_, err = d.UpsertMergeRequest(ctx, staleSnapshot)
+	require.Error(err)
+	repopulated, err := d.GetMergeRequestByRepoIDAndNumber(ctx, recreatedID, 2)
+	require.NoError(err)
+	assert.Nil(repopulated)
 
 	mr, err := d.GetMergeRequestByRepoIDAndNumber(ctx, recreatedID, 1)
 	require.NoError(err)
@@ -1130,6 +1157,46 @@ func TestUpsertRepoByProviderIDResetsRecreatedRepositoryAtSamePath(t *testing.T)
 	)
 	require.NoError(err)
 	assert.Nil(watermark)
+	etag, err := d.GetHTTPEtag(
+		ctx, "github", "github.com", "acme", "widget", "pull_request", 1,
+	)
+	require.NoError(err)
+	assert.Empty(etag)
+
+	staleWorkspace, err := d.GetWorkspaceByMRForProvider(
+		ctx, "github", "github.com", "acme", "widget", 1,
+	)
+	require.NoError(err)
+	assert.Nil(staleWorkspace)
+	retiredWorkspace, err := d.GetWorkspace(ctx, "old-incarnation-workspace")
+	require.NoError(err)
+	require.NotNil(retiredWorkspace)
+	assert.Equal("error", retiredWorkspace.Status)
+	require.NotNil(retiredWorkspace.ErrorMessage)
+	assert.Contains(*retiredWorkspace.ErrorMessage, "replaced")
+	retryStarted, err := d.StartWorkspaceRetry(ctx, retiredWorkspace.ID)
+	require.NoError(err)
+	assert.False(retryStarted)
+	require.NoError(d.UpdateWorkspaceStatus(
+		ctx, retiredWorkspace.ID, "ready", nil,
+	))
+	retiredWorkspace, err = d.GetWorkspace(ctx, retiredWorkspace.ID)
+	require.NoError(err)
+	require.NotNil(retiredWorkspace)
+	assert.Equal("error", retiredWorkspace.Status)
+	require.NoError(d.InsertWorkspace(ctx, &Workspace{
+		ID:           "new-incarnation-workspace",
+		Platform:     "github",
+		PlatformHost: "github.com",
+		RepoOwner:    "acme",
+		RepoName:     "widget",
+		ItemType:     WorkspaceItemTypePullRequest,
+		ItemNumber:   1,
+		GitHeadRef:   "new-feature",
+		WorktreePath: "/tmp/new-incarnation-workspace",
+		TmuxSession:  "new-incarnation-workspace",
+		Status:       "ready",
+	}))
 
 	linkedProject, err := d.GetProjectByID(ctx, project.ID)
 	require.NoError(err)
@@ -1285,6 +1352,19 @@ func TestUpsertRepoByProviderIDDiscardsReplacedDestinationWhenIncomingRepoMoved(
 	})
 	require.NoError(err)
 	insertTestMRWithOptions(t, d, testMR(sourceID, 7, withMRTitle("incoming repository MR")))
+	require.NoError(d.InsertWorkspace(ctx, &Workspace{
+		ID:           "incoming-workspace",
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.com",
+		RepoOwner:    "old-group",
+		RepoName:     "old-name",
+		ItemType:     WorkspaceItemTypePullRequest,
+		ItemNumber:   7,
+		GitHeadRef:   "incoming-feature",
+		WorktreePath: "/tmp/incoming-workspace",
+		TmuxSession:  "incoming-workspace",
+		Status:       "ready",
+	}))
 
 	destinationID, err := d.UpsertRepoByProviderID(ctx, RepoIdentity{
 		Platform:       "gitlab",
@@ -1295,6 +1375,19 @@ func TestUpsertRepoByProviderIDDiscardsReplacedDestinationWhenIncomingRepoMoved(
 	})
 	require.NoError(err)
 	insertTestIssueWithOptions(t, d, testIssue(destinationID, 8, withIssueTitle("replaced repository issue")))
+	require.NoError(d.InsertWorkspace(ctx, &Workspace{
+		ID:           "replaced-destination-workspace",
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.com",
+		RepoOwner:    "new-group",
+		RepoName:     "new-name",
+		ItemType:     WorkspaceItemTypePullRequest,
+		ItemNumber:   7,
+		GitHeadRef:   "replaced-feature",
+		WorktreePath: "/tmp/replaced-destination-workspace",
+		TmuxSession:  "replaced-destination-workspace",
+		Status:       "ready",
+	}))
 	project, err := d.CreateProject(ctx, CreateProjectInput{
 		DisplayName:   "New Name",
 		LocalPath:     "/tmp/new-name",
@@ -1328,6 +1421,21 @@ func TestUpsertRepoByProviderIDDiscardsReplacedDestinationWhenIncomingRepoMoved(
 	issue, err := d.GetIssueByRepoIDAndNumber(ctx, sourceID, 8)
 	require.NoError(err)
 	assert.Nil(issue)
+
+	incomingWorkspace, err := d.GetWorkspaceByMRForProvider(
+		ctx, "gitlab", "gitlab.com", "new-group", "new-name", 7,
+	)
+	require.NoError(err)
+	require.NotNil(incomingWorkspace)
+	assert.Equal("incoming-workspace", incomingWorkspace.ID)
+	retiredDestinationWorkspace, err := d.GetWorkspace(
+		ctx, "replaced-destination-workspace",
+	)
+	require.NoError(err)
+	require.NotNil(retiredDestinationWorkspace)
+	assert.Equal("error", retiredDestinationWorkspace.Status)
+	require.NotNil(retiredDestinationWorkspace.ErrorMessage)
+	assert.Contains(*retiredDestinationWorkspace.ErrorMessage, "replaced")
 
 	linkedProject, err := d.GetProjectByID(ctx, project.ID)
 	require.NoError(err)

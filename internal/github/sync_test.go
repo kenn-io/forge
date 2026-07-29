@@ -6617,6 +6617,77 @@ func TestSyncRepoUsesProviderIDToPreserveRenamedRepo(t *testing.T) {
 	assert.Equal("new-group/new-project", repos[0].RepoPath)
 }
 
+func TestSyncRepoInvalidatesListETagsForFreshRepositoryIncarnation(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	repo := RepoRef{
+		Platform:     platform.KindGitHub,
+		PlatformHost: "github.com",
+		Owner:        "owner",
+		Name:         "repo",
+	}
+	previousID, err := d.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "repo-previous",
+		Owner:          "owner",
+		Name:           "repo",
+	})
+	require.NoError(err)
+	require.NoError(d.UpdateRepoSyncCompleted(ctx, previousID, time.Now().UTC(), ""))
+
+	client := &mockClient{}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client},
+		d, nil, []RepoRef{repo}, time.Minute, nil, nil,
+	)
+
+	require.NoError(syncer.syncRepo(ctx, repo))
+	assert.EqualValues(1, client.invalidateCalls.Load())
+}
+
+func TestSyncRepoInvalidatesListETagsWhenRepositoryReplacesDestination(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	sourceID, err := d.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "repo-owner-repo",
+		Owner:          "previous-owner",
+		Name:           "previous-repo",
+	})
+	require.NoError(err)
+	require.NoError(d.UpdateRepoSyncCompleted(ctx, sourceID, time.Now().UTC(), ""))
+	destinationID, err := d.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "repo-replaced",
+		Owner:          "owner",
+		Name:           "repo",
+	})
+	require.NoError(err)
+	require.NoError(d.UpdateRepoSyncCompleted(ctx, destinationID, time.Now().UTC(), ""))
+
+	repo := RepoRef{
+		Platform:     platform.KindGitHub,
+		PlatformHost: "github.com",
+		Owner:        "owner",
+		Name:         "repo",
+	}
+	client := &mockClient{}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client},
+		d, nil, []RepoRef{repo}, time.Minute, nil, nil,
+	)
+
+	require.NoError(syncer.syncRepo(ctx, repo))
+	assert.EqualValues(1, client.invalidateCalls.Load())
+}
+
 func TestRepoReconciliationDefersTrustUntilPostRenameSnapshot(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

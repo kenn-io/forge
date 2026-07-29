@@ -48,6 +48,9 @@ Bulk sync and detail sync have different jobs, but they must not disagree about
 what "current" means.
 
 - Bulk sync keeps tracked repos, open PRs/issues, and cheap derived state fresh.
+- The first sync of an unsynced repository identity invalidates process-local
+  list ETags so a replacement at the same path cannot reuse the prior
+  incarnation's conditional requests (`internal/github/sync.go::syncRepo`).
 - Detail sync populates comments, reviews, commits, and richer timeline data for
   one item.
 - If a PR or issue is marked as detail-fetched, the persisted fields that power

@@ -266,6 +266,40 @@ describe("dispatchKeydown — a focused terminal owns the keyboard", () => {
     expect(chord).not.toHaveBeenCalled();
   });
 
+  it("lets Cmd-K and Cmd-P through to a TUI that binds them", () => {
+    const palette = register("palette.open", { key: "k", ctrlOrMeta: true });
+    const { textarea } = terminalTargets();
+
+    for (const key of ["k", "p"]) {
+      const e = event({ key, metaKey: true });
+      Object.defineProperty(e, "target", { value: textarea });
+      dispatchKeydown(e, () => ctx);
+      expect(e.preventDefault, `Cmd-${key}`).not.toHaveBeenCalled();
+    }
+
+    expect(palette).not.toHaveBeenCalled();
+  });
+
+  it("keeps terminal ownership while a modal frame is open", () => {
+    // RESERVED_WHILE_MODAL_OPEN preventDefaults the palette keys for any frame
+    // on the stack. A frame that never trapped focus cannot own the keyboard
+    // the user is typing into, so the terminal still wins.
+    const framed = vi.fn();
+    pushModalFrame("modal", [
+      { id: "modal.esc", label: "Close", binding: { key: "Escape" }, priority: 100, when: () => true, handler: framed },
+    ]);
+    const { textarea } = terminalTargets();
+
+    for (const init of [{ key: "Escape" }, { key: "k", metaKey: true }]) {
+      const e = event(init);
+      Object.defineProperty(e, "target", { value: textarea });
+      dispatchKeydown(e, () => ctx);
+      expect(e.preventDefault, init.key).not.toHaveBeenCalled();
+    }
+
+    expect(framed).not.toHaveBeenCalled();
+  });
+
   it("still dispatches the same keys away from a terminal", () => {
     const escape = register("escape.list", { key: "Escape" });
     const chord = register("palette", { key: "p", ctrlOrMeta: true });

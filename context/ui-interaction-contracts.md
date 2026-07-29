@@ -214,11 +214,13 @@ Keyboard handlers must have one clear owner for each key press.
 - Input fields, textareas, and contenteditable elements own printable keys while
   focused. Global shortcuts must not reinterpret those keystrokes, though
   modified bindings still dispatch.
-- A focused TERMINAL owns every key, modified ones included, and the global
-  registry dispatches nothing: a TUI binds Escape, function keys, and Ctrl/Alt
-  chords, so any key the app reserves is a key the terminal loses. Ownership is
-  matched from the terminal surface, not from xterm's hidden textarea alone —
-  focus also rests on the session wrapper
+- A focused TERMINAL owns every key, modified ones included, and outranks even
+  the modal stack: a TUI binds Escape, function keys, and Ctrl/Cmd chords
+  (Cmd-K and Cmd-P included), so any key the app reserves is a key the terminal
+  loses. The dispatcher runs no handler and does not preventDefault. Ownership
+  is matched from the terminal surface, not from xterm's hidden textarea alone,
+  because focus also rests on the session wrapper. Popovers close from their own
+  window Escape listeners, not from the registry
   (`frontend/src/lib/utils/keyboardShortcuts.ts::isTerminalKeyboardTarget`).
 - Modal frames outrank page-level shortcuts. When a modal, drawer, popover, or
   command surface is active, route and list navigation should run only through

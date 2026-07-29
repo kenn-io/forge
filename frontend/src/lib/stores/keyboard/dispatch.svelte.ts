@@ -20,6 +20,16 @@ const SCOPE_SPECIFICITY: Record<Action["scope"], number> = {
 };
 
 export function dispatchKeydown(event: KeyboardEvent, contextProvider: () => Context): void {
+  // A focused terminal owns EVERY key, modified ones included, and it outranks
+  // the modal stack too: a frame that did not trap focus cannot be holding the
+  // keyboard the user is typing into. Anything less and the app quietly steals
+  // whatever the TUI binds — Escape, the function keys, Ctrl/Cmd chords — and
+  // the terminal is only as usable as the set of keys this app happens not to
+  // want. Not even preventDefault: the keystroke is xterm's, and suppressing
+  // the default is how it would fail to arrive. Popovers keep their own window
+  // Escape listeners, so they still close from here.
+  if (isTerminalKeyboardTarget(event.target)) return;
+
   const stack = getStack();
   if (stack.length > 0) {
     const modalCtx = contextProvider();
@@ -38,13 +48,6 @@ export function dispatchKeydown(event: KeyboardEvent, contextProvider: () => Con
     }
     return;
   }
-
-  // A focused terminal owns EVERY key, modified ones included. Anything less
-  // and the app quietly steals whatever the TUI inside it binds — Escape, the
-  // function keys, Ctrl chords — and the terminal is only as usable as the set
-  // of keys this app happens not to want. No preventDefault: the keystroke is
-  // xterm's, and stopping the default is how it would fail to arrive.
-  if (isTerminalKeyboardTarget(event.target)) return;
 
   const editable = shouldIgnoreGlobalShortcutTarget(event.target);
   const ctx = contextProvider();

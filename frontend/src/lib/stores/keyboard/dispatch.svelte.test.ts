@@ -300,6 +300,43 @@ describe("dispatchKeydown — a focused terminal owns the keyboard", () => {
     expect(framed).not.toHaveBeenCalled();
   });
 
+  it("owns the keyboard when Focus Terminal parked focus on the workspace wrapper", () => {
+    // The unpromoted workspace terminal's Focus Terminal path focuses
+    // `.workspace-host-wrapper` itself, which sits ABOVE the terminal —
+    // closest() walks up, so a subtree selector never sees it.
+    const escape = register("escape.list", { key: "Escape" });
+    const host = document.createElement("div");
+    host.className = "workspace-host-wrapper";
+    host.tabIndex = -1;
+    host.append(document.createElement("div"));
+    document.body.append(host);
+
+    const e = event({ key: "Escape" });
+    Object.defineProperty(e, "target", { value: host });
+    dispatchKeydown(e, () => ctx);
+
+    expect(escape).not.toHaveBeenCalled();
+    expect(e.preventDefault).not.toHaveBeenCalled();
+  });
+
+  it("leaves the workspace's own controls to the app", () => {
+    // The wrapper also contains the workspace sidebar, dock header, and
+    // dialogs. Matching it as an ancestor would swallow every shortcut typed
+    // anywhere in the workspace, so only the wrapper ITSELF counts.
+    const escape = register("escape.list", { key: "Escape" });
+    const host = document.createElement("div");
+    host.className = "workspace-host-wrapper";
+    const control = document.createElement("button");
+    host.append(control);
+    document.body.append(host);
+
+    const e = event({ key: "Escape" });
+    Object.defineProperty(e, "target", { value: control });
+    dispatchKeydown(e, () => ctx);
+
+    expect(escape).toHaveBeenCalled();
+  });
+
   it("still dispatches the same keys away from a terminal", () => {
     const escape = register("escape.list", { key: "Escape" });
     const chord = register("palette", { key: "p", ctrlOrMeta: true });

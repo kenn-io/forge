@@ -38,7 +38,15 @@ type repositoryFeatureProbe struct {
 	generation  uint64
 	reservation uint64
 	bypass      bool
+	gate        *repositoryFeatureProbeGate
 }
+
+type repositoryFeatureProbeGate struct {
+	once sync.Once
+	gate *sync.RWMutex
+}
+
+type repoIncarnationGateHeldKey struct{}
 
 type repositoryFeatureCooldownBypassKey struct{}
 
@@ -161,6 +169,7 @@ func (c *repositoryFeatureCooldowns) clearRepository(repo RepoRef) {
 }
 
 func (probe repositoryFeatureProbe) release() {
+	defer probe.releaseIncarnationGate()
 	if probe.bypass {
 		probe.clear()
 		return
@@ -177,6 +186,7 @@ func (probe repositoryFeatureProbe) release() {
 }
 
 func (probe repositoryFeatureProbe) abandon() {
+	defer probe.releaseIncarnationGate()
 	if probe.cooldowns == nil || probe.reservation == 0 {
 		return
 	}
@@ -191,6 +201,7 @@ func (probe repositoryFeatureProbe) abandon() {
 }
 
 func (probe repositoryFeatureProbe) clear() {
+	defer probe.releaseIncarnationGate()
 	if probe.cooldowns == nil {
 		return
 	}
@@ -206,15 +217,37 @@ func (probe repositoryFeatureProbe) clear() {
 	delete(probe.cooldowns.states, probe.key)
 }
 
+func (probe repositoryFeatureProbe) releaseIncarnationGate() {
+	if probe.gate == nil || probe.gate.gate == nil {
+		return
+	}
+	probe.gate.once.Do(probe.gate.gate.RUnlock)
+}
+
+func withRepoIncarnationGateHeld(ctx context.Context, repo RepoRef) context.Context {
+	return context.WithValue(ctx, repoIncarnationGateHeldKey{}, repoPriorityKey(repo))
+}
+
+func repoIncarnationGateHeld(ctx context.Context, repo RepoRef) bool {
+	key, _ := ctx.Value(repoIncarnationGateHeldKey{}).(string)
+	return key == repoPriorityKey(repo)
+}
+
 func (s *Syncer) beginRepositoryFeatureProbe(
 	ctx context.Context,
 	repo RepoRef,
 	feature string,
 ) (repositoryFeatureProbe, bool) {
+	var gate *sync.RWMutex
+	if !repoIncarnationGateHeld(ctx, repo) {
+		gate = s.repoIncarnationGate(repo)
+		gate.RLock()
+	}
 	bypass, bypassEnabled := repositoryFeatureCooldownBypassFromContext(ctx)
-	return s.featureCooldowns.beginProbe(
+	probe, due := s.featureCooldowns.beginProbe(
 		repo, feature, s.now().UTC(), bypass, bypassEnabled,
 	)
+	return attachFeatureProbeIncarnationGate(probe, due, gate)
 }
 
 func (s *Syncer) beginRepositoryFeatureProbeWithRetry(
@@ -222,10 +255,33 @@ func (s *Syncer) beginRepositoryFeatureProbeWithRetry(
 	repo RepoRef,
 	feature string,
 ) (repositoryFeatureProbe, bool, time.Time) {
+	var gate *sync.RWMutex
+	if !repoIncarnationGateHeld(ctx, repo) {
+		gate = s.repoIncarnationGate(repo)
+		gate.RLock()
+	}
 	bypass, bypassEnabled := repositoryFeatureCooldownBypassFromContext(ctx)
-	return s.featureCooldowns.beginProbeWithRetry(
+	probe, due, retryAt := s.featureCooldowns.beginProbeWithRetry(
 		repo, feature, s.now().UTC(), bypass, bypassEnabled,
 	)
+	probe, due = attachFeatureProbeIncarnationGate(probe, due, gate)
+	return probe, due, retryAt
+}
+
+func attachFeatureProbeIncarnationGate(
+	probe repositoryFeatureProbe,
+	due bool,
+	gate *sync.RWMutex,
+) (repositoryFeatureProbe, bool) {
+	if gate == nil {
+		return probe, due
+	}
+	if !due {
+		gate.RUnlock()
+		return probe, false
+	}
+	probe.gate = &repositoryFeatureProbeGate{gate: gate}
+	return probe, true
 }
 
 func (s *Syncer) recordRepositoryFeatureDisabled(repo RepoRef, feature string, err error) bool {

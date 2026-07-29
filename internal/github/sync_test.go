@@ -7211,6 +7211,73 @@ func TestSetReposSerializesArchiveSeedingWithIdentityResolution(t *testing.T) {
 	assert.Equal("R_new", repos[0].PlatformRepoID)
 }
 
+func TestConfigurationCutoverLocksOutgoingRepositoryPaths(t *testing.T) {
+	tests := []struct {
+		name     string
+		incoming []RepoRef
+	}{
+		{
+			name: "rename",
+			incoming: []RepoRef{{
+				Platform: platform.KindGitHub, PlatformHost: "github.com",
+				Owner: "acme", Name: "renamed-widget",
+			}},
+		},
+		{
+			name:     "removal",
+			incoming: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require := require.New(t)
+			assert := assert.New(t)
+			oldRepo := RepoRef{
+				Platform: platform.KindGitHub, PlatformHost: "github.com",
+				Owner: "acme", Name: "widget",
+			}
+			syncer := NewSyncer(
+				map[string]Client{},
+				openTestDB(t),
+				nil,
+				[]RepoRef{oldRepo},
+				time.Minute,
+				nil,
+				nil,
+			)
+			t.Cleanup(syncer.Stop)
+			oldGate := syncer.repoIncarnationGate(oldRepo)
+			oldGate.RLock()
+
+			cutoverDone := make(chan error, 1)
+			go func() {
+				cutoverDone <- syncer.SetReposWithContext(
+					t.Context(),
+					tt.incoming,
+					false,
+				)
+			}()
+			completedWhileOutgoingPathActive := false
+			select {
+			case err := <-cutoverDone:
+				require.NoError(err)
+				completedWhileOutgoingPathActive = true
+			case <-time.After(100 * time.Millisecond):
+			}
+			oldGate.RUnlock()
+			if !completedWhileOutgoingPathActive {
+				require.NoError(<-cutoverDone)
+			}
+
+			assert.False(
+				completedWhileOutgoingPathActive,
+				"configuration cutover did not wait for the outgoing path",
+			)
+		})
+	}
+}
+
 func TestSyncRepoUsesAuthoritativeConfiguredRefAfterReconciliation(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

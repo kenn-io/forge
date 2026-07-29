@@ -487,6 +487,7 @@ type Syncer struct {
 	rateLimitSnapshotRefresh map[string]time.Time
 	repos                    []RepoRef
 	reposMu                  sync.Mutex
+	repoConfigMu             sync.Mutex
 	repoIdentityLocksMu      sync.Mutex
 	repoIdentityLocks        map[string]*sync.Mutex
 	repoIncarnationGatesMu   sync.Mutex
@@ -930,6 +931,7 @@ func (s *Syncer) Admit(
 		PlatformRepoID: ref.PlatformID,
 	}, false)
 	if err != nil {
+		probe.abandon()
 		return archive.AdmissionResult{}, err
 	}
 	if s.higherPriorityProviderWorkActive(key, archive.PriorityFullArchive) {
@@ -3609,10 +3611,10 @@ func (s *Syncer) HostForRepo(owner, name string) string {
 
 // SetRepos atomically replaces the list of repositories to sync.
 func (s *Syncer) SetRepos(repos []RepoRef) {
-	if err := s.SetReposWithContext(context.Background(), repos, false); err != nil {
+	unlockCutover := s.lockRepoConfigurationCutover(repos)
+	defer unlockCutover()
+	if err := s.setReposWithContextLocked(context.Background(), repos, false); err != nil {
 		slog.Warn("update archive repositories", "err", err)
-		unlockIncarnations := s.lockRepoIncarnationPaths(repos)
-		defer unlockIncarnations()
 		s.reposMu.Lock()
 		s.repos = slices.Clone(repos)
 		s.reposMu.Unlock()
@@ -3624,9 +3626,16 @@ func (s *Syncer) SetRepos(repos []RepoRef) {
 // configured repository set to sync workers. Credential reloads may also make
 // authentication-blocked work eligible without resetting archive progress.
 func (s *Syncer) SetReposWithContext(ctx context.Context, repos []RepoRef, retryAuthentication bool) error {
-	unlockIncarnations := s.lockRepoIncarnationPaths(repos)
-	defer unlockIncarnations()
+	unlockCutover := s.lockRepoConfigurationCutover(repos)
+	defer unlockCutover()
+	return s.setReposWithContextLocked(ctx, repos, retryAuthentication)
+}
 
+func (s *Syncer) setReposWithContextLocked(
+	ctx context.Context,
+	repos []RepoRef,
+	retryAuthentication bool,
+) error {
 	refs := make([]platform.RepoRef, 0, len(repos))
 	for _, repo := range repos {
 		refs = append(refs, platformRepoRef(repo))
@@ -5212,6 +5221,20 @@ func (s *Syncer) repoIncarnationGate(repo RepoRef) *sync.RWMutex {
 	return gate
 }
 
+func (s *Syncer) lockRepoConfigurationCutover(incoming []RepoRef) func() {
+	s.repoConfigMu.Lock()
+	s.reposMu.Lock()
+	paths := make([]RepoRef, 0, len(s.repos)+len(incoming))
+	paths = append(paths, s.repos...)
+	paths = append(paths, incoming...)
+	s.reposMu.Unlock()
+	unlockPaths := s.lockRepoIncarnationPaths(paths)
+	return func() {
+		unlockPaths()
+		s.repoConfigMu.Unlock()
+	}
+}
+
 func (s *Syncer) lockRepoIncarnationPaths(repos []RepoRef) func() {
 	byKey := make(map[string]*sync.RWMutex, len(repos))
 	keys := make([]string, 0, len(repos))
@@ -5447,6 +5470,7 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 	incarnationGate := s.repoIncarnationGate(repo)
 	incarnationGate.RLock()
 	defer incarnationGate.RUnlock()
+	ctx = withRepoIncarnationGateHeld(ctx, repo)
 	repo = s.latestConfiguredRepo(repo)
 
 	bucket, err := s.bucketKeyForRepo(repo, false)

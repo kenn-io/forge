@@ -57,6 +57,9 @@ what "current" means.
   writes and use the authoritative configured provider reference after
   reconciliation (`internal/github/sync.go::syncRepo`,
   `internal/github/notifications_sync.go::Syncer.syncNotificationsForRepo`).
+- Feature probes retain the gate through release or abandonment, fencing
+  fast/detail/archive cooldown publication without serializing concurrent reads
+  (`internal/github/feature_cooldown.go::Syncer.beginRepositoryFeatureProbe`).
 - Detail sync populates comments, reviews, commits, and richer timeline data for
   one item.
 - If a PR or issue is marked as detail-fetched, the persisted fields that power

@@ -26,6 +26,56 @@ func (p cooldownCapabilityOnlyProvider) Capabilities() platform.Capabilities {
 	return p.capabilities
 }
 
+func TestRepositoryFeatureProbeHoldsIncarnationGateUntilTerminal(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	repo := RepoRef{
+		Platform: platform.KindGitHub, PlatformHost: "github.com",
+		Owner: "acme", Name: "widget",
+	}
+	syncer := NewSyncer(
+		map[string]Client{},
+		openTestDB(t),
+		nil,
+		[]RepoRef{repo},
+		time.Minute,
+		nil,
+		nil,
+	)
+	t.Cleanup(syncer.Stop)
+
+	probe, due := syncer.beginRepositoryFeatureProbe(
+		t.Context(),
+		repo,
+		platform.RepositoryFeatureMergeRequests,
+	)
+	require.True(due)
+	gate := syncer.repoIncarnationGate(repo)
+	acquiredDuringProbe := gate.TryLock()
+	if acquiredDuringProbe {
+		gate.Unlock()
+	}
+	assert.False(acquiredDuringProbe)
+
+	probe.abandon()
+	require.True(gate.TryLock())
+	gate.Unlock()
+
+	syncer.featureCooldowns.deferUntil(
+		repo,
+		platform.RepositoryFeatureMergeRequests,
+		time.Now().UTC().Add(time.Hour),
+	)
+	_, due = syncer.beginRepositoryFeatureProbe(
+		t.Context(),
+		repo,
+		platform.RepositoryFeatureMergeRequests,
+	)
+	assert.False(due)
+	require.True(gate.TryLock())
+	gate.Unlock()
+}
+
 func TestDisabledIssueScopeUsesDailyBackgroundProbeAndManualBypass(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

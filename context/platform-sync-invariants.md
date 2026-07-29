@@ -25,9 +25,11 @@ reconciliation when available.
   (`internal/db/queries.go::UpsertRepoByProviderID`,
   `internal/github/sync.go::resetRepositoryPathState`).
 - Hold one per-full-path incarnation gate across provider-ID reconciliation
-  and every operation that can publish path-keyed state; configuration cutover
-  takes the exclusive side so stale work cannot outlive it
+  and every operation that can publish path-keyed state
   (`internal/github/sync.go::repoIncarnationGate`).
+- Configuration cutovers serialize and lock the union of outgoing and incoming
+  paths exclusively before reconciliation or publication
+  (`internal/github/sync.go::lockRepoConfigurationCutover`).
 
 GitLab nested namespaces make `repo_path` mandatory for reliable addressing:
 `group/subgroup/project` has owner `group/subgroup` and name `project`.

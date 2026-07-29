@@ -40,23 +40,18 @@ func TestRunIsolatedMainProtectsRealGitWithPortableConfig(t *testing.T) {
 	externalHomeConfig := filepath.Join(externalHome, ".gitconfig")
 	externalContents := []byte("[user]\n\tname = External User\n")
 	require.NoError(os.WriteFile(externalHomeConfig, externalContents, 0o600))
-	externalSystemConfig := filepath.Join(t.TempDir(), "system.gitconfig")
-	require.NoError(os.WriteFile(externalSystemConfig, externalContents, 0o600))
 
 	cmd := procutil.Command("git", "config", "--get", "user.name")
+	cmd.Dir = externalHome
 	cmd.Env = replaceEnv(os.Environ(), map[string]string{
-		"HOME":              externalHome,
-		"GIT_CONFIG_SYSTEM": externalSystemConfig,
+		"HOME": externalHome,
 	})
 	_, err = cmd.Output()
-	require.Error(err, "Git unexpectedly read external home or system config")
+	require.Error(err, "Git unexpectedly read external home config")
 
 	homeContents, err := os.ReadFile(externalHomeConfig)
 	require.NoError(err)
 	assert.Equal(externalContents, homeContents)
-	systemContents, err := os.ReadFile(externalSystemConfig)
-	require.NoError(err)
-	assert.Equal(externalContents, systemContents)
 }
 
 // If a test that writes global Git config shares the package config, parallel

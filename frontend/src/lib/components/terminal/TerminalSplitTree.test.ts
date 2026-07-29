@@ -1,7 +1,9 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
+import { clearActiveTabbedPanelDrag, readTabbedPanelTabDrag, sessionPaneKey } from "@middleman/ui";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import TerminalSplitTree from "./TerminalSplitTree.svelte";
 import type { PaneNode } from "./terminal-layout";
+import { clearActiveTerminalDrag, readRuntimeSessionDrag } from "./terminal-drag";
 
 vi.mock("./TerminalPane.svelte", async () => ({
   default: (await import("./TerminalSplitTreeTestPane.svelte")).default,
@@ -83,8 +85,40 @@ describe("TerminalSplitTree", () => {
 
   afterEach(() => {
     cleanup();
+    clearActiveTerminalDrag();
+    clearActiveTabbedPanelDrag();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+  });
+
+  it("publishes and clears a detail-pane payload from a terminal leaf drag", async () => {
+    const paneKey = sessionPaneKey("ws-1", undefined, sessions[0]!.key);
+    render(TerminalSplitTree, {
+      props: {
+        workspaceId: "ws-1",
+        node: leaf("leaf-a", sessions[0]!.key),
+        sessions: sessions.slice(0, 2),
+        displayLabels: {},
+        activeSessionKey: sessions[0]!.key,
+        dragScope: "detail:prs",
+        paneKeyForSession: (sessionKey: string) => (sessionKey === sessions[0]!.key ? paneKey : null),
+      },
+    });
+    const data = new Map<string, string>();
+    const dataTransfer = {
+      effectAllowed: "none",
+      setData: (type: string, value: string) => data.set(type, value),
+      getData: (type: string) => data.get(type) ?? "",
+    };
+    const header = screen.getByRole("group", { name: "Shell A terminal pane" });
+
+    await fireEvent.dragStart(header, { dataTransfer });
+    expect(readRuntimeSessionDrag({ dataTransfer } as unknown as DragEvent, "ws-1")).toBe(sessions[0]!.key);
+    expect(readTabbedPanelTabDrag({ dataTransfer } as unknown as DragEvent, "detail:prs")).toBe(paneKey);
+
+    await fireEvent.dragEnd(header, { dataTransfer });
+    expect(readRuntimeSessionDrag({ dataTransfer } as unknown as DragEvent, "ws-1")).toBeNull();
+    expect(readTabbedPanelTabDrag({ dataTransfer } as unknown as DragEvent, "detail:prs")).toBeNull();
   });
 
   it("resizes a horizontal split with truthful pixel ARIA values", async () => {

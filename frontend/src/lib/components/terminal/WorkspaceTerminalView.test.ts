@@ -3528,7 +3528,7 @@ describe("WorkspaceTerminalView", () => {
   });
 
   describe("promoted sessions", () => {
-    it("reports a row-only workspace while its workflow session is promoted and its dock remains", async () => {
+    it("gives a parked row-only dock the sole workspace actions and live dialogs", async () => {
       localStorage.setItem(
         "middleman-workspace-terminal-layout:ws-1",
         JSON.stringify({
@@ -3564,6 +3564,7 @@ describe("WorkspaceTerminalView", () => {
         props: {
           workspaceId: "ws-1",
           paneSurface: "prs" as const,
+          hostVisible: false,
         },
       });
 
@@ -3571,7 +3572,28 @@ describe("WorkspaceTerminalView", () => {
       await waitFor(() => expect(controller.workspacePaneRowOnly()).toBe(true));
       expect(controller.dockRow()).not.toBeNull();
 
-      getPaneLayoutStore("prs").demoteTab(paneKey);
+      const externalDock = await screen.findByRole("region", { name: "Terminal panel" });
+      render(WorkspacePaneControls, { props: { showStripActions: false } });
+      expect(screen.getAllByRole("button", { name: /^Delete workspace / })).toHaveLength(1);
+      expect(screen.getAllByRole("button", { name: "Workspace controls" })).toHaveLength(2);
+
+      await fireEvent.click(within(externalDock).getByRole("button", { name: /^Delete workspace / }));
+      const deleteDialog = await screen.findByRole("dialog", { name: "Delete workspace?" });
+      await fireEvent.click(within(deleteDialog).getByRole("button", { name: "Cancel" }));
+
+      await fireEvent.click(within(externalDock).getByRole("button", { name: "Workspace controls" }));
+      const controls = await screen.findByRole("dialog", { name: "Workspace controls" });
+      await fireEvent.click(within(controls).getByRole("button", { name: "Launch session" }));
+      const launcher = await screen.findByRole("dialog", { name: "Launch a session" });
+      await fireEvent.click(within(launcher).getByRole("button", { name: "Close" }));
+
+      await fireEvent.click(within(externalDock).getByRole("button", { name: "Move Shell to a pane" }));
+      const shellPaneKey = sessionPaneKey("ws-1", undefined, "ws-1_shell_a");
+      const layout = getPaneLayoutStore("prs");
+      await waitFor(() => expect(layout.hasTab(shellPaneKey)).toBe(true));
+
+      layout.demoteTab(shellPaneKey);
+      layout.demoteTab(paneKey);
       await waitFor(() => expect(controller.workspacePaneRowOnly()).toBe(false));
       expect(controller.dockRow()).toBeNull();
     });

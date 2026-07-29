@@ -1,6 +1,7 @@
 <script lang="ts">
+  import type { Snippet } from "svelte";
   import { SplitResizeHandle, type SplitResizeEvent } from "@kenn-io/kit-ui";
-  import { clearActiveTabbedPanelDrag } from "@middleman/ui";
+  import { clearActiveTabbedPanelDrag, startTabbedPanelTabDrag } from "@middleman/ui";
   import type { RuntimeSession } from "@middleman/ui/api/types";
   import PlusIcon from "@lucide/svelte/icons/plus";
   import XIcon from "@lucide/svelte/icons/x";
@@ -46,6 +47,12 @@
     // False while the owning WorkspaceTerminalView is parked in a hidden
     // host: forwarded to TerminalSplitTree so its TerminalPanes deactivate.
     hostVisible?: boolean;
+    /** Shared detail-surface scope when terminal sessions may become top-level panes. */
+    dragScope?: string | undefined;
+    /** Maps a runtime session to its top-level detail-pane key. */
+    paneKeyForSession?: ((sessionKey: string) => string | null) | undefined;
+    /** Actions owned by the placement hosting this dock, rendered in its header. */
+    headerActions?: Snippet | undefined;
     onToggle?: (() => void) | undefined;
     onNewTerminal?: (() => void) | undefined;
     onSplit?: ((direction: SplitDirection) => void) | undefined;
@@ -83,6 +90,9 @@
     loading = false,
     disabled = false,
     hostVisible = true,
+    dragScope = undefined,
+    paneKeyForSession = undefined,
+    headerActions = undefined,
     onToggle,
     onNewTerminal,
     onSplit,
@@ -130,6 +140,15 @@
       workspaceId: session.workspace_id,
       sessionKey: session.key,
     });
+    const paneKey = paneKeyForSession?.(session.key) ?? null;
+    if (dragScope !== undefined && paneKey !== null) {
+      startTabbedPanelTabDrag(event, { scope: dragScope, tabKey: paneKey }, "Middleman session tab");
+    }
+  }
+
+  function clearDrag(): void {
+    clearActiveTerminalDrag();
+    clearActiveTabbedPanelDrag();
   }
 
   function readDroppedSession(event: DragEvent): string | null {
@@ -200,6 +219,7 @@
       <span class="panel-count">{sessions.length}</span>
     </button>
     <div class="panel-actions">
+      {@render headerActions?.()}
       <button
         class="panel-action"
         title="New terminal"
@@ -279,6 +299,8 @@
             {activeSessionKey}
             {disabled}
             {hostVisible}
+            {dragScope}
+            {paneKeyForSession}
             {onSelect}
             {onClose}
             {onRename}
@@ -307,7 +329,7 @@
             <button
               draggable={!disabled}
               ondragstart={(event) => startSessionDrag(event, session)}
-              ondragend={clearActiveTerminalDrag}
+              ondragend={clearDrag}
               class={[
                 "selector-row",
                 {

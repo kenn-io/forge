@@ -16,6 +16,7 @@
   import TerminalOptionsMenu from "./TerminalOptionsMenu.svelte";
   import TerminalZoomControl from "./TerminalZoomControl.svelte";
   import DockedTerminalPanel from "./DockedTerminalPanel.svelte";
+  import WorkspacePaneControls from "./WorkspacePaneControls.svelte";
   import WorkflowSplitTree, {
     type WorkflowTabDescriptor,
   } from "./WorkflowSplitTree.svelte";
@@ -532,6 +533,11 @@
     return sessionPaneKey(workspaceId, workspaceHostKey, session.key);
   }
 
+  function detailPaneKeyForSession(sessionKey: string): string | null {
+    const session = runtimeSessions.find((candidate) => candidate.key === sessionKey);
+    return session ? sessionPaneKeyFor(session) : null;
+  }
+
   const promotedSessionKeys = $derived(
     new Set(
       surfaceLayout === null
@@ -976,6 +982,20 @@
       terminalLayout.dock === "bottom" &&
       terminalSessions.length > 0,
   );
+  const externalControlsVisible = $derived(
+    workspacePaneEmpty ||
+      workspacePaneRowOnly ||
+      (surfaceLayout?.paneRender()?.onScreenTabs.some((tabKey) =>
+        sessionPaneKeyMatchesWorkspace(tabKey, workspaceId, workspaceHostKey),
+      ) ??
+        false),
+  );
+  // A parked terminal host stays inactive, but controls actually rendered in a
+  // promoted pane or external dock still own portalled UI. Do not use the broad
+  // `controlsInPane` flag here: it is also true during a selection handoff before
+  // the destination slot mounts, and opening a launcher in that parked window
+  // prevents Focus Terminal from completing the reveal on Firefox.
+  const interactionVisible = $derived(hostVisible || externalControlsVisible);
 
   // Handed to the detail pane's controls popover, which is where the controls live
   // once this view is embedded. Registered with the workspace it acts on, because
@@ -3900,6 +3920,8 @@
                           <DockedTerminalPanel
                             {workspaceId}
                             {workspaceHostKey}
+                            dragScope={surfaceLayout?.dragScope}
+                            paneKeyForSession={detailPaneKeyForSession}
                             sessions={terminalSessions}
                             displayLabels={sessionDisplayLabels}
                             tree={dockTree}
@@ -3959,7 +3981,7 @@
                 !soleEmbeddedSessionIsDocked &&
                 !workspacePaneEmpty &&
                 !workspacePaneRowOnly}
-                {@render workspaceDockRowBody(hostVisible)}
+                {@render workspaceDockRowBody(hostVisible, false)}
               {/if}
             </div>
           </div>
@@ -4063,7 +4085,7 @@
 
 {#if launcherMode && workspace !== null}
   <WorkspaceLauncherOverlay
-    open={launcherOpen && hostVisible}
+    open={launcherOpen && interactionVisible}
     {workspace}
     launchTargets={launchTargets}
     sessions={runtimeSessions}
@@ -4079,9 +4101,9 @@
   />
 {/if}
 
-{#if renamePrompt !== null && hostVisible}
+{#if renamePrompt !== null && interactionVisible}
   <Modal
-    open={renamePrompt !== null && hostVisible}
+    open={renamePrompt !== null && interactionVisible}
     title="Rename tab"
     width={460}
     frameId="workspace-rename-session"
@@ -4126,7 +4148,7 @@
 {/if}
 
 <ConfirmDialog
-  open={stopPromptSession !== null && hostVisible}
+  open={stopPromptSession !== null && interactionVisible}
   title={stopPromptSession
     ? `Stop ${stopPromptSession.label}?`
     : "Stop session?"}
@@ -4142,7 +4164,7 @@
 />
 
 <ConfirmDialog
-  open={deletePromptOpen && hostVisible}
+  open={deletePromptOpen && interactionVisible}
   title="Delete workspace?"
   message={workspace
     ? `This removes the worktree and tmux session for ${workspace.git_head_ref}.`
@@ -4156,7 +4178,7 @@
 />
 
 <ConfirmDialog
-  open={forcePromptMessage !== null && hostVisible}
+  open={forcePromptMessage !== null && interactionVisible}
   title="Force delete workspace?"
   message={forcePromptMessage ?? ""}
   hint="Force-deleting discards any uncommitted changes in the worktree. This cannot be undone."
@@ -4172,10 +4194,13 @@
 <!-- The dock body has one definition for its internal and surface-hosted placements.
      The internal copy follows the workspace host's visibility; the external copy is
      visible even while that host is parked because the container pane retired. -->
-{#snippet workspaceDockRowBody(dockHostVisible: boolean)}
+{#snippet workspaceDockRowBody(dockHostVisible: boolean, external: boolean)}
   <DockedTerminalPanel
                 {workspaceId}
                 {workspaceHostKey}
+                dragScope={surfaceLayout?.dragScope}
+                paneKeyForSession={detailPaneKeyForSession}
+                headerActions={external ? workspaceDockHeaderActions : undefined}
                 sessions={terminalSessions}
                 displayLabels={sessionDisplayLabels}
                 tree={dockTree}
@@ -4215,7 +4240,11 @@
      retired. Its own visible placement, not the parked host wrapper, owns whether
      terminal slots may attach. -->
 {#snippet workspaceDockRow()}
-  {@render workspaceDockRowBody(true)}
+  {@render workspaceDockRowBody(true, true)}
+{/snippet}
+
+{#snippet workspaceDockHeaderActions()}
+  <WorkspacePaneControls showStripActions={true} />
 {/snippet}
 
 <!-- The workspace's own controls, defined here because every one of them is wired
@@ -4272,7 +4301,7 @@
       onApply={(presetId) => void applyWorkflowPreset(presetId)}
       onDelete={deleteWorkflowPreset}
       disabled={actionsBlocked}
-      {hostVisible}
+      hostVisible={interactionVisible}
     />
   {/if}
   <TerminalZoomControl
@@ -4284,7 +4313,7 @@
   />
   <TerminalOptionsMenu
     disabled={actionsBlocked || !terminalSettingsReady || terminalZoomSaving}
-    {hostVisible}
+    hostVisible={interactionVisible}
     onSavingChange={(saving) => {
       terminalOptionsSaving = saving;
     }}
@@ -4327,7 +4356,7 @@
       launchTargets={launchTargets}
       {launchingKey}
       disabled={actionsBlocked}
-      {hostVisible}
+      hostVisible={interactionVisible}
       onLaunch={(key) => void handleLaunch(key)}
     />
   {/if}

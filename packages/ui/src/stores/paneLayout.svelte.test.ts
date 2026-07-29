@@ -258,18 +258,12 @@ describe("promoted session panes", () => {
     expect(layout.hasTab("conversation")).toBe(true);
   });
 
-  it("promotes beside the workspace pane only while that pane is on screen", () => {
+  it("promotes beside the workspace pane when it is on screen", () => {
     const layout = store();
     const onScreen = { editableTabs: TABS, onScreenTabs: TABS, flattened: false, soloChromeTabs: [] };
 
     // Nothing rendered yet, so there is no evidence the split would land anywhere
     // the user can see it.
-    expect(promoteSessionBesideWorkspace(layout, AGENT_PANE)).toBe(false);
-
-    // Present in the tree but not on screen: tabbed behind a sibling, hidden, or
-    // under another leaf's zoom. The view keeps publishing its sessions from the
-    // parked host either way, so this is the only thing that can tell them apart.
-    layout.notePaneRender({ ...onScreen, onScreenTabs: ["conversation"] });
     expect(promoteSessionBesideWorkspace(layout, AGENT_PANE)).toBe(false);
 
     // Flattened: one strip for the whole surface, where structural edits are off.
@@ -282,6 +276,44 @@ describe("promoted session panes", () => {
     // Its own leaf, not a tab stacked behind the workspace pane, which would look
     // like the command did nothing.
     expect(layout.leafIDForTab(AGENT_PANE)).not.toBe("leaf-workspace");
+  });
+
+  it("promotes beside an on-screen session from the same workspace after the workspace pane retires", () => {
+    const layout = store();
+    const reviewerPane = sessionPaneKey("ws-1", undefined, "ws-1:reviewer");
+    expect(
+      layout.promoteTab(reviewerPane, {
+        kind: "split",
+        leafID: "leaf-detail",
+        direction: "horizontal",
+        placement: "after",
+      }),
+    ).toBe(true);
+    layout.notePaneRender({
+      editableTabs: ["conversation", reviewerPane],
+      onScreenTabs: ["conversation", reviewerPane],
+      flattened: false,
+      soloChromeTabs: [],
+    });
+
+    expect(promoteSessionBesideWorkspace(layout, AGENT_PANE)).toBe(true);
+    expect(layout.hasTab(AGENT_PANE)).toBe(true);
+    expect(layout.leafIDForTab(AGENT_PANE)).not.toBe(layout.leafIDForTab(reviewerPane));
+  });
+
+  it("promotes beside a visible detail pane in a row-only layout", () => {
+    const layout = store();
+    layout.noteFocused("conversation");
+    layout.notePaneRender({
+      editableTabs: ["conversation", "files"],
+      onScreenTabs: ["conversation", "files"],
+      flattened: false,
+      soloChromeTabs: [],
+    });
+
+    expect(promoteSessionBesideWorkspace(layout, AGENT_PANE)).toBe(true);
+    expect(layout.hasTab(AGENT_PANE)).toBe(true);
+    expect(layout.leafIDForTab(AGENT_PANE)).not.toBe("leaf-detail");
   });
 
   it("refuses to promote a key the surface would prune, or one already in the tree", () => {

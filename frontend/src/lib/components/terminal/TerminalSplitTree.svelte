@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import { SplitResizeHandle, type SplitResizeEvent } from "@kenn-io/kit-ui";
-  import { clearActiveTabbedPanelDrag } from "@middleman/ui";
+  import { clearActiveTabbedPanelDrag, startTabbedPanelTabDrag } from "@middleman/ui";
   import type { RuntimeSession } from "@middleman/ui/api/types";
   import XIcon from "@lucide/svelte/icons/x";
   import MoveIcon from "@lucide/svelte/icons/move";
@@ -47,6 +47,10 @@
     // host: ANDed into every TerminalPane's `active` prop so ResizeObserver-
     // driven refresh/resize work in the pane suspends while hidden.
     hostVisible?: boolean;
+    /** Shared detail-surface scope when terminal sessions may become top-level panes. */
+    dragScope?: string | undefined;
+    /** Maps a runtime session to its top-level detail-pane key. */
+    paneKeyForSession?: ((sessionKey: string) => string | null) | undefined;
     onSelect?: ((sessionKey: string) => void) | undefined;
     onClose?: ((session: RuntimeSession) => void) | undefined;
     onRename?: ((session: RuntimeSession) => void) | undefined;
@@ -76,6 +80,8 @@
     borderTrim = {},
     disabled = false,
     hostVisible = true,
+    dragScope = undefined,
+    paneKeyForSession = undefined,
     onSelect,
     onClose,
     onRename,
@@ -113,6 +119,15 @@
       workspaceId: session.workspace_id,
       sessionKey: session.key,
     });
+    const paneKey = paneKeyForSession?.(session.key) ?? null;
+    if (dragScope !== undefined && paneKey !== null) {
+      startTabbedPanelTabDrag(event, { scope: dragScope, tabKey: paneKey }, "Middleman session tab");
+    }
+  }
+
+  function clearDrag(): void {
+    clearActiveTerminalDrag();
+    clearActiveTabbedPanelDrag();
   }
 
   function readDroppedSession(event: DragEvent): string | null {
@@ -280,13 +295,13 @@
           aria-label={`${labelFor(session)} terminal pane`}
           draggable={!disabled}
           ondragstart={(event) => startSessionDrag(event, session)}
-          ondragend={clearActiveTerminalDrag}
+          ondragend={clearDrag}
         >
           <button
             class="leaf-title"
             draggable={!disabled}
             ondragstart={(event) => startSessionDrag(event, session)}
-            ondragend={clearActiveTerminalDrag}
+            ondragend={clearDrag}
             onclick={() => {
               if (disabled) return;
               onSelect?.(session.key);
@@ -417,6 +432,8 @@
         {activeSessionKey}
         {disabled}
         {hostVisible}
+        {dragScope}
+        {paneKeyForSession}
         borderTrim={firstChildTrim(node.direction)}
         {onSelect}
         {onClose}
@@ -449,6 +466,8 @@
         {activeSessionKey}
         {disabled}
         {hostVisible}
+        {dragScope}
+        {paneKeyForSession}
         borderTrim={secondChildTrim(node.direction)}
         {onSelect}
         {onClose}

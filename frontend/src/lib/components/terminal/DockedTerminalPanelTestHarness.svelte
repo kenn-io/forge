@@ -1,24 +1,42 @@
 <script lang="ts">
+  import type { RuntimeSession } from "@middleman/ui/api/types";
   import DockedTerminalPanel from "./DockedTerminalPanel.svelte";
+  import type { PaneNode } from "./terminal-layout";
 
   interface Props {
     height?: number;
     disabled?: boolean;
     onResize?: (height: number) => void;
+    sessions?: RuntimeSession[];
+    tree?: PaneNode | null;
+    activeSessionKey?: string | null;
+    dragScope?: string;
+    paneKeyForSession?: (sessionKey: string) => string | null;
   }
 
-  let { height = 300, disabled = false, onResize = () => {} }: Props = $props();
+  let {
+    height = 300,
+    disabled = false,
+    onResize = () => {},
+    sessions = [],
+    tree = null,
+    activeSessionKey = null,
+    dragScope = undefined,
+    paneKeyForSession = undefined,
+  }: Props = $props();
 </script>
 
 <DockedTerminalPanel
   workspaceId="ws-1"
-  sessions={[]}
+  {sessions}
   displayLabels={{}}
-  tree={null}
-  activeSessionKey={null}
+  {tree}
+  {activeSessionKey}
   open={true}
   dock="bottom"
   {height}
   {disabled}
   {onResize}
+  {dragScope}
+  {paneKeyForSession}
 />

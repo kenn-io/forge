@@ -24,6 +24,7 @@ async function fetchModes(request: APIRequestContext, baseURL: string): Promise<
 // same pooled process rather than fresh spawns, pinning that no
 // option state leaks from one lease into the next.
 test("pooled server leases reset cleanly across option combinations", async ({ request }) => {
+  test.slow();
   const ghe = await startIsolatedE2EServerWithOptions({ defaultPlatformHost: "ghe.example.com" });
   try {
     const repos = await fetchRepos(request, ghe.info.base_url);

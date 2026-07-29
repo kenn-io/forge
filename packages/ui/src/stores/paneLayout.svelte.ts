@@ -20,6 +20,7 @@ import {
 } from "../components/shared/tabbed-panel-layout.js";
 import { getStackDepth } from "./keyboard/modal-stack.svelte.js";
 import { PANE_SURFACES } from "./pane-surfaces.js";
+import { parseSessionPaneKey, sessionPaneKeyMatchesWorkspace } from "./session-pane-key.js";
 
 export type PaneSurfaceKey = "prs" | "issues" | "activity";
 
@@ -365,23 +366,45 @@ export function createPaneLayoutStore(
 }
 
 /**
- * Promote a session into its own leaf beside the workspace pane.
+ * Promote a session into its own leaf beside visible workspace content.
  *
  * What every entry point that is not a drag means by "move to a pane": the point
  * of promoting is to see the session next to the work it belongs to, and a tab
- * stacked behind the workspace pane looks like the command did nothing. Shared so
- * the palette command and the dock's own control cannot drift apart.
+ * stacked behind another pane looks like the command did nothing. Shared so the
+ * palette command and the dock's own control cannot drift apart.
  *
  * The visibility rule is enforced HERE rather than left to each caller: holding a
  * leaf in the stored tree is not the same as being on screen, and a pane that is
  * closed, tabbed behind a sibling, or covered by another leaf's zoom would have
- * the split grow off screen while the view keeps publishing its sessions. False
- * in all of those, and while flattened, where structural edits are disabled.
+ * the split grow off screen while the view keeps publishing its sessions. Prefer
+ * the workspace, then another visible session from the same workspace, then a
+ * visible detail pane. Refuse only when none exists or structural edits are off.
  */
 export function promoteSessionBesideWorkspace(layout: PaneLayoutStore, tabKey: string): boolean {
   const render = layout.paneRender();
-  if (render === null || render.flattened || !render.onScreenTabs.includes("workspace")) return false;
-  const leafID = layout.leafIDForTab("workspace");
+  if (render === null || render.flattened) return false;
+
+  const target = parseSessionPaneKey(tabKey);
+  const sameWorkspaceSession =
+    target === null
+      ? undefined
+      : render.onScreenTabs.find((candidate) =>
+          sessionPaneKeyMatchesWorkspace(candidate, target.workspaceId, target.hostKey),
+        );
+  const focused = layout.lastFocusedTabKey();
+  const focusedDetail =
+    focused !== null && render.onScreenTabs.includes(focused) && parseSessionPaneKey(focused) === null
+      ? focused
+      : undefined;
+  const firstDetail = render.onScreenTabs.find(
+    (candidate) => candidate !== "workspace" && parseSessionPaneKey(candidate) === null,
+  );
+  const anchorTab = render.onScreenTabs.includes("workspace")
+    ? "workspace"
+    : (sameWorkspaceSession ?? focusedDetail ?? firstDetail);
+  if (anchorTab === undefined) return false;
+
+  const leafID = layout.leafIDForTab(anchorTab);
   if (leafID === null) return false;
   return layout.promoteTab(tabKey, { kind: "split", leafID, direction: "horizontal", placement: "after" });
 }

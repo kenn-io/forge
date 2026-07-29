@@ -2007,6 +2007,47 @@ describe("PullDetail inline workspace handoff", () => {
   });
 });
 
+describe("PullDetail description collapse", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("offers an expanded collapse control for a long pull description", () => {
+    const detail = pullDetail();
+    detail.merge_request.Body = "x".repeat(1_501);
+    renderPullDetail(detail);
+
+    const collapse = screen.getByRole("button", { name: "Collapse description" });
+    expect(collapse.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("does not offer collapse at the long-description threshold", () => {
+    const detail = pullDetail();
+    detail.merge_request.Body = "x".repeat(1_500);
+    renderPullDetail(detail);
+
+    expect(screen.queryByRole("button", { name: "Collapse description" })).toBeNull();
+  });
+
+  it("expands a collapsed description after pull navigation", async () => {
+    const detail = pullDetail();
+    detail.merge_request.Body = "x".repeat(1_501);
+    const { rerender } = renderPullDetail(detail);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Collapse description" }));
+    expect(screen.getByRole("button", { name: "Expand description" }).getAttribute("aria-expanded")).toBe("false");
+
+    detail.merge_request.Number = 2;
+    await rerender({ number: 2 });
+
+    expect(screen.getByRole("button", { name: "Collapse description" }).getAttribute("aria-expanded")).toBe("true");
+  });
+});
+
 describe("PullDetail body copy feedback", () => {
   beforeEach(() => {
     localStorage.clear();

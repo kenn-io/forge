@@ -25,14 +25,9 @@
   import { moveTaskListItem, toggleTaskListItem } from "../../utils/task-list.js";
   import type { ApplySuggestionRequest } from "../../utils/markdown-suggestions.js";
   import { firstUnavailableGate, operationGate } from "./operation-gates.js";
-  import {
-    Card,
-    CopyButton,
-    FitStages,
-    copyToClipboard,
-    formatRelativeTime,
-  } from "@kenn-io/kit-ui";
+  import { FitStages, copyToClipboard, formatRelativeTime } from "@kenn-io/kit-ui";
   import EventTimeline from "./EventTimeline.svelte";
+  import CollapsibleDescription from "./CollapsibleDescription.svelte";
   import DetailActivityViewMenu from "./DetailActivityViewMenu.svelte";
   import CommentBox from "./CommentBox.svelte";
   import ApproveButton from "./ApproveButton.svelte";
@@ -2715,20 +2710,10 @@
 
       <!-- PR body -->
       <div class="section body-section">
-        <div class="section-header">
-          <span class="section-title-inline">Description</span>
-          {#if !editingBody && capabilities.state_mutation && !stalePR}
-            <button
-              class="edit-body-btn"
-              onclick={startEditBody}
-              disabled={contentGate.unavailable}
-              title={contentGate.unavailable ? contentGate.reason : undefined}
-            >
-              Edit
-            </button>
-          {/if}
-        </div>
         {#if editingBody}
+          <div class="section-header">
+            <span class="section-title-inline">Description</span>
+          </div>
           <div class="body-edit">
             <!-- svelte-ignore a11y_autofocus -->
             <textarea
@@ -2757,47 +2742,67 @@
             </div>
           </div>
         {:else if pr.Body}
-          <div class="inset-box-wrap">
-            <CopyButton
-              class={bodyCopied ? "body-copy body-copy--copied" : "body-copy"}
-              copied={bodyCopied}
-              onclick={() => copyBody(pr.Body)}
-              revealOnHover
-              ariaLabel="Copy to clipboard"
-              copiedAriaLabel="Copied!"
-              title="Copy to clipboard"
-              copiedTitle="Copied!"
-            />
-            <Card level="inset" padding="none" class="inset-box">
-              <!-- svelte-ignore a11y_click_events_have_key_events -->
-              <!-- svelte-ignore a11y_no_static_element_interactions -->
-              <div
-                class="inset-box__content markdown-body"
-                class:dragging={dragSourceIndex !== null}
-                onclick={onBodyClick}
-                ondragstart={onBodyDragStart}
-                ondragover={onBodyDragOver}
-                ondragleave={onBodyDragLeave}
-                ondrop={onBodyDrop}
-                ondragend={onBodyDragEnd}
-              >
-                {#await renderMarkdown(pr.Body, { provider, platformHost, owner, name, repoPath }, { interactiveTasks: capabilities.state_mutation && !contentGate.unavailable })}
-                  {@html renderMarkdownSync(pr.Body, { provider, platformHost, owner, name, repoPath })}
-                {:then html}
-                  {@html html}
-                {/await}
-              </div>
-            </Card>
-          </div>
-        {:else if capabilities.state_mutation && !stalePR}
-          <button
-            class="add-description-btn"
-            onclick={startEditBody}
-            disabled={contentGate.unavailable}
-            title={contentGate.unavailable ? contentGate.reason : undefined}
+          <CollapsibleDescription
+            source={pr.Body}
+            itemKey={`${provider}:${platformHost ?? ""}:${owner}/${name}:pull:${number}`}
+            copied={bodyCopied}
+            oncopy={() => copyBody(pr.Body)}
           >
-            Add a description
-          </button>
+            {#snippet headerActions()}
+              {#if capabilities.state_mutation && !stalePR}
+                <button
+                  class="edit-body-btn"
+                  onclick={startEditBody}
+                  disabled={contentGate.unavailable}
+                  title={contentGate.unavailable ? contentGate.reason : undefined}
+                >
+                  Edit
+                </button>
+              {/if}
+            {/snippet}
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div
+              class="inset-box__content markdown-body"
+              class:dragging={dragSourceIndex !== null}
+              onclick={onBodyClick}
+              ondragstart={onBodyDragStart}
+              ondragover={onBodyDragOver}
+              ondragleave={onBodyDragLeave}
+              ondrop={onBodyDrop}
+              ondragend={onBodyDragEnd}
+            >
+              {#await renderMarkdown(pr.Body, { provider, platformHost, owner, name, repoPath }, { interactiveTasks: capabilities.state_mutation && !contentGate.unavailable })}
+                {@html renderMarkdownSync(pr.Body, { provider, platformHost, owner, name, repoPath })}
+              {:then html}
+                {@html html}
+              {/await}
+            </div>
+          </CollapsibleDescription>
+        {:else}
+          <div class="section-header">
+            <span class="section-title-inline">Description</span>
+            {#if capabilities.state_mutation && !stalePR}
+              <button
+                class="edit-body-btn"
+                onclick={startEditBody}
+                disabled={contentGate.unavailable}
+                title={contentGate.unavailable ? contentGate.reason : undefined}
+              >
+                Edit
+              </button>
+            {/if}
+          </div>
+          {#if capabilities.state_mutation && !stalePR}
+            <button
+              class="add-description-btn"
+              onclick={startEditBody}
+              disabled={contentGate.unavailable}
+              title={contentGate.unavailable ? contentGate.reason : undefined}
+            >
+              Add a description
+            </button>
+          {/if}
         {/if}
       </div>
 
@@ -3493,29 +3498,6 @@
     color: var(--text-muted);
   }
 
-  .inset-box-wrap {
-    position: relative;
-  }
-
-  /* Kit CopyButton owns size, hover, active, copied icon, and the
-     touch always-visible rule; the wrap positions it and reveals it on
-     hover (kit's --reveal only self-reveals on focus-visible). */
-  .inset-box-wrap :global(.kit-copy-btn.body-copy) {
-    position: absolute;
-    top: 6px;
-    right: 6px;
-    z-index: 1;
-  }
-
-  .inset-box-wrap:hover :global(.kit-copy-btn.body-copy),
-  .inset-box-wrap :global(.kit-copy-btn.body-copy--copied) {
-    opacity: 1;
-  }
-
-  :global(.inset-box) {
-    overflow: hidden;
-  }
-
   .inset-box__content {
     padding: 10px 12px;
     font-size: var(--font-size-root);
@@ -3673,8 +3655,7 @@
     .edit-title-btn,
     .edit-body-btn,
     .star-btn,
-    .gh-link,
-    .inset-box-wrap :global(.kit-copy-btn.body-copy) {
+    .gh-link {
       min-width: var(--detail-mobile-hit-target);
       min-height: var(--detail-mobile-hit-target);
       justify-content: center;
@@ -3766,9 +3747,5 @@
       min-height: var(--detail-mobile-hit-target);
     }
 
-    .inset-box-wrap :global(.kit-copy-btn.body-copy) {
-      position: static;
-      opacity: 1;
-    }
   }
 </style>

@@ -44,8 +44,10 @@
     height: number;
     loading?: boolean;
     disabled?: boolean;
-    // False while the owning WorkspaceTerminalView is parked in a hidden
-    // host: forwarded to TerminalSplitTree so its TerminalPanes deactivate.
+    // Whether this dock is painted: false while the owning
+    // WorkspaceTerminalView is parked in a hidden host, and false for the
+    // workflow-tab placement while another tab is selected. Forwarded to
+    // TerminalSplitTree, which makes it every leaf's visibility.
     hostVisible?: boolean;
     /** Shared detail-surface scope when terminal sessions may become top-level panes. */
     dragScope?: string | undefined;

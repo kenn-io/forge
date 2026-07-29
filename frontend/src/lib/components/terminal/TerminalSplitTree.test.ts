@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import TerminalSplitTree from "./TerminalSplitTree.svelte";
 import type { PaneNode } from "./terminal-layout";
 import { clearActiveTerminalDrag, readRuntimeSessionDrag } from "./terminal-drag";
+import { isSessionSlotVisible, resetSessionHostForTest, sessionHostKey } from "../../stores/session-host.svelte.ts";
 
 vi.mock("./TerminalPane.svelte", async () => ({
   default: (await import("./TerminalSplitTreeTestPane.svelte")).default,
@@ -87,8 +88,47 @@ describe("TerminalSplitTree", () => {
     cleanup();
     clearActiveTerminalDrag();
     clearActiveTabbedPanelDrag();
+    resetSessionHostForTest();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+  });
+
+  it("keeps every leaf of a split on screen, not only the focused one", async () => {
+    render(TerminalSplitTree, {
+      props: {
+        workspaceId: "ws-1",
+        node: split(),
+        sessions,
+        displayLabels: {},
+        activeSessionKey: sessions[0]!.key,
+      },
+    });
+
+    // Both leaves of a split are painted side by side, so both terminals have
+    // to size themselves to their own pane. Only the focused one reporting as
+    // visible leaves the other inert at whatever size it last held.
+    for (const session of sessions.slice(0, 2)) {
+      const key = sessionHostKey("ws-1", undefined, session.key, session.created_at);
+      expect(isSessionSlotVisible(key), session.label).toBe(true);
+    }
+  });
+
+  it("hides every leaf while the host is parked", async () => {
+    render(TerminalSplitTree, {
+      props: {
+        workspaceId: "ws-1",
+        node: split(),
+        sessions,
+        displayLabels: {},
+        activeSessionKey: sessions[0]!.key,
+        hostVisible: false,
+      },
+    });
+
+    for (const session of sessions.slice(0, 2)) {
+      const key = sessionHostKey("ws-1", undefined, session.key, session.created_at);
+      expect(isSessionSlotVisible(key), session.label).toBe(false);
+    }
   });
 
   it("publishes and clears a detail-pane payload from a terminal leaf drag", async () => {

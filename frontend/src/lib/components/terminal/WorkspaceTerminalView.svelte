@@ -3955,7 +3955,7 @@
                             height={terminalLayout.height}
                             loading={terminalLaunching}
                             disabled={actionsBlocked}
-                            {hostVisible}
+                            hostVisible={active && hostVisible}
                             onToggle={() => void toggleTerminalPanel()}
                             onNewTerminal={() => void launchTerminalSession()}
                             onSplit={(direction) => void splitTerminal(direction)}

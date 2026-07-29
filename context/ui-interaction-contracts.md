@@ -311,6 +311,12 @@ Keyboard handlers must have one clear owner for each key press.
   settles with no destination (the pane closed) — a cross-flush transfer's
   transient no-destination park keeps it. A restore fires only into unclaimed
   focus (`frontend/src/lib/components/terminal/PooledSessionTerminal.svelte`).
+- A slot's `visible` means PAINTED, never FOCUSED. Only a visible terminal pushes
+  its size (the pane suspends resize work and the server refuses resize authority
+  while inactive), so a container that reports only its focused session leaves the
+  other halves of a split at whatever size they last held — for a session never
+  focused, the tmux launch default. Every leaf of a split shares the container's
+  own visibility (`frontend/src/lib/components/terminal/TerminalSplitTree.svelte`).
 - A promoted session is recorded ONCE, in the detail surface's stored pane tree.
   Containers mask it out of what they render (derived, not an effect) and never
   prune their own stored trees, so demoting restores the tab order, split, and

@@ -43,9 +43,13 @@
     activeSessionKey: string | null;
     borderTrim?: BorderTrim | undefined;
     disabled?: boolean;
-    // False while the owning WorkspaceTerminalView is parked in a hidden
-    // host: ANDed into every TerminalPane's `active` prop so ResizeObserver-
-    // driven refresh/resize work in the pane suspends while hidden.
+    // Whether this tree is painted at all: false while the owning
+    // WorkspaceTerminalView is parked in a hidden host, or while the dock
+    // holding it sits behind another workflow tab. It is every leaf's whole
+    // visibility, because a split paints all of its leaves at once — gating a
+    // leaf on `activeSessionKey` instead would leave the unfocused halves of a
+    // split inert, so their ResizeObserver never pushed a size and their tmux
+    // pane kept the launch default until the user clicked into them.
     hostVisible?: boolean;
     /** Shared detail-surface scope when terminal sessions may become top-level panes. */
     dragScope?: string | undefined;
@@ -400,7 +404,7 @@
               session.key,
               session.created_at,
             )}
-            visible={activeSessionKey === session.key && hostVisible}
+            visible={hostVisible}
           />
           <div
             class={[

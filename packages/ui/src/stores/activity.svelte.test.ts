@@ -3,7 +3,9 @@ import type { ActivityItem, ActivitySettings } from "../api/types.js";
 import {
   buildActivityFilterTypes,
   createActivityStore,
+  DEFAULT_ACTIVITY_ITEM_TYPES,
   DEFAULT_EVENT_TYPES,
+  isActivityItemTypeEnabled,
   notificationDbId,
 } from "./activity.svelte.js";
 import { dismissFlash, getFlash, getFlashes } from "./flash.svelte.js";
@@ -130,15 +132,16 @@ describe("activity store collapse state", () => {
 });
 
 describe("buildActivityFilterTypes", () => {
+  const allItemTypes = new Set(DEFAULT_ACTIVITY_ITEM_TYPES);
   const allEvents = new Set<string>(DEFAULT_EVENT_TYPES);
 
   it("returns no filter when everything is selected", () => {
-    expect(buildActivityFilterTypes("all", allEvents, false)).toEqual([]);
+    expect(buildActivityFilterTypes(allItemTypes, allEvents, false)).toEqual([]);
   });
 
   it("drops default-branch commits when the commit event is deselected", () => {
     const enabled = new Set(["comment", "review", "force_push"]);
-    expect(buildActivityFilterTypes("all", enabled, false)).toEqual([
+    expect(buildActivityFilterTypes(allItemTypes, enabled, false)).toEqual([
       "new_pr",
       "new_issue",
       "default_branch_force_push",
@@ -151,7 +154,7 @@ describe("buildActivityFilterTypes", () => {
 
   it("drops default-branch force pushes when the force-push event is deselected", () => {
     const enabled = new Set(["comment", "review", "commit"]);
-    expect(buildActivityFilterTypes("all", enabled, false)).toEqual([
+    expect(buildActivityFilterTypes(allItemTypes, enabled, false)).toEqual([
       "new_pr",
       "new_issue",
       "default_branch_commit",
@@ -163,7 +166,7 @@ describe("buildActivityFilterTypes", () => {
   });
 
   it("excludes all default-branch activity when it is hidden", () => {
-    expect(buildActivityFilterTypes("all", allEvents, true)).toEqual([
+    expect(buildActivityFilterTypes(allItemTypes, allEvents, true)).toEqual([
       "new_pr",
       "new_issue",
       "comment",
@@ -174,17 +177,11 @@ describe("buildActivityFilterTypes", () => {
     ]);
   });
 
-  it("never includes default-branch activity for PR or issue item filters", () => {
-    expect(buildActivityFilterTypes("prs", allEvents, false)).toEqual([
-      "new_pr",
-      "comment",
-      "review",
-      "commit",
-      "force_push",
-      "notification",
-    ]);
-    expect(buildActivityFilterTypes("issues", allEvents, false)).toEqual([
+  it("independently controls PR and issue opening events", () => {
+    expect(buildActivityFilterTypes(new Set(["issue"]), allEvents, false)).toEqual([
       "new_issue",
+      "default_branch_commit",
+      "default_branch_force_push",
       "comment",
       "review",
       "commit",
@@ -194,11 +191,11 @@ describe("buildActivityFilterTypes", () => {
   });
 
   it("keeps the all-selected shortcut only while notifications stay on", () => {
-    expect(buildActivityFilterTypes("all", allEvents, false, true)).toEqual([]);
+    expect(buildActivityFilterTypes(allItemTypes, allEvents, false, true)).toEqual([]);
   });
 
   it("builds an explicit list omitting notifications when they are hidden", () => {
-    expect(buildActivityFilterTypes("all", allEvents, false, false)).toEqual([
+    expect(buildActivityFilterTypes(allItemTypes, allEvents, false, false)).toEqual([
       "new_pr",
       "new_issue",
       "default_branch_commit",
@@ -208,6 +205,22 @@ describe("buildActivityFilterTypes", () => {
       "commit",
       "force_push",
     ]);
+  });
+
+  it("supports repository-level commits with both item types hidden", () => {
+    expect(buildActivityFilterTypes(new Set(), new Set(["commit"]), false, false)).toEqual([
+      "default_branch_commit",
+      "commit",
+    ]);
+  });
+});
+
+describe("isActivityItemTypeEnabled", () => {
+  it("filters PR and issue rows without filtering repository-level rows", () => {
+    const issuesOnly = new Set<"pr" | "issue">(["issue"]);
+    expect(isActivityItemTypeEnabled("pr", issuesOnly)).toBe(false);
+    expect(isActivityItemTypeEnabled("issue", issuesOnly)).toBe(true);
+    expect(isActivityItemTypeEnabled("", new Set())).toBe(true);
   });
 });
 
@@ -247,6 +260,33 @@ describe("activity store URL hydration", () => {
     expect(s.getActivityFilterTypes()).toEqual([]);
     expect(new URLSearchParams(window.location.search).has("types")).toBe(false);
   });
+
+  it.each([
+    {
+      name: "PRs only",
+      types: "new_pr,comment",
+      expected: ["pr"],
+      normalized: "new_pr,comment,notification",
+    },
+    {
+      name: "issues only",
+      types: "new_issue,comment",
+      expected: ["issue"],
+      normalized: "new_issue,comment,notification",
+    },
+    {
+      name: "neither item type",
+      types: "default_branch_commit,commit",
+      expected: [],
+      normalized: "default_branch_commit,commit,notification",
+    },
+  ])("hydrates $name from the types parameter", ({ types, expected, normalized }) => {
+    window.history.replaceState(null, "", `/?types=${types}`);
+    const s = makeStore();
+    s.initializeFromMount();
+    expect([...s.getEnabledItemTypes()]).toEqual(expected);
+    expect(new URLSearchParams(window.location.search).get("types")).toBe(normalized);
+  });
 });
 
 describe("activity store notification visibility", () => {
@@ -260,7 +300,7 @@ describe("activity store notification visibility", () => {
 
     s.setShowNotifications(false);
     s.setActivityFilterTypes(
-      buildActivityFilterTypes(s.getItemFilter(), s.getEnabledEvents(), s.getHideDefaultBranchActivity(), false),
+      buildActivityFilterTypes(s.getEnabledItemTypes(), s.getEnabledEvents(), s.getHideDefaultBranchActivity(), false),
     );
     s.syncToURL();
     expect(new URLSearchParams(window.location.search).get("notif")).toBe("0");

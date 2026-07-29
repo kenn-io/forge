@@ -40,6 +40,14 @@ const onSelectItem = vi.hoisted(() => vi.fn());
 const hideClosedMerged = vi.hoisted(() => ({ value: false }));
 const hideOrgName = vi.hoisted(() => ({ value: false }));
 const showNotifications = vi.hoisted(() => ({ value: true }));
+const enabledItemTypes = vi.hoisted(() => ({
+  value: new Set<"pr" | "issue">(["pr", "issue"]),
+}));
+const setEnabledItemTypes = vi.hoisted(() =>
+  vi.fn((itemTypes: Set<"pr" | "issue">) => {
+    enabledItemTypes.value = itemTypes;
+  }),
+);
 const setHideOrgName = vi.hoisted(() =>
   vi.fn((value: boolean) => {
     hideOrgName.value = value;
@@ -63,7 +71,7 @@ vi.mock("../context.js", () => ({
       getActivityItems: () => items.value,
       getActivityError: () => null,
       getTimeRange: () => "7d",
-      getItemFilter: () => "all",
+      getEnabledItemTypes: () => enabledItemTypes.value,
       getEnabledEvents: () => new Set(["comment", "review", "commit", "force_push"]),
       getShowNotifications: () => showNotifications.value,
       getHideClosedMerged: () => hideClosedMerged.value,
@@ -74,7 +82,7 @@ vi.mock("../context.js", () => ({
       setActivityFilterTypes: vi.fn(),
       setActivitySearch: vi.fn(),
       setTimeRange: vi.fn(),
-      setItemFilter: vi.fn(),
+      setEnabledItemTypes,
       setShowNotifications,
       markNotificationSeen,
       setHideBots: vi.fn(),
@@ -101,7 +109,9 @@ describe("MobileActivityView branch activity", () => {
     items.value = [branchActivityItem("branch-commit")];
     hideOrgName.value = false;
     hideClosedMerged.value = false;
+    enabledItemTypes.value = new Set(["pr", "issue"]);
     onSelectItem.mockClear();
+    setEnabledItemTypes.mockClear();
     setHideOrgName.mockClear();
   });
 
@@ -122,6 +132,20 @@ describe("MobileActivityView branch activity", () => {
     expect(article?.textContent).not.toContain("#0");
     expect(article?.querySelector(".chip--kind-pr")).toBeNull();
     expect(article?.querySelector(".chip--kind-issue")).toBeNull();
+  });
+
+  it("exposes independent PR and issue toggles", async () => {
+    render(MobileActivityView, {
+      props: { onSelectItem },
+    });
+
+    const prs = screen.getByRole("switch", { name: "PRs" });
+    const issues = screen.getByRole("switch", { name: "Issues" });
+    expect((prs as HTMLInputElement).checked).toBe(true);
+    expect((issues as HTMLInputElement).checked).toBe(true);
+
+    await fireEvent.click(prs);
+    expect(setEnabledItemTypes).toHaveBeenCalledWith(new Set(["issue"]));
   });
 
   it("uses the shared repo path by default", () => {

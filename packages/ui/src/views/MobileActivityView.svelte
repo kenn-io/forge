@@ -4,7 +4,8 @@
   import { getStores } from "../context.js";
   import {
     buildActivityFilterTypes,
-    type ItemFilter,
+    isActivityItemTypeEnabled,
+    type ActivityItemType,
     type TimeRange,
   } from "../stores/activity.svelte.js";
   import {
@@ -14,6 +15,7 @@
     SearchInput,
     Timeline,
     TimelineItem,
+    Toggle,
     type TimelineTone,
   } from "@kenn-io/kit-ui";
   import { parseAPITimestamp } from "../utils/time.js";
@@ -59,11 +61,6 @@
 
   const BOT_SUFFIXES = ["[bot]", "-bot", "bot"];
   const timeRanges: TimeRange[] = ["24h", "7d", "30d", "90d"];
-  const itemFilters: { value: ItemFilter; label: string }[] = [
-    { value: "all", label: "All" },
-    { value: "prs", label: "PRs" },
-    { value: "issues", label: "Issues" },
-  ];
   const timeRangeOptions = timeRanges.map((range) => ({
     value: range,
     label: range,
@@ -98,14 +95,9 @@
   }
 
   const displayItems = $derived.by(() => {
-    let result = activity.getActivityItems();
-    const filter = activity.getItemFilter();
-
-    if (filter === "prs") {
-      result = result.filter((item) => item.item_type === "pr");
-    } else if (filter === "issues") {
-      result = result.filter((item) => item.item_type === "issue");
-    }
+    let result = activity.getActivityItems().filter((item) =>
+      isActivityItemTypeEnabled(item.item_type, activity.getEnabledItemTypes())
+    );
 
     if (activity.getHideClosedMerged()) {
       result = result.filter((item) => !isClosedOrMergedActivity(item));
@@ -186,7 +178,7 @@
 
   function applyFilters(): void {
     activity.setActivityFilterTypes(buildActivityFilterTypes(
-      activity.getItemFilter(),
+      activity.getEnabledItemTypes(),
       activity.getEnabledEvents(),
       activity.getHideDefaultBranchActivity(),
       activity.getShowNotifications(),
@@ -195,13 +187,12 @@
     void activity.loadActivity();
   }
 
-  function setItemFilter(filter: ItemFilter): void {
-    activity.setItemFilter(filter);
+  function toggleItemType(itemType: ActivityItemType): void {
+    const next = new Set(activity.getEnabledItemTypes());
+    if (next.has(itemType)) next.delete(itemType);
+    else next.add(itemType);
+    activity.setEnabledItemTypes(next);
     applyFilters();
-  }
-
-  function handleItemFilterChange(value: string): void {
-    setItemFilter(value as ItemFilter);
   }
 
   function setTimeRange(range: TimeRange): void {
@@ -389,14 +380,19 @@
     </div>
 
     <div class="mobile-activity-filter-grid" aria-label="Activity filters">
-      <div class="mobile-filter-select">
-        <span>Type</span>
-        <SelectDropdown
-          class="mobile-filter-dropdown"
-          title="Activity type"
-          value={activity.getItemFilter()}
-          options={itemFilters}
-          onchange={handleItemFilterChange}
+      <div class="mobile-item-type-toggle">
+        <Toggle
+          checked={activity.getEnabledItemTypes().has("pr")}
+          label="PRs"
+          onchange={() => toggleItemType("pr")}
+        />
+      </div>
+
+      <div class="mobile-item-type-toggle">
+        <Toggle
+          checked={activity.getEnabledItemTypes().has("issue")}
+          label="Issues"
+          onchange={() => toggleItemType("issue")}
         />
       </div>
 
@@ -630,7 +626,8 @@
     margin-bottom: var(--mobile-space-sm);
   }
 
-  .mobile-filter-select {
+  .mobile-filter-select,
+  .mobile-item-type-toggle {
     min-width: 0;
     min-height: var(--mobile-hit-target);
     display: grid;
@@ -642,6 +639,15 @@
     border-radius: var(--radius-md);
     color: var(--text-secondary);
     background: var(--bg-inset);
+  }
+
+  .mobile-item-type-toggle {
+    display: flex;
+  }
+
+  .mobile-item-type-toggle :global(.kit-toggle) {
+    width: 100%;
+    min-height: var(--mobile-hit-target);
   }
 
   .mobile-filter-select--repo {

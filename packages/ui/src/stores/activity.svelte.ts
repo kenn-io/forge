@@ -4,8 +4,9 @@ import { showFlash } from "./flash.svelte.js";
 
 export type TimeRange = "24h" | "7d" | "30d" | "90d";
 export type ViewMode = "flat" | "threaded";
-export type ItemFilter = "all" | "prs" | "issues";
+export type ActivityItemType = "pr" | "issue";
 
+export const DEFAULT_ACTIVITY_ITEM_TYPES = ["pr", "issue"] as const;
 export const DEFAULT_EVENT_TYPES = ["comment", "review", "commit", "force_push"] as const;
 
 // Default-branch activity rows render as "Commit"/"Force-pushed" just like
@@ -16,13 +17,13 @@ const BRANCH_TYPE_FOR_EVENT: Partial<Record<string, string>> = {
 };
 
 export function buildActivityFilterTypes(
-  itemFilter: ItemFilter,
+  enabledItemTypes: ReadonlySet<ActivityItemType>,
   enabledEvents: ReadonlySet<string>,
   hideDefaultBranchActivity: boolean,
   showNotifications = true,
 ): string[] {
   const allSelected =
-    itemFilter === "all" &&
+    enabledItemTypes.size === DEFAULT_ACTIVITY_ITEM_TYPES.length &&
     enabledEvents.size === DEFAULT_EVENT_TYPES.length &&
     !hideDefaultBranchActivity &&
     showNotifications;
@@ -32,25 +33,13 @@ export function buildActivityFilterTypes(
   // to build the explicit list that omits "notification".
   if (allSelected) return [];
 
-  // Notifications-only inbox: every event type is deselected, the item
-  // filter is unscoped, and notifications are on. Return just the
-  // notification type so the PR/issue "Opened" anchor rows (new_pr /
-  // new_issue) do not leak into a view the user narrowed to
-  // notifications. A bare [] cannot express this (it means "everything").
-  if (itemFilter === "all" && enabledEvents.size === 0 && showNotifications) {
-    return ["notification"];
-  }
-
   const types: string[] = [];
-  if (itemFilter === "prs") types.push("new_pr");
-  else if (itemFilter === "issues") types.push("new_issue");
-  else {
-    types.push("new_pr", "new_issue");
-    if (!hideDefaultBranchActivity) {
-      for (const evt of DEFAULT_EVENT_TYPES) {
-        const branchType = BRANCH_TYPE_FOR_EVENT[evt];
-        if (branchType && enabledEvents.has(evt)) types.push(branchType);
-      }
+  if (enabledItemTypes.has("pr")) types.push("new_pr");
+  if (enabledItemTypes.has("issue")) types.push("new_issue");
+  if (!hideDefaultBranchActivity) {
+    for (const evt of DEFAULT_EVENT_TYPES) {
+      const branchType = BRANCH_TYPE_FOR_EVENT[evt];
+      if (branchType && enabledEvents.has(evt)) types.push(branchType);
     }
   }
   for (const evt of DEFAULT_EVENT_TYPES) {
@@ -58,6 +47,11 @@ export function buildActivityFilterTypes(
   }
   if (showNotifications) types.push("notification");
   return types;
+}
+
+export function isActivityItemTypeEnabled(itemType: string, enabledItemTypes: ReadonlySet<ActivityItemType>): boolean {
+  if (itemType !== "pr" && itemType !== "issue") return true;
+  return enabledItemTypes.has(itemType);
 }
 
 // Activity item ids are "<source>:<source_id>"; notification rows use
@@ -114,9 +108,9 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   let hideClosedMerged = $state(false);
   let hideBots = $state(false);
   let hideDefaultBranchActivity = $state(false);
+  let enabledItemTypes = $state<Set<ActivityItemType>>(new Set(DEFAULT_ACTIVITY_ITEM_TYPES));
   let enabledEvents = $state<Set<string>>(new Set(DEFAULT_EVENT_TYPES));
   let showNotifications = $state(true);
-  let itemFilter = $state<ItemFilter>("all");
   let initialized = false;
 
   // --- reads ---
@@ -163,14 +157,14 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   function getHideDefaultBranchActivity(): boolean {
     return hideDefaultBranchActivity;
   }
+  function getEnabledItemTypes(): Set<ActivityItemType> {
+    return enabledItemTypes;
+  }
   function getEnabledEvents(): Set<string> {
     return enabledEvents;
   }
   function getShowNotifications(): boolean {
     return showNotifications;
-  }
-  function getItemFilter(): ItemFilter {
-    return itemFilter;
   }
   function isInitialized(): boolean {
     return initialized;
@@ -220,16 +214,15 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   function setHideDefaultBranchActivity(v: boolean): void {
     hideDefaultBranchActivity = v;
   }
+  function setEnabledItemTypes(itemTypes: Set<ActivityItemType>): void {
+    enabledItemTypes = itemTypes;
+  }
   function setEnabledEvents(events: Set<string>): void {
     enabledEvents = events;
   }
   function setShowNotifications(v: boolean): void {
     showNotifications = v;
   }
-  function setItemFilter(f: ItemFilter): void {
-    itemFilter = f;
-  }
-
   // --- hydration ---
 
   function hydrateDefaults(activity: ActivitySettings): void {
@@ -428,21 +421,26 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   // `notif` URL param (read in syncFromURL) instead.
   function deriveFiltersFromTypes(): void {
     if (filterTypes.length === 0) {
-      itemFilter = "all";
+      enabledItemTypes = new Set(DEFAULT_ACTIVITY_ITEM_TYPES);
       enabledEvents = new Set(DEFAULT_EVENT_TYPES);
     } else {
-      const hasPR = filterTypes.includes("new_pr");
-      const hasIssue = filterTypes.includes("new_issue");
-      if (hasPR && !hasIssue) itemFilter = "prs";
-      else if (hasIssue && !hasPR) itemFilter = "issues";
-      else itemFilter = "all";
+      enabledItemTypes = new Set(
+        DEFAULT_ACTIVITY_ITEM_TYPES.filter((itemType) =>
+          filterTypes.includes(itemType === "pr" ? "new_pr" : "new_issue"),
+        ),
+      );
       enabledEvents = new Set(DEFAULT_EVENT_TYPES.filter((t) => filterTypes.includes(t)));
     }
     // Rebuild so the request matches the filter state the dropdown
     // shows: legacy URLs can list default_branch_commit while commit is
     // deselected, and an empty list with notifications hidden must
     // become the explicit exclusion list a bare `[]` cannot express.
-    filterTypes = buildActivityFilterTypes(itemFilter, enabledEvents, hideDefaultBranchActivity, showNotifications);
+    filterTypes = buildActivityFilterTypes(
+      enabledItemTypes,
+      enabledEvents,
+      hideDefaultBranchActivity,
+      showNotifications,
+    );
   }
 
   function applyCollapsedFromURL(): void {
@@ -526,9 +524,9 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     getHideClosedMerged,
     getHideBots,
     getHideDefaultBranchActivity,
+    getEnabledItemTypes,
     getEnabledEvents,
     getShowNotifications,
-    getItemFilter,
     isInitialized,
     setActivityFilterTypes,
     setActivitySearch,
@@ -541,9 +539,9 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     setHideClosedMerged,
     setHideBots,
     setHideDefaultBranchActivity,
+    setEnabledItemTypes,
     setEnabledEvents,
     setShowNotifications,
-    setItemFilter,
     hydrateDefaults,
     initializeFromMount,
     loadActivity,

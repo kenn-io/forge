@@ -61,6 +61,9 @@ const hideDefaultBranchActivity = vi.hoisted(() => ({ value: false }));
 const hideClosedMerged = vi.hoisted(() => ({ value: false }));
 const hideOrgName = vi.hoisted(() => ({ value: false }));
 const setActivityFilterTypes = vi.hoisted(() => vi.fn());
+const enabledItemTypes = vi.hoisted(() => ({
+  value: new Set<"pr" | "issue">(["pr", "issue"]),
+}));
 const enabledEvents = vi.hoisted(() => ({
   value: new Set(["comment", "review", "commit", "force_push"]),
 }));
@@ -82,7 +85,7 @@ vi.mock("../context.js", () => ({
       getHideClosedMerged: () => hideClosedMerged.value,
       getHideBots: () => false,
       getHideDefaultBranchActivity: () => hideDefaultBranchActivity.value,
-      getItemFilter: () => "all",
+      getEnabledItemTypes: () => enabledItemTypes.value,
       getActivityItems: () => items.value,
       getActivityError: () => null,
       getViewMode: () => viewMode.value,
@@ -99,7 +102,9 @@ vi.mock("../context.js", () => ({
       isThreadItemExpanded: () => true,
       toggleThreadItem: vi.fn(),
       setActivityFilterTypes,
-      setItemFilter: vi.fn(),
+      setEnabledItemTypes: vi.fn((itemTypes: Set<"pr" | "issue">) => {
+        enabledItemTypes.value = itemTypes;
+      }),
       setEnabledEvents: vi.fn((events: Set<string>) => {
         enabledEvents.value = events;
       }),
@@ -143,6 +148,7 @@ describe("ActivityFeed compact mode", () => {
     hideDefaultBranchActivity.value = false;
     hideClosedMerged.value = false;
     hideOrgName.value = false;
+    enabledItemTypes.value = new Set(["pr", "issue"]);
     enabledEvents.value = new Set(["comment", "review", "commit", "force_push"]);
     showNotifications.value = true;
     setActivityFilterTypes.mockClear();
@@ -177,6 +183,67 @@ describe("ActivityFeed compact mode", () => {
     expect(container.querySelector(".activity-table")).toBeNull();
     expect(container.querySelectorAll(".activity-compact-row")).toHaveLength(2);
     expect(screen.getByText("Add widget caching layer")).toBeTruthy();
+  });
+
+  it("independently toggles PR and issue visibility", async () => {
+    items.value = [
+      activityItem("pr-comment"),
+      activityItem("issue-comment", {
+        item_number: 2,
+        item_title: "Fix Safari issue",
+        item_type: "issue",
+        item_url: "https://github.com/acme/widgets/issues/2",
+      }),
+      branchActivityItem("branch-commit"),
+    ];
+
+    const { container } = render(ActivityFeed, { props: { compact: true } });
+    const prs = screen.getByRole("switch", { name: "PRs" });
+    const issues = screen.getByRole("switch", { name: "Issues" });
+    expect((prs as HTMLInputElement).checked).toBe(true);
+    expect((issues as HTMLInputElement).checked).toBe(true);
+
+    await fireEvent.click(prs);
+    expect([...enabledItemTypes.value]).toEqual(["issue"]);
+    expect(setActivityFilterTypes).toHaveBeenLastCalledWith([
+      "new_issue",
+      "default_branch_commit",
+      "default_branch_force_push",
+      "comment",
+      "review",
+      "commit",
+      "force_push",
+      "notification",
+    ]);
+
+    await fireEvent.click(issues);
+    expect(enabledItemTypes.value.size).toBe(0);
+    expect(container.textContent).toContain("Refresh cache warmer");
+  });
+
+  it("hides the complete PR thread when PRs are disabled", async () => {
+    viewMode.value = "threaded";
+    enabledItemTypes.value = new Set(["issue"]);
+    items.value = [
+      activityItem("pr-comment"),
+      activityItem("pr-review", {
+        activity_type: "review",
+        body_preview: "Approved",
+      }),
+      activityItem("issue-comment", {
+        item_number: 2,
+        item_title: "Fix Safari issue",
+        item_type: "issue",
+        item_url: "https://github.com/acme/widgets/issues/2",
+      }),
+      branchActivityItem("branch-commit"),
+    ];
+
+    const { container } = render(ActivityFeed, { props: { compact: true } });
+    expect(container.textContent).not.toContain("Add widget caching layer");
+    expect(container.textContent).not.toContain("Approved");
+    expect(container.textContent).toContain("Fix Safari issue");
+    expect(container.textContent).toContain("Refresh cache warmer");
   });
 
   it("respects hide org name in compact flat rows", () => {
@@ -527,11 +594,10 @@ describe("ActivityFeed compact mode", () => {
     await fireEvent.click(screen.getByRole("button", { name: "View" }));
     await fireEvent.click(screen.getByRole("button", { name: "Comments" }));
 
-    // The last event type must be removable. With notifications still on
-    // and the item filter unscoped, that leaves a notifications-only view
-    // rather than reintroducing the PR/issue "Opened" anchor rows.
+    // Item types and event types are independent: removing the last content
+    // event leaves PR/issue opening rows and notifications enabled.
     expect(enabledEvents.value.size).toBe(0);
-    expect(setActivityFilterTypes).toHaveBeenCalledWith(["notification"]);
+    expect(setActivityFilterTypes).toHaveBeenCalledWith(["new_pr", "new_issue", "notification"]);
   });
 
   it("hides notifications on merged PRs even in a notifications-only feed", () => {

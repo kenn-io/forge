@@ -154,7 +154,8 @@ test.describe("phone routes", () => {
     await expect(page.locator(".mobile-activity-inbox")).toBeVisible();
     await expect(page.getByRole("heading", { name: "What needs attention?" })).toBeVisible();
     await expect(page.getByText("Readable threads first")).toHaveCount(0);
-    await expect(page.getByLabel("Activity type")).toBeVisible();
+    await expect(page.getByRole("switch", { name: "PRs" })).toBeVisible();
+    await expect(page.getByRole("switch", { name: "Issues" })).toBeVisible();
     await expect(page.getByLabel("Time range")).toBeVisible();
     await expect(page.getByLabel("Repository")).toBeVisible();
     await expect(page.locator(".threaded-view")).toHaveCount(0);
@@ -175,7 +176,7 @@ test.describe("phone routes", () => {
       const desktopButton = document.querySelector(".mobile-desktop-link");
       const desktopIcon = document.querySelector(".mobile-desktop-link svg");
       const appIcon = document.querySelector(".mobile-app-icon");
-      const typeSelect = document.querySelector(".mobile-filter-dropdown button[aria-label^='Activity type']");
+      const itemTypeToggle = document.querySelector(".mobile-item-type-toggle .kit-toggle");
       const rangeSelect = document.querySelector(".mobile-filter-dropdown button[aria-label^='Time range']");
       const repoSelect = document.querySelector(".mobile-filter-dropdown button[aria-label^='Repository']");
       const search = document.querySelector(".kit-search-input");
@@ -258,10 +259,10 @@ test.describe("phone routes", () => {
         themeBgInset: getComputedStyle(insetSample).backgroundColor,
         themeBorder: getComputedStyle(themeSample).borderColor,
         themeRadiusLg: getComputedStyle(surfaceSample).borderRadius,
-        typeSelectFontSize: fontSize(typeSelect),
+        itemTypeToggleFontSize: fontSize(document.querySelector(".mobile-item-type-toggle .kit-toggle__label")),
         rangeSelectFontSize: fontSize(rangeSelect),
         repoSelectFontSize: fontSize(repoSelect),
-        typeSelectRect: compactRect(typeSelect),
+        itemTypeToggleRect: compactRect(itemTypeToggle),
         rangeSelectRect: compactRect(rangeSelect),
         repoSelectRect: compactRect(repoSelect),
         searchLeft: searchRect?.left ?? 0,
@@ -295,10 +296,10 @@ test.describe("phone routes", () => {
     expect(metrics.cardBorderColor).toBe(metrics.themeBorder);
     expect(metrics.cardRadius).toBe(metrics.themeRadiusLg);
     expect(metrics.searchBackground).toBe(metrics.themeBgInset);
-    expect(metrics.typeSelectFontSize).toBeGreaterThanOrEqual(15);
+    expect(metrics.itemTypeToggleFontSize).toBeGreaterThanOrEqual(15);
     expect(metrics.rangeSelectFontSize).toBeGreaterThanOrEqual(15);
     expect(metrics.repoSelectFontSize).toBeGreaterThanOrEqual(15);
-    for (const bounds of [metrics.typeSelectRect, metrics.rangeSelectRect, metrics.repoSelectRect]) {
+    for (const bounds of [metrics.itemTypeToggleRect, metrics.rangeSelectRect, metrics.repoSelectRect]) {
       expect(bounds?.left ?? 0).toBeGreaterThanOrEqual(0);
       expect(bounds?.right ?? 0).toBeLessThanOrEqual(metrics.viewportWidth);
     }
@@ -308,9 +309,8 @@ test.describe("phone routes", () => {
     await page.goto("/m?range=30d&view=threaded");
     await expect(page.locator(".mobile-activity-inbox")).toBeVisible();
 
-    await page.getByRole("combobox", { name: /Activity type/ }).click();
-    await page.getByRole("option", { name: "PRs" }).click();
-    await expect(page.getByRole("combobox", { name: "Activity type: PRs" })).toBeVisible();
+    await page.getByRole("switch", { name: "Issues" }).click();
+    await expect(page.getByRole("switch", { name: "Issues" })).not.toBeChecked();
     await expect(page).toHaveURL(/types=new_pr/);
 
     await page.getByRole("combobox", { name: /Time range/ }).click();
@@ -549,8 +549,10 @@ test.describe("high-density phone routes", () => {
 
     await expect(page.locator(".mobile-shell")).toBeVisible();
     await expect(page.locator(".mobile-activity-inbox")).toBeVisible();
-    await page.getByRole("combobox", { name: /Activity type/ }).click();
-    await expect(page.getByRole("option", { name: "All" })).toBeVisible();
+    await expect(page.getByRole("switch", { name: "PRs" })).toBeVisible();
+    await expect(page.getByRole("switch", { name: "Issues" })).toBeVisible();
+    await page.getByRole("combobox", { name: /Time range/ }).click();
+    await expect(page.getByRole("option", { name: "24h" })).toBeVisible();
 
     const metrics = await page.evaluate(() => {
       const fontSize = (selector: string): number => {
@@ -563,7 +565,7 @@ test.describe("high-density phone routes", () => {
         node ? getComputedStyle(node).getPropertyValue(name).trim() : "";
       const filterControls = [
         ...document.querySelectorAll(
-          ".mobile-activity-filter-grid .kit-select-dropdown__trigger, .mobile-filter-toggle",
+          ".mobile-activity-filter-grid .kit-select-dropdown__trigger, .mobile-item-type-toggle .kit-toggle, .mobile-filter-toggle",
         ),
       ]
         .map((control) => control.getBoundingClientRect())
@@ -580,7 +582,7 @@ test.describe("high-density phone routes", () => {
         activityTypeToken: tokenValue(inbox, "--mobile-type-body"),
         densityScale: tokenValue(inbox, "--mobile-device-density-scale"),
         bodyFontSize: fontSize(".mobile-activity-inbox"),
-        filterFontSize: fontSize(".mobile-activity-filter-grid .kit-select-dropdown__trigger"),
+        filterFontSize: fontSize(".mobile-item-type-toggle .kit-toggle__label"),
         filterOptionFontSize: fontSize(".mobile-filter-dropdown .kit-select-dropdown__option"),
         filterOptionHeight: firstOption?.height ?? 0,
         tabFontSize: fontSize(".mobile-tabs a"),

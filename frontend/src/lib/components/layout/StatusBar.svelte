@@ -2,6 +2,7 @@
   import { StatusBar as KitStatusBar, StatusDot } from "@kenn-io/kit-ui";
   import { getStores } from "@middleman/ui";
   import type { ActivityItem } from "@middleman/ui/api/types";
+  import { isActivityItemTypeEnabled } from "@middleman/ui/stores/activity";
   import BudgetBars from "./BudgetBars.svelte";
   import BudgetPopover from "./BudgetPopover.svelte";
   import { client } from "../../api/runtime.js";
@@ -107,13 +108,12 @@
     const pullRequests = new Set<string>();
     const issueKeys = new Set<string>();
     const repos = new Set<string>();
-    const itemFilter = activity.getItemFilter();
+    const enabledItemTypes = activity.getEnabledItemTypes();
     const hideBots = activity.getHideBots();
 
     for (const item of activity.getActivityItems()) {
       if (hideBots && isBot(item.author)) continue;
-      if (itemFilter === "prs" && item.item_type !== "pr") continue;
-      if (itemFilter === "issues" && item.item_type !== "issue") continue;
+      if (!isActivityItemTypeEnabled(item.item_type, enabledItemTypes)) continue;
 
       const lifecycleState = activityLifecycleState(item);
       const isOpenPullRequest = item.item_type === "pr"

@@ -1,10 +1,13 @@
 <script lang="ts">
-  import { EmptyState, SearchInput, SegmentedControl, Spinner } from "@kenn-io/kit-ui";
+  import { EmptyState, SearchInput, Spinner, Toggle } from "@kenn-io/kit-ui";
   import { onMount, onDestroy } from "svelte";
   import type { ActivityItem } from "../api/types.js";
   import {
     buildActivityFilterTypes,
+    DEFAULT_ACTIVITY_ITEM_TYPES,
     DEFAULT_EVENT_TYPES,
+    isActivityItemTypeEnabled,
+    type ActivityItemType,
     type TimeRange,
     type ViewMode,
   } from "../stores/activity.svelte.js";
@@ -107,7 +110,8 @@
   }
 
   const hiddenFilterCount = $derived(
-    (EVENT_TYPES.length - activity.getEnabledEvents().size)
+    (DEFAULT_ACTIVITY_ITEM_TYPES.length - activity.getEnabledItemTypes().size)
+    + (EVENT_TYPES.length - activity.getEnabledEvents().size)
     + (activity.getShowNotifications() ? 0 : 1)
     + (activity.getHideClosedMerged() ? 1 : 0)
     + (activity.getHideBots() ? 1 : 0)
@@ -133,7 +137,7 @@
 
   function applyFilters(): void {
     activity.setActivityFilterTypes(buildActivityFilterTypes(
-      activity.getItemFilter(),
+      activity.getEnabledItemTypes(),
       activity.getEnabledEvents(),
       activity.getHideDefaultBranchActivity(),
       activity.getShowNotifications(),
@@ -142,8 +146,11 @@
     void activity.loadActivity();
   }
 
-  function handleItemFilterChange(f: "all" | "prs" | "issues"): void {
-    activity.setItemFilter(f);
+  function toggleItemType(itemType: ActivityItemType): void {
+    const next = new Set(activity.getEnabledItemTypes());
+    if (next.has(itemType)) next.delete(itemType);
+    else next.add(itemType);
+    activity.setEnabledItemTypes(next);
     applyFilters();
   }
 
@@ -248,13 +255,9 @@
   }
 
   const displayItems = $derived.by(() => {
-    let result = activity.getActivityItems();
-    const filter = activity.getItemFilter();
-    if (filter === "prs") {
-      result = result.filter((it) => it.item_type === "pr");
-    } else if (filter === "issues") {
-      result = result.filter((it) => it.item_type === "issue");
-    }
+    let result = activity.getActivityItems().filter((item) =>
+      isActivityItemTypeEnabled(item.item_type, activity.getEnabledItemTypes())
+    );
     if (activity.getHideClosedMerged()) {
       result = result.filter((it) => !isClosedOrMergedActivity(it));
     }
@@ -294,6 +297,7 @@
   }
 
   function resetFilters(): void {
+    activity.setEnabledItemTypes(new Set(DEFAULT_ACTIVITY_ITEM_TYPES));
     activity.setEnabledEvents(new Set(EVENT_TYPES));
     activity.setShowNotifications(true);
     activity.setHideClosedMerged(false);
@@ -561,17 +565,16 @@
     : undefined}
 >
   <div class="controls-bar">
-    <div class="filter-group">
-      <SegmentedControl
-        options={[
-          { value: "all", label: "All" },
-          { value: "prs", label: "PRs" },
-          { value: "issues", label: "Issues" },
-        ]}
-        value={activity.getItemFilter()}
-        onchange={(v) => handleItemFilterChange(v as "all" | "prs" | "issues")}
-        ariaLabel="Item filter"
-        block={compact}
+    <div class="filter-group" aria-label="Item types">
+      <Toggle
+        checked={activity.getEnabledItemTypes().has("pr")}
+        label="PRs"
+        onchange={() => toggleItemType("pr")}
+      />
+      <Toggle
+        checked={activity.getEnabledItemTypes().has("issue")}
+        label="Issues"
+        onchange={() => toggleItemType("issue")}
       />
     </div>
 

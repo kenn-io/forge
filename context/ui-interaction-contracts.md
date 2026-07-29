@@ -326,10 +326,9 @@ Keyboard handlers must have one clear owner for each key press.
   container that reports only its focused session makes the other halves of a
   split unclickable. Every leaf of a split shares the container's own visibility
   (`frontend/src/lib/components/terminal/TerminalSplitTree.svelte`).
-- Terminal SIZE is never gated on visibility, focus, or any "is this pane
-  active" inference. A pane measures its own region through the fit addon and
-  pushes the result whenever it differs from what the PTY was last told; resize
-  authority follows the same measurement. Every pooled slot boundary must fill
+- Terminal SIZE and resize authority require PAINTED state plus a valid fit
+  measurement, never focus: `visibility:hidden` retains geometry, while focus
+  gating strands unfocused split leaves. Every pooled slot boundary must fill
   its painted leaf in both axes; horizontal block stretch alone can leave the
   xterm at a stale intrinsic height, so no vertical ResizeObserver result ever
   reaches the PTY. A container with no content box (a
@@ -338,7 +337,7 @@ Keyboard handlers must have one clear owner for each key press.
   only once the socket carried it, or a resize computed before the socket opened
   is suppressed forever and the PTY keeps its launch default
   (`frontend/src/lib/components/terminal/TerminalSplitTree.svelte::terminal-leaf-body`,
-  `frontend/src/lib/components/terminal/XtermTerminalPane.svelte::terminalRegionSize`).
+  `frontend/src/lib/components/terminal/XtermTerminalPane.svelte::resizeAuthorityRegionSize`).
 - A promoted session is recorded ONCE, in the detail surface's stored pane tree.
   Containers mask it out of what they render (derived, not an effect) and never
   prune their own stored trees, so demoting restores the tab order, split, and

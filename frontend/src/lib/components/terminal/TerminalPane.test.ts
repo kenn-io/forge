@@ -515,12 +515,12 @@ describe("TerminalPane", () => {
     expect(mockSockets[0]!.sent).toContain(JSON.stringify({ type: "resize", cols: 80, rows: 24 }));
   });
 
-  it("pushes the re-measured size when a font resolves late in an unfocused pane", async () => {
+  it("pushes the re-measured size when a font resolves late in a painted pane", async () => {
     vi.useFakeTimers();
     const fontLoad = deferred<FontFace[]>();
     stubFontLoad(fontLoad.promise);
 
-    render(TerminalPane, { props: { workspaceId: "ws-123", active: false } });
+    render(TerminalPane, { props: { workspaceId: "ws-123", active: true } });
     await tick();
     await vi.advanceTimersByTimeAsync(300);
 
@@ -582,23 +582,52 @@ describe("TerminalPane", () => {
     expect(xtermInstances[0]!.clearTextureAtlas).not.toHaveBeenCalled();
   });
 
-  it("claims resize authority for a measurable region even while unfocused", async () => {
-    // Authority follows the region, not focus. An unfocused pane that is
-    // painted still owns its own PTY's size — gating this on `active` is what
-    // left the other halves of a split at the tmux launch default.
-    render(TerminalPane, { props: { workspaceId: "ws-123", active: false } });
+  it("claims resize authority for a painted measurable region", async () => {
+    render(TerminalPane, { props: { workspaceId: "ws-123", active: true } });
 
     await waitFor(() => expect(mockSockets).toHaveLength(1));
     expect(mockSockets[0]!.url).toContain("resize_active=1");
 
     mockSockets[0]!.onopen?.();
-    expect(mockSockets[0]!.sent).toContain(JSON.stringify({ type: "resize_active", active: true }));
+    mockSockets[0]!.sent = [];
+    fitDimensions = { cols: 100, rows: 40 };
+    resizeObserverCallbacks[0]!([], {} as ResizeObserver);
+
+    expect(resizeFramesOf(mockSockets[0]!)).toEqual([JSON.stringify({ type: "resize", cols: 100, rows: 40 })]);
+  });
+
+  it("does not claim resize authority for a hidden but measurable region", async () => {
+    render(TerminalPane, { props: { workspaceId: "ws-123", active: false } });
+
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
+    expect(mockSockets[0]!.url).toContain("resize_active=0");
+
+    mockSockets[0]!.onopen?.();
+    expect(mockSockets[0]!.sent).toContain(JSON.stringify({ type: "resize_active", active: false }));
 
     mockSockets[0]!.sent = [];
     fitDimensions = { cols: 100, rows: 40 };
     resizeObserverCallbacks[0]!([], {} as ResizeObserver);
 
-    expect(mockSockets[0]!.sent).toContain(JSON.stringify({ type: "resize", cols: 100, rows: 40 }));
+    expect(mockSockets[0]!.sent).toHaveLength(0);
+  });
+
+  it("revokes authority and ignores later measurements when its tab becomes hidden", async () => {
+    const { rerender } = render(TerminalPane, {
+      props: { workspaceId: "ws-123", active: true },
+    });
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
+    mockSockets[0]!.onopen?.();
+    mockSockets[0]!.sent = [];
+
+    await rerender({ workspaceId: "ws-123", active: false });
+    expect(mockSockets[0]!.sent).toContain(JSON.stringify({ type: "resize_active", active: false }));
+
+    mockSockets[0]!.sent = [];
+    fitDimensions = { cols: 100, rows: 40 };
+    resizeObserverCallbacks[0]!([], {} as ResizeObserver);
+
+    expect(mockSockets[0]!.sent).toHaveLength(0);
   });
 
   it("neither claims authority nor pushes a size for an unmeasurable region", async () => {
@@ -633,7 +662,7 @@ describe("TerminalPane", () => {
     expect(resizeFramesOf(mockSockets[0]!)).toEqual([JSON.stringify({ type: "resize", cols: 120, rows: 50 })]);
   });
 
-  it("re-sends a size the socket was not open to carry", async () => {
+  it("sends a size measured before socket open once the connection opens", async () => {
     // The first measurement lands before the socket opens. Recording it as sent
     // anyway would let the dedupe suppress it forever, leaving the PTY at the
     // size it launched with.
@@ -647,10 +676,8 @@ describe("TerminalPane", () => {
 
     mockSockets[0]!.readyState = 1;
     mockSockets[0]!.onopen?.();
-    mockSockets[0]!.sent = [];
-    resizeObserverCallbacks[0]!([], {} as ResizeObserver);
 
-    expect(resizeFramesOf(mockSockets[0]!)).toEqual([JSON.stringify({ type: "resize", cols: 90, rows: 30 })]);
+    expect(mockSockets[0]!.sent).toContain(JSON.stringify({ type: "refresh", cols: 90, rows: 30 }));
   });
 
   it("focuses the xterm terminal once it initializes while active", async () => {

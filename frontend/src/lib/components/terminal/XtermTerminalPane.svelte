@@ -269,7 +269,7 @@
     rows: number,
   ): string {
     const sep = url.includes("?") ? "&" : "?";
-    const resizeActive = terminalRegionSize() !== null ? "1" : "0";
+    const resizeActive = resizeAuthorityRegionSize() !== null ? "1" : "0";
     const { traceparent, baggage } = traceHeadersForRequest();
     let result = `${url}${sep}cols=${cols}&rows=${rows}&resize_active=${resizeActive}&traceparent=${encodeURIComponent(traceparent)}`;
     if (baggage !== null) result += `&baggage=${encodeURIComponent(baggage)}`;
@@ -351,15 +351,16 @@
   }
 
   function refreshVisibleTerminal(): void {
-    if (!terminal) return;
+    const size = resizeAuthorityRegionSize();
+    if (!size || !terminal) return;
 
     fitAddon?.fit();
-    terminal.refresh(0, Math.max(0, terminal.rows - 1));
+    terminal.refresh(0, Math.max(0, size.rows - 1));
     // The server resizes on a refresh's dimensions too, so a delivered refresh
     // counts as the size the PTY now has.
-    if (sendRefresh(terminal.cols, terminal.rows)) {
-      sentCols = terminal.cols;
-      sentRows = terminal.rows;
+    if (sendRefresh(size.cols, size.rows)) {
+      sentCols = size.cols;
+      sentRows = size.rows;
     }
   }
 
@@ -434,8 +435,8 @@
    * A parked terminal sits in a `display:none` node, whose content box is zero,
    * so the fit addon proposes nothing usable for it — measuring that is what
    * used to resize a live tmux pane to one row. The measurement itself is the
-   * check; nothing here infers whether some container believes the pane is on
-   * screen.
+   * geometry check. Painted state is applied separately because
+   * `visibility:hidden` retains dimensions.
    */
   function terminalRegionSize(): { cols: number; rows: number } | null {
     if (!fitAddon || !terminal || !containerEl.isConnected) return null;
@@ -448,17 +449,21 @@
     return { cols: proposed.cols, rows: proposed.rows };
   }
 
+  function resizeAuthorityRegionSize(): { cols: number; rows: number } | null {
+    if (!active) return null;
+    return terminalRegionSize();
+  }
+
   /**
    * Push the region's size whenever it differs from what the PTY was last told.
    *
-   * Deliberately not gated on the pane being focused or "active": every painted
-   * terminal owns its own size, and a container that reports only its focused
-   * session used to leave the other halves of a split at whatever size they
-   * last held. Sending only on a real change keeps a ResizeObserver burst from
-   * turning into a burst of resize frames.
+   * Painted state is not focus: every visible split leaf is active and owns its
+   * own size. Requiring it here prevents a visibility-hidden tab, whose geometry
+   * remains measurable, from resizing the PTY. Sending only on a real change
+   * keeps a ResizeObserver burst from turning into a burst of resize frames.
    */
   function resizeVisibleTerminal(): void {
-    const size = terminalRegionSize();
+    const size = resizeAuthorityRegionSize();
     if (!size || !terminal) return;
 
     fitAddon?.fit();
@@ -515,7 +520,7 @@
     socket.onopen = () => {
       switchTimer.record("socket-open");
       reconnectDelay = 1000;
-      sendResizeActive(terminalRegionSize() !== null);
+      sendResizeActive(resizeAuthorityRegionSize() !== null);
       if (active) scheduleTerminalRefresh();
     };
 
@@ -699,10 +704,10 @@
 
   $effect(() => {
     if (!terminal) return;
-    // Authority follows the rendered region, not focus: a painted split leaf
-    // must be allowed to size its own PTY, while a parked terminal (no region)
-    // must not dictate a size for the pane the user is actually looking at.
-    sendResizeActive(terminalRegionSize() !== null);
+    // Authority requires painted state plus geometry, never focus: every
+    // painted split leaf stays eligible, while hidden and parked terminals do
+    // not dictate a size for the pane the user is actually looking at.
+    sendResizeActive(resizeAuthorityRegionSize() !== null);
     if (active) scheduleTerminalRefresh();
   });
 

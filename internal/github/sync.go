@@ -5496,9 +5496,14 @@ func (s *Syncer) resolveRepoIdentity(
 	repo RepoRef,
 ) (repoIdentityResolution, error) {
 	configuredRepo, generation, configured := s.configuredRepo(repo)
-	if configured {
-		repo = configuredRepo
+	if !configured {
+		return repoIdentityResolution{}, fmt.Errorf(
+			"repo %s/%s is no longer configured",
+			repo.Owner,
+			repo.Name,
+		)
 	}
+	repo = configuredRepo
 	repoIdentity, resolvedRepo, err := s.syncRepoIdentity(ctx, repo)
 	if err != nil {
 		return repoIdentityResolution{}, fmt.Errorf(
@@ -10506,7 +10511,11 @@ func (s *Syncer) syncMRForRepo(
 	useConditionalPRDetail bool,
 	providerAttempted *bool,
 ) error {
-	ctx, releaseIncarnationGate := s.holdRepoIncarnationRead(ctx, repo)
+	ctx, repo, releaseIncarnationGate, err :=
+		s.holdCurrentRepoIncarnationRead(ctx, repo)
+	if err != nil {
+		return err
+	}
 	defer releaseIncarnationGate()
 	ctx = withGitHubCredentialRoute(ctx, repo)
 
@@ -11078,7 +11087,11 @@ func (s *Syncer) syncIssueForRepo(
 	number int,
 	providerAttempted *bool,
 ) error {
-	ctx, releaseIncarnationGate := s.holdRepoIncarnationRead(ctx, repo)
+	ctx, repo, releaseIncarnationGate, err :=
+		s.holdCurrentRepoIncarnationRead(ctx, repo)
+	if err != nil {
+		return err
+	}
 	defer releaseIncarnationGate()
 	ctx = withGitHubCredentialRoute(ctx, repo)
 

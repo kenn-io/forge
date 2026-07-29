@@ -1045,6 +1045,9 @@ type syncTestReadProvider struct {
 	readReviewThreads   bool
 	listMRRefsMu        sync.Mutex
 	listMRRefs          []platform.RepoRef
+	detailRefsMu        sync.Mutex
+	getMRRefs           []platform.RepoRef
+	getIssueRefs        []platform.RepoRef
 }
 
 type syncTestRepositoryReadProvider struct {
@@ -1170,10 +1173,13 @@ func (p *syncTestReadProvider) mergeRequestRefs() []platform.RepoRef {
 
 func (p *syncTestReadProvider) GetMergeRequest(
 	_ context.Context,
-	_ platform.RepoRef,
+	ref platform.RepoRef,
 	number int,
 ) (platform.MergeRequest, error) {
 	p.getMRCalls.Add(1)
+	p.detailRefsMu.Lock()
+	p.getMRRefs = append(p.getMRRefs, ref)
+	p.detailRefsMu.Unlock()
 	for _, mr := range p.mergeRequests {
 		if mr.Number == number {
 			return mr, nil
@@ -1212,10 +1218,13 @@ func (p *syncTestReadProvider) ListOpenIssues(
 
 func (p *syncTestReadProvider) GetIssue(
 	_ context.Context,
-	_ platform.RepoRef,
+	ref platform.RepoRef,
 	number int,
 ) (platform.Issue, error) {
 	p.getIssueCalls.Add(1)
+	p.detailRefsMu.Lock()
+	p.getIssueRefs = append(p.getIssueRefs, ref)
+	p.detailRefsMu.Unlock()
 	if p.getIssueErr != nil {
 		return platform.Issue{}, p.getIssueErr
 	}
@@ -1225,6 +1234,17 @@ func (p *syncTestReadProvider) GetIssue(
 		}
 	}
 	return platform.Issue{}, errors.New("missing issue")
+}
+
+func (p *syncTestReadProvider) detailRepoRefs(
+	itemType db.ArchiveItemType,
+) []platform.RepoRef {
+	p.detailRefsMu.Lock()
+	defer p.detailRefsMu.Unlock()
+	if itemType == db.ArchiveItemTypeMergeRequest {
+		return slices.Clone(p.getMRRefs)
+	}
+	return slices.Clone(p.getIssueRefs)
 }
 
 func (p *syncTestReadProvider) ListIssueEvents(
@@ -7396,6 +7416,176 @@ func TestConfigurationCutoverLocksOutgoingRepositoryPaths(t *testing.T) {
 			)
 		})
 	}
+}
+
+func waitForRepoConfigurationCutover(
+	t *testing.T,
+	syncer *Syncer,
+) {
+	t.Helper()
+	require.Eventually(t, func() bool {
+		if syncer.repoConfigMu.TryLock() {
+			syncer.repoConfigMu.Unlock()
+			return false
+		}
+		return true
+	}, time.Second, time.Millisecond)
+}
+
+func TestQueuedDetailSyncUsesReplacementConfiguration(t *testing.T) {
+	for _, itemType := range []db.ArchiveItemType{
+		db.ArchiveItemTypeMergeRequest,
+		db.ArchiveItemTypeIssue,
+	} {
+		t.Run(string(itemType), func(t *testing.T) {
+			require := require.New(t)
+			assert := assert.New(t)
+			d := openTestDB(t)
+			oldRepo := RepoRef{
+				Platform: platform.KindGitLab, PlatformHost: "gitlab.example.com",
+				Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+				PlatformExternalID: "repo-old",
+			}
+			newRepo := oldRepo
+			newRepo.PlatformExternalID = "repo-new"
+			now := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
+			provider := &syncTestReadProvider{
+				syncTestProvider: syncTestProvider{
+					kind: oldRepo.Platform,
+					host: oldRepo.PlatformHost,
+				},
+				mergeRequests: []platform.MergeRequest{{
+					Repo: platformRepoRef(newRepo), Number: 7,
+					PlatformExternalID: "mr-7", Title: "Replacement MR",
+					State: "open", CreatedAt: now, UpdatedAt: now,
+					LastActivityAt: now,
+				}},
+				issues: []platform.Issue{{
+					Repo: platformRepoRef(newRepo), Number: 8,
+					PlatformExternalID: "issue-8", Title: "Replacement issue",
+					State: "open", CreatedAt: now, UpdatedAt: now,
+					LastActivityAt: now,
+				}},
+			}
+			registry, err := platform.NewRegistry(provider)
+			require.NoError(err)
+			syncer := NewSyncerWithRegistry(
+				registry,
+				d,
+				nil,
+				[]RepoRef{oldRepo},
+				time.Hour,
+				nil,
+				nil,
+			)
+			t.Cleanup(syncer.Stop)
+			syncer.archiveLifecycle = archiveIdentitySeeder{database: d}
+			_, err = d.UpsertRepoByProviderID(
+				t.Context(),
+				platform.DBRepoIdentity(platformRepoRef(oldRepo)),
+			)
+			require.NoError(err)
+
+			gate := syncer.repoIncarnationGate(oldRepo)
+			gate.RLock()
+			cutoverDone := make(chan error, 1)
+			go func() {
+				cutoverDone <- syncer.SetReposWithContext(
+					t.Context(),
+					[]RepoRef{newRepo},
+					false,
+				)
+			}()
+			waitForRepoConfigurationCutover(t, syncer)
+
+			detailDone := make(chan error, 1)
+			go func() {
+				switch itemType {
+				case db.ArchiveItemTypeMergeRequest:
+					detailDone <- syncer.syncMRForRepo(
+						t.Context(), oldRepo, 7, false, nil,
+					)
+				case db.ArchiveItemTypeIssue:
+					detailDone <- syncer.syncIssueForRepo(
+						t.Context(), oldRepo, 8, nil,
+					)
+				}
+			}()
+			gate.RUnlock()
+
+			require.NoError(<-cutoverDone)
+			require.NoError(<-detailDone)
+			refs := provider.detailRepoRefs(itemType)
+			require.NotEmpty(refs)
+			for _, ref := range refs {
+				assert.Equal(newRepo.PlatformExternalID, ref.PlatformExternalID)
+			}
+			repos, err := d.ListRepos(t.Context())
+			require.NoError(err)
+			require.Len(repos, 1)
+			assert.Equal(newRepo.PlatformExternalID, repos[0].PlatformRepoID)
+		})
+	}
+}
+
+func TestQueuedFullSyncSkipsRemovedConfiguration(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	repo := RepoRef{
+		Platform: platform.KindGitHub, PlatformHost: "github.com",
+		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+		PlatformExternalID: "repo-old",
+	}
+	var providerCalls atomic.Int32
+	client := &mockClient{getRepositoryFn: func(
+		context.Context,
+		string,
+		string,
+	) (*gh.Repository, error) {
+		providerCalls.Add(1)
+		return &gh.Repository{
+			NodeID: new(repo.PlatformExternalID),
+			Name:   new(repo.Name),
+			Owner:  &gh.User{Login: new(repo.Owner)},
+		}, nil
+	}}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client},
+		d,
+		nil,
+		[]RepoRef{repo},
+		time.Hour,
+		nil,
+		nil,
+	)
+	t.Cleanup(syncer.Stop)
+
+	gate := syncer.repoIncarnationGate(repo)
+	gate.RLock()
+	cutoverDone := make(chan error, 1)
+	go func() {
+		cutoverDone <- syncer.SetReposWithContext(
+			t.Context(),
+			nil,
+			false,
+		)
+	}()
+	waitForRepoConfigurationCutover(t, syncer)
+
+	syncDone := make(chan error, 1)
+	go func() {
+		syncDone <- syncer.syncRepo(t.Context(), repo)
+	}()
+	gate.RUnlock()
+
+	require.NoError(<-cutoverDone)
+	err := <-syncDone
+	require.ErrorContains(err, "no longer configured")
+	assert.Zero(providerCalls.Load())
+	repos, err := d.ListRepos(t.Context())
+	require.NoError(err)
+	assert.Empty(repos)
 }
 
 func TestSyncRepoUsesAuthoritativeConfiguredRefAfterReconciliation(t *testing.T) {

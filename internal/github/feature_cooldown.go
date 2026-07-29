@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -233,16 +234,36 @@ func repoIncarnationGateHeld(ctx context.Context, repo RepoRef) bool {
 	return key == repoPriorityKey(repo)
 }
 
-func (s *Syncer) holdRepoIncarnationRead(
+func (s *Syncer) holdCurrentRepoIncarnationRead(
 	ctx context.Context,
 	repo RepoRef,
-) (context.Context, func()) {
+) (context.Context, RepoRef, func(), error) {
 	if repoIncarnationGateHeld(ctx, repo) {
-		return ctx, func() {}
+		configured, _, ok := s.configuredRepo(repo)
+		if !ok {
+			return ctx, RepoRef{}, func() {}, fmt.Errorf(
+				"repo %s/%s is no longer configured",
+				repo.Owner,
+				repo.Name,
+			)
+		}
+		return ctx, configured, func() {}, nil
 	}
 	gate := s.repoIncarnationGate(repo)
 	gate.RLock()
-	return withRepoIncarnationGateHeld(ctx, repo), gate.RUnlock
+	configured, _, ok := s.configuredRepo(repo)
+	if !ok {
+		gate.RUnlock()
+		return ctx, RepoRef{}, func() {}, fmt.Errorf(
+			"repo %s/%s is no longer configured",
+			repo.Owner,
+			repo.Name,
+		)
+	}
+	return withRepoIncarnationGateHeld(ctx, configured),
+		configured,
+		gate.RUnlock,
+		nil
 }
 
 func (s *Syncer) beginRepositoryFeatureProbe(

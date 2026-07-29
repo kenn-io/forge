@@ -53,13 +53,15 @@ what "current" means.
   incarnation can suppress its first sync
   (`internal/github/sync.go::resetRepositoryPathState`,
   `internal/github/sync.go::reconcileRepoIdentity`).
-- Full and notification syncs hold the incarnation gate through path-keyed
-  writes and use the authoritative configured provider reference after
-  reconciliation (`internal/github/sync.go::syncRepo`,
+- Full sync revalidates configuration membership after taking the incarnation
+  gate and holds it through path-keyed writes; notification sync provides the
+  same cutover guarantee under the configuration barrier
+  (`internal/github/sync.go::Syncer.resolveRepoIdentity`,
   `internal/github/notifications_sync.go::Syncer.syncNotificationsForRepo`).
-- On-demand MR and issue detail syncs hold the incarnation gate through their
-  provider reads and persistence
-  (`internal/github/feature_cooldown.go::Syncer.holdRepoIncarnationRead`).
+- On-demand MR and issue detail syncs refresh the configured repository after
+  acquiring the incarnation gate, then hold it through provider reads and
+  persistence
+  (`internal/github/feature_cooldown.go::Syncer.holdCurrentRepoIncarnationRead`).
 - Provider-ID replacement at a configured path holds the incarnation gate
   exclusively through reconciliation, and configuration cutover supersedes an
   older provider observation

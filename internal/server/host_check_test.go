@@ -28,9 +28,11 @@ func setupHostCheckServer(t *testing.T, opts HostCheckOptions) *Server {
 	database := dbtest.Open(t)
 	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
 	t.Cleanup(syncer.Stop)
-	return New(database, syncer, emptyFrontend(), "/", nil, ServerOptions{
+	srv := New(database, syncer, emptyFrontend(), "/", nil, ServerOptions{
 		HostCheck: opts,
 	})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	return srv
 }
 
 func bindLoopback8091() config.HostKey {

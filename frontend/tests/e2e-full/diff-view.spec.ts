@@ -2202,7 +2202,11 @@ test.describe("diff view", () => {
     await expect(content).toBeVisible();
   });
 
-  test("clicking a file path writes the exact path to the clipboard", async ({ page, context, browserName }) => {
+  test("clicking a file path copy icon writes the exact path to the clipboard", async ({
+    page,
+    context,
+    browserName,
+  }) => {
     test.skip(browserName !== "chromium", "Clipboard read assertions require Chromium permissions");
     await context.grantPermissions(["clipboard-read", "clipboard-write"]);
     await mockDiffApi(page, smallDiff);
@@ -2210,182 +2214,22 @@ test.describe("diff view", () => {
     await waitForDiffLoaded(page);
 
     const path = "internal/server/handler.go";
-    const pathButton = page.locator(`.diff-file[data-file-path="${path}"] .file-path`);
-    await pathButton.click();
+    const copyButton = page.locator(`.diff-file[data-file-path="${path}"] .file-path-copy`);
+    await copyButton.click();
 
     await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(path);
-    await expect(pathButton).toHaveAttribute("title", "Copied!");
-    await expect(page.locator(".file-path-copy-status")).toHaveText("Copied");
+    await expect(copyButton).toHaveAttribute("title", "Copied!");
   });
 
-  test("confirms a truncated shell-unsafe path before copying it", async ({ page, context, browserName }) => {
-    test.skip(browserName !== "chromium", "Clipboard read assertions require Chromium permissions");
-    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
-    const path = `src/${"a".repeat(240)};$(hidden-command).ts`;
-    const unsafeDiff: DiffResult = {
-      ...smallDiff,
-      files: smallDiff.files.map((file, index) => (index === 0 ? { ...file, path, old_path: path } : file)),
-    };
-    await mockDiffApi(page, unsafeDiff);
-    await navigateToDiff(page);
-    await waitForDiffLoaded(page);
-    await page.evaluate(() => navigator.clipboard.writeText("unchanged"));
-
-    const pathButton = page.locator(`.diff-file[data-file-path="${path}"] .file-path`);
-    await expect
-      .poll(() =>
-        pathButton.evaluate((element) => {
-          const style = getComputedStyle(element);
-          return {
-            overflowing: element.scrollWidth > element.clientWidth,
-            overflow: style.overflow,
-            textOverflow: style.textOverflow,
-            whiteSpace: style.whiteSpace,
-          };
-        }),
-      )
-      .toEqual({
-        overflowing: true,
-        overflow: "hidden",
-        textOverflow: "ellipsis",
-        whiteSpace: "nowrap",
-      });
-
-    let confirmationMessage = "";
-    page.once("dialog", async (dialog) => {
-      confirmationMessage = dialog.message();
-      await dialog.dismiss();
-    });
-    await pathButton.click();
-
-    expect(confirmationMessage).toContain(path);
-    expect(confirmationMessage).toContain("Quote or escape the entire path for your shell");
-    expect(confirmationMessage).not.toContain("place -- before it");
-    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe("unchanged");
-
-    page.once("dialog", async (dialog) => {
-      await dialog.accept();
-    });
-    await pathButton.click();
-
-    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(path);
-  });
-
-  test("confirms an option-shaped path before preserving it on the clipboard", async ({
-    page,
-    context,
-    browserName,
-  }) => {
-    test.skip(browserName !== "chromium", "Clipboard read assertions require Chromium permissions");
-    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
-    const path = "--output=.git/config";
-    const optionShapedDiff: DiffResult = {
-      ...smallDiff,
-      files: smallDiff.files.map((file, index) => (index === 0 ? { ...file, path, old_path: path } : file)),
-    };
-    await mockDiffApi(page, optionShapedDiff);
-    await navigateToDiff(page);
-    await waitForDiffLoaded(page);
-    await page.evaluate(() => navigator.clipboard.writeText("unchanged"));
-
-    const pathButton = page.locator(`.diff-file[data-file-path="${path}"] .file-path`);
-    let confirmationMessage = "";
-    page.once("dialog", async (dialog) => {
-      confirmationMessage = dialog.message();
-      await dialog.dismiss();
-    });
-
-    await pathButton.click();
-
-    expect(confirmationMessage).toContain(path);
-    expect(confirmationMessage).toContain("place -- before it or prefix it with ./");
-    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe("unchanged");
-
-    page.once("dialog", async (dialog) => {
-      await dialog.accept();
-    });
-    await pathButton.click();
-
-    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(path);
-  });
-
-  test("confirms an augmented assignment-shaped path before copying it", async ({ page, context, browserName }) => {
-    test.skip(browserName !== "chromium", "Clipboard read assertions require Chromium permissions");
-    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
-    const path = "PROMPT_COMMAND+=src/payload";
-    const assignmentShapedDiff: DiffResult = {
-      ...smallDiff,
-      files: smallDiff.files.map((file, index) => (index === 0 ? { ...file, path, old_path: path } : file)),
-    };
-    await mockDiffApi(page, assignmentShapedDiff);
-    await navigateToDiff(page);
-    await waitForDiffLoaded(page);
-    await page.evaluate(() => navigator.clipboard.writeText("unchanged"));
-
-    const pathButton = page.locator(`.diff-file[data-file-path="${path}"] .file-path`);
-    let confirmationMessage = "";
-    page.once("dialog", async (dialog) => {
-      confirmationMessage = dialog.message();
-      await dialog.dismiss();
-    });
-
-    await pathButton.click();
-
-    expect(confirmationMessage).toContain(path);
-    expect(confirmationMessage).toContain("pass it as an argument after the command");
-    expect(confirmationMessage).not.toContain("place -- before it");
-    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe("unchanged");
-
-    page.once("dialog", async (dialog) => {
-      await dialog.accept();
-    });
-    await pathButton.click();
-
-    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(path);
-  });
-
-  test("concealed path characters remain escaped and cannot reach the clipboard", async ({
-    page,
-    context,
-    browserName,
-  }) => {
-    test.skip(browserName !== "chromium", "Clipboard read assertions require Chromium permissions");
-    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
-    const path = "src/safe\ufe0fpayload.ts";
-    const concealedDiff: DiffResult = {
-      ...smallDiff,
-      files: smallDiff.files.map((file, index) => (index === 0 ? { ...file, path, old_path: path } : file)),
-    };
-    await mockDiffApi(page, concealedDiff);
-    await navigateToDiff(page);
-    await waitForDiffLoaded(page);
-    await page.evaluate(() => navigator.clipboard.writeText("unchanged"));
-
-    const pathButton = page.locator(`.diff-file[data-file-path="${path}"] .file-path`);
-    await expect(pathButton).toHaveText("src/safe\\ufe0fpayload.ts");
-    await expect(pathButton).toHaveAttribute("aria-disabled", "true");
-
-    await pathButton.click({ force: true });
-
-    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe("unchanged");
-  });
-
-  test("deleted file paths retain line-through while hovered and focused", async ({ page }) => {
+  test("deleted file paths retain line-through", async ({ page }) => {
     await mockDiffApi(page, smallDiff);
     await navigateToDiff(page);
     await waitForDiffLoaded(page);
 
-    const pathButton = page.locator('.diff-file[data-file-path="internal/legacy/old_handler.go"] .file-path');
-    const decorations = () => pathButton.evaluate((element) => getComputedStyle(element).textDecorationLine.split(" "));
+    const pathLabel = page.locator('.diff-file[data-file-path="internal/legacy/old_handler.go"] .file-path');
+    const decorations = () => pathLabel.evaluate((element) => getComputedStyle(element).textDecorationLine.split(" "));
 
-    await pathButton.hover();
     await expect.poll(decorations).toContain("line-through");
-    await expect.poll(decorations).toContain("underline");
-
-    await page.mouse.move(0, 0);
-    await pathButton.focus();
-    await expect.poll(decorations).toContain("line-through");
-    await expect.poll(decorations).toContain("underline");
   });
 
   test("more menu collapses and expands all visible diffs", async ({ page }) => {

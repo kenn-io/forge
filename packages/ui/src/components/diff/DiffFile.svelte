@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { DiffLineAnnotation, SelectedLineRange, Virtualizer } from "@pierre/diffs";
-  import { mount, onDestroy, onMount, unmount } from "svelte";
+  import { mount, onMount, unmount } from "svelte";
   import type { DiffFile as DiffFileType } from "../../api/types.js";
   import type { DiffReviewDraftComment } from "../../stores/diff-review-draft.svelte.js";
   import type { DiffReviewLineRange } from "../../stores/diff-review-draft.svelte.js";
@@ -9,7 +9,7 @@
   import DiffReviewDraftInlineComment from "./DiffReviewDraftInlineComment.svelte";
   import DiffReviewThreadInlineComment from "./DiffReviewThreadInlineComment.svelte";
   import DiffRichPreview from "./DiffRichPreview.svelte";
-  import { copyToClipboard, DiffStats } from "@kenn-io/kit-ui";
+  import { CopyButton, DiffStats } from "@kenn-io/kit-ui";
   import {
     reviewThreadTargetLine,
     reviewThreadTargetSide,
@@ -83,10 +83,6 @@
   // fires synchronously for on-screen files.
   let fileEl: HTMLDivElement | undefined = $state();
   let inViewport = $state(false);
-  let copiedPath = $state(false);
-  let copiedPathTimeout: ReturnType<typeof setTimeout> | undefined;
-  const pathContainsConcealedCharacters = $derived(containsConcealedCharacters(file.path));
-  const displayedPath = $derived(displayPath(file));
   type MountedAnnotation = {
     component?: object;
     observer?: MutationObserver;
@@ -186,24 +182,8 @@
     };
   });
 
-  onDestroy(() => {
-    if (copiedPathTimeout !== undefined) clearTimeout(copiedPathTimeout);
-  });
-
   function toggle(): void {
     diffStore.toggleFileCollapsed(owner, name, number, file.path);
-  }
-
-  async function copyPath(): Promise<void> {
-    if (pathContainsConcealedCharacters) return;
-    if (pathContainsShellUnsafeCharacters(file.path) && !confirmShellUnsafePathCopy(file.path)) return;
-    if (!(await copyToClipboard(file.path))) return;
-    copiedPath = true;
-    if (copiedPathTimeout !== undefined) clearTimeout(copiedPathTimeout);
-    copiedPathTimeout = setTimeout(() => {
-      copiedPath = false;
-      copiedPathTimeout = undefined;
-    }, 1500);
   }
 
   async function loadDiffText(side: "old" | "new"): Promise<string> {
@@ -221,76 +201,10 @@
   }
 
   function displayPath(f: DiffFileType): string {
-    const path = escapeConcealedCharacters(f.path);
     if (f.status === "renamed" && f.old_path !== f.path) {
-      return `${escapeConcealedCharacters(f.old_path)} -> ${path}`;
+      return `${f.old_path} -> ${f.path}`;
     }
-    return path;
-  }
-
-  function containsConcealedCharacters(path: string): boolean {
-    return Array.from(path).some((character) => isConcealedCharacter(character));
-  }
-
-  function pathContainsShellUnsafeCharacters(path: string): boolean {
-    return path.startsWith("-") || pathLooksLikeShellAssignment(path) || pathContainsShellSyntaxCharacters(path);
-  }
-
-  function pathLooksLikeShellAssignment(path: string): boolean {
-    return /^[\p{L}_][\p{L}\p{M}\p{N}_]*(?:\+)?=/u.test(path);
-  }
-
-  function pathContainsShellSyntaxCharacters(path: string): boolean {
-    return /[^\p{L}\p{M}\p{N}._@:+,=/-]/u.test(path);
-  }
-
-  function confirmShellUnsafePathCopy(path: string): boolean {
-    const guidance: string[] = [];
-    if (pathContainsShellSyntaxCharacters(path)) {
-      guidance.push("Quote or escape the entire path for your shell before using it in a terminal.");
-    }
-    if (path.startsWith("-")) {
-      guidance.push(
-        "When passing this path to a command, place -- before it or prefix it with ./ so it is treated as a file operand.",
-      );
-    }
-    if (pathLooksLikeShellAssignment(path)) {
-      guidance.push(
-        "Do not paste this path before a command name; pass it as an argument after the command instead.",
-      );
-    }
-    return window.confirm(
-      `This file path contains characters that may be unsafe to paste into a terminal.\n\nReview the full path before copying:\n${escapeConcealedCharacters(path)}\n\n${guidance.join("\n\n")}\n\nCopy it anyway?`,
-    );
-  }
-
-  function escapeConcealedCharacters(path: string): string {
-    return Array.from(path, (character) => {
-      if (!isConcealedCharacter(character)) return character;
-      switch (character) {
-        case "\0":
-          return "\\0";
-        case "\b":
-          return "\\b";
-        case "\t":
-          return "\\t";
-        case "\n":
-          return "\\n";
-        case "\v":
-          return "\\v";
-        case "\f":
-          return "\\f";
-        case "\r":
-          return "\\r";
-      }
-      const codePoint = character.codePointAt(0) ?? 0;
-      const hex = codePoint.toString(16).padStart(4, "0");
-      return codePoint <= 0xffff ? `\\u${hex}` : `\\u{${hex}}`;
-    }).join("");
-  }
-
-  function isConcealedCharacter(character: string): boolean {
-    return /[\p{Cc}\p{Cf}\p{Cs}\p{Default_Ignorable_Code_Point}\u2028\u2029]/u.test(character);
+    return f.path;
   }
 
   function supportsRichPreview(path: string): boolean {
@@ -613,30 +527,26 @@
         <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
     </button>
-    <button
-      type="button"
+    <span
       class="file-path"
-      class:file-path--copied={copiedPath}
       class:file-path--deleted={file.status === "deleted"}
-      class:file-path--unsafe={pathContainsConcealedCharacters}
-      onclick={copyPath}
-      aria-disabled={pathContainsConcealedCharacters}
-      aria-label={pathContainsConcealedCharacters
-        ? `Cannot copy file path containing concealed characters: ${displayedPath}`
-        : copiedPath
-          ? `Copied file path ${file.path}`
-          : `Copy file path ${file.path}`}
-      title={pathContainsConcealedCharacters
-        ? "Cannot copy a path containing concealed characters"
-        : copiedPath
-          ? "Copied!"
-          : "Copy file path"}
     >
-      {displayedPath}
-    </button>
-    {#if copiedPath}
-      <span class="file-path-copy-status" role="status" aria-live="polite">Copied</span>
-    {/if}
+      {displayPath(file)}
+    </span>
+    <!--
+      Copying repository metadata is not code execution or a security boundary.
+      Preserve the provider's filename exactly; interpretation after paste belongs
+      to the destination explicitly chosen by the user. Do not filter, quote,
+      escape, or add shell-specific confirmation here.
+    -->
+    <CopyButton
+      class="file-path-copy"
+      text={file.path}
+      ariaLabel={`Copy file path ${file.path}`}
+      copiedAriaLabel={`Copied file path ${file.path}`}
+      title="Copy file path"
+      copiedTitle="Copied!"
+    />
     <span class="file-stats">
       <DiffStats
         additions={file.additions}
@@ -752,15 +662,9 @@
   }
 
   .file-path {
-    appearance: none;
-    padding: 0;
-    border: 0;
-    background: transparent;
     font-family: var(--font-mono);
     font-size: var(--font-size-sm);
     color: var(--diff-text);
-    text-align: left;
-    cursor: copy;
     flex: 1;
     min-width: 0;
     overflow: hidden;
@@ -768,40 +672,8 @@
     white-space: nowrap;
   }
 
-  .file-path:hover,
-  .file-path:focus-visible {
-    text-decoration: underline;
-    text-underline-offset: 2px;
-  }
-
-  .file-path:focus-visible {
-    outline: 1px solid var(--border-strong);
-    outline-offset: 2px;
-    border-radius: var(--radius-sm);
-  }
-
-  .file-path--copied {
-    color: var(--accent-green);
-  }
-
-  .file-path--unsafe {
-    color: var(--text-muted);
-    cursor: not-allowed;
-  }
-
-  .file-path-copy-status {
-    flex-shrink: 0;
-    color: var(--accent-green);
-    font-size: var(--font-size-xs);
-  }
-
   .file-path--deleted {
     text-decoration: line-through;
-  }
-
-  .file-path--deleted:hover,
-  .file-path--deleted:focus-visible {
-    text-decoration: line-through underline;
   }
 
   .file-stats {

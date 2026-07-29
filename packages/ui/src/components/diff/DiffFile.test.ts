@@ -90,18 +90,12 @@ afterAll(() => {
 
 import DiffFile from "./DiffFile.svelte";
 import diffRichPreviewSource from "./DiffRichPreview.svelte?raw";
-import { copyToClipboard } from "@kenn-io/kit-ui";
 import type { DiffFile as DiffFileType, FilePreview } from "../../api/types.js";
 import { STORES_KEY } from "../../context.js";
 import type { DiffReviewDraftComment, DiffReviewLineRange } from "../../stores/diff-review-draft.svelte.js";
 import { createDiffStore } from "../../stores/diff.svelte.js";
 import { renderedCodeSide } from "./pierre-dom.js";
 import type { ReviewThread } from "./review-thread-context.js";
-
-vi.mock("@kenn-io/kit-ui", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@kenn-io/kit-ui")>()),
-  copyToClipboard: vi.fn(() => Promise.resolve(true)),
-}));
 
 type LoadFilePreview = (
   owner: string,
@@ -349,7 +343,6 @@ function textPreview(path: string, text: string): FilePreview {
 
 describe("DiffFile", () => {
   afterEach(() => {
-    vi.mocked(copyToClipboard).mockClear();
     cleanup();
     localStorage.removeItem("diff-rich-preview");
     localStorage.removeItem("diff-view-mode");
@@ -369,102 +362,31 @@ describe("DiffFile", () => {
     await expectPierreDiffText(/old linenew line/);
   });
 
-  it("copies the title-bar file path without collapsing the diff", async () => {
-    renderDiffFile(makeFile());
+  it("copies the exact title-bar file path from a dedicated copy button", async () => {
+    const path = "PROMPT_COMMAND+=src/payload;$(hidden-command).ts";
+    const originalClipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
 
-    await fireEvent.click(screen.getByRole("button", { name: "Copy file path src/foo.ts" }));
-
-    expect(copyToClipboard).toHaveBeenCalledWith("src/foo.ts");
-    const copyStatus = document.querySelector(".file-path-copy-status");
-    expect(copyStatus?.textContent).toBe("Copied");
-    expect(copyStatus?.getAttribute("role")).toBe("status");
-    expect(copyStatus?.getAttribute("aria-live")).toBe("polite");
-    expect(document.querySelector(".file-content")).toBeTruthy();
-  });
-
-  it("requires confirmation before copying a shell-unsafe path", async () => {
-    const path = `src/${"a".repeat(180)};$(hidden-command).ts`;
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
     try {
       renderDiffFile(makeFile({ path, old_path: path }));
-      const pathButton = screen.getByRole("button", { name: `Copy file path ${path}` });
 
-      await fireEvent.click(pathButton);
+      const pathLabel = screen.getByText(path);
+      expect(pathLabel.tagName).toBe("SPAN");
+      await fireEvent.click(screen.getByRole("button", { name: `Copy file path ${path}` }));
 
-      expect(confirmSpy).toHaveBeenCalledWith(
-        `This file path contains characters that may be unsafe to paste into a terminal.\n\nReview the full path before copying:\n${path}\n\nQuote or escape the entire path for your shell before using it in a terminal.\n\nCopy it anyway?`,
-      );
-      expect(copyToClipboard).not.toHaveBeenCalled();
-
-      confirmSpy.mockReturnValue(true);
-      await fireEvent.click(pathButton);
-
-      expect(copyToClipboard).toHaveBeenCalledWith(path);
+      expect(writeText).toHaveBeenCalledWith(path);
+      expect(document.querySelector(".file-content")).toBeTruthy();
     } finally {
-      confirmSpy.mockRestore();
+      if (originalClipboard) {
+        Object.defineProperty(navigator, "clipboard", originalClipboard);
+      } else {
+        delete (navigator as Navigator & { clipboard?: Clipboard }).clipboard;
+      }
     }
-  });
-
-  it.each(["-rf", "--output=.git/config"])(
-    "requires confirmation before copying an option-shaped path: %s",
-    async (path) => {
-      const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
-      try {
-        renderDiffFile(makeFile({ path, old_path: path }));
-        const pathButton = screen.getByRole("button", { name: `Copy file path ${path}` });
-
-        await fireEvent.click(pathButton);
-
-        expect(confirmSpy).toHaveBeenCalledWith(
-          `This file path contains characters that may be unsafe to paste into a terminal.\n\nReview the full path before copying:\n${path}\n\nWhen passing this path to a command, place -- before it or prefix it with ./ so it is treated as a file operand.\n\nCopy it anyway?`,
-        );
-        expect(copyToClipboard).not.toHaveBeenCalled();
-      } finally {
-        confirmSpy.mockRestore();
-      }
-    },
-  );
-
-  it.each(["CONFIG=payload", "PROMPT_COMMAND+=src/payload"])(
-    "requires confirmation before copying an assignment-shaped path: %s",
-    async (path) => {
-      const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
-      try {
-        renderDiffFile(makeFile({ path, old_path: path }));
-        const pathButton = screen.getByRole("button", { name: `Copy file path ${path}` });
-
-        await fireEvent.click(pathButton);
-
-        expect(confirmSpy).toHaveBeenCalledWith(
-          `This file path contains characters that may be unsafe to paste into a terminal.\n\nReview the full path before copying:\n${path}\n\nDo not paste this path before a command name; pass it as an argument after the command instead.\n\nCopy it anyway?`,
-        );
-        expect(copyToClipboard).not.toHaveBeenCalled();
-      } finally {
-        confirmSpy.mockRestore();
-      }
-    },
-  );
-
-  it.each([
-    ["control character", "\n", "\\n"],
-    ["format character", "\u202e", "\\u202e"],
-    ["unpaired surrogate", "\ud800", "\\ud800"],
-    ["variation selector", "\ufe0f", "\\ufe0f"],
-    ["supplementary variation selector", "\u{e0100}", "\\u{e0100}"],
-    ["line separator", "\u2028", "\\u2028"],
-    ["paragraph separator", "\u2029", "\\u2029"],
-  ])("refuses to copy paths with a concealed %s", async (_description, character, escapedCharacter) => {
-    const path = `src/safe.ts${character}payload`;
-    renderDiffFile(makeFile({ path, old_path: path }));
-
-    const pathButton = screen.getByRole("button", {
-      name: `Cannot copy file path containing concealed characters: src/safe.ts${escapedCharacter}payload`,
-    });
-    await fireEvent.click(pathButton);
-
-    expect(pathButton.textContent?.trim()).toBe(`src/safe.ts${escapedCharacter}payload`);
-    expect(pathButton.getAttribute("aria-disabled")).toBe("true");
-    expect(copyToClipboard).not.toHaveBeenCalled();
   });
 
   it("exposes stable line targets inside the Pierre shadow root", async () => {

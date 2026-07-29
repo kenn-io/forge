@@ -212,6 +212,8 @@ func TestStartupLockCollisionAndStatus(t *testing.T) {
 	root := t.TempDir()
 	dataDir := filepath.Join(root, "data")
 	require.NoError(os.MkdirAll(dataDir, 0o700))
+	canonicalDataDir, err := filepath.EvalSymlinks(dataDir)
+	require.NoError(err)
 	cfgPath := filepath.Join(root, "config.toml")
 
 	port := reserveFreePort(t)
@@ -244,7 +246,7 @@ func TestStartupLockCollisionAndStatus(t *testing.T) {
 	startupJSONCmd.Stderr = os.Stderr
 	require.NoError(startupJSONCmd.Run())
 	require.Contains(startupJSONOut.String(), "\"running\": true")
-	require.Contains(startupJSONOut.String(), "\"data_dir\": \""+dataDir+"\"")
+	require.Contains(startupJSONOut.String(), "\"data_dir\": \""+canonicalDataDir+"\"")
 	require.Contains(startupJSONOut.String(), "\"metadata\": null")
 	require.Contains(startupJSONOut.String(), "\"metadata_error\": \"missing\"")
 
@@ -310,7 +312,7 @@ func TestStartupLockCollisionAndStatus(t *testing.T) {
 	jsonCmd.Stderr = os.Stderr
 	require.NoError(jsonCmd.Run())
 	require.Contains(jsonOut.String(), "\"running\": true")
-	require.Contains(jsonOut.String(), "\"data_dir\": \""+dataDir+"\"")
+	require.Contains(jsonOut.String(), "\"data_dir\": \""+canonicalDataDir+"\"")
 	require.Contains(jsonOut.String(), "\"port\": "+strconv.Itoa(port))
 
 	// Shut down the first process gracefully so the deferred Release

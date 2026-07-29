@@ -8,6 +8,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 	"go.kenn.io/kit/daemon"
+	"go.kenn.io/middleman/internal/daemonruntime"
 	"go.kenn.io/middleman/internal/server/httpapi"
 )
 
@@ -34,7 +35,7 @@ func (s *Server) daemonPing(
 ) (*daemonPingOutput, error) {
 	return &daemonPingOutput{Body: daemon.PingInfo{
 		OK:      true,
-		Service: "middleman",
+		Service: daemonruntime.Service,
 		Version: s.buildInfo.Version,
 		PID:     os.Getpid(),
 	}}, nil

@@ -807,7 +807,8 @@ type Config struct {
 	parsedAllowedHosts []HostKey
 	// parsedBindKey is the canonical (Host, Port) key for the bind
 	// address, populated by Validate.
-	parsedBindKey HostKey
+	parsedBindKey      HostKey
+	dataDirWasRelative bool
 }
 
 // API configures the HTTP API surface.
@@ -1139,6 +1140,12 @@ func load(path string) (*Config, error) {
 	if cfg.DataDir == "" {
 		cfg.DataDir = DefaultDataDir()
 	}
+	cfg.dataDirWasRelative = !filepath.IsAbs(cfg.DataDir)
+	canonicalDir, err := canonicalDataDir(cfg.DataDir)
+	if err != nil {
+		return nil, err
+	}
+	cfg.DataDir = canonicalDir
 
 	if cfg.Activity.ViewMode == "" {
 		cfg.Activity.ViewMode = defaultViewMode
@@ -1209,6 +1216,12 @@ func rejectDeprecatedConfigKeys(meta toml.MetaData) error {
 
 func (c *Config) Validate() error {
 	return c.validate()
+}
+
+// DataDirWasRelative reports whether data_dir was relative before loading
+// established its canonical runtime identity.
+func (c *Config) DataDirWasRelative() bool {
+	return c.dataDirWasRelative
 }
 
 // validate runs every config rule.

@@ -7,8 +7,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
-	"runtime"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -19,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/kit/daemon"
 	"go.kenn.io/middleman/internal/config"
+	"go.kenn.io/middleman/internal/runtimelock"
 )
 
 func TestValidateBackgroundConfigRejectsUnsafeDirectVerification(t *testing.T) {
@@ -51,30 +50,6 @@ func TestValidateBackgroundConfigRejectsUnsafeDirectVerification(t *testing.T) {
 	}
 }
 
-func TestCanonicalDataDirUsesOneFilesystemIdentity(t *testing.T) {
-	root := t.TempDir()
-	realDir := filepath.Join(root, "state")
-	require.NoError(t, os.Mkdir(realDir, 0o700))
-	t.Chdir(root)
-
-	relative, err := config.CanonicalDataDir("./state")
-	require.NoError(t, err)
-	absolute, err := config.CanonicalDataDir(realDir)
-	require.NoError(t, err)
-
-	assert.Equal(t, absolute, relative)
-	link := filepath.Join(root, "state-link")
-	if err := os.Symlink(realDir, link); err != nil {
-		if runtime.GOOS == "windows" {
-			return
-		}
-		require.NoError(t, err)
-	}
-	linked, err := config.CanonicalDataDir(link)
-	require.NoError(t, err)
-	assert.Equal(t, absolute, linked)
-}
-
 // TestBackgroundLifecycleSerializesConcurrentStarts protects the launch
 // owner invariant. If the shared start lock is removed or discovery is not
 // repeated under it, concurrent callers invoke the detached starter twice.
@@ -97,17 +72,19 @@ func TestBackgroundLifecycleSerializesConcurrentStarts(t *testing.T) {
 
 	runtimeDir := t.TempDir()
 	dataDir := t.TempDir()
+	require.NoError(os.WriteFile(
+		runtimelock.AuthTokenPath(dataDir), []byte(token+"\n"), 0o600,
+	))
 	store := daemon.RuntimeStore{Dir: runtimeDir}
 	startEntered := make(chan struct{})
 	releaseStart := make(chan struct{})
 	var enteredOnce sync.Once
 	var starts atomic.Int32
 	lifecycle := backgroundLifecycle{
-		store:         store,
-		dataDir:       dataDir,
-		token:         token,
-		authTokenPath: dataDir + "/auth_token",
-		version:       "v-test",
+		store:   store,
+		dataDir: dataDir,
+		token:   token,
+		version: "v-test",
 		start: func(context.Context) error {
 			starts.Add(1)
 			enteredOnce.Do(func() { close(startEntered) })
@@ -154,6 +131,58 @@ func TestBackgroundLifecycleSerializesConcurrentStarts(t *testing.T) {
 	assert.Equal(first.record.PID, second.record.PID)
 }
 
+// TestBackgroundLifecycleAllowsIndependentDataDirectoryStarts protects the
+// lock scope. A stalled launch for one data directory must not block an
+// unrelated instance that shares the config-home discovery directory.
+func TestBackgroundLifecycleAllowsIndependentDataDirectoryStarts(t *testing.T) {
+	store := daemon.RuntimeStore{Dir: t.TempDir()}
+	firstStarted := make(chan struct{})
+	secondStarted := make(chan struct{})
+	ctx, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+
+	first := backgroundLifecycle{
+		store: store, dataDir: t.TempDir(), version: "v-test",
+		start: func(ctx context.Context) error {
+			close(firstStarted)
+			<-ctx.Done()
+			return ctx.Err()
+		},
+	}
+	second := backgroundLifecycle{
+		store: store, dataDir: t.TempDir(), version: "v-test",
+		start: func(ctx context.Context) error {
+			close(secondStarted)
+			<-ctx.Done()
+			return ctx.Err()
+		},
+	}
+
+	go func() {
+		_, _, _ = first.Ensure(ctx, 2*time.Second)
+	}()
+	require.Eventually(t, func() bool {
+		select {
+		case <-firstStarted:
+			return true
+		default:
+			return false
+		}
+	}, time.Second, 10*time.Millisecond)
+	go func() {
+		_, _, _ = second.Ensure(ctx, 2*time.Second)
+	}()
+
+	require.Eventually(t, func() bool {
+		select {
+		case <-secondStarted:
+			return true
+		default:
+			return false
+		}
+	}, 500*time.Millisecond, 10*time.Millisecond)
+}
+
 // TestBackgroundLifecycleRejectsUnverifiedLiveRecord protects the boundary
 // between process discovery and daemon identity. A live PID and plausible
 // metadata are insufficient until the authenticated ping succeeds.
@@ -192,7 +221,7 @@ func TestBackgroundLifecycleRejectsUnverifiedLiveRecord(t *testing.T) {
 	var starts atomic.Int32
 	lifecycle := backgroundLifecycle{
 		store: store, dataDir: dataDir, token: "daemon-secret",
-		authTokenPath: dataDir + "/auth_token", version: "v-test",
+		version: "v-test",
 		start: func(context.Context) error {
 			starts.Add(1)
 			allowPing.Store(true)

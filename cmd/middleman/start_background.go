@@ -5,21 +5,19 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"os"
 	"path/filepath"
-	"strconv"
 	"time"
 
 	"github.com/gofrs/flock"
 	"github.com/spf13/cobra"
 	"go.kenn.io/kit/daemon"
 	"go.kenn.io/middleman/internal/config"
+	"go.kenn.io/middleman/internal/daemonruntime"
 	"go.kenn.io/middleman/internal/runtimelock"
 )
 
 const (
-	daemonServiceName      = "middleman"
 	backgroundStartTimeout = 90 * time.Second
 	backgroundProbeTimeout = 750 * time.Millisecond
 	backgroundProbeTick    = 50 * time.Millisecond
@@ -28,13 +26,11 @@ const (
 type backgroundRunner func(context.Context, string, io.Writer) error
 
 type backgroundLifecycle struct {
-	store         daemon.RuntimeStore
-	dataDir       string
-	token         string
-	authTokenPath string
-	version       string
-	prepare       func(*backgroundLifecycle) error
-	start         daemon.StartFunc
+	store   daemon.RuntimeStore
+	dataDir string
+	token   string
+	version string
+	start   daemon.StartFunc
 }
 
 func newStartCommand(run backgroundRunner, stdout io.Writer) *cobra.Command {
@@ -72,33 +68,19 @@ func startBackground(
 	if err := os.MkdirAll(cfg.DataDir, 0o700); err != nil {
 		return fmt.Errorf("create data directory %s: %w", cfg.DataDir, err)
 	}
-	dataDir, err := config.CanonicalDataDir(cfg.DataDir)
-	if err != nil {
-		return err
-	}
-	cfg.DataDir = dataDir
 	token, err := runtimelock.ReadAuthToken(cfg.DataDir)
 	if err != nil {
 		return fmt.Errorf("read auth token: %w", err)
 	}
-	runtimeDir, err := filepath.Abs(config.DefaultDataDir())
+	store, err := daemonruntime.Store()
 	if err != nil {
-		return fmt.Errorf("resolve runtime directory: %w", err)
+		return err
 	}
 	lifecycle := backgroundLifecycle{
-		store:         daemon.RuntimeStore{Dir: runtimeDir},
-		dataDir:       cfg.DataDir,
-		token:         token,
-		authTokenPath: runtimelock.AuthTokenPath(cfg.DataDir),
-		version:       version,
-		prepare: func(l *backgroundLifecycle) error {
-			token, err := runtimelock.EnsureAuthToken(cfg.DataDir)
-			if err != nil {
-				return fmt.Errorf("ensure auth token: %w", err)
-			}
-			l.token = token
-			return nil
-		},
+		store:   store,
+		dataDir: cfg.DataDir,
+		token:   token,
+		version: version,
 		start: func(ctx context.Context) error {
 			return startBackgroundProcess(ctx, configPath, cfg.DataDir)
 		},
@@ -166,7 +148,7 @@ func (l backgroundLifecycle) Ensure(
 	if record, ping, ok, err := l.find(ctx); err != nil || ok {
 		return record, ping, err
 	}
-	lockPath, err := l.store.LockPath()
+	lockPath, err := daemonruntime.StartLockStore(l.store, l.dataDir).LockPath()
 	if err != nil {
 		return daemon.RuntimeRecord{}, daemon.PingInfo{}, err
 	}
@@ -182,11 +164,13 @@ func (l backgroundLifecycle) Ensure(
 	}
 	defer func() { _ = lock.Unlock() }()
 
-	if l.prepare != nil {
-		if err := l.prepare(&l); err != nil {
-			return daemon.RuntimeRecord{}, daemon.PingInfo{}, err
-		}
+	token, err := runtimelock.EnsureAuthToken(l.dataDir)
+	if err != nil {
+		return daemon.RuntimeRecord{}, daemon.PingInfo{}, fmt.Errorf(
+			"ensure auth token: %w", err,
+		)
 	}
+	l.token = token
 	if record, ping, ok, err := l.find(ctx); err != nil || ok {
 		return record, ping, err
 	}
@@ -239,29 +223,10 @@ func (l backgroundLifecycle) find(
 func (l backgroundLifecycle) probe(
 	ctx context.Context, record daemon.RuntimeRecord,
 ) (daemon.PingInfo, bool, error) {
-	if record.Service != daemonServiceName || record.Network != daemon.NetworkTCP ||
-		record.Metadata["data_dir"] != l.dataDir || !daemon.ProcessAlive(record.PID) {
-		return daemon.PingInfo{}, false, nil
-	}
-	if err := daemon.RequireLoopback(record.Address); err != nil {
-		return daemon.PingInfo{}, false, nil
-	}
-	host, port, err := net.SplitHostPort(record.Address)
-	if err != nil || record.Metadata["host"] != host || record.Metadata["port"] != port {
-		return daemon.PingInfo{}, false, nil
-	}
-	readOnly, err := strconv.ParseBool(record.Metadata["read_only"])
-	if err != nil || readOnly {
-		return daemon.PingInfo{}, false, nil
-	}
-	requireAuth, err := strconv.ParseBool(record.Metadata["require_auth"])
-	if err != nil {
-		return daemon.PingInfo{}, false, nil
-	}
-	if requireAuth && (l.token == "" || record.Metadata["auth_token_path"] != l.authTokenPath) {
-		return daemon.PingInfo{}, false, nil
-	}
-	if !requireAuth && record.Metadata["auth_token_path"] != "" {
+	if !daemonruntime.Compatible(record, daemonruntime.MatchOptions{
+		DataDir:        l.dataDir,
+		TokenAvailable: l.token != "",
+	}) {
 		return daemon.PingInfo{}, false, nil
 	}
 
@@ -276,7 +241,7 @@ func (l backgroundLifecycle) probe(
 	ping, err := daemon.ProbeHTTP(
 		ctx, client, endpoint.BaseURL(), daemon.ProbeOptions{
 			Path:            "/api/ping",
-			ExpectedService: daemonServiceName,
+			ExpectedService: daemonruntime.Service,
 			Timeout:         backgroundProbeTimeout,
 		},
 	)

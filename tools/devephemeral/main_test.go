@@ -54,8 +54,10 @@ func TestPrepareEphemeralConfigOverridesPortAndDataDir(t *testing.T) {
 
 	reloaded, err := config.Load(prepared.configPath)
 	require.NoError(err)
+	expectedDataDir, err := filepath.EvalSymlinks(filepath.Join(workDir, "data"))
+	require.NoError(err)
 	assert.Equal(39101, reloaded.Port)
-	assert.Equal(filepath.Join(workDir, "data"), reloaded.DataDir)
+	assert.Equal(expectedDataDir, reloaded.DataDir)
 	assert.Equal(filepath.Join(workDir, "dev-ephemeral.json"), prepared.statusPath)
 	assert.Equal("http://127.0.0.1:39101", prepared.backendURL)
 	assert.Equal("http://127.0.0.1:39102", prepared.frontendURL)

@@ -229,8 +229,8 @@ func installAgentHooks(action, configPath, rawAgent, binary string, stdout io.Wr
 	if err != nil {
 		return err
 	}
-	if !filepath.IsAbs(cfg.DataDir) {
-		return fmt.Errorf("agent hook install requires an absolute data_dir: %q", cfg.DataDir)
+	if cfg.DataDirWasRelative() {
+		return fmt.Errorf("agent hook install requires an absolute data_dir")
 	}
 	absoluteConfigPath, err := filepath.Abs(configPath)
 	if err != nil {

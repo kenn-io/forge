@@ -457,10 +457,6 @@ func TestConfigReloadPreservesCanonicalDataDirIdentity(t *testing.T) {
 	srv, _, cfgPath := setupTestServerWithConfigContent(t, content, &mockGH{})
 	canonicalDir, err := filepath.EvalSymlinks(realDir)
 	require.NoError(err)
-	srv.cfgMu.Lock()
-	srv.cfg.DataDir = canonicalDir
-	srv.bootCfgSnapshot.DataDir = canonicalDir
-	srv.cfgMu.Unlock()
 
 	writeConfigToml(t, cfgPath, content)
 	event := srv.applyConfigChange(t.Context())

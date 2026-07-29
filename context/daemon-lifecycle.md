@@ -5,18 +5,23 @@
 - `middleman` and `middleman serve` are raw foreground commands; their
   authoritative `data_dir` lock keeps duplicate startup as an error.
 - `middleman start --background` is idempotent: reuse requires verified
-  identity for the same resolved `data_dir`, and concurrent starts serialize
-  token creation and launch (`cmd/middleman/start_background.go::Ensure`).
+  identity for the same resolved `data_dir`; starts serialize per data
+  directory without blocking unrelated instances
+  (`cmd/middleman/start_background.go::Ensure`).
+- Config loading establishes the canonical `data_dir` identity used by startup
+  and reload comparisons (`internal/config/config.go::load`).
 
 ## Discovery and readiness
 
 - Every ready server publishes the standard `daemon.<pid>.json` record in
   config home, even when `config.toml` changes `data_dir`; the record is a
   discovery surface and does not replace the authoritative data-directory
-  lock/status (`cmd/middleman/main.go::writeDaemonRuntimeRecord`).
+  lock/status (`internal/daemonruntime/runtime.go::Publish`).
 - Record metadata is string-valued `host`, `port`, `read_only=false`,
   `require_auth`, and `data_dir`; `auth_token_path` is present only when auth is
-  enabled. Discovery still requires a live PID and authenticated ping.
+  enabled. Its producer and compatibility checks share one typed owner;
+  discovery still requires a live PID and authenticated ping
+  (`internal/daemonruntime/runtime.go::Compatible`).
 - `GET /api/ping` is registered only on the ready application handler and
   returns the standard service, version, and PID identity
   (`internal/server/daemon_ping.go::registerDaemonPing`).

@@ -205,7 +205,7 @@ test("terminal keeps keyboard focus across a pane move without a click", async (
     await movedTerminal.evaluate((element) => {
       element
         .closest(".tabbed-panel-leaf")
-        ?.querySelector<HTMLElement>(".tabbed-panel-solo-grip, .tabbed-panel-tab-button")
+        ?.querySelector<HTMLElement>(".tabbed-panel-tab-button")
         ?.setAttribute("data-focus-drag-source", "true");
     });
     await page

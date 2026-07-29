@@ -317,8 +317,8 @@ describe("detail pane layout", () => {
   it("drops the strip for a leaf that holds only the workspace, keeping its controls", () => {
     // The workspace pane draws its own strip inside - one tab per session, plus the
     // dock - so a leaf holding it alone stacked two rows to name one thing, and the
-    // outer one said only "Workspace". The controls move onto the pane instead, with
-    // a grip standing in for the tab as the drag source.
+    // outer one said only "Workspace". The remaining controls move onto the pane
+    // instead without inventing a separate drag affordance.
     render(DetailPaneLayoutTestHarness, { layout: store(splitTree()), withLeafExtras: true });
 
     const workspaceBody = screen.getByTestId("pane-workspace").closest(".tabbed-panel-body")!;
@@ -329,7 +329,7 @@ describe("detail pane layout", () => {
     const cluster = screen.getByTestId("tabbed-panel-solo-actions");
     expect(workspaceBody.contains(cluster)).toBe(false);
     expect(workspaceBody.closest(".tabbed-panel-leaf")?.contains(cluster)).toBe(true);
-    expect(within(cluster).getByRole("button", { name: "Move Workspace" })).toBeTruthy();
+    expect(within(cluster).queryByRole("button", { name: "Move Workspace" })).toBeNull();
     expect(within(cluster).getByTestId("pane-hide-workspace")).toBeTruthy();
     expect(within(cluster).getByTestId("pane-toggle-zoom")).toBeTruthy();
     expect(within(cluster).getByTestId("leaf-extra-leaf-workspace")).toBeTruthy();
@@ -348,7 +348,8 @@ describe("detail pane layout", () => {
 
     flushSync(() => layout.appendTabToLeaf("files", "leaf-workspace"));
 
-    expect(screen.getByRole("tab", { name: "Workspace" })).toBeTruthy();
+    const workspaceTab = screen.getByRole("tab", { name: "Workspace" });
+    expect(workspaceTab.getAttribute("draggable")).toBe("true");
     expect(screen.queryByTestId("tabbed-panel-solo-actions")).toBeNull();
   });
 

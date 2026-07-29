@@ -362,10 +362,10 @@ Keyboard handlers must have one clear owner for each key press.
 - A leaf holding ONLY the workspace pane renders no outer tab strip at all
   (`TabbedPanelTree`'s `soloChromeTabKeys`, wired in `DetailPaneLayout`): the pane
   draws its own strip inside, and an outer row saying "Workspace" named the same
-  thing twice. Its strip contents float top-right of the leaf instead - a grip (the
-  tab's replacement as HTML5 drag source; without it a strip-less pane could never
-  be moved), the hide X, caller extras, and Maximize. A second tab in the leaf, or a
-  flattened surface, brings the strip back. The floating cluster must stack ABOVE
+  thing twice. Its remaining actions float top-right of the leaf instead: the hide
+  X, caller extras, and Maximize. A solo-chrome pane has no pointer drag source;
+  pane commands remain available, and a second tab or flattened surface brings the
+  draggable strip back. The floating cluster must stack ABOVE
   xterm's internal layers (its overlay scrollbar slider is z-index 11 and hugs the
   same right edge; nothing between the leaf and xterm's internals is a stacking
   context) - below that, the scrollbar silently swallows clicks on the rightmost

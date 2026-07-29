@@ -1,5 +1,4 @@
 <script lang="ts">
-  import GripVerticalIcon from "@lucide/svelte/icons/grip-vertical";
   import { SplitResizeHandle, StatusDot, type SplitResizeEvent } from "@kenn-io/kit-ui";
   import { untrack, type Snippet } from "svelte";
   import Self from "./TabbedPanelTree.svelte";
@@ -654,23 +653,10 @@
     {#if soloChrome}
       {@const soloTab = tabForKey(node.tabs[0]!)}
       {#if soloTab}
-        <!-- The strip's contents with the strip taken away: they float at the top
-             right of the body, which is where the pane's own strip ends, so the two
-             read as one bar. The grip is the drag source the tab button used to be -
-             without it a pane with no strip could never be moved. -->
+        <!-- The strip's remaining actions with the strip taken away: they float at
+             the top right of the body, which is where the pane's own strip ends, so
+             the two read as one bar. -->
         <div class="tabbed-panel-solo-actions" data-testid="tabbed-panel-solo-actions">
-          <button
-            class="tabbed-panel-tab-tool tabbed-panel-solo-grip"
-            type="button"
-            draggable={tabDragEnabled()}
-            disabled={disabled}
-            title={`Move ${soloTab.label}`}
-            aria-label={`Move ${soloTab.label}`}
-            ondragstart={(event) => startTabDrag(event, soloTab)}
-            ondragend={finishTabDrag}
-          >
-            <GripVerticalIcon size="12" strokeWidth="2.2" aria-hidden="true" />
-          </button>
           {@render tabActions?.(soloTab)}
           {@render leafActions?.(node)}
         </div>
@@ -939,10 +925,6 @@
   .tabbed-panel-solo-actions :global(.tabbed-panel-tab-tool:disabled) {
     cursor: default;
     opacity: 0.3;
-  }
-
-  .tabbed-panel-solo-grip {
-    cursor: grab;
   }
 
   .tabbed-panel-tabs {

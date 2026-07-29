@@ -443,6 +443,35 @@ func TestConfigReload_NilSyncerAppliesHotReloadWithoutPanic(t *testing.T) {
 	assert.Equal("30d", gotActivity.TimeRange)
 }
 
+func TestConfigReloadPreservesCanonicalDataDirIdentity(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	root := t.TempDir()
+	realDir := filepath.Join(root, "state")
+	require.NoError(os.Mkdir(realDir, 0o700))
+	link := filepath.Join(root, "state-link")
+	if err := os.Symlink(realDir, link); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	content := fmt.Sprintf("data_dir = %q\n", link) + validReloadConfig
+	srv, _, cfgPath := setupTestServerWithConfigContent(t, content, &mockGH{})
+	canonicalDir, err := filepath.EvalSymlinks(realDir)
+	require.NoError(err)
+	srv.cfgMu.Lock()
+	srv.cfg.DataDir = canonicalDir
+	srv.bootCfgSnapshot.DataDir = canonicalDir
+	srv.cfgMu.Unlock()
+
+	writeConfigToml(t, cfgPath, content)
+	event := srv.applyConfigChange(t.Context())
+
+	require.True(event.Valid, event.Error)
+	assert.False(event.RestartRequired)
+	srv.cfgMu.Lock()
+	assert.Equal(canonicalDir, srv.cfg.DataDir)
+	srv.cfgMu.Unlock()
+}
+
 func TestConfigReload_UpdatesBranchActivityLimits(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

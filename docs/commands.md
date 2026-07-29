@@ -10,6 +10,20 @@ middleman serve -config /path/to/config.toml
 
 Without a subcommand, `middleman` starts the daemon and web UI.
 
+Use the idempotent background lifecycle when a caller needs to ensure the app
+is available without treating an existing compatible process as an error:
+
+```sh
+middleman start --background
+middleman start --background --config /path/to/config.toml
+```
+
+The command waits for the ready daemon identity before returning. Direct
+foreground starts retain their duplicate-process error behavior. Background
+startup requires a loopback listener; when `trust_reverse_proxy=true`, API
+authentication must also be enabled so direct readiness verification stays
+authenticated.
+
 ## Version
 
 ```sh

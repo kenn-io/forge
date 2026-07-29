@@ -9,11 +9,14 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/kit/daemon"
 
 	"go.kenn.io/middleman/internal/procutil"
 	"go.kenn.io/middleman/internal/runtimelock"
@@ -31,6 +34,130 @@ func buildMiddleman(t *testing.T) string {
 	cmd.Stderr = os.Stderr
 	require.NoError(t, cmd.Run(), "go build ./cmd/middleman")
 	return binPath
+}
+
+func writeBackgroundStartConfig(
+	t *testing.T, configPath, dataDir string, port int,
+) {
+	t.Helper()
+	binDir := t.TempDir()
+	ghName := "gh"
+	ghBody := "#!/bin/sh\nexit 1\n"
+	if runtime.GOOS == "windows" {
+		ghName = "gh.bat"
+		ghBody = "@exit /b 1\r\n"
+	}
+	require.NoError(t, os.WriteFile(
+		filepath.Join(binDir, ghName), []byte(ghBody), 0o700,
+	))
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("MIDDLEMAN_GITHUB_TOKEN_UNSET_FOR_BACKGROUND_E2E", "")
+	body := fmt.Sprintf(`host = "127.0.0.1"
+port = %d
+data_dir = %q
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN_UNSET_FOR_BACKGROUND_E2E"
+allowed_hosts = ["middleman.example.test"]
+trust_reverse_proxy = true
+
+[api]
+require_auth = true
+
+[activity]
+view_mode = "threaded"
+time_range = "7d"
+
+[terminal]
+`, port, dataDir)
+	require.NoError(t, os.WriteFile(configPath, []byte(body), 0o600))
+}
+
+// TestStartBackgroundSerializesAndReusesCompatibleRuntime protects the
+// process-level lifecycle contract. If serialization breaks, simultaneous
+// callers can launch competing children; if discovery trusts a file without
+// the authenticated ping, a stale or unrelated runtime can be reported as
+// success.
+func TestStartBackgroundSerializesAndReusesCompatibleRuntime(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	bin := buildMiddleman(t)
+	root := t.TempDir()
+	dataDir := filepath.Join(root, "data")
+	require.NoError(os.MkdirAll(dataDir, 0o700))
+	runtimeDir := filepath.Join(root, "config-home")
+	require.NoError(os.MkdirAll(runtimeDir, 0o700))
+	t.Setenv("MIDDLEMAN_HOME", runtimeDir)
+	configPath := filepath.Join(runtimeDir, "config.toml")
+	writeBackgroundStartConfig(t, configPath, "./data", reserveFreePort(t))
+
+	type commandResult struct {
+		stdout string
+		stderr string
+		err    error
+	}
+	runStart := func(gate <-chan struct{}) commandResult {
+		<-gate
+		cmd := procutil.Command(bin, "start", "--background", "--config", configPath)
+		cmd.Dir = root
+		var stdout, stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		cmd.Env = append(os.Environ(), "MIDDLEMAN_LOG_LEVEL=warn")
+		err := cmd.Run()
+		return commandResult{stdout: stdout.String(), stderr: stderr.String(), err: err}
+	}
+
+	gate := make(chan struct{})
+	results := make(chan commandResult, 2)
+	var callers sync.WaitGroup
+	callers.Add(2)
+	for range 2 {
+		go func() {
+			defer callers.Done()
+			results <- runStart(gate)
+		}()
+	}
+	close(gate)
+	callers.Wait()
+	close(results)
+	for result := range results {
+		require.NoError(result.err, result.stderr)
+		assert.Contains(result.stdout, "middleman running")
+	}
+
+	store := daemon.RuntimeStore{Dir: runtimeDir}
+	records, err := store.List()
+	require.NoError(err)
+	require.Len(records, 1)
+	record := records[0]
+	t.Cleanup(func() {
+		if process, findErr := os.FindProcess(record.PID); findErr == nil {
+			_ = process.Kill()
+		}
+	})
+	assert.Equal("middleman", record.Service)
+	assert.Equal("dev", record.Version)
+	assert.Equal(daemon.NetworkTCP, record.Network)
+	assert.Equal("127.0.0.1", record.Metadata["host"])
+	assert.NotEmpty(record.Metadata["port"])
+	assert.Equal("false", record.Metadata["read_only"])
+	assert.Equal("true", record.Metadata["require_auth"])
+	canonicalDir, err := filepath.EvalSymlinks(dataDir)
+	require.NoError(err)
+	assert.Equal(canonicalDir, record.Metadata["data_dir"])
+	assert.Equal(runtimelock.AuthTokenPath(canonicalDir), record.Metadata["auth_token_path"])
+
+	again := procutil.Command(bin, "start", "--background", "--config", configPath)
+	again.Dir = root
+	var againOut, againErr bytes.Buffer
+	again.Stdout = &againOut
+	again.Stderr = &againErr
+	require.NoError(again.Run(), againErr.String())
+	assert.Contains(againOut.String(), "middleman running")
+	recordsAfter, err := store.List()
+	require.NoError(err)
+	require.Len(recordsAfter, 1)
+	assert.Equal(record.PID, recordsAfter[0].PID)
 }
 
 // reserveFreePort opens a listener on 127.0.0.1:0, closes it, and

@@ -66,6 +66,9 @@ func NewStartupHandler(
 		options.HostCheck,
 		options.HostCheckAllowLoopbackAnyPort,
 	)
+	if bind, ok := listenerHostKey(ln); ok {
+		hostOpts.Bind = bind
+	}
 
 	var spa http.Handler
 	if frontend != nil {

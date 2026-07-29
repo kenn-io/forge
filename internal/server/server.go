@@ -1128,9 +1128,11 @@ func newServer(
 		prefix := strings.TrimSuffix(basePath, "/")
 		outer.Handle("/healthz", mux)
 		outer.Handle("/livez", mux)
+		s.registerDaemonPing(outer)
 		outer.Handle(basePath, stripPrefixPreservingPattern(prefix, mux))
 		assembled = outer
 	} else {
+		s.registerDaemonPing(mux)
 		assembled = mux
 	}
 	s.handler = otelhttp.NewHandler(assembled, "middleman.http",
@@ -1281,7 +1283,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 	hostOpts := *s.hostOpts.Load()
-	if !checkHost(w, r, hostOpts) {
+	directDaemonBearer := s.isDirectDaemonBearerRequest(r, hostOpts)
+	if !directDaemonBearer && !checkHost(w, r, hostOpts) {
 		return
 	}
 	if !s.checkHost(w, r) {
@@ -1534,20 +1537,16 @@ func (s *Server) AttachHTTPServer(srv *http.Server, ln net.Listener) {
 	s.bgMu.Unlock()
 }
 
-// adoptListenerHostPort repoints the Host-check bind at the actual
-// bound port when the configured bind asked for a kernel-assigned
-// one (port 0) - otherwise every request to an ephemeral-port daemon
-// would be rejected, since no Host header can match port "0".
+// adoptListenerHostPort repoints the Host-check bind at the listener's actual
+// authority. Besides kernel-assigned ports, this normalizes IP literals to the
+// form net/http places in direct request Host headers.
 func (s *Server) adoptListenerHostPort(ln net.Listener) {
 	opts := *s.hostOpts.Load()
-	if opts.Bind.Port != "0" {
+	bind, ok := listenerHostKey(ln)
+	if !ok {
 		return
 	}
-	_, port, err := net.SplitHostPort(ln.Addr().String())
-	if err != nil {
-		return
-	}
-	opts.Bind.Port = port
+	opts.Bind = bind
 	s.hostOpts.Store(&opts)
 }
 

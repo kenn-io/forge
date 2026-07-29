@@ -5,10 +5,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/kit/daemon"
 
 	"go.kenn.io/middleman/internal/testutil/dbtest"
 )
@@ -21,6 +23,35 @@ func newAuthTestServer(t *testing.T, token string) *httptest.Server {
 	ts := httptest.NewServer(srv)
 	t.Cleanup(ts.Close)
 	return ts
+}
+
+// TestDaemonPingRequiresBearerAndReportsReadyIdentity protects the generic
+// kit-daemon attachment contract. If the route becomes public or stops
+// reporting the live service/version/PID tuple, a launcher can attach to the
+// wrong process or treat an unready app as usable.
+func TestDaemonPingRequiresBearerAndReportsReadyIdentity(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	srv := New(dbtest.Open(t), nil, nil, "/middleman", nil, ServerOptions{
+		APIAuthToken: "secret-token",
+	})
+	srv.SetBuildInfo(BuildInfo{Name: "middleman", Version: "v-test"})
+	ts := httptest.NewServer(srv)
+	t.Cleanup(ts.Close)
+
+	unauthorized := authGet(t, ts, "/api/ping", nil)
+	assert.Equal(http.StatusUnauthorized, unauthorized.StatusCode)
+
+	response := authGet(t, ts, "/api/ping", func(r *http.Request) {
+		r.Header.Set("Authorization", "Bearer secret-token")
+	})
+	require.Equal(http.StatusOK, response.StatusCode)
+	var ping daemon.PingInfo
+	require.NoError(json.NewDecoder(response.Body).Decode(&ping))
+	assert.True(ping.OK)
+	assert.Equal("middleman", ping.Service)
+	assert.Equal("v-test", ping.Version)
+	assert.Equal(os.Getpid(), ping.PID)
 }
 
 func authGet(

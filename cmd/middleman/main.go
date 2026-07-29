@@ -13,11 +13,13 @@ import (
 	"os/signal"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
 
+	"go.kenn.io/kit/daemon"
 	oteltelemetry "go.kenn.io/kit/telemetry"
 	"go.kenn.io/middleman/internal/archive"
 	"go.kenn.io/middleman/internal/cli/serve"
@@ -303,6 +305,11 @@ func run(opts serve.Options) error {
 			"create data directory %s: %w", cfg.DataDir, err,
 		)
 	}
+	canonicalDir, err := config.CanonicalDataDir(cfg.DataDir)
+	if err != nil {
+		return err
+	}
+	cfg.DataDir = canonicalDir
 
 	lockHandle, err := runtimelock.Acquire(cfg.DataDir)
 	if err != nil {
@@ -368,6 +375,16 @@ func run(opts serve.Options) error {
 	); err != nil {
 		slog.Warn("write runtime metadata", "err", err)
 	}
+	runtimePath, err := writeDaemonRuntimeRecord(ln, cfg)
+	if err != nil {
+		_ = ln.Close()
+		return fmt.Errorf("write daemon runtime record: %w", err)
+	}
+	defer func() {
+		if err := os.Remove(runtimePath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			slog.Warn("remove daemon runtime record", "err", err)
+		}
+	}()
 
 	startupHandler := server.NewStartupHandler(
 		assets, cfg, server.ServerOptions{}, ln,
@@ -743,6 +760,42 @@ func writeRuntimeMetadata(
 		BasePath:    canonicalBasePath(basePath),
 		RequireAuth: requireAuth,
 	})
+}
+
+func writeDaemonRuntimeRecord(
+	ln net.Listener, cfg *config.Config,
+) (string, error) {
+	host, portText, err := net.SplitHostPort(ln.Addr().String())
+	if err != nil {
+		return "", fmt.Errorf("listener address is not TCP: %w", err)
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil {
+		return "", fmt.Errorf("parse listener port: %w", err)
+	}
+	runtimeDir, err := filepath.Abs(config.DefaultDataDir())
+	if err != nil {
+		return "", fmt.Errorf("resolve runtime directory: %w", err)
+	}
+	store := daemon.RuntimeStore{Dir: runtimeDir}
+	if _, err := store.CleanupDead(); err != nil {
+		return "", fmt.Errorf("clean stale daemon runtime records: %w", err)
+	}
+	record := daemon.NewRuntimeRecord(
+		daemonServiceName, version,
+		daemon.Endpoint{Network: daemon.NetworkTCP, Address: ln.Addr().String()},
+	)
+	record.Metadata = map[string]string{
+		"host":         host,
+		"port":         strconv.Itoa(port),
+		"read_only":    "false",
+		"require_auth": strconv.FormatBool(cfg.API.RequireAuth),
+		"data_dir":     cfg.DataDir,
+	}
+	if cfg.API.RequireAuth {
+		record.Metadata["auth_token_path"] = runtimelock.AuthTokenPath(cfg.DataDir)
+	}
+	return store.Write(record)
 }
 
 // canonicalBasePath publishes the prefix form clients join paths

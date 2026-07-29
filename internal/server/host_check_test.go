@@ -24,17 +24,183 @@ import (
 // resolveHostCheckOptions over both the cfg=nil fallback and the
 // test-friendly AllowLoopbackAnyPort relaxation.
 func setupHostCheckServer(t *testing.T, opts HostCheckOptions) *Server {
+	return setupHostCheckServerWithToken(t, opts, "")
+}
+
+func setupHostCheckServerWithToken(
+	t *testing.T, opts HostCheckOptions, token string,
+) *Server {
 	t.Helper()
 	database := dbtest.Open(t)
 	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
 	t.Cleanup(syncer.Stop)
 	return New(database, syncer, emptyFrontend(), "/", nil, ServerOptions{
-		HostCheck: opts,
+		HostCheck:    opts,
+		APIAuthToken: token,
 	})
 }
 
 func bindLoopback8091() config.HostKey {
 	return config.HostKey{Host: "127.0.0.1", Port: "8091"}
+}
+
+type fixedAddrListener struct {
+	net.Listener
+	addr net.Addr
+}
+
+func (l fixedAddrListener) Addr() net.Addr { return l.addr }
+
+// TestDirectDaemonBearerClassification protects the native-client trust
+// boundary. If bearer classification moves after proxy Host validation,
+// authenticated CLI requests fail whenever trust_reverse_proxy is enabled. If
+// the classifier is widened, cookies, listener aliases, configured public
+// hosts, or forwarded requests can bypass the proxy checks.
+func TestDirectDaemonBearerClassification(t *testing.T) {
+	tests := []struct {
+		name            string
+		configuredToken string
+		host            string
+		bearer          string
+		cookie          string
+		headers         http.Header
+		remoteAddr      string
+		wantStatus      int
+	}{
+		{
+			name:            "valid bearer and exact listener authority",
+			configuredToken: "daemon-secret",
+			host:            "127.0.0.1:8091", bearer: "daemon-secret",
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:            "missing bearer",
+			configuredToken: "daemon-secret",
+			host:            "127.0.0.1:8091", wantStatus: http.StatusForbidden,
+		},
+		{
+			name:            "invalid bearer",
+			configuredToken: "daemon-secret",
+			host:            "127.0.0.1:8091", bearer: "wrong",
+			wantStatus: http.StatusForbidden,
+		},
+		{
+			name:            "session cookie does not qualify",
+			configuredToken: "daemon-secret",
+			host:            "127.0.0.1:8091", cookie: "daemon-secret",
+			wantStatus: http.StatusForbidden,
+		},
+		{
+			name:            "loopback alias is not the exact listener authority",
+			configuredToken: "daemon-secret",
+			host:            "localhost:8091", bearer: "daemon-secret",
+			wantStatus: http.StatusForbidden,
+		},
+		{
+			name:            "non-loopback peer is not a direct client",
+			configuredToken: "daemon-secret",
+			host:            "127.0.0.1:8091", bearer: "daemon-secret",
+			remoteAddr: "192.0.2.1:1234", wantStatus: http.StatusForbidden,
+		},
+		{
+			name:            "allowed public host is not the listener authority",
+			configuredToken: "daemon-secret",
+			host:            "mm.example.com", bearer: "daemon-secret",
+			wantStatus: http.StatusForbidden,
+		},
+		{
+			name:            "X-Forwarded-For stays on proxy path",
+			configuredToken: "daemon-secret",
+			host:            "127.0.0.1:8091", bearer: "daemon-secret",
+			headers:    http.Header{"X-Forwarded-For": {"127.0.0.1"}},
+			wantStatus: http.StatusForbidden,
+		},
+		{
+			name:            "valid forwarded host stays on proxy path",
+			configuredToken: "daemon-secret",
+			host:            "127.0.0.1:8091", bearer: "daemon-secret",
+			headers:    http.Header{"X-Forwarded-Host": {"mm.example.com"}},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:            "malformed forwarded header stays rejected",
+			configuredToken: "daemon-secret",
+			host:            "127.0.0.1:8091", bearer: "daemon-secret",
+			headers:    http.Header{"Forwarded": {"wat"}},
+			wantStatus: http.StatusForbidden,
+		},
+		{
+			name:            "conflicting forwarded headers stay rejected",
+			configuredToken: "daemon-secret",
+			host:            "127.0.0.1:8091", bearer: "daemon-secret",
+			headers: http.Header{
+				"Forwarded":        {"host=other.example.com"},
+				"X-Forwarded-Host": {"mm.example.com"},
+			},
+			wantStatus: http.StatusForbidden,
+		},
+		{
+			name: "authentication disabled",
+			host: "127.0.0.1:8091", bearer: "daemon-secret",
+			wantStatus: http.StatusForbidden,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := setupHostCheckServerWithToken(t, HostCheckOptions{
+				Bind: bindLoopback8091(),
+				Allowed: []config.HostKey{
+					{Host: "mm.example.com", Port: ""},
+					{Host: "other.example.com", Port: ""},
+				},
+				TrustReverseProxy: true,
+			}, tt.configuredToken)
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/snapshot", nil)
+			req.Host = tt.host
+			req.RemoteAddr = tt.remoteAddr
+			if req.RemoteAddr == "" {
+				req.RemoteAddr = "127.0.0.1:1234"
+			}
+			for name, values := range tt.headers {
+				for _, value := range values {
+					req.Header.Add(name, value)
+				}
+			}
+			if tt.bearer != "" {
+				req.Header.Set("Authorization", "Bearer "+tt.bearer)
+			}
+			if tt.cookie != "" {
+				req.AddCookie(&http.Cookie{Name: authCookieName, Value: tt.cookie})
+			}
+			rr := httptest.NewRecorder()
+
+			srv.ServeHTTP(rr, req)
+
+			assert.Equal(t, tt.wantStatus, rr.Code, rr.Body.String())
+		})
+	}
+}
+
+func TestDirectDaemonBearerUsesActualIPv6ListenerAuthority(t *testing.T) {
+	srv := setupHostCheckServerWithToken(t, HostCheckOptions{
+		Bind: config.HostKey{
+			Host: "[0:0:0:0:0:0:0:1]", Port: "8091",
+		},
+		TrustReverseProxy: true,
+	}, "daemon-secret")
+	srv.adoptListenerHostPort(fixedAddrListener{addr: &net.TCPAddr{
+		IP: net.IPv6loopback, Port: 8091,
+	}})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/snapshot", nil)
+	req.Host = "[::1]:8091"
+	req.RemoteAddr = "[::1]:1234"
+	req.Header.Set("Authorization", "Bearer daemon-secret")
+	rr := httptest.NewRecorder()
+
+	srv.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
 }
 
 // TestHostCheckBackendHost exercises Step 1+2 of the spec: parse

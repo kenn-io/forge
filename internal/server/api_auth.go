@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strings"
 
+	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/server/httpapi"
 )
 
@@ -29,6 +30,15 @@ const authBootstrapParam = "auth_token"
 
 func tokenEqual(a, b string) bool {
 	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
+}
+
+func (s *Server) hasValidDaemonBearer(r *http.Request) bool {
+	if s.apiAuthToken == "" {
+		return false
+	}
+	header := r.Header.Get("Authorization")
+	token, ok := strings.CutPrefix(header, "Bearer ")
+	return ok && tokenEqual(strings.TrimSpace(token), s.apiAuthToken)
 }
 
 // handleAuthBootstrap converts a valid ?auth_token= query into the
@@ -69,11 +79,8 @@ func (s *Server) handleAuthBootstrap(
 func (s *Server) authorizeAPIRequest(
 	w http.ResponseWriter, r *http.Request,
 ) bool {
-	header := r.Header.Get("Authorization")
-	if token, ok := strings.CutPrefix(header, "Bearer "); ok {
-		if tokenEqual(strings.TrimSpace(token), s.apiAuthToken) {
-			return true
-		}
+	if s.hasValidDaemonBearer(r) {
+		return true
 	}
 	if cookie, err := r.Cookie(authCookieName); err == nil {
 		if tokenEqual(cookie.Value, s.apiAuthToken) {
@@ -88,6 +95,18 @@ func (s *Server) authorizeAPIRequest(
 		nil,
 	))
 	return false
+}
+
+func (s *Server) isDirectDaemonBearerRequest(
+	r *http.Request, opts HostCheckOptions,
+) bool {
+	if !s.isGatedAPIRequest(r) || !s.hasValidDaemonBearer(r) ||
+		hasForwardingHeaders(r.Header) || !isLoopbackRemoteAddr(r.RemoteAddr) ||
+		!config.IsLoopbackHostname(strings.Trim(opts.Bind.Host, "[]")) {
+		return false
+	}
+	key, err := config.ParseHostKey(r.Host)
+	return err == nil && key.Equal(opts.Bind)
 }
 
 // isGatedAPIRequest reports whether the path is a route subject to

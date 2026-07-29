@@ -38,7 +38,18 @@ func TestMain(m *testing.M) {
 			panic(err)
 		}
 	}
-	os.Exit(m.Run())
+	runtimeDir, err := os.MkdirTemp("", "middleman-test-home-")
+	if err != nil {
+		panic(err)
+	}
+	if err := os.Setenv("MIDDLEMAN_HOME", runtimeDir); err != nil {
+		panic(err)
+	}
+	code := m.Run()
+	if err := os.RemoveAll(runtimeDir); err != nil {
+		panic(err)
+	}
+	os.Exit(code)
 }
 
 func TestConfigureLoggingRedactsTokens(t *testing.T) {
@@ -773,7 +784,7 @@ func TestRootHelpListsEveryPublicCommandWithoutStartingServer(t *testing.T) {
 	for _, name := range []string{
 		"activity", "agent-hook", "api", "archive", "config", "docs",
 		"issues", "pulls", "quickstart", "rate-limits", "repo-summaries",
-		"repos", "serve", "stacks", "status", "sync", "version", "workspaces",
+		"repos", "serve", "stacks", "start", "status", "sync", "version", "workspaces",
 	} {
 		assert.Contains(stdout.String(), name)
 	}
@@ -814,6 +825,7 @@ func TestRootNestedHelpExposesCommandFlags(t *testing.T) {
 		{name: "archive report", args: []string{"archive", "report", "--help"}, want: []string{"--days", "--start", "--end", "--format", "--repo"}},
 		{name: "agent hook run", args: []string{"agent-hook", "run", "--help"}, want: []string{"--agent", "--config", "--source"}},
 		{name: "status", args: []string{"status", "--help"}, want: []string{"--config", "--json"}},
+		{name: "start", args: []string{"start", "--help"}, want: []string{"--background", "--config"}},
 		{name: "serve", args: []string{"serve", "--help"}, want: []string{"--config", "--pprof-addr"}},
 		{name: "api", args: []string{"api", "--help"}, want: []string{"list", "--config", "-d", "-i", "--timeout"}},
 	}

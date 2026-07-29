@@ -61,7 +61,7 @@ knowledge that changes what future agents should do.
 | `platform` | `context/provider-architecture.md`, `context/platform-sync-invariants.md` | `internal/platform/` |
 | `github-sync` | `context/github-sync-invariants.md` | `internal/github/` |
 | `db` | `context/db-migrations.md`, `context/embeds.md` | `internal/db/`, `internal/db/migrations/` |
-| `server` | `context/workspace-apis.md`, `context/workspace-runtime-lifecycle.md` | `internal/server/`, `internal/apiclient/generated/` |
+| `server` | `context/daemon-lifecycle.md`, `context/workspace-apis.md`, `context/workspace-runtime-lifecycle.md` | `cmd/middleman/`, `internal/server/`, `internal/apiclient/generated/` |
 | `errors` | `context/error-handling.md` | error envelopes and frontend error branching |
 | `retries` | `context/retries-and-backoffs.md` | retry, backoff, and single-flight paths |
 | `testing` | `context/testing.md` | server API/E2E packages and test helpers |

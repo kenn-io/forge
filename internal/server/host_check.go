@@ -50,6 +50,25 @@ func (o HostCheckOptions) Valid() bool {
 	return o.Bind.Valid()
 }
 
+func hasForwardingHeaders(header http.Header) bool {
+	for name := range header {
+		if strings.EqualFold(name, "Forwarded") ||
+			strings.HasPrefix(strings.ToLower(name), "x-forwarded-") {
+			return true
+		}
+	}
+	return false
+}
+
+func listenerHostKey(ln net.Listener) (config.HostKey, bool) {
+	host, port, err := net.SplitHostPort(ln.Addr().String())
+	if err != nil {
+		return config.HostKey{}, false
+	}
+	key, err := config.ParseHostKey(net.JoinHostPort(host, port))
+	return key, err == nil
+}
+
 // checkHost runs the Host validation steps from the design spec.
 // Returns true when the request may proceed; returns false (and
 // writes the 403) when it must be rejected. Panics when opts is

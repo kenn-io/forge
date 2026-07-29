@@ -31,13 +31,13 @@ func TestDaemonOriginTransportScopesHeadersToDaemonOrigin(t *testing.T) {
 
 	client := &http.Client{Transport: daemonOriginTransport{
 		token: "daemon-secret", origin: origin.URL,
-		forwardedHost: "127.0.0.1:8091", base: http.DefaultTransport,
+		base: http.DefaultTransport,
 	}}
 	resp, err := client.Get(origin.URL)
 	require.NoError(err)
 	require.NoError(resp.Body.Close())
 	assert.Equal("Bearer daemon-secret", originAuthorization)
-	assert.Equal("127.0.0.1:8091", originForwardedHost)
+	assert.Empty(originForwardedHost)
 	assert.Empty(redirectedAuthorization)
 	assert.Empty(redirectedForwardedHost)
 }

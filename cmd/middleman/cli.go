@@ -13,10 +13,11 @@ import (
 )
 
 type cliOptions struct {
-	Stdin     io.Reader
-	Stdout    io.Writer
-	Stderr    io.Writer
-	RunServer serve.Runner
+	Stdin           io.Reader
+	Stdout          io.Writer
+	Stderr          io.Writer
+	RunServer       serve.Runner
+	StartBackground backgroundRunner
 }
 
 func newRootCommand(opts cliOptions) *cobra.Command {
@@ -31,6 +32,9 @@ func newRootCommand(opts cliOptions) *cobra.Command {
 	}
 	if opts.RunServer == nil {
 		opts.RunServer = runServer
+	}
+	if opts.StartBackground == nil {
+		opts.StartBackground = startBackground
 	}
 
 	serveOptions := serve.Options{}
@@ -72,6 +76,7 @@ func newRootCommand(opts cliOptions) *cobra.Command {
 		newArchiveCommand(opts.Stdout, time.Now),
 		newAgentHookCommand(opts.Stdin, opts.Stdout),
 		newStatusCommand(opts.Stdout),
+		newStartCommand(opts.StartBackground, opts.Stdout),
 		newPtyOwnerCommand(),
 		serve.NewCommand(opts.RunServer),
 	)

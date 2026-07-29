@@ -343,6 +343,19 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 			Error: sanitizeConfigError(err, s.cfgPath),
 		}
 	}
+	canonicalDir, err := config.CanonicalDataDir(newCfg.DataDir)
+	if err != nil {
+		slog.Warn(
+			"config reload failed data directory resolution; keeping last-known-good",
+			"path", s.cfgPath,
+			"err", err,
+		)
+		return configChangedEvent{
+			Valid: false,
+			Error: sanitizeConfigError(err, s.cfgPath),
+		}
+	}
+	newCfg.DataDir = canonicalDir
 	if err := validateReloadCloneTokenSources(newCfg); err != nil {
 		slog.Warn(
 			"config reload failed clone token validation; keeping last-known-good",

@@ -90,7 +90,7 @@ test.describe("embedded workspace launcher", () => {
     });
   });
 
-  test("launches a first session from the overlay and reopens it from the pane controls", async ({ page }) => {
+  test("launches a first session from the overlay and another from the pane header", async ({ page }) => {
     test.skip(
       !hasCommand("git") || !hasCommand("tmux", ["-V"]),
       "git and tmux are required for the real workspace flow",
@@ -119,26 +119,29 @@ test.describe("embedded workspace launcher", () => {
       await expect(container).toBeVisible();
       await typeMarkerCommand(page, container, workspace.worktree_path, "launcher-marker");
 
-      // And it is reachable again afterwards: the workspace's controls moved into
-      // the pane's own popover, which is the only launch affordance left in a pane.
-      await page.getByRole("button", { name: "Workspace controls" }).first().click();
-      const controls = page.getByRole("dialog", { name: "Workspace controls" });
-      await expect(controls).toBeVisible();
-      await controls.getByRole("button", { name: "Launch" }).click();
+      // The direct pane-header action must reach the same launcher after a session is
+      // already running, without opening the workspace controls popover first.
+      const headerLaunch = page.getByRole("button", { name: "Launch session" });
+      await expect(headerLaunch).toBeVisible();
+      await headerLaunch.click();
       await expect(launcher).toBeVisible();
-
-      // Dismissed by hand this time, which must leave the live terminal behind it
-      // untouched rather than reopening over it.
-      await page.keyboard.press("Escape");
+      await launcher.getByRole("button", { name: "Shell", exact: true }).click();
       await expect(launcher).toBeHidden();
 
-      // The popover deliberately stays open under a dialog it opened, and it floats
-      // over the terminal, so it has to come down before the keystrokes below can
-      // reach it. Its own trigger, not Escape: with the launcher gone Escape belongs
-      // to the detail view, which would deselect the issue and take the pane with it.
-      await page.getByRole("button", { name: "Workspace controls" }).first().click();
-      await expect(controls).toBeHidden();
-      await typeMarkerCommand(page, container, workspace.worktree_path, "launcher-marker-after-dismiss");
+      // The e2e-only endpoint reads SQLite directly, so two persisted shell targets
+      // prove the header-opened launch completed across the HTTP/runtime boundary.
+      await expect
+        .poll(async () => {
+          const response = await api!.get(`/__e2e/workspaces/${workspace.id}/persisted-runtime-sessions`);
+          expect(response.ok()).toBe(true);
+          const body = (await response.json()) as { target_keys: string[] };
+          return body.target_keys;
+        })
+        .toEqual(["plain_shell", "plain_shell"]);
+      const activeContainer = page.locator(
+        ".detail-pane-workspace-slot .tabbed-panel-tab-panel.active .terminal-container",
+      );
+      await typeMarkerCommand(page, activeContainer, workspace.worktree_path, "launcher-marker-after-header-launch");
     } finally {
       await api?.dispose();
       await isolatedServer?.stop();

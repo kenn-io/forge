@@ -7622,6 +7622,115 @@ func TestReconcileRepoIdentityDrainsActiveIncarnationBeforeReplacement(t *testin
 	assert.Equal("R_new", repos[0].PlatformRepoID)
 }
 
+func TestReconcileRepoIdentityLocksAndResetsOccupiedResolvedPath(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	sourceRepo := RepoRef{
+		Platform:           platform.KindGitHub,
+		PlatformHost:       "github.com",
+		Owner:              "acme",
+		Name:               "widgets",
+		RepoPath:           "acme/widgets",
+		PlatformExternalID: "R_source",
+	}
+	destinationRepo := sourceRepo
+	destinationRepo.Name = "renamed-widgets"
+	destinationRepo.RepoPath = "acme/renamed-widgets"
+	destinationRepo.PlatformExternalID = "R_destination"
+	sourceID, err := d.UpsertRepoByProviderID(
+		t.Context(),
+		platform.DBRepoIdentity(platformRepoRef(sourceRepo)),
+	)
+	require.NoError(err)
+	destinationID, err := d.UpsertRepoByProviderID(
+		t.Context(),
+		platform.DBRepoIdentity(platformRepoRef(destinationRepo)),
+	)
+	require.NoError(err)
+
+	client := &mockClient{getRepositoryFn: func(
+		context.Context,
+		string,
+		string,
+	) (*gh.Repository, error) {
+		return &gh.Repository{
+			NodeID: new(sourceRepo.PlatformExternalID),
+			Name:   new(destinationRepo.Name),
+			Owner:  &gh.User{Login: new(destinationRepo.Owner)},
+		}, nil
+	}}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client},
+		d,
+		nil,
+		[]RepoRef{sourceRepo},
+		time.Minute,
+		nil,
+		nil,
+	)
+	t.Cleanup(syncer.Stop)
+	syncer.featureCooldowns.deferUntil(
+		destinationRepo,
+		platform.RepositoryFeatureIssues,
+		time.Now().UTC().Add(time.Hour),
+	)
+	activeProbe, due := syncer.beginRepositoryFeatureProbe(
+		t.Context(),
+		destinationRepo,
+		platform.RepositoryFeatureMergeRequests,
+	)
+	require.True(due)
+
+	type reconciliationResult struct {
+		repoID int64
+		err    error
+	}
+	reconcileDone := make(chan reconciliationResult, 1)
+	go func() {
+		_, repoID, _, _, err := syncer.reconcileRepoIdentity(
+			t.Context(),
+			sourceRepo,
+		)
+		reconcileDone <- reconciliationResult{repoID: repoID, err: err}
+	}()
+
+	var result reconciliationResult
+	completedWhileDestinationActive := false
+	select {
+	case result = <-reconcileDone:
+		require.NoError(result.err)
+		completedWhileDestinationActive = true
+	case <-time.After(100 * time.Millisecond):
+	}
+	activeProbe.abandon()
+	if !completedWhileDestinationActive {
+		result = <-reconcileDone
+		require.NoError(result.err)
+	}
+
+	repos, err := d.ListRepos(t.Context())
+	require.NoError(err)
+	require.Len(repos, 1)
+	assert.False(
+		completedWhileDestinationActive,
+		"reconciliation did not drain the occupied destination path",
+	)
+	assert.Equal(sourceID, result.repoID)
+	assert.Equal(sourceID, repos[0].ID)
+	assert.NotEqual(destinationID, repos[0].ID)
+	assert.Equal(destinationRepo.RepoPath, repos[0].RepoPath)
+	assert.Equal(sourceRepo.PlatformExternalID, repos[0].PlatformRepoID)
+
+	probe, due := syncer.beginRepositoryFeatureProbe(
+		t.Context(),
+		destinationRepo,
+		platform.RepositoryFeatureIssues,
+	)
+	assert.True(due, "replaced destination retained its feature cooldown")
+	probe.abandon()
+}
+
 func TestReconcileRepoIdentityUsesLatestConfiguredIDWithoutRepositoryReader(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

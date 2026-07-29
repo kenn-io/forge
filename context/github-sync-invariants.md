@@ -57,10 +57,10 @@ what "current" means.
   writes and use the authoritative configured provider reference after
   reconciliation (`internal/github/sync.go::syncRepo`,
   `internal/github/notifications_sync.go::Syncer.syncNotificationsForRepo`).
-- Provider-ID reconciliation that replaces an established incarnation must
-  drain shared gate readers and retain the exclusive lease through that sync;
-  a configuration cutover during handoff supersedes the older provider
-  observation (`internal/github/sync.go::reconcileRepoIdentityWithIncarnationGate`).
+- Provider-ID replacement or a resolved path move locks the configured/resolved
+  union through that sync; reset an occupied destination even when the source
+  row survives, and let cutover during handoff supersede the older observation
+  (`internal/github/sync.go::reconcileRepoIdentityWithIncarnationGate`).
 - Feature probes retain the gate through release or abandonment, fencing
   fast/detail/archive cooldown publication without serializing concurrent reads
   (`internal/github/feature_cooldown.go::Syncer.beginRepositoryFeatureProbe`).

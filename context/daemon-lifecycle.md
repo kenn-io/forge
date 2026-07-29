@@ -6,8 +6,8 @@
   authoritative `data_dir` lock keeps duplicate startup as an error.
 - `middleman start --background` is idempotent: reuse requires verified
   identity for the same resolved `data_dir`; starts serialize per data
-  directory without blocking unrelated instances
-  (`cmd/middleman/start_background.go::Ensure`).
+  directory through the shared daemon manager without blocking unrelated
+  instances (`cmd/middleman/start_background.go::newBackgroundManager`).
 - Config loading establishes the canonical `data_dir` identity used by startup
   and reload comparisons (`internal/config/config.go::load`).
 

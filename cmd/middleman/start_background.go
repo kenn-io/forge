@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/gofrs/flock"
 	"github.com/spf13/cobra"
 	"go.kenn.io/kit/daemon"
 	"go.kenn.io/middleman/internal/config"
@@ -20,17 +19,14 @@ import (
 const (
 	backgroundStartTimeout = 90 * time.Second
 	backgroundProbeTimeout = 750 * time.Millisecond
-	backgroundProbeTick    = 50 * time.Millisecond
 )
 
 type backgroundRunner func(context.Context, string, io.Writer) error
 
-type backgroundLifecycle struct {
+type backgroundDiscovery struct {
 	store   daemon.RuntimeStore
 	dataDir string
-	token   string
 	version string
-	start   daemon.StartFunc
 }
 
 func newStartCommand(run backgroundRunner, stdout io.Writer) *cobra.Command {
@@ -68,24 +64,17 @@ func startBackground(
 	if err := os.MkdirAll(cfg.DataDir, 0o700); err != nil {
 		return fmt.Errorf("create data directory %s: %w", cfg.DataDir, err)
 	}
-	token, err := runtimelock.ReadAuthToken(cfg.DataDir)
-	if err != nil {
-		return fmt.Errorf("read auth token: %w", err)
-	}
 	store, err := daemonruntime.Store()
 	if err != nil {
 		return err
 	}
-	lifecycle := backgroundLifecycle{
-		store:   store,
-		dataDir: cfg.DataDir,
-		token:   token,
-		version: version,
-		start: func(ctx context.Context) error {
+	manager := newBackgroundManager(
+		store, cfg.DataDir, version,
+		func(ctx context.Context) error {
 			return startBackgroundProcess(ctx, configPath, cfg.DataDir)
 		},
-	}
-	record, _, err := lifecycle.Ensure(ctx, backgroundStartTimeout)
+	)
+	record, _, err := manager.Ensure(ctx, backgroundStartTimeout)
 	if err != nil {
 		return err
 	}
@@ -136,80 +125,45 @@ func startBackgroundProcess(
 	})
 }
 
-func (l backgroundLifecycle) Ensure(
-	ctx context.Context, timeout time.Duration,
-) (daemon.RuntimeRecord, daemon.PingInfo, error) {
-	if timeout <= 0 {
-		timeout = backgroundStartTimeout
+func newBackgroundManager(
+	discoveryStore daemon.RuntimeStore,
+	dataDir, expectedVersion string,
+	start daemon.StartFunc,
+) daemon.Manager {
+	discovery := backgroundDiscovery{
+		store: discoveryStore, dataDir: dataDir, version: expectedVersion,
 	}
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	if record, ping, ok, err := l.find(ctx); err != nil || ok {
-		return record, ping, err
-	}
-	lockPath, err := daemonruntime.StartLockStore(l.store, l.dataDir).LockPath()
-	if err != nil {
-		return daemon.RuntimeRecord{}, daemon.PingInfo{}, err
-	}
-	lock := flock.New(lockPath)
-	locked, err := lock.TryLockContext(ctx, backgroundProbeTick)
-	if err != nil {
-		return daemon.RuntimeRecord{}, daemon.PingInfo{}, fmt.Errorf(
-			"acquire daemon start lock: %w", err,
-		)
-	}
-	if !locked {
-		return daemon.RuntimeRecord{}, daemon.PingInfo{}, ctx.Err()
-	}
-	defer func() { _ = lock.Unlock() }()
-
-	token, err := runtimelock.EnsureAuthToken(l.dataDir)
-	if err != nil {
-		return daemon.RuntimeRecord{}, daemon.PingInfo{}, fmt.Errorf(
-			"ensure auth token: %w", err,
-		)
-	}
-	l.token = token
-	if record, ping, ok, err := l.find(ctx); err != nil || ok {
-		return record, ping, err
-	}
-	if l.start == nil {
-		return daemon.RuntimeRecord{}, daemon.PingInfo{}, errors.New("middleman daemon is not running")
-	}
-	if err := l.start(ctx); err != nil {
-		return daemon.RuntimeRecord{}, daemon.PingInfo{}, fmt.Errorf("start middleman daemon: %w", err)
-	}
-
-	ticker := time.NewTicker(backgroundProbeTick)
-	defer ticker.Stop()
-	for {
-		record, ping, ok, err := l.find(ctx)
-		if err != nil {
-			return daemon.RuntimeRecord{}, daemon.PingInfo{}, err
-		}
-		if ok {
-			return record, ping, nil
-		}
-		select {
-		case <-ctx.Done():
-			return daemon.RuntimeRecord{}, daemon.PingInfo{}, fmt.Errorf(
-				"middleman failed to start within %s: %w", timeout, ctx.Err(),
-			)
-		case <-ticker.C:
-		}
+	return daemon.Manager{
+		Store:    daemonruntime.StartLockStore(discoveryStore, dataDir),
+		FindFunc: discovery.find,
+		Start: func(ctx context.Context) error {
+			if _, err := runtimelock.EnsureAuthToken(dataDir); err != nil {
+				return fmt.Errorf("ensure auth token: %w", err)
+			}
+			if start == nil {
+				return errors.New("middleman daemon is not running")
+			}
+			if err := start(ctx); err != nil {
+				return fmt.Errorf("start middleman daemon: %w", err)
+			}
+			return nil
+		},
 	}
 }
 
-func (l backgroundLifecycle) find(
+func (d backgroundDiscovery) find(
 	ctx context.Context,
 ) (daemon.RuntimeRecord, daemon.PingInfo, bool, error) {
-	records, err := l.store.List()
+	token, err := runtimelock.ReadAuthToken(d.dataDir)
+	if err != nil {
+		return daemon.RuntimeRecord{}, daemon.PingInfo{}, false, err
+	}
+	records, err := d.store.List()
 	if err != nil {
 		return daemon.RuntimeRecord{}, daemon.PingInfo{}, false, err
 	}
 	for _, record := range records {
-		ping, compatible, err := l.probe(ctx, record)
+		ping, compatible, err := d.probe(ctx, record, token)
 		if err != nil {
 			return daemon.RuntimeRecord{}, daemon.PingInfo{}, false, err
 		}
@@ -220,12 +174,12 @@ func (l backgroundLifecycle) find(
 	return daemon.RuntimeRecord{}, daemon.PingInfo{}, false, nil
 }
 
-func (l backgroundLifecycle) probe(
-	ctx context.Context, record daemon.RuntimeRecord,
+func (d backgroundDiscovery) probe(
+	ctx context.Context, record daemon.RuntimeRecord, token string,
 ) (daemon.PingInfo, bool, error) {
 	if !daemonruntime.Compatible(record, daemonruntime.MatchOptions{
-		DataDir:        l.dataDir,
-		TokenAvailable: l.token != "",
+		DataDir:        d.dataDir,
+		TokenAvailable: token != "",
 	}) {
 		return daemon.PingInfo{}, false, nil
 	}
@@ -236,7 +190,7 @@ func (l backgroundLifecycle) probe(
 		DisableKeepAlives: true,
 	})
 	client.Transport = daemonOriginTransport{
-		token: l.token, origin: endpoint.BaseURL(), base: client.Transport,
+		token: token, origin: endpoint.BaseURL(), base: client.Transport,
 	}
 	ping, err := daemon.ProbeHTTP(
 		ctx, client, endpoint.BaseURL(), daemon.ProbeOptions{
@@ -254,10 +208,10 @@ func (l backgroundLifecycle) probe(
 	if ping.PID != record.PID {
 		return daemon.PingInfo{}, false, nil
 	}
-	if record.Version != l.version || ping.Version != l.version {
+	if record.Version != d.version || ping.Version != d.version {
 		return daemon.PingInfo{}, false, fmt.Errorf(
 			"running middleman version %q is incompatible with %q",
-			ping.Version, l.version,
+			ping.Version, d.version,
 		)
 	}
 	return ping, true, nil

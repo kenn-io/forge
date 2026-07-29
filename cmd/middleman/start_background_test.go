@@ -50,10 +50,10 @@ func TestValidateBackgroundConfigRejectsUnsafeDirectVerification(t *testing.T) {
 	}
 }
 
-// TestBackgroundLifecycleSerializesConcurrentStarts protects the launch
+// TestBackgroundManagerSerializesConcurrentStarts protects the launch
 // owner invariant. If the shared start lock is removed or discovery is not
 // repeated under it, concurrent callers invoke the detached starter twice.
-func TestBackgroundLifecycleSerializesConcurrentStarts(t *testing.T) {
+func TestBackgroundManagerSerializesConcurrentStarts(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	token := "daemon-secret"
@@ -80,12 +80,9 @@ func TestBackgroundLifecycleSerializesConcurrentStarts(t *testing.T) {
 	releaseStart := make(chan struct{})
 	var enteredOnce sync.Once
 	var starts atomic.Int32
-	lifecycle := backgroundLifecycle{
-		store:   store,
-		dataDir: dataDir,
-		token:   token,
-		version: "v-test",
-		start: func(context.Context) error {
+	manager := newBackgroundManager(
+		store, dataDir, "v-test",
+		func(context.Context) error {
 			starts.Add(1)
 			enteredOnce.Do(func() { close(startEntered) })
 			<-releaseStart
@@ -105,7 +102,7 @@ func TestBackgroundLifecycleSerializesConcurrentStarts(t *testing.T) {
 			})
 			return err
 		},
-	}
+	)
 
 	type result struct {
 		record daemon.RuntimeRecord
@@ -113,12 +110,12 @@ func TestBackgroundLifecycleSerializesConcurrentStarts(t *testing.T) {
 	}
 	results := make(chan result, 2)
 	go func() {
-		record, _, err := lifecycle.Ensure(t.Context(), time.Second)
+		record, _, err := manager.Ensure(t.Context(), time.Second)
 		results <- result{record: record, err: err}
 	}()
 	<-startEntered
 	go func() {
-		record, _, err := lifecycle.Ensure(t.Context(), time.Second)
+		record, _, err := manager.Ensure(t.Context(), time.Second)
 		results <- result{record: record, err: err}
 	}()
 	close(releaseStart)
@@ -131,32 +128,32 @@ func TestBackgroundLifecycleSerializesConcurrentStarts(t *testing.T) {
 	assert.Equal(first.record.PID, second.record.PID)
 }
 
-// TestBackgroundLifecycleAllowsIndependentDataDirectoryStarts protects the
+// TestBackgroundManagerAllowsIndependentDataDirectoryStarts protects the
 // lock scope. A stalled launch for one data directory must not block an
 // unrelated instance that shares the config-home discovery directory.
-func TestBackgroundLifecycleAllowsIndependentDataDirectoryStarts(t *testing.T) {
+func TestBackgroundManagerAllowsIndependentDataDirectoryStarts(t *testing.T) {
 	store := daemon.RuntimeStore{Dir: t.TempDir()}
 	firstStarted := make(chan struct{})
 	secondStarted := make(chan struct{})
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
 
-	first := backgroundLifecycle{
-		store: store, dataDir: t.TempDir(), version: "v-test",
-		start: func(ctx context.Context) error {
+	first := newBackgroundManager(
+		store, t.TempDir(), "v-test",
+		func(ctx context.Context) error {
 			close(firstStarted)
 			<-ctx.Done()
 			return ctx.Err()
 		},
-	}
-	second := backgroundLifecycle{
-		store: store, dataDir: t.TempDir(), version: "v-test",
-		start: func(ctx context.Context) error {
+	)
+	second := newBackgroundManager(
+		store, t.TempDir(), "v-test",
+		func(ctx context.Context) error {
 			close(secondStarted)
 			<-ctx.Done()
 			return ctx.Err()
 		},
-	}
+	)
 
 	go func() {
 		_, _, _ = first.Ensure(ctx, 2*time.Second)
@@ -183,10 +180,10 @@ func TestBackgroundLifecycleAllowsIndependentDataDirectoryStarts(t *testing.T) {
 	}, 500*time.Millisecond, 10*time.Millisecond)
 }
 
-// TestBackgroundLifecycleRejectsUnverifiedLiveRecord protects the boundary
+// TestBackgroundManagerRejectsUnverifiedLiveRecord protects the boundary
 // between process discovery and daemon identity. A live PID and plausible
 // metadata are insufficient until the authenticated ping succeeds.
-func TestBackgroundLifecycleRejectsUnverifiedLiveRecord(t *testing.T) {
+func TestBackgroundManagerRejectsUnverifiedLiveRecord(t *testing.T) {
 	require := require.New(t)
 	var allowPing atomic.Bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -219,17 +216,16 @@ func TestBackgroundLifecycleRejectsUnverifiedLiveRecord(t *testing.T) {
 	})
 	require.NoError(err)
 	var starts atomic.Int32
-	lifecycle := backgroundLifecycle{
-		store: store, dataDir: dataDir, token: "daemon-secret",
-		version: "v-test",
-		start: func(context.Context) error {
+	manager := newBackgroundManager(
+		store, dataDir, "v-test",
+		func(context.Context) error {
 			starts.Add(1)
 			allowPing.Store(true)
 			return nil
 		},
-	}
+	)
 
-	_, _, err = lifecycle.Ensure(t.Context(), time.Second)
+	_, _, err = manager.Ensure(t.Context(), time.Second)
 
 	require.NoError(err)
 	assert.Equal(t, int32(1), starts.Load())

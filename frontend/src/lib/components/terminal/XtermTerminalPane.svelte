@@ -71,6 +71,7 @@
   // ResizeObserver burst costs one frame, not one per callback.
   let sentCols = 0;
   let sentRows = 0;
+  let sentResizeActive: boolean | null = null;
   let appliedTerminalFontFamily = "";
   let appliedFontSize = 0;
   let appliedScrollback = 0;
@@ -334,10 +335,14 @@
     return sendControl("refresh", cols, rows);
   }
 
-  function sendResizeActive(nextActive: boolean): void {
+  function sendResizeActive(nextActive: boolean): boolean {
+    if (sentResizeActive === nextActive) return false;
     if (ws?.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: "resize_active", active: nextActive }));
+      sentResizeActive = nextActive;
+      return true;
     }
+    return false;
   }
 
   function sendControl(
@@ -463,14 +468,18 @@
    * keeps a ResizeObserver burst from turning into a burst of resize frames.
    */
   function resizeVisibleTerminal(): void {
-    const size = resizeAuthorityRegionSize();
-    if (!size || !terminal) return;
+    const size = terminalRegionSize();
+    const resizeActive = active && size !== null;
+    const authorityChanged = sendResizeActive(resizeActive);
+    if (!resizeActive || !size || !terminal) return;
 
     fitAddon?.fit();
     terminal.refresh(0, Math.max(0, size.rows - 1));
     // Compare the MEASUREMENT, not a read-back of terminal.cols: fit() applies
     // these same numbers, and the measurement is what the size should be.
-    if (size.cols === sentCols && size.rows === sentRows) return;
+    // Re-send unchanged dimensions when reclaiming authority because another
+    // attachment may have resized the PTY while this region had no geometry.
+    if (!authorityChanged && size.cols === sentCols && size.rows === sentRows) return;
     // Recorded only once the socket carried it — a resize computed before the
     // socket opened would otherwise be suppressed forever as already sent.
     if (sendResize(size.cols, size.rows)) {
@@ -515,6 +524,7 @@
     if (!url) return;
     const socket = new WebSocket(url);
     socket.binaryType = "arraybuffer";
+    sentResizeActive = null;
     ws = socket;
 
     socket.onopen = () => {

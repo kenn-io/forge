@@ -647,6 +647,47 @@ describe("TerminalPane", () => {
     expect(resizeFramesOf(mockSockets[0]!)).toHaveLength(0);
   });
 
+  it("claims authority before resizing when an active region gains geometry", async () => {
+    fitDimensions = undefined;
+    render(TerminalPane, { props: { workspaceId: "ws-123", active: true } });
+
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
+    expect(mockSockets[0]!.url).toContain("resize_active=0");
+    mockSockets[0]!.onopen?.();
+    mockSockets[0]!.sent = [];
+
+    fitDimensions = { cols: 100, rows: 40 };
+    resizeObserverCallbacks[0]!([], {} as ResizeObserver);
+    resizeObserverCallbacks[0]!([], {} as ResizeObserver);
+
+    expect(mockSockets[0]!.sent.map(String)).toEqual([
+      JSON.stringify({ type: "resize_active", active: true }),
+      JSON.stringify({ type: "resize", cols: 100, rows: 40 }),
+    ]);
+  });
+
+  it("revokes and reclaims authority as active region geometry changes", async () => {
+    render(TerminalPane, { props: { workspaceId: "ws-123", active: true } });
+
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
+    mockSockets[0]!.onopen?.();
+    mockSockets[0]!.sent = [];
+
+    fitDimensions = undefined;
+    resizeObserverCallbacks[0]!([], {} as ResizeObserver);
+    resizeObserverCallbacks[0]!([], {} as ResizeObserver);
+
+    fitDimensions = { cols: 80, rows: 24 };
+    resizeObserverCallbacks[0]!([], {} as ResizeObserver);
+    resizeObserverCallbacks[0]!([], {} as ResizeObserver);
+
+    expect(mockSockets[0]!.sent.map(String)).toEqual([
+      JSON.stringify({ type: "resize_active", active: false }),
+      JSON.stringify({ type: "resize_active", active: true }),
+      JSON.stringify({ type: "resize", cols: 80, rows: 24 }),
+    ]);
+  });
+
   it("sends nothing more for a burst that measures the same size", async () => {
     render(TerminalPane, { props: { workspaceId: "ws-123" } });
 

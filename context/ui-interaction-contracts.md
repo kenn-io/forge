@@ -335,9 +335,11 @@ Keyboard handlers must have one clear owner for each key press.
   parked terminal) measures nothing, which is what keeps it from resizing a live
   tmux pane to one row — the measurement IS the check. Record a size as sent
   only once the socket carried it, or a resize computed before the socket opened
-  is suppressed forever and the PTY keeps its launch default
+  is suppressed forever and the PTY keeps its launch default. Synchronize
+  authority on every measurement because geometry changes independently of
+  painted state; reclaiming authority must push even an unchanged size
   (`frontend/src/lib/components/terminal/TerminalSplitTree.svelte::terminal-leaf-body`,
-  `frontend/src/lib/components/terminal/XtermTerminalPane.svelte::resizeAuthorityRegionSize`).
+  `frontend/src/lib/components/terminal/XtermTerminalPane.svelte::resizeVisibleTerminal`).
 - A promoted session is recorded ONCE, in the detail surface's stored pane tree.
   Containers mask it out of what they render (derived, not an effect) and never
   prune their own stored trees, so demoting restores the tab order, split, and

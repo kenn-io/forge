@@ -2845,12 +2845,64 @@ describe("WorkspaceTerminalView", () => {
     expect(controls.queryByRole("button", { name: "Delete" })).toBeNull();
   });
 
-  it("leaves the strip Delete off a broken workspace, whose error panel owns one", async () => {
-    // The strip action is the single owner only while the workspace is ready. A
-    // failed setup renders its own Delete beside the Retry the user is already
-    // looking at, so a second one in the strip would be two Deletes with their own
-    // disabled and pending states -- exactly what moving it out of the popover
-    // avoided.
+  it("opens the session launcher directly from the workspace pane header", async () => {
+    claimForPrs();
+
+    render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+        paneSurface: "prs" as const,
+      },
+    });
+
+    await waitFor(() => expect(hostedWorkspaceControls()).not.toBeNull());
+    render(WorkspacePaneControls);
+
+    expect(screen.queryByRole("dialog", { name: "Workspace controls" })).toBeNull();
+    const launch = await screen.findByRole("button", { name: "Launch session" });
+    const deleteWorkspace = screen.getByRole("button", { name: /^Delete workspace / });
+    expect(launch.getAttribute("title")).toBe("Launch session");
+    expect(launch.compareDocumentPosition(deleteWorkspace) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+
+    await fireEvent.click(launch);
+    expect(await screen.findByRole("dialog", { name: "Launch a session" })).toBeTruthy();
+  });
+
+  it("disables the header session launcher while workspace deletion is pending", async () => {
+    const deleteRequest = deferred<Response>();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: Request | URL | string, init?: RequestInit) => {
+        const method = init?.method ?? (input instanceof Request ? input.method : "GET");
+        const { pathname } = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
+        if (method === "DELETE" && pathname.endsWith("/workspaces/ws-1")) return deleteRequest.promise;
+        if (pathname.endsWith("/workspaces/ws-1")) {
+          return Promise.resolve(Response.json(workspaceResponse));
+        }
+        if (pathname.endsWith("/api/v1/workspaces")) {
+          return Promise.resolve(Response.json({ workspaces: [workspaceResponse] }));
+        }
+        return Promise.resolve(Response.json({}));
+      }),
+    );
+    claimForPrs();
+
+    render(WorkspaceTerminalView, {
+      props: { workspaceId: "ws-1", paneSurface: "prs" as const },
+    });
+    await waitFor(() => expect(hostedWorkspaceControls()).not.toBeNull());
+    render(WorkspacePaneControls);
+    const launch = await screen.findByRole("button", { name: "Launch session" });
+    expect(launch.hasAttribute("disabled")).toBe(false);
+
+    await clickDeleteAndConfirm(screen.getByRole("button", { name: /^Delete workspace / }));
+    await waitFor(() => expect(launch.hasAttribute("disabled")).toBe(true));
+  });
+
+  it("leaves workspace strip actions off a broken workspace, whose error panel owns delete", async () => {
+    // The strip actions only apply while the workspace is ready. A failed setup
+    // cannot launch a session and renders its own Delete beside the Retry the user
+    // is already looking at, so the header must offer neither shortcut.
     vi.stubGlobal(
       "fetch",
       vi.fn().mockImplementation((input: Request | URL | string) => {
@@ -2881,6 +2933,7 @@ describe("WorkspaceTerminalView", () => {
     await waitFor(() => expect(screen.getByText(/tmux session is no longer running/)).toBeTruthy());
     expect(screen.getByRole("button", { name: "Delete" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /^Delete workspace / })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Launch session" })).toBeNull();
   });
 
   it("carries the dock modes into the pane controls, since the header that held them is gone", async () => {
@@ -3102,9 +3155,11 @@ describe("WorkspaceTerminalView", () => {
       render(WorkspaceTerminalView, {
         props: { workspaceId: "ws-1", paneSurface: "prs" as const },
       });
+      render(WorkspacePaneControls);
 
       await waitFor(() => expect(mocks.getWorkspaceRuntime).toHaveBeenCalled());
       await waitFor(() => expect(screen.queryByRole("dialog", { name: /Launch a session/ })).toBeNull());
+      expect(screen.queryByRole("button", { name: "Launch session" })).toBeNull();
     });
 
     it("gives a recovered workspace its launcher back", async () => {

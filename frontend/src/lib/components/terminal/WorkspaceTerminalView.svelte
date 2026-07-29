@@ -4382,16 +4382,25 @@
 {/snippet}
 
 <!-- Sits in the tab strip beside the controls trigger, not inside the popover.
-     Deleting the worktree is the action a maintainer reaches for most once a PR is
-     done, and behind a menu it costs a click to open, a target to find, and a second
-     click. It is the only strip action for that reason: everything else here is
-     either rare or lives with the thing it acts on. -->
+     Launching and deleting are the workspace actions a maintainer reaches for often
+     enough that opening a menu first is a click too many. Launch remains in the
+     popover as well because promoted session panes intentionally suppress these
+     workspace-level strip actions. -->
 {#snippet workspaceStripActions()}
-  <!-- Ready only. A workspace whose setup failed renders its own Delete beside the
+  <!-- Ready only. A workspace whose setup failed renders its own actions beside the
        Retry in the error panel, which is where the user is already looking, and one
-       still being created has nothing to delete yet - the strip action there would
-       be the second owner this snippet exists to avoid. -->
+       still being created cannot launch or be deleted yet. -->
   {#if workspaceLive && workspace?.status === "ready"}
+    <IconButton
+      size="sm"
+      tone="neutral"
+      disabled={actionsBlocked}
+      ariaLabel="Launch session"
+      title="Launch session"
+      onclick={openLauncher}
+    >
+      <PlayIcon size="13" strokeWidth="2" aria-hidden="true" />
+    </IconButton>
     <IconButton
       size="sm"
       tone="danger"

@@ -1633,6 +1633,10 @@ test.describe("diff view", () => {
     });
   });
 
+  test.afterEach(async ({ page }) => {
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+  });
+
   test("renders diff with sidebar file list, toolbar, and file diffs", async ({ page }) => {
     await mockDiffApi(page, smallDiff);
     await navigateToDiff(page);

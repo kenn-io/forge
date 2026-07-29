@@ -199,6 +199,9 @@ Playwright waits must observe the rendered state consumed by the next assertion,
 not only the request completion or control value that triggered it; route refinement
 can leave new controls paired with old or loading content (`frontend/tests/e2e-full/kata.spec.ts:1625`, `frontend/tests/e2e-full/repo-browser.spec.ts:480`).
 
+Playwright suites with `route.fetch()` proxies must unregister routes with
+`page.unrouteAll({ behavior: "ignoreErrors" })` before page teardown; background refetches can otherwise fail outside the completed test (`frontend/tests/e2e-full/diff-view.spec.ts::mockReviewThreadsOnPreviewMarkdown`).
+
 CI executes both Playwright suites in Chromium and Firefox. Frontend-owned
 browser workflows using intercepted API responses belong in
 `frontend/tests/e2e/` (`frontend/playwright.config.ts`); workflows that must

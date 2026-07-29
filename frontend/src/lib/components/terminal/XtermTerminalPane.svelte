@@ -1,7 +1,12 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { getStores } from "@middleman/ui";
-  import { ClipboardAddon } from "@xterm/addon-clipboard";
+  import {
+    BrowserClipboardProvider,
+    ClipboardAddon,
+    type ClipboardSelectionType,
+    type IClipboardProvider,
+  } from "@xterm/addon-clipboard";
   import { Terminal } from "@xterm/xterm";
   import { FitAddon } from "@xterm/addon-fit";
   import { LigaturesAddon } from "@xterm/addon-ligatures/lib/addon-ligatures.mjs";
@@ -99,9 +104,25 @@
   const TERMINAL_MINIMUM_CONTRAST_RATIO = 4.5;
   const TERMINAL_FONT_WAIT_MS = 300;
   const TERMINAL_FONT_LOAD_GLYPHS = "0MWim@#";
+  const TERMINAL_SEQUENCE_CANCEL = "\x18";
+  const SYSTEM_CLIPBOARD_SELECTION = "c" as ClipboardSelectionType;
+
+  function createTmuxClipboardProvider(): IClipboardProvider {
+    const browserClipboard = new BrowserClipboardProvider();
+    const normalizeSelection = (selection: ClipboardSelectionType): ClipboardSelectionType =>
+      (selection as string) === "" ? SYSTEM_CLIPBOARD_SELECTION : selection;
+    return {
+      readText: (selection) => browserClipboard.readText(normalizeSelection(selection)),
+      writeText: (selection, text) => browserClipboard.writeText(normalizeSelection(selection), text),
+    };
+  }
 
   function isAttachableInitialStatus(status: string | undefined): boolean {
     return status === undefined || status === "running" || status === "starting";
+  }
+
+  function cancelPendingTerminalSequence(): void {
+    terminal?.write(TERMINAL_SEQUENCE_CANCEL);
   }
 
   function initialStatusMessage(status: string | undefined): string {
@@ -442,6 +463,7 @@
             code?: number;
           };
           if (msg.type === "exited") {
+            cancelPendingTerminalSequence();
             onExit?.(msg.code ?? 0);
             exited = true;
             if (reconnectOnExit) {
@@ -462,6 +484,7 @@
     };
 
     socket.onclose = () => {
+      cancelPendingTerminalSequence();
       scheduleReconnect();
     };
 
@@ -479,6 +502,7 @@
       // Close stale socket so its onclose handler
       // cannot schedule a duplicate reconnect.
       if (ws) {
+        cancelPendingTerminalSequence();
         ws.onclose = null;
         ws.onerror = null;
         ws.onmessage = null;
@@ -632,7 +656,7 @@
       switchTimer.record("terminal-constructed");
       containerEl.addEventListener("paste", handleTerminalPaste, true);
 
-      term.loadAddon(new ClipboardAddon());
+      term.loadAddon(new ClipboardAddon(undefined, createTmuxClipboardProvider()));
 
       const fit = new FitAddon();
       fitAddon = fit;

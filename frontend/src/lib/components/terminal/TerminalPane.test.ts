@@ -5,6 +5,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 const {
   clipboardAddon,
   clipboardAddonCtor,
+  clipboardAddonProviders,
+  browserClipboardReadText,
+  browserClipboardWriteText,
   ligaturesAddonCtor,
   mockWebglCtor,
   resizeObserverCallbacks,
@@ -16,6 +19,12 @@ const {
 } = vi.hoisted(() => ({
   clipboardAddon: { dispose: vi.fn() },
   clipboardAddonCtor: vi.fn(),
+  clipboardAddonProviders: [] as Array<{
+    readText: (selection: string) => string | Promise<string>;
+    writeText: (selection: string, text: string) => void | Promise<void>;
+  }>,
+  browserClipboardReadText: vi.fn(),
+  browserClipboardWriteText: vi.fn(),
   ligaturesAddonCtor: vi.fn(),
   mockWebglCtor: vi.fn(),
   resizeObserverCallbacks: [] as ResizeObserverCallback[],
@@ -139,8 +148,15 @@ vi.mock("@xterm/addon-fit", () => ({
 }));
 
 vi.mock("@xterm/addon-clipboard", () => ({
-  ClipboardAddon: vi.fn().mockImplementation(function () {
+  BrowserClipboardProvider: vi.fn().mockImplementation(function () {
+    return {
+      readText: browserClipboardReadText,
+      writeText: browserClipboardWriteText,
+    };
+  }),
+  ClipboardAddon: vi.fn().mockImplementation(function (_base64, provider) {
     clipboardAddonCtor();
+    clipboardAddonProviders.push(provider);
     return clipboardAddon;
   }),
 }));
@@ -182,6 +198,9 @@ describe("TerminalPane", () => {
     fitDimensions = { cols: 80, rows: 24 };
     clipboardAddon.dispose.mockReset();
     clipboardAddonCtor.mockReset();
+    clipboardAddonProviders.length = 0;
+    browserClipboardReadText.mockReset();
+    browserClipboardWriteText.mockReset();
     ligaturesAddonCtor.mockReset();
     mockWebglCtor.mockReset();
     resizeObserverCallbacks.length = 0;
@@ -235,6 +254,15 @@ describe("TerminalPane", () => {
 
     expect(clipboardAddonCtor).toHaveBeenCalledTimes(1);
     expect(xtermInstances[0]!.loadAddon).toHaveBeenCalledWith(clipboardAddon);
+  });
+
+  it("maps tmux's empty OSC 52 target to the system clipboard", async () => {
+    render(TerminalPane, { props: { workspaceId: "ws-123" } });
+
+    await waitFor(() => expect(clipboardAddonProviders).toHaveLength(1));
+    await clipboardAddonProviders[0]!.writeText("", "copied through tmux");
+
+    expect(browserClipboardWriteText).toHaveBeenCalledWith("c", "copied through tmux");
   });
 
   it("matches VS Code's stable xterm rendering defaults", async () => {
@@ -642,6 +670,34 @@ describe("TerminalPane", () => {
     xtermOnDataHandlers[0]!("\x1b[<32;12;5M");
 
     expect(sentText(socket, 0)).toBe("\x1b[<32;12;5M");
+  });
+
+  it("aborts a partial terminal sequence before writing reconnected output", async () => {
+    render(TerminalPane, { props: { workspaceId: "ws-123" } });
+
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
+    const terminal = xtermInstances[0]!;
+    const firstSocket = mockSockets[0]!;
+    terminal.write.mockClear();
+    vi.useFakeTimers();
+    const binaryMessage = (text: string): MessageEvent => {
+      const encoded = new TextEncoder().encode(text);
+      const data = new Uint8Array(new window.ArrayBuffer(encoded.byteLength));
+      data.set(encoded);
+      return new MessageEvent("message", { data: data.buffer });
+    };
+
+    firstSocket.onmessage?.(binaryMessage("\x1b]52;c;cGFydGlhbA=="));
+    firstSocket.onclose?.();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(mockSockets).toHaveLength(2);
+
+    mockSockets[1]!.onmessage?.(binaryMessage("fresh session output"));
+
+    const writtenChunks = terminal.write.mock.calls.map(([data]) =>
+      typeof data === "string" ? data : new TextDecoder().decode(data),
+    );
+    expect(writtenChunks).toEqual(["\x1b]52;c;cGFydGlhbA==", "\x18", "fresh session output"]);
   });
 
   it("does not attach xterm sessions with unavailable initial status", async () => {

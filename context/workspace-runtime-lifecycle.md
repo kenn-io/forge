@@ -102,9 +102,12 @@ stale tabs.
   backend view of live launched sessions.
 - Workspace terminals use xterm.js exclusively; there is no renderer setting
   or alternate renderer path (`frontend/src/lib/components/terminal/TerminalPane.svelte`).
-- Forward xterm input to tmux unchanged; its clipboard addon owns OSC 52 under
-  browser permissions. Do not add gesture authorization, native bridges, or
-  server fallbacks (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::onMount`).
+- Forward xterm input unchanged and never synthesize edge-drag reports. The
+  addon owns OSC 52 reads and writes under browser permissions; only normalize
+  tmux's empty target to `c`, with no gesture, native bridge, or fallback (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::createTmuxClipboardProvider`).
+- Cancel an incomplete terminal sequence at socket exit/reconnect boundaries,
+  or stale OSC state can consume the next session's output
+  (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::cancelPendingTerminalSequence`).
 - The frontend may react immediately to terminal exit events, but should then
   reconcile with a runtime refresh.
 - Only the active terminal pane may publish cell geometry; font-metric changes

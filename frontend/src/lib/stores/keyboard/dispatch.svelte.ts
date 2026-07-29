@@ -20,15 +20,12 @@ const SCOPE_SPECIFICITY: Record<Action["scope"], number> = {
 };
 
 export function dispatchKeydown(event: KeyboardEvent, contextProvider: () => Context): void {
-  // A focused terminal owns EVERY key, modified ones included, and it outranks
-  // the modal stack too: a frame that did not trap focus cannot be holding the
-  // keyboard the user is typing into. Anything less and the app quietly steals
-  // whatever the TUI binds — Escape, the function keys, Ctrl/Cmd chords — and
-  // the terminal is only as usable as the set of keys this app happens not to
-  // want. Not even preventDefault: the keystroke is xterm's, and suppressing
-  // the default is how it would fail to arrive. Popovers keep their own window
-  // Escape listeners, so they still close from here.
-  if (isTerminalKeyboardTarget(event.target)) return;
+  // A focused terminal owns every key except the explicit shifted palette
+  // chord, and it otherwise outranks the modal stack too: a frame that did not
+  // trap focus cannot be holding the keyboard the user is typing into. Not even
+  // preventDefault: the keystroke is xterm's, and suppressing the default is how
+  // it would fail to arrive. Popovers keep their own window Escape listeners.
+  if (isTerminalKeyboardTarget(event.target) && !isTerminalPaletteShortcut(event)) return;
 
   const stack = getStack();
   if (stack.length > 0) {
@@ -64,6 +61,10 @@ export function dispatchKeydown(event: KeyboardEvent, contextProvider: () => Con
 
   event.preventDefault();
   runHandler(matchingActions[0]!, ctx);
+}
+
+function isTerminalPaletteShortcut(event: KeyboardEvent): boolean {
+  return event.key.toLowerCase() === "k" && (event.ctrlKey || event.metaKey) && event.shiftKey && !event.altKey;
 }
 
 interface RunnableAction {

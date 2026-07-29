@@ -429,6 +429,7 @@
       id: "palette.close",
       label: "Close palette",
       binding: [
+        { key: "k", ctrlOrMeta: true, shift: true },
         { key: "k", ctrlOrMeta: true },
         { key: "p", ctrlOrMeta: true },
         { key: "p", ctrlOrMeta: true, shift: true },

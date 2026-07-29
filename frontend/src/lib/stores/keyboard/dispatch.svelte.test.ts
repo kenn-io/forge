@@ -280,6 +280,22 @@ describe("dispatchKeydown — a focused terminal owns the keyboard", () => {
     expect(palette).not.toHaveBeenCalled();
   });
 
+  it("reserves Ctrl/Cmd-Shift-K for the palette while a terminal is focused", () => {
+    const palette = register("palette.open", { key: "k", ctrlOrMeta: true, shift: true });
+    const { textarea, wrapper } = terminalTargets();
+
+    for (const modifier of [{ metaKey: true }, { ctrlKey: true }]) {
+      for (const target of [textarea, wrapper]) {
+        const e = event({ key: "k", shiftKey: true, ...modifier });
+        Object.defineProperty(e, "target", { value: target });
+        dispatchKeydown(e, () => ctx);
+        expect(e.preventDefault).toHaveBeenCalled();
+      }
+    }
+
+    expect(palette).toHaveBeenCalledTimes(4);
+  });
+
   it("keeps terminal ownership while a modal frame is open", () => {
     // RESERVED_WHILE_MODAL_OPEN preventDefaults the palette keys for any frame
     // on the stack. A frame that never trapped focus cannot own the keyboard

@@ -576,6 +576,7 @@ export const defaultActions: Action[] = [
     label: "Open command palette",
     scope: "global",
     binding: [
+      { key: "k", ctrlOrMeta: true, shift: true },
       { key: "k", ctrlOrMeta: true },
       { key: "p", ctrlOrMeta: true },
       { key: "p", ctrlOrMeta: true, shift: true },

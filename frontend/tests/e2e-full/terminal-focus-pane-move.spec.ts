@@ -257,7 +257,7 @@ test("terminal keeps keyboard focus across a pane move without a click", async (
     // The real pane command, entirely by keyboard. Palette teardown restores
     // the terminal focus it saved before the handler splits this tab into a
     // new leaf, and the split reparents the terminal through the parking node.
-    await page.keyboard.press("Meta+k");
+    await page.keyboard.press("Meta+Shift+k");
     const palette = page.getByRole("dialog", { name: "Command palette" });
     await expect(palette).toBeVisible();
     await page.getByRole("textbox", { name: "Search command palette" }).fill("Split pane right");

@@ -139,10 +139,11 @@ describe("defaultActions", () => {
     expect(ids).not.toContain("nav.pulls.board");
   });
 
-  it("palette.open binds Cmd/Ctrl+K, Cmd/Ctrl+P, and Cmd/Ctrl+Shift+P", () => {
+  it("palette.open binds the terminal-safe shifted K chord and the existing palette chords", () => {
     const palette = defaultActions.find((a) => a.id === "palette.open");
     expect(palette).toBeDefined();
     expect(palette!.binding).toEqual([
+      { key: "k", ctrlOrMeta: true, shift: true },
       { key: "k", ctrlOrMeta: true },
       { key: "p", ctrlOrMeta: true },
       { key: "p", ctrlOrMeta: true, shift: true },

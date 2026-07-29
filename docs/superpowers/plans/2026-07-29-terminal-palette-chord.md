@@ -83,10 +83,6 @@ if (isTerminalKeyboardTarget(event.target) && !isTerminalPaletteShortcut(event))
 
 Run the Step 2 command. Expected: PASS, including the existing terminal-ownership cases.
 
-- [ ] **Step 5: Commit the dispatcher boundary**
-
-Run `context-sync --commit`, then create a hook-enforced commit containing only the dispatcher and its test. Do not amend or bypass hooks.
-
 ### Task 2: Register and exercise the safe palette chord
 
 **Files:**
@@ -187,11 +183,11 @@ Expected: the full spec passes in both projects; the pane-move test opens the pa
 
 - [ ] **Step 7: Run the required full frontend verification**
 
-Run from `frontend/`:
+Run from the repository root:
 
 ```bash
-../node_modules/.bin/vp check
-../node_modules/.bin/vp test
+make frontend-check-no-deps
+cd frontend && ../node_modules/.bin/vp test
 ```
 
 Expected: checks and the complete Vitest suite pass.

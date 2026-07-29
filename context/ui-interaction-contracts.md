@@ -217,7 +217,9 @@ Keyboard handlers must have one clear owner for each key press.
 - A focused TERMINAL owns every key, modified ones included, and outranks even
   the modal stack: a TUI binds Escape, function keys, and Ctrl/Cmd chords
   (Cmd-K and Cmd-P included), so any key the app reserves is a key the terminal
-  loses. The dispatcher runs no handler and does not preventDefault. Ownership
+  loses. Only `Ctrl/Cmd-Shift-K`, the documented command-palette escape hatch,
+  crosses this boundary; otherwise the dispatcher runs no handler and does not
+  preventDefault. Ownership
   is matched from the terminal surface, not from xterm's hidden textarea alone,
   because focus also rests on the session wrapper. Popovers close from their own
   window Escape listeners, not from the registry

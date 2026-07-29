@@ -2,11 +2,12 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import Palette from "./Palette.svelte";
+import { dispatchKeydown } from "../../stores/keyboard/dispatch.svelte.js";
 import { closePalette, openPalette, resetPaletteState } from "../../stores/keyboard/palette-state.svelte.js";
 import { registerScopedActions, resetRegistry } from "../../stores/keyboard/registry.svelte.js";
 import { RECENTS_KEY } from "../../stores/keyboard/recents.svelte.js";
 import type { ModePaletteResults } from "../../stores/keyboard/mode-palette-search.js";
-import type { Action } from "../../stores/keyboard/types.js";
+import type { Action, Context } from "../../stores/keyboard/types.js";
 import { resetModalStack } from "@middleman/ui/stores/keyboard/modal-stack";
 
 const noop = (): void => {};
@@ -52,6 +53,24 @@ describe("Palette", () => {
     closePalette();
     await rerender({});
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("closes with Cmd-Shift-K", async () => {
+    const { rerender } = render(Palette, { props: {} });
+    openPalette();
+    await rerender({});
+    const input = screen.getByRole("textbox", { name: "Search command palette" });
+    const event = new KeyboardEvent("keydown", {
+      key: "k",
+      metaKey: true,
+      shiftKey: true,
+      cancelable: true,
+    });
+    Object.defineProperty(event, "target", { value: input });
+
+    dispatchKeydown(event, () => ({}) as Context);
+
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Command palette" })).toBeNull());
   });
 
   it("renders preview placeholder when no results", async () => {

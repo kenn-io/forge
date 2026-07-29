@@ -32,7 +32,7 @@ const {
   mouseDragObserveTerminalData: vi.fn(),
   mouseDragReset: vi.fn(),
   resizeObserverCallbacks: [] as ResizeObserverCallback[],
-  xtermFitAddons: [] as Array<{ fit: ReturnType<typeof vi.fn> }>,
+  xtermFitAddons: [] as Array<{ fit: ReturnType<typeof vi.fn>; proposeDimensions: ReturnType<typeof vi.fn> }>,
   xtermInstances: [] as Array<{
     clearTextureAtlas: ReturnType<typeof vi.fn>;
     cols: number;
@@ -56,6 +56,9 @@ let configuredLetterSpacing = 0;
 let configuredCursorBlink = true;
 let configuredFontLigatures = false;
 let mockSockets: MockWebSocket[] = [];
+// What the fit addon measures the region as. undefined models a container with
+// no content box (a parked terminal), for which the real addon proposes nothing.
+let fitDimensions: { cols: number; rows: number } | undefined = { cols: 80, rows: 24 };
 const originalDocumentFonts = Object.getOwnPropertyDescriptor(document, "fonts");
 const originalNavigatorClipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard");
 
@@ -178,7 +181,10 @@ vi.mock("@xterm/xterm", () => ({
 
 vi.mock("@xterm/addon-fit", () => ({
   FitAddon: vi.fn().mockImplementation(function () {
-    const addon = { fit: vi.fn() };
+    // proposeDimensions is the pane's measurement of its own region: the real
+    // addon returns undefined, or a zero, for a container with no content box
+    // (a parked terminal), and the pane only pushes a size when it gets one.
+    const addon = { fit: vi.fn(), proposeDimensions: vi.fn(() => fitDimensions) };
     xtermFitAddons.push(addon);
     return addon;
   }),
@@ -205,6 +211,10 @@ vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
 
 import TerminalPane from "./TerminalPane.svelte";
 
+function resizeFramesOf(socket: MockWebSocket): string[] {
+  return socket.sent.map(String).filter((frame) => frame.includes('"type":"resize"'));
+}
+
 describe("TerminalPane", () => {
   beforeEach(() => {
     configuredFontFamily = "";
@@ -214,6 +224,7 @@ describe("TerminalPane", () => {
     configuredLetterSpacing = 0;
     configuredCursorBlink = true;
     configuredFontLigatures = false;
+    fitDimensions = { cols: 80, rows: 24 };
     ligaturesAddonCtor.mockReset();
     clipboardWriteText.mockReset();
     clipboardWriterCancelPointerGesture.mockReset();
@@ -504,7 +515,7 @@ describe("TerminalPane", () => {
     expect(mockSockets[0]!.sent).toContain(JSON.stringify({ type: "resize", cols: 80, rows: 24 }));
   });
 
-  it("does not claim resize authority when a selected font resolves in an inactive pane", async () => {
+  it("pushes the re-measured size when a font resolves late in an unfocused pane", async () => {
     vi.useFakeTimers();
     const fontLoad = deferred<FontFace[]>();
     stubFontLoad(fontLoad.promise);
@@ -516,17 +527,17 @@ describe("TerminalPane", () => {
     const terminal = xtermInstances[0]!;
     const fitAddon = xtermFitAddons[0]!;
     terminal.clearTextureAtlas.mockClear();
-    terminal.refresh.mockClear();
     fitAddon.fit.mockClear();
     mockSockets[0]!.sent = [];
+    // Different metrics, so the region works out to a different size.
+    fitDimensions = { cols: 70, rows: 20 };
 
     fontLoad.resolve([]);
     await vi.advanceTimersByTimeAsync(0);
 
     expect(terminal.clearTextureAtlas).toHaveBeenCalledTimes(1);
     expect(fitAddon.fit).toHaveBeenCalledTimes(1);
-    expect(terminal.refresh).toHaveBeenCalledTimes(1);
-    expect(mockSockets[0]!.sent).toHaveLength(0);
+    expect(resizeFramesOf(mockSockets[0]!)).toEqual([JSON.stringify({ type: "resize", cols: 70, rows: 20 })]);
   });
 
   it("does not rebuild a disposed xterm when the selected font resolves late", async () => {
@@ -571,23 +582,75 @@ describe("TerminalPane", () => {
     expect(xtermInstances[0]!.clearTextureAtlas).not.toHaveBeenCalled();
   });
 
-  it("only lets active panes claim terminal resize authority", async () => {
-    const { rerender } = render(TerminalPane, {
-      props: { workspaceId: "ws-123", active: false },
-    });
+  it("claims resize authority for a measurable region even while unfocused", async () => {
+    // Authority follows the region, not focus. An unfocused pane that is
+    // painted still owns its own PTY's size — gating this on `active` is what
+    // left the other halves of a split at the tmux launch default.
+    render(TerminalPane, { props: { workspaceId: "ws-123", active: false } });
+
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
+    expect(mockSockets[0]!.url).toContain("resize_active=1");
+
+    mockSockets[0]!.onopen?.();
+    expect(mockSockets[0]!.sent).toContain(JSON.stringify({ type: "resize_active", active: true }));
+
+    mockSockets[0]!.sent = [];
+    fitDimensions = { cols: 100, rows: 40 };
+    resizeObserverCallbacks[0]!([], {} as ResizeObserver);
+
+    expect(mockSockets[0]!.sent).toContain(JSON.stringify({ type: "resize", cols: 100, rows: 40 }));
+  });
+
+  it("neither claims authority nor pushes a size for an unmeasurable region", async () => {
+    // A parked terminal sits in a display:none node: the fit addon proposes
+    // nothing for it, and measuring it anyway is what used to resize a live
+    // tmux pane to one row.
+    fitDimensions = undefined;
+    render(TerminalPane, { props: { workspaceId: "ws-123" } });
 
     await waitFor(() => expect(mockSockets).toHaveLength(1));
     expect(mockSockets[0]!.url).toContain("resize_active=0");
 
     mockSockets[0]!.onopen?.();
-    expect(mockSockets[0]!.sent).toContain(JSON.stringify({ type: "resize_active", active: false }));
-
     mockSockets[0]!.sent = [];
     resizeObserverCallbacks[0]!([], {} as ResizeObserver);
-    expect(mockSockets[0]!.sent).toHaveLength(0);
 
-    await rerender({ workspaceId: "ws-123", active: true });
-    expect(mockSockets[0]!.sent).toContain(JSON.stringify({ type: "resize_active", active: true }));
+    expect(resizeFramesOf(mockSockets[0]!)).toHaveLength(0);
+  });
+
+  it("sends nothing more for a burst that measures the same size", async () => {
+    render(TerminalPane, { props: { workspaceId: "ws-123" } });
+
+    await waitFor(() => expect(resizeObserverCallbacks).toHaveLength(1));
+    mockSockets[0]!.onopen?.();
+
+    mockSockets[0]!.sent = [];
+    fitDimensions = { cols: 120, rows: 50 };
+    resizeObserverCallbacks[0]!([], {} as ResizeObserver);
+    resizeObserverCallbacks[0]!([], {} as ResizeObserver);
+    resizeObserverCallbacks[0]!([], {} as ResizeObserver);
+
+    expect(resizeFramesOf(mockSockets[0]!)).toEqual([JSON.stringify({ type: "resize", cols: 120, rows: 50 })]);
+  });
+
+  it("re-sends a size the socket was not open to carry", async () => {
+    // The first measurement lands before the socket opens. Recording it as sent
+    // anyway would let the dedupe suppress it forever, leaving the PTY at the
+    // size it launched with.
+    render(TerminalPane, { props: { workspaceId: "ws-123" } });
+
+    await waitFor(() => expect(resizeObserverCallbacks).toHaveLength(1));
+    mockSockets[0]!.readyState = 0;
+    fitDimensions = { cols: 90, rows: 30 };
+    resizeObserverCallbacks[0]!([], {} as ResizeObserver);
+    expect(resizeFramesOf(mockSockets[0]!)).toHaveLength(0);
+
+    mockSockets[0]!.readyState = 1;
+    mockSockets[0]!.onopen?.();
+    mockSockets[0]!.sent = [];
+    resizeObserverCallbacks[0]!([], {} as ResizeObserver);
+
+    expect(resizeFramesOf(mockSockets[0]!)).toEqual([JSON.stringify({ type: "resize", cols: 90, rows: 30 })]);
   });
 
   it("focuses the xterm terminal once it initializes while active", async () => {
@@ -630,12 +693,12 @@ describe("TerminalPane", () => {
     fitAddon.fit.mockClear();
     mockSockets[0]!.sent = [];
 
+    fitDimensions = { cols: 80, rows: 24 };
     resizeObserverCallbacks[0]!([], {} as ResizeObserver);
 
     expect(fitAddon.fit).toHaveBeenCalled();
     expect(terminal.clearTextureAtlas).not.toHaveBeenCalled();
     expect(terminal.refresh).toHaveBeenCalledWith(0, 23);
-    expect(mockSockets[0]!.sent).toContain(JSON.stringify({ type: "resize", cols: 80, rows: 24 }));
   });
 
   it("forwards complete tmux mouse drags without a local threshold", async () => {

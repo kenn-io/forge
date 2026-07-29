@@ -67,6 +67,10 @@
   let resizeObserver: ResizeObserver | null = null;
   let refreshFrame: number | null = null;
   let resizeFrame: number | null = null;
+  // What the PTY was last told. Resends are skipped against this, so a
+  // ResizeObserver burst costs one frame, not one per callback.
+  let sentCols = 0;
+  let sentRows = 0;
   let appliedTerminalFontFamily = "";
   let appliedFontSize = 0;
   let appliedScrollback = 0;
@@ -265,7 +269,7 @@
     rows: number,
   ): string {
     const sep = url.includes("?") ? "&" : "?";
-    const resizeActive = active ? "1" : "0";
+    const resizeActive = terminalRegionSize() !== null ? "1" : "0";
     const { traceparent, baggage } = traceHeadersForRequest();
     let result = `${url}${sep}cols=${cols}&rows=${rows}&resize_active=${resizeActive}&traceparent=${encodeURIComponent(traceparent)}`;
     if (baggage !== null) result += `&baggage=${encodeURIComponent(baggage)}`;
@@ -322,12 +326,12 @@
     }
   }
 
-  function sendResize(cols: number, rows: number): void {
-    sendControl("resize", cols, rows);
+  function sendResize(cols: number, rows: number): boolean {
+    return sendControl("resize", cols, rows);
   }
 
-  function sendRefresh(cols: number, rows: number): void {
-    sendControl("refresh", cols, rows);
+  function sendRefresh(cols: number, rows: number): boolean {
+    return sendControl("refresh", cols, rows);
   }
 
   function sendResizeActive(nextActive: boolean): void {
@@ -340,10 +344,10 @@
     type: "resize" | "refresh",
     cols: number,
     rows: number,
-  ): void {
-    if (ws?.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type, cols, rows }));
-    }
+  ): boolean {
+    if (ws?.readyState !== WebSocket.OPEN) return false;
+    ws.send(JSON.stringify({ type, cols, rows }));
+    return true;
   }
 
   function refreshVisibleTerminal(): void {
@@ -351,7 +355,12 @@
 
     fitAddon?.fit();
     terminal.refresh(0, Math.max(0, terminal.rows - 1));
-    sendRefresh(terminal.cols, terminal.rows);
+    // The server resizes on a refresh's dimensions too, so a delivered refresh
+    // counts as the size the PTY now has.
+    if (sendRefresh(terminal.cols, terminal.rows)) {
+      sentCols = terminal.cols;
+      sentRows = terminal.rows;
+    }
   }
 
   function redrawTerminalTextureAtlas(): void {
@@ -419,12 +428,50 @@
     });
   }
 
-  function resizeVisibleTerminal(): void {
-    if (!fitAddon || !terminal || !active) return;
+  /**
+   * The size this terminal's region actually is, or null when it has none.
+   *
+   * A parked terminal sits in a `display:none` node, whose content box is zero,
+   * so the fit addon proposes nothing usable for it — measuring that is what
+   * used to resize a live tmux pane to one row. The measurement itself is the
+   * check; nothing here infers whether some container believes the pane is on
+   * screen.
+   */
+  function terminalRegionSize(): { cols: number; rows: number } | null {
+    if (!fitAddon || !terminal || !containerEl.isConnected) return null;
 
-    fitAddon.fit();
-    terminal.refresh(0, Math.max(0, terminal.rows - 1));
-    sendResize(terminal.cols, terminal.rows);
+    const proposed = fitAddon.proposeDimensions();
+    if (!proposed) return null;
+    if (!Number.isFinite(proposed.cols) || !Number.isFinite(proposed.rows)) return null;
+    if (proposed.cols < 1 || proposed.rows < 1) return null;
+
+    return { cols: proposed.cols, rows: proposed.rows };
+  }
+
+  /**
+   * Push the region's size whenever it differs from what the PTY was last told.
+   *
+   * Deliberately not gated on the pane being focused or "active": every painted
+   * terminal owns its own size, and a container that reports only its focused
+   * session used to leave the other halves of a split at whatever size they
+   * last held. Sending only on a real change keeps a ResizeObserver burst from
+   * turning into a burst of resize frames.
+   */
+  function resizeVisibleTerminal(): void {
+    const size = terminalRegionSize();
+    if (!size || !terminal) return;
+
+    fitAddon?.fit();
+    terminal.refresh(0, Math.max(0, size.rows - 1));
+    // Compare the MEASUREMENT, not a read-back of terminal.cols: fit() applies
+    // these same numbers, and the measurement is what the size should be.
+    if (size.cols === sentCols && size.rows === sentRows) return;
+    // Recorded only once the socket carried it — a resize computed before the
+    // socket opened would otherwise be suppressed forever as already sent.
+    if (sendResize(size.cols, size.rows)) {
+      sentCols = size.cols;
+      sentRows = size.rows;
+    }
   }
 
   function handleTerminalPaste(event: ClipboardEvent): void {
@@ -468,7 +515,7 @@
     socket.onopen = () => {
       switchTimer.record("socket-open");
       reconnectDelay = 1000;
-      sendResizeActive(active);
+      sendResizeActive(terminalRegionSize() !== null);
       if (active) scheduleTerminalRefresh();
     };
 
@@ -652,7 +699,10 @@
 
   $effect(() => {
     if (!terminal) return;
-    sendResizeActive(active);
+    // Authority follows the rendered region, not focus: a painted split leaf
+    // must be allowed to size its own PTY, while a parked terminal (no region)
+    // must not dictate a size for the pane the user is actually looking at.
+    sendResizeActive(terminalRegionSize() !== null);
     if (active) scheduleTerminalRefresh();
   });
 
@@ -799,9 +849,10 @@
 
         lateFontRebuilt = true;
         terminal.clearTextureAtlas();
-        fitAddon?.fit();
-        terminal.refresh(0, Math.max(0, terminal.rows - 1));
-        if (active) sendResize(terminal.cols, terminal.rows);
+        // New metrics mean a new measurement; resizeVisibleTerminal re-fits,
+        // repaints, and pushes the size only if the region now works out
+        // differently.
+        resizeVisibleTerminal();
       },
       () => finishInitialFontWait({ error: true }),
     );

@@ -66,7 +66,9 @@ vi.mock("@xterm/xterm", () => ({
 
 vi.mock("@xterm/addon-fit", () => ({
   FitAddon: vi.fn().mockImplementation(function () {
-    return { fit: vi.fn() };
+    // The pane measures its own region through the addon; a real one proposes
+    // nothing for a container with no content box.
+    return { fit: vi.fn(), proposeDimensions: () => ({ cols: 80, rows: 24 }) };
   }),
 }));
 

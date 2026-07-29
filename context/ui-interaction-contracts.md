@@ -319,12 +319,20 @@ Keyboard handlers must have one clear owner for each key press.
   settles with no destination (the pane closed) — a cross-flush transfer's
   transient no-destination park keeps it. A restore fires only into unclaimed
   focus (`frontend/src/lib/components/terminal/PooledSessionTerminal.svelte`).
-- A slot's `visible` means PAINTED, never FOCUSED. Only a visible terminal pushes
-  its size (the pane suspends resize work and the server refuses resize authority
-  while inactive), so a container that reports only its focused session leaves the
-  other halves of a split at whatever size they last held — for a session never
-  focused, the tmux launch default. Every leaf of a split shares the container's
-  own visibility (`frontend/src/lib/components/terminal/TerminalSplitTree.svelte`).
+- A slot's `visible` means PAINTED, never FOCUSED. It gates INTERACTIVITY — an
+  invisible slot's terminal is `inert`, dead to pointer and keyboard — so a
+  container that reports only its focused session makes the other halves of a
+  split unclickable. Every leaf of a split shares the container's own visibility
+  (`frontend/src/lib/components/terminal/TerminalSplitTree.svelte`).
+- Terminal SIZE is never gated on visibility, focus, or any "is this pane
+  active" inference. A pane measures its own region through the fit addon and
+  pushes the result whenever it differs from what the PTY was last told; resize
+  authority follows the same measurement. A container with no content box (a
+  parked terminal) measures nothing, which is what keeps it from resizing a live
+  tmux pane to one row — the measurement IS the check. Record a size as sent
+  only once the socket carried it, or a resize computed before the socket opened
+  is suppressed forever and the PTY keeps its launch default
+  (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::terminalRegionSize`).
 - A promoted session is recorded ONCE, in the detail surface's stored pane tree.
   Containers mask it out of what they render (derived, not an effect) and never
   prune their own stored trees, so demoting restores the tab order, split, and

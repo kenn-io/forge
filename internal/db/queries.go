@@ -6071,6 +6071,67 @@ func (d *DB) DeleteWorkspace(
 	return nil
 }
 
+// RetiredWorkspaceHasActiveWorktreeOwner reports whether id is retired and
+// another active workspace currently owns the same filesystem path.
+func (d *DB) RetiredWorkspaceHasActiveWorktreeOwner(
+	ctx context.Context, id string,
+) (bool, error) {
+	var shared bool
+	err := d.ro.QueryRowContext(ctx, `
+		SELECT EXISTS (
+		    SELECT 1
+		    FROM middleman_workspaces AS retired
+		    JOIN middleman_workspaces AS active
+		      ON active.id <> retired.id
+		     AND active.retired_at IS NULL
+		     AND active.worktree_path = retired.worktree_path
+		    WHERE retired.id = ?
+		      AND retired.retired_at IS NOT NULL
+		)`, id,
+	).Scan(&shared)
+	if err != nil {
+		return false, fmt.Errorf(
+			"check retired workspace active worktree owner: %w", err,
+		)
+	}
+	return shared, nil
+}
+
+// DeleteRetiredWorkspaceWithActiveWorktreeOwner removes a retired workspace
+// only when another active workspace still owns the same filesystem path. The
+// conditional delete makes the final ownership decision and record teardown
+// one database operation, so callers must skip all filesystem cleanup when it
+// succeeds.
+func (d *DB) DeleteRetiredWorkspaceWithActiveWorktreeOwner(
+	ctx context.Context, id string,
+) (bool, error) {
+	result, err := d.rw.ExecContext(ctx, `
+		DELETE FROM middleman_workspaces
+		WHERE id = ?
+		  AND retired_at IS NOT NULL
+		  AND EXISTS (
+		      SELECT 1
+		      FROM middleman_workspaces AS active
+		      WHERE active.id <> middleman_workspaces.id
+		        AND active.retired_at IS NULL
+		        AND active.worktree_path = middleman_workspaces.worktree_path
+		  )`, id,
+	)
+	if err != nil {
+		return false, fmt.Errorf(
+			"delete retired workspace with active worktree owner: %w", err,
+		)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf(
+			"delete retired workspace with active worktree owner rows affected: %w",
+			err,
+		)
+	}
+	return rows == 1, nil
+}
+
 // workspaceSummaryColumns is the SELECT list shared by
 // ListWorkspaceSummaries and GetWorkspaceSummary.
 const workspaceSummaryColumns = `

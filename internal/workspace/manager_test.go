@@ -164,7 +164,13 @@ func TestCreate(t *testing.T) {
 	assert.Equal(42, ws.ItemNumber)
 	assert.Equal("feature/thing", ws.GitHeadRef)
 	assert.Nil(ws.MRHeadRepo)
-	assert.Contains(ws.WorktreePath, "pr-42")
+	assert.Equal(
+		filepath.Join(
+			wtDir, "github", "github.com", "acme", "widget",
+			fmt.Sprintf("repo-%d", repoID), "pr-42",
+		),
+		ws.WorktreePath,
+	)
 	assert.Equal("middleman-"+ws.ID, ws.TmuxSession)
 
 	// Verify persisted in DB.
@@ -1084,7 +1090,7 @@ func TestCreateKataTaskNormalizesRelativeWorktreeDir(t *testing.T) {
 
 	d := openTestDB(t)
 	ctx := t.Context()
-	seedRepo(t, d, "github.com", "acme", "widget")
+	repoID := seedRepo(t, d, "github.com", "acme", "widget")
 
 	mgr := NewManager(d, "relative-worktrees")
 	metadata := db.WorkspaceKataMetadata{
@@ -1102,7 +1108,8 @@ func TestCreateKataTaskNormalizesRelativeWorktreeDir(t *testing.T) {
 	assert.Equal(
 		filepath.Join(
 			cwd, "relative-worktrees", "github", "github.com",
-			"acme", "widget", "kata-"+kataTaskBranchID(metadata),
+			"acme", "widget", fmt.Sprintf("repo-%d", repoID),
+			"kata-"+kataTaskBranchID(metadata),
 		),
 		ws.WorktreePath,
 	)
@@ -1193,7 +1200,8 @@ func TestCreateIssueRecoversExpectedExistingDirectory(t *testing.T) {
 
 	const branch = "middleman/issue-7"
 	expectedPath := filepath.Join(
-		worktreeRoot, "github", platformHost, "acme", "widget", "issue-7",
+		worktreeRoot, "github", platformHost, "acme", "widget",
+		fmt.Sprintf("repo-%d", repoID), "issue-7",
 	)
 	runWorkspaceTestGit(
 		t, localRepo,
@@ -1259,7 +1267,8 @@ func TestIssueWorkspaceBranchDoesNotCollideWithRecoveryState(t *testing.T) {
 
 			const branch = "__middleman_recovery_pending__"
 			expectedPath := filepath.Join(
-				worktreeRoot, "github", platformHost, "acme", "widget", "issue-7",
+				worktreeRoot, "github", platformHost, "acme", "widget",
+				fmt.Sprintf("repo-%d", repoID), "issue-7",
 			)
 			if recoverExisting {
 				runWorkspaceTestGit(
@@ -1364,7 +1373,8 @@ func TestCreateIssueRecoveryRejectsInvalidExpectedDirectory(t *testing.T) {
 			seedIssue(t, d, repoID, 7, "")
 			const branch = "middleman/issue-7"
 			expectedPath := filepath.Join(
-				worktreeRoot, "github", platformHost, "acme", "widget", "issue-7",
+				worktreeRoot, "github", platformHost, "acme", "widget",
+				fmt.Sprintf("repo-%d", repoID), "issue-7",
 			)
 			tt.prepare(t, localRepo, expectedPath, branch)
 
@@ -1417,7 +1427,8 @@ func TestCreateIssueRecoveryRejectsManagedCloneWithWrongOrigin(t *testing.T) {
 		"https://github.com/other/repository.git",
 	)
 	expectedPath := filepath.Join(
-		worktreeRoot, "github", host, owner, name, "issue-7",
+		worktreeRoot, "github", host, owner, name,
+		fmt.Sprintf("repo-%d", repoID), "issue-7",
 	)
 	runWorkspaceTestGit(
 		t, cloneDir,
@@ -1465,7 +1476,8 @@ func TestSetupRecoveryRejectsManagedCloneWhoseOriginChanged(t *testing.T) {
 		"https://github.com/acme/widget.git",
 	)
 	expectedPath := filepath.Join(
-		worktreeRoot, "github", host, owner, name, "issue-7",
+		worktreeRoot, "github", host, owner, name,
+		fmt.Sprintf("repo-%d", repoID), "issue-7",
 	)
 	runWorkspaceTestGit(
 		t, cloneDir,
@@ -1514,7 +1526,8 @@ func TestCreateIssueReportsRecoverableDirectoryBranch(t *testing.T) {
 
 	const existingBranch = "middleman/issue-7-original-title"
 	expectedPath := filepath.Join(
-		worktreeRoot, "github", platformHost, "acme", "widget", "issue-7",
+		worktreeRoot, "github", platformHost, "acme", "widget",
+		fmt.Sprintf("repo-%d", repoID), "issue-7",
 	)
 	runWorkspaceTestGit(
 		t, localRepo,
@@ -1554,7 +1567,8 @@ func TestSetupDirectoryRecoveryNeverCreatesReplacement(t *testing.T) {
 
 	const branch = "middleman/issue-7"
 	expectedPath := filepath.Join(
-		worktreeRoot, "github", platformHost, "acme", "widget", "issue-7",
+		worktreeRoot, "github", platformHost, "acme", "widget",
+		fmt.Sprintf("repo-%d", repoID), "issue-7",
 	)
 	runWorkspaceTestGit(
 		t, localRepo,
@@ -1607,7 +1621,8 @@ func TestRetryDirectoryRecoveryPreservesExistingWorktree(t *testing.T) {
 
 	const branch = "middleman/issue-7"
 	expectedPath := filepath.Join(
-		worktreeRoot, "github", platformHost, "acme", "widget", "issue-7",
+		worktreeRoot, "github", platformHost, "acme", "widget",
+		fmt.Sprintf("repo-%d", repoID), "issue-7",
 	)
 	runWorkspaceTestGit(
 		t, localRepo,
@@ -1664,7 +1679,8 @@ func TestDeletePendingDirectoryRecoveryPreservesExistingWorktree(t *testing.T) {
 
 	const branch = "middleman/issue-7"
 	expectedPath := filepath.Join(
-		worktreeRoot, "github", platformHost, "acme", "widget", "issue-7",
+		worktreeRoot, "github", platformHost, "acme", "widget",
+		fmt.Sprintf("repo-%d", repoID), "issue-7",
 	)
 	runWorkspaceTestGit(
 		t, localRepo,
@@ -2599,7 +2615,8 @@ func TestCreateUsesProviderQualifiedRepo(t *testing.T) {
 	assert.Equal("feature/gitlab", ws.GitHeadRef)
 	assert.Equal(
 		filepath.Join(
-			worktreeDir, "gitlab", "forge.example.com", "acme", "widget", "pr-42",
+			worktreeDir, "gitlab", "forge.example.com", "acme", "widget",
+			fmt.Sprintf("repo-%d", gitlabRepoID), "pr-42",
 		),
 		ws.WorktreePath,
 	)
@@ -5951,6 +5968,112 @@ func TestValidateWorkspaceRetryableRejectsRetiredWorkspace(t *testing.T) {
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrWorkspaceInvalidState)
 	assert.Contains(t, err.Error(), "replaced")
+}
+
+func TestDeleteRetiredWorkspacePreservesActiveSharedWorktree(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	localRepo := setupLocalWorktreeBaseForWorkspaceGitTest(t, "feature/thing")
+	worktreePath := filepath.Join(t.TempDir(), "shared-worktree")
+	branch := syntheticPRWorktreeBranch(42)
+	runWorkspaceTestGit(
+		t, localRepo,
+		"worktree", "add", worktreePath, "-b", branch, "HEAD",
+	)
+	require.NoError(os.WriteFile(
+		filepath.Join(worktreePath, "replacement.txt"),
+		[]byte("replacement work\n"),
+		0o644,
+	))
+	runWorkspaceTestGit(t, worktreePath, "add", "replacement.txt")
+	runWorkspaceTestGit(t, worktreePath, "commit", "-m", "replacement work")
+	replacementHead := strings.TrimSpace(string(runWorkspaceTestGit(
+		t, worktreePath, "rev-parse", "HEAD",
+	)))
+
+	_, err := d.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "R_old",
+		Owner:          "acme",
+		Name:           "widget",
+	})
+	require.NoError(err)
+	retired := &Workspace{
+		ID:              "retired-shared-worktree",
+		Platform:        "github",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		ItemType:        db.WorkspaceItemTypePullRequest,
+		ItemNumber:      42,
+		GitHeadRef:      "feature/thing",
+		WorkspaceBranch: branch,
+		WorktreePath:    worktreePath,
+		TmuxSession:     "middleman-retired-shared-worktree",
+		Status:          "ready",
+	}
+	require.NoError(d.InsertWorkspace(ctx, retired))
+	_, err = d.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "R_new",
+		Owner:          "acme",
+		Name:           "widget",
+	})
+	require.NoError(err)
+	require.NoError(d.InsertWorkspace(ctx, &Workspace{
+		ID:              "active-shared-worktree",
+		Platform:        "github",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		ItemType:        db.WorkspaceItemTypePullRequest,
+		ItemNumber:      42,
+		GitHeadRef:      "feature/thing",
+		WorkspaceBranch: branch,
+		WorktreePath:    worktreePath,
+		TmuxSession:     "middleman-active-shared-worktree",
+		Status:          "ready",
+	}))
+	recordRuntimeTmuxSessionForTest(
+		t,
+		d,
+		retired.ID,
+		"retired-agent",
+		"codex",
+		"middleman-retired-agent",
+		time.Now().UTC(),
+	)
+
+	mgr := NewManager(d, t.TempDir())
+	tmuxScript, _ := writeRecorderScript(t)
+	mgr.SetTmuxCommand([]string{tmuxScript})
+	runtimeStopped := false
+	dirty, err := mgr.Delete(ctx, retired.ID, false, func(context.Context) {
+		runtimeStopped = true
+	})
+
+	require.NoError(err)
+	assert.Empty(dirty)
+	assert.True(runtimeStopped)
+	deleted, err := d.GetWorkspace(ctx, retired.ID)
+	require.NoError(err)
+	assert.Nil(deleted)
+	runtimeSessions, err := d.ListWorkspaceRuntimeSessions(ctx, retired.ID)
+	require.NoError(err)
+	assert.Empty(runtimeSessions)
+	active, err := d.GetWorkspace(ctx, "active-shared-worktree")
+	require.NoError(err)
+	require.NotNil(active)
+	assert.Equal(
+		replacementHead,
+		strings.TrimSpace(string(runWorkspaceTestGit(
+			t, worktreePath, "rev-parse", "HEAD",
+		))),
+	)
 }
 
 func TestManagerRequestRetryPreservesReusedIssueBranchSentinel(t *testing.T) {

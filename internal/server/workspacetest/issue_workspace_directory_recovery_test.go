@@ -1,6 +1,7 @@
 package workspacetest
 
 import (
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -11,6 +12,20 @@ import (
 	"go.kenn.io/middleman/internal/apiclient/generated"
 )
 
+func issueWorkspacePath(
+	fixture workspaceServerFixture, repoID int64, issueNumber int,
+) string {
+	return filepath.Join(
+		fixture.worktreeDir,
+		"github",
+		"github.com",
+		"acme",
+		"widget",
+		fmt.Sprintf("repo-%d", repoID),
+		fmt.Sprintf("issue-%d", issueNumber),
+	)
+}
+
 func TestIssueWorkspaceRecoversExpectedDirectory(t *testing.T) {
 	t.Parallel()
 	acquireWorkspaceGitSlot(t)
@@ -18,13 +33,10 @@ func TestIssueWorkspaceRecoversExpectedDirectory(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	fixture := setupWorkspaceServerFixture(t, nil)
-	seedIssue(t, fixture.database, "acme", "widget", 7, "open")
+	repoID := seedIssue(t, fixture.database, "acme", "widget", 7, "open")
 
 	branch := "middleman/issue-7"
-	expectedPath := filepath.Join(
-		fixture.worktreeDir,
-		"github", "github.com", "acme", "widget", "issue-7",
-	)
+	expectedPath := issueWorkspacePath(fixture, repoID, 7)
 	runGit(
 		t, fixture.bare,
 		"worktree", "add", expectedPath, "-b", branch, "main",
@@ -160,11 +172,10 @@ func TestIssueWorkspaceDirectoryRecoveryReasons(t *testing.T) {
 			assert := assert.New(t)
 			require := require.New(t)
 			fixture := setupWorkspaceServerFixture(t, nil)
-			seedIssue(t, fixture.database, "acme", "widget", 7, "open")
-			expectedPath := filepath.Join(
-				fixture.worktreeDir,
-				"github", "github.com", "acme", "widget", "issue-7",
+			repoID := seedIssue(
+				t, fixture.database, "acme", "widget", 7, "open",
 			)
+			expectedPath := issueWorkspacePath(fixture, repoID, 7)
 			tt.prepare(t, fixture, expectedPath)
 
 			branch := "middleman/issue-7"
@@ -204,13 +215,10 @@ func TestIssueWorkspaceConflictRejectsAlternateBranchForExistingDirectory(t *tes
 	assert := assert.New(t)
 	require := require.New(t)
 	fixture := setupWorkspaceServerFixture(t, nil)
-	seedIssue(t, fixture.database, "acme", "widget", 7, "open")
+	repoID := seedIssue(t, fixture.database, "acme", "widget", 7, "open")
 
 	branch := "middleman/issue-7-original-title"
-	expectedPath := filepath.Join(
-		fixture.worktreeDir,
-		"github", "github.com", "acme", "widget", "issue-7",
-	)
+	expectedPath := issueWorkspacePath(fixture, repoID, 7)
 	runGit(t, fixture.bare, "worktree", "add", expectedPath, "-b", branch, "main")
 
 	resp, err := fixture.client.HTTP.CreateIssueWorkspaceWithResponse(

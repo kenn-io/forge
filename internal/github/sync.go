@@ -241,6 +241,24 @@ type RepoRef struct {
 	WebURL             string
 	CloneURL           string
 	DefaultBranch      string
+	// CredentialOwner and CredentialName preserve the configured authorization
+	// route when the provider reports a live rename. Provider requests use the
+	// authoritative Owner and Name while route selection stays configuration
+	// bounded.
+	CredentialOwner string
+	CredentialName  string
+}
+
+func repoCredentialRoute(repo RepoRef) (string, string) {
+	owner := strings.TrimSpace(repo.CredentialOwner)
+	name := strings.TrimSpace(repo.CredentialName)
+	if owner == "" {
+		owner = repo.Owner
+	}
+	if name == "" {
+		name = repo.Name
+	}
+	return owner, name
 }
 
 // PartialSyncError reports a repo sync cycle whose index scan completed but
@@ -1451,7 +1469,7 @@ func (p *gitHubClientProvider) ViewerAuthoredMergeRequest(
 func (p *gitHubClientProvider) authenticatedViewerLoginForRepo(
 	ctx context.Context, owner, name string,
 ) (string, error) {
-	cacheKey := p.authenticatedViewerCacheKeyForRepo(owner, name)
+	cacheKey := p.authenticatedViewerCacheKeyForRepo(ctx, owner, name)
 	now := time.Now()
 	p.viewerMu.Lock()
 	defer p.viewerMu.Unlock()
@@ -1487,7 +1505,18 @@ func (p *gitHubClientProvider) authenticatedViewerLoginForRepo(
 	return login, nil
 }
 
-func (p *gitHubClientProvider) authenticatedViewerCacheKeyForRepo(owner, name string) string {
+func (p *gitHubClientProvider) authenticatedViewerCacheKeyForRepo(
+	ctx context.Context, owner, name string,
+) string {
+	if routed, ok := p.client.(interface {
+		AuthenticatedViewerCacheKeyForRepoContext(
+			context.Context, string, string,
+		) string
+	}); ok {
+		return routed.AuthenticatedViewerCacheKeyForRepoContext(
+			ctx, owner, name,
+		)
+	}
 	if routed, ok := p.client.(interface {
 		AuthenticatedViewerCacheKeyForRepo(string, string) string
 	}); ok {
@@ -2958,7 +2987,8 @@ func (s *Syncer) fetcherFor(repo RepoRef) *GraphQLFetcher {
 	}
 	host := repoHost(repo)
 	if router := s.routers[host]; router != nil {
-		route, err := router.RouteForRepo(repo.Owner, repo.Name)
+		routeOwner, routeName := repoCredentialRoute(repo)
+		route, err := router.RouteForRepo(routeOwner, routeName)
 		if err == nil {
 			return route.Fetcher
 		}
@@ -3050,10 +3080,11 @@ func (s *Syncer) identityForRepo(repo RepoRef, write bool) (IdentityKey, error) 
 	if router == nil {
 		return HostIdentity(host), nil
 	}
+	routeOwner, routeName := repoCredentialRoute(repo)
 	if write {
-		return router.WriteIdentityForRepo(repo.Owner, repo.Name)
+		return router.WriteIdentityForRepo(routeOwner, routeName)
 	}
-	return router.ReadIdentityForRepo(repo.Owner, repo.Name)
+	return router.ReadIdentityForRepo(routeOwner, routeName)
 }
 
 func (s *Syncer) bucketKeyForRepo(repo RepoRef, write bool) (string, error) {
@@ -3133,7 +3164,8 @@ func (s *Syncer) writeCredentialProberForRepo(
 	if router == nil {
 		return nil, nil, nil
 	}
-	route, err := router.RouteForRepo(repo.Owner, repo.Name)
+	routeOwner, routeName := repoCredentialRoute(repo)
+	route, err := router.RouteForRepo(routeOwner, routeName)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -5294,7 +5326,18 @@ func (s *Syncer) resetRepositoryPathState(repo RepoRef) {
 	s.nativeStackResults.Delete(key)
 	s.nativeStackConfirmations.Delete(key)
 	if client, ok := s.optionalGitHubClientFor(repo); ok {
-		client.InvalidateListETagsForRepo(repo.Owner, repo.Name)
+		routeOwner, routeName := repoCredentialRoute(repo)
+		if routed, ok := client.(interface {
+			InvalidateListETagsForRepoWithCredentialRoute(
+				string, string, string, string, ...string,
+			)
+		}); ok {
+			routed.InvalidateListETagsForRepoWithCredentialRoute(
+				routeOwner, routeName, repo.Owner, repo.Name,
+			)
+		} else {
+			client.InvalidateListETagsForRepo(repo.Owner, repo.Name)
+		}
 	}
 }
 
@@ -5565,7 +5608,16 @@ func (s *Syncer) persistRepoIdentityResolution(
 	}
 	resetPaths := make(map[string]RepoRef)
 	resolvedPath := repoRefFromIdentity(resolution.identity)
-	if repoPriorityKey(resolution.repo) != repoPriorityKey(resolvedPath) {
+	resolvedPath.CredentialOwner = resolution.repo.Owner
+	resolvedPath.CredentialName = resolution.repo.Name
+	pathChanged := repoPriorityKey(resolution.repo) !=
+		repoPriorityKey(resolvedPath)
+	firstResolvedEnrollment := resolution.previousRepo == nil &&
+		resolution.destinationRepo == nil
+	if pathChanged &&
+		(firstResolvedEnrollment ||
+			(resolution.previousRepo != nil &&
+				resolution.previousRepo.ID == repoID)) {
 		resetPaths[repoPriorityKey(resolvedPath)] = resolvedPath
 	}
 	if resolution.destinationRepo != nil &&
@@ -5576,7 +5628,9 @@ func (s *Syncer) persistRepoIdentityResolution(
 	}
 	if resolution.previousRepo != nil && resolution.previousRepo.ID != repoID {
 		resetPaths[repoPriorityKey(resolution.repo)] = resolution.repo
-	} else if resolution.previousRepo == nil {
+	} else if resolution.previousRepo == nil &&
+		resolution.destinationRepo == nil &&
+		!pathChanged {
 		if client, ok := s.optionalGitHubClientFor(resolution.repo); ok {
 			client.InvalidateListETagsForRepo(
 				resolution.repo.Owner,
@@ -5603,6 +5657,12 @@ func authoritativeRepoRef(
 	resolved *platform.Repository,
 ) RepoRef {
 	ref := configured
+	if ref.CredentialOwner == "" {
+		ref.CredentialOwner = configured.Owner
+	}
+	if ref.CredentialName == "" {
+		ref.CredentialName = configured.Name
+	}
 	ref.RepoID = repoID
 	ref.Platform = platform.Kind(persisted.Platform)
 	ref.PlatformHost = persisted.PlatformHost
@@ -5686,6 +5746,7 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 		return err
 	}
 	defer releaseIncarnationGate()
+	ctx = withGitHubCredentialRoute(ctx, repo)
 	ctx = withRepoIncarnationGateHeld(ctx, repo)
 
 	s.refreshRepoSettings(ctx, repo, repoID, resolvedRepo)

@@ -60,6 +60,12 @@ Workspace deletion is intentionally conservative.
 - Only after a clean preflight may runtime sessions and shells be stopped.
 - Only after runtime shutdown succeeds should destructive worktree and DB
   teardown continue.
+- A retired workspace whose path is also owned by an active replacement is the
+  exception: stop only the retired runtime, atomically delete only its database
+  records while the active owner still exists, and never inspect or clean the
+  shared filesystem path
+  (`internal/db/queries.go::DeleteRetiredWorkspaceWithActiveWorktreeOwner`,
+  `internal/workspace/manager.go::Manager.Delete`).
 
 This ordering prevents a rejected delete from silently killing the user's live
 workspace sessions.

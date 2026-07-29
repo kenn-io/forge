@@ -213,6 +213,10 @@ Persisted workspace `worktree_path` values should be absolute. Workspace setup
 runs `git worktree add` from the managed clone or configured base checkout, so
 relative paths would be interpreted relative to that Git directory while later
 API reads interpret them relative to the middleman server process.
+Middleman-managed paths include the internal repository ID. They remain
+deterministic for recovery within one repository incarnation while a
+same-provider-path replacement receives a distinct filesystem namespace
+(`internal/workspace/manager.go::Manager.repositoryWorktreePath`).
 
 Keep Git worktree and merge-request lifecycle semantics in
 `go.kenn.io/kit/git/managed`; Middleman supplies application policy instead of

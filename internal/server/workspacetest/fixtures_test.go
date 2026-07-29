@@ -292,7 +292,8 @@ func seedIssue(
 	}
 	issueID, err := database.UpsertIssue(ctx, issue)
 	require.NoError(t, err)
-	return issueID
+	require.Positive(t, issueID)
+	return repoID
 }
 
 func createReadyWorkspace(

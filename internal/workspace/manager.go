@@ -315,6 +315,21 @@ func (m *Manager) insertWorkspaceForRepo(
 	return m.db.InsertWorkspace(ctx, ws)
 }
 
+func (m *Manager) repositoryWorktreePath(
+	repoID int64,
+	platformName, platformHost, owner, name, itemDir string,
+) string {
+	return filepath.Join(
+		m.worktreeDir,
+		platformName,
+		platformHost,
+		owner,
+		name,
+		fmt.Sprintf("repo-%d", repoID),
+		itemDir,
+	)
+}
+
 // tmuxExec builds an *exec.Cmd for a tmux invocation: the
 // configured prefix + extra args. Defaults to ["tmux"] when
 // unconfigured. Returning the *exec.Cmd directly (rather than a
@@ -383,8 +398,8 @@ func (m *Manager) Create(
 			repo.Platform, platformHost, owner, name, mr.HeadRepoCloneURL,
 		),
 		WorkspaceBranch: workspaceBranchUnknown,
-		WorktreePath: filepath.Join(
-			m.worktreeDir, repo.Platform, platformHost, owner, name,
+		WorktreePath: m.repositoryWorktreePath(
+			repo.ID, repo.Platform, platformHost, owner, name,
 			fmt.Sprintf("pr-%d", mrNumber),
 		),
 		TmuxSession:     "middleman-" + id,
@@ -461,8 +476,8 @@ func (m *Manager) CreateIssue(
 		ItemNumber:      issueNumber,
 		GitHeadRef:      gitHeadRef,
 		WorkspaceBranch: gitHeadRef,
-		WorktreePath: filepath.Join(
-			m.worktreeDir, repo.Platform, platformHost, owner, name,
+		WorktreePath: m.repositoryWorktreePath(
+			repo.ID, repo.Platform, platformHost, owner, name,
 			fmt.Sprintf("issue-%d", issueNumber),
 		),
 		TmuxSession:     "middleman-" + id,
@@ -654,8 +669,8 @@ func (m *Manager) CreateKataTask(
 		ItemKey:         itemKey,
 		GitHeadRef:      gitHeadRef,
 		WorkspaceBranch: gitHeadRef,
-		WorktreePath: filepath.Join(
-			m.worktreeDir, repo.Platform, platformHost, owner, name,
+		WorktreePath: m.repositoryWorktreePath(
+			repo.ID, repo.Platform, platformHost, owner, name,
 			"kata-"+branchID,
 		),
 		TmuxSession:     "middleman-" + id,
@@ -736,8 +751,8 @@ func (m *Manager) CreateAdHoc(
 		ItemKey:         db.AdHocWorkspaceItemKey(gitHeadRef),
 		GitHeadRef:      gitHeadRef,
 		WorkspaceBranch: workspaceBranch,
-		WorktreePath: filepath.Join(
-			m.worktreeDir, repo.Platform, platformHost, owner, name,
+		WorktreePath: m.repositoryWorktreePath(
+			repo.ID, repo.Platform, platformHost, owner, name,
 			adHocWorktreeDirName(gitHeadRef),
 		),
 		TmuxSession:     "middleman-" + id,
@@ -2408,6 +2423,34 @@ func (m *Manager) Delete(
 	}
 	if ws == nil {
 		return nil, ErrWorkspaceNotFound
+	}
+
+	sharedWorktree, err := m.db.RetiredWorkspaceHasActiveWorktreeOwner(
+		ctx, ws.ID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if sharedWorktree {
+		if beforeDestructive != nil {
+			beforeDestructive(ctx)
+		}
+		if err := m.cleanupTmuxSession(ctx, ws); err != nil {
+			return nil, err
+		}
+		deleted, err := m.db.DeleteRetiredWorkspaceWithActiveWorktreeOwner(
+			ctx, ws.ID,
+		)
+		if err != nil {
+			return nil, err
+		}
+		if !deleted {
+			return nil, fmt.Errorf(
+				"retired workspace worktree ownership changed; retry deletion",
+			)
+		}
+		m.removeWorkspaceSummaryFromCache(id)
+		return nil, nil
 	}
 
 	if !force {

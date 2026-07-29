@@ -61,6 +61,12 @@ what "current" means.
   union through that sync; reset an occupied destination even when the source
   row survives, and let cutover during handoff supersede the older observation
   (`internal/github/sync.go::reconcileRepoIdentityWithIncarnationGate`).
+- A provider-resolved live rename separates two identities for the rest of the
+  sync: API requests use the authoritative resolved path, while credential
+  selection keeps the configured exact-repository route. Reset path-keyed state
+  only when the persisted row actually moves, not on every later resolution of
+  the unchanged rename (`internal/github/sync.go::authoritativeRepoRef`,
+  `internal/github/auth_router.go::RoutedClient.routeForRepoContext`).
 - Feature probes retain the gate through release or abandonment, fencing
   fast/detail/archive cooldown publication without serializing concurrent reads
   (`internal/github/feature_cooldown.go::Syncer.beginRepositoryFeatureProbe`).

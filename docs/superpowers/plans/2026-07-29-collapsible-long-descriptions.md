@@ -6,7 +6,7 @@
 
 **Approved spec/design:** `docs/superpowers/specs/2026-07-29-collapsible-long-descriptions-design.md`
 
-**Architecture:** Introduce one shared `CollapsibleDescription` Svelte component that owns threshold detection, transient per-item collapse state, the description header, copy control, and compact card styling. Pull and issue detail components retain their existing Markdown rendering and interaction handlers and pass that content to the shared component as a snippet.
+**Architecture:** Introduce one shared `CollapsibleDescription` Svelte component that owns threshold detection, transient collapse state, the description header, copy control, and compact card styling. Pull and issue detail components retain their existing Markdown rendering and interaction handlers, key the shared component by normalized provider-aware identity, and pass rendered content as a snippet.
 
 **Tech Stack:** Svelte 5 runes and snippets, TypeScript, `@kenn-io/kit-ui`, Testing Library, Vite+ unit and browser projects.
 
@@ -29,7 +29,7 @@
 - Test: `packages/ui/src/components/detail/PullDetail.test.ts`
 
 **Interfaces:**
-- Produces: `CollapsibleDescription` with props `source: string`, `itemKey: string`, `copied: boolean`, `oncopy: () => void`, optional `headerActions?: Snippet`, and `children: Snippet`.
+- Produces: `CollapsibleDescription` with props `source: string`, `copied: boolean`, `oncopy: () => void`, optional `headerActions?: Snippet`, and `children: Snippet`.
 - Produces: visible `Collapse` / `Expand` control with accessible names `Collapse description` / `Expand description` and `aria-expanded` state.
 - Consumes: the existing `CopyButton`, `Card`, PR body copy callback, edit callback, Markdown renderer, and body drag handlers.
 
@@ -71,14 +71,13 @@ Create the component with this public shape and initial state:
 
   interface Props {
     source: string;
-    itemKey: string;
     copied: boolean;
     oncopy: () => void;
     headerActions?: Snippet;
     children: Snippet;
   }
 
-  const { source, itemKey, copied, oncopy, headerActions, children }: Props = $props();
+  const { source, copied, oncopy, headerActions, children }: Props = $props();
   let collapsed = $state(false);
   const isLong = true;
 
@@ -90,7 +89,7 @@ Create the component with this public shape and initial state:
 
 Render the `Description` header, the conditional text button, the existing copy button contract, a `Card level="inset" padding="none"`, and `{@render children()}`. The toggle uses `aria-expanded={!collapsed}`, the visible label is `Collapse` or `Expand`, and its `aria-label` adds `description`.
 
-In `PullDetail.svelte`, replace only the non-editing `pr.Body` header/card branch with `CollapsibleDescription`. Pass a provider-aware `itemKey` containing `provider`, `platformHost`, `owner`, `name`, `number`, and the `pull` kind. Pass the existing Edit button as `headerActions`; keep the textarea/add-description branches in `PullDetail`.
+In `PullDetail.svelte`, replace only the non-editing `pr.Body` header/card branch with `CollapsibleDescription`. Derive a normalized provider-aware key containing `canonicalProvider(provider)`, `resolvedPlatformHost(provider, platformHost)`, `owner`, `name`, `number`, and the `pull` kind, then wrap the shared component in a Svelte `{#key}` block. Pass the existing Edit button as `headerActions`; keep the textarea/add-description branches in `PullDetail`.
 
 - [ ] **Step 4: Run the focused test and verify it passes**
 
@@ -123,6 +122,11 @@ it("expands a collapsed description after pull navigation", async () => {
   await rerender({ number: 2 });
 
   expect(screen.getByRole("button", { name: "Collapse description" }).getAttribute("aria-expanded")).toBe("true");
+
+  detail.merge_request.Number = 1;
+  await rerender({ number: 1 });
+
+  expect(screen.getByRole("button", { name: "Collapse description" }).getAttribute("aria-expanded")).toBe("true");
 });
 ```
 
@@ -140,19 +144,20 @@ Expected: both tests FAIL because the minimal implementation shows the control u
 
 - [ ] **Step 7: Complete threshold and per-item state behavior**
 
-Replace the minimal state with the final threshold and per-item derivations:
+Replace the unconditional threshold with the final source-length derivation:
 
 ```ts
-let collapsedItemKey = $state<string | null>(null);
+let collapsed = $state(false);
 const isLong = $derived(source.length > 1_500);
-const collapsed = $derived(isLong && collapsedItemKey === itemKey);
 
 function toggleCollapsed(): void {
-  collapsedItemKey = collapsed ? null : itemKey;
+  collapsed = !collapsed;
 }
 ```
 
-Do not use `$effect` or persistence: changing `itemKey` makes `collapsed` false without an imperative reset.
+In each provider detail parent, derive `descriptionItemKey` from canonical provider, resolved host, owner, name, item kind, and number. Wrap the complete existing `CollapsibleDescription` call in `{#key descriptionItemKey}` / `{/key}` without changing its rendered Markdown child.
+
+Do not use `$effect` or persistence: Svelte recreates the transient component state whenever navigation changes normalized identity, including an A → B → A round trip.
 
 - [ ] **Step 8: Run the entire PullDetail unit file**
 
@@ -186,7 +191,7 @@ Before committing, run the repository-local `context-sync` skill with `--commit`
 The fixture renders `CollapsibleDescription` with a 1,501-character source, a stable item key, and content tall enough to overflow:
 
 ```svelte
-<CollapsibleDescription source={"x".repeat(1_501)} itemKey="github:github.com:acme/widget:pull:1" copied={false} oncopy={() => {}}>
+<CollapsibleDescription source={"x".repeat(1_501)} copied={false} oncopy={() => {}}>
   <div style="height: 640px">Long rendered description</div>
 </CollapsibleDescription>
 ```
@@ -293,7 +298,7 @@ Expected: FAIL because IssueDetail does not yet render the shared control.
 
 - [ ] **Step 3: Replace the issue description wrapper**
 
-Import `CollapsibleDescription` in `IssueDetail.svelte` and replace the existing `section-header` / `inset-box-wrap` / `Card` shell for non-empty issue bodies. Pass `issue.Body`, the existing copy state and callback, and an item key containing `provider`, `platformHost`, `owner`, `name`, `number`, and the `issue` kind. Keep the existing `.inset-box__content markdown-body` div and every click/drag/drop handler as the child snippet.
+Import `CollapsibleDescription` in `IssueDetail.svelte` and replace the existing `section-header` / `inset-box-wrap` / `Card` shell for non-empty issue bodies. Pass `issue.Body` plus the existing copy state and callback, and key the component by the normalized provider/host/owner/name/number identity with the `issue` kind. Keep the existing `.inset-box__content markdown-body` div and every click/drag/drop handler as the child snippet.
 
 - [ ] **Step 4: Run the issue test file and verify it passes**
 

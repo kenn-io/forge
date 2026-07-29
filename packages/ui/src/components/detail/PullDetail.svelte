@@ -217,6 +217,9 @@
     number,
     itemType: "pull",
   });
+  const descriptionItemKey = $derived(
+    `${canonicalProvider(provider)}:${resolvedPlatformHost(provider, platformHost)}:${owner}/${name}:pull:${number}`,
+  );
 
   let activeTab = $state<"conversation" | "files">("conversation");
   let expandedPanel = $state<"ci" | "stack" | "merge" | null>(null);
@@ -2742,43 +2745,44 @@
             </div>
           </div>
         {:else if pr.Body}
-          <CollapsibleDescription
-            source={pr.Body}
-            itemKey={`${provider}:${platformHost ?? ""}:${owner}/${name}:pull:${number}`}
-            copied={bodyCopied}
-            oncopy={() => copyBody(pr.Body)}
-          >
-            {#snippet headerActions()}
-              {#if capabilities.state_mutation && !stalePR}
-                <button
-                  class="edit-body-btn"
-                  onclick={startEditBody}
-                  disabled={contentGate.unavailable}
-                  title={contentGate.unavailable ? contentGate.reason : undefined}
-                >
-                  Edit
-                </button>
-              {/if}
-            {/snippet}
-            <!-- svelte-ignore a11y_click_events_have_key_events -->
-            <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <div
-              class="inset-box__content markdown-body"
-              class:dragging={dragSourceIndex !== null}
-              onclick={onBodyClick}
-              ondragstart={onBodyDragStart}
-              ondragover={onBodyDragOver}
-              ondragleave={onBodyDragLeave}
-              ondrop={onBodyDrop}
-              ondragend={onBodyDragEnd}
+          {#key descriptionItemKey}
+            <CollapsibleDescription
+              source={pr.Body}
+              copied={bodyCopied}
+              oncopy={() => copyBody(pr.Body)}
             >
-              {#await renderMarkdown(pr.Body, { provider, platformHost, owner, name, repoPath }, { interactiveTasks: capabilities.state_mutation && !contentGate.unavailable })}
-                {@html renderMarkdownSync(pr.Body, { provider, platformHost, owner, name, repoPath })}
-              {:then html}
-                {@html html}
-              {/await}
-            </div>
-          </CollapsibleDescription>
+              {#snippet headerActions()}
+                {#if capabilities.state_mutation && !stalePR}
+                  <button
+                    class="edit-body-btn"
+                    onclick={startEditBody}
+                    disabled={contentGate.unavailable}
+                    title={contentGate.unavailable ? contentGate.reason : undefined}
+                  >
+                    Edit
+                  </button>
+                {/if}
+              {/snippet}
+              <!-- svelte-ignore a11y_click_events_have_key_events -->
+              <!-- svelte-ignore a11y_no_static_element_interactions -->
+              <div
+                class="inset-box__content markdown-body"
+                class:dragging={dragSourceIndex !== null}
+                onclick={onBodyClick}
+                ondragstart={onBodyDragStart}
+                ondragover={onBodyDragOver}
+                ondragleave={onBodyDragLeave}
+                ondrop={onBodyDrop}
+                ondragend={onBodyDragEnd}
+              >
+                {#await renderMarkdown(pr.Body, { provider, platformHost, owner, name, repoPath }, { interactiveTasks: capabilities.state_mutation && !contentGate.unavailable })}
+                  {@html renderMarkdownSync(pr.Body, { provider, platformHost, owner, name, repoPath })}
+                {:then html}
+                  {@html html}
+                {/await}
+              </div>
+            </CollapsibleDescription>
+          {/key}
         {:else}
           <div class="section-header">
             <span class="section-title-inline">Description</span>

@@ -144,6 +144,9 @@
     number,
     itemType: "issue",
   });
+  const descriptionItemKey = $derived(
+    `${canonicalProvider(provider)}:${resolvedPlatformHost(provider, platformHost)}:${owner}/${name}:issue:${number}`,
+  );
 
   // See PullDetail.svelte: while a route change is in flight, the
   // displayed issue may briefly belong to the previous route. Mutating
@@ -1370,31 +1373,32 @@
       <!-- Issue body -->
       {#if issue.Body}
         <div class="section body-section">
-          <CollapsibleDescription
-            source={issue.Body}
-            itemKey={`${provider}:${platformHost ?? ""}:${owner}/${name}:issue:${number}`}
-            copied={bodyCopied}
-            oncopy={() => copyBody(issue.Body)}
-          >
-            <!-- svelte-ignore a11y_click_events_have_key_events -->
-            <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <div
-              class="inset-box__content markdown-body"
-              class:dragging={dragSourceIndex !== null}
-              onclick={onBodyClick}
-              ondragstart={onBodyDragStart}
-              ondragover={onBodyDragOver}
-              ondragleave={onBodyDragLeave}
-              ondrop={onBodyDrop}
-              ondragend={onBodyDragEnd}
+          {#key descriptionItemKey}
+            <CollapsibleDescription
+              source={issue.Body}
+              copied={bodyCopied}
+              oncopy={() => copyBody(issue.Body)}
             >
-              {#await renderMarkdown(issue.Body, { provider, platformHost, owner, name, repoPath }, { interactiveTasks: capabilities.state_mutation && !contentGate.unavailable })}
-                {@html renderMarkdownSync(issue.Body, { provider, platformHost, owner, name, repoPath })}
-              {:then html}
-                {@html html}
-              {/await}
-            </div>
-          </CollapsibleDescription>
+              <!-- svelte-ignore a11y_click_events_have_key_events -->
+              <!-- svelte-ignore a11y_no_static_element_interactions -->
+              <div
+                class="inset-box__content markdown-body"
+                class:dragging={dragSourceIndex !== null}
+                onclick={onBodyClick}
+                ondragstart={onBodyDragStart}
+                ondragover={onBodyDragOver}
+                ondragleave={onBodyDragLeave}
+                ondrop={onBodyDrop}
+                ondragend={onBodyDragEnd}
+              >
+                {#await renderMarkdown(issue.Body, { provider, platformHost, owner, name, repoPath }, { interactiveTasks: capabilities.state_mutation && !contentGate.unavailable })}
+                  {@html renderMarkdownSync(issue.Body, { provider, platformHost, owner, name, repoPath })}
+                {:then html}
+                  {@html html}
+                {/await}
+              </div>
+            </CollapsibleDescription>
+          {/key}
         </div>
       {/if}
 

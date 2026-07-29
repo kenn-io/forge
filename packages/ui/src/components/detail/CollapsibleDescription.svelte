@@ -4,21 +4,19 @@
 
   interface Props {
     source: string;
-    itemKey: string;
     copied: boolean;
     oncopy: () => void;
     headerActions?: Snippet;
     children: Snippet;
   }
 
-  const { source, itemKey, copied, oncopy, headerActions, children }: Props = $props();
+  const { source, copied, oncopy, headerActions, children }: Props = $props();
 
-  let collapsedItemKey = $state<string | null>(null);
+  let collapsed = $state(false);
   const isLong = $derived(source.length > 1_500);
-  const collapsed = $derived(isLong && collapsedItemKey === itemKey);
 
   function toggleCollapsed(): void {
-    collapsedItemKey = collapsed ? null : itemKey;
+    collapsed = !collapsed;
   }
 </script>
 
@@ -32,11 +30,11 @@
       <button
         type="button"
         class="detail-description__toggle"
-        aria-label={collapsed ? "Expand description" : "Collapse description"}
-        aria-expanded={!collapsed}
+        aria-label={isLong && collapsed ? "Expand description" : "Collapse description"}
+        aria-expanded={!(isLong && collapsed)}
         onclick={toggleCollapsed}
       >
-        {collapsed ? "Expand" : "Collapse"}
+        {isLong && collapsed ? "Expand" : "Collapse"}
       </button>
     {/if}
   </div>
@@ -55,7 +53,7 @@
   <Card
     level="inset"
     padding="none"
-    class={collapsed
+    class={isLong && collapsed
       ? "detail-description-card detail-description-card--compact"
       : "detail-description-card"}
   >

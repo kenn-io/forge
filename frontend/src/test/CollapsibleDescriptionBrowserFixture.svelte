@@ -4,7 +4,6 @@
 
 <CollapsibleDescription
   source={"x".repeat(1_501)}
-  itemKey="github:github.com:acme/widget:pull:1"
   copied={false}
   oncopy={() => {}}
 >

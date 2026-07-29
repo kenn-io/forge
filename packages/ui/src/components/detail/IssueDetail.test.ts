@@ -1020,6 +1020,22 @@ describe("IssueDetail description collapse", () => {
     await fireEvent.click(expand);
     expect(screen.getByRole("button", { name: "Collapse description" }).getAttribute("aria-expanded")).toBe("true");
   });
+
+  it("expands a collapsed description after issue navigation", async () => {
+    const detail = issueDetail();
+    detail.issue.Body = "x".repeat(1_501);
+    const { rerender } = renderIssueDetail(detail);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Collapse description" }));
+
+    detail.issue.Number = 8;
+    await rerender({ number: 8 });
+    expect(screen.getByRole("button", { name: "Collapse description" }).getAttribute("aria-expanded")).toBe("true");
+
+    detail.issue.Number = 7;
+    await rerender({ number: 7 });
+    expect(screen.getByRole("button", { name: "Collapse description" }).getAttribute("aria-expanded")).toBe("true");
+  });
 });
 
 describe("IssueDetail body copy feedback", () => {

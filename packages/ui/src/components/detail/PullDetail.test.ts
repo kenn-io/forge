@@ -2045,6 +2045,11 @@ describe("PullDetail description collapse", () => {
     await rerender({ number: 2 });
 
     expect(screen.getByRole("button", { name: "Collapse description" }).getAttribute("aria-expanded")).toBe("true");
+
+    detail.merge_request.Number = 1;
+    await rerender({ number: 1 });
+
+    expect(screen.getByRole("button", { name: "Collapse description" }).getAttribute("aria-expanded")).toBe("true");
   });
 });
 

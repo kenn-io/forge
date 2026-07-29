@@ -25,9 +25,16 @@
     onExit = undefined,
     initialStatus = undefined,
   }: TerminalPaneProps = $props();
+
+  let xtermPane = $state<XtermTerminalPane | null>(null);
+
+  export function focus(): void {
+    xtermPane?.focus();
+  }
 </script>
 
 <XtermTerminalPane
+  bind:this={xtermPane}
   {workspaceId}
   {websocketPath}
   {reconnectOnExit}

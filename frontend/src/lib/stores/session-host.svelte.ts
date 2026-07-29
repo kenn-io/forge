@@ -205,7 +205,7 @@ export function noteSessionExited(key: SessionHostKey, code: number): void {
 // workspace host, a pooled session has no placement effect of its own to hand the
 // request to. Deliberately a single slot: only one focus request can be
 // outstanding, and a newer one supersedes it.
-let pendingFocusKey: SessionHostKey | null = null;
+let pendingFocusKey = $state<SessionHostKey | null>(null);
 
 export function requestSessionFocus(key: SessionHostKey): void {
   pendingFocusKey = key;

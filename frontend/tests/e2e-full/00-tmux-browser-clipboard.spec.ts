@@ -501,9 +501,9 @@ test("tmux drag-copy reaches the clipboard in tab and inline hosts", async ({ pa
     await expect(tabTerminal).not.toBeVisible();
     await expect.poll(() => output.activeSocketCount()).toBe(0);
     await selectIssueByTitle(page, "Widget rendering broken on Safari");
-    await page.locator(".workspace-dock-panel").getByRole("button", { name: "Open terminal panel" }).click();
-    const inlineTerminal = page.locator(".workspace-dock-panel .workspace-dock-slot .terminal-container");
+    const inlineTerminal = page.locator(".sole-embedded-session .terminal-container");
     await expect(inlineTerminal).toBeVisible();
+    await expect(inlineTerminal.locator("canvas, .xterm-screen").first()).toBeVisible();
     const inlineMarker = "inline clipboard marker";
     await enableTmuxMouseAndRenderMarker(page, inlineTerminal, output, inlineMarker);
     await dragTerminalCells(page, inlineTerminal, inlineMarker.length);

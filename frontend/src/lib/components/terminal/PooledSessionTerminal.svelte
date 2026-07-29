@@ -14,6 +14,7 @@
   let { session, parking, slotEl, active, onExit }: Props = $props();
 
   let wrapper = $state<HTMLElement | null>(null);
+  let terminalPane = $state<TerminalPane | null>(null);
   // True only once the wrapper actually sits in its destination and the browser
   // has laid it out. Activating a terminal earlier makes the fit addon measure
   // the parking node and resize the real tmux pane to one row.
@@ -51,15 +52,16 @@
     };
   });
 
-  // Focus a terminal that was asked for before it existed. Focus Terminal on a
-  // promoted session reveals its pane and the pool mounts the wrapper a tick and a
-  // frame later, by which time the request would otherwise be lost: focusing an
-  // inert, still-parked wrapper does nothing at all.
+  // Focus an explicitly requested terminal whether the request arrived before
+  // attachment or after it was already visible. The renderer queues the request
+  // through its async construction; the wrapper is an immediate fallback while
+  // that work finishes.
   $effect(() => {
     if (!attached || !active) return;
     const node = wrapper;
     if (!node || !consumeSessionFocus(session.hostKey)) return;
-    node.focus();
+    terminalPane?.focus();
+    if (!node.contains(document.activeElement)) node.focus();
   });
 
   // The wrapper is reparented out of this component's own fragment, so Svelte
@@ -79,6 +81,7 @@
   inert={!active || !attached}
 >
   <TerminalPane
+    bind:this={terminalPane}
     websocketPath={session.websocketPath}
     reconnectOnExit={false}
     disabled={session.disabled ?? false}

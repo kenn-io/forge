@@ -38,6 +38,7 @@
     noteSessionMounted,
     noteSessionUnmounted,
     onSessionExited,
+    requestSessionFocus,
     sessionHostKey,
     sessionHostPrefix,
     type MountedSession,
@@ -1937,6 +1938,7 @@
       // way, so the session appears as soon as a later refresh finds it.
       if (refreshed?.sessions.some((candidate) => candidate.key === session.key) === true) {
         closeLauncher();
+        requestSessionFocus(sessionHostKeyFor(session));
       } else {
         showFlash("Session launched, but the workspace could not be reloaded", {
           tone: "danger",

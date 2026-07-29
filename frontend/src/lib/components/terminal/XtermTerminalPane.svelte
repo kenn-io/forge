@@ -79,6 +79,7 @@
   let sawFirstBytes = false;
   let clipboardFailureReported = false;
   let activePointerId: number | null = null;
+  let explicitFocusRequested = false;
   const encoder = new TextEncoder();
   const clipboardWriter = createTerminalClipboardWriter(
     createBrowserTerminalClipboardPort(),
@@ -96,6 +97,14 @@
   // so a later focus steal is detected even though start() itself cannot
   // observe when focus moved during the wait.
   const focusIntent = createInitialFocusIntent();
+
+  export function focus(): void {
+    if (terminal !== null) {
+      terminal.focus();
+      return;
+    }
+    explicitFocusRequested = true;
+  }
 
   const MAX_RECONNECT_DELAY = 30000;
   const TERMINAL_SMOOTH_SCROLL_DURATION = 0;
@@ -708,13 +717,14 @@
       appliedFontLigatures = terminalFontLigatures;
       fit.fit();
 
-      // Focus only at terminal creation: launching/opening a session mounts a
-      // fresh pane, which is the one moment focus is unambiguously intended.
-      // Reveal- or enable-driven re-runs of the active effect must not steal
-      // focus from controls managed by WorkspaceHost/WorkspaceDockPanel. The
-      // font-load wait above is async, so focus only moves if the mount-time
-      // focus context is still current and isn't a dialog/menu/input.
-      if (autoFocus && active && !disabled && focusIntent.shouldFocus()) term.focus();
+      // Renderer autofocus runs only at terminal creation. Explicit pool/host
+      // requests use focus() above, but reveal- or enable-driven re-runs of the
+      // active effect must not steal focus from controls. The font-load wait is
+      // async, so creation autofocus only moves focus when the mount-time context
+      // is still current and isn't a dialog/menu/input.
+      const focusExplicitly = explicitFocusRequested;
+      explicitFocusRequested = false;
+      if (active && !disabled && (focusExplicitly || (autoFocus && focusIntent.shouldFocus()))) term.focus();
 
       term.onData((data: string) => {
         if (disabled) return;

@@ -168,7 +168,25 @@ describe("SessionTerminalPool", () => {
     await waitForReparent();
 
     await vi.waitFor(() => {
-      expect(document.activeElement).toBe(wrapper);
+      expect(document.activeElement?.closest(".terminal-container")).not.toBeNull();
+    }, WAIT);
+    button.remove();
+  });
+
+  it("focuses an already visible session's terminal when requested", async () => {
+    mountSession(agent);
+    mountPool();
+    showIn(agent, slotA);
+    await waitForReparent();
+
+    const button = document.createElement("button");
+    document.body.append(button);
+    button.focus();
+
+    requestSessionFocus(agent);
+
+    await vi.waitFor(() => {
+      expect(document.activeElement?.closest(".terminal-container")).not.toBeNull();
     }, WAIT);
     button.remove();
   });

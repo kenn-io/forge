@@ -243,14 +243,10 @@ Keyboard handlers must have one clear owner for each key press.
   the detail is only ever an explicit user action. Reopening also has to clear a
   zoom held by any other leaf, or the revealed pane sits behind it
   (`frontend/src/lib/stores/workspace-host.svelte.ts::focusTerminal`).
-- Terminal panes call `.focus()` only once, at terminal
-  creation, and only when a focus-intent guard captured at mount still holds:
-  `document.activeElement` must be unchanged since mount and not "sacred"
-  (inside `[role="dialog"|"menu"|"listbox"]`, or a form control/
-  contenteditable). This covers the async font-load window before `.focus()`
-  runs, during which something else can claim focus. Re-running the active/disabled effect on a
-  reveal or an enable flip must never call `.focus()` again — that would
-  fight the opt-in focus contracts above (`pendingHostFocus`,
+- Terminal renderers autofocus only once, at creation, and only when a
+  mount-time focus-intent guard still holds; explicit pool/host requests may
+  focus an existing renderer separately. Reveal or enable effects never focus,
+  or they fight the opt-in contracts above (`pendingHostFocus`,
   `shouldReclaimFocus`)
   (`frontend/src/lib/components/terminal/terminal-focus.ts`,
   `frontend/src/lib/components/terminal/XtermTerminalPane.svelte::start`).

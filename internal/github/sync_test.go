@@ -7003,6 +7003,114 @@ func TestSyncRepoSerializesRepositoryIdentityResolution(t *testing.T) {
 	assert.Equal("R_new", repos[0].PlatformRepoID)
 }
 
+type archiveIdentitySeeder struct {
+	database *db.DB
+}
+
+func (s archiveIdentitySeeder) EnsureConfigured(
+	ctx context.Context,
+	refs []platform.RepoRef,
+) error {
+	for _, ref := range refs {
+		if _, err := s.database.UpsertRepoByProviderID(
+			ctx,
+			platform.DBRepoIdentity(ref),
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (archiveIdentitySeeder) RetryAuthentication(
+	context.Context,
+	[]platform.RepoRef,
+) error {
+	return nil
+}
+
+func TestSetReposSerializesArchiveSeedingWithIdentityResolution(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	oldRepo := RepoRef{
+		Platform:           platform.KindGitHub,
+		PlatformHost:       "github.com",
+		Owner:              "acme",
+		Name:               "widgets",
+		RepoPath:           "acme/widgets",
+		PlatformExternalID: "R_old",
+	}
+	newRepo := oldRepo
+	newRepo.PlatformExternalID = "R_new"
+	identityReadStarted := make(chan struct{})
+	releaseIdentityRead := make(chan struct{})
+	client := &mockClient{getRepositoryFn: func(
+		context.Context,
+		string,
+		string,
+	) (*gh.Repository, error) {
+		close(identityReadStarted)
+		<-releaseIdentityRead
+		return &gh.Repository{
+			NodeID: new("R_old"),
+			Name:   new("widgets"),
+			Owner:  &gh.User{Login: new("acme")},
+		}, nil
+	}}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client},
+		d,
+		nil,
+		[]RepoRef{oldRepo},
+		time.Minute,
+		nil,
+		nil,
+	)
+	syncer.archiveLifecycle = archiveIdentitySeeder{database: d}
+
+	syncDone := make(chan error, 1)
+	go func() {
+		_, _, _, err := syncer.reconcileRepoIdentity(t.Context(), oldRepo)
+		syncDone <- err
+	}()
+	select {
+	case <-identityReadStarted:
+	case <-time.After(time.Second):
+		require.Fail("repository identity read did not start")
+	}
+
+	setReposDone := make(chan error, 1)
+	go func() {
+		setReposDone <- syncer.SetReposWithContext(
+			t.Context(),
+			[]RepoRef{newRepo},
+			false,
+		)
+	}()
+	completedBeforeIdentityRead := false
+	select {
+	case err := <-setReposDone:
+		require.NoError(err)
+		completedBeforeIdentityRead = true
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(releaseIdentityRead)
+	require.NoError(<-syncDone)
+	if !completedBeforeIdentityRead {
+		require.NoError(<-setReposDone)
+	}
+
+	repos, err := d.ListRepos(t.Context())
+	require.NoError(err)
+	require.Len(repos, 1)
+	assert.False(
+		completedBeforeIdentityRead,
+		"configuration seeding bypassed the repository identity gate",
+	)
+	assert.Equal("R_new", repos[0].PlatformRepoID)
+}
+
 func TestReconcileRepoIdentityRefreshesPrefilledProviderID(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -7045,6 +7153,86 @@ func TestReconcileRepoIdentityRefreshesPrefilledProviderID(t *testing.T) {
 	require.NotNil(stored)
 	assert.Equal("R_current", stored.PlatformRepoID)
 	assert.Equal(int32(1), reads.Load())
+}
+
+func TestReconcileRepoIdentityClearsFreshIncarnationProcessState(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	repo := RepoRef{
+		Platform:           platform.KindGitHub,
+		PlatformHost:       "github.com",
+		Owner:              "acme",
+		Name:               "widgets",
+		RepoPath:           "acme/widgets",
+		PlatformExternalID: "R_old",
+	}
+	_, err := d.UpsertRepoByProviderID(
+		t.Context(),
+		platform.DBRepoIdentity(platformRepoRef(repo)),
+	)
+	require.NoError(err)
+	client := &mockClient{getRepositoryFn: func(
+		context.Context,
+		string,
+		string,
+	) (*gh.Repository, error) {
+		return &gh.Repository{
+			NodeID: new("R_new"),
+			Name:   new("widgets"),
+			Owner:  &gh.User{Login: new("acme")},
+		}, nil
+	}}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client},
+		d,
+		nil,
+		[]RepoRef{repo},
+		time.Minute,
+		nil,
+		nil,
+	)
+	nextProbe := time.Now().UTC().Add(time.Hour)
+	syncer.featureCooldowns.deferUntil(
+		repo,
+		platform.RepositoryFeatureIssues,
+		nextProbe,
+	)
+	syncer.featureCooldowns.deferUntil(
+		repo,
+		platform.RepositoryFeatureMergeRequests,
+		nextProbe,
+	)
+	key := repoFailKey(repo)
+	syncer.failedRepos.Store(key, failIssues|failMR)
+	syncer.nativeStackResults.Store(key, &GitHubNativeStackSyncResult{})
+	syncer.nativeStackConfirmations.Store(key, nativeStackConfirmation{})
+
+	repoID, _, _, err := syncer.reconcileRepoIdentity(t.Context(), repo)
+	require.NoError(err)
+	stored, err := d.GetRepoByID(t.Context(), repoID)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal("R_new", stored.PlatformRepoID)
+	for _, feature := range []string{
+		platform.RepositoryFeatureIssues,
+		platform.RepositoryFeatureMergeRequests,
+	} {
+		probe, due := syncer.beginRepositoryFeatureProbe(
+			t.Context(),
+			repo,
+			feature,
+		)
+		assert.True(due, "fresh incarnation retained %s cooldown", feature)
+		probe.abandon()
+	}
+	_, failed := syncer.failedRepos.Load(key)
+	assert.False(failed)
+	_, nativeResult := syncer.nativeStackResults.Load(key)
+	assert.False(nativeResult)
+	_, nativeConfirmation := syncer.nativeStackConfirmations.Load(key)
+	assert.False(nativeConfirmation)
+	assert.Equal(int32(1), client.invalidateCalls.Load())
 }
 
 func TestReconcileRepoIdentityUsesLatestConfiguredIDWithoutRepositoryReader(t *testing.T) {

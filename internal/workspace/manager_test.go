@@ -658,6 +658,70 @@ func TestSetupRejectsWorkspaceRetiredBeforeHeadRepoReadLock(t *testing.T) {
 	}
 }
 
+func TestSetupCleansArtifactsWhenRepositoryReplacementWinsReadyRace(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	localRepo, _, platformHost := setupHTTPWorktreeBaseForWorkspaceGitTest(
+		t,
+		"feature/thing",
+	)
+	oldIdentity := db.RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   platformHost,
+		PlatformRepoID: "R_old",
+		Owner:          "acme",
+		Name:           "widget",
+	}
+	repoID, err := d.UpsertRepoByProviderID(t.Context(), oldIdentity)
+	require.NoError(err)
+	seedMR(t, d, repoID, 42, "feature/thing")
+
+	owner := newBlockingPtyOwnerClient()
+	mgr := NewManager(d, t.TempDir())
+	mgr.SetPtyOwnerClient(owner)
+	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
+	ws, err := mgr.Create(
+		t.Context(),
+		"github",
+		platformHost,
+		"acme",
+		"widget",
+		42,
+	)
+	require.NoError(err)
+
+	setupDone := make(chan error, 1)
+	go func() {
+		setupDone <- mgr.Setup(t.Context(), ws)
+	}()
+	select {
+	case <-owner.ensureStarted:
+	case <-time.After(5 * time.Second):
+		require.Fail("workspace setup did not reach terminal creation")
+	}
+	replacementIdentity := oldIdentity
+	replacementIdentity.PlatformRepoID = "R_new"
+	_, err = d.UpsertRepoByProviderID(t.Context(), replacementIdentity)
+	require.NoError(err)
+	close(owner.releaseEnsure)
+
+	select {
+	case setupErr := <-setupDone:
+		require.Error(setupErr)
+		require.ErrorIs(setupErr, ErrWorkspaceInvalidState)
+	case <-time.After(5 * time.Second):
+		require.Fail("workspace setup did not finish after replacement")
+	}
+	stored, err := d.GetWorkspace(t.Context(), ws.ID)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.NotNil(stored.RetiredAt)
+	assert.Equal("error", stored.Status)
+	assert.True(owner.stopped.Load())
+	assert.NoDirExists(ws.WorktreePath)
+}
+
 func TestRefreshWorkspaceHeadRepoRetriesWhenMissingRepoAppears(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -6119,6 +6183,52 @@ type fakePtyOwnerCall struct {
 	Op      string
 	Session string
 	Cwd     string
+}
+
+type blockingPtyOwnerClient struct {
+	ensureStarted chan struct{}
+	releaseEnsure chan struct{}
+	stopped       atomic.Bool
+}
+
+func newBlockingPtyOwnerClient() *blockingPtyOwnerClient {
+	return &blockingPtyOwnerClient{
+		ensureStarted: make(chan struct{}),
+		releaseEnsure: make(chan struct{}),
+	}
+}
+
+func (*blockingPtyOwnerClient) HasState(string) bool { return false }
+
+func (c *blockingPtyOwnerClient) Ensure(
+	context.Context,
+	string,
+	string,
+) error {
+	close(c.ensureStarted)
+	<-c.releaseEnsure
+	return nil
+}
+
+func (*blockingPtyOwnerClient) Attach(
+	context.Context,
+	string,
+	int,
+	int,
+) (*ptyowner.Attachment, error) {
+	return nil, nil
+}
+
+func (c *blockingPtyOwnerClient) Stop(context.Context, string) error {
+	c.stopped.Store(true)
+	return nil
+}
+
+func (*blockingPtyOwnerClient) Snapshot(
+	context.Context,
+	string,
+) (ptyowner.Status, error) {
+	return ptyowner.Status{}, nil
 }
 
 type fakePtyOwnerClient struct {

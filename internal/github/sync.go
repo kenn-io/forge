@@ -3608,6 +3608,8 @@ func (s *Syncer) HostForRepo(owner, name string) string {
 func (s *Syncer) SetRepos(repos []RepoRef) {
 	if err := s.SetReposWithContext(context.Background(), repos, false); err != nil {
 		slog.Warn("update archive repositories", "err", err)
+		unlockIdentities := s.lockRepoIdentityPaths(repos)
+		defer unlockIdentities()
 		s.reposMu.Lock()
 		s.repos = slices.Clone(repos)
 		s.reposMu.Unlock()
@@ -3619,13 +3621,31 @@ func (s *Syncer) SetRepos(repos []RepoRef) {
 // configured repository set to sync workers. Credential reloads may also make
 // authentication-blocked work eligible without resetting archive progress.
 func (s *Syncer) SetReposWithContext(ctx context.Context, repos []RepoRef, retryAuthentication bool) error {
+	unlockIdentities := s.lockRepoIdentityPaths(repos)
+	defer unlockIdentities()
+
 	refs := make([]platform.RepoRef, 0, len(repos))
 	for _, repo := range repos {
 		refs = append(refs, platformRepoRef(repo))
 	}
 	if s.archiveLifecycle != nil {
+		previousIDs, err := s.configuredRepoIDs(ctx, repos)
+		if err != nil {
+			return fmt.Errorf("read configured repository identities: %w", err)
+		}
 		if err := s.archiveLifecycle.EnsureConfigured(ctx, refs); err != nil {
 			return fmt.Errorf("seed archive discovery: %w", err)
+		}
+		currentIDs, err := s.configuredRepoIDs(ctx, repos)
+		if err != nil {
+			return fmt.Errorf("read seeded repository identities: %w", err)
+		}
+		for _, repo := range repos {
+			key := repoPriorityKey(repo)
+			currentID := currentIDs[key]
+			if currentID != 0 && currentID != previousIDs[key] {
+				s.resetRepositoryPathState(repo)
+			}
 		}
 		if retryAuthentication {
 			if err := s.archiveLifecycle.RetryAuthentication(ctx, refs); err != nil {
@@ -5174,6 +5194,64 @@ func (s *Syncer) repoIdentityLock(repo RepoRef) *sync.Mutex {
 	return lock
 }
 
+func (s *Syncer) lockRepoIdentityPaths(repos []RepoRef) func() {
+	byKey := make(map[string]*sync.Mutex, len(repos))
+	keys := make([]string, 0, len(repos))
+	for _, repo := range repos {
+		key := repoPriorityKey(repo)
+		if _, exists := byKey[key]; exists {
+			continue
+		}
+		byKey[key] = s.repoIdentityLock(repo)
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+	for _, key := range keys {
+		byKey[key].Lock()
+	}
+	return func() {
+		for i := len(keys) - 1; i >= 0; i-- {
+			byKey[keys[i]].Unlock()
+		}
+	}
+}
+
+func (s *Syncer) configuredRepoIDs(
+	ctx context.Context,
+	repos []RepoRef,
+) (map[string]int64, error) {
+	ids := make(map[string]int64, len(repos))
+	for _, repo := range repos {
+		key := repoPriorityKey(repo)
+		if _, seen := ids[key]; seen {
+			continue
+		}
+		ids[key] = 0
+		persisted, err := s.db.GetRepoByIdentity(
+			ctx,
+			platform.DBRepoIdentity(platformRepoRef(repo)),
+		)
+		if err != nil {
+			return nil, err
+		}
+		if persisted != nil {
+			ids[key] = persisted.ID
+		}
+	}
+	return ids, nil
+}
+
+func (s *Syncer) resetRepositoryPathState(repo RepoRef) {
+	key := repoFailKey(repo)
+	s.featureCooldowns.clearRepository(repo)
+	s.failedRepos.Delete(key)
+	s.nativeStackResults.Delete(key)
+	s.nativeStackConfirmations.Delete(key)
+	if client, ok := s.optionalGitHubClientFor(repo); ok {
+		client.InvalidateListETagsForRepo(repo.Owner, repo.Name)
+	}
+}
+
 func (s *Syncer) latestConfiguredRepo(repo RepoRef) RepoRef {
 	key := repoPriorityKey(repo)
 	s.reposMu.Lock()
@@ -5219,6 +5297,18 @@ func (s *Syncer) reconcileRepoIdentity(
 	defer identityLock.Unlock()
 
 	repo = s.latestConfiguredRepo(repo)
+	previousRepo, err := s.db.GetRepoByIdentity(
+		ctx,
+		platform.DBRepoIdentity(platformRepoRef(repo)),
+	)
+	if err != nil {
+		return 0, nil, nil, fmt.Errorf(
+			"read repo %s/%s before identity reconciliation: %w",
+			repo.Owner,
+			repo.Name,
+			err,
+		)
+	}
 	repoIdentity, resolvedRepo, err := s.syncRepoIdentity(ctx, repo)
 	if err != nil {
 		return 0, nil, nil, fmt.Errorf(
@@ -5253,6 +5343,13 @@ func (s *Syncer) reconcileRepoIdentity(
 			repo.Name,
 		)
 	}
+	if previousRepo != nil && previousRepo.ID != repoID {
+		s.resetRepositoryPathState(repo)
+	} else if previousRepo == nil {
+		if client, ok := s.optionalGitHubClientFor(repo); ok {
+			client.InvalidateListETagsForRepo(repo.Owner, repo.Name)
+		}
+	}
 	return repoID, resolvedRepo, persistedRepo, nil
 }
 
@@ -5284,15 +5381,10 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 		}
 	}
 
-	repoID, resolvedRepo, persistedRepo, err :=
+	repoID, resolvedRepo, _, err :=
 		s.reconcileRepoIdentity(ctx, repo)
 	if err != nil {
 		return err
-	}
-	if persistedRepo.LastSyncCompletedAt == nil {
-		if client, ok := s.optionalGitHubClientFor(repo); ok {
-			client.InvalidateListETagsForRepo(repo.Owner, repo.Name)
-		}
 	}
 
 	s.refreshRepoSettings(ctx, repo, repoID, resolvedRepo)

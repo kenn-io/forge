@@ -22,10 +22,12 @@ reconciliation when available.
   a rename: allocate a fresh internal repo ID, discard provider-owned snapshots
   and path-keyed caches, retire destination workspaces, and preserve local
   project links
-  (`internal/db/queries.go::UpsertRepoByProviderID`).
-- Serialize authoritative provider-ID resolution through reconciliation per
-  full repository path; a delayed observation must not restore a replaced
-  incarnation (`internal/github/sync.go::reconcileRepoIdentity`).
+  (`internal/db/queries.go::UpsertRepoByProviderID`,
+  `internal/github/sync.go::resetRepositoryPathState`).
+- Serialize every provider-ID writer, including configuration/archive seeding,
+  through one per-full-path reconciliation gate; a delayed observation must
+  not restore a replaced incarnation (`internal/github/sync.go::SetReposWithContext`,
+  `internal/github/sync.go::reconcileRepoIdentity`).
 
 GitLab nested namespaces make `repo_path` mandatory for reliable addressing:
 `group/subgroup/project` has owner `group/subgroup` and name `project`.

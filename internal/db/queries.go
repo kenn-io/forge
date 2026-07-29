@@ -5510,7 +5510,7 @@ func (d *DB) UpdateWorkspaceStatus(
 	id, status string,
 	errMsg *string,
 ) error {
-	_, err := d.rw.ExecContext(ctx, `
+	result, err := d.rw.ExecContext(ctx, `
 		UPDATE middleman_workspaces
 		SET status = ?, error_message = ?
 		WHERE id = ?
@@ -5520,7 +5520,9 @@ func (d *DB) UpdateWorkspaceStatus(
 	if err != nil {
 		return fmt.Errorf("update workspace status: %w", err)
 	}
-	return nil
+	return d.classifyWorkspaceMutation(
+		ctx, id, result, "workspace status",
+	)
 }
 
 // UpdateWorkspaceBranch stores the exact branch middleman created
@@ -5529,7 +5531,7 @@ func (d *DB) UpdateWorkspaceStatus(
 func (d *DB) UpdateWorkspaceBranch(
 	ctx context.Context, id, branch string,
 ) error {
-	_, err := d.rw.ExecContext(ctx, `
+	result, err := d.rw.ExecContext(ctx, `
 		UPDATE middleman_workspaces
 		SET workspace_branch = ?
 		WHERE id = ?
@@ -5539,7 +5541,9 @@ func (d *DB) UpdateWorkspaceBranch(
 	if err != nil {
 		return fmt.Errorf("update workspace branch: %w", err)
 	}
-	return nil
+	return d.classifyWorkspaceMutation(
+		ctx, id, result, "workspace branch",
+	)
 }
 
 // CompleteRecoveredWorkspaceSetup publishes the recovered branch and ready
@@ -5548,7 +5552,7 @@ func (d *DB) UpdateWorkspaceBranch(
 func (d *DB) CompleteRecoveredWorkspaceSetup(
 	ctx context.Context, id, branch string,
 ) error {
-	_, err := d.rw.ExecContext(ctx, `
+	result, err := d.rw.ExecContext(ctx, `
 		UPDATE middleman_workspaces
 		SET workspace_branch = ?,
 		    status = 'ready',
@@ -5560,6 +5564,27 @@ func (d *DB) CompleteRecoveredWorkspaceSetup(
 	if err != nil {
 		return fmt.Errorf("complete recovered workspace setup: %w", err)
 	}
+	return d.classifyWorkspaceMutation(
+		ctx, id, result, "recovered workspace setup",
+	)
+}
+
+func (d *DB) classifyWorkspaceMutation(
+	ctx context.Context,
+	id string,
+	result sql.Result,
+	operation string,
+) error {
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("read %s update result: %w", operation, err)
+	}
+	if rowsAffected > 0 {
+		return nil
+	}
+	if err := d.classifyWorkspaceConditionalUpdateMiss(ctx, id); err != nil {
+		return fmt.Errorf("check workspace after %s update: %w", operation, err)
+	}
 	return nil
 }
 
@@ -5570,7 +5595,7 @@ func (d *DB) CompleteRecoveredWorkspaceSetup(
 func (d *DB) UpdateWorkspaceMRHeadRepo(
 	ctx context.Context, id string, mrHeadRepo *string,
 ) error {
-	_, err := d.rw.ExecContext(ctx, `
+	result, err := d.rw.ExecContext(ctx, `
 		UPDATE middleman_workspaces
 		SET mr_head_repo = ?
 		WHERE id = ?
@@ -5580,7 +5605,9 @@ func (d *DB) UpdateWorkspaceMRHeadRepo(
 	if err != nil {
 		return fmt.Errorf("update workspace mr head repo: %w", err)
 	}
-	return nil
+	return d.classifyWorkspaceMutation(
+		ctx, id, result, "workspace mr head repo",
+	)
 }
 
 // UpdateWorkspaceMRHeadRepoForMissingRepo persists an unknown classification

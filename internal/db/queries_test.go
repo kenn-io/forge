@@ -1182,9 +1182,9 @@ func TestUpsertRepoByProviderIDResetsRecreatedRepositoryAtSamePath(t *testing.T)
 	retryStarted, err := d.StartWorkspaceRetry(ctx, retiredWorkspace.ID)
 	require.NoError(err)
 	assert.False(retryStarted)
-	require.NoError(d.UpdateWorkspaceStatus(
+	require.ErrorIs(d.UpdateWorkspaceStatus(
 		ctx, retiredWorkspace.ID, "ready", nil,
-	))
+	), ErrWorkspaceRetired)
 	retiredWorkspace, err = d.GetWorkspace(ctx, retiredWorkspace.ID)
 	require.NoError(err)
 	require.NotNil(retiredWorkspace)
@@ -5122,6 +5122,80 @@ func TestConditionalWorkspaceHeadRepoUpdatesReportRetirement(t *testing.T) {
 		nil,
 	)
 	require.ErrorIs(err, ErrWorkspaceRetired)
+}
+
+func TestWorkspaceSetupMutationsReportRetirement(t *testing.T) {
+	req := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	_, err := d.UpsertRepoByProviderID(ctx, RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "R_old",
+		Owner:          "acme",
+		Name:           "widget",
+	})
+	req.NoError(err)
+	req.NoError(d.InsertWorkspace(ctx, &Workspace{
+		ID:           "ws-retired-setup-mutations",
+		Platform:     "github",
+		PlatformHost: "github.com",
+		RepoOwner:    "acme",
+		RepoName:     "widget",
+		ItemType:     WorkspaceItemTypePullRequest,
+		ItemNumber:   7,
+		WorktreePath: t.TempDir(),
+		Status:       "creating",
+	}))
+	_, err = d.UpsertRepoByProviderID(ctx, RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "R_new",
+		Owner:          "acme",
+		Name:           "widget",
+	})
+	req.NoError(err)
+
+	mutations := []struct {
+		name   string
+		mutate func() error
+	}{
+		{name: "status", mutate: func() error {
+			return d.UpdateWorkspaceStatus(
+				ctx,
+				"ws-retired-setup-mutations",
+				"ready",
+				nil,
+			)
+		}},
+		{name: "branch", mutate: func() error {
+			return d.UpdateWorkspaceBranch(
+				ctx,
+				"ws-retired-setup-mutations",
+				"feature/replacement",
+			)
+		}},
+		{name: "recovered setup", mutate: func() error {
+			return d.CompleteRecoveredWorkspaceSetup(
+				ctx,
+				"ws-retired-setup-mutations",
+				"feature/replacement",
+			)
+		}},
+		{name: "merge request head repo", mutate: func() error {
+			return d.UpdateWorkspaceMRHeadRepo(
+				ctx,
+				"ws-retired-setup-mutations",
+				nil,
+			)
+		}},
+	}
+	for _, mutation := range mutations {
+		t.Run(mutation.name, func(t *testing.T) {
+			require := require.New(t)
+			require.ErrorIs(mutation.mutate(), ErrWorkspaceRetired)
+		})
+	}
 }
 
 func TestWorkspaceItemKeyDefaultsFromItemNumber(t *testing.T) {

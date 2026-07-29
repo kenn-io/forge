@@ -147,6 +147,19 @@ func (c *repositoryFeatureCooldowns) deferUntil(repo RepoRef, feature string, ne
 	}
 }
 
+func (c *repositoryFeatureCooldowns) clearRepository(repo RepoRef) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	target := repositoryFeatureKey(repo, "")
+	for key := range c.states {
+		if key.platform == target.platform &&
+			key.host == target.host &&
+			key.repoPath == target.repoPath {
+			delete(c.states, key)
+		}
+	}
+}
+
 func (probe repositoryFeatureProbe) release() {
 	if probe.bypass {
 		probe.clear()

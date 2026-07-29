@@ -1005,6 +1005,9 @@ func (m *Manager) SetupWithWorktreeBasePath(
 			if !reusedWorktree {
 				m.rollbackWorktree(ctx, gitDir, ws, branch)
 			}
+			if errors.Is(err, db.ErrWorkspaceRetired) {
+				err = retiredWorkspaceInvalidState()
+			}
 			return m.failSetup(
 				ctx,
 				ws.ID, workspaceSetupStageWorktree, err,
@@ -1050,6 +1053,21 @@ func (m *Manager) SetupWithWorktreeBasePath(
 		err = m.updateWorkspaceStatus(ctx, ws.ID, "ready", nil)
 	}
 	if err != nil {
+		if errors.Is(err, db.ErrWorkspaceRetired) {
+			cleanupCtx, cancel := cleanupContext(ctx)
+			cleanupErr := m.cleanupTmuxSession(cleanupCtx, terminalWorkspace)
+			cancel()
+			if !reusedWorktree {
+				m.rollbackWorktree(ctx, gitDir, ws, branch)
+			}
+			err = retiredWorkspaceInvalidState()
+			if cleanupErr != nil {
+				err = errors.Join(
+					err,
+					fmt.Errorf("clean up retired workspace terminal: %w", cleanupErr),
+				)
+			}
+		}
 		return m.failSetup(
 			ctx,
 			ws.ID, workspaceSetupStageSetup,

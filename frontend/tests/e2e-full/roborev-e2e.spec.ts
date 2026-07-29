@@ -639,6 +639,53 @@ test.describe.serial("Roborev", () => {
       await expect(autoDesignClassifyRow.locator(".col-type")).toHaveText("classify");
     });
 
+    test("status counts follow the default auto-design visibility", async ({ page }) => {
+      await page.route("**/api/roborev/api/stream/events", (route) => route.abort());
+      await waitForReviewsReady(page);
+      await waitForJobRows(page, 10);
+
+      await page.locator(".picker-button").click();
+      const visibleJobsResponse = page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return (
+          response.ok() &&
+          url.pathname.endsWith("/api/roborev/api/jobs") &&
+          url.searchParams.get("limit") === "0" &&
+          url.searchParams.get("hide_classify_jobs") === "true" &&
+          url.searchParams.getAll("repo").some((repo) => repo.includes("test-repo-alpha"))
+        );
+      });
+      await page.locator(".dropdown-item.repo-item", { hasText: "test-repo-alpha" }).click();
+      const visibleJobsBody = (await (await visibleJobsResponse).json()) as {
+        jobs: Array<{ id: number; status: string }>;
+      };
+      const visibleFailed = visibleJobsBody.jobs.filter((job) => job.status === "failed").length;
+      expect(visibleJobsBody.jobs.some((job) => job.id === 76)).toBe(false);
+
+      await expect(page.locator('.status-counts [title="Failed"]')).toHaveText(`${visibleFailed} failed`);
+
+      const allJobsResponse = page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return (
+          response.ok() &&
+          url.pathname.endsWith("/api/roborev/api/jobs") &&
+          url.searchParams.get("limit") === "0" &&
+          url.searchParams.get("hide_classify_jobs") === null &&
+          url.searchParams.getAll("repo").some((repo) => repo.includes("test-repo-alpha"))
+        );
+      });
+      await page.getByLabel("Show auto-design").check();
+
+      const allJobsBody = (await (await allJobsResponse).json()) as {
+        jobs: Array<{ id: number; status: string }>;
+      };
+      const allFailed = allJobsBody.jobs.filter((job) => job.status === "failed").length;
+      expect(allJobsBody.jobs.some((job) => job.id === 76)).toBe(true);
+      expect(allFailed).toBeGreaterThan(visibleFailed);
+      await expect(page.locator(".git-ref[title='auto-design-classify']")).toBeVisible();
+      await expect(page.locator('.status-counts [title="Failed"]')).toHaveText(`${allFailed} failed`);
+    });
+
     test("reset each filter to default restores full list", async ({ page }) => {
       await waitForReviewsReady(page);
       await waitForJobRows(page, 10);

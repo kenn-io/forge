@@ -39,6 +39,7 @@ export function createJobsStore(opts: JobsStoreOptions) {
   let hasMore = $state(false);
   let stats = $state<JobStats>({ done: 0, closed: 0, open: 0 });
   let filteredStatusCounts = $state<JobStatusCounts | undefined>(undefined);
+  let filteredStatusCountsScope: string | undefined;
   let storeError = $state<string | null>(null);
   let selectedJobId = $state<number | undefined>(undefined);
   let highlightedJobId = $state<number | undefined>(undefined);
@@ -180,17 +181,23 @@ export function createJobsStore(opts: JobsStoreOptions) {
     const filtered = hasActiveFilters();
     loading = true;
     storeError = null;
-    filteredStatusCounts = undefined;
     try {
       const query = buildQuery();
+      const countQuery = { ...query, limit: 0, omit_prompt: "true" as const };
+      const countScope = JSON.stringify(countQuery);
+      if (filtered && filteredStatusCountsScope !== countScope) {
+        filteredStatusCounts = undefined;
+      }
       const [listResult, countResult] = await Promise.all([
         client.GET("/api/jobs", { params: { query } }),
         filtered
-          ? client.GET("/api/jobs", {
-              params: {
-                query: { ...query, limit: 0, omit_prompt: "true" },
-              },
-            })
+          ? client
+              .GET("/api/jobs", {
+                params: {
+                  query: countQuery,
+                },
+              })
+              .catch(() => undefined)
           : Promise.resolve(undefined),
       ]);
       const { data, error } = listResult;
@@ -201,6 +208,7 @@ export function createJobsStore(opts: JobsStoreOptions) {
       stats = data?.stats ?? { done: 0, closed: 0, open: 0 };
       if (filtered && countResult && !countResult.error) {
         filteredStatusCounts = countJobsByStatus(countResult.data?.jobs ?? []);
+        filteredStatusCountsScope = countScope;
       }
       const expandedRuns: Record<string, true> = {};
       for (const job of jobs) {
@@ -634,6 +642,9 @@ export function createJobsStore(opts: JobsStoreOptions) {
   function getFilteredStatusCounts(): JobStatusCounts | undefined {
     return filteredStatusCounts;
   }
+  function usesFilteredStatusCounts(): boolean {
+    return hasActiveFilters();
+  }
   function getError(): string | null {
     return storeError;
   }
@@ -681,6 +692,7 @@ export function createJobsStore(opts: JobsStoreOptions) {
     getHasMore,
     getStats,
     getFilteredStatusCounts,
+    usesFilteredStatusCounts,
     getError,
     getSelectedJobId,
     getHighlightedJobId,

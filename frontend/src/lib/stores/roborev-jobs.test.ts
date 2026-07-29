@@ -346,6 +346,90 @@ describe("createJobsStore filtered status counts", () => {
       },
     });
   });
+
+  it("preserves the previous scoped counts while a filtered reload is pending", async () => {
+    let resolveReloadCounts!: (result: { data: { jobs: ReviewJob[]; has_more: boolean }; error: undefined }) => void;
+    const reloadCounts = new Promise<{
+      data: { jobs: ReviewJob[]; has_more: boolean };
+      error: undefined;
+    }>((resolve) => {
+      resolveReloadCounts = resolve;
+    });
+    let countRequests = 0;
+    const client = {
+      GET: vi.fn().mockImplementation((_path: string, opts: { params: { query: Record<string, unknown> } }) => {
+        if (opts.params.query.limit === 0 && ++countRequests === 2) return reloadCounts;
+        return Promise.resolve({
+          data: { jobs: [makeJob(1)], has_more: false },
+          error: undefined,
+        });
+      }),
+    };
+    const store = createJobsStore({ client: client as never, navigate: vi.fn() });
+    await store.loadJobs();
+    expect(store.getFilteredStatusCounts()?.done).toBe(1);
+
+    const reload = store.loadJobs();
+    try {
+      expect(store.getFilteredStatusCounts()?.done).toBe(1);
+    } finally {
+      resolveReloadCounts({
+        data: { jobs: [makeJob(2), makeJob(3)], has_more: false },
+        error: undefined,
+      });
+    }
+    await reload;
+    expect(store.getFilteredStatusCounts()?.done).toBe(2);
+  });
+
+  it("does not reuse scoped counts after the filters change", async () => {
+    let resolveNextCounts!: (result: { data: { jobs: ReviewJob[]; has_more: boolean }; error: undefined }) => void;
+    const nextCounts = new Promise<{
+      data: { jobs: ReviewJob[]; has_more: boolean };
+      error: undefined;
+    }>((resolve) => {
+      resolveNextCounts = resolve;
+    });
+    const client = {
+      GET: vi.fn().mockImplementation((_path: string, opts: { params: { query: Record<string, unknown> } }) => {
+        if (opts.params.query.limit === 0 && opts.params.query.git_ref === "next") return nextCounts;
+        return Promise.resolve({
+          data: { jobs: [makeJob(1)], has_more: false },
+          error: undefined,
+        });
+      }),
+    };
+    const store = createJobsStore({ client: client as never, navigate: vi.fn() });
+    await store.loadJobs();
+
+    store.setFilter("search", "next");
+    try {
+      expect(store.getFilteredStatusCounts()).toBeUndefined();
+    } finally {
+      resolveNextCounts({
+        data: { jobs: [makeJob(2)], has_more: false },
+        error: undefined,
+      });
+    }
+  });
+
+  it("keeps successful rows when the scoped count request rejects", async () => {
+    const client = {
+      GET: vi.fn().mockImplementation((_path: string, opts: { params: { query: Record<string, unknown> } }) => {
+        if (opts.params.query.limit === 0) return Promise.reject(new Error("count unavailable"));
+        return Promise.resolve({
+          data: { jobs: [makeJob(7)], has_more: false },
+          error: undefined,
+        });
+      }),
+    };
+    const store = createJobsStore({ client: client as never, navigate: vi.fn() });
+
+    await store.loadJobs();
+
+    expect(store.getJobs().map((job) => job.id)).toEqual([7]);
+    expect(store.getError()).toBeNull();
+  });
 });
 
 describe("createJobsStore panel expansion", () => {

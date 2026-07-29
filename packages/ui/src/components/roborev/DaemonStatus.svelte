@@ -5,6 +5,11 @@
   const daemon = stores.roborevDaemon;
 
   const counts = $derived(stores.roborevJobs?.getFilteredStatusCounts());
+  const filteredCounts = $derived(stores.roborevJobs?.usesFilteredStatusCounts() ?? false);
+
+  function displayCount(filtered: number | undefined, daemonTotal: number): number | string {
+    return filteredCounts ? (filtered ?? "--") : daemonTotal;
+  }
 
   function formatVersion(version: string): string {
     if (version.startsWith("v")) return version;
@@ -42,16 +47,16 @@
 
       <span class="status-counts">
         <span class="count count-queued" title="Queued">
-          {counts?.queued ?? daemon.getQueuedJobs()} queued
+          {displayCount(counts?.queued, daemon.getQueuedJobs())} queued
         </span>
         <span class="count count-running" title="Running">
-          {counts?.running ?? daemon.getRunningJobs()} running
+          {displayCount(counts?.running, daemon.getRunningJobs())} running
         </span>
         <span class="count count-done" title="Done">
-          {counts?.done ?? daemon.getCompletedJobs()} done
+          {displayCount(counts?.done, daemon.getCompletedJobs())} done
         </span>
         <span class="count count-failed" title="Failed">
-          {counts?.failed ?? daemon.getFailedJobs()} failed
+          {displayCount(counts?.failed, daemon.getFailedJobs())} failed
         </span>
       </span>
     {:else}

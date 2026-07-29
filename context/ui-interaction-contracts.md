@@ -327,12 +327,16 @@ Keyboard handlers must have one clear owner for each key press.
 - Terminal SIZE is never gated on visibility, focus, or any "is this pane
   active" inference. A pane measures its own region through the fit addon and
   pushes the result whenever it differs from what the PTY was last told; resize
-  authority follows the same measurement. A container with no content box (a
+  authority follows the same measurement. Every pooled slot boundary must fill
+  its painted leaf in both axes; horizontal block stretch alone can leave the
+  xterm at a stale intrinsic height, so no vertical ResizeObserver result ever
+  reaches the PTY. A container with no content box (a
   parked terminal) measures nothing, which is what keeps it from resizing a live
   tmux pane to one row — the measurement IS the check. Record a size as sent
   only once the socket carried it, or a resize computed before the socket opened
   is suppressed forever and the PTY keeps its launch default
-  (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::terminalRegionSize`).
+  (`frontend/src/lib/components/terminal/TerminalSplitTree.svelte::terminal-leaf-body`,
+  `frontend/src/lib/components/terminal/XtermTerminalPane.svelte::terminalRegionSize`).
 - A promoted session is recorded ONCE, in the detail surface's stored pane tree.
   Containers mask it out of what they render (derived, not an effect) and never
   prune their own stored trees, so demoting restores the tab order, split, and

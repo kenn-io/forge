@@ -119,7 +119,7 @@ func TestArchiveServiceEnsureConfiguredSeedsFreshRepository(t *testing.T) {
 	assert.Equal(db.ArchiveOperatorStateActive, states[0].OperatorState)
 }
 
-func TestArchiveServiceEnsureConfiguredMergesRenamedRepositoryAtExistingDestination(t *testing.T) {
+func TestArchiveServiceEnsureConfiguredReplacesRepositoryAtExistingDestination(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -144,10 +144,12 @@ func TestArchiveServiceEnsureConfiguredMergesRenamedRepositoryAtExistingDestinat
 	repos, err := database.ListRepos(t.Context())
 	require.NoError(err)
 	require.Len(repos, 1)
-	assert.Equal(destinationID, repos[0].ID)
+	assert.Equal(sourceID, repos[0].ID)
 	assert.Equal("repo-current", repos[0].PlatformRepoID)
 	assert.Equal("current", repos[0].Name)
-	assert.NotEqual(sourceID, destinationID)
+	replaced, err := database.GetRepoByID(t.Context(), destinationID)
+	require.NoError(err)
+	assert.Nil(replaced)
 }
 
 func TestArchiveServiceAllScopeAndWakeLifecycle(t *testing.T) {

@@ -1080,6 +1080,12 @@ func TestUpsertRepoByProviderIDResetsRecreatedRepositoryAtSamePath(t *testing.T)
 	insertTestMRWithOptions(t, d, testMR(repoID, 1, withMRTitle("old merge request")))
 	insertTestIssueWithOptions(t, d, testIssue(repoID, 1, withIssueTitle("old issue")))
 	require.NoError(d.EnsureDiscoveryArchives(ctx, []int64{repoID}, baseTime()))
+	require.NoError(d.UpsertNotifications(ctx, []Notification{
+		notificationFixture("old-notification", "mention", baseTime()),
+	}))
+	require.NoError(d.UpdateNotificationSyncWatermark(
+		ctx, "github", "github.com", "acme", "widget", baseTime(), nil,
+	))
 	project, err := d.CreateProject(ctx, CreateProjectInput{
 		DisplayName:   "Widget",
 		LocalPath:     "/tmp/widget",
@@ -1116,6 +1122,14 @@ func TestUpsertRepoByProviderIDResetsRecreatedRepositoryAtSamePath(t *testing.T)
 		recreatedID,
 	).Scan(&archiveRows))
 	assert.Zero(archiveRows)
+	notifications, err := d.ListNotifications(ctx, ListNotificationsOpts{State: "all"})
+	require.NoError(err)
+	assert.Empty(notifications)
+	watermark, err := d.GetNotificationSyncWatermark(
+		ctx, "github", "github.com", "acme", "widget",
+	)
+	require.NoError(err)
+	assert.Nil(watermark)
 
 	linkedProject, err := d.GetProjectByID(ctx, project.ID)
 	require.NoError(err)
@@ -1254,6 +1268,75 @@ func TestUpsertRepoByProviderIDMergesExistingDestinationPathRow(t *testing.T) {
 	).Scan(&issueRepoID)
 	require.NoError(err)
 	assert.Equal(destinationID, issueRepoID)
+}
+
+func TestUpsertRepoByProviderIDDiscardsReplacedDestinationWhenIncomingRepoMoved(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+
+	sourceID, err := d.UpsertRepoByProviderID(ctx, RepoIdentity{
+		Platform:       "gitlab",
+		PlatformHost:   "gitlab.com",
+		PlatformRepoID: "gid://gitlab/Project/42",
+		Owner:          "old-group",
+		Name:           "old-name",
+	})
+	require.NoError(err)
+	insertTestMRWithOptions(t, d, testMR(sourceID, 7, withMRTitle("incoming repository MR")))
+
+	destinationID, err := d.UpsertRepoByProviderID(ctx, RepoIdentity{
+		Platform:       "gitlab",
+		PlatformHost:   "gitlab.com",
+		PlatformRepoID: "gid://gitlab/Project/99",
+		Owner:          "new-group",
+		Name:           "new-name",
+	})
+	require.NoError(err)
+	insertTestIssueWithOptions(t, d, testIssue(destinationID, 8, withIssueTitle("replaced repository issue")))
+	project, err := d.CreateProject(ctx, CreateProjectInput{
+		DisplayName:   "New Name",
+		LocalPath:     "/tmp/new-name",
+		RepoID:        sql.NullInt64{Int64: destinationID, Valid: true},
+		DefaultBranch: "main",
+	})
+	require.NoError(err)
+
+	gotID, err := d.UpsertRepoByProviderID(ctx, RepoIdentity{
+		Platform:       "gitlab",
+		PlatformHost:   "gitlab.com",
+		PlatformRepoID: "gid://gitlab/Project/42",
+		Owner:          "new-group",
+		Name:           "new-name",
+	})
+	require.NoError(err)
+	assert.Equal(sourceID, gotID)
+
+	replaced, err := d.GetRepoByID(ctx, destinationID)
+	require.NoError(err)
+	assert.Nil(replaced)
+	incoming, err := d.GetRepoByID(ctx, sourceID)
+	require.NoError(err)
+	require.NotNil(incoming)
+	assert.Equal("new-group/new-name", incoming.RepoPath)
+
+	mergeRequest, err := d.GetMergeRequestByRepoIDAndNumber(ctx, sourceID, 7)
+	require.NoError(err)
+	require.NotNil(mergeRequest)
+	assert.Equal("incoming repository MR", mergeRequest.Title)
+	issue, err := d.GetIssueByRepoIDAndNumber(ctx, sourceID, 8)
+	require.NoError(err)
+	assert.Nil(issue)
+
+	linkedProject, err := d.GetProjectByID(ctx, project.ID)
+	require.NoError(err)
+	require.NotNil(linkedProject)
+	require.NotNil(linkedProject.PlatformIdentity)
+	assert.Equal("gitlab", linkedProject.PlatformIdentity.Platform)
+	assert.Equal("gitlab.com", linkedProject.PlatformIdentity.Host)
+	assert.Equal("new-group", linkedProject.PlatformIdentity.Owner)
+	assert.Equal("new-name", linkedProject.PlatformIdentity.Name)
 }
 
 func TestUpsertRepoByProviderIDPreservesNewerCollidingMergeRequest(t *testing.T) {

@@ -18,6 +18,10 @@ reconciliation when available.
 - `repo_path` carries the full provider path when `owner/name` is not enough.
 - `platform_repo_id` / provider external IDs are stable provider identities;
   prefer them for rename reconciliation, but never drop human-readable fields.
+- A different non-empty provider ID at an existing path is a replacement, not
+  a rename: discard provider-owned snapshots and path-keyed notification
+  progress while preserving local project links
+  (`internal/db/queries.go::UpsertRepoByProviderID`).
 
 GitLab nested namespaces make `repo_path` mandatory for reliable addressing:
 `group/subgroup/project` has owner `group/subgroup` and name `project`.

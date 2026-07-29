@@ -1035,6 +1035,38 @@ func (d *DB) UpsertRepoByProviderID(ctx context.Context, identity RepoIdentity) 
 			if err != nil {
 				return err
 			}
+			if targetIdentity.PlatformRepoID != "" &&
+				targetIdentity.PlatformRepoID != identity.PlatformRepoID {
+				if err := clearRepoIncarnationNotificationStateTx(
+					ctx, tx, targetID, targetIdentity,
+				); err != nil {
+					return err
+				}
+				if _, err := tx.ExecContext(ctx,
+					`UPDATE middleman_projects SET repo_id = ? WHERE repo_id = ?`,
+					sourceID,
+					targetID,
+				); err != nil {
+					return fmt.Errorf("relink projects from replaced destination repo: %w", err)
+				}
+				if _, err := tx.ExecContext(ctx,
+					`DELETE FROM middleman_repos WHERE id = ?`,
+					targetID,
+				); err != nil {
+					return fmt.Errorf("clear replaced destination repo: %w", err)
+				}
+				if err := updateRepoIdentityTx(ctx, tx, sourceID, identity); err != nil {
+					return err
+				}
+				if err := updateWorkspaceRepoIdentityTx(ctx, tx, sourceIdentity, identity); err != nil {
+					return err
+				}
+				if err := updateWorkspaceRepoIdentityTx(ctx, tx, targetIdentity, identity); err != nil {
+					return err
+				}
+				id = sourceID
+				return nil
+			}
 			if err := mergeRepoRowsTx(ctx, tx, sourceID, targetID); err != nil {
 				return err
 			}
@@ -1105,6 +1137,15 @@ func replaceRepoIncarnationTx(
 	identity RepoIdentity,
 ) error {
 	identity = canonicalRepoIdentity(identity)
+	currentIdentity, err := lookupRepoIdentityByIDTx(ctx, tx, repoID)
+	if err != nil {
+		return err
+	}
+	if err := clearRepoIncarnationNotificationStateTx(
+		ctx, tx, repoID, currentIdentity,
+	); err != nil {
+		return err
+	}
 
 	rows, err := tx.QueryContext(ctx,
 		`SELECT id FROM middleman_projects WHERE repo_id = ?`,
@@ -1162,6 +1203,46 @@ func replaceRepoIncarnationTx(
 		); err != nil {
 			return fmt.Errorf("relink project to replaced repo: %w", err)
 		}
+	}
+	return nil
+}
+
+func clearRepoIncarnationNotificationStateTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	repoID int64,
+	identity RepoIdentity,
+) error {
+	identity = canonicalRepoIdentity(identity)
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM middleman_notification_items
+		WHERE repo_id = ?
+		   OR (
+		       platform = ?
+		       AND platform_host = ?
+		       AND repo_owner = ?
+		       AND repo_name = ?
+		   )`,
+		repoID,
+		identity.Platform,
+		identity.PlatformHost,
+		identity.OwnerKey,
+		identity.NameKey,
+	); err != nil {
+		return fmt.Errorf("clear replaced repo notifications: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM middleman_notification_sync_watermarks
+		WHERE platform = ?
+		  AND platform_host = ?
+		  AND repo_owner = ?
+		  AND repo_name = ?`,
+		identity.Platform,
+		identity.PlatformHost,
+		identity.OwnerKey,
+		identity.NameKey,
+	); err != nil {
+		return fmt.Errorf("clear replaced repo notification watermark: %w", err)
 	}
 	return nil
 }

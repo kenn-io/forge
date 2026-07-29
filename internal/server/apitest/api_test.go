@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/apiclient/generated"
 	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/middleman/internal/platform"
 )
 
 func TestAPIListPullsIncludesLabels(t *testing.T) {
@@ -216,6 +217,55 @@ func TestAPIListIssuesStateFilter(t *testing.T) {
 	resp, err = client.HTTP.ListIssuesWithResponse(ctx, &generated.ListIssuesParams{State: &state})
 	require.NoError(err)
 	require.Len(*resp.JSON200, 2)
+}
+
+func TestAPIRepositorySyncDropsPreviousIncarnationSnapshots(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	srv, database, _, syncer := setupTestServerWithFixtureClient(t)
+	client := setupTestClient(t, srv)
+
+	seedPR(t, database, "acme", "widget", 1)
+	seedIssue(t, database, "acme", "widget", 2, "open")
+	repo, err := database.GetRepoByIdentity(
+		ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	require.NotNil(repo)
+	require.NoError(database.UpdateRepoProviderMetadata(ctx, repo.ID, db.RepoProviderMetadata{
+		PlatformRepoID: "repo-previous-incarnation",
+	}))
+
+	state := "all"
+	pullsBefore, err := client.HTTP.ListPullsWithResponse(
+		ctx, &generated.ListPullsParams{State: &state},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, pullsBefore.StatusCode())
+	require.Len(*pullsBefore.JSON200, 1)
+	issuesBefore, err := client.HTTP.ListIssuesWithResponse(
+		ctx, &generated.ListIssuesParams{State: &state},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, issuesBefore.StatusCode())
+	require.Len(*issuesBefore.JSON200, 1)
+
+	require.NoError(syncer.SyncRepoOnProvider(
+		ctx, platform.KindGitHub, "github.com", "acme", "widget",
+	))
+
+	pullsAfter, err := client.HTTP.ListPullsWithResponse(
+		ctx, &generated.ListPullsParams{State: &state},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, pullsAfter.StatusCode())
+	require.Empty(*pullsAfter.JSON200)
+	issuesAfter, err := client.HTTP.ListIssuesWithResponse(
+		ctx, &generated.ListIssuesParams{State: &state},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, issuesAfter.StatusCode())
+	require.Empty(*issuesAfter.JSON200)
 }
 
 func TestAPIListIssuesFilterByAssignee(t *testing.T) {

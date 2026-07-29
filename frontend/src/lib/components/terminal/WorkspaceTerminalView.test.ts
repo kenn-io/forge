@@ -212,6 +212,7 @@ const workspaceResponse = {
   worktree_path: "/tmp/worktree",
   tmux_session: "middleman-ws-1",
   status: "ready",
+  retryable: false,
   enrichment_status: "fresh",
   created_at: "2026-04-29T00:00:00Z",
   mr_head_repo_kind: "same_repo",
@@ -505,6 +506,38 @@ describe("WorkspaceTerminalView", () => {
 
     expect(await screen.findByRole("tab", { name: "Helper, Helper running" })).toBeTruthy();
     expect(screen.getByLabelText("Helper running").classList.contains("kit-status-dot--idle")).toBe(true);
+  });
+
+  it("hides setup retry for a retired workspace", async () => {
+    const retiredWorkspace = {
+      ...workspaceResponse,
+      status: "error",
+      error_message: "source repository was replaced",
+      retryable: false,
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: Request | URL | string) => {
+        const pathname = fetchPath(input);
+        if (pathname.endsWith("/workspaces/ws-1")) {
+          return Promise.resolve(Response.json(retiredWorkspace));
+        }
+        if (pathname.endsWith("/api/v1/workspaces")) {
+          return Promise.resolve(Response.json({ workspaces: [retiredWorkspace] }));
+        }
+        return Promise.resolve(Response.json({}));
+      }),
+    );
+
+    render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+      },
+    });
+
+    expect(await screen.findByText("source repository was replaced")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Delete" })).toBeTruthy();
   });
 
   it("persists toolbar and focused-terminal font zoom through shared settings", async () => {

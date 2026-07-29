@@ -7793,6 +7793,8 @@ export interface components {
             repo: components["schemas"]["RepoRefResponse"];
             repo_name: string;
             repo_owner: string;
+            /** @description True when workspace setup can be retried. */
+            retryable: boolean;
             status: string;
             tmux_activity_source: string;
             tmux_last_output_at: string | null;

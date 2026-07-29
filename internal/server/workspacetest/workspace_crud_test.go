@@ -30,6 +30,7 @@ type rawWorkspaceStatusResponse struct {
 	GitHeadRef   string  `json:"git_head_ref"`
 	Status       string  `json:"status"`
 	ErrorMessage *string `json:"error_message"`
+	Retryable    *bool   `json:"retryable"`
 	Created      bool    `json:"created"`
 }
 
@@ -275,6 +276,69 @@ func TestWorkspaceRetryReadyWorkspaceConflictE2E(t *testing.T) {
 	afterEvents, err := database.ListWorkspaceSetupEvents(ctx, wsID)
 	require.NoError(err)
 	assert.Len(afterEvents, len(beforeEvents))
+}
+
+func TestWorkspaceRetryRetiredWorkspaceConflictE2E(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	fixture := setupWorkspaceServerFixture(t, nil)
+	ctx := t.Context()
+
+	_, err := fixture.database.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "repo-before-replacement",
+		Owner:          "acme",
+		Name:           "widget",
+	})
+	require.NoError(err)
+	require.NoError(fixture.database.InsertWorkspace(ctx, &db.Workspace{
+		ID:           "retired-workspace",
+		Platform:     "github",
+		PlatformHost: "github.com",
+		RepoOwner:    "acme",
+		RepoName:     "widget",
+		ItemType:     db.WorkspaceItemTypePullRequest,
+		ItemNumber:   7,
+		GitHeadRef:   "feature/retired",
+		WorktreePath: t.TempDir(),
+		TmuxSession:  "middleman-retired-workspace",
+		Status:       "error",
+	}))
+	_, err = fixture.database.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "repo-after-replacement",
+		Owner:          "acme",
+		Name:           "widget",
+	})
+	require.NoError(err)
+
+	getRR := doJSON(
+		t, fixture.server, http.MethodGet,
+		"/api/v1/workspaces/retired-workspace", nil,
+	)
+	require.Equal(http.StatusOK, getRR.Code, getRR.Body.String())
+	var workspaceBody rawWorkspaceStatusResponse
+	require.NoError(json.NewDecoder(getRR.Body).Decode(&workspaceBody))
+	require.NotNil(workspaceBody.Retryable)
+	assert.False(*workspaceBody.Retryable)
+
+	retryResp, err := fixture.client.HTTP.RetryWorkspaceWithResponse(
+		ctx, "retired-workspace",
+	)
+	require.NoError(err)
+	require.Equal(http.StatusConflict, retryResp.StatusCode())
+	require.NotNil(retryResp.ApplicationproblemJSONDefault)
+	assert.Equal(
+		generated.ProblemErrorCode("conflict"),
+		retryResp.ApplicationproblemJSONDefault.Code,
+	)
+	require.NotNil(retryResp.ApplicationproblemJSONDefault.Detail)
+	assert.Contains(
+		*retryResp.ApplicationproblemJSONDefault.Detail,
+		"cannot be retried",
+	)
 }
 
 // TestWorkspaceReadyStatusImpliesReadySetupEventE2E pins the write order

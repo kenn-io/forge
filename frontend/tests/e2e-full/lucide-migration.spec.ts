@@ -233,6 +233,7 @@ test.describe("lucide migration", () => {
             ...baseWorkspace,
             status: "error",
             error_message: "tmux bootstrap failed",
+            retryable: true,
           },
         },
         {

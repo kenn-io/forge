@@ -168,6 +168,11 @@ not join provider item tables and leave provider item activity absent. If the
 owning provider item has not synced yet, the summary leaves
 `item_last_activity_at` absent rather than inventing a value.
 
+Repository-incarnation replacement leaves retired workspaces visible for
+cleanup, but they are terminal, non-retryable, and excluded from item
+associations (`internal/db/queries.go::ListActiveWorkspaces`,
+`internal/workspace/manager.go::validateWorkspaceRetryable`).
+
 Kata task repository resolution is deliberately exact. Manual settings mappings
 key by optional daemon ID plus Kata project UID and point to a known repository
 identity, including registered Middleman Projects. Removing a watched repo does

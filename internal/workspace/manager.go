@@ -2396,6 +2396,9 @@ func (m *Manager) RequestRetry(
 	if ws == nil {
 		return nil, false, ErrWorkspaceNotFound
 	}
+	if err := validateWorkspaceRetryable(ws); err != nil {
+		return nil, false, err
+	}
 	started, err := m.db.StartWorkspaceRetry(ctx, ws.ID)
 	if err != nil {
 		return nil, false, err
@@ -2428,6 +2431,9 @@ func (m *Manager) StartQueuedRetryIfErrored(
 	}
 	if ws == nil || ws.Status != "error" {
 		return ws, false, nil
+	}
+	if err := validateWorkspaceRetryable(ws); err != nil {
+		return nil, false, err
 	}
 
 	started, err := m.db.StartWorkspaceRetry(ctx, id)
@@ -2463,6 +2469,10 @@ func (m *Manager) queueRetryOrStartErrored(
 		m.retryMu.Unlock()
 		return nil, false, ErrWorkspaceNotFound
 	}
+	if err := validateWorkspaceRetryable(current); err != nil {
+		m.retryMu.Unlock()
+		return nil, false, err
+	}
 	switch current.Status {
 	case "creating":
 		m.retryQueued[id] = true
@@ -2479,6 +2489,16 @@ func (m *Manager) queueRetryOrStartErrored(
 			ErrWorkspaceInvalidState,
 		)
 	}
+}
+
+func validateWorkspaceRetryable(ws *Workspace) error {
+	if ws != nil && ws.RetiredAt != nil {
+		return fmt.Errorf(
+			"%w: workspace source repository was replaced and cannot be retried",
+			ErrWorkspaceInvalidState,
+		)
+	}
+	return nil
 }
 
 func (m *Manager) startWorkspaceRetry(

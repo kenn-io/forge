@@ -1230,6 +1230,7 @@ type Workspace struct {
 	Status          string // "creating", "ready", "error"
 	ErrorMessage    *string
 	CreatedAt       time.Time
+	RetiredAt       *time.Time
 	KataMetadata    *WorkspaceKataMetadata
 }
 

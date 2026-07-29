@@ -7759,6 +7759,9 @@ components:
           type: string
         repo_owner:
           type: string
+        retryable:
+          description: True when workspace setup can be retried.
+          type: boolean
         status:
           type: string
         tmux_activity_source:
@@ -7791,6 +7794,7 @@ components:
         - tmux_activity_source
         - tmux_last_output_at
         - status
+        - retryable
         - created_at
         - enrichment_status
       type: object

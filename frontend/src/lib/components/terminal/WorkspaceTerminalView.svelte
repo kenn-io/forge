@@ -121,6 +121,7 @@
     worktree_path: string;
     tmux_session: string;
     status: string;
+    retryable: boolean;
     enrichment_status: string;
     error_message?: string | null;
     created_at: string;
@@ -3003,13 +3004,15 @@
             {workspace.error_message ??
               "Workspace setup failed"}
           </span>
-          <button
-            class="retry-btn"
-            disabled={actionsBlocked || retryingSetup}
-            onclick={() => void handleRetrySetup()}
-          >
-            Retry
-          </button>
+          {#if workspace.retryable}
+            <button
+              class="retry-btn"
+              disabled={actionsBlocked || retryingSetup}
+              onclick={() => void handleRetrySetup()}
+            >
+              Retry
+            </button>
+          {/if}
           <button
             class="retry-btn danger"
             disabled={actionsBlocked}

@@ -999,6 +999,7 @@ test.describe("terminal state icons", () => {
             ...testWorkspace,
             status: "error",
             error_message: "tmux bootstrap failed",
+            retryable: true,
           },
         },
         {
@@ -1044,6 +1045,7 @@ test.describe("terminal state icons", () => {
             ...testWorkspace,
             status: "error",
             error_message: "ensure clone failed",
+            retryable: true,
           },
         },
       ],
@@ -4139,6 +4141,7 @@ test.describe("delayed-response navigation", () => {
       mr_title: "A title",
       status: "error",
       error_message: "setup failed A",
+      retryable: true,
     };
     const wsB = {
       ...testWorkspace,
@@ -4147,6 +4150,7 @@ test.describe("delayed-response navigation", () => {
       mr_title: "B title",
       status: "error",
       error_message: "setup failed B",
+      retryable: true,
     };
 
     await mockApi(page);

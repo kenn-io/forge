@@ -50,7 +50,7 @@ func workspaceLookupKey(
 func (s *Handler) buildWorkspaceRefLookup(
 	ctx context.Context,
 ) (map[string]workspaceapi.WorkspaceRef, error) {
-	workspaces, err := s.db.ListWorkspaces(ctx)
+	workspaces, err := s.db.ListActiveWorkspaces(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list workspaces: %w", err)
 	}

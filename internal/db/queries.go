@@ -5200,7 +5200,7 @@ func scanWorkspace(scanner interface{ Scan(...any) error }) (*Workspace, error) 
 		&ws.ItemType, &ws.ItemNumber, &ws.ItemKey, &ws.AssociatedPRNumber,
 		&ws.GitHeadRef, &ws.MRHeadRepo, &ws.WorkspaceBranch,
 		&ws.WorktreePath, &ws.TmuxSession, &ws.TerminalBackend, &ws.Status,
-		&ws.ErrorMessage, &ws.CreatedAt, &kataMetadataJSON,
+		&ws.ErrorMessage, &ws.CreatedAt, &ws.RetiredAt, &kataMetadataJSON,
 	)
 	if err != nil {
 		return nil, err
@@ -5209,6 +5209,10 @@ func scanWorkspace(scanner interface{ Scan(...any) error }) (*Workspace, error) 
 		ws.ItemKey = strconv.Itoa(ws.ItemNumber)
 	}
 	ws.CreatedAt = ws.CreatedAt.UTC()
+	if ws.RetiredAt != nil {
+		retiredAt := ws.RetiredAt.UTC()
+		ws.RetiredAt = &retiredAt
+	}
 	if strings.TrimSpace(kataMetadataJSON) != "" {
 		var metadata WorkspaceKataMetadata
 		if err := json.Unmarshal([]byte(kataMetadataJSON), &metadata); err != nil {
@@ -5276,7 +5280,7 @@ func (d *DB) GetWorkspace(
 		       item_type, item_number, item_key, associated_pr_number,
 		       git_head_ref, mr_head_repo, workspace_branch,
 		       worktree_path, tmux_session, terminal_backend, status,
-		       error_message, created_at, kata_metadata
+		       error_message, created_at, retired_at, kata_metadata
 		FROM middleman_workspaces WHERE id = ?`, id,
 	))
 	if errors.Is(err, sql.ErrNoRows) {
@@ -5322,7 +5326,7 @@ func (d *DB) getWorkspaceByMR(
 		       item_type, item_number, item_key, associated_pr_number,
 		       git_head_ref, mr_head_repo, workspace_branch,
 		       worktree_path, tmux_session, terminal_backend, status,
-		       error_message, created_at, kata_metadata
+		       error_message, created_at, retired_at, kata_metadata
 			FROM middleman_workspaces
 			WHERE platform_host = ? AND repo_owner_key = ?
 			  AND repo_name_key = ? AND item_type = ? AND item_number = ?
@@ -5374,7 +5378,7 @@ func (d *DB) getWorkspaceByIssue(
 		       item_type, item_number, item_key, associated_pr_number,
 		       git_head_ref, mr_head_repo, workspace_branch,
 		       worktree_path, tmux_session, terminal_backend, status,
-		       error_message, created_at, kata_metadata
+		       error_message, created_at, retired_at, kata_metadata
 		FROM middleman_workspaces
 		WHERE platform_host = ? AND repo_owner_key = ?
 		  AND repo_name_key = ? AND item_type = ? AND item_number = ?
@@ -5408,7 +5412,7 @@ func (d *DB) GetWorkspaceByItemKeyForProvider(
 		       item_type, item_number, item_key, associated_pr_number,
 		       git_head_ref, mr_head_repo, workspace_branch,
 		       worktree_path, tmux_session, terminal_backend, status,
-		       error_message, created_at, kata_metadata
+		       error_message, created_at, retired_at, kata_metadata
 		FROM middleman_workspaces
 		WHERE platform_host = ? AND repo_owner_key = ?
 		  AND repo_name_key = ? AND item_type = ? AND item_key = ?
@@ -5430,15 +5434,33 @@ func (d *DB) GetWorkspaceByItemKeyForProvider(
 func (d *DB) ListWorkspaces(
 	ctx context.Context,
 ) ([]Workspace, error) {
-	rows, err := d.ro.QueryContext(ctx, `
+	return d.listWorkspaces(ctx, false)
+}
+
+// ListActiveWorkspaces returns non-retired workspaces for source-item
+// association overlays.
+func (d *DB) ListActiveWorkspaces(
+	ctx context.Context,
+) ([]Workspace, error) {
+	return d.listWorkspaces(ctx, true)
+}
+
+func (d *DB) listWorkspaces(
+	ctx context.Context,
+	activeOnly bool,
+) ([]Workspace, error) {
+	query := `
 		SELECT id, platform, platform_host, repo_owner, repo_name,
 		       item_type, item_number, item_key, associated_pr_number,
 		       git_head_ref, mr_head_repo, workspace_branch,
 		       worktree_path, tmux_session, terminal_backend, status,
-		       error_message, created_at, kata_metadata
-		FROM middleman_workspaces
-		ORDER BY created_at DESC`,
-	)
+		       error_message, created_at, retired_at, kata_metadata
+		FROM middleman_workspaces`
+	if activeOnly {
+		query += "\nWHERE retired_at IS NULL"
+	}
+	query += "\nORDER BY created_at DESC"
+	rows, err := d.ro.QueryContext(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("list workspaces: %w", err)
 	}
@@ -5999,7 +6021,7 @@ const workspaceSummaryColumns = `
 	w.item_type, w.item_number, w.item_key, w.associated_pr_number,
 	w.git_head_ref, w.mr_head_repo, w.workspace_branch,
 	w.worktree_path, w.tmux_session, w.terminal_backend, w.status,
-	w.error_message, w.created_at, w.kata_metadata,
+	w.error_message, w.created_at, w.retired_at, w.kata_metadata,
 	CASE
 	    WHEN w.item_type = 'issue' THEN i.title
 	    ELSE m.title
@@ -6050,7 +6072,7 @@ func scanWorkspaceSummary(
 		&s.ItemType, &s.ItemNumber, &s.ItemKey, &s.AssociatedPRNumber,
 		&s.GitHeadRef, &s.MRHeadRepo, &s.WorkspaceBranch,
 		&s.WorktreePath, &s.TmuxSession, &s.TerminalBackend, &s.Status,
-		&s.ErrorMessage, &s.CreatedAt, &kataMetadataJSON,
+		&s.ErrorMessage, &s.CreatedAt, &s.RetiredAt, &kataMetadataJSON,
 		&s.SourceTitle, &s.SourceState, &s.SourceURL,
 		&s.MRIsDraft, &s.MRCIStatus,
 		&s.MRReviewDecision, &s.MRAdditions, &s.MRDeletions,
@@ -6062,6 +6084,10 @@ func scanWorkspaceSummary(
 		return nil, err
 	}
 	s.CreatedAt = s.CreatedAt.UTC()
+	if s.RetiredAt != nil {
+		retiredAt := s.RetiredAt.UTC()
+		s.RetiredAt = &retiredAt
+	}
 	s.MRTitle = s.SourceTitle
 	s.MRState = s.SourceState
 	if s.ItemKey == "" && workspaceItemTypeKeysByNumber(s.ItemType) {

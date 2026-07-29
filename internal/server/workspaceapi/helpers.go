@@ -174,6 +174,7 @@ func toWorkspaceResponse(summary *db.WorkspaceSummary) workspaceResponse {
 		WorktreePath:       summary.WorktreePath,
 		TmuxSession:        summary.TmuxSession,
 		Status:             summary.Status,
+		Retryable:          summary.Status == "error" && summary.RetiredAt == nil,
 		EnrichmentStatus:   workspaceEnrichmentNotApplicable,
 		TmuxActivitySource: tmuxActivitySourceUnknown,
 		ErrorMessage:       summary.ErrorMessage,

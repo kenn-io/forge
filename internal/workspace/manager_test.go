@@ -5678,6 +5678,19 @@ func TestManagerRequestRetryQueuesWhileCreatingAndStartsIfErrored(t *testing.T) 
 	assert.False(queued)
 }
 
+func TestValidateWorkspaceRetryableRejectsRetiredWorkspace(t *testing.T) {
+	retiredAt := time.Now().UTC()
+	err := validateWorkspaceRetryable(&Workspace{
+		ID:        "retired-workspace",
+		Status:    "error",
+		RetiredAt: &retiredAt,
+	})
+
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrWorkspaceInvalidState)
+	assert.Contains(t, err.Error(), "replaced")
+}
+
 func TestManagerRequestRetryPreservesReusedIssueBranchSentinel(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

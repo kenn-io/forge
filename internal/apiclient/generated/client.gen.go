@@ -4153,22 +4153,25 @@ type WorkspaceResponse struct {
 	MrDeletions        *int64                            `json:"mr_deletions,omitempty"`
 
 	// MrHeadRepoKind Set only for pull_request workspaces: same_repo when the PR head is confirmed to be in the base repo, fork when it is a confirmed fork clone, unknown when repository identity could not be resolved.
-	MrHeadRepoKind     *WorkspaceResponseMrHeadRepoKind `json:"mr_head_repo_kind,omitempty"`
-	MrIsDraft          *bool                            `json:"mr_is_draft,omitempty"`
-	MrReviewDecision   *string                          `json:"mr_review_decision,omitempty"`
-	MrState            *string                          `json:"mr_state,omitempty"`
-	MrTitle            *string                          `json:"mr_title,omitempty"`
-	PlatformHost       string                           `json:"platform_host"`
-	Repo               RepoRefResponse                  `json:"repo"`
-	RepoName           string                           `json:"repo_name"`
-	RepoOwner          string                           `json:"repo_owner"`
-	Status             string                           `json:"status"`
-	TmuxActivitySource string                           `json:"tmux_activity_source"`
-	TmuxLastOutputAt   *string                          `json:"tmux_last_output_at"`
-	TmuxPaneTitle      *string                          `json:"tmux_pane_title,omitempty"`
-	TmuxSession        string                           `json:"tmux_session"`
-	TmuxWorking        bool                             `json:"tmux_working"`
-	WorktreePath       string                           `json:"worktree_path"`
+	MrHeadRepoKind   *WorkspaceResponseMrHeadRepoKind `json:"mr_head_repo_kind,omitempty"`
+	MrIsDraft        *bool                            `json:"mr_is_draft,omitempty"`
+	MrReviewDecision *string                          `json:"mr_review_decision,omitempty"`
+	MrState          *string                          `json:"mr_state,omitempty"`
+	MrTitle          *string                          `json:"mr_title,omitempty"`
+	PlatformHost     string                           `json:"platform_host"`
+	Repo             RepoRefResponse                  `json:"repo"`
+	RepoName         string                           `json:"repo_name"`
+	RepoOwner        string                           `json:"repo_owner"`
+
+	// Retryable True when workspace setup can be retried.
+	Retryable          bool    `json:"retryable"`
+	Status             string  `json:"status"`
+	TmuxActivitySource string  `json:"tmux_activity_source"`
+	TmuxLastOutputAt   *string `json:"tmux_last_output_at"`
+	TmuxPaneTitle      *string `json:"tmux_pane_title,omitempty"`
+	TmuxSession        string  `json:"tmux_session"`
+	TmuxWorking        bool    `json:"tmux_working"`
+	WorktreePath       string  `json:"worktree_path"`
 }
 
 // WorkspaceResponseAgentState Hook-reported aggregate state for live agent sessions. Omitted when no live session has reported lifecycle state.

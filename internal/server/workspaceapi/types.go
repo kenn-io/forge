@@ -48,6 +48,7 @@ type workspaceResponse struct {
 	AgentStateUpdatedAt   *string                   `json:"agent_state_updated_at,omitempty" format:"date-time" doc:"UTC timestamp of the hook report that produced agent_state."`
 	Status                string                    `json:"status"`
 	ErrorMessage          *string                   `json:"error_message,omitempty"`
+	Retryable             bool                      `json:"retryable" doc:"True when workspace setup can be retried."`
 	CreatedAt             string                    `json:"created_at"`
 	ItemLastActivityAt    *string                   `json:"item_last_activity_at,omitempty"`
 	MRTitle               *string                   `json:"mr_title,omitempty"`

@@ -1063,6 +1063,69 @@ func TestUpsertRepoByProviderIDUpdatesRenamedRepo(t *testing.T) {
 	assert.Equal("new-group/subgroup/new-name", repos[0].RepoPathKey)
 }
 
+func TestUpsertRepoByProviderIDResetsRecreatedRepositoryAtSamePath(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+
+	repoID, err := d.UpsertRepoByProviderID(ctx, RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "R_old",
+		Owner:          "acme",
+		Name:           "widget",
+	})
+	require.NoError(err)
+	insertTestMRWithOptions(t, d, testMR(repoID, 1, withMRTitle("old merge request")))
+	insertTestIssueWithOptions(t, d, testIssue(repoID, 1, withIssueTitle("old issue")))
+	require.NoError(d.EnsureDiscoveryArchives(ctx, []int64{repoID}, baseTime()))
+	project, err := d.CreateProject(ctx, CreateProjectInput{
+		DisplayName:   "Widget",
+		LocalPath:     "/tmp/widget",
+		RepoID:        sql.NullInt64{Int64: repoID, Valid: true},
+		DefaultBranch: "main",
+	})
+	require.NoError(err)
+
+	recreatedID, err := d.UpsertRepoByProviderID(ctx, RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "R_new",
+		Owner:          "acme",
+		Name:           "widget",
+	})
+	require.NoError(err)
+
+	assert.Equal(repoID, recreatedID)
+	repo, err := d.GetRepoByID(ctx, recreatedID)
+	require.NoError(err)
+	require.NotNil(repo)
+	assert.Equal("R_new", repo.PlatformRepoID)
+
+	mr, err := d.GetMergeRequestByRepoIDAndNumber(ctx, recreatedID, 1)
+	require.NoError(err)
+	assert.Nil(mr)
+	issue, err := d.GetIssueByRepoIDAndNumber(ctx, recreatedID, 1)
+	require.NoError(err)
+	assert.Nil(issue)
+
+	var archiveRows int
+	require.NoError(d.ReadDB().QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM middleman_archive_repos WHERE repo_id = ?`,
+		recreatedID,
+	).Scan(&archiveRows))
+	assert.Zero(archiveRows)
+
+	linkedProject, err := d.GetProjectByID(ctx, project.ID)
+	require.NoError(err)
+	require.NotNil(linkedProject)
+	require.NotNil(linkedProject.PlatformIdentity)
+	assert.Equal("github", linkedProject.PlatformIdentity.Platform)
+	assert.Equal("acme", linkedProject.PlatformIdentity.Owner)
+	assert.Equal("widget", linkedProject.PlatformIdentity.Name)
+}
+
 func TestUpsertRepoByProviderIDUpdatesRenamedRepoWorkspaces(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

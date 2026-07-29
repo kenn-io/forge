@@ -6,8 +6,9 @@ import (
 )
 
 var (
-	ErrNilPullRequest = errors.New("nil pull request")
-	ErrNilIssue       = errors.New("nil issue")
+	ErrNilPullRequest     = errors.New("nil pull request")
+	ErrNilIssue           = errors.New("nil issue")
+	ErrIssueIsPullRequest = errors.New("issue payload is a pull request")
 )
 
 type ForcePushEvent struct {

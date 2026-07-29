@@ -98,6 +98,9 @@ func NormalizeIssue(repo platform.RepoRef, ghIssue *gh.Issue) (platform.Issue, e
 	if ghIssue == nil {
 		return platform.Issue{}, ErrNilIssue
 	}
+	if ghIssue.PullRequestLinks != nil {
+		return platform.Issue{}, ErrIssueIsPullRequest
+	}
 
 	var assignees []string
 	for _, a := range ghIssue.Assignees {

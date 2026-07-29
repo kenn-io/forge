@@ -1071,6 +1071,14 @@ func (d *DB) UpsertRepoByProviderID(ctx context.Context, identity RepoIdentity) 
 			if err != nil {
 				return err
 			}
+			if targetIdentity.PlatformRepoID != "" &&
+				targetIdentity.PlatformRepoID != identity.PlatformRepoID {
+				if err := replaceRepoIncarnationTx(ctx, tx, targetID, identity); err != nil {
+					return err
+				}
+				id = targetID
+				return nil
+			}
 			if err := updateRepoIdentityTx(ctx, tx, targetID, identity); err != nil {
 				return err
 			}
@@ -1088,6 +1096,74 @@ func (d *DB) UpsertRepoByProviderID(ctx context.Context, identity RepoIdentity) 
 		return 0, err
 	}
 	return id, nil
+}
+
+func replaceRepoIncarnationTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	repoID int64,
+	identity RepoIdentity,
+) error {
+	identity = canonicalRepoIdentity(identity)
+
+	rows, err := tx.QueryContext(ctx,
+		`SELECT id FROM middleman_projects WHERE repo_id = ?`,
+		repoID,
+	)
+	if err != nil {
+		return fmt.Errorf("list projects linked to replaced repo: %w", err)
+	}
+	var projectIDs []string
+	for rows.Next() {
+		var projectID string
+		if err := rows.Scan(&projectID); err != nil {
+			_ = rows.Close()
+			return fmt.Errorf("scan project linked to replaced repo: %w", err)
+		}
+		projectIDs = append(projectIDs, projectID)
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("close projects linked to replaced repo: %w", err)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate projects linked to replaced repo: %w", err)
+	}
+
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM middleman_repos WHERE id = ?`,
+		repoID,
+	); err != nil {
+		return fmt.Errorf("clear replaced repo incarnation: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO middleman_repos (
+			id, platform, platform_host, platform_repo_id,
+			owner, name, repo_path,
+			owner_key, name_key, repo_path_key
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		repoID,
+		identity.Platform,
+		identity.PlatformHost,
+		identity.PlatformRepoID,
+		identity.Owner,
+		identity.Name,
+		identity.RepoPath,
+		identity.OwnerKey,
+		identity.NameKey,
+		identity.RepoPathKey,
+	); err != nil {
+		return fmt.Errorf("insert replaced repo incarnation: %w", err)
+	}
+	for _, projectID := range projectIDs {
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE middleman_projects SET repo_id = ? WHERE id = ?`,
+			repoID,
+			projectID,
+		); err != nil {
+			return fmt.Errorf("relink project to replaced repo: %w", err)
+		}
+	}
+	return nil
 }
 
 func lookupRepoIDByProviderIDTx(

@@ -291,13 +291,13 @@ func (s *Syncer) syncNotificationsForRepo(
 	repo RepoRef,
 	startedAt time.Time,
 ) error {
+	identityLock := s.repoIdentityLock(repo)
+	identityLock.Lock()
+	defer identityLock.Unlock()
 	incarnationGate := s.repoIncarnationGate(repo)
 	incarnationGate.RLock()
 	defer incarnationGate.RUnlock()
 	repo = s.latestConfiguredRepo(repo)
-	identityLock := s.repoIdentityLock(repo)
-	identityLock.Lock()
-	defer identityLock.Unlock()
 
 	platformName := string(kind)
 	persistedRepo, err := s.db.GetRepoByIdentity(

@@ -487,6 +487,7 @@ type Syncer struct {
 	rateLimitSnapshotRefresh map[string]time.Time
 	repos                    []RepoRef
 	reposMu                  sync.Mutex
+	reposGeneration          uint64
 	repoConfigMu             sync.Mutex
 	repoIdentityLocksMu      sync.Mutex
 	repoIdentityLocks        map[string]*sync.Mutex
@@ -809,6 +810,7 @@ func NewSyncerWithRegistry(
 		rateTrackers:             rateTrackers,
 		budgets:                  budgets,
 		repos:                    repos,
+		reposGeneration:          1,
 		interval:                 interval,
 		rateLimitSnapshotRefresh: make(map[string]time.Time),
 		branchActivityRetention:  defaultBranchActivityRetention,
@@ -1032,6 +1034,7 @@ func (s *Syncer) Admit(
 					RetryAt: nextProbe,
 					Detail:  disabled.Error(),
 				}
+				probe.release()
 			} else {
 				probe.release()
 			}
@@ -3617,6 +3620,7 @@ func (s *Syncer) SetRepos(repos []RepoRef) {
 		slog.Warn("update archive repositories", "err", err)
 		s.reposMu.Lock()
 		s.repos = slices.Clone(repos)
+		s.reposGeneration++
 		s.reposMu.Unlock()
 		s.WakeArchive()
 	}
@@ -3667,6 +3671,7 @@ func (s *Syncer) setReposWithContextLocked(
 	}
 	s.reposMu.Lock()
 	s.repos = slices.Clone(repos)
+	s.reposGeneration++
 	s.reposMu.Unlock()
 	s.WakeArchive()
 	return nil
@@ -5294,15 +5299,23 @@ func (s *Syncer) resetRepositoryPathState(repo RepoRef) {
 }
 
 func (s *Syncer) latestConfiguredRepo(repo RepoRef) RepoRef {
+	configured, _, ok := s.configuredRepo(repo)
+	if ok {
+		return configured
+	}
+	return repo
+}
+
+func (s *Syncer) configuredRepo(repo RepoRef) (RepoRef, uint64, bool) {
 	key := repoPriorityKey(repo)
 	s.reposMu.Lock()
 	defer s.reposMu.Unlock()
 	for _, configured := range s.repos {
 		if repoPriorityKey(configured) == key {
-			return configured
+			return configured, s.reposGeneration, true
 		}
 	}
-	return repo
+	return RepoRef{}, s.reposGeneration, false
 }
 
 func (s *Syncer) syncRepoIdentity(ctx context.Context, repo RepoRef) (db.RepoIdentity, *platform.Repository, error) {
@@ -5330,29 +5343,106 @@ func (s *Syncer) reconcileRepoIdentity(
 	ctx context.Context,
 	repo RepoRef,
 ) (RepoRef, int64, *platform.Repository, *db.Repo, error) {
-	incarnationGate := s.repoIncarnationGate(repo)
-	incarnationGate.RLock()
-	defer incarnationGate.RUnlock()
+	repo, repoID, resolvedRepo, persistedRepo, release, err :=
+		s.reconcileRepoIdentityWithIncarnationGate(ctx, repo)
+	if release != nil {
+		release()
+	}
+	return repo, repoID, resolvedRepo, persistedRepo, err
+}
+
+type repoIdentityResolution struct {
+	repo         RepoRef
+	generation   uint64
+	previousRepo *db.Repo
+	identity     db.RepoIdentity
+	resolvedRepo *platform.Repository
+}
+
+func (s *Syncer) reconcileRepoIdentityWithIncarnationGate(
+	ctx context.Context,
+	repo RepoRef,
+) (RepoRef, int64, *platform.Repository, *db.Repo, func(), error) {
 	if s.beforeRepoIdentityLock != nil {
 		s.beforeRepoIdentityLock(repo)
 	}
 	identityLock := s.repoIdentityLock(repo)
 	identityLock.Lock()
 	defer identityLock.Unlock()
-	return s.reconcileRepoIdentityLocked(ctx, repo)
+
+	incarnationGate := s.repoIncarnationGate(repo)
+	incarnationGate.RLock()
+	exclusive := false
+	releaseGate := func() {
+		if exclusive {
+			incarnationGate.Unlock()
+		} else {
+			incarnationGate.RUnlock()
+		}
+	}
+
+	resolution, err := s.resolveRepoIdentity(ctx, repo)
+	if err != nil {
+		releaseGate()
+		return RepoRef{}, 0, nil, nil, nil, err
+	}
+	if repoIdentityResolutionNeedsExclusiveGate(resolution) {
+		incarnationGate.RUnlock()
+		incarnationGate.Lock()
+		exclusive = true
+
+		configuredRepo, generation, configured := s.configuredRepo(repo)
+		if !configured {
+			releaseGate()
+			return RepoRef{}, 0, nil, nil, nil, fmt.Errorf(
+				"repo %s/%s is no longer configured",
+				repo.Owner,
+				repo.Name,
+			)
+		}
+		if generation != resolution.generation {
+			if configuredIdentity := platform.DBRepoIdentity(
+				platformRepoRef(configuredRepo),
+			); configuredIdentity.PlatformRepoID != "" {
+				resolution, err = s.resolveConfiguredRepoIdentity(
+					ctx,
+					configuredRepo,
+					generation,
+					configuredIdentity,
+				)
+			} else {
+				resolution, err = s.resolveRepoIdentity(ctx, configuredRepo)
+			}
+			if err != nil {
+				releaseGate()
+				return RepoRef{}, 0, nil, nil, nil, err
+			}
+		}
+	}
+
+	repo, repoID, resolvedRepo, persistedRepo, err :=
+		s.persistRepoIdentityResolution(ctx, resolution)
+	if err != nil {
+		releaseGate()
+		return RepoRef{}, 0, nil, nil, nil, err
+	}
+	return repo, repoID, resolvedRepo, persistedRepo, releaseGate, nil
 }
 
-func (s *Syncer) reconcileRepoIdentityLocked(
+func (s *Syncer) resolveRepoIdentity(
 	ctx context.Context,
 	repo RepoRef,
-) (RepoRef, int64, *platform.Repository, *db.Repo, error) {
-	repo = s.latestConfiguredRepo(repo)
+) (repoIdentityResolution, error) {
+	configuredRepo, generation, configured := s.configuredRepo(repo)
+	if configured {
+		repo = configuredRepo
+	}
 	previousRepo, err := s.db.GetRepoByIdentity(
 		ctx,
 		platform.DBRepoIdentity(platformRepoRef(repo)),
 	)
 	if err != nil {
-		return RepoRef{}, 0, nil, nil, fmt.Errorf(
+		return repoIdentityResolution{}, fmt.Errorf(
 			"read repo %s/%s before identity reconciliation: %w",
 			repo.Owner,
 			repo.Name,
@@ -5361,19 +5451,61 @@ func (s *Syncer) reconcileRepoIdentityLocked(
 	}
 	repoIdentity, resolvedRepo, err := s.syncRepoIdentity(ctx, repo)
 	if err != nil {
-		return RepoRef{}, 0, nil, nil, fmt.Errorf(
+		return repoIdentityResolution{}, fmt.Errorf(
 			"resolve repo identity %s/%s: %w",
 			repo.Owner,
 			repo.Name,
 			err,
 		)
 	}
-	repoID, err := s.db.UpsertRepoByProviderID(ctx, repoIdentity)
+	return repoIdentityResolution{
+		repo:         repo,
+		generation:   generation,
+		previousRepo: previousRepo,
+		identity:     repoIdentity,
+		resolvedRepo: resolvedRepo,
+	}, nil
+}
+
+func (s *Syncer) resolveConfiguredRepoIdentity(
+	ctx context.Context,
+	repo RepoRef,
+	generation uint64,
+	identity db.RepoIdentity,
+) (repoIdentityResolution, error) {
+	previousRepo, err := s.db.GetRepoByIdentity(ctx, identity)
+	if err != nil {
+		return repoIdentityResolution{}, fmt.Errorf(
+			"read configured repo %s/%s during identity handoff: %w",
+			repo.Owner,
+			repo.Name,
+			err,
+		)
+	}
+	return repoIdentityResolution{
+		repo:         repo,
+		generation:   generation,
+		previousRepo: previousRepo,
+		identity:     identity,
+	}, nil
+}
+
+func repoIdentityResolutionNeedsExclusiveGate(resolution repoIdentityResolution) bool {
+	return resolution.previousRepo != nil &&
+		resolution.previousRepo.PlatformRepoID != "" &&
+		resolution.previousRepo.PlatformRepoID != resolution.identity.PlatformRepoID
+}
+
+func (s *Syncer) persistRepoIdentityResolution(
+	ctx context.Context,
+	resolution repoIdentityResolution,
+) (RepoRef, int64, *platform.Repository, *db.Repo, error) {
+	repoID, err := s.db.UpsertRepoByProviderID(ctx, resolution.identity)
 	if err != nil {
 		return RepoRef{}, 0, nil, nil, fmt.Errorf(
 			"upsert repo %s/%s by provider id: %w",
-			repo.Owner,
-			repo.Name,
+			resolution.repo.Owner,
+			resolution.repo.Name,
 			err,
 		)
 	}
@@ -5381,27 +5513,35 @@ func (s *Syncer) reconcileRepoIdentityLocked(
 	if err != nil {
 		return RepoRef{}, 0, nil, nil, fmt.Errorf(
 			"read repo %s/%s after identity reconciliation: %w",
-			repo.Owner,
-			repo.Name,
+			resolution.repo.Owner,
+			resolution.repo.Name,
 			err,
 		)
 	}
 	if persistedRepo == nil {
 		return RepoRef{}, 0, nil, nil, fmt.Errorf(
 			"repo %s/%s missing after identity reconciliation",
-			repo.Owner,
-			repo.Name,
+			resolution.repo.Owner,
+			resolution.repo.Name,
 		)
 	}
-	if previousRepo != nil && previousRepo.ID != repoID {
-		s.resetRepositoryPathState(repo)
-	} else if previousRepo == nil {
-		if client, ok := s.optionalGitHubClientFor(repo); ok {
-			client.InvalidateListETagsForRepo(repo.Owner, repo.Name)
+	if resolution.previousRepo != nil && resolution.previousRepo.ID != repoID {
+		s.resetRepositoryPathState(resolution.repo)
+	} else if resolution.previousRepo == nil {
+		if client, ok := s.optionalGitHubClientFor(resolution.repo); ok {
+			client.InvalidateListETagsForRepo(
+				resolution.repo.Owner,
+				resolution.repo.Name,
+			)
 		}
 	}
-	repo = authoritativeRepoRef(repo, repoID, persistedRepo, resolvedRepo)
-	return repo, repoID, resolvedRepo, persistedRepo, nil
+	repo := authoritativeRepoRef(
+		resolution.repo,
+		repoID,
+		persistedRepo,
+		resolution.resolvedRepo,
+	)
+	return repo, repoID, resolution.resolvedRepo, persistedRepo, nil
 }
 
 func authoritativeRepoRef(
@@ -5467,10 +5607,6 @@ func (s *Syncer) markClosedLinkedNotificationsDone(ctx context.Context) error {
 }
 
 func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
-	incarnationGate := s.repoIncarnationGate(repo)
-	incarnationGate.RLock()
-	defer incarnationGate.RUnlock()
-	ctx = withRepoIncarnationGateHeld(ctx, repo)
 	repo = s.latestConfiguredRepo(repo)
 
 	bucket, err := s.bucketKeyForRepo(repo, false)
@@ -5492,17 +5628,13 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 		}
 	}
 
-	if s.beforeRepoIdentityLock != nil {
-		s.beforeRepoIdentityLock(repo)
-	}
-	identityLock := s.repoIdentityLock(repo)
-	identityLock.Lock()
-	repo, repoID, resolvedRepo, _, err :=
-		s.reconcileRepoIdentityLocked(ctx, repo)
-	identityLock.Unlock()
+	repo, repoID, resolvedRepo, _, releaseIncarnationGate, err :=
+		s.reconcileRepoIdentityWithIncarnationGate(ctx, repo)
 	if err != nil {
 		return err
 	}
+	defer releaseIncarnationGate()
+	ctx = withRepoIncarnationGateHeld(ctx, repo)
 
 	s.refreshRepoSettings(ctx, repo, repoID, resolvedRepo)
 

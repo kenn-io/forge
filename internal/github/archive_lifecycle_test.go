@@ -1106,6 +1106,54 @@ func TestArchiveCompletionWithoutProviderAttemptAbandonsExpiredFeatureProbeReser
 	require.False(due)
 }
 
+func TestArchiveFeatureDisabledCompletionReleasesIncarnationGate(t *testing.T) {
+	require := require.New(t)
+	database := dbtest.Open(t)
+	now := time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC)
+	key := RateBucketKey("github", "github.test", "host")
+	tracker := NewPlatformRateTracker(database, "github", "github.test", "host", "rest")
+	tracker.UpdateFromRate(Rate{
+		Limit: 5000, Remaining: 4999,
+		Reset: now.Add(repositoryFeatureProbeInterval + time.Minute),
+	})
+	syncer := NewSyncerWithRegistry(
+		nil, database, nil, nil, time.Hour,
+		map[string]*RateTracker{key: tracker},
+		map[string]*SyncBudget{key: NewSyncBudget(100)},
+	)
+	syncer.now = func() time.Time { return now }
+	ref := platform.RepoRef{
+		Platform: platform.KindGitHub, Host: "github.test", Owner: "acme", Name: "widget",
+	}
+	repo := RepoRef{
+		Platform: ref.Platform, PlatformHost: ref.Host, Owner: ref.Owner, Name: ref.Name,
+	}
+	disabledErr := platform.RepositoryFeatureDisabled(
+		platform.KindGitHub, ref.Host, platform.RepositoryFeatureIssues,
+		errors.New("repository issues disabled"),
+	)
+	require.True(syncer.recordRepositoryFeatureDisabled(
+		repo,
+		platform.RepositoryFeatureIssues,
+		disabledErr,
+	))
+	now = now.Add(repositoryFeatureProbeInterval)
+
+	admission, err := syncer.Admit(t.Context(), ref, db.ArchiveItemTypeIssue, 1)
+	require.NoError(err)
+	require.True(admission.Allowed, admission.Detail)
+	require.NotNil(admission.Complete(disabledErr, true))
+
+	gate := syncer.repoIncarnationGate(repo)
+	require.True(gate.TryLock(), "feature-disabled completion retained the incarnation gate")
+	gate.Unlock()
+	require.NoError(syncer.SetReposWithContext(
+		t.Context(),
+		[]RepoRef{repo},
+		false,
+	))
+}
+
 func TestArchiveAdmissionLeaseSerializesProviderRequests(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

@@ -7544,6 +7544,84 @@ func TestReconcileRepoIdentityClearsFreshIncarnationProcessState(t *testing.T) {
 	assert.Equal(int32(1), client.invalidateCalls.Load())
 }
 
+func TestReconcileRepoIdentityDrainsActiveIncarnationBeforeReplacement(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	repo := RepoRef{
+		Platform:           platform.KindGitHub,
+		PlatformHost:       "github.com",
+		Owner:              "acme",
+		Name:               "widgets",
+		RepoPath:           "acme/widgets",
+		PlatformExternalID: "R_old",
+	}
+	oldRepoID, err := d.UpsertRepoByProviderID(
+		t.Context(),
+		platform.DBRepoIdentity(platformRepoRef(repo)),
+	)
+	require.NoError(err)
+	client := &mockClient{getRepositoryFn: func(
+		context.Context,
+		string,
+		string,
+	) (*gh.Repository, error) {
+		return &gh.Repository{
+			NodeID: new("R_new"),
+			Name:   new("widgets"),
+			Owner:  &gh.User{Login: new("acme")},
+		}, nil
+	}}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client},
+		d,
+		nil,
+		[]RepoRef{repo},
+		time.Minute,
+		nil,
+		nil,
+	)
+	t.Cleanup(syncer.Stop)
+
+	probe, due := syncer.beginRepositoryFeatureProbe(
+		t.Context(),
+		repo,
+		platform.RepositoryFeatureIssues,
+	)
+	require.True(due)
+
+	reconcileDone := make(chan error, 1)
+	go func() {
+		_, _, _, _, err := syncer.reconcileRepoIdentity(t.Context(), repo)
+		reconcileDone <- err
+	}()
+
+	replacementCompletedWhileProbeActive := false
+	select {
+	case err := <-reconcileDone:
+		require.NoError(err)
+		replacementCompletedWhileProbeActive = true
+	case <-time.After(100 * time.Millisecond):
+	}
+	stored, err := d.GetRepoByID(t.Context(), oldRepoID)
+	require.NoError(err)
+	assert.NotNil(stored)
+
+	probe.abandon()
+	if !replacementCompletedWhileProbeActive {
+		require.NoError(<-reconcileDone)
+	}
+
+	repos, err := d.ListRepos(t.Context())
+	require.NoError(err)
+	require.Len(repos, 1)
+	assert.False(
+		replacementCompletedWhileProbeActive,
+		"replacement did not drain active incarnation readers",
+	)
+	assert.Equal("R_new", repos[0].PlatformRepoID)
+}
+
 func TestReconcileRepoIdentityUsesLatestConfiguredIDWithoutRepositoryReader(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

@@ -138,6 +138,13 @@
     position: absolute;
     right: 0;
     top: calc(100% + 4px);
+    /* The pane-controls popover that hosts this trigger sets
+       `overflow-wrap: anywhere` so a long branch name cannot set its
+       min-content width. That inherits in here, where it has no business:
+       it let the settings form shrink its Save/Reset buttons below their
+       labels, which then broke mid-word ("Sa/ve"). */
+    overflow-wrap: normal;
+    word-break: normal;
     z-index: 25;
     width: 372px;
     padding: 10px;

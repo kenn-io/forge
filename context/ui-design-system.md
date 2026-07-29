@@ -340,6 +340,8 @@ Before placing an overlay inside a split view, compact sidebar, drawer, or scrol
 
 Popover surface chrome (background, border, radius, shadow) comes from `kit-popover-card`; do not re-declare it in component-scoped styles. Scoped rules outrank the kit class, and a `var()` referencing an undefined token (there is no `--bg-elevated`) computes to transparent with no build-time error.
 
+A popover that lowers its own min-content width (`overflow-wrap: anywhere`, so an unbreakable branch name cannot stretch `WorkspacePaneControls` past its max-width) leaks that to every surface nested inside it, where flex rows then shrink buttons below their labels and break them mid-word. Reset `overflow-wrap`/`word-break` at the nested popover's root instead of hardening each child (`frontend/src/lib/components/terminal/TerminalOptionsMenu.svelte`).
+
 ### GitHubLabels
 
 Use `GitHubLabels` for actual GitHub labels.

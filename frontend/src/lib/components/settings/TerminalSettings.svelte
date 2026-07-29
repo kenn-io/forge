@@ -557,18 +557,26 @@
 
   .setting-actions {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
     gap: 12px;
   }
 
+  /* The help paragraph is the only flexible item here: without this the
+     buttons shrink below their label width and "Save"/"Reset" wrap
+     mid-word inside the narrow compact popover. */
   .button-row {
     display: flex;
+    flex: 0 0 auto;
+    margin-left: auto;
     align-items: center;
     gap: 8px;
   }
 
   .setting-help {
+    flex: 1 1 180px;
+    min-width: 0;
     margin: 0;
     font-size: var(--font-size-xs);
     color: var(--text-muted);
@@ -581,6 +589,7 @@
   .retry-fonts-btn {
     height: 28px;
     padding: 0 10px;
+    white-space: nowrap;
     font-size: var(--font-size-sm);
     font-weight: 600;
     border-radius: var(--radius-sm);

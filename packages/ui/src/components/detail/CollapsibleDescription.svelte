@@ -118,6 +118,11 @@
     overflow: hidden;
   }
 
+  :global(.detail-description-card--compact) {
+    max-height: 320px;
+    overflow-y: auto;
+  }
+
   @media (max-width: 640px) {
     .detail-description__card-wrap :global(.kit-copy-btn.body-copy) {
       position: static;

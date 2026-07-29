@@ -301,10 +301,12 @@ Keyboard handlers must have one clear owner for each key press.
   the pool only while it actually renders it, since a parked terminal keeps its
   websocket (`frontend/src/lib/stores/session-host.svelte.ts`).
 - A pooled terminal constructs immediately, even in parking, so every mounted
-  session keeps its websocket; it opts out of renderer autofocus and after
-  attachment the pool focuses explicit requests plus focus the reparent itself
-  took: parking blurs xterm's textarea, so a pane move restores focus a wrapper
-  held, while a park with no destination (pane closed) drops that intent
+  session keeps its websocket; it opts out of renderer autofocus. After
+  attachment the pool focuses explicit requests and restores focus-event-tracked
+  keyboard ownership: a real pane move rips the focused textarea out of the DOM
+  silently (slot teardown fires no focusout), so never sample activeElement at
+  park time. Ownership is revoked by any other element's focus claim, and a
+  restore fires only into unclaimed focus
   (`frontend/src/lib/components/terminal/PooledSessionTerminal.svelte`).
 - A promoted session is recorded ONCE, in the detail surface's stored pane tree.
   Containers mask it out of what they render (derived, not an effect) and never

@@ -291,7 +291,52 @@ func (s *Syncer) syncNotificationsForRepo(
 	repo RepoRef,
 	startedAt time.Time,
 ) error {
+	incarnationGate := s.repoIncarnationGate(repo)
+	incarnationGate.RLock()
+	defer incarnationGate.RUnlock()
+	repo = s.latestConfiguredRepo(repo)
+	identityLock := s.repoIdentityLock(repo)
+	identityLock.Lock()
+	defer identityLock.Unlock()
+
 	platformName := string(kind)
+	persistedRepo, err := s.db.GetRepoByIdentity(
+		ctx,
+		platform.DBRepoIdentity(platformRepoRef(repo)),
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"load current notification repository %s/%s on %s: %w",
+			repo.Owner,
+			repo.Name,
+			host,
+			err,
+		)
+	}
+	if persistedRepo == nil {
+		repoID, upsertErr := s.db.UpsertRepo(
+			ctx,
+			platform.DBRepoIdentity(platformRepoRef(repo)),
+		)
+		if upsertErr != nil {
+			return fmt.Errorf(
+				"initialize notification repository %s/%s on %s: %w",
+				repo.Owner,
+				repo.Name,
+				host,
+				upsertErr,
+			)
+		}
+		repo.RepoID = repoID
+	} else {
+		repo.RepoID = persistedRepo.ID
+	}
+	tracked[notificationRepoKey(
+		platformName,
+		host,
+		repo.Owner,
+		repo.Name,
+	)] = repo
 	watermark, err := s.db.GetNotificationSyncWatermark(
 		ctx, platformName, host, repo.Owner, repo.Name,
 	)

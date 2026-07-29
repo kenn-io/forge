@@ -1041,6 +1041,8 @@ type syncTestReadProvider struct {
 	listReviewThreadsFn func(context.Context, platform.RepoRef, int) ([]platform.MergeRequestReviewThread, error)
 	listIssueReadEvents []platform.IssueEvent
 	readReviewThreads   bool
+	listMRRefsMu        sync.Mutex
+	listMRRefs          []platform.RepoRef
 }
 
 type syncTestRepositoryReadProvider struct {
@@ -1148,11 +1150,20 @@ func (p *syncTestRepositoryReadProvider) ListRepositories(
 }
 
 func (p *syncTestReadProvider) ListOpenMergeRequests(
-	context.Context,
-	platform.RepoRef,
+	_ context.Context,
+	ref platform.RepoRef,
 ) ([]platform.MergeRequest, error) {
 	p.listMRCalls.Add(1)
+	p.listMRRefsMu.Lock()
+	p.listMRRefs = append(p.listMRRefs, ref)
+	p.listMRRefsMu.Unlock()
 	return p.mergeRequests, nil
+}
+
+func (p *syncTestReadProvider) mergeRequestRefs() []platform.RepoRef {
+	p.listMRRefsMu.Lock()
+	defer p.listMRRefsMu.Unlock()
+	return slices.Clone(p.listMRRefs)
 }
 
 func (p *syncTestReadProvider) GetMergeRequest(
@@ -2062,6 +2073,94 @@ func TestSyncNotificationsContinuesAfterHostError(t *testing.T) {
 	require.ErrorIs(syncErr, boom)
 	check.Equal("ghe.example.com", items[0].PlatformHost)
 	check.Equal("thread-ok", items[0].PlatformNotificationID)
+}
+
+func TestRepositoryReplacementWaitsForNotificationWatermark(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	oldRepo := RepoRef{
+		Platform:           platform.KindGitHub,
+		PlatformHost:       "github.com",
+		Owner:              "acme",
+		Name:               "widget",
+		RepoPath:           "acme/widget",
+		PlatformExternalID: "R_old",
+	}
+	newRepo := oldRepo
+	newRepo.PlatformExternalID = "R_new"
+	_, err := d.UpsertRepoByProviderID(
+		t.Context(),
+		platform.DBRepoIdentity(platformRepoRef(oldRepo)),
+	)
+	require.NoError(err)
+	listStarted := make(chan struct{})
+	releaseList := make(chan struct{})
+	var signalList sync.Once
+	client := &mockClient{listNotificationsFn: func(
+		context.Context,
+		NotificationListOptions,
+	) ([]NotificationThread, bool, error) {
+		signalList.Do(func() { close(listStarted) })
+		<-releaseList
+		return nil, false, nil
+	}}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client},
+		d,
+		nil,
+		[]RepoRef{oldRepo},
+		time.Minute,
+		nil,
+		nil,
+	)
+	t.Cleanup(syncer.Stop)
+	syncer.archiveLifecycle = archiveIdentitySeeder{database: d}
+
+	notificationsDone := make(chan error, 1)
+	go func() {
+		notificationsDone <- syncer.SyncNotifications(t.Context())
+	}()
+	select {
+	case <-listStarted:
+	case <-time.After(time.Second):
+		require.Fail("notification sync did not reach provider listing")
+	}
+
+	setReposDone := make(chan error, 1)
+	go func() {
+		setReposDone <- syncer.SetReposWithContext(
+			t.Context(),
+			[]RepoRef{newRepo},
+			false,
+		)
+	}()
+	replacementCompletedEarly := false
+	select {
+	case err := <-setReposDone:
+		require.NoError(err)
+		replacementCompletedEarly = true
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(releaseList)
+	require.NoError(<-notificationsDone)
+	if !replacementCompletedEarly {
+		require.NoError(<-setReposDone)
+	}
+
+	watermark, err := d.GetNotificationSyncWatermark(
+		t.Context(),
+		"github",
+		"github.com",
+		newRepo.Owner,
+		newRepo.Name,
+	)
+	require.NoError(err)
+	assert.False(
+		replacementCompletedEarly,
+		"replacement completed while an old notification watermark was pending",
+	)
+	assert.Nil(watermark)
 }
 
 func TestSyncNotificationsContinuesAfterRepoErrorOnSameHost(t *testing.T) {
@@ -6968,7 +7067,7 @@ func TestSyncRepoSerializesRepositoryIdentityResolution(t *testing.T) {
 
 	errs := make(chan error, 2)
 	go func() {
-		_, _, _, err := syncer.reconcileRepoIdentity(t.Context(), repo)
+		_, _, _, _, err := syncer.reconcileRepoIdentity(t.Context(), repo)
 		errs <- err
 	}()
 	select {
@@ -6977,7 +7076,7 @@ func TestSyncRepoSerializesRepositoryIdentityResolution(t *testing.T) {
 		require.Fail("first repository identity read did not start")
 	}
 	go func() {
-		_, _, _, err := syncer.reconcileRepoIdentity(t.Context(), repo)
+		_, _, _, _, err := syncer.reconcileRepoIdentity(t.Context(), repo)
 		errs <- err
 	}()
 	for range 2 {
@@ -7067,11 +7166,12 @@ func TestSetReposSerializesArchiveSeedingWithIdentityResolution(t *testing.T) {
 		nil,
 		nil,
 	)
+	t.Cleanup(syncer.Stop)
 	syncer.archiveLifecycle = archiveIdentitySeeder{database: d}
 
 	syncDone := make(chan error, 1)
 	go func() {
-		_, _, _, err := syncer.reconcileRepoIdentity(t.Context(), oldRepo)
+		_, _, _, _, err := syncer.reconcileRepoIdentity(t.Context(), oldRepo)
 		syncDone <- err
 	}()
 	select {
@@ -7111,6 +7211,148 @@ func TestSetReposSerializesArchiveSeedingWithIdentityResolution(t *testing.T) {
 	assert.Equal("R_new", repos[0].PlatformRepoID)
 }
 
+func TestSyncRepoUsesAuthoritativeConfiguredRefAfterReconciliation(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	oldRepo := RepoRef{
+		Platform:           platform.KindGitLab,
+		PlatformHost:       "gitlab.example.com",
+		Owner:              "acme",
+		Name:               "widgets",
+		RepoPath:           "acme/widgets",
+		PlatformRepoID:     41,
+		PlatformExternalID: "gid://gitlab/Project/41",
+	}
+	currentRepo := oldRepo
+	currentRepo.PlatformRepoID = 42
+	currentRepo.PlatformExternalID = "gid://gitlab/Project/42"
+	reader := &syncTestReadProvider{syncTestProvider: syncTestProvider{
+		kind: platform.KindGitLab,
+		host: "gitlab.example.com",
+	}}
+	provider := &syncTestRepositoryReadProvider{
+		syncTestReadProvider: reader,
+		repository: platform.Repository{
+			Ref:                platformRepoRef(currentRepo),
+			PlatformID:         currentRepo.PlatformRepoID,
+			PlatformExternalID: currentRepo.PlatformExternalID,
+		},
+	}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	syncer := NewSyncerWithRegistry(
+		registry,
+		d,
+		nil,
+		[]RepoRef{currentRepo},
+		time.Minute,
+		nil,
+		nil,
+	)
+
+	require.NoError(syncer.syncRepo(t.Context(), oldRepo))
+
+	refs := reader.mergeRequestRefs()
+	require.NotEmpty(refs)
+	for _, ref := range refs {
+		assert.Equal(currentRepo.PlatformRepoID, ref.PlatformID)
+		assert.Equal(currentRepo.PlatformExternalID, ref.PlatformExternalID)
+	}
+}
+
+func TestRepositoryReplacementWaitsForIncarnationSensitiveSyncState(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	oldRepo := RepoRef{
+		Platform:           platform.KindGitHub,
+		PlatformHost:       "github.com",
+		Owner:              "acme",
+		Name:               "widgets",
+		RepoPath:           "acme/widgets",
+		PlatformExternalID: "R_old",
+	}
+	newRepo := oldRepo
+	newRepo.PlatformExternalID = "R_new"
+	_, err := d.UpsertRepoByProviderID(
+		t.Context(),
+		platform.DBRepoIdentity(platformRepoRef(oldRepo)),
+	)
+	require.NoError(err)
+	listStarted := make(chan struct{})
+	releaseList := make(chan struct{})
+	disabledErr := platform.RepositoryFeatureDisabled(
+		platform.KindGitHub,
+		"github.com",
+		platform.RepositoryFeatureMergeRequests,
+		errors.New("pull requests disabled"),
+	)
+	client := &mockClient{listOpenPRsFn: func(
+		context.Context,
+		string,
+		string,
+	) ([]*gh.PullRequest, error) {
+		close(listStarted)
+		<-releaseList
+		return nil, disabledErr
+	}}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client},
+		d,
+		nil,
+		[]RepoRef{oldRepo},
+		time.Minute,
+		nil,
+		nil,
+	)
+	t.Cleanup(syncer.Stop)
+	syncer.archiveLifecycle = archiveIdentitySeeder{database: d}
+
+	syncDone := make(chan error, 1)
+	go func() {
+		syncDone <- syncer.syncRepo(t.Context(), oldRepo)
+	}()
+	select {
+	case <-listStarted:
+	case <-time.After(time.Second):
+		require.Fail("repository sync did not reach merge request listing")
+	}
+
+	setReposDone := make(chan error, 1)
+	go func() {
+		setReposDone <- syncer.SetReposWithContext(
+			t.Context(),
+			[]RepoRef{newRepo},
+			false,
+		)
+	}()
+	replacementCompletedEarly := false
+	select {
+	case err := <-setReposDone:
+		require.NoError(err)
+		replacementCompletedEarly = true
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(releaseList)
+	require.NoError(<-syncDone)
+	if !replacementCompletedEarly {
+		require.NoError(<-setReposDone)
+	}
+
+	probe, due := syncer.beginRepositoryFeatureProbe(
+		t.Context(),
+		newRepo,
+		platform.RepositoryFeatureMergeRequests,
+	)
+	assert.False(
+		replacementCompletedEarly,
+		"replacement completed while the old incarnation could still write state",
+	)
+	assert.True(due, "old incarnation restored a feature cooldown after replacement")
+	probe.abandon()
+}
+
 func TestReconcileRepoIdentityRefreshesPrefilledProviderID(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -7146,7 +7388,7 @@ func TestReconcileRepoIdentityRefreshesPrefilledProviderID(t *testing.T) {
 		nil,
 	)
 
-	repoID, _, _, err := syncer.reconcileRepoIdentity(t.Context(), repo)
+	_, repoID, _, _, err := syncer.reconcileRepoIdentity(t.Context(), repo)
 	require.NoError(err)
 	stored, err := d.GetRepoByID(t.Context(), repoID)
 	require.NoError(err)
@@ -7208,7 +7450,7 @@ func TestReconcileRepoIdentityClearsFreshIncarnationProcessState(t *testing.T) {
 	syncer.nativeStackResults.Store(key, &GitHubNativeStackSyncResult{})
 	syncer.nativeStackConfirmations.Store(key, nativeStackConfirmation{})
 
-	repoID, _, _, err := syncer.reconcileRepoIdentity(t.Context(), repo)
+	_, repoID, _, _, err := syncer.reconcileRepoIdentity(t.Context(), repo)
 	require.NoError(err)
 	stored, err := d.GetRepoByID(t.Context(), repoID)
 	require.NoError(err)
@@ -7272,7 +7514,7 @@ func TestReconcileRepoIdentityUsesLatestConfiguredIDWithoutRepositoryReader(t *t
 		false,
 	))
 
-	repoID, _, _, err := syncer.reconcileRepoIdentity(
+	_, repoID, _, _, err := syncer.reconcileRepoIdentity(
 		t.Context(),
 		oldRepo,
 	)

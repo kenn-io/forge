@@ -54,6 +54,7 @@ type Manager struct {
 	deletedSummaryIDs         map[string]bool
 	worktreeBaseResolver      WorktreeBasePathResolver
 	afterHeadRepoSnapshotRead func()
+	beforeWorkspaceInsert     func()
 }
 
 // WorktreeBasePathResolver resolves a tracked remote repository to a
@@ -285,6 +286,35 @@ func (m *Manager) currentHideTmuxStatus() bool {
 	return m.hideTmuxStatus
 }
 
+func (m *Manager) insertWorkspaceForRepo(
+	ctx context.Context,
+	expectedRepoID int64,
+	ws *Workspace,
+) error {
+	if m.beforeWorkspaceInsert != nil {
+		m.beforeWorkspaceInsert()
+	}
+	releaseReconciliation, err := m.db.LockRepositoryReconciliationRead(ctx)
+	if err != nil {
+		return fmt.Errorf("lock repository reconciliation for workspace insert: %w", err)
+	}
+	defer releaseReconciliation()
+	currentRepo, err := m.workspaceRepo(
+		ctx,
+		ws.Platform,
+		ws.PlatformHost,
+		ws.RepoOwner,
+		ws.RepoName,
+	)
+	if err != nil {
+		return fmt.Errorf("validate workspace repository: %w", err)
+	}
+	if currentRepo == nil || currentRepo.ID != expectedRepoID {
+		return retiredWorkspaceInvalidState()
+	}
+	return m.db.InsertWorkspace(ctx, ws)
+}
+
 // tmuxExec builds an *exec.Cmd for a tmux invocation: the
 // configured prefix + extra args. Defaults to ["tmux"] when
 // unconfigured. Returning the *exec.Cmd directly (rather than a
@@ -362,7 +392,7 @@ func (m *Manager) Create(
 		Status:          "creating",
 	}
 
-	if err := m.db.InsertWorkspace(ctx, ws); err != nil {
+	if err := m.insertWorkspaceForRepo(ctx, repo.ID, ws); err != nil {
 		if isUniqueConstraintError(err) {
 			return nil, fmt.Errorf("%w: %v", ErrWorkspaceDuplicate, err)
 		}
@@ -493,7 +523,7 @@ func (m *Manager) CreateIssue(
 		}
 	}
 
-	if err := m.db.InsertWorkspace(ctx, ws); err != nil {
+	if err := m.insertWorkspaceForRepo(ctx, repo.ID, ws); err != nil {
 		return nil, fmt.Errorf("insert workspace: %w", err)
 	}
 	return ws, nil
@@ -634,7 +664,7 @@ func (m *Manager) CreateKataTask(
 		KataMetadata:    &metadata,
 	}
 
-	if err := m.db.InsertWorkspace(ctx, ws); err != nil {
+	if err := m.insertWorkspaceForRepo(ctx, repo.ID, ws); err != nil {
 		if isUniqueConstraintError(err) {
 			return nil, fmt.Errorf("%w: %v", ErrWorkspaceDuplicate, err)
 		}
@@ -715,7 +745,7 @@ func (m *Manager) CreateAdHoc(
 		Status:          "creating",
 	}
 
-	if err := m.db.InsertWorkspace(ctx, ws); err != nil {
+	if err := m.insertWorkspaceForRepo(ctx, repo.ID, ws); err != nil {
 		if isUniqueConstraintError(err) {
 			return nil, fmt.Errorf("%w: %v", ErrWorkspaceDuplicate, err)
 		}

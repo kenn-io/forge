@@ -336,6 +336,128 @@ func TestCreatePRHeadRepoClassification(t *testing.T) {
 	}
 }
 
+func TestRepositoryBackedWorkspaceCreationRejectsReplacedIncarnation(t *testing.T) {
+	tests := []struct {
+		name   string
+		seed   func(*testing.T, *db.DB, int64)
+		create func(context.Context, *Manager) (*Workspace, error)
+	}{
+		{
+			name: "pull request",
+			seed: func(t *testing.T, d *db.DB, repoID int64) {
+				seedMR(t, d, repoID, 7, "feature/replacement")
+			},
+			create: func(ctx context.Context, mgr *Manager) (*Workspace, error) {
+				return mgr.Create(
+					ctx, "github", "github.com", "acme", "widget", 7,
+				)
+			},
+		},
+		{
+			name: "issue",
+			seed: func(t *testing.T, d *db.DB, repoID int64) {
+				seedIssue(t, d, repoID, 7, "replacement race")
+			},
+			create: func(ctx context.Context, mgr *Manager) (*Workspace, error) {
+				return mgr.CreateIssue(
+					ctx,
+					"github.com",
+					"acme",
+					"widget",
+					7,
+					CreateIssueOptions{Provider: "github"},
+				)
+			},
+		},
+		{
+			name: "kata task",
+			seed: func(*testing.T, *db.DB, int64) {},
+			create: func(ctx context.Context, mgr *Manager) (*Workspace, error) {
+				return mgr.CreateKataTask(
+					ctx,
+					"github",
+					"github.com",
+					"acme",
+					"widget",
+					db.WorkspaceKataMetadata{
+						DaemonID:   "daemon",
+						ProjectUID: "project",
+						IssueUID:   "issue",
+						ShortID:    "TASK",
+						Title:      "Replacement race",
+					},
+				)
+			},
+		},
+		{
+			name: "ad hoc",
+			seed: func(*testing.T, *db.DB, int64) {},
+			create: func(ctx context.Context, mgr *Manager) (*Workspace, error) {
+				return mgr.CreateAdHoc(
+					ctx,
+					"github",
+					"github.com",
+					"acme",
+					"widget",
+					CreateAdHocOptions{BranchName: "feature/replacement"},
+				)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require := require.New(t)
+			assert := assert.New(t)
+			d := openTestDB(t)
+			oldIdentity := db.RepoIdentity{
+				Platform:       "github",
+				PlatformHost:   "github.com",
+				PlatformRepoID: "R_old",
+				Owner:          "acme",
+				Name:           "widget",
+			}
+			repoID, err := d.UpsertRepoByProviderID(t.Context(), oldIdentity)
+			require.NoError(err)
+			tt.seed(t, d, repoID)
+			mgr := NewManager(d, t.TempDir())
+			insertStarted := make(chan struct{})
+			releaseInsert := make(chan struct{})
+			mgr.beforeWorkspaceInsert = func() {
+				close(insertStarted)
+				<-releaseInsert
+			}
+			createDone := make(chan error, 1)
+			go func() {
+				_, createErr := tt.create(t.Context(), mgr)
+				createDone <- createErr
+			}()
+			select {
+			case <-insertStarted:
+			case <-time.After(5 * time.Second):
+				require.Fail("workspace creation did not reach persistence")
+			}
+
+			newIdentity := oldIdentity
+			newIdentity.PlatformRepoID = "R_new"
+			_, err = d.UpsertRepoByProviderID(t.Context(), newIdentity)
+			require.NoError(err)
+			close(releaseInsert)
+
+			select {
+			case createErr := <-createDone:
+				require.Error(createErr)
+				require.ErrorIs(createErr, ErrWorkspaceInvalidState)
+			case <-time.After(5 * time.Second):
+				require.Fail("workspace creation did not finish")
+			}
+			active, err := d.ListActiveWorkspaces(t.Context())
+			require.NoError(err)
+			assert.Empty(active)
+		})
+	}
+}
+
 func TestRefreshWorkspaceHeadRepo(t *testing.T) {
 	tests := []struct {
 		name        string

@@ -172,6 +172,9 @@ Repository-incarnation replacement leaves retired workspaces visible for
 cleanup, but they are terminal, non-retryable, and excluded from item
 associations (`internal/db/queries.go::ListActiveWorkspaces`,
 `internal/workspace/manager.go::validateWorkspaceRetryable`).
+Repository-backed creation must revalidate the internal repository ID while
+holding the reconciliation barrier through insertion; a replacement race is
+terminal invalid state (`internal/workspace/manager.go::insertWorkspaceForRepo`).
 
 Kata task repository resolution is deliberately exact. Manual settings mappings
 key by optional daemon ID plus Kata project UID and point to a known repository

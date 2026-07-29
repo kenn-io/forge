@@ -24,10 +24,10 @@ reconciliation when available.
   project links
   (`internal/db/queries.go::UpsertRepoByProviderID`,
   `internal/github/sync.go::resetRepositoryPathState`).
-- Serialize every provider-ID writer, including configuration/archive seeding,
-  through one per-full-path reconciliation gate; a delayed observation must
-  not restore a replaced incarnation (`internal/github/sync.go::SetReposWithContext`,
-  `internal/github/sync.go::reconcileRepoIdentity`).
+- Hold one per-full-path incarnation gate across provider-ID reconciliation
+  and every operation that can publish path-keyed state; configuration cutover
+  takes the exclusive side so stale work cannot outlive it
+  (`internal/github/sync.go::repoIncarnationGate`).
 
 GitLab nested namespaces make `repo_path` mandatory for reliable addressing:
 `group/subgroup/project` has owner `group/subgroup` and name `project`.

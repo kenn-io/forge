@@ -489,6 +489,8 @@ type Syncer struct {
 	reposMu                  sync.Mutex
 	repoIdentityLocksMu      sync.Mutex
 	repoIdentityLocks        map[string]*sync.Mutex
+	repoIncarnationGatesMu   sync.Mutex
+	repoIncarnationGates     map[string]*sync.RWMutex
 	interval                 time.Duration
 	watchInterval            time.Duration
 	watchedMRs               []WatchedMR
@@ -813,6 +815,7 @@ func NewSyncerWithRegistry(
 		nextSyncAfter:            make(map[string]time.Time),
 		nextWatchSyncAfter:       make(map[string]time.Time),
 		repoIdentityLocks:        make(map[string]*sync.Mutex),
+		repoIncarnationGates:     make(map[string]*sync.RWMutex),
 		archiveProviderRequests:  make(map[string]archiveProviderRequest),
 		stopCh:                   make(chan struct{}),
 		archiveWake:              make(chan struct{}, 1),
@@ -3608,8 +3611,8 @@ func (s *Syncer) HostForRepo(owner, name string) string {
 func (s *Syncer) SetRepos(repos []RepoRef) {
 	if err := s.SetReposWithContext(context.Background(), repos, false); err != nil {
 		slog.Warn("update archive repositories", "err", err)
-		unlockIdentities := s.lockRepoIdentityPaths(repos)
-		defer unlockIdentities()
+		unlockIncarnations := s.lockRepoIncarnationPaths(repos)
+		defer unlockIncarnations()
 		s.reposMu.Lock()
 		s.repos = slices.Clone(repos)
 		s.reposMu.Unlock()
@@ -3621,8 +3624,8 @@ func (s *Syncer) SetRepos(repos []RepoRef) {
 // configured repository set to sync workers. Credential reloads may also make
 // authentication-blocked work eligible without resetting archive progress.
 func (s *Syncer) SetReposWithContext(ctx context.Context, repos []RepoRef, retryAuthentication bool) error {
-	unlockIdentities := s.lockRepoIdentityPaths(repos)
-	defer unlockIdentities()
+	unlockIncarnations := s.lockRepoIncarnationPaths(repos)
+	defer unlockIncarnations()
 
 	refs := make([]platform.RepoRef, 0, len(repos))
 	for _, repo := range repos {
@@ -5194,15 +5197,30 @@ func (s *Syncer) repoIdentityLock(repo RepoRef) *sync.Mutex {
 	return lock
 }
 
-func (s *Syncer) lockRepoIdentityPaths(repos []RepoRef) func() {
-	byKey := make(map[string]*sync.Mutex, len(repos))
+func (s *Syncer) repoIncarnationGate(repo RepoRef) *sync.RWMutex {
+	key := repoPriorityKey(repo)
+	s.repoIncarnationGatesMu.Lock()
+	defer s.repoIncarnationGatesMu.Unlock()
+	gate := s.repoIncarnationGates[key]
+	if gate == nil {
+		gate = &sync.RWMutex{}
+		if s.repoIncarnationGates == nil {
+			s.repoIncarnationGates = make(map[string]*sync.RWMutex)
+		}
+		s.repoIncarnationGates[key] = gate
+	}
+	return gate
+}
+
+func (s *Syncer) lockRepoIncarnationPaths(repos []RepoRef) func() {
+	byKey := make(map[string]*sync.RWMutex, len(repos))
 	keys := make([]string, 0, len(repos))
 	for _, repo := range repos {
 		key := repoPriorityKey(repo)
 		if _, exists := byKey[key]; exists {
 			continue
 		}
-		byKey[key] = s.repoIdentityLock(repo)
+		byKey[key] = s.repoIncarnationGate(repo)
 		keys = append(keys, key)
 	}
 	slices.Sort(keys)
@@ -5288,21 +5306,30 @@ func (s *Syncer) syncRepoIdentity(ctx context.Context, repo RepoRef) (db.RepoIde
 func (s *Syncer) reconcileRepoIdentity(
 	ctx context.Context,
 	repo RepoRef,
-) (int64, *platform.Repository, *db.Repo, error) {
+) (RepoRef, int64, *platform.Repository, *db.Repo, error) {
+	incarnationGate := s.repoIncarnationGate(repo)
+	incarnationGate.RLock()
+	defer incarnationGate.RUnlock()
 	if s.beforeRepoIdentityLock != nil {
 		s.beforeRepoIdentityLock(repo)
 	}
 	identityLock := s.repoIdentityLock(repo)
 	identityLock.Lock()
 	defer identityLock.Unlock()
+	return s.reconcileRepoIdentityLocked(ctx, repo)
+}
 
+func (s *Syncer) reconcileRepoIdentityLocked(
+	ctx context.Context,
+	repo RepoRef,
+) (RepoRef, int64, *platform.Repository, *db.Repo, error) {
 	repo = s.latestConfiguredRepo(repo)
 	previousRepo, err := s.db.GetRepoByIdentity(
 		ctx,
 		platform.DBRepoIdentity(platformRepoRef(repo)),
 	)
 	if err != nil {
-		return 0, nil, nil, fmt.Errorf(
+		return RepoRef{}, 0, nil, nil, fmt.Errorf(
 			"read repo %s/%s before identity reconciliation: %w",
 			repo.Owner,
 			repo.Name,
@@ -5311,7 +5338,7 @@ func (s *Syncer) reconcileRepoIdentity(
 	}
 	repoIdentity, resolvedRepo, err := s.syncRepoIdentity(ctx, repo)
 	if err != nil {
-		return 0, nil, nil, fmt.Errorf(
+		return RepoRef{}, 0, nil, nil, fmt.Errorf(
 			"resolve repo identity %s/%s: %w",
 			repo.Owner,
 			repo.Name,
@@ -5320,7 +5347,7 @@ func (s *Syncer) reconcileRepoIdentity(
 	}
 	repoID, err := s.db.UpsertRepoByProviderID(ctx, repoIdentity)
 	if err != nil {
-		return 0, nil, nil, fmt.Errorf(
+		return RepoRef{}, 0, nil, nil, fmt.Errorf(
 			"upsert repo %s/%s by provider id: %w",
 			repo.Owner,
 			repo.Name,
@@ -5329,7 +5356,7 @@ func (s *Syncer) reconcileRepoIdentity(
 	}
 	persistedRepo, err := s.db.GetRepoByID(ctx, repoID)
 	if err != nil {
-		return 0, nil, nil, fmt.Errorf(
+		return RepoRef{}, 0, nil, nil, fmt.Errorf(
 			"read repo %s/%s after identity reconciliation: %w",
 			repo.Owner,
 			repo.Name,
@@ -5337,7 +5364,7 @@ func (s *Syncer) reconcileRepoIdentity(
 		)
 	}
 	if persistedRepo == nil {
-		return 0, nil, nil, fmt.Errorf(
+		return RepoRef{}, 0, nil, nil, fmt.Errorf(
 			"repo %s/%s missing after identity reconciliation",
 			repo.Owner,
 			repo.Name,
@@ -5350,7 +5377,62 @@ func (s *Syncer) reconcileRepoIdentity(
 			client.InvalidateListETagsForRepo(repo.Owner, repo.Name)
 		}
 	}
-	return repoID, resolvedRepo, persistedRepo, nil
+	repo = authoritativeRepoRef(repo, repoID, persistedRepo, resolvedRepo)
+	return repo, repoID, resolvedRepo, persistedRepo, nil
+}
+
+func authoritativeRepoRef(
+	configured RepoRef,
+	repoID int64,
+	persisted *db.Repo,
+	resolved *platform.Repository,
+) RepoRef {
+	ref := configured
+	ref.RepoID = repoID
+	ref.Platform = platform.Kind(persisted.Platform)
+	ref.PlatformHost = persisted.PlatformHost
+	ref.Owner = persisted.Owner
+	ref.Name = persisted.Name
+	ref.RepoPath = persisted.RepoPath
+	ref.PlatformExternalID = persisted.PlatformRepoID
+	if persisted.WebURL != "" {
+		ref.WebURL = persisted.WebURL
+	}
+	if persisted.CloneURL != "" {
+		ref.CloneURL = persisted.CloneURL
+	}
+	if persisted.DefaultBranch != "" {
+		ref.DefaultBranch = persisted.DefaultBranch
+	}
+	if resolved == nil {
+		return ref
+	}
+	if resolved.Ref.PlatformID != 0 {
+		ref.PlatformRepoID = resolved.Ref.PlatformID
+	} else if resolved.PlatformID != 0 {
+		ref.PlatformRepoID = resolved.PlatformID
+	}
+	if resolved.Ref.PlatformExternalID != "" {
+		ref.PlatformExternalID = resolved.Ref.PlatformExternalID
+	} else if resolved.PlatformExternalID != "" {
+		ref.PlatformExternalID = resolved.PlatformExternalID
+	}
+	if resolved.Ref.WebURL != "" {
+		ref.WebURL = resolved.Ref.WebURL
+	} else if resolved.WebURL != "" {
+		ref.WebURL = resolved.WebURL
+	}
+	if resolved.Ref.CloneURL != "" {
+		ref.CloneURL = resolved.Ref.CloneURL
+	} else if resolved.CloneURL != "" {
+		ref.CloneURL = resolved.CloneURL
+	}
+	if resolved.Ref.DefaultBranch != "" {
+		ref.DefaultBranch = resolved.Ref.DefaultBranch
+	} else if resolved.DefaultBranch != "" {
+		ref.DefaultBranch = resolved.DefaultBranch
+	}
+	return ref
 }
 
 // syncRepo syncs one repository: open PRs, timeline events, and stale closures.
@@ -5362,6 +5444,11 @@ func (s *Syncer) markClosedLinkedNotificationsDone(ctx context.Context) error {
 }
 
 func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
+	incarnationGate := s.repoIncarnationGate(repo)
+	incarnationGate.RLock()
+	defer incarnationGate.RUnlock()
+	repo = s.latestConfiguredRepo(repo)
+
 	bucket, err := s.bucketKeyForRepo(repo, false)
 	if err != nil {
 		return fmt.Errorf("resolve sync credential route for %s/%s: %w", repo.Owner, repo.Name, err)
@@ -5381,8 +5468,14 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 		}
 	}
 
-	repoID, resolvedRepo, _, err :=
-		s.reconcileRepoIdentity(ctx, repo)
+	if s.beforeRepoIdentityLock != nil {
+		s.beforeRepoIdentityLock(repo)
+	}
+	identityLock := s.repoIdentityLock(repo)
+	identityLock.Lock()
+	repo, repoID, resolvedRepo, _, err :=
+		s.reconcileRepoIdentityLocked(ctx, repo)
+	identityLock.Unlock()
 	if err != nil {
 		return err
 	}

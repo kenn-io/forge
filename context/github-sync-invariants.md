@@ -53,6 +53,10 @@ what "current" means.
   incarnation can suppress its first sync
   (`internal/github/sync.go::resetRepositoryPathState`,
   `internal/github/sync.go::reconcileRepoIdentity`).
+- Full and notification syncs hold the incarnation gate through path-keyed
+  writes and use the authoritative configured provider reference after
+  reconciliation (`internal/github/sync.go::syncRepo`,
+  `internal/github/notifications_sync.go::Syncer.syncNotificationsForRepo`).
 - Detail sync populates comments, reviews, commits, and richer timeline data for
   one item.
 - If a PR or issue is marked as detail-fetched, the persisted fields that power

@@ -12,14 +12,9 @@
   import { renderMarkdown, renderMarkdownSync } from "../../utils/markdown.js";
   import { moveTaskListItem, toggleTaskListItem } from "../../utils/task-list.js";
   import { firstUnavailableGate, operationGate } from "./operation-gates.js";
-  import {
-    Card,
-    CopyButton,
-    copyToClipboard,
-    formatRelativeTime,
-    StatusDot,
-  } from "@kenn-io/kit-ui";
+  import { copyToClipboard, formatRelativeTime, StatusDot } from "@kenn-io/kit-ui";
   import EventTimeline from "./EventTimeline.svelte";
+  import CollapsibleDescription from "./CollapsibleDescription.svelte";
   import DetailActivityViewMenu from "./DetailActivityViewMenu.svelte";
   import IssueCommentBox from "./IssueCommentBox.svelte";
   import WorkspaceCreateSplitButton from "../workspace/WorkspaceCreateSplitButton.svelte";
@@ -1375,41 +1370,31 @@
       <!-- Issue body -->
       {#if issue.Body}
         <div class="section body-section">
-          <div class="section-header">
-            <span class="section-title-inline">Description</span>
-          </div>
-          <div class="inset-box-wrap">
-            <CopyButton
-              class={bodyCopied ? "body-copy body-copy--copied" : "body-copy"}
-              copied={bodyCopied}
-              onclick={() => copyBody(issue.Body)}
-              revealOnHover
-              ariaLabel="Copy to clipboard"
-              copiedAriaLabel="Copied!"
-              title="Copy to clipboard"
-              copiedTitle="Copied!"
-            />
-            <Card level="inset" padding="none" class="inset-box">
-              <!-- svelte-ignore a11y_click_events_have_key_events -->
-              <!-- svelte-ignore a11y_no_static_element_interactions -->
-              <div
-                class="inset-box__content markdown-body"
-                class:dragging={dragSourceIndex !== null}
-                onclick={onBodyClick}
-                ondragstart={onBodyDragStart}
-                ondragover={onBodyDragOver}
-                ondragleave={onBodyDragLeave}
-                ondrop={onBodyDrop}
-                ondragend={onBodyDragEnd}
-              >
-                {#await renderMarkdown(issue.Body, { provider, platformHost, owner, name, repoPath }, { interactiveTasks: capabilities.state_mutation && !contentGate.unavailable })}
-                  {@html renderMarkdownSync(issue.Body, { provider, platformHost, owner, name, repoPath })}
-                {:then html}
-                  {@html html}
-                {/await}
-              </div>
-            </Card>
-          </div>
+          <CollapsibleDescription
+            source={issue.Body}
+            itemKey={`${provider}:${platformHost ?? ""}:${owner}/${name}:issue:${number}`}
+            copied={bodyCopied}
+            oncopy={() => copyBody(issue.Body)}
+          >
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div
+              class="inset-box__content markdown-body"
+              class:dragging={dragSourceIndex !== null}
+              onclick={onBodyClick}
+              ondragstart={onBodyDragStart}
+              ondragover={onBodyDragOver}
+              ondragleave={onBodyDragLeave}
+              ondrop={onBodyDrop}
+              ondragend={onBodyDragEnd}
+            >
+              {#await renderMarkdown(issue.Body, { provider, platformHost, owner, name, repoPath }, { interactiveTasks: capabilities.state_mutation && !contentGate.unavailable })}
+                {@html renderMarkdownSync(issue.Body, { provider, platformHost, owner, name, repoPath })}
+              {:then html}
+                {@html html}
+              {/await}
+            </div>
+          </CollapsibleDescription>
         </div>
       {/if}
 
@@ -1754,12 +1739,6 @@
     gap: 8px;
   }
 
-  .section-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-
   .section-title-row {
     display: flex;
     align-items: center;
@@ -1773,37 +1752,6 @@
     text-transform: uppercase;
     letter-spacing: 0.05em;
     color: var(--text-muted);
-  }
-
-  .section-title-inline {
-    font-size: var(--font-size-sm);
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--text-muted);
-  }
-
-  .inset-box-wrap {
-    position: relative;
-  }
-
-  /* Kit CopyButton owns size, hover, active, copied icon, and the
-     touch always-visible rule; the wrap positions it and reveals it on
-     hover (kit's --reveal only self-reveals on focus-visible). */
-  .inset-box-wrap :global(.kit-copy-btn.body-copy) {
-    position: absolute;
-    top: 6px;
-    right: 6px;
-    z-index: 1;
-  }
-
-  .inset-box-wrap:hover :global(.kit-copy-btn.body-copy),
-  .inset-box-wrap :global(.kit-copy-btn.body-copy--copied) {
-    opacity: 1;
-  }
-
-  :global(.inset-box) {
-    overflow: hidden;
   }
 
   .inset-box__content {
@@ -1954,7 +1902,6 @@
 
     .star-btn,
     .gh-link,
-    .inset-box-wrap :global(.kit-copy-btn.body-copy),
     .meta-row :global(.copy-number-btn) {
       min-width: var(--detail-mobile-hit-target);
       min-height: var(--detail-mobile-hit-target);
@@ -1971,7 +1918,6 @@
     .meta-sep,
     .sync-indicator,
     .section-title,
-    .section-title-inline,
     .refresh-banner,
     .loading-placeholder {
       font-size: var(--font-size-sm);
@@ -2028,9 +1974,5 @@
       font-size: var(--font-size-sm);
     }
 
-    .inset-box-wrap :global(.kit-copy-btn.body-copy) {
-      position: static;
-      opacity: 1;
-    }
   }
 </style>

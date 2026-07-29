@@ -999,6 +999,29 @@ describe("IssueDetail inline workspace handoff", () => {
   });
 });
 
+describe("IssueDetail description collapse", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("collapses and expands a long issue description", async () => {
+    const detail = issueDetail();
+    detail.issue.Body = "x".repeat(1_501);
+    renderIssueDetail(detail);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Collapse description" }));
+    const expand = screen.getByRole("button", { name: "Expand description" });
+    expect(expand.getAttribute("aria-expanded")).toBe("false");
+
+    await fireEvent.click(expand);
+    expect(screen.getByRole("button", { name: "Collapse description" }).getAttribute("aria-expanded")).toBe("true");
+  });
+});
+
 describe("IssueDetail body copy feedback", () => {
   beforeEach(() => {
     localStorage.clear();

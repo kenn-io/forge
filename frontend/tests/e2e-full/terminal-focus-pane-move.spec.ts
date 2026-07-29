@@ -49,21 +49,37 @@ async function waitForWorkspaceReady(api: APIRequestContext, workspaceId: string
   throw new Error(`workspace ${workspaceId} did not become ready`);
 }
 
-async function createIssueWorkspace(api: APIRequestContext): Promise<WorkspaceStatusResponse> {
-  const response = await api.post("/api/v1/issues/github/acme/widgets/10/workspace", { data: {} });
+async function createIssueWorkspace(api: APIRequestContext, issueNumber = 10): Promise<WorkspaceStatusResponse> {
+  const response = await api.post(`/api/v1/issues/github/acme/widgets/${issueNumber}/workspace`, {
+    data: {},
+  });
   expect(response.status()).toBe(202);
   const workspace = (await response.json()) as WorkspaceStatusResponse;
   return waitForWorkspaceReady(api, workspace.id);
 }
 
-async function launchDockedShell(api: APIRequestContext, workspaceId: string): Promise<void> {
+async function launchShell(
+  api: APIRequestContext,
+  workspaceId: string,
+  region: "terminal" | "workflow",
+): Promise<void> {
   const response = await api.post(`/api/v1/workspaces/${workspaceId}/runtime/sessions`, {
     data: {
       target_key: "plain_shell",
-      display_region: "terminal",
+      display_region: region,
     },
   });
   expect(response.status(), await response.text()).toBe(200);
+}
+
+async function launchDockedShell(api: APIRequestContext, workspaceId: string): Promise<void> {
+  await launchShell(api, workspaceId, "terminal");
+}
+
+async function focusedSessionHost(page: Page): Promise<string | null> {
+  return page.evaluate(
+    () => document.activeElement?.closest("[data-session-host]")?.getAttribute("data-session-host") ?? null,
+  );
 }
 
 async function openTerminalPanel(page: Page): Promise<Locator> {
@@ -266,6 +282,49 @@ test("terminal keeps keyboard focus across a pane move without a click", async (
         timeout: 15_000,
       })
       .toBe(true);
+  } finally {
+    await api?.dispose();
+    await isolatedServer?.stop();
+  }
+});
+
+test("terminal acquires keyboard focus on every item switch, not just the first", async ({ page }) => {
+  test.skip(!hasCommand("git") || !hasCommand("tmux", ["-V"]), "git and tmux are required for the real workspace flow");
+  await page.setViewportSize({ width: 1440, height: 900 });
+
+  let isolatedServer: IsolatedE2EServer | null = null;
+  let api: APIRequestContext | null = null;
+  try {
+    isolatedServer = await startIsolatedWorkspaceE2EServer();
+    api = await playwrightRequest.newContext({
+      baseURL: isolatedServer.info.base_url,
+    });
+    // Two items, each with its own workspace and a live tmux shell filling the
+    // workspace pane, so switching items swaps the whole terminal under the
+    // detail surface.
+    const first = await createIssueWorkspace(api, 10);
+    const second = await createIssueWorkspace(api, 13);
+    await launchShell(api, first.id, "workflow");
+    await launchShell(api, second.id, "workflow");
+
+    // Entering an item with a live terminal must hand it the keyboard without
+    // any click: the only prior focus is the page body.
+    await page.goto(`${isolatedServer.info.base_url}/issues/github/acme/widgets/10`);
+    await expect(page.locator(".detail-pane-workspace-slot .workspace-host-wrapper")).toBeVisible();
+    await expect.poll(() => activeElementDescription(page), { timeout: 15_000 }).toContain("xterm-helper-textarea");
+    expect(await focusedSessionHost(page)).toContain(first.id);
+
+    // Switching to another item with a workspace must acquire again — the bug
+    // was that only the first terminal ever did. The sidebar row is a plain
+    // button, exactly the focus a soft request is allowed to take.
+    await page.locator("aside button", { hasText: "#13" }).first().click();
+    await expect.poll(() => focusedSessionHost(page), { timeout: 15_000 }).toContain(second.id);
+    await expect.poll(() => activeElementDescription(page)).toContain("xterm-helper-textarea");
+
+    // And back: re-entry is an acquisition too, not a one-shot.
+    await page.locator("aside button", { hasText: "#10" }).first().click();
+    await expect.poll(() => focusedSessionHost(page), { timeout: 15_000 }).toContain(first.id);
+    await expect.poll(() => activeElementDescription(page)).toContain("xterm-helper-textarea");
   } finally {
     await api?.dispose();
     await isolatedServer?.stop();

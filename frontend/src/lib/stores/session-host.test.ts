@@ -49,6 +49,26 @@ describe("session host registry", () => {
     expect(consumeSessionFocus(agentOnA)).toBe(false);
   });
 
+  it("distinguishes soft focus requests from explicit ones", () => {
+    // Soft requests come from navigation (a detail surface switched items), and
+    // the pool must be able to decline them when focus is somewhere sacred.
+    requestSessionFocus(agentOnA, { soft: true });
+    expect(consumeSessionFocus(agentOnA)).toBe("soft");
+    expect(consumeSessionFocus(agentOnA)).toBe(false);
+
+    requestSessionFocus(agentOnA);
+    expect(consumeSessionFocus(agentOnA)).toBe("explicit");
+  });
+
+  it("supersedes a soft request's flavor along with its key", () => {
+    const shellOnA = sessionHostKey("ws-1", undefined, "shell", "2026-01-01T00:00:00Z");
+    requestSessionFocus(agentOnA, { soft: true });
+    requestSessionFocus(shellOnA);
+    // A stale soft flavor on a newer explicit request would let a sacred
+    // element veto a focus the user explicitly asked for.
+    expect(consumeSessionFocus(shellOnA)).toBe("explicit");
+  });
+
   it("registers and clears one slot per session key", () => {
     const el = document.createElement("div");
     registerSessionSlot(agentOnA, el);

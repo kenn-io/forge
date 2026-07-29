@@ -176,7 +176,10 @@ export function noteSessionUnmounted(key: SessionHostKey): void {
   // waits for a subtree under the same key to mount - a revisit, or the pane being
   // reopened for its own reasons - and steals focus for a Focus Terminal the user
   // pressed long before, somewhere else.
-  if (pendingFocusKey === key) pendingFocusKey = null;
+  if (pendingFocusKey === key) {
+    pendingFocusKey = null;
+    pendingFocusSoft = false;
+  }
   mounted = mounted.filter((session) => session.hostKey !== key);
   registerSessionSlot(key, null);
 }
@@ -206,21 +209,36 @@ export function noteSessionExited(key: SessionHostKey, code: number): void {
 // request to. Deliberately a single slot: only one focus request can be
 // outstanding, and a newer one supersedes it.
 let pendingFocusKey = $state<SessionHostKey | null>(null);
+let pendingFocusSoft = false;
 
-export function requestSessionFocus(key: SessionHostKey): void {
+/**
+ * Queue a focus request for a session's terminal. Explicit requests (Focus
+ * Terminal, a fresh launch) always land. Soft requests come from navigation —
+ * a detail surface switched to another item — and the pool declines them when
+ * focus is somewhere sacred, so switching PRs never pulls the keyboard out of
+ * a form field or dialog.
+ */
+export function requestSessionFocus(key: SessionHostKey, opts?: { soft?: boolean }): void {
   pendingFocusKey = key;
+  pendingFocusSoft = opts?.soft === true;
 }
 
 /** Drop an outstanding request, for when focus moves somewhere else entirely. */
 export function clearSessionFocusRequest(): void {
   pendingFocusKey = null;
+  pendingFocusSoft = false;
 }
 
-/** True when this session owns the outstanding focus request, which it consumes. */
-export function consumeSessionFocus(key: SessionHostKey): boolean {
+/**
+ * The outstanding request's flavor when this session owns it, which it
+ * consumes; false otherwise.
+ */
+export function consumeSessionFocus(key: SessionHostKey): "explicit" | "soft" | false {
   if (pendingFocusKey !== key) return false;
   pendingFocusKey = null;
-  return true;
+  const soft = pendingFocusSoft;
+  pendingFocusSoft = false;
+  return soft ? "soft" : "explicit";
 }
 
 export function resetSessionHostForTest(): void {
@@ -229,5 +247,6 @@ export function resetSessionHostForTest(): void {
   for (const key of Object.keys(slotVisible)) delete slotVisible[key];
   mounted = [];
   pendingFocusKey = null;
+  pendingFocusSoft = false;
   exitListeners.clear();
 }

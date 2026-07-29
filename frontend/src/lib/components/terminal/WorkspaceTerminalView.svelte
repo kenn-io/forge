@@ -37,6 +37,7 @@
   import {
     mountedSessions,
     noteSessionMounted,
+    isSessionSlotVisible,
     noteSessionUnmounted,
     onSessionExited,
     requestSessionFocus,
@@ -810,6 +811,29 @@
       sessionKeyFromWorkflowTab(activeTabKey) ??
       (terminalLayout.open ? terminalLayout.activeSessionKey : null),
   );
+
+  // Entering a detail item that hosts a live terminal asks for the keyboard,
+  // softly: the pool declines while focus is somewhere sacred, so navigation
+  // never pulls the user out of a form field or dialog. Without this, only a
+  // terminal the user had personally focused ever re-acquired focus (the
+  // pool's ownership restore), which made acquisition look random across PRs.
+  // Fires once per claim while the surface stays visible; leaving and coming
+  // back — another item, another tab — arms it again.
+  let acquiredFocusClaim: string | null = null;
+  $effect(() => {
+    if (paneSurface === undefined || !hostVisible) {
+      acquiredFocusClaim = null;
+      return;
+    }
+    const session = runtimeSessions.find((candidate) => candidate.key === currentSessionKey);
+    if (session === undefined) return;
+    const sessionHost = sessionHostKeyFor(session);
+    if (!isSessionSlotVisible(sessionHost)) return;
+    const claim = `${workspaceId} ${workspaceHostKey ?? ""}`;
+    if (acquiredFocusClaim === claim) return;
+    acquiredFocusClaim = claim;
+    requestSessionFocus(sessionHost, { soft: true });
+  });
 
   // Promotion implies mounted. Demotion hands the session back to the workflow
   // region, whose slot only renders for a mounted session, so a session promoted

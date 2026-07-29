@@ -4,6 +4,7 @@ import { DEFAULT_TERMINAL_SETTINGS } from "@middleman/ui";
 
 import { STORES_KEY } from "../../../../../packages/ui/src/context.js";
 import {
+  consumeSessionFocus,
   noteSessionMounted,
   noteSessionUnmounted,
   registerSessionSlot,
@@ -276,6 +277,52 @@ describe("SessionTerminalPool", () => {
     input.remove();
   });
 
+  it("drops ownership when its pane closes, even with no focus claim after", async () => {
+    mountSession(agent);
+    mountPool();
+    showIn(agent, slotA);
+    await waitForReparent();
+
+    requestSessionFocus(agent);
+    await vi.waitFor(() => {
+      expect(document.activeElement?.closest(".terminal-container")).not.toBeNull();
+    }, WAIT);
+
+    // The pane closes while the terminal holds focus, and the user touches
+    // nothing focusable afterwards: focus sits on <body>. A later, unrelated
+    // reveal must not replay ownership the close already took away.
+    showIn(agent, null);
+    await waitForReparent();
+
+    showIn(agent, slotB);
+    const wrapper = wrapperFor(agent) as HTMLElement;
+    await vi.waitFor(() => expect(wrapper.inert).toBe(false), WAIT);
+    expect(document.activeElement?.closest(".terminal-container")).toBeNull();
+  });
+
+  it("keeps ownership through a cross-flush transfer's transient park", async () => {
+    mountSession(agent);
+    mountPool();
+    showIn(agent, slotA);
+    await waitForReparent();
+
+    requestSessionFocus(agent);
+    await vi.waitFor(() => {
+      expect(document.activeElement?.closest(".terminal-container")).not.toBeNull();
+    }, WAIT);
+
+    // A promotion can unregister the source slot in one flush and register the
+    // destination in the next: the terminal passes through a no-destination
+    // park. That transient must not be mistaken for the pane closing.
+    showIn(agent, null);
+    showIn(agent, slotB);
+    await waitForReparent();
+
+    await vi.waitFor(() => {
+      expect(document.activeElement?.closest(".terminal-container")).not.toBeNull();
+    }, WAIT);
+  });
+
   it("drops the restore intent once focus was claimed elsewhere while parked", async () => {
     mountSession(agent);
     mountPool();
@@ -301,6 +348,49 @@ describe("SessionTerminalPool", () => {
     const wrapper = wrapperFor(agent) as HTMLElement;
     await vi.waitFor(() => expect(wrapper.inert).toBe(false), WAIT);
     expect(document.activeElement?.closest(".terminal-container")).toBeNull();
+    input.remove();
+  });
+
+  it("honors a soft focus request over a plain button's focus", async () => {
+    mountSession(agent);
+    mountPool();
+    showIn(agent, slotA);
+    await waitForReparent();
+    const wrapper = wrapperFor(agent) as HTMLElement;
+    await vi.waitFor(() => expect(wrapper.inert).toBe(false), WAIT);
+
+    // A PR list row is a plain button: like a launch tile, it is not a focus
+    // target the terminal must defer to when navigation asks for acquisition.
+    const button = document.createElement("button");
+    document.body.append(button);
+    button.focus();
+
+    requestSessionFocus(agent, { soft: true });
+    await vi.waitFor(() => {
+      expect(document.activeElement?.closest(".terminal-container")).not.toBeNull();
+    }, WAIT);
+    button.remove();
+  });
+
+  it("declines a soft focus request while a sacred element holds focus", async () => {
+    mountSession(agent);
+    mountPool();
+    showIn(agent, slotA);
+    await waitForReparent();
+    const wrapper = wrapperFor(agent) as HTMLElement;
+    await vi.waitFor(() => expect(wrapper.inert).toBe(false), WAIT);
+
+    const input = document.createElement("input");
+    document.body.append(input);
+    input.focus();
+
+    requestSessionFocus(agent, { soft: true });
+    flushSync();
+
+    // The user is typing somewhere: navigation-driven acquisition must lose,
+    // and the declined request must not stay armed for a later reveal.
+    expect(document.activeElement).toBe(input);
+    expect(consumeSessionFocus(agent)).toBe(false);
     input.remove();
   });
 

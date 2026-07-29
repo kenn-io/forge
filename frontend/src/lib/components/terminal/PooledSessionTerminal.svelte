@@ -1,6 +1,7 @@
 <script lang="ts">
   import { tick } from "svelte";
   import TerminalPane from "./TerminalPane.svelte";
+  import { focusIsSacred } from "./terminal-focus.ts";
   import { consumeSessionFocus, type MountedSession } from "../../stores/session-host.svelte.ts";
 
   interface Props {
@@ -52,8 +53,26 @@
     if (!node || !park) return;
     attached = false;
     park.appendChild(node);
-    if (!destination || destination === park) return;
     let cancelled = false;
+    if (!destination || destination === park) {
+      // Parked with nowhere to go: the pane closed — unless this park is the
+      // transient first half of a cross-flush transfer whose destination
+      // registers a moment later (a promotion can do this). Settle on the
+      // same tick-then-frame cadence attachment uses before dropping
+      // ownership, so focus a close took is never replayed on some later,
+      // unrelated reveal, while a transfer mid-handoff keeps it.
+      void (async () => {
+        await tick();
+        if (cancelled) return;
+        requestAnimationFrame(() => {
+          if (cancelled) return;
+          ownsFocus = false;
+        });
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }
     void (async () => {
       await tick();
       if (cancelled) return;
@@ -80,8 +99,13 @@
     const node = wrapper;
     if (!node) return;
     const requested = consumeSessionFocus(session.hostKey);
+    // A soft request is navigation asking, not the user: it loses to a sacred
+    // focus target (form fields, dialogs) but wins over a plain button, the
+    // same contract renderer autofocus follows at creation.
+    const granted =
+      requested === "explicit" || (requested === "soft" && !focusIsSacred(document.activeElement));
     const unclaimed = document.activeElement === null || document.activeElement === document.body;
-    if (!requested && !(ownsFocus && unclaimed)) return;
+    if (!granted && !(ownsFocus && unclaimed)) return;
     terminalPane?.focus();
     if (!node.contains(document.activeElement)) node.focus();
   });

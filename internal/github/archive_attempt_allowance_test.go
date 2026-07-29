@@ -379,6 +379,68 @@ func TestArchiveProviderAttemptAllowanceResetsObservedCostWithQuotaWindow(t *tes
 	assert.Equal(int32(2), calls.Load())
 }
 
+func TestArchiveProviderAttemptAllowanceSeedsCostAcrossQuotaWindowReset(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	now := time.Date(2026, 7, 28, 18, 30, 0, 0, time.UTC)
+	firstReset := now.Add(5 * time.Minute)
+	nextReset := now.Add(time.Hour)
+	registry := NewQuotaRegistry()
+	registry.now = func() time.Time { return now }
+	identity := IdentityKey{Host: "github.com", Principal: "user:7"}
+	resources := []QuotaResource{QuotaResourceREST, QuotaResourceGraphQL}
+	for _, resource := range resources {
+		registry.UpdateSnapshot(identity, resource, Rate{
+			Limit: 5000, Remaining: 5000, Reset: firstReset,
+		})
+	}
+
+	var calls atomic.Int32
+	base := roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		calls.Add(1)
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader("{}")),
+			Header: quotaTestHeaders(
+				RateReserveBuffer+5,
+				RateReserveBuffer+1,
+				nextReset,
+			),
+			Request: req,
+		}, nil
+	})
+	budget := NewSyncBudget(100)
+	transport := &quotaTransport{
+		base: WrapSyncBudgetTransport(base, budget), registry: registry,
+		identity: identity, resource: QuotaResourceGraphQL,
+	}
+	request := func() error {
+		ctx := WithArchiveProviderAttemptAllowance(
+			WithArchiveSyncBudget(t.Context()),
+			10,
+			identity,
+			resources,
+			RateReserveBuffer,
+			budget,
+		)
+		req, err := http.NewRequestWithContext(
+			ctx, http.MethodPost, "https://api.github.test/graphql", nil,
+		)
+		require.NoError(err)
+		_, err = transport.RoundTrip(req)
+		return err
+	}
+
+	require.NoError(request())
+	pool, ok := registry.Get(identity, QuotaResourceGraphQL)
+	require.True(ok)
+	assert.Equal(nextReset, pool.ResetAt)
+	assert.Equal(4, pool.AttemptCost)
+
+	require.ErrorIs(request(), platform.ErrArchiveAttemptBudget)
+	assert.Equal(int32(1), calls.Load())
+}
+
 func TestArchiveProviderAttemptAllowanceRechecksEveryRequiredPool(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

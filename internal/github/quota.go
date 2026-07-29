@@ -374,6 +374,25 @@ func (r *QuotaRegistry) clearReservationsBeforeLocked(key quotaKey, reset time.T
 	}
 }
 
+func (r *QuotaRegistry) raiseAttemptCost(
+	key quotaKey,
+	resetAt time.Time,
+	cost int,
+) {
+	if r == nil || cost <= 0 {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	pool, ok := r.pools[key]
+	if !ok || !pool.Known || !pool.ResetAt.Equal(resetAt) ||
+		cost <= pool.AttemptCost {
+		return
+	}
+	pool.AttemptCost = cost
+	r.pools[key] = pool
+}
+
 func (r *QuotaRegistry) EarliestReset(
 	identity IdentityKey,
 	resources []QuotaResource,

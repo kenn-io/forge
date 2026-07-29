@@ -372,8 +372,9 @@ response never overwrites an App installation pool
   headroom after the provider reserve; a high local ceiling must not enlarge
   the provider envelope. Each archive attempt atomically reserves live headroom;
   an unobserved reservation remains deducted until a current header accounts
-  for it or that resource window rolls. Persistent spend is keyed by resource
-  and reset window, so staggered resets cannot erase newer-window charges
+  for it or that resource window rolls. The first header in a newer window uses
+  total reported usage as its conservative request-cost bound. Persistent spend
+  is keyed by resource and reset window, so staggered resets cannot erase charges
   (`internal/github/sync.go::Admit`,
   `internal/github/quota.go::quotaTransport`).
 - Outside the archive attempt guard above, there is one background reserve

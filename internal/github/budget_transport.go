@@ -172,6 +172,15 @@ func reconcileArchiveProviderAttempt(
 			)
 		case observedReset.After(reservation.before.ResetAt):
 			spendReset = observedReset
+			actualCost = max(
+				actualCost,
+				observed.Limit-observed.Remaining,
+			)
+			registry.raiseAttemptCost(
+				reservation.quota.key.quotaKey,
+				observedReset,
+				actualCost,
+			)
 		}
 	}
 	if budget := reservation.allowance.provider.budget; budget != nil {

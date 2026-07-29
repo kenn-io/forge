@@ -582,6 +582,82 @@ func TestRefreshWorkspaceHeadRepoBlocksRepositoryReconciliation(t *testing.T) {
 	assert.Equal(forkURL, *stored.MRHeadRepo)
 }
 
+func TestSetupRejectsWorkspaceRetiredBeforeHeadRepoReadLock(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	_, err := d.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "R_old",
+		Owner:          "acme",
+		Name:           "widget",
+	})
+	require.NoError(err)
+	ws := &Workspace{
+		ID:           "ws-retired-before-head-refresh",
+		Platform:     "github",
+		PlatformHost: "github.com",
+		RepoOwner:    "acme",
+		RepoName:     "widget",
+		ItemType:     db.WorkspaceItemTypePullRequest,
+		ItemNumber:   42,
+		GitHeadRef:   "feature/thing",
+		WorktreePath: t.TempDir(),
+		Status:       "creating",
+	}
+	require.NoError(d.InsertWorkspace(ctx, ws))
+
+	writeLockAttempted := make(chan struct{})
+	continueReplacement := make(chan struct{})
+	restoreWriteLockHook := d.SetBeforeRepositoryReconciliationWriteLockForTest(
+		func() {
+			close(writeLockAttempted)
+			<-continueReplacement
+		},
+	)
+	defer restoreWriteLockHook()
+	replacementDone := make(chan error, 1)
+	go func() {
+		_, replaceErr := d.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+			Platform:       "github",
+			PlatformHost:   "github.com",
+			PlatformRepoID: "R_new",
+			Owner:          "acme",
+			Name:           "widget",
+		})
+		replacementDone <- replaceErr
+	}()
+	select {
+	case <-writeLockAttempted:
+	case <-time.After(time.Second):
+		require.Fail("repository replacement did not enter write admission")
+	}
+
+	refreshCtx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	refreshDone := make(chan error, 1)
+	mgr := NewManager(d, t.TempDir())
+	go func() {
+		refreshDone <- mgr.Setup(refreshCtx, ws)
+	}()
+	close(continueReplacement)
+	select {
+	case replaceErr := <-replacementDone:
+		require.NoError(replaceErr)
+	case <-time.After(time.Second):
+		require.Fail("repository replacement did not finish")
+	}
+	select {
+	case refreshErr := <-refreshDone:
+		require.Error(refreshErr)
+		require.ErrorIs(refreshErr, ErrWorkspaceInvalidState)
+		require.NotErrorIs(refreshErr, context.DeadlineExceeded)
+	case <-time.After(2 * time.Second):
+		require.Fail("workspace head refresh did not terminate")
+	}
+}
+
 func TestRefreshWorkspaceHeadRepoRetriesWhenMissingRepoAppears(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

@@ -1111,6 +1111,9 @@ func (m *Manager) RefreshWorkspaceHeadRepoSnapshot(
 		if current == nil {
 			return nil, ErrWorkspaceNotFound
 		}
+		if current.RetiredAt != nil {
+			return nil, retiredWorkspaceInvalidState()
+		}
 		*ws = *current
 	}
 	if ws.ItemType != db.WorkspaceItemTypePullRequest {
@@ -1150,6 +1153,9 @@ func (m *Manager) RefreshWorkspaceHeadRepoSnapshot(
 					refreshed,
 				)
 			if updateErr != nil {
+				if errors.Is(updateErr, db.ErrWorkspaceRetired) {
+					return nil, retiredWorkspaceInvalidState()
+				}
 				return nil, fmt.Errorf(
 					"persist missing-repo head classification: %w",
 					updateErr,
@@ -1206,6 +1212,9 @@ func (m *Manager) RefreshWorkspaceHeadRepoSnapshot(
 			refreshed,
 		)
 		if updateErr != nil {
+			if errors.Is(updateErr, db.ErrWorkspaceRetired) {
+				return nil, retiredWorkspaceInvalidState()
+			}
 			return nil, fmt.Errorf(
 				"persist refreshed head repository: %w", updateErr,
 			)
@@ -2499,6 +2508,13 @@ func validateWorkspaceRetryable(ws *Workspace) error {
 		)
 	}
 	return nil
+}
+
+func retiredWorkspaceInvalidState() error {
+	return fmt.Errorf(
+		"%w: workspace source repository was replaced",
+		ErrWorkspaceInvalidState,
+	)
 }
 
 func (m *Manager) startWorkspaceRetry(

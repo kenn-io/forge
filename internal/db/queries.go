@@ -1037,6 +1037,12 @@ func (d *DB) UpsertRepoByProviderID(ctx context.Context, identity RepoIdentity) 
 			}
 			if targetIdentity.PlatformRepoID != "" &&
 				targetIdentity.PlatformRepoID != identity.PlatformRepoID {
+				targetArchiveEnrolled, err := archiveRepositoryEnrolledTx(
+					ctx, tx, targetID,
+				)
+				if err != nil {
+					return err
+				}
 				if err := clearRepoIncarnationNotificationStateTx(
 					ctx, tx, targetID, targetIdentity,
 				); err != nil {
@@ -1075,6 +1081,13 @@ func (d *DB) UpsertRepoByProviderID(ctx context.Context, identity RepoIdentity) 
 				}
 				if err := updateWorkspaceRepoIdentityTx(ctx, tx, sourceIdentity, identity); err != nil {
 					return err
+				}
+				if targetArchiveEnrolled {
+					if err := ensureDiscoveryArchiveTx(
+						ctx, tx, sourceID, time.Now().UTC(),
+					); err != nil {
+						return err
+					}
 				}
 				id = sourceID
 				return nil
@@ -1166,6 +1179,10 @@ func replaceRepoIncarnationTx(
 	); err != nil {
 		return 0, err
 	}
+	archiveEnrolled, err := archiveRepositoryEnrolledTx(ctx, tx, repoID)
+	if err != nil {
+		return 0, err
+	}
 
 	rows, err := tx.QueryContext(ctx,
 		`SELECT id FROM middleman_projects WHERE repo_id = ?`,
@@ -1226,6 +1243,13 @@ func replaceRepoIncarnationTx(
 			projectID,
 		); err != nil {
 			return 0, fmt.Errorf("relink project to replaced repo: %w", err)
+		}
+	}
+	if archiveEnrolled {
+		if err := ensureDiscoveryArchiveTx(
+			ctx, tx, replacementID, time.Now().UTC(),
+		); err != nil {
+			return 0, err
 		}
 	}
 	return replacementID, nil
@@ -5181,6 +5205,8 @@ func workspaceItemTypeKeysByNumber(itemType string) bool {
 		itemType != WorkspaceItemTypeAdHoc
 }
 
+var ErrWorkspaceRetired = errors.New("workspace retired")
+
 func workspaceKataMetadataJSON(ws *Workspace) (string, error) {
 	if ws.KataMetadata == nil {
 		return "", nil
@@ -5600,21 +5626,11 @@ func (d *DB) UpdateWorkspaceMRHeadRepoForMissingRepo(
 	if rowsAffected > 0 {
 		return true, nil
 	}
-	var workspaceExists bool
-	if err := d.ro.QueryRowContext(
-		ctx,
-		`SELECT EXISTS(
-		    SELECT 1 FROM middleman_workspaces WHERE id = ?
-		)`,
-		id,
-	).Scan(&workspaceExists); err != nil {
+	if err := d.classifyWorkspaceConditionalUpdateMiss(ctx, id); err != nil {
 		return false, fmt.Errorf(
 			"check workspace after missing-repo head classification update: %w",
 			err,
 		)
-	}
-	if !workspaceExists {
-		return false, fmt.Errorf("workspace %q not found", id)
 	}
 	return false, nil
 }
@@ -5660,22 +5676,36 @@ func (d *DB) UpdateWorkspaceMRHeadRepoForSnapshot(
 	if rowsAffected > 0 {
 		return true, nil
 	}
-	var workspaceExists bool
-	if err := d.ro.QueryRowContext(
-		ctx,
-		`SELECT EXISTS(
-		    SELECT 1 FROM middleman_workspaces WHERE id = ?
-		)`,
-		id,
-	).Scan(&workspaceExists); err != nil {
+	if err := d.classifyWorkspaceConditionalUpdateMiss(ctx, id); err != nil {
 		return false, fmt.Errorf(
 			"check workspace after mr head repo snapshot update: %w", err,
 		)
 	}
-	if !workspaceExists {
-		return false, fmt.Errorf("workspace %q not found", id)
-	}
 	return false, nil
+}
+
+func (d *DB) classifyWorkspaceConditionalUpdateMiss(
+	ctx context.Context,
+	id string,
+) error {
+	var retired bool
+	err := d.ro.QueryRowContext(
+		ctx,
+		`SELECT retired_at IS NOT NULL
+		 FROM middleman_workspaces
+		 WHERE id = ?`,
+		id,
+	).Scan(&retired)
+	if errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("workspace %q not found", id)
+	}
+	if err != nil {
+		return err
+	}
+	if retired {
+		return fmt.Errorf("%w: workspace %q", ErrWorkspaceRetired, id)
+	}
+	return nil
 }
 
 // StartWorkspaceRetry atomically transitions an errored workspace

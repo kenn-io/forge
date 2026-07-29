@@ -6874,12 +6874,11 @@ func TestSyncRepoPersistsGitHubProviderMetadataWhenIdentityPrefilled(t *testing.
 	require := require.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)
-	// Repo resolution (glob listing and explicit lookup) pre-fills the
-	// platform repo id, so syncRepoIdentity never resolves the repository
-	// itself and the GitHub settings-refresh branch is the row's only
-	// metadata writer. It must persist provider metadata from its own
-	// settings fetch, or the row keeps an empty default branch forever and
-	// the worktree diff sampler degrades to a bare HEAD diff.
+	// Repo resolution pre-fills the platform repo id, but reconciliation
+	// still refreshes the authoritative repository identity and reuses that
+	// response for provider metadata. Otherwise the row keeps an empty
+	// default branch and the worktree diff sampler degrades to a bare HEAD
+	// diff.
 	repo := RepoRef{
 		Platform:           platform.KindGitHub,
 		PlatformHost:       "github.com",
@@ -6913,6 +6912,187 @@ func TestSyncRepoPersistsGitHubProviderMetadataWhenIdentityPrefilled(t *testing.
 	assert.Equal("https://github.com/acme/widgets", repos[0].WebURL)
 	assert.Equal("https://github.com/acme/widgets.git", repos[0].CloneURL)
 	assert.Equal("R_kgDOexample", repos[0].PlatformRepoID)
+}
+
+func TestSyncRepoSerializesRepositoryIdentityResolution(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	repo := RepoRef{
+		Platform:     platform.KindGitHub,
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widgets",
+		RepoPath:     "acme/widgets",
+	}
+	firstIdentityRead := make(chan struct{})
+	releaseFirstRead := make(chan struct{})
+	secondIdentityRead := make(chan struct{})
+	var reads atomic.Int32
+	client := &mockClient{getRepositoryFn: func(
+		context.Context,
+		string,
+		string,
+	) (*gh.Repository, error) {
+		switch reads.Add(1) {
+		case 1:
+			close(firstIdentityRead)
+			<-releaseFirstRead
+			return &gh.Repository{
+				NodeID: new("R_old"),
+				Name:   new("widgets"),
+				Owner:  &gh.User{Login: new("acme")},
+			}, nil
+		default:
+			close(secondIdentityRead)
+			return &gh.Repository{
+				NodeID: new("R_new"),
+				Name:   new("widgets"),
+				Owner:  &gh.User{Login: new("acme")},
+			}, nil
+		}
+	}}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client},
+		d,
+		nil,
+		[]RepoRef{repo},
+		time.Minute,
+		nil,
+		nil,
+	)
+	beforeIdentityLock := make(chan struct{}, 2)
+	syncer.beforeRepoIdentityLock = func(RepoRef) {
+		beforeIdentityLock <- struct{}{}
+	}
+
+	errs := make(chan error, 2)
+	go func() {
+		_, _, _, err := syncer.reconcileRepoIdentity(t.Context(), repo)
+		errs <- err
+	}()
+	select {
+	case <-firstIdentityRead:
+	case <-time.After(time.Second):
+		require.Fail("first repository identity read did not start")
+	}
+	go func() {
+		_, _, _, err := syncer.reconcileRepoIdentity(t.Context(), repo)
+		errs <- err
+	}()
+	for range 2 {
+		select {
+		case <-beforeIdentityLock:
+		case <-time.After(time.Second):
+			require.Fail("repository sync did not reach identity gate")
+		}
+	}
+
+	select {
+	case <-secondIdentityRead:
+		require.Fail("second repository identity read overlapped the first")
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(releaseFirstRead)
+	require.NoError(<-errs)
+	require.NoError(<-errs)
+
+	repos, err := d.ListRepos(t.Context())
+	require.NoError(err)
+	require.Len(repos, 1)
+	assert.Equal("R_new", repos[0].PlatformRepoID)
+}
+
+func TestReconcileRepoIdentityRefreshesPrefilledProviderID(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	repo := RepoRef{
+		Platform:           platform.KindGitHub,
+		PlatformHost:       "github.com",
+		Owner:              "acme",
+		Name:               "widgets",
+		RepoPath:           "acme/widgets",
+		PlatformExternalID: "R_stale",
+	}
+	var reads atomic.Int32
+	client := &mockClient{getRepositoryFn: func(
+		context.Context,
+		string,
+		string,
+	) (*gh.Repository, error) {
+		reads.Add(1)
+		return &gh.Repository{
+			NodeID: new("R_current"),
+			Name:   new("widgets"),
+			Owner:  &gh.User{Login: new("acme")},
+		}, nil
+	}}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client},
+		d,
+		nil,
+		[]RepoRef{repo},
+		time.Minute,
+		nil,
+		nil,
+	)
+
+	repoID, _, _, err := syncer.reconcileRepoIdentity(t.Context(), repo)
+	require.NoError(err)
+	stored, err := d.GetRepoByID(t.Context(), repoID)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal("R_current", stored.PlatformRepoID)
+	assert.Equal(int32(1), reads.Load())
+}
+
+func TestReconcileRepoIdentityUsesLatestConfiguredIDWithoutRepositoryReader(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	oldRepo := RepoRef{
+		Platform:           platform.KindGitLab,
+		PlatformHost:       "gitlab.example.com",
+		Owner:              "group",
+		Name:               "project",
+		RepoPath:           "group/project",
+		PlatformExternalID: "gid://gitlab/Project/old",
+	}
+	newRepo := oldRepo
+	newRepo.PlatformExternalID = "gid://gitlab/Project/new"
+	provider := &syncTestReadProvider{
+		syncTestProvider: syncTestProvider{
+			kind: platform.KindGitLab,
+			host: "gitlab.example.com",
+		},
+	}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	syncer := NewSyncerWithRegistry(
+		registry,
+		d,
+		nil,
+		[]RepoRef{oldRepo},
+		time.Minute,
+		nil,
+		nil,
+	)
+	require.NoError(syncer.SetReposWithContext(
+		t.Context(),
+		[]RepoRef{newRepo},
+		false,
+	))
+
+	repoID, _, _, err := syncer.reconcileRepoIdentity(
+		t.Context(),
+		oldRepo,
+	)
+	require.NoError(err)
+	stored, err := d.GetRepoByID(t.Context(), repoID)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal(newRepo.PlatformExternalID, stored.PlatformRepoID)
 }
 
 func TestRefreshRepoSettingsPreservesViewerCanMergeWhenGitHubOmitsPermissions(t *testing.T) {
@@ -7017,7 +7197,16 @@ func TestSyncRepoRefreshesProviderRepoSettingsWhenIdentityKnown(t *testing.T) {
 			},
 		},
 		repository: platform.Repository{
-			ViewerCanMerge: &viewerCanMerge,
+			Ref: platform.RepoRef{
+				Platform:           platform.KindGitLab,
+				Host:               "gitlab.example.com",
+				Owner:              "group",
+				Name:               "project",
+				RepoPath:           "group/project",
+				PlatformExternalID: "gid://gitlab/Project/42",
+			},
+			PlatformExternalID: "gid://gitlab/Project/42",
+			ViewerCanMerge:     &viewerCanMerge,
 		},
 	}
 	registry, err := platform.NewRegistry(provider)

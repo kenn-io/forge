@@ -271,6 +271,9 @@ commit (`internal/db/db.go::LockMergeRequestSnapshot`,
 Persisted-workspace refreshes reload by workspace ID while holding that same
 barrier through classification persistence, so repository renames cannot turn
 a known head into `unknown` (`internal/workspace/manager.go::RefreshWorkspaceHeadRepoSnapshot`).
+If replacement retires the workspace before that barrier is acquired, setup
+fails terminally; zero-row conditional writes must not retry retired rows
+(`internal/db/queries.go::classifyWorkspaceConditionalUpdateMiss`).
 
 Workspace creation launches an agent only after an explicit target choice on
 the create split button. The one-shot target is reactive session state keyed by

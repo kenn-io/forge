@@ -23,6 +23,9 @@ reconciliation when available.
   and path-keyed caches, retire destination workspaces, and preserve local
   project links
   (`internal/db/queries.go::UpsertRepoByProviderID`).
+- Serialize authoritative provider-ID resolution through reconciliation per
+  full repository path; a delayed observation must not restore a replaced
+  incarnation (`internal/github/sync.go::reconcileRepoIdentity`).
 
 GitLab nested namespaces make `repo_path` mandatory for reliable addressing:
 `group/subgroup/project` has owner `group/subgroup` and name `project`.
@@ -205,6 +208,9 @@ registry helpers return typed errors for missing providers or capabilities.
   the provider advertises that stream again. (`internal/db/queries_archive.go::ReconcileArchiveCoverage`)
 - A bare optional `DiffSyncError` does not block archive historical-activity completion; wrapped or joined hard failures still retry. (`internal/github/sync.go::SyncArchiveItem`)
 - Every configured repository starts provider-neutral discovery; do not restore provider-specific closed-item cursors or translate legacy formats. (`internal/archive/service.go::EnsureConfigured`)
+- Replacing an enrolled repository starts fresh discovery on the new internal
+  ID; archive progress never crosses repository incarnations
+  (`internal/db/queries.go::replaceRepoIncarnationTx`).
 - Configuration reconciliation pauses omitted repositories with a durable `configuration_removed` reason while retaining archive content and progress. Re-adding the same full identity clears only that automatic pause; an operator pause stays paused. (`internal/db/queries_archive.go::ReconcileDiscoveryArchives`, `internal/db/queries_archive.go::EnsureDiscoveryArchives`)
 - Reconcile configured repositories only at startup or configuration reload; idle scheduler polls must remain read-only unless they claim actual work. (`internal/github/sync.go::SetReposWithContext`, `internal/archive/scheduler.go::RunEligible`)
 - Startup reconciliation reopens completed legacy known-item lookups once when

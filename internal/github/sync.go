@@ -487,6 +487,8 @@ type Syncer struct {
 	rateLimitSnapshotRefresh map[string]time.Time
 	repos                    []RepoRef
 	reposMu                  sync.Mutex
+	repoIdentityLocksMu      sync.Mutex
+	repoIdentityLocks        map[string]*sync.Mutex
 	interval                 time.Duration
 	watchInterval            time.Duration
 	watchedMRs               []WatchedMR
@@ -585,6 +587,7 @@ type Syncer struct {
 
 	afterMergeRequestParentSnapshotCommit func()
 	afterHeadRepoSnapshotRead             func()
+	beforeRepoIdentityLock                func(RepoRef)
 }
 
 type archiveProviderRequest struct {
@@ -809,6 +812,7 @@ func NewSyncerWithRegistry(
 		branchActivityMaxCommits: defaultBranchActivityMaxCommits,
 		nextSyncAfter:            make(map[string]time.Time),
 		nextWatchSyncAfter:       make(map[string]time.Time),
+		repoIdentityLocks:        make(map[string]*sync.Mutex),
 		archiveProviderRequests:  make(map[string]archiveProviderRequest),
 		stopCh:                   make(chan struct{}),
 		archiveWake:              make(chan struct{}, 1),
@@ -5155,13 +5159,41 @@ func repoPriorityKey(repo RepoRef) string {
 	)
 }
 
+func (s *Syncer) repoIdentityLock(repo RepoRef) *sync.Mutex {
+	key := repoPriorityKey(repo)
+	s.repoIdentityLocksMu.Lock()
+	defer s.repoIdentityLocksMu.Unlock()
+	lock := s.repoIdentityLocks[key]
+	if lock == nil {
+		lock = &sync.Mutex{}
+		if s.repoIdentityLocks == nil {
+			s.repoIdentityLocks = make(map[string]*sync.Mutex)
+		}
+		s.repoIdentityLocks[key] = lock
+	}
+	return lock
+}
+
+func (s *Syncer) latestConfiguredRepo(repo RepoRef) RepoRef {
+	key := repoPriorityKey(repo)
+	s.reposMu.Lock()
+	defer s.reposMu.Unlock()
+	for _, configured := range s.repos {
+		if repoPriorityKey(configured) == key {
+			return configured
+		}
+	}
+	return repo
+}
+
 func (s *Syncer) syncRepoIdentity(ctx context.Context, repo RepoRef) (db.RepoIdentity, *platform.Repository, error) {
 	identity := platform.DBRepoIdentity(platformRepoRef(repo))
-	if identity.PlatformRepoID != "" {
-		return identity, nil, nil
-	}
 	reader, err := s.clients.RepositoryReader(repoPlatform(repo), repoHost(repo))
 	if err != nil {
+		if identity.PlatformRepoID != "" &&
+			errors.Is(err, platform.ErrUnsupportedCapability) {
+			return identity, nil, nil
+		}
 		return db.RepoIdentity{}, nil, err
 	}
 	resolved, err := reader.GetRepository(ctx, platformRepoRef(repo))
@@ -5173,6 +5205,55 @@ func (s *Syncer) syncRepoIdentity(ctx context.Context, repo RepoRef) (db.RepoIde
 		return db.RepoIdentity{}, nil, fmt.Errorf("provider returned no repo id")
 	}
 	return identity, &resolved, nil
+}
+
+func (s *Syncer) reconcileRepoIdentity(
+	ctx context.Context,
+	repo RepoRef,
+) (int64, *platform.Repository, *db.Repo, error) {
+	if s.beforeRepoIdentityLock != nil {
+		s.beforeRepoIdentityLock(repo)
+	}
+	identityLock := s.repoIdentityLock(repo)
+	identityLock.Lock()
+	defer identityLock.Unlock()
+
+	repo = s.latestConfiguredRepo(repo)
+	repoIdentity, resolvedRepo, err := s.syncRepoIdentity(ctx, repo)
+	if err != nil {
+		return 0, nil, nil, fmt.Errorf(
+			"resolve repo identity %s/%s: %w",
+			repo.Owner,
+			repo.Name,
+			err,
+		)
+	}
+	repoID, err := s.db.UpsertRepoByProviderID(ctx, repoIdentity)
+	if err != nil {
+		return 0, nil, nil, fmt.Errorf(
+			"upsert repo %s/%s by provider id: %w",
+			repo.Owner,
+			repo.Name,
+			err,
+		)
+	}
+	persistedRepo, err := s.db.GetRepoByID(ctx, repoID)
+	if err != nil {
+		return 0, nil, nil, fmt.Errorf(
+			"read repo %s/%s after identity reconciliation: %w",
+			repo.Owner,
+			repo.Name,
+			err,
+		)
+	}
+	if persistedRepo == nil {
+		return 0, nil, nil, fmt.Errorf(
+			"repo %s/%s missing after identity reconciliation",
+			repo.Owner,
+			repo.Name,
+		)
+	}
+	return repoID, resolvedRepo, persistedRepo, nil
 }
 
 // syncRepo syncs one repository: open PRs, timeline events, and stale closures.
@@ -5203,20 +5284,10 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 		}
 	}
 
-	repoIdentity, resolvedRepo, err := s.syncRepoIdentity(ctx, repo)
+	repoID, resolvedRepo, persistedRepo, err :=
+		s.reconcileRepoIdentity(ctx, repo)
 	if err != nil {
-		return fmt.Errorf("resolve repo identity %s/%s: %w", repo.Owner, repo.Name, err)
-	}
-	repoID, err := s.db.UpsertRepoByProviderID(ctx, repoIdentity)
-	if err != nil {
-		return fmt.Errorf("upsert repo %s/%s by provider id: %w", repo.Owner, repo.Name, err)
-	}
-	persistedRepo, err := s.db.GetRepoByID(ctx, repoID)
-	if err != nil {
-		return fmt.Errorf("read repo %s/%s after identity reconciliation: %w", repo.Owner, repo.Name, err)
-	}
-	if persistedRepo == nil {
-		return fmt.Errorf("repo %s/%s missing after identity reconciliation", repo.Owner, repo.Name)
+		return err
 	}
 	if persistedRepo.LastSyncCompletedAt == nil {
 		if client, ok := s.optionalGitHubClientFor(repo); ok {

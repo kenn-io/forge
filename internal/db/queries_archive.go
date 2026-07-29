@@ -32,47 +32,82 @@ func (d *DB) EnsureDiscoveryArchives(ctx context.Context, repoIDs []int64, now t
 			}
 		}
 		for _, repoID := range repoIDs {
-			_, err := tx.ExecContext(ctx, `
-				INSERT INTO middleman_archive_repos (
-					repo_id, collection_mode, operator_state,
-					initial_started_at, initial_completed_at,
-					maintenance_watermark, maintenance_succeeded_at,
-					issues_coverage, merge_requests_coverage,
-					comments_coverage, reviews_coverage, inline_comments_coverage,
-					last_error_code, last_error_detail, next_retry_at,
-					created_at, updated_at
-				) VALUES (
-					?, 'discovery', 'active',
-					NULL, NULL, NULL, NULL,
-					'unknown', 'unknown',
-					'unknown', 'unknown', 'unknown',
-					NULL, NULL, NULL, ?, ?
-				)
-				ON CONFLICT(repo_id) DO UPDATE SET
-					operator_state = CASE
-						WHEN middleman_archive_repos.last_error_code = 'configuration_removed' THEN 'active'
-						ELSE middleman_archive_repos.operator_state END,
-					last_error_code = CASE
-						WHEN middleman_archive_repos.last_error_code = 'configuration_removed' THEN NULL
-						ELSE middleman_archive_repos.last_error_code END,
-					last_error_detail = CASE
-						WHEN middleman_archive_repos.last_error_code = 'configuration_removed' THEN NULL
-						ELSE middleman_archive_repos.last_error_detail END,
-					next_retry_at = CASE
-						WHEN middleman_archive_repos.last_error_code = 'configuration_removed' THEN NULL
-						ELSE middleman_archive_repos.next_retry_at END,
-					updated_at = CASE
-						WHEN middleman_archive_repos.last_error_code = 'configuration_removed' THEN excluded.updated_at
-						ELSE middleman_archive_repos.updated_at END`, repoID, now, now)
-			if err != nil {
-				return fmt.Errorf("ensure discovery archive for repo %d: %w", repoID, err)
-			}
-			if err := ensureArchiveRepoScansTx(ctx, tx, repoID, now); err != nil {
+			if err := ensureDiscoveryArchiveTx(ctx, tx, repoID, now); err != nil {
 				return err
 			}
 		}
 		return nil
 	})
+}
+
+func ensureDiscoveryArchiveTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	repoID int64,
+	now time.Time,
+) error {
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO middleman_archive_repos (
+			repo_id, collection_mode, operator_state,
+			initial_started_at, initial_completed_at,
+			maintenance_watermark, maintenance_succeeded_at,
+			issues_coverage, merge_requests_coverage,
+			comments_coverage, reviews_coverage, inline_comments_coverage,
+			last_error_code, last_error_detail, next_retry_at,
+			created_at, updated_at
+		) VALUES (
+			?, 'discovery', 'active',
+			NULL, NULL, NULL, NULL,
+			'unknown', 'unknown',
+			'unknown', 'unknown', 'unknown',
+			NULL, NULL, NULL, ?, ?
+		)
+		ON CONFLICT(repo_id) DO UPDATE SET
+			operator_state = CASE
+				WHEN middleman_archive_repos.last_error_code = 'configuration_removed' THEN 'active'
+				ELSE middleman_archive_repos.operator_state END,
+			last_error_code = CASE
+				WHEN middleman_archive_repos.last_error_code = 'configuration_removed' THEN NULL
+				ELSE middleman_archive_repos.last_error_code END,
+			last_error_detail = CASE
+				WHEN middleman_archive_repos.last_error_code = 'configuration_removed' THEN NULL
+				ELSE middleman_archive_repos.last_error_detail END,
+			next_retry_at = CASE
+				WHEN middleman_archive_repos.last_error_code = 'configuration_removed' THEN NULL
+				ELSE middleman_archive_repos.next_retry_at END,
+			updated_at = CASE
+				WHEN middleman_archive_repos.last_error_code = 'configuration_removed' THEN excluded.updated_at
+				ELSE middleman_archive_repos.updated_at END`,
+		repoID,
+		now,
+		now,
+	)
+	if err != nil {
+		return fmt.Errorf("ensure discovery archive for repo %d: %w", repoID, err)
+	}
+	return ensureArchiveRepoScansTx(ctx, tx, repoID, now)
+}
+
+func archiveRepositoryEnrolledTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	repoID int64,
+) (bool, error) {
+	var enrolled bool
+	if err := tx.QueryRowContext(
+		ctx,
+		`SELECT EXISTS(
+			SELECT 1 FROM middleman_archive_repos WHERE repo_id = ?
+		)`,
+		repoID,
+	).Scan(&enrolled); err != nil {
+		return false, fmt.Errorf(
+			"check archive enrollment for repo %d: %w",
+			repoID,
+			err,
+		)
+	}
+	return enrolled, nil
 }
 
 // ReconcileDiscoveryArchives ensures current repositories and automatically

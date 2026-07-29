@@ -1143,12 +1143,16 @@ func TestUpsertRepoByProviderIDResetsRecreatedRepositoryAtSamePath(t *testing.T)
 	require.NoError(err)
 	assert.Nil(issue)
 
-	var archiveRows int
-	require.NoError(d.ReadDB().QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM middleman_archive_repos WHERE repo_id = ?`,
-		recreatedID,
-	).Scan(&archiveRows))
-	assert.Zero(archiveRows)
+	archiveStates, err := d.ListArchiveRepoStates(ctx, []int64{recreatedID})
+	require.NoError(err)
+	require.Len(archiveStates, 1)
+	archiveState := archiveStates[0]
+	assert.Equal(ArchiveCollectionModeDiscovery, archiveState.CollectionMode)
+	assert.Equal(ArchiveOperatorStateActive, archiveState.OperatorState)
+	assert.Equal(ArchiveScanPending, archiveState.IssueInventory.Status)
+	assert.Equal(ArchiveScanPending, archiveState.MergeRequestInventory.Status)
+	assert.Nil(archiveState.InitialStartedAt)
+	assert.Nil(archiveState.InitialCompletedAt)
 	notifications, err := d.ListNotifications(ctx, ListNotificationsOpts{State: "all"})
 	require.NoError(err)
 	assert.Empty(notifications)
@@ -1382,6 +1386,11 @@ func TestUpsertRepoByProviderIDDiscardsReplacedDestinationWhenIncomingRepoMoved(
 		Name:           "new-name",
 	})
 	require.NoError(err)
+	require.NoError(d.EnsureDiscoveryArchives(
+		ctx,
+		[]int64{destinationID},
+		baseTime(),
+	))
 	insertTestIssueWithOptions(t, d, testIssue(destinationID, 8, withIssueTitle("replaced repository issue")))
 	require.NoError(d.InsertWorkspace(ctx, &Workspace{
 		ID:           "replaced-destination-workspace",
@@ -1429,6 +1438,12 @@ func TestUpsertRepoByProviderIDDiscardsReplacedDestinationWhenIncomingRepoMoved(
 	issue, err := d.GetIssueByRepoIDAndNumber(ctx, sourceID, 8)
 	require.NoError(err)
 	assert.Nil(issue)
+
+	archiveStates, err := d.ListArchiveRepoStates(ctx, []int64{sourceID})
+	require.NoError(err)
+	require.Len(archiveStates, 1)
+	assert.Equal(ArchiveCollectionModeDiscovery, archiveStates[0].CollectionMode)
+	assert.Equal(ArchiveOperatorStateActive, archiveStates[0].OperatorState)
 
 	incomingWorkspace, err := d.GetWorkspaceByMRForProvider(
 		ctx, "gitlab", "gitlab.com", "new-group", "new-name", 7,
@@ -5052,6 +5067,61 @@ func TestUpdateWorkspaceMRHeadRepoForSnapshotRejectsStaleRevision(t *testing.T) 
 	)
 	require.Error(err)
 	assert.Contains(err.Error(), "workspace \"missing-workspace\" not found")
+}
+
+func TestConditionalWorkspaceHeadRepoUpdatesReportRetirement(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	_, err := d.UpsertRepoByProviderID(ctx, RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "R_old",
+		Owner:          "acme",
+		Name:           "widget",
+	})
+	require.NoError(err)
+	require.NoError(d.InsertWorkspace(ctx, &Workspace{
+		ID:           "ws-retired-head-repo-update",
+		Platform:     "github",
+		PlatformHost: "github.com",
+		RepoOwner:    "acme",
+		RepoName:     "widget",
+		ItemType:     WorkspaceItemTypePullRequest,
+		ItemNumber:   7,
+		WorktreePath: t.TempDir(),
+		Status:       "creating",
+	}))
+	replacementID, err := d.UpsertRepoByProviderID(ctx, RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "R_new",
+		Owner:          "acme",
+		Name:           "widget",
+	})
+	require.NoError(err)
+
+	_, err = d.UpdateWorkspaceMRHeadRepoForSnapshot(
+		ctx,
+		"ws-retired-head-repo-update",
+		replacementID,
+		7,
+		0,
+		nil,
+	)
+	require.ErrorIs(err, ErrWorkspaceRetired)
+	_, err = d.UpdateWorkspaceMRHeadRepoForMissingRepo(
+		ctx,
+		"ws-retired-head-repo-update",
+		RepoIdentity{
+			Platform:     "github",
+			PlatformHost: "github.com",
+			Owner:        "missing",
+			Name:         "repo",
+		},
+		nil,
+	)
+	require.ErrorIs(err, ErrWorkspaceRetired)
 }
 
 func TestWorkspaceItemKeyDefaultsFromItemNumber(t *testing.T) {

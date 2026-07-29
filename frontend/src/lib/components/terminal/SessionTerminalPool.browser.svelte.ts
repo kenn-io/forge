@@ -191,6 +191,30 @@ describe("SessionTerminalPool", () => {
     button.remove();
   });
 
+  it("keeps keyboard focus inside the terminal across a pane move", async () => {
+    mountSession(agent);
+    mountPool();
+    showIn(agent, slotA);
+    await waitForReparent();
+
+    requestSessionFocus(agent);
+    await vi.waitFor(() => {
+      expect(document.activeElement?.closest(".terminal-container")).not.toBeNull();
+    }, WAIT);
+
+    // A pane move: the slot changes and nothing queues a focus request. The
+    // reparent through the display:none parking node blurs xterm's helper
+    // textarea, so unless the pool restores what it took, tmux copy/paste
+    // keys land on <body> until the user clicks the terminal again.
+    showIn(agent, slotB);
+    await waitForReparent();
+
+    expect(wrapperFor(agent)?.parentElement).toBe(slotB);
+    await vi.waitFor(() => {
+      expect(document.activeElement?.closest(".terminal-container")).not.toBeNull();
+    }, WAIT);
+  });
+
   it("keeps two sessions live at once", async () => {
     mountSession(agent);
     mountSession(shell);

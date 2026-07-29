@@ -20,6 +20,13 @@
   // the parking node and resize the real tmux pane to one row.
   let attached = $state(false);
 
+  // Parking to move between slots blurs xterm's helper textarea (the wrapper
+  // passes through a display:none node and goes inert), so a pane move would
+  // silently take the keyboard away from a terminal the user was typing in.
+  // Remember that the wrapper held focus and give it back after attachment.
+  // Not $state: the focus effect below already reruns on `attached`.
+  let restoreFocus = false;
+
   // Placement, mirroring WorkspaceHost's: park first, attach after a tick.
   // Parking rather than leaving the wrapper in place matters because the
   // previous slot may be unmounting in this same flush.
@@ -35,8 +42,15 @@
     const park = parking;
     if (!node || !park) return;
     attached = false;
+    if (node.contains(document.activeElement)) restoreFocus = true;
     park.appendChild(node);
-    if (!destination || destination === park) return;
+    if (!destination || destination === park) {
+      // Parked with nowhere to go: the pane closed. Like the workspace host's
+      // clearPendingHostFocus, the intent must not fire on some later,
+      // unrelated reveal.
+      restoreFocus = false;
+      return;
+    }
     let cancelled = false;
     void (async () => {
       await tick();
@@ -52,14 +66,18 @@
     };
   });
 
-  // Focus an explicitly requested terminal whether the request arrived before
-  // attachment or after it was already visible. The renderer queues the request
-  // through its async construction; the wrapper is an immediate fallback while
-  // that work finishes.
+  // Focus the terminal on an explicit request (whether it arrived before
+  // attachment or after it was already visible) or to give back focus a
+  // reparent took. The renderer queues the request through its async
+  // construction; the wrapper is an immediate fallback while that work
+  // finishes.
   $effect(() => {
     if (!attached || !active) return;
     const node = wrapper;
-    if (!node || !consumeSessionFocus(session.hostKey)) return;
+    if (!node) return;
+    const requested = consumeSessionFocus(session.hostKey);
+    if (!requested && !restoreFocus) return;
+    restoreFocus = false;
     terminalPane?.focus();
     if (!node.contains(document.activeElement)) node.focus();
   });

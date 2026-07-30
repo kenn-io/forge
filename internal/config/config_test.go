@@ -731,10 +731,10 @@ func TestDefaultPathsWithoutForgeHome(t *testing.T) {
 	t.Setenv("HOME", "/fakehome")
 
 	assert.Equal(
-		filepath.FromSlash("/fakehome/.config/kenn-forge/config.toml"),
+		filepath.FromSlash("/fakehome/.kenn/forge/config.toml"),
 		DefaultConfigPath(),
 	)
-	assert.Equal(filepath.FromSlash("/fakehome/.config/kenn-forge"), DefaultDataDir())
+	assert.Equal(filepath.FromSlash("/fakehome/.kenn/forge"), DefaultDataDir())
 }
 
 func TestDBPath(t *testing.T) {

@@ -936,7 +936,7 @@ func baseDir() string {
 	if d := os.Getenv("KENN_FORGE_HOME"); d != "" {
 		return d
 	}
-	return filepath.Join(homeDir(), ".config", "kenn-forge")
+	return filepath.Join(homeDir(), ".kenn", "forge")
 }
 
 func homeDir() string {
@@ -1198,6 +1198,11 @@ func load(path string) (*Config, error) {
 // LoadForGitHubAppRepair loads path for GitHub App management commands while
 // retaining the ordinary structural validation rules.
 func LoadForGitHubAppRepair(path string) (*Config, error) {
+	var err error
+	path, err = migrateLegacyState(path)
+	if err != nil {
+		return nil, err
+	}
 	cfg, err := load(path)
 	if err != nil {
 		return nil, err

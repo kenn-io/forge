@@ -263,11 +263,7 @@ func prepareEphemeralConfig(opts ephemeralOptions) (ephemeralRun, error) {
 	if err := os.MkdirAll(opts.workDir, 0o700); err != nil {
 		return ephemeralRun{}, fmt.Errorf("create work directory: %w", err)
 	}
-	if err := config.EnsureDefault(opts.sourceConfigPath); err != nil {
-		return ephemeralRun{}, fmt.Errorf("ensure source config: %w", err)
-	}
-
-	cfg, err := config.Load(opts.sourceConfigPath)
+	cfg, err := config.LoadOrCreate(opts.sourceConfigPath)
 	if err != nil {
 		return ephemeralRun{}, fmt.Errorf("load source config: %w", err)
 	}

@@ -45,12 +45,9 @@ func runCreate(args []string, env *appEnv) error {
 		return err
 	}
 
-	if err := config.EnsureDefault(env.configPath); err != nil {
-		return fmt.Errorf("ensuring kenn-forge config exists: %w", err)
-	}
-	cfg, err := env.loadConfig()
+	cfg, err := config.LoadOrCreate(env.configPath)
 	if err != nil {
-		return err
+		return fmt.Errorf("loading kenn-forge config %s: %w", env.configPath, err)
 	}
 	for _, existing := range cfg.GitHubAppsForHost(h) {
 		if *org != "" && strings.EqualFold(existing.Owner, *org) {

@@ -101,6 +101,21 @@ func TestForgeIgnoreOverlaysOnGitignore(t *testing.T) {
 	assert.NotContains(names, "logs/build.md", "logs/ should be hidden by .gitignore")
 }
 
+func TestFolderIgnoreMigratesLegacyRootIgnore(t *testing.T) {
+	require := require.New(t)
+	root := t.TempDir()
+	legacyPath := filepath.Join(root, "."+"middle"+"manignore")
+	canonicalPath := filepath.Join(root, forgeIgnoreFilename)
+	require.NoError(os.WriteFile(legacyPath, []byte("private/\n"), 0o600))
+
+	matcher, err := loadFolderIgnore(root)
+	require.NoError(err)
+
+	assert.True(t, matcher.Match("private/note.md", false))
+	assert.FileExists(t, canonicalPath)
+	assert.NoFileExists(t, legacyPath)
+}
+
 func TestMissingIgnoreFilesAreSilent(t *testing.T) {
 	// Folder with no .gitignore and no .kenn-forgeignore should not
 	// error - baseline applies and everything else stays visible.

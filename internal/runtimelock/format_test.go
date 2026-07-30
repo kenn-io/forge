@@ -11,8 +11,8 @@ func TestFormatCollisionBannerWithMetadata(t *testing.T) {
 	require := require.New(t)
 
 	cerr := &CollisionError{
-		DataDir:  "/home/u/.config/kenn-forge",
-		LockPath: "/home/u/.config/kenn-forge/forge.lock",
+		DataDir:  "/home/u/.kenn/forge",
+		LockPath: "/home/u/.kenn/forge/kenn-forge.lock",
 		Metadata: &Metadata{
 			PID:        12345,
 			Host:       "127.0.0.1",
@@ -25,11 +25,11 @@ func TestFormatCollisionBannerWithMetadata(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	FormatCollisionBanner(&buf, cerr, "" /* configPath */, "/home/u/.config/kenn-forge/config.toml" /* defaultConfigPath */)
+	FormatCollisionBanner(&buf, cerr, "" /* configPath */, "/home/u/.kenn/forge/config.toml" /* defaultConfigPath */)
 
 	want := `error: another kenn-forge instance is already running
-  data_dir:     /home/u/.config/kenn-forge
-  lock file:    /home/u/.config/kenn-forge/forge.lock
+  data_dir:     /home/u/.kenn/forge
+  lock file:    /home/u/.kenn/forge/kenn-forge.lock
   running pid:  12345
   listening on: 127.0.0.1:8091
   started at:   2026-05-19T10:30:00Z
@@ -44,8 +44,8 @@ func TestFormatCollisionBannerWithNonDefaultConfig(t *testing.T) {
 	require := require.New(t)
 
 	cerr := &CollisionError{
-		DataDir:  "/home/u/.config/kenn-forge",
-		LockPath: "/home/u/.config/kenn-forge/forge.lock",
+		DataDir:  "/home/u/.kenn/forge",
+		LockPath: "/home/u/.kenn/forge/kenn-forge.lock",
 		Metadata: &Metadata{
 			PID:        12345,
 			ListenAddr: "127.0.0.1:8091",
@@ -55,7 +55,7 @@ func TestFormatCollisionBannerWithNonDefaultConfig(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	FormatCollisionBanner(&buf, cerr, "/etc/kenn-forge/alt.toml", "/home/u/.config/kenn-forge/config.toml")
+	FormatCollisionBanner(&buf, cerr, "/etc/kenn-forge/alt.toml", "/home/u/.kenn/forge/config.toml")
 
 	require.Contains(buf.String(), "Run `kenn-forge status --config /etc/kenn-forge/alt.toml` to inspect it.")
 }
@@ -64,17 +64,17 @@ func TestFormatCollisionBannerMetadataUnavailable(t *testing.T) {
 	require := require.New(t)
 
 	cerr := &CollisionError{
-		DataDir:             "/home/u/.config/kenn-forge",
-		LockPath:            "/home/u/.config/kenn-forge/forge.lock",
+		DataDir:             "/home/u/.kenn/forge",
+		LockPath:            "/home/u/.kenn/forge/kenn-forge.lock",
 		MetadataUnavailable: ReasonMetadataMissing,
 	}
 
 	var buf bytes.Buffer
-	FormatCollisionBanner(&buf, cerr, "", "/home/u/.config/kenn-forge/config.toml")
+	FormatCollisionBanner(&buf, cerr, "", "/home/u/.kenn/forge/config.toml")
 
 	want := `error: another kenn-forge instance is already running
-  data_dir:     /home/u/.config/kenn-forge
-  lock file:    /home/u/.config/kenn-forge/forge.lock
+  data_dir:     /home/u/.kenn/forge
+  lock file:    /home/u/.kenn/forge/kenn-forge.lock
   metadata:     unavailable (daemon may be early in startup, or metadata is missing/corrupt)
 
   Run ` + "`kenn-forge status`" + ` to inspect it.
@@ -86,8 +86,8 @@ func TestFormatStatusHumanRunningWithMetadata(t *testing.T) {
 	require := require.New(t)
 
 	st := Status{
-		DataDir:  "/home/u/.config/kenn-forge",
-		LockPath: "/home/u/.config/kenn-forge/forge.lock",
+		DataDir:  "/home/u/.kenn/forge",
+		LockPath: "/home/u/.kenn/forge/kenn-forge.lock",
 		Running:  true,
 		Metadata: &Metadata{
 			PID:        12345,
@@ -104,8 +104,8 @@ func TestFormatStatusHumanRunningWithMetadata(t *testing.T) {
 	require.NoError(FormatStatus(&buf, st, false))
 
 	want := `running
-  data_dir:     /home/u/.config/kenn-forge
-  lock file:    /home/u/.config/kenn-forge/forge.lock
+  data_dir:     /home/u/.kenn/forge
+  lock file:    /home/u/.kenn/forge/kenn-forge.lock
   pid:          12345
   host:         127.0.0.1
   port:         8091
@@ -121,8 +121,8 @@ func TestFormatStatusHumanRunningMetadataUnavailable(t *testing.T) {
 	require := require.New(t)
 
 	st := Status{
-		DataDir:             "/home/u/.config/kenn-forge",
-		LockPath:            "/home/u/.config/kenn-forge/forge.lock",
+		DataDir:             "/home/u/.kenn/forge",
+		LockPath:            "/home/u/.kenn/forge/kenn-forge.lock",
 		Running:             true,
 		MetadataUnavailable: ReasonMetadataMissing,
 	}
@@ -131,8 +131,8 @@ func TestFormatStatusHumanRunningMetadataUnavailable(t *testing.T) {
 	require.NoError(FormatStatus(&buf, st, false))
 
 	want := `running (metadata unavailable: missing (daemon may be early in startup))
-  data_dir:     /home/u/.config/kenn-forge
-  lock file:    /home/u/.config/kenn-forge/forge.lock
+  data_dir:     /home/u/.kenn/forge
+  lock file:    /home/u/.kenn/forge/kenn-forge.lock
 `
 	require.Equal(want, buf.String())
 }
@@ -141,16 +141,16 @@ func TestFormatStatusHumanNotRunning(t *testing.T) {
 	require := require.New(t)
 
 	st := Status{
-		DataDir:  "/home/u/.config/kenn-forge",
-		LockPath: "/home/u/.config/kenn-forge/forge.lock",
+		DataDir:  "/home/u/.kenn/forge",
+		LockPath: "/home/u/.kenn/forge/kenn-forge.lock",
 	}
 
 	var buf bytes.Buffer
 	require.NoError(FormatStatus(&buf, st, false))
 
 	want := `no running daemon
-  data_dir:     /home/u/.config/kenn-forge
-  lock file:    /home/u/.config/kenn-forge/forge.lock
+  data_dir:     /home/u/.kenn/forge
+  lock file:    /home/u/.kenn/forge/kenn-forge.lock
 `
 	require.Equal(want, buf.String())
 }
@@ -160,7 +160,7 @@ func TestFormatStatusJSONRunning(t *testing.T) {
 
 	st := Status{
 		DataDir:  "/dd",
-		LockPath: "/dd/forge.lock",
+		LockPath: "/dd/kenn-forge.lock",
 		Running:  true,
 		Metadata: &Metadata{
 			PID:        4242,
@@ -179,7 +179,7 @@ func TestFormatStatusJSONRunning(t *testing.T) {
 	want := `{
   "running": true,
   "data_dir": "/dd",
-  "lock_file": "/dd/forge.lock",
+  "lock_file": "/dd/kenn-forge.lock",
   "metadata": {
     "pid": 4242,
     "host": "127.0.0.1",
@@ -199,7 +199,7 @@ func TestFormatStatusJSONNotRunning(t *testing.T) {
 
 	st := Status{
 		DataDir:  "/dd",
-		LockPath: "/dd/forge.lock",
+		LockPath: "/dd/kenn-forge.lock",
 	}
 
 	var buf bytes.Buffer
@@ -208,7 +208,7 @@ func TestFormatStatusJSONNotRunning(t *testing.T) {
 	want := `{
   "running": false,
   "data_dir": "/dd",
-  "lock_file": "/dd/forge.lock",
+  "lock_file": "/dd/kenn-forge.lock",
   "metadata": null
 }
 `
@@ -220,7 +220,7 @@ func TestFormatStatusJSONMetadataUnavailable(t *testing.T) {
 
 	st := Status{
 		DataDir:             "/dd",
-		LockPath:            "/dd/forge.lock",
+		LockPath:            "/dd/kenn-forge.lock",
 		Running:             true,
 		MetadataUnavailable: ReasonMetadataCorrupt,
 	}
@@ -231,7 +231,7 @@ func TestFormatStatusJSONMetadataUnavailable(t *testing.T) {
 	want := `{
   "running": true,
   "data_dir": "/dd",
-  "lock_file": "/dd/forge.lock",
+  "lock_file": "/dd/kenn-forge.lock",
   "metadata": null,
   "metadata_error": "corrupt"
 }

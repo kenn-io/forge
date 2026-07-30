@@ -245,7 +245,7 @@ func reserveFreePort(t *testing.T) int {
 
 // writeMinimalConfig writes a config that binds to the chosen port
 // with no provider repos. The dataDir is set so it does not collide
-// with the developer's real ~/.config/kenn-forge.
+// with the developer's real ~/.kenn/forge.
 func writeMinimalConfig(t *testing.T, configPath, dataDir string, port int) {
 	t.Helper()
 	writeMinimalConfigWithBasePath(t, configPath, dataDir, port, "")

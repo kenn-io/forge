@@ -1708,8 +1708,8 @@ func TestSanitizeConfigErrorRedactsTokenMaterial(t *testing.T) {
 	assert := assert.New(t)
 
 	got := sanitizeConfigError(
-		errors.New("open /home/me/.config/kenn-forge/config.toml: https://x-access-token:ghp_config_secret@github.com/acme/widgets.git failed"),
-		"/home/me/.config/kenn-forge/config.toml",
+		errors.New("open /home/me/.kenn/forge/config.toml: https://x-access-token:ghp_config_secret@github.com/acme/widgets.git failed"),
+		"/home/me/.kenn/forge/config.toml",
 	)
 
 	assert.Contains(got, "config.toml")

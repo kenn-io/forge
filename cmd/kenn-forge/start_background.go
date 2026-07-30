@@ -41,10 +41,7 @@ func newStartCommand(run backgroundRunner, stdout io.Writer) *cobra.Command {
 func startBackground(
 	ctx context.Context, configPath string, stdout io.Writer,
 ) error {
-	if err := config.EnsureDefault(configPath); err != nil {
-		return fmt.Errorf("ensure config: %w", err)
-	}
-	cfg, err := config.Load(configPath)
+	cfg, err := config.LoadOrCreate(configPath)
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}

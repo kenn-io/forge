@@ -26,6 +26,11 @@ var contentRules = []Rule{
 	{Old: "XForgeKataDaemon", New: "XKennForgeKataDaemon"},
 	{Old: "XForgeRuntimeSessionKey", New: "XKennForgeRuntimeSessionKey"},
 	{Old: "cb190ac507b2b0a4", New: "5e73279a62064378"},
+	{Old: "forge.lock", New: "kenn-forge.lock"},
+	{Old: "forge.run.json", New: "kenn-forge.run.json"},
+	{Old: ".forge.run.json.tmp", New: ".kenn-forge.run.json.tmp"},
+	{Old: "kenn-kenn-forge", New: "kenn-forge"},
+	{Old: ".config/kenn-forge", New: ".kenn/forge"},
 	{Old: "MIDDLEMAN", New: "KENN_FORGE"},
 	{Old: "__middleman", New: "__kenn_forge"},
 	{Old: "middleman_", New: "forge_"},
@@ -282,6 +287,9 @@ func isAllowlistedPath(path string) bool {
 		return true
 	}
 	if path == "internal/db/migrations.go" || path == "internal/db/db_test.go" {
+		return true
+	}
+	if path == "internal/config/legacy_migration.go" || path == "internal/config/legacy_migration_test.go" {
 		return true
 	}
 	return strings.HasPrefix(path, "docs/superpowers/specs/") ||

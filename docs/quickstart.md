@@ -32,7 +32,7 @@ export KENN_FORGE_GITHUB_TOKEN=ghp_your_token_here
 ./kenn-forge
 ```
 
-On first run, kenn-forge creates `~/.config/kenn-forge/config.toml` and starts the
+On first run, kenn-forge creates `~/.kenn/forge/config.toml` and starts the
 UI at:
 
 ```text
@@ -47,7 +47,7 @@ make install
 
 ## Add repositories
 
-Use Settings in the UI, or edit `~/.config/kenn-forge/config.toml`:
+Use Settings in the UI, or edit `~/.kenn/forge/config.toml`:
 
 ```toml
 [[repos]]

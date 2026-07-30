@@ -145,8 +145,8 @@ Set log environment variables before starting the daemon:
 
 ```sh
 KENN_FORGE_LOG_LEVEL=debug kenn-forge
-KENN_FORGE_LOG_FILE=~/.kenn/forge/kenn-forge.log kenn-forge
-KENN_FORGE_LOG_STDERR_LEVEL=warn KENN_FORGE_LOG_FILE=~/.kenn/forge/kenn-forge.log kenn-forge
+KENN_FORGE_LOG_FILE=~/.kenn/forge/forge.log kenn-forge
+KENN_FORGE_LOG_STDERR_LEVEL=warn KENN_FORGE_LOG_FILE=~/.kenn/forge/forge.log kenn-forge
 ```
 
 Logs redact configured token-shaped values.

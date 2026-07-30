@@ -1,5 +1,5 @@
 # Docker development config — port 18090 to avoid conflicting with host instance.
-# Copy repos from ~/.config/kenn-forge/config.toml or add via settings UI.
+# Copy repos from ~/.kenn/forge/config.toml or add via settings UI.
 
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"

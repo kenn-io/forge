@@ -366,7 +366,7 @@ const MOCK_BROWSE: Record<string, string[]> = {
   "/Users/mock/Projects/reader": [],
   "/Users/mock/Projects/obsidian-replacement": [],
   "/Users/mock/.config": ["kenn-forge"],
-  "/Users/mock/.config/kenn-forge": [],
+  "/Users/mock/.kenn/forge": [],
   "/Users": ["mock"],
 };
 

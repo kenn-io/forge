@@ -100,6 +100,20 @@ func TestRewriteAppliesCanonicalMappings(t *testing.T) {
 			wantPath: "internal/server/kataapi/workspace_test.go",
 			wantBody: "name = \"kenn-*\"\n",
 		},
+		{
+			name:     "runtime filenames damaged by earlier alias mapping",
+			path:     "internal/runtimelock/paths.go",
+			body:     "const names = \"forge.lock forge.run.json .forge.run.json.tmp\"\n",
+			wantPath: "internal/runtimelock/paths.go",
+			wantBody: "const names = \"kenn-forge.lock kenn-forge.run.json .kenn-forge.run.json.tmp\"\n",
+		},
+		{
+			name:     "canonical home",
+			path:     "README.md",
+			body:     "~/.config/kenn-forge/config.toml\n",
+			wantPath: "README.md",
+			wantBody: "~/.kenn/forge/config.toml\n",
+		},
 	}
 
 	for _, tt := range tests {

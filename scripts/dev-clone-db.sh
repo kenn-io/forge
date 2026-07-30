@@ -2,7 +2,7 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-source_config="${KENN_FORGE_CONFIG:-${HOME}/.config/kenn-forge/config.toml}"
+source_config="${KENN_FORGE_CONFIG:-${HOME}/.kenn/forge/config.toml}"
 clone_dir="${KENN_FORGE_DEV_CLONE_DIR:-${repo_root}/tmp/dev-db-clone}"
 clone_port="${KENN_FORGE_DEV_CLONE_PORT:-8092}"
 

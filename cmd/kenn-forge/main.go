@@ -241,10 +241,7 @@ func runPtyOwner(root, session, cwd, commandJSON string) error {
 }
 
 func readConfigValue(configPath, key string, stdout io.Writer) error {
-	if err := config.EnsureDefault(configPath); err != nil {
-		return fmt.Errorf("ensure config: %w", err)
-	}
-	cfg, err := config.Load(configPath)
+	cfg, err := config.LoadOrCreate(configPath)
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
@@ -259,10 +256,7 @@ func readConfigValue(configPath, key string, stdout io.Writer) error {
 }
 
 func writeStatus(configPath string, asJSON bool, stdout io.Writer) error {
-	if err := config.EnsureDefault(configPath); err != nil {
-		return fmt.Errorf("ensure config: %w", err)
-	}
-	cfg, err := config.Load(configPath)
+	cfg, err := config.LoadOrCreate(configPath)
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
@@ -283,11 +277,7 @@ func writeStatus(configPath string, asJSON bool, stdout io.Writer) error {
 
 func run(opts serve.Options) error {
 	configPath := opts.ConfigPath
-	if err := config.EnsureDefault(configPath); err != nil {
-		return fmt.Errorf("ensure config: %w", err)
-	}
-
-	cfg, err := config.Load(configPath)
+	cfg, err := config.LoadOrCreate(configPath)
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}

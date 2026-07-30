@@ -11,9 +11,9 @@ import (
 func TestPathsAreUnderDataDir(t *testing.T) {
 	dir := t.TempDir()
 
-	require.Equal(t, filepath.Join(dir, "forge.lock"), LockPath(dir))
-	require.Equal(t, filepath.Join(dir, "forge.run.json"), MetadataPath(dir))
-	require.Equal(t, filepath.Join(dir, ".forge.run.json.tmp"), metadataTmpPath(dir))
+	require.Equal(t, filepath.Join(dir, "kenn-forge.lock"), LockPath(dir))
+	require.Equal(t, filepath.Join(dir, "kenn-forge.run.json"), MetadataPath(dir))
+	require.Equal(t, filepath.Join(dir, ".kenn-forge.run.json.tmp"), metadataTmpPath(dir))
 }
 
 func TestMetadataAtomicWriteRoundTrip(t *testing.T) {

@@ -225,7 +225,7 @@ func installAgentHooks(action, configPath, rawAgent, binary string, stdout io.Wr
 		return nil
 	}
 
-	cfg, err := config.Load(configPath)
+	cfg, err := config.LoadExisting(configPath)
 	if err != nil {
 		return err
 	}

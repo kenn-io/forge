@@ -13,7 +13,7 @@ func TestCollisionErrorImplementsError(t *testing.T) {
 	meta := Metadata{PID: 99, ListenAddr: "127.0.0.1:9999"}
 	cerr := &CollisionError{
 		DataDir:  "/tmp/dd",
-		LockPath: "/tmp/dd/forge.lock",
+		LockPath: "/tmp/dd/kenn-forge.lock",
 		Metadata: &meta,
 	}
 
@@ -36,7 +36,7 @@ func TestCollisionErrorMetadataUnavailable(t *testing.T) {
 
 	cerr := &CollisionError{
 		DataDir:             "/tmp/dd",
-		LockPath:            "/tmp/dd/forge.lock",
+		LockPath:            "/tmp/dd/kenn-forge.lock",
 		Metadata:            nil,
 		MetadataUnavailable: ReasonMetadataMissing,
 	}

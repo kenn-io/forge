@@ -256,8 +256,8 @@ Everything a local client (or the SSH relay acting as one) needs to
 reach a daemon, with no out-of-band configuration:
 
 - **Runtime discovery** (`internal/runtimelock`): the daemon is
-  running iff the flock on `<data_dir>/forge.lock` is held; only
-  then is `<data_dir>/forge.run.json` authoritative. The metadata
+  running iff the flock on `<data_dir>/kenn-forge.lock` is held; only
+  then is `<data_dir>/kenn-forge.run.json` authoritative. The metadata
   publishes pid, `listen_addr` (from the actual bound listener),
   `base_path` (canonical, no trailing slash; clients join API paths
   onto it), `token_path`, and `require_auth`.

@@ -7,6 +7,8 @@ import (
 	"net"
 	"path/filepath"
 	"strconv"
+	"strings"
+	"time"
 
 	"go.kenn.io/kit/daemon"
 	"go.kenn.io/middleman/internal/config"
@@ -25,12 +27,21 @@ const (
 	metadataAuthTokenPath = "auth_token_path"
 )
 
-// PublishOptions contains the startup-bound identity written for discovery.
-type PublishOptions struct {
-	Address     string
+// IdentityOptions contains the startup-bound values shared by both runtime
+// discovery surfaces.
+type IdentityOptions struct {
 	Version     string
+	Commit      string
 	DataDir     string
+	BasePath    string
 	RequireAuth bool
+}
+
+// Identity is the single startup identity serialized to the authoritative
+// data-directory status and the generic kit discovery store.
+type Identity struct {
+	Record       daemon.RuntimeRecord
+	LockMetadata runtimelock.Metadata
 }
 
 // Store returns the predictable config-home discovery store.
@@ -52,24 +63,19 @@ func StartLockStore(discoveryStore daemon.RuntimeStore, dataDir string) daemon.R
 	}
 }
 
-// Publish writes the standard discovery record after the listener is bound and
-// returns the exact identity that credential-free endpoint proof must bind.
-func Publish(opts PublishOptions) (daemon.RuntimeRecord, string, error) {
-	host, port, err := net.SplitHostPort(opts.Address)
-	if err != nil {
-		return daemon.RuntimeRecord{}, "", fmt.Errorf("listener address is not TCP: %w", err)
+// NewIdentity derives both discovery representations from one bound TCP
+// listener address and process snapshot.
+func NewIdentity(address net.Addr, opts IdentityOptions) (Identity, error) {
+	tcpAddress, ok := address.(*net.TCPAddr)
+	if !ok {
+		return Identity{}, fmt.Errorf("listener returned non-TCP address %T", address)
 	}
-	store, err := Store()
-	if err != nil {
-		return daemon.RuntimeRecord{}, "", err
-	}
-	if _, err := store.CleanupDead(); err != nil {
-		return daemon.RuntimeRecord{}, "", fmt.Errorf("clean stale daemon runtime records: %w", err)
-	}
+	host := tcpAddress.IP.String()
+	port := strconv.Itoa(tcpAddress.Port)
 	record := daemon.NewRuntimeRecord(
 		Service,
 		opts.Version,
-		daemon.Endpoint{Network: daemon.NetworkTCP, Address: opts.Address},
+		daemon.Endpoint{Network: daemon.NetworkTCP, Address: address.String()},
 	)
 	record.Metadata = map[string]string{
 		metadataHost:        host,
@@ -78,11 +84,49 @@ func Publish(opts PublishOptions) (daemon.RuntimeRecord, string, error) {
 		metadataRequireAuth: strconv.FormatBool(opts.RequireAuth),
 		metadataDataDir:     opts.DataDir,
 	}
+	tokenPath := runtimelock.AuthTokenPath(opts.DataDir)
 	if opts.RequireAuth {
-		record.Metadata[metadataAuthTokenPath] = runtimelock.AuthTokenPath(opts.DataDir)
+		record.Metadata[metadataAuthTokenPath] = tokenPath
+	}
+	return Identity{
+		Record: record,
+		LockMetadata: runtimelock.Metadata{
+			PID:         record.PID,
+			Host:        host,
+			Port:        tcpAddress.Port,
+			ListenAddr:  record.Address,
+			StartedAt:   record.StartedAt.UTC().Format(time.RFC3339),
+			Version:     record.Version,
+			Commit:      opts.Commit,
+			TokenPath:   tokenPath,
+			BasePath:    canonicalBasePath(opts.BasePath),
+			RequireAuth: opts.RequireAuth,
+		},
+	}, nil
+}
+
+// Publish writes identity's standard discovery record and returns its exact
+// path for cleanup when the server exits.
+func Publish(record daemon.RuntimeRecord) (string, error) {
+	store, err := Store()
+	if err != nil {
+		return "", err
+	}
+	if _, err := store.CleanupDead(); err != nil {
+		return "", fmt.Errorf("clean stale daemon runtime records: %w", err)
 	}
 	path, err := store.Write(record)
-	return record, path, err
+	return path, err
+}
+
+func canonicalBasePath(basePath string) string {
+	if basePath == "" {
+		return "/"
+	}
+	if trimmed := strings.TrimSuffix(basePath, "/"); trimmed != "" {
+		return trimmed
+	}
+	return "/"
 }
 
 // Compatible reports whether a discovery record can represent the expected

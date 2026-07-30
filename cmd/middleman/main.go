@@ -365,17 +365,18 @@ func run(opts serve.Options) error {
 		)
 	}
 
-	if err := writeRuntimeMetadata(
-		lockHandle, ln, cfg.DataDir, cfg.BasePath, cfg.API.RequireAuth,
-	); err != nil {
+	runtimeIdentity, err := daemonruntime.NewIdentity(ln.Addr(), daemonruntime.IdentityOptions{
+		Version: version, Commit: commit, DataDir: cfg.DataDir,
+		BasePath: cfg.BasePath, RequireAuth: cfg.API.RequireAuth,
+	})
+	if err != nil {
+		_ = ln.Close()
+		return fmt.Errorf("build daemon runtime identity: %w", err)
+	}
+	if err := lockHandle.WriteMetadata(runtimeIdentity.LockMetadata); err != nil {
 		slog.Warn("write runtime metadata", "err", err)
 	}
-	runtimeRecord, runtimePath, err := daemonruntime.Publish(daemonruntime.PublishOptions{
-		Address:     ln.Addr().String(),
-		Version:     version,
-		DataDir:     cfg.DataDir,
-		RequireAuth: cfg.API.RequireAuth,
-	})
+	runtimePath, err := daemonruntime.Publish(runtimeIdentity.Record)
 	if err != nil {
 		_ = ln.Close()
 		return fmt.Errorf("write daemon runtime record: %w", err)
@@ -390,7 +391,7 @@ func run(opts serve.Options) error {
 		_ = ln.Close()
 		return fmt.Errorf("initialize daemon proof: %w", err)
 	}
-	daemonProofHandler, err := proof.NewPingHandler(runtimeRecord)
+	daemonProofHandler, err := proof.NewPingHandler(runtimeIdentity.Record)
 	if err != nil {
 		_ = ln.Close()
 		return fmt.Errorf("initialize daemon ping: %w", err)
@@ -746,44 +747,6 @@ func profilerSrvDone(srv *profiler.Server) <-chan error {
 		return nil
 	}
 	return srv.Done()
-}
-
-// writeRuntimeMetadata snapshots the bound listener and process state
-// into the runtime metadata file. The recorded port comes from
-// ln.Addr() (not cfg.Port) so it matches the kernel-assigned value if
-// they ever diverge.
-func writeRuntimeMetadata(
-	h *runtimelock.Handle, ln net.Listener,
-	dataDir, basePath string, requireAuth bool,
-) error {
-	tcpAddr, ok := ln.Addr().(*net.TCPAddr)
-	if !ok {
-		return fmt.Errorf("listener returned non-TCP address %T", ln.Addr())
-	}
-	return h.WriteMetadata(runtimelock.Metadata{
-		PID:         os.Getpid(),
-		Host:        tcpAddr.IP.String(),
-		Port:        tcpAddr.Port,
-		ListenAddr:  ln.Addr().String(),
-		StartedAt:   time.Now().UTC().Format(time.RFC3339),
-		Version:     version,
-		Commit:      commit,
-		TokenPath:   runtimelock.AuthTokenPath(dataDir),
-		BasePath:    canonicalBasePath(basePath),
-		RequireAuth: requireAuth,
-	})
-}
-
-// canonicalBasePath publishes the prefix form clients join paths
-// onto: no trailing slash, except the bare root.
-func canonicalBasePath(basePath string) string {
-	if basePath == "" {
-		return "/"
-	}
-	if trimmed := strings.TrimSuffix(basePath, "/"); trimmed != "" {
-		return trimmed
-	}
-	return "/"
 }
 
 func resolveStartupRepos(

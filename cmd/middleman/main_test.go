@@ -25,7 +25,6 @@ import (
 	"go.kenn.io/middleman/internal/db"
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/platform"
-	"go.kenn.io/middleman/internal/runtimelock"
 	"go.kenn.io/middleman/internal/server"
 	"go.kenn.io/middleman/internal/testutil"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
@@ -130,49 +129,6 @@ func mainTestTokenSource(
 			EnvName: envName,
 		}},
 	}, tokenauth.Options{})
-}
-
-func TestWriteRuntimeMetadataRecordsBoundTCPPort(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	dataDir := t.TempDir()
-	lockHandle, err := runtimelock.Acquire(dataDir)
-	require.NoError(err)
-	t.Cleanup(func() {
-		require.NoError(lockHandle.Release())
-	})
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(err)
-	t.Cleanup(func() {
-		require.NoError(ln.Close())
-	})
-
-	require.NoError(writeRuntimeMetadata(lockHandle, ln, dataDir, "/", false))
-
-	data, err := os.ReadFile(runtimelock.MetadataPath(dataDir))
-	require.NoError(err)
-	var meta runtimelock.Metadata
-	require.NoError(json.Unmarshal(data, &meta))
-	tcpAddr := ln.Addr().(*net.TCPAddr)
-	assert.Equal(tcpAddr.Port, meta.Port)
-	assert.Equal("127.0.0.1", meta.Host)
-	assert.Equal(ln.Addr().String(), meta.ListenAddr)
-}
-
-func TestWriteRuntimeMetadataRejectsNonTCPListener(t *testing.T) {
-	dataDir := t.TempDir()
-	lockHandle, err := runtimelock.Acquire(dataDir)
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, lockHandle.Release())
-	})
-
-	err = writeRuntimeMetadata(
-		lockHandle, fakeListener{addr: fakeAddr("not-an-address")},
-		dataDir, "/", false,
-	)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "non-TCP")
 }
 
 func TestRunMainShutdownStopsSignalsBeforeLongCleanup(t *testing.T) {
@@ -281,22 +237,6 @@ func TestResolveStartupReposExpandsConfiguredGlobs(t *testing.T) {
 		RepoPath:     "roborev-dev/middleman",
 	}}, repos)
 }
-
-type fakeAddr string
-
-func (a fakeAddr) Network() string { return "fake" }
-
-func (a fakeAddr) String() string { return string(a) }
-
-type fakeListener struct {
-	addr net.Addr
-}
-
-func (l fakeListener) Accept() (net.Conn, error) { return nil, errors.New("not implemented") }
-
-func (l fakeListener) Close() error { return nil }
-
-func (l fakeListener) Addr() net.Addr { return l.addr }
 
 func TestResolveStartupReposKeepsExactReposWhenResolutionFails(t *testing.T) {
 	assert := assert.New(t)

@@ -217,6 +217,9 @@ Middleman-managed paths include the internal repository ID. They remain
 deterministic for recovery within one repository incarnation while a
 same-provider-path replacement receives a distinct filesystem namespace
 (`internal/workspace/manager.go::Manager.repositoryWorktreePath`).
+The managed bare clone and Git common directory use that same repository ID;
+separate incarnations cannot share branches, worktree registrations, or history
+(`internal/workspace/manager.go::workspaceCloneNamespace`).
 
 Keep Git worktree and merge-request lifecycle semantics in
 `go.kenn.io/kit/git/managed`; Middleman supplies application policy instead of

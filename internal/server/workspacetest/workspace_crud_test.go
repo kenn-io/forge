@@ -341,6 +341,90 @@ func TestWorkspaceRetryRetiredWorkspaceConflictE2E(t *testing.T) {
 	)
 }
 
+func TestWorkspaceReplacementUsesFreshManagedCloneE2E(t *testing.T) {
+	acquireWorkspaceGitSlot(t)
+
+	require := require.New(t)
+	assert := assert.New(t)
+	fixture := setupWorkspaceServerFixture(t, nil)
+	ctx := t.Context()
+
+	oldRepoID, err := fixture.database.UpsertRepoByProviderID(
+		ctx,
+		db.RepoIdentity{
+			Platform:       "github",
+			PlatformHost:   "github.com",
+			PlatformRepoID: "repo-before-replacement",
+			Owner:          "acme",
+			Name:           "widget",
+		},
+	)
+	require.NoError(err)
+	oldCreate, err := fixture.client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     1,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, oldCreate.StatusCode())
+	require.NotNil(oldCreate.JSON202)
+	oldWorkspace := waitForWorkspaceReady(
+		t, ctx, fixture.client, oldCreate.JSON202.Id,
+	)
+	oldCommonDir := workspaceGitOutput(
+		t, oldWorkspace.WorktreePath,
+		"rev-parse", "--path-format=absolute", "--git-common-dir",
+	)
+
+	newRepoID, err := fixture.database.UpsertRepoByProviderID(
+		ctx,
+		db.RepoIdentity{
+			Platform:       "github",
+			PlatformHost:   "github.com",
+			PlatformRepoID: "repo-after-replacement",
+			Owner:          "acme",
+			Name:           "widget",
+		},
+	)
+	require.NoError(err)
+	require.NotEqual(oldRepoID, newRepoID)
+	prepareWorkspaceManagedClone(
+		t, fixture.cloneBase, fixture.remote, newRepoID,
+	)
+	seedPROnHost(t, fixture.database, "github.com", "acme", "widget", 1)
+
+	newCreate, err := fixture.client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     1,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, newCreate.StatusCode())
+	require.NotNil(newCreate.JSON202)
+	newWorkspace := waitForWorkspaceReady(
+		t, ctx, fixture.client, newCreate.JSON202.Id,
+	)
+	newCommonDir := workspaceGitOutput(
+		t, newWorkspace.WorktreePath,
+		"rev-parse", "--path-format=absolute", "--git-common-dir",
+	)
+
+	assert.NotEqual(oldWorkspace.WorktreePath, newWorkspace.WorktreePath)
+	assert.NotEqual(oldCommonDir, newCommonDir)
+	assert.Contains(oldCommonDir, "repo-"+strconv.FormatInt(oldRepoID, 10))
+	assert.Contains(newCommonDir, "repo-"+strconv.FormatInt(newRepoID, 10))
+}
+
 // TestWorkspaceReadyStatusImpliesReadySetupEventE2E pins the write order
 // in Manager.Setup: the final "setup ready" event must be recorded before
 // status flips to "ready". When the order was reversed, pollers that

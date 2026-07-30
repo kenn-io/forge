@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -210,11 +211,19 @@ func setupWrapperServerWithScriptAndDBAndServer(
 
 	dir := t.TempDir()
 	database = dbtest.Open(t)
+	seedPR(t, database, "acme", "widget", 1)
+	repo, err := database.GetRepoByIdentity(
+		t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(t, err)
+	require.NotNil(t, repo)
 
 	bareDir := filepath.Join(dir, "clones")
 	require.NoError(t, os.MkdirAll(bareDir, 0o755))
 	bare := filepath.Join(
-		bareDir, "github.com", "acme", "widget.git",
+		bareDir,
+		fmt.Sprintf("workspace-github-repo-%d", repo.ID),
+		"github.com", "acme", "widget.git",
 	)
 	tmpWork := filepath.Join(dir, "work")
 	runGit(t, dir, "init", "--bare", "--initial-branch=main", bare)
@@ -262,8 +271,6 @@ func setupWrapperServerWithScriptAndDBAndServer(
 		Clones:      clones,
 		WorktreeDir: worktreeDir,
 	})
-	seedPR(t, database, "acme", "widget", 1)
-
 	// Real listener — WebSocket Dial needs a real TCP endpoint.
 	// The generated API client also points at this URL rather than
 	// the in-process roundtripper used elsewhere, because we cannot
@@ -727,7 +734,15 @@ func TestWorkspaceSetupFailureRollbackCleansWorktreeViaAPI(t *testing.T) {
 		t, script,
 	)
 	ctx := t.Context()
-	clonePath, err := srv.clones.ClonePath("github", "github.com", "acme", "widget")
+	repo, err := database.GetRepoByIdentity(
+		ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	require.NotNil(repo)
+	clonePath, err := srv.clones.ClonePathInNamespace(
+		fmt.Sprintf("workspace-github-repo-%d", repo.ID),
+		"github.com", "acme", "widget",
+	)
 	require.NoError(err)
 	featureSHA := testGitSHA(t, clonePath, "refs/heads/feature")
 

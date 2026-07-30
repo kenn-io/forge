@@ -1035,6 +1035,13 @@ func (d *DB) UpsertRepoByProviderID(ctx context.Context, identity RepoIdentity) 
 			if err != nil {
 				return err
 			}
+			if repoIdentityPathChanged(sourceIdentity, identity) {
+				if err := clearRepoIncarnationNotificationStateTx(
+					ctx, tx, sourceID, sourceIdentity,
+				); err != nil {
+					return err
+				}
+			}
 			if targetIdentity.PlatformRepoID != "" &&
 				targetIdentity.PlatformRepoID != identity.PlatformRepoID {
 				targetArchiveEnrolled, err := archiveRepositoryEnrolledTx(
@@ -1113,6 +1120,13 @@ func (d *DB) UpsertRepoByProviderID(ctx context.Context, identity RepoIdentity) 
 			if err != nil {
 				return err
 			}
+			if repoIdentityPathChanged(sourceIdentity, identity) {
+				if err := clearRepoIncarnationNotificationStateTx(
+					ctx, tx, sourceID, sourceIdentity,
+				); err != nil {
+					return err
+				}
+			}
 			if err := updateRepoIdentityTx(ctx, tx, sourceID, identity); err != nil {
 				return err
 			}
@@ -1156,6 +1170,14 @@ func (d *DB) UpsertRepoByProviderID(ctx context.Context, identity RepoIdentity) 
 		return 0, err
 	}
 	return id, nil
+}
+
+func repoIdentityPathChanged(before, after RepoIdentity) bool {
+	before = canonicalRepoIdentity(before)
+	after = canonicalRepoIdentity(after)
+	return before.Platform != after.Platform ||
+		before.PlatformHost != after.PlatformHost ||
+		before.RepoPathKey != after.RepoPathKey
 }
 
 func replaceRepoIncarnationTx(

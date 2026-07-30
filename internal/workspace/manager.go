@@ -520,7 +520,7 @@ func (m *Manager) CreateIssue(
 
 	if !opts.ReuseExistingDirectory {
 		branchDir, ok, localBase, err := m.branchInspectionDir(
-			ctx, repo.Platform, platformHost, owner, name,
+			ctx, repo.ID, repo.Platform, platformHost, owner, name,
 			workspaceCloneRemoteURL(repo, platformHost, owner, name),
 		)
 		if err != nil {
@@ -725,7 +725,7 @@ func (m *Manager) CreateAdHoc(
 
 	workspaceBranch := gitHeadRef
 	branchDir, ok, localBase, err := m.branchInspectionDir(
-		ctx, repo.Platform, platformHost, owner, name,
+		ctx, repo.ID, repo.Platform, platformHost, owner, name,
 		workspaceCloneRemoteURL(repo, platformHost, owner, name),
 	)
 	if err != nil {
@@ -840,16 +840,41 @@ func newWorkspaceID() (string, error) {
 	return hex.EncodeToString(idBytes), nil
 }
 
-func workspaceCloneNamespace(platform string) string {
+func workspaceCloneNamespace(platform string, repoID int64) string {
 	platform = strings.ToLower(strings.TrimSpace(platform))
-	if platform == "" || platform == "github" {
-		return ""
+	if platform == "" {
+		platform = "github"
 	}
-	return platform
+	return fmt.Sprintf("workspace-%s-repo-%d", platform, repoID)
+}
+
+func (m *Manager) workspaceRepositoryID(ws *Workspace) (int64, error) {
+	relative, err := filepath.Rel(
+		filepath.Clean(m.worktreeDir),
+		filepath.Clean(ws.WorktreePath),
+	)
+	if err != nil {
+		return 0, fmt.Errorf("resolve workspace repository incarnation: %w", err)
+	}
+	if relative == ".." ||
+		strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return 0, fmt.Errorf("workspace path is outside managed worktree directory")
+	}
+	repoDir := filepath.Base(filepath.Dir(relative))
+	repoIDText, ok := strings.CutPrefix(repoDir, "repo-")
+	if !ok {
+		return 0, fmt.Errorf("workspace path has no repository incarnation")
+	}
+	repoID, err := strconv.ParseInt(repoIDText, 10, 64)
+	if err != nil || repoID <= 0 {
+		return 0, fmt.Errorf("workspace path has invalid repository incarnation")
+	}
+	return repoID, nil
 }
 
 func (m *Manager) branchInspectionDir(
-	ctx context.Context, platform, platformHost, owner, name, remoteURL string,
+	ctx context.Context, repoID int64,
+	platform, platformHost, owner, name, remoteURL string,
 ) (dir string, ok bool, localBase bool, err error) {
 	if baseDir, ok, err := m.localWorktreeBaseDir(ctx, platform, platformHost, owner, name); err != nil || ok {
 		return baseDir, ok, ok, err
@@ -859,14 +884,14 @@ func (m *Manager) branchInspectionDir(
 	}
 
 	if err := m.clones.EnsureCloneInNamespace(
-		ctx, workspaceCloneNamespace(platform), platform, platformHost,
+		ctx, workspaceCloneNamespace(platform, repoID), platform, platformHost,
 		owner, name, remoteURL,
 	); err != nil {
 		return "", false, false, fmt.Errorf("ensure clone: %w", err)
 	}
 
 	cloneDir, err := m.clones.ClonePathInNamespace(
-		workspaceCloneNamespace(platform), platformHost, owner, name,
+		workspaceCloneNamespace(platform, repoID), platformHost, owner, name,
 	)
 	if err != nil {
 		return "", false, false, err
@@ -1414,8 +1439,12 @@ func (m *Manager) existingWorktreeUsesManagedClone(
 	if m.clones == nil {
 		return false
 	}
+	repoID, err := m.workspaceRepositoryID(ws)
+	if err != nil {
+		return false
+	}
 	cloneDir, err := m.clones.ClonePathInNamespace(
-		workspaceCloneNamespace(ws.Platform),
+		workspaceCloneNamespace(ws.Platform, repoID),
 		ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 	)
 	if err != nil {
@@ -1593,6 +1622,10 @@ func (m *Manager) workspaceSetupGitDir(
 	if m.clones == nil {
 		return "", false, fmt.Errorf("clone manager not set")
 	}
+	repoID, err := m.workspaceRepositoryID(ws)
+	if err != nil {
+		return "", false, err
+	}
 
 	remoteURL, err := m.workspaceSetupRemoteURL(
 		ctx, ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
@@ -1601,14 +1634,15 @@ func (m *Manager) workspaceSetupGitDir(
 		return "", false, err
 	}
 	if err := m.clones.EnsureCloneInNamespace(
-		ctx, workspaceCloneNamespace(ws.Platform), ws.Platform, ws.PlatformHost,
+		ctx, workspaceCloneNamespace(ws.Platform, repoID),
+		ws.Platform, ws.PlatformHost,
 		ws.RepoOwner, ws.RepoName, remoteURL,
 	); err != nil {
 		return "", false, err
 	}
 
 	cloneDir, err := m.clones.ClonePathInNamespace(
-		workspaceCloneNamespace(ws.Platform),
+		workspaceCloneNamespace(ws.Platform, repoID),
 		ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 	)
 	if err != nil {
@@ -2800,8 +2834,12 @@ func (m *Manager) workspaceCleanupGitDir(
 	}
 
 	if m.clones != nil {
+		repoID, err := m.workspaceRepositoryID(ws)
+		if err != nil {
+			return "", false, nil
+		}
 		cloneDir, err := m.clones.ClonePathInNamespace(
-			workspaceCloneNamespace(ws.Platform),
+			workspaceCloneNamespace(ws.Platform, repoID),
 			ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 		)
 		if err != nil {

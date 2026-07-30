@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -129,6 +130,12 @@ func TestWorkspaceRetryLegacyUnknownHeadRepoLeavesBranchUntrackedE2E(t *testing.
 	headSHA := testGitSHA(t, fixture.remote, "refs/heads/feature")
 	runGit(t, fixture.remote, "update-ref", "refs/pull/2/head", headSHA)
 	seedPRWithoutHeadRepo(t, fixture.database, "github.com", "acme", "widget", 2)
+	repo, err := fixture.database.GetRepoByIdentity(
+		ctx,
+		db.GitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	require.NotNil(repo)
 	errMessage := "retry legacy workspace"
 	const workspaceID = "legacy-unknown-head-repo"
 	require.NoError(fixture.database.InsertWorkspace(ctx, &db.Workspace{
@@ -142,10 +149,13 @@ func TestWorkspaceRetryLegacyUnknownHeadRepoLeavesBranchUntrackedE2E(t *testing.
 		GitHeadRef:      "feature",
 		MRHeadRepo:      nil,
 		WorkspaceBranch: "__middleman_unknown__",
-		WorktreePath:    filepath.Join(t.TempDir(), workspaceID),
-		TmuxSession:     "middleman-" + workspaceID,
-		Status:          "error",
-		ErrorMessage:    &errMessage,
+		WorktreePath: filepath.Join(
+			fixture.worktreeDir, "github", "github.com", "acme", "widget",
+			"repo-"+strconv.FormatInt(repo.ID, 10), "pr-2",
+		),
+		TmuxSession:  "middleman-" + workspaceID,
+		Status:       "error",
+		ErrorMessage: &errMessage,
 	}))
 
 	retryResp, err := fixture.client.HTTP.RetryWorkspaceWithResponse(ctx, workspaceID)

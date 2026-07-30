@@ -23738,11 +23738,23 @@ func setupWorkspaceServerFixtureWithMockHostAndOptions(
 	runGit(t, tmpWork, "push", "origin", "feature")
 	featureSHA := gitOutput(t, tmpWork, "rev-parse", "HEAD")
 	runGit(t, remote, "update-ref", "refs/pull/1/head", featureSHA)
+	seedPROnHost(
+		t, database, platformHost, "acme", "widget", 1,
+		withSeedPRHeadRepoCloneURL("https://github.com/acme/widget.git"),
+	)
+	repo, err := database.GetRepoByIdentity(
+		t.Context(),
+		db.GitHubRepoIdentity(platformHost, "acme", "widget"),
+	)
+	require.NoError(t, err)
+	require.NotNil(t, repo)
 
 	bareDir := filepath.Join(dir, "clones")
 	require.NoError(t, os.MkdirAll(bareDir, 0o755))
 	bare := filepath.Join(
-		bareDir, platformHost, "acme", "widget.git",
+		bareDir,
+		fmt.Sprintf("workspace-github-repo-%d", repo.ID),
+		platformHost, "acme", "widget.git",
 	)
 	runGit(t, dir, "clone", "--bare", remote, bare)
 	runGit(t, bare, "remote", "set-url", "origin", gitLocalRemoteURL(remote))
@@ -23779,11 +23791,6 @@ func setupWorkspaceServerFixtureWithMockHostAndOptions(
 	// registered earlier, so it remains open for artifact cleanup.
 	t.Cleanup(func() { cleanupWorkspaceServerFixtureArtifacts(t, srv, database) })
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
-
-	seedPROnHost(
-		t, database, platformHost, "acme", "widget", 1,
-		withSeedPRHeadRepoCloneURL("https://github.com/acme/widget.git"),
-	)
 
 	clientBaseURL := "http://middleman.test"
 	if basePath != "/" {

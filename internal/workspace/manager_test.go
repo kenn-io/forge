@@ -1419,7 +1419,9 @@ func TestCreateIssueRecoveryRejectsManagedCloneWithWrongOrigin(t *testing.T) {
 	seedIssue(t, d, repoID, 7, "")
 
 	clones := gitclone.New(t.TempDir(), nil)
-	cloneDir, err := clones.ClonePath("github", host, owner, name)
+	cloneDir, err := clones.ClonePathInNamespace(
+		workspaceCloneNamespace("github", repoID), host, owner, name,
+	)
 	require.NoError(err)
 	seedWorkspaceBareCloneAt(t, cloneDir)
 	runWorkspaceTestGit(
@@ -1468,7 +1470,9 @@ func TestSetupRecoveryRejectsManagedCloneWhoseOriginChanged(t *testing.T) {
 	seedIssue(t, d, repoID, 7, "")
 
 	clones := gitclone.New(t.TempDir(), nil)
-	cloneDir, err := clones.ClonePath("github", host, owner, name)
+	cloneDir, err := clones.ClonePathInNamespace(
+		workspaceCloneNamespace("github", repoID), host, owner, name,
+	)
 	require.NoError(err)
 	seedWorkspaceBareCloneAt(t, cloneDir)
 	runWorkspaceTestGit(
@@ -2569,7 +2573,8 @@ func TestCreateIssueUsesProviderCloneURLForNamespacedManagedClone(t *testing.T) 
 	require.NotNil(ws)
 	assert.Equal("gitlab", ws.Platform)
 	cloneDir, err := clones.ClonePathInNamespace(
-		"gitlab", "gitlab.example.com", "group", "project",
+		workspaceCloneNamespace("gitlab", repoID),
+		"gitlab.example.com", "group", "project",
 	)
 	require.NoError(err)
 	assert.DirExists(cloneDir)
@@ -2646,7 +2651,9 @@ func TestSetupUsesManagedCloneForForkPRWithConfiguredWorktreeBasePath(t *testing
 		t, branch, prNumber,
 	)
 	clones := gitclone.New(cloneBaseDir, nil)
-	cloneDir, err := clones.ClonePath("github", host, owner, name)
+	cloneDir, err := clones.ClonePathInNamespace(
+		workspaceCloneNamespace("github", repoID), host, owner, name,
+	)
 	require.NoError(err)
 	require.NoError(os.MkdirAll(filepath.Dir(cloneDir), 0o755))
 	runWorkspaceTestGit(t, cloneBaseDir, "clone", "--bare", remote, cloneDir)
@@ -3063,9 +3070,13 @@ func TestCleanupFallsBackToManagedCloneWhenConfiguredBaseInvalid(t *testing.T) {
 	require := require.New(t)
 
 	const branch = "middleman/pr-99"
+	const repoID int64 = 42
 	cloneBaseDir := t.TempDir()
 	clones := gitclone.New(cloneBaseDir, nil)
-	cloneDir, err := clones.ClonePath("github", "github.com", "acme", "widget")
+	cloneDir, err := clones.ClonePathInNamespace(
+		workspaceCloneNamespace("github", repoID),
+		"github.com", "acme", "widget",
+	)
 	require.NoError(err)
 	require.NoError(os.MkdirAll(filepath.Dir(cloneDir), 0o755))
 	runWorkspaceTestGit(
@@ -3073,13 +3084,18 @@ func TestCleanupFallsBackToManagedCloneWhenConfiguredBaseInvalid(t *testing.T) {
 		setupLocalWorktreeBaseForWorkspaceGitTest(t, "feature/thing"),
 		cloneDir,
 	)
-	worktreePath := filepath.Join(t.TempDir(), "workspace")
+	worktreeRoot := t.TempDir()
+	worktreePath := filepath.Join(
+		worktreeRoot, "github", "github.com", "acme", "widget",
+		"repo-42", "pr-99",
+	)
+	require.NoError(os.MkdirAll(filepath.Dir(worktreePath), 0o755))
 	runWorkspaceTestGit(
 		t, cloneDir, "worktree", "add", worktreePath, "-b", branch, "HEAD",
 	)
 	require.NoError(os.RemoveAll(worktreePath))
 
-	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr := NewManager(openTestDB(t), worktreeRoot)
 	mgr.SetClones(clones)
 	mgr.SetWorktreeBasePathResolver(staticBaseResolver(filepath.Join(t.TempDir(), "missing")))
 	ws := &Workspace{
@@ -3108,10 +3124,11 @@ func TestCleanupUsesProviderScopedManagedClone(t *testing.T) {
 
 	const branch = "middleman/pr-99"
 	const host = "forge.example.com"
+	const repoID int64 = 42
 	cloneBaseDir := t.TempDir()
 	clones := gitclone.New(cloneBaseDir, nil)
 	cloneDir, err := clones.ClonePathInNamespace(
-		workspaceCloneNamespace("gitlab"), host, "acme", "widget",
+		workspaceCloneNamespace("gitlab", repoID), host, "acme", "widget",
 	)
 	require.NoError(err)
 	require.NoError(os.MkdirAll(filepath.Dir(cloneDir), 0o755))
@@ -3120,13 +3137,18 @@ func TestCleanupUsesProviderScopedManagedClone(t *testing.T) {
 		setupLocalWorktreeBaseForWorkspaceGitTest(t, "feature/thing"),
 		cloneDir,
 	)
-	worktreePath := filepath.Join(t.TempDir(), "workspace")
+	worktreeRoot := t.TempDir()
+	worktreePath := filepath.Join(
+		worktreeRoot, "gitlab", host, "acme", "widget",
+		"repo-42", "pr-99",
+	)
+	require.NoError(os.MkdirAll(filepath.Dir(worktreePath), 0o755))
 	runWorkspaceTestGit(
 		t, cloneDir, "worktree", "add", worktreePath, "-b", branch, "HEAD",
 	)
 	require.NoError(os.RemoveAll(worktreePath))
 
-	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr := NewManager(openTestDB(t), worktreeRoot)
 	mgr.SetClones(clones)
 	ws := &Workspace{
 		ID:              "ws-cleanup-provider-scoped-managed",
@@ -5852,15 +5874,22 @@ func TestIssueRetryCleansLeakedUnknownBranchAndUsesIssueBranch(t *testing.T) {
 
 	host, owner, name := "github.com", "acme", "widget"
 	baseDir := t.TempDir()
-	mgr := NewManager(openTestDB(t), t.TempDir())
+	worktreeRoot := t.TempDir()
+	const repoID int64 = 42
+	mgr := NewManager(openTestDB(t), worktreeRoot)
 	mgr.SetClones(gitclone.New(baseDir, nil))
 
-	cloneDir, err := mgr.clones.ClonePath("github", host, owner, name)
+	cloneDir, err := mgr.clones.ClonePathInNamespace(
+		workspaceCloneNamespace("github", repoID), host, owner, name,
+	)
 	require.NoError(err)
 	seedWorkspaceBareCloneAt(t, cloneDir)
 	configureOriginHeadForIssueWorkspace(t, cloneDir)
 
-	staleWorktree := filepath.Join(t.TempDir(), "stale-unknown-worktree")
+	staleWorktree := filepath.Join(
+		worktreeRoot, "github", host, owner, name, "repo-42", "issue-23",
+	)
+	require.NoError(os.MkdirAll(filepath.Dir(staleWorktree), 0o755))
 	runWorkspaceTestGit(
 		t, cloneDir,
 		"worktree", "add", staleWorktree,
@@ -6788,7 +6817,12 @@ func TestManagerCleanupForDeleteAcquiresRepoLock(t *testing.T) {
 
 	host, owner, name := "github.com", "acme", "widget"
 	baseDir := t.TempDir()
-	cloneDir := filepath.Join(baseDir, host, owner, name+".git")
+	const repoID int64 = 42
+	clones := gitclone.New(baseDir, nil)
+	cloneDir, err := clones.ClonePathInNamespace(
+		workspaceCloneNamespace("github", repoID), host, owner, name,
+	)
+	require.NoError(err)
 	require.NoError(os.MkdirAll(filepath.Dir(cloneDir), 0o755))
 	work := filepath.Join(t.TempDir(), "source")
 	runWorkspaceTestGit(t, baseDir, "init", "--initial-branch=main", work)
@@ -6803,9 +6837,13 @@ func TestManagerCleanupForDeleteAcquiresRepoLock(t *testing.T) {
 		t, baseDir, "clone", "--bare", work, cloneDir,
 	)
 
-	mgr := NewManager(openTestDB(t), t.TempDir())
-	mgr.SetClones(gitclone.New(baseDir, nil))
-	worktreePath := filepath.Join(t.TempDir(), "missing-wt")
+	worktreeRoot := t.TempDir()
+	mgr := NewManager(openTestDB(t), worktreeRoot)
+	mgr.SetClones(clones)
+	worktreePath := filepath.Join(
+		worktreeRoot, "github", host, owner, name, "repo-42", "pr-1",
+	)
+	require.NoError(os.MkdirAll(filepath.Dir(worktreePath), 0o755))
 	runWorkspaceTestGit(
 		t, cloneDir, "worktree", "add", worktreePath, "HEAD",
 	)

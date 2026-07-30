@@ -130,6 +130,9 @@ Rules:
 - Top-level manual sync also triggers notification sync.
 - `/notifications/sync` triggers only notification sync and returns `202` once accepted.
 - Sync watermark identity is per repository: `(platform, platform_host, repo_owner, repo_name)`, with owner/name lowercased to match `notificationRepoKey`. One repository's failing or unroutable credential route must not hold back watermark advancement for healthy repositories on the same host.
+- A stable repository move clears notifications, its watermark, and detail
+  ETags at the vacated path so a later incarnation cannot inherit them
+  (`internal/db/queries.go::UpsertRepoByProviderID`).
 - A repository with no watermark yet full-syncs (GitHub `All: true`) without resetting siblings; later syncs use its persisted watermark/overlap to avoid full backlog scans.
 - GitHub notification pagination must run until the provider reports no next page; do not use a fixed page cap for either the primary repo notification list or the participating-only annotation scan. A fixed cap can pin the watermark forever on large backlogs. The guardrail is the shared sync budget/rate reserve (`internal/github/notifications_sync.go::ensureNotificationPageBudget`), which should stop sync explicitly when upstream budget is exhausted (`internal/github/sync_test.go::TestSyncNotificationsReadsAllRepositoryNotificationPages`, `internal/github/sync_test.go::TestSyncNotificationsReadsAllParticipatingNotificationPages`).
 - Notification sync and read propagation should stop with server lifecycle before shared services are torn down.

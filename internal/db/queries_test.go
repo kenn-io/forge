@@ -1063,6 +1063,69 @@ func TestUpsertRepoByProviderIDUpdatesRenamedRepo(t *testing.T) {
 	assert.Equal("new-group/subgroup/new-name", repos[0].RepoPathKey)
 }
 
+func TestUpsertRepoByProviderIDClearsVacatedPathStateOnRename(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := baseTime()
+
+	_, err := d.UpsertRepoByProviderID(ctx, RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "R_source",
+		Owner:          "acme",
+		Name:           "widget",
+	})
+	require.NoError(err)
+	_, err = d.UpsertRepoByProviderID(ctx, RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "R_destination",
+		Owner:          "acme",
+		Name:           "renamed-widget",
+	})
+	require.NoError(err)
+	require.NoError(d.UpsertNotifications(ctx, []Notification{
+		notificationFixture("vacated-path-notification", "mention", now),
+	}))
+	require.NoError(d.UpdateNotificationSyncWatermark(
+		ctx, "github", "github.com", "acme", "widget", now, nil,
+	))
+	require.NoError(d.UpsertHTTPEtag(
+		ctx, "github", "github.com", "acme", "widget",
+		"pull_request", 7, `"vacated-path-etag"`,
+	))
+
+	_, err = d.UpsertRepoByProviderID(ctx, RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "R_source",
+		Owner:          "acme",
+		Name:           "renamed-widget",
+	})
+	require.NoError(err)
+
+	notifications, err := d.ListNotifications(
+		ctx,
+		ListNotificationsOpts{
+			State: "all",
+		},
+	)
+	require.NoError(err)
+	assert.Empty(notifications)
+	watermark, err := d.GetNotificationSyncWatermark(
+		ctx, "github", "github.com", "acme", "widget",
+	)
+	require.NoError(err)
+	assert.Nil(watermark)
+	etag, err := d.GetHTTPEtag(
+		ctx, "github", "github.com", "acme", "widget", "pull_request", 7,
+	)
+	require.NoError(err)
+	assert.Empty(etag)
+}
+
 func TestUpsertRepoByProviderIDResetsRecreatedRepositoryAtSamePath(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

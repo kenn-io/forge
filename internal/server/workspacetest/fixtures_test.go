@@ -30,6 +30,7 @@ type workspaceServerFixture struct {
 	client           *apiclient.Client
 	database         *db.DB
 	bare             string
+	cloneBase        string
 	remote           string
 	agentActivityDir string
 	worktreeDir      string
@@ -78,15 +79,12 @@ func setupWorkspaceServerFixture(
 
 	bareDir := filepath.Join(dir, "clones")
 	require.NoError(t, os.MkdirAll(bareDir, 0o755))
-	bare := filepath.Join(bareDir, "github.com", "acme", "widget.git")
-	runGit(t, dir, "clone", "--bare", remote, bare)
-	runGit(
-		t, bare, "remote", "set-url", "origin",
-		"https://github.com/acme/widget.git",
+	repoID, err := database.UpsertRepo(
+		t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"),
 	)
-	runGit(
-		t, bare, "config", "--add",
-		"url."+remote+".insteadOf", "https://github.com/acme/widget.git",
+	require.NoError(t, err)
+	bare := prepareWorkspaceManagedClone(
+		t, bareDir, remote, repoID,
 	)
 
 	clones := gitclone.New(bareDir, nil)
@@ -131,10 +129,32 @@ func setupWorkspaceServerFixture(
 		client:           client,
 		database:         database,
 		bare:             bare,
+		cloneBase:        bareDir,
 		remote:           remote,
 		agentActivityDir: filepath.Join(dir, "agent-activity"),
 		worktreeDir:      worktreeDir,
 	}
+}
+
+func prepareWorkspaceManagedClone(
+	t *testing.T, cloneBase, remote string, repoID int64,
+) string {
+	t.Helper()
+	namespace := fmt.Sprintf("workspace-github-repo-%d", repoID)
+	bare := filepath.Join(
+		cloneBase, namespace, "github.com", "acme", "widget.git",
+	)
+	require.NoError(t, os.MkdirAll(filepath.Dir(bare), 0o755))
+	runGit(t, cloneBase, "clone", "--bare", remote, bare)
+	runGit(
+		t, bare, "remote", "set-url", "origin",
+		"https://github.com/acme/widget.git",
+	)
+	runGit(
+		t, bare, "config", "--add",
+		"url."+remote+".insteadOf", "https://github.com/acme/widget.git",
+	)
+	return bare
 }
 
 func setupTestClientWithBaseURL(

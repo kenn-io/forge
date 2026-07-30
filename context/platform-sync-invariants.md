@@ -11,8 +11,8 @@ Repository identity is `(platform, platform_host, owner, name)`, with
 `repo_path` as the provider-canonical full path and provider IDs used for
 reconciliation when available.
 
-- `platform` is the provider kind, such as `github`, `gitlab`, `forgejo`, or
-  `gitea`.
+- `platform` is the provider kind named in the canonical provider list in
+  `CLAUDE.md`.
 - `platform_host` is the normalized host for that provider. Preserve ports.
 - `owner` and `name` are provider-canonical display/config fields.
 - `repo_path` carries the full provider path when `owner/name` is not enough.
@@ -51,10 +51,6 @@ effective chains, checked against each repository's own descriptor —
 (`internal/config/config.go::Config.ValidateRepoTokenSourceConsistency`).
 GitHub may additionally define exact-repository and owner authorization routes.
 
-- Legacy GitHub config still defaults to `github` on `github.com`.
-- GitLab public config defaults to `gitlab.com`.
-- Forgejo public config defaults to `codeberg.org`.
-- Gitea public config defaults to `gitea.com`.
 - Self-hosted hosts are hostnames with optional ports, not URL paths.
 - A missing token should fail only the provider host that needs it.
 
@@ -79,6 +75,12 @@ by full route, while GitHub App installation-token caches are shared by
 canonical App credential across routes; reload probes must reuse that shared
 cache (`internal/tokenauth/source.go::githubAppTokenStore`,
 `internal/tokenauth/source.go::SourceSet.ProbeToken`).
+
+GitHub CLI fallback is always requested with `gh auth token --hostname HOST`.
+Only the default `github.com` host may retry bare `gh auth token` for an older
+CLI that does not support `--hostname`; retrying bare for another host could
+silently authenticate to the wrong account
+(`internal/config/config.go::ghAuthTokenForHost`).
 
 Managed Git authorization is selected by full `(platform, platform_host, owner,
 name)` identity. GitHub smart HTTP uses mutation/user candidates and never an
@@ -227,7 +229,28 @@ check `read_labels` and `label_mutation`, reject missing/null/empty/duplicate or
 non-catalog names, call the provider mutator first, then persist the returned
 provider labels to SQLite so the next sync does not revert the edit.
 
+## Provider Event Mutations
+
+Comment deletion is provider-authoritative: validate the parent identity, call
+the provider first, and retain the SQLite event until authoritative detail sync
+removes it. Provider rejection must leave local state intact
+(`internal/server/pullapi/routes.go::Handler.deleteComment`,
+`internal/server/issueapi/mutation_handlers.go::Handler.deleteIssueComment`).
+
+Direct event URLs are provider data. Preserve a stored URL when a partial
+response omits it. GitLab Notes are the explicit exception: derive
+`parent URL + #note_<id>` because Notes do not expose a browser URL
+(`internal/db/queries.go::DB.UpsertMREvents`,
+`internal/db/queries.go::DB.UpsertIssueEvents`,
+`internal/platform/gitlab/normalize.go::noteDirectURL`).
+
 ## GitLab Shape
+
+GitLab note IDs identify comments; discussion IDs identify reply and resolution
+targets. Reads supporting threaded mutations must preserve Discussions
+grouping rather than flattening it into Notes
+(`internal/platform/gitlab/pages.go::Client.listMergeRequestDiscussionsPage`,
+`internal/platform/gitlab/normalize.go::NormalizeMergeRequestDiscussions`).
 
 GitLab API calls address projects by numeric id or URL-escaped path with
 slashes. Middleman should prefer the stored provider id after resolution and

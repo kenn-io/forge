@@ -34,6 +34,9 @@ prose.
 
 Wire codes are camelCase. Keep internal platform error constants in their native
 snake_case form and translate them at the `internal/server` boundary.
+`internal/server/httpapi/problems.go::ProblemCode` is the complete wire-code
+source of truth; the table below records selected domain and recovery contracts,
+not an exhaustive enum.
 
 | Wire code | Status | Use |
 | --- | ---: | --- |

@@ -8,6 +8,9 @@ Mobile is not the desktop app squeezed into a smaller viewport. It is a separate
 
 `middleman` can stay dense and information-rich, but phone density must come from hierarchy and summarization, not from tiny desktop controls, compressed split panes, or table layouts.
 
+Kata and Docs remain desktop-first modes. Do not add `/m` routes or phone-only
+sizing until each mode has a deliberately designed phone workflow.
+
 ## Product model
 
 Think about mobile work in this order:

@@ -57,15 +57,18 @@ middleman's durable agent context lives in two places:
   handling, db migrations, retries, testing discipline, UI design system, mobile UX,
   etc.). Deep enough to hold real rationale; narrow enough to load only when relevant.
 
-Specs and plans live under `docs/superpowers/specs/` and `docs/superpowers/plans/`;
-durable, dated decisions live under `docs/adr/`.
+Temporary design work may live outside the durable context surface. Once a
+feature lands, promote only its lasting user guidance and non-greppable
+constraints into `docs/`, `context/`, or `docs/adr/`; do not retain
+implementation plans as repository documentation.
 
 ### The Sorting Test
 
 When a new fact arrives, ask: does it describe the *whole project's* shape or workflow
 (→ root `CLAUDE.md`), one *concern in depth* (→ the matching `context/*.md`), a *dated
 decision* you chose between alternatives (→ `docs/adr/`), or a *feature still being
-designed* (→ `docs/superpowers/specs/`)? Put it in exactly one home and route to it.
+designed* (→ a temporary design document)? Put it in exactly one home and route
+to it.
 
 ## Anchored Claims
 
@@ -138,14 +141,16 @@ Silencing a failing guard without recording the decision is forbidden.
 | New-provider checklist, package layout | `context/provider-architecture.md` | Onboarding a provider |
 | GitHub-only sync behavior (GraphQL, ETag) | `context/github-sync-invariants.md` | Isolated optimization |
 | Schema evolution rules | `context/db-migrations.md` | Migrations are the source of truth |
+| Daemon startup, Host validation, SSE replay | `context/server-runtime.md` | Root server lifecycle and request boundary |
 | API error envelopes + frontend branching | `context/error-handling.md` | Stable contract |
 | Retry/backoff/single-flight | `context/retries-and-backoffs.md` | Upstream flakiness |
 | HTTP test discipline (apitest vs e2etest) | `context/testing.md` | Wire-level testing |
 | UI/TS/Svelte conventions, interaction contracts | `context/ui-design-system.md`, `context/ui-interaction-contracts.md` | Frontend consistency |
 | Phone-first mobile workflow | `context/mobile-ux.md` | `/m` is its own UX |
-| Kata / Docs mode integration | `docs/superpowers/specs/2026-06-08-kata-docs-msgvault-modes-design.md` | Until dedicated docs exist |
+| Kata daemon integration | `context/kata-mode.md`, `context/workspace-apis.md` | External authority and workspace contracts |
+| Docs mode integration | `context/docs-mode.md` | Local filesystem and git-publish boundary |
 | A decision chosen over an alternative | `docs/adr/NNNN-title.md` | Dated, durable rationale |
-| A feature still being designed | `docs/superpowers/specs/YYYY-MM-DD-topic-design.md` | Loaded only when needed |
+| A feature still being designed | temporary design document | Promote durable results after landing |
 
 Every new topic doc MUST get a routing reference from root `CLAUDE.md` (or from another
 reachable doc). Unreachable context is invisible to agents.
@@ -159,7 +164,6 @@ deleting substance. They are not a mandate to shrink today's docs.
 |------|----------------|-----------|
 | Each `context/*.md` topic doc | ~250 | One concern, deep but scannable |
 | `docs/adr/*` entry | ~80 | One decision |
-| `docs/superpowers/specs/*` | as needed | Design surface, archived after landing |
 
 The root `CLAUDE.md` is the hub and is allowed to be long, but it should stay a router
 and a conventions list — push any concern that grows rationale into a `context/` doc and

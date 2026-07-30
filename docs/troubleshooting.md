@@ -45,11 +45,13 @@ Check these in order:
    commits, tags, releases, and CI/status data.
 5. The provider rate limit is not exhausted.
 
-For GitHub, `gh auth token` can supply the token when `MIDDLEMAN_GITHUB_TOKEN`
-is not set. With `[[github_owner_tokens]]`, confirm the entered owner matches the
-mapping exactly after case folding and restart after changing the PAT to one
-issued by a different GitHub user. A missing owner route reports the GitHub host
-and owner without exposing token material.
+For GitHub, `gh auth token --hostname HOST` can supply the token when the
+configured token source is absent. The unscoped `gh auth token` fallback applies
+only to `github.com`; run `gh auth login --hostname HOST` for another host.
+With `[[github_owner_tokens]]`, confirm the entered owner matches the mapping
+exactly after case folding and restart after changing the PAT to one issued by
+a different GitHub user. A missing owner route reports the GitHub host and owner
+without exposing token material.
 
 ## Mutating actions are disabled
 
@@ -77,6 +79,23 @@ identity-scoped budgets.
 If App-backed reads work but mutations or notifications are disabled, restart
 middleman after adding the user PAT. App-only routes intentionally remain
 read-only until startup establishes a stable write identity.
+
+## A repository feature stays unavailable
+
+When a provider definitively reports that issues or pull requests are disabled,
+middleman cools that repository feature down for 24 hours instead of retrying a
+permanent failure every sync. Other repository data continues syncing. Use an
+explicit repository sync after re-enabling the feature to bypass the cooldown
+and clear it on success.
+
+## An issue workspace directory already exists
+
+If an issue workspace row was lost but its expected middleman worktree is still
+on disk, choose **Use Existing Directory** in the branch-conflict dialog. This
+only re-registers the deterministic middleman-managed directory after verifying
+its repository and branch. It does not reset the branch, clean files, or remove
+untracked work. Use **Use Existing Branch** only when the branch is not already
+checked out in that directory.
 
 ## Docs mode has no folders
 

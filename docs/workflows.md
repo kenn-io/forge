@@ -28,12 +28,19 @@ order matters.
 
 ## Move around the UI
 
-Use the sidebar to switch between modes. Use the command palette when you know
-the action or destination but do not want to hunt through the page. Press `?` to
-see the shortcuts available in the current view.
+Use the sidebar to switch between modes. Open the command palette with
+`Cmd/Ctrl+K` or `Cmd/Ctrl+P` when you know the action or destination but do not
+want to hunt through the page. Use `Cmd/Ctrl+Shift+K` while a terminal has
+focus. Prefix a search with `>` for commands, `pr:` for pull requests, or
+`issue:` for issues. Press `?` to see the shortcuts available in the current
+view.
 
 The UI supports repeated keyboard triage. List movement, detail panes, drawer
 closing, mode switching, and search stay inside the console flow.
+
+The repository selector filters every provider-qualified repository in the
+current mode. Use **Sync current repository** when you need fresh data for the
+selected item without scheduling a global refresh.
 
 ## Review and merge
 
@@ -43,6 +50,9 @@ From the detail view you can:
 
 - Read the description and discussion.
 - Inspect changed files and inline diffs.
+- Use the shared **View** menu to filter the timeline or switch compact rows,
+  and copy provider links for individual comments.
+- Edit or delete your own comments where the provider supports it.
 - Check CI and branch status.
 - Comment.
 - Approve where supported.
@@ -52,6 +62,17 @@ From the detail view you can:
 
 Provider-specific differences are shown as disabled or unavailable actions
 rather than hidden GitHub-only behavior.
+
+When middleman detects a stacked PR series, the detail view shows its members
+and ordering. GitHub native stack data can improve detection when enabled, but
+the same UI and branch-based fallback remain authoritative. Merging a middle
+member is blocked by default until earlier members land.
+
+Conversation, files, and an open workspace share a rearrangeable pane layout.
+Drag tabs to reorder or split them, resize the resulting panes, hide or maximize
+panes, and reopen them from the tab strip or command palette. Long PR and issue
+descriptions start expanded and can be collapsed when they crowd the working
+area.
 
 ## Track local PR state
 
@@ -68,9 +89,10 @@ can move from triage to implementation without hunting for the repository.
 
 ## Inspect repository source
 
-Use **Repos** to browse configured repositories, branches, and files. This is
-useful when a review or issue references code and you need quick context without
-opening the forge.
+Use **Repos** to browse configured repositories, inspect summary metadata,
+switch branches, search paths, open source files, and follow references back to
+provider items. This is useful when a review or issue references code and you
+need quick context without opening the forge.
 
 ## Work in local sessions
 
@@ -79,6 +101,11 @@ repositories. tmux-backed sessions let middleman keep a durable attach point for
 ongoing work. The primary **Create Workspace** action creates only; choose an
 agent from its dropdown to create and launch immediately without another modal.
 The choice is per-creation, session-scoped intent, not a persistent default.
+
+Once a workspace is ready, launch another session from its header. A session can
+stay in the workspace controls or be promoted into the detail pane layout and
+moved beside the conversation or files without opening a second terminal
+connection.
 
 New work does not need an existing pull request, issue, or Kata task. Use **New
 workspace** in the Workspaces sidebar, or the same command in the palette
@@ -106,12 +133,20 @@ daemons from Kata's own config and runtime records. You can browse tasks, open
 details, update task state, and cross-link task references from Docs when the
 source contains them.
 
-Kata task data stays in Kata; middleman is the console.
+Use project scope, the **Open**, **Ready**, **Closed**, and **All** status
+filters, text search, optional columns, and link filters to narrow the task
+tree. Parent and child tasks stay together while you expand the hierarchy. Open
+the reachable-task graph when dependencies matter, or create a workspace when a
+task resolves to exactly one registered repository. Configure project-to-repo
+mappings when Kata cannot infer that repository unambiguously. Kata task data
+stays in Kata; middleman is the console.
 
 ## Browse and edit docs
 
 Enable Docs mode and register markdown folders. Use it to browse, search, read,
-edit, and publish local docs from the same console you use for code review.
+edit, pull, and publish local docs from the same console you use for code review.
+Folder trees show markdown changes, and task references can open the matching
+Kata task using the folder's configured daemon binding.
 
 Docs files stay on disk. middleman only operates inside the configured folders.
 

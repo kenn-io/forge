@@ -61,16 +61,9 @@ abstraction unless a separate design explicitly changes rate-limit policy.
 
 ## Scheduling cadence (out of scope)
 
-These paths are also **not** transient retry. They define steady background
-cadence.
-
-- [`internal/server/server.go`](../internal/server/server.go) — ticker loops at
-  lines 217 and 794 for periodic server-side refresh work.
-- [`internal/github/sync.go`](../internal/github/sync.go) — ticker loops at
-  lines 1370 and 1387 for periodic sync cadence.
-
-Do not migrate cadence loops into `backoff/v5`; they are scheduling policy, not
-failure recovery.
+Steady background cadence is scheduling policy, not transient retry. Do not
+migrate ticker-driven sync or refresh loops into `backoff/v5`
+(`internal/github/sync.go::Syncer.Start`).
 
 Repository-disabled issue and merge-request scopes use a 24-hour in-memory
 background probe gate. Expiry admits one reserved background probe across all

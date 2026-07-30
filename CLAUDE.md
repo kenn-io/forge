@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-middleman is a local-first maintainer console. Its original core is a dashboard for tracking pull and merge requests across a maintainer's fixed set of repositories on multiple platforms: it syncs PR/MR data into SQLite on a timer, serves a Svelte 5 SPA via an embedded Go HTTP server, and provides a focused workflow for triage, review, and merge from one place rather than each provider's notification UI. The product surface is expanding to include first-class modes for external Kata task daemons and markdown docs without moving those domains into the provider registry.
+middleman is a local-first maintainer console. Its original core is a dashboard for tracking pull and merge requests across a maintainer's fixed set of repositories on multiple platforms: it syncs PR/MR data into SQLite on a timer, serves a Svelte 5 SPA via an embedded Go HTTP server, and provides a focused workflow for triage, review, and merge from one place rather than each provider's notification UI. The product also includes first-class modes for external Kata task daemons and markdown docs without moving those domains into the provider registry.
 
 ## Architecture
 
@@ -57,7 +57,7 @@ Kata and Docs are first-class middleman modes, but they are not platform provide
 - `internal/githubapp/` - GitHub App manifest flow, app JWT signing, installation token minting
 - `internal/db/` - SQLite schema, connection, queries, types
 - `internal/kata/` - Kata daemon catalog/runtime discovery, health, and proxy integration
-- `internal/docs/` - Markdown folder filesystem, search, and git-publish support (planned on this branch)
+- `internal/docs/` - Markdown folder filesystem, search, and git-publish support
 - `internal/platform/` - Provider-neutral types, capability interfaces, registry, persistence helpers
 - `internal/platform/<provider>/` - Per-provider API transport and normalization
 - `internal/github/` - GitHub-only sync orchestration (GraphQL bulk fetch, ETag/rate-limit transports) consumed by the platform registry
@@ -76,7 +76,7 @@ Kata and Docs are first-class middleman modes, but they are not platform provide
 | `internal/db/queries.go`                     | All CRUD operations                                                                               |
 | `internal/db/types.go`                       | DB model types                                                                                    |
 | `internal/kata/`                             | External Kata daemon discovery, selection, health, and passthrough transport                      |
-| `internal/docs/`                             | Planned on this branch: markdown folder registry, safe file operations, search, and git publish   |
+| `internal/docs/`                             | Markdown folder registry, safe file operations, search, and git publish                           |
 | `internal/platform/types.go`                 | Provider-neutral domain types (Repository, MergeRequest, Issue, events, labels, releases, checks) |
 | `internal/platform/registry.go`              | `(platform, platform_host)` provider lookup and capability error types                            |
 | `internal/platform/metadata.go`              | Provider metadata (kind, label, default host, owner casing/nesting behavior)                      |
@@ -174,13 +174,13 @@ Coverage of real behavior is non-negotiable; the lane is chosen by the behavior 
 - Tests should be fast and isolated
 - No emojis in code or output
 - For database schema changes, follow `context/db-migrations.md`; `internal/db/migrations/` is the source of truth for schema evolution.
+- For daemon startup, Host validation, and process-scoped SSE replay, follow `context/server-runtime.md`.
 - For HTTP API error envelopes and frontend error branching, follow `context/error-handling.md`; branch on stable codes/details rather than prose.
-- For server discovery, background startup, and daemon identity, follow `context/daemon-lifecycle.md`.
 - For retries, backoff, and single-flight dedup against flaky upstreams, follow `context/retries-and-backoffs.md`.
 - For frontend UI and TypeScript/Svelte conventions, follow `context/ui-design-system.md`; prefer extending shared UI primitives over adding one-off local badge/chip/button styling, and name reused domain object shapes instead of repeating anonymous inline types.
 - For mobile, phone, narrow-viewport, touch, or `/m` route work, follow `context/mobile-ux.md`; mobile UX is a phone-first workflow, not desktop UI resized under mobile routes.
-- For Kata task authority, daemon integration, and workspace behavior, follow `context/workspace-apis.md`.
-- For Docs mode integration, follow `docs/superpowers/specs/2026-06-08-kata-docs-msgvault-modes-design.md` until dedicated context docs exist; its Messages/msgvault sections are historical (that mode was removed).
+- For Kata daemon discovery and ownership boundaries, follow `context/kata-mode.md`; for task authority and workspace behavior, follow `context/workspace-apis.md`.
+- For Docs mode filesystem, access, config, and git-publish boundaries, follow `context/docs-mode.md`.
 - Datetimes are UTC across storage and API boundaries. Store timestamps in UTC, emit API timestamps as UTC RFC3339, and only convert to local time in the Svelte UI presentation layer.
 
 ## Roborev

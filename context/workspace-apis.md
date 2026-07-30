@@ -28,7 +28,8 @@ embedder protocol for arbitrary host state.
 ## Endpoint Intent
 
 - `POST /workspaces`: create or reuse a PR-backed workspace.
-- `POST /repos/{owner}/{name}/issues/{number}/workspace`: create or reuse an
+- `POST /issues/{provider}/{owner}/{name}/{number}/workspace`, with
+  `/host/{platform_host}/...` for non-default hosts: create or reuse an
   issue-backed workspace; these start from the repo's current `origin/HEAD`,
   not from a PR head branch.
   - Directory recovery accepts no path and applies only when the workspace row
@@ -173,7 +174,7 @@ key by optional daemon ID plus Kata project UID and point to a known repository
 identity, including registered Middleman Projects. Removing a watched repo does
 not delete an override because a registered Project may still own that identity
 (`internal/config/config.go::validateKataProjectRepoMappings`,
-`internal/server/kata_workspace.go::kataManualWorkspaceTarget`). Automatic
+`internal/server/kataapi/workspace.go::Handler.kataManualWorkspaceTarget`). Automatic
 resolution first uses watched exact repos with `worktree_base_path` whose clone
 contains a matching `.kata.toml`. Matching first compares both explicit
 identifiers, `project.uid` and `project.identity`, to the Kata project UID. If
@@ -192,14 +193,14 @@ or globbed config and lacking readable project metadata resolve by name.
 Ambiguous, mismatched, or missing matches
 mean the Create/Open
 workspace button must not render
-(`internal/server/kata_workspace.go::resolveKataWorkspaceRepo`).
+(`internal/server/kataapi/workspace.go::Handler.resolveKataWorkspaceRepo`).
 
 Settings lists each selected-daemon Kata project with the status and source from
 the workspace resolver. Its selector lists repository identities known from
 exact watched repositories, currently matched tracked repositories, or
 non-stale registered Projects. It defaults only to an inferred identity match
 and persists that repository identity
-(`internal/server/kata_workspace.go::getKataProjectMappings`).
+(`internal/server/kataapi/workspace.go::Handler.getKataProjectMappings`).
 
 Persisted workspace `worktree_path` values should be absolute. Workspace setup
 runs `git worktree add` from the managed clone or configured base checkout, so

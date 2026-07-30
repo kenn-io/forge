@@ -41,11 +41,13 @@ Filter the file tree by name, toggle whitespace visibility, and adjust tab width
 
 ### Issue tracking
 
-Same filtering, search, and detail view as PRs. Post comments, close/reopen, and star issues without context-switching to GitHub.
+Same filtering, search, and detail view as PRs. Post comments, close/reopen, and
+star issues without context-switching to the provider.
 
 ### CI checks
 
-Expandable check run section on each PR shows pass/fail/pending status with color-coded indicators and direct links to the failing run on GitHub.
+Expandable check run section on each PR shows success, failure, pending, skipped,
+and neutral results with direct links to provider runs when available.
 
 ### Sync engine
 
@@ -109,7 +111,9 @@ export MIDDLEMAN_GITHUB_TOKEN=ghp_your_token_here
 ./middleman
 ```
 
-If you use the [GitHub CLI](https://cli.github.com/), middleman will use `gh auth token` automatically -- no env var needed.
+If you use the [GitHub CLI](https://cli.github.com/), middleman will use
+`gh auth token --hostname HOST` automatically. The unscoped fallback applies
+only to `github.com`.
 
 For token rotation without restarting middleman, configure `token_file` on a
 repo, provider, or GitHub owner entry and replace that file atomically when the

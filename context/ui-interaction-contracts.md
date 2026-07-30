@@ -614,6 +614,11 @@ Rows that contain buttons, links, or toggles need clear event ownership.
 - Kata route callbacks require both an accepted snapshot and the current navigation
   generation; daemon switches restore the target daemon's persisted authority, never
   source-daemon scope or selection (`frontend/src/lib/features/kata/KataWorkspace.svelte::switchKataDaemon`).
+- Same-daemon Kata snapshot acceptance updates the task list in place:
+  freshness timestamps are not structural identity, and a visible selected row
+  keeps its viewport coordinate across row changes. Only a daemon change may
+  replace the list instance
+  (`frontend/src/lib/components/kata/KataIssueList.svelte:637`).
 - Reserve disabled navigation choices for exclusive transactions such as
   writes, initial ownership setup, or a context switch already in progress;
   background refresh counters are presentation state, not transaction locks

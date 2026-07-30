@@ -6,15 +6,19 @@ product
 
 ## Users
 
-Middleman is for maintainers who manage pull requests, issues, reviews, CI signals, and local workspaces across a small fixed set of repositories. They are usually already fluent in GitHub and want a calmer, faster command surface than GitHub notifications.
+Middleman is for maintainers who manage pull requests, issues, reviews, CI signals, and local workspaces across a small fixed set of repositories. They are usually already fluent in their code forge and want a calmer, faster command surface than provider notifications.
 
 Their context is task-oriented: scanning what changed, finding what needs attention, reviewing or merging work, and returning to focused development without losing state.
 
 ## Product Purpose
 
-Middleman is a local-first GitHub PR and issue monitoring dashboard. It syncs GitHub data into SQLite, serves a fast Svelte interface, and keeps maintainers out of notification clutter while preserving the actions they need: triage, review, comment, merge, track activity, and manage repository settings.
+Middleman is a local-first maintainer console for GitHub, GitLab, Forgejo, and
+Gitea repositories. It syncs provider data into SQLite, serves a fast Svelte
+interface, and keeps maintainers out of notification clutter while preserving
+the actions they need: triage, review, comment, merge, track activity, and
+manage repository settings.
 
-Success looks like an expert user understanding the state of their repos at a glance, moving through items with keyboard navigation, and taking action without bouncing through multiple GitHub pages.
+Success looks like an expert user understanding the state of their repos at a glance, moving through items with keyboard navigation, and taking action without bouncing through multiple provider pages.
 
 ## Brand Personality
 
@@ -22,7 +26,7 @@ Expert, dense, calm, and sharp. The interface should feel deliberate and efficie
 
 ## Anti-references
 
-Avoid GitHub notification clutter, overloaded activity streams, and surfaces where everything competes for attention. Avoid excessive animation, decorative motion, generic SaaS gloss, inflated controls, and ornamental dashboard styling that slows down expert triage.
+Avoid provider notification clutter, overloaded activity streams, and surfaces where everything competes for attention. Avoid excessive animation, decorative motion, generic SaaS gloss, inflated controls, and ornamental dashboard styling that slows down expert triage.
 
 ## Design Principles
 
@@ -31,7 +35,7 @@ Avoid GitHub notification clutter, overloaded activity streams, and surfaces whe
 - Keep expert flow intact: keyboard navigation, predictable shortcuts, and preserved context matter more than onboarding spectacle.
 - Treat overlays as shared infrastructure: dropdowns, popovers, menus, and tooltips must float above split panes, sidebars, resize handles, drawers, and other overflow-constrained containers instead of being clipped by their local layout.
 - Local-first should feel trustworthy: sync, error, and data freshness states must be visible without being noisy.
-- GitHub fluency is assumed, but GitHub clutter is not copied.
+- Code-forge fluency is assumed, but provider clutter is not copied.
 
 ## Accessibility & Inclusion
 

@@ -54,6 +54,20 @@ middleman status -config /path/to/config.toml
 
 Reports whether a middleman daemon is running.
 
+## API relay
+
+```sh
+middleman api GET /pulls
+middleman api POST /sync
+middleman api GET /version
+```
+
+`middleman api` discovers the running daemon from the selected config and
+relays one request. Use `-i` to include the HTTP status line, `--timeout` to
+bound the request, and `--config` when the daemon uses another config file.
+Non-2xx responses return a distinct failure exit code while preserving the
+response body.
+
 ## Historical activity archive
 
 ```sh
@@ -101,6 +115,19 @@ middleman docs remove-folder project
 ```
 
 These commands manage `[[doc_folders]]` in the config file.
+
+## Agent activity hooks
+
+```sh
+middleman agent-hook install
+middleman agent-hook install --agent codex
+middleman agent-hook uninstall
+middleman agent-hook uninstall --agent codex
+```
+
+With no `--agent`, install or remove every supported integration. Installed
+hooks forward lifecycle activity to the running daemon; Codex asks for one
+manual review of the installed commands through `/hooks`.
 
 ## GitHub App credentials
 

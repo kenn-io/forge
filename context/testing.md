@@ -48,6 +48,11 @@ backend/API behavior can affect the SPA contract even when no TypeScript files
 moved. Manual `workflow_dispatch` forces all buckets on so maintainers can
 request a full test pass.
 
+External forks may consume an existing private Playwright image but must never
+receive package-write authority. If the content-addressed image is absent, the
+fork run fails until a trusted same-repository run publishes it
+(`.github/workflows/ci.yml:76`).
+
 ## Dependency versions in guard tests
 
 Guard tests must not assert a literal dependency version (for example

@@ -25,6 +25,20 @@ base_path = "/"
   default; set `MIDDLEMAN_HOME` to relocate both config and data, or use an
   absolute `data_dir` path to move only app state.
 
+For a trusted reverse proxy or a larger SSE replay window, use:
+
+```toml
+allowed_hosts = ["middleman.example.com", "proxy.example.com:8091"]
+trust_reverse_proxy = true
+sse_buffer_size = 256
+```
+
+`allowed_hosts` accepts exact host-and-port values beyond the listener's
+loopback names. With `trust_reverse_proxy`, both the direct request host and
+the forwarded public host must be accepted. `sse_buffer_size` defaults to 256
+events and accepts 16 through 16384. Restart middleman after changing these
+startup settings.
+
 ## Repositories
 
 GitHub repositories can use the default provider settings:
@@ -83,7 +97,10 @@ name = "private-repo"
 token_file = "~/.config/middleman/tokens/private-repo"
 ```
 
-For GitHub, middleman can also fall back to `gh auth token`.
+For GitHub, middleman can also fall back to
+`gh auth token --hostname HOST`. The unscoped `gh auth token` fallback applies
+only to `github.com`; authenticate another host with
+`gh auth login --hostname HOST`.
 
 ### GitHub tokens by owner
 
@@ -133,6 +150,20 @@ middleman-github-app list
 ```
 
 The app credentials are written to `[[github_apps]]` in the same config file.
+
+### Pull request stacks
+
+```toml
+[pull_requests]
+prefer_github_native_stacks = true
+allow_mid_stack_merges = false
+```
+
+The native-stack option opts into GitHub's read-only stack preview data when it
+is complete and usable; middleman keeps branch-based detection as the fallback.
+It does not create, reorder, or mutate GitHub stacks. Mid-stack merging stays
+blocked by default because merging a later branch first can invalidate earlier
+stack members.
 
 ## Activity defaults
 
@@ -199,7 +230,11 @@ This writes `[[doc_folders]]` entries:
 id = "notes"
 name = "Notes"
 path = "/Users/you/notes"
+daemon = "kata-main"
 ```
+
+`daemon` is optional. Set it when task references in that folder must always
+open against one Kata daemon instead of the currently selected daemon.
 
 ## Telemetry
 

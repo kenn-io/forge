@@ -25,6 +25,10 @@
     primaryTerminalFontFamily,
   } from "./terminalFontFamily.js";
   import { createInitialFocusIntent } from "./terminal-focus.js";
+  import {
+    clearSharedTerminalTextureAtlas,
+    registerTerminalTextureAtlasParticipant,
+  } from "./sharedTerminalTextureAtlas.js";
   import { createTmuxMouseDragAutoscroll } from "./tmuxMouseDragAutoscroll.js";
 
   interface TerminalPaneProps {
@@ -65,6 +69,7 @@
   let restartTimer: ReturnType<typeof setTimeout> | null = null;
   let reconnectDelay = 1000;
   let resizeObserver: ResizeObserver | null = null;
+  let unregisterTextureAtlasParticipant: (() => void) | null = null;
   let refreshFrame: number | null = null;
   let resizeFrame: number | null = null;
   // What the PTY was last told. Resends are skipped against this, so a
@@ -372,7 +377,7 @@
   function redrawTerminalTextureAtlas(): void {
     if (!terminal) return;
 
-    terminal.clearTextureAtlas();
+    clearSharedTerminalTextureAtlas(terminal);
     terminal.refresh(0, Math.max(0, terminal.rows - 1));
   }
 
@@ -664,6 +669,8 @@
     }
     containerEl?.removeEventListener("paste", handleTerminalPaste, true);
     if (terminal) {
+      unregisterTextureAtlasParticipant?.();
+      unregisterTextureAtlasParticipant = null;
       ligaturesAddon?.dispose();
       ligaturesAddon = null;
       webglAddon?.dispose();
@@ -757,6 +764,8 @@
         disableStdin: disabled,
       });
       terminal = term;
+      unregisterTextureAtlasParticipant =
+        registerTerminalTextureAtlasParticipant(terminal);
 
       term.open(containerEl);
       term.parser.registerOscHandler(52, handleOsc52Clipboard);
@@ -863,7 +872,7 @@
         if (!fontWaitTimedOut || lateFontRebuilt || disposed || !terminal) return;
 
         lateFontRebuilt = true;
-        terminal.clearTextureAtlas();
+        clearSharedTerminalTextureAtlas(terminal);
         // New metrics mean a new measurement; resizeVisibleTerminal re-fits,
         // repaints, and pushes the size only if the region now works out
         // differently.

@@ -313,6 +313,9 @@ Keyboard handlers must have one clear owner for each key press.
   own, or one tmux session gets two sockets. A container mounts a session into
   the pool only while it actually renders it, since a parked terminal keeps its
   websocket (`frontend/src/lib/stores/session-host.svelte.ts`).
+- xterm WebGL texture atlases are shared across matching live panes; every explicit
+  atlas clear must refresh sibling renderers, or cached glyph coordinates display
+  repurposed characters (`frontend/src/lib/components/terminal/sharedTerminalTextureAtlas.ts::clearSharedTerminalTextureAtlas`).
 - A pooled terminal constructs immediately, even in parking, so every mounted
   session keeps its websocket; it opts out of renderer autofocus. After
   attachment the pool honors queued focus requests — explicit ones always, soft

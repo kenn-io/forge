@@ -16,7 +16,8 @@
 - New environment variables use `KENN_FORGE_*`; no legacy command or environment fallback is permitted.
 - The default home is `~/.kenn/forge/`; only the old default home moves, while explicit config and data directory choices remain authoritative.
 - The GitHub repository rename is deferred; do not change the current Git remote or perform external repository mutations.
-- Shipped migration files and SQLite schema identifiers are immutable persistence history and remain narrowly allowlisted.
+- Shipped migration files are immutable. One new forward migration renames live `middleman_*` schema objects to `forge_*`; old schema names remain only in migration history and reversible migration statements.
+- Landed dated design and implementation-plan artifacts remain historical records and are excluded from mechanical prose rewriting.
 - Mechanical edits must be made by `tools/renameforge`; manual edits are limited to migration semantics and compile/test fixes that the declarative mappings cannot express safely.
 - Use `bun`, never npm. Invoke frontend tooling through the checked-in Vite+ binary.
 - Never amend commits, change branches, bypass hooks, or use `--no-verify`.
@@ -33,11 +34,11 @@
 
 **Interfaces:**
 - Consumes: repository root plus the NUL-delimited tracked path list from `git ls-files -z`.
-- Produces: `func Rewrite(root string, paths []string, checkOnly bool) (Report, error)`, deterministic `pathRules` and `contentRules`, symlink-safe path moves, and a CLI with apply mode plus `--check` audit mode.
+- Produces: `func Rewrite(root string, paths []string, checkOnly bool) (Report, error)`, `func RenderSchemaRename(objects []SchemaObject) (upSQL, downSQL []byte, err error)`, deterministic path/content/schema mappings, symlink-safe path moves, and a CLI with apply, `--write-schema-migration`, and `--check` modes.
 
 - [ ] **Step 1: Write focused failing tests for the codemod engine**
 
-Create table-driven tests covering ordered content rewrites, longest-path-first moves, symlink target rewriting, binary-file skipping, destination-collision errors, rerun determinism, and audit allowlisting. Use a temporary root and explicit path slices so tests exercise owned rewrite logic rather than Git behavior.
+Create table-driven tests covering ordered content rewrites, longest-path-first moves, symlink target rewriting, binary-file skipping, destination-collision errors, rerun determinism, audit allowlisting, and reversible schema-migration rendering. Use a temporary root and explicit path/object slices so tests exercise owned rewrite logic rather than Git or SQLite-driver behavior.
 
 ```go
 func TestRewriteAppliesCanonicalMappings(t *testing.T) {
@@ -89,9 +90,9 @@ var contentRules = []Rule{
 }
 ```
 
-Handle lowercase forms by syntax category rather than a blind identifier-breaking substitution: camel-case identifiers become `forge...`, double-underscore globals become `__kenn_forge...`, package scopes and slugs become `kenn-forge`, and current user-facing lowercase prose becomes `kenn forge` only where the mapping declares it. Skip shipped `internal/db/migrations/**` content and persisted `middleman_*` SQL identifiers. Preserve executable bits and symlink identity.
+Handle lowercase forms by syntax category rather than a blind identifier-breaking substitution: camel-case identifiers become `forge...`, double-underscore globals become `__kenn_forge...`, package scopes and slugs become `kenn-forge`, current SQL identifiers become `forge_*`, and current user-facing lowercase prose becomes `kenn forge` only where the mapping declares it. Skip shipped `internal/db/migrations/**` content and landed dated files under `docs/superpowers/specs/` and `docs/superpowers/plans/` other than this rename's spec/plan. Preserve executable bits and symlink identity.
 
-The CLI obtains tracked files with `git ls-files -z`, applies all path moves before content rewrites, and reports changed, moved, skipped-binary, and allowlisted counts. `--check` performs no writes and exits nonzero for an unapplied canonical rewrite or a legacy occurrence outside the explicit allowlist.
+The CLI obtains tracked files with `git ls-files -z`, applies all path moves before content rewrites, and reports changed, moved, skipped-binary, and allowlisted counts. `--write-schema-migration` snapshots the version-43 `sqlite_schema`, renders ordered table renames plus drop/recreate statements for old-named triggers and indexes, rebuilds the workspace table to replace its legacy default sentinel, and writes the single `000044_rename_schema_to_forge.{up,down}.sql` pair. `--check` performs no writes and exits nonzero for an unapplied canonical rewrite or a legacy occurrence outside the explicit allowlist.
 
 - [ ] **Step 4: Run codemod unit tests and formatting**
 
@@ -117,12 +118,15 @@ git commit -m "build: make the Kenn Forge rename reproducible"
 - Rename: `cmd/middleman-github-app/` to `cmd/kenn-forge-github-app/`
 - Rename: `cmd/middleman-openapi/` to `cmd/kenn-forge-openapi/`
 - Rename: repository-local skill paths containing `middleman` to their `kenn-forge` equivalents
-- Modify mechanically: all tracked maintained source, tests, manifests, scripts, fixtures, docs, CI, Docker, build, generated API, and Rust files selected by the codemod
-- Preserve: `internal/db/migrations/**` structural content and persisted `middleman_*` schema references
+- Modify mechanically: all tracked maintained source, tests, manifests, scripts, fixtures, current docs/context, CI, Docker, build, generated API, Rust files, and current SQL selected by the codemod
+- Preserve: `internal/db/migrations/000001_*` through `000043_*` and landed dated design/plan artifacts
+- Create: `internal/db/migrations/000044_rename_schema_to_forge.up.sql`
+- Create: `internal/db/migrations/000044_rename_schema_to_forge.down.sql`
+- Modify: `internal/db/db_test.go`
 
 **Interfaces:**
 - Consumes: `tools/renameforge` from Task 1.
-- Produces: `kenn-forge`, `kenn-forge-github-app`, and `kenn-forge-openapi` command trees; `go.kenn.io/forge/...` imports; `@kenn-forge/ui` workspace imports; `KENN_FORGE_*` runtime configuration; renamed build/package/Rust identities.
+- Produces: `kenn-forge`, `kenn-forge-github-app`, and `kenn-forge-openapi` command trees; `go.kenn.io/forge/...` imports; `@kenn-forge/ui` workspace imports; `KENN_FORGE_*` runtime configuration; renamed build/package/Rust identities; `forge_*` live SQLite objects and current queries.
 
 - [ ] **Step 1: Capture the pre-rename inventory**
 
@@ -142,7 +146,29 @@ Run: `go run ./tools/renameforge`
 
 Expected: zero changed and zero moved files.
 
-- [ ] **Step 4: Regenerate dependency and API artifacts through project tooling**
+- [ ] **Step 4: Write a failing upgrade test for schema identity**
+
+Build a representative version-43 database with parent and child rows, apply the new migration through `db.Open`, and query `sqlite_schema`. Assert that all rows survive, `PRAGMA integrity_check` is `ok`, `PRAGMA foreign_key_check` is empty, live tables/triggers/index names and SQL contain no legacy product token, and the workspace unknown-branch sentinel is updated to `__forge_unknown__`.
+
+Run: `go test ./internal/db -run TestSchemaIdentityMigration -shuffle=on`
+
+Expected: FAIL because migration 44 does not exist and current SQL still uses legacy schema names.
+
+- [ ] **Step 5: Generate and apply the single forward schema migration**
+
+Run: `go run ./tools/renameforge --write-schema-migration`
+
+Expected: creates exactly the `000044` up/down pair without modifying migrations 1–43. The up migration renames all live `middleman_*` tables to `forge_*`, renames old-named triggers/indexes by recreate, and rebuilds the workspace table where needed to replace the legacy default sentinel without losing dependent rows. The down migration reverses those exact operations.
+
+Run: `go test ./internal/db -run TestSchemaIdentityMigration -shuffle=on`
+
+Expected: PASS with clean integrity and foreign-key checks.
+
+Run: `go run ./tools/migrationhistorycheck`
+
+Expected: PASS, confirming migrations 1–43 are unchanged and the branch introduces only migration 44.
+
+- [ ] **Step 6: Regenerate dependency and API artifacts through project tooling**
 
 Run: `bun install --frozen-lockfile --ignore-scripts`
 
@@ -154,11 +180,11 @@ Run: `cargo check --manifest-path rust/pty-manager/Cargo.toml`
 
 Expected: package locks, generated OpenAPI clients, and Rust metadata refer only to canonical Kenn Forge identities outside approved legacy boundaries.
 
-- [ ] **Step 5: Use the required Svelte analysis workflow on mechanically changed components**
+- [ ] **Step 7: Use the required Svelte analysis workflow on mechanically changed components**
 
 Load `svelte-code-writer` and `svelte-core-bestpractices`, run their prescribed formatter/analyzer over changed `.svelte` files, and apply only fixes required by the rename. Do not redesign components.
 
-- [ ] **Step 6: Run compile-oriented validation**
+- [ ] **Step 8: Run compile-oriented validation**
 
 Run: `go test ./... -short -shuffle=on`
 
@@ -168,7 +194,7 @@ Run: `cargo test --manifest-path rust/pty-manager/Cargo.toml`
 
 Expected: PASS. Fix mechanical misses by adding or correcting codemod mappings first, rerunning the tool, and then rerunning these commands; do not hand-edit repeated rename patterns.
 
-- [ ] **Step 7: Context-sync and commit the mechanical rename**
+- [ ] **Step 9: Context-sync and commit the mechanical rename**
 
 Run the repository-local `context-sync --commit` workflow and required commit workflow.
 
@@ -182,13 +208,14 @@ git commit -m "refactor: establish the Kenn Forge product identity"
 **Files:**
 - Create: `internal/config/legacy_migration.go`
 - Create: `internal/config/legacy_migration_test.go`
+- Create: `cmd/kenn-forge/legacy_migration_e2e_test.go`
 - Modify: `internal/config/config.go`
 - Modify: config-loading call sites under `cmd/kenn-forge/`, `cmd/kenn-forge-github-app/`, `internal/cli/`, and `tools/devephemeral/`
 - Modify: `internal/runtimelock/paths.go` only if a narrow helper is needed to probe legacy lock liveness
 
 **Interfaces:**
-- Consumes: old default home `~/.config/middleman/`, new default home `~/.kenn/forge/`, and an explicitly selected config path.
-- Produces: `func LoadOrCreate(path string) (*Config, error)` as the production startup boundary; resumable home migration; `middleman.db` to `forge.db` data-file migration in default or custom data directories; rewritten built-in config values.
+- Consumes: old default home `~/.config/middleman/`, new default home `~/.kenn/forge/`, an explicitly selected config path, and the legacy runtime lock in the resolved data directory.
+- Produces: `func LoadOrCreate(path string) (*Config, error)` for create-on-use commands and `func LoadExisting(path string) (*Config, error)` for non-creating first invocations; a held legacy migration lock; resumable home migration; `middleman.db` to `forge.db` data-file migration in default or custom data directories; rewritten built-in config values.
 
 - [ ] **Step 1: Write failing table-driven migration tests**
 
@@ -207,13 +234,16 @@ func TestLoadOrCreateMigratesLegacyState(t *testing.T) {
 		{name: "nonempty old and new homes fail without merging"},
 		{name: "active legacy daemon fails without moving files"},
 		{name: "cross device rename stages validates and publishes"},
+		{name: "prepared marker resumes before publish"},
+		{name: "staged copy resumes before validation"},
+		{name: "validated stage resumes before publish"},
 		{name: "published marker resumes legacy source cleanup"},
 	}
 	// Each case sets HOME and clears KENN_FORGE_HOME before calling LoadOrCreate.
 }
 ```
 
-Also assert that an explicit config path does not relocate its directory, known `MIDDLEMAN_*` values in that config become `KENN_FORGE_*`, an existing `forge.db` plus `middleman.db` is a conflict, and failed staged-copy validation preserves the source.
+Also assert that an explicit config path does not relocate its directory, known `MIDDLEMAN_*` values in that config become `KENN_FORGE_*`, an existing `forge.db` plus `middleman.db` is a conflict, an active daemon in a custom `data_dir` blocks all movement, and failed staged-copy validation preserves the source. Inject a `migrationOps` value with `rename`, `copyTree`, `validateTree`, and marker-write functions so `EXDEV` and every interruption phase are deterministic rather than dependent on the host filesystem.
 
 - [ ] **Step 2: Run focused tests and confirm failure**
 
@@ -223,41 +253,33 @@ Expected: FAIL because the migration boundary does not exist and defaults still 
 
 - [ ] **Step 3: Implement the resumable home move**
 
-Add `LoadOrCreate` with this order:
+Resolve enough of the legacy config to find its effective `data_dir`, acquire and hold the legacy flock before moving or renaming anything, and release it only after migration succeeds or fails. Add the public loading boundaries with this shape:
 
 ```go
 func LoadOrCreate(path string) (*Config, error) {
-	if path == DefaultConfigPath() && os.Getenv("KENN_FORGE_HOME") == "" {
-		if err := migrateLegacyDefaultHome(); err != nil {
-			return nil, err
-		}
-	}
-	if err := EnsureDefault(path); err != nil {
-		return nil, err
-	}
-	if err := rewriteLegacyConfig(path); err != nil {
-		return nil, err
-	}
-	cfg, err := Load(path)
-	if err != nil {
-		return nil, err
-	}
-	if err := migrateLegacyDataFiles(cfg.DataDir); err != nil {
-		return nil, err
-	}
-	return cfg, nil
+	return loadWithMigration(path, true)
+}
+
+func LoadExisting(path string) (*Config, error) {
+	return loadWithMigration(path, false)
 }
 ```
 
-Use `.kenn-forge-migration.json` with explicit `prepared` and `published` phases. Probe the old lock before moving anything. Prefer `os.Rename`; on `EXDEV`, copy into a sibling staging directory, preserving directory/file modes and symlink targets, compare type/mode/size/SHA-256 or symlink target for every copied entry, publish with rename, record `published`, and only then remove the old tree. On restart, resume only a marker whose recorded source and destination exactly match the canonical old and new homes.
+`loadWithMigration` first identifies the existing legacy config without creating a new file, decodes the legacy `data_dir`, and holds the old-named flock in that directory. It then migrates the default home when applicable, creates a config only when requested, rewrites known config values, loads the canonical config, migrates data filenames, and releases the legacy lock.
+
+Use `.kenn-forge-migration.json` with explicit `prepared`, `staged`, `validated`, and `published` phases. Prefer `os.Rename`; on injected or real `EXDEV`, copy into a sibling staging directory, preserving directory/file modes and symlink targets, compare type/mode/size/SHA-256 or symlink target for every copied entry, publish with rename, record `published`, and only then remove the old tree. On restart, resume only a marker whose recorded source and destination exactly match the canonical old and new homes. Recover a publish that completed before the phase write by validating the destination against the recorded source rather than treating it as an unrelated collision.
 
 - [ ] **Step 4: Implement config and data-file rewriting**
 
 Atomically rewrite known built-in config values while preserving unrelated bytes and file mode. Rename `middleman.db` to `forge.db` within the resolved data directory, including custom directories, only after confirming the legacy runtime lock is not held. Remove stale legacy lock/runtime files after the database rename. If both database names exist, return a conflict with both exact paths.
 
-Change defaults to `KENN_FORGE_HOME`, `~/.kenn/forge/`, `forge.db`, `kenn-forge.lock`, and `kenn-forge.run.json`. Replace production `EnsureDefault` plus `Load` pairs with `LoadOrCreate`; leave plain `Load` available for side-effect-free reloads after startup.
+Change defaults to `KENN_FORGE_HOME`, `~/.kenn/forge/`, `forge.db`, `kenn-forge.lock`, and `kenn-forge.run.json`. Route every production first-load path through `LoadOrCreate` or `LoadExisting`, including docs list/removal, daemon discovery, agent-hook installation, GitHub App commands, control commands, and development tools. Preserve commands such as docs list that intentionally do not create a fresh config by using `LoadExisting`. Leave plain `Load` available only for side-effect-free reloads after startup.
 
-- [ ] **Step 5: Run focused and integration validation**
+- [ ] **Step 5: Add a real CLI/database migration test**
+
+Create a subprocess-style test that builds an old default home with a real version-43 SQLite database and stored repository row, starts the renamed CLI on an ephemeral loopback port, waits for its normal readiness endpoint, reads the migrated repository through the generated API client, and terminates only the process created by the test. Assert the old home is gone, `forge.db` is present, and the API returns the pre-migration row. This uniquely proves command entry, database opening, and server serving after migration.
+
+- [ ] **Step 6: Run focused and integration validation**
 
 Run: `gofmt -w internal/config cmd/kenn-forge cmd/kenn-forge-github-app internal/cli tools/devephemeral`
 
@@ -267,7 +289,7 @@ Run: `go test ./... -short -shuffle=on`
 
 Expected: PASS, including existing custom-config and daemon-collision behavior.
 
-- [ ] **Step 6: Context-sync and commit filesystem migration**
+- [ ] **Step 7: Context-sync and commit filesystem migration**
 
 Run the repository-local `context-sync --commit` workflow and required commit workflow.
 
@@ -281,6 +303,7 @@ git commit -m "feat: migrate existing state into Kenn Forge"
 **Files:**
 - Create: `frontend/src/lib/utils/kennForgeStorageMigration.ts`
 - Create: `frontend/src/lib/utils/kennForgeStorageMigration.test.ts`
+- Create: `frontend/src/kenn-forge-storage-migration.browser.svelte.ts`
 - Create: `frontend/src/runStorageMigration.ts`
 - Modify: `frontend/src/main.ts`
 
@@ -305,11 +328,13 @@ describe("migrateKennForgeStorage", () => {
 });
 ```
 
-Add cases proving an existing new key wins, unrelated keys remain untouched, a failed write leaves the old key intact, and one failing key does not prevent independent keys from migrating.
+Add cases proving an existing new key wins, unrelated keys remain untouched, a failed write leaves the old key intact, and one failing key does not prevent independent keys from migrating. Add a Vitest browser test that seeds real browser `localStorage`, resets modules, dynamically imports `runStorageMigration.ts`, verifies the side effect, and then dynamically imports a storage-reading store to prove it observes the transferred value.
 
 - [ ] **Step 2: Run the focused test and confirm failure**
 
 Run: `./node_modules/.bin/vp test run frontend/src/lib/utils/kennForgeStorageMigration.test.ts`
+
+Run: `./node_modules/.bin/vp test --project browser frontend/src/kenn-forge-storage-migration.browser.svelte.ts`
 
 Expected: FAIL because the migration function does not exist.
 
@@ -359,7 +384,7 @@ Run: `go run ./tools/renameforge --check`
 
 Run: `rg -n --hidden -S 'middleman|Middleman|MIDDLEMAN' -g '!node_modules' -g '!.git'`
 
-Expected: codemod check exits zero. Every raw search result is one of: codemod mapping input, filesystem/browser migration input, immutable SQLite schema identifier/current SQL reference, legacy-input fixture, or migration documentation. Fix repeated mechanical misses in mappings and rerun the codemod rather than editing occurrences individually.
+Expected: codemod check exits zero. Every raw search result is one of: codemod mapping input, immutable or reversible migration SQL, filesystem/browser migration input, legacy-input fixture, migration documentation, or a landed dated design/plan artifact. No live SQLite schema object or current SQL query may retain the old name. Fix repeated mechanical misses in mappings and rerun the codemod rather than editing occurrences individually.
 
 - [ ] **Step 2: Run final generated-artifact and source validation**
 
@@ -367,7 +392,7 @@ Run: `make api-generate`
 
 Run: `git diff --exit-code -- frontend/openapi/openapi.yaml internal/apiclient/spec/openapi.json internal/apiclient/generated packages/ui/src/api/generated`
 
-Run: `make test-short`
+Run: `make test`
 
 Run: `make vet`
 
@@ -387,7 +412,11 @@ Run: `make build`
 
 Run: `./kenn-forge version`
 
-Expected: the build succeeds and version output identifies `kenn-forge`; no `middleman` binary is produced.
+Run: `go build -o ./tmp/kenn-forge-github-app ./cmd/kenn-forge-github-app && ./tmp/kenn-forge-github-app --help`
+
+Run: `go build -o ./tmp/kenn-forge-openapi ./cmd/kenn-forge-openapi && ./tmp/kenn-forge-openapi --help`
+
+Expected: the primary version output and both helper usage banners use their canonical binary names; no legacy binary is produced.
 
 - [ ] **Step 4: Run context sync for the completed rename**
 

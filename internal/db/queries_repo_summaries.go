@@ -50,7 +50,7 @@ func (d *DB) loadRepoSummaryStats(
 			       SUM(CASE WHEN state = 'open' THEN 1 ELSE 0 END) AS open_pr_count,
 			       SUM(CASE WHEN state = 'open' AND is_draft THEN 1 ELSE 0 END) AS draft_pr_count,
 			       MAX(last_activity_at) AS last_pr_activity_at
-			FROM middleman_merge_requests
+			FROM forge_merge_requests
 			GROUP BY repo_id
 		),
 		issue_stats AS (
@@ -58,7 +58,7 @@ func (d *DB) loadRepoSummaryStats(
 			       COUNT(*) AS cached_issue_count,
 			       SUM(CASE WHEN state = 'open' THEN 1 ELSE 0 END) AS open_issue_count,
 			       MAX(last_activity_at) AS last_issue_activity_at
-			FROM middleman_issues
+			FROM forge_issues
 			GROUP BY repo_id
 		)
 		SELECT r.id,
@@ -73,7 +73,7 @@ func (d *DB) loadRepoSummaryStats(
 		           WHEN pr.last_pr_activity_at >= i.last_issue_activity_at THEN pr.last_pr_activity_at
 		           ELSE i.last_issue_activity_at
 		       END AS most_recent_activity_at
-		FROM middleman_repos r
+		FROM forge_repos r
 		LEFT JOIN pr_stats pr ON pr.repo_id = r.id
 		LEFT JOIN issue_stats i ON i.repo_id = r.id
 		ORDER BY r.owner, r.name`,
@@ -195,7 +195,7 @@ func (d *DB) UpsertRepoOverview(
 	}
 
 	_, err = d.rw.ExecContext(ctx, `
-		INSERT INTO middleman_repo_overviews
+		INSERT INTO forge_repo_overviews
 		    (repo_id, latest_release_tag, latest_release_name,
 		     latest_release_url, latest_release_target,
 		     latest_release_prerelease, latest_release_published_at,
@@ -212,25 +212,25 @@ func (d *DB) UpsertRepoOverview(
 		    commits_since_release = CASE
 		        WHEN excluded.timeline_updated_at IS NOT NULL
 		        THEN excluded.commits_since_release
-		        WHEN middleman_repo_overviews.latest_release_tag IS excluded.latest_release_tag
+		        WHEN forge_repo_overviews.latest_release_tag IS excluded.latest_release_tag
 		        THEN COALESCE(
 		            excluded.commits_since_release,
-		            middleman_repo_overviews.commits_since_release
+		            forge_repo_overviews.commits_since_release
 		        )
 		        ELSE excluded.commits_since_release
 		    END,
 		    commit_timeline_json = CASE
 		        WHEN excluded.timeline_updated_at IS NULL
-		             AND middleman_repo_overviews.latest_release_tag IS excluded.latest_release_tag
-		        THEN middleman_repo_overviews.commit_timeline_json
+		             AND forge_repo_overviews.latest_release_tag IS excluded.latest_release_tag
+		        THEN forge_repo_overviews.commit_timeline_json
 		        ELSE excluded.commit_timeline_json
 		    END,
 		    releases_json = excluded.releases_json,
 		    timeline_updated_at = CASE
 		        WHEN excluded.timeline_updated_at IS NOT NULL
 		        THEN excluded.timeline_updated_at
-		        WHEN middleman_repo_overviews.latest_release_tag IS excluded.latest_release_tag
-		        THEN middleman_repo_overviews.timeline_updated_at
+		        WHEN forge_repo_overviews.latest_release_tag IS excluded.latest_release_tag
+		        THEN forge_repo_overviews.timeline_updated_at
 		        ELSE excluded.timeline_updated_at
 		    END,
 		    updated_at = excluded.updated_at`,
@@ -276,7 +276,7 @@ func (d *DB) loadRepoSummaryOverviews(
 		       commit_timeline_json,
 		       releases_json,
 		       timeline_updated_at
-		FROM middleman_repo_overviews`,
+		FROM forge_repo_overviews`,
 	)
 	if err != nil {
 		return fmt.Errorf("list repo summary overviews: %w", err)
@@ -420,11 +420,11 @@ func (d *DB) loadRepoSummaryAuthors(
 	rows, err := d.ro.QueryContext(ctx, `
 		WITH author_items AS (
 			SELECT repo_id, author, last_activity_at
-			FROM middleman_merge_requests
+			FROM forge_merge_requests
 			WHERE author <> ''
 			UNION ALL
 			SELECT repo_id, author, last_activity_at
-			FROM middleman_issues
+			FROM forge_issues
 			WHERE author <> ''
 		),
 		author_totals AS (
@@ -495,7 +495,7 @@ func (d *DB) loadRepoSummaryIssues(
 			           PARTITION BY repo_id
 			           ORDER BY last_activity_at DESC, number DESC
 			       ) AS rank
-			FROM middleman_issues
+			FROM forge_issues
 			WHERE state = 'open'
 		)
 		SELECT repo_id, number, title, author, state, url, last_activity_at

@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/platform"
 )
 
 var ErrRepoPathRequired = errors.New("repo_path is required")

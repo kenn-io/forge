@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/forge/internal/platform"
 )
 
 // pageCursor binds an opaque resumable cursor to the enumeration that produced

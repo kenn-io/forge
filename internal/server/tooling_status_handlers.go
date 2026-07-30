@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"go.kenn.io/middleman/internal/procutil"
+	"go.kenn.io/forge/internal/procutil"
 )
 
 // Tooling status reports this host's view of the git/gh/glab CLIs so

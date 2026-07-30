@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"go.kenn.io/middleman/internal/config"
+	"go.kenn.io/forge/internal/config"
 )
 
 // TestCopyProxyRequestHeadersStripsBrowserHeaders verifies the hub does not
@@ -56,7 +56,7 @@ func TestCopyProxyWebSocketRequestHeadersStripsBrowserHeaders(t *testing.T) {
 	src.Set("Sec-Fetch-Dest", "websocket")
 	src.Set("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
 	src.Set("Authorization", "Bearer token")
-	src.Set("Cookie", "middleman_auth=abc")
+	src.Set("Cookie", "forge_auth=abc")
 	src.Set("Forwarded", "host=hub.local:8091")
 	src.Set("X-Forwarded-Host", "hub.local:8091")
 
@@ -89,7 +89,7 @@ func TestIsPeerProxyClientHeader(t *testing.T) {
 		{"Authorization", false},
 		{"Content-Type", false},
 		{"Sec-WebSocket-Key", false},
-		{"X-Middleman-Fleet-Host", false},
+		{"X-Kenn-Forge-Fleet-Host", false},
 	} {
 		assert.Equal(t, tc.want, isPeerProxyClientHeader(tc.key), "header %q", tc.key)
 	}
@@ -106,7 +106,7 @@ func TestIsPeerProxyCredentialHeader(t *testing.T) {
 		{"cookie", true},
 		{"Content-Type", false},
 		{"Origin", false},
-		{"X-Middleman-Fleet-Host", false},
+		{"X-Kenn-Forge-Fleet-Host", false},
 	} {
 		assert.Equal(t, tc.want, isPeerProxyCredentialHeader(tc.key), "header %q", tc.key)
 	}

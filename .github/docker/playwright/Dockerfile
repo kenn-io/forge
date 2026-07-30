@@ -9,7 +9,7 @@ FROM ${PLAYWRIGHT_BASE_IMAGE}
 
 ARG VITE_PLUS_VERSION
 
-LABEL org.opencontainers.image.source="https://github.com/kenn-io/middleman"
+LABEL org.opencontainers.image.source="https://github.com/kenn-io/kenn-forge"
 
 ENV BUN_INSTALL=/usr/local \
     DEBIAN_FRONTEND=noninteractive

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { runAppStartup } from "./appStartup.js";
-import type { StoreInstances } from "@middleman/ui";
-import { DEFAULT_TERMINAL_SETTINGS, type Settings, type TerminalSettings } from "@middleman/ui/api/types";
+import type { StoreInstances } from "@kenn-forge/ui";
+import { DEFAULT_TERMINAL_SETTINGS, type Settings, type TerminalSettings } from "@kenn-forge/ui/api/types";
 
 type LaunchTargets = NonNullable<Settings["launch_targets"]>;
 

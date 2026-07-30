@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { Button, SelectDropdown, type SelectDropdownOption } from "@middleman/ui";
+  import { Button, SelectDropdown, type SelectDropdownOption } from "@kenn-forge/ui";
   import { TextInput } from "@kenn-io/kit-ui";
-  import type { Settings } from "@middleman/ui/api/types";
-  import { showFlash } from "@middleman/ui/stores/flash";
+  import type { Settings } from "@kenn-forge/ui/api/types";
+  import { showFlash } from "@kenn-forge/ui/stores/flash";
   import Modal from "../shared/Modal.svelte";
   import { bulkAddRepos, previewRepos, type RepoPreviewRow } from "../../api/settings.js";
   import RepoPreviewTable from "./RepoPreviewTable.svelte";

@@ -12,7 +12,7 @@ import (
 	"strings"
 	"unicode/utf16"
 
-	"go.kenn.io/middleman/internal/procutil"
+	"go.kenn.io/forge/internal/procutil"
 )
 
 var ErrUnavailable = errors.New("system clipboard unavailable")

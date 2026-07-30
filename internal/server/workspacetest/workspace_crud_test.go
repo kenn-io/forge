@@ -16,11 +16,11 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/apiclient/generated"
+	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/server"
 	gitcmd "go.kenn.io/kit/git/cmd"
-	"go.kenn.io/middleman/internal/apiclient/generated"
-	"go.kenn.io/middleman/internal/config"
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/server"
 )
 
 type rawWorkspaceStatusResponse struct {
@@ -53,7 +53,7 @@ func doJSON(
 		reader = bytes.NewReader(payload)
 	}
 	req := httptest.NewRequest(method, path, reader)
-	req.Host = "middleman.test"
+	req.Host = "forge.test"
 	if body != nil || method == http.MethodPost || method == http.MethodDelete ||
 		method == http.MethodPut || method == http.MethodPatch {
 		req.Header.Set("Content-Type", "application/json")
@@ -521,11 +521,11 @@ func TestWorkspaceCreateIssueE2E(t *testing.T) {
 	assert.Equal("issue", created.ItemType)
 	assert.Equal(7, created.ItemNumber)
 	// seedIssue uses title "Test Issue" → slug style appends "-test-issue".
-	assert.Equal("middleman/issue-7-test-issue", created.GitHeadRef)
+	assert.Equal("kenn-forge/issue-7-test-issue", created.GitHeadRef)
 
 	ready := waitForWorkspaceReady(t, ctx, fixture.client, created.ID)
 	assert.Equal(
-		"middleman/issue-7-test-issue",
+		"kenn-forge/issue-7-test-issue",
 		workspaceGitOutput(t, ready.WorktreePath, "branch", "--show-current"),
 	)
 	assert.Equal(
@@ -577,11 +577,11 @@ func TestWorkspaceCreateIssueUsesTitleSlugInBranch(t *testing.T) {
 
 	var created rawWorkspaceStatusResponse
 	require.NoError(json.NewDecoder(createRR.Body).Decode(&created))
-	assert.Equal("middleman/issue-8-add-foo-to-bar", created.GitHeadRef)
+	assert.Equal("kenn-forge/issue-8-add-foo-to-bar", created.GitHeadRef)
 
 	ready := waitForWorkspaceReady(t, ctx, fixture.client, created.ID)
 	assert.Equal(
-		"middleman/issue-8-add-foo-to-bar",
+		"kenn-forge/issue-8-add-foo-to-bar",
 		workspaceGitOutput(t, ready.WorktreePath, "branch", "--show-current"),
 	)
 }
@@ -615,11 +615,11 @@ func TestWorkspaceCreateIssueBareStyleConfigOptOut(t *testing.T) {
 
 	var created rawWorkspaceStatusResponse
 	require.NoError(json.NewDecoder(createRR.Body).Decode(&created))
-	assert.Equal("middleman/issue-9", created.GitHeadRef)
+	assert.Equal("kenn-forge/issue-9", created.GitHeadRef)
 
 	ready := waitForWorkspaceReady(t, ctx, fixture.client, created.ID)
 	assert.Equal(
-		"middleman/issue-9",
+		"kenn-forge/issue-9",
 		workspaceGitOutput(t, ready.WorktreePath, "branch", "--show-current"),
 	)
 }
@@ -687,7 +687,7 @@ func TestWorkspaceCreateIssueAfterDeleteRecreatesBranch(t *testing.T) {
 	require.NoError(json.NewDecoder(createRR.Body).Decode(&created))
 	ready := waitForWorkspaceReady(t, ctx, fixture.client, created.ID)
 	assert.Equal(
-		"middleman/issue-7-test-issue",
+		"kenn-forge/issue-7-test-issue",
 		workspaceGitOutput(t, ready.WorktreePath, "branch", "--show-current"),
 	)
 
@@ -713,7 +713,7 @@ func TestWorkspaceCreateIssueAfterDeleteRecreatesBranch(t *testing.T) {
 	require.NoError(json.NewDecoder(recreateRR.Body).Decode(&recreated))
 	recreatedReady := waitForWorkspaceReady(t, ctx, fixture.client, recreated.ID)
 	assert.Equal(
-		"middleman/issue-7-test-issue",
+		"kenn-forge/issue-7-test-issue",
 		workspaceGitOutput(t, recreatedReady.WorktreePath, "branch", "--show-current"),
 	)
 }

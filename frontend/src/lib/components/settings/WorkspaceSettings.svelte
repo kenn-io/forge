@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Settings } from "@middleman/ui/api/types";
+  import type { Settings } from "@kenn-forge/ui/api/types";
 
   import { updateSettings } from "../../api/settings.js";
   import { isEmbedded } from "../../stores/embed-config.svelte.js";

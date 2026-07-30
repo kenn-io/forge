@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/procutil"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/procutil"
 )
 
 func main() {
@@ -23,7 +23,7 @@ func main() {
 func run(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("fleet-seed", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
-	dbPath := fs.String("db", "", "path to the middleman SQLite database")
+	dbPath := fs.String("db", "", "path to the kenn-forge SQLite database")
 	projectPath := fs.String("project-path", "", "project path to seed")
 	worktreePath := fs.String("worktree-path", "", "workspace worktree path to seed")
 	startTmux := fs.Bool("start-tmux", false, "start the seeded workspace tmux session")
@@ -124,14 +124,14 @@ func run(ctx context.Context, args []string) error {
 		GitHeadRef:      "feature/fleet-read",
 		WorkspaceBranch: "feature/fleet-read",
 		WorktreePath:    *worktreePath,
-		TmuxSession:     "middleman-fleet-member-ws-7",
+		TmuxSession:     "kenn-forge-fleet-member-ws-7",
 		TerminalBackend: "tmux",
 		Status:          "ready",
 	}); err != nil {
 		return fmt.Errorf("insert workspace: %w", err)
 	}
 	if *startTmux {
-		if err := startWorkspaceTmux(ctx, "middleman-fleet-member-ws-7", *worktreePath); err != nil {
+		if err := startWorkspaceTmux(ctx, "kenn-forge-fleet-member-ws-7", *worktreePath); err != nil {
 			return err
 		}
 	}
@@ -209,14 +209,14 @@ func runGit(ctx context.Context, dir string, args ...string) error {
 func resetFixtureRows(ctx context.Context, database *db.DB, projectPath string) error {
 	if _, err := database.WriteDB().ExecContext(
 		ctx,
-		`DELETE FROM middleman_workspaces WHERE id = ?`,
+		`DELETE FROM forge_workspaces WHERE id = ?`,
 		"fleet-member-ws-7",
 	); err != nil {
 		return fmt.Errorf("delete workspace: %w", err)
 	}
 	if _, err := database.WriteDB().ExecContext(
 		ctx,
-		`DELETE FROM middleman_projects WHERE local_path = ?`,
+		`DELETE FROM forge_projects WHERE local_path = ?`,
 		projectPath,
 	); err != nil {
 		return fmt.Errorf("delete project: %w", err)

@@ -1,5 +1,5 @@
 // Browser-tier reimplementation of frontend/tests/e2e-full/force-mobile-routes.spec.ts.
-// The __MIDDLEMAN_FORCE_MOBILE_ROUTES__ global forces the responsive focus
+// The __KENN_FORGE_FORCE_MOBILE_ROUTES__ global forces the responsive focus
 // presentation even on a desktop-width viewport, so the canonical /issues route
 // renders the focus layout (no mobile shell, no app header). App.svelte reads
 // the flag at render time via shouldForceMobileRoutes(), so the value present
@@ -31,19 +31,19 @@ describe("force-mobile routes", () => {
     // A desktop-width viewport so the focus presentation in the flagged case is
     // attributable to the flag, not to a compact viewport.
     await page.viewport(1280, 800);
-    window.__MIDDLEMAN_FORCE_MOBILE_ROUTES__ = false;
+    window.__KENN_FORGE_FORCE_MOBILE_ROUTES__ = false;
   });
 
   afterEach(async () => {
     mounted?.unmount();
     mounted = null;
-    window.__MIDDLEMAN_FORCE_MOBILE_ROUTES__ = false;
+    window.__KENN_FORGE_FORCE_MOBILE_ROUTES__ = false;
     localStorage.clear();
     await resetKeyboardModuleState();
   });
 
   it("renders the canonical issue route with focus presentation when forced", async () => {
-    window.__MIDDLEMAN_FORCE_MOBILE_ROUTES__ = true;
+    window.__KENN_FORGE_FORCE_MOBILE_ROUTES__ = true;
     mounted = await mountBrowserApp("/issues");
 
     await vi.waitFor(() => expect(count(".focus-layout .focus-list")).toBe(1), WAIT);

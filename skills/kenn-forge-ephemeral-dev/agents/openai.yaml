@@ -1,0 +1,4 @@
+interface:
+  display_name: "Kenn Forge Ephemeral Dev"
+  short_description: "Run Kenn Forge dev on free ports."
+  default_prompt: "Use $kenn-forge-ephemeral-dev to run a local kenn-forge dev stack on free ports and find its status JSON."

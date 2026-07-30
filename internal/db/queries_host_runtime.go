@@ -28,7 +28,7 @@ func (d *DB) UpsertHostRuntimeTmuxSession(
 		createdAt = time.Now().UTC()
 	}
 	_, err := d.rw.ExecContext(ctx, `
-		INSERT INTO middleman_host_runtime_sessions
+		INSERT INTO forge_host_runtime_sessions
 		    (session_key, runtime_backend, backend_session_key, label, cwd,
 		     created_at)
 		VALUES (?, 'tmux', ?, ?, ?, ?)
@@ -55,7 +55,7 @@ func (d *DB) ListHostRuntimeTmuxSessions(
 	rows, err := d.ro.QueryContext(ctx, `
 		SELECT session_key, COALESCE(backend_session_key, ''), label, cwd,
 		       created_at
-		FROM middleman_host_runtime_sessions
+		FROM forge_host_runtime_sessions
 		WHERE runtime_backend = 'tmux'
 		ORDER BY created_at, session_key`,
 	)
@@ -89,7 +89,7 @@ func (d *DB) DeleteHostRuntimeTmuxSession(
 	sessionKey string,
 ) error {
 	_, err := d.rw.ExecContext(ctx, `
-		DELETE FROM middleman_host_runtime_sessions
+		DELETE FROM forge_host_runtime_sessions
 		WHERE session_key = ? AND runtime_backend = 'tmux'`, sessionKey,
 	)
 	if err != nil {
@@ -109,7 +109,7 @@ func (d *DB) DeleteHostRuntimeTmuxSessionCreatedAt(
 	createdAt time.Time,
 ) (bool, error) {
 	result, err := d.rw.ExecContext(ctx, `
-		DELETE FROM middleman_host_runtime_sessions
+		DELETE FROM forge_host_runtime_sessions
 		WHERE session_key = ?
 		  AND runtime_backend = 'tmux'
 		  AND created_at = ?`,

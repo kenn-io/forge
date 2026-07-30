@@ -22,12 +22,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/gitclone"
+	"go.kenn.io/forge/internal/procutil"
+	"go.kenn.io/forge/internal/ptyowner"
+	"go.kenn.io/forge/internal/testutil/dbtest"
 	gitcmd "go.kenn.io/kit/git/cmd"
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/gitclone"
-	"go.kenn.io/middleman/internal/procutil"
-	"go.kenn.io/middleman/internal/ptyowner"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
 )
 
 func openTestDB(t *testing.T) *db.DB {
@@ -165,7 +165,7 @@ func TestCreate(t *testing.T) {
 	assert.Equal("feature/thing", ws.GitHeadRef)
 	assert.Nil(ws.MRHeadRepo)
 	assert.Contains(ws.WorktreePath, "pr-42")
-	assert.Equal("middleman-"+ws.ID, ws.TmuxSession)
+	assert.Equal("kenn-forge-"+ws.ID, ws.TmuxSession)
 
 	// Verify persisted in DB.
 	got, err := d.GetWorkspace(ctx, ws.ID)
@@ -703,25 +703,25 @@ func TestCreateIssueDefaultBranchSluggified(t *testing.T) {
 			name:      "slug style with usable title",
 			title:     "Add foo to bar",
 			slugStyle: true,
-			want:      "middleman/issue-7-add-foo-to-bar",
+			want:      "kenn-forge/issue-7-add-foo-to-bar",
 		},
 		{
 			name:      "slug style with empty title falls back to bare",
 			title:     "",
 			slugStyle: true,
-			want:      "middleman/issue-7",
+			want:      "kenn-forge/issue-7",
 		},
 		{
 			name:      "slug style with all-punctuation falls back to bare",
 			title:     "?!@#",
 			slugStyle: true,
-			want:      "middleman/issue-7",
+			want:      "kenn-forge/issue-7",
 		},
 		{
 			name:      "bare style ignores title",
 			title:     "Add foo to bar",
 			slugStyle: false,
-			want:      "middleman/issue-7",
+			want:      "kenn-forge/issue-7",
 		},
 	}
 
@@ -796,7 +796,7 @@ func TestCreateKataTaskDoesNotRequireProviderIssue(t *testing.T) {
 	assert.Equal(db.WorkspaceItemTypeKataTask, ws.ItemType)
 	assert.Equal(0, ws.ItemNumber)
 	assert.Equal(db.KataWorkspaceItemKey(metadata), ws.ItemKey)
-	assert.Contains(ws.GitHeadRef, "middleman/kata/task-123-")
+	assert.Contains(ws.GitHeadRef, "kenn-forge/kata/task-123-")
 	assert.Contains(ws.GitHeadRef, "-fix-widget")
 	assert.Equal(ws.GitHeadRef, ws.WorkspaceBranch)
 	assert.Contains(ws.WorktreePath, "kata-task-123-")
@@ -880,8 +880,8 @@ func TestCreateKataTaskScopesItemKeyByDaemonAndProject(t *testing.T) {
 	assert.Equal(db.KataWorkspaceItemKey(second), ws2.ItemKey)
 	assert.NotEqual(ws1.GitHeadRef, ws2.GitHeadRef)
 	assert.NotEqual(ws1.WorktreePath, ws2.WorktreePath)
-	assert.Contains(ws1.GitHeadRef, "middleman/kata/task-1-")
-	assert.Contains(ws2.GitHeadRef, "middleman/kata/task-1-")
+	assert.Contains(ws1.GitHeadRef, "kenn-forge/kata/task-1-")
+	assert.Contains(ws2.GitHeadRef, "kenn-forge/kata/task-1-")
 }
 
 func TestCreateIssueReuseLocalBaseBranchCheckedOutReturnsConflict(t *testing.T) {
@@ -893,7 +893,7 @@ func TestCreateIssueReuseLocalBaseBranchCheckedOutReturnsConflict(t *testing.T) 
 	repoID := seedRepo(t, d, "github.com", "acme", "widget")
 	seedIssue(t, d, repoID, 7, "")
 
-	const branch = "middleman/issue-7"
+	const branch = "kenn-forge/issue-7"
 	localRepo := setupLocalWorktreeBaseForWorkspaceGitTest(t, "feature/thing")
 	runWorkspaceTestGit(
 		t, localRepo,
@@ -929,7 +929,7 @@ func TestCreateIssueRecoversExpectedExistingDirectory(t *testing.T) {
 	repoID := seedRepo(t, d, platformHost, "acme", "widget")
 	seedIssue(t, d, repoID, 7, "")
 
-	const branch = "middleman/issue-7"
+	const branch = "kenn-forge/issue-7"
 	expectedPath := filepath.Join(
 		worktreeRoot, "github", platformHost, "acme", "widget", "issue-7",
 	)
@@ -995,7 +995,7 @@ func TestIssueWorkspaceBranchDoesNotCollideWithRecoveryState(t *testing.T) {
 			repoID := seedRepo(t, d, platformHost, "acme", "widget")
 			seedIssue(t, d, repoID, 7, "")
 
-			const branch = "__middleman_recovery_pending__"
+			const branch = "__kenn_forge_recovery_pending__"
 			expectedPath := filepath.Join(
 				worktreeRoot, "github", platformHost, "acme", "widget", "issue-7",
 			)
@@ -1100,7 +1100,7 @@ func TestCreateIssueRecoveryRejectsInvalidExpectedDirectory(t *testing.T) {
 			)
 			repoID := seedRepo(t, d, platformHost, "acme", "widget")
 			seedIssue(t, d, repoID, 7, "")
-			const branch = "middleman/issue-7"
+			const branch = "kenn-forge/issue-7"
 			expectedPath := filepath.Join(
 				worktreeRoot, "github", platformHost, "acme", "widget", "issue-7",
 			)
@@ -1141,7 +1141,7 @@ func TestCreateIssueRecoveryRejectsManagedCloneWithWrongOrigin(t *testing.T) {
 		host   = "github.com"
 		owner  = "acme"
 		name   = "widget"
-		branch = "middleman/issue-7"
+		branch = "kenn-forge/issue-7"
 	)
 	repoID := seedRepo(t, d, host, owner, name)
 	seedIssue(t, d, repoID, 7, "")
@@ -1189,7 +1189,7 @@ func TestSetupRecoveryRejectsManagedCloneWhoseOriginChanged(t *testing.T) {
 		host   = "github.com"
 		owner  = "acme"
 		name   = "widget"
-		branch = "middleman/issue-7"
+		branch = "kenn-forge/issue-7"
 	)
 	repoID := seedRepo(t, d, host, owner, name)
 	seedIssue(t, d, repoID, 7, "")
@@ -1250,7 +1250,7 @@ func TestCreateIssueReportsRecoverableDirectoryBranch(t *testing.T) {
 	repoID := seedRepo(t, d, platformHost, "acme", "widget")
 	seedIssue(t, d, repoID, 7, "renamed issue title")
 
-	const existingBranch = "middleman/issue-7-original-title"
+	const existingBranch = "kenn-forge/issue-7-original-title"
 	expectedPath := filepath.Join(
 		worktreeRoot, "github", platformHost, "acme", "widget", "issue-7",
 	)
@@ -1290,7 +1290,7 @@ func TestSetupDirectoryRecoveryNeverCreatesReplacement(t *testing.T) {
 	repoID := seedRepo(t, d, platformHost, "acme", "widget")
 	seedIssue(t, d, repoID, 7, "")
 
-	const branch = "middleman/issue-7"
+	const branch = "kenn-forge/issue-7"
 	expectedPath := filepath.Join(
 		worktreeRoot, "github", platformHost, "acme", "widget", "issue-7",
 	)
@@ -1343,7 +1343,7 @@ func TestRetryDirectoryRecoveryPreservesExistingWorktree(t *testing.T) {
 	repoID := seedRepo(t, d, platformHost, "acme", "widget")
 	seedIssue(t, d, repoID, 7, "")
 
-	const branch = "middleman/issue-7"
+	const branch = "kenn-forge/issue-7"
 	expectedPath := filepath.Join(
 		worktreeRoot, "github", platformHost, "acme", "widget", "issue-7",
 	)
@@ -1400,7 +1400,7 @@ func TestDeletePendingDirectoryRecoveryPreservesExistingWorktree(t *testing.T) {
 	repoID := seedRepo(t, d, platformHost, "acme", "widget")
 	seedIssue(t, d, repoID, 7, "")
 
-	const branch = "middleman/issue-7"
+	const branch = "kenn-forge/issue-7"
 	expectedPath := filepath.Join(
 		worktreeRoot, "github", platformHost, "acme", "widget", "issue-7",
 	)
@@ -2486,7 +2486,7 @@ func TestSetupRefreshesConfiguredWorktreeBaseOriginHead(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(got)
 	assert.Equal("ready", got.Status)
-	assert.Equal("middleman/issue-7", got.WorkspaceBranch)
+	assert.Equal("kenn-forge/issue-7", got.WorkspaceBranch)
 	ref := strings.TrimSpace(string(runWorkspaceTestGit(
 		t, localRepo, "symbolic-ref", "refs/remotes/origin/HEAD",
 	)))
@@ -2580,7 +2580,7 @@ func TestCleanupUsesExistingWorktreeGitDirWhenConfiguredBaseChanges(t *testing.T
 	assert := assert.New(t)
 	require := require.New(t)
 
-	const branch = "middleman/pr-99"
+	const branch = "kenn-forge/pr-99"
 	actualRepo := setupLocalWorktreeBaseForWorkspaceGitTest(t, "feature/thing")
 	wrongRepo := setupLocalWorktreeBaseForWorkspaceGitTest(t, "feature/thing")
 	worktreePath := filepath.Join(t.TempDir(), "workspace")
@@ -2620,7 +2620,7 @@ func TestCleanupDoesNotTrustReplacementCloneAtWorkspacePath(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
-	const branch = "middleman/pr-42"
+	const branch = "kenn-forge/pr-42"
 	_, remote := setupLocalWorktreeBaseWithRemoteForWorkspaceGitTest(t, "feature/thing")
 	worktreePath := filepath.Join(t.TempDir(), "workspace")
 	runWorkspaceTestGit(t, t.TempDir(), "clone", remote, worktreePath)
@@ -2658,7 +2658,7 @@ func TestCleanupDoesNotTrustStaleLocalBaseRegistrationForReplacementClone(t *tes
 	assert := assert.New(t)
 	require := require.New(t)
 
-	const branch = "middleman/pr-42"
+	const branch = "kenn-forge/pr-42"
 	localRepo, remote := setupLocalWorktreeBaseWithRemoteForWorkspaceGitTest(
 		t, "feature/thing",
 	)
@@ -2716,7 +2716,7 @@ func TestCleanupIgnoresInvalidConfiguredBaseWhenWorktreeAbsent(t *testing.T) {
 		ItemType:        db.WorkspaceItemTypePullRequest,
 		ItemNumber:      99,
 		GitHeadRef:      "feature/thing",
-		WorkspaceBranch: "middleman/pr-99",
+		WorkspaceBranch: "kenn-forge/pr-99",
 		WorktreePath:    filepath.Join(t.TempDir(), "already-removed"),
 	}
 
@@ -2770,7 +2770,7 @@ func TestCleanupSucceedsWhenWorkspacePathReplacedByNonGitDirectory(t *testing.T)
 				ItemType:        db.WorkspaceItemTypePullRequest,
 				ItemNumber:      99,
 				GitHeadRef:      "feature/thing",
-				WorkspaceBranch: "middleman/pr-99",
+				WorkspaceBranch: "kenn-forge/pr-99",
 				WorktreePath:    worktreePath,
 			}
 
@@ -2783,7 +2783,7 @@ func TestCleanupFallsBackToManagedCloneWhenConfiguredBaseInvalid(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
-	const branch = "middleman/pr-99"
+	const branch = "kenn-forge/pr-99"
 	cloneBaseDir := t.TempDir()
 	clones := gitclone.New(cloneBaseDir, nil)
 	cloneDir, err := clones.ClonePath("github", "github.com", "acme", "widget")
@@ -2827,7 +2827,7 @@ func TestCleanupUsesProviderScopedManagedClone(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
-	const branch = "middleman/pr-99"
+	const branch = "kenn-forge/pr-99"
 	const host = "forge.example.com"
 	cloneBaseDir := t.TempDir()
 	clones := gitclone.New(cloneBaseDir, nil)
@@ -2873,7 +2873,7 @@ func TestCleanupSkipsReplacedWorktreeFromWrongRepo(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
-	const branch = "middleman/pr-99"
+	const branch = "kenn-forge/pr-99"
 	unrelatedRepo := setupLocalWorktreeBaseForWorkspaceGitTest(t, "feature/thing")
 	runWorkspaceTestGit(
 		t, unrelatedRepo, "remote", "set-url", "origin",
@@ -3009,10 +3009,10 @@ func TestAddPreferredWorktreeRejectsUnsafeBranchName(t *testing.T) {
 
 func TestValidateLocalBranchNameIgnoresBrokenWorkingTreeCwd(t *testing.T) {
 	require := require.New(t)
-	if os.Getenv("MIDDLEMAN_TEST_VALIDATE_BRANCH_CWD") == "1" {
-		require.NoError(os.Chdir(os.Getenv("MIDDLEMAN_TEST_BROKEN_CWD")))
+	if os.Getenv("KENN_FORGE_TEST_VALIDATE_BRANCH_CWD") == "1" {
+		require.NoError(os.Chdir(os.Getenv("KENN_FORGE_TEST_BROKEN_CWD")))
 		require.NoError(validateLocalBranchName(
-			t.Context(), "", "middleman/issue-23-federation-test",
+			t.Context(), "", "kenn-forge/issue-23-federation-test",
 		))
 		return
 	}
@@ -3030,8 +3030,8 @@ func TestValidateLocalBranchNameIgnoresBrokenWorkingTreeCwd(t *testing.T) {
 	)
 	cmd.Env = append(
 		os.Environ(),
-		"MIDDLEMAN_TEST_VALIDATE_BRANCH_CWD=1",
-		"MIDDLEMAN_TEST_BROKEN_CWD="+brokenCwd,
+		"KENN_FORGE_TEST_VALIDATE_BRANCH_CWD=1",
+		"KENN_FORGE_TEST_BROKEN_CWD="+brokenCwd,
 	)
 	out, err := cmd.CombinedOutput()
 	require.NoError(err, string(out))
@@ -3673,8 +3673,8 @@ func TestAddWorktreeMergedSameRepoPRUsesPullRefWhenHeadBranchDeleted(
 		ID:              "ws-merged-same-repo-pr",
 		Platform:        "github",
 		PlatformHost:    "github.com",
-		RepoOwner:       "middleman",
-		RepoName:        "middleman",
+		RepoOwner:       "kenn-forge",
+		RepoName:        "kenn-forge",
 		ItemType:        db.WorkspaceItemTypePullRequest,
 		ItemNumber:      prNumber,
 		GitHeadRef:      headBranch,
@@ -3723,8 +3723,8 @@ func TestAddWorktreeGitLabMRUsesMergeRequestRefWhenHeadBranchDeleted(
 		ID:              "ws-merged-gitlab-mr",
 		Platform:        "gitlab",
 		PlatformHost:    "gitlab.com",
-		RepoOwner:       "middleman",
-		RepoName:        "middleman",
+		RepoOwner:       "kenn-forge",
+		RepoName:        "kenn-forge",
 		ItemType:        db.WorkspaceItemTypePullRequest,
 		ItemNumber:      mrNumber,
 		GitHeadRef:      headBranch,
@@ -3767,8 +3767,8 @@ func TestAddWorktreeGitLabMRFetchesSpecificMergeRequestRef(t *testing.T) {
 		ID:              "ws-merged-gitlab-mr-specific-fetch",
 		Platform:        "gitlab",
 		PlatformHost:    "gitlab.com",
-		RepoOwner:       "middleman",
-		RepoName:        "middleman",
+		RepoOwner:       "kenn-forge",
+		RepoName:        "kenn-forge",
 		ItemType:        db.WorkspaceItemTypePullRequest,
 		ItemNumber:      mrNumber,
 		GitHeadRef:      headBranch,
@@ -3831,14 +3831,14 @@ func TestLocalBranchExistsIgnoresInheritedGitEnv(t *testing.T) {
 	poisonClone := setupBareCloneForWorkspaceGitTest(t)
 	require.NoError(runGitWithoutHooks(
 		context.Background(), poisonClone,
-		"branch", "middleman/issue-7", "main",
+		"branch", "kenn-forge/issue-7", "main",
 	))
 
 	t.Setenv("GIT_DIR", poisonClone)
 	t.Setenv("GIT_WORK_TREE", t.TempDir())
 
 	exists, err := localBranchExists(
-		context.Background(), targetClone, "middleman/issue-7",
+		context.Background(), targetClone, "kenn-forge/issue-7",
 	)
 
 	require.NoError(err)
@@ -4318,7 +4318,7 @@ func TestManagerTerminalPaneSnapshotIncludesPtyOwnerTitle(t *testing.T) {
 	mgr.SetPtyOwnerClient(owner)
 	ws := &db.Workspace{
 		ID:              "ws-1",
-		TmuxSession:     "middleman-ws-1",
+		TmuxSession:     "kenn-forge-ws-1",
 		TerminalBackend: TerminalBackendPtyOwner,
 	}
 
@@ -4373,7 +4373,7 @@ func TestManagerCleanupPtyOwnerWorkspaceStopsStoredRuntimeTmuxSessions(t *testin
 	require.NoError(err)
 	recordRuntimeTmuxSessionForTest(
 		t, d, ws.ID, "ws-runtime-session", "agent-1",
-		"middleman-runtime-session",
+		"kenn-forge-runtime-session",
 		time.Date(2026, 4, 29, 1, 0, 0, 0, time.UTC),
 	)
 
@@ -4386,7 +4386,7 @@ func TestManagerCleanupPtyOwnerWorkspaceStopsStoredRuntimeTmuxSessions(t *testin
 	argvs := readRecorderArgv(t, record)
 	require.Len(argvs, 1)
 	assert.Equal(
-		[]string{"wrap", "kill-session", "-t", "middleman-runtime-session"},
+		[]string{"wrap", "kill-session", "-t", "kenn-forge-runtime-session"},
 		argvs[0],
 	)
 	stored, err := d.ListWorkspaceRuntimeTmuxSessions(t.Context(), ws.ID)
@@ -4592,7 +4592,7 @@ func TestManagerDeleteAllowsErroredWorkspaceWhenTmuxUnavailable(t *testing.T) {
 		GitHeadRef:      "feature/thing",
 		WorkspaceBranch: workspaceBranchUnknown,
 		WorktreePath:    filepath.Join(t.TempDir(), "worktree"),
-		TmuxSession:     "middleman-0000000000000042",
+		TmuxSession:     "kenn-forge-0000000000000042",
 		Status:          "error",
 	}
 	require.NoError(d.InsertWorkspace(ctx, ws))
@@ -4627,11 +4627,11 @@ func TestManagerReapOrphanTmuxSessionsKillsUnknownManagedSessions(t *testing.T) 
 		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
 		`for a in "$@"; do` + "\n" +
 		`  if [ "$a" = "list-sessions" ]; then` + "\n" +
-		`    printf 'middleman-0000000000000001:%s\n' "$MIDDLEMAN_TMUX_OWNER"` + "\n" +
-		`    printf 'middleman-ffffffffffffffff\n'` + "\n" +
-		`    printf 'middleman-aaaaaaaaaaaaaaaa-0123456789abcdef:%s\n' "$MIDDLEMAN_TMUX_OWNER"` + "\n" +
-		`    printf 'middleman-aaaaaaaaaaaaaaaa-claude:%s\n' "$MIDDLEMAN_TMUX_OWNER"` + "\n" +
-		`    printf 'middleman-notes\nother-session\n'` + "\n" +
+		`    printf 'kenn-forge-0000000000000001:%s\n' "$KENN_FORGE_TMUX_OWNER"` + "\n" +
+		`    printf 'kenn-forge-ffffffffffffffff\n'` + "\n" +
+		`    printf 'kenn-forge-aaaaaaaaaaaaaaaa-0123456789abcdef:%s\n' "$KENN_FORGE_TMUX_OWNER"` + "\n" +
+		`    printf 'kenn-forge-aaaaaaaaaaaaaaaa-claude:%s\n' "$KENN_FORGE_TMUX_OWNER"` + "\n" +
+		`    printf 'kenn-forge-notes\nother-session\n'` + "\n" +
 		`    exit 0` + "\n" +
 		`  fi` + "\n" +
 		"done\n" +
@@ -4642,7 +4642,7 @@ func TestManagerReapOrphanTmuxSessionsKillsUnknownManagedSessions(t *testing.T) 
 	d := openTestDB(t)
 	mgr := NewManager(d, t.TempDir())
 	mgr.SetTmuxCommand([]string{script, "wrap"})
-	t.Setenv("MIDDLEMAN_TMUX_OWNER", mgr.tmuxOwnerMarker())
+	t.Setenv("KENN_FORGE_TMUX_OWNER", mgr.tmuxOwnerMarker())
 
 	live := &Workspace{
 		ID:           "ws-live",
@@ -4653,7 +4653,7 @@ func TestManagerReapOrphanTmuxSessionsKillsUnknownManagedSessions(t *testing.T) 
 		ItemNumber:   1,
 		GitHeadRef:   "feature/live",
 		WorktreePath: filepath.Join(t.TempDir(), "live"),
-		TmuxSession:  "middleman-0000000000000001",
+		TmuxSession:  "kenn-forge-0000000000000001",
 		Status:       "ready",
 	}
 	require.NoError(d.InsertWorkspace(context.Background(), live))
@@ -4665,24 +4665,24 @@ func TestManagerReapOrphanTmuxSessionsKillsUnknownManagedSessions(t *testing.T) 
 	assert.Equal(
 		[]string{
 			"wrap", "list-sessions", "-F",
-			"#{session_name}:#{@middleman_owner}",
+			"#{session_name}:#{@forge_owner}",
 		},
 		argvs[0],
 	)
 	assert.Equal(
 		[]string{
 			"wrap", "kill-session", "-t",
-			"middleman-aaaaaaaaaaaaaaaa-0123456789abcdef",
+			"kenn-forge-aaaaaaaaaaaaaaaa-0123456789abcdef",
 		},
 		argvs[1],
 	)
 	assert.NotContains(argvs, []string{
 		"wrap", "show-options", "-qv", "-t",
-		"middleman-aaaaaaaaaaaaaaaa-claude", "@middleman_owner",
+		"kenn-forge-aaaaaaaaaaaaaaaa-claude", "@forge_owner",
 	})
 	assert.NotContains(argvs, []string{
 		"wrap", "kill-session", "-t",
-		"middleman-aaaaaaaaaaaaaaaa-claude",
+		"kenn-forge-aaaaaaaaaaaaaaaa-claude",
 	})
 }
 
@@ -4699,9 +4699,9 @@ func TestManagerReapOrphanTmuxSessionsKeepsStoredRuntimeSessions(
 		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
 		`for a in "$@"; do` + "\n" +
 		`  if [ "$a" = "list-sessions" ]; then` + "\n" +
-		`    printf 'middleman-0000000000000001:%s\n' "$MIDDLEMAN_TMUX_OWNER"` + "\n" +
-		`    printf 'middleman-0000000000000001-57de4cf40144bdf7:%s\n' "$MIDDLEMAN_TMUX_OWNER"` + "\n" +
-		`    printf 'middleman-aaaaaaaaaaaaaaaa-c857d09db23e6822:%s\n' "$MIDDLEMAN_TMUX_OWNER"` + "\n" +
+		`    printf 'kenn-forge-0000000000000001:%s\n' "$KENN_FORGE_TMUX_OWNER"` + "\n" +
+		`    printf 'kenn-forge-0000000000000001-57de4cf40144bdf7:%s\n' "$KENN_FORGE_TMUX_OWNER"` + "\n" +
+		`    printf 'kenn-forge-aaaaaaaaaaaaaaaa-c857d09db23e6822:%s\n' "$KENN_FORGE_TMUX_OWNER"` + "\n" +
 		`    exit 0` + "\n" +
 		`  fi` + "\n" +
 		"done\n" +
@@ -4712,7 +4712,7 @@ func TestManagerReapOrphanTmuxSessionsKeepsStoredRuntimeSessions(
 	d := openTestDB(t)
 	mgr := NewManager(d, t.TempDir())
 	mgr.SetTmuxCommand([]string{script, "wrap"})
-	t.Setenv("MIDDLEMAN_TMUX_OWNER", mgr.tmuxOwnerMarker())
+	t.Setenv("KENN_FORGE_TMUX_OWNER", mgr.tmuxOwnerMarker())
 
 	require.NoError(d.InsertWorkspace(context.Background(), &Workspace{
 		ID:           "0000000000000001",
@@ -4723,12 +4723,12 @@ func TestManagerReapOrphanTmuxSessionsKeepsStoredRuntimeSessions(
 		ItemNumber:   1,
 		GitHeadRef:   "feature/live",
 		WorktreePath: filepath.Join(t.TempDir(), "live"),
-		TmuxSession:  "middleman-0000000000000001",
+		TmuxSession:  "kenn-forge-0000000000000001",
 		Status:       "ready",
 	}))
 	recordRuntimeTmuxSessionForTest(
 		t, d, "0000000000000001", "0000000000000001_codex",
-		"codex", "middleman-0000000000000001-57de4cf40144bdf7",
+		"codex", "kenn-forge-0000000000000001-57de4cf40144bdf7",
 		time.Time{},
 	)
 
@@ -4737,11 +4737,11 @@ func TestManagerReapOrphanTmuxSessionsKeepsStoredRuntimeSessions(
 	argvs := readRecorderArgv(t, record)
 	assert.Contains(argvs, []string{
 		"wrap", "kill-session", "-t",
-		"middleman-aaaaaaaaaaaaaaaa-c857d09db23e6822",
+		"kenn-forge-aaaaaaaaaaaaaaaa-c857d09db23e6822",
 	})
 	assert.NotContains(argvs, []string{
 		"wrap", "kill-session", "-t",
-		"middleman-0000000000000001-57de4cf40144bdf7",
+		"kenn-forge-0000000000000001-57de4cf40144bdf7",
 	})
 }
 
@@ -4758,7 +4758,7 @@ func TestManagerPruneMissingTmuxSessionsRemovesStaleRecords(
 		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
 		`for a in "$@"; do` + "\n" +
 		`  if [ "$a" = "list-sessions" ]; then` + "\n" +
-		`    printf 'middleman-0000000000000001\nmiddleman-0000000000000001-57de4cf40144bdf7\n'` + "\n" +
+		`    printf 'kenn-forge-0000000000000001\nkenn-forge-0000000000000001-57de4cf40144bdf7\n'` + "\n" +
 		`    exit 0` + "\n" +
 		`  fi` + "\n" +
 		"done\n" +
@@ -4771,7 +4771,7 @@ func TestManagerPruneMissingTmuxSessionsRemovesStaleRecords(
 	mgr.SetTmuxCommand([]string{script, "wrap"})
 	mgr.SetPtyOwnerFallbackClient(&fakePtyOwnerClient{
 		StateSessions: map[string]bool{
-			"middleman-0000000000000003": true,
+			"kenn-forge-0000000000000003": true,
 		},
 	})
 	ctx := context.Background()
@@ -4785,7 +4785,7 @@ func TestManagerPruneMissingTmuxSessionsRemovesStaleRecords(
 		ItemNumber:   1,
 		GitHeadRef:   "feature/live",
 		WorktreePath: filepath.Join(t.TempDir(), "live"),
-		TmuxSession:  "middleman-0000000000000001",
+		TmuxSession:  "kenn-forge-0000000000000001",
 		Status:       "ready",
 	}))
 	require.NoError(d.InsertWorkspace(ctx, &Workspace{
@@ -4797,7 +4797,7 @@ func TestManagerPruneMissingTmuxSessionsRemovesStaleRecords(
 		ItemNumber:   2,
 		GitHeadRef:   "feature/stale",
 		WorktreePath: filepath.Join(t.TempDir(), "stale"),
-		TmuxSession:  "middleman-0000000000000002",
+		TmuxSession:  "kenn-forge-0000000000000002",
 		Status:       "ready",
 	}))
 	require.NoError(d.InsertWorkspace(ctx, &Workspace{
@@ -4809,23 +4809,23 @@ func TestManagerPruneMissingTmuxSessionsRemovesStaleRecords(
 		ItemNumber:   3,
 		GitHeadRef:   "feature/owner",
 		WorktreePath: filepath.Join(t.TempDir(), "owner"),
-		TmuxSession:  "middleman-0000000000000003",
+		TmuxSession:  "kenn-forge-0000000000000003",
 		Status:       "ready",
 	}))
 	_, err := d.WriteDB().ExecContext(
 		ctx,
-		`UPDATE middleman_workspaces SET terminal_backend = '' WHERE id = ?`,
+		`UPDATE forge_workspaces SET terminal_backend = '' WHERE id = ?`,
 		"0000000000000003",
 	)
 	require.NoError(err)
 	recordRuntimeTmuxSessionForTest(
 		t, d, "0000000000000001", "0000000000000001_codex",
-		"codex", "middleman-0000000000000001-57de4cf40144bdf7",
+		"codex", "kenn-forge-0000000000000001-57de4cf40144bdf7",
 		time.Time{},
 	)
 	recordRuntimeTmuxSessionForTest(
 		t, d, "0000000000000001", "0000000000000001_claude",
-		"claude", "middleman-0000000000000001-c857d09db23e6822",
+		"claude", "kenn-forge-0000000000000001-c857d09db23e6822",
 		time.Time{},
 	)
 
@@ -4837,7 +4837,7 @@ func TestManagerPruneMissingTmuxSessionsRemovesStaleRecords(
 	require.NoError(err)
 	require.Len(stored, 1)
 	assert.Equal(
-		"middleman-0000000000000001-57de4cf40144bdf7",
+		"kenn-forge-0000000000000001-57de4cf40144bdf7",
 		stored[0].TmuxSession,
 	)
 
@@ -4852,7 +4852,7 @@ func TestManagerPruneMissingTmuxSessionsRemovesStaleRecords(
 	assert.Equal("error", stale.Status)
 	require.NotNil(stale.ErrorMessage)
 	assert.Contains(*stale.ErrorMessage, "tmux session is no longer running")
-	assert.Contains(*stale.ErrorMessage, "middleman-0000000000000002")
+	assert.Contains(*stale.ErrorMessage, "kenn-forge-0000000000000002")
 
 	legacyOwner, err := d.GetWorkspace(ctx, "0000000000000003")
 	require.NoError(err)
@@ -4884,10 +4884,10 @@ func TestManagerTmuxSessionListSurvivesTmux36Sanitization(t *testing.T) {
 		`done` + "\n" +
 		`for a in "$@"; do` + "\n" +
 		`  if [ "$a" = "list-sessions" ]; then` + "\n" +
-		`    for name in middleman-0000000000000001 middleman-aaaaaaaaaaaaaaaa; do` + "\n" +
+		`    for name in kenn-forge-0000000000000001 kenn-forge-aaaaaaaaaaaaaaaa; do` + "\n" +
 		`      printf '%s\n' "$fmt" \` + "\n" +
 		`        | sed -e "s|#{session_name}|$name|" \` + "\n" +
-		`              -e "s|#{@middleman_owner}|$MIDDLEMAN_TMUX_OWNER|" \` + "\n" +
+		`              -e "s|#{@forge_owner}|$KENN_FORGE_TMUX_OWNER|" \` + "\n" +
 		`        | tr '\t' '_'` + "\n" +
 		`    done` + "\n" +
 		`    exit 0` + "\n" +
@@ -4900,7 +4900,7 @@ func TestManagerTmuxSessionListSurvivesTmux36Sanitization(t *testing.T) {
 	d := openTestDB(t)
 	mgr := NewManager(d, t.TempDir())
 	mgr.SetTmuxCommand([]string{script, "wrap"})
-	t.Setenv("MIDDLEMAN_TMUX_OWNER", mgr.tmuxOwnerMarker())
+	t.Setenv("KENN_FORGE_TMUX_OWNER", mgr.tmuxOwnerMarker())
 	ctx := context.Background()
 
 	require.NoError(d.InsertWorkspace(ctx, &Workspace{
@@ -4912,7 +4912,7 @@ func TestManagerTmuxSessionListSurvivesTmux36Sanitization(t *testing.T) {
 		ItemNumber:   1,
 		GitHeadRef:   "feature/live",
 		WorktreePath: filepath.Join(t.TempDir(), "live"),
-		TmuxSession:  "middleman-0000000000000001",
+		TmuxSession:  "kenn-forge-0000000000000001",
 		Status:       "ready",
 	}))
 
@@ -4927,10 +4927,10 @@ func TestManagerTmuxSessionListSurvivesTmux36Sanitization(t *testing.T) {
 	require.NoError(mgr.ReapOrphanTmuxSessions(ctx))
 	argvs := readRecorderArgv(t, record)
 	assert.Contains(argvs, []string{
-		"wrap", "kill-session", "-t", "middleman-aaaaaaaaaaaaaaaa",
+		"wrap", "kill-session", "-t", "kenn-forge-aaaaaaaaaaaaaaaa",
 	})
 	assert.NotContains(argvs, []string{
-		"wrap", "kill-session", "-t", "middleman-0000000000000001",
+		"wrap", "kill-session", "-t", "kenn-forge-0000000000000001",
 	})
 }
 
@@ -4951,7 +4951,7 @@ func TestManagerListTmuxSessionInfosRealTmux(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
-	dir, err := os.MkdirTemp("/tmp", "middleman-tmux-list-*")
+	dir, err := os.MkdirTemp("/tmp", "kenn-forge-tmux-list-*")
 	require.NoError(err)
 	t.Cleanup(func() {
 		_ = os.RemoveAll(dir)
@@ -4973,15 +4973,15 @@ func TestManagerListTmuxSessionInfosRealTmux(t *testing.T) {
 		require.NoError(err, string(out))
 	}
 
-	const owned = "middleman-0123456789abcdef"
-	const unowned = "middleman-fedcba9876543210"
+	const owned = "kenn-forge-0123456789abcdef"
+	const unowned = "kenn-forge-fedcba9876543210"
 	run("new-session", "-d", "-s", owned, "sleep 30")
 	run("new-session", "-d", "-s", unowned, "sleep 30")
 
 	d := openTestDB(t)
 	mgr := NewManager(d, t.TempDir())
 	mgr.SetTmuxCommand([]string{tmuxPath, "-f", "/dev/null", "-S", socket})
-	run("set-option", "-t", owned, "@middleman_owner", mgr.tmuxOwnerMarker())
+	run("set-option", "-t", owned, "@forge_owner", mgr.tmuxOwnerMarker())
 
 	infos, err := mgr.listTmuxSessionInfos(context.Background())
 	require.NoError(err)
@@ -5012,18 +5012,18 @@ func TestManagerTmuxSessionsForWorkspaceReadsStoredRuntimeSessions(
 		ItemNumber:   1,
 		GitHeadRef:   "feature/live",
 		WorktreePath: filepath.Join(t.TempDir(), "live"),
-		TmuxSession:  "middleman-0000000000000001",
+		TmuxSession:  "kenn-forge-0000000000000001",
 		Status:       "ready",
 	}))
 	createdAt := time.Date(2026, 5, 30, 12, 0, 0, 0, time.UTC)
 	recordRuntimeTmuxSessionForTest(
 		t, d, "0000000000000001", "0000000000000001_codex",
-		"codex", "middleman-0000000000000001-57de4cf40144bdf7",
+		"codex", "kenn-forge-0000000000000001-57de4cf40144bdf7",
 		createdAt.Add(time.Minute),
 	)
 	recordRuntimeTmuxSessionForTest(
 		t, d, "0000000000000001", "0000000000000001_claude",
-		"claude", "middleman-0000000000000001-c857d09db23e6822",
+		"claude", "kenn-forge-0000000000000001-c857d09db23e6822",
 		createdAt,
 	)
 	require.NoError(d.InsertWorkspace(context.Background(), &Workspace{
@@ -5035,26 +5035,26 @@ func TestManagerTmuxSessionsForWorkspaceReadsStoredRuntimeSessions(
 		ItemNumber:   2,
 		GitHeadRef:   "feature/other",
 		WorktreePath: filepath.Join(t.TempDir(), "other"),
-		TmuxSession:  "middleman-0000000000000002",
+		TmuxSession:  "kenn-forge-0000000000000002",
 		Status:       "ready",
 	}))
 	recordRuntimeTmuxSessionForTest(
 		t, d, "0000000000000002", "0000000000000002_codex",
-		"codex", "middleman-0000000000000002-57de4cf40144bdf7",
+		"codex", "kenn-forge-0000000000000002-57de4cf40144bdf7",
 		createdAt,
 	)
 
 	sessions, err := mgr.TmuxSessionsForWorkspace(
 		context.Background(),
 		"0000000000000001",
-		"middleman-0000000000000001",
+		"kenn-forge-0000000000000001",
 	)
 	require.NoError(err)
 
 	assert.Equal([]string{
-		"middleman-0000000000000001",
-		"middleman-0000000000000001-c857d09db23e6822",
-		"middleman-0000000000000001-57de4cf40144bdf7",
+		"kenn-forge-0000000000000001",
+		"kenn-forge-0000000000000001-c857d09db23e6822",
+		"kenn-forge-0000000000000001-57de4cf40144bdf7",
 	}, sessions)
 
 	sessions, err = mgr.TmuxSessionsForWorkspace(
@@ -5064,8 +5064,8 @@ func TestManagerTmuxSessionsForWorkspaceReadsStoredRuntimeSessions(
 	)
 	require.NoError(err)
 	assert.Equal([]string{
-		"middleman-0000000000000001-c857d09db23e6822",
-		"middleman-0000000000000001-57de4cf40144bdf7",
+		"kenn-forge-0000000000000001-c857d09db23e6822",
+		"kenn-forge-0000000000000001-57de4cf40144bdf7",
 	}, sessions)
 }
 
@@ -5089,7 +5089,7 @@ func TestManagerCleanupTmuxSessionKillsRuntimeSessionsForWorkspace(
 	mgr.SetTmuxCommand([]string{script})
 	ws := &Workspace{
 		ID:           "0000000000000001",
-		TmuxSession:  "middleman-0000000000000001",
+		TmuxSession:  "kenn-forge-0000000000000001",
 		Status:       "ready",
 		PlatformHost: "github.com",
 		RepoOwner:    "acme",
@@ -5102,12 +5102,12 @@ func TestManagerCleanupTmuxSessionKillsRuntimeSessionsForWorkspace(
 	require.NoError(d.InsertWorkspace(context.Background(), ws))
 	recordRuntimeTmuxSessionForTest(
 		t, d, ws.ID, "0000000000000001_codex", "codex",
-		"middleman-0000000000000001-57de4cf40144bdf7",
+		"kenn-forge-0000000000000001-57de4cf40144bdf7",
 		time.Time{},
 	)
 	recordRuntimeTmuxSessionForTest(
 		t, d, ws.ID, "0000000000000001_claude", "claude",
-		"middleman-0000000000000001-c857d09db23e6822",
+		"kenn-forge-0000000000000001-c857d09db23e6822",
 		time.Time{},
 	)
 
@@ -5115,19 +5115,19 @@ func TestManagerCleanupTmuxSessionKillsRuntimeSessionsForWorkspace(
 
 	argvs := readRecorderArgv(t, record)
 	assert.Contains(argvs, []string{
-		"kill-session", "-t", "middleman-0000000000000001",
+		"kill-session", "-t", "kenn-forge-0000000000000001",
 	})
 	assert.Contains(argvs, []string{
 		"kill-session", "-t",
-		"middleman-0000000000000001-c857d09db23e6822",
+		"kenn-forge-0000000000000001-c857d09db23e6822",
 	})
 	assert.Contains(argvs, []string{
 		"kill-session", "-t",
-		"middleman-0000000000000001-57de4cf40144bdf7",
+		"kenn-forge-0000000000000001-57de4cf40144bdf7",
 	})
 	assert.NotContains(argvs, []string{
 		"kill-session", "-t",
-		"middleman-0000000000000002-57de4cf40144bdf7",
+		"kenn-forge-0000000000000002-57de4cf40144bdf7",
 	})
 	stored, err := d.ListWorkspaceRuntimeTmuxSessions(context.Background(), ws.ID)
 	require.NoError(err)
@@ -5153,11 +5153,11 @@ func TestManagerCleanupTmuxSessionPreservesStoredRowsAfterRuntimeKillFailure(
 		`done` + "\n" +
 		`if [ "$1" = "kill-session" ]; then` + "\n" +
 		`  case "$target" in` + "\n" +
-		`    middleman-0000000000000001)` + "\n" +
+		`    kenn-forge-0000000000000001)` + "\n" +
 		`      echo "can't find session: $target" >&2` + "\n" +
 		`      exit 1` + "\n" +
 		`      ;;` + "\n" +
-		`    middleman-0000000000000001-57de4cf40144bdf7)` + "\n" +
+		`    kenn-forge-0000000000000001-57de4cf40144bdf7)` + "\n" +
 		`      echo "permission denied" >&2` + "\n" +
 		`      exit 42` + "\n" +
 		`      ;;` + "\n" +
@@ -5172,7 +5172,7 @@ func TestManagerCleanupTmuxSessionPreservesStoredRowsAfterRuntimeKillFailure(
 	mgr.SetTmuxCommand([]string{script})
 	ws := &Workspace{
 		ID:           "0000000000000001",
-		TmuxSession:  "middleman-0000000000000001",
+		TmuxSession:  "kenn-forge-0000000000000001",
 		Status:       "error",
 		PlatformHost: "github.com",
 		RepoOwner:    "acme",
@@ -5191,8 +5191,8 @@ func TestManagerCleanupTmuxSessionPreservesStoredRowsAfterRuntimeKillFailure(
 			ws.ID+"_"+targetKey,
 			targetKey,
 			map[string]string{
-				"codex":  "middleman-0000000000000001-57de4cf40144bdf7",
-				"claude": "middleman-0000000000000001-c857d09db23e6822",
+				"codex":  "kenn-forge-0000000000000001-57de4cf40144bdf7",
+				"claude": "kenn-forge-0000000000000001-c857d09db23e6822",
 			}[targetKey],
 			time.Time{},
 		)
@@ -5200,19 +5200,19 @@ func TestManagerCleanupTmuxSessionPreservesStoredRowsAfterRuntimeKillFailure(
 
 	err := mgr.cleanupTmuxSession(context.Background(), ws)
 	require.Error(err)
-	assert.Contains(err.Error(), "middleman-0000000000000001-57de4cf40144bdf7")
+	assert.Contains(err.Error(), "kenn-forge-0000000000000001-57de4cf40144bdf7")
 
 	argvs := readRecorderArgv(t, record)
 	assert.Contains(argvs, []string{
-		"kill-session", "-t", "middleman-0000000000000001",
+		"kill-session", "-t", "kenn-forge-0000000000000001",
 	})
 	assert.Contains(argvs, []string{
 		"kill-session", "-t",
-		"middleman-0000000000000001-57de4cf40144bdf7",
+		"kenn-forge-0000000000000001-57de4cf40144bdf7",
 	})
 	assert.Contains(argvs, []string{
 		"kill-session", "-t",
-		"middleman-0000000000000001-c857d09db23e6822",
+		"kenn-forge-0000000000000001-c857d09db23e6822",
 	})
 
 	stored, err := d.ListWorkspaceRuntimeTmuxSessions(context.Background(), ws.ID)
@@ -5230,7 +5230,7 @@ func TestManagerForgetRuntimeSessionCreatedAtPreservesRecreatedRow(
 	mgr := NewManager(d, t.TempDir())
 	require.NoError(d.InsertWorkspace(context.Background(), &Workspace{
 		ID:           "ws-1",
-		TmuxSession:  "middleman-ws-1",
+		TmuxSession:  "kenn-forge-ws-1",
 		Status:       "ready",
 		PlatformHost: "github.com",
 		RepoOwner:    "acme",
@@ -5244,11 +5244,11 @@ func TestManagerForgetRuntimeSessionCreatedAtPreservesRecreatedRow(
 	newCreatedAt := time.Date(2026, 4, 29, 1, 1, 0, 0, time.UTC)
 	sessionKey := "ws-1_helper"
 	recordRuntimeTmuxSessionForTest(
-		t, d, "ws-1", sessionKey, "helper", "middleman-ws-1-helper",
+		t, d, "ws-1", sessionKey, "helper", "kenn-forge-ws-1-helper",
 		oldCreatedAt,
 	)
 	recordRuntimeTmuxSessionForTest(
-		t, d, "ws-1", sessionKey, "helper", "middleman-ws-1-helper",
+		t, d, "ws-1", sessionKey, "helper", "kenn-forge-ws-1-helper",
 		newCreatedAt,
 	)
 
@@ -5274,7 +5274,7 @@ func TestManagerForgetRuntimeSessionAfterExitKeepsLiveTmuxSession(
 	mgr := NewManager(d, t.TempDir())
 	require.NoError(d.InsertWorkspace(context.Background(), &Workspace{
 		ID:           "ws-1",
-		TmuxSession:  "middleman-ws-1",
+		TmuxSession:  "kenn-forge-ws-1",
 		Status:       "ready",
 		PlatformHost: "github.com",
 		RepoOwner:    "acme",
@@ -5286,7 +5286,7 @@ func TestManagerForgetRuntimeSessionAfterExitKeepsLiveTmuxSession(
 	}))
 	createdAt := time.Date(2026, 4, 29, 1, 0, 0, 0, time.UTC)
 	sessionKey := "ws-1_helper"
-	tmuxSession := "middleman-ws-1-helper"
+	tmuxSession := "kenn-forge-ws-1-helper"
 	recordRuntimeTmuxSessionForTest(
 		t, d, "ws-1", sessionKey, "helper", tmuxSession, createdAt,
 	)
@@ -5365,9 +5365,9 @@ func TestManagerRequestRetryFailsWhenTmuxCleanupFails(t *testing.T) {
 		ItemType:        db.WorkspaceItemTypePullRequest,
 		ItemNumber:      42,
 		GitHeadRef:      "feature/retry",
-		WorkspaceBranch: "middleman/pr-42",
+		WorkspaceBranch: "kenn-forge/pr-42",
 		WorktreePath:    "/tmp/ws-retry-cleanup-fails",
-		TmuxSession:     "middleman-retry-cleanup-fails",
+		TmuxSession:     "kenn-forge-retry-cleanup-fails",
 		Status:          "error",
 		ErrorMessage:    &errMsg,
 	}
@@ -5393,7 +5393,7 @@ func TestManagerRequestRetryFailsWhenTmuxCleanupFails(t *testing.T) {
 	assert.Equal("error", got.Status)
 	require.NotNil(got.ErrorMessage)
 	assert.Contains(*got.ErrorMessage, "permission denied")
-	assert.Equal("middleman/pr-42", got.WorkspaceBranch)
+	assert.Equal("kenn-forge/pr-42", got.WorkspaceBranch)
 
 	argvs := readRecorderArgv(t, record)
 	require.Len(argvs, 1)
@@ -5446,9 +5446,9 @@ func TestManagerRequestRetryConsumesQueuedRetryWhenCleanupFails(t *testing.T) {
 		ItemType:        db.WorkspaceItemTypePullRequest,
 		ItemNumber:      42,
 		GitHeadRef:      "feature/retry",
-		WorkspaceBranch: "middleman/pr-42",
+		WorkspaceBranch: "kenn-forge/pr-42",
 		WorktreePath:    "/tmp/ws-retry-cleanup-queued",
-		TmuxSession:     "middleman-retry-cleanup-queued",
+		TmuxSession:     "kenn-forge-retry-cleanup-queued",
 		Status:          "error",
 		ErrorMessage:    &errMsg,
 	}
@@ -5544,9 +5544,9 @@ func TestManagerRequestRetrySkipsGitCleanupWhenCloneMissing(t *testing.T) {
 		ItemType:        db.WorkspaceItemTypePullRequest,
 		ItemNumber:      42,
 		GitHeadRef:      "feature/retry",
-		WorkspaceBranch: "middleman/pr-42",
+		WorkspaceBranch: "kenn-forge/pr-42",
 		WorktreePath:    filepath.Join(dir, "missing-worktree"),
-		TmuxSession:     "middleman-retry-missing-clone",
+		TmuxSession:     "kenn-forge-retry-missing-clone",
 		Status:          "error",
 		ErrorMessage:    &errMsg,
 	}
@@ -5600,7 +5600,7 @@ func TestIssueRetryCleansLeakedUnknownBranchAndUsesIssueBranch(t *testing.T) {
 		RepoName:        name,
 		ItemType:        db.WorkspaceItemTypeIssue,
 		ItemNumber:      23,
-		GitHeadRef:      "middleman/issue-23-federation-test",
+		GitHeadRef:      "kenn-forge/issue-23-federation-test",
 		WorkspaceBranch: workspaceBranchUnknown,
 		WorktreePath:    staleWorktree,
 		Status:          "error",
@@ -5644,7 +5644,7 @@ func TestManagerRequestRetryQueuesWhileCreatingAndStartsIfErrored(t *testing.T) 
 		GitHeadRef:      "feature/retry",
 		WorkspaceBranch: workspaceBranchUnknown,
 		WorktreePath:    "/tmp/ws-queued-retry",
-		TmuxSession:     "middleman-ws-queued-retry",
+		TmuxSession:     "kenn-forge-ws-queued-retry",
 		Status:          "creating",
 	}
 	require.NoError(d.InsertWorkspace(ctx, ws))
@@ -5696,7 +5696,7 @@ func TestManagerRequestRetryPreservesReusedIssueBranchSentinel(t *testing.T) {
 		GitHeadRef:      "feature/reused",
 		WorkspaceBranch: "",
 		WorktreePath:    "/tmp/ws-reused-issue-retry",
-		TmuxSession:     "middleman-ws-reused-issue-retry",
+		TmuxSession:     "kenn-forge-ws-reused-issue-retry",
 		Status:          "error",
 		ErrorMessage:    &errMsg,
 	}
@@ -5734,9 +5734,9 @@ func TestManagerRequestRetryStartsWhenSetupFailedBeforeQueue(t *testing.T) {
 		ItemType:        db.WorkspaceItemTypePullRequest,
 		ItemNumber:      42,
 		GitHeadRef:      "feature/retry",
-		WorkspaceBranch: "middleman/pr-42",
+		WorkspaceBranch: "kenn-forge/pr-42",
 		WorktreePath:    "/tmp/ws-raced-retry",
-		TmuxSession:     "middleman-ws-raced-retry",
+		TmuxSession:     "kenn-forge-ws-raced-retry",
 		Status:          "error",
 		ErrorMessage:    &errMsg,
 	}
@@ -5780,7 +5780,7 @@ func TestManagerRequestRetryDiscardsQueuedRetryWhenSetupSucceeds(t *testing.T) {
 		GitHeadRef:      "feature/retry",
 		WorkspaceBranch: workspaceBranchUnknown,
 		WorktreePath:    "/tmp/ws-discard-retry",
-		TmuxSession:     "middleman-ws-discard-retry",
+		TmuxSession:     "kenn-forge-ws-discard-retry",
 		Status:          "creating",
 	}
 	require.NoError(d.InsertWorkspace(ctx, ws))
@@ -5855,7 +5855,7 @@ func TestManagerEnsureTmuxCreatesSessionOnMiss(t *testing.T) {
 	assert.Equal(
 		[]string{
 			"set-option", "-t", "sess-B",
-			"@middleman_owner", mgr.tmuxOwnerMarker(),
+			"@forge_owner", mgr.tmuxOwnerMarker(),
 		},
 		argvs[2],
 	)
@@ -5901,7 +5901,7 @@ func TestManagerEnsureTmuxCreatesSessionOnMacOSMissingServer(t *testing.T) {
 	assert.Equal(
 		[]string{
 			"set-option", "-t", "sess-macos",
-			"@middleman_owner", mgr.tmuxOwnerMarker(),
+			"@forge_owner", mgr.tmuxOwnerMarker(),
 		},
 		argvs[2],
 	)
@@ -6086,22 +6086,22 @@ func (f *fakePtyOwnerClient) Snapshot(
 
 func TestWorkspaceBranchCandidatesDoesNotIncludeBareForSluggedWorkspace(t *testing.T) {
 	// Slug-style issue workspace whose bare-form branch name might
-	// be a user-owned local branch unrelated to middleman. Cleanup
+	// be a user-owned local branch unrelated to kenn-forge. Cleanup
 	// must return only the persisted GitHeadRef so the unrelated
 	// branch is not deleted.
 	assert := assert.New(t)
 	ws := &Workspace{
 		ItemType:   db.WorkspaceItemTypeIssue,
 		ItemNumber: 10,
-		GitHeadRef: "middleman/issue-10-widget-rendering-broken",
+		GitHeadRef: "kenn-forge/issue-10-widget-rendering-broken",
 	}
 	got := workspaceBranchCandidates(ws, workspaceBranchUnknown)
-	assert.Equal([]string{"middleman/issue-10-widget-rendering-broken"}, got)
+	assert.Equal([]string{"kenn-forge/issue-10-widget-rendering-broken"}, got)
 }
 
 func TestWorkspaceBranchCandidatesUsesBareFallbackOnlyForLegacyWorkspace(t *testing.T) {
 	// Pre-feature issue workspaces have no recorded GitHeadRef.
-	// Cleanup must still find the bare middleman/issue-<n> branch
+	// Cleanup must still find the bare kenn-forge/issue-<n> branch
 	// those workspaces actually use.
 	assert := assert.New(t)
 	ws := &Workspace{
@@ -6110,7 +6110,7 @@ func TestWorkspaceBranchCandidatesUsesBareFallbackOnlyForLegacyWorkspace(t *test
 		GitHeadRef: "",
 	}
 	got := workspaceBranchCandidates(ws, workspaceBranchUnknown)
-	assert.Equal([]string{"middleman/issue-10"}, got)
+	assert.Equal([]string{"kenn-forge/issue-10"}, got)
 }
 
 func TestIsGitWorktreeAbsentClassifiesCorruptGitfile(t *testing.T) {

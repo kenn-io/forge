@@ -14,7 +14,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/tokenauth"
+	"go.kenn.io/forge/internal/tokenauth"
 )
 
 func writeConfig(t *testing.T, content string) string {
@@ -202,7 +202,7 @@ func TestSaveAppliesNotificationDefaultsForInMemoryConfig(t *testing.T) {
 	assert := assert.New(t)
 	cfg := &Config{
 		SyncInterval:        "5m",
-		GitHubTokenEnv:      "MIDDLEMAN_GITHUB_TOKEN",
+		GitHubTokenEnv:      "KENN_FORGE_GITHUB_TOKEN",
 		DefaultPlatformHost: "github.com",
 		Host:                "127.0.0.1",
 		Port:                8091,
@@ -456,12 +456,12 @@ func TestLoadRoundTripsHostAuthorityConfig(t *testing.T) {
 	cfg, cfg2 := roundTripConfigString(t, `
 host = "127.0.0.1"
 port = 8091
-allowed_hosts = ["middleman.local:8091", "studio.tailnet:8091"]
+allowed_hosts = ["forge.local:8091", "studio.tailnet:8091"]
 trust_reverse_proxy = true
 `)
 
 	assert.Equal(
-		[]string{"middleman.local:8091", "studio.tailnet:8091"},
+		[]string{"forge.local:8091", "studio.tailnet:8091"},
 		cfg.AllowedHosts,
 	)
 	assert.True(cfg.TrustReverseProxy)
@@ -680,9 +680,9 @@ name = "b"
 	}{
 		{"default", "", false, "/"},
 		{"root", "/", false, "/"},
-		{"simple", "middleman", false, "/middleman/"},
-		{"with slashes", "/middleman/", false, "/middleman/"},
-		{"nested", "/apps/middleman", false, "/apps/middleman/"},
+		{"simple", "kenn-forge", false, "/kenn-forge/"},
+		{"with slashes", "/kenn-forge/", false, "/kenn-forge/"},
+		{"nested", "/apps/kenn-forge", false, "/apps/kenn-forge/"},
 		{"dot segment", "/../evil", true, ""},
 		{"single dot", "/./path", true, ""},
 		{"special chars", "/mid<script>", true, ""},
@@ -714,32 +714,32 @@ func TestGitHubTokenReturnsEmptyWhenGHCliUnavailable(t *testing.T) {
 	assert.Empty(t, cfg.GitHubToken())
 }
 
-func TestMiddlemanHomeOverridesDefaultPaths(t *testing.T) {
+func TestForgeHomeOverridesDefaultPaths(t *testing.T) {
 	assert := assert.New(t)
-	t.Setenv("MIDDLEMAN_HOME", "/tmp/middleman-test")
+	t.Setenv("KENN_FORGE_HOME", "/tmp/kenn-forge-test")
 
 	assert.Equal(
-		filepath.FromSlash("/tmp/middleman-test/config.toml"),
+		filepath.FromSlash("/tmp/kenn-forge-test/config.toml"),
 		DefaultConfigPath(),
 	)
-	assert.Equal("/tmp/middleman-test", DefaultDataDir())
+	assert.Equal("/tmp/kenn-forge-test", DefaultDataDir())
 }
 
-func TestDefaultPathsWithoutMiddlemanHome(t *testing.T) {
+func TestDefaultPathsWithoutForgeHome(t *testing.T) {
 	assert := assert.New(t)
-	t.Setenv("MIDDLEMAN_HOME", "")
+	t.Setenv("KENN_FORGE_HOME", "")
 	t.Setenv("HOME", "/fakehome")
 
 	assert.Equal(
-		filepath.FromSlash("/fakehome/.config/middleman/config.toml"),
+		filepath.FromSlash("/fakehome/.config/kenn-forge/config.toml"),
 		DefaultConfigPath(),
 	)
-	assert.Equal(filepath.FromSlash("/fakehome/.config/middleman"), DefaultDataDir())
+	assert.Equal(filepath.FromSlash("/fakehome/.config/kenn-forge"), DefaultDataDir())
 }
 
 func TestDBPath(t *testing.T) {
-	cfg := &Config{DataDir: "/tmp/middleman-test"}
-	expected := filepath.FromSlash("/tmp/middleman-test/middleman.db")
+	cfg := &Config{DataDir: "/tmp/kenn-forge-test"}
+	expected := filepath.FromSlash("/tmp/kenn-forge-test/forge.db")
 	assert.Equal(t, expected, cfg.DBPath())
 }
 
@@ -1188,7 +1188,7 @@ func TestLoadTokenFilePathsAreNormalized(t *testing.T) {
 	cfgPath := filepath.Join(dir, "config", "config.toml")
 	require.NoError(os.MkdirAll(filepath.Dir(cfgPath), 0o755))
 	require.NoError(os.WriteFile(cfgPath, []byte(`
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 
 [[platforms]]
 type = "gitlab"
@@ -1212,7 +1212,7 @@ token_file = "~/tokens/github"
 func TestConfigTokenSourceDescriptorPrecedence(t *testing.T) {
 	assert := assert.New(t)
 	cfg := &Config{
-		GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN",
+		GitHubTokenEnv: "KENN_FORGE_GITHUB_TOKEN",
 		Platforms: []PlatformConfig{{
 			Type: "gitlab", Host: "gitlab.com", TokenFile: "/platform/file", TokenEnv: "PLATFORM_TOKEN",
 		}},
@@ -1238,8 +1238,8 @@ func TestTokenSourceForPlatformHostScopesGitHubTokenEnvToDefaultHost(t *testing.
 	// candidate chain may only contain the host-scoped gh credential, so
 	// the public-GitHub token can never be sent to an Enterprise or
 	// self-hosted GitHub host that lacks an explicit token.
-	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "public-github-token")
-	cfg := &Config{GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN"}
+	t.Setenv("KENN_FORGE_GITHUB_TOKEN", "public-github-token")
+	cfg := &Config{GitHubTokenEnv: "KENN_FORGE_GITHUB_TOKEN"}
 
 	ghe := cfg.TokenSourceForPlatformHost("github", "ghe.example.com", "", "")
 	require.Len(ghe.Candidates, 1)
@@ -1249,7 +1249,7 @@ func TestTokenSourceForPlatformHostScopesGitHubTokenEnvToDefaultHost(t *testing.
 	def := cfg.TokenSourceForPlatformHost("github", "github.com", "", "")
 	require.Len(def.Candidates, 2)
 	assert.Equal(tokenauth.SourceKindEnv, def.Candidates[0].Kind)
-	assert.Equal("MIDDLEMAN_GITHUB_TOKEN", def.Candidates[0].EnvName)
+	assert.Equal("KENN_FORGE_GITHUB_TOKEN", def.Candidates[0].EnvName)
 	assert.Equal(tokenauth.SourceKindGitHubCLI, def.Candidates[1].Kind)
 	assert.Equal("github.com", def.Candidates[1].Host)
 }
@@ -1314,7 +1314,7 @@ func TestConfigCloneTokenDescriptorsUseFirstNonEmptyHostChain(t *testing.T) {
 func TestConfigProviderTokenSourcesPlansEffectiveDescriptors(t *testing.T) {
 	assert := assert.New(t)
 	cfg := &Config{
-		GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN",
+		GitHubTokenEnv: "KENN_FORGE_GITHUB_TOKEN",
 		Platforms: []PlatformConfig{
 			{Type: "github", Host: "github.com", TokenEnv: "PLATFORM_GITHUB_TOKEN"},
 			{Type: "gitlab", Host: "gitlab.com"},
@@ -1361,7 +1361,7 @@ func TestConfigProviderTokenSourcesPlansEffectiveDescriptors(t *testing.T) {
 
 func TestConfigProviderTokenSourcesIncludesOptionalDefaultGitHub(t *testing.T) {
 	assert := assert.New(t)
-	cfg := &Config{GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN"}
+	cfg := &Config{GitHubTokenEnv: "KENN_FORGE_GITHUB_TOKEN"}
 
 	plans := cfg.ProviderTokenSources()
 
@@ -1370,7 +1370,7 @@ func TestConfigProviderTokenSourcesIncludesOptionalDefaultGitHub(t *testing.T) {
 	assert.Equal(tokenauth.Key{Platform: "github", Host: "github.com"}, plans[0].Descriptor.Key)
 	require.Len(t, plans[0].Descriptor.Candidates, 2)
 	assert.Equal(tokenauth.SourceKindEnv, plans[0].Descriptor.Candidates[0].Kind)
-	assert.Equal("MIDDLEMAN_GITHUB_TOKEN", plans[0].Descriptor.Candidates[0].EnvName)
+	assert.Equal("KENN_FORGE_GITHUB_TOKEN", plans[0].Descriptor.Candidates[0].EnvName)
 	assert.Equal(tokenauth.SourceKindGitHubCLI, plans[0].Descriptor.Candidates[1].Kind)
 	assert.Equal("github.com", plans[0].Descriptor.Candidates[1].Host)
 }
@@ -1465,7 +1465,7 @@ func TestLoadPlatformConfigGitLabToken(t *testing.T) {
 [[platforms]]
 type = "gitlab"
 host = "gitlab.com"
-token_env = "MIDDLEMAN_GITLAB_TOKEN"
+token_env = "KENN_FORGE_GITLAB_TOKEN"
 
 [[repos]]
 platform = "gitlab"
@@ -1473,7 +1473,7 @@ platform_host = "gitlab.com"
 owner = "acme"
 name = "widgets"
 `)
-	t.Setenv("MIDDLEMAN_GITLAB_TOKEN", "gitlab-secret")
+	t.Setenv("KENN_FORGE_GITLAB_TOKEN", "gitlab-secret")
 
 	cfg, err := Load(path)
 	require.NoError(t, err)
@@ -1481,7 +1481,7 @@ name = "widgets"
 	require.Len(t, cfg.Repos, 1)
 	assert.Equal("gitlab", cfg.Platforms[0].Type)
 	assert.Equal("gitlab.com", cfg.Platforms[0].Host)
-	assert.Equal("MIDDLEMAN_GITLAB_TOKEN", cfg.Platforms[0].TokenEnv)
+	assert.Equal("KENN_FORGE_GITLAB_TOKEN", cfg.Platforms[0].TokenEnv)
 	assert.Equal("gitlab", cfg.Repos[0].Platform)
 	assert.Equal("gitlab.com", cfg.Repos[0].PlatformHost)
 	assert.Equal(
@@ -1496,7 +1496,7 @@ func TestLoadPlatformConfigForgejoToken(t *testing.T) {
 [[platforms]]
 type = "forgejo"
 host = "codeberg.org"
-token_env = "MIDDLEMAN_FORGEJO_TOKEN"
+token_env = "KENN_FORGE_FORGEJO_TOKEN"
 
 [[repos]]
 platform = "forgejo"
@@ -1504,7 +1504,7 @@ platform_host = "codeberg.org"
 owner = "forgejo"
 name = "forgejo"
 `)
-	t.Setenv("MIDDLEMAN_FORGEJO_TOKEN", "forgejo-secret")
+	t.Setenv("KENN_FORGE_FORGEJO_TOKEN", "forgejo-secret")
 
 	cfg, err := Load(path)
 	require.NoError(t, err)
@@ -1512,7 +1512,7 @@ name = "forgejo"
 	require.Len(t, cfg.Repos, 1)
 	assert.Equal("forgejo", cfg.Platforms[0].Type)
 	assert.Equal("codeberg.org", cfg.Platforms[0].Host)
-	assert.Equal("MIDDLEMAN_FORGEJO_TOKEN", cfg.Platforms[0].TokenEnv)
+	assert.Equal("KENN_FORGE_FORGEJO_TOKEN", cfg.Platforms[0].TokenEnv)
 	assert.Equal("forgejo", cfg.Repos[0].Platform)
 	assert.Equal("codeberg.org", cfg.Repos[0].PlatformHost)
 	assert.Equal("forgejo-secret", cfg.TokenForPlatformHost("forgejo", "codeberg.org", ""))
@@ -1526,7 +1526,7 @@ platform_host = "codeberg.org"
 owner = "forgejo"
 name = "forgejo"
 `)
-	t.Setenv("MIDDLEMAN_FORGEJO_TOKEN", "codeberg-secret")
+	t.Setenv("KENN_FORGE_FORGEJO_TOKEN", "codeberg-secret")
 
 	cfg, err := Load(path)
 	require.NoError(t, err)
@@ -1539,7 +1539,7 @@ func TestLoadPlatformConfigForgejoTokensAreHostScoped(t *testing.T) {
 [[platforms]]
 type = "forgejo"
 host = "codeberg.org"
-token_env = "MIDDLEMAN_FORGEJO_TOKEN"
+token_env = "KENN_FORGE_FORGEJO_TOKEN"
 
 [[platforms]]
 type = "forgejo"
@@ -1558,7 +1558,7 @@ platform_host = "forgejo.example.com"
 owner = "team"
 name = "service"
 `)
-	t.Setenv("MIDDLEMAN_FORGEJO_TOKEN", "codeberg-secret")
+	t.Setenv("KENN_FORGE_FORGEJO_TOKEN", "codeberg-secret")
 	t.Setenv("FORGEJO_EXAMPLE_TOKEN", "self-hosted-secret")
 
 	cfg, err := Load(path)
@@ -1590,7 +1590,7 @@ func TestLoadPlatformConfigGiteaToken(t *testing.T) {
 [[platforms]]
 type = "gitea"
 host = "gitea.com"
-token_env = "MIDDLEMAN_GITEA_TOKEN"
+token_env = "KENN_FORGE_GITEA_TOKEN"
 
 [[repos]]
 platform = "gitea"
@@ -1598,7 +1598,7 @@ platform_host = "gitea.com"
 owner = "gitea"
 name = "tea"
 `)
-	t.Setenv("MIDDLEMAN_GITEA_TOKEN", "gitea-secret")
+	t.Setenv("KENN_FORGE_GITEA_TOKEN", "gitea-secret")
 
 	cfg, err := Load(path)
 	require.NoError(t, err)
@@ -1606,7 +1606,7 @@ name = "tea"
 	require.Len(t, cfg.Repos, 1)
 	assert.Equal("gitea", cfg.Platforms[0].Type)
 	assert.Equal("gitea.com", cfg.Platforms[0].Host)
-	assert.Equal("MIDDLEMAN_GITEA_TOKEN", cfg.Platforms[0].TokenEnv)
+	assert.Equal("KENN_FORGE_GITEA_TOKEN", cfg.Platforms[0].TokenEnv)
 	assert.Equal("gitea", cfg.Repos[0].Platform)
 	assert.Equal("gitea.com", cfg.Repos[0].PlatformHost)
 	assert.Equal("gitea-secret", cfg.TokenForPlatformHost("gitea", "gitea.com", ""))
@@ -1620,7 +1620,7 @@ platform_host = "gitea.com"
 owner = "gitea"
 name = "tea"
 `)
-	t.Setenv("MIDDLEMAN_GITEA_TOKEN", "gitea-public-secret")
+	t.Setenv("KENN_FORGE_GITEA_TOKEN", "gitea-public-secret")
 
 	cfg, err := Load(path)
 	require.NoError(t, err)
@@ -1633,7 +1633,7 @@ func TestLoadPlatformConfigGiteaTokensAreHostScoped(t *testing.T) {
 [[platforms]]
 type = "gitea"
 host = "gitea.com"
-token_env = "MIDDLEMAN_GITEA_TOKEN"
+token_env = "KENN_FORGE_GITEA_TOKEN"
 
 [[platforms]]
 type = "gitea"
@@ -1652,7 +1652,7 @@ platform_host = "gitea.internal.example"
 owner = "team"
 name = "service"
 `)
-	t.Setenv("MIDDLEMAN_GITEA_TOKEN", "gitea-public-secret")
+	t.Setenv("KENN_FORGE_GITEA_TOKEN", "gitea-public-secret")
 	t.Setenv("GITEA_INTERNAL_TOKEN", "gitea-internal-secret")
 
 	cfg, err := Load(path)
@@ -1682,7 +1682,7 @@ func TestLoadKeepsExistingGitHubURLInference(t *testing.T) {
 	assert := assert.New(t)
 	path := writeConfig(t, `
 [[repos]]
-name = "https://github.com/wesm/middleman.git"
+name = "https://github.com/wesm/kenn-forge.git"
 `)
 
 	cfg, err := Load(path)
@@ -1691,8 +1691,8 @@ name = "https://github.com/wesm/middleman.git"
 	assert.Equal("github", cfg.Repos[0].Platform)
 	assert.Equal("github.com", cfg.Repos[0].PlatformHost)
 	assert.Equal("wesm", cfg.Repos[0].Owner)
-	assert.Equal("middleman", cfg.Repos[0].Name)
-	assert.Equal("wesm/middleman", cfg.Repos[0].RepoPath)
+	assert.Equal("kenn-forge", cfg.Repos[0].Name)
+	assert.Equal("wesm/kenn-forge", cfg.Repos[0].RepoPath)
 }
 
 func TestLoadKeepsExistingGitLabURLInference(t *testing.T) {
@@ -2226,7 +2226,7 @@ func TestSaveRoundTripHostCheckSettings(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	path := writeConfig(t, `
-allowed_hosts = ["proxy.local:8091", "middleman.example"]
+allowed_hosts = ["proxy.local:8091", "forge.example"]
 trust_reverse_proxy = true
 
 [[repos]]
@@ -2241,10 +2241,10 @@ name = "arrow"
 
 	cfg2, err := Load(savePath)
 	require.NoError(err)
-	assert.Equal([]string{"proxy.local:8091", "middleman.example"}, cfg2.AllowedHosts)
+	assert.Equal([]string{"proxy.local:8091", "forge.example"}, cfg2.AllowedHosts)
 	assert.True(cfg2.TrustReverseProxy)
 	assert.Equal(
-		[]HostKey{{Host: "proxy.local", Port: "8091"}, {Host: "middleman.example", Port: ""}},
+		[]HostKey{{Host: "proxy.local", Port: "8091"}, {Host: "forge.example", Port: ""}},
 		cfg2.ParsedAllowedHosts(),
 	)
 }
@@ -2330,7 +2330,7 @@ func TestSaveRejectsInvalidConfigWithoutWriting(t *testing.T) {
 	require := require.New(t)
 	cfg := &Config{
 		SyncInterval:   "5m",
-		GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN",
+		GitHubTokenEnv: "KENN_FORGE_GITHUB_TOKEN",
 		Host:           "0.0.0.0",
 		Port:           8091,
 		Activity:       Activity{ViewMode: "threaded", TimeRange: "7d"},
@@ -3031,7 +3031,7 @@ func TestSavePreservesTmuxAgentSessionsDisabled(t *testing.T) {
 
 	cfg := &Config{
 		SyncInterval:   "5m",
-		GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN",
+		GitHubTokenEnv: "KENN_FORGE_GITHUB_TOKEN",
 		Host:           "127.0.0.1",
 		Port:           8091,
 		DataDir:        dir,
@@ -3184,7 +3184,7 @@ func TestSavePreservesShellCommand(t *testing.T) {
 
 	cfg := &Config{
 		SyncInterval:   "5m",
-		GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN",
+		GitHubTokenEnv: "KENN_FORGE_GITHUB_TOKEN",
 		Host:           "127.0.0.1",
 		Port:           8091,
 		DataDir:        dir,
@@ -3210,7 +3210,7 @@ func TestSavePreservesTmuxCommand(t *testing.T) {
 
 	cfg := &Config{
 		SyncInterval:   "5m",
-		GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN",
+		GitHubTokenEnv: "KENN_FORGE_GITHUB_TOKEN",
 		Host:           "127.0.0.1",
 		Port:           8091,
 		DataDir:        dir,
@@ -3239,7 +3239,7 @@ func TestSaveRoundTripsFleet(t *testing.T) {
 
 	cfg := &Config{
 		SyncInterval:   "5m",
-		GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN",
+		GitHubTokenEnv: "KENN_FORGE_GITHUB_TOKEN",
 		Host:           "127.0.0.1",
 		Port:           8091,
 		DataDir:        dir,
@@ -3275,7 +3275,7 @@ func TestSaveOmitsEmptyFleet(t *testing.T) {
 
 	cfg := &Config{
 		SyncInterval:   "5m",
-		GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN",
+		GitHubTokenEnv: "KENN_FORGE_GITHUB_TOKEN",
 		Host:           "127.0.0.1",
 		Port:           8091,
 		DataDir:        dir,
@@ -3430,7 +3430,7 @@ func TestSavePreservesAgents(t *testing.T) {
 
 	cfg := &Config{
 		SyncInterval:   "5m",
-		GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN",
+		GitHubTokenEnv: "KENN_FORGE_GITHUB_TOKEN",
 		Host:           "127.0.0.1",
 		Port:           8091,
 		DataDir:        dir,
@@ -3465,7 +3465,7 @@ func TestTokenEnvNamesIncludesGlobalPlatformAndPerRepo(t *testing.T) {
 	cfg := &Config{
 		GitHubTokenEnv: "WORK_GH_BOT_TOKEN",
 		Platforms: []PlatformConfig{
-			{Type: "forgejo", Host: "codeberg.org", TokenEnv: "MIDDLEMAN_FORGEJO_TOKEN"},
+			{Type: "forgejo", Host: "codeberg.org", TokenEnv: "KENN_FORGE_FORGEJO_TOKEN"},
 			{Type: "forgejo", Host: "forgejo.example.com", TokenEnv: "FORGEJO_EXAMPLE_TOKEN"},
 			{Type: "gitea", Host: "gitea.internal.example", TokenEnv: "GITEA_INTERNAL_TOKEN"},
 		},
@@ -3479,7 +3479,7 @@ func TestTokenEnvNamesIncludesGlobalPlatformAndPerRepo(t *testing.T) {
 		t,
 		[]string{
 			"WORK_GH_BOT_TOKEN",
-			"MIDDLEMAN_FORGEJO_TOKEN",
+			"KENN_FORGE_FORGEJO_TOKEN",
 			"FORGEJO_EXAMPLE_TOKEN",
 			"GITEA_INTERNAL_TOKEN",
 			"ACME_TOKEN",
@@ -3512,8 +3512,8 @@ func TestTokenEnvNamesIncludesImplicitPublicForgeTokenEnvs(t *testing.T) {
 		t,
 		[]string{
 			"WORK_GH_BOT_TOKEN",
-			"MIDDLEMAN_FORGEJO_TOKEN",
-			"MIDDLEMAN_GITEA_TOKEN",
+			"KENN_FORGE_FORGEJO_TOKEN",
+			"KENN_FORGE_GITEA_TOKEN",
 		},
 		cfg.TokenEnvNames(),
 	)
@@ -3534,8 +3534,8 @@ func TestTokenEnvNamesIncludesImplicitPublicForgeTokenEnvsFromPlatformOnly(t *te
 		t,
 		[]string{
 			"WORK_GH_BOT_TOKEN",
-			"MIDDLEMAN_FORGEJO_TOKEN",
-			"MIDDLEMAN_GITEA_TOKEN",
+			"KENN_FORGE_FORGEJO_TOKEN",
+			"KENN_FORGE_GITEA_TOKEN",
 		},
 		cfg.TokenEnvNames(),
 	)
@@ -3566,8 +3566,8 @@ func TestTokenEnvNamesIncludesFallbackProviderDefaultsForRepoTokenEnv(t *testing
 		t,
 		[]string{
 			"WORK_GH_BOT_TOKEN",
-			"MIDDLEMAN_FORGEJO_TOKEN",
-			"MIDDLEMAN_GITEA_TOKEN",
+			"KENN_FORGE_FORGEJO_TOKEN",
+			"KENN_FORGE_GITEA_TOKEN",
 			"REPO_FORGEJO_TOKEN",
 			"REPO_GITEA_TOKEN",
 		},
@@ -3663,9 +3663,9 @@ func TestTokenForPlatformHostUsesGHWithHostnameForGHE(t *testing.T) {
 	argvPath := setFakeGHCLIScript(t, fakeGHCLIOptions{
 		Stdout: "ghe-secret",
 	})
-	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "")
+	t.Setenv("KENN_FORGE_GITHUB_TOKEN", "")
 
-	cfg := &Config{GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN"}
+	cfg := &Config{GitHubTokenEnv: "KENN_FORGE_GITHUB_TOKEN"}
 	got := cfg.TokenForPlatformHost("github", "ghe.example.com", "")
 	assert.Equal(t, "ghe-secret", got)
 
@@ -3681,9 +3681,9 @@ func TestTokenForPlatformHostIgnoresGitHubTokenEnvForGHE(t *testing.T) {
 	argvPath := setFakeGHCLIScript(t, fakeGHCLIOptions{
 		Stdout: "ghe-from-gh",
 	})
-	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "public-github-token")
+	t.Setenv("KENN_FORGE_GITHUB_TOKEN", "public-github-token")
 
-	cfg := &Config{GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN"}
+	cfg := &Config{GitHubTokenEnv: "KENN_FORGE_GITHUB_TOKEN"}
 	got := cfg.TokenForPlatformHost("github", "ghe.example.com", "")
 	assert.Equal(t, "ghe-from-gh", got)
 
@@ -3696,11 +3696,11 @@ func TestTokenForPlatformHostPrefersPlatformsEntryOverGHForGHE(t *testing.T) {
 	argvPath := setFakeGHCLIScript(t, fakeGHCLIOptions{
 		Stdout: "ghe-from-gh",
 	})
-	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "")
+	t.Setenv("KENN_FORGE_GITHUB_TOKEN", "")
 	t.Setenv("PLATFORMS_GHE_TOKEN", "ghe-from-platforms")
 
 	cfg := &Config{
-		GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN",
+		GitHubTokenEnv: "KENN_FORGE_GITHUB_TOKEN",
 		Platforms: []PlatformConfig{
 			{Type: "github", Host: "ghe.example.com", TokenEnv: "PLATFORMS_GHE_TOKEN"},
 		},
@@ -3715,10 +3715,10 @@ func TestTokenForPlatformHostPrefersRepoTokenEnvOverGHForGHE(t *testing.T) {
 	argvPath := setFakeGHCLIScript(t, fakeGHCLIOptions{
 		Stdout: "ghe-from-gh",
 	})
-	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "")
+	t.Setenv("KENN_FORGE_GITHUB_TOKEN", "")
 	t.Setenv("REPO_GHE_TOKEN", "ghe-from-repo")
 
-	cfg := &Config{GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN"}
+	cfg := &Config{GitHubTokenEnv: "KENN_FORGE_GITHUB_TOKEN"}
 	got := cfg.TokenForPlatformHost("github", "ghe.example.com", "REPO_GHE_TOKEN")
 	assert.Equal(t, "ghe-from-repo", got)
 
@@ -3729,9 +3729,9 @@ func TestGitHubTokenInvokesGHWithGithubComHostname(t *testing.T) {
 	argvPath := setFakeGHCLIScript(t, fakeGHCLIOptions{
 		Stdout: "default-host-secret",
 	})
-	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "")
+	t.Setenv("KENN_FORGE_GITHUB_TOKEN", "")
 
-	cfg := &Config{GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN"}
+	cfg := &Config{GitHubTokenEnv: "KENN_FORGE_GITHUB_TOKEN"}
 	got := cfg.GitHubToken()
 	assert.Equal(t, "default-host-secret", got)
 
@@ -3987,7 +3987,7 @@ key = "self"
 			content: `
 [[fleet.peers]]
 key = "self"
-base_url = "http://middleman.local:8091"
+base_url = "http://forge.local:8091"
 `,
 			want: "fleet.peers[0]",
 		},
@@ -3996,7 +3996,7 @@ base_url = "http://middleman.local:8091"
 			content: `
 [[fleet.ssh_peers]]
 key = "self"
-destination = "dev@middleman.local"
+destination = "dev@forge.local"
 `,
 			want: "fleet.ssh_peers[0]",
 		},
@@ -4100,37 +4100,37 @@ func TestValidateFleetSSHPeers(t *testing.T) {
 		{"remote command with flags", []FleetSSHPeer{
 			{
 				Key: "epyc", Destination: "x@y",
-				RemoteCommand: "middleman --config /etc/mm.toml",
+				RemoteCommand: "kenn-forge --config /etc/mm.toml",
 			},
 		}, "remote_command must be a bare executable"},
 		{"remote command with semicolon", []FleetSSHPeer{
 			{
 				Key: "epyc", Destination: "x@y",
-				RemoteCommand: "middleman;rm",
+				RemoteCommand: "kenn-forge;rm",
 			},
 		}, "remote_command must be a bare executable"},
 		{"remote command with substitution", []FleetSSHPeer{
 			{
 				Key: "epyc", Destination: "x@y",
-				RemoteCommand: "$(which middleman)",
+				RemoteCommand: "$(which kenn-forge)",
 			},
 		}, "remote_command must be a bare executable"},
 		{"remote command with newline", []FleetSSHPeer{
 			{
 				Key: "epyc", Destination: "x@y",
-				RemoteCommand: "middleman\nrm",
+				RemoteCommand: "kenn-forge\nrm",
 			},
 		}, "remote_command must be a bare executable"},
 		{"remote command with trailing newline", []FleetSSHPeer{
 			{
 				Key: "epyc", Destination: "x@y",
-				RemoteCommand: "middleman\n",
+				RemoteCommand: "kenn-forge\n",
 			},
 		}, "remote_command must be a bare executable"},
 		{"remote command with trailing space", []FleetSSHPeer{
 			{
 				Key: "epyc", Destination: "x@y",
-				RemoteCommand: "middleman ",
+				RemoteCommand: "kenn-forge ",
 			},
 		}, "remote_command must be a bare executable"},
 	}

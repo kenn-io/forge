@@ -4,9 +4,9 @@ import "path/filepath"
 
 // File names at the root of data_dir.
 const (
-	lockFileName     = "middleman.lock"
-	metadataFileName = "middleman.run.json"
-	metadataTmpFile  = ".middleman.run.json.tmp"
+	lockFileName     = "forge.lock"
+	metadataFileName = "forge.run.json"
+	metadataTmpFile  = ".forge.run.json.tmp"
 	authTokenLock    = ".auth_token.lock"
 )
 

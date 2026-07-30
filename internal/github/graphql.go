@@ -11,7 +11,7 @@ import (
 
 	gh "github.com/google/go-github/v89/github"
 	"github.com/shurcooL/githubv4"
-	"go.kenn.io/middleman/internal/tokenauth"
+	"go.kenn.io/forge/internal/tokenauth"
 )
 
 // topLevelPageSize is the number of PRs fetched per GraphQL
@@ -118,7 +118,7 @@ type gqlNativeStack struct {
 }
 
 // gqlReviewRequest carries the requested reviewer of a pending review
-// request. Team review requests are intentionally skipped: middleman only
+// request. Team review requests are intentionally skipped: kenn-forge only
 // tracks user review requests.
 type gqlReviewRequest struct {
 	RequestedReviewer struct {

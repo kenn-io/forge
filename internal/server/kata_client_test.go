@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"go.kenn.io/middleman/internal/kata"
+	"go.kenn.io/forge/internal/kata"
 )
 
 func TestKataAPIClientExposesSnapshotEnrichmentMethods(t *testing.T) {

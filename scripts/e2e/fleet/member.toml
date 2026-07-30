@@ -6,7 +6,7 @@ port = 8091
 allowed_hosts = ["member:18091"]
 data_dir = "/data/member"
 sync_interval = "1h"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN_UNSET_FOR_FLEET_E2E"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN_UNSET_FOR_FLEET_E2E"
 
 [activity]
 view_mode = "threaded"

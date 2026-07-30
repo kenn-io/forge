@@ -25,22 +25,22 @@ func RepairLegacyTimestamps(
 		table  string
 		column string
 	}{
-		{table: "middleman_repos", column: "created_at"},
-		{table: "middleman_repos", column: "last_sync_started_at"},
-		{table: "middleman_repos", column: "last_sync_completed_at"},
-		{table: "middleman_merge_requests", column: "created_at"},
-		{table: "middleman_merge_requests", column: "updated_at"},
-		{table: "middleman_merge_requests", column: "last_activity_at"},
-		{table: "middleman_merge_requests", column: "merged_at"},
-		{table: "middleman_merge_requests", column: "closed_at"},
-		{table: "middleman_merge_requests", column: "detail_fetched_at"},
-		{table: "middleman_issues", column: "created_at"},
-		{table: "middleman_issues", column: "updated_at"},
-		{table: "middleman_issues", column: "last_activity_at"},
-		{table: "middleman_issues", column: "closed_at"},
-		{table: "middleman_issues", column: "detail_fetched_at"},
-		{table: "middleman_mr_events", column: "created_at"},
-		{table: "middleman_issue_events", column: "created_at"},
+		{table: "forge_repos", column: "created_at"},
+		{table: "forge_repos", column: "last_sync_started_at"},
+		{table: "forge_repos", column: "last_sync_completed_at"},
+		{table: "forge_merge_requests", column: "created_at"},
+		{table: "forge_merge_requests", column: "updated_at"},
+		{table: "forge_merge_requests", column: "last_activity_at"},
+		{table: "forge_merge_requests", column: "merged_at"},
+		{table: "forge_merge_requests", column: "closed_at"},
+		{table: "forge_merge_requests", column: "detail_fetched_at"},
+		{table: "forge_issues", column: "created_at"},
+		{table: "forge_issues", column: "updated_at"},
+		{table: "forge_issues", column: "last_activity_at"},
+		{table: "forge_issues", column: "closed_at"},
+		{table: "forge_issues", column: "detail_fetched_at"},
+		{table: "forge_mr_events", column: "created_at"},
+		{table: "forge_issue_events", column: "created_at"},
 	}
 
 	for _, repair := range repairs {

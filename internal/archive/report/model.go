@@ -6,7 +6,7 @@ import (
 )
 
 const (
-	Schema               = "middleman-archive-report/1"
+	Schema               = "kenn-forge-archive-report/1"
 	MaxDetailedRecords   = 10_000
 	MaxDetailedTextBytes = 32 * 1024 * 1024
 )

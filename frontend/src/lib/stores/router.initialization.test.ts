@@ -10,16 +10,16 @@ async function importRouterAt(path: string) {
 
 describe("router initialization", () => {
   afterEach(() => {
-    delete window.__middleman_config;
+    delete window.__kenn_forge_config;
     delete window.__BASE_PATH__;
     window.history.replaceState(null, "", "/");
     vi.resetModules();
   });
 
   it("withBasePath prefixes hrefs when mounted under a base path", async () => {
-    window.__BASE_PATH__ = "/middleman/";
-    const { withBasePath } = await importRouterAt("/middleman/docs");
-    expect(withBasePath("/docs?folder=notes&doc=README.md")).toBe("/middleman/docs?folder=notes&doc=README.md");
+    window.__BASE_PATH__ = "/kenn-forge/";
+    const { withBasePath } = await importRouterAt("/kenn-forge/docs");
+    expect(withBasePath("/docs?folder=notes&doc=README.md")).toBe("/kenn-forge/docs?folder=notes&doc=README.md");
   });
 
   it("withBasePath is a no-op at the root base path", async () => {
@@ -59,7 +59,7 @@ describe("router initialization", () => {
   });
 
   it("uses embed initialRoute before the first app render", async () => {
-    window.__middleman_config = {
+    window.__kenn_forge_config = {
       embed: {
         initialRoute: "/workspaces/embed/detail/gitlab/pr/git.example.com/42" + "?repo_path=group%2Fproject",
       },

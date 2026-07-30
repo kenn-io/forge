@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 
 import RepoIssueModal from "./RepoIssueModal.svelte";
 import type { RepoSummaryCard } from "./repoSummary.js";
-import { getStackDepth, getTopFrame, resetModalStack } from "@middleman/ui/stores/keyboard/modal-stack";
+import { getStackDepth, getTopFrame, resetModalStack } from "@kenn-forge/ui/stores/keyboard/modal-stack";
 
 const summary: RepoSummaryCard = {
   owner: "acme",

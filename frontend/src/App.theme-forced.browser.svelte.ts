@@ -1,5 +1,5 @@
 // Regression guard for the embed-forced theme path. When an embed host pins
-// window.__middleman_config.theme.mode, App.svelte resolves the theme from a
+// window.__kenn_forge_config.theme.mode, App.svelte resolves the theme from a
 // $effect (reapplyTheme). A read-after-write on the forcedDark $state inside
 // that effect makes it depend on a signal it mutates, so it reschedules until
 // Svelte throws effect_update_depth_exceeded — the header still paints but the
@@ -35,7 +35,7 @@ describe("embed-forced theme mode", () => {
   afterEach(async () => {
     mounted?.unmount();
     mounted = null;
-    delete window.__middleman_config;
+    delete window.__kenn_forge_config;
     // kit-ui-check-ignore: test harness resets the dark class between cases
     document.documentElement.classList.remove("dark");
     cleanupTheme();
@@ -45,7 +45,7 @@ describe("embed-forced theme mode", () => {
 
   it("renders the shell past loading when a mode is forced", async () => {
     // Set before mount: App reads the config during its initial render.
-    window.__middleman_config = { theme: { mode: "dark" } };
+    window.__kenn_forge_config = { theme: { mode: "dark" } };
     mounted = await mountBrowserApp("/pulls");
 
     // The list-view sidebar layout only mounts once the shell advances past

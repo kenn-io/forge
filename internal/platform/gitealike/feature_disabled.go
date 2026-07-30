@@ -5,7 +5,7 @@ import (
 	"errors"
 	"net/http"
 
-	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/forge/internal/platform"
 )
 
 func (p *Provider) ClassifyRepositoryFeatureError(

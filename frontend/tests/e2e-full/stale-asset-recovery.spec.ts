@@ -133,7 +133,7 @@ test("reloads an outdated frontend before rendering a Mermaid diagram", async ({
       async () => {
         try {
           return await page.evaluate(() =>
-            Object.keys(window.sessionStorage).filter((key) => key.startsWith("middleman:vite-reload")),
+            Object.keys(window.sessionStorage).filter((key) => key.startsWith("kenn-forge:vite-reload")),
           );
         } catch (error) {
           if (isNavigationContextReplacement(error)) return null;

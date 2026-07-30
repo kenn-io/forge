@@ -73,11 +73,11 @@ func TestEnsureCommandSessionLaunchesTmuxBackedCommand(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	tmuxPath, recordPath, _ := writeCommandSessionFakeTmux(
-		t, "middleman:test-owner",
+		t, "kenn-forge:test-owner",
 	)
 	mgr := NewManager(Options{
 		TmuxCommand:     []string{tmuxPath},
-		TmuxOwnerMarker: "middleman:test-owner",
+		TmuxOwnerMarker: "kenn-forge:test-owner",
 	})
 	t.Cleanup(mgr.Shutdown)
 
@@ -121,11 +121,11 @@ func TestEnsureCommandSessionReturnsExistingLiveSession(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	tmuxPath, recordPath, _ := writeCommandSessionFakeTmux(
-		t, "middleman:test-owner",
+		t, "kenn-forge:test-owner",
 	)
 	mgr := NewManager(Options{
 		TmuxCommand:     []string{tmuxPath},
-		TmuxOwnerMarker: "middleman:test-owner",
+		TmuxOwnerMarker: "kenn-forge:test-owner",
 	})
 	t.Cleanup(mgr.Shutdown)
 
@@ -162,10 +162,10 @@ func TestEnsureCommandSessionReturnsExistingLiveSession(t *testing.T) {
 func TestEnsureCommandSessionRejectsKeyOwnedByAnotherScope(t *testing.T) {
 	requirePTYAvailable(t)
 	require := require.New(t)
-	tmuxPath, _, _ := writeCommandSessionFakeTmux(t, "middleman:test-owner")
+	tmuxPath, _, _ := writeCommandSessionFakeTmux(t, "kenn-forge:test-owner")
 	mgr := NewManager(Options{
 		TmuxCommand:     []string{tmuxPath},
-		TmuxOwnerMarker: "middleman:test-owner",
+		TmuxOwnerMarker: "kenn-forge:test-owner",
 	})
 	t.Cleanup(mgr.Shutdown)
 
@@ -183,7 +183,7 @@ func TestEnsureCommandSessionRejectsKeyOwnedByAnotherScope(t *testing.T) {
 }
 
 func TestEnsureCommandSessionRequiresCommand(t *testing.T) {
-	tmuxPath, _, _ := writeCommandSessionFakeTmux(t, "middleman:test-owner")
+	tmuxPath, _, _ := writeCommandSessionFakeTmux(t, "kenn-forge:test-owner")
 	mgr := NewManager(Options{TmuxCommand: []string{tmuxPath}})
 	t.Cleanup(mgr.Shutdown)
 
@@ -200,13 +200,13 @@ func TestEnsureCommandSessionReattachesToSurvivingTmuxSession(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	tmuxPath, recordPath, statePath := writeCommandSessionFakeTmux(
-		t, "middleman:test-owner",
+		t, "kenn-forge:test-owner",
 	)
 	// Simulate a tmux session that survived a manager restart.
 	require.NoError(os.WriteFile(statePath, nil, 0o644))
 	mgr := NewManager(Options{
 		TmuxCommand:     []string{tmuxPath},
-		TmuxOwnerMarker: "middleman:test-owner",
+		TmuxOwnerMarker: "kenn-forge:test-owner",
 	})
 	t.Cleanup(mgr.Shutdown)
 
@@ -234,7 +234,7 @@ func TestEnsureCommandSessionRejectsForeignTmuxSessionOwner(t *testing.T) {
 	require.NoError(os.WriteFile(statePath, nil, 0o644))
 	mgr := NewManager(Options{
 		TmuxCommand:     []string{tmuxPath},
-		TmuxOwnerMarker: "middleman:test-owner",
+		TmuxOwnerMarker: "kenn-forge:test-owner",
 	})
 	t.Cleanup(mgr.Shutdown)
 

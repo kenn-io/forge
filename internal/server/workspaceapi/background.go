@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"time"
 
-	"go.kenn.io/middleman/internal/workspace"
+	"go.kenn.io/forge/internal/workspace"
 )
 
 func (s *Handler) runWorkspacePRMonitorLoop(ctx context.Context) {

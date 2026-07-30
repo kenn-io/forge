@@ -4,7 +4,7 @@ import { mockApi } from "./support/mockApi";
 
 declare global {
   interface Window {
-    __middlemanOpenedURL: string;
+    __kenn_forgeOpenedURL: string;
   }
 }
 
@@ -51,7 +51,7 @@ function branchForcePush(createdAt: string): unknown {
     activity_url:
       "https://github.com/acme/widgets/compare/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     after_sha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-    author: "middleman",
+    author: "kenn-forge",
     before_sha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     body_preview: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa -> bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     branch_name: "main",
@@ -144,13 +144,13 @@ function sparseCommitPatch(): string {
 
 async function mockDefaultBranchActivity(page: Page): Promise<void> {
   await page.addInitScript(() => {
-    Object.defineProperty(window, "__middlemanOpenedURL", {
+    Object.defineProperty(window, "__kenn_forgeOpenedURL", {
       configurable: true,
       value: "",
       writable: true,
     });
     window.open = (url?: string | URL) => {
-      window.__middlemanOpenedURL = String(url ?? "");
+      window.__kenn_forgeOpenedURL = String(url ?? "");
       return null;
     };
   });
@@ -484,7 +484,7 @@ test.describe("default branch activity", () => {
     await forcePushRow.click();
     await expect(page.locator(".activity-detail")).toHaveCount(0);
     await expect
-      .poll(() => page.evaluate(() => window.__middlemanOpenedURL))
+      .poll(() => page.evaluate(() => window.__kenn_forgeOpenedURL))
       .toContain("github.com/acme/widgets/compare");
   });
 
@@ -522,7 +522,7 @@ test.describe("default branch activity", () => {
     await expect.poll(() => pierreDiffCount(diffFile, '[data-separator="line-info"]')).toBeGreaterThanOrEqual(1);
     await expect.poll(() => pierreDiffCount(diffFile, "[data-expand-button]")).toBe(0);
     await expect.poll(() => filePreviewRequests).toBe(0);
-    await expect.poll(() => page.evaluate(() => window.__middlemanOpenedURL)).toBe("");
+    await expect.poll(() => page.evaluate(() => window.__kenn_forgeOpenedURL)).toBe("");
   });
 });
 
@@ -557,7 +557,7 @@ test.describe("mobile default branch activity", () => {
 
     await expect(page).toHaveURL(/\/m/);
     await expect
-      .poll(() => page.evaluate(() => window.__middlemanOpenedURL))
+      .poll(() => page.evaluate(() => window.__kenn_forgeOpenedURL))
       .toContain("github.com/acme/widgets/compare");
   });
 });

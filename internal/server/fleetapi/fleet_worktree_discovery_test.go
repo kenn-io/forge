@@ -12,8 +12,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"go.kenn.io/forge/internal/db"
 	gitworktree "go.kenn.io/kit/git/worktree"
-	"go.kenn.io/middleman/internal/db"
 )
 
 // seedRepoWithWorktree creates a git repo with one empty commit and a single

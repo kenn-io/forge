@@ -10,7 +10,7 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v89/github"
-	"go.kenn.io/middleman/internal/tokenauth"
+	"go.kenn.io/forge/internal/tokenauth"
 )
 
 // IdentityKey identifies the GitHub principal whose rate limit and sync budget

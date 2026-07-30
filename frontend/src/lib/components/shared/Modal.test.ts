@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
-import { getStack, resetModalStack } from "@middleman/ui/stores/keyboard/modal-stack";
+import { getStack, resetModalStack } from "@kenn-forge/ui/stores/keyboard/modal-stack";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { createRawSnippet } from "svelte";
 

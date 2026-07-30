@@ -1,6 +1,6 @@
 # Federated fleet
 
-Middleman daemons federate into a fleet: one daemon (the **hub**) merges
+Kenn Forge daemons federate into a fleet: one daemon (the **hub**) merges
 its own state with the state of remote daemons (**peers**) into a single
 snapshot, proxies mutations to the peer that owns the resource, and tells
 clients how to attach native terminals to sessions anywhere in the fleet.
@@ -29,12 +29,12 @@ What the fleet does today:
   executing the peer's own CLI remotely, so the peer's HTTP listener
   never leaves its host).
 - **Daemon contract**: runtime discovery via the lock file and
-  published metadata, a minted bearer token, and the `middleman api`
+  published metadata, a minted bearer token, and the `kenn-forge api`
   CLI verb give thin clients and relays one uniform way to reach a
   daemon.
 
 Out of scope: remote binary provisioning/bootstrap
-(peers are expected to have `middleman` installed), cross-fleet
+(peers are expected to have `kenn-forge` installed), cross-fleet
 identity beyond config keys, and peer-to-peer topology. Fan-out is always
 hub → peer, one hop.
 
@@ -78,7 +78,7 @@ key = "epyc"
 name = "EPYC box"
 destination = "wes@epyc.tail"
 # platform = "linux"
-# remote_command = "middleman"   # bare executable, no flags
+# remote_command = "kenn-forge"   # bare executable, no flags
 
 [api]
 # Gate this daemon's own HTTP API and terminal WebSocket routes behind
@@ -97,7 +97,7 @@ ssh(1) as a single positional argument, never through a shell);
 embeds it unquoted in a remote shell fragment and the CLI only
 dispatches subcommands in `argv[0]` position, so flags or metacharacters
 would change meaning. A custom remote config location is set via
-`MIDDLEMAN_HOME` in the remote login profile (the relay runs
+`KENN_FORGE_HOME` in the remote login profile (the relay runs
 `sh -lc`). Editing `[api].require_auth` or the SSH peer set while the
 daemon runs reports `restart_required` on the `config.changed` event.
 Both are wired at startup.
@@ -237,14 +237,14 @@ the ControlMaster lifecycle.
 - **Runner** (`runner.go`): relays one HTTP exchange by executing
   the remote CLI through the master:
   `ssh -o ControlPath=<socket> -o ControlMaster=no <destination>
-  sh -lc '<PATH=...>; middleman api -i [-d @-] METHOD PATH'`. The
+  sh -lc '<PATH=...>; kenn-forge api -i [-d @-] METHOD PATH'`. The
   `-i` framing (status line, blank line, body) lets the hub recover
   the exact remote status. Exit codes are the transport contract:
   0/1 → parse framed response, 2 → typed
   `ErrRemoteDaemonUnavailable`.
 - **Daemon auto-start** (`ensure.go`): when a relay hits exit 2, the
   hub probes `status --json` on the peer, starts a detached daemon
-  (`nohup middleman serve`) if none runs, polls until the probe
+  (`nohup kenn-forge serve`) if none runs, polls until the probe
   reports running **with published runtime metadata** (the api verb
   needs the listen address, which trails the lock early in startup),
   then retries the relay once. Double-starts are harmless: the loser
@@ -256,8 +256,8 @@ Everything a local client (or the SSH relay acting as one) needs to
 reach a daemon, with no out-of-band configuration:
 
 - **Runtime discovery** (`internal/runtimelock`): the daemon is
-  running iff the flock on `<data_dir>/middleman.lock` is held; only
-  then is `<data_dir>/middleman.run.json` authoritative. The metadata
+  running iff the flock on `<data_dir>/forge.lock` is held; only
+  then is `<data_dir>/forge.run.json` authoritative. The metadata
   publishes pid, `listen_addr` (from the actual bound listener),
   `base_path` (canonical, no trailing slash; clients join API paths
   onto it), `token_path`, and `require_auth`.
@@ -272,7 +272,7 @@ reach a daemon, with no out-of-band configuration:
   before reading the token file. The hub never forwards a caller's
   token or cookie to an HTTP peer. A require_auth daemon must be reached
   as an SSH peer instead.
-- **`middleman api` verb** (`cmd/middleman/api_verb.go`): the
+- **`kenn-forge api` verb** (`cmd/kenn-forge/api_verb.go`): the
   thin-client primitive: discovers the daemon through the runtime
   metadata, authenticates with the token, relays one request.
   Response bytes go to stdout verbatim; `-i` prefixes the exact
@@ -292,7 +292,7 @@ reach a daemon, with no out-of-band configuration:
   wrapping, and auto-start contracts against a faked ssh exec seam.
 - `internal/sshfleet` unit tests pin the ControlMaster lifecycle,
   relay framing, and ensure-daemon polling.
-- `cmd/middleman` e2e tests build the middleman binary and pin the api
+- `cmd/kenn-forge` e2e tests build the kenn-forge binary and pin the api
   verb's auth, framing, exit-code, and base-path behavior.
 - Container e2e (`fleet_container_e2e_test.go`,
   `scripts/e2e/fleet/`) runs a real hub + member over Docker

@@ -252,7 +252,7 @@ describe("terminal clipboard writer", () => {
     expect(writeText).toHaveBeenCalledWith("fallback");
   });
 
-  it("falls back to the local Middleman clipboard when browser writes fail", async () => {
+  it("falls back to the local Kenn Forge clipboard when browser writes fail", async () => {
     const writeLocalText = vi.fn(async () => undefined);
     const writer = createTerminalClipboardWriter({
       beginDeferredWrite() {

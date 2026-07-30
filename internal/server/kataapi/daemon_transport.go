@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"go.kenn.io/middleman/internal/kata"
+	"go.kenn.io/forge/internal/kata"
 )
 
 const (

@@ -23,8 +23,8 @@ const { mockGetTerminalSettings, mockSetTerminalSettings, mockTerminalStore, moc
   };
 });
 
-vi.mock("@middleman/ui", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@middleman/ui")>();
+vi.mock("@kenn-forge/ui", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@kenn-forge/ui")>();
   return {
     ...actual,
     DEFAULT_TERMINAL_SETTINGS: {

@@ -12,9 +12,9 @@ import (
 	"strconv"
 	"strings"
 
+	"go.kenn.io/forge/internal/gitclone"
+	"go.kenn.io/forge/internal/procutil"
 	gitcmd "go.kenn.io/kit/git/cmd"
-	"go.kenn.io/middleman/internal/gitclone"
-	"go.kenn.io/middleman/internal/procutil"
 )
 
 func isGitWhitespace(b byte) bool {

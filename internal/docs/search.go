@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync"
 
-	"go.kenn.io/middleman/internal/config"
+	"go.kenn.io/forge/internal/config"
 )
 
 // Hit is a single search result. Score is unstable across releases but

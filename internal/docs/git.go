@@ -12,14 +12,14 @@ import (
 	"strings"
 	"sync"
 
+	"go.kenn.io/forge/internal/procutil"
 	gitcmd "go.kenn.io/kit/git/cmd"
-	"go.kenn.io/middleman/internal/procutil"
 )
 
 // docsGitBase is the base kit runner for every git command against a docs
 // folder. StripEnv drops inherited GIT_* variables so a docs git command
 // can never bind to another repository or splice in caller config, and the
-// secret stripping keeps middleman credentials out of git
+// secret stripping keeps kenn-forge credentials out of git
 // child processes. Stripping is deliberately wholesale — env-based
 // customization such as GIT_SSH_COMMAND and GIT_AUTHOR_*/GIT_COMMITTER_*
 // goes too, rather than resurrecting a hand-maintained allowlist; the
@@ -36,10 +36,10 @@ func docsGitBase() gitcmd.Runner {
 // emptyHooksDir is an empty directory used as core.hooksPath so that
 // hooks shipped inside a docs folder's .git/hooks (or pointed to by a
 // core.hooksPath override in its repo config) never execute when
-// middleman drives git. Docs folders are user data, not trusted code.
+// kenn-forge drives git. Docs folders are user data, not trusted code.
 // A randomly named temp dir avoids predictable-path pre-creation.
 var emptyHooksDir = sync.OnceValues(func() (string, error) {
-	return os.MkdirTemp("", "middleman-docs-no-hooks-")
+	return os.MkdirTemp("", "kenn-forge-docs-no-hooks-")
 })
 
 // docsGitRunner returns the kit runner with command-scope overrides that
@@ -125,7 +125,7 @@ func isDocsSecretEnv(key string) bool {
 	if upper == "" {
 		return false
 	}
-	if strings.HasPrefix(upper, "MIDDLEMAN_") && strings.Contains(upper, "TOKEN") {
+	if strings.HasPrefix(upper, "KENN_FORGE_") && strings.Contains(upper, "TOKEN") {
 		return true
 	}
 	for _, part := range []string{"TOKEN", "SECRET", "PASSWORD", "API_KEY", "ACCESS_KEY", "PRIVATE_KEY"} {

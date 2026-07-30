@@ -1,8 +1,8 @@
 <script lang="ts">
   import { StatusBar as KitStatusBar, StatusDot } from "@kenn-io/kit-ui";
-  import { getStores } from "@middleman/ui";
-  import type { ActivityItem } from "@middleman/ui/api/types";
-  import { isActivityItemTypeEnabled } from "@middleman/ui/stores/activity";
+  import { getStores } from "@kenn-forge/ui";
+  import type { ActivityItem } from "@kenn-forge/ui/api/types";
+  import { isActivityItemTypeEnabled } from "@kenn-forge/ui/stores/activity";
   import BudgetBars from "./BudgetBars.svelte";
   import BudgetPopover from "./BudgetPopover.svelte";
   import { client } from "../../api/runtime.js";

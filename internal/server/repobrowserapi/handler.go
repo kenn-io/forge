@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"go.kenn.io/middleman/internal/config"
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/gitclone"
-	"go.kenn.io/middleman/internal/server/httpapi"
+	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/gitclone"
+	"go.kenn.io/forge/internal/server/httpapi"
 )
 
 type Handler struct {

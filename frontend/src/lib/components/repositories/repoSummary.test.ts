@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import type { RepoSummary } from "@middleman/ui/api/types";
+import type { RepoSummary } from "@kenn-forge/ui/api/types";
 
 import { defaultProviderCapabilities, normalizeSummaries, repoKey, shouldShowPlatformHost } from "./repoSummary.js";
 

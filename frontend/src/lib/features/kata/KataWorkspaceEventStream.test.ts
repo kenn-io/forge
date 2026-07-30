@@ -15,8 +15,8 @@ import {
   resetKataWorkspaceTestState,
 } from "./test/KataWorkspaceSupport.js";
 
-vi.mock("@middleman/ui", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@middleman/ui")>();
+vi.mock("@kenn-forge/ui", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@kenn-forge/ui")>();
   return {
     ...actual,
     getStores: () => ({
@@ -169,7 +169,7 @@ describe("KataWorkspace compact snapshot stream", () => {
           : new Request(new URL(String(input), window.location.origin), init),
       )
       .find((request) => new URL(request.url, window.location.origin).pathname === "/api/v1/kata/tasks/events");
-    expect(streamRequest?.headers.get("X-Middleman-Kata-Daemon")).toBe("home");
+    expect(streamRequest?.headers.get("X-Kenn-Forge-Kata-Daemon")).toBe("home");
     expect(streamRequest?.headers.get("Last-Event-ID")).toBe("5");
   });
 
@@ -741,8 +741,8 @@ describe("KataWorkspace compact snapshot stream", () => {
 
     await fireEvent.click(screen.getByRole("button", { name: "Retry Kata snapshot" }));
     await waitFor(() => expect(harness.snapshotRequests).toHaveLength(3));
-    expect(harness.snapshotRequests[1]!.headers.get("X-Middleman-Kata-Daemon")).toBe("work");
-    expect(harness.snapshotRequests[2]!.headers.get("X-Middleman-Kata-Daemon")).toBe("home");
+    expect(harness.snapshotRequests[1]!.headers.get("X-Kenn-Forge-Kata-Daemon")).toBe("work");
+    expect(harness.snapshotRequests[2]!.headers.get("X-Kenn-Forge-Kata-Daemon")).toBe("home");
     await screen.findByRole("button", { name: /Pay rent/ });
   });
 

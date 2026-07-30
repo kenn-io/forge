@@ -17,8 +17,8 @@
   import ArrowUpIcon from "@lucide/svelte/icons/arrow-up";
   import ArrowDownIcon from "@lucide/svelte/icons/arrow-down";
   import { apiErrorMessage, client } from "../../api/runtime.js";
-  import { showFlash } from "@middleman/ui/stores/flash";
-  import type { components } from "@middleman/ui/api/schema";
+  import { showFlash } from "@kenn-forge/ui/stores/flash";
+  import type { components } from "@kenn-forge/ui/api/schema";
   import {
     DiffStats,
     FilterDropdown,
@@ -26,12 +26,12 @@
     ScrollBox,
     SidebarToggle,
     type WorkspaceItemIdentity,
-  } from "@middleman/ui";
+  } from "@kenn-forge/ui";
   import {
     createRepoLabelFormatter,
     repoIdentityKey,
     type RepoLabelIdentity,
-  } from "@middleman/ui/utils/repo-label";
+  } from "@kenn-forge/ui/utils/repo-label";
   import ProviderIcon from "../provider/ProviderIcon.svelte";
   import ConfirmDialog from "../shared/ConfirmDialog.svelte";
   import {
@@ -150,7 +150,7 @@
     window.__BASE_PATH__ ?? "/"
   ).replace(/\/$/, "");
   const doneAcknowledgementsStorageKey =
-    "middleman:workspace-agent-done-acknowledgements/v1";
+    "kenn-forge:workspace-agent-done-acknowledgements/v1";
 
   let workspaces = $state.raw<Workspace[]>([]);
   let fleetHosts = $state.raw<HostSummary[]>([]);

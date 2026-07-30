@@ -14,15 +14,15 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go/modules/compose"
 	"github.com/testcontainers/testcontainers-go/wait"
-	"go.kenn.io/middleman/internal/archive"
-	archivereport "go.kenn.io/middleman/internal/archive/report"
-	"go.kenn.io/middleman/internal/db"
-	ghclient "go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/platform"
-	platformforgejo "go.kenn.io/middleman/internal/platform/forgejo"
-	platformgitea "go.kenn.io/middleman/internal/platform/gitea"
-	"go.kenn.io/middleman/internal/procutil"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/archive"
+	archivereport "go.kenn.io/forge/internal/archive/report"
+	"go.kenn.io/forge/internal/db"
+	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/platform"
+	platformforgejo "go.kenn.io/forge/internal/platform/forgejo"
+	platformgitea "go.kenn.io/forge/internal/platform/gitea"
+	"go.kenn.io/forge/internal/procutil"
+	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
 type giteaLikeContainerClient interface {
@@ -76,8 +76,8 @@ type giteaLikeContainerManifest struct {
 }
 
 func TestForgejoContainerSync(t *testing.T) {
-	if os.Getenv("MIDDLEMAN_FORGEJO_CONTAINER_TESTS") != "1" {
-		t.Skip("set MIDDLEMAN_FORGEJO_CONTAINER_TESTS=1 to run Forgejo container e2e")
+	if os.Getenv("KENN_FORGE_FORGEJO_CONTAINER_TESTS") != "1" {
+		t.Skip("set KENN_FORGE_FORGEJO_CONTAINER_TESTS=1 to run Forgejo container e2e")
 	}
 
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Minute)
@@ -86,10 +86,10 @@ func TestForgejoContainerSync(t *testing.T) {
 		Kind:        platform.KindForgejo,
 		Service:     "forgejo",
 		ScriptDir:   "forgejo",
-		StackID:     compose.StackIdentifier(envOrDefault("MIDDLEMAN_FORGEJO_COMPOSE_PROJECT", "middleman-forgejo-e2e")),
-		Image:       envOrDefault("MIDDLEMAN_FORGEJO_IMAGE", "codeberg.org/forgejo/forgejo:12"),
+		StackID:     compose.StackIdentifier(envOrDefault("KENN_FORGE_FORGEJO_COMPOSE_PROJECT", "kenn-forge-forgejo-e2e")),
+		Image:       envOrDefault("KENN_FORGE_FORGEJO_IMAGE", "codeberg.org/forgejo/forgejo:12"),
 		HTTPPort:    envOrDefault("FORGEJO_HTTP_PORT", freeLoopbackPort(t)),
-		KeepEnv:     "MIDDLEMAN_KEEP_FORGEJO_FIXTURE",
+		KeepEnv:     "KENN_FORGE_KEEP_FORGEJO_FIXTURE",
 		EnvPrefix:   "FORGEJO",
 		TitlePrefix: "Forgejo",
 	})
@@ -116,8 +116,8 @@ func TestForgejoContainerSync(t *testing.T) {
 }
 
 func TestGiteaContainerSync(t *testing.T) {
-	if os.Getenv("MIDDLEMAN_GITEA_CONTAINER_TESTS") != "1" {
-		t.Skip("set MIDDLEMAN_GITEA_CONTAINER_TESTS=1 to run Gitea container e2e")
+	if os.Getenv("KENN_FORGE_GITEA_CONTAINER_TESTS") != "1" {
+		t.Skip("set KENN_FORGE_GITEA_CONTAINER_TESTS=1 to run Gitea container e2e")
 	}
 
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Minute)
@@ -126,10 +126,10 @@ func TestGiteaContainerSync(t *testing.T) {
 		Kind:        platform.KindGitea,
 		Service:     "gitea",
 		ScriptDir:   "gitea",
-		StackID:     compose.StackIdentifier(envOrDefault("MIDDLEMAN_GITEA_COMPOSE_PROJECT", "middleman-gitea-e2e")),
-		Image:       envOrDefault("MIDDLEMAN_GITEA_IMAGE", "gitea/gitea:1.24.6"),
+		StackID:     compose.StackIdentifier(envOrDefault("KENN_FORGE_GITEA_COMPOSE_PROJECT", "kenn-forge-gitea-e2e")),
+		Image:       envOrDefault("KENN_FORGE_GITEA_IMAGE", "gitea/gitea:1.24.6"),
 		HTTPPort:    envOrDefault("GITEA_HTTP_PORT", freeLoopbackPort(t)),
-		KeepEnv:     "MIDDLEMAN_KEEP_GITEA_FIXTURE",
+		KeepEnv:     "KENN_FORGE_KEEP_GITEA_FIXTURE",
 		EnvPrefix:   "GITEA",
 		TitlePrefix: "Gitea",
 	})
@@ -355,8 +355,8 @@ func runGiteaLikeContainerFixture(
 	require.NoError(err)
 	composeStack := stack.
 		WithEnv(map[string]string{
-			"MIDDLEMAN_" + cfg.EnvPrefix + "_IMAGE": cfg.Image,
-			cfg.EnvPrefix + "_HTTP_PORT":            cfg.HTTPPort,
+			"KENN_FORGE_" + cfg.EnvPrefix + "_IMAGE": cfg.Image,
+			cfg.EnvPrefix + "_HTTP_PORT":             cfg.HTTPPort,
 		}).
 		WaitForService(cfg.Service, waitForGiteaLikeHTTP())
 	err = composeStack.Up(ctx, compose.Wait(true))

@@ -26,22 +26,22 @@ Prove whether the failure is local runner/environment pressure or a product/test
 
 ## Tmux Orphan Checks
 
-middleman tests can spawn real tmux sessions. If a test process is `SIGKILL`ed, its normal cleanup can be bypassed and those sessions may remain.
+kenn-forge tests can spawn real tmux sessions. If a test process is `SIGKILL`ed, its normal cleanup can be bypassed and those sessions may remain.
 
 Inspect candidates without deleting them:
 
 ```sh
 tmux list-sessions -F '#{session_name}	#{session_created}	#{session_attached}	#{session_windows}'
-tmux show-options -qv -t <session> @middleman_owner
+tmux show-options -qv -t <session> @forge_owner
 tmux display-message -p -t <session> '#{pane_current_path} #{pane_current_command} #{pane_title}'
 tmux capture-pane -p -t <session> -S -80
 ```
 
-A tmux session is a plausible middleman test orphan only when the evidence lines up:
+A tmux session is a plausible kenn-forge test orphan only when the evidence lines up:
 
-- the name matches middleman's managed shapes: `middleman-<16 lowercase hex>` or `middleman-<16 lowercase hex>-<16 lowercase hex>`;
-- it is unattached and not being used by a live middleman dev server, workspace, or runtime session;
-- its `@middleman_owner` marker points at this checkout's manager, or other evidence clearly ties it to the failed test run;
+- the name matches kenn-forge's managed shapes: `kenn-forge-<16 lowercase hex>` or `kenn-forge-<16 lowercase hex>-<16 lowercase hex>`;
+- it is unattached and not being used by a live kenn-forge dev server, workspace, or runtime session;
+- its `@forge_owner` marker points at this checkout's manager, or other evidence clearly ties it to the failed test run;
 - its pane path, command, title, or captured output points at this repo/test run rather than a user shell;
 - if the local SQLite state is available, it is not referenced by a live workspace row or stored runtime tmux-session row.
 

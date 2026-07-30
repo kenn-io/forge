@@ -10,8 +10,8 @@ import (
 
 	"github.com/doordash-oss/oapi-codegen-dd/v3/pkg/runtime"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/server/httpapi"
 	katagenerated "go.kenn.io/kata/pkg/client/generated"
-	"go.kenn.io/middleman/internal/server/httpapi"
 )
 
 func TestKataSnapshotLoaderLoadsGlobalReadyAuthority(t *testing.T) {

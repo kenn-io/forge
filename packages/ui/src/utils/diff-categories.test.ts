@@ -27,7 +27,7 @@ function binaryFile(path: string): DiffFile {
 describe("diff file categorization", () => {
   it("treats non-binary changed files as code without per-language allowlisting", () => {
     expect(categorizeDiffFile(file("flake.nix"))).toBe("code");
-    expect(categorizeDiffFile(file("config/middleman.toml"))).toBe("code");
+    expect(categorizeDiffFile(file("config/forge.toml"))).toBe("code");
     expect(categorizeDiffFile(file("Makefile"))).toBe("code");
     expect(categorizeDiffFile(file("docs/scripts/bootstrap.sh"))).toBe("code");
     expect(categorizeDiffFile(file("docs/screenshots/playwright.config.ts"))).toBe("code");
@@ -45,6 +45,6 @@ describe("diff file categorization", () => {
     expect(categorizeDiffFile(binaryFile("assets/logo.png"))).toBe("other");
     expect(categorizeDiffFile(binaryFile("docs/logo.png"))).toBe("other");
     expect(categorizeDiffFile(binaryFile("tests/fixtures/screenshot.png"))).toBe("other");
-    expect(categorizeDiffFile(binaryFile("release/middleman.tar.gz"))).toBe("other");
+    expect(categorizeDiffFile(binaryFile("release/forge.tar.gz"))).toBe("other");
   });
 });

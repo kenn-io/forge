@@ -17,7 +17,7 @@ function task(overrides: Partial<KataTaskSummary> = {}): KataTaskSummary {
     status: overrides.status ?? "open",
     metadata: overrides.metadata ?? {},
     revision: overrides.revision ?? 1,
-    author: overrides.author ?? "middleman",
+    author: overrides.author ?? "kenn-forge",
     priority: overrides.priority,
     closed_reason: overrides.closed_reason,
     created_at: overrides.created_at ?? "2026-06-29T12:00:00Z",

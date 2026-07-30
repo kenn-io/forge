@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Provider, type StoreInstances } from "@middleman/ui";
+  import { Provider, type StoreInstances } from "@kenn-forge/ui";
   import { client } from "../../api/runtime.js";
   import { getPage } from "../../stores/router.svelte.ts";
   import StatusBar from "./StatusBar.svelte";

@@ -1,6 +1,6 @@
-# middleman user docs
+# kenn-forge user docs
 
-middleman is a local-first maintainer console for repositories you watch every
+kenn-forge is a local-first maintainer console for repositories you watch every
 day. It syncs pull requests, merge requests, issues, reviews, comments, CI
 signals, releases, and activity into SQLite, then gives you one browser UI for
 triage and action.
@@ -21,7 +21,7 @@ next?
 - [Troubleshooting](troubleshooting.md): startup, auth, sync, config, database,
   and mode issues.
 
-## What middleman can do
+## What kenn-forge can do
 
 - Show a cross-repository Activity feed with comment, review, commit, PR, and
   issue activity.
@@ -37,12 +37,12 @@ next?
 - Launch and attach to local workspace sessions for repository work.
 - Browse repository source, branches, and files from the UI.
 - Use optional modes for Kata task daemons and local markdown docs.
-- Federate middleman daemons so one machine can view and act on items owned by
+- Federate kenn-forge daemons so one machine can view and act on items owned by
   another machine.
 - Run as one local daemon with an embedded web app, local SQLite storage, and a
   single TOML config file.
 
-## What middleman is not
+## What kenn-forge is not
 
 - It is not a hosted service.
 - It is not a replacement data source for your forge, Kata, or local docs.

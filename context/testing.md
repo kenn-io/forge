@@ -13,12 +13,12 @@ enforced by golangci-lint's `importas` rule.
 GraphQL query shape changes must be validated against GitHub's live GraphQL API before they are merged. The local test suite includes a gated live test:
 
 ```sh
-MIDDLEMAN_LIVE_GITHUB_TESTS=1 go test ./internal/github -run TestLiveGraphQLQueriesValidateAgainstGitHub -shuffle=on
+KENN_FORGE_LIVE_GITHUB_TESTS=1 go test ./internal/github -run TestLiveGraphQLQueriesValidateAgainstGitHub -shuffle=on
 ```
 
-The test uses `MIDDLEMAN_GITHUB_TOKEN` first, then `GITHUB_TOKEN`. It intentionally skips unless `MIDDLEMAN_LIVE_GITHUB_TESTS=1` is set because live validation consumes GitHub GraphQL rate limit and requires network access.
+The test uses `KENN_FORGE_GITHUB_TOKEN` first, then `GITHUB_TOKEN`. It intentionally skips unless `KENN_FORGE_LIVE_GITHUB_TESTS=1` is set because live validation consumes GitHub GraphQL rate limit and requires network access.
 
-When changing structs, fields, aliases, fragments, pagination arguments, or nested selections used by `internal/github/graphql.go`, enable `MIDDLEMAN_LIVE_GITHUB_TESTS=1` and run the live validation test in addition to the normal Go tests.
+When changing structs, fields, aliases, fragments, pagination arguments, or nested selections used by `internal/github/graphql.go`, enable `KENN_FORGE_LIVE_GITHUB_TESTS=1` and run the live validation test in addition to the normal Go tests.
 
 CI runs the live GraphQL validation as a separate Go test step using the workflow `GITHUB_TOKEN` only in trusted contexts, such as pushes to `main`, manual `workflow_dispatch` runs, and same-repository pull requests. The general pull request Go test step does not receive a GitHub token.
 
@@ -124,8 +124,8 @@ not require a duplicate full-stack browser test when it would only replay data
 that is already proven at those two boundaries.
 
 Agent lifecycle hooks have no full agent-launch E2E: kit covers config formats and
-profile mappings, while Middleman tests all-profile selection, normalized relay, and HTTP
-handling as independent external seams (`cmd/middleman/agent_hook_cli_test.go::TestAgentHookRunNormalizesGeminiLifecyclePayload`, `internal/server/workspaceapi/agent_hook_test.go::TestReceiveAgentHookRecordsActivityAndGeneratesClaudeContext`).
+profile mappings, while Kenn Forge tests all-profile selection, normalized relay, and HTTP
+handling as independent external seams (`cmd/kenn-forge/agent_hook_cli_test.go::TestAgentHookRunNormalizesGeminiLifecyclePayload`, `internal/server/workspaceapi/agent_hook_test.go::TestReceiveAgentHookRecordsActivityAndGeneratesClaudeContext`).
 
 A leaf renders a body per tab and hides the inactive ones, so which bodies exist
 depends on the caller's `visible` gating, not on which tab is active: the
@@ -191,7 +191,7 @@ Keep injected Roborev `panel_run` failures controlled until the assertion observ
 Roborev `/api/stream/events` is NDJSON, not SSE: use an abortable Fetch reader with bounded reconnects, and abort both pre-header and active-body requests on teardown (`packages/ui/src/stores/roborev/jobs.svelte.ts::connectEventStream`).
 The `e2e-roborev` daemon pin (`ROBOREV_REF` in `.github/workflows/ci.yml`) must be at or after the roborev commit the generated schema (`packages/ui/src/api/roborev/generated/`) was produced from; a stale pin makes the daemon silently omit newer response fields while seed inserts still succeed, because the seeder creates its own schema.
 
-Kata reachable-graph tests can use `window.__middleman_kata_graph_debug` in
+Kata reachable-graph tests can use `window.__kenn_forge_kata_graph_debug` in
 browser/e2e runs, or `kata-graph-debug.ts` directly in unit tests, to inspect
 recent graph/store events and the latest rendered node IDs. Prefer this bridge
 when debugging or asserting graph refresh ordering, missing-ref population,

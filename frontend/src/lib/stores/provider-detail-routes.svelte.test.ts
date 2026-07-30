@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 
-import { createDetailStore } from "@middleman/ui/stores/detail";
-import { createIssuesStore } from "@middleman/ui/stores/issues";
-import * as flash from "@middleman/ui/stores/flash";
-import type { MiddlemanClient } from "@middleman/ui";
+import { createDetailStore } from "@kenn-forge/ui/stores/detail";
+import { createIssuesStore } from "@kenn-forge/ui/stores/issues";
+import * as flash from "@kenn-forge/ui/stores/flash";
+import type { ForgeClient } from "@kenn-forge/ui";
 
 describe("provider-aware detail API routes", () => {
   it("loads PR detail through the provider item endpoint", async () => {
@@ -19,7 +19,7 @@ describe("provider-aware detail API routes", () => {
       POST: vi.fn(),
       PUT: vi.fn(),
       DELETE: vi.fn(),
-    } as unknown as MiddlemanClient;
+    } as unknown as ForgeClient;
     const store = createDetailStore({ client });
 
     await store.loadDetail("Group/SubGroup", "Project", 12, {
@@ -65,7 +65,7 @@ describe("provider-aware detail API routes", () => {
       })),
       PUT: vi.fn(),
       DELETE: vi.fn(),
-    } as unknown as MiddlemanClient;
+    } as unknown as ForgeClient;
     const store = createDetailStore({ client });
 
     await store.loadDetail("Group/SubGroup", "Project", 12, {
@@ -117,7 +117,7 @@ describe("provider-aware detail API routes", () => {
       POST: vi.fn(async () => ({ data: detail })),
       PUT: vi.fn(),
       DELETE: vi.fn(),
-    } as unknown as MiddlemanClient;
+    } as unknown as ForgeClient;
     const showFlash = vi.spyOn(flash, "showFlash").mockImplementation(() => {});
     showFlash.mockClear();
     const store = createDetailStore({ client });
@@ -162,7 +162,7 @@ describe("provider-aware detail API routes", () => {
       })),
       PUT: vi.fn(),
       DELETE: vi.fn(),
-    } as unknown as MiddlemanClient;
+    } as unknown as ForgeClient;
     const showFlash = vi.spyOn(flash, "showFlash").mockImplementation(() => {});
     showFlash.mockClear();
     const store = createDetailStore({ client });
@@ -210,7 +210,7 @@ describe("provider-aware detail API routes", () => {
       }),
       PUT: vi.fn(),
       DELETE: vi.fn(),
-    } as unknown as MiddlemanClient;
+    } as unknown as ForgeClient;
     const store = createDetailStore({ client });
 
     await store.loadDetail("acme", "widgets", 1, {
@@ -268,7 +268,7 @@ describe("provider-aware detail API routes", () => {
       }),
       PUT: vi.fn(),
       DELETE: vi.fn(),
-    } as unknown as MiddlemanClient;
+    } as unknown as ForgeClient;
     const store = createDetailStore({ client });
 
     await store.loadDetail("acme", "widgets", 1, {
@@ -325,7 +325,7 @@ describe("provider-aware detail API routes", () => {
       }),
       PUT: vi.fn(),
       DELETE: vi.fn(),
-    } as unknown as MiddlemanClient;
+    } as unknown as ForgeClient;
     const store = createDetailStore({ client });
 
     await store.loadDetail("acme", "widgets", 1, {
@@ -387,7 +387,7 @@ describe("provider-aware detail API routes", () => {
       }),
       PUT: vi.fn(),
       DELETE: vi.fn(),
-    } as unknown as MiddlemanClient;
+    } as unknown as ForgeClient;
     const store = createDetailStore({ client });
 
     await store.loadDetail("acme", "widgets", 1, {
@@ -438,7 +438,7 @@ describe("provider-aware detail API routes", () => {
       }),
       PUT: vi.fn(),
       DELETE: vi.fn(),
-    } as unknown as MiddlemanClient;
+    } as unknown as ForgeClient;
     const store = createDetailStore({ client });
 
     await store.loadDetail("acme", "widgets", 1, {
@@ -466,7 +466,7 @@ describe("provider-aware detail API routes", () => {
       POST: vi.fn(),
       PUT: vi.fn(),
       DELETE: vi.fn(),
-    } as unknown as MiddlemanClient;
+    } as unknown as ForgeClient;
     const store = createIssuesStore({ client });
 
     await store.loadIssueDetail("Group/SubGroup", "Project", 7, {

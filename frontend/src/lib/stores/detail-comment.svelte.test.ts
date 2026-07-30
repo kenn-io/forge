@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 
-import { createDetailStore } from "@middleman/ui/stores/detail";
-import type { MiddlemanClient } from "@middleman/ui";
+import { createDetailStore } from "@kenn-forge/ui/stores/detail";
+import type { ForgeClient } from "@kenn-forge/ui";
 
 const pullRef = {
   provider: "github",
@@ -51,7 +51,7 @@ describe("createDetailStore submitComment", () => {
         POST: post,
         PUT: vi.fn(),
         DELETE: del,
-      } as unknown as MiddlemanClient,
+      } as unknown as ForgeClient,
     });
     await store.loadDetail("octo", "repo", 1, pullRef);
     await Promise.resolve();
@@ -81,7 +81,7 @@ describe("createDetailStore submitComment", () => {
         POST: vi.fn(async () => ({ data: undefined })),
         PUT: vi.fn(),
         DELETE: vi.fn(async () => ({ error: { detail: "provider denied deletion" } })),
-      } as unknown as MiddlemanClient,
+      } as unknown as ForgeClient,
     });
     await store.loadDetail("octo", "repo", 1, pullRef);
     await Promise.resolve();
@@ -112,7 +112,7 @@ describe("createDetailStore submitComment", () => {
           await deletePending;
           return { error: { detail: "old deletion failed" } };
         }),
-      } as unknown as MiddlemanClient,
+      } as unknown as ForgeClient,
     });
     await store.loadDetail("octo", "repo", 1, { ...pullRef, sync: false });
 
@@ -137,7 +137,7 @@ describe("createDetailStore submitComment", () => {
           await pending;
           return { error: { detail: "provider denied deletion" } };
         }),
-      } as unknown as MiddlemanClient,
+      } as unknown as ForgeClient,
     });
     await store.loadDetail("octo", "repo", 1, { ...pullRef, sync: false });
     const deleting = store.deleteComment("octo", "repo", 1, 44);
@@ -164,7 +164,7 @@ describe("createDetailStore submitComment", () => {
           await deletePending;
           return { error: undefined };
         }),
-      } as unknown as MiddlemanClient,
+      } as unknown as ForgeClient,
     });
     await store.loadDetail("octo", "repo", 1, { ...pullRef, sync: false });
 
@@ -204,7 +204,7 @@ describe("createDetailStore submitComment", () => {
       }),
       PUT: vi.fn(),
       DELETE: vi.fn(),
-    } as unknown as MiddlemanClient;
+    } as unknown as ForgeClient;
 
     holder.store = createDetailStore({ client });
 
@@ -245,7 +245,7 @@ describe("createDetailStore submitComment", () => {
       }),
       PUT: vi.fn(),
       DELETE: vi.fn(),
-    } as unknown as MiddlemanClient;
+    } as unknown as ForgeClient;
 
     const store = createDetailStore({ client });
 
@@ -285,7 +285,7 @@ describe("createDetailStore submitComment", () => {
       }),
       PUT: vi.fn(),
       DELETE: vi.fn(),
-    } as unknown as MiddlemanClient;
+    } as unknown as ForgeClient;
 
     const store = createDetailStore({
       client,
@@ -346,7 +346,7 @@ describe("createDetailStore submitComment", () => {
       }),
       PUT: vi.fn(),
       DELETE: vi.fn(),
-    } as unknown as MiddlemanClient;
+    } as unknown as ForgeClient;
 
     const store = createDetailStore({ client });
 

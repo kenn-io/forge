@@ -17,9 +17,9 @@ import (
 	gh "github.com/google/go-github/v89/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/testutil"
-	"go.kenn.io/middleman/internal/web"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/testutil"
+	"go.kenn.io/forge/internal/web"
 )
 
 func TestWriteServerInfoFile(t *testing.T) {
@@ -342,14 +342,14 @@ func waitForServerInfo(
 }
 
 // TestRunPprofListenerFromEnv pins the contract the workspace-switch
-// profiling harness depends on: MIDDLEMAN_PPROF_ADDR makes run()
+// profiling harness depends on: KENN_FORGE_PPROF_ADDR makes run()
 // start the diagnostics listener, report its resolved address in the
 // server-info file, and serve the pprof index there.
 func TestRunPprofListenerFromEnv(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
-	t.Setenv("MIDDLEMAN_PPROF_ADDR", "127.0.0.1:0")
+	t.Setenv("KENN_FORGE_PPROF_ADDR", "127.0.0.1:0")
 
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)

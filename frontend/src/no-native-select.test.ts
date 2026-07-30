@@ -51,7 +51,7 @@ describe("no native select elements", () => {
     const violations = files.flatMap(violationsIn);
     expect(
       violations,
-      `Found native <select> elements. Use the SelectDropdown primitive from @middleman/ui instead:\n${violations.join("\n")}`,
+      `Found native <select> elements. Use the SelectDropdown primitive from @kenn-forge/ui instead:\n${violations.join("\n")}`,
     ).toEqual([]);
   });
 });

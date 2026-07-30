@@ -18,7 +18,7 @@ describe("kata api helpers", () => {
     vi.restoreAllMocks();
   });
 
-  it("loads daemon roster from the middleman API", async () => {
+  it("loads daemon roster from the kenn-forge API", async () => {
     let seenURL: URL | undefined;
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       seenURL = requestURL(input);
@@ -102,7 +102,7 @@ describe("kata api helpers", () => {
   });
 
   it("uses the configured base path for daemon roster and proxy URLs", async () => {
-    window.__BASE_PATH__ = "/middleman/";
+    window.__BASE_PATH__ = "/kenn-forge/";
     let seenURL: URL | undefined;
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       seenURL = requestURL(input);
@@ -127,9 +127,11 @@ describe("kata api helpers", () => {
 
     const daemons = await fetchKataDaemons(fetchMock);
 
-    expect(seenURL?.pathname).toBe("/middleman/api/v1/kata/daemons");
+    expect(seenURL?.pathname).toBe("/kenn-forge/api/v1/kata/daemons");
     expect(daemons.map((d) => d.id)).toEqual(["home"]);
-    expect(kataProxyPath("/projects?include=stats")).toBe("/middleman/api/v1/kata/proxy/api/v1/projects?include=stats");
+    expect(kataProxyPath("/projects?include=stats")).toBe(
+      "/kenn-forge/api/v1/kata/proxy/api/v1/projects?include=stats",
+    );
   });
 
   it("returns an empty roster when the control endpoint is absent", async () => {

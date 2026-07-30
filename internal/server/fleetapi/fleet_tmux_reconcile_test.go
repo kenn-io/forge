@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"go.kenn.io/middleman/internal/fleet"
+	"go.kenn.io/forge/internal/fleet"
 )
 
 func TestReconcileFleetTmuxLiveOwnedAndUnmanaged(t *testing.T) {
@@ -17,16 +17,16 @@ func TestReconcileFleetTmuxLiveOwnedAndUnmanaged(t *testing.T) {
 	polledAt := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
 	owned := []fleetOwnedTmuxSession{
 		{
-			Name:             "middleman-main",
+			Name:             "kenn-forge-main",
 			WorktreeKey:      "worktree:/repo/main",
 			SessionScopedKey: "session:ws-1:main",
 			RuntimeKind:      "tmux",
 			Status:           "running",
-			Label:            "middleman-main",
+			Label:            "kenn-forge-main",
 			CreatedAt:        createdAt,
 		},
 		{
-			Name:             "middleman-agent",
+			Name:             "kenn-forge-agent",
 			WorktreeKey:      "worktree:/repo/main",
 			SessionScopedKey: "session:session-agent",
 			RuntimeKind:      "agent",
@@ -43,15 +43,15 @@ func TestReconcileFleetTmuxLiveOwnedAndUnmanaged(t *testing.T) {
 			PolledAt:  polledAt,
 			Succeeded: true,
 			Sessions: map[string]fleetTmuxLiveSession{
-				"middleman-main": {
-					Name:        "middleman-main",
+				"kenn-forge-main": {
+					Name:        "kenn-forge-main",
 					WindowCount: 1,
 					Windows: []fleet.TmuxWindowInfo{{
 						ID: "@1", Index: 0, Name: "main",
 					}},
 				},
-				"middleman-agent": {
-					Name:        "middleman-agent",
+				"kenn-forge-agent": {
+					Name:        "kenn-forge-agent",
 					WindowCount: 1,
 					Windows: []fleet.TmuxWindowInfo{{
 						ID: "@2", Index: 0, Name: "agent",
@@ -72,7 +72,7 @@ func TestReconcileFleetTmuxLiveOwnedAndUnmanaged(t *testing.T) {
 	reconcileFleetTmuxSnapshot(&raw, owned, snap)
 
 	require.Len(raw.Host.TmuxSessions, 3)
-	main := requireTmuxInfo(t, raw.Host.TmuxSessions, "middleman-main")
+	main := requireTmuxInfo(t, raw.Host.TmuxSessions, "kenn-forge-main")
 	assert.True(main.Managed)
 	assert.Equal("worktree:/repo/main", main.WorktreeKey)
 	assert.Equal("session:ws-1:main", main.SessionScopedKey)

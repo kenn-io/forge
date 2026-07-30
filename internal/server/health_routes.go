@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/danielgtaylor/huma/v2"
-	"go.kenn.io/middleman/internal/server/httpapi"
+	"go.kenn.io/forge/internal/server/httpapi"
 )
 
 type healthOutput = httpapi.BodyOutput[healthResponse]
@@ -14,7 +14,7 @@ type healthResponse struct {
 }
 
 func healthAPIConfig() huma.Config {
-	config := huma.DefaultConfig("middleman health", "0.1.0")
+	config := huma.DefaultConfig("kenn-forge health", "0.1.0")
 	config.OpenAPIPath = ""
 	config.DocsPath = ""
 	config.SchemasPath = ""

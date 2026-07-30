@@ -8,8 +8,8 @@ import (
 	gh "github.com/google/go-github/v89/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/config"
-	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/platform"
 )
 
 func TestResolveConfiguredRepos_ExpandsGlobAndSkipsArchived(t *testing.T) {

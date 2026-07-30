@@ -153,7 +153,7 @@ func TestDeleteStaleStacks(t *testing.T) {
 	// Verify directly that "delete-me" is gone.
 	var count int
 	err = d.ReadDB().QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM middleman_stacks WHERE repo_id = ?`, repoID,
+		`SELECT COUNT(*) FROM forge_stacks WHERE repo_id = ?`, repoID,
 	).Scan(&count)
 	require.NoError(err)
 	assert.Equal(1, count) // only "keep" remains
@@ -200,7 +200,7 @@ func TestReplaceStackMembersReassignsAcrossStacks(t *testing.T) {
 	// Only one membership row remains, now in stackB.
 	var count int
 	err = d.ReadDB().QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM middleman_stack_members WHERE merge_request_id = ?`,
+		`SELECT COUNT(*) FROM forge_stack_members WHERE merge_request_id = ?`,
 		mrID,
 	).Scan(&count)
 	require.NoError(err)
@@ -208,7 +208,7 @@ func TestReplaceStackMembersReassignsAcrossStacks(t *testing.T) {
 
 	var gotStack int64
 	err = d.ReadDB().QueryRowContext(ctx,
-		`SELECT stack_id FROM middleman_stack_members WHERE merge_request_id = ?`,
+		`SELECT stack_id FROM forge_stack_members WHERE merge_request_id = ?`,
 		mrID,
 	).Scan(&gotStack)
 	require.NoError(err)

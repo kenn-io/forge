@@ -107,7 +107,7 @@ class MockWebSocket {
   close(): void {}
 }
 
-vi.mock("@middleman/ui", () => ({
+vi.mock("@kenn-forge/ui", () => ({
   getStores: () => ({
     settings: {
       getTerminalFontFamily: () => configuredFontFamily,
@@ -121,7 +121,7 @@ vi.mock("@middleman/ui", () => ({
   }),
 }));
 
-vi.mock("@middleman/ui/stores/flash", () => ({
+vi.mock("@kenn-forge/ui/stores/flash", () => ({
   showFlash: mockShowFlash,
 }));
 

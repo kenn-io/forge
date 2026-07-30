@@ -1,6 +1,6 @@
 services:
   forgejo:
-    image: ${MIDDLEMAN_FORGEJO_IMAGE:-codeberg.org/forgejo/forgejo:12}
+    image: ${KENN_FORGE_FORGEJO_IMAGE:-codeberg.org/forgejo/forgejo:12}
     ports:
       - "127.0.0.1:${FORGEJO_HTTP_PORT:-13000}:3000"
     environment:

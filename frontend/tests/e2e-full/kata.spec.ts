@@ -687,7 +687,7 @@ async function handleKataRequest(state: BackendState, req: IncomingMessage, res:
     });
     res.write(": connected\n\n");
     state.streams.add(res);
-    // Middleman's own SSE endpoint and real daemons send periodic
+    // Kenn Forge's own SSE endpoint and real daemons send periodic
     // keepalive comments. Beyond fidelity, the heartbeat matters on
     // Linux WebKit: its network stack delivers a fetch-stream chunk's
     // tail beyond ~128 bytes only when new data arrives on the socket,
@@ -1472,7 +1472,7 @@ async function readJSONBody(req: IncomingMessage): Promise<Record<string, unknow
 }
 
 async function configureKataHome(backendURL: string): Promise<{ home: string; restore: () => void }> {
-  const home = await mkdtemp(path.join(os.tmpdir(), "middleman-kata-e2e-"));
+  const home = await mkdtemp(path.join(os.tmpdir(), "kenn-forge-kata-e2e-"));
   await mkdir(home, { recursive: true });
   await writeFile(
     path.join(home, "config.toml"),
@@ -1497,7 +1497,7 @@ async function configureKataHomeDaemons(
   daemons: { name: string; url: string }[],
   activeDaemon: string,
 ): Promise<{ home: string; restore: () => void }> {
-  const home = await mkdtemp(path.join(os.tmpdir(), "middleman-kata-e2e-"));
+  const home = await mkdtemp(path.join(os.tmpdir(), "kenn-forge-kata-e2e-"));
   await mkdir(home, { recursive: true });
   await writeFile(
     path.join(home, "config.toml"),
@@ -1542,7 +1542,7 @@ async function closeServer(server: Server): Promise<void> {
   });
 }
 
-test("kata workspace reads tasks through Middleman snapshots", async ({ page }) => {
+test("kata workspace reads tasks through Kenn Forge snapshots", async ({ page }) => {
   const backend = await startKataBackend();
   const kataHome = await configureKataHome(backend.url);
   const server = await startIsolatedE2EServer();
@@ -1631,15 +1631,15 @@ test("kata reachable graph renders and selects tasks through the configured exte
 
     const detail = page.getByRole("region", { name: "Task detail" });
     await expect(detail.getByRole("heading", { name: "Pay rent" })).toBeVisible();
-    await page.evaluate(() => window.__middleman_kata_graph_debug?.reset());
+    await page.evaluate(() => window.__kenn_forge_kata_graph_debug?.reset());
     await detail.getByRole("button", { name: "Open reachable graph" }).click();
 
     const graph = page.getByRole("region", { name: "Reachable task graph" });
     await expect(graph).toBeVisible();
     await expect
-      .poll(() => page.evaluate(() => window.__middleman_kata_graph_debug?.snapshot().latestGraph?.nodeCount ?? 0))
+      .poll(() => page.evaluate(() => window.__kenn_forge_kata_graph_debug?.snapshot().latestGraph?.nodeCount ?? 0))
       .toBeGreaterThan(1);
-    const debugBeforeSelection = await page.evaluate(() => window.__middleman_kata_graph_debug?.snapshot());
+    const debugBeforeSelection = await page.evaluate(() => window.__kenn_forge_kata_graph_debug?.snapshot());
     expect(debugBeforeSelection?.latestGraph?.sourceUID).toBe("issue-rent");
     expect(debugBeforeSelection?.latestGraph?.layoutDirection).toBe("TB");
     expect(debugBeforeSelection?.latestGraph?.nodeIds).toEqual(
@@ -1652,7 +1652,7 @@ test("kata reachable graph renders and selects tasks through the configured exte
     await expect
       .poll(() =>
         page.evaluate(() => {
-          const latest = window.__middleman_kata_graph_debug?.snapshot().latestGraph;
+          const latest = window.__kenn_forge_kata_graph_debug?.snapshot().latestGraph;
           return latest
             ? {
                 depthLimit: latest.depthLimit,
@@ -1675,7 +1675,7 @@ test("kata reachable graph renders and selects tasks through the configured exte
     await expect
       .poll(() =>
         page.evaluate(() => {
-          const latest = window.__middleman_kata_graph_debug?.snapshot().latestGraph;
+          const latest = window.__kenn_forge_kata_graph_debug?.snapshot().latestGraph;
           return latest
             ? {
                 depthLimit: latest.depthLimit,
@@ -1693,7 +1693,7 @@ test("kata reachable graph renders and selects tasks through the configured exte
         layoutEdgeCount: 3,
       });
     const fullSnapshotBeforeContext = await page.evaluate(() => {
-      const latest = window.__middleman_kata_graph_debug?.snapshot().latestGraph;
+      const latest = window.__kenn_forge_kata_graph_debug?.snapshot().latestGraph;
       return latest
         ? {
             nodeIds: latest.nodeIds,
@@ -1710,7 +1710,7 @@ test("kata reachable graph renders and selects tasks through the configured exte
     await expect
       .poll(() =>
         page.evaluate(() => {
-          const latest = window.__middleman_kata_graph_debug?.snapshot().latestGraph;
+          const latest = window.__kenn_forge_kata_graph_debug?.snapshot().latestGraph;
           return latest
             ? {
                 contextDepth: latest.contextDepth,
@@ -1755,7 +1755,7 @@ test("kata reachable graph renders and selects tasks through the configured exte
     await expect(graph).toBeVisible();
     await expect(graphNodes.filter({ hasText: "Pay rent" })).toBeVisible();
     await expect(linkedNode).toBeVisible();
-    const debugAfterSelection = await page.evaluate(() => window.__middleman_kata_graph_debug?.snapshot());
+    const debugAfterSelection = await page.evaluate(() => window.__kenn_forge_kata_graph_debug?.snapshot());
     expect(debugAfterSelection?.latestGraph?.selectedUID).toBe("issue-q3");
     expect(debugAfterSelection?.latestGraph?.contextDepth).toBe("1");
     expect(debugAfterSelection?.latestGraph?.nodeIds).toEqual(expect.arrayContaining(["issue-rent", "issue-q3"]));
@@ -1784,13 +1784,13 @@ test("kata reachable graph renders and selects tasks through the configured exte
     );
     await expect(graph).toHaveAttribute("data-layout-direction", "LR");
     await expect
-      .poll(() => page.evaluate(() => window.__middleman_kata_graph_debug?.snapshot().latestGraph?.layoutDirection))
+      .poll(() => page.evaluate(() => window.__kenn_forge_kata_graph_debug?.snapshot().latestGraph?.layoutDirection))
       .toBe("LR");
     await selectGraphFilterItem(graph, "direction-TB");
     await page.keyboard.press("Escape");
     await expect(graph).toHaveAttribute("data-layout-direction", "TB");
     await expect
-      .poll(() => page.evaluate(() => window.__middleman_kata_graph_debug?.snapshot().latestGraph?.layoutDirection))
+      .poll(() => page.evaluate(() => window.__kenn_forge_kata_graph_debug?.snapshot().latestGraph?.layoutDirection))
       .toBe("TB");
     const toolbarMetrics = await page.evaluate(() => {
       const toolbar = document.querySelector<HTMLElement>(".graph-toolbar");
@@ -1896,11 +1896,11 @@ test("kata workspace initial load does not mutate the configured external daemon
   const backend = await startKataBackend();
   const kataHome = await configureKataHome(backend.url);
   const server = await startDefaultIsolatedE2EServer();
-  const middlemanKataReads: string[] = [];
+  const forgeKataReads: string[] = [];
   page.on("request", (request) => {
     const url = new URL(request.url());
     if (request.method() === "GET" && url.pathname.startsWith("/api/v1/kata/tasks/")) {
-      middlemanKataReads.push(url.pathname);
+      forgeKataReads.push(url.pathname);
     }
   });
 
@@ -1909,8 +1909,8 @@ test("kata workspace initial load does not mutate the configured external daemon
 
     await expectKataDaemonSwitcherReady(page);
     await expect(page.getByRole("button", { name: /Pay rent/ })).toBeVisible();
-    await expect.poll(() => middlemanKataReads).toContain("/api/v1/kata/tasks/snapshot");
-    await expect.poll(() => middlemanKataReads).toContain("/api/v1/kata/tasks/events");
+    await expect.poll(() => forgeKataReads).toContain("/api/v1/kata/tasks/snapshot");
+    await expect.poll(() => forgeKataReads).toContain("/api/v1/kata/tasks/events");
     expect(backend.state.seenPaths.filter((path) => !path.startsWith("GET "))).toEqual([]);
   } finally {
     await server.stop();
@@ -2227,7 +2227,7 @@ test("kata daemon switch fences a late old-daemon compact frame delivered on the
         return originalFetch(input, init);
       }
 
-      const daemon = request.headers.get("X-Middleman-Kata-Daemon") ?? "";
+      const daemon = request.headers.get("X-Kenn-Forge-Kata-Daemon") ?? "";
       let controlled!: ControlledStream;
       const body = new ReadableStream<Uint8Array>(
         {
@@ -2290,7 +2290,7 @@ test("kata daemon switch fences a late old-daemon compact frame delivered on the
   const snapshotDaemons: string[] = [];
   page.on("request", (request) => {
     if (new URL(request.url()).pathname !== "/api/v1/kata/tasks/snapshot") return;
-    snapshotDaemons.push(request.headers()["x-middleman-kata-daemon"] ?? "");
+    snapshotDaemons.push(request.headers()["x-kenn-forge-kata-daemon"] ?? "");
   });
 
   try {
@@ -2301,7 +2301,7 @@ test("kata daemon switch fences a late old-daemon compact frame delivered on the
       const request = response.request();
       return (
         new URL(response.url()).pathname === "/api/v1/kata/tasks/snapshot" &&
-        request.headers()["x-middleman-kata-daemon"] === "work" &&
+        request.headers()["x-kenn-forge-kata-daemon"] === "work" &&
         response.status() === 200
       );
     });
@@ -3175,7 +3175,7 @@ test("kata focused nested selection survives a compact reset", async ({ page }) 
       .poll(async () => {
         const response = await page.request.get(
           `${server.info.base_url}/api/v1/kata/tasks/snapshot?scope=global&authority=open&selected_issue_uid=${child.uid}`,
-          { headers: { "X-Middleman-Kata-Daemon": "e2e" } },
+          { headers: { "X-Kenn-Forge-Kata-Daemon": "e2e" } },
         );
         resetSnapshot = (await response.json()) as typeof selectedSnapshot;
         return (
@@ -3276,7 +3276,7 @@ test("kata workspace restores filtered expanded child selection after leaving Ka
   try {
     await seedRestoredKataWorkspace(page, server.info.base_url);
     await expect
-      .poll(() => page.evaluate(() => window.localStorage.getItem("middleman:kata:workspace-state/v2")))
+      .poll(() => page.evaluate(() => window.localStorage.getItem("kenn-forge:kata:workspace-state/v2")))
       .toContain(fixture.child.uid);
     const focusUIDBeforeLeave = await page.evaluate(() => document.activeElement?.getAttribute("data-uid"));
     expect(focusUIDBeforeLeave).toBe(fixture.child.uid);
@@ -3314,7 +3314,7 @@ test("kata explicit URL view uses fresh defaults instead of unrelated persisted 
   try {
     await seedRestoredKataWorkspace(page, server.info.base_url, { projectScoped: false });
     await expect
-      .poll(() => page.evaluate(() => window.localStorage.getItem("middleman:kata:workspace-state/v2")))
+      .poll(() => page.evaluate(() => window.localStorage.getItem("kenn-forge:kata:workspace-state/v2")))
       .toContain(fixture.child.uid);
 
     await appHeaderTab(page, "PRs").click();
@@ -4650,7 +4650,7 @@ test("docs issue autocomplete searches the folder-bound external daemon", async 
     const referencesResponse = await referencesResponsePromise;
     expect(referencesResponse.status()).toBe(200);
     expect(new URL(referencesResponse.url()).searchParams.get("limit")).toBe("50");
-    expect(referencesResponse.request().headers()["x-middleman-kata-daemon"]).toBe("work");
+    expect(referencesResponse.request().headers()["x-kenn-forge-kata-daemon"]).toBe("work");
 
     const tooltip = autocompleteTooltip(page);
     await expect(tooltip).toBeVisible();
@@ -4838,7 +4838,7 @@ test("kata detail comments and labels mutate through the configured external dae
     await expect(detail.getByRole("button", { name: "Remove label home" })).toHaveCount(0);
     await expect
       .poll(() => backend.state.seenPaths)
-      .toContain("DELETE /api/v1/projects/1/issues/issue-rent/labels/home?actor=middleman");
+      .toContain("DELETE /api/v1/projects/1/issues/issue-rent/labels/home?actor=kenn-forge");
   } finally {
     await server.stop();
     kataHome.restore();
@@ -5131,7 +5131,7 @@ test("kata task links re-resolve a stale link identity through an isolated looku
 
   try {
     // Keep the browser's catalog stale by blocking its invalidation stream;
-    // middleman itself still ingests the daemon event. This pins the race
+    // kenn-forge itself still ingests the daemon event. This pins the race
     // where a link is clicked with identity the daemon has already moved on
     // from.
     await page.route("**/api/v1/kata/tasks/events**", (route) => route.abort());
@@ -5715,7 +5715,7 @@ test("kata recurrence panel creates edits and deletes through the configured ext
     await expect(recurrence).toHaveCount(0);
     await expect
       .poll(() => backend.state.seenPaths)
-      .toContain("DELETE /api/v1/projects/2/recurrences/recurrence-1?actor=middleman");
+      .toContain("DELETE /api/v1/projects/2/recurrences/recurrence-1?actor=kenn-forge");
     // The backend 412s any recurrence mutation without a matching If-Match, so
     // the successful edit and conflict retry above prove the revisions were
     // carried: rev-1 on the edit, rev-2 on the single conflicted delete,
@@ -6021,7 +6021,7 @@ test("kata close mutation changes open membership only after replacement snapsho
       .poll(async () => {
         const response = await page.request.get(
           `${server.info.base_url}/api/v1/kata/tasks/snapshot?scope=global&authority=open`,
-          { headers: { "X-Middleman-Kata-Daemon": "e2e" } },
+          { headers: { "X-Kenn-Forge-Kata-Daemon": "e2e" } },
         );
         const snapshot = (await response.json()) as { issues: Array<{ uid: string }> };
         return snapshot.issues.some((issue) => issue.uid === selectedIssue.uid);

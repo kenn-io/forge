@@ -13,7 +13,7 @@ import (
 
 	gitlab "gitlab.com/gitlab-org/api/client-go/v2"
 
-	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/forge/internal/platform"
 )
 
 // gitLabPageCursor binds an opaque resumable cursor to the enumeration that

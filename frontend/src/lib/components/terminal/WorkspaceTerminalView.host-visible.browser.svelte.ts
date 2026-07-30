@@ -1,9 +1,9 @@
 import { page } from "vite-plus/test/browser";
 import { flushSync, mount, unmount } from "svelte";
 import { describe, expect, it, vi } from "vite-plus/test";
-import { DEFAULT_TERMINAL_SETTINGS } from "@middleman/ui";
-import { createDiffStore } from "@middleman/ui/stores/diff";
-import { getStackDepth } from "@middleman/ui/stores/keyboard/modal-stack";
+import { DEFAULT_TERMINAL_SETTINGS } from "@kenn-forge/ui";
+import { createDiffStore } from "@kenn-forge/ui/stores/diff";
+import { getStackDepth } from "@kenn-forge/ui/stores/keyboard/modal-stack";
 
 import { STORES_KEY } from "../../../../../packages/ui/src/context.js";
 import { createMockApiFetch, jsonResponse, type MockRouteOverride } from "../../../test/mockApiFetch.js";
@@ -27,7 +27,7 @@ const workspace = {
   item_number: 7,
   git_head_ref: "feature/host-visible",
   worktree_path: "/tmp/worktree",
-  tmux_session: "middleman-ws-1",
+  tmux_session: "kenn-forge-ws-1",
   status: "ready",
   enrichment_status: "fresh",
   created_at: "2026-04-29T00:00:00Z",
@@ -177,8 +177,8 @@ describe("WorkspaceTerminalView hostVisible", () => {
     // state — this test only asserts sidebar presence).
     const diffStore = createDiffStore();
 
-    localStorage.removeItem("middleman-workspace-sidebar-open");
-    localStorage.setItem("middleman-workspace-sidebar-width", "400");
+    localStorage.removeItem("kenn-forge-workspace-sidebar-open");
+    localStorage.setItem("kenn-forge-workspace-sidebar-width", "400");
 
     let hostVisible = $state(true);
     const target = document.createElement("div");
@@ -216,7 +216,7 @@ describe("WorkspaceTerminalView hostVisible", () => {
       // the stored width here; what's persisted now is the baseline.
       pressSidebarToggle();
       expect(document.querySelector(".right-sidebar")).not.toBeNull();
-      const visibleWidth = localStorage.getItem("middleman-workspace-sidebar-width");
+      const visibleWidth = localStorage.getItem("kenn-forge-workspace-sidebar-width");
       expect(visibleWidth).not.toBe("0");
 
       hostVisible = false;
@@ -233,7 +233,7 @@ describe("WorkspaceTerminalView hostVisible", () => {
       target.style.display = "none";
       window.dispatchEvent(new Event("resize"));
       flushSync();
-      expect(localStorage.getItem("middleman-workspace-sidebar-width")).toBe(visibleWidth);
+      expect(localStorage.getItem("kenn-forge-workspace-sidebar-width")).toBe(visibleWidth);
       target.style.display = "";
 
       // Visible again: the shortcut is re-armed.
@@ -244,8 +244,8 @@ describe("WorkspaceTerminalView hostVisible", () => {
     } finally {
       flushSync(() => unmount(instance));
       target.remove();
-      localStorage.removeItem("middleman-workspace-sidebar-open");
-      localStorage.removeItem("middleman-workspace-sidebar-width");
+      localStorage.removeItem("kenn-forge-workspace-sidebar-open");
+      localStorage.removeItem("kenn-forge-workspace-sidebar-width");
       globalThis.fetch = originalFetch;
       globalThis.EventSource = originalEventSource;
     }

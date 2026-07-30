@@ -203,7 +203,7 @@ func (d *DB) UpsertNotifications(ctx context.Context, notifications []Notificati
 			}
 
 			_, err := tx.ExecContext(ctx, `
-				INSERT INTO middleman_notification_items (
+				INSERT INTO forge_notification_items (
 					platform, platform_host, platform_notification_id, repo_id, repo_owner, repo_name,
 					subject_type, subject_title, subject_url, subject_latest_comment_url, web_url,
 					item_number, item_type, item_author, reason, unread, participating,
@@ -212,7 +212,7 @@ func (d *DB) UpsertNotifications(ctx context.Context, notifications []Notificati
 					source_ack_last_attempt_at, source_ack_next_attempt_at
 				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 				ON CONFLICT(platform, platform_host, platform_notification_id) DO UPDATE SET
-					repo_id = COALESCE(excluded.repo_id, middleman_notification_items.repo_id),
+					repo_id = COALESCE(excluded.repo_id, forge_notification_items.repo_id),
 					platform = excluded.platform,
 					repo_owner = excluded.repo_owner,
 					repo_name = excluded.repo_name,
@@ -227,109 +227,109 @@ func (d *DB) UpsertNotifications(ctx context.Context, notifications []Notificati
 					reason = excluded.reason,
 					unread = CASE
 						WHEN excluded.unread = 1
-						 AND middleman_notification_items.source_ack_generation_at IS NOT NULL
-						 AND excluded.source_updated_at <= middleman_notification_items.source_ack_generation_at THEN 0
+						 AND forge_notification_items.source_ack_generation_at IS NOT NULL
+						 AND excluded.source_updated_at <= forge_notification_items.source_ack_generation_at THEN 0
 						WHEN excluded.unread = 1
-						 AND middleman_notification_items.source_ack_queued_at IS NOT NULL
-						 AND middleman_notification_items.source_ack_synced_at IS NULL
-						 AND excluded.source_updated_at <= COALESCE(middleman_notification_items.source_ack_generation_at, middleman_notification_items.source_ack_queued_at) THEN 0
+						 AND forge_notification_items.source_ack_queued_at IS NOT NULL
+						 AND forge_notification_items.source_ack_synced_at IS NULL
+						 AND excluded.source_updated_at <= COALESCE(forge_notification_items.source_ack_generation_at, forge_notification_items.source_ack_queued_at) THEN 0
 						ELSE excluded.unread
 					END,
 					participating = excluded.participating,
 					source_updated_at = excluded.source_updated_at,
 					source_last_acknowledged_at = CASE
 						WHEN excluded.unread = 1
-						 AND middleman_notification_items.source_ack_generation_at IS NOT NULL
-						 AND excluded.source_updated_at <= middleman_notification_items.source_ack_generation_at THEN middleman_notification_items.source_last_acknowledged_at
+						 AND forge_notification_items.source_ack_generation_at IS NOT NULL
+						 AND excluded.source_updated_at <= forge_notification_items.source_ack_generation_at THEN forge_notification_items.source_last_acknowledged_at
 						ELSE excluded.source_last_acknowledged_at
 					END,
 					synced_at = excluded.synced_at,
 					done_at = CASE
 						WHEN excluded.unread = 1
-						 AND middleman_notification_items.done_at IS NOT NULL
-						 AND excluded.source_updated_at > COALESCE(middleman_notification_items.source_ack_generation_at, middleman_notification_items.done_at) THEN NULL
-						ELSE middleman_notification_items.done_at
+						 AND forge_notification_items.done_at IS NOT NULL
+						 AND excluded.source_updated_at > COALESCE(forge_notification_items.source_ack_generation_at, forge_notification_items.done_at) THEN NULL
+						ELSE forge_notification_items.done_at
 					END,
 					done_reason = CASE
 						WHEN excluded.unread = 1
-						 AND middleman_notification_items.done_at IS NOT NULL
-						 AND excluded.source_updated_at > COALESCE(middleman_notification_items.source_ack_generation_at, middleman_notification_items.done_at) THEN ''
-						ELSE middleman_notification_items.done_reason
+						 AND forge_notification_items.done_at IS NOT NULL
+						 AND excluded.source_updated_at > COALESCE(forge_notification_items.source_ack_generation_at, forge_notification_items.done_at) THEN ''
+						ELSE forge_notification_items.done_reason
 					END,
 					source_ack_queued_at = CASE
 						WHEN excluded.unread = 0 THEN NULL
 						WHEN excluded.unread = 1
-						 AND middleman_notification_items.source_ack_queued_at IS NOT NULL
-						 AND middleman_notification_items.source_ack_synced_at IS NULL
-						 AND excluded.source_updated_at > COALESCE(middleman_notification_items.source_ack_generation_at, middleman_notification_items.source_ack_queued_at) THEN NULL
-						WHEN excluded.unread = 1 AND middleman_notification_items.done_at IS NOT NULL AND excluded.source_updated_at > COALESCE(middleman_notification_items.source_ack_generation_at, middleman_notification_items.done_at) THEN NULL
-						ELSE middleman_notification_items.source_ack_queued_at
+						 AND forge_notification_items.source_ack_queued_at IS NOT NULL
+						 AND forge_notification_items.source_ack_synced_at IS NULL
+						 AND excluded.source_updated_at > COALESCE(forge_notification_items.source_ack_generation_at, forge_notification_items.source_ack_queued_at) THEN NULL
+						WHEN excluded.unread = 1 AND forge_notification_items.done_at IS NOT NULL AND excluded.source_updated_at > COALESCE(forge_notification_items.source_ack_generation_at, forge_notification_items.done_at) THEN NULL
+						ELSE forge_notification_items.source_ack_queued_at
 					END,
 					source_ack_synced_at = CASE
 						WHEN excluded.unread = 0 THEN COALESCE(excluded.source_last_acknowledged_at, excluded.synced_at)
 						WHEN excluded.unread = 1
-						 AND middleman_notification_items.source_ack_generation_at IS NOT NULL
-						 AND excluded.source_updated_at > middleman_notification_items.source_ack_generation_at THEN NULL
+						 AND forge_notification_items.source_ack_generation_at IS NOT NULL
+						 AND excluded.source_updated_at > forge_notification_items.source_ack_generation_at THEN NULL
 						WHEN excluded.unread = 1
-						 AND middleman_notification_items.source_ack_queued_at IS NOT NULL
-						 AND middleman_notification_items.source_ack_synced_at IS NULL
-						 AND excluded.source_updated_at > COALESCE(middleman_notification_items.source_ack_generation_at, middleman_notification_items.source_ack_queued_at) THEN NULL
-						WHEN excluded.unread = 1 AND middleman_notification_items.done_at IS NOT NULL AND excluded.source_updated_at > COALESCE(middleman_notification_items.source_ack_generation_at, middleman_notification_items.done_at) THEN NULL
-						ELSE middleman_notification_items.source_ack_synced_at
+						 AND forge_notification_items.source_ack_queued_at IS NOT NULL
+						 AND forge_notification_items.source_ack_synced_at IS NULL
+						 AND excluded.source_updated_at > COALESCE(forge_notification_items.source_ack_generation_at, forge_notification_items.source_ack_queued_at) THEN NULL
+						WHEN excluded.unread = 1 AND forge_notification_items.done_at IS NOT NULL AND excluded.source_updated_at > COALESCE(forge_notification_items.source_ack_generation_at, forge_notification_items.done_at) THEN NULL
+						ELSE forge_notification_items.source_ack_synced_at
 					END,
 					source_ack_error = CASE
 						WHEN excluded.unread = 0 THEN ''
 						WHEN excluded.unread = 1
-						 AND middleman_notification_items.source_ack_generation_at IS NOT NULL
-						 AND excluded.source_updated_at > middleman_notification_items.source_ack_generation_at THEN ''
+						 AND forge_notification_items.source_ack_generation_at IS NOT NULL
+						 AND excluded.source_updated_at > forge_notification_items.source_ack_generation_at THEN ''
 						WHEN excluded.unread = 1
-						 AND middleman_notification_items.source_ack_queued_at IS NOT NULL
-						 AND middleman_notification_items.source_ack_synced_at IS NULL
-						 AND excluded.source_updated_at > COALESCE(middleman_notification_items.source_ack_generation_at, middleman_notification_items.source_ack_queued_at) THEN ''
-						WHEN excluded.unread = 1 AND middleman_notification_items.done_at IS NOT NULL AND excluded.source_updated_at > COALESCE(middleman_notification_items.source_ack_generation_at, middleman_notification_items.done_at) THEN ''
-						ELSE middleman_notification_items.source_ack_error
+						 AND forge_notification_items.source_ack_queued_at IS NOT NULL
+						 AND forge_notification_items.source_ack_synced_at IS NULL
+						 AND excluded.source_updated_at > COALESCE(forge_notification_items.source_ack_generation_at, forge_notification_items.source_ack_queued_at) THEN ''
+						WHEN excluded.unread = 1 AND forge_notification_items.done_at IS NOT NULL AND excluded.source_updated_at > COALESCE(forge_notification_items.source_ack_generation_at, forge_notification_items.done_at) THEN ''
+						ELSE forge_notification_items.source_ack_error
 					END,
 					source_ack_attempts = CASE
 						WHEN excluded.unread = 0 THEN 0
 						WHEN excluded.unread = 1
-						 AND middleman_notification_items.source_ack_generation_at IS NOT NULL
-						 AND excluded.source_updated_at > middleman_notification_items.source_ack_generation_at THEN 0
+						 AND forge_notification_items.source_ack_generation_at IS NOT NULL
+						 AND excluded.source_updated_at > forge_notification_items.source_ack_generation_at THEN 0
 						WHEN excluded.unread = 1
-						 AND middleman_notification_items.source_ack_queued_at IS NOT NULL
-						 AND middleman_notification_items.source_ack_synced_at IS NULL
-						 AND excluded.source_updated_at > COALESCE(middleman_notification_items.source_ack_generation_at, middleman_notification_items.source_ack_queued_at) THEN 0
-						WHEN excluded.unread = 1 AND middleman_notification_items.done_at IS NOT NULL AND excluded.source_updated_at > COALESCE(middleman_notification_items.source_ack_generation_at, middleman_notification_items.done_at) THEN 0
-						ELSE middleman_notification_items.source_ack_attempts
+						 AND forge_notification_items.source_ack_queued_at IS NOT NULL
+						 AND forge_notification_items.source_ack_synced_at IS NULL
+						 AND excluded.source_updated_at > COALESCE(forge_notification_items.source_ack_generation_at, forge_notification_items.source_ack_queued_at) THEN 0
+						WHEN excluded.unread = 1 AND forge_notification_items.done_at IS NOT NULL AND excluded.source_updated_at > COALESCE(forge_notification_items.source_ack_generation_at, forge_notification_items.done_at) THEN 0
+						ELSE forge_notification_items.source_ack_attempts
 					END,
 					source_ack_last_attempt_at = CASE
 						WHEN excluded.unread = 0 THEN NULL
 						WHEN excluded.unread = 1
-						 AND middleman_notification_items.source_ack_generation_at IS NOT NULL
-						 AND excluded.source_updated_at > middleman_notification_items.source_ack_generation_at THEN NULL
+						 AND forge_notification_items.source_ack_generation_at IS NOT NULL
+						 AND excluded.source_updated_at > forge_notification_items.source_ack_generation_at THEN NULL
 						WHEN excluded.unread = 1
-						 AND middleman_notification_items.source_ack_queued_at IS NOT NULL
-						 AND middleman_notification_items.source_ack_synced_at IS NULL
-						 AND excluded.source_updated_at > COALESCE(middleman_notification_items.source_ack_generation_at, middleman_notification_items.source_ack_queued_at) THEN NULL
-						ELSE middleman_notification_items.source_ack_last_attempt_at
+						 AND forge_notification_items.source_ack_queued_at IS NOT NULL
+						 AND forge_notification_items.source_ack_synced_at IS NULL
+						 AND excluded.source_updated_at > COALESCE(forge_notification_items.source_ack_generation_at, forge_notification_items.source_ack_queued_at) THEN NULL
+						ELSE forge_notification_items.source_ack_last_attempt_at
 					END,
 					source_ack_next_attempt_at = CASE
 						WHEN excluded.unread = 0 THEN NULL
 						WHEN excluded.unread = 1
-						 AND middleman_notification_items.source_ack_generation_at IS NOT NULL
-						 AND excluded.source_updated_at > middleman_notification_items.source_ack_generation_at THEN NULL
+						 AND forge_notification_items.source_ack_generation_at IS NOT NULL
+						 AND excluded.source_updated_at > forge_notification_items.source_ack_generation_at THEN NULL
 						WHEN excluded.unread = 1
-						 AND middleman_notification_items.source_ack_queued_at IS NOT NULL
-						 AND middleman_notification_items.source_ack_synced_at IS NULL
-						 AND excluded.source_updated_at > COALESCE(middleman_notification_items.source_ack_generation_at, middleman_notification_items.source_ack_queued_at) THEN NULL
-						ELSE middleman_notification_items.source_ack_next_attempt_at
+						 AND forge_notification_items.source_ack_queued_at IS NOT NULL
+						 AND forge_notification_items.source_ack_synced_at IS NULL
+						 AND excluded.source_updated_at > COALESCE(forge_notification_items.source_ack_generation_at, forge_notification_items.source_ack_queued_at) THEN NULL
+						ELSE forge_notification_items.source_ack_next_attempt_at
 					END,
 					source_ack_generation_at = CASE
 						WHEN excluded.unread = 0 THEN excluded.source_updated_at
-						WHEN middleman_notification_items.source_ack_generation_at IS NOT NULL
-						 AND excluded.source_updated_at > middleman_notification_items.source_ack_generation_at THEN NULL
-						ELSE middleman_notification_items.source_ack_generation_at
+						WHEN forge_notification_items.source_ack_generation_at IS NOT NULL
+						 AND excluded.source_updated_at > forge_notification_items.source_ack_generation_at THEN NULL
+						ELSE forge_notification_items.source_ack_generation_at
 					END
-				WHERE excluded.source_updated_at >= middleman_notification_items.source_updated_at`,
+				WHERE excluded.source_updated_at >= forge_notification_items.source_updated_at`,
 				n.Platform, n.PlatformHost, n.PlatformNotificationID, nullableInt64(repoID), n.RepoOwner, n.RepoName,
 				n.SubjectType, n.SubjectTitle, n.SubjectURL, n.SubjectLatestCommentURL, n.WebURL,
 				nullableInt(n.ItemNumber), n.ItemType, n.ItemAuthor, n.Reason, boolInt(n.Unread), boolInt(n.Participating),
@@ -356,7 +356,7 @@ func (d *DB) FilterNotificationIDs(ctx context.Context, ids []int64, repos []Not
 	for _, id := range ids {
 		args = append(args, id)
 	}
-	rows, err := d.ro.QueryContext(ctx, fmt.Sprintf("SELECT n.id FROM middleman_notification_items n WHERE %s AND n.id IN (%s)", where, sqlPlaceholders(len(ids))), args...)
+	rows, err := d.ro.QueryContext(ctx, fmt.Sprintf("SELECT n.id FROM forge_notification_items n WHERE %s AND n.id IN (%s)", where, sqlPlaceholders(len(ids))), args...)
 	if err != nil {
 		return nil, fmt.Errorf("filter notification ids: %w", err)
 	}
@@ -366,7 +366,7 @@ func (d *DB) FilterNotificationIDs(ctx context.Context, ids []int64, repos []Not
 func lookupNotificationRepoIDTx(ctx context.Context, tx *sql.Tx, platform, host, owner, name string) (int64, bool, error) {
 	var id int64
 	err := tx.QueryRowContext(ctx, `
-		SELECT id FROM middleman_repos
+		SELECT id FROM forge_repos
 		WHERE platform = ? AND platform_host = ? AND owner = ? AND name = ?`, platform, host, owner, name).Scan(&id)
 	if err == nil {
 		return id, true, nil
@@ -407,7 +407,7 @@ func notificationWhere(opts ListNotificationsOpts) (string, []any, error) {
 		}
 	} else {
 		clauses = append(clauses, `EXISTS (
-			SELECT 1 FROM middleman_repos r
+			SELECT 1 FROM forge_repos r
 			WHERE r.platform = n.platform
 			  AND r.platform_host = n.platform_host
 			  AND r.owner = n.repo_owner
@@ -509,7 +509,7 @@ func (d *DB) ListNotifications(ctx context.Context, opts ListNotificationsOpts) 
 	if opts.Offset < 0 {
 		opts.Offset = 0
 	}
-	query := fmt.Sprintf("SELECT %s FROM middleman_notification_items n WHERE %s ORDER BY %s LIMIT ? OFFSET ?", notificationSelectColumns, where, notificationOrder(opts.Sort))
+	query := fmt.Sprintf("SELECT %s FROM forge_notification_items n WHERE %s ORDER BY %s LIMIT ? OFFSET ?", notificationSelectColumns, where, notificationOrder(opts.Sort))
 	args = append(args, limit, opts.Offset)
 	rows, err := d.ro.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -538,14 +538,14 @@ func (d *DB) NotificationSummary(ctx context.Context, opts ListNotificationsOpts
 		COALESCE(SUM(CASE WHEN n.done_at IS NULL THEN 1 ELSE 0 END), 0),
 		COALESCE(SUM(CASE WHEN n.done_at IS NULL AND n.unread = 1 THEN 1 ELSE 0 END), 0),
 		COALESCE(SUM(CASE WHEN n.done_at IS NOT NULL THEN 1 ELSE 0 END), 0)
-		FROM middleman_notification_items n WHERE %s`, where), args...)
+		FROM forge_notification_items n WHERE %s`, where), args...)
 	if err := row.Scan(&summary.TotalActive, &summary.Unread, &summary.Done); err != nil {
 		return summary, fmt.Errorf("notification summary totals: %w", err)
 	}
-	if err := scanNotificationCounts(ctx, d.ro, fmt.Sprintf("SELECT n.reason, COUNT(*) FROM middleman_notification_items n WHERE %s GROUP BY n.reason", where), args, summary.ByReason); err != nil {
+	if err := scanNotificationCounts(ctx, d.ro, fmt.Sprintf("SELECT n.reason, COUNT(*) FROM forge_notification_items n WHERE %s GROUP BY n.reason", where), args, summary.ByReason); err != nil {
 		return summary, err
 	}
-	if err := scanNotificationCounts(ctx, d.ro, fmt.Sprintf("SELECT n.platform_host || '/' || n.repo_owner || '/' || n.repo_name, COUNT(*) FROM middleman_notification_items n WHERE %s GROUP BY n.platform_host, n.repo_owner, n.repo_name", where), args, summary.ByRepo); err != nil {
+	if err := scanNotificationCounts(ctx, d.ro, fmt.Sprintf("SELECT n.platform_host || '/' || n.repo_owner || '/' || n.repo_name, COUNT(*) FROM forge_notification_items n WHERE %s GROUP BY n.platform_host, n.repo_owner, n.repo_name", where), args, summary.ByRepo); err != nil {
 		return summary, err
 	}
 	return summary, nil
@@ -587,7 +587,7 @@ func (d *DB) MarkNotificationsDone(ctx context.Context, ids []int64, doneAt time
 	for _, id := range ids {
 		args = append(args, id)
 	}
-	rows, err := d.rw.QueryContext(ctx, fmt.Sprintf("UPDATE middleman_notification_items SET done_at = ?, done_reason = CASE WHEN done_reason = '' THEN 'user' ELSE done_reason END%s WHERE id IN (%s) RETURNING id", setRead, sqlPlaceholders(len(ids))), args...)
+	rows, err := d.rw.QueryContext(ctx, fmt.Sprintf("UPDATE forge_notification_items SET done_at = ?, done_reason = CASE WHEN done_reason = '' THEN 'user' ELSE done_reason END%s WHERE id IN (%s) RETURNING id", setRead, sqlPlaceholders(len(ids))), args...)
 	if err != nil {
 		return nil, fmt.Errorf("mark notifications done: %w", err)
 	}
@@ -602,7 +602,7 @@ func (d *DB) MarkNotificationsUndone(ctx context.Context, ids []int64) ([]int64,
 	for _, id := range ids {
 		args = append(args, id)
 	}
-	rows, err := d.rw.QueryContext(ctx, fmt.Sprintf("UPDATE middleman_notification_items SET done_at = NULL, done_reason = '' WHERE id IN (%s) RETURNING id", sqlPlaceholders(len(ids))), args...)
+	rows, err := d.rw.QueryContext(ctx, fmt.Sprintf("UPDATE forge_notification_items SET done_at = NULL, done_reason = '' WHERE id IN (%s) RETURNING id", sqlPlaceholders(len(ids))), args...)
 	if err != nil {
 		return nil, fmt.Errorf("mark notifications undone: %w", err)
 	}
@@ -617,7 +617,7 @@ func (d *DB) MarkNotificationIDsReadLocal(ctx context.Context, ids []int64) ([]i
 	for _, id := range ids {
 		args = append(args, id)
 	}
-	rows, err := d.rw.QueryContext(ctx, fmt.Sprintf(`UPDATE middleman_notification_items
+	rows, err := d.rw.QueryContext(ctx, fmt.Sprintf(`UPDATE forge_notification_items
 		SET unread = 0, source_ack_queued_at = NULL, source_ack_synced_at = NULL, source_ack_generation_at = NULL,
 		    source_ack_error = '', source_ack_attempts = 0, source_ack_last_attempt_at = NULL, source_ack_next_attempt_at = NULL
 		WHERE id IN (%s)
@@ -637,7 +637,7 @@ func (d *DB) QueueNotificationIDsRead(ctx context.Context, ids []int64, readAt t
 	for _, id := range ids {
 		args = append(args, id)
 	}
-	rows, err := d.rw.QueryContext(ctx, fmt.Sprintf(`UPDATE middleman_notification_items
+	rows, err := d.rw.QueryContext(ctx, fmt.Sprintf(`UPDATE forge_notification_items
 		SET unread = 0, source_ack_queued_at = ?, source_ack_synced_at = NULL, source_ack_generation_at = source_updated_at,
 		    source_ack_error = '', source_ack_attempts = 0, source_ack_last_attempt_at = NULL, source_ack_next_attempt_at = NULL
 		WHERE id IN (%s)
@@ -687,7 +687,7 @@ func (d *DB) GetNotificationSyncWatermark(ctx context.Context, platform, host, o
 	var rawLastFull sql.NullString
 	err = d.ro.QueryRowContext(ctx, `
 		SELECT last_successful_sync_at, last_full_sync_at
-		FROM middleman_notification_sync_watermarks
+		FROM forge_notification_sync_watermarks
 		WHERE platform = ? AND platform_host = ? AND repo_owner = ? AND repo_name = ?`,
 		platform, host, owner, name).Scan(&rawLastSuccessful, &rawLastFull)
 	if err == nil {
@@ -731,7 +731,7 @@ func (d *DB) UpdateNotificationSyncWatermark(ctx context.Context, platform, host
 	syncedAt = canonicalUTCTime(syncedAt)
 	lastFullValue := nullableNotificationTime(lastFullSyncedAt)
 	_, err = d.rw.ExecContext(ctx, `
-		INSERT INTO middleman_notification_sync_watermarks (platform, platform_host, repo_owner, repo_name, last_successful_sync_at, last_full_sync_at)
+		INSERT INTO forge_notification_sync_watermarks (platform, platform_host, repo_owner, repo_name, last_successful_sync_at, last_full_sync_at)
 		VALUES (?, ?, ?, ?, ?, ?)
 		ON CONFLICT(platform, platform_host, repo_owner, repo_name) DO UPDATE SET
 			last_successful_sync_at = excluded.last_successful_sync_at,
@@ -757,7 +757,7 @@ func (d *DB) MarkNotificationsAcknowledged(ctx context.Context, platform, host s
 	for _, id := range notificationIDs {
 		args = append(args, id)
 	}
-	_, err = d.rw.ExecContext(ctx, fmt.Sprintf(`UPDATE middleman_notification_items
+	_, err = d.rw.ExecContext(ctx, fmt.Sprintf(`UPDATE forge_notification_items
 		SET unread = 0, source_last_acknowledged_at = ?, source_ack_synced_at = ?, source_ack_queued_at = NULL, source_ack_generation_at = NULL,
 		    source_ack_error = '', source_ack_attempts = 0, source_ack_last_attempt_at = NULL, source_ack_next_attempt_at = NULL
 		WHERE platform = ? AND platform_host = ? AND platform_notification_id IN (%s)`, sqlPlaceholders(len(notificationIDs))), args...)
@@ -774,7 +774,7 @@ func (d *DB) ListQueuedNotificationAcks(ctx context.Context, platform, host stri
 		return nil, err
 	}
 	limit = normalizedNotificationLimit(limit)
-	rows, err := d.ro.QueryContext(ctx, fmt.Sprintf(`SELECT %s FROM middleman_notification_items n
+	rows, err := d.ro.QueryContext(ctx, fmt.Sprintf(`SELECT %s FROM forge_notification_items n
 		WHERE n.platform = ?
 		  AND n.platform_host = ?
 		  AND n.source_ack_queued_at IS NOT NULL
@@ -799,7 +799,7 @@ func (d *DB) ListQueuedNotificationAcks(ctx context.Context, platform, host stri
 
 func (d *DB) NotificationAckPropagationCurrent(ctx context.Context, id int64, queuedAt *time.Time, sourceUpdatedAt time.Time) (bool, error) {
 	var matched int
-	err := d.ro.QueryRowContext(ctx, `SELECT 1 FROM middleman_notification_items
+	err := d.ro.QueryRowContext(ctx, `SELECT 1 FROM forge_notification_items
 		WHERE id = ?
 		  AND source_ack_queued_at = ?
 		  AND source_updated_at = ?
@@ -819,7 +819,7 @@ func (d *DB) MarkNotificationAckPropagationResult(ctx context.Context, id int64,
 		synced := canonicalUTCTime(*syncedAt)
 		queuedAtValue := nullableNotificationTime(queuedAt)
 		sourceUpdatedAt = canonicalUTCTime(sourceUpdatedAt)
-		_, err := d.rw.ExecContext(ctx, `UPDATE middleman_notification_items
+		_, err := d.rw.ExecContext(ctx, `UPDATE forge_notification_items
 			SET unread = 0,
 			    source_last_acknowledged_at = ?,
 			    source_ack_synced_at = ?,
@@ -837,7 +837,7 @@ func (d *DB) MarkNotificationAckPropagationResult(ctx context.Context, id int64,
 		return nil
 	}
 	now := time.Now().UTC()
-	_, err := d.rw.ExecContext(ctx, `UPDATE middleman_notification_items
+	_, err := d.rw.ExecContext(ctx, `UPDATE forge_notification_items
 		SET source_ack_error = ?, source_ack_attempts = source_ack_attempts + 1,
 		    source_ack_last_attempt_at = ?, source_ack_next_attempt_at = ?
 		WHERE id = ? AND source_ack_queued_at = ? AND source_updated_at = ?`, errText, now, nullableNotificationTime(nextAttemptAt), id, nullableNotificationTime(queuedAt), canonicalUTCTime(sourceUpdatedAt))
@@ -850,7 +850,7 @@ func (d *DB) MarkNotificationAckPropagationResult(ctx context.Context, id int64,
 // ReopenNotificationAckPropagation restores a locally read notification to
 // unread when a successful upstream read ack cannot be reconciled safely.
 func (d *DB) ReopenNotificationAckPropagation(ctx context.Context, id int64, queuedAt *time.Time, sourceUpdatedAt time.Time) error {
-	_, err := d.rw.ExecContext(ctx, `UPDATE middleman_notification_items
+	_, err := d.rw.ExecContext(ctx, `UPDATE forge_notification_items
 		SET unread = 1,
 		    source_ack_queued_at = NULL,
 		    source_ack_synced_at = NULL,
@@ -902,7 +902,7 @@ func (d *DB) DeferQueuedNotificationAcksForRepos(
 		placeholders = append(placeholders, "(LOWER(?), LOWER(?))")
 		args = append(args, repo.Owner, repo.Name)
 	}
-	_, err = d.rw.ExecContext(ctx, `UPDATE middleman_notification_items
+	_, err = d.rw.ExecContext(ctx, `UPDATE forge_notification_items
 		SET source_ack_error = ?, source_ack_last_attempt_at = ?,
 		    source_ack_next_attempt_at = CASE
 			    WHEN source_ack_next_attempt_at IS NULL OR source_ack_next_attempt_at < ? THEN ?
@@ -924,36 +924,36 @@ func (d *DB) DeferQueuedNotificationAcksForRepos(
 func (d *DB) MarkClosedLinkedNotificationsDone(ctx context.Context, now time.Time) error {
 	now = canonicalUTCTime(now)
 	_, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_notification_items
+		UPDATE forge_notification_items
 		SET done_at = COALESCE(done_at, ?), done_reason = 'closed'
 		WHERE done_at IS NULL
 		  AND item_type = 'pr'
 		  AND item_number IS NOT NULL
 		  AND EXISTS (
-		    SELECT 1 FROM middleman_repos r
-		    JOIN middleman_merge_requests mr ON mr.repo_id = r.id AND mr.number = middleman_notification_items.item_number
-		    WHERE r.platform = middleman_notification_items.platform
-		      AND r.platform_host = middleman_notification_items.platform_host
-		      AND r.owner = middleman_notification_items.repo_owner
-		      AND r.name = middleman_notification_items.repo_name
+		    SELECT 1 FROM forge_repos r
+		    JOIN forge_merge_requests mr ON mr.repo_id = r.id AND mr.number = forge_notification_items.item_number
+		    WHERE r.platform = forge_notification_items.platform
+		      AND r.platform_host = forge_notification_items.platform_host
+		      AND r.owner = forge_notification_items.repo_owner
+		      AND r.name = forge_notification_items.repo_name
 		      AND (mr.state IN ('closed', 'merged') OR mr.merged_at IS NOT NULL OR mr.closed_at IS NOT NULL)
 		  )`, now)
 	if err != nil {
 		return fmt.Errorf("mark closed pr notifications done: %w", err)
 	}
 	_, err = d.rw.ExecContext(ctx, `
-		UPDATE middleman_notification_items
+		UPDATE forge_notification_items
 		SET done_at = COALESCE(done_at, ?), done_reason = 'closed'
 		WHERE done_at IS NULL
 		  AND item_type = 'issue'
 		  AND item_number IS NOT NULL
 		  AND EXISTS (
-		    SELECT 1 FROM middleman_repos r
-		    JOIN middleman_issues i ON i.repo_id = r.id AND i.number = middleman_notification_items.item_number
-		    WHERE r.platform = middleman_notification_items.platform
-		      AND r.platform_host = middleman_notification_items.platform_host
-		      AND r.owner = middleman_notification_items.repo_owner
-		      AND r.name = middleman_notification_items.repo_name
+		    SELECT 1 FROM forge_repos r
+		    JOIN forge_issues i ON i.repo_id = r.id AND i.number = forge_notification_items.item_number
+		    WHERE r.platform = forge_notification_items.platform
+		      AND r.platform_host = forge_notification_items.platform_host
+		      AND r.owner = forge_notification_items.repo_owner
+		      AND r.name = forge_notification_items.repo_name
 		      AND (i.state = 'closed' OR i.closed_at IS NOT NULL)
 		  )`, now)
 	if err != nil {

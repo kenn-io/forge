@@ -26,7 +26,7 @@ vi.mock("../../stores/router.svelte.ts", () => ({
   navigate: mocks.navigate,
 }));
 
-vi.mock("@middleman/ui/stores/flash", () => ({
+vi.mock("@kenn-forge/ui/stores/flash", () => ({
   showFlash: mocks.showFlash,
 }));
 
@@ -53,7 +53,7 @@ function setupConfig({
   ghAvailable = true,
   onWorkspaceCommand = vi.fn().mockResolvedValue({ ok: true }),
 }: SetupArgs): typeof onWorkspaceCommand {
-  win.__middleman_config = {
+  win.__kenn_forge_config = {
     onWorkspaceCommand,
     embed: {
       tooling: {
@@ -62,7 +62,7 @@ function setupConfig({
       },
     },
   };
-  win.__middleman_notify_config_changed?.();
+  win.__kenn_forge_notify_config_changed?.();
   return onWorkspaceCommand;
 }
 
@@ -83,7 +83,7 @@ describe("WorkspaceFirstRunPanel", () => {
 
   afterEach(() => {
     cleanup();
-    delete win.__middleman_config;
+    delete win.__kenn_forge_config;
   });
 
   it("renders the three primary actions with their descriptions", () => {
@@ -220,7 +220,7 @@ describe("WorkspaceFirstRunPanel", () => {
   it("falls back to injected workspace host metadata", async () => {
     mocks.loadSnapshotHosts.mockRejectedValue(new Error("snapshot down"));
     setupConfig({ ghAuthed: true });
-    win.__middleman_config.workspace = {
+    win.__kenn_forge_config.workspace = {
       selectedHostKey: "local",
       selectedWorktreeKey: null,
       hosts: [
@@ -244,7 +244,7 @@ describe("WorkspaceFirstRunPanel", () => {
         },
       ],
     };
-    win.__middleman_notify_config_changed?.();
+    win.__kenn_forge_notify_config_changed?.();
 
     render(WorkspaceFirstRunPanel, {
       props: { firstRun: false, hostKey: "epyc" },
@@ -389,7 +389,7 @@ describe("WorkspaceFirstRunPanel", () => {
 
   it("shows GitLab CLI status for a selected GitLab workspace host", () => {
     setupConfig({ ghAuthed: true });
-    win.__middleman_config.workspace = {
+    win.__kenn_forge_config.workspace = {
       selectedHostKey: "gitlab-main",
       selectedWorktreeKey: null,
       hosts: [
@@ -404,13 +404,13 @@ describe("WorkspaceFirstRunPanel", () => {
         },
       ],
     };
-    win.__middleman_config.embed.tooling.glab = {
+    win.__kenn_forge_config.embed.tooling.glab = {
       available: true,
       authenticated: true,
       user: "wesm",
       host: "gitlab.com",
     };
-    win.__middleman_notify_config_changed?.();
+    win.__kenn_forge_notify_config_changed?.();
 
     render(WorkspaceFirstRunPanel);
 

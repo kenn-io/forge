@@ -176,7 +176,7 @@ describe("activity row link button", () => {
 
   it("threaded rows remain clickable after the split detail pane opens", async () => {
     await page.viewport(900, 720);
-    localStorage.setItem("middleman-activity-pane-width", "1200");
+    localStorage.setItem("kenn-forge-activity-pane-width", "1200");
     mounted = await mountBrowserApp("/", { overrides: flatOverrides() });
     await vi.waitFor(() => expect(document.querySelector(".activity-table .activity-row")).not.toBeNull(), WAIT);
 

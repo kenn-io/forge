@@ -11,8 +11,8 @@ LDFLAGS := -X main.version=$(VERSION) \
 LDFLAGS_RELEASE := $(LDFLAGS) -s -w
 
 EXE_SUFFIX := $(if $(filter windows,$(shell go env GOOS)),.exe,)
-BINARY := middleman$(EXE_SUFFIX)
-GHAPP_BINARY := middleman-github-app$(EXE_SUFFIX)
+BINARY := kenn-forge$(EXE_SUFFIX)
+GHAPP_BINARY := kenn-forge-github-app$(EXE_SUFFIX)
 GOPATH_FIRST := $(shell go env GOPATH | sed -E 's/^([A-Za-z]:)?([^;:]*).*/\1\2/')
 
 ROBOREV_SRC ?= $(HOME)/code/roborev
@@ -64,19 +64,19 @@ ensure-tmp-dir:
 
 # Build the binary (debug, with embedded frontend)
 build: frontend githubapp-frontend
-	go build -ldflags="$(LDFLAGS)" -o $(BINARY) ./cmd/middleman
-	go build -ldflags="$(LDFLAGS)" -o $(GHAPP_BINARY) ./cmd/middleman-github-app
+	go build -ldflags="$(LDFLAGS)" -o $(BINARY) ./cmd/kenn-forge
+	go build -ldflags="$(LDFLAGS)" -o $(GHAPP_BINARY) ./cmd/kenn-forge-github-app
 
 # Build with optimizations (release)
 build-release: frontend githubapp-frontend
-	go build -ldflags="$(LDFLAGS_RELEASE)" -trimpath -o $(BINARY) ./cmd/middleman
-	go build -ldflags="$(LDFLAGS_RELEASE)" -trimpath -o $(GHAPP_BINARY) ./cmd/middleman-github-app
+	go build -ldflags="$(LDFLAGS_RELEASE)" -trimpath -o $(BINARY) ./cmd/kenn-forge
+	go build -ldflags="$(LDFLAGS_RELEASE)" -trimpath -o $(GHAPP_BINARY) ./cmd/kenn-forge-github-app
 
 rust-pty-manager:
-	cargo build -p middleman-pty-manager
+	cargo build -p kenn-forge-pty-manager
 
 rust-test:
-	cargo test -p middleman-pty-manager
+	cargo test -p kenn-forge-pty-manager
 
 # Install to ~/.local/bin, $GOBIN, or $GOPATH/bin
 install: build-release
@@ -131,22 +131,22 @@ frontend-dev:
 	./scripts/frontend-dev.sh $(ARGS)
 
 # Clone the configured database into this worktree and run the backend against it.
-# Override with DEV_CLONE_DB_DIR=... DEV_CLONE_PORT=... MIDDLEMAN_CONFIG=...
+# Override with DEV_CLONE_DB_DIR=... DEV_CLONE_PORT=... KENN_FORGE_CONFIG=...
 dev-clone-db: ensure-embed-dir check-air
-	@clone_config="$$(MIDDLEMAN_DEV_CLONE_DIR="$(abspath $(DEV_CLONE_DB_DIR))" MIDDLEMAN_DEV_CLONE_PORT="$(DEV_CLONE_PORT)" ./scripts/dev-clone-db.sh)"; \
+	@clone_config="$$(KENN_FORGE_DEV_CLONE_DIR="$(abspath $(DEV_CLONE_DB_DIR))" KENN_FORGE_DEV_CLONE_PORT="$(DEV_CLONE_PORT)" ./scripts/dev-clone-db.sh)"; \
 		echo "cloned dev config: $$clone_config"; \
-		echo "cloned dev database: $(abspath $(DEV_CLONE_DB_DIR))/middleman.db"; \
+		echo "cloned dev database: $(abspath $(DEV_CLONE_DB_DIR))/forge.db"; \
 		echo "backend URL: http://127.0.0.1:$(DEV_CLONE_PORT)"; \
-		MIDDLEMAN_CONFIG="$$clone_config" MIDDLEMAN_LOG_FILE="$${MIDDLEMAN_LOG_FILE:-$(DEV_CLONE_BACKEND_LOG)}" GOFLAGS="$${GOFLAGS:+$$GOFLAGS }-buildvcs=false" $(MAKE) dev
+		KENN_FORGE_CONFIG="$$clone_config" KENN_FORGE_LOG_FILE="$${KENN_FORGE_LOG_FILE:-$(DEV_CLONE_BACKEND_LOG)}" GOFLAGS="$${GOFLAGS:+$$GOFLAGS }-buildvcs=false" $(MAKE) dev
 
 # Run Vite against the cloned database backend from `make dev-clone-db`.
 frontend-dev-clone-db:
 	@clone_config="$(abspath $(DEV_CLONE_DB_DIR))/config.toml"; \
 		if [ ! -f "$$clone_config" ]; then \
-			clone_config="$$(MIDDLEMAN_DEV_CLONE_DIR="$(abspath $(DEV_CLONE_DB_DIR))" MIDDLEMAN_DEV_CLONE_PORT="$(DEV_CLONE_PORT)" ./scripts/dev-clone-db.sh)"; \
+			clone_config="$$(KENN_FORGE_DEV_CLONE_DIR="$(abspath $(DEV_CLONE_DB_DIR))" KENN_FORGE_DEV_CLONE_PORT="$(DEV_CLONE_PORT)" ./scripts/dev-clone-db.sh)"; \
 		fi; \
 		echo "frontend proxy config: $$clone_config"; \
-		MIDDLEMAN_CONFIG="$$clone_config" $(MAKE) frontend-dev ARGS="$${ARGS:---port $(DEV_CLONE_FRONTEND_PORT)}"
+		KENN_FORGE_CONFIG="$$clone_config" $(MAKE) frontend-dev ARGS="$${ARGS:---port $(DEV_CLONE_FRONTEND_PORT)}"
 
 # Run Vite+ dev server after installing dependencies with Bun; Node launches Vite+ (use alongside `make dev`)
 frontend-dev-bun: frontend-deps
@@ -202,9 +202,9 @@ guardrail-check: check-vite-plus-bin
 
 # Regenerate the checked-in OpenAPI document and generated clients
 api-generate: frontend-deps
-	set -e; tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; go run ./cmd/middleman-openapi -out "$$tmp" -format yaml; if [ -f frontend/openapi/openapi.yaml ] && cmp -s "$$tmp" frontend/openapi/openapi.yaml; then rm "$$tmp"; else mv "$$tmp" frontend/openapi/openapi.yaml; fi; trap - EXIT
+	set -e; tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; go run ./cmd/kenn-forge-openapi -out "$$tmp" -format yaml; if [ -f frontend/openapi/openapi.yaml ] && cmp -s "$$tmp" frontend/openapi/openapi.yaml; then rm "$$tmp"; else mv "$$tmp" frontend/openapi/openapi.yaml; fi; trap - EXIT
 	mkdir -p internal/apiclient/spec
-	set -e; tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; go run ./cmd/middleman-openapi -out "$$tmp" -version 3.0 -format json; if [ -f internal/apiclient/spec/openapi.json ] && cmp -s "$$tmp" internal/apiclient/spec/openapi.json; then rm "$$tmp"; else mv "$$tmp" internal/apiclient/spec/openapi.json; fi; trap - EXIT
+	set -e; tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; go run ./cmd/kenn-forge-openapi -out "$$tmp" -version 3.0 -format json; if [ -f internal/apiclient/spec/openapi.json ] && cmp -s "$$tmp" internal/apiclient/spec/openapi.json; then rm "$$tmp"; else mv "$$tmp" internal/apiclient/spec/openapi.json; fi; trap - EXIT
 	set -e; tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; node frontend/node_modules/openapi-typescript/bin/cli.js frontend/openapi/openapi.yaml --enum-values -o "$$tmp"; if [ -f packages/ui/src/api/generated/schema.ts ] && cmp -s "$$tmp" packages/ui/src/api/generated/schema.ts; then rm "$$tmp"; else mv "$$tmp" packages/ui/src/api/generated/schema.ts; fi; trap - EXIT
 	set -e; tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; printf '%s\n' \
 		'/**' \
@@ -240,18 +240,18 @@ air-install:
 # Run Go server in dev mode with live reload and API artifact refresh (use alongside `make frontend-dev`)
 dev: ensure-embed-dir check-air
 	@mkdir -p "$(DEV_LOG_DIR)"
-	@echo "backend debug log: $${MIDDLEMAN_LOG_FILE:-$(DEV_BACKEND_LOG)}"
-	@echo "backend console log level: $${MIDDLEMAN_LOG_STDERR_LEVEL:-info}"
-	@echo "tail with: tail -F $${MIDDLEMAN_LOG_FILE:-$(DEV_BACKEND_LOG)}"
-	@if [ -n "$(MIDDLEMAN_CONFIG)" ]; then \
-		MIDDLEMAN_LOG_LEVEL="$${MIDDLEMAN_LOG_LEVEL:-debug}" \
-		MIDDLEMAN_LOG_FILE="$${MIDDLEMAN_LOG_FILE:-$(DEV_BACKEND_LOG)}" \
-		MIDDLEMAN_LOG_STDERR_LEVEL="$${MIDDLEMAN_LOG_STDERR_LEVEL:-info}" \
-		"$(AIR_BIN)" -c .air.toml -- -config "$(MIDDLEMAN_CONFIG)" $(ARGS); \
+	@echo "backend debug log: $${KENN_FORGE_LOG_FILE:-$(DEV_BACKEND_LOG)}"
+	@echo "backend console log level: $${KENN_FORGE_LOG_STDERR_LEVEL:-info}"
+	@echo "tail with: tail -F $${KENN_FORGE_LOG_FILE:-$(DEV_BACKEND_LOG)}"
+	@if [ -n "$(KENN_FORGE_CONFIG)" ]; then \
+		KENN_FORGE_LOG_LEVEL="$${KENN_FORGE_LOG_LEVEL:-debug}" \
+		KENN_FORGE_LOG_FILE="$${KENN_FORGE_LOG_FILE:-$(DEV_BACKEND_LOG)}" \
+		KENN_FORGE_LOG_STDERR_LEVEL="$${KENN_FORGE_LOG_STDERR_LEVEL:-info}" \
+		"$(AIR_BIN)" -c .air.toml -- -config "$(KENN_FORGE_CONFIG)" $(ARGS); \
 	else \
-		MIDDLEMAN_LOG_LEVEL="$${MIDDLEMAN_LOG_LEVEL:-debug}" \
-		MIDDLEMAN_LOG_FILE="$${MIDDLEMAN_LOG_FILE:-$(DEV_BACKEND_LOG)}" \
-		MIDDLEMAN_LOG_STDERR_LEVEL="$${MIDDLEMAN_LOG_STDERR_LEVEL:-info}" \
+		KENN_FORGE_LOG_LEVEL="$${KENN_FORGE_LOG_LEVEL:-debug}" \
+		KENN_FORGE_LOG_FILE="$${KENN_FORGE_LOG_FILE:-$(DEV_BACKEND_LOG)}" \
+		KENN_FORGE_LOG_STDERR_LEVEL="$${KENN_FORGE_LOG_STDERR_LEVEL:-info}" \
 		"$(AIR_BIN)" -c .air.toml -- $(ARGS); \
 	fi
 
@@ -293,7 +293,7 @@ race-times: ensure-embed-dir
 # Run full-stack E2E tests (Playwright against real Go server, excludes roborev)
 test-e2e: frontend
 	GOFLAGS="$${GOFLAGS:+$$GOFLAGS }-buildvcs=false" go build -o ./cmd/e2e-server/e2e-server$(EXE_SUFFIX) ./cmd/e2e-server
-	$(VITE_PLUS_BIN) run middleman-frontend#test:e2e --project=chromium
+	$(VITE_PLUS_BIN) run kenn-forge-frontend#test:e2e --project=chromium
 	cd packages/github-app-ui && $(VITE_PLUS_PACKAGE_BIN) build --logLevel warn && node node_modules/.bin/playwright test
 
 # Capture a reproducible workspace-switch profile: warm/cold switch
@@ -301,10 +301,10 @@ test-e2e: frontend
 # e2e backend. See frontend/tests/profiling/README.md.
 profile-workspace-switch: frontend
 	GOFLAGS="$${GOFLAGS:+$$GOFLAGS }-buildvcs=false" go build -o ./cmd/e2e-server/e2e-server$(EXE_SUFFIX) ./cmd/e2e-server
-	$(VITE_PLUS_BIN) run middleman-frontend#profile:workspace-switch
+	$(VITE_PLUS_BIN) run kenn-forge-frontend#profile:workspace-switch
 
 # Run the local all-in-one OTLP collector + Grafana/Tempo UI for
-# middleman trace export. See frontend/tests/profiling/README.md.
+# kenn-forge trace export. See frontend/tests/profiling/README.md.
 otel-lgtm:
 	docker run --rm -ti -p 3000:3000 -p 4317:4317 -p 4318:4318 grafana/otel-lgtm
 
@@ -315,24 +315,24 @@ test-e2e-roborev:
 
 # Run opt-in fleet federation container tests.
 test-fleet-container: ensure-embed-dir ensure-tmp-dir
-	@if [ "$${MIDDLEMAN_FLEET_CONTAINER_E2E:-}" != "1" ]; then \
-		echo "Set MIDDLEMAN_FLEET_CONTAINER_E2E=1 to run the fleet container e2e fixture." >&2; \
+	@if [ "$${KENN_FORGE_FLEET_CONTAINER_E2E:-}" != "1" ]; then \
+		echo "Set KENN_FORGE_FLEET_CONTAINER_E2E=1 to run the fleet container e2e fixture." >&2; \
 		exit 1; \
 	fi
 	GOFLAGS="$${GOFLAGS:+$$GOFLAGS }-buildvcs=false" $(GOTESTSUM)=tmp/test-fleet-container-output.json -- ./internal/server -run TestFleetContainerReadE2E -shuffle=on -timeout 10m
 
 # Run opt-in fleet drive container tests.
 test-fleet-drive-container: ensure-embed-dir ensure-tmp-dir
-	@if [ "$${MIDDLEMAN_FLEET_DRIVE_CONTAINER_E2E:-}" != "1" ]; then \
-		echo "Set MIDDLEMAN_FLEET_DRIVE_CONTAINER_E2E=1 to run the fleet drive container e2e fixture." >&2; \
+	@if [ "$${KENN_FORGE_FLEET_DRIVE_CONTAINER_E2E:-}" != "1" ]; then \
+		echo "Set KENN_FORGE_FLEET_DRIVE_CONTAINER_E2E=1 to run the fleet drive container e2e fixture." >&2; \
 		exit 1; \
 	fi
 	GOFLAGS="$${GOFLAGS:+$$GOFLAGS }-buildvcs=false" $(GOTESTSUM)=tmp/test-fleet-drive-container-output.json -- ./internal/server -run TestFleetContainerDriveE2E -shuffle=on -timeout 10m
 
 # Run opt-in GitLab CE container compatibility tests.
 test-gitlab-container: ensure-embed-dir ensure-tmp-dir
-	@if [ "$${MIDDLEMAN_GITLAB_CONTAINER_E2E:-}" != "1" ]; then \
-		echo "Set MIDDLEMAN_GITLAB_CONTAINER_E2E=1 to run the GitLab CE container e2e fixture." >&2; \
+	@if [ "$${KENN_FORGE_GITLAB_CONTAINER_E2E:-}" != "1" ]; then \
+		echo "Set KENN_FORGE_GITLAB_CONTAINER_E2E=1 to run the GitLab CE container e2e fixture." >&2; \
 		exit 1; \
 	fi
 	GOFLAGS="$${GOFLAGS:+$$GOFLAGS }-buildvcs=false" $(GOTESTSUM)=tmp/test-gitlab-container-output.json -- ./internal/server -run TestGitLabContainerE2E -shuffle=on -timeout 40m
@@ -391,12 +391,12 @@ install-hooks:
 
 # Clean build artifacts
 clean:
-	rm -f middleman middleman.exe
+	rm -f kenn-forge forge.exe
 	rm -rf internal/web/dist dist/
 
 # Show help
 help:
-	@echo "middleman build targets:"
+	@echo "kenn-forge build targets:"
 	@echo ""
 	@echo "  build          - Build with embedded frontend"
 	@echo "  build-release  - Release build (optimized, stripped)"
@@ -411,8 +411,8 @@ help:
 	@echo "  frontend-deps  - Install Bun workspace dependencies for frontend and packages/ui"
 	@echo "  vite-plus-install - Install global Vite+ launcher with Bun when vp is missing"
 	@echo "  frontend       - Build frontend SPA with Vite+"
-	@echo "  frontend-dev   - Install deps and run Vite dev server, logging to tmp/logs/frontend-dev.log (honors MIDDLEMAN_CONFIG)"
-	@echo "  frontend-dev-bun - Install deps with Bun and run Vite+ dev server (honors MIDDLEMAN_CONFIG)"
+	@echo "  frontend-dev   - Install deps and run Vite dev server, logging to tmp/logs/frontend-dev.log (honors KENN_FORGE_CONFIG)"
+	@echo "  frontend-dev-bun - Install deps with Bun and run Vite+ dev server (honors KENN_FORGE_CONFIG)"
 	@echo "  frontend-check - Run Vite+ format, lint, type, and Svelte checks for frontend and packages/ui"
 	@echo "  frontend-api-client-check - Prevent manual /api/v1 frontend calls outside generated clients"
 	@echo "  font-size-token-check - Enforce --font-size design tokens in frontend styles"

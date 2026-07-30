@@ -27,8 +27,8 @@ function setLightBaseline(): void {
   // Mirror the e2e's emulateMedia({ colorScheme: "light" }) + fresh load: clear
   // any persisted choice and force a light start so the first toggle goes dark.
   try {
-    localStorage.removeItem("middleman-theme");
-    localStorage.setItem("middleman-theme", "light");
+    localStorage.removeItem("kenn-forge-theme");
+    localStorage.setItem("kenn-forge-theme", "light");
   } catch {
     // Storage blocked is irrelevant here; initTheme still honors the value.
   }
@@ -47,7 +47,7 @@ describe("ThemeToggle (browser)", () => {
     // kit-ui-check-ignore: test harness resets the dark class between cases
     document.documentElement.classList.remove("dark");
     try {
-      localStorage.removeItem("middleman-theme");
+      localStorage.removeItem("kenn-forge-theme");
     } catch {
       // ignore
     }

@@ -1,8 +1,8 @@
 export type CollapseSurface = "pulls" | "issues";
 
 const STORAGE_KEYS: Record<CollapseSurface, string> = {
-  pulls: "middleman:collapsedRepos:pulls",
-  issues: "middleman:collapsedRepos:issues",
+  pulls: "kenn-forge:collapsedRepos:pulls",
+  issues: "kenn-forge:collapsedRepos:issues",
 };
 
 function readFromStorage(surface: CollapseSurface): Set<string> {

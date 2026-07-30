@@ -9,11 +9,11 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/gitclone"
-	ghclient "go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/server/httpapi"
-	"go.kenn.io/middleman/internal/workspace"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/gitclone"
+	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/workspace"
 )
 
 type Event struct {

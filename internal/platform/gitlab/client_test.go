@@ -14,10 +14,10 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	ghsync "go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/platform"
-	"go.kenn.io/middleman/internal/ratelimit"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
+	ghsync "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/platform"
+	"go.kenn.io/forge/internal/ratelimit"
+	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
 func TestClientLooksUpProjectByRawPathAndUsesNumericIDAfterLookup(t *testing.T) {
@@ -529,11 +529,11 @@ func TestPreviewNamespaceUsesGroupFirstFallbackPaginatesAndFiltersArchived(t *te
 		case "", "1":
 			w.Header().Set("X-Next-Page", "2")
 			writeJSON(w, `[
-				{"id": 1, "path": "one", "path_with_namespace": "middleman/one", "archived": false},
-				{"id": 2, "path": "old", "path_with_namespace": "middleman/old", "archived": true}
+				{"id": 1, "path": "one", "path_with_namespace": "kenn-forge/one", "archived": false},
+				{"id": 2, "path": "old", "path_with_namespace": "kenn-forge/old", "archived": true}
 			]`)
 		case "2":
-			writeJSON(w, `[{"id": 3, "path": "two", "path_with_namespace": "middleman/subgroup/two", "archived": false}]`)
+			writeJSON(w, `[{"id": 3, "path": "two", "path_with_namespace": "kenn-forge/subgroup/two", "archived": false}]`)
 		default:
 			http.NotFound(w, r)
 		}
@@ -541,7 +541,7 @@ func TestPreviewNamespaceUsesGroupFirstFallbackPaginatesAndFiltersArchived(t *te
 	defer server.Close()
 
 	client := newTestClient(t, server.URL)
-	preview, err := client.PreviewNamespace(context.Background(), "middleman", PreviewOptions{Limit: 10})
+	preview, err := client.PreviewNamespace(context.Background(), "kenn-forge", PreviewOptions{Limit: 10})
 	require.NoError(t, err)
 
 	require.Len(t, preview.Repositories, 2)
@@ -549,13 +549,13 @@ func TestPreviewNamespaceUsesGroupFirstFallbackPaginatesAndFiltersArchived(t *te
 	assert.Equal(2, preview.ReturnedCount)
 	assert.False(preview.Truncated)
 	assert.Empty(preview.PartialErrors)
-	assert.Equal([]string{"middleman/one", "middleman/subgroup/two"}, []string{
+	assert.Equal([]string{"kenn-forge/one", "kenn-forge/subgroup/two"}, []string{
 		preview.Repositories[0].Ref.RepoPath,
 		preview.Repositories[1].Ref.RepoPath,
 	})
 	assert.Equal([]string{
-		"/api/v4/groups/middleman/projects",
-		"/api/v4/groups/middleman/projects",
+		"/api/v4/groups/kenn-forge/projects",
+		"/api/v4/groups/kenn-forge/projects",
 	}, paths)
 }
 
@@ -602,7 +602,7 @@ func TestPreviewNamespaceHonorsCancellationAndForegroundTimeout(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
 
-		_, err := client.PreviewNamespace(ctx, "middleman", PreviewOptions{})
+		_, err := client.PreviewNamespace(ctx, "kenn-forge", PreviewOptions{})
 
 		require.Error(t, err)
 		require.ErrorIs(t, err, context.Canceled)
@@ -617,7 +617,7 @@ func TestPreviewNamespaceHonorsCancellationAndForegroundTimeout(t *testing.T) {
 		defer server.Close()
 
 		client := newTestClient(t, server.URL, WithForegroundTimeoutForTesting(time.Nanosecond))
-		_, err := client.PreviewNamespace(context.Background(), "middleman", PreviewOptions{})
+		_, err := client.PreviewNamespace(context.Background(), "kenn-forge", PreviewOptions{})
 
 		require.Error(t, err)
 		require.ErrorIs(t, err, context.DeadlineExceeded)
@@ -638,15 +638,15 @@ func TestPreviewNamespaceTruncatesAtLimitAndCapsAtHardLimit(t *testing.T) {
 		}
 
 		writeJSON(w, `[
-			{"id": 1, "path": "one", "path_with_namespace": "middleman/one"},
-			{"id": 2, "path": "two", "path_with_namespace": "middleman/two"},
-			{"id": 3, "path": "three", "path_with_namespace": "middleman/three"}
+			{"id": 1, "path": "one", "path_with_namespace": "kenn-forge/one"},
+			{"id": 2, "path": "two", "path_with_namespace": "kenn-forge/two"},
+			{"id": 3, "path": "three", "path_with_namespace": "kenn-forge/three"}
 		]`)
 	}))
 	defer server.Close()
 
 	client := newTestClient(t, server.URL)
-	preview, err := client.PreviewNamespace(context.Background(), "middleman", PreviewOptions{Limit: 2_000})
+	preview, err := client.PreviewNamespace(context.Background(), "kenn-forge", PreviewOptions{Limit: 2_000})
 	require.NoError(t, err)
 
 	assert.Equal(maxPreviewLimit, preview.Limit)
@@ -662,7 +662,7 @@ func TestPreviewNamespaceReturnsPartialMetadataAfterLaterPageFailure(t *testing.
 		switch r.URL.Query().Get("page") {
 		case "", "1":
 			w.Header().Set("X-Next-Page", "2")
-			writeJSON(w, `[{"id": 1, "path": "one", "path_with_namespace": "middleman/one"}]`)
+			writeJSON(w, `[{"id": 1, "path": "one", "path_with_namespace": "kenn-forge/one"}]`)
 		case "2":
 			http.Error(w, "temporary upstream failure", http.StatusTeapot)
 		default:
@@ -672,13 +672,13 @@ func TestPreviewNamespaceReturnsPartialMetadataAfterLaterPageFailure(t *testing.
 	defer server.Close()
 
 	client := newTestClient(t, server.URL)
-	preview, err := client.PreviewNamespace(context.Background(), "middleman", PreviewOptions{Limit: 10})
+	preview, err := client.PreviewNamespace(context.Background(), "kenn-forge", PreviewOptions{Limit: 10})
 	require.NoError(err)
 
 	require.Len(preview.Repositories, 1)
 	assert.True(preview.Truncated)
 	require.Len(preview.PartialErrors, 1)
-	assert.Equal("middleman", preview.PartialErrors[0].Namespace)
+	assert.Equal("kenn-forge", preview.PartialErrors[0].Namespace)
 	assert.Equal(int64(2), preview.PartialErrors[0].Page)
 	assert.Equal("upstream_error", preview.PartialErrors[0].Code)
 }
@@ -728,7 +728,7 @@ func TestReadClientFetchesMergeRequestsIssuesEventsReleasesTagsAndPipelines(t *t
 	defer server.Close()
 
 	client := newTestClient(t, server.URL)
-	ref := platform.RepoRef{Platform: platform.KindGitLab, Host: "gitlab.example.com", RepoPath: "middleman/project", PlatformID: 42}
+	ref := platform.RepoRef{Platform: platform.KindGitLab, Host: "gitlab.example.com", RepoPath: "kenn-forge/project", PlatformID: 42}
 
 	mrs, err := client.ListOpenMergeRequests(context.Background(), ref)
 	require.NoError(err)
@@ -862,7 +862,7 @@ func TestListCIChecksReturnsEmptyWhenNoPipelineExists(t *testing.T) {
 	checks, err := client.ListCIChecks(context.Background(), platform.RepoRef{
 		Platform:   platform.KindGitLab,
 		Host:       "gitlab.example.com",
-		RepoPath:   "middleman/project",
+		RepoPath:   "kenn-forge/project",
 		PlatformID: 42,
 	}, "missing")
 

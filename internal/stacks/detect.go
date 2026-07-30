@@ -7,7 +7,7 @@ import (
 	"slices"
 	"strings"
 
-	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/forge/internal/db"
 )
 
 type branchKey struct {

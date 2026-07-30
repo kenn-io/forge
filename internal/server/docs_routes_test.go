@@ -12,8 +12,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/config"
-	"go.kenn.io/middleman/internal/server/httpapi"
+	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/server/httpapi"
 )
 
 type docsFolderWire struct {

@@ -7,8 +7,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/testutil"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil"
+	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/propagation"
@@ -68,9 +68,9 @@ func TestHTTPSpanUsesMatchedRouteUnderBasePath(t *testing.T) {
 	t.Cleanup(func() { otel.SetTracerProvider(prev) })
 
 	database := dbtest.Open(t)
-	srv := New(database, nil, nil, "/middleman/", nil, ServerOptions{})
+	srv := New(database, nil, nil, "/kenn-forge/", nil, ServerOptions{})
 
-	req := httptest.NewRequest(http.MethodGet, "/middleman/api/v1/sync/status", nil)
+	req := httptest.NewRequest(http.MethodGet, "/kenn-forge/api/v1/sync/status", nil)
 	rec := httptest.NewRecorder()
 	srv.ServeHTTP(rec, req)
 
@@ -93,7 +93,7 @@ func TestOTelTraceableFiltersOnlyLongLivedStreams(t *testing.T) {
 	}{
 		{name: "websocket", basePath: "/", method: http.MethodGet, target: "/ws/v1/terminal", upgrade: true, want: false},
 		{name: "server events", basePath: "/", method: http.MethodGet, target: "/api/v1/events", want: false},
-		{name: "prefixed server events", basePath: "/middleman/", method: http.MethodGet, target: "/middleman/api/v1/events", want: false},
+		{name: "prefixed server events", basePath: "/kenn-forge/", method: http.MethodGet, target: "/kenn-forge/api/v1/events", want: false},
 		{name: "telemetry event", basePath: "/", method: http.MethodPost, target: "/api/v1/telemetry/events", want: true},
 		{name: "kata events stream", method: http.MethodGet, target: "/api/v1/kata/proxy/api/v1/events/stream", want: false},
 		{name: "kata events page", method: http.MethodGet, target: "/api/v1/kata/proxy/api/v1/events?limit=1000", want: true},

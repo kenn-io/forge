@@ -11,7 +11,7 @@ import (
 	"time"
 
 	gitlab "gitlab.com/gitlab-org/api/client-go/v2"
-	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/forge/internal/platform"
 )
 
 // gitlabHeadMismatchPhrase is the documented GitLab rejection for

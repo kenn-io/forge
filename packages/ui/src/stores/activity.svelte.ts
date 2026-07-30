@@ -1,5 +1,5 @@
 import type { ActivityItem, ActivityParams, ActivitySettings } from "../api/types.js";
-import type { MiddlemanClient } from "../types.js";
+import type { ForgeClient } from "../types.js";
 import { showFlash } from "./flash.svelte.js";
 
 export type TimeRange = "24h" | "7d" | "30d" | "90d";
@@ -84,7 +84,7 @@ const RANGE_MS: Record<TimeRange, number> = {
 };
 
 export interface ActivityStoreOptions {
-  client: MiddlemanClient;
+  client: ForgeClient;
   getGlobalRepo?: () => string | undefined;
   getBasePath?: () => string;
 }

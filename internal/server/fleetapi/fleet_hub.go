@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"go.kenn.io/middleman/internal/config"
-	"go.kenn.io/middleman/internal/fleet"
+	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/fleet"
 )
 
 // buildFleetSnapshot builds the enriched snapshot. When includePeers

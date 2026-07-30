@@ -13,14 +13,14 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/apiclient"
-	"go.kenn.io/middleman/internal/apiclient/generated"
-	"go.kenn.io/middleman/internal/config"
-	"go.kenn.io/middleman/internal/db"
-	ghclient "go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/server"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
-	"go.kenn.io/middleman/internal/testutil/servertest"
+	"go.kenn.io/forge/internal/apiclient"
+	"go.kenn.io/forge/internal/apiclient/generated"
+	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/db"
+	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/servertest"
 )
 
 // TestHostValidationE2E exercises the Host validation middleware
@@ -29,7 +29,7 @@ import (
 // test-friendly fallback (AllowLoopbackAnyPort) so the test pins
 // the production contract: only the configured bind and the
 // loopback synonyms at the bind port are accepted; the
-// `middleman.test` hostname the apitest helpers normally use is
+// `forge.test` hostname the apitest helpers normally use is
 // NOT in the allowlist.
 //
 // Case 1: a request whose Host is attacker.example:8091 is
@@ -77,7 +77,7 @@ func TestHostValidationE2E(t *testing.T) {
 func TestHostValidationUsesConfigDerivedTrustedProxyE2E(t *testing.T) {
 	srv, database := setupHostValidationServerFromConfig(t, `host = "127.0.0.1"
 port = 8091
-allowed_hosts = ["proxy.local:8091", "middleman.example"]
+allowed_hosts = ["proxy.local:8091", "forge.example"]
 trust_reverse_proxy = true
 `)
 	seedPR(t, database, "acme", "widget", 1)
@@ -87,7 +87,7 @@ trust_reverse_proxy = true
 		client := newHostValidationClient(t, srv, "http://proxy.local:8091")
 		resp, err := client.HTTP.ListPullsWithResponse(
 			t.Context(), nil,
-			requestHeader("X-Forwarded-Host", "middleman.example"),
+			requestHeader("X-Forwarded-Host", "forge.example"),
 		)
 		require.NoError(err)
 		require.Equal(http.StatusOK, resp.StatusCode())
@@ -111,7 +111,7 @@ func TestHostValidationTrustedProxyE2E(t *testing.T) {
 		Bind: config.HostKey{Host: "127.0.0.1", Port: "8091"},
 		Allowed: []config.HostKey{
 			{Host: "proxy.local", Port: "8091"},
-			{Host: "middleman.example", Port: ""},
+			{Host: "forge.example", Port: ""},
 		},
 		TrustReverseProxy: true,
 	})
@@ -122,7 +122,7 @@ func TestHostValidationTrustedProxyE2E(t *testing.T) {
 		client := newHostValidationClient(t, srv, "http://proxy.local:8091")
 		resp, err := client.HTTP.ListPullsWithResponse(
 			t.Context(), nil,
-			requestHeader("X-Forwarded-Host", "middleman.example"),
+			requestHeader("X-Forwarded-Host", "forge.example"),
 		)
 		require.NoError(err)
 		require.Equal(http.StatusOK, resp.StatusCode())
@@ -144,7 +144,7 @@ func TestHostValidationTrustedProxyE2E(t *testing.T) {
 		client := newHostValidationClient(t, srv, "http://proxy.local:8091")
 		resp, err := client.HTTP.ListPullsWithResponse(
 			t.Context(), nil,
-			requestHeader("X-Forwarded-Host", "middleman.example"),
+			requestHeader("X-Forwarded-Host", "forge.example"),
 			requestHeader("Forwarded", "host=attacker.example"),
 		)
 		require.NoError(t, err)
@@ -197,7 +197,7 @@ func writeHostValidationConfig(t *testing.T, content string) string {
 // URL drives req.URL.Host (and therefore the server's req.Host)
 // per the row. Reuses the apitest round-tripper pattern from
 // setupTestClient but isolates this test from the default
-// "middleman.test" base URL.
+// "forge.test" base URL.
 func newHostValidationClient(t *testing.T, srv *server.Server, baseURL string) *apiclient.Client {
 	t.Helper()
 	httpClient := &http.Client{

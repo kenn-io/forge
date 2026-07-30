@@ -12,7 +12,7 @@ export type NewWorkspaceRepoSeed = {
 // Repo of the last workspace started from the dialog. Ad-hoc work tends to
 // repeat in the same repository, so the picker prefers it whenever the caller
 // did not supply a more specific seed.
-const LAST_REPO_STORAGE_KEY = "middleman:workspace:new_repo";
+const LAST_REPO_STORAGE_KEY = "kenn-forge:workspace:new_repo";
 
 let open = $state(false);
 let seedRepo = $state<NewWorkspaceRepoSeed | null>(null);

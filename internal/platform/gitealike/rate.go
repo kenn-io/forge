@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"go.kenn.io/middleman/internal/ratelimit"
+	"go.kenn.io/forge/internal/ratelimit"
 )
 
 // RateFromHeaders returns provider rate state only when the response contains

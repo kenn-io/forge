@@ -1,12 +1,12 @@
 # Configuration
 
-middleman reads TOML from:
+kenn-forge reads TOML from:
 
 ```text
-~/.config/middleman/config.toml
+~/.kenn/forge/config.toml
 ```
 
-Set `MIDDLEMAN_HOME` to use a different config and data directory. Most users
+Set `KENN_FORGE_HOME` to use a different config and data directory. Most users
 only need repositories, tokens, and optional modes.
 
 ## Basic server settings
@@ -22,13 +22,13 @@ base_path = "/"
 - `host` and `port`: where the local daemon listens.
 - `base_path`: URL prefix when serving behind a reverse proxy.
 - `data_dir`: local database and app state location. Leave unset for the
-  default; set `MIDDLEMAN_HOME` to relocate both config and data, or use an
+  default; set `KENN_FORGE_HOME` to relocate both config and data, or use an
   absolute `data_dir` path to move only app state.
 
 For a trusted reverse proxy or a larger SSE replay window, use:
 
 ```toml
-allowed_hosts = ["middleman.example.com", "proxy.example.com:8091"]
+allowed_hosts = ["kenn-forge.example.com", "proxy.example.com:8091"]
 trust_reverse_proxy = true
 sse_buffer_size = 256
 ```
@@ -36,7 +36,7 @@ sse_buffer_size = 256
 `allowed_hosts` accepts exact host-and-port values beyond the listener's
 loopback names. With `trust_reverse_proxy`, both the direct request host and
 the forwarded public host must be accepted. `sse_buffer_size` defaults to 256
-events and accepts 16 through 16384. Restart middleman after changing these
+events and accepts 16 through 16384. Restart kenn-forge after changing these
 startup settings.
 
 ## Repositories
@@ -46,10 +46,10 @@ GitHub repositories can use the default provider settings:
 ```toml
 [[repos]]
 owner = "kenn-io"
-name = "middleman"
+name = "kenn-forge"
 ```
 
-You can also paste a repository URL into `owner` or `name`; middleman normalizes
+You can also paste a repository URL into `owner` or `name`; kenn-forge normalizes
 common HTTPS and SSH forms.
 
 For providers or hosts outside the default GitHub host, set `platform` and
@@ -84,20 +84,20 @@ name = "service"
 Token lookup is scoped by provider and host. Use one of these sources:
 
 ```toml
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 
 [[platforms]]
 type = "gitlab"
 host = "gitlab.com"
-token_env = "MIDDLEMAN_GITLAB_TOKEN"
+token_env = "KENN_FORGE_GITLAB_TOKEN"
 
 [[repos]]
 owner = "team"
 name = "private-repo"
-token_file = "~/.config/middleman/tokens/private-repo"
+token_file = "~/.kenn/forge/tokens/private-repo"
 ```
 
-For GitHub, middleman can also fall back to
+For GitHub, kenn-forge can also fall back to
 `gh auth token --hostname HOST`. The unscoped `gh auth token` fallback applies
 only to `github.com`; authenticate another host with
 `gh auth login --hostname HOST`.
@@ -110,11 +110,11 @@ repository. This advanced feature is configured in TOML only:
 ```toml
 [[github_owner_tokens]]
 owner = "org-a"
-token_env = "MIDDLEMAN_GITHUB_TOKEN_ORG_A"
+token_env = "KENN_FORGE_GITHUB_TOKEN_ORG_A"
 
 [[github_owner_tokens]]
 owner = "org-b"
-token_file = "~/.config/middleman/tokens/org-b"
+token_file = "~/.kenn/forge/tokens/org-b"
 ```
 
 Authorization is selected by GitHub host and repository owner. An exact
@@ -124,9 +124,9 @@ then the host fallback and GitHub CLI are tried.
 
 For an App installed on only selected repositories, `selected_repos` is a
 startup routing snapshot. After changing repository access on GitHub, rerun
-`middleman-github-app install` and restart middleman. Until then, newly granted
+`kenn-forge-github-app install` and restart kenn-forge. Until then, newly granted
 repositories continue on their PAT route, while revoked App access can surface
-as a repository 404. Middleman does not retry a PAT after that 404 because the
+as a repository 404. Kenn Forge does not retry a PAT after that 404 because the
 same response can also mean that the repository is absent or private.
 
 Rate limits and sync budgets are accounted by authenticated identity, not by
@@ -135,18 +135,18 @@ budget and rate state. Different users and App installations have separate
 host-and-identity budgets. Owner mappings are not editable in the UI.
 
 Replacing a PAT with another token for the same GitHub user can be applied from
-a token file. Restart middleman after changing a route to a different GitHub
+a token file. Restart kenn-forge after changing a route to a different GitHub
 user so identity-scoped budgets, mutation availability, and snapshots are
 rebuilt safely.
 
-Use read access for monitoring. Add write access only when you want middleman to
+Use read access for monitoring. Add write access only when you want kenn-forge to
 comment, approve, close, reopen, edit, or merge.
 
 For GitHub rate-limit isolation, use the companion CLI:
 
 ```sh
-middleman-github-app create
-middleman-github-app list
+kenn-forge-github-app create
+kenn-forge-github-app list
 ```
 
 The app credentials are written to `[[github_apps]]` in the same config file.
@@ -160,7 +160,7 @@ allow_mid_stack_merges = false
 ```
 
 The native-stack option opts into GitHub's read-only stack preview data when it
-is complete and usable; middleman keeps branch-based detection as the fallback.
+is complete and usable; kenn-forge keeps branch-based detection as the fallback.
 It does not create, reorder, or mutate GitHub stacks. Mid-stack merging stays
 blocked by default because merging a later branch first can invalidate earlier
 stack members.
@@ -218,9 +218,9 @@ Custom agents are also editable in the app under Settings → Agents.
 Register markdown folders from the CLI:
 
 ```sh
-middleman docs add-folder --name Notes ~/notes
-middleman docs list-folders
-middleman docs remove-folder notes
+kenn-forge docs add-folder --name Notes ~/notes
+kenn-forge docs list-folders
+kenn-forge docs remove-folder notes
 ```
 
 This writes `[[doc_folders]]` entries:
@@ -238,7 +238,7 @@ open against one Kata daemon instead of the currently selected daemon.
 
 ## Telemetry
 
-middleman sends limited anonymous telemetry by default: daemon activity, app
+kenn-forge sends limited anonymous telemetry by default: daemon activity, app
 load view names, version, commit, OS/arch, and an anonymous install ID.
 
 It does not send repo names, PR or issue content, tokens, usernames, hostnames,
@@ -247,5 +247,5 @@ or paths.
 Disable telemetry with:
 
 ```sh
-TELEMETRY_ENABLED=0 middleman
+TELEMETRY_ENABLED=0 kenn-forge
 ```

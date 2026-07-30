@@ -22,7 +22,7 @@ describe("waitUntilBackendReady", () => {
     vi.useFakeTimers();
     const fetch = vi.fn().mockResolvedValueOnce({ ok: false }).mockResolvedValueOnce({ ok: true });
     vi.stubGlobal("fetch", fetch);
-    const { waitUntilBackendReady } = await importReadiness("/middleman/");
+    const { waitUntilBackendReady } = await importReadiness("/kenn-forge/");
 
     const ready = waitUntilBackendReady(new AbortController().signal);
     await flushMicrotasks();
@@ -30,7 +30,7 @@ describe("waitUntilBackendReady", () => {
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(fetch).toHaveBeenNthCalledWith(
       1,
-      "/middleman/healthz",
+      "/kenn-forge/healthz",
       expect.objectContaining({
         cache: "no-store",
         headers: { Accept: "application/json" },

@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/platform"
 )
 
 // hydrateItem runs the existing full item sync under archive admission. The

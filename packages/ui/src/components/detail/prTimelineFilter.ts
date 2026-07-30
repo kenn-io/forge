@@ -11,7 +11,7 @@ export interface PRTimelineFilterState {
 
 export type PRTimelineEventBucket = "messages" | "commitDetails" | "events" | "forcePushes";
 
-export const PR_TIMELINE_FILTER_STORAGE_KEY = "middleman-pr-timeline-filter";
+export const PR_TIMELINE_FILTER_STORAGE_KEY = "kenn-forge-pr-timeline-filter";
 
 export const DEFAULT_PR_TIMELINE_FILTER: PRTimelineFilterState = {
   showMessages: true,

@@ -18,9 +18,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/config"
-	ghclient "go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/config"
+	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
 // setupTestServerWithRoborev creates a server with the roborev
@@ -35,7 +35,7 @@ func setupTestServerWithRoborev(
 
 	cfgContent := fmt.Sprintf(`
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -126,12 +126,12 @@ func TestRoborevProxyE2EForwardsSubpathAndNonGETMethod(t *testing.T) {
 	defer daemon.Close()
 
 	srv := setupTestServerWithRoborev(t, daemon.URL)
-	middleman := httptest.NewServer(srv)
-	defer middleman.Close()
+	forge := httptest.NewServer(srv)
+	defer forge.Close()
 
 	req, err := http.NewRequest(
 		http.MethodPost,
-		middleman.URL+"/api/roborev/api/jobs/123/retry?force=1",
+		forge.URL+"/api/roborev/api/jobs/123/retry?force=1",
 		strings.NewReader(`{"reason":"retry"}`),
 	)
 	require.NoError(err)
@@ -258,15 +258,15 @@ func TestRoborevNDJSONPassThrough(t *testing.T) {
 
 	srv := setupTestServerWithRoborev(t, daemon.URL)
 
-	// Wrap the middleman server in its own httptest.Server
+	// Wrap the kenn-forge server in its own httptest.Server
 	// so we get a real TCP connection with streaming reads.
-	middleman := httptest.NewServer(srv)
-	defer middleman.Close()
+	forge := httptest.NewServer(srv)
+	defer forge.Close()
 
 	r := require.New(t)
 
 	resp, err := http.Get(
-		middleman.URL + "/api/roborev/stream",
+		forge.URL + "/api/roborev/stream",
 	)
 	r.NoError(err)
 	defer resp.Body.Close()
@@ -299,15 +299,15 @@ func TestRoborevProxyCancelsIdleUpstreamBeforeReconnect(t *testing.T) {
 	defer daemon.Close()
 
 	srv := setupTestServerWithRoborev(t, daemon.URL)
-	middleman := httptest.NewServer(srv)
-	defer middleman.Close()
+	forge := httptest.NewServer(srv)
+	defer forge.Close()
 
 	startRequest := func() (context.CancelFunc, <-chan error) {
 		ctx, cancel := context.WithCancel(context.Background())
 		req, err := http.NewRequestWithContext(
 			ctx,
 			http.MethodGet,
-			middleman.URL+"/api/roborev/api/stream/events",
+			forge.URL+"/api/roborev/api/stream/events",
 			nil,
 		)
 		require.NoError(err)

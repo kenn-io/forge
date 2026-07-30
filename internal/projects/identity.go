@@ -14,10 +14,10 @@ import (
 	"path/filepath"
 	"strings"
 
+	"go.kenn.io/forge/internal/db"
+	platformpkg "go.kenn.io/forge/internal/platform"
+	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/kit/git/env"
-	"go.kenn.io/middleman/internal/db"
-	platformpkg "go.kenn.io/middleman/internal/platform"
-	"go.kenn.io/middleman/internal/procutil"
 )
 
 type KnownPlatformHost struct {

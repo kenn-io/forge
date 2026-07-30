@@ -16,13 +16,13 @@ import (
 
 	gh "github.com/google/go-github/v89/github"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/config"
-	"go.kenn.io/middleman/internal/db"
-	ghclient "go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/platform"
-	"go.kenn.io/middleman/internal/server"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
-	"go.kenn.io/middleman/internal/testutil/servertest"
+	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/db"
+	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/platform"
+	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/servertest"
 )
 
 func TestTriggerSyncE2EBypassesCooldown(t *testing.T) {
@@ -43,7 +43,7 @@ func TestTriggerSyncE2EBypassesCooldown(t *testing.T) {
 	}
 	baseURL, client, database := startSyncCooldownE2EServer(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -100,7 +100,7 @@ func TestTriggerSyncE2ERefreshesSnapshotBeforeRateBackoff(t *testing.T) {
 	}
 	baseURL, client, _, syncer := startSyncCooldownE2EServerWithSyncer(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -151,7 +151,7 @@ func TestTriggerSyncE2EPrioritizesFilteredRepos(t *testing.T) {
 	}
 	baseURL, client, _, syncer := startSyncCooldownE2EServerWithSyncer(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -215,7 +215,7 @@ func TestTriggerSyncE2EPrioritizesNonDefaultHostFilter(t *testing.T) {
 	}
 	baseURL, client, _, syncer := startSyncCooldownE2EServerWithSyncer(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -281,7 +281,7 @@ func TestTriggerSyncE2EPrioritizesProviderQualifiedFilter(t *testing.T) {
 	}
 	baseURL, client, _, syncer := startSyncCooldownE2EServerWithSyncer(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -341,7 +341,7 @@ func TestAddRepoE2ETriggersImmediateSyncDuringCooldown(t *testing.T) {
 
 	baseURL, client, database := startSyncCooldownE2EServer(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -380,7 +380,7 @@ func TestRefreshRepoE2ETriggersImmediateSyncDuringCooldown(t *testing.T) {
 			_ context.Context, owner string,
 		) ([]*gh.Repository, error) {
 			repos := []*gh.Repository{{
-				Name:     new("middleman"),
+				Name:     new("kenn-forge"),
 				Owner:    &gh.User{Login: new(owner)},
 				Archived: new(false),
 			}}
@@ -397,7 +397,7 @@ func TestRefreshRepoE2ETriggersImmediateSyncDuringCooldown(t *testing.T) {
 
 	baseURL, client, database := startSyncCooldownE2EServer(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -410,7 +410,7 @@ name = "*"
 		t, client, baseURL+"/api/v1/sync", nil,
 	)
 	require.Equal(http.StatusAccepted, status, body)
-	waitForRepoSynced(t, database, "roborev-dev", "middleman", nil)
+	waitForRepoSynced(t, database, "roborev-dev", "kenn-forge", nil)
 	waitForSyncIdle(t, client, baseURL)
 
 	includeRefreshRepo.Store(true)

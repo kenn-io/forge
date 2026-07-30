@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/forge/internal/db"
 )
 
 // MarshalAssigneesJSON converts a list of assignee usernames to a JSON array string.

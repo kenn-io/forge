@@ -253,7 +253,7 @@ describe("IssueDetail activity view", () => {
 
     await fireEvent.click(screen.getByRole("button", { name: /compact/i }));
 
-    expect(localStorage.getItem("middleman-detail-activity-view")).toBe("compact");
+    expect(localStorage.getItem("kenn-forge-detail-activity-view")).toBe("compact");
     expect(container.querySelectorAll(".event-card--compact-row")).toHaveLength(1);
     expect(container.textContent).toContain("Issue activity preview");
   });
@@ -370,9 +370,9 @@ describe("IssueDetail inline workspace handoff", () => {
     return { apiClient, resolvePost };
   }
 
-  function workspaceBranchConflict(existingBranch = "middleman/issue-7-original-title", existingDirectory = false) {
+  function workspaceBranchConflict(existingBranch = "kenn-forge/issue-7-original-title", existingDirectory = false) {
     return {
-      type: "urn:middleman:error:issue-workspace-branch-conflict",
+      type: "urn:kenn-forge:error:issue-workspace-branch-conflict",
       title: "Issue workspace branch conflict",
       detail: "A local branch with the requested name already exists.",
       details: { existingDirectory },
@@ -393,7 +393,7 @@ describe("IssueDetail inline workspace handoff", () => {
 
   it("recovers the expected existing workspace directory", async () => {
     const controller = createTestController("split");
-    const conflict = workspaceBranchConflict("middleman/issue-7-original-title", true);
+    const conflict = workspaceBranchConflict("kenn-forge/issue-7-original-title", true);
     const apiClient = {
       GET: vi.fn(),
       POST: vi
@@ -412,7 +412,7 @@ describe("IssueDetail inline workspace handoff", () => {
 
     expect(apiClient.POST.mock.calls[1]?.[1]).toMatchObject({
       body: {
-        git_head_ref: "middleman/issue-7-original-title",
+        git_head_ref: "kenn-forge/issue-7-original-title",
         reuse_existing_directory: true,
       },
     });
@@ -425,7 +425,7 @@ describe("IssueDetail inline workspace handoff", () => {
   });
 
   it("keeps directory recovery errors in the conflict dialog", async () => {
-    const conflict = workspaceBranchConflict("middleman/issue-7-original-title", true);
+    const conflict = workspaceBranchConflict("kenn-forge/issue-7-original-title", true);
     const apiClient = {
       GET: vi.fn(),
       POST: vi
@@ -434,7 +434,7 @@ describe("IssueDetail inline workspace handoff", () => {
         .mockResolvedValueOnce({
           error: {
             code: "workspaceDirectoryNotReusable",
-            detail: "the expected Middleman worktree directory does not exist",
+            detail: "the expected Kenn Forge worktree directory does not exist",
             details: { reason: "missing" },
           },
         }),
@@ -445,7 +445,7 @@ describe("IssueDetail inline workspace handoff", () => {
     await fireEvent.click(await screen.findByRole("button", { name: "Use Existing Directory" }));
 
     expect(screen.getByRole("dialog", { name: "Existing Workspace Directory" })).toBeTruthy();
-    expect(screen.getByText("the expected Middleman worktree directory does not exist")).toBeTruthy();
+    expect(screen.getByText("the expected Kenn Forge worktree directory does not exist")).toBeTruthy();
   });
 
   it("explains when the existing branch is checked out elsewhere", async () => {
@@ -801,15 +801,15 @@ describe("IssueDetail inline workspace handoff", () => {
 
   it("discards a branch-conflict response that lands after the selection changed", async () => {
     const conflictError = {
-      type: "urn:middleman:error:issue-workspace-branch-conflict",
+      type: "urn:kenn-forge:error:issue-workspace-branch-conflict",
       title: "Issue workspace branch conflict",
       detail: "A local branch with the requested name already exists.",
       errors: [
-        { message: "Requested branch already exists", location: "body.git_head_ref", value: "middleman/issue-7" },
+        { message: "Requested branch already exists", location: "body.git_head_ref", value: "kenn-forge/issue-7" },
         {
           message: "Suggested alternative branch name",
           location: "body.suggested_git_head_ref",
-          value: "middleman/issue-7-2",
+          value: "kenn-forge/issue-7-2",
         },
       ],
     };

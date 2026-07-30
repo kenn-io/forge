@@ -1,9 +1,9 @@
-import type { StoreInstances } from "@middleman/ui";
-import type { Settings } from "@middleman/ui/api/types";
+import type { StoreInstances } from "@kenn-forge/ui";
+import type { Settings } from "@kenn-forge/ui/api/types";
 import {
   beginTerminalSettingsHydration,
   hydrateTerminalSettings,
-} from "@middleman/ui/stores/terminal-settings-persistence";
+} from "@kenn-forge/ui/stores/terminal-settings-persistence";
 
 export interface AppStartupDeps {
   waitUntilBackendReady?: (signal: AbortSignal) => Promise<void>;

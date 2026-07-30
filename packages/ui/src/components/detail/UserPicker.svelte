@@ -47,7 +47,7 @@
 
   const selectedNames = $derived(new Set(selected.map((name) => name.toLowerCase())));
   // Selected users always appear in the list even when they are not in
-  // the candidate set (for example a user assigned outside middleman).
+  // the candidate set (for example a user assigned outside kenn-forge).
   const listedUsers = $derived.by(() => {
     const seen = new Set<string>();
     const users: string[] = [];

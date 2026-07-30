@@ -17,14 +17,14 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/platform"
+	ptyownerruntime "go.kenn.io/forge/internal/ptyowner/runtime"
+	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/tokenauth"
+	"go.kenn.io/forge/internal/workspace"
+	"go.kenn.io/forge/internal/workspace/localruntime"
 	gitcmd "go.kenn.io/kit/git/cmd"
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/platform"
-	ptyownerruntime "go.kenn.io/middleman/internal/ptyowner/runtime"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
-	"go.kenn.io/middleman/internal/tokenauth"
-	"go.kenn.io/middleman/internal/workspace"
-	"go.kenn.io/middleman/internal/workspace/localruntime"
 )
 
 func TestWorkspaceRuntimeLaunchMissingTokenReturnsBadRequestE2E(t *testing.T) {

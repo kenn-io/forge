@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
 func openTestDB(t *testing.T) *db.DB {
@@ -66,7 +66,7 @@ func TestCreateProjectLinkedToRepo(t *testing.T) {
 	assert.Equal("examplerepo", project.PlatformIdentity.Name)
 	assert.Equal("main", project.DefaultBranch)
 
-	// Re-fetching reads the joined identity off middleman_repos -
+	// Re-fetching reads the joined identity off forge_repos -
 	// pin that the JOIN is the source of truth.
 	roundTrip, err := d.GetProjectByID(ctx, project.ID)
 	require.NoError(err)
@@ -95,7 +95,7 @@ func TestCreateProjectFKSetNullOnRepoDelete(t *testing.T) {
 	// cascade-delete the project. The on-disk checkout is the source
 	// of truth for the project record.
 	_, err = d.WriteDB().ExecContext(ctx,
-		`DELETE FROM middleman_repos WHERE id = ?`, repoID,
+		`DELETE FROM forge_repos WHERE id = ?`, repoID,
 	)
 	require.NoError(err)
 
@@ -342,13 +342,13 @@ func TestProjectWorktreeCascadesOnProjectDelete(t *testing.T) {
 	require.NoError(err)
 
 	_, err = d.WriteDB().ExecContext(ctx,
-		`DELETE FROM middleman_projects WHERE id = ?`, project.ID,
+		`DELETE FROM forge_projects WHERE id = ?`, project.ID,
 	)
 	require.NoError(err)
 
 	var count int
 	err = d.ReadDB().QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM middleman_project_worktrees WHERE project_id = ?`,
+		`SELECT COUNT(*) FROM forge_project_worktrees WHERE project_id = ?`,
 		project.ID,
 	).Scan(&count)
 	require.NoError(err)
@@ -367,7 +367,7 @@ func TestProjectWorktreeTmuxSessionRoundTrip(t *testing.T) {
 	require.NoError(d.UpsertProjectWorktreeTmuxSession(ctx, &db.ProjectWorktreeTmuxSession{
 		WorktreeID:  worktree.ID,
 		SessionKey:  "wt_codex",
-		SessionName: "middleman-project-worktree-codex",
+		SessionName: "kenn-forge-project-worktree-codex",
 		TargetKey:   "codex",
 		CreatedAt:   createdAt,
 	}))
@@ -377,7 +377,7 @@ func TestProjectWorktreeTmuxSessionRoundTrip(t *testing.T) {
 	require.Len(sessions, 1)
 	assert.Equal(worktree.ID, sessions[0].WorktreeID)
 	assert.Equal("wt_codex", sessions[0].SessionKey)
-	assert.Equal("middleman-project-worktree-codex", sessions[0].SessionName)
+	assert.Equal("kenn-forge-project-worktree-codex", sessions[0].SessionName)
 	assert.Equal("codex", sessions[0].TargetKey)
 	assert.Equal(createdAt, sessions[0].CreatedAt)
 }
@@ -396,14 +396,14 @@ func TestProjectWorktreeTmuxSessionKeyedBySessionKey(t *testing.T) {
 	require.NoError(d.UpsertProjectWorktreeTmuxSession(ctx, &db.ProjectWorktreeTmuxSession{
 		WorktreeID:  worktree.ID,
 		SessionKey:  "wt_codex_1",
-		SessionName: "middleman-project-worktree-codex-a",
+		SessionName: "kenn-forge-project-worktree-codex-a",
 		TargetKey:   "codex",
 		CreatedAt:   first,
 	}))
 	require.NoError(d.UpsertProjectWorktreeTmuxSession(ctx, &db.ProjectWorktreeTmuxSession{
 		WorktreeID:  worktree.ID,
 		SessionKey:  "wt_codex_1",
-		SessionName: "middleman-project-worktree-codex-b",
+		SessionName: "kenn-forge-project-worktree-codex-b",
 		TargetKey:   "codex",
 		CreatedAt:   second,
 	}))
@@ -411,14 +411,14 @@ func TestProjectWorktreeTmuxSessionKeyedBySessionKey(t *testing.T) {
 	sessions, err := d.ListProjectWorktreeTmuxSessions(ctx, worktree.ID)
 	require.NoError(err)
 	require.Len(sessions, 1)
-	assert.Equal("middleman-project-worktree-codex-b", sessions[0].SessionName)
+	assert.Equal("kenn-forge-project-worktree-codex-b", sessions[0].SessionName)
 	assert.Equal(second, sessions[0].CreatedAt)
 
 	// A distinct session key for the same target is a separate row.
 	require.NoError(d.UpsertProjectWorktreeTmuxSession(ctx, &db.ProjectWorktreeTmuxSession{
 		WorktreeID:  worktree.ID,
 		SessionKey:  "wt_codex_2",
-		SessionName: "middleman-project-worktree-codex-c",
+		SessionName: "kenn-forge-project-worktree-codex-c",
 		TargetKey:   "codex",
 		CreatedAt:   second.Add(time.Minute),
 	}))
@@ -448,7 +448,7 @@ func TestProjectWorktreeTmuxSessionForgetAndCascade(t *testing.T) {
 	require.NoError(d.UpsertProjectWorktreeTmuxSession(ctx, &db.ProjectWorktreeTmuxSession{
 		WorktreeID:  worktree.ID,
 		SessionKey:  "wt_cascade",
-		SessionName: "middleman-project-worktree-cascade",
+		SessionName: "kenn-forge-project-worktree-cascade",
 		TargetKey:   "codex",
 		CreatedAt:   time.Now().UTC(),
 	}))
@@ -461,18 +461,18 @@ func TestProjectWorktreeTmuxSessionForgetAndCascade(t *testing.T) {
 	require.NoError(d.UpsertProjectWorktreeTmuxSession(ctx, &db.ProjectWorktreeTmuxSession{
 		WorktreeID:  worktree.ID,
 		SessionKey:  "wt_cascade",
-		SessionName: "middleman-project-worktree-cascade",
+		SessionName: "kenn-forge-project-worktree-cascade",
 		TargetKey:   "codex",
 		CreatedAt:   time.Now().UTC(),
 	}))
 	_, err = d.WriteDB().ExecContext(ctx,
-		`DELETE FROM middleman_project_worktrees WHERE id = ?`, worktree.ID,
+		`DELETE FROM forge_project_worktrees WHERE id = ?`, worktree.ID,
 	)
 	require.NoError(err)
 
 	var count int
 	err = d.ReadDB().QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM middleman_project_worktree_runtime_sessions WHERE worktree_id = ?`,
+		`SELECT COUNT(*) FROM forge_project_worktree_runtime_sessions WHERE worktree_id = ?`,
 		worktree.ID,
 	).Scan(&count)
 	require.NoError(err)

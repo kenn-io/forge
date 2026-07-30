@@ -13,7 +13,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"go.kenn.io/middleman/internal/server/kataapi"
+	"go.kenn.io/forge/internal/server/kataapi"
 )
 
 type pullLifecycleRecorder struct {

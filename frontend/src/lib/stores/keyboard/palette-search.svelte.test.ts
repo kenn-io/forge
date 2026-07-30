@@ -2,7 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { groupResults, parsePaletteQuery } from "./palette-search.svelte.js";
 import type { Action } from "./types.js";
-import type { Issue, PullRequest } from "@middleman/ui/api/types";
+import type { Issue, PullRequest } from "@kenn-forge/ui/api/types";
 
 const noop = (): void => {};
 const trueWhen = (): boolean => true;

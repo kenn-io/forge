@@ -29,7 +29,7 @@ const baseWorkspace: WorkspaceFixture = {
   mr_number: 42,
   mr_head_ref: "feature/auth",
   worktree_path: "/tmp/worktrees/ws-lucide",
-  tmux_session: "middleman-ws-lucide",
+  tmux_session: "kenn-forge-ws-lucide",
   status: "ready",
   created_at: "2026-04-10T12:00:00Z",
   mr_title: "Add auth middleware",

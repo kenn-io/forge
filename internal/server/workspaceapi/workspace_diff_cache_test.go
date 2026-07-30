@@ -10,8 +10,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/gitclone"
-	"go.kenn.io/middleman/internal/workspace"
+	"go.kenn.io/forge/internal/gitclone"
+	"go.kenn.io/forge/internal/workspace"
 )
 
 func TestWorkspaceDiffCacheMissThenHitPreparesOnce(t *testing.T) {

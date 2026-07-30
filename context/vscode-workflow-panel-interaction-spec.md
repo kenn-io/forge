@@ -2,7 +2,7 @@
 
 Primary source: local VS Code checkout at `/Users/mariusvniekerk/src/microsoft/vscode`, revision `6b1e5513a8b`.
 
-This spec describes the VS Code interaction model to mirror for middleman's workflow and terminal panel work. It intentionally focuses on editor groups/tabs and integrated terminal tabs/splits, not VS Code implementation internals that do not map to middleman.
+This spec describes the VS Code interaction model to mirror for kenn-forge's workflow and terminal panel work. It intentionally focuses on editor groups/tabs and integrated terminal tabs/splits, not VS Code implementation internals that do not map to kenn-forge.
 
 ## Mental Model
 
@@ -11,7 +11,7 @@ VS Code has two related but distinct tab models:
 - **Editor area:** an `EditorPart` owns a grid of editor groups. Each group owns an ordered editor model and a tab strip. A group can be split, moved, copied, merged, focused, or persisted as part of the editor grid. Source: `src/vs/workbench/browser/parts/editor/editorPart.ts:476`, `src/vs/workbench/browser/parts/editor/editorPart.ts:532`, `src/vs/workbench/browser/parts/editor/editorPart.ts:834`.
 - **Terminal panel:** a `TerminalGroupService` owns an ordered list of terminal groups. Each terminal group is represented as one terminal tab entry in the terminal tabs list; a group may contain multiple split terminal instances. Source: `src/vs/workbench/contrib/terminal/browser/terminalGroupService.ts:97`, `src/vs/workbench/contrib/terminal/browser/terminalGroup.ts:334`, `src/vs/workbench/contrib/terminal/browser/terminalGroup.ts:489`.
 
-For middleman, use the same separation:
+For kenn-forge, use the same separation:
 
 - A **workflow group** is a top-level pane in the workspace/workflow area.
 - A **workflow tab** is an item inside a workflow group.
@@ -28,7 +28,7 @@ When an editor group receives focus, VS Code makes that group active, records it
 
 Opening a tab decides both tab activity and group activation. An editor opens active unless explicitly inactive; activating a tab also activates/restores its group unless `preserveFocus` or explicit activation options say otherwise. Source: `src/vs/workbench/browser/parts/editor/editorGroupView.ts:1168`, `src/vs/workbench/browser/parts/editor/editorGroupView.ts:1192`.
 
-Middleman behavior:
+Kenn Forge behavior:
 
 - Clicking a workflow tab makes that tab active and makes its group active.
 - If focus is intentionally preserved, still update selection and visual active state, but avoid stealing DOM focus from the originating control.
@@ -45,10 +45,10 @@ Click behavior:
 - Double-clicking an unpinned tab pins it; double-clicking a pinned tab may expand/maximize the group depending on settings. Source: `src/vs/workbench/browser/parts/editor/multiEditorTabsControl.ts:1049`.
 - Double-clicking empty tab-strip space creates a new pinned editor at the end. Source: `src/vs/workbench/browser/parts/editor/multiEditorTabsControl.ts:299`.
 
-Middleman behavior:
+Kenn Forge behavior:
 
 - Support click-to-activate, shift range selection, and Cmd/Ctrl toggle for workflow tabs if multi-tab moves are implemented.
-- Treat "pinning" as optional. If middleman has no preview-tab concept, do not invent one; just keep tab ordering and activation semantics.
+- Treat "pinning" as optional. If kenn-forge has no preview-tab concept, do not invent one; just keep tab ordering and activation semantics.
 - Empty tab-strip double-click should create a sensible new workflow item only if the product has an obvious creation action. Otherwise omit it.
 
 ### Reorder Within A Group
@@ -57,7 +57,7 @@ Dragging a tab inside the same group moves it to the drop index. VS Code compute
 
 The model update pins a moved editor and forwards the move to the title control so the tab strip redraws in-place. Source: `src/vs/workbench/browser/parts/editor/editorGroupView.ts:1400`.
 
-Middleman behavior:
+Kenn Forge behavior:
 
 - During drag, show an insertion target in the tab strip.
 - On drop in the same group, reorder selected tabs as a stable block and preserve their relative order.
@@ -71,11 +71,11 @@ VS Code distinguishes moving/copying editors from moving/copying whole groups:
 - Dropping in the editor content area can split into a new group or merge into the current group depending on the drop zone. Source: `src/vs/workbench/browser/parts/editor/editorDropTarget.ts:251`.
 - Cross-group moved editors are always pinned and preserve view state where possible. Source: `src/vs/workbench/browser/parts/editor/editorGroupView.ts:1437`.
 
-Middleman behavior:
+Kenn Forge behavior:
 
 - Dropping a workflow tab onto another group's tab strip inserts into that group at the indicated index.
 - Dropping a workflow tab into a group's content drop zone either merges into that group or creates a new group based on the zone.
-- If a move empties the source group and the middleman setting is "close empty groups", remove that source group and activate the nearest previous group.
+- If a move empties the source group and the kenn-forge setting is "close empty groups", remove that source group and activate the nearest previous group.
 
 ### Split And Drop Zones
 
@@ -89,7 +89,7 @@ Drop-zone rules:
 - The overlay is half-width or half-height for split directions, and full-size for merge. Source: `src/vs/workbench/browser/parts/editor/editorDropTarget.ts:471`.
 - When tabs are visible, the content area below the tab strip is the group drop target; if the group is empty or tabs are hidden, the full group area is targetable. Source: `src/vs/workbench/browser/parts/editor/editorDropTarget.ts:525`.
 
-Middleman behavior:
+Kenn Forge behavior:
 
 - Implement one visible overlay per hovered workflow group.
 - Center drop merges into the hovered group.
@@ -103,7 +103,7 @@ VS Code persists editor layout as a serialized grid plus active group and most-r
 
 Applying a layout counts required groups, merges surplus groups into the last group in the target layout, recreates the grid descriptor, and restores focus if needed. Source: `src/vs/workbench/browser/parts/editor/editorPart.ts:476`.
 
-Middleman behavior:
+Kenn Forge behavior:
 
 - Persist group tree orientation, group sizes, tab order, active group id, active tab id per group, and most-recent-active group order.
 - Restore layout before attaching expensive terminal/process state.
@@ -117,7 +117,7 @@ The terminal tab list represents terminal groups, while each group owns ordered 
 
 Creating the first group/instance automatically activates it. Source: `src/vs/workbench/contrib/terminal/browser/terminalGroupService.ts:162`.
 
-Middleman behavior:
+Kenn Forge behavior:
 
 - A terminal tab equals a terminal group.
 - A split terminal is an instance inside a terminal group.
@@ -135,7 +135,7 @@ VS Code's terminal tabs list is configurable and hides depending on count:
 
 The tab list is added or removed from a split view when visibility changes. It is not removed while the mouse context says the user is interacting with the tabs. Source: `src/vs/workbench/contrib/terminal/browser/terminalTabbedView.ts:196`.
 
-Middleman behavior:
+Kenn Forge behavior:
 
 - Default: show the terminal tab list when there is more than one terminal group or the active group has splits.
 - Do not make the terminal list flicker closed while the pointer is over it.
@@ -149,7 +149,7 @@ Splitting creates a new panel terminal instance, adds it to the group, and makes
 
 The split pane orientation follows terminal location and panel position: horizontal panel gives horizontal splits; side/vertical location gives vertical splits. Source: `src/vs/workbench/contrib/terminal/browser/terminalGroup.ts:480`, `src/vs/workbench/contrib/terminal/browser/terminalGroup.ts:537`.
 
-Middleman behavior:
+Kenn Forge behavior:
 
 - Split active terminal creates a sibling terminal instance immediately after the active instance.
 - The new split becomes active.
@@ -170,11 +170,11 @@ VS Code terminal drag behavior is list-based:
 - If source and target are in the same terminal group, reorder instances within that split group. Source: `src/vs/workbench/contrib/terminal/browser/terminalGroupService.ts:354`.
 - If source and target are in different groups, reorder whole groups around the target group. Source: `src/vs/workbench/contrib/terminal/browser/terminalGroupService.ts:367`.
 
-Middleman behavior:
+Kenn Forge behavior:
 
 - Dragging a terminal tab moves terminal groups, not individual split panes, unless the UI explicitly targets a split row.
 - Dropping a split terminal onto another split in the same group reorders split panes.
-- Dropping onto another group should move the whole source terminal group unless middleman provides an explicit "move split into group" affordance.
+- Dropping onto another group should move the whole source terminal group unless kenn-forge provides an explicit "move split into group" affordance.
 - After drop, activate the first dragged terminal and keep the terminal tabs list selection in sync.
 
 ### Terminal Rename Behavior
@@ -190,7 +190,7 @@ Inline rename behavior:
 - Enter commits if valid; Escape cancels; blur commits if valid. Source: `src/vs/workbench/contrib/terminal/browser/terminalTabsList.ts:466`.
 - Empty title resets to generated title. Source: `src/vs/workbench/contrib/terminal/browser/terminalInstance.ts:2392`.
 
-Middleman behavior:
+Kenn Forge behavior:
 
 - Provide F2 rename for focused terminal tab; Enter rename on macOS is optional unless the tab list owns focus semantics.
 - Inline rename should focus an input, select the current name, commit on Enter/blur, cancel on Escape.
@@ -204,15 +204,15 @@ The terminal service recreates groups from persisted tab layouts, restores the a
 
 Runtime state is saved debounced and skipped during shutdown; the saved state contains terminal tabs and background terminal ids. Source: `src/vs/workbench/contrib/terminal/browser/terminalService.ts:723`.
 
-Middleman behavior:
+Kenn Forge behavior:
 
 - Persist terminal group order, active group, active instance per group, instance ids, custom titles, and relative split sizes.
 - Treat persisted process/session identity separately from UI layout. If a process cannot be restored, keep the UI layout recoverable.
 - Save terminal layout after tab/split reorder, split creation/removal, rename, and resize, but debounce rapid resize writes.
 
-## Mapping To Middleman
+## Mapping To Kenn Forge
 
-| VS Code concept | Middleman concept | Implementation note |
+| VS Code concept | Kenn Forge concept | Implementation note |
 | --- | --- | --- |
 | `EditorPart` serialized grid | Workspace workflow layout | Persist nested split tree, sizes, active group, MRU group order. |
 | Editor group | Workflow group/pane | Owns ordered workflow tabs and active tab id. |

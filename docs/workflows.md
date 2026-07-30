@@ -63,7 +63,7 @@ From the detail view you can:
 Provider-specific differences are shown as disabled or unavailable actions
 rather than hidden GitHub-only behavior.
 
-When middleman detects a stacked PR series, the detail view shows its members
+When kenn-forge detects a stacked PR series, the detail view shows its members
 and ordering. GitHub native stack data can improve detection when enabled, but
 the same UI and branch-based fallback remain authoritative. Merging a middle
 member is blocked by default until earlier members land.
@@ -77,7 +77,7 @@ area.
 ## Track local PR state
 
 Set a PR's workflow status from its detail view, and filter the PR list by one
-or more statuses. Workflow status is stored in middleman and does not write
+or more statuses. Workflow status is stored in kenn-forge and does not write
 provider labels, milestones, projects, or fields.
 
 ## Work issues
@@ -97,7 +97,7 @@ need quick context without opening the forge.
 ## Work in local sessions
 
 Use **Workspaces** to launch and attach to shell or agent sessions tied to local
-repositories. tmux-backed sessions let middleman keep a durable attach point for
+repositories. tmux-backed sessions let kenn-forge keep a durable attach point for
 ongoing work. The primary **Create Workspace** action creates only; choose an
 agent from its dropdown to create and launch immediately without another modal.
 The choice is per-creation, session-scoped intent, not a persistent default.
@@ -111,24 +111,24 @@ New work does not need an existing pull request, issue, or Kata task. Use **New
 workspace** in the Workspaces sidebar, or the same command in the palette
 (Cmd/Ctrl+K), to pick a tracked repository and start a fresh worktree. The
 picker preselects the repository you last started work in. Name the
-branch or leave it empty and middleman generates one; either way the worktree
+branch or leave it empty and kenn-forge generates one; either way the worktree
 branches from the repository's default branch.
 
-Run or rerun `middleman agent-hook install` to show activity from Claude Code,
+Run or rerun `kenn-forge agent-hook install` to show activity from Claude Code,
 Codex, GitHub Copilot CLI, Cursor, Factory Droid, Gemini CLI, Hermes Agent, and
 Qwen Code in workspace rows. The command installs all supported integrations by
 default; pass `--agent NAME` to install only one. The rows distinguish active
 work, approval requests, and user input, refreshing within five seconds while
 the sidebar is open. Reports expire after 30 minutes without another hook event
 and then fall back to tmux activity. Installed hooks forward lifecycle events
-to the running middleman daemon. Claude sessions also receive a workspace
+to the running kenn-forge daemon. Claude sessions also receive a workspace
 summary regenerated from persisted workspace metadata at session start;
 `CLAUDE.local.md` is never read for it. Codex asks you to review the installed
 command through `/hooks` once.
 
 ## Use Kata tasks
 
-Enable Kata mode when your work is tracked in Kata. middleman discovers Kata
+Enable Kata mode when your work is tracked in Kata. kenn-forge discovers Kata
 daemons from Kata's own config and runtime records. You can browse tasks, open
 details, update task state, and cross-link task references from Docs when the
 source contains them.
@@ -139,7 +139,7 @@ tree. Parent and child tasks stay together while you expand the hierarchy. Open
 the reachable-task graph when dependencies matter, or create a workspace when a
 task resolves to exactly one registered repository. Configure project-to-repo
 mappings when Kata cannot infer that repository unambiguously. Kata task data
-stays in Kata; middleman is the console.
+stays in Kata; kenn-forge is the console.
 
 ## Browse and edit docs
 
@@ -148,11 +148,11 @@ edit, pull, and publish local docs from the same console you use for code review
 Folder trees show markdown changes, and task references can open the matching
 Kata task using the folder's configured daemon binding.
 
-Docs files stay on disk. middleman only operates inside the configured folders.
+Docs files stay on disk. kenn-forge only operates inside the configured folders.
 
 ## Use a fleet
 
-Fleet mode lets one middleman daemon view snapshots from other middleman
+Fleet mode lets one kenn-forge daemon view snapshots from other kenn-forge
 daemons. The hub can route supported mutations back to the machine that owns the
 resource and can expose attach commands for remote sessions.
 

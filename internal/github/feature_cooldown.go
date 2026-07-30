@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/forge/internal/platform"
 )
 
 const repositoryFeatureProbeInterval = 24 * time.Hour

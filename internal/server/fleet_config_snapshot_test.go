@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"go.kenn.io/middleman/internal/config"
+	"go.kenn.io/forge/internal/config"
 )
 
 // The Fleet auth snapshot copies only the fields the resolver reads. Owner PATs
@@ -15,7 +15,7 @@ import (
 func TestFleetConfigSnapshotCarriesGitHubCredentialRoutes(t *testing.T) {
 	assert := assert.New(t)
 	cfg := &config.Config{
-		GitHubTokenEnv:      "MIDDLEMAN_GITHUB_TOKEN",
+		GitHubTokenEnv:      "KENN_FORGE_GITHUB_TOKEN",
 		DefaultPlatformHost: "github.com",
 		Repos: []config.Repo{{
 			Platform: "github", PlatformHost: "github.com",

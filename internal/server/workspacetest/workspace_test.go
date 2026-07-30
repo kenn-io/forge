@@ -15,11 +15,11 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/apiclient/generated"
-	"go.kenn.io/middleman/internal/config"
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/procutil"
-	"go.kenn.io/middleman/internal/workspace/localruntime"
+	"go.kenn.io/forge/internal/apiclient/generated"
+	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/procutil"
+	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
 func TestWorkspaceFixtureUsesIsolatedTmuxServer(t *testing.T) {
@@ -194,7 +194,7 @@ func TestWorkspaceRuntimeAttachSpecUsesStoredTmuxSessionE2E(t *testing.T) {
 			sessionKey+"/attach-spec",
 		nil,
 	)
-	req.Host = "middleman.test"
+	req.Host = "forge.test"
 	rr := httptest.NewRecorder()
 	fixture.server.ServeHTTP(rr, req)
 

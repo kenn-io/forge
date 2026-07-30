@@ -6,7 +6,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
-	"go.kenn.io/middleman/internal/terminal"
+	"go.kenn.io/forge/internal/terminal"
 )
 
 // RegisterTerminal registers workspace terminal websocket routes on either

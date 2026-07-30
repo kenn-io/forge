@@ -1,7 +1,7 @@
 package main
 
 import (
-	"go.kenn.io/middleman/tools/testifyhelpercheck"
+	"go.kenn.io/forge/tools/testifyhelpercheck"
 	"golang.org/x/tools/go/analysis/singlechecker"
 )
 

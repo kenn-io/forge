@@ -83,7 +83,7 @@ describe("KataEventStreamParser", () => {
       "",
       "",
     ].join("\n");
-    const rawPayloadUnderMiddlemanName = [
+    const rawPayloadUnderForgeName = [
       "id: 44",
       "event: kata.tasks.invalidated",
       'data: {"event_id":44,"type":"issue.updated","payload":{"secret":"raw-upstream"}}',
@@ -92,7 +92,7 @@ describe("KataEventStreamParser", () => {
     ].join("\n");
 
     expect(parser.push(rawFrame)).toEqual([]);
-    expect(parser.push(rawPayloadUnderMiddlemanName)).toEqual([]);
+    expect(parser.push(rawPayloadUnderForgeName)).toEqual([]);
   });
 
   test("exposes no upstream fields from an accepted compact frame", () => {
@@ -127,7 +127,7 @@ describe("KataEventStreamParser", () => {
 describe("readKataEventStream", () => {
   test("opens the generated stream endpoint under the configured app base path", async () => {
     const previousBasePath = window.__BASE_PATH__;
-    window.__BASE_PATH__ = "/middleman/";
+    window.__BASE_PATH__ = "/kenn-forge/";
     vi.resetModules();
     try {
       const { readKataEventStream: readConfiguredStream } = await import("./eventStream.js");
@@ -141,7 +141,7 @@ describe("readKataEventStream", () => {
         "Live updates disconnected",
       );
 
-      expect(new URL(requestURL, window.location.origin).pathname).toBe("/middleman/api/v1/kata/tasks/events");
+      expect(new URL(requestURL, window.location.origin).pathname).toBe("/kenn-forge/api/v1/kata/tasks/events");
     } finally {
       if (previousBasePath === undefined) delete window.__BASE_PATH__;
       else window.__BASE_PATH__ = previousBasePath;
@@ -149,7 +149,7 @@ describe("readKataEventStream", () => {
     }
   });
 
-  test("opens the Middleman stream with daemon selection and snapshot cursor replay", async () => {
+  test("opens the Kenn Forge stream with daemon selection and snapshot cursor replay", async () => {
     let requestURL = "";
     let requestHeaders = new Headers();
     const onOpen = vi.fn();

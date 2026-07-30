@@ -183,7 +183,7 @@ describe("workspace-runtime api", () => {
   });
 
   it("includes the configured base path in runtime and websocket paths", async () => {
-    window.__BASE_PATH__ = "/middleman/";
+    window.__BASE_PATH__ = "/kenn-forge/";
     const fetchMock = vi.fn<RuntimeFetch>(
       async () =>
         new Response(
@@ -201,11 +201,11 @@ describe("workspace-runtime api", () => {
     await getWorkspaceRuntime("ws-1", fetchMock);
 
     expect(new URL(capturedRequest(fetchMock.mock.calls[0]).url).pathname).toBe(
-      "/middleman/api/v1/workspaces/ws-1/runtime",
+      "/kenn-forge/api/v1/workspaces/ws-1/runtime",
     );
     expect(workspaceSessionWebSocketPath("ws-1", "ws-1:helper")).toBe(
-      "/middleman/ws/v1/workspaces/ws-1/runtime/sessions/ws-1%3Ahelper/terminal",
+      "/kenn-forge/ws/v1/workspaces/ws-1/runtime/sessions/ws-1%3Ahelper/terminal",
     );
-    expect(workspaceTmuxWebSocketPath("ws-1")).toBe("/middleman/ws/v1/workspaces/ws-1/terminal");
+    expect(workspaceTmuxWebSocketPath("ws-1")).toBe("/kenn-forge/ws/v1/workspaces/ws-1/terminal");
   });
 });

@@ -9,7 +9,7 @@ import (
 
 // The Messages mode and its msgvault backend were removed. The former
 // API surface must stay gone: a route that quietly came back would
-// resurrect credential proxying middleman no longer guards.
+// resurrect credential proxying kenn-forge no longer guards.
 func TestRemovedMessagesRoutesReturnNotFound(t *testing.T) {
 	srv, _ := setupTestServer(t)
 

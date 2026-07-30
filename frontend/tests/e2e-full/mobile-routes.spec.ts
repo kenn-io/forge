@@ -330,11 +330,11 @@ test.describe("phone routes", () => {
 
   test("mobile activity hide-org toggle updates card repo labels and persists", async ({ page }) => {
     await page.addInitScript(() => {
-      if (sessionStorage.getItem("middleman:test:mobile-hide-org:init") === "1") {
+      if (sessionStorage.getItem("kenn-forge:test:mobile-hide-org:init") === "1") {
         return;
       }
-      localStorage.removeItem("middleman:hideOrgName");
-      sessionStorage.setItem("middleman:test:mobile-hide-org:init", "1");
+      localStorage.removeItem("kenn-forge:hideOrgName");
+      sessionStorage.setItem("kenn-forge:test:mobile-hide-org:init", "1");
     });
 
     await page.goto("/m?range=30d&view=threaded");
@@ -536,7 +536,7 @@ test.describe("phone routes", () => {
     const server = await startIsolatedE2EServerWithOptions({ providerCollision: true });
     const page = await browser.newPage();
     try {
-      await page.addInitScript(() => localStorage.setItem("middleman:hideOrgName", "1"));
+      await page.addInitScript(() => localStorage.setItem("kenn-forge:hideOrgName", "1"));
 
       await page.goto(`${server.info.base_url}/m/pulls`);
       await expect(page.locator(".pull-item .repo-name", { hasText: "github/github.com/acme/widgets" })).toHaveCount(4);

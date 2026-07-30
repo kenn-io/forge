@@ -18,14 +18,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"go.kenn.io/middleman/internal/config"
-	"go.kenn.io/middleman/internal/db"
-	ghclient "go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/platform"
-	"go.kenn.io/middleman/internal/server"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
-	"go.kenn.io/middleman/internal/testutil/servertest"
-	"go.kenn.io/middleman/internal/tokenauth"
+	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/db"
+	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/platform"
+	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/servertest"
+	"go.kenn.io/forge/internal/tokenauth"
 )
 
 // TestGitHubAppSplitAuthE2E pins the credential split through the
@@ -38,7 +38,7 @@ import (
 func TestGitHubAppSplitAuthE2E(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "user-pat-e2e")
+	t.Setenv("KENN_FORGE_GITHUB_TOKEN", "user-pat-e2e")
 
 	var mu sync.Mutex
 	authByCall := map[string]string{}
@@ -53,7 +53,7 @@ func TestGitHubAppSplitAuthE2E(t *testing.T) {
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/v3/repos/kenn-io/middleman",
+	mux.HandleFunc("GET /api/v3/repos/kenn-io/kenn-forge",
 		func(w http.ResponseWriter, r *http.Request) {
 			// The repo settings refresh fetches metadata with the app
 			// token and overlays viewer permissions from the PAT; the
@@ -70,41 +70,41 @@ func TestGitHubAppSplitAuthE2E(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = fmt.Fprint(w, `{
 				"id": 4242001,
-				"name": "middleman",
-				"full_name": "kenn-io/middleman",
+				"name": "kenn-forge",
+				"full_name": "kenn-io/kenn-forge",
 				"owner": {"login": "kenn-io"},
 				"default_branch": "main",
-				"html_url": "https://github.com/kenn-io/middleman",
-				"clone_url": "https://github.com/kenn-io/middleman.git",
+				"html_url": "https://github.com/kenn-io/kenn-forge",
+				"clone_url": "https://github.com/kenn-io/forge.git",
 				`+permissions+`
 			}`)
 		})
-	mux.HandleFunc("GET /api/v3/repos/kenn-io/middleman/pulls",
+	mux.HandleFunc("GET /api/v3/repos/kenn-io/kenn-forge/pulls",
 		func(w http.ResponseWriter, r *http.Request) {
 			record("read:list-pulls", r)
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = fmt.Fprint(w, `[]`)
 		})
-	mux.HandleFunc("GET /api/v3/repos/kenn-io/middleman/releases",
+	mux.HandleFunc("GET /api/v3/repos/kenn-io/kenn-forge/releases",
 		func(w http.ResponseWriter, r *http.Request) {
 			record("read:releases", r)
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = fmt.Fprint(w, `[]`)
 		})
-	mux.HandleFunc("POST /api/v3/repos/kenn-io/middleman/issues/7/comments",
+	mux.HandleFunc("POST /api/v3/repos/kenn-io/kenn-forge/issues/7/comments",
 		func(w http.ResponseWriter, r *http.Request) {
 			record("write:comment", r)
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusCreated)
 			_, _ = fmt.Fprint(w, `{
 				"id": 99001,
-				"body": "from middleman",
+				"body": "from kenn-forge",
 				"user": {"login": "mariusvniekerk"},
 				"created_at": "2026-06-11T17:00:00Z",
-				"html_url": "https://github.com/kenn-io/middleman/pull/7#issuecomment-99001"
+				"html_url": "https://github.com/kenn-io/kenn-forge/pull/7#issuecomment-99001"
 			}`)
 		})
-	mux.HandleFunc("PATCH /api/v3/repos/kenn-io/middleman/issues/7",
+	mux.HandleFunc("PATCH /api/v3/repos/kenn-io/kenn-forge/issues/7",
 		func(w http.ResponseWriter, r *http.Request) {
 			record("write:assignees", r)
 			w.Header().Set("Content-Type", "application/json")
@@ -116,7 +116,7 @@ func TestGitHubAppSplitAuthE2E(t *testing.T) {
 	// The reviewer diff reads the current set with the read client and
 	// then adds/removes with the write client; the fake reports one
 	// pre-existing reviewer so a single set call exercises both paths.
-	mux.HandleFunc("GET /api/v3/repos/kenn-io/middleman/pulls/7",
+	mux.HandleFunc("GET /api/v3/repos/kenn-io/kenn-forge/pulls/7",
 		func(w http.ResponseWriter, r *http.Request) {
 			record("read:pull", r)
 			w.Header().Set("Content-Type", "application/json")
@@ -126,7 +126,7 @@ func TestGitHubAppSplitAuthE2E(t *testing.T) {
 				"requested_reviewers": [{"login": "old-reviewer"}]
 			}`)
 		})
-	mux.HandleFunc("POST /api/v3/repos/kenn-io/middleman/pulls/7/requested_reviewers",
+	mux.HandleFunc("POST /api/v3/repos/kenn-io/kenn-forge/pulls/7/requested_reviewers",
 		func(w http.ResponseWriter, r *http.Request) {
 			record("write:reviewers-add", r)
 			w.Header().Set("Content-Type", "application/json")
@@ -136,7 +136,7 @@ func TestGitHubAppSplitAuthE2E(t *testing.T) {
 				"requested_reviewers": [{"login": "old-reviewer"}, {"login": "new-reviewer"}]
 			}`)
 		})
-	mux.HandleFunc("DELETE /api/v3/repos/kenn-io/middleman/pulls/7/requested_reviewers",
+	mux.HandleFunc("DELETE /api/v3/repos/kenn-io/kenn-forge/pulls/7/requested_reviewers",
 		func(w http.ResponseWriter, r *http.Request) {
 			record("write:reviewers-remove", r)
 			w.Header().Set("Content-Type", "application/json")
@@ -162,13 +162,13 @@ func TestGitHubAppSplitAuthE2E(t *testing.T) {
 	cfgPath := filepath.Join(dir, "config.toml")
 	require.NoError(os.WriteFile(cfgPath, []byte(`
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
 [[repos]]
 owner = "kenn-io"
-name = "middleman"
+name = "kenn-forge"
 
 [[github_apps]]
 host = "github.com"
@@ -182,7 +182,7 @@ repository_selection = "all"
 	require.NoError(err)
 
 	// Same SourceSet shape main() builds, with the minter stubbed: the
-	// JWT-signing exchange itself is pinned by the cmd/middleman
+	// JWT-signing exchange itself is pinned by the cmd/kenn-forge
 	// startup e2e; this test pins which credential each server code
 	// path resolves.
 	sourceSet := tokenauth.NewSourceSet(tokenauth.Options{
@@ -232,8 +232,8 @@ repository_selection = "all"
 	ref := ghclient.RepoRef{
 		Platform:           platform.KindGitHub,
 		Owner:              "kenn-io",
-		Name:               "middleman",
-		RepoPath:           "kenn-io/middleman",
+		Name:               "kenn-forge",
+		RepoPath:           "kenn-io/kenn-forge",
 		PlatformHost:       "github.com",
 		PlatformRepoID:     4242001,
 		PlatformExternalID: "4242001",
@@ -243,8 +243,8 @@ repository_selection = "all"
 		Platform:           platform.KindGitHub,
 		Host:               "github.com",
 		Owner:              "kenn-io",
-		Name:               "middleman",
-		RepoPath:           "kenn-io/middleman",
+		Name:               "kenn-forge",
+		RepoPath:           "kenn-io/kenn-forge",
 		PlatformID:         4242001,
 		PlatformExternalID: "4242001",
 		DefaultBranch:      "main",
@@ -254,7 +254,7 @@ repository_selection = "all"
 		RepoID:         repoID,
 		PlatformID:     7001,
 		Number:         7,
-		URL:            "https://github.com/kenn-io/middleman/pull/7",
+		URL:            "https://github.com/kenn-io/kenn-forge/pull/7",
 		Title:          "Split auth test PR",
 		Author:         "ada",
 		State:          "open",
@@ -286,14 +286,14 @@ repository_selection = "all"
 	// with the app installation token.
 	status, body := postJSON(t, httpServer.Client(), httpServer.URL+"/api/v1/sync", nil)
 	require.Equal(http.StatusAccepted, status, body)
-	waitForRepoSynced(t, database, "kenn-io", "middleman", nil)
+	waitForRepoSynced(t, database, "kenn-io", "kenn-forge", nil)
 
 	// Write half: posting a PR comment through the API must reach
 	// upstream with the user's PAT.
 	commentResp := doServerJSON(
 		t, httpServer.Client(), http.MethodPost,
-		httpServer.URL+"/api/v1/pulls/gh/kenn-io/middleman/7/comments",
-		map[string]string{"body": "from middleman"},
+		httpServer.URL+"/api/v1/pulls/gh/kenn-io/kenn-forge/7/comments",
+		map[string]string{"body": "from kenn-forge"},
 	)
 	defer commentResp.Body.Close()
 	commentBody, err := io.ReadAll(commentResp.Body)
@@ -304,7 +304,7 @@ repository_selection = "all"
 	// assignees must reach upstream with the PAT, never the app token.
 	assigneeResp := doServerJSON(
 		t, httpServer.Client(), http.MethodPut,
-		httpServer.URL+"/api/v1/pulls/gh/kenn-io/middleman/7/assignees",
+		httpServer.URL+"/api/v1/pulls/gh/kenn-io/kenn-forge/7/assignees",
 		map[string][]string{"assignees": {"octocat"}},
 	)
 	defer assigneeResp.Body.Close()
@@ -317,7 +317,7 @@ repository_selection = "all"
 	// write paths.
 	reviewerResp := doServerJSON(
 		t, httpServer.Client(), http.MethodPut,
-		httpServer.URL+"/api/v1/pulls/gh/kenn-io/middleman/7/reviewers",
+		httpServer.URL+"/api/v1/pulls/gh/kenn-io/kenn-forge/7/reviewers",
 		map[string][]string{"reviewers": {"new-reviewer"}},
 	)
 	defer reviewerResp.Body.Close()
@@ -327,7 +327,7 @@ repository_selection = "all"
 
 	// The repo settings refresh resolved with the PAT, so the stored
 	// merge permission must reflect the user, not the read-only app.
-	dbRepo, err := database.GetRepoByIdentity(t.Context(), db.GitHubRepoIdentity("github.com", "kenn-io", "middleman"))
+	dbRepo, err := database.GetRepoByIdentity(t.Context(), db.GitHubRepoIdentity("github.com", "kenn-io", "kenn-forge"))
 	require.NoError(err)
 	assert.True(dbRepo.ViewerCanMerge,
 		"viewer_can_merge must come from the PAT-visible permissions, not the app's")
@@ -336,7 +336,7 @@ repository_selection = "all"
 	// missing write credential.
 	opsResp := doServerJSON(
 		t, httpServer.Client(), http.MethodGet,
-		httpServer.URL+"/api/v1/repo/github/kenn-io/middleman", nil,
+		httpServer.URL+"/api/v1/repo/github/kenn-io/kenn-forge", nil,
 	)
 	defer opsResp.Body.Close()
 	require.Equal(http.StatusOK, opsResp.StatusCode)
@@ -360,7 +360,7 @@ repository_selection = "all"
 		"the viewer permission overlay must use the user's PAT")
 	assert.Equal("Bearer ghs_app_token_e2e", authByCall["read:repo-metadata"],
 		"repository metadata must stay on the app token")
-	notificationCall := "read:other GET /api/v3/repos/kenn-io/middleman/notifications"
+	notificationCall := "read:other GET /api/v3/repos/kenn-io/kenn-forge/notifications"
 	assert.Equal("Bearer user-pat-e2e", authByCall[notificationCall],
 		"notification APIs are user-scoped and must use the user's PAT")
 	for name, auth := range authByCall {
@@ -411,7 +411,7 @@ repository_selection = "all"
 func TestGitHubAppGlobDiscoveryUsesInstallationRepositoriesE2E(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "user-pat-e2e")
+	t.Setenv("KENN_FORGE_GITHUB_TOKEN", "user-pat-e2e")
 
 	var mu sync.Mutex
 	authByCall := map[string]string{}
@@ -524,7 +524,7 @@ func TestGitHubAppGlobDiscoveryUsesInstallationRepositoriesE2E(t *testing.T) {
 	cfgPath := filepath.Join(dir, "config.toml")
 	require.NoError(os.WriteFile(cfgPath, []byte(`
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -650,36 +650,36 @@ func TestGitHubAppNoUserCredentialGatesWritesE2E(t *testing.T) {
 	require := require.New(t)
 	// The configured PAT env var is present but empty: only the app
 	// candidate can resolve a token.
-	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "")
+	t.Setenv("KENN_FORGE_GITHUB_TOKEN", "")
 
 	var writeMu sync.Mutex
 	var upstreamWrites []string
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /api/v3/repos/kenn-io/middleman/issues/7/comments",
+	mux.HandleFunc("POST /api/v3/repos/kenn-io/kenn-forge/issues/7/comments",
 		func(w http.ResponseWriter, r *http.Request) {
 			writeMu.Lock()
 			upstreamWrites = append(upstreamWrites, r.Method+" "+r.URL.Path)
 			writeMu.Unlock()
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusCreated)
-			_, _ = fmt.Fprint(w, `{"id": 99001, "body": "from middleman"}`)
+			_, _ = fmt.Fprint(w, `{"id": 99001, "body": "from kenn-forge"}`)
 		})
 	mux.HandleFunc("/api/v3/rate_limit", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = fmt.Fprint(w, `{"resources":{"core":{"limit":12500,"remaining":12000,"reset":2000000000}}}`)
 	})
-	mux.HandleFunc("GET /api/v3/repos/kenn-io/middleman",
+	mux.HandleFunc("GET /api/v3/repos/kenn-io/kenn-forge",
 		func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = fmt.Fprint(w, `{
 				"id": 4242001,
-				"name": "middleman",
-				"full_name": "kenn-io/middleman",
+				"name": "kenn-forge",
+				"full_name": "kenn-io/kenn-forge",
 				"owner": {"login": "kenn-io"},
 				"default_branch": "main",
-				"html_url": "https://github.com/kenn-io/middleman",
-				"clone_url": "https://github.com/kenn-io/middleman.git"
+				"html_url": "https://github.com/kenn-io/kenn-forge",
+				"clone_url": "https://github.com/kenn-io/forge.git"
 			}`)
 		})
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -693,13 +693,13 @@ func TestGitHubAppNoUserCredentialGatesWritesE2E(t *testing.T) {
 	cfgPath := filepath.Join(dir, "config.toml")
 	require.NoError(os.WriteFile(cfgPath, []byte(`
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
 [[repos]]
 owner = "kenn-io"
-name = "middleman"
+name = "kenn-forge"
 
 [[github_apps]]
 host = "github.com"
@@ -754,8 +754,8 @@ repository_selection = "all"
 	ref := ghclient.RepoRef{
 		Platform:           platform.KindGitHub,
 		Owner:              "kenn-io",
-		Name:               "middleman",
-		RepoPath:           "kenn-io/middleman",
+		Name:               "kenn-forge",
+		RepoPath:           "kenn-io/kenn-forge",
 		PlatformHost:       "github.com",
 		PlatformRepoID:     4242001,
 		PlatformExternalID: "4242001",
@@ -765,8 +765,8 @@ repository_selection = "all"
 		Platform:           platform.KindGitHub,
 		Host:               "github.com",
 		Owner:              "kenn-io",
-		Name:               "middleman",
-		RepoPath:           "kenn-io/middleman",
+		Name:               "kenn-forge",
+		RepoPath:           "kenn-io/kenn-forge",
 		PlatformID:         4242001,
 		PlatformExternalID: "4242001",
 		DefaultBranch:      "main",
@@ -776,7 +776,7 @@ repository_selection = "all"
 		RepoID:         repoID,
 		PlatformID:     7001,
 		Number:         7,
-		URL:            "https://github.com/kenn-io/middleman/pull/7",
+		URL:            "https://github.com/kenn-io/kenn-forge/pull/7",
 		Title:          "App-only host PR",
 		Author:         "ada",
 		State:          "open",
@@ -813,12 +813,12 @@ repository_selection = "all"
 	// Reads still work: sync completes on the app token alone.
 	status, body := postJSON(t, httpServer.Client(), httpServer.URL+"/api/v1/sync", nil)
 	require.Equal(http.StatusAccepted, status, body)
-	waitForRepoSynced(t, database, "kenn-io", "middleman", nil)
+	waitForRepoSynced(t, database, "kenn-io", "kenn-forge", nil)
 
 	// Availability must say up front that writes cannot authenticate.
 	opsResp := doServerJSON(
 		t, httpServer.Client(), http.MethodGet,
-		httpServer.URL+"/api/v1/repo/github/kenn-io/middleman", nil,
+		httpServer.URL+"/api/v1/repo/github/kenn-io/kenn-forge", nil,
 	)
 	defer opsResp.Body.Close()
 	require.Equal(http.StatusOK, opsResp.StatusCode)
@@ -834,8 +834,8 @@ repository_selection = "all"
 	// The mutation endpoint must refuse instead of writing as the bot.
 	commentResp := doServerJSON(
 		t, httpServer.Client(), http.MethodPost,
-		httpServer.URL+"/api/v1/pulls/gh/kenn-io/middleman/7/comments",
-		map[string]string{"body": "from middleman"},
+		httpServer.URL+"/api/v1/pulls/gh/kenn-io/kenn-forge/7/comments",
+		map[string]string{"body": "from kenn-forge"},
 	)
 	defer commentResp.Body.Close()
 	commentBody, err := io.ReadAll(commentResp.Body)

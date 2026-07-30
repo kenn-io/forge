@@ -25,21 +25,21 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v89/github"
+	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/gitclone"
+	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/platform"
+	"go.kenn.io/forge/internal/procutil"
+	"go.kenn.io/forge/internal/profiler"
+	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/stacks"
+	"go.kenn.io/forge/internal/testutil"
+	"go.kenn.io/forge/internal/tokenauth"
+	"go.kenn.io/forge/internal/web"
+	"go.kenn.io/forge/internal/workspace"
 	gitcmd "go.kenn.io/kit/git/cmd"
 	oteltelemetry "go.kenn.io/kit/telemetry"
-	"go.kenn.io/middleman/internal/config"
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/gitclone"
-	ghclient "go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/platform"
-	"go.kenn.io/middleman/internal/procutil"
-	"go.kenn.io/middleman/internal/profiler"
-	"go.kenn.io/middleman/internal/server"
-	"go.kenn.io/middleman/internal/stacks"
-	"go.kenn.io/middleman/internal/testutil"
-	"go.kenn.io/middleman/internal/tokenauth"
-	"go.kenn.io/middleman/internal/web"
-	"go.kenn.io/middleman/internal/workspace"
 )
 
 // defaultRoborevEndpoint is the address the e2e server points the
@@ -958,7 +958,7 @@ func buildAppState(
 	}
 	roborevEndpoint := opts.roborevEndpoint
 
-	tmpDir, err := os.MkdirTemp("", "middleman-e2e-*")
+	tmpDir, err := os.MkdirTemp("", "kenn-forge-e2e-*")
 	if err != nil {
 		return nil, fmt.Errorf("create temp dir: %w", err)
 	}
@@ -1053,7 +1053,7 @@ func buildAppState(
 	}
 	cfg := &config.Config{
 		SyncInterval:        "5m",
-		GitHubTokenEnv:      "MIDDLEMAN_GITHUB_TOKEN",
+		GitHubTokenEnv:      "KENN_FORGE_GITHUB_TOKEN",
 		DefaultPlatformHost: defaultPlatformHost,
 		Host:                "127.0.0.1",
 		Port:                8091,
@@ -1096,7 +1096,7 @@ func buildAppState(
 	fc.ListRepositoriesByOwnerFn = func(
 		ctx context.Context, owner string,
 	) ([]*gh.Repository, error) {
-		pushedMiddleman := gh.Timestamp{Time: time.Date(2026, 4, 22, 10, 0, 0, 0, time.UTC)}
+		pushedForge := gh.Timestamp{Time: time.Date(2026, 4, 22, 10, 0, 0, 0, time.UTC)}
 		pushedWorker := gh.Timestamp{Time: time.Date(2026, 4, 20, 9, 0, 0, 0, time.UTC)}
 		pushedBot := gh.Timestamp{Time: time.Date(2026, 4, 21, 12, 0, 0, 0, time.UTC)}
 		privateFalse := false
@@ -1108,7 +1108,7 @@ func buildAppState(
 					Description: new("Import API"),
 					Private:     &privateFalse,
 					Archived:    new(false),
-					PushedAt:    &pushedMiddleman,
+					PushedAt:    &pushedForge,
 				},
 				{
 					Name:        new("worker"),
@@ -1134,12 +1134,12 @@ func buildAppState(
 
 		repos := []*gh.Repository{
 			{
-				Name:        new("middleman"),
+				Name:        new("kenn-forge"),
 				Owner:       &gh.User{Login: new(owner)},
 				Description: new("Main dashboard"),
 				Private:     &privateFalse,
 				Archived:    new(false),
-				PushedAt:    &pushedMiddleman,
+				PushedAt:    &pushedForge,
 			},
 			{
 				Name:        new("worker"),
@@ -1464,7 +1464,7 @@ func buildAppState(
 				http.Error(w, "resolve fixture clone", http.StatusInternalServerError)
 				return
 			}
-			const branch = "middleman/issue-10-widget-rendering-broken-on-safari"
+			const branch = "kenn-forge/issue-10-widget-rendering-broken-on-safari"
 			_, stderr, err := gitcmd.New().Run(
 				r.Context(), clonePath, nil,
 				"update-ref", "refs/heads/"+branch, diffRepo.BaseSHA,
@@ -2259,11 +2259,11 @@ func run(
 		}()
 	}
 
-	// The workspace-switch profiling harness sets MIDDLEMAN_PPROF_ADDR
+	// The workspace-switch profiling harness sets KENN_FORGE_PPROF_ADDR
 	// (typically 127.0.0.1:0) so it can capture Go-side pprof data for
 	// the same window as the browser trace. Failure to bind must not
 	// take down the e2e suite for an unrelated env var.
-	if pprofAddr := strings.TrimSpace(os.Getenv("MIDDLEMAN_PPROF_ADDR")); pprofAddr != "" {
+	if pprofAddr := strings.TrimSpace(os.Getenv("KENN_FORGE_PPROF_ADDR")); pprofAddr != "" {
 		pprofSrv, pprofErr := profiler.Start(pprofAddr)
 		if pprofErr != nil {
 			slog.Warn("e2e pprof listener not started", "err", pprofErr)

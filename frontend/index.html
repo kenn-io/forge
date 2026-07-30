@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <title>middleman</title>
+    <title>kenn-forge</title>
     <style>
       /* Critical theme colors inlined to prevent flash before app.css loads */
       html {
@@ -18,7 +18,7 @@
     <script>
       // Apply theme before first paint to avoid flash of wrong theme.
       (function () {
-        var cfg = window.__middleman_config;
+        var cfg = window.__kenn_forge_config;
         var mode = cfg && cfg.theme && cfg.theme.mode;
         var dark;
         if (mode === "dark") {
@@ -29,7 +29,7 @@
           dark = matchMedia("(prefers-color-scheme: dark)").matches;
         } else {
           try {
-            var v = localStorage.getItem("middleman-theme");
+            var v = localStorage.getItem("kenn-forge-theme");
           } catch (e) {
             var v = null;
           }

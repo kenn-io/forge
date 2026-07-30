@@ -6,7 +6,7 @@ import (
 	"slices"
 	"sync/atomic"
 
-	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/forge/internal/platform"
 )
 
 type syncBudgetKey struct{}

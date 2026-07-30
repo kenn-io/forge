@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"sync"
 
-	"go.kenn.io/middleman/internal/db/dbupgrade"
+	"go.kenn.io/forge/internal/db/dbupgrade"
 	_ "modernc.org/sqlite"
 )
 

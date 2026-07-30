@@ -64,7 +64,7 @@ async function waitForWorkspaceReady(api: APIRequestContext, workspaceId: string
 test.describe("detail action buttons", () => {
   test.describe.configure({ timeout: lockedWorkspaceTestTimeoutMs });
 
-  test("issue detail creates a middleman workspace in its inline workspace pane", async ({ page }) => {
+  test("issue detail creates a kenn-forge workspace in its inline workspace pane", async ({ page }) => {
     test.skip(
       !hasCommand("git") || !hasCommand("tmux", ["-V"]),
       "git and tmux are required for the real workspace flow",
@@ -101,7 +101,7 @@ test.describe("detail action buttons", () => {
       expect(createdWorkspace.platform_host).toBe("github.com");
       expect(createdWorkspace.item_type).toBe("issue");
       expect(createdWorkspace.item_number).toBe(10);
-      expect(createdWorkspace.git_head_ref).toBe("middleman/issue-10-widget-rendering-broken-on-safari");
+      expect(createdWorkspace.git_head_ref).toBe("kenn-forge/issue-10-widget-rendering-broken-on-safari");
 
       // Creation stays on the issue: the workspace claims the inline pane
       // instead of navigating away.
@@ -114,7 +114,7 @@ test.describe("detail action buttons", () => {
       const readyWorkspace = await waitForWorkspaceReady(apiContext, createdWorkspace.id);
       await access(readyWorkspace.worktree_path);
       expect(gitOutput(readyWorkspace.worktree_path, ["branch", "--show-current"])).toBe(
-        "middleman/issue-10-widget-rendering-broken-on-safari",
+        "kenn-forge/issue-10-widget-rendering-broken-on-safari",
       );
 
       // A workspace with nothing running opens its launcher overlay in the pane,
@@ -133,7 +133,7 @@ test.describe("detail action buttons", () => {
     }
   });
 
-  test("PR detail creates a middleman workspace in its inline workspace pane", async ({ page }) => {
+  test("PR detail creates a kenn-forge workspace in its inline workspace pane", async ({ page }) => {
     test.skip(
       !hasCommand("git") || !hasCommand("tmux", ["-V"]),
       "git and tmux are required for the real workspace flow",
@@ -280,7 +280,7 @@ test.describe("detail action buttons", () => {
     }
   });
 
-  test("issue workspace button still creates a middleman workspace after detail sync refresh", async ({ page }) => {
+  test("issue workspace button still creates a kenn-forge workspace after detail sync refresh", async ({ page }) => {
     const createdWorkspace = {
       id: "ws-issue-10",
       platform_host: "github.com",
@@ -288,9 +288,9 @@ test.describe("detail action buttons", () => {
       repo_name: "widgets",
       item_type: "issue",
       item_number: 10,
-      git_head_ref: "middleman/issue-10",
+      git_head_ref: "kenn-forge/issue-10",
       worktree_path: "/tmp/workspaces/issue-10",
-      tmux_session: "middleman-ws-issue-10",
+      tmux_session: "kenn-forge-ws-issue-10",
       status: "ready",
       created_at: "2026-04-20T12:00:00Z",
       mr_title: "Add keyboard shortcut docs",
@@ -390,14 +390,14 @@ test.describe("detail action buttons", () => {
   for (const scenario of [
     {
       name: "reuse the existing branch",
-      branch: "middleman/issue-10",
+      branch: "kenn-forge/issue-10",
       button: "Use Existing Branch",
       reusePayload: { reuse_existing_branch: true },
       existingDirectory: false,
     },
     {
-      name: "recover the existing Middleman directory",
-      branch: "middleman/issue-10-original-title",
+      name: "recover the existing Kenn Forge directory",
+      branch: "kenn-forge/issue-10-original-title",
       button: "Use Existing Directory",
       reusePayload: { reuse_existing_directory: true },
       existingDirectory: true,
@@ -413,14 +413,14 @@ test.describe("detail action buttons", () => {
         item_number: 10,
         git_head_ref: scenario.branch,
         worktree_path: "/tmp/workspaces/issue-10",
-        tmux_session: "middleman-ws-issue-10",
+        tmux_session: "kenn-forge-ws-issue-10",
         status: "ready",
         created_at: "2026-04-20T12:00:00Z",
         mr_title: "Add keyboard shortcut docs",
         mr_state: "open",
       };
       const conflict = {
-        type: "urn:middleman:error:issue-workspace-branch-conflict",
+        type: "urn:kenn-forge:error:issue-workspace-branch-conflict",
         title: "Issue workspace branch conflict",
         status: 409,
         detail: "A local branch with the requested name already exists.",
@@ -555,16 +555,16 @@ test.describe("detail action buttons", () => {
       repo_name: "widgets",
       item_type: "issue",
       item_number: 10,
-      git_head_ref: "middleman/issue-10-2",
+      git_head_ref: "kenn-forge/issue-10-2",
       worktree_path: "/tmp/workspaces/issue-10-2",
-      tmux_session: "middleman-ws-issue-10",
+      tmux_session: "kenn-forge-ws-issue-10",
       status: "ready",
       created_at: "2026-04-20T12:00:00Z",
       mr_title: "Add keyboard shortcut docs",
       mr_state: "open",
     };
     const conflict = {
-      type: "urn:middleman:error:issue-workspace-branch-conflict",
+      type: "urn:kenn-forge:error:issue-workspace-branch-conflict",
       title: "Issue workspace branch conflict",
       status: 409,
       detail: "A local branch with the requested name already exists.",
@@ -572,12 +572,12 @@ test.describe("detail action buttons", () => {
         {
           message: "Requested branch already exists",
           location: "body.git_head_ref",
-          value: "middleman/issue-10",
+          value: "kenn-forge/issue-10",
         },
         {
           message: "Suggested alternative branch name",
           location: "body.suggested_git_head_ref",
-          value: "middleman/issue-10-2",
+          value: "kenn-forge/issue-10-2",
         },
       ],
     };
@@ -668,7 +668,7 @@ test.describe("detail action buttons", () => {
       .toEqual([
         {},
         {
-          git_head_ref: "middleman/issue-10-2",
+          git_head_ref: "kenn-forge/issue-10-2",
         },
       ]);
     // The workspace lands in its inline workspace pane; the issue stays selected.

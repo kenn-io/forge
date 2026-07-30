@@ -1,6 +1,6 @@
 import { flushSync, mount, unmount } from "svelte";
 import { describe, expect, it, vi } from "vite-plus/test";
-import { createSettingsStore } from "@middleman/ui";
+import { createSettingsStore } from "@kenn-forge/ui";
 import { STORES_KEY } from "../../../../../packages/ui/src/context.js";
 import XtermTerminalPane from "./XtermTerminalPane.svelte";
 

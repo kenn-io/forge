@@ -1,7 +1,7 @@
 import { setGlobalRepo } from "../stores/filter.svelte.js";
 
 // Bridge: repo filter (module-scope, not workspace-specific)
-window.__middleman_set_repo_filter = (repo: { owner: string; name: string } | null) => {
+window.__kenn_forge_set_repo_filter = (repo: { owner: string; name: string } | null) => {
   setGlobalRepo(repo ? `${repo.owner}/${repo.name}` : undefined);
 };
 
@@ -37,7 +37,7 @@ export interface ProjectActionHook {
 // up ambient globals declared in vite-env.d.ts.
 export type ToolingStatusValue = ToolingStatus;
 
-type UIRepoConfig = NonNullable<NonNullable<MiddlemanConfig["ui"]>["repo"]>;
+type UIRepoConfig = NonNullable<NonNullable<ForgeConfig["ui"]>["repo"]>;
 
 interface UIDefaults {
   hideSync: boolean;
@@ -57,14 +57,14 @@ const UI_DEFAULTS: UIDefaults = {
 
 let _generation = $state(0);
 
-function readConfig(): MiddlemanConfig | undefined {
+function readConfig(): ForgeConfig | undefined {
   void _generation; // reactive dependency
-  return window.__middleman_config;
+  return window.__kenn_forge_config;
 }
 
 // Install the notify function on window. The embedder calls this
-// after mutating window.__middleman_config.
-window.__middleman_notify_config_changed = () => {
+// after mutating window.__kenn_forge_config.
+window.__kenn_forge_notify_config_changed = () => {
   _generation++;
 };
 
@@ -88,15 +88,15 @@ export function getThemeMode(): "light" | "dark" | "system" | undefined {
   return readConfig()?.theme?.mode;
 }
 
-export function getThemeColors(): NonNullable<NonNullable<MiddlemanConfig["theme"]>["colors"]> | undefined {
+export function getThemeColors(): NonNullable<NonNullable<ForgeConfig["theme"]>["colors"]> | undefined {
   return readConfig()?.theme?.colors;
 }
 
-export function getThemeFonts(): NonNullable<NonNullable<MiddlemanConfig["theme"]>["fonts"]> | undefined {
+export function getThemeFonts(): NonNullable<NonNullable<ForgeConfig["theme"]>["fonts"]> | undefined {
   return readConfig()?.theme?.fonts;
 }
 
-export function getThemeRadii(): NonNullable<NonNullable<MiddlemanConfig["theme"]>["radii"]> | undefined {
+export function getThemeRadii(): NonNullable<NonNullable<ForgeConfig["theme"]>["radii"]> | undefined {
   return readConfig()?.theme?.radii;
 }
 
@@ -140,11 +140,11 @@ export function getToolingStatus(): ToolingStatus | undefined {
   return readConfig()?.embed?.tooling;
 }
 
-export function getOnNavigate(): ((event: MiddlemanNavigateEvent) => void) | undefined {
+export function getOnNavigate(): ((event: ForgeNavigateEvent) => void) | undefined {
   return readConfig()?.onNavigate;
 }
 
-export function getOnRouteChange(): ((event: MiddlemanNavigateEvent) => void) | undefined {
+export function getOnRouteChange(): ((event: ForgeNavigateEvent) => void) | undefined {
   return readConfig()?.onRouteChange;
 }
 
@@ -203,7 +203,7 @@ export function getEmbedActivePlatformHost(): string | null {
   return value;
 }
 
-export function getOnLayoutChanged(): MiddlemanConfig["onLayoutChanged"] | undefined {
+export function getOnLayoutChanged(): ForgeConfig["onLayoutChanged"] | undefined {
   return readConfig()?.onLayoutChanged;
 }
 
@@ -220,7 +220,7 @@ export function emitLayoutChanged(layout: {
       try {
         handler(layout);
       } catch (e) {
-        console.error("[middleman] onLayoutChanged error:", e);
+        console.error("[kenn-forge] onLayoutChanged error:", e);
       }
     }
   }, 150);
@@ -247,21 +247,21 @@ export async function emitWorkspaceCommand(command: string, payload: Record<stri
     return { ok: true };
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
-    console.error(`[middleman] workspace command "${command}" failed:`, e);
+    console.error(`[kenn-forge] workspace command "${command}" failed:`, e);
     return { ok: false, message };
   }
 }
 
 export function initWorkspaceBridge(): void {
-  window.__middleman_update_workspace = (data: WorkspaceData) => {
-    const config = window.__middleman_config;
+  window.__kenn_forge_update_workspace = (data: WorkspaceData) => {
+    const config = window.__kenn_forge_config;
     if (config) {
       config.workspace = data;
-      window.__middleman_notify_config_changed?.();
+      window.__kenn_forge_notify_config_changed?.();
     }
   };
-  window.__middleman_update_selection = (selection: { hostKey?: string | null; worktreeKey?: string | null }) => {
-    const config = window.__middleman_config;
+  window.__kenn_forge_update_selection = (selection: { hostKey?: string | null; worktreeKey?: string | null }) => {
+    const config = window.__kenn_forge_config;
     if (!config?.workspace) return;
     const changingHost = "hostKey" in selection && selection.hostKey !== config.workspace.selectedHostKey;
     const updated = { ...config.workspace };
@@ -274,16 +274,16 @@ export function initWorkspaceBridge(): void {
       updated.selectedWorktreeKey = null;
     }
     config.workspace = updated;
-    window.__middleman_notify_config_changed?.();
+    window.__kenn_forge_notify_config_changed?.();
   };
-  window.__middleman_update_host_state = (
+  window.__kenn_forge_update_host_state = (
     hostKey: string,
     patch: {
       connectionState?: WorkspaceHost["connectionState"];
       resources?: WorkspaceResources | null;
     },
   ) => {
-    const config = window.__middleman_config;
+    const config = window.__kenn_forge_config;
     if (!config?.workspace) return;
     const hostIdx = config.workspace.hosts.findIndex((h) => h.key === hostKey);
     if (hostIdx < 0) return;
@@ -298,13 +298,13 @@ export function initWorkspaceBridge(): void {
     const hosts = [...config.workspace.hosts];
     hosts[hostIdx] = updated;
     config.workspace = { ...config.workspace, hosts };
-    window.__middleman_notify_config_changed?.();
+    window.__kenn_forge_notify_config_changed?.();
   };
-  window.__middleman_update_tooling = (tooling: ToolingStatus) => {
-    const config = window.__middleman_config;
+  window.__kenn_forge_update_tooling = (tooling: ToolingStatus) => {
+    const config = window.__kenn_forge_config;
     if (!config) return;
     const embed = { ...(config.embed ?? {}), tooling };
     config.embed = embed;
-    window.__middleman_notify_config_changed?.();
+    window.__kenn_forge_notify_config_changed?.();
   };
 }

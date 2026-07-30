@@ -16,10 +16,10 @@ import (
 	gh "github.com/google/go-github/v89/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/db"
-	ghclient "go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/platform"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/db"
+	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/platform"
+	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
 func openTestDB(t *testing.T) *db.DB {

@@ -76,21 +76,21 @@ describe("KataProjectMappingsSettings", () => {
             provider: "github",
             platform_host: "github.com",
             owner: "kenn-io",
-            name: "middleman",
-            repo_path: "kenn-io/middleman",
+            name: "kenn-forge",
+            repo_path: "kenn-io/kenn-forge",
             capabilities: defaultProviderCapabilities,
           },
         },
       ],
       targets: [
         {
-          display_name: "Middleman",
+          display_name: "Kenn Forge",
           repo: {
             provider: "github",
             platform_host: "github.com",
             owner: "kenn-io",
-            name: "middleman",
-            repo_path: "kenn-io/middleman",
+            name: "kenn-forge",
+            repo_path: "kenn-io/kenn-forge",
             capabilities: defaultProviderCapabilities,
           },
         },
@@ -103,23 +103,23 @@ describe("KataProjectMappingsSettings", () => {
 
     await waitFor(() => {
       expect(screen.getByText("Registered project")).toBeTruthy();
-      expect(screen.getByText("kenn-io/middleman")).toBeTruthy();
+      expect(screen.getByText("kenn-io/kenn-forge")).toBeTruthy();
     });
     await fireEvent.click(screen.getByRole("button", { name: "Add override" }));
 
     expect((screen.getByLabelText("Kata project project-kata daemon ID") as HTMLInputElement).value).toBe("work");
     expect((screen.getByLabelText("Kata project project-kata UID") as HTMLInputElement).value).toBe("project-kata");
-    expect(screen.getByRole("button", { name: /project-kata repository target/ }).textContent).toContain("Middleman");
+    expect(screen.getByRole("button", { name: /project-kata repository target/ }).textContent).toContain("Kenn Forge");
   });
 
-  it("saves a Kata mapping to a selected known Middleman project", async () => {
+  it("saves a Kata mapping to a selected known Kenn Forge project", async () => {
     const savedMappings = [
       {
         daemon_id: "work",
         project_uid: "project-kata",
         provider: "github",
         platform_host: "github.com",
-        repo_path: "kenn-io/middleman",
+        repo_path: "kenn-io/kenn-forge",
       },
     ];
     mockUpdateSettings.mockResolvedValue({ kata_projects: savedMappings });
@@ -128,13 +128,13 @@ describe("KataProjectMappingsSettings", () => {
       projects: [],
       targets: [
         {
-          display_name: "Middleman",
+          display_name: "Kenn Forge",
           repo: {
             provider: "github",
             platform_host: "github.com",
             owner: "kenn-io",
-            name: "middleman",
-            repo_path: "kenn-io/middleman",
+            name: "kenn-forge",
+            repo_path: "kenn-io/kenn-forge",
             capabilities: defaultProviderCapabilities,
           },
         },
@@ -176,9 +176,9 @@ describe("KataProjectMappingsSettings", () => {
     const query = screen.getByRole("combobox", { name: pickerName });
     await fireEvent.input(query, { target: { value: "middle" } });
 
-    expect(screen.getByRole("option", { name: "Middleman · kenn-io/middleman" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "Kenn Forge · kenn-io/kenn-forge" })).toBeTruthy();
     expect(screen.queryByRole("option", { name: "Tools · acme/tools" })).toBeNull();
-    await fireEvent.mouseDown(screen.getByRole("option", { name: "Middleman · kenn-io/middleman" }));
+    await fireEvent.mouseDown(screen.getByRole("option", { name: "Kenn Forge · kenn-io/kenn-forge" }));
 
     await fireEvent.click(screen.getByRole("button", { name: "Save Kata mappings" }));
 

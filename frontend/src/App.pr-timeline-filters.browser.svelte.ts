@@ -28,7 +28,7 @@ import { mountBrowserApp, resetKeyboardModuleState, type MountedBrowserApp } fro
 import { jsonResponse, type MockRouteOverride } from "./test/mockApiFetch.js";
 
 const WAIT = 10_000;
-const FILTER_STORAGE_KEY = "middleman-pr-timeline-filter";
+const FILTER_STORAGE_KEY = "kenn-forge-pr-timeline-filter";
 
 // SHA constants mirror the widgets PR#1 force-push generations in the Go seed.
 const sha = {

@@ -15,10 +15,10 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/config"
-	ghclient "go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/server/httpapi"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/config"
+	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
 func TestSwitchHandlerSwapsDifferentHandlerTypes(t *testing.T) {
@@ -72,7 +72,7 @@ func TestStartupHandlerServesSPAWhileAPIUnavailable(t *testing.T) {
 	assert.Equal(http.StatusOK, rootRR.Code)
 	assert.Contains(rootRR.Body.String(), `<body>app</body>`)
 	assert.Contains(rootRR.Body.String(), `window.__BASE_PATH__="/"`)
-	assert.NotContains(rootRR.Body.String(), "middleman is starting")
+	assert.NotContains(rootRR.Body.String(), "kenn-forge is starting")
 
 	apiReq := httptest.NewRequest(http.MethodGet, "/api/v1/settings", nil)
 	apiReq.Host = "127.0.0.1:8091"
@@ -131,7 +131,7 @@ func TestStartupHandlerHonorsBasePath(t *testing.T) {
 	cfg := &config.Config{
 		Host:     "127.0.0.1",
 		Port:     8091,
-		BasePath: "/middleman/",
+		BasePath: "/kenn-forge/",
 	}
 	handler := NewStartupHandler(
 		frontend,
@@ -140,7 +140,7 @@ func TestStartupHandlerHonorsBasePath(t *testing.T) {
 		staticListener{addr: staticListenerAddr("127.0.0.1:8091")},
 	)
 
-	req := httptest.NewRequest(http.MethodGet, "/middleman/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/kenn-forge/", nil)
 	req.Host = "127.0.0.1:8091"
 	req.RemoteAddr = "127.0.0.1:1234"
 	rr := httptest.NewRecorder()
@@ -149,11 +149,11 @@ func TestStartupHandlerHonorsBasePath(t *testing.T) {
 	assert := assert.New(t)
 	assert.Equal(http.StatusOK, rr.Code)
 	assert.Contains(rr.Body.String(), `<body>app</body>`)
-	assert.Contains(rr.Body.String(), `window.__BASE_PATH__="/middleman/"`)
-	assert.Contains(rr.Body.String(), `src="/middleman/assets/index.js"`)
-	assert.NotContains(rr.Body.String(), "middleman is starting")
+	assert.Contains(rr.Body.String(), `window.__BASE_PATH__="/kenn-forge/"`)
+	assert.Contains(rr.Body.String(), `src="/kenn-forge/assets/index.js"`)
+	assert.NotContains(rr.Body.String(), "kenn-forge is starting")
 
-	healthReq := httptest.NewRequest(http.MethodGet, "/middleman/healthz", nil)
+	healthReq := httptest.NewRequest(http.MethodGet, "/kenn-forge/healthz", nil)
 	healthReq.Host = "127.0.0.1:8091"
 	healthReq.RemoteAddr = "127.0.0.1:1234"
 	healthRR := httptest.NewRecorder()
@@ -161,7 +161,7 @@ func TestStartupHandlerHonorsBasePath(t *testing.T) {
 
 	assert.Equal(http.StatusServiceUnavailable, healthRR.Code)
 
-	apiReq := httptest.NewRequest(http.MethodGet, "/middleman/api/v1/settings", nil)
+	apiReq := httptest.NewRequest(http.MethodGet, "/kenn-forge/api/v1/settings", nil)
 	apiReq.Host = "127.0.0.1:8091"
 	apiReq.RemoteAddr = "127.0.0.1:1234"
 	apiRR := httptest.NewRecorder()
@@ -193,7 +193,7 @@ func TestStartupHandlerSwapsToFullServerOverHTTP(t *testing.T) {
 		Port:           port,
 		BasePath:       "/",
 		SyncInterval:   "5m",
-		GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN_UNSET_FOR_STARTUP_TEST",
+		GitHubTokenEnv: "KENN_FORGE_GITHUB_TOKEN_UNSET_FOR_STARTUP_TEST",
 		Activity: config.Activity{
 			ViewMode:  "threaded",
 			TimeRange: "7d",
@@ -238,7 +238,7 @@ func TestStartupHandlerSwapsToFullServerOverHTTP(t *testing.T) {
 	assert.Equal(http.StatusOK, rootStatus)
 	assert.Contains(rootBody, `<body>app</body>`)
 	assert.Contains(rootBody, `window.__BASE_PATH__="/"`)
-	assert.NotContains(rootBody, "middleman is starting")
+	assert.NotContains(rootBody, "kenn-forge is starting")
 
 	apiStatus, apiHeader, apiBody := getHTTPBody(
 		t, client, baseURL+"/api/v1/sync/status",

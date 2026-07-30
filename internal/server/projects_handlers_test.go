@@ -18,13 +18,13 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/db"
+	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/server/workspaceapi"
+	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/workspace/localruntime"
 	gitcmd "go.kenn.io/kit/git/cmd"
-	"go.kenn.io/middleman/internal/config"
-	"go.kenn.io/middleman/internal/db"
-	ghclient "go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/server/workspaceapi"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
-	"go.kenn.io/middleman/internal/workspace/localruntime"
 )
 
 // TestW1SliceAGate is the falsifiable capability gate from the convergence
@@ -32,7 +32,7 @@ import (
 // launch-target discovery against a path with no `gh` context and an
 // unrecognizable remote, and finishes by asserting neutral operation IDs in
 // the live OpenAPI document. If this test passes, the W1 milestone is
-// unblocked on the Middleman side.
+// unblocked on the Kenn Forge side.
 
 func TestProjectWorktreeRuntimeShellLifecycle(t *testing.T) {
 	require := require.New(t)
@@ -420,7 +420,7 @@ func setupProjectWorktreeRuntimeTestWithTmux(
 	t.Helper()
 	cfgContent := `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 

@@ -49,7 +49,7 @@ describe("WorktreeRow", () => {
       props: {
         worktree,
         hostKey: "local",
-        projectKey: "middleman",
+        projectKey: "kenn-forge",
         isSelected: false,
         onCommand: () => {},
       },
@@ -65,7 +65,7 @@ describe("WorktreeRow", () => {
       props: {
         worktree: createWorktree(),
         hostKey: "local",
-        projectKey: "middleman",
+        projectKey: "kenn-forge",
         isSelected: false,
         onCommand,
       },
@@ -80,7 +80,7 @@ describe("WorktreeRow", () => {
 
     expect(onCommand).toHaveBeenCalledWith("selectWorktree", {
       hostKey: "local",
-      projectKey: "middleman",
+      projectKey: "kenn-forge",
       worktreeKey: "worktree-1",
     });
   });

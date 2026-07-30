@@ -36,6 +36,9 @@ func Rewrite(root string, paths []string, checkOnly bool) (Report, error) {
 		newPath := cleaned
 		if !isAllowlistedPath(cleaned) {
 			newPath = rewritePath(cleaned)
+			if cleaned != newPath && alreadyMoved(root, cleaned, newPath) {
+				cleaned = newPath
+			}
 		}
 		files = append(files, plannedFile{OldPath: cleaned, NewPath: newPath})
 	}
@@ -56,6 +59,10 @@ func Rewrite(root string, paths []string, checkOnly bool) (Report, error) {
 		}
 		if binary {
 			report.SkippedBinary++
+			if files[i].OldPath != files[i].NewPath {
+				report.Changed++
+				report.Moved++
+			}
 			continue
 		}
 		if changed {
@@ -85,6 +92,15 @@ func Rewrite(root string, paths []string, checkOnly bool) (Report, error) {
 		}
 	}
 	return report, nil
+}
+
+func alreadyMoved(root, oldPath, newPath string) bool {
+	_, oldErr := os.Lstat(filepath.Join(root, filepath.FromSlash(oldPath)))
+	if !errors.Is(oldErr, os.ErrNotExist) {
+		return false
+	}
+	_, newErr := os.Lstat(filepath.Join(root, filepath.FromSlash(newPath)))
+	return newErr == nil
 }
 
 func rejectCollisions(root string, files []plannedFile) error {
@@ -149,6 +165,15 @@ func applyFileRewrite(root string, file plannedFile) error {
 		return fmt.Errorf("read %s: %w", file.OldPath, err)
 	}
 	if bytes.IndexByte(data, 0) >= 0 {
+		if file.OldPath != file.NewPath {
+			newFullPath := filepath.Join(root, filepath.FromSlash(file.NewPath))
+			if err := os.MkdirAll(filepath.Dir(newFullPath), 0o755); err != nil {
+				return fmt.Errorf("create rename parent for %s: %w", file.NewPath, err)
+			}
+			if err := os.Rename(oldFullPath, newFullPath); err != nil {
+				return fmt.Errorf("rename %s to %s: %w", file.OldPath, file.NewPath, err)
+			}
+		}
 		return nil
 	}
 	rewritten := []byte(rewriteContent(file.NewPath, string(data)))
@@ -218,17 +243,69 @@ func RenderSchemaRename(objects []SchemaObject) ([]byte, []byte, error) {
 	var up, down strings.Builder
 	writeDrops(&up, objects, "middleman")
 	writeTableRenames(&up, objects, "middleman", "forge", false)
+	writeWorkspaceObjectsDrop(&up, objects, "middleman")
+	writeWorkspaceBranchMigration(&up, objects, "forge_workspaces", false)
+	writeWorkspaceObjectsCreate(&up, objects, "forge")
 	writeCreates(&up, objects, "middleman", "forge")
 
 	writeDrops(&down, objects, "forge")
+	writeWorkspaceObjectsDrop(&down, objects, "forge")
+	writeWorkspaceBranchMigration(&down, objects, "forge_workspaces", true)
 	writeTableRenames(&down, objects, "middleman", "forge", true)
+	writeWorkspaceObjectsCreate(&down, objects, "middleman")
 	writeCreates(&down, objects, "middleman", "middleman")
 	return []byte(up.String()), []byte(down.String()), nil
+}
+
+func writeWorkspaceBranchMigration(builder *strings.Builder, objects []SchemaObject, table string, reverse bool) {
+	if !slices.ContainsFunc(objects, func(object SchemaObject) bool {
+		return object.Type == "table" && object.Name == "middleman_workspaces"
+	}) {
+		return
+	}
+
+	oldUnknown, newUnknown := "__middleman_unknown__", "__kenn_forge_unknown__"
+	oldRecovery, newRecovery := "__middleman_recovery_pending__..state", "__kenn_forge_recovery_pending__..state"
+	if reverse {
+		oldUnknown, newUnknown = newUnknown, oldUnknown
+		oldRecovery, newRecovery = newRecovery, oldRecovery
+	}
+	fmt.Fprintf(builder, "ALTER TABLE %s RENAME COLUMN workspace_branch TO workspace_branch_rename_legacy;\n", table)
+	fmt.Fprintf(builder, "ALTER TABLE %s ADD COLUMN workspace_branch TEXT NOT NULL DEFAULT '%s';\n", table, newUnknown)
+	fmt.Fprintf(builder, "UPDATE %s SET workspace_branch = CASE workspace_branch_rename_legacy\n", table)
+	fmt.Fprintf(builder, "    WHEN '%s' THEN '%s'\n", oldUnknown, newUnknown)
+	fmt.Fprintf(builder, "    WHEN '%s' THEN '%s'\n", oldRecovery, newRecovery)
+	fmt.Fprintln(builder, "    ELSE workspace_branch_rename_legacy")
+	fmt.Fprintln(builder, "END;")
+	fmt.Fprintf(builder, "ALTER TABLE %s DROP COLUMN workspace_branch_rename_legacy;\n", table)
+}
+
+func writeWorkspaceObjectsDrop(builder *strings.Builder, objects []SchemaObject, existingPrefix string) {
+	for _, object := range objects {
+		if object.Table != "middleman_workspaces" || object.Type == "table" {
+			continue
+		}
+		name := strings.ReplaceAll(object.Name, "middleman", existingPrefix)
+		fmt.Fprintf(builder, "DROP %s %s;\n", strings.ToUpper(object.Type), name)
+	}
+}
+
+func writeWorkspaceObjectsCreate(builder *strings.Builder, objects []SchemaObject, targetPrefix string) {
+	for _, object := range objects {
+		if object.Table != "middleman_workspaces" || object.Type == "table" {
+			continue
+		}
+		sql := strings.ReplaceAll(object.SQL, "middleman", targetPrefix)
+		fmt.Fprintln(builder, strings.TrimSuffix(sql, ";")+";")
+	}
 }
 
 func writeDrops(builder *strings.Builder, objects []SchemaObject, existing string) {
 	for _, object := range objects {
 		if object.Type != "index" && object.Type != "trigger" {
+			continue
+		}
+		if object.Table == "middleman_workspaces" {
 			continue
 		}
 		name := object.Name
@@ -259,7 +336,8 @@ func writeTableRenames(builder *strings.Builder, objects []SchemaObject, old, ne
 
 func writeCreates(builder *strings.Builder, objects []SchemaObject, old, new string) {
 	for _, object := range objects {
-		if (object.Type == "index" || object.Type == "trigger") && strings.Contains(object.Name, old) {
+		if object.Table != "middleman_workspaces" &&
+			(object.Type == "index" || object.Type == "trigger") && strings.Contains(object.Name, old) {
 			fmt.Fprintln(builder, strings.TrimSuffix(strings.ReplaceAll(object.SQL, old, new), ";")+";")
 		}
 	}

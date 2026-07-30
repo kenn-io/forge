@@ -10,9 +10,9 @@
     ReviewsView,
     FocusListView,
     normalizeRepoFilterSelection,
-  } from "@middleman/ui";
-  import type { StoreInstances } from "@middleman/ui";
-  import type { ActivityItem, ModeVisibility } from "@middleman/ui/api/types";
+  } from "@kenn-forge/ui";
+  import type { StoreInstances } from "@kenn-forge/ui";
+  import type { ActivityItem, ModeVisibility } from "@kenn-forge/ui/api/types";
   import {
     buildFocusPullRequestFilesRoute,
     buildFocusPullRequestRoute,
@@ -21,7 +21,7 @@
     type PullRequestRouteRef,
     type RepoBrowserRouteRef,
     type RoutedItemRef,
-  } from "@middleman/ui/routes";
+  } from "@kenn-forge/ui/routes";
   import { client } from "./lib/api/runtime.js";
 
   import AppHeader from "./lib/components/layout/AppHeader.svelte";
@@ -52,7 +52,7 @@
   import { createKataAuxiliaryAuthority } from "./lib/features/kata/kataAuxiliaryAuthority.svelte.js";
   import { FlashBanner, Spinner } from "@kenn-io/kit-ui";
   import { MonitorIcon } from "./lib/icons.ts";
-  import { showFlash } from "@middleman/ui/stores/flash";
+  import { showFlash } from "@kenn-forge/ui/stores/flash";
   import { initItemRefHandler } from "./lib/utils/itemRefHandler.js";
   import { globalRepoForSelectedRoute } from "./lib/utils/repoSelectionSync.js";
   import { runAppStartup } from "./lib/utils/appStartup.js";
@@ -310,7 +310,7 @@
 
   function reloadAfterLazyFeatureRetryFailure(): void {
     const url = new URL(window.location.href);
-    url.searchParams.set("_middleman_feature_retry", String(Date.now()));
+    url.searchParams.set("_forge_feature_retry", String(Date.now()));
     window.location.assign(url.toString());
   }
 
@@ -503,9 +503,9 @@
 
   function shouldForceMobileRoutes(): boolean {
     return (
-      window.__MIDDLEMAN_FORCE_MOBILE_ROUTES__ === true ||
-      import.meta.env.VITE_MIDDLEMAN_FORCE_MOBILE_ROUTES === "1" ||
-      import.meta.env.VITE_MIDDLEMAN_FORCE_MOBILE_ROUTES === "true"
+      window.__KENN_FORGE_FORCE_MOBILE_ROUTES__ === true ||
+      import.meta.env.VITE_KENN_FORGE_FORCE_MOBILE_ROUTES === "1" ||
+      import.meta.env.VITE_KENN_FORGE_FORCE_MOBILE_ROUTES === "true"
     );
   }
 
@@ -829,7 +829,7 @@
 
   // PR-detail palette commands (pr.approve, pr.ready, pr.approveWorkflows).
   // Lives here in the app shell because the keyboard registry can't be
-  // imported from inside @middleman/ui. The buildPRDetailInput closure
+  // imported from inside @kenn-forge/ui. The buildPRDetailInput closure
   // assembles the action input from the active PR detail, the loaded
   // capabilities, and the app stores; it returns null when nothing is
   // ready, in which case every action's `when` returns false. pr.merge
@@ -1068,7 +1068,7 @@
       <header class="mobile-topbar" {@attach trackMobileHeaderHeight}>
         <span class="mobile-brand">
           <img class="mobile-app-icon" src={appIconSrc} alt="" aria-hidden="true" />
-          <span class="mobile-title">middleman</span>
+          <span class="mobile-title">kenn-forge</span>
         </span>
 
         <nav class="mobile-tabs" aria-label="Phone navigation">

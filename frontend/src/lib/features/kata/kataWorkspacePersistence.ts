@@ -1,6 +1,6 @@
 import type { KataTaskSearchFilters, KataTaskViewName } from "../../api/kata/taskTypes.js";
 
-export const KATA_WORKSPACE_STATE_STORAGE_KEY = "middleman:kata:workspace-state/v2";
+export const KATA_WORKSPACE_STATE_STORAGE_KEY = "kenn-forge:kata:workspace-state/v2";
 
 export interface KataPersistedWorkspaceState {
   view: KataTaskViewName;

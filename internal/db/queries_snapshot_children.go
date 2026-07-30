@@ -55,7 +55,7 @@ func (d *DB) CommitIssueChildSnapshot(
 	applied := false
 	err := d.Tx(ctx, func(tx *sql.Tx) error {
 		current, err := domainParentSnapshotCurrentTx(
-			ctx, tx, "middleman_issues", snapshot.IssueID, snapshot.ExpectedRevision,
+			ctx, tx, "forge_issues", snapshot.IssueID, snapshot.ExpectedRevision,
 		)
 		if err != nil || !current {
 			return err
@@ -85,7 +85,7 @@ func (d *DB) CommitMergeRequestChildSnapshot(
 	applied := false
 	err := d.Tx(ctx, func(tx *sql.Tx) error {
 		current, err := domainParentSnapshotCurrentTx(
-			ctx, tx, "middleman_merge_requests", snapshot.MergeRequestID, snapshot.ExpectedRevision,
+			ctx, tx, "forge_merge_requests", snapshot.MergeRequestID, snapshot.ExpectedRevision,
 		)
 		if err != nil || !current {
 			return err
@@ -135,7 +135,7 @@ func (d *DB) CommitMergeRequestChildSnapshot(
 		}
 		if snapshot.DerivedFields != nil {
 			if _, err := tx.ExecContext(ctx, `
-				UPDATE middleman_merge_requests
+				UPDATE forge_merge_requests
 				SET review_decision = ?, last_activity_at = ?
 				WHERE id = ?`, snapshot.DerivedFields.ReviewDecision,
 				snapshot.DerivedFields.LastActivityAt, snapshot.MergeRequestID,
@@ -177,7 +177,7 @@ func (d *DB) UpdateMergeRequestCISnapshot(
 	checksJSON string,
 ) (bool, error) {
 	return d.updateApplied(ctx, "update merge-request CI", `
-		UPDATE middleman_merge_requests
+		UPDATE forge_merge_requests
 		SET ci_status = ?, ci_checks_json = ?
 		WHERE id = ? AND snapshot_revision = ?`,
 		status, checksJSON, mergeRequestID, expectedRevision)
@@ -190,7 +190,7 @@ func (d *DB) ClearMRCISnapshot(
 	expectedHeadSHA string,
 ) (bool, error) {
 	return d.updateApplied(ctx, "clear merge-request CI", `
-		UPDATE middleman_merge_requests
+		UPDATE forge_merge_requests
 		SET ci_status = '', ci_checks_json = '', ci_had_pending = 0
 		WHERE id = ? AND snapshot_revision = ? AND platform_head_sha = ?`,
 		mergeRequestID, expectedRevision, expectedHeadSHA)
@@ -207,7 +207,7 @@ func (d *DB) UpdateDiffSHAsSnapshot(
 	mergeBaseSHA string,
 ) (bool, error) {
 	return d.updateApplied(ctx, "update merge-request diff", `
-		UPDATE middleman_merge_requests
+		UPDATE forge_merge_requests
 		SET diff_head_sha = ?, diff_base_sha = ?, merge_base_sha = ?
 		WHERE id = ? AND snapshot_revision = ? AND platform_head_sha = ? AND platform_base_sha = ?`,
 		diffHeadSHA, diffBaseSHA, mergeBaseSHA,
@@ -220,7 +220,7 @@ func (d *DB) ClearMRDetailFetchedSnapshot(
 	expectedRevision int64,
 ) (bool, error) {
 	return d.updateApplied(ctx, "clear merge-request detail", `
-		UPDATE middleman_merge_requests
+		UPDATE forge_merge_requests
 		SET detail_fetched_at = NULL
 		WHERE id = ? AND snapshot_revision = ?`, mergeRequestID, expectedRevision)
 }
@@ -231,7 +231,7 @@ func (d *DB) ClearIssueDetailFetchedSnapshot(
 	expectedRevision int64,
 ) (bool, error) {
 	return d.updateApplied(ctx, "clear issue detail", `
-		UPDATE middleman_issues
+		UPDATE forge_issues
 		SET detail_fetched_at = NULL
 		WHERE id = ? AND snapshot_revision = ?`, issueID, expectedRevision)
 }
@@ -243,7 +243,7 @@ func (d *DB) MarkMergeRequestDetailFetchedSnapshot(
 	ciHadPending bool,
 ) (bool, error) {
 	return d.updateApplied(ctx, "mark merge-request detail fetched", `
-		UPDATE middleman_merge_requests
+		UPDATE forge_merge_requests
 		SET detail_fetched_at = datetime('now'), ci_had_pending = ?
 		WHERE id = ? AND snapshot_revision = ?`, ciHadPending, mergeRequestID, expectedRevision)
 }
@@ -254,7 +254,7 @@ func (d *DB) MarkIssueDetailFetchedSnapshot(
 	expectedRevision int64,
 ) (bool, error) {
 	return d.updateApplied(ctx, "mark issue detail fetched", `
-		UPDATE middleman_issues
+		UPDATE forge_issues
 		SET detail_fetched_at = datetime('now')
 		WHERE id = ? AND snapshot_revision = ?`, issueID, expectedRevision)
 }

@@ -4,64 +4,64 @@ import { createKataTaskAPI } from "./taskClient.js";
 
 type LiveKataHarnessModule = typeof import("../../../../tests/e2e-full/support/kataLiveHarness");
 type LiveKataHarness = Awaited<ReturnType<LiveKataHarnessModule["createLiveKataHarness"]>>;
-type MiddlemanKataHome = Awaited<ReturnType<LiveKataHarnessModule["configureMiddlemanKataHome"]>>;
-type MiddlemanServer = { info: { base_url: string }; stop: () => Promise<void> };
+type ForgeKataHome = Awaited<ReturnType<LiveKataHarnessModule["configureForgeKataHome"]>>;
+type ForgeServer = { info: { base_url: string }; stop: () => Promise<void> };
 
-describe.skipIf(process.env.MIDDLEMAN_LIVE_KATA_TESTS !== "1")("createKataTaskAPI live daemon integration", () => {
-  test("runs core task mutations through the middleman proxy", async () => {
+describe.skipIf(process.env.KENN_FORGE_LIVE_KATA_TESTS !== "1")("createKataTaskAPI live daemon integration", () => {
+  test("runs core task mutations through the kenn-forge proxy", async () => {
     let harness: LiveKataHarness | undefined;
-    let kataHome: MiddlemanKataHome | undefined;
-    let server: MiddlemanServer | undefined;
+    let kataHome: ForgeKataHome | undefined;
+    let server: ForgeServer | undefined;
     try {
-      const { configureMiddlemanKataHome, createLiveKataHarness } =
+      const { configureForgeKataHome, createLiveKataHarness } =
         await import("../../../../tests/e2e-full/support/kataLiveHarness");
       const { startIsolatedE2EServer } = await import("../../../../tests/e2e-full/support/e2eServer");
       harness = await createLiveKataHarness();
-      kataHome = await configureMiddlemanKataHome(harness.baseURL);
+      kataHome = await configureForgeKataHome(harness.baseURL);
       server = await startIsolatedE2EServer();
 
       const seeded = await harness.seedIssue({
-        projectName: "Middleman Client Mutations",
+        projectName: "Kenn Forge Client Mutations",
         issueTitle: "Seed client mutation project",
         issueBody: "Created so the client can reuse the project identity.",
       });
       const api = createKataTaskAPI({
-        fetchImpl: createMiddlemanFetch(server),
+        fetchImpl: createForgeFetch(server),
       });
       const options = { daemonId: "live" };
 
       await expect(
         api.createIssue(
           seeded.project.id,
-          "middleman-e2e",
+          "kenn-forge-e2e",
           {
             title: "Exercise client mutations",
             body: "Original body",
             force_new: true,
           },
           options,
-          "01MIDDLEMANCLIENTMUT000001",
+          "01KENN_FORGECLIENTMUT000001",
         ),
       ).resolves.toEqual({
         changed: true,
       });
 
       const peer = await harness.seedIssue({
-        projectName: "Middleman Client Mutations",
+        projectName: "Kenn Forge Client Mutations",
         issueTitle: "Related client peer",
         issueBody: "Related through the mutation-only client.",
       });
       const target = { project_id: seeded.project.id, ref: seeded.issue.short_id };
 
-      await expect(api.addComment(target, "middleman-e2e", "Client mutation comment", options)).resolves.toEqual({
+      await expect(api.addComment(target, "kenn-forge-e2e", "Client mutation comment", options)).resolves.toEqual({
         changed: true,
       });
-      await expect(api.addLabel(target, "middleman-e2e", "ui", options)).resolves.toEqual({ changed: true });
-      await expect(api.removeLabel(target, "middleman-e2e", "ui", options)).resolves.toEqual({ changed: true });
+      await expect(api.addLabel(target, "kenn-forge-e2e", "ui", options)).resolves.toEqual({ changed: true });
+      await expect(api.removeLabel(target, "kenn-forge-e2e", "ui", options)).resolves.toEqual({ changed: true });
       await expect(
         api.editIssue(
           target,
-          "middleman-e2e",
+          "kenn-forge-e2e",
           {
             title: "Exercise client mutations updated",
             body: "Updated body",
@@ -73,16 +73,16 @@ describe.skipIf(process.env.MIDDLEMAN_LIVE_KATA_TESTS !== "1")("createKataTaskAP
       await expect(
         api.closeIssue(
           target,
-          "middleman-e2e",
+          "kenn-forge-e2e",
           {
             reason: "done",
-            message: "Finished through the middleman client mutation coverage.",
+            message: "Finished through the kenn-forge client mutation coverage.",
             source: "ui",
           },
           options,
         ),
       ).resolves.toEqual({ changed: true });
-      await expect(api.reopenIssue(target, "middleman-e2e", options)).resolves.toEqual({ changed: true });
+      await expect(api.reopenIssue(target, "kenn-forge-e2e", options)).resolves.toEqual({ changed: true });
 
       const detail = await harness.getIssue(seeded.issue.uid);
       expect(detail.issue).toMatchObject({
@@ -111,7 +111,7 @@ describe.skipIf(process.env.MIDDLEMAN_LIVE_KATA_TESTS !== "1")("createKataTaskAP
   });
 });
 
-function createMiddlemanFetch(server: MiddlemanServer): typeof fetch {
+function createForgeFetch(server: ForgeServer): typeof fetch {
   return (input: RequestInfo | URL, init?: RequestInit) => {
     const raw = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
     return fetch(new URL(raw, server.info.base_url), init);

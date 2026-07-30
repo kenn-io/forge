@@ -1,7 +1,7 @@
-/middleman
-/middleman.exe
-/middleman-github-app
-/middleman-github-app.exe
+/kenn-forge
+/forge.exe
+/kenn-forge-github-app
+/kenn-forge-github-app.exe
 dist/
 !internal/web/dist/
 internal/web/dist/*

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/forge/internal/platform"
 )
 
 func NormalizeRepository(

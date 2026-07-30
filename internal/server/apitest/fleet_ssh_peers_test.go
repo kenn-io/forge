@@ -7,12 +7,12 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/apiclient/generated"
-	"go.kenn.io/middleman/internal/config"
-	ghclient "go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/server"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
-	"go.kenn.io/middleman/internal/testutil/servertest"
+	"go.kenn.io/forge/internal/apiclient/generated"
+	"go.kenn.io/forge/internal/config"
+	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/servertest"
 )
 
 func setupFleetSettingsServer(t *testing.T) (*server.Server, string) {
@@ -20,10 +20,10 @@ func setupFleetSettingsServer(t *testing.T) (*server.Server, string) {
 	cfgPath := t.TempDir() + "/config.toml"
 	require.NoError(t, os.WriteFile(cfgPath, []byte(`
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
-allowed_hosts = ["middleman.test"]
+allowed_hosts = ["forge.test"]
 `), 0o600))
 	cfg, err := config.Load(cfgPath)
 	require.NoError(t, err)

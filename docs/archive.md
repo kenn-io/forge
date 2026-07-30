@@ -1,6 +1,6 @@
 # Historical activity archive
 
-Middleman can backfill historical provider activity into its local SQLite database and keep it fresh under the normal sync budget. Reports read only local data, so they remain deterministic and do not spend provider requests.
+Kenn Forge can backfill historical provider activity into its local SQLite database and keep it fresh under the normal sync budget. Reports read only local data, so they remain deterministic and do not spend provider requests.
 
 For command syntax, see [Commands](commands.md#historical-activity-archive).
 
@@ -16,7 +16,7 @@ Provider capabilities determine coverage. Unsupported historical inventory is re
 
 Every configured repository begins in discovery mode. Discovery inventories supported historical item identities without hydrating each item.
 
-Use `middleman archive start` to promote selected repositories, or all configured repositories, to full archival. Use `middleman archive pause` to stop new archive work without deleting data or progress. Start and pause are idempotent.
+Use `kenn-forge archive start` to promote selected repositories, or all configured repositories, to full archival. Use `kenn-forge archive pause` to stop new archive work without deleting data or progress. Start and pause are idempotent.
 
 Archive work is incremental and resumable across daemon restarts. Inventory pages record item identities and durable cursors; admitted item work then invokes normal sync and records the archive outcome. A failed or interrupted operation is retried from durable progress while unrelated repositories continue independently.
 
@@ -24,7 +24,7 @@ There is no manual cursor-reset command. Invalid cursors, provider page limits, 
 
 ## Status and coverage
 
-`middleman archive status` reports repository-scoped progress using the full provider identity. Common states are:
+`kenn-forge archive status` reports repository-scoped progress using the full provider identity. Common states are:
 
 - **current** — supported inventory and item hydration are complete;
 - **partial** — one or more inventory scopes or items are unsupported or terminally blocked;
@@ -37,7 +37,7 @@ Error details are sanitized. Removing a repository from configuration pauses its
 
 ## Reports
 
-`middleman archive report` reads SQLite for a UTC time range and optional repository filters. Summary output aggregates activity and contributors. Verbose output includes individual records. JSON output is available for automation.
+`kenn-forge archive report` reads SQLite for a UTC time range and optional repository filters. Summary output aggregates activity and contributors. Verbose output includes individual records. JSON output is available for automation.
 
 Reports reflect supported coverage. Check archive status before treating a report as complete.
 

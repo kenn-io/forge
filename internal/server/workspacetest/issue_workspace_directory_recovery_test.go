@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/apiclient/generated"
+	"go.kenn.io/forge/internal/apiclient/generated"
 )
 
 func TestIssueWorkspaceRecoversExpectedDirectory(t *testing.T) {
@@ -20,7 +20,7 @@ func TestIssueWorkspaceRecoversExpectedDirectory(t *testing.T) {
 	fixture := setupWorkspaceServerFixture(t, nil)
 	seedIssue(t, fixture.database, "acme", "widget", 7, "open")
 
-	branch := "middleman/issue-7"
+	branch := "kenn-forge/issue-7"
 	expectedPath := filepath.Join(
 		fixture.worktreeDir,
 		"github", "github.com", "acme", "widget", "issue-7",
@@ -75,7 +75,7 @@ func TestIssueWorkspaceDirectoryRecoveryRejectsMissingPath(t *testing.T) {
 	fixture := setupWorkspaceServerFixture(t, nil)
 	seedIssue(t, fixture.database, "acme", "widget", 7, "open")
 
-	branch := "middleman/issue-7"
+	branch := "kenn-forge/issue-7"
 	reuseDirectory := true
 	resp, err := fixture.client.HTTP.CreateIssueWorkspaceWithResponse(
 		t.Context(), "gh", "acme", "widget", 7,
@@ -127,7 +127,7 @@ func TestIssueWorkspaceDirectoryRecoveryReasons(t *testing.T) {
 				))
 				runGit(t, repo, "add", ".")
 				runGit(t, repo, "commit", "-m", "base")
-				runGit(t, repo, "worktree", "add", path, "-b", "middleman/issue-7", "HEAD")
+				runGit(t, repo, "worktree", "add", path, "-b", "kenn-forge/issue-7", "HEAD")
 			},
 			wantReason: "repository_mismatch",
 		},
@@ -138,7 +138,7 @@ func TestIssueWorkspaceDirectoryRecoveryReasons(t *testing.T) {
 			},
 			wantReason:    "branch_mismatch",
 			checkBranches: true,
-			wantExpected:  "middleman/issue-7",
+			wantExpected:  "kenn-forge/issue-7",
 			wantActual:    "other/branch",
 		},
 		{
@@ -148,7 +148,7 @@ func TestIssueWorkspaceDirectoryRecoveryReasons(t *testing.T) {
 			},
 			wantReason:    "branch_mismatch",
 			checkBranches: true,
-			wantExpected:  "middleman/issue-7",
+			wantExpected:  "kenn-forge/issue-7",
 			wantActual:    "",
 		},
 	}
@@ -167,7 +167,7 @@ func TestIssueWorkspaceDirectoryRecoveryReasons(t *testing.T) {
 			)
 			tt.prepare(t, fixture, expectedPath)
 
-			branch := "middleman/issue-7"
+			branch := "kenn-forge/issue-7"
 			reuseDirectory := true
 			resp, err := fixture.client.HTTP.CreateIssueWorkspaceWithResponse(
 				t.Context(), "gh", "acme", "widget", 7,
@@ -206,7 +206,7 @@ func TestIssueWorkspaceConflictRejectsAlternateBranchForExistingDirectory(t *tes
 	fixture := setupWorkspaceServerFixture(t, nil)
 	seedIssue(t, fixture.database, "acme", "widget", 7, "open")
 
-	branch := "middleman/issue-7-original-title"
+	branch := "kenn-forge/issue-7-original-title"
 	expectedPath := filepath.Join(
 		fixture.worktreeDir,
 		"github", "github.com", "acme", "widget", "issue-7",

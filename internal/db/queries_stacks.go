@@ -24,7 +24,7 @@ func (d *DB) listPRsForStacks(ctx context.Context, repoID int64, stateFilter str
 	rows, err := d.ro.QueryContext(ctx, `
 		SELECT id, number, title, head_branch, base_branch, state, ci_status, review_decision,
 		       head_repo_clone_url
-		FROM middleman_merge_requests
+		FROM forge_merge_requests
 		WHERE repo_id = ? `+stateFilter+`
 		ORDER BY number`,
 		repoID,
@@ -53,7 +53,7 @@ func (d *DB) listPRsForStacks(ctx context.Context, repoID int64, stateFilter str
 // UpsertStack inserts or updates a stack keyed by (repo_id, base_number).
 func (d *DB) UpsertStack(ctx context.Context, repoID int64, baseNumber int, name string) (int64, error) {
 	_, err := d.rw.ExecContext(ctx, `
-		INSERT INTO middleman_stacks (repo_id, base_number, name)
+		INSERT INTO forge_stacks (repo_id, base_number, name)
 		VALUES (?, ?, ?)
 		ON CONFLICT(repo_id, base_number) DO UPDATE SET
 			name = excluded.name, updated_at = datetime('now')`,
@@ -64,7 +64,7 @@ func (d *DB) UpsertStack(ctx context.Context, repoID int64, baseNumber int, name
 	}
 	var id int64
 	err = d.ro.QueryRowContext(ctx,
-		`SELECT id FROM middleman_stacks WHERE repo_id = ? AND base_number = ?`,
+		`SELECT id FROM forge_stacks WHERE repo_id = ? AND base_number = ?`,
 		repoID, baseNumber,
 	).Scan(&id)
 	if err != nil {
@@ -80,7 +80,7 @@ func (d *DB) UpsertStack(ctx context.Context, repoID int64, baseNumber int, name
 func (d *DB) ReplaceStackMembers(ctx context.Context, stackID int64, members []StackMember) error {
 	return d.Tx(ctx, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx,
-			`DELETE FROM middleman_stack_members WHERE stack_id = ?`, stackID,
+			`DELETE FROM forge_stack_members WHERE stack_id = ?`, stackID,
 		); err != nil {
 			return fmt.Errorf("delete old stack members: %w", err)
 		}
@@ -90,14 +90,14 @@ func (d *DB) ReplaceStackMembers(ctx context.Context, stackID int64, members []S
 		// Evict these PRs from any other stack to avoid unique-index conflict.
 		for _, m := range members {
 			if _, err := tx.ExecContext(ctx,
-				`DELETE FROM middleman_stack_members WHERE merge_request_id = ?`,
+				`DELETE FROM forge_stack_members WHERE merge_request_id = ?`,
 				m.MergeRequestID,
 			); err != nil {
 				return fmt.Errorf("evict existing stack member: %w", err)
 			}
 		}
 		stmt, err := tx.PrepareContext(ctx, `
-			INSERT INTO middleman_stack_members (stack_id, merge_request_id, position)
+			INSERT INTO forge_stack_members (stack_id, merge_request_id, position)
 			VALUES (?, ?, ?)`)
 		if err != nil {
 			return fmt.Errorf("prepare insert stack member: %w", err)
@@ -125,7 +125,7 @@ func (d *DB) ListStacksWithMembers(ctx context.Context, repoFilter string) ([]St
 		if strings.Count(pathKey, "/") > 1 {
 			var exists int
 			err := d.ro.QueryRowContext(ctx,
-				`SELECT 1 FROM middleman_repos WHERE repo_path_key = ? LIMIT 1`,
+				`SELECT 1 FROM forge_repos WHERE repo_path_key = ? LIMIT 1`,
 				pathKey,
 			).Scan(&exists)
 			if errors.Is(err, sql.ErrNoRows) {
@@ -139,8 +139,8 @@ func (d *DB) ListStacksWithMembers(ctx context.Context, repoFilter string) ([]St
 		args = append(args, pathKey)
 	}
 	conds = append(conds, `EXISTS (
-		SELECT 1 FROM middleman_stack_members sm2
-		JOIN middleman_merge_requests p2 ON p2.id = sm2.merge_request_id
+		SELECT 1 FROM forge_stack_members sm2
+		JOIN forge_merge_requests p2 ON p2.id = sm2.merge_request_id
 		WHERE sm2.stack_id = s.id AND p2.state = 'open')`)
 
 	where := "WHERE " + strings.Join(conds, " AND ")
@@ -148,8 +148,8 @@ func (d *DB) ListStacksWithMembers(ctx context.Context, repoFilter string) ([]St
 	stackQuery := fmt.Sprintf(`
 		SELECT s.id, s.repo_id, s.base_number, s.name, s.created_at, s.updated_at,
 		       r.owner, r.name
-		FROM middleman_stacks s
-		JOIN middleman_repos r ON r.id = s.repo_id
+		FROM forge_stacks s
+		JOIN forge_repos r ON r.id = s.repo_id
 		%s
 		ORDER BY s.updated_at DESC`, where)
 
@@ -187,8 +187,8 @@ func (d *DB) ListStacksWithMembers(ctx context.Context, repoFilter string) ([]St
 		SELECT sm.stack_id, sm.merge_request_id, sm.position,
 		       p.number, p.title, p.state, p.ci_status, p.review_decision,
 		       p.is_draft, p.base_branch, p.mergeable_state
-		FROM middleman_stack_members sm
-		JOIN middleman_merge_requests p ON p.id = sm.merge_request_id
+		FROM forge_stack_members sm
+		JOIN forge_merge_requests p ON p.id = sm.merge_request_id
 		WHERE sm.stack_id IN (` + sqlPlaceholders(len(stackIDs)) + `)
 		ORDER BY sm.stack_id, sm.position`
 
@@ -217,7 +217,7 @@ func (d *DB) ListStacksWithMembers(ctx context.Context, repoFilter string) ([]St
 func (d *DB) DeleteStaleStacks(ctx context.Context, repoID int64, activeStackIDs []int64) error {
 	if len(activeStackIDs) == 0 {
 		_, err := d.rw.ExecContext(ctx,
-			`DELETE FROM middleman_stacks WHERE repo_id = ?`, repoID)
+			`DELETE FROM forge_stacks WHERE repo_id = ?`, repoID)
 		if err != nil {
 			return fmt.Errorf("delete all stacks for repo: %w", err)
 		}
@@ -229,7 +229,7 @@ func (d *DB) DeleteStaleStacks(ctx context.Context, repoID int64, activeStackIDs
 		args = append(args, id)
 	}
 	_, err := d.rw.ExecContext(ctx,
-		`DELETE FROM middleman_stacks WHERE repo_id = ? AND id NOT IN (`+
+		`DELETE FROM forge_stacks WHERE repo_id = ? AND id NOT IN (`+
 			sqlPlaceholders(len(activeStackIDs))+`)`,
 		args...,
 	)
@@ -270,10 +270,10 @@ func (d *DB) getStackForPRWhere(ctx context.Context, where string, args ...any) 
 	var stack Stack
 	err := d.ro.QueryRowContext(ctx, `
 		SELECT s.id, s.repo_id, s.base_number, s.name, s.created_at, s.updated_at
-		FROM middleman_stacks s
-		JOIN middleman_stack_members sm ON sm.stack_id = s.id
-		JOIN middleman_merge_requests p ON p.id = sm.merge_request_id
-		JOIN middleman_repos r ON r.id = p.repo_id
+		FROM forge_stacks s
+		JOIN forge_stack_members sm ON sm.stack_id = s.id
+		JOIN forge_merge_requests p ON p.id = sm.merge_request_id
+		JOIN forge_repos r ON r.id = p.repo_id
 		`+where,
 		args...,
 	).Scan(&stack.ID, &stack.RepoID, &stack.BaseNumber, &stack.Name, &stack.CreatedAt, &stack.UpdatedAt)
@@ -288,8 +288,8 @@ func (d *DB) getStackForPRWhere(ctx context.Context, where string, args ...any) 
 		SELECT sm.stack_id, sm.merge_request_id, sm.position,
 		       p.number, p.title, p.state, p.ci_status, p.review_decision,
 		       p.is_draft, p.base_branch, p.mergeable_state
-		FROM middleman_stack_members sm
-		JOIN middleman_merge_requests p ON p.id = sm.merge_request_id
+		FROM forge_stack_members sm
+		JOIN forge_merge_requests p ON p.id = sm.merge_request_id
 		WHERE sm.stack_id = ?
 		ORDER BY sm.position`, stack.ID,
 	)
@@ -329,12 +329,12 @@ func (d *DB) ListMRsBlockedByStackConflicts(ctx context.Context, mrIDs []int64) 
 
 	rows, err := d.ro.QueryContext(ctx, `
 		SELECT DISTINCT target.merge_request_id
-		FROM middleman_stack_members target
-		JOIN middleman_merge_requests target_pr ON target_pr.id = target.merge_request_id
-		JOIN middleman_stack_members blocker
+		FROM forge_stack_members target
+		JOIN forge_merge_requests target_pr ON target_pr.id = target.merge_request_id
+		JOIN forge_stack_members blocker
 		  ON blocker.stack_id = target.stack_id
 		 AND blocker.position < target.position
-		JOIN middleman_merge_requests blocker_pr ON blocker_pr.id = blocker.merge_request_id
+		JOIN forge_merge_requests blocker_pr ON blocker_pr.id = blocker.merge_request_id
 		WHERE target.merge_request_id IN (`+sqlPlaceholders(len(mrIDs))+`)
 		  AND target_pr.state = 'open'
 		  AND blocker_pr.state != 'merged'

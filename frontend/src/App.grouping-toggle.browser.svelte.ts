@@ -1,5 +1,5 @@
 // Browser-tier reimplementation of frontend/tests/e2e-full/grouping-toggle.spec.ts.
-// The repo grouping toggle is a single store (middleman:groupingMode) shared
+// The repo grouping toggle is a single store (kenn-forge:groupingMode) shared
 // across the PR list, the issue list, and the threaded activity view, plus a
 // hide-org-name preference. This exercises the full app: the PR list defaults to
 // grouped repo headers and switches to per-item repo chips, the choice persists
@@ -298,9 +298,9 @@ describe("grouping toggle", () => {
   beforeEach(async () => {
     await page.viewport(1280, 900);
     hideBotIssues = false;
-    localStorage.removeItem("middleman:groupingMode");
-    localStorage.removeItem("middleman:groupByRepo");
-    localStorage.removeItem("middleman:hideOrgName");
+    localStorage.removeItem("kenn-forge:groupingMode");
+    localStorage.removeItem("kenn-forge:groupByRepo");
+    localStorage.removeItem("kenn-forge:hideOrgName");
   });
 
   afterEach(async () => {
@@ -338,7 +338,7 @@ describe("grouping toggle", () => {
     // Assert the choice is written to localStorage, not just held in module
     // state: this is what survives a real reload, and proves a regression that
     // kept grouping only in memory would fail here rather than silently pass.
-    await vi.waitFor(() => expect(localStorage.getItem("middleman:groupingMode")).toBe("flat"), WAIT);
+    await vi.waitFor(() => expect(localStorage.getItem("kenn-forge:groupingMode")).toBe("flat"), WAIT);
 
     // Remount then rereads that persisted value: localStorage survives teardown.
     mounted?.unmount();
@@ -391,7 +391,7 @@ describe("grouping toggle", () => {
       () => expect(document.querySelector(".pull-item .repo-name")?.textContent?.trim()).toBe("widgets"),
       WAIT,
     );
-    expect(localStorage.getItem("middleman:hideOrgName")).toBe("1");
+    expect(localStorage.getItem("kenn-forge:hideOrgName")).toBe("1");
 
     mounted?.unmount();
     mounted = await mountBrowserApp("/issues", { overrides: overrides() });

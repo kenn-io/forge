@@ -4,8 +4,8 @@ import (
 	"context"
 
 	giteasdk "code.gitea.io/sdk/gitea"
-	"go.kenn.io/middleman/internal/platform"
-	"go.kenn.io/middleman/internal/platform/gitealike"
+	"go.kenn.io/forge/internal/platform"
+	"go.kenn.io/forge/internal/platform/gitealike"
 )
 
 func (t *transport) CreatePullReview(

@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"go.kenn.io/middleman/internal/testutil/gitsafe"
+	"go.kenn.io/forge/internal/testutil/gitsafe"
 )
 
 func TestMain(m *testing.M) {

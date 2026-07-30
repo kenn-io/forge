@@ -44,8 +44,8 @@ describe("ReadyForReviewButton", () => {
         provider: "github",
         platformHost: "github.com",
         owner: "wesm",
-        name: "middleman",
-        repoPath: "wesm/middleman",
+        name: "kenn-forge",
+        repoPath: "wesm/kenn-forge",
         number: 141,
         size: "sm",
       },
@@ -53,10 +53,10 @@ describe("ReadyForReviewButton", () => {
 
     await fireEvent.click(screen.getByRole("button", { name: /ready for review/i }));
 
-    expect(mockLoadDetail).toHaveBeenCalledWith("wesm", "middleman", 141, {
+    expect(mockLoadDetail).toHaveBeenCalledWith("wesm", "kenn-forge", 141, {
       provider: "github",
       platformHost: "github.com",
-      repoPath: "wesm/middleman",
+      repoPath: "wesm/kenn-forge",
     });
     expect(mockLoadPulls).toHaveBeenCalledTimes(1);
   });
@@ -65,7 +65,7 @@ describe("ReadyForReviewButton", () => {
     mockPost.mockResolvedValue({
       error: {
         detail:
-          "marking wesm/middleman#141 ready for review: POST https://api.github.com/repos/wesm/middleman/pulls/141/ready_for_review: 404 Not Found []",
+          "marking wesm/kenn-forge#141 ready for review: POST https://api.github.com/repos/wesm/kenn-forge/pulls/141/ready_for_review: 404 Not Found []",
       },
     });
 
@@ -74,8 +74,8 @@ describe("ReadyForReviewButton", () => {
         provider: "github",
         platformHost: "github.com",
         owner: "wesm",
-        name: "middleman",
-        repoPath: "wesm/middleman",
+        name: "kenn-forge",
+        repoPath: "wesm/kenn-forge",
         number: 141,
         size: "sm",
       },
@@ -83,10 +83,10 @@ describe("ReadyForReviewButton", () => {
 
     await fireEvent.click(screen.getByRole("button", { name: /ready for review/i }));
 
-    expect(mockLoadDetail).toHaveBeenCalledWith("wesm", "middleman", 141, {
+    expect(mockLoadDetail).toHaveBeenCalledWith("wesm", "kenn-forge", 141, {
       provider: "github",
       platformHost: "github.com",
-      repoPath: "wesm/middleman",
+      repoPath: "wesm/kenn-forge",
     });
     expect(mockLoadPulls).toHaveBeenCalledTimes(1);
   });

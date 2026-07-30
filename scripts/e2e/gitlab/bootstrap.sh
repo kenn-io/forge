@@ -103,7 +103,7 @@ def create_personal_access_token(admin_token):
         "/users/1/personal_access_tokens",
         token=admin_token,
         form={
-            "name": f"middleman-e2e-{int(time.time())}",
+            "name": f"kenn-forge-e2e-{int(time.time())}",
             "scopes[]": "api",
             "expires_at": (date.today() + timedelta(days=30)).isoformat(),
         },
@@ -112,7 +112,7 @@ def create_personal_access_token(admin_token):
 
 
 def get_or_create_group(token, name, path, parent_id=None):
-    encoded = urllib.parse.quote(path if parent_id is None else f"middleman-fixture/{path}", safe="")
+    encoded = urllib.parse.quote(path if parent_id is None else f"kenn-forge-fixture/{path}", safe="")
     try:
         return request("GET", f"/groups/{encoded}", token=token)
     except Exception:
@@ -160,7 +160,7 @@ def ensure_label(token, project, name):
         "POST",
         f"/projects/{pid}/labels",
         token=token,
-        data={"name": name, "color": "#0052cc", "description": "Middleman GitLab e2e fixture"},
+        data={"name": name, "color": "#0052cc", "description": "Kenn Forge GitLab e2e fixture"},
     )
 
 
@@ -210,7 +210,7 @@ def ensure_merge_request(token, project, label):
             "source_branch": "feature/gitlab",
             "target_branch": "main",
             "title": "GitLab container MR",
-            "description": "Merge request seeded by middleman e2e.",
+            "description": "Merge request seeded by kenn-forge e2e.",
             "labels": label,
         },
     )
@@ -228,7 +228,7 @@ def ensure_issue(token, project, label):
         token=token,
         data={
             "title": "GitLab container issue",
-            "description": "Issue seeded by middleman e2e.",
+            "description": "Issue seeded by kenn-forge e2e.",
             "labels": label,
         },
     )
@@ -261,17 +261,17 @@ def ensure_tag_and_release(token, project):
         data={
             "name": "Version 1.0.0",
             "tag_name": "v1.0.0",
-            "description": "Release seeded by middleman e2e.",
+            "description": "Release seeded by kenn-forge e2e.",
         },
     )
 
 
 wait_for_gitlab()
 token = root_token()
-group = get_or_create_group(token, "middleman-fixture", "middleman-fixture")
+group = get_or_create_group(token, "kenn-forge-fixture", "kenn-forge-fixture")
 subgroup = get_or_create_group(token, "nested", "nested", group["id"])
-project = get_or_create_project(token, subgroup["id"], "middleman-fixture/nested/project-special")
-label = ensure_label(token, project, "middleman-fixture")
+project = get_or_create_project(token, subgroup["id"], "kenn-forge-fixture/nested/project-special")
+label = ensure_label(token, project, "kenn-forge-fixture")
 ensure_branch_and_file(token, project)
 mr = ensure_merge_request(token, project, label["name"])
 issue = ensure_issue(token, project, label["name"])
@@ -286,11 +286,11 @@ manifest = {
     "api_url": api_url,
     "host": parsed.netloc,
     "token": api_token,
-    "owner": "middleman-fixture/nested",
+    "owner": "kenn-forge-fixture/nested",
     "name": "project-special",
-    "repo_path": "middleman-fixture/nested/project-special",
-    "web_url": f"{base_url}/middleman-fixture/nested/project-special",
-    "clone_url": f"{base_url}/middleman-fixture/nested/project-special.git",
+    "repo_path": "kenn-forge-fixture/nested/project-special",
+    "web_url": f"{base_url}/kenn-forge-fixture/nested/project-special",
+    "clone_url": f"{base_url}/kenn-forge-fixture/nested/project-special.git",
     "default_branch": "main",
     "project_id": project["id"],
     "project_external_id": f"gid://gitlab/Project/{project['id']}",

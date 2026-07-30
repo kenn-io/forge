@@ -1,6 +1,6 @@
 <script lang="ts">
   import { SearchInput, Typeahead, type TypeaheadOption } from "@kenn-io/kit-ui";
-  import { SelectDropdown } from "@middleman/ui";
+  import { SelectDropdown } from "@kenn-forge/ui";
 
   import type { KataProjectSummary, KataTaskSearchFilters } from "../../api/kata/taskTypes.js";
 

@@ -393,7 +393,7 @@ func loadTestBranchCommits(
 		SELECT repo_id, branch_name, commit_sha, author_name, author_email,
 		       authored_at, committer_name, committer_email, committed_at,
 		       subject
-		FROM middleman_branch_commits
+		FROM forge_branch_commits
 		WHERE repo_id = ?`,
 		repoID,
 	)
@@ -438,7 +438,7 @@ func loadTestBranchCommitsByBranch(
 		SELECT repo_id, branch_name, commit_sha, author_name, author_email,
 		       authored_at, committer_name, committer_email, committed_at,
 		       subject
-		FROM middleman_branch_commits
+		FROM forge_branch_commits
 		WHERE repo_id = ?`,
 		repoID,
 	)
@@ -496,7 +496,7 @@ func loadTestBranchCommitLifecycle(
 	var updatedAt string
 	err := d.ro.QueryRow(`
 		SELECT created_at, updated_at
-		FROM middleman_branch_commits
+		FROM forge_branch_commits
 		WHERE repo_id = ? AND commit_sha = ?`,
 		repoID,
 		commitSHA,
@@ -517,7 +517,7 @@ func countTestBranchForcePushes(t *testing.T, d *DB, repoID int64) int {
 	var count int
 	err := d.ro.QueryRow(`
 		SELECT COUNT(*)
-		FROM middleman_branch_force_pushes
+		FROM forge_branch_force_pushes
 		WHERE repo_id = ?`,
 		repoID,
 	).Scan(&count)
@@ -534,7 +534,7 @@ func loadOnlyTestBranchForcePushAfterSHA(
 	var afterSHA string
 	err := d.ro.QueryRow(`
 		SELECT after_sha
-		FROM middleman_branch_force_pushes
+		FROM forge_branch_force_pushes
 		WHERE repo_id = ?`,
 		repoID,
 	).Scan(&afterSHA)
@@ -551,7 +551,7 @@ func loadOnlyTestBranchForcePushCreatedAt(
 	var createdAt string
 	err := d.ro.QueryRow(`
 		SELECT created_at
-		FROM middleman_branch_force_pushes
+		FROM forge_branch_force_pushes
 		WHERE repo_id = ?`,
 		repoID,
 	).Scan(&createdAt)

@@ -3,14 +3,14 @@
   import PlusIcon from "@lucide/svelte/icons/plus";
   import RotateCcwIcon from "@lucide/svelte/icons/rotate-ccw";
   import TrashIcon from "@lucide/svelte/icons/trash-2";
-  import { Button } from "@middleman/ui";
+  import { Button } from "@kenn-forge/ui";
   import type {
     FleetPeer,
     FleetSSHPeer,
     FleetSettings as FleetSettingsType,
     FleetSettingsUpdate,
-  } from "@middleman/ui/api/types";
-  import { showFlash } from "@middleman/ui/stores/flash";
+  } from "@kenn-forge/ui/api/types";
+  import { showFlash } from "@kenn-forge/ui/stores/flash";
   import { updateFleetSettings } from "../../api/settings.js";
   import { isEmbedded } from "../../stores/embed-config.svelte.js";
 
@@ -463,7 +463,7 @@
                 <td>
                   <input
                     bind:value={peer.remoteCommand}
-                    placeholder="middleman"
+                    placeholder="kenn-forge"
                     disabled={embedded || saving}
                     aria-label={`SSH peer ${label} remote command`}
                   />

@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strconv"
 
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/platform"
 )
 
 // inventoryPage advances one historical inventory scan by one canonical page:

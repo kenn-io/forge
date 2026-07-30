@@ -4,12 +4,12 @@ set -euo pipefail
 role="${1:?role is required}"
 config="/app/scripts/e2e/fleet/${role}.toml"
 data_dir="/data/${role}"
-binary="${data_dir}/middleman"
+binary="${data_dir}/kenn-forge"
 
 mkdir -p "${data_dir}"
 
 prepare_hub_config() {
-  local host_port="${MIDDLEMAN_FLEET_HOST_PORT:-}"
+  local host_port="${KENN_FORGE_FLEET_HOST_PORT:-}"
   if [[ -z "${host_port}" ]]; then
     return
   fi
@@ -64,8 +64,8 @@ case "${role}" in
 esac
 
 cleanup() {
-  if [[ -n "${middleman_pid:-}" ]]; then
-    kill "${middleman_pid}" 2>/dev/null || true
+  if [[ -n "${forge_pid:-}" ]]; then
+    kill "${forge_pid}" 2>/dev/null || true
   fi
   if [[ -n "${proxy_pid:-}" ]]; then
     kill "${proxy_pid}" 2>/dev/null || true
@@ -78,20 +78,20 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 go_build_args=(-o "${binary}")
-if [[ -n "${MIDDLEMAN_GO_BUILD_TAGS:-}" ]]; then
-  go_build_args=(-tags "${MIDDLEMAN_GO_BUILD_TAGS}" "${go_build_args[@]}")
+if [[ -n "${KENN_FORGE_GO_BUILD_TAGS:-}" ]]; then
+  go_build_args=(-tags "${KENN_FORGE_GO_BUILD_TAGS}" "${go_build_args[@]}")
 fi
-go build "${go_build_args[@]}" ./cmd/middleman
+go build "${go_build_args[@]}" ./cmd/kenn-forge
 
 "${binary}" serve --config "${config}" &
-middleman_pid=$!
+forge_pid=$!
 
 for _ in $(seq 1 120); do
   if curl -fsS http://127.0.0.1:8091/healthz >/dev/null 2>&1; then
     break
   fi
-  if ! kill -0 "${middleman_pid}" 2>/dev/null; then
-    wait "${middleman_pid}"
+  if ! kill -0 "${forge_pid}" 2>/dev/null; then
+    wait "${forge_pid}"
     exit $?
   fi
   sleep 1
@@ -101,4 +101,4 @@ curl -fsS http://127.0.0.1:8091/healthz >/dev/null
 socat TCP-LISTEN:18091,fork,reuseaddr,bind=0.0.0.0 TCP:127.0.0.1:8091 &
 proxy_pid=$!
 
-wait -n "${middleman_pid}" "${proxy_pid}"
+wait -n "${forge_pid}" "${proxy_pid}"

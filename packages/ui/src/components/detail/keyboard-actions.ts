@@ -154,7 +154,7 @@
 import type { PullRequest } from "../../api/types.js";
 import { isProblem, problemConflictContext, problemConflictReason } from "../../api/problems.js";
 import { providerItemPath, providerRouteParams, type ProviderRouteRef } from "../../api/provider-routes.js";
-import type { MiddlemanClient } from "../../types.js";
+import type { ForgeClient } from "../../types.js";
 import type { DetailStore } from "../../stores/detail.svelte.js";
 import type { PullsStore } from "../../stores/pulls.svelte.js";
 
@@ -193,7 +193,7 @@ export interface PRDetailActionInput {
   /** True iff the PR is stale (route changed mid-load, etc.). */
   stale: boolean;
   stores: PRDetailActionStores;
-  client: MiddlemanClient;
+  client: ForgeClient;
   /**
    * True when the provider supports mutation head binding
    * (capabilities.mutation_head_binding). Merge is unavailable until the

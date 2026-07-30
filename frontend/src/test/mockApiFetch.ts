@@ -1,4 +1,4 @@
-// Shared mock of the middleman REST API: one set of fixtures and one
+// Shared mock of the kenn-forge REST API: one set of fixtures and one
 // /api/v1 route matcher consumed by two thin adapters so the suites cannot
 // drift apart:
 //

@@ -15,8 +15,8 @@ vi.stubGlobal("localStorage", {
   clear: () => storage.clear(),
 });
 
-import { createDiffStore } from "@middleman/ui/stores/diff";
-import type { DiffScope, DiffStoreOptions } from "@middleman/ui/stores/diff";
+import { createDiffStore } from "@kenn-forge/ui/stores/diff";
+import type { DiffScope, DiffStoreOptions } from "@kenn-forge/ui/stores/diff";
 
 type TestClient = NonNullable<DiffStoreOptions["client"]>;
 

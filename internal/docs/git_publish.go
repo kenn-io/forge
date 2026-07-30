@@ -446,7 +446,7 @@ func (r *Registry) stagePublishSet(ctx context.Context, root string, changes []P
 }
 
 func (r *Registry) runCommit(ctx context.Context, root, message string) (string, error) {
-	messageFile, err := os.CreateTemp("", "middleman-docs-commit-message-*")
+	messageFile, err := os.CreateTemp("", "kenn-forge-docs-commit-message-*")
 	if err != nil {
 		return "", err
 	}

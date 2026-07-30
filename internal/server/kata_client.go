@@ -11,8 +11,8 @@ import (
 	"github.com/doordash-oss/oapi-codegen-dd/v3/pkg/runtime"
 	katagenerated "go.kenn.io/kata/pkg/client/generated"
 
-	"go.kenn.io/middleman/internal/kata"
-	"go.kenn.io/middleman/internal/server/kataapi"
+	"go.kenn.io/forge/internal/kata"
+	"go.kenn.io/forge/internal/server/kataapi"
 )
 
 const (
@@ -20,7 +20,7 @@ const (
 
 	// Generated responses are decoded from a complete byte slice by the
 	// generated runtime. Keep a generous default ceiling while still bounding
-	// the memory a configured daemon can make Middleman retain per request.
+	// the memory a configured daemon can make Kenn Forge retain per request.
 	kataGeneratedResponseMaxBytes = int64(32 << 20)
 
 	// Authority and graph endpoints legitimately return substantially more

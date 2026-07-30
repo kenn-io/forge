@@ -32,16 +32,16 @@ func TestOwnerAttachInputAndReplay(t *testing.T) {
 	go func() {
 		done <- RunOwner(ctx, Options{
 			Root:    root,
-			Session: "middleman-test",
+			Session: "kenn-forge-test",
 			Cwd:     t.TempDir(),
 			Command: []string{"sh", "-c", "printf ready; while IFS= read -r line; do echo got:$line; done"},
 		})
 	}()
 
 	client := Client{Root: root}
-	waitOwnerReady(t, done, client, "middleman-test")
+	waitOwnerReady(t, done, client, "kenn-forge-test")
 
-	first, err := client.Attach(context.Background(), "middleman-test", 120, 30)
+	first, err := client.Attach(context.Background(), "kenn-forge-test", 120, 30)
 	require.NoError(err)
 	defer first.Close()
 
@@ -50,13 +50,13 @@ func TestOwnerAttachInputAndReplay(t *testing.T) {
 	require.Contains(readUntil(t, first.Output, "got:hello"), "got:hello")
 	first.Close()
 
-	second, err := client.Attach(context.Background(), "middleman-test", 100, 20)
+	second, err := client.Attach(context.Background(), "kenn-forge-test", 100, 20)
 	require.NoError(err)
 	defer second.Close()
 
 	assert.Contains(readUntil(t, second.Output, "got:hello"), "got:hello")
 	require.NoError(second.Resize(90, 25))
-	require.NoError(client.Stop(context.Background(), "middleman-test"))
+	require.NoError(client.Stop(context.Background(), "kenn-forge-test"))
 
 	select {
 	case err := <-done:
@@ -73,22 +73,22 @@ func TestOwnerStopWhileRunOwnerReturns(t *testing.T) {
 	}
 
 	root := t.TempDir()
-	paths, err := NewSessionPaths(root, "middleman-stop-race")
+	paths, err := NewSessionPaths(root, "kenn-forge-stop-race")
 	require.NoError(err)
 	done := make(chan error, 1)
 	go func() {
 		done <- RunOwner(t.Context(), Options{
 			Root:    root,
-			Session: "middleman-stop-race",
+			Session: "kenn-forge-stop-race",
 			Cwd:     t.TempDir(),
 			Command: []string{"sh", "-c", "while :; do sleep 0.05; done"},
 		})
 	}()
 
 	client := Client{Root: root}
-	waitOwnerReady(t, done, client, "middleman-stop-race")
+	waitOwnerReady(t, done, client, "kenn-forge-stop-race")
 
-	require.NoError(client.Stop(context.Background(), "middleman-stop-race"))
+	require.NoError(client.Stop(context.Background(), "kenn-forge-stop-race"))
 	_, err = os.Stat(paths.Dir)
 	require.True(os.IsNotExist(err))
 	select {
@@ -107,7 +107,7 @@ func TestOwnerQuickExitRemainsAttachable(t *testing.T) {
 	}
 
 	root := t.TempDir()
-	session := "middleman-quick-exit"
+	session := "kenn-forge-quick-exit"
 	done := make(chan error, 1)
 	go func() {
 		done <- RunOwner(t.Context(), Options{
@@ -151,8 +151,8 @@ func TestOwnerPTYEOFClosesAttachmentBeforeProcessWait(t *testing.T) {
 	}
 
 	root := t.TempDir()
-	session := "middleman-pty-eof-before-wait"
-	t.Setenv("MIDDLEMAN_PTYOWNER_CLOSE_PTY_HELPER", "1")
+	session := "kenn-forge-pty-eof-before-wait"
+	t.Setenv("KENN_FORGE_PTYOWNER_CLOSE_PTY_HELPER", "1")
 	done := make(chan error, 1)
 	go func() {
 		done <- RunOwner(t.Context(), Options{
@@ -191,7 +191,7 @@ func TestOwnerPTYEOFClosesAttachmentBeforeProcessWait(t *testing.T) {
 }
 
 func TestPtyOwnerClosePTYThenSleepHelperProcess(t *testing.T) {
-	if os.Getenv("MIDDLEMAN_PTYOWNER_CLOSE_PTY_HELPER") != "1" {
+	if os.Getenv("KENN_FORGE_PTYOWNER_CLOSE_PTY_HELPER") != "1" {
 		return
 	}
 	ignorePtyOwnerHangupForTest()
@@ -210,7 +210,7 @@ func TestOwnerDetachedBeforeExitKeepsPostExitAttachWindow(t *testing.T) {
 	}
 
 	root := t.TempDir()
-	session := "middleman-detach-before-exit"
+	session := "kenn-forge-detach-before-exit"
 	done := make(chan error, 1)
 	go func() {
 		done <- RunOwner(t.Context(), Options{
@@ -335,7 +335,7 @@ func TestOwnerRejectsOversizedUnauthenticatedRequest(t *testing.T) {
 	}
 
 	root := t.TempDir()
-	session := "middleman-oversized-request"
+	session := "kenn-forge-oversized-request"
 	done := make(chan error, 1)
 	go func() {
 		done <- RunOwner(t.Context(), Options{
@@ -384,7 +384,7 @@ func TestOwnerRejectsOversizedUnauthenticatedRequest(t *testing.T) {
 func TestOwnerHelperEnvironmentStripsCredentials(t *testing.T) {
 	out := ownerHelperEnvironment([]string{
 		"PATH=/usr/bin",
-		"MIDDLEMAN_GITHUB_TOKEN=secret-1",
+		"KENN_FORGE_GITHUB_TOKEN=secret-1",
 		"GITHUB_TOKEN=secret-2",
 		"GH_TOKEN_WORK=secret-3",
 		"KEEP=value",
@@ -399,19 +399,19 @@ func TestOwnerHelperEnvironmentStripsCredentials(t *testing.T) {
 func TestClientOwnerHelperEnvironmentAppliesSessionEnvironmentPolicy(t *testing.T) {
 	client := Client{
 		StripEnvVars: []string{"WORKSPACE_TOKEN"},
-		ExtraEnv:     map[string]string{"MIDDLEMAN_RUNTIME_SESSION_KEY": "runtime-1"},
+		ExtraEnv:     map[string]string{"KENN_FORGE_RUNTIME_SESSION_KEY": "runtime-1"},
 	}
 	out := client.ownerHelperEnvironment([]string{
 		"PATH=/usr/bin",
 		"WORKSPACE_TOKEN=secret",
-		"MIDDLEMAN_RUNTIME_SESSION_KEY=stale-runtime",
+		"KENN_FORGE_RUNTIME_SESSION_KEY=stale-runtime",
 		"KEEP=value",
 	})
 
 	require.ElementsMatch(t, []string{
 		"PATH=/usr/bin",
 		"KEEP=value",
-		"MIDDLEMAN_RUNTIME_SESSION_KEY=runtime-1",
+		"KENN_FORGE_RUNTIME_SESSION_KEY=runtime-1",
 	}, out)
 }
 
@@ -419,7 +419,7 @@ func TestClientStopTreatsStaleOwnerStateAsAbsent(t *testing.T) {
 	require := require.New(t)
 
 	root := t.TempDir()
-	paths, err := NewSessionPaths(root, "middleman-stale")
+	paths, err := NewSessionPaths(root, "kenn-forge-stale")
 	require.NoError(err)
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -436,13 +436,13 @@ func TestClientStopTreatsStaleOwnerStateAsAbsent(t *testing.T) {
 		_ = conn.Close()
 	}()
 	require.NoError(writeState(paths, ownerState{
-		Session: "middleman-stale",
+		Session: "kenn-forge-stale",
 		Addr:    addr,
 		Token:   "token",
 		Cwd:     t.TempDir(),
 	}))
 
-	err = (&Client{Root: root}).Stop(context.Background(), "middleman-stale")
+	err = (&Client{Root: root}).Stop(context.Background(), "kenn-forge-stale")
 
 	require.NoError(err)
 	<-accepted
@@ -454,10 +454,10 @@ func TestClientEnsurePreservesStateOnContextCancellation(t *testing.T) {
 	require := require.New(t)
 
 	root := t.TempDir()
-	paths, err := NewSessionPaths(root, "middleman-canceled-ensure")
+	paths, err := NewSessionPaths(root, "kenn-forge-canceled-ensure")
 	require.NoError(err)
 	require.NoError(writeState(paths, ownerState{
-		Session: "middleman-canceled-ensure",
+		Session: "kenn-forge-canceled-ensure",
 		Addr:    "127.0.0.1:1",
 		Token:   "token",
 		Cwd:     t.TempDir(),
@@ -465,7 +465,7 @@ func TestClientEnsurePreservesStateOnContextCancellation(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	err = (&Client{Root: root}).Ensure(ctx, "middleman-canceled-ensure", t.TempDir())
+	err = (&Client{Root: root}).Ensure(ctx, "kenn-forge-canceled-ensure", t.TempDir())
 
 	require.Error(err)
 	_, err = os.Stat(paths.Dir)
@@ -487,15 +487,15 @@ func TestClientEnsureSerializesConcurrentStarts(t *testing.T) {
 		InProcess: true,
 		Command: []string{
 			"sh", "-c",
-			"printf start >> \"$MIDDLEMAN_START_RECORD\"; " +
-				"while [ ! -f \"$MIDDLEMAN_STOP_FILE\" ]; do sleep 0.05; done",
+			"printf start >> \"$KENN_FORGE_START_RECORD\"; " +
+				"while [ ! -f \"$KENN_FORGE_STOP_FILE\" ]; do sleep 0.05; done",
 		},
 	}
-	t.Setenv("MIDDLEMAN_START_RECORD", record)
-	t.Setenv("MIDDLEMAN_STOP_FILE", stop)
+	t.Setenv("KENN_FORGE_START_RECORD", record)
+	t.Setenv("KENN_FORGE_STOP_FILE", stop)
 	t.Cleanup(func() {
 		_ = os.WriteFile(stop, []byte("stop"), 0o644)
-		_ = client.Stop(context.Background(), "middleman-concurrent-ensure")
+		_ = client.Stop(context.Background(), "kenn-forge-concurrent-ensure")
 	})
 
 	const callers = 8
@@ -507,7 +507,7 @@ func TestClientEnsureSerializesConcurrentStarts(t *testing.T) {
 			<-start
 			errs <- client.Ensure(
 				context.Background(),
-				"middleman-concurrent-ensure",
+				"kenn-forge-concurrent-ensure",
 				dir,
 			)
 		})
@@ -529,10 +529,10 @@ func TestClientStopPreservesStateOnContextCancellation(t *testing.T) {
 	require := require.New(t)
 
 	root := t.TempDir()
-	paths, err := NewSessionPaths(root, "middleman-canceled-stop")
+	paths, err := NewSessionPaths(root, "kenn-forge-canceled-stop")
 	require.NoError(err)
 	require.NoError(writeState(paths, ownerState{
-		Session: "middleman-canceled-stop",
+		Session: "kenn-forge-canceled-stop",
 		Addr:    "127.0.0.1:1",
 		Token:   "token",
 		Cwd:     t.TempDir(),
@@ -540,7 +540,7 @@ func TestClientStopPreservesStateOnContextCancellation(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	err = (&Client{Root: root}).Stop(ctx, "middleman-canceled-stop")
+	err = (&Client{Root: root}).Stop(ctx, "kenn-forge-canceled-stop")
 
 	require.Error(err)
 	_, err = os.Stat(paths.Dir)
@@ -551,7 +551,7 @@ func TestClientPingHonorsContextAfterConnect(t *testing.T) {
 	require := require.New(t)
 
 	root := t.TempDir()
-	paths, err := NewSessionPaths(root, "middleman-silent-owner")
+	paths, err := NewSessionPaths(root, "kenn-forge-silent-owner")
 	require.NoError(err)
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -565,7 +565,7 @@ func TestClientPingHonorsContextAfterConnect(t *testing.T) {
 		}
 	}()
 	require.NoError(writeState(paths, ownerState{
-		Session: "middleman-silent-owner",
+		Session: "kenn-forge-silent-owner",
 		Addr:    listener.Addr().String(),
 		Token:   "token",
 		Cwd:     t.TempDir(),
@@ -573,7 +573,7 @@ func TestClientPingHonorsContextAfterConnect(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
-	err = (&Client{Root: root}).Ping(ctx, "middleman-silent-owner")
+	err = (&Client{Root: root}).Ping(ctx, "kenn-forge-silent-owner")
 
 	require.Error(err)
 	select {
@@ -589,21 +589,21 @@ func TestClientOwnerCommandUsesExternalManagerDirectly(t *testing.T) {
 	client := Client{
 		Root:        "/tmp/owner-root",
 		ExeArgs:     []string{"kept"},
-		ManagerPath: "/tmp/middleman-pty-manager",
+		ManagerPath: "/tmp/kenn-forge-pty-manager",
 	}
 
 	exe, args := client.ownerCommand(
-		"/tmp/middleman",
-		"middleman-test",
+		"/tmp/kenn-forge",
+		"kenn-forge-test",
 		"/tmp/worktree",
 		`["sh"]`,
 	)
 
-	assert.Equal("/tmp/middleman-pty-manager", exe)
+	assert.Equal("/tmp/kenn-forge-pty-manager", exe)
 	assert.Equal([]string{
 		"kept",
 		"-root", "/tmp/owner-root",
-		"-session", "middleman-test",
+		"-session", "kenn-forge-test",
 		"-cwd", "/tmp/worktree",
 		"-command-json", `["sh"]`,
 	}, args)
@@ -631,13 +631,13 @@ func TestOwnerDialTargetParsesTransportAddresses(t *testing.T) {
 		},
 		{
 			name:        "unix",
-			raw:         "unix:///tmp/middleman.sock",
+			raw:         "unix:///tmp/forge.sock",
 			wantNetwork: "unix",
-			wantAddr:    "/tmp/middleman.sock",
+			wantAddr:    "/tmp/forge.sock",
 		},
 		{
 			name:    "unsupported scheme",
-			raw:     "npipe://middleman/test",
+			raw:     "npipe://kenn-forge/test",
 			wantErr: "unsupported pty owner address scheme",
 		},
 	}
@@ -660,9 +660,9 @@ func TestOwnerDialTargetParsesTransportAddresses(t *testing.T) {
 
 func TestClientEnsuresExternalManager(t *testing.T) {
 	require := require.New(t)
-	managerPath := os.Getenv("MIDDLEMAN_PTY_MANAGER_TEST")
+	managerPath := os.Getenv("KENN_FORGE_PTY_MANAGER_TEST")
 	if managerPath == "" {
-		t.Skip("set MIDDLEMAN_PTY_MANAGER_TEST to an external pty manager binary")
+		t.Skip("set KENN_FORGE_PTY_MANAGER_TEST to an external pty manager binary")
 	}
 
 	root := t.TempDir()
@@ -675,13 +675,13 @@ func TestClientEnsuresExternalManager(t *testing.T) {
 		},
 	}
 
-	require.NoError(client.Ensure(t.Context(), "middleman-rust-test", t.TempDir()))
+	require.NoError(client.Ensure(t.Context(), "kenn-forge-rust-test", t.TempDir()))
 	t.Cleanup(func() {
-		_ = client.Stop(context.Background(), "middleman-rust-test")
+		_ = client.Stop(context.Background(), "kenn-forge-rust-test")
 	})
 
 	attachment, err := client.Attach(
-		context.Background(), "middleman-rust-test", 120, 30,
+		context.Background(), "kenn-forge-rust-test", 120, 30,
 	)
 	require.NoError(err)
 	defer attachment.Close()
@@ -696,9 +696,9 @@ func TestClientEnsuresExternalManagerWithPowerShell(t *testing.T) {
 		t.Skip("PowerShell PTY manager startup coverage is Windows-specific")
 	}
 	require := require.New(t)
-	managerPath := os.Getenv("MIDDLEMAN_PTY_MANAGER_TEST")
+	managerPath := os.Getenv("KENN_FORGE_PTY_MANAGER_TEST")
 	if managerPath == "" {
-		t.Skip("set MIDDLEMAN_PTY_MANAGER_TEST to an external pty manager binary")
+		t.Skip("set KENN_FORGE_PTY_MANAGER_TEST to an external pty manager binary")
 	}
 
 	root := filepath.Join(t.TempDir(), strings.Repeat("long-owner-root-", 8))
@@ -711,13 +711,13 @@ func TestClientEnsuresExternalManagerWithPowerShell(t *testing.T) {
 		},
 	}
 
-	require.NoError(client.Ensure(t.Context(), "middleman-powershell-test", t.TempDir()))
+	require.NoError(client.Ensure(t.Context(), "kenn-forge-powershell-test", t.TempDir()))
 	t.Cleanup(func() {
-		_ = client.Stop(context.Background(), "middleman-powershell-test")
+		_ = client.Stop(context.Background(), "kenn-forge-powershell-test")
 	})
 
 	attachment, err := client.Attach(
-		context.Background(), "middleman-powershell-test", 120, 30,
+		context.Background(), "kenn-forge-powershell-test", 120, 30,
 	)
 	require.NoError(err)
 	defer attachment.Close()
@@ -731,11 +731,11 @@ func TestClientEnsuresExternalManagerWithGoTestHelper(t *testing.T) {
 		t.Skip("Windows ConPTY coverage for Go test helpers")
 	}
 	require := require.New(t)
-	managerPath := os.Getenv("MIDDLEMAN_PTY_MANAGER_TEST")
+	managerPath := os.Getenv("KENN_FORGE_PTY_MANAGER_TEST")
 	if managerPath == "" {
-		t.Skip("set MIDDLEMAN_PTY_MANAGER_TEST to an external pty manager binary")
+		t.Skip("set KENN_FORGE_PTY_MANAGER_TEST to an external pty manager binary")
 	}
-	t.Setenv("MIDDLEMAN_PTYOWNER_TEST_HELPER", "1")
+	t.Setenv("KENN_FORGE_PTYOWNER_TEST_HELPER", "1")
 
 	root := filepath.Join(t.TempDir(), strings.Repeat("long-owner-root-", 8))
 	require.NoError(os.MkdirAll(root, 0o755))
@@ -750,13 +750,13 @@ func TestClientEnsuresExternalManagerWithGoTestHelper(t *testing.T) {
 		},
 	}
 
-	require.NoError(client.Ensure(t.Context(), "middleman-go-helper-test", t.TempDir()))
+	require.NoError(client.Ensure(t.Context(), "kenn-forge-go-helper-test", t.TempDir()))
 	t.Cleanup(func() {
-		_ = client.Stop(context.Background(), "middleman-go-helper-test")
+		_ = client.Stop(context.Background(), "kenn-forge-go-helper-test")
 	})
 
 	attachment, err := client.Attach(
-		context.Background(), "middleman-go-helper-test", 120, 30,
+		context.Background(), "kenn-forge-go-helper-test", 120, 30,
 	)
 	require.NoError(err)
 	defer attachment.Close()
@@ -780,7 +780,7 @@ func TestBoundedOutputBufferRetainsTail(t *testing.T) {
 }
 
 func TestPtyOwnerEchoHelperProcess(t *testing.T) {
-	if os.Getenv("MIDDLEMAN_PTYOWNER_TEST_HELPER") != "1" {
+	if os.Getenv("KENN_FORGE_PTYOWNER_TEST_HELPER") != "1" {
 		return
 	}
 	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
@@ -804,7 +804,7 @@ func TestExternalManagerAttachmentWritesUseAttachConnection(t *testing.T) {
 	}
 
 	root := t.TempDir()
-	session := "middleman-rust-attach"
+	session := "kenn-forge-rust-attach"
 	paths, err := NewSessionPaths(root, session)
 	require.NoError(err)
 	require.NoError(createPrivateDir(paths.Dir))
@@ -857,7 +857,7 @@ func TestExternalManagerAttachmentWritesUseAttachConnection(t *testing.T) {
 
 	client := Client{
 		Root:        root,
-		ManagerPath: "/tmp/middleman-pty-manager",
+		ManagerPath: "/tmp/kenn-forge-pty-manager",
 	}
 	attachment, err := client.Attach(context.Background(), session, 120, 30)
 	require.NoError(err)

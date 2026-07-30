@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/forge/internal/db"
 )
 
 func TestHostRuntimeCommandSessionLifecycle(t *testing.T) {
@@ -143,11 +143,11 @@ func TestHostRuntimeStoredSessionSurvivesRestart(t *testing.T) {
 	defer ts.Close()
 
 	// A stored row without a live runtime session models a host session
-	// surviving from before a middleman restart.
+	// surviving from before a kenn-forge restart.
 	require.NoError(srv.db.UpsertHostRuntimeTmuxSession(
 		context.Background(), &db.HostRuntimeTmuxSession{
 			SessionKey:  "surface:host:console:console:root",
-			SessionName: "middleman-stored-console",
+			SessionName: "kenn-forge-stored-console",
 			Label:       "Stored Console",
 			CWD:         "/tmp",
 		},
@@ -163,7 +163,7 @@ func TestHostRuntimeStoredSessionSurvivesRestart(t *testing.T) {
 	require.Len(listBody.Sessions, 1)
 	assert.Equal("Stored Console", listBody.Sessions[0]["label"])
 	assert.Equal(
-		"middleman-stored-console", listBody.Sessions[0]["tmux_session"],
+		"kenn-forge-stored-console", listBody.Sessions[0]["tmux_session"],
 	)
 
 	resp = httpDo(t, ts, http.MethodDelete,
@@ -172,7 +172,7 @@ func TestHostRuntimeStoredSessionSurvivesRestart(t *testing.T) {
 	require.Equal(http.StatusNoContent, resp.StatusCode)
 	resp.Body.Close()
 
-	assertFakeTmuxKilledSession(t, recordPath, "middleman-stored-console")
+	assertFakeTmuxKilledSession(t, recordPath, "kenn-forge-stored-console")
 	rows, err := srv.db.ListHostRuntimeTmuxSessions(context.Background())
 	require.NoError(err)
 	assert.Empty(rows)

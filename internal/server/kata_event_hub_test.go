@@ -21,8 +21,8 @@ import (
 	"github.com/stretchr/testify/require"
 	katagenerated "go.kenn.io/kata/pkg/client/generated"
 
-	"go.kenn.io/middleman/internal/kata"
-	"go.kenn.io/middleman/internal/server/kataapi"
+	"go.kenn.io/forge/internal/kata"
+	"go.kenn.io/forge/internal/server/kataapi"
 )
 
 func TestKataFrontendEventRegistryEnsureDoesNotWaitForCatchUp(t *testing.T) {
@@ -1022,7 +1022,7 @@ func TestKataFrontendEventPublisherCoalescesBurst(t *testing.T) {
 	}
 }
 
-func TestKataTaskEventsEndpointEmitsResetThenMiddlemanInvalidationFrame(t *testing.T) {
+func TestKataTaskEventsEndpointEmitsResetThenForgeInvalidationFrame(t *testing.T) {
 	assert := assert.New(t)
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -1048,20 +1048,20 @@ name = "primary"
 url = "`+upstream.URL+`"
 	`)
 	srv, _ := setupTestServer(t)
-	middleman := httptest.NewServer(srv)
+	forge := httptest.NewServer(srv)
 
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(func() {
 		cancel()
 		srv.kataEvents.Close()
-		middleman.Close()
+		forge.Close()
 		upstream.Close()
 	})
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, middleman.URL+"/api/v1/kata/tasks/events", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, forge.URL+"/api/v1/kata/tasks/events", nil)
 	require.NoError(t, err)
 	req.Header.Set(kataapi.DaemonHeaderName, "primary")
 	req.Header.Set("Last-Event-ID", "0")
-	response, err := middleman.Client().Do(req)
+	response, err := forge.Client().Do(req)
 	require.NoError(t, err)
 	defer func() { _ = response.Body.Close() }()
 	scanner := bufio.NewScanner(response.Body)
@@ -1104,7 +1104,7 @@ name = "primary"
 url = "`+upstream.URL+`"
 	`)
 	srv, _ := setupTestServer(t)
-	middleman := httptest.NewServer(srv)
+	forge := httptest.NewServer(srv)
 	daemon, problem := srv.kataAPI.SelectDaemonForID("primary")
 	require.Nil(problem)
 	binding := requireKataFrontendEventBinding(t, srv.kataEvents, daemon)
@@ -1117,13 +1117,13 @@ url = "`+upstream.URL+`"
 	t.Cleanup(func() {
 		cancel()
 		srv.kataEvents.Close()
-		middleman.Close()
+		forge.Close()
 		upstream.Close()
 	})
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, middleman.URL+"/api/v1/kata/tasks/events", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, forge.URL+"/api/v1/kata/tasks/events", nil)
 	require.NoError(err)
 	req.Header.Set(kataapi.DaemonHeaderName, "primary")
-	response, err := middleman.Client().Do(req)
+	response, err := forge.Client().Do(req)
 	require.NoError(err)
 	defer func() { _ = response.Body.Close() }()
 	scanner := bufio.NewScanner(response.Body)

@@ -7,9 +7,9 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v89/github"
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/platform"
-	platformgithub "go.kenn.io/middleman/internal/platform/github"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/platform"
+	platformgithub "go.kenn.io/forge/internal/platform/github"
 )
 
 // sanitizeURL returns the URL if it uses a safe scheme, or empty string.
@@ -255,7 +255,7 @@ func DeriveReviewDecision(reviews []*gh.PullRequestReview) string {
 }
 
 // mapGraphQLReviewDecision converts GitHub's authoritative reviewDecision enum
-// into middleman's stored review decision. The second return reports whether
+// into kenn-forge's stored review decision. The second return reports whether
 // the provider supplied an authoritative decision: a non-empty enum. A null or
 // empty reviewDecision means the repository enforces no review decision, so
 // callers must derive the aggregate from the reviews themselves rather than
@@ -268,7 +268,7 @@ func mapGraphQLReviewDecision(raw string) (string, bool) {
 		return "changes_requested", true
 	case "REVIEW_REQUIRED":
 		// Reviews are required but no blocking change or sufficient approval
-		// exists yet, which middleman represents as no actionable decision.
+		// exists yet, which kenn-forge represents as no actionable decision.
 		return "", true
 	default:
 		return "", false

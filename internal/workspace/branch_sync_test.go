@@ -11,9 +11,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/gitclone"
-	"go.kenn.io/middleman/internal/testutil/gitfake"
-	"go.kenn.io/middleman/internal/tokenauth"
+	"go.kenn.io/forge/internal/gitclone"
+	"go.kenn.io/forge/internal/testutil/gitfake"
+	"go.kenn.io/forge/internal/tokenauth"
 )
 
 // branchSyncTestManager builds a Manager with no clone manager configured, so
@@ -159,8 +159,8 @@ func TestPushWorktreeBranchUsesAuthenticatedRunnerAndMutationAuth(t *testing.T) 
 	require.NoError(os.WriteFile(filepath.Join(fakeDir, "git"), []byte(`#!/bin/sh
 set -eu
 `+gitfake.CredentialHelperRunner+`
-real="${MIDDLEMAN_TEST_REAL_GIT:?}"
-capture="${MIDDLEMAN_TEST_GIT_CAPTURE:?}"
+real="${KENN_FORGE_TEST_REAL_GIT:?}"
+capture="${KENN_FORGE_TEST_GIT_CAPTURE:?}"
 op="${1:-}"
 case "$op" in
 push|fetch)
@@ -189,11 +189,11 @@ push|fetch)
 esac
 exec "$real" "$@"
 `), 0o755))
-	t.Setenv("MIDDLEMAN_TEST_REAL_GIT", realGit)
-	t.Setenv("MIDDLEMAN_TEST_GIT_CAPTURE", capturePath)
+	t.Setenv("KENN_FORGE_TEST_REAL_GIT", realGit)
+	t.Setenv("KENN_FORGE_TEST_GIT_CAPTURE", capturePath)
 	t.Setenv("PATH", fakeDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	const patEnv = "MIDDLEMAN_TEST_BRANCH_SYNC_PAT"
+	const patEnv = "KENN_FORGE_TEST_BRANCH_SYNC_PAT"
 	t.Setenv(patEnv, "pat-token")
 	source := tokenauth.NewManagedSource(
 		tokenauth.Descriptor{

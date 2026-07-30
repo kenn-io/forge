@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"database/sql"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -10,7 +11,7 @@ import (
 	"sort"
 	"strconv"
 
-	"go.kenn.io/middleman/internal/procutil"
+	"go.kenn.io/forge/internal/procutil"
 	_ "modernc.org/sqlite"
 )
 
@@ -18,16 +19,26 @@ func main() {
 	checkOnly := flag.Bool("check", false, "report unapplied Kenn Forge rename changes")
 	writeSchemaMigration := flag.Bool("write-schema-migration", false, "write migration 44 from the version-43 schema")
 	flag.Parse()
+	if err := validateModes(*checkOnly, *writeSchemaMigration); err != nil {
+		fatal(err)
+	}
 
 	root, err := os.Getwd()
 	if err != nil {
 		fatal(err)
 	}
 	if *writeSchemaMigration {
-		if err := writeMigration44(root); err != nil {
+		if err := rewriteMigration44(root); err != nil {
 			fatal(err)
 		}
 		return
+	}
+	if *checkOnly {
+		if err := checkMigration44(root); err != nil {
+			fatal(err)
+		}
+	} else if err := ensureMigration44(root); err != nil {
+		fatal(err)
 	}
 	paths, err := gitTrackedPaths(root)
 	if err != nil {
@@ -38,6 +49,13 @@ func main() {
 	if err != nil {
 		fatal(err)
 	}
+}
+
+func validateModes(checkOnly, writeSchemaMigration bool) error {
+	if checkOnly && writeSchemaMigration {
+		return errors.New("--check and --write-schema-migration cannot be combined")
+	}
+	return nil
 }
 
 func fatal(err error) {
@@ -63,34 +81,150 @@ func gitTrackedPaths(root string) ([]string, error) {
 }
 
 func writeMigration44(root string) error {
-	objects, err := schemaAtVersion43(root)
+	up, down, err := renderMigration44(root)
 	if err != nil {
 		return err
 	}
-	up, down, err := RenderSchemaRename(objects)
+	return writeMigrationPair(filepath.Join(root, "internal", "db", "migrations"), up, down)
+}
+
+func rewriteMigration44(root string) error {
+	up, down, err := renderMigration44(root)
 	if err != nil {
 		return err
 	}
 	dir := filepath.Join(root, "internal", "db", "migrations")
-	files := []struct {
+	for _, file := range []struct {
 		name string
 		body []byte
 	}{
-		{name: "000044_rename_schema_to_forge.up.sql", body: up},
-		{name: "000044_rename_schema_to_forge.down.sql", body: down},
+		{name: upMigration44, body: up},
+		{name: downMigration44, body: down},
+	} {
+		temp, err := writeMigrationTemp(dir, file.name, file.body)
+		if err != nil {
+			return err
+		}
+		if err := os.Rename(temp, filepath.Join(dir, file.name)); err != nil {
+			_ = os.Remove(temp)
+			return fmt.Errorf("replace migration %s: %w", file.name, err)
+		}
 	}
-	for _, file := range files {
-		path := filepath.Join(dir, file.name)
+	return nil
+}
+
+func renderMigration44(root string) ([]byte, []byte, error) {
+	objects, err := schemaAtVersion43(root)
+	if err != nil {
+		return nil, nil, err
+	}
+	up, down, err := RenderSchemaRename(objects)
+	if err != nil {
+		return nil, nil, err
+	}
+	return up, down, nil
+}
+
+const (
+	upMigration44   = "000044_rename_schema_to_forge.up.sql"
+	downMigration44 = "000044_rename_schema_to_forge.down.sql"
+)
+
+func ensureMigration44(root string) error {
+	dir := filepath.Join(root, "internal", "db", "migrations")
+	upPath := filepath.Join(dir, upMigration44)
+	downPath := filepath.Join(dir, downMigration44)
+	_, upErr := os.Stat(upPath)
+	_, downErr := os.Stat(downPath)
+	if os.IsNotExist(upErr) && os.IsNotExist(downErr) {
+		return writeMigration44(root)
+	}
+	return checkMigration44(root)
+}
+
+func checkMigration44(root string) error {
+	up, down, err := renderMigration44(root)
+	if err != nil {
+		return err
+	}
+	return verifyMigrationPair(filepath.Join(root, "internal", "db", "migrations"), up, down)
+}
+
+func verifyMigrationPair(dir string, wantUp, wantDown []byte) error {
+	for _, file := range []struct {
+		name string
+		want []byte
+	}{
+		{name: upMigration44, want: wantUp},
+		{name: downMigration44, want: wantDown},
+	} {
+		got, err := os.ReadFile(filepath.Join(dir, file.name))
+		if err != nil {
+			return fmt.Errorf("read migration %s: %w", file.name, err)
+		}
+		if !bytes.Equal(got, file.want) {
+			return fmt.Errorf("migration %s differs from generated output", file.name)
+		}
+	}
+	return nil
+}
+
+func writeMigrationPair(dir string, up, down []byte) error {
+	for _, name := range []string{upMigration44, downMigration44} {
+		path := filepath.Join(dir, name)
 		if _, err := os.Stat(path); err == nil {
 			return fmt.Errorf("migration already exists: %s", path)
 		} else if !os.IsNotExist(err) {
 			return fmt.Errorf("inspect migration %s: %w", path, err)
 		}
-		if err := os.WriteFile(path, file.body, 0o644); err != nil {
-			return fmt.Errorf("write migration %s: %w", path, err)
+	}
+
+	upTemp, err := writeMigrationTemp(dir, upMigration44, up)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(upTemp)
+	downTemp, err := writeMigrationTemp(dir, downMigration44, down)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(downTemp)
+
+	upPath := filepath.Join(dir, upMigration44)
+	if err := os.Rename(upTemp, upPath); err != nil {
+		return fmt.Errorf("publish migration %s: %w", upMigration44, err)
+	}
+	downPath := filepath.Join(dir, downMigration44)
+	if err := os.Rename(downTemp, downPath); err != nil {
+		if removeErr := os.Remove(upPath); removeErr != nil {
+			return fmt.Errorf("publish migration %s: %w (rollback %s: %v)", downMigration44, err, upMigration44, removeErr)
 		}
+		return fmt.Errorf("publish migration %s: %w", downMigration44, err)
 	}
 	return nil
+}
+
+func writeMigrationTemp(dir, name string, body []byte) (string, error) {
+	file, err := os.CreateTemp(dir, "."+name+"-*")
+	if err != nil {
+		return "", fmt.Errorf("create migration temp for %s: %w", name, err)
+	}
+	path := file.Name()
+	if _, err := file.Write(body); err != nil {
+		_ = file.Close()
+		_ = os.Remove(path)
+		return "", fmt.Errorf("write migration temp for %s: %w", name, err)
+	}
+	if err := file.Sync(); err != nil {
+		_ = file.Close()
+		_ = os.Remove(path)
+		return "", fmt.Errorf("sync migration temp for %s: %w", name, err)
+	}
+	if err := file.Close(); err != nil {
+		_ = os.Remove(path)
+		return "", fmt.Errorf("close migration temp for %s: %w", name, err)
+	}
+	return path, nil
 }
 
 func schemaAtVersion43(root string) ([]SchemaObject, error) {
@@ -126,7 +260,7 @@ func schemaAtVersion43(root string) ([]SchemaObject, error) {
 	rows, err := database.Query(`
 		SELECT type, name, tbl_name, sql
 		FROM sqlite_schema
-		WHERE type IN ('table', 'index', 'trigger')
+		WHERE type IN ('table', 'index', 'trigger', 'view')
 		  AND name NOT LIKE 'sqlite_%'
 		  AND sql IS NOT NULL
 		ORDER BY type, name`)

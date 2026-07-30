@@ -1,12 +1,12 @@
 # Mobile UX Principles
 
-Use this document as the intent-level guide for mobile UI work in `middleman`. Read it before designing, implementing, or reviewing anything under phone routes, narrow viewports, touch-focused layouts, or mobile-specific CSS.
+Use this document as the intent-level guide for mobile UI work in `kenn-forge`. Read it before designing, implementing, or reviewing anything under phone routes, narrow viewports, touch-focused layouts, or mobile-specific CSS.
 
 ## Core stance
 
 Mobile is not the desktop app squeezed into a smaller viewport. It is a separate phone-first workflow for maintainers who need to triage, inspect, and act while holding a phone.
 
-`middleman` can stay dense and information-rich, but phone density must come from hierarchy and summarization, not from tiny desktop controls, compressed split panes, or table layouts.
+`kenn-forge` can stay dense and information-rich, but phone density must come from hierarchy and summarization, not from tiny desktop controls, compressed split panes, or table layouts.
 
 Kata and Docs remain desktop-first modes. Do not add `/m` routes or phone-only
 sizing until each mode has a deliberately designed phone workflow.

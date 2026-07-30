@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"go.kenn.io/middleman/internal/githubapp/githubapptest"
+	"go.kenn.io/forge/internal/githubapp/githubapptest"
 )
 
 // submitManifest plays the browser role: POST a manifest form to the
@@ -47,7 +47,7 @@ func TestConvertManifest(t *testing.T) {
 	require := require.New(t)
 	fake := githubapptest.NewFake()
 	t.Cleanup(fake.Close)
-	manifest, err := NewManifest("middleman-conv", "", "http://127.0.0.1:1/callback")
+	manifest, err := NewManifest("kenn-forge-conv", "", "http://127.0.0.1:1/callback")
 	require.NoError(err)
 	code := submitManifest(t, fake, manifest)
 
@@ -56,7 +56,7 @@ func TestConvertManifest(t *testing.T) {
 	require.NoError(err)
 
 	assert := assert.New(t)
-	assert.Equal("middleman-conv", creds.Slug)
+	assert.Equal("kenn-forge-conv", creds.Slug)
 	assert.Positive(creds.ID)
 	assert.Contains(creds.PEM, "RSA PRIVATE KEY")
 	assert.NotEmpty(creds.ClientSecret)
@@ -74,7 +74,7 @@ func TestMintInstallationToken(t *testing.T) {
 	require := require.New(t)
 	fake := githubapptest.NewFake()
 	t.Cleanup(fake.Close)
-	manifest, err := NewManifest("middleman-mint", "", "http://127.0.0.1:1/callback")
+	manifest, err := NewManifest("kenn-forge-mint", "", "http://127.0.0.1:1/callback")
 	require.NoError(err)
 	code := submitManifest(t, fake, manifest)
 	client := NewClientWithBase(fake.APIBase())
@@ -105,7 +105,7 @@ func TestMintInstallationTokenRejectsWrongKey(t *testing.T) {
 	require := require.New(t)
 	fake := githubapptest.NewFake()
 	t.Cleanup(fake.Close)
-	manifest, err := NewManifest("middleman-badkey", "", "http://127.0.0.1:1/callback")
+	manifest, err := NewManifest("kenn-forge-badkey", "", "http://127.0.0.1:1/callback")
 	require.NoError(err)
 	client := NewClientWithBase(fake.APIBase())
 	creds, err := client.ConvertManifest(

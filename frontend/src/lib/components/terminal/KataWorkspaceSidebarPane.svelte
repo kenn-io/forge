@@ -1,6 +1,6 @@
 <script lang="ts">
   import { untrack } from "svelte";
-  import { showFlash } from "@middleman/ui/stores/flash";
+  import { showFlash } from "@kenn-forge/ui/stores/flash";
 
   import { createKataTaskAPI } from "../../api/kata/taskClient.js";
   import {
@@ -34,7 +34,7 @@
 
   let { kata, disabled = false }: Props = $props();
 
-  const actor = "middleman";
+  const actor = "kenn-forge";
   const api = createKataTaskAPI();
   const authorityStore = createKataAuthorityStore();
 

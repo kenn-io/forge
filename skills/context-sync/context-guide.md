@@ -1,8 +1,8 @@
-# Context Engineering Guide — middleman
+# Context Engineering Guide — kenn-forge
 
 Loaded during a `context-sync` run. The complete philosophy and rules for keeping
-middleman's context system aligned with its code. This guide is adapted from a generic
-context-engineering system to middleman's actual stack (Go backend, Svelte 5 SPA, a
+kenn-forge's context system aligned with its code. This guide is adapted from a generic
+context-engineering system to kenn-forge's actual stack (Go backend, Svelte 5 SPA, a
 small Rust pty-manager) and its single-surface context layout.
 
 ## Core Principle: The Grep Test
@@ -48,7 +48,7 @@ The size ceilings below are per-doc; these are per-change:
 
 ## Single-Surface Layout
 
-middleman's durable agent context lives in two places:
+kenn-forge's durable agent context lives in two places:
 
 - **Root `CLAUDE.md`** — the hub. Project overview, architecture, the single canonical
   provider list, non-provider modes, project structure, key files, dev/test commands,
@@ -107,7 +107,7 @@ test should exist if the invariant matters.
 ## Invariant Guards (the Go analogue of probes)
 
 The most fragile invariants should be protected by runnable code, not prose. In
-middleman that means Go tests and custom analyzers, not Python probes. Examples of
+kenn-forge that means Go tests and custom analyzers, not Python probes. Examples of
 invariants that warrant a guard:
 
 - Provider identity is the full `(platform, platform_host, owner, name)` tuple

@@ -11,7 +11,7 @@ import (
 	"github.com/shurcooL/githubv4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/tokenauth"
+	"go.kenn.io/forge/internal/tokenauth"
 )
 
 type mutableRuntimeAuthTokenSource struct {
@@ -42,7 +42,7 @@ func (s *mutableRuntimeAuthTokenSource) Descriptor() tokenauth.Descriptor {
 		Key: tokenauth.Key{Platform: "github", Host: "github.example.com"},
 		Candidates: []tokenauth.Candidate{{
 			Kind:    tokenauth.SourceKindEnv,
-			EnvName: "MIDDLEMAN_TEST_TOKEN",
+			EnvName: "KENN_FORGE_TEST_TOKEN",
 		}},
 	}
 }

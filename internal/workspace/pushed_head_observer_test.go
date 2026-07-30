@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/forge/internal/db"
 )
 
 type fakeRemoteHeadReader struct {
@@ -78,7 +78,7 @@ func insertPushedHeadWorkspace(
 		GitHeadRef:         "feature/remote-head",
 		WorkspaceBranch:    "feature/remote-head",
 		WorktreePath:       "/tmp/worktree",
-		TmuxSession:        "middleman-" + id,
+		TmuxSession:        "kenn-forge-" + id,
 		Status:             "ready",
 	}))
 }
@@ -486,7 +486,7 @@ func TestPushedHeadObserverRunOnceHealsAssociatedKataWorkspace(t *testing.T) {
 		GitHeadRef:         "feature/kata-task",
 		WorkspaceBranch:    "feature/kata-task",
 		WorktreePath:       worktreePath,
-		TmuxSession:        "middleman-ws-kata",
+		TmuxSession:        "kenn-forge-ws-kata",
 		Status:             "ready",
 		KataMetadata:       &kataMetadata,
 	}))
@@ -561,7 +561,7 @@ func TestPushedHeadObserverUpstreamHeal(t *testing.T) {
 	}{
 		{
 			name:             "synthetic PR branch is rewired to the PR head",
-			branch:           "middleman/pr-42",
+			branch:           "kenn-forge/pr-42",
 			headRepoCloneURL: sameRepoURL,
 			trackingOK:       true,
 			wantHeal:         true,
@@ -608,7 +608,7 @@ func TestPushedHeadObserverUpstreamHeal(t *testing.T) {
 		},
 		{
 			name:             "missing remote-tracking ref blocks heal",
-			branch:           "middleman/pr-42",
+			branch:           "kenn-forge/pr-42",
 			headRepoCloneURL: sameRepoURL,
 			trackingOK:       false,
 		},
@@ -635,7 +635,7 @@ func TestPushedHeadObserverUpstreamHeal(t *testing.T) {
 				MRHeadRepo:      tc.mrHeadRepo,
 				WorkspaceBranch: tc.branch,
 				WorktreePath:    "/tmp/worktree",
-				TmuxSession:     "middleman-ws-pr",
+				TmuxSession:     "kenn-forge-ws-pr",
 				Status:          "ready",
 			}))
 			reader := &fakeRemoteHeadReader{

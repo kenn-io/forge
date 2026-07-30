@@ -5,7 +5,7 @@ import {
   providerRouteParams,
   type ProviderRouteRef,
 } from "../api/provider-routes.js";
-import type { MiddlemanClient } from "../types.js";
+import type { ForgeClient } from "../types.js";
 import { bucketCIChecks, parseCIChecks } from "../utils/ci-buckets.js";
 import { normalizeKanbanStatus } from "./workflow.svelte.js";
 import { showFlash } from "./flash.svelte.js";
@@ -39,7 +39,7 @@ type PullsParams = {
 export type PullAttributeFilter = "approved" | "draft" | "ready" | "merge_conflicts" | "failed_ci" | "has_workspace";
 
 export interface PullsStoreOptions {
-  client: MiddlemanClient;
+  client: ForgeClient;
   getGlobalRepo?: () => string | undefined;
   getGroupByRepo?: () => boolean;
 }

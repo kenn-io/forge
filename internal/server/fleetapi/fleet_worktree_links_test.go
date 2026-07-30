@@ -9,11 +9,11 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	realdb "go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/fleet"
-	ghclient "go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/server/workspaceapi"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
+	realdb "go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/fleet"
+	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/server/workspaceapi"
+	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
 // fakeWatchedMRSetter records every watched-MR set the recompute applies so

@@ -1,4 +1,4 @@
-// Package githubapp implements the GitHub App primitives middleman
+// Package githubapp implements the GitHub App primitives kenn-forge
 // uses to mitigate PAT rate-limit exhaustion: the App Manifest
 // creation flow, app JWT signing, and installation access token
 // minting. Installation tokens carry their own rate-limit budget
@@ -34,17 +34,17 @@ type HookAttributes struct {
 
 // DefaultHomepageURL is the manifest homepage shown on the app's
 // public page. GitHub requires a URL; the project page is accurate.
-const DefaultHomepageURL = "https://go.kenn.io/middleman"
+const DefaultHomepageURL = "https://go.kenn.io/forge"
 
 // maxAppNameLength is GitHub's limit for app names.
 const maxAppNameLength = 34
 
-// DefaultPermissions is the permission set middleman's sync surface
+// DefaultPermissions is the permission set kenn-forge's sync surface
 // needs. The app is read-only by design: every mutation (merge,
 // comment, review, ready-for-review, workflow approval) authenticates
 // with the user's own credential chain so it stays attributed to the
 // user, and the tokenauth mutation marker never selects the app token
-// for writes. Webhooks stay disabled: middleman polls.
+// for writes. Webhooks stay disabled: kenn-forge polls.
 //
 // Permission matrix (all read):
 //   - contents: PR/issue sync, releases, tags, git clone/fetch
@@ -66,7 +66,7 @@ func DefaultPermissions() map[string]string {
 	}
 }
 
-// NewManifest builds a middleman app manifest with redirectURL as the
+// NewManifest builds a kenn-forge app manifest with redirectURL as the
 // manifest-conversion callback.
 func NewManifest(name, homepageURL, redirectURL string) (Manifest, error) {
 	if name == "" {
@@ -100,11 +100,11 @@ func (m Manifest) JSON() (string, error) {
 }
 
 // RandomAppName returns a globally-unique-enough default app name
-// within GitHub's length limit, e.g. "middleman-3f9a2c".
+// within GitHub's length limit, e.g. "kenn-forge-3f9a2c".
 func RandomAppName() (string, error) {
 	var buf [3]byte
 	if _, err := rand.Read(buf[:]); err != nil {
 		return "", fmt.Errorf("generating app name suffix: %w", err)
 	}
-	return "middleman-" + hex.EncodeToString(buf[:]), nil
+	return "kenn-forge-" + hex.EncodeToString(buf[:]), nil
 }

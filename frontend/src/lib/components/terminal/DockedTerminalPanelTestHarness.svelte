@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { RuntimeSession } from "@middleman/ui/api/types";
+  import type { RuntimeSession } from "@kenn-forge/ui/api/types";
   import DockedTerminalPanel from "./DockedTerminalPanel.svelte";
   import type { PaneNode } from "./terminal-layout";
 

@@ -9,7 +9,7 @@ import (
 	gh "github.com/google/go-github/v89/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/forge/internal/db"
 )
 
 func decodeIssueWorkflowBody(t *testing.T, body []byte, target any) {
@@ -92,7 +92,7 @@ func TestIssueWorkflowStatusMetadataNormalizesInvalidStoredStatus(t *testing.T) 
 	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotNil(repo)
-	_, err = database.WriteDB().ExecContext(ctx, `INSERT INTO middleman_item_workflow_state (
+	_, err = database.WriteDB().ExecContext(ctx, `INSERT INTO forge_item_workflow_state (
 			repo_id, item_type, item_number, status, updated_source
 		) VALUES (?, 'issue', 6, 'bogus', 'api')`, repo.ID)
 	require.NoError(err)

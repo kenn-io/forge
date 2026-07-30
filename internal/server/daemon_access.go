@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"strings"
 
-	"go.kenn.io/middleman/internal/config"
-	"go.kenn.io/middleman/internal/daemonruntime"
+	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/daemonruntime"
 )
 
 // DaemonAccessOptions configures startup-bound daemon authentication and proof.

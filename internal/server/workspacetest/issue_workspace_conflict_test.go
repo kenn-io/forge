@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/apiclient/generated"
+	"go.kenn.io/forge/internal/apiclient/generated"
 )
 
 // TestIssueWorkspaceConflictExposesTyped409ThroughGeneratedClient is a
@@ -34,7 +34,7 @@ func TestIssueWorkspaceConflictExposesTyped409ThroughGeneratedClient(t *testing.
 
 	seedIssue(t, fixture.database, "acme", "widget", 7, "open")
 
-	branch := "middleman/issue-7"
+	branch := "kenn-forge/issue-7"
 
 	// Pre-create the requested branch so the next workspace request hits
 	// the typed conflict path regardless of the default branch style.
@@ -57,7 +57,7 @@ func TestIssueWorkspaceConflictExposesTyped409ThroughGeneratedClient(t *testing.
 
 	require.NotNil(problem.Type)
 	assert.Equal(
-		"urn:middleman:error:issue-workspace-branch-conflict",
+		"urn:kenn-forge:error:issue-workspace-branch-conflict",
 		*problem.Type,
 	)
 	require.NotNil(problem.Status)
@@ -87,7 +87,7 @@ func TestIssueWorkspaceReuseExistingBranchDoesNotReportCreated(t *testing.T) {
 	fixture := setupWorkspaceServerFixture(t, nil)
 	seedIssue(t, fixture.database, "acme", "widget", 7, "open")
 
-	branch := "middleman/issue-7"
+	branch := "kenn-forge/issue-7"
 	mainSHA := testGitSHA(t, fixture.remote, "refs/heads/main")
 	runGit(
 		t,
@@ -116,7 +116,7 @@ func TestIssueWorkspaceReuseMissingBranchReportsCreated(t *testing.T) {
 	fixture := setupWorkspaceServerFixture(t, nil)
 	seedIssue(t, fixture.database, "acme", "widget", 7, "open")
 
-	branch := "middleman/issue-7"
+	branch := "kenn-forge/issue-7"
 	reuse := true
 	resp, err := fixture.client.HTTP.CreateIssueWorkspaceWithResponse(
 		t.Context(), "gh", "acme", "widget", 7,
@@ -152,7 +152,7 @@ func TestIssueWorkspaceCreateIgnoresBrokenCallerCwdForBranchValidation(t *testin
 		require.NoError(os.Chdir(previousCwd))
 	})
 
-	branch := "middleman/issue-23-federation-test"
+	branch := "kenn-forge/issue-23-federation-test"
 	resp, err := fixture.client.HTTP.CreateIssueWorkspaceWithResponse(
 		t.Context(), "gh", "acme", "widget", 23,
 		generated.CreateIssueWorkspaceInputBody{GitHeadRef: &branch},

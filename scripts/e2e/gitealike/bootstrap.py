@@ -38,15 +38,15 @@ class Fixture:
         self.api_url = f"{base_url}/api/v1"
         self.container_id = container_id
         self.title_prefix = title_prefix
-        self.admin_user = "middleman-admin"
-        self.admin_password = "middleman-admin-password"
-        self.fixture_user = "middleman-user"
-        self.fixture_password = "middleman-user-password"
-        self.owner = "middleman-fixture"
+        self.admin_user = "kenn-forge-admin"
+        self.admin_password = "kenn-forge-admin-password"
+        self.fixture_user = "kenn-forge-user"
+        self.fixture_password = "kenn-forge-user-password"
+        self.owner = "kenn-forge-fixture"
         self.repo = "project-special"
-        self.label = "middleman-fixture"
+        self.label = "kenn-forge-fixture"
         self.branch = "feature/gitealike"
-        self.status_context = "middleman/container-fixture"
+        self.status_context = "kenn-forge/container-fixture"
 
     def bootstrap(self):
         self.wait_ready()
@@ -129,7 +129,7 @@ class Fixture:
             "--password",
             self.admin_password,
             "--email",
-            "middleman-admin@example.invalid",
+            "kenn-forge-admin@example.invalid",
             "--admin",
             "--must-change-password=false",
         ]
@@ -139,7 +139,7 @@ class Fixture:
             raise RuntimeError(output)
 
     def create_token(self):
-        name = f"middleman-e2e-{int(time.time())}"
+        name = f"kenn-forge-e2e-{int(time.time())}"
         token = self.request(
             "POST",
             f"/users/{quote(self.admin_user)}/tokens",
@@ -163,7 +163,7 @@ class Fixture:
                 data={
                     "username": self.fixture_user,
                     "login_name": self.fixture_user,
-                    "email": "middleman-user@example.invalid",
+                    "email": "kenn-forge-user@example.invalid",
                     "password": self.fixture_password,
                     "must_change_password": False,
                     "source_id": 0,
@@ -181,8 +181,8 @@ class Fixture:
                 token=token,
                 data={
                     "username": self.owner,
-                    "full_name": "Middleman Fixture",
-                    "description": "Middleman Gitea-compatible e2e fixture",
+                    "full_name": "Kenn Forge Fixture",
+                    "description": "Kenn Forge Gitea-compatible e2e fixture",
                 },
                 expected=(201,),
             )
@@ -200,7 +200,7 @@ class Fixture:
                     "auto_init": True,
                     "default_branch": "main",
                     "private": False,
-                    "description": "Middleman Gitea-compatible e2e fixture",
+                    "description": "Kenn Forge Gitea-compatible e2e fixture",
                 },
                 expected=(201,),
             )
@@ -214,7 +214,7 @@ class Fixture:
             "POST",
             self.repo_path("/labels"),
             token=token,
-            data={"name": self.label, "color": "#0052cc", "description": "Middleman container fixture"},
+            data={"name": self.label, "color": "#0052cc", "description": "Kenn Forge container fixture"},
             expected=(201,),
         )
 
@@ -292,7 +292,7 @@ class Fixture:
                 "head": self.branch,
                 "base": "main",
                 "title": title,
-                "body": "Pull request seeded by middleman e2e.",
+                "body": "Pull request seeded by kenn-forge e2e.",
             },
             expected=(201,),
         )
@@ -312,7 +312,7 @@ class Fixture:
             token=token,
             data={
                 "title": title,
-                "body": "Issue seeded by middleman e2e.",
+                "body": "Issue seeded by kenn-forge e2e.",
                 "labels": [label_id],
             },
             expected=(201,),
@@ -399,7 +399,7 @@ class Fixture:
                 "tag_name": tag,
                 "target_commitish": "main",
                 "name": "Version 1.0.0",
-                "body": "Release seeded by middleman e2e.",
+                "body": "Release seeded by kenn-forge e2e.",
             },
             expected=(201,),
         )

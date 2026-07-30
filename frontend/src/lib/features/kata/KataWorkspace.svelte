@@ -1,10 +1,10 @@
 <script lang="ts">
   import { onMount, untrack } from "svelte";
   import { SvelteSet } from "svelte/reactivity";
-  import { getStores } from "@middleman/ui";
+  import { getStores } from "@kenn-forge/ui";
   import { IconButton, type TypeaheadOption } from "@kenn-io/kit-ui";
-  import { showFlash } from "@middleman/ui/stores/flash";
-  import { queueWorkspaceLaunch } from "@middleman/ui/stores/workspace-create-pending";
+  import { showFlash } from "@kenn-forge/ui/stores/flash";
+  import { queueWorkspaceLaunch } from "@kenn-forge/ui/stores/workspace-create-pending";
   import LayoutPanelLeftIcon from "@lucide/svelte/icons/layout-panel-left";
   import LayoutPanelTopIcon from "@lucide/svelte/icons/layout-panel-top";
   import PlusIcon from "@lucide/svelte/icons/plus";
@@ -200,7 +200,7 @@
   let rowNavigationSelection: PendingRecoveredSelection | null = null;
   let replaceNextSelectionScopeUID: string | null = null;
   let pendingRecoveredSelection: PendingRecoveredSelection | null = null;
-  const actor = "middleman";
+  const actor = "kenn-forge";
   let navigationGeneration = 0;
   // Reactive shadow of navigationGeneration so the issue list can drop
   // a pending keyboard selection the moment any navigation starts —
@@ -209,7 +209,7 @@
   let navigationEpoch = $state(0);
   let revealRequest = $state<KataIssueRevealRequest | null>(null);
   let revealGeneration = 0;
-  const layoutStorageKey = "middleman:kata:task-layout/v1";
+  const layoutStorageKey = "kenn-forge:kata:task-layout/v1";
   const defaultSplitSizes: Record<SplitOrientation, number> = {
     vertical: 420,
     horizontal: 520,

@@ -30,13 +30,13 @@ func main() {
 }
 
 func run(ctx context.Context, stderr io.Writer) int {
-	baseRef := getenvDefault("MIDDLEMAN_MIGRATION_BASE_REF", defaultBaseRef)
+	baseRef := getenvDefault("KENN_FORGE_MIGRATION_BASE_REF", defaultBaseRef)
 	comparisonRef := baseRef
-	prBaseRef := os.Getenv("MIDDLEMAN_MIGRATION_PR_BASE_REF")
+	prBaseRef := os.Getenv("KENN_FORGE_MIGRATION_PR_BASE_REF")
 	if prBaseRef != "" {
 		comparisonRef = prBaseRef
 	}
-	migrationDir := strings.TrimRight(getenvDefault("MIDDLEMAN_MIGRATION_DIR", defaultMigrationDir), "/")
+	migrationDir := strings.TrimRight(getenvDefault("KENN_FORGE_MIGRATION_DIR", defaultMigrationDir), "/")
 
 	if _, err := git(ctx, "rev-parse", "--git-dir"); err != nil {
 		fmt.Fprintln(stderr, "migration history check must run inside a git worktree")
@@ -45,7 +45,7 @@ func run(ctx context.Context, stderr io.Writer) int {
 
 	if _, err := git(ctx, "rev-parse", "--verify", "--quiet", comparisonRef+"^{commit}"); err != nil {
 		fmt.Fprintf(stderr, "Cannot verify migration history because %s is unavailable.\n", comparisonRef)
-		fmt.Fprintln(stderr, "Fetch the comparison ref or set MIDDLEMAN_MIGRATION_BASE_REF or MIDDLEMAN_MIGRATION_PR_BASE_REF to an available commit.")
+		fmt.Fprintln(stderr, "Fetch the comparison ref or set KENN_FORGE_MIGRATION_BASE_REF or KENN_FORGE_MIGRATION_PR_BASE_REF to an available commit.")
 		return 1
 	}
 

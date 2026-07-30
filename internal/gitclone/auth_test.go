@@ -10,8 +10,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/testutil/gitfake"
-	"go.kenn.io/middleman/internal/tokenauth"
+	"go.kenn.io/forge/internal/testutil/gitfake"
+	"go.kenn.io/forge/internal/tokenauth"
 )
 
 type mutableTestTokenSource struct {
@@ -54,7 +54,7 @@ func TestGitOwnerRoutesSelectAndInvalidateOnlyTheirSource(t *testing.T) {
 	require.NoError(os.WriteFile(gitPath, []byte(`#!/bin/sh
 set -eu
 `+gitfake.CredentialHelperRunner+`
-out="${MIDDLEMAN_TEST_GIT_CAPTURE:?}"
+out="${KENN_FORGE_TEST_GIT_CAPTURE:?}"
 tmp="$out.current"
 helper=""
 i=0
@@ -74,7 +74,7 @@ if [ "$password" = "first-token" ]; then
 fi
 `), 0o755))
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	t.Setenv("MIDDLEMAN_TEST_GIT_CAPTURE", capturePath)
+	t.Setenv("KENN_FORGE_TEST_GIT_CAPTURE", capturePath)
 
 	acme := &mutableTestTokenSource{token: "first-token"}
 	example := &mutableTestTokenSource{token: "token-b"}
@@ -174,7 +174,7 @@ func TestGitNetworkedResolvesTokenSourceForEachCall(t *testing.T) {
 	require.NoError(os.WriteFile(gitPath, []byte(`#!/bin/sh
 set -eu
 `+gitfake.CredentialHelperRunner+`
-out="${MIDDLEMAN_TEST_GIT_CAPTURE:?}"
+out="${KENN_FORGE_TEST_GIT_CAPTURE:?}"
 i=0
 count="${GIT_CONFIG_COUNT:-0}"
 while [ "$i" -lt "$count" ]; do
@@ -188,7 +188,7 @@ while [ "$i" -lt "$count" ]; do
 done
 `), 0o755))
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	t.Setenv("MIDDLEMAN_TEST_GIT_CAPTURE", capturePath)
+	t.Setenv("KENN_FORGE_TEST_GIT_CAPTURE", capturePath)
 
 	source := &mutableTestTokenSource{token: "first-token"}
 	mgr := New(t.TempDir(), HostSources{"github.com": source})
@@ -223,7 +223,7 @@ func TestGitNetworkedResolvesTokenFileSourceForEachCall(t *testing.T) {
 	require.NoError(os.WriteFile(gitPath, []byte(`#!/bin/sh
 set -eu
 `+gitfake.CredentialHelperRunner+`
-out="${MIDDLEMAN_TEST_GIT_CAPTURE:?}"
+out="${KENN_FORGE_TEST_GIT_CAPTURE:?}"
 i=0
 count="${GIT_CONFIG_COUNT:-0}"
 while [ "$i" -lt "$count" ]; do
@@ -237,7 +237,7 @@ while [ "$i" -lt "$count" ]; do
 done
 `), 0o755))
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	t.Setenv("MIDDLEMAN_TEST_GIT_CAPTURE", capturePath)
+	t.Setenv("KENN_FORGE_TEST_GIT_CAPTURE", capturePath)
 
 	require.NoError(os.WriteFile(tokenPath, []byte("first-token\n"), 0o600))
 	source := tokenauth.NewManagedSource(tokenauth.Descriptor{
@@ -278,7 +278,7 @@ func TestGitRetriesAuthFailureAfterInvalidatingTokenSource(t *testing.T) {
 	require.NoError(os.WriteFile(gitPath, []byte(`#!/bin/sh
 set -eu
 `+gitfake.CredentialHelperRunner+`
-out="${MIDDLEMAN_TEST_GIT_CAPTURE:?}"
+out="${KENN_FORGE_TEST_GIT_CAPTURE:?}"
 tmp="$out.current"
 helper=""
 i=0
@@ -301,7 +301,7 @@ if [ "$password" = "first-token" ]; then
 fi
 `), 0o755))
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	t.Setenv("MIDDLEMAN_TEST_GIT_CAPTURE", capturePath)
+	t.Setenv("KENN_FORGE_TEST_GIT_CAPTURE", capturePath)
 
 	source := &mutableTestTokenSource{token: "first-token"}
 	mgr := New(t.TempDir(), HostSources{"github.com": source})
@@ -337,7 +337,7 @@ if [ "${1:-}" != "clone" ]; then
 	exit 0
 fi
 
-out="${MIDDLEMAN_TEST_GIT_CAPTURE:?}"
+out="${KENN_FORGE_TEST_GIT_CAPTURE:?}"
 dest="${4:?}"
 if [ -e "$dest" ]; then
 	echo "fatal: destination path '$dest' already exists and is not an empty directory." >&2
@@ -371,7 +371,7 @@ fi
 echo complete > "$dest/complete"
 `), 0o755))
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	t.Setenv("MIDDLEMAN_TEST_GIT_CAPTURE", capturePath)
+	t.Setenv("KENN_FORGE_TEST_GIT_CAPTURE", capturePath)
 
 	source := &mutableTestTokenSource{token: "first-token"}
 	mgr := New(t.TempDir(), HostSources{"github.com": source})

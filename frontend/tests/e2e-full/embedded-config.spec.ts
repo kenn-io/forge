@@ -40,7 +40,7 @@ async function sidebarWidth(page: Page): Promise<number> {
 test.describe("embedded config", () => {
   test("hides sync button when hideSync is true", async ({ page }) => {
     await page.addInitScript(() => {
-      window.__middleman_config = { ui: { hideSync: true } };
+      window.__kenn_forge_config = { ui: { hideSync: true } };
     });
     await page.goto("/pulls");
     await waitForPRList(page);
@@ -50,7 +50,7 @@ test.describe("embedded config", () => {
 
   test("hides repo selector when hideRepoSelector is true", async ({ page }) => {
     await page.addInitScript(() => {
-      window.__middleman_config = { ui: { hideRepoSelector: true } };
+      window.__kenn_forge_config = { ui: { hideRepoSelector: true } };
     });
     await page.goto("/pulls");
     await waitForPRList(page);
@@ -60,7 +60,7 @@ test.describe("embedded config", () => {
 
   test("hides star button when hideStar is true", async ({ page }) => {
     await page.addInitScript(() => {
-      window.__middleman_config = { ui: { hideStar: true } };
+      window.__kenn_forge_config = { ui: { hideStar: true } };
     });
     await page.goto("/pulls");
     await waitForPRList(page);
@@ -74,7 +74,7 @@ test.describe("embedded config", () => {
 
   test("hides theme toggle when theme.mode is set", async ({ page }) => {
     await page.addInitScript(() => {
-      window.__middleman_config = { theme: { mode: "dark" } };
+      window.__kenn_forge_config = { theme: { mode: "dark" } };
     });
     await page.goto("/pulls");
     await waitForPRList(page);
@@ -84,8 +84,8 @@ test.describe("embedded config", () => {
 
   test("host sidebarWidth overrides persisted width on pulls", async ({ page }) => {
     await page.addInitScript(() => {
-      localStorage.setItem("middleman-sidebar-width", "520");
-      window.__middleman_config = { embed: { sidebarWidth: 410 } };
+      localStorage.setItem("kenn-forge-sidebar-width", "520");
+      window.__kenn_forge_config = { embed: { sidebarWidth: 410 } };
     });
     await page.goto("/pulls");
     await waitForPRList(page);
@@ -100,7 +100,7 @@ test.describe("embedded config", () => {
 
   test("settings page is blocked in embedded mode", async ({ page }) => {
     await page.addInitScript(() => {
-      window.__middleman_config = { embed: {} };
+      window.__kenn_forge_config = { embed: {} };
     });
     await page.goto("/settings");
 
@@ -112,12 +112,12 @@ test.describe("embedded config", () => {
   });
 
   test("daemon ui-only config does not block standalone settings", async ({ page }) => {
-    // The daemon serves window.__middleman_config carrying only its
+    // The daemon serves window.__kenn_forge_config carrying only its
     // UI focus state (ui.activeWorktreeKey, set via the API). That
     // must not flip the SPA into embedded mode and hide the settings
     // page, which a standalone client needs.
     await page.addInitScript(() => {
-      window.__middleman_config = { ui: { activeWorktreeKey: "wt-1" } };
+      window.__kenn_forge_config = { ui: { activeWorktreeKey: "wt-1" } };
     });
     await page.goto("/settings");
 
@@ -126,7 +126,7 @@ test.describe("embedded config", () => {
 
   test("project intake uses snapshot host metadata and host-scoped registration", async ({ page }) => {
     const server = await startIsolatedE2EServerWithOptions({ fleetKey: "hub" });
-    const localRepo = realpathSync(mkdtempSync(path.join(os.tmpdir(), "middleman-hosted-intake-")));
+    const localRepo = realpathSync(mkdtempSync(path.join(os.tmpdir(), "kenn-forge-hosted-intake-")));
     try {
       execFileSync("git", ["init", "-b", "main"], { cwd: localRepo, stdio: "ignore" });
       execFileSync("git", ["config", "user.email", "e2e@example.com"], {
@@ -188,7 +188,7 @@ test.describe("embedded config", () => {
 
   test("embed project card preserves host key in project actions", async ({ page }) => {
     const server = await startIsolatedE2EServerWithOptions({ fleetKey: "hub" });
-    const localRepo = realpathSync(mkdtempSync(path.join(os.tmpdir(), "middleman-hosted-card-")));
+    const localRepo = realpathSync(mkdtempSync(path.join(os.tmpdir(), "kenn-forge-hosted-card-")));
     try {
       execFileSync("git", ["init"], { cwd: localRepo, stdio: "ignore" });
       const registerResponse = await page.request.post(`${server.info.base_url}/api/v1/projects`, {
@@ -204,17 +204,17 @@ test.describe("embedded config", () => {
 
       await page.addInitScript(() => {
         const win = window as unknown as {
-          __middleman_config?: MiddlemanConfig;
-          __middleman_project_action_context?: unknown;
+          __kenn_forge_config?: ForgeConfig;
+          __kenn_forge_project_action_context?: unknown;
         };
-        win.__middleman_config = {
+        win.__kenn_forge_config = {
           actions: {
             project: [
               {
                 id: "new-worktree",
                 label: "New Worktree",
                 handler: (context) => {
-                  win.__middleman_project_action_context = context;
+                  win.__kenn_forge_project_action_context = context;
                   return { ok: true };
                 },
               },
@@ -237,9 +237,9 @@ test.describe("embedded config", () => {
         .poll(() =>
           page.evaluate(() => {
             const win = window as unknown as {
-              __middleman_project_action_context?: unknown;
+              __kenn_forge_project_action_context?: unknown;
             };
-            return win.__middleman_project_action_context;
+            return win.__kenn_forge_project_action_context;
           }),
         )
         .toEqual({

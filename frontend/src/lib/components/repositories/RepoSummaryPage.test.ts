@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import * as flash from "@middleman/ui/stores/flash";
+import * as flash from "@kenn-forge/ui/stores/flash";
 
 const mockGet = vi.fn();
 const mockPost = vi.fn();
@@ -24,8 +24,8 @@ vi.mock("../../stores/filter.svelte.js", () => ({
   setGlobalRepo: (repo: string | undefined) => mockSetGlobalRepo(repo),
 }));
 
-vi.mock("@middleman/ui", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@middleman/ui")>();
+vi.mock("@kenn-forge/ui", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@kenn-forge/ui")>();
   const { default: MockCommentEditor } = await import("../../../test/MockCommentEditor.svelte");
   return {
     ...actual,

@@ -24,10 +24,10 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
-	"go.kenn.io/middleman/internal/config"
-	"go.kenn.io/middleman/internal/fleet"
-	"go.kenn.io/middleman/internal/server/workspaceapi"
-	"go.kenn.io/middleman/internal/sshfleet"
+	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/fleet"
+	"go.kenn.io/forge/internal/server/workspaceapi"
+	"go.kenn.io/forge/internal/sshfleet"
 )
 
 // fakeSSHExec scripts the remote api -i verb: requests are recorded
@@ -43,7 +43,7 @@ type fakeSSHExec struct {
 func (f *fakeSSHExec) exec(
 	_ context.Context, argv []string, stdin []byte,
 ) ([]byte, []byte, int, error) {
-	// argv ends with: sh -lc '<PATH=...; middleman api -i [-d @-] METHOD PATH'
+	// argv ends with: sh -lc '<PATH=...; kenn-forge api -i [-d @-] METHOD PATH'
 	fragment := argv[len(argv)-1]
 	fields := strings.Fields(fragment)
 	trim := func(v string) string {
@@ -109,7 +109,7 @@ func setTestFleetConfig(srv *Handler, mutate func(*config.Config)) {
 			Platforms:           cfg.Platforms,
 		},
 		PlatformAuthEnabled: true,
-		TmuxCommand:         []string{"middleman-no-such-tmux"},
+		TmuxCommand:         []string{"kenn-forge-no-such-tmux"},
 	})
 }
 
@@ -652,7 +652,7 @@ func TestSSHFleetRelayAutoStartsRemoteDaemon(t *testing.T) {
 			return nil, nil, 0, nil
 		case strings.Contains(fragment, "api"):
 			if !ready() {
-				return nil, []byte("no middleman daemon is running"),
+				return nil, []byte("no kenn-forge daemon is running"),
 					2, nil
 			}
 			return []byte(framedJSON(201, `{"id":"wtr_1"}`)), nil, 0, nil

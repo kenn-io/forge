@@ -11,11 +11,11 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/apiclient"
+	"go.kenn.io/forge/internal/apiclient/generated"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/workspace"
 	gitcmd "go.kenn.io/kit/git/cmd"
-	"go.kenn.io/middleman/internal/apiclient"
-	"go.kenn.io/middleman/internal/apiclient/generated"
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/workspace"
 )
 
 func setupLifecycleWorkspaceServer(t *testing.T) (*apiclient.Client, *db.DB, string, string) {
@@ -141,9 +141,9 @@ func TestWorkspaceRetryLegacyUnknownHeadRepoLeavesBranchUntrackedE2E(t *testing.
 		ItemNumber:      2,
 		GitHeadRef:      "feature",
 		MRHeadRepo:      nil,
-		WorkspaceBranch: "__middleman_unknown__",
+		WorkspaceBranch: "__kenn_forge_unknown__",
 		WorktreePath:    filepath.Join(t.TempDir(), workspaceID),
-		TmuxSession:     "middleman-" + workspaceID,
+		TmuxSession:     "kenn-forge-" + workspaceID,
 		Status:          "error",
 		ErrorMessage:    &errMessage,
 	}))
@@ -236,7 +236,7 @@ func TestWorkspaceDeleteDoesNotCleanupReplacementCloneE2E(t *testing.T) {
 
 	client, database, _, remotePath := setupLifecycleWorkspaceServer(t)
 	ctx := t.Context()
-	const branch = "middleman/pr-42"
+	const branch = "kenn-forge/pr-42"
 	replacementClone := filepath.Join(t.TempDir(), "replacement-clone")
 	runGit(t, filepath.Dir(replacementClone), "clone", remotePath, replacementClone)
 	runGit(
@@ -320,7 +320,7 @@ func TestWorkspaceCreatePreservesExistingLocalPreferredBranch(t *testing.T) {
 
 	ws := waitForWorkspaceReady(t, ctx, client, createResp.JSON202.Id)
 	assert.Equal(
-		"middleman/pr-1",
+		"kenn-forge/pr-1",
 		workspaceGitOutput(t, ws.WorktreePath, "branch", "--show-current"),
 	)
 	assert.Equal(originSHA, testGitSHA(t, ws.WorktreePath, "HEAD"))
@@ -379,13 +379,13 @@ func TestWorkspaceDeleteLegacySyntheticBranchAllowsRecreate(t *testing.T) {
 
 	ws := waitForWorkspaceReady(t, ctx, client, createResp.JSON202.Id)
 	assert.Equal(
-		"middleman/pr-1",
+		"kenn-forge/pr-1",
 		workspaceGitOutput(t, ws.WorktreePath, "branch", "--show-current"),
 	)
 
 	_, err = database.WriteDB().ExecContext(ctx, `
-		UPDATE middleman_workspaces
-		SET workspace_branch = '__middleman_unknown__'
+		UPDATE forge_workspaces
+		SET workspace_branch = '__kenn_forge_unknown__'
 		WHERE id = ?`,
 		createResp.JSON202.Id,
 	)
@@ -417,7 +417,7 @@ func TestWorkspaceDeleteLegacySyntheticBranchAllowsRecreate(t *testing.T) {
 
 	recreated := waitForWorkspaceReady(t, ctx, client, recreateResp.JSON202.Id)
 	assert.Equal(
-		"middleman/pr-1",
+		"kenn-forge/pr-1",
 		workspaceGitOutput(t, recreated.WorktreePath, "branch", "--show-current"),
 	)
 	assert.Equal(originSHA, testGitSHA(t, recreated.WorktreePath, "HEAD"))
@@ -564,8 +564,8 @@ case " $* " in
 		exit 128
 		;;
 esac
-exec "$MIDDLEMAN_TEST_REAL_GIT" "$@"
+exec "$KENN_FORGE_TEST_REAL_GIT" "$@"
 `), 0o755))
 	t.Setenv("PATH", wrapperDir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	t.Setenv("MIDDLEMAN_TEST_REAL_GIT", realGit)
+	t.Setenv("KENN_FORGE_TEST_REAL_GIT", realGit)
 }

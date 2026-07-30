@@ -20,7 +20,7 @@ const workspace = {
   item_number: 42,
   git_head_ref: "feature/auth",
   worktree_path: "/tmp/worktrees/ws-123",
-  tmux_session: "middleman-ws-123",
+  tmux_session: "kenn-forge-ws-123",
   tmux_pane_title: null,
   tmux_working: false,
   status: "ready",

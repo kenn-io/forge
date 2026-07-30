@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
-import type { DiffFile, DiffLine, DiffResult, FilesResult } from "@middleman/ui/api/types";
+import type { DiffFile, DiffLine, DiffResult, FilesResult } from "@kenn-forge/ui/api/types";
 
 type DiffFixtureFile = Omit<DiffFile, "patch"> & { patch?: string };
 type DiffFixture = Omit<DiffResult, "files"> & {
@@ -593,7 +593,7 @@ test.describe("activity split view", () => {
 
   test("compact flat activity rows respect hide org name", async ({ page }) => {
     await page.addInitScript(() => {
-      localStorage.removeItem("middleman:hideOrgName");
+      localStorage.removeItem("kenn-forge:hideOrgName");
     });
     await page.goto("/?view=flat");
     await waitForActivityTable(page);

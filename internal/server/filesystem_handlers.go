@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"go.kenn.io/middleman/internal/server/httpapi"
+	"go.kenn.io/forge/internal/server/httpapi"
 )
 
 // Filesystem discovery endpoints back project-registration UX: a client

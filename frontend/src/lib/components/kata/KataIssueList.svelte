@@ -68,7 +68,7 @@
     onOpenGraph = undefined,
   }: Props = $props();
 
-  const SORT_STORAGE_KEY = "middleman:kata:issue-sort/v1";
+  const SORT_STORAGE_KEY = "kenn-forge:kata:issue-sort/v1";
   const restoredColumnVisibility = loadKataTaskColumnVisibility();
   const restoredSort = loadSort();
   const initialSort = sortForColumnVisibility(restoredSort, restoredColumnVisibility);

@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
-import { getStackDepth, getTopFrame, resetModalStack } from "@middleman/ui/stores/keyboard/modal-stack";
+import { getStackDepth, getTopFrame, resetModalStack } from "@kenn-forge/ui/stores/keyboard/modal-stack";
 import { expandMarkdownImages } from "./markdownImages";
 
 const appCss = readFileSync("src/app.css", "utf8");

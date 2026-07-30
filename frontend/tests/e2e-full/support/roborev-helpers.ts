@@ -67,7 +67,7 @@ function waitForDaemonHealthy(): void {
       execSync("sleep 1", { stdio: "pipe" });
     }
   }
-  throw new Error("Daemon not healthy through Middleman's proxy after 30 attempts");
+  throw new Error("Daemon not healthy through Kenn Forge's proxy after 30 attempts");
 }
 
 export async function countRoborevDaemonEventStreams(): Promise<number> {

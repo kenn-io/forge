@@ -1,5 +1,5 @@
 // Package ui embeds the built GitHub App setup frontend
-// (packages/github-app-ui) served by middleman-github-app's loopback
+// (packages/github-app-ui) served by kenn-forge-github-app's loopback
 // flow server. Like internal/web, the dist directory holds only a
 // committed stub until `make build` copies the real Vite output in.
 package ui

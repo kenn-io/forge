@@ -12,13 +12,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"go.kenn.io/middleman/internal/archive"
-	"go.kenn.io/middleman/internal/db"
-	ghclient "go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/platform"
-	"go.kenn.io/middleman/internal/server"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
-	"go.kenn.io/middleman/internal/testutil/servertest"
+	"go.kenn.io/forge/internal/archive"
+	"go.kenn.io/forge/internal/db"
+	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/platform"
+	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/servertest"
 )
 
 type archiveQuotaBurstSource struct {
@@ -143,13 +143,13 @@ func TestArchiveAPIStopsProviderBurstAtObservedQuotaHeadroomE2E(t *testing.T) {
 		HostCheckAllowLoopbackAnyPort: true,
 	})
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
-	middleman := httptest.NewServer(srv)
-	t.Cleanup(middleman.Close)
+	forge := httptest.NewServer(srv)
+	t.Cleanup(forge.Close)
 
 	status, body := postJSON(
 		t,
-		middleman.Client(),
-		middleman.URL+"/api/v1/archive/start",
+		forge.Client(),
+		forge.URL+"/api/v1/archive/start",
 		map[string]any{"all": false, "repositories": []map[string]string{{
 			"provider": "github", "platform_host": "github.com",
 			"owner": "acme", "name": "widget", "repo_path": "acme/widget",

@@ -272,7 +272,7 @@
   </div>
 
   {#if issues.getIssueFilterState() !== "open"}
-    <p class="state-note">Showing items closed after middleman began tracking them</p>
+    <p class="state-note">Showing items closed after kenn-forge began tracking them</p>
   {/if}
   <ScrollBox class="list-body" label="Issues">
     {#if settings.isSettingsLoaded() && !settings.hasConfiguredRepos()}

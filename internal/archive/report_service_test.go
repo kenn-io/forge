@@ -7,10 +7,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"go.kenn.io/middleman/internal/archive/report"
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/platform"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/archive/report"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/platform"
+	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
 func TestArchiveServiceReportBuildsOfflineCountsCoverageAndDetails(t *testing.T) {
@@ -187,7 +187,7 @@ func TestArchiveServiceReportUsesOneSQLiteSnapshot(t *testing.T) {
 	}()
 	<-coverageRead
 	_, err = database.WriteDB().ExecContext(t.Context(), `
-		INSERT INTO middleman_issues (
+		INSERT INTO forge_issues (
 			repo_id, platform_id, platform_external_id, number, title, state,
 			created_at, updated_at, last_activity_at
 		) VALUES (?, 99, 'issue-99', 99, 'concurrent', 'open', ?, ?, ?)`, repoID, now, now, now)
@@ -221,7 +221,7 @@ func TestArchiveServiceDetailedReportLimitDoesNotLimitSummary(t *testing.T) {
 		WITH RECURSIVE sequence(n) AS (
 			VALUES(1) UNION ALL SELECT n + 1 FROM sequence WHERE n < 10001
 		)
-		INSERT INTO middleman_issues (
+		INSERT INTO forge_issues (
 			repo_id, platform_id, platform_external_id, number, title, state,
 			created_at, updated_at, last_activity_at
 		)

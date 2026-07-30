@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/server/httpapi"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/server/httpapi"
 )
 
 type setAssigneesOutput = httpapi.BodyOutput[httpapi.ItemAssigneesResponse]
@@ -109,7 +109,7 @@ func (s *Handler) setPullReviewers(
 
 	// Resolve the current requested-reviewer set from the provider, not
 	// from the last synced row: the synced state can be stale (drift
-	// from edits made outside middleman) or unknown (reviewers_json was
+	// from edits made outside kenn-forge) or unknown (reviewers_json was
 	// never reported), and either would make the diff below silently
 	// skip removals. An empty request is the providers' read primitive.
 	ref := platformRepoRefFromDB(*repo)

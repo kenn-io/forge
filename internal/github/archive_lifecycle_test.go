@@ -14,10 +14,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"go.kenn.io/middleman/internal/archive"
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/platform"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/archive"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/platform"
+	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
 type blockingArchiveRunner struct {
@@ -295,7 +295,7 @@ func TestArchivePreemptedItemRecordsNoFailureAndCompletesOnNextPass(t *testing.T
 	var lastErrorCode *string
 	var nextRetryAt *time.Time
 	require.NoError(database.ReadDB().QueryRowContext(t.Context(), `
-		SELECT last_error_code, next_retry_at FROM middleman_archive_repos WHERE repo_id = ?`, repo.ID,
+		SELECT last_error_code, next_retry_at FROM forge_archive_repos WHERE repo_id = ?`, repo.ID,
 	).Scan(&lastErrorCode, &nextRetryAt))
 	assert.Nil(lastErrorCode)
 	assert.Nil(nextRetryAt)
@@ -635,7 +635,7 @@ func TestArchiveWorkerAdvancesRealServiceAfterStart(t *testing.T) {
 			assert.Equal(db.ArchiveCollectionModeFull, states[0].CollectionMode)
 			var itemCount int
 			require.NoError(database.ReadDB().QueryRowContext(t.Context(), `
-				SELECT COUNT(*) FROM middleman_archive_items
+				SELECT COUNT(*) FROM forge_archive_items
 				WHERE repo_id = ? AND item_type = 'issue'`, repo.ID,
 			).Scan(&itemCount))
 			assert.Equal(1, itemCount)

@@ -10,7 +10,7 @@ import (
 )
 
 // baselineIgnore is the hardcoded floor - these patterns apply even
-// when the folder has no .gitignore or .middlemanignore. Middleman is a
+// when the folder has no .gitignore or .kenn-forgeignore. Kenn Forge is a
 // human-notes browser, so VCS metadata, dependency caches, and OS
 // clutter are never things the user wants to scroll past, and we
 // don't want the user to have to opt every folder into hiding them.
@@ -23,8 +23,8 @@ var baselineIgnore = []string{
 }
 
 const (
-	gitIgnoreFilename       = ".gitignore"
-	middlemanIgnoreFilename = ".middlemanignore"
+	gitIgnoreFilename   = ".gitignore"
+	forgeIgnoreFilename = ".kenn-forgeignore"
 )
 
 // ignoreLayer is one ignore source's compiled patterns, anchored at
@@ -36,7 +36,7 @@ type ignoreLayer struct {
 }
 
 // folderIgnore answers "is this path hidden from the docs view?"
-// for one registered folder. It composes baseline + .middlemanignore
+// for one registered folder. It composes baseline + .kenn-forgeignore
 // (root only) + every .gitignore found in the tree. A positive match
 // from any layer hides the path - cross-layer negation (parent
 // ignores `*.log`, child un-ignores `important.log`) is not
@@ -58,7 +58,7 @@ func loadFolderIgnore(root string) (*folderIgnore, error) {
 			{dir: "", ig: gitignore.CompileIgnoreLines(baselineIgnore...)},
 		},
 	}
-	if extra, err := compileIgnoreIfExists(filepath.Join(root, middlemanIgnoreFilename)); err != nil {
+	if extra, err := compileIgnoreIfExists(filepath.Join(root, forgeIgnoreFilename)); err != nil {
 		return nil, err
 	} else if extra != nil {
 		fi.layers = append(fi.layers, ignoreLayer{dir: "", ig: extra})

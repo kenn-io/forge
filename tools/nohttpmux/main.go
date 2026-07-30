@@ -14,7 +14,7 @@ import (
 	"slices"
 	"strings"
 
-	"go.kenn.io/middleman/internal/procutil"
+	"go.kenn.io/forge/internal/procutil"
 )
 
 const diagnosticMessage = "non-Huma HTTP route registration is not allowed; register API routes through the Huma route layer"
@@ -268,15 +268,15 @@ func allowedRegistration(path string, call *ast.CallExpr) bool {
 	}
 }
 
-// isExemptNonAPIServerPath lists muxes that are not middleman API
+// isExemptNonAPIServerPath lists muxes that are not kenn-forge API
 // surfaces and so have no Huma route layer to go through: the GitHub
-// App fake server used by tests, and the middleman-github-app CLI's
+// App fake server used by tests, and the kenn-forge-github-app CLI's
 // loopback browser-callback server for the App Manifest flow.
 func isExemptNonAPIServerPath(path string) bool {
 	slashPath := filepath.ToSlash(path)
 	for _, exempt := range []string{
 		"internal/githubapp/githubapptest/",
-		"cmd/middleman-github-app/",
+		"cmd/kenn-forge-github-app/",
 	} {
 		if strings.Contains(slashPath, "/"+exempt) ||
 			strings.HasPrefix(slashPath, exempt) {
@@ -317,8 +317,8 @@ func isServerApplicationPath(path string) bool {
 	slashPath := filepath.ToSlash(path)
 	return strings.Contains(slashPath, "/internal/server/") ||
 		strings.HasPrefix(slashPath, "internal/server/") ||
-		strings.Contains(slashPath, "/cmd/middleman/") ||
-		strings.HasPrefix(slashPath, "cmd/middleman/")
+		strings.Contains(slashPath, "/cmd/kenn-forge/") ||
+		strings.HasPrefix(slashPath, "cmd/kenn-forge/")
 }
 
 func pathHasSuffix(path, suffix string) bool {

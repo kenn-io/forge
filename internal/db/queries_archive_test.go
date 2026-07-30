@@ -16,7 +16,7 @@ func archiveTestTime() time.Time {
 func insertArchiveItemForTest(t *testing.T, d *DB, repoID int64, itemType ArchiveItemType, number int, createdAt time.Time) {
 	t.Helper()
 	_, err := d.WriteDB().ExecContext(t.Context(), `
-		INSERT INTO middleman_archive_items (
+		INSERT INTO forge_archive_items (
 			repo_id, item_type, item_number, provider_item_id,
 			provider_created_at, provider_updated_at, lifecycle_state
 		) VALUES (?, ?, ?, ?, ?, ?, 'active')`,
@@ -37,7 +37,7 @@ func insertArchiveProgressForTest(
 ) {
 	t.Helper()
 	_, err := d.WriteDB().ExecContext(t.Context(), `
-		INSERT INTO middleman_archive_dataset_progress (
+		INSERT INTO forge_archive_dataset_progress (
 			repo_id, item_type, item_number, dataset, status, updated_at
 		) VALUES (?, ?, ?, ?, ?, ?)
 		ON CONFLICT(repo_id, item_type, item_number, dataset) DO UPDATE SET
@@ -85,13 +85,13 @@ func TestArchiveDiscoveryLifecyclePreservesExistingState(t *testing.T) {
 	assert.Equal(now, states[0].UpdatedAt)
 
 	_, err = d.WriteDB().ExecContext(ctx, `
-		UPDATE middleman_archive_repos
+		UPDATE forge_archive_repos
 		SET collection_mode = 'full', operator_state = 'paused',
 			maintenance_watermark = ?, updated_at = ?
 		WHERE repo_id = ?`, now.Add(time.Hour), now.Add(2*time.Hour), firstRepoID)
 	require.NoError(err)
 	_, err = d.WriteDB().ExecContext(ctx, `
-		UPDATE middleman_archive_repo_scans
+		UPDATE forge_archive_repo_scans
 		SET next_cursor = 'issue-cursor', status = 'running', page_count = 1
 		WHERE repo_id = ? AND scan = 'issue_inventory'`, firstRepoID)
 	require.NoError(err)
@@ -114,7 +114,7 @@ func TestStartFullArchiveCompletesEmptyFinishedInventory(t *testing.T) {
 	repoID := insertTestRepo(t, d, "acme", "empty")
 	require.NoError(d.EnsureDiscoveryArchives(t.Context(), []int64{repoID}, now))
 	_, err := d.WriteDB().ExecContext(t.Context(), `
-		UPDATE middleman_archive_repo_scans
+		UPDATE forge_archive_repo_scans
 		SET status = 'complete'
 		WHERE repo_id = ? AND scan IN ('issue_inventory', 'merge_request_inventory')`, repoID)
 	require.NoError(err)
@@ -190,7 +190,7 @@ func TestArchiveInventoryPageCommitUsesScanCursorCompareAndSwap(t *testing.T) {
 	assert.Equal("invalid_cursor", *states[0].IssueInventory.LastErrorCode)
 	var echoedItems int
 	require.NoError(d.ReadDB().QueryRowContext(ctx, `
-		SELECT COUNT(*) FROM middleman_archive_items
+		SELECT COUNT(*) FROM forge_archive_items
 		WHERE repo_id = ? AND item_number = 2`, repoID).Scan(&echoedItems))
 	assert.Zero(echoedItems, "a rejected page must not commit parent rows")
 
@@ -232,7 +232,7 @@ func TestArchiveInventoryCompletedScanRejectsStaleDeliveries(t *testing.T) {
 		t.Helper()
 		var updatedAt time.Time
 		require.NoError(d.ReadDB().QueryRowContext(ctx, `
-			SELECT provider_updated_at FROM middleman_archive_items
+			SELECT provider_updated_at FROM forge_archive_items
 			WHERE repo_id = ? AND item_type = 'issue' AND item_number = ?`,
 			repoID, number).Scan(&updatedAt))
 		return updatedAt
@@ -279,7 +279,7 @@ func TestArchiveInventoryPageBoundBlocksScan(t *testing.T) {
 	require.NoError(d.EnsureDiscoveryArchives(ctx, []int64{repoID}, now))
 	require.NoError(d.StartFullArchives(ctx, []int64{repoID}, now))
 	_, err := d.WriteDB().ExecContext(ctx, `
-		UPDATE middleman_archive_repo_scans
+		UPDATE forge_archive_repo_scans
 		SET page_count = ?, next_cursor = 'deep', status = 'running'
 		WHERE repo_id = ? AND scan = 'issue_inventory'`, maxScanPages, repoID)
 	require.NoError(err)
@@ -322,18 +322,18 @@ func TestArchiveStartFullPromotesDiscoveryAndPreservesResumedProgress(t *testing
 	repoID := insertTestRepo(t, d, "acme", "widget")
 	require.NoError(d.EnsureDiscoveryArchives(ctx, []int64{repoID}, now))
 	_, err := d.WriteDB().ExecContext(ctx, `
-		UPDATE middleman_archive_repos
+		UPDATE forge_archive_repos
 		SET maintenance_watermark = ?,
 			last_error_code = 'transient', last_error_detail = 'retry me', next_retry_at = ?
 		WHERE repo_id = ?`, now.Add(-time.Hour), now.Add(time.Hour), repoID)
 	require.NoError(err)
 	_, err = d.WriteDB().ExecContext(ctx, `
-		UPDATE middleman_archive_repo_scans
+		UPDATE forge_archive_repo_scans
 		SET next_cursor = 'issues-next', status = 'running', page_count = 1
 		WHERE repo_id = ? AND scan = 'issue_inventory'`, repoID)
 	require.NoError(err)
 	_, err = d.WriteDB().ExecContext(ctx, `
-		UPDATE middleman_archive_repo_scans
+		UPDATE forge_archive_repo_scans
 		SET next_cursor = 'mrs-next', status = 'running', page_count = 1
 		WHERE repo_id = ? AND scan = 'merge_request_inventory'`, repoID)
 	require.NoError(err)
@@ -362,16 +362,16 @@ func TestArchiveStartFullPromotesDiscoveryAndPreservesResumedProgress(t *testing
 		archiveProgressStatusForTest(t, d, repoID, ArchiveItemTypeMergeRequest, 8, ArchiveDatasetLookup))
 
 	_, err = d.WriteDB().ExecContext(ctx, `
-		UPDATE middleman_archive_repos
+		UPDATE forge_archive_repos
 		SET operator_state = 'paused', maintenance_succeeded_at = ?
 		WHERE repo_id = ?`, now.Add(3*time.Hour), repoID)
 	require.NoError(err)
 	_, err = d.WriteDB().ExecContext(ctx, `
-		UPDATE middleman_archive_repo_scans SET status = 'complete'
+		UPDATE forge_archive_repo_scans SET status = 'complete'
 		WHERE repo_id = ? AND scan = 'issue_inventory'`, repoID)
 	require.NoError(err)
 	_, err = d.WriteDB().ExecContext(ctx,
-		`UPDATE middleman_archive_dataset_progress SET status = 'complete' WHERE repo_id = ?`, repoID)
+		`UPDATE forge_archive_dataset_progress SET status = 'complete' WHERE repo_id = ?`, repoID)
 	require.NoError(err)
 	require.NoError(d.StartFullArchives(ctx, []int64{repoID}, now.Add(5*time.Hour)))
 	resumed, err := d.ListArchiveRepoStates(ctx, []int64{repoID})
@@ -390,7 +390,7 @@ func TestArchiveStartFullPromotesDiscoveryAndPreservesResumedProgress(t *testing
 	activeUpdatedAt := now.Add(6 * time.Hour)
 	activeRetryAt := now.Add(7 * time.Hour)
 	_, err = d.WriteDB().ExecContext(ctx, `
-		UPDATE middleman_archive_repos
+		UPDATE forge_archive_repos
 		SET last_error_code = ?, last_error_detail = ?, next_retry_at = ?, updated_at = ?
 		WHERE repo_id = ?`,
 		ArchiveErrorCodeAuthentication, "credentials rejected", activeRetryAt, activeUpdatedAt, repoID)
@@ -468,7 +468,7 @@ func TestArchiveClaimItemUsesEligibleDueWorkAndStableOrder(t *testing.T) {
 	insertArchiveItemForTest(t, d, firstRepoID, ArchiveItemTypeIssue, 2, oldest.Add(-time.Minute))
 	insertArchiveProgressForTest(t, d, firstRepoID, ArchiveItemTypeIssue, 2, ArchiveDatasetLookup, ArchiveDatasetProgressFailed)
 	_, err := d.WriteDB().ExecContext(ctx, `
-		UPDATE middleman_archive_dataset_progress
+		UPDATE forge_archive_dataset_progress
 		SET next_retry_at = ?
 		WHERE repo_id = ? AND item_type = 'issue' AND item_number = 2`,
 		formatDatasetProgressTime(now.Add(time.Hour)), firstRepoID)
@@ -480,7 +480,7 @@ func TestArchiveClaimItemUsesEligibleDueWorkAndStableOrder(t *testing.T) {
 	insertArchiveItemForTest(t, d, firstRepoID, ArchiveItemTypeIssue, 5, oldest.Add(-4*time.Minute))
 	insertArchiveProgressForTest(t, d, firstRepoID, ArchiveItemTypeIssue, 5, ArchiveDatasetLookup, ArchiveDatasetProgressPending)
 	_, err = d.WriteDB().ExecContext(ctx, `
-		UPDATE middleman_archive_items SET lifecycle_state = 'removed_upstream'
+		UPDATE forge_archive_items SET lifecycle_state = 'removed_upstream'
 		WHERE repo_id = ? AND item_type = 'issue' AND item_number = 5`, firstRepoID)
 	require.NoError(err)
 
@@ -518,7 +518,7 @@ func TestArchiveClaimItemUsesEligibleDueWorkAndStableOrder(t *testing.T) {
 	assert.Equal(secondRepoID, claim.RepoID)
 
 	_, err = d.WriteDB().ExecContext(ctx, `
-		UPDATE middleman_archive_repos SET next_retry_at = ? WHERE repo_id = ?`,
+		UPDATE forge_archive_repos SET next_retry_at = ? WHERE repo_id = ?`,
 		now.Add(time.Hour), secondRepoID)
 	require.NoError(err)
 	claim, err = d.ClaimArchiveItem(ctx, ClaimArchiveItemOpts{
@@ -643,7 +643,7 @@ func TestRequeueArchiveLifecycleDetailsOnlyReopensIncompleteGitHubRows(t *testin
 		t, database, repoID, 8, "issue-8", "Closed issue", "author", mergedAt.Add(-time.Hour),
 	)
 	_, err = database.WriteDB().ExecContext(ctx, `
-		UPDATE middleman_issues SET state = 'closed', closed_at = ? WHERE id = ?`,
+		UPDATE forge_issues SET state = 'closed', closed_at = ? WHERE id = ?`,
 		mergedAt, issueID)
 	require.NoError(err)
 	insertArchiveItemForTest(t, database, repoID, ArchiveItemTypeIssue, 8, mergedAt)
@@ -670,7 +670,7 @@ func TestRequeueArchiveLifecycleDetailsOnlyReopensIncompleteGitHubRows(t *testin
 	assert.Equal(ArchiveDatasetProgressPending, issueProgress.Status)
 
 	_, err = database.WriteDB().ExecContext(ctx, `
-		UPDATE middleman_merge_requests
+		UPDATE forge_merge_requests
 		SET files_changed = 1, merge_commit_sha = 'abc123'
 		WHERE repo_id = ? AND number = 7`, repoID)
 	require.NoError(err)
@@ -681,7 +681,7 @@ func TestRequeueArchiveLifecycleDetailsOnlyReopensIncompleteGitHubRows(t *testin
 		t, database, issueID, "closed", "closed-8", "", "closer", mergedAt,
 	)
 	_, err = database.WriteDB().ExecContext(ctx, `
-		UPDATE middleman_archive_dataset_progress
+		UPDATE forge_archive_dataset_progress
 		SET status = 'complete'
 		WHERE repo_id = ? AND (
 			(item_type = 'merge_request' AND item_number = 7)
@@ -863,7 +863,7 @@ func TestReconcileArchiveCoverageRequeuesKnownItemsWhenInventoryReturns(t *testi
 		ArchiveDatasetLookup, ArchiveDatasetProgressComplete,
 	)
 	_, err = database.WriteDB().ExecContext(ctx, `
-		UPDATE middleman_archive_dataset_progress
+		UPDATE forge_archive_dataset_progress
 		SET scan_generation = ?
 		WHERE repo_id = ? AND item_type = 'merge_request'
 		  AND item_number = 7 AND dataset = 'lookup'`,
@@ -1112,10 +1112,10 @@ func TestArchiveGetProgressDerivesCountsFromDurableRows(t *testing.T) {
 	require.NoError(d.EnsureDiscoveryArchives(ctx, []int64{firstRepoID, secondRepoID}, now))
 	require.NoError(d.StartFullArchives(ctx, []int64{firstRepoID, secondRepoID}, now))
 	_, err := d.WriteDB().ExecContext(ctx, `
-		UPDATE middleman_archive_repos SET initial_completed_at = ?`, now)
+		UPDATE forge_archive_repos SET initial_completed_at = ?`, now)
 	require.NoError(err)
 	_, err = d.WriteDB().ExecContext(ctx, `
-		UPDATE middleman_archive_repo_scans SET status = 'complete'
+		UPDATE forge_archive_repo_scans SET status = 'complete'
 		WHERE scan IN ('issue_inventory', 'merge_request_inventory')`)
 	require.NoError(err)
 	insertArchiveItemForTest(t, d, firstRepoID, ArchiveItemTypeIssue, 1, now.Add(-3*time.Hour))
@@ -1125,14 +1125,14 @@ func TestArchiveGetProgressDerivesCountsFromDurableRows(t *testing.T) {
 	insertArchiveItemForTest(t, d, firstRepoID, ArchiveItemTypeIssue, 3, now.Add(-time.Hour))
 	insertArchiveProgressForTest(t, d, firstRepoID, ArchiveItemTypeIssue, 3, ArchiveDatasetLookup, ArchiveDatasetProgressFailed)
 	_, err = d.WriteDB().ExecContext(ctx, `
-		UPDATE middleman_archive_dataset_progress SET next_retry_at = ?
+		UPDATE forge_archive_dataset_progress SET next_retry_at = ?
 		WHERE repo_id = ? AND item_type = 'issue' AND item_number = 3`,
 		formatDatasetProgressTime(now.Add(time.Hour)), firstRepoID)
 	require.NoError(err)
 	insertArchiveItemForTest(t, d, secondRepoID, ArchiveItemTypeMergeRequest, 4, now.Add(-time.Hour))
 	insertArchiveProgressForTest(t, d, secondRepoID, ArchiveItemTypeMergeRequest, 4, ArchiveDatasetLookup, ArchiveDatasetProgressComplete)
 	_, err = d.WriteDB().ExecContext(ctx, `
-		UPDATE middleman_archive_items SET lifecycle_state = 'removed_upstream'
+		UPDATE forge_archive_items SET lifecycle_state = 'removed_upstream'
 		WHERE repo_id = ? AND item_type = 'merge_request' AND item_number = 4`, secondRepoID)
 	require.NoError(err)
 
@@ -1169,12 +1169,12 @@ func TestArchiveGetProgressUsesOneReadSnapshot(t *testing.T) {
 	require.NoError(d.EnsureDiscoveryArchives(ctx, []int64{repoID}, now))
 	require.NoError(d.StartFullArchives(ctx, []int64{repoID}, now))
 	_, err := d.WriteDB().ExecContext(ctx, `
-		UPDATE middleman_archive_repos
+		UPDATE forge_archive_repos
 		SET initial_completed_at = ?
 		WHERE repo_id = ?`, now, repoID)
 	require.NoError(err)
 	_, err = d.WriteDB().ExecContext(ctx, `
-		UPDATE middleman_archive_repo_scans SET status = 'complete'
+		UPDATE forge_archive_repo_scans SET status = 'complete'
 		WHERE repo_id = ? AND scan IN ('issue_inventory', 'merge_request_inventory')`, repoID)
 	require.NoError(err)
 	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 1, now)
@@ -1182,7 +1182,7 @@ func TestArchiveGetProgressUsesOneReadSnapshot(t *testing.T) {
 
 	progress, err := d.getArchiveProgress(ctx, ArchiveProgressOpts{RepoIDs: []int64{repoID}, Now: now}, func() error {
 		_, err := d.WriteDB().ExecContext(ctx, `
-			UPDATE middleman_archive_dataset_progress
+			UPDATE forge_archive_dataset_progress
 			SET status = 'complete'
 			WHERE repo_id = ? AND item_type = 'issue' AND item_number = 1`, repoID)
 		return err
@@ -1254,12 +1254,12 @@ func TestArchiveDBBoundariesNormalizeTimestampsToUTC(t *testing.T) {
 	require.NotNil(claim)
 	assert.Equal(1, claim.ItemNumber)
 	_, err = d.WriteDB().ExecContext(ctx, `
-		UPDATE middleman_archive_repos
+		UPDATE forge_archive_repos
 		SET initial_completed_at = ?
 		WHERE repo_id = ?`, now.UTC(), repoID)
 	require.NoError(err)
 	_, err = d.WriteDB().ExecContext(ctx, `
-		UPDATE middleman_archive_repo_scans SET status = 'complete'
+		UPDATE forge_archive_repo_scans SET status = 'complete'
 		WHERE repo_id = ? AND scan IN ('issue_inventory', 'merge_request_inventory')`, repoID)
 	require.NoError(err)
 	progress, err := d.GetArchiveProgress(ctx, ArchiveProgressOpts{RepoIDs: []int64{repoID}, Now: claimAt})
@@ -1277,7 +1277,7 @@ func TestScanScopedRepositoryFailureIsClaimFenced(t *testing.T) {
 	repoID := insertTestRepo(t, d, "acme", "scan-failure-fence")
 	require.NoError(d.EnsureDiscoveryArchives(ctx, []int64{repoID}, now))
 	_, err := d.WriteDB().ExecContext(ctx, `
-		UPDATE middleman_archive_repo_scans
+		UPDATE forge_archive_repo_scans
 		SET scan_generation = 6, status = 'running'
 		WHERE repo_id = ? AND scan = 'issue_inventory'`, repoID)
 	require.NoError(err)
@@ -1299,7 +1299,7 @@ func TestScanScopedRepositoryFailureIsClaimFenced(t *testing.T) {
 	assert.Nil(repoErrorCode())
 
 	_, err = d.WriteDB().ExecContext(ctx, `
-		UPDATE middleman_archive_repo_scans SET status = 'complete'
+		UPDATE forge_archive_repo_scans SET status = 'complete'
 		WHERE repo_id = ? AND scan = 'issue_inventory'`, repoID)
 	require.NoError(err)
 	applied, err = d.RecordArchiveRepositoryFailureForScan(
@@ -1311,7 +1311,7 @@ func TestScanScopedRepositoryFailureIsClaimFenced(t *testing.T) {
 	assert.Nil(repoErrorCode())
 
 	_, err = d.WriteDB().ExecContext(ctx, `
-		UPDATE middleman_archive_repo_scans SET status = 'running'
+		UPDATE forge_archive_repo_scans SET status = 'running'
 		WHERE repo_id = ? AND scan = 'issue_inventory'`, repoID)
 	require.NoError(err)
 	applied, err = d.RecordArchiveRepositoryFailureForScan(

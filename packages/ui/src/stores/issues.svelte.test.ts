@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { Issue, IssueDetail } from "../api/types.js";
-import type { MiddlemanClient } from "../types.js";
+import type { ForgeClient } from "../types.js";
 import { dismissFlash, getFlash, getFlashes } from "./flash.svelte.js";
 import { createIssuesStore } from "./issues.svelte.js";
 
@@ -45,7 +45,7 @@ describe("issues store bot visibility", () => {
         ],
         error: undefined,
       })),
-    } as unknown as MiddlemanClient;
+    } as unknown as ForgeClient;
     const store = createIssuesStore({ client });
 
     await store.loadIssues();
@@ -66,7 +66,7 @@ describe("issues store bot visibility", () => {
       error: undefined,
     }));
     const store = createIssuesStore({
-      client: { PUT: put } as unknown as MiddlemanClient,
+      client: { PUT: put } as unknown as ForgeClient,
     });
 
     await store.setHideBots(true);
@@ -93,7 +93,7 @@ describe("issues store bot visibility", () => {
         error: undefined,
       });
     const store = createIssuesStore({
-      client: { PUT: put } as unknown as MiddlemanClient,
+      client: { PUT: put } as unknown as ForgeClient,
     });
 
     const hide = store.setHideBots(true);
@@ -121,7 +121,7 @@ describe("issues store bot visibility", () => {
           data: undefined,
           error: { detail: "settings unavailable" },
         })),
-      } as unknown as MiddlemanClient,
+      } as unknown as ForgeClient,
     });
 
     await store.setHideBots(true);
@@ -136,7 +136,7 @@ describe("issues store bot visibility", () => {
         PUT: vi.fn(async () => {
           throw new Error("network unavailable");
         }),
-      } as unknown as MiddlemanClient,
+      } as unknown as ForgeClient,
     });
 
     await store.setHideBots(true);
@@ -165,7 +165,7 @@ function issueDetail(): IssueDetail {
   } as unknown as IssueDetail;
 }
 
-function mockClient(overrides: Partial<MiddlemanClient> = {}): MiddlemanClient {
+function mockClient(overrides: Partial<ForgeClient> = {}): ForgeClient {
   return {
     GET: vi.fn(),
     POST: vi.fn(),
@@ -176,7 +176,7 @@ function mockClient(overrides: Partial<MiddlemanClient> = {}): MiddlemanClient {
     HEAD: vi.fn(),
     TRACE: vi.fn(),
     ...overrides,
-  } as unknown as MiddlemanClient;
+  } as unknown as ForgeClient;
 }
 
 function deferred<T>(): {

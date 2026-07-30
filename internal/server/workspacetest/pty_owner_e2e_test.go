@@ -20,16 +20,16 @@ import (
 	"github.com/creack/pty/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/apiclient/generated"
-	"go.kenn.io/middleman/internal/config"
-	"go.kenn.io/middleman/internal/procutil"
-	"go.kenn.io/middleman/internal/ptyowner"
-	"go.kenn.io/middleman/internal/server"
-	"go.kenn.io/middleman/internal/workspace"
-	"go.kenn.io/middleman/internal/workspace/localruntime"
+	"go.kenn.io/forge/internal/apiclient/generated"
+	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/procutil"
+	"go.kenn.io/forge/internal/ptyowner"
+	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/workspace"
+	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
-const workspaceRuntimeHelperMarker = "middleman-workspace-runtime-helper"
+const workspaceRuntimeHelperMarker = "kenn-forge-workspace-runtime-helper"
 
 var rustPtyManagerBuild struct {
 	once sync.Once
@@ -208,11 +208,11 @@ func buildRustPtyManagerForTest(t *testing.T) string {
 	}
 	rustPtyManagerBuild.once.Do(func() {
 		root := repoRootForPtyOwnerTest(t)
-		cmd := procutil.Command(cargo, "build", "-p", "middleman-pty-manager")
+		cmd := procutil.Command(cargo, "build", "-p", "kenn-forge-pty-manager")
 		cmd.Dir = root
 		rustPtyManagerBuild.out, rustPtyManagerBuild.err = cmd.CombinedOutput()
 		rustPtyManagerBuild.path = filepath.Join(
-			root, "target", "debug", "middleman-pty-manager",
+			root, "target", "debug", "kenn-forge-pty-manager",
 		)
 		if runtime.GOOS == "windows" {
 			rustPtyManagerBuild.path += ".exe"

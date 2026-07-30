@@ -10,14 +10,14 @@
     SplitResizeHandle,
     type DiffFileCategoryFilter,
     type FileTreeEntry,
-    type MiddlemanClient,
+    type ForgeClient,
     type RepoBrowserRouteRef,
     type RepoBrowserViewMode,
     type SourceBrowserFileEntry,
     type SplitResizeEvent,
-  } from "@middleman/ui";
-  import type { RepoBrowserCommit, RepoBrowserRef } from "@middleman/ui/api/types";
-  import { providerDefaultHost } from "@middleman/ui/api/provider-routes";
+  } from "@kenn-forge/ui";
+  import type { RepoBrowserCommit, RepoBrowserRef } from "@kenn-forge/ui/api/types";
+  import { providerDefaultHost } from "@kenn-forge/ui/api/provider-routes";
   import DocMarkdownView from "../../components/docs/DocMarkdownView.svelte";
   import { RefreshIcon, ExternalLinkIcon, SpinnerIcon } from "../../icons";
   import {
@@ -47,7 +47,7 @@
   };
 
   interface Props {
-    client: MiddlemanClient;
+    client: ForgeClient;
     route: RepoBrowserFeatureRoute;
     onRouteChange: (route: RepoBrowserRouteRef, options?: { replace?: boolean }) => void;
   }

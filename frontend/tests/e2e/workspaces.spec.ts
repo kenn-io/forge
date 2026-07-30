@@ -9,20 +9,20 @@ test.beforeEach(async ({ page }) => {
 const contextMenuWorkspace = {
   id: "ws-context-menu-geometry",
   platform_host: "github.com",
-  repo_owner: "middleman",
-  repo_name: "middleman",
+  repo_owner: "kenn-forge",
+  repo_name: "kenn-forge",
   repo: {
     provider: "github",
     platform_host: "github.com",
-    owner: "middleman",
-    name: "middleman",
-    repo_path: "middleman/middleman",
+    owner: "kenn-forge",
+    name: "kenn-forge",
+    repo_path: "kenn-forge/kenn-forge",
   },
   item_type: "pull_request",
   item_number: 555,
   git_head_ref: "fix/issue-cross-reference-events",
-  worktree_path: "/tmp/middleman-ws-context-menu",
-  tmux_session: "middleman-ws-context-menu",
+  worktree_path: "/tmp/kenn-forge-ws-context-menu",
+  tmux_session: "kenn-forge-ws-context-menu",
   tmux_pane_title: null,
   tmux_working: false,
   status: "ready",
@@ -153,7 +153,7 @@ test("repo selector renders icon and still filters repos", async ({ page }) => {
 
 test("hideHeader suppresses AppHeader on the workspaces page", async ({ page }) => {
   await page.addInitScript(() => {
-    window.__middleman_config = {
+    window.__kenn_forge_config = {
       embed: { hideHeader: true },
     };
   });
@@ -165,7 +165,7 @@ test("hideHeader suppresses AppHeader on the workspaces page", async ({ page }) 
 test("navigateToRoute bridge method works", async ({ page }) => {
   await page.goto("/pulls");
   await page.evaluate(() => {
-    window.__middleman_navigate_to_route?.("/workspaces");
+    window.__kenn_forge_navigate_to_route?.("/workspaces");
   });
   await expect(page).toHaveURL(/\/workspaces/);
 });
@@ -175,10 +175,10 @@ test("workspace bridge methods are registered on startup", async ({ page }) => {
 
   await expect(
     page.evaluate(() => ({
-      navigateToRoute: typeof window.__middleman_navigate_to_route,
-      updateWorkspace: typeof window.__middleman_update_workspace,
-      updateSelection: typeof window.__middleman_update_selection,
-      updateHostState: typeof window.__middleman_update_host_state,
+      navigateToRoute: typeof window.__kenn_forge_navigate_to_route,
+      updateWorkspace: typeof window.__kenn_forge_update_workspace,
+      updateSelection: typeof window.__kenn_forge_update_selection,
+      updateHostState: typeof window.__kenn_forge_update_host_state,
     })),
   ).resolves.toEqual({
     navigateToRoute: "function",
@@ -294,7 +294,7 @@ test("nested repo_path embed detail route loads matching detail content", async 
 
 test("embed initialRoute opens detail surface without full app chrome", async ({ page }) => {
   await page.addInitScript(() => {
-    window.__middleman_config = {
+    window.__kenn_forge_config = {
       embed: {
         initialRoute: "/workspaces/embed/detail/gitlab/issue/git.example.com/7" + "?repo_path=group%2Fproject",
       },
@@ -384,7 +384,7 @@ test("full app initializes after navigating away from an initial embed route", a
   });
 
   await page.addInitScript(() => {
-    window.__middleman_config = {
+    window.__kenn_forge_config = {
       embed: {
         initialRoute: "/workspaces/embed/list",
       },
@@ -396,7 +396,7 @@ test("full app initializes after navigating away from an initial embed route", a
 
   const pullsResponse = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/v1/pulls");
   await page.evaluate(() => {
-    window.__middleman_navigate_to_route?.("/pulls");
+    window.__kenn_forge_navigate_to_route?.("/pulls");
   });
 
   await expect(page).toHaveURL(/\/pulls$/);
@@ -422,7 +422,7 @@ test("full app reinitializes after navigating through an embed route", async ({ 
       }
     }
     window.EventSource = TrackingEventSource;
-    Object.defineProperty(window, "__middleman_event_source_counts", {
+    Object.defineProperty(window, "__kenn_forge_event_source_counts", {
       value: () => ({ created: created.length, closed: closed.length }),
     });
   });
@@ -456,29 +456,29 @@ test("full app reinitializes after navigating through an embed route", async ({ 
   await page.goto("/pulls");
   await expect(page.locator("header.app-top-bar")).toBeVisible();
   await expect.poll(() => settingsRequests).toBe(1);
-  const initialEventSources = await page.evaluate(() => window.__middleman_event_source_counts?.().created ?? 0);
+  const initialEventSources = await page.evaluate(() => window.__kenn_forge_event_source_counts?.().created ?? 0);
   expect(initialEventSources).toBeGreaterThan(0);
 
   await page.evaluate(() => {
-    window.__middleman_navigate_to_route?.("/workspaces/embed/list");
+    window.__kenn_forge_navigate_to_route?.("/workspaces/embed/list");
   });
   await expect(page).toHaveURL(/\/workspaces\/embed\/list$/);
   await expect(page.locator("header.app-top-bar")).toHaveCount(0);
   await expect.poll(() => settingsRequests).toBe(2);
   await expect
-    .poll(async () => page.evaluate(() => window.__middleman_event_source_counts?.().closed ?? 0))
+    .poll(async () => page.evaluate(() => window.__kenn_forge_event_source_counts?.().closed ?? 0))
     .toBeGreaterThanOrEqual(initialEventSources);
 
   await page.evaluate(() => {
-    window.__middleman_navigate_to_route?.("/pulls");
+    window.__kenn_forge_navigate_to_route?.("/pulls");
   });
   await expect(page).toHaveURL(/\/pulls$/);
   await expect(page.locator("header.app-top-bar")).toBeVisible();
   await expect.poll(() => settingsRequests).toBe(3);
   await expect
-    .poll(async () => page.evaluate(() => window.__middleman_event_source_counts?.().created ?? 0))
+    .poll(async () => page.evaluate(() => window.__kenn_forge_event_source_counts?.().created ?? 0))
     .toBeGreaterThan(initialEventSources);
   await expect
-    .poll(async () => page.evaluate(() => window.__middleman_event_source_counts?.().closed ?? 0))
+    .poll(async () => page.evaluate(() => window.__kenn_forge_event_source_counts?.().closed ?? 0))
     .toBeGreaterThanOrEqual(initialEventSources);
 });

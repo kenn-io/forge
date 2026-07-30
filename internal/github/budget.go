@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/forge/internal/platform"
 )
 
 // PRDetailWorstCase is the maximum API calls a PR detail

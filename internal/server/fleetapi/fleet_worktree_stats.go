@@ -6,9 +6,9 @@ import (
 	"os"
 	"time"
 
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/server/workspaceapi"
-	"go.kenn.io/middleman/internal/workspace"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/server/workspaceapi"
+	"go.kenn.io/forge/internal/workspace"
 )
 
 // fleetWorktreeStatsInterval is how often the sampler re-measures every
@@ -21,7 +21,7 @@ const fleetWorktreeStatsInterval = 30 * time.Second
 // fleet snapshot reports. On a fixed interval it measures each worktree's
 // whole-branch diff size and upstream ahead/behind, writing them to the store
 // so the snapshot read path (buildLocalRaw) stays free of per-worktree git I/O.
-// It is the only writer of middleman_worktree_stats.
+// It is the only writer of forge_worktree_stats.
 type fleetWorktreeStatsSampler struct {
 	db       *db.DB
 	interval time.Duration

@@ -11,8 +11,8 @@ import {
   resetKataWorkspaceTestState,
 } from "./test/KataWorkspaceSupport.js";
 
-vi.mock("@middleman/ui", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@middleman/ui")>();
+vi.mock("@kenn-forge/ui", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@kenn-forge/ui")>();
   return {
     ...actual,
     getStores: () => ({

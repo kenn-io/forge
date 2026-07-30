@@ -16,9 +16,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/server/httpapi"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
 func openTestDB(t *testing.T) *db.DB {
@@ -47,7 +47,7 @@ func TestPreferPtyOwnerForWorkspacesOnWindows(t *testing.T) {
 	require := require.New(t)
 
 	prefer := preferPtyOwnerForWorkspaces("windows", true, ServerOptions{
-		PtyOwnerManagerPath: "middleman-pty-manager.exe",
+		PtyOwnerManagerPath: "kenn-forge-pty-manager.exe",
 	})
 
 	require.True(prefer)
@@ -184,7 +184,7 @@ func TestServeHTTPRejectsLoopbackHostFromNonLoopbackPeer(t *testing.T) {
 	srv.allowedHosts = map[string]struct{}{
 		"127.0.0.1:8091": {},
 		"localhost:8091": {},
-		"middleman.test": {},
+		"forge.test":     {},
 	}
 	srv.allowedHostMu.Unlock()
 
@@ -220,7 +220,7 @@ func TestServeHTTPRejectsLoopbackHostFromNonLoopbackPeer(t *testing.T) {
 		},
 		{
 			name:       "allowed non-loopback host from remote client",
-			host:       "middleman.test",
+			host:       "forge.test",
 			remoteAddr: "192.0.2.10:4444",
 			want:       http.StatusOK,
 		},

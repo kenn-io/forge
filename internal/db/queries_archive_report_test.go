@@ -101,7 +101,7 @@ func TestArchiveReportActivityIncludesCurrentCloseAndMergeLifecycle(t *testing.T
 	issueID := insertArchiveReportIssue(t, database, repoID, 1, "issue-1", "Issue", "author", start)
 	issueClosedAt := start.Add(time.Hour)
 	_, err := database.WriteDB().ExecContext(t.Context(), `
-		UPDATE middleman_issues SET state = 'closed', closed_at = ?, comment_count = 3
+		UPDATE forge_issues SET state = 'closed', closed_at = ?, comment_count = 3
 		WHERE id = ?`, issueClosedAt, issueID)
 	require.NoError(err)
 	insertArchiveReportIssueEvent(
@@ -113,7 +113,7 @@ func TestArchiveReportActivityIncludesCurrentCloseAndMergeLifecycle(t *testing.T
 	)
 	mergedAt := start.Add(2 * time.Hour)
 	_, err = database.WriteDB().ExecContext(t.Context(), `
-		UPDATE middleman_merge_requests
+		UPDATE forge_merge_requests
 		SET state = 'merged', merged_at = ?, additions = 20, deletions = 4,
 			files_changed = 17, merge_commit_sha = 'abc123'
 		WHERE id = ?`, mergedAt, mrID)
@@ -175,7 +175,7 @@ func TestArchiveReportActivityOmitsActorFromEarlierCloseCycle(t *testing.T) {
 	)
 	closedAt := start.Add(2 * time.Hour)
 	_, err := database.WriteDB().ExecContext(t.Context(), `
-		UPDATE middleman_issues SET state = 'closed', closed_at = ? WHERE id = ?`,
+		UPDATE forge_issues SET state = 'closed', closed_at = ? WHERE id = ?`,
 		closedAt, issueID)
 	require.NoError(err)
 	insertArchiveReportIssueEvent(
@@ -209,7 +209,7 @@ func TestArchiveReportActivityOmitsActorWhenNewestCloseDoesNotMatch(t *testing.T
 	)
 	closedAt := start.Add(2 * time.Hour)
 	_, err := database.WriteDB().ExecContext(t.Context(), `
-		UPDATE middleman_issues SET state = 'closed', closed_at = ? WHERE id = ?`,
+		UPDATE forge_issues SET state = 'closed', closed_at = ? WHERE id = ?`,
 		closedAt, issueID)
 	require.NoError(err)
 	insertArchiveReportIssueEvent(
@@ -244,7 +244,7 @@ func TestArchiveReportRepositoriesAreSnapshotCoverageOrderedByFullIdentity(t *te
 		Platform: "github", PlatformHost: "github.example", Owner: "acme", Name: "repo",
 	})
 	_, err := database.WriteDB().ExecContext(t.Context(), `
-		UPDATE middleman_archive_repos
+		UPDATE forge_archive_repos
 		SET reviews_coverage = 'unsupported'
 		WHERE repo_id = ?`, second)
 	require.NoError(err)
@@ -272,7 +272,7 @@ func insertArchiveReportRepo(t *testing.T, database *DB, identity RepoIdentity) 
 	now := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
 	require.NoError(t, database.EnsureDiscoveryArchives(t.Context(), []int64{repoID}, now))
 	_, err = database.WriteDB().ExecContext(t.Context(), `
-		UPDATE middleman_archive_repos
+		UPDATE forge_archive_repos
 		SET collection_mode = 'full', initial_started_at = ?,
 			initial_completed_at = ?, maintenance_watermark = ?,
 			maintenance_succeeded_at = ?, comments_coverage = 'supported',
@@ -280,7 +280,7 @@ func insertArchiveReportRepo(t *testing.T, database *DB, identity RepoIdentity) 
 		WHERE repo_id = ?`, now, now, now, now, repoID)
 	require.NoError(t, err)
 	_, err = database.WriteDB().ExecContext(t.Context(), `
-		UPDATE middleman_archive_repo_scans SET status = 'complete'
+		UPDATE forge_archive_repo_scans SET status = 'complete'
 		WHERE repo_id = ? AND scan IN ('issue_inventory', 'merge_request_inventory')`, repoID)
 	require.NoError(t, err)
 	return repoID
@@ -291,7 +291,7 @@ func insertArchiveReportIssue(
 ) int64 {
 	t.Helper()
 	result, err := database.WriteDB().ExecContext(t.Context(), `
-		INSERT INTO middleman_issues (
+		INSERT INTO forge_issues (
 			repo_id, platform_id, platform_external_id, number, url, title, author,
 			state, body, created_at, updated_at, last_activity_at
 		) VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?)`,
@@ -308,7 +308,7 @@ func insertArchiveReportMR(
 ) int64 {
 	t.Helper()
 	result, err := database.WriteDB().ExecContext(t.Context(), `
-		INSERT INTO middleman_merge_requests (
+		INSERT INTO forge_merge_requests (
 			repo_id, platform_id, platform_external_id, number, url, title, author,
 			state, body, created_at, updated_at, last_activity_at
 		) VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?)`,
@@ -325,7 +325,7 @@ func insertArchiveReportIssueEvent(
 ) {
 	t.Helper()
 	_, err := database.WriteDB().ExecContext(t.Context(), `
-		INSERT INTO middleman_issue_events (
+		INSERT INTO forge_issue_events (
 			issue_id, platform_external_id, event_type, author, body, created_at, dedupe_key, direct_url
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, issueID, externalID, kind, author, body,
 		createdAt, kind+":"+externalID, "https://example.test/comment")
@@ -337,7 +337,7 @@ func insertArchiveReportMREvent(
 ) {
 	t.Helper()
 	_, err := database.WriteDB().ExecContext(t.Context(), `
-		INSERT INTO middleman_mr_events (
+		INSERT INTO forge_mr_events (
 			merge_request_id, platform_external_id, event_type, author, body,
 			created_at, dedupe_key, direct_url
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, mrID, externalID, kind, author, body,

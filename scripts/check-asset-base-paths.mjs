@@ -5,7 +5,7 @@ import { relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // The built SPA is served under a configurable base path (config base_path,
-// e.g. /middleman/) by rewriting index.html's <script src>/<link href> at
+// e.g. /kenn-forge/) by rewriting index.html's <script src>/<link href> at
 // request time. That rewrite only reaches HTML, not URLs baked inside JS
 // bundles. An asset URL written as `new URL("/assets/x.js", import.meta.url)`
 // uses an absolute root path, so the browser resolves it against the origin

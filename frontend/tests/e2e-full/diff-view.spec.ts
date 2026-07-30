@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page, type Request } from "@playwright/test";
-import type { DiffFile, DiffLine, DiffResult, FilesResult } from "@middleman/ui/api/types";
+import type { DiffFile, DiffLine, DiffResult, FilesResult } from "@kenn-forge/ui/api/types";
 import { startIsolatedE2EServer } from "./support/e2eServer";
 
 type DiffFixtureFile = Omit<DiffFile, "patch"> & {
@@ -1588,7 +1588,7 @@ async function selectPierreReviewLine(file: Locator, line: number, side: "left" 
   ].join(",");
   const target = file.locator(`.pierre-diff ${selector}`).first();
   await expect(target).toBeVisible({ timeout: 10_000 });
-  await clickVisibleTarget(target.locator("[data-middleman-line-comment-button]"));
+  await clickVisibleTarget(target.locator("[data-kenn-forge-line-comment-button]"));
 }
 
 function inlineComposerFor(textarea: Locator): Locator {
@@ -1874,16 +1874,16 @@ test.describe("diff view", () => {
 
   test("complete added Go file patches render through the syntax-enabled browser path", async ({ page }) => {
     await page.addInitScript(() => {
-      (globalThis as { __middlemanForceSyntaxHighlight?: boolean }).__middlemanForceSyntaxHighlight = true;
+      (globalThis as { __kenn_forgeForceSyntaxHighlight?: boolean }).__kenn_forgeForceSyntaxHighlight = true;
       const nativeWorker = window.Worker;
-      (window as typeof window & { __middlemanWorkerUrls?: string[] }).__middlemanWorkerUrls = [];
+      (window as typeof window & { __kenn_forgeWorkerUrls?: string[] }).__kenn_forgeWorkerUrls = [];
       window.Worker = class extends nativeWorker {
         constructor(scriptURL: string | URL, options?: WorkerOptions) {
           (
             window as typeof window & {
-              __middlemanWorkerUrls: string[];
+              __kenn_forgeWorkerUrls: string[];
             }
-          ).__middlemanWorkerUrls.push(String(scriptURL));
+          ).__kenn_forgeWorkerUrls.push(String(scriptURL));
           super(scriptURL, options);
         }
       } as typeof Worker;
@@ -1964,7 +1964,9 @@ test.describe("diff view", () => {
       .poll(
         async () => {
           return await page.evaluate(() => {
-            return (window as typeof window & { __middlemanWorkerUrls?: string[] }).__middlemanWorkerUrls?.length ?? 0;
+            return (
+              (window as typeof window & { __kenn_forgeWorkerUrls?: string[] }).__kenn_forgeWorkerUrls?.length ?? 0
+            );
           });
         },
         { timeout: 10_000 },
@@ -3079,7 +3081,7 @@ test.describe("diff view", () => {
 
   test("sparse diffs with syntax state gaps preload full context before rendering", async ({ page }) => {
     await page.addInitScript(() => {
-      (globalThis as { __middlemanForceSyntaxHighlight?: boolean }).__middlemanForceSyntaxHighlight = true;
+      (globalThis as { __kenn_forgeForceSyntaxHighlight?: boolean }).__kenn_forgeForceSyntaxHighlight = true;
     });
 
     const previewSides: string[] = [];
@@ -3423,7 +3425,7 @@ test.describe("diff view", () => {
 
   test("Pierre dark diff background follows the app surface token", async ({ page }) => {
     await page.addInitScript(() => {
-      localStorage.setItem("middleman-theme", "dark");
+      localStorage.setItem("kenn-forge-theme", "dark");
     });
     await mockDiffApi(page, smallDiff);
     await navigateToDiff(page);
@@ -3437,7 +3439,7 @@ test.describe("diff view", () => {
 
   test("Pierre light diff change backgrounds stay light", async ({ page }) => {
     await page.addInitScript(() => {
-      localStorage.setItem("middleman-theme", "light");
+      localStorage.setItem("kenn-forge-theme", "light");
     });
     await mockDiffApi(page, smallDiff);
     await navigateToDiff(page);
@@ -3816,16 +3818,16 @@ test.describe("diff view performance", () => {
       // This test asserts the highlight worker pool spins up during
       // fast scrolling, so opt back into syntax highlighting (it is
       // disabled by default under automation; see pierre-worker-pool.ts).
-      (globalThis as { __middlemanForceSyntaxHighlight?: boolean }).__middlemanForceSyntaxHighlight = true;
+      (globalThis as { __kenn_forgeForceSyntaxHighlight?: boolean }).__kenn_forgeForceSyntaxHighlight = true;
       const nativeWorker = window.Worker;
-      (window as typeof window & { __middlemanWorkerUrls?: string[] }).__middlemanWorkerUrls = [];
+      (window as typeof window & { __kenn_forgeWorkerUrls?: string[] }).__kenn_forgeWorkerUrls = [];
       window.Worker = class extends nativeWorker {
         constructor(scriptURL: string | URL, options?: WorkerOptions) {
           (
             window as typeof window & {
-              __middlemanWorkerUrls: string[];
+              __kenn_forgeWorkerUrls: string[];
             }
-          ).__middlemanWorkerUrls.push(String(scriptURL));
+          ).__kenn_forgeWorkerUrls.push(String(scriptURL));
           super(scriptURL, options);
         }
       } as typeof Worker;
@@ -3855,9 +3857,9 @@ test.describe("diff view performance", () => {
           () =>
             (
               window as typeof window & {
-                __middlemanWorkerUrls?: string[];
+                __kenn_forgeWorkerUrls?: string[];
               }
-            ).__middlemanWorkerUrls?.length ?? 0,
+            ).__kenn_forgeWorkerUrls?.length ?? 0,
         );
       })
       .toBeGreaterThan(0);

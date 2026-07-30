@@ -6,11 +6,11 @@ export const diffTokenizeMaxLineLength = 180;
 // the shiki worker pool loads ~1MB of worker + wasm per page and
 // tokenizes every rendered hunk. Under browser automation diffs render
 // as plain text instead, unless a test opts back in by setting
-// globalThis.__middlemanForceSyntaxHighlight = true from an init
+// globalThis.__kenn_forgeForceSyntaxHighlight = true from an init
 // script (see diff-highlight-screenshot.spec.ts).
 export function syntaxHighlightingDisabledForAutomation(): boolean {
   if (typeof navigator === "undefined" || navigator.webdriver !== true) return false;
-  return (globalThis as { __middlemanForceSyntaxHighlight?: boolean }).__middlemanForceSyntaxHighlight !== true;
+  return (globalThis as { __kenn_forgeForceSyntaxHighlight?: boolean }).__kenn_forgeForceSyntaxHighlight !== true;
 }
 
 export function getPierreDiffWorkerPool(): WorkerPoolManager | undefined {

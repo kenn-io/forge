@@ -3,9 +3,9 @@
   import {
     DEFAULT_MODE_VISIBILITY,
     getStores,
-  } from "@middleman/ui";
-  import { showFlash } from "@middleman/ui/stores/flash";
-  import type { ModeVisibility } from "@middleman/ui/api/types";
+  } from "@kenn-forge/ui";
+  import { showFlash } from "@kenn-forge/ui/stores/flash";
+  import type { ModeVisibility } from "@kenn-forge/ui/api/types";
   import { updateSettings } from "../../api/settings.js";
   import { isEmbedded } from "../../stores/embed-config.svelte.js";
 

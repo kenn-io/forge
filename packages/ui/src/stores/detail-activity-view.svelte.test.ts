@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { createDetailActivityViewStore } from "./detail-activity-view.svelte.js";
 
-const STORAGE_KEY = "middleman-detail-activity-view";
+const STORAGE_KEY = "kenn-forge-detail-activity-view";
 
 beforeEach(() => {
   localStorage.clear();

@@ -10,9 +10,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/apiclient/generated"
-	"go.kenn.io/middleman/internal/server"
-	"go.kenn.io/middleman/internal/server/workspaceapi"
+	"go.kenn.io/forge/internal/apiclient/generated"
+	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/server/workspaceapi"
 )
 
 func TestWorkspaceListReportsCommitsAheadBehindE2E(t *testing.T) {

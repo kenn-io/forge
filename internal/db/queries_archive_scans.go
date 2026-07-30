@@ -39,7 +39,7 @@ func ensureArchiveRepoScansTx(ctx context.Context, tx *sql.Tx, repoID int64, now
 	nowText := formatDatasetProgressTime(now)
 	for _, kind := range archiveScanKinds {
 		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO middleman_archive_repo_scans (repo_id, scan, updated_at)
+			INSERT INTO forge_archive_repo_scans (repo_id, scan, updated_at)
 			VALUES (?, ?, ?)
 			ON CONFLICT(repo_id, scan) DO NOTHING`,
 			repoID, kind, nowText); err != nil {
@@ -78,7 +78,7 @@ func checkArchiveScanAdvanceTx(
 	var status ArchiveScanStatus
 	err := tx.QueryRowContext(ctx, `
 		SELECT scan_generation, next_cursor, last_input_cursor, page_count, status, last_error_code
-		FROM middleman_archive_repo_scans
+		FROM forge_archive_repo_scans
 		WHERE repo_id = ? AND scan = ?`, commit.RepoID, kind,
 	).Scan(&generation, &nextCursor, &lastInputCursor, &pageCount, &status, &lastErrorCode)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -178,7 +178,7 @@ func advanceArchiveScanTx(
 		cursor = commit.NextCursor
 	}
 	query := `
-		UPDATE middleman_archive_repo_scans
+		UPDATE forge_archive_repo_scans
 		SET next_cursor = ?, last_input_cursor = ?, page_count = ?, status = ?,
 			last_error_code = NULL, last_error_detail = NULL, updated_at = ?
 		WHERE repo_id = ? AND scan = ?`
@@ -189,7 +189,7 @@ func advanceArchiveScanTx(
 	if kind == ArchiveScanMaintenanceIssues || kind == ArchiveScanMaintenanceMergeRequests {
 		query += `
 		  AND EXISTS (
-			SELECT 1 FROM middleman_archive_repos
+			SELECT 1 FROM forge_archive_repos
 			WHERE repo_id = ? AND collection_mode = 'full' AND operator_state = 'active'
 			  AND prompt_scan_started_at IS NOT NULL
 		  )`
@@ -219,7 +219,7 @@ func blockArchiveScanTx(
 	now time.Time,
 ) error {
 	result, err := tx.ExecContext(ctx, `
-		UPDATE middleman_archive_repo_scans
+		UPDATE forge_archive_repo_scans
 		SET status = 'blocked', last_error_code = ?, last_error_detail = ?, updated_at = ?
 		WHERE repo_id = ? AND scan = ?`,
 		code, sanitizeArchiveErrorDetail(detail), formatDatasetProgressTime(now), repoID, kind)
@@ -250,7 +250,7 @@ func (d *DB) BlockArchiveRepoScan(
 	detail string,
 ) error {
 	_, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_archive_repo_scans
+		UPDATE forge_archive_repo_scans
 		SET status = 'blocked', last_error_code = ?, last_error_detail = ?, updated_at = ?
 		WHERE repo_id = ? AND scan = ?
 		  AND scan_generation = ?
@@ -273,7 +273,7 @@ func resetArchiveScanTx(
 	now time.Time,
 ) error {
 	result, err := tx.ExecContext(ctx, `
-		UPDATE middleman_archive_repo_scans
+		UPDATE forge_archive_repo_scans
 		SET scan_generation = scan_generation + 1,
 			next_cursor = NULL, last_input_cursor = NULL, page_count = 0,
 			status = 'pending', last_error_code = NULL, last_error_detail = NULL,
@@ -317,7 +317,7 @@ func loadArchiveScanStates(
 	rows, err := queryer.QueryContext(ctx, fmt.Sprintf(`
 		SELECT repo_id, scan, scan_generation, next_cursor, last_input_cursor,
 			page_count, status, last_error_code, last_error_detail
-		FROM middleman_archive_repo_scans
+		FROM forge_archive_repo_scans
 		WHERE repo_id IN (%s)`, sqlPlaceholders(len(repoIDs))),
 		archiveRepoIDArgs(repoIDs)...)
 	if err != nil {

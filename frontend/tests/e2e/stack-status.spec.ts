@@ -371,9 +371,9 @@ async function emitPRDetailRefreshed(page: Page, number: number): Promise<void> 
     (ref) => {
       const eventSources = (
         window as unknown as {
-          __middlemanEventSources?: EventTarget[];
+          __kenn_forgeEventSources?: EventTarget[];
         }
-      ).__middlemanEventSources;
+      ).__kenn_forgeEventSources;
       eventSources?.[0]?.dispatchEvent(
         new MessageEvent("pr_detail_refreshed", {
           data: JSON.stringify(ref),
@@ -417,14 +417,14 @@ async function installMockEventSource(page: Page): Promise<void> {
     (
       window as unknown as {
         EventSource: typeof EventSource;
-        __middlemanEventSources: EventTarget[];
+        __kenn_forgeEventSources: EventTarget[];
       }
     ).EventSource = MockEventSource as unknown as typeof EventSource;
     (
       window as unknown as {
-        __middlemanEventSources: EventTarget[];
+        __kenn_forgeEventSources: EventTarget[];
       }
-    ).__middlemanEventSources = eventSources;
+    ).__kenn_forgeEventSources = eventSources;
   });
 }
 

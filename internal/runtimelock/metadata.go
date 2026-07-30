@@ -8,7 +8,7 @@ import (
 	"os"
 )
 
-// Metadata is the on-disk shape of middleman.run.json. JSON tags are
+// Metadata is the on-disk shape of forge.run.json. JSON tags are
 // the wire format; do not rename keys without a migration story.
 //
 // Decoders accept unknown keys so future fields don't break older
@@ -47,7 +47,7 @@ var errMetadataMissing = errors.New("runtime metadata is missing")
 //
 // Pattern (mirrors internal/ptyowner/paths.go:writeState):
 //  1. Marshal meta to JSON.
-//  2. Open <dataDir>/.middleman.run.json.tmp with O_CREATE|O_WRONLY|O_TRUNC mode 0o600.
+//  2. Open <dataDir>/.forge.run.json.tmp with O_CREATE|O_WRONLY|O_TRUNC mode 0o600.
 //     Truncating, rather than O_EXCL, ensures a leftover temp file from a
 //     previous crash is overwritten rather than blocking us.
 //  3. Write, fsync, close.

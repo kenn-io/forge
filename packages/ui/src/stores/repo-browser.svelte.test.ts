@@ -274,7 +274,7 @@ describe("createRepoBrowserStore", () => {
           });
         }
         if (url.startsWith("/repo/github/acme/widgets/browser/last-changed?")) {
-          const params = new URL(`http://middleman.test${url}`).searchParams;
+          const params = new URL(`http://forge.test${url}`).searchParams;
           const paths = params.getAll("path");
           lastChangedBatches.push(paths);
           return Promise.resolve({

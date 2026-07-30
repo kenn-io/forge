@@ -12,7 +12,7 @@ import {
   recordWorkspaceCreated,
   resetWorkspaceCreatePendingForTest,
 } from "../../stores/workspace-create-pending.svelte.js";
-import type { MiddlemanClient } from "../../types.js";
+import type { ForgeClient } from "../../types.js";
 import type { InlineWorkspaceController, WorkspaceItemIdentity } from "../../workspace-inline.js";
 import { openLabelPickerFor } from "./labelPickerCommand.js";
 import { createTestController } from "../workspace/inlineWorkspaceTestController.svelte.js";
@@ -804,7 +804,7 @@ describe("PullDetail approvals", () => {
     await fireEvent.click(screen.getByRole("button", { name: /view/i }));
     await fireEvent.click(screen.getByRole("button", { name: /compact/i }));
 
-    expect(localStorage.getItem("middleman-detail-activity-view")).toBe("compact");
+    expect(localStorage.getItem("kenn-forge-detail-activity-view")).toBe("compact");
     expect(container.querySelectorAll(".event-card--compact-row")).toHaveLength(1);
     expect(container.textContent).toContain("Compact activity preview");
   });
@@ -1091,7 +1091,7 @@ describe("PullDetail approvals", () => {
       }),
     };
     const detailStore = createDetailStore({
-      client: apiClient as unknown as MiddlemanClient,
+      client: apiClient as unknown as ForgeClient,
     });
     await detailStore.loadDetail("acme", "widget", 1, {
       provider: "github",

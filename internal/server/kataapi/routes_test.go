@@ -15,7 +15,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/server/httpapi"
+	"go.kenn.io/forge/internal/server/httpapi"
 )
 
 type kataDaemonWire struct {
@@ -51,7 +51,7 @@ func TestKataDaemonsEndpointEmptyWhenCatalogAbsent(t *testing.T) {
 	assert.NotContains(raw, `"source"`)
 }
 
-func TestKataDaemonsEndpointIgnoresMiddlemanConfigAndLegacyEnvCatalogSources(t *testing.T) {
+func TestKataDaemonsEndpointIgnoresForgeConfigAndLegacyEnvCatalogSources(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -67,7 +67,7 @@ func TestKataDaemonsEndpointIgnoresMiddlemanConfigAndLegacyEnvCatalogSources(t *
 	t.Setenv("KATA_TOKEN", "legacy-secret")
 	srv, _, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -76,7 +76,7 @@ owner = "acme"
 name = "widget"
 
 [[daemon]]
-name = "middleman-owned"
+name = "kenn-forge-owned"
 url = "`+upstream.URL+`"
 `, &mockGH{})
 
@@ -89,7 +89,7 @@ url = "`+upstream.URL+`"
 	assert.Empty(body.Source)
 	assert.Empty(body.Daemons)
 	assert.Zero(probes.Load())
-	assert.NotContains(raw, "middleman-owned")
+	assert.NotContains(raw, "kenn-forge-owned")
 	assert.NotContains(raw, "legacy-secret")
 }
 
@@ -153,12 +153,12 @@ func TestKataDaemonsEndpointRejectsUnsetTokenEnv(t *testing.T) {
 
 	home := t.TempDir()
 	t.Setenv("KATA_HOME", home)
-	t.Setenv("MIDDLEMAN_KATA_MISSING_TOKEN", "")
+	t.Setenv("KENN_FORGE_KATA_MISSING_TOKEN", "")
 	writeKataServerCatalog(t, home, `
 [[daemon]]
 name = "work"
 url = "https://kata.example.com"
-token_env = "MIDDLEMAN_KATA_MISSING_TOKEN"
+token_env = "KENN_FORGE_KATA_MISSING_TOKEN"
 `)
 	srv, _ := setupTestServer(t)
 
@@ -168,7 +168,7 @@ token_env = "MIDDLEMAN_KATA_MISSING_TOKEN"
 	problem := decodeProblem(t, rr)
 	assert.Equal(httpapi.CodeBadRequest, problem.Code)
 	assert.Contains(problem.Detail, "token_env")
-	assert.Contains(problem.Detail, "MIDDLEMAN_KATA_MISSING_TOKEN")
+	assert.Contains(problem.Detail, "KENN_FORGE_KATA_MISSING_TOKEN")
 }
 
 func TestKataDaemonsEndpointRejectsInvalidCatalog(t *testing.T) {
@@ -323,12 +323,12 @@ func TestKataDaemonsEndpointLocalDaemonIgnoresTokenEnv(t *testing.T) {
 	t.Setenv("KATA_HOME", home)
 	t.Setenv("KATA_AUTH_TOKEN", "")
 	t.Setenv("KATA_DB", "")
-	t.Setenv("MIDDLEMAN_KATA_MISSING_TOKEN", "")
+	t.Setenv("KENN_FORGE_KATA_MISSING_TOKEN", "")
 	writeKataServerCatalog(t, home, `
 [[daemon]]
 name = "local"
 local = true
-token_env = "MIDDLEMAN_KATA_MISSING_TOKEN"
+token_env = "KENN_FORGE_KATA_MISSING_TOKEN"
 `)
 	writeKataProxyRuntimeRecord(t, daemon.URL)
 	srv, _ := setupTestServer(t)

@@ -34,12 +34,12 @@ export interface LiveKataHarnessOptions {
   requiredBranch?: string | undefined;
 }
 
-export interface MiddlemanKataHome {
+export interface ForgeKataHome {
   home: string;
   stop(): Promise<void>;
 }
 
-export interface MiddlemanKataDaemonConfig {
+export interface ForgeKataDaemonConfig {
   name: string;
   token?: string | undefined;
   url: string;
@@ -101,12 +101,12 @@ export async function createLiveKataHarness(options: LiveKataHarnessOptions = {}
   const kataRepo = resolveKataRepo();
   const kataBranch = git(kataRepo, ["branch", "--show-current"]);
   const requiredBranch =
-    options.requiredBranch ?? process.env.MIDDLEMAN_LIVE_KATA_REQUIRED_BRANCH ?? defaultRequiredBranch;
+    options.requiredBranch ?? process.env.KENN_FORGE_LIVE_KATA_REQUIRED_BRANCH ?? defaultRequiredBranch;
   if (requiredBranch && kataBranch !== requiredBranch) {
     throw new Error(`Kata repo must be on ${requiredBranch}; found ${kataBranch} at ${kataRepo}`);
   }
 
-  const kataHome = await mkdtemp(path.join(tmpdir(), "middleman-kata-live-e2e-"));
+  const kataHome = await mkdtemp(path.join(tmpdir(), "kenn-forge-kata-live-e2e-"));
   const workspaceRoot = path.join(kataHome, "workspace");
   await mkdir(workspaceRoot, { recursive: true });
   if (options.authToken) {
@@ -172,16 +172,16 @@ export async function createLiveKataHarness(options: LiveKataHarnessOptions = {}
   return harness;
 }
 
-export async function configureMiddlemanKataHome(backendURL: string, token?: string): Promise<MiddlemanKataHome> {
-  return configureMiddlemanKataCatalog([{ name: "live", url: backendURL, token }], "live");
+export async function configureForgeKataHome(backendURL: string, token?: string): Promise<ForgeKataHome> {
+  return configureForgeKataCatalog([{ name: "live", url: backendURL, token }], "live");
 }
 
-export async function configureMiddlemanKataCatalog(
-  daemons: MiddlemanKataDaemonConfig[],
+export async function configureForgeKataCatalog(
+  daemons: ForgeKataDaemonConfig[],
   activeDaemon: string,
-): Promise<MiddlemanKataHome> {
-  const home = await mkdtemp(path.join(tmpdir(), "middleman-kata-catalog-e2e-"));
-  assertMiddlemanCatalogHome(home);
+): Promise<ForgeKataHome> {
+  const home = await mkdtemp(path.join(tmpdir(), "kenn-forge-kata-catalog-e2e-"));
+  assertForgeCatalogHome(home);
   await writeFile(
     path.join(home, "config.toml"),
     [
@@ -216,14 +216,14 @@ export async function configureMiddlemanKataCatalog(
   };
 }
 
-function assertMiddlemanCatalogHome(home: string): void {
+function assertForgeCatalogHome(home: string): void {
   const resolvedHome = path.resolve(home);
   const tempRoot = path.resolve(tmpdir());
   if (
     !resolvedHome.startsWith(tempRoot + path.sep) ||
-    !path.basename(resolvedHome).startsWith("middleman-kata-catalog-e2e-")
+    !path.basename(resolvedHome).startsWith("kenn-forge-kata-catalog-e2e-")
   ) {
-    throw new Error(`Refusing to set middleman KATA_HOME to non-temp catalog home: ${resolvedHome}`);
+    throw new Error(`Refusing to set kenn-forge KATA_HOME to non-temp catalog home: ${resolvedHome}`);
   }
 }
 
@@ -241,7 +241,7 @@ async function seedIssue(harness: LiveKataHarness, input: SeedIssueInput): Promi
   const createdIssue = await harness.post<{ issue: KataIssueSummary; changed: boolean }>(
     `/api/v1/projects/${createdProject.project.id}/issues`,
     {
-      actor: "middleman-e2e",
+      actor: "kenn-forge-e2e",
       title: input.issueTitle,
       body: input.issueBody,
       force_new: true,
@@ -296,7 +296,7 @@ function assertIsolatedEnv(env: NodeJS.ProcessEnv & { KATA_HOME: string; KATA_DB
   const kataDB = path.resolve(env.KATA_DB);
   const tempRoot = path.resolve(tmpdir());
 
-  if (!kataHome.startsWith(tempRoot + path.sep) || !path.basename(kataHome).startsWith("middleman-kata-live-e2e-")) {
+  if (!kataHome.startsWith(tempRoot + path.sep) || !path.basename(kataHome).startsWith("kenn-forge-kata-live-e2e-")) {
     throw new Error(`Refusing to run e2e against non-temp KATA_HOME: ${kataHome}`);
   }
   if (!kataDB.startsWith(kataHome + path.sep)) {

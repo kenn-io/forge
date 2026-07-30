@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/ptyowner"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/ptyowner"
 )
 
 const (

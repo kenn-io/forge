@@ -151,7 +151,7 @@ test.beforeEach(async ({ page }) => {
   await mockSplitViewPR(page);
 });
 
-const LAYOUT_KEY = "middleman-pane-layout-v1:prs";
+const LAYOUT_KEY = "kenn-forge-pane-layout-v1:prs";
 
 async function firstPaneWidth(page: Page): Promise<number> {
   const box = await page.locator(".tabbed-panel-split-child.first").boundingBox();

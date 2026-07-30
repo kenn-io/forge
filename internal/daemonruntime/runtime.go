@@ -1,4 +1,4 @@
-// Package daemonruntime owns Middleman's standard kit daemon discovery record.
+// Package daemonruntime owns Kenn Forge's standard kit daemon discovery record.
 package daemonruntime
 
 import (
@@ -10,13 +10,13 @@ import (
 	"strings"
 	"time"
 
+	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/runtimelock"
 	"go.kenn.io/kit/daemon"
-	"go.kenn.io/middleman/internal/config"
-	"go.kenn.io/middleman/internal/runtimelock"
 )
 
 const (
-	Service       = "middleman"
+	Service       = "kenn-forge"
 	ProofPingPath = "/api/ping/proof"
 
 	metadataHost          = "host"

@@ -8,7 +8,7 @@ import (
 // WorktreeRepoRef is a registered worktree paired with its owning project's
 // linked repository identity. It is the enumeration step of the
 // worktree-to-merge-request branch-match recompute: only worktrees whose
-// project links a middleman_repos row are returned, since a local-only project
+// project links a forge_repos row are returned, since a local-only project
 // cannot match a platform merge request. Stale, empty-branch, and detached-HEAD
 // worktrees are excluded because none of them can branch-match an open merge
 // request; discovery stores detached checkouts with the synthetic labels
@@ -26,7 +26,7 @@ type WorktreeRepoRef struct {
 
 // ListWorktreesForBranchMatch returns every registered worktree that can
 // branch-match an open merge request: its project links a repo, its branch is
-// non-empty, and it is not stale. The inner join on middleman_repos excludes
+// non-empty, and it is not stale. The inner join on forge_repos excludes
 // local-only projects, and each row carries the repo's id and platform identity
 // so the recompute can both scope the merge-request lookup and build watched-MR
 // entries from one read.
@@ -34,9 +34,9 @@ func (d *DB) ListWorktreesForBranchMatch(ctx context.Context) ([]WorktreeRepoRef
 	rows, err := d.ro.QueryContext(ctx, `
 		SELECT w.path, w.branch,
 		       r.id, r.platform, r.platform_host, r.owner, r.name
-		FROM middleman_project_worktrees w
-		JOIN middleman_projects p ON p.id = w.project_id
-		JOIN middleman_repos r ON r.id = p.repo_id
+		FROM forge_project_worktrees w
+		JOIN forge_projects p ON p.id = w.project_id
+		JOIN forge_repos r ON r.id = p.repo_id
 		WHERE w.branch != ''
 		  AND w.branch != 'detached'
 		  AND w.branch NOT LIKE 'detached/%'
@@ -96,8 +96,8 @@ func (d *DB) ListWorktreeLinkPRs(ctx context.Context) ([]WorktreeLinkPR, error) 
 	rows, err := d.ro.QueryContext(ctx, `
 		SELECT l.worktree_key, m.number, m.state, m.is_draft, m.title, m.ci_status,
 		       m.review_decision, m.mergeable_state, m.additions, m.deletions, m.comment_count
-		FROM middleman_mr_worktree_links l
-		JOIN middleman_merge_requests m ON m.id = l.merge_request_id
+		FROM forge_mr_worktree_links l
+		JOIN forge_merge_requests m ON m.id = l.merge_request_id
 		ORDER BY l.worktree_key`)
 	if err != nil {
 		return nil, fmt.Errorf("list worktree link PRs: %w", err)

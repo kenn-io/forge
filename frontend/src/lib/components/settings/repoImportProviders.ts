@@ -1,4 +1,4 @@
-import { providerDisplayLabel } from "@middleman/ui/api/provider-labels";
+import { providerDisplayLabel } from "@kenn-forge/ui/api/provider-labels";
 
 export interface RepoImportProvider {
   id: string;

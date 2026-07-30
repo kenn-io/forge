@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Button, Chip, operationGate } from "@middleman/ui";
+  import { Button, Chip, operationGate } from "@kenn-forge/ui";
   import { Card, formatRelativeTime, type ChipTone } from "@kenn-io/kit-ui";
   import { ExternalLinkIcon, FolderTreeIcon } from "../../icons.js";
   import ProviderIcon from "../provider/ProviderIcon.svelte";

@@ -7,7 +7,7 @@ import (
 	"github.com/posthog/posthog-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
 type fakePostHogClient struct {
@@ -109,7 +109,7 @@ func TestReporterCaptureUsesAnonymousDistinctID(t *testing.T) {
 	assert.NotContains(capture.Properties, "app")
 	assert.False(capture.Properties["$process_person_profile"].(bool))
 	assert.True(capture.Properties["$geoip_disable"].(bool))
-	assert.Equal("middleman", capture.Properties["application"])
+	assert.Equal("kenn-forge", capture.Properties["application"])
 	assert.Equal("1.2.3", capture.Properties["version"])
 	assert.Equal("abc123", capture.Properties["commit"])
 	assert.Equal(runtime.GOOS, capture.Properties["goos"])
@@ -150,7 +150,7 @@ func TestReporterCaptureDropsUnsafePropertyValues(t *testing.T) {
 	assert.NotContains(capture.Properties, "view")
 	assert.False(capture.Properties["$process_person_profile"].(bool))
 	assert.True(capture.Properties["$geoip_disable"].(bool))
-	assert.Equal("middleman", capture.Properties["application"])
+	assert.Equal("kenn-forge", capture.Properties["application"])
 	assert.Equal("backend", capture.Properties["source"])
 }
 
@@ -169,5 +169,5 @@ func TestSanitizePropertiesAddsNonOverridablePrivacyAndApplication(t *testing.T)
 	assert.Equal("pulls", properties["view"])
 	assert.False(properties["$process_person_profile"].(bool))
 	assert.True(properties["$geoip_disable"].(bool))
-	assert.Equal("middleman", properties["application"])
+	assert.Equal("kenn-forge", properties["application"])
 }

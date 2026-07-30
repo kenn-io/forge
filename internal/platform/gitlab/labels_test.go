@@ -10,7 +10,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	Require "github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/forge/internal/platform"
 )
 
 func gitlabLabelTestRef() platform.RepoRef {

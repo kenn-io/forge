@@ -4283,7 +4283,7 @@ type ListActivityParams struct {
 
 // ReceiveAgentHookParams defines parameters for ReceiveAgentHook.
 type ReceiveAgentHookParams struct {
-	XMiddlemanRuntimeSessionKey *string `json:"X-Middleman-Runtime-Session-Key,omitempty"`
+	XKennForgeRuntimeSessionKey *string `json:"X-Kenn-Forge-Runtime-Session-Key,omitempty"`
 }
 
 // GetArchiveReportParams defines parameters for GetArchiveReport.
@@ -4629,14 +4629,14 @@ type ListIssuesParams struct {
 
 // GetKataProjectMappingsParams defines parameters for GetKataProjectMappings.
 type GetKataProjectMappingsParams struct {
-	// XMiddlemanKataDaemon Kata daemon id; the effective default daemon when empty
-	XMiddlemanKataDaemon *string `json:"X-Middleman-Kata-Daemon,omitempty"`
+	// XKennForgeKataDaemon Kata daemon id; the effective default daemon when empty
+	XKennForgeKataDaemon *string `json:"X-Kenn-Forge-Kata-Daemon,omitempty"`
 }
 
 // StreamKataTaskEventsParams defines parameters for StreamKataTaskEvents.
 type StreamKataTaskEventsParams struct {
-	// XMiddlemanKataDaemon Kata daemon id; the effective default daemon when empty
-	XMiddlemanKataDaemon *string `json:"X-Middleman-Kata-Daemon,omitempty"`
+	// XKennForgeKataDaemon Kata daemon id; the effective default daemon when empty
+	XKennForgeKataDaemon *string `json:"X-Kenn-Forge-Kata-Daemon,omitempty"`
 }
 
 // SearchKataTaskReferencesParams defines parameters for SearchKataTaskReferences.
@@ -4645,8 +4645,8 @@ type SearchKataTaskReferencesParams struct {
 	Limit  *int64                                `form:"limit,omitempty" json:"limit,omitempty"`
 	Status *SearchKataTaskReferencesParamsStatus `form:"status,omitempty" json:"status,omitempty"`
 
-	// XMiddlemanKataDaemon Kata daemon id; the effective default daemon when empty
-	XMiddlemanKataDaemon *string `json:"X-Middleman-Kata-Daemon,omitempty"`
+	// XKennForgeKataDaemon Kata daemon id; the effective default daemon when empty
+	XKennForgeKataDaemon *string `json:"X-Kenn-Forge-Kata-Daemon,omitempty"`
 }
 
 // SearchKataTaskReferencesParamsStatus defines parameters for SearchKataTaskReferences.
@@ -4660,8 +4660,8 @@ type GetKataTaskSnapshotParams struct {
 	SelectedIssueUid *string                             `form:"selected_issue_uid,omitempty" json:"selected_issue_uid,omitempty"`
 	GraphSourceUid   *string                             `form:"graph_source_uid,omitempty" json:"graph_source_uid,omitempty"`
 
-	// XMiddlemanKataDaemon Kata daemon id; the effective default daemon when empty
-	XMiddlemanKataDaemon *string `json:"X-Middleman-Kata-Daemon,omitempty"`
+	// XKennForgeKataDaemon Kata daemon id; the effective default daemon when empty
+	XKennForgeKataDaemon *string `json:"X-Kenn-Forge-Kata-Daemon,omitempty"`
 }
 
 // GetKataTaskSnapshotParamsScope defines parameters for GetKataTaskSnapshot.
@@ -11425,15 +11425,15 @@ func NewReceiveAgentHookRequestWithBody(server string, agent string, params *Rec
 
 	if params != nil {
 
-		if params.XMiddlemanRuntimeSessionKey != nil {
+		if params.XKennForgeRuntimeSessionKey != nil {
 			var headerParam0 string
 
-			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "X-Middleman-Runtime-Session-Key", *params.XMiddlemanRuntimeSessionKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "X-Kenn-Forge-Runtime-Session-Key", *params.XKennForgeRuntimeSessionKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
 			if err != nil {
 				return nil, err
 			}
 
-			req.Header.Set("X-Middleman-Runtime-Session-Key", headerParam0)
+			req.Header.Set("X-Kenn-Forge-Runtime-Session-Key", headerParam0)
 		}
 
 	}
@@ -21226,15 +21226,15 @@ func NewGetKataProjectMappingsRequest(server string, params *GetKataProjectMappi
 
 	if params != nil {
 
-		if params.XMiddlemanKataDaemon != nil {
+		if params.XKennForgeKataDaemon != nil {
 			var headerParam0 string
 
-			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "X-Middleman-Kata-Daemon", *params.XMiddlemanKataDaemon, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "X-Kenn-Forge-Kata-Daemon", *params.XKennForgeKataDaemon, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
 			if err != nil {
 				return nil, err
 			}
 
-			req.Header.Set("X-Middleman-Kata-Daemon", headerParam0)
+			req.Header.Set("X-Kenn-Forge-Kata-Daemon", headerParam0)
 		}
 
 	}
@@ -21268,15 +21268,15 @@ func NewStreamKataTaskEventsRequest(server string, params *StreamKataTaskEventsP
 
 	if params != nil {
 
-		if params.XMiddlemanKataDaemon != nil {
+		if params.XKennForgeKataDaemon != nil {
 			var headerParam0 string
 
-			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "X-Middleman-Kata-Daemon", *params.XMiddlemanKataDaemon, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "X-Kenn-Forge-Kata-Daemon", *params.XKennForgeKataDaemon, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
 			if err != nil {
 				return nil, err
 			}
 
-			req.Header.Set("X-Middleman-Kata-Daemon", headerParam0)
+			req.Header.Set("X-Kenn-Forge-Kata-Daemon", headerParam0)
 		}
 
 	}
@@ -21361,15 +21361,15 @@ func NewSearchKataTaskReferencesRequest(server string, params *SearchKataTaskRef
 
 	if params != nil {
 
-		if params.XMiddlemanKataDaemon != nil {
+		if params.XKennForgeKataDaemon != nil {
 			var headerParam0 string
 
-			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "X-Middleman-Kata-Daemon", *params.XMiddlemanKataDaemon, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "X-Kenn-Forge-Kata-Daemon", *params.XKennForgeKataDaemon, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
 			if err != nil {
 				return nil, err
 			}
 
-			req.Header.Set("X-Middleman-Kata-Daemon", headerParam0)
+			req.Header.Set("X-Kenn-Forge-Kata-Daemon", headerParam0)
 		}
 
 	}
@@ -21478,15 +21478,15 @@ func NewGetKataTaskSnapshotRequest(server string, params *GetKataTaskSnapshotPar
 
 	if params != nil {
 
-		if params.XMiddlemanKataDaemon != nil {
+		if params.XKennForgeKataDaemon != nil {
 			var headerParam0 string
 
-			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "X-Middleman-Kata-Daemon", *params.XMiddlemanKataDaemon, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "X-Kenn-Forge-Kata-Daemon", *params.XKennForgeKataDaemon, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
 			if err != nil {
 				return nil, err
 			}
 
-			req.Header.Set("X-Middleman-Kata-Daemon", headerParam0)
+			req.Header.Set("X-Kenn-Forge-Kata-Daemon", headerParam0)
 		}
 
 	}

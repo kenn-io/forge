@@ -5,13 +5,13 @@ services:
       dockerfile: Dockerfile.dev
     command: ["./scripts/e2e/fleet/run-daemon.sh", "hub"]
     environment:
-      MIDDLEMAN_GO_BUILD_TAGS: kit_posthog_disabled
-      MIDDLEMAN_GITHUB_TOKEN_UNSET_FOR_FLEET_E2E: ""
-      MIDDLEMAN_FLEET_HOST_PORT: "${MIDDLEMAN_FLEET_HUB_PORT:-18091}"
+      KENN_FORGE_GO_BUILD_TAGS: kit_posthog_disabled
+      KENN_FORGE_GITHUB_TOKEN_UNSET_FOR_FLEET_E2E: ""
+      KENN_FORGE_FLEET_HOST_PORT: "${KENN_FORGE_FLEET_HUB_PORT:-18091}"
     expose:
       - "18091"
     ports:
-      - "127.0.0.1:${MIDDLEMAN_FLEET_HUB_PORT:-18091}:18091"
+      - "127.0.0.1:${KENN_FORGE_FLEET_HUB_PORT:-18091}:18091"
     volumes:
       - ../../..:/app
       - hub-data:/data/hub
@@ -25,8 +25,8 @@ services:
       dockerfile: Dockerfile.dev
     command: ["./scripts/e2e/fleet/run-daemon.sh", "member"]
     environment:
-      MIDDLEMAN_GO_BUILD_TAGS: kit_posthog_disabled
-      MIDDLEMAN_GITHUB_TOKEN_UNSET_FOR_FLEET_E2E: ""
+      KENN_FORGE_GO_BUILD_TAGS: kit_posthog_disabled
+      KENN_FORGE_GITHUB_TOKEN_UNSET_FOR_FLEET_E2E: ""
     expose:
       - "18091"
     volumes:
@@ -41,8 +41,8 @@ services:
       dockerfile: Dockerfile.dev
     command: ["./scripts/e2e/fleet/run-daemon.sh", "member-ssh"]
     environment:
-      MIDDLEMAN_GO_BUILD_TAGS: kit_posthog_disabled
-      MIDDLEMAN_GITHUB_TOKEN_UNSET_FOR_FLEET_E2E: ""
+      KENN_FORGE_GO_BUILD_TAGS: kit_posthog_disabled
+      KENN_FORGE_GITHUB_TOKEN_UNSET_FOR_FLEET_E2E: ""
     expose:
       - "22"
       - "18091"

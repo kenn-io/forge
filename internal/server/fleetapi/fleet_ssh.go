@@ -11,11 +11,11 @@ import (
 	"sync"
 	"time"
 
-	"go.kenn.io/middleman/internal/config"
-	"go.kenn.io/middleman/internal/fleet"
-	"go.kenn.io/middleman/internal/server/httpapi"
-	"go.kenn.io/middleman/internal/server/workspaceapi"
-	"go.kenn.io/middleman/internal/sshfleet"
+	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/fleet"
+	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/server/workspaceapi"
+	"go.kenn.io/forge/internal/sshfleet"
 )
 
 // SSH fleet peers are hosts the hub reaches over ssh(1) instead of

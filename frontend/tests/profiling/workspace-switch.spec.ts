@@ -45,10 +45,10 @@ type SwitchMeasurement = {
 
 const frontendDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
-const iterations = Math.max(1, Number(process.env.MIDDLEMAN_PROFILE_ITERATIONS ?? "3") || 3);
+const iterations = Math.max(1, Number(process.env.KENN_FORGE_PROFILE_ITERATIONS ?? "3") || 3);
 
 const outputDir =
-  process.env.MIDDLEMAN_PROFILE_OUT_DIR ??
+  process.env.KENN_FORGE_PROFILE_OUT_DIR ??
   path.join(frontendDir, "test-results", "workspace-switch-profile", new Date().toISOString().replace(/[:.]/g, "-"));
 
 // Phases the instrumentation must emit for a switch into a ready
@@ -331,7 +331,7 @@ test.describe("workspace switch profiling", () => {
       // from the environment could be occupied and silently cost the
       // run its Go trace. The resolved address comes back in the
       // server info for the Go-side capture below.
-      process.env.MIDDLEMAN_PPROF_ADDR = "127.0.0.1:0";
+      process.env.KENN_FORGE_PPROF_ADDR = "127.0.0.1:0";
       isolatedServer = await startIsolatedWorkspaceE2EServerWithOptions({ freshProcess: true });
       const baseURL = isolatedServer.info.base_url;
       api = await playwrightRequest.newContext({ baseURL });
@@ -362,7 +362,7 @@ test.describe("workspace switch profiling", () => {
       // window, for correlating server-side stalls (tmux subprocesses,
       // replay buffering) with the browser timings. See README.md.
       let goTrace: Promise<Buffer> | null = null;
-      const goTraceEnabled = process.env.MIDDLEMAN_PROFILE_GO_TRACE !== "0";
+      const goTraceEnabled = process.env.KENN_FORGE_PROFILE_GO_TRACE !== "0";
       const pprofAddr = isolatedServer.info.pprof_addr;
       if (goTraceEnabled) {
         expect(
@@ -377,7 +377,7 @@ test.describe("workspace switch profiling", () => {
             // The profiler rejects requests that look like a browser
             // without fetch metadata; identify as tooling instead of
             // Playwright's browser-like default User-Agent.
-            headers: { "user-agent": "middleman-workspace-switch-profiler" },
+            headers: { "user-agent": "kenn-forge-workspace-switch-profiler" },
             timeout: (seconds + 30) * 1000,
           })
           .then(async (response) => {

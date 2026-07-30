@@ -1,7 +1,7 @@
 import type createClient from "openapi-fetch";
 import type { paths } from "./api/generated/schema.js";
 
-export type MiddlemanClient = ReturnType<typeof createClient<paths>>;
+export type ForgeClient = ReturnType<typeof createClient<paths>>;
 
 export interface Action {
   id: string;
@@ -60,7 +60,7 @@ export type WorkspaceCommandCallback = (
   payload: Record<string, unknown>,
 ) => WorkspaceCommandResult | Promise<WorkspaceCommandResult>;
 
-export interface MiddlemanEvent {
+export interface ForgeEvent {
   type: "pr-selected" | "issue-selected" | "pr-state-changed" | "sync-completed" | "detail-loaded";
   owner?: string;
   name?: string;
@@ -68,7 +68,7 @@ export interface MiddlemanEvent {
   meta?: Record<string, unknown>;
 }
 
-export type EventCallback = (event: MiddlemanEvent) => void;
+export type EventCallback = (event: ForgeEvent) => void;
 
 export type PrepareRouteCallback = (
   repo: { host?: string; owner: string; name: string },

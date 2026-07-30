@@ -2,7 +2,7 @@
 //
 // Two callers render this exact data and must not drift apart:
 //   - DesignSystemTabbedPanelDemo.svelte ships it on /design-system through the
-//     @middleman/ui barrel,
+//     @kenn-forge/ui barrel,
 //   - DesignSystemPanelHarness.svelte mounts the real TabbedPanelTree from its
 //     source files so the browser-tier panel test stays deterministic on a cold
 //     optimizer (the barrel re-exports tiptap/pierre/lucide and reloads mid-run).

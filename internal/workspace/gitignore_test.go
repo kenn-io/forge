@@ -23,7 +23,7 @@ func TestEnsureGeneratedContextFilesIgnoredAppendsMissingEntriesToGitExclude(t *
 	}))
 
 	excludeText := readGitExclude(t, worktree)
-	assert.Contains(excludeText, "# middleman generated agent context")
+	assert.Contains(excludeText, "# kenn-forge generated agent context")
 	assert.Contains(excludeText, "/AGENTS.override.md")
 	assert.Contains(excludeText, "/CLAUDE.local.md")
 	assert.Contains(excludeText, "/.tmp-agent-context-*")

@@ -14,9 +14,9 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v89/github"
-	"go.kenn.io/middleman/internal/platform"
-	platformgithub "go.kenn.io/middleman/internal/platform/github"
-	"go.kenn.io/middleman/internal/tokenauth"
+	"go.kenn.io/forge/internal/platform"
+	platformgithub "go.kenn.io/forge/internal/platform/github"
+	"go.kenn.io/forge/internal/tokenauth"
 )
 
 // ListIssuesPage owns GitHub issue inventory requests and normalization.
@@ -1026,7 +1026,7 @@ func githubArchiveDestination(ref platform.RepoRef, repositoryURL string) *platf
 		destination.CloneURL = ""
 		destination.DefaultBranch = ""
 		// GitHub owner/repo names are case-insensitive (canonical
-		// middleman identity lowercases them per the platform metadata's
+		// kenn-forge identity lowercases them per the platform metadata's
 		// LowercaseRepoNames), so a source ref that differs from the
 		// returned repository URL only in casing is the same repository,
 		// not a transfer.

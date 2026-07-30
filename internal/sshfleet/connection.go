@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"go.kenn.io/middleman/internal/procutil"
+	"go.kenn.io/forge/internal/procutil"
 )
 
 // Package sshfleet owns the SSH transport for fleet peers the hub

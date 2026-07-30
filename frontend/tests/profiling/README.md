@@ -22,11 +22,11 @@ bun run profile:workspace-switch
 Requires `git`, `tmux`, and `less` on the host (the same requirements
 as the real-workspace e2e specs). Knobs, all optional:
 
-| Env var                        | Effect                                                                            |
-| ------------------------------ | --------------------------------------------------------------------------------- |
-| `MIDDLEMAN_PROFILE_ITERATIONS` | Warm-switch iterations per scenario (default 3)                                   |
-| `MIDDLEMAN_PROFILE_OUT_DIR`    | Artifact directory (default `test-results/workspace-switch-profile/<timestamp>/`) |
-| `MIDDLEMAN_PROFILE_GO_TRACE=0` | Skip the Go execution trace capture                                               |
+| Env var                         | Effect                                                                            |
+| ------------------------------- | --------------------------------------------------------------------------------- |
+| `KENN_FORGE_PROFILE_ITERATIONS` | Warm-switch iterations per scenario (default 3)                                   |
+| `KENN_FORGE_PROFILE_OUT_DIR`    | Artifact directory (default `test-results/workspace-switch-profile/<timestamp>/`) |
+| `KENN_FORGE_PROFILE_GO_TRACE=0` | Skip the Go execution trace capture                                               |
 
 ## Timing names
 
@@ -71,7 +71,7 @@ questions directly: time before terminal creation
 
 The measures are queryable anywhere —
 `performance.getEntriesByName("workspace-switch:first-paint")` in the
-DevTools console works against any running middleman, not just this
+DevTools console works against any running kenn-forge, not just this
 harness. Each entry's `detail` carries the `workspaceId` it was
 recorded for, plus `error: true` on request phases that failed.
 
@@ -98,11 +98,11 @@ navigation-start timeline.
 
 ## Correlating browser timings with Go pprof
 
-The harness starts the backend with `MIDDLEMAN_PPROF_ADDR=127.0.0.1:0`,
+The harness starts the backend with `KENN_FORGE_PPROF_ADDR=127.0.0.1:0`,
 which serves the standard `net/http/pprof` endpoints (the resolved
 address is `pprofAddr` in `timings.json`). The real server supports the
-same via `middleman serve -pprof-addr 127.0.0.1:6060` or the
-`MIDDLEMAN_PPROF_ADDR` env var.
+same via `kenn-forge serve -pprof-addr 127.0.0.1:6060` or the
+`KENN_FORGE_PPROF_ADDR` env var.
 
 To line up a browser phase with Go-side work:
 
@@ -117,7 +117,7 @@ To line up a browser phase with Go-side work:
    `first-bytes`.
 3. For sampled CPU profiles instead of traces, capture
    `curl -o cpu.pprof "http://127.0.0.1:6060/debug/pprof/profile?seconds=10"`
-   while reproducing switches (e.g. `MIDDLEMAN_PROFILE_ITERATIONS=10`),
+   while reproducing switches (e.g. `KENN_FORGE_PROFILE_ITERATIONS=10`),
    then `go tool pprof cpu.pprof`. Sampling windows longer than 30s are
    rejected by the profiler listener.
 
@@ -134,8 +134,8 @@ those traces to an OTel backend is opt-in. To inspect a live trace:
 1. Start a local all-in-one OTLP collector + Grafana/Tempo UI:
    `make otel-lgtm` (requires Docker; serves the UI at
    `http://127.0.0.1:3000` and OTLP on `4317`/`4318`).
-2. Start middleman with export enabled:
-   `OTEL_TRACES_EXPORTER=otlp OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318 middleman serve`.
+2. Start kenn-forge with export enabled:
+   `OTEL_TRACES_EXPORTER=otlp OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318 kenn-forge serve`.
 3. Perform a workspace switch in the browser, then find its trace ID
    from any `workspace-switch:*` measure's `detail.traceId` (e.g.
    `performance.getEntriesByName("workspace-switch:first-paint")[0].detail.traceId`

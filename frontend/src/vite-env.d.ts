@@ -14,7 +14,7 @@ declare module "@xterm/addon-ligatures/lib/addon-ligatures.mjs" {
   export { LigaturesAddon } from "@xterm/addon-ligatures";
 }
 
-interface MiddlemanConfig {
+interface ForgeConfig {
   theme?: {
     mode?: "light" | "dark" | "system";
     colors?: Partial<{
@@ -86,8 +86,8 @@ interface MiddlemanConfig {
     tooling?: ToolingStatus;
   };
   onLayoutChanged?: (layout: { sidebar: { width: number }; pinnedPanel: { width: number; visible: boolean } }) => void;
-  onNavigate?: (event: MiddlemanNavigateEvent) => void;
-  onRouteChange?: (event: MiddlemanNavigateEvent) => void;
+  onNavigate?: (event: ForgeNavigateEvent) => void;
+  onRouteChange?: (event: ForgeNavigateEvent) => void;
 }
 
 interface ActionHookDef {
@@ -226,13 +226,13 @@ interface WorkspaceDetailContext {
   host: WorkspaceHost | null;
 }
 
-type MiddlemanNavigatePage = "pulls" | "issues" | "activity" | "repos" | "kata" | "docs" | "reviews" | "workspaces";
+type ForgeNavigatePage = "pulls" | "issues" | "activity" | "repos" | "kata" | "docs" | "reviews" | "workspaces";
 
-type MiddlemanNavigateType = "pull" | "issue" | "activity" | "repos" | "kata" | "docs" | "reviews" | "workspaces";
+type ForgeNavigateType = "pull" | "issue" | "activity" | "repos" | "kata" | "docs" | "reviews" | "workspaces";
 
-interface MiddlemanNavigateEvent {
-  page: MiddlemanNavigatePage;
-  type: MiddlemanNavigateType;
+interface ForgeNavigateEvent {
+  page: ForgeNavigatePage;
+  type: ForgeNavigateType;
   provider?: string;
   platform_host?: string;
   repo_path?: string;
@@ -247,28 +247,28 @@ interface MiddlemanNavigateEvent {
 
 interface Window {
   __BASE_PATH__?: string;
-  __MIDDLEMAN_DEV_API_URL__?: string;
+  __KENN_FORGE_DEV_API_URL__?: string;
   __KENN_EMBEDDED_WEBSOCKET_BASE_URL__?: string;
-  __MIDDLEMAN_FORCE_MOBILE_ROUTES__?: boolean;
-  __middleman_config?: MiddlemanConfig;
-  __middleman_event_source_counts?: () => {
+  __KENN_FORGE_FORCE_MOBILE_ROUTES__?: boolean;
+  __kenn_forge_config?: ForgeConfig;
+  __kenn_forge_event_source_counts?: () => {
     created: number;
     closed: number;
   };
-  __middleman_notify_config_changed?: () => void;
-  __middleman_update_workspace?: (data: WorkspaceData) => void;
-  __middleman_navigate_to_route?: (route: string) => void;
-  __middleman_set_repo_filter?: (repo: { owner: string; name: string } | null) => void;
-  __middleman_update_selection?: (selection: { hostKey?: string | null; worktreeKey?: string | null }) => void;
-  __middleman_update_host_state?: (
+  __kenn_forge_notify_config_changed?: () => void;
+  __kenn_forge_update_workspace?: (data: WorkspaceData) => void;
+  __kenn_forge_navigate_to_route?: (route: string) => void;
+  __kenn_forge_set_repo_filter?: (repo: { owner: string; name: string } | null) => void;
+  __kenn_forge_update_selection?: (selection: { hostKey?: string | null; worktreeKey?: string | null }) => void;
+  __kenn_forge_update_host_state?: (
     hostKey: string,
     patch: {
       connectionState?: WorkspaceHost["connectionState"];
       resources?: WorkspaceResources | null;
     },
   ) => void;
-  __middleman_update_tooling?: (tooling: ToolingStatus) => void;
-  __middleman_kata_graph_debug?: {
+  __kenn_forge_update_tooling?: (tooling: ToolingStatus) => void;
+  __kenn_forge_kata_graph_debug?: {
     snapshot: () => {
       events: Array<{
         id: number;

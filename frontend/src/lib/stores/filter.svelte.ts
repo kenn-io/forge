@@ -1,4 +1,4 @@
-const STORAGE_KEY = "middleman-filter-repo";
+const STORAGE_KEY = "kenn-forge-filter-repo";
 
 export function parseRepoFilterValue(repo: string | undefined): string[] {
   return (repo ?? "")

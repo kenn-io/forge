@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
+	"go.kenn.io/forge/internal/runtimelock"
 	"go.kenn.io/kit/daemon"
-	"go.kenn.io/middleman/internal/runtimelock"
 )
 
 const probeTimeout = 750 * time.Millisecond
@@ -18,7 +18,7 @@ type discovery struct {
 	version string
 }
 
-// NewManager returns the shared lifecycle manager with Middleman's discovery
+// NewManager returns the shared lifecycle manager with Kenn Forge's discovery
 // identity and per-data-directory start lock.
 func NewManager(
 	store daemon.RuntimeStore,
@@ -31,10 +31,10 @@ func NewManager(
 		FindFunc: discovery.find,
 		Start: func(ctx context.Context) error {
 			if start == nil {
-				return errors.New("middleman daemon is not running")
+				return errors.New("kenn-forge daemon is not running")
 			}
 			if err := start(ctx); err != nil {
-				return fmt.Errorf("start middleman daemon: %w", err)
+				return fmt.Errorf("start kenn-forge daemon: %w", err)
 			}
 			return nil
 		},
@@ -91,7 +91,7 @@ func (d discovery) probe(
 	}
 	if record.Version != d.version {
 		return daemon.PingInfo{}, false, fmt.Errorf(
-			"running middleman version %q is incompatible with %q",
+			"running kenn-forge version %q is incompatible with %q",
 			record.Version, d.version,
 		)
 	}

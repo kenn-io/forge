@@ -1,11 +1,11 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import * as flash from "@middleman/ui/stores/flash";
+import * as flash from "@kenn-forge/ui/stores/flash";
 
 const mockRefreshSyncStatus = vi.fn();
 
-vi.mock("@middleman/ui", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@middleman/ui")>()),
+vi.mock("@kenn-forge/ui", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@kenn-forge/ui")>()),
   getStores: () => ({
     sync: {
       refreshSyncStatus: mockRefreshSyncStatus,

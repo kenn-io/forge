@@ -20,12 +20,12 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/compose"
 	"github.com/testcontainers/testcontainers-go/wait"
-	"go.kenn.io/middleman/internal/db"
-	ghclient "go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/platform"
-	platformgitlab "go.kenn.io/middleman/internal/platform/gitlab"
-	"go.kenn.io/middleman/internal/procutil"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/db"
+	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/platform"
+	platformgitlab "go.kenn.io/forge/internal/platform/gitlab"
+	"go.kenn.io/forge/internal/procutil"
+	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
 type gitLabContainerManifest struct {
@@ -48,8 +48,8 @@ type gitLabContainerManifest struct {
 }
 
 func TestGitLabContainerE2E(t *testing.T) {
-	if os.Getenv("MIDDLEMAN_GITLAB_CONTAINER_E2E") != "1" {
-		t.Skip("set MIDDLEMAN_GITLAB_CONTAINER_E2E=1 to run GitLab CE container e2e")
+	if os.Getenv("KENN_FORGE_GITLAB_CONTAINER_E2E") != "1" {
+		t.Skip("set KENN_FORGE_GITLAB_CONTAINER_E2E=1 to run GitLab CE container e2e")
 	}
 
 	assert := assert.New(t)
@@ -57,10 +57,10 @@ func TestGitLabContainerE2E(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 25*time.Minute)
 	defer cancel()
 
-	image := envOrDefault("MIDDLEMAN_GITLAB_IMAGE", "gitlab/gitlab-ce:19.1.1-ce.0")
+	image := envOrDefault("KENN_FORGE_GITLAB_IMAGE", "gitlab/gitlab-ce:19.1.1-ce.0")
 	rootPassword := envOrDefault("GITLAB_ROOT_PASSWORD", "V9q!T3m#R7p-L2x@N6s")
 	httpPort := envOrDefault("GITLAB_HTTP_PORT", freeLoopbackPort(t))
-	stackID := compose.StackIdentifier(envOrDefault("MIDDLEMAN_GITLAB_COMPOSE_PROJECT", "middleman-gitlab-e2e"))
+	stackID := compose.StackIdentifier(envOrDefault("KENN_FORGE_GITLAB_COMPOSE_PROJECT", "kenn-forge-gitlab-e2e"))
 	stack, err := compose.NewDockerComposeWith(
 		compose.WithStackFiles(filepath.Join(repoRoot(t), "scripts/e2e/gitlab/docker-compose.yml")),
 		stackID,
@@ -69,9 +69,9 @@ func TestGitLabContainerE2E(t *testing.T) {
 
 	composeStack := stack.
 		WithEnv(map[string]string{
-			"MIDDLEMAN_GITLAB_IMAGE": image,
-			"GITLAB_ROOT_PASSWORD":   rootPassword,
-			"GITLAB_HTTP_PORT":       httpPort,
+			"KENN_FORGE_GITLAB_IMAGE": image,
+			"GITLAB_ROOT_PASSWORD":    rootPassword,
+			"GITLAB_HTTP_PORT":        httpPort,
 		}).
 		WaitForService("gitlab", wait.ForHTTP("/users/sign_in").
 			WithPort("80/tcp").
@@ -91,7 +91,7 @@ func TestGitLabContainerE2E(t *testing.T) {
 		require.NoError(err)
 	}
 	require.NoError(containerErr)
-	if os.Getenv("MIDDLEMAN_KEEP_GITLAB_FIXTURE") == "1" {
+	if os.Getenv("KENN_FORGE_KEEP_GITLAB_FIXTURE") == "1" {
 		t.Logf("keeping GitLab Compose stack %s at http://127.0.0.1:%s", stackID, httpPort)
 	} else {
 		t.Cleanup(func() {
@@ -234,7 +234,7 @@ func TestGitLabContainerE2E(t *testing.T) {
 	require.NotNil(summaries[0].Overview.LatestRelease)
 	assert.Equal(manifest.ReleaseTag, summaries[0].Overview.LatestRelease.TagName)
 
-	// Write surface: drive every GitLab mutation through middleman's HTTP
+	// Write surface: drive every GitLab mutation through kenn-forge's HTTP
 	// API against the live container.
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
@@ -329,7 +329,7 @@ func TestGitLabContainerE2E(t *testing.T) {
 	createdIssueTitle := fmt.Sprintf("Write parity issue %d", runID)
 	createIssueRR := doJSON(t, srv, http.MethodPost, issueBase, map[string]string{
 		"title": createdIssueTitle,
-		"body":  "Issue created through middleman against the GitLab container.",
+		"body":  "Issue created through kenn-forge against the GitLab container.",
 	})
 	require.Equal(http.StatusCreated, createIssueRR.Code, createIssueRR.Body.String())
 	var createdIssue struct {
@@ -341,7 +341,7 @@ func TestGitLabContainerE2E(t *testing.T) {
 		fmt.Sprintf("/projects/%d/issues/%d", manifest.ProjectID, createdIssue.Number), nil)
 	assert.Equal(createdIssueTitle, upstreamIssue["title"])
 	assert.Equal(
-		"Issue created through middleman against the GitLab container.",
+		"Issue created through kenn-forge against the GitLab container.",
 		upstreamIssue["description"],
 	)
 
@@ -410,7 +410,7 @@ func TestGitLabContainerE2E(t *testing.T) {
 
 	// Approve through the approvals API (body becomes a regular note).
 	approveRR := doJSON(t, srv, http.MethodPost, parityMR+"/approve", map[string]string{
-		"body":              "Approving from middleman write parity e2e",
+		"body":              "Approving from kenn-forge write parity e2e",
 		"expected_head_sha": parityHeadSHA,
 	})
 	require.Equal(http.StatusOK, approveRR.Code, approveRR.Body.String())
@@ -419,7 +419,7 @@ func TestGitLabContainerE2E(t *testing.T) {
 		nil,
 	)
 	approvedBy, _ := approvalState["approved_by"].([]any)
-	assert.NotEmpty(approvedBy, "approvals API should record the middleman approval")
+	assert.NotEmpty(approvedBy, "approvals API should record the kenn-forge approval")
 
 	// Discussion reply and resolve/unresolve on a resolvable thread.
 	discussion := gitlabContainerAPI(t, ctx, manifest, http.MethodPost,
@@ -431,7 +431,7 @@ func TestGitLabContainerE2E(t *testing.T) {
 
 	replyRR := doJSON(t, srv, http.MethodPost,
 		fmt.Sprintf("%s/discussions/%s/reply", parityMR, discussionID),
-		map[string]string{"body": "Reply sent through middleman"},
+		map[string]string{"body": "Reply sent through kenn-forge"},
 	)
 	require.Equal(http.StatusCreated, replyRR.Code, replyRR.Body.String())
 	repliedDiscussion := gitlabContainerAPI(t, ctx, manifest, http.MethodGet,
@@ -442,7 +442,7 @@ func TestGitLabContainerE2E(t *testing.T) {
 	replyNotes, _ := repliedDiscussion["notes"].([]any)
 	require.Len(replyNotes, 2, "discussion should contain the seed note and the reply")
 	lastNote, _ := replyNotes[1].(map[string]any)
-	assert.Equal("Reply sent through middleman", lastNote["body"])
+	assert.Equal("Reply sent through kenn-forge", lastNote["body"])
 
 	resolveRR := doJSON(t, srv, http.MethodPost,
 		fmt.Sprintf("%s/discussions/%s/resolve", parityMR, discussionID),
@@ -480,7 +480,7 @@ func TestGitLabContainerE2E(t *testing.T) {
 	mergeRR := doJSON(t, srv, http.MethodPost, parityMR+"/merge", map[string]string{
 		"method":            "squash",
 		"commit_title":      fmt.Sprintf("Write parity squash merge %d", runID),
-		"commit_message":    "Squash merged through middleman against the GitLab container",
+		"commit_message":    "Squash merged through kenn-forge against the GitLab container",
 		"expected_head_sha": parityHeadSHA,
 	})
 	require.Equal(http.StatusOK, mergeRR.Code, mergeRR.Body.String())
@@ -495,7 +495,7 @@ func TestGitLabContainerE2E(t *testing.T) {
 }
 
 // gitlabContainerAPI issues a raw request against the container's GitLab
-// REST API for fixture setup and out-of-band verification of middleman's
+// REST API for fixture setup and out-of-band verification of kenn-forge's
 // mutations. Payload nil sends no body; responses must be JSON objects.
 func gitlabContainerAPI(
 	t *testing.T,

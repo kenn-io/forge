@@ -4,8 +4,8 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v89/github"
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/ratelimit"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/ratelimit"
 )
 
 const RateReserveBuffer = ratelimit.RateReserveBuffer

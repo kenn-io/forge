@@ -1,15 +1,15 @@
 # Docker development config — port 18090 to avoid conflicting with host instance.
-# Copy repos from ~/.config/middleman/config.toml or add via settings UI.
+# Copy repos from ~/.config/kenn-forge/config.toml or add via settings UI.
 
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 18090
 data_dir = "/data"
 
 [[repos]]
 owner = "wesm"
-name = "middleman"
+name = "kenn-forge"
 
 [[repos]]
 owner = "roborev-dev"

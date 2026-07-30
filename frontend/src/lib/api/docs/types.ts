@@ -1,5 +1,5 @@
 /**
- * Wire types for the middleman Go server's /api/docs/* endpoints.
+ * Wire types for the kenn-forge Go server's /api/docs/* endpoints.
  *
  * Keep in sync with `internal/server/docs_routes.go` and
  * `internal/docs/{folder,search}.go`.

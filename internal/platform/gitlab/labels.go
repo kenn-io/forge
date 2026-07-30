@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	gitlab "gitlab.com/gitlab-org/api/client-go/v2"
-	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/forge/internal/platform"
 )
 
 func (c *Client) ListLabels(

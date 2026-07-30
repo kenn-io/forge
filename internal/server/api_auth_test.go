@@ -12,9 +12,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/kit/daemon"
 
-	"go.kenn.io/middleman/internal/config"
-	"go.kenn.io/middleman/internal/daemonruntime"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/daemonruntime"
+	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
 func newAuthTestServer(t *testing.T, token string) *httptest.Server {
@@ -53,17 +53,17 @@ func TestDaemonPingContract(t *testing.T) {
 			ProofHandler: proofHandler,
 		},
 		HostCheck: HostCheckOptions{
-			Bind: bind, Allowed: []config.HostKey{{Host: "middleman.example.test"}},
+			Bind: bind, Allowed: []config.HostKey{{Host: "forge.example.test"}},
 			TrustReverseProxy: true,
 		},
 	})
-	srv.SetBuildInfo(BuildInfo{Name: "middleman", Version: "v-test"})
+	srv.SetBuildInfo(BuildInfo{Name: "kenn-forge", Version: "v-test"})
 	ts.Config.Handler = srv
 	ts.Start()
 	t.Cleanup(ts.Close)
 
 	unauthorized := authGet(t, ts, "/api/ping", func(r *http.Request) {
-		r.Header.Set("X-Forwarded-Host", "middleman.example.test")
+		r.Header.Set("X-Forwarded-Host", "forge.example.test")
 	})
 	assert.Equal(http.StatusUnauthorized, unauthorized.StatusCode)
 	response := authGet(t, ts, "/api/ping", func(r *http.Request) {
@@ -83,7 +83,7 @@ func TestDaemonPingContract(t *testing.T) {
 	require.NoError(err)
 
 	forwarded := authGet(t, ts, daemonruntime.ProofPingPath, func(r *http.Request) {
-		r.Header.Set("X-Forwarded-Host", "middleman.example.test")
+		r.Header.Set("X-Forwarded-Host", "forge.example.test")
 	})
 	assert.Equal(http.StatusForbidden, forwarded.StatusCode)
 }
@@ -119,7 +119,7 @@ func TestAPIAuthGatesAPIRoutes(t *testing.T) {
 
 	resp := authGet(t, ts, "/api/v1/snapshot", nil)
 	require.Equal(http.StatusUnauthorized, resp.StatusCode)
-	assert.Equal(`Bearer realm="middleman"`,
+	assert.Equal(`Bearer realm="kenn-forge"`,
 		resp.Header.Get("WWW-Authenticate"))
 	var problem struct {
 		Code string `json:"code"`
@@ -187,7 +187,7 @@ func TestAPIAuthCookieBootstrap(t *testing.T) {
 		"token must be stripped from the redirect target")
 	cookies := resp.Cookies()
 	require.Len(cookies, 1)
-	assert.Equal("middleman_auth", cookies[0].Name)
+	assert.Equal("forge_auth", cookies[0].Name)
 	assert.True(cookies[0].HttpOnly)
 
 	resp = authGet(t, ts, "/api/v1/snapshot", func(r *http.Request) {

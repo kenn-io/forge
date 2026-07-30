@@ -23,7 +23,7 @@
   }: Props = $props();
 
   const storageKey = $derived(
-    `middleman-project-${project.key}-collapsed`,
+    `kenn-forge-project-${project.key}-collapsed`,
   );
 
   let collapsed = $state(false);

@@ -111,7 +111,7 @@ func LoadArchiveReportRepositories(
 	}
 	rows, err := tx.QueryContext(ctx, fmt.Sprintf(`
 		SELECT id, platform, platform_host, owner, name, repo_path
-		FROM middleman_repos
+		FROM forge_repos
 		WHERE id IN (%s)
 		ORDER BY platform, platform_host, owner, name, id`, sqlPlaceholders(len(ids))),
 		archiveRepoIDArgs(ids)...)
@@ -277,9 +277,9 @@ func archiveReportActivityQuery(
 				i.comment_count AS comments, 0 AS additions, 0 AS deletions,
 				NULL AS files_changed, '' AS merge_commit_sha,
 				1 AS source_rank, i.id AS source_row_id
-			FROM middleman_issues i
+			FROM forge_issues i
 			JOIN scope s ON s.repo_id = i.repo_id
-			JOIN middleman_repos r ON r.id = i.repo_id
+			JOIN forge_repos r ON r.id = i.repo_id
 			CROSS JOIN bounds b
 			WHERE i.created_at >= b.start_at AND i.created_at < b.end_at
 			UNION ALL
@@ -289,16 +289,16 @@ func archiveReportActivityQuery(
 				i.title, i.author,
 				COALESCE((
 					SELECT CASE WHEN e.created_at = i.closed_at THEN e.author ELSE '' END
-					FROM middleman_issue_events e
+					FROM forge_issue_events e
 					WHERE e.issue_id = i.id AND e.event_type = 'closed' AND e.author <> ''
 					ORDER BY e.created_at DESC, e.id DESC
 					LIMIT 1
 				), ''),
 				i.closed_at, '', i.url, i.comment_count, 0, 0, NULL, '',
 				2, i.id
-			FROM middleman_issues i
+			FROM forge_issues i
 			JOIN scope s ON s.repo_id = i.repo_id
-			JOIN middleman_repos r ON r.id = i.repo_id
+			JOIN forge_repos r ON r.id = i.repo_id
 			CROSS JOIN bounds b
 			WHERE i.closed_at >= b.start_at AND i.closed_at < b.end_at
 			UNION ALL
@@ -308,9 +308,9 @@ func archiveReportActivityQuery(
 				mr.title, mr.author, '', mr.created_at, mr.body, mr.url,
 				mr.comment_count, mr.additions, mr.deletions, mr.files_changed, mr.merge_commit_sha,
 				3, mr.id
-			FROM middleman_merge_requests mr
+			FROM forge_merge_requests mr
 			JOIN scope s ON s.repo_id = mr.repo_id
-			JOIN middleman_repos r ON r.id = mr.repo_id
+			JOIN forge_repos r ON r.id = mr.repo_id
 			CROSS JOIN bounds b
 			WHERE mr.created_at >= b.start_at AND mr.created_at < b.end_at
 			UNION ALL
@@ -320,7 +320,7 @@ func archiveReportActivityQuery(
 				mr.title, mr.author,
 				COALESCE((
 					SELECT e.author
-					FROM middleman_mr_events e
+					FROM forge_mr_events e
 					WHERE e.merge_request_id = mr.id AND e.event_type = 'merged' AND e.author <> ''
 					ORDER BY e.created_at DESC, e.id DESC
 					LIMIT 1
@@ -328,9 +328,9 @@ func archiveReportActivityQuery(
 				mr.merged_at, '', mr.url, mr.comment_count, mr.additions, mr.deletions,
 				mr.files_changed, mr.merge_commit_sha,
 				4, mr.id
-			FROM middleman_merge_requests mr
+			FROM forge_merge_requests mr
 			JOIN scope s ON s.repo_id = mr.repo_id
-			JOIN middleman_repos r ON r.id = mr.repo_id
+			JOIN forge_repos r ON r.id = mr.repo_id
 			CROSS JOIN bounds b
 			WHERE mr.merged_at >= b.start_at AND mr.merged_at < b.end_at
 			UNION ALL
@@ -341,10 +341,10 @@ func archiveReportActivityQuery(
 				COALESCE(NULLIF(e.direct_url, ''), i.url),
 				0, 0, 0, NULL, '',
 				5, e.id
-			FROM middleman_issue_events e
-			JOIN middleman_issues i ON i.id = e.issue_id
+			FROM forge_issue_events e
+			JOIN forge_issues i ON i.id = e.issue_id
 			JOIN scope s ON s.repo_id = i.repo_id
-			JOIN middleman_repos r ON r.id = i.repo_id
+			JOIN forge_repos r ON r.id = i.repo_id
 			CROSS JOIN bounds b
 			WHERE e.event_type = 'issue_comment'
 			  AND e.created_at >= b.start_at AND e.created_at < b.end_at
@@ -360,10 +360,10 @@ func archiveReportActivityQuery(
 				COALESCE(NULLIF(e.direct_url, ''), mr.url),
 				0, 0, 0, NULL, '',
 				6, e.id
-			FROM middleman_mr_events e
-			JOIN middleman_merge_requests mr ON mr.id = e.merge_request_id
+			FROM forge_mr_events e
+			JOIN forge_merge_requests mr ON mr.id = e.merge_request_id
 			JOIN scope s ON s.repo_id = mr.repo_id
-			JOIN middleman_repos r ON r.id = mr.repo_id
+			JOIN forge_repos r ON r.id = mr.repo_id
 			CROSS JOIN bounds b
 			WHERE e.event_type IN ('issue_comment', 'review', 'review_comment')
 			  AND e.created_at >= b.start_at AND e.created_at < b.end_at

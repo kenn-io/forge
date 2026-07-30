@@ -1,6 +1,6 @@
 package httpapi
 
-import "go.kenn.io/middleman/internal/db"
+import "go.kenn.io/forge/internal/db"
 
 type SetLabelsRequest struct {
 	Labels *[]string `json:"labels" required:"true"`

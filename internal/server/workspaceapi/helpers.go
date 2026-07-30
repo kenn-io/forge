@@ -11,11 +11,11 @@ import (
 	"strings"
 	"time"
 
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/fleet"
+	"go.kenn.io/forge/internal/platform"
+	"go.kenn.io/forge/internal/server/httpapi"
 	gitcmd "go.kenn.io/kit/git/cmd"
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/fleet"
-	"go.kenn.io/middleman/internal/platform"
-	"go.kenn.io/middleman/internal/server/httpapi"
 )
 
 func expandHomeCWD(cwd string) string {
@@ -227,7 +227,7 @@ func logWebsocketDebug(msg string, args ...any) {
 }
 
 func websocketDebugEnabled() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("MIDDLEMAN_WS_DEBUG"))) {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("KENN_FORGE_WS_DEBUG"))) {
 	case "1", "true", "yes", "on":
 		return true
 	default:

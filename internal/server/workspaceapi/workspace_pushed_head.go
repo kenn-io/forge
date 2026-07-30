@@ -4,9 +4,9 @@ import (
 	"context"
 	"strconv"
 
-	"go.kenn.io/middleman/internal/db"
-	ghclient "go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/workspace"
+	"go.kenn.io/forge/internal/db"
+	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/workspace"
 )
 
 type workspacePushedHeadChangedPayload struct {

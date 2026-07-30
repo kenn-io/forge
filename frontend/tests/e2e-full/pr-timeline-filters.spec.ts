@@ -15,7 +15,7 @@ import { startIsolatedE2EServer } from "./support/e2eServer";
 // backend-shaped values in a hand fixture would assert the fixture, not the
 // system.
 
-const activityViewStorageKey = "middleman-detail-activity-view";
+const activityViewStorageKey = "kenn-forge-detail-activity-view";
 
 async function gotoWithWebKitRetry(page: Page, url: string): Promise<void> {
   let lastError: unknown;

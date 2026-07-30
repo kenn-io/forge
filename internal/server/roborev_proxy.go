@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"go.kenn.io/middleman/internal/config"
-	"go.kenn.io/middleman/internal/server/httpapi"
+	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/server/httpapi"
 )
 
 // roborevProxy returns an HTTP handler that reverse-proxies requests

@@ -3,19 +3,19 @@
 ## Serve the app
 
 ```sh
-middleman
-middleman serve
-middleman serve -config /path/to/config.toml
+kenn-forge
+kenn-forge serve
+kenn-forge serve -config /path/to/config.toml
 ```
 
-Without a subcommand, `middleman` starts the daemon and web UI.
+Without a subcommand, `kenn-forge` starts the daemon and web UI.
 
 Use the idempotent background lifecycle when a caller needs to ensure the app
 is available without treating an existing compatible process as an error:
 
 ```sh
-middleman start --background
-middleman start --background --config /path/to/config.toml
+kenn-forge start --background
+kenn-forge start --background --config /path/to/config.toml
 ```
 
 The command waits for the ready daemon identity before returning. Direct
@@ -27,8 +27,8 @@ API authentication is disabled.
 ## Version
 
 ```sh
-middleman version
-middleman version --json
+kenn-forge version
+kenn-forge version --json
 ```
 
 Prints the version, commit, and build date. Use `--json` for fleet inventory
@@ -36,7 +36,7 @@ and other integrations. The JSON contract is a single object written to stdout:
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `name` | string | Canonical tool name, always `middleman` |
+| `name` | string | Canonical tool name, always `kenn-forge` |
 | `version` | string | Semantic version for a release build; development identifier otherwise |
 | `commit` | string | Build commit identifier |
 | `buildDate` | string | UTC RFC3339 timestamp for a release build; `unknown` when not injected |
@@ -47,12 +47,12 @@ workspace.
 ## Status
 
 ```sh
-middleman status
-middleman status -json
-middleman status -config /path/to/config.toml
+kenn-forge status
+kenn-forge status -json
+kenn-forge status -config /path/to/config.toml
 ```
 
-Reports whether a middleman daemon is running.
+Reports whether a kenn-forge daemon is running.
 
 ## API relay
 
@@ -71,12 +71,12 @@ response body.
 ## Historical activity archive
 
 ```sh
-middleman archive start --all
-middleman archive start --repo 'github|github.com/owner/repo'
-middleman archive status --json
-middleman archive pause --all
-middleman archive report --days 7
-middleman archive report --start 2026-07-01 --end 2026-07-07 --verbose
+kenn-forge archive start --all
+kenn-forge archive start --repo 'github|github.com/owner/repo'
+kenn-forge archive status --json
+kenn-forge archive pause --all
+kenn-forge archive report --days 7
+kenn-forge archive report --start 2026-07-01 --end 2026-07-07 --verbose
 ```
 
 Archive collection runs in the background within each provider host's normal
@@ -84,22 +84,22 @@ sync budget. Status reports `current`, `partial`, or blocked work honestly; a
 provider that cannot supply a required dataset remains partial rather than
 being treated as complete.
 
-Reports use only middleman's local archive, so they make no provider requests,
-but the middleman daemon must be running. `--days` uses rolling 24-hour UTC
+Reports use only kenn-forge's local archive, so they make no provider requests,
+but the kenn-forge daemon must be running. `--days` uses rolling 24-hour UTC
 periods. Date-only ranges include both named dates; RFC3339 ranges use an
 inclusive start and exclusive end. Reports default to Markdown; use
 `--format json`, `--output PATH`, and repeated fully qualified `--repo` filters
 as needed.
 
-Starting from an existing middleman database discovers historical issues, pull
+Starting from an existing kenn-forge database discovers historical issues, pull
 or merge requests, comments, and supported review activity. No import from an
 older standalone archive is required.
 
 ## Config
 
 ```sh
-middleman config read port
-middleman config read -config /path/to/config.toml port
+kenn-forge config read port
+kenn-forge config read -config /path/to/config.toml port
 ```
 
 The current CLI exposes a small read surface. Use the Settings UI or edit the
@@ -108,10 +108,10 @@ TOML file for normal configuration changes.
 ## Docs folders
 
 ```sh
-middleman docs list-folders
-middleman docs add-folder --name Docs ~/docs
-middleman docs add-folder --id project --daemon kata-main ~/project-docs
-middleman docs remove-folder project
+kenn-forge docs list-folders
+kenn-forge docs add-folder --name Docs ~/docs
+kenn-forge docs add-folder --id project --daemon kata-main ~/project-docs
+kenn-forge docs remove-folder project
 ```
 
 These commands manage `[[doc_folders]]` in the config file.
@@ -132,13 +132,13 @@ manual review of the installed commands through `/hooks`.
 ## GitHub App credentials
 
 ```sh
-middleman-github-app create
-middleman-github-app list
-middleman-github-app install
-middleman-github-app uninstall
-middleman-github-app delete
-middleman-github-app open
+kenn-forge-github-app create
+kenn-forge-github-app list
+kenn-forge-github-app install
+kenn-forge-github-app uninstall
+kenn-forge-github-app delete
+kenn-forge-github-app open
 ```
 
-Use this companion CLI when you want middleman sync reads to use GitHub App
+Use this companion CLI when you want kenn-forge sync reads to use GitHub App
 installation tokens instead of your personal access token rate limit.

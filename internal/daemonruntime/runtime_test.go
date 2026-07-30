@@ -8,8 +8,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/runtimelock"
 	"go.kenn.io/kit/daemon"
-	"go.kenn.io/middleman/internal/runtimelock"
 )
 
 // TestNewIdentityKeepsDiscoverySurfacesAligned protects clients of both the
@@ -26,7 +26,7 @@ func TestNewIdentityKeepsDiscoverySurfacesAligned(t *testing.T) {
 
 	identity, err := NewIdentity(listener.Addr(), IdentityOptions{
 		Version: "v-test", Commit: "commit-test", DataDir: dataDir,
-		BasePath: "/middleman/", RequireAuth: true,
+		BasePath: "/kenn-forge/", RequireAuth: true,
 	})
 
 	require.NoError(err)
@@ -40,7 +40,7 @@ func TestNewIdentityKeepsDiscoverySurfacesAligned(t *testing.T) {
 	assert.Equal(strconv.Itoa(listener.Addr().(*net.TCPAddr).Port), record.Metadata[metadataPort])
 	assert.Equal(runtimelock.AuthTokenPath(dataDir), metadata.TokenPath)
 	assert.Equal(metadata.TokenPath, record.Metadata[metadataAuthTokenPath])
-	assert.Equal("/middleman", metadata.BasePath)
+	assert.Equal("/kenn-forge", metadata.BasePath)
 	assert.Equal(metadata.BasePath, record.Metadata[metadataBasePath])
 	assert.True(metadata.RequireAuth)
 }

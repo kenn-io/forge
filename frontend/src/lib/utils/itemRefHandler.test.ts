@@ -21,7 +21,7 @@ vi.mock("../stores/router.svelte.js", () => ({
   ),
 }));
 
-vi.mock("@middleman/ui/stores/flash", () => ({
+vi.mock("@kenn-forge/ui/stores/flash", () => ({
   showFlash: mocks.showFlash,
 }));
 

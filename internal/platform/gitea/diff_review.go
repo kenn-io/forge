@@ -7,7 +7,7 @@ import (
 	"time"
 
 	giteasdk "code.gitea.io/sdk/gitea"
-	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/forge/internal/platform"
 )
 
 func (c *Client) ListMergeRequestReviewThreads(

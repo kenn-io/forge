@@ -223,13 +223,13 @@
       [data-expand-button] {
         cursor: pointer;
       }
-      [data-middleman-line-comment-cell] {
+      [data-kenn-forge-line-comment-cell] {
         position: relative;
       }
-      [data-middleman-line-comment-cell] > [data-line-number-content] {
+      [data-kenn-forge-line-comment-cell] > [data-line-number-content] {
         pointer-events: none;
       }
-      [data-middleman-line-comment-button] {
+      [data-kenn-forge-line-comment-button] {
         position: absolute;
         top: 50%;
         right: 2px;
@@ -249,11 +249,11 @@
         line-height: 1;
         opacity: 0;
       }
-      [data-line-type]:hover > [data-middleman-line-comment-button],
-      [data-middleman-line-comment-button]:focus-visible {
+      [data-line-type]:hover > [data-kenn-forge-line-comment-button],
+      [data-kenn-forge-line-comment-button]:focus-visible {
         opacity: 1;
       }
-      [data-middleman-line-comment-button]::before {
+      [data-kenn-forge-line-comment-button]::before {
         content: "+";
       }
     `,
@@ -434,7 +434,7 @@
     let wrapper: HTMLElement | null = target;
     while (wrapper && wrapper.parentElement !== host) wrapper = wrapper.parentElement;
     if (!wrapper) return undefined;
-    const isAnnotation = wrapper.dataset.middlemanLineAnnotationWrapper !== undefined ||
+    const isAnnotation = wrapper.dataset.forgeLineAnnotationWrapper !== undefined ||
       wrapper.dataset.transientAnnotationSlot !== undefined;
     return isAnnotation ? wrapper : undefined;
   }
@@ -1104,11 +1104,11 @@
     const root = host?.shadowRoot;
     const pre = renderedDiffPre(root);
     if (!root || !pre) return;
-    for (const button of root.querySelectorAll("[data-middleman-line-comment-button]")) {
+    for (const button of root.querySelectorAll("[data-kenn-forge-line-comment-button]")) {
       button.remove();
     }
-    for (const cell of root.querySelectorAll("[data-middleman-line-comment-cell]")) {
-      cell.removeAttribute("data-middleman-line-comment-cell");
+    for (const cell of root.querySelectorAll("[data-kenn-forge-line-comment-cell]")) {
+      cell.removeAttribute("data-kenn-forge-line-comment-cell");
     }
     if (!enableLineSelection || !onLineSelected) return;
 
@@ -1125,7 +1125,7 @@
         }
         const target = lineCommentTarget(contentElement);
         if (!target) continue;
-        gutterElement.setAttribute("data-middleman-line-comment-cell", "");
+        gutterElement.setAttribute("data-kenn-forge-line-comment-cell", "");
         gutterElement.appendChild(lineCommentButton(target));
       }
     }
@@ -1153,7 +1153,7 @@
     button.type = "button";
     button.title = label;
     button.setAttribute("aria-label", label);
-    button.setAttribute("data-middleman-line-comment-button", "");
+    button.setAttribute("data-kenn-forge-line-comment-button", "");
     button.addEventListener("pointerdown", (event) => {
       event.stopPropagation();
       lineCommentButtonHasPointerSnapshot = true;
@@ -1309,7 +1309,7 @@
       if (!content) continue;
 
       const wrapper = document.createElement("div");
-      wrapper.dataset.middlemanLineAnnotationWrapper = "";
+      wrapper.dataset.forgeLineAnnotationWrapper = "";
       wrapper.slot = slotName;
       wrapper.style.whiteSpace = "normal";
       wrapper.appendChild(content);

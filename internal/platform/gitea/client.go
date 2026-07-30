@@ -7,11 +7,11 @@ import (
 	"time"
 
 	giteasdk "code.gitea.io/sdk/gitea"
-	ghsync "go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/platform"
-	"go.kenn.io/middleman/internal/platform/gitealike"
-	"go.kenn.io/middleman/internal/ratelimit"
-	"go.kenn.io/middleman/internal/tokenauth"
+	ghsync "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/platform"
+	"go.kenn.io/forge/internal/platform/gitealike"
+	"go.kenn.io/forge/internal/ratelimit"
+	"go.kenn.io/forge/internal/tokenauth"
 )
 
 const minimumReviewThreadVersion = ">= 1.24.6"
@@ -78,7 +78,7 @@ func NewClient(host string, source tokenauth.Source, options ...ClientOption) (*
 	}
 
 	clientOptions := []giteasdk.ClientOption{
-		giteasdk.SetUserAgent("middleman"),
+		giteasdk.SetUserAgent("kenn-forge"),
 	}
 	if opts.serverVersion != "" {
 		clientOptions = append(clientOptions, giteasdk.SetGiteaVersion(opts.serverVersion))

@@ -20,7 +20,7 @@ const home = {
   selectedIssueUID: "issue-child",
 };
 
-const LEGACY_KATA_WORKSPACE_STATE_STORAGE_KEY = "middleman:kata:workspace-state/v1";
+const LEGACY_KATA_WORKSPACE_STATE_STORAGE_KEY = "kenn-forge:kata:workspace-state/v1";
 
 beforeEach(() => window.localStorage.clear());
 afterEach(() => vi.restoreAllMocks());

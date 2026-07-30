@@ -34,7 +34,7 @@ func testDBTemplatePath(t *testing.T) string {
 	t.Helper()
 
 	testDBTemplate.once.Do(func() {
-		dir, err := os.MkdirTemp("", "middleman-db-package-test-template-*")
+		dir, err := os.MkdirTemp("", "kenn-forge-db-package-test-template-*")
 		if err != nil {
 			testDBTemplate.initErr = err
 			return

@@ -26,9 +26,9 @@ func TestStartWorkspaceRetryTransitionsOnlyOneConcurrentCaller(t *testing.T) {
 		ItemType:        WorkspaceItemTypePullRequest,
 		ItemNumber:      42,
 		GitHeadRef:      "feature/retry",
-		WorkspaceBranch: "middleman/pr-42",
+		WorkspaceBranch: "kenn-forge/pr-42",
 		WorktreePath:    "/tmp/ws-retry-race",
-		TmuxSession:     "middleman-ws-retry-race",
+		TmuxSession:     "kenn-forge-ws-retry-race",
 		Status:          "error",
 		ErrorMessage:    &errMsg,
 	}
@@ -73,7 +73,7 @@ func TestStartWorkspaceRetryTransitionsOnlyOneConcurrentCaller(t *testing.T) {
 	require.NotNil(got)
 	assert.Equal("creating", got.Status)
 	assert.Nil(got.ErrorMessage)
-	assert.Equal("middleman/pr-42", got.WorkspaceBranch)
+	assert.Equal("kenn-forge/pr-42", got.WorkspaceBranch)
 }
 
 func TestStartWorkspaceRetryPreservesBranchUntilCleanupSucceeds(t *testing.T) {
@@ -91,9 +91,9 @@ func TestStartWorkspaceRetryPreservesBranchUntilCleanupSucceeds(t *testing.T) {
 		ItemType:        WorkspaceItemTypePullRequest,
 		ItemNumber:      42,
 		GitHeadRef:      "feature/retry",
-		WorkspaceBranch: "middleman/pr-42",
+		WorkspaceBranch: "kenn-forge/pr-42",
 		WorktreePath:    "/tmp/ws-retry-preserve-branch",
-		TmuxSession:     "middleman-ws-retry-preserve-branch",
+		TmuxSession:     "kenn-forge-ws-retry-preserve-branch",
 		Status:          "error",
 		ErrorMessage:    &errMsg,
 	}
@@ -108,7 +108,7 @@ func TestStartWorkspaceRetryPreservesBranchUntilCleanupSucceeds(t *testing.T) {
 	require.NotNil(got)
 	assert.Equal("creating", got.Status)
 	assert.Nil(got.ErrorMessage)
-	assert.Equal("middleman/pr-42", got.WorkspaceBranch)
+	assert.Equal("kenn-forge/pr-42", got.WorkspaceBranch)
 }
 
 func insertTestRepo(t *testing.T, d *DB, owner, name string) int64 {
@@ -230,7 +230,7 @@ func TestPurgeOtherHosts(t *testing.T) {
 	// ghes.company.com repo should be gone.
 	var gheCount int
 	err = d.ReadDB().QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM middleman_repos
+		`SELECT COUNT(*) FROM forge_repos
 		 WHERE platform_host = 'ghes.company.com'`,
 	).Scan(&gheCount)
 	require.NoError(err)
@@ -239,7 +239,7 @@ func TestPurgeOtherHosts(t *testing.T) {
 	// ghes.company.com MR should be gone.
 	var gheMRCount int
 	err = d.ReadDB().QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM middleman_merge_requests
+		`SELECT COUNT(*) FROM forge_merge_requests
 		 WHERE repo_id = ?`, gheRepoID,
 	).Scan(&gheMRCount)
 	require.NoError(err)
@@ -248,7 +248,7 @@ func TestPurgeOtherHosts(t *testing.T) {
 	// ghes.company.com events should be gone.
 	var gheEvtCount int
 	err = d.ReadDB().QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM middleman_mr_events
+		`SELECT COUNT(*) FROM forge_mr_events
 		 WHERE dedupe_key = 'ghe-evt-1'`,
 	).Scan(&gheEvtCount)
 	require.NoError(err)
@@ -304,38 +304,38 @@ func TestCascadeDeleteRepo(t *testing.T) {
 
 	// Direct delete of the repo should cascade through all dependents.
 	_, err := d.WriteDB().ExecContext(ctx,
-		`DELETE FROM middleman_repos WHERE id = ?`, repoID,
+		`DELETE FROM forge_repos WHERE id = ?`, repoID,
 	)
 	require.NoError(err)
 
 	// All dependent rows should be gone.
 	var count int
 	err = d.ReadDB().QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM middleman_merge_requests`,
+		`SELECT COUNT(*) FROM forge_merge_requests`,
 	).Scan(&count)
 	require.NoError(err)
 	assert.Equal(0, count)
 
 	err = d.ReadDB().QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM middleman_mr_events`,
+		`SELECT COUNT(*) FROM forge_mr_events`,
 	).Scan(&count)
 	require.NoError(err)
 	assert.Equal(0, count)
 
 	err = d.ReadDB().QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM middleman_item_workflow_state`,
+		`SELECT COUNT(*) FROM forge_item_workflow_state`,
 	).Scan(&count)
 	require.NoError(err)
 	assert.Equal(0, count)
 
 	err = d.ReadDB().QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM middleman_issues`,
+		`SELECT COUNT(*) FROM forge_issues`,
 	).Scan(&count)
 	require.NoError(err)
 	assert.Equal(0, count)
 
 	err = d.ReadDB().QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM middleman_issue_events`,
+		`SELECT COUNT(*) FROM forge_issue_events`,
 	).Scan(&count)
 	require.NoError(err)
 	assert.Equal(0, count)
@@ -1178,7 +1178,7 @@ func TestUpsertRepoByProviderIDMergesExistingDestinationPathRow(t *testing.T) {
 
 	var mergeRequestRepoID int64
 	err = d.ReadDB().QueryRowContext(ctx,
-		`SELECT repo_id FROM middleman_merge_requests WHERE number = ?`,
+		`SELECT repo_id FROM forge_merge_requests WHERE number = ?`,
 		7,
 	).Scan(&mergeRequestRepoID)
 	require.NoError(err)
@@ -1186,7 +1186,7 @@ func TestUpsertRepoByProviderIDMergesExistingDestinationPathRow(t *testing.T) {
 
 	var issueRepoID int64
 	err = d.ReadDB().QueryRowContext(ctx,
-		`SELECT repo_id FROM middleman_issues WHERE number = ?`,
+		`SELECT repo_id FROM forge_issues WHERE number = ?`,
 		8,
 	).Scan(&issueRepoID)
 	require.NoError(err)
@@ -1248,7 +1248,7 @@ func TestUpsertRepoByProviderIDPreservesNewerCollidingMergeRequest(t *testing.T)
 	require.NoError(err)
 	require.NotNil(draft)
 	_, err = d.rw.ExecContext(ctx, `
-		UPDATE middleman_mr_review_drafts
+		UPDATE forge_mr_review_drafts
 		SET body = 'destination draft'
 		WHERE id = ?`,
 		draft.ID,
@@ -1612,7 +1612,7 @@ func TestUpsertRepoByProviderIDMergesMovedItemLabelLinksIntoDestinationLabels(t 
 
 	var destinationLabelID int64
 	err = d.ReadDB().QueryRowContext(ctx,
-		`SELECT id FROM middleman_labels WHERE repo_id = ? AND name = ?`,
+		`SELECT id FROM forge_labels WHERE repo_id = ? AND name = ?`,
 		destinationID, "bug",
 	).Scan(&destinationLabelID)
 	require.NoError(err)
@@ -2992,7 +2992,7 @@ func TestUpsertLabels_UsesPlatformIDForRename(t *testing.T) {
 
 	var count int
 	err := d.ReadDB().QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM middleman_labels WHERE repo_id = ?`,
+		`SELECT COUNT(*) FROM forge_labels WHERE repo_id = ?`,
 		repoID,
 	).Scan(&count)
 	require.NoError(err)
@@ -3003,7 +3003,7 @@ func TestUpsertLabels_UsesPlatformIDForRename(t *testing.T) {
 	var updatedAt time.Time
 	err = d.ReadDB().QueryRowContext(ctx,
 		`SELECT name, description, color, is_default, updated_at
-		 FROM middleman_labels
+		 FROM forge_labels
 		 WHERE repo_id = ? AND platform_id = ?`,
 		repoID, 41,
 	).Scan(&name, &description, &color, &isDefault, &updatedAt)
@@ -3040,7 +3040,7 @@ func TestUpsertLabels_UsesPlatformExternalIDForRename(t *testing.T) {
 
 	var count int
 	err := d.ReadDB().QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM middleman_labels WHERE repo_id = ?`,
+		`SELECT COUNT(*) FROM forge_labels WHERE repo_id = ?`,
 		repoID,
 	).Scan(&count)
 	require.NoError(err)
@@ -3049,7 +3049,7 @@ func TestUpsertLabels_UsesPlatformExternalIDForRename(t *testing.T) {
 	var name, externalID string
 	err = d.ReadDB().QueryRowContext(ctx,
 		`SELECT name, platform_external_id
-		 FROM middleman_labels
+		 FROM forge_labels
 		 WHERE repo_id = ? AND platform_external_id = ?`,
 		repoID, "gid://gitlab/Label/bug",
 	).Scan(&name, &externalID)
@@ -3099,7 +3099,7 @@ func TestUpsertLabels_MergesStaleNameOnlyRowIntoPlatformRow(t *testing.T) {
 
 	var count int
 	err := d.ReadDB().QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM middleman_labels WHERE repo_id = ?`,
+		`SELECT COUNT(*) FROM forge_labels WHERE repo_id = ?`,
 		repoID,
 	).Scan(&count)
 	require.NoError(err)
@@ -3111,7 +3111,7 @@ func TestUpsertLabels_MergesStaleNameOnlyRowIntoPlatformRow(t *testing.T) {
 	var isDefault bool
 	err = d.ReadDB().QueryRowContext(ctx, `
 		SELECT id, platform_id, name, description, color, is_default
-		FROM middleman_labels
+		FROM forge_labels
 		WHERE repo_id = ?`, repoID,
 	).Scan(&labelID, &platformID, &name, &description, &color, &isDefault)
 	require.NoError(err)
@@ -3265,7 +3265,7 @@ func TestReplaceCommentEventsRollsBackWhenDerivedUpdateFails(t *testing.T) {
 		mrID := insertTestMR(t, database, repoID, 1, "pr", baseTime())
 		require.NoError(database.UpsertMREvents(t.Context(), []MREvent{{MergeRequestID: mrID, EventType: "issue_comment", CreatedAt: baseTime(), DedupeKey: "old"}}))
 		require.NoError(database.UpdateMRDerivedFields(t.Context(), repoID, 1, MRDerivedFields{CommentCount: 1, LastActivityAt: baseTime()}))
-		_, err := database.WriteDB().ExecContext(t.Context(), `CREATE TRIGGER reject_mr_comment_count BEFORE UPDATE OF comment_count ON middleman_merge_requests BEGIN SELECT RAISE(ABORT, 'reject count'); END`)
+		_, err := database.WriteDB().ExecContext(t.Context(), `CREATE TRIGGER reject_mr_comment_count BEFORE UPDATE OF comment_count ON forge_merge_requests BEGIN SELECT RAISE(ABORT, 'reject count'); END`)
 		require.NoError(err)
 
 		err = database.ReplaceMRCommentEvents(t.Context(), mrID, []MREvent{{MergeRequestID: mrID, EventType: "issue_comment", CreatedAt: baseTime(), DedupeKey: "new"}}, nil)
@@ -3288,7 +3288,7 @@ func TestReplaceCommentEventsRollsBackWhenDerivedUpdateFails(t *testing.T) {
 		issueID := insertTestIssue(t, database, repoID, 1, "issue", baseTime())
 		require.NoError(database.UpsertIssueEvents(t.Context(), []IssueEvent{{IssueID: issueID, EventType: "issue_comment", CreatedAt: baseTime(), DedupeKey: "old"}}))
 		require.NoError(database.UpdateIssueDerivedFields(t.Context(), repoID, 1, IssueDerivedFields{CommentCount: 1, LastActivityAt: baseTime()}))
-		_, err := database.WriteDB().ExecContext(t.Context(), `CREATE TRIGGER reject_issue_comment_count BEFORE UPDATE OF comment_count ON middleman_issues BEGIN SELECT RAISE(ABORT, 'reject count'); END`)
+		_, err := database.WriteDB().ExecContext(t.Context(), `CREATE TRIGGER reject_issue_comment_count BEFORE UPDATE OF comment_count ON forge_issues BEGIN SELECT RAISE(ABORT, 'reject count'); END`)
 		require.NoError(err)
 
 		err = database.ReplaceIssueCommentEvents(t.Context(), issueID, []IssueEvent{{IssueID: issueID, EventType: "issue_comment", CreatedAt: baseTime(), DedupeKey: "new"}}, nil)
@@ -3400,7 +3400,7 @@ func TestMREventsDedupeIsScopedToMergeRequest(t *testing.T) {
 
 	var total int
 	err = d.ReadDB().QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM middleman_mr_events WHERE dedupe_key = ?`,
+		`SELECT COUNT(*) FROM forge_mr_events WHERE dedupe_key = ?`,
 		sharedDedupeKey,
 	).Scan(&total)
 	require.NoError(err)
@@ -4420,7 +4420,7 @@ func TestWorktreeLinksCascadeOnMRDelete(t *testing.T) {
 
 	// Delete the MR; the ON DELETE CASCADE should remove the link.
 	_, err = d.WriteDB().ExecContext(ctx,
-		`DELETE FROM middleman_merge_requests WHERE id = ?`, mrID)
+		`DELETE FROM forge_merge_requests WHERE id = ?`, mrID)
 	require.NoError(err)
 
 	after, err := d.GetAllWorktreeLinks(ctx)
@@ -4461,14 +4461,14 @@ func TestRepoIdentifierCasefoldTriggers(t *testing.T) {
 	ctx := t.Context()
 
 	_, err := d.WriteDB().ExecContext(ctx, `
-		INSERT INTO middleman_repos (platform, platform_host, owner, name)
+		INSERT INTO forge_repos (platform, platform_host, owner, name)
 		VALUES ('github', 'github.com', 'Acme', 'widget')`)
 	require.Error(err)
 	require.Contains(err.Error(), "repo identifiers must be provider-canonical")
 
 	repoID := insertTestRepo(t, d, "acme", "widget")
 	_, err = d.WriteDB().ExecContext(ctx, `
-		UPDATE middleman_repos SET name = 'Widget' WHERE id = ?`,
+		UPDATE forge_repos SET name = 'Widget' WHERE id = ?`,
 		repoID,
 	)
 	require.Error(err)
@@ -4489,7 +4489,7 @@ func TestWorkspaceCRUD(t *testing.T) {
 		ItemType:        WorkspaceItemTypePullRequest,
 		ItemNumber:      42,
 		GitHeadRef:      "feature/thing",
-		WorkspaceBranch: "middleman/pr-42",
+		WorkspaceBranch: "kenn-forge/pr-42",
 		WorktreePath:    "/tmp/ws-abc-123",
 		TmuxSession:     "ws-abc-123",
 		Status:          "creating",
@@ -4510,7 +4510,7 @@ func TestWorkspaceCRUD(t *testing.T) {
 	assert.Equal(42, got.ItemNumber)
 	assert.Equal("feature/thing", got.GitHeadRef)
 	assert.Nil(got.MRHeadRepo)
-	assert.Equal("middleman/pr-42", got.WorkspaceBranch)
+	assert.Equal("kenn-forge/pr-42", got.WorkspaceBranch)
 	assert.Equal("/tmp/ws-abc-123", got.WorktreePath)
 	assert.Equal("ws-abc-123", got.TmuxSession)
 	assert.Equal("creating", got.Status)
@@ -4524,7 +4524,7 @@ func TestWorkspaceCRUD(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(byMR)
 	assert.Equal("ws-abc-123", byMR.ID)
-	assert.Equal("middleman/pr-42", byMR.WorkspaceBranch)
+	assert.Equal("kenn-forge/pr-42", byMR.WorkspaceBranch)
 
 	// GetWorkspaceByMR miss
 	missMR, err := d.GetWorkspaceByMR(
@@ -4536,7 +4536,7 @@ func TestWorkspaceCRUD(t *testing.T) {
 	// List (ordered by created_at DESC).
 	// Force ws2 to have a later created_at.
 	_, err = d.WriteDB().ExecContext(ctx, `
-		INSERT INTO middleman_workspaces
+		INSERT INTO forge_workspaces
 		    (id, platform_host, repo_owner, repo_name,
 		     item_type, item_number, item_key, git_head_ref,
 		     worktree_path, tmux_session, status,
@@ -4605,7 +4605,7 @@ func TestWorkspaceCRUD(t *testing.T) {
 			Label:       "Codex",
 			Kind:        "agent",
 			Scope:       "session",
-			TmuxSession: "middleman-ws-abc-123-codex",
+			TmuxSession: "kenn-forge-ws-abc-123-codex",
 		},
 	))
 	require.NoError(d.UpsertWorkspaceRuntimeSession(
@@ -4617,13 +4617,13 @@ func TestWorkspaceCRUD(t *testing.T) {
 			Label:       "Claude",
 			Kind:        "agent",
 			Scope:       "session",
-			TmuxSession: "middleman-ws-abc-123-claude",
+			TmuxSession: "kenn-forge-ws-abc-123-claude",
 		},
 	))
 	tmuxSessions, err := d.ListWorkspaceRuntimeTmuxSessions(ctx, "ws-abc-123")
 	require.NoError(err)
 	require.Len(tmuxSessions, 2)
-	assert.Equal("middleman-ws-abc-123-codex", tmuxSessions[0].TmuxSession)
+	assert.Equal("kenn-forge-ws-abc-123-codex", tmuxSessions[0].TmuxSession)
 	assert.Equal("codex", tmuxSessions[0].TargetKey)
 	assert.False(tmuxSessions[0].CreatedAt.IsZero())
 
@@ -4637,7 +4637,7 @@ func TestWorkspaceCRUD(t *testing.T) {
 	tmuxSessions, err = d.ListWorkspaceRuntimeTmuxSessions(ctx, "ws-abc-123")
 	require.NoError(err)
 	require.Len(tmuxSessions, 1)
-	assert.Equal("middleman-ws-abc-123-codex", tmuxSessions[0].TmuxSession)
+	assert.Equal("kenn-forge-ws-abc-123-codex", tmuxSessions[0].TmuxSession)
 
 	require.NoError(d.DeleteWorkspaceRuntimeSessions(ctx, "ws-abc-123"))
 	tmuxSessions, err = d.ListWorkspaceRuntimeTmuxSessions(ctx, "ws-abc-123")
@@ -4805,8 +4805,8 @@ func TestWorkspaceItemKeyDefaultsFromItemNumber(t *testing.T) {
 		RepoName:        "widget",
 		ItemType:        WorkspaceItemTypeIssue,
 		ItemNumber:      42,
-		GitHeadRef:      "middleman/issue-42",
-		WorkspaceBranch: "middleman/issue-42",
+		GitHeadRef:      "kenn-forge/issue-42",
+		WorkspaceBranch: "kenn-forge/issue-42",
 		WorktreePath:    "/tmp/ws-provider-issue",
 		TmuxSession:     "ws-provider-issue",
 		Status:          "ready",
@@ -4902,8 +4902,8 @@ func TestKataWorkspaceMetadata(t *testing.T) {
 		RepoName:        "widget",
 		ItemType:        WorkspaceItemTypeKataTask,
 		ItemKey:         itemKey,
-		GitHeadRef:      "middleman/kata/task-123-fix-widget",
-		WorkspaceBranch: "middleman/kata/task-123-fix-widget",
+		GitHeadRef:      "kenn-forge/kata/task-123-fix-widget",
+		WorkspaceBranch: "kenn-forge/kata/task-123-fix-widget",
 		WorktreePath:    "/tmp/ws-kata-task",
 		TmuxSession:     "ws-kata-task",
 		Status:          "ready",
@@ -4957,8 +4957,8 @@ func TestGetWorkspaceByIssueForProviderDisambiguatesProvider(t *testing.T) {
 		RepoName:        "widget",
 		ItemType:        WorkspaceItemTypeIssue,
 		ItemNumber:      7,
-		GitHeadRef:      "middleman/issue-7",
-		WorkspaceBranch: "middleman/issue-7",
+		GitHeadRef:      "kenn-forge/issue-7",
+		WorkspaceBranch: "kenn-forge/issue-7",
 		WorktreePath:    "/tmp/github-issue-workspace",
 		TmuxSession:     "github-issue-workspace",
 		Status:          "ready",
@@ -4971,8 +4971,8 @@ func TestGetWorkspaceByIssueForProviderDisambiguatesProvider(t *testing.T) {
 		RepoName:        "widget",
 		ItemType:        WorkspaceItemTypeIssue,
 		ItemNumber:      7,
-		GitHeadRef:      "middleman/issue-7",
-		WorkspaceBranch: "middleman/issue-7",
+		GitHeadRef:      "kenn-forge/issue-7",
+		WorkspaceBranch: "kenn-forge/issue-7",
 		WorktreePath:    "/tmp/gitlab-issue-workspace",
 		TmuxSession:     "gitlab-issue-workspace",
 		Status:          "ready",
@@ -5017,7 +5017,7 @@ func TestGetWorkspaceByMRForProviderDisambiguatesProvider(t *testing.T) {
 		ItemType:        WorkspaceItemTypePullRequest,
 		ItemNumber:      7,
 		GitHeadRef:      "feature",
-		WorkspaceBranch: "middleman/pr-7",
+		WorkspaceBranch: "kenn-forge/pr-7",
 		WorktreePath:    "/tmp/github-pr-workspace",
 		TmuxSession:     "github-pr-workspace",
 		Status:          "ready",
@@ -5031,7 +5031,7 @@ func TestGetWorkspaceByMRForProviderDisambiguatesProvider(t *testing.T) {
 		ItemType:        WorkspaceItemTypePullRequest,
 		ItemNumber:      7,
 		GitHeadRef:      "feature",
-		WorkspaceBranch: "middleman/pr-7",
+		WorkspaceBranch: "kenn-forge/pr-7",
 		WorktreePath:    "/tmp/gitlab-pr-workspace",
 		TmuxSession:     "gitlab-pr-workspace",
 		Status:          "ready",
@@ -5059,7 +5059,7 @@ func TestFreshWorkspaceRuntimeSessionSchemaIncludesTmuxSession(t *testing.T) {
 	d := openTestDB(t)
 	rows, err := d.ReadDB().QueryContext(
 		context.Background(),
-		`PRAGMA table_info(middleman_workspace_runtime_sessions)`,
+		`PRAGMA table_info(forge_workspace_runtime_sessions)`,
 	)
 	require.NoError(err)
 	defer rows.Close()
@@ -5092,7 +5092,7 @@ func TestWorkspaceIdentifierCasefoldTriggers(t *testing.T) {
 	ctx := t.Context()
 
 	_, err := d.WriteDB().ExecContext(ctx, `
-		INSERT INTO middleman_workspaces
+		INSERT INTO forge_workspaces
 		    (id, platform_host, repo_owner, repo_name,
 		     item_type, item_number, item_key, git_head_ref, worktree_path, tmux_session)
 		VALUES ('mixed', 'github.com', 'Acme', 'widget', 'pull_request', 1, '1', 'feature',
@@ -5114,7 +5114,7 @@ func TestWorkspaceIdentifierCasefoldTriggers(t *testing.T) {
 	require.NoError(d.InsertWorkspace(ctx, ws))
 
 	_, err = d.WriteDB().ExecContext(ctx, `
-		UPDATE middleman_workspaces SET repo_name = 'Widget' WHERE id = 'lower'`)
+		UPDATE forge_workspaces SET repo_name = 'Widget' WHERE id = 'lower'`)
 	require.Error(err)
 	require.Contains(err.Error(), "workspace repo identifiers must be provider-canonical")
 }
@@ -5210,7 +5210,7 @@ func TestWorkspaceUniqueConstraint(t *testing.T) {
 			RepoName:     "widget-issues",
 			ItemType:     WorkspaceItemTypeIssue,
 			ItemNumber:   42,
-			GitHeadRef:   "middleman/issue-42",
+			GitHeadRef:   "kenn-forge/issue-42",
 			WorktreePath: "/tmp/ws-issue-1",
 			TmuxSession:  "ws-issue-1",
 			Status:       "creating",
@@ -5224,7 +5224,7 @@ func TestWorkspaceUniqueConstraint(t *testing.T) {
 			RepoName:     "widget-issues",
 			ItemType:     WorkspaceItemTypeIssue,
 			ItemNumber:   42,
-			GitHeadRef:   "middleman/issue-42-copy",
+			GitHeadRef:   "kenn-forge/issue-42-copy",
 			WorktreePath: "/tmp/ws-issue-2",
 			TmuxSession:  "ws-issue-2",
 			Status:       "creating",
@@ -5255,7 +5255,7 @@ func TestWorkspaceUniqueConstraint(t *testing.T) {
 			RepoName:     "widget-mixed",
 			ItemType:     WorkspaceItemTypeIssue,
 			ItemNumber:   7,
-			GitHeadRef:   "middleman/issue-7",
+			GitHeadRef:   "kenn-forge/issue-7",
 			WorktreePath: "/tmp/ws-mixed-issue",
 			TmuxSession:  "ws-mixed-issue",
 			Status:       "creating",
@@ -5391,7 +5391,7 @@ func TestWorkspaceSummaries(t *testing.T) {
 
 	// PR workspace with matching PR (earlier created_at).
 	_, err = d.WriteDB().ExecContext(ctx, `
-		INSERT INTO middleman_workspaces
+		INSERT INTO forge_workspaces
 		    (id, platform_host, repo_owner, repo_name,
 		     item_type, item_number, item_key, git_head_ref,
 		     worktree_path, tmux_session, status,
@@ -5406,7 +5406,7 @@ func TestWorkspaceSummaries(t *testing.T) {
 
 	// Issue workspace with owner issue metadata and associated PR metadata.
 	_, err = d.WriteDB().ExecContext(ctx, `
-		INSERT INTO middleman_workspaces
+		INSERT INTO forge_workspaces
 		    (id, platform_host, repo_owner, repo_name,
 		     item_type, item_number, item_key, associated_pr_number, git_head_ref,
 		     worktree_path, tmux_session, status,
@@ -5421,7 +5421,7 @@ func TestWorkspaceSummaries(t *testing.T) {
 
 	// Workspace without matching PR (later created_at, no repo).
 	_, err = d.WriteDB().ExecContext(ctx, `
-		INSERT INTO middleman_workspaces
+		INSERT INTO forge_workspaces
 		    (id, platform_host, repo_owner, repo_name,
 		     item_type, item_number, item_key, git_head_ref,
 		     worktree_path, tmux_session, status,
@@ -5517,7 +5517,7 @@ func TestSetWorkspaceAssociatedPRNumberIfNull(t *testing.T) {
 	ctx := context.Background()
 
 	_, err := d.WriteDB().ExecContext(ctx, `
-		INSERT INTO middleman_workspaces
+		INSERT INTO forge_workspaces
 		    (id, platform_host, repo_owner, repo_name,
 		     item_type, item_number, item_key, git_head_ref,
 		     worktree_path, tmux_session, status)
@@ -5736,7 +5736,7 @@ func TestUpsertIssue_StoresAssignees(t *testing.T) {
 	// Verify stored value
 	var stored string
 	err = d.ReadDB().QueryRowContext(ctx,
-		`SELECT assignees_json FROM middleman_issues WHERE repo_id = ? AND number = ?`,
+		`SELECT assignees_json FROM forge_issues WHERE repo_id = ? AND number = ?`,
 		repoID, 42,
 	).Scan(&stored)
 	require.NoError(err)
@@ -5872,7 +5872,7 @@ func TestUpsertIssue_NormalizesEmptyAssigneesJSON(t *testing.T) {
 
 	var stored string
 	err = d.ReadDB().QueryRowContext(ctx,
-		`SELECT assignees_json FROM middleman_issues WHERE repo_id = ? AND number = ?`,
+		`SELECT assignees_json FROM forge_issues WHERE repo_id = ? AND number = ?`,
 		repoID, 1,
 	).Scan(&stored)
 	require.NoError(err)
@@ -5894,7 +5894,7 @@ func TestUpsertIssue_NormalizesEmptyAssigneesJSON(t *testing.T) {
 	})
 	require.NoError(err)
 	err = d.ReadDB().QueryRowContext(ctx,
-		`SELECT assignees_json FROM middleman_issues WHERE repo_id = ? AND number = ?`,
+		`SELECT assignees_json FROM forge_issues WHERE repo_id = ? AND number = ?`,
 		repoID, 1,
 	).Scan(&stored)
 	require.NoError(err)

@@ -1,6 +1,6 @@
 import { render } from "vitest-browser-svelte";
 import { describe, expect, it, vi } from "vite-plus/test";
-import { DEFAULT_TERMINAL_SETTINGS } from "@middleman/ui";
+import { DEFAULT_TERMINAL_SETTINGS } from "@kenn-forge/ui";
 
 import { STORES_KEY } from "../../../../../packages/ui/src/context.js";
 import { createMockApiFetch, jsonResponse, type MockRouteOverride } from "../../../test/mockApiFetch.js";
@@ -25,7 +25,7 @@ const workspace = {
   item_number: 7,
   git_head_ref: "feature/session-exit",
   worktree_path: "/tmp/worktree",
-  tmux_session: "middleman-ws-1",
+  tmux_session: "kenn-forge-ws-1",
   status: "ready",
   enrichment_status: "fresh",
   created_at: "2026-04-29T00:00:00Z",

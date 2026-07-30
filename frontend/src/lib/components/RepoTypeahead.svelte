@@ -6,10 +6,10 @@
     displayRepoFilterValue,
     getStores,
     normalizeRepoFilterSelection,
-  } from "@middleman/ui";
+  } from "@kenn-forge/ui";
   import { client } from "../api/runtime.js";
-  import type { ConfigRepo, Repo } from "@middleman/ui/api/types";
-  import { canonicalProvider } from "@middleman/ui/api/provider-routes";
+  import type { ConfigRepo, Repo } from "@kenn-forge/ui/api/types";
+  import { canonicalProvider } from "@kenn-forge/ui/api/provider-routes";
   import type { RepoTreeOption } from "./repoTree.js";
   import RepoTreeNode from "./RepoTreeNode.svelte";
   import TreeCheckbox from "./TreeCheckbox.svelte";

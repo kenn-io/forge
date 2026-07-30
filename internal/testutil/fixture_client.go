@@ -12,8 +12,8 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v89/github"
-	ghclient "go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/platform"
+	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/platform"
 )
 
 var errFixtureReadOnly = errors.New("fixture client: mutation not supported")

@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { STORES_KEY } from "../../context.js";
-import type { MiddlemanClient } from "../../types.js";
+import type { ForgeClient } from "../../types.js";
 import type { ProviderRouteRef } from "../../api/provider-routes.js";
 import { createDiffReviewDraftStore } from "../../stores/diff-review-draft.svelte.js";
 import DiffReviewDraftInlineComment from "./DiffReviewDraftInlineComment.svelte";
@@ -75,7 +75,7 @@ async function renderTray(publishResult: boolean) {
         response: { ok: true, status: 200 },
       });
     }),
-  } as unknown as MiddlemanClient;
+  } as unknown as ForgeClient;
   const diffReviewDraft = createDiffReviewDraftStore({ client });
   diffReviewDraft.setContext(providerRef(), 12, true, "head-sha");
   await waitFor(() => {

@@ -112,7 +112,7 @@ func supportedProvidersFromDoc(t *testing.T, contents string) []string {
 	t.Helper()
 
 	section := providerSupportSection(t, contents)
-	re := regexp.MustCompile(`(?m)^middleman supports ([^.]+)\.`)
+	re := regexp.MustCompile(`(?m)^kenn-forge supports ([^.]+)\.`)
 	match := re.FindStringSubmatch(section)
 	require.Len(t, match, 2, "Provider Support section must contain the supported-provider sentence")
 

@@ -8,12 +8,12 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 
-	"go.kenn.io/middleman/internal/server/httpapi"
-	"go.kenn.io/middleman/internal/server/kataapi"
+	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/server/kataapi"
 )
 
 type streamKataTaskEventsInput struct {
-	DaemonID string `header:"X-Middleman-Kata-Daemon" doc:"Kata daemon id; the effective default daemon when empty"`
+	DaemonID string `header:"X-Kenn-Forge-Kata-Daemon" doc:"Kata daemon id; the effective default daemon when empty"`
 }
 
 func (s *Server) registerKataFrontendAPI(api huma.API) {

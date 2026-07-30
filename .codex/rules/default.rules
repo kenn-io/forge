@@ -1,7 +1,7 @@
 prefix_rule(
     pattern=["git", "commit", "--no-verify"],
     decision="forbidden",
-    justification="middleman commits must run repository hooks",
+    justification="kenn-forge commits must run repository hooks",
     match=[
         "git commit --no-verify -m test",
     ],
@@ -10,7 +10,7 @@ prefix_rule(
 prefix_rule(
     pattern=["git", "commit", "--amend"],
     decision="forbidden",
-    justification="middleman workflow requires new commits instead of amending history",
+    justification="kenn-forge workflow requires new commits instead of amending history",
     match=[
         "git commit --amend -m test",
     ],
@@ -19,7 +19,7 @@ prefix_rule(
 prefix_rule(
     pattern=["git", ["status", "diff", "add"]],
     decision="allow",
-    justification="middleman Codex worktrees may store git metadata outside the visible worktree",
+    justification="kenn-forge Codex worktrees may store git metadata outside the visible worktree",
     match=[
         "git status --short --branch",
         "git diff --stat",
@@ -30,17 +30,17 @@ prefix_rule(
 prefix_rule(
     pattern=["git", "commit", ["-m", "-F"]],
     decision="allow",
-    justification="middleman Codex worktrees may store git metadata outside the visible worktree",
+    justification="kenn-forge Codex worktrees may store git metadata outside the visible worktree",
     match=[
         "git commit -m test",
-        "git commit -F /tmp/middleman-commit-message",
+        "git commit -F /tmp/kenn-forge-commit-message",
     ],
 )
 
 prefix_rule(
     pattern=["go", "test"],
     decision="allow",
-    justification="middleman tests use workspace fixtures backed by repository git metadata",
+    justification="kenn-forge tests use workspace fixtures backed by repository git metadata",
     match=[
         "go test ./internal/server -shuffle=on",
         "go test ./internal/workspace/localruntime ./internal/server -shuffle=on",
@@ -50,7 +50,7 @@ prefix_rule(
 prefix_rule(
     pattern=["make", ["test", "test-short", "test-integration"]],
     decision="allow",
-    justification="middleman make test targets run Go tests that may need repository git metadata",
+    justification="kenn-forge make test targets run Go tests that may need repository git metadata",
     match=[
         "make test",
         "make test-short",

@@ -2,8 +2,8 @@
   import ArrowLeftIcon from "@lucide/svelte/icons/arrow-left";
   import { onMount } from "svelte";
   import { SearchInput, SettingsLayout, SettingsSection, type SettingsCategory } from "@kenn-io/kit-ui";
-  import { getStores } from "@middleman/ui";
-  import type { Settings } from "@middleman/ui/api/types";
+  import { getStores } from "@kenn-forge/ui";
+  import type { Settings } from "@kenn-forge/ui/api/types";
   import { getSettings } from "../../api/settings.js";
   import { navigate } from "../../stores/router.svelte.js";
   import RepoSettings from "./RepoSettings.svelte";
@@ -18,7 +18,7 @@
   import {
     beginTerminalSettingsHydration,
     hydrateTerminalSettings,
-  } from "@middleman/ui/stores/terminal-settings-persistence";
+  } from "@kenn-forge/ui/stores/terminal-settings-persistence";
   import { SETTINGS_PANELS, settingsPanelsForModes } from "./settingsPanels.js";
 
   // Switched-panel model on kit SettingsLayout: this list is the single
@@ -78,7 +78,7 @@
     // Always route to an in-app destination rather than window.history.back():
     // on a direct or bookmarked /settings visit the previous history entry can
     // be an unrelated site, and history.back() would navigate the user out of
-    // middleman entirely. The header's settings toggle owns exact-route return;
+    // kenn-forge entirely. The header's settings toggle owns exact-route return;
     // this in-page control only needs a guaranteed in-app landing.
     navigate("/");
   }

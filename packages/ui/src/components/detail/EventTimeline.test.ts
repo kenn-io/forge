@@ -2347,8 +2347,8 @@ describe("EventTimeline", () => {
         provider: "github",
         platformHost: "github.com",
         repoOwner: "kenn-io",
-        repoName: "middleman",
-        repoPath: "kenn-io/middleman",
+        repoName: "kenn-forge",
+        repoPath: "kenn-io/kenn-forge",
       },
     });
 
@@ -2391,8 +2391,8 @@ describe("EventTimeline", () => {
         provider: "github",
         platformHost: "github.com",
         repoOwner: "kenn-io",
-        repoName: "middleman",
-        repoPath: "kenn-io/middleman",
+        repoName: "kenn-forge",
+        repoPath: "kenn-io/kenn-forge",
         activityViewMode: "compact",
       },
     });
@@ -2422,10 +2422,10 @@ describe("EventTimeline", () => {
           makeEvent({
             ID: 4,
             EventType: "cross_referenced",
-            Summary: "Referenced from kenn-io/middleman#377",
+            Summary: "Referenced from kenn-io/kenn-forge#377",
             MetadataJSON: JSON.stringify({
               source_title: "external reference",
-              source_url: "https://github.com/kenn-io/middleman/pull/377",
+              source_url: "https://github.com/kenn-io/kenn-forge/pull/377",
             }),
           }),
         ],
@@ -2437,7 +2437,7 @@ describe("EventTimeline", () => {
     const link = screen.getByRole("link", {
       name: "external reference",
     });
-    expect(link.getAttribute("href")).toBe("https://github.com/kenn-io/middleman/pull/377");
+    expect(link.getAttribute("href")).toBe("https://github.com/kenn-io/kenn-forge/pull/377");
     expect(link.classList.contains("item-ref")).toBe(false);
     expect(link.getAttribute("target")).toBe("_blank");
     expect(link.getAttribute("rel")).toBe("noopener noreferrer");

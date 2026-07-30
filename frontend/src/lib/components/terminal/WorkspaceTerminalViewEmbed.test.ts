@@ -12,7 +12,7 @@
 
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import { pushModalFrame, resetModalStack } from "@middleman/ui/stores/keyboard/modal-stack";
+import { pushModalFrame, resetModalStack } from "@kenn-forge/ui/stores/keyboard/modal-stack";
 
 const mocks = vi.hoisted(() => ({
   runtimeClient: {
@@ -28,7 +28,7 @@ vi.mock("../../api/runtime.js", () => ({
   apiErrorMessage: (_err: unknown, fallback: string) => fallback,
 }));
 
-vi.mock("@middleman/ui/stores/flash", () => ({
+vi.mock("@kenn-forge/ui/stores/flash", () => ({
   showFlash: mocks.showFlash,
 }));
 
@@ -78,8 +78,8 @@ vi.mock("@xterm/addon-webgl", () => ({
   }),
 }));
 
-vi.mock("@middleman/ui", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@middleman/ui")>();
+vi.mock("@kenn-forge/ui", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@kenn-forge/ui")>();
   return {
     ...actual,
     getStores: () => ({
@@ -128,7 +128,7 @@ const readyWorkspaceData = {
   item_number: 7,
   git_head_ref: "feature/embed-props",
   worktree_path: "/tmp/worktree",
-  tmux_session: "middleman-ws-1",
+  tmux_session: "kenn-forge-ws-1",
   status: "ready",
   created_at: "2026-04-29T00:00:00Z",
 };

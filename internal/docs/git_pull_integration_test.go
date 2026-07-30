@@ -10,7 +10,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/config"
+	"go.kenn.io/forge/internal/config"
 )
 
 // remoteCommit advances the bare fixture remote by one commit created in a
@@ -23,8 +23,8 @@ func (g *gitRepo) remoteCommit(t *testing.T, rel, body string) string {
 	clone := t.TempDir()
 	runGit(t, g.dir, "clone", g.remote, clone)
 	runGit(t, clone, "checkout", "main")
-	runGit(t, clone, "config", "user.email", "middleman-fixture@example.invalid")
-	runGit(t, clone, "config", "user.name", "Middleman Fixture")
+	runGit(t, clone, "config", "user.email", "kenn-forge-fixture@example.invalid")
+	runGit(t, clone, "config", "user.name", "Kenn Forge Fixture")
 	full := filepath.Join(clone, filepath.FromSlash(rel))
 	require.NoError(t, os.MkdirAll(filepath.Dir(full), 0o755))
 	require.NoError(t, os.WriteFile(full, []byte(body), 0o644))

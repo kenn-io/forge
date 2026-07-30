@@ -27,13 +27,13 @@ func (d *DB) EnsureDiscoveryArchives(ctx context.Context, repoIDs []int64, now t
 	now = now.UTC()
 	return d.Tx(ctx, func(tx *sql.Tx) error {
 		if len(repoIDs) > 0 {
-			if err := requireArchiveRepoIDs(ctx, tx, "middleman_repos", repoIDs); err != nil {
+			if err := requireArchiveRepoIDs(ctx, tx, "forge_repos", repoIDs); err != nil {
 				return err
 			}
 		}
 		for _, repoID := range repoIDs {
 			_, err := tx.ExecContext(ctx, `
-				INSERT INTO middleman_archive_repos (
+				INSERT INTO forge_archive_repos (
 					repo_id, collection_mode, operator_state,
 					initial_started_at, initial_completed_at,
 					maintenance_watermark, maintenance_succeeded_at,
@@ -50,20 +50,20 @@ func (d *DB) EnsureDiscoveryArchives(ctx context.Context, repoIDs []int64, now t
 				)
 				ON CONFLICT(repo_id) DO UPDATE SET
 					operator_state = CASE
-						WHEN middleman_archive_repos.last_error_code = 'configuration_removed' THEN 'active'
-						ELSE middleman_archive_repos.operator_state END,
+						WHEN forge_archive_repos.last_error_code = 'configuration_removed' THEN 'active'
+						ELSE forge_archive_repos.operator_state END,
 					last_error_code = CASE
-						WHEN middleman_archive_repos.last_error_code = 'configuration_removed' THEN NULL
-						ELSE middleman_archive_repos.last_error_code END,
+						WHEN forge_archive_repos.last_error_code = 'configuration_removed' THEN NULL
+						ELSE forge_archive_repos.last_error_code END,
 					last_error_detail = CASE
-						WHEN middleman_archive_repos.last_error_code = 'configuration_removed' THEN NULL
-						ELSE middleman_archive_repos.last_error_detail END,
+						WHEN forge_archive_repos.last_error_code = 'configuration_removed' THEN NULL
+						ELSE forge_archive_repos.last_error_detail END,
 					next_retry_at = CASE
-						WHEN middleman_archive_repos.last_error_code = 'configuration_removed' THEN NULL
-						ELSE middleman_archive_repos.next_retry_at END,
+						WHEN forge_archive_repos.last_error_code = 'configuration_removed' THEN NULL
+						ELSE forge_archive_repos.next_retry_at END,
 					updated_at = CASE
-						WHEN middleman_archive_repos.last_error_code = 'configuration_removed' THEN excluded.updated_at
-						ELSE middleman_archive_repos.updated_at END`, repoID, now, now)
+						WHEN forge_archive_repos.last_error_code = 'configuration_removed' THEN excluded.updated_at
+						ELSE forge_archive_repos.updated_at END`, repoID, now, now)
 			if err != nil {
 				return fmt.Errorf("ensure discovery archive for repo %d: %w", repoID, err)
 			}
@@ -81,7 +81,7 @@ func (d *DB) ReconcileDiscoveryArchives(ctx context.Context, repoIDs []int64, no
 	repoIDs = normalizedArchiveRepoIDs(repoIDs)
 	now = now.UTC()
 	if err := d.Tx(ctx, func(tx *sql.Tx) error {
-		query := `UPDATE middleman_archive_repos
+		query := `UPDATE forge_archive_repos
 			SET operator_state = 'paused', last_error_code = ?,
 				last_error_detail = 'repository is no longer configured',
 				next_retry_at = NULL, updated_at = ?
@@ -108,23 +108,23 @@ func (d *DB) StartFullArchives(ctx context.Context, repoIDs []int64, now time.Ti
 		return nil
 	}
 	return d.Tx(ctx, func(tx *sql.Tx) error {
-		if err := requireArchiveRepoIDs(ctx, tx, "middleman_archive_repos", repoIDs); err != nil {
+		if err := requireArchiveRepoIDs(ctx, tx, "forge_archive_repos", repoIDs); err != nil {
 			return err
 		}
 		args := archiveRepoIDArgs(repoIDs)
 		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`
-			UPDATE middleman_archive_items
+			UPDATE forge_archive_items
 			SET refresh_reason = 'initial'
 			WHERE lifecycle_state = 'active'
 			  AND repo_id IN (%s)
 			  AND repo_id IN (
-				SELECT repo_id FROM middleman_archive_repos WHERE collection_mode = 'discovery'
+				SELECT repo_id FROM forge_archive_repos WHERE collection_mode = 'discovery'
 			  )`, sqlPlaceholders(len(repoIDs))), args...); err != nil {
 			return fmt.Errorf("queue promoted archive items: %w", err)
 		}
 		promoteArgs := append([]any{formatDatasetProgressTime(now)}, args...)
 		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`
-			UPDATE middleman_archive_dataset_progress
+			UPDATE forge_archive_dataset_progress
 			SET scan_generation = CASE WHEN status = 'complete' THEN %s ELSE scan_generation END,
 				next_cursor = CASE WHEN status = 'complete' THEN NULL ELSE next_cursor END,
 				last_input_cursor = CASE WHEN status = 'complete' THEN NULL ELSE last_input_cursor END,
@@ -137,20 +137,20 @@ func (d *DB) StartFullArchives(ctx context.Context, repoIDs []int64, now time.Ti
 			WHERE status IN ('pending', 'complete', 'failed')
 			  AND repo_id IN (%s)
 			  AND repo_id IN (
-				SELECT repo_id FROM middleman_archive_repos WHERE collection_mode = 'discovery'
+				SELECT repo_id FROM forge_archive_repos WHERE collection_mode = 'discovery'
 			  )
 			  AND EXISTS (
-				SELECT 1 FROM middleman_archive_items ai
-				WHERE ai.repo_id = middleman_archive_dataset_progress.repo_id
-				  AND ai.item_type = middleman_archive_dataset_progress.item_type
-				  AND ai.item_number = middleman_archive_dataset_progress.item_number
+				SELECT 1 FROM forge_archive_items ai
+				WHERE ai.repo_id = forge_archive_dataset_progress.repo_id
+				  AND ai.item_type = forge_archive_dataset_progress.item_type
+				  AND ai.item_number = forge_archive_dataset_progress.item_number
 				  AND ai.lifecycle_state = 'active'
 			  )`, nextEvenScanGenerationSQL, sqlPlaceholders(len(repoIDs))), promoteArgs...); err != nil {
 			return fmt.Errorf("queue promoted archive dataset progress: %w", err)
 		}
 		updateArgs := append([]any{now, now}, args...)
 		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`
-			UPDATE middleman_archive_repos
+			UPDATE forge_archive_repos
 			SET collection_mode = 'full', operator_state = 'active',
 				initial_started_at = COALESCE(initial_started_at, ?),
 				last_error_code = CASE WHEN last_error_code IN ('budget_exhausted', 'authentication_failed', 'repository_blocked') THEN last_error_code ELSE NULL END,
@@ -182,12 +182,12 @@ func (d *DB) PauseArchives(ctx context.Context, repoIDs []int64, now time.Time) 
 		return nil
 	}
 	return d.Tx(ctx, func(tx *sql.Tx) error {
-		if err := requireArchiveRepoIDs(ctx, tx, "middleman_archive_repos", repoIDs); err != nil {
+		if err := requireArchiveRepoIDs(ctx, tx, "forge_archive_repos", repoIDs); err != nil {
 			return err
 		}
 		args := append([]any{now}, archiveRepoIDArgs(repoIDs)...)
 		_, err := tx.ExecContext(ctx, fmt.Sprintf(`
-			UPDATE middleman_archive_repos
+			UPDATE forge_archive_repos
 			SET operator_state = 'paused', updated_at = ?
 			WHERE repo_id IN (%s) AND operator_state <> 'paused'`,
 			sqlPlaceholders(len(repoIDs))), args...)
@@ -215,7 +215,7 @@ func (d *DB) ReconcileArchiveCoverage(ctx context.Context, repoID int64, coverag
 	}
 	now = now.UTC()
 	return d.Tx(ctx, func(tx *sql.Tx) error {
-		if err := requireArchiveRepoIDs(ctx, tx, "middleman_archive_repos", []int64{repoID}); err != nil {
+		if err := requireArchiveRepoIDs(ctx, tx, "forge_archive_repos", []int64{repoID}); err != nil {
 			return err
 		}
 		for _, inventory := range []struct {
@@ -230,7 +230,7 @@ func (d *DB) ReconcileArchiveCoverage(ctx context.Context, repoID int64, coverag
 				continue
 			}
 			result, err := tx.ExecContext(ctx, `
-				UPDATE middleman_archive_repo_scans
+				UPDATE forge_archive_repo_scans
 				SET scan_generation = `+nextEvenScanGenerationSQL+`,
 					next_cursor = NULL, last_input_cursor = NULL,
 					page_count = 0, status = 'pending',
@@ -238,7 +238,7 @@ func (d *DB) ReconcileArchiveCoverage(ctx context.Context, repoID int64, coverag
 					updated_at = ?
 				WHERE repo_id = ? AND scan = ? AND status = 'complete'
 				  AND EXISTS (
-					SELECT 1 FROM middleman_archive_repos
+					SELECT 1 FROM forge_archive_repos
 					WHERE repo_id = ? AND `+inventory.column+` = 'unsupported'
 				  )`, now, repoID, inventory.scan, repoID)
 			if err != nil {
@@ -261,7 +261,7 @@ func (d *DB) ReconcileArchiveCoverage(ctx context.Context, repoID int64, coverag
 				return err
 			}
 			if _, err := tx.ExecContext(ctx, `
-				UPDATE middleman_archive_repos
+				UPDATE forge_archive_repos
 				SET `+inventory.column+` = 'unknown',
 					initial_completed_at = NULL,
 					updated_at = MAX(updated_at, ?)
@@ -270,16 +270,16 @@ func (d *DB) ReconcileArchiveCoverage(ctx context.Context, repoID int64, coverag
 			}
 		}
 		_, err := tx.ExecContext(ctx, `
-			UPDATE middleman_archive_repos
+			UPDATE forge_archive_repos
 			SET issues_coverage = CASE WHEN EXISTS (
-				SELECT 1 FROM middleman_archive_repo_scans
+				SELECT 1 FROM forge_archive_repo_scans
 					WHERE repo_id = ? AND scan = 'issue_inventory' AND status = 'complete'
 				) THEN CASE WHEN issues_coverage = 'unknown'
 					THEN ?
 					ELSE issues_coverage END
 				ELSE issues_coverage END,
 				merge_requests_coverage = CASE WHEN EXISTS (
-					SELECT 1 FROM middleman_archive_repo_scans
+					SELECT 1 FROM forge_archive_repo_scans
 					WHERE repo_id = ? AND scan = 'merge_request_inventory' AND status = 'complete'
 				) THEN CASE WHEN merge_requests_coverage = 'unknown'
 					THEN ?
@@ -305,7 +305,7 @@ func requeueArchiveKnownItemLookupsTx(
 	now time.Time,
 ) error {
 	_, err := tx.ExecContext(ctx, `
-		UPDATE middleman_archive_dataset_progress
+		UPDATE forge_archive_dataset_progress
 		SET scan_generation = `+nextEvenScanGenerationSQL+`,
 			next_cursor = NULL, last_input_cursor = NULL,
 			page_count = 0, observed_count = 0,
@@ -315,10 +315,10 @@ func requeueArchiveKnownItemLookupsTx(
 		WHERE repo_id = ? AND item_type = ? AND dataset = 'lookup'
 		  AND status = 'complete'
 		  AND EXISTS (
-			SELECT 1 FROM middleman_archive_items ai
-			WHERE ai.repo_id = middleman_archive_dataset_progress.repo_id
-			  AND ai.item_type = middleman_archive_dataset_progress.item_type
-			  AND ai.item_number = middleman_archive_dataset_progress.item_number
+			SELECT 1 FROM forge_archive_items ai
+			WHERE ai.repo_id = forge_archive_dataset_progress.repo_id
+			  AND ai.item_type = forge_archive_dataset_progress.item_type
+			  AND ai.item_number = forge_archive_dataset_progress.item_number
 			  AND ai.lifecycle_state = 'active'
 		  )`, now, repoID, itemType)
 	if err != nil {
@@ -345,7 +345,7 @@ func (d *DB) RequeueArchiveLifecycleDetails(
 	args = append(args, archiveRepoIDArgs(repoIDs)...)
 	args = append(args, archiveLifecycleDetailsGeneration)
 	_, err := d.rw.ExecContext(ctx, fmt.Sprintf(`
-		UPDATE middleman_archive_dataset_progress
+		UPDATE forge_archive_dataset_progress
 		SET scan_generation = ?,
 			next_cursor = NULL, last_input_cursor = NULL,
 			page_count = 0, observed_count = 0,
@@ -358,21 +358,21 @@ func (d *DB) RequeueArchiveLifecycleDetails(
 		  AND scan_generation < ?
 		  AND EXISTS (
 			SELECT 1
-			FROM middleman_archive_items ai
-			JOIN middleman_archive_repos ar ON ar.repo_id = ai.repo_id
-			WHERE ai.repo_id = middleman_archive_dataset_progress.repo_id
-			  AND ai.item_type = middleman_archive_dataset_progress.item_type
-			  AND ai.item_number = middleman_archive_dataset_progress.item_number
+			FROM forge_archive_items ai
+			JOIN forge_archive_repos ar ON ar.repo_id = ai.repo_id
+			WHERE ai.repo_id = forge_archive_dataset_progress.repo_id
+			  AND ai.item_type = forge_archive_dataset_progress.item_type
+			  AND ai.item_number = forge_archive_dataset_progress.item_number
 			  AND ai.lifecycle_state = 'active'
 			  AND ar.collection_mode = 'full'
 			  AND (
 				(ai.item_type = 'issue' AND EXISTS (
-					SELECT 1 FROM middleman_issues i
+					SELECT 1 FROM forge_issues i
 					WHERE i.repo_id = ai.repo_id AND i.number = ai.item_number
 					  AND i.closed_at IS NOT NULL
 					  AND (
 						SELECT e.created_at
-						FROM middleman_issue_events e
+						FROM forge_issue_events e
 						WHERE e.issue_id = i.id AND e.event_type = 'closed' AND e.author <> ''
 						ORDER BY e.created_at DESC, e.id DESC
 						LIMIT 1
@@ -380,13 +380,13 @@ func (d *DB) RequeueArchiveLifecycleDetails(
 				))
 				OR
 				(ai.item_type = 'merge_request' AND EXISTS (
-					SELECT 1 FROM middleman_merge_requests mr
+					SELECT 1 FROM forge_merge_requests mr
 					WHERE mr.repo_id = ai.repo_id AND mr.number = ai.item_number
 					  AND mr.merged_at IS NOT NULL
 					  AND (
 						mr.files_changed IS NULL OR mr.merge_commit_sha = ''
 						OR NOT EXISTS (
-							SELECT 1 FROM middleman_mr_events e
+							SELECT 1 FROM forge_mr_events e
 							WHERE e.merge_request_id = mr.id
 							  AND e.event_type = 'merged' AND e.author <> ''
 						)
@@ -404,7 +404,7 @@ func (d *DB) RequeueArchiveLifecycleDetails(
 // incrementing item attempts. A later successful request clears this state.
 func (d *DB) DeferArchiveRepository(ctx context.Context, repoID int64, retryAt time.Time, detail string, now time.Time) error {
 	result, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_archive_repos
+		UPDATE forge_archive_repos
 		SET last_error_code = ?, last_error_detail = ?, next_retry_at = ?, updated_at = ?
 		WHERE repo_id = ?`, ArchiveErrorCodeBudgetExhausted,
 		sanitizeArchiveErrorDetail(detail), retryAt.UTC(), now.UTC(), repoID)
@@ -423,7 +423,7 @@ func (d *DB) DeferArchiveRepository(ctx context.Context, repoID int64, retryAt t
 
 func (d *DB) ClearArchiveRepositoryError(ctx context.Context, repoID int64, now time.Time) error {
 	_, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_archive_repos
+		UPDATE forge_archive_repos
 		SET last_error_code = CASE WHEN last_error_code = ? THEN NULL ELSE last_error_code END,
 			last_error_detail = CASE WHEN last_error_code = ? THEN NULL ELSE last_error_detail END,
 			next_retry_at = CASE WHEN last_error_code = ? THEN NULL ELSE next_retry_at END,
@@ -446,7 +446,7 @@ func (d *DB) RetryArchiveAuthentication(ctx context.Context, repoIDs []int64, no
 	}
 	args := append([]any{now.UTC()}, archiveRepoIDArgs(repoIDs)...)
 	_, err := d.rw.ExecContext(ctx, fmt.Sprintf(`
-		UPDATE middleman_archive_repos
+		UPDATE forge_archive_repos
 		SET last_error_code = NULL, last_error_detail = NULL,
 			next_retry_at = NULL, updated_at = MAX(updated_at, ?)
 		WHERE repo_id IN (%s) AND last_error_code = 'authentication_failed'`,
@@ -489,7 +489,7 @@ func recordArchiveRepositoryFailureTx(
 		retry = retryAt.UTC()
 	}
 	result, err := tx.ExecContext(ctx, `
-		UPDATE middleman_archive_repos
+		UPDATE forge_archive_repos
 		SET last_error_code = ?, last_error_detail = ?, next_retry_at = ?, updated_at = MAX(updated_at, ?)
 		WHERE repo_id = ?`, code, sanitizeArchiveErrorDetail(detail), retry, now.UTC(), repoID)
 	if err != nil {
@@ -525,7 +525,7 @@ func (d *DB) RecordArchiveRepositoryFailureForScan(
 		var generation int64
 		var status ArchiveScanStatus
 		err := tx.QueryRowContext(ctx, `
-			SELECT scan_generation, status FROM middleman_archive_repo_scans
+			SELECT scan_generation, status FROM forge_archive_repo_scans
 			WHERE repo_id = ? AND scan = ?`, repoID, kind,
 		).Scan(&generation, &status)
 		if errors.Is(err, sql.ErrNoRows) {
@@ -560,7 +560,7 @@ func (d *DB) BeginArchivePromptMaintenance(
 	err := d.Tx(ctx, func(tx *sql.Tx) error {
 		var started sql.NullTime
 		err := tx.QueryRowContext(ctx, `
-			SELECT prompt_scan_started_at FROM middleman_archive_repos
+			SELECT prompt_scan_started_at FROM forge_archive_repos
 			WHERE repo_id = ? AND collection_mode = 'full' AND operator_state = 'active'`,
 			repoID).Scan(&started)
 		if errors.Is(err, sql.ErrNoRows) {
@@ -573,7 +573,7 @@ func (d *DB) BeginArchivePromptMaintenance(
 			return nil
 		}
 		if _, err := tx.ExecContext(ctx, `
-			UPDATE middleman_archive_repos
+			UPDATE forge_archive_repos
 			SET prompt_scan_started_at = ?, prompt_since = ?, updated_at = MAX(updated_at, ?)
 			WHERE repo_id = ?`,
 			scanStart.UTC(), since.UTC(), scanStart.UTC(), repoID); err != nil {
@@ -610,18 +610,18 @@ func (d *DB) CompleteArchivePromptMaintenance(
 ) error {
 	return d.Tx(ctx, func(tx *sql.Tx) error {
 		result, err := tx.ExecContext(ctx, `
-			UPDATE middleman_archive_repos
+			UPDATE forge_archive_repos
 			SET maintenance_watermark = ?, maintenance_succeeded_at = ?,
 				prompt_scan_started_at = NULL, prompt_since = NULL,
 				last_error_code = NULL, last_error_detail = NULL, next_retry_at = NULL,
 				updated_at = MAX(updated_at, ?)
 			WHERE repo_id = ? AND collection_mode = 'full' AND operator_state = 'active'
 			  AND (
-				SELECT status FROM middleman_archive_repo_scans
+				SELECT status FROM forge_archive_repo_scans
 				WHERE repo_id = ? AND scan = 'maintenance_issues'
 			  ) = 'complete'
 			  AND (
-				SELECT status FROM middleman_archive_repo_scans
+				SELECT status FROM forge_archive_repo_scans
 				WHERE repo_id = ? AND scan = 'maintenance_merge_requests'
 			  ) = 'complete'`,
 			scanStart.UTC(), completedAt.UTC(), completedAt.UTC(), repoID, repoID, repoID)
@@ -668,12 +668,12 @@ func queueArchivePromptByIdentity(
 ) error {
 	identity = canonicalRepoIdentity(identity)
 	_, err := execer.ExecContext(ctx, `
-		UPDATE middleman_archive_repos
+		UPDATE forge_archive_repos
 		SET maintenance_watermark = COALESCE(maintenance_watermark, initial_completed_at, created_at),
 			maintenance_succeeded_at = NULL, updated_at = MAX(updated_at, ?)
 		WHERE collection_mode = 'full' AND operator_state = 'active'
 		  AND repo_id = (
-			SELECT id FROM middleman_repos
+			SELECT id FROM forge_repos
 			WHERE platform = ? AND platform_host = ? AND owner = ? AND name = ?
 		  )`, now.UTC(), identity.Platform, identity.PlatformHost, identity.Owner, identity.Name)
 	if err != nil {
@@ -702,7 +702,7 @@ func listArchiveRepoStates(
 			comments_coverage, reviews_coverage, inline_comments_coverage,
 			last_error_code, last_error_detail, next_retry_at,
 			created_at, updated_at
-		FROM middleman_archive_repos`
+		FROM forge_archive_repos`
 	var args []any
 	if len(repoIDs) > 0 {
 		query += " WHERE repo_id IN (" + sqlPlaceholders(len(repoIDs)) + ")"
@@ -808,10 +808,10 @@ func (d *DB) claimArchiveItem(
 const dueArchiveItemsQuery = `
 	SELECT ai.repo_id, ai.item_type, ai.item_number, ai.provider_created_at,
 		p.scan_generation
-	FROM middleman_archive_dataset_progress p
-	JOIN middleman_archive_items ai
+	FROM forge_archive_dataset_progress p
+	JOIN forge_archive_items ai
 	  ON ai.repo_id = p.repo_id AND ai.item_type = p.item_type AND ai.item_number = p.item_number
-	JOIN middleman_archive_repos ar ON ar.repo_id = p.repo_id
+	JOIN forge_archive_repos ar ON ar.repo_id = p.repo_id
 	WHERE p.repo_id = ?
 	  AND ar.collection_mode = 'full'
 	  AND ar.operator_state = 'active'
@@ -898,7 +898,7 @@ type ArchiveItemTerminal struct {
 
 func markArchiveItemTerminalTx(ctx context.Context, tx *sql.Tx, t ArchiveItemTerminal) error {
 	result, err := tx.ExecContext(ctx, `
-		UPDATE middleman_archive_items
+		UPDATE forge_archive_items
 		SET lifecycle_state = ?
 		WHERE repo_id = ? AND item_type = ? AND item_number = ?`,
 		t.Lifecycle, t.RepoID, t.ItemType, t.ItemNumber,
@@ -1020,7 +1020,7 @@ func loadArchiveProgressCounts(
 				AND COALESCE(pp.due_count, 0) > 0 THEN 1 ELSE 0 END),
 			SUM(CASE WHEN ai.lifecycle_state = 'active'
 				AND COALESCE(pp.blocked_count, 0) > 0 THEN 1 ELSE 0 END)
-		FROM middleman_archive_items ai
+		FROM forge_archive_items ai
 		LEFT JOIN (
 			SELECT repo_id, item_type, item_number,
 				SUM(CASE WHEN status IN ('pending', 'running') THEN 1 ELSE 0 END) AS pending_count,
@@ -1030,7 +1030,7 @@ func loadArchiveProgressCounts(
 				SUM(CASE WHEN status IN ('pending', 'running', 'failed')
 					AND (next_retry_at IS NULL OR next_retry_at <= ?) THEN 1 ELSE 0 END) AS due_count,
 				SUM(CASE WHEN status IN ('pending', 'running', 'failed') THEN 1 ELSE 0 END) AS open_count
-			FROM middleman_archive_dataset_progress
+			FROM forge_archive_dataset_progress
 			GROUP BY repo_id, item_type, item_number
 		) pp ON pp.repo_id = ai.repo_id AND pp.item_type = ai.item_type AND pp.item_number = ai.item_number
 		WHERE ai.repo_id IN (%s)
@@ -1200,7 +1200,7 @@ func archiveRepoIDArgs(repoIDs []int64) []any {
 
 func requireArchiveRepoIDs(ctx context.Context, tx *sql.Tx, table string, repoIDs []int64) error {
 	idColumn := "repo_id"
-	if table == "middleman_repos" {
+	if table == "forge_repos" {
 		idColumn = "id"
 	}
 	rows, err := tx.QueryContext(ctx, fmt.Sprintf(
@@ -1285,7 +1285,7 @@ func (d *DB) CommitArchiveInventoryPage(ctx context.Context, commit ArchiveInven
 				column = "merge_requests_coverage"
 			}
 			if _, err := tx.ExecContext(ctx, `
-				UPDATE middleman_archive_repos
+				UPDATE forge_archive_repos
 				SET `+column+` = ?, updated_at = MAX(updated_at, ?)
 				WHERE repo_id = ?`, commit.Coverage, commit.Now, commit.RepoID); err != nil {
 				return fmt.Errorf("record archive inventory coverage: %w", err)
@@ -1340,7 +1340,7 @@ func seedArchiveItemProgressTx(
 	itemNumber int,
 ) error {
 	_, err := tx.ExecContext(ctx, `
-		INSERT INTO middleman_archive_dataset_progress (
+		INSERT INTO forge_archive_dataset_progress (
 			repo_id, item_type, item_number, dataset, scan_generation, status, updated_at
 		) VALUES (?, ?, ?, 'lookup', 2, 'pending', ?)
 		ON CONFLICT(repo_id, item_type, item_number, dataset) DO NOTHING`,
@@ -1394,21 +1394,21 @@ func validateInventoryCommit(commit ArchiveInventoryCommit) error {
 // would start maintenance over an incomplete initial archive.
 func completeArchiveInitialIfReadyTx(ctx context.Context, tx *sql.Tx, repoID int64, now time.Time) error {
 	_, err := tx.ExecContext(ctx, `
-		UPDATE middleman_archive_repos
+		UPDATE forge_archive_repos
 		SET initial_completed_at = COALESCE(initial_completed_at, ?), updated_at = MAX(updated_at, ?)
 		WHERE repo_id = ?
 		  AND collection_mode = 'full'
 		  AND (
-			SELECT status FROM middleman_archive_repo_scans
+			SELECT status FROM forge_archive_repo_scans
 			WHERE repo_id = ? AND scan = 'issue_inventory'
 		  ) = 'complete'
 		  AND (
-			SELECT status FROM middleman_archive_repo_scans
+			SELECT status FROM forge_archive_repo_scans
 			WHERE repo_id = ? AND scan = 'merge_request_inventory'
 		  ) = 'complete'
 		  AND NOT EXISTS (
-			SELECT 1 FROM middleman_archive_dataset_progress p
-			JOIN middleman_archive_items ai
+			SELECT 1 FROM forge_archive_dataset_progress p
+			JOIN forge_archive_items ai
 			  ON ai.repo_id = p.repo_id AND ai.item_type = p.item_type AND ai.item_number = p.item_number
 			WHERE p.repo_id = ? AND ai.lifecycle_state = 'active'
 			  AND p.status IN ('pending', 'running', 'failed', 'blocked')
@@ -1432,7 +1432,7 @@ func reactivateTerminalArchiveWorkTx(
 	itemNumber int,
 ) error {
 	_, err := tx.ExecContext(ctx, `
-		UPDATE middleman_archive_items
+		UPDATE forge_archive_items
 		SET lifecycle_state = 'active'
 		WHERE repo_id = ? AND item_type = ? AND item_number = ?
 		  AND lifecycle_state IN ('removed_upstream', 'inaccessible')`, repoID, itemType, itemNumber)
@@ -1449,7 +1449,7 @@ func clearArchiveRepositoryFailureTx(
 	now time.Time,
 ) error {
 	_, err := tx.ExecContext(ctx, `
-		UPDATE middleman_archive_repos
+		UPDATE forge_archive_repos
 		SET last_error_code = NULL, last_error_detail = NULL, next_retry_at = NULL,
 			updated_at = MAX(updated_at, ?)
 		WHERE repo_id = ?`, now.UTC(), repoID)
@@ -1460,7 +1460,7 @@ func clearArchiveRepositoryFailureTx(
 }
 
 // upsertArchiveItemWorkTx records the item-level work row for one parent
-// observation. Dataset state lives in middleman_archive_dataset_progress; the
+// observation. Dataset state lives in forge_archive_dataset_progress; the
 // work row only tracks provider identity, timestamps, lifecycle, and the
 // refresh reason of the winning observation.
 func upsertArchiveItemWorkTx(
@@ -1475,7 +1475,7 @@ func upsertArchiveItemWorkTx(
 	refreshReason ArchiveRefreshReason,
 ) error {
 	_, err := tx.ExecContext(ctx, `
-		INSERT INTO middleman_archive_items (
+		INSERT INTO forge_archive_items (
 			repo_id, item_type, item_number, provider_item_id,
 			provider_created_at, provider_updated_at,
 			lifecycle_state, refresh_reason
@@ -1497,7 +1497,7 @@ func upsertArchiveItemWorkTx(
 func archiveRepositoryActiveTx(ctx context.Context, tx *sql.Tx, repoID int64) (bool, error) {
 	var operator ArchiveOperatorState
 	err := tx.QueryRowContext(ctx,
-		`SELECT operator_state FROM middleman_archive_repos WHERE repo_id = ?`, repoID,
+		`SELECT operator_state FROM forge_archive_repos WHERE repo_id = ?`, repoID,
 	).Scan(&operator)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, &ArchiveRepoStateNotFoundError{RepoIDs: []int64{repoID}}

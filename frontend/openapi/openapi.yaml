@@ -8035,7 +8035,7 @@ components:
         - linkedIssueNumbers
       type: object
 info:
-  title: middleman API
+  title: kenn-forge API
   version: 0.1.0
 openapi: 3.1.0
 paths:
@@ -8111,7 +8111,7 @@ paths:
           schema:
             type: string
         - in: header
-          name: X-Middleman-Runtime-Session-Key
+          name: X-Kenn-Forge-Runtime-Session-Key
           schema:
             type: string
       requestBody:
@@ -14431,7 +14431,7 @@ paths:
       parameters:
         - description: Kata daemon id; the effective default daemon when empty
           in: header
-          name: X-Middleman-Kata-Daemon
+          name: X-Kenn-Forge-Kata-Daemon
           schema:
             description: Kata daemon id; the effective default daemon when empty
             type: string
@@ -14461,7 +14461,7 @@ paths:
       parameters:
         - description: Kata daemon id; the effective default daemon when empty
           in: header
-          name: X-Middleman-Kata-Daemon
+          name: X-Kenn-Forge-Kata-Daemon
           schema:
             description: Kata daemon id; the effective default daemon when empty
             type: string
@@ -14485,7 +14485,7 @@ paths:
       parameters:
         - description: Kata daemon id; the effective default daemon when empty
           in: header
-          name: X-Middleman-Kata-Daemon
+          name: X-Kenn-Forge-Kata-Daemon
           schema:
             description: Kata daemon id; the effective default daemon when empty
             type: string
@@ -14538,7 +14538,7 @@ paths:
       parameters:
         - description: Kata daemon id; the effective default daemon when empty
           in: header
-          name: X-Middleman-Kata-Daemon
+          name: X-Kenn-Forge-Kata-Daemon
           schema:
             description: Kata daemon id; the effective default daemon when empty
             type: string

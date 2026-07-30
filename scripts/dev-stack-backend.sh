@@ -12,13 +12,13 @@ case "$(uname -s)" in
   CYGWIN* | MINGW* | MSYS*) air_config=".air.windows.toml" ;;
 esac
 
-printf 'backend debug log: %s\n' "${MIDDLEMAN_LOG_FILE:-tmp/logs/backend-dev.log}"
-printf 'backend console log level: %s\n' "${MIDDLEMAN_LOG_STDERR_LEVEL:-info}"
-printf 'tail with: tail -F %s\n' "${MIDDLEMAN_LOG_FILE:-tmp/logs/backend-dev.log}"
+printf 'backend debug log: %s\n' "${KENN_FORGE_LOG_FILE:-tmp/logs/backend-dev.log}"
+printf 'backend console log level: %s\n' "${KENN_FORGE_LOG_STDERR_LEVEL:-info}"
+printf 'tail with: tail -F %s\n' "${KENN_FORGE_LOG_FILE:-tmp/logs/backend-dev.log}"
 
-export MIDDLEMAN_LOG_LEVEL="${MIDDLEMAN_LOG_LEVEL:-debug}"
-export MIDDLEMAN_LOG_FILE="${MIDDLEMAN_LOG_FILE:-tmp/logs/backend-dev.log}"
-export MIDDLEMAN_LOG_STDERR_LEVEL="${MIDDLEMAN_LOG_STDERR_LEVEL:-info}"
+export KENN_FORGE_LOG_LEVEL="${KENN_FORGE_LOG_LEVEL:-debug}"
+export KENN_FORGE_LOG_FILE="${KENN_FORGE_LOG_FILE:-tmp/logs/backend-dev.log}"
+export KENN_FORGE_LOG_STDERR_LEVEL="${KENN_FORGE_LOG_STDERR_LEVEL:-info}"
 
 air_bin="${AIR_BIN:-}"
 if [ -z "$air_bin" ]; then
@@ -39,8 +39,8 @@ if [ -z "$air_bin" ]; then
   exit 1
 fi
 
-if [ -n "${MIDDLEMAN_CONFIG:-}" ]; then
-  exec "$air_bin" -c "$air_config" -- -config "$MIDDLEMAN_CONFIG" ${BACKEND_ARGS:-}
+if [ -n "${KENN_FORGE_CONFIG:-}" ]; then
+  exec "$air_bin" -c "$air_config" -- -config "$KENN_FORGE_CONFIG" ${BACKEND_ARGS:-}
 else
   exec "$air_bin" -c "$air_config" -- ${BACKEND_ARGS:-}
 fi

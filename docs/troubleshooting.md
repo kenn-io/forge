@@ -5,10 +5,10 @@
 Check the daemon:
 
 ```sh
-middleman status
+kenn-forge status
 ```
 
-If another middleman is already running on the same `data_dir`, the startup
+If another kenn-forge is already running on the same `data_dir`, the startup
 banner shows the existing daemon. Use the reported URL instead of starting a
 second daemon with the same data directory.
 
@@ -23,7 +23,7 @@ port = 8092
 or start with another config:
 
 ```sh
-middleman serve -config /path/to/config.toml
+kenn-forge serve -config /path/to/config.toml
 ```
 
 ## Config edits are not showing up
@@ -31,8 +31,8 @@ middleman serve -config /path/to/config.toml
 Most config is read at startup. Restart the daemon after editing
 `config.toml`.
 
-If you need isolated state for a test run, set `MIDDLEMAN_HOME` before starting
-middleman.
+If you need isolated state for a test run, set `KENN_FORGE_HOME` before starting
+kenn-forge.
 
 ## Repositories do not sync
 
@@ -57,7 +57,7 @@ without exposing token material.
 
 Actions such as approve, merge, close, reopen, or comment require both provider
 support and token permission. If the provider does not support an action,
-middleman reports an unsupported capability instead of trying a GitHub-specific
+kenn-forge reports an unsupported capability instead of trying a GitHub-specific
 fallback.
 
 ## GitHub sync hits rate limits
@@ -65,34 +65,34 @@ fallback.
 Use a GitHub App for sync reads:
 
 ```sh
-middleman-github-app create
-middleman-github-app install
-middleman-github-app list
+kenn-forge-github-app create
+kenn-forge-github-app install
+kenn-forge-github-app list
 ```
 
 Mutating actions still use the user credential chain so comments, approvals, and
 merges are attributed to you. Multiple PAT entries issued to the same GitHub
 user do not create additional capacity: they share one rate limit and one
-middleman sync budget. Distinct users and App installations have separate
+kenn-forge sync budget. Distinct users and App installations have separate
 identity-scoped budgets.
 
 If App-backed reads work but mutations or notifications are disabled, restart
-middleman after adding the user PAT. App-only routes intentionally remain
+kenn-forge after adding the user PAT. App-only routes intentionally remain
 read-only until startup establishes a stable write identity.
 
 ## A repository feature stays unavailable
 
 When a provider definitively reports that issues or pull requests are disabled,
-middleman cools that repository feature down for 24 hours instead of retrying a
+kenn-forge cools that repository feature down for 24 hours instead of retrying a
 permanent failure every sync. Other repository data continues syncing. Use an
 explicit repository sync after re-enabling the feature to bypass the cooldown
 and clear it on success.
 
 ## An issue workspace directory already exists
 
-If an issue workspace row was lost but its expected middleman worktree is still
+If an issue workspace row was lost but its expected kenn-forge worktree is still
 on disk, choose **Use Existing Directory** in the branch-conflict dialog. This
-only re-registers the deterministic middleman-managed directory after verifying
+only re-registers the deterministic kenn-forge-managed directory after verifying
 its repository and branch. It does not reset the branch, clean files, or remove
 untracked work. Use **Use Existing Branch** only when the branch is not already
 checked out in that directory.
@@ -102,7 +102,7 @@ checked out in that directory.
 Register at least one folder:
 
 ```sh
-middleman docs add-folder --name Docs ~/docs
+kenn-forge docs add-folder --name Docs ~/docs
 ```
 
 Then enable the mode if it is hidden:
@@ -114,39 +114,39 @@ docs = true
 
 ## Kata mode has no daemons
 
-middleman does not store Kata daemon definitions. Check Kata's own config:
+kenn-forge does not store Kata daemon definitions. Check Kata's own config:
 
 ```text
 ~/.kata/config.toml
 ```
 
-or set `KATA_HOME` before starting middleman.
+or set `KATA_HOME` before starting kenn-forge.
 
 ## The database will not migrate
 
-middleman stores synced data in:
+kenn-forge stores synced data in:
 
 ```text
-~/.config/middleman/middleman.db
+~/.kenn/forge/forge.db
 ```
 
-If startup reports a dirty failed migration, stop middleman, make a backup copy,
-then move `middleman.db` and any `middleman.db-wal` or `middleman.db-shm`
+If startup reports a dirty failed migration, stop kenn-forge, make a backup copy,
+then move `forge.db` and any `forge.db-wal` or `forge.db-shm`
 sidecars out of the data directory before starting again. Provider data will
 sync again from a fresh database, but local-only state such as stars, PR
 workflow statuses, and workspace links is only available in the saved copy.
 
 If startup reports that the database is newer than the binary, upgrade
-middleman.
+kenn-forge.
 
 ## Need more logs
 
 Set log environment variables before starting the daemon:
 
 ```sh
-MIDDLEMAN_LOG_LEVEL=debug middleman
-MIDDLEMAN_LOG_FILE=~/.config/middleman/middleman.log middleman
-MIDDLEMAN_LOG_STDERR_LEVEL=warn MIDDLEMAN_LOG_FILE=~/.config/middleman/middleman.log middleman
+KENN_FORGE_LOG_LEVEL=debug kenn-forge
+KENN_FORGE_LOG_FILE=~/.kenn/forge/kenn-forge.log kenn-forge
+KENN_FORGE_LOG_STDERR_LEVEL=warn KENN_FORGE_LOG_FILE=~/.kenn/forge/kenn-forge.log kenn-forge
 ```
 
 Logs redact configured token-shaped values.

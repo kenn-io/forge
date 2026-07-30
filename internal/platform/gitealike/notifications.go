@@ -3,7 +3,7 @@ package gitealike
 import (
 	"context"
 
-	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/forge/internal/platform"
 )
 
 // Notification support for Forgejo and Gitea is not implemented yet.

@@ -8,8 +8,8 @@ import (
 	"reflect"
 	"time"
 
+	"go.kenn.io/forge/internal/server/httpapi"
 	katagenerated "go.kenn.io/kata/pkg/client/generated"
-	"go.kenn.io/middleman/internal/server/httpapi"
 )
 
 type kataAuthorityRequest struct {

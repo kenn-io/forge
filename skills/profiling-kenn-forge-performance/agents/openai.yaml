@@ -1,0 +1,4 @@
+interface:
+  display_name: "Profile Kenn Forge Performance"
+  short_description: "Diagnose frontend and backend latency"
+  default_prompt: "Use $profiling-kenn-forge-performance to measure and diagnose this Kenn Forge performance regression."

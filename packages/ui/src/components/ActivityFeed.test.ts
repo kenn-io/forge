@@ -481,7 +481,7 @@ describe("ActivityFeed compact mode", () => {
       branchActivityItem("force-push", {
         activity_type: "default_branch_force_push",
         after_sha: "def5678901234567890123456789012345678901",
-        author: "middleman",
+        author: "kenn-forge",
         author_name: "",
         before_sha: "abc1234901234567890123456789012345678901",
         body_preview: "abc1234901234567890123456789012345678901 -> def5678901234567890123456789012345678901",

@@ -42,13 +42,13 @@ function startFakeFlowServer(opts: { flowGone?: boolean }): Promise<FakeFlow> {
         JSON.stringify({
           action: `${base}/settings/apps/new?state=test-state`,
           manifest: JSON.stringify({
-            name: "middleman-pw",
+            name: "kenn-forge-pw",
             redirect_url: `${base}/callback/test-state`,
             hook_attributes: { active: false },
             public: false,
             default_permissions: { contents: "read", pull_requests: "read" },
           }),
-          name: "middleman-pw",
+          name: "kenn-forge-pw",
           host: "github.com",
         }),
       );
@@ -100,9 +100,9 @@ test("create step renders the flow and hands the manifest to GitHub", async ({ p
   try {
     await page.goto(fake.base);
 
-    await expect(page.getByRole("heading", { name: "Create the GitHub App for middleman" })).toBeVisible();
-    await expect(page.getByText("middleman-pw")).toBeVisible();
-    await expect(page.getByText("Disabled — middleman polls")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Create the GitHub App for kenn-forge" })).toBeVisible();
+    await expect(page.getByText("kenn-forge-pw")).toBeVisible();
+    await expect(page.getByText("Disabled — kenn-forge polls")).toBeVisible();
     await expect(page.getByText("pull requests")).toBeVisible();
 
     // The page auto-continues, but clicking must work too; either way
@@ -115,7 +115,7 @@ test("create step renders the flow and hands the manifest to GitHub", async ({ p
     expect(fake.manifestPosts).toHaveLength(1);
     const posted = new URLSearchParams(fake.manifestPosts[0]!);
     const manifest = JSON.parse(posted.get("manifest") ?? "{}") as { name?: string };
-    expect(manifest.name).toBe("middleman-pw");
+    expect(manifest.name).toBe("kenn-forge-pw");
   } finally {
     fake.server.close();
   }

@@ -1,4 +1,4 @@
-const storageKey = "middleman:vite-reload";
+const storageKey = "kenn-forge:vite-reload";
 
 interface FrontendReload {
   source: string;

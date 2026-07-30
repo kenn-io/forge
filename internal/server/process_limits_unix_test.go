@@ -5,7 +5,7 @@ package server
 import (
 	"time"
 
-	"go.kenn.io/middleman/internal/procutil"
+	"go.kenn.io/forge/internal/procutil"
 	"golang.org/x/sys/unix"
 )
 

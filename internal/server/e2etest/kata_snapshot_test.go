@@ -16,10 +16,10 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/apiclient"
+	apigenerated "go.kenn.io/forge/internal/apiclient/generated"
+	"go.kenn.io/forge/internal/db"
 	katagenerated "go.kenn.io/kata/pkg/client/generated"
-	"go.kenn.io/middleman/internal/apiclient"
-	apigenerated "go.kenn.io/middleman/internal/apiclient/generated"
-	"go.kenn.io/middleman/internal/db"
 )
 
 const kataSnapshotE2EDaemonID = "primary"
@@ -37,7 +37,7 @@ func TestKataTaskSnapshotProjectReadyAuthorityE2E(t *testing.T) {
 	selectedIssueUID := "issue-member"
 	response, err := fixture.client.HTTP.GetKataTaskSnapshotWithResponse(t.Context(), &apigenerated.GetKataTaskSnapshotParams{
 		Scope: &scope, ProjectUid: &projectUID, Authority: &authority,
-		SelectedIssueUid: &selectedIssueUID, XMiddlemanKataDaemon: new(kataSnapshotE2EDaemonID),
+		SelectedIssueUid: &selectedIssueUID, XKennForgeKataDaemon: new(kataSnapshotE2EDaemonID),
 	})
 
 	require.NoError(err)
@@ -115,7 +115,7 @@ func TestKataTaskSnapshotLoadsCompleteRetainedProjectHistoryE2E(t *testing.T) {
 	projectUID := "project-a"
 	response, err := fixture.client.HTTP.GetKataTaskSnapshotWithResponse(t.Context(), &apigenerated.GetKataTaskSnapshotParams{
 		Scope: &scope, ProjectUid: &projectUID, Authority: &authority,
-		SelectedIssueUid: &selectedIssueUID, XMiddlemanKataDaemon: new(kataSnapshotE2EDaemonID),
+		SelectedIssueUid: &selectedIssueUID, XKennForgeKataDaemon: new(kataSnapshotE2EDaemonID),
 	})
 
 	require.NoError(err)
@@ -160,7 +160,7 @@ func TestKataTaskSnapshotReusesSelectedEnrichmentUntilMutationInvalidatesEpochE2
 	firstResponse, err := fixture.client.HTTP.GetKataTaskSnapshotWithResponse(t.Context(), &apigenerated.GetKataTaskSnapshotParams{
 		Scope: &scope, ProjectUid: &projectUID, Authority: &authority,
 		SelectedIssueUid: &selectedIssueUID, GraphSourceUid: &selectedIssueUID,
-		XMiddlemanKataDaemon: new(kataSnapshotE2EDaemonID),
+		XKennForgeKataDaemon: new(kataSnapshotE2EDaemonID),
 	})
 	require.NoError(err)
 	require.Equal(http.StatusOK, firstResponse.StatusCode(), string(firstResponse.Body))
@@ -183,7 +183,7 @@ func TestKataTaskSnapshotReusesSelectedEnrichmentUntilMutationInvalidatesEpochE2
 	secondResponse, err := fixture.client.HTTP.GetKataTaskSnapshotWithResponse(t.Context(), &apigenerated.GetKataTaskSnapshotParams{
 		Scope: &scope, ProjectUid: &projectUID, Authority: &authority,
 		SelectedIssueUid: &selectedIssueUID, GraphSourceUid: &selectedIssueUID,
-		XMiddlemanKataDaemon: new(kataSnapshotE2EDaemonID),
+		XKennForgeKataDaemon: new(kataSnapshotE2EDaemonID),
 	})
 	require.NoError(err)
 	require.Equal(http.StatusOK, secondResponse.StatusCode(), string(secondResponse.Body))
@@ -205,13 +205,13 @@ func TestKataTaskSnapshotReusesSelectedEnrichmentUntilMutationInvalidatesEpochE2
 	mutationRequest, err := http.NewRequestWithContext(
 		t.Context(),
 		http.MethodPost,
-		fixture.middleman.URL+"/api/v1/kata/proxy/api/v1/issues/issue-member",
+		fixture.forge.URL+"/api/v1/kata/proxy/api/v1/issues/issue-member",
 		strings.NewReader(`{"title":"After mutation"}`),
 	)
 	require.NoError(err)
 	mutationRequest.Header.Set("Content-Type", "application/json")
 	mutationRequest.Header.Set("Sec-Fetch-Site", "same-origin")
-	mutationResponse, err := fixture.middleman.Client().Do(mutationRequest)
+	mutationResponse, err := fixture.forge.Client().Do(mutationRequest)
 	require.NoError(err)
 	require.NoError(mutationResponse.Body.Close())
 	require.Equal(http.StatusNoContent, mutationResponse.StatusCode)
@@ -219,7 +219,7 @@ func TestKataTaskSnapshotReusesSelectedEnrichmentUntilMutationInvalidatesEpochE2
 	thirdResponse, err := fixture.client.HTTP.GetKataTaskSnapshotWithResponse(t.Context(), &apigenerated.GetKataTaskSnapshotParams{
 		Scope: &scope, ProjectUid: &projectUID, Authority: &authority,
 		SelectedIssueUid: &selectedIssueUID, GraphSourceUid: &selectedIssueUID,
-		XMiddlemanKataDaemon: new(kataSnapshotE2EDaemonID),
+		XKennForgeKataDaemon: new(kataSnapshotE2EDaemonID),
 	})
 	require.NoError(err)
 	require.Equal(http.StatusOK, thirdResponse.StatusCode(), string(thirdResponse.Body))
@@ -264,7 +264,7 @@ func TestKataTaskSnapshotRetriesWhenSelectedRevisionChangesBetweenReadsE2E(t *te
 	response, err := fixture.client.HTTP.GetKataTaskSnapshotWithResponse(t.Context(), &apigenerated.GetKataTaskSnapshotParams{
 		Scope: &scope, ProjectUid: &projectUID, Authority: &authority,
 		SelectedIssueUid:     &selectedIssueUID,
-		XMiddlemanKataDaemon: new(kataSnapshotE2EDaemonID),
+		XKennForgeKataDaemon: new(kataSnapshotE2EDaemonID),
 	})
 
 	require.NoError(err)
@@ -301,7 +301,7 @@ func TestKataTaskSnapshotRetriesWhenGraphRevisionChangesBetweenReadsE2E(t *testi
 	response, err := fixture.client.HTTP.GetKataTaskSnapshotWithResponse(t.Context(), &apigenerated.GetKataTaskSnapshotParams{
 		Scope: &scope, ProjectUid: &projectUID, Authority: &authority,
 		GraphSourceUid:       &graphSourceUID,
-		XMiddlemanKataDaemon: new(kataSnapshotE2EDaemonID),
+		XKennForgeKataDaemon: new(kataSnapshotE2EDaemonID),
 	})
 
 	require.NoError(err)
@@ -371,7 +371,7 @@ func TestKataTaskSnapshotConcurrentSelectedHistoriesShareProjectPaginationE2E(t 
 		projectUID := "project-a"
 		response, err := fixture.client.HTTP.GetKataTaskSnapshotWithResponse(t.Context(), &apigenerated.GetKataTaskSnapshotParams{
 			Scope: &scope, ProjectUid: &projectUID, Authority: &authority,
-			SelectedIssueUid: &memberIssueUID, XMiddlemanKataDaemon: new(kataSnapshotE2EDaemonID),
+			SelectedIssueUid: &memberIssueUID, XKennForgeKataDaemon: new(kataSnapshotE2EDaemonID),
 		})
 		results <- result{selectedUID: memberIssueUID, response: response, err: err}
 	}()
@@ -383,7 +383,7 @@ func TestKataTaskSnapshotConcurrentSelectedHistoriesShareProjectPaginationE2E(t 
 		projectUID := "project-a"
 		response, err := fixture.client.HTTP.GetKataTaskSnapshotWithResponse(t.Context(), &apigenerated.GetKataTaskSnapshotParams{
 			Scope: &scope, ProjectUid: &projectUID, Authority: &authority,
-			SelectedIssueUid: &otherIssueUID, XMiddlemanKataDaemon: new(kataSnapshotE2EDaemonID),
+			SelectedIssueUid: &otherIssueUID, XKennForgeKataDaemon: new(kataSnapshotE2EDaemonID),
 		})
 		results <- result{selectedUID: otherIssueUID, response: response, err: err}
 	}()
@@ -491,7 +491,7 @@ func TestKataTaskSnapshotConcurrentOversizedHistoriesStaySelectedAndUncachedE2E(
 		projectUID := "project-a"
 		response, err := fixture.client.HTTP.GetKataTaskSnapshotWithResponse(t.Context(), &apigenerated.GetKataTaskSnapshotParams{
 			Scope: &scope, ProjectUid: &projectUID, Authority: &authority,
-			SelectedIssueUid: &memberIssueUID, XMiddlemanKataDaemon: new(kataSnapshotE2EDaemonID),
+			SelectedIssueUid: &memberIssueUID, XKennForgeKataDaemon: new(kataSnapshotE2EDaemonID),
 		})
 		results <- result{selectedUID: memberIssueUID, response: response, err: err}
 	}()
@@ -503,7 +503,7 @@ func TestKataTaskSnapshotConcurrentOversizedHistoriesStaySelectedAndUncachedE2E(
 		projectUID := "project-a"
 		response, err := fixture.client.HTTP.GetKataTaskSnapshotWithResponse(t.Context(), &apigenerated.GetKataTaskSnapshotParams{
 			Scope: &scope, ProjectUid: &projectUID, Authority: &authority,
-			SelectedIssueUid: &otherIssueUID, XMiddlemanKataDaemon: new(kataSnapshotE2EDaemonID),
+			SelectedIssueUid: &otherIssueUID, XKennForgeKataDaemon: new(kataSnapshotE2EDaemonID),
 		})
 		results <- result{selectedUID: otherIssueUID, response: response, err: err}
 	}()
@@ -558,7 +558,7 @@ func TestKataTaskSnapshotConcurrentOversizedHistoriesStaySelectedAndUncachedE2E(
 	projectUID := "project-a"
 	reloaded, err := fixture.client.HTTP.GetKataTaskSnapshotWithResponse(t.Context(), &apigenerated.GetKataTaskSnapshotParams{
 		Scope: &scope, ProjectUid: &projectUID, Authority: &authority,
-		SelectedIssueUid: &memberIssueUID, XMiddlemanKataDaemon: new(kataSnapshotE2EDaemonID),
+		SelectedIssueUid: &memberIssueUID, XKennForgeKataDaemon: new(kataSnapshotE2EDaemonID),
 	})
 	require.NoError(err)
 	require.Equal(http.StatusOK, reloaded.StatusCode(), string(reloaded.Body))
@@ -626,7 +626,7 @@ func TestKataTaskSnapshotDiscardsPreResetHistoryAtRetainedBaselineE2E(t *testing
 	projectUID := "project-a"
 	response, err := fixture.client.HTTP.GetKataTaskSnapshotWithResponse(t.Context(), &apigenerated.GetKataTaskSnapshotParams{
 		Scope: &scope, ProjectUid: &projectUID, Authority: &authority,
-		SelectedIssueUid: &selectedIssueUID, XMiddlemanKataDaemon: new(kataSnapshotE2EDaemonID),
+		SelectedIssueUid: &selectedIssueUID, XKennForgeKataDaemon: new(kataSnapshotE2EDaemonID),
 	})
 
 	require.NoError(err)
@@ -655,7 +655,7 @@ func TestKataTaskSnapshotPreservesGraphSourceWhenEnrichmentFailsE2E(t *testing.T
 	graphSourceUID := "issue-member"
 	response, err := fixture.client.HTTP.GetKataTaskSnapshotWithResponse(t.Context(), &apigenerated.GetKataTaskSnapshotParams{
 		Scope: &scope, ProjectUid: &projectUID, Authority: &authority,
-		GraphSourceUid: &graphSourceUID, XMiddlemanKataDaemon: new(kataSnapshotE2EDaemonID),
+		GraphSourceUid: &graphSourceUID, XKennForgeKataDaemon: new(kataSnapshotE2EDaemonID),
 	})
 
 	require.NoError(err)
@@ -746,7 +746,7 @@ func TestKataTaskSnapshotDaemonRotationRejectsInflightAuthorityE2E(t *testing.T)
 	home := t.TempDir()
 	t.Setenv("KATA_HOME", home)
 	writeKataSnapshotE2ECatalog(t, home, oldDaemon.server.URL)
-	_, client := startKataSnapshotE2EMiddleman(t)
+	_, client := startKataSnapshotE2EForge(t)
 
 	type result struct {
 		response *apigenerated.GetKataTaskSnapshotResponse
@@ -759,7 +759,7 @@ func TestKataTaskSnapshotDaemonRotationRejectsInflightAuthorityE2E(t *testing.T)
 		projectUID := "project-a"
 		response, err := client.HTTP.GetKataTaskSnapshotWithResponse(t.Context(), &apigenerated.GetKataTaskSnapshotParams{
 			Scope: &scope, ProjectUid: &projectUID, Authority: &authority,
-			XMiddlemanKataDaemon: new(kataSnapshotE2EDaemonID),
+			XKennForgeKataDaemon: new(kataSnapshotE2EDaemonID),
 		})
 		resultCh <- result{response: response, err: err}
 	}()
@@ -817,7 +817,7 @@ func TestKataTaskSnapshotDaemonRotationRejectsInflightSelectedEnrichmentE2E(t *t
 	home := t.TempDir()
 	t.Setenv("KATA_HOME", home)
 	writeKataSnapshotE2ECatalog(t, home, oldDaemon.server.URL)
-	_, client := startKataSnapshotE2EMiddleman(t)
+	_, client := startKataSnapshotE2EForge(t)
 
 	type result struct {
 		response *apigenerated.GetKataTaskSnapshotResponse
@@ -832,7 +832,7 @@ func TestKataTaskSnapshotDaemonRotationRejectsInflightSelectedEnrichmentE2E(t *t
 		response, err := client.HTTP.GetKataTaskSnapshotWithResponse(t.Context(), &apigenerated.GetKataTaskSnapshotParams{
 			Scope: &scope, ProjectUid: &projectUID, Authority: &authority,
 			SelectedIssueUid: &selectedIssueUID, GraphSourceUid: &selectedIssueUID,
-			XMiddlemanKataDaemon: new(kataSnapshotE2EDaemonID),
+			XKennForgeKataDaemon: new(kataSnapshotE2EDaemonID),
 		})
 		resultCh <- result{response: response, err: err}
 	}()
@@ -891,13 +891,13 @@ func TestKataProxySuccessfulMutationInvalidatesSnapshotBeforeResponseE2E(t *test
 	req, err := http.NewRequestWithContext(
 		t.Context(),
 		http.MethodPost,
-		fixture.middleman.URL+"/api/v1/kata/proxy/api/v1/issues/issue-member",
+		fixture.forge.URL+"/api/v1/kata/proxy/api/v1/issues/issue-member",
 		strings.NewReader(`{"title":"After mutation"}`),
 	)
 	require.NoError(err)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Sec-Fetch-Site", "same-origin")
-	response, err := fixture.middleman.Client().Do(req)
+	response, err := fixture.forge.Client().Do(req)
 	require.NoError(err)
 	defer response.Body.Close()
 	require.Equal(http.StatusNoContent, response.StatusCode)
@@ -911,9 +911,9 @@ func TestKataProxySuccessfulMutationInvalidatesSnapshotBeforeResponseE2E(t *test
 }
 
 type kataSnapshotE2EFixture struct {
-	daemon    *kataSnapshotDaemonStub
-	middleman *httptest.Server
-	client    *apiclient.Client
+	daemon *kataSnapshotDaemonStub
+	forge  *httptest.Server
+	client *apiclient.Client
 }
 
 func newKataSnapshotE2EFixture(t *testing.T, title string) *kataSnapshotE2EFixture {
@@ -924,7 +924,7 @@ func newKataSnapshotE2EFixture(t *testing.T, title string) *kataSnapshotE2EFixtu
 	writeKataSnapshotE2ECatalog(t, home, daemon.server.URL)
 	srv, database, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -948,15 +948,15 @@ repo_path = "acme/widget"
 	require.NoError(t, database.InsertWorkspace(t.Context(), &db.Workspace{
 		ID: "ws-kata-e2e", Platform: "github", PlatformHost: "github.com",
 		RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypeKataTask,
-		ItemKey: db.KataWorkspaceItemKey(metadata), GitHeadRef: "middleman/kata/task-1",
-		WorkspaceBranch: "middleman/kata/task-1", WorktreePath: "/tmp/ws-kata-e2e",
-		TmuxSession: "middleman-ws-kata-e2e", Status: "ready", KataMetadata: &metadata,
+		ItemKey: db.KataWorkspaceItemKey(metadata), GitHeadRef: "kenn-forge/kata/task-1",
+		WorkspaceBranch: "kenn-forge/kata/task-1", WorktreePath: "/tmp/ws-kata-e2e",
+		TmuxSession: "kenn-forge-ws-kata-e2e", Status: "ready", KataMetadata: &metadata,
 	}))
-	middleman := httptest.NewServer(srv)
-	t.Cleanup(middleman.Close)
-	client, err := apiclient.NewWithHTTPClient(middleman.URL, middleman.Client())
+	forge := httptest.NewServer(srv)
+	t.Cleanup(forge.Close)
+	client, err := apiclient.NewWithHTTPClient(forge.URL, forge.Client())
 	require.NoError(t, err)
-	return &kataSnapshotE2EFixture{daemon: daemon, middleman: middleman, client: client}
+	return &kataSnapshotE2EFixture{daemon: daemon, forge: forge, client: client}
 }
 
 func (f *kataSnapshotE2EFixture) snapshot(
@@ -968,7 +968,7 @@ func (f *kataSnapshotE2EFixture) snapshot(
 	projectUID := "project-a"
 	response, err := f.client.HTTP.GetKataTaskSnapshotWithResponse(t.Context(), &apigenerated.GetKataTaskSnapshotParams{
 		Scope: &scope, ProjectUid: &projectUID, Authority: &authority,
-		XMiddlemanKataDaemon: new(kataSnapshotE2EDaemonID),
+		XKennForgeKataDaemon: new(kataSnapshotE2EDaemonID),
 	})
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, response.StatusCode(), string(response.Body))
@@ -979,7 +979,7 @@ func (f *kataSnapshotE2EFixture) snapshot(
 func (f *kataSnapshotE2EFixture) references(t *testing.T) *apigenerated.KataTaskReferenceResponse {
 	t.Helper()
 	response, err := f.client.HTTP.SearchKataTaskReferencesWithResponse(t.Context(), &apigenerated.SearchKataTaskReferencesParams{
-		XMiddlemanKataDaemon: new(kataSnapshotE2EDaemonID),
+		XKennForgeKataDaemon: new(kataSnapshotE2EDaemonID),
 	})
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, response.StatusCode(), string(response.Body))
@@ -987,14 +987,14 @@ func (f *kataSnapshotE2EFixture) references(t *testing.T) *apigenerated.KataTask
 	return response.JSON200
 }
 
-func startKataSnapshotE2EMiddleman(t *testing.T) (*httptest.Server, *apiclient.Client) {
+func startKataSnapshotE2EForge(t *testing.T) (*httptest.Server, *apiclient.Client) {
 	t.Helper()
 	srv, _ := setupTestServer(t)
-	middleman := httptest.NewServer(srv)
-	t.Cleanup(middleman.Close)
-	client, err := apiclient.NewWithHTTPClient(middleman.URL, middleman.Client())
+	forge := httptest.NewServer(srv)
+	t.Cleanup(forge.Close)
+	client, err := apiclient.NewWithHTTPClient(forge.URL, forge.Client())
 	require.NoError(t, err)
-	return middleman, client
+	return forge, client
 }
 
 func writeKataSnapshotE2ECatalog(t *testing.T, home, daemonURL string) {

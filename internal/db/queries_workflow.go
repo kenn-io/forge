@@ -46,7 +46,7 @@ func (d *DB) GetItemWorkflowState(
 	err := d.ro.QueryRowContext(ctx,
 		`SELECT repo_id, item_type, item_number, status, updated_at,
 		        updated_source, updated_actor, updated_reason
-		   FROM middleman_item_workflow_state
+		   FROM forge_item_workflow_state
 		  WHERE repo_id = ? AND item_type = ? AND item_number = ?`,
 		repoID, itemType, number,
 	).Scan(
@@ -78,7 +78,7 @@ func (d *DB) EnsureItemWorkflowState(
 		return err
 	}
 	_, err := d.rw.ExecContext(ctx,
-		`INSERT INTO middleman_item_workflow_state (repo_id, item_type, item_number, status)
+		`INSERT INTO forge_item_workflow_state (repo_id, item_type, item_number, status)
 		 VALUES (?, ?, ?, 'new')
 		 ON CONFLICT(repo_id, item_type, item_number) DO NOTHING`,
 		repoID, itemType, number,
@@ -114,7 +114,7 @@ func (d *DB) SetItemWorkflowState(
 	current := "new"
 	err = tx.QueryRowContext(ctx,
 		`SELECT status
-		   FROM middleman_item_workflow_state
+		   FROM forge_item_workflow_state
 		  WHERE repo_id = ? AND item_type = ? AND item_number = ?`,
 		p.RepoID, p.ItemType, p.ItemNumber,
 	).Scan(&current)
@@ -129,7 +129,7 @@ func (d *DB) SetItemWorkflowState(
 	}
 
 	_, err = tx.ExecContext(ctx,
-		`INSERT INTO middleman_item_workflow_state (
+		`INSERT INTO forge_item_workflow_state (
 		     repo_id, item_type, item_number, status, updated_at,
 		     updated_source, updated_actor, updated_reason
 		 )
@@ -315,9 +315,9 @@ func (d *DB) ListItemWorkflowStates(
 		           COALESCE(w.updated_reason, '') AS updated_reason,
 		           CAST(COALESCE(w.updated_at, p.last_activity_at) AS TEXT) AS sort_key,
 		           CAST(p.last_activity_at AS TEXT) AS activity_key
-		    FROM middleman_merge_requests p
-		    JOIN middleman_repos r ON r.id = p.repo_id
-		    LEFT JOIN middleman_item_workflow_state w
+		    FROM forge_merge_requests p
+		    JOIN forge_repos r ON r.id = p.repo_id
+		    LEFT JOIN forge_item_workflow_state w
 		        ON w.repo_id = p.repo_id AND w.item_type = 'pr' AND w.item_number = p.number
 		    %s
 		    UNION ALL
@@ -332,9 +332,9 @@ func (d *DB) ListItemWorkflowStates(
 		           COALESCE(w.updated_reason, '') AS updated_reason,
 		           CAST(COALESCE(w.updated_at, i.last_activity_at) AS TEXT) AS sort_key,
 		           CAST(i.last_activity_at AS TEXT) AS activity_key
-		    FROM middleman_issues i
-		    JOIN middleman_repos r ON r.id = i.repo_id
-		    LEFT JOIN middleman_item_workflow_state w
+		    FROM forge_issues i
+		    JOIN forge_repos r ON r.id = i.repo_id
+		    LEFT JOIN forge_item_workflow_state w
 		        ON w.repo_id = i.repo_id AND w.item_type = 'issue' AND w.item_number = i.number
 		    %s
 		) t

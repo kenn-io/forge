@@ -20,7 +20,7 @@ function handleHealthcheck(req: IncomingMessage, res: ServerResponse, next: Next
 
 export function healthcheckPlugin(): Plugin {
   return {
-    name: "middleman-healthcheck",
+    name: "kenn-forge-healthcheck",
     configurePreviewServer(server) {
       server.middlewares.use(handleHealthcheck);
     },

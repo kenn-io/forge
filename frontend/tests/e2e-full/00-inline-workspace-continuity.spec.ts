@@ -240,7 +240,7 @@ test.describe("inline workspace pane continuity", () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
       for (const surface of ["prs", "issues", "activity"]) {
-        localStorage.removeItem(`middleman-pane-layout-v1:${surface}`);
+        localStorage.removeItem(`kenn-forge-pane-layout-v1:${surface}`);
       }
     });
   });
@@ -561,7 +561,7 @@ test.describe("inline workspace pane continuity", () => {
       await page.evaluate(() => {
         const selector = '[role="dialog"][aria-label="Launch a session"]';
         const state = { appeared: document.querySelector(selector) !== null };
-        Reflect.set(window, "__middlemanDeleteLauncherProbe", state);
+        Reflect.set(window, "__kenn_forgeDeleteLauncherProbe", state);
         new MutationObserver((records) => {
           for (const record of records) {
             for (const node of record.addedNodes) {
@@ -583,7 +583,7 @@ test.describe("inline workspace pane continuity", () => {
       await deleteProxyCompleted;
       const launcherAppeared = await page.evaluate(
         () =>
-          (Reflect.get(window, "__middlemanDeleteLauncherProbe") as { appeared?: boolean } | undefined)?.appeared ??
+          (Reflect.get(window, "__kenn_forgeDeleteLauncherProbe") as { appeared?: boolean } | undefined)?.appeared ??
           false,
       );
       expect(launcherAppeared).toBe(false);
@@ -1168,14 +1168,14 @@ test.describe("inline workspace pane continuity", () => {
       if (browserName === "chromium") {
         await page.addInitScript(() => {
           const trackedWindow = window as Window & {
-            __middlemanGenerateMipmapCalls?: number;
+            __kenn_forgeGenerateMipmapCalls?: number;
           };
-          trackedWindow.__middlemanGenerateMipmapCalls = 0;
+          trackedWindow.__kenn_forgeGenerateMipmapCalls = 0;
           if (typeof WebGL2RenderingContext === "undefined") return;
           const original = Object.getOwnPropertyDescriptor(WebGL2RenderingContext.prototype, "generateMipmap")
             ?.value as WebGL2RenderingContext["generateMipmap"];
           WebGL2RenderingContext.prototype.generateMipmap = function (target: number): void {
-            trackedWindow.__middlemanGenerateMipmapCalls = (trackedWindow.__middlemanGenerateMipmapCalls ?? 0) + 1;
+            trackedWindow.__kenn_forgeGenerateMipmapCalls = (trackedWindow.__kenn_forgeGenerateMipmapCalls ?? 0) + 1;
             original.call(this, target);
           };
         });
@@ -1216,9 +1216,9 @@ test.describe("inline workspace pane continuity", () => {
               () =>
                 (
                   window as Window & {
-                    __middlemanGenerateMipmapCalls?: number;
+                    __kenn_forgeGenerateMipmapCalls?: number;
                   }
-                ).__middlemanGenerateMipmapCalls ?? 0,
+                ).__kenn_forgeGenerateMipmapCalls ?? 0,
             ),
           )
           .toBe(0);

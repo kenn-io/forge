@@ -25,7 +25,7 @@ func (d *DB) UpsertBranchCommits(
 	return d.Tx(ctx, func(tx *sql.Tx) error {
 		observedBase := time.Now().UTC().UnixNano()
 		stmt, err := tx.PrepareContext(ctx, `
-			INSERT INTO middleman_branch_commits (
+			INSERT INTO forge_branch_commits (
 			    repo_id, branch_name, commit_sha, author_name, author_email,
 			    authored_at, committer_name, committer_email, committed_at,
 			    subject, observed_order
@@ -89,7 +89,7 @@ func (d *DB) GetBranchTip(
 	var updatedAt string
 	err := d.ro.QueryRowContext(ctx, `
 		SELECT repo_id, branch_name, tip_sha, observed_at, created_at, updated_at
-		FROM middleman_branch_tips
+		FROM forge_branch_tips
 		WHERE repo_id = ? AND branch_name = ?`,
 		repoID,
 		branch,
@@ -130,7 +130,7 @@ func (d *DB) GetBranchTip(
 func (d *DB) UpsertBranchTip(ctx context.Context, tip BranchTip) error {
 	canonicalizeBranchTipTimestamps(&tip)
 	_, err := d.rw.ExecContext(ctx, `
-		INSERT INTO middleman_branch_tips (
+		INSERT INTO forge_branch_tips (
 		    repo_id, branch_name, tip_sha, observed_at
 		)
 		VALUES (?, ?, ?, ?)
@@ -160,7 +160,7 @@ func (d *DB) InsertBranchForcePush(
 ) error {
 	canonicalizeBranchForcePushTimestamps(&fp)
 	_, err := d.rw.ExecContext(ctx, `
-		INSERT INTO middleman_branch_force_pushes (
+		INSERT INTO forge_branch_force_pushes (
 		    repo_id, branch_name, before_sha, after_sha, before_observed_at,
 		    detected_at
 		)
@@ -194,14 +194,14 @@ func (d *DB) PruneBranchActivity(
 	before = canonicalUTCTime(before)
 	return d.Tx(ctx, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx, `
-			DELETE FROM middleman_branch_commits
+			DELETE FROM forge_branch_commits
 			WHERE committed_at < ?`,
 			before,
 		); err != nil {
 			return fmt.Errorf("prune branch commits: %w", err)
 		}
 		if _, err := tx.ExecContext(ctx, `
-			DELETE FROM middleman_branch_force_pushes
+			DELETE FROM forge_branch_force_pushes
 			WHERE detected_at < ?`,
 			before,
 		); err != nil {
@@ -209,7 +209,7 @@ func (d *DB) PruneBranchActivity(
 		}
 		if maxCommitsPerBranch > 0 {
 			if _, err := tx.ExecContext(ctx, `
-				DELETE FROM middleman_branch_commits
+				DELETE FROM forge_branch_commits
 				WHERE id IN (
 				    SELECT id
 				    FROM (
@@ -218,7 +218,7 @@ func (d *DB) PruneBranchActivity(
 				                   PARTITION BY repo_id, branch_name
 				                   ORDER BY committed_at DESC, observed_order DESC, id DESC
 				               ) AS rn
-				        FROM middleman_branch_commits
+				        FROM forge_branch_commits
 				    )
 				    WHERE rn > ?
 				)`,

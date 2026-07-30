@@ -21,7 +21,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"go.kenn.io/middleman/internal/procutil"
+	"go.kenn.io/forge/internal/procutil"
 )
 
 const (

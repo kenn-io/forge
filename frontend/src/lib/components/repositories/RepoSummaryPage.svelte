@@ -1,13 +1,13 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { FilterDropdown, getStores } from "@middleman/ui";
+  import { FilterDropdown, getStores } from "@kenn-forge/ui";
   import {
     providerCollectionPath,
     providerRouteParams,
-  } from "@middleman/ui/api/provider-routes";
-  import type { RepoSummary } from "@middleman/ui/api/types";
-  import { buildIssueRoute, buildRepoBrowserRoute } from "@middleman/ui/routes";
-  import { showFlash } from "@middleman/ui/stores/flash";
+  } from "@kenn-forge/ui/api/provider-routes";
+  import type { RepoSummary } from "@kenn-forge/ui/api/types";
+  import { buildIssueRoute, buildRepoBrowserRoute } from "@kenn-forge/ui/routes";
+  import { showFlash } from "@kenn-forge/ui/stores/flash";
 
   import {
     RefreshIcon,

@@ -15,15 +15,15 @@ import (
 	"sync"
 	"time"
 
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/fleet"
+	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/procutil"
+	"go.kenn.io/forge/internal/projects"
+	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/workspace/localruntime"
 	gitcmd "go.kenn.io/kit/git/cmd"
 	managedworktree "go.kenn.io/kit/git/managed"
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/fleet"
-	ghclient "go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/procutil"
-	"go.kenn.io/middleman/internal/projects"
-	"go.kenn.io/middleman/internal/server/httpapi"
-	"go.kenn.io/middleman/internal/workspace/localruntime"
 )
 
 type platformIdentityPayload struct {
@@ -87,7 +87,7 @@ type registerWorktreeInput struct {
 		// derives from base_dir (default "<project>-worktrees") plus
 		// the slash-slugged branch.
 		Path string `json:"path,omitempty"`
-		// CreateOnDisk asks middleman to perform the git work (branch
+		// CreateOnDisk asks kenn-forge to perform the git work (branch
 		// attach/create plus git worktree add) before registering.
 		// Without it the route only records a row for a worktree the
 		// caller already created.
@@ -113,7 +113,7 @@ type removeWorktreeInput struct {
 	ProjectID  string `path:"project_id"`
 	WorktreeID string `path:"worktree_id"`
 	Body       struct {
-		// RemoveFromDisk asks middleman to run the git removal (and
+		// RemoveFromDisk asks kenn-forge to run the git removal (and
 		// optional branch delete) before dropping the registry row.
 		// Without it the route only drops the row, matching the legacy
 		// DELETE route.
@@ -135,7 +135,7 @@ type createWorktreeFromMergeRequestInput struct {
 	ProjectID string `path:"project_id"`
 	Body      struct {
 		// Number is the merge request to materialize; it must already be
-		// synced into middleman.
+		// synced into kenn-forge.
 		Number int `json:"number" minimum:"1"`
 		// Branch is the local branch name for the new worktree.
 		Branch string `json:"branch"`
@@ -316,11 +316,11 @@ type projectWorktreeRuntimeSessionOutput struct {
 //     the project local-only.
 //
 // When an identity is established (caller-provided or parsed), the handler
-// calls db.UpsertRepo to ensure a middleman_repos row exists for it and
+// calls db.UpsertRepo to ensure a forge_repos row exists for it and
 // stores the row's id as the project's repo_id FK. UpsertRepo is pure DDL
 // (INSERT ON CONFLICT DO NOTHING + SELECT id) and does NOT subscribe the
 // repo to sync; sync subscription remains driven by the user's TOML config
-// and the AddRepo settings handler. The middleman_repos row exists solely
+// and the AddRepo settings handler. The forge_repos row exists solely
 // as a stable FK target so the project's identity cannot drift.
 func (s *Handler) registerProject(
 	ctx context.Context, input *registerProjectInput,
@@ -633,7 +633,7 @@ func (s *Handler) createWorktreeOnDisk(
 		BaseRef:               input.Body.BaseRef,
 		SetupScript:           input.Body.SetupScript,
 		WorktreeName:          input.Body.WorktreeName,
-		HookEnvironmentPrefix: "MIDDLEMAN",
+		HookEnvironmentPrefix: "KENN_FORGE",
 		RunGit:                runManagedWorktreeGit,
 		RunHook:               runManagedWorktreeHook,
 	})
@@ -748,7 +748,7 @@ func (s *Handler) createProjectWorktreeFromMergeRequest(
 			BaseDir:               input.Body.BaseDir,
 			SetupScript:           input.Body.SetupScript,
 			WorktreeName:          input.Body.WorktreeName,
-			HookEnvironmentPrefix: "MIDDLEMAN",
+			HookEnvironmentPrefix: "KENN_FORGE",
 			RunGit:                runManagedWorktreeGit,
 			RunHook:               runManagedWorktreeHook,
 			Number:                mr.Number,
@@ -890,7 +890,7 @@ func (s *Handler) removeProjectWorktree(
 			RemoveBranch:          input.Body.RemoveBranch,
 			TeardownScript:        input.Body.TeardownScript,
 			WorktreeName:          input.Body.WorktreeName,
-			HookEnvironmentPrefix: "MIDDLEMAN",
+			HookEnvironmentPrefix: "KENN_FORGE",
 			RunGit:                runManagedWorktreeGit,
 			RunHook:               runManagedWorktreeHook,
 		}); err != nil {
@@ -992,7 +992,7 @@ func runManagedWorktreeHook(
 
 // deleteProjectWorktree handles
 // DELETE /api/v1/projects/{project_id}/worktrees/{worktree_id}. The caller must
-// have already removed the worktree from disk; middleman only drops its
+// have already removed the worktree from disk; kenn-forge only drops its
 // registry row. Primary worktrees are synthesized from the project row and have
 // no registry row, so they cannot be deleted through this route. A worktree id
 // that does not exist under the given project is a 404.

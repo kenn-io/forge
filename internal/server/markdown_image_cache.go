@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/forge/internal/platform"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -22,7 +22,7 @@ const (
 	markdownImageCacheTTL      = 14 * 24 * time.Hour
 	markdownImageFetchTimeout  = 30 * time.Second
 	markdownImageCacheMaxBytes = int64(512 << 20)
-	markdownImageCacheMagic    = "middleman-markdown-image-v1\n"
+	markdownImageCacheMagic    = "kenn-forge-markdown-image-v1\n"
 )
 
 type markdownImageCache struct {

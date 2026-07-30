@@ -14,7 +14,7 @@ import (
 )
 
 // PlatformIdentity captures a project's optional VCS-platform identity. It is
-// derived from the linked middleman_repos row at read time; middleman_projects
+// derived from the linked forge_repos row at read time; forge_projects
 // itself stores only the FK in repo_id. A project may be registered without a
 // linked repo (a local-only directory with no parseable remote), in which case
 // PlatformIdentity is nil.
@@ -25,9 +25,9 @@ type PlatformIdentity struct {
 	Name     string `json:"name"`
 }
 
-// Project is the registry record for a local repository checkout middleman
+// Project is the registry record for a local repository checkout kenn-forge
 // knows about. Identity (host/owner/name), when present, lives in
-// middleman_repos and is joined in via repo_id.
+// forge_repos and is joined in via repo_id.
 type Project struct {
 	ID               string
 	DisplayName      string
@@ -41,7 +41,7 @@ type Project struct {
 }
 
 // ProjectWorktree is the registry record for a worktree of a Project. The
-// caller performs the filesystem mutation (`git worktree add`); middleman only
+// caller performs the filesystem mutation (`git worktree add`); kenn-forge only
 // persists the metadata.
 type ProjectWorktree struct {
 	ID                 string
@@ -82,7 +82,7 @@ var ErrProjectPathTaken = errors.New("project local_path already registered")
 var ErrWorktreePathTaken = errors.New("worktree path already registered")
 
 // CreateProjectInput collects the fields required to register a new project.
-// RepoID links the project to a middleman_repos row that owns the platform
+// RepoID links the project to a forge_repos row that owns the platform
 // identity; pass an unset NullInt64 to register a local-only project.
 type CreateProjectInput struct {
 	DisplayName   string
@@ -110,13 +110,13 @@ func (d *DB) CreateProject(ctx context.Context, in CreateProjectInput) (*Project
 	defaultBranch := strings.TrimSpace(in.DefaultBranch)
 
 	_, err = d.rw.ExecContext(ctx,
-		`INSERT INTO middleman_projects (
+		`INSERT INTO forge_projects (
 		    id, display_name, local_path, repo_id, default_branch
 		 ) VALUES (?, ?, ?, ?, ?)`,
 		id, displayName, localPath, in.RepoID, defaultBranch,
 	)
 	if err != nil {
-		if isUniqueConstraintErr(err, "middleman_projects.local_path") {
+		if isUniqueConstraintErr(err, "forge_projects.local_path") {
 			return nil, ErrProjectPathTaken
 		}
 		return nil, fmt.Errorf("insert project: %w", err)
@@ -130,11 +130,11 @@ const projectSelectColumns = `p.id, p.display_name, p.local_path,
         p.created_at, p.updated_at,
         r.platform, r.platform_host, r.owner, r.name`
 
-const projectFromJoin = `FROM middleman_projects p
-        LEFT JOIN middleman_repos r ON r.id = p.repo_id`
+const projectFromJoin = `FROM forge_projects p
+        LEFT JOIN forge_repos r ON r.id = p.repo_id`
 
 // GetProjectByID returns one project by its server-assigned id, joining the
-// linked middleman_repos row to populate PlatformIdentity when present.
+// linked forge_repos row to populate PlatformIdentity when present.
 func (d *DB) GetProjectByID(ctx context.Context, id string) (*Project, error) {
 	row := d.ro.QueryRowContext(ctx,
 		`SELECT `+projectSelectColumns+` `+projectFromJoin+`
@@ -186,7 +186,7 @@ func (d *DB) ListProjects(ctx context.Context) ([]Project, error) {
 // rather than a misleading success.
 func (d *DB) DeleteProject(ctx context.Context, id string) error {
 	res, err := d.rw.ExecContext(ctx,
-		`DELETE FROM middleman_projects WHERE id = ?`, id,
+		`DELETE FROM forge_projects WHERE id = ?`, id,
 	)
 	if err != nil {
 		return fmt.Errorf("delete project: %w", err)
@@ -202,14 +202,14 @@ func (d *DB) DeleteProject(ctx context.Context, id string) error {
 }
 
 // DeleteProjectWorktree removes a registered worktree record. The caller must
-// have already run `git worktree remove`; middleman only drops its metadata.
+// have already run `git worktree remove`; kenn-forge only drops its metadata.
 // The delete is scoped to the owning project so a worktree id under a different
 // project is treated as not found. Returns ErrProjectNotFound when no matching
 // worktree exists, so a host write-through can surface a 404 instead of a
 // misleading 204.
 func (d *DB) DeleteProjectWorktree(ctx context.Context, projectID, worktreeID string) error {
 	res, err := d.rw.ExecContext(ctx,
-		`DELETE FROM middleman_project_worktrees WHERE id = ? AND project_id = ?`,
+		`DELETE FROM forge_project_worktrees WHERE id = ? AND project_id = ?`,
 		worktreeID, projectID,
 	)
 	if err != nil {
@@ -234,7 +234,7 @@ type CreateProjectWorktreeInput struct {
 }
 
 // CreateProjectWorktree persists a worktree record. The caller must have
-// already run `git worktree add`; middleman only records metadata.
+// already run `git worktree add`; kenn-forge only records metadata.
 func (d *DB) CreateProjectWorktree(ctx context.Context, in CreateProjectWorktreeInput) (*ProjectWorktree, error) {
 	projectID := strings.TrimSpace(in.ProjectID)
 	if projectID == "" {
@@ -259,13 +259,13 @@ func (d *DB) CreateProjectWorktree(ctx context.Context, in CreateProjectWorktree
 	}
 
 	_, err = d.rw.ExecContext(ctx,
-		`INSERT INTO middleman_project_worktrees (
+		`INSERT INTO forge_project_worktrees (
 		    id, project_id, branch, path
 		 ) VALUES (?, ?, ?, ?)`,
 		id, projectID, branch, path,
 	)
 	if err != nil {
-		if isUniqueConstraintErr(err, "middleman_project_worktrees.path") {
+		if isUniqueConstraintErr(err, "forge_project_worktrees.path") {
 			return d.adoptProjectWorktreeByPath(ctx, projectID, branch, path)
 		}
 		return nil, fmt.Errorf("insert project worktree: %w", err)
@@ -284,7 +284,7 @@ func (d *DB) adoptProjectWorktreeByPath(
 ) (*ProjectWorktree, error) {
 	var id, owner string
 	if err := d.ro.QueryRowContext(ctx,
-		`SELECT id, project_id FROM middleman_project_worktrees WHERE path = ?`,
+		`SELECT id, project_id FROM forge_project_worktrees WHERE path = ?`,
 		path,
 	).Scan(&id, &owner); err != nil {
 		return nil, fmt.Errorf("lookup worktree by path: %w", err)
@@ -293,7 +293,7 @@ func (d *DB) adoptProjectWorktreeByPath(
 		return nil, ErrWorktreePathTaken
 	}
 	if _, err := d.rw.ExecContext(ctx,
-		`UPDATE middleman_project_worktrees
+		`UPDATE forge_project_worktrees
 		 SET branch = ?, is_stale = 0, updated_at = (datetime('now'))
 		 WHERE id = ?`,
 		branch, id,
@@ -307,7 +307,7 @@ func (d *DB) adoptProjectWorktreeByPath(
 func (d *DB) GetProjectWorktreeByID(ctx context.Context, id string) (*ProjectWorktree, error) {
 	row := d.ro.QueryRowContext(ctx,
 		`SELECT id, project_id, branch, path, is_stale, is_hidden, session_backend, linked_issue_numbers, created_at, updated_at
-		 FROM middleman_project_worktrees WHERE id = ?`,
+		 FROM forge_project_worktrees WHERE id = ?`,
 		id,
 	)
 	return scanProjectWorktree(row)
@@ -319,7 +319,7 @@ func (d *DB) GetProjectWorktreeByID(ctx context.Context, id string) (*ProjectWor
 func (d *DB) GetProjectWorktreeByPath(ctx context.Context, path string) (*ProjectWorktree, error) {
 	row := d.ro.QueryRowContext(ctx,
 		`SELECT id, project_id, branch, path, is_stale, is_hidden, session_backend, linked_issue_numbers, created_at, updated_at
-		 FROM middleman_project_worktrees WHERE path = ?`,
+		 FROM forge_project_worktrees WHERE path = ?`,
 		path,
 	)
 	return scanProjectWorktree(row)
@@ -333,7 +333,7 @@ func (d *DB) ListProjectWorktrees(ctx context.Context, projectID string) ([]Proj
 	}
 	rows, err := d.ro.QueryContext(ctx,
 		`SELECT id, project_id, branch, path, is_stale, is_hidden, session_backend, linked_issue_numbers, created_at, updated_at
-		 FROM middleman_project_worktrees
+		 FROM forge_project_worktrees
 		 WHERE project_id = ?
 		 ORDER BY created_at, id`,
 		projectID,
@@ -374,7 +374,7 @@ func (d *DB) SetProjectWorktreeHidden(
 		hiddenInt = 1
 	}
 	res, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_project_worktrees
+		UPDATE forge_project_worktrees
 		SET is_hidden = ?, updated_at = ?
 		WHERE id = ? AND project_id = ?`,
 		hiddenInt, ts, worktreeID, projectID,
@@ -407,7 +407,7 @@ func (d *DB) SetProjectWorktreeSessionBackend(
 		ts = time.Now().UTC()
 	}
 	res, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_project_worktrees
+		UPDATE forge_project_worktrees
 		SET session_backend = ?, updated_at = ?
 		WHERE id = ? AND project_id = ?`,
 		strings.TrimSpace(backend), ts, worktreeID, projectID,
@@ -469,7 +469,7 @@ func (d *DB) ReconcileProjectInventory(
 
 	return d.Tx(ctx, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx, `
-			UPDATE middleman_projects
+			UPDATE forge_projects
 			SET repository_kind = ?,
 			    default_branch = CASE WHEN ? != '' THEN ? ELSE default_branch END,
 			    is_stale = 0,
@@ -492,7 +492,7 @@ func (d *DB) ReconcileProjectInventory(
 				return err
 			}
 			if _, err := tx.ExecContext(ctx, `
-				INSERT INTO middleman_project_worktrees
+				INSERT INTO forge_project_worktrees
 				    (id, project_id, branch, path, is_stale, updated_at)
 				VALUES (?, ?, ?, ?, 0, ?)
 				ON CONFLICT(path) DO UPDATE SET
@@ -508,7 +508,7 @@ func (d *DB) ReconcileProjectInventory(
 
 		markArgs := []any{ts, projectID}
 		markQuery := `
-			UPDATE middleman_project_worktrees
+			UPDATE forge_project_worktrees
 			SET is_stale = 1, updated_at = ?
 			WHERE project_id = ? AND is_stale = 0`
 		if len(discoveredPaths) > 0 {
@@ -538,7 +538,7 @@ func (d *DB) MarkProjectStale(
 		ts = time.Now().UTC()
 	}
 	if _, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_projects
+		UPDATE forge_projects
 		SET is_stale = 1, updated_at = ?
 		WHERE id = ?`, ts, projectID,
 	); err != nil {
@@ -559,7 +559,7 @@ func (d *DB) UpsertProjectWorktreeTmuxSession(
 		createdAt = time.Now().UTC()
 	}
 	_, err := d.rw.ExecContext(ctx, `
-		INSERT INTO middleman_project_worktree_runtime_sessions
+		INSERT INTO forge_project_worktree_runtime_sessions
 		    (worktree_id, session_key, target_key, label, runtime_backend,
 		     backend_session_key,
 		     created_at)
@@ -589,8 +589,8 @@ func (d *DB) ListProjectWorktreeTmuxSessions(
 		SELECT s.worktree_id, s.session_key, COALESCE(s.backend_session_key, ''),
 		       s.target_key,
 		       s.label, s.created_at, w.path, w.project_id
-		FROM middleman_project_worktree_runtime_sessions s
-		JOIN middleman_project_worktrees w ON w.id = s.worktree_id
+		FROM forge_project_worktree_runtime_sessions s
+		JOIN forge_project_worktrees w ON w.id = s.worktree_id
 		WHERE s.worktree_id = ?
 		  AND s.runtime_backend = 'tmux'
 		ORDER BY s.created_at, s.session_key`, worktreeID,
@@ -623,8 +623,8 @@ func (d *DB) ListAllProjectWorktreeTmuxSessions(
 		SELECT s.worktree_id, s.session_key, COALESCE(s.backend_session_key, ''),
 		       s.target_key,
 		       s.label, s.created_at, w.path, w.project_id
-		FROM middleman_project_worktree_runtime_sessions s
-		JOIN middleman_project_worktrees w ON w.id = s.worktree_id
+		FROM forge_project_worktree_runtime_sessions s
+		JOIN forge_project_worktrees w ON w.id = s.worktree_id
 		WHERE s.runtime_backend = 'tmux'
 		ORDER BY w.path, s.created_at, s.session_key`,
 	)
@@ -655,7 +655,7 @@ func (d *DB) DeleteProjectWorktreeTmuxSession(
 	sessionKey string,
 ) error {
 	_, err := d.rw.ExecContext(ctx, `
-		DELETE FROM middleman_project_worktree_runtime_sessions
+		DELETE FROM forge_project_worktree_runtime_sessions
 		WHERE worktree_id = ?
 		  AND session_key = ?
 		  AND runtime_backend = 'tmux'`, worktreeID, sessionKey,
@@ -678,7 +678,7 @@ func (d *DB) DeleteProjectWorktreeTmuxSessionCreatedAt(
 	createdAt time.Time,
 ) (bool, error) {
 	result, err := d.rw.ExecContext(ctx, `
-		DELETE FROM middleman_project_worktree_runtime_sessions
+		DELETE FROM forge_project_worktree_runtime_sessions
 		WHERE worktree_id = ?
 		  AND session_key = ?
 		  AND runtime_backend = 'tmux'
@@ -819,7 +819,7 @@ func decodeIssueNumbers(raw string) ([]int, error) {
 // normalizeIssueNumbers returns a sorted, deduped copy of the input so stored
 // and emitted linked-issue lists are canonical. Values are not otherwise
 // validated: the host write path does not reject non-positive numbers, so
-// neither does middleman.
+// neither does kenn-forge.
 func normalizeIssueNumbers(in []int) []int {
 	out := slices.Clone(in)
 	slices.Sort(out)
@@ -849,7 +849,7 @@ func (d *DB) SetProjectWorktreeLinkedIssues(
 		return nil, fmt.Errorf("marshal linked issue numbers: %w", err)
 	}
 	res, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_project_worktrees
+		UPDATE forge_project_worktrees
 		SET linked_issue_numbers = ?, updated_at = ?
 		WHERE id = ? AND project_id = ?`,
 		string(encoded), ts, worktreeID, projectID,

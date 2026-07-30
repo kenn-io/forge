@@ -39,13 +39,13 @@ function compactPullGroupingLabel(label: string | RegExp): string | RegExp {
 test.describe("grouping toggle", () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
-      if (sessionStorage.getItem("middleman:test:grouping:init") === "1") {
+      if (sessionStorage.getItem("kenn-forge:test:grouping:init") === "1") {
         return;
       }
-      localStorage.removeItem("middleman:groupingMode");
-      localStorage.removeItem("middleman:groupByRepo");
-      localStorage.removeItem("middleman:hideOrgName");
-      sessionStorage.setItem("middleman:test:grouping:init", "1");
+      localStorage.removeItem("kenn-forge:groupingMode");
+      localStorage.removeItem("kenn-forge:groupByRepo");
+      localStorage.removeItem("kenn-forge:hideOrgName");
+      sessionStorage.setItem("kenn-forge:test:grouping:init", "1");
     });
     await page.goto("/pulls");
     await waitForPullList(page);

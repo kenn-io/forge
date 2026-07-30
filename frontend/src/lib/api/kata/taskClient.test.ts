@@ -89,7 +89,7 @@ function recurrence(uid: string, revision = 1) {
     template_body: "Review open loops.",
     template_labels: "[]",
     template_metadata: "{}",
-    author: "middleman",
+    author: "kenn-forge",
     revision,
     created_at: "2026-05-15T12:00:00.000Z",
     updated_at: "2026-05-15T12:00:00.000Z",
@@ -109,8 +109,8 @@ describe("kata mutation and recurrence HTTP client", () => {
     const target = { project_id: 7, ref: "issue-1" };
 
     await api.createProject("New", accepted);
-    await api.addComment(target, "middleman", "hello", accepted);
-    await api.moveIssue(target, "middleman", "project-next", '"rev-1"', accepted);
+    await api.addComment(target, "kenn-forge", "hello", accepted);
+    await api.moveIssue(target, "kenn-forge", "project-next", '"rev-1"', accepted);
     await api.recurrences(7, accepted);
 
     expect(calls.map((call) => call.headers.get(KATA_DAEMON_HEADER))).toEqual([
@@ -148,8 +148,8 @@ describe("kata mutation and recurrence HTTP client", () => {
     const options = { daemonId: "accepted" };
 
     await expect(api.createProject("New", options)).resolves.toEqual({ changed: true });
-    await expect(api.addComment(target, "middleman", "hello", options)).resolves.toEqual({ changed: true });
-    await expect(api.moveIssue(target, "middleman", "project-next", '"rev-1"', options)).resolves.toEqual({
+    await expect(api.addComment(target, "kenn-forge", "hello", options)).resolves.toEqual({ changed: true });
+    await expect(api.moveIssue(target, "kenn-forge", "project-next", '"rev-1"', options)).resolves.toEqual({
       changed: true,
     });
   });
@@ -164,9 +164,9 @@ describe("kata mutation and recurrence HTTP client", () => {
     expect(calls.map((call) => [proxyPath(call.url), call.method])).toEqual([["/api/v1/projects", "POST"]]);
   });
 
-  test("keeps the Kata API path independent of Middleman's configured base path", async () => {
+  test("keeps the Kata API path independent of Kenn Forge's configured base path", async () => {
     const previousBasePath = window.__BASE_PATH__;
-    window.__BASE_PATH__ = "/middleman/";
+    window.__BASE_PATH__ = "/kenn-forge/";
     try {
       const { calls, fetchImpl } = createFetchStub({
         "/api/v1/projects": { body: { project: project("project-new", "New") } },
@@ -177,7 +177,9 @@ describe("kata mutation and recurrence HTTP client", () => {
 
       const requestURL = calls[0]?.url;
       if (requestURL === undefined) throw new Error("expected a Kata proxy request");
-      expect(new URL(requestURL, window.location.origin).pathname).toBe("/middleman/api/v1/kata/proxy/api/v1/projects");
+      expect(new URL(requestURL, window.location.origin).pathname).toBe(
+        "/kenn-forge/api/v1/kata/proxy/api/v1/projects",
+      );
     } finally {
       if (previousBasePath === undefined) {
         delete window.__BASE_PATH__;
@@ -206,16 +208,16 @@ describe("kata mutation and recurrence HTTP client", () => {
     await expect(
       api.createIssue(
         7,
-        "middleman",
+        "kenn-forge",
         { title: "Capture", metadata: { scheduled_on: "2026-05-20" } },
         { daemonId: "home" },
-        "01MIDDLEMANCAPTURE00000001",
+        "01KENN_FORGECAPTURE00000001",
       ),
     ).resolves.toEqual({ changed: true });
 
     expect(calls.map((call) => call.headers.get(KATA_DAEMON_HEADER))).toEqual(["home", "home"]);
-    expect(calls[0]!.headers.get("Idempotency-Key")).toBe("01MIDDLEMANCAPTURE00000001");
-    expect(calls[1]!.headers.get("Idempotency-Key")).toBe("01MIDDLEMANCAPTURE00000001:metadata");
+    expect(calls[0]!.headers.get("Idempotency-Key")).toBe("01KENN_FORGECAPTURE00000001");
+    expect(calls[1]!.headers.get("Idempotency-Key")).toBe("01KENN_FORGECAPTURE00000001:metadata");
     expect(calls[1]!.headers.get("If-Match")).toBe('"rev-1"');
   });
 
@@ -230,7 +232,7 @@ describe("kata mutation and recurrence HTTP client", () => {
     await expect(
       api.createIssue(
         7,
-        "middleman",
+        "kenn-forge",
         { title: "Capture", metadata: { scheduled_on: "2026-05-20" } },
         { daemonId: "home" },
       ),
@@ -254,7 +256,7 @@ describe("kata mutation and recurrence HTTP client", () => {
     await expect(
       api.createIssue(
         7,
-        "middleman",
+        "kenn-forge",
         { title: "Capture", metadata: { scheduled_on: "2026-05-20" } },
         { daemonId: "home" },
       ),
@@ -269,7 +271,7 @@ describe("kata mutation and recurrence HTTP client", () => {
     const routes = {
       "/api/v1/projects/7/issues/issue-1/comments": { body: { changed: true } },
       "/api/v1/projects/7/issues/issue-1/labels": { body: { changed: true } },
-      "/api/v1/projects/7/issues/issue-1/labels/money?actor=middleman": { body: { changed: true } },
+      "/api/v1/projects/7/issues/issue-1/labels/money?actor=kenn-forge": { body: { changed: true } },
       "/api/v1/projects/7/issues/issue-1/actions/assign": { body: { changed: true } },
       "/api/v1/projects/7/issues/issue-1/actions/unassign": { body: { changed: true } },
       "/api/v1/projects/7/issues/issue-1/actions/priority": { body: { changed: true } },
@@ -286,16 +288,16 @@ describe("kata mutation and recurrence HTTP client", () => {
     const target = { project_id: 7, ref: "issue-1" };
     const options = { daemonId: "home" };
 
-    await api.addComment(target, "middleman", "hello", options);
-    await api.addLabel(target, "middleman", "money", options);
-    await api.removeLabel(target, "middleman", "money", options);
-    await api.assignOwner(target, "middleman", "alice", options);
-    await api.unassignOwner(target, "middleman", options);
-    await api.setPriority(target, "middleman", 2, options);
-    await api.closeIssue(target, "middleman", { reason: "done", message: "done" }, options);
-    await api.reopenIssue(target, "middleman", options);
-    await api.editIssue(target, "middleman", { title: "Edited" }, options);
-    await api.patchIssueMetadata(target, "middleman", { scheduled_on: "2026-05-20" }, '"rev-1"', {
+    await api.addComment(target, "kenn-forge", "hello", options);
+    await api.addLabel(target, "kenn-forge", "money", options);
+    await api.removeLabel(target, "kenn-forge", "money", options);
+    await api.assignOwner(target, "kenn-forge", "alice", options);
+    await api.unassignOwner(target, "kenn-forge", options);
+    await api.setPriority(target, "kenn-forge", 2, options);
+    await api.closeIssue(target, "kenn-forge", { reason: "done", message: "done" }, options);
+    await api.reopenIssue(target, "kenn-forge", options);
+    await api.editIssue(target, "kenn-forge", { title: "Edited" }, options);
+    await api.patchIssueMetadata(target, "kenn-forge", { scheduled_on: "2026-05-20" }, '"rev-1"', {
       daemonId: "home",
     });
 
@@ -314,7 +316,7 @@ describe("kata mutation and recurrence HTTP client", () => {
     const api = createKataTaskAPI({ fetchImpl });
 
     await expect(
-      api.moveIssue({ project_id: 7, ref: "issue-1" }, "middleman", "project-next", '"rev-1"', { daemonId: "home" }),
+      api.moveIssue({ project_id: 7, ref: "issue-1" }, "kenn-forge", "project-next", '"rev-1"', { daemonId: "home" }),
     ).resolves.toEqual({ changed: true });
     expect(calls[0]!.headers.get("If-Match")).toBe('"rev-1"');
   });
@@ -328,7 +330,7 @@ describe("kata mutation and recurrence HTTP client", () => {
         headers: { etag: '"rev-2"' },
         body: { recurrence: patched, changed: true },
       },
-      "/api/v1/projects/7/recurrences/recurrence-existing?actor=middleman": { status: 204 },
+      "/api/v1/projects/7/recurrences/recurrence-existing?actor=kenn-forge": { status: 204 },
     });
     const api = createKataTaskAPI({ fetchImpl });
     const options = { daemonId: "home" };
@@ -340,7 +342,7 @@ describe("kata mutation and recurrence HTTP client", () => {
       api.createRecurrence(
         7,
         {
-          actor: "middleman",
+          actor: "kenn-forge",
           rrule: "FREQ=WEEKLY",
           dtstart: "2026-05-20",
           timezone: "America/New_York",
@@ -351,10 +353,10 @@ describe("kata mutation and recurrence HTTP client", () => {
     ).resolves.toMatchObject({ recurrence: expect.objectContaining({ uid: "recurrence-created" }) });
     await expect(api.showRecurrence(7, "recurrence-existing", options)).resolves.toMatchObject({ etag: '"rev-2"' });
     await expect(
-      api.patchRecurrence(7, "recurrence-existing", { actor: "middleman", timezone: "UTC" }, '"rev-1"', options),
+      api.patchRecurrence(7, "recurrence-existing", { actor: "kenn-forge", timezone: "UTC" }, '"rev-1"', options),
     ).resolves.toMatchObject({ changed: true, etag: '"rev-2"' });
     await expect(
-      api.deleteRecurrence(7, "recurrence-existing", "middleman", options, '"rev-2"'),
+      api.deleteRecurrence(7, "recurrence-existing", "kenn-forge", options, '"rev-2"'),
     ).resolves.toBeUndefined();
 
     expect(calls[0]!.headers.get(KATA_DAEMON_HEADER)).toBe("work");

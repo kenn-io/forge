@@ -1,6 +1,6 @@
 import { getContext } from "svelte";
 import type {
-  MiddlemanClient,
+  ForgeClient,
   ActionRegistry,
   NavigateCallback,
   EventCallback,
@@ -13,18 +13,18 @@ import type {
 } from "./types.js";
 import type { RoborevClient } from "./api/roborev/client.js";
 
-export const API_CLIENT_KEY = Symbol("middleman-api-client");
-export const ACTIONS_KEY = Symbol("middleman-actions");
-export const NAVIGATE_KEY = Symbol("middleman-navigate");
-export const EVENT_KEY = Symbol("middleman-event");
-export const PREPARE_ROUTE_KEY = Symbol("middleman-prepare-route");
-export const WORKSPACE_COMMAND_KEY = Symbol("middleman-workspace-command");
-export const STORES_KEY = Symbol("middleman-stores");
-export const UI_CONFIG_KEY = Symbol("middleman-ui-config");
-export const SIDEBAR_KEY = Symbol("middleman-sidebar");
-export const HOST_STATE_KEY = Symbol("middleman-host-state");
+export const API_CLIENT_KEY = Symbol("kenn-forge-api-client");
+export const ACTIONS_KEY = Symbol("kenn-forge-actions");
+export const NAVIGATE_KEY = Symbol("kenn-forge-navigate");
+export const EVENT_KEY = Symbol("kenn-forge-event");
+export const PREPARE_ROUTE_KEY = Symbol("kenn-forge-prepare-route");
+export const WORKSPACE_COMMAND_KEY = Symbol("kenn-forge-workspace-command");
+export const STORES_KEY = Symbol("kenn-forge-stores");
+export const UI_CONFIG_KEY = Symbol("kenn-forge-ui-config");
+export const SIDEBAR_KEY = Symbol("kenn-forge-sidebar");
+export const HOST_STATE_KEY = Symbol("kenn-forge-host-state");
 
-export function getClient(): MiddlemanClient {
+export function getClient(): ForgeClient {
   return getContext(API_CLIENT_KEY);
 }
 export function getActions(): ActionRegistry {

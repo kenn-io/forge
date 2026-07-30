@@ -9,7 +9,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/apiclient/generated"
+	"go.kenn.io/forge/internal/apiclient/generated"
 )
 
 // Starting new work needs no provider item: a tracked repository plus an
@@ -59,7 +59,7 @@ func TestCreateAdHocWorkspaceGeneratesBranchWhenOmitted(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusAccepted, resp.StatusCode(), string(resp.Body))
 	require.NotNil(resp.JSON202)
-	assert.True(strings.HasPrefix(resp.JSON202.GitHeadRef, "middleman/work-"),
+	assert.True(strings.HasPrefix(resp.JSON202.GitHeadRef, "kenn-forge/work-"),
 		"generated branch %q should carry the work prefix", resp.JSON202.GitHeadRef)
 
 	ready := waitForWorkspaceReady(t, t.Context(), fixture.client, resp.JSON202.Id)
@@ -153,7 +153,7 @@ func TestCreateAdHocWorkspaceExistingBranchReturnsTypedConflict(t *testing.T) {
 	problem := resp.ApplicationproblemJSONDefault
 	require.NotNil(problem)
 	require.NotNil(problem.Type)
-	assert.Equal("urn:middleman:error:workspace-branch-conflict", *problem.Type)
+	assert.Equal("urn:kenn-forge:error:workspace-branch-conflict", *problem.Type)
 	assert.Equal(generated.BranchConflict, problem.Code)
 	require.NotNil(problem.Details)
 	details := *problem.Details
@@ -243,7 +243,7 @@ func TestCreateAdHocWorkspaceReuseStartsFromDivergedBranchTip(t *testing.T) {
 	assert.NoError(err, "the diverged commit's file should be checked out")
 }
 
-// Renaming the branch from inside the worktree is a shell action middleman does
+// Renaming the branch from inside the worktree is a shell action kenn-forge does
 // not observe, so the workspace keeps its creation-time identity: the old name
 // still resolves to it, and the new name cannot be turned into a second
 // workspace while this worktree holds the branch.

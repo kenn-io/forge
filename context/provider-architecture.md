@@ -207,11 +207,11 @@ instances use the `/host/{platform_host}/...` prefix.
 Examples:
 
 ```text
-GET /api/v1/pulls/github/wesm/middleman/244
+GET /api/v1/pulls/github/wesm/kenn-forge/244
 GET /api/v1/pulls/gitlab/group%2Fsubgroup/project/12
 GET /api/v1/host/gitlab.example.com/pulls/gitlab/group%2Fsubgroup/project/12
-GET /api/v1/pulls/github/wesm/middleman/244/diff
-GET /api/v1/pulls/github/wesm/middleman/244/file-preview?path=README.md
+GET /api/v1/pulls/github/wesm/kenn-forge/244/diff
+GET /api/v1/pulls/github/wesm/kenn-forge/244/file-preview?path=README.md
 ```
 
 Do not add new `/repos/{owner}/{name}/pulls/{number}/...` compatibility routes

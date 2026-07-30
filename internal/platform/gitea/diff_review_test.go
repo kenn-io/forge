@@ -14,8 +14,8 @@ import (
 	giteasdk "code.gitea.io/sdk/gitea"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	ghsync "go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/platform"
+	ghsync "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/platform"
 )
 
 func TestGiteaReviewThreadPreservesContextCoordinates(t *testing.T) {

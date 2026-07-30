@@ -32,7 +32,7 @@ func Discover() *Discovered {
 }
 
 // RuntimeAddressURL converts a Kata runtime-record Address into a URL
-// middleman can proxy to. Kata writes "unix:///path" for a Unix socket, or a
+// kenn-forge can proxy to. Kata writes "unix:///path" for a Unix socket, or a
 // bare "host:port" for a TCP daemon with no scheme.
 func RuntimeAddressURL(addr string) string {
 	if strings.HasPrefix(addr, "unix://") ||

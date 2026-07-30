@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/platform"
 )
 
 type remoteHeadKey struct {
@@ -453,7 +453,7 @@ func (o *PushedHeadObserver) lookupRemoteTrackingSHA(
 // head-repo metadata was unavailable at creation, and issue workspaces never
 // set it even when their associated PR is fork-backed. The merge-request row
 // must place the head branch in the base repository, the checked-out branch
-// must be the PR head branch or middleman's synthetic PR branch (an unrelated
+// must be the PR head branch or kenn-forge's synthetic PR branch (an unrelated
 // user branch must not be rewired), and the remote-tracking ref must already
 // exist — mirroring worktree creation — so the branch never ends up tracking
 // a ref that resolves to nothing.

@@ -9,7 +9,7 @@ import (
 )
 
 func roborevProxyAPIConfig() huma.Config {
-	config := huma.DefaultConfig("middleman roborev proxy", "0.1.0")
+	config := huma.DefaultConfig("kenn-forge roborev proxy", "0.1.0")
 	config.OpenAPIPath = ""
 	config.DocsPath = ""
 	config.SchemasPath = ""

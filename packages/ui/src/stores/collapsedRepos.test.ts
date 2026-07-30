@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { createCollapsedReposStore } from "./collapsedRepos.svelte.js";
 
-const PULLS_KEY = "middleman:collapsedRepos:pulls";
-const ISSUES_KEY = "middleman:collapsedRepos:issues";
+const PULLS_KEY = "kenn-forge:collapsedRepos:pulls";
+const ISSUES_KEY = "kenn-forge:collapsedRepos:issues";
 
 beforeEach(() => {
   localStorage.clear();

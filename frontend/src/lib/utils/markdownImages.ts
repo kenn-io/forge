@@ -1,4 +1,4 @@
-import { pushModalFrame } from "@middleman/ui/stores/keyboard/modal-stack";
+import { pushModalFrame } from "@kenn-forge/ui/stores/keyboard/modal-stack";
 
 export interface MarkdownImageExpansionController {
   renderNow: () => void;

@@ -1,8 +1,8 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import { SplitResizeHandle, type SplitResizeEvent } from "@kenn-io/kit-ui";
-  import { clearActiveTabbedPanelDrag, startTabbedPanelTabDrag } from "@middleman/ui";
-  import type { RuntimeSession } from "@middleman/ui/api/types";
+  import { clearActiveTabbedPanelDrag, startTabbedPanelTabDrag } from "@kenn-forge/ui";
+  import type { RuntimeSession } from "@kenn-forge/ui/api/types";
   import XIcon from "@lucide/svelte/icons/x";
   import MoveIcon from "@lucide/svelte/icons/move";
   import PanelRightIcon from "@lucide/svelte/icons/panel-right";
@@ -125,7 +125,7 @@
     });
     const paneKey = paneKeyForSession?.(session.key) ?? null;
     if (dragScope !== undefined && paneKey !== null) {
-      startTabbedPanelTabDrag(event, { scope: dragScope, tabKey: paneKey }, "Middleman session tab");
+      startTabbedPanelTabDrag(event, { scope: dragScope, tabKey: paneKey }, "Kenn Forge session tab");
     }
   }
 

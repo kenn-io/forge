@@ -3,7 +3,7 @@ import {
   buildPullRequestFilesRoute,
   buildPullRequestRoute,
   type RoutedItemRef,
-} from "@middleman/ui/routes";
+} from "@kenn-forge/ui/routes";
 
 export type ActivitySelectionItemType = "pr" | "issue";
 export type ActivityDetailTab = "conversation" | "files";

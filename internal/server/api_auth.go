@@ -6,7 +6,7 @@ import (
 	"net/url"
 	"strings"
 
-	"go.kenn.io/middleman/internal/server/httpapi"
+	"go.kenn.io/forge/internal/server/httpapi"
 )
 
 // API auth gates /api and /ws routes behind the daemon's bearer token
@@ -19,7 +19,7 @@ import (
 // probes (/healthz, /livez) stay open so supervisors can poll before
 // they have read the token file.
 
-const authCookieName = "middleman_auth"
+const authCookieName = "forge_auth"
 
 // authBootstrapParam is the query parameter that converts a token
 // into a session cookie; it is stripped from the URL by redirect so
@@ -86,7 +86,7 @@ func (s *Server) authorizeAPIRequest(
 			return true
 		}
 	}
-	w.Header().Set("WWW-Authenticate", `Bearer realm="middleman"`)
+	w.Header().Set("WWW-Authenticate", `Bearer realm="kenn-forge"`)
 	writeProblemResponse(w, httpapi.NewProblem(
 		http.StatusUnauthorized,
 		httpapi.CodeUnauthorized,

@@ -8,7 +8,7 @@
 }
 
 /* Design tokens mirroring frontend/src/app.css so the setup flow
-   reads as part of middleman. This page is standalone (no config or
+   reads as part of kenn-forge. This page is standalone (no config or
    localStorage), so theme follows the OS preference. */
 :root {
   --bg-primary: #f5f6f8;

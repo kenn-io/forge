@@ -11,8 +11,8 @@ import {
   resetKataWorkspaceTestState,
 } from "./test/KataWorkspaceSupport.js";
 
-vi.mock("@middleman/ui", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@middleman/ui")>();
+vi.mock("@kenn-forge/ui", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@kenn-forge/ui")>();
   return {
     ...actual,
     getStores: () => ({
@@ -123,7 +123,7 @@ describe("KataWorkspace", () => {
     expect(deleteRecurrence).toHaveBeenCalledWith(
       selected.project_id,
       "recurrence-selected",
-      "middleman",
+      "kenn-forge",
       expect.any(Object),
       '"rev-6"',
     );
@@ -181,7 +181,7 @@ describe("KataWorkspace", () => {
     expect(deleteRecurrence).toHaveBeenCalledWith(
       selected.project_id,
       "recurrence-selected",
-      "middleman",
+      "kenn-forge",
       expect.any(Object),
       '"rev-9"',
     );
@@ -233,7 +233,7 @@ describe("KataWorkspace", () => {
     expect(deleteRecurrence).toHaveBeenLastCalledWith(
       selected.project_id,
       "recurrence-selected",
-      "middleman",
+      "kenn-forge",
       expect.any(Object),
       '"rev-9"',
     );
@@ -248,7 +248,7 @@ describe("KataWorkspace", () => {
     expect(deleteRecurrence).toHaveBeenLastCalledWith(
       selected.project_id,
       "recurrence-selected",
-      "middleman",
+      "kenn-forge",
       expect.any(Object),
       '"rev-10"',
     );

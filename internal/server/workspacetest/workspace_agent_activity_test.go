@@ -11,9 +11,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/agentactivity"
-	"go.kenn.io/middleman/internal/apiclient/generated"
-	"go.kenn.io/middleman/internal/config"
+	"go.kenn.io/forge/internal/agentactivity"
+	"go.kenn.io/forge/internal/apiclient/generated"
+	"go.kenn.io/forge/internal/config"
 )
 
 func TestWorkspaceAgentActivityFlowsThroughHTTPResponsesE2E(t *testing.T) {

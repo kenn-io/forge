@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/gitclone"
 	gitcmd "go.kenn.io/kit/git/cmd"
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/gitclone"
 )
 
 // DiffRepoResult holds the SHAs from the test repo for use in assertions.
@@ -53,7 +53,7 @@ func SetupDiffRepo(
 		return nil, fmt.Errorf("git init: %w", err)
 	}
 	if err := git(ctx, workDir,
-		"config", "user.email", "middleman-fixture@example.invalid"); err != nil {
+		"config", "user.email", "kenn-forge-fixture@example.invalid"); err != nil {
 		return nil, err
 	}
 	if err := git(ctx, workDir,

@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/server/httpapi"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/server/httpapi"
 )
 
 type listRepoLabelsOutput = httpapi.BodyOutput[repoLabelsResponse]

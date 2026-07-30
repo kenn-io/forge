@@ -7,7 +7,7 @@ import (
 	"os"
 	"runtime"
 
-	"go.kenn.io/middleman/internal/procutil"
+	"go.kenn.io/forge/internal/procutil"
 )
 
 var ErrRevealUnsupported = errors.New("open workspace folder is not supported on this platform")

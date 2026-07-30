@@ -12,13 +12,13 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/apiclient"
-	"go.kenn.io/middleman/internal/db"
-	ghclient "go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/server"
-	"go.kenn.io/middleman/internal/testutil"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
-	"go.kenn.io/middleman/internal/testutil/servertest"
+	"go.kenn.io/forge/internal/apiclient"
+	"go.kenn.io/forge/internal/db"
+	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/testutil"
+	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/servertest"
 )
 
 var defaultTestRepos = []ghclient.RepoRef{
@@ -94,7 +94,7 @@ func setupTestClient(t *testing.T, srv *server.Server) *apiclient.Client {
 		}),
 	}
 
-	client, err := apiclient.NewWithHTTPClient("http://middleman.test", httpClient)
+	client, err := apiclient.NewWithHTTPClient("http://forge.test", httpClient)
 	require.NoError(t, err)
 	return client
 }

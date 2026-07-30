@@ -13,7 +13,7 @@ run = "process-compose -f process-compose.yml up"
 
 [tasks.dev-compose]
 description = "Run docker compose with host gh auth token injection"
-run = 'MIDDLEMAN_GITHUB_TOKEN="$(gh auth token)" docker compose up'
+run = 'KENN_FORGE_GITHUB_TOKEN="$(gh auth token)" docker compose up'
 
 [tasks.dev-compose-logs]
 description = "Show docker compose logs"

@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-Middleman moves timestamps through several layers:
+Kenn Forge moves timestamps through several layers:
 
 - GitHub API payloads
 - Go normalization and persistence
@@ -20,9 +20,9 @@ Without a documented rule, timezone logic can leak into the wrong layer and crea
 
 ## Decision
 
-Middleman will use UTC as the canonical representation for datetimes across storage and API boundaries.
+Kenn Forge will use UTC as the canonical representation for datetimes across storage and API boundaries.
 
-- Store middleman-owned datetimes in UTC.
+- Store kenn-forge-owned datetimes in UTC.
 - Serialize API datetimes as UTC RFC3339.
 - Convert to local timezone only in the Svelte UI presentation layer.
 

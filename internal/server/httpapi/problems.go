@@ -26,9 +26,9 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/platform"
-	"go.kenn.io/middleman/internal/tokenauth"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/platform"
+	"go.kenn.io/forge/internal/tokenauth"
 )
 
 // ProblemCode is the machine-readable error code carried on the wire.

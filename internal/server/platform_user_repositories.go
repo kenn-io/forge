@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"go.kenn.io/middleman/internal/server/httpapi"
+	"go.kenn.io/forge/internal/server/httpapi"
 )
 
 // The user-repositories endpoint backs "pick one of your repositories"

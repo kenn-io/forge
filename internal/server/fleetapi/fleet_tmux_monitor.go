@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"go.kenn.io/middleman/internal/fleet"
-	"go.kenn.io/middleman/internal/procutil"
+	"go.kenn.io/forge/internal/fleet"
+	"go.kenn.io/forge/internal/procutil"
 )
 
 const (

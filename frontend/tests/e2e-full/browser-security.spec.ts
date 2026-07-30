@@ -130,7 +130,7 @@ test("same-origin browser JSON mutations reach the API", async ({ page, baseURL 
   const result = await page.evaluate(async () => {
     const response = await fetch("/api/v1/sync", {
       method: "POST",
-      headers: { "Content-Type": "application/json", "X-Middleman-Csrf": "1" },
+      headers: { "Content-Type": "application/json", "X-Kenn-Forge-Csrf": "1" },
       body: "{}",
     });
     return { status: response.status };
@@ -156,7 +156,7 @@ test("SPA shell cannot be framed by another origin", async ({ page, baseURL }) =
 
   const escapedTarget = target.replaceAll('"', "&quot;");
   const externalOrigin = await startExternalOrigin(
-    `<!doctype html><title>frame attempt</title><iframe id="middleman-frame" src="${escapedTarget}"></iframe>`,
+    `<!doctype html><title>frame attempt</title><iframe id="kenn-forge-frame" src="${escapedTarget}"></iframe>`,
   );
 
   try {
@@ -173,7 +173,7 @@ test("SPA shell cannot be framed by another origin", async ({ page, baseURL }) =
       )
       .toBe(true);
 
-    const frameHandle = await page.locator("#middleman-frame").elementHandle();
+    const frameHandle = await page.locator("#kenn-forge-frame").elementHandle();
     expect(frameHandle).not.toBeNull();
     const frame = await frameHandle!.contentFrame();
     expect(await frame?.locator(".workspace-list-sidebar").count()).toBeFalsy();
@@ -199,12 +199,12 @@ test("workspace embed routes remain frameable", async ({ page, baseURL }) => {
 
   const escapedTarget = target.replaceAll('"', "&quot;");
   const externalOrigin = await startExternalOrigin(
-    `<!doctype html><title>embed host</title><iframe id="middleman-frame" src="${escapedTarget}"></iframe>`,
+    `<!doctype html><title>embed host</title><iframe id="kenn-forge-frame" src="${escapedTarget}"></iframe>`,
   );
 
   try {
     await page.goto(externalOrigin.url);
-    const frameHandle = await page.locator("#middleman-frame").elementHandle();
+    const frameHandle = await page.locator("#kenn-forge-frame").elementHandle();
     expect(frameHandle).not.toBeNull();
     const frame = await frameHandle!.contentFrame();
     expect(frame).not.toBeNull();

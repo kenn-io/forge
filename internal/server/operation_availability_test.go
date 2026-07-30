@@ -11,14 +11,14 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/db"
-	ghclient "go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/platform"
-	"go.kenn.io/middleman/internal/ratelimit"
-	"go.kenn.io/middleman/internal/server/httpapi"
-	"go.kenn.io/middleman/internal/server/pullapi"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
-	"go.kenn.io/middleman/internal/tokenauth"
+	"go.kenn.io/forge/internal/db"
+	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/platform"
+	"go.kenn.io/forge/internal/ratelimit"
+	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/server/pullapi"
+	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/tokenauth"
 )
 
 func TestDeriveOperationAvailability(t *testing.T) {
@@ -402,7 +402,7 @@ func TestAPIRepoResponseIncludesOperationsGraphQLPauseDoesNotBlockREST(t *testin
 	require := require.New(t)
 	assert := assert.New(t)
 
-	// Mutations in middleman are REST-backed, so a paused GraphQL
+	// Mutations in kenn-forge are REST-backed, so a paused GraphQL
 	// tracker must leave merge_pr available; this guards against
 	// the earlier behavior that treated either tracker's pause as
 	// blocking every operation.

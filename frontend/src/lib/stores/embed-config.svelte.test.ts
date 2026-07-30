@@ -21,7 +21,7 @@ import type { ActionHook, ProjectActionHook } from "./embed-config.svelte.js";
 const win = window as any;
 
 afterEach(() => {
-  delete win.__middleman_config;
+  delete win.__kenn_forge_config;
 });
 
 describe("isEmbedded", () => {
@@ -30,16 +30,16 @@ describe("isEmbedded", () => {
   });
 
   it("returns true when the embed block is present", () => {
-    win.__middleman_config = { embed: {} };
-    win.__middleman_notify_config_changed();
+    win.__kenn_forge_config = { embed: {} };
+    win.__kenn_forge_notify_config_changed();
     expect(isEmbedded()).toBe(true);
   });
 
   it("daemon-served ui-only config does not imply embedding", () => {
-    win.__middleman_config = {
+    win.__kenn_forge_config = {
       ui: { activeWorktreeKey: "wt-1" },
     };
-    win.__middleman_notify_config_changed();
+    win.__kenn_forge_notify_config_changed();
     expect(isEmbedded()).toBe(false);
   });
 });
@@ -50,32 +50,32 @@ describe("theme config", () => {
   });
 
   it("returns mode from config", () => {
-    win.__middleman_config = { theme: { mode: "dark" } };
-    win.__middleman_notify_config_changed();
+    win.__kenn_forge_config = { theme: { mode: "dark" } };
+    win.__kenn_forge_notify_config_changed();
     expect(getThemeMode()).toBe("dark");
   });
 
   it("returns partial colors", () => {
-    win.__middleman_config = {
+    win.__kenn_forge_config = {
       theme: { colors: { bgPrimary: "#111" } },
     };
-    win.__middleman_notify_config_changed();
+    win.__kenn_forge_notify_config_changed();
     expect(getThemeColors()?.bgPrimary).toBe("#111");
   });
 
   it("returns fonts", () => {
-    win.__middleman_config = {
+    win.__kenn_forge_config = {
       theme: { fonts: { sans: "SF Pro" } },
     };
-    win.__middleman_notify_config_changed();
+    win.__kenn_forge_notify_config_changed();
     expect(getThemeFonts()?.sans).toBe("SF Pro");
   });
 
   it("returns radii", () => {
-    win.__middleman_config = {
+    win.__kenn_forge_config = {
       theme: { radii: { sm: "2px" } },
     };
-    win.__middleman_notify_config_changed();
+    win.__kenn_forge_notify_config_changed();
     expect(getThemeRadii()?.sm).toBe("2px");
   });
 });
@@ -91,10 +91,10 @@ describe("UI config", () => {
   });
 
   it("reads flags from config", () => {
-    win.__middleman_config = {
+    win.__kenn_forge_config = {
       ui: { hideSync: true, repo: { owner: "a", name: "b" } },
     };
-    win.__middleman_notify_config_changed();
+    win.__kenn_forge_notify_config_changed();
     const ui = getUIConfig();
     expect(ui.hideSync).toBe(true);
     expect(ui.repo?.owner).toBe("a");
@@ -103,18 +103,18 @@ describe("UI config", () => {
 
 describe("reset semantics", () => {
   it("reverts to defaults when properties removed", () => {
-    win.__middleman_config = {
+    win.__kenn_forge_config = {
       theme: { mode: "dark" },
       ui: { hideSync: true },
     };
-    win.__middleman_notify_config_changed();
+    win.__kenn_forge_notify_config_changed();
     expect(getThemeMode()).toBe("dark");
     expect(getUIConfig().hideSync).toBe(true);
 
     // Remove properties and notify
-    delete win.__middleman_config.theme;
-    delete win.__middleman_config.ui;
-    win.__middleman_notify_config_changed();
+    delete win.__kenn_forge_config.theme;
+    delete win.__kenn_forge_config.ui;
+    win.__kenn_forge_notify_config_changed();
     expect(getThemeMode()).toBeUndefined();
     expect(getUIConfig().hideSync).toBe(false);
   });
@@ -128,12 +128,12 @@ describe("actions (migrated from hooks)", () => {
 
   it("returns PR actions from config", () => {
     const handler = vi.fn();
-    win.__middleman_config = {
+    win.__kenn_forge_config = {
       actions: {
         pullRequest: [{ id: "pr1", label: "Test", handler }],
       },
     };
-    win.__middleman_notify_config_changed();
+    win.__kenn_forge_notify_config_changed();
     const actions = getPullRequestActions();
     expect(actions).toHaveLength(1);
     expect(actions[0]!.id).toBe("pr1");
@@ -141,19 +141,19 @@ describe("actions (migrated from hooks)", () => {
 
   it("returns issue actions from config", () => {
     const handler = vi.fn();
-    win.__middleman_config = {
+    win.__kenn_forge_config = {
       actions: {
         issue: [{ id: "iss1", label: "Issue", handler }],
       },
     };
-    win.__middleman_notify_config_changed();
+    win.__kenn_forge_notify_config_changed();
     expect(getIssueActions()).toHaveLength(1);
   });
 
   it("picks up in-place mutation via notify", () => {
     const config = { actions: { issue: [] as ActionHook[] } };
-    win.__middleman_config = config;
-    win.__middleman_notify_config_changed();
+    win.__kenn_forge_config = config;
+    win.__kenn_forge_notify_config_changed();
     expect(getIssueActions()).toHaveLength(0);
 
     config.actions.issue.push({
@@ -161,7 +161,7 @@ describe("actions (migrated from hooks)", () => {
       label: "Mutated",
       handler: vi.fn(),
     });
-    win.__middleman_notify_config_changed();
+    win.__kenn_forge_notify_config_changed();
     expect(getIssueActions()).toHaveLength(1);
   });
 });
@@ -230,17 +230,17 @@ describe("onNavigate callback", () => {
 
   it("returns callback from config", () => {
     const cb = vi.fn();
-    win.__middleman_config = { onNavigate: cb };
-    win.__middleman_notify_config_changed();
+    win.__kenn_forge_config = { onNavigate: cb };
+    win.__kenn_forge_notify_config_changed();
     expect(getOnNavigate()).toBe(cb);
   });
 
   it("reverts to undefined when removed", () => {
     const cb = vi.fn();
-    win.__middleman_config = { onNavigate: cb };
-    win.__middleman_notify_config_changed();
-    delete win.__middleman_config.onNavigate;
-    win.__middleman_notify_config_changed();
+    win.__kenn_forge_config = { onNavigate: cb };
+    win.__kenn_forge_notify_config_changed();
+    delete win.__kenn_forge_config.onNavigate;
+    win.__kenn_forge_notify_config_changed();
     expect(getOnNavigate()).toBeUndefined();
   });
 });
@@ -253,12 +253,12 @@ describe("project actions", () => {
 
   it("returns project actions from config", () => {
     const handler = vi.fn().mockResolvedValue({ ok: true });
-    win.__middleman_config = {
+    win.__kenn_forge_config = {
       actions: {
         project: [{ id: "add-existing", label: "Add existing", handler }],
       },
     };
-    win.__middleman_notify_config_changed();
+    win.__kenn_forge_notify_config_changed();
     expect(getProjectActions()).toHaveLength(1);
     expect(getProjectAction("add-existing")?.id).toBe("add-existing");
     expect(getProjectAction("missing")).toBeUndefined();
@@ -343,7 +343,7 @@ describe("tooling status", () => {
   });
 
   it("returns tooling block when set", () => {
-    win.__middleman_config = {
+    win.__kenn_forge_config = {
       embed: {
         tooling: {
           git: { available: true, version: "2.45.0" },
@@ -351,19 +351,19 @@ describe("tooling status", () => {
         },
       },
     };
-    win.__middleman_notify_config_changed();
+    win.__kenn_forge_notify_config_changed();
     const tooling = getToolingStatus();
     expect(tooling?.git?.available).toBe(true);
     expect(tooling?.gh?.authenticated).toBe(false);
   });
 
-  it("__middleman_update_tooling pushes new state and notifies", () => {
+  it("__kenn_forge_update_tooling pushes new state and notifies", () => {
     initWorkspaceBridge();
-    win.__middleman_config = {};
-    win.__middleman_notify_config_changed();
+    win.__kenn_forge_config = {};
+    win.__kenn_forge_notify_config_changed();
     expect(getToolingStatus()).toBeUndefined();
 
-    win.__middleman_update_tooling({
+    win.__kenn_forge_update_tooling({
       git: { available: false },
       gh: { available: false, authenticated: false },
     });
@@ -371,11 +371,11 @@ describe("tooling status", () => {
     expect(getToolingStatus()?.gh?.authenticated).toBe(false);
   });
 
-  it("__middleman_update_tooling is a no-op when config is unset", () => {
+  it("__kenn_forge_update_tooling is a no-op when config is unset", () => {
     initWorkspaceBridge();
-    delete win.__middleman_config;
+    delete win.__kenn_forge_config;
     expect(() =>
-      win.__middleman_update_tooling({
+      win.__kenn_forge_update_tooling({
         git: { available: true },
         gh: { available: true, authenticated: true },
       }),

@@ -1,14 +1,14 @@
 import { cleanup, render, waitFor } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import { DEFAULT_TERMINAL_SETTINGS, type Settings } from "@middleman/ui/api/types";
+import { DEFAULT_TERMINAL_SETTINGS, type Settings } from "@kenn-forge/ui/api/types";
 
 const { getSettings, setLaunchTargets } = vi.hoisted(() => ({
   getSettings: vi.fn(),
   setLaunchTargets: vi.fn(),
 }));
 
-vi.mock("@middleman/ui", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@middleman/ui")>()),
+vi.mock("@kenn-forge/ui", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@kenn-forge/ui")>()),
   getStores: () => ({
     settings: {
       getTerminalSettings: () => DEFAULT_TERMINAL_SETTINGS,

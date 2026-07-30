@@ -15,14 +15,14 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/danielgtaylor/huma/v2"
-	"go.kenn.io/middleman/internal/config"
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/server/httpapi"
-	"go.kenn.io/middleman/internal/server/workspaceapi"
-	"go.kenn.io/middleman/internal/workspace"
+	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/server/workspaceapi"
+	"go.kenn.io/forge/internal/workspace"
 )
 
-// maxKataProjectTOMLBytes caps how much of a .kata.toml middleman will read.
+// maxKataProjectTOMLBytes caps how much of a .kata.toml kenn-forge will read.
 // The file only carries a tiny [project] table, so this is generous while
 // preventing untrusted repo content from forcing an unbounded read.
 const maxKataProjectTOMLBytes = 64 << 10
@@ -73,7 +73,7 @@ type kataProjectMappingDiagnostic struct {
 }
 
 type kataProjectMappingsInput struct {
-	DaemonID string `header:"X-Middleman-Kata-Daemon" doc:"Kata daemon id; the effective default daemon when empty"`
+	DaemonID string `header:"X-Kenn-Forge-Kata-Daemon" doc:"Kata daemon id; the effective default daemon when empty"`
 }
 
 type kataProjectMappingsResponse struct {
@@ -621,7 +621,7 @@ func readKataProjectTOML(root string) (kataProjectTOML, bool) {
 	path := filepath.Join(root, ".kata.toml")
 	// .kata.toml lives in a repo whose contents are not trusted. A contributor
 	// could commit it as a symlink to an endless or huge file (for example
-	// /dev/zero) and stall or exhaust the middleman process when the worktree
+	// /dev/zero) and stall or exhaust the kenn-forge process when the worktree
 	// is scanned. Lstat first and accept only a regular file (this rejects
 	// symlinks, devices, FIFOs, and directories) before opening it.
 	info, err := os.Lstat(path)

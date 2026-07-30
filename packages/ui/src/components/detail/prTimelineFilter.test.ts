@@ -60,14 +60,14 @@ describe("prTimelineFilter", () => {
   });
 
   it("returns defaults for corrupt persisted JSON", () => {
-    localStorage.setItem("middleman-pr-timeline-filter", "{");
+    localStorage.setItem("kenn-forge-pr-timeline-filter", "{");
 
     expect(loadPRTimelineFilter()).toEqual(DEFAULT_PR_TIMELINE_FILTER);
   });
 
   it("uses defaults for invalid persisted fields while preserving booleans", () => {
     localStorage.setItem(
-      "middleman-pr-timeline-filter",
+      "kenn-forge-pr-timeline-filter",
       JSON.stringify({
         showMessages: "false",
         showReplies: false,
@@ -89,10 +89,10 @@ describe("prTimelineFilter", () => {
   });
 
   it("returns defaults when persisted JSON is not an object", () => {
-    localStorage.setItem("middleman-pr-timeline-filter", JSON.stringify([]));
+    localStorage.setItem("kenn-forge-pr-timeline-filter", JSON.stringify([]));
     expect(loadPRTimelineFilter()).toEqual(DEFAULT_PR_TIMELINE_FILTER);
 
-    localStorage.setItem("middleman-pr-timeline-filter", JSON.stringify("filter"));
+    localStorage.setItem("kenn-forge-pr-timeline-filter", JSON.stringify("filter"));
     expect(loadPRTimelineFilter()).toEqual(DEFAULT_PR_TIMELINE_FILTER);
   });
 

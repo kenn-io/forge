@@ -23,7 +23,7 @@ import (
 	tcexec "github.com/testcontainers/testcontainers-go/exec"
 	"github.com/testcontainers/testcontainers-go/modules/compose"
 	"github.com/testcontainers/testcontainers-go/wait"
-	"go.kenn.io/middleman/internal/fleet"
+	"go.kenn.io/forge/internal/fleet"
 )
 
 var fleetContainerUUIDPattern = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
@@ -39,21 +39,21 @@ func TestFleetComposeBuildDisablesTelemetry(t *testing.T) {
 	script, err := os.ReadFile(filepath.Join(repoRoot(t), "scripts/e2e/fleet/run-daemon.sh"))
 	require.NoError(err)
 
-	assert.NotContains(string(dockerfile), "MIDDLEMAN_GO_BUILD_TAGS")
-	assert.Equal(3, strings.Count(string(compose), "MIDDLEMAN_GO_BUILD_TAGS: kit_posthog_disabled"))
-	assert.NotContains(string(compose), "args:\n        MIDDLEMAN_GO_BUILD_TAGS: kit_posthog_disabled")
+	assert.NotContains(string(dockerfile), "KENN_FORGE_GO_BUILD_TAGS")
+	assert.Equal(3, strings.Count(string(compose), "KENN_FORGE_GO_BUILD_TAGS: kit_posthog_disabled"))
+	assert.NotContains(string(compose), "args:\n        KENN_FORGE_GO_BUILD_TAGS: kit_posthog_disabled")
 	assert.Contains(
 		string(script),
-		`if [[ -n "${MIDDLEMAN_GO_BUILD_TAGS:-}" ]]; then`,
+		`if [[ -n "${KENN_FORGE_GO_BUILD_TAGS:-}" ]]; then`,
 	)
-	assert.Contains(string(script), `go_build_args=(-tags "${MIDDLEMAN_GO_BUILD_TAGS}" "${go_build_args[@]}")`)
-	assert.Contains(string(script), `go build "${go_build_args[@]}" ./cmd/middleman`)
+	assert.Contains(string(script), `go_build_args=(-tags "${KENN_FORGE_GO_BUILD_TAGS}" "${go_build_args[@]}")`)
+	assert.Contains(string(script), `go build "${go_build_args[@]}" ./cmd/kenn-forge`)
 	assert.NotContains(string(script), "go build -tags kit_posthog_disabled")
 }
 
 func TestFleetContainerReadE2E(t *testing.T) {
-	if os.Getenv("MIDDLEMAN_FLEET_CONTAINER_E2E") != "1" {
-		t.Skip("set MIDDLEMAN_FLEET_CONTAINER_E2E=1 to run fleet container e2e")
+	if os.Getenv("KENN_FORGE_FLEET_CONTAINER_E2E") != "1" {
+		t.Skip("set KENN_FORGE_FLEET_CONTAINER_E2E=1 to run fleet container e2e")
 	}
 
 	assert := assert.New(t)
@@ -61,9 +61,9 @@ func TestFleetContainerReadE2E(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 8*time.Minute)
 	defer cancel()
 
-	hubPort := envOrDefault("MIDDLEMAN_FLEET_HUB_PORT", freeLoopbackPort(t))
-	memberPort := envOrDefault("MIDDLEMAN_FLEET_MEMBER_PORT", freeLoopbackPort(t))
-	stackID := compose.StackIdentifier(envOrDefault("MIDDLEMAN_FLEET_COMPOSE_PROJECT", "middleman-fleet-e2e"))
+	hubPort := envOrDefault("KENN_FORGE_FLEET_HUB_PORT", freeLoopbackPort(t))
+	memberPort := envOrDefault("KENN_FORGE_FLEET_MEMBER_PORT", freeLoopbackPort(t))
+	stackID := compose.StackIdentifier(envOrDefault("KENN_FORGE_FLEET_COMPOSE_PROJECT", "kenn-forge-fleet-e2e"))
 	stack, err := compose.NewDockerComposeWith(
 		compose.WithStackFiles(filepath.Join(repoRoot(t), "scripts/e2e/fleet/docker-compose.yml")),
 		stackID,
@@ -72,8 +72,8 @@ func TestFleetContainerReadE2E(t *testing.T) {
 
 	composeStack := stack.
 		WithEnv(map[string]string{
-			"MIDDLEMAN_FLEET_HUB_PORT":    hubPort,
-			"MIDDLEMAN_FLEET_MEMBER_PORT": memberPort,
+			"KENN_FORGE_FLEET_HUB_PORT":    hubPort,
+			"KENN_FORGE_FLEET_MEMBER_PORT": memberPort,
 		}).
 		WaitForService("hub", waitForFleetContainerPublishedHTTP()).
 		WaitForService("member", waitForFleetContainerInternalHTTP()).
@@ -97,7 +97,7 @@ func TestFleetContainerReadE2E(t *testing.T) {
 	require.NoError(hubContainerErr)
 	require.NoError(memberContainerErr)
 	require.NoError(memberSSHContainerErr)
-	if os.Getenv("MIDDLEMAN_KEEP_FLEET_FIXTURE") == "1" {
+	if os.Getenv("KENN_FORGE_KEEP_FLEET_FIXTURE") == "1" {
 		t.Logf("keeping fleet Compose stack %s at http://127.0.0.1:%s", stackID, hubPort)
 	} else {
 		t.Cleanup(func() {
@@ -149,7 +149,7 @@ func TestFleetContainerReadE2E(t *testing.T) {
 	assertFleetContainerUUID(t, member.ID)
 	assert.NotEqual("member", member.ID)
 	require.Len(member.TmuxSessions, 1, "member host tmux inventory must fan out from its raw snapshot")
-	assert.Equal("middleman-fleet-member-ws-7", member.TmuxSessions[0].Name)
+	assert.Equal("kenn-forge-fleet-member-ws-7", member.TmuxSessions[0].Name)
 	assert.Equal("worktree:/data/member/worktrees/widget-pr-7", member.TmuxSessions[0].WorktreeKey)
 
 	down := fleetContainerHostByKey(snap.Hosts, "down")
@@ -185,8 +185,8 @@ func TestFleetContainerReadE2E(t *testing.T) {
 }
 
 func TestFleetContainerDriveE2E(t *testing.T) {
-	if os.Getenv("MIDDLEMAN_FLEET_DRIVE_CONTAINER_E2E") != "1" {
-		t.Skip("set MIDDLEMAN_FLEET_DRIVE_CONTAINER_E2E=1 to run fleet drive container e2e")
+	if os.Getenv("KENN_FORGE_FLEET_DRIVE_CONTAINER_E2E") != "1" {
+		t.Skip("set KENN_FORGE_FLEET_DRIVE_CONTAINER_E2E=1 to run fleet drive container e2e")
 	}
 
 	assert := assert.New(t)
@@ -389,7 +389,7 @@ func TestFleetContainerDriveE2E(t *testing.T) {
 		snap.Worktrees, memberAfterDelete.ID, "widget-pr-7",
 	))
 	for _, tmuxSession := range memberAfterDelete.TmuxSessions {
-		assert.NotEqual("middleman-fleet-member-ws-7", tmuxSession.Name)
+		assert.NotEqual("kenn-forge-fleet-member-ws-7", tmuxSession.Name)
 	}
 }
 
@@ -411,9 +411,9 @@ func startFleetDriveContainerStack(
 	assert := assert.New(t)
 	require := require.New(t)
 
-	hubPort := envOrDefault("MIDDLEMAN_FLEET_DRIVE_HUB_PORT", freeLoopbackPort(t))
-	memberPort := envOrDefault("MIDDLEMAN_FLEET_DRIVE_MEMBER_PORT", freeLoopbackPort(t))
-	stackID := compose.StackIdentifier(envOrDefault("MIDDLEMAN_FLEET_DRIVE_COMPOSE_PROJECT", "middleman-fleet-drive-e2e"))
+	hubPort := envOrDefault("KENN_FORGE_FLEET_DRIVE_HUB_PORT", freeLoopbackPort(t))
+	memberPort := envOrDefault("KENN_FORGE_FLEET_DRIVE_MEMBER_PORT", freeLoopbackPort(t))
+	stackID := compose.StackIdentifier(envOrDefault("KENN_FORGE_FLEET_DRIVE_COMPOSE_PROJECT", "kenn-forge-fleet-drive-e2e"))
 	stack, err := compose.NewDockerComposeWith(
 		compose.WithStackFiles(filepath.Join(repoRoot(t), "scripts/e2e/fleet/docker-compose.yml")),
 		stackID,
@@ -422,8 +422,8 @@ func startFleetDriveContainerStack(
 
 	composeStack := stack.
 		WithEnv(map[string]string{
-			"MIDDLEMAN_FLEET_HUB_PORT":    hubPort,
-			"MIDDLEMAN_FLEET_MEMBER_PORT": memberPort,
+			"KENN_FORGE_FLEET_HUB_PORT":    hubPort,
+			"KENN_FORGE_FLEET_MEMBER_PORT": memberPort,
 		}).
 		WaitForService("hub", waitForFleetContainerPublishedHTTP()).
 		WaitForService("member", waitForFleetContainerInternalHTTP()).
@@ -447,7 +447,7 @@ func startFleetDriveContainerStack(
 	require.NoError(hubContainerErr)
 	require.NoError(memberContainerErr)
 	require.NoError(memberSSHContainerErr)
-	if os.Getenv("MIDDLEMAN_KEEP_FLEET_FIXTURE") == "1" {
+	if os.Getenv("KENN_FORGE_KEEP_FLEET_FIXTURE") == "1" {
 		t.Logf("keeping fleet drive Compose stack %s at http://127.0.0.1:%s", stackID, hubPort)
 	} else {
 		t.Cleanup(func() {
@@ -511,7 +511,7 @@ func seedFleetContainerWithArgs(
 	t.Helper()
 	args := []string{
 		"go", "run", "./scripts/e2e/fleet/seed",
-		"-db", dataRoot + "/middleman.db",
+		"-db", dataRoot + "/forge.db",
 		"-project-path", dataRoot + "/projects/fleet-widget",
 		"-worktree-path", dataRoot + "/worktrees/widget-pr-7",
 	}
@@ -677,7 +677,7 @@ func fleetContainerExecCode(
 
 func fleetContainerRuntimeTmuxSessionName(scope, sessionKey string) string {
 	sum := sha256.Sum256([]byte(sessionKey))
-	return "middleman-" + fleetContainerTmuxSessionSafeComponent(scope) + "-" +
+	return "kenn-forge-" + fleetContainerTmuxSessionSafeComponent(scope) + "-" +
 		hex.EncodeToString(sum[:8])
 }
 

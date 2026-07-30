@@ -9,10 +9,10 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/kata"
-	"go.kenn.io/middleman/internal/server/httpapi"
-	"go.kenn.io/middleman/internal/server/kataapi"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/kata"
+	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/server/kataapi"
 )
 
 const (
@@ -29,7 +29,7 @@ type kataFrontendEventHandle interface {
 }
 
 type kataTaskSnapshotInput struct {
-	DaemonID         string `header:"X-Middleman-Kata-Daemon" doc:"Kata daemon id; the effective default daemon when empty"`
+	DaemonID         string `header:"X-Kenn-Forge-Kata-Daemon" doc:"Kata daemon id; the effective default daemon when empty"`
 	Scope            string `query:"scope" default:"global" enum:"global,project"`
 	ProjectUID       string `query:"project_uid"`
 	Authority        string `query:"authority" default:"open" enum:"open,ready,closed,all"`
@@ -58,7 +58,7 @@ type kataTaskSnapshotOutput struct {
 }
 
 type kataTaskReferenceInput struct {
-	DaemonID string `header:"X-Middleman-Kata-Daemon" doc:"Kata daemon id; the effective default daemon when empty"`
+	DaemonID string `header:"X-Kenn-Forge-Kata-Daemon" doc:"Kata daemon id; the effective default daemon when empty"`
 	Query    string `query:"q"`
 	Limit    int    `query:"limit" default:"20" minimum:"1" maximum:"50"`
 	Status   string `query:"status" default:"open" enum:"open,all"`

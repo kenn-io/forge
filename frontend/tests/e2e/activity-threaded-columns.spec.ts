@@ -197,8 +197,8 @@ test.describe("threaded activity columns", () => {
     // Start in ungrouped mode so the repo chip is rendered next to each row.
     await page.goto("/?view=threaded");
     await page.evaluate(() => {
-      localStorage.setItem("middleman:groupingMode", "flat");
-      localStorage.removeItem("middleman:hideOrgName");
+      localStorage.setItem("kenn-forge:groupingMode", "flat");
+      localStorage.removeItem("kenn-forge:hideOrgName");
     });
     await page.reload();
 

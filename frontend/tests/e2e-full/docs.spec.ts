@@ -12,7 +12,7 @@ import {
 import { startIsolatedE2EServer } from "./support/e2eServer";
 
 async function createEngineeringDocsFixture(): Promise<string> {
-  const dir = await mkdtemp(path.join(os.tmpdir(), "middleman-engineering-docs-e2e-"));
+  const dir = await mkdtemp(path.join(os.tmpdir(), "kenn-forge-engineering-docs-e2e-"));
   await mkdir(dir, { recursive: true });
   await writeFile(
     path.join(dir, "index.md"),
@@ -26,7 +26,7 @@ async function createEngineeringDocsFixture(): Promise<string> {
 // pushes the h1 out of view. Both anchor fixtures share the heading id so
 // a stale anchor would scroll the second folder's landing doc.
 async function createTallAnchorDocsFixture(h1: string): Promise<string> {
-  const dir = await mkdtemp(path.join(os.tmpdir(), "middleman-anchor-docs-e2e-"));
+  const dir = await mkdtemp(path.join(os.tmpdir(), "kenn-forge-anchor-docs-e2e-"));
   await mkdir(dir, { recursive: true });
   // Each paragraph needs a blank line after it or markdown folds them
   // into one short block that never overflows the scroll container.

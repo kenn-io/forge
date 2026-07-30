@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
   showFlash: vi.fn(),
 }));
 
-vi.mock("@middleman/ui/stores/flash", () => ({
+vi.mock("@kenn-forge/ui/stores/flash", () => ({
   showFlash: mocks.showFlash,
 }));
 
@@ -80,7 +80,7 @@ function setWorktreesResponse(
 
 describe("WorkspaceProjectCard", () => {
   beforeEach(() => {
-    delete win.__middleman_config;
+    delete win.__kenn_forge_config;
     mocks.showFlash.mockReset();
   });
 
@@ -214,7 +214,7 @@ describe("WorkspaceProjectCard", () => {
 
   it("invokes the new-worktree action with the project id when clicked", async () => {
     const newWorktreeHandler = vi.fn().mockResolvedValue({ ok: true });
-    win.__middleman_config = {
+    win.__kenn_forge_config = {
       actions: {
         project: [
           {
@@ -225,7 +225,7 @@ describe("WorkspaceProjectCard", () => {
         ],
       },
     };
-    win.__middleman_notify_config_changed?.();
+    win.__kenn_forge_notify_config_changed?.();
 
     setProjectResponse({
       id: "prj_1",
@@ -250,7 +250,7 @@ describe("WorkspaceProjectCard", () => {
 
   it("includes the host key in new-worktree action context", async () => {
     const newWorktreeHandler = vi.fn().mockResolvedValue({ ok: true });
-    win.__middleman_config = {
+    win.__kenn_forge_config = {
       actions: {
         project: [
           {
@@ -261,7 +261,7 @@ describe("WorkspaceProjectCard", () => {
         ],
       },
     };
-    win.__middleman_notify_config_changed?.();
+    win.__kenn_forge_notify_config_changed?.();
 
     setProjectResponse({
       id: "prj_1",
@@ -288,7 +288,7 @@ describe("WorkspaceProjectCard", () => {
   });
 
   it("surfaces a failure message when the new-worktree action returns ok: false", async () => {
-    win.__middleman_config = {
+    win.__kenn_forge_config = {
       actions: {
         project: [
           {
@@ -303,7 +303,7 @@ describe("WorkspaceProjectCard", () => {
         ],
       },
     };
-    win.__middleman_notify_config_changed?.();
+    win.__kenn_forge_notify_config_changed?.();
 
     setProjectResponse({
       id: "prj_1",
@@ -326,8 +326,8 @@ describe("WorkspaceProjectCard", () => {
   });
 
   it("renders an upgrade-host hint when the new-worktree action is missing", async () => {
-    win.__middleman_config = { actions: { project: [] } };
-    win.__middleman_notify_config_changed?.();
+    win.__kenn_forge_config = { actions: { project: [] } };
+    win.__kenn_forge_notify_config_changed?.();
 
     setProjectResponse({
       id: "prj_1",

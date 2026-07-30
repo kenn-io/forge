@@ -125,8 +125,8 @@ async function setPersistedSidebarWidth(
 ): Promise<Locator> {
   await page.goto(path);
   await page.evaluate((value) => {
-    localStorage.setItem("middleman-sidebar-width", String(value));
-    localStorage.removeItem("middleman-sidebar");
+    localStorage.setItem("kenn-forge-sidebar-width", String(value));
+    localStorage.removeItem("kenn-forge-sidebar");
   }, width);
   await page.reload();
   await waitForList(page);

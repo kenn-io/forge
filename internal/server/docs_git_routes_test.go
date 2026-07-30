@@ -14,11 +14,11 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/docs"
+	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/testutil/gitsafe"
 	gitcmd "go.kenn.io/kit/git/cmd"
-	"go.kenn.io/middleman/internal/config"
-	"go.kenn.io/middleman/internal/docs"
-	"go.kenn.io/middleman/internal/server/httpapi"
-	"go.kenn.io/middleman/internal/testutil/gitsafe"
 )
 
 type docsGitRepo struct {
@@ -34,8 +34,8 @@ func newDocsGitRepo(t *testing.T, upstream bool) docsGitRepo {
 	dir := t.TempDir()
 	remote := t.TempDir()
 	runDocsGit(t, dir, "init", "-b", "main")
-	runDocsGit(t, dir, "config", "user.email", "middleman-fixture@example.invalid")
-	runDocsGit(t, dir, "config", "user.name", "Middleman Fixture")
+	runDocsGit(t, dir, "config", "user.email", "kenn-forge-fixture@example.invalid")
+	runDocsGit(t, dir, "config", "user.name", "Kenn Forge Fixture")
 	runDocsGit(t, dir, "config", "commit.gpgsign", "false")
 	runDocsGit(t, dir, "config", "tag.gpgsign", "false")
 	runDocsGit(t, dir, "config", "core.hooksPath", ".git/hooks")
@@ -626,8 +626,8 @@ func (g docsGitRepo) remoteAdvance(t *testing.T, rel, body string) string {
 	clone := t.TempDir()
 	runDocsGit(t, g.dir, "clone", g.remote, clone)
 	runDocsGit(t, clone, "checkout", "main")
-	runDocsGit(t, clone, "config", "user.email", "middleman-fixture@example.invalid")
-	runDocsGit(t, clone, "config", "user.name", "Middleman Fixture")
+	runDocsGit(t, clone, "config", "user.email", "kenn-forge-fixture@example.invalid")
+	runDocsGit(t, clone, "config", "user.name", "Kenn Forge Fixture")
 	runDocsGit(t, clone, "config", "commit.gpgsign", "false")
 	require.NoError(t, os.WriteFile(filepath.Join(clone, filepath.FromSlash(rel)), []byte(body), 0o644))
 	runDocsGit(t, clone, "add", "--", rel)

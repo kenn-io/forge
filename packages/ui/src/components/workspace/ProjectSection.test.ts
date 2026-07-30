@@ -24,12 +24,12 @@ function createWorktree(isStale: boolean): WorkspaceWorktree {
 
 function createProject(isStale: boolean): WorkspaceProject {
   return {
-    key: "middleman",
-    name: "middleman",
+    key: "kenn-forge",
+    name: "kenn-forge",
     kind: "repository",
     repoKind: "git",
     defaultBranch: "main",
-    platformRepo: "kenn-io/middleman",
+    platformRepo: "kenn-io/kenn-forge",
     worktrees: [createWorktree(isStale)],
   };
 }

@@ -66,7 +66,7 @@ Apply these checks to every new or modified test:
 
 ## Test Level
 
-Use the narrowest test that can catch the break, but honor repo rules. In middleman, e2e tests are required for API behavior, data flow across HTTP and SQLite, and user-visible workflows. Keep those e2e tests non-tautological: assert the workflow result, stored state, rendered UI, or API contract, not just that the server, router, or page did not crash.
+Use the narrowest test that can catch the break, but honor repo rules. In kenn-forge, e2e tests are required for API behavior, data flow across HTTP and SQLite, and user-visible workflows. Keep those e2e tests non-tautological: assert the workflow result, stored state, rendered UI, or API contract, not just that the server, router, or page did not crash.
 
 ## Mutation Check
 

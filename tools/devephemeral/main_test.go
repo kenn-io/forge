@@ -18,9 +18,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/config"
-	"go.kenn.io/middleman/internal/server"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/testutil/dbtest"
 	_ "modernc.org/sqlite"
 )
 
@@ -35,7 +35,7 @@ func TestPrepareEphemeralConfigOverridesPortAndDataDir(t *testing.T) {
 
 	source := config.Config{
 		SyncInterval:        "5m",
-		GitHubTokenEnv:      "MIDDLEMAN_GITHUB_TOKEN",
+		GitHubTokenEnv:      "KENN_FORGE_GITHUB_TOKEN",
 		DefaultPlatformHost: "github.com",
 		Host:                "127.0.0.1",
 		Port:                8091,
@@ -72,7 +72,7 @@ func TestPrepareEphemeralConfigForcesBackendToLoopback(t *testing.T) {
 
 	source := config.Config{
 		SyncInterval:        "5m",
-		GitHubTokenEnv:      "MIDDLEMAN_GITHUB_TOKEN",
+		GitHubTokenEnv:      "KENN_FORGE_GITHUB_TOKEN",
 		DefaultPlatformHost: "github.com",
 		Host:                "::1",
 		Port:                8091,
@@ -104,12 +104,12 @@ func TestPrepareEphemeralConfigDisablesReverseProxyTrustForDirectBackend(t *test
 
 	source := config.Config{
 		SyncInterval:        "5m",
-		GitHubTokenEnv:      "MIDDLEMAN_GITHUB_TOKEN",
+		GitHubTokenEnv:      "KENN_FORGE_GITHUB_TOKEN",
 		DefaultPlatformHost: "github.com",
 		Host:                "127.0.0.1",
 		Port:                8091,
 		DataDir:             filepath.Join(dir, "source-data"),
-		AllowedHosts:        []string{"middleman.example.test"},
+		AllowedHosts:        []string{"forge.example.test"},
 		TrustReverseProxy:   true,
 		Activity:            config.Activity{ViewMode: "threaded", TimeRange: "7d"},
 	}
@@ -147,7 +147,7 @@ func TestPrepareEphemeralConfigCopiesSourceDatabaseByDefault(t *testing.T) {
 
 	source := config.Config{
 		SyncInterval:        "5m",
-		GitHubTokenEnv:      "MIDDLEMAN_GITHUB_TOKEN",
+		GitHubTokenEnv:      "KENN_FORGE_GITHUB_TOKEN",
 		DefaultPlatformHost: "github.com",
 		Host:                "127.0.0.1",
 		Port:                8091,
@@ -166,13 +166,13 @@ func TestPrepareEphemeralConfigCopiesSourceDatabaseByDefault(t *testing.T) {
 	})
 	require.NoError(err)
 
-	assert.Equal(t, "copied state", readSQLiteMarker(t, filepath.Join(prepared.dataDir, "middleman.db")))
+	assert.Equal(t, "copied state", readSQLiteMarker(t, filepath.Join(prepared.dataDir, "forge.db")))
 }
 
 func TestPrepareEphemeralDatabaseRejectsSourceDestinationMatch(t *testing.T) {
 	require := require.New(t)
 	dir := t.TempDir()
-	dbPath := filepath.Join(dir, "middleman.db")
+	dbPath := filepath.Join(dir, "forge.db")
 	writeSQLiteMarker(t, dbPath, "preserve me")
 
 	err := prepareEphemeralDatabase(dbPath, dbPath, true)
@@ -190,8 +190,8 @@ func TestPrepareEphemeralDatabaseRejectsSymlinkedSourceDestinationMatch(t *testi
 	require.NoError(os.MkdirAll(realDir, 0o700))
 	require.NoError(os.Symlink(realDir, linkDir))
 
-	sourcePath := filepath.Join(realDir, "middleman.db")
-	destPath := filepath.Join(linkDir, "middleman.db")
+	sourcePath := filepath.Join(realDir, "forge.db")
+	destPath := filepath.Join(linkDir, "forge.db")
 	writeSQLiteMarker(t, sourcePath, "preserve me")
 
 	err := prepareEphemeralDatabase(sourcePath, destPath, true)
@@ -210,7 +210,7 @@ func TestPrepareEphemeralConfigCanStartWithFreshDatabase(t *testing.T) {
 
 	source := config.Config{
 		SyncInterval:        "5m",
-		GitHubTokenEnv:      "MIDDLEMAN_GITHUB_TOKEN",
+		GitHubTokenEnv:      "KENN_FORGE_GITHUB_TOKEN",
 		DefaultPlatformHost: "github.com",
 		Host:                "127.0.0.1",
 		Port:                8091,
@@ -230,7 +230,7 @@ func TestPrepareEphemeralConfigCanStartWithFreshDatabase(t *testing.T) {
 	})
 	require.NoError(err)
 
-	_, err = os.Stat(filepath.Join(prepared.dataDir, "middleman.db"))
+	_, err = os.Stat(filepath.Join(prepared.dataDir, "forge.db"))
 	require.ErrorIs(err, os.ErrNotExist)
 }
 
@@ -241,11 +241,11 @@ func TestPrepareEphemeralConfigKeepsBasePathInBackendURL(t *testing.T) {
 
 	source := config.Config{
 		SyncInterval:        "5m",
-		GitHubTokenEnv:      "MIDDLEMAN_GITHUB_TOKEN",
+		GitHubTokenEnv:      "KENN_FORGE_GITHUB_TOKEN",
 		DefaultPlatformHost: "github.com",
 		Host:                "127.0.0.1",
 		Port:                8091,
-		BasePath:            "/middleman/",
+		BasePath:            "/kenn-forge/",
 		DataDir:             filepath.Join(dir, "source-data"),
 		Activity:            config.Activity{ViewMode: "threaded", TimeRange: "7d"},
 	}
@@ -259,7 +259,7 @@ func TestPrepareEphemeralConfigKeepsBasePathInBackendURL(t *testing.T) {
 	})
 	require.NoError(err)
 
-	assert.Equal(t, "http://127.0.0.1:39201/middleman", prepared.backendURL)
+	assert.Equal(t, "http://127.0.0.1:39201/kenn-forge", prepared.backendURL)
 }
 
 func TestBuildCommandSpecsWiresEphemeralEnvironment(t *testing.T) {
@@ -267,8 +267,8 @@ func TestBuildCommandSpecsWiresEphemeralEnvironment(t *testing.T) {
 	t.Setenv("PATH", "/bin")
 	t.Setenv("HOME", "/tmp/home")
 	t.Setenv("TMPDIR", "/tmp")
-	t.Setenv("MIDDLEMAN_VITE_HMR_HOST", "dev.example.test")
-	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "secret-token")
+	t.Setenv("KENN_FORGE_VITE_HMR_HOST", "dev.example.test")
+	t.Setenv("KENN_FORGE_GITHUB_TOKEN", "secret-token")
 	t.Setenv("GH_TOKEN", "secret-gh")
 	t.Setenv("AWS_SECRET_ACCESS_KEY", "secret-aws")
 	t.Setenv("OPENAI_API_KEY", "secret-openai")
@@ -278,33 +278,33 @@ func TestBuildCommandSpecsWiresEphemeralEnvironment(t *testing.T) {
 	t.Setenv("PLAIN_FRONTEND_SETTING", "kept")
 
 	specs := buildCommandSpecs(ephemeralRun{
-		configPath:   "/tmp/middleman-dev/config.toml",
+		configPath:   "/tmp/kenn-forge-dev/config.toml",
 		backendURL:   "http://127.0.0.1:39301",
 		frontendPort: 39302,
-		logDir:       "/tmp/middleman-dev/logs",
+		logDir:       "/tmp/kenn-forge-dev/logs",
 	}, []string{"--host", "127.0.0.1"})
 
 	assert.Equal("./scripts/dev-stack-backend.sh", specs.backend.name)
-	assert.Contains(specs.backend.env, "MIDDLEMAN_CONFIG=/tmp/middleman-dev/config.toml")
-	assert.Contains(specs.backend.env, "MIDDLEMAN_LOG_FILE=/tmp/middleman-dev/logs/backend-dev.log")
+	assert.Contains(specs.backend.env, "KENN_FORGE_CONFIG=/tmp/kenn-forge-dev/config.toml")
+	assert.Contains(specs.backend.env, "KENN_FORGE_LOG_FILE=/tmp/kenn-forge-dev/logs/backend-dev.log")
 	assert.Contains(specs.backend.env, "TELEMETRY_ENABLED=0")
 	assert.Equal("./scripts/frontend-dev.sh", specs.frontend.name)
 	assert.Equal([]string{"--port", "39302", "--host", "127.0.0.1"}, specs.frontend.args)
-	assert.Contains(specs.frontend.env, "MIDDLEMAN_CONFIG=/tmp/middleman-dev/config.toml")
-	assert.Contains(specs.frontend.env, "MIDDLEMAN_API_URL=http://127.0.0.1:39301")
+	assert.Contains(specs.frontend.env, "KENN_FORGE_CONFIG=/tmp/kenn-forge-dev/config.toml")
+	assert.Contains(specs.frontend.env, "KENN_FORGE_API_URL=http://127.0.0.1:39301")
 	assert.Contains(specs.frontend.env, "PATH=/bin")
 	assert.Contains(specs.frontend.env, "HOME=/tmp/home")
 	assert.Contains(specs.frontend.env, "TMPDIR=/tmp")
-	assert.Contains(specs.frontend.env, "MIDDLEMAN_VITE_HMR_HOST=dev.example.test")
+	assert.Contains(specs.frontend.env, "KENN_FORGE_VITE_HMR_HOST=dev.example.test")
 	assert.NotContains(specs.frontend.env, "PLAIN_FRONTEND_SETTING=kept")
-	assert.NotContains(specs.frontend.env, "MIDDLEMAN_GITHUB_TOKEN=secret-token")
+	assert.NotContains(specs.frontend.env, "KENN_FORGE_GITHUB_TOKEN=secret-token")
 	assert.NotContains(specs.frontend.env, "GH_TOKEN=secret-gh")
 	assert.NotContains(specs.frontend.env, "AWS_SECRET_ACCESS_KEY=secret-aws")
 	assert.NotContains(specs.frontend.env, "OPENAI_API_KEY=secret-openai")
 	assert.NotContains(specs.frontend.env, "AWS_ACCESS_KEY_ID=secret-access-key")
 	assert.NotContains(specs.frontend.env, "GITHUB_PAT=secret-pat")
 	assert.NotContains(specs.frontend.env, "SESSION_COOKIE=secret-cookie")
-	assert.Contains(specs.backend.env, "MIDDLEMAN_GITHUB_TOKEN=secret-token")
+	assert.Contains(specs.backend.env, "KENN_FORGE_GITHUB_TOKEN=secret-token")
 	assert.Contains(specs.backend.env, "OPENAI_API_KEY=secret-openai")
 }
 
@@ -313,10 +313,10 @@ func TestBuildCommandSpecsPreservesExplicitTelemetrySetting(t *testing.T) {
 	t.Setenv("TELEMETRY_ENABLED", "1")
 
 	specs := buildCommandSpecs(ephemeralRun{
-		configPath:   "/tmp/middleman-dev/config.toml",
+		configPath:   "/tmp/kenn-forge-dev/config.toml",
 		backendURL:   "http://127.0.0.1:39301",
 		frontendPort: 39302,
-		logDir:       "/tmp/middleman-dev/logs",
+		logDir:       "/tmp/kenn-forge-dev/logs",
 	}, nil)
 
 	assert.Contains(specs.backend.env, "TELEMETRY_ENABLED=1")
@@ -455,7 +455,7 @@ func TestRunWaitsForStopLockBeforeStartingReplacementStack(t *testing.T) {
 
 	source := config.Config{
 		SyncInterval:        "5m",
-		GitHubTokenEnv:      "MIDDLEMAN_GITHUB_TOKEN",
+		GitHubTokenEnv:      "KENN_FORGE_GITHUB_TOKEN",
 		DefaultPlatformHost: "github.com",
 		Host:                "127.0.0.1",
 		Port:                8091,
@@ -742,7 +742,7 @@ func TestRunWritesStatusAndReusesLiveDefaultStack(t *testing.T) {
 
 	source := config.Config{
 		SyncInterval:        "5m",
-		GitHubTokenEnv:      "MIDDLEMAN_GITHUB_TOKEN",
+		GitHubTokenEnv:      "KENN_FORGE_GITHUB_TOKEN",
 		DefaultPlatformHost: "github.com",
 		Host:                "127.0.0.1",
 		Port:                8091,
@@ -784,7 +784,7 @@ func TestRunWritesStatusAndReusesLiveDefaultStack(t *testing.T) {
 	assert.NotZero(status.FrontendPID)
 	assert.Equal("http://127.0.0.1:39501", status.BackendURL)
 	assert.Equal("http://127.0.0.1:39502", status.FrontendURL)
-	assert.Equal("workflow state", readSQLiteMarker(t, filepath.Join(workDir, "data", "middleman.db")))
+	assert.Equal("workflow state", readSQLiteMarker(t, filepath.Join(workDir, "data", "forge.db")))
 
 	var reuseErr error
 	require.Eventually(func() bool {

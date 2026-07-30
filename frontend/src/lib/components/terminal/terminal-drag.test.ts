@@ -1,4 +1,4 @@
-import { clearActiveTabbedPanelDrag } from "@middleman/ui";
+import { clearActiveTabbedPanelDrag } from "@kenn-forge/ui";
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 import {
   RUNTIME_SESSION_DRAG_MIME,
@@ -21,7 +21,7 @@ describe("terminal drag payloads", () => {
       workspaceId: "workspace-1",
       sessionKey: "session-1",
     });
-    expect(dragStart.dataTransfer?.getData("text/plain")).toBe("Middleman terminal session");
+    expect(dragStart.dataTransfer?.getData("text/plain")).toBe("Kenn Forge terminal session");
     expect(dragStart.dataTransfer?.getData(RUNTIME_SESSION_DRAG_MIME)).not.toContain("session-1");
     expect(dragStart.dataTransfer?.getData(RUNTIME_SESSION_DRAG_MIME)).not.toContain("workspace-1");
 
@@ -45,7 +45,7 @@ describe("terminal drag payloads", () => {
       workspaceId: "workspace-1",
       tabKey: "session:session-1",
     });
-    expect(dragStart.dataTransfer?.getData("text/plain")).toBe("Middleman workflow tab");
+    expect(dragStart.dataTransfer?.getData("text/plain")).toBe("Kenn Forge workflow tab");
     expect(dragStart.dataTransfer?.getData(WORKFLOW_TAB_DRAG_MIME)).not.toContain("session-1");
     expect(dragStart.dataTransfer?.getData(RUNTIME_SESSION_DRAG_MIME)).not.toContain("workspace-1");
     const chromeDragOver = fakeDragEvent({ exposeGetData: false });

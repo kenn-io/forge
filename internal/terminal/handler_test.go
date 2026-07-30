@@ -13,10 +13,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/ptyowner"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
-	"go.kenn.io/middleman/internal/workspace"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/ptyowner"
+	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/workspace"
 )
 
 func openTestDB(t *testing.T) *db.DB {
@@ -135,11 +135,11 @@ func TestTmuxAttachCommandForcesUTF8(t *testing.T) {
 		t,
 		[]string{
 			"/usr/bin/env", "tmux", "-u",
-			"attach-session", "-t", "middleman-test",
+			"attach-session", "-t", "kenn-forge-test",
 		},
 		tmuxAttachCommand(
 			[]string{"/usr/bin/env", "tmux"},
-			"middleman-test",
+			"kenn-forge-test",
 		),
 	)
 }
@@ -161,7 +161,7 @@ func TestHandlerAttachesPtyOwnerTerminal(t *testing.T) {
 		GitHeadRef:      "feature/thing",
 		WorkspaceBranch: "feature/thing",
 		WorktreePath:    t.TempDir(),
-		TmuxSession:     "middleman-owner-test",
+		TmuxSession:     "kenn-forge-owner-test",
 		TerminalBackend: workspace.TerminalBackendPtyOwner,
 		Status:          "ready",
 	}

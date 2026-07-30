@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import { createJobsStore } from "@middleman/ui";
-import type { components } from "@middleman/ui/api/roborev/schema";
+import { createJobsStore } from "@kenn-forge/ui";
+import type { components } from "@kenn-forge/ui/api/roborev/schema";
 
 type ReviewJob = components["schemas"]["ReviewJob"];
 

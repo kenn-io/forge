@@ -7,7 +7,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"go.opentelemetry.io/otel/trace"
 
-	"go.kenn.io/middleman/internal/tracing"
+	"go.kenn.io/forge/internal/tracing"
 )
 
 // otelTraceable reports whether a request should get an otelhttp
@@ -47,7 +47,7 @@ func otelTraceable(basePath string) func(*http.Request) bool {
 // formatter, whenever the stdlib mux recorded a matched pattern on
 // the request (r.Pattern); that second call would otherwise clobber
 // the route-pattern name set by otelSpanMiddleware with the generic
-// "middleman.http" operation name. r.Pattern is exactly the
+// "forge.http" operation name. r.Pattern is exactly the
 // method-prefixed pattern Huma registered (e.g. "GET /healthz"), so
 // prefer it when present and fall back to the static operation name
 // for non-Huma handlers (SPA assets, the roborev proxy).

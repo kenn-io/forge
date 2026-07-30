@@ -18,13 +18,13 @@ describe("terminal clipboard server fallback", () => {
     expect(request.url).toBe(`${window.location.origin}/api/v1/terminal/clipboard`);
     expect(request.method).toBe("POST");
     expect(request.headers.get("Content-Type")).toBe("application/json");
-    expect(request.headers.get("X-Middleman-Csrf")).toBe("1");
+    expect(request.headers.get("X-Kenn-Forge-Csrf")).toBe("1");
     await expect(request.json()).resolves.toEqual({
       text: "copied in Firefox",
     });
   });
 
-  it("rejects when Middleman cannot write the local clipboard", async () => {
+  it("rejects when Kenn Forge cannot write the local clipboard", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => new Response(null, { status: 503 })),

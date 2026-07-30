@@ -1,4 +1,4 @@
-export const KATA_TASK_COLUMNS_STORAGE_KEY = "middleman:kata:issue-columns/v1";
+export const KATA_TASK_COLUMNS_STORAGE_KEY = "kenn-forge:kata:issue-columns/v1";
 
 export const KATA_OPTIONAL_TASK_COLUMNS = [
   { id: "updated", label: "Updated" },

@@ -320,7 +320,7 @@ describe("KataIssueList", () => {
 
   it("reconciles a restored sort whose optional column is disabled", () => {
     localStorage.setItem(KATA_TASK_COLUMNS_STORAGE_KEY, JSON.stringify(["updated", "priority", "due", "tags"]));
-    localStorage.setItem("middleman:kata:issue-sort/v1", JSON.stringify({ key: "owner", direction: "desc" }));
+    localStorage.setItem("kenn-forge:kata:issue-sort/v1", JSON.stringify({ key: "owner", direction: "desc" }));
 
     render(KataIssueList, {
       props: {
@@ -335,7 +335,7 @@ describe("KataIssueList", () => {
     expect(
       screen.getByRole("button", { name: "Sort by Title, currently ascending" }).getAttribute("aria-pressed"),
     ).toBe("true");
-    expect(JSON.parse(localStorage.getItem("middleman:kata:issue-sort/v1")!)).toEqual({
+    expect(JSON.parse(localStorage.getItem("kenn-forge:kata:issue-sort/v1")!)).toEqual({
       key: "title",
       direction: "asc",
     });
@@ -399,7 +399,7 @@ describe("KataIssueList", () => {
     expect(
       screen.getByRole("button", { name: "Sort by Title, currently ascending" }).getAttribute("aria-pressed"),
     ).toBe("true");
-    expect(JSON.parse(localStorage.getItem("middleman:kata:issue-sort/v1")!)).toEqual({
+    expect(JSON.parse(localStorage.getItem("kenn-forge:kata:issue-sort/v1")!)).toEqual({
       key: "title",
       direction: "asc",
     });

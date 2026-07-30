@@ -8,13 +8,13 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/apiclient/generated"
-	"go.kenn.io/middleman/internal/config"
-	"go.kenn.io/middleman/internal/db"
-	ghclient "go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/server"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
-	"go.kenn.io/middleman/internal/testutil/servertest"
+	"go.kenn.io/forge/internal/apiclient/generated"
+	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/db"
+	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/servertest"
 )
 
 // setupNotificationsAPIServer builds an API server with a non-nil config so
@@ -30,12 +30,12 @@ func setupNotificationsAPIServer(t *testing.T) (*server.Server, *db.DB) {
 
 	// A non-nil config enables notifications; the explicit HostCheck override
 	// (which short-circuits config-derived host options) keeps the apitest
-	// "middleman.test" base URL accepted.
+	// "forge.test" base URL accepted.
 	srv := servertest.New(t, database, syncer, nil, "/", &config.Config{}, server.ServerOptions{
 		HostCheck: server.HostCheckOptions{
 			Bind: config.HostKey{Host: "127.0.0.1", Port: "8091"},
 			Allowed: []config.HostKey{
-				{Host: "middleman.test", Port: ""},
+				{Host: "forge.test", Port: ""},
 				{Host: "example.com", Port: ""},
 			},
 		},
@@ -52,7 +52,7 @@ func setupNotificationsAPIServer(t *testing.T) (*server.Server, *db.DB) {
 // seedNotification inserts one notification row directly, bypassing sync, so
 // the test exercises the activity query's own anchoring/author guards at the
 // real SQLite boundary. Direct insertion mirrors rows that an older,
-// pre-filter sync may have already persisted into middleman_notification_items
+// pre-filter sync may have already persisted into forge_notification_items
 // and that Activity must still hide.
 func seedNotification(t *testing.T, database *db.DB, n db.Notification) {
 	t.Helper()

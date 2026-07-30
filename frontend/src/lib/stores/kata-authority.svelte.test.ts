@@ -339,7 +339,7 @@ describe("Kata authority store", () => {
     });
   });
 
-  it("accepts a lower generation after the Middleman server instance changes", async () => {
+  it("accepts a lower generation after the Kenn Forge server instance changes", async () => {
     const loadSnapshot = vi
       .fn<(intent: KataSnapshotIntent) => Promise<KataWorkspaceSnapshotResponse>>()
       .mockResolvedValueOnce(snapshot({ generation: 9, server_instance_id: "server-a" }))

@@ -8,10 +8,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/fleet"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
-	"go.kenn.io/middleman/internal/workspace"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/fleet"
+	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/workspace"
 )
 
 func TestBuildLocalRawSynthesizesAndDedupes(t *testing.T) {
@@ -35,7 +35,7 @@ func TestBuildLocalRawSynthesizesAndDedupes(t *testing.T) {
 		RepoOwner: "o", RepoName: "orphan",
 		ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 1,
 		GitHeadRef: "feature/orphan", WorktreePath: orphanPath,
-		TmuxSession: "middleman-ws-orphan", Status: "ready",
+		TmuxSession: "kenn-forge-ws-orphan", Status: "ready",
 	}))
 
 	srv := newTestHandlerWithWorkspaceManager(t, database)
@@ -60,8 +60,8 @@ func TestBuildLocalRawSynthesizesAndDedupes(t *testing.T) {
 
 // TestBuildLocalRawSynthesizedProjectFillsDefaultBranchFromSyncedRepo confirms
 // the synthesized orphan-workspace project borrows its default branch from the
-// repo middleman already synced — a DB read, not read-path git I/O — while
-// still carrying no RootPath/RepositoryKind (middleman owns no checkout).
+// repo kenn-forge already synced — a DB read, not read-path git I/O — while
+// still carrying no RootPath/RepositoryKind (kenn-forge owns no checkout).
 func TestBuildLocalRawSynthesizedProjectFillsDefaultBranchFromSyncedRepo(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -83,7 +83,7 @@ func TestBuildLocalRawSynthesizedProjectFillsDefaultBranchFromSyncedRepo(t *test
 		RepoOwner: "o", RepoName: "synced",
 		ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 3,
 		GitHeadRef: "feature/synced", WorktreePath: filepath.Join(t.TempDir(), "synced"),
-		TmuxSession: "middleman-ws-synced", Status: "ready",
+		TmuxSession: "kenn-forge-ws-synced", Status: "ready",
 	}))
 
 	srv := newTestHandlerWithWorkspaceManager(t, database)
@@ -117,7 +117,7 @@ func TestBuildLocalRawOverlaysWorkspaceOntoProjectWorktree(t *testing.T) {
 		ID: "ws-shared", Platform: "github", PlatformHost: "github.com",
 		RepoOwner: "o", RepoName: "app",
 		ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 42,
-		GitHeadRef: "feat", WorktreePath: shared, TmuxSession: "middleman-ws-shared", Status: "ready",
+		GitHeadRef: "feat", WorktreePath: shared, TmuxSession: "kenn-forge-ws-shared", Status: "ready",
 	}))
 
 	srv := newTestHandlerWithWorkspaceManager(t, database)
@@ -312,7 +312,7 @@ func TestBuildLocalRawReconcilesLiveTmuxInventory(t *testing.T) {
 		RepoOwner: "o", RepoName: "app",
 		ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 7,
 		GitHeadRef: "feature", WorktreePath: worktreePath,
-		TmuxSession: "middleman-main", Status: "ready",
+		TmuxSession: "kenn-forge-main", Status: "ready",
 		CreatedAt: createdAt,
 	}))
 	require.NoError(database.UpsertWorkspaceRuntimeSession(ctx, &db.WorkspaceRuntimeSession{
@@ -322,7 +322,7 @@ func TestBuildLocalRawReconcilesLiveTmuxInventory(t *testing.T) {
 		Label:       "codex",
 		Kind:        "agent",
 		Scope:       "session",
-		TmuxSession: "middleman-agent",
+		TmuxSession: "kenn-forge-agent",
 		CreatedAt:   createdAt,
 	}))
 
@@ -331,15 +331,15 @@ func TestBuildLocalRawReconcilesLiveTmuxInventory(t *testing.T) {
 		PolledAt:  polledAt,
 		Succeeded: true,
 		Sessions: map[string]fleetTmuxLiveSession{
-			"middleman-main": {
-				Name:        "middleman-main",
+			"kenn-forge-main": {
+				Name:        "kenn-forge-main",
 				WindowCount: 1,
 				Windows: []fleet.TmuxWindowInfo{{
 					ID: "@1", Index: 0, Name: "main",
 				}},
 			},
-			"middleman-agent": {
-				Name:        "middleman-agent",
+			"kenn-forge-agent": {
+				Name:        "kenn-forge-agent",
 				WindowCount: 1,
 				Windows: []fleet.TmuxWindowInfo{{
 					ID: "@2", Index: 0, Name: "agent",
@@ -361,13 +361,13 @@ func TestBuildLocalRawReconcilesLiveTmuxInventory(t *testing.T) {
 	require.NoError(err)
 
 	require.Equal(polledAt.Format(time.RFC3339), raw.Host.TmuxLastPolledAt)
-	main := requireRawTmuxInfo(t, raw.Host.TmuxSessions, "middleman-main")
+	main := requireRawTmuxInfo(t, raw.Host.TmuxSessions, "kenn-forge-main")
 	require.True(main.Managed)
 	require.Equal("session:ws-1:main", main.SessionScopedKey)
 	require.Len(main.Windows, 1)
 
 	runtimeScopedKey := "session:ws-1_codex"
-	agent := requireRawTmuxInfo(t, raw.Host.TmuxSessions, "middleman-agent")
+	agent := requireRawTmuxInfo(t, raw.Host.TmuxSessions, "kenn-forge-agent")
 	require.True(agent.Managed)
 	require.Equal(runtimeScopedKey, agent.SessionScopedKey)
 	requireRawSession(t, raw.Sessions, runtimeScopedKey)
@@ -400,7 +400,7 @@ func TestBuildLocalRawIncludesProjectWorktreeRuntimeTmuxSession(t *testing.T) {
 	require.NoError(database.UpsertProjectWorktreeTmuxSession(ctx, &db.ProjectWorktreeTmuxSession{
 		WorktreeID:  worktree.ID,
 		SessionKey:  "wt_codex",
-		SessionName: "middleman-project-worktree-agent",
+		SessionName: "kenn-forge-project-worktree-agent",
 		TargetKey:   "codex",
 		CreatedAt:   createdAt,
 	}))
@@ -410,8 +410,8 @@ func TestBuildLocalRawIncludesProjectWorktreeRuntimeTmuxSession(t *testing.T) {
 		PolledAt:  polledAt,
 		Succeeded: true,
 		Sessions: map[string]fleetTmuxLiveSession{
-			"middleman-project-worktree-agent": {
-				Name:        "middleman-project-worktree-agent",
+			"kenn-forge-project-worktree-agent": {
+				Name:        "kenn-forge-project-worktree-agent",
 				WindowCount: 1,
 			},
 		},
@@ -429,7 +429,7 @@ func TestBuildLocalRawIncludesProjectWorktreeRuntimeTmuxSession(t *testing.T) {
 	require.Equal("codex", session.Label)
 
 	info := requireRawTmuxInfo(
-		t, raw.Host.TmuxSessions, "middleman-project-worktree-agent",
+		t, raw.Host.TmuxSessions, "kenn-forge-project-worktree-agent",
 	)
 	require.True(info.Managed)
 	require.Equal(wtKey, info.WorktreeKey)

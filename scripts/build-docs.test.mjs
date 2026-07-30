@@ -7,7 +7,7 @@ import { test } from "node:test";
 import { stageDocsSource } from "./build-docs.mjs";
 
 test("docs staging excludes previously generated screenshots", async (t) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "middleman-docs-build-test-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "kenn-forge-docs-build-test-"));
   t.after(() => rm(root, { recursive: true, force: true }));
 
   const source = path.join(root, "source");

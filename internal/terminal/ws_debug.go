@@ -14,7 +14,7 @@ func logWebsocketDebug(msg string, args ...any) {
 }
 
 func websocketDebugEnabled() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("MIDDLEMAN_WS_DEBUG"))) {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("KENN_FORGE_WS_DEBUG"))) {
 	case "1", "true", "yes", "on":
 		return true
 	default:

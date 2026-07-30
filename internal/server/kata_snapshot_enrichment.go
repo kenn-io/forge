@@ -11,9 +11,9 @@ import (
 
 	katagenerated "go.kenn.io/kata/pkg/client/generated"
 
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/server/httpapi"
-	"go.kenn.io/middleman/internal/server/kataapi"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/server/kataapi"
 )
 
 const (
@@ -25,7 +25,7 @@ const (
 	// kataSelectedHistoryMaxBytes bounds the serialized cost of one selected
 	// task's aggregated history across pagination. A daemon that keeps
 	// returning matching events must exhaust this budget instead of
-	// Middleman's memory; the history stage then degrades with an upstream
+	// Kenn Forge's memory; the history stage then degrades with an upstream
 	// error instead of failing the snapshot.
 	kataSelectedHistoryMaxBytes   = uint64(32 << 20)
 	kataLinkedPeerLoadConcurrency = 8

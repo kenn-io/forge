@@ -4,7 +4,7 @@ import (
 	"slices"
 	"time"
 
-	"go.kenn.io/middleman/internal/fleet"
+	"go.kenn.io/forge/internal/fleet"
 )
 
 const fleetSessionStatusExited = "exited"

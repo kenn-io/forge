@@ -1,5 +1,5 @@
 // Shell coverage matrix for the shared flash store: a flash raised through
-// @middleman/ui/stores/flash must render in a mounted kit FlashBanner in
+// @kenn-forge/ui/stores/flash must render in a mounted kit FlashBanner in
 // every app presentation, not just the desktop shell. The jsdom App test
 // covers the focus/phone presentation (its 1024px #app classifies compact);
 // this browser suite covers the desktop shell (wide viewport) and the
@@ -22,12 +22,12 @@ describe("flash rendering across app shells", () => {
   let overlayTarget: HTMLElement | null = null;
 
   beforeEach(async () => {
-    const { getFlashes, dismissFlash } = await import("@middleman/ui/stores/flash");
+    const { getFlashes, dismissFlash } = await import("@kenn-forge/ui/stores/flash");
     for (const flash of getFlashes()) dismissFlash(flash.id);
   });
 
   afterEach(async () => {
-    const { getFlashes, dismissFlash } = await import("@middleman/ui/stores/flash");
+    const { getFlashes, dismissFlash } = await import("@kenn-forge/ui/stores/flash");
     for (const flash of getFlashes()) dismissFlash(flash.id);
     overlayUnmount?.();
     overlayUnmount = null;
@@ -35,11 +35,11 @@ describe("flash rendering across app shells", () => {
     overlayTarget = null;
     mounted?.unmount();
     mounted = null;
-    delete window.__middleman_config;
+    delete window.__kenn_forge_config;
   });
 
   async function visibleFlash(message: string): Promise<HTMLElement> {
-    const { showFlash } = await import("@middleman/ui/stores/flash");
+    const { showFlash } = await import("@kenn-forge/ui/stores/flash");
     showFlash(message, { tone: "danger" });
     return vi.waitFor(() => {
       const stack = document.querySelector<HTMLElement>(".kit-flash-stack");
@@ -98,7 +98,7 @@ describe("flash rendering across app shells", () => {
 
   it("pins flashes to the page edge when embed config hides the header", async () => {
     await page.viewport(1280, 900);
-    window.__middleman_config = { embed: { hideHeader: true } };
+    window.__kenn_forge_config = { embed: { hideHeader: true } };
     mounted = await mountBrowserApp("/settings");
     await vi.waitFor(() => expect(document.querySelector(".app-main")).not.toBeNull(), WAIT);
 

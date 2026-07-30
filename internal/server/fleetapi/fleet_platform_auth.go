@@ -6,7 +6,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"go.kenn.io/middleman/internal/config"
+	"go.kenn.io/forge/internal/config"
 )
 
 // fleetPlatformAuthInterval is how often the monitor re-resolves the host's

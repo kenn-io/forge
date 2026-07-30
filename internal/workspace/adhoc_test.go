@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/forge/internal/db"
 )
 
 func TestCreateAdHocGeneratesBranchWhenUnnamed(t *testing.T) {
@@ -27,7 +27,7 @@ func TestCreateAdHocGeneratesBranchWhenUnnamed(t *testing.T) {
 
 	assert.Equal(db.WorkspaceItemTypeAdHoc, ws.ItemType)
 	assert.Equal(0, ws.ItemNumber)
-	assert.True(strings.HasPrefix(ws.GitHeadRef, "middleman/work-"),
+	assert.True(strings.HasPrefix(ws.GitHeadRef, "kenn-forge/work-"),
 		"generated branch %q should carry the work prefix", ws.GitHeadRef)
 	assert.Equal(ws.GitHeadRef, ws.WorkspaceBranch)
 	assert.Equal(db.AdHocWorkspaceItemKey(ws.GitHeadRef), ws.ItemKey)
@@ -170,7 +170,7 @@ func TestCreateAdHocReuseExistingLocalBranch(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(ws)
 
-	// An empty workspace branch means middleman did not create the branch, so
+	// An empty workspace branch means kenn-forge did not create the branch, so
 	// rollback and delete leave the user's pre-existing branch alone.
 	assert.Empty(ws.WorkspaceBranch)
 	assert.Equal(branch, ws.GitHeadRef)

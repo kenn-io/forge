@@ -60,18 +60,18 @@ jobs:
           mkdir -p dist
           LDFLAGS="-s -w -X main.version=v${VERSION} -X main.commit=${COMMIT} -X main.buildDate=${BUILD_DATE}"
           go build -buildvcs=false -ldflags="$LDFLAGS" -trimpath \
-            -o dist/middleman ./cmd/middleman
+            -o dist/kenn-forge ./cmd/kenn-forge
 
-          ./dist/middleman version
+          ./dist/kenn-forge version
 
           cd dist
-          ARCHIVE="middleman_${VERSION}_linux_${{ matrix.goarch }}.tar.gz"
-          tar czf "$ARCHIVE" middleman
-          rm middleman
+          ARCHIVE="forge_${VERSION}_linux_${{ matrix.goarch }}.tar.gz"
+          tar czf "$ARCHIVE" kenn-forge
+          rm kenn-forge
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: middleman-linux-${{ matrix.goarch }}
+          name: kenn-forge-linux-${{ matrix.goarch }}
           path: dist/*.tar.gz
 
   build:
@@ -131,25 +131,25 @@ jobs:
           mkdir -p dist
           LDFLAGS="-s -w -X main.version=v${VERSION} -X main.commit=${COMMIT} -X main.buildDate=${BUILD_DATE}"
           go build -buildvcs=false -ldflags="$LDFLAGS" -trimpath \
-            -o dist/middleman${EXT} ./cmd/middleman
+            -o dist/kenn-forge${EXT} ./cmd/kenn-forge
 
           if [ "$GOOS" != "darwin" ] || [ "$GOARCH" = "$(go env GOHOSTARCH)" ]; then
-            ./dist/middleman${EXT} version
+            ./dist/kenn-forge${EXT} version
           fi
 
           cd dist
           if [ "$GOOS" = "windows" ]; then
-            ARCHIVE="middleman_${VERSION}_${{ matrix.goos }}_${{ matrix.goarch }}.zip"
-            7z a "$ARCHIVE" middleman${EXT}
+            ARCHIVE="forge_${VERSION}_${{ matrix.goos }}_${{ matrix.goarch }}.zip"
+            7z a "$ARCHIVE" kenn-forge${EXT}
           else
-            ARCHIVE="middleman_${VERSION}_${{ matrix.goos }}_${{ matrix.goarch }}.tar.gz"
-            tar czf "$ARCHIVE" middleman${EXT}
+            ARCHIVE="forge_${VERSION}_${{ matrix.goos }}_${{ matrix.goarch }}.tar.gz"
+            tar czf "$ARCHIVE" kenn-forge${EXT}
           fi
-          rm middleman${EXT}
+          rm kenn-forge${EXT}
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: middleman-${{ matrix.goos }}-${{ matrix.goarch }}
+          name: kenn-forge-${{ matrix.goos }}-${{ matrix.goarch }}
           path: |
             dist/*.tar.gz
             dist/*.zip

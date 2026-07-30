@@ -10,9 +10,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/platform"
-	gitlabprovider "go.kenn.io/middleman/internal/platform/gitlab"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/platform"
+	gitlabprovider "go.kenn.io/forge/internal/platform/gitlab"
+	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
 // fakeGitLabReviewerAPI serves the minimal GitLab v4 surface the

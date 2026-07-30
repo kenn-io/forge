@@ -7,7 +7,7 @@ import test from "node:test";
 import { checkPlaywrightVersion } from "./check-playwright-version.mjs";
 
 async function writeFixture(t, workflow) {
-  const root = await mkdtemp(path.join(os.tmpdir(), "middleman-playwright-version-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "kenn-forge-playwright-version-"));
   t.after(() => rm(root, { force: true, recursive: true }));
 
   for (const directory of ["frontend", "packages/github-app-ui", ".github/docker/playwright", ".github/workflows"]) {

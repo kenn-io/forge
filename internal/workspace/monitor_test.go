@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/forge/internal/db"
 )
 
 func setupMonitorRepo(t *testing.T) string {
@@ -54,10 +54,10 @@ func insertMonitorWorkspace(
 		RepoName:           "widget",
 		ItemType:           db.WorkspaceItemTypeIssue,
 		ItemNumber:         7,
-		GitHeadRef:         "middleman/issue-7",
+		GitHeadRef:         "kenn-forge/issue-7",
 		AssociatedPRNumber: associatedPRNumber,
 		WorktreePath:       worktreePath,
-		TmuxSession:        "middleman-ws-issue",
+		TmuxSession:        "kenn-forge-ws-issue",
 		Status:             "ready",
 	}
 	require.NoError(t, d.InsertWorkspace(context.Background(), &ws))
@@ -78,9 +78,9 @@ func insertMonitorWorkspaceWithIdentity(
 		RepoName:     name,
 		ItemType:     db.WorkspaceItemTypeIssue,
 		ItemNumber:   7,
-		GitHeadRef:   "middleman/issue-7",
+		GitHeadRef:   "kenn-forge/issue-7",
 		WorktreePath: worktreePath,
-		TmuxSession:  "middleman-" + id,
+		TmuxSession:  "kenn-forge-" + id,
 		Status:       "ready",
 	}))
 	return id
@@ -219,7 +219,7 @@ func TestPRMonitorRefreshWorkspaceAssociationAssociatesKataTask(t *testing.T) {
 		ItemKey:      db.KataWorkspaceItemKey(kataMetadata),
 		GitHeadRef:   "feature/kata-task",
 		WorktreePath: worktreePath,
-		TmuxSession:  "middleman-ws-kata",
+		TmuxSession:  "kenn-forge-ws-kata",
 		Status:       "ready",
 		KataMetadata: &kataMetadata,
 	}))
@@ -395,10 +395,10 @@ func TestPRMonitorRunOnceSkipsSyntheticIssueBranch(t *testing.T) {
 
 	repoID := seedRepo(t, d, "github.com", "acme", "widget")
 	seedIssue(t, d, repoID, 7, "Track workspace association")
-	seedMR(t, d, repoID, 42, "middleman/issue-7")
+	seedMR(t, d, repoID, 42, "kenn-forge/issue-7")
 
 	worktreePath := setupMonitorRepo(t)
-	runWorkspaceTestGit(t, worktreePath, "checkout", "-b", "middleman/issue-7")
+	runWorkspaceTestGit(t, worktreePath, "checkout", "-b", "kenn-forge/issue-7")
 	insertMonitorWorkspace(t, d, worktreePath, nil)
 
 	monitor := NewPRMonitor(d)
@@ -422,17 +422,17 @@ func TestPRMonitorRunOnceAssociatesPRFromManagedIssueBranch(t *testing.T) {
 	seedIssue(t, d, repoID, 7, "Track workspace association")
 	seedMRWithHeadRepo(
 		t, d, repoID, 42,
-		"middleman/issue-7", "https://github.com/acme/widget.git",
+		"kenn-forge/issue-7", "https://github.com/acme/widget.git",
 	)
 
 	worktreePath := setupMonitorRepo(t)
-	runWorkspaceTestGit(t, worktreePath, "checkout", "-b", "middleman/issue-7")
+	runWorkspaceTestGit(t, worktreePath, "checkout", "-b", "kenn-forge/issue-7")
 	require.NoError(os.WriteFile(
 		filepath.Join(worktreePath, "feature.txt"), []byte("feature\n"), 0o644,
 	))
 	runWorkspaceTestGit(t, worktreePath, "add", ".")
 	runWorkspaceTestGit(t, worktreePath, "commit", "-m", "feature commit")
-	runWorkspaceTestGit(t, worktreePath, "push", "-u", "origin", "middleman/issue-7")
+	runWorkspaceTestGit(t, worktreePath, "push", "-u", "origin", "kenn-forge/issue-7")
 	runWorkspaceTestGit(
 		t, worktreePath,
 		"remote", "set-url", "origin", "git@github.com:acme/widget.git",
@@ -456,7 +456,7 @@ func TestPRMonitorRunOnceAssociatesPRFromManagedIssueBranch(t *testing.T) {
 func TestPRMonitorRunOnceAssociatesPRWhenSlugWorkspaceCheckedOutToBareBranch(t *testing.T) {
 	// Regression: a slug-style workspace (GitHeadRef = the slugged
 	// branch) checked out to the legacy bare-form branch
-	// `middleman/issue-<n>` is NOT on its managed branch and should
+	// `kenn-forge/issue-<n>` is NOT on its managed branch and should
 	// not suppress PR detection. The bare-form fallback only applies
 	// to pre-feature workspaces with an empty GitHeadRef.
 	assert := assert.New(t)
@@ -468,7 +468,7 @@ func TestPRMonitorRunOnceAssociatesPRWhenSlugWorkspaceCheckedOutToBareBranch(t *
 	seedIssue(t, d, repoID, 7, "Track workspace association")
 
 	worktreePath := setupMonitorRepo(t)
-	runWorkspaceTestGit(t, worktreePath, "checkout", "-b", "middleman/issue-7")
+	runWorkspaceTestGit(t, worktreePath, "checkout", "-b", "kenn-forge/issue-7")
 	require.NoError(os.WriteFile(
 		filepath.Join(worktreePath, "feature.txt"), []byte("feature\n"), 0o644,
 	))
@@ -485,7 +485,7 @@ func TestPRMonitorRunOnceAssociatesPRWhenSlugWorkspaceCheckedOutToBareBranch(t *
 		Title:           "Test PR",
 		Author:          "author",
 		State:           "open",
-		HeadBranch:      "middleman/issue-7",
+		HeadBranch:      "kenn-forge/issue-7",
 		PlatformHeadSHA: headSHA,
 		BaseBranch:      "main",
 		CreatedAt:       now,
@@ -501,9 +501,9 @@ func TestPRMonitorRunOnceAssociatesPRWhenSlugWorkspaceCheckedOutToBareBranch(t *
 		RepoName:     "widget",
 		ItemType:     db.WorkspaceItemTypeIssue,
 		ItemNumber:   7,
-		GitHeadRef:   "middleman/issue-7-track-workspace-association",
+		GitHeadRef:   "kenn-forge/issue-7-track-workspace-association",
 		WorktreePath: worktreePath,
-		TmuxSession:  "middleman-ws-issue-slug",
+		TmuxSession:  "kenn-forge-ws-issue-slug",
 		Status:       "ready",
 	}))
 

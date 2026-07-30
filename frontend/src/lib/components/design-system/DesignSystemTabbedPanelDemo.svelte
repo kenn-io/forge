@@ -8,7 +8,7 @@
     type TabbedPanelDirection,
     type TabbedPanelNode,
     updateTabbedPanelSplitRatio,
-  } from "@middleman/ui";
+  } from "@kenn-forge/ui";
 
   import {
     createTabbedPanelDemoNode,

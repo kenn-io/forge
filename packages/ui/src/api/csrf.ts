@@ -1,6 +1,6 @@
 export type FetchFn = typeof globalThis.fetch;
 
-export const MIDDLEMAN_CSRF_HEADER = "X-Middleman-Csrf";
+export const KENN_FORGE_CSRF_HEADER = "X-Kenn-Forge-Csrf";
 
 const formURLSearchParamsContentType = "application/x-www-form-urlencoded;charset=UTF-8";
 
@@ -47,13 +47,13 @@ export function csrfFetch(inner: FetchFn): FetchFn {
     const method = request.method.toUpperCase();
     if (method !== "GET" && method !== "HEAD") {
       const defaultToJSON = shouldDefaultContentTypeToJSON(requestInit, request);
-      if (defaultToJSON || !request.headers.has(MIDDLEMAN_CSRF_HEADER)) {
+      if (defaultToJSON || !request.headers.has(KENN_FORGE_CSRF_HEADER)) {
         const headers = new Headers(request.headers);
         if (defaultToJSON) {
           headers.set("Content-Type", "application/json");
         }
-        if (!headers.has(MIDDLEMAN_CSRF_HEADER)) {
-          headers.set(MIDDLEMAN_CSRF_HEADER, "1");
+        if (!headers.has(KENN_FORGE_CSRF_HEADER)) {
+          headers.set(KENN_FORGE_CSRF_HEADER, "1");
         }
         return inner(new Request(request, { headers }));
       }

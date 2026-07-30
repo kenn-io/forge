@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 
-	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/forge/internal/platform"
 )
 
 const maxMarkdownImageBytes = 25 << 20

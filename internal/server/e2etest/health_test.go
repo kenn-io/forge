@@ -45,7 +45,7 @@ func TestHealthEndpointsE2E_ReturnOKWhenReady(t *testing.T) {
 }
 
 func TestHealthEndpointsE2E_RemainAvailableAtRootWithBasePath(t *testing.T) {
-	srv := setupWithBasePath(t, "/middleman/", nil)
+	srv := setupWithBasePath(t, "/kenn-forge/", nil)
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 

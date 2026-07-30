@@ -11,14 +11,14 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/apiclient"
-	"go.kenn.io/middleman/internal/apiclient/generated"
-	ghclient "go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/platform"
-	platformgithub "go.kenn.io/middleman/internal/platform/github"
-	"go.kenn.io/middleman/internal/server"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
-	"go.kenn.io/middleman/internal/testutil/servertest"
+	"go.kenn.io/forge/internal/apiclient"
+	"go.kenn.io/forge/internal/apiclient/generated"
+	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/platform"
+	platformgithub "go.kenn.io/forge/internal/platform/github"
+	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/servertest"
 )
 
 func TestSyncRoutesWithoutProviderSyncerE2E(t *testing.T) {
@@ -121,10 +121,10 @@ func TestSyncListNotModifiedDoesNotChangeRateLimitBudgetE2E(t *testing.T) {
 	srv := servertest.New(t, database, syncer, nil, "/", nil, server.ServerOptions{
 		HostCheckAllowLoopbackAnyPort: true,
 	})
-	middleman := httptest.NewServer(srv)
-	defer middleman.Close()
+	forge := httptest.NewServer(srv)
+	defer forge.Close()
 
-	api, err := apiclient.NewWithHTTPClient(middleman.URL, middleman.Client())
+	api, err := apiclient.NewWithHTTPClient(forge.URL, forge.Client())
 	require.NoError(err)
 
 	syncLastRunAt := func() *time.Time {

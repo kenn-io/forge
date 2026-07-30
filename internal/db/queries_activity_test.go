@@ -657,7 +657,7 @@ func insertOversizedBranchCommitRow(
 	committedAt time.Time,
 ) error {
 	_, err := d.rw.ExecContext(ctx, `
-		INSERT INTO middleman_branch_commits (
+		INSERT INTO forge_branch_commits (
 		    repo_id, branch_name, commit_sha, author_name, author_email,
 		    authored_at, committer_name, committer_email, committed_at,
 		    subject
@@ -874,7 +874,7 @@ func TestUpsertMREventsRewritesLegacyCreatedAtOnConflict(t *testing.T) {
 	prID := insertTestMR(t, d, repoID, 1, "Rewrite timestamps", base)
 
 	_, err := d.WriteDB().ExecContext(ctx, `
-		INSERT INTO middleman_mr_events
+		INSERT INTO forge_mr_events
 		    (merge_request_id, platform_id, event_type, author, summary, body,
 		     metadata_json, created_at, dedupe_key)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -903,7 +903,7 @@ func TestUpsertMREventsRewritesLegacyCreatedAtOnConflict(t *testing.T) {
 
 	var raw string
 	err = d.ReadDB().QueryRowContext(ctx,
-		`SELECT created_at FROM middleman_mr_events WHERE merge_request_id = ? AND dedupe_key = ?`,
+		`SELECT created_at FROM forge_mr_events WHERE merge_request_id = ? AND dedupe_key = ?`,
 		prID,
 		"comment-legacy",
 	).Scan(&raw)
@@ -964,7 +964,7 @@ func TestUpsertIssueEventsRewritesLegacyCreatedAtOnConflict(t *testing.T) {
 	issueID := insertTestIssue(t, d, repoID, 7, "Rewrite timestamps", base)
 
 	_, err := d.WriteDB().ExecContext(ctx, `
-		INSERT INTO middleman_issue_events
+		INSERT INTO forge_issue_events
 		    (issue_id, platform_id, event_type, author, summary, body,
 		     metadata_json, created_at, dedupe_key)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -993,7 +993,7 @@ func TestUpsertIssueEventsRewritesLegacyCreatedAtOnConflict(t *testing.T) {
 
 	var raw string
 	err = d.ReadDB().QueryRowContext(ctx,
-		`SELECT created_at FROM middleman_issue_events WHERE issue_id = ? AND dedupe_key = ?`,
+		`SELECT created_at FROM forge_issue_events WHERE issue_id = ? AND dedupe_key = ?`,
 		issueID,
 		"issue-comment-legacy",
 	).Scan(&raw)

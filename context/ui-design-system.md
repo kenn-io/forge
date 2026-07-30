@@ -1,6 +1,6 @@
 # UI Design System
 
-Use this document as the intent-level guide for frontend UI work in `middleman`. It should stay short, stable, and useful in model context.
+Use this document as the intent-level guide for frontend UI work in `kenn-forge`. It should stay short, stable, and useful in model context.
 
 ## Purpose
 
@@ -10,7 +10,7 @@ Use this document as the intent-level guide for frontend UI work in `middleman`.
 
 ## Design intent
 
-`middleman` is a dense maintainer tool, not a marketing surface.
+`kenn-forge` is a dense maintainer tool, not a marketing surface.
 
 - Layouts should feel compact, deliberate, and information-rich.
 - Visual emphasis should come from hierarchy and semantic color, not oversized controls or decorative effects.
@@ -24,7 +24,7 @@ Use this document as the intent-level guide for frontend UI work in `middleman`.
 - Tokens: `@kenn-io/kit-ui/theme.css` and `@kenn-io/kit-ui/mermaid.css`
   (the `--mermaid-*`/`--viewer-scrim` tokens and diagram viewer chrome;
   both imported at the top of `frontend/src/app.css`) plus the
-  middleman-specific tokens `app.css` defines on top (chrome, budget,
+  kenn-forge-specific tokens `app.css` defines on top (chrome, budget,
   workflow status, review, verdict, diff, viewer glass controls)
 - Shared primitives: `@kenn-io/kit-ui` first; app-specific compositions live
   in `packages/ui/src/components/shared/` and
@@ -39,16 +39,16 @@ Use this document as the intent-level guide for frontend UI work in `middleman`.
 
 ## kit-ui contract
 
-middleman consumes `@kenn-io/kit-ui` as source, pinned to one commit SHA in
+kenn-forge consumes `@kenn-io/kit-ui` as source, pinned to one commit SHA in
 both `frontend/package.json` and `packages/ui/package.json` (bump both
 together; never a `file:` path — bun's store keys by name@version and goes
 stale). Its runtime deps are peers and its rune-module source cannot be
 prebundled: keep it in vite `optimizeDeps.exclude` with transitive deps as
 `"@kenn-io/kit-ui > <dep>"` includes. See kit-ui's `docs/migration.md` and
-`docs/theming.md`. Invariants middleman relies on:
+`docs/theming.md`. Invariants kenn-forge relies on:
 
 - Theme tokens come from kit `theme.css`; theming is `dark` /
-  `high-contrast` classes on `<html>`. `@middleman/ui` additionally
+  `high-contrast` classes on `<html>`. `@kenn-forge/ui` additionally
   consumes app tokens from `frontend/src/app.css` and has no standalone
   theme — style-asserting harnesses must load `app.css` like
   `browserAppHarness.ts`.
@@ -67,7 +67,7 @@ prebundled: keep it in vite `optimizeDeps.exclude` with transitive deps as
   `trailing`; no downstream `.kit-chip__label` overrides — repo chips
   depend on its ellipsis.
 - Theme resolution: kit's theme store owns dark/light/system resolution
-  and persistence (`middleman-theme` key); `theme.svelte.ts` adapts it. A
+  and persistence (`kenn-forge-theme` key); `theme.svelte.ts` adapts it. A
   host-forced mode applies classes directly and never persists via
   `setThemeMode`; an explicit user toggle persists even under a forced
   mode. Relative timestamps use kit `formatRelativeTime`;
@@ -90,7 +90,7 @@ prebundled: keep it in vite `optimizeDeps.exclude` with transitive deps as
   `test/setup.ts` stubs the latter two, focus-trap tests install
   `stubOffsetParent.ts`, and synthetic Tab only exercises kit's trap at
   wrap boundaries.
-- `CollapsibleSidebar`: middleman relies on the `kit-sidebar-layout*` BEM
+- `CollapsibleSidebar`: kenn-forge relies on the `kit-sidebar-layout*` BEM
   classes, `data-collapsed`, `SplitResizeEvent`, and `SidebarToggle`
   modifiers; the narrow floating overlay is kit-owned via the `overlay`
   prop — no app-side copies of its CSS.
@@ -118,7 +118,7 @@ prebundled: keep it in vite `optimizeDeps.exclude` with transitive deps as
   wrapped instead. Every stage must expose the same accessible names
   (`packages/ui/src/components/roborev/ReviewDrawer.svelte::.footer-actions-fit`,
   `packages/ui/src/components/detail/PullDetail.svelte::measuredPrimaryActions`).
-- Flash: one shared store (`@middleman/ui/stores/flash`); kit `FlashBanner`
+- Flash: one shared store (`@kenn-forge/ui/stores/flash`); kit `FlashBanner`
   mounts once per shell in a page-level fixed layer below measured shell chrome
   and above modal backdrops, never inside feature containers; headerless shells
   use the viewport edge (`frontend/src/App.svelte:968`).
@@ -206,7 +206,7 @@ component instead of adding a fourth copy.
 
 ### SidebarToggle
 
-Use kit-ui's `SidebarToggle` (re-exported from `@middleman/ui`) for collapse and expand controls on left-side navigation rails.
+Use kit-ui's `SidebarToggle` (re-exported from `@kenn-forge/ui`) for collapse and expand controls on left-side navigation rails.
 
 Intent:
 

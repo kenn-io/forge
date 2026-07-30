@@ -1,4 +1,4 @@
-module go.kenn.io/middleman
+module go.kenn.io/forge
 
 go 1.26.3
 

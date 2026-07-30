@@ -11,20 +11,20 @@ describe("csrfFetch", () => {
     });
 
     const fetch = csrfFetch(inner);
-    await fetch("https://middleman.test/api/v1/settings", {
+    await fetch("https://forge.test/api/v1/settings", {
       method: "POST",
       body: JSON.stringify({ theme: "dark" }),
       headers: { "X-Test": "present" },
     });
 
-    expect(request?.url).toBe("https://middleman.test/api/v1/settings");
+    expect(request?.url).toBe("https://forge.test/api/v1/settings");
     expect(request?.method).toBe("POST");
     expect(request?.headers.get("X-Test")).toBe("present");
     expect(request?.headers.get("Content-Type")).toBe("application/json");
     await expect(request?.text()).resolves.toBe('{"theme":"dark"}');
   });
 
-  it("attaches the middleman csrf proof header to mutation requests", async () => {
+  it("attaches the kenn-forge csrf proof header to mutation requests", async () => {
     let request: Request | null = null;
     const inner = vi.fn(async (input: RequestInfo | URL) => {
       request = input instanceof Request ? input : new Request(input);
@@ -32,15 +32,15 @@ describe("csrfFetch", () => {
     });
 
     const fetch = csrfFetch(inner);
-    await fetch("https://middleman.test/api/v1/settings", {
+    await fetch("https://forge.test/api/v1/settings", {
       method: "PUT",
       body: JSON.stringify({ modes: {} }),
     });
 
-    expect(request?.headers.get("X-Middleman-Csrf")).toBe("1");
+    expect(request?.headers.get("X-Kenn-Forge-Csrf")).toBe("1");
   });
 
-  it("does not attach the middleman csrf proof header to reads", async () => {
+  it("does not attach the kenn-forge csrf proof header to reads", async () => {
     let request: Request | null = null;
     const inner = vi.fn(async (input: RequestInfo | URL) => {
       request = input instanceof Request ? input : new Request(input);
@@ -48,9 +48,9 @@ describe("csrfFetch", () => {
     });
 
     const fetch = csrfFetch(inner);
-    await fetch("https://middleman.test/api/v1/settings");
+    await fetch("https://forge.test/api/v1/settings");
 
-    expect(request?.headers.has("X-Middleman-Csrf")).toBe(false);
+    expect(request?.headers.has("X-Kenn-Forge-Csrf")).toBe(false);
   });
 
   it("does not overwrite generated multipart content types", async () => {
@@ -64,7 +64,7 @@ describe("csrfFetch", () => {
     body.append("upload", new Blob(["avatar"]), "avatar.txt");
 
     const fetch = csrfFetch(inner);
-    await fetch("https://middleman.test/api/v1/uploads", { method: "POST", body });
+    await fetch("https://forge.test/api/v1/uploads", { method: "POST", body });
 
     expect(request?.headers.get("Content-Type")).not.toBe("application/json");
   });
@@ -77,7 +77,7 @@ describe("csrfFetch", () => {
     });
 
     const fetch = csrfFetch(inner);
-    await fetch("https://middleman.test/api/v1/search", {
+    await fetch("https://forge.test/api/v1/search", {
       method: "POST",
       body: new URLSearchParams({ q: "notifications" }),
     });
@@ -98,7 +98,7 @@ describe("csrfFetch", () => {
     if (!OtherURLSearchParams) throw new Error("missing iframe URLSearchParams");
 
     const fetch = csrfFetch(inner);
-    await fetch("https://middleman.test/api/v1/search", {
+    await fetch("https://forge.test/api/v1/search", {
       method: "POST",
       body: new OtherURLSearchParams({ q: "notifications" }) as BodyInit,
     });
@@ -117,7 +117,7 @@ describe("csrfFetch", () => {
 
     const fetch = csrfFetch(inner);
     await fetch(
-      new Request("https://middleman.test/api/v1/ready", {
+      new Request("https://forge.test/api/v1/ready", {
         method: "POST",
         body: JSON.stringify({ ready: true }),
       }),
@@ -135,7 +135,7 @@ describe("csrfFetch", () => {
     });
 
     const fetch = csrfFetch(inner);
-    await fetch("https://middleman.test/api/v1/notifications/sync", { method: "POST" });
+    await fetch("https://forge.test/api/v1/notifications/sync", { method: "POST" });
 
     expect(request?.method).toBe("POST");
     expect(request?.headers.get("Content-Type")).toBe("application/json");

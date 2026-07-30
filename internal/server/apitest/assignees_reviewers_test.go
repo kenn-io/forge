@@ -10,13 +10,13 @@ import (
 	gh "github.com/google/go-github/v89/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/db"
-	ghclient "go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/platform"
-	"go.kenn.io/middleman/internal/server"
-	"go.kenn.io/middleman/internal/testutil"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
-	"go.kenn.io/middleman/internal/testutil/servertest"
+	"go.kenn.io/forge/internal/db"
+	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/platform"
+	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/testutil"
+	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/servertest"
 )
 
 type assigneesAPIResponse struct {
@@ -259,7 +259,7 @@ func TestAPISetPullReviewersRemovesDriftedProviderReviewers(t *testing.T) {
 	pr, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 1)
 	require.NoError(err)
 	// The synced row believes only alice is requested, but the provider
-	// drifted: carol was requested outside middleman. Replacing the set
+	// drifted: carol was requested outside kenn-forge. Replacing the set
 	// with alice must still remove carol because the handler diffs
 	// against live provider state.
 	require.NoError(database.UpdateMergeRequestReviewers(t.Context(), repoID, pr.ID, []string{"alice"}))

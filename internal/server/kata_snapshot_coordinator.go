@@ -15,9 +15,9 @@ import (
 
 	"golang.org/x/sync/singleflight"
 
-	"go.kenn.io/middleman/internal/kata"
-	"go.kenn.io/middleman/internal/server/httpapi"
-	"go.kenn.io/middleman/internal/server/kataapi"
+	"go.kenn.io/forge/internal/kata"
+	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/server/kataapi"
 )
 
 var (

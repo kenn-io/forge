@@ -10,10 +10,10 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/archive/report"
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/platform"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/archive/report"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/platform"
+	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
 func TestArchiveRetryClassifierTreatsAttemptBudgetRefusalAsTransient(t *testing.T) {
@@ -224,7 +224,7 @@ func TestArchiveServicePauseRejectsInFlightInventoryCommit(t *testing.T) {
 	assert.Nil(states[0].IssueInventory.NextCursor)
 	var itemCount int
 	require.NoError(database.ReadDB().QueryRowContext(t.Context(), `
-		SELECT COUNT(*) FROM middleman_archive_items WHERE repo_id = ?`, repoID,
+		SELECT COUNT(*) FROM forge_archive_items WHERE repo_id = ?`, repoID,
 	).Scan(&itemCount))
 	assert.Zero(itemCount)
 }
@@ -244,12 +244,12 @@ func TestArchiveServiceRetryAuthenticationPreservesProgress(t *testing.T) {
 	cursor := "issue-page-2"
 	watermark := now.Add(-time.Hour)
 	_, err = database.WriteDB().ExecContext(t.Context(), `
-		UPDATE middleman_archive_repo_scans
+		UPDATE forge_archive_repo_scans
 		SET next_cursor = ?, status = 'running', page_count = 1
 		WHERE repo_id = ? AND scan = 'issue_inventory'`, cursor, repoID)
 	require.NoError(err)
 	_, err = database.WriteDB().ExecContext(t.Context(), `
-		UPDATE middleman_archive_repos
+		UPDATE forge_archive_repos
 		SET maintenance_watermark = ?, last_error_code = 'authentication_failed',
 			last_error_detail = 'expired token', next_retry_at = ?
 		WHERE repo_id = ?`, watermark, now.Add(time.Hour), repoID)
@@ -282,7 +282,7 @@ func TestArchiveAuthenticationFailureDefersPendingHydration(t *testing.T) {
 	require.NoError(service.RunEligible(t.Context()))
 
 	_, err = database.WriteDB().ExecContext(t.Context(), `
-		UPDATE middleman_archive_repos
+		UPDATE forge_archive_repos
 		SET last_error_code = 'authentication_failed', last_error_detail = 'expired token',
 			next_retry_at = NULL
 		WHERE repo_id = ?`, repoID)
@@ -312,11 +312,11 @@ func TestArchiveIdlePollDoesNotReconcileConfiguredRepositories(t *testing.T) {
 	_, err = service.Pause(t.Context(), []platform.RepoRef{ref})
 	require.NoError(err)
 	_, err = database.WriteDB().ExecContext(t.Context(), `
-		CREATE TRIGGER reject_idle_repo_reconcile BEFORE UPDATE ON middleman_repos
+		CREATE TRIGGER reject_idle_repo_reconcile BEFORE UPDATE ON forge_repos
 		BEGIN SELECT RAISE(ABORT, 'idle poll wrote repository'); END`)
 	require.NoError(err)
 	_, err = database.WriteDB().ExecContext(t.Context(), `
-		CREATE TRIGGER reject_idle_archive_reconcile BEFORE UPDATE ON middleman_archive_repos
+		CREATE TRIGGER reject_idle_archive_reconcile BEFORE UPDATE ON forge_archive_repos
 		BEGIN SELECT RAISE(ABORT, 'idle poll wrote archive state'); END`)
 	require.NoError(err)
 
@@ -341,7 +341,7 @@ func TestArchiveServiceRemovedRepositoryStopsWorkAndReaddResumesState(t *testing
 	require.NoError(err)
 	cursor := "durable-cursor"
 	_, err = database.WriteDB().ExecContext(t.Context(), `
-		UPDATE middleman_archive_repo_scans
+		UPDATE forge_archive_repo_scans
 		SET next_cursor = ?, status = 'running', page_count = 1
 		WHERE repo_id = ? AND scan = 'issue_inventory'`, cursor, repoID)
 	require.NoError(err)
@@ -464,7 +464,7 @@ func TestArchiveResumesDiscoveryAppliesMaintenanceAndReportsDeterministically(t 
 	service.clock = fixedClock{value: now.Add(5 * time.Minute)}
 	initialStartedAt := now.Add(-2 * time.Hour)
 	_, err = database.WriteDB().ExecContext(t.Context(), `
-		UPDATE middleman_archive_repos
+		UPDATE forge_archive_repos
 		SET initial_started_at = ?, initial_completed_at = ?,
 			maintenance_watermark = NULL, maintenance_succeeded_at = NULL
 		WHERE repo_id = ?`, initialStartedAt, now.Add(-time.Hour), repoID)

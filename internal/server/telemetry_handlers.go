@@ -5,8 +5,8 @@ import (
 	"errors"
 	"strings"
 
-	"go.kenn.io/middleman/internal/server/httpapi"
-	telemetrypkg "go.kenn.io/middleman/internal/telemetry"
+	"go.kenn.io/forge/internal/server/httpapi"
+	telemetrypkg "go.kenn.io/forge/internal/telemetry"
 )
 
 type telemetryEventInput struct {

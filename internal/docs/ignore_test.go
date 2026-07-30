@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/config"
+	"go.kenn.io/forge/internal/config"
 )
 
 // seedFolder writes each entry of files to disk under a fresh tempdir
@@ -30,7 +30,7 @@ func seedFolder(t *testing.T, files map[string]string) (*Registry, string) {
 
 func TestBaselineHidesVCSAndCachesWithoutUserConfig(t *testing.T) {
 	assert := assert.New(t)
-	// No .gitignore / .middlemanignore - baseline alone must still
+	// No .gitignore / .kenn-forgeignore - baseline alone must still
 	// drop .git, node_modules, and .DS_Store.
 	r, _ := seedFolder(t, map[string]string{
 		"kept.md":             "# Kept",
@@ -82,27 +82,27 @@ func TestNestedGitignoreScopesToItsSubtree(t *testing.T) {
 	assert.Contains(names, "other/secret.md", "nested .gitignore should not affect sibling dirs")
 }
 
-func TestMiddlemanIgnoreOverlaysOnGitignore(t *testing.T) {
+func TestForgeIgnoreOverlaysOnGitignore(t *testing.T) {
 	assert := assert.New(t)
-	// .middlemanignore lives next to .gitignore at the root and
+	// .kenn-forgeignore lives next to .gitignore at the root and
 	// stacks additively - both layers can hide paths.
 	r, _ := seedFolder(t, map[string]string{
-		".gitignore":       "logs/\n",
-		".middlemanignore": "drafts/\n",
-		"kept.md":          "# Kept",
-		"drafts/wip.md":    "# wip",
-		"logs/build.md":    "# build",
+		".gitignore":        "logs/\n",
+		".kenn-forgeignore": "drafts/\n",
+		"kept.md":           "# Kept",
+		"drafts/wip.md":     "# wip",
+		"logs/build.md":     "# build",
 	})
 	tree, err := r.Tree("notes")
 	require.NoError(t, err)
 	names := walkNames(tree)
 	assert.Contains(names, "kept.md")
-	assert.NotContains(names, "drafts/wip.md", "drafts/ should be hidden by .middlemanignore")
+	assert.NotContains(names, "drafts/wip.md", "drafts/ should be hidden by .kenn-forgeignore")
 	assert.NotContains(names, "logs/build.md", "logs/ should be hidden by .gitignore")
 }
 
 func TestMissingIgnoreFilesAreSilent(t *testing.T) {
-	// Folder with no .gitignore and no .middlemanignore should not
+	// Folder with no .gitignore and no .kenn-forgeignore should not
 	// error - baseline applies and everything else stays visible.
 	r, _ := seedFolder(t, map[string]string{
 		"kept.md": "# Kept",
@@ -184,10 +184,10 @@ func TestReadBlobRefusesGitignoredPath(t *testing.T) {
 	}
 }
 
-func TestReadFileRefusesMiddlemanIgnoredPath(t *testing.T) {
+func TestReadFileRefusesForgeIgnoredPath(t *testing.T) {
 	r, _ := seedFolder(t, map[string]string{
-		".middlemanignore": "private/\n",
-		"private/diary.md": "personal",
+		".kenn-forgeignore": "private/\n",
+		"private/diary.md":  "personal",
 	})
 	if _, err := r.ReadFile("notes", "private/diary.md"); !errors.Is(err, ErrOutsideFolder) {
 		assert.ErrorIs(t, err, ErrOutsideFolder)

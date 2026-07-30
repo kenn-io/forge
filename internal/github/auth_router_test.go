@@ -13,8 +13,8 @@ import (
 	gh "github.com/google/go-github/v89/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/platform"
-	"go.kenn.io/middleman/internal/tokenauth"
+	"go.kenn.io/forge/internal/platform"
+	"go.kenn.io/forge/internal/tokenauth"
 )
 
 type routeRecordingClient struct {

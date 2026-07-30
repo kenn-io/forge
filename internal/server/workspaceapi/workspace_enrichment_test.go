@@ -12,12 +12,12 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/agentactivity"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/workspace"
+	"go.kenn.io/forge/internal/workspace/localruntime"
 	gitcmd "go.kenn.io/kit/git/cmd"
-	"go.kenn.io/middleman/internal/agentactivity"
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
-	"go.kenn.io/middleman/internal/workspace"
-	"go.kenn.io/middleman/internal/workspace/localruntime"
 )
 
 func newEnrichmentTestHandler(t *testing.T, tmuxScript string) *Handler {

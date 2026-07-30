@@ -264,7 +264,7 @@ describe("Pierre diff parsing", () => {
   });
 
   it("keeps Pierre diff debug logging disabled by default", () => {
-    window.localStorage.removeItem("middleman:debug:diff");
+    window.localStorage.removeItem("kenn-forge:debug:diff");
     const debug = vi.spyOn(console, "debug").mockImplementation(() => {});
     try {
       parsePierreFileDiff(makeFile("src/foo.ts", "-old line\n+new line"), {
@@ -278,7 +278,7 @@ describe("Pierre diff parsing", () => {
   });
 
   it("emits Pierre diff debug logging when explicitly enabled", () => {
-    window.localStorage.setItem("middleman:debug:diff", "1");
+    window.localStorage.setItem("kenn-forge:debug:diff", "1");
     const debug = vi.spyOn(console, "debug").mockImplementation(() => {});
     try {
       parsePierreFileDiff(makeFile("src/foo.ts", "-old line\n+new line"), {
@@ -286,7 +286,7 @@ describe("Pierre diff parsing", () => {
       });
 
       expect(debug).toHaveBeenCalledWith(
-        "[middleman:diff]",
+        "[kenn-forge:diff]",
         "parse sparse context diff",
         expect.objectContaining({
           kind: "sparse",
@@ -294,7 +294,7 @@ describe("Pierre diff parsing", () => {
         }),
       );
     } finally {
-      window.localStorage.removeItem("middleman:debug:diff");
+      window.localStorage.removeItem("kenn-forge:debug:diff");
       debug.mockRestore();
     }
   });

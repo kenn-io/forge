@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	"go.kenn.io/middleman/internal/config"
-	ghclient "go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/config"
+	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
 // TestNewCfgNilTestFriendlyDefault pins the test-friendly default
@@ -33,7 +33,7 @@ func TestNewCfgNilTestFriendlyDefault(t *testing.T) {
 		{name: "127.0.0.1 ephemeral port accepted (httptest.NewServer)", host: "127.0.0.1:44321", status: http.StatusOK},
 		{name: "[::1] ephemeral port accepted", host: "[::1]:44321", status: http.StatusOK},
 		{name: "example.com accepted (httptest default)", host: "example.com", status: http.StatusOK},
-		{name: "middleman.test accepted (apitest default)", host: "middleman.test", status: http.StatusOK},
+		{name: "forge.test accepted (apitest default)", host: "forge.test", status: http.StatusOK},
 		{name: "attacker.example rejected", host: "attacker.example", status: http.StatusForbidden},
 		{name: "localhost ephemeral port rejected (no any-port for non-literal)", host: "localhost:44321", status: http.StatusForbidden},
 	}

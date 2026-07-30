@@ -4,7 +4,7 @@
     PaneLayoutStore,
     PaneTabSpec,
   } from "../../../../../packages/ui/src/stores/paneLayout.svelte.js";
-  import type { InlineWorkspaceController } from "@middleman/ui";
+  import type { InlineWorkspaceController } from "@kenn-forge/ui";
 
   interface Props {
     layout: PaneLayoutStore;

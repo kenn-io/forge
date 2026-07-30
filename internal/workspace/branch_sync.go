@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"go.kenn.io/middleman/internal/tokenauth"
+	"go.kenn.io/forge/internal/tokenauth"
 )
 
 var (

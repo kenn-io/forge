@@ -2,7 +2,7 @@ host = "127.0.0.1"
 port = 8091
 data_dir = "/data/member-ssh"
 sync_interval = "1h"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN_UNSET_FOR_FLEET_E2E"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN_UNSET_FOR_FLEET_E2E"
 
 [activity]
 view_mode = "threaded"

@@ -22,13 +22,13 @@ import (
 	"github.com/shurcooL/githubv4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/gitclone"
+	"go.kenn.io/forge/internal/platform"
+	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/tokenauth"
+	"go.kenn.io/forge/internal/workspace"
 	gitcmd "go.kenn.io/kit/git/cmd"
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/gitclone"
-	"go.kenn.io/middleman/internal/platform"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
-	"go.kenn.io/middleman/internal/tokenauth"
-	"go.kenn.io/middleman/internal/workspace"
 )
 
 // openTestDB opens a temporary SQLite database for the duration of the test.
@@ -300,7 +300,7 @@ func TestCommitMergeRequestParentSnapshotRollsBackParentWhenLabelsFail(t *testin
 		RepoID: repoID, PlatformID: 1, Name: "stored", Color: "ffffff", UpdatedAt: now,
 	}}))
 	_, err = database.WriteDB().ExecContext(ctx, `
-		CREATE TRIGGER reject_new_mr_label BEFORE INSERT ON middleman_merge_request_labels
+		CREATE TRIGGER reject_new_mr_label BEFORE INSERT ON forge_merge_request_labels
 		BEGIN SELECT RAISE(ABORT, 'synthetic label failure'); END`)
 	require.NoError(err)
 
@@ -735,7 +735,7 @@ case "$*" in
 	"fetch --prune --no-tags origin")
 		;;
 	"remote set-head origin -a")
-		touch "${MIDDLEMAN_TEST_CANCEL_FILE:?}"
+		touch "${KENN_FORGE_TEST_CANCEL_FILE:?}"
 		sleep 10
 		;;
 	merge-base*)
@@ -749,7 +749,7 @@ case "$*" in
 esac
 `), 0o755))
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	t.Setenv("MIDDLEMAN_TEST_CANCEL_FILE", cancelFile)
+	t.Setenv("KENN_FORGE_TEST_CANCEL_FILE", cancelFile)
 
 	database := openTestDB(t)
 	clones := gitclone.New(filepath.Join(dir, "clones"), nil)
@@ -3844,7 +3844,7 @@ func TestDiffSyncErrorUserMessageSanitized(t *testing.T) {
 	// A representative leak: clone path, ref, SHA, and command stderr.
 	leaky := fmt.Errorf(
 		"rev-parse refs/pull/42/head for merged PR #42: " +
-			"exec /home/user/.middleman/clones/github.com/owner/repo.git: " +
+			"exec /home/user/.kenn-forge/clones/github.com/owner/repo.git: " +
 			"fatal: ambiguous argument 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef'")
 
 	cases := []struct {
@@ -8852,7 +8852,7 @@ func TestSyncIssueProviderCommentReplacementRollsBack(t *testing.T) {
 	}}))
 	_, err = database.WriteDB().ExecContext(t.Context(), `
 		CREATE TRIGGER reject_new_provider_issue_comment
-		BEFORE INSERT ON middleman_issue_events
+		BEFORE INSERT ON forge_issue_events
 		WHEN NEW.dedupe_key = 'new-comment'
 		BEGIN SELECT RAISE(ABORT, 'reject new comment'); END`)
 	require.NoError(err)
@@ -12064,8 +12064,8 @@ func TestFetchAndUpdateClosedRefreshesPRLabelsWithSameRepoOnAnotherHost(t *testi
 	var labelName string
 	err = d.ReadDB().QueryRowContext(ctx, `
 		SELECT l.name
-		FROM middleman_merge_request_labels ml
-		JOIN middleman_labels l ON l.id = ml.label_id
+		FROM forge_merge_request_labels ml
+		JOIN forge_labels l ON l.id = ml.label_id
 		WHERE ml.merge_request_id = ?`, targetMRID,
 	).Scan(&labelName)
 	require.NoError(err)
@@ -12073,8 +12073,8 @@ func TestFetchAndUpdateClosedRefreshesPRLabelsWithSameRepoOnAnotherHost(t *testi
 
 	err = d.ReadDB().QueryRowContext(ctx, `
 		SELECT l.name
-		FROM middleman_merge_request_labels ml
-		JOIN middleman_labels l ON l.id = ml.label_id
+		FROM forge_merge_request_labels ml
+		JOIN forge_labels l ON l.id = ml.label_id
 		WHERE ml.merge_request_id = ?`, otherMRID,
 	).Scan(&labelName)
 	require.NoError(err)
@@ -12170,8 +12170,8 @@ func TestFetchAndUpdateClosedRefreshesIssueLabelsWithSameRepoOnAnotherHost(t *te
 	var labelName string
 	err = d.ReadDB().QueryRowContext(ctx, `
 		SELECT l.name
-		FROM middleman_issue_labels il
-		JOIN middleman_labels l ON l.id = il.label_id
+		FROM forge_issue_labels il
+		JOIN forge_labels l ON l.id = il.label_id
 		WHERE il.issue_id = ?`, issueRowID,
 	).Scan(&labelName)
 	require.NoError(err)
@@ -12179,8 +12179,8 @@ func TestFetchAndUpdateClosedRefreshesIssueLabelsWithSameRepoOnAnotherHost(t *te
 
 	err = d.ReadDB().QueryRowContext(ctx, `
 		SELECT l.name
-		FROM middleman_issue_labels il
-		JOIN middleman_labels l ON l.id = il.label_id
+		FROM forge_issue_labels il
+		JOIN forge_labels l ON l.id = il.label_id
 		WHERE il.issue_id = ?`, otherIssueRowID,
 	).Scan(&labelName)
 	require.NoError(err)
@@ -14757,7 +14757,7 @@ func TestPersistGitHubCommentsRollsBackRecoveryWrites(t *testing.T) {
 		require.NotNil(mr)
 		oldID := int64(11)
 		require.NoError(database.UpsertMREvents(t.Context(), []db.MREvent{{MergeRequestID: mr.ID, PlatformID: &oldID, EventType: "issue_comment", CreatedAt: now, DedupeKey: "old"}}))
-		_, err = database.WriteDB().ExecContext(t.Context(), `CREATE TRIGGER reject_github_pr_comment_count BEFORE UPDATE OF comment_count ON middleman_merge_requests BEGIN SELECT RAISE(ABORT, 'reject count'); END`)
+		_, err = database.WriteDB().ExecContext(t.Context(), `CREATE TRIGGER reject_github_pr_comment_count BEFORE UPDATE OF comment_count ON forge_merge_requests BEGIN SELECT RAISE(ABORT, 'reject count'); END`)
 		require.NoError(err)
 
 		newID, body, login := int64(12), "new", "bob"
@@ -14793,7 +14793,7 @@ func TestPersistGitHubCommentsRollsBackRecoveryWrites(t *testing.T) {
 		require.NotNil(issue)
 		oldID := int64(21)
 		require.NoError(database.UpsertIssueEvents(t.Context(), []db.IssueEvent{{IssueID: issue.ID, PlatformID: &oldID, EventType: "issue_comment", CreatedAt: now, DedupeKey: "old"}}))
-		_, err = database.WriteDB().ExecContext(t.Context(), `CREATE TRIGGER reject_github_issue_comment_count BEFORE UPDATE OF comment_count ON middleman_issues BEGIN SELECT RAISE(ABORT, 'reject count'); END`)
+		_, err = database.WriteDB().ExecContext(t.Context(), `CREATE TRIGGER reject_github_issue_comment_count BEFORE UPDATE OF comment_count ON forge_issues BEGIN SELECT RAISE(ABORT, 'reject count'); END`)
 		require.NoError(err)
 
 		newID, body, login := int64(22), "new", "bob"

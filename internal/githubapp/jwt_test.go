@@ -121,7 +121,7 @@ func TestNewManifestValidation(t *testing.T) {
 	_, err = NewManifest(strings.Repeat("x", 35), "", "http://127.0.0.1:1/callback")
 	require.ErrorContains(err, "34 character limit")
 
-	m, err := NewManifest("middleman-test", "", "http://127.0.0.1:9/callback")
+	m, err := NewManifest("kenn-forge-test", "", "http://127.0.0.1:9/callback")
 	require.NoError(err)
 	assert := assert.New(t)
 	assert.False(m.Public)

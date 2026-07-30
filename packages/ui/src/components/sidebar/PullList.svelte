@@ -474,7 +474,7 @@
   </div>
 
   {#if pulls.getFilterState() !== "open"}
-    <p class="state-note">Showing items closed after middleman began tracking them</p>
+    <p class="state-note">Showing items closed after kenn-forge began tracking them</p>
   {/if}
   <ScrollBox
     dataTest="pr-list"

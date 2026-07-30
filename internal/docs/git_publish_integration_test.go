@@ -12,9 +12,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/config"
-	"go.kenn.io/middleman/internal/procutil"
-	"go.kenn.io/middleman/internal/testutil/gitsafe"
+	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/procutil"
+	"go.kenn.io/forge/internal/testutil/gitsafe"
 )
 
 type gitRepo struct {
@@ -32,8 +32,8 @@ func newGitRepo(t *testing.T) *gitRepo {
 	dir := t.TempDir()
 	remote := t.TempDir()
 	runGit(t, dir, "init", "-b", "main")
-	runGit(t, dir, "config", "user.email", "middleman-fixture@example.invalid")
-	runGit(t, dir, "config", "user.name", "Middleman Fixture")
+	runGit(t, dir, "config", "user.email", "kenn-forge-fixture@example.invalid")
+	runGit(t, dir, "config", "user.name", "Kenn Forge Fixture")
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "seed.md"), []byte("seed\n"), 0o644))
 	runGit(t, dir, "add", "seed.md")
 	runGit(t, dir, "commit", "-m", "seed")
@@ -53,8 +53,8 @@ func newGitRepoNoUpstream(t *testing.T) *gitRepo {
 	}
 	dir := t.TempDir()
 	runGit(t, dir, "init", "-b", "main")
-	runGit(t, dir, "config", "user.email", "middleman-fixture@example.invalid")
-	runGit(t, dir, "config", "user.name", "Middleman Fixture")
+	runGit(t, dir, "config", "user.email", "kenn-forge-fixture@example.invalid")
+	runGit(t, dir, "config", "user.name", "Kenn Forge Fixture")
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "seed.md"), []byte("seed\n"), 0o644))
 	runGit(t, dir, "add", "seed.md")
 	runGit(t, dir, "commit", "-m", "seed")

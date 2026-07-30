@@ -17,13 +17,13 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	gh "github.com/google/go-github/v89/github"
 	gitlabapi "gitlab.com/gitlab-org/api/client-go/v2"
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/gitclone"
-	ghclient "go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/platform"
-	"go.kenn.io/middleman/internal/platform/gitealike"
-	"go.kenn.io/middleman/internal/server/httpapi"
-	"go.kenn.io/middleman/internal/server/workspaceapi"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/gitclone"
+	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/platform"
+	"go.kenn.io/forge/internal/platform/gitealike"
+	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/server/workspaceapi"
 )
 
 var discussionIDPattern = regexp.MustCompile(`^[a-f0-9]{40}$`)
@@ -1344,7 +1344,7 @@ func (s *Handler) requestChangesPR(ctx context.Context, input *requestChangesPRI
 // review form, and a change request must not be pinned more strictly (or
 // more loosely) than an approval. Clients should send the head captured
 // when the review UI opened, normally platform_head_sha. Omitting the pin
-// is a compatibility path for older clients; in that case middleman binds
+// is a compatibility path for older clients; in that case kenn-forge binds
 // the review to the best stored provider head rather than rejecting the
 // request. Stale supplied pins are delegated to provider head-binding where
 // available and mapped through the normal stale_state path. Merge and
@@ -1763,7 +1763,7 @@ func (s *Handler) preflightMergePR(
 // reviewedHeadSHA resolves the head commit a mutation should be pinned
 // to. For head-bound providers, this is the verified diff snapshot head,
 // not the mutable platform head row: if diff sync is missing or stale,
-// middleman cannot prove the user reviewed the current code and must
+// kenn-forge cannot prove the user reviewed the current code and must
 // fail closed. Deliberately, this path never refreshes a missing diff,
 // because persisting a fresh head here could arm a retry from the same
 // stale UI to mutate a commit nobody reviewed.

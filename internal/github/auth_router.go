@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	gh "github.com/google/go-github/v89/github"
-	"go.kenn.io/middleman/internal/platform"
-	"go.kenn.io/middleman/internal/tokenauth"
+	"go.kenn.io/forge/internal/platform"
+	"go.kenn.io/forge/internal/tokenauth"
 )
 
 // RouteKey identifies one configuration-bounded GitHub authorization route.

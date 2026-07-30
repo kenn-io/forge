@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import * as flash from "@middleman/ui/stores/flash";
+import * as flash from "@kenn-forge/ui/stores/flash";
 import UserListEditor from "../../../../../packages/ui/src/components/detail/UserListEditor.svelte";
 
 describe("UserListEditor", () => {

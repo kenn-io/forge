@@ -7,9 +7,9 @@ import (
 	"sort"
 	"strings"
 
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/server/httpapi"
-	"go.kenn.io/middleman/internal/workspace/localruntime"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
 // Branch listing and worktree inspection back delete-confirmation and

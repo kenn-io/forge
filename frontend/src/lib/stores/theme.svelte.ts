@@ -9,7 +9,7 @@ import { getThemeMode, getThemeColors, getThemeFonts, getThemeRadii } from "./em
 /*
  * Adapter over kit-ui's theme store. Standalone dark/light resolution,
  * persistence, and the `dark` root class are kit's; the storage key stays
- * "middleman-theme" and kit reads the same "dark"/"light" values the old
+ * "kenn-forge-theme" and kit reads the same "dark"/"light" values the old
  * store wrote, so existing preferences carry over (kit adds "system" as a
  * persistable mode).
  *
@@ -19,10 +19,10 @@ import { getThemeMode, getThemeColors, getThemeFonts, getThemeRadii } from "./em
  *   standalone preference — so the forced path applies classes directly and
  *   never touches kit's storage.
  * - applyThemeOverrides: embed-config color/font/radius CSS variable
- *   injection is a middleman embed feature, not a kit concern.
+ *   injection is a kenn-forge embed feature, not a kit concern.
  */
 
-const THEME_KEY = "middleman-theme";
+const THEME_KEY = "kenn-forge-theme";
 
 const COLOR_MAP: Record<string, string> = {
   bgPrimary: "--bg-primary",

@@ -9,7 +9,7 @@ interface ParsePierreFileDiffOptions {
 
 type PierreDiffDebugDetails = Record<string, unknown>;
 
-const debugDiffStorageKey = "middleman:debug:diff";
+const debugDiffStorageKey = "kenn-forge:debug:diff";
 const maxSparseContextLine = 50_000;
 const syntheticPatchFiles = new WeakSet<DiffFile>();
 
@@ -83,7 +83,7 @@ export function pierreFileContents(name: string, contents: string, cacheIdentity
 
 export function debugPierreDiff(message: string, details?: PierreDiffDebugDetails): void {
   if (!pierreDiffDebugEnabled()) return;
-  console.debug("[middleman:diff]", message, details ?? {});
+  console.debug("[kenn-forge:diff]", message, details ?? {});
 }
 
 export function pierreDiffDebugEnabled(): boolean {
@@ -316,7 +316,7 @@ function safePierreFileName(file: DiffFile, side: "old" | "new"): string {
   const source = side === "old" ? file.old_path || file.path : file.path;
   const extensionIndex = source.lastIndexOf(".");
   const extension = extensionIndex >= 0 ? source.slice(extensionIndex) : "";
-  return `middleman-diff${extension.replace(/[^A-Za-z0-9.]/g, "")}`;
+  return `kenn-forge-diff${extension.replace(/[^A-Za-z0-9.]/g, "")}`;
 }
 
 function canBuildSparsePatchContents(file: DiffFile): boolean {

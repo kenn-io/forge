@@ -9,10 +9,10 @@ services:
       - .:/app
       - go-mod:/go/pkg/mod
       - go-cache:/go/cache
-      - middleman-data:/data
+      - kenn-forge-data:/data
     environment:
-      MIDDLEMAN_CONFIG_PATH: /app/docker/dev-config.toml
-      MIDDLEMAN_GITHUB_TOKEN: ${MIDDLEMAN_GITHUB_TOKEN}
+      KENN_FORGE_CONFIG_PATH: /app/docker/dev-config.toml
+      KENN_FORGE_GITHUB_TOKEN: ${KENN_FORGE_GITHUB_TOKEN}
       GOCACHE: /go/cache
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:18091/healthz >/dev/null"]
@@ -34,7 +34,7 @@ services:
       - .:/app
       - /app/frontend/node_modules
     environment:
-      MIDDLEMAN_API_URL: http://backend:18091
+      KENN_FORGE_API_URL: http://backend:18091
       BUN_INSTALL_FLAGS: --frozen-lockfile
       FRONTEND_DEV_ARGS: --host 0.0.0.0 --port 15173
     depends_on:
@@ -53,4 +53,4 @@ services:
 volumes:
   go-mod:
   go-cache:
-  middleman-data:
+  kenn-forge-data:

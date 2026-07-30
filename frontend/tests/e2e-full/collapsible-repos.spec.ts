@@ -19,7 +19,7 @@ function widgetsHeader(page: Page) {
 
 test("PR list — keyboard activation via Enter and Space toggles collapse", async ({ page }) => {
   await page.addInitScript(() => {
-    localStorage.removeItem("middleman:collapsedRepos:pulls");
+    localStorage.removeItem("kenn-forge:collapsedRepos:pulls");
   });
   await page.goto("/pulls");
   await waitForPullList(page);

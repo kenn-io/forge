@@ -1,6 +1,6 @@
 # Retries, Backoff, and Single-Flight Dedup
 
-middleman has three distinct wait patterns. Keep them separate:
+kenn-forge has three distinct wait patterns. Keep them separate:
 
 - **Transient retry** — short bounded retries for flaky upstream failures.
 - **Rate-limit gate** — wait until provider quota resets.

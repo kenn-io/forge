@@ -1,5 +1,5 @@
 /**
- * Global workspace type declarations for the @middleman/ui package.
+ * Global workspace type declarations for the @kenn-forge/ui package.
  *
  * These mirror the types in frontend/src/vite-env.d.ts so that
  * Svelte components in packages/ui can reference them without

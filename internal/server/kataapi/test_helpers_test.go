@@ -18,13 +18,13 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/server/workspaceapi"
+	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/workspace"
 	gitcmd "go.kenn.io/kit/git/cmd"
-	"go.kenn.io/middleman/internal/config"
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/server/httpapi"
-	"go.kenn.io/middleman/internal/server/workspaceapi"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
-	"go.kenn.io/middleman/internal/workspace"
 )
 
 type mockGH struct{}
@@ -64,7 +64,7 @@ func setupTestServerWithConfigContent(
 func setupTestServerWithConfig(t *testing.T) (*Server, *db.DB, string) {
 	return setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -114,7 +114,7 @@ func newKataTestServer(
 		ConfigRepoPath:   testConfigRepoPath,
 	})
 	mux := http.NewServeMux()
-	apiConfig := huma.DefaultConfig("middleman API", "0.1.0")
+	apiConfig := huma.DefaultConfig("kenn-forge API", "0.1.0")
 	apiConfig.OpenAPIPath = "/openapi"
 	apiConfig.DocsPath = "/docs"
 	apiConfig.SchemasPath = "/schemas"

@@ -13,7 +13,7 @@ function lockRootSuffix(): string {
   }
 }
 
-const LOCK_ROOT = path.join(os.tmpdir(), `middleman-playwright-locks-${lockRootSuffix()}`);
+const LOCK_ROOT = path.join(os.tmpdir(), `kenn-forge-playwright-locks-${lockRootSuffix()}`);
 export type ExclusiveLockOptions = {
   rootDir?: string;
 };

@@ -7,11 +7,11 @@ import (
 	"runtime"
 	"slices"
 
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/fleet"
-	"go.kenn.io/middleman/internal/server/workspaceapi"
-	"go.kenn.io/middleman/internal/workspace"
-	"go.kenn.io/middleman/internal/workspace/localruntime"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/fleet"
+	"go.kenn.io/forge/internal/server/workspaceapi"
+	"go.kenn.io/forge/internal/workspace"
+	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
 // buildLocalRaw builds this daemon's raw fleet inventory from the local
@@ -63,7 +63,7 @@ func (s *Handler) buildLocalRaw(ctx context.Context) (fleet.RawSnapshot, error) 
 		// BackendReady is left nil: this daemon is the backend serving every
 		// registered project, so a local project is ready by construction.
 		// PlatformCoverage treats nil as ready ("active"); only an explicit
-		// not-ready signal degrades coverage, and middleman has no per-project
+		// not-ready signal degrades coverage, and kenn-forge has no per-project
 		// readiness source distinct from host-level auth/diagnostics.
 		rp := fleet.RawProject{
 			ScopedKey:      key,
@@ -234,7 +234,7 @@ func applyWorktreeStats(wt *fleet.RawWorktree, stats map[string]db.WorktreeGitSt
 }
 
 // synthesizedWorkspaceProject builds a placeholder project for a workspace
-// whose repo identity has no registered project. middleman owns no local
+// whose repo identity has no registered project. kenn-forge owns no local
 // checkout for it, so it carries no RootPath or RepositoryKind and is flagged
 // IsSynthesized; consumers must treat it as read-only (no worktree creation).
 // The default branch is filled from the synced repo row when known — a DB
@@ -253,7 +253,7 @@ func (s *Handler) synthesizedWorkspaceProject(
 	}
 }
 
-// syncedRepoDefaultBranch returns the default branch middleman recorded for a
+// syncedRepoDefaultBranch returns the default branch kenn-forge recorded for a
 // workspace's repo during sync, or "" when the repo is unknown or unsynced.
 func (s *Handler) syncedRepoDefaultBranch(ctx context.Context, sum db.WorkspaceSummary) string {
 	if s.db == nil {

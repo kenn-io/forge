@@ -11,8 +11,8 @@ import (
 	gh "github.com/google/go-github/v89/github"
 	"github.com/stretchr/testify/require"
 
-	"go.kenn.io/middleman/internal/db"
-	ghclient "go.kenn.io/middleman/internal/github"
+	"go.kenn.io/forge/internal/db"
+	ghclient "go.kenn.io/forge/internal/github"
 )
 
 // SeedResult holds references to seeded data for use in E2E tests.

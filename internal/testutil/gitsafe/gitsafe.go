@@ -17,7 +17,7 @@ import (
 // The setup is shared by the test binary so Git-heavy suites do not create a
 // new config directory for every test or command, which is costly on Windows.
 func RunIsolatedMain(m *testing.M) int {
-	root, err := os.MkdirTemp("", "middleman-git-test-*")
+	root, err := os.MkdirTemp("", "kenn-forge-git-test-*")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "create isolated Git test directory: %v\n", err)
 		return 1

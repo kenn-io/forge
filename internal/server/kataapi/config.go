@@ -3,7 +3,7 @@ package kataapi
 import (
 	"slices"
 
-	"go.kenn.io/middleman/internal/config"
+	"go.kenn.io/forge/internal/config"
 )
 
 // ConfigSnapshot is the immutable, committed configuration consumed by Kata.

@@ -3,7 +3,7 @@ package gitea
 import (
 	"context"
 
-	"go.kenn.io/middleman/internal/tokenauth"
+	"go.kenn.io/forge/internal/tokenauth"
 )
 
 type staticTestTokenSource string

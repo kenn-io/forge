@@ -1,7 +1,7 @@
 import { getUIConfig, getSidebarWidth as getEmbeddedSidebarWidth } from "./embed-config.svelte.js";
 
-const STORAGE_KEY = "middleman-sidebar";
-const WIDTH_STORAGE_KEY = "middleman-sidebar-width";
+const STORAGE_KEY = "kenn-forge-sidebar";
+const WIDTH_STORAGE_KEY = "kenn-forge-sidebar-width";
 const DEFAULT_WIDTH = 340;
 const MIN_WIDTH = 200;
 const MAX_WIDTH = 600;

@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/forge/internal/platform"
 )
 
 const defaultPageSize = 100

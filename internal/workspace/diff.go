@@ -11,9 +11,9 @@ import (
 	"strconv"
 	"strings"
 
+	"go.kenn.io/forge/internal/gitclone"
+	"go.kenn.io/forge/internal/procutil"
 	gitcmd "go.kenn.io/kit/git/cmd"
-	"go.kenn.io/middleman/internal/gitclone"
-	"go.kenn.io/middleman/internal/procutil"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"golang.org/x/sync/errgroup"
@@ -30,7 +30,7 @@ const (
 
 const maxUntrackedTextFileBytes = 1 << 20
 
-var workspaceDiffTracer = otel.Tracer("go.kenn.io/middleman/internal/workspace/diff")
+var workspaceDiffTracer = otel.Tracer("go.kenn.io/forge/internal/workspace/diff")
 
 var untrackedFileReads = newUntrackedReadPool(runtime.GOMAXPROCS(0))
 
@@ -1256,7 +1256,7 @@ func worktreeGitOutputWithInput(
 	if dir == "" {
 		return nil, errors.New("empty worktree dir")
 	}
-	// gitcmd.New provides middleman's required git hygiene for workspace
+	// gitcmd.New provides kenn-forge's required git hygiene for workspace
 	// reads: strip inherited GIT_* hook state, ignore user/system config,
 	// and disable interactive prompts. The procutil wrapper below preserves
 	// the app-wide git subprocess capacity guard for potentially expensive

@@ -13,16 +13,16 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/apiclient"
+	"go.kenn.io/forge/internal/apiclient/generated"
+	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/gitclone"
+	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/servertest"
 	gitcmd "go.kenn.io/kit/git/cmd"
-	"go.kenn.io/middleman/internal/apiclient"
-	"go.kenn.io/middleman/internal/apiclient/generated"
-	"go.kenn.io/middleman/internal/config"
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/gitclone"
-	ghclient "go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/server"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
-	"go.kenn.io/middleman/internal/testutil/servertest"
 )
 
 type workspaceServerFixture struct {
@@ -121,7 +121,7 @@ func setupWorkspaceServerFixture(
 	options.WorktreeDir = worktreeDir
 	options.HostCheck = server.HostCheckOptions{
 		Bind:    config.HostKey{Host: "127.0.0.1", Port: "8091"},
-		Allowed: []config.HostKey{{Host: "middleman.test", Port: ""}},
+		Allowed: []config.HostKey{{Host: "forge.test", Port: ""}},
 	}
 	srv := servertest.New(t, database, syncer, nil, basePath, cfg, options)
 	t.Cleanup(func() {
@@ -130,7 +130,7 @@ func setupWorkspaceServerFixture(
 		require.NoError(t, srv.Shutdown(ctx))
 	})
 
-	clientBaseURL := "http://middleman.test"
+	clientBaseURL := "http://forge.test"
 	if basePath != "/" {
 		clientBaseURL += strings.TrimSuffix(basePath, "/")
 	}

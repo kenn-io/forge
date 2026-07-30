@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import type { DiffFile, DiffLine, DiffResult, FilesResult } from "@middleman/ui/api/types";
+import type { DiffFile, DiffLine, DiffResult, FilesResult } from "@kenn-forge/ui/api/types";
 
 type DiffFixtureFile = Omit<DiffFile, "patch"> & { patch?: string };
 type DiffFixture = Omit<DiffResult, "files"> & {
@@ -200,7 +200,7 @@ test.describe("diff highlight backgrounds on horizontal scroll", () => {
     // pierre-worker-pool.ts); this spec asserts real highlighting, so
     // opt back in before the app loads.
     await page.addInitScript(() => {
-      (globalThis as { __middlemanForceSyntaxHighlight?: boolean }).__middlemanForceSyntaxHighlight = true;
+      (globalThis as { __kenn_forgeForceSyntaxHighlight?: boolean }).__kenn_forgeForceSyntaxHighlight = true;
     });
     await page.route("**/api/v1/pulls/github/acme/widgets/1/files", async (route) => {
       await route.fulfill({

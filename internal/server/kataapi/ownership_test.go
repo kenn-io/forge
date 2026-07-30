@@ -37,7 +37,7 @@ func TestKataAPIDoesNotImportRootServer(t *testing.T) {
 		file, parseErr := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
 		require.NoError(t, parseErr)
 		for _, imported := range file.Imports {
-			assert.NotEqual(t, `"go.kenn.io/middleman/internal/server"`, imported.Path.Value, path)
+			assert.NotEqual(t, `"go.kenn.io/forge/internal/server"`, imported.Path.Value, path)
 		}
 	}
 }

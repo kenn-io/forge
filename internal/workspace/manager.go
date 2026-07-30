@@ -21,15 +21,15 @@ import (
 	"sync"
 	"time"
 
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/gitclone"
+	"go.kenn.io/forge/internal/platform"
+	"go.kenn.io/forge/internal/procutil"
 	gitcmd "go.kenn.io/kit/git/cmd"
 	gitremote "go.kenn.io/kit/git/remote"
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/gitclone"
-	"go.kenn.io/middleman/internal/platform"
-	"go.kenn.io/middleman/internal/procutil"
 )
 
-// Manager owns middleman's persisted workspace lifecycle.
+// Manager owns kenn-forge's persisted workspace lifecycle.
 //
 // Its purpose is to turn tracked review items into durable local execution
 // contexts backed by a database row, a Git worktree, and a tmux session. It is
@@ -64,7 +64,7 @@ type WorktreeBasePathResolver func(
 
 // CreateIssueOptions controls how issue-backed workspaces choose their branch.
 //
-// The default path creates middleman's conventional issue branch. When a local
+// The default path creates kenn-forge's conventional issue branch. When a local
 // branch with that name already exists, callers can either ask the manager to
 // reuse it or supply a different GitHeadRef.
 type CreateIssueOptions struct {
@@ -119,18 +119,18 @@ type WorkspaceDirectoryRecoveryError struct {
 func (e *WorkspaceDirectoryRecoveryError) Error() string {
 	switch e.Reason {
 	case WorkspaceDirectoryMissing:
-		return "the expected Middleman worktree directory does not exist"
+		return "the expected Kenn Forge worktree directory does not exist"
 	case WorkspaceDirectoryNotLinkedWorktree:
-		return "the expected Middleman directory is not a linked Git worktree"
+		return "the expected Kenn Forge directory is not a linked Git worktree"
 	case WorkspaceDirectoryRepositoryMismatch:
-		return "the expected Middleman worktree does not belong to this repository"
+		return "the expected Kenn Forge worktree does not belong to this repository"
 	case WorkspaceDirectoryBranchMismatch:
 		return fmt.Sprintf(
-			"the expected Middleman worktree checks out %q, not %q",
+			"the expected Kenn Forge worktree checks out %q, not %q",
 			e.ActualBranch, e.ExpectedBranch,
 		)
 	default:
-		return "the expected Middleman worktree cannot be reused"
+		return "the expected Kenn Forge worktree cannot be reused"
 	}
 }
 
@@ -139,8 +139,8 @@ const (
 	workspaceSetupStageClone       = "clone"
 	workspaceSetupStageWorktree    = "worktree"
 	workspaceSetupStageTmuxSession = "tmux_session"
-	workspaceBranchUnknown         = "__middleman_unknown__"
-	workspaceBranchRecoveryPending = "__middleman_recovery_pending__..state"
+	workspaceBranchUnknown         = "__kenn_forge_unknown__"
+	workspaceBranchRecoveryPending = "__kenn_forge_recovery_pending__..state"
 	tmuxCaptureScrollbackLines     = 160
 )
 
@@ -190,7 +190,7 @@ func NewManager(
 
 // SetIssueBranchSlugEnabled controls whether issue-workspace branch
 // names include a slug derived from the issue title. When false, the
-// manager keeps the legacy bare middleman/issue-<n> form. Default is
+// manager keeps the legacy bare kenn-forge/issue-<n> form. Default is
 // true, matching the configured default issue_workspace_branch_style.
 func (m *Manager) SetIssueBranchSlugEnabled(enabled bool) {
 	m.issueBranchSlugEnabled = enabled
@@ -198,15 +198,15 @@ func (m *Manager) SetIssueBranchSlugEnabled(enabled bool) {
 
 // SetWorktreeBasePathResolver configures the optional local-repository
 // resolver used when a tracked remote repo should create worktrees from a
-// user-openable checkout instead of middleman's managed bare clone.
+// user-openable checkout instead of kenn-forge's managed bare clone.
 func (m *Manager) SetWorktreeBasePathResolver(resolver WorktreeBasePathResolver) {
 	m.worktreeBaseResolver = resolver
 }
 
-// defaultIssueBranch returns the middleman issue-workspace branch
+// defaultIssueBranch returns the kenn-forge issue-workspace branch
 // name to use when the caller did not pass an explicit GitHeadRef.
 // When the slug style is enabled and the issue has a usable title,
-// the bare middleman/issue-<n> is suffixed with a sanitized slug.
+// the bare kenn-forge/issue-<n> is suffixed with a sanitized slug.
 func (m *Manager) defaultIssueBranch(issueNumber int, title string) string {
 	if m.issueBranchSlugEnabled {
 		return issueWorkspaceBranchWithTitle(issueNumber, title)
@@ -304,7 +304,7 @@ func (m *Manager) tmuxExec(
 	return procutil.CommandContext(ctx, m.tmuxCmd[0], args...)
 }
 
-// Create persists a PR-backed middleman workspace.
+// Create persists a PR-backed kenn-forge workspace.
 //
 // The point of this row is to give a tracked pull request a stable local
 // workspace entry that the UI can reopen later, rather than rediscovering local
@@ -357,7 +357,7 @@ func (m *Manager) Create(
 			m.worktreeDir, repo.Platform, platformHost, owner, name,
 			fmt.Sprintf("pr-%d", mrNumber),
 		),
-		TmuxSession:     "middleman-" + id,
+		TmuxSession:     "kenn-forge-" + id,
 		TerminalBackend: m.PreferredTerminalBackend(),
 		Status:          "creating",
 	}
@@ -371,7 +371,7 @@ func (m *Manager) Create(
 	return ws, nil
 }
 
-// CreateIssue persists an issue-backed middleman workspace.
+// CreateIssue persists an issue-backed kenn-forge workspace.
 //
 // Unlike PR workspaces, issue workspaces are not tied to a remote head branch.
 // They exist to give an issue its own durable local execution context that
@@ -435,7 +435,7 @@ func (m *Manager) CreateIssue(
 			m.worktreeDir, repo.Platform, platformHost, owner, name,
 			fmt.Sprintf("issue-%d", issueNumber),
 		),
-		TmuxSession:     "middleman-" + id,
+		TmuxSession:     "kenn-forge-" + id,
 		TerminalBackend: m.PreferredTerminalBackend(),
 		Status:          "creating",
 	}
@@ -628,7 +628,7 @@ func (m *Manager) CreateKataTask(
 			m.worktreeDir, repo.Platform, platformHost, owner, name,
 			"kata-"+branchID,
 		),
-		TmuxSession:     "middleman-" + id,
+		TmuxSession:     "kenn-forge-" + id,
 		TerminalBackend: m.PreferredTerminalBackend(),
 		Status:          "creating",
 		KataMetadata:    &metadata,
@@ -710,7 +710,7 @@ func (m *Manager) CreateAdHoc(
 			m.worktreeDir, repo.Platform, platformHost, owner, name,
 			adHocWorktreeDirName(gitHeadRef),
 		),
-		TmuxSession:     "middleman-" + id,
+		TmuxSession:     "kenn-forge-" + id,
 		TerminalBackend: m.PreferredTerminalBackend(),
 		Status:          "creating",
 	}
@@ -732,7 +732,7 @@ func adHocWorkspaceBranch(workspaceID string) string {
 	if len(suffix) > 8 {
 		suffix = suffix[:8]
 	}
-	return "middleman/work-" + suffix
+	return "kenn-forge/work-" + suffix
 }
 
 // adHocWorktreeDirName derives a filesystem-safe directory name from the
@@ -769,7 +769,7 @@ func kataTaskScopeHash(metadata db.WorkspaceKataMetadata) string {
 }
 
 func kataWorkspaceBranch(branchID, title string) string {
-	bare := "middleman/kata/" + branchID
+	bare := "kenn-forge/kata/" + branchID
 	slug := slugifyIssueTitle(title)
 	if slug == "" {
 		return bare
@@ -1309,7 +1309,7 @@ func (m *Manager) reuseExistingWorkspaceWorktree(
 //
 // If reuse fails after this point, Setup records an error and leaves the
 // worktree in place. Cleanup later deletes only branches that the persisted
-// workspace branch proves middleman owns; an empty or unknown branch marker is
+// workspace branch proves kenn-forge owns; an empty or unknown branch marker is
 // deliberately treated as user-owned.
 func (m *Manager) existingWorkspaceWorktreeProvenance(
 	ctx context.Context,
@@ -1584,7 +1584,7 @@ func (m *Manager) localWorktreeBaseDir(
 func (m *Manager) localWorktreeBaseLockRoot(path string) string {
 	sum := sha256.Sum256([]byte(path))
 	return filepath.Join(
-		m.worktreeDir, ".middleman-worktree-base-locks",
+		m.worktreeDir, ".kenn-forge-worktree-base-locks",
 		hex.EncodeToString(sum[:]),
 	)
 }
@@ -1968,7 +1968,7 @@ func (m *Manager) addWorktreeLocked(
 // PR head branch, which is where setup lands whenever the preferred name is
 // unusable (stale local branch, checked out elsewhere, or simply taken).
 //
-// Every failure reachable from here is a naming collision inside middleman's own
+// Every failure reachable from here is a naming collision inside kenn-forge's own
 // branch namespace, never a missing commit, so no collision may be terminal: a
 // taken synthetic name is uniquified, and if no branch can be created at all the
 // worktree is checked out detached. A workspace the maintainer can open and
@@ -1988,7 +1988,7 @@ func (m *Manager) addFallbackWorktree(
 	fallbackErr := err
 
 	// Uniquifying leaves the colliding branch untouched: it may be a live
-	// workspace's checkout or a user branch middleman never created.
+	// workspace's checkout or a user branch kenn-forge never created.
 	if uniqueBranch, nameErr := nextAvailableBranchName(
 		ctx, cloneDir, fallbackBranch,
 	); nameErr == nil {
@@ -2007,7 +2007,7 @@ func (m *Manager) addFallbackWorktree(
 			"%w; detached checkout failed: %w", fallbackErr, detachErr,
 		)
 	}
-	// An empty managed branch: middleman owns no branch here, so rollback and
+	// An empty managed branch: kenn-forge owns no branch here, so rollback and
 	// delete leave every existing branch in place.
 	slog.Warn("workspace worktree checked out detached",
 		"workspace_id", ws.ID, "path", ws.WorktreePath,
@@ -2190,12 +2190,12 @@ func workspaceMergeRequestHeadRef(ws *Workspace) string {
 }
 
 func syntheticPRWorktreeBranch(mrNumber int) string {
-	return fmt.Sprintf("middleman/pr-%d", mrNumber)
+	return fmt.Sprintf("kenn-forge/pr-%d", mrNumber)
 }
 
 // isSyntheticPRWorktreeBranch reports whether branch is the synthetic PR branch
 // for this merge request or one of the numbered variants addFallbackWorktree
-// creates when that name is taken. Both are middleman-created names for the same
+// creates when that name is taken. Both are kenn-forge-created names for the same
 // workspace head, so reuse and upstream repair must recognize either.
 func isSyntheticPRWorktreeBranch(mrNumber int, branch string) bool {
 	base := syntheticPRWorktreeBranch(mrNumber)
@@ -2211,7 +2211,7 @@ func isSyntheticPRWorktreeBranch(mrNumber int, branch string) bool {
 }
 
 // cleanupWorktreeAddOnUpstreamFailure rolls back a just-added worktree (and,
-// when middleman created it, its branch) after configuring the branch
+// when kenn-forge created it, its branch) after configuring the branch
 // upstream failed. Callers must already hold the per-repo lock for cloneDir.
 // An empty branch leaves a pre-existing user-owned branch in place.
 func cleanupWorktreeAddOnUpstreamFailure(
@@ -2997,7 +2997,7 @@ func filterDeletedWorkspaceSummaries(
 	return out
 }
 
-// ReapOrphanTmuxSessions kills middleman-managed tmux sessions that no longer
+// ReapOrphanTmuxSessions kills kenn-forge-managed tmux sessions that no longer
 // correspond to any workspace row. This is a conservative startup cleanup for
 // stale sessions left behind by crashes or previous bugs.
 func (m *Manager) ReapOrphanTmuxSessions(ctx context.Context) error {
@@ -3030,7 +3030,7 @@ func (m *Manager) ReapOrphanTmuxSessions(ctx context.Context) error {
 		return err
 	}
 	for _, session := range sessions {
-		if !isMiddlemanWorkspaceTmuxSessionName(session.name) {
+		if !isForgeWorkspaceTmuxSessionName(session.name) {
 			continue
 		}
 		if live[session.name] {
@@ -3051,7 +3051,7 @@ func (m *Manager) ReapOrphanTmuxSessions(ctx context.Context) error {
 
 // PruneMissingTmuxSessions reconciles persisted tmux ownership state against
 // the host tmux server. Runtime-session rows whose tmux session was killed
-// outside middleman are removed. Ready workspaces whose primary tmux session is
+// outside kenn-forge are removed. Ready workspaces whose primary tmux session is
 // missing are marked errored so list responses stop probing dead session names
 // and the UI can offer retry/delete. It reports whether anything was pruned so
 // callers only notify clients about passes that changed state.
@@ -3125,7 +3125,7 @@ func (m *Manager) PruneMissingTmuxSessions(ctx context.Context) (bool, error) {
 }
 
 func isWorkspaceTmuxSessionName(session string) bool {
-	const prefix = "middleman-"
+	const prefix = "kenn-forge-"
 	if len(session) != len(prefix)+16 ||
 		!strings.HasPrefix(session, prefix) {
 		return false
@@ -3133,13 +3133,13 @@ func isWorkspaceTmuxSessionName(session string) bool {
 	return isLowerHex(session[len(prefix):])
 }
 
-func isMiddlemanWorkspaceTmuxSessionName(session string) bool {
+func isForgeWorkspaceTmuxSessionName(session string) bool {
 	if isWorkspaceTmuxSessionName(session) {
 		return true
 	}
-	const prefix = "middleman-"
+	const prefix = "kenn-forge-"
 	// Runtime session names intentionally only match the current opaque
-	// middleman-<workspace-id>-<target-key-hash> shape. Old readable
+	// kenn-forge-<workspace-id>-<target-key-hash> shape. Old readable
 	// target suffixes are not supported; stored DB rows are authoritative
 	// for restart activity and cleanup.
 	if len(session) != len(prefix)+16+1+16 ||
@@ -3169,7 +3169,7 @@ func (m *Manager) tmuxOwnerMarker() string {
 		abs = m.worktreeDir
 	}
 	sum := sha256.Sum256([]byte(abs))
-	return "middleman:" + hex.EncodeToString(sum[:8])
+	return "kenn-forge:" + hex.EncodeToString(sum[:8])
 }
 
 // TmuxOwnerMarker returns the marker used to tag tmux sessions owned by this
@@ -3230,9 +3230,9 @@ type tmuxSessionInfo struct {
 // colon. tmux 3.6+ sanitizes control characters in -F output (a literal
 // tab prints as "_"), so the separator must be printable. A colon is
 // unambiguous because tmux replaces ":" in session names with "_", so no
-// live session name can contain one; the owner marker ("middleman:<hex>")
+// live session name can contain one; the owner marker ("kenn-forge:<hex>")
 // does, which is why parsing cuts at the first colon only.
-const tmuxSessionListFormat = "#{session_name}:#{@middleman_owner}"
+const tmuxSessionListFormat = "#{session_name}:#{@forge_owner}"
 
 func (m *Manager) listTmuxSessionInfos(
 	ctx context.Context,
@@ -3616,7 +3616,7 @@ func (m *Manager) setTmuxOwnerMarker(
 		m.tmuxExec(
 			ctx,
 			"set-option", "-t", session,
-			"@middleman_owner", m.tmuxOwnerMarker(),
+			"@forge_owner", m.tmuxOwnerMarker(),
 		),
 	)
 }
@@ -4227,7 +4227,7 @@ func workspaceBranchCandidates(
 			// only applies when GitHeadRef is empty (pre-feature
 			// workspaces); a slug-style workspace's bare-form
 			// branch may be a user-owned local branch that
-			// middleman never created, so cleanup must not delete
+			// kenn-forge never created, so cleanup must not delete
 			// it as a candidate.
 			if ws.GitHeadRef != "" {
 				return []string{ws.GitHeadRef}

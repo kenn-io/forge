@@ -13,7 +13,7 @@ async function write(root: string, file: string, content: string): Promise<strin
 }
 
 async function makeRoot(): Promise<string> {
-  return mkdtemp("/tmp/middleman-font-size-token-check-");
+  return mkdtemp("/tmp/kenn-forge-font-size-token-check-");
 }
 
 test("flags raw font-size lengths in frontend styles", async () => {

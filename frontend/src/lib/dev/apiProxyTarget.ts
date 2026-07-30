@@ -10,19 +10,19 @@ export const defaultDevApiUrl = `http://${defaultHost}:${defaultPort}`;
 
 export interface DevEnv {
   HOME?: string;
-  MIDDLEMAN_API_URL?: string;
-  MIDDLEMAN_CONFIG?: string;
-  MIDDLEMAN_HOME?: string;
+  KENN_FORGE_API_URL?: string;
+  KENN_FORGE_CONFIG?: string;
+  KENN_FORGE_HOME?: string;
 }
 
-interface MiddlemanConfigFields {
+interface ForgeConfigFields {
   basePath?: string;
   host?: string;
   port?: number;
 }
 
 export function resolveDevApiUrl(env: DevEnv = process.env): string {
-  const override = env.MIDDLEMAN_API_URL?.trim();
+  const override = env.KENN_FORGE_API_URL?.trim();
   if (override) {
     return override;
   }
@@ -36,21 +36,21 @@ export function resolveDevApiUrl(env: DevEnv = process.env): string {
 }
 
 function resolveConfigPath(env: DevEnv): string {
-  const explicitConfigPath = env.MIDDLEMAN_CONFIG?.trim();
+  const explicitConfigPath = env.KENN_FORGE_CONFIG?.trim();
   if (explicitConfigPath) {
     return explicitConfigPath;
   }
 
-  const middlemanHome = env.MIDDLEMAN_HOME?.trim();
-  if (middlemanHome) {
-    return path.join(middlemanHome, "config.toml");
+  const forgeHome = env.KENN_FORGE_HOME?.trim();
+  if (forgeHome) {
+    return path.join(forgeHome, "config.toml");
   }
 
   const home = env.HOME?.trim() || os.homedir();
-  return path.join(home, ".config", "middleman", "config.toml");
+  return path.join(home, ".config", "kenn-forge", "config.toml");
 }
 
-function buildDevApiUrl(config: MiddlemanConfigFields): string {
+function buildDevApiUrl(config: ForgeConfigFields): string {
   const host = normalizeHost(config.host);
   const port = normalizePort(config.port);
   const basePath = normalizeBasePath(config.basePath);
@@ -95,9 +95,9 @@ function formatHostForUrl(host: string): string {
   return host;
 }
 
-function parseConfig(configText: string): MiddlemanConfigFields {
+function parseConfig(configText: string): ForgeConfigFields {
   const config = loadToml(configText) as Record<string, unknown>;
-  const parsed: MiddlemanConfigFields = {};
+  const parsed: ForgeConfigFields = {};
 
   const host = parseStringField(config.host);
   if (host !== undefined) {

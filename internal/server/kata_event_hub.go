@@ -17,7 +17,7 @@ import (
 
 	katagenerated "go.kenn.io/kata/pkg/client/generated"
 
-	"go.kenn.io/middleman/internal/kata"
+	"go.kenn.io/forge/internal/kata"
 )
 
 const (

@@ -6,13 +6,13 @@ import (
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
+	"go.kenn.io/forge/internal/agentactivity"
 	"go.kenn.io/kit/agenthook"
-	"go.kenn.io/middleman/internal/agentactivity"
 )
 
 type receiveAgentHookInput struct {
 	Agent             string                  `path:"agent"`
-	RuntimeSessionKey string                  `header:"X-Middleman-Runtime-Session-Key"`
+	RuntimeSessionKey string                  `header:"X-Kenn-Forge-Runtime-Session-Key"`
 	Body              agentactivity.HookEvent `json:"body"`
 }
 

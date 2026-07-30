@@ -1,6 +1,6 @@
 // Tooling status with a standalone fallback. Embedded, the host
 // pushes its own probe into the embed config slot
-// (__middleman_update_tooling) and that value wins. Standalone, no
+// (__kenn_forge_update_tooling) and that value wins. Standalone, no
 // embedder exists to fill the slot, so the first read lazily fetches
 // the server's native probe from GET /api/v1/tooling-status. The
 // fetch fires once per page load — the server caches probes

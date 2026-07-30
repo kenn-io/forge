@@ -16,17 +16,17 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/config"
-	"go.kenn.io/middleman/internal/db"
-	ghclient "go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/platform"
-	platformforgejo "go.kenn.io/middleman/internal/platform/forgejo"
-	platformgitea "go.kenn.io/middleman/internal/platform/gitea"
-	platformgitlab "go.kenn.io/middleman/internal/platform/gitlab"
-	"go.kenn.io/middleman/internal/server"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
-	"go.kenn.io/middleman/internal/testutil/servertest"
-	"go.kenn.io/middleman/internal/tokenauth"
+	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/db"
+	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/platform"
+	platformforgejo "go.kenn.io/forge/internal/platform/forgejo"
+	platformgitea "go.kenn.io/forge/internal/platform/gitea"
+	platformgitlab "go.kenn.io/forge/internal/platform/gitlab"
+	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/servertest"
+	"go.kenn.io/forge/internal/tokenauth"
 )
 
 func TestTokenFileRotationE2EConfigStartupAndHTTPSync(t *testing.T) {
@@ -68,7 +68,7 @@ func TestTokenFileRotationE2EConfigStartupAndHTTPSync(t *testing.T) {
 	cfgPath := filepath.Join(dir, "config.toml")
 	require.NoError(os.WriteFile(cfgPath, fmt.Appendf(nil, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -174,8 +174,8 @@ func TestInvalidReloadKeepsLiveTokenSourceE2E(t *testing.T) {
 	require := require.New(t)
 	ctx := t.Context()
 	dir := t.TempDir()
-	const liveTokenEnv = "MIDDLEMAN_INVALID_RELOAD_E2E_REPO_TOKEN"
-	const missingTokenEnv = "MIDDLEMAN_INVALID_RELOAD_E2E_MISSING_REPO_TOKEN"
+	const liveTokenEnv = "KENN_FORGE_INVALID_RELOAD_E2E_REPO_TOKEN"
+	const missingTokenEnv = "KENN_FORGE_INVALID_RELOAD_E2E_MISSING_REPO_TOKEN"
 	t.Setenv(liveTokenEnv, "opaque-live-token-11111")
 	t.Setenv(missingTokenEnv, "")
 
@@ -278,7 +278,7 @@ func startMissingGitLabTokenServerE2E(t *testing.T) *httptest.Server {
 	cfgPath := filepath.Join(dir, "config.toml")
 	require.NoError(os.WriteFile(cfgPath, fmt.Appendf(nil, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -371,7 +371,7 @@ func TestMissingTokenBulkAddReposReturnsBadRequestE2E(t *testing.T) {
 func gitLabPlatformTokenConfig(tokenEnvLine string) string {
 	return fmt.Sprintf(`
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -386,7 +386,7 @@ func TestPlatformTokenRemovalAppliesWithoutRestartE2E(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	dir := t.TempDir()
-	t.Setenv("MIDDLEMAN_E2E_PLATFORM_TOKEN", "opaque-platform-token-11111")
+	t.Setenv("KENN_FORGE_E2E_PLATFORM_TOKEN", "opaque-platform-token-11111")
 
 	var tokens []string
 	gitlabAPI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -402,7 +402,7 @@ func TestPlatformTokenRemovalAppliesWithoutRestartE2E(t *testing.T) {
 
 	cfgPath := filepath.Join(dir, "config.toml")
 	require.NoError(os.WriteFile(cfgPath, []byte(gitLabPlatformTokenConfig(
-		`token_env = "MIDDLEMAN_E2E_PLATFORM_TOKEN"`,
+		`token_env = "KENN_FORGE_E2E_PLATFORM_TOKEN"`,
 	)), 0o644))
 	cfg, err := config.Load(cfgPath)
 	require.NoError(err)
@@ -458,14 +458,14 @@ func TestRuntimeLaunchStripsReloadedAndImplicitTokenEnvsE2E(t *testing.T) {
 	outputPath := filepath.Join(dir, "runtime-env.txt")
 	workspacePath := filepath.Join(dir, "workspace")
 	require.NoError(os.MkdirAll(workspacePath, 0o755))
-	t.Setenv("MIDDLEMAN_OLD_REPO_TOKEN", "old-secret")
-	t.Setenv("MIDDLEMAN_NEW_REPO_TOKEN", "new-secret")
-	t.Setenv("MIDDLEMAN_FORGEJO_TOKEN", "forgejo-secret")
-	t.Setenv("MIDDLEMAN_GITEA_TOKEN", "gitea-secret")
-	t.Setenv("MIDDLEMAN_VISIBLE_VALUE", "visible")
+	t.Setenv("KENN_FORGE_OLD_REPO_TOKEN", "old-secret")
+	t.Setenv("KENN_FORGE_NEW_REPO_TOKEN", "new-secret")
+	t.Setenv("KENN_FORGE_FORGEJO_TOKEN", "forgejo-secret")
+	t.Setenv("KENN_FORGE_GITEA_TOKEN", "gitea-secret")
+	t.Setenv("KENN_FORGE_VISIBLE_VALUE", "visible")
 
 	cfgPath := filepath.Join(dir, "config.toml")
-	initialConfig := runtimeStripConfig(outputPath, "MIDDLEMAN_OLD_REPO_TOKEN")
+	initialConfig := runtimeStripConfig(outputPath, "KENN_FORGE_OLD_REPO_TOKEN")
 	require.NoError(os.WriteFile(cfgPath, []byte(initialConfig), 0o644))
 	cfg, err := config.Load(cfgPath)
 	require.NoError(err)
@@ -494,7 +494,7 @@ func TestRuntimeLaunchStripsReloadedAndImplicitTokenEnvsE2E(t *testing.T) {
 	stream := streamTokenRotationConfigEvents(t, srv, httpServer)
 	defer stream.Close()
 	writeConfigTomlAtomically(
-		t, cfgPath, runtimeStripConfig(outputPath, "MIDDLEMAN_NEW_REPO_TOKEN"),
+		t, cfgPath, runtimeStripConfig(outputPath, "KENN_FORGE_NEW_REPO_TOKEN"),
 	)
 	ev := waitForTokenRotationConfigEvent(t, stream, 3*time.Second)
 	require.True(ev.Valid, "reload error: %s", ev.Error)
@@ -526,7 +526,7 @@ func TestRuntimeLaunchStripsReloadedAndImplicitTokenEnvsE2E(t *testing.T) {
 // canonical chains and keep the reload valid rather than flag a host conflict.
 const equivalentCloneTokenChainReloadConfig = `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -556,7 +556,7 @@ func TestEquivalentCloneTokenChainsReloadStaysValidE2E(t *testing.T) {
 	cfgPath := filepath.Join(dir, "config.toml")
 	require.NoError(os.WriteFile(cfgPath, []byte(`
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -595,7 +595,7 @@ name = "widget"
 func sharedHostCloneConfig(forgejoTokenLine, giteaTokenLine string) string {
 	return fmt.Sprintf(`
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -615,13 +615,13 @@ func TestSharedHostCloneAuthFollowsSurvivingProviderTokenE2E(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	dir := t.TempDir()
-	t.Setenv("MIDDLEMAN_E2E_SHARED_TOKEN", "opaque-shared-token-11111")
-	t.Setenv("MIDDLEMAN_E2E_ROTATED_TOKEN", "opaque-rotated-token-22222")
+	t.Setenv("KENN_FORGE_E2E_SHARED_TOKEN", "opaque-shared-token-11111")
+	t.Setenv("KENN_FORGE_E2E_ROTATED_TOKEN", "opaque-rotated-token-22222")
 
 	cfgPath := filepath.Join(dir, "config.toml")
 	require.NoError(os.WriteFile(cfgPath, []byte(sharedHostCloneConfig(
-		`token_env = "MIDDLEMAN_E2E_SHARED_TOKEN"`,
-		`token_env = "MIDDLEMAN_E2E_SHARED_TOKEN"`,
+		`token_env = "KENN_FORGE_E2E_SHARED_TOKEN"`,
+		`token_env = "KENN_FORGE_E2E_SHARED_TOKEN"`,
 	)), 0o644))
 	cfg, err := config.Load(cfgPath)
 	require.NoError(err)
@@ -680,7 +680,7 @@ func TestSharedHostCloneAuthFollowsSurvivingProviderTokenE2E(t *testing.T) {
 	// keep live provider clients, so no restart may be demanded.
 	writeConfigTomlAtomically(t, cfgPath, sharedHostCloneConfig(
 		"",
-		`token_env = "MIDDLEMAN_E2E_ROTATED_TOKEN"`,
+		`token_env = "KENN_FORGE_E2E_ROTATED_TOKEN"`,
 	))
 	ev := waitForTokenRotationConfigEvent(t, stream, 3*time.Second)
 	assert.True(ev.Valid, "reload error: %s", ev.Error)
@@ -803,7 +803,7 @@ func gitLabTokenRepoRef() ghclient.RepoRef {
 func gitLabTokenEnvConfig(tokenEnv string) string {
 	return fmt.Sprintf(`
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -820,21 +820,21 @@ token_env = %q
 func runtimeStripConfig(outputPath, tokenEnv string) string {
 	script := strings.Join([]string{
 		`printf '%s\n%s\n%s\n%s\n%s\n'`,
-		`"${MIDDLEMAN_OLD_REPO_TOKEN-unset}"`,
-		`"${MIDDLEMAN_NEW_REPO_TOKEN-unset}"`,
-		`"${MIDDLEMAN_FORGEJO_TOKEN-unset}"`,
-		`"${MIDDLEMAN_GITEA_TOKEN-unset}"`,
-		`"${MIDDLEMAN_VISIBLE_VALUE-unset}"`,
+		`"${KENN_FORGE_OLD_REPO_TOKEN-unset}"`,
+		`"${KENN_FORGE_NEW_REPO_TOKEN-unset}"`,
+		`"${KENN_FORGE_FORGEJO_TOKEN-unset}"`,
+		`"${KENN_FORGE_GITEA_TOKEN-unset}"`,
+		`"${KENN_FORGE_VISIBLE_VALUE-unset}"`,
 		`> "$1"`,
 	}, " ")
 	return fmt.Sprintf(`
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
 [tmux]
-command = ["/definitely/missing-middleman-test-tmux"]
+command = ["/definitely/missing-kenn-forge-test-tmux"]
 
 [[platforms]]
 type = "forgejo"

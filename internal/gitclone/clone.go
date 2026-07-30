@@ -14,10 +14,10 @@ import (
 	"sync"
 	"time"
 
+	"go.kenn.io/forge/internal/procutil"
+	"go.kenn.io/forge/internal/tokenauth"
 	gitcmd "go.kenn.io/kit/git/cmd"
 	gitremote "go.kenn.io/kit/git/remote"
-	"go.kenn.io/middleman/internal/procutil"
-	"go.kenn.io/middleman/internal/tokenauth"
 	"golang.org/x/sync/singleflight"
 )
 

@@ -1,5 +1,5 @@
-import type { components } from "@middleman/ui/api/schema";
-import { configuredAPIBaseURL } from "@middleman/ui/api/runtime-base";
+import type { components } from "@kenn-forge/ui/api/schema";
+import { configuredAPIBaseURL } from "@kenn-forge/ui/api/runtime-base";
 import type {
   AddFolderInput,
   BrowseResponse,
@@ -17,7 +17,7 @@ import type {
 import { apiErrorMessage, createRuntimeClient } from "../runtime.js";
 
 /**
- * Typed wrapper around the middleman Go server's /api/docs/* endpoints.
+ * Typed wrapper around the kenn-forge Go server's /api/docs/* endpoints.
  *
  * Image blob URLs aren't fetched through this API — markdown <img src=...>
  * tags request them directly. `blobURL` builds the right URL.

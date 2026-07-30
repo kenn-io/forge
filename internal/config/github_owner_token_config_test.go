@@ -9,7 +9,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/tokenauth"
+	"go.kenn.io/forge/internal/tokenauth"
 )
 
 func TestGitHubOwnerTokensValidation(t *testing.T) {
@@ -119,7 +119,7 @@ token_env = "ACME_PAT"
 	assert.True(ownerPlan.Required)
 	assert.Equal("acme", ownerPlan.GitHubOwner)
 	assert.Equal([]string{
-		"env:ACME_PAT", "env:MIDDLEMAN_GITHUB_TOKEN", "github_cli:github.com",
+		"env:ACME_PAT", "env:KENN_FORGE_GITHUB_TOKEN", "github_cli:github.com",
 	}, candidateSafeStrings(ownerPlan.Descriptor))
 }
 
@@ -253,11 +253,11 @@ func candidateSafeStrings(desc tokenauth.Descriptor) []string {
 func TestConfiguredCredentialAvailableSeesOwnerTokenRoute(t *testing.T) {
 	assert := assert.New(t)
 	cfg, err := Load(writeConfig(t, `
-github_token_env = "MIDDLEMAN_OWNER_ROUTE_TEST_ABSENT_DEFAULT"
+github_token_env = "KENN_FORGE_OWNER_ROUTE_TEST_ABSENT_DEFAULT"
 
 [[github_owner_tokens]]
 owner = "acme"
-token_env = "MIDDLEMAN_OWNER_ROUTE_TEST_ACME_PAT"
+token_env = "KENN_FORGE_OWNER_ROUTE_TEST_ACME_PAT"
 
 [[repos]]
 owner = "acme"
@@ -268,7 +268,7 @@ name = "widgets"
 	assert.False(cfg.ConfiguredCredentialAvailable(),
 		"an owner route whose PAT env is unset supplies no credential")
 
-	t.Setenv("MIDDLEMAN_OWNER_ROUTE_TEST_ACME_PAT", "acme-tok")
+	t.Setenv("KENN_FORGE_OWNER_ROUTE_TEST_ACME_PAT", "acme-tok")
 
 	assert.True(cfg.ConfiguredCredentialAvailable(),
 		"the owner PAT is a usable platform credential")
@@ -281,13 +281,13 @@ name = "widgets"
 // anything.
 func TestConfiguredCredentialAvailableSeesRoutesWithoutTrackedRepos(t *testing.T) {
 	assert := assert.New(t)
-	t.Setenv("MIDDLEMAN_STANDALONE_OWNER_PAT", "standalone-tok")
+	t.Setenv("KENN_FORGE_STANDALONE_OWNER_PAT", "standalone-tok")
 	cfg, err := Load(writeConfig(t, `
-github_token_env = "MIDDLEMAN_OWNER_ROUTE_TEST_ABSENT_DEFAULT"
+github_token_env = "KENN_FORGE_OWNER_ROUTE_TEST_ABSENT_DEFAULT"
 
 [[github_owner_tokens]]
 owner = "acme"
-token_env = "MIDDLEMAN_STANDALONE_OWNER_PAT"
+token_env = "KENN_FORGE_STANDALONE_OWNER_PAT"
 `))
 	require.NoError(t, err)
 	require.Empty(t, cfg.Repos)
@@ -306,7 +306,7 @@ func TestConfiguredCredentialAvailableSeesStandaloneAppRoute(t *testing.T) {
 	keyPath := filepath.Join(t.TempDir(), "app.pem")
 	require.NoError(os.WriteFile(keyPath, []byte("private-key\n"), 0o600))
 	cfg, err := Load(writeConfig(t, `
-github_token_env = "MIDDLEMAN_OWNER_ROUTE_TEST_ABSENT_DEFAULT"
+github_token_env = "KENN_FORGE_OWNER_ROUTE_TEST_ABSENT_DEFAULT"
 
 [[github_apps]]
 app_id = 42
@@ -337,7 +337,7 @@ func TestConfiguredCredentialAvailableAcceptsAppPrivateKey(t *testing.T) {
 	keyPath := filepath.Join(dir, "app.pem")
 	require.NoError(t, os.WriteFile(keyPath, []byte("private-key\n"), 0o600))
 	cfg, err := Load(writeConfig(t, `
-github_token_env = "MIDDLEMAN_OWNER_ROUTE_TEST_ABSENT_DEFAULT"
+github_token_env = "KENN_FORGE_OWNER_ROUTE_TEST_ABSENT_DEFAULT"
 
 [[github_apps]]
 app_id = 42
@@ -372,7 +372,7 @@ func TestOverriddenRepoReadsUseAppInstallationAndWritesUseRepoPAT(t *testing.T) 
 	keyPath := filepath.Join(dir, "app.pem")
 	require.NoError(os.WriteFile(keyPath, []byte("private-key\n"), 0o600))
 	cfg, err := Load(writeConfig(t, `
-github_token_env = "MIDDLEMAN_APP_READ_TEST_ABSENT"
+github_token_env = "KENN_FORGE_APP_READ_TEST_ABSENT"
 
 [[github_apps]]
 app_id = 42

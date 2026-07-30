@@ -84,7 +84,7 @@
 {#snippet wordmark()}
   <header>
     <span class="logo" aria-hidden="true"></span>
-    <span class="brand">middleman</span>
+    <span class="brand">kenn-forge</span>
     <span class="divider">/</span>
     <span class="context">GitHub App setup</span>
   </header>
@@ -107,8 +107,8 @@
         <h1>App created on GitHub</h1>
       </div>
       <p>
-        GitHub handed the app's creation code back to <code>middleman-github-app</code>. The terminal is finishing
-        setup: exchanging the code, saving the credentials to your middleman config, and opening GitHub's install
+        GitHub handed the app's creation code back to <code>kenn-forge-github-app</code>. The terminal is finishing
+        setup: exchanging the code, saving the credentials to your kenn-forge config, and opening GitHub's install
         page so you can choose the account your repositories live in.
       </p>
       <p>
@@ -128,14 +128,14 @@
         <h1>This setup link is no longer active</h1>
       </div>
       <p>
-        The <code>middleman-github-app create</code> command that opened this page is not running anymore. Re-run it
+        The <code>kenn-forge-github-app create</code> command that opened this page is not running anymore. Re-run it
         in your terminal to start a fresh setup.
       </p>
       <p class="detail">{loadError}</p>
     {:else if flow}
-      <h1>Create the GitHub App for middleman</h1>
+      <h1>Create the GitHub App for kenn-forge</h1>
       <p>
-        middleman will sync <strong>{flow.host}</strong> with this app's installation tokens instead of your
+        kenn-forge will sync <strong>{flow.host}</strong> with this app's installation tokens instead of your
         personal access token, freeing up your PAT's rate limit. Merges and comments keep using your own
         credentials, so they stay attributed to you.
       </p>
@@ -146,7 +146,7 @@
         <dt>Visibility</dt>
         <dd>Private to your account</dd>
         <dt>Webhooks</dt>
-        <dd>Disabled — middleman polls</dd>
+        <dd>Disabled — kenn-forge polls</dd>
       </dl>
 
       {#if permissions.length > 0}

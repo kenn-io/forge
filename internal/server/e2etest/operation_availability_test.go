@@ -8,12 +8,12 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/apiclient"
-	"go.kenn.io/middleman/internal/db"
-	ghclient "go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/server"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
-	"go.kenn.io/middleman/internal/testutil/servertest"
+	"go.kenn.io/forge/internal/apiclient"
+	"go.kenn.io/forge/internal/db"
+	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/servertest"
 )
 
 func TestPullDetailReportsPausedRateTrackerE2E(t *testing.T) {
@@ -55,10 +55,10 @@ func TestPullDetailReportsPausedRateTrackerE2E(t *testing.T) {
 	srv := servertest.New(t, database, syncer, nil, "/", nil, server.ServerOptions{
 		HostCheckAllowLoopbackAnyPort: true,
 	})
-	middleman := httptest.NewServer(srv)
-	t.Cleanup(middleman.Close)
+	forge := httptest.NewServer(srv)
+	t.Cleanup(forge.Close)
 
-	client, err := apiclient.NewWithHTTPClient(middleman.URL, middleman.Client())
+	client, err := apiclient.NewWithHTTPClient(forge.URL, forge.Client())
 	require.NoError(err)
 	response, err := client.HTTP.GetPullWithResponse(t.Context(), "github", "acme", "widget", 7)
 	require.NoError(err)

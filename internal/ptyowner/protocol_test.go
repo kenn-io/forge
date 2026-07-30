@@ -28,11 +28,11 @@ func TestSessionPathsAreStable(t *testing.T) {
 	require := require.New(t)
 	root := t.TempDir()
 
-	paths, err := NewSessionPaths(root, "middleman-abc123")
+	paths, err := NewSessionPaths(root, "kenn-forge-abc123")
 
 	require.NoError(err)
 	assert.Equal(root, paths.Root)
-	assert.Contains(paths.Dir, "middleman-abc123")
+	assert.Contains(paths.Dir, "kenn-forge-abc123")
 	assert.NotEmpty(paths.Socket)
 	assert.Contains(paths.StatePath, "owner.json")
 }
@@ -56,12 +56,12 @@ func TestSessionPathsUsePrivateSocketDirForLongRoots(t *testing.T) {
 	require := require.New(t)
 	root := filepath.Join(t.TempDir(), strings.Repeat("x", maxUnixSocketPathLen))
 
-	paths, err := NewSessionPaths(root, "middleman-abc123")
+	paths, err := NewSessionPaths(root, "kenn-forge-abc123")
 
 	require.NoError(err)
 	require.NotEmpty(paths.SocketDir)
 	assert.Equal(filepath.Join(paths.SocketDir, "sock"), paths.Socket)
-	assert.Equal(fallbackSocketDir(root, "middleman-abc123", os.TempDir()), paths.SocketDir)
+	assert.Equal(fallbackSocketDir(root, "kenn-forge-abc123", os.TempDir()), paths.SocketDir)
 	assert.LessOrEqual(len(paths.Socket), maxUnixSocketPathLen)
 }
 
@@ -75,12 +75,12 @@ func TestSessionPathsUseShortPrivateTmpWhenTempDirIsTooLong(t *testing.T) {
 	longTempDir := filepath.Join(t.TempDir(), strings.Repeat("long-temp-root-", 8))
 	t.Setenv("TMPDIR", longTempDir)
 
-	paths, err := NewSessionPaths(root, "middleman-abc123")
+	paths, err := NewSessionPaths(root, "kenn-forge-abc123")
 
 	require.NoError(err)
 	expectedDir := filepath.Join(
 		"/private/tmp",
-		"middleman-pty-"+sessionSocketHash(root+"-middleman-abc123"),
+		"kenn-forge-pty-"+sessionSocketHash(root+"-kenn-forge-abc123"),
 	)
 	assert.Equal(expectedDir, paths.SocketDir)
 	assert.Equal(filepath.Join(expectedDir, "sock"), paths.Socket)
@@ -92,11 +92,11 @@ func TestFallbackSocketDirSkipsPrivateTmpOffDarwin(t *testing.T) {
 	root := filepath.Join(t.TempDir(), strings.Repeat("x", maxUnixSocketPathLen))
 	longTempDir := filepath.Join(t.TempDir(), strings.Repeat("long-temp-root-", 8))
 
-	socketDir := fallbackSocketDirForOS(root, "middleman-abc123", longTempDir, "linux")
+	socketDir := fallbackSocketDirForOS(root, "kenn-forge-abc123", longTempDir, "linux")
 
 	expectedDir := filepath.Join(
 		"/tmp",
-		"middleman-pty-"+sessionSocketHash(root+"-middleman-abc123"),
+		"kenn-forge-pty-"+sessionSocketHash(root+"-kenn-forge-abc123"),
 	)
 	assert.Equal(expectedDir, socketDir)
 	assert.LessOrEqual(len(filepath.Join(socketDir, "sock")), maxUnixSocketPathLen)
@@ -107,11 +107,11 @@ func TestFallbackSocketDirUsesPrivateTmpOnDarwin(t *testing.T) {
 	root := filepath.Join(t.TempDir(), strings.Repeat("x", maxUnixSocketPathLen))
 	longTempDir := filepath.Join(t.TempDir(), strings.Repeat("long-temp-root-", 8))
 
-	socketDir := fallbackSocketDirForOS(root, "middleman-abc123", longTempDir, "darwin")
+	socketDir := fallbackSocketDirForOS(root, "kenn-forge-abc123", longTempDir, "darwin")
 
 	expectedDir := filepath.Join(
 		"/private/tmp",
-		"middleman-pty-"+sessionSocketHash(root+"-middleman-abc123"),
+		"kenn-forge-pty-"+sessionSocketHash(root+"-kenn-forge-abc123"),
 	)
 	assert.Equal(expectedDir, socketDir)
 	assert.LessOrEqual(len(filepath.Join(socketDir, "sock")), maxUnixSocketPathLen)
@@ -124,7 +124,7 @@ func TestCreatePrivateSocketDirRejectsSymlink(t *testing.T) {
 	require := require.New(t)
 	parent := t.TempDir()
 	target := filepath.Join(parent, "target")
-	socketDir := filepath.Join(parent, "middleman-pty-symlink")
+	socketDir := filepath.Join(parent, "kenn-forge-pty-symlink")
 	require.NoError(os.Mkdir(target, 0o700))
 	require.NoError(os.Symlink(target, socketDir))
 
@@ -139,7 +139,7 @@ func TestCreatePrivateSocketDirRejectsSharedExistingDir(t *testing.T) {
 		t.Skip("Unix mode fallback socket hardening is Unix-specific")
 	}
 	require := require.New(t)
-	socketDir := filepath.Join(t.TempDir(), "middleman-pty-shared")
+	socketDir := filepath.Join(t.TempDir(), "kenn-forge-pty-shared")
 	require.NoError(os.Mkdir(socketDir, 0o755))
 	// os.Mkdir applies the process umask, so under a umask of 077 the dir
 	// would be created 0o700 and the rejection below would never fire. Force

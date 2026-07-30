@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
-import { clearActiveTabbedPanelDrag, readTabbedPanelTabDrag, sessionPaneKey } from "@middleman/ui";
+import { clearActiveTabbedPanelDrag, readTabbedPanelTabDrag, sessionPaneKey } from "@kenn-forge/ui";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import TerminalSplitTree from "./TerminalSplitTree.svelte";
 import type { PaneNode } from "./terminal-layout";

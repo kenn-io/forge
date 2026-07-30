@@ -1,13 +1,13 @@
-# middleman
+# kenn-forge
 
 A local-first maintainer console. The original core syncs PRs and issues from your repos into SQLite, serves a fast Svelte 5 frontend from a single binary, and keeps you out of provider notification inboxes.
 
-Middleman runs entirely on your machine -- no hosted service, no account to create. One binary, one config file, and you're up.
+Kenn Forge runs entirely on your machine -- no hosted service, no account to create. One binary, one config file, and you're up.
 
 For user-facing setup and workflow docs, start with
 [docs/index.md](docs/index.md).
 
-This workstream expands middleman beyond provider PR/MR triage with first-class
+This workstream expands kenn-forge beyond provider PR/MR triage with first-class
 modes for external Kata task daemons and local markdown docs. Those domains
 stay owned by their source systems: Kata task data remains in Kata daemons and
 docs remain on disk.
@@ -72,7 +72,7 @@ and neutral results with direct links to provider runs when available.
 - **Copy to clipboard** -- one-click copy of PR/issue bodies and comments
 - **Settings UI** -- add/remove repos and configure activity feed defaults from the browser
 - **Reverse proxy support** -- deploy behind a proxy with the `base_path` config
-- **Version info** -- `middleman version` prints build metadata, with `--json` for integrations
+- **Version info** -- `kenn-forge version` prints build metadata, with `--json` for integrations
 
 ### Additional modes in this integration branch
 
@@ -81,7 +81,7 @@ and neutral results with direct links to provider runs when available.
 - **Docs** -- browse, view, edit, search, and publish configured markdown
   folders.
 - **Federated fleet** -- one daemon (the hub) merges snapshots from remote
-  middleman daemons, proxies mutations to the host that owns the resource,
+  kenn-forge daemons, proxies mutations to the host that owns the resource,
   and hands out native tmux attach commands fleet-wide. Peers are reached
   over HTTP or SSH (no exposed remote listener required). See
   [docs/federated-fleet.md](docs/federated-fleet.md).
@@ -99,29 +99,29 @@ and neutral results with direct links to provider runs when available.
 ### Build and run
 
 ```sh
-git clone https://github.com/kenn-io/middleman.git
-cd middleman
+git clone https://github.com/kenn-io/forge.git
+cd kenn-forge
 make build
 ```
 
-Set your token and start middleman:
+Set your token and start kenn-forge:
 
 ```sh
-export MIDDLEMAN_GITHUB_TOKEN=ghp_your_token_here
-./middleman
+export KENN_FORGE_GITHUB_TOKEN=ghp_your_token_here
+./kenn-forge
 ```
 
-If you use the [GitHub CLI](https://cli.github.com/), middleman will use
+If you use the [GitHub CLI](https://cli.github.com/), kenn-forge will use
 `gh auth token --hostname HOST` automatically. The unscoped fallback applies
 only to `github.com`.
 
-For token rotation without restarting middleman, configure `token_file` on a
+For token rotation without restarting kenn-forge, configure `token_file` on a
 repo, provider, or GitHub owner entry and replace that file atomically when the
-token changes. Middleman reads token files on demand and trims surrounding
+token changes. Kenn Forge reads token files on demand and trims surrounding
 whitespace. Restart after rotating an owner route to a PAT issued by a different
 GitHub user.
 
-On first run, middleman creates a default config at `~/.config/middleman/config.toml` and serves the UI at **http://localhost:8091**. Add repositories from the Settings page, or edit the config file directly:
+On first run, kenn-forge creates a default config at `~/.kenn/forge/config.toml` and serves the UI at **http://localhost:8091**. Add repositories from the Settings page, or edit the config file directly:
 
 ```toml
 [[repos]]
@@ -136,9 +136,9 @@ name = "another-repo"
 To expose Go profiler endpoints for local diagnostics, start a separate listener:
 
 ```sh
-MIDDLEMAN_PPROF_ADDR=127.0.0.1:6060 ./middleman
+KENN_FORGE_PPROF_ADDR=127.0.0.1:6060 ./kenn-forge
 # or
-./middleman serve -pprof-addr 127.0.0.1:6060
+./kenn-forge serve -pprof-addr 127.0.0.1:6060
 ```
 
 The listener is disabled when the address is empty and serves the standard `/debug/pprof/` endpoints.
@@ -156,12 +156,12 @@ All fields are optional. Repos can be added in the config file or through the Se
 | Field | Default | Description |
 |-------|---------|-------------|
 | `sync_interval` | `"5m"` | How often to pull from configured providers |
-| `github_token_env` | `"MIDDLEMAN_GITHUB_TOKEN"` | Env var holding the default GitHub token |
+| `github_token_env` | `"KENN_FORGE_GITHUB_TOKEN"` | Env var holding the default GitHub token |
 | `default_platform_host` | `"github.com"` | Host treated as implicit in repository UI labels |
 | `host` | `"127.0.0.1"` | Listen address |
 | `port` | `8091` | Listen port, from 1 to 65535 |
 | `base_path` | `"/"` | URL prefix for reverse proxy deployments |
-| `data_dir` | `"~/.config/middleman"` | Directory for the SQLite database |
+| `data_dir` | `"~/.kenn/forge"` | Directory for the SQLite database |
 | `activity.view_mode` | `"threaded"` | `"flat"` or `"threaded"` |
 | `activity.time_range` | `"7d"` | `"24h"`, `"7d"`, `"30d"`, or `"90d"` |
 | `activity.hide_closed` | `false` | Hide closed/merged items in the feed |
@@ -170,7 +170,7 @@ All fields are optional. Repos can be added in the config file or through the Se
 | `activity.default_branch_max_commits` | `5000` | Maximum default-branch commit rows kept per repo branch |
 
 The integration branch also adds docs-folder configuration. Kata
-daemon definitions are intentionally not stored in middleman config; middleman
+daemon definitions are intentionally not stored in kenn-forge config; kenn-forge
 reads the Kata daemon catalog from `$KATA_HOME/config.toml`, defaulting to
 `~/.kata/config.toml`.
 
@@ -189,8 +189,8 @@ token_env = "GHE_TOKEN"
 
 Tokens can come from `token_file`, `token_env`, exact public-host defaults, or
 the GitHub CLI fallback. Use `token_file` when you need rotation without
-restarting Middleman: write the new token to a temporary file, then atomically
-rename it over the configured path. Middleman reads token files on demand and
+restarting Kenn Forge: write the new token to a temporary file, then atomically
+rename it over the configured path. Kenn Forge reads token files on demand and
 trims surrounding whitespace.
 
 For a repo or platform entry, `token_file` is checked before `token_env`; empty
@@ -198,11 +198,11 @@ token files and empty env vars are treated as absent so the next configured
 fallback can supply a token. Public-host defaults are:
 
 - GitHub `github.com`: `github_token_env`, defaulting to
-  `MIDDLEMAN_GITHUB_TOKEN`, then GitHub CLI fallback.
+  `KENN_FORGE_GITHUB_TOKEN`, then GitHub CLI fallback.
 - GitLab `gitlab.com`: no implicit default env var; configure `token_env` or
   `token_file`.
-- Forgejo `codeberg.org`: `MIDDLEMAN_FORGEJO_TOKEN`.
-- Gitea `gitea.com`: `MIDDLEMAN_GITEA_TOKEN`.
+- Forgejo `codeberg.org`: `KENN_FORGE_FORGEJO_TOKEN`.
+- Gitea `gitea.com`: `KENN_FORGE_GITEA_TOKEN`.
 
 Provider fallback tokens are looked up by `(provider, host)`. GitHub may also
 route exact repositories or owners to dedicated PATs; see
@@ -225,12 +225,12 @@ Example provider-level token file:
 [[platforms]]
 type = "gitlab"
 host = "gitlab.com"
-token_file = "~/.config/middleman/tokens/gitlab.com"
+token_file = "~/.kenn/forge/tokens/gitlab.com"
 ```
 
 Minimum read access is enough for sync: repository metadata, pull or merge
 requests, issues, comments, commits, tags, releases, and CI/status data. Enable
-write access only if you want middleman to post comments, edit titles/bodies,
+write access only if you want kenn-forge to post comments, edit titles/bodies,
 change issue or PR state, approve reviews, or merge.
 
 GitLab hosts are configured through `[[platforms]]`, then referenced by repos:
@@ -239,7 +239,7 @@ GitLab hosts are configured through `[[platforms]]`, then referenced by repos:
 [[platforms]]
 type = "gitlab"
 host = "gitlab.com"
-token_env = "MIDDLEMAN_GITLAB_TOKEN"
+token_env = "KENN_FORGE_GITLAB_TOKEN"
 
 [[repos]]
 platform = "gitlab"
@@ -300,35 +300,35 @@ name = "ops"
 
 Forgejo and Gitea preserve owner and repo casing as returned by the server.
 Unlike GitLab, nested owners are not supported for these providers; `repo_path`
-is normally the same as `owner/name` and is most useful when middleman parsed a
+is normally the same as `owner/name` and is most useful when kenn-forge parsed a
 repository URL or needs to preserve provider-canonical casing.
 
 ## Telemetry
 
-Middleman sends limited anonymous telemetry to PostHog: `daemon_active` with repo count and `app_loaded` with view name, plus version, commit, OS/arch, `application: "middleman"`, and an anonymous install ID.
+Kenn Forge sends limited anonymous telemetry to PostHog: `daemon_active` with repo count and `app_loaded` with view name, plus version, commit, OS/arch, `application: "kenn-forge"`, and an anonymous install ID.
 It disables PostHog person profile processing and IP geolocation for every capture. It does not send repo names, PR/issue content, provider tokens, usernames, hostnames, or paths; set `TELEMETRY_ENABLED=0` to disable it.
 
 ## Thin clients
 
-Middleman runs as a standalone daemon. Native apps and scripts reach
+Kenn Forge runs as a standalone daemon. Native apps and scripts reach
 it without out-of-band configuration: probe the flock on
-`<data_dir>/middleman.lock`, read `middleman.run.json` for the listen
+`<data_dir>/kenn-forge.lock`, read `kenn-forge.run.json` for the listen
 address and base path, authenticate with the bearer token minted at
 `<data_dir>/auth_token`, and use `/api/v1` plus the SSE event stream
-(Last-Event-ID replay supported). The `middleman api` CLI verb wraps
+(Last-Event-ID replay supported). The `kenn-forge api` CLI verb wraps
 this discovery + auth for one-shot calls; webview hosts can load SPA
 routes directly and read daemon-side UI state from the served
-`window.__middleman_config`. See `docs/federated-fleet.md` for the
+`window.__kenn_forge_config`. See `docs/federated-fleet.md` for the
 fleet and daemon contract details.
 
 ## Architecture
 
-Middleman is a single Go binary with the Svelte frontend embedded at build time.
+Kenn Forge is a single Go binary with the Svelte frontend embedded at build time.
 The provider dashboard stores synced provider state in SQLite. Additional modes
 may talk to local external services such as Kata daemons.
 
 ```
-middleman binary
+kenn-forge binary
   |- Config loader (TOML)
   |- Sync engine -> provider registry (GitHub/GitLab/Forgejo/Gitea readers)
   |- Mode adapters -> Kata daemons, markdown folders
@@ -342,16 +342,16 @@ middleman binary
 
 ## Database
 
-Middleman uses SQLite with embedded SQL migrations in `internal/db/migrations/`, applied on startup via `github.com/golang-migrate/migrate/v4`.
+Kenn Forge uses SQLite with embedded SQL migrations in `internal/db/migrations/`, applied on startup via `github.com/golang-migrate/migrate/v4`.
 
 On startup:
 
 - **Fresh database**: all embedded migrations are applied.
-- **Legacy database without `schema_migrations`**: middleman assumes the pre-migration schema is baseline version 1 and migrates forward.
-- **Dirty or failed migration state**: startup fails and instructs you to delete the database file and let middleman recreate it.
-- **Newer database** (migration version > binary): startup fails and instructs you to upgrade middleman.
+- **Legacy database without `schema_migrations`**: kenn-forge assumes the pre-migration schema is baseline version 1 and migrates forward.
+- **Dirty or failed migration state**: startup fails and instructs you to delete the database file and let kenn-forge recreate it.
+- **Newer database** (migration version > binary): startup fails and instructs you to upgrade kenn-forge.
 
-If a migration cannot be applied cleanly, delete `~/.config/middleman/middleman.db` and let middleman recreate it. Sync data will be repopulated from GitHub on the next run; local-only state (PR workflow statuses, stars, and worktree links) is lost.
+If a migration cannot be applied cleanly, delete `~/.kenn/forge/forge.db` and let kenn-forge recreate it. Sync data will be repopulated from GitHub on the next run; local-only state (PR workflow statuses, stars, and worktree links) is lost.
 
 ## Development
 
@@ -375,7 +375,7 @@ mise run dev-compose-down  # docker compose down
 
 Compose behavior:
 - Uses repo-local `docker/dev-config.toml` so compose config stays isolated from native runs
-- Stores SQLite state in Docker volume as `/data/middleman.db` via `data_dir = "/data"`
+- Stores SQLite state in Docker volume as `/data/forge.db` via `data_dir = "/data"`
 - Exposes backend on `http://127.0.0.1:18090` and frontend dev server on `http://127.0.0.1:15173`
 
 ### Custom config file
@@ -383,8 +383,8 @@ Compose behavior:
 Use custom config file for both processes with shared env override:
 
 ```sh
-MIDDLEMAN_CONFIG=/path/to/config.toml make dev
-MIDDLEMAN_CONFIG=/path/to/config.toml make frontend-dev
+KENN_FORGE_CONFIG=/path/to/config.toml make dev
+KENN_FORGE_CONFIG=/path/to/config.toml make frontend-dev
 ```
 
 ### Ephemeral dev stack
@@ -441,11 +441,11 @@ prek install
 
 ## License
 
-Middleman is source-available software, licensed under the
+Kenn Forge is source-available software, licensed under the
 [Elastic License 2.0](LICENSE) (ELv2).
 
 You can use, copy, modify, and redistribute it for free. The main restriction is
-that you may not provide Middleman to third parties as a hosted or managed
+that you may not provide Kenn Forge to third parties as a hosted or managed
 service that gives users access to a substantial set of its features. You also
 may not remove the project's licensing or copyright notices. The
 [LICENSE](LICENSE) file is the authoritative text; this paragraph is a

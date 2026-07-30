@@ -14,8 +14,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/server/workspaceapi"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/server/workspaceapi"
 )
 
 func setupWorkspaceTestServerWithConfigContent(
@@ -44,7 +44,7 @@ func TestKataWorkspaceTargetAutomaticMapping(t *testing.T) {
 	))
 	cfg := fmt.Sprintf(`
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -94,7 +94,7 @@ func TestKataWorkspaceTargetAutomaticMappingFromProjectIdentity(t *testing.T) {
 	))
 	cfg := fmt.Sprintf(`
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -134,7 +134,7 @@ func TestKataWorkspaceTargetAutomaticMappingFromProjectIdentityWhenUIDPresent(t 
 	))
 	cfg := fmt.Sprintf(`
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -172,7 +172,7 @@ func TestKataWorkspaceTargetAutomaticMappingFromProjectName(t *testing.T) {
 	))
 	cfg := fmt.Sprintf(`
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -215,7 +215,7 @@ func TestKataWorkspaceTargetUnavailableWhenProjectNameMatchesButIdentifierDiffer
 	))
 	cfg := fmt.Sprintf(`
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -257,7 +257,7 @@ func TestKataWorkspaceTargetNameFallbackResolvesWithUnrelatedIdentityClone(t *te
 	))
 	cfg := fmt.Sprintf(`
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -296,21 +296,21 @@ func TestKataWorkspaceTargetAutomaticMappingFromTrackedRepoName(t *testing.T) {
 
 	srv, database, _ := setupWorkspaceTestServerWithConfigContent(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
 [[repos]]
 owner = "acme"
-name = "middleman"
+name = "kenn-forge"
 `, &mockGH{})
-	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "middleman"))
+	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "kenn-forge"))
 	require.NoError(err)
 
 	resp, err := srv.kataWorkspaceTargetForMetadata(t.Context(), db.WorkspaceKataMetadata{
 		DaemonID:    "desktop",
-		ProjectUID:  "project-middleman",
-		ProjectName: "middleman",
+		ProjectUID:  "project-kenn-forge",
+		ProjectName: "kenn-forge",
 		IssueUID:    "issue-kata-1",
 		ShortID:     "task-123",
 		Title:       "Fix workspace affordance",
@@ -321,11 +321,11 @@ name = "middleman"
 	assert.Equal("github", resp.Repo.Provider)
 	assert.Equal("github.com", resp.Repo.PlatformHost)
 	assert.Equal("acme", resp.Repo.Owner)
-	assert.Equal("middleman", resp.Repo.Name)
+	assert.Equal("kenn-forge", resp.Repo.Name)
 	assert.Equal(db.WorkspaceItemTypeKataTask, resp.ItemType)
 	assert.Equal(db.KataWorkspaceItemKey(db.WorkspaceKataMetadata{
 		DaemonID:   "desktop",
-		ProjectUID: "project-middleman",
+		ProjectUID: "project-kenn-forge",
 		IssueUID:   "issue-kata-1",
 	}), resp.ItemKey)
 }
@@ -336,7 +336,7 @@ func TestKataWorkspaceTargetAutomaticMappingFromRegisteredProject(t *testing.T) 
 
 	srv, database, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 `, &mockGH{})
@@ -376,7 +376,7 @@ func TestKataWorkspaceTargetRegisteredProjectsWithDifferentCheckoutsAreAmbiguous
 
 	srv, database, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 `, &mockGH{})
@@ -411,7 +411,7 @@ func TestCreateKataWorkspaceUsesRegisteredProjectCheckout(t *testing.T) {
 
 	srv, database, _ := setupWorkspaceTestServerWithConfigContent(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -460,7 +460,7 @@ func TestKataManualMappingRejectsHistoricalUnconfiguredRepo(t *testing.T) {
 
 	srv, database, _ := setupWorkspaceTestServerWithConfigContent(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -487,7 +487,7 @@ func TestKataMappingTargetsIncludeConfiguredRepositories(t *testing.T) {
 
 	srv, database, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -534,7 +534,7 @@ url = "`+daemon.URL+`"
 `)
 	srv, database, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -543,12 +543,12 @@ daemon_id = "desktop"
 project_uid = "project-kata"
 provider = "github"
 platform_host = "github.com"
-repo_path = "acme/middleman"
+repo_path = "acme/kenn-forge"
 `, &mockGH{})
-	repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "middleman"))
+	repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "kenn-forge"))
 	require.NoError(err)
 	_, err = database.CreateProject(t.Context(), db.CreateProjectInput{
-		DisplayName: "Middleman",
+		DisplayName: "Kenn Forge",
 		LocalPath:   t.TempDir(),
 		RepoID:      sql.NullInt64{Int64: repoID, Valid: true},
 	})
@@ -563,11 +563,11 @@ repo_path = "acme/middleman"
 	assert.Equal("mapped", resp.Projects[0].Status)
 	assert.Equal("manual_daemon", resp.Projects[0].Source)
 	require.NotNil(resp.Projects[0].Repo)
-	assert.Equal("acme/middleman", resp.Projects[0].Repo.RepoPath)
+	assert.Equal("acme/kenn-forge", resp.Projects[0].Repo.RepoPath)
 	assert.Equal("unmapped", resp.Projects[1].Status)
 	require.Len(resp.Targets, 1)
-	assert.Equal("Middleman", resp.Targets[0].DisplayName)
-	assert.Equal("acme/middleman", resp.Targets[0].Repo.RepoPath)
+	assert.Equal("Kenn Forge", resp.Targets[0].DisplayName)
+	assert.Equal("acme/kenn-forge", resp.Targets[0].Repo.RepoPath)
 }
 
 func TestKataWorkspaceTargetTrackedRepoNameFallbackRequiresOneMatch(t *testing.T) {
@@ -576,27 +576,27 @@ func TestKataWorkspaceTargetTrackedRepoNameFallbackRequiresOneMatch(t *testing.T
 
 	srv, database, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
 [[repos]]
 owner = "acme"
-name = "middleman"
+name = "kenn-forge"
 
 [[repos]]
 owner = "forks"
-name = "middleman"
+name = "kenn-forge"
 `, &mockGH{})
-	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "middleman"))
+	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "kenn-forge"))
 	require.NoError(err)
-	_, err = database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "forks", "middleman"))
+	_, err = database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "forks", "kenn-forge"))
 	require.NoError(err)
 
 	resp, err := srv.kataWorkspaceTargetForMetadata(t.Context(), db.WorkspaceKataMetadata{
 		DaemonID:    "desktop",
-		ProjectUID:  "project-middleman",
-		ProjectName: "middleman",
+		ProjectUID:  "project-kenn-forge",
+		ProjectName: "kenn-forge",
 		IssueUID:    "issue-kata-1",
 	})
 	require.NoError(err)
@@ -610,19 +610,19 @@ func TestKataWorkspaceTargetTrackedRepoNameFallbackRequiresTrackedRepo(t *testin
 
 	srv, _, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
 [[repos]]
 owner = "acme"
-name = "middleman"
+name = "kenn-forge"
 `, &mockGH{})
 
 	resp, err := srv.kataWorkspaceTargetForMetadata(t.Context(), db.WorkspaceKataMetadata{
 		DaemonID:    "desktop",
-		ProjectUID:  "project-middleman",
-		ProjectName: "middleman",
+		ProjectUID:  "project-kenn-forge",
+		ProjectName: "kenn-forge",
 		IssueUID:    "issue-kata-1",
 	})
 	require.NoError(err)
@@ -636,23 +636,23 @@ func TestKataWorkspaceTargetAutomaticMappingFromGlobTrackedRepoName(t *testing.T
 
 	srv, database, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
 [[repos]]
 owner = "acme"
-name = "middle*"
+name = "kenn-*"
 `, &mockGH{})
-	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "middleman"))
+	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "kenn-forge"))
 	require.NoError(err)
 	_, err = database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "middle-earth"))
 	require.NoError(err)
 
 	resp, err := srv.kataWorkspaceTargetForMetadata(t.Context(), db.WorkspaceKataMetadata{
 		DaemonID:    "desktop",
-		ProjectUID:  "project-middleman",
-		ProjectName: "middleman",
+		ProjectUID:  "project-kenn-forge",
+		ProjectName: "kenn-forge",
 		IssueUID:    "issue-kata-1",
 	})
 	require.NoError(err)
@@ -661,7 +661,7 @@ name = "middle*"
 	assert.Equal("github", resp.Repo.Provider)
 	assert.Equal("github.com", resp.Repo.PlatformHost)
 	assert.Equal("acme", resp.Repo.Owner)
-	assert.Equal("middleman", resp.Repo.Name)
+	assert.Equal("kenn-forge", resp.Repo.Name)
 	assert.Equal(db.WorkspaceItemTypeKataTask, resp.ItemType)
 }
 
@@ -671,27 +671,27 @@ func TestKataWorkspaceTargetGlobTrackedRepoNameFallbackRequiresOneMatch(t *testi
 
 	srv, database, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
 [[repos]]
 owner = "acme"
-name = "middle*"
+name = "kenn-*"
 
 [[repos]]
 owner = "forks"
-name = "middle*"
+name = "kenn-*"
 `, &mockGH{})
-	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "middleman"))
+	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "kenn-forge"))
 	require.NoError(err)
-	_, err = database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "forks", "middleman"))
+	_, err = database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "forks", "kenn-forge"))
 	require.NoError(err)
 
 	resp, err := srv.kataWorkspaceTargetForMetadata(t.Context(), db.WorkspaceKataMetadata{
 		DaemonID:    "desktop",
-		ProjectUID:  "project-middleman",
-		ProjectName: "middleman",
+		ProjectUID:  "project-kenn-forge",
+		ProjectName: "kenn-forge",
 		IssueUID:    "issue-kata-1",
 	})
 	require.NoError(err)
@@ -705,27 +705,27 @@ func TestKataWorkspaceTargetTrackedRepoNameFallbackCombinesExactAndGlobMatches(t
 
 	srv, database, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
 [[repos]]
 owner = "acme"
-name = "middleman"
+name = "kenn-forge"
 
 [[repos]]
 owner = "forks"
-name = "middle*"
+name = "kenn-*"
 `, &mockGH{})
-	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "middleman"))
+	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "kenn-forge"))
 	require.NoError(err)
-	_, err = database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "forks", "middleman"))
+	_, err = database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "forks", "kenn-forge"))
 	require.NoError(err)
 
 	resp, err := srv.kataWorkspaceTargetForMetadata(t.Context(), db.WorkspaceKataMetadata{
 		DaemonID:    "desktop",
-		ProjectUID:  "project-middleman",
-		ProjectName: "middleman",
+		ProjectUID:  "project-kenn-forge",
+		ProjectName: "kenn-forge",
 		IssueUID:    "issue-kata-1",
 	})
 	require.NoError(err)
@@ -745,7 +745,7 @@ func TestKataWorkspaceTargetAutomaticMappingFromProjectUIDWhenIdentityPresent(t 
 	))
 	cfg := fmt.Sprintf(`
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -837,7 +837,7 @@ func TestKataWorkspaceTargetUnavailableWhenAutomaticMappingAmbiguous(t *testing.
 	))
 	cfg := fmt.Sprintf(`
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -886,7 +886,7 @@ func TestKataWorkspaceTargetTOMLAmbiguityBlocksTrackedRepoNameFallback(t *testin
 	))
 	cfg := fmt.Sprintf(`
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -902,20 +902,20 @@ worktree_base_path = %q
 
 [[repos]]
 owner = "acme"
-name = "middleman"
+name = "kenn-forge"
 `, firstClone, secondClone)
 	srv, database, _ := setupTestServerWithConfigContent(t, cfg, &mockGH{})
 	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	_, err = database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "other"))
 	require.NoError(err)
-	_, err = database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "middleman"))
+	_, err = database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "kenn-forge"))
 	require.NoError(err)
 
 	resp, err := srv.kataWorkspaceTargetForMetadata(t.Context(), db.WorkspaceKataMetadata{
 		DaemonID:    "desktop",
 		ProjectUID:  "project-kata",
-		ProjectName: "middleman",
+		ProjectName: "kenn-forge",
 		IssueUID:    "issue-kata-1",
 	})
 	require.NoError(err)
@@ -938,7 +938,7 @@ func TestKataWorkspaceTargetUnavailableWhenProjectNameMappingAmbiguous(t *testin
 	}
 	cfg := fmt.Sprintf(`
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -994,7 +994,7 @@ func TestKataWorkspaceTargetManualMappingReturnsExistingWorkspace(t *testing.T) 
 
 	srv, database, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -1024,10 +1024,10 @@ repo_path = "acme/widget"
 		RepoName:        "widget",
 		ItemType:        db.WorkspaceItemTypeKataTask,
 		ItemKey:         itemKey,
-		GitHeadRef:      "middleman/kata/task-123-fix-widget",
-		WorkspaceBranch: "middleman/kata/task-123-fix-widget",
+		GitHeadRef:      "kenn-forge/kata/task-123-fix-widget",
+		WorkspaceBranch: "kenn-forge/kata/task-123-fix-widget",
 		WorktreePath:    "/tmp/ws-kata-existing",
-		TmuxSession:     "middleman-ws-kata-existing",
+		TmuxSession:     "kenn-forge-ws-kata-existing",
 		Status:          "ready",
 		KataMetadata: &db.WorkspaceKataMetadata{
 			DaemonID:    "desktop",
@@ -1060,7 +1060,7 @@ func TestCreateKataWorkspaceDoesNotRequireProviderIssue(t *testing.T) {
 
 	srv, database, _ := setupWorkspaceTestServerWithConfigContent(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -1096,7 +1096,7 @@ repo_path = "acme/widget"
 		ProjectUID: "project-kata",
 		IssueUID:   "issue-kata-1",
 	}), created.ItemKey)
-	assert.Contains(created.GitHeadRef, "middleman/kata/task-123-")
+	assert.Contains(created.GitHeadRef, "kenn-forge/kata/task-123-")
 	assert.Contains(created.GitHeadRef, "-fix-widget")
 	require.NotNil(created.Kata)
 	assert.Equal("desktop", created.Kata.DaemonID)
@@ -1112,11 +1112,11 @@ repo_path = "acme/widget"
 }
 
 func TestCreateKataWorkspaceFromGlobTrackedRepoName(t *testing.T) {
-	testCreateKataWorkspaceFromTrackedRepoName(t, "middle*")
+	testCreateKataWorkspaceFromTrackedRepoName(t, "kenn-*")
 }
 
 func TestCreateKataWorkspaceFromExactTrackedRepoName(t *testing.T) {
-	testCreateKataWorkspaceFromTrackedRepoName(t, "middleman")
+	testCreateKataWorkspaceFromTrackedRepoName(t, "kenn-forge")
 }
 
 func testCreateKataWorkspaceFromTrackedRepoName(t *testing.T, configuredRepoName string) {
@@ -1127,7 +1127,7 @@ func testCreateKataWorkspaceFromTrackedRepoName(t *testing.T, configuredRepoName
 
 	cfg := fmt.Sprintf(`
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -1136,13 +1136,13 @@ owner = "acme"
 name = %q
 `, configuredRepoName)
 	srv, database, _ := setupWorkspaceTestServerWithConfigContent(t, cfg, &mockGH{})
-	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "middleman"))
+	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "kenn-forge"))
 	require.NoError(err)
 
 	metadata := db.WorkspaceKataMetadata{
 		DaemonID:    "desktop",
-		ProjectUID:  "project-middleman",
-		ProjectName: "middleman",
+		ProjectUID:  "project-kenn-forge",
+		ProjectName: "kenn-forge",
 		IssueUID:    "issue-kata-1",
 		ShortID:     "task-123",
 		Title:       "Fix workspace affordance",
@@ -1162,8 +1162,8 @@ name = %q
 	assert.Equal("github", created.Repo.Provider)
 	assert.Equal("github.com", created.Repo.PlatformHost)
 	assert.Equal("acme", created.Repo.Owner)
-	assert.Equal("middleman", created.Repo.Name)
-	assert.Equal("acme/middleman", created.Repo.RepoPath)
+	assert.Equal("kenn-forge", created.Repo.Name)
+	assert.Equal("acme/kenn-forge", created.Repo.RepoPath)
 	assert.Equal(db.WorkspaceItemTypeKataTask, created.ItemType)
 	assert.Equal(db.KataWorkspaceItemKey(metadata), created.ItemKey)
 	require.NotNil(created.Kata)
@@ -1175,14 +1175,14 @@ name = %q
 		"github",
 		"github.com",
 		"acme",
-		"middleman",
+		"kenn-forge",
 		db.WorkspaceItemTypeKataTask,
 		db.KataWorkspaceItemKey(metadata),
 	)
 	require.NoError(err)
 	require.NotNil(stored)
 	assert.Equal("acme", stored.RepoOwner)
-	assert.Equal("middleman", stored.RepoName)
+	assert.Equal("kenn-forge", stored.RepoName)
 }
 
 func TestCreateKataWorkspaceReusesExistingScopedTaskWorkspace(t *testing.T) {
@@ -1191,7 +1191,7 @@ func TestCreateKataWorkspaceReusesExistingScopedTaskWorkspace(t *testing.T) {
 
 	srv, database, _ := setupWorkspaceTestServerWithConfigContent(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 

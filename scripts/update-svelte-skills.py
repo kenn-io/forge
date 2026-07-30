@@ -89,7 +89,7 @@ def fetch_json(url: str) -> object:
         url,
         headers={
             "Accept": "application/vnd.github+json",
-            "User-Agent": "middleman-svelte-skills",
+            "User-Agent": "kenn-forge-svelte-skills",
         },
     )
     with urllib.request.urlopen(request) as response:
@@ -132,7 +132,7 @@ def list_remote_directory(api_path: str, ref: str) -> list[RemoteEntry]:
 
 
 def download_file(url: str, destination: Path) -> None:
-    request = urllib.request.Request(url, headers={"User-Agent": "middleman-svelte-skills"})
+    request = urllib.request.Request(url, headers={"User-Agent": "kenn-forge-svelte-skills"})
     with urllib.request.urlopen(request) as response, destination.open("wb") as output:
         shutil.copyfileobj(response, output)
 

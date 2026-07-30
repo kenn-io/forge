@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/server/httpapi"
-	"go.kenn.io/middleman/internal/server/workspaceapi"
-	"go.kenn.io/middleman/internal/workspace/localruntime"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/server/workspaceapi"
+	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
 // hostRuntimeScope is the runtime manager scope for sessions launched at

@@ -64,12 +64,12 @@ func fallbackSocketDirForOS(root, session, primaryTempDir, goos string) string {
 	}
 	bases = append(bases, "/tmp")
 	for _, base := range bases {
-		candidate := filepath.Join(base, "middleman-pty-"+sessionSocketHash(root+"-"+session))
+		candidate := filepath.Join(base, "kenn-forge-pty-"+sessionSocketHash(root+"-"+session))
 		if len(filepath.Join(candidate, "sock")) <= maxUnixSocketPathLen {
 			return candidate
 		}
 	}
-	return filepath.Join("/tmp", "middleman-pty-"+sessionSocketHash(root+"-"+session))
+	return filepath.Join("/tmp", "kenn-forge-pty-"+sessionSocketHash(root+"-"+session))
 }
 
 func sessionDirName(session string) string {

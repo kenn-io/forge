@@ -17,7 +17,7 @@ and provider capability rules, start with
 
 ## Identity Rules
 
-GitHub entities in middleman are not identified by owner/name/number alone.
+GitHub entities in kenn-forge are not identified by owner/name/number alone.
 The provider-neutral identity is `(platform, platform_host, owner, name)`;
 this document focuses on GitHub-specific default-host behavior and GitHub-only
 sync optimizations.
@@ -71,7 +71,7 @@ For pull requests, that means:
   a slower cadence so the Activity view stays fresh without spending the same
   request rate on hours-old rows. A missing `detail_fetched_at` remains due
   immediately (`internal/github/sync.go::activeMRDueForFastSync`).
-- GitHub detail ETags reduce both payload work and middleman's eager-refresh
+- GitHub detail ETags reduce both payload work and kenn-forge's eager-refresh
   budget spend for unchanged PRs; the sync budget transport does not count
   `304 Not Modified` responses (`internal/github/budget_transport.go::budgetTransport`).
   Active watched-PR sync must use the same persisted pull-request ETag path as
@@ -264,7 +264,7 @@ must share one runtime; App reads use their installation identity.
   `github_token_env` equal to the built-in default does not count as explicit
   because Load, Save, and the sample config all materialize that name
   (`internal/config/config.go::Config.HasExplicitGitHubTokenEnv`,
-  `cmd/middleman/provider_startup.go::buildGitHubIdentityRuntimes`).
+  `cmd/kenn-forge/provider_startup.go::buildGitHubIdentityRuntimes`).
 - A configured router with no exact, owner, or fallback route is a routing
   failure; operation availability must fail closed instead of treating it as an
   unrouted legacy host (`internal/github/auth_router.go::MissingRouteError`,
@@ -347,7 +347,7 @@ A nil `tokenauth.Source` is not fail-closed: `gitclone` reads it as permission t
 run git with no credential, which succeeds against any public repository and
 spends no identity's budget. A route resolver that cannot serve a repository must
 return a source whose `Token` reports the missing route
-(`cmd/middleman/provider_startup.go::missingRouteTokenSource`).
+(`cmd/kenn-forge/provider_startup.go::missingRouteTokenSource`).
 
 Token-file rotation within the same GitHub user is hot-reloadable. Changing the
 authenticated user, adding a write identity to an App-only route, or adding or
@@ -420,13 +420,13 @@ response never overwrites an App installation pool
 
 ## GitHub App Manifest Flow
 
-`middleman-github-app create` uses GitHub's App Manifest flow so sync can read
-with installation tokens. Even though middleman disables webhooks and polls,
+`kenn-forge-github-app create` uses GitHub's App Manifest flow so sync can read
+with installation tokens. Even though kenn-forge disables webhooks and polls,
 the manifest must still include a syntactically valid `hook_attributes.url`;
 GitHub's live manifest validator can report the missing hook URL as a generic
 `"url" wasn't supplied` error. Do not remove that hook URL from
 `internal/githubapp/manifest.go::NewManifest`; keep
-`cmd/middleman-github-app/e2e_test.go::TestCreateFlowEndToEnd` asserting the
+`cmd/kenn-forge-github-app/e2e_test.go::TestCreateFlowEndToEnd` asserting the
 serialized manifest shape so the fake cannot accept a payload GitHub rejects.
 
 A covering App installation leads every read chain, including on a repository
@@ -460,7 +460,7 @@ owned by that row's `installation_account`, and the install CLI must not warn
 that an installation on one account "cannot reach" repos owned by another
 account. The recorded selected-repository list is a startup routing snapshot:
 expanded access remains on the PAT route and narrowed access may return 404
-until `middleman-github-app install` refreshes the snapshot and middleman is
+until `kenn-forge-github-app install` refreshes the snapshot and kenn-forge is
 restarted. Do not retry PAT credentials after an App-backed repository 404;
 GitHub uses the same response for absent, private, and inaccessible repositories,
 so automatic fallback would hide stale or revoked App access.

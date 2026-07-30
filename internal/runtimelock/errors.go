@@ -4,7 +4,7 @@ import "fmt"
 
 // MetadataUnavailableReason explains why the runtime metadata file
 // could not be read when reporting a CollisionError or Status. The
-// banner and `middleman status` use it for the metadata-unavailable
+// banner and `kenn-forge status` use it for the metadata-unavailable
 // branch.
 type MetadataUnavailableReason string
 
@@ -47,5 +47,5 @@ type CollisionError struct {
 }
 
 func (e *CollisionError) Error() string {
-	return fmt.Sprintf("another middleman is already running on %s", e.DataDir)
+	return fmt.Sprintf("another kenn-forge is already running on %s", e.DataDir)
 }

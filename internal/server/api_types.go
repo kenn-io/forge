@@ -3,9 +3,9 @@ package server
 import (
 	"time"
 
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/server/httpapi"
-	"go.kenn.io/middleman/internal/server/workspaceapi"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/server/workspaceapi"
 )
 
 type repoResponse struct {
@@ -178,7 +178,7 @@ type rateLimitHostStatus struct {
 	GraphQL            rateLimitResourceStatus `json:"graphql"`
 }
 
-// localSyncCeilingStatus is middleman's own hourly spend guard for one
+// localSyncCeilingStatus is kenn-forge's own hourly spend guard for one
 // principal. It is independent of provider quota: the ceiling can be reached
 // while GitHub still reports capacity, and it resets on its own clock.
 type localSyncCeilingStatus struct {

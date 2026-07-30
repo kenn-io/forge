@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/jellydator/ttlcache/v3"
-	"go.kenn.io/middleman/internal/gitclone"
-	"go.kenn.io/middleman/internal/workspace"
+	"go.kenn.io/forge/internal/gitclone"
+	"go.kenn.io/forge/internal/workspace"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -33,7 +33,7 @@ const (
 var errWorkspaceDiffMovedDuringPreparation = errors.New("workspace diff moved during preparation")
 var errWorkspaceDiffBaseUnavailable = errors.New("workspace diff base is unavailable")
 
-var workspaceDiffCacheTracer = otel.Tracer("go.kenn.io/middleman/internal/server/workspace-diff-cache")
+var workspaceDiffCacheTracer = otel.Tracer("go.kenn.io/forge/internal/server/workspace-diff-cache")
 
 type workspaceDiffLogicalKey struct {
 	WorkspaceID string

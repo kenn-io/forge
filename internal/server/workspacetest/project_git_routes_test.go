@@ -12,8 +12,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/procutil"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/procutil"
 )
 
 func TestCloneProject(t *testing.T) {
@@ -283,7 +283,7 @@ func TestInspectProjectWorktreeCountsStoredTmuxSessions(t *testing.T) {
 		t.Context(), &db.ProjectWorktreeTmuxSession{
 			WorktreeID:  worktreeID,
 			SessionKey:  "restart-survivor",
-			SessionName: "middleman-restart-survivor",
+			SessionName: "kenn-forge-restart-survivor",
 			Label:       "Survivor",
 			CreatedAt:   time.Now().UTC(),
 		},

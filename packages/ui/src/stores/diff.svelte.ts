@@ -8,7 +8,7 @@ import {
   type ProviderRouteRef,
 } from "../api/provider-routes.js";
 import type { components } from "../api/generated/schema.js";
-import type { MiddlemanClient } from "../types.js";
+import type { ForgeClient } from "../types.js";
 import { isProblem, ProblemCodes } from "../api/problems.js";
 import {
   countDiffFilesByCategory,
@@ -43,7 +43,7 @@ export type DiffScrollTarget = {
 };
 
 export interface DiffStoreOptions {
-  client?: MiddlemanClient;
+  client?: ForgeClient;
   getBasePath?: () => string;
 }
 

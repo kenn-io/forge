@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { PullRequest } from "../api/types.js";
-import type { MiddlemanClient } from "../types.js";
+import type { ForgeClient } from "../types.js";
 import { createPullsStore } from "./pulls.svelte.js";
 import { dismissFlash, getFlash, getFlashes } from "./flash.svelte.js";
 
@@ -40,10 +40,10 @@ function pull(id: number, repoName: string, lastActivityAt: string, overrides: P
   } as PullRequest;
 }
 
-function clientWithPulls(data: PullRequest[]): MiddlemanClient {
+function clientWithPulls(data: PullRequest[]): ForgeClient {
   return {
     GET: vi.fn(async () => ({ data, error: undefined })),
-  } as unknown as MiddlemanClient;
+  } as unknown as ForgeClient;
 }
 
 describe("pulls store display order", () => {
@@ -51,7 +51,7 @@ describe("pulls store display order", () => {
     const store = createPullsStore({
       client: {
         DELETE: vi.fn(async () => ({ error: { detail: "permission denied" } })),
-      } as unknown as MiddlemanClient,
+      } as unknown as ForgeClient,
     });
 
     await store.togglePRStar(

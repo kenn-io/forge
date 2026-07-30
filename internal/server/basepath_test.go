@@ -11,8 +11,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	ghclient "go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
+	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
 func setupWithBasePath(t *testing.T, basePath string, frontend fs.FS) *Server {
@@ -47,9 +47,9 @@ func TestBasePathAPIRouting(t *testing.T) {
 	}{
 		{"root: API returns JSON", "/", "/api/v1/sync/status", 200, "application/json", `"running"`},
 		{"root: SPA returns HTML", "/", "/pulls", 200, "text/html", "<body>app</body>"},
-		{"prefix: API returns JSON", "/middleman/", "/middleman/api/v1/sync/status", 200, "application/json", `"running"`},
-		{"prefix: SPA returns HTML", "/middleman/", "/middleman/pulls", 200, "text/html", "<body>app</body>"},
-		{"prefix: bare API 404s", "/middleman/", "/api/v1/sync/status", 404, "text/plain", "404 page not found"},
+		{"prefix: API returns JSON", "/kenn-forge/", "/kenn-forge/api/v1/sync/status", 200, "application/json", `"running"`},
+		{"prefix: SPA returns HTML", "/kenn-forge/", "/kenn-forge/pulls", 200, "text/html", "<body>app</body>"},
+		{"prefix: bare API 404s", "/kenn-forge/", "/api/v1/sync/status", 404, "text/plain", "404 page not found"},
 	}
 
 	for _, tt := range tests {
@@ -69,7 +69,7 @@ func TestBasePathAPIRouting(t *testing.T) {
 }
 
 func TestBasePathHealthEndpointsStayAtRoot(t *testing.T) {
-	srv := setupWithBasePath(t, "/middleman/", nil)
+	srv := setupWithBasePath(t, "/kenn-forge/", nil)
 
 	for _, path := range []string{"/healthz", "/livez"} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
@@ -88,13 +88,13 @@ func TestBasePathInjectsScript(t *testing.T) {
 		},
 	}
 
-	srv := setupWithBasePath(t, "/middleman/", frontend)
-	req := httptest.NewRequest(http.MethodGet, "/middleman/", nil)
+	srv := setupWithBasePath(t, "/kenn-forge/", frontend)
+	req := httptest.NewRequest(http.MethodGet, "/kenn-forge/", nil)
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
 
 	body := rr.Body.String()
-	assert.Contains(t, body, `window.__BASE_PATH__="/middleman/"`)
+	assert.Contains(t, body, `window.__BASE_PATH__="/kenn-forge/"`)
 }
 
 func TestBasePathRewritesAssetURLs(t *testing.T) {
@@ -104,16 +104,16 @@ func TestBasePathRewritesAssetURLs(t *testing.T) {
 		},
 	}
 
-	srv := setupWithBasePath(t, "/middleman/", frontend)
-	req := httptest.NewRequest(http.MethodGet, "/middleman/", nil)
+	srv := setupWithBasePath(t, "/kenn-forge/", frontend)
+	req := httptest.NewRequest(http.MethodGet, "/kenn-forge/", nil)
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
 
 	body := rr.Body.String()
 	assert := assert.New(t)
 	assert.NotContains(body, `href="/assets/`)
-	assert.Contains(body, `href="/middleman/assets/`)
-	assert.Contains(body, `src="/middleman/assets/`)
+	assert.Contains(body, `href="/kenn-forge/assets/`)
+	assert.Contains(body, `src="/kenn-forge/assets/`)
 }
 
 func TestCSRFRejectsCrossSite(t *testing.T) {
@@ -181,12 +181,12 @@ func TestCSRFRejectsNoContentType(t *testing.T) {
 }
 
 func TestCSRFAppliesUnderBasePath(t *testing.T) {
-	srv := setupWithBasePath(t, "/middleman/", nil)
+	srv := setupWithBasePath(t, "/kenn-forge/", nil)
 
 	body := strings.NewReader(`{"body":"test"}`)
 	req := httptest.NewRequest(
 		http.MethodPost,
-		"/middleman/api/v1/sync", body,
+		"/kenn-forge/api/v1/sync", body,
 	)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Sec-Fetch-Site", "cross-site")
@@ -204,19 +204,19 @@ func TestBasePathDocsAndOpenAPIUsePrefixedURLs(t *testing.T) {
 		},
 	}
 
-	srv := setupWithBasePath(t, "/middleman/", frontend)
+	srv := setupWithBasePath(t, "/kenn-forge/", frontend)
 
-	docsReq := httptest.NewRequest(http.MethodGet, "/middleman/api/v1/docs", nil)
+	docsReq := httptest.NewRequest(http.MethodGet, "/kenn-forge/api/v1/docs", nil)
 	docsRR := httptest.NewRecorder()
 	srv.ServeHTTP(docsRR, docsReq)
 
 	require.Equal(t, http.StatusOK, docsRR.Code, docsRR.Body.String())
-	assert.Contains(docsRR.Body.String(), `apiDescriptionUrl="/middleman/api/v1/openapi.yaml"`)
+	assert.Contains(docsRR.Body.String(), `apiDescriptionUrl="/kenn-forge/api/v1/openapi.yaml"`)
 
-	openAPIReq := httptest.NewRequest(http.MethodGet, "/middleman/api/v1/openapi.json", nil)
+	openAPIReq := httptest.NewRequest(http.MethodGet, "/kenn-forge/api/v1/openapi.json", nil)
 	openAPIRR := httptest.NewRecorder()
 	srv.ServeHTTP(openAPIRR, openAPIReq)
 
 	require.Equal(t, http.StatusOK, openAPIRR.Code, openAPIRR.Body.String())
-	assert.Contains(openAPIRR.Body.String(), `"url":"/middleman/api/v1"`)
+	assert.Contains(openAPIRR.Body.String(), `"url":"/kenn-forge/api/v1"`)
 }

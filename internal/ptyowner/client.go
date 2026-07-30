@@ -17,7 +17,7 @@ import (
 	"syscall"
 	"time"
 
-	"go.kenn.io/middleman/internal/procutil"
+	"go.kenn.io/forge/internal/procutil"
 )
 
 type Client struct {
@@ -84,7 +84,7 @@ func (c *Client) Ensure(ctx context.Context, session, cwd string) error {
 	if exe == "" {
 		exe, err = os.Executable()
 		if err != nil {
-			return fmt.Errorf("resolve middleman executable: %w", err)
+			return fmt.Errorf("resolve kenn-forge executable: %w", err)
 		}
 	}
 	command := append([]string(nil), c.Command...)

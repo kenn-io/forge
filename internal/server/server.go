@@ -22,35 +22,35 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
-	"go.kenn.io/middleman/internal/agentactivity"
-	"go.kenn.io/middleman/internal/archive"
-	"go.kenn.io/middleman/internal/config"
-	"go.kenn.io/middleman/internal/configwatch"
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/docs"
-	"go.kenn.io/middleman/internal/gitclone"
-	ghclient "go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/platform"
-	"go.kenn.io/middleman/internal/projects"
-	"go.kenn.io/middleman/internal/ptyowner"
-	ptyownerruntime "go.kenn.io/middleman/internal/ptyowner/runtime"
-	"go.kenn.io/middleman/internal/server/docsapi"
-	"go.kenn.io/middleman/internal/server/fleetapi"
-	"go.kenn.io/middleman/internal/server/httpapi"
-	"go.kenn.io/middleman/internal/server/issueapi"
-	"go.kenn.io/middleman/internal/server/kataapi"
-	"go.kenn.io/middleman/internal/server/pullapi"
-	"go.kenn.io/middleman/internal/server/repobrowserapi"
-	"go.kenn.io/middleman/internal/server/workspaceapi"
-	"go.kenn.io/middleman/internal/systemclipboard"
-	"go.kenn.io/middleman/internal/telemetry"
-	"go.kenn.io/middleman/internal/tokenauth"
-	"go.kenn.io/middleman/internal/workspace"
-	"go.kenn.io/middleman/internal/workspace/localruntime"
+	"go.kenn.io/forge/internal/agentactivity"
+	"go.kenn.io/forge/internal/archive"
+	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/configwatch"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/docs"
+	"go.kenn.io/forge/internal/gitclone"
+	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/platform"
+	"go.kenn.io/forge/internal/projects"
+	"go.kenn.io/forge/internal/ptyowner"
+	ptyownerruntime "go.kenn.io/forge/internal/ptyowner/runtime"
+	"go.kenn.io/forge/internal/server/docsapi"
+	"go.kenn.io/forge/internal/server/fleetapi"
+	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/server/issueapi"
+	"go.kenn.io/forge/internal/server/kataapi"
+	"go.kenn.io/forge/internal/server/pullapi"
+	"go.kenn.io/forge/internal/server/repobrowserapi"
+	"go.kenn.io/forge/internal/server/workspaceapi"
+	"go.kenn.io/forge/internal/systemclipboard"
+	"go.kenn.io/forge/internal/telemetry"
+	"go.kenn.io/forge/internal/tokenauth"
+	"go.kenn.io/forge/internal/workspace"
+	"go.kenn.io/forge/internal/workspace/localruntime"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
-const middlemanCSRFHeaderName = "X-Middleman-Csrf"
+const forgeCSRFHeaderName = "X-Kenn-Forge-Csrf"
 
 type BuildInfo struct {
 	Name      string `json:"name"`
@@ -493,13 +493,13 @@ const (
 
 // testFallbackAllowedHosts is the allowlist applied alongside the
 // fallback bind. httptest.NewRequest defaults the Host to
-// "example.com" and the apitest helpers use "middleman.test"; both
+// "example.com" and the apitest helpers use "forge.test"; both
 // must be accepted so the dozens of test helpers that pass
 // cfg=nil work unchanged.
 func testFallbackAllowedHosts() []config.HostKey {
 	return []config.HostKey{
 		{Host: "example.com", Port: ""},
-		{Host: "middleman.test", Port: ""},
+		{Host: "forge.test", Port: ""},
 	}
 }
 
@@ -922,7 +922,7 @@ func newServer(
 			agents = cfg.Agents
 		}
 		// Runtime sessions that are not tmux-backed must still be owned
-		// outside the middleman server process so restarts do not tear down
+		// outside the kenn-forge server process so restarts do not tear down
 		// workspace terminal state. Tmux-backed sessions still attach via
 		// tmux; the runtime manager only uses this owner for non-tmux starts.
 		runtimePtyOwner := ptyownerruntime.New(ptyOwnerClient, nil)
@@ -1134,7 +1134,7 @@ func newServer(
 		s.registerDaemonPing(mux)
 		assembled = mux
 	}
-	s.handler = otelhttp.NewHandler(assembled, "middleman.http",
+	s.handler = otelhttp.NewHandler(assembled, "forge.http",
 		otelhttp.WithFilter(otelTraceable(basePath)),
 		otelhttp.WithSpanNameFormatter(otelSpanName))
 
@@ -1233,7 +1233,7 @@ func (s *Server) bootstrapScript() string {
 		configJSON, _ := json.Marshal(map[string]any{
 			"ui": map[string]any{"activeWorktreeKey": awKey},
 		})
-		builder.WriteString(`window.__middleman_config=`)
+		builder.WriteString(`window.__kenn_forge_config=`)
 		builder.WriteString(scriptSafe(string(configJSON)))
 		builder.WriteString(`;`)
 	}

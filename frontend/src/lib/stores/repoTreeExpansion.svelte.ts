@@ -1,4 +1,4 @@
-const STORAGE_KEY = "middleman:repoTreeCollapsed";
+const STORAGE_KEY = "kenn-forge:repoTreeCollapsed";
 
 function readFromStorage(): Set<string> {
   try {

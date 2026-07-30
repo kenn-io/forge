@@ -1,9 +1,9 @@
 import { cleanup, render } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import type { EventsStoreOptions } from "@middleman/ui/stores/events";
-import type { Settings, SyncStatus } from "@middleman/ui/api/types";
-import type { MiddlemanClient } from "@middleman/ui";
+import type { EventsStoreOptions } from "@kenn-forge/ui/stores/events";
+import type { Settings, SyncStatus } from "@kenn-forge/ui/api/types";
+import type { ForgeClient } from "@kenn-forge/ui";
 
 type LaunchTargets = NonNullable<Settings["launch_targets"]>;
 
@@ -27,7 +27,7 @@ const captured: {
   settings: null,
 };
 
-vi.mock("@middleman/ui/stores/events", () => ({
+vi.mock("@kenn-forge/ui/stores/events", () => ({
   createEventsStore: (opts: EventsStoreOptions) => {
     const store: CapturedEventsStore = {
       options: opts,
@@ -47,7 +47,7 @@ const setSyncStatus = vi.fn();
 const refreshDetailOnly = vi.fn(async () => undefined);
 let currentDetail: unknown = null;
 
-vi.mock("@middleman/ui/stores/pulls", () => ({
+vi.mock("@kenn-forge/ui/stores/pulls", () => ({
   createPullsStore: () => ({
     loadPulls,
     optimisticKanbanUpdate: vi.fn(),
@@ -57,7 +57,7 @@ vi.mock("@middleman/ui/stores/pulls", () => ({
   }),
 }));
 
-vi.mock("@middleman/ui/stores/issues", () => ({
+vi.mock("@kenn-forge/ui/stores/issues", () => ({
   createIssuesStore: () => ({
     loadIssues,
     hydrateDefaults: vi.fn(),
@@ -66,7 +66,7 @@ vi.mock("@middleman/ui/stores/issues", () => ({
   }),
 }));
 
-vi.mock("@middleman/ui/stores/activity", () => ({
+vi.mock("@kenn-forge/ui/stores/activity", () => ({
   createActivityStore: () => ({
     loadActivity,
     hydrateDefaults: vi.fn(),
@@ -75,7 +75,7 @@ vi.mock("@middleman/ui/stores/activity", () => ({
   }),
 }));
 
-vi.mock("@middleman/ui/stores/sync", () => ({
+vi.mock("@kenn-forge/ui/stores/sync", () => ({
   createSyncStore: () => ({
     getSyncState: () => null,
     onNextSyncComplete: vi.fn(),
@@ -88,7 +88,7 @@ vi.mock("@middleman/ui/stores/sync", () => ({
   }),
 }));
 
-vi.mock("@middleman/ui/stores/detail", () => ({
+vi.mock("@kenn-forge/ui/stores/detail", () => ({
   createDetailStore: () => ({
     loadDetail: vi.fn(),
     refreshDetailOnly,
@@ -97,21 +97,21 @@ vi.mock("@middleman/ui/stores/detail", () => ({
   }),
 }));
 
-vi.mock("@middleman/ui/stores/diff", () => ({
+vi.mock("@kenn-forge/ui/stores/diff", () => ({
   createDiffStore: () => ({
     loadDiff: vi.fn(),
     getDiff: () => null,
   }),
 }));
 
-vi.mock("@middleman/ui/stores/grouping", () => ({
+vi.mock("@kenn-forge/ui/stores/grouping", () => ({
   createGroupingStore: () => ({
     getGroupByRepo: () => false,
     setGroupByRepo: vi.fn(),
   }),
 }));
 
-vi.mock("@middleman/ui/stores/settings", () => ({
+vi.mock("@kenn-forge/ui/stores/settings", () => ({
   createSettingsStore: () => {
     let launchTargets: LaunchTargets = [];
     const store = {
@@ -167,7 +167,7 @@ const stubClient = {
   POST: vi.fn(),
   PUT: vi.fn(),
   DELETE: vi.fn(),
-} as unknown as MiddlemanClient;
+} as unknown as ForgeClient;
 
 beforeEach(() => {
   captured.store = null;

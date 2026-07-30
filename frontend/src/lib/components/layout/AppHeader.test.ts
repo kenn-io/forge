@@ -44,9 +44,9 @@ vi.mock("../../stores/container.svelte.js", () => ({
   isNarrow: () => mockedContainerSize.value === "narrow",
 }));
 
-// AppHeader reads sync state from the @middleman/ui context.
-vi.mock("@middleman/ui", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@middleman/ui")>();
+// AppHeader reads sync state from the @kenn-forge/ui context.
+vi.mock("@kenn-forge/ui", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@kenn-forge/ui")>();
   return {
     ...actual,
     getStores: () => ({
@@ -135,8 +135,8 @@ describe("AppHeader", () => {
     mockedSync.triggerSync.mockClear();
     mockedSync.triggerRepoSync.mockClear();
     setGlobalRepo(undefined);
-    delete window.__middleman_config;
-    window.__middleman_notify_config_changed?.();
+    delete window.__kenn_forge_config;
+    window.__kenn_forge_notify_config_changed?.();
     mockedModeVisibility.value = {
       activity: true,
       repos: true,
@@ -161,8 +161,8 @@ describe("AppHeader", () => {
     mockedReviewsDaemonAvailable.value = true;
     mockedSync.running = false;
     setGlobalRepo(undefined);
-    delete window.__middleman_config;
-    window.__middleman_notify_config_changed?.();
+    delete window.__kenn_forge_config;
+    window.__kenn_forge_notify_config_changed?.();
     mockedModeVisibility.value = {
       activity: true,
       repos: true,
@@ -286,14 +286,14 @@ describe("AppHeader", () => {
     const button = screen.getByTitle("Toggle theme");
 
     await fireEvent.click(button);
-    expect(localStorage.getItem("middleman-theme")).toBe("dark");
+    expect(localStorage.getItem("kenn-forge-theme")).toBe("dark");
 
     await fireEvent.click(button);
-    expect(localStorage.getItem("middleman-theme")).toBe("light");
+    expect(localStorage.getItem("kenn-forge-theme")).toBe("light");
   });
 
   it("restores theme from localStorage over system preference", () => {
-    localStorage.setItem("middleman-theme", "dark");
+    localStorage.setItem("kenn-forge-theme", "dark");
     mockMatchMedia(false);
 
     initTheme();
@@ -316,7 +316,7 @@ describe("AppHeader", () => {
   it("ignores invalid localStorage value and falls back to system preference", () => {
     cleanup();
     document.documentElement.classList.remove("dark");
-    localStorage.setItem("middleman-theme", "garbage");
+    localStorage.setItem("kenn-forge-theme", "garbage");
     mockMatchMedia(true);
 
     initTheme();
@@ -326,7 +326,7 @@ describe("AppHeader", () => {
     // kit-ui's store leaves the invalid value in place (it resolves to
     // "system" on every read); the old store deleted it. Either way the next
     // explicit toggle overwrites it, so only the fallback is contractual.
-    localStorage.removeItem("middleman-theme");
+    localStorage.removeItem("kenn-forge-theme");
   });
 
   it("falls back to system preference when localStorage throws", () => {
@@ -552,8 +552,8 @@ describe("AppHeader", () => {
 
   it("does not reserve the repo selector slot when embed config hides it", () => {
     initTheme();
-    window.__middleman_config = { ui: { hideRepoSelector: true } };
-    window.__middleman_notify_config_changed?.();
+    window.__kenn_forge_config = { ui: { hideRepoSelector: true } };
+    window.__kenn_forge_notify_config_changed?.();
     navigate("/kata");
     const { container } = render(AppHeader);
 

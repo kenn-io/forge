@@ -1,4 +1,4 @@
-import type { components } from "@middleman/ui/api/schema";
+import type { components } from "@kenn-forge/ui/api/schema";
 
 import { getActiveKataDaemon, getDefaultKataDaemon } from "../../stores/active-kata-daemon.svelte.js";
 import { apiErrorMessage, createRuntimeClient } from "../runtime.js";
@@ -64,7 +64,7 @@ function effectiveDaemonID(requested: string | undefined, options: KataClientOpt
   return (options.getDefaultDaemonId ?? getDefaultKataDaemon)()?.trim() || undefined;
 }
 
-function daemonHeaders(daemonID: string | undefined): { "X-Middleman-Kata-Daemon"?: string } {
+function daemonHeaders(daemonID: string | undefined): { "X-Kenn-Forge-Kata-Daemon"?: string } {
   return daemonID ? { [KATA_DAEMON_HEADER]: daemonID } : {};
 }
 

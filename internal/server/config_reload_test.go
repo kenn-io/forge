@@ -19,14 +19,14 @@ import (
 	gh "github.com/google/go-github/v89/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/config"
-	"go.kenn.io/middleman/internal/db"
-	ghclient "go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/platform"
-	ptyownerruntime "go.kenn.io/middleman/internal/ptyowner/runtime"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
-	"go.kenn.io/middleman/internal/tokenauth"
-	"go.kenn.io/middleman/internal/workspace/localruntime"
+	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/db"
+	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/platform"
+	ptyownerruntime "go.kenn.io/forge/internal/ptyowner/runtime"
+	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/tokenauth"
+	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
 type reloadArchiveLifecycleRecorder struct {
@@ -177,7 +177,7 @@ func waitForConfigEvent(
 
 const validReloadConfig = `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -188,7 +188,7 @@ name = "widget"
 
 const validReloadConfigExtraRepo = `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -203,19 +203,19 @@ name = "engine"
 
 const validReloadConfigRepoTokenEnv = `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
 [[repos]]
 owner = "acme"
 name = "widget"
-token_env = "MIDDLEMAN_REPO_TOKEN"
+token_env = "KENN_FORGE_REPO_TOKEN"
 `
 
 const validReloadConfigChangedGitHubTokenEnv = `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_NEW_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_NEW_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -226,14 +226,14 @@ name = "widget"
 
 const validReloadConfigPlatformTokenEnv = `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
 [[platforms]]
 type = "github"
 host = "github.com"
-token_env = "MIDDLEMAN_PLATFORM_TOKEN"
+token_env = "KENN_FORGE_PLATFORM_TOKEN"
 
 [[repos]]
 owner = "acme"
@@ -242,24 +242,24 @@ name = "widget"
 
 const validReloadConfigPlatformAndRepoTokenEnv = `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
 [[platforms]]
 type = "github"
 host = "github.com"
-token_env = "MIDDLEMAN_PLATFORM_TOKEN"
+token_env = "KENN_FORGE_PLATFORM_TOKEN"
 
 [[repos]]
 owner = "acme"
 name = "widget"
-token_env = "MIDDLEMAN_REPO_TOKEN"
+token_env = "KENN_FORGE_REPO_TOKEN"
 `
 
 const validReloadConfigGlobRepo = `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -270,7 +270,7 @@ name = "widget-*"
 
 const validReloadConfigChangedActivity = `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -285,7 +285,7 @@ time_range = "30d"
 
 const validReloadConfigChangedBranchActivityLimits = `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -300,7 +300,7 @@ default_branch_max_commits = 2
 
 const validReloadConfigChangedModes = `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -316,7 +316,7 @@ workspaces = false
 
 const validReloadConfigRestartRequired = `
 sync_interval = "10m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -327,10 +327,10 @@ name = "widget"
 
 const validReloadConfigHostCheckPolicy = `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
-allowed_hosts = ["middleman.example"]
+allowed_hosts = ["forge.example"]
 trust_reverse_proxy = true
 
 [[repos]]
@@ -611,7 +611,7 @@ func TestConfigReloadSerializesDocsFolderMutation(t *testing.T) {
 		setAcceptedHostForServerTest(req, srv)
 		req.RemoteAddr = "127.0.0.1:12345"
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set(middlemanCSRFHeaderName, "1")
+		req.Header.Set(forgeCSRFHeaderName, "1")
 		mutation = httptest.NewRecorder()
 		srv.ServeHTTP(mutation, req)
 	}()
@@ -684,8 +684,8 @@ func TestConfigReload_RestartRequiredOnHostCheckPolicyChange(t *testing.T) {
 func TestConfigReload_TokenSourceChangeForExistingHostUpdatesSource(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "old")
-	t.Setenv("MIDDLEMAN_REPO_TOKEN", "new")
+	t.Setenv("KENN_FORGE_GITHUB_TOKEN", "old")
+	t.Setenv("KENN_FORGE_REPO_TOKEN", "new")
 
 	srv, _, cfgPath := setupTestServerWithConfigContent(
 		t, validReloadConfig, &mockGH{},
@@ -718,8 +718,8 @@ func TestConfigReload_TokenSourceChangeForExistingHostUpdatesSource(t *testing.T
 func TestConfigReload_GitHubTokenEnvChangeUpdatesConfigSnapshot(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "old")
-	t.Setenv("MIDDLEMAN_NEW_GITHUB_TOKEN", "new")
+	t.Setenv("KENN_FORGE_GITHUB_TOKEN", "old")
+	t.Setenv("KENN_FORGE_NEW_GITHUB_TOKEN", "new")
 
 	srv, _, cfgPath := setupTestServerWithConfigContent(
 		t, validReloadConfig, &mockGH{},
@@ -754,11 +754,11 @@ func TestConfigReload_GitHubTokenEnvChangeUpdatesConfigSnapshot(t *testing.T) {
 	saveErr := srv.cfg.Save(savePath)
 	srv.cfgMu.Unlock()
 	require.NoError(saveErr)
-	assert.Equal("MIDDLEMAN_NEW_GITHUB_TOKEN", currentTokenEnv)
+	assert.Equal("KENN_FORGE_NEW_GITHUB_TOKEN", currentTokenEnv)
 
 	saved, err := config.Load(savePath)
 	require.NoError(err)
-	assert.Equal("MIDDLEMAN_NEW_GITHUB_TOKEN", saved.GitHubTokenEnv)
+	assert.Equal("KENN_FORGE_NEW_GITHUB_TOKEN", saved.GitHubTokenEnv)
 }
 
 func TestConfigReloadPublishesCommittedWorkspaceSnapshot(t *testing.T) {
@@ -811,8 +811,8 @@ command = ["sh"]
 func TestConfigReload_InvalidTokenSourceKeepsLastKnownGoodSource(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "")
-	t.Setenv("MIDDLEMAN_REPO_TOKEN", "old")
+	t.Setenv("KENN_FORGE_GITHUB_TOKEN", "")
+	t.Setenv("KENN_FORGE_REPO_TOKEN", "old")
 
 	srv, _, cfgPath := setupTestServerWithConfigContent(
 		t, validReloadConfigRepoTokenEnv, &mockGH{},
@@ -833,14 +833,14 @@ func TestConfigReload_InvalidTokenSourceKeepsLastKnownGoodSource(t *testing.T) {
 
 	writeConfigToml(t, cfgPath, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
 [[repos]]
 owner = "acme"
 name = "widget"
-token_env = "MIDDLEMAN_MISSING_REPO_TOKEN"
+token_env = "KENN_FORGE_MISSING_REPO_TOKEN"
 `)
 
 	ev := waitForConfigEvent(t, stream, 2*time.Second)
@@ -854,13 +854,13 @@ token_env = "MIDDLEMAN_MISSING_REPO_TOKEN"
 	srv.cfgMu.Lock()
 	currentTokenEnv := srv.cfg.Repos[0].TokenEnv
 	srv.cfgMu.Unlock()
-	assert.Equal("MIDDLEMAN_REPO_TOKEN", currentTokenEnv)
+	assert.Equal("KENN_FORGE_REPO_TOKEN", currentTokenEnv)
 }
 
 func TestValidateReloadCloneTokenSourcesUsesRepoDescriptorForProviderHost(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "config.toml")
 	writeConfigToml(t, cfgPath, `
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 
 [[platforms]]
 type = "github"
@@ -1073,14 +1073,14 @@ token_env = "OWNER_PAT"
 
 const reloadPlatformTokenConfig = `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
 [[platforms]]
 type = "gitlab"
 host = "gitlab.example.com"
-token_env = "MIDDLEMAN_PLATFORM_TOKEN"
+token_env = "KENN_FORGE_PLATFORM_TOKEN"
 
 [[repos]]
 owner = "acme"
@@ -1089,7 +1089,7 @@ name = "widget"
 
 const reloadPlatformTokenlessConfig = `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -1105,8 +1105,8 @@ name = "widget"
 func TestConfigReload_RemovingPlatformTokenClearsLiveSource(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "github-token")
-	t.Setenv("MIDDLEMAN_PLATFORM_TOKEN", "platform-token")
+	t.Setenv("KENN_FORGE_GITHUB_TOKEN", "github-token")
+	t.Setenv("KENN_FORGE_PLATFORM_TOKEN", "platform-token")
 
 	srv, _, cfgPath := setupTestServerWithConfigContent(
 		t, reloadPlatformTokenConfig, &mockGH{},
@@ -1137,8 +1137,8 @@ func TestConfigReload_RemovingPlatformTokenClearsLiveSource(t *testing.T) {
 func TestConfigReload_TokenAddedForUnbuiltClientRequiresRestart(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "github-token")
-	t.Setenv("MIDDLEMAN_PLATFORM_TOKEN", "platform-token")
+	t.Setenv("KENN_FORGE_GITHUB_TOKEN", "github-token")
+	t.Setenv("KENN_FORGE_PLATFORM_TOKEN", "platform-token")
 
 	srv, _, cfgPath := setupTestServerWithConfigContent(
 		t, reloadPlatformTokenlessConfig, &mockGH{},
@@ -1170,7 +1170,7 @@ func TestConfigReload_TokenAddedForUnbuiltClientRequiresRestart(t *testing.T) {
 func TestConfigReload_GitHubAppAddedRequiresRestart(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "github-token")
+	t.Setenv("KENN_FORGE_GITHUB_TOKEN", "github-token")
 
 	srv, _, cfgPath := setupTestServerWithConfigContent(
 		t, validReloadConfig, &mockGH{},
@@ -1287,7 +1287,7 @@ func newReloadServerWithTokenSources(
 }
 
 func TestConfigReloadFreezesGitHubChainOnSplitTopologyChange(t *testing.T) {
-	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "github-token")
+	t.Setenv("KENN_FORGE_GITHUB_TOKEN", "github-token")
 
 	githubKey := tokenauth.Key{Platform: "github", Host: "github.com"}
 	ownerKey := tokenauth.Key{
@@ -1359,7 +1359,7 @@ repository_selection = "all"
 	})
 
 	t.Run("non-topology token change still hot-applies", func(t *testing.T) {
-		t.Setenv("MIDDLEMAN_NEW_GITHUB_TOKEN", "rotated")
+		t.Setenv("KENN_FORGE_NEW_GITHUB_TOKEN", "rotated")
 		bootCfg, bootPath := loadCfg(t, "boot-plain.toml", validReloadConfig)
 		srv, set := newReloadServerWithTokenSources(t, bootCfg, bootPath)
 		newCfg, _ := loadCfg(t, "new-env.toml", validReloadConfigChangedGitHubTokenEnv)
@@ -1367,7 +1367,7 @@ repository_selection = "all"
 		srv.updateTokenSourcesForReload(newCfg)
 		src, ok := set.Get(githubKey)
 		require.True(t, ok)
-		assert.Contains(t, src.Descriptor().SafeString(), "MIDDLEMAN_NEW_GITHUB_TOKEN",
+		assert.Contains(t, src.Descriptor().SafeString(), "KENN_FORGE_NEW_GITHUB_TOKEN",
 			"hosts whose split classification is unchanged must keep hot-reloading")
 	})
 }
@@ -1376,19 +1376,19 @@ repository_selection = "all"
 // multi-provider-per-host layout clone-token validation accepts.
 const reloadSharedHostBothTokensConfig = `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
 [[platforms]]
 type = "forgejo"
 host = "code.example.com"
-token_env = "MIDDLEMAN_SHARED_TOKEN"
+token_env = "KENN_FORGE_SHARED_TOKEN"
 
 [[platforms]]
 type = "gitea"
 host = "code.example.com"
-token_env = "MIDDLEMAN_SHARED_TOKEN"
+token_env = "KENN_FORGE_SHARED_TOKEN"
 
 [[repos]]
 owner = "acme"
@@ -1399,7 +1399,7 @@ name = "widget"
 // var, so the host's effective clone chain is gitea's surviving chain.
 const reloadSharedHostSurvivorRotatedConfig = `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -1410,7 +1410,7 @@ host = "code.example.com"
 [[platforms]]
 type = "gitea"
 host = "code.example.com"
-token_env = "MIDDLEMAN_ROTATED_TOKEN"
+token_env = "KENN_FORGE_ROTATED_TOKEN"
 
 [[repos]]
 owner = "acme"
@@ -1419,7 +1419,7 @@ name = "widget"
 
 const reloadSharedHostAllTokenlessConfig = `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -1439,9 +1439,9 @@ name = "widget"
 func TestConfigReload_SharedHostCloneSourceFollowsSurvivingProviderChain(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "github-token")
-	t.Setenv("MIDDLEMAN_SHARED_TOKEN", "shared-token")
-	t.Setenv("MIDDLEMAN_ROTATED_TOKEN", "rotated-token")
+	t.Setenv("KENN_FORGE_GITHUB_TOKEN", "github-token")
+	t.Setenv("KENN_FORGE_SHARED_TOKEN", "shared-token")
+	t.Setenv("KENN_FORGE_ROTATED_TOKEN", "rotated-token")
 
 	srv, _, cfgPath := setupTestServerWithConfigContent(
 		t, reloadSharedHostBothTokensConfig, &mockGH{},
@@ -1476,8 +1476,8 @@ func TestConfigReload_SharedHostCloneSourceFollowsSurvivingProviderChain(t *test
 func TestConfigReload_SharedHostCloneSourceClearsWhenAllTokensRemoved(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "github-token")
-	t.Setenv("MIDDLEMAN_SHARED_TOKEN", "shared-token")
+	t.Setenv("KENN_FORGE_GITHUB_TOKEN", "github-token")
+	t.Setenv("KENN_FORGE_SHARED_TOKEN", "shared-token")
 
 	srv, _, cfgPath := setupTestServerWithConfigContent(
 		t, reloadSharedHostBothTokensConfig, &mockGH{},
@@ -1508,8 +1508,8 @@ func TestConfigReload_SharedHostCloneSourceClearsWhenAllTokensRemoved(t *testing
 func TestConfigReload_RepoTokenOverrideWithPlatformFallbackUpdatesSource(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	t.Setenv("MIDDLEMAN_PLATFORM_TOKEN", "platform-token")
-	t.Setenv("MIDDLEMAN_REPO_TOKEN", "repo-token")
+	t.Setenv("KENN_FORGE_PLATFORM_TOKEN", "platform-token")
+	t.Setenv("KENN_FORGE_REPO_TOKEN", "repo-token")
 
 	srv, _, cfgPath := setupTestServerWithConfigContent(
 		t, validReloadConfigPlatformTokenEnv, &mockGH{},
@@ -1600,8 +1600,8 @@ func TestConfigReload_RuntimeStripsBootAndReloadedStartupBoundTokenEnvs(t *testi
 
 	initialConfig := strings.ReplaceAll(
 		validReloadConfigRepoTokenEnv,
-		"MIDDLEMAN_REPO_TOKEN",
-		"MIDDLEMAN_REPO_OLD_TOKEN",
+		"KENN_FORGE_REPO_TOKEN",
+		"KENN_FORGE_REPO_OLD_TOKEN",
 	) + `
 [[agents]]
 key = "helper"
@@ -1610,8 +1610,8 @@ command = ["/bin/echo"]
 `
 	updatedConfig := strings.ReplaceAll(
 		validReloadConfigRepoTokenEnv,
-		"MIDDLEMAN_REPO_TOKEN",
-		"MIDDLEMAN_REPO_NEW_TOKEN",
+		"KENN_FORGE_REPO_TOKEN",
+		"KENN_FORGE_REPO_NEW_TOKEN",
 	) + `
 [[agents]]
 key = "helper"
@@ -1651,8 +1651,8 @@ command = ["/bin/echo"]
 
 	_, err := srv.runtime.Launch(context.Background(), "ws-1", t.TempDir(), "helper")
 	require.NoError(err)
-	assert.Contains(owner.startedStripEnvVars, "MIDDLEMAN_REPO_OLD_TOKEN")
-	assert.Contains(owner.startedStripEnvVars, "MIDDLEMAN_REPO_NEW_TOKEN")
+	assert.Contains(owner.startedStripEnvVars, "KENN_FORGE_REPO_OLD_TOKEN")
+	assert.Contains(owner.startedStripEnvVars, "KENN_FORGE_REPO_NEW_TOKEN")
 }
 
 func TestConfigReload_InvalidConfigKeepsLastKnownGood(t *testing.T) {
@@ -1708,8 +1708,8 @@ func TestSanitizeConfigErrorRedactsTokenMaterial(t *testing.T) {
 	assert := assert.New(t)
 
 	got := sanitizeConfigError(
-		errors.New("open /home/me/.config/middleman/config.toml: https://x-access-token:ghp_config_secret@github.com/acme/widgets.git failed"),
-		"/home/me/.config/middleman/config.toml",
+		errors.New("open /home/me/.config/kenn-forge/config.toml: https://x-access-token:ghp_config_secret@github.com/acme/widgets.git failed"),
+		"/home/me/.config/kenn-forge/config.toml",
 	)
 
 	assert.Contains(got, "config.toml")
@@ -1955,7 +1955,7 @@ func TestRestartRequiredForNotificationIntervals(t *testing.T) {
 
 const validReloadConfigAuthGate = `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -1969,7 +1969,7 @@ require_auth = true
 
 const validReloadConfigFleetSessions = `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -1983,7 +1983,7 @@ include_unmanaged_details = true
 
 const validReloadConfigSSHPeer = `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -1998,11 +1998,11 @@ destination = "wes@epyc.local"
 
 const validReloadConfigRestartRequiredFields = `
 sync_interval = "10m"
-github_token_env = "MIDDLEMAN_RELOADED_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_RELOADED_GITHUB_TOKEN"
 host = "127.0.0.2"
 port = 9191
-base_path = "/middleman"
-allowed_hosts = ["middleman.test:9191"]
+base_path = "/kenn-forge"
+allowed_hosts = ["forge.test:9191"]
 trust_reverse_proxy = true
 
 [[repos]]
@@ -2149,11 +2149,11 @@ func TestConfigReload_SettingsSavePreservesRestartRequiredFields(t *testing.T) {
 	reloaded, err := config.Load(cfgPath)
 	require.NoError(err)
 	assert.Equal("10m", reloaded.SyncInterval)
-	assert.Equal("MIDDLEMAN_RELOADED_GITHUB_TOKEN", reloaded.GitHubTokenEnv)
+	assert.Equal("KENN_FORGE_RELOADED_GITHUB_TOKEN", reloaded.GitHubTokenEnv)
 	assert.Equal("127.0.0.2", reloaded.Host)
 	assert.Equal(9191, reloaded.Port)
-	assert.Equal("/middleman/", reloaded.BasePath)
-	assert.Equal([]string{"middleman.test:9191"}, reloaded.AllowedHosts)
+	assert.Equal("/kenn-forge/", reloaded.BasePath)
+	assert.Equal([]string{"forge.test:9191"}, reloaded.AllowedHosts)
 	assert.True(reloaded.TrustReverseProxy)
 	assert.True(reloaded.API.RequireAuth)
 	assert.True(reloaded.Fleet.Sessions.IncludeUnmanagedDetails)

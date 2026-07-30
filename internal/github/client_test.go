@@ -20,8 +20,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"go.kenn.io/middleman/internal/platform"
-	"go.kenn.io/middleman/internal/tokenauth"
+	"go.kenn.io/forge/internal/platform"
+	"go.kenn.io/forge/internal/tokenauth"
 )
 
 // Compile-time assertion that liveClient satisfies Client.
@@ -1835,7 +1835,7 @@ func TestMarkPullRequestReadyForReviewUsesGraphQLMutation(t *testing.T) {
 			_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequest":{"id":"PR_kwDOAAABc84"}}}}`))
 			return
 		}
-		_, _ = w.Write([]byte(`{"data":{"markPullRequestReadyForReview":{"pullRequest":{"databaseId":1001,"number":141,"title":"Ready PR","state":"OPEN","isDraft":false,"body":"body","url":"https://github.com/wesm/middleman/pull/141","author":{"login":"wesm"},"createdAt":"2026-04-14T00:00:00Z","updatedAt":"2026-04-14T00:05:00Z","mergedAt":null,"closedAt":null,"additions":12,"deletions":3,"mergeable":"MERGEABLE","reviewDecision":"APPROVED","headRefName":"feature","baseRefName":"main","headRefOid":"abc123","baseRefOid":"def456","headRepository":{"url":"https://github.com/wesm/middleman"},"labels":{"nodes":[]}}}}}`))
+		_, _ = w.Write([]byte(`{"data":{"markPullRequestReadyForReview":{"pullRequest":{"databaseId":1001,"number":141,"title":"Ready PR","state":"OPEN","isDraft":false,"body":"body","url":"https://github.com/wesm/kenn-forge/pull/141","author":{"login":"wesm"},"createdAt":"2026-04-14T00:00:00Z","updatedAt":"2026-04-14T00:05:00Z","mergedAt":null,"closedAt":null,"additions":12,"deletions":3,"mergeable":"MERGEABLE","reviewDecision":"APPROVED","headRefName":"feature","baseRefName":"main","headRefOid":"abc123","baseRefOid":"def456","headRepository":{"url":"https://github.com/wesm/kenn-forge"},"labels":{"nodes":[]}}}}}`))
 	})
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
@@ -1849,7 +1849,7 @@ func TestMarkPullRequestReadyForReviewUsesGraphQLMutation(t *testing.T) {
 		graphQLEndpoint: srv.URL + "/graphql",
 	}
 
-	pr, err := c.MarkPullRequestReadyForReview(t.Context(), "wesm", "middleman", 141)
+	pr, err := c.MarkPullRequestReadyForReview(t.Context(), "wesm", "kenn-forge", 141)
 	require.NoError(err)
 	require.NotNil(pr)
 	require.Equal(141, pr.GetNumber())
@@ -1898,7 +1898,7 @@ func TestConvertPullRequestToDraftUsesGraphQLMutation(t *testing.T) {
 		graphQLEndpoint: srv.URL + "/graphql",
 	}
 
-	pr, err := c.ConvertPullRequestToDraft(t.Context(), "wesm", "middleman", 141)
+	pr, err := c.ConvertPullRequestToDraft(t.Context(), "wesm", "kenn-forge", 141)
 	require.NoError(err)
 	require.NotNil(pr)
 	require.Equal(141, pr.GetNumber())
@@ -1942,7 +1942,7 @@ func TestMarkPullRequestReadyForReviewReturnsTypedStaleStateError(t *testing.T) 
 		graphQLEndpoint: srv.URL + "/graphql",
 	}
 
-	pr, err := c.MarkPullRequestReadyForReview(t.Context(), "wesm", "middleman", 141)
+	pr, err := c.MarkPullRequestReadyForReview(t.Context(), "wesm", "kenn-forge", 141)
 	require.Nil(pr)
 	require.Error(err)
 	require.ErrorContains(err, "Could not resolve to a PullRequest")

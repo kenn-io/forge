@@ -11,8 +11,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/server/workspaceapi"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/server/workspaceapi"
 )
 
 func launchCommandSessionForDeleteTest(
@@ -120,12 +120,12 @@ func TestDeleteProjectWorktreeKillsStoredTmuxSession(t *testing.T) {
 	defer ts.Close()
 
 	// A stored row without a live runtime session models a tmux session
-	// surviving from before a middleman restart.
+	// surviving from before a kenn-forge restart.
 	require.NoError(srv.db.UpsertProjectWorktreeTmuxSession(
 		context.Background(), &db.ProjectWorktreeTmuxSession{
 			WorktreeID:  worktreeID,
 			SessionKey:  "surface:host:wt:shell:leaf",
-			SessionName: "middleman-stored-command",
+			SessionName: "kenn-forge-stored-command",
 			Label:       "Stored Shell",
 		},
 	))
@@ -137,6 +137,6 @@ func TestDeleteProjectWorktreeKillsStoredTmuxSession(t *testing.T) {
 	resp.Body.Close()
 
 	assertFakeTmuxKilledSession(
-		t, recordPath, "middleman-stored-command",
+		t, recordPath, "kenn-forge-stored-command",
 	)
 }

@@ -1,10 +1,10 @@
 export type GroupingMode = "flat" | "byRepo" | "byWorkflow";
 
-const STORAGE_KEY = "middleman:groupingMode";
-const HIDE_ORG_KEY = "middleman:hideOrgName";
+const STORAGE_KEY = "kenn-forge:groupingMode";
+const HIDE_ORG_KEY = "kenn-forge:hideOrgName";
 
 // Legacy key for backward-compat reads.
-const LEGACY_KEY = "middleman:groupByRepo";
+const LEGACY_KEY = "kenn-forge:groupByRepo";
 
 function readFromStorage(): GroupingMode {
   try {

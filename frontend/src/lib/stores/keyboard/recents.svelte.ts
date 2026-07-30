@@ -1,8 +1,8 @@
-import type { RoutedItemRef } from "@middleman/ui/routes";
+import type { RoutedItemRef } from "@kenn-forge/ui/routes";
 
 import type { RecentsState } from "./types.js";
 
-export const RECENTS_KEY = "middleman-palette-recents";
+export const RECENTS_KEY = "kenn-forge-palette-recents";
 export const MAX_ITEMS = 8;
 const STALE_MS = 30 * 24 * 60 * 60 * 1000;
 

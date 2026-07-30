@@ -13,7 +13,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/server"
+	"go.kenn.io/forge/internal/server"
 )
 
 // TestSSEContractPinDeliversCachedSyncStatusFrame is a paving wire-level test:

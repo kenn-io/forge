@@ -14,10 +14,10 @@ import (
 	"github.com/creack/pty/v2"
 	"go.opentelemetry.io/otel/attribute"
 
-	"go.kenn.io/middleman/internal/procutil"
-	"go.kenn.io/middleman/internal/ptyowner"
-	"go.kenn.io/middleman/internal/tracing"
-	"go.kenn.io/middleman/internal/workspace"
+	"go.kenn.io/forge/internal/procutil"
+	"go.kenn.io/forge/internal/ptyowner"
+	"go.kenn.io/forge/internal/tracing"
+	"go.kenn.io/forge/internal/workspace"
 )
 
 // Handler serves WebSocket connections that bridge a
@@ -314,7 +314,7 @@ func (h *Handler) ServeHTTP(
 func tmuxAttachCommand(prefix []string, session string) []string {
 	argv := make([]string, 0, len(prefix)+4)
 	argv = append(argv, prefix...)
-	// Middleman may run as a service without locale variables. Force UTF-8 so
+	// Kenn Forge may run as a service without locale variables. Force UTF-8 so
 	// tmux does not replace non-ASCII terminal output with underscores.
 	return append(argv, "-u", "attach-session", "-t", session)
 }

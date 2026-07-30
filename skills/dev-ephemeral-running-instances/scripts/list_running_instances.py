@@ -2,7 +2,7 @@
 # /// script
 # requires-python = ">=3.11"
 # ///
-"""List middleman dev-ephemeral instances across Codex worktrees."""
+"""List kenn-forge dev-ephemeral instances across Codex worktrees."""
 
 from __future__ import annotations
 
@@ -48,7 +48,7 @@ class Instance:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="List middleman dev-ephemeral instances and health checks."
+        description="List kenn-forge dev-ephemeral instances and health checks."
     )
     parser.add_argument(
         "--worktrees-root",
@@ -90,7 +90,7 @@ def parse_args() -> argparse.Namespace:
 def discover_status_files(worktrees_root: Path) -> list[Path]:
     if not worktrees_root.exists():
         return []
-    return sorted(worktrees_root.glob("*/middleman/tmp/**/dev-ephemeral.json"))
+    return sorted(worktrees_root.glob("*/kenn-forge/tmp/**/dev-ephemeral.json"))
 
 
 def find_worktree(path: Path) -> Path:

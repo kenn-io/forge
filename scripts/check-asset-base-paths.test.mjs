@@ -12,7 +12,7 @@ async function write(root, file, content) {
 }
 
 async function makeRoot() {
-  return mkdtemp("/tmp/middleman-asset-base-");
+  return mkdtemp("/tmp/kenn-forge-asset-base-");
 }
 
 test("flags the minified worker URL that breaks subpath deploys", async () => {

@@ -1,8 +1,8 @@
 import type { RateLimitsResponse, SyncStatus } from "../api/types.js";
-import type { MiddlemanClient } from "../types.js";
+import type { ForgeClient } from "../types.js";
 
 export interface SyncStoreOptions {
-  client: MiddlemanClient;
+  client: ForgeClient;
   getPriorityRepos?: (() => string | undefined) | undefined;
 }
 

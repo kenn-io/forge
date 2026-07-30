@@ -81,7 +81,7 @@ describe("migrated global shortcuts", () => {
     // Desktop width so the collapsed sidebar strip (with its Expand button) is
     // present on Activity; in narrow mode there is no sidebar at all.
     await page.viewport(1280, 900);
-    localStorage.setItem("middleman-sidebar", "collapsed");
+    localStorage.setItem("kenn-forge-sidebar", "collapsed");
     mounted = await mountBrowserApp("/");
 
     await expect.element(page.getByRole("button", { name: "Expand sidebar" })).toBeVisible();
@@ -127,11 +127,11 @@ describe("migrated global shortcuts", () => {
     await vi.waitFor(() => expect(document.body.textContent).toContain("Add browser regression coverage"));
 
     expect(document.querySelectorAll(".kit-sidebar-layout__sidebar")).toHaveLength(0);
-    localStorage.removeItem("middleman-sidebar");
+    localStorage.removeItem("kenn-forge-sidebar");
 
     const event = pressKey("[", { meta: true });
 
     expect(event.defaultPrevented).toBe(true);
-    expect(localStorage.getItem("middleman-sidebar")).toBeNull();
+    expect(localStorage.getItem("kenn-forge-sidebar")).toBeNull();
   });
 });

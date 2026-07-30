@@ -9,11 +9,11 @@ import {
   type IsolatedE2EServer,
 } from "./support/e2eServer";
 import {
-  configureMiddlemanKataHome,
+  configureForgeKataHome,
   createLiveKataHarness,
   type KataIssueSummary,
   type LiveKataHarness,
-  type MiddlemanKataHome,
+  type ForgeKataHome,
 } from "./support/kataLiveHarness";
 
 type WorkspaceStatusResponse = {
@@ -333,7 +333,7 @@ test.describe("workspace sidebar full-stack", () => {
       // container query that hides diff stats can never fire and mask
       // the toggle's effect.
       await page.addInitScript(() => {
-        window.localStorage.setItem("middleman-sidebar-width", "420");
+        window.localStorage.setItem("kenn-forge-sidebar-width", "420");
       });
 
       await page.goto(`${isolatedServer.info.base_url}/terminal/${workspace.id}`);
@@ -634,12 +634,12 @@ test.describe("workspace sidebar full-stack", () => {
 });
 
 test.describe("workspace Kata sidebar live integration", () => {
-  test.skip(process.env.MIDDLEMAN_LIVE_KATA_TESTS !== "1", "Set MIDDLEMAN_LIVE_KATA_TESTS=1 to run live Kata e2e.");
+  test.skip(process.env.KENN_FORGE_LIVE_KATA_TESTS !== "1", "Set KENN_FORGE_LIVE_KATA_TESTS=1 to run live Kata e2e.");
   test.describe.configure({ timeout: lockedWorkspaceTestTimeoutMs });
 
   test("preserves the newer task draft while an older mutation acknowledgement is delayed", async ({ page }) => {
     let harness: LiveKataHarness | null = null;
-    let kataHome: MiddlemanKataHome | null = null;
+    let kataHome: ForgeKataHome | null = null;
     let isolatedServer: IsolatedE2EServer | null = null;
     let api: APIRequestContext | null = null;
     let releaseAcknowledgement = (): void => {};
@@ -647,7 +647,7 @@ test.describe("workspace Kata sidebar live integration", () => {
 
     try {
       harness = await createLiveKataHarness();
-      kataHome = await configureMiddlemanKataHome(harness.baseURL);
+      kataHome = await configureForgeKataHome(harness.baseURL);
       isolatedServer = await startIsolatedWorkspaceE2EServerWithOptions({ freshProcess: true });
       api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
 
@@ -659,7 +659,7 @@ test.describe("workspace Kata sidebar live integration", () => {
       const target = await harness.post<{ issue: KataIssueSummary; changed: boolean }>(
         `/api/v1/projects/${source.project.id}/issues`,
         {
-          actor: "middleman-e2e",
+          actor: "kenn-forge-e2e",
           title: "Preserve the newer draft",
           body: "Target task selected while the source mutation is pending.",
           force_new: true,
@@ -673,7 +673,7 @@ test.describe("workspace Kata sidebar live integration", () => {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            actor: "middleman-e2e",
+            actor: "kenn-forge-e2e",
             links_delta: { add_related: [target.issue.short_id] },
           }),
         },
@@ -760,7 +760,7 @@ test.describe("workspace Kata sidebar live integration", () => {
 
   test("preserves comment and related-task drafts edited away and back before replacement", async ({ page }) => {
     let harness: LiveKataHarness | null = null;
-    let kataHome: MiddlemanKataHome | null = null;
+    let kataHome: ForgeKataHome | null = null;
     let isolatedServer: IsolatedE2EServer | null = null;
     let api: APIRequestContext | null = null;
     let releaseCommentAcknowledgement = (): void => {};
@@ -770,7 +770,7 @@ test.describe("workspace Kata sidebar live integration", () => {
 
     try {
       harness = await createLiveKataHarness();
-      kataHome = await configureMiddlemanKataHome(harness.baseURL);
+      kataHome = await configureForgeKataHome(harness.baseURL);
       isolatedServer = await startIsolatedWorkspaceE2EServerWithOptions({ freshProcess: true });
       api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
 
@@ -782,7 +782,7 @@ test.describe("workspace Kata sidebar live integration", () => {
       const relatedA = await harness.post<{ issue: KataIssueSummary; changed: boolean }>(
         `/api/v1/projects/${source.project.id}/issues`,
         {
-          actor: "middleman-e2e",
+          actor: "kenn-forge-e2e",
           title: "Related task A",
           body: "First valid related-task draft.",
           force_new: true,
@@ -792,7 +792,7 @@ test.describe("workspace Kata sidebar live integration", () => {
       const relatedB = await harness.post<{ issue: KataIssueSummary; changed: boolean }>(
         `/api/v1/projects/${source.project.id}/issues`,
         {
-          actor: "middleman-e2e",
+          actor: "kenn-forge-e2e",
           title: "Related task B",
           body: "Interim related-task draft.",
           force_new: true,

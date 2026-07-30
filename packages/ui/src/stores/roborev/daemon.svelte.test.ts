@@ -1,5 +1,5 @@
 import type { RoborevClient } from "../../api/roborev/client.js";
-import type { MiddlemanClient } from "../../types.js";
+import type { ForgeClient } from "../../types.js";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import { createDaemonStore } from "./daemon.svelte.js";
@@ -22,7 +22,7 @@ describe("createDaemonStore", () => {
     }>((resolve) => {
       resolveHealth = resolve;
     });
-    const middlemanGet = vi.fn().mockReturnValue(health);
+    const forgeGet = vi.fn().mockReturnValue(health);
     const roborevGet = vi.fn().mockResolvedValue({
       data: {
         active_workers: 0,
@@ -41,14 +41,14 @@ describe("createDaemonStore", () => {
     });
     const store = createDaemonStore({
       client: { GET: roborevGet } as unknown as RoborevClient,
-      middlemanClient: { GET: middlemanGet } as unknown as MiddlemanClient,
+      forgeClient: { GET: forgeGet } as unknown as ForgeClient,
     });
 
     try {
       store.startPolling();
       const retry = store.checkHealth();
 
-      expect(middlemanGet).toHaveBeenCalledTimes(1);
+      expect(forgeGet).toHaveBeenCalledTimes(1);
 
       resolveHealth({
         data: {
@@ -105,7 +105,7 @@ describe("createDaemonStore", () => {
         version: "",
       },
     };
-    const middlemanGet = vi
+    const forgeGet = vi
       .fn()
       .mockReturnValueOnce(oldHealth)
       .mockResolvedValueOnce(unavailable)
@@ -129,18 +129,18 @@ describe("createDaemonStore", () => {
     const onRecover = vi.fn();
     const store = createDaemonStore({
       client: { GET: roborevGet } as unknown as RoborevClient,
-      middlemanClient: { GET: middlemanGet } as unknown as MiddlemanClient,
+      forgeClient: { GET: forgeGet } as unknown as ForgeClient,
       onRecover,
     });
 
     try {
       store.startPolling();
-      expect(middlemanGet).toHaveBeenCalledTimes(1);
+      expect(forgeGet).toHaveBeenCalledTimes(1);
 
       store.stopPolling();
       store.startPolling();
       await vi.waitFor(() => {
-        expect(middlemanGet).toHaveBeenCalledTimes(2);
+        expect(forgeGet).toHaveBeenCalledTimes(2);
         expect(store.isLoading()).toBe(false);
       });
       expect(store.isAvailable()).toBe(false);
@@ -177,7 +177,7 @@ describe("createDaemonStore", () => {
   it("polls quickly while unavailable and returns to the healthy cadence after recovery", async () => {
     vi.useFakeTimers();
 
-    const middlemanGet = vi
+    const forgeGet = vi
       .fn()
       .mockResolvedValueOnce({
         data: {
@@ -212,7 +212,7 @@ describe("createDaemonStore", () => {
     const onRecover = vi.fn();
     const store = createDaemonStore({
       client: { GET: roborevGet } as unknown as RoborevClient,
-      middlemanClient: { GET: middlemanGet } as unknown as MiddlemanClient,
+      forgeClient: { GET: forgeGet } as unknown as ForgeClient,
       onRecover,
     });
 
@@ -220,23 +220,23 @@ describe("createDaemonStore", () => {
       store.startPolling();
       await vi.advanceTimersByTimeAsync(0);
 
-      expect(middlemanGet).toHaveBeenCalledTimes(1);
+      expect(forgeGet).toHaveBeenCalledTimes(1);
       expect(store.isAvailable()).toBe(false);
 
       await vi.advanceTimersByTimeAsync(999);
-      expect(middlemanGet).toHaveBeenCalledTimes(1);
+      expect(forgeGet).toHaveBeenCalledTimes(1);
 
       await vi.advanceTimersByTimeAsync(1);
-      expect(middlemanGet).toHaveBeenCalledTimes(2);
+      expect(forgeGet).toHaveBeenCalledTimes(2);
       expect(store.isAvailable()).toBe(true);
       expect(onRecover).toHaveBeenCalledTimes(1);
       expect(roborevGet).toHaveBeenCalledTimes(1);
 
       await vi.advanceTimersByTimeAsync(29_999);
-      expect(middlemanGet).toHaveBeenCalledTimes(2);
+      expect(forgeGet).toHaveBeenCalledTimes(2);
 
       await vi.advanceTimersByTimeAsync(1);
-      expect(middlemanGet).toHaveBeenCalledTimes(3);
+      expect(forgeGet).toHaveBeenCalledTimes(3);
     } finally {
       store.stopPolling();
       vi.useRealTimers();

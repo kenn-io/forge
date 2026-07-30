@@ -1,8 +1,8 @@
 <script lang="ts">
   import { Modal as KitModal } from "@kenn-io/kit-ui";
   import { untrack, type ComponentProps } from "svelte";
-  import { pushModalFrame } from "@middleman/ui/stores/keyboard/modal-stack";
-  import type { ModalFrameAction } from "@middleman/ui/stores/keyboard/keyspec";
+  import { pushModalFrame } from "@kenn-forge/ui/stores/keyboard/modal-stack";
+  import type { ModalFrameAction } from "@kenn-forge/ui/stores/keyboard/keyspec";
   import type { Snippet } from "svelte";
 
   type KitModalFooter = NonNullable<ComponentProps<typeof KitModal>["footer"]>;

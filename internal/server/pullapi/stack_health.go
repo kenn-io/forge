@@ -1,6 +1,6 @@
 package pullapi
 
-import "go.kenn.io/middleman/internal/db"
+import "go.kenn.io/forge/internal/db"
 
 func computeStackHealth(members []db.StackMemberWithPR) string {
 	if len(members) == 0 {

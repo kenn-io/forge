@@ -46,6 +46,60 @@ func TestRewriteAppliesCanonicalMappings(t *testing.T) {
 			wantPath: "internal/db/queries.go",
 			wantBody: "SELECT id FROM forge_repos\n",
 		},
+		{
+			name: "go identifiers and repository URL",
+			path: "internal/config/url_test.go",
+			body: "package config\n\nfunc use() {\n" +
+				"\tmiddleman := struct{ URL string }{}\n" +
+				"\t_ = middleman.URL\n" +
+				"\tvar _ XMiddlemanKataDaemon\n" +
+				"\tvar _ XForgeRuntimeSessionKey\n" +
+				"\t_ = \"https://github.com/wesm/middleman.git\"\n" +
+				"}\n",
+			wantPath: "internal/config/url_test.go",
+			wantBody: "package config\n\nfunc use() {\n" +
+				"\tforge := struct{ URL string }{}\n" +
+				"\t_ = forge.URL\n" +
+				"\tvar _ XKennForgeKataDaemon\n" +
+				"\tvar _ XKennForgeRuntimeSessionKey\n" +
+				"\t_ = \"https://github.com/wesm/kenn-forge.git\"\n" +
+				"}\n",
+		},
+		{
+			name:     "http header token",
+			path:     "internal/server/headers.go",
+			body:     "const header = \"X-Middleman-Fleet-Host\"\n",
+			wantPath: "internal/server/headers.go",
+			wantBody: "const header = \"X-Kenn-Forge-Fleet-Host\"\n",
+		},
+		{
+			name:     "repository URL damaged by earlier alias mapping",
+			path:     "internal/config/config_test.go",
+			body:     "name = \"https://github.com/wesm/forge.git\"\n",
+			wantPath: "internal/config/config_test.go",
+			wantBody: "name = \"https://github.com/wesm/kenn-forge.git\"\n",
+		},
+		{
+			name:     "typescript identifiers preserve storage keys",
+			path:     "frontend/src/server.ts",
+			body:     "let middleman = \"middleman:state\";\nlet kenn-forge = \"kenn-forge:state\";\n",
+			wantPath: "frontend/src/server.ts",
+			wantBody: "let forge = \"kenn-forge:state\";\nlet forge = \"kenn-forge:state\";\n",
+		},
+		{
+			name:     "derived socket hash fixture",
+			path:     "rust/pty-manager/src/main.rs",
+			body:     "sock-cb190ac507b2b0a4\n",
+			wantPath: "rust/pty-manager/src/main.rs",
+			wantBody: "sock-5e73279a62064378\n",
+		},
+		{
+			name:     "repository prefix glob fixture",
+			path:     "internal/server/kataapi/workspace_test.go",
+			body:     "name = \"middle*\"\n",
+			wantPath: "internal/server/kataapi/workspace_test.go",
+			wantBody: "name = \"kenn-*\"\n",
+		},
 	}
 
 	for _, tt := range tests {
@@ -85,6 +139,19 @@ func TestRewriteIsIdempotent(t *testing.T) {
 
 	assert.Zero(report.Changed)
 	assert.Zero(report.Moved)
+}
+
+func TestRewriteRecognizesAlreadyMovedTrackedPath(t *testing.T) {
+	root := t.TempDir()
+	const oldPath = "cmd/middleman/main.go"
+	const newPath = "cmd/kenn-forge/main.go"
+	writeFixture(t, root, newPath, "package main\n", 0o644)
+
+	report, err := Rewrite(root, []string{oldPath}, false)
+
+	require.NoError(t, err)
+	assert.Zero(t, report.Changed)
+	assert.Zero(t, report.Moved)
 }
 
 func TestRewriteRejectsPathCollision(t *testing.T) {
@@ -138,6 +205,45 @@ func TestRewriteSkipsBinaryAndHistoricalArtifacts(t *testing.T) {
 	assert.Equal("Middleman historical record\n", string(body))
 }
 
+func TestRewriteMovesBinaryPathWithoutEditingContent(t *testing.T) {
+	root := t.TempDir()
+	const oldPath = "assets/middleman-logo.bin"
+	const newPath = "assets/kenn-forge-logo.bin"
+	const payload = "middleman\x00payload"
+	writeFixture(t, root, oldPath, payload, 0o644)
+
+	report, err := Rewrite(root, []string{oldPath}, false)
+	require.NoError(t, err)
+
+	assert := assert.New(t)
+	assert.Equal(1, report.Changed)
+	assert.Equal(1, report.Moved)
+	assert.Equal(1, report.SkippedBinary)
+	body, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(newPath)))
+	require.NoError(t, err)
+	assert.Equal(payload, string(body))
+}
+
+func TestRewriteUpdatesItsOwnModuleImportWithoutChangingLegacyMappings(t *testing.T) {
+	root := t.TempDir()
+	const toolPath = "tools/renameforge/main.go"
+	legacyModule := "go.kenn.io/" + "middleman"
+	body := "package main\n\n" +
+		"import \"" + legacyModule + "/internal/procutil\"\n\n" +
+		"var rule = Rule{Old: \"" + legacyModule + "\", New: \"go.kenn.io/forge\"}\n"
+	writeFixture(t, root, toolPath, body, 0o644)
+
+	report, err := Rewrite(root, []string{toolPath}, false)
+	require.NoError(t, err)
+
+	bodyBytes, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(toolPath)))
+	require.NoError(t, err)
+	assert := assert.New(t)
+	assert.Equal(1, report.Changed)
+	assert.Contains(string(bodyBytes), `import "go.kenn.io/forge/internal/procutil"`)
+	assert.Contains(string(bodyBytes), `Old: "`+legacyModule+`"`)
+}
+
 func TestRewriteCheckOnlyReportsRequiredChanges(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -185,6 +291,43 @@ func TestRenderSchemaRenameRejectsUnsupportedObject(t *testing.T) {
 
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrUnsupportedSchemaObject)
+}
+
+func TestValidateModesRejectsCheckAndWriteTogether(t *testing.T) {
+	err := validateModes(true, true)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot be combined")
+}
+
+func TestVerifyMigrationPairDetectsDrift(t *testing.T) {
+	dir := t.TempDir()
+	writeFixture(t, dir, "000044_rename_schema_to_forge.up.sql", "stale up\n", 0o644)
+	writeFixture(t, dir, "000044_rename_schema_to_forge.down.sql", "fresh down\n", 0o644)
+
+	err := verifyMigrationPair(dir, []byte("fresh up\n"), []byte("fresh down\n"))
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "000044_rename_schema_to_forge.up.sql")
+}
+
+func TestRenderSchemaRenameMigratesWorkspaceSentinels(t *testing.T) {
+	objects := []SchemaObject{{
+		Type: "table",
+		Name: "middleman_workspaces",
+		SQL:  "CREATE TABLE middleman_workspaces (workspace_branch TEXT NOT NULL DEFAULT '__middleman_unknown__')",
+	}}
+
+	up, down, err := RenderSchemaRename(objects)
+	require.NoError(t, err)
+
+	assert := assert.New(t)
+	assert.Contains(string(up), "__middleman_unknown__")
+	assert.Contains(string(up), "__kenn_forge_unknown__")
+	assert.Contains(string(up), "__middleman_recovery_pending__..state")
+	assert.Contains(string(up), "__kenn_forge_recovery_pending__..state")
+	assert.Contains(string(down), "__middleman_unknown__")
+	assert.Contains(string(down), "__middleman_recovery_pending__..state")
 }
 
 func writeFixture(t *testing.T, root, relativePath, body string, mode os.FileMode) {

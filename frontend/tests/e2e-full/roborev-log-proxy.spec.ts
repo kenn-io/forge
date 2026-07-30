@@ -131,7 +131,7 @@ async function startFakeRoborevDaemon(): Promise<{
   };
 }
 
-async function startMiddlemanWithRoborev(endpoint: string): Promise<IsolatedE2EServer> {
+async function startForgeWithRoborev(endpoint: string): Promise<IsolatedE2EServer> {
   const previous = process.env.ROBOREV_ENDPOINT;
   process.env.ROBOREV_ENDPOINT = endpoint;
   try {
@@ -148,13 +148,13 @@ async function startMiddlemanWithRoborev(endpoint: string): Promise<IsolatedE2ES
   }
 }
 
-test("completed job Log tab renders output through the middleman roborev proxy", async ({ page }) => {
+test("completed job Log tab renders output through the kenn-forge roborev proxy", async ({ page }) => {
   const daemon = await startFakeRoborevDaemon();
-  let middleman: IsolatedE2EServer | undefined;
+  let forge: IsolatedE2EServer | undefined;
   try {
-    middleman = await startMiddlemanWithRoborev(daemon.url);
+    forge = await startForgeWithRoborev(daemon.url);
 
-    await page.goto(`${middleman.info.base_url}/reviews/${job.id}`);
+    await page.goto(`${forge.info.base_url}/reviews/${job.id}`);
     await expect(page.getByRole("region", { name: "Review details" })).toBeVisible();
 
     await page.locator(".tab-bar .tab", { hasText: "Log" }).click();
@@ -162,7 +162,7 @@ test("completed job Log tab renders output through the middleman roborev proxy",
     await expect(page.locator(".log-text")).toContainText("proxy rendered log line");
     expect(daemon.requests).toContain(`/api/job/output?job_id=${job.id}`);
   } finally {
-    await middleman?.stop();
+    await forge?.stop();
     await daemon.close();
   }
 });

@@ -18,8 +18,8 @@ import (
 )
 
 const (
-	processJobOwnerHelper = "MIDDLEMAN_PROCESS_JOB_OWNER_HELPER"
-	processJobChildHelper = "MIDDLEMAN_PROCESS_JOB_CHILD_HELPER"
+	processJobOwnerHelper = "KENN_FORGE_PROCESS_JOB_OWNER_HELPER"
+	processJobChildHelper = "KENN_FORGE_PROCESS_JOB_CHILD_HELPER"
 )
 
 func TestContainCurrentProcessTreeStopsDetachedDescendant(t *testing.T) {

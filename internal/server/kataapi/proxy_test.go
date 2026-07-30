@@ -17,11 +17,11 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/kata"
-	"go.kenn.io/middleman/internal/server/httpapi"
+	"go.kenn.io/forge/internal/kata"
+	"go.kenn.io/forge/internal/server/httpapi"
 )
 
-const kataProxyTestDaemonHeaderName = "X-Middleman-Kata-Daemon"
+const kataProxyTestDaemonHeaderName = "X-Kenn-Forge-Kata-Daemon"
 
 func TestKataProxyRoutesDefaultDaemon(t *testing.T) {
 	assert := assert.New(t)
@@ -153,7 +153,7 @@ url = "`+daemon.URL+`"
 	srv, _ := setupTestServer(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/kata/proxy/api/v1/instance", nil)
-	req.Header.Set("Origin", "http://middleman.invalid")
+	req.Header.Set("Origin", "http://forge.invalid")
 	req.Header.Set(kataProxyTestDaemonHeaderName, "home")
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
@@ -211,24 +211,24 @@ url = "`+daemon.URL+`"
 token = "stream-secret"
 `)
 	srv, _ := setupTestServer(t)
-	middleman := httptest.NewServer(srv)
+	forge := httptest.NewServer(srv)
 	t.Cleanup(daemon.Close)
-	t.Cleanup(middleman.Close)
+	t.Cleanup(forge.Close)
 	t.Cleanup(releaseSecond)
 
 	req, err := http.NewRequestWithContext(
 		t.Context(),
 		http.MethodGet,
-		middleman.URL+"/api/v1/kata/proxy/api/v1/events/stream",
+		forge.URL+"/api/v1/kata/proxy/api/v1/events/stream",
 		http.NoBody,
 	)
 	require.NoError(err)
 	req.Header.Set("Accept", "text/event-stream")
 	req.Header.Set("Last-Event-ID", "7")
-	req.Header.Set("Origin", "http://middleman.invalid")
+	req.Header.Set("Origin", "http://forge.invalid")
 	req.Header.Set(kataProxyTestDaemonHeaderName, "home")
 
-	resp, err := middleman.Client().Do(req)
+	resp, err := forge.Client().Do(req)
 	require.NoError(err)
 	defer resp.Body.Close()
 	require.Equal(http.StatusOK, resp.StatusCode)
@@ -483,12 +483,12 @@ func TestKataProxyRejectsUnsetTokenEnvBeforeForwarding(t *testing.T) {
 
 	home := t.TempDir()
 	t.Setenv("KATA_HOME", home)
-	t.Setenv("MIDDLEMAN_KATA_PROXY_MISSING_TOKEN", "")
+	t.Setenv("KENN_FORGE_KATA_PROXY_MISSING_TOKEN", "")
 	writeKataProxyCatalog(t, home, `
 [[daemon]]
 name = "home"
 url = "`+daemon.URL+`"
-token_env = "MIDDLEMAN_KATA_PROXY_MISSING_TOKEN"
+token_env = "KENN_FORGE_KATA_PROXY_MISSING_TOKEN"
 `)
 	srv, _ := setupTestServer(t)
 
@@ -498,7 +498,7 @@ token_env = "MIDDLEMAN_KATA_PROXY_MISSING_TOKEN"
 	problem := decodeProblem(t, rr)
 	assert.Equal(httpapi.CodeBadRequest, problem.Code)
 	assert.Contains(problem.Detail, "token_env")
-	assert.Contains(problem.Detail, "MIDDLEMAN_KATA_PROXY_MISSING_TOKEN")
+	assert.Contains(problem.Detail, "KENN_FORGE_KATA_PROXY_MISSING_TOKEN")
 	assert.False(reached)
 }
 
@@ -800,14 +800,14 @@ func TestKataProxyLocalDaemonIgnoresTokenEnv(t *testing.T) {
 	t.Setenv("KATA_HOME", home)
 	t.Setenv("KATA_AUTH_TOKEN", "")
 	t.Setenv("KATA_DB", "")
-	t.Setenv("MIDDLEMAN_KATA_MISSING_TOKEN", "")
+	t.Setenv("KENN_FORGE_KATA_MISSING_TOKEN", "")
 	writeKataProxyCatalog(t, home, `
 active_daemon = "local"
 
 [[daemon]]
 name = "local"
 local = true
-token_env = "MIDDLEMAN_KATA_MISSING_TOKEN"
+token_env = "KENN_FORGE_KATA_MISSING_TOKEN"
 `)
 	writeKataProxyRuntimeRecord(t, daemon.URL)
 	srv, _ := setupTestServer(t)

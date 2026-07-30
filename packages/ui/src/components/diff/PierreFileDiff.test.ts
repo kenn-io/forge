@@ -471,7 +471,7 @@ describe("PierreFileDiff", () => {
 
   it("logs virtualized render geometry when diff debugging is enabled", async () => {
     const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
-    window.localStorage.setItem("middleman:debug:diff", "1");
+    window.localStorage.setItem("kenn-forge:debug:diff", "1");
     const debugSpy = vi.spyOn(console, "debug").mockImplementation(() => {});
 
     try {
@@ -481,7 +481,7 @@ describe("PierreFileDiff", () => {
 
       const call = await waitFor(() => {
         const found = debugSpy.mock.calls.find(
-          ([tag, message]) => tag === "[middleman:diff]" && message === "virtualized post-render",
+          ([tag, message]) => tag === "[kenn-forge:diff]" && message === "virtualized post-render",
         );
         expect(found).toBeTruthy();
         return found!;
@@ -491,7 +491,7 @@ describe("PierreFileDiff", () => {
       expect(call[2]).toHaveProperty("renderRange");
     } finally {
       debugSpy.mockRestore();
-      window.localStorage.removeItem("middleman:debug:diff");
+      window.localStorage.removeItem("kenn-forge:debug:diff");
     }
   });
 

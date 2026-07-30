@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import { createDiffStore } from "@middleman/ui/stores/diff";
-import type { DiffStoreOptions } from "@middleman/ui/stores/diff";
-import type { DiffFile, DiffResult, FilesResult } from "@middleman/ui/api/types";
+import { createDiffStore } from "@kenn-forge/ui/stores/diff";
+import type { DiffStoreOptions } from "@kenn-forge/ui/stores/diff";
+import type { DiffFile, DiffResult, FilesResult } from "@kenn-forge/ui/api/types";
 
 const ownerRepoRef = {
   provider: "github",

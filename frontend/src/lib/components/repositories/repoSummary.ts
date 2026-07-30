@@ -5,7 +5,7 @@ import type {
   RepoSummaryCommitPointResponse,
   RepoSummaryIssue,
   RepoSummaryReleaseResponse,
-} from "@middleman/ui/api/types";
+} from "@kenn-forge/ui/api/types";
 
 export type RepoSummaryCard = Omit<RepoSummary, "active_authors" | "recent_issues" | "commit_timeline" | "releases"> & {
   active_authors: RepoSummaryAuthor[];

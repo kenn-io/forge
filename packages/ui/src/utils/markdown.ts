@@ -207,7 +207,7 @@ const MARKDOWN_ALLOWED_ATTRS = [
   "data-item-type",
   "data-external-url",
   "data-task-index",
-  "data-middleman-shiki",
+  "data-kenn-forge-shiki",
   "draggable",
 ];
 
@@ -230,7 +230,7 @@ const SHIKI_THEMES = {
   dark: SHIKI_DARK_THEME,
 } as const;
 const SHIKI_PLAINTEXT_LANG = "text";
-const SHIKI_GENERATED_ATTR = "data-middleman-shiki";
+const SHIKI_GENERATED_ATTR = "data-kenn-forge-shiki";
 let shikiHighlighter: Highlighter | undefined;
 let shikiHighlighterPromise: Promise<Highlighter> | undefined;
 let shikiNonceFallbackCounter = 0;

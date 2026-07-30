@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/forge/internal/db"
 )
 
 var templateCache = &templateState{}
@@ -69,7 +69,7 @@ func templatePath(t testing.TB) string {
 
 	templateCache.once.Do(func() {
 		templateCache.buildCount.Add(1)
-		dir, err := os.MkdirTemp(templateRoot, "middleman-test-db-template-*")
+		dir, err := os.MkdirTemp(templateRoot, "kenn-forge-test-db-template-*")
 		if err != nil {
 			templateCache.initErr = err
 			return

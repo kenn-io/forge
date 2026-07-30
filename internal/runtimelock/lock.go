@@ -61,7 +61,7 @@ func Acquire(dataDir string) (*Handle, error) {
 	// the held lock so a partially-started daemon does not see another's
 	// PID.
 	if _, statErr := os.Stat(MetadataPath(dataDir)); statErr == nil {
-		slog.Warn("previous middleman run terminated uncleanly; removing stale metadata",
+		slog.Warn("previous kenn-forge run terminated uncleanly; removing stale metadata",
 			"data_dir", dataDir,
 			"metadata_path", MetadataPath(dataDir),
 		)

@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 
-import { createDetailStore } from "@middleman/ui/stores/detail";
-import { createIssuesStore } from "@middleman/ui/stores/issues";
-import type { MiddlemanClient } from "@middleman/ui";
-import type { Label } from "@middleman/ui/api/types";
+import { createDetailStore } from "@kenn-forge/ui/stores/detail";
+import { createIssuesStore } from "@kenn-forge/ui/stores/issues";
+import type { ForgeClient } from "@kenn-forge/ui";
+import type { Label } from "@kenn-forge/ui/api/types";
 
 const routeRef = {
   provider: "github",
@@ -56,7 +56,7 @@ describe("label editing stores", () => {
       POST: vi.fn(async () => ({ data: undefined })),
       PUT: vi.fn(async () => ({ data: { labels: [label("triage")] } })),
       DELETE: vi.fn(),
-    } as unknown as MiddlemanClient;
+    } as unknown as ForgeClient;
     const store = createDetailStore({ client });
 
     await store.loadDetail("octo", "repo", 1, routeRef);
@@ -93,7 +93,7 @@ describe("label editing stores", () => {
       POST: vi.fn(async () => ({ data: undefined })),
       PUT: vi.fn(async () => put.promise),
       DELETE: vi.fn(),
-    } as unknown as MiddlemanClient;
+    } as unknown as ForgeClient;
     const store = createDetailStore({ client });
 
     await store.loadDetail("octo", "repo", 1, routeRef);
@@ -130,7 +130,7 @@ describe("label editing stores", () => {
       POST: vi.fn(async () => ({ data: undefined })),
       PUT: vi.fn(async () => ({ data: { labels: [label("triage")] } })),
       DELETE: vi.fn(),
-    } as unknown as MiddlemanClient;
+    } as unknown as ForgeClient;
     const store = createIssuesStore({ client });
 
     await store.loadIssueDetail("octo", "repo", 2, routeRef);
@@ -168,7 +168,7 @@ describe("label editing stores", () => {
       POST: vi.fn(async () => ({ data: undefined })),
       PUT: vi.fn(async () => put.promise),
       DELETE: vi.fn(),
-    } as unknown as MiddlemanClient;
+    } as unknown as ForgeClient;
     const store = createIssuesStore({ client });
 
     await store.loadIssueDetail("octo", "repo", 2, routeRef);

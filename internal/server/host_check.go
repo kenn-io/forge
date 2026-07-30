@@ -7,7 +7,7 @@ import (
 	"slices"
 	"strings"
 
-	"go.kenn.io/middleman/internal/config"
+	"go.kenn.io/forge/internal/config"
 )
 
 // hostValidationError is the operator-facing 403 body for any host
@@ -17,7 +17,7 @@ import (
 // injection via crafted Host values). Rejected hostnames go to
 // slog.Warn on the server side for operator diagnosis.
 const hostValidationError = "host validation failed: the requested hostname is not allowed. " +
-	"Add expected Backend and Public hostnames to allowed_hosts in middleman's config.toml. " +
+	"Add expected Backend and Public hostnames to allowed_hosts in kenn-forge's config.toml. " +
 	"If a reverse proxy sets forwarded-host headers, also enable trust_reverse_proxy."
 
 // HostCheckOptions configures the Host validation middleware.
@@ -210,7 +210,7 @@ func rejectHost(w http.ResponseWriter, r *http.Request, reason, host, forwarded 
 
 // parseXForwardedHost extracts and canonicalises a single
 // X-Forwarded-Host header value. Multiple comma-separated values are
-// rejected because middleman has no trusted-hop model.
+// rejected because kenn-forge has no trusted-hop model.
 func parseXForwardedHost(value string) (config.HostKey, error) {
 	if strings.Contains(value, ",") {
 		return config.HostKey{}, errMultipleForwardedHosts
@@ -224,7 +224,7 @@ func parseXForwardedHost(value string) (config.HostKey, error) {
 
 // parseForwardedHost extracts and canonicalises the host= parameter of
 // a single RFC 7239 Forwarded header entry. Multiple comma-separated
-// entries are rejected because middleman has no trusted-hop model; a
+// entries are rejected because kenn-forge has no trusted-hop model; a
 // proxy that appends instead of overwriting could otherwise leave a
 // spoofed client entry first.
 func parseForwardedHost(value string) (config.HostKey, error) {

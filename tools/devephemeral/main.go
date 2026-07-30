@@ -21,8 +21,8 @@ import (
 	"syscall"
 	"time"
 
-	"go.kenn.io/middleman/internal/config"
-	"go.kenn.io/middleman/internal/procutil"
+	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/procutil"
 	_ "modernc.org/sqlite"
 )
 
@@ -99,7 +99,7 @@ func run(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("dev-ephemeral", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	sourceConfigPath := fs.String(
-		"config", firstNonEmpty(os.Getenv("MIDDLEMAN_CONFIG"), config.DefaultConfigPath()),
+		"config", firstNonEmpty(os.Getenv("KENN_FORGE_CONFIG"), config.DefaultConfigPath()),
 		"source config file",
 	)
 	workDir := fs.String("work-dir", "", "directory for generated config, database, logs, and status JSON")
@@ -281,7 +281,7 @@ func prepareEphemeralConfig(opts ephemeralOptions) (ephemeralRun, error) {
 	if err := os.MkdirAll(logDir, 0o700); err != nil {
 		return ephemeralRun{}, fmt.Errorf("create log directory: %w", err)
 	}
-	if err := prepareEphemeralDatabase(sourceDBPath, filepath.Join(dataDir, "middleman.db"), !opts.freshDB); err != nil {
+	if err := prepareEphemeralDatabase(sourceDBPath, filepath.Join(dataDir, "forge.db"), !opts.freshDB); err != nil {
 		return ephemeralRun{}, err
 	}
 
@@ -319,17 +319,17 @@ func prepareEphemeralConfig(opts ephemeralOptions) (ephemeralRun, error) {
 func buildCommandSpecs(run ephemeralRun, frontendArgs []string) commandSpecs {
 	baseEnv := os.Environ()
 	backendEnv := overlayEnv(baseEnv, map[string]string{
-		"MIDDLEMAN_CONFIG":           run.configPath,
-		"MIDDLEMAN_LOG_LEVEL":        envDefault("MIDDLEMAN_LOG_LEVEL", "debug"),
-		"MIDDLEMAN_LOG_FILE":         filepath.Join(run.logDir, "backend-dev.log"),
-		"MIDDLEMAN_LOG_STDERR_LEVEL": envDefault("MIDDLEMAN_LOG_STDERR_LEVEL", "info"),
-		"TELEMETRY_ENABLED":          envDefault("TELEMETRY_ENABLED", "0"),
+		"KENN_FORGE_CONFIG":           run.configPath,
+		"KENN_FORGE_LOG_LEVEL":        envDefault("KENN_FORGE_LOG_LEVEL", "debug"),
+		"KENN_FORGE_LOG_FILE":         filepath.Join(run.logDir, "backend-dev.log"),
+		"KENN_FORGE_LOG_STDERR_LEVEL": envDefault("KENN_FORGE_LOG_STDERR_LEVEL", "info"),
+		"TELEMETRY_ENABLED":           envDefault("TELEMETRY_ENABLED", "0"),
 	})
 	frontendEnv := overlayEnv(sanitizedFrontendEnv(baseEnv), map[string]string{
-		"MIDDLEMAN_CONFIG": run.configPath,
+		"KENN_FORGE_CONFIG": run.configPath,
 		// frontend/vite.config.ts resolves its dev proxy from this value,
 		// so random ephemeral backend ports do not fall back to defaults.
-		"MIDDLEMAN_API_URL": run.backendURL,
+		"KENN_FORGE_API_URL": run.backendURL,
 	})
 	args := append([]string{"--port", strconv.Itoa(run.frontendPort)}, frontendArgs...)
 	return commandSpecs{
@@ -367,8 +367,8 @@ func allowedFrontendEnvKey(key string) bool {
 		"CLICOLOR", "CLICOLOR_FORCE", "COLORTERM",
 		"FORCE_COLOR", "HOME", "LANG", "LOGNAME",
 		"MISE_CACHE_DIR", "MISE_CONFIG_DIR", "MISE_DATA_DIR",
-		"MIDDLEMAN_VITE_ALLOWED_HOSTS", "MIDDLEMAN_VITE_HMR_CLIENT_PORT",
-		"MIDDLEMAN_VITE_HMR_HOST", "MIDDLEMAN_VITE_HMR_PROTOCOL",
+		"KENN_FORGE_VITE_ALLOWED_HOSTS", "KENN_FORGE_VITE_HMR_CLIENT_PORT",
+		"KENN_FORGE_VITE_HMR_HOST", "KENN_FORGE_VITE_HMR_PROTOCOL",
 		"NO_COLOR", "PATH", "SHELL", "TEMP", "TERM", "TMP", "TMPDIR",
 		"USER", "XDG_CACHE_HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME":
 		return true

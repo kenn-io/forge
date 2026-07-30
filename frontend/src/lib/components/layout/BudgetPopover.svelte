@@ -4,7 +4,7 @@
     LocalSyncCeilingStatus,
     RateLimitHostStatus,
     RateLimitResourceStatus,
-  } from "@middleman/ui/api/types";
+  } from "@kenn-forge/ui/api/types";
   import { budgetColor, formatCompact, syncBudgetColor } from "./budget-utils";
 
   interface Props {
@@ -90,7 +90,7 @@
     ];
   }
 
-  // Local ceilings are middleman's own hourly guard, not GitHub quota, so
+  // Local ceilings are kenn-forge's own hourly guard, not GitHub quota, so
   // they render in their own section rather than beside the provider pools.
   function ceilingEntries() {
     return Object.entries(localCeilings).filter(([, ceiling]) => ceiling.limit > 0);

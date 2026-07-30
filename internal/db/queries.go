@@ -30,8 +30,8 @@ func listSearchCondition(alias, search string) (string, []any) {
 		labelCondition = fmt.Sprintf(
 			` OR EXISTS (
 				SELECT 1
-				FROM middleman_merge_request_labels mrl
-				JOIN middleman_labels l ON l.id = mrl.label_id
+				FROM forge_merge_request_labels mrl
+				JOIN forge_labels l ON l.id = mrl.label_id
 				WHERE mrl.merge_request_id = %s.id AND l.name LIKE ?
 			)`,
 			alias,
@@ -40,8 +40,8 @@ func listSearchCondition(alias, search string) (string, []any) {
 		labelCondition = fmt.Sprintf(
 			` OR EXISTS (
 				SELECT 1
-				FROM middleman_issue_labels il
-				JOIN middleman_labels l ON l.id = il.label_id
+				FROM forge_issue_labels il
+				JOIN forge_labels l ON l.id = il.label_id
 				WHERE il.issue_id = %s.id AND l.name LIKE ?
 			)`,
 			alias,
@@ -266,7 +266,7 @@ func canonicalRepoIdentity(identity RepoIdentity) RepoIdentity {
 func lookupLabelIDByNameTx(ctx context.Context, tx *sql.Tx, repoID int64, name string) (int64, bool, error) {
 	var id int64
 	err := tx.QueryRowContext(ctx,
-		`SELECT id FROM middleman_labels WHERE repo_id = ? AND name = ?`,
+		`SELECT id FROM forge_labels WHERE repo_id = ? AND name = ?`,
 		repoID, name,
 	).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -281,7 +281,7 @@ func lookupLabelIDByNameTx(ctx context.Context, tx *sql.Tx, repoID int64, name s
 func labelPlatformIDTx(ctx context.Context, tx *sql.Tx, labelID int64) (sql.NullInt64, error) {
 	var platformID sql.NullInt64
 	err := tx.QueryRowContext(ctx,
-		`SELECT platform_id FROM middleman_labels WHERE id = ?`,
+		`SELECT platform_id FROM forge_labels WHERE id = ?`,
 		labelID,
 	).Scan(&platformID)
 	if err != nil {
@@ -298,8 +298,8 @@ func mergeLabelRowAssociationsTx(ctx context.Context, tx *sql.Tx, fromLabelID, t
 		       (source.catalog_seen_at IS NOT NULL
 		           AND (target.catalog_seen_at IS NULL OR source.catalog_seen_at > target.catalog_seen_at))
 		       OR (target.catalog_present = 0 AND source.updated_at > target.updated_at)
-		FROM middleman_labels AS source
-		JOIN middleman_labels AS target ON target.id = ?
+		FROM forge_labels AS source
+		JOIN forge_labels AS target ON target.id = ?
 		WHERE source.id = ?`,
 		toLabelID, fromLabelID,
 	).Scan(&sourceName, &shouldCopySourceName); err != nil {
@@ -307,42 +307,42 @@ func mergeLabelRowAssociationsTx(ctx context.Context, tx *sql.Tx, fromLabelID, t
 	}
 
 	if _, err := tx.ExecContext(ctx, `
-		UPDATE middleman_labels
+		UPDATE forge_labels
 		SET description = CASE
-		        WHEN (SELECT catalog_seen_at FROM middleman_labels WHERE id = ?) > COALESCE(catalog_seen_at, '')
-		          OR (catalog_present = 0 AND (SELECT updated_at FROM middleman_labels WHERE id = ?) > updated_at)
-		        THEN (SELECT description FROM middleman_labels WHERE id = ?)
+		        WHEN (SELECT catalog_seen_at FROM forge_labels WHERE id = ?) > COALESCE(catalog_seen_at, '')
+		          OR (catalog_present = 0 AND (SELECT updated_at FROM forge_labels WHERE id = ?) > updated_at)
+		        THEN (SELECT description FROM forge_labels WHERE id = ?)
 		        ELSE description
 		    END,
 		    color = CASE
-		        WHEN (SELECT catalog_seen_at FROM middleman_labels WHERE id = ?) > COALESCE(catalog_seen_at, '')
-		          OR (catalog_present = 0 AND (SELECT updated_at FROM middleman_labels WHERE id = ?) > updated_at)
-		        THEN (SELECT color FROM middleman_labels WHERE id = ?)
+		        WHEN (SELECT catalog_seen_at FROM forge_labels WHERE id = ?) > COALESCE(catalog_seen_at, '')
+		          OR (catalog_present = 0 AND (SELECT updated_at FROM forge_labels WHERE id = ?) > updated_at)
+		        THEN (SELECT color FROM forge_labels WHERE id = ?)
 		        ELSE color
 		    END,
 		    is_default = CASE
-		        WHEN (SELECT catalog_seen_at FROM middleman_labels WHERE id = ?) > COALESCE(catalog_seen_at, '')
-		          OR (catalog_present = 0 AND (SELECT updated_at FROM middleman_labels WHERE id = ?) > updated_at)
-		        THEN (SELECT is_default FROM middleman_labels WHERE id = ?)
+		        WHEN (SELECT catalog_seen_at FROM forge_labels WHERE id = ?) > COALESCE(catalog_seen_at, '')
+		          OR (catalog_present = 0 AND (SELECT updated_at FROM forge_labels WHERE id = ?) > updated_at)
+		        THEN (SELECT is_default FROM forge_labels WHERE id = ?)
 		        ELSE is_default
 		    END,
 		    updated_at = CASE
-		        WHEN (SELECT updated_at FROM middleman_labels WHERE id = ?) > updated_at
-		        THEN (SELECT updated_at FROM middleman_labels WHERE id = ?)
+		        WHEN (SELECT updated_at FROM forge_labels WHERE id = ?) > updated_at
+		        THEN (SELECT updated_at FROM forge_labels WHERE id = ?)
 		        ELSE updated_at
 		    END,
 		    catalog_present = CASE
-		        WHEN catalog_present = 1 OR (SELECT catalog_present FROM middleman_labels WHERE id = ?) = 1
+		        WHEN catalog_present = 1 OR (SELECT catalog_present FROM forge_labels WHERE id = ?) = 1
 		        THEN 1
 		        ELSE catalog_present
 		    END,
 		    catalog_seen_at = CASE
 		        WHEN catalog_seen_at IS NULL
-		        THEN (SELECT catalog_seen_at FROM middleman_labels WHERE id = ?)
-		        WHEN (SELECT catalog_seen_at FROM middleman_labels WHERE id = ?) IS NULL
+		        THEN (SELECT catalog_seen_at FROM forge_labels WHERE id = ?)
+		        WHEN (SELECT catalog_seen_at FROM forge_labels WHERE id = ?) IS NULL
 		        THEN catalog_seen_at
-		        WHEN (SELECT catalog_seen_at FROM middleman_labels WHERE id = ?) > catalog_seen_at
-		        THEN (SELECT catalog_seen_at FROM middleman_labels WHERE id = ?)
+		        WHEN (SELECT catalog_seen_at FROM forge_labels WHERE id = ?) > catalog_seen_at
+		        THEN (SELECT catalog_seen_at FROM forge_labels WHERE id = ?)
 		        ELSE catalog_seen_at
 		    END
 		WHERE id = ?`,
@@ -355,41 +355,41 @@ func mergeLabelRowAssociationsTx(ctx context.Context, tx *sql.Tx, fromLabelID, t
 		return fmt.Errorf("merge label catalog metadata: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO middleman_issue_labels (issue_id, label_id)
-		SELECT issue_id, ? FROM middleman_issue_labels WHERE label_id = ?
+		INSERT INTO forge_issue_labels (issue_id, label_id)
+		SELECT issue_id, ? FROM forge_issue_labels WHERE label_id = ?
 		ON CONFLICT(issue_id, label_id) DO NOTHING`,
 		toLabelID, fromLabelID,
 	); err != nil {
 		return fmt.Errorf("move issue label associations: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx,
-		`DELETE FROM middleman_issue_labels WHERE label_id = ?`,
+		`DELETE FROM forge_issue_labels WHERE label_id = ?`,
 		fromLabelID,
 	); err != nil {
 		return fmt.Errorf("delete old issue label associations: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO middleman_merge_request_labels (merge_request_id, label_id)
-		SELECT merge_request_id, ? FROM middleman_merge_request_labels WHERE label_id = ?
+		INSERT INTO forge_merge_request_labels (merge_request_id, label_id)
+		SELECT merge_request_id, ? FROM forge_merge_request_labels WHERE label_id = ?
 		ON CONFLICT(merge_request_id, label_id) DO NOTHING`,
 		toLabelID, fromLabelID,
 	); err != nil {
 		return fmt.Errorf("move merge request label associations: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx,
-		`DELETE FROM middleman_merge_request_labels WHERE label_id = ?`,
+		`DELETE FROM forge_merge_request_labels WHERE label_id = ?`,
 		fromLabelID,
 	); err != nil {
 		return fmt.Errorf("delete old merge request label associations: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx,
-		`DELETE FROM middleman_labels WHERE id = ?`,
+		`DELETE FROM forge_labels WHERE id = ?`,
 		fromLabelID,
 	); err != nil {
 		return fmt.Errorf("delete old label row: %w", err)
 	}
 	if shouldCopySourceName {
-		if _, err := tx.ExecContext(ctx, `UPDATE middleman_labels SET name = ? WHERE id = ?`, sourceName, toLabelID); err != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE forge_labels SET name = ? WHERE id = ?`, sourceName, toLabelID); err != nil {
 			return fmt.Errorf("copy source label name: %w", err)
 		}
 	}
@@ -402,7 +402,7 @@ func lookupLabelIDByPlatformIDTx(ctx context.Context, tx *sql.Tx, repoID, platfo
 	}
 	var id int64
 	err := tx.QueryRowContext(ctx,
-		`SELECT id FROM middleman_labels WHERE repo_id = ? AND platform_id = ?`,
+		`SELECT id FROM forge_labels WHERE repo_id = ? AND platform_id = ?`,
 		repoID, platformID,
 	).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -425,7 +425,7 @@ func lookupLabelIDByPlatformExternalIDTx(
 	}
 	var id int64
 	err := tx.QueryRowContext(ctx,
-		`SELECT id FROM middleman_labels WHERE repo_id = ? AND platform_external_id = ?`,
+		`SELECT id FROM forge_labels WHERE repo_id = ? AND platform_external_id = ?`,
 		repoID, platformExternalID,
 	).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -494,7 +494,7 @@ func labelIDForUpsertTx(ctx context.Context, tx *sql.Tx, repoID int64, label Lab
 func repoIDForIssueTx(ctx context.Context, tx *sql.Tx, issueID int64) (int64, error) {
 	var repoID int64
 	err := tx.QueryRowContext(ctx,
-		`SELECT repo_id FROM middleman_issues WHERE id = ?`,
+		`SELECT repo_id FROM forge_issues WHERE id = ?`,
 		issueID,
 	).Scan(&repoID)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -509,7 +509,7 @@ func repoIDForIssueTx(ctx context.Context, tx *sql.Tx, issueID int64) (int64, er
 func repoIDForMergeRequestTx(ctx context.Context, tx *sql.Tx, mrID int64) (int64, error) {
 	var repoID int64
 	err := tx.QueryRowContext(ctx,
-		`SELECT repo_id FROM middleman_merge_requests WHERE id = ?`,
+		`SELECT repo_id FROM forge_merge_requests WHERE id = ?`,
 		mrID,
 	).Scan(&repoID)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -535,7 +535,7 @@ func upsertLabelsTx(ctx context.Context, tx *sql.Tx, repoID int64, labels []Labe
 		}
 		if !found {
 			result, err := tx.ExecContext(ctx, `
-				INSERT INTO middleman_labels (
+				INSERT INTO forge_labels (
 					repo_id, platform_id, platform_external_id,
 					name, description, color, is_default, updated_at,
 					catalog_present, catalog_seen_at
@@ -554,7 +554,7 @@ func upsertLabelsTx(ctx context.Context, tx *sql.Tx, repoID int64, labels []Labe
 			}
 		} else {
 			_, err = tx.ExecContext(ctx, `
-				UPDATE middleman_labels
+				UPDATE forge_labels
 				SET platform_id = COALESCE(NULLIF(?, 0), platform_id),
 				    platform_external_id = COALESCE(NULLIF(?, ''), platform_external_id),
 				    name = CASE
@@ -609,7 +609,7 @@ func replaceIssueLabelsTx(ctx context.Context, tx *sql.Tx, repoID, issueID int64
 	if actualRepoID != repoID {
 		return fmt.Errorf("issue %d belongs to repo %d, not repo %d", issueID, actualRepoID, repoID)
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM middleman_issue_labels WHERE issue_id = ?`, issueID); err != nil {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM forge_issue_labels WHERE issue_id = ?`, issueID); err != nil {
 		return fmt.Errorf("delete issue labels: %w", err)
 	}
 	if len(labels) == 0 {
@@ -621,7 +621,7 @@ func replaceIssueLabelsTx(ctx context.Context, tx *sql.Tx, repoID, issueID int64
 	}
 	for _, label := range labels {
 		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO middleman_issue_labels (issue_id, label_id) VALUES (?, ?) ON CONFLICT(issue_id, label_id) DO NOTHING`,
+			`INSERT INTO forge_issue_labels (issue_id, label_id) VALUES (?, ?) ON CONFLICT(issue_id, label_id) DO NOTHING`,
 			issueID, ids[label.Name],
 		); err != nil {
 			return fmt.Errorf("insert issue label %s: %w", label.Name, err)
@@ -638,7 +638,7 @@ func replaceMergeRequestLabelsTx(ctx context.Context, tx *sql.Tx, repoID, mrID i
 	if actualRepoID != repoID {
 		return fmt.Errorf("merge request %d belongs to repo %d, not repo %d", mrID, actualRepoID, repoID)
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM middleman_merge_request_labels WHERE merge_request_id = ?`, mrID); err != nil {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM forge_merge_request_labels WHERE merge_request_id = ?`, mrID); err != nil {
 		return fmt.Errorf("delete merge request labels: %w", err)
 	}
 	if len(labels) == 0 {
@@ -650,7 +650,7 @@ func replaceMergeRequestLabelsTx(ctx context.Context, tx *sql.Tx, repoID, mrID i
 	}
 	for _, label := range labels {
 		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO middleman_merge_request_labels (merge_request_id, label_id) VALUES (?, ?) ON CONFLICT(merge_request_id, label_id) DO NOTHING`,
+			`INSERT INTO forge_merge_request_labels (merge_request_id, label_id) VALUES (?, ?) ON CONFLICT(merge_request_id, label_id) DO NOTHING`,
 			mrID, ids[label.Name],
 		); err != nil {
 			return fmt.Errorf("insert merge request label %s: %w", label.Name, err)
@@ -673,7 +673,7 @@ func (d *DB) ReplaceRepoLabelCatalog(ctx context.Context, repoID int64, labels [
 	syncedAt = canonicalUTCTime(syncedAt)
 	return d.Tx(ctx, func(tx *sql.Tx) error {
 		result, err := tx.ExecContext(ctx, `
-			UPDATE middleman_repos
+			UPDATE forge_repos
 			SET label_catalog_synced_at = ?,
 			    label_catalog_checked_at = CASE
 			        WHEN ? >= COALESCE(label_catalog_checked_at, '') THEN ?
@@ -698,7 +698,7 @@ func (d *DB) ReplaceRepoLabelCatalog(ctx context.Context, repoID int64, labels [
 			return nil
 		}
 		if _, err := tx.ExecContext(ctx,
-			`UPDATE middleman_labels SET catalog_present = 0 WHERE repo_id = ?`,
+			`UPDATE forge_labels SET catalog_present = 0 WHERE repo_id = ?`,
 			repoID,
 		); err != nil {
 			return fmt.Errorf("clear label catalog: %w", err)
@@ -722,7 +722,7 @@ func (d *DB) ListRepoLabelCatalog(ctx context.Context, repoID int64) ([]Label, L
 		SELECT id, repo_id, COALESCE(platform_id, 0), platform_external_id,
 		       name, description, color, is_default, updated_at,
 		       catalog_present, catalog_seen_at
-		FROM middleman_labels
+		FROM forge_labels
 		WHERE repo_id = ? AND catalog_present = 1
 		ORDER BY lower(name), name`,
 		repoID,
@@ -764,7 +764,7 @@ func (d *DB) GetRepoLabelCatalogFreshness(ctx context.Context, repoID int64) (La
 	var freshness LabelCatalogFreshness
 	err := d.ro.QueryRowContext(ctx, `
 		SELECT label_catalog_synced_at, label_catalog_checked_at, label_catalog_sync_error
-		FROM middleman_repos
+		FROM forge_repos
 		WHERE id = ?`, repoID,
 	).Scan(&freshness.SyncedAt, &freshness.CheckedAt, &freshness.SyncError)
 	if err != nil {
@@ -784,7 +784,7 @@ func (d *DB) GetRepoLabelCatalogFreshness(ctx context.Context, repoID int64) (La
 func (d *DB) UpdateRepoLabelCatalogCheck(ctx context.Context, repoID int64, checkedAt time.Time, syncErr string) error {
 	checkedAt = canonicalUTCTime(checkedAt)
 	_, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_repos
+		UPDATE forge_repos
 		SET label_catalog_checked_at = ?, label_catalog_sync_error = ?
 		WHERE id = ?
 		  AND (? >= COALESCE(label_catalog_checked_at, ''))`,
@@ -799,7 +799,7 @@ func (d *DB) UpdateRepoLabelCatalogCheck(ctx context.Context, repoID int64, chec
 func (d *DB) MarkRepoLabelCatalogSynced(ctx context.Context, repoID int64, syncedAt time.Time) error {
 	syncedAt = canonicalUTCTime(syncedAt)
 	_, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_repos
+		UPDATE forge_repos
 		SET label_catalog_synced_at = CASE
 		        WHEN ? >= COALESCE(label_catalog_synced_at, '') THEN ?
 		        ELSE label_catalog_synced_at
@@ -844,8 +844,8 @@ func (d *DB) loadLabelsForMergeRequests(ctx context.Context, ids []int64) (map[i
 	query := fmt.Sprintf(`
 		SELECT ml.merge_request_id, l.id, l.repo_id, COALESCE(l.platform_id, 0),
 		       l.platform_external_id, l.name, l.description, l.color, l.is_default, l.updated_at
-		FROM middleman_merge_request_labels ml
-		JOIN middleman_labels l ON l.id = ml.label_id
+		FROM forge_merge_request_labels ml
+		JOIN forge_labels l ON l.id = ml.label_id
 		WHERE ml.merge_request_id IN (%s)
 		ORDER BY l.name, l.id`, sqlPlaceholders(len(ids)))
 	rows, err := d.ro.QueryContext(ctx, query, args...)
@@ -880,8 +880,8 @@ func (d *DB) loadLabelsForIssues(ctx context.Context, ids []int64) (map[int64][]
 	query := fmt.Sprintf(`
 		SELECT il.issue_id, l.id, l.repo_id, COALESCE(l.platform_id, 0),
 		       l.platform_external_id, l.name, l.description, l.color, l.is_default, l.updated_at
-		FROM middleman_issue_labels il
-		JOIN middleman_labels l ON l.id = il.label_id
+		FROM forge_issue_labels il
+		JOIN forge_labels l ON l.id = il.label_id
 		WHERE il.issue_id IN (%s)
 		ORDER BY l.name, l.id`, sqlPlaceholders(len(ids)))
 	rows, err := d.ro.QueryContext(ctx, query, args...)
@@ -916,15 +916,15 @@ func (d *DB) PurgeOtherHosts(ctx context.Context, keepHost string) error {
 	}
 	return d.Tx(ctx, func(tx *sql.Tx) error {
 		queries := []string{
-			`DELETE FROM middleman_starred_items WHERE repo_id IN (SELECT id FROM middleman_repos WHERE platform_host != ?)`,
-			`DELETE FROM middleman_mr_worktree_links WHERE merge_request_id IN (SELECT id FROM middleman_merge_requests WHERE repo_id IN (SELECT id FROM middleman_repos WHERE platform_host != ?))`,
-			`DELETE FROM middleman_item_workflow_state WHERE repo_id IN (SELECT id FROM middleman_repos WHERE platform_host != ?)`,
-			`DELETE FROM middleman_mr_events WHERE merge_request_id IN (SELECT id FROM middleman_merge_requests WHERE repo_id IN (SELECT id FROM middleman_repos WHERE platform_host != ?))`,
-			`DELETE FROM middleman_merge_requests WHERE repo_id IN (SELECT id FROM middleman_repos WHERE platform_host != ?)`,
-			`DELETE FROM middleman_issue_events WHERE issue_id IN (SELECT id FROM middleman_issues WHERE repo_id IN (SELECT id FROM middleman_repos WHERE platform_host != ?))`,
-			`DELETE FROM middleman_issues WHERE repo_id IN (SELECT id FROM middleman_repos WHERE platform_host != ?)`,
-			`DELETE FROM middleman_repos WHERE platform_host != ?`,
-			`DELETE FROM middleman_rate_limits WHERE platform_host != ?`,
+			`DELETE FROM forge_starred_items WHERE repo_id IN (SELECT id FROM forge_repos WHERE platform_host != ?)`,
+			`DELETE FROM forge_mr_worktree_links WHERE merge_request_id IN (SELECT id FROM forge_merge_requests WHERE repo_id IN (SELECT id FROM forge_repos WHERE platform_host != ?))`,
+			`DELETE FROM forge_item_workflow_state WHERE repo_id IN (SELECT id FROM forge_repos WHERE platform_host != ?)`,
+			`DELETE FROM forge_mr_events WHERE merge_request_id IN (SELECT id FROM forge_merge_requests WHERE repo_id IN (SELECT id FROM forge_repos WHERE platform_host != ?))`,
+			`DELETE FROM forge_merge_requests WHERE repo_id IN (SELECT id FROM forge_repos WHERE platform_host != ?)`,
+			`DELETE FROM forge_issue_events WHERE issue_id IN (SELECT id FROM forge_issues WHERE repo_id IN (SELECT id FROM forge_repos WHERE platform_host != ?))`,
+			`DELETE FROM forge_issues WHERE repo_id IN (SELECT id FROM forge_repos WHERE platform_host != ?)`,
+			`DELETE FROM forge_repos WHERE platform_host != ?`,
+			`DELETE FROM forge_rate_limits WHERE platform_host != ?`,
 		}
 		for _, q := range queries {
 			if _, err := tx.ExecContext(ctx, q, keepHost); err != nil {
@@ -964,7 +964,7 @@ func upsertRepoIdentityTx(ctx context.Context, tx *sql.Tx, identity RepoIdentity
 	}
 
 	_, err := tx.ExecContext(ctx,
-		`INSERT INTO middleman_repos (
+		`INSERT INTO forge_repos (
 		     platform, platform_host, platform_repo_id,
 		     owner, name, repo_path,
 		     owner_key, name_key, repo_path_key
@@ -976,9 +976,9 @@ func upsertRepoIdentityTx(ctx context.Context, tx *sql.Tx, identity RepoIdentity
 		     name_key = excluded.name_key,
 		     repo_path_key = excluded.repo_path_key,
 		     platform_repo_id = CASE
-		         WHEN middleman_repos.platform_repo_id = ''
+		         WHEN forge_repos.platform_repo_id = ''
 		         THEN excluded.platform_repo_id
-		         ELSE middleman_repos.platform_repo_id
+		         ELSE forge_repos.platform_repo_id
 		     END`,
 		identity.Platform, identity.PlatformHost, identity.PlatformRepoID,
 		identity.Owner, identity.Name, identity.RepoPath,
@@ -989,7 +989,7 @@ func upsertRepoIdentityTx(ctx context.Context, tx *sql.Tx, identity RepoIdentity
 	}
 	var id int64
 	err = tx.QueryRowContext(ctx,
-		`SELECT id FROM middleman_repos
+		`SELECT id FROM forge_repos
 		 WHERE platform = ? AND platform_host = ?
 		   AND owner_key = ? AND name_key = ?`,
 		identity.Platform, identity.PlatformHost, identity.OwnerKey, identity.NameKey,
@@ -1098,7 +1098,7 @@ func lookupRepoIDByProviderIDTx(
 	var id int64
 	err := tx.QueryRowContext(ctx,
 		`SELECT id
-		 FROM middleman_repos
+		 FROM forge_repos
 		 WHERE platform = ?
 		   AND platform_host = ?
 		   AND platform_repo_id = ?`,
@@ -1121,7 +1121,7 @@ func lookupRepoIDByIdentityTx(
 	var id int64
 	err := tx.QueryRowContext(ctx,
 		`SELECT id
-		 FROM middleman_repos
+		 FROM forge_repos
 		 WHERE platform = ?
 		   AND platform_host = ?
 		   AND owner_key = ?
@@ -1147,7 +1147,7 @@ func lookupRepoIdentityByIDTx(
 		`SELECT platform, platform_host, platform_repo_id,
 		        owner, name, repo_path,
 		        owner_key, name_key, repo_path_key
-		 FROM middleman_repos
+		 FROM forge_repos
 		 WHERE id = ?`,
 		repoID,
 	).Scan(
@@ -1169,13 +1169,13 @@ func updateRepoIdentityTx(
 ) error {
 	identity = canonicalRepoIdentity(identity)
 	if _, err := tx.ExecContext(ctx, `
-		UPDATE middleman_merge_requests
+		UPDATE forge_merge_requests
 		SET head_repo_identity_stale = 1,
 		    snapshot_revision = snapshot_revision + 1
 		WHERE repo_id = ?
 		  AND EXISTS (
 		      SELECT 1
-		      FROM middleman_repos
+		      FROM forge_repos
 		      WHERE id = ?
 		        AND (
 		            platform <> ?
@@ -1192,7 +1192,7 @@ func updateRepoIdentityTx(
 		return fmt.Errorf("mark renamed repo merge request identities stale: %w", err)
 	}
 	_, err := tx.ExecContext(ctx,
-		`UPDATE middleman_repos
+		`UPDATE forge_repos
 		 SET platform_repo_id = CASE
 		         WHEN ? <> ''
 		         THEN ?
@@ -1242,7 +1242,7 @@ func updateWorkspaceRepoIdentityTx(
 	}
 
 	_, err := tx.ExecContext(ctx,
-		`UPDATE middleman_workspaces
+		`UPDATE forge_workspaces
 		 SET platform_host = ?,
 		     repo_owner = ?,
 		     repo_name = ?,
@@ -1273,8 +1273,8 @@ func mergeWorkspaceRowsForIdentityChangeTx(
 ) error {
 	rows, err := tx.QueryContext(ctx,
 		`SELECT source.id, target.id
-		 FROM middleman_workspaces AS source
-		 JOIN middleman_workspaces AS target
+		 FROM forge_workspaces AS source
+		 JOIN forge_workspaces AS target
 		   ON target.platform_host = ?
 		  AND target.repo_path_key = ?
 		  AND target.item_type = source.item_type
@@ -1313,7 +1313,7 @@ func mergeWorkspaceRowsForIdentityChangeTx(
 
 	for _, merge := range merges {
 		if _, err := tx.ExecContext(ctx,
-			`UPDATE middleman_workspace_setup_events
+			`UPDATE forge_workspace_setup_events
 			 SET workspace_id = ?
 			 WHERE workspace_id = ?`,
 			merge.targetID,
@@ -1322,7 +1322,7 @@ func mergeWorkspaceRowsForIdentityChangeTx(
 			return fmt.Errorf("move workspace setup events: %w", err)
 		}
 		if _, err := tx.ExecContext(ctx,
-			`UPDATE middleman_workspace_runtime_sessions
+			`UPDATE forge_workspace_runtime_sessions
 			 SET workspace_id = ?
 			 WHERE workspace_id = ?`,
 			merge.targetID,
@@ -1331,7 +1331,7 @@ func mergeWorkspaceRowsForIdentityChangeTx(
 			return fmt.Errorf("move workspace runtime sessions: %w", err)
 		}
 		if _, err := tx.ExecContext(ctx,
-			`DELETE FROM middleman_workspaces
+			`DELETE FROM forge_workspaces
 			 WHERE id = ?`,
 			merge.sourceID,
 		); err != nil {
@@ -1345,8 +1345,8 @@ func mergeWorkspaceRowsForIdentityChangeTx(
 func mergeRepoLabelNameConflictsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64) error {
 	rows, err := tx.QueryContext(ctx, `
 		SELECT conflict.id, target.id
-		FROM middleman_labels AS source
-		JOIN middleman_labels AS target
+		FROM forge_labels AS source
+		JOIN forge_labels AS target
 		  ON target.repo_id = ?
 		 AND (
 		     source.platform_id IS NOT NULL
@@ -1358,7 +1358,7 @@ func mergeRepoLabelNameConflictsTx(ctx context.Context, tx *sql.Tx, fromRepoID, 
 		         AND source.platform_external_id = target.platform_external_id
 		     )
 		 )
-		JOIN middleman_labels AS conflict
+		JOIN forge_labels AS conflict
 		  ON conflict.repo_id = ?
 		 AND conflict.name = source.name
 		 AND conflict.id <> target.id
@@ -1403,7 +1403,7 @@ func mergeRepoMergeRequestDraftsTx(
 	var sourceUpdatedAt string
 	err := tx.QueryRowContext(ctx, `
 		SELECT id, updated_at
-		FROM middleman_mr_review_drafts
+		FROM forge_mr_review_drafts
 		WHERE merge_request_id = ?`,
 		sourceMRID,
 	).Scan(&sourceDraftID, &sourceUpdatedAt)
@@ -1418,13 +1418,13 @@ func mergeRepoMergeRequestDraftsTx(
 	var targetUpdatedAt string
 	err = tx.QueryRowContext(ctx, `
 		SELECT id, updated_at
-		FROM middleman_mr_review_drafts
+		FROM forge_mr_review_drafts
 		WHERE merge_request_id = ?`,
 		targetMRID,
 	).Scan(&targetDraftID, &targetUpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		if _, err := tx.ExecContext(ctx, `
-			UPDATE middleman_mr_review_drafts
+			UPDATE forge_mr_review_drafts
 			SET merge_request_id = ?
 			WHERE id = ?`,
 			targetMRID, sourceDraftID,
@@ -1438,7 +1438,7 @@ func mergeRepoMergeRequestDraftsTx(
 	}
 
 	if _, err := tx.ExecContext(ctx, `
-		UPDATE middleman_mr_review_draft_comments
+		UPDATE forge_mr_review_draft_comments
 		SET draft_id = ?
 		WHERE draft_id = ?`,
 		targetDraftID, sourceDraftID,
@@ -1447,12 +1447,12 @@ func mergeRepoMergeRequestDraftsTx(
 	}
 	if sourceUpdatedAt > targetUpdatedAt {
 		if _, err := tx.ExecContext(ctx, `
-			UPDATE middleman_mr_review_drafts
+			UPDATE forge_mr_review_drafts
 			SET body = source.body,
 			    action = source.action,
 			    updated_at = source.updated_at
-			FROM middleman_mr_review_drafts AS source
-			WHERE middleman_mr_review_drafts.id = ?
+			FROM forge_mr_review_drafts AS source
+			WHERE forge_mr_review_drafts.id = ?
 			  AND source.id = ?`,
 			targetDraftID, sourceDraftID,
 		); err != nil {
@@ -1460,7 +1460,7 @@ func mergeRepoMergeRequestDraftsTx(
 		}
 	}
 	if _, err := tx.ExecContext(ctx,
-		`DELETE FROM middleman_mr_review_drafts WHERE id = ?`,
+		`DELETE FROM forge_mr_review_drafts WHERE id = ?`,
 		sourceDraftID,
 	); err != nil {
 		return fmt.Errorf("delete merged source review draft: %w", err)
@@ -1486,21 +1486,21 @@ func mergeRepoMergeRequestChildrenTx(
 	}{
 		{
 			name: "merge merge request labels",
-			sql: `INSERT OR IGNORE INTO middleman_merge_request_labels (
+			sql: `INSERT OR IGNORE INTO forge_merge_request_labels (
 			          merge_request_id, label_id
 			      )
 			      SELECT ?, label_id
-			      FROM middleman_merge_request_labels
+			      FROM forge_merge_request_labels
 			      WHERE merge_request_id = ?`,
 			args: []any{targetMRID, sourceMRID},
 		},
 		{
 			name: "drop duplicate source merge request events",
-			sql: `DELETE FROM middleman_mr_events AS source
+			sql: `DELETE FROM forge_mr_events AS source
 			      WHERE source.merge_request_id = ?
 			        AND EXISTS (
 			            SELECT 1
-			            FROM middleman_mr_events AS target
+			            FROM forge_mr_events AS target
 			            WHERE target.merge_request_id = ?
 			              AND (
 			                  target.dedupe_key = source.dedupe_key
@@ -1515,33 +1515,33 @@ func mergeRepoMergeRequestChildrenTx(
 		},
 		{
 			name: "move merge request events",
-			sql:  `UPDATE middleman_mr_events SET merge_request_id = ? WHERE merge_request_id = ?`,
+			sql:  `UPDATE forge_mr_events SET merge_request_id = ? WHERE merge_request_id = ?`,
 			args: []any{targetMRID, sourceMRID},
 		},
 		{
 			name: "move merge request worktree links",
-			sql:  `UPDATE middleman_mr_worktree_links SET merge_request_id = ? WHERE merge_request_id = ?`,
+			sql:  `UPDATE forge_mr_worktree_links SET merge_request_id = ? WHERE merge_request_id = ?`,
 			args: []any{targetMRID, sourceMRID},
 		},
 		{
 			name: "drop source stack membership when target is already stacked",
-			sql: `DELETE FROM middleman_stack_members
+			sql: `DELETE FROM forge_stack_members
 			      WHERE merge_request_id = ?
 			        AND EXISTS (
 			            SELECT 1
-			            FROM middleman_stack_members
+			            FROM forge_stack_members
 			            WHERE merge_request_id = ?
 			        )`,
 			args: []any{sourceMRID, targetMRID},
 		},
 		{
 			name: "move merge request stack membership",
-			sql:  `UPDATE middleman_stack_members SET merge_request_id = ? WHERE merge_request_id = ?`,
+			sql:  `UPDATE forge_stack_members SET merge_request_id = ? WHERE merge_request_id = ?`,
 			args: []any{targetMRID, sourceMRID},
 		},
 		{
 			name: "copy newer duplicate review threads",
-			sql: `UPDATE middleman_mr_review_threads AS target
+			sql: `UPDATE forge_mr_review_threads AS target
 			      SET provider_review_id = source.provider_review_id,
 			          provider_comment_id = source.provider_comment_id,
 			          path = source.path,
@@ -1562,7 +1562,7 @@ func mergeRepoMergeRequestChildrenTx(
 			          updated_at = source.updated_at,
 			          resolved_at = source.resolved_at,
 			          metadata_json = source.metadata_json
-			      FROM middleman_mr_review_threads AS source
+			      FROM forge_mr_review_threads AS source
 			      WHERE target.merge_request_id = ?
 			        AND source.merge_request_id = ?
 			        AND target.provider_thread_id = source.provider_thread_id
@@ -1571,11 +1571,11 @@ func mergeRepoMergeRequestChildrenTx(
 		},
 		{
 			name: "drop duplicate source review threads",
-			sql: `DELETE FROM middleman_mr_review_threads AS source
+			sql: `DELETE FROM forge_mr_review_threads AS source
 			      WHERE source.merge_request_id = ?
 			        AND EXISTS (
 			            SELECT 1
-			            FROM middleman_mr_review_threads AS target
+			            FROM forge_mr_review_threads AS target
 			            WHERE target.merge_request_id = ?
 			              AND target.provider_thread_id = source.provider_thread_id
 			        )`,
@@ -1583,7 +1583,7 @@ func mergeRepoMergeRequestChildrenTx(
 		},
 		{
 			name: "move merge request review threads",
-			sql:  `UPDATE middleman_mr_review_threads SET merge_request_id = ? WHERE merge_request_id = ?`,
+			sql:  `UPDATE forge_mr_review_threads SET merge_request_id = ? WHERE merge_request_id = ?`,
 			args: []any{targetMRID, sourceMRID},
 		},
 	}
@@ -1601,7 +1601,7 @@ func copyMergeRequestSnapshotTx(
 	sourceMRID, targetMRID int64,
 ) error {
 	_, err := tx.ExecContext(ctx, `
-		UPDATE middleman_merge_requests AS target
+		UPDATE forge_merge_requests AS target
 		SET (
 		    platform_id, platform_external_id, number, url, title, author,
 		    author_display_name, state, is_draft, is_locked, body,
@@ -1629,7 +1629,7 @@ func copyMergeRequestSnapshotTx(
 		        workflow_approval_head_sha, workflow_approval_required,
 		        workflow_approval_count, assignees_json, reviewers_json,
 		        1, MAX(source.snapshot_revision, target.snapshot_revision) + 1
-		    FROM middleman_merge_requests AS source
+		    FROM forge_merge_requests AS source
 		    WHERE source.id = ?
 		)
 		WHERE target.id = ?`,
@@ -1648,8 +1648,8 @@ func mergeRepoMergeRequestCollisionsTx(
 ) error {
 	rows, err := tx.QueryContext(ctx, `
 		SELECT source.id, target.id, source.updated_at >= target.updated_at
-		FROM middleman_merge_requests AS source
-		JOIN middleman_merge_requests AS target
+		FROM forge_merge_requests AS source
+		JOIN forge_merge_requests AS target
 		  ON target.repo_id = ?
 		 AND (
 		     target.number = source.number
@@ -1715,7 +1715,7 @@ func mergeRepoMergeRequestCollisionsTx(
 			}
 		}
 		if _, err := tx.ExecContext(ctx,
-			`DELETE FROM middleman_merge_requests WHERE id = ?`,
+			`DELETE FROM forge_merge_requests WHERE id = ?`,
 			c.sourceID,
 		); err != nil {
 			return fmt.Errorf("delete merged source merge request: %w", err)
@@ -1741,53 +1741,53 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 	}{
 		{
 			name: "clear stale source label catalog membership",
-			sql: `UPDATE middleman_labels
+			sql: `UPDATE forge_labels
 			      SET catalog_present = 0
 			      WHERE repo_id = ?
-			        AND COALESCE((SELECT label_catalog_synced_at FROM middleman_repos WHERE id = ?), '') <=
-			            COALESCE((SELECT label_catalog_synced_at FROM middleman_repos WHERE id = ?), '')`,
+			        AND COALESCE((SELECT label_catalog_synced_at FROM forge_repos WHERE id = ?), '') <=
+			            COALESCE((SELECT label_catalog_synced_at FROM forge_repos WHERE id = ?), '')`,
 			args: []any{fromRepoID, fromRepoID, toRepoID},
 		},
 		{
 			name: "clear stale destination label catalog membership",
-			sql: `UPDATE middleman_labels
+			sql: `UPDATE forge_labels
 			      SET catalog_present = 0
 			      WHERE repo_id = ?
-			        AND COALESCE((SELECT label_catalog_synced_at FROM middleman_repos WHERE id = ?), '') >
-			            COALESCE((SELECT label_catalog_synced_at FROM middleman_repos WHERE id = ?), '')`,
+			        AND COALESCE((SELECT label_catalog_synced_at FROM forge_repos WHERE id = ?), '') >
+			            COALESCE((SELECT label_catalog_synced_at FROM forge_repos WHERE id = ?), '')`,
 			args: []any{toRepoID, fromRepoID, toRepoID},
 		},
 		{
 			name: "copy source repo metadata",
-			sql: `UPDATE middleman_repos
+			sql: `UPDATE forge_repos
 			      SET web_url = CASE
 			              WHEN web_url = ''
-			              THEN (SELECT web_url FROM middleman_repos WHERE id = ?)
+			              THEN (SELECT web_url FROM forge_repos WHERE id = ?)
 			              ELSE web_url
 			          END,
 			          clone_url = CASE
 			              WHEN clone_url = ''
-			              THEN (SELECT clone_url FROM middleman_repos WHERE id = ?)
+			              THEN (SELECT clone_url FROM forge_repos WHERE id = ?)
 			              ELSE clone_url
 			          END,
 			          default_branch = CASE
 			              WHEN default_branch = ''
-			              THEN (SELECT default_branch FROM middleman_repos WHERE id = ?)
+			              THEN (SELECT default_branch FROM forge_repos WHERE id = ?)
 			              ELSE default_branch
 			          END,
 			          label_catalog_synced_at = CASE
-			              WHEN (SELECT label_catalog_synced_at FROM middleman_repos WHERE id = ?) > COALESCE(label_catalog_synced_at, '')
-			              THEN (SELECT label_catalog_synced_at FROM middleman_repos WHERE id = ?)
+			              WHEN (SELECT label_catalog_synced_at FROM forge_repos WHERE id = ?) > COALESCE(label_catalog_synced_at, '')
+			              THEN (SELECT label_catalog_synced_at FROM forge_repos WHERE id = ?)
 			              ELSE label_catalog_synced_at
 			          END,
 			          label_catalog_checked_at = CASE
-			              WHEN (SELECT label_catalog_checked_at FROM middleman_repos WHERE id = ?) > COALESCE(label_catalog_checked_at, '')
-			              THEN (SELECT label_catalog_checked_at FROM middleman_repos WHERE id = ?)
+			              WHEN (SELECT label_catalog_checked_at FROM forge_repos WHERE id = ?) > COALESCE(label_catalog_checked_at, '')
+			              THEN (SELECT label_catalog_checked_at FROM forge_repos WHERE id = ?)
 			              ELSE label_catalog_checked_at
 			          END,
 			          label_catalog_sync_error = CASE
-			              WHEN (SELECT label_catalog_checked_at FROM middleman_repos WHERE id = ?) > COALESCE(label_catalog_checked_at, '')
-			              THEN (SELECT label_catalog_sync_error FROM middleman_repos WHERE id = ?)
+			              WHEN (SELECT label_catalog_checked_at FROM forge_repos WHERE id = ?) > COALESCE(label_catalog_checked_at, '')
+			              THEN (SELECT label_catalog_sync_error FROM forge_repos WHERE id = ?)
 			              ELSE label_catalog_sync_error
 			          END
 			      WHERE id = ?`,
@@ -1795,7 +1795,7 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 		},
 		{
 			name: "move merge requests",
-			sql: `UPDATE middleman_merge_requests
+			sql: `UPDATE forge_merge_requests
 			      SET repo_id = ?,
 			          head_repo_identity_stale = 1,
 			          snapshot_revision = snapshot_revision + 1
@@ -1804,45 +1804,45 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 		},
 		{
 			name: "move issues",
-			sql: `UPDATE middleman_issues
+			sql: `UPDATE forge_issues
 			      SET repo_id = ?
 			      WHERE repo_id = ?
 			        AND NOT EXISTS (
 			            SELECT 1
-			            FROM middleman_issues AS target
+			            FROM forge_issues AS target
 			            WHERE target.repo_id = ?
 			              AND (
-			                  target.number = middleman_issues.number
-			                  OR target.platform_id = middleman_issues.platform_id
+			                  target.number = forge_issues.number
+			                  OR target.platform_id = forge_issues.platform_id
 			              )
 			        )`,
 			args: []any{toRepoID, fromRepoID, toRepoID},
 		},
 		{
 			name: "drop duplicate issues",
-			sql:  `DELETE FROM middleman_issues WHERE repo_id = ?`,
+			sql:  `DELETE FROM forge_issues WHERE repo_id = ?`,
 			args: []any{fromRepoID},
 		},
 		{
 			name: "move labels",
-			sql: `UPDATE middleman_labels
+			sql: `UPDATE forge_labels
 			      SET repo_id = ?
 			      WHERE repo_id = ?
 			        AND NOT EXISTS (
 			            SELECT 1
-			            FROM middleman_labels AS target
+			            FROM forge_labels AS target
 			            WHERE target.repo_id = ?
 			              AND (
-			                  target.name = middleman_labels.name
+			                  target.name = forge_labels.name
 			                  OR (
 			                      target.platform_id IS NOT NULL
-			                      AND middleman_labels.platform_id IS NOT NULL
-			                      AND target.platform_id = middleman_labels.platform_id
+			                      AND forge_labels.platform_id IS NOT NULL
+			                      AND target.platform_id = forge_labels.platform_id
 			                  )
 			                  OR (
 			                      target.platform_external_id <> ''
-			                      AND middleman_labels.platform_external_id <> ''
-			                      AND target.platform_external_id = middleman_labels.platform_external_id
+			                      AND forge_labels.platform_external_id <> ''
+			                      AND target.platform_external_id = forge_labels.platform_external_id
 			                  )
 			              )
 			        )`,
@@ -1850,10 +1850,10 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 		},
 		{
 			name: "copy duplicate label catalog metadata",
-			sql: `UPDATE middleman_labels AS target
+			sql: `UPDATE forge_labels AS target
 			      SET name = COALESCE((
 			              SELECT source.name
-			              FROM middleman_labels AS source
+			              FROM forge_labels AS source
 			              WHERE source.repo_id = ?
 			                AND source.catalog_present = 1
 			                AND (
@@ -1874,7 +1874,7 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 			          ), name),
 			          description = COALESCE((
 			              SELECT source.description
-			              FROM middleman_labels AS source
+			              FROM forge_labels AS source
 			              WHERE source.repo_id = ?
 			                AND source.catalog_present = 1
 			                AND (
@@ -1895,7 +1895,7 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 			          ), description),
 			          color = COALESCE((
 			              SELECT source.color
-			              FROM middleman_labels AS source
+			              FROM forge_labels AS source
 			              WHERE source.repo_id = ?
 			                AND source.catalog_present = 1
 			                AND (
@@ -1916,7 +1916,7 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 			          ), color),
 			          is_default = COALESCE((
 			              SELECT source.is_default
-			              FROM middleman_labels AS source
+			              FROM forge_labels AS source
 			              WHERE source.repo_id = ?
 			                AND source.catalog_present = 1
 			                AND (
@@ -1937,7 +1937,7 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 			          ), is_default),
 			          updated_at = COALESCE((
 			              SELECT source.updated_at
-			              FROM middleman_labels AS source
+			              FROM forge_labels AS source
 			              WHERE source.repo_id = ?
 			                AND source.catalog_present = 1
 			                AND (
@@ -1959,7 +1959,7 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 			          catalog_present = CASE
 			              WHEN catalog_present = 1 OR EXISTS (
 			                  SELECT 1
-			                  FROM middleman_labels AS source
+			                  FROM forge_labels AS source
 			                  WHERE source.repo_id = ?
 			                    AND source.catalog_present = 1
 			                    AND (
@@ -1983,7 +1983,7 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 			              WHEN catalog_seen_at IS NULL
 			              THEN (
 			                  SELECT MAX(source.catalog_seen_at)
-			                  FROM middleman_labels AS source
+			                  FROM forge_labels AS source
 			                  WHERE source.repo_id = ?
 			                    AND (
 			                        source.name = target.name
@@ -2001,7 +2001,7 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 			              )
 			              WHEN (
 			                  SELECT MAX(source.catalog_seen_at)
-			                  FROM middleman_labels AS source
+			                  FROM forge_labels AS source
 			                  WHERE source.repo_id = ?
 			                    AND (
 			                        source.name = target.name
@@ -2019,7 +2019,7 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 			              ) > catalog_seen_at
 			              THEN (
 			                  SELECT MAX(source.catalog_seen_at)
-			                  FROM middleman_labels AS source
+			                  FROM forge_labels AS source
 			                  WHERE source.repo_id = ?
 			                    AND (
 			                        source.name = target.name
@@ -2040,7 +2040,7 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 			      WHERE target.repo_id = ?
 			        AND EXISTS (
 			            SELECT 1
-			            FROM middleman_labels AS source
+			            FROM forge_labels AS source
 			            WHERE source.repo_id = ?
 			              AND (
 			                  source.name = target.name
@@ -2079,8 +2079,8 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 			                         END,
 			                         target.id
 			                 ) AS target_rank
-			          FROM middleman_labels AS source
-			          JOIN middleman_labels AS target
+			          FROM forge_labels AS source
+			          JOIN forge_labels AS target
 			              ON target.repo_id = ?
 			             AND (
 			                 target.name = source.name
@@ -2097,9 +2097,9 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 			             )
 			          WHERE source.repo_id = ?
 			      )
-			      INSERT INTO middleman_issue_labels (issue_id, label_id)
+			      INSERT INTO forge_issue_labels (issue_id, label_id)
 			      SELECT il.issue_id, slt.target_label_id
-			      FROM middleman_issue_labels AS il
+			      FROM forge_issue_labels AS il
 			      JOIN source_label_targets AS slt
 			          ON slt.source_label_id = il.label_id
 			         AND slt.target_rank = 1
@@ -2127,8 +2127,8 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 			                         END,
 			                         target.id
 			                 ) AS target_rank
-			          FROM middleman_labels AS source
-			          JOIN middleman_labels AS target
+			          FROM forge_labels AS source
+			          JOIN forge_labels AS target
 			              ON target.repo_id = ?
 			             AND (
 			                 target.name = source.name
@@ -2145,9 +2145,9 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 			             )
 			          WHERE source.repo_id = ?
 			      )
-			      INSERT INTO middleman_merge_request_labels (merge_request_id, label_id)
+			      INSERT INTO forge_merge_request_labels (merge_request_id, label_id)
 			      SELECT mrl.merge_request_id, slt.target_label_id
-			      FROM middleman_merge_request_labels AS mrl
+			      FROM forge_merge_request_labels AS mrl
 			      JOIN source_label_targets AS slt
 			          ON slt.source_label_id = mrl.label_id
 			         AND slt.target_rank = 1
@@ -2156,62 +2156,62 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 		},
 		{
 			name: "drop duplicate labels",
-			sql:  `DELETE FROM middleman_labels WHERE repo_id = ?`,
+			sql:  `DELETE FROM forge_labels WHERE repo_id = ?`,
 			args: []any{fromRepoID},
 		},
 		{
 			name: "copy starred items",
-			sql: `INSERT OR IGNORE INTO middleman_starred_items (
+			sql: `INSERT OR IGNORE INTO forge_starred_items (
 			          item_type, repo_id, number, starred_at
 			      )
 			      SELECT item_type, ?, number, starred_at
-			      FROM middleman_starred_items
+			      FROM forge_starred_items
 			      WHERE repo_id = ?`,
 			args: []any{toRepoID, fromRepoID},
 		},
 		{
 			name: "delete source starred items",
-			sql:  `DELETE FROM middleman_starred_items WHERE repo_id = ?`,
+			sql:  `DELETE FROM forge_starred_items WHERE repo_id = ?`,
 			args: []any{fromRepoID},
 		},
 		{
 			name: "move stacks",
-			sql: `UPDATE middleman_stacks
+			sql: `UPDATE forge_stacks
 			      SET repo_id = ?
 			      WHERE repo_id = ?
 			        AND NOT EXISTS (
 			            SELECT 1
-			            FROM middleman_stacks AS target
+			            FROM forge_stacks AS target
 			            WHERE target.repo_id = ?
-			              AND target.base_number = middleman_stacks.base_number
+			              AND target.base_number = forge_stacks.base_number
 			        )`,
 			args: []any{toRepoID, fromRepoID, toRepoID},
 		},
 		{
 			name: "drop duplicate stacks",
-			sql:  `DELETE FROM middleman_stacks WHERE repo_id = ?`,
+			sql:  `DELETE FROM forge_stacks WHERE repo_id = ?`,
 			args: []any{fromRepoID},
 		},
 		{
 			name: "move repo overview",
-			sql: `UPDATE middleman_repo_overviews
+			sql: `UPDATE forge_repo_overviews
 			      SET repo_id = ?
 			      WHERE repo_id = ?
 			        AND NOT EXISTS (
 			            SELECT 1
-			            FROM middleman_repo_overviews AS target
+			            FROM forge_repo_overviews AS target
 			            WHERE target.repo_id = ?
 			        )`,
 			args: []any{toRepoID, fromRepoID, toRepoID},
 		},
 		{
 			name: "drop duplicate repo overview",
-			sql:  `DELETE FROM middleman_repo_overviews WHERE repo_id = ?`,
+			sql:  `DELETE FROM forge_repo_overviews WHERE repo_id = ?`,
 			args: []any{fromRepoID},
 		},
 		{
 			name: "delete source repo",
-			sql:  `DELETE FROM middleman_repos WHERE id = ?`,
+			sql:  `DELETE FROM forge_repos WHERE id = ?`,
 			args: []any{fromRepoID},
 		},
 	}
@@ -2242,7 +2242,7 @@ func (d *DB) ListRepos(ctx context.Context) ([]Repo, error) {
 		        label_catalog_synced_at, label_catalog_checked_at,
 		        label_catalog_sync_error,
 		        created_at
-		 FROM middleman_repos ORDER BY owner, name, platform, platform_host`,
+		 FROM forge_repos ORDER BY owner, name, platform, platform_host`,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("list repos: %w", err)
@@ -2277,7 +2277,7 @@ func (d *DB) ListRepos(ctx context.Context) ([]Repo, error) {
 func (d *DB) UpdateRepoSyncStarted(ctx context.Context, id int64, t time.Time) error {
 	t = canonicalUTCTime(t)
 	_, err := d.rw.ExecContext(ctx,
-		`UPDATE middleman_repos SET last_sync_started_at = ? WHERE id = ?`, t, id,
+		`UPDATE forge_repos SET last_sync_started_at = ? WHERE id = ?`, t, id,
 	)
 	if err != nil {
 		return fmt.Errorf("update repo sync started: %w", err)
@@ -2289,7 +2289,7 @@ func (d *DB) UpdateRepoSyncStarted(ctx context.Context, id int64, t time.Time) e
 func (d *DB) UpdateRepoSyncCompleted(ctx context.Context, id int64, t time.Time, syncErr string) error {
 	t = canonicalUTCTime(t)
 	_, err := d.rw.ExecContext(ctx,
-		`UPDATE middleman_repos SET last_sync_completed_at = ?, last_sync_error = ? WHERE id = ?`,
+		`UPDATE forge_repos SET last_sync_completed_at = ?, last_sync_error = ? WHERE id = ?`,
 		t, syncErr, id,
 	)
 	if err != nil {
@@ -2304,7 +2304,7 @@ func (d *DB) UpdateRepoProviderMetadata(
 	metadata RepoProviderMetadata,
 ) error {
 	_, err := d.rw.ExecContext(ctx,
-		`UPDATE middleman_repos
+		`UPDATE forge_repos
 		 SET platform_repo_id = ?,
 		     web_url = ?,
 		     clone_url = ?,
@@ -2338,7 +2338,7 @@ func (d *DB) GetRepoByIdentity(ctx context.Context, identity RepoIdentity) (*Rep
 		        label_catalog_synced_at, label_catalog_checked_at,
 		        label_catalog_sync_error,
 		        created_at
-		 FROM middleman_repos
+		 FROM forge_repos
 		 WHERE platform = ?
 		   AND platform_host = ?
 		   AND repo_path_key = ?`,
@@ -2380,7 +2380,7 @@ func (d *DB) GetRepoByID(ctx context.Context, id int64) (*Repo, error) {
 		        label_catalog_synced_at, label_catalog_checked_at,
 		        label_catalog_sync_error,
 		        created_at
-		 FROM middleman_repos WHERE id = ?`, id,
+		 FROM forge_repos WHERE id = ?`, id,
 	).Scan(
 		&r.ID, &r.Platform, &r.PlatformHost, &r.PlatformRepoID,
 		&r.Owner, &r.Name, &r.RepoPath,
@@ -2434,7 +2434,7 @@ func (d *DB) UpdateRepoSettings(
 	allowSquash, allowMerge, allowRebase, viewerCanMerge bool,
 ) error {
 	_, err := d.rw.ExecContext(ctx,
-		`UPDATE middleman_repos SET allow_squash_merge = ?, allow_merge_commit = ?, allow_rebase_merge = ?, viewer_can_merge = ? WHERE id = ?`,
+		`UPDATE forge_repos SET allow_squash_merge = ?, allow_merge_commit = ?, allow_rebase_merge = ?, viewer_can_merge = ? WHERE id = ?`,
 		allowSquash, allowMerge, allowRebase, viewerCanMerge, id,
 	)
 	return err
@@ -2447,7 +2447,7 @@ func (d *DB) UpdateRepoMergeSettings(
 	allowSquash, allowMerge, allowRebase bool,
 ) error {
 	_, err := d.rw.ExecContext(ctx,
-		`UPDATE middleman_repos SET allow_squash_merge = ?, allow_merge_commit = ?, allow_rebase_merge = ? WHERE id = ?`,
+		`UPDATE forge_repos SET allow_squash_merge = ?, allow_merge_commit = ?, allow_rebase_merge = ? WHERE id = ?`,
 		allowSquash, allowMerge, allowRebase, id,
 	)
 	return err
@@ -2456,7 +2456,7 @@ func (d *DB) UpdateRepoMergeSettings(
 // UpdateRepoViewerCanMerge updates the current user's merge permission for a repo without changing merge method settings.
 func (d *DB) UpdateRepoViewerCanMerge(ctx context.Context, id int64, viewerCanMerge bool) error {
 	_, err := d.rw.ExecContext(ctx,
-		`UPDATE middleman_repos SET viewer_can_merge = ? WHERE id = ?`,
+		`UPDATE forge_repos SET viewer_can_merge = ? WHERE id = ?`,
 		viewerCanMerge, id,
 	)
 	return err
@@ -2501,7 +2501,7 @@ func marshalUserNamesJSON(names []string) string {
 // after a mutation so the next sync does not revert the edit.
 func (d *DB) UpdateMergeRequestAssignees(ctx context.Context, repoID, mrID int64, assignees []string) error {
 	_, err := d.rw.ExecContext(ctx,
-		`UPDATE middleman_merge_requests SET assignees_json = ? WHERE id = ? AND repo_id = ?`,
+		`UPDATE forge_merge_requests SET assignees_json = ? WHERE id = ? AND repo_id = ?`,
 		marshalUserNamesJSON(assignees), mrID, repoID,
 	)
 	if err != nil {
@@ -2514,7 +2514,7 @@ func (d *DB) UpdateMergeRequestAssignees(ctx context.Context, repoID, mrID int64
 // requested-reviewer set after a mutation.
 func (d *DB) UpdateMergeRequestReviewers(ctx context.Context, repoID, mrID int64, reviewers []string) error {
 	_, err := d.rw.ExecContext(ctx,
-		`UPDATE middleman_merge_requests SET reviewers_json = ? WHERE id = ? AND repo_id = ?`,
+		`UPDATE forge_merge_requests SET reviewers_json = ? WHERE id = ? AND repo_id = ?`,
 		marshalUserNamesJSON(reviewers), mrID, repoID,
 	)
 	if err != nil {
@@ -2527,7 +2527,7 @@ func (d *DB) UpdateMergeRequestReviewers(ctx context.Context, repoID, mrID int64
 // issue after a mutation.
 func (d *DB) UpdateIssueAssignees(ctx context.Context, repoID, issueID int64, assignees []string) error {
 	_, err := d.rw.ExecContext(ctx,
-		`UPDATE middleman_issues SET assignees_json = ? WHERE id = ? AND repo_id = ?`,
+		`UPDATE forge_issues SET assignees_json = ? WHERE id = ? AND repo_id = ?`,
 		marshalUserNamesJSON(assignees), issueID, repoID,
 	)
 	if err != nil {
@@ -2618,7 +2618,7 @@ func upsertMergeRequestSnapshot(
 	mr *MergeRequest,
 ) (int64, int64, bool, error) {
 	result, err := executor.ExecContext(ctx, `
-		INSERT INTO middleman_merge_requests
+		INSERT INTO forge_merge_requests
 		    (repo_id, platform_id, platform_external_id, number, url, title, author, author_display_name,
 		     state, is_draft, is_locked, body, head_branch, base_branch,
 		     platform_head_sha, platform_base_sha, head_repo_clone_url,
@@ -2632,7 +2632,7 @@ func upsertMergeRequestSnapshot(
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1)
 		ON CONFLICT(repo_id, number) DO UPDATE SET
 		    platform_id          = excluded.platform_id,
-		    platform_external_id = COALESCE(NULLIF(excluded.platform_external_id, ''), middleman_merge_requests.platform_external_id),
+		    platform_external_id = COALESCE(NULLIF(excluded.platform_external_id, ''), forge_merge_requests.platform_external_id),
 		    url                  = excluded.url,
 		    title                = excluded.title,
 		    author               = excluded.author,
@@ -2646,41 +2646,41 @@ func upsertMergeRequestSnapshot(
 		    platform_head_sha    = excluded.platform_head_sha,
 		    platform_base_sha    = excluded.platform_base_sha,
 		    head_repo_clone_url  = CASE WHEN ?
-		                                THEN middleman_merge_requests.head_repo_clone_url
+		                                THEN forge_merge_requests.head_repo_clone_url
 		                                ELSE excluded.head_repo_clone_url END,
 		    head_repo_identity_stale = CASE
-		                                   WHEN middleman_merge_requests.head_repo_identity_stale
+		                                   WHEN forge_merge_requests.head_repo_identity_stale
 		                                        AND ?
 		                                   THEN 1
 		                                   ELSE 0
 		                               END,
 		    additions            = CASE WHEN ?
 		                                THEN excluded.additions
-		                                ELSE middleman_merge_requests.additions END,
+		                                ELSE forge_merge_requests.additions END,
 		    deletions            = CASE WHEN ?
 		                                THEN excluded.deletions
-		                                ELSE middleman_merge_requests.deletions END,
-		    files_changed        = COALESCE(excluded.files_changed, middleman_merge_requests.files_changed),
-		    merge_commit_sha     = COALESCE(NULLIF(excluded.merge_commit_sha, ''), middleman_merge_requests.merge_commit_sha),
+		                                ELSE forge_merge_requests.deletions END,
+		    files_changed        = COALESCE(excluded.files_changed, forge_merge_requests.files_changed),
+		    merge_commit_sha     = COALESCE(NULLIF(excluded.merge_commit_sha, ''), forge_merge_requests.merge_commit_sha),
 		    comment_count        = excluded.comment_count,
 		    review_decision      = excluded.review_decision,
 		    ci_status            = excluded.ci_status,
 		    ci_checks_json       = excluded.ci_checks_json,
-		    detail_fetched_at    = COALESCE(middleman_merge_requests.detail_fetched_at, excluded.detail_fetched_at),
-		    ci_had_pending       = middleman_merge_requests.ci_had_pending,
+		    detail_fetched_at    = COALESCE(forge_merge_requests.detail_fetched_at, excluded.detail_fetched_at),
+		    ci_had_pending       = forge_merge_requests.ci_had_pending,
 		    updated_at           = excluded.updated_at,
-		    last_activity_at     = MAX(middleman_merge_requests.last_activity_at, excluded.last_activity_at),
+		    last_activity_at     = MAX(forge_merge_requests.last_activity_at, excluded.last_activity_at),
 		    merged_at            = excluded.merged_at,
 		    closed_at            = excluded.closed_at,
 		    mergeable_state      = excluded.mergeable_state,
 		    assignees_json       = CASE WHEN excluded.assignees_json = ''
-		                                THEN middleman_merge_requests.assignees_json
+		                                THEN forge_merge_requests.assignees_json
 		                                ELSE excluded.assignees_json END,
 		    reviewers_json       = CASE WHEN excluded.reviewers_json = ''
-		                                THEN middleman_merge_requests.reviewers_json
+		                                THEN forge_merge_requests.reviewers_json
 		                                ELSE excluded.reviewers_json END,
-		    snapshot_revision    = middleman_merge_requests.snapshot_revision + 1
-		WHERE excluded.updated_at >= middleman_merge_requests.updated_at`,
+		    snapshot_revision    = forge_merge_requests.snapshot_revision + 1
+		WHERE excluded.updated_at >= forge_merge_requests.updated_at`,
 		mr.RepoID, mr.PlatformID, mr.PlatformExternalID, mr.Number, mr.URL, mr.Title,
 		mr.Author, mr.AuthorDisplayName,
 		mr.State, mr.IsDraft, mr.IsLocked, mr.Body, mr.HeadBranch, mr.BaseBranch,
@@ -2705,7 +2705,7 @@ func upsertMergeRequestSnapshot(
 	}
 	var id, revision int64
 	err = executor.QueryRowContext(ctx,
-		`SELECT id, snapshot_revision FROM middleman_merge_requests WHERE repo_id = ? AND number = ?`,
+		`SELECT id, snapshot_revision FROM forge_merge_requests WHERE repo_id = ? AND number = ?`,
 		mr.RepoID, mr.Number,
 	).Scan(&id, &revision)
 	if err != nil {
@@ -2788,11 +2788,11 @@ func (d *DB) GetMergeRequest(
 		       p.assignees_json, p.reviewers_json,
 		       COALESCE(k.status, '') AS kanban_status,
 		       (s.number IS NOT NULL) AS starred
-		FROM middleman_merge_requests p
-		JOIN middleman_repos r ON r.id = p.repo_id
-		LEFT JOIN middleman_item_workflow_state k
+		FROM forge_merge_requests p
+		JOIN forge_repos r ON r.id = p.repo_id
+		LEFT JOIN forge_item_workflow_state k
 		    ON k.repo_id = p.repo_id AND k.item_type = 'pr' AND k.item_number = p.number
-		LEFT JOIN middleman_starred_items s
+		LEFT JOIN forge_starred_items s
 		    ON s.item_type = 'pr' AND s.repo_id = p.repo_id AND s.number = p.number
 		WHERE r.platform = ? AND r.platform_host = ?
 		  AND r.owner_key = ? AND r.name_key = ?
@@ -2852,10 +2852,10 @@ func (d *DB) GetMergeRequestByRepoIDAndNumber(ctx context.Context, repoID int64,
 		       p.assignees_json, p.reviewers_json,
 		       COALESCE(k.status, '') AS kanban_status,
 		       (s.number IS NOT NULL) AS starred
-		FROM middleman_merge_requests p
-		LEFT JOIN middleman_item_workflow_state k
+		FROM forge_merge_requests p
+		LEFT JOIN forge_item_workflow_state k
 		    ON k.repo_id = p.repo_id AND k.item_type = 'pr' AND k.item_number = p.number
-		LEFT JOIN middleman_starred_items s
+		LEFT JOIN forge_starred_items s
 		    ON s.item_type = 'pr' AND s.repo_id = p.repo_id AND s.number = p.number
 		WHERE p.repo_id = ? AND p.number = ?`,
 		repoID, number,
@@ -2977,11 +2977,11 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 		       p.assignees_json, p.reviewers_json,
 		       COALESCE(k.status, '') AS kanban_status,
 		       (s.number IS NOT NULL) AS starred
-		FROM middleman_merge_requests p
-		JOIN middleman_repos r ON r.id = p.repo_id
-		LEFT JOIN middleman_item_workflow_state k
+		FROM forge_merge_requests p
+		JOIN forge_repos r ON r.id = p.repo_id
+		LEFT JOIN forge_item_workflow_state k
 		    ON k.repo_id = p.repo_id AND k.item_type = 'pr' AND k.item_number = p.number
-		LEFT JOIN middleman_starred_items s
+		LEFT JOIN forge_starred_items s
 		    ON s.item_type = 'pr' AND s.repo_id = p.repo_id AND s.number = p.number
 		%s
 		ORDER BY p.last_activity_at DESC, p.id DESC`, where)
@@ -3052,7 +3052,7 @@ func upsertMREventsTx(ctx context.Context, tx *sql.Tx, events []MREvent) error {
 		return nil
 	}
 	stmt, err := tx.PrepareContext(ctx, `
-			INSERT INTO middleman_mr_events
+			INSERT INTO forge_mr_events
 			    (merge_request_id, platform_id, platform_external_id, event_type, author, summary, body,
 			     metadata_json, created_at, dedupe_key, direct_url, thread_id, position_json, resolvable, resolved)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -3104,7 +3104,7 @@ func (d *DB) MRCommentEventExists(
 	err := d.ro.QueryRowContext(ctx, `
 		SELECT EXISTS (
 			SELECT 1
-			FROM middleman_mr_events
+			FROM forge_mr_events
 			WHERE merge_request_id = ?
 			  AND platform_id = ?
 			  AND event_type = 'issue_comment'
@@ -3138,7 +3138,7 @@ func replaceMRCommentEventsTx(
 	events []MREvent,
 	lastActivityAt *time.Time,
 ) error {
-	query := `DELETE FROM middleman_mr_events
+	query := `DELETE FROM forge_mr_events
 			WHERE merge_request_id = ? AND event_type = 'issue_comment'`
 	args := []any{mrID}
 	if len(events) > 0 {
@@ -3154,9 +3154,9 @@ func replaceMRCommentEventsTx(
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `
-			UPDATE middleman_merge_requests
+			UPDATE forge_merge_requests
 			SET comment_count = (
-				SELECT COUNT(*) FROM middleman_mr_events
+				SELECT COUNT(*) FROM forge_mr_events
 				WHERE merge_request_id = ? AND event_type = 'issue_comment'
 			), last_activity_at = COALESCE(?, last_activity_at)
 			WHERE id = ?`, mrID, lastActivityAt, mrID); err != nil {
@@ -3173,7 +3173,7 @@ func replaceMRCommentEventsTx(
 func (d *DB) GetMRLatestNonCommentEventTime(ctx context.Context, mrID int64) (time.Time, error) {
 	var createdAt sql.NullString
 	err := d.ro.QueryRowContext(ctx, `
-		SELECT MAX(created_at) FROM middleman_mr_events
+		SELECT MAX(created_at) FROM forge_mr_events
 		WHERE merge_request_id = ? AND event_type != 'issue_comment'`,
 		mrID,
 	).Scan(&createdAt)
@@ -3195,7 +3195,7 @@ func (d *DB) ListMREvents(ctx context.Context, mrID int64) ([]MREvent, error) {
 	rows, err := d.ro.QueryContext(ctx, `
 		SELECT id, merge_request_id, platform_id, platform_external_id, event_type, author, summary, body,
 		       metadata_json, created_at, dedupe_key, direct_url, thread_id, position_json, resolvable, resolved
-		FROM middleman_mr_events
+		FROM forge_mr_events
 		WHERE merge_request_id = ?
 		ORDER BY created_at DESC`, mrID,
 	)
@@ -3230,7 +3230,7 @@ func (d *DB) ListMREvents(ctx context.Context, mrID int64) ([]MREvent, error) {
 // given merge request and thread ID.
 func (d *DB) UpdateThreadResolved(ctx context.Context, mrID int64, threadID string, resolved bool) error {
 	_, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_mr_events
+		UPDATE forge_mr_events
 		SET resolved = ?
 		WHERE merge_request_id = ? AND thread_id = ?`,
 		resolved, mrID, threadID,
@@ -3247,7 +3247,7 @@ func (d *DB) mergeRequestWorkflowRef(ctx context.Context, mrID int64) (int64, in
 	var repoID int64
 	var number int
 	err := d.ro.QueryRowContext(ctx,
-		`SELECT repo_id, number FROM middleman_merge_requests WHERE id = ?`,
+		`SELECT repo_id, number FROM forge_merge_requests WHERE id = ?`,
 		mrID,
 	).Scan(&repoID, &number)
 	if err != nil {
@@ -3286,8 +3286,8 @@ func (d *DB) GetKanbanState(ctx context.Context, mrID int64) (*KanbanState, erro
 	var k KanbanState
 	err := d.ro.QueryRowContext(ctx,
 		`SELECT p.id, w.status, w.updated_at
-		   FROM middleman_merge_requests p
-		   JOIN middleman_item_workflow_state w
+		   FROM forge_merge_requests p
+		   JOIN forge_item_workflow_state w
 		     ON w.repo_id = p.repo_id AND w.item_type = 'pr' AND w.item_number = p.number
 		  WHERE p.id = ?`,
 		mrID,
@@ -3309,7 +3309,7 @@ func (d *DB) GetPreviouslyOpenMRNumbers(
 	stillOpen map[int]bool,
 ) ([]int, error) {
 	rows, err := d.ro.QueryContext(ctx,
-		`SELECT number FROM middleman_merge_requests
+		`SELECT number FROM forge_merge_requests
 		 WHERE repo_id = ? AND state = 'open'`,
 		repoID,
 	)
@@ -3334,7 +3334,7 @@ func (d *DB) GetPreviouslyOpenMRNumbers(
 func (d *DB) CountOpenMergeRequestsForRepo(ctx context.Context, repoID int64) (int, error) {
 	var count int
 	err := d.ro.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM middleman_merge_requests
+		`SELECT COUNT(*) FROM forge_merge_requests
 		WHERE repo_id = ? AND state = 'open'`,
 		repoID,
 	).Scan(&count)
@@ -3368,7 +3368,7 @@ func (d *DB) UpdateMRTitleBody(
 	updatedAt time.Time,
 ) error {
 	_, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_merge_requests
+		UPDATE forge_merge_requests
 		SET title = ?, body = ?, updated_at = ?,
 		    last_activity_at = MAX(last_activity_at, ?)
 		WHERE id = ? AND updated_at <= ?`,
@@ -3390,7 +3390,7 @@ func (d *DB) UpdateIssueTitleBody(
 	updatedAt time.Time,
 ) error {
 	_, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_issues
+		UPDATE forge_issues
 		SET title = ?, body = ?, updated_at = ?,
 		    last_activity_at = MAX(last_activity_at, ?)
 		WHERE id = ? AND updated_at <= ?`,
@@ -3410,7 +3410,7 @@ func (d *DB) UpdateMRDerivedFields(
 	fields MRDerivedFields,
 ) error {
 	_, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_merge_requests
+		UPDATE forge_merge_requests
 		SET review_decision = ?, comment_count = ?, last_activity_at = ?
 		WHERE repo_id = ? AND number = ?`,
 		fields.ReviewDecision, fields.CommentCount, fields.LastActivityAt,
@@ -3431,7 +3431,7 @@ func (d *DB) UpdateMRReviewActivity(
 	lastActivityAt time.Time,
 ) error {
 	_, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_merge_requests
+		UPDATE forge_merge_requests
 		SET review_decision = ?, last_activity_at = ?
 		WHERE id = ?`, reviewDecision, lastActivityAt, mrID)
 	if err != nil {
@@ -3448,7 +3448,7 @@ func (d *DB) UpdateIssueDerivedFields(
 	fields IssueDerivedFields,
 ) error {
 	_, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_issues
+		UPDATE forge_issues
 		SET comment_count = ?, last_activity_at = ?
 		WHERE repo_id = ? AND number = ?`,
 		fields.CommentCount, fields.LastActivityAt,
@@ -3468,7 +3468,7 @@ func (d *DB) UpdateIssueActivity(
 	lastActivityAt time.Time,
 ) error {
 	_, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_issues
+		UPDATE forge_issues
 		SET last_activity_at = ?
 		WHERE id = ?`, lastActivityAt, issueID)
 	if err != nil {
@@ -3486,7 +3486,7 @@ func (d *DB) UpdateMRCIStatus(
 	ciChecksJSON string,
 ) error {
 	_, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_merge_requests
+		UPDATE forge_merge_requests
 		SET ci_status = ?, ci_checks_json = ?
 		WHERE repo_id = ? AND number = ?`,
 		ciStatus, ciChecksJSON,
@@ -3510,7 +3510,7 @@ func (d *DB) UpdateMRCIStatusForHead(
 	ciHadPending bool,
 ) error {
 	_, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_merge_requests
+		UPDATE forge_merge_requests
 		SET ci_status = ?, ci_checks_json = ?, ci_had_pending = ci_had_pending OR ?
 		WHERE repo_id = ? AND number = ? AND platform_head_sha = ?`,
 		ciStatus, ciChecksJSON, ciHadPending,
@@ -3535,7 +3535,7 @@ func (d *DB) UpdateClosedMRState(
 	platformHeadSHA, platformBaseSHA string,
 ) error {
 	_, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_merge_requests
+		UPDATE forge_merge_requests
 		SET state = ?, merged_at = ?, closed_at = ?,
 		    updated_at = ?, last_activity_at = ?,
 		    platform_head_sha = ?, platform_base_sha = ?
@@ -3553,7 +3553,7 @@ func (d *DB) UpdateClosedMRState(
 // Called after a successful bare clone fetch and merge-base computation.
 func (d *DB) UpdateDiffSHAs(ctx context.Context, repoID int64, number int, diffHead, diffBase, mergeBase string) error {
 	_, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_merge_requests
+		UPDATE forge_merge_requests
 		 SET diff_head_sha = ?, diff_base_sha = ?, merge_base_sha = ?
 		 WHERE repo_id = ? AND number = ?`,
 		diffHead, diffBase, mergeBase, repoID, number,
@@ -3572,7 +3572,7 @@ func (d *DB) UpdatePlatformSHAs(
 	platformHead, platformBase string,
 ) error {
 	_, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_merge_requests
+		UPDATE forge_merge_requests
 		 SET platform_head_sha = ?, platform_base_sha = ?
 		 WHERE repo_id = ? AND number = ?`,
 		platformHead, platformBase, repoID, number,
@@ -3615,7 +3615,7 @@ func (d *DB) GetDiffSHAs(
 	platformHost, owner, name = canonicalRepoLookupIdentifier(platformHost, owner, name)
 	return d.getDiffSHAs(
 		ctx,
-		`JOIN middleman_repos r ON r.id = p.repo_id
+		`JOIN forge_repos r ON r.id = p.repo_id
 		 WHERE r.platform = ? AND r.platform_host = ?
 		   AND r.owner_key = ? AND r.name_key = ?
 		   AND p.number = ?`,
@@ -3635,7 +3635,7 @@ func (d *DB) getDiffSHAs(ctx context.Context, where string, args ...any) (*DiffS
 		SELECT p.platform_head_sha, p.platform_base_sha,
 		       p.diff_head_sha, p.diff_base_sha, p.merge_base_sha,
 		       p.state
-		FROM middleman_merge_requests p
+		FROM forge_merge_requests p
 		`+where,
 		args...,
 	).Scan(&s.PlatformHeadSHA, &s.PlatformBaseSHA,
@@ -3660,7 +3660,7 @@ func (d *DB) UpdateMRState(
 ) error {
 	now := time.Now().UTC()
 	_, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_merge_requests
+		UPDATE forge_merge_requests
 		SET state = ?, merged_at = ?, closed_at = ?,
 		    updated_at = ?, last_activity_at = ?
 		WHERE repo_id = ? AND number = ?`,
@@ -3685,7 +3685,7 @@ func (d *DB) UpdateMRDraftState(ctx context.Context, repoID int64, number int, i
 	var lastActivityAt time.Time
 	if err := tx.QueryRowContext(ctx, `
 		SELECT updated_at, last_activity_at
-		FROM middleman_merge_requests
+		FROM forge_merge_requests
 		WHERE repo_id = ? AND number = ?`,
 		repoID, number,
 	).Scan(&updatedAt, &lastActivityAt); err != nil {
@@ -3705,7 +3705,7 @@ func (d *DB) UpdateMRDraftState(ctx context.Context, repoID int64, number int, i
 	}
 
 	if _, err := tx.ExecContext(ctx, `
-			UPDATE middleman_merge_requests
+			UPDATE forge_merge_requests
 			SET is_draft = ?,
 			    updated_at = ?,
 			    last_activity_at = ?
@@ -3763,14 +3763,14 @@ func upsertIssueParentTx(
 	canonicalizeIssueTimestamps(issue)
 	var issueID, revision int64
 	err := tx.QueryRowContext(ctx, `
-		INSERT INTO middleman_issues
+		INSERT INTO forge_issues
 		    (repo_id, platform_id, platform_external_id, number, url, title, author, state,
 		     body, comment_count, labels_json, assignees_json, detail_fetched_at,
 		     created_at, updated_at, last_activity_at, closed_at, snapshot_revision)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(NULLIF(?, ''), '[]'), ?, ?, ?, ?, ?, 1)
 		ON CONFLICT(repo_id, number) DO UPDATE SET
 		    platform_id       = excluded.platform_id,
-		    platform_external_id = COALESCE(NULLIF(excluded.platform_external_id, ''), middleman_issues.platform_external_id),
+		    platform_external_id = COALESCE(NULLIF(excluded.platform_external_id, ''), forge_issues.platform_external_id),
 		    url               = excluded.url,
 		    title             = excluded.title,
 		    author            = excluded.author,
@@ -3779,12 +3779,12 @@ func upsertIssueParentTx(
 		    comment_count     = excluded.comment_count,
 		    labels_json       = excluded.labels_json,
 		    assignees_json    = COALESCE(NULLIF(excluded.assignees_json, ''), '[]'),
-		    detail_fetched_at = COALESCE(middleman_issues.detail_fetched_at, excluded.detail_fetched_at),
+		    detail_fetched_at = COALESCE(forge_issues.detail_fetched_at, excluded.detail_fetched_at),
 		    updated_at        = excluded.updated_at,
 		    last_activity_at  = excluded.last_activity_at,
 		    closed_at         = excluded.closed_at,
-		    snapshot_revision = middleman_issues.snapshot_revision + 1
-		WHERE excluded.updated_at >= middleman_issues.updated_at
+		    snapshot_revision = forge_issues.snapshot_revision + 1
+		WHERE excluded.updated_at >= forge_issues.updated_at
 		RETURNING id, snapshot_revision`,
 		issue.RepoID, issue.PlatformID, issue.PlatformExternalID, issue.Number, issue.URL,
 		issue.Title, issue.Author, issue.State,
@@ -3794,7 +3794,7 @@ func upsertIssueParentTx(
 	).Scan(&issueID, &revision)
 	if errors.Is(err, sql.ErrNoRows) {
 		err = tx.QueryRowContext(ctx,
-			`SELECT id, snapshot_revision FROM middleman_issues WHERE repo_id = ? AND number = ?`,
+			`SELECT id, snapshot_revision FROM forge_issues WHERE repo_id = ? AND number = ?`,
 			issue.RepoID, issue.Number,
 		).Scan(&issueID, &revision)
 		if err != nil {
@@ -3824,11 +3824,11 @@ func (d *DB) GetIssue(
 		       i.created_at, i.updated_at, i.last_activity_at, i.closed_at,
 		       (s.number IS NOT NULL) AS starred,
 		       COALESCE(w.status, '') AS workflow_status
-		FROM middleman_issues i
-		JOIN middleman_repos r ON r.id = i.repo_id
-		LEFT JOIN middleman_starred_items s
+		FROM forge_issues i
+		JOIN forge_repos r ON r.id = i.repo_id
+		LEFT JOIN forge_starred_items s
 		    ON s.item_type = 'issue' AND s.repo_id = i.repo_id AND s.number = i.number
-		LEFT JOIN middleman_item_workflow_state w
+		LEFT JOIN forge_item_workflow_state w
 		    ON w.repo_id = i.repo_id AND w.item_type = 'issue' AND w.item_number = i.number
 		WHERE r.platform = ? AND r.platform_host = ?
 		  AND r.owner_key = ? AND r.name_key = ?
@@ -3872,10 +3872,10 @@ func (d *DB) GetIssueByRepoIDAndNumber(ctx context.Context, repoID int64, number
 		       i.created_at, i.updated_at, i.last_activity_at, i.closed_at,
 		       (s.number IS NOT NULL) AS starred,
 		       COALESCE(w.status, '') AS workflow_status
-		FROM middleman_issues i
-		LEFT JOIN middleman_starred_items s
+		FROM forge_issues i
+		LEFT JOIN forge_starred_items s
 		    ON s.item_type = 'issue' AND s.repo_id = i.repo_id AND s.number = i.number
-		LEFT JOIN middleman_item_workflow_state w
+		LEFT JOIN forge_item_workflow_state w
 		    ON w.repo_id = i.repo_id AND w.item_type = 'issue' AND w.item_number = i.number
 		WHERE i.repo_id = ? AND i.number = ?`,
 		repoID, number,
@@ -3978,11 +3978,11 @@ func (d *DB) ListIssues(
 		       i.created_at, i.updated_at, i.last_activity_at, i.closed_at,
 		       (s.number IS NOT NULL) AS starred,
 		       COALESCE(w.status, '') AS workflow_status
-		FROM middleman_issues i
-		JOIN middleman_repos r ON r.id = i.repo_id
-		LEFT JOIN middleman_starred_items s
+		FROM forge_issues i
+		JOIN forge_repos r ON r.id = i.repo_id
+		LEFT JOIN forge_starred_items s
 		    ON s.item_type = 'issue' AND s.repo_id = i.repo_id AND s.number = i.number
-		LEFT JOIN middleman_item_workflow_state w
+		LEFT JOIN forge_item_workflow_state w
 		    ON w.repo_id = i.repo_id AND w.item_type = 'issue' AND w.item_number = i.number
 		%s
 		ORDER BY i.last_activity_at DESC, i.id DESC`, where)
@@ -4038,7 +4038,7 @@ func (d *DB) ResolveItemNumber(
 ) (itemType string, found bool, err error) {
 	var exists int
 	err = d.ro.QueryRowContext(ctx,
-		`SELECT 1 FROM middleman_merge_requests
+		`SELECT 1 FROM forge_merge_requests
 		 WHERE repo_id = ? AND number = ?`,
 		repoID, number,
 	).Scan(&exists)
@@ -4050,7 +4050,7 @@ func (d *DB) ResolveItemNumber(
 	}
 
 	err = d.ro.QueryRowContext(ctx,
-		`SELECT 1 FROM middleman_issues
+		`SELECT 1 FROM forge_issues
 		 WHERE repo_id = ? AND number = ?`,
 		repoID, number,
 	).Scan(&exists)
@@ -4071,10 +4071,10 @@ func (d *DB) ResolveItemNumberOfType(
 	var query string
 	switch itemType {
 	case "pr":
-		query = `SELECT 1 FROM middleman_merge_requests
+		query = `SELECT 1 FROM forge_merge_requests
 		         WHERE repo_id = ? AND number = ?`
 	case "issue":
-		query = `SELECT 1 FROM middleman_issues
+		query = `SELECT 1 FROM forge_issues
 		         WHERE repo_id = ? AND number = ?`
 	default:
 		return "", false, fmt.Errorf("unsupported item type %q", itemType)
@@ -4101,7 +4101,7 @@ func (d *DB) UpdateIssueState(
 ) error {
 	now := time.Now().UTC()
 	_, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_issues SET state = ?, closed_at = ?,
+		UPDATE forge_issues SET state = ?, closed_at = ?,
 		    updated_at = ?, last_activity_at = ?
 		WHERE repo_id = ? AND number = ?`,
 		state, closedAt, now, now, repoID, number,
@@ -4120,7 +4120,7 @@ func (d *DB) GetPreviouslyOpenIssueNumbers(
 	stillOpen map[int]bool,
 ) ([]int, error) {
 	rows, err := d.ro.QueryContext(ctx,
-		`SELECT number FROM middleman_issues
+		`SELECT number FROM forge_issues
 		 WHERE repo_id = ? AND state = 'open'`,
 		repoID,
 	)
@@ -4145,7 +4145,7 @@ func (d *DB) GetPreviouslyOpenIssueNumbers(
 func (d *DB) CountOpenIssuesForRepo(ctx context.Context, repoID int64) (int, error) {
 	var count int
 	err := d.ro.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM middleman_issues
+		`SELECT COUNT(*) FROM forge_issues
 		WHERE repo_id = ? AND state = 'open'`,
 		repoID,
 	).Scan(&count)
@@ -4163,7 +4163,7 @@ func (d *DB) GetHTTPEtag(
 	platformHost, owner, name = canonicalRepoLookupIdentifier(platformHost, owner, name)
 	var etag string
 	err := d.ro.QueryRowContext(ctx,
-		`SELECT etag FROM middleman_http_etags
+		`SELECT etag FROM forge_http_etags
 		WHERE platform = ?
 		  AND platform_host = ?
 		  AND owner_key = ?
@@ -4192,7 +4192,7 @@ func (d *DB) UpsertHTTPEtag(
 	}
 	platformHost, owner, name = canonicalRepoLookupIdentifier(platformHost, owner, name)
 	_, err := d.rw.ExecContext(ctx,
-		`INSERT INTO middleman_http_etags (
+		`INSERT INTO forge_http_etags (
 			platform, platform_host, owner_key, name_key,
 			resource_type, resource_number, etag, fetched_at
 		)
@@ -4225,11 +4225,11 @@ func (d *DB) UpdateMRDetailFetched(
 		platformHost, repoOwner, repoName,
 	)
 	_, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_merge_requests
+		UPDATE forge_merge_requests
 		SET detail_fetched_at = datetime('now'),
 		    ci_had_pending = ?
 		WHERE repo_id = (
-		    SELECT id FROM middleman_repos
+		    SELECT id FROM forge_repos
 		    WHERE platform = ? AND platform_host = ? AND owner_key = ? AND name_key = ?
 		) AND number = ?`,
 		ciHadPending, platform, platformHost, repoOwner, repoName, number,
@@ -4249,7 +4249,7 @@ func (d *DB) UpdateMRDetailFetchedByRepoID(
 	ciHadPending bool,
 ) error {
 	_, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_merge_requests
+		UPDATE forge_merge_requests
 		SET detail_fetched_at = datetime('now'),
 		    ci_had_pending = ?
 		WHERE repo_id = ? AND number = ?`,
@@ -4276,7 +4276,7 @@ func (d *DB) UpdateMRWorkflowApproval(
 	count int,
 ) error {
 	_, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_merge_requests
+		UPDATE forge_merge_requests
 		SET workflow_approval_checked_at = ?,
 		    workflow_approval_head_sha   = ?,
 		    workflow_approval_required   = ?,
@@ -4301,10 +4301,10 @@ func (d *DB) UpdateIssueDetailFetched(
 		platformHost, repoOwner, repoName,
 	)
 	_, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_issues
+		UPDATE forge_issues
 		SET detail_fetched_at = datetime('now')
 		WHERE repo_id = (
-		    SELECT id FROM middleman_repos
+		    SELECT id FROM forge_repos
 		    WHERE platform = ? AND platform_host = ? AND owner_key = ? AND name_key = ?
 		) AND number = ?`,
 		platform, platformHost, repoOwner, repoName, number,
@@ -4334,7 +4334,7 @@ func upsertIssueEventsTx(ctx context.Context, tx *sql.Tx, events []IssueEvent) e
 		return nil
 	}
 	stmt, err := tx.PrepareContext(ctx, `
-			INSERT INTO middleman_issue_events
+			INSERT INTO forge_issue_events
 			    (issue_id, platform_id, platform_external_id, event_type, author, summary, body,
 			     metadata_json, created_at, dedupe_key, direct_url, thread_id)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -4378,7 +4378,7 @@ func (d *DB) IssueCommentEventExists(
 	err := d.ro.QueryRowContext(ctx, `
 		SELECT EXISTS (
 			SELECT 1
-			FROM middleman_issue_events
+			FROM forge_issue_events
 			WHERE issue_id = ?
 			  AND platform_id = ?
 			  AND event_type = 'issue_comment'
@@ -4412,7 +4412,7 @@ func replaceIssueCommentEventsTx(
 	events []IssueEvent,
 	lastActivityAt *time.Time,
 ) error {
-	query := `DELETE FROM middleman_issue_events
+	query := `DELETE FROM forge_issue_events
 			WHERE issue_id = ? AND event_type = 'issue_comment'`
 	args := []any{issueID}
 	if len(events) > 0 {
@@ -4428,9 +4428,9 @@ func replaceIssueCommentEventsTx(
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `
-			UPDATE middleman_issues
+			UPDATE forge_issues
 			SET comment_count = (
-				SELECT COUNT(*) FROM middleman_issue_events
+				SELECT COUNT(*) FROM forge_issue_events
 				WHERE issue_id = ? AND event_type = 'issue_comment'
 			), last_activity_at = COALESCE(?, last_activity_at)
 			WHERE id = ?`, issueID, lastActivityAt, issueID); err != nil {
@@ -4444,7 +4444,7 @@ func (d *DB) ListIssueEvents(ctx context.Context, issueID int64) ([]IssueEvent, 
 	rows, err := d.ro.QueryContext(ctx, `
 		SELECT id, issue_id, platform_id, platform_external_id, event_type, author, summary, body,
 		       metadata_json, created_at, dedupe_key, direct_url, thread_id
-		FROM middleman_issue_events
+		FROM forge_issue_events
 		WHERE issue_id = ?
 		ORDER BY created_at DESC`, issueID,
 	)
@@ -4493,25 +4493,25 @@ func (d *DB) ListCommentAutocompleteUsers(
 	rows, err := d.ro.QueryContext(ctx, `
 		WITH repo AS (
 			SELECT id
-			FROM middleman_repos
+			FROM forge_repos
 			WHERE platform = ? AND platform_host = ? AND owner_key = ? AND name_key = ?
 		), candidates AS (
 			SELECT mr.author AS login, mr.last_activity_at AS last_seen
-			FROM middleman_merge_requests mr
+			FROM forge_merge_requests mr
 			WHERE mr.repo_id = (SELECT id FROM repo)
 			UNION ALL
 			SELECT i.author AS login, i.last_activity_at AS last_seen
-			FROM middleman_issues i
+			FROM forge_issues i
 			WHERE i.repo_id = (SELECT id FROM repo)
 			UNION ALL
 			SELECT e.author AS login, e.created_at AS last_seen
-			FROM middleman_mr_events e
-			JOIN middleman_merge_requests mr ON mr.id = e.merge_request_id
+			FROM forge_mr_events e
+			JOIN forge_merge_requests mr ON mr.id = e.merge_request_id
 			WHERE mr.repo_id = (SELECT id FROM repo)
 			UNION ALL
 			SELECT e.author AS login, e.created_at AS last_seen
-			FROM middleman_issue_events e
-			JOIN middleman_issues i ON i.id = e.issue_id
+			FROM forge_issue_events e
+			JOIN forge_issues i ON i.id = e.issue_id
 			WHERE i.repo_id = (SELECT id FROM repo)
 		), ranked AS (
 			SELECT login, MAX(last_seen) AS last_seen
@@ -4570,15 +4570,15 @@ func (d *DB) ListCommentAutocompleteReferences(
 	rows, err := d.ro.QueryContext(ctx, `
 		WITH repo AS (
 			SELECT id
-			FROM middleman_repos
+			FROM forge_repos
 			WHERE platform = ? AND platform_host = ? AND owner_key = ? AND name_key = ?
 		), candidates AS (
 			SELECT 'pull' AS kind, mr.number, mr.title, mr.state, mr.last_activity_at
-			FROM middleman_merge_requests mr
+			FROM forge_merge_requests mr
 			WHERE mr.repo_id = (SELECT id FROM repo)
 			UNION ALL
 			SELECT 'issue' AS kind, i.number, i.title, i.state, i.last_activity_at
-			FROM middleman_issues i
+			FROM forge_issues i
 			WHERE i.repo_id = (SELECT id FROM repo)
 		)
 		SELECT kind, number, title, state
@@ -4628,7 +4628,7 @@ func (d *DB) SetStarred(
 	ctx context.Context, itemType string, repoID int64, number int,
 ) error {
 	_, err := d.rw.ExecContext(ctx, `
-		INSERT INTO middleman_starred_items (item_type, repo_id, number)
+		INSERT INTO forge_starred_items (item_type, repo_id, number)
 		VALUES (?, ?, ?)
 		ON CONFLICT(item_type, repo_id, number) DO NOTHING`,
 		itemType, repoID, number,
@@ -4644,7 +4644,7 @@ func (d *DB) UnsetStarred(
 	ctx context.Context, itemType string, repoID int64, number int,
 ) error {
 	_, err := d.rw.ExecContext(ctx, `
-		DELETE FROM middleman_starred_items
+		DELETE FROM forge_starred_items
 		WHERE item_type = ? AND repo_id = ? AND number = ?`,
 		itemType, repoID, number,
 	)
@@ -4660,7 +4660,7 @@ func (d *DB) IsStarred(
 ) (bool, error) {
 	var count int
 	err := d.ro.QueryRowContext(ctx, `
-		SELECT COUNT(*) FROM middleman_starred_items
+		SELECT COUNT(*) FROM forge_starred_items
 		WHERE item_type = ? AND repo_id = ? AND number = ?`,
 		itemType, repoID, number,
 	).Scan(&count)
@@ -4702,7 +4702,7 @@ func (d *DB) UpsertPlatformRateLimit(
 	rateResetAt *time.Time,
 ) error {
 	_, err := d.rw.Exec(`
-		INSERT INTO middleman_rate_limits
+		INSERT INTO forge_rate_limits
 		    (platform, platform_host, rate_principal, api_type, requests_hour,
 		     hour_start, rate_remaining, rate_limit, rate_reset_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
@@ -4743,7 +4743,7 @@ func (d *DB) GetPlatformRateLimit(
 		SELECT id, platform, platform_host, rate_principal, api_type,
 		       requests_hour, hour_start, rate_remaining, rate_limit,
 		       rate_reset_at, updated_at
-		FROM middleman_rate_limits
+		FROM forge_rate_limits
 		WHERE platform = ? AND platform_host = ? AND rate_principal = ? AND api_type = ?`,
 		platform, platformHost, ratePrincipal, apiType,
 	).Scan(
@@ -4768,7 +4768,7 @@ func (d *DB) SetWorktreeLinks(
 ) error {
 	return d.Tx(ctx, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx,
-			`DELETE FROM middleman_mr_worktree_links`,
+			`DELETE FROM forge_mr_worktree_links`,
 		); err != nil {
 			return fmt.Errorf("delete worktree links: %w", err)
 		}
@@ -4776,7 +4776,7 @@ func (d *DB) SetWorktreeLinks(
 			return nil
 		}
 		stmt, err := tx.PrepareContext(ctx, `
-			INSERT INTO middleman_mr_worktree_links
+			INSERT INTO forge_mr_worktree_links
 			    (merge_request_id, worktree_key,
 			     worktree_path, worktree_branch, linked_at)
 			VALUES (?, ?, ?, ?, ?)`)
@@ -4811,7 +4811,7 @@ func (d *DB) GetWorktreeLinksForMR(
 	rows, err := d.ro.QueryContext(ctx, `
 		SELECT id, merge_request_id, worktree_key,
 		       worktree_path, worktree_branch, linked_at
-		FROM middleman_mr_worktree_links
+		FROM forge_mr_worktree_links
 		WHERE merge_request_id = ?
 		ORDER BY linked_at DESC`,
 		mergeRequestID,
@@ -4848,7 +4848,7 @@ func (d *DB) GetWorktreeLinksForMRs(
 		query := `
 			SELECT id, merge_request_id, worktree_key,
 			       worktree_path, worktree_branch, linked_at
-			FROM middleman_mr_worktree_links
+			FROM forge_mr_worktree_links
 			WHERE merge_request_id IN (` +
 			strings.Join(placeholders, ",") + `)
 			ORDER BY linked_at DESC`
@@ -4876,7 +4876,7 @@ func (d *DB) GetAllWorktreeLinks(
 	rows, err := d.ro.QueryContext(ctx, `
 		SELECT id, merge_request_id, worktree_key,
 		       worktree_path, worktree_branch, linked_at
-		FROM middleman_mr_worktree_links
+		FROM forge_mr_worktree_links
 		ORDER BY linked_at DESC`,
 	)
 	if err != nil {
@@ -4909,7 +4909,7 @@ func (d *DB) canonicalizeWorkspaceRepo(
 	var matchedProvider, displayOwner, displayName, repoOwnerKey, repoNameKey, repoPathKey string
 	err := d.ro.QueryRowContext(ctx, `
 		SELECT platform, owner, name, owner_key, name_key, repo_path_key
-		FROM middleman_repos
+		FROM forge_repos
 		WHERE platform_host = ? AND repo_path_key = ?
 		  AND (? = '' OR platform = ?)
 		ORDER BY CASE WHEN platform <> 'github' THEN 0 ELSE 1 END, id
@@ -5014,7 +5014,7 @@ func (d *DB) InsertWorkspace(
 		return fmt.Errorf("encode workspace kata metadata: %w", err)
 	}
 	_, err = d.rw.ExecContext(ctx, `
-		INSERT INTO middleman_workspaces
+		INSERT INTO forge_workspaces
 		    (id, platform, platform_host, repo_owner, repo_name,
 		     repo_owner_key, repo_name_key, repo_path_key,
 		     item_type, item_number, item_key, associated_pr_number,
@@ -5046,7 +5046,7 @@ func (d *DB) GetWorkspace(
 		       git_head_ref, mr_head_repo, workspace_branch,
 		       worktree_path, tmux_session, terminal_backend, status,
 		       error_message, created_at, kata_metadata
-		FROM middleman_workspaces WHERE id = ?`, id,
+		FROM forge_workspaces WHERE id = ?`, id,
 	))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -5092,7 +5092,7 @@ func (d *DB) getWorkspaceByMR(
 		       git_head_ref, mr_head_repo, workspace_branch,
 		       worktree_path, tmux_session, terminal_backend, status,
 		       error_message, created_at, kata_metadata
-			FROM middleman_workspaces
+			FROM forge_workspaces
 			WHERE platform_host = ? AND repo_owner_key = ?
 			  AND repo_name_key = ? AND item_type = ? AND item_number = ?
 			  AND (? = '' OR platform = ?)`,
@@ -5143,7 +5143,7 @@ func (d *DB) getWorkspaceByIssue(
 		       git_head_ref, mr_head_repo, workspace_branch,
 		       worktree_path, tmux_session, terminal_backend, status,
 		       error_message, created_at, kata_metadata
-		FROM middleman_workspaces
+		FROM forge_workspaces
 		WHERE platform_host = ? AND repo_owner_key = ?
 		  AND repo_name_key = ? AND item_type = ? AND item_number = ?
 		  AND (? = '' OR platform = ?)`,
@@ -5176,7 +5176,7 @@ func (d *DB) GetWorkspaceByItemKeyForProvider(
 		       git_head_ref, mr_head_repo, workspace_branch,
 		       worktree_path, tmux_session, terminal_backend, status,
 		       error_message, created_at, kata_metadata
-		FROM middleman_workspaces
+		FROM forge_workspaces
 		WHERE platform_host = ? AND repo_owner_key = ?
 		  AND repo_name_key = ? AND item_type = ? AND item_key = ?
 		  AND (? = '' OR platform = ?)`,
@@ -5202,7 +5202,7 @@ func (d *DB) ListWorkspaces(
 		       git_head_ref, mr_head_repo, workspace_branch,
 		       worktree_path, tmux_session, terminal_backend, status,
 		       error_message, created_at, kata_metadata
-		FROM middleman_workspaces
+		FROM forge_workspaces
 		ORDER BY created_at DESC`,
 	)
 	if err != nil {
@@ -5229,7 +5229,7 @@ func (d *DB) UpdateWorkspaceStatus(
 	errMsg *string,
 ) error {
 	_, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_workspaces
+		UPDATE forge_workspaces
 		SET status = ?, error_message = ?
 		WHERE id = ?`,
 		status, errMsg, id,
@@ -5240,14 +5240,14 @@ func (d *DB) UpdateWorkspaceStatus(
 	return nil
 }
 
-// UpdateWorkspaceBranch stores the exact branch middleman created
+// UpdateWorkspaceBranch stores the exact branch kenn-forge created
 // for a workspace. Empty means setup reused a pre-existing local
 // branch and therefore does not own it.
 func (d *DB) UpdateWorkspaceBranch(
 	ctx context.Context, id, branch string,
 ) error {
 	_, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_workspaces
+		UPDATE forge_workspaces
 		SET workspace_branch = ?
 		WHERE id = ?`,
 		branch, id,
@@ -5265,7 +5265,7 @@ func (d *DB) CompleteRecoveredWorkspaceSetup(
 	ctx context.Context, id, branch string,
 ) error {
 	_, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_workspaces
+		UPDATE forge_workspaces
 		SET workspace_branch = ?,
 		    status = 'ready',
 		    error_message = NULL
@@ -5286,7 +5286,7 @@ func (d *DB) UpdateWorkspaceMRHeadRepo(
 	ctx context.Context, id string, mrHeadRepo *string,
 ) error {
 	_, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_workspaces
+		UPDATE forge_workspaces
 		SET mr_head_repo = ?
 		WHERE id = ?`,
 		mrHeadRepo, id,
@@ -5309,12 +5309,12 @@ func (d *DB) UpdateWorkspaceMRHeadRepoForMissingRepo(
 ) (bool, error) {
 	identity = canonicalRepoIdentity(identity)
 	result, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_workspaces
+		UPDATE forge_workspaces
 		SET mr_head_repo = ?
 		WHERE id = ?
 		  AND NOT EXISTS (
 		      SELECT 1
-		      FROM middleman_repos
+		      FROM forge_repos
 		      WHERE platform = ?
 		        AND platform_host = ?
 		        AND repo_path_key = ?
@@ -5343,7 +5343,7 @@ func (d *DB) UpdateWorkspaceMRHeadRepoForMissingRepo(
 	if err := d.ro.QueryRowContext(
 		ctx,
 		`SELECT EXISTS(
-		    SELECT 1 FROM middleman_workspaces WHERE id = ?
+		    SELECT 1 FROM forge_workspaces WHERE id = ?
 		)`,
 		id,
 	).Scan(&workspaceExists); err != nil {
@@ -5370,12 +5370,12 @@ func (d *DB) UpdateWorkspaceMRHeadRepoForSnapshot(
 	mrHeadRepo *string,
 ) (bool, error) {
 	result, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_workspaces
+		UPDATE forge_workspaces
 		SET mr_head_repo = ?
 		WHERE id = ?
 		  AND COALESCE((
 		      SELECT snapshot_revision
-		      FROM middleman_merge_requests
+		      FROM forge_merge_requests
 		      WHERE repo_id = ? AND number = ?
 		  ), 0) = ?`,
 		mrHeadRepo,
@@ -5402,7 +5402,7 @@ func (d *DB) UpdateWorkspaceMRHeadRepoForSnapshot(
 	if err := d.ro.QueryRowContext(
 		ctx,
 		`SELECT EXISTS(
-		    SELECT 1 FROM middleman_workspaces WHERE id = ?
+		    SELECT 1 FROM forge_workspaces WHERE id = ?
 		)`,
 		id,
 	).Scan(&workspaceExists); err != nil {
@@ -5423,7 +5423,7 @@ func (d *DB) StartWorkspaceRetry(
 	ctx context.Context, id string,
 ) (bool, error) {
 	res, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_workspaces
+		UPDATE forge_workspaces
 		SET status = 'creating',
 		    error_message = NULL
 		WHERE id = ? AND status = 'error'`, id,
@@ -5446,7 +5446,7 @@ func (d *DB) SetWorkspaceAssociatedPRNumberIfNull(
 	ctx context.Context, id string, prNumber int,
 ) (bool, error) {
 	res, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_workspaces
+		UPDATE forge_workspaces
 		SET associated_pr_number = ?
 		WHERE id = ? AND associated_pr_number IS NULL`,
 		prNumber, id,
@@ -5471,7 +5471,7 @@ func (d *DB) InsertWorkspaceSetupEvent(
 	ctx context.Context, event *WorkspaceSetupEvent,
 ) error {
 	_, err := d.rw.ExecContext(ctx, `
-		INSERT INTO middleman_workspace_setup_events
+		INSERT INTO forge_workspace_setup_events
 		    (workspace_id, stage, outcome, message)
 		VALUES (?, ?, ?, ?)`,
 		event.WorkspaceID, event.Stage, event.Outcome,
@@ -5493,7 +5493,7 @@ func (d *DB) ListWorkspaceSetupEvents(
 	rows, err := d.ro.QueryContext(ctx, `
 		SELECT id, workspace_id, stage, outcome, message,
 		       created_at
-		FROM middleman_workspace_setup_events
+		FROM forge_workspace_setup_events
 		WHERE workspace_id = ?
 		ORDER BY id`, workspaceID,
 	)
@@ -5532,7 +5532,7 @@ func (d *DB) UpsertWorkspaceRuntimeSession(
 		createdAt = time.Now().UTC()
 	}
 	_, err := d.rw.ExecContext(ctx, `
-		INSERT INTO middleman_workspace_runtime_sessions
+		INSERT INTO forge_workspace_runtime_sessions
 		    (workspace_id, session_key, target_key, label, kind, display_region, scope,
 		     tmux_session, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -5563,7 +5563,7 @@ func (d *DB) ListWorkspaceRuntimeSessions(
 	rows, err := d.ro.QueryContext(ctx, `
 		SELECT workspace_id, session_key, target_key, label, kind, display_region, scope,
 		       tmux_session, created_at
-		FROM middleman_workspace_runtime_sessions
+		FROM forge_workspace_runtime_sessions
 		WHERE workspace_id = ?
 		ORDER BY created_at, session_key`, workspaceID,
 	)
@@ -5583,7 +5583,7 @@ func (d *DB) ListAllWorkspaceRuntimeSessions(
 	rows, err := d.ro.QueryContext(ctx, `
 		SELECT workspace_id, session_key, target_key, label, kind, display_region, scope,
 		       tmux_session, created_at
-		FROM middleman_workspace_runtime_sessions
+		FROM forge_workspace_runtime_sessions
 		ORDER BY workspace_id, created_at, session_key`,
 	)
 	if err != nil {
@@ -5603,7 +5603,7 @@ func (d *DB) ListWorkspaceRuntimeTmuxSessions(
 	rows, err := d.ro.QueryContext(ctx, `
 		SELECT workspace_id, session_key, target_key, label, kind, display_region, scope,
 		       tmux_session, created_at
-		FROM middleman_workspace_runtime_sessions
+		FROM forge_workspace_runtime_sessions
 		WHERE workspace_id = ? AND tmux_session != ''
 		ORDER BY created_at, session_key`, workspaceID,
 	)
@@ -5623,7 +5623,7 @@ func (d *DB) ListAllWorkspaceRuntimeTmuxSessions(
 	rows, err := d.ro.QueryContext(ctx, `
 		SELECT workspace_id, session_key, target_key, label, kind, display_region, scope,
 		       tmux_session, created_at
-		FROM middleman_workspace_runtime_sessions
+		FROM forge_workspace_runtime_sessions
 		WHERE tmux_session != ''
 		ORDER BY workspace_id, created_at, session_key`,
 	)
@@ -5644,7 +5644,7 @@ func (d *DB) UpdateWorkspaceRuntimeSessionLabel(
 	label string,
 ) (bool, error) {
 	res, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_workspace_runtime_sessions
+		UPDATE forge_workspace_runtime_sessions
 		SET label = ?
 		WHERE workspace_id = ? AND session_key = ?`,
 		strings.TrimSpace(label), workspaceID, sessionKey,
@@ -5686,7 +5686,7 @@ func (d *DB) DeleteWorkspaceRuntimeSession(
 	sessionKey string,
 ) error {
 	_, err := d.rw.ExecContext(ctx, `
-		DELETE FROM middleman_workspace_runtime_sessions
+		DELETE FROM forge_workspace_runtime_sessions
 		WHERE workspace_id = ? AND session_key = ?`,
 		workspaceID, sessionKey,
 	)
@@ -5705,7 +5705,7 @@ func (d *DB) DeleteWorkspaceRuntimeSessionCreatedAt(
 	createdAt time.Time,
 ) (bool, error) {
 	result, err := d.rw.ExecContext(ctx, `
-		DELETE FROM middleman_workspace_runtime_sessions
+		DELETE FROM forge_workspace_runtime_sessions
 		WHERE workspace_id = ? AND session_key = ? AND created_at = ?`,
 		workspaceID, sessionKey, canonicalUTCTime(createdAt),
 	)
@@ -5726,7 +5726,7 @@ func (d *DB) DeleteWorkspaceRuntimeSessions(
 	workspaceID string,
 ) error {
 	_, err := d.rw.ExecContext(ctx, `
-		DELETE FROM middleman_workspace_runtime_sessions
+		DELETE FROM forge_workspace_runtime_sessions
 		WHERE workspace_id = ?`, workspaceID,
 	)
 	if err != nil {
@@ -5740,7 +5740,7 @@ func (d *DB) DeleteWorkspace(
 	ctx context.Context, id string,
 ) error {
 	_, err := d.rw.ExecContext(ctx,
-		`DELETE FROM middleman_workspaces WHERE id = ?`, id,
+		`DELETE FROM forge_workspaces WHERE id = ?`, id,
 	)
 	if err != nil {
 		return fmt.Errorf("delete workspace: %w", err)
@@ -5779,17 +5779,17 @@ const workspaceSummaryColumns = `
 // workspaceSummaryJoins is the FROM/JOIN clause shared by
 // ListWorkspaceSummaries and GetWorkspaceSummary.
 const workspaceSummaryJoins = `
-	FROM middleman_workspaces w
-	LEFT JOIN middleman_repos r
+	FROM forge_workspaces w
+	LEFT JOIN forge_repos r
 	    ON r.platform = w.platform
 	   AND r.platform_host = w.platform_host
 	   AND r.owner_key = w.repo_owner_key
 	   AND r.name_key = w.repo_name_key
-	LEFT JOIN middleman_merge_requests m
+	LEFT JOIN forge_merge_requests m
 	    ON m.repo_id = r.id
 	   AND m.number = w.item_number
 	   AND w.item_type = 'pull_request'
-	LEFT JOIN middleman_issues i
+	LEFT JOIN forge_issues i
 	    ON i.repo_id = r.id
 	   AND i.number = w.item_number
 	   AND w.item_type = 'issue'`

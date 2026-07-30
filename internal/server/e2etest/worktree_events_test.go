@@ -12,19 +12,19 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"go.kenn.io/middleman/internal/config"
-	dbpkg "go.kenn.io/middleman/internal/db"
-	ghclient "go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/server"
-	"go.kenn.io/middleman/internal/server/fleetapi"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
-	"go.kenn.io/middleman/internal/testutil/servertest"
+	"go.kenn.io/forge/internal/config"
+	dbpkg "go.kenn.io/forge/internal/db"
+	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/server/fleetapi"
+	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/servertest"
 )
 
 // TestE2E_WorktreeLinkChangeReachesSSE drives the sync-completed path
 // over the wire: an open merge request on branch "feature" matches a
 // registered worktree, and the sync hook — composed exactly as
-// cmd/middleman and the embedded Instance wire it, recompute feeding
+// cmd/kenn-forge and the embedded Instance wire it, recompute feeding
 // the server's notify fanout — must surface worktree_links_changed to
 // an /api/v1/events subscriber. This is the refetch hint standalone
 // clients rely on instead of embedder hooks; the mutation path is
@@ -37,7 +37,7 @@ func TestE2E_WorktreeLinkChangeReachesSSE(t *testing.T) {
 	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
 	t.Cleanup(syncer.Stop)
 	cfg := &config.Config{BasePath: "/"}
-	cfg.Tmux.Command = []string{"middleman-no-such-tmux"}
+	cfg.Tmux.Command = []string{"kenn-forge-no-such-tmux"}
 	srv := servertest.New(t, database, syncer, nil, "/", cfg, server.ServerOptions{
 		WorktreeDir:                        t.TempDir(),
 		DisableWorkspaceBackgroundMonitors: true,
@@ -90,7 +90,7 @@ func TestE2E_WorktreeLinkChangeReachesSSE(t *testing.T) {
 	})
 	require.NoError(err)
 
-	// Compose the sync-completed hook exactly as cmd/middleman and the
+	// Compose the sync-completed hook exactly as cmd/kenn-forge and the
 	// embedded Instance do — recompute feeding the server fanout — and
 	// fire it as the syncer would after a sync.
 	hook := fleetapi.WorktreeLinksSyncHook(

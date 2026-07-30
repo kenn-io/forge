@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"time"
 
-	"go.kenn.io/middleman/internal/workspace/localruntime"
+	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
 // Start launches workspace-owned background work once. The parent context is

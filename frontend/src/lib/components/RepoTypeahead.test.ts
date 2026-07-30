@@ -1,15 +1,15 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vite-plus/test";
 
-import type { Repo } from "@middleman/ui/api/types";
-import { createSettingsStore } from "@middleman/ui/stores/settings";
+import type { Repo } from "@kenn-forge/ui/api/types";
+import { createSettingsStore } from "@kenn-forge/ui/stores/settings";
 import { client } from "../api/runtime.js";
 import RepoTypeahead from "./RepoTypeahead.svelte";
 
 let settingsStore: ReturnType<typeof createSettingsStore>;
 
-vi.mock("@middleman/ui", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@middleman/ui")>();
+vi.mock("@kenn-forge/ui", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@kenn-forge/ui")>();
   return {
     ...actual,
     getStores: () => ({
@@ -74,7 +74,7 @@ describe("RepoTypeahead", () => {
         Platform: "github",
         PlatformHost: "github.com",
         Owner: "roborev-dev",
-        Name: "middleman",
+        Name: "kenn-forge",
       },
       {
         Platform: "github",
@@ -111,7 +111,7 @@ describe("RepoTypeahead", () => {
     await fireEvent.click(screen.getByRole("button", { name: /all repos/i }));
 
     await waitFor(() => {
-      expect(screen.getByRole("option", { name: /roborev-dev\/middleman/i })).toBeTruthy();
+      expect(screen.getByRole("option", { name: /roborev-dev\/kenn-forge/i })).toBeTruthy();
       expect(screen.getByRole("option", { name: /roborev-dev\/worker/i })).toBeTruthy();
     });
   });
@@ -326,7 +326,7 @@ describe("RepoTypeahead", () => {
         Platform: "github",
         PlatformHost: "github.com",
         Owner: "roborev-dev",
-        Name: "middleman",
+        Name: "kenn-forge",
       },
     ] as unknown as Repo[];
     const onchange = vi.fn();
@@ -355,19 +355,19 @@ describe("RepoTypeahead", () => {
 
     render(RepoTypeahead, {
       props: {
-        selected: "github.com/roborev-dev/middleman",
+        selected: "github.com/roborev-dev/kenn-forge",
         onchange,
       },
     });
 
     await fireEvent.click(
       screen.getByRole("button", {
-        name: /github.com\/roborev-dev\/middleman/i,
+        name: /github.com\/roborev-dev\/kenn-forge/i,
       }),
     );
 
     await waitFor(() => {
-      expect(screen.getByRole("option", { name: /roborev-dev\/middleman/i })).toBeTruthy();
+      expect(screen.getByRole("option", { name: /roborev-dev\/kenn-forge/i })).toBeTruthy();
     });
 
     settingsStore.setConfiguredRepos([]);
@@ -375,7 +375,7 @@ describe("RepoTypeahead", () => {
     await waitFor(() => {
       expect(
         screen.queryByRole("option", {
-          name: /roborev-dev\/middleman/i,
+          name: /roborev-dev\/kenn-forge/i,
         }),
       ).toBeNull();
       expect(onchange).toHaveBeenCalledWith(undefined);

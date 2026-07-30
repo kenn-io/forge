@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"go.kenn.io/middleman/internal/agentactivity"
-	"go.kenn.io/middleman/internal/ptyowner"
+	"go.kenn.io/forge/internal/agentactivity"
+	"go.kenn.io/forge/internal/ptyowner"
 )
 
 type Owner interface {

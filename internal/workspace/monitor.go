@@ -8,8 +8,8 @@ import (
 	"net/url"
 	"strings"
 
+	"go.kenn.io/forge/internal/db"
 	gitcmd "go.kenn.io/kit/git/cmd"
-	"go.kenn.io/middleman/internal/db"
 )
 
 type PRAssociationUpdate struct {

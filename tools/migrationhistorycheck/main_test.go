@@ -16,7 +16,7 @@ func TestAllowsNewMigration(t *testing.T) {
 	isolateGitEnvironment(t)
 	repo := initRepoWithMainMigration(t)
 	t.Chdir(repo)
-	t.Setenv("MIDDLEMAN_MIGRATION_BASE_REF", "main")
+	t.Setenv("KENN_FORGE_MIGRATION_BASE_REF", "main")
 
 	writeFile(t, repo, "internal/db/migrations/000002_next.up.sql", "new\n")
 	gitCommand(t, "add", "internal/db/migrations/000002_next.up.sql")
@@ -31,7 +31,7 @@ func TestBlocksMultipleNewMigrations(t *testing.T) {
 	isolateGitEnvironment(t)
 	repo := initRepoWithMainMigration(t)
 	t.Chdir(repo)
-	t.Setenv("MIDDLEMAN_MIGRATION_BASE_REF", "main")
+	t.Setenv("KENN_FORGE_MIGRATION_BASE_REF", "main")
 
 	writeFile(t, repo, "internal/db/migrations/000002_first.up.sql", "first up\n")
 	writeFile(t, repo, "internal/db/migrations/000002_first.down.sql", "first down\n")
@@ -50,8 +50,8 @@ func TestBlocksSecondMigrationAcrossPRCommits(t *testing.T) {
 	isolateGitEnvironment(t)
 	repo := initRepoWithMainMigration(t)
 	t.Chdir(repo)
-	t.Setenv("MIDDLEMAN_MIGRATION_BASE_REF", "main")
-	t.Setenv("MIDDLEMAN_MIGRATION_PR_BASE_REF", "main")
+	t.Setenv("KENN_FORGE_MIGRATION_BASE_REF", "main")
+	t.Setenv("KENN_FORGE_MIGRATION_PR_BASE_REF", "main")
 
 	writeFile(t, repo, "internal/db/migrations/000002_first.up.sql", "first up\n")
 	writeFile(t, repo, "internal/db/migrations/000002_first.down.sql", "first down\n")
@@ -71,8 +71,8 @@ func TestAllowsOneMigrationOnStackedPR(t *testing.T) {
 	isolateGitEnvironment(t)
 	repo := initRepoWithMainMigration(t)
 	t.Chdir(repo)
-	t.Setenv("MIDDLEMAN_MIGRATION_BASE_REF", "main")
-	t.Setenv("MIDDLEMAN_MIGRATION_PR_BASE_REF", "parent")
+	t.Setenv("KENN_FORGE_MIGRATION_BASE_REF", "main")
+	t.Setenv("KENN_FORGE_MIGRATION_PR_BASE_REF", "parent")
 
 	gitCommand(t, "checkout", "main")
 	gitCommand(t, "checkout", "-qb", "parent")
@@ -95,8 +95,8 @@ func TestAllowsBaseOnlyMigrationAddedAfterChildDiverged(t *testing.T) {
 	isolateGitEnvironment(t)
 	repo := initRepoWithMainMigration(t)
 	t.Chdir(repo)
-	t.Setenv("MIDDLEMAN_MIGRATION_BASE_REF", "main")
-	t.Setenv("MIDDLEMAN_MIGRATION_PR_BASE_REF", "parent")
+	t.Setenv("KENN_FORGE_MIGRATION_BASE_REF", "main")
+	t.Setenv("KENN_FORGE_MIGRATION_PR_BASE_REF", "parent")
 
 	gitCommand(t, "checkout", "main")
 	gitCommand(t, "checkout", "-qb", "parent")
@@ -120,7 +120,7 @@ func TestBlocksNewMigrationWhenNumberAlreadyExistsOnMain(t *testing.T) {
 	isolateGitEnvironment(t)
 	repo := initRepoWithMainMigration(t)
 	t.Chdir(repo)
-	t.Setenv("MIDDLEMAN_MIGRATION_BASE_REF", "main")
+	t.Setenv("KENN_FORGE_MIGRATION_BASE_REF", "main")
 
 	gitCommand(t, "checkout", "main")
 	writeFile(t, repo, "internal/db/migrations/000002_main_name.up.sql", "main up\n")
@@ -144,7 +144,7 @@ func TestBlocksMainBranchMigrationEdit(t *testing.T) {
 	isolateGitEnvironment(t)
 	repo := initRepoWithMainMigration(t)
 	t.Chdir(repo)
-	t.Setenv("MIDDLEMAN_MIGRATION_BASE_REF", "main")
+	t.Setenv("KENN_FORGE_MIGRATION_BASE_REF", "main")
 
 	writeFile(t, repo, "internal/db/migrations/000001_init.up.sql", "changed\n")
 	gitCommand(t, "add", "internal/db/migrations/000001_init.up.sql")
@@ -159,7 +159,7 @@ func TestBlocksMainBranchMigrationRename(t *testing.T) {
 	isolateGitEnvironment(t)
 	repo := initRepoWithMainMigration(t)
 	t.Chdir(repo)
-	t.Setenv("MIDDLEMAN_MIGRATION_BASE_REF", "main")
+	t.Setenv("KENN_FORGE_MIGRATION_BASE_REF", "main")
 
 	gitCommand(t, "mv", "internal/db/migrations/000001_init.up.sql", "internal/db/migrations/000001_renamed.up.sql")
 
@@ -172,7 +172,7 @@ func TestUsesHookGitIndexFile(t *testing.T) {
 	isolateGitEnvironment(t)
 	repo := initRepoWithMainMigration(t)
 	t.Chdir(repo)
-	t.Setenv("MIDDLEMAN_MIGRATION_BASE_REF", "main")
+	t.Setenv("KENN_FORGE_MIGRATION_BASE_REF", "main")
 
 	alternateIndex := filepath.Join(t.TempDir(), "index")
 	hookEnv := append(cleanGitEnv(os.Environ()), "GIT_INDEX_FILE="+alternateIndex)
@@ -202,7 +202,7 @@ func initRepoWithMainMigration(t *testing.T) string {
 	require.NoError(t, os.WriteFile(migrationPath, []byte("old\n"), 0o644))
 
 	gitCommandIn(t, repo, "init", "-q", "-b", "main")
-	gitCommandIn(t, repo, "config", "user.email", "middleman-fixture@example.invalid")
+	gitCommandIn(t, repo, "config", "user.email", "kenn-forge-fixture@example.invalid")
 	gitCommandIn(t, repo, "config", "user.name", "Test")
 	gitCommandIn(t, repo, "add", ".")
 	gitCommandIn(t, repo, "commit", "-qm", "init")

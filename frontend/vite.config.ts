@@ -11,7 +11,7 @@ import { healthcheckPlugin } from "./src/lib/dev/healthcheckPlugin.ts";
 const require = createRequire(import.meta.url);
 const testingLibrarySvelteEntry = require.resolve("@testing-library/svelte");
 
-// resolveDevApiUrl() prefers MIDDLEMAN_API_URL, which dev-ephemeral sets
+// resolveDevApiUrl() prefers KENN_FORGE_API_URL, which dev-ephemeral sets
 // to the generated backend URL before starting Vite.
 const apiUrl = resolveDevApiUrl();
 const devServerPort = resolveViteServerPort();
@@ -42,13 +42,13 @@ const uiStoreSettings = path.resolve(process.cwd(), "../packages/ui/src/stores/s
 
 function devApiUrlPlugin(url: string): Plugin {
   return {
-    name: "middleman-dev-api-url",
+    name: "kenn-forge-dev-api-url",
     apply: "serve",
     transformIndexHtml() {
       return [
         {
           tag: "script",
-          children: `window.__MIDDLEMAN_DEV_API_URL__ = ${JSON.stringify(url)};`,
+          children: `window.__KENN_FORGE_DEV_API_URL__ = ${JSON.stringify(url)};`,
           injectTo: "head-prepend",
         },
       ];
@@ -90,14 +90,14 @@ function parseHostList(value: string | undefined): string[] {
 }
 
 export function resolveViteAllowedHosts(env: Record<string, string | undefined> = process.env): string[] | undefined {
-  const hosts = parseHostList(env.MIDDLEMAN_VITE_ALLOWED_HOSTS);
+  const hosts = parseHostList(env.KENN_FORGE_VITE_ALLOWED_HOSTS);
   return hosts.length > 0 ? hosts : undefined;
 }
 
 export function resolveViteHmr(port = resolveViteServerPort(), env: Record<string, string | undefined> = process.env) {
-  const protocol = env.MIDDLEMAN_VITE_HMR_PROTOCOL === "wss" ? "wss" : "ws";
-  const host = env.MIDDLEMAN_VITE_HMR_HOST?.trim() || "127.0.0.1";
-  const clientPort = parsePort(env.MIDDLEMAN_VITE_HMR_CLIENT_PORT) ?? port;
+  const protocol = env.KENN_FORGE_VITE_HMR_PROTOCOL === "wss" ? "wss" : "ws";
+  const host = env.KENN_FORGE_VITE_HMR_HOST?.trim() || "127.0.0.1";
+  const clientPort = parsePort(env.KENN_FORGE_VITE_HMR_CLIENT_PORT) ?? port;
 
   return {
     protocol,
@@ -128,7 +128,7 @@ function logWebSocketProxyRequests(): NonNullable<ProxyOptions["configure"]> {
 }
 
 export function webSocketDebugEnabled(env: Record<string, string | undefined> = process.env): boolean {
-  switch (env.MIDDLEMAN_WS_DEBUG?.trim().toLowerCase()) {
+  switch (env.KENN_FORGE_WS_DEBUG?.trim().toLowerCase()) {
     case "1":
     case "true":
     case "yes":
@@ -145,7 +145,7 @@ export function resolveBrowserTestWorkers(env: Record<string, string | undefined
 
 export function resolveUnitTestWorkers(env: Record<string, string | undefined> = process.env): number | undefined {
   if (!env.CI) return undefined;
-  const configured = Number.parseInt(env.MIDDLEMAN_CI_WORKERS ?? "", 10);
+  const configured = Number.parseInt(env.KENN_FORGE_CI_WORKERS ?? "", 10);
   return configured > 0 ? configured : 14;
 }
 
@@ -227,7 +227,7 @@ const browserTestProject = defineProject(async () => {
 const config = {
   base: "/",
   // The Go server serves this build under a configurable base_path (default
-  // "/", e.g. "/middleman/" behind a reverse proxy) by rewriting index.html's
+  // "/", e.g. "/kenn-forge/" behind a reverse proxy) by rewriting index.html's
   // <script src>/<link href> at request time. That rewrite only reaches HTML,
   // not URLs baked inside JS bundles. An asset URL emitted as an absolute root
   // path -- new URL("/assets/x.js", import.meta.url) -- resolves against the
@@ -249,77 +249,77 @@ const config = {
         replacement: testingLibrarySvelteEntry,
       },
       {
-        find: /^@middleman\/ui$/,
+        find: /^@kenn-forge\/ui$/,
         replacement: uiIndex,
       },
       {
-        find: /^@middleman\/ui\/api\/client$/,
+        find: /^@kenn-forge\/ui\/api\/client$/,
         replacement: uiGeneratedClient,
       },
       {
-        find: /^@middleman\/ui\/api\/schema$/,
+        find: /^@kenn-forge\/ui\/api\/schema$/,
         replacement: uiGeneratedSchema,
       },
       {
-        find: /^@middleman\/ui\/api\/types$/,
+        find: /^@kenn-forge\/ui\/api\/types$/,
         replacement: uiApiTypes,
       },
       {
-        find: /^@middleman\/ui\/api\/csrf$/,
+        find: /^@kenn-forge\/ui\/api\/csrf$/,
         replacement: uiApiCsrf,
       },
       {
-        find: /^@middleman\/ui\/routes$/,
+        find: /^@kenn-forge\/ui\/routes$/,
         replacement: uiRoutes,
       },
       {
-        find: /^@middleman\/ui\/utils\/repo-label$/,
+        find: /^@kenn-forge\/ui\/utils\/repo-label$/,
         replacement: uiRepoLabel,
       },
       {
-        find: /^@middleman\/ui\/stores\/detail$/,
+        find: /^@kenn-forge\/ui\/stores\/detail$/,
         replacement: uiStoreDetail,
       },
       {
-        find: /^@middleman\/ui\/stores\/events$/,
+        find: /^@kenn-forge\/ui\/stores\/events$/,
         replacement: uiStoreEvents,
       },
       {
-        find: /^@middleman\/ui\/stores\/pulls$/,
+        find: /^@kenn-forge\/ui\/stores\/pulls$/,
         replacement: uiStorePulls,
       },
       {
-        find: /^@middleman\/ui\/stores\/issues$/,
+        find: /^@kenn-forge\/ui\/stores\/issues$/,
         replacement: uiStoreIssues,
       },
       {
-        find: /^@middleman\/ui\/stores\/activity$/,
+        find: /^@kenn-forge\/ui\/stores\/activity$/,
         replacement: uiStoreActivity,
       },
       {
-        find: /^@middleman\/ui\/stores\/sync$/,
+        find: /^@kenn-forge\/ui\/stores\/sync$/,
         replacement: uiStoreSync,
       },
       {
-        find: /^@middleman\/ui\/stores\/diff$/,
+        find: /^@kenn-forge\/ui\/stores\/diff$/,
         replacement: uiStoreDiff,
       },
       {
-        find: /^@middleman\/ui\/stores\/grouping$/,
+        find: /^@kenn-forge\/ui\/stores\/grouping$/,
         replacement: uiStoreGrouping,
       },
       {
-        find: /^@middleman\/ui\/stores\/detail-activity-view$/,
+        find: /^@kenn-forge\/ui\/stores\/detail-activity-view$/,
         replacement: uiStoreDetailActivityView,
       },
       {
-        find: /^@middleman\/ui\/stores\/settings$/,
+        find: /^@kenn-forge\/ui\/stores\/settings$/,
         replacement: uiStoreSettings,
       },
     ],
   },
   optimizeDeps: {
-    // @middleman/ui is excluded so Vite serves its source modules directly
+    // @kenn-forge/ui is excluded so Vite serves its source modules directly
     // (the resolve.alias above points it at ../packages/ui/src). But the
     // barrel reaches heavy transitive deps that some of those packages own
     // and frontend cannot resolve bare (the @tiptap/@pierre/prosemirror/
@@ -329,7 +329,7 @@ const config = {
     // tier (TypeError: Failed to fetch dynamically imported module). Force
     // pre-bundling them at startup so there is nothing to discover later.
     //
-    // The "@middleman/ui > <dep>" barrel-traversal entries resolve the dep in
+    // The "@kenn-forge/ui > <dep>" barrel-traversal entries resolve the dep in
     // packages/ui's context (it is not a frontend dependency); the bare
     // entries (openapi-fetch, the @lucide/svelte icon paths) resolve from
     // frontend directly. The set is exactly the cold "new dependencies
@@ -337,21 +337,21 @@ const config = {
     // @kenn-io/kit-ui is likewise consumed as Svelte source (svelte export
     // condition); its .svelte.ts rune modules cannot go through the dep
     // optimizer's plain-JS parse.
-    exclude: ["@middleman/ui", "@kenn-io/kit-ui"],
+    exclude: ["@kenn-forge/ui", "@kenn-io/kit-ui"],
     include: [
       // packages/ui-owned transitive deps, reached through the excluded barrel.
-      "@middleman/ui > @pierre/diffs",
-      "@middleman/ui > @pierre/diffs/worker",
-      "@middleman/ui > @tiptap/core",
-      "@middleman/ui > @tiptap/extension-document",
-      "@middleman/ui > @tiptap/extension-hard-break",
-      "@middleman/ui > @tiptap/extension-paragraph",
-      "@middleman/ui > @tiptap/extension-placeholder",
-      "@middleman/ui > @tiptap/extension-text",
-      "@middleman/ui > @tiptap/suggestion",
-      "@middleman/ui > prosemirror-state",
-      "@middleman/ui > shiki",
-      "@middleman/ui > svelte-tiptap",
+      "@kenn-forge/ui > @pierre/diffs",
+      "@kenn-forge/ui > @pierre/diffs/worker",
+      "@kenn-forge/ui > @tiptap/core",
+      "@kenn-forge/ui > @tiptap/extension-document",
+      "@kenn-forge/ui > @tiptap/extension-hard-break",
+      "@kenn-forge/ui > @tiptap/extension-paragraph",
+      "@kenn-forge/ui > @tiptap/extension-placeholder",
+      "@kenn-forge/ui > @tiptap/extension-text",
+      "@kenn-forge/ui > @tiptap/suggestion",
+      "@kenn-forge/ui > prosemirror-state",
+      "@kenn-forge/ui > shiki",
+      "@kenn-forge/ui > svelte-tiptap",
       // kit-ui-owned transitive deps, reached through its excluded barrel
       // (the markdown pipeline peers plus its own icon set — the icon paths
       // below are shared with the frontend list where they overlap).

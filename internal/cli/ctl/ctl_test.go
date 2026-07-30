@@ -18,17 +18,17 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	configpkg "go.kenn.io/middleman/internal/config"
-	ghclient "go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/server"
-	"go.kenn.io/middleman/internal/testutil"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
+	configpkg "go.kenn.io/forge/internal/config"
+	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/testutil"
+	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
-func TestDefaultServerComesFromMiddlemanConfig(t *testing.T) {
+func TestDefaultServerComesFromForgeConfig(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	t.Setenv("MIDDLEMAN_HOME", t.TempDir())
+	t.Setenv("KENN_FORGE_HOME", t.TempDir())
 	require.NoError(os.WriteFile(configpkg.DefaultConfigPath(), []byte(`
 host = "127.0.0.1"
 port = 8123
@@ -84,38 +84,38 @@ func TestQuickstartFormatsStructuredOutput(t *testing.T) {
 		Stdout: &jsonOut,
 		Stderr: &bytes.Buffer{},
 	})
-	cmd.SetArgs([]string{"--server", "http://middleman.test", "quickstart"})
+	cmd.SetArgs([]string{"--server", "http://forge.test", "quickstart"})
 
 	require.NoError(cmd.Execute())
 
 	var payload map[string]any
 	require.NoError(json.Unmarshal(jsonOut.Bytes(), &payload))
-	assert.Equal("http://middleman.test/api/v1", payload["api_base_url"])
-	assert.Contains(jsonOut.String(), "middleman api GET /pulls")
-	assert.Contains(jsonOut.String(), "middleman api GET /version")
+	assert.Equal("http://forge.test/api/v1", payload["api_base_url"])
+	assert.Contains(jsonOut.String(), "kenn-forge api GET /pulls")
+	assert.Contains(jsonOut.String(), "kenn-forge api GET /version")
 
 	var yamlOut bytes.Buffer
 	cmd = newCommand(commandDeps{
 		Stdout: &yamlOut,
 		Stderr: &bytes.Buffer{},
 	})
-	cmd.SetArgs([]string{"--server", "http://middleman.test", "--output", "yaml", "quickstart"})
+	cmd.SetArgs([]string{"--server", "http://forge.test", "--output", "yaml", "quickstart"})
 
 	require.NoError(cmd.Execute())
-	assert.Contains(yamlOut.String(), "api_base_url: http://middleman.test/api/v1")
-	assert.Contains(yamlOut.String(), "middleman api GET /sync/status")
+	assert.Contains(yamlOut.String(), "api_base_url: http://forge.test/api/v1")
+	assert.Contains(yamlOut.String(), "kenn-forge api GET /sync/status")
 
 	var jsonlOut bytes.Buffer
 	cmd = newCommand(commandDeps{
 		Stdout: &jsonlOut,
 		Stderr: &bytes.Buffer{},
 	})
-	cmd.SetArgs([]string{"--server", "http://middleman.test", "--output", "jsonl", "quickstart"})
+	cmd.SetArgs([]string{"--server", "http://forge.test", "--output", "jsonl", "quickstart"})
 
 	require.NoError(cmd.Execute())
 	lines := strings.Split(strings.TrimSpace(jsonlOut.String()), "\n")
 	require.Len(lines, 1)
-	assert.Contains(lines[0], `"api_base_url":"http://middleman.test/api/v1"`)
+	assert.Contains(lines[0], `"api_base_url":"http://forge.test/api/v1"`)
 	assert.Contains(lines[0], `"jsonl"`)
 }
 
@@ -141,7 +141,7 @@ func TestPullsCommandDelegatesToRequestWithAgentFriendlyDefaults(t *testing.T) {
 		},
 	})
 	cmd.SetArgs([]string{
-		"--server", "http://middleman.test",
+		"--server", "http://forge.test",
 		"--output", "yaml",
 		"pulls",
 		"--state", "open",
@@ -156,7 +156,7 @@ func TestPullsCommandDelegatesToRequestWithAgentFriendlyDefaults(t *testing.T) {
 	assert.Equal(http.MethodGet, got.method)
 	requestURL, err := url.Parse(got.url)
 	require.NoError(err)
-	assert.Equal("http://middleman.test/api/v1/pulls", requestURL.Scheme+"://"+requestURL.Host+requestURL.Path)
+	assert.Equal("http://forge.test/api/v1/pulls", requestURL.Scheme+"://"+requestURL.Host+requestURL.Path)
 	values := requestURL.Query()
 	assert.Equal("open", values.Get("state"))
 	assert.Equal("5", values.Get("limit"))
@@ -166,7 +166,7 @@ func TestPullsCommandDelegatesToRequestWithAgentFriendlyDefaults(t *testing.T) {
 	assert.NotContains(stdout.String(), "Content-Type")
 }
 
-func TestRawAPICommandBuildsMiddlemanAPIURLAndBodyArgs(t *testing.T) {
+func TestRawAPICommandBuildsForgeAPIURLAndBodyArgs(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	var got struct {
@@ -185,13 +185,13 @@ func TestRawAPICommandBuildsMiddlemanAPIURLAndBodyArgs(t *testing.T) {
 		},
 	})
 	cmd.SetArgs([]string{
-		"--server", "http://middleman.test/",
+		"--server", "http://forge.test/",
 		"api", "POST", "/pulls/gh/acme/widget/7/comments", "body: LGTM",
 	})
 
 	require.NoError(cmd.Execute())
 	assert.Equal(http.MethodPost, got.method)
-	assert.Equal("http://middleman.test/api/v1/pulls/gh/acme/widget/7/comments", got.url)
+	assert.Equal("http://forge.test/api/v1/pulls/gh/acme/widget/7/comments", got.url)
 	assert.Equal([]string{"body: LGTM"}, got.bodyArgs)
 }
 
@@ -208,7 +208,7 @@ func TestRawAPICommandRejectsAbsoluteURLs(t *testing.T) {
 		},
 	})
 	cmd.SetArgs([]string{
-		"--server", "http://middleman.test/",
+		"--server", "http://forge.test/",
 		"api", "GET", "http://169.254.169.254/latest/meta-data",
 	})
 
@@ -228,10 +228,10 @@ func TestRawAPICommandWritesErrorResponseBody(t *testing.T) {
 		Stderr: &bytes.Buffer{},
 		Request: func(context.Context, cliConfig, string, string, []string) ([]byte, error) {
 			return []byte(`{"code":"not_found","details":{"repo":"acme/widget"}}`),
-				errors.New("middleman API returned 404 Not Found")
+				errors.New("kenn-forge API returned 404 Not Found")
 		},
 	})
-	cmd.SetArgs([]string{"--server", "http://middleman.test/", "api", "GET", "/missing"})
+	cmd.SetArgs([]string{"--server", "http://forge.test/", "api", "GET", "/missing"})
 
 	err := cmd.Execute()
 
@@ -260,7 +260,7 @@ func TestRawAPICommandRejectsDotSegmentPaths(t *testing.T) {
 					return nil, nil
 				},
 			})
-			cmd.SetArgs([]string{"--server", "http://middleman.test/", "api", "GET", rawPath})
+			cmd.SetArgs([]string{"--server", "http://forge.test/", "api", "GET", rawPath})
 
 			err := cmd.Execute()
 
@@ -288,14 +288,14 @@ func TestRawAPICommandAllowsEncodedSlashesInRouteParameters(t *testing.T) {
 		},
 	})
 	cmd.SetArgs([]string{
-		"--server", "http://middleman.test/",
+		"--server", "http://forge.test/",
 		"api", "GET", "/host/gitlab.example.com/pulls/gl/Group%2FSubGroup/project/7",
 	})
 
 	require.NoError(cmd.Execute())
 	assert.Equal(http.MethodGet, got.method)
 	assert.Equal(
-		"http://middleman.test/api/v1/host/gitlab.example.com/pulls/gl/Group%2FSubGroup/project/7",
+		"http://forge.test/api/v1/host/gitlab.example.com/pulls/gl/Group%2FSubGroup/project/7",
 		got.url,
 	)
 }
@@ -317,14 +317,14 @@ func TestPullGetAllowsNestedOwners(t *testing.T) {
 		},
 	})
 	cmd.SetArgs([]string{
-		"--server", "http://middleman.test/",
+		"--server", "http://forge.test/",
 		"pulls", "get", "--host", "gitlab.example.com", "gl", "Group/SubGroup", "project", "7",
 	})
 
 	require.NoError(cmd.Execute())
 	assert.Equal(http.MethodGet, got.method)
 	assert.Equal(
-		"http://middleman.test/api/v1/host/gitlab.example.com/pulls/gl/Group%2FSubGroup/project/7",
+		"http://forge.test/api/v1/host/gitlab.example.com/pulls/gl/Group%2FSubGroup/project/7",
 		got.url,
 	)
 }
@@ -386,12 +386,12 @@ func TestAPIListCommandDiscoversOpenAPIOperations(t *testing.T) {
 			}`), nil
 		},
 	})
-	cmd.SetArgs([]string{"--server", "http://middleman.test", "--output", "jsonl", "api", "list"})
+	cmd.SetArgs([]string{"--server", "http://forge.test", "--output", "jsonl", "api", "list"})
 
 	require.NoError(cmd.Execute())
 
 	assert.Equal(http.MethodGet, got.method)
-	assert.Equal("http://middleman.test/api/v1/openapi.json", got.url)
+	assert.Equal("http://forge.test/api/v1/openapi.json", got.url)
 	assert.Empty(got.bodyArgs)
 	lines := strings.Split(strings.TrimSpace(stdout.String()), "\n")
 	require.Len(lines, 2)
@@ -400,47 +400,47 @@ func TestAPIListCommandDiscoversOpenAPIOperations(t *testing.T) {
 	assert.NotContains(lines[1], "path_params")
 }
 
-func TestMiddlemanctlCommandsUseRealAPIAndSQLite(t *testing.T) {
+func TestForgectlCommandsUseRealAPIAndSQLite(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	ts := setupMiddlemanctlE2E(t)
+	ts := setupForgectlE2E(t)
 
-	pullsOut := runMiddleman(t, ts.URL, "--output", "jsonl", "pulls", "--limit", "2")
+	pullsOut := runForge(t, ts.URL, "--output", "jsonl", "pulls", "--limit", "2")
 	pullLines := strings.Split(strings.TrimSpace(pullsOut), "\n")
 	require.Len(pullLines, 2)
 	assert.NotZero(jsonNumberField(t, pullLines[0]))
 	assert.NotZero(jsonNumberField(t, pullLines[1]))
 
-	issuesOut := runMiddleman(t, ts.URL, "--output", "jsonl", "issues", "--limit", "2")
+	issuesOut := runForge(t, ts.URL, "--output", "jsonl", "issues", "--limit", "2")
 	issueLines := strings.Split(strings.TrimSpace(issuesOut), "\n")
 	require.Len(issueLines, 2)
 	assert.NotZero(jsonNumberField(t, issueLines[0]))
 	assert.NotZero(jsonNumberField(t, issueLines[1]))
 
-	versionOut := runMiddleman(t, ts.URL, "api", "GET", "/version")
+	versionOut := runForge(t, ts.URL, "api", "GET", "/version")
 	assert.Contains(versionOut, `"version"`)
 
-	starOut := runMiddleman(
+	starOut := runForge(
 		t, ts.URL,
 		"api", "PUT", "/starred",
 		"item_type: pr, provider: github, platform_host: github.com, owner: acme, name: widgets, number: 1",
 	)
 	assert.Empty(starOut)
-	starredOut := runMiddleman(t, ts.URL, "--output", "jsonl", "pulls", "--starred")
+	starredOut := runForge(t, ts.URL, "--output", "jsonl", "pulls", "--starred")
 	starredLines := strings.Split(strings.TrimSpace(starredOut), "\n")
 	require.Len(starredLines, 1)
 	assert.InDelta(float64(1), jsonNumberField(t, starredLines[0]), 0)
 	assert.True(jsonBoolField(t, starredLines[0], "starred", "Starred"))
 
-	apiListOut := runMiddleman(t, ts.URL, "--output", "jsonl", "api", "list")
+	apiListOut := runForge(t, ts.URL, "--output", "jsonl", "api", "list")
 	assert.Contains(apiListOut, `"method":"GET"`)
 	assert.Contains(apiListOut, `"path":"/pulls"`)
 
-	syncOut := runMiddleman(t, ts.URL, "sync")
+	syncOut := runForge(t, ts.URL, "sync")
 	assert.Empty(syncOut)
 }
 
-func setupMiddlemanctlE2E(t *testing.T) *httptest.Server {
+func setupForgectlE2E(t *testing.T) *httptest.Server {
 	t.Helper()
 	database := dbtest.Open(t)
 	_, err := testutil.SeedFixtures(t.Context(), database)
@@ -461,7 +461,7 @@ func setupMiddlemanctlE2E(t *testing.T) *httptest.Server {
 	return ts
 }
 
-func runMiddleman(t *testing.T, serverURL string, args ...string) string {
+func runForge(t *testing.T, serverURL string, args ...string) string {
 	t.Helper()
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

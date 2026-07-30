@@ -1,7 +1,7 @@
-import { canonicalProvider, providerRepoPath, providerRouteParams } from "@middleman/ui/api/provider-routes";
+import { canonicalProvider, providerRepoPath, providerRouteParams } from "@kenn-forge/ui/api/provider-routes";
 import { client } from "../api/runtime.js";
 import { navigate, buildItemRoute } from "../stores/router.svelte.js";
-import { showFlash } from "@middleman/ui/stores/flash";
+import { showFlash } from "@kenn-forge/ui/stores/flash";
 
 let requestId = 0;
 type ItemRefType = "pr" | "issue";

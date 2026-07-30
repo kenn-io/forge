@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { ProblemCodes, type ProblemBody } from "../api/problems.js";
 import type { PullDetail } from "../api/types.js";
-import type { MiddlemanClient } from "../types.js";
+import type { ForgeClient } from "../types.js";
 import { createDetailStore } from "./detail.svelte.js";
 import { dismissFlash, getFlash, getFlashes } from "./flash.svelte.js";
 
@@ -58,7 +58,7 @@ function conflictProblem(reason: string): ProblemBody {
   };
 }
 
-function mockClient(overrides: Partial<MiddlemanClient> = {}): MiddlemanClient {
+function mockClient(overrides: Partial<ForgeClient> = {}): ForgeClient {
   return {
     GET: vi.fn(),
     POST: vi.fn(),
@@ -69,7 +69,7 @@ function mockClient(overrides: Partial<MiddlemanClient> = {}): MiddlemanClient {
     HEAD: vi.fn(),
     TRACE: vi.fn(),
     ...overrides,
-  } as unknown as MiddlemanClient;
+  } as unknown as ForgeClient;
 }
 
 describe("createDetailStore", () => {

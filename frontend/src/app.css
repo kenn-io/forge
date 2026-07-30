@@ -1,6 +1,6 @@
 /* Shared design tokens (palette, typography, spacing, radii, shadows,
    breakpoints rationale) come from kit-ui; app.css only defines
-   middleman-specific tokens on top. */
+   kenn-forge-specific tokens on top. */
 @import "@kenn-io/kit-ui/theme.css";
 /* Mermaid viewer chrome plus the --mermaid- and --viewer-scrim tokens (opt-in kit module). */
 @import "@kenn-io/kit-ui/mermaid.css";

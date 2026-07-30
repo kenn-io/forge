@@ -8,7 +8,7 @@ import { pressKey } from "../../../test/browserAppHarness.js";
 import type { KataReachableGraphEdge, KataReachableGraphResponse, KataTaskSummary } from "../../api/kata/taskTypes.js";
 import KataReachableGraph from "./KataReachableGraph.svelte";
 
-const graphPreferencesStorageKey = "middleman:kata:reachableGraphPreferences/v1";
+const graphPreferencesStorageKey = "kenn-forge:kata:reachableGraphPreferences/v1";
 
 function task(overrides: Partial<KataTaskSummary> = {}): KataTaskSummary {
   const shortID = overrides.short_id ?? "root";
@@ -24,7 +24,7 @@ function task(overrides: Partial<KataTaskSummary> = {}): KataTaskSummary {
     status: overrides.status ?? "open",
     metadata: overrides.metadata ?? {},
     revision: overrides.revision ?? 1,
-    author: overrides.author ?? "middleman",
+    author: overrides.author ?? "kenn-forge",
     priority: overrides.priority,
     blocks: overrides.blocks,
     closed_reason: overrides.closed_reason,
@@ -221,12 +221,12 @@ describe("KataReachableGraph (browser)", () => {
     expect(getComputedStyle(graphCanvas!).overflow).toBe("hidden");
     await expect.element(page.getByRole("button", { name: /Graph filters/ })).toBeVisible();
     await selectGraphFilterItem("Context", "1 edge");
-    await expect.poll(() => window.__middleman_kata_graph_debug?.snapshot().latestGraph?.contextDepth).toBe("1");
+    await expect.poll(() => window.__kenn_forge_kata_graph_debug?.snapshot().latestGraph?.contextDepth).toBe("1");
     await selectGraphFilterItem("Direction", "Top to bottom");
     await vi.waitFor(() => {
       expect(graphFilterDetailText(container)).toContain("TB");
     });
-    await expect.poll(() => window.__middleman_kata_graph_debug?.snapshot().latestGraph?.layoutDirection).toBe("TB");
+    await expect.poll(() => window.__kenn_forge_kata_graph_debug?.snapshot().latestGraph?.layoutDirection).toBe("TB");
     expect(container.querySelector(".kata-graph-pane")?.getAttribute("data-layout-direction")).toBe("TB");
     const controlsButton = container.querySelector<HTMLElement>(".svelte-flow__controls-button");
     const minimap = container.querySelector<SVGSVGElement>(".svelte-flow__minimap");
@@ -397,7 +397,7 @@ describe("KataReachableGraph (browser)", () => {
     await vi.waitFor(() => {
       expect(graphFilterDetailText(container)).toContain("Follow LR");
     });
-    await expect.poll(() => window.__middleman_kata_graph_debug?.snapshot().latestGraph?.layoutDirection).toBe("LR");
+    await expect.poll(() => window.__kenn_forge_kata_graph_debug?.snapshot().latestGraph?.layoutDirection).toBe("LR");
   });
 
   it("restores graph control preferences from localStorage", async () => {
@@ -436,8 +436,8 @@ describe("KataReachableGraph (browser)", () => {
     await vi.waitFor(() => {
       expect(graphFilterDetailText(container)).toBe("2 edges · 1 edge · ELK · Pinned TB");
     });
-    await expect.poll(() => window.__middleman_kata_graph_debug?.snapshot().latestGraph?.layoutMode).toBe("elk");
-    await expect.poll(() => window.__middleman_kata_graph_debug?.snapshot().latestGraph?.layoutDirection).toBe("TB");
+    await expect.poll(() => window.__kenn_forge_kata_graph_debug?.snapshot().latestGraph?.layoutMode).toBe("elk");
+    await expect.poll(() => window.__kenn_forge_kata_graph_debug?.snapshot().latestGraph?.layoutDirection).toBe("TB");
 
     await selectGraphFilterItem("Context", "3 edges");
     await selectGraphFilterItem("Direction", "Left to right");
@@ -482,10 +482,10 @@ describe("KataReachableGraph (browser)", () => {
     await expect.element(page.getByRole("button", { name: /Graph filters/ })).toBeVisible();
     await selectGraphFilterItem("Layout", "ELK");
     await expect
-      .poll(() => window.__middleman_kata_graph_debug?.snapshot().latestGraph?.layoutReady ?? false)
+      .poll(() => window.__kenn_forge_kata_graph_debug?.snapshot().latestGraph?.layoutReady ?? false)
       .toBe(true);
     expect(
-      window.__middleman_kata_graph_debug?.snapshot().events.some((event) => event.kind === "graph-layout-complete"),
+      window.__kenn_forge_kata_graph_debug?.snapshot().events.some((event) => event.kind === "graph-layout-complete"),
     ).toBe(true);
 
     const updatedRoot = { ...root, title: "Root title after refresh" };
@@ -595,7 +595,7 @@ describe("KataReachableGraph (browser)", () => {
     const initialBoxes = await waitForStableRenderedNodeBoxes(container, 4);
 
     await selectGraphFilterItem("Context", "1 edge");
-    await expect.poll(() => window.__middleman_kata_graph_debug?.snapshot().latestGraph?.contextDepth).toBe("1");
+    await expect.poll(() => window.__kenn_forge_kata_graph_debug?.snapshot().latestGraph?.contextDepth).toBe("1");
     expectRenderedNodeBoxesStable(await waitForStableRenderedNodeBoxes(container, 4), initialBoxes);
 
     await rerender({

@@ -13,7 +13,7 @@
     TabbedPanelTree,
     workspaceTabDragScope,
     type TabbedPanelDescriptor,
-  } from "@middleman/ui";
+  } from "@kenn-forge/ui";
   import type { SplitDirection, WorkflowNode, WorkflowTabKey } from "./terminal-layout";
   import {
     clearActiveTerminalDrag,
@@ -106,7 +106,7 @@
     startWorkflowTabDrag(event, { workspaceId, tabKey });
     const paneKey = promotion?.paneKeyFor(tabKey) ?? null;
     if (paneKey !== null) {
-      startTabbedPanelTabDrag(event, { scope: resolvedDragScope, tabKey: paneKey }, "Middleman session tab");
+      startTabbedPanelTabDrag(event, { scope: resolvedDragScope, tabKey: paneKey }, "Kenn Forge session tab");
     }
   }
 

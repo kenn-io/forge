@@ -10,8 +10,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"go.kenn.io/forge/internal/apiclient/generated"
 	gitcmd "go.kenn.io/kit/git/cmd"
-	"go.kenn.io/middleman/internal/apiclient/generated"
 )
 
 // TestWorkspaceConcurrentSameRepoOperationsE2E exercises the per-repo

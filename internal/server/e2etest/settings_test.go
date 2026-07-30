@@ -19,15 +19,15 @@ import (
 	gh "github.com/google/go-github/v89/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/apiclient/generated"
+	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/fleet"
+	"go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/servertest"
 	gitcmd "go.kenn.io/kit/git/cmd"
-	"go.kenn.io/middleman/internal/apiclient/generated"
-	"go.kenn.io/middleman/internal/config"
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/fleet"
-	"go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/server"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
-	"go.kenn.io/middleman/internal/testutil/servertest"
 )
 
 func doServerJSON(
@@ -326,7 +326,7 @@ exit 0
 	cfgPath := filepath.Join(dir, "config.toml")
 	require.NoError(os.WriteFile(cfgPath, fmt.Appendf(nil, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -402,11 +402,11 @@ func TestSettingsAPIE2EPreservesStartupConfigThroughSettingsSave(t *testing.T) {
 	require := require.New(t)
 	srv, _, cfgPath := setupTestServerWithConfigContent(t, `
 sync_interval = "10m"
-github_token_env = "MIDDLEMAN_RELOADED_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_RELOADED_GITHUB_TOKEN"
 host = "127.0.0.2"
 port = 9191
-base_path = "/middleman"
-allowed_hosts = ["middleman.test:9191"]
+base_path = "/kenn-forge"
+allowed_hosts = ["forge.test:9191"]
 trust_reverse_proxy = false
 
 [[repos]]
@@ -437,7 +437,7 @@ command = ["systemd-run", "--user", "--scope", "--pty", "bash"]
 
 	updateResp := doServerJSON(
 		t, ts.Client(), http.MethodPut,
-		ts.URL+"/middleman/api/v1/settings",
+		ts.URL+"/kenn-forge/api/v1/settings",
 		generated.UpdateSettingsRequest{
 			Activity: &generated.Activity{
 				ViewMode:  "flat",
@@ -451,11 +451,11 @@ command = ["systemd-run", "--user", "--scope", "--pty", "bash"]
 	cfgAfterUpdate, err := config.Load(cfgPath)
 	require.NoError(err)
 	assert.Equal("10m", cfgAfterUpdate.SyncInterval)
-	assert.Equal("MIDDLEMAN_RELOADED_GITHUB_TOKEN", cfgAfterUpdate.GitHubTokenEnv)
+	assert.Equal("KENN_FORGE_RELOADED_GITHUB_TOKEN", cfgAfterUpdate.GitHubTokenEnv)
 	assert.Equal("127.0.0.2", cfgAfterUpdate.Host)
 	assert.Equal(9191, cfgAfterUpdate.Port)
-	assert.Equal("/middleman/", cfgAfterUpdate.BasePath)
-	assert.Equal([]string{"middleman.test:9191"}, cfgAfterUpdate.AllowedHosts)
+	assert.Equal("/kenn-forge/", cfgAfterUpdate.BasePath)
+	assert.Equal([]string{"forge.test:9191"}, cfgAfterUpdate.AllowedHosts)
 	assert.False(cfgAfterUpdate.TrustReverseProxy)
 	assert.True(cfgAfterUpdate.API.RequireAuth)
 	assert.True(cfgAfterUpdate.Fleet.Sessions.IncludeUnmanagedDetails)
@@ -479,7 +479,7 @@ func TestSettingsAPIE2EFleetReadUpdateAndValidation(t *testing.T) {
 	require := require.New(t)
 	srv, _, cfgPath := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -819,7 +819,7 @@ func setupSettingsWorkspaceEnv(
 	localRepo, remote, platformHost := setupSettingsLocalGitRepo(t)
 	require.NoError(os.WriteFile(cfgPath, []byte(`
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -983,8 +983,8 @@ func TestRepoConfigAPIE2EWorkspaceCreationUsesFallbackBranchWhenPreferredChecked
 	stored, err := database.GetWorkspace(t.Context(), ready.Id)
 	require.NoError(err)
 	require.NotNil(stored)
-	assert.Equal("middleman/pr-42", stored.WorkspaceBranch)
-	assert.Equal("middleman/pr-42", strings.TrimSpace(string(runSettingsGitOutput(
+	assert.Equal("kenn-forge/pr-42", stored.WorkspaceBranch)
+	assert.Equal("kenn-forge/pr-42", strings.TrimSpace(string(runSettingsGitOutput(
 		t, ready.WorktreePath, "branch", "--show-current",
 	))))
 
@@ -1059,7 +1059,7 @@ func TestRepoConfigAPIE2EDeleteReusedIssueBranchKeepsLocalBranch(t *testing.T) {
 	localRepo, platformHost := env.localRepo, env.platformHost
 	ts := env.ts
 
-	const branch = "middleman/issue-7"
+	const branch = "kenn-forge/issue-7"
 	runSettingsGit(t, localRepo, "branch", branch, "HEAD")
 
 	env.setWorktreeBase(t)
@@ -1117,7 +1117,7 @@ func TestRepoConfigAPIE2ERefreshGlobAndErrors(t *testing.T) {
 	}
 	srv, _, _, syncer := setupTestServerWithConfigContentAndSyncer(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 

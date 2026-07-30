@@ -7,11 +7,11 @@ variable "GITLAB_BASE_IMAGE" {
 }
 
 variable "GITLAB_FIXTURE_RUNTIME_IMAGE" {
-  default = "middleman/gitlab-ce-fixture-runtime:${GITLAB_VERSION}"
+  default = "kenn-forge/gitlab-ce-fixture-runtime:${GITLAB_VERSION}"
 }
 
 variable "GITLAB_FIXTURE_IMAGE" {
-  default = "middleman/gitlab-ce-fixture:${GITLAB_VERSION}"
+  default = "kenn-forge/gitlab-ce-fixture:${GITLAB_VERSION}"
 }
 
 group "default" {

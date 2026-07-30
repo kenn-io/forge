@@ -1,4 +1,4 @@
-const STORAGE_KEY = "middleman:kata:active_daemon";
+const STORAGE_KEY = "kenn-forge:kata:active_daemon";
 
 function readStoredActiveDaemon(): string | undefined {
   try {

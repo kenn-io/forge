@@ -7,15 +7,15 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
+	"go.kenn.io/forge/internal/daemonruntime"
+	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/kit/daemon"
-	"go.kenn.io/middleman/internal/daemonruntime"
-	"go.kenn.io/middleman/internal/server/httpapi"
 )
 
 type daemonPingOutput = httpapi.BodyOutput[daemon.PingInfo]
 
 func daemonPingAPIConfig() huma.Config {
-	config := huma.DefaultConfig("middleman daemon", "0.1.0")
+	config := huma.DefaultConfig("kenn-forge daemon", "0.1.0")
 	config.OpenAPIPath = ""
 	config.DocsPath = ""
 	config.SchemasPath = ""

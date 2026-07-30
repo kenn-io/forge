@@ -18,15 +18,15 @@ import (
 	"unicode"
 
 	"github.com/BurntSushi/toml"
-	platformpkg "go.kenn.io/middleman/internal/platform"
-	"go.kenn.io/middleman/internal/procutil"
-	"go.kenn.io/middleman/internal/tokenauth"
+	platformpkg "go.kenn.io/forge/internal/platform"
+	"go.kenn.io/forge/internal/procutil"
+	"go.kenn.io/forge/internal/tokenauth"
 )
 
 const (
-	defaultGitHubTokenEnv                  = "MIDDLEMAN_GITHUB_TOKEN"
-	defaultForgejoTokenEnv                 = "MIDDLEMAN_FORGEJO_TOKEN"
-	defaultGiteaTokenEnv                   = "MIDDLEMAN_GITEA_TOKEN"
+	defaultGitHubTokenEnv                  = "KENN_FORGE_GITHUB_TOKEN"
+	defaultForgejoTokenEnv                 = "KENN_FORGE_FORGEJO_TOKEN"
+	defaultGiteaTokenEnv                   = "KENN_FORGE_GITEA_TOKEN"
 	defaultSyncInterval                    = "5m"
 	defaultActivePRRefreshInterval         = "2m"
 	defaultActivePRWindow                  = "4h"
@@ -49,11 +49,11 @@ const (
 
 const (
 	// IssueWorkspaceBranchStyleSlug appends a slug derived from the
-	// issue title onto middleman/issue-<n>, producing recognizable
+	// issue title onto kenn-forge/issue-<n>, producing recognizable
 	// branch names that match common GitHub workflow conventions.
 	IssueWorkspaceBranchStyleSlug = "slug"
 	// IssueWorkspaceBranchStyleBare keeps the original
-	// middleman/issue-<n> form with no title slug appended.
+	// kenn-forge/issue-<n> form with no title slug appended.
 	IssueWorkspaceBranchStyleBare = "bare"
 
 	defaultIssueWorkspaceBranchStyle = IssueWorkspaceBranchStyleSlug
@@ -105,7 +105,7 @@ type GitHubOwnerTokenConfig struct {
 }
 
 // GitHubAppConfig registers a GitHub App created by the
-// middleman-github-app CLI. Installation tokens minted from the app's
+// kenn-forge-github-app CLI. Installation tokens minted from the app's
 // private key carry their own rate-limit budget, taking sync traffic
 // off the host's PAT.
 //
@@ -131,10 +131,10 @@ type GitHubAppConfig struct {
 	RepositorySelection string `toml:"repository_selection,omitempty" json:"repository_selection,omitempty"`
 	// SelectedRepos lists the full names (owner/name) an "Only select
 	// repositories" installation could reach when the CLI recorded it.
-	// This is a startup routing snapshot: middleman does not detect selection
+	// This is a startup routing snapshot: kenn-forge does not detect selection
 	// changes made on GitHub afterwards. Narrowed access can surface as sync
 	// 404s, while newly granted repositories keep using PAT fallback. Re-run
-	// "middleman-github-app install" and restart middleman to load either
+	// "kenn-forge-github-app install" and restart kenn-forge to load either
 	// change into the bounded route table.
 	SelectedRepos []string `toml:"selected_repos,omitempty" json:"selected_repos,omitempty"`
 }
@@ -576,7 +576,7 @@ type PullRequests struct {
 // Workspaces configures behavior shared by PR- and issue-backed workspaces.
 type Workspaces struct {
 	// AutoAssignOnCreate adds the authenticated provider user to the source
-	// PR or issue when middleman creates its workspace.
+	// PR or issue when kenn-forge creates its workspace.
 	AutoAssignOnCreate bool `toml:"auto_assign_on_create,omitempty" json:"auto_assign_on_create"`
 }
 
@@ -680,7 +680,7 @@ type Tmux struct {
 	AgentSessions *bool    `toml:"agent_sessions,omitempty"`
 }
 
-// FleetPeer is a remote middleman daemon this hub federates with over HTTP.
+// FleetPeer is a remote kenn-forge daemon this hub federates with over HTTP.
 type FleetPeer struct {
 	Key     string `toml:"key" json:"key"`
 	Name    string `toml:"name,omitempty" json:"name,omitempty"`
@@ -700,17 +700,17 @@ type FleetSSHPeer struct {
 	Name        string `toml:"name,omitempty" json:"name,omitempty"`
 	Destination string `toml:"destination" json:"destination"`
 	Platform    string `toml:"platform,omitempty" json:"platform,omitempty"`
-	// RemoteCommand invokes the peer's CLI; defaults to "middleman".
+	// RemoteCommand invokes the peer's CLI; defaults to "kenn-forge".
 	// Must be a bare executable name or path — no flags, since CLI
 	// subcommands are appended right after it. A custom remote config
-	// location is set via MIDDLEMAN_HOME in the remote shell profile.
+	// location is set via KENN_FORGE_HOME in the remote shell profile.
 	RemoteCommand string `toml:"remote_command,omitempty" json:"remote_command,omitempty"`
 }
 
 // RemoteCommandOrDefault returns the CLI invocation for the peer.
 func (p FleetSSHPeer) RemoteCommandOrDefault() string {
 	if strings.TrimSpace(p.RemoteCommand) == "" {
-		return "middleman"
+		return "kenn-forge"
 	}
 	return p.RemoteCommand
 }
@@ -744,8 +744,8 @@ type Notifications struct {
 	BatchSize           int    `toml:"batch_size" json:"batch_size"`
 }
 
-// Shell configures the command middleman runs when ensuring the
-// per-workspace plain shell session. Hardened middleman deployments
+// Shell configures the command kenn-forge runs when ensuring the
+// per-workspace plain shell session. Hardened kenn-forge deployments
 // (e.g. systemd services with SystemCallFilter=~@privileged) must
 // wrap the shell so it escapes the parent's seccomp filter — zsh
 // calls setresuid during startup and is killed by SIGSYS otherwise.
@@ -883,7 +883,7 @@ func (c *Config) validateFleetSSHPeers() error {
 		// fragment and appends CLI subcommands directly after it, and
 		// the CLI only dispatches a subcommand in argv[0] position —
 		// so flags, whitespace, or shell metacharacters would change
-		// meaning. Custom remote config goes through MIDDLEMAN_HOME
+		// meaning. Custom remote config goes through KENN_FORGE_HOME
 		// in the remote login profile instead.
 		// Validate the RAW value: the relay embeds it untrimmed, so
 		// even leading/trailing whitespace changes the remote shell
@@ -892,7 +892,7 @@ func (c *Config) validateFleetSSHPeers() error {
 			return fmt.Errorf(
 				"config: fleet.ssh_peers[%d] (%s): remote_command must be"+
 					" a bare executable name or path (no flags or shell"+
-					" metacharacters); set MIDDLEMAN_HOME in the remote"+
+					" metacharacters); set KENN_FORGE_HOME in the remote"+
 					" shell profile for a custom config location",
 				i, key,
 			)
@@ -933,10 +933,10 @@ func DefaultDataDir() string {
 }
 
 func baseDir() string {
-	if d := os.Getenv("MIDDLEMAN_HOME"); d != "" {
+	if d := os.Getenv("KENN_FORGE_HOME"); d != "" {
 		return d
 	}
-	return filepath.Join(homeDir(), ".config", "middleman")
+	return filepath.Join(homeDir(), ".config", "kenn-forge")
 }
 
 func homeDir() string {
@@ -969,11 +969,11 @@ func EnsureDefault(path string) error {
 	tmpPath := tmp.Name()
 	defer os.Remove(tmpPath)
 
-	const defaultConfig = `# middleman configuration
-# See https://github.com/wesm/middleman for documentation.
+	const defaultConfig = `# kenn-forge configuration
+# See https://github.com/wesm/kenn-forge for documentation.
 
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 default_platform_host = "github.com"
 host = "127.0.0.1"
 port = 8091
@@ -991,7 +991,7 @@ port = 8091
 # [[fleet.ssh_peers]]
 # key = "studio"
 # destination = "user@studio.local"
-# # remote_command = "middleman"   # bare executable, no flags; use MIDDLEMAN_HOME remotely for custom config
+# # remote_command = "kenn-forge"   # bare executable, no flags; use KENN_FORGE_HOME remotely for custom config
 
 # Gate the HTTP API behind a bearer token (minted to
 # <data_dir>/auth_token; browsers bootstrap a session cookie via the
@@ -1004,7 +1004,7 @@ port = 8091
 # [[platforms]]
 # type = "gitlab"
 # host = "gitlab.com"
-# token_env = "MIDDLEMAN_GITLAB_TOKEN"
+# token_env = "KENN_FORGE_GITLAB_TOKEN"
 
 # Add repositories to monitor (or add them in the Settings UI).
 # [[repos]]
@@ -2154,7 +2154,7 @@ func (c *Config) ResolveRepoTokenSource(r Repo) tokenauth.Descriptor {
 
 // HasExplicitGitHubTokenEnv reports whether github_token_env names a
 // deliberately configured github.com fallback credential rather than
-// middleman's built-in default. Load defaults the field, and Save and the
+// kenn-forge's built-in default. Load defaults the field, and Save and the
 // sample config both materialize the default name into the file, so the
 // value itself is the only durable signal: only a non-default name is an
 // explicit fallback choice.
@@ -2758,7 +2758,7 @@ func (c *Config) ParsedAllowedHosts() []HostKey {
 }
 
 func (c *Config) DBPath() string {
-	return filepath.Join(c.DataDir, "middleman.db")
+	return filepath.Join(c.DataDir, "forge.db")
 }
 
 // RoborevEndpoint returns the configured roborev daemon endpoint,
@@ -2946,7 +2946,7 @@ func (c *Config) Save(path string) error {
 		}
 	}
 
-	tmp, err := os.CreateTemp(dir, ".middleman-config-*.toml")
+	tmp, err := os.CreateTemp(dir, ".kenn-forge-config-*.toml")
 	if err != nil {
 		return fmt.Errorf("creating temp config: %w", err)
 	}

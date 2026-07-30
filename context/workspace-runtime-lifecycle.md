@@ -5,7 +5,7 @@ management, tmux persistence, and workspace terminal UI behavior.
 
 ## Purpose
 
-- Keep the lifecycle of middleman-managed runtime state explicit.
+- Keep the lifecycle of kenn-forge-managed runtime state explicit.
 - Preserve the distinction between the durable workspace, the base tmux
   terminal, and launched runtime sessions.
 - Prevent review regressions around destructive ordering, stale tmux rows, and
@@ -13,12 +13,12 @@ management, tmux persistence, and workspace terminal UI behavior.
 
 ## Runtime Model
 
-Middleman manages three related but different things:
+Kenn Forge manages three related but different things:
 
 - The persisted workspace record and worktree.
 - The base workspace `tmux` terminal, which is durable and reconnectable.
 - Launched runtime sessions and the shell drawer. When tmux is available they
-  are tmux-backed, recorded, and reconnectable across middleman restarts; when
+  are tmux-backed, recorded, and reconnectable across kenn-forge restarts; when
   tmux is unavailable they use ptyowner.
 
 Rules:
@@ -26,7 +26,7 @@ Rules:
 - The base workspace `tmux` tab is part of the durable workspace experience.
 - Launched agent sessions and shell sessions are not durable after natural exit.
 - The shell drawer is a singleton per workspace, but a tmux-backed shell should
-  survive middleman server restarts until the shell exits or the workspace is
+  survive kenn-forge server restarts until the shell exits or the workspace is
   deleted.
 
 ## Natural Exit Rules
@@ -86,7 +86,7 @@ still exists.
   gone state to be cleaned up, not as a reason to preserve stale runtime rows.
 - During explicit delete or stop flows, forgetting the persisted row is part of
   cleanup.
-- During middleman shutdown, detach/restart behavior is different: do not treat
+- During kenn-forge shutdown, detach/restart behavior is different: do not treat
   normal server shutdown as a natural user exit that should erase recoverable
   base runtime state.
 - Every tmux client attach must force UTF-8; service launchers may omit locale
@@ -134,8 +134,8 @@ stale tabs.
 ## Shell Command Override
 
 When tmux is unavailable, the plain shell session is launched through ptyowner
-rather than as a direct child of middleman. This decouples shell ownership and
-lifetime from the middleman server process. Hardened deployments (systemd
+rather than as a direct child of kenn-forge. This decouples shell ownership and
+lifetime from the kenn-forge server process. Hardened deployments (systemd
 services with `SystemCallFilter=~@privileged`, `LockPersonality=`,
 `MemoryDenyWriteExecute=`, etc.) can still need a `[shell] command` wrapper or
 external ptyowner manager path that starts the shell outside the restricted
@@ -153,7 +153,7 @@ command = [
   "systemd-run", "--user", "--quiet", "--collect", "--wait", "--pipe",
   "--service-type=exec",
   "--property=KillMode=process",
-  "--description=middleman shell",
+  "--description=kenn-forge shell",
   "--",
   "zsh",  # absolute path or PATH-resolvable name; see below
 ]

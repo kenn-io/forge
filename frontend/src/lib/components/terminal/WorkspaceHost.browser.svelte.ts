@@ -1,8 +1,8 @@
 import { page } from "vite-plus/test/browser";
 import { flushSync, mount, unmount } from "svelte";
 import { describe, expect, it, vi, beforeEach, afterEach } from "vite-plus/test";
-import { DEFAULT_TERMINAL_SETTINGS } from "@middleman/ui";
-import { createDiffStore } from "@middleman/ui/stores/diff";
+import { DEFAULT_TERMINAL_SETTINGS } from "@kenn-forge/ui";
+import { createDiffStore } from "@kenn-forge/ui/stores/diff";
 
 import { STORES_KEY } from "../../../../../packages/ui/src/context.js";
 import { createMockApiFetch, jsonResponse, type MockRouteOverride } from "../../../test/mockApiFetch.js";
@@ -45,7 +45,7 @@ const workspace = {
   item_number: 7,
   git_head_ref: "feature/inline-host",
   worktree_path: "/tmp/worktree",
-  tmux_session: "middleman-ws-1",
+  tmux_session: "kenn-forge-ws-1",
   status: "ready",
   enrichment_status: "fresh",
   created_at: "2026-04-29T00:00:00Z",
@@ -367,7 +367,7 @@ describe("WorkspaceHost", () => {
     // A fresh store rather than the surface-cached one: this spec owns the
     // arrangement it maximizes, and localStorage from another test must not
     // decide where the workspace pane sits.
-    localStorage.removeItem("middleman-pane-layout-v1:prs");
+    localStorage.removeItem("kenn-forge-pane-layout-v1:prs");
     const layout = createPaneLayoutStore("prs", ["conversation", "workspace"], {
       type: "split",
       id: "split-root",
@@ -433,7 +433,7 @@ describe("WorkspaceHost", () => {
     // calls hit the mock (and fail harmlessly into the panel's error state
     // — this test only asserts sidebar presence).
     const diffStore = createDiffStore();
-    localStorage.setItem("middleman-workspace-sidebar-open", "true");
+    localStorage.setItem("kenn-forge-workspace-sidebar-open", "true");
     try {
       instance = mount(WorkspaceHost, {
         target: hostContainer,
@@ -473,8 +473,8 @@ describe("WorkspaceHost", () => {
         expect(host.querySelector(".right-sidebar")).not.toBeNull();
       }, WAIT);
     } finally {
-      localStorage.removeItem("middleman-workspace-sidebar-open");
-      localStorage.removeItem("middleman-workspace-sidebar-width");
+      localStorage.removeItem("kenn-forge-workspace-sidebar-open");
+      localStorage.removeItem("kenn-forge-workspace-sidebar-width");
     }
   });
 });

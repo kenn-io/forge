@@ -18,14 +18,14 @@ import (
 	gh "github.com/google/go-github/v89/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/config"
-	"go.kenn.io/middleman/internal/db"
-	ghclient "go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/platform"
-	"go.kenn.io/middleman/internal/platform/gitealike"
-	"go.kenn.io/middleman/internal/stacks"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
-	"go.kenn.io/middleman/internal/workspace/localruntime"
+	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/db"
+	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/platform"
+	"go.kenn.io/forge/internal/platform/gitealike"
+	"go.kenn.io/forge/internal/stacks"
+	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
 func setupTestServerWithConfig(
@@ -33,7 +33,7 @@ func setupTestServerWithConfig(
 ) (*Server, *db.DB, string) {
 	return setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -328,7 +328,7 @@ func TestHandleGetSettings(t *testing.T) {
 	assert := assert.New(t)
 	srv, _, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -378,7 +378,7 @@ func TestHandleGetSettingsEncodesEmptyKataProjectsAsArray(t *testing.T) {
 	// No [[kata_projects]] configured, so cfg.KataProjects is nil.
 	srv, _, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -558,7 +558,7 @@ func TestHandleUpdateSettingsDisablesNativeStackProjectionImmediately(t *testing
 	require := require.New(t)
 	srv, database, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -610,7 +610,7 @@ func TestHandleUpdateTerminalSettingsPreservesActivity(t *testing.T) {
 	assert := assert.New(t)
 	srv, _, cfgPath := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -702,7 +702,7 @@ func TestHandleUpdateSettingsRefreshesRuntimeTargets(t *testing.T) {
 	))
 	srv, _, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -803,7 +803,7 @@ func TestHandleAddRepoTriggersImmediateSyncDuringCooldown(t *testing.T) {
 	cfgPath := filepath.Join(dir, "config.toml")
 	require.NoError(os.WriteFile(cfgPath, []byte(`
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -1048,7 +1048,7 @@ func TestHandleGetSettingsIncludesGlobCounts(t *testing.T) {
 		) ([]*gh.Repository, error) {
 			return []*gh.Repository{
 				{
-					Name:     new("middleman"),
+					Name:     new("kenn-forge"),
 					Owner:    &gh.User{Login: new(owner)},
 					Archived: new(false),
 				},
@@ -1067,7 +1067,7 @@ func TestHandleGetSettingsIncludesGlobCounts(t *testing.T) {
 	}
 	srv, _, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -1097,7 +1097,7 @@ func TestHandleRefreshRepoRebuildsExpandedSyncSet(t *testing.T) {
 		) ([]*gh.Repository, error) {
 			return []*gh.Repository{
 				{
-					Name:     new("middleman"),
+					Name:     new("kenn-forge"),
 					Owner:    &gh.User{Login: new(owner)},
 					Archived: new(false),
 				},
@@ -1116,7 +1116,7 @@ func TestHandleRefreshRepoRebuildsExpandedSyncSet(t *testing.T) {
 	}
 	srv, _, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -1134,7 +1134,7 @@ name = "*"
 	var resp settingsResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	require.Equal(2, resp.Repos[0].MatchedRepoCount)
-	assert.True(srv.syncer.IsTrackedRepo("roborev-dev", "middleman"))
+	assert.True(srv.syncer.IsTrackedRepo("roborev-dev", "kenn-forge"))
 	assert.True(srv.syncer.IsTrackedRepo("roborev-dev", "globber"))
 	assert.False(srv.syncer.IsTrackedRepo("roborev-dev", "archived"))
 }
@@ -1149,7 +1149,7 @@ func TestHandleRefreshRepoPersistsExpandedReposBeforeAsyncSync(t *testing.T) {
 		) ([]*gh.Repository, error) {
 			repos := []*gh.Repository{
 				{
-					Name:     new("middleman"),
+					Name:     new("kenn-forge"),
 					Owner:    &gh.User{Login: new(owner)},
 					Archived: new(false),
 				},
@@ -1171,7 +1171,7 @@ func TestHandleRefreshRepoPersistsExpandedReposBeforeAsyncSync(t *testing.T) {
 	}
 	srv, database, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -1196,7 +1196,7 @@ name = "*"
 			names = append(names, repo.Name)
 		}
 	}
-	assert.ElementsMatch([]string{"middleman", "review-bot"}, names)
+	assert.ElementsMatch([]string{"kenn-forge", "review-bot"}, names)
 }
 
 func TestHandleRefreshRepoKeepsReposMatchedByOtherConfigEntries(t *testing.T) {
@@ -1217,7 +1217,7 @@ func TestHandleRefreshRepoKeepsReposMatchedByOtherConfigEntries(t *testing.T) {
 		) ([]*gh.Repository, error) {
 			return []*gh.Repository{
 				{
-					Name:     new("middleman"),
+					Name:     new("kenn-forge"),
 					Owner:    &gh.User{Login: new(owner)},
 					Archived: new(false),
 				},
@@ -1226,7 +1226,7 @@ func TestHandleRefreshRepoKeepsReposMatchedByOtherConfigEntries(t *testing.T) {
 	}
 	srv, _, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -1248,7 +1248,7 @@ name = "worker"
 	var resp settingsResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	require.Len(resp.Repos, 2)
-	assert.True(srv.syncer.IsTrackedRepo("roborev-dev", "middleman"))
+	assert.True(srv.syncer.IsTrackedRepo("roborev-dev", "kenn-forge"))
 	assert.True(srv.syncer.IsTrackedRepo("roborev-dev", "worker"))
 }
 
@@ -1268,7 +1268,7 @@ func TestHandleDeleteRepoRebuildsExpandedSetFromRemainingPatterns(t *testing.T) 
 		) ([]*gh.Repository, error) {
 			return []*gh.Repository{
 				{
-					Name:     new("middleman"),
+					Name:     new("kenn-forge"),
 					Owner:    &gh.User{Login: new(owner)},
 					Archived: new(false),
 				},
@@ -1277,7 +1277,7 @@ func TestHandleDeleteRepoRebuildsExpandedSetFromRemainingPatterns(t *testing.T) 
 	}
 	srv, _, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -1296,14 +1296,14 @@ name = "tools"
 	)
 	require.Equal(t, http.StatusNoContent, rr.Code, rr.Body.String())
 	assert.True(t, srv.syncer.IsTrackedRepo("roborev-dev", "tools"))
-	assert.False(t, srv.syncer.IsTrackedRepo("roborev-dev", "middleman"))
+	assert.False(t, srv.syncer.IsTrackedRepo("roborev-dev", "kenn-forge"))
 }
 
 func TestHandleDeleteRepoUsesProviderHostQuery(t *testing.T) {
 	require := require.New(t)
 	srv, _, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -1345,7 +1345,7 @@ func TestRefreshRepoPreservesExistingWhenResolutionFails(t *testing.T) {
 				return nil, errors.New("boom")
 			}
 			return []*gh.Repository{{
-				Name:     new("middleman"),
+				Name:     new("kenn-forge"),
 				Owner:    &gh.User{Login: new(owner)},
 				Archived: new(false),
 			}}, nil
@@ -1353,7 +1353,7 @@ func TestRefreshRepoPreservesExistingWhenResolutionFails(t *testing.T) {
 	}
 	srv, _, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -1365,7 +1365,7 @@ name = "*"
 	// verify it survives a failed refresh.
 	srv.syncer.SetRepos([]ghclient.RepoRef{{
 		Owner:        "roborev-dev",
-		Name:         "middleman",
+		Name:         "kenn-forge",
 		PlatformHost: "github.com",
 	}})
 
@@ -1374,7 +1374,7 @@ name = "*"
 		"/api/v1/repo/gh/roborev-dev/*/refresh", nil,
 	)
 	require.Equal(http.StatusBadGateway, rr.Code, rr.Body.String())
-	assert.True(srv.syncer.IsTrackedRepo("roborev-dev", "middleman"))
+	assert.True(srv.syncer.IsTrackedRepo("roborev-dev", "kenn-forge"))
 }
 
 func TestGetSettingsDoesNotCallGitHub(t *testing.T) {
@@ -1402,7 +1402,7 @@ func TestGetSettingsDoesNotCallGitHub(t *testing.T) {
 	cfgPath := filepath.Join(dir, "config.toml")
 	require.NoError(os.WriteFile(cfgPath, []byte(`
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -1453,7 +1453,7 @@ func TestGlobMatchingIsCaseInsensitive(t *testing.T) {
 	}
 	srv, _, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -1532,7 +1532,7 @@ func TestConcurrentRefreshAndDeleteDoesNotResurrect(t *testing.T) {
 				<-ghUnblock
 			}
 			return []*gh.Repository{{
-				Name:     new("middleman"),
+				Name:     new("kenn-forge"),
 				Owner:    &gh.User{Login: new(owner)},
 				Archived: new(false),
 			}}, nil
@@ -1540,7 +1540,7 @@ func TestConcurrentRefreshAndDeleteDoesNotResurrect(t *testing.T) {
 	}
 	srv, _, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -1548,7 +1548,7 @@ port = 8091
 owner = "roborev-dev"
 name = "*"
 `, mock)
-	require.True(srv.syncer.IsTrackedRepo("roborev-dev", "middleman"))
+	require.True(srv.syncer.IsTrackedRepo("roborev-dev", "kenn-forge"))
 
 	refreshDone := make(chan *httptest.ResponseRecorder, 1)
 	go func() {
@@ -1576,7 +1576,7 @@ name = "*"
 		"/api/v1/repo/gh/roborev-dev/*", nil,
 	)
 	require.Equal(http.StatusNoContent, delRR.Code, delRR.Body.String())
-	require.False(srv.syncer.IsTrackedRepo("roborev-dev", "middleman"))
+	require.False(srv.syncer.IsTrackedRepo("roborev-dev", "kenn-forge"))
 
 	close(ghUnblock)
 	var refreshRR *httptest.ResponseRecorder
@@ -1591,7 +1591,7 @@ name = "*"
 
 	// The deleted repo must not have reappeared after the
 	// refresh completed.
-	assert.False(srv.syncer.IsTrackedRepo("roborev-dev", "middleman"),
+	assert.False(srv.syncer.IsTrackedRepo("roborev-dev", "kenn-forge"),
 		"deleted repo resurrected by concurrent refresh")
 }
 
@@ -1605,7 +1605,7 @@ func TestHandleUpdateSettingsPreservesTmuxCommand(t *testing.T) {
 	assert := assert.New(t)
 	srv, _, cfgPath := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -1682,7 +1682,7 @@ func TestHandlePreviewReposFiltersAndMarksAlreadyConfigured(t *testing.T) {
 	}
 	srv, _, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -1861,7 +1861,7 @@ func TestHandlePreviewReposFallsBackToListWhenExactLookupFails(t *testing.T) {
 	}
 	srv, _, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 `, mock)
@@ -1923,7 +1923,7 @@ func TestHandlePreviewReposUsesExactLookupForConcreteRepo(t *testing.T) {
 	}
 	srv, _, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 `, mock)
@@ -2018,7 +2018,7 @@ func TestHandlePreviewReposSupportsGitLabNamespaces(t *testing.T) {
 	}
 	srv, _, _ := setupTestServerWithConfigProviders(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -2094,7 +2094,7 @@ func TestHandlePreviewReposSupportsForgejoOrgFallback(t *testing.T) {
 	)
 	srv, _, _ := setupTestServerWithConfigProviders(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -2151,7 +2151,7 @@ func TestHandleBulkAddReposPersistsExactRepos(t *testing.T) {
 	}
 	srv, _, cfgPath := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -2216,7 +2216,7 @@ func TestHandleBulkAddReposPersistsGitLabProviderIdentity(t *testing.T) {
 	}
 	srv, database, cfgPath := setupTestServerWithConfigProviders(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 `, &mockGH{}, provider)
@@ -2308,7 +2308,7 @@ func TestHandleBulkAddReposPersistsGiteaProviderIdentity(t *testing.T) {
 	)
 	srv, database, cfgPath := setupTestServerWithConfigProviders(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 `, &mockGH{}, provider)
@@ -2376,7 +2376,7 @@ func TestHandleBulkAddReposValidationFailureChangesNothing(t *testing.T) {
 	}
 	srv, _, cfgPath := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -2419,7 +2419,7 @@ func TestHandleBulkAddReposSkipsAlreadyConfiguredBeforeValidation(t *testing.T) 
 	}
 	srv, _, cfgPath := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -2460,7 +2460,7 @@ func TestHandleBulkAddReposReturnsAlreadyConfiguredWhenAllSkippedBeforeValidatio
 	}
 	srv, _, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -2498,7 +2498,7 @@ func TestHandleBulkAddReposSkipsAlreadyConfiguredAtApplyTime(t *testing.T) {
 	}
 	srv, _, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -2661,7 +2661,7 @@ func TestHandleUpdateSettingsRestoresProjectionAfterRequestCancellation(t *testi
 	require := require.New(t)
 	srv, database, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -2726,7 +2726,7 @@ func TestReconcileNativeStackProjectionSkipsSupersededDisable(t *testing.T) {
 	require := require.New(t)
 	srv, database, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -2778,7 +2778,7 @@ func TestHandleUpdateSettingsRestoresProjectionForUntrackedRepo(t *testing.T) {
 	require := require.New(t)
 	srv, database, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -2865,7 +2865,7 @@ func TestNewServerRestoresProjectionWhenNativeStacksBootDisabled(t *testing.T) {
 	cfgPath := filepath.Join(dir, "config.toml")
 	require.NoError(os.WriteFile(cfgPath, []byte(`
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 

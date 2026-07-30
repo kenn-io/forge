@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import * as flash from "@middleman/ui/stores/flash";
+import * as flash from "@kenn-forge/ui/stores/flash";
 
 const mockPost = vi.fn();
 const mockRefreshDetailOnly = vi.fn();

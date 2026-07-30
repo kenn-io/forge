@@ -3,8 +3,8 @@ package workspaceapi
 import (
 	"slices"
 
-	"go.kenn.io/middleman/internal/config"
-	"go.kenn.io/middleman/internal/projects"
+	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/projects"
 )
 
 // ConfigSnapshot is the immutable, committed configuration state consumed by

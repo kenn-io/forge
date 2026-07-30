@@ -140,7 +140,7 @@ func TestRunnerRelayFramesStatusAndBody(t *testing.T) {
 
 	resp, err := runner.Relay(
 		context.Background(),
-		"studio", "wes@studio.local", "middleman",
+		"studio", "wes@studio.local", "kenn-forge",
 		"POST", "/api/v1/projects/prj_1/worktrees",
 		[]byte(`{"branch":"feat"}`),
 	)
@@ -154,7 +154,7 @@ func TestRunnerRelayFramesStatusAndBody(t *testing.T) {
 	assert.Contains(joined, "ControlPath="+mgr.SocketPath("studio"))
 	assert.Contains(joined, "ControlMaster=no")
 	assert.Contains(joined, "wes@studio.local")
-	assert.Contains(joined, "middleman")
+	assert.Contains(joined, "kenn-forge")
 	assert.Contains(joined, "api")
 	assert.Contains(joined, "PATH=")
 
@@ -167,7 +167,7 @@ func TestRunnerRelayFramesStatusAndBody(t *testing.T) {
 	}
 	resp, err = runner.Relay(
 		context.Background(),
-		"studio", "wes@studio.local", "middleman",
+		"studio", "wes@studio.local", "kenn-forge",
 		"GET", "/api/v1/projects/prj_missing", nil,
 	)
 	require.NoError(err)
@@ -178,17 +178,17 @@ func TestRunnerRelayFramesStatusAndBody(t *testing.T) {
 	runner.execCommand = func(
 		context.Context, []string, []byte,
 	) ([]byte, []byte, int, error) {
-		return nil, []byte("no middleman daemon is running on /data"),
+		return nil, []byte("no kenn-forge daemon is running on /data"),
 			verbExitNoRequest, nil
 	}
 	_, err = runner.Relay(
 		context.Background(),
-		"studio", "wes@studio.local", "middleman",
+		"studio", "wes@studio.local", "kenn-forge",
 		"GET", "/api/v1/snapshot/raw", nil,
 	)
 	require.Error(err)
 	assert.Contains(err.Error(), "remote daemon unavailable")
-	assert.Contains(err.Error(), "no middleman daemon is running")
+	assert.Contains(err.Error(), "no kenn-forge daemon is running")
 }
 
 // TestRelayNoRequestErrorIsTyped pins that an exit-2 relay (no
@@ -201,12 +201,12 @@ func TestRelayNoRequestErrorIsTyped(t *testing.T) {
 	runner := NewRunnerWithExec(mgr, func(
 		context.Context, []string, []byte,
 	) ([]byte, []byte, int, error) {
-		return nil, []byte("no middleman daemon is running"),
+		return nil, []byte("no kenn-forge daemon is running"),
 			verbExitNoRequest, nil
 	})
 	_, err := runner.Relay(
 		context.Background(),
-		"studio", "wes@studio.local", "middleman",
+		"studio", "wes@studio.local", "kenn-forge",
 		"GET", "/api/v1/snapshot/raw", nil,
 	)
 	require.ErrorIs(t, err, ErrRemoteDaemonUnavailable)
@@ -280,7 +280,7 @@ func TestEnsureDaemonAlreadyRunning(t *testing.T) {
 	f := &ensureFakeExec{running: true}
 	r := newEnsureRunner(t, f)
 	require.NoError(t, r.EnsureDaemon(
-		context.Background(), "studio", "wes@studio.local", "middleman",
+		context.Background(), "studio", "wes@studio.local", "kenn-forge",
 	))
 	assert.Equal(t, 0, f.startCalls)
 }
@@ -291,7 +291,7 @@ func TestEnsureDaemonStartsAndPolls(t *testing.T) {
 	f := &ensureFakeExec{flipOnStart: true}
 	r := newEnsureRunner(t, f)
 	require.NoError(t, r.EnsureDaemon(
-		context.Background(), "studio", "wes@studio.local", "middleman",
+		context.Background(), "studio", "wes@studio.local", "kenn-forge",
 	))
 	assert.Equal(t, 1, f.startCalls)
 	assert.GreaterOrEqual(t, f.probeCalls, 2,
@@ -304,7 +304,7 @@ func TestEnsureDaemonTimeout(t *testing.T) {
 	f := &ensureFakeExec{}
 	r := newEnsureRunner(t, f)
 	err := r.EnsureDaemon(
-		context.Background(), "studio", "wes@studio.local", "middleman",
+		context.Background(), "studio", "wes@studio.local", "kenn-forge",
 	)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "wes@studio.local")
@@ -318,7 +318,7 @@ func TestEnsureDaemonWaitsForMetadata(t *testing.T) {
 	f := &ensureFakeExec{flipOnStart: true, metadataLagProbes: 3}
 	r := newEnsureRunner(t, f)
 	require.NoError(t, r.EnsureDaemon(
-		context.Background(), "studio", "wes@studio.local", "middleman",
+		context.Background(), "studio", "wes@studio.local", "kenn-forge",
 	))
 	assert.Equal(t, 1, f.startCalls)
 	assert.GreaterOrEqual(t, f.probeCalls, 5,

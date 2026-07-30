@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	Require "github.com/stretchr/testify/require"
 
-	"go.kenn.io/middleman/internal/testutil/gitsafe"
+	"go.kenn.io/forge/internal/testutil/gitsafe"
 )
 
 func lifecycleRouteGit(t *testing.T, dir string, args ...string) string {
@@ -367,7 +367,7 @@ func TestWorktreeDeleteFromDiskRunsTeardownHook(t *testing.T) {
 	outFile := filepath.Join(t.TempDir(), "teardown.out")
 	require.NoError(os.WriteFile(
 		filepath.Join(repo, "teardown.sh"),
-		[]byte("#!/bin/sh\necho \"$MIDDLEMAN_BRANCH\" > "+outFile+"\n"),
+		[]byte("#!/bin/sh\necho \"$KENN_FORGE_BRANCH\" > "+outFile+"\n"),
 		0o755,
 	))
 	projectID := registerProjectForTest(t, ts, repo)

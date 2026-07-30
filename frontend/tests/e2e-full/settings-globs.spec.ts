@@ -60,13 +60,13 @@ test("settings shows glob match counts and refresh updates tracked repos", async
         .sort()
         .join(",");
     })
-    .toBe("middleman,worker");
+    .toBe("kenn-forge,worker");
 
   await page.goto(`${isolatedServer!.info.base_url}/pulls`);
   const selector = page.getByRole("button", { name: /^Select repository:/ });
   await expect(selector).toBeVisible();
   await selector.click();
-  await expect(page.getByRole("option", { name: /roborev-dev\/middleman/ })).toBeVisible();
+  await expect(page.getByRole("option", { name: /roborev-dev\/kenn-forge/ })).toBeVisible();
   await expect(page.getByRole("option", { name: /roborev-dev\/worker/ })).toBeVisible();
   await page.keyboard.press("Escape");
 
@@ -88,7 +88,7 @@ test("settings shows glob match counts and refresh updates tracked repos", async
         .sort()
         .join(",");
     })
-    .toBe("middleman,review-bot,worker");
+    .toBe("kenn-forge,review-bot,worker");
 
   await page.screenshot({
     path: "test-results/settings-globs-pr.png",
@@ -183,7 +183,7 @@ test("settings imports a selected subset from a repository glob", async ({ page 
 test("settings promotes a glob match to a persisted exact repo with a local clone", async ({ page }) => {
   localRepo = realpathSync(mkdtempSync(path.join(os.tmpdir(), "mm-promote-clone-")));
   git(localRepo, "init");
-  git(localRepo, "remote", "add", "origin", "https://github.com/roborev-dev/middleman.git");
+  git(localRepo, "remote", "add", "origin", "https://github.com/roborev-dev/forge.git");
 
   await page.goto(`${isolatedServer!.info.base_url}/settings`);
   await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
@@ -192,23 +192,23 @@ test("settings promotes a glob match to a persisted exact repo with a local clon
   await globRow.getByRole("button", { name: "Promote glob repository roborev-dev/*" }).click();
   const dialog = page.getByRole("dialog", { name: "Promote wildcard repository" });
   await expect(dialog.getByLabel("Search matches")).toBeFocused();
-  await expect(dialog.getByRole("radio", { name: /roborev-dev\/middleman/ })).toBeChecked();
+  await expect(dialog.getByRole("radio", { name: /roborev-dev\/kenn-forge/ })).toBeChecked();
 
   const saveResponsePromise = page.waitForResponse(
     (response) =>
-      response.url().endsWith("/api/v1/repo/github/roborev-dev/middleman/worktree-base") &&
+      response.url().endsWith("/api/v1/repo/github/roborev-dev/kenn-forge/worktree-base") &&
       response.request().method() === "PUT",
   );
-  await dialog.getByLabel("Local clone path for roborev-dev/middleman", { exact: true }).fill(localRepo);
+  await dialog.getByLabel("Local clone path for roborev-dev/kenn-forge", { exact: true }).fill(localRepo);
   await dialog.getByRole("button", { name: "Promote repository" }).click();
   const saveResponse = await saveResponsePromise;
   const saveBody = await saveResponse.text();
   expect(saveResponse.status(), `PUT worktree-base failed: ${saveBody}`).toBe(200);
 
   await expect(dialog).toHaveCount(0);
-  const exactRow = page.locator(".repo-row", { hasText: "roborev-dev/middleman" });
+  const exactRow = page.locator(".repo-row", { hasText: "roborev-dev/kenn-forge" });
   await expect(exactRow).toBeVisible();
-  await expect(exactRow.getByRole("button", { name: "Local clone for roborev-dev/middleman" })).toHaveAttribute(
+  await expect(exactRow.getByRole("button", { name: "Local clone for roborev-dev/kenn-forge" })).toHaveAttribute(
     "title",
     `Local clone: ${localRepo}`,
   );
@@ -229,8 +229,8 @@ test("settings promotes a glob match to a persisted exact repo with a local clon
   expect(settings.repos).toContainEqual(
     expect.objectContaining({
       owner: "roborev-dev",
-      name: "middleman",
-      repo_path: "roborev-dev/middleman",
+      name: "kenn-forge",
+      repo_path: "roborev-dev/kenn-forge",
       is_glob: false,
       worktree_base_path: localRepo,
     }),
@@ -244,23 +244,23 @@ test("settings rolls back a promoted glob match when the local clone path is inv
   const globRow = page.locator(".repo-row", { hasText: "roborev-dev/*" });
   await globRow.getByRole("button", { name: "Promote glob repository roborev-dev/*" }).click();
   const dialog = page.getByRole("dialog", { name: "Promote wildcard repository" });
-  await expect(dialog.getByRole("radio", { name: /roborev-dev\/middleman/ })).toBeChecked();
+  await expect(dialog.getByRole("radio", { name: /roborev-dev\/kenn-forge/ })).toBeChecked();
 
   const addResponsePromise = page.waitForResponse(
     (response) => response.url().endsWith("/api/v1/repos/bulk") && response.request().method() === "POST",
   );
   const saveResponsePromise = page.waitForResponse(
     (response) =>
-      response.url().endsWith("/api/v1/repo/github/roborev-dev/middleman/worktree-base") &&
+      response.url().endsWith("/api/v1/repo/github/roborev-dev/kenn-forge/worktree-base") &&
       response.request().method() === "PUT",
   );
   const rollbackResponsePromise = page.waitForResponse(
     (response) =>
-      response.url().endsWith("/api/v1/repo/github/roborev-dev/middleman") && response.request().method() === "DELETE",
+      response.url().endsWith("/api/v1/repo/github/roborev-dev/kenn-forge") && response.request().method() === "DELETE",
   );
 
   await dialog
-    .getByLabel("Local clone path for roborev-dev/middleman", { exact: true })
+    .getByLabel("Local clone path for roborev-dev/kenn-forge", { exact: true })
     .fill("/missing/promoted/clone");
   await dialog.getByRole("button", { name: "Promote repository" }).click();
   const addResponse = await addResponsePromise;
@@ -285,7 +285,7 @@ test("settings rolls back a promoted glob match when the local clone path is inv
           is_glob: boolean;
         }>;
       };
-      return settings.repos.some((repo) => repo.owner === "roborev-dev" && repo.name === "middleman" && !repo.is_glob);
+      return settings.repos.some((repo) => repo.owner === "roborev-dev" && repo.name === "kenn-forge" && !repo.is_glob);
     })
     .toBe(false);
 });
@@ -551,12 +551,12 @@ test("repository import clears stale preview results after failed preview", asyn
   const dialog = page.getByRole("dialog", { name: "Add repositories" });
   await dialog.getByLabel("Repository pattern").fill("roborev-dev/*");
   await dialog.getByRole("button", { name: "Preview" }).click();
-  await expect(dialog.getByText("roborev-dev/middleman")).toBeVisible();
+  await expect(dialog.getByText("roborev-dev/kenn-forge")).toBeVisible();
 
   await dialog.getByLabel("Repository pattern").fill("bad-owner/[invalid");
   await dialog.getByRole("button", { name: "Preview" }).click();
   await expect(dialog.getByText(/invalid glob pattern|GitHub API error|glob syntax/)).toBeVisible();
-  await expect(dialog.getByText("roborev-dev/middleman")).toHaveCount(0);
+  await expect(dialog.getByText("roborev-dev/kenn-forge")).toHaveCount(0);
 });
 
 test("repository import ignores older preview responses", async ({ page }) => {
@@ -582,8 +582,8 @@ test("repository import ignores older preview responses", async ({ page }) => {
               provider: "github",
               platform_host: "github.com",
               owner: "roborev-dev",
-              name: "middleman",
-              repo_path: "roborev-dev/middleman",
+              name: "kenn-forge",
+              repo_path: "roborev-dev/kenn-forge",
               description: "Main dashboard",
               private: false,
               fork: false,
@@ -634,5 +634,5 @@ test("repository import ignores older preview responses", async ({ page }) => {
 
   firstPreviewRelease?.();
   await expect(dialog.getByText("roborev-dev/review-bot")).toBeVisible();
-  await expect(dialog.getByText("roborev-dev/middleman")).toHaveCount(0);
+  await expect(dialog.getByText("roborev-dev/kenn-forge")).toHaveCount(0);
 });

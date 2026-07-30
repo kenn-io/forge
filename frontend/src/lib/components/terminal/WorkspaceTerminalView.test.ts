@@ -1,18 +1,18 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import { createDiffStore } from "@middleman/ui/stores/diff";
+import { createDiffStore } from "@kenn-forge/ui/stores/diff";
 import {
   clearActiveTabbedPanelDrag,
   getPaneLayoutStore,
   resetPaneLayoutStoresForTest,
   sessionPaneKey,
   startTabbedPanelTabDrag,
-} from "@middleman/ui";
+} from "@kenn-forge/ui";
 import {
   consumeWorkspaceLaunch,
   queueWorkspaceLaunch,
   resetWorkspaceCreatePendingForTest,
-} from "@middleman/ui/stores/workspace-create-pending";
+} from "@kenn-forge/ui/stores/workspace-create-pending";
 import { STORES_KEY } from "../../../../../packages/ui/src/context.js";
 
 const mocks = vi.hoisted(() => ({
@@ -102,8 +102,8 @@ vi.mock("@xterm/addon-webgl", () => ({
 
 vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
 
-vi.mock("@middleman/ui", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@middleman/ui")>();
+vi.mock("@kenn-forge/ui", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@kenn-forge/ui")>();
   return {
     ...actual,
     getStores: () => ({
@@ -156,7 +156,7 @@ vi.mock("../../api/settings.js", () => ({
   updateSettings: mocks.mockUpdateSettings,
 }));
 
-vi.mock("@middleman/ui/stores/flash", () => ({
+vi.mock("@kenn-forge/ui/stores/flash", () => ({
   showFlash: mocks.showFlash,
 }));
 
@@ -234,7 +234,7 @@ const workspaceResponse = {
   item_number: 7,
   git_head_ref: "feature/session-exit",
   worktree_path: "/tmp/worktree",
-  tmux_session: "middleman-ws-1",
+  tmux_session: "kenn-forge-ws-1",
   status: "ready",
   enrichment_status: "fresh",
   created_at: "2026-04-29T00:00:00Z",
@@ -258,7 +258,7 @@ function serveAnyWorkspace(): void {
       const match = /\/workspaces\/([^/]+)$/.exec(pathname);
       if (match) {
         return Promise.resolve(
-          Response.json({ ...workspaceResponse, id: match[1], tmux_session: `middleman-${match[1]}` }),
+          Response.json({ ...workspaceResponse, id: match[1], tmux_session: `kenn-forge-${match[1]}` }),
         );
       }
       if (pathname.endsWith("/api/v1/workspaces")) {
@@ -530,7 +530,7 @@ describe("WorkspaceTerminalView", () => {
     resetSessionHostForTest();
     resetPaneLayoutStoresForTest();
     resetWorkspaceHostForTest();
-    localStorage.setItem("middleman-workspace-active-tab:ws-1", "session:ws-1:helper");
+    localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "session:ws-1:helper");
     sockets = [];
     resetWorkspaceCreatePendingForTest();
     mocks.diffStore = createDiffStore();
@@ -782,7 +782,7 @@ describe("WorkspaceTerminalView", () => {
 
     await waitFor(() => expect(screen.queryByRole("tab", { name: /Helper/ })).toBeNull());
     expect(screen.getByRole("tab", { name: /Home/ }).getAttribute("aria-selected")).toBe("true");
-    expect(localStorage.getItem("middleman-workspace-active-tab:ws-1")).toBe("home");
+    expect(localStorage.getItem("kenn-forge-workspace-active-tab:ws-1")).toBe("home");
   });
 
   it("starts the runtime request before workspace metadata resolves without fetching it twice", async () => {
@@ -824,7 +824,7 @@ describe("WorkspaceTerminalView", () => {
   });
 
   it("polls local workspace runtime so peer-spawned sessions appear", async () => {
-    localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+    localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
     const intervalCallbacks: Array<{ callback: () => void; delay: number | undefined }> = [];
     const setIntervalSpy = vi
       .spyOn(globalThis, "setInterval")
@@ -976,7 +976,7 @@ describe("WorkspaceTerminalView", () => {
   });
 
   it("polls remote workspace runtime so peer-spawned sessions appear", async () => {
-    localStorage.setItem("middleman-workspace-active-tab:fleet:member:ws-1", "home");
+    localStorage.setItem("kenn-forge-workspace-active-tab:fleet:member:ws-1", "home");
     const intervalCallbacks: Array<{ callback: () => void; delay: number | undefined }> = [];
     const setIntervalSpy = vi
       .spyOn(globalThis, "setInterval")
@@ -1014,8 +1014,8 @@ describe("WorkspaceTerminalView", () => {
   });
 
   it("persists remote terminal layout under the fleet-scoped workspace key", async () => {
-    localStorage.setItem("middleman-workspace-active-tab:fleet:member:ws-1", "home");
-    localStorage.removeItem("middleman-workspace-terminal-layout:ws-1");
+    localStorage.setItem("kenn-forge-workspace-active-tab:fleet:member:ws-1", "home");
+    localStorage.removeItem("kenn-forge-workspace-terminal-layout:ws-1");
     mocks.getWorkspaceRuntime.mockResolvedValue({ launch_targets: [], sessions: [] });
 
     render(WorkspaceTerminalView, {
@@ -1027,16 +1027,16 @@ describe("WorkspaceTerminalView", () => {
 
     await screen.findByRole("tab", { name: "Home" });
     await waitFor(() =>
-      expect(localStorage.getItem("middleman-workspace-terminal-layout:fleet:member:ws-1")).toContain(
+      expect(localStorage.getItem("kenn-forge-workspace-terminal-layout:fleet:member:ws-1")).toContain(
         '"workflowMode":"tabs"',
       ),
     );
-    expect(localStorage.getItem("middleman-workspace-terminal-layout:ws-1")).toBeNull();
+    expect(localStorage.getItem("kenn-forge-workspace-terminal-layout:ws-1")).toBeNull();
   });
 
   it("does not show remote runtime while same-id local workspace data is still cached", async () => {
-    localStorage.setItem("middleman-workspace-active-tab:ws-1", "session:ws-1:helper");
-    localStorage.setItem("middleman-workspace-active-tab:fleet:member:ws-1", "home");
+    localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "session:ws-1:helper");
+    localStorage.setItem("kenn-forge-workspace-active-tab:fleet:member:ws-1", "home");
     const remoteWorkspace = deferred<typeof workspaceResponse>();
     const eventListeners: Record<string, () => void> = {};
 
@@ -1166,8 +1166,8 @@ describe("WorkspaceTerminalView", () => {
 
   it("prewarms a selected fleet diff and reloads it when the remote watch advances", async () => {
     window.__BASE_PATH__ = window.location.origin;
-    localStorage.setItem("middleman-workspace-sidebar-open", "true");
-    localStorage.setItem("middleman-workspace-sidebar-tab", "diff");
+    localStorage.setItem("kenn-forge-workspace-sidebar-open", "true");
+    localStorage.setItem("kenn-forge-workspace-sidebar-tab", "diff");
     const changed = deferred<Response>();
     let watchCalls = 0;
     const fetchMock = vi.fn().mockImplementation((input: Request | URL | string) => {
@@ -1214,8 +1214,8 @@ describe("WorkspaceTerminalView", () => {
 
   it("retries a fleet diff watch while the workspace transitions from creating to ready", async () => {
     window.__BASE_PATH__ = window.location.origin;
-    localStorage.setItem("middleman-workspace-sidebar-open", "true");
-    localStorage.setItem("middleman-workspace-sidebar-tab", "diff");
+    localStorage.setItem("kenn-forge-workspace-sidebar-open", "true");
+    localStorage.setItem("kenn-forge-workspace-sidebar-tab", "diff");
     vi.spyOn(Math, "random").mockReturnValue(0);
     let watchCalls = 0;
     const fetchMock = vi.fn().mockImplementation((input: Request | URL | string) => {
@@ -1266,8 +1266,8 @@ describe("WorkspaceTerminalView", () => {
 
   it("removes the old sidebar and waits for matching runtime before loading the new diff", async () => {
     window.__BASE_PATH__ = window.location.origin;
-    localStorage.setItem("middleman-workspace-sidebar-open", "true");
-    localStorage.setItem("middleman-workspace-sidebar-tab", "diff");
+    localStorage.setItem("kenn-forge-workspace-sidebar-open", "true");
+    localStorage.setItem("kenn-forge-workspace-sidebar-tab", "diff");
     const workspaceB = { ...workspaceResponse, id: "ws-2", git_head_ref: "feature/two" };
     const workspaceBGate = deferred<typeof workspaceB>();
     const runtimeBGate = deferred<ReturnType<typeof runtimeWithStaleSession>>();
@@ -1340,8 +1340,8 @@ describe("WorkspaceTerminalView", () => {
 
   it("renders matching workspace details when runtime loading fails", async () => {
     window.__BASE_PATH__ = window.location.origin;
-    localStorage.setItem("middleman-workspace-sidebar-open", "true");
-    localStorage.setItem("middleman-workspace-sidebar-tab", "diff");
+    localStorage.setItem("kenn-forge-workspace-sidebar-open", "true");
+    localStorage.setItem("kenn-forge-workspace-sidebar-tab", "diff");
     const loadWorkspaceDiff = vi.spyOn(mocks.diffStore, "loadWorkspaceDiff").mockResolvedValue();
 
     vi.stubGlobal(
@@ -1412,7 +1412,7 @@ describe("WorkspaceTerminalView", () => {
   });
 
   it("does not overlap runtime polling while a slow fetch is in flight", async () => {
-    localStorage.setItem("middleman-workspace-active-tab:fleet:member:ws-1", "home");
+    localStorage.setItem("kenn-forge-workspace-active-tab:fleet:member:ws-1", "home");
     const intervalCallbacks: Array<{ callback: () => void; delay: number | undefined }> = [];
     const setIntervalSpy = vi
       .spyOn(globalThis, "setInterval")
@@ -1455,7 +1455,7 @@ describe("WorkspaceTerminalView", () => {
   });
 
   it("forces post-launch runtime refresh past an older in-flight poll", async () => {
-    localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+    localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
     const intervalCallbacks: Array<{ callback: () => void; delay: number | undefined }> = [];
     const setIntervalSpy = vi
       .spyOn(globalThis, "setInterval")
@@ -1506,9 +1506,9 @@ describe("WorkspaceTerminalView", () => {
   it("collapses a dock persisted open when no terminal session is left in it", async () => {
     // The last docked session exiting leaves open=true behind; an open dock with
     // nothing in it is a saved-height hole in the stage.
-    localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+    localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
     localStorage.setItem(
-      "middleman-workspace-terminal-layout:ws-1",
+      "kenn-forge-workspace-terminal-layout:ws-1",
       JSON.stringify({
         version: 1,
         open: true,
@@ -1592,7 +1592,7 @@ describe("WorkspaceTerminalView", () => {
   });
 
   it("restores a selected workflow tab without keeping the tiled grid view", async () => {
-    localStorage.setItem("middleman-workspace-terminal-layout:ws-1", persistedTerminalLayout("grid"));
+    localStorage.setItem("kenn-forge-workspace-terminal-layout:ws-1", persistedTerminalLayout("grid"));
 
     const { container } = render(WorkspaceTerminalView, {
       props: {
@@ -1609,7 +1609,7 @@ describe("WorkspaceTerminalView", () => {
   });
 
   it("drops a restored legacy Shell tab after runtime tabs are normalized", async () => {
-    localStorage.setItem("middleman-workspace-active-tab:ws-1", "shell");
+    localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "shell");
 
     render(WorkspaceTerminalView, {
       props: {
@@ -1625,7 +1625,7 @@ describe("WorkspaceTerminalView", () => {
   });
 
   it("closes a terminal-panel shell when its terminal exits", async () => {
-    localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+    localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTerminalSession());
 
     render(WorkspaceTerminalView, {
@@ -1654,7 +1654,7 @@ describe("WorkspaceTerminalView", () => {
   });
 
   it("uses an in-app modal when stopping a running shell", async () => {
-    localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+    localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoTerminalSessions());
     const confirm = vi.fn();
     vi.stubGlobal("confirm", confirm);
@@ -1801,7 +1801,7 @@ describe("WorkspaceTerminalView", () => {
   });
 
   it("does not reopen the just-exited terminal from stale runtime data", async () => {
-    localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+    localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTerminalSession());
 
     render(WorkspaceTerminalView, {
@@ -1826,7 +1826,7 @@ describe("WorkspaceTerminalView", () => {
   });
 
   it("reconnects terminal panes when selecting another shell", async () => {
-    localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+    localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoTerminalSessions());
 
     render(WorkspaceTerminalView, {
@@ -1847,7 +1847,7 @@ describe("WorkspaceTerminalView", () => {
   });
 
   it("renders a split terminal immediately after launching its session", async () => {
-    localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+    localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTerminalSession());
     mocks.launchWorkspaceSession.mockResolvedValue({
       ...relaunchedShellSession,
@@ -1873,7 +1873,7 @@ describe("WorkspaceTerminalView", () => {
   });
 
   it("keeps a split terminal when an older runtime poll resolves", async () => {
-    localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+    localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
     const intervalCallbacks: Array<{ callback: () => void; delay: number | undefined }> = [];
     vi.spyOn(globalThis, "setInterval").mockImplementation((callback: TimerHandler, delay?: number) => {
       intervalCallbacks.push({ callback: callback as () => void, delay });
@@ -1918,7 +1918,7 @@ describe("WorkspaceTerminalView", () => {
   });
 
   it("shows newly discovered terminal sessions without auto-splitting them", async () => {
-    localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+    localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
     const intervalCallbacks: Array<{ callback: () => void; delay: number | undefined }> = [];
     const setIntervalSpy = vi
       .spyOn(globalThis, "setInterval")
@@ -1960,7 +1960,7 @@ describe("WorkspaceTerminalView", () => {
   });
 
   it("ignores older runtime responses after terminal cleanup refreshes", async () => {
-    localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+    localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
     const initialRuntime = deferred<ReturnType<typeof runtimeWithTerminalSession>>();
     const staleRefresh = deferred<ReturnType<typeof runtimeWithTerminalSession>>();
     const freshRefresh = deferred<ReturnType<typeof runtimeWithTerminalSession>>();
@@ -2003,7 +2003,7 @@ describe("WorkspaceTerminalView", () => {
   });
 
   it("moves a workflow shell back into the terminal panel", async () => {
-    localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+    localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoTerminalSessions());
 
     render(WorkspaceTerminalView, {
@@ -2029,7 +2029,7 @@ describe("WorkspaceTerminalView", () => {
   });
 
   it("keeps one live terminal while a shell moves between the terminal panel and the workflow area", async () => {
-    localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+    localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoTerminalSessions());
 
     render(WorkspaceTerminalView, {
@@ -2060,7 +2060,7 @@ describe("WorkspaceTerminalView", () => {
   });
 
   it("hands a docked terminal back when the terminal panel closes", async () => {
-    localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+    localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoTerminalSessions());
 
     render(WorkspaceTerminalView, {
@@ -2104,7 +2104,7 @@ describe("WorkspaceTerminalView", () => {
   });
 
   it("disables middle-pane workspace controls while the selected workspace is deleting", async () => {
-    localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+    localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoTerminalSessions());
     const deleteRequest = deferred<Response>();
     const otherDeleteRequest = deferred<Response>();
@@ -2229,7 +2229,7 @@ describe("WorkspaceTerminalView", () => {
   it("issues no delete until the confirmation is accepted, and none on cancel", async () => {
     // Delete removes a worktree whose unpushed commits go with it, from a
     // one-click strip button — so every entry point confirms first.
-    localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+    localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
     const fetchMock = vi.fn().mockImplementation((input: Request | URL | string) => {
       const pathname = fetchPath(input);
       if (pathname.endsWith("/workspaces/ws-1")) {
@@ -2262,7 +2262,7 @@ describe("WorkspaceTerminalView", () => {
   });
 
   it("drops a failed delete response after unmounting and remounting the workspace", async () => {
-    localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+    localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
     const deleteRequest = deferred<Response>();
     const fetchMock = vi.fn().mockImplementation((input: Request | URL | string, init?: RequestInit) => {
       const url = input instanceof Request ? input.url : String(input);
@@ -2309,7 +2309,7 @@ describe("WorkspaceTerminalView", () => {
   });
 
   it("reports a successful delete even after switching to another workspace", async () => {
-    localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+    localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
     const deleteRequest = deferred<Response>();
     const otherWorkspaceResponse = {
       ...workspaceResponse,
@@ -2382,7 +2382,7 @@ describe("WorkspaceTerminalView", () => {
   });
 
   it("reports a successful force delete even after switching to another workspace", async () => {
-    localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+    localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
     const forceDeleteRequest = deferred<Response>();
     const otherWorkspaceResponse = {
       ...workspaceResponse,
@@ -2643,9 +2643,9 @@ describe("WorkspaceTerminalView", () => {
   });
 
   it("publishes the session the pane is showing, so a keyboard command can promote it", async () => {
-    localStorage.setItem("middleman-workspace-active-tab:ws-1", "session:ws-1:helper");
+    localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "session:ws-1:helper");
     localStorage.setItem(
-      "middleman-workspace-terminal-layout:ws-1",
+      "kenn-forge-workspace-terminal-layout:ws-1",
       persistedTwoSessionWorkflowLayout("ws-1:helper", "ws-1:reviewer"),
     );
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoWorkflowSessions());
@@ -2743,7 +2743,7 @@ describe("WorkspaceTerminalView", () => {
 
   it("keeps the workflow strip for two embedded sessions", async () => {
     localStorage.setItem(
-      "middleman-workspace-terminal-layout:ws-1",
+      "kenn-forge-workspace-terminal-layout:ws-1",
       persistedTwoSessionWorkflowLayout("ws-1:helper", "ws-1:reviewer"),
     );
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoWorkflowSessions());
@@ -2794,7 +2794,7 @@ describe("WorkspaceTerminalView", () => {
 
   it("leaves session and workspace actions to the chrome that already owns them", async () => {
     localStorage.setItem(
-      "middleman-workspace-terminal-layout:ws-1",
+      "kenn-forge-workspace-terminal-layout:ws-1",
       persistedTwoSessionWorkflowLayout("ws-1:helper", "ws-1:reviewer"),
     );
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoWorkflowSessions());
@@ -2956,7 +2956,7 @@ describe("WorkspaceTerminalView", () => {
             Response.json({
               ...workspaceResponse,
               status: "error",
-              error_message: "tmux session is no longer running: middleman-ws-1",
+              error_message: "tmux session is no longer running: kenn-forge-ws-1",
             }),
           );
         }
@@ -3015,7 +3015,7 @@ describe("WorkspaceTerminalView", () => {
     // the standalone tab, which is the only place presets are offered.
     serveAnyWorkspace();
     localStorage.setItem(
-      "middleman-workspace-layout-presets",
+      "kenn-forge-workspace-layout-presets",
       JSON.stringify([
         {
           id: "preset-1",
@@ -3125,7 +3125,7 @@ describe("WorkspaceTerminalView", () => {
 
   describe("launcher overlay", () => {
     it("drops the Home tab in a pane and opens the launcher when nothing is running", async () => {
-      localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+      localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
       mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
       claimForPrs();
 
@@ -3158,7 +3158,7 @@ describe("WorkspaceTerminalView", () => {
               Response.json({
                 ...workspaceResponse,
                 status: "error",
-                error_message: "tmux session is no longer running: middleman-ws-1",
+                error_message: "tmux session is no longer running: kenn-forge-ws-1",
               }),
             );
           }
@@ -3232,7 +3232,7 @@ describe("WorkspaceTerminalView", () => {
               Response.json({
                 ...workspaceResponse,
                 status,
-                error_message: status === "error" ? "tmux session is no longer running: middleman-ws-1" : null,
+                error_message: status === "error" ? "tmux session is no longer running: kenn-forge-ws-1" : null,
               }),
             );
           }
@@ -3260,9 +3260,9 @@ describe("WorkspaceTerminalView", () => {
     });
 
     it("leaves a docked terminal alone instead of covering it with the launcher", async () => {
-      localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+      localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
       localStorage.setItem(
-        "middleman-workspace-terminal-layout:ws-1",
+        "kenn-forge-workspace-terminal-layout:ws-1",
         persistedSplitWorkflowLayout("ws-1_shell_a", "terminal"),
       );
       mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTerminalSession());
@@ -3282,7 +3282,7 @@ describe("WorkspaceTerminalView", () => {
     });
 
     it("keeps the Home tab on the standalone Workspaces tab", async () => {
-      localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+      localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
       mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
 
       render(WorkspaceTerminalView, {
@@ -3297,8 +3297,8 @@ describe("WorkspaceTerminalView", () => {
     });
 
     it("leaves a running workspace's sessions on screen instead of the launcher", async () => {
-      localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
-      localStorage.setItem("middleman-workspace-terminal-layout:ws-1", persistedSplitWorkflowLayout("ws-1:helper"));
+      localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
+      localStorage.setItem("kenn-forge-workspace-terminal-layout:ws-1", persistedSplitWorkflowLayout("ws-1:helper"));
       claimForPrs();
 
       render(WorkspaceTerminalView, {
@@ -3500,9 +3500,9 @@ describe("WorkspaceTerminalView", () => {
   });
 
   it("publishes the dock's session while the dock is open", async () => {
-    localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+    localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
     localStorage.setItem(
-      "middleman-workspace-terminal-layout:ws-1",
+      "kenn-forge-workspace-terminal-layout:ws-1",
       persistedSplitWorkflowLayout("ws-1_shell_a", "terminal"),
     );
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTerminalSession());
@@ -3521,9 +3521,9 @@ describe("WorkspaceTerminalView", () => {
   });
 
   it("shows a sole session whose dock was collapsed, and treats it as current", async () => {
-    localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+    localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
     localStorage.setItem(
-      "middleman-workspace-terminal-layout:ws-1",
+      "kenn-forge-workspace-terminal-layout:ws-1",
       JSON.stringify({
         ...JSON.parse(persistedSplitWorkflowLayout("ws-1_shell_a", "terminal")),
         open: false,
@@ -3557,9 +3557,9 @@ describe("WorkspaceTerminalView", () => {
     // TWO sessions on purpose. With one, the pane renders it through the sole-session
     // path, which goes nowhere near the workflow tree - so a single session would pass
     // this whether the mounting effect exists or not.
-    localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+    localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
     localStorage.setItem(
-      "middleman-workspace-terminal-layout:ws-1",
+      "kenn-forge-workspace-terminal-layout:ws-1",
       JSON.stringify({
         version: 1,
         open: false,
@@ -3606,9 +3606,9 @@ describe("WorkspaceTerminalView", () => {
   });
 
   it("publishes a collapsed dock's session without making it current", async () => {
-    localStorage.setItem("middleman-workspace-active-tab:ws-1", "session:ws-1:helper");
+    localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "session:ws-1:helper");
     localStorage.setItem(
-      "middleman-workspace-terminal-layout:ws-1",
+      "kenn-forge-workspace-terminal-layout:ws-1",
       JSON.stringify({
         version: 1,
         open: false,
@@ -3645,7 +3645,7 @@ describe("WorkspaceTerminalView", () => {
   describe("promoted sessions", () => {
     it("gives a parked row-only dock the sole workspace actions and live dialogs", async () => {
       localStorage.setItem(
-        "middleman-workspace-terminal-layout:ws-1",
+        "kenn-forge-workspace-terminal-layout:ws-1",
         JSON.stringify({
           version: 1,
           open: true,
@@ -3714,9 +3714,9 @@ describe("WorkspaceTerminalView", () => {
     });
 
     it("masks a promoted session out of the workflow strip and gives back its placement on demote", async () => {
-      localStorage.setItem("middleman-workspace-active-tab:ws-1", "session:ws-1:reviewer");
+      localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "session:ws-1:reviewer");
       localStorage.setItem(
-        "middleman-workspace-terminal-layout:ws-1",
+        "kenn-forge-workspace-terminal-layout:ws-1",
         persistedTwoSessionWorkflowLayout("ws-1:reviewer", "ws-1:helper"),
       );
       mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoWorkflowSessions());
@@ -3744,8 +3744,8 @@ describe("WorkspaceTerminalView", () => {
     });
 
     it("keeps a promoted session's terminal live without a tab of its own", async () => {
-      localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
-      localStorage.setItem("middleman-workspace-terminal-layout:ws-1", persistedSplitWorkflowLayout("ws-1:helper"));
+      localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
+      localStorage.setItem("kenn-forge-workspace-terminal-layout:ws-1", persistedSplitWorkflowLayout("ws-1:helper"));
       promoteSession("prs", "ws-1:helper");
 
       render(WorkspaceTerminalView, {
@@ -3763,9 +3763,9 @@ describe("WorkspaceTerminalView", () => {
     });
 
     it("masks a promoted session out of the terminal dock too", async () => {
-      localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+      localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
       localStorage.setItem(
-        "middleman-workspace-terminal-layout:ws-1",
+        "kenn-forge-workspace-terminal-layout:ws-1",
         persistedSplitWorkflowLayout("ws-1_shell_a", "terminal"),
       );
       mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTerminalSession());
@@ -3796,9 +3796,9 @@ describe("WorkspaceTerminalView", () => {
     });
 
     it("promotes a docked session from its own control", async () => {
-      localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+      localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
       localStorage.setItem(
-        "middleman-workspace-terminal-layout:ws-1",
+        "kenn-forge-workspace-terminal-layout:ws-1",
         persistedSplitWorkflowLayout("ws-1_shell_a", "terminal"),
       );
       // Two, because the per-session header carrying this control only renders
@@ -3830,9 +3830,9 @@ describe("WorkspaceTerminalView", () => {
     });
 
     it("keeps the only docked session available to pane commands without dock chrome", async () => {
-      localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+      localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
       localStorage.setItem(
-        "middleman-workspace-terminal-layout:ws-1",
+        "kenn-forge-workspace-terminal-layout:ws-1",
         persistedSplitWorkflowLayout("ws-1_shell_a", "terminal"),
       );
       mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTerminalSession());
@@ -3859,9 +3859,9 @@ describe("WorkspaceTerminalView", () => {
     });
 
     it("offers no promote control on the standalone Workspaces tab", async () => {
-      localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
+      localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
       localStorage.setItem(
-        "middleman-workspace-terminal-layout:ws-1",
+        "kenn-forge-workspace-terminal-layout:ws-1",
         persistedSplitWorkflowLayout("ws-1_shell_a", "terminal"),
       );
       mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoTerminalSessions());
@@ -3880,8 +3880,8 @@ describe("WorkspaceTerminalView", () => {
     });
 
     it("masks nothing on the standalone Workspaces tab, which has no detail panes", async () => {
-      localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
-      localStorage.setItem("middleman-workspace-terminal-layout:ws-1", persistedSplitWorkflowLayout("ws-1:helper"));
+      localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
+      localStorage.setItem("kenn-forge-workspace-terminal-layout:ws-1", persistedSplitWorkflowLayout("ws-1:helper"));
       promoteSession("prs", "ws-1:helper");
 
       render(WorkspaceTerminalView, {
@@ -3896,9 +3896,9 @@ describe("WorkspaceTerminalView", () => {
     });
   });
   it("demotes a promoted session dropped back on the workflow strip", async () => {
-    localStorage.setItem("middleman-workspace-active-tab:ws-1", "session:ws-1:reviewer");
+    localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "session:ws-1:reviewer");
     localStorage.setItem(
-      "middleman-workspace-terminal-layout:ws-1",
+      "kenn-forge-workspace-terminal-layout:ws-1",
       persistedTwoSessionWorkflowLayout("ws-1:reviewer", "ws-1:helper"),
     );
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoWorkflowSessions());
@@ -3958,7 +3958,7 @@ describe("WorkspaceTerminalView", () => {
       "ws-1:helper": "workflow",
       "ws-1_shell_a": "terminal",
     };
-    localStorage.setItem("middleman-workspace-terminal-layout:ws-1", JSON.stringify(persisted));
+    localStorage.setItem("kenn-forge-workspace-terminal-layout:ws-1", JSON.stringify(persisted));
     mocks.getWorkspaceRuntime.mockResolvedValue({
       launch_targets: [],
       sessions: [reviewerSession, runningSession, runningShellSession],
@@ -4009,9 +4009,9 @@ describe("WorkspaceTerminalView", () => {
   });
 
   it("refuses a session pane dropped from another workspace", async () => {
-    localStorage.setItem("middleman-workspace-active-tab:ws-1", "session:ws-1:reviewer");
+    localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "session:ws-1:reviewer");
     localStorage.setItem(
-      "middleman-workspace-terminal-layout:ws-1",
+      "kenn-forge-workspace-terminal-layout:ws-1",
       persistedTwoSessionWorkflowLayout("ws-1:reviewer", "ws-1:helper"),
     );
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoWorkflowSessions());

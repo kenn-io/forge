@@ -1,7 +1,7 @@
 <script lang="ts">
   import ELK, { type ElkNode } from "elkjs/lib/elk.bundled.js";
   import ArrowLeftIcon from "@lucide/svelte/icons/arrow-left";
-  import { FilterDropdown } from "@middleman/ui";
+  import { FilterDropdown } from "@kenn-forge/ui";
   import {
     Background,
     BackgroundVariant,
@@ -72,7 +72,7 @@
     onSelectIssue,
   }: Props = $props();
 
-  const graphPreferencesStorageKey = "middleman:kata:reachableGraphPreferences/v1";
+  const graphPreferencesStorageKey = "kenn-forge:kata:reachableGraphPreferences/v1";
   const defaultGraphPreferences: KataGraphPreferences = {
     contextDepth: "all",
     depthLimit: "full",

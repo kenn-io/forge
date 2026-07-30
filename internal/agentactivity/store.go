@@ -25,7 +25,7 @@ const (
 	StateDone     State = "done"
 )
 
-const RuntimeSessionKeyEnv = "MIDDLEMAN_RUNTIME_SESSION_KEY"
+const RuntimeSessionKeyEnv = "KENN_FORGE_RUNTIME_SESSION_KEY"
 
 // ReportFreshness bounds how long a hook state can override tmux activity
 // without another lifecycle event confirming it.

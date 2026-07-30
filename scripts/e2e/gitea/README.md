@@ -5,7 +5,7 @@ This opt-in fixture starts a real Gitea instance on loopback, runs an idempotent
 Run:
 
 ```sh
-MIDDLEMAN_GITEA_CONTAINER_TESTS=1 go test ./internal/server -run TestGiteaContainerSync -shuffle=on
+KENN_FORGE_GITEA_CONTAINER_TESTS=1 go test ./internal/server -run TestGiteaContainerSync -shuffle=on
 ```
 
 The manifest emitted by `bootstrap.sh` includes both `base_url` and `api_url`. The provider test intentionally configures the SDK with `base_url`; `api_url` is only for script/API diagnostics.

@@ -44,7 +44,7 @@ provider safely; providers with no credential chain of their own do not veto
 the fallback, and runtime route resolution must honor the disabled state
 instead of falling through to another provider's unscoped route
 (`internal/config/config.go::Config.CloneTokenDescriptors`,
-`cmd/middleman/provider_startup.go::providerStartup.FallbackSource`).
+`cmd/kenn-forge/provider_startup.go::providerStartup.FallbackSource`).
 Non-GitHub repositories on one (provider, host) must declare equivalent
 effective chains, checked against each repository's own descriptor —
 `ProviderTokenSources` deduplicates by key and would hide the conflict
@@ -68,7 +68,7 @@ authorization routes may be exact-repository, owner, or host fallback. Lookup
 checks repo `token_file`, repo `token_env`, a covered App installation for
 reads, owner PAT, platform token, public-host default, then GitHub CLI. GitLab
 `gitlab.com` has no implicit default env var. Forgejo `codeberg.org` uses
-`MIDDLEMAN_FORGEJO_TOKEN`, and Gitea `gitea.com` uses `MIDDLEMAN_GITEA_TOKEN`.
+`KENN_FORGE_FORGEJO_TOKEN`, and Gitea `gitea.com` uses `KENN_FORGE_GITEA_TOKEN`.
 Token files are read lazily so atomic replacement rotates credentials without
 rebuilding provider clients. Route descriptors and auth transports stay keyed
 by full route, while GitHub App installation-token caches are shared by
@@ -98,7 +98,7 @@ review suggestion application, or ready-for-review.
 
 ## Sync Capabilities
 
-Middleman reads repositories, merge requests, issues, releases, tags, CI, and
+Kenn Forge reads repositories, merge requests, issues, releases, tags, CI, and
 timeline/comment-like events through provider capability interfaces in
 `internal/platform`. Providers implement only supported optional interfaces;
 registry helpers return typed errors for missing providers or capabilities.
@@ -148,7 +148,7 @@ registry helpers return typed errors for missing providers or capabilities.
   (`internal/server/detail_sync.go::enqueueDetailSyncOrRerun`).
 - Unexpected or ambiguous mutation outcomes trigger an immediate best-effort
   authoritative detail refresh; ordinary periodic sync is the eventual recovery
-  path if that refresh fails or still observes stale provider state. Middleman
+  path if that refresh fails or still observes stale provider state. Kenn Forge
   must not persist a local mutation fence that can indefinitely block future
   actions. Provider snapshots use ordinary timestamp ordering, and expected-head
   binding remains the mutation integrity boundary.
@@ -213,7 +213,7 @@ registry helpers return typed errors for missing providers or capabilities.
 - Archive admission is provider-host scoped. Normal index, notification, and active-detail work outrank archive requests; live work registers first, cancels the active archive request context, and waits for that request lease to release before provider I/O. Archive leases are released before SQLite commits. Register repo index and item detail work inside their shared execution functions so periodic, watched, manual, API, and item-number entry points cannot bypass admission. (`internal/github/sync.go::beginProviderWork`, `internal/github/sync.go::tryBeginArchiveProviderRequest`, `internal/github/sync.go::Admit`, `internal/archive/scheduler.go::admit`)
 - Archive admission requires the declared minimum cost and normally bounds wire attempts above the live floor. Gitealike merge-request reads remain preemptible but may exceed the estimate to complete their atomic dataset. (`internal/github/budget.go::LocalArchiveSpendAvailable`,
   `internal/archive/scheduler.go::archiveFeatureReadAttemptCost`, `internal/github/sync.go::Admit`)
-- Detailed reports use schema `middleman-archive-report/1` and half-open UTC windows. They expose opened items, current close/merge lifecycle projections, comments, reviews, and inline comments; a reopened issue has no close row. Issue close actors must match the current `closed_at`; merge metrics come from the normalized merge-request row. Daemon CLI JSON must reject any other schema before conversion and round-trip every recognized report kind and field. (`internal/db/queries_archive_report.go::archiveReportActivityQuery`, `cmd/middleman/archive_cli.go::archiveReportFromAPI`)
+- Detailed reports use schema `kenn-forge-archive-report/1` and half-open UTC windows. They expose opened items, current close/merge lifecycle projections, comments, reviews, and inline comments; a reopened issue has no close row. Issue close actors must match the current `closed_at`; merge metrics come from the normalized merge-request row. Daemon CLI JSON must reject any other schema before conversion and round-trip every recognized report kind and field. (`internal/db/queries_archive_report.go::archiveReportActivityQuery`, `cmd/kenn-forge/archive_cli.go::archiveReportFromAPI`)
 
 ## Label Catalogs And Mutations
 
@@ -253,7 +253,7 @@ grouping rather than flattening it into Notes
 `internal/platform/gitlab/normalize.go::NormalizeMergeRequestDiscussions`).
 
 GitLab API calls address projects by numeric id or URL-escaped path with
-slashes. Middleman should prefer the stored provider id after resolution and
+slashes. Kenn Forge should prefer the stored provider id after resolution and
 preserve `path_with_namespace` as `repo_path`.
 
 GitLab private Markdown upload web URLs do not accept API-token authentication.
@@ -277,7 +277,7 @@ GitLab merge reports use `merge_commit_sha`, falling back to `squash_commit_sha`
 ## Forgejo And Gitea Shape
 
 Forgejo and Gitea use owner/name repository addressing in the REST and SDK
-surfaces. Middleman should still persist provider repo IDs and external object
+surfaces. Kenn Forge should still persist provider repo IDs and external object
 IDs when available, but route and config identity should remain
 `(provider, host, owner, name)` with optional `repo_path` for canonical display.
 

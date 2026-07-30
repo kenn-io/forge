@@ -14,14 +14,14 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 	gh "github.com/google/go-github/v89/github"
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/gitclone"
-	ghclient "go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/platform"
-	"go.kenn.io/middleman/internal/ratelimit"
-	"go.kenn.io/middleman/internal/server/httpapi"
-	"go.kenn.io/middleman/internal/server/issueapi"
-	"go.kenn.io/middleman/internal/server/pullapi"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/gitclone"
+	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/platform"
+	"go.kenn.io/forge/internal/ratelimit"
+	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/server/issueapi"
+	"go.kenn.io/forge/internal/server/pullapi"
 )
 
 type repoNumberInput struct {
@@ -161,7 +161,7 @@ type notificationBulkOutput struct {
 }
 
 func apiConfig(basePath string) huma.Config {
-	config := huma.DefaultConfig("middleman API", "0.1.0")
+	config := huma.DefaultConfig("kenn-forge API", "0.1.0")
 	config.OpenAPIPath = "/openapi"
 	config.DocsPath = "/docs"
 	config.SchemasPath = "/schemas"

@@ -28,7 +28,7 @@ go test ./path/to/pkg -shuffle=on -json > /tmp/pkg-tests.json
 jq -r 'select(.Action=="pass" and .Test != null and .Elapsed != null) | [.Elapsed, .Test] | @tsv' /tmp/pkg-tests.json | sort -nr | head -60
 ```
 
-Follow repository test rules first. In middleman, always pass `-shuffle=on` for direct `go test`, do not add `-count=1`, and do not use `-v` unless needed for a specific failure.
+Follow repository test rules first. In kenn-forge, always pass `-shuffle=on` for direct `go test`, do not add `-count=1`, and do not use `-v` unless needed for a specific failure.
 
 ## Trace Workflow
 

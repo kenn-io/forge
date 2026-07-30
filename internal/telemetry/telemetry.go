@@ -16,12 +16,12 @@ import (
 	"time"
 
 	"github.com/posthog/posthog-go"
-	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/forge/internal/db"
 )
 
 const (
 	EnabledEnv           = "TELEMETRY_ENABLED"
-	applicationSlug      = "middleman"
+	applicationSlug      = "kenn-forge"
 	installIDMetadataKey = "telemetry.install_id"
 	postHogAPIKey        = "phc_AzHd9YvuHR7M5poKzC6eW654d3SgKyBdoQPuwkWhimUf"
 	postHogEndpoint      = "https://us.i.posthog.com"

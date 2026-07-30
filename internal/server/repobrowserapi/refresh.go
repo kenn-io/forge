@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"go.kenn.io/middleman/internal/config"
-	"go.kenn.io/middleman/internal/gitclone"
+	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/gitclone"
 )
 
 const defaultRepoBrowserRefreshInterval = 5 * time.Minute

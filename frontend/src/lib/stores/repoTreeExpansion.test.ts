@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 
 import { createRepoTreeExpansionStore } from "./repoTreeExpansion.svelte.js";
 
-const KEY = "middleman:repoTreeCollapsed";
+const KEY = "kenn-forge:repoTreeCollapsed";
 
 beforeEach(() => {
   localStorage.clear();

@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
-import * as flash from "@middleman/ui/stores/flash";
+import * as flash from "@kenn-forge/ui/stores/flash";
 import AddFolderDialog from "./AddFolderDialog.svelte";
 import type { DocsAPI } from "../../api/docs/api";
 import { createMockDocsBackend } from "./docsTestBackend";

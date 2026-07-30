@@ -48,7 +48,7 @@ func parseNullableTime(v sql.NullString) (*time.Time, error) {
 func (d *DB) GetOrCreateMRReviewDraft(ctx context.Context, mrID int64) (*MRReviewDraft, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 	if _, err := d.rw.ExecContext(ctx, `
-		INSERT INTO middleman_mr_review_drafts (merge_request_id, created_at, updated_at)
+		INSERT INTO forge_mr_review_drafts (merge_request_id, created_at, updated_at)
 		VALUES (?, ?, ?)
 		ON CONFLICT(merge_request_id) DO NOTHING`,
 		mrID, now, now,
@@ -63,7 +63,7 @@ func (d *DB) GetMRReviewDraft(ctx context.Context, mrID int64) (*MRReviewDraft, 
 	var createdAt, updatedAt string
 	err := d.ro.QueryRowContext(ctx, `
 		SELECT id, merge_request_id, body, action, created_at, updated_at
-		FROM middleman_mr_review_drafts
+		FROM forge_mr_review_drafts
 		WHERE merge_request_id = ?`,
 		mrID,
 	).Scan(&draft.ID, &draft.MergeRequestID, &draft.Body, &draft.Action, &createdAt, &updatedAt)
@@ -95,7 +95,7 @@ func (d *DB) ListMRReviewDraftComments(ctx context.Context, draftID int64) ([]MR
 		SELECT id, draft_id, body, path, old_path, side, start_side, start_line,
 			line, old_line, new_line, line_type, diff_head_sha, commit_sha,
 			created_at, updated_at
-		FROM middleman_mr_review_draft_comments
+		FROM forge_mr_review_draft_comments
 		WHERE draft_id = ?
 		ORDER BY id`,
 		draftID,
@@ -126,7 +126,7 @@ func (d *DB) CreateMRReviewDraftComment(
 ) (*MRReviewDraftComment, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 	res, err := d.rw.ExecContext(ctx, `
-		INSERT INTO middleman_mr_review_draft_comments (
+		INSERT INTO forge_mr_review_draft_comments (
 			draft_id, body, path, old_path, side, start_side, start_line,
 			line, old_line, new_line, line_type, diff_head_sha, commit_sha,
 			created_at, updated_at
@@ -145,7 +145,7 @@ func (d *DB) CreateMRReviewDraftComment(
 		return nil, fmt.Errorf("get mr review draft comment id: %w", err)
 	}
 	if _, err := d.rw.ExecContext(ctx,
-		`UPDATE middleman_mr_review_drafts SET updated_at = ? WHERE id = ?`,
+		`UPDATE forge_mr_review_drafts SET updated_at = ? WHERE id = ?`,
 		now, draftID,
 	); err != nil {
 		return nil, fmt.Errorf("touch mr review draft: %w", err)
@@ -160,7 +160,7 @@ func (d *DB) UpdateMRReviewDraftComment(
 ) (*MRReviewDraftComment, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 	res, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_mr_review_draft_comments
+		UPDATE forge_mr_review_draft_comments
 		SET body = ?, path = ?, old_path = ?, side = ?, start_side = ?,
 			start_line = ?, line = ?, old_line = ?, new_line = ?,
 			line_type = ?, diff_head_sha = ?, commit_sha = ?, updated_at = ?
@@ -180,7 +180,7 @@ func (d *DB) UpdateMRReviewDraftComment(
 		return nil, sql.ErrNoRows
 	}
 	if _, err := d.rw.ExecContext(ctx,
-		`UPDATE middleman_mr_review_drafts SET updated_at = ? WHERE id = ?`,
+		`UPDATE forge_mr_review_drafts SET updated_at = ? WHERE id = ?`,
 		now, draftID,
 	); err != nil {
 		return nil, fmt.Errorf("touch mr review draft: %w", err)
@@ -190,7 +190,7 @@ func (d *DB) UpdateMRReviewDraftComment(
 
 func (d *DB) DeleteMRReviewDraftComment(ctx context.Context, draftID, commentID int64) error {
 	res, err := d.rw.ExecContext(ctx,
-		`DELETE FROM middleman_mr_review_draft_comments WHERE draft_id = ? AND id = ?`,
+		`DELETE FROM forge_mr_review_draft_comments WHERE draft_id = ? AND id = ?`,
 		draftID, commentID,
 	)
 	if err != nil {
@@ -203,7 +203,7 @@ func (d *DB) DeleteMRReviewDraftComment(ctx context.Context, draftID, commentID 
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	if _, err := d.rw.ExecContext(ctx,
-		`UPDATE middleman_mr_review_drafts SET updated_at = ? WHERE id = ?`,
+		`UPDATE forge_mr_review_drafts SET updated_at = ? WHERE id = ?`,
 		now, draftID,
 	); err != nil {
 		return fmt.Errorf("touch mr review draft: %w", err)
@@ -213,7 +213,7 @@ func (d *DB) DeleteMRReviewDraftComment(ctx context.Context, draftID, commentID 
 
 func (d *DB) DeleteMRReviewDraft(ctx context.Context, mrID int64) error {
 	if _, err := d.rw.ExecContext(ctx,
-		`DELETE FROM middleman_mr_review_drafts WHERE merge_request_id = ?`,
+		`DELETE FROM forge_mr_review_drafts WHERE merge_request_id = ?`,
 		mrID,
 	); err != nil {
 		return fmt.Errorf("delete mr review draft: %w", err)
@@ -226,7 +226,7 @@ func (d *DB) getMRReviewDraftComment(ctx context.Context, draftID, commentID int
 		SELECT id, draft_id, body, path, old_path, side, start_side, start_line,
 			line, old_line, new_line, line_type, diff_head_sha, commit_sha,
 			created_at, updated_at
-		FROM middleman_mr_review_draft_comments
+		FROM forge_mr_review_draft_comments
 		WHERE draft_id = ? AND id = ?`,
 		draftID, commentID,
 	)
@@ -294,7 +294,7 @@ func upsertMRReviewThreadsTx(
 		}
 		resolvedAt := nullableReviewTime(thread.ResolvedAt)
 		if _, err := tx.ExecContext(ctx, `
-				INSERT INTO middleman_mr_review_threads (
+				INSERT INTO forge_mr_review_threads (
 					merge_request_id, provider_thread_id, provider_review_id,
 					provider_comment_id, path, old_path, side, start_side,
 					start_line, line, old_line, new_line, line_type,
@@ -361,9 +361,9 @@ func deleteMissingMRReviewThreadsTx(
 	providerThreadIDs []string,
 	reviewCommentDedupeKeys []string,
 ) error {
-	threadQuery := `DELETE FROM middleman_mr_review_threads WHERE merge_request_id = ?`
+	threadQuery := `DELETE FROM forge_mr_review_threads WHERE merge_request_id = ?`
 	threadArgs := []any{mrID}
-	eventQuery := `DELETE FROM middleman_mr_events WHERE merge_request_id = ? AND event_type = 'review_comment'`
+	eventQuery := `DELETE FROM forge_mr_events WHERE merge_request_id = ? AND event_type = 'review_comment'`
 	eventArgs := []any{mrID}
 	if len(providerThreadIDs) > 0 {
 		threadQuery += ` AND provider_thread_id NOT IN (SELECT value FROM json_each(?))`
@@ -389,7 +389,7 @@ func (d *DB) ListMRReviewThreads(ctx context.Context, mrID int64) ([]MRReviewThr
 			line, old_line, new_line, line_type, diff_head_sha, commit_sha,
 			body, author_login, resolved, created_at, updated_at,
 			resolved_at, metadata_json
-		FROM middleman_mr_review_threads
+		FROM forge_mr_review_threads
 		WHERE merge_request_id = ?
 		ORDER BY created_at, id`,
 		mrID,
@@ -420,7 +420,7 @@ func (d *DB) GetMRReviewThread(ctx context.Context, mrID, threadID int64) (*MRRe
 			line, old_line, new_line, line_type, diff_head_sha, commit_sha,
 			body, author_login, resolved, created_at, updated_at,
 			resolved_at, metadata_json
-		FROM middleman_mr_review_threads
+		FROM forge_mr_review_threads
 		WHERE merge_request_id = ? AND id = ?`,
 		mrID, threadID,
 	)
@@ -441,7 +441,7 @@ func (d *DB) SetMRReviewThreadResolved(
 	resolvedAt *time.Time,
 ) error {
 	res, err := d.rw.ExecContext(ctx, `
-		UPDATE middleman_mr_review_threads
+		UPDATE forge_mr_review_threads
 		SET resolved = ?, resolved_at = ?, updated_at = ?
 		WHERE merge_request_id = ? AND id = ?`,
 		resolved, nullableReviewTime(resolvedAt), time.Now().UTC().Format(time.RFC3339),

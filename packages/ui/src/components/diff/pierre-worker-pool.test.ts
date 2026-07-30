@@ -5,7 +5,7 @@ describe("pierre-worker-pool", () => {
     vi.restoreAllMocks();
     vi.resetModules();
     delete (globalThis as { Worker?: unknown }).Worker;
-    delete (globalThis as { __middlemanForceSyntaxHighlight?: unknown }).__middlemanForceSyntaxHighlight;
+    delete (globalThis as { __kenn_forgeForceSyntaxHighlight?: unknown }).__kenn_forgeForceSyntaxHighlight;
   });
 
   it("uses the shared tokenize line-length cap for worker highlighting", async () => {

@@ -5,7 +5,7 @@ import { dirname, isAbsolute, resolve } from "node:path";
 
 import { planE2ERuns } from "./e2e-run-plan.ts";
 
-const outputFile = process.env.MIDDLEMAN_E2E_OUTPUT_FILE ?? "../tmp/e2e.log";
+const outputFile = process.env.KENN_FORGE_E2E_OUTPUT_FILE ?? "../tmp/e2e.log";
 const displayFile = isAbsolute(outputFile) ? outputFile : resolve(outputFile);
 const basePlaywrightArgs = ["test", "--config=playwright-e2e.config.ts"];
 const requestedArgs = process.argv.slice(2);

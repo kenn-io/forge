@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { getStores } from "@middleman/ui";
-  import type { PullRequestSettings as PullRequestSettingsType } from "@middleman/ui/api/types";
+  import { getStores } from "@kenn-forge/ui";
+  import type { PullRequestSettings as PullRequestSettingsType } from "@kenn-forge/ui/api/types";
 
   import { updateSettings } from "../../api/settings.js";
   import { isEmbedded } from "../../stores/embed-config.svelte.js";
@@ -46,7 +46,7 @@
     <div class="setting-copy">
       <span class="setting-label">Prefer GitHub native stacks</span>
       <span class="setting-description">
-        Use GitHub's read-only stack preview when available. Middleman's branch-based detection remains the fallback.
+        Use GitHub's read-only stack preview when available. Kenn Forge's branch-based detection remains the fallback.
       </span>
     </div>
     <button
@@ -68,7 +68,7 @@
     <div class="setting-copy">
       <span class="setting-label">Allow mid-stack merges</span>
       <span class="setting-description">
-        When off, only the bottom unmerged branch in a stack can be merged. When on, middleman warns before merging another stack member.
+        When off, only the bottom unmerged branch in a stack can be merged. When on, kenn-forge warns before merging another stack member.
       </span>
     </div>
     <button

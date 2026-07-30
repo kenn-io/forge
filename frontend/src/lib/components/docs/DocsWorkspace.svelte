@@ -8,7 +8,7 @@
   import Plus from "@lucide/svelte/icons/plus";
   import Trash2 from "@lucide/svelte/icons/trash-2";
   import Upload from "@lucide/svelte/icons/upload";
-  import { showFlash } from "@middleman/ui/stores/flash";
+  import { showFlash } from "@kenn-forge/ui/stores/flash";
   import type { DocsRoute } from "../../api/docs/route.js";
   import { createDocsAPI, type DocsAPI } from "../../api/docs/api";
   import {
@@ -37,7 +37,7 @@
   import { buildMentionCompletionSource, collectMentionNames } from "./mentionCompletion";
   import { buildWikilinkCompletionSource } from "./wikilinkCompletion";
   import type { IssueSummary } from "./docsIssueTypes";
-  import { SelectDropdown, type SelectDropdownOption } from "@middleman/ui";
+  import { SelectDropdown, type SelectDropdownOption } from "@kenn-forge/ui";
   import { IconButton } from "@kenn-io/kit-ui";
 
   interface Props {
@@ -162,7 +162,7 @@
   // restricted environments (private browsing, blocked cookies); both
   // paths fall back silently to the default. Default is visible so a
   // fresh user discovers the outline.
-  const OUTLINE_COLLAPSED_KEY = "middleman:docs:outline-collapsed";
+  const OUTLINE_COLLAPSED_KEY = "kenn-forge:docs:outline-collapsed";
   function readOutlineCollapsed(): boolean {
     if (typeof localStorage === "undefined") return false;
     try {
@@ -1397,7 +1397,7 @@
   onClose={() => (removeFolderTarget = null)}
 >
   <p class="modal-body-text">
-    Remove <strong>{removeFolderTarget?.name}</strong> from middleman? The
+    Remove <strong>{removeFolderTarget?.name}</strong> from kenn-forge? The
     folder on disk stays put — only the registration is dropped.
   </p>
   {#if removeFolderError}

@@ -31,8 +31,8 @@ trap 'cleanup' EXIT
 
 air_bin="${AIR_BIN:-/go/bin/air}"
 go_bin="${GO_BIN:-go}"
-config_path="${MIDDLEMAN_CONFIG_PATH:-/data/config.toml}"
-backend_port="$($go_bin run ./cmd/middleman config read -config "$config_path" port 2>/dev/null || true)"
+config_path="${KENN_FORGE_CONFIG_PATH:-/data/config.toml}"
+backend_port="$($go_bin run ./cmd/kenn-forge config read -config "$config_path" port 2>/dev/null || true)"
 case "$backend_port" in
   ''|*[!0-9]*)
     backend_port=8091

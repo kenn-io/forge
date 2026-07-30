@@ -8,8 +8,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/testutil/gitsafe"
 	gitcmd "go.kenn.io/kit/git/cmd"
-	"go.kenn.io/middleman/internal/testutil/gitsafe"
 )
 
 func TestParseRemoteURL_GitHubFormats(t *testing.T) {
@@ -219,8 +219,8 @@ func runGit(t *testing.T, dir string, args ...string) error {
 	t.Helper()
 	cmd := gitcmd.New().Command(t.Context(), dir, args...)
 	cmd.Env = append(cmd.Env,
-		"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=middleman-fixture@example.invalid",
-		"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=middleman-fixture@example.invalid",
+		"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=kenn-forge-fixture@example.invalid",
+		"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=kenn-forge-fixture@example.invalid",
 	)
 	return cmd.Run()
 }

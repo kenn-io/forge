@@ -3,7 +3,7 @@ package httpapi
 import (
 	"time"
 
-	"go.kenn.io/middleman/internal/gitclone"
+	"go.kenn.io/forge/internal/gitclone"
 )
 
 type DiffResponse struct {

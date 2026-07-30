@@ -95,6 +95,6 @@ The clean package runs remain approximately at the prior 5m30s baseline. A later
 - Baseline browser samples: [2026-07-14-workspace-switch-baseline.txt](artifacts/2026-07-14-workspace-switch-baseline.txt)
 - Final browser samples: [capture A](artifacts/2026-07-14-workspace-switch-final-a.txt) and [capture B](artifacts/2026-07-14-workspace-switch-final-b.txt)
 - Terminal retention measurements: [2026-07-14-terminal-retention-summary.json](artifacts/2026-07-14-terminal-retention-summary.json)
-- Profiling skill: `skills/profiling-middleman-performance/`
+- Profiling skill: `skills/profiling-kenn-forge-performance/`
 
 The full Chromium and Go traces are intentionally excluded because of their size. The checked-in browser-switch and terminal-retention samples preserve those report inputs. Workspace API timings, allocation profiles, and test-duration measurements came from live captures; the profiling command documents how to reproduce their raw inputs when deeper inspection is needed.

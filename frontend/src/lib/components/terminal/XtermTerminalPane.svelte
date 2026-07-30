@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { getStores } from "@middleman/ui";
-  import { showFlash } from "@middleman/ui/stores/flash";
+  import { getStores } from "@kenn-forge/ui";
+  import { showFlash } from "@kenn-forge/ui/stores/flash";
   import { Terminal } from "@xterm/xterm";
   import { FitAddon } from "@xterm/addon-fit";
   import { LigaturesAddon } from "@xterm/addon-ligatures/lib/addon-ligatures.mjs";
@@ -315,12 +315,12 @@
 
   function buildDevApiWsUrl(path: string): string | null {
     if (!import.meta.env.DEV) return null;
-    const apiUrl = window.__MIDDLEMAN_DEV_API_URL__?.trim();
+    const apiUrl = window.__KENN_FORGE_DEV_API_URL__?.trim();
     if (!apiUrl || !path.startsWith("/api/")) return null;
 
     try {
       const base = new URL(apiUrl);
-      const requested = new URL(path, "http://middleman.local");
+      const requested = new URL(path, "http://forge.local");
       const basePath = base.pathname.replace(/\/$/, "");
       base.protocol = base.protocol === "https:" ? "wss:" : "ws:";
       base.pathname = `${basePath}${requested.pathname}`;

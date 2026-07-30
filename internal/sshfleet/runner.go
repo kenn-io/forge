@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"go.kenn.io/middleman/internal/procutil"
+	"go.kenn.io/forge/internal/procutil"
 )
 
 // The runner relays HTTP requests to a peer's local daemon by
@@ -76,7 +76,7 @@ func NewRunnerWithExec(
 
 // Relay performs METHOD path with body against hostKey's remote
 // daemon via its CLI. remoteCommand is the peer's configured CLI
-// invocation (default "middleman"); it may carry flags and is
+// invocation (default "kenn-forge"); it may carry flags and is
 // embedded as a shell fragment.
 func (r *Runner) Relay(
 	ctx context.Context,

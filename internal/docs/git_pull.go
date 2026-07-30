@@ -43,7 +43,7 @@ type PullResponse struct {
 // gates (assertSafeToPublish, assertWorktreeAttributesSafe). Those gates
 // exist because publish-side commands rehash worktree content implicitly —
 // the status/changes previews run whenever the UI shows a folder, so a
-// repo-local filter must be rejected before middleman triggers it in the
+// repo-local filter must be rejected before kenn-forge triggers it in the
 // background. Pull is the opposite shape: an explicit user action against
 // a folder and upstream the user registered by hand, carrying exactly the
 // trust of typing `git pull` in that directory. The docs runner still

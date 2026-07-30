@@ -7,7 +7,7 @@ import (
 	"time"
 
 	forgejosdk "codeberg.org/mvdkleijn/forgejo-sdk/forgejo/v3"
-	"go.kenn.io/middleman/internal/platform/gitealike"
+	"go.kenn.io/forge/internal/platform/gitealike"
 )
 
 func convertRepository(repo *forgejosdk.Repository) (gitealike.RepositoryDTO, error) {
@@ -80,7 +80,7 @@ func convertPullRequest(
 		Closed:         timePtrValue(pr.Closed),
 		// The Forgejo SDK pull request has no requested-reviewers
 		// field, so RequestedReviewers stays nil (unknown) and
-		// persistence keeps the last value middleman recorded.
+		// persistence keeps the last value kenn-forge recorded.
 		Assignees: convertUsers(pr.Assignees),
 	}
 }

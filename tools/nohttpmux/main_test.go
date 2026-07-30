@@ -123,8 +123,8 @@ func TestCheckSourceAllowsNonAPIServerMuxes(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
-	// The GitHub App fake and the middleman-github-app loopback
-	// callback server are not middleman API surfaces; both stand in
+	// The GitHub App fake and the kenn-forge-github-app loopback
+	// callback server are not kenn-forge API surfaces; both stand in
 	// for (or talk to) GitHub itself.
 	src := `package whatever
 
@@ -139,7 +139,7 @@ func routes() {
 	for _, path := range []string{
 		"internal/githubapp/githubapptest/fake.go",
 		"/tmp/worktree/internal/githubapp/githubapptest/fake.go",
-		"cmd/middleman-github-app/create.go",
+		"cmd/kenn-forge-github-app/create.go",
 	} {
 		diagnostics, err := checkSource(path, src)
 		require.NoError(err)

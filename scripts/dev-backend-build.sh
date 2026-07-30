@@ -47,7 +47,7 @@ fi
 compute_inputs_hash() {
   {
     printf '%s\n' "go.mod" "go.sum"
-    find cmd/middleman-openapi internal/server -type f -name '*.go' | sort
+    find cmd/kenn-forge-openapi internal/server -type f -name '*.go' | sort
   } | while IFS= read -r path; do
     [ -f "$path" ] || continue
     shasum -a 256 "$path"
@@ -94,8 +94,8 @@ generate_api_artifacts() {
 
   mkdir -p "$(dirname "$backend_spec")"
 
-  GOCACHE="${GOCACHE:-/tmp/middleman-gocache}" "$GO_BIN" run ./cmd/middleman-openapi -out "$tmp_frontend_spec" -format yaml
-  GOCACHE="${GOCACHE:-/tmp/middleman-gocache}" "$GO_BIN" run ./cmd/middleman-openapi -out "$tmp_backend_spec" -version 3.0
+  GOCACHE="${GOCACHE:-/tmp/kenn-forge-gocache}" "$GO_BIN" run ./cmd/kenn-forge-openapi -out "$tmp_frontend_spec" -format yaml
+  GOCACHE="${GOCACHE:-/tmp/kenn-forge-gocache}" "$GO_BIN" run ./cmd/kenn-forge-openapi -out "$tmp_backend_spec" -version 3.0
 
   if write_if_changed "$frontend_spec" "$tmp_frontend_spec"; then
     frontend_changed=1
@@ -113,7 +113,7 @@ generate_api_artifacts() {
     generate_frontend_client
   fi
 
-  GOCACHE="${GOCACHE:-/tmp/middleman-gocache}" "$GO_BIN" generate ./internal/apiclient/generated
+  GOCACHE="${GOCACHE:-/tmp/kenn-forge-gocache}" "$GO_BIN" generate ./internal/apiclient/generated
 }
 
 current_inputs_hash="$(compute_inputs_hash)"
@@ -128,4 +128,4 @@ if [ "$current_inputs_hash" != "$previous_inputs_hash" ]; then
   printf '%s\n' "$current_inputs_hash" > "$input_hash_file"
 fi
 
-"$GO_BIN" build -o "./tmp/middleman$exe_suffix" ./cmd/middleman
+"$GO_BIN" build -o "./tmp/kenn-forge$exe_suffix" ./cmd/kenn-forge

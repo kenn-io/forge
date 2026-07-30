@@ -1,7 +1,7 @@
-# Claim Verifier — Subagent Instructions (middleman)
+# Claim Verifier — Subagent Instructions (kenn-forge)
 
 You are a read-only subagent verifying the factual claims in a single context document
-against the current state of middleman's code. You MUST NOT modify any code or doc
+against the current state of kenn-forge's code. You MUST NOT modify any code or doc
 files. Return findings; the parent run presents them to the maintainer.
 
 ## Inputs
@@ -29,7 +29,7 @@ For each factual claim in the document:
 
 ## Critical invariants — verify with extra care, tag CRITICAL
 
-These are middleman's load-bearing cross-cutting rules. When a document touches one,
+These are kenn-forge's load-bearing cross-cutting rules. When a document touches one,
 re-check it directly against code rather than trusting the prose:
 
 - **Provider identity tuple.** Claim that identity is `(platform, platform_host, owner,

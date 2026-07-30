@@ -10,7 +10,7 @@ function configuredWorkers(): number | string {
   const args = process.argv.join(" ");
   const firefox = /--project[= ]firefox/.test(args);
   if (process.env.CI) {
-    const configured = Number.parseInt(process.env.MIDDLEMAN_CI_WORKERS ?? "", 10);
+    const configured = Number.parseInt(process.env.KENN_FORGE_CI_WORKERS ?? "", 10);
     const baseline = configured > 0 ? configured : 14;
     return firefox ? baseline : baseline * 2;
   }

@@ -10,7 +10,7 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
-// issueBranchMaxLen caps the full middleman/issue-<n>-<slug> branch
+// issueBranchMaxLen caps the full kenn-forge/issue-<n>-<slug> branch
 // name. The ceiling is well below git's 255-byte ref limit and leaves
 // a small headroom for nextAvailableBranchName to append a "-N"
 // disambiguator on collision.
@@ -21,11 +21,11 @@ const issueBranchMaxLen = 100
 // enough for `-NNNN` collision suffixes up to 9999.
 const issueBranchSlugBudget = 5
 
-// issueWorkspaceBranch returns middleman's conventional issue-only
+// issueWorkspaceBranch returns kenn-forge's conventional issue-only
 // branch name without a title slug. Use this for the "bare" branch
 // style and as a fallback when a title cannot be slugified.
 func issueWorkspaceBranch(issueNumber int) string {
-	return fmt.Sprintf("middleman/issue-%d", issueNumber)
+	return fmt.Sprintf("kenn-forge/issue-%d", issueNumber)
 }
 
 // issueWorkspaceBranchWithTitle returns a slugified branch name for an

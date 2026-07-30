@@ -72,7 +72,7 @@ export class DocsPane {
 }
 
 export async function createDocsFixture(): Promise<string> {
-  const dir = await mkdtemp(path.join(os.tmpdir(), "middleman-docs-e2e-"));
+  const dir = await mkdtemp(path.join(os.tmpdir(), "kenn-forge-docs-e2e-"));
   await mkdir(path.join(dir, "Projects"), { recursive: true });
   await mkdir(path.join(dir, "Daily"), { recursive: true });
   await mkdir(path.join(dir, "assets"), { recursive: true });
@@ -139,7 +139,7 @@ export type DocsPublishFixture = {
 };
 
 export async function startDocsPublishServer(page: Page): Promise<DocsPublishFixture> {
-  const root = await mkdtemp(path.join(os.tmpdir(), "middleman-docs-publish-e2e-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "kenn-forge-docs-publish-e2e-"));
   const workDir = path.join(root, "work");
   const remoteDir = path.join(root, "remote.git");
   const homeDir = path.join(root, "home");
@@ -149,10 +149,10 @@ export async function startDocsPublishServer(page: Page): Promise<DocsPublishFix
 
   const gitEnv = isolatedFixtureGitEnv(homeDir);
   runFixtureGit(workDir, gitEnv, "init", "-b", "main");
-  runFixtureGit(workDir, gitEnv, "config", "user.name", "Middleman E2E");
-  runFixtureGit(workDir, gitEnv, "config", "user.email", "middleman-e2e@example.invalid");
+  runFixtureGit(workDir, gitEnv, "config", "user.name", "Kenn Forge E2E");
+  runFixtureGit(workDir, gitEnv, "config", "user.email", "kenn-forge-e2e@example.invalid");
   runFixtureGit(workDir, gitEnv, "config", "commit.gpgsign", "false");
-  // The middleman server performs the publish commit with its own environment,
+  // The kenn-forge server performs the publish commit with its own environment,
   // not gitEnv, so pin hooks to the repo's own dir to ignore any global
   // core.hooksPath a developer or CI runner may have configured.
   runFixtureGit(workDir, gitEnv, "config", "core.hooksPath", ".git/hooks");

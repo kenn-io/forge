@@ -1,6 +1,6 @@
 <script lang="ts">
   import { flushSync, tick } from "svelte";
-  import type { InlineDockMode } from "@middleman/ui";
+  import type { InlineDockMode } from "@kenn-forge/ui";
   import SessionTerminalPool from "./SessionTerminalPool.svelte";
   import SessionTerminalSlot from "./SessionTerminalSlot.svelte";
   import WorkspaceTerminalView from "./WorkspaceTerminalView.svelte";

@@ -45,7 +45,7 @@ func (d *DB) UpsertWorktreeStats(
 	var prev WorktreeGitStats
 	readErr := d.ro.QueryRowContext(ctx, `
 		SELECT diff_added, diff_removed, sync_ahead, sync_behind
-		FROM middleman_worktree_stats WHERE path = ?`, path,
+		FROM forge_worktree_stats WHERE path = ?`, path,
 	).Scan(&prev.DiffAdded, &prev.DiffRemoved, &prev.SyncAhead, &prev.SyncBehind)
 	switch {
 	case errors.Is(readErr, sql.ErrNoRows):
@@ -57,7 +57,7 @@ func (d *DB) UpsertWorktreeStats(
 	}
 
 	if _, err = d.rw.ExecContext(ctx, `
-		INSERT INTO middleman_worktree_stats
+		INSERT INTO forge_worktree_stats
 		    (path, diff_added, diff_removed, sync_ahead, sync_behind, sampled_at)
 		VALUES (?, ?, ?, ?, ?, ?)
 		ON CONFLICT(path) DO UPDATE SET
@@ -91,7 +91,7 @@ func (d *DB) ListWorktreeStats(
 ) (map[string]WorktreeGitStats, error) {
 	rows, err := d.ro.QueryContext(ctx, `
 		SELECT path, diff_added, diff_removed, sync_ahead, sync_behind, sampled_at
-		FROM middleman_worktree_stats`,
+		FROM forge_worktree_stats`,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("list worktree stats: %w", err)
@@ -124,7 +124,7 @@ func (d *DB) ListWorktreeStats(
 func (d *DB) PruneWorktreeStats(ctx context.Context, keepPaths []string) error {
 	if len(keepPaths) == 0 {
 		if _, err := d.rw.ExecContext(
-			ctx, `DELETE FROM middleman_worktree_stats`,
+			ctx, `DELETE FROM forge_worktree_stats`,
 		); err != nil {
 			return fmt.Errorf("prune worktree stats: %w", err)
 		}
@@ -136,7 +136,7 @@ func (d *DB) PruneWorktreeStats(ctx context.Context, keepPaths []string) error {
 		args = append(args, p)
 	}
 	if _, err := d.rw.ExecContext(ctx,
-		`DELETE FROM middleman_worktree_stats WHERE path NOT IN (`+placeholders+`)`,
+		`DELETE FROM forge_worktree_stats WHERE path NOT IN (`+placeholders+`)`,
 		args...,
 	); err != nil {
 		return fmt.Errorf("prune worktree stats: %w", err)

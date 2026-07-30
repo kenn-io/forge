@@ -34,7 +34,7 @@ export interface PaneTabSpec {
   hideable?: boolean | undefined;
 }
 
-export const PANE_LAYOUT_STORAGE_PREFIX = "middleman-pane-layout-v1:";
+export const PANE_LAYOUT_STORAGE_PREFIX = "kenn-forge-pane-layout-v1:";
 
 /** The state only the renderer knows, published for consumers outside the tree. */
 export interface PaneRenderReport {

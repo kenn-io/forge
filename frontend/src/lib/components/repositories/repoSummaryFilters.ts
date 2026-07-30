@@ -1,6 +1,6 @@
 import type { RepoFilter, RepoSort } from "./repoSummary.js";
 
-const storageKey = "middleman:repoSummaryFilters";
+const storageKey = "kenn-forge:repoSummaryFilters";
 
 const validFilters = new Set<RepoFilter>(["all", "prs", "issues", "stale"]);
 const validSorts = new Set<RepoSort>(["name", "open-prs", "open-issues", "activity", "stale"]);

@@ -95,7 +95,7 @@ function cloneSnapshot(): KataGraphDebugSnapshot {
 
 function installKataGraphDebugHook(): void {
   if (typeof window === "undefined") return;
-  window.__middleman_kata_graph_debug = kataGraphDebug;
+  window.__kenn_forge_kata_graph_debug = kataGraphDebug;
 }
 
 export function recordKataGraphDebugEvent(kind: KataGraphDebugEventKind, detail?: Record<string, unknown>): void {

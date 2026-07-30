@@ -22,7 +22,7 @@ describe("active kata daemon store", () => {
     setActiveKataDaemon("work");
 
     expect(getActiveKataDaemon()).toBe("work");
-    expect(localStorage.getItem("middleman:kata:active_daemon")).toBe("work");
+    expect(localStorage.getItem("kenn-forge:kata:active_daemon")).toBe("work");
   });
 
   it("keeps a valid daemon selection during reconcile", () => {
@@ -39,7 +39,7 @@ describe("active kata daemon store", () => {
     reconcileActiveKataDaemon(["home", "work"], "home");
 
     expect(getActiveKataDaemon()).toBe("home");
-    expect(localStorage.getItem("middleman:kata:active_daemon")).toBe("home");
+    expect(localStorage.getItem("kenn-forge:kata:active_daemon")).toBe("home");
   });
 
   it("clears storage when the active daemon is unset", () => {
@@ -48,7 +48,7 @@ describe("active kata daemon store", () => {
     setActiveKataDaemon(undefined);
 
     expect(getActiveKataDaemon()).toBeUndefined();
-    expect(localStorage.getItem("middleman:kata:active_daemon")).toBeNull();
+    expect(localStorage.getItem("kenn-forge:kata:active_daemon")).toBeNull();
   });
 
   it("stores the live daemon roster and default daemon", () => {
@@ -65,7 +65,7 @@ describe("active kata daemon store", () => {
     setKataDaemonRoster(["home", "work"], "home");
 
     expect(getActiveKataDaemon()).toBe("home");
-    expect(localStorage.getItem("middleman:kata:active_daemon")).toBe("home");
+    expect(localStorage.getItem("kenn-forge:kata:active_daemon")).toBe("home");
   });
 
   it("tracks whether the live daemon roster has resolved", () => {

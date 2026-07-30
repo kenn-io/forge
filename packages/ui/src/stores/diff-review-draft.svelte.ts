@@ -1,4 +1,4 @@
-import type { MiddlemanClient } from "../types.js";
+import type { ForgeClient } from "../types.js";
 import type { components } from "../api/generated/schema.js";
 import { isProblem, problemConflictReason } from "../api/problems.js";
 import { providerItemPath, providerRouteParams, type ProviderRouteRef } from "../api/provider-routes.js";
@@ -14,7 +14,7 @@ export interface DiffReviewDraftCommentEditState {
 }
 
 export interface DiffReviewDraftStoreOptions {
-  client: MiddlemanClient;
+  client: ForgeClient;
   onPublished?: (ref: ProviderRouteRef, number: number) => Promise<void> | void;
   onStalePublish?: (ref: ProviderRouteRef, number: number) => Promise<void> | void;
 }

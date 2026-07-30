@@ -1,13 +1,13 @@
 ---
 name: dev-ephemeral-running-instances
-description: Use only when the user explicitly invokes dev-ephemeral-running-instances. Must be run outside the Codex sandbox because sandboxed scans cannot reliably see all Codex worktrees, uv/Python state, or the process table. Lists middleman dev-ephemeral status files across git worktrees, checks recorded launcher/backend/frontend PIDs and backend/frontend URLs, reports which worktree each running, degraded, stale, or invalid instance belongs to, and prepares clean shutdown command lists when explicitly requested.
+description: Use only when the user explicitly invokes dev-ephemeral-running-instances. Must be run outside the Codex sandbox because sandboxed scans cannot reliably see all Codex worktrees, uv/Python state, or the process table. Lists kenn-forge dev-ephemeral status files across git worktrees, checks recorded launcher/backend/frontend PIDs and backend/frontend URLs, reports which worktree each running, degraded, stale, or invalid instance belongs to, and prepares clean shutdown command lists when explicitly requested.
 ---
 
 # Dev Ephemeral Running Instances
 
 ## Overview
 
-List middleman `dev-ephemeral` instances across Codex git worktrees without stopping or cleaning up any process by default. Use the bundled Python script as the source of truth for process and URL checks.
+List kenn-forge `dev-ephemeral` instances across Codex git worktrees without stopping or cleaning up any process by default. Use the bundled Python script as the source of truth for process and URL checks.
 
 ## Sandbox Requirement
 
@@ -21,7 +21,7 @@ Run this skill outside the Codex sandbox. The inspector needs read access to all
    uv run --script skills/dev-ephemeral-running-instances/scripts/list_running_instances.py
    ```
 
-2. If working outside a middleman checkout, pass the worktrees root explicitly:
+2. If working outside a kenn-forge checkout, pass the worktrees root explicitly:
 
    ```sh
    uv run --script /path/to/dev-ephemeral-running-instances/scripts/list_running_instances.py \
@@ -44,11 +44,11 @@ To generate a shutdown plan while keeping one worktree, run:
 
 ```sh
 uv run --script skills/dev-ephemeral-running-instances/scripts/list_running_instances.py \
-  --exclude-worktree /Users/mariusvniekerk/.codex/worktrees/e007/middleman \
+  --exclude-worktree /Users/mariusvniekerk/.codex/worktrees/e007/kenn-forge \
   --emit-stop-commands
 ```
 
-Present the generated target list and commands to the user. After approval, run the commands from a middleman checkout. The `devephemeral` stop path verifies process identity from status-file start times, interrupts process groups first, escalates to terminate after the built-in grace period, and removes the status file only when shutdown succeeds or no matching live processes remain.
+Present the generated target list and commands to the user. After approval, run the commands from a kenn-forge checkout. The `devephemeral` stop path verifies process identity from status-file start times, interrupts process groups first, escalates to terminate after the built-in grace period, and removes the status file only when shutdown succeeds or no matching live processes remain.
 
 ## Script Behavior
 

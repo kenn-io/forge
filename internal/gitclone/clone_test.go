@@ -348,7 +348,7 @@ func TestIntegrationEnsureCloneRemovesLegacyBranchRefspec(t *testing.T) {
 
 // TestEnsureCloneMigratesCloneWithNoRefspec covers a clone that has no
 // fetch refspec at all (the state left by a vanilla `git clone --bare`
-// before any middleman-specific refspec was added). In that case
+// before any kenn-forge-specific refspec was added). In that case
 // `git config --get-all remote.origin.fetch` exits 1, which must not
 // short-circuit ensureRefspecs.
 func TestIntegrationEnsureCloneMigratesCloneWithNoRefspec(t *testing.T) {

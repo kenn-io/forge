@@ -1,4 +1,4 @@
-export const TABBED_PANEL_TAB_DRAG_MIME = "application/x-middleman-tabbed-panel-tab";
+export const TABBED_PANEL_TAB_DRAG_MIME = "application/x-kenn-forge-tabbed-panel-tab";
 
 /**
  * Drag scope for a workspace's own panel tree.
@@ -40,7 +40,7 @@ const dragEndListeners = new Set<() => void>();
 export function startTabbedPanelTabDrag(
   event: DragEvent,
   payload: TabbedPanelTabDragPayload,
-  plainTextLabel = "Middleman panel tab",
+  plainTextLabel = "Kenn Forge panel tab",
 ): void {
   const token = newDragToken();
   activeTabbedPanelTabDrag = payload;

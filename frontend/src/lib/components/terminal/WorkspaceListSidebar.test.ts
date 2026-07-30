@@ -148,7 +148,7 @@ function sortFixtures() {
       provider: "github",
       platformHost: "github.com",
       owner: "kenn-io",
-      name: "middleman",
+      name: "kenn-forge",
       number: 3,
       title: "Newest created",
       createdAt: "2026-05-12T12:00:00Z",
@@ -170,7 +170,7 @@ function sortFixtures() {
       provider: "github",
       platformHost: "github.com",
       owner: "kenn-io",
-      name: "middleman",
+      name: "kenn-forge",
       number: 1,
       title: "Oldest without activity",
       createdAt: "2026-05-10T12:00:00Z",
@@ -727,7 +727,7 @@ describe("WorkspaceListSidebar", () => {
             provider: "github",
             platformHost: "github.com",
             owner: "kenn-io",
-            name: "middleman",
+            name: "kenn-forge",
             number: 224,
             title: "Add notification inbox triage",
             itemType: "issue",
@@ -769,7 +769,7 @@ describe("WorkspaceListSidebar", () => {
             provider: "github",
             platformHost: "github.com",
             owner: "kenn-io",
-            name: "middleman",
+            name: "kenn-forge",
             number: 224,
             title: "Add notification inbox triage",
             itemType: "issue",
@@ -782,7 +782,7 @@ describe("WorkspaceListSidebar", () => {
       props: { selectedId: "ws-hidden" },
     });
     const groupHeader = await screen.findByRole("button", {
-      name: /kenn-io\/middleman/,
+      name: /kenn-io\/kenn-forge/,
     });
     const filter = screen.getByLabelText("Filter workspaces");
 
@@ -813,7 +813,7 @@ describe("WorkspaceListSidebar", () => {
     await screen.findByText("Newest created");
 
     // Default org/repo mode groups rows under repo headers.
-    expect(screen.getByText("kenn-io/middleman")).toBeTruthy();
+    expect(screen.getByText("kenn-io/kenn-forge")).toBeTruthy();
     expect(container.querySelectorAll(".repo-context")).toHaveLength(0);
 
     await fireEvent.click(screen.getByTitle("View workspace options"));
@@ -910,7 +910,7 @@ describe("WorkspaceListSidebar", () => {
             provider: "github",
             platformHost: "github.com",
             owner: "kenn-io",
-            name: "middleman",
+            name: "kenn-forge",
             number: 1,
             title: "Newest created fallback",
             createdAt: "2026-05-15T12:00:00Z",
@@ -920,7 +920,7 @@ describe("WorkspaceListSidebar", () => {
             provider: "github",
             platformHost: "github.com",
             owner: "kenn-io",
-            name: "middleman",
+            name: "kenn-forge",
             number: 2,
             title: "PR recently changed",
             createdAt: "2026-05-10T12:00:00Z",
@@ -1010,19 +1010,19 @@ describe("WorkspaceListSidebar", () => {
     const { container } = render(WorkspaceListSidebar, {
       props: { selectedId: "ws-new" },
     });
-    await screen.findByText("kenn-io/middleman");
+    await screen.findByText("kenn-io/kenn-forge");
 
     await fireEvent.click(screen.getByRole("button", { name: "View" }));
     const hideOrgName = screen.getByRole("button", { name: "Hide org name" });
     await fireEvent.click(hideOrgName);
     expect(hideOrgName.classList.contains("active")).toBe(true);
 
-    expect(screen.queryByText("kenn-io/middleman")).toBeNull();
-    expect(screen.getByText("middleman")).toBeTruthy();
+    expect(screen.queryByText("kenn-io/kenn-forge")).toBeNull();
+    expect(screen.getByText("kenn-forge")).toBeTruthy();
 
     await fireEvent.click(screen.getByRole("button", { name: "Created" }));
 
-    expect(container.querySelectorAll(".repo-context-name")[0]?.textContent?.trim()).toBe("middleman");
+    expect(container.querySelectorAll(".repo-context-name")[0]?.textContent?.trim()).toBe("kenn-forge");
     expect(container.querySelectorAll(".repo-context-name")[1]?.textContent?.trim()).toBe("agentsview");
   });
 
@@ -1133,7 +1133,7 @@ describe("WorkspaceListSidebar", () => {
             provider: "github",
             platformHost: "github.com",
             owner: "kenn-io",
-            name: "middleman",
+            name: "kenn-forge",
             number: 9,
             title: "Diff-heavy workspace",
             additions: 42,
@@ -1187,7 +1187,7 @@ describe("WorkspaceListSidebar", () => {
               provider: "github",
               platformHost: "github.com",
               owner: "kenn-io",
-              name: "middleman",
+              name: "kenn-forge",
               number: 555,
               title: "Local mac workspace",
             }),
@@ -1217,15 +1217,15 @@ describe("WorkspaceListSidebar", () => {
       provider: "github",
       platformHost: "github.com",
       owner: "kenn-io",
-      name: "middleman",
+      name: "kenn-forge",
       number: 0,
-      branch: "middleman/kata/task-123-abcd1234",
+      branch: "kenn-forge/kata/task-123-abcd1234",
       itemType: "kata_task",
       itemKey: "kata:ZGVza3RvcA:cHJvamVjdC1rYXRh:aXNzdWUta2F0YS0x",
       kata: {
         daemon_id: "desktop",
         project_uid: "project-kata",
-        project_name: "Middleman",
+        project_name: "Kenn Forge",
         issue_uid: "issue-kata-1",
         short_id: "task-123",
         qualified_id: "Kata#task-123",
@@ -1269,7 +1269,7 @@ describe("WorkspaceListSidebar", () => {
             provider: "github",
             platformHost: "github.com",
             owner: "kenn-io",
-            name: "middleman",
+            name: "kenn-forge",
             number: 241,
             title: "Plan ACP agent chat integration",
             isDraft: true,
@@ -1279,7 +1279,7 @@ describe("WorkspaceListSidebar", () => {
             provider: "github",
             platformHost: "github.com",
             owner: "kenn-io",
-            name: "middleman",
+            name: "kenn-forge",
             number: 242,
             title: "Ready for review PR",
           }),
@@ -1346,7 +1346,7 @@ describe("WorkspaceListSidebar", () => {
             kata: {
               daemon_id: "desktop",
               project_uid: "project-kata",
-              project_name: "Middleman",
+              project_name: "Kenn Forge",
               issue_uid: "issue-kata-1",
             },
           }),
@@ -1383,7 +1383,7 @@ describe("WorkspaceListSidebar", () => {
             provider: "github",
             platformHost: "github.com",
             owner: "kenn-io",
-            name: "middleman",
+            name: "kenn-forge",
             number: 9,
             status,
           }),
@@ -1407,7 +1407,7 @@ describe("WorkspaceListSidebar", () => {
             provider: "github",
             platformHost: "github.com",
             owner: "kenn-io",
-            name: "middleman",
+            name: "kenn-forge",
             number: 9,
           }),
         ],
@@ -1434,7 +1434,7 @@ describe("WorkspaceListSidebar", () => {
             provider: "github",
             platformHost: "github.com",
             owner: "kenn-io",
-            name: "middleman",
+            name: "kenn-forge",
             number: 9,
             title: "Working workspace",
             tmuxWorking: true,
@@ -1592,7 +1592,7 @@ describe("WorkspaceListSidebar", () => {
             provider: "github",
             platformHost: "github.com",
             owner: "kenn-io",
-            name: "middleman",
+            name: "kenn-forge",
             number: 9,
             title: "Ahead workspace",
             commitsAhead: 2,
@@ -1640,7 +1640,7 @@ describe("WorkspaceListSidebar", () => {
             provider: "github",
             platformHost: "github.com",
             owner: "kenn-io",
-            name: "middleman",
+            name: "kenn-forge",
             number: 9,
             title: "Behind workspace",
             commitsBehind: 1,
@@ -1702,7 +1702,7 @@ describe("WorkspaceListSidebar", () => {
               provider: "github",
               platformHost: "github.com",
               owner: "kenn-io",
-              name: "middleman",
+              name: "kenn-forge",
               number: 12,
               title: "Reveal me",
             }),
@@ -1766,7 +1766,7 @@ describe("WorkspaceListSidebar", () => {
               provider: "github",
               platformHost: "github.com",
               owner: "kenn-io",
-              name: "middleman",
+              name: "kenn-forge",
               number: 10,
               title: "Delete me",
             }),
@@ -1816,7 +1816,7 @@ describe("WorkspaceListSidebar", () => {
             provider: "github",
             platformHost: "github.com",
             owner: "kenn-io",
-            name: "middleman",
+            name: "kenn-forge",
             number: 11,
             title: "Keep me",
           }),
@@ -1917,7 +1917,7 @@ describe("WorkspaceListSidebar", () => {
             provider: "github",
             platformHost: "github.com",
             owner: "kenn-io",
-            name: "middleman",
+            name: "kenn-forge",
             number: 9,
             title: "Diverged workspace",
             commitsAhead: 1,
@@ -1945,7 +1945,7 @@ describe("WorkspaceListSidebar", () => {
       provider: "github",
       platformHost: "github.com",
       owner: "kenn-io",
-      name: "middleman",
+      name: "kenn-forge",
       number: 0,
       branch: "spike/rate-limits",
       itemType: "adhoc",
@@ -1980,7 +1980,7 @@ describe("WorkspaceListSidebar", () => {
             provider: "github",
             platformHost: "github.com",
             owner: "kenn-io",
-            name: "middleman",
+            name: "kenn-forge",
             number: 4,
             title: "Some pull request",
           }),
@@ -2016,7 +2016,7 @@ describe("WorkspaceListSidebar", () => {
       provider: "github",
       platformHost: "github.com",
       owner: "kenn-io",
-      name: "middleman",
+      name: "kenn-forge",
     });
   });
 });

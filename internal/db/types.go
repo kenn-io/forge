@@ -644,7 +644,7 @@ type MergeRequest struct {
 	MergeableState        string
 	DetailFetchedAt       *time.Time
 	CIHadPending          bool
-	// WorkflowApprovalCheckedAt is when middleman last reconciled the
+	// WorkflowApprovalCheckedAt is when kenn-forge last reconciled the
 	// workflow-approval state for this merge request. Nil means never
 	// checked; the GET path treats persisted state as authoritative
 	// only when WorkflowApprovalHeadSHA matches PlatformHeadSHA. Only
@@ -1204,7 +1204,7 @@ func kataWorkspaceItemKeyPart(value string) string {
 	return base64.RawURLEncoding.EncodeToString([]byte(value))
 }
 
-// Workspace represents a middleman-managed git worktree linked to a
+// Workspace represents a kenn-forge-managed git worktree linked to a
 // pull request, provider issue, or external Kata task.
 type Workspace struct {
 	ID                 string

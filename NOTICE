@@ -1,4 +1,4 @@
-Middleman
+Kenn Forge
 Copyright (c) 2026 Kenn Software LLC
 
 This software is made available under the Elastic License 2.0.
@@ -7,7 +7,7 @@ See the LICENSE file for the full license text.
 For purposes of the Elastic License 2.0, the licensor is Kenn Software LLC.
 
 A commercial license is available for uses not permitted under the Elastic
-License 2.0 (for example, providing Middleman to third parties as a hosted or
+License 2.0 (for example, providing Kenn Forge to third parties as a hosted or
 managed service). For commercial licensing, contact Kenn Software LLC at
 info@kenn.io.
 
@@ -15,14 +15,14 @@ info@kenn.io.
 
 Prior license
 
-Middleman was originally distributed under the MIT License. All contributions
+Kenn Forge was originally distributed under the MIT License. All contributions
 made up to and including commit 4b28941c ("Use Vite+ for frontend tooling")
 remain available under the MIT License set out below. Contributions made after
 that commit are licensed under the Elastic License 2.0.
 
 MIT License
 
-Copyright (c) 2026 Wes McKinney and middleman contributors
+Copyright (c) 2026 Wes McKinney and kenn-forge contributors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

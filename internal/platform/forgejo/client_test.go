@@ -12,11 +12,11 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	Require "github.com/stretchr/testify/require"
-	ghsync "go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/platform"
-	"go.kenn.io/middleman/internal/platform/gitealike"
-	"go.kenn.io/middleman/internal/ratelimit"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
+	ghsync "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/platform"
+	"go.kenn.io/forge/internal/platform/gitealike"
+	"go.kenn.io/forge/internal/ratelimit"
+	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
 var (

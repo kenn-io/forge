@@ -8,11 +8,11 @@
   "type": "module",
   "scripts": {
     "check": "node node_modules/vite-plus/bin/vp run frontend-check",
-    "demo-workspace": "node node_modules/vite-plus/bin/vp run middleman-frontend#demo-workspace",
+    "demo-workspace": "node node_modules/vite-plus/bin/vp run kenn-forge-frontend#demo-workspace",
     "docs:build": "node scripts/build-docs.mjs",
     "fmt": "node node_modules/vite-plus/bin/vp fmt frontend packages/ui packages/github-app-ui '!frontend/dist/**' '!packages/github-app-ui/dist/**' '!frontend/test-results/**' '!packages/github-app-ui/test-results/**' '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern --threads=1",
     "fmt:check": "node node_modules/vite-plus/bin/vp fmt --check frontend packages/ui packages/github-app-ui '!frontend/dist/**' '!packages/github-app-ui/dist/**' '!frontend/test-results/**' '!packages/github-app-ui/test-results/**' '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern --threads=1",
-    "test:e2e": "node node_modules/vite-plus/bin/vp run middleman-frontend#test:e2e && cd packages/github-app-ui && node ../../node_modules/vite-plus/bin/vp build --logLevel warn && node node_modules/.bin/playwright test"
+    "test:e2e": "node node_modules/vite-plus/bin/vp run kenn-forge-frontend#test:e2e && cd packages/github-app-ui && node ../../node_modules/vite-plus/bin/vp build --logLevel warn && node node_modules/.bin/playwright test"
   },
   "devDependencies": {
     "@playwright/test": "1.61.1",

@@ -199,7 +199,7 @@ describe("collapsible repo groups", () => {
   });
 
   it("status groups collapse like repo groups", async () => {
-    localStorage.setItem("middleman:groupingMode", "byWorkflow");
+    localStorage.setItem("kenn-forge:groupingMode", "byWorkflow");
     mounted = await mountBrowserApp("/pulls", { overrides: listOverrides() });
 
     await vi.waitFor(() => expect(expanded("New")).toBe("true"), WAIT);

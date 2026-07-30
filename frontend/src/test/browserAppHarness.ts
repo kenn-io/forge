@@ -151,13 +151,13 @@ export function firePopstate(path: string): void {
  * Reset the keyboard subsystem's module-level singletons between mounts so one
  * spec's palette/cheatsheet/registry/modal-stack state cannot leak into the
  * next. Identical to appHarness.ts resetKeyboardModuleState(), including the
- * dynamic import of "@middleman/ui/stores/keyboard/modal-stack".
+ * dynamic import of "@kenn-forge/ui/stores/keyboard/modal-stack".
  */
 export async function resetKeyboardModuleState(): Promise<void> {
   const { resetPaletteState } = await import("../lib/stores/keyboard/palette-state.svelte.js");
   const { resetCheatsheetState } = await import("../lib/stores/keyboard/cheatsheet-state.svelte.js");
   const { resetRegistry } = await import("../lib/stores/keyboard/registry.svelte.js");
-  const { resetModalStack } = await import("@middleman/ui/stores/keyboard/modal-stack");
+  const { resetModalStack } = await import("@kenn-forge/ui/stores/keyboard/modal-stack");
   resetPaletteState();
   resetCheatsheetState();
   resetRegistry();

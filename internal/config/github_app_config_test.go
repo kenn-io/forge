@@ -6,21 +6,21 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/tokenauth"
+	"go.kenn.io/forge/internal/tokenauth"
 )
 
 const githubAppConfigTOML = `
 [[repos]]
 owner = "kenn-io"
-name = "middleman"
+name = "kenn-forge"
 
 [[github_apps]]
 host = "github.com"
 app_id = 4321
-slug = "middleman-abc"
+slug = "kenn-forge-abc"
 owner = "mariusvniekerk"
 owner_type = "User"
-private_key_path = "github-app-middleman-abc.pem"
+private_key_path = "github-app-kenn-forge-abc.pem"
 installation_id = 99
 installation_account = "kenn-io"
 repository_selection = "all"
@@ -36,13 +36,13 @@ func TestLoadGitHubApps(t *testing.T) {
 	assert := assert.New(t)
 	assert.Equal("github.com", app.Host)
 	assert.Equal(int64(4321), app.AppID)
-	assert.Equal("middleman-abc", app.Slug)
+	assert.Equal("kenn-forge-abc", app.Slug)
 	assert.Equal(int64(99), app.InstallationID)
 	assert.Equal("kenn-io", app.InstallationAccount)
 	// Relative key paths resolve against the config directory, like
 	// token_file does, so the CLI can write portable entries.
 	assert.Equal(
-		filepath.Join(filepath.Dir(path), "github-app-middleman-abc.pem"),
+		filepath.Join(filepath.Dir(path), "github-app-kenn-forge-abc.pem"),
 		app.PrivateKeyPath,
 	)
 }
@@ -147,7 +147,7 @@ func TestGitHubAppInstallationCoverage(t *testing.T) {
 			toml: `
 [[repos]]
 owner = "kenn-io"
-name = "middleman"
+name = "kenn-forge"
 
 [[github_apps]]
 app_id = 1
@@ -162,7 +162,7 @@ repository_selection = "all"
 			toml: `
 [[repos]]
 owner = "kenn-io"
-name = "middleman"
+name = "kenn-forge"
 
 [[github_apps]]
 app_id = 1
@@ -177,7 +177,7 @@ repository_selection = "all"
 			toml: `
 [[repos]]
 owner = "kenn-io"
-name = "middleman"
+name = "kenn-forge"
 
 [[repos]]
 owner = "otherorg"
@@ -241,7 +241,7 @@ repository_selection = "all"
 			toml: `
 [[repos]]
 owner = "kenn-io"
-name = "middleman"
+name = "kenn-forge"
 
 [[github_apps]]
 app_id = 1
@@ -249,7 +249,7 @@ private_key_path = "a.pem"
 installation_id = 9
 installation_account = "kenn-io"
 repository_selection = "selected"
-selected_repos = ["kenn-io/middleman"]
+selected_repos = ["kenn-io/kenn-forge"]
 `,
 		},
 		{
@@ -257,7 +257,7 @@ selected_repos = ["kenn-io/middleman"]
 			toml: `
 [[repos]]
 owner = "kenn-io"
-name = "middleman"
+name = "kenn-forge"
 
 [[repos]]
 owner = "kenn-io"
@@ -269,7 +269,7 @@ private_key_path = "a.pem"
 installation_id = 9
 installation_account = "kenn-io"
 repository_selection = "selected"
-selected_repos = ["kenn-io/middleman"]
+selected_repos = ["kenn-io/kenn-forge"]
 `,
 		},
 		{
@@ -341,7 +341,7 @@ private_key_path = "a.pem"
 installation_id = 9
 installation_account = "kenn-io"
 repository_selection = " Selected "
-selected_repos = ["kenn-io/middleman"]
+selected_repos = ["kenn-io/kenn-forge"]
 `,
 		},
 	}
@@ -389,7 +389,7 @@ func TestGitHubAppMixedOverrideAndCoveredReposUseSeparateRoutes(t *testing.T) {
 	cfg, err := Load(writeConfig(t, `
 [[repos]]
 owner = "kenn-io"
-name = "middleman"
+name = "kenn-forge"
 
 [[repos]]
 owner = "other-org"
@@ -486,7 +486,7 @@ github_token_env = "MY_PAT"
 
 [[repos]]
 owner = "kenn-io"
-name = "middleman"
+name = "kenn-forge"
 
 [[github_apps]]
 host = "github.com"
@@ -526,7 +526,7 @@ github_token_env = "MY_PAT"
 
 [[repos]]
 owner = "kenn-io"
-name = "middleman"
+name = "kenn-forge"
 
 [[repos]]
 owner = "other-org"
@@ -595,7 +595,7 @@ func TestTokenSourceChainSkipsAppForOtherHosts(t *testing.T) {
 	cfg, err := Load(writeConfig(t, `
 [[repos]]
 owner = "kenn-io"
-name = "middleman"
+name = "kenn-forge"
 
 [[github_apps]]
 host = "github.com"

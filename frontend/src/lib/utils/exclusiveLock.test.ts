@@ -25,7 +25,7 @@ describe("exclusive e2e lock", () => {
   });
 
   async function tempRoot(): Promise<string> {
-    const root = await mkdtemp(path.join(os.tmpdir(), "middleman-lock-test-"));
+    const root = await mkdtemp(path.join(os.tmpdir(), "kenn-forge-lock-test-"));
     tempRoots.push(root);
     return root;
   }
@@ -76,7 +76,7 @@ describe("exclusive e2e lock", () => {
 
   it("rejects a symlinked lock root", async () => {
     const target = await tempRoot();
-    const root = path.join(os.tmpdir(), `middleman-lock-link-${process.pid}`);
+    const root = path.join(os.tmpdir(), `kenn-forge-lock-link-${process.pid}`);
     tempRoots.push(root);
     await rm(root, { force: true, recursive: true });
     await symlink(target, root, process.platform === "win32" ? "junction" : undefined);

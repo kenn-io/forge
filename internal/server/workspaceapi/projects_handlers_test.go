@@ -12,8 +12,8 @@ import (
 	gitcmd "go.kenn.io/kit/git/cmd"
 	managedworktree "go.kenn.io/kit/git/managed"
 
-	"go.kenn.io/middleman/internal/procutil"
-	"go.kenn.io/middleman/internal/server/httpapi"
+	"go.kenn.io/forge/internal/procutil"
+	"go.kenn.io/forge/internal/server/httpapi"
 )
 
 func TestWorktreeLifecycleProblemMapsExistingBranch(t *testing.T) {

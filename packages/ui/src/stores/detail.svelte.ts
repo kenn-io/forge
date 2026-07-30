@@ -16,7 +16,7 @@ import {
   resolvedPlatformHost,
   type ProviderRouteRef,
 } from "../api/provider-routes.js";
-import type { MiddlemanClient } from "../types.js";
+import type { ForgeClient } from "../types.js";
 import { showFlash } from "./flash.svelte.js";
 import { nextWorkspaceLifecycleTick } from "./workspace-create-pending.svelte.js";
 
@@ -40,7 +40,7 @@ type DetailRequestRef = {
 };
 
 export interface DetailStoreOptions {
-  client: MiddlemanClient;
+  client: ForgeClient;
   getPage?: () => string;
   pulls?: {
     loadPulls: (params?: unknown) => Promise<void>;

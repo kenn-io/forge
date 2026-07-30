@@ -3,7 +3,7 @@ package gitlab
 import (
 	"context"
 
-	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/forge/internal/platform"
 )
 
 // Notification support for GitLab is not implemented yet. GitLab's

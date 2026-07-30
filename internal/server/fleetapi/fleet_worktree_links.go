@@ -8,10 +8,10 @@ import (
 	"sync"
 	"time"
 
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/fleet"
-	ghclient "go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/fleet"
+	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/platform"
 )
 
 // worktreeLinkRecomputeMu serializes every branch-match recompute — the
@@ -273,7 +273,7 @@ func (s *Handler) notifyWorktreeLinksChanged() {
 }
 
 // NotifyWorktreeLinksChanged is the exported wrapper for callers wiring
-// the sync-path link recompute outside this package (cmd/middleman).
+// the sync-path link recompute outside this package (cmd/kenn-forge).
 func (s *Handler) NotifyWorktreeLinksChanged() {
 	s.notifyWorktreeLinksChanged()
 }

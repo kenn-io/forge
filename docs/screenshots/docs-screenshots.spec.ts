@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { startIsolatedWorkspaceE2EServer } from "../../frontend/tests/e2e-full/support/e2eServer";
 
-const outputDir = process.env.MIDDLEMAN_DOCS_SCREENSHOT_DIR;
+const outputDir = process.env.KENN_FORGE_DOCS_SCREENSHOT_DIR;
 
 type ThemeName = "light" | "dark";
 
@@ -67,8 +67,8 @@ const cases: CaptureCase[] = [
 
 async function preparePage(page: Page, theme: ThemeName): Promise<void> {
   await page.addInitScript((themeName) => {
-    localStorage.setItem("middleman-theme", themeName);
-    localStorage.setItem("middleman-sidebar", "expanded");
+    localStorage.setItem("kenn-forge-theme", themeName);
+    localStorage.setItem("kenn-forge-sidebar", "expanded");
   }, theme);
 }
 
@@ -222,7 +222,7 @@ test.describe("docs workflow screenshots", () => {
 
   test.beforeAll(async () => {
     if (!outputDir) {
-      throw new Error("MIDDLEMAN_DOCS_SCREENSHOT_DIR must point to the staged docs asset directory");
+      throw new Error("KENN_FORGE_DOCS_SCREENSHOT_DIR must point to the staged docs asset directory");
     }
     server = await startIsolatedWorkspaceE2EServer();
     await mkdir(outputDir, { recursive: true });

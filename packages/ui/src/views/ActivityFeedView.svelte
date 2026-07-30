@@ -79,7 +79,7 @@
   const { detail: detailStore, issues: issuesStore } = getStores();
   const paneLayout = getPaneLayoutStore("activity");
 
-  const ACTIVITY_PANE_WIDTH_KEY = "middleman-activity-pane-width";
+  const ACTIVITY_PANE_WIDTH_KEY = "kenn-forge-activity-pane-width";
   const DEFAULT_ACTIVITY_PANE_WIDTH = 360;
 
   function loadActivityPaneWidth(): number {

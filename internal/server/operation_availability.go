@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"time"
 
-	"go.kenn.io/middleman/internal/db"
-	ghclient "go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/platform"
-	"go.kenn.io/middleman/internal/server/httpapi"
-	"go.kenn.io/middleman/internal/tokenauth"
+	"go.kenn.io/forge/internal/db"
+	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/platform"
+	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/tokenauth"
 )
 
 const (
@@ -451,7 +451,7 @@ func operationRepoRef(repo db.Repo) ghclient.RepoRef {
 // re-resolves a split host's mutation credential chain. Within the
 // TTL the cached verdict answers; afterwards the next request probes
 // again, so a user who signs in with the gh CLI or fills a token file
-// at runtime sees writes come back without restarting middleman.
+// at runtime sees writes come back without restarting kenn-forge.
 const writeCredentialProbeTTL = time.Minute
 
 // writeCredentialProbeErrorTTL caches resolver failures (as opposed
@@ -512,7 +512,7 @@ func (s *Server) writeCredentialGateForRepo(repo db.Repo) writeCredentialGate {
 				return writeCredentialGate{
 					code: availabilityCodeMissingWriteCredential,
 					reason: fmt.Sprintf(
-						"No startup-resolved user credential for writes on %s. Configure a PAT or gh CLI auth, then restart middleman.",
+						"No startup-resolved user credential for writes on %s. Configure a PAT or gh CLI auth, then restart kenn-forge.",
 						httpapi.ProviderHost(repo),
 					),
 				}
@@ -638,7 +638,7 @@ func writeCredentialGateFromError(host string, err error) writeCredentialGate {
 		return writeCredentialGate{
 			code: availabilityCodeWriteCredentialError,
 			reason: fmt.Sprintf(
-				"The GitHub write credential for %s changed identity; restart middleman to bind the route to the new user.",
+				"The GitHub write credential for %s changed identity; restart kenn-forge to bind the route to the new user.",
 				host,
 			),
 		}

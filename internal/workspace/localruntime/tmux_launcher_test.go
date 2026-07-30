@@ -17,17 +17,17 @@ import (
 func TestTmuxLauncherAgentOperationsKeepEnvValuesOutOfArgv(t *testing.T) {
 	assert := assert.New(t)
 	t.Setenv("XDG_RUNTIME_DIR", "argv-visible-value")
-	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "secret-value")
+	t.Setenv("KENN_FORGE_GITHUB_TOKEN", "secret-value")
 
 	paneEnv := tmuxAgentEnvPolicy.paneEnvironment(
 		os.Environ(), []string{"/bin/sh", "-lc", "sleep 10"}, nil,
 	)
 	launcher := tmuxLauncher{
 		TmuxCommand: []string{"/usr/bin/tmux"},
-		Session:     "middleman-test",
+		Session:     "kenn-forge-test",
 		CWD:         "/tmp/work tree",
 		Pane:        paneEnv,
-		OwnerMarker: "middleman:test-owner",
+		OwnerMarker: "kenn-forge:test-owner",
 	}
 
 	paneCommand, cleanup, err := launcher.newSessionPaneCommand()
@@ -54,12 +54,12 @@ func TestTmuxLauncherAgentOperationsKeepEnvValuesOutOfArgv(t *testing.T) {
 	assert.Contains(scriptText, "exec env -i")
 	assert.Contains(newSession, ";")
 	assert.Contains(newSession, "set-option")
-	assert.Contains(newSession, "@middleman_owner")
-	assert.Contains(newSession, "middleman:test-owner")
+	assert.Contains(newSession, "@forge_owner")
+	assert.Contains(newSession, "kenn-forge:test-owner")
 	assert.Contains(scriptText, `XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR-}"`)
-	assert.Contains(scriptText, "__middleman_env_file=")
-	assert.Contains(scriptText, "__middleman_script_file=")
-	assert.Contains(scriptText, "trap __middleman_cleanup_tmux_files EXIT")
+	assert.Contains(scriptText, "__kenn_forge_env_file=")
+	assert.Contains(scriptText, "__kenn_forge_script_file=")
+	assert.Contains(scriptText, "trap __kenn_forge_cleanup_tmux_files EXIT")
 	assert.Contains(scriptText, "trap - EXIT")
 	assert.NotContains(newSessionText, "argv-visible-value")
 	assert.NotContains(newSessionText, "secret-value")
@@ -69,13 +69,13 @@ func TestTmuxLauncherAgentOperationsKeepEnvValuesOutOfArgv(t *testing.T) {
 
 func TestTmuxPaneEnvironmentExtraReplacesInheritedValue(t *testing.T) {
 	pane := tmuxAgentEnvPolicy.paneEnvironmentWithExtra(
-		[]string{"PATH=/usr/bin", "MIDDLEMAN_RUNTIME_SESSION_KEY=parent"},
+		[]string{"PATH=/usr/bin", "KENN_FORGE_RUNTIME_SESSION_KEY=parent"},
 		[]string{"/bin/sh"}, nil,
-		map[string]string{"MIDDLEMAN_RUNTIME_SESSION_KEY": "child"},
+		map[string]string{"KENN_FORGE_RUNTIME_SESSION_KEY": "child"},
 	)
 
-	assert.Contains(t, pane.commandEnv, "MIDDLEMAN_RUNTIME_SESSION_KEY=child")
-	assert.NotContains(t, pane.commandEnv, "MIDDLEMAN_RUNTIME_SESSION_KEY=parent")
+	assert.Contains(t, pane.commandEnv, "KENN_FORGE_RUNTIME_SESSION_KEY=child")
+	assert.NotContains(t, pane.commandEnv, "KENN_FORGE_RUNTIME_SESSION_KEY=parent")
 }
 
 func TestTmuxLauncherCanHideStatusOnNewSessions(t *testing.T) {
@@ -86,10 +86,10 @@ func TestTmuxLauncherCanHideStatusOnNewSessions(t *testing.T) {
 	)
 	launcher := tmuxLauncher{
 		TmuxCommand: []string{"/usr/bin/tmux"},
-		Session:     "middleman-test",
+		Session:     "kenn-forge-test",
 		CWD:         "/tmp/work tree",
 		Pane:        paneEnv,
-		OwnerMarker: "middleman:test-owner",
+		OwnerMarker: "kenn-forge:test-owner",
 		HideStatus:  true,
 	}
 
@@ -103,21 +103,21 @@ func TestTmuxLauncherCanHideStatusOnNewSessions(t *testing.T) {
 	assert.NotContains(newSession, "status")
 	assert.NotContains(newSession, "off")
 	assert.True(containsArgvSequence(hideStatus, []string{
-		"set-option", "-q", "-t", "middleman-test", "status", "off",
+		"set-option", "-q", "-t", "kenn-forge-test", "status", "off",
 	}))
 	assert.NotContains(launcher.attachSessionCommand(), "status")
 }
 
 func TestTmuxLauncherAttachForcesUTF8(t *testing.T) {
 	launcher := tmuxLauncher{
-		TmuxCommand: []string{"/usr/bin/tmux", "-L", "middleman-test"},
-		Session:     "middleman-test",
+		TmuxCommand: []string{"/usr/bin/tmux", "-L", "kenn-forge-test"},
+		Session:     "kenn-forge-test",
 	}
 
 	assert.Equal(t,
 		[]string{
-			"/usr/bin/tmux", "-L", "middleman-test",
-			"-u", "attach-session", "-t", "middleman-test",
+			"/usr/bin/tmux", "-L", "kenn-forge-test",
+			"-u", "attach-session", "-t", "kenn-forge-test",
 		},
 		launcher.attachSessionCommand(),
 	)
@@ -174,7 +174,7 @@ exit 0
 
 	launcher := tmuxLauncher{
 		TmuxCommand: []string{tmuxPath},
-		Session:     "middleman-test",
+		Session:     "kenn-forge-test",
 		Pane: tmuxPaneEnvironment{
 			paneCommand: "exec /bin/sh",
 			keys:        []string{"PATH", "TERM"},
@@ -182,10 +182,10 @@ exit 0
 				os.Environ(),
 				"TMUX_RECORD="+record,
 				"TMUX_CREATED="+created,
-				"TMUX_EXISTING_OWNER=middleman:test-owner",
+				"TMUX_EXISTING_OWNER=kenn-forge:test-owner",
 			),
 		},
-		OwnerMarker: "middleman:test-owner",
+		OwnerMarker: "kenn-forge:test-owner",
 		HideStatus:  true,
 	}
 
@@ -195,30 +195,30 @@ exit 0
 	assert.Contains(err.Error(), "hide tmux status")
 	records := readNullArgvRecord(t, record)
 	assert.Contains(records, []string{
-		"kill-session", "-t", "middleman-test",
+		"kill-session", "-t", "kenn-forge-test",
 	})
 	assert.NotContains(records, []string{
-		"-u", "attach-session", "-t", "middleman-test",
+		"-u", "attach-session", "-t", "kenn-forge-test",
 	})
 	assert.NoFileExists(created)
 }
 
 func TestTmuxLauncherShellPolicyPreservesCustomEnvByKey(t *testing.T) {
 	assert := assert.New(t)
-	t.Setenv("MIDDLEMAN_TEST_CUSTOM_SHELL_ENV", "custom-visible-value")
+	t.Setenv("KENN_FORGE_TEST_CUSTOM_SHELL_ENV", "custom-visible-value")
 
 	shellKeys := tmuxShellEnvPolicy.keys(nil)
 	agentKeys := tmuxAgentEnvPolicy.keys(nil)
 
-	assert.Contains(shellKeys, "MIDDLEMAN_TEST_CUSTOM_SHELL_ENV")
-	assert.NotContains(agentKeys, "MIDDLEMAN_TEST_CUSTOM_SHELL_ENV")
+	assert.Contains(shellKeys, "KENN_FORGE_TEST_CUSTOM_SHELL_ENV")
+	assert.NotContains(agentKeys, "KENN_FORGE_TEST_CUSTOM_SHELL_ENV")
 
 	paneCommand := tmuxShellEnvPolicy.paneEnvironment(
 		os.Environ(), []string{"/bin/sh"}, nil,
 	).paneCommand
 	assert.Contains(
 		paneCommand,
-		`MIDDLEMAN_TEST_CUSTOM_SHELL_ENV="${MIDDLEMAN_TEST_CUSTOM_SHELL_ENV-}"`,
+		`KENN_FORGE_TEST_CUSTOM_SHELL_ENV="${KENN_FORGE_TEST_CUSTOM_SHELL_ENV-}"`,
 	)
 	assert.NotContains(paneCommand, "custom-visible-value")
 }
@@ -248,7 +248,7 @@ exit 0
 
 	launcher := tmuxLauncher{
 		TmuxCommand: []string{tmuxPath},
-		Session:     "middleman-test",
+		Session:     "kenn-forge-test",
 		Pane: tmuxPaneEnvironment{
 			paneCommand: "exec /bin/sh",
 			keys:        []string{"PATH", "TERM"},
@@ -258,7 +258,7 @@ exit 0
 				"TMUX_EXISTING_OWNER=other-owner",
 			),
 		},
-		OwnerMarker: "middleman:test-owner",
+		OwnerMarker: "kenn-forge:test-owner",
 	}
 
 	_, err := launcher.prepare(context.Background())
@@ -266,17 +266,17 @@ exit 0
 	require.Error(err)
 	records := readNullArgvRecord(t, record)
 	assert.Contains(records, []string{
-		"has-session", "-t", "middleman-test",
+		"has-session", "-t", "kenn-forge-test",
 	})
 	assert.Contains(records, []string{
-		"show-options", "-qv", "-t", "middleman-test", "@middleman_owner",
+		"show-options", "-qv", "-t", "kenn-forge-test", "@forge_owner",
 	})
 	assert.NotContains(records, []string{
-		"-u", "attach-session", "-t", "middleman-test",
+		"-u", "attach-session", "-t", "kenn-forge-test",
 	})
 	assert.NotContains(records, []string{
 		"new-session", "-e", "PATH", "-e", "TERM",
-		"-d", "-s", "middleman-test", "exec /bin/sh",
+		"-d", "-s", "kenn-forge-test", "exec /bin/sh",
 	})
 }
 

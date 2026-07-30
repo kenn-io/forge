@@ -93,7 +93,7 @@ func EnsureGeneratedContextFilesIgnored(
 		if len(text) > 0 && !strings.HasSuffix(text, "\n") {
 			block.WriteString("\n")
 		}
-		block.WriteString("# middleman generated agent context\n")
+		block.WriteString("# kenn-forge generated agent context\n")
 		for _, pattern := range add {
 			block.WriteString(pattern)
 			block.WriteString("\n")
@@ -139,7 +139,7 @@ func gitPathIgnored(ctx context.Context, worktreePath, rel string) (bool, error)
 }
 
 // generatedContextIgnorePattern maps a generated context path to the exact
-// local ignore rule that covers it. Only known middleman-generated paths are
+// local ignore rule that covers it. Only known kenn-forge-generated paths are
 // allowed; anything else is rejected rather than silently ignored.
 func generatedContextIgnorePattern(rel string) (cleanPath, pattern string, err error) {
 	rel = strings.TrimSpace(rel)

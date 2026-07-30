@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"go.kenn.io/middleman/internal/kata"
-	"go.kenn.io/middleman/internal/server/httpapi"
+	"go.kenn.io/forge/internal/kata"
+	"go.kenn.io/forge/internal/server/httpapi"
 )
 
 const (

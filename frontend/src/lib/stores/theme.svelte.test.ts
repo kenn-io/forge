@@ -31,11 +31,11 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  delete window.__middleman_config;
+  delete window.__kenn_forge_config;
   document.documentElement.classList.remove("dark");
   document.documentElement.style.cssText = "";
   try {
-    localStorage.removeItem("middleman-theme");
+    localStorage.removeItem("kenn-forge-theme");
   } catch {
     /* storage blocked */
   }
@@ -58,59 +58,59 @@ describe("standalone mode (no config)", () => {
   it("persists theme to localStorage", () => {
     initTheme();
     toggleTheme();
-    const stored = localStorage.getItem("middleman-theme");
+    const stored = localStorage.getItem("kenn-forge-theme");
     expect(stored).toBeTruthy();
   });
 
   it("an explicit toggle overwrites an invalid stored value", () => {
     // kit ignores garbage (resolving to system) without deleting it; the
     // contract is that the next explicit choice replaces it.
-    localStorage.setItem("middleman-theme", "garbage");
+    localStorage.setItem("kenn-forge-theme", "garbage");
     mockMatchMedia(true);
     initTheme();
     expect(isDark()).toBe(true);
 
     toggleTheme();
     expect(isDark()).toBe(false);
-    expect(localStorage.getItem("middleman-theme")).toBe("light");
+    expect(localStorage.getItem("kenn-forge-theme")).toBe("light");
   });
 });
 
 describe("embedded mode with theme.mode", () => {
   it("hides toggle when mode is set", () => {
-    window.__middleman_config = { theme: { mode: "dark" } };
-    window.__middleman_notify_config_changed?.();
+    window.__kenn_forge_config = { theme: { mode: "dark" } };
+    window.__kenn_forge_notify_config_changed?.();
     initTheme();
     expect(isThemeToggleVisible()).toBe(false);
   });
 
-  it("a keyboard toggle under a forced mode persists to the middleman key", () => {
+  it("a keyboard toggle under a forced mode persists to the kenn-forge key", () => {
     // Covers the adapter's kit lifecycle assumption: initTheme binds kit's
     // storage key before cleanupTheme drops the OS listener, and cleanup
     // must not unbind the key — a later setThemeMode from toggleTheme has
-    // to land in middleman-theme, not kit's default key.
-    window.__middleman_config = { theme: { mode: "light" } };
-    window.__middleman_notify_config_changed?.();
+    // to land in kenn-forge-theme, not kit's default key.
+    window.__kenn_forge_config = { theme: { mode: "light" } };
+    window.__kenn_forge_notify_config_changed?.();
     initTheme();
     expect(isDark()).toBe(false);
 
     toggleTheme();
     expect(isDark()).toBe(true);
-    expect(localStorage.getItem("middleman-theme")).toBe("dark");
+    expect(localStorage.getItem("kenn-forge-theme")).toBe("dark");
     expect(localStorage.getItem("kit-ui-theme")).toBeNull();
   });
 
   it("applies dark class when mode is dark", () => {
-    window.__middleman_config = { theme: { mode: "dark" } };
-    window.__middleman_notify_config_changed?.();
+    window.__kenn_forge_config = { theme: { mode: "dark" } };
+    window.__kenn_forge_notify_config_changed?.();
     initTheme();
     expect(isDark()).toBe(true);
     expect(document.documentElement.classList.contains("dark")).toBe(true);
   });
 
   it("applies light class when mode is light", () => {
-    window.__middleman_config = { theme: { mode: "light" } };
-    window.__middleman_notify_config_changed?.();
+    window.__kenn_forge_config = { theme: { mode: "light" } };
+    window.__kenn_forge_notify_config_changed?.();
     initTheme();
     expect(isDark()).toBe(false);
   });
@@ -119,36 +119,36 @@ describe("embedded mode with theme.mode", () => {
 describe("reapplyTheme after removing forced mode", () => {
   it("restores localStorage preference when mode is removed", () => {
     // Start with forced dark mode
-    window.__middleman_config = { theme: { mode: "dark" } };
-    window.__middleman_notify_config_changed?.();
+    window.__kenn_forge_config = { theme: { mode: "dark" } };
+    window.__kenn_forge_notify_config_changed?.();
     initTheme();
     expect(isDark()).toBe(true);
 
     // Store a light preference, then remove forced mode
-    localStorage.setItem("middleman-theme", "light");
-    delete window.__middleman_config!.theme;
-    window.__middleman_notify_config_changed?.();
+    localStorage.setItem("kenn-forge-theme", "light");
+    delete window.__kenn_forge_config!.theme;
+    window.__kenn_forge_notify_config_changed?.();
     reapplyTheme();
     expect(isDark()).toBe(false);
   });
 
   it("falls back to OS preference when no stored or manual choice", () => {
     mockMatchMedia(true); // OS prefers dark
-    window.__middleman_config = { theme: { mode: "light" } };
-    window.__middleman_notify_config_changed?.();
+    window.__kenn_forge_config = { theme: { mode: "light" } };
+    window.__kenn_forge_notify_config_changed?.();
     initTheme();
     expect(isDark()).toBe(false);
 
     // Remove forced mode, no localStorage, no manual toggle
-    delete window.__middleman_config!.theme;
-    window.__middleman_notify_config_changed?.();
+    delete window.__kenn_forge_config!.theme;
+    window.__kenn_forge_notify_config_changed?.();
     reapplyTheme();
     expect(isDark()).toBe(true); // follows OS dark preference
   });
 
   it("preserves in-memory manual toggle when storage is blocked", () => {
-    window.__middleman_config = { theme: { mode: "light" } };
-    window.__middleman_notify_config_changed?.();
+    window.__kenn_forge_config = { theme: { mode: "light" } };
+    window.__kenn_forge_notify_config_changed?.();
     initTheme();
     expect(isDark()).toBe(false);
 
@@ -163,8 +163,8 @@ describe("reapplyTheme after removing forced mode", () => {
 
     // Remove forced mode — should use in-memory manual choice, not OS
     mockMatchMedia(false); // OS prefers light
-    delete window.__middleman_config!.theme;
-    window.__middleman_notify_config_changed?.();
+    delete window.__kenn_forge_config!.theme;
+    window.__kenn_forge_notify_config_changed?.();
     reapplyTheme();
     expect(isDark()).toBe(true); // kept manual dark choice
   });

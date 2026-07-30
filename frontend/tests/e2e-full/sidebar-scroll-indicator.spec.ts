@@ -70,7 +70,7 @@ test("grouped rails share labeled native scroll regions", async ({ page, browser
 });
 
 test("dark grouped rows keep selected between the surface and hover", async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem("middleman-theme", "dark"));
+  await page.addInitScript(() => localStorage.setItem("kenn-forge-theme", "dark"));
   await page.goto("/pulls");
 
   const lightness = await page.evaluate(() => {

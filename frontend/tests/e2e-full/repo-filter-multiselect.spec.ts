@@ -45,7 +45,7 @@ test("repository selector persists provider-qualified filters for provider colli
     await page.keyboard.press("Escape");
 
     await expect
-      .poll(() => page.evaluate(() => localStorage.getItem("middleman-filter-repo")))
+      .poll(() => page.evaluate(() => localStorage.getItem("kenn-forge-filter-repo")))
       .toBe("gitea|github.com/acme/widgets");
     await expect(page.getByText("Gitea provider collision issue")).toBeVisible();
     await expect(page.getByText("Widget rendering broken on Safari")).toHaveCount(0);

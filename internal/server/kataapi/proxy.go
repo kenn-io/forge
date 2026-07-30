@@ -15,12 +15,12 @@ import (
 	"strings"
 	"time"
 
-	"go.kenn.io/middleman/internal/kata"
-	"go.kenn.io/middleman/internal/server/httpapi"
+	"go.kenn.io/forge/internal/kata"
+	"go.kenn.io/forge/internal/server/httpapi"
 )
 
 const (
-	kataDaemonHeaderName          = "X-Middleman-Kata-Daemon"
+	kataDaemonHeaderName          = "X-Kenn-Forge-Kata-Daemon"
 	kataProxyPrefix               = "/api/v1/kata/proxy"
 	kataDaemonProxyRequestTimeout = 30 * time.Second
 )
@@ -165,7 +165,7 @@ func (h *Handler) selectKataProxyDaemon(w http.ResponseWriter, r *http.Request) 
 }
 
 // selectKataDaemonForID resolves the catalog daemon addressed by the
-// X-Middleman-Kata-Daemon header value (the effective default daemon when
+// X-Kenn-Forge-Kata-Daemon header value (the effective default daemon when
 // empty) to a reachable target. Shared by the passthrough proxy and the
 // server-side Kata task reads.
 func (h *Handler) selectKataDaemonForID(headerID string) (kata.Daemon, *httpapi.ProblemError) {

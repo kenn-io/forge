@@ -7952,7 +7952,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                "X-Middleman-Runtime-Session-Key"?: string;
+                "X-Kenn-Forge-Runtime-Session-Key"?: string;
             };
             path: {
                 agent: string;
@@ -13069,7 +13069,7 @@ export interface operations {
             query?: never;
             header?: {
                 /** @description Kata daemon id; the effective default daemon when empty */
-                "X-Middleman-Kata-Daemon"?: string;
+                "X-Kenn-Forge-Kata-Daemon"?: string;
             };
             path?: never;
             cookie?: never;
@@ -13102,7 +13102,7 @@ export interface operations {
             query?: never;
             header?: {
                 /** @description Kata daemon id; the effective default daemon when empty */
-                "X-Middleman-Kata-Daemon"?: string;
+                "X-Kenn-Forge-Kata-Daemon"?: string;
             };
             path?: never;
             cookie?: never;
@@ -13138,7 +13138,7 @@ export interface operations {
             };
             header?: {
                 /** @description Kata daemon id; the effective default daemon when empty */
-                "X-Middleman-Kata-Daemon"?: string;
+                "X-Kenn-Forge-Kata-Daemon"?: string;
             };
             path?: never;
             cookie?: never;
@@ -13177,7 +13177,7 @@ export interface operations {
             };
             header?: {
                 /** @description Kata daemon id; the effective default daemon when empty */
-                "X-Middleman-Kata-Daemon"?: string;
+                "X-Kenn-Forge-Kata-Daemon"?: string;
             };
             path?: never;
             cookie?: never;

@@ -2,9 +2,9 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-source_config="${MIDDLEMAN_CONFIG:-${HOME}/.config/middleman/config.toml}"
-clone_dir="${MIDDLEMAN_DEV_CLONE_DIR:-${repo_root}/tmp/dev-db-clone}"
-clone_port="${MIDDLEMAN_DEV_CLONE_PORT:-8092}"
+source_config="${KENN_FORGE_CONFIG:-${HOME}/.config/kenn-forge/config.toml}"
+clone_dir="${KENN_FORGE_DEV_CLONE_DIR:-${repo_root}/tmp/dev-db-clone}"
+clone_port="${KENN_FORGE_DEV_CLONE_PORT:-8092}"
 
 python3 - "$source_config" "$clone_dir" "$clone_port" <<'PY'
 import os
@@ -24,7 +24,7 @@ source_config = Path(sys.argv[1]).expanduser().resolve()
 clone_dir = Path(sys.argv[2]).expanduser().resolve()
 clone_port = int(sys.argv[3])
 if clone_port < 1 or clone_port > 65535:
-    raise SystemExit(f"invalid MIDDLEMAN_DEV_CLONE_PORT {clone_port!r}")
+    raise SystemExit(f"invalid KENN_FORGE_DEV_CLONE_PORT {clone_port!r}")
 if not source_config.exists():
     raise SystemExit(f"source config does not exist: {source_config}")
 
@@ -36,20 +36,20 @@ if source_data_dir:
     if not source_data_dir.is_absolute():
         source_data_dir = (source_config.parent / source_data_dir).resolve()
 else:
-    middleman_home = os.environ.get("MIDDLEMAN_HOME")
-    if middleman_home:
-        source_data_dir = Path(middleman_home).expanduser().resolve()
+    forge_home = os.environ.get("KENN_FORGE_HOME")
+    if forge_home:
+        source_data_dir = Path(forge_home).expanduser().resolve()
     else:
-        source_data_dir = Path.home() / ".config" / "middleman"
+        source_data_dir = Path.home() / ".config" / "kenn-forge"
 
-source_db = source_data_dir / "middleman.db"
+source_db = source_data_dir / "forge.db"
 if not source_db.exists():
     raise SystemExit(f"source database does not exist: {source_db}")
 
 clone_dir.mkdir(parents=True, exist_ok=True)
 clone_dir.chmod(stat.S_IRWXU)
-clone_db = clone_dir / "middleman.db"
-tmp_db = clone_dir / ".middleman.db.tmp"
+clone_db = clone_dir / "forge.db"
+tmp_db = clone_dir / ".forge.db.tmp"
 if tmp_db.exists():
     tmp_db.unlink()
 with sqlite3.connect(f"file:{source_db}?mode=ro", uri=True) as src:

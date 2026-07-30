@@ -5,7 +5,7 @@ import (
 	"os/exec"
 	"slices"
 
-	"go.kenn.io/middleman/internal/config"
+	"go.kenn.io/forge/internal/config"
 )
 
 type lookPathFunc func(string) (string, error)

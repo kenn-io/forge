@@ -40,7 +40,7 @@ function run(command, args, options = {}) {
 export async function buildDocs() {
   const sourceDir = path.join(repoRoot, "docs");
   const siteDir = path.join(repoRoot, "site");
-  const stagingRoot = await mkdtemp(path.join(os.tmpdir(), "middleman-docs-build-"));
+  const stagingRoot = await mkdtemp(path.join(os.tmpdir(), "kenn-forge-docs-build-"));
   const stagedDocs = path.join(stagingRoot, "docs");
 
   try {
@@ -65,7 +65,7 @@ export async function buildDocs() {
         cwd: repoRoot,
         env: {
           ...process.env,
-          MIDDLEMAN_DOCS_SCREENSHOT_DIR: path.join(stagedDocs, "assets", "generated"),
+          KENN_FORGE_DOCS_SCREENSHOT_DIR: path.join(stagedDocs, "assets", "generated"),
         },
       },
     );

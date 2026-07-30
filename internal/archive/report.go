@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"go.kenn.io/middleman/internal/archive/report"
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/forge/internal/archive/report"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/platform"
 )
 
 var ErrEmptyReportScope = errors.New("archive report repository scope is empty")

@@ -9,9 +9,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"go.kenn.io/middleman/internal/config"
-	"go.kenn.io/middleman/internal/fleet"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/fleet"
+	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
 func TestBuildFleetSnapshotMergesPeerAndDegrades(t *testing.T) {

@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import {
   consumeWorkspaceLaunch,
   resetWorkspaceCreatePendingForTest,
-} from "@middleman/ui/stores/workspace-create-pending";
+} from "@kenn-forge/ui/stores/workspace-create-pending";
 import type { KataTaskLink } from "../../api/kata/taskTypes.js";
 import KataWorkspace from "./KataWorkspace.svelte";
 import { KATA_WORKSPACE_STATE_STORAGE_KEY } from "./kataWorkspacePersistence.js";
@@ -35,8 +35,8 @@ vi.mock("../../api/kata/workspaces.js", async (importOriginal) => {
 
 vi.mock("../../stores/router.svelte.js", () => ({ navigate: mockNavigate }));
 
-vi.mock("@middleman/ui", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@middleman/ui")>();
+vi.mock("@kenn-forge/ui", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@kenn-forge/ui")>();
   return {
     ...actual,
     getStores: () => ({
@@ -166,7 +166,7 @@ describe("KataWorkspace snapshot authority", () => {
     await waitFor(() =>
       expect(patchIssueMetadata).toHaveBeenCalledWith(
         { project_id: selected.project_id, ref: selected.uid },
-        "middleman",
+        "kenn-forge",
         expect.objectContaining({ checklist: expect.any(Array) }),
         snapshotETag,
         { daemonId: "home" },
@@ -727,7 +727,7 @@ describe("KataWorkspace snapshot authority", () => {
         from: { uid: selected.uid, short_id: selected.short_id },
         to: { uid: linked.uid, short_id: linked.short_id },
         type: "related",
-        author: "middleman",
+        author: "kenn-forge",
         created_at: fetchedAt,
       },
     ];
@@ -764,7 +764,7 @@ describe("KataWorkspace snapshot authority", () => {
         from: { uid: selected.uid, short_id: selected.short_id },
         to: { uid: closedPeer.uid, short_id: closedPeer.short_id },
         type: "related",
-        author: "middleman",
+        author: "kenn-forge",
         created_at: fetchedAt,
       },
     ];
@@ -852,7 +852,7 @@ describe("KataWorkspace snapshot authority", () => {
         from: { uid: selected.uid, short_id: selected.short_id },
         to: { uid: movedPeer.uid, short_id: movedPeer.short_id },
         type: "related",
-        author: "middleman",
+        author: "kenn-forge",
         created_at: fetchedAt,
       },
     ];

@@ -16,7 +16,7 @@ func (d *DB) AppMetadataValue(ctx context.Context, key string) (string, bool, er
 
 	var value string
 	err := d.ro.QueryRowContext(ctx,
-		`SELECT value FROM middleman_app_metadata WHERE key = ?`,
+		`SELECT value FROM forge_app_metadata WHERE key = ?`,
 		key,
 	).Scan(&value)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -44,7 +44,7 @@ func (d *DB) GetOrCreateAppMetadataValue(
 	var value string
 	if err := d.Tx(ctx, func(tx *sql.Tx) error {
 		err := tx.QueryRowContext(ctx,
-			`SELECT value FROM middleman_app_metadata WHERE key = ?`,
+			`SELECT value FROM forge_app_metadata WHERE key = ?`,
 			key,
 		).Scan(&value)
 		if err == nil {
@@ -64,7 +64,7 @@ func (d *DB) GetOrCreateAppMetadataValue(
 		}
 
 		_, err = tx.ExecContext(ctx,
-			`INSERT INTO middleman_app_metadata (key, value, updated_at)
+			`INSERT INTO forge_app_metadata (key, value, updated_at)
 			 VALUES (?, ?, CURRENT_TIMESTAMP)`,
 			key, created,
 		)

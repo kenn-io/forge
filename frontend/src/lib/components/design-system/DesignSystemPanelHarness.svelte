@@ -5,7 +5,7 @@
   read that configuration from the shared tabbedPanelDemoData.ts (including the
   nine Activity rows whose overflow drives the scroll assertion), so the demo and
   this harness cannot drift apart. It imports TabbedPanelTree and
-  activateTabbedPanelTab from their source files rather than the @middleman/ui
+  activateTabbedPanelTab from their source files rather than the @kenn-forge/ui
   barrel: the barrel re-exports the whole UI package (tiptap, pierre, dozens of
   lucide icons), which the browser project would optimize mid-run and reload
   over, making a cold run flaky. The geometry/scroll under test belongs to the

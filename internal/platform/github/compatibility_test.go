@@ -6,7 +6,7 @@ import (
 	gh "github.com/google/go-github/v89/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	legacygithub "go.kenn.io/middleman/internal/github"
+	legacygithub "go.kenn.io/forge/internal/github"
 )
 
 func TestLegacyNormalizePRLeavesCommentCountUnpopulated(t *testing.T) {

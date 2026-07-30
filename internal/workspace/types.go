@@ -1,6 +1,6 @@
 package workspace
 
-import "go.kenn.io/middleman/internal/db"
+import "go.kenn.io/forge/internal/db"
 
 type (
 	Workspace        = db.Workspace

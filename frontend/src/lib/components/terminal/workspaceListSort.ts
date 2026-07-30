@@ -39,8 +39,8 @@ export const defaultWorkspaceListDisplayOptions: WorkspaceListDisplayOptions = {
   showDiffStats: true,
 };
 
-const sortStorageKey = "middleman:workspaceListSort";
-const displayStorageKey = "middleman:workspaceListDisplayOptions";
+const sortStorageKey = "kenn-forge:workspaceListSort";
+const displayStorageKey = "kenn-forge:workspaceListDisplayOptions";
 
 const validSorts = new Set<WorkspaceListSort>(workspaceListSortOptions.map((option) => option.value));
 

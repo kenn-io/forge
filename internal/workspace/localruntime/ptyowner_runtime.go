@@ -7,8 +7,8 @@ import (
 	"log/slog"
 
 	"github.com/cenkalti/backoff/v7"
-	ptyownerruntime "go.kenn.io/middleman/internal/ptyowner/runtime"
-	internalretry "go.kenn.io/middleman/internal/retry"
+	ptyownerruntime "go.kenn.io/forge/internal/ptyowner/runtime"
+	internalretry "go.kenn.io/forge/internal/retry"
 )
 
 var newPtyOwnerAttachBackOff = func() backoff.BackOff {

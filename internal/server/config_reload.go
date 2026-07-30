@@ -9,12 +9,12 @@ import (
 	"slices"
 	"strings"
 
-	"go.kenn.io/middleman/internal/config"
-	"go.kenn.io/middleman/internal/configwatch"
-	ghclient "go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/platform"
-	"go.kenn.io/middleman/internal/server/docsapi"
-	"go.kenn.io/middleman/internal/tokenauth"
+	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/configwatch"
+	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/platform"
+	"go.kenn.io/forge/internal/server/docsapi"
+	"go.kenn.io/forge/internal/tokenauth"
 )
 
 // configChangedEvent is the payload broadcast on the SSE "config.changed"

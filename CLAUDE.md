@@ -2,12 +2,12 @@
 
 ## Project Overview
 
-middleman is a local-first maintainer console. Its original core is a dashboard for tracking pull and merge requests across a maintainer's fixed set of repositories on multiple platforms: it syncs PR/MR data into SQLite on a timer, serves a Svelte 5 SPA via an embedded Go HTTP server, and provides a focused workflow for triage, review, and merge from one place rather than each provider's notification UI. The product also includes first-class modes for external Kata task daemons and markdown docs without moving those domains into the provider registry.
+kenn-forge is a local-first maintainer console. Its original core is a dashboard for tracking pull and merge requests across a maintainer's fixed set of repositories on multiple platforms: it syncs PR/MR data into SQLite on a timer, serves a Svelte 5 SPA via an embedded Go HTTP server, and provides a focused workflow for triage, review, and merge from one place rather than each provider's notification UI. The product also includes first-class modes for external Kata task daemons and markdown docs without moving those domains into the provider registry.
 
 ## Architecture
 
 ```
-CLI (middleman) → Config (TOML) → DB (SQLite)
+CLI (kenn-forge) → Config (TOML) → DB (SQLite)
                     ↓                ↓
                Sync Engine → Platform Registry → Provider Clients
                     ↓                ↓
@@ -19,14 +19,14 @@ CLI (middleman) → Config (TOML) → DB (SQLite)
 - **Server**: Huma-based HTTP server on loopback (default 127.0.0.1:8091)
 - **Storage**: SQLite with WAL mode (pure Go driver: modernc.org/sqlite)
 - **Sync**: Periodic pull from each configured provider host (configurable, default 5m)
-- **Kata**: External daemon client mode; daemon catalog comes from Kata's own `$KATA_HOME/config.toml` and runtime records, not middleman config
+- **Kata**: External daemon client mode; daemon catalog comes from Kata's own `$KATA_HOME/config.toml` and runtime records, not kenn-forge config
 - **Docs**: Configured markdown folders with filesystem-safe browse/read/write/search/git publish behavior
 - **Frontend**: Svelte 5 SPA embedded in the Go binary at build time
-- **Config**: TOML at `~/.config/middleman/config.toml`; per-provider `MIDDLEMAN_<PROVIDER>_TOKEN` env vars (with optional repo-level `token_env` overrides). Optional `[[github_apps]]` entries (written by the `middleman-github-app` CLI) authenticate GitHub sync reads with app installation tokens ahead of PATs to relieve rate limits; mutations (merges, comments, state changes) stay on the user's PAT chain so they remain attributed to the user
+- **Config**: TOML at `~/.kenn/forge/config.toml`; per-provider `KENN_FORGE_<PROVIDER>_TOKEN` env vars (with optional repo-level `token_env` overrides). Optional `[[github_apps]]` entries (written by the `kenn-forge-github-app` CLI) authenticate GitHub sync reads with app installation tokens ahead of PATs to relieve rate limits; mutations (merges, comments, state changes) stay on the user's PAT chain so they remain attributed to the user
 
 ## Provider Support
 
-middleman supports GitHub, GitLab, Forgejo, and Gitea. The `gitealike` package is the shared Forgejo/Gitea adapter.
+kenn-forge supports GitHub, GitLab, Forgejo, and Gitea. The `gitealike` package is the shared Forgejo/Gitea adapter.
 
 This paragraph is the single place CLAUDE.md enumerates supported providers. Do not duplicate the list elsewhere in this file: not in the architecture diagram, env-var lists, project structure, key files, or test guidance. Adding or removing a provider updates this paragraph only. Mentioning a specific provider in context (for example, GitHub-only optimizations in `internal/github/`) is fine when it describes real artifacts, not when it restates the supported set.
 
@@ -43,16 +43,16 @@ For package layout and the new-provider checklist, see `context/provider-archite
 
 ## Non-Provider Modes
 
-Kata and Docs are first-class middleman modes, but they are not platform providers and do not use provider-neutral repository identity. Do not force them through `internal/platform` or provider capability abstractions.
+Kata and Docs are first-class kenn-forge modes, but they are not platform providers and do not use provider-neutral repository identity. Do not force them through `internal/platform` or provider capability abstractions.
 
-- Kata mode talks to external Kata daemons. Middleman reads the Kata daemon catalog from `$KATA_HOME/config.toml` (default `~/.kata/config.toml`) and resolves `local = true` daemon entries from Kata runtime records. Middleman config must not become the source of truth for Kata daemon definitions.
+- Kata mode talks to external Kata daemons. Kenn Forge reads the Kata daemon catalog from `$KATA_HOME/config.toml` (default `~/.kata/config.toml`) and resolves `local = true` daemon entries from Kata runtime records. Kenn Forge config must not become the source of truth for Kata daemon definitions.
 - Docs mode operates on explicitly configured local markdown folders. Treat folder reads, writes, deletes, browse, and git publish as local filesystem surfaces requiring explicit path safety, CSRF, and loopback-access decisions.
-- These modes may link to each other, but their data ownership remains separate: provider PR/MR data lives in middleman's SQLite DB, Kata task data stays in external Kata daemons, and docs files stay on disk.
+- These modes may link to each other, but their data ownership remains separate: provider PR/MR data lives in kenn-forge's SQLite DB, Kata task data stays in external Kata daemons, and docs files stay on disk.
 
 ## Project Structure
 
-- `cmd/middleman/` - Go server entrypoint
-- `cmd/middleman-github-app/` - CLI that creates and manages GitHub Apps (browser manifest flow) whose installation tokens middleman uses instead of PATs
+- `cmd/kenn-forge/` - Go server entrypoint
+- `cmd/kenn-forge-github-app/` - CLI that creates and manages GitHub Apps (browser manifest flow) whose installation tokens kenn-forge uses instead of PATs
 - `internal/config/` - TOML config loading and validation
 - `internal/githubapp/` - GitHub App manifest flow, app JWT signing, installation token minting
 - `internal/db/` - SQLite schema, connection, queries, types
@@ -69,7 +69,7 @@ Kata and Docs are first-class middleman modes, but they are not platform provide
 
 | Path                                         | Purpose                                                                                           |
 | -------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `cmd/middleman/main.go`                      | CLI entry point, server startup, signal handling                                                  |
+| `cmd/kenn-forge/main.go`                      | CLI entry point, server startup, signal handling                                                  |
 | `internal/config/config.go`                  | TOML config, validation, defaults                                                                 |
 | `internal/db/migrations/`                    | Numbered SQL migrations for schema changes                                                        |
 | `internal/db/db.go`                          | Database open, WAL, migration init                                                                |
@@ -145,7 +145,7 @@ Coverage of real behavior is non-negotiable; the lane is chosen by the behavior 
   tautological and should be replaced with real execution, parser/tool-native
   validation, or a documented manual release check.
 - Do not run tests with `-v` (especially `go test`) — default output has enough signal to debug failures, and verbose output wastes tokens. Only use `-v` if the user asks for it or a failure genuinely needs the extra detail
-- For provider-specific live or container test fixtures used when fake transports can't catch endpoint or auth drift, follow `context/testing.md` and `context/platform-sync-invariants.md`. The GitHub GraphQL gate is `MIDDLEMAN_LIVE_GITHUB_TESTS=1`.
+- For provider-specific live or container test fixtures used when fake transports can't catch endpoint or auth drift, follow `context/testing.md` and `context/platform-sync-invariants.md`. The GitHub GraphQL gate is `KENN_FORGE_LIVE_GITHUB_TESTS=1`.
 
 ## Build Requirements
 
@@ -155,16 +155,16 @@ Coverage of real behavior is non-negotiable; the lane is chosen by the behavior 
 ## Conventions
 
 - Prefer stdlib over external dependencies
-- The `middleman` binary has one Cobra root command. Register every public command on that tree; do not add a second parser, manual dispatcher, or command-facing `flag.FlagSet`. (`cmd/middleman/cli.go::newRootCommand`)
+- The `kenn-forge` binary has one Cobra root command. Register every public command on that tree; do not add a second parser, manual dispatcher, or command-facing `flag.FlagSet`. (`cmd/kenn-forge/cli.go::newRootCommand`)
 - CLI flags must affect execution or fail validation; reject shared persistent flags outside the commands that consume them instead of silently ignoring user input. (`internal/cli/ctl/ctl.go::installControlFlagValidation`)
 - Do the task requested, not the task imagined. Do not widen scope without explicitly confirming with the user first
 - When a backwards compatibility adapter, shim, alias, fallback wrapper, or legacy translation layer seems useful, ask the user for EXPRESS permission before introducing it. These shims carry very high maintenance cost because they preserve old paths, multiply edge cases, and make future changes harder to reason about; explain the compatibility benefit and why direct migration or removal is not the better choice.
 - Use `huma` for the web framework and OpenAPI generation
 - Regenerate API artifacts with `make api-generate`; the Go client also supports `go generate ./internal/apiclient/generated`
-- User-facing docs should be concise and workflow-oriented: state the UI capabilities and the maintainer workflows middleman enables, avoid overexplaining internals, and treat the HTTP API as an internal/thin-client concern rather than regular user guidance.
+- User-facing docs should be concise and workflow-oriented: state the UI capabilities and the maintainer workflows kenn-forge enables, avoid overexplaining internals, and treat the HTTP API as an internal/thin-client concern rather than regular user guidance.
 - Local thin clients must not infer startup-bound daemon middleware policy from
   reloadable config; derive required request metadata from the runtime record or
-  send it safely when the middleware ignores it (`cmd/middleman/daemon_client.go::discoverDaemonHTTP`).
+  send it safely when the middleware ignores it (`cmd/kenn-forge/daemon_client.go::discoverDaemonHTTP`).
 - User-facing workflow screenshots are generated into a staged docs tree by the docs build and must not be tracked in Git; the Playwright captures in `docs/screenshots/` use the real seeded e2e backend, not mocked API fixtures or a developer daemon.
 - Verify Zensical screenshot asset-path findings against rendered `site/` output; raw HTML source paths can be rewritten when `use_directory_urls` is enabled.
 - Zensical resolves `docs_dir`/`site_dir` relative to the config file's directory, so `uvx zensical build` cannot run in place against the checked-in `docs/zensical.toml`; stage a scratch project root containing a copy of the config beside a copy of `docs/`, then build there.

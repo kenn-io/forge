@@ -1,4 +1,4 @@
-import type { components } from "@middleman/ui/api/schema";
+import type { components } from "@kenn-forge/ui/api/schema";
 
 import { apiErrorMessage, client } from "../runtime.js";
 import { KATA_DAEMON_HEADER } from "./daemons.js";

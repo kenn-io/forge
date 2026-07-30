@@ -7,15 +7,15 @@ import (
 )
 
 // GIT_* binding and config-redirect variables are stripped by kit's
-// gitcmd.Runner (StripEnv); only the middleman-specific secret stripping
+// gitcmd.Runner (StripEnv); only the kenn-forge-specific secret stripping
 // is owned and therefore tested here.
 func TestStripDocsSecretEnvDropsCredentialLikeVars(t *testing.T) {
 	assert := assert.New(t)
 
 	got := stripDocsSecretEnv([]string{
 		"PATH=/bin",
-		"MIDDLEMAN_GITHUB_TOKEN=provider-secret",
-		"MIDDLEMAN_CUSTOM_TOKEN=custom-secret",
+		"KENN_FORGE_GITHUB_TOKEN=provider-secret",
+		"KENN_FORGE_CUSTOM_TOKEN=custom-secret",
 		"SERVICE_API_KEY=service-secret",
 		"SERVICE_PASSWORD=password-secret",
 		"AWS_ACCESS_KEY=cloud-secret",

@@ -11,15 +11,15 @@ const SOURCE_EXTENSIONS = new Set([".js", ".jsx", ".svelte", ".ts", ".tsx"]);
 const DEFAULT_SCAN_PATHS = ["frontend/src", "packages/ui/src"];
 
 const API_URL_MESSAGE =
-  "Manual Middleman API URL in production frontend code. Use the generated client through the frontend runtime (or injected typed UI client) for REST requests; use the configured API base helper for browser resource URLs. Only explicit scoped transport helpers are exempt.";
+  "Manual Kenn Forge API URL in production frontend code. Use the generated client through the frontend runtime (or injected typed UI client) for REST requests; use the configured API base helper for browser resource URLs. Only explicit scoped transport helpers are exempt.";
 
 const GENERATED_CLIENT_RUNTIME_FILES = new Set([
   "frontend/src/lib/api/runtime.ts",
   "packages/ui/src/api/runtime-base.ts",
 ]);
 
-// This helper builds a Middleman proxy URL whose nested /api/v1 belongs to
-// Kata, not Middleman. Keep the exception tied to the proxy boundary itself;
+// This helper builds a Kenn Forge proxy URL whose nested /api/v1 belongs to
+// Kata, not Kenn Forge. Keep the exception tied to the proxy boundary itself;
 // callers and neighboring files remain subject to the normal API-client rule.
 const SCOPED_UPSTREAM_PROXY_HELPERS = new Map([
   ["frontend/src/lib/api/kata/daemons.ts", new Set(["kataProxyPath"])],
@@ -471,7 +471,7 @@ function parseArgs(argv) {
 function printHelp() {
   console.log(`Usage: node scripts/lint-api-urls.mjs [--root DIR] [PATH...]
 
-Detect hardcoded Middleman /api/v1 URLs in production frontend TypeScript
+Detect hardcoded Kenn Forge /api/v1 URLs in production frontend TypeScript
 and Svelte code. Test files, generated code, and scoped streaming
 or upstream-proxy transports are ignored.
 `);

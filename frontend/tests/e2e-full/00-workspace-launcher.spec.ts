@@ -85,7 +85,7 @@ test.describe("embedded workspace launcher", () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
       for (const surface of ["prs", "issues", "activity"]) {
-        localStorage.removeItem(`middleman-pane-layout-v1:${surface}`);
+        localStorage.removeItem(`kenn-forge-pane-layout-v1:${surface}`);
       }
     });
   });

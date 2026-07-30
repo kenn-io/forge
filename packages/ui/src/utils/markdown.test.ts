@@ -22,7 +22,7 @@ describe("renderMarkdown task lists", () => {
 
   it("keeps the configured base path in proxied image URLs", async () => {
     const previousBasePath = window.__BASE_PATH__;
-    window.__BASE_PATH__ = "/middleman/";
+    window.__BASE_PATH__ = "/kenn-forge/";
     const source = "https://github.com/user-attachments/assets/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
 
     try {
@@ -35,7 +35,7 @@ describe("renderMarkdown task lists", () => {
       });
 
       expect(html).toContain(
-        `src="/middleman/api/v1/repo/github/acme/widgets/markdown-image?source=${encodeURIComponent(source)}"`,
+        `src="/kenn-forge/api/v1/repo/github/acme/widgets/markdown-image?source=${encodeURIComponent(source)}"`,
       );
     } finally {
       if (previousBasePath === undefined) delete window.__BASE_PATH__;
@@ -339,7 +339,7 @@ describe("renderMarkdown code highlighting", () => {
     expect(html).toContain("<span>forged</span>");
     expect(html).not.toContain("--shiki-light:#000000");
     expect(html).not.toContain("--shiki-dark:#000000");
-    expect(html).not.toContain("data-middleman-shiki");
+    expect(html).not.toContain("data-kenn-forge-shiki");
     expect(html).toContain("--shiki-light:");
     expect(html).toContain("--shiki-dark:");
   });

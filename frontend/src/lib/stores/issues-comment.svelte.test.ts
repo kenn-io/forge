@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 
-import { createIssuesStore } from "@middleman/ui/stores/issues";
-import type { MiddlemanClient } from "@middleman/ui";
+import { createIssuesStore } from "@kenn-forge/ui/stores/issues";
+import type { ForgeClient } from "@kenn-forge/ui";
 
 const issueRef = {
   provider: "github",
@@ -51,7 +51,7 @@ describe("createIssuesStore submitIssueComment", () => {
         POST: post,
         PUT: vi.fn(),
         DELETE: del,
-      } as unknown as MiddlemanClient,
+      } as unknown as ForgeClient,
     });
     await store.loadIssueDetail("octo", "repo", 1, issueRef);
     await Promise.resolve();
@@ -90,7 +90,7 @@ describe("createIssuesStore submitIssueComment", () => {
           await deletePending;
           return { error: { detail: "old deletion failed" } };
         }),
-      } as unknown as MiddlemanClient,
+      } as unknown as ForgeClient,
     });
     await store.loadIssueDetail("octo", "repo", 1, { ...issueRef, sync: false });
 
@@ -115,7 +115,7 @@ describe("createIssuesStore submitIssueComment", () => {
           await pending;
           return { error: { detail: "provider denied deletion" } };
         }),
-      } as unknown as MiddlemanClient,
+      } as unknown as ForgeClient,
     });
     await store.loadIssueDetail("octo", "repo", 1, { ...issueRef, sync: false });
     const deleting = store.deleteIssueComment("octo", "repo", 1, 44);
@@ -142,7 +142,7 @@ describe("createIssuesStore submitIssueComment", () => {
           await deletePending;
           return { error: undefined };
         }),
-      } as unknown as MiddlemanClient,
+      } as unknown as ForgeClient,
     });
     await store.loadIssueDetail("octo", "repo", 1, { ...issueRef, sync: false });
 
@@ -171,7 +171,7 @@ describe("createIssuesStore submitIssueComment", () => {
       }),
       PUT: vi.fn(),
       DELETE: vi.fn(),
-    } as unknown as MiddlemanClient;
+    } as unknown as ForgeClient;
 
     const store = createIssuesStore({
       client,
@@ -212,7 +212,7 @@ describe("createIssuesStore submitIssueComment", () => {
       }),
       PUT: vi.fn(),
       DELETE: vi.fn(),
-    } as unknown as MiddlemanClient;
+    } as unknown as ForgeClient;
 
     const store = createIssuesStore({
       client,
@@ -255,7 +255,7 @@ describe("createIssuesStore submitIssueComment", () => {
       }),
       PUT: vi.fn(),
       DELETE: vi.fn(),
-    } as unknown as MiddlemanClient;
+    } as unknown as ForgeClient;
 
     const store = createIssuesStore({ client });
 
@@ -314,7 +314,7 @@ describe("createIssuesStore submitIssueComment", () => {
       }),
       PUT: vi.fn(),
       DELETE: vi.fn(),
-    } as unknown as MiddlemanClient;
+    } as unknown as ForgeClient;
 
     const store = createIssuesStore({ client });
 

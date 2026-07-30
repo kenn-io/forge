@@ -26,7 +26,7 @@ type Locker interface {
 // or a retry cleanup overlapping a fresh setup — can wedge the worktree
 // or leave dangling branches. FileLockManager funnels every such
 // mutation through Acquire so the bare clone sees one mutation at a
-// time, both within one middleman process and across processes that
+// time, both within one kenn-forge process and across processes that
 // share the on-disk state.
 type FileLockManager struct {
 	mu     sync.Mutex
@@ -38,7 +38,7 @@ type FileLockManager struct {
 // The semaphore is the in-process mutex: it enforces exclusion between
 // goroutines while still allowing Acquire(ctx, ...) to return promptly
 // when ctx is canceled while waiting. The Flock enforces exclusion
-// between this process and any other middleman process holding the same
+// between this process and any other kenn-forge process holding the same
 // on-disk lock file. Both are required: gofrs/flock returns success
 // immediately when the same *Flock instance is already locked (see
 // flock_unix.go:48), so a shared Flock alone does not serialize
@@ -80,13 +80,13 @@ func (m *FileLockManager) stateFor(lockPath string) *repoLockState {
 // file lock are held, or ctx is done. On success the returned Locker
 // holds the lock; Unlock must be called exactly once to release it.
 //
-// repoRoot is the directory that owns the lock file. For middleman's
+// repoRoot is the directory that owns the lock file. For kenn-forge's
 // managed bare clones that is the clone directory; for user-configured
-// local worktree bases it is a middleman-owned lock directory.
+// local worktree bases it is a kenn-forge-owned lock directory.
 func (m *FileLockManager) Acquire(
 	ctx context.Context, repoRoot string,
 ) (Locker, error) {
-	lockPath := filepath.Join(repoRoot, ".middleman-worktree.lock")
+	lockPath := filepath.Join(repoRoot, ".kenn-forge-worktree.lock")
 	state := m.stateFor(lockPath)
 
 	if err := state.local.Acquire(ctx, 1); err != nil {

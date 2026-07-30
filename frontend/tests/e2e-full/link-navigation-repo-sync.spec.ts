@@ -14,7 +14,7 @@ async function waitForIssueDetail(page: Page): Promise<void> {
 
 test("navigating to an issue in a different repo updates the dropdown", async ({ page }) => {
   await page.addInitScript(() => {
-    localStorage.setItem("middleman-filter-repo", "github|github.com/acme/tools");
+    localStorage.setItem("kenn-forge-filter-repo", "github|github.com/acme/tools");
   });
 
   await page.goto("/issues/github/acme/widgets/10");

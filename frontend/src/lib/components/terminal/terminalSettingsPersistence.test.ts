@@ -1,4 +1,4 @@
-import { DEFAULT_TERMINAL_SETTINGS, type TerminalSettings } from "@middleman/ui/api/types";
+import { DEFAULT_TERMINAL_SETTINGS, type TerminalSettings } from "@kenn-forge/ui/api/types";
 import { describe, expect, it, vi } from "vite-plus/test";
 import {
   beginTerminalSettingsHydration,
@@ -6,7 +6,7 @@ import {
   previewTerminalSettings,
   restoreTerminalSettingsPreview,
   saveTerminalSettings,
-} from "@middleman/ui/stores/terminal-settings-persistence";
+} from "@kenn-forge/ui/stores/terminal-settings-persistence";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;

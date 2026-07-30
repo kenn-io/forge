@@ -16,7 +16,7 @@ import (
 	"sync"
 	"time"
 
-	"go.kenn.io/middleman/internal/gitclone"
+	"go.kenn.io/forge/internal/gitclone"
 	"go.opentelemetry.io/otel/attribute"
 )
 
@@ -162,7 +162,7 @@ func FingerprintDiffSnapshot(
 	}
 
 	h := sha256.New()
-	writeDiffFingerprintField(h, []byte("middleman-workspace-diff-v1"))
+	writeDiffFingerprintField(h, []byte("kenn-forge-workspace-diff-v1"))
 	writeDiffFingerprintField(h, []byte(current.WorktreePath))
 	writeDiffFingerprintField(h, []byte(current.BaseOID))
 	writeDiffFingerprintField(h, []byte(current.HeadOID))

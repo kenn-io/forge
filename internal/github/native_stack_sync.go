@@ -7,7 +7,7 @@ import (
 	"slices"
 	"time"
 
-	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/forge/internal/db"
 )
 
 // nativeStackObservationTTL bounds how long a cached stack whose membership

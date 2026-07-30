@@ -819,7 +819,7 @@ test("keeps split-mode inline composers on trailing right-side hunk lines", asyn
         .evaluate((host, lineNumber) => {
           const root = host.shadowRoot;
           const button = Array.from(
-            root?.querySelectorAll<HTMLButtonElement>("[data-middleman-line-comment-button]") ?? [],
+            root?.querySelectorAll<HTMLButtonElement>("[data-kenn-forge-line-comment-button]") ?? [],
           ).find((candidate) => candidate.getAttribute("aria-label") === `Comment on new line ${lineNumber}`);
           return button ? pierreCodeSide(root, button) : null;
 
@@ -1024,7 +1024,7 @@ test("shows a visible composer focus indicator without focus flicker", async ({ 
 test("keeps the draft review footer readable for long comments", async ({ page }) => {
   await page.setViewportSize({ width: 1000, height: 720 });
   const longDraftBody = [
-    "so i'd recommend we use huma for this similar to what we do in middleman,",
+    "so i'd recommend we use huma for this similar to what we do in kenn-forge,",
     "that generally means we can generate a nice typed client which makes more of the frontend safer",
   ].join(" ");
   await mockInlineReviewAPI(page, baseCapabilities, "github", "github.com", diffResponse, undefined, {
@@ -1219,7 +1219,7 @@ test("shows published inline review context in conversation and jumps to the dif
   await expect(page.getByRole("tab", { name: "Files changed" })).toHaveAttribute("aria-selected", "true");
   await expect(
     page.locator(
-      '.diff-area [data-diff-path="src/main.ts"][data-diff-new-line="2"]:not([data-middleman-line-comment-cell])',
+      '.diff-area [data-diff-path="src/main.ts"][data-diff-new-line="2"]:not([data-kenn-forge-line-comment-cell])',
     ),
   ).toBeVisible();
 });

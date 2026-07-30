@@ -9,30 +9,30 @@
 ## Build
 
 ```sh
-git clone https://github.com/kenn-io/middleman.git
-cd middleman
+git clone https://github.com/kenn-io/forge.git
+cd kenn-forge
 make build
 ```
 
-This builds a `middleman` binary with the frontend embedded.
+This builds a `kenn-forge` binary with the frontend embedded.
 
-## Start middleman
+## Start kenn-forge
 
 For GitHub, either authenticate with the GitHub CLI:
 
 ```sh
 gh auth login
-./middleman
+./kenn-forge
 ```
 
 or set a token explicitly:
 
 ```sh
-export MIDDLEMAN_GITHUB_TOKEN=ghp_your_token_here
-./middleman
+export KENN_FORGE_GITHUB_TOKEN=ghp_your_token_here
+./kenn-forge
 ```
 
-On first run, middleman creates `~/.config/middleman/config.toml` and starts the
+On first run, kenn-forge creates `~/.config/kenn-forge/config.toml` and starts the
 UI at:
 
 ```text
@@ -47,7 +47,7 @@ make install
 
 ## Add repositories
 
-Use Settings in the UI, or edit `~/.config/middleman/config.toml`:
+Use Settings in the UI, or edit `~/.config/kenn-forge/config.toml`:
 
 ```toml
 [[repos]]
@@ -59,7 +59,7 @@ owner = "your-org"
 name = "another-repo"
 ```
 
-Restart middleman after editing the config file. The first sync starts on
+Restart kenn-forge after editing the config file. The first sync starts on
 startup and then repeats on the configured interval.
 
 ## Open the main views
@@ -84,4 +84,4 @@ docs = true
 ```
 
 - Kata reads daemon definitions from Kata's own config.
-- Docs uses folders you register with `middleman docs add-folder`.
+- Docs uses folders you register with `kenn-forge docs add-folder`.

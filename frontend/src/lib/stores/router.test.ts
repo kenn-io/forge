@@ -535,24 +535,24 @@ describe("router navigation events", () => {
   });
 
   afterEach(() => {
-    delete (window as unknown as { __middleman_config?: unknown }).__middleman_config;
+    delete (window as unknown as { __kenn_forge_config?: unknown }).__kenn_forge_config;
     (
       window as unknown as {
-        __middleman_notify_config_changed?: () => void;
+        __kenn_forge_notify_config_changed?: () => void;
       }
-    ).__middleman_notify_config_changed?.();
+    ).__kenn_forge_notify_config_changed?.();
   });
 
   function installOnNavigate(spy: ReturnType<typeof vi.fn>, config: Record<string, unknown> = {}): void {
-    (window as unknown as { __middleman_config?: unknown }).__middleman_config = {
+    (window as unknown as { __kenn_forge_config?: unknown }).__kenn_forge_config = {
       ...config,
       onNavigate: spy,
     };
     (
       window as unknown as {
-        __middleman_notify_config_changed?: () => void;
+        __kenn_forge_notify_config_changed?: () => void;
       }
-    ).__middleman_notify_config_changed?.();
+    ).__kenn_forge_notify_config_changed?.();
   }
 
   it("fires onNavigate with pull payload for files route", () => {
@@ -812,21 +812,21 @@ describe("router window bridges", () => {
     navigate("/pulls");
   });
 
-  it("exposes __middleman_navigate_to_route as a window global", () => {
+  it("exposes __kenn_forge_navigate_to_route as a window global", () => {
     const bridge = (
       window as unknown as {
-        __middleman_navigate_to_route?: (route: string) => void;
+        __kenn_forge_navigate_to_route?: (route: string) => void;
       }
-    ).__middleman_navigate_to_route;
+    ).__kenn_forge_navigate_to_route;
     expect(typeof bridge).toBe("function");
   });
 
-  it("__middleman_navigate_to_route updates the SPA route", () => {
+  it("__kenn_forge_navigate_to_route updates the SPA route", () => {
     const bridge = (
       window as unknown as {
-        __middleman_navigate_to_route: (route: string) => void;
+        __kenn_forge_navigate_to_route: (route: string) => void;
       }
-    ).__middleman_navigate_to_route;
+    ).__kenn_forge_navigate_to_route;
 
     bridge("/workspaces/embed/first-run");
     expect(getRoute()).toEqual({ page: "embed-workspace-first-run" });

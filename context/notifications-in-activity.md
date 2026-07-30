@@ -4,7 +4,7 @@ Use this document for changes touching GitHub notifications, their presentation 
 
 ## Purpose
 
-Notifications are a built-in signal that syncs the signed-in user's GitHub notification threads into SQLite, filters them to currently monitored repositories, and gives middleman local triage state that is separate from GitHub's read/unread flag.
+Notifications are a built-in signal that syncs the signed-in user's GitHub notification threads into SQLite, filters them to currently monitored repositories, and gives kenn-forge local triage state that is separate from GitHub's read/unread flag.
 
 There is no standalone inbox surface. Notifications are presented as rows **inside the Activity feed**, labelled by their reason (review requested, mentioned, assigned, etc.) and toggled by a dedicated "Notifications" filter. The backend still owns the mutable per-user state behind those rows:
 
@@ -32,7 +32,7 @@ Rules:
 
 ## Repository Scope And Identity
 
-Notifications are user-scoped at provider level but repo-scoped in middleman.
+Notifications are user-scoped at provider level but repo-scoped in kenn-forge.
 
 Rules:
 
@@ -51,8 +51,8 @@ Notification persistence is provider-neutral even though only GitHub sync exists
 
 Current tables:
 
-- `middleman_notification_items`
-- `middleman_notification_sync_watermarks`
+- `forge_notification_items`
+- `forge_notification_sync_watermarks`
 
 Current provider-owned fields:
 
@@ -65,13 +65,13 @@ Current provider-owned fields:
 
 Rules:
 
-- `done_at` and `done_reason` remain middleman-local triage state.
+- `done_at` and `done_reason` remain kenn-forge-local triage state.
 - `source_*` fields track provider-side activity and acknowledgement propagation state.
 - The notification schema ships as a single migration, `000035_notifications.*`; do not split future assumptions across deleted branch-only migrations. Branch databases that already applied the abandoned notification migration at version 34 are repaired at startup by ensuring the current `000034_fleet_integration` artifacts exist before the database is accepted. Migration `000040` rebuilt the watermark table to per-repository identity and retired the host-wide `sync_cursor`/`tracked_repos_key` columns; old host-wide rows are dropped because they cannot be attributed to a repository.
 
 ## Triage State Model
 
-Middleman stores local workflow state separately from GitHub state. These states drive the notification list/mutation API; the Activity feed surfaces unread vs read via the row's `item_state`.
+Kenn Forge stores local workflow state separately from GitHub state. These states drive the notification list/mutation API; the Activity feed surfaces unread vs read via the row's `item_state`.
 
 - `unread`: `done_at IS NULL AND unread = 1`.
 - `active`: `done_at IS NULL`, regardless of unread.
@@ -124,7 +124,7 @@ Rules:
 
 - Only PR/issue-anchored notifications are persisted. GitHub sends CheckSuite/CI, discussion, and release notifications with no subject number or browser URL, so sync skips any thread whose `item_type` is not `pr`/`issue` (or whose `item_number` is nil), and `listActivity` filters the notification union the same way for rows synced before this rule.
 - Sync also skips `reason = "author"` ("Your thread") notifications: they fire for any activity on a thread the user opened and carry no displayable content beyond a `latest_comment_url` (a raw API URL) that already corresponds to a comment/review/state row in the feed. Comment, subscribed, and the attention-requesting reasons (mention, review_requested, assign, …) are kept.
-- These two filters are enforced at sync (new rows) and in the Activity union (existing rows). The notification list/summary APIs (`GET /notifications`, summaries) are not UI-surfaced today and intentionally still return any rows already in `middleman_notification_items`; the Activity feed is the only filtered surface. If those APIs gain a UI, apply the same `item_type IN ('pr','issue') AND item_number IS NOT NULL AND reason != 'author'` filter there.
+- These two filters are enforced at sync (new rows) and in the Activity union (existing rows). The notification list/summary APIs (`GET /notifications`, summaries) are not UI-surfaced today and intentionally still return any rows already in `forge_notification_items`; the Activity feed is the only filtered surface. If those APIs gain a UI, apply the same `item_type IN ('pr','issue') AND item_number IS NOT NULL AND reason != 'author'` filter there.
 - Notification sync should process each configured provider host independently; one provider-host failure must not block others.
 - Notification sync failures should update notification sync status so UI can surface them.
 - Top-level manual sync also triggers notification sync.
@@ -141,7 +141,7 @@ Notification subjects may be PRs, issues, releases, commits, discussions, or oth
 
 Rules:
 
-- PR/issue notifications should route to existing middleman detail surfaces when `(platform_host, owner, repo, number)` is available.
+- PR/issue notifications should route to existing kenn-forge detail surfaces when `(platform_host, owner, repo, number)` is available.
 - PR subjects may arrive with issue-style API URLs; parse both `/pulls/{number}` and `/issues/{number}` when GitHub subject type is `PullRequest`.
 - Non-PR/issue subjects are external-link rows when a deterministic browser URL is available.
 - Never turn raw API URLs into browser links.

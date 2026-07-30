@@ -5,7 +5,7 @@
 import { afterEach, describe, expect, it } from "vite-plus/test";
 
 import "../../app.css";
-import { renderMarkdown } from "@middleman/ui/utils/markdown";
+import { renderMarkdown } from "@kenn-forge/ui/utils/markdown";
 
 function mountedMarkdown(html: string): HTMLDivElement {
   const root = document.createElement("div");

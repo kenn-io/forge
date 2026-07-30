@@ -1,13 +1,13 @@
 # Workspace APIs
 
-These APIs manage **middleman-owned workspaces**: durable local execution
+These APIs manage **kenn-forge-owned workspaces**: durable local execution
 contexts for tracked PRs, provider issues, mapped Kata tasks, and ad-hoc work in
 a tracked repository. They are not a generic Git worktree browser and not an
 embedder protocol for arbitrary host state.
 
 ## Purpose
 
-- Persist a middleman workspace entry for a tracked item.
+- Persist a kenn-forge workspace entry for a tracked item.
 - Materialize that entry as a local Git worktree plus tmux session.
 - Let the UI reopen the same workspace from `/workspaces` or `/terminal/:id`.
 - Carry enough item metadata to render the correct sidebar behavior.
@@ -52,7 +52,7 @@ embedder protocol for arbitrary host state.
   identity; selected detail, history, graph, and workspace target belong to the
   same accepted snapshot, while query, owner, and label remain local presentation
   state (`internal/server/kata_snapshot_frontend.go::kataTaskSnapshot`).
-- Middleman persists no Kata task, snapshot, or cursor state. Its only Kata
+- Kenn Forge persists no Kata task, snapshot, or cursor state. Its only Kata
   authority storage is a bounded, non-touching in-memory TTL cache
   (`internal/server/kata_snapshot_cache.go::newKataSnapshotCacheWithConfig`).
 - Global Kata issue/event reads establish workspace authority and invalidation;
@@ -98,7 +98,7 @@ embedder protocol for arbitrary host state.
 - Frontend mutation results are acknowledgement-only `{ changed }`; canonical
   project/task identity and rendered state come from a newly accepted snapshot,
   never mutation response payloads (`frontend/src/lib/api/kata/taskTypes.ts::KataTaskMutationResponse`).
-- `GET /kata/tasks/references`: middleman's global Kata reference service; it
+- `GET /kata/tasks/references`: kenn-forge's global Kata reference service; it
   defaults to open tasks for autocomplete, while navigation explicitly requests
   `status=all` and routes from the returned canonical task status.
   Rank exact short, qualified, or UID matches before substring matches and only
@@ -112,7 +112,7 @@ embedder protocol for arbitrary host state.
 - `POST /kata/workspaces`: create or reuse a Kata-task-backed workspace. Kata
   tasks are not provider issues, so this path never resolves or syncs a
   provider issue row.
-- `GET /workspaces`: list middleman's persisted workspaces for the workspaces
+- `GET /workspaces`: list kenn-forge's persisted workspaces for the workspaces
   page and terminal picker.
 - `GET /workspaces/{id}`: load one persisted workspace for terminal view.
 - List/detail reads return persisted plus last-known-good enrichment without
@@ -135,7 +135,7 @@ embedder protocol for arbitrary host state.
   content-identical (ignoring fetch timestamps) must not replace displayed
   store state — equal-but-new objects re-render the whole panel every cycle
   (`packages/ui/src/stores/detail.svelte.ts::applyRefreshedDetail`).
-- `DELETE /workspaces/{id}`: tear down a middleman-managed workspace and its
+- `DELETE /workspaces/{id}`: tear down a kenn-forge-managed workspace and its
   local resources.
 
 ## Data Model Intent
@@ -148,13 +148,13 @@ embedder protocol for arbitrary host state.
   issue UID so issue IDs from different Kata scopes cannot collide.
 - `item_number`: the provider item number within the repo. For Kata task
   workspaces this is `0` and must not be used for owner identity.
-- `git_head_ref`: the Git branch name middleman opens in the worktree.
+- `git_head_ref`: the Git branch name kenn-forge opens in the worktree.
   Kata-task workspaces keep a readable slug from `short_id`, `qualified_id`, or
   issue UID, but the branch/worktree leaf must also include a short stable hash
   of daemon ID, project UID, and issue UID so project-scoped visible task IDs do
   not collide in the same watched repo.
 - `item_last_activity_at`: the synced provider item activity timestamp for the
-  owning PR or issue, when middleman has that owner item row.
+  owning PR or issue, when kenn-forge has that owner item row.
 
 These fields exist so PR-backed workspaces show PR/Reviews sidebars, while
 issue-backed workspaces show the issue sidebar and disable the PR/reviews path.
@@ -163,15 +163,15 @@ detail component as the Kata browser.
 
 Workspace summaries join the owning PR or issue row by full provider identity:
 `platform`, `platform_host`, `repo_owner`, `repo_name`, `item_type`, and
-`item_number`. A PR workspace uses `middleman_merge_requests.last_activity_at`;
-an issue workspace uses `middleman_issues.last_activity_at`. Kata workspaces do
+`item_number`. A PR workspace uses `forge_merge_requests.last_activity_at`;
+an issue workspace uses `forge_issues.last_activity_at`. Kata workspaces do
 not join provider item tables and leave provider item activity absent. If the
 owning provider item has not synced yet, the summary leaves
 `item_last_activity_at` absent rather than inventing a value.
 
 Kata task repository resolution is deliberately exact. Manual settings mappings
 key by optional daemon ID plus Kata project UID and point to a known repository
-identity, including registered Middleman Projects. Removing a watched repo does
+identity, including registered Kenn Forge Projects. Removing a watched repo does
 not delete an override because a registered Project may still own that identity
 (`internal/config/config.go::validateKataProjectRepoMappings`,
 `internal/server/kataapi/workspace.go::Handler.kataManualWorkspaceTarget`). Automatic
@@ -184,7 +184,7 @@ only allowed per clone when that clone has no usable `project.uid` or
 `project.identity`, and then exactly one case-insensitive `project.name` match
 is required. If no `.kata.toml` mapping matches, the
 resolver may fall back to a case-insensitive exact match between the Kata
-project and exactly one non-stale registered Middleman Project with provider
+project and exactly one non-stale registered Kenn Forge Project with provider
 identity; use `.kata.toml` before display/repository name. Distinct matching
 registered checkout paths are ambiguous. A unique registered match carries its
 checkout through workspace creation, while a configured clone carries its own
@@ -205,10 +205,10 @@ and persists that repository identity
 Persisted workspace `worktree_path` values should be absolute. Workspace setup
 runs `git worktree add` from the managed clone or configured base checkout, so
 relative paths would be interpreted relative to that Git directory while later
-API reads interpret them relative to the middleman server process.
+API reads interpret them relative to the kenn-forge server process.
 
 Keep Git worktree and merge-request lifecycle semantics in
-`go.kenn.io/kit/git/managed`; Middleman supplies application policy instead of
+`go.kenn.io/kit/git/managed`; Kenn Forge supplies application policy instead of
 maintaining a local lifecycle fork (`internal/server/projects_handlers.go::createWorktreeOnDisk`).
 Classify same-repository merge requests with the provider-hosted project
 identity, not the effective origin URL: the origin may be a local mirror
@@ -229,7 +229,7 @@ Claude receives context-only `CLAUDE.local.md` because its local file is additiv
 No instruction file is written during setup.
 
 The first-line marker owns refreshes; ownership detection is root-confined and
-reads only the bounded marker prefix. Middleman updates only marked files.
+reads only the bounded marker prefix. Kenn Forge updates only marked files.
 Unmarked `AGENTS.override.md`/`CLAUDE.local.md` files, symlinks, and root
 `AGENTS.md`/`CLAUDE.md` stay untouched. The content carries source identity
 (kind, repo, item number, URL) and PR push target facts agents cannot read from
@@ -239,7 +239,7 @@ External identifiers are only normalized to one line, which preserves Markdown
 structure and is not a trust boundary; new free-prose fields must go through the
 fence.
 
-Before writing, middleman ignores the generated path through the worktree's
+Before writing, kenn-forge ignores the generated path through the worktree's
 private exclude file, not tracked `.gitignore`. If the path would remain
 visible to Git, the write fails.
 
@@ -302,18 +302,18 @@ Workspace create endpoints may return 202 with a pre-existing workspace
 
 - Kit owns hook profiles, config mutation, payload normalization, and native responses;
   thin clients relay normalized events and the daemon owns activity transitions
-  (`cmd/middleman/agent_hook.go::agentHookRelay`, `internal/server/workspaceapi/agent_hook.go::Handler.receiveAgentHook`).
+  (`cmd/kenn-forge/agent_hook.go::agentHookRelay`, `internal/server/workspaceapi/agent_hook.go::Handler.receiveAgentHook`).
 - Claude `SessionStart` context is regenerated from persisted workspace metadata,
   never read from instruction files (`internal/workspace/agent_context.go::Manager.RenderAgentContextForWorktree`).
 - User-level install and uninstall target all kit profiles by default or one
   profile with `--agent`; kit preserves unrelated handlers and never enables
-  agent consent or auto-approval (`cmd/middleman/agent_hook.go::installAgentHooks`).
+  agent consent or auto-approval (`cmd/kenn-forge/agent_hook.go::installAgentHooks`).
 - Matching live runtime/worktree reports prioritize approval, input, working, done, then idle.
   Stop/Interrupt stays `done` for the 30-minute report window; row activation acknowledges a versioned completion for the browser-tab session, while a new timestamp resurfaces (`internal/agentactivity/store.go::statePriority`, `frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte::openWorkspace`).
 - Hook installs require absolute data roots; kit preserves config symlinks, while
-  report/worktree matching uses canonical paths (`cmd/middleman/agent_hook.go::installAgentHooks`,
+  report/worktree matching uses canonical paths (`cmd/kenn-forge/agent_hook.go::installAgentHooks`,
   `internal/agentactivity/store.go::canonicalWorkspacePath`).
-- The active sidebar polls every five seconds, and hook receipt fails open (`frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte::onMount`, `cmd/middleman/agent_hook.go::receiveAgentHook`).
+- The active sidebar polls every five seconds, and hook receipt fails open (`frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte::onMount`, `cmd/kenn-forge/agent_hook.go::receiveAgentHook`).
 
 ## Diff Scopes
 
@@ -344,7 +344,7 @@ server check exactly.
   (`internal/server/workspaceapi/workspace_diff_cache.go::workspaceDiffCache`).
 - Cache entries are stale-while-revalidate with last-known-good fallback.
   `jellydator/ttlcache/v3` owns entry storage, TTL expiration, and inactive-entry
-  cost pressure through separate protected and cost-limited pools; middleman's
+  cost pressure through separate protected and cost-limited pools; kenn-forge's
   wrapper owns snapshot coherence, bounded validation, selection leases, and
   publication. Only selected workspaces
   receive proactive refresh leases; ordinary entries validate on demand
@@ -441,9 +441,9 @@ server check exactly.
 ## Worktree Branch Names
 
 An unavailable branch name must never fail workspace creation: an unusable PR
-head branch degrades to `middleman/pr-<n>`, then to a numbered variant of it,
+head branch degrades to `kenn-forge/pr-<n>`, then to a numbered variant of it,
 then to a detached checkout with no managed branch
-(`internal/workspace/manager.go::addFallbackWorktree`). Middleman owns the
+(`internal/workspace/manager.go::addFallbackWorktree`). Kenn Forge owns the
 synthetic name and its numbered variants and may delete them during cleanup;
 any other pre-existing branch is user-owned and must keep pointing where it did.
 
@@ -513,7 +513,7 @@ at the boundary a client observes:
 
 - Represent arbitrary worktrees discovered on a host machine.
 - Mirror an external workspace tree or host inventory.
-- Serve as a generic Git automation API outside middleman's workspace lifecycle.
+- Serve as a generic Git automation API outside kenn-forge's workspace lifecycle.
 
 ## Related context
 

@@ -7,8 +7,8 @@ import (
 	"path"
 	"strings"
 
-	"go.kenn.io/middleman/internal/config"
-	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/platform"
 )
 
 var ErrConfiguredRepoArchived = errors.New("configured repo archived")

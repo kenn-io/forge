@@ -1,9 +1,9 @@
-import { configuredAPIBaseURL, configuredAPIPath } from "@middleman/ui/api/runtime-base";
-import type { components } from "@middleman/ui/api/schema";
+import { configuredAPIBaseURL, configuredAPIPath } from "@kenn-forge/ui/api/runtime-base";
+import type { components } from "@kenn-forge/ui/api/schema";
 
 import { createRuntimeClient } from "../runtime.js";
 
-export const KATA_DAEMON_HEADER = "X-Middleman-Kata-Daemon";
+export const KATA_DAEMON_HEADER = "X-Kenn-Forge-Kata-Daemon";
 
 export type KataDaemonInfo = components["schemas"]["KataDaemonResponse"];
 

@@ -1,10 +1,10 @@
 import { expect, test } from "@playwright/test";
 import {
   createLiveKataHarness,
-  configureMiddlemanKataCatalog,
-  configureMiddlemanKataHome,
+  configureForgeKataCatalog,
+  configureForgeKataHome,
   type LiveKataHarness,
-  type MiddlemanKataHome,
+  type ForgeKataHome,
 } from "./support/kataLiveHarness";
 import { startIsolatedE2EServerWithOptions, type IsolatedE2EServer } from "./support/e2eServer";
 
@@ -12,28 +12,28 @@ import { startIsolatedE2EServerWithOptions, type IsolatedE2EServer } from "./sup
 // daemon via process.env.KATA_HOME, which only a process spawned
 // after the env is set can inherit. A pooled lease would fail fast on
 // the support module's env guardrail. This suite is gated behind
-// MIDDLEMAN_LIVE_KATA_TESTS=1, so the extra spawns never affect
+// KENN_FORGE_LIVE_KATA_TESTS=1, so the extra spawns never affect
 // normal local or CI runs.
 async function startIsolatedE2EServer(): Promise<IsolatedE2EServer> {
   return startIsolatedE2EServerWithOptions({ freshProcess: true });
 }
 
 test.describe("kata live daemon integration", () => {
-  test.skip(process.env.MIDDLEMAN_LIVE_KATA_TESTS !== "1", "Set MIDDLEMAN_LIVE_KATA_TESTS=1 to run live Kata e2e.");
+  test.skip(process.env.KENN_FORGE_LIVE_KATA_TESTS !== "1", "Set KENN_FORGE_LIVE_KATA_TESTS=1 to run live Kata e2e.");
 
-  test("proxies live daemon route capabilities through middleman", async () => {
+  test("proxies live daemon route capabilities through kenn-forge", async () => {
     const harness = await createLiveKataHarness();
-    const kataHome = await configureMiddlemanKataHome(harness.baseURL);
+    const kataHome = await configureForgeKataHome(harness.baseURL);
     const server = await startIsolatedE2EServer();
 
     try {
       const seeded = await harness.seedIssue({
-        projectName: "Middleman Route Probes",
-        issueTitle: "Probe middleman proxy routes",
+        projectName: "Kenn Forge Route Probes",
+        issueTitle: "Probe kenn-forge proxy routes",
         issueBody: "Created to verify live route passthrough.",
       });
       const recurrence = await harness.rawPost(`/api/v1/projects/${seeded.project.id}/recurrences`, {
-        actor: "middleman-e2e",
+        actor: "kenn-forge-e2e",
         rrule: "FREQ=WEEKLY;COUNT=2",
         dtstart: "2026-06-10",
         timezone: "America/Chicago",
@@ -91,12 +91,12 @@ test.describe("kata live daemon integration", () => {
         server,
         `/api/v1/projects/${seeded.project.id}/issues`,
         {
-          actor: "middleman-e2e",
+          actor: "kenn-forge-e2e",
           title: "Observe proxied SSE issue",
-          body: "Created while middleman has a proxied event stream open.",
+          body: "Created while kenn-forge has a proxied event stream open.",
           force_new: true,
         },
-        { "Idempotency-Key": "01MIDDLEMANPROXYSSE000001" },
+        { "Idempotency-Key": "01KENN_FORGEPROXYSSE000001" },
       );
       expect(created.status).toBe(200);
       expect(created.body).toEqual(expect.objectContaining({ changed: true }));
@@ -123,13 +123,13 @@ test.describe("kata live daemon integration", () => {
   test("switches between real daemons from the external catalog", async ({ page }) => {
     let home: LiveKataHarness | undefined;
     let work: LiveKataHarness | undefined;
-    let kataHome: MiddlemanKataHome | undefined;
+    let kataHome: ForgeKataHome | undefined;
     let server: IsolatedE2EServer | undefined;
 
     try {
       home = await createLiveKataHarness();
       work = await createLiveKataHarness();
-      kataHome = await configureMiddlemanKataCatalog(
+      kataHome = await configureForgeKataCatalog(
         [
           { name: "home", url: home.baseURL },
           { name: "work", url: work.baseURL },
@@ -173,16 +173,16 @@ test.describe("kata live daemon integration", () => {
     }
   });
 
-  test("reads and mutates a real external daemon through middleman", async ({ page }) => {
+  test("reads and mutates a real external daemon through kenn-forge", async ({ page }) => {
     const harness = await createLiveKataHarness();
-    const kataHome = await configureMiddlemanKataHome(harness.baseURL);
+    const kataHome = await configureForgeKataHome(harness.baseURL);
     const server = await startIsolatedE2EServer();
 
     try {
       const seeded = await harness.seedIssue({
-        projectName: "Middleman Live",
+        projectName: "Kenn Forge Live",
         issueTitle: "Verify live daemon proxy",
-        issueBody: "Created by the opt-in middleman live daemon e2e.",
+        issueBody: "Created by the opt-in kenn-forge live daemon e2e.",
       });
 
       await page.goto(`${server.info.base_url}/kata`);
@@ -191,7 +191,7 @@ test.describe("kata live daemon integration", () => {
       await expect(page.getByText("Connected")).toBeVisible();
       await expect(page.getByRole("button", { name: /Verify live daemon proxy/ })).toBeVisible();
       await expect(page.getByRole("region", { name: "Task detail" })).toContainText(
-        "Created by the opt-in middleman live daemon e2e.",
+        "Created by the opt-in kenn-forge live daemon e2e.",
       );
 
       const mutation = await page.evaluate(
@@ -205,7 +205,7 @@ test.describe("kata live daemon integration", () => {
                 "If-Match": `"rev-${revision}"`,
               },
               body: JSON.stringify({
-                actor: "middleman",
+                actor: "kenn-forge",
                 patch: { deadline_on: "2026-06-12" },
               }),
             },
@@ -249,7 +249,7 @@ test.describe("kata live daemon integration", () => {
 
   test("retries a failed recurrence refresh without repeating the acknowledged mutation", async ({ page }) => {
     const harness = await createLiveKataHarness();
-    const kataHome = await configureMiddlemanKataHome(harness.baseURL);
+    const kataHome = await configureForgeKataHome(harness.baseURL);
     const server = await startIsolatedE2EServer();
     let blockRecurrenceReads = false;
     let recurrenceDeleteRequests = 0;
@@ -287,12 +287,12 @@ test.describe("kata live daemon integration", () => {
 
     try {
       const seeded = await harness.seedIssue({
-        projectName: "Middleman Recurrence Recovery",
+        projectName: "Kenn Forge Recurrence Recovery",
         issueTitle: "Verify recurrence recovery",
         issueBody: "Created to verify recurrence refresh fencing against a live Kata database.",
       });
       const created = await harness.rawPost(`/api/v1/projects/${seeded.project.id}/recurrences`, {
-        actor: "middleman-e2e",
+        actor: "kenn-forge-e2e",
         rrule: "FREQ=WEEKLY;COUNT=2",
         dtstart: "2026-07-21",
         timezone: "America/New_York",
@@ -346,9 +346,9 @@ test.describe("kata live daemon integration", () => {
   });
 
   test("uses catalog token for authenticated daemon proxy mutations", async ({ page }) => {
-    const token = "middleman-live-kata-token";
+    const token = "kenn-forge-live-kata-token";
     const harness = await createLiveKataHarness({ authToken: token });
-    const kataHome = await configureMiddlemanKataHome(harness.baseURL, token);
+    const kataHome = await configureForgeKataHome(harness.baseURL, token);
     const server = await startIsolatedE2EServer();
     const authHeaders = { Authorization: `Bearer ${token}` };
 
@@ -365,7 +365,7 @@ test.describe("kata live daemon integration", () => {
       const project = await harness.post<{ project: { id: number; uid: string; name: string }; created: boolean }>(
         "/api/v1/projects",
         {
-          name: "Middleman Auth",
+          name: "Kenn Forge Auth",
           alias: {
             identity: `local://${harness.workspaceRoot}/auth`,
             kind: "local",
@@ -379,14 +379,14 @@ test.describe("kata live daemon integration", () => {
       }>(
         `/api/v1/projects/${project.project.id}/issues`,
         {
-          actor: "middleman-e2e",
+          actor: "kenn-forge-e2e",
           title: "Verify authenticated daemon proxy",
           body: "Created to verify catalog-token proxying.",
           force_new: true,
         },
         {
           ...authHeaders,
-          "Idempotency-Key": "01MIDDLEMANLIVEAUTH000001",
+          "Idempotency-Key": "01KENN_FORGELIVEAUTH000001",
         },
       );
 
@@ -406,7 +406,7 @@ test.describe("kata live daemon integration", () => {
                   "If-Match": ifMatch,
                 },
                 body: JSON.stringify({
-                  actor: "middleman",
+                  actor: "kenn-forge",
                   patch,
                 }),
               },

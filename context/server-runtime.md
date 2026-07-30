@@ -5,9 +5,9 @@ and the root event stream.
 
 ## Startup Contracts
 
-- `middleman` and `middleman serve` are raw foreground commands; their
+- `kenn-forge` and `kenn-forge serve` are raw foreground commands; their
   authoritative `data_dir` lock keeps duplicate startup as an error.
-- `middleman start --background` is idempotent: reuse requires verified
+- `kenn-forge start --background` is idempotent: reuse requires verified
   identity for the same resolved `data_dir`; starts serialize per data
   directory through the shared daemon manager without blocking unrelated
   instances (`internal/daemonruntime/lifecycle.go::NewManager`).

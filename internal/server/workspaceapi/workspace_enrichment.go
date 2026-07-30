@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"time"
 
-	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/forge/internal/db"
 )
 
 const (

@@ -6,11 +6,11 @@ import (
 	"strings"
 	"time"
 
-	"go.kenn.io/middleman/internal/db"
-	ghclient "go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/platform"
-	"go.kenn.io/middleman/internal/server/httpapi"
-	"go.kenn.io/middleman/internal/server/workspaceapi"
+	"go.kenn.io/forge/internal/db"
+	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/platform"
+	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/server/workspaceapi"
 )
 
 type starredRequest struct {
@@ -225,7 +225,7 @@ func validateStarredRequest(body starredRequest) bool {
 
 // formatUTCRFC3339 is the server's API boundary formatter for timestamps.
 // Handlers pass absolute instants through this helper so JSON always leaves
-// middleman as explicit UTC RFC3339, regardless of how a test or caller
+// kenn-forge as explicit UTC RFC3339, regardless of how a test or caller
 // constructed the original time.Time.
 func formatUTCRFC3339(t time.Time) string {
 	return t.UTC().Format(time.RFC3339)

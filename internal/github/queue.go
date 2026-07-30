@@ -5,7 +5,7 @@ import (
 	"slices"
 	"time"
 
-	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/forge/internal/platform"
 )
 
 // QueueItemType distinguishes PRs from issues for cost

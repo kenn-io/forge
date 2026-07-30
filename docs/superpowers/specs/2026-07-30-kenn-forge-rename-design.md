@@ -28,9 +28,9 @@ The renamed product uses these canonical identifiers:
 
 Package, workspace, Rust crate, socket, browser-storage, and build identifiers use `kenn-forge`, `kenn_forge`, or `forge` according to the syntax and surrounding convention. User-facing prose uses “Kenn Forge”; shell examples use `kenn-forge`.
 
-Frontend-injected globals and browser-persisted keys move to a Kenn Forge namespace. The application transfers existing browser values once and then removes the legacy keys.
+Frontend-injected globals and browser-persisted keys move to a Kenn Forge namespace. The application transfers existing `localStorage` and `sessionStorage` values once and then removes the legacy keys.
 
-Historical database migrations must remain structurally valid and may not be edited. One new forward migration renames every live `middleman_*` SQLite table, trigger, and index to a `forge_*` identity, and current SQL statements use only the new names. Legacy schema names remain only inside immutable historical migrations and the new migration's reversible source-side statements.
+Historical database migrations must remain structurally valid and may not be edited. One new forward migration renames every live `middleman_*` SQLite table, trigger, and index to a `forge_*` identity, migrates both legacy workspace sentinels, and makes current-schema SQL use only the new names. Legacy schema names remain inside immutable historical migrations, the new migration's reversible source-side statements, and the narrow bootstrap queries required to recognize pre-`schema_migrations` version 1–3 databases.
 
 ## Compatibility Boundary
 
@@ -42,19 +42,19 @@ An explicitly supplied `--config` path, a `KENN_FORGE_HOME` override, and an exp
 
 Before loading its default config, `kenn-forge` compares the old default home at `~/.config/middleman/` with the new default at `~/.kenn/forge/`.
 
-When the old home exists and the new home does not, startup performs a one-shot migration:
+When the old home exists and the new home is absent or empty, startup performs a one-shot migration. An empty destination is adopted only after verifying that it contains no entries; a nonempty destination conflicts.
 
-1. Verify that no daemon represented by the old runtime state is active. If one is active, stop with an actionable error; do not terminate it.
-2. Move the old home into the new location as one migration transaction.
+1. Resolve the legacy config and custom `data_dir`, then acquire and retain the legacy lock at its original stable pathname. If an old daemon holds it, stop with an actionable error; do not terminate it.
+2. Move the old home's contents into the new location without moving or unlinking the held legacy lock file itself.
 3. Rename live product files, including the database, to their Kenn Forge names.
-4. Discard stale lock and runtime metadata rather than publishing it as Kenn Forge state.
-5. Rewrite only known built-in config values: an exact old default `data_dir` becomes the new default, and built-in token-variable references receive the `KENN_FORGE_` prefix.
+4. Discard stale runtime metadata rather than publishing it as Kenn Forge state. Leave the inactive legacy lock file in place after releasing it so migration never creates a split-lock inode race.
+5. Rewrite known built-in config values: an exact old default `data_dir` becomes the new default, built-in token-variable references receive the `KENN_FORGE_` prefix, and every absolute path-valued config entry located beneath the old home is rebased beneath the new home.
 6. Preserve the database, auth material, repository state, worktrees, clones, docs configuration, and all other user-owned state.
 7. Write migration state sufficient to diagnose and safely resume an interrupted attempt.
 
-If both homes contain data, startup must fail instead of silently merging them. A fresh installation with no old home creates the new home normally.
+If both homes contain data, startup must fail instead of silently merging them. A fresh installation with no old home creates the new home normally. Registered Docs folders migrate a root `.middlemanignore` to `.kenn-forgeignore` in place; both names present is an explicit collision, not a dual-read fallback.
 
-The normal path uses an atomic rename. A cross-filesystem layout uses a staged copy that preserves permissions and validates the staged tree before publishing the new home and removing the old tree. An interrupted staged migration must either resume safely or stop with specific recovery instructions; it must not select between two ambiguous databases.
+The normal path uses per-entry renames while the old lock remains held at its original pathname. A cross-filesystem layout uses a staged copy that preserves permissions and validates the staged tree before publishing the new home entries and removing their old copies. An interrupted migration must either resume safely or stop with specific recovery instructions; it must not select between two ambiguous databases.
 
 ## Rename Codemod
 
@@ -72,7 +72,7 @@ The codemod must be deterministic and safe to rerun. It rejects path collisions,
 
 Manual changes after the codemod are limited to semantic implementation work—the filesystem and browser migrations—and compile or test fixes that cannot be expressed safely as declarative mappings.
 
-The old product name may remain only in an explicit allowlist for codemod mappings, immutable historical migrations, the forward/reverse schema-rename migration, legacy filesystem/browser migration code, legacy-input fixtures, migration documentation, and landed dated design/plan artifacts that record the product as it existed when they were written. The allowlist must be narrow enough that newly introduced live product identifiers fail the audit.
+The old product name may remain only in an explicit allowlist for codemod mappings, immutable historical migrations, the forward/reverse schema-rename migration, legacy schema-bootstrap queries, legacy filesystem/browser migration code, persisted generated-agent-context markers, legacy-input fixtures, migration documentation, and landed dated design/plan artifacts that record the product as it existed when they were written. The allowlist must be narrow enough that newly introduced live product identifiers fail the audit.
 
 ## Maintained Source Scope
 

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { getStores, KbdBadge } from "@middleman/ui";
+  import { getStores, KbdBadge } from "@kenn-forge/ui";
   import { TextInput } from "@kenn-io/kit-ui";
   import Modal from "../shared/Modal.svelte";
   import {

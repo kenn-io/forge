@@ -1,13 +1,13 @@
 sync_interval = "5m"
 # Environment variable containing your GitHub personal access token.
 # Required scopes: repo (private repos) or public_repo (public only).
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 
 # Advanced: fine-grained PATs can be selected by exact GitHub owner. These
 # entries are configured in TOML only; token_file is checked before token_env.
 # [[github_owner_tokens]]
 # owner = "my-organization"
-# token_env = "MIDDLEMAN_GITHUB_TOKEN_MY_ORGANIZATION"
+# token_env = "KENN_FORGE_GITHUB_TOKEN_MY_ORGANIZATION"
 
 # Host treated as implicit in repository UI labels
 default_platform_host = "github.com"
@@ -16,8 +16,8 @@ port = 8091
 
 # Style of branch name created for new issue workspaces. "slug" (default)
 # appends a sanitized slug derived from the issue title onto the bare
-# middleman/issue-<n> form, e.g. middleman/issue-1234-add-foo-to-bar.
-# Set to "bare" to keep the legacy middleman/issue-<n> form.
+# kenn-forge/issue-<n> form, e.g. kenn-forge/issue-1234-add-foo-to-bar.
+# Set to "bare" to keep the legacy kenn-forge/issue-<n> form.
 # issue_workspace_branch_style = "slug"
 
 [terminal]
@@ -30,14 +30,14 @@ collapse_threads = true
 [[platforms]]
 type = "gitlab"
 host = "gitlab.com"
-token_env = "MIDDLEMAN_GITLAB_TOKEN"
+token_env = "KENN_FORGE_GITLAB_TOKEN"
 
 # Tokens are selected by provider and host. Read access is enough for sync;
 # write access is needed only for comments, state edits, approvals, and merges.
 [[platforms]]
 type = "forgejo"
 host = "codeberg.org"
-token_env = "MIDDLEMAN_FORGEJO_TOKEN"
+token_env = "KENN_FORGE_FORGEJO_TOKEN"
 
 [[platforms]]
 type = "forgejo"
@@ -47,7 +47,7 @@ token_env = "FORGEJO_INTERNAL_TOKEN"
 [[platforms]]
 type = "gitea"
 host = "gitea.com"
-token_env = "MIDDLEMAN_GITEA_TOKEN"
+token_env = "KENN_FORGE_GITEA_TOKEN"
 
 [[platforms]]
 type = "gitea"

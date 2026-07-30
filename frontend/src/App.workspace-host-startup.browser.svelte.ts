@@ -20,7 +20,7 @@ const workspace = {
   item_number: 42,
   git_head_ref: "feature/auth",
   worktree_path: "/tmp/worktrees/ws-9",
-  tmux_session: "middleman-ws-9",
+  tmux_session: "kenn-forge-ws-9",
   status: "ready",
   created_at: "2026-04-10T12:00:00Z",
 };

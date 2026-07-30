@@ -12,15 +12,15 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/fleet"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/fleet"
+	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
 // TestBuildLocalRawOverlaysBranchMatchedPR proves a registered worktree's
 // durable branch-match link surfaces the linked PR's number, folded state,
 // title, and checks status on the raw snapshot worktree — the snapshot half of
-// middleman owning worktree-to-PR links.
+// kenn-forge owning worktree-to-PR links.
 func TestBuildLocalRawOverlaysBranchMatchedPR(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)

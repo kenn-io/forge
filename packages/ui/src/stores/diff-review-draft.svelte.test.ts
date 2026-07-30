@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
-import type { MiddlemanClient } from "../types.js";
+import type { ForgeClient } from "../types.js";
 import type { ProviderRouteRef } from "../api/provider-routes.js";
 import { createDiffReviewDraftStore } from "./diff-review-draft.svelte.js";
 import { dismissFlash, getFlash, getFlashes } from "./flash.svelte.js";
@@ -110,8 +110,8 @@ function mockClient({
   POST?: ReturnType<typeof vi.fn>;
   PATCH?: ReturnType<typeof vi.fn>;
   DELETE?: ReturnType<typeof vi.fn>;
-} = {}): MiddlemanClient {
-  return { GET, POST, PATCH, DELETE } as unknown as MiddlemanClient;
+} = {}): ForgeClient {
+  return { GET, POST, PATCH, DELETE } as unknown as ForgeClient;
 }
 
 function deferred<T>() {

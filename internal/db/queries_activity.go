@@ -140,15 +140,15 @@ func (d *DB) ListActivity(
 			       NULL, NULL,
 			       n.web_url,
 			       COALESCE(mr.state, iss.state, '')
-			FROM middleman_notification_items n
-			JOIN middleman_repos r
+			FROM forge_notification_items n
+			JOIN forge_repos r
 			       ON r.platform = n.platform
 			      AND r.platform_host = n.platform_host
 			      AND r.owner = n.repo_owner
 			      AND r.name = n.repo_name
-			LEFT JOIN middleman_merge_requests mr
+			LEFT JOIN forge_merge_requests mr
 			       ON n.item_type = 'pr' AND mr.repo_id = r.id AND mr.number = n.item_number
-			LEFT JOIN middleman_issues iss
+			LEFT JOIN forge_issues iss
 			       ON n.item_type = 'issue' AND iss.repo_id = r.id AND iss.number = n.item_number
 			WHERE n.item_type IN ('pr', 'issue') AND n.item_number IS NOT NULL
 			      AND n.reason != 'author'` + notificationScope
@@ -180,8 +180,8 @@ func (d *DB) ListActivity(
 			       NULL AS authored_at, NULL AS committed_at,
 			       '' AS activity_url,
 			       '' AS subject_state
-			FROM middleman_merge_requests p
-			JOIN middleman_repos r ON p.repo_id = r.id
+			FROM forge_merge_requests p
+			JOIN forge_repos r ON p.repo_id = r.id
 			UNION ALL
 			SELECT 'new_issue', 'issue', i.id,
 			       r.platform, r.platform_host, r.owner, r.name, r.repo_path_key,
@@ -195,8 +195,8 @@ func (d *DB) ListActivity(
 			       NULL, NULL,
 			       '',
 			       ''
-			FROM middleman_issues i
-			JOIN middleman_repos r ON i.repo_id = r.id
+			FROM forge_issues i
+			JOIN forge_repos r ON i.repo_id = r.id
 			UNION ALL
 			SELECT CASE e.event_type
 			           WHEN 'issue_comment' THEN 'comment'
@@ -214,9 +214,9 @@ func (d *DB) ListActivity(
 			       NULL, NULL,
 			       '',
 			       ''
-			FROM middleman_mr_events e
-			JOIN middleman_merge_requests p ON e.merge_request_id = p.id
-			JOIN middleman_repos r ON p.repo_id = r.id
+			FROM forge_mr_events e
+			JOIN forge_merge_requests p ON e.merge_request_id = p.id
+			JOIN forge_repos r ON p.repo_id = r.id
 			WHERE e.event_type IN (
 				'issue_comment', 'review', 'commit', 'force_push')
 			UNION ALL
@@ -232,9 +232,9 @@ func (d *DB) ListActivity(
 			       NULL, NULL,
 			       '',
 			       ''
-			FROM middleman_issue_events e
-			JOIN middleman_issues i ON e.issue_id = i.id
-			JOIN middleman_repos r ON i.repo_id = r.id
+			FROM forge_issue_events e
+			JOIN forge_issues i ON e.issue_id = i.id
+			JOIN forge_repos r ON i.repo_id = r.id
 			WHERE e.event_type = 'issue_comment'
 			UNION ALL
 			SELECT 'default_branch_commit', 'bc', bc.id,
@@ -251,8 +251,8 @@ func (d *DB) ListActivity(
 			       bc.authored_at, bc.committed_at,
 			       '',
 			       ''
-			FROM middleman_branch_commits bc
-			JOIN middleman_repos r ON bc.repo_id = r.id
+			FROM forge_branch_commits bc
+			JOIN forge_repos r ON bc.repo_id = r.id
 			UNION ALL
 			SELECT 'default_branch_force_push', 'bfp', bfp.id,
 			       r.platform, r.platform_host, r.owner, r.name, r.repo_path_key,
@@ -266,8 +266,8 @@ func (d *DB) ListActivity(
 			       NULL, NULL,
 			       '',
 			       ''
-			FROM middleman_branch_force_pushes bfp
-			JOIN middleman_repos r ON bfp.repo_id = r.id
+			FROM forge_branch_force_pushes bfp
+			JOIN forge_repos r ON bfp.repo_id = r.id
 			%[3]s
 		) unified
 		%[2]s
@@ -398,7 +398,7 @@ func activityNotificationRepoFilterCondition(filters []NotificationRepoFilter, a
 }
 
 // dbTimeLayouts lists timestamp encodings that may already exist in SQLite.
-// Middleman now writes UTC timestamps consistently, but older databases may
+// Kenn Forge now writes UTC timestamps consistently, but older databases may
 // still contain local-offset strings from earlier builds or SQLite-built
 // values from migrations/defaults. The parser accepts both so read paths and
 // startup repair can recover the original instant before normalizing to UTC.

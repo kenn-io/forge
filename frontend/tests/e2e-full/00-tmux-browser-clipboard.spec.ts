@@ -188,7 +188,7 @@ async function runAttachedTmuxCommand(page: Page, command: string): Promise<void
 
 async function runClipboardGesture(page: Page, action: "read" | "write", text = ""): Promise<string> {
   clipboardProbeSequence += 1;
-  const probeId = `middleman-clipboard-probe-${clipboardProbeSequence}`;
+  const probeId = `kenn-forge-clipboard-probe-${clipboardProbeSequence}`;
   await page.evaluate(
     ({ id, operation, value }) => {
       const button = document.createElement("button");
@@ -251,7 +251,7 @@ async function interceptDeniedBrowserClipboard(page: Page): Promise<string[]> {
   await page.route("**/api/v1/terminal/clipboard", async (route) => {
     const request = route.request();
     await expect(request.headerValue("content-type")).resolves.toContain("application/json");
-    await expect(request.headerValue("x-middleman-csrf")).resolves.toBe("1");
+    await expect(request.headerValue("x-kenn-forge-csrf")).resolves.toBe("1");
     const body = request.postDataJSON() as { text?: string };
     fallbackWrites.push(body.text ?? "");
     await route.fulfill({ status: 204 });

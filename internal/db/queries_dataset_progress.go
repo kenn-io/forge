@@ -44,7 +44,7 @@ func reopenArchiveItemProgressTx(
 	itemNumber int,
 ) error {
 	_, err := tx.ExecContext(ctx, fmt.Sprintf(`
-		UPDATE middleman_archive_dataset_progress
+		UPDATE forge_archive_dataset_progress
 		SET scan_generation = %s,
 			next_cursor = NULL, last_input_cursor = NULL,
 			page_count = 0, observed_count = 0,
@@ -85,7 +85,7 @@ func (d *DB) CommitArchiveItemSync(ctx context.Context, commit ArchiveItemSyncCo
 		var status ArchiveDatasetProgressStatus
 		err := tx.QueryRowContext(ctx, `
 			SELECT scan_generation, status
-			FROM middleman_archive_dataset_progress
+			FROM forge_archive_dataset_progress
 			WHERE repo_id = ? AND item_type = ? AND item_number = ? AND dataset = 'lookup'`,
 			commit.RepoID, commit.ItemType, commit.ItemNumber,
 		).Scan(&generation, &status)
@@ -124,7 +124,7 @@ func (d *DB) CommitArchiveItemSync(ctx context.Context, commit ArchiveItemSyncCo
 			}
 			nowText := formatDatasetProgressTime(commit.Now)
 			if _, err := tx.ExecContext(ctx, `
-				UPDATE middleman_archive_dataset_progress
+				UPDATE forge_archive_dataset_progress
 				SET parent_revision = ?,
 					scan_generation = MAX(scan_generation, ?),
 					status = 'complete',
@@ -156,7 +156,7 @@ func (d *DB) CommitArchiveItemSync(ctx context.Context, commit ArchiveItemSyncCo
 		}
 		nowText := formatDatasetProgressTime(commit.Now)
 		if _, err := tx.ExecContext(ctx, `
-			UPDATE middleman_archive_dataset_progress
+			UPDATE forge_archive_dataset_progress
 			SET status = 'terminal', next_cursor = NULL, last_input_cursor = NULL,
 				next_retry_at = NULL, last_error_code = ?, last_error_detail = ?,
 				completed_at = ?, updated_at = ?
@@ -190,7 +190,7 @@ func (d *DB) FailArchiveItemSync(
 	return d.Tx(ctx, func(tx *sql.Tx) error {
 		var generation int64
 		if err := tx.QueryRowContext(ctx, `
-			SELECT scan_generation FROM middleman_archive_dataset_progress
+			SELECT scan_generation FROM forge_archive_dataset_progress
 			WHERE repo_id = ? AND item_type = ? AND item_number = ? AND dataset = 'lookup'`,
 			commit.RepoID, commit.ItemType, commit.ItemNumber,
 		).Scan(&generation); err != nil {
@@ -204,7 +204,7 @@ func (d *DB) FailArchiveItemSync(
 			retry = formatDatasetProgressTime(*retryAt)
 		}
 		result, err := tx.ExecContext(ctx, `
-			UPDATE middleman_archive_dataset_progress
+			UPDATE forge_archive_dataset_progress
 			SET status = 'failed', attempt_count = attempt_count + 1,
 				next_retry_at = ?, last_error_code = ?, last_error_detail = ?, updated_at = ?
 			WHERE repo_id = ? AND item_type = ? AND item_number = ?
@@ -236,9 +236,9 @@ func lookupDomainRevisionTx(
 	itemType ArchiveItemType,
 	itemNumber int,
 ) (int64, error) {
-	table := "middleman_issues"
+	table := "forge_issues"
 	if itemType == ArchiveItemTypeMergeRequest {
-		table = "middleman_merge_requests"
+		table = "forge_merge_requests"
 	} else if itemType != ArchiveItemTypeIssue {
 		return 0, fmt.Errorf("read archive item revision: invalid item type %q", itemType)
 	}
@@ -274,7 +274,7 @@ func (d *DB) GetDatasetProgress(
 			page_count, status, observed_count, attempt_count,
 			next_retry_at, last_error_code, last_error_detail,
 			started_at, completed_at, updated_at
-		FROM middleman_archive_dataset_progress
+		FROM forge_archive_dataset_progress
 		WHERE repo_id = ? AND item_type = ? AND item_number = ? AND dataset = ?`,
 		repoID, itemType, itemNumber, dataset,
 	).Scan(

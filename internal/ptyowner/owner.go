@@ -615,7 +615,7 @@ func defaultShellCommand() []string {
 }
 
 var sessionVarPrefixes = []string{
-	"MIDDLEMAN_GITHUB_TOKEN",
+	"KENN_FORGE_GITHUB_TOKEN",
 	"GITHUB_TOKEN",
 	"GH_TOKEN",
 	"GH_PAT",

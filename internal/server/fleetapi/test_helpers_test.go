@@ -24,11 +24,11 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	gitcmd "go.kenn.io/kit/git/cmd"
 
-	"go.kenn.io/middleman/internal/config"
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/server/workspaceapi"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
-	"go.kenn.io/middleman/internal/workspace"
+	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/server/workspaceapi"
+	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/workspace"
 )
 
 func setupTestServer(t *testing.T) (*Handler, *db.DB) {
@@ -68,7 +68,7 @@ func newTestHandler(t *testing.T, database *db.DB, fleetConfig config.Fleet) *Ha
 		DB: database,
 		Config: ConfigSnapshot{
 			Fleet:       fleetConfig,
-			TmuxCommand: []string{"middleman-no-such-tmux"},
+			TmuxCommand: []string{"kenn-forge-no-such-tmux"},
 		},
 		BasePath:          "/",
 		LocalHandler:      func() http.Handler { return local },
@@ -232,7 +232,7 @@ func runGit(t *testing.T, dir string, args ...string) {
 	require.NoError(t, err, "git %v failed: %s%s", args, out, stderr)
 }
 
-const serverRuntimeHelperMarker = "middleman-fleet-runtime-helper"
+const serverRuntimeHelperMarker = "kenn-forge-fleet-runtime-helper"
 
 func serverRuntimeHelperCommand(mode string) []string {
 	return []string{

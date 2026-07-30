@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/testutil/dbtest"
 	gitcmd "go.kenn.io/kit/git/cmd"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
 )
 
 // TestSetupDiffRepoDoesNotLeakIntoHostGitDir guards against regression
@@ -15,7 +15,7 @@ import (
 // git several times; if the test binary is invoked from a git hook
 // (prek pre-commit fires `go test`), the outer git exports GIT_DIR,
 // GIT_WORK_TREE, and friends. Without stripping, `git config
-// user.email middleman-fixture@example.invalid` inside the fixture's workrepo honors
+// user.email kenn-forge-fixture@example.invalid` inside the fixture's workrepo honors
 // the inherited GIT_DIR and writes to the hosting repo's .git/config
 // instead, leaving a stray [user] block behind.
 //

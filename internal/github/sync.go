@@ -17,14 +17,14 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v89/github"
-	"go.kenn.io/middleman/internal/archive"
-	"go.kenn.io/middleman/internal/config"
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/gitclone"
-	"go.kenn.io/middleman/internal/platform"
-	platformgithub "go.kenn.io/middleman/internal/platform/github"
-	"go.kenn.io/middleman/internal/tokenauth"
-	"go.kenn.io/middleman/internal/workspace"
+	"go.kenn.io/forge/internal/archive"
+	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/gitclone"
+	"go.kenn.io/forge/internal/platform"
+	platformgithub "go.kenn.io/forge/internal/platform/github"
+	"go.kenn.io/forge/internal/tokenauth"
+	"go.kenn.io/forge/internal/workspace"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -4429,7 +4429,7 @@ type rateLimitSnapshotter interface {
 
 // RefreshRateLimitSnapshots refreshes GitHub REST and GraphQL quota facts from
 // GitHub's /rate_limit endpoint. The snapshot call is intentionally not
-// recorded as a middleman request because GitHub does not charge it against the
+// recorded as a kenn-forge request because GitHub does not charge it against the
 // primary REST budget.
 func (s *Syncer) RefreshRateLimitSnapshots(ctx context.Context) {
 	s.refreshRateLimitSnapshots(ctx)

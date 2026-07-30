@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"go.kenn.io/middleman/internal/config"
+	"go.kenn.io/forge/internal/config"
 )
 
 type recordingTerminalClipboard struct {
@@ -43,7 +43,7 @@ func TestTerminalClipboardWriteRequiresLoopbackAndCSRF(t *testing.T) {
 			remoteAddr: "127.0.0.1:54321",
 			fetchSite:  "same-origin",
 			wantStatus: http.StatusNoContent,
-			wantTexts:  []string{"copied through middleman"},
+			wantTexts:  []string{"copied through kenn-forge"},
 		},
 		{
 			name:       "remote client",
@@ -67,7 +67,7 @@ func TestTerminalClipboardWriteRequiresLoopbackAndCSRF(t *testing.T) {
 				ServerOptions{TerminalClipboard: clipboard},
 			)
 			body, err := json.Marshal(map[string]string{
-				"text": "copied through middleman",
+				"text": "copied through kenn-forge",
 			})
 			require.NoError(t, err)
 			req := httptest.NewRequest(
@@ -176,7 +176,7 @@ func TestTerminalClipboardWriteThroughTrustedReverseProxyRequiresLocalClient(
 							Port: "8091",
 						},
 						Allowed: []config.HostKey{
-							{Host: "middleman.example"},
+							{Host: "forge.example"},
 						},
 						TrustReverseProxy: true,
 					},
@@ -190,7 +190,7 @@ func TestTerminalClipboardWriteThroughTrustedReverseProxyRequiresLocalClient(
 			)
 			req.Host = "127.0.0.1:8091"
 			req.RemoteAddr = tt.remoteAddr
-			req.Header.Set("X-Forwarded-Host", "middleman.example")
+			req.Header.Set("X-Forwarded-Host", "forge.example")
 			if tt.forwardedFor != "" {
 				req.Header.Set("X-Forwarded-For", tt.forwardedFor)
 			}

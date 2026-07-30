@@ -6,8 +6,8 @@
     TopBar,
     type TopBarTab,
   } from "@kenn-io/kit-ui";
-  import { getStores, KbdBadge } from "@middleman/ui";
-  import type { ModeVisibility } from "@middleman/ui/api/types";
+  import { getStores, KbdBadge } from "@kenn-forge/ui";
+  import type { ModeVisibility } from "@kenn-forge/ui/api/types";
   import { tick } from "svelte";
   import { SvelteMap } from "svelte/reactivity";
   import {
@@ -358,7 +358,7 @@
     {/if}
     <span class="brand">
       <img class="app-icon" src={appIconSrc} alt="" aria-hidden="true" />
-      <span class="logo">middleman</span>
+      <span class="logo">kenn-forge</span>
     </span>
     {#if showProviderRepoSelector}
       <RepoTypeahead

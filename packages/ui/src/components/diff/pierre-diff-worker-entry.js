@@ -10,4 +10,4 @@
 // namespace reachable so the import cannot be erased.
 import * as workerModule from "@pierre/diffs/worker/worker.js";
 
-globalThis.__middlemanPierreDiffWorkerModule = workerModule;
+globalThis.__kenn_forgePierreDiffWorkerModule = workerModule;

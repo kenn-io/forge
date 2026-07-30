@@ -12,7 +12,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/forge/internal/db"
 )
 
 func TestW1SliceAGate(t *testing.T) {
@@ -75,8 +75,8 @@ func TestW1SliceAGate(t *testing.T) {
 	assert.NotContains(fetched, "platform_identity")
 
 	// 4) Register a worktree the daemon already created on disk.
-	//    Middleman just persists the metadata - the path validity
-	//    contract is the daemon's, not Middleman's.
+	//    Kenn Forge just persists the metadata - the path validity
+	//    contract is the daemon's, not Kenn Forge's.
 	worktreePath := filepath.Join(t.TempDir(), "wt-feature-x")
 	wtBody := mustMarshal(t, map[string]any{
 		"branch": "feature-x",
@@ -270,7 +270,7 @@ func TestRegisterProject_UsesConfiguredProviderForRemoteIdentity(t *testing.T) {
 
 	srv, _, _ := setupProjectServerWithConfigContent(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -310,7 +310,7 @@ func TestRegisterProject_UsesDefaultPlatformHostForRemoteIdentity(t *testing.T) 
 
 	srv, _, _ := setupProjectServerWithConfigContent(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 default_platform_host = "ghe.example.com"
 host = "127.0.0.1"
 port = 8091
@@ -394,9 +394,9 @@ func TestRegisterProject_AcceptsCallerProvidedIdentity(t *testing.T) {
 
 	// Even though the repo has no remote, the caller can provide
 	// platform_identity directly. Caller-provided wins, and the handler
-	// upserts a middleman_repos row to give the project a stable FK
+	// upserts a forge_repos row to give the project a stable FK
 	// target - no sync subscription is created (sync is driven by TOML
-	// config, not by middleman_repos rows).
+	// config, not by forge_repos rows).
 	body := mustMarshal(t, map[string]any{
 		"local_path": repoDir,
 		"platform_identity": map[string]string{
@@ -419,9 +419,9 @@ func TestRegisterProject_AcceptsCallerProvidedIdentity(t *testing.T) {
 	assert.Equal("acme", identity["owner"])
 	assert.Equal("widget", identity["name"])
 
-	// Re-fetching reads the identity off the joined middleman_repos
+	// Re-fetching reads the identity off the joined forge_repos
 	// row - confirms the FK linkage is what the response is built from
-	// (not a stale duplicate copy on middleman_projects).
+	// (not a stale duplicate copy on forge_projects).
 	projectID, _ := got["id"].(string)
 	require.NotEmpty(projectID)
 	resp = httpDo(t, ts, http.MethodGet, "/api/v1/projects/"+projectID, nil)
@@ -441,7 +441,7 @@ func TestRegisterProject_AcceptsCallerProvidedIdentity(t *testing.T) {
 // TestRegisterProject_DoesNotSubscribeRepoToSync pins the load-bearing
 // invariant that registering a project does NOT subscribe the linked
 // repo to sync. registerProject calls db.UpsertRepo to give the project
-// a stable middleman_repos FK target, but UpsertRepo is pure DDL and
+// a stable forge_repos FK target, but UpsertRepo is pure DDL and
 // must not touch the syncer's in-memory tracked-repos list - sync
 // subscription is driven exclusively by the user's TOML config and
 // SetRepos.

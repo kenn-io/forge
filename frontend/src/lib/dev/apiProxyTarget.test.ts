@@ -13,47 +13,47 @@ describe("resolveDevApiUrl", () => {
     tempDirs.length = 0;
   });
 
-  it("prefers MIDDLEMAN_API_URL when present", () => {
+  it("prefers KENN_FORGE_API_URL when present", () => {
     expect(
       resolveDevApiUrl({
         HOME: "/ignored",
-        MIDDLEMAN_API_URL: "http://127.0.0.1:9123/custom",
+        KENN_FORGE_API_URL: "http://127.0.0.1:9123/custom",
       }),
     ).toBe("http://127.0.0.1:9123/custom");
   });
 
-  it("reads host, port, and base path from MIDDLEMAN_HOME config", () => {
-    const middlemanHome = makeTempDir();
+  it("reads host, port, and base path from KENN_FORGE_HOME config", () => {
+    const forgeHome = makeTempDir();
     writeConfig(
-      middlemanHome,
+      forgeHome,
       `
 host = "127.0.0.1"
 port = 9123
-base_path = "/middleman/"
+base_path = "/kenn-forge/"
 `,
     );
 
     expect(
       resolveDevApiUrl({
         HOME: "/ignored",
-        MIDDLEMAN_HOME: middlemanHome,
+        KENN_FORGE_HOME: forgeHome,
       }),
-    ).toBe("http://127.0.0.1:9123/middleman");
+    ).toBe("http://127.0.0.1:9123/kenn-forge");
   });
 
-  it("prefers explicit MIDDLEMAN_CONFIG over MIDDLEMAN_HOME and HOME defaults", () => {
+  it("prefers explicit KENN_FORGE_CONFIG over KENN_FORGE_HOME and HOME defaults", () => {
     const home = makeTempDir();
-    const middlemanHome = makeTempDir();
+    const forgeHome = makeTempDir();
     const explicitConfigPath = path.join(makeTempDir(), "custom.toml");
 
     writeConfig(
-      path.join(home, ".config", "middleman"),
+      path.join(home, ".config", "kenn-forge"),
       `
 port = 9234
 `,
     );
     writeConfig(
-      middlemanHome,
+      forgeHome,
       `
 port = 9345
 `,
@@ -67,8 +67,8 @@ port = 9456
 
     const env = {
       HOME: home,
-      MIDDLEMAN_HOME: middlemanHome,
-      MIDDLEMAN_CONFIG: explicitConfigPath,
+      KENN_FORGE_HOME: forgeHome,
+      KENN_FORGE_CONFIG: explicitConfigPath,
     };
 
     expect(resolveDevApiUrl(env)).toBe("http://127.0.0.1:9456");
@@ -77,7 +77,7 @@ port = 9456
   it("falls back to the default config path under HOME", () => {
     const home = makeTempDir();
     writeConfig(
-      path.join(home, ".config", "middleman"),
+      path.join(home, ".config", "kenn-forge"),
       `
 port = 9234
 `,
@@ -91,22 +91,22 @@ port = 9234
   });
 
   it("parses full TOML syntax used by backend config", () => {
-    const middlemanHome = makeTempDir();
+    const forgeHome = makeTempDir();
     writeConfig(
-      middlemanHome,
+      forgeHome,
       `
 host = '::1'
 port = 9_456
-base_path = '/middleman/'
+base_path = '/kenn-forge/'
 `,
     );
 
     expect(
       resolveDevApiUrl({
         HOME: "/ignored",
-        MIDDLEMAN_HOME: middlemanHome,
+        KENN_FORGE_HOME: forgeHome,
       }),
-    ).toBe("http://[::1]:9456/middleman");
+    ).toBe("http://[::1]:9456/kenn-forge");
   });
 
   it("falls back to the default URL when config cannot be read", () => {
@@ -118,9 +118,9 @@ base_path = '/middleman/'
   });
 
   it("formats IPv6 loopback hosts correctly", () => {
-    const middlemanHome = makeTempDir();
+    const forgeHome = makeTempDir();
     writeConfig(
-      middlemanHome,
+      forgeHome,
       `
 host = "::1"
 port = 9345
@@ -130,7 +130,7 @@ port = 9345
     expect(
       resolveDevApiUrl({
         HOME: "/ignored",
-        MIDDLEMAN_HOME: middlemanHome,
+        KENN_FORGE_HOME: forgeHome,
       }),
     ).toBe("http://[::1]:9345");
   });
@@ -138,7 +138,7 @@ port = 9345
   function makeTempDir(): string {
     const dir = path.join(
       os.tmpdir(),
-      `middleman-api-proxy-target-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      `kenn-forge-api-proxy-target-${Date.now()}-${Math.random().toString(16).slice(2)}`,
     );
     mkdirSync(dir, { recursive: true });
     tempDirs.push(dir);

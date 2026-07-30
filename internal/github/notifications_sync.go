@@ -10,9 +10,9 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v89/github"
-	"go.kenn.io/middleman/internal/archive"
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/forge/internal/archive"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/platform"
 )
 
 const (
@@ -349,7 +349,7 @@ func (s *Syncer) syncNotificationsForRepo(
 			}
 			// Only notifications anchored to a PR or issue have an in-app
 			// destination and meaningful triage. CI/check-suite, discussion,
-			// release, and other subjects are worthless in middleman, so do
+			// release, and other subjects are worthless in kenn-forge, so do
 			// not persist them.
 			if (thread.ItemType != "pr" && thread.ItemType != "issue") || thread.ItemNumber == nil {
 				continue

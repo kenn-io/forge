@@ -5,7 +5,7 @@ import (
 	"errors"
 	"log/slog"
 
-	ghclient "go.kenn.io/middleman/internal/github"
+	ghclient "go.kenn.io/forge/internal/github"
 )
 
 type detailSyncJob struct {

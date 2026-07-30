@@ -76,11 +76,11 @@ linters:
         text: Direct .* client construction belongs in internal/github or provider startup.
       - linters:
           - forbidigo
-        path: cmd/middleman/provider_startup\.go
+        path: cmd/kenn-forge/provider_startup\.go
         text: Direct go-github client construction belongs in internal/github or provider startup.
       - linters:
           - forbidigo
-        path: middleman\.go
+        path: kenn-forge\.go
         text: Direct go-github client construction belongs in internal/github or provider startup.
       - linters:
           - forbidigo

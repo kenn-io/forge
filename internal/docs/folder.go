@@ -1,4 +1,4 @@
-// Package docs is the filesystem half of the middleman markdown folder
+// Package docs is the filesystem half of the kenn-forge markdown folder
 // feature. It exposes a Registry that resolves folder IDs to canonical
 // paths, walks folder trees safely (refusing to follow links outside the
 // root), and reads/writes files within the folder.
@@ -15,8 +15,8 @@ import (
 	"strings"
 	"sync"
 
+	"go.kenn.io/forge/internal/config"
 	gitcmd "go.kenn.io/kit/git/cmd"
-	"go.kenn.io/middleman/internal/config"
 )
 
 // folderIDPattern constrains a folder id to characters that survive as a
@@ -79,7 +79,7 @@ var markdownExts = map[string]struct{}{
 // into a generic file-server for arbitrary file types. SVG is
 // intentionally excluded - folder-hosted SVGs can embed <script>, and
 // serving them same-origin with image/svg+xml would let that script
-// run in the middleman origin.
+// run in the kenn-forge origin.
 var imageExts = map[string]string{
 	".png":  "image/png",
 	".jpg":  "image/jpeg",
@@ -90,7 +90,7 @@ var imageExts = map[string]string{
 
 // Ignore rules are sourced from a per-folder matcher built in
 // ignore.go: a hardcoded baseline (.git, node_modules, .DS_Store, ...)
-// plus any .gitignore (nested) and .middlemanignore (root-only) the
+// plus any .gitignore (nested) and .kenn-forgeignore (root-only) the
 // folder ships.
 
 // Registry resolves folder IDs to their canonical root. Built once at
@@ -557,7 +557,7 @@ func (r *Registry) WriteFile(folderID, relPath string, content []byte) error {
 	} else if !info.IsDir() {
 		return fmt.Errorf("parent %q is not a directory", dir)
 	}
-	tmp, err := os.CreateTemp(dir, ".middleman-*.tmp")
+	tmp, err := os.CreateTemp(dir, ".kenn-forge-*.tmp")
 	if err != nil {
 		return err
 	}

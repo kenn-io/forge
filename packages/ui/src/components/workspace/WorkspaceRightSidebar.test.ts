@@ -69,7 +69,7 @@ function renderKataSidebarWithoutPR() {
       ownerItemType: "kata_task",
       ownerItemNumber: 0,
       associatedPRNumber: null,
-      branch: "middleman/kata/task-123",
+      branch: "kenn-forge/kata/task-123",
       roborevBaseUrl: "http://localhost/api/roborev",
     },
     context: new Map([[STORES_KEY, makeStores()]]),

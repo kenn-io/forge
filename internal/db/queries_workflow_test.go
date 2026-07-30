@@ -206,7 +206,7 @@ func TestListItemWorkflowStates(t *testing.T) {
 	insertTestMR(t, d, repoID, 2, "pr two", base.Add(2*time.Hour))
 	id3 := insertTestMR(t, d, repoID, 3, "pr three", base.Add(3*time.Hour))
 	_, err := d.rw.ExecContext(ctx,
-		`UPDATE middleman_merge_requests SET state = 'closed' WHERE id = ?`,
+		`UPDATE forge_merge_requests SET state = 'closed' WHERE id = ?`,
 		id3,
 	)
 	require.NoError(err)

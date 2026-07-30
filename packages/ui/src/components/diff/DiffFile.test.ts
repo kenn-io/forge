@@ -658,7 +658,7 @@ describe("DiffFile", () => {
       const element = document
         .querySelector(".pierre-diff")
         ?.shadowRoot?.querySelector<HTMLButtonElement>(
-          `[data-middleman-line-comment-button][aria-label="Comment on ${sideLabel} line ${line}"]`,
+          `[data-kenn-forge-line-comment-button][aria-label="Comment on ${sideLabel} line ${line}"]`,
         );
       expect(element).toBeTruthy();
       return element!;

@@ -23,13 +23,13 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
-	"go.kenn.io/middleman/internal/config"
-	dbpkg "go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/fleet"
-	ghclient "go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/server"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
-	"go.kenn.io/middleman/internal/testutil/servertest"
+	"go.kenn.io/forge/internal/config"
+	dbpkg "go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/fleet"
+	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/servertest"
 )
 
 func bootFleetServer(t *testing.T, cfg *config.Config) (*httptest.Server, *dbpkg.DB) {
@@ -41,7 +41,7 @@ func bootFleetServer(t *testing.T, cfg *config.Config) (*httptest.Server, *dbpkg
 		cfg = &config.Config{BasePath: "/"}
 	}
 	if cfg.Tmux.Command == nil {
-		cfg.Tmux.Command = []string{"middleman-no-such-tmux"}
+		cfg.Tmux.Command = []string{"kenn-forge-no-such-tmux"}
 	}
 	srv := servertest.New(t, database, syncer, nil, "/", cfg, server.ServerOptions{
 		WorktreeDir:                        t.TempDir(),
@@ -133,7 +133,7 @@ func TestFleetSnapshotLocalE2E(t *testing.T) {
 		ID: "ws-1", Platform: "github", PlatformHost: "github.com",
 		RepoOwner: "acme", RepoName: "widget",
 		ItemType: dbpkg.WorkspaceItemTypePullRequest, ItemNumber: 7,
-		GitHeadRef: "feature", WorktreePath: t.TempDir() + "/ws", TmuxSession: "middleman-ws-1",
+		GitHeadRef: "feature", WorktreePath: t.TempDir() + "/ws", TmuxSession: "kenn-forge-ws-1",
 		Status: "ready",
 	}))
 
@@ -204,8 +204,8 @@ func TestFleetSnapshotIssueWorkspaceLinksIssueOnlyE2E(t *testing.T) {
 		RepoOwner: "acme", RepoName: "widget",
 		ItemType: dbpkg.WorkspaceItemTypeIssue, ItemNumber: 42,
 		AssociatedPRNumber: &associatedPR,
-		GitHeadRef:         "middleman/issue-42", WorktreePath: t.TempDir() + "/ws-issue",
-		TmuxSession: "middleman-ws-issue", Status: "ready",
+		GitHeadRef:         "kenn-forge/issue-42", WorktreePath: t.TempDir() + "/ws-issue",
+		TmuxSession: "kenn-forge-ws-issue", Status: "ready",
 	}))
 
 	var snap fleet.Snapshot
@@ -374,7 +374,7 @@ func TestFleetSnapshotLiveTmuxEnrichmentE2E(t *testing.T) {
 		RepoOwner: "acme", RepoName: "widget",
 		ItemType: dbpkg.WorkspaceItemTypePullRequest, ItemNumber: 7,
 		GitHeadRef: "feature", WorktreePath: worktreePath,
-		TmuxSession: "middleman-main", Status: "ready",
+		TmuxSession: "kenn-forge-main", Status: "ready",
 		CreatedAt: createdAt,
 	}))
 	require.NoError(database.UpsertWorkspaceRuntimeSession(ctx, &dbpkg.WorkspaceRuntimeSession{
@@ -384,7 +384,7 @@ func TestFleetSnapshotLiveTmuxEnrichmentE2E(t *testing.T) {
 		Label:       "codex",
 		Kind:        "agent",
 		Scope:       "session",
-		TmuxSession: "middleman-agent",
+		TmuxSession: "kenn-forge-agent",
 		CreatedAt:   createdAt,
 	}))
 
@@ -395,7 +395,7 @@ func TestFleetSnapshotLiveTmuxEnrichmentE2E(t *testing.T) {
 	}, fleetSnapshotEventuallyTimeout, fleetSnapshotEventuallyTick)
 
 	require.Len(raw.Host.TmuxSessions, 3)
-	main := rawTmuxByName(raw.Host.TmuxSessions, "middleman-main")
+	main := rawTmuxByName(raw.Host.TmuxSessions, "kenn-forge-main")
 	require.NotNil(main)
 	require.True(main.Managed)
 	require.Equal("session:ws-live:main", main.SessionScopedKey)
@@ -403,7 +403,7 @@ func TestFleetSnapshotLiveTmuxEnrichmentE2E(t *testing.T) {
 	require.Len(main.Windows, 1)
 
 	runtimeScopedKey := "session:ws-live_codex"
-	agent := rawTmuxByName(raw.Host.TmuxSessions, "middleman-agent")
+	agent := rawTmuxByName(raw.Host.TmuxSessions, "kenn-forge-agent")
 	require.NotNil(agent)
 	require.True(agent.Managed)
 	require.Equal(runtimeScopedKey, agent.SessionScopedKey)
@@ -455,7 +455,7 @@ func TestFleetSnapshotProjectWorktreeRuntimeE2E(t *testing.T) {
 		&dbpkg.ProjectWorktreeTmuxSession{
 			WorktreeID:  worktree.ID,
 			SessionKey:  "wt_codex",
-			SessionName: "middleman-project-worktree-agent",
+			SessionName: "kenn-forge-project-worktree-agent",
 			TargetKey:   "codex",
 			CreatedAt:   createdAt,
 		},
@@ -465,7 +465,7 @@ func TestFleetSnapshotProjectWorktreeRuntimeE2E(t *testing.T) {
 	require.Eventually(func() bool {
 		getJSON(t, ts, "/api/v1/snapshot/raw", &raw)
 		return raw.Host.TmuxLastPolledAt != "" &&
-			rawTmuxByName(raw.Host.TmuxSessions, "middleman-project-worktree-agent") != nil
+			rawTmuxByName(raw.Host.TmuxSessions, "kenn-forge-project-worktree-agent") != nil
 	}, fleetSnapshotEventuallyTimeout, fleetSnapshotEventuallyTick)
 
 	worktreeAbs, err := filepath.Abs(worktreePath)
@@ -477,7 +477,7 @@ func TestFleetSnapshotProjectWorktreeRuntimeE2E(t *testing.T) {
 	require.Equal(wtKey, session.WorktreeKey)
 	require.Equal("agent", session.RuntimeKind)
 
-	tmuxInfo := rawTmuxByName(raw.Host.TmuxSessions, "middleman-project-worktree-agent")
+	tmuxInfo := rawTmuxByName(raw.Host.TmuxSessions, "kenn-forge-project-worktree-agent")
 	require.NotNil(tmuxInfo)
 	require.True(tmuxInfo.Managed)
 	require.Equal(wtKey, tmuxInfo.WorktreeKey)
@@ -582,25 +582,25 @@ case "$cmd" in
   list-sessions)
     case "$*" in
       *session_created*)
-        printf '1717150000\t1\tmiddleman-main\n'
-        printf '1717150000\t1\tmiddleman-agent\n'
+        printf '1717150000\t1\tkenn-forge-main\n'
+        printf '1717150000\t1\tkenn-forge-agent\n'
         printf '1717150000\t2\tpersonal\n'
         ;;
       *)
-        printf 'middleman-main\n'
-        printf 'middleman-agent\n'
+        printf 'kenn-forge-main\n'
+        printf 'kenn-forge-agent\n'
         printf 'personal\n'
         ;;
     esac
     ;;
   list-windows)
-    printf 'middleman-main\t@1\t0\tmain\t1717150100\n'
-    printf 'middleman-agent\t@2\t0\tagent\t1717150200\n'
+    printf 'kenn-forge-main\t@1\t0\tmain\t1717150100\n'
+    printf 'kenn-forge-agent\t@2\t0\tagent\t1717150200\n'
     printf 'personal\t@3\t0\tprivate\t1717150300\n'
     printf 'personal\t@4\t1\tlogs\t1717150400\n'
     ;;
   list-panes)
-    printf 'middleman-agent\t1717150200\t100\tcodex\n'
+    printf 'kenn-forge-agent\t1717150200\t100\tcodex\n'
     ;;
   has-session|show-options|kill-session)
     exit 0
@@ -625,18 +625,18 @@ case "$cmd" in
   list-sessions)
     case "$*" in
       *session_created*)
-        printf '1717243200\t1\tmiddleman-project-worktree-agent\n'
+        printf '1717243200\t1\tkenn-forge-project-worktree-agent\n'
         ;;
       *)
-        printf 'middleman-project-worktree-agent\n'
+        printf 'kenn-forge-project-worktree-agent\n'
         ;;
     esac
     ;;
   list-windows)
-    printf 'middleman-project-worktree-agent\t@1\t0\tagent\t1717243260\n'
+    printf 'kenn-forge-project-worktree-agent\t@1\t0\tagent\t1717243260\n'
     ;;
   list-panes)
-    printf 'middleman-project-worktree-agent\t1717243260\t100\tcodex\n'
+    printf 'kenn-forge-project-worktree-agent\t1717243260\t100\tcodex\n'
     ;;
   has-session|show-options|kill-session)
     exit 0
@@ -981,8 +981,8 @@ func TestFleetOperationProxyRoutesSelfNestedOwnerE2E(t *testing.T) {
 		ID: "ws-nested-issue", Platform: "gitlab", PlatformHost: "gitlab.com",
 		RepoOwner: "group/subgroup", RepoName: "widget",
 		ItemType: dbpkg.WorkspaceItemTypeIssue, ItemNumber: 7,
-		GitHeadRef: "middleman/issue-7", WorktreePath: t.TempDir() + "/ws-nested",
-		TmuxSession: "middleman-ws-nested", Status: "ready",
+		GitHeadRef: "kenn-forge/issue-7", WorktreePath: t.TempDir() + "/ws-nested",
+		TmuxSession: "kenn-forge-ws-nested", Status: "ready",
 	}))
 
 	status, body := postJSON(
@@ -1299,14 +1299,14 @@ func TestFleetSnapshotDraftFoldE2E(t *testing.T) {
 		ID: "ws-open-draft", Platform: "github", PlatformHost: "github.com",
 		RepoOwner: "acme", RepoName: "widget",
 		ItemType: dbpkg.WorkspaceItemTypePullRequest, ItemNumber: 1,
-		GitHeadRef: "feat-open", WorktreePath: t.TempDir() + "/ws-open", TmuxSession: "middleman-ws-open",
+		GitHeadRef: "feat-open", WorktreePath: t.TempDir() + "/ws-open", TmuxSession: "kenn-forge-ws-open",
 		Status: "ready",
 	}))
 	require.NoError(database.InsertWorkspace(ctx, &dbpkg.Workspace{
 		ID: "ws-closed-draft", Platform: "github", PlatformHost: "github.com",
 		RepoOwner: "acme", RepoName: "widget",
 		ItemType: dbpkg.WorkspaceItemTypePullRequest, ItemNumber: 2,
-		GitHeadRef: "feat-closed", WorktreePath: t.TempDir() + "/ws-closed", TmuxSession: "middleman-ws-closed",
+		GitHeadRef: "feat-closed", WorktreePath: t.TempDir() + "/ws-closed", TmuxSession: "kenn-forge-ws-closed",
 		Status: "ready",
 	}))
 

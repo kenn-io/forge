@@ -10,7 +10,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	dbpkg "go.kenn.io/middleman/internal/db"
+	dbpkg "go.kenn.io/forge/internal/db"
 )
 
 func TestInspectProjectWorktreeCountsStoredTmuxSessionsWithRuntime(t *testing.T) {
@@ -30,7 +30,7 @@ func TestInspectProjectWorktreeCountsStoredTmuxSessionsWithRuntime(t *testing.T)
 		t.Context(), &dbpkg.ProjectWorktreeTmuxSession{
 			WorktreeID:  worktreeID,
 			SessionKey:  "restart-survivor-runtime",
-			SessionName: "middleman-restart-survivor-runtime",
+			SessionName: "kenn-forge-restart-survivor-runtime",
 			Label:       "Survivor",
 			CreatedAt:   time.Now().UTC(),
 		},

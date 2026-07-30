@@ -1,8 +1,8 @@
-import { onTabbedPanelDragEnd } from "@middleman/ui";
+import { onTabbedPanelDragEnd } from "@kenn-forge/ui";
 import type { WorkflowTabKey } from "./terminal-layout";
 
-export const WORKFLOW_TAB_DRAG_MIME = "application/x-middleman-workflow-tab";
-export const RUNTIME_SESSION_DRAG_MIME = "application/x-middleman-runtime-session";
+export const WORKFLOW_TAB_DRAG_MIME = "application/x-kenn-forge-workflow-tab";
+export const RUNTIME_SESSION_DRAG_MIME = "application/x-kenn-forge-runtime-session";
 
 interface RuntimeSessionDragPayload {
   workspaceId: string;
@@ -28,7 +28,7 @@ export function startRuntimeSessionDrag(event: DragEvent, payload: RuntimeSessio
   activeWorkflowTabDrag = null;
   activeWorkflowTabDragToken = null;
   writeDragToken(event, RUNTIME_SESSION_DRAG_MIME, token);
-  writePlainTextLabel(event, "Middleman terminal session");
+  writePlainTextLabel(event, "Kenn Forge terminal session");
   if (event.dataTransfer) {
     event.dataTransfer.effectAllowed = "move";
   }
@@ -47,7 +47,7 @@ export function startWorkflowTabDrag(event: DragEvent, payload: WorkflowTabDragP
   } else {
     activeRuntimeSessionDragToken = null;
   }
-  writePlainTextLabel(event, "Middleman workflow tab");
+  writePlainTextLabel(event, "Kenn Forge workflow tab");
   if (event.dataTransfer) {
     event.dataTransfer.effectAllowed = "move";
   }

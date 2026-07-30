@@ -4,8 +4,8 @@ import (
 	"context"
 	"slices"
 
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/workspace/localruntime"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
 // FleetSnapshot is the canonical workspace-owned projection consumed by

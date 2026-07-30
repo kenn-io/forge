@@ -14,7 +14,7 @@ async function write(root, file, content) {
 }
 
 async function makeRoot() {
-  return mkdtemp("/tmp/middleman-api-lint-");
+  return mkdtemp("/tmp/kenn-forge-api-lint-");
 }
 
 test("flags hardcoded production /api/v1 endpoint calls", async () => {

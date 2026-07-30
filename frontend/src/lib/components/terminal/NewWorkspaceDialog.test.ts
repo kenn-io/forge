@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/sv
 import {
   consumeWorkspaceLaunch,
   resetWorkspaceCreatePendingForTest,
-} from "@middleman/ui/stores/workspace-create-pending";
+} from "@kenn-forge/ui/stores/workspace-create-pending";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { STORES_KEY } from "../../../../../packages/ui/src/context.js";
 
@@ -215,7 +215,7 @@ describe("NewWorkspaceDialog", () => {
   });
 
   it("falls back to the first repo when the last used one is no longer tracked", async () => {
-    localStorage.setItem("middleman:workspace:new_repo", "github/github.com/acme/retired");
+    localStorage.setItem("kenn-forge:workspace:new_repo", "github/github.com/acme/retired");
     await renderDialog();
 
     await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));

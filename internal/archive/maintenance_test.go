@@ -8,9 +8,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/platform"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/platform"
+	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
 func TestPromptMaintenanceCommitsPagesBeforeAdvancingScanWatermark(t *testing.T) {
@@ -90,7 +90,7 @@ func TestPromptMaintenanceFailureRetainsPriorWatermarkAndCommittedPages(t *testi
 	assert.Nil(states[0].MaintenanceSucceededAt)
 	var count int
 	require.NoError(database.ReadDB().QueryRowContext(t.Context(), `
-		SELECT COUNT(*) FROM middleman_archive_items
+		SELECT COUNT(*) FROM forge_archive_items
 		WHERE repo_id = ? AND item_type = 'issue' AND item_number = 3`, repoID).Scan(&count))
 	assert.Equal(1, count, "the first page must remain durably committed")
 }

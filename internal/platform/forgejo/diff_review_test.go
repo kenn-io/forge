@@ -15,7 +15,7 @@ import (
 	forgejosdk "codeberg.org/mvdkleijn/forgejo-sdk/forgejo/v3"
 	"github.com/stretchr/testify/assert"
 	Require "github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/forge/internal/platform"
 )
 
 func TestForgejoReviewThreadPreservesContextCoordinates(t *testing.T) {

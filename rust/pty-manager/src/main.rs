@@ -1148,7 +1148,7 @@ fn fallback_socket_dir_for_platform(
     include_darwin_private_tmp: bool,
 ) -> PathBuf {
     let dir_name = format!(
-        "middleman-pty-{}",
+        "kenn-forge-pty-{}",
         socket_hash(&format!("{}-{session}", root.display()))
     );
     let mut bases = vec![primary_temp_dir];
@@ -1216,14 +1216,14 @@ fn default_shell_command() -> Vec<String> {
 
 fn strip_secret_env(cmd: &mut CommandBuilder) {
     for (key, _) in env::vars() {
-        if key == "MIDDLEMAN_GITHUB_TOKEN"
+        if key == "KENN_FORGE_GITHUB_TOKEN"
             || key == "GITHUB_TOKEN"
             || key == "GH_TOKEN"
             || key == "GH_PAT"
             || key == "GITHUB_PAT"
             || key == "GITHUB_ENTERPRISE_TOKEN"
             || key == "GH_ENTERPRISE_TOKEN"
-            || key.starts_with("MIDDLEMAN_GITHUB_TOKEN_")
+            || key.starts_with("KENN_FORGE_GITHUB_TOKEN_")
             || key.starts_with("GITHUB_TOKEN_")
             || key.starts_with("GH_TOKEN_")
             || key.starts_with("GH_PAT_")
@@ -1337,14 +1337,14 @@ mod tests {
 
     #[test]
     fn paths_match_go_hash_shape() {
-        let paths = session_paths(Path::new("/tmp/root"), "middleman-abc123").unwrap();
+        let paths = session_paths(Path::new("/tmp/root"), "kenn-forge-abc123").unwrap();
 
-        assert_eq!(paths.dir, Path::new("/tmp/root/middleman-abc123"));
-        assert_eq!(paths.socket, Path::new("/tmp/root/sock-cb190ac507b2b0a4"));
+        assert_eq!(paths.dir, Path::new("/tmp/root/kenn-forge-abc123"));
+        assert_eq!(paths.socket, Path::new("/tmp/root/sock-5e73279a62064378"));
         assert!(paths.socket_dir.is_none());
         assert_eq!(
             paths.state_path,
-            Path::new("/tmp/root/middleman-abc123/owner.json")
+            Path::new("/tmp/root/kenn-forge-abc123/owner.json")
         );
     }
 
@@ -1361,22 +1361,22 @@ mod tests {
     fn paths_use_private_temp_socket_dir_for_long_roots() {
         let root = PathBuf::from("/tmp").join("x".repeat(MAX_UNIX_SOCKET_PATH_LEN));
 
-        let paths = session_paths(&root, "middleman-abc123").unwrap();
+        let paths = session_paths(&root, "kenn-forge-abc123").unwrap();
 
-        assert_eq!(paths.dir, root.join("middleman-abc123"));
+        assert_eq!(paths.dir, root.join("kenn-forge-abc123"));
         let socket_dir = paths.socket_dir.as_ref().unwrap();
         let temp_socket = env::temp_dir()
             .join(format!(
-                "middleman-pty-{}",
-                socket_hash(&format!("{}-middleman-abc123", root.display()))
+                "kenn-forge-pty-{}",
+                socket_hash(&format!("{}-kenn-forge-abc123", root.display()))
             ))
             .join("sock");
         if temp_socket.to_string_lossy().len() <= MAX_UNIX_SOCKET_PATH_LEN {
             assert!(socket_dir.starts_with(env::temp_dir()));
         }
         let expected_file_name = format!(
-            "middleman-pty-{}",
-            socket_hash(&format!("{}-middleman-abc123", root.display()))
+            "kenn-forge-pty-{}",
+            socket_hash(&format!("{}-kenn-forge-abc123", root.display()))
         );
         assert_eq!(
             socket_dir.file_name().and_then(|name| name.to_str()),
@@ -1392,13 +1392,13 @@ mod tests {
         let long_temp_dir = PathBuf::from("/tmp").join("long-temp-root-".repeat(8));
 
         let socket_dir =
-            fallback_socket_dir_for_platform(&root, "middleman-abc123", &long_temp_dir, true);
+            fallback_socket_dir_for_platform(&root, "kenn-forge-abc123", &long_temp_dir, true);
 
         assert_eq!(
             socket_dir,
             Path::new("/private/tmp").join(format!(
-                "middleman-pty-{}",
-                socket_hash(&format!("{}-middleman-abc123", root.display()))
+                "kenn-forge-pty-{}",
+                socket_hash(&format!("{}-kenn-forge-abc123", root.display()))
             ))
         );
         assert!(socket_dir.join("sock").to_string_lossy().len() <= MAX_UNIX_SOCKET_PATH_LEN);
@@ -1410,13 +1410,13 @@ mod tests {
         let long_temp_dir = PathBuf::from("/tmp").join("long-temp-root-".repeat(8));
 
         let socket_dir =
-            fallback_socket_dir_for_platform(&root, "middleman-abc123", &long_temp_dir, false);
+            fallback_socket_dir_for_platform(&root, "kenn-forge-abc123", &long_temp_dir, false);
 
         assert_eq!(
             socket_dir,
             Path::new("/tmp").join(format!(
-                "middleman-pty-{}",
-                socket_hash(&format!("{}-middleman-abc123", root.display()))
+                "kenn-forge-pty-{}",
+                socket_hash(&format!("{}-kenn-forge-abc123", root.display()))
             ))
         );
         assert!(socket_dir.join("sock").to_string_lossy().len() <= MAX_UNIX_SOCKET_PATH_LEN);
@@ -1427,7 +1427,7 @@ mod tests {
     fn create_private_socket_dir_rejects_symlink() {
         let parent = env::temp_dir().join(format!("mm-pty-symlink-test-{}", new_token()));
         let target = parent.join("target");
-        let socket_dir = parent.join("middleman-pty-symlink");
+        let socket_dir = parent.join("kenn-forge-pty-symlink");
         fs::create_dir_all(&target).unwrap();
         std::os::unix::fs::symlink(&target, &socket_dir).unwrap();
 
@@ -1457,7 +1457,7 @@ mod tests {
     #[test]
     fn owner_listener_uses_tcp_loopback_on_windows() {
         let root = env::temp_dir().join(format!("mm-pty-listener-test-{}", new_token()));
-        let paths = session_paths(&root, "middleman-abc123").unwrap();
+        let paths = session_paths(&root, "kenn-forge-abc123").unwrap();
         create_private_dir(&paths.dir).unwrap();
 
         let (_listener, addr) = bind_owner_listener(&paths).unwrap();
@@ -1473,7 +1473,7 @@ mod tests {
     fn windows_acl_paths_use_extended_length_prefix() {
         let path = Path::new(r"C:\tmp")
             .join("long-owner-root-".repeat(8))
-            .join("middleman-abc123")
+            .join("kenn-forge-abc123")
             .join("owner.json.tmp");
 
         assert_eq!(
@@ -1509,13 +1509,13 @@ mod tests {
     #[test]
     fn state_files_are_private() {
         let root = Path::new("/tmp").join(format!("mm-pty-test-{}", new_token()));
-        let paths = session_paths(&root, "middleman-abc123").unwrap();
+        let paths = session_paths(&root, "kenn-forge-abc123").unwrap();
         create_private_dir(&paths.dir).unwrap();
         write_state(
             &paths,
             &OwnerState {
-                session: "middleman-abc123",
-                addr: "unix:///tmp/middleman.sock".to_string(),
+                session: "kenn-forge-abc123",
+                addr: "unix:///tmp/forge.sock".to_string(),
                 token: "secret",
                 cwd: "/tmp/work",
                 pid: 123,
@@ -1543,7 +1543,7 @@ mod tests {
             new_token(),
             "x".repeat(MAX_UNIX_SOCKET_PATH_LEN)
         ));
-        let paths = session_paths(&root, "middleman-abc123").unwrap();
+        let paths = session_paths(&root, "kenn-forge-abc123").unwrap();
         create_private_dir(&paths.dir).unwrap();
         if let Some(socket_dir) = &paths.socket_dir {
             create_private_dir(socket_dir).unwrap();

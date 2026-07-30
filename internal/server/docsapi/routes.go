@@ -12,9 +12,9 @@ import (
 	"sync"
 
 	"github.com/danielgtaylor/huma/v2"
-	"go.kenn.io/middleman/internal/config"
-	"go.kenn.io/middleman/internal/docs"
-	"go.kenn.io/middleman/internal/server/httpapi"
+	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/docs"
+	"go.kenn.io/forge/internal/server/httpapi"
 )
 
 const docsMaxBodyBytes = 4 << 20

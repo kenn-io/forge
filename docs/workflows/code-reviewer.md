@@ -1,11 +1,11 @@
 # I am a code reviewer
 
-Use middleman to review the newest PR context, check whether the branch is
+Use kenn-forge to review the newest PR context, check whether the branch is
 ready, and move into local follow-up work when needed.
 
 <figure class="workflow-shot">
-  <img class="workflow-shot__image workflow-shot__image--light" src="../assets/generated/code-reviewer-light.svg" alt="middleman code review view in light mode">
-  <img class="workflow-shot__image workflow-shot__image--dark" src="../assets/generated/code-reviewer-dark.svg" alt="middleman code review view in dark mode">
+  <img class="workflow-shot__image workflow-shot__image--light" src="../assets/generated/code-reviewer-light.svg" alt="kenn-forge code review view in light mode">
+  <img class="workflow-shot__image workflow-shot__image--dark" src="../assets/generated/code-reviewer-dark.svg" alt="kenn-forge code review view in dark mode">
   <figcaption>PR detail brings together review status, CI context, discussion, files, and workspace creation.</figcaption>
 </figure>
 
@@ -35,7 +35,7 @@ forge behaves like GitHub.
 ## Drop into a workspace
 
 When a review needs local verification or follow-up changes, use **Create
-Workspace** from the PR detail pane. middleman creates a worktree for the PR head
+Workspace** from the PR detail pane. kenn-forge creates a worktree for the PR head
 and opens the workspace surface. You can run a shell or configured agent without
 finding the repo, branch, or clone path by hand.
 

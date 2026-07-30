@@ -20,9 +20,9 @@ import (
 
 	"github.com/creack/pty/v2"
 
-	"go.kenn.io/middleman/internal/agentactivity"
-	"go.kenn.io/middleman/internal/procutil"
-	ptyownerruntime "go.kenn.io/middleman/internal/ptyowner/runtime"
+	"go.kenn.io/forge/internal/agentactivity"
+	"go.kenn.io/forge/internal/procutil"
+	ptyownerruntime "go.kenn.io/forge/internal/ptyowner/runtime"
 )
 
 type SessionStatus string
@@ -83,7 +83,7 @@ type Options struct {
 	ShellCommand []string
 	TmuxCommand  []string
 	// TmuxOwnerMarker tags tmux-backed agent sessions so workspace startup
-	// cleanup can identify middleman-owned runtime sessions that were created
+	// cleanup can identify kenn-forge-owned runtime sessions that were created
 	// before their durable DB row was written.
 	TmuxOwnerMarker string
 	// WrapAgentSessionsInTmux starts agent targets under tmux when
@@ -1493,7 +1493,7 @@ func (m *Manager) launchCommand(
 
 func tmuxSessionName(workspaceID string, targetKey string) string {
 	sum := sha256.Sum256([]byte(targetKey))
-	return "middleman-" + tmuxSessionSafeComponent(workspaceID) + "-" +
+	return "kenn-forge-" + tmuxSessionSafeComponent(workspaceID) + "-" +
 		hex.EncodeToString(sum[:8])
 }
 
@@ -2149,7 +2149,7 @@ func resolveExecutable(name string) (string, error) {
 		// relative entry like "bin" or "." yields a relative
 		// result, which would re-resolve inside cmd.Dir (the
 		// worktree). Bind it to an absolute path now, while we
-		// are still in middleman's working directory.
+		// are still in kenn-forge's working directory.
 		if !filepath.IsAbs(path) {
 			abs, err := filepath.Abs(path)
 			if err != nil {
@@ -2188,7 +2188,7 @@ func resolveTmuxCommand(command []string) ([]string, error) {
 // or API keys that an agent process running inside an untrusted
 // workspace must not be able to read.
 var sessionVarPrefixes = []string{
-	"MIDDLEMAN_GITHUB_TOKEN",
+	"KENN_FORGE_GITHUB_TOKEN",
 	"GITHUB_TOKEN",
 	"GH_TOKEN",
 	"GITHUB_PAT",

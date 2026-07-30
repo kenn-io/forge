@@ -5,8 +5,8 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"go.kenn.io/middleman/internal/fleet"
-	"go.kenn.io/middleman/internal/server/httpapi"
+	"go.kenn.io/forge/internal/fleet"
+	"go.kenn.io/forge/internal/server/httpapi"
 )
 
 type snapshotInput struct {

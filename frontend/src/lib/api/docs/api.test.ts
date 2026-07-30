@@ -6,7 +6,7 @@ import { createDocsAPI } from "./api";
 // the injected fetch with a single Request object, so unpack url/method/body
 // from it into the {url, init} shape the assertions read. Each `respond`
 // entry is consumed in FIFO order; trailing requests fall back to 200/{}.
-// Error responses (>=400) carry the middleman problem+json content type so
+// Error responses (>=400) carry the kenn-forge problem+json content type so
 // they exercise the same parse path the live server's errors take.
 function fakeFetch(respond: Array<{ status: number; body?: unknown }>) {
   const calls: Array<{ url: string; init?: RequestInit }> = [];
@@ -28,7 +28,7 @@ function fakeFetch(respond: Array<{ status: number; body?: unknown }>) {
   return { fn, calls };
 }
 
-// problem+json error body matching the shape middleman's Huma layer emits.
+// problem+json error body matching the shape kenn-forge's Huma layer emits.
 function problem(status: number, code: string, detail: string) {
   return { type: "about:blank", title: code, status, detail, code };
 }
@@ -132,9 +132,9 @@ describe("createDocsAPI folder edits", () => {
   });
 
   test("blobURL accepts a relative API base", () => {
-    const api = createDocsAPI({ baseURL: "/middleman/api/v1" });
+    const api = createDocsAPI({ baseURL: "/kenn-forge/api/v1" });
     expect(api.blobURL("notes", "images/logo.png")).toBe(
-      "/middleman/api/v1/docs/folders/notes/blob?path=images%2Flogo.png",
+      "/kenn-forge/api/v1/docs/folders/notes/blob?path=images%2Flogo.png",
     );
   });
 });

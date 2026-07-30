@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"go.kenn.io/middleman/internal/procutil"
+	"go.kenn.io/forge/internal/procutil"
 )
 
 // probeCommandTimeout bounds each version-probe subprocess. Probe runs while

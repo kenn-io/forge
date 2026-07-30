@@ -9,9 +9,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/apiclient/generated"
+	"go.kenn.io/forge/internal/db"
 	gitcmd "go.kenn.io/kit/git/cmd"
-	"go.kenn.io/middleman/internal/apiclient/generated"
-	"go.kenn.io/middleman/internal/db"
 )
 
 func TestWorkspaceCreateUsesPRBranchAndFallbackBranch(t *testing.T) {
@@ -41,7 +41,7 @@ func TestWorkspaceCreateUsesPRBranchAndFallbackBranch(t *testing.T) {
 	runGit(t, fixture.bare, "fetch", "--prune", "origin")
 
 	fallback := create(2)
-	assert.Equal("middleman/pr-2", gitOutputForLifecycle(t, fallback.WorktreePath, "branch", "--show-current"))
+	assert.Equal("kenn-forge/pr-2", gitOutputForLifecycle(t, fallback.WorktreePath, "branch", "--show-current"))
 	assert.Equal(testGitSHA(t, tracked.WorktreePath, "HEAD"), testGitSHA(t, fallback.WorktreePath, "HEAD"))
 }
 

@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	ghclient "go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
+	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
 func setupEmbeddedServer(
@@ -58,7 +58,7 @@ func TestBootstrapActiveWorktreeKey(t *testing.T) {
 		body := rr.Body.String()
 		assert := assert.New(t)
 		assert.Contains(body, `"activeWorktreeKey":"wt-123"`)
-		assert.Contains(body, `window.__middleman_config=`)
+		assert.Contains(body, `window.__kenn_forge_config=`)
 	})
 
 	t.Run("no key means no served config", func(t *testing.T) {
@@ -69,7 +69,7 @@ func TestBootstrapActiveWorktreeKey(t *testing.T) {
 
 		body := rr.Body.String()
 		assert := assert.New(t)
-		assert.NotContains(body, `__middleman_config`)
+		assert.NotContains(body, `__kenn_forge_config`)
 		assert.Contains(body, `window.__BASE_PATH__="/app/"`)
 	})
 }

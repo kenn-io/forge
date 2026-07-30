@@ -7,11 +7,11 @@ import (
 	"time"
 
 	forgejosdk "codeberg.org/mvdkleijn/forgejo-sdk/forgejo/v3"
-	ghsync "go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/platform"
-	"go.kenn.io/middleman/internal/platform/gitealike"
-	"go.kenn.io/middleman/internal/ratelimit"
-	"go.kenn.io/middleman/internal/tokenauth"
+	ghsync "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/platform"
+	"go.kenn.io/forge/internal/platform/gitealike"
+	"go.kenn.io/forge/internal/ratelimit"
+	"go.kenn.io/forge/internal/tokenauth"
 )
 
 type ClientOption func(*clientOptions)
@@ -70,7 +70,7 @@ func NewClient(host string, source tokenauth.Source, options ...ClientOption) (*
 	}
 
 	clientOptions := []forgejosdk.ClientOption{
-		forgejosdk.SetUserAgent("middleman"),
+		forgejosdk.SetUserAgent("kenn-forge"),
 	}
 	if opts.skipVersionProbe {
 		clientOptions = append(

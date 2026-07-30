@@ -20,7 +20,7 @@
     createLogStore,
   } from "./stores/roborev/log.svelte.js";
   import type {
-    MiddlemanClient, ActionRegistry, NavigateCallback,
+    ForgeClient, ActionRegistry, NavigateCallback,
     EventCallback, PrepareRouteCallback, WorkspaceCommandCallback,
     HostStateAccessors, StoreInstances, UIConfig,
     SidebarAccessors,
@@ -84,7 +84,7 @@
   import type { RoutedItemRef } from "./routes.js";
 
   interface Props {
-    client: MiddlemanClient;
+    client: ForgeClient;
     actions?: ActionRegistry;
     onNavigate?: NavigateCallback;
     onEvent?: EventCallback;
@@ -129,7 +129,7 @@
   // parameters are plain values, not reactive proxies.
   // This avoids state_referenced_locally warnings.
   function init(
-    cl: MiddlemanClient,
+    cl: ForgeClient,
     hs: HostStateAccessors,
     cfg: UIConfig,
     act: ActionRegistry,
@@ -444,7 +444,7 @@
 
       const daemon = createDaemonStore({
         client: roborevClient,
-        middlemanClient: cl,
+        forgeClient: cl,
         onRecover: () => {
           void jobsStore.loadJobs();
           const selectedId =

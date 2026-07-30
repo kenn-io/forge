@@ -14,8 +14,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/apiclient"
-	"go.kenn.io/middleman/internal/kata"
+	"go.kenn.io/forge/internal/apiclient"
+	"go.kenn.io/forge/internal/kata"
 )
 
 func TestKataLocalDaemonChallengeIsDownAndProxyUpstreamErrorE2E(t *testing.T) {
@@ -49,10 +49,10 @@ local = true
 `)
 	writeKataE2ERuntimeRecord(t, daemon.URL)
 	srv, _ := setupTestServer(t)
-	middleman := httptest.NewServer(srv)
-	defer middleman.Close()
+	forge := httptest.NewServer(srv)
+	defer forge.Close()
 
-	client, err := apiclient.New(middleman.URL)
+	client, err := apiclient.New(forge.URL)
 	require.NoError(err)
 	roster, err := client.HTTP.ListKataDaemonsWithResponse(t.Context())
 	require.NoError(err)
@@ -68,12 +68,12 @@ local = true
 	req, err := http.NewRequestWithContext(
 		t.Context(),
 		http.MethodGet,
-		middleman.URL+"/api/v1/kata/proxy/api/v1/instance",
+		forge.URL+"/api/v1/kata/proxy/api/v1/instance",
 		http.NoBody,
 	)
 	require.NoError(err)
 	req.Header.Set("Accept-Encoding", "gzip")
-	resp, err := middleman.Client().Do(req)
+	resp, err := forge.Client().Do(req)
 	require.NoError(err)
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
@@ -110,21 +110,21 @@ func TestKataLocalDaemonTokenEnvIsNotUsedForRosterOrProxyE2E(t *testing.T) {
 	t.Setenv("KATA_HOME", home)
 	t.Setenv("KATA_AUTH_TOKEN", "")
 	t.Setenv("KATA_DB", "")
-	t.Setenv("MIDDLEMAN_KATA_MISSING_TOKEN", "")
+	t.Setenv("KENN_FORGE_KATA_MISSING_TOKEN", "")
 	writeKataE2ECatalog(t, home, `
 active_daemon = "local"
 
 [[daemon]]
 name = "local"
 local = true
-token_env = "MIDDLEMAN_KATA_MISSING_TOKEN"
+token_env = "KENN_FORGE_KATA_MISSING_TOKEN"
 `)
 	writeKataE2ERuntimeRecord(t, daemon.URL)
 	srv, _ := setupTestServer(t)
-	middleman := httptest.NewServer(srv)
-	defer middleman.Close()
+	forge := httptest.NewServer(srv)
+	defer forge.Close()
 
-	client, err := apiclient.New(middleman.URL)
+	client, err := apiclient.New(forge.URL)
 	require.NoError(err)
 	roster, err := client.HTTP.ListKataDaemonsWithResponse(t.Context())
 	require.NoError(err)
@@ -140,12 +140,12 @@ token_env = "MIDDLEMAN_KATA_MISSING_TOKEN"
 	req, err := http.NewRequestWithContext(
 		t.Context(),
 		http.MethodGet,
-		middleman.URL+"/api/v1/kata/proxy/api/v1/instance",
+		forge.URL+"/api/v1/kata/proxy/api/v1/instance",
 		http.NoBody,
 	)
 	require.NoError(err)
 	req.Header.Set("Authorization", "Bearer caller-secret")
-	resp, err := middleman.Client().Do(req)
+	resp, err := forge.Client().Do(req)
 	require.NoError(err)
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)

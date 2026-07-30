@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-restore_dir="/opt/middleman/gitlab-fixture/data"
-sentinel="/var/opt/gitlab/.middleman-fixture-restored"
+restore_dir="/opt/kenn-forge/gitlab-fixture/data"
+sentinel="/var/opt/gitlab/.kenn-forge-fixture-restored"
 
 if [ -d "$restore_dir" ] && [ ! -f "$sentinel" ]; then
   if [ -f "$restore_dir/etc-gitlab.tgz" ]; then

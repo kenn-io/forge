@@ -1,6 +1,6 @@
 import { flushSync, mount, unmount } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import { DEFAULT_TERMINAL_SETTINGS } from "@middleman/ui";
+import { DEFAULT_TERMINAL_SETTINGS } from "@kenn-forge/ui";
 
 import { STORES_KEY } from "../../../../../packages/ui/src/context.js";
 import {

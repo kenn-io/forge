@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"go.kenn.io/middleman/internal/config"
+	"go.kenn.io/forge/internal/config"
 )
 
 func TestFleetPlatformAuthMonitorCachesResolvedSignal(t *testing.T) {
@@ -48,8 +48,8 @@ func TestPlatformAuthResolverNilConfigIsUnauthenticated(t *testing.T) {
 
 func TestPlatformAuthResolverEnvTokenIsAuthenticated(t *testing.T) {
 	require := require.New(t)
-	t.Setenv("MIDDLEMAN_PLATFORM_AUTH_TEST_TOKEN", "tok")
-	cfg := &config.Config{GitHubTokenEnv: "MIDDLEMAN_PLATFORM_AUTH_TEST_TOKEN"}
+	t.Setenv("KENN_FORGE_PLATFORM_AUTH_TEST_TOKEN", "tok")
+	cfg := &config.Config{GitHubTokenEnv: "KENN_FORGE_PLATFORM_AUTH_TEST_TOKEN"}
 	require.True(platformAuthResolver(func() *config.Config { return cfg })(),
 		"a resolvable env token means the platform backend is authenticated")
 }
@@ -65,11 +65,11 @@ func TestPlatformAuthResolverEnvTokenIsAuthenticated(t *testing.T) {
 // make this pass vacuously.
 func TestPlatformAuthResolverOwnerTokenOnlyIsAuthenticated(t *testing.T) {
 	require := require.New(t)
-	t.Setenv("MIDDLEMAN_PLATFORM_AUTH_TEST_OWNER_TOKEN", "owner-tok")
+	t.Setenv("KENN_FORGE_PLATFORM_AUTH_TEST_OWNER_TOKEN", "owner-tok")
 	authConfig := config.Config{
 		// Names an env var that is never set, so only the owner
 		// route can supply a credential.
-		GitHubTokenEnv:      "MIDDLEMAN_PLATFORM_AUTH_TEST_ABSENT",
+		GitHubTokenEnv:      "KENN_FORGE_PLATFORM_AUTH_TEST_ABSENT",
 		DefaultPlatformHost: "github.example.com",
 		Repos: []config.Repo{{
 			Platform: "github", PlatformHost: "github.example.com",
@@ -87,7 +87,7 @@ func TestPlatformAuthResolverOwnerTokenOnlyIsAuthenticated(t *testing.T) {
 	authConfig.GitHubOwnerTokens = []config.GitHubOwnerTokenConfig{{
 		Host:     "github.example.com",
 		Owner:    "acme",
-		TokenEnv: "MIDDLEMAN_PLATFORM_AUTH_TEST_OWNER_TOKEN",
+		TokenEnv: "KENN_FORGE_PLATFORM_AUTH_TEST_OWNER_TOKEN",
 	}}
 	handler.ApplyConfig(ConfigSnapshot{
 		PlatformAuthEnabled: true, PlatformAuthConfig: authConfig,
@@ -107,17 +107,17 @@ func TestPlatformAuthResolverOwnerTokenOnlyIsAuthenticated(t *testing.T) {
 // can reach the platform.
 func TestPlatformAuthResolverStandaloneOwnerRouteIsAuthenticated(t *testing.T) {
 	require := require.New(t)
-	t.Setenv("MIDDLEMAN_PLATFORM_AUTH_TEST_STANDALONE_PAT", "owner-tok")
+	t.Setenv("KENN_FORGE_PLATFORM_AUTH_TEST_STANDALONE_PAT", "owner-tok")
 	handler := &Handler{}
 	handler.ApplyConfig(ConfigSnapshot{
 		PlatformAuthEnabled: true,
 		PlatformAuthConfig: config.Config{
-			GitHubTokenEnv:      "MIDDLEMAN_PLATFORM_AUTH_TEST_ABSENT",
+			GitHubTokenEnv:      "KENN_FORGE_PLATFORM_AUTH_TEST_ABSENT",
 			DefaultPlatformHost: "github.example.com",
 			GitHubOwnerTokens: []config.GitHubOwnerTokenConfig{{
 				Host:     "github.example.com",
 				Owner:    "acme",
-				TokenEnv: "MIDDLEMAN_PLATFORM_AUTH_TEST_STANDALONE_PAT",
+				TokenEnv: "KENN_FORGE_PLATFORM_AUTH_TEST_STANDALONE_PAT",
 			}},
 		},
 	})

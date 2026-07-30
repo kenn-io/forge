@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import LabelPicker from "../../../../../packages/ui/src/components/detail/LabelPicker.svelte";
-import type { Label } from "@middleman/ui/api/types";
+import type { Label } from "@kenn-forge/ui/api/types";
 
 function label(name: string, description = ""): Label {
   return {

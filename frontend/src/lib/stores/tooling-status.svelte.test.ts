@@ -11,7 +11,7 @@ const serverStatus: ToolingStatusValue = {
 };
 
 afterEach(() => {
-  delete win.__middleman_config;
+  delete win.__kenn_forge_config;
   resetToolingStatusForTest();
 });
 
@@ -22,8 +22,8 @@ describe("resolveToolingStatus", () => {
     const embedded: ToolingStatusValue = {
       git: { available: true },
     };
-    win.__middleman_config = { embed: { tooling: embedded } };
-    win.__middleman_notify_config_changed();
+    win.__kenn_forge_config = { embed: { tooling: embedded } };
+    win.__kenn_forge_notify_config_changed();
 
     expect(resolveToolingStatus()).toEqual(embedded);
     await Promise.resolve();
@@ -33,8 +33,8 @@ describe("resolveToolingStatus", () => {
   it("returns undefined while embedded with no tooling pushed yet", async () => {
     const fetcher = vi.fn(async () => serverStatus);
     resetToolingStatusForTest(fetcher);
-    win.__middleman_config = { embed: {} };
-    win.__middleman_notify_config_changed();
+    win.__kenn_forge_config = { embed: {} };
+    win.__kenn_forge_notify_config_changed();
 
     expect(resolveToolingStatus()).toBeUndefined();
     await Promise.resolve();

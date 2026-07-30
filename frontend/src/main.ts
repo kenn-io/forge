@@ -1,5 +1,5 @@
 import { initMarkdownMermaidRendering } from "@kenn-io/kit-ui/utils/markdown-mermaid";
-import { pushModalFrame } from "@middleman/ui/stores/keyboard/modal-stack";
+import { pushModalFrame } from "@kenn-forge/ui/stores/keyboard/modal-stack";
 import { mount } from "svelte";
 import App from "./App.svelte";
 import "./app.css";

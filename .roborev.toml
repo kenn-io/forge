@@ -1,5 +1,5 @@
 review_guidelines = """
-middleman is a local-first, single-user tool that binds to loopback
+kenn-forge is a local-first, single-user tool that binds to loopback
 (127.0.0.1) by default. There is no multi-user authentication or
 session management by design. All API endpoints -- including mutation
 endpoints like merge, approve, comment, close, and reopen -- share the
@@ -10,7 +10,7 @@ Do not flag the absence of request-level authentication, authorization,
 or CSRF protection on API endpoints. This is an intentional architectural
 decision, not a missing feature.
 
-The root-level middleman package (middleman.go) is the embedding API.
+The root-level kenn-forge package (forge.go) is the embedding API.
 It does not have a stable API and can be changed arbitrarily until it
 stabilizes. Do not flag breaking changes to its exported surface.
 
@@ -38,7 +38,7 @@ maintainer actions, regression-prone flows, or bug fixes where the lack
 of an e2e test could allow a user-visible breakage to ship.
 
 Do not downgrade missing e2e coverage because of a claim that this repo
-lacks browser testing infrastructure. middleman already has Playwright
+lacks browser testing infrastructure. kenn-forge already has Playwright
 e2e coverage, and many required e2e tests here are API plus SQLite
 full-stack tests rather than purely browser concerns.
 
@@ -47,11 +47,11 @@ Do not require duplicate e2e coverage for default-host and
 wrapper. Require host-specific e2e only for custom host logic, route
 parsing, or provider identity changes.
 
-middleman targets Go 1.26, where the built-in new accepts expression
+kenn-forge targets Go 1.26, where the built-in new accepts expression
 operands such as new(expr). Do not flag new(expr) usage as invalid,
 suspicious, or something that must be rewritten through a temporary
 variable solely because older Go versions did not allow it.
 
 Disregard findings whose only substance is that the code does not
-compile or type-check. middleman has static tests for that already.
+compile or type-check. kenn-forge has static tests for that already.
 """

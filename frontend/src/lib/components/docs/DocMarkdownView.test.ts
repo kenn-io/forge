@@ -82,13 +82,13 @@ describe("DocMarkdownView", () => {
   test("renders inline code", () => {
     const { container } = render(DocMarkdownView, {
       props: {
-        source: "Run `middleman sync` before opening.",
+        source: "Run `kenn-forge sync` before opening.",
         options: options(),
       },
     });
 
     const code = container.querySelector("code");
-    expect(code?.textContent).toBe("middleman sync");
+    expect(code?.textContent).toBe("kenn-forge sync");
   });
 
   test("renders lists", () => {

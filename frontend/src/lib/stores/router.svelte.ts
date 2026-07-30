@@ -4,8 +4,8 @@ import {
   type NumberedRouteItemRef,
   type RepositoryRouteRef,
   type RoutedItemRef,
-} from "@middleman/ui/routes";
-import { canonicalProvider } from "@middleman/ui/api/provider-routes";
+} from "@kenn-forge/ui/routes";
+import { canonicalProvider } from "@kenn-forge/ui/api/provider-routes";
 import type { KataTaskViewName } from "../api/kata/taskTypes.js";
 
 export type RepoRef = RepositoryRouteRef;
@@ -98,7 +98,7 @@ import {
   getInitialRoute,
 } from "./embed-config.svelte.js";
 
-// Runtime base path injected by the Go server (e.g., "/" or "/middleman/").
+// Runtime base path injected by the Go server (e.g., "/" or "/kenn-forge/").
 const rawBase = window.__BASE_PATH__ ?? "/";
 const basePrefix = rawBase === "/" ? "" : rawBase.replace(/\/$/, "");
 
@@ -642,13 +642,13 @@ export function navigate(path: string, state?: Record<string, unknown>): void {
   // remembers the route it lands on — a terminal visit exited that way
   // would otherwise never enter route memory.
   rememberWorkspaceRoute();
-  fireMiddlemanNavigateEvent(route);
+  fireForgeNavigateEvent(route);
   fireRouteChange(route);
 }
 
-function buildRouteEvent(r: Route): MiddlemanNavigateEvent {
+function buildRouteEvent(r: Route): ForgeNavigateEvent {
   const focus = r.page === "focus";
-  let navType: MiddlemanNavigateType;
+  let navType: ForgeNavigateType;
   if (r.page === "focus") {
     if (r.itemType === "mrs") {
       navType = "pull";
@@ -683,7 +683,7 @@ function buildRouteEvent(r: Route): MiddlemanNavigateEvent {
     navType = "activity";
   }
 
-  let page: MiddlemanNavigatePage;
+  let page: ForgeNavigatePage;
   if (navType === "pull") {
     page = "pulls";
   } else if (navType === "issue") {
@@ -692,7 +692,7 @@ function buildRouteEvent(r: Route): MiddlemanNavigateEvent {
     page = navType;
   }
 
-  const event: MiddlemanNavigateEvent = {
+  const event: ForgeNavigateEvent = {
     page,
     type: navType,
     focus,
@@ -736,7 +736,7 @@ function buildRouteEvent(r: Route): MiddlemanNavigateEvent {
   return event;
 }
 
-function applyRouteRepoIdentity(event: MiddlemanNavigateEvent, ref: RepoRef): void {
+function applyRouteRepoIdentity(event: ForgeNavigateEvent, ref: RepoRef): void {
   event.provider = ref.provider;
   if (ref.platformHost) event.platform_host = ref.platformHost;
   event.repo_path = ref.repoPath;
@@ -817,7 +817,7 @@ export function isMobilePage(page: Page): boolean {
   return page === "mobile-activity" || page === "mobile-pulls" || page === "mobile-issues";
 }
 
-function fireMiddlemanNavigateEvent(r: Route): void {
+function fireForgeNavigateEvent(r: Route): void {
   const cb = getOnNavigate();
   if (cb) cb(buildRouteEvent(r));
 }
@@ -848,7 +848,7 @@ if (typeof window !== "undefined") {
 
 // Expose imperative navigation for the host embedder.
 if (typeof window !== "undefined") {
-  window.__middleman_navigate_to_route = (route: string) => {
+  window.__kenn_forge_navigate_to_route = (route: string) => {
     navigate(route);
   };
 }

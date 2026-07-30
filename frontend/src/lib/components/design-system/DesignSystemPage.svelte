@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Chip } from "@middleman/ui";
+  import { Chip } from "@kenn-forge/ui";
   import type { ChipSize, ChipTone } from "@kenn-io/kit-ui";
   import DesignSystemTabbedPanelDemo from "./DesignSystemTabbedPanelDemo.svelte";
   import DesignSystemTypeaheadDemo from "./DesignSystemTypeaheadDemo.svelte";
@@ -24,7 +24,7 @@
 </script>
 
 <svelte:head>
-  <title>middleman design system</title>
+  <title>kenn-forge design system</title>
 </svelte:head>
 
 <div class="design-system-page">

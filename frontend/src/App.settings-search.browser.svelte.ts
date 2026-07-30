@@ -93,7 +93,7 @@ describe("settings sidebar search", () => {
     // The fix's contract is that this control must not fall back to
     // window.history.back(): on a direct or bookmarked /settings entry the
     // previous history entry can be an unrelated site, so history.back() would
-    // navigate out of middleman. Asserting the resulting route alone is not a
+    // navigate out of kenn-forge. Asserting the resulting route alone is not a
     // reliable guard here — the harness's leftover history can make back() land
     // on "/" by coincidence — so stub back() (also keeps a regressed impl from
     // navigating the test page away) and assert it is never reached.

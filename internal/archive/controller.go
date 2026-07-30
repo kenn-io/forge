@@ -3,8 +3,8 @@ package archive
 import (
 	"context"
 
-	"go.kenn.io/middleman/internal/archive/report"
-	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/forge/internal/archive/report"
+	"go.kenn.io/forge/internal/platform"
 )
 
 type Controller interface {

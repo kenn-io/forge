@@ -7,7 +7,7 @@ import KataWorkspaceSidebarPane from "./KataWorkspaceSidebarPane.svelte";
 
 const { showFlash } = vi.hoisted(() => ({ showFlash: vi.fn() }));
 
-vi.mock("@middleman/ui/stores/flash", () => ({ showFlash }));
+vi.mock("@kenn-forge/ui/stores/flash", () => ({ showFlash }));
 
 const fetchedAt = "2026-06-01T12:00:00Z";
 

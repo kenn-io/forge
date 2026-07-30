@@ -1,6 +1,6 @@
 export type DetailActivityViewMode = "normal" | "compact";
 
-const STORAGE_KEY = "middleman-detail-activity-view";
+const STORAGE_KEY = "kenn-forge-detail-activity-view";
 
 function readFromStorage(): DetailActivityViewMode {
   try {

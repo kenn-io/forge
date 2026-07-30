@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Button, Card, Checkbox, Chip, SearchInput, Table, TableHeaderCell } from "@kenn-io/kit-ui";
-  import { SelectDropdown, type SelectDropdownOption } from "@middleman/ui";
+  import { SelectDropdown, type SelectDropdownOption } from "@kenn-forge/ui";
   import type { RepoImportRow, SortState, StatusFilter } from "./repoImportSelection.js";
   import { rowKey } from "./repoImportSelection.js";
 

@@ -20,23 +20,23 @@ import (
 	shellquote "github.com/kballard/go-shellquote"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/procutil"
-	"go.kenn.io/middleman/internal/ptyowner"
-	ptyownerruntime "go.kenn.io/middleman/internal/ptyowner/runtime"
-	"go.kenn.io/middleman/internal/testutil/processjob"
+	"go.kenn.io/forge/internal/procutil"
+	"go.kenn.io/forge/internal/ptyowner"
+	ptyownerruntime "go.kenn.io/forge/internal/ptyowner/runtime"
+	"go.kenn.io/forge/internal/testutil/processjob"
 )
 
 func TestMain(m *testing.M) {
-	if os.Getenv("MIDDLEMAN_LOCALRUNTIME_HELPER") == "1" {
+	if os.Getenv("KENN_FORGE_LOCALRUNTIME_HELPER") == "1" {
 		os.Exit(m.Run())
 	}
 	if err := processjob.ContainCurrentProcessTree(); err != nil {
 		fmt.Fprintf(os.Stderr, "contain local runtime test process tree: %v\n", err)
 		os.Exit(1)
 	}
-	envDir, err := os.MkdirTemp("", "middleman-localruntime-tmux-env-*")
+	envDir, err := os.MkdirTemp("", "kenn-forge-localruntime-tmux-env-*")
 	if err == nil {
-		_ = os.Setenv("MIDDLEMAN_TMUX_ENV_DIR", envDir)
+		_ = os.Setenv("KENN_FORGE_TMUX_ENV_DIR", envDir)
 	}
 	code := m.Run()
 	if err == nil {
@@ -69,7 +69,7 @@ func withTestPtyOwnerRuntime(t *testing.T, options Options) Options {
 
 func TestManagerLaunchesIndependentSessionsPerWorkspaceTarget(t *testing.T) {
 	requirePTYAvailable(t)
-	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
+	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
 
 	ctx := context.Background()
 	mgr := NewManager(withTestPtyOwnerRuntime(t, Options{Targets: []LaunchTarget{
@@ -93,7 +93,7 @@ func TestManagerLaunchesIndependentSessionsPerWorkspaceTarget(t *testing.T) {
 
 func TestManagerRenamesSessionMetadata(t *testing.T) {
 	requirePTYAvailable(t)
-	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
+	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
 
 	ctx := context.Background()
 	mgr := NewManager(withTestPtyOwnerRuntime(t, Options{Targets: []LaunchTarget{
@@ -117,7 +117,7 @@ func TestManagerRenamesSessionMetadata(t *testing.T) {
 
 func TestManagerLaunchConcurrentStartsIndependentProcesses(t *testing.T) {
 	requirePTYAvailable(t)
-	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
+	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -208,7 +208,7 @@ func TestManagerLaunchMissingTarget(t *testing.T) {
 
 func TestManagerUpdateTargetsAffectsFutureLaunches(t *testing.T) {
 	requirePTYAvailable(t)
-	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
+	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
 	assert := assert.New(t)
 
 	ctx := context.Background()
@@ -243,7 +243,7 @@ func TestManagerTmuxSessionsReturnsWrappedAgentSessions(t *testing.T) {
 			TargetKey:   "codex",
 			Kind:        LaunchTargetAgent,
 		},
-		tmuxSession: "middleman-ws-1-codex",
+		tmuxSession: "kenn-forge-ws-1-codex",
 	}
 	mgr.sessions["ws-1:other"] = &session{
 		info: SessionInfo{
@@ -260,18 +260,18 @@ func TestManagerTmuxSessionsReturnsWrappedAgentSessions(t *testing.T) {
 			TargetKey:   "codex",
 			Kind:        LaunchTargetAgent,
 		},
-		tmuxSession: "middleman-ws-2-codex",
+		tmuxSession: "kenn-forge-ws-2-codex",
 	}
 
 	assert.Equal(
-		[]string{"middleman-ws-1-codex"},
+		[]string{"kenn-forge-ws-1-codex"},
 		mgr.TmuxSessions("ws-1"),
 	)
 }
 
 func TestStartTmuxAttachSessionKeepsBackingTmuxSession(t *testing.T) {
 	requirePTYAvailable(t)
-	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
+	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -280,7 +280,7 @@ func TestStartTmuxAttachSessionKeepsBackingTmuxSession(t *testing.T) {
 		WorkspaceID: "ws-1",
 		TargetKey:   "codex",
 		Kind:        LaunchTargetAgent,
-		TmuxSession: "middleman-ws-1-codex",
+		TmuxSession: "kenn-forge-ws-1-codex",
 	}
 	s, err := startTmuxAttachSession(info, helperCommand("sleep"), t.TempDir(), nil)
 	require.NoError(err)
@@ -292,8 +292,8 @@ func TestStartTmuxAttachSessionKeepsBackingTmuxSession(t *testing.T) {
 		waitSessionDone(s)
 	})
 
-	assert.Equal("middleman-ws-1-codex", s.tmuxSession)
-	assert.Equal("middleman-ws-1-codex", s.snapshot().TmuxSession)
+	assert.Equal("kenn-forge-ws-1-codex", s.tmuxSession)
+	assert.Equal("kenn-forge-ws-1-codex", s.snapshot().TmuxSession)
 }
 
 func TestManagerLaunchCommandWrapsAgentsInTmuxWhenEnabled(t *testing.T) {
@@ -354,7 +354,7 @@ exit 0
 	assert.NotContains(newSession, "-e")
 	assert.Contains(newSession, "-c")
 	assert.Contains(newSession, "/tmp/work tree")
-	assert.Contains(scriptText, "__middleman_env_file=")
+	assert.Contains(scriptText, "__kenn_forge_env_file=")
 	assert.Contains(scriptText, "exec env -i")
 	assert.Contains(scriptText, `XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR-}"`)
 	assert.Contains(scriptText, shellquote.Join(agent.Command[0]))
@@ -448,7 +448,7 @@ exit 0
 			},
 		},
 		TmuxCommand:             []string{tmuxPath},
-		TmuxOwnerMarker:         "middleman:test-owner",
+		TmuxOwnerMarker:         "kenn-forge:test-owner",
 		WrapAgentSessionsInTmux: true,
 	})
 	t.Cleanup(mgr.Shutdown)
@@ -469,15 +469,15 @@ exit 0
 	assert.Contains(newSession, "set-option")
 	assert.Contains(newSession, "-t")
 	assert.Contains(newSession, sessionName)
-	assert.Contains(newSession, "@middleman_owner")
-	assert.Contains(newSession, "middleman:test-owner")
+	assert.Contains(newSession, "@forge_owner")
+	assert.Contains(newSession, "kenn-forge:test-owner")
 }
 
 func TestManagerLaunchPlainShellWrapsInTmuxWhenAvailable(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	t.Setenv("XDG_RUNTIME_DIR", "argv-visible-value")
-	t.Setenv("MIDDLEMAN_TEST_CUSTOM_SHELL_ENV", "custom-visible-value")
+	t.Setenv("KENN_FORGE_TEST_CUSTOM_SHELL_ENV", "custom-visible-value")
 	dir := t.TempDir()
 	record := filepath.Join(dir, "tmux-record")
 	tmuxPath := filepath.Join(dir, "tmux")
@@ -502,7 +502,7 @@ exit 0
 		}, plainShellTarget()},
 		ShellCommand:    helperCommand("sleep"),
 		TmuxCommand:     []string{tmuxPath},
-		TmuxOwnerMarker: "middleman:test-owner",
+		TmuxOwnerMarker: "kenn-forge:test-owner",
 	})
 	t.Cleanup(mgr.Shutdown)
 
@@ -537,17 +537,17 @@ exit 0
 	)
 	assert.Contains(
 		scriptText,
-		"MIDDLEMAN_TEST_CUSTOM_SHELL_ENV=\"${MIDDLEMAN_TEST_CUSTOM_SHELL_ENV-}\"",
+		"KENN_FORGE_TEST_CUSTOM_SHELL_ENV=\"${KENN_FORGE_TEST_CUSTOM_SHELL_ENV-}\"",
 	)
 	assert.Contains(newSession, "-E")
 	assert.NotContains(newSession, "-e")
-	assert.Contains(scriptText, "__middleman_env_file=")
+	assert.Contains(scriptText, "__kenn_forge_env_file=")
 	assert.Contains(newSession, ";")
 	assert.Contains(newSession, "set-option")
 	assert.Contains(newSession, "-t")
 	assert.Contains(newSession, sessionName)
-	assert.Contains(newSession, "@middleman_owner")
-	assert.Contains(newSession, "middleman:test-owner")
+	assert.Contains(newSession, "@forge_owner")
+	assert.Contains(newSession, "kenn-forge:test-owner")
 	assert.NotContains(newSessionText, "argv-visible-value")
 	assert.NotContains(newSessionText, "custom-visible-value")
 	assert.Len(mgr.ListSessions("ws:alpha"), 1)
@@ -566,7 +566,7 @@ func TestManagerRestoreTmuxSessionRestoresPlainShellRuntimeSession(t *testing.T)
 	err := mgr.RestoreRuntimeSessions(context.Background(), []RestoredRuntimeSession{{
 		WorkspaceID: "ws-1",
 		SessionKey:  "ws-1_shell-restored",
-		TmuxSession: "middleman-ws-1-shell",
+		TmuxSession: "kenn-forge-ws-1-shell",
 		TargetKey:   string(LaunchTargetPlainShell),
 		CreatedAt:   createdAt,
 	}})
@@ -579,25 +579,25 @@ func TestManagerRestoreTmuxSessionRestoresPlainShellRuntimeSession(t *testing.T)
 	assert.Equal(string(LaunchTargetPlainShell), shell.TargetKey)
 	assert.Equal(LaunchTargetPlainShell, shell.Kind)
 	assert.Equal("Shell", shell.Label)
-	assert.Equal("middleman-ws-1-shell", shell.TmuxSession)
+	assert.Equal("kenn-forge-ws-1-shell", shell.TmuxSession)
 	assert.Equal(createdAt, shell.CreatedAt)
 }
 
 func TestManagerRestoredRuntimeCommandForcesUTF8(t *testing.T) {
 	mgr := NewManager(Options{
-		TmuxCommand: []string{"/usr/bin/tmux", "-L", "middleman-test"},
+		TmuxCommand: []string{"/usr/bin/tmux", "-L", "kenn-forge-test"},
 	})
 	t.Cleanup(mgr.Shutdown)
 
 	command, err := mgr.restoredRuntimeCommand(RestoredRuntimeSession{
-		TmuxSession: "middleman-ws-1-shell",
+		TmuxSession: "kenn-forge-ws-1-shell",
 	})
 
 	require.NoError(t, err)
 	assert.Equal(t,
 		[]string{
-			"/usr/bin/tmux", "-L", "middleman-test",
-			"-u", "attach-session", "-t", "middleman-ws-1-shell",
+			"/usr/bin/tmux", "-L", "kenn-forge-test",
+			"-u", "attach-session", "-t", "kenn-forge-ws-1-shell",
 		},
 		command,
 	)
@@ -614,7 +614,7 @@ func TestManagerRestoreTmuxSessionReusesExistingPlainShellRuntimeSession(t *test
 	restored := RestoredRuntimeSession{
 		WorkspaceID: "ws-1",
 		SessionKey:  "ws-1_shell-restored",
-		TmuxSession: "middleman-ws-1-shell",
+		TmuxSession: "kenn-forge-ws-1-shell",
 		TargetKey:   string(LaunchTargetPlainShell),
 		CreatedAt:   time.Date(2026, 5, 28, 12, 0, 0, 0, time.UTC),
 	}
@@ -777,14 +777,14 @@ exit 0
 `), 0o755))
 	mgr := NewManager(Options{
 		TmuxCommand:     []string{tmuxPath},
-		TmuxOwnerMarker: "middleman:test-owner",
+		TmuxOwnerMarker: "kenn-forge:test-owner",
 	})
 	t.Cleanup(mgr.Shutdown)
 
 	err := mgr.RestoreRuntimeSessions(context.Background(), []RestoredRuntimeSession{{
 		WorkspaceID: "ws-1",
 		SessionKey:  "ws-1_shell-restored",
-		TmuxSession: "middleman-ws-1-shell",
+		TmuxSession: "kenn-forge-ws-1-shell",
 		TargetKey:   string(LaunchTargetPlainShell),
 		CreatedAt:   time.Date(2026, 5, 28, 12, 0, 0, 0, time.UTC),
 	}})
@@ -799,15 +799,15 @@ func TestManagerRestoreTmuxSessionUnavailableWhenCommandCannotResolve(
 	require := require.New(t)
 
 	mgr := NewManager(Options{
-		TmuxCommand:     []string{"/missing/middleman-test-tmux"},
-		TmuxOwnerMarker: "middleman:test-owner",
+		TmuxCommand:     []string{"/missing/kenn-forge-test-tmux"},
+		TmuxOwnerMarker: "kenn-forge:test-owner",
 	})
 	t.Cleanup(mgr.Shutdown)
 
 	err := mgr.RestoreRuntimeSessions(context.Background(), []RestoredRuntimeSession{{
 		WorkspaceID: "ws-1",
 		SessionKey:  "ws-1_shell-restored",
-		TmuxSession: "middleman-ws-1-shell",
+		TmuxSession: "kenn-forge-ws-1-shell",
 		TargetKey:   string(LaunchTargetPlainShell),
 		CreatedAt:   time.Date(2026, 5, 28, 12, 0, 0, 0, time.UTC),
 	}})
@@ -825,7 +825,7 @@ func TestTmuxSessionNameUsesOpaqueTargetHash(t *testing.T) {
 	assert.NotContains(fooSlash, "foo")
 	assert.NotContains(fooSlash, "/")
 	assert.NotContains(fooColon, ":")
-	assert.Contains(fooSlash, "middleman-ws-alpha-")
+	assert.Contains(fooSlash, "kenn-forge-ws-alpha-")
 }
 
 func TestManagerLaunchCommandFailsWhenOwnerMarkingFailsDuringCreate(t *testing.T) {
@@ -847,7 +847,7 @@ case "$1" in
     ;;
   new-session)
     for a in "$@"; do
-      if [ "$a" = "@middleman_owner" ]; then
+      if [ "$a" = "@forge_owner" ]; then
         exit 42
       fi
     done
@@ -871,7 +871,7 @@ exit 0
 			},
 		},
 		TmuxCommand:             []string{tmuxPath},
-		TmuxOwnerMarker:         "middleman:test-owner",
+		TmuxOwnerMarker:         "kenn-forge:test-owner",
 		WrapAgentSessionsInTmux: true,
 	})
 	t.Cleanup(mgr.Shutdown)
@@ -882,7 +882,7 @@ exit 0
 	require.NoError(err)
 	recorded := string(data)
 	assert.Contains(recorded, "new-session")
-	assert.Contains(recorded, "@middleman_owner")
+	assert.Contains(recorded, "@forge_owner")
 	assert.NotContains(recorded, "kill-session")
 }
 
@@ -924,7 +924,7 @@ exit 0
 			},
 		},
 		TmuxCommand:             []string{tmuxPath},
-		TmuxOwnerMarker:         "middleman:test-owner",
+		TmuxOwnerMarker:         "kenn-forge:test-owner",
 		WrapAgentSessionsInTmux: true,
 	})
 	t.Cleanup(mgr.Shutdown)
@@ -962,7 +962,7 @@ func TestManagerLaunchCommandRejectsRelativeAgentCommandWhenWrapped(t *testing.T
 }
 
 func TestManagerLaunchCommandDoesNotEmbedEnvForWrappedAgent(t *testing.T) {
-	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "secret-token")
+	t.Setenv("KENN_FORGE_GITHUB_TOKEN", "secret-token")
 	t.Setenv("CONTEXT7_API_KEY", "context7-secret")
 	t.Setenv("XDG_RUNTIME_DIR", "not-carried")
 	assert := assert.New(t)
@@ -996,18 +996,18 @@ func TestTmuxLauncherCopiesClientEnvWithoutGlobalUpdateEnvironment(t *testing.T)
 
 	require := require.New(t)
 	t.Setenv("XDG_RUNTIME_DIR", "client-visible-value")
-	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "client-secret")
-	t.Setenv("MIDDLEMAN_STRIPPED_ENV", "client-stripped")
+	t.Setenv("KENN_FORGE_GITHUB_TOKEN", "client-secret")
+	t.Setenv("KENN_FORGE_STRIPPED_ENV", "client-stripped")
 
-	dir, err := os.MkdirTemp("/tmp", "middleman-tmux-env-*")
+	dir, err := os.MkdirTemp("/tmp", "kenn-forge-tmux-env-*")
 	require.NoError(err)
 	t.Cleanup(func() {
 		_ = os.RemoveAll(dir)
 	})
 	socket := filepath.Join(dir, "tmux.sock")
 	output := filepath.Join(dir, "env-output")
-	seed := "middleman-seed-" + strconv.FormatInt(time.Now().UnixNano(), 36)
-	sessionName := "middleman-test-" + strconv.FormatInt(time.Now().UnixNano(), 36)
+	seed := "kenn-forge-seed-" + strconv.FormatInt(time.Now().UnixNano(), 36)
+	sessionName := "kenn-forge-test-" + strconv.FormatInt(time.Now().UnixNano(), 36)
 	t.Cleanup(func() {
 		_ = procutil.Command(
 			tmuxPath, "-f", "/dev/null", "-S", socket, "kill-server",
@@ -1019,10 +1019,10 @@ func TestTmuxLauncherCopiesClientEnvWithoutGlobalUpdateEnvironment(t *testing.T)
 		"new-session", "-d", "-s", seed, "sleep 10",
 	)
 	seedCmd.Env = append(
-		sessionEnvironment(os.Environ(), []string{"MIDDLEMAN_STRIPPED_ENV"}),
+		sessionEnvironment(os.Environ(), []string{"KENN_FORGE_STRIPPED_ENV"}),
 		"XDG_RUNTIME_DIR=server-visible-value",
-		"MIDDLEMAN_GITHUB_TOKEN=server-secret",
-		"MIDDLEMAN_STRIPPED_ENV=server-stripped",
+		"KENN_FORGE_GITHUB_TOKEN=server-secret",
+		"KENN_FORGE_STRIPPED_ENV=server-stripped",
 		"TERM=xterm-256color",
 	)
 	runOutput, err := seedCmd.CombinedOutput()
@@ -1031,14 +1031,14 @@ func TestTmuxLauncherCopiesClientEnvWithoutGlobalUpdateEnvironment(t *testing.T)
 	printCommand := fmt.Sprintf(
 		"printf '%%s\\n%%s\\n%%s\\n' "+
 			"\"$XDG_RUNTIME_DIR\" "+
-			"\"${MIDDLEMAN_GITHUB_TOKEN-unset}\" "+
-			"\"${MIDDLEMAN_STRIPPED_ENV-unset}\" > %s",
+			"\"${KENN_FORGE_GITHUB_TOKEN-unset}\" "+
+			"\"${KENN_FORGE_STRIPPED_ENV-unset}\" > %s",
 		shellquote.Join(output),
 	)
 	paneEnv := tmuxAgentEnvPolicy.paneEnvironment(
 		os.Environ(),
 		[]string{"/bin/sh", "-c", printCommand},
-		[]string{"MIDDLEMAN_STRIPPED_ENV"},
+		[]string{"KENN_FORGE_STRIPPED_ENV"},
 	)
 	paneCommand := paneEnv.paneCommand
 	require.NotContains(paneCommand, "client-visible-value")
@@ -1241,7 +1241,7 @@ func TestManagerStopReportsTmuxCleanupFailure(t *testing.T) {
 			Kind:        LaunchTargetAgent,
 		},
 		cmd:         &exec.Cmd{},
-		tmuxSession: "middleman-ws-1-codex",
+		tmuxSession: "kenn-forge-ws-1-codex",
 		done:        done,
 	}
 
@@ -1254,7 +1254,7 @@ func TestManagerStopReportsTmuxCleanupFailure(t *testing.T) {
 
 func TestManagerStopFailedTmuxCleanupDoesNotSuppressExitCleanup(t *testing.T) {
 	requirePTYAvailable(t)
-	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
+	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -1277,7 +1277,7 @@ func TestManagerStopFailedTmuxCleanupDoesNotSuppressExitCleanup(t *testing.T) {
 	require.NoError(err)
 
 	mgr.mu.Lock()
-	mgr.sessions[info.Key].tmuxSession = "middleman-ws-1-helper"
+	mgr.sessions[info.Key].tmuxSession = "kenn-forge-ws-1-helper"
 	mgr.mu.Unlock()
 
 	err = mgr.Stop(ctx, "ws-1", info.Key)
@@ -1307,7 +1307,7 @@ func TestManagerStopIgnoresAbsentTmuxSession(t *testing.T) {
 			Kind:        LaunchTargetAgent,
 		},
 		cmd:         &exec.Cmd{},
-		tmuxSession: "middleman-ws-1-codex",
+		tmuxSession: "kenn-forge-ws-1-codex",
 		done:        done,
 	}
 
@@ -1318,7 +1318,7 @@ func TestManagerStopIgnoresAbsentTmuxSession(t *testing.T) {
 
 func TestManagerShutdownLeavesTmuxSessionsRunning(t *testing.T) {
 	requirePTYAvailable(t)
-	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
+	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
 
 	require := require.New(t)
 	assert := assert.New(t)
@@ -1337,7 +1337,7 @@ func TestManagerShutdownLeavesTmuxSessionsRunning(t *testing.T) {
 		WorkspaceID: "ws-1",
 		TargetKey:   "codex",
 		Kind:        LaunchTargetAgent,
-		TmuxSession: "middleman-ws-1-codex",
+		TmuxSession: "kenn-forge-ws-1-codex",
 	}
 	s, err := startTmuxAttachSession(
 		info, helperCommand("sleep"), t.TempDir(), nil,
@@ -1491,7 +1491,7 @@ func TestManagerStopKeepsPtyOwnerSessionRetryableAfterStopFailure(t *testing.T) 
 
 func TestManagerStopRemovesSession(t *testing.T) {
 	requirePTYAvailable(t)
-	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
+	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
 
 	ctx := context.Background()
 	mgr := NewManager(withTestPtyOwnerRuntime(t, Options{Targets: []LaunchTarget{
@@ -1510,7 +1510,7 @@ func TestManagerStopRemovesSession(t *testing.T) {
 
 func TestManagerLaunchRejectsWhileWorkspaceStopping(t *testing.T) {
 	requirePTYAvailable(t)
-	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
+	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -1557,7 +1557,7 @@ func TestManagerLaunchRejectsWhileWorkspaceStopping(t *testing.T) {
 
 func TestBeginStoppingRejectsLaunchUntilEnd(t *testing.T) {
 	requirePTYAvailable(t)
-	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
+	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
 	require := require.New(t)
 
 	mgr := NewManager(withTestPtyOwnerRuntime(t, Options{Targets: []LaunchTarget{
@@ -1628,7 +1628,7 @@ func TestStopWorkspaceWaitsForInflightLaunches(t *testing.T) {
 
 func TestManagerStopKillsDescendantProcesses(t *testing.T) {
 	requirePTYAvailable(t)
-	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
+	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -1849,7 +1849,7 @@ func TestManagerRemovesNaturallyExitedShell(t *testing.T) {
 
 func TestManagerLaunchPlainShellCreatesIndependentSessions(t *testing.T) {
 	requirePTYAvailable(t)
-	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
+	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
 
 	ctx := context.Background()
 	mgr := NewManager(withTestPtyOwnerRuntime(t, Options{
@@ -1889,7 +1889,7 @@ func TestManagerLaunchPlainShellCreatesIndependentSessions(t *testing.T) {
 // exposes that distinction to bridge code.
 func TestAttachmentSessionOutputClosedDistinguishesSubscriberDrop(t *testing.T) {
 	requirePTYAvailable(t)
-	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
+	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
 
 	require := require.New(t)
 	assert := assert.New(t)
@@ -2148,7 +2148,7 @@ func (f *fakeRuntimePTY) Close() {
 
 func TestManagerPlainShellConcurrentLaunchesStartIndependentProcesses(t *testing.T) {
 	requirePTYAvailable(t)
-	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
+	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -2197,7 +2197,7 @@ func TestManagerPlainShellConcurrentLaunchesStartIndependentProcesses(t *testing
 }
 
 func TestManagerShutdownRejectsNewLaunches(t *testing.T) {
-	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
+	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
 
 	mgr := NewManager(Options{Targets: []LaunchTarget{
 		helperTarget("helper", "sleep"),
@@ -2409,7 +2409,7 @@ func TestSessionOutputBufferIsBounded(t *testing.T) {
 
 func TestManagerStopWorkspaceStopsAllSessions(t *testing.T) {
 	requirePTYAvailable(t)
-	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
+	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
 
 	require := require.New(t)
 	assert := assert.New(t)
@@ -2531,7 +2531,7 @@ func TestResolveExecutableRejectsRelativePaths(t *testing.T) {
 
 	// Bare name not on PATH should surface a LookPath error.
 	_, err = resolveExecutable(
-		"middleman-localruntime-bogus-name-zzz",
+		"kenn-forge-localruntime-bogus-name-zzz",
 	)
 	require.Error(err)
 }
@@ -2610,7 +2610,7 @@ func TestSessionEnvironmentStripsCredentials(t *testing.T) {
 	in := []string{
 		"PATH=/usr/bin",
 		"HOME=/home/me",
-		"MIDDLEMAN_GITHUB_TOKEN=secret-1",
+		"KENN_FORGE_GITHUB_TOKEN=secret-1",
 		"GITHUB_TOKEN=secret-2",
 		"GH_TOKEN=secret-3",
 		"GITHUB_PAT=secret-4",
@@ -2654,7 +2654,7 @@ func TestSessionEnvironmentStripsConfiguredTokenEnv(t *testing.T) {
 }
 
 func TestHelperProcess(t *testing.T) {
-	if os.Getenv("MIDDLEMAN_LOCALRUNTIME_HELPER") != "1" {
+	if os.Getenv("KENN_FORGE_LOCALRUNTIME_HELPER") != "1" {
 		return
 	}
 	args := os.Args

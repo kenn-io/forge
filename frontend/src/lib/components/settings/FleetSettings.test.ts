@@ -1,8 +1,8 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import * as flash from "@middleman/ui/stores/flash";
+import * as flash from "@kenn-forge/ui/stores/flash";
 
-import type { FleetSettings as FleetSettingsType } from "@middleman/ui/api/types";
+import type { FleetSettings as FleetSettingsType } from "@kenn-forge/ui/api/types";
 
 const { mockUpdateFleetSettings } = vi.hoisted(() => ({
   mockUpdateFleetSettings: vi.fn(),
@@ -104,7 +104,7 @@ describe("FleetSettings", () => {
       target: { value: "Mini" },
     });
     await fireEvent.input(screen.getByLabelText("SSH peer epyc remote command"), {
-      target: { value: "middleman" },
+      target: { value: "kenn-forge" },
     });
     await fireEvent.click(screen.getByRole("button", { name: "SSH peer epyc platform: linux" }));
     const platformInput = screen.getByRole("combobox", { name: "SSH peer epyc platform" });
@@ -132,7 +132,7 @@ describe("FleetSettings", () => {
             name: "EPYC",
             destination: "wes@epyc.tail",
             platform: "macos",
-            remote_command: "middleman",
+            remote_command: "kenn-forge",
           },
         ],
       });

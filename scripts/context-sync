@@ -5,7 +5,7 @@ usage() {
   cat >&2 <<'USAGE'
 usage: scripts/context-sync --check
 
-Validate Middleman's routed context surface. This deterministic check confirms
+Validate Kenn Forge's routed context surface. This deterministic check confirms
 that required context files exist, CLAUDE.md references resolve, and AGENTS.md
 resolves to CLAUDE.md. Semantic context capture is performed by the
 repository-local context-sync skill, not this script.

@@ -22,7 +22,7 @@ const testWorkspace = {
   item_number: 42,
   git_head_ref: "feature/auth",
   worktree_path: "/tmp/worktrees/ws-123",
-  tmux_session: "middleman-ws-123",
+  tmux_session: "kenn-forge-ws-123",
   tmux_pane_title: null,
   tmux_working: false,
   status: "ready",
@@ -40,9 +40,9 @@ const testIssueWorkspace = {
   repo: workspaceRepoRef(),
   item_type: "issue",
   item_number: 7,
-  git_head_ref: "middleman/issue-7",
+  git_head_ref: "kenn-forge/issue-7",
   worktree_path: "/tmp/worktrees/ws-issue-7",
-  tmux_session: "middleman-ws-issue-7",
+  tmux_session: "kenn-forge-ws-issue-7",
   status: "ready",
   created_at: "2026-04-10T12:00:00Z",
   mr_title: "Theme toggle does not stick",
@@ -862,9 +862,9 @@ test("provider-aware detail mocks enforce provider and host identity", async ({ 
 test.describe("terminal state icons", () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
-      localStorage.removeItem("middleman-workspace-sidebar-tab");
-      localStorage.removeItem("middleman-workspace-sidebar-open");
-      localStorage.removeItem("middleman-workspace-sidebar-width");
+      localStorage.removeItem("kenn-forge-workspace-sidebar-tab");
+      localStorage.removeItem("kenn-forge-workspace-sidebar-open");
+      localStorage.removeItem("kenn-forge-workspace-sidebar-width");
     });
   });
 
@@ -1482,10 +1482,10 @@ test.describe("terminal state icons", () => {
 test.describe("workspace launch home", () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
-      localStorage.removeItem("middleman-workspace-list-sidebar-width");
-      localStorage.removeItem("middleman-workspace-sidebar-tab");
-      localStorage.removeItem("middleman-workspace-sidebar-open");
-      localStorage.removeItem("middleman-workspace-sidebar-width");
+      localStorage.removeItem("kenn-forge-workspace-list-sidebar-width");
+      localStorage.removeItem("kenn-forge-workspace-sidebar-tab");
+      localStorage.removeItem("kenn-forge-workspace-sidebar-open");
+      localStorage.removeItem("kenn-forge-workspace-sidebar-width");
     });
     await setupTerminalMocks(page);
   });
@@ -1535,7 +1535,7 @@ test.describe("workspace launch home", () => {
     await page.addInitScript(() => {
       const OriginalWebSocket = window.WebSocket;
       const urls: string[] = [];
-      Object.defineProperty(window, "__middlemanWebSocketUrls", {
+      Object.defineProperty(window, "__kenn_forgeWebSocketUrls", {
         value: urls,
       });
       window.WebSocket = class extends OriginalWebSocket {
@@ -1558,9 +1558,9 @@ test.describe("workspace launch home", () => {
       (
         (
           window as unknown as {
-            __middlemanWebSocketUrls: string[];
+            __kenn_forgeWebSocketUrls: string[];
           }
-        ).__middlemanWebSocketUrls ?? []
+        ).__kenn_forgeWebSocketUrls ?? []
       ).filter((url) => url.includes("/ws/v1/workspaces/ws-123/")),
     );
     expect(initialTerminalSockets).toEqual([]);
@@ -1574,9 +1574,9 @@ test.describe("workspace launch home", () => {
           (
             (
               window as unknown as {
-                __middlemanWebSocketUrls: string[];
+                __kenn_forgeWebSocketUrls: string[];
               }
-            ).__middlemanWebSocketUrls ?? []
+            ).__kenn_forgeWebSocketUrls ?? []
           ).filter((url) => url.includes("/ws/v1/workspaces/ws-123/")),
         );
         return urls.some((url) => url.includes("/runtime/sessions/ws-123%3Acodex/terminal"));
@@ -1602,8 +1602,8 @@ test.describe("workspace launch home", () => {
       },
     });
     await page.addInitScript((layout) => {
-      localStorage.setItem("middleman-workspace-terminal-layout:ws-123", JSON.stringify(layout));
-      localStorage.setItem("middleman-workspace-active-tab:ws-123", "home");
+      localStorage.setItem("kenn-forge-workspace-terminal-layout:ws-123", JSON.stringify(layout));
+      localStorage.setItem("kenn-forge-workspace-active-tab:ws-123", "home");
     }, topDockedTerminalWorkflowLayout());
 
     await page.goto("/terminal/ws-123");
@@ -1638,8 +1638,8 @@ test.describe("workspace launch home", () => {
       },
     });
     await page.addInitScript((layout) => {
-      localStorage.setItem("middleman-workspace-terminal-layout:ws-123", JSON.stringify(layout));
-      localStorage.setItem("middleman-workspace-active-tab:ws-123", "home");
+      localStorage.setItem("kenn-forge-workspace-terminal-layout:ws-123", JSON.stringify(layout));
+      localStorage.setItem("kenn-forge-workspace-active-tab:ws-123", "home");
     }, closedTopDockedTerminalWorkflowLayout());
 
     await page.goto("/terminal/ws-123");
@@ -1662,9 +1662,9 @@ test.describe("workspace launch home", () => {
 
   test("applies a workflow preset that restores the Shell workflow tab", async ({ page }) => {
     await page.addInitScript((preset) => {
-      localStorage.removeItem("middleman-workspace-terminal-layout:ws-123");
-      localStorage.setItem("middleman-workspace-layout-presets", JSON.stringify([preset]));
-      localStorage.setItem("middleman-workspace-active-tab:ws-123", "home");
+      localStorage.removeItem("kenn-forge-workspace-terminal-layout:ws-123");
+      localStorage.setItem("kenn-forge-workspace-layout-presets", JSON.stringify([preset]));
+      localStorage.setItem("kenn-forge-workspace-active-tab:ws-123", "home");
     }, shellWorkflowPreset());
     await setupTerminalMocks(page);
 
@@ -1688,7 +1688,7 @@ test.describe("workspace launch home", () => {
       runtime: workflowDragRuntime(),
     });
     await page.addInitScript((layout) => {
-      localStorage.setItem("middleman-workspace-terminal-layout:ws-123", JSON.stringify(layout));
+      localStorage.setItem("kenn-forge-workspace-terminal-layout:ws-123", JSON.stringify(layout));
     }, workflowDragLayout());
 
     await page.goto("/terminal/ws-123");
@@ -1765,7 +1765,7 @@ test.describe("workspace launch home", () => {
       runtime: workflowDragRuntime(),
     });
     await page.addInitScript((layout) => {
-      localStorage.setItem("middleman-workspace-terminal-layout:ws-123", JSON.stringify(layout));
+      localStorage.setItem("kenn-forge-workspace-terminal-layout:ws-123", JSON.stringify(layout));
     }, workflowDragLayout());
 
     await page.goto("/terminal/ws-123");
@@ -1781,7 +1781,7 @@ test.describe("workspace launch home", () => {
     ).toBeVisible();
 
     await page.evaluate((layout) => {
-      localStorage.setItem("middleman-workspace-terminal-layout:ws-123", JSON.stringify(layout));
+      localStorage.setItem("kenn-forge-workspace-terminal-layout:ws-123", JSON.stringify(layout));
     }, workflowDragLayout());
     await page.reload();
 
@@ -1798,8 +1798,8 @@ test.describe("workspace launch home", () => {
 
   test("saves updates applies and deletes workflow presets", async ({ page }) => {
     await page.addInitScript(() => {
-      localStorage.removeItem("middleman-workspace-terminal-layout:ws-123");
-      localStorage.removeItem("middleman-workspace-layout-presets");
+      localStorage.removeItem("kenn-forge-workspace-terminal-layout:ws-123");
+      localStorage.removeItem("kenn-forge-workspace-layout-presets");
     });
     const runtimeEvents: RuntimeEvents = {
       launches: [],
@@ -1842,7 +1842,7 @@ test.describe("workspace launch home", () => {
     await expect
       .poll(() =>
         page.evaluate(() => {
-          const raw = localStorage.getItem("middleman-workspace-layout-presets");
+          const raw = localStorage.getItem("kenn-forge-workspace-layout-presets");
           const presets = raw ? JSON.parse(raw) : [];
           return presets.map((preset: { name: string }) => preset.name);
         }),
@@ -1867,7 +1867,7 @@ test.describe("workspace launch home", () => {
     await expect
       .poll(() =>
         page.evaluate(() => {
-          const raw = localStorage.getItem("middleman-workspace-layout-presets");
+          const raw = localStorage.getItem("kenn-forge-workspace-layout-presets");
           const presets = raw ? JSON.parse(raw) : [];
           return presets[0]?.sessions.find((session: { targetKey: string }) => session.targetKey === "codex")?.label;
         }),
@@ -1900,7 +1900,7 @@ test.describe("workspace launch home", () => {
     await expect
       .poll(() =>
         page.evaluate(() => {
-          const raw = localStorage.getItem("middleman-workspace-terminal-layout:ws-123");
+          const raw = localStorage.getItem("kenn-forge-workspace-terminal-layout:ws-123");
           const layout = raw ? JSON.parse(raw) : null;
           return {
             open: layout?.open,
@@ -1923,7 +1923,7 @@ test.describe("workspace launch home", () => {
     await expect
       .poll(() =>
         page.evaluate(() => {
-          const raw = localStorage.getItem("middleman-workspace-layout-presets");
+          const raw = localStorage.getItem("kenn-forge-workspace-layout-presets");
           return raw ? JSON.parse(raw).length : 0;
         }),
       )
@@ -1949,7 +1949,7 @@ test.describe("workspace launch home", () => {
         url: string;
       };
       const recordedSockets: RecordedSocket[] = [];
-      Object.defineProperty(window, "__middlemanRecordedTerminalSockets", {
+      Object.defineProperty(window, "__kenn_forgeRecordedTerminalSockets", {
         value: recordedSockets,
       });
       const NativeWebSocket = window.WebSocket;
@@ -2017,11 +2017,11 @@ test.describe("workspace launch home", () => {
     await page.evaluate(() => {
       for (const socket of (
         window as unknown as {
-          __middlemanRecordedTerminalSockets: Array<{
+          __kenn_forgeRecordedTerminalSockets: Array<{
             sent: unknown[];
           }>;
         }
-      ).__middlemanRecordedTerminalSockets) {
+      ).__kenn_forgeRecordedTerminalSockets) {
         socket.sent = [];
       }
     });
@@ -2034,11 +2034,11 @@ test.describe("workspace launch home", () => {
         page.evaluate(() =>
           (
             window as unknown as {
-              __middlemanRecordedTerminalSockets: Array<{
+              __kenn_forgeRecordedTerminalSockets: Array<{
                 sent: unknown[];
               }>;
             }
-          ).__middlemanRecordedTerminalSockets.some((socket) =>
+          ).__kenn_forgeRecordedTerminalSockets.some((socket) =>
             socket.sent.some((frame) => {
               if (typeof frame !== "string") return false;
               try {
@@ -2056,7 +2056,7 @@ test.describe("workspace launch home", () => {
   test("xterm uses stable rendering for colored terminal diff output in Firefox", async ({ page, browserName }) => {
     test.skip(browserName !== "firefox", "Firefox-specific xterm rendering regression coverage");
     await page.addInitScript(() => {
-      Object.defineProperty(window, "__middlemanOpenedTerminalSockets", {
+      Object.defineProperty(window, "__kenn_forgeOpenedTerminalSockets", {
         value: [] as string[],
       });
       const NativeWebSocket = window.WebSocket;
@@ -2090,9 +2090,9 @@ test.describe("workspace launch home", () => {
             return new NativeWebSocket(url, protocols);
           }
           queueMicrotask(() => {
-            (window as unknown as { __middlemanOpenedTerminalSockets: string[] }).__middlemanOpenedTerminalSockets.push(
-              this.url,
-            );
+            (
+              window as unknown as { __kenn_forgeOpenedTerminalSockets: string[] }
+            ).__kenn_forgeOpenedTerminalSockets.push(this.url);
             const event = new Event("open");
             this.dispatchEvent(event);
             this.onopen?.(event);
@@ -2128,7 +2128,7 @@ test.describe("workspace launch home", () => {
     await expect
       .poll(() =>
         page.evaluate(() =>
-          (window as unknown as { __middlemanOpenedTerminalSockets: string[] }).__middlemanOpenedTerminalSockets.some(
+          (window as unknown as { __kenn_forgeOpenedTerminalSockets: string[] }).__kenn_forgeOpenedTerminalSockets.some(
             (url) => url.includes("/runtime/sessions/ws-123%3Acodex/terminal"),
           ),
         ),
@@ -2144,7 +2144,7 @@ test.describe("workspace launch home", () => {
         url: string;
       };
       const recordedSockets: RecordedSocket[] = [];
-      Object.defineProperty(window, "__middlemanRecordedTerminalSockets", {
+      Object.defineProperty(window, "__kenn_forgeRecordedTerminalSockets", {
         value: recordedSockets,
       });
       const NativeWebSocket = window.WebSocket;
@@ -2216,11 +2216,11 @@ test.describe("workspace launch home", () => {
     await page.evaluate(() => {
       for (const socket of (
         window as unknown as {
-          __middlemanRecordedTerminalSockets: Array<{
+          __kenn_forgeRecordedTerminalSockets: Array<{
             sent: unknown[];
           }>;
         }
-      ).__middlemanRecordedTerminalSockets) {
+      ).__kenn_forgeRecordedTerminalSockets) {
         socket.sent = [];
       }
     });
@@ -2245,11 +2245,11 @@ test.describe("workspace launch home", () => {
           const decoder = new TextDecoder();
           return (
             window as unknown as {
-              __middlemanRecordedTerminalSockets: Array<{
+              __kenn_forgeRecordedTerminalSockets: Array<{
                 sent: unknown[];
               }>;
             }
-          ).__middlemanRecordedTerminalSockets
+          ).__kenn_forgeRecordedTerminalSockets
             .flatMap((socket) => socket.sent)
             .map((frame) => (Array.isArray(frame) ? decoder.decode(new Uint8Array(frame)) : frame));
         }),
@@ -2385,7 +2385,7 @@ test.describe("workspace launch home", () => {
     });
     await page.addInitScript((tree) => {
       localStorage.setItem(
-        "middleman-workspace-terminal-layout:ws-123",
+        "kenn-forge-workspace-terminal-layout:ws-123",
         JSON.stringify({
           version: 1,
           open: true,
@@ -2570,10 +2570,10 @@ test.describe("sidebar toggle behavior", () => {
   test.beforeEach(async ({ page }) => {
     // Clear any persisted sidebar state before each test.
     await page.addInitScript(() => {
-      localStorage.removeItem("middleman-workspace-list-sidebar-width");
-      localStorage.removeItem("middleman-workspace-sidebar-tab");
-      localStorage.removeItem("middleman-workspace-sidebar-open");
-      localStorage.removeItem("middleman-workspace-sidebar-width");
+      localStorage.removeItem("kenn-forge-workspace-list-sidebar-width");
+      localStorage.removeItem("kenn-forge-workspace-sidebar-tab");
+      localStorage.removeItem("kenn-forge-workspace-sidebar-open");
+      localStorage.removeItem("kenn-forge-workspace-sidebar-width");
     });
     await setupTerminalMocks(page);
   });
@@ -2784,7 +2784,7 @@ test.describe("sidebar toggle behavior", () => {
       },
     });
     await page.addInitScript(() => {
-      localStorage.setItem("middleman-workspace-sidebar-width", "0");
+      localStorage.setItem("kenn-forge-workspace-sidebar-width", "0");
     });
     await page.goto("/terminal/ws-123");
 
@@ -2870,10 +2870,10 @@ test.describe("sidebar toggle behavior", () => {
 test.describe("workspace list fleet inventory", () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
-      localStorage.removeItem("middleman-workspace-list-sidebar-width");
-      localStorage.removeItem("middleman-workspace-sidebar-tab");
-      localStorage.removeItem("middleman-workspace-sidebar-open");
-      localStorage.removeItem("middleman-workspace-sidebar-width");
+      localStorage.removeItem("kenn-forge-workspace-list-sidebar-width");
+      localStorage.removeItem("kenn-forge-workspace-sidebar-tab");
+      localStorage.removeItem("kenn-forge-workspace-sidebar-open");
+      localStorage.removeItem("kenn-forge-workspace-sidebar-width");
     });
     await mockApi(page);
     await page.route("**/api/v1/events", async (route) => {
@@ -2890,7 +2890,7 @@ test.describe("workspace list fleet inventory", () => {
       ...testIssueWorkspace,
       id: "member-ws-23",
       item_number: 23,
-      git_head_ref: "middleman/issue-23-federation-test",
+      git_head_ref: "kenn-forge/issue-23-federation-test",
       worktree_path: "/data/member/worktrees/github.com/kenn-io/kit/issue-23",
       mr_title: "Member workspace",
       repo_owner: "kenn-io",
@@ -3138,9 +3138,9 @@ test.describe("sidebar persistence", () => {
 
   async function clearSidebarStorage(page: import("@playwright/test").Page): Promise<void> {
     await page.evaluate(() => {
-      localStorage.removeItem("middleman-workspace-sidebar-tab");
-      localStorage.removeItem("middleman-workspace-sidebar-open");
-      localStorage.removeItem("middleman-workspace-sidebar-width");
+      localStorage.removeItem("kenn-forge-workspace-sidebar-tab");
+      localStorage.removeItem("kenn-forge-workspace-sidebar-open");
+      localStorage.removeItem("kenn-forge-workspace-sidebar-width");
     });
   }
 
@@ -3156,7 +3156,7 @@ test.describe("sidebar persistence", () => {
     await expect(page.locator(".right-sidebar")).toBeVisible();
 
     // Verify localStorage written
-    const stored = await page.evaluate(() => localStorage.getItem("middleman-workspace-sidebar-open"));
+    const stored = await page.evaluate(() => localStorage.getItem("kenn-forge-workspace-sidebar-open"));
     expect(stored).toBe("true");
 
     // Reload — sidebar should still be open
@@ -3176,7 +3176,7 @@ test.describe("sidebar persistence", () => {
     await expect(reviewsBtn).toHaveClass(/active/);
 
     // Verify localStorage
-    const tab = await page.evaluate(() => localStorage.getItem("middleman-workspace-sidebar-tab"));
+    const tab = await page.evaluate(() => localStorage.getItem("kenn-forge-workspace-sidebar-tab"));
     expect(tab).toBe("reviews");
 
     // Reload
@@ -3208,7 +3208,7 @@ test.describe("sidebar persistence", () => {
     }
 
     // Width should have increased from default 360
-    const width = await page.evaluate(() => localStorage.getItem("middleman-workspace-sidebar-width"));
+    const width = await page.evaluate(() => localStorage.getItem("kenn-forge-workspace-sidebar-width"));
     expect(Number(width)).toBeGreaterThan(360);
 
     const savedWidth = Number(width);
@@ -3231,9 +3231,9 @@ test.describe("sidebar persistence", () => {
 test.describe("sidebar PR tab", () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
-      localStorage.removeItem("middleman-workspace-sidebar-tab");
-      localStorage.removeItem("middleman-workspace-sidebar-open");
-      localStorage.removeItem("middleman-workspace-sidebar-width");
+      localStorage.removeItem("kenn-forge-workspace-sidebar-tab");
+      localStorage.removeItem("kenn-forge-workspace-sidebar-open");
+      localStorage.removeItem("kenn-forge-workspace-sidebar-width");
     });
     await setupTerminalMocks(page);
   });
@@ -3271,9 +3271,9 @@ test.describe("sidebar PR tab", () => {
 test.describe("workspace list bubble opens right sidebar", () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
-      localStorage.removeItem("middleman-workspace-sidebar-tab");
-      localStorage.removeItem("middleman-workspace-sidebar-open");
-      localStorage.removeItem("middleman-workspace-sidebar-width");
+      localStorage.removeItem("kenn-forge-workspace-sidebar-tab");
+      localStorage.removeItem("kenn-forge-workspace-sidebar-open");
+      localStorage.removeItem("kenn-forge-workspace-sidebar-width");
     });
   });
 
@@ -3574,8 +3574,8 @@ test.describe("workspace list bubble opens right sidebar", () => {
       ...testIssueWorkspace,
       id: "ws-number",
       repo_owner: "kenn-io",
-      repo_name: "middleman",
-      repo: workspaceRepoRef("kenn-io", "middleman"),
+      repo_name: "kenn-forge",
+      repo: workspaceRepoRef("kenn-io", "kenn-forge"),
       item_number: 224,
       mr_title: "Add notification inbox triage",
     };
@@ -3736,14 +3736,14 @@ test.describe("workspace list sorting", () => {
       mr_additions: 5,
       mr_deletions: 1,
     };
-    const wsMiddleman = {
+    const wsForge = {
       ...testWorkspace,
-      id: "ws-middleman",
+      id: "ws-kenn-forge",
       repo_owner: "kenn-io",
-      repo_name: "middleman",
-      repo: workspaceRepoRef("kenn-io", "middleman"),
+      repo_name: "kenn-forge",
+      repo: workspaceRepoRef("kenn-io", "kenn-forge"),
       item_number: 12,
-      mr_title: "Middleman workspace",
+      mr_title: "Kenn Forge workspace",
       mr_additions: 13,
       mr_deletions: 2,
     };
@@ -3753,7 +3753,7 @@ test.describe("workspace list sorting", () => {
         await route.fulfill({
           status: 200,
           contentType: "application/json",
-          body: JSON.stringify({ workspaces: [wsGithub, wsGitea, wsMiddleman] }),
+          body: JSON.stringify({ workspaces: [wsGithub, wsGitea, wsForge] }),
         });
         return;
       }
@@ -3766,7 +3766,7 @@ test.describe("workspace list sorting", () => {
     await expect(groupLabels).toHaveText([
       "github/github.com/acme/widgets",
       "gitea/github.com/acme/widgets",
-      "kenn-io/middleman",
+      "kenn-io/kenn-forge",
     ]);
     await expect(page.locator(".workspace-list-sidebar .workspace-diff-stats")).toHaveCount(3);
 
@@ -3777,7 +3777,7 @@ test.describe("workspace list sorting", () => {
     await expect(groupLabels).toHaveText([
       "github/github.com/acme/widgets",
       "gitea/github.com/acme/widgets",
-      "middleman",
+      "kenn-forge",
     ]);
 
     await page.locator(".kit-filter-dropdown__panel").getByRole("button", { name: "Show PR diff stats" }).click();
@@ -3788,7 +3788,7 @@ test.describe("workspace list sorting", () => {
     await expect(groupLabels).toHaveText([
       "github/github.com/acme/widgets",
       "gitea/github.com/acme/widgets",
-      "middleman",
+      "kenn-forge",
     ]);
     await expect(page.locator(".workspace-list-sidebar .workspace-diff-stats")).toHaveCount(0);
   });
@@ -3836,9 +3836,9 @@ test.describe("workspace list sorting", () => {
 test.describe("delayed-response navigation", () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
-      localStorage.removeItem("middleman-workspace-sidebar-tab");
-      localStorage.removeItem("middleman-workspace-sidebar-open");
-      localStorage.removeItem("middleman-workspace-sidebar-width");
+      localStorage.removeItem("kenn-forge-workspace-sidebar-tab");
+      localStorage.removeItem("kenn-forge-workspace-sidebar-open");
+      localStorage.removeItem("kenn-forge-workspace-sidebar-width");
     });
   });
 
@@ -4448,9 +4448,9 @@ test.describe("delayed-response navigation", () => {
 test.describe("issue workspace sidebar", () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
-      localStorage.removeItem("middleman-workspace-sidebar-tab");
-      localStorage.removeItem("middleman-workspace-sidebar-open");
-      localStorage.removeItem("middleman-workspace-sidebar-width");
+      localStorage.removeItem("kenn-forge-workspace-sidebar-tab");
+      localStorage.removeItem("kenn-forge-workspace-sidebar-open");
+      localStorage.removeItem("kenn-forge-workspace-sidebar-width");
     });
   });
 
@@ -4602,8 +4602,8 @@ test.describe("issue workspace sidebar", () => {
     };
 
     await page.addInitScript(() => {
-      localStorage.setItem("middleman-workspace-sidebar-open", "true");
-      localStorage.setItem("middleman-workspace-sidebar-tab", "issue");
+      localStorage.setItem("kenn-forge-workspace-sidebar-open", "true");
+      localStorage.setItem("kenn-forge-workspace-sidebar-tab", "issue");
 
       const instances: Array<{
         listeners: Map<string, Set<(event: MessageEvent) => void>>;
@@ -4709,9 +4709,9 @@ test.describe("issue workspace sidebar", () => {
 test.describe("sidebar Reviews tab", () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
-      localStorage.removeItem("middleman-workspace-sidebar-tab");
-      localStorage.removeItem("middleman-workspace-sidebar-open");
-      localStorage.removeItem("middleman-workspace-sidebar-width");
+      localStorage.removeItem("kenn-forge-workspace-sidebar-tab");
+      localStorage.removeItem("kenn-forge-workspace-sidebar-open");
+      localStorage.removeItem("kenn-forge-workspace-sidebar-width");
     });
   });
 

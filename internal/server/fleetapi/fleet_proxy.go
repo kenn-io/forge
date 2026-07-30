@@ -21,11 +21,11 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
-	"go.kenn.io/middleman/internal/config"
-	"go.kenn.io/middleman/internal/procutil"
-	"go.kenn.io/middleman/internal/server/httpapi"
-	"go.kenn.io/middleman/internal/server/workspaceapi"
-	"go.kenn.io/middleman/internal/tracing"
+	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/procutil"
+	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/server/workspaceapi"
+	"go.kenn.io/forge/internal/tracing"
 )
 
 type fleetRESTProxyRoute struct {
@@ -767,7 +767,7 @@ func (s *Handler) serveRemoteFleetRESTProxy(
 		return
 	}
 	copyProxyRequestHeaders(req.Header, r.Header)
-	req.Header.Set("X-Middleman-Fleet-Host", peer.Key)
+	req.Header.Set("X-Kenn-Forge-Fleet-Host", peer.Key)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -828,7 +828,7 @@ func (s *Handler) serveFleetWebSocketProxy(
 	peerURL := remoteWebSocketURL(target.peer.BaseURL, targetPath, r.URL.RawQuery)
 	dialHeader := make(http.Header)
 	copyProxyWebSocketRequestHeaders(dialHeader, r.Header)
-	dialHeader.Set("X-Middleman-Fleet-Host", target.peer.Key)
+	dialHeader.Set("X-Kenn-Forge-Fleet-Host", target.peer.Key)
 	peerConn, _, err := websocket.Dial(r.Context(), peerURL, &websocket.DialOptions{
 		HTTPHeader: dialHeader,
 	})
@@ -1331,7 +1331,7 @@ func copyProxyWebSocketRequestHeaders(dst, src http.Header) {
 // isPeerProxyCredentialHeader reports whether key carries the caller's
 // credentials, which must never ride along on a server-to-server fleet proxy
 // request. The hub's Authorization bearer and session cookie (including
-// middleman_auth) authenticate the *hub*, not the peer: each daemon mints its
+// forge_auth) authenticate the *hub*, not the peer: each daemon mints its
 // own token, so forwarding them cannot authenticate to the peer and would only
 // leak the hub credential to it. HTTP fleet peers are therefore credential-free
 // and must sit behind a trusted transport boundary; SSH peers are the

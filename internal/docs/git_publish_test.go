@@ -168,9 +168,9 @@ func TestSuggestedCommitMessage(t *testing.T) {
 			changes: []PublishChange{
 				{Path: "README.md", Status: GitChangeModified},
 				{Path: "Daily/2026-05-18.md", Status: GitChangeAdded},
-				{Path: "Projects/middleman.md", Status: GitChangeModified},
+				{Path: "Projects/forge.md", Status: GitChangeModified},
 			},
-			want: "docs: update 3 files\n\n- README.md\n- Daily/2026-05-18.md\n- Projects/middleman.md\n",
+			want: "docs: update 3 files\n\n- README.md\n- Daily/2026-05-18.md\n- Projects/forge.md\n",
 		},
 		{
 			name:    "rename body line shows new path only",

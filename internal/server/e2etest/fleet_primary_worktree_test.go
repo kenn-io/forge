@@ -11,8 +11,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"go.kenn.io/middleman/internal/fleet"
-	"go.kenn.io/middleman/internal/testutil/gitsafe"
+	"go.kenn.io/forge/internal/fleet"
+	"go.kenn.io/forge/internal/testutil/gitsafe"
 )
 
 // gitInitRepoWithWorktree creates a real git repo with one empty commit and a

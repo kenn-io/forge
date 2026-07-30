@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"go.kenn.io/middleman/internal/procutil"
-	"go.kenn.io/middleman/internal/testutil/gitsafe"
-	"go.kenn.io/middleman/internal/testutil/processjob"
+	"go.kenn.io/forge/internal/procutil"
+	"go.kenn.io/forge/internal/testutil/gitsafe"
+	"go.kenn.io/forge/internal/testutil/processjob"
 )
 
 var workspaceTestTmuxCommand []string
@@ -51,7 +51,7 @@ func configureWorkspaceTestTmux() (func() error, error) {
 		return nil, fmt.Errorf("find tmux: %w", err)
 	}
 
-	tmuxDir, err := os.MkdirTemp("/tmp", "middleman-workspacetest-tmux-*")
+	tmuxDir, err := os.MkdirTemp("/tmp", "kenn-forge-workspacetest-tmux-*")
 	if err != nil {
 		return nil, fmt.Errorf("create tmux socket directory: %w", err)
 	}

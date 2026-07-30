@@ -4,8 +4,8 @@
   import PlusIcon from "@lucide/svelte/icons/plus";
   import RotateCcwIcon from "@lucide/svelte/icons/rotate-ccw";
   import TrashIcon from "@lucide/svelte/icons/trash-2";
-  import type { AgentSettings as AgentSettingsType, LaunchTarget } from "@middleman/ui/api/types";
-  import { showFlash } from "@middleman/ui/stores/flash";
+  import type { AgentSettings as AgentSettingsType, LaunchTarget } from "@kenn-forge/ui/api/types";
+  import { showFlash } from "@kenn-forge/ui/stores/flash";
   import { slide } from "svelte/transition";
   import { updateSettings } from "../../api/settings.js";
   import { isEmbedded } from "../../stores/embed-config.svelte.js";

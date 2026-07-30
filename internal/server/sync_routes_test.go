@@ -7,8 +7,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/server/httpapi"
+	"go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/server/httpapi"
 )
 
 func TestSyncRoutesWithoutSyncer(t *testing.T) {

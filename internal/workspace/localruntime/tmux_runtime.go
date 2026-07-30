@@ -10,7 +10,7 @@ import (
 
 	"github.com/creack/pty/v2"
 
-	"go.kenn.io/middleman/internal/procutil"
+	"go.kenn.io/forge/internal/procutil"
 )
 
 type tmuxAttachLifecycle struct {

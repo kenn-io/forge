@@ -13,15 +13,15 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"go.kenn.io/middleman/internal/apiclient/generated"
-	"go.kenn.io/middleman/internal/archive"
-	"go.kenn.io/middleman/internal/archive/report"
-	"go.kenn.io/middleman/internal/db"
-	ghclient "go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/platform"
-	"go.kenn.io/middleman/internal/server"
-	"go.kenn.io/middleman/internal/server/httpapi"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/apiclient/generated"
+	"go.kenn.io/forge/internal/archive"
+	"go.kenn.io/forge/internal/archive/report"
+	"go.kenn.io/forge/internal/db"
+	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/platform"
+	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
 func TestAPIArchiveRoutesRemainRegisteredWithoutController(t *testing.T) {
@@ -29,7 +29,7 @@ func TestAPIArchiveRoutesRemainRegisteredWithoutController(t *testing.T) {
 	require := require.New(t)
 	srv, _ := setupTestServer(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/archive/status", http.NoBody)
-	req.Host = "middleman.test"
+	req.Host = "forge.test"
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
 
@@ -74,7 +74,7 @@ func TestAPIArchiveStartPauseStatusAndReport(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(repo)
 	issueResult, err := database.WriteDB().ExecContext(t.Context(), `
-		INSERT INTO middleman_issues (
+		INSERT INTO forge_issues (
 			repo_id, platform_id, platform_external_id, number, url, title, author,
 			state, body, comment_count, created_at, updated_at, last_activity_at, closed_at
 		) VALUES (?, 7, 'issue-7', 7, 'https://github.test/owner/repo/issues/7',
@@ -103,7 +103,7 @@ func TestAPIArchiveStartPauseStatusAndReport(t *testing.T) {
 		Author: "merger", CreatedAt: mergedAt, DedupeKey: "merged:8",
 	}}))
 	_, err = database.WriteDB().ExecContext(t.Context(), `
-		UPDATE middleman_archive_repos
+		UPDATE forge_archive_repos
 		SET issues_coverage = 'supported', merge_requests_coverage = 'supported'
 		WHERE repo_id = ?`, repo.ID)
 	require.NoError(err)
@@ -156,7 +156,7 @@ func TestAPIArchiveStartPauseStatusAndReport(t *testing.T) {
 
 	resetAt := time.Now().UTC().Add(time.Hour).Truncate(time.Second)
 	_, err = database.WriteDB().ExecContext(t.Context(), `
-		UPDATE middleman_archive_repos
+		UPDATE forge_archive_repos
 		SET last_error_code = 'budget_exhausted',
 			last_error_detail = '/private/path?token=should-not-leak', next_retry_at = ?
 		WHERE repo_id = ?`, resetAt, repo.ID)
@@ -279,7 +279,7 @@ func TestAPIArchiveRoutesObeyHostAuthAndCSRFGuards(t *testing.T) {
 	crossSite := httptest.NewRequest(
 		http.MethodPost, "/api/v1/archive/start", strings.NewReader(`{"all":true}`),
 	)
-	crossSite.Host = "middleman.test"
+	crossSite.Host = "forge.test"
 	crossSite.Header.Set("Content-Type", "application/json")
 	crossSite.Header.Set("Sec-Fetch-Site", "cross-site")
 	crossSiteRecorder := httptest.NewRecorder()

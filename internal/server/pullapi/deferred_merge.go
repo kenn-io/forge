@@ -10,11 +10,11 @@ import (
 	"sync"
 	"time"
 
-	"go.kenn.io/middleman/internal/db"
-	ghclient "go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/platform"
-	"go.kenn.io/middleman/internal/server/httpapi"
-	"go.kenn.io/middleman/internal/server/workspaceapi"
+	"go.kenn.io/forge/internal/db"
+	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/platform"
+	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/server/workspaceapi"
 )
 
 const (
@@ -621,7 +621,7 @@ func deferredMergeCheckState(aggregateStatus string, keys []deferredMergeCheckKe
 	if err != nil {
 		return "", err
 	}
-	// Middleman does not have a provider-neutral required-check model. Deferred
+	// Kenn Forge does not have a provider-neutral required-check model. Deferred
 	// merge therefore fails closed: the checks that were pending when queued
 	// must pass, and the current refreshed snapshot must contain no failed or
 	// still-pending checks before the merge is attempted.

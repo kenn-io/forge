@@ -19,11 +19,11 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/semaphore"
 
-	"go.kenn.io/middleman/internal/apiclient/generated"
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/server"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
-	"go.kenn.io/middleman/internal/workspace"
+	"go.kenn.io/forge/internal/apiclient/generated"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/workspace"
 )
 
 var workspaceGitSlots = semaphore.NewWeighted(8)
@@ -206,9 +206,9 @@ func TestWorkspaceDiffEndpointsReturnPierreTreeOrderE2E(t *testing.T) {
 		ItemType:        db.WorkspaceItemTypePullRequest,
 		ItemNumber:      1,
 		GitHeadRef:      "feature/file-order",
-		WorkspaceBranch: "middleman/pr-1",
+		WorkspaceBranch: "kenn-forge/pr-1",
 		WorktreePath:    worktreePath,
-		TmuxSession:     "middleman-file-order",
+		TmuxSession:     "kenn-forge-file-order",
 		Status:          "ready",
 	}))
 
@@ -456,7 +456,7 @@ func TestWorkspaceDiffEndpointReportsMergeTargetForAssociatedKataWorkspaceE2E(t 
 		GitHeadRef:         ws.GitHeadRef,
 		WorkspaceBranch:    ws.GitHeadRef,
 		WorktreePath:       ws.WorktreePath,
-		TmuxSession:        "middleman-ws-kata-merge-target",
+		TmuxSession:        "kenn-forge-ws-kata-merge-target",
 		Status:             "ready",
 		KataMetadata: &db.WorkspaceKataMetadata{
 			DaemonID:   "desktop",
@@ -720,8 +720,8 @@ func TestWorkspaceDiffEndpointQuotesDangerousPathsE2E(t *testing.T) {
 	require.NoError(database.InsertWorkspace(t.Context(), &workspace.Workspace{
 		ID: "ws-control-paths", PlatformHost: "github.com", RepoOwner: "acme", RepoName: "widget",
 		ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 1, GitHeadRef: "feature/control-paths",
-		WorkspaceBranch: "middleman/pr-1", WorktreePath: worktreePath,
-		TmuxSession: "middleman-control-paths", Status: "ready",
+		WorkspaceBranch: "kenn-forge/pr-1", WorktreePath: worktreePath,
+		TmuxSession: "kenn-forge-control-paths", Status: "ready",
 	}))
 
 	diff := requestWorkspaceDiff(t, srv, "ws-control-paths", "head")
@@ -872,7 +872,7 @@ func requestWorkspaceFilePreview(
 
 func newWorkspaceFixtureRequest(method, target string, body io.Reader) *http.Request {
 	req := httptest.NewRequest(method, target, body)
-	req.Host = "middleman.test"
+	req.Host = "forge.test"
 	return req
 }
 

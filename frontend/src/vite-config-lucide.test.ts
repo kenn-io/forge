@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vite-plus/test";
 
-// `@middleman/ui` and `@kenn-io/kit-ui` are excluded from Vite's optimizer, so every
+// `@kenn-forge/ui` and `@kenn-io/kit-ui` are excluded from Vite's optimizer, so every
 // lucide icon they import is discovered lazily. A cold optimizer that meets an
 // unlisted one mid-run re-bundles and reloads the page underneath whatever is
 // mounted -- which in the dev server shows up as an icon that renders wrong, and in

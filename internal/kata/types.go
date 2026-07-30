@@ -2,7 +2,7 @@ package kata
 
 import "time"
 
-// Daemon describes one external Kata daemon that middleman can talk to.
+// Daemon describes one external Kata daemon that kenn-forge can talk to.
 type Daemon struct {
 	ID            string
 	URL           string

@@ -153,7 +153,7 @@
     if (onStartTabDrag) {
       onStartTabDrag(event, tab);
     } else {
-      startTabbedPanelTabDrag(event, { scope: dragScope, tabKey: tab.key }, "Middleman panel tab");
+      startTabbedPanelTabDrag(event, { scope: dragScope, tabKey: tab.key }, "Kenn Forge panel tab");
     }
     draggedTabKey = tab.key;
     const sourceEl =

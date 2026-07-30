@@ -6,8 +6,8 @@
   import LayersIcon from "@lucide/svelte/icons/layers";
   import PlusIcon from "@lucide/svelte/icons/plus";
   import StarIcon from "@lucide/svelte/icons/star";
-  import { GroupedSidebarSection, ScrollBox } from "@middleman/ui";
-  import { showFlash } from "@middleman/ui/stores/flash";
+  import { GroupedSidebarSection, ScrollBox } from "@kenn-forge/ui";
+  import { showFlash } from "@kenn-forge/ui/stores/flash";
 
   import type {
     KataProjectSummary,

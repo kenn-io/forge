@@ -11,10 +11,10 @@ import (
 	"time"
 
 	gitlab "gitlab.com/gitlab-org/api/client-go/v2"
-	ghsync "go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/platform"
-	"go.kenn.io/middleman/internal/ratelimit"
-	"go.kenn.io/middleman/internal/tokenauth"
+	ghsync "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/platform"
+	"go.kenn.io/forge/internal/ratelimit"
+	"go.kenn.io/forge/internal/tokenauth"
 )
 
 const (
@@ -42,7 +42,7 @@ type Client struct {
 
 	// userIDMu guards userIDs, a username -> user ID cache for
 	// assignee/reviewer mutations. GitLab addresses users by numeric ID
-	// while middleman stores usernames, so lookups are cached for the
+	// while kenn-forge stores usernames, so lookups are cached for the
 	// client lifetime (user IDs are immutable).
 	userIDMu sync.Mutex
 	userIDs  map[string]int64

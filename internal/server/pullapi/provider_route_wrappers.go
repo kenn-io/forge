@@ -3,7 +3,7 @@ package pullapi
 import (
 	"context"
 
-	"go.kenn.io/middleman/internal/server/httpapi"
+	"go.kenn.io/forge/internal/server/httpapi"
 )
 
 type repoNumberHostInput struct {

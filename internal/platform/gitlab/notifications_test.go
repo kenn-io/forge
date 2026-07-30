@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	Require "github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/forge/internal/platform"
 )
 
 // The notification stubs exist so GitLab fails with a typed

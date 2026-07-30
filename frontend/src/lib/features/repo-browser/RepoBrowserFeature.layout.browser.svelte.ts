@@ -3,7 +3,7 @@ import { page } from "vite-plus/test/browser";
 import { render } from "vitest-browser-svelte";
 
 import "../../../app.css";
-import type { MiddlemanClient } from "@middleman/ui";
+import type { ForgeClient } from "@kenn-forge/ui";
 import RepoBrowserFeature from "./RepoBrowserFeature.svelte";
 
 const route = {
@@ -16,7 +16,7 @@ const route = {
   repoPath: "acme/widgets",
 };
 
-function testClient(): MiddlemanClient {
+function testClient(): ForgeClient {
   const repo = {
     name: "widgets",
     owner: "acme",
@@ -38,7 +38,7 @@ function testClient(): MiddlemanClient {
       }
       throw new Error(`unexpected GET ${path}`);
     }),
-  } as unknown as MiddlemanClient;
+  } as unknown as ForgeClient;
 }
 
 describe("repository browser responsive rails", () => {

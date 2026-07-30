@@ -18,7 +18,7 @@ describe("vite config", () => {
   it("uses the guaranteed CI cores for unit tests", () => {
     expect(resolveUnitTestWorkers({})).toBeUndefined();
     expect(resolveUnitTestWorkers({ CI: "1" })).toBe(14);
-    expect(resolveUnitTestWorkers({ CI: "1", MIDDLEMAN_CI_WORKERS: "2" })).toBe(2);
+    expect(resolveUnitTestWorkers({ CI: "1", KENN_FORGE_CI_WORKERS: "2" })).toBe(2);
   });
 
   it("runs unit tests in worker threads", () => {
@@ -29,17 +29,17 @@ describe("vite config", () => {
     });
   });
 
-  it("aliases @middleman/ui to the workspace source tree", () => {
+  it("aliases @kenn-forge/ui to the workspace source tree", () => {
     const aliases = Array.isArray(config.resolve?.alias) ? config.resolve.alias : [];
 
     const uiRootAlias = aliases.find(
-      (alias) => alias.find instanceof RegExp && alias.find.source === "^@middleman\\/ui$",
+      (alias) => alias.find instanceof RegExp && alias.find.source === "^@kenn-forge\\/ui$",
     );
     const uiSubpathAlias = aliases.find(
-      (alias) => alias.find instanceof RegExp && alias.find.source === "^@middleman\\/ui\\/api\\/client$",
+      (alias) => alias.find instanceof RegExp && alias.find.source === "^@kenn-forge\\/ui\\/api\\/client$",
     );
     const repoLabelAlias = aliases.find(
-      (alias) => alias.find instanceof RegExp && alias.find.source === "^@middleman\\/ui\\/utils\\/repo-label$",
+      (alias) => alias.find instanceof RegExp && alias.find.source === "^@kenn-forge\\/ui\\/utils\\/repo-label$",
     );
 
     expect(uiRootAlias?.replacement).toBe(path.resolve(process.cwd(), "../packages/ui/src/index.ts"));
@@ -47,10 +47,10 @@ describe("vite config", () => {
     expect(repoLabelAlias?.replacement).toBe(path.resolve(process.cwd(), "../packages/ui/src/utils/repo-label.ts"));
   });
 
-  it("prebundles browser-test dependencies reached through @middleman/ui", () => {
+  it("prebundles browser-test dependencies reached through @kenn-forge/ui", () => {
     const includes = config.optimizeDeps?.include ?? [];
 
-    expect(includes).toContain("@middleman/ui > shiki");
+    expect(includes).toContain("@kenn-forge/ui > shiki");
     expect(includes).toContain("@lucide/svelte/icons/list-chevrons-down-up");
     expect(includes).toContain("@lucide/svelte/icons/list-chevrons-up-down");
   });
@@ -101,11 +101,11 @@ describe("vite config", () => {
 
   it("requires explicit opt-in for websocket proxy diagnostics", () => {
     expect(webSocketDebugEnabled({})).toBe(false);
-    expect(webSocketDebugEnabled({ MIDDLEMAN_WS_DEBUG: "0" })).toBe(false);
-    expect(webSocketDebugEnabled({ MIDDLEMAN_WS_DEBUG: "false" })).toBe(false);
-    expect(webSocketDebugEnabled({ MIDDLEMAN_WS_DEBUG: "1" })).toBe(true);
-    expect(webSocketDebugEnabled({ MIDDLEMAN_WS_DEBUG: "true" })).toBe(true);
-    expect(webSocketDebugEnabled({ MIDDLEMAN_WS_DEBUG: "yes" })).toBe(true);
+    expect(webSocketDebugEnabled({ KENN_FORGE_WS_DEBUG: "0" })).toBe(false);
+    expect(webSocketDebugEnabled({ KENN_FORGE_WS_DEBUG: "false" })).toBe(false);
+    expect(webSocketDebugEnabled({ KENN_FORGE_WS_DEBUG: "1" })).toBe(true);
+    expect(webSocketDebugEnabled({ KENN_FORGE_WS_DEBUG: "true" })).toBe(true);
+    expect(webSocketDebugEnabled({ KENN_FORGE_WS_DEBUG: "yes" })).toBe(true);
   });
 
   it("uses the Vite CLI port for dev server HMR settings", () => {
@@ -118,7 +118,7 @@ describe("vite config", () => {
     expect(resolveViteAllowedHosts({})).toBeUndefined();
     expect(
       resolveViteAllowedHosts({
-        MIDDLEMAN_VITE_ALLOWED_HOSTS: "mariuss-macbook-pro.emperor-gopher.ts.net, another.ts.net",
+        KENN_FORGE_VITE_ALLOWED_HOSTS: "mariuss-macbook-pro.emperor-gopher.ts.net, another.ts.net",
       }),
     ).toEqual(["mariuss-macbook-pro.emperor-gopher.ts.net", "another.ts.net"]);
   });
@@ -126,9 +126,9 @@ describe("vite config", () => {
   it("can advertise HMR through the tailnet HTTPS endpoint", () => {
     expect(
       resolveViteHmr(5174, {
-        MIDDLEMAN_VITE_HMR_HOST: "mariuss-macbook-pro.emperor-gopher.ts.net",
-        MIDDLEMAN_VITE_HMR_PROTOCOL: "wss",
-        MIDDLEMAN_VITE_HMR_CLIENT_PORT: "443",
+        KENN_FORGE_VITE_HMR_HOST: "mariuss-macbook-pro.emperor-gopher.ts.net",
+        KENN_FORGE_VITE_HMR_PROTOCOL: "wss",
+        KENN_FORGE_VITE_HMR_CLIENT_PORT: "443",
       }),
     ).toEqual({
       protocol: "wss",

@@ -1,9 +1,9 @@
 <script lang="ts">
   import { tick } from "svelte";
   import { Button, IconButton, TextInput } from "@kenn-io/kit-ui";
-  import { getStores } from "@middleman/ui";
-  import type { ConfigRepo } from "@middleman/ui/api/types";
-  import { showFlash } from "@middleman/ui/stores/flash";
+  import { getStores } from "@kenn-forge/ui";
+  import type { ConfigRepo } from "@kenn-forge/ui/api/types";
+  import { showFlash } from "@kenn-forge/ui/stores/flash";
   import {
     addRepo,
     removeRepo,

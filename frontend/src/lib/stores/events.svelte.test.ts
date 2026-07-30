@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import { createEventsStore } from "@middleman/ui/stores/events";
-import type { SyncStatus } from "@middleman/ui/api/types";
+import { createEventsStore } from "@kenn-forge/ui/stores/events";
+import type { SyncStatus } from "@kenn-forge/ui/api/types";
 
 type Handler = (ev: unknown) => void;
 

@@ -14,9 +14,9 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/tracing"
-	"go.kenn.io/middleman/internal/workspace/localruntime"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/tracing"
+	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
 type runtimeTerminalControlMsg struct {
@@ -84,7 +84,7 @@ func (s *Handler) handleWorkspaceRuntimeSessionTerminal(
 }
 
 func runtimeTerminalResizePriority(r *http.Request) localruntime.ResizePriority {
-	if r.Header.Get("X-Middleman-Fleet-Host") != "" {
+	if r.Header.Get("X-Kenn-Forge-Fleet-Host") != "" {
 		return localruntime.ResizePriorityRemote
 	}
 	return localruntime.ResizePriorityLocal

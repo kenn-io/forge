@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/forge/internal/platform"
 )
 
 // APIBaseForHost resolves the REST API base URL for a GitHub host:
@@ -33,7 +33,7 @@ func WebBaseForHost(host string) string {
 }
 
 // Client is a minimal GitHub App management client. It speaks only
-// the app-scoped endpoints the middleman-github-app CLI and the
+// the app-scoped endpoints the kenn-forge-github-app CLI and the
 // installation token minter need; repository data access stays on the
 // main provider clients.
 type Client struct {
@@ -73,7 +73,7 @@ type Account struct {
 	Type  string `json:"type"`
 }
 
-// App is the GET /app response subset middleman cares about.
+// App is the GET /app response subset kenn-forge cares about.
 type App struct {
 	ID      int64   `json:"id"`
 	Slug    string  `json:"slug"`
@@ -159,7 +159,7 @@ func (c *Client) CreateInstallationToken(
 // every repository an installation token can reach. Authenticated
 // with the installation token itself, not an app JWT. Used to verify
 // that a "selected repositories" installation actually covers the
-// repos middleman is configured to sync.
+// repos kenn-forge is configured to sync.
 func (c *Client) ListInstallationRepositories(
 	ctx context.Context, installationToken string,
 ) ([]string, error) {

@@ -3,7 +3,7 @@ package server
 import (
 	"context"
 
-	"go.kenn.io/middleman/internal/server/workspaceapi"
+	"go.kenn.io/forge/internal/server/workspaceapi"
 )
 
 func repoNumberFromHost(input *repoNumberHostInput) repoNumberInput {

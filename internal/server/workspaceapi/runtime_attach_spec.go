@@ -8,8 +8,8 @@ import (
 	"os/exec"
 	"strings"
 
-	"go.kenn.io/middleman/internal/procutil"
-	"go.kenn.io/middleman/internal/server/httpapi"
+	"go.kenn.io/forge/internal/procutil"
+	"go.kenn.io/forge/internal/server/httpapi"
 )
 
 func runtimeAttachSpec(

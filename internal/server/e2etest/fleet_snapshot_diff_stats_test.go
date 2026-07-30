@@ -14,15 +14,15 @@ import (
 	"github.com/stretchr/testify/require"
 	gitcmd "go.kenn.io/kit/git/cmd"
 
-	"go.kenn.io/middleman/internal/config"
-	dbpkg "go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/fleet"
-	ghclient "go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/platform"
-	"go.kenn.io/middleman/internal/server"
-	"go.kenn.io/middleman/internal/testutil"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
-	"go.kenn.io/middleman/internal/testutil/servertest"
+	"go.kenn.io/forge/internal/config"
+	dbpkg "go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/fleet"
+	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/platform"
+	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/testutil"
+	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/servertest"
 )
 
 // repoMetadataClient wraps the fixture client so GetRepository reports the
@@ -122,7 +122,7 @@ func TestFleetSnapshotBranchDiffForSyncedRepoE2E(t *testing.T) {
 	}))
 
 	cfg := &config.Config{BasePath: "/"}
-	cfg.Tmux.Command = []string{"middleman-no-such-tmux"}
+	cfg.Tmux.Command = []string{"kenn-forge-no-such-tmux"}
 	srv := servertest.New(t, database, syncer, nil, "/", cfg, server.ServerOptions{
 		WorktreeDir:                        t.TempDir(),
 		DisableWorkspaceBackgroundMonitors: true,

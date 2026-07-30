@@ -17,10 +17,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"go.kenn.io/middleman/internal/config"
-	"go.kenn.io/middleman/internal/db"
-	ghclient "go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/db"
+	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
 // writeRuntimeCommandFakeTmux writes a fake tmux for server-level command
@@ -51,7 +51,7 @@ case "$1" in
         printf '%%s\n' "$arg" > %[3]s
         found_marker="done"
       fi
-      if [ "$arg" = "@middleman_owner" ]; then found_marker="next"; fi
+      if [ "$arg" = "@forge_owner" ]; then found_marker="next"; fi
     done
     exit 0
     ;;
@@ -91,7 +91,7 @@ func setupProjectWorktreeCommandSessionTestWithRecord(
 	t.Helper()
 	cfgContent := `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -254,12 +254,12 @@ func TestProjectWorktreeRuntimeListsStoredCommandSessionLabel(t *testing.T) {
 	defer ts.Close()
 
 	// A stored row without a live runtime session models a command session
-	// surviving from before a middleman restart.
+	// surviving from before a kenn-forge restart.
 	require.NoError(srv.db.UpsertProjectWorktreeTmuxSession(
 		context.Background(), &db.ProjectWorktreeTmuxSession{
 			WorktreeID:  worktreeID,
 			SessionKey:  "surface:host:wt:shell:leaf",
-			SessionName: "middleman-stored-command",
+			SessionName: "kenn-forge-stored-command",
 			Label:       "Stored Shell",
 		},
 	))
@@ -276,7 +276,7 @@ func TestProjectWorktreeRuntimeListsStoredCommandSessionLabel(t *testing.T) {
 	require.Len(runtimeBody.Sessions, 1)
 	assert.Equal("Stored Shell", runtimeBody.Sessions[0]["label"])
 	assert.Equal("command", runtimeBody.Sessions[0]["kind"])
-	assert.Equal("middleman-stored-command", runtimeBody.Sessions[0]["tmux_session"])
+	assert.Equal("kenn-forge-stored-command", runtimeBody.Sessions[0]["tmux_session"])
 }
 
 // TestProjectWorktreeCommandSessionExpandsHomeCWD mirrors the host-level

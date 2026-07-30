@@ -42,8 +42,8 @@ describe("RepoTreePicker", () => {
       data: {
         repos: [
           {
-            root_path: "/work/middleman",
-            name: "middleman",
+            root_path: "/work/kenn-forge",
+            name: "kenn-forge",
             count: 4,
           },
         ],

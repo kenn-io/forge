@@ -4,10 +4,10 @@ import { dispatchKeydown } from "./dispatch.svelte.js";
 import { defaultActions } from "./actions.js";
 import { registerScopedActions, resetRegistry } from "./registry.svelte.js";
 import { isSidebarCollapsed, setSidebarCollapsed } from "../sidebar.svelte.js";
-import { pushModalFrame, resetModalStack } from "@middleman/ui/stores/keyboard/modal-stack";
+import { pushModalFrame, resetModalStack } from "@kenn-forge/ui/stores/keyboard/modal-stack";
 import type { Action, Context } from "./types.js";
 
-const flashModule = await import("@middleman/ui/stores/flash");
+const flashModule = await import("@kenn-forge/ui/stores/flash");
 
 const ctx: Context = {
   page: "pulls",

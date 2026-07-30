@@ -40,23 +40,23 @@ func TestOpenAndSchema(t *testing.T) {
 	require := require.New(t)
 	d := openDBWithMigrations(t)
 	tables := []string{
-		"middleman_archive_repos",
-		"middleman_archive_items",
-		"middleman_repos",
-		"middleman_merge_requests",
-		"middleman_mr_events",
-		"middleman_item_workflow_state",
-		"middleman_labels",
-		"middleman_merge_request_labels",
-		"middleman_issue_labels",
-		"middleman_repo_overviews",
-		"middleman_mr_review_drafts",
-		"middleman_mr_review_draft_comments",
-		"middleman_mr_review_threads",
-		"middleman_project_worktree_runtime_sessions",
-		"middleman_host_runtime_sessions",
-		"middleman_notification_items",
-		"middleman_notification_sync_watermarks",
+		"forge_archive_repos",
+		"forge_archive_items",
+		"forge_repos",
+		"forge_merge_requests",
+		"forge_mr_events",
+		"forge_item_workflow_state",
+		"forge_labels",
+		"forge_merge_request_labels",
+		"forge_issue_labels",
+		"forge_repo_overviews",
+		"forge_mr_review_drafts",
+		"forge_mr_review_draft_comments",
+		"forge_mr_review_threads",
+		"forge_project_worktree_runtime_sessions",
+		"forge_host_runtime_sessions",
+		"forge_notification_items",
+		"forge_notification_sync_watermarks",
 	}
 	for _, tbl := range tables {
 		var name string
@@ -70,7 +70,7 @@ func TestOpenAndSchema(t *testing.T) {
 		var found string
 		err := d.ReadDB().QueryRow(
 			`SELECT name
-			 FROM pragma_table_info('middleman_workspaces')
+			 FROM pragma_table_info('forge_workspaces')
 			 WHERE name = ?`,
 			column,
 		).Scan(&found)
@@ -79,11 +79,11 @@ func TestOpenAndSchema(t *testing.T) {
 	}
 
 	runtimeSessionColumns := map[string][]string{
-		"middleman_project_worktree_runtime_sessions": {
+		"forge_project_worktree_runtime_sessions": {
 			"runtime_backend",
 			"backend_session_key",
 		},
-		"middleman_host_runtime_sessions": {
+		"forge_host_runtime_sessions": {
 			"runtime_backend",
 			"backend_session_key",
 		},
@@ -103,14 +103,14 @@ func TestOpenAndSchema(t *testing.T) {
 	}
 
 	for table := range map[string]struct{}{
-		"middleman_archive_repos": {},
-		"middleman_archive_items": {},
+		"forge_archive_repos": {},
+		"forge_archive_items": {},
 	} {
 		var foreignKeyCount int
 		err := d.ReadDB().QueryRow(`
 			SELECT COUNT(*)
 			FROM pragma_foreign_key_list(?)
-			WHERE "table" = 'middleman_repos'
+			WHERE "table" = 'forge_repos'
 			  AND "from" = 'repo_id'
 			  AND on_delete = 'CASCADE'`, table,
 		).Scan(&foreignKeyCount)
@@ -118,17 +118,17 @@ func TestOpenAndSchema(t *testing.T) {
 		require.Equal(1, foreignKeyCount)
 	}
 
-	assertIndexForTest(t, d.ReadDB(), "middleman_archive_repos", "idx_archive_repos_due_work", []string{
+	assertIndexForTest(t, d.ReadDB(), "forge_archive_repos", "idx_archive_repos_due_work", []string{
 		"operator_state", "next_retry_at", "updated_at", "repo_id",
 	}, false)
-	assertIndexForTest(t, d.ReadDB(), "middleman_archive_items", "idx_archive_items_due_work", []string{
+	assertIndexForTest(t, d.ReadDB(), "forge_archive_items", "idx_archive_items_due_work", []string{
 		"repo_id", "provider_created_at", "item_type", "item_number",
 	}, true)
-	assertIndexForTest(t, d.ReadDB(), "middleman_archive_items", "idx_archive_items_stable_order", []string{
+	assertIndexForTest(t, d.ReadDB(), "forge_archive_items", "idx_archive_items_stable_order", []string{
 		"repo_id", "provider_created_at", "item_type", "item_number",
 	}, false)
 
-	_, err := d.ReadDB().Exec(`INSERT INTO middleman_repos (
+	_, err := d.ReadDB().Exec(`INSERT INTO forge_repos (
 		id, platform, platform_host, owner, name, repo_path,
 		owner_key, name_key, repo_path_key, created_at
 	) VALUES (
@@ -143,19 +143,19 @@ func TestOpenAndSchema(t *testing.T) {
 	}{
 		{
 			name: "collection_mode",
-			statement: `INSERT INTO middleman_archive_repos (
+			statement: `INSERT INTO forge_archive_repos (
 				repo_id, collection_mode, operator_state, created_at, updated_at
 			 ) VALUES (1, 'invalid', 'active', datetime('now'), datetime('now'))`,
 		},
 		{
 			name: "operator_state",
-			statement: `INSERT INTO middleman_archive_repos (
+			statement: `INSERT INTO forge_archive_repos (
 				repo_id, collection_mode, operator_state, created_at, updated_at
 			 ) VALUES (1, 'discovery', 'invalid', datetime('now'), datetime('now'))`,
 		},
 		{
 			name: "comments_coverage",
-			statement: `INSERT INTO middleman_archive_repos (
+			statement: `INSERT INTO forge_archive_repos (
 				repo_id, collection_mode, operator_state, comments_coverage, created_at, updated_at
 			 ) VALUES (1, 'discovery', 'active', 'invalid', datetime('now'), datetime('now'))`,
 		},
@@ -164,7 +164,7 @@ func TestOpenAndSchema(t *testing.T) {
 		require.Error(err, tc.name)
 	}
 
-	_, err = d.ReadDB().Exec(`INSERT INTO middleman_archive_repos (
+	_, err = d.ReadDB().Exec(`INSERT INTO forge_archive_repos (
 		repo_id, collection_mode, operator_state, created_at, updated_at
 	) VALUES (1, 'discovery', 'active', datetime('now'), datetime('now'))`)
 	require.NoError(err)
@@ -270,33 +270,33 @@ func TestOpenMigratesHistoricalActivityArchive(t *testing.T) {
 			(1, 'issue', 7, 'waiting', '2026-07-05 13:00:00', 'local', 'alice', 'triage'),
 			(1, 'pr', 9, 'reviewing', '2026-07-05 14:00:00', 'local', 'alice', 'review')`)
 		require.NoError(err)
-		before = readHistoricalArchiveUpgradeSnapshotForTest(t, raw)
+		before = readHistoricalArchiveUpgradeSnapshotForTest(t, raw, "middleman")
 	})
 
 	d, err := Open(path)
 	require.NoError(err)
 	t.Cleanup(func() { require.NoError(d.Close()) })
-	assert.Equal(before, readHistoricalArchiveUpgradeSnapshotForTest(t, d.ReadDB()))
+	assert.Equal(before, readHistoricalArchiveUpgradeSnapshotForTest(t, d.ReadDB(), "forge"))
 	for _, column := range backfillColumns {
-		exists, columnErr := hasColumn(d.ReadDB(), "middleman_repos", column)
+		exists, columnErr := hasColumn(d.ReadDB(), "forge_repos", column)
 		require.NoError(columnErr)
 		assert.False(exists, column)
 	}
 
-	assert.True(tableExistsForTest(t, d.ReadDB(), "middleman_archive_repo_scans"))
-	assert.True(tableExistsForTest(t, d.ReadDB(), "middleman_archive_dataset_progress"))
+	assert.True(tableExistsForTest(t, d.ReadDB(), "forge_archive_repo_scans"))
+	assert.True(tableExistsForTest(t, d.ReadDB(), "forge_archive_dataset_progress"))
 	for table, columns := range map[string][]string{
-		"middleman_archive_repo_scans": {
+		"forge_archive_repo_scans": {
 			"scan", "scan_generation", "next_cursor", "last_input_cursor",
 			"page_count", "status", "last_error_code", "last_error_detail",
 		},
-		"middleman_archive_dataset_progress": {
+		"forge_archive_dataset_progress": {
 			"dataset", "parent_revision", "scan_generation", "next_cursor",
 			"last_input_cursor", "page_count", "status", "observed_count",
 			"attempt_count", "next_retry_at", "started_at", "completed_at",
 		},
-		"middleman_issue_events": {"ingest_generation"},
-		"middleman_mr_events":    {"ingest_generation"},
+		"forge_issue_events": {"ingest_generation"},
+		"forge_mr_events":    {"ingest_generation"},
 	} {
 		for _, column := range columns {
 			exists, columnErr := hasColumn(d.ReadDB(), table, column)
@@ -349,14 +349,14 @@ func TestOpenMigratesKanbanRowsToItemWorkflowState(t *testing.T) {
 	var itemType, status, source string
 	var number int
 	err = d.ReadDB().QueryRow(`SELECT item_type, item_number, status, updated_source
-		FROM middleman_item_workflow_state`).Scan(&itemType, &number, &status, &source)
+		FROM forge_item_workflow_state`).Scan(&itemType, &number, &status, &source)
 	require.NoError(t, err)
 	assert.Equal("pr", itemType)
 	assert.Equal(7, number)
 	assert.Equal("reviewing", status)
 	assert.Empty(source)
-	assert.False(tableExistsForTest(t, d.ReadDB(), "middleman_kanban_state"))
-	assert.True(tableExistsForTest(t, d.ReadDB(), "middleman_item_workflow_state"))
+	assert.False(tableExistsForTest(t, d.ReadDB(), "forge_kanban_state"))
+	assert.True(tableExistsForTest(t, d.ReadDB(), "forge_item_workflow_state"))
 }
 
 func TestOpenResyncsKanbanRowsBeforeDroppingKanbanState(t *testing.T) {
@@ -394,11 +394,11 @@ func TestOpenResyncsKanbanRowsBeforeDroppingKanbanState(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, d.Close()) })
 
 	var status string
-	err = d.ReadDB().QueryRow(`SELECT status FROM middleman_item_workflow_state
+	err = d.ReadDB().QueryRow(`SELECT status FROM forge_item_workflow_state
 		WHERE repo_id = 1 AND item_type = 'pr' AND item_number = 7`).Scan(&status)
 	require.NoError(t, err)
 	assert.Equal("waiting", status)
-	assert.False(tableExistsForTest(t, d.ReadDB(), "middleman_kanban_state"))
+	assert.False(tableExistsForTest(t, d.ReadDB(), "forge_kanban_state"))
 }
 
 func TestOpenNormalizesInvalidWorkflowStatusesDuringCutover(t *testing.T) {
@@ -436,11 +436,11 @@ func TestOpenNormalizesInvalidWorkflowStatusesDuringCutover(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, d.Close()) })
 
 	var resynced, orphaned string
-	err = d.ReadDB().QueryRow(`SELECT status FROM middleman_item_workflow_state
+	err = d.ReadDB().QueryRow(`SELECT status FROM forge_item_workflow_state
 		WHERE repo_id = 1 AND item_type = 'pr' AND item_number = 7`).Scan(&resynced)
 	require.NoError(t, err)
 	assert.Equal("new", resynced)
-	err = d.ReadDB().QueryRow(`SELECT status FROM middleman_item_workflow_state
+	err = d.ReadDB().QueryRow(`SELECT status FROM forge_item_workflow_state
 		WHERE repo_id = 1 AND item_type = 'pr' AND item_number = 9`).Scan(&orphaned)
 	require.NoError(t, err)
 	assert.Equal("new", orphaned)
@@ -529,6 +529,95 @@ func TestOpenMigratesLegacyDatabase(t *testing.T) {
 	}
 }
 
+func TestSchemaIdentityMigrationPreservesDataAndIsReversible(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	path := filepath.Join(t.TempDir(), "schema-identity-v43.db")
+	openAtVersionForTest(t, path, 43, func(raw *sql.DB) {
+		_, err := raw.Exec(`
+			INSERT INTO middleman_repos (
+				id, platform, platform_host, owner, name, repo_path,
+				owner_key, name_key, repo_path_key, created_at
+			) VALUES (
+				1, 'github', 'github.com', 'acme', 'widget', 'acme/widget',
+				'acme', 'widget', 'acme/widget', datetime('now')
+			);
+			INSERT INTO middleman_workspaces (
+				id, platform, platform_host, repo_owner, repo_name,
+				item_type, item_number, git_head_ref, worktree_path,
+				tmux_session, status, workspace_branch,
+				repo_owner_key, repo_name_key, repo_path_key, item_key
+			) VALUES
+				('unknown', 'github', 'github.com', 'acme', 'widget',
+				 'issue', 1, 'issue-1', '/tmp/unknown', 'unknown', 'ready',
+				 '__middleman_unknown__', 'acme', 'widget', 'acme/widget', 'issue:1'),
+				('recovery', 'github', 'github.com', 'acme', 'widget',
+				 'issue', 2, 'issue-2', '/tmp/recovery', 'recovery', 'ready',
+				 '__middleman_recovery_pending__..state', 'acme', 'widget', 'acme/widget', 'issue:2')
+		`)
+		require.NoError(err)
+	})
+
+	database, err := Open(path)
+	require.NoError(err)
+	var legacySchemaObjects int
+	require.NoError(database.ReadDB().QueryRow(`
+		SELECT COUNT(*) FROM sqlite_schema
+		WHERE name LIKE '%middleman%' OR tbl_name LIKE '%middleman%' OR sql LIKE '%middleman%'
+	`).Scan(&legacySchemaObjects))
+	assert.Zero(legacySchemaObjects)
+	var temporarySchemaReferences int
+	require.NoError(database.ReadDB().QueryRow(`
+		SELECT COUNT(*) FROM sqlite_schema
+		WHERE name LIKE '%_rename_legacy%'
+		   OR tbl_name LIKE '%_rename_legacy%'
+		   OR sql LIKE '%_rename_legacy%'
+	`).Scan(&temporarySchemaReferences))
+	assert.Zero(temporarySchemaReferences)
+	_, err = database.WriteDB().Exec(`
+		INSERT INTO forge_workspace_setup_events
+			(workspace_id, stage, outcome, message)
+		VALUES ('unknown', 'clone', 'success', 'ready');
+		INSERT INTO forge_workspace_runtime_sessions
+			(workspace_id, session_key, target_key, label, kind)
+		VALUES ('unknown', 'session-1', 'plain_shell', 'Shell', 'plain_shell')
+	`)
+	require.NoError(err)
+	var childRows int
+	require.NoError(database.ReadDB().QueryRow(`
+		SELECT
+			(SELECT COUNT(*) FROM forge_workspace_setup_events) +
+			(SELECT COUNT(*) FROM forge_workspace_runtime_sessions)
+	`).Scan(&childRows))
+	assert.Equal(2, childRows)
+	rows, err := database.ReadDB().Query(`SELECT workspace_branch FROM forge_workspaces ORDER BY id`)
+	require.NoError(err)
+	var branches []string
+	for rows.Next() {
+		var branch string
+		require.NoError(rows.Scan(&branch))
+		branches = append(branches, branch)
+	}
+	require.NoError(rows.Close())
+	assert.Equal([]string{"__kenn_forge_recovery_pending__..state", "__kenn_forge_unknown__"}, branches)
+	assertDatabaseIntegrityForTest(t, database.ReadDB())
+	require.NoError(database.Close())
+
+	raw, err := sql.Open("sqlite", path+"?_pragma=foreign_keys(1)")
+	require.NoError(err)
+	sourceDriver, err := iofs.New(migrationFiles, "migrations")
+	require.NoError(err)
+	databaseDriver, err := migratesqlite.WithInstance(raw, &migratesqlite.Config{MigrationsTable: migrationTableName})
+	require.NoError(err)
+	migrator, err := migrate.NewWithInstance("iofs", sourceDriver, "sqlite", databaseDriver)
+	require.NoError(err)
+	require.NoError(migrator.Migrate(43))
+	assert.True(tableExistsForTest(t, raw, "middleman_workspaces"))
+	assert.False(tableExistsForTest(t, raw, "forge_workspaces"))
+	assertDatabaseIntegrityForTest(t, raw)
+	require.NoError(raw.Close())
+}
+
 func TestOpenMigratesRateLimitsToPrincipals(t *testing.T) {
 	require := require.New(t)
 	path := filepath.Join(t.TempDir(), "rate-v38.db")
@@ -557,7 +646,7 @@ func TestOpenMigratesRateLimitsToPrincipals(t *testing.T) {
 
 	var principal string
 	err = database.ReadDB().QueryRow(`
-		SELECT rate_principal FROM middleman_rate_limits
+		SELECT rate_principal FROM forge_rate_limits
 		WHERE platform = 'gitlab' AND platform_host = 'gitlab.example.com'
 	`).Scan(&principal)
 	require.NoError(err)
@@ -565,14 +654,14 @@ func TestOpenMigratesRateLimitsToPrincipals(t *testing.T) {
 
 	var githubRows int
 	err = database.ReadDB().QueryRow(`
-		SELECT COUNT(*) FROM middleman_rate_limits WHERE platform = 'github'
+		SELECT COUNT(*) FROM forge_rate_limits WHERE platform = 'github'
 	`).Scan(&githubRows)
 	require.NoError(err)
 	require.Zero(githubRows)
 
 	var watermarkRows int
 	err = database.ReadDB().QueryRow(`
-		SELECT COUNT(*) FROM middleman_notification_sync_watermarks
+		SELECT COUNT(*) FROM forge_notification_sync_watermarks
 	`).Scan(&watermarkRows)
 	require.NoError(err)
 	require.Zero(watermarkRows,
@@ -602,7 +691,7 @@ func TestOpenBackfillsLegacyIssueLabelsIntoNormalizedTables(t *testing.T) {
 	t.Cleanup(func() { require.NoError(d.Close()) })
 
 	var issueLabelCount int
-	err = d.ReadDB().QueryRow(`SELECT COUNT(*) FROM middleman_issue_labels WHERE issue_id = ?`, 1).Scan(&issueLabelCount)
+	err = d.ReadDB().QueryRow(`SELECT COUNT(*) FROM forge_issue_labels WHERE issue_id = ?`, 1).Scan(&issueLabelCount)
 	require.NoError(err)
 	require.Equal(1, issueLabelCount)
 
@@ -614,8 +703,8 @@ func TestOpenBackfillsLegacyIssueLabelsIntoNormalizedTables(t *testing.T) {
 	var updatedAt string
 	err = d.ReadDB().QueryRow(
 		`SELECT l.platform_id, l.name, l.description, l.color, l.is_default, l.updated_at
-		 FROM middleman_labels l
-		 JOIN middleman_issue_labels il ON il.label_id = l.id
+		 FROM forge_labels l
+		 JOIN forge_issue_labels il ON il.label_id = l.id
 		 WHERE il.issue_id = ?`,
 		1,
 	).Scan(&platformID, &name, &description, &color, &isDefault, &updatedAt)
@@ -640,12 +729,12 @@ func TestOpenIgnoresMalformedLegacyIssueLabelsJSON(t *testing.T) {
 	t.Cleanup(func() { require.NoError(d.Close()) })
 
 	var labelCount int
-	err = d.ReadDB().QueryRow(`SELECT COUNT(*) FROM middleman_labels`).Scan(&labelCount)
+	err = d.ReadDB().QueryRow(`SELECT COUNT(*) FROM forge_labels`).Scan(&labelCount)
 	require.NoError(err)
 	require.Equal(0, labelCount)
 
 	var issueLabelCount int
-	err = d.ReadDB().QueryRow(`SELECT COUNT(*) FROM middleman_issue_labels`).Scan(&issueLabelCount)
+	err = d.ReadDB().QueryRow(`SELECT COUNT(*) FROM forge_issue_labels`).Scan(&issueLabelCount)
 	require.NoError(err)
 	require.Equal(0, issueLabelCount)
 }
@@ -663,13 +752,13 @@ func TestOpenBackfillsDuplicateLegacyIssueLabelsDeterministically(t *testing.T) 
 	t.Cleanup(func() { require.NoError(d.Close()) })
 
 	var labelCount int
-	err = d.ReadDB().QueryRow(`SELECT COUNT(*) FROM middleman_labels WHERE repo_id = ? AND name = ?`, 1, "bug").Scan(&labelCount)
+	err = d.ReadDB().QueryRow(`SELECT COUNT(*) FROM forge_labels WHERE repo_id = ? AND name = ?`, 1, "bug").Scan(&labelCount)
 	require.NoError(err)
 	require.Equal(1, labelCount)
 
 	var color string
 	err = d.ReadDB().QueryRow(
-		`SELECT color FROM middleman_labels WHERE repo_id = ? AND name = ?`,
+		`SELECT color FROM forge_labels WHERE repo_id = ? AND name = ?`,
 		1,
 		"bug",
 	).Scan(&color)
@@ -820,13 +909,13 @@ func TestOpenCasefoldsDuplicateRepositoryRows(t *testing.T) {
 	require.Equal("foo", repos[0].Name)
 
 	var prCount int
-	err = d.ReadDB().QueryRow(`SELECT COUNT(*) FROM middleman_merge_requests`).Scan(&prCount)
+	err = d.ReadDB().QueryRow(`SELECT COUNT(*) FROM forge_merge_requests`).Scan(&prCount)
 	require.NoError(err)
 	require.Equal(2, prCount)
 
 	var uniquePRRepoID int
 	err = d.ReadDB().QueryRow(
-		`SELECT repo_id FROM middleman_merge_requests WHERE number = 2`,
+		`SELECT repo_id FROM forge_merge_requests WHERE number = 2`,
 	).Scan(&uniquePRRepoID)
 	require.NoError(err)
 	require.Equal(1, uniquePRRepoID)
@@ -834,8 +923,8 @@ func TestOpenCasefoldsDuplicateRepositoryRows(t *testing.T) {
 	var uniquePREventCount int
 	err = d.ReadDB().QueryRow(`
 		SELECT COUNT(*)
-		FROM middleman_mr_events e
-		JOIN middleman_merge_requests mr ON mr.id = e.merge_request_id
+		FROM forge_mr_events e
+		JOIN forge_merge_requests mr ON mr.id = e.merge_request_id
 		WHERE mr.number = 2`,
 	).Scan(&uniquePREventCount)
 	require.NoError(err)
@@ -844,8 +933,8 @@ func TestOpenCasefoldsDuplicateRepositoryRows(t *testing.T) {
 	var duplicatePREventCount int
 	err = d.ReadDB().QueryRow(`
 		SELECT COUNT(*)
-		FROM middleman_mr_events e
-		JOIN middleman_merge_requests mr ON mr.id = e.merge_request_id
+		FROM forge_mr_events e
+		JOIN forge_merge_requests mr ON mr.id = e.merge_request_id
 		WHERE mr.number = 1 AND e.dedupe_key = 'duplicate-pr-comment'`,
 	).Scan(&duplicatePREventCount)
 	require.NoError(err)
@@ -854,8 +943,8 @@ func TestOpenCasefoldsDuplicateRepositoryRows(t *testing.T) {
 	var kanbanStatus string
 	err = d.ReadDB().QueryRow(`
 		SELECT ws.status
-		FROM middleman_item_workflow_state ws
-		JOIN middleman_merge_requests mr
+		FROM forge_item_workflow_state ws
+		JOIN forge_merge_requests mr
 			ON mr.repo_id = ws.repo_id AND mr.number = ws.item_number
 		WHERE ws.item_type = 'pr'
 		  AND mr.number = 2`,
@@ -866,8 +955,8 @@ func TestOpenCasefoldsDuplicateRepositoryRows(t *testing.T) {
 	var mergedKanbanStatus string
 	err = d.ReadDB().QueryRow(`
 		SELECT ws.status
-		FROM middleman_item_workflow_state ws
-		JOIN middleman_merge_requests mr
+		FROM forge_item_workflow_state ws
+		JOIN forge_merge_requests mr
 			ON mr.repo_id = ws.repo_id AND mr.number = ws.item_number
 		WHERE ws.item_type = 'pr'
 		  AND mr.number = 1`,
@@ -878,8 +967,8 @@ func TestOpenCasefoldsDuplicateRepositoryRows(t *testing.T) {
 	var duplicateIssueEventCount int
 	err = d.ReadDB().QueryRow(`
 		SELECT COUNT(*)
-		FROM middleman_issue_events e
-		JOIN middleman_issues i ON i.id = e.issue_id
+		FROM forge_issue_events e
+		JOIN forge_issues i ON i.id = e.issue_id
 		WHERE i.number = 8 AND e.dedupe_key = 'duplicate-issue-comment'`,
 	).Scan(&duplicateIssueEventCount)
 	require.NoError(err)
@@ -888,9 +977,9 @@ func TestOpenCasefoldsDuplicateRepositoryRows(t *testing.T) {
 	var duplicateIssueLabelCount int
 	err = d.ReadDB().QueryRow(`
 		SELECT COUNT(*)
-		FROM middleman_issue_labels il
-		JOIN middleman_issues i ON i.id = il.issue_id
-		JOIN middleman_labels l ON l.id = il.label_id
+		FROM forge_issue_labels il
+		JOIN forge_issues i ON i.id = il.issue_id
+		JOIN forge_labels l ON l.id = il.label_id
 		WHERE i.number = 8 AND l.name = 'triage'`,
 	).Scan(&duplicateIssueLabelCount)
 	require.NoError(err)
@@ -898,14 +987,14 @@ func TestOpenCasefoldsDuplicateRepositoryRows(t *testing.T) {
 
 	var issueRepoID int
 	err = d.ReadDB().QueryRow(
-		`SELECT repo_id FROM middleman_issues WHERE number = 9`,
+		`SELECT repo_id FROM forge_issues WHERE number = 9`,
 	).Scan(&issueRepoID)
 	require.NoError(err)
 	require.Equal(1, issueRepoID)
 
 	var labelRepoID int
 	err = d.ReadDB().QueryRow(
-		`SELECT repo_id FROM middleman_labels WHERE platform_id = 700`,
+		`SELECT repo_id FROM forge_labels WHERE platform_id = 700`,
 	).Scan(&labelRepoID)
 	require.NoError(err)
 	require.Equal(1, labelRepoID)
@@ -913,9 +1002,9 @@ func TestOpenCasefoldsDuplicateRepositoryRows(t *testing.T) {
 	var issuePlatformLabelCount int
 	err = d.ReadDB().QueryRow(`
 		SELECT COUNT(*)
-		FROM middleman_issue_labels il
-		JOIN middleman_issues i ON i.id = il.issue_id
-		JOIN middleman_labels l ON l.id = il.label_id
+		FROM forge_issue_labels il
+		JOIN forge_issues i ON i.id = il.issue_id
+		JOIN forge_labels l ON l.id = il.label_id
 		WHERE i.number = 9 AND l.platform_id = 700`,
 	).Scan(&issuePlatformLabelCount)
 	require.NoError(err)
@@ -924,7 +1013,7 @@ func TestOpenCasefoldsDuplicateRepositoryRows(t *testing.T) {
 	var staleNamePlatformLabelCount int
 	err = d.ReadDB().QueryRow(`
 		SELECT COUNT(*)
-		FROM middleman_labels
+		FROM forge_labels
 		WHERE repo_id = 1 AND name = 'stale-label' AND platform_id = 702`,
 	).Scan(&staleNamePlatformLabelCount)
 	require.NoError(err)
@@ -933,9 +1022,9 @@ func TestOpenCasefoldsDuplicateRepositoryRows(t *testing.T) {
 	var mrPlatformLabelCount int
 	err = d.ReadDB().QueryRow(`
 		SELECT COUNT(*)
-		FROM middleman_merge_request_labels mrl
-		JOIN middleman_merge_requests mr ON mr.id = mrl.merge_request_id
-		JOIN middleman_labels l ON l.id = mrl.label_id
+		FROM forge_merge_request_labels mrl
+		JOIN forge_merge_requests mr ON mr.id = mrl.merge_request_id
+		JOIN forge_labels l ON l.id = mrl.label_id
 		WHERE mr.number = 2 AND l.platform_id = 700`,
 	).Scan(&mrPlatformLabelCount)
 	require.NoError(err)
@@ -943,20 +1032,20 @@ func TestOpenCasefoldsDuplicateRepositoryRows(t *testing.T) {
 
 	var starredRepoID int
 	err = d.ReadDB().QueryRow(
-		`SELECT repo_id FROM middleman_starred_items WHERE item_type = 'issue' AND number = 9`,
+		`SELECT repo_id FROM forge_starred_items WHERE item_type = 'issue' AND number = 9`,
 	).Scan(&starredRepoID)
 	require.NoError(err)
 	require.Equal(1, starredRepoID)
 
 	var stackRepoID int
 	err = d.ReadDB().QueryRow(
-		`SELECT repo_id FROM middleman_stacks WHERE base_number = 2`,
+		`SELECT repo_id FROM forge_stacks WHERE base_number = 2`,
 	).Scan(&stackRepoID)
 	require.NoError(err)
 	require.Equal(1, stackRepoID)
 
 	var workspaceCount int
-	err = d.ReadDB().QueryRow(`SELECT COUNT(*) FROM middleman_workspaces`).Scan(&workspaceCount)
+	err = d.ReadDB().QueryRow(`SELECT COUNT(*) FROM forge_workspaces`).Scan(&workspaceCount)
 	require.NoError(err)
 	require.Equal(2, workspaceCount)
 
@@ -983,7 +1072,7 @@ func TestOpenRepairsCurrentSchemaMissingWorkspaceTerminalBackend(t *testing.T) {
 
 	raw, err := sql.Open("sqlite", path)
 	require.NoError(err)
-	_, err = raw.Exec(`ALTER TABLE middleman_workspaces DROP COLUMN terminal_backend`)
+	_, err = raw.Exec(`ALTER TABLE forge_workspaces DROP COLUMN terminal_backend`)
 	require.NoError(err)
 	require.NoError(raw.Close())
 
@@ -994,7 +1083,7 @@ func TestOpenRepairsCurrentSchemaMissingWorkspaceTerminalBackend(t *testing.T) {
 	var terminalBackendColumn string
 	err = reopened.ReadDB().QueryRow(
 		`SELECT name
-		 FROM pragma_table_info('middleman_workspaces')
+		 FROM pragma_table_info('forge_workspaces')
 		 WHERE name = ?`,
 		"terminal_backend",
 	).Scan(&terminalBackendColumn)
@@ -1010,7 +1099,7 @@ func TestOpenRepairsCurrentSchemaMissingWorkspaceTerminalBackend(t *testing.T) {
 		ItemNumber:      42,
 		GitHeadRef:      "feature/backend",
 		WorktreePath:    "/tmp/ws-terminal-backend",
-		TmuxSession:     "middleman-ws-terminal-backend",
+		TmuxSession:     "kenn-forge-ws-terminal-backend",
 		Status:          "creating",
 		WorkspaceBranch: "feature/backend",
 	})
@@ -1028,9 +1117,9 @@ func TestOpenInitializesBranchActivitySchema(t *testing.T) {
 	t.Cleanup(func() { require.NoError(d.Close()) })
 
 	for table, columns := range map[string][]string{
-		"middleman_branch_commits":      {"observed_order", "created_at", "updated_at"},
-		"middleman_branch_tips":         {"created_at", "updated_at"},
-		"middleman_branch_force_pushes": {"before_observed_at", "created_at"},
+		"forge_branch_commits":      {"observed_order", "created_at", "updated_at"},
+		"forge_branch_tips":         {"created_at", "updated_at"},
+		"forge_branch_force_pushes": {"before_observed_at", "created_at"},
 	} {
 		for _, column := range columns {
 			hasColumn, err := hasColumn(d.ReadDB(), table, column)
@@ -1082,7 +1171,7 @@ func TestOpenInitializesBranchActivitySchema(t *testing.T) {
 	var commitRows int
 	err = d.ReadDB().QueryRowContext(ctx, `
 		SELECT COUNT(*)
-		FROM middleman_branch_commits
+		FROM forge_branch_commits
 		WHERE repo_id = ? AND commit_sha = ?`,
 		repoID,
 		"shared-sha",
@@ -1093,7 +1182,7 @@ func TestOpenInitializesBranchActivitySchema(t *testing.T) {
 	var forcePushRows int
 	err = d.ReadDB().QueryRowContext(ctx, `
 		SELECT COUNT(*)
-		FROM middleman_branch_force_pushes
+		FROM forge_branch_force_pushes
 		WHERE repo_id = ? AND before_sha = ? AND after_sha = ?`,
 		repoID,
 		"before-sha",
@@ -1119,9 +1208,9 @@ func TestRepoTimestampWritesStoreUTC(t *testing.T) {
 	require.NoError(d.UpdateRepoSyncCompleted(ctx, repoID, completedAt, ""))
 
 	rows, err := d.ReadDB().QueryContext(ctx, `
-		SELECT last_sync_started_at FROM middleman_repos WHERE id = ?
+		SELECT last_sync_started_at FROM forge_repos WHERE id = ?
 		UNION ALL
-		SELECT last_sync_completed_at FROM middleman_repos WHERE id = ?`,
+		SELECT last_sync_completed_at FROM forge_repos WHERE id = ?`,
 		repoID, repoID,
 	)
 	require.NoError(err)
@@ -1322,7 +1411,7 @@ func archiveItemInsertForTest(
 	providerItemID string,
 	lifecycleState string,
 ) string {
-	return fmt.Sprintf(`INSERT INTO middleman_archive_items (
+	return fmt.Sprintf(`INSERT INTO forge_archive_items (
 		repo_id, item_type, item_number, provider_item_id,
 		provider_created_at, provider_updated_at, lifecycle_state
 	) VALUES (
@@ -1399,20 +1488,21 @@ type historicalArchiveUpgradeSnapshotForTest struct {
 func readHistoricalArchiveUpgradeSnapshotForTest(
 	t *testing.T,
 	db *sql.DB,
+	tablePrefix string,
 ) historicalArchiveUpgradeSnapshotForTest {
 	t.Helper()
 	require := require.New(t)
 	var snapshot historicalArchiveUpgradeSnapshotForTest
 
 	for query, item := range map[string]*historicalArchiveItemSnapshotForTest{
-		`SELECT
+		fmt.Sprintf(`SELECT
 			id, repo_id, platform_id, platform_external_id, number,
 			CAST(created_at AS TEXT), CAST(updated_at AS TEXT), CAST(last_activity_at AS TEXT)
-			FROM middleman_issues`: &snapshot.Issue,
-		`SELECT
+			FROM %s_issues`, tablePrefix): &snapshot.Issue,
+		fmt.Sprintf(`SELECT
 			id, repo_id, platform_id, platform_external_id, number,
 			CAST(created_at AS TEXT), CAST(updated_at AS TEXT), CAST(last_activity_at AS TEXT)
-			FROM middleman_merge_requests`: &snapshot.MergeRequest,
+			FROM %s_merge_requests`, tablePrefix): &snapshot.MergeRequest,
 	} {
 		err := db.QueryRow(query).Scan(
 			&item.ID,
@@ -1427,10 +1517,10 @@ func readHistoricalArchiveUpgradeSnapshotForTest(
 		require.NoError(err)
 	}
 
-	err := db.QueryRow(`SELECT
+	err := db.QueryRow(fmt.Sprintf(`SELECT
 		id, merge_request_id, body, action,
 		CAST(created_at AS TEXT), CAST(updated_at AS TEXT)
-		FROM middleman_mr_review_drafts`).Scan(
+		FROM %s_mr_review_drafts`, tablePrefix)).Scan(
 		&snapshot.Draft.ID,
 		&snapshot.Draft.MergeRequestID,
 		&snapshot.Draft.Body,
@@ -1440,10 +1530,10 @@ func readHistoricalArchiveUpgradeSnapshotForTest(
 	)
 	require.NoError(err)
 
-	err = db.QueryRow(`SELECT
+	err = db.QueryRow(fmt.Sprintf(`SELECT
 		id, merge_request_id, worktree_key, worktree_path, worktree_branch,
 		CAST(linked_at AS TEXT)
-		FROM middleman_mr_worktree_links`).Scan(
+		FROM %s_mr_worktree_links`, tablePrefix)).Scan(
 		&snapshot.Worktree.ID,
 		&snapshot.Worktree.MergeRequestID,
 		&snapshot.Worktree.WorktreeKey,
@@ -1453,12 +1543,12 @@ func readHistoricalArchiveUpgradeSnapshotForTest(
 	)
 	require.NoError(err)
 
-	err = db.QueryRow(`SELECT
+	err = db.QueryRow(fmt.Sprintf(`SELECT
 		s.id, s.repo_id, s.base_number, s.name,
 		CAST(s.created_at AS TEXT), CAST(s.updated_at AS TEXT),
 		sm.stack_id, sm.merge_request_id, sm.position
-		FROM middleman_stacks s
-		JOIN middleman_stack_members sm ON sm.stack_id = s.id`).Scan(
+		FROM %[1]s_stacks s
+		JOIN %[1]s_stack_members sm ON sm.stack_id = s.id`, tablePrefix)).Scan(
 		&snapshot.Stack.ID,
 		&snapshot.Stack.RepoID,
 		&snapshot.Stack.BaseNumber,
@@ -1471,11 +1561,11 @@ func readHistoricalArchiveUpgradeSnapshotForTest(
 	)
 	require.NoError(err)
 
-	rows, err := db.Query(`SELECT
+	rows, err := db.Query(fmt.Sprintf(`SELECT
 		repo_id, item_type, item_number, status, CAST(updated_at AS TEXT),
 		updated_source, updated_actor, updated_reason
-		FROM middleman_item_workflow_state
-		ORDER BY item_type, item_number`)
+		FROM %s_item_workflow_state
+		ORDER BY item_type, item_number`, tablePrefix))
 	require.NoError(err)
 	defer rows.Close()
 	for rows.Next() {
@@ -1518,6 +1608,17 @@ func openAtVersionForTest(t *testing.T, dbPath string, version uint, seed func(*
 	}
 	seed(raw)
 	require.NoError(raw.Close())
+}
+
+func assertDatabaseIntegrityForTest(t *testing.T, raw *sql.DB) {
+	t.Helper()
+	require := require.New(t)
+	var integrity string
+	require.NoError(raw.QueryRow(`PRAGMA integrity_check`).Scan(&integrity))
+	require.Equal("ok", integrity)
+	var foreignKeyViolations int
+	require.NoError(raw.QueryRow(`SELECT COUNT(*) FROM pragma_foreign_key_check`).Scan(&foreignKeyViolations))
+	require.Zero(foreignKeyViolations)
 }
 
 func openSchemaVersion4DBForTest(t *testing.T) (string, *sql.DB) {

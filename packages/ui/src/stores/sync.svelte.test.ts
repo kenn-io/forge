@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vite-plus/test";
-import type { MiddlemanClient } from "../types.js";
+import type { ForgeClient } from "../types.js";
 import { createSyncStore } from "./sync.svelte.js";
 
 describe("sync store", () => {
@@ -17,7 +17,7 @@ describe("sync store", () => {
       client: {
         GET: get,
         POST: post,
-      } as unknown as MiddlemanClient,
+      } as unknown as ForgeClient,
       getPriorityRepos: () => "github|github.com/acme/first, github|github.com/acme/second",
     });
 
@@ -46,7 +46,7 @@ describe("sync store", () => {
       client: {
         GET: get,
         POST: post,
-      } as unknown as MiddlemanClient,
+      } as unknown as ForgeClient,
     });
 
     await store.triggerRepoSync("gitlab|gitlab.example.com/group/subgroup/project");

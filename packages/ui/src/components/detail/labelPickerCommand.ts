@@ -1,4 +1,4 @@
-export const OPEN_LABEL_PICKER_EVENT = "middleman-open-label-picker";
+export const OPEN_LABEL_PICKER_EVENT = "kenn-forge-open-label-picker";
 
 export type LabelPickerItemType = "pull" | "issue";
 

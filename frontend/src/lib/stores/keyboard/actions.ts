@@ -14,18 +14,18 @@ import {
   buildPullRequestRoute,
   buildRepoBrowserRoute,
   type RepositoryRouteRef,
-} from "@middleman/ui/routes";
+} from "@kenn-forge/ui/routes";
 import {
   getPaneLayoutStore,
   promoteSessionBesideWorkspace,
   type PaneLayoutStore,
   type PaneRenderReport,
   type PaneSurfaceKey,
-} from "@middleman/ui/stores/paneLayout";
-import { isSessionPaneKey } from "@middleman/ui";
+} from "@kenn-forge/ui/stores/paneLayout";
+import { isSessionPaneKey } from "@kenn-forge/ui";
 import { activeHostedSession, hostedWorkspaceLauncher } from "../workspace-host.svelte.js";
-import type { ConfigRepo } from "@middleman/ui/api/types";
-import type { StoreInstances } from "@middleman/ui";
+import type { ConfigRepo } from "@kenn-forge/ui/api/types";
+import type { StoreInstances } from "@kenn-forge/ui";
 import type { Action, Context, PreviewBlock } from "./types.js";
 import { parseActivitySelection } from "../../utils/activitySelection.js";
 
@@ -613,7 +613,7 @@ export const defaultActions: Action[] = [
     ],
     priority: 0,
     // The reviews page renders roborev's UI, which owns its own `?`-bound
-    // help modal. Letting the middleman cheatsheet also fire on `?` opens
+    // help modal. Letting the kenn-forge cheatsheet also fire on `?` opens
     // both modals at once and the cheatsheet's filter input then steals
     // focus, causing roborev's window-level handler to ignore the
     // subsequent Escape (its tag === "INPUT" guard returns early).

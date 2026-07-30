@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import { createLogStore } from "@middleman/ui";
+import { createLogStore } from "@kenn-forge/ui";
 
 const encoder = new TextEncoder();
 

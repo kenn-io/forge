@@ -1,12 +1,12 @@
 ARG GITLAB_BASE_IMAGE=gitlab/gitlab-ce:19.1.1-ce.0
 FROM ${GITLAB_BASE_IMAGE}
 
-COPY bootstrap.sh wait.sh /opt/middleman/gitlab-fixture/
-COPY fixture-entrypoint.sh /usr/local/bin/middleman-gitlab-fixture-entrypoint
+COPY bootstrap.sh wait.sh /opt/kenn-forge/gitlab-fixture/
+COPY fixture-entrypoint.sh /usr/local/bin/kenn-forge-gitlab-fixture-entrypoint
 
 RUN chmod +x \
-    /opt/middleman/gitlab-fixture/bootstrap.sh \
-    /opt/middleman/gitlab-fixture/wait.sh \
-    /usr/local/bin/middleman-gitlab-fixture-entrypoint
+    /opt/kenn-forge/gitlab-fixture/bootstrap.sh \
+    /opt/kenn-forge/gitlab-fixture/wait.sh \
+    /usr/local/bin/kenn-forge-gitlab-fixture-entrypoint
 
-CMD ["/usr/local/bin/middleman-gitlab-fixture-entrypoint"]
+CMD ["/usr/local/bin/kenn-forge-gitlab-fixture-entrypoint"]

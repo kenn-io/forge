@@ -1,12 +1,12 @@
 import type { RoborevClient } from "../../api/roborev/client.js";
-import type { MiddlemanClient } from "../../types.js";
+import type { ForgeClient } from "../../types.js";
 
 const UNAVAILABLE_POLL_INTERVAL_MS = 1_000;
 const AVAILABLE_POLL_INTERVAL_MS = 30_000;
 
 export interface DaemonStoreOptions {
   client: RoborevClient;
-  middlemanClient: MiddlemanClient;
+  forgeClient: ForgeClient;
   onRecover?: () => void;
 }
 
@@ -37,7 +37,7 @@ export function createDaemonStore(opts: DaemonStoreOptions) {
     let recovered = false;
     loading = true;
     try {
-      const { data, error } = await opts.middlemanClient.GET("/roborev/status");
+      const { data, error } = await opts.forgeClient.GET("/roborev/status");
       if (!isCurrent()) return false;
 
       if (error || !data) {

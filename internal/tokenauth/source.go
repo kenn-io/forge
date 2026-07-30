@@ -179,7 +179,7 @@ type githubOwnerCtxKey struct{}
 // WithMutationAuth marks ctx so token resolution skips github_app
 // installation tokens and resolves the user's own credential chain
 // (env PAT, token file, gh CLI) instead. Mutations sent with an app
-// token are attributed to "<app>[bot]" on GitHub; middleman keeps
+// token are attributed to "<app>[bot]" on GitHub; kenn-forge keeps
 // user-visible writes (merges, comments, state changes) on the user's
 // credential so they stay attributed to the user. A host configured
 // with only an app and no PAT chain fails mutation auth with a

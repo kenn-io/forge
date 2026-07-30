@@ -19,13 +19,13 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
-	configpkg "go.kenn.io/middleman/internal/config"
+	configpkg "go.kenn.io/forge/internal/config"
 	"go.yaml.in/yaml/v3"
 )
 
 const (
 	apiPrefix            = "/api/v1"
-	controlCommandMarker = "middleman.io/control-command"
+	controlCommandMarker = "forge.io/control-command"
 )
 
 type apiRequester func(context.Context, cliConfig, string, string, []string) ([]byte, error)
@@ -75,14 +75,14 @@ func Execute(args []string, opts Options) error {
 
 func newCommand(deps commandDeps) *cobra.Command {
 	root := &cobra.Command{
-		Use:   "middleman",
-		Short: "Agent-oriented CLI for the middleman API",
-		Long: strings.TrimSpace(`middleman serves middleman API content for agents.
+		Use:   "kenn-forge",
+		Short: "Agent-oriented CLI for the kenn-forge API",
+		Long: strings.TrimSpace(`kenn-forge serves kenn-forge API content for agents.
 
-Start with "middleman quickstart" for the API shape, then use typed shortcuts
-like "middleman pulls" or the raw HTTP escape hatch:
+Start with "kenn-forge quickstart" for the API shape, then use typed shortcuts
+like "kenn-forge pulls" or the raw HTTP escape hatch:
 
-  middleman api METHOD PATH [body...]
+  kenn-forge api METHOD PATH [body...]
 
 Responses are formatted as JSON by default, YAML with --output yaml, and
 newline-delimited JSON with --output jsonl.`),
@@ -104,7 +104,7 @@ func registerCommands(root *cobra.Command, deps commandDeps) {
 	}
 
 	cfg := viper.New()
-	cfg.SetEnvPrefix("MIDDLEMAN")
+	cfg.SetEnvPrefix("KENN_FORGE")
 	cfg.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
 	cfg.AutomaticEnv()
 	cfg.SetDefault("output", "json")
@@ -112,7 +112,7 @@ func registerCommands(root *cobra.Command, deps commandDeps) {
 
 	root.SetOut(deps.Stdout)
 	root.SetErr(deps.Stderr)
-	root.PersistentFlags().String("server", "", "middleman server URL (defaults to middleman config host/port)")
+	root.PersistentFlags().String("server", "", "kenn-forge server URL (defaults to kenn-forge config host/port)")
 	root.PersistentFlags().StringP("output", "o", "json", "response format: json, yaml, or jsonl")
 	root.PersistentFlags().Duration("timeout", 30*time.Second, "HTTP request timeout")
 	mustBind(cfg, root.PersistentFlags().Lookup("server"), "server")
@@ -248,13 +248,13 @@ func resolveServer(cfg *viper.Viper) (string, error) {
 		return strings.TrimRight(raw, "/"), nil
 	}
 	if err := configpkg.EnsureDefault(configpkg.DefaultConfigPath()); err != nil {
-		return "", fmt.Errorf("ensure middleman config: %w", err)
+		return "", fmt.Errorf("ensure kenn-forge config: %w", err)
 	}
-	middlemanCfg, err := configpkg.Load(configpkg.DefaultConfigPath())
+	forgeCfg, err := configpkg.Load(configpkg.DefaultConfigPath())
 	if err != nil {
-		return "", fmt.Errorf("load middleman config: %w", err)
+		return "", fmt.Errorf("load kenn-forge config: %w", err)
 	}
-	return "http://" + middlemanCfg.ListenAddr(), nil
+	return "http://" + forgeCfg.ListenAddr(), nil
 }
 
 func apiURL(server, rawPath string, query url.Values) (string, error) {
@@ -333,7 +333,7 @@ func mustAPIURL(server, path string, query url.Values) string {
 func newQuickstartCommand(cfg *viper.Viper, stdout io.Writer) *cobra.Command {
 	return &cobra.Command{
 		Use:   "quickstart",
-		Short: "Explain how middleman talks to the API",
+		Short: "Explain how kenn-forge talks to the API",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			current, err := readConfig(cfg)
 			if err != nil {
@@ -343,13 +343,13 @@ func newQuickstartCommand(cfg *viper.Viper, stdout io.Writer) *cobra.Command {
 				"api_base_url": mustAPIURL(current.server, apiPrefix, nil),
 				"formats":      []string{"json", "yaml", "jsonl"},
 				"commands": []map[string]string{
-					{"command": "middleman pulls --state open --limit 20", "does": "GET /api/v1/pulls with query parameters"},
-					{"command": "middleman issues --output jsonl", "does": "Emit one issue JSON object per line"},
-					{"command": "middleman api list", "does": "List API methods, paths, summaries, and parameters"},
-					{"command": "middleman api GET /pulls", "does": "Raw HTTP request to /api/v1/pulls"},
-					{"command": "middleman api GET /version", "does": "Show server version"},
-					{"command": "middleman api GET /sync/status", "does": "Inspect sync state"},
-					{"command": "middleman api POST /sync", "does": "Trigger a sync"},
+					{"command": "kenn-forge pulls --state open --limit 20", "does": "GET /api/v1/pulls with query parameters"},
+					{"command": "kenn-forge issues --output jsonl", "does": "Emit one issue JSON object per line"},
+					{"command": "kenn-forge api list", "does": "List API methods, paths, summaries, and parameters"},
+					{"command": "kenn-forge api GET /pulls", "does": "Raw HTTP request to /api/v1/pulls"},
+					{"command": "kenn-forge api GET /version", "does": "Show server version"},
+					{"command": "kenn-forge api GET /sync/status", "does": "Inspect sync state"},
+					{"command": "kenn-forge api POST /sync", "does": "Trigger a sync"},
 				},
 				"notes": []string{
 					"PATH values without /api/v1 are automatically scoped to /api/v1.",
@@ -366,10 +366,10 @@ func newQuickstartCommand(cfg *viper.Viper, stdout io.Writer) *cobra.Command {
 func newAPICommand(request func(context.Context, string, string, url.Values, []string) error) *cobra.Command {
 	return &cobra.Command{
 		Use:   "api METHOD PATH [body...]",
-		Short: "Call any middleman API path",
-		Long: strings.TrimSpace(`Call any middleman API path.
+		Short: "Call any kenn-forge API path",
+		Long: strings.TrimSpace(`Call any kenn-forge API path.
 
-Use "middleman api list" to discover available methods and paths.`),
+Use "kenn-forge api list" to discover available methods and paths.`),
 		Args: cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return request(cmd.Context(), args[0], args[1], nil, args[2:])
@@ -380,7 +380,7 @@ Use "middleman api list" to discover available methods and paths.`),
 func newAPIListCommand(listOperations func(context.Context) error) *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
-		Short: "List available middleman API operations",
+		Short: "List available kenn-forge API operations",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return listOperations(cmd.Context())
@@ -534,7 +534,7 @@ func newSyncCommand(request func(context.Context, string, string, url.Values, []
 }
 
 func newWorkspacesCommand(request func(context.Context, string, string, url.Values, []string) error) *cobra.Command {
-	cmd := newSimpleGetCommand("workspaces", "List middleman workspaces", "/workspaces", nil, request)
+	cmd := newSimpleGetCommand("workspaces", "List kenn-forge workspaces", "/workspaces", nil, request)
 	get := &cobra.Command{
 		Use:   "get ID",
 		Short: "Get one workspace",
@@ -720,7 +720,7 @@ type apiStatusError struct {
 func (e apiStatusError) Error() string {
 	body := strings.TrimSpace(string(e.Body))
 	if body == "" {
-		return fmt.Sprintf("middleman API returned %s", e.Status)
+		return fmt.Sprintf("kenn-forge API returned %s", e.Status)
 	}
-	return fmt.Sprintf("middleman API returned %s: %s", e.Status, body)
+	return fmt.Sprintf("kenn-forge API returned %s: %s", e.Status, body)
 }

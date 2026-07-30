@@ -537,7 +537,7 @@
   const createWorkspaceDescriptionId =
     "issue-create-workspace-description";
   const ISSUE_WORKSPACE_BRANCH_CONFLICT_TYPE =
-    "urn:middleman:error:issue-workspace-branch-conflict";
+    "urn:kenn-forge:error:issue-workspace-branch-conflict";
 
   type APIErrorDetail = {
     location?: string;
@@ -602,7 +602,7 @@
   });
 
   function issueWorkspaceBranch(): string {
-    return `middleman/issue-${number}`;
+    return `kenn-forge/issue-${number}`;
   }
 
   function branchConflictValue(
@@ -1467,7 +1467,7 @@
           <div class="conflict-body">
             {#if conflict.existingDirectory}
               <p class="modal-copy">
-                Middleman's workspace directory for this issue already contains branch
+                Kenn Forge's workspace directory for this issue already contains branch
                 <code>{conflict.existingBranch}</code>. A different branch cannot use the same directory.
               </p>
             {:else}
@@ -1507,10 +1507,10 @@
               <div class="branch-conflict-option">
                 <div>
                   <div class="branch-conflict-heading">
-                    Use the existing Middleman directory
+                    Use the existing Kenn Forge directory
                   </div>
                   <div class="branch-conflict-copy">
-                    Recover the worktree already present at the directory Middleman expects for this issue.
+                    Recover the worktree already present at the directory Kenn Forge expects for this issue.
                   </div>
                 </div>
                 <Button

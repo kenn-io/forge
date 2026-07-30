@@ -11,14 +11,14 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/gitclone"
-	ghclient "go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/platform"
-	"go.kenn.io/middleman/internal/server/httpapi"
-	"go.kenn.io/middleman/internal/tokenauth"
-	"go.kenn.io/middleman/internal/workspace"
-	"go.kenn.io/middleman/internal/workspace/localruntime"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/gitclone"
+	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/platform"
+	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/tokenauth"
+	"go.kenn.io/forge/internal/workspace"
+	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
 type createWorkspaceInput struct {
@@ -61,9 +61,9 @@ type createAdHocWorkspaceInput struct {
 // CreateAdHocWorkspaceInput is shared with provider-aware route wrappers.
 type CreateAdHocWorkspaceInput = createAdHocWorkspaceInput
 
-const issueWorkspaceBranchConflictType = "urn:middleman:error:issue-workspace-branch-conflict"
+const issueWorkspaceBranchConflictType = "urn:kenn-forge:error:issue-workspace-branch-conflict"
 
-const adHocWorkspaceBranchConflictType = "urn:middleman:error:workspace-branch-conflict"
+const adHocWorkspaceBranchConflictType = "urn:kenn-forge:error:workspace-branch-conflict"
 
 type getWorkspaceInput struct {
 	ID string `path:"id"`
@@ -193,10 +193,10 @@ type workspaceDiffRequest struct {
 
 // --- Workspaces ---
 
-// createWorkspace creates or reuses a PR-backed middleman workspace.
+// createWorkspace creates or reuses a PR-backed kenn-forge workspace.
 //
 // This API exists so a tracked pull request can have a durable local execution
-// context that middleman owns and can reopen later. It is not a generic
+// context that kenn-forge owns and can reopen later. It is not a generic
 // worktree-creation endpoint for arbitrary branches.
 func (s *Handler) createWorkspace(
 	ctx context.Context, input *createWorkspaceInput,
@@ -376,7 +376,7 @@ func (s *Handler) RunWorkspaceSetupWithBasePath(ws *workspace.Workspace, basePat
 	s.runWorkspaceSetupWithBasePath(ws, basePath)
 }
 
-// createIssueWorkspace creates or reuses an issue-backed middleman workspace.
+// createIssueWorkspace creates or reuses an issue-backed kenn-forge workspace.
 //
 // This API exists so an issue can have its own durable local execution context
 // even when there is no PR branch yet. These workspaces start from the repo's
@@ -701,10 +701,10 @@ func (s *Handler) CreateAdHocWorkspace(
 	return s.createAdHocWorkspace(ctx, input)
 }
 
-// listWorkspaces returns middleman's persisted workspace records.
+// listWorkspaces returns kenn-forge's persisted workspace records.
 //
 // Its purpose is to drive the workspaces page and terminal picker from
-// middleman's own database model, rather than from ad hoc discovery of host
+// kenn-forge's own database model, rather than from ad hoc discovery of host
 // worktrees.
 func (s *Handler) listWorkspaces(
 	ctx context.Context, _ *struct{},
@@ -740,7 +740,7 @@ func derefString(value *string) string {
 	return *value
 }
 
-// getWorkspace returns one persisted middleman workspace.
+// getWorkspace returns one persisted kenn-forge workspace.
 //
 // The terminal view uses this to reopen an existing local execution context and
 // determine whether the workspace is PR-backed or issue-backed.
@@ -2338,7 +2338,7 @@ func workspaceRuntimeLaunchError(err error) error {
 	return httpapi.Internal("launch session: " + msg)
 }
 
-// deleteWorkspace tears down a middleman-managed workspace.
+// deleteWorkspace tears down a kenn-forge-managed workspace.
 //
 // This exists to remove the persisted workspace entry plus its managed local
 // resources. It is not intended to delete arbitrary worktrees on disk.

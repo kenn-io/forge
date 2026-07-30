@@ -1,10 +1,10 @@
 <script lang="ts">
-  import { getStores, WorkspaceCreateSplitButton } from "@middleman/ui";
+  import { getStores, WorkspaceCreateSplitButton } from "@kenn-forge/ui";
   import { Button, TextInput, Typeahead, type TypeaheadOption } from "@kenn-io/kit-ui";
   import GitBranchIcon from "@lucide/svelte/icons/git-branch";
-  import { canonicalProvider, providerRepoPath, providerRouteParams } from "@middleman/ui/api/provider-routes";
-  import type { Repo } from "@middleman/ui/api/types";
-  import { queueWorkspaceLaunch } from "@middleman/ui/stores/workspace-create-pending";
+  import { canonicalProvider, providerRepoPath, providerRouteParams } from "@kenn-forge/ui/api/provider-routes";
+  import type { Repo } from "@kenn-forge/ui/api/types";
+  import { queueWorkspaceLaunch } from "@kenn-forge/ui/stores/workspace-create-pending";
   import Modal from "../shared/Modal.svelte";
   import { apiErrorMessage, client } from "../../api/runtime.js";
   import { navigate } from "../../stores/router.svelte.js";
@@ -15,7 +15,7 @@
   } from "../../stores/new-workspace.svelte.js";
 
   // Starts new work in a tracked repository without a pull request, issue, or
-  // Kata task: pick the repo, optionally name the branch, and middleman
+  // Kata task: pick the repo, optionally name the branch, and kenn-forge
   // materializes a worktree from the repository's default branch.
 
   interface Props {

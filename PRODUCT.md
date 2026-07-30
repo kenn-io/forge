@@ -6,13 +6,13 @@ product
 
 ## Users
 
-Middleman is for maintainers who manage pull requests, issues, reviews, CI signals, and local workspaces across a small fixed set of repositories. They are usually already fluent in their code forge and want a calmer, faster command surface than provider notifications.
+Kenn Forge is for maintainers who manage pull requests, issues, reviews, CI signals, and local workspaces across a small fixed set of repositories. They are usually already fluent in their code forge and want a calmer, faster command surface than provider notifications.
 
 Their context is task-oriented: scanning what changed, finding what needs attention, reviewing or merging work, and returning to focused development without losing state.
 
 ## Product Purpose
 
-Middleman is a local-first maintainer console for GitHub, GitLab, Forgejo, and
+Kenn Forge is a local-first maintainer console for GitHub, GitLab, Forgejo, and
 Gitea repositories. It syncs provider data into SQLite, serves a fast Svelte
 interface, and keeps maintainers out of notification clutter while preserving
 the actions they need: triage, review, comment, merge, track activity, and

@@ -14,7 +14,7 @@ export type E2EServerInfo = {
   base_url: string;
   pid: number;
   config_path: string;
-  // Present when the server was spawned with MIDDLEMAN_PPROF_ADDR set
+  // Present when the server was spawned with KENN_FORGE_PPROF_ADDR set
   // (the workspace-switch profiling harness does this).
   pprof_addr?: string;
 };
@@ -39,7 +39,7 @@ export type IsolatedE2EServerOptions = {
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "../../../..");
-const serverInfoDir = mkdtempSync(path.join(os.tmpdir(), "middleman-e2e-"));
+const serverInfoDir = mkdtempSync(path.join(os.tmpdir(), "kenn-forge-e2e-"));
 const serverInfoFile = path.join(serverInfoDir, "server-info.json");
 const startupTimeoutMs = 60_000;
 const pollIntervalMs = 100;
@@ -625,7 +625,7 @@ function dropPooledServer(server: PooledServer): void {
 }
 
 async function spawnPooledServer(options: PooledServerOptions): Promise<PooledServer> {
-  const infoDir = mkdtempSync(path.join(os.tmpdir(), "middleman-e2e-"));
+  const infoDir = mkdtempSync(path.join(os.tmpdir(), "kenn-forge-e2e-"));
   const infoFile = path.join(infoDir, "server-info.json");
   const started = await spawnServer(infoFile, {
     ...(options.host === defaultPlatformHost ? {} : { defaultPlatformHost: options.host }),
@@ -656,7 +656,7 @@ export async function startIsolatedE2EServerWithOptions(
   options: IsolatedE2EServerOptions = {},
 ): Promise<IsolatedE2EServer> {
   if (options.freshProcess) {
-    const infoDir = mkdtempSync(path.join(os.tmpdir(), "middleman-e2e-"));
+    const infoDir = mkdtempSync(path.join(os.tmpdir(), "kenn-forge-e2e-"));
     const infoFile = path.join(infoDir, "server-info.json");
     const started = await spawnServer(infoFile, options);
     return {

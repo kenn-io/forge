@@ -20,7 +20,7 @@ const (
 	firstLegacySchemaVersion       = 1
 	latestLegacySchemaVersion      = 3
 	migrationTableName             = "schema_migrations"
-	recreateDatabaseInstruction    = "delete the database file and let middleman recreate it"
+	recreateDatabaseInstruction    = "delete the database file and let kenn-forge recreate it"
 	timestampRepairGateVersion     = 10
 	workspaceSetupMigrationVersion = 11
 )
@@ -54,8 +54,8 @@ func runMigrations(rw *sql.DB) (int, error) {
 
 	if version > latest {
 		return migratedb.NilVersion, fmt.Errorf(
-			"middleman schema version %d is newer than this binary "+
-				"(expects %d); upgrade middleman",
+			"kenn-forge schema version %d is newer than this binary "+
+				"(expects %d); upgrade kenn-forge",
 			version, latest,
 		)
 	}
@@ -74,13 +74,13 @@ func runMigrations(rw *sql.DB) (int, error) {
 		case hasLegacyVersion:
 			if !hasMiddlemanTables(rw) {
 				return migratedb.NilVersion, wrapMigrationError(
-					fmt.Errorf("legacy database schema version metadata exists without middleman tables"),
+					fmt.Errorf("legacy database schema version metadata exists without kenn-forge tables"),
 				)
 			}
 			if legacyVersion > latestLegacySchemaVersion {
 				return migratedb.NilVersion, fmt.Errorf(
-					"middleman schema version %d is newer than this binary "+
-						"(expects %d); upgrade middleman",
+					"kenn-forge schema version %d is newer than this binary "+
+						"(expects %d); upgrade kenn-forge",
 					legacyVersion, latestLegacySchemaVersion,
 				)
 			}
@@ -240,11 +240,11 @@ func hasColumn(
 }
 
 func reconcileWorkspaceTerminalBackendColumn(rw *sql.DB) error {
-	if !hasTable(rw, "middleman_workspaces") {
+	if !hasTable(rw, "forge_workspaces") {
 		return nil
 	}
 	hasTerminalBackend, err := hasColumn(
-		rw, "middleman_workspaces", "terminal_backend",
+		rw, "forge_workspaces", "terminal_backend",
 	)
 	if err != nil {
 		return err
@@ -253,16 +253,16 @@ func reconcileWorkspaceTerminalBackendColumn(rw *sql.DB) error {
 		return nil
 	}
 	_, err = rw.Exec(`
-		ALTER TABLE middleman_workspaces
+		ALTER TABLE forge_workspaces
 		    ADD COLUMN terminal_backend TEXT NOT NULL DEFAULT ''
 	`)
 	return err
 }
 
 func reconcileFleetIntegrationSchema(rw *sql.DB) error {
-	if !hasTable(rw, "middleman_projects") ||
-		!hasTable(rw, "middleman_project_worktrees") ||
-		!hasTable(rw, "middleman_workspace_runtime_sessions") {
+	if !hasTable(rw, "forge_projects") ||
+		!hasTable(rw, "forge_project_worktrees") ||
+		!hasTable(rw, "forge_workspace_runtime_sessions") {
 		return nil
 	}
 
@@ -271,7 +271,7 @@ func reconcileFleetIntegrationSchema(rw *sql.DB) error {
 		"repository_kind": "TEXT NOT NULL DEFAULT 'standard'",
 	}
 	for column, definition := range projectColumns {
-		if err := ensureColumn(rw, "middleman_projects", column, definition); err != nil {
+		if err := ensureColumn(rw, "forge_projects", column, definition); err != nil {
 			return err
 		}
 	}
@@ -283,16 +283,16 @@ func reconcileFleetIntegrationSchema(rw *sql.DB) error {
 		"linked_issue_numbers": "TEXT NOT NULL DEFAULT '[]'",
 	}
 	for column, definition := range worktreeColumns {
-		if err := ensureColumn(rw, "middleman_project_worktrees", column, definition); err != nil {
+		if err := ensureColumn(rw, "forge_project_worktrees", column, definition); err != nil {
 			return err
 		}
 	}
 
-	if err := ensureColumn(rw, "middleman_workspace_runtime_sessions", "display_region", "TEXT NOT NULL DEFAULT ''"); err != nil {
+	if err := ensureColumn(rw, "forge_workspace_runtime_sessions", "display_region", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
 	if _, err := rw.Exec(`
-		UPDATE middleman_workspace_runtime_sessions
+		UPDATE forge_workspace_runtime_sessions
 		SET display_region = CASE
 		    WHEN target_key = 'plain_shell' THEN 'terminal'
 		    ELSE 'workflow'
@@ -303,8 +303,8 @@ func reconcileFleetIntegrationSchema(rw *sql.DB) error {
 	}
 
 	if _, err := rw.Exec(`
-		CREATE TABLE IF NOT EXISTS middleman_project_worktree_runtime_sessions (
-		    worktree_id         TEXT NOT NULL REFERENCES middleman_project_worktrees(id) ON DELETE CASCADE,
+		CREATE TABLE IF NOT EXISTS forge_project_worktree_runtime_sessions (
+		    worktree_id         TEXT NOT NULL REFERENCES forge_project_worktrees(id) ON DELETE CASCADE,
 		    session_key         TEXT NOT NULL,
 		    target_key          TEXT NOT NULL,
 		    runtime_backend     TEXT NOT NULL,
@@ -319,13 +319,13 @@ func reconcileFleetIntegrationSchema(rw *sql.DB) error {
 		return err
 	}
 	if _, err := rw.Exec(`
-		CREATE INDEX IF NOT EXISTS middleman_project_worktree_runtime_sessions_worktree_id_idx
-		    ON middleman_project_worktree_runtime_sessions(worktree_id)
+		CREATE INDEX IF NOT EXISTS forge_project_worktree_runtime_sessions_worktree_id_idx
+		    ON forge_project_worktree_runtime_sessions(worktree_id)
 	`); err != nil {
 		return err
 	}
 	if _, err := rw.Exec(`
-		CREATE TABLE IF NOT EXISTS middleman_worktree_stats (
+		CREATE TABLE IF NOT EXISTS forge_worktree_stats (
 		    path         TEXT PRIMARY KEY,
 		    diff_added   INTEGER NOT NULL DEFAULT 0,
 		    diff_removed INTEGER NOT NULL DEFAULT 0,
@@ -337,7 +337,7 @@ func reconcileFleetIntegrationSchema(rw *sql.DB) error {
 		return err
 	}
 	if _, err := rw.Exec(`
-		CREATE TABLE IF NOT EXISTS middleman_host_runtime_sessions (
+		CREATE TABLE IF NOT EXISTS forge_host_runtime_sessions (
 		    session_key         TEXT PRIMARY KEY,
 		    runtime_backend     TEXT NOT NULL,
 		    backend_session_key TEXT,

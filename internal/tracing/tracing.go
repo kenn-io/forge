@@ -54,7 +54,7 @@ func SetBaggageAttributes(ctx context.Context, span trace.Span) {
 // entering any long-lived streaming loop so attach spans stay bounded.
 func StartAttachSpan(r *http.Request, name string) (context.Context, trace.Span) {
 	ctx := otel.GetTextMapPropagator().Extract(r.Context(), QueryCarrier(r.URL.Query()))
-	ctx, span := otel.Tracer("go.kenn.io/middleman/internal/tracing").Start(ctx, name)
+	ctx, span := otel.Tracer("go.kenn.io/forge/internal/tracing").Start(ctx, name)
 	SetBaggageAttributes(ctx, span)
 	return ctx, span
 }

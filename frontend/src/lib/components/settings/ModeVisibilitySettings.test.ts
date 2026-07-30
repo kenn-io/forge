@@ -1,13 +1,13 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import type { ModeVisibility } from "@middleman/ui/api/types";
+import type { ModeVisibility } from "@kenn-forge/ui/api/types";
 
 const { mockSetModeVisibility, mockUpdateSettings } = vi.hoisted(() => ({
   mockSetModeVisibility: vi.fn(),
   mockUpdateSettings: vi.fn(),
 }));
 
-vi.mock("@middleman/ui", () => ({
+vi.mock("@kenn-forge/ui", () => ({
   DEFAULT_MODE_VISIBILITY: {
     activity: true,
     repos: true,

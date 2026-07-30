@@ -176,7 +176,7 @@ func execProjectRuntimeSession(
 	createdAt time.Time,
 ) error {
 	_, err := d.rw.ExecContext(ctx, `
-		INSERT INTO middleman_project_worktree_runtime_sessions
+		INSERT INTO forge_project_worktree_runtime_sessions
 			(worktree_id, session_key, target_key, runtime_backend,
 			 backend_session_key, label, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -193,7 +193,7 @@ func execHostRuntimeSession(
 	createdAt time.Time,
 ) error {
 	_, err := d.rw.ExecContext(ctx, `
-		INSERT INTO middleman_host_runtime_sessions
+		INSERT INTO forge_host_runtime_sessions
 			(session_key, runtime_backend, backend_session_key, label, cwd, created_at)
 		VALUES (?, 'ptyowner', ?, 'pty', '/tmp', ?)`,
 		sessionKey, "ptyowner-"+sessionKey, canonicalUTCTime(createdAt),
@@ -211,7 +211,7 @@ func countProjectRuntimeSession(
 	var count int
 	err := d.ro.QueryRowContext(t.Context(), `
 		SELECT COUNT(*)
-		FROM middleman_project_worktree_runtime_sessions
+		FROM forge_project_worktree_runtime_sessions
 		WHERE worktree_id = ? AND session_key = ?`,
 		worktreeID, sessionKey,
 	).Scan(&count)
@@ -224,7 +224,7 @@ func countHostRuntimeSession(t *testing.T, d *DB, sessionKey string) int {
 	var count int
 	err := d.ro.QueryRowContext(t.Context(), `
 		SELECT COUNT(*)
-		FROM middleman_host_runtime_sessions
+		FROM forge_host_runtime_sessions
 		WHERE session_key = ?`,
 		sessionKey,
 	).Scan(&count)

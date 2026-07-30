@@ -22,15 +22,15 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"go.kenn.io/middleman/internal/apiclient"
-	"go.kenn.io/middleman/internal/apiclient/generated"
-	"go.kenn.io/middleman/internal/config"
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/gitclone"
-	ghclient "go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/procutil"
-	"go.kenn.io/middleman/internal/server/workspaceapi"
-	"go.kenn.io/middleman/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/apiclient"
+	"go.kenn.io/forge/internal/apiclient/generated"
+	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/gitclone"
+	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/procutil"
+	"go.kenn.io/forge/internal/server/workspaceapi"
+	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
 type lockedBuffer struct {
@@ -557,7 +557,7 @@ func TestWorkspaceCreateFailureLogsAndPersistsAuditEvent(t *testing.T) {
 
 	rows, err := database.ReadDB().QueryContext(ctx, `
 		SELECT stage, outcome, message
-		FROM middleman_workspace_setup_events
+		FROM forge_workspace_setup_events
 		WHERE workspace_id = ?
 		ORDER BY id`, wsID,
 	)
@@ -675,7 +675,7 @@ func TestWorkspaceShutdownCancellationPersistsFailureViaAPI(t *testing.T) {
 
 	rows, err := database.ReadDB().QueryContext(ctx, `
 		SELECT stage, outcome, message
-		FROM middleman_workspace_setup_events
+		FROM forge_workspace_setup_events
 		WHERE workspace_id = ?
 		ORDER BY id`, wsID,
 	)

@@ -210,7 +210,7 @@ async function configureKataHomeDaemons(
   daemons: { name: string; url: string }[],
   activeDaemon: string,
 ): Promise<KataHome> {
-  const home = await mkdtemp(path.join(os.tmpdir(), "middleman-docs-kata-e2e-"));
+  const home = await mkdtemp(path.join(os.tmpdir(), "kenn-forge-docs-kata-e2e-"));
   await mkdir(home, { recursive: true });
   await writeFile(
     path.join(home, "config.toml"),

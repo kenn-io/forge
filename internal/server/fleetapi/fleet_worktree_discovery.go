@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
+	"go.kenn.io/forge/internal/db"
 	gitcmd "go.kenn.io/kit/git/cmd"
 	gitworktree "go.kenn.io/kit/git/worktree"
-	"go.kenn.io/middleman/internal/db"
 )
 
 // fleetWorktreeDiscoveryInterval is how often the discoverer re-inspects every

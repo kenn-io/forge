@@ -53,7 +53,7 @@ const appSurfaceProps = vi.hoisted(() => ({
   docs: null as Record<string, unknown> | null,
 }));
 
-vi.mock("@middleman/ui", async () => {
+vi.mock("@kenn-forge/ui", async () => {
   const Provider = (await import("./lib/testing/AppProviderMock.svelte")).default;
   const Stub = (await import("./lib/testing/AppViewStub.svelte")).default;
   return {
@@ -308,7 +308,7 @@ describe("App feature routes", () => {
     // single-module-instance invariant the flash unification depends on: if
     // frontend and packages/ui ever resolve different kit-ui copies, the
     // flash lands in a store the mounted banner does not read and this fails.
-    const { showFlash, getFlashes, dismissFlash } = await import("@middleman/ui/stores/flash");
+    const { showFlash, getFlashes, dismissFlash } = await import("@kenn-forge/ui/stores/flash");
     try {
       showFlash("first shared-store flash");
       await waitFor(() => expect(screen.getByText("first shared-store flash")).toBeTruthy());

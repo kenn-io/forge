@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	shellquote "github.com/kballard/go-shellquote"
-	"go.kenn.io/middleman/internal/procutil"
+	"go.kenn.io/forge/internal/procutil"
 )
 
 type tmuxEnvPolicy struct {
@@ -293,7 +293,7 @@ func (l tmuxLauncher) newSessionPaneCommand() (string, func(), error) {
 }
 
 func writeTmuxPaneScript(envPath string, paneCommand string) (string, error) {
-	file, err := os.CreateTemp(tmuxPaneEnvironmentTempDir(), "middleman-tmux-pane-*")
+	file, err := os.CreateTemp(tmuxPaneEnvironmentTempDir(), "kenn-forge-tmux-pane-*")
 	if err != nil {
 		return "", err
 	}
@@ -305,17 +305,17 @@ func writeTmuxPaneScript(envPath string, paneCommand string) (string, error) {
 	}
 
 	content := strings.Join([]string{
-		"__middleman_env_file=" + shellCommand([]string{envPath}),
-		"__middleman_script_file=" + shellCommand([]string{path}),
-		`__middleman_cleanup_tmux_files() { /bin/rm -f "$__middleman_env_file" "$__middleman_script_file"; }`,
-		`trap __middleman_cleanup_tmux_files EXIT`,
-		`if [ ! -r "$__middleman_env_file" ]; then exit 127; fi`,
-		`. "$__middleman_env_file"`,
-		`__middleman_cleanup_tmux_files`,
+		"__kenn_forge_env_file=" + shellCommand([]string{envPath}),
+		"__kenn_forge_script_file=" + shellCommand([]string{path}),
+		`__kenn_forge_cleanup_tmux_files() { /bin/rm -f "$__kenn_forge_env_file" "$__kenn_forge_script_file"; }`,
+		`trap __kenn_forge_cleanup_tmux_files EXIT`,
+		`if [ ! -r "$__kenn_forge_env_file" ]; then exit 127; fi`,
+		`. "$__kenn_forge_env_file"`,
+		`__kenn_forge_cleanup_tmux_files`,
 		`trap - EXIT`,
-		`unset -f __middleman_cleanup_tmux_files`,
-		`unset __middleman_env_file`,
-		`unset __middleman_script_file`,
+		`unset -f __kenn_forge_cleanup_tmux_files`,
+		`unset __kenn_forge_env_file`,
+		`unset __kenn_forge_script_file`,
 		paneCommand,
 	}, "\n")
 	if _, err := file.WriteString(content); err != nil {
@@ -360,7 +360,7 @@ func writeTmuxPaneEnvironment(env []string, keys []string) (string, error) {
 	// This short-lived handoff keeps preserved values out of tmux argv. The
 	// file is 0600 and cleaned on tmux launch failure and pane shell exit, but
 	// it is not intended to be a same-user sandbox boundary.
-	file, err := os.CreateTemp(tmuxPaneEnvironmentTempDir(), "middleman-tmux-env-*")
+	file, err := os.CreateTemp(tmuxPaneEnvironmentTempDir(), "kenn-forge-tmux-env-*")
 	if err != nil {
 		return "", err
 	}
@@ -383,7 +383,7 @@ func writeTmuxPaneEnvironment(env []string, keys []string) (string, error) {
 }
 
 func tmuxPaneEnvironmentTempDir() string {
-	return os.Getenv("MIDDLEMAN_TMUX_ENV_DIR")
+	return os.Getenv("KENN_FORGE_TMUX_ENV_DIR")
 }
 
 func (l tmuxLauncher) hasSessionCommand() []string {
@@ -393,7 +393,7 @@ func (l tmuxLauncher) hasSessionCommand() []string {
 func (l tmuxLauncher) showOwnerCommand() []string {
 	return append(
 		slices.Clone(l.TmuxCommand),
-		"show-options", "-qv", "-t", l.Session, "@middleman_owner",
+		"show-options", "-qv", "-t", l.Session, "@forge_owner",
 	)
 }
 
@@ -408,7 +408,7 @@ func (l tmuxLauncher) newSessionCommand(paneCommand string) []string {
 		command = append(
 			command,
 			";", "set-option", "-q", "-t", l.Session,
-			"@middleman_owner", l.OwnerMarker,
+			"@forge_owner", l.OwnerMarker,
 		)
 	}
 	return command
@@ -432,7 +432,7 @@ func (l tmuxLauncher) attachSessionCommand() []string {
 }
 
 func tmuxAttachSessionCommand(command []string, session string) []string {
-	// Middleman may run as a service without locale variables. Force UTF-8 so
+	// Kenn Forge may run as a service without locale variables. Force UTF-8 so
 	// tmux does not replace non-ASCII terminal output with underscores.
 	return append(
 		slices.Clone(command),

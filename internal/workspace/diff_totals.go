@@ -9,9 +9,9 @@ import (
 	"os/exec"
 	"strings"
 
+	"go.kenn.io/forge/internal/gitclone"
+	"go.kenn.io/forge/internal/procutil"
 	gitcmd "go.kenn.io/kit/git/cmd"
-	"go.kenn.io/middleman/internal/gitclone"
-	"go.kenn.io/middleman/internal/procutil"
 )
 
 // WorktreeDiffTotals returns a worktree's total added/removed line counts for

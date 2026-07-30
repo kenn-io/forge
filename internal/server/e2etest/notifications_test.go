@@ -10,11 +10,11 @@ import (
 	gh "github.com/google/go-github/v89/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/apiclient"
-	"go.kenn.io/middleman/internal/apiclient/generated"
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/forge/internal/apiclient"
+	"go.kenn.io/forge/internal/apiclient/generated"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/platform"
 )
 
 func TestNotificationsTriageFlowE2E(t *testing.T) {
@@ -22,7 +22,7 @@ func TestNotificationsTriageFlowE2E(t *testing.T) {
 	require := require.New(t)
 	srv, database, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 
@@ -188,7 +188,7 @@ func TestNotificationReadPropagationDefersQueuedAcksOnRefetchRateLimitE2E(t *tes
 	}
 	srv, database, _, syncer := setupTestServerWithConfigContentAndSyncer(t, `
 sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 

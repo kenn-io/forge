@@ -208,7 +208,7 @@ test("design system panel supports drag mutations and typeahead dropdown states"
 });
 
 test("chip descenders render without clipping", async ({ page }, testInfo) => {
-  test.skip(process.env.MIDDLEMAN_VISUAL_E2E !== "1", "Set MIDDLEMAN_VISUAL_E2E=1 to run chip visual snapshots.");
+  test.skip(process.env.KENN_FORGE_VISUAL_E2E !== "1", "Set KENN_FORGE_VISUAL_E2E=1 to run chip visual snapshots.");
   test.skip(testInfo.project.name !== "chromium", "Chip visual snapshot is Chromium-only.");
 
   await page.goto("/design-system");

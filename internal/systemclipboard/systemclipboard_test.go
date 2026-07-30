@@ -72,7 +72,7 @@ func TestNativeWriterSelectsPlatformClipboardCommand(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			assert := assert.New(t)
 			t.Setenv("LC_ALL", "C")
-			t.Setenv("MIDDLEMAN_CLIPBOARD_TEST_ENV", "preserved")
+			t.Setenv("KENN_FORGE_CLIPBOARD_TEST_ENV", "preserved")
 
 			var gotEnvironment []string
 			var gotInput string
@@ -122,7 +122,7 @@ func TestNativeWriterSelectsPlatformClipboardCommand(t *testing.T) {
 				assert.Equal("en_US.UTF-8", environmentValue(gotEnvironment, "LC_ALL"))
 				assert.Equal(
 					"preserved",
-					environmentValue(gotEnvironment, "MIDDLEMAN_CLIPBOARD_TEST_ENV"),
+					environmentValue(gotEnvironment, "KENN_FORGE_CLIPBOARD_TEST_ENV"),
 				)
 				assert.Equal(1, environmentKeyCount(gotEnvironment, "LC_ALL"))
 			} else {
@@ -145,12 +145,12 @@ func TestNativeWriterRunsPbcopyWithUTF8Locale(t *testing.T) {
 	stdinPath := filepath.Join(tempDir, "stdin")
 	require.NoError(os.WriteFile(pbcopyPath, []byte(`#!/bin/sh
 set -eu
-printf '%s' "$LC_ALL" > "$MIDDLEMAN_TEST_PBCOPY_LOCALE"
-cat > "$MIDDLEMAN_TEST_PBCOPY_STDIN"
+printf '%s' "$LC_ALL" > "$KENN_FORGE_TEST_PBCOPY_LOCALE"
+cat > "$KENN_FORGE_TEST_PBCOPY_STDIN"
 `), 0o755))
 	t.Setenv("LC_ALL", "C")
-	t.Setenv("MIDDLEMAN_TEST_PBCOPY_LOCALE", localePath)
-	t.Setenv("MIDDLEMAN_TEST_PBCOPY_STDIN", stdinPath)
+	t.Setenv("KENN_FORGE_TEST_PBCOPY_LOCALE", localePath)
+	t.Setenv("KENN_FORGE_TEST_PBCOPY_STDIN", stdinPath)
 
 	writer := nativeWriter{
 		goos:   "darwin",

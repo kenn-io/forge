@@ -3,8 +3,8 @@ import {
   getPaneLayoutStore,
   resetPaneLayoutStoresForTest,
   type PaneLayoutStore,
-} from "@middleman/ui/stores/paneLayout";
-import { sessionPaneKey } from "@middleman/ui";
+} from "@kenn-forge/ui/stores/paneLayout";
+import { sessionPaneKey } from "@kenn-forge/ui";
 
 import { defaultActions, setStoreInstances } from "./actions.js";
 import { navigate } from "../router.svelte.ts";
@@ -109,7 +109,7 @@ describe("defaultActions", () => {
   afterEach(() => {
     setSidebarCollapsed(false);
     resetNewWorkspaceDialogState();
-    delete window.__middleman_config;
+    delete window.__kenn_forge_config;
     window.history.replaceState(null, "", "/");
   });
 
@@ -224,7 +224,7 @@ describe("defaultActions", () => {
 
   it("cheatsheet.open does not fire on the reviews page (roborev owns ?)", () => {
     // Roborev's ReviewsView has its own window-level `?` handler that
-    // opens a help modal. If middleman's cheatsheet also fires on `?`,
+    // opens a help modal. If kenn-forge's cheatsheet also fires on `?`,
     // both modals open and the cheatsheet's filter input steals focus,
     // causing roborev's Escape handler to short-circuit on its
     // tag === "INPUT" guard. Gate the action by page to avoid that.
@@ -418,7 +418,7 @@ describe("defaultActions", () => {
 
   it("opens the repo browser for a uniquely configured workspace repo", () => {
     const action = command("repo.browser.open");
-    window.__middleman_config = {
+    window.__kenn_forge_config = {
       ui: {
         repo: { owner: "acme", name: "widgets" },
       },
@@ -440,7 +440,7 @@ describe("defaultActions", () => {
 
   it("opens the repo browser from fully qualified workspace repo config", () => {
     const action = command("repo.browser.open");
-    window.__middleman_config = {
+    window.__kenn_forge_config = {
       ui: {
         repo: {
           provider: "gitea",
@@ -477,7 +477,7 @@ describe("defaultActions", () => {
 
   it("opens the repo browser from canonical workspace repo identity", () => {
     const action = command("repo.browser.open");
-    window.__middleman_config = {
+    window.__kenn_forge_config = {
       ui: {
         repo: {
           provider: "gitlab",
@@ -499,7 +499,7 @@ describe("defaultActions", () => {
 
   it("uses workspace provider and host hints when matching configured repos", () => {
     const action = command("repo.browser.open");
-    window.__middleman_config = {
+    window.__kenn_forge_config = {
       ui: {
         repo: {
           provider: "gitlab",
@@ -537,7 +537,7 @@ describe("defaultActions", () => {
 
   it("hides the repo browser command when workspace repo context is ambiguous", () => {
     const action = command("repo.browser.open");
-    window.__middleman_config = {
+    window.__kenn_forge_config = {
       ui: {
         repo: { owner: "acme", name: "widgets" },
       },
@@ -569,7 +569,7 @@ describe("defaultActions", () => {
     expect(getNewWorkspaceSeedRepo()).toBeNull();
 
     resetNewWorkspaceDialogState();
-    window.__middleman_config = {
+    window.__kenn_forge_config = {
       ui: {
         repo: {
           provider: "gitea",

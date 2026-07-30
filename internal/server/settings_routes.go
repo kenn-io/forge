@@ -4,8 +4,8 @@ import (
 	"context"
 	"net/http"
 
-	"go.kenn.io/middleman/internal/config"
-	"go.kenn.io/middleman/internal/server/httpapi"
+	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/server/httpapi"
 
 	"github.com/danielgtaylor/huma/v2"
 )

@@ -1,9 +1,9 @@
 package workspaceapi
 
 import (
-	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/server/httpapi"
-	"go.kenn.io/middleman/internal/workspace/localruntime"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
 type diffResponse = httpapi.DiffResponse
@@ -22,7 +22,7 @@ type commitResponse = httpapi.CommitResponse
 type commitsResponse = httpapi.CommitsResponse
 
 // WorkspaceRef is the lightweight link from item detail APIs back to an
-// existing middleman workspace.
+// existing kenn-forge workspace.
 type WorkspaceRef struct {
 	ID     string `json:"id"`
 	Status string `json:"status"`

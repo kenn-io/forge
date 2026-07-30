@@ -2,9 +2,9 @@
   import { Checkbox } from "@kenn-io/kit-ui";
   import Modal from "../shared/Modal.svelte";
   import { onDestroy, untrack } from "svelte";
-  import { DEFAULT_TERMINAL_SETTINGS, getStores } from "@middleman/ui";
-  import { showFlash } from "@middleman/ui/stores/flash";
-  import type { TerminalSettings as TerminalSettingsType } from "@middleman/ui/api/types";
+  import { DEFAULT_TERMINAL_SETTINGS, getStores } from "@kenn-forge/ui";
+  import { showFlash } from "@kenn-forge/ui/stores/flash";
+  import type { TerminalSettings as TerminalSettingsType } from "@kenn-forge/ui/api/types";
   import { updateSettings } from "../../api/settings.js";
   import { isEmbedded } from "../../stores/embed-config.svelte.js";
   import {
@@ -12,7 +12,7 @@
     restoreTerminalSettingsPreview,
     saveTerminalSettings,
     terminalSettingsChanges,
-  } from "@middleman/ui/stores/terminal-settings-persistence";
+  } from "@kenn-forge/ui/stores/terminal-settings-persistence";
 
   interface FontData {
     family: string;

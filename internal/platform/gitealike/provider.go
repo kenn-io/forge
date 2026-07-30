@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"strings"
 
-	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/forge/internal/platform"
 )
 
 type Provider struct {

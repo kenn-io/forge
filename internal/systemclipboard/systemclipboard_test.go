@@ -26,8 +26,8 @@ func TestNativeWriterSelectsPlatformClipboardCommand(t *testing.T) {
 			goos:      "darwin",
 			paths:     map[string]string{"pbcopy": "/usr/bin/pbcopy"},
 			wantName:  "/usr/bin/pbcopy",
-			text:      "accountability — no access\u00a0",
-			wantInput: "accountability — no access\u00a0",
+			text:      "clipboard — Unicode\u00a0text",
+			wantInput: "clipboard — Unicode\u00a0text",
 		},
 		{
 			name: "Wayland",

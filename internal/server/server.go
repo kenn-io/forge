@@ -26,7 +26,6 @@ import (
 	"go.kenn.io/middleman/internal/archive"
 	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/configwatch"
-	"go.kenn.io/middleman/internal/daemonruntime"
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/docs"
 	"go.kenn.io/middleman/internal/gitclone"
@@ -231,10 +230,8 @@ type Server struct {
 	toolingRun    toolingRunner
 
 	// apiAuthToken gates /api routes when non-empty (api_auth.go).
-	apiAuthToken string
-	// directClientToken classifies native direct-listener requests even when
-	// general API authentication is disabled.
-	directClientToken string
+	apiAuthToken   string
+	daemonRequests daemonRequestPolicy
 
 	// bg tracks short-lived goroutines that HTTP handlers spawn
 	// outside of the Syncer's own wait group (e.g. mergePR's
@@ -761,21 +758,24 @@ func newServer(
 	})
 
 	s := &Server{
-		db:                     database,
-		repoResolver:           repoResolver,
-		basePath:               basePath,
-		syncer:                 syncer,
-		archive:                options.Archive,
-		clones:                 clones,
-		telemetry:              options.Telemetry,
-		cfg:                    cfg,
-		cfgPath:                cfgPath,
-		tokenSources:           options.TokenSources,
-		bootCfgSnapshot:        snapshotStartupConfig(cfg),
-		runtimeStripEnvVars:    initialRuntimeStripEnvNames(cfg),
-		options:                options,
-		apiAuthToken:           options.APIAuthToken,
-		directClientToken:      options.DirectClientToken,
+		db:                  database,
+		repoResolver:        repoResolver,
+		basePath:            basePath,
+		syncer:              syncer,
+		archive:             options.Archive,
+		clones:              clones,
+		telemetry:           options.Telemetry,
+		cfg:                 cfg,
+		cfgPath:             cfgPath,
+		tokenSources:        options.TokenSources,
+		bootCfgSnapshot:     snapshotStartupConfig(cfg),
+		runtimeStripEnvVars: initialRuntimeStripEnvNames(cfg),
+		options:             options,
+		apiAuthToken:        options.APIAuthToken,
+		daemonRequests: daemonRequestPolicy{
+			directToken: options.DirectClientToken,
+			proof:       options.DaemonProofHandler,
+		},
 		now:                    time.Now,
 		hub:                    NewEventHubWithCapacity(cfg.SSEBufferSizeOrDefault()),
 		labelCatalogRefreshIDs: make(map[int64]struct{}),
@@ -1295,20 +1295,16 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 	hostOpts := *s.hostOpts.Load()
-	directDaemonBearer := s.isDirectDaemonBearerRequest(r, hostOpts)
-	directDaemonProof := isDirectDaemonProofRequest(r, hostOpts)
-	if r.URL.Path == daemonruntime.ProofPingPath && !directDaemonProof {
-		rejectHost(w, r, "daemon_proof_not_direct", r.Host, "")
+	admission := s.daemonRequests.admit(
+		w, r, hostOpts, s.isGatedAPIRequest(r),
+	)
+	if admission.handled {
 		return
 	}
-	if !directDaemonBearer && !directDaemonProof && !checkHost(w, r, hostOpts) {
+	if !admission.bypassProxyHostCheck && !checkHost(w, r, hostOpts) {
 		return
 	}
 	if !s.checkHost(w, r) {
-		return
-	}
-	if directDaemonProof {
-		s.handler.ServeHTTP(w, r)
 		return
 	}
 	if s.apiAuthToken != "" {

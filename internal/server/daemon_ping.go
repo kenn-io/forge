@@ -24,9 +24,6 @@ func daemonPingAPIConfig() huma.Config {
 }
 
 func (s *Server) registerDaemonPing(mux *http.ServeMux) {
-	if s.options.DaemonProofHandler != nil {
-		mux.Handle(daemonruntime.ProofPingPath, s.options.DaemonProofHandler)
-	}
 	api := humago.New(mux, daemonPingAPIConfig())
 	api.UseMiddleware(otelSpanMiddleware)
 	huma.Get(api, "/api/ping", s.daemonPing,

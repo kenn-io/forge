@@ -25,7 +25,7 @@
   (`internal/daemonruntime/runtime.go::Compatible`).
 - The ready handler exposes standard identity at `GET /api/ping`; its private
   proof path binds the same identity to the published record and only accepts
-  direct loopback requests (`internal/server/daemon_ping.go::registerDaemonPing`).
+  direct loopback requests (`internal/server/daemon_access.go::daemonRequestPolicy.admit`).
 
 ## Transport trust boundary
 
@@ -34,7 +34,8 @@
   non-loopback listeners before launching.
 - Only the startup-bound bearer with exact loopback authority/peer and no
   forwarding headers bypasses proxy Host interpretation; cookies never qualify,
-  and the bearer remains available when general API auth is off (`internal/server/api_auth.go::isDirectDaemonBearerRequest`).
+  and the bearer remains available when general API auth is off
+  (`internal/server/daemon_access.go::daemonRequestPolicy.admit`).
 - Discovery sends only a random challenge until the endpoint proves the daemon
   token and full runtime identity; the proof route requires the exact direct
   loopback authority without forwarding headers (`cmd/middleman/start_background.go::backgroundDiscovery.probe`).

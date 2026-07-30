@@ -6,8 +6,6 @@ import (
 	"net/url"
 	"strings"
 
-	"go.kenn.io/middleman/internal/config"
-	"go.kenn.io/middleman/internal/daemonruntime"
 	"go.kenn.io/middleman/internal/server/httpapi"
 )
 
@@ -96,28 +94,6 @@ func (s *Server) authorizeAPIRequest(
 		nil,
 	))
 	return false
-}
-
-func (s *Server) isDirectDaemonBearerRequest(
-	r *http.Request, opts HostCheckOptions,
-) bool {
-	return s.isGatedAPIRequest(r) &&
-		hasValidBearer(r, s.directClientToken) &&
-		isDirectLoopbackListenerRequest(r, opts)
-}
-
-func isDirectDaemonProofRequest(r *http.Request, opts HostCheckOptions) bool {
-	return r.Method == http.MethodGet && r.URL.Path == daemonruntime.ProofPingPath &&
-		isDirectLoopbackListenerRequest(r, opts)
-}
-
-func isDirectLoopbackListenerRequest(r *http.Request, opts HostCheckOptions) bool {
-	if hasForwardingHeaders(r.Header) || !isLoopbackRemoteAddr(r.RemoteAddr) ||
-		!config.IsLoopbackHostname(strings.Trim(opts.Bind.Host, "[]")) {
-		return false
-	}
-	key, err := config.ParseHostKey(r.Host)
-	return err == nil && key.Equal(opts.Bind)
 }
 
 // isGatedAPIRequest reports whether the path is a route subject to

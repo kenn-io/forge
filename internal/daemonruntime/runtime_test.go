@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/kit/daemon"
 	"go.kenn.io/middleman/internal/runtimelock"
 )
 
@@ -47,6 +48,19 @@ func TestNewIdentityRejectsNonTCPAddress(t *testing.T) {
 	_, err := NewIdentity(fakeAddress("not-tcp"), IdentityOptions{})
 
 	require.ErrorContains(t, err, "non-TCP")
+}
+
+// TestStartLockStoreScopesLocksByDataDirectory protects independent daemon
+// instances that share the config-home runtime store. If the data directory is
+// dropped from lock identity, a stalled start blocks unrelated instances.
+func TestStartLockStoreScopesLocksByDataDirectory(t *testing.T) {
+	store := daemon.RuntimeStore{Dir: t.TempDir()}
+
+	first := StartLockStore(store, "/data/first")
+	second := StartLockStore(store, "/data/second")
+
+	assert.Equal(t, first.Dir, second.Dir)
+	assert.NotEqual(t, first.Prefix, second.Prefix)
 }
 
 type fakeAddress string

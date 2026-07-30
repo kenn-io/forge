@@ -36,9 +36,7 @@ func buildMiddleman(t *testing.T) string {
 	return binPath
 }
 
-func writeBackgroundStartConfig(
-	t *testing.T, configPath, dataDir string, port int,
-) {
+func installMissingGitHubCLI(t *testing.T) {
 	t.Helper()
 	binDir := t.TempDir()
 	ghName := "gh"
@@ -51,6 +49,13 @@ func writeBackgroundStartConfig(
 		filepath.Join(binDir, ghName), []byte(ghBody), 0o700,
 	))
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+func writeBackgroundStartConfig(
+	t *testing.T, configPath, dataDir string, port int,
+) {
+	t.Helper()
+	installMissingGitHubCLI(t)
 	t.Setenv("MIDDLEMAN_GITHUB_TOKEN_UNSET_FOR_BACKGROUND_E2E", "")
 	body := fmt.Sprintf(`host = "127.0.0.1"
 port = %d
@@ -178,17 +183,7 @@ func reserveFreePort(t *testing.T) int {
 // with the developer's real ~/.config/middleman.
 func writeMinimalConfig(t *testing.T, configPath, dataDir string, port int) {
 	t.Helper()
-	binDir := t.TempDir()
-	ghName := "gh"
-	ghBody := "#!/bin/sh\nexit 1\n"
-	if runtime.GOOS == "windows" {
-		ghName = "gh.bat"
-		ghBody = "@exit /b 1\r\n"
-	}
-	require.NoError(t, os.WriteFile(
-		filepath.Join(binDir, ghName), []byte(ghBody), 0o700,
-	))
-	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	installMissingGitHubCLI(t)
 	t.Setenv("MIDDLEMAN_GITHUB_TOKEN_UNSET_FOR_LOCK_E2E", "")
 	body := fmt.Sprintf(`host = "127.0.0.1"
 port = %d

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -53,133 +54,133 @@ type fixedAddrListener struct {
 
 func (l fixedAddrListener) Addr() net.Addr { return l.addr }
 
+func newDirectDaemonRequest(bearer string, headers http.Header) *http.Request {
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/snapshot", nil)
+	req.Host = "127.0.0.1:8091"
+	req.RemoteAddr = "127.0.0.1:1234"
+	if bearer != "" {
+		req.Header.Set("Authorization", "Bearer "+bearer)
+	}
+	maps.Copy(req.Header, headers)
+	return req
+}
+
+func serveDirectDaemonRequest(
+	srv *Server, bearer string, headers http.Header,
+) *httptest.ResponseRecorder {
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, newDirectDaemonRequest(bearer, headers))
+	return rr
+}
+
 // TestDirectDaemonBearerClassification protects the native-client trust
-// boundary. If bearer classification moves after proxy Host validation,
-// authenticated CLI requests fail whenever trust_reverse_proxy is enabled. If
-// the classifier is widened, cookies, listener aliases, configured public
-// hosts, or forwarded requests can bypass the proxy checks.
+// boundary without constructing the full application. If the classifier is
+// widened, cookies, listener aliases, non-loopback peers, or forwarded
+// requests can bypass reverse-proxy Host validation.
 func TestDirectDaemonBearerClassification(t *testing.T) {
 	tests := []struct {
-		name            string
-		configuredToken string
-		host            string
-		bearer          string
-		cookie          string
-		headers         http.Header
-		remoteAddr      string
-		wantStatus      int
+		name                     string
+		bearer, host, remoteAddr string
+		missingBearer, noToken   bool
+		cookie, forwarded, ipv6  bool
+		wantBypass               bool
 	}{
-		{
-			name:            "valid bearer and exact listener authority",
-			configuredToken: "daemon-secret",
-			host:            "127.0.0.1:8091", bearer: "daemon-secret",
-			wantStatus: http.StatusOK,
-		},
-		{
-			name:            "missing bearer",
-			configuredToken: "daemon-secret",
-			host:            "127.0.0.1:8091", wantStatus: http.StatusForbidden,
-		},
-		{
-			name:            "invalid bearer",
-			configuredToken: "daemon-secret",
-			host:            "127.0.0.1:8091", bearer: "wrong",
-			wantStatus: http.StatusForbidden,
-		},
-		{
-			name:            "session cookie does not qualify",
-			configuredToken: "daemon-secret",
-			host:            "127.0.0.1:8091", cookie: "daemon-secret",
-			wantStatus: http.StatusForbidden,
-		},
-		{
-			name:            "loopback alias is not the exact listener authority",
-			configuredToken: "daemon-secret",
-			host:            "localhost:8091", bearer: "daemon-secret",
-			wantStatus: http.StatusForbidden,
-		},
-		{
-			name:            "non-loopback peer is not a direct client",
-			configuredToken: "daemon-secret",
-			host:            "127.0.0.1:8091", bearer: "daemon-secret",
-			remoteAddr: "192.0.2.1:1234", wantStatus: http.StatusForbidden,
-		},
-		{
-			name:            "allowed public host is not the listener authority",
-			configuredToken: "daemon-secret",
-			host:            "mm.example.com", bearer: "daemon-secret",
-			wantStatus: http.StatusForbidden,
-		},
-		{
-			name:            "X-Forwarded-For stays on proxy path",
-			configuredToken: "daemon-secret",
-			host:            "127.0.0.1:8091", bearer: "daemon-secret",
-			headers:    http.Header{"X-Forwarded-For": {"127.0.0.1"}},
-			wantStatus: http.StatusForbidden,
-		},
-		{
-			name:            "valid forwarded host stays on proxy path",
-			configuredToken: "daemon-secret",
-			host:            "127.0.0.1:8091", bearer: "daemon-secret",
-			headers:    http.Header{"X-Forwarded-Host": {"mm.example.com"}},
-			wantStatus: http.StatusOK,
-		},
-		{
-			name:            "malformed forwarded header stays rejected",
-			configuredToken: "daemon-secret",
-			host:            "127.0.0.1:8091", bearer: "daemon-secret",
-			headers:    http.Header{"Forwarded": {"wat"}},
-			wantStatus: http.StatusForbidden,
-		},
-		{
-			name:            "conflicting forwarded headers stay rejected",
-			configuredToken: "daemon-secret",
-			host:            "127.0.0.1:8091", bearer: "daemon-secret",
-			headers: http.Header{
-				"Forwarded":        {"host=other.example.com"},
-				"X-Forwarded-Host": {"mm.example.com"},
-			},
-			wantStatus: http.StatusForbidden,
-		},
-		{
-			name: "authentication disabled",
-			host: "127.0.0.1:8091", bearer: "daemon-secret",
-			wantStatus: http.StatusForbidden,
-		},
+		{name: "valid exact listener authority", wantBypass: true},
+		{name: "missing bearer", missingBearer: true},
+		{name: "invalid bearer", bearer: "wrong"},
+		{name: "session cookie does not qualify", missingBearer: true, cookie: true},
+		{name: "loopback alias is not exact", host: "localhost:8091"},
+		{name: "non-loopback peer", remoteAddr: "192.0.2.1:1234"},
+		{name: "public host", host: "mm.example.com"},
+		{name: "forwarded request", forwarded: true},
+		{name: "missing configured token", noToken: true},
+		{name: "IPv6 listener authority", ipv6: true, wantBypass: true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			srv := setupHostCheckServerWithToken(t, HostCheckOptions{
-				Bind: bindLoopback8091(),
-				Allowed: []config.HostKey{
-					{Host: "mm.example.com", Port: ""},
-					{Host: "other.example.com", Port: ""},
-				},
-				TrustReverseProxy: true,
-			}, tt.configuredToken)
-			req := httptest.NewRequest(http.MethodGet, "/api/v1/snapshot", nil)
-			req.Host = tt.host
-			req.RemoteAddr = tt.remoteAddr
-			if req.RemoteAddr == "" {
-				req.RemoteAddr = "127.0.0.1:1234"
+			token := "daemon-secret"
+			if tt.noToken {
+				token = ""
 			}
-			for name, values := range tt.headers {
-				for _, value := range values {
-					req.Header.Add(name, value)
-				}
+			bind := bindLoopback8091()
+			req := newDirectDaemonRequest("daemon-secret", nil)
+			if tt.ipv6 {
+				bind = config.HostKey{Host: "[::1]", Port: "8091"}
+				req.Host = "[::1]:8091"
+				req.RemoteAddr = "[::1]:1234"
 			}
-			if tt.bearer != "" {
+			if tt.host != "" {
+				req.Host = tt.host
+			}
+			if tt.remoteAddr != "" {
+				req.RemoteAddr = tt.remoteAddr
+			}
+			if tt.forwarded {
+				req.Header.Set("X-Forwarded-For", "127.0.0.1")
+			}
+			if tt.missingBearer {
+				req.Header.Del("Authorization")
+			} else if tt.bearer != "" {
 				req.Header.Set("Authorization", "Bearer "+tt.bearer)
 			}
-			if tt.cookie != "" {
-				req.AddCookie(&http.Cookie{Name: authCookieName, Value: tt.cookie})
+			if tt.cookie {
+				req.AddCookie(&http.Cookie{Name: authCookieName, Value: "daemon-secret"})
 			}
 			rr := httptest.NewRecorder()
 
-			srv.ServeHTTP(rr, req)
+			admission := (daemonRequestPolicy{token: token}).admit(
+				rr, req, HostCheckOptions{Bind: bind}, true,
+			)
 
-			assert.Equal(t, tt.wantStatus, rr.Code, rr.Body.String())
+			assert.False(t, admission.handled)
+			assert.Equal(t, tt.wantBypass, admission.bypassProxyHostCheck)
+		})
+	}
+}
+
+// TestDirectDaemonBearerHostIntegration protects middleware ordering. Direct
+// bearer requests bypass proxy Host interpretation, while any forwarded shape
+// remains subject to the existing proxy validation and rejection rules.
+func TestDirectDaemonBearerHostIntegration(t *testing.T) {
+	srv := setupHostCheckServerWithToken(t, HostCheckOptions{
+		Bind: bindLoopback8091(),
+		Allowed: []config.HostKey{
+			{Host: "mm.example.com"}, {Host: "other.example.com"},
+		},
+		TrustReverseProxy: true,
+	}, "daemon-secret")
+	tests := []struct {
+		name    string
+		bearer  string
+		headers http.Header
+		status  int
+	}{
+		{name: "direct bearer", bearer: "daemon-secret", status: http.StatusOK},
+		{name: "missing bearer", status: http.StatusForbidden},
+		{
+			name: "valid forwarded host", bearer: "daemon-secret",
+			headers: http.Header{"X-Forwarded-Host": {"mm.example.com"}},
+			status:  http.StatusOK,
+		},
+		{
+			name: "malformed forwarded header", bearer: "daemon-secret",
+			headers: http.Header{"Forwarded": {"wat"}}, status: http.StatusForbidden,
+		},
+		{
+			name: "conflicting forwarded headers", bearer: "daemon-secret",
+			headers: http.Header{
+				"Forwarded":        {"host=other.example.com"},
+				"X-Forwarded-Host": {"mm.example.com"},
+			},
+			status: http.StatusForbidden,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rr := serveDirectDaemonRequest(srv, tt.bearer, tt.headers)
+
+			assert.Equal(t, tt.status, rr.Code, rr.Body.String())
 		})
 	}
 }
@@ -221,41 +222,13 @@ func TestDirectDaemonBearerClassificationWithoutGeneralAPIAuth(t *testing.T) {
 		},
 		DaemonAccess: DaemonAccessOptions{Token: "daemon-secret"},
 	})
-	tests := []struct {
-		name    string
-		bearer  string
-		headers http.Header
-		status  int
-	}{
-		{name: "valid direct credential", bearer: "daemon-secret", status: http.StatusOK},
-		{name: "missing direct credential", status: http.StatusForbidden},
-		{name: "invalid direct credential", bearer: "wrong", status: http.StatusForbidden},
-		{
-			name:    "unauthenticated proxy request retains configured policy",
-			headers: http.Header{"X-Forwarded-Host": {"mm.example.com"}},
-			status:  http.StatusOK,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, "/api/v1/snapshot", nil)
-			req.Host = "127.0.0.1:8091"
-			req.RemoteAddr = "127.0.0.1:1234"
-			if tt.bearer != "" {
-				req.Header.Set("Authorization", "Bearer "+tt.bearer)
-			}
-			for name, values := range tt.headers {
-				for _, value := range values {
-					req.Header.Add(name, value)
-				}
-			}
-			rr := httptest.NewRecorder()
+	direct := serveDirectDaemonRequest(srv, "daemon-secret", nil)
+	assert.Equal(t, http.StatusOK, direct.Code, direct.Body.String())
 
-			srv.ServeHTTP(rr, req)
-
-			assert.Equal(t, tt.status, rr.Code, rr.Body.String())
-		})
-	}
+	proxied := serveDirectDaemonRequest(srv, "", http.Header{
+		"X-Forwarded-Host": {"mm.example.com"},
+	})
+	assert.Equal(t, http.StatusOK, proxied.Code, proxied.Body.String())
 }
 
 // TestHostCheckBackendHost exercises Step 1+2 of the spec: parse

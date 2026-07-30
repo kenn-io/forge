@@ -248,7 +248,7 @@ func reserveFreePort(t *testing.T) int {
 // with the developer's real ~/.config/middleman.
 func writeMinimalConfig(t *testing.T, configPath, dataDir string, port int) {
 	t.Helper()
-	writeMinimalConfigWithBasePath(t, configPath, dataDir, port, "/")
+	writeMinimalConfigWithBasePath(t, configPath, dataDir, port, "")
 }
 
 func writeMinimalConfigWithBasePath(
@@ -267,11 +267,14 @@ func writeMinimalConfigWithBasePath(
 	))
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("MIDDLEMAN_GITHUB_TOKEN_UNSET_FOR_LOCK_E2E", "")
+	basePathConfig := ""
+	if basePath != "" {
+		basePathConfig = fmt.Sprintf("base_path = %q\n", basePath)
+	}
 	body := fmt.Sprintf(`host = "127.0.0.1"
 port = %d
 data_dir = %q
-base_path = %q
-sync_interval = "5m"
+%ssync_interval = "5m"
 github_token_env = "MIDDLEMAN_GITHUB_TOKEN_UNSET_FOR_LOCK_E2E"
 
 [activity]
@@ -279,7 +282,7 @@ view_mode = "threaded"
 time_range = "7d"
 
 [terminal]
-`, port, dataDir, basePath)
+`, port, dataDir, basePathConfig)
 	require.NoError(t, os.WriteFile(configPath, []byte(body), 0o600))
 }
 

@@ -3,6 +3,7 @@ package systemclipboard
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -21,10 +22,12 @@ func TestNativeWriterSelectsPlatformClipboardCommand(t *testing.T) {
 		wantInput string
 	}{
 		{
-			name:     "macOS",
-			goos:     "darwin",
-			paths:    map[string]string{"pbcopy": "/usr/bin/pbcopy"},
-			wantName: "/usr/bin/pbcopy",
+			name:      "macOS",
+			goos:      "darwin",
+			paths:     map[string]string{"pbcopy": "/usr/bin/pbcopy"},
+			wantName:  "/usr/bin/pbcopy",
+			text:      "accountability — no access\u00a0",
+			wantInput: "accountability — no access\u00a0",
 		},
 		{
 			name: "Wayland",
@@ -65,6 +68,10 @@ func TestNativeWriterSelectsPlatformClipboardCommand(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			assert := assert.New(t)
+			t.Setenv("LC_ALL", "C")
+			t.Setenv("MIDDLEMAN_CLIPBOARD_TEST_ENV", "preserved")
+
+			var gotEnvironment []string
 			var gotInput string
 			writer := nativeWriter{
 				goos: tt.goos,
@@ -82,10 +89,12 @@ func TestNativeWriterSelectsPlatformClipboardCommand(t *testing.T) {
 					_ context.Context,
 					name string,
 					args []string,
+					environment []string,
 					text string,
 				) error {
 					assert.Equal(tt.wantName, name)
 					assert.Equal(tt.wantArgs, args)
+					gotEnvironment = environment
 					gotInput = text
 					return nil
 				},
@@ -106,6 +115,16 @@ func TestNativeWriterSelectsPlatformClipboardCommand(t *testing.T) {
 
 			require.NoError(t, err)
 			assert.Equal(wantInput, gotInput)
+			if tt.goos == "darwin" {
+				assert.Equal("en_US.UTF-8", environmentValue(gotEnvironment, "LC_ALL"))
+				assert.Equal(
+					"preserved",
+					environmentValue(gotEnvironment, "MIDDLEMAN_CLIPBOARD_TEST_ENV"),
+				)
+				assert.Equal(1, environmentKeyCount(gotEnvironment, "LC_ALL"))
+			} else {
+				assert.Nil(gotEnvironment)
+			}
 		})
 	}
 }
@@ -121,6 +140,7 @@ func TestNativeWriterReportsUnavailableClipboard(t *testing.T) {
 			context.Context,
 			string,
 			[]string,
+			[]string,
 			string,
 		) error {
 			return nil
@@ -131,4 +151,25 @@ func TestNativeWriterReportsUnavailableClipboard(t *testing.T) {
 
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrUnavailable)
+}
+
+func environmentValue(environment []string, key string) string {
+	prefix := key + "="
+	for _, entry := range environment {
+		if after, ok := strings.CutPrefix(entry, prefix); ok {
+			return after
+		}
+	}
+	return ""
+}
+
+func environmentKeyCount(environment []string, key string) int {
+	prefix := key + "="
+	count := 0
+	for _, entry := range environment {
+		if strings.HasPrefix(entry, prefix) {
+			count++
+		}
+	}
+	return count
 }

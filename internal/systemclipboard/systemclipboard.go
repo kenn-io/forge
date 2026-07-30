@@ -25,6 +25,7 @@ type commandRunner func(
 	context.Context,
 	string,
 	[]string,
+	[]string,
 	string,
 ) error
 
@@ -61,10 +62,41 @@ func (w nativeWriter) WriteText(
 	if w.goos == "windows" {
 		input = encodeUTF16LE(text)
 	}
-	if err := w.run(ctx, command.name, command.args, input); err != nil {
+
+	var environment []string
+	if w.goos == "darwin" {
+		environment = environmentWithOverride(
+			os.Environ(),
+			"LC_ALL",
+			"en_US.UTF-8",
+		)
+	}
+
+	if err := w.run(
+		ctx,
+		command.name,
+		command.args,
+		environment,
+		input,
+	); err != nil {
 		return fmt.Errorf("write system clipboard: %w", err)
 	}
 	return nil
+}
+
+func environmentWithOverride(
+	environment []string,
+	key string,
+	value string,
+) []string {
+	prefix := key + "="
+	overridden := make([]string, 0, len(environment)+1)
+	for _, entry := range environment {
+		if !strings.HasPrefix(entry, prefix) {
+			overridden = append(overridden, entry)
+		}
+	}
+	return append(overridden, prefix+value)
 }
 
 func encodeUTF16LE(text string) string {
@@ -121,6 +153,7 @@ func runCommand(
 	ctx context.Context,
 	name string,
 	args []string,
+	environment []string,
 	text string,
 ) error {
 	release, err := procutil.TryAcquire(
@@ -133,6 +166,9 @@ func runCommand(
 	defer release()
 
 	command := procutil.CommandContext(ctx, name, args...)
+	if environment != nil {
+		command.Env = environment
+	}
 	command.Stdin = strings.NewReader(text)
 	return command.Run()
 }

@@ -117,6 +117,9 @@ stale tabs.
 - During active tmux SGR drags outside xterm bounds, add only clamped edge wheel, drag, and release reports; forward
   all other mouse reports unchanged, and never retain unsent drag state across a WebSocket boundary
   (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::connect`).
+- macOS loopback clipboard fallback must run `pbcopy` with `LC_ALL=en_US.UTF-8`; service launchers may omit
+  a UTF-8 locale and make `pbcopy` reinterpret unchanged UTF-8 input
+  (`internal/systemclipboard/systemclipboard.go::nativeWriter.WriteText`).
 - Windows loopback clipboard fallback must send UTF-16LE to `clip.exe`; UTF-8 stdin is code-page-dependent and corrupts
   non-ASCII text (`internal/systemclipboard/systemclipboard.go::encodeUTF16LE`).
 - The frontend may react immediately to terminal exit events, but should then

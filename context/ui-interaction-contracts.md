@@ -114,6 +114,9 @@ Interactive surfaces must agree on which item is selected.
   surface immediately and reconcile the tombstone away — an ID-less tombstone
   would mask it forever, because the workspace-absent envelope it waits for
   never arrives once the item has a new workspace.
+- Automatic empty-pane launchers stay closed during inline workspace deletion:
+  runtime sessions disappear before the host is removed, and that teardown gap
+  is not a launchable empty workspace (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::autoOpenLauncher`).
 - Catalog-backed routes must normalize missing selections even when the catalog
   is empty: select the first available item or `null`, and clear dependent route
   identity (`frontend/src/lib/components/docs/DocsWorkspace.svelte::loadFolders`).

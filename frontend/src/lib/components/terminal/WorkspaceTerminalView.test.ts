@@ -2899,6 +2899,50 @@ describe("WorkspaceTerminalView", () => {
     await waitFor(() => expect(launch.hasAttribute("disabled")).toBe(true));
   });
 
+  it("does not auto-open the session launcher while workspace deletion empties the runtime", async () => {
+    const deleteRequest = deferred<Response>();
+    const eventListeners: Record<string, () => void> = {};
+    vi.stubGlobal(
+      "EventSource",
+      class {
+        addEventListener(type: string, callback: () => void): void {
+          eventListeners[type] = callback;
+        }
+        close(): void {}
+      },
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: Request | URL | string, init?: RequestInit) => {
+        const method = init?.method ?? (input instanceof Request ? input.method : "GET");
+        const { pathname } = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
+        if (method === "DELETE" && pathname.endsWith("/workspaces/ws-1")) return deleteRequest.promise;
+        if (pathname.endsWith("/workspaces/ws-1")) {
+          return Promise.resolve(Response.json(workspaceResponse));
+        }
+        if (pathname.endsWith("/api/v1/workspaces")) {
+          return Promise.resolve(Response.json({ workspaces: [workspaceResponse] }));
+        }
+        return Promise.resolve(Response.json({}));
+      }),
+    );
+    claimForPrs();
+
+    render(WorkspaceTerminalView, {
+      props: { workspaceId: "ws-1", paneSurface: "prs" as const },
+    });
+    await waitFor(() => expect(hostedWorkspaceControls()).not.toBeNull());
+    render(WorkspacePaneControls);
+    await screen.findByRole("button", { name: "Launch session" });
+
+    await clickDeleteAndConfirm(screen.getByRole("button", { name: /^Delete workspace / }));
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
+    eventListeners["reconnect.stale"]?.();
+
+    await waitFor(() => expect(mocks.getWorkspaceRuntime).toHaveBeenCalledTimes(2));
+    expect(screen.queryByRole("dialog", { name: "Launch a session" })).toBeNull();
+  });
+
   it("leaves workspace strip actions off a broken workspace, whose error panel owns delete", async () => {
     // The strip actions only apply while the workspace is ready. A failed setup
     // cannot launch a session and renders its own Delete beside the Retry the user

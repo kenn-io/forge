@@ -685,6 +685,9 @@
     // state message, and the Retry and Delete beside it, with an invitation to start
     // an agent inside something that cannot run one.
     if (workspace?.status !== "ready") return;
+    // Runtime teardown can reach any of the automatic fallback paths before the
+    // deleted inline host is removed. It is not an empty workspace to relaunch.
+    if (deletingSelectedWorkspace || forceDeleting) return;
     if (launcherAutoOpenedFor.includes(viewWorkspaceKey)) return;
     launcherAutoOpenedFor = [...launcherAutoOpenedFor, viewWorkspaceKey];
     launcherState = { workspaceKey: viewWorkspaceKey, auto: true };
@@ -760,6 +763,7 @@
     const anySession = runtimeSessions.length > 0;
     const openState = launcherState;
     const autoOpened = launcherAutoOpenedFor.includes(workspaceKey);
+    const deletionPending = deletingSelectedWorkspace || forceDeleting;
     untrack(() => {
       if (tabs.length > 0 && activeMissing) selectWorkspaceTab(tabs[0]!.key);
       // A docked terminal is not a workflow tab but is very much on screen, so an
@@ -772,6 +776,9 @@
         if (openState?.workspaceKey === workspaceKey && openState.auto) closeLauncher();
         return;
       }
+      // Deletion tears down the runtime before the inline host disappears. That
+      // sessionless gap is not an empty workspace asking what to launch next.
+      if (deletionPending) return;
       // Once per workspace: reopening a launcher the user dismissed would trap them
       // in it, while a different session-less workspace still gets one.
       if (openState?.workspaceKey === workspaceKey || autoOpened) return;

@@ -41,6 +41,7 @@ func TestNewIdentityKeepsDiscoverySurfacesAligned(t *testing.T) {
 	assert.Equal(runtimelock.AuthTokenPath(dataDir), metadata.TokenPath)
 	assert.Equal(metadata.TokenPath, record.Metadata[metadataAuthTokenPath])
 	assert.Equal("/middleman", metadata.BasePath)
+	assert.Equal(metadata.BasePath, record.Metadata[metadataBasePath])
 	assert.True(metadata.RequireAuth)
 }
 

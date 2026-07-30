@@ -68,9 +68,13 @@ func startBackground(
 	if err != nil {
 		return err
 	}
+	runtimeURL, err := daemonruntime.URL(record)
+	if err != nil {
+		return err
+	}
 	_, err = fmt.Fprintf(
 		stdout, "middleman running at %s (pid %d)\n",
-		record.Endpoint().BaseURL(), record.PID,
+		runtimeURL, record.PID,
 	)
 	return err
 }

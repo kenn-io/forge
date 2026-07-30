@@ -3,12 +3,15 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -108,6 +111,7 @@ func TestStartBackgroundSerializesAndReusesCompatibleRuntime(t *testing.T) {
 // has multiple winners, discovery cannot authenticate the runtime that won the
 // authoritative data-directory lock.
 func TestForegroundAndBackgroundStartShareAuthToken(t *testing.T) {
+	assert := assert.New(t)
 	require := require.New(t)
 	bin := buildMiddleman(t)
 	root := t.TempDir()
@@ -169,7 +173,61 @@ func TestForegroundAndBackgroundStartShareAuthToken(t *testing.T) {
 		Path: daemonruntime.ProofPingPath,
 	})
 	require.NoError(err)
-	assert.Equal(t, record.PID, ping.PID)
+	assert.Equal(record.PID, ping.PID)
+}
+
+// TestStartBackgroundReportsConfiguredBasePath protects the operator-facing
+// URL. If discovery drops the startup-bound prefix, the reported location
+// points at an unmounted route and returns 404.
+func TestStartBackgroundReportsConfiguredBasePath(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	bin := buildMiddleman(t)
+	root := t.TempDir()
+	dataDir := filepath.Join(root, "data")
+	runtimeDir := filepath.Join(root, "config-home")
+	require.NoError(os.MkdirAll(runtimeDir, 0o700))
+	t.Setenv("MIDDLEMAN_HOME", runtimeDir)
+	configPath := filepath.Join(runtimeDir, "config.toml")
+	port := reserveFreePort(t)
+	writeMinimalConfigWithBasePath(
+		t, configPath, dataDir, port, "/console/",
+	)
+	store := daemon.RuntimeStore{Dir: runtimeDir}
+	t.Cleanup(func() {
+		records, _ := store.List()
+		for _, record := range records {
+			if process, findErr := os.FindProcess(record.PID); findErr == nil {
+				_ = process.Kill()
+			}
+		}
+	})
+
+	cmd := procutil.Command(
+		bin, "start", "--background", "--config", configPath,
+	)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	cmd.Env = append(os.Environ(), "MIDDLEMAN_LOG_LEVEL=warn")
+	require.NoError(cmd.Run(), stderr.String())
+
+	records, err := store.List()
+	require.NoError(err)
+	require.Len(records, 1)
+	wantURL := fmt.Sprintf("http://127.0.0.1:%d/console", port)
+	require.Contains(strings.TrimSpace(stdout.String()), wantURL+" (pid ")
+	client := &http.Client{Timeout: 5 * time.Second}
+	request, err := http.NewRequestWithContext(
+		t.Context(), http.MethodGet, wantURL, nil,
+	)
+	require.NoError(err)
+	response, err := client.Do(request)
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(response.Body.Close()) })
+	_, err = io.Copy(io.Discard, response.Body)
+	require.NoError(err)
+	assert.Equal(http.StatusOK, response.StatusCode)
 }
 
 // reserveFreePort opens a listener on 127.0.0.1:0, closes it, and
@@ -190,6 +248,13 @@ func reserveFreePort(t *testing.T) int {
 // with the developer's real ~/.config/middleman.
 func writeMinimalConfig(t *testing.T, configPath, dataDir string, port int) {
 	t.Helper()
+	writeMinimalConfigWithBasePath(t, configPath, dataDir, port, "/")
+}
+
+func writeMinimalConfigWithBasePath(
+	t *testing.T, configPath, dataDir string, port int, basePath string,
+) {
+	t.Helper()
 	binDir := t.TempDir()
 	ghName := "gh"
 	ghBody := "#!/bin/sh\nexit 1\n"
@@ -205,6 +270,7 @@ func writeMinimalConfig(t *testing.T, configPath, dataDir string, port int) {
 	body := fmt.Sprintf(`host = "127.0.0.1"
 port = %d
 data_dir = %q
+base_path = %q
 sync_interval = "5m"
 github_token_env = "MIDDLEMAN_GITHUB_TOKEN_UNSET_FOR_LOCK_E2E"
 
@@ -213,7 +279,7 @@ view_mode = "threaded"
 time_range = "7d"
 
 [terminal]
-`, port, dataDir)
+`, port, dataDir, basePath)
 	require.NoError(t, os.WriteFile(configPath, []byte(body), 0o600))
 }
 

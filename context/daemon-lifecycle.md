@@ -21,8 +21,8 @@
   discovery surface and does not replace the authoritative data-directory
   lock/status (`internal/daemonruntime/runtime.go::Publish`).
 - Record metadata is string-valued `host`, `port`, `read_only=false`,
-  `require_auth`, and `data_dir`; `auth_token_path` is present only when auth is
-  enabled. Its producer and compatibility checks share one typed owner;
+  `require_auth`, `data_dir`, and canonical `base_path`; `auth_token_path` is
+  present only when auth is enabled. One typed owner builds and validates it;
   discovery still requires a live PID and a token-derived proof bound to the
   record's service, version, PID, network, and address
   (`internal/daemonruntime/runtime.go::Compatible`).

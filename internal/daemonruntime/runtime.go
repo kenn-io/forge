@@ -25,6 +25,7 @@ const (
 	metadataRequireAuth   = "require_auth"
 	metadataDataDir       = "data_dir"
 	metadataAuthTokenPath = "auth_token_path"
+	metadataBasePath      = "base_path"
 )
 
 // IdentityOptions contains the startup-bound values shared by both runtime
@@ -72,6 +73,7 @@ func NewIdentity(address net.Addr, opts IdentityOptions) (Identity, error) {
 	}
 	host := tcpAddress.IP.String()
 	port := strconv.Itoa(tcpAddress.Port)
+	basePath := canonicalBasePath(opts.BasePath)
 	record := daemon.NewRuntimeRecord(
 		Service,
 		opts.Version,
@@ -83,6 +85,7 @@ func NewIdentity(address net.Addr, opts IdentityOptions) (Identity, error) {
 		metadataReadOnly:    strconv.FormatBool(false),
 		metadataRequireAuth: strconv.FormatBool(opts.RequireAuth),
 		metadataDataDir:     opts.DataDir,
+		metadataBasePath:    basePath,
 	}
 	tokenPath := runtimelock.AuthTokenPath(opts.DataDir)
 	if opts.RequireAuth {
@@ -99,10 +102,25 @@ func NewIdentity(address net.Addr, opts IdentityOptions) (Identity, error) {
 			Version:     record.Version,
 			Commit:      opts.Commit,
 			TokenPath:   tokenPath,
-			BasePath:    canonicalBasePath(opts.BasePath),
+			BasePath:    basePath,
 			RequireAuth: opts.RequireAuth,
 		},
 	}, nil
+}
+
+// URL returns the browser location advertised by a verified runtime record.
+func URL(record daemon.RuntimeRecord) (string, error) {
+	basePath := record.Metadata[metadataBasePath]
+	if basePath == "" || !strings.HasPrefix(basePath, "/") ||
+		strings.HasPrefix(basePath, "//") || strings.ContainsAny(basePath, "?#") ||
+		canonicalBasePath(basePath) != basePath {
+		return "", fmt.Errorf("daemon runtime record has invalid base_path %q", basePath)
+	}
+	baseURL := record.Endpoint().BaseURL()
+	if basePath == "/" {
+		return baseURL, nil
+	}
+	return baseURL + basePath, nil
 }
 
 // Publish writes identity's standard discovery record and returns its exact
@@ -151,6 +169,9 @@ func Compatible(record daemon.RuntimeRecord, dataDir string) bool {
 	}
 	requireAuth, err := strconv.ParseBool(record.Metadata[metadataRequireAuth])
 	if err != nil {
+		return false
+	}
+	if _, err := URL(record); err != nil {
 		return false
 	}
 	if requireAuth {

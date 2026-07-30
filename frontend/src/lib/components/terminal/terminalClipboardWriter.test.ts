@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
-import { createTerminalClipboardWriter, type TerminalClipboardPort } from "./terminalClipboardWriter";
+import {
+  createBrowserTerminalClipboardPort,
+  createTerminalClipboardWriter,
+  type TerminalClipboardPort,
+} from "./terminalClipboardWriter";
 
 function deferred<T>(): {
   promise: Promise<T>;
@@ -42,6 +46,28 @@ function createPort(): {
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
+
+describe("browser terminal clipboard port", () => {
+  it("handles an expired deferred payload without leaking an unhandled rejection", async () => {
+    const payload = deferred<string>();
+    const write = vi.fn(async () => undefined);
+
+    vi.stubGlobal("navigator", { clipboard: { write } });
+    vi.stubGlobal(
+      "ClipboardItem",
+      class {
+        constructor(_items: Record<string, Promise<Blob>>) {}
+      },
+    );
+
+    await createBrowserTerminalClipboardPort().beginDeferredWrite(payload.promise);
+    payload.reject(new DOMException("Terminal clipboard authorization expired", "AbortError"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(write).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("terminal clipboard writer", () => {

@@ -34,9 +34,11 @@ export function createBrowserTerminalClipboardPort(): TerminalClipboardPort {
       if (!navigator.clipboard?.write || typeof ClipboardItem === "undefined") {
         throw new DOMException("Deferred clipboard writes are unavailable", "NotSupportedError");
       }
-      const item = new ClipboardItem({
-        "text/plain": text.then((value) => new Blob([value], { type: "text/plain" })),
-      });
+      const payload = text.then((value) => new Blob([value], { type: "text/plain" }));
+      // ClipboardItem does not consistently observe a rejected deferred payload.
+      // Keep the rejection intact so the write is canceled, but mark it handled.
+      void payload.catch(() => undefined);
+      const item = new ClipboardItem({ "text/plain": payload });
       return navigator.clipboard.write([item]);
     },
     writeLocalText(text) {

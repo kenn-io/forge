@@ -511,6 +511,90 @@ test.describe("inline workspace pane continuity", () => {
     }
   });
 
+  test("deleting a running inline workspace never reveals the launcher during teardown", async ({ page }) => {
+    test.skip(
+      !hasCommand("git") || !hasCommand("tmux", ["-V"]),
+      "git and tmux are required for the real workspace flow",
+    );
+
+    let isolatedServer: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    try {
+      isolatedServer = await startIsolatedWorkspaceE2EServer();
+      api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
+      const workspace = await createIssueWorkspace(api, 10);
+      const launch = await api.post(`/api/v1/workspaces/${workspace.id}/runtime/sessions`, {
+        data: { target_key: "plain_shell", display_region: "workflow" },
+      });
+      expect(launch.status(), await launch.text()).toBe(200);
+
+      await page.goto(`${isolatedServer.info.base_url}/issues/github/acme/widgets/10`);
+      await expect(page.locator(".detail-pane-workspace-slot .terminal-container")).toBeVisible();
+      const launcher = page.getByRole("dialog", { name: "Launch a session" });
+      await expect(launcher).toHaveCount(0);
+
+      let resolveDeleteProxy!: () => void;
+      const deleteProxyCompleted = new Promise<void>((resolve) => {
+        resolveDeleteProxy = resolve;
+      });
+      // Let the real DELETE stop tmux and remove the workspace, but hold its
+      // response briefly so runtime teardown can render while the inline host is
+      // still present. A mocked runtime response would miss the server ordering
+      // this regression is meant to protect.
+      await page.route(`**/api/v1/workspaces/${workspace.id}`, async (route) => {
+        if (route.request().method() !== "DELETE") {
+          await route.continue();
+          return;
+        }
+        try {
+          const response = await route.fetch();
+          await new Promise((resolve) => setTimeout(resolve, 1_000));
+          await route.fulfill({ response });
+        } finally {
+          resolveDeleteProxy();
+        }
+      });
+
+      // An end-state absence assertion can miss a dialog that mounts for one
+      // render and disappears with the host. Record every added dialog node so
+      // even that transient launch surface fails the test.
+      await page.evaluate(() => {
+        const selector = '[role="dialog"][aria-label="Launch a session"]';
+        const state = { appeared: document.querySelector(selector) !== null };
+        Reflect.set(window, "__middlemanDeleteLauncherProbe", state);
+        new MutationObserver((records) => {
+          for (const record of records) {
+            for (const node of record.addedNodes) {
+              if (node instanceof Element && (node.matches(selector) || node.querySelector(selector) !== null)) {
+                state.appeared = true;
+              }
+            }
+          }
+        }).observe(document.body, { childList: true, subtree: true });
+      });
+
+      await page.getByRole("button", { name: /^Delete workspace / }).click();
+      await page
+        .getByRole("dialog", { name: "Delete workspace?" })
+        .getByRole("button", { name: "Delete workspace" })
+        .click();
+
+      await expect(page.locator(".detail-pane-workspace-slot")).toHaveCount(0, { timeout: 10_000 });
+      await deleteProxyCompleted;
+      const launcherAppeared = await page.evaluate(
+        () =>
+          (Reflect.get(window, "__middlemanDeleteLauncherProbe") as { appeared?: boolean } | undefined)?.appeared ??
+          false,
+      );
+      expect(launcherAppeared).toBe(false);
+      await expect.poll(async () => (await api!.get(`/api/v1/workspaces/${workspace.id}`)).status()).toBe(404);
+    } finally {
+      await page.unrouteAll({ behavior: "ignoreErrors" });
+      await api?.dispose();
+      await isolatedServer?.stop();
+    }
+  });
+
   test("the pane's own maximize and close controls keep the live terminal", async ({ page }) => {
     // The frame-geometry side of maximizing is covered above. This is the same pair
     // of pane-native controls driven for a different question: that the single hosted

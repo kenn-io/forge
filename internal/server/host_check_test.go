@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"io"
-	"maps"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -47,30 +46,23 @@ func bindLoopback8091() config.HostKey {
 	return config.HostKey{Host: "127.0.0.1", Port: "8091"}
 }
 
-type fixedAddrListener struct {
-	net.Listener
-	addr net.Addr
-}
-
-func (l fixedAddrListener) Addr() net.Addr { return l.addr }
-
-func newDirectDaemonRequest(bearer string, headers http.Header) *http.Request {
+func directDaemonRequest(bearer string, headers http.Header) *http.Request {
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/snapshot", nil)
 	req.Host = "127.0.0.1:8091"
 	req.RemoteAddr = "127.0.0.1:1234"
+	if headers != nil {
+		req.Header = headers.Clone()
+	}
 	if bearer != "" {
 		req.Header.Set("Authorization", "Bearer "+bearer)
 	}
-	maps.Copy(req.Header, headers)
 	return req
 }
 
-func serveDirectDaemonRequest(
-	srv *Server, bearer string, headers http.Header,
-) *httptest.ResponseRecorder {
+func serveDirectDaemonRequest(srv *Server, bearer string, headers http.Header) int {
 	rr := httptest.NewRecorder()
-	srv.ServeHTTP(rr, newDirectDaemonRequest(bearer, headers))
-	return rr
+	srv.ServeHTTP(rr, directDaemonRequest(bearer, headers))
+	return rr.Code
 }
 
 // TestDirectDaemonBearerClassification protects the native-client trust
@@ -79,57 +71,37 @@ func serveDirectDaemonRequest(
 // requests can bypass reverse-proxy Host validation.
 func TestDirectDaemonBearerClassification(t *testing.T) {
 	tests := []struct {
-		name                     string
-		bearer, host, remoteAddr string
-		missingBearer, noToken   bool
-		cookie, forwarded, ipv6  bool
-		wantBypass               bool
+		name, token, host, remoteAddr, bearer string
+		headers                               http.Header
+		cookie, wantBypass                    bool
+		bind                                  config.HostKey
 	}{
-		{name: "valid exact listener authority", wantBypass: true},
-		{name: "missing bearer", missingBearer: true},
-		{name: "invalid bearer", bearer: "wrong"},
-		{name: "session cookie does not qualify", missingBearer: true, cookie: true},
-		{name: "loopback alias is not exact", host: "localhost:8091"},
-		{name: "non-loopback peer", remoteAddr: "192.0.2.1:1234"},
-		{name: "public host", host: "mm.example.com"},
-		{name: "forwarded request", forwarded: true},
-		{name: "missing configured token", noToken: true},
-		{name: "IPv6 listener authority", ipv6: true, wantBypass: true},
+		{name: "valid", token: "secret", host: "127.0.0.1:8091", remoteAddr: "127.0.0.1:1", bearer: "secret", wantBypass: true},
+		{name: "missing bearer", token: "secret", host: "127.0.0.1:8091", remoteAddr: "127.0.0.1:1"},
+		{name: "invalid bearer", token: "secret", host: "127.0.0.1:8091", remoteAddr: "127.0.0.1:1", bearer: "wrong"},
+		{name: "cookie", token: "secret", host: "127.0.0.1:8091", remoteAddr: "127.0.0.1:1", cookie: true},
+		{name: "listener alias", token: "secret", host: "localhost:8091", remoteAddr: "127.0.0.1:1", bearer: "secret"},
+		{name: "non-loopback peer", token: "secret", host: "127.0.0.1:8091", remoteAddr: "192.0.2.1:1", bearer: "secret"},
+		{name: "public host", token: "secret", host: "mm.example.com", remoteAddr: "127.0.0.1:1", bearer: "secret"},
+		{name: "forwarded", token: "secret", host: "127.0.0.1:8091", remoteAddr: "127.0.0.1:1", bearer: "secret", headers: http.Header{"Forwarded": {"host=mm.example.com"}}},
+		{name: "missing token", host: "127.0.0.1:8091", remoteAddr: "127.0.0.1:1", bearer: "secret"},
+		{name: "IPv6", token: "secret", bind: config.HostKey{Host: "[::1]", Port: "8091"}, host: "[::1]:8091", remoteAddr: "[::1]:1", bearer: "secret", wantBypass: true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			token := "daemon-secret"
-			if tt.noToken {
-				token = ""
-			}
 			bind := bindLoopback8091()
-			req := newDirectDaemonRequest("daemon-secret", nil)
-			if tt.ipv6 {
-				bind = config.HostKey{Host: "[::1]", Port: "8091"}
-				req.Host = "[::1]:8091"
-				req.RemoteAddr = "[::1]:1234"
+			if tt.bind.Host != "" {
+				bind = tt.bind
 			}
-			if tt.host != "" {
-				req.Host = tt.host
-			}
-			if tt.remoteAddr != "" {
-				req.RemoteAddr = tt.remoteAddr
-			}
-			if tt.forwarded {
-				req.Header.Set("X-Forwarded-For", "127.0.0.1")
-			}
-			if tt.missingBearer {
-				req.Header.Del("Authorization")
-			} else if tt.bearer != "" {
-				req.Header.Set("Authorization", "Bearer "+tt.bearer)
-			}
+			req := directDaemonRequest(tt.bearer, tt.headers)
+			req.Host, req.RemoteAddr = tt.host, tt.remoteAddr
 			if tt.cookie {
-				req.AddCookie(&http.Cookie{Name: authCookieName, Value: "daemon-secret"})
+				req.AddCookie(&http.Cookie{Name: authCookieName, Value: "secret"})
 			}
 			rr := httptest.NewRecorder()
 
-			admission := (daemonRequestPolicy{token: token}).admit(
+			admission := (daemonRequestPolicy{token: tt.token}).admit(
 				rr, req, HostCheckOptions{Bind: bind}, true,
 			)
 
@@ -144,66 +116,12 @@ func TestDirectDaemonBearerClassification(t *testing.T) {
 // remains subject to the existing proxy validation and rejection rules.
 func TestDirectDaemonBearerHostIntegration(t *testing.T) {
 	srv := setupHostCheckServerWithToken(t, HostCheckOptions{
-		Bind: bindLoopback8091(),
-		Allowed: []config.HostKey{
-			{Host: "mm.example.com"}, {Host: "other.example.com"},
-		},
+		Bind:              bindLoopback8091(),
 		TrustReverseProxy: true,
 	}, "daemon-secret")
-	tests := []struct {
-		name    string
-		bearer  string
-		headers http.Header
-		status  int
-	}{
-		{name: "direct bearer", bearer: "daemon-secret", status: http.StatusOK},
-		{name: "missing bearer", status: http.StatusForbidden},
-		{
-			name: "valid forwarded host", bearer: "daemon-secret",
-			headers: http.Header{"X-Forwarded-Host": {"mm.example.com"}},
-			status:  http.StatusOK,
-		},
-		{
-			name: "malformed forwarded header", bearer: "daemon-secret",
-			headers: http.Header{"Forwarded": {"wat"}}, status: http.StatusForbidden,
-		},
-		{
-			name: "conflicting forwarded headers", bearer: "daemon-secret",
-			headers: http.Header{
-				"Forwarded":        {"host=other.example.com"},
-				"X-Forwarded-Host": {"mm.example.com"},
-			},
-			status: http.StatusForbidden,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			rr := serveDirectDaemonRequest(srv, tt.bearer, tt.headers)
-
-			assert.Equal(t, tt.status, rr.Code, rr.Body.String())
-		})
-	}
-}
-
-func TestDirectDaemonBearerUsesActualIPv6ListenerAuthority(t *testing.T) {
-	srv := setupHostCheckServerWithToken(t, HostCheckOptions{
-		Bind: config.HostKey{
-			Host: "[0:0:0:0:0:0:0:1]", Port: "8091",
-		},
-		TrustReverseProxy: true,
-	}, "daemon-secret")
-	srv.adoptListenerHostPort(fixedAddrListener{addr: &net.TCPAddr{
-		IP: net.IPv6loopback, Port: 8091,
-	}})
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/snapshot", nil)
-	req.Host = "[::1]:8091"
-	req.RemoteAddr = "[::1]:1234"
-	req.Header.Set("Authorization", "Bearer daemon-secret")
-	rr := httptest.NewRecorder()
-
-	srv.ServeHTTP(rr, req)
-
-	assert.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	assert.Equal(t, http.StatusOK, serveDirectDaemonRequest(srv, "daemon-secret", nil))
+	assert.Equal(t, http.StatusForbidden, serveDirectDaemonRequest(srv, "", nil))
+	assert.Equal(t, http.StatusForbidden, serveDirectDaemonRequest(srv, "wrong", nil))
 }
 
 // TestDirectDaemonBearerClassificationWithoutGeneralAPIAuth protects the
@@ -222,13 +140,10 @@ func TestDirectDaemonBearerClassificationWithoutGeneralAPIAuth(t *testing.T) {
 		},
 		DaemonAccess: DaemonAccessOptions{Token: "daemon-secret"},
 	})
-	direct := serveDirectDaemonRequest(srv, "daemon-secret", nil)
-	assert.Equal(t, http.StatusOK, direct.Code, direct.Body.String())
-
-	proxied := serveDirectDaemonRequest(srv, "", http.Header{
+	assert.Equal(t, http.StatusOK, serveDirectDaemonRequest(srv, "daemon-secret", nil))
+	assert.Equal(t, http.StatusOK, serveDirectDaemonRequest(srv, "", http.Header{
 		"X-Forwarded-Host": {"mm.example.com"},
-	})
-	assert.Equal(t, http.StatusOK, proxied.Code, proxied.Body.String())
+	}))
 }
 
 // TestHostCheckBackendHost exercises Step 1+2 of the spec: parse

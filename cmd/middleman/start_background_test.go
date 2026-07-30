@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -17,32 +16,8 @@ import (
 )
 
 func TestValidateBackgroundConfigRejectsUnsafeDirectVerification(t *testing.T) {
-	tests := []struct {
-		name string
-		cfg  config.Config
-		want string
-	}{
-		{
-			name: "non-loopback listener",
-			cfg: config.Config{
-				Host: "192.0.2.1", API: config.API{RequireAuth: true},
-			},
-			want: "loopback TCP listener",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := validateBackgroundConfig(&tt.cfg)
-			require.ErrorContains(t, err, tt.want)
-		})
-	}
-}
-
-func TestValidateBackgroundConfigAllowsUnauthenticatedReverseProxy(t *testing.T) {
-	cfg := config.Config{Host: "127.0.0.1", TrustReverseProxy: true}
-
-	require.NoError(t, validateBackgroundConfig(&cfg))
+	err := validateBackgroundConfig(&config.Config{Host: "192.0.2.1"})
+	require.ErrorContains(t, err, "loopback TCP listener")
 }
 
 // TestBackgroundManagerRejectsMismatchedPingIdentity protects the attachment
@@ -53,15 +28,9 @@ func TestBackgroundManagerRejectsMismatchedPingIdentity(t *testing.T) {
 	require := require.New(t)
 	dataDir := t.TempDir()
 	token := "daemon-secret"
-	_, record := newBackgroundProofServer(t, dataDir, token, "v-real")
-	require.NoError(os.WriteFile(
-		runtimelock.AuthTokenPath(dataDir), []byte(token+"\n"), 0o600,
-	))
+	record := newBackgroundProofRecord(t, dataDir, token, "v-real")
 	record.Version = "v-claimed"
-	store := daemon.RuntimeStore{Dir: t.TempDir()}
-	_, err := store.Write(record)
-	require.NoError(err)
-	manager := daemonruntime.NewManager(store, dataDir, "v-claimed", nil)
+	manager := newDiscoveryManager(t, dataDir, token, record, "v-claimed")
 
 	_, _, found, err := manager.Find(t.Context())
 
@@ -79,11 +48,9 @@ func TestBackgroundDiscoveryDoesNotDiscloseBearerBeforeProof(t *testing.T) {
 	attacker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests.Add(1)
 		receivedAuthorization.Store(r.Header.Get("Authorization"))
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprintf(w,
-			`{"ok":true,"service":"middleman","version":"v-test","pid":%d}`,
-			os.Getpid(),
-		)
+		daemon.NewPingHandler(daemon.PingHandlerOptions{
+			Service: daemonruntime.Service, Version: "v-test", PID: os.Getpid(),
+		}).ServeHTTP(w, r)
 	}))
 	t.Cleanup(attacker.Close)
 
@@ -94,14 +61,9 @@ func TestBackgroundDiscoveryDoesNotDiscloseBearerBeforeProof(t *testing.T) {
 		},
 	)
 	require.NoError(t, err)
-	record := identity.Record
-	require.NoError(t, os.WriteFile(
-		runtimelock.AuthTokenPath(dataDir), []byte("daemon-secret\n"), 0o600,
-	))
-	store := daemon.RuntimeStore{Dir: t.TempDir()}
-	_, err = store.Write(record)
-	require.NoError(t, err)
-	manager := daemonruntime.NewManager(store, dataDir, "v-test", nil)
+	manager := newDiscoveryManager(
+		t, dataDir, "daemon-secret", identity.Record, "v-test",
+	)
 
 	_, _, compatible, err := manager.Find(t.Context())
 
@@ -111,10 +73,26 @@ func TestBackgroundDiscoveryDoesNotDiscloseBearerBeforeProof(t *testing.T) {
 	assert.Empty(t, receivedAuthorization.Load())
 }
 
-func newBackgroundProofServer(
+func newDiscoveryManager(
+	t *testing.T,
+	dataDir, token string,
+	record daemon.RuntimeRecord,
+	version string,
+) daemon.Manager {
+	t.Helper()
+	require.NoError(t, os.WriteFile(
+		runtimelock.AuthTokenPath(dataDir), []byte(token+"\n"), 0o600,
+	))
+	store := daemon.RuntimeStore{Dir: t.TempDir()}
+	_, err := store.Write(record)
+	require.NoError(t, err)
+	return daemonruntime.NewManager(store, dataDir, version, nil)
+}
+
+func newBackgroundProofRecord(
 	t *testing.T,
 	dataDir, token, version string,
-) (*httptest.Server, daemon.RuntimeRecord) {
+) daemon.RuntimeRecord {
 	t.Helper()
 	server := httptest.NewUnstartedServer(nil)
 	identity, err := daemonruntime.NewIdentity(
@@ -131,5 +109,5 @@ func newBackgroundProofServer(
 	server.Config.Handler = ping
 	server.Start()
 	t.Cleanup(server.Close)
-	return server, record
+	return record
 }

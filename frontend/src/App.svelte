@@ -1584,6 +1584,7 @@
   .focus-layout--phone :global(.copy-icon-btn),
   .focus-layout--phone :global(.copy-number-btn),
   .focus-layout--phone :global(.pull-detail-content .meta-row .copy-number-btn),
+  .focus-layout--phone :global(.detail-description__toggle),
   .focus-layout--phone :global(.kit-button),
   .focus-layout--phone :global(.detail-tab),
   .focus-layout--phone :global(.add-description-btn) {

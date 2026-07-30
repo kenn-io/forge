@@ -427,6 +427,28 @@ test.describe("phone routes", () => {
     await expect(page.locator(".mobile-shell")).toHaveCount(0);
   });
 
+  test("long description collapse toggle has a phone-sized hit target", async ({ page }) => {
+    const server = await startIsolatedE2EServerWithOptions();
+    try {
+      await page.goto(`${server.info.base_url}/pulls/github/acme/widgets/1`);
+      await expect(page.locator(".focus-layout .pull-detail .detail-title")).toBeVisible();
+      await expect(page.locator(".pull-detail .sync-indicator")).toHaveCount(0, { timeout: 15_000 });
+
+      await page.locator(".edit-body-btn").click();
+      await page.locator(".body-edit-textarea").fill(["Long phone description", "", "Details ".repeat(200)].join("\n"));
+      await page.locator(".body-edit .title-edit-save").click();
+
+      const collapseToggle = page.getByRole("button", { name: "Collapse description" });
+      await expect(collapseToggle).toBeVisible();
+      const bounds = await collapseToggle.boundingBox();
+
+      expect(bounds?.width ?? 0).toBeGreaterThanOrEqual(49);
+      expect(bounds?.height ?? 0).toBeGreaterThanOrEqual(49);
+    } finally {
+      await server.stop();
+    }
+  });
+
   test("phone canonical PR files deep link renders focus presentation without changing URL", async ({ page }) => {
     await page.goto("/pulls/github/acme/widgets/1/files");
 

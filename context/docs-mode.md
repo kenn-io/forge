@@ -37,12 +37,12 @@ filesystem operations, search, and git pull/publish behavior.
 
 ## Git Pull And Publish
 
-- Docs git operations treat registered repositories as user data, not trusted
-  code: strip inherited credential-like environment variables, disable
-  repository hooks and fsmonitor, and refuse command-bearing local config or
-  attributes before commands that inspect or stage worktree content
-  (`internal/docs/git.go::docsGitRunner`,
-  `internal/docs/git_safety.go::Registry.assertSafeToPublish`).
+- Every Docs git command strips inherited credential-like environment
+  variables, disables hooks and fsmonitor, and restricts transport helpers
+  (`internal/docs/git.go::docsGitRunner`).
+- Status rejects command-bearing worktree attributes; changes and publish also
+  reject command-bearing local config before inspecting or staging content
+  (`internal/docs/git.go::Registry.GitStatus`, `internal/docs/git_publish.go::Registry.GitChanges`).
 - Publish handles markdown changes only. Unrelated staged files, partial stages,
   conflicts, missing upstreams, and diverged branches block the operation rather
   than being folded into a Docs commit
@@ -50,8 +50,9 @@ filesystem operations, search, and git pull/publish behavior.
 - Push the branch's configured upstream; repository-wide `push.default` or
   `remote.pushDefault` must not redirect publication
   (`internal/docs/git_publish.go::Registry.currentUpstreamPushTarget`).
-- Pull is fast-forward-only and refuses a dirty worktree or diverged history;
-  conflict resolution belongs in a git client
+- Pull is an explicit trusted action: it skips config and attribute gates and
+  permits unrelated dirty changes, but rejects divergence and changes Git would
+  overwrite during its fast-forward checkout
   (`internal/docs/git_pull.go::Registry.GitPull`).
 
 ## Related Context

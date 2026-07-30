@@ -57,9 +57,9 @@ Reports whether a middleman daemon is running.
 ## API relay
 
 ```sh
-middleman api GET /pulls
-middleman api POST /sync
-middleman api GET /version
+middleman api GET /api/v1/pulls
+middleman api POST /api/v1/sync
+middleman api GET /api/v1/version
 ```
 
 `middleman api` discovers the running daemon from the selected config and

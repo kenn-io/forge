@@ -35,9 +35,10 @@ func setupHostCheckServerWithToken(
 	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
 	t.Cleanup(syncer.Stop)
 	return New(database, syncer, emptyFrontend(), "/", nil, ServerOptions{
-		HostCheck:         opts,
-		APIAuthToken:      token,
-		DirectClientToken: token,
+		HostCheck: opts,
+		DaemonAccess: DaemonAccessOptions{
+			Token: token, RequireAPIAuth: token != "",
+		},
 	})
 }
 
@@ -218,7 +219,7 @@ func TestDirectDaemonBearerClassificationWithoutGeneralAPIAuth(t *testing.T) {
 			Allowed:           []config.HostKey{{Host: "mm.example.com"}},
 			TrustReverseProxy: true,
 		},
-		DirectClientToken: "daemon-secret",
+		DaemonAccess: DaemonAccessOptions{Token: "daemon-secret"},
 	})
 	tests := []struct {
 		name    string

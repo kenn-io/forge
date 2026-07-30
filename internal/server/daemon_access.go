@@ -8,9 +8,17 @@ import (
 	"go.kenn.io/middleman/internal/daemonruntime"
 )
 
+// DaemonAccessOptions configures startup-bound daemon authentication and proof.
+type DaemonAccessOptions struct {
+	Token          string
+	RequireAPIAuth bool
+	ProofHandler   http.Handler
+}
+
 type daemonRequestPolicy struct {
-	directToken string
-	proof       http.Handler
+	token          string
+	requireAPIAuth bool
+	proof          http.Handler
 }
 
 type daemonRequestAdmission struct {
@@ -38,7 +46,7 @@ func (p daemonRequestPolicy) admit(
 	}
 	return daemonRequestAdmission{
 		bypassProxyHostCheck: gatedAPIRequest &&
-			hasValidBearer(r, p.directToken) && direct,
+			hasValidBearer(r, p.token) && direct,
 	}
 }
 

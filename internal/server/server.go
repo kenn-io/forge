@@ -63,18 +63,7 @@ type versionOutputBody BuildInfo
 type versionOutput = httpapi.BodyOutput[versionOutputBody]
 
 type ServerOptions struct {
-	// APIAuthToken, when non-empty, gates /api routes behind bearer
-	// or session-cookie auth (see api_auth.go). Health probes stay
-	// open. Minted under data_dir by the serve entrypoint when
-	// [api].require_auth is set.
-	APIAuthToken string
-	// DirectClientToken authenticates native clients addressing the exact
-	// loopback listener without forwarding headers. It is startup-bound and
-	// independent of whether general API authentication is enabled.
-	DirectClientToken string
-	// DaemonProofHandler serves the private credential-free proof route.
-	// Production supplies kit's proof handler bound to the published record.
-	DaemonProofHandler                 http.Handler
+	DaemonAccess                       DaemonAccessOptions
 	Clones                             *gitclone.Manager // optional clone manager for diff view
 	WorktreeDir                        string            // base dir for workspace worktrees
 	DisableWorkspaceBackgroundMonitors bool
@@ -229,8 +218,6 @@ type Server struct {
 	toolingStatus toolingStatusCache
 	toolingRun    toolingRunner
 
-	// apiAuthToken gates /api routes when non-empty (api_auth.go).
-	apiAuthToken   string
 	daemonRequests daemonRequestPolicy
 
 	// bg tracks short-lived goroutines that HTTP handlers spawn
@@ -771,10 +758,10 @@ func newServer(
 		bootCfgSnapshot:     snapshotStartupConfig(cfg),
 		runtimeStripEnvVars: initialRuntimeStripEnvNames(cfg),
 		options:             options,
-		apiAuthToken:        options.APIAuthToken,
 		daemonRequests: daemonRequestPolicy{
-			directToken: options.DirectClientToken,
-			proof:       options.DaemonProofHandler,
+			token:          options.DaemonAccess.Token,
+			requireAPIAuth: options.DaemonAccess.RequireAPIAuth,
+			proof:          options.DaemonAccess.ProofHandler,
 		},
 		now:                    time.Now,
 		hub:                    NewEventHubWithCapacity(cfg.SSEBufferSizeOrDefault()),
@@ -1307,7 +1294,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !s.checkHost(w, r) {
 		return
 	}
-	if s.apiAuthToken != "" {
+	if s.daemonRequests.requireAPIAuth {
 		if s.handleAuthBootstrap(w, r) {
 			return
 		}

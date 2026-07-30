@@ -296,7 +296,10 @@ func TestAPIArchiveRoutesObeyHostAuthAndCSRFGuards(t *testing.T) {
 	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
 	t.Cleanup(syncer.Stop)
 	authServer := server.New(database, syncer, nil, "/", nil, server.ServerOptions{
-		APIAuthToken: "archive-test-token", Archive: archiveStatusController{},
+		DaemonAccess: server.DaemonAccessOptions{
+			Token: "archive-test-token", RequireAPIAuth: true,
+		},
+		Archive: archiveStatusController{},
 	})
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

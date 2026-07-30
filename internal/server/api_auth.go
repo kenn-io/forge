@@ -10,7 +10,7 @@ import (
 )
 
 // API auth gates /api and /ws routes behind the daemon's bearer token
-// when the server is constructed with one (ServerOptions.APIAuthToken,
+// when the server is configured to require it (ServerOptions.DaemonAccess,
 // minted under data_dir at serve start). Two credentials are
 // accepted: an `Authorization: Bearer <token>` header (CLI, native
 // thin clients, SSE over plain HTTP clients) and the session cookie a
@@ -50,7 +50,7 @@ func (s *Server) handleAuthBootstrap(
 	if token == "" {
 		return false
 	}
-	if !tokenEqual(token, s.apiAuthToken) {
+	if !tokenEqual(token, s.daemonRequests.token) {
 		http.Error(w, "invalid auth token", http.StatusForbidden)
 		return true
 	}
@@ -78,11 +78,11 @@ func (s *Server) handleAuthBootstrap(
 func (s *Server) authorizeAPIRequest(
 	w http.ResponseWriter, r *http.Request,
 ) bool {
-	if hasValidBearer(r, s.apiAuthToken) {
+	if hasValidBearer(r, s.daemonRequests.token) {
 		return true
 	}
 	if cookie, err := r.Cookie(authCookieName); err == nil {
-		if tokenEqual(cookie.Value, s.apiAuthToken) {
+		if tokenEqual(cookie.Value, s.daemonRequests.token) {
 			return true
 		}
 	}

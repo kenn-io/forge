@@ -21,7 +21,9 @@ import (
 func newAuthTestServer(t *testing.T, token string) *httptest.Server {
 	t.Helper()
 	srv := New(dbtest.Open(t), nil, nil, "/", nil, ServerOptions{
-		APIAuthToken: token,
+		DaemonAccess: DaemonAccessOptions{
+			Token: token, RequireAPIAuth: token != "",
+		},
 	})
 	ts := httptest.NewServer(srv)
 	t.Cleanup(ts.Close)
@@ -36,7 +38,9 @@ func TestDaemonPingRequiresBearerAndReportsReadyIdentity(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	srv := New(dbtest.Open(t), nil, nil, "/middleman", nil, ServerOptions{
-		APIAuthToken: "secret-token",
+		DaemonAccess: DaemonAccessOptions{
+			Token: "secret-token", RequireAPIAuth: true,
+		},
 	})
 	srv.SetBuildInfo(BuildInfo{Name: "middleman", Version: "v-test"})
 	ts := httptest.NewServer(srv)
@@ -77,9 +81,10 @@ func TestDaemonProofUsesThePublishedIdentity(t *testing.T) {
 	proofHandler, err := proof.NewPingHandler(record)
 	require.NoError(err)
 	srv := New(dbtest.Open(t), nil, nil, "/", nil, ServerOptions{
-		APIAuthToken:       "secret-token",
-		DirectClientToken:  "secret-token",
-		DaemonProofHandler: proofHandler,
+		DaemonAccess: DaemonAccessOptions{
+			Token: "secret-token", RequireAPIAuth: true,
+			ProofHandler: proofHandler,
+		},
 		HostCheck: HostCheckOptions{
 			Bind: bind, TrustReverseProxy: true,
 		},

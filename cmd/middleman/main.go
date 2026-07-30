@@ -346,11 +346,6 @@ func run(opts serve.Options) error {
 	if err != nil {
 		return fmt.Errorf("ensure auth token: %w", err)
 	}
-	enforcedToken := ""
-	if cfg.API.RequireAuth {
-		enforcedToken = authToken
-	}
-
 	addr := cfg.ListenAddr()
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -583,9 +578,10 @@ func run(opts serve.Options) error {
 	srv = server.NewWithConfig(
 		database, syncer, cloneMgr, assets,
 		cfg, configPath, server.ServerOptions{
-			APIAuthToken:        enforcedToken,
-			DirectClientToken:   authToken,
-			DaemonProofHandler:  daemonProofHandler,
+			DaemonAccess: server.DaemonAccessOptions{
+				Token: authToken, RequireAPIAuth: cfg.API.RequireAuth,
+				ProofHandler: daemonProofHandler,
+			},
 			WorktreeDir:         filepath.Join(cfg.DataDir, "worktrees"),
 			PtyOwnerManagerPath: os.Getenv("MIDDLEMAN_PTY_MANAGER"),
 			Telemetry:           telemetryReporter,

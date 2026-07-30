@@ -92,11 +92,6 @@ func validateBackgroundConfig(cfg *config.Config) error {
 			cfg.Host,
 		)
 	}
-	if cfg.TrustReverseProxy && !cfg.API.RequireAuth {
-		return errors.New(
-			"background start with trust_reverse_proxy=true requires api.require_auth=true",
-		)
-	}
 	return nil
 }
 
@@ -158,6 +153,9 @@ func (d backgroundDiscovery) find(
 	if err != nil {
 		return daemon.RuntimeRecord{}, daemon.PingInfo{}, false, err
 	}
+	if token == "" {
+		return daemon.RuntimeRecord{}, daemon.PingInfo{}, false, nil
+	}
 	records, err := d.store.List()
 	if err != nil {
 		return daemon.RuntimeRecord{}, daemon.PingInfo{}, false, err
@@ -184,17 +182,13 @@ func (d backgroundDiscovery) probe(
 		return daemon.PingInfo{}, false, nil
 	}
 
-	endpoint := record.Endpoint()
-	client := endpoint.HTTPClient(daemon.HTTPClientOptions{
-		Timeout:           backgroundProbeTimeout,
-		DisableKeepAlives: true,
-	})
-	client.Transport = daemonOriginTransport{
-		token: token, origin: endpoint.BaseURL(), base: client.Transport,
+	proof, err := daemon.NewProof([]byte(token))
+	if err != nil {
+		return daemon.PingInfo{}, false, fmt.Errorf("initialize daemon proof: %w", err)
 	}
-	ping, err := daemon.ProbeHTTP(
-		ctx, client, endpoint.BaseURL(), daemon.ProbeOptions{
-			Path:            "/api/ping",
+	ping, err := proof.Probe(
+		ctx, record, daemon.ProbeOptions{
+			Path:            daemonruntime.ProofPingPath,
 			ExpectedService: daemonruntime.Service,
 			Timeout:         backgroundProbeTimeout,
 		},

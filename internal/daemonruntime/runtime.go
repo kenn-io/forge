@@ -14,7 +14,8 @@ import (
 )
 
 const (
-	Service = "middleman"
+	Service       = "middleman"
+	ProofPingPath = "/api/ping/proof"
 
 	metadataHost          = "host"
 	metadataPort          = "port"
@@ -57,18 +58,19 @@ func StartLockStore(discoveryStore daemon.RuntimeStore, dataDir string) daemon.R
 	}
 }
 
-// Publish writes the standard discovery record after the listener is bound.
-func Publish(opts PublishOptions) (string, error) {
+// Publish writes the standard discovery record after the listener is bound and
+// returns the exact identity that credential-free endpoint proof must bind.
+func Publish(opts PublishOptions) (daemon.RuntimeRecord, string, error) {
 	host, port, err := net.SplitHostPort(opts.Address)
 	if err != nil {
-		return "", fmt.Errorf("listener address is not TCP: %w", err)
+		return daemon.RuntimeRecord{}, "", fmt.Errorf("listener address is not TCP: %w", err)
 	}
 	store, err := Store()
 	if err != nil {
-		return "", err
+		return daemon.RuntimeRecord{}, "", err
 	}
 	if _, err := store.CleanupDead(); err != nil {
-		return "", fmt.Errorf("clean stale daemon runtime records: %w", err)
+		return daemon.RuntimeRecord{}, "", fmt.Errorf("clean stale daemon runtime records: %w", err)
 	}
 	record := daemon.NewRuntimeRecord(
 		Service,
@@ -85,7 +87,8 @@ func Publish(opts PublishOptions) (string, error) {
 	if opts.RequireAuth {
 		record.Metadata[metadataAuthTokenPath] = runtimelock.AuthTokenPath(opts.DataDir)
 	}
-	return store.Write(record)
+	path, err := store.Write(record)
+	return record, path, err
 }
 
 // Compatible reports whether a discovery record can represent the expected

@@ -18,6 +18,7 @@ import (
 	"syscall"
 	"time"
 
+	"go.kenn.io/kit/daemon"
 	oteltelemetry "go.kenn.io/kit/telemetry"
 	"go.kenn.io/middleman/internal/archive"
 	"go.kenn.io/middleman/internal/cli/serve"
@@ -369,7 +370,7 @@ func run(opts serve.Options) error {
 	); err != nil {
 		slog.Warn("write runtime metadata", "err", err)
 	}
-	runtimePath, err := daemonruntime.Publish(daemonruntime.PublishOptions{
+	runtimeRecord, runtimePath, err := daemonruntime.Publish(daemonruntime.PublishOptions{
 		Address:     ln.Addr().String(),
 		Version:     version,
 		DataDir:     cfg.DataDir,
@@ -384,6 +385,16 @@ func run(opts serve.Options) error {
 			slog.Warn("remove daemon runtime record", "err", err)
 		}
 	}()
+	proof, err := daemon.NewProof([]byte(authToken))
+	if err != nil {
+		_ = ln.Close()
+		return fmt.Errorf("initialize daemon proof: %w", err)
+	}
+	daemonProofHandler, err := proof.NewPingHandler(runtimeRecord)
+	if err != nil {
+		_ = ln.Close()
+		return fmt.Errorf("initialize daemon ping: %w", err)
+	}
 
 	startupHandler := server.NewStartupHandler(
 		assets, cfg, server.ServerOptions{}, ln,
@@ -572,6 +583,8 @@ func run(opts serve.Options) error {
 		database, syncer, cloneMgr, assets,
 		cfg, configPath, server.ServerOptions{
 			APIAuthToken:        enforcedToken,
+			DirectClientToken:   authToken,
+			DaemonProofHandler:  daemonProofHandler,
 			WorktreeDir:         filepath.Join(cfg.DataDir, "worktrees"),
 			PtyOwnerManagerPath: os.Getenv("MIDDLEMAN_PTY_MANAGER"),
 			Telemetry:           telemetryReporter,

@@ -20,9 +20,9 @@ middleman start --background --config /path/to/config.toml
 
 The command waits for the ready daemon identity before returning. Direct
 foreground starts retain their duplicate-process error behavior. Background
-startup requires a loopback listener; when `trust_reverse_proxy=true`, API
-authentication must also be enabled so direct readiness verification stays
-authenticated.
+startup requires a loopback listener. It verifies the recorded endpoint with a
+credential-free challenge before reusing the process, including when general
+API authentication is disabled.
 
 ## Version
 

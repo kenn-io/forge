@@ -26,6 +26,7 @@ import (
 	"go.kenn.io/middleman/internal/archive"
 	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/configwatch"
+	"go.kenn.io/middleman/internal/daemonruntime"
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/docs"
 	"go.kenn.io/middleman/internal/gitclone"
@@ -67,7 +68,14 @@ type ServerOptions struct {
 	// or session-cookie auth (see api_auth.go). Health probes stay
 	// open. Minted under data_dir by the serve entrypoint when
 	// [api].require_auth is set.
-	APIAuthToken                       string
+	APIAuthToken string
+	// DirectClientToken authenticates native clients addressing the exact
+	// loopback listener without forwarding headers. It is startup-bound and
+	// independent of whether general API authentication is enabled.
+	DirectClientToken string
+	// DaemonProofHandler serves the private credential-free proof route.
+	// Production supplies kit's proof handler bound to the published record.
+	DaemonProofHandler                 http.Handler
 	Clones                             *gitclone.Manager // optional clone manager for diff view
 	WorktreeDir                        string            // base dir for workspace worktrees
 	DisableWorkspaceBackgroundMonitors bool
@@ -224,6 +232,9 @@ type Server struct {
 
 	// apiAuthToken gates /api routes when non-empty (api_auth.go).
 	apiAuthToken string
+	// directClientToken classifies native direct-listener requests even when
+	// general API authentication is disabled.
+	directClientToken string
 
 	// bg tracks short-lived goroutines that HTTP handlers spawn
 	// outside of the Syncer's own wait group (e.g. mergePR's
@@ -764,6 +775,7 @@ func newServer(
 		runtimeStripEnvVars:    initialRuntimeStripEnvNames(cfg),
 		options:                options,
 		apiAuthToken:           options.APIAuthToken,
+		directClientToken:      options.DirectClientToken,
 		now:                    time.Now,
 		hub:                    NewEventHubWithCapacity(cfg.SSEBufferSizeOrDefault()),
 		labelCatalogRefreshIDs: make(map[int64]struct{}),
@@ -1284,10 +1296,19 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}()
 	hostOpts := *s.hostOpts.Load()
 	directDaemonBearer := s.isDirectDaemonBearerRequest(r, hostOpts)
-	if !directDaemonBearer && !checkHost(w, r, hostOpts) {
+	directDaemonProof := isDirectDaemonProofRequest(r, hostOpts)
+	if r.URL.Path == daemonruntime.ProofPingPath && !directDaemonProof {
+		rejectHost(w, r, "daemon_proof_not_direct", r.Host, "")
+		return
+	}
+	if !directDaemonBearer && !directDaemonProof && !checkHost(w, r, hostOpts) {
 		return
 	}
 	if !s.checkHost(w, r) {
+		return
+	}
+	if directDaemonProof {
+		s.handler.ServeHTTP(w, r)
 		return
 	}
 	if s.apiAuthToken != "" {

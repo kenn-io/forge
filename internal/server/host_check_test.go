@@ -35,8 +35,9 @@ func setupHostCheckServerWithToken(
 	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
 	t.Cleanup(syncer.Stop)
 	return New(database, syncer, emptyFrontend(), "/", nil, ServerOptions{
-		HostCheck:    opts,
-		APIAuthToken: token,
+		HostCheck:         opts,
+		APIAuthToken:      token,
+		DirectClientToken: token,
 	})
 }
 
@@ -201,6 +202,59 @@ func TestDirectDaemonBearerUsesActualIPv6ListenerAuthority(t *testing.T) {
 	srv.ServeHTTP(rr, req)
 
 	assert.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+}
+
+// TestDirectDaemonBearerClassificationWithoutGeneralAPIAuth protects the
+// distinction between the direct-listener credential and optional API auth.
+// A native client must still bypass proxy Host interpretation without forcing
+// proxied browser/API traffic to authenticate.
+func TestDirectDaemonBearerClassificationWithoutGeneralAPIAuth(t *testing.T) {
+	database := dbtest.Open(t)
+	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, emptyFrontend(), "/", nil, ServerOptions{
+		HostCheck: HostCheckOptions{
+			Bind:              bindLoopback8091(),
+			Allowed:           []config.HostKey{{Host: "mm.example.com"}},
+			TrustReverseProxy: true,
+		},
+		DirectClientToken: "daemon-secret",
+	})
+	tests := []struct {
+		name    string
+		bearer  string
+		headers http.Header
+		status  int
+	}{
+		{name: "valid direct credential", bearer: "daemon-secret", status: http.StatusOK},
+		{name: "missing direct credential", status: http.StatusForbidden},
+		{name: "invalid direct credential", bearer: "wrong", status: http.StatusForbidden},
+		{
+			name:    "unauthenticated proxy request retains configured policy",
+			headers: http.Header{"X-Forwarded-Host": {"mm.example.com"}},
+			status:  http.StatusOK,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/snapshot", nil)
+			req.Host = "127.0.0.1:8091"
+			req.RemoteAddr = "127.0.0.1:1234"
+			if tt.bearer != "" {
+				req.Header.Set("Authorization", "Bearer "+tt.bearer)
+			}
+			for name, values := range tt.headers {
+				for _, value := range values {
+					req.Header.Add(name, value)
+				}
+			}
+			rr := httptest.NewRecorder()
+
+			srv.ServeHTTP(rr, req)
+
+			assert.Equal(t, tt.status, rr.Code, rr.Body.String())
+		})
+	}
 }
 
 // TestHostCheckBackendHost exercises Step 1+2 of the spec: parse

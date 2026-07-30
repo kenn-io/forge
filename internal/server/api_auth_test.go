@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -12,6 +13,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/kit/daemon"
 
+	"go.kenn.io/middleman/internal/config"
+	"go.kenn.io/middleman/internal/daemonruntime"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
 )
 
@@ -52,6 +55,61 @@ func TestDaemonPingRequiresBearerAndReportsReadyIdentity(t *testing.T) {
 	assert.Equal("middleman", ping.Service)
 	assert.Equal("v-test", ping.Version)
 	assert.Equal(os.Getpid(), ping.PID)
+}
+
+// TestDaemonProofUsesThePublishedIdentity protects the proof route that
+// lifecycle discovery reaches before sending credentials. The proof must bind
+// the exact runtime record and remain unavailable through proxy-shaped or
+// wrong-authority requests.
+func TestDaemonProofUsesThePublishedIdentity(t *testing.T) {
+	require := require.New(t)
+	ts := httptest.NewUnstartedServer(nil)
+	address := ts.Listener.Addr().String()
+	bind, err := config.ParseHostKey(address)
+	require.NoError(err)
+	record := daemon.NewRuntimeRecord(
+		daemonruntime.Service,
+		"v-test",
+		daemon.Endpoint{Network: daemon.NetworkTCP, Address: address},
+	)
+	proof, err := daemon.NewProof([]byte("secret-token"))
+	require.NoError(err)
+	proofHandler, err := proof.NewPingHandler(record)
+	require.NoError(err)
+	srv := New(dbtest.Open(t), nil, nil, "/", nil, ServerOptions{
+		APIAuthToken:       "secret-token",
+		DirectClientToken:  "secret-token",
+		DaemonProofHandler: proofHandler,
+		HostCheck: HostCheckOptions{
+			Bind: bind, TrustReverseProxy: true,
+		},
+	})
+	ts.Config.Handler = srv
+	ts.Start()
+	t.Cleanup(ts.Close)
+
+	ping, err := proof.Probe(t.Context(), record, daemon.ProbeOptions{
+		Path: daemonruntime.ProofPingPath,
+	})
+	require.NoError(err)
+	assert.Equal(t, record.PID, ping.PID)
+
+	wrongProof, err := daemon.NewProof([]byte("wrong-token"))
+	require.NoError(err)
+	_, err = wrongProof.Probe(t.Context(), record, daemon.ProbeOptions{
+		Path: daemonruntime.ProofPingPath,
+	})
+	require.Error(err)
+
+	forwarded := authGet(t, ts, daemonruntime.ProofPingPath, func(r *http.Request) {
+		r.Header.Set("X-Forwarded-Host", r.Host)
+	})
+	assert.Equal(t, http.StatusForbidden, forwarded.StatusCode)
+
+	wrongHost := authGet(t, ts, daemonruntime.ProofPingPath, func(r *http.Request) {
+		r.Host = net.JoinHostPort("localhost", bind.Port)
+	})
+	assert.Equal(t, http.StatusForbidden, wrongHost.StatusCode)
 }
 
 func authGet(

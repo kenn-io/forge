@@ -101,13 +101,20 @@ can drive both `GET` (read-out) and `POST` (write) attacks.
 
 One narrowly authenticated request class does not require a forwarded-host
 header when `trust_reverse_proxy=true`: a gated API request with the valid
-daemon `Authorization: Bearer` credential, no `Forwarded` header and no
-`X-Forwarded-*` header, the exact configured loopback listener authority in
-`Host`, and a loopback peer address. Session cookies do not qualify. This lets
-native local clients address the listener directly without claiming to be a
-reverse proxy. Every request that misses any condition follows the validation
-steps below unchanged; in particular, a request carrying forwarding metadata
-always stays on the reverse-proxy path.
+startup-bound daemon `Authorization: Bearer` credential, no `Forwarded` header
+and no `X-Forwarded-*` header, the exact configured loopback listener authority
+in `Host`, and a loopback peer address. The daemon token exists independently
+of the optional general API-authentication policy. Session cookies do not
+qualify. This lets native local clients address the listener directly without
+claiming to be a reverse proxy. Every request that misses any condition follows
+the validation steps below unchanged; in particular, a request carrying
+forwarding metadata always stays on the reverse-proxy path.
+
+Lifecycle discovery uses a narrower credential-free exception on the private
+ping-proof path. It requires the exact loopback listener authority, a loopback
+peer, and no forwarding headers. The endpoint answers a random challenge with
+an HMAC bound to the complete published runtime identity, so discovery can
+reject stale or redirected records before any bearer token is transmitted.
 
 Canonicalization: parse a host header value into a `hostKey` of
 `(lowercase_host, port_string_or_empty)`. IPv6 literals are wrapped

@@ -20,20 +20,21 @@
 - Record metadata is string-valued `host`, `port`, `read_only=false`,
   `require_auth`, and `data_dir`; `auth_token_path` is present only when auth is
   enabled. Its producer and compatibility checks share one typed owner;
-  discovery still requires a live PID and authenticated ping
+  discovery still requires a live PID and a token-derived proof bound to the
+  record's service, version, PID, network, and address
   (`internal/daemonruntime/runtime.go::Compatible`).
-- `GET /api/ping` is registered only on the ready application handler and
-  returns the standard service, version, and PID identity
-  (`internal/server/daemon_ping.go::registerDaemonPing`).
+- The ready handler exposes standard identity at `GET /api/ping`; its private
+  proof path binds the same identity to the published record and only accepts
+  direct loopback requests (`internal/server/daemon_ping.go::registerDaemonPing`).
 
 ## Transport trust boundary
 
 - Loopback TCP is the required cross-platform transport; Unix sockets and
   named pipes are not lifecycle requirements. Background startup rejects
-  non-loopback listeners before launching; proxy-trusting configurations also
-  require API authentication.
-- A direct request bypasses proxy Host interpretation only with the valid API
-  bearer, exact loopback listener authority, loopback peer, and no
-  `Forwarded` or `X-Forwarded-*` headers. Cookies never qualify, and requests
-  with forwarding metadata stay on the proxy path
-  (`internal/server/api_auth.go::isDirectDaemonBearerRequest`).
+  non-loopback listeners before launching.
+- Only the startup-bound bearer with exact loopback authority/peer and no
+  forwarding headers bypasses proxy Host interpretation; cookies never qualify,
+  and the bearer remains available when general API auth is off (`internal/server/api_auth.go::isDirectDaemonBearerRequest`).
+- Discovery sends only a random challenge until the endpoint proves the daemon
+  token and full runtime identity; the proof route requires the exact direct
+  loopback authority without forwarding headers (`cmd/middleman/start_background.go::backgroundDiscovery.probe`).

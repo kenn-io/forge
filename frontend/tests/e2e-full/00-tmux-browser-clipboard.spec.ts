@@ -486,7 +486,7 @@ test("tmux drag-copy reaches the clipboard in tab and inline hosts", async ({ pa
 
     await page.goto(`${isolatedServer.info.base_url}/terminal/${workspace.id}`);
     const tabTerminal = await openTerminalPanel(page);
-    const tabMarker = "tab clipboard marker";
+    const tabMarker = "tab clipboard — marker\u00a0value";
     await enableTmuxMouseAndRenderMarker(page, tabTerminal, output, tabMarker);
     await dragTerminalCells(page, tabTerminal, tabMarker.length);
     if (browserName === "firefox") {
@@ -504,7 +504,7 @@ test("tmux drag-copy reaches the clipboard in tab and inline hosts", async ({ pa
     const inlineTerminal = page.locator(".sole-embedded-session .terminal-container");
     await expect(inlineTerminal).toBeVisible();
     await expect(inlineTerminal.locator("canvas, .xterm-screen").first()).toBeVisible();
-    const inlineMarker = "inline clipboard marker";
+    const inlineMarker = "inline clipboard — marker\u00a0value";
     await enableTmuxMouseAndRenderMarker(page, inlineTerminal, output, inlineMarker);
     await dragTerminalCells(page, inlineTerminal, inlineMarker.length);
     if (browserName === "firefox") {

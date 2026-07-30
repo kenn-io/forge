@@ -7,7 +7,7 @@
 - `middleman start --background` is idempotent: reuse requires verified
   identity for the same resolved `data_dir`; starts serialize per data
   directory through the shared daemon manager without blocking unrelated
-  instances (`cmd/middleman/start_background.go::newBackgroundManager`).
+  instances (`internal/daemonruntime/lifecycle.go::NewManager`).
 - Config loading establishes the canonical `data_dir` identity used by startup
   and reload comparisons (`internal/config/config.go::load`).
 
@@ -38,4 +38,5 @@
   (`internal/server/daemon_access.go::daemonRequestPolicy.admit`).
 - Discovery sends only a random challenge until the endpoint proves the daemon
   token and full runtime identity; the proof route requires the exact direct
-  loopback authority without forwarding headers (`cmd/middleman/start_background.go::backgroundDiscovery.probe`).
+  loopback authority without forwarding headers
+  (`internal/daemonruntime/lifecycle.go::discovery.probe`).

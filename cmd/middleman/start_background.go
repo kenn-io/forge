@@ -13,21 +13,11 @@ import (
 	"go.kenn.io/kit/daemon"
 	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/daemonruntime"
-	"go.kenn.io/middleman/internal/runtimelock"
 )
 
-const (
-	backgroundStartTimeout = 90 * time.Second
-	backgroundProbeTimeout = 750 * time.Millisecond
-)
+const backgroundStartTimeout = 90 * time.Second
 
 type backgroundRunner func(context.Context, string, io.Writer) error
-
-type backgroundDiscovery struct {
-	store   daemon.RuntimeStore
-	dataDir string
-	version string
-}
 
 func newStartCommand(run backgroundRunner, stdout io.Writer) *cobra.Command {
 	var background bool
@@ -68,7 +58,7 @@ func startBackground(
 	if err != nil {
 		return err
 	}
-	manager := newBackgroundManager(
+	manager := daemonruntime.NewManager(
 		store, cfg.DataDir, version,
 		func(ctx context.Context) error {
 			return startBackgroundProcess(ctx, configPath, cfg.DataDir)
@@ -118,95 +108,4 @@ func startBackgroundProcess(
 		Stderr:          logFile,
 		RefuseEphemeral: true,
 	})
-}
-
-func newBackgroundManager(
-	discoveryStore daemon.RuntimeStore,
-	dataDir, expectedVersion string,
-	start daemon.StartFunc,
-) daemon.Manager {
-	discovery := backgroundDiscovery{
-		store: discoveryStore, dataDir: dataDir, version: expectedVersion,
-	}
-	return daemon.Manager{
-		Store:    daemonruntime.StartLockStore(discoveryStore, dataDir),
-		FindFunc: discovery.find,
-		Start: func(ctx context.Context) error {
-			if _, err := runtimelock.EnsureAuthToken(dataDir); err != nil {
-				return fmt.Errorf("ensure auth token: %w", err)
-			}
-			if start == nil {
-				return errors.New("middleman daemon is not running")
-			}
-			if err := start(ctx); err != nil {
-				return fmt.Errorf("start middleman daemon: %w", err)
-			}
-			return nil
-		},
-	}
-}
-
-func (d backgroundDiscovery) find(
-	ctx context.Context,
-) (daemon.RuntimeRecord, daemon.PingInfo, bool, error) {
-	token, err := runtimelock.ReadAuthToken(d.dataDir)
-	if err != nil {
-		return daemon.RuntimeRecord{}, daemon.PingInfo{}, false, err
-	}
-	if token == "" {
-		return daemon.RuntimeRecord{}, daemon.PingInfo{}, false, nil
-	}
-	records, err := d.store.List()
-	if err != nil {
-		return daemon.RuntimeRecord{}, daemon.PingInfo{}, false, err
-	}
-	for _, record := range records {
-		ping, compatible, err := d.probe(ctx, record, token)
-		if err != nil {
-			return daemon.RuntimeRecord{}, daemon.PingInfo{}, false, err
-		}
-		if compatible {
-			return record, ping, true, nil
-		}
-	}
-	return daemon.RuntimeRecord{}, daemon.PingInfo{}, false, nil
-}
-
-func (d backgroundDiscovery) probe(
-	ctx context.Context, record daemon.RuntimeRecord, token string,
-) (daemon.PingInfo, bool, error) {
-	if !daemonruntime.Compatible(record, daemonruntime.MatchOptions{
-		DataDir:        d.dataDir,
-		TokenAvailable: token != "",
-	}) {
-		return daemon.PingInfo{}, false, nil
-	}
-
-	proof, err := daemon.NewProof([]byte(token))
-	if err != nil {
-		return daemon.PingInfo{}, false, fmt.Errorf("initialize daemon proof: %w", err)
-	}
-	ping, err := proof.Probe(
-		ctx, record, daemon.ProbeOptions{
-			Path:            daemonruntime.ProofPingPath,
-			ExpectedService: daemonruntime.Service,
-			Timeout:         backgroundProbeTimeout,
-		},
-	)
-	if err != nil {
-		if ctx.Err() != nil {
-			return daemon.PingInfo{}, false, ctx.Err()
-		}
-		return daemon.PingInfo{}, false, nil
-	}
-	if ping.PID != record.PID {
-		return daemon.PingInfo{}, false, nil
-	}
-	if record.Version != d.version || ping.Version != d.version {
-		return daemon.PingInfo{}, false, fmt.Errorf(
-			"running middleman version %q is incompatible with %q",
-			ping.Version, d.version,
-		)
-	}
-	return ping, true, nil
 }

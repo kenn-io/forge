@@ -33,12 +33,6 @@ type PublishOptions struct {
 	RequireAuth bool
 }
 
-// MatchOptions contains the local identity required to attach to a record.
-type MatchOptions struct {
-	DataDir        string
-	TokenAvailable bool
-}
-
 // Store returns the predictable config-home discovery store.
 func Store() (daemon.RuntimeStore, error) {
 	runtimeDir, err := filepath.Abs(config.DefaultDataDir())
@@ -93,9 +87,9 @@ func Publish(opts PublishOptions) (daemon.RuntimeRecord, string, error) {
 
 // Compatible reports whether a discovery record can represent the expected
 // local instance before the caller performs its authenticated readiness probe.
-func Compatible(record daemon.RuntimeRecord, opts MatchOptions) bool {
+func Compatible(record daemon.RuntimeRecord, dataDir string) bool {
 	if record.Service != Service || record.Network != daemon.NetworkTCP ||
-		record.Metadata[metadataDataDir] != opts.DataDir ||
+		record.Metadata[metadataDataDir] != dataDir ||
 		!daemon.ProcessAlive(record.PID) {
 		return false
 	}
@@ -116,8 +110,7 @@ func Compatible(record daemon.RuntimeRecord, opts MatchOptions) bool {
 		return false
 	}
 	if requireAuth {
-		return opts.TokenAvailable &&
-			record.Metadata[metadataAuthTokenPath] == runtimelock.AuthTokenPath(opts.DataDir)
+		return record.Metadata[metadataAuthTokenPath] == runtimelock.AuthTokenPath(dataDir)
 	}
 	return record.Metadata[metadataAuthTokenPath] == ""
 }

@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/kit/daemon"
 	"go.kenn.io/middleman/internal/config"
+	"go.kenn.io/middleman/internal/daemonruntime"
 	"go.kenn.io/middleman/internal/runtimelock"
 )
 
@@ -67,7 +68,7 @@ func TestBackgroundManagerSerializesConcurrentStarts(t *testing.T) {
 	releaseStart := make(chan struct{})
 	var enteredOnce sync.Once
 	var starts atomic.Int32
-	manager := newBackgroundManager(
+	manager := daemonruntime.NewManager(
 		store, dataDir, "v-test",
 		func(context.Context) error {
 			starts.Add(1)
@@ -112,7 +113,7 @@ func TestBackgroundManagerAllowsIndependentDataDirectoryStarts(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
 
-	first := newBackgroundManager(
+	first := daemonruntime.NewManager(
 		store, t.TempDir(), "v-test",
 		func(ctx context.Context) error {
 			close(firstStarted)
@@ -120,7 +121,7 @@ func TestBackgroundManagerAllowsIndependentDataDirectoryStarts(t *testing.T) {
 			return ctx.Err()
 		},
 	)
-	second := newBackgroundManager(
+	second := daemonruntime.NewManager(
 		store, t.TempDir(), "v-test",
 		func(ctx context.Context) error {
 			close(secondStarted)
@@ -173,7 +174,7 @@ func TestBackgroundManagerRejectsUnverifiedLiveRecord(t *testing.T) {
 	_, err := store.Write(record)
 	require.NoError(err)
 	var starts atomic.Int32
-	manager := newBackgroundManager(
+	manager := daemonruntime.NewManager(
 		store, dataDir, "v-test",
 		func(context.Context) error {
 			starts.Add(1)
@@ -186,6 +187,30 @@ func TestBackgroundManagerRejectsUnverifiedLiveRecord(t *testing.T) {
 
 	require.NoError(err)
 	assert.Equal(t, int32(1), starts.Load())
+}
+
+// TestBackgroundManagerRejectsMismatchedPingIdentity protects the attachment
+// boundary rather than a particular implementation of the proof check. If all
+// identity validation is removed, a record for one runtime can claim another
+// live endpoint and background start will report the wrong daemon as success.
+func TestBackgroundManagerRejectsMismatchedPingIdentity(t *testing.T) {
+	require := require.New(t)
+	dataDir := t.TempDir()
+	token := "daemon-secret"
+	_, record := newBackgroundProofServer(t, dataDir, token, "v-real", nil)
+	require.NoError(os.WriteFile(
+		runtimelock.AuthTokenPath(dataDir), []byte(token+"\n"), 0o600,
+	))
+	record.Version = "v-claimed"
+	store := daemon.RuntimeStore{Dir: t.TempDir()}
+	_, err := store.Write(record)
+	require.NoError(err)
+	manager := daemonruntime.NewManager(store, dataDir, "v-claimed", nil)
+
+	_, _, found, err := manager.Find(t.Context())
+
+	require.NoError(err)
+	assert.False(t, found)
 }
 
 // TestBackgroundDiscoveryDoesNotDiscloseBearerBeforeProof protects the
@@ -221,9 +246,15 @@ func TestBackgroundDiscoveryDoesNotDiscloseBearerBeforeProof(t *testing.T) {
 			"auth_token_path": runtimelock.AuthTokenPath(dataDir),
 		},
 	}
-	discovery := backgroundDiscovery{dataDir: dataDir, version: "v-test"}
+	require.NoError(t, os.WriteFile(
+		runtimelock.AuthTokenPath(dataDir), []byte("daemon-secret\n"), 0o600,
+	))
+	store := daemon.RuntimeStore{Dir: t.TempDir()}
+	_, err := store.Write(record)
+	require.NoError(t, err)
+	manager := daemonruntime.NewManager(store, dataDir, "v-test", nil)
 
-	_, compatible, err := discovery.probe(t.Context(), record, "daemon-secret")
+	_, _, compatible, err := manager.Find(t.Context())
 
 	require.NoError(t, err)
 	assert.False(t, compatible)

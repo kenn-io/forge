@@ -105,6 +105,9 @@ stale tabs.
 - Treat terminal processes as native-terminal-equivalent, but accept bounded, write-only OSC 52 writes only after one
   recent one-shot trusted DOM gesture; terminal data callbacks are not input provenance, and browser denial falls back
   through CSRF-protected loopback (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::handleTerminalKeyDown`).
+- Keep OSC 52 validation synchronous and ahead of gesture consumption; addon-clipboard 0.2.0 cannot preserve rejection,
+  parser progress, and ordered read denial without custom prefilters and handler coupling
+  ([decision](../docs/superpowers/specs/2026-07-30-terminal-clipboard-unicode-fidelity-design.md)).
 - Pointer clipboard authority and keyboard authority created during it must remain timed and revocable through release
   grace on capture, focus, or visibility loss; a watchdog bounds missing releases
   (`frontend/src/lib/components/terminal/terminalClipboardWriter.ts::createTerminalClipboardWriter`).

@@ -89,6 +89,32 @@ func TestTerminalClipboardWriteRequiresLoopbackAndCSRF(t *testing.T) {
 	}
 }
 
+func TestTerminalClipboardWritePreservesUnicode(t *testing.T) {
+	const text = "clipboard — Unicode\u00a0text"
+	clipboard := &recordingTerminalClipboard{}
+	srv := New(
+		openTestDB(t), nil, nil, "/", nil,
+		ServerOptions{TerminalClipboard: clipboard},
+	)
+	body, err := json.Marshal(map[string]string{"text": text})
+	require.NoError(t, err)
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/terminal/clipboard",
+		bytes.NewReader(body),
+	)
+	setAcceptedHostForServerTest(req, srv)
+	req.RemoteAddr = "127.0.0.1:54321"
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	rr := httptest.NewRecorder()
+
+	srv.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusNoContent, rr.Code, rr.Body.String())
+	assert.Equal(t, []string{text}, clipboard.texts)
+}
+
 func TestTerminalClipboardWriteThroughTrustedReverseProxyRequiresLocalClient(
 	t *testing.T,
 ) {

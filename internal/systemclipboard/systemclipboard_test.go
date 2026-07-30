@@ -3,6 +3,9 @@ package systemclipboard
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -127,6 +130,46 @@ func TestNativeWriterSelectsPlatformClipboardCommand(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestNativeWriterRunsPbcopyWithUTF8Locale(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake pbcopy requires a POSIX shell")
+	}
+
+	assert := assert.New(t)
+	require := require.New(t)
+	tempDir := t.TempDir()
+	pbcopyPath := filepath.Join(tempDir, "pbcopy")
+	localePath := filepath.Join(tempDir, "locale")
+	stdinPath := filepath.Join(tempDir, "stdin")
+	require.NoError(os.WriteFile(pbcopyPath, []byte(`#!/bin/sh
+set -eu
+printf '%s' "$LC_ALL" > "$MIDDLEMAN_TEST_PBCOPY_LOCALE"
+cat > "$MIDDLEMAN_TEST_PBCOPY_STDIN"
+`), 0o755))
+	t.Setenv("LC_ALL", "C")
+	t.Setenv("MIDDLEMAN_TEST_PBCOPY_LOCALE", localePath)
+	t.Setenv("MIDDLEMAN_TEST_PBCOPY_STDIN", stdinPath)
+
+	writer := nativeWriter{
+		goos:   "darwin",
+		getenv: os.Getenv,
+		lookPath: func(string) (string, error) {
+			return pbcopyPath, nil
+		},
+		run: runCommand,
+	}
+	const text = "clipboard — Unicode\u00a0text"
+
+	require.NoError(writer.WriteText(t.Context(), text))
+	locale, err := os.ReadFile(localePath)
+	require.NoError(err)
+	input, err := os.ReadFile(stdinPath)
+	require.NoError(err)
+
+	assert.Equal("en_US.UTF-8", string(locale))
+	assert.Equal(text, string(input))
 }
 
 func TestNativeWriterReportsUnavailableClipboard(t *testing.T) {

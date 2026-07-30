@@ -6,7 +6,8 @@ and the root event stream.
 ## Startup Contracts
 
 - `kenn-forge` and `kenn-forge serve` are raw foreground commands; their
-  authoritative `data_dir` lock keeps duplicate startup as an error.
+  authoritative `data_dir` lock keeps duplicate startup as an error
+  (`cmd/kenn-forge/main.go::run`).
 - `kenn-forge start --background` is idempotent: reuse requires verified
   identity for the same resolved `data_dir`; starts serialize per data
   directory through the shared daemon manager without blocking unrelated
@@ -52,7 +53,8 @@ and the root event stream.
 
 - Loopback TCP is the required cross-platform transport; Unix sockets and
   named pipes are not lifecycle requirements. Background startup rejects
-  non-loopback listeners before launching.
+  non-loopback listeners before launching
+  (`cmd/middleman/start_background.go::validateBackgroundConfig`).
 - Only the startup-bound bearer with exact loopback authority/peer and no
   forwarding headers bypasses proxy Host interpretation; cookies never qualify,
   and the bearer remains available when general API auth is off

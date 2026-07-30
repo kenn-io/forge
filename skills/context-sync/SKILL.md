@@ -58,7 +58,7 @@ knowledge that changes what future agents should do.
 
 | Area | Topic doc(s) | Code it tracks |
 |------|--------------|----------------|
-| `agent-bootstrap` | `context/agent-bootstrap.md` | repository-controlled agent hooks and dependency bootstrap |
+| `agent-bootstrap` | `context/agent-bootstrap.md` | `.claude/settings.json`, `.codex/hooks.json` |
 | `config` | `context/config-persistence.md` | `internal/config/` save paths |
 | `platform` | `context/provider-architecture.md`, `context/platform-sync-invariants.md` | `internal/platform/` |
 | `github-sync` | `context/github-sync-invariants.md` | `internal/github/` |
@@ -66,13 +66,13 @@ knowledge that changes what future agents should do.
 | `db` | `context/db-migrations.md` | `internal/db/`, `internal/db/migrations/` |
 | `deferred-merge` | `context/deferred-merge.md` | deferred merge paths in `internal/server/` |
 | `embeds` | `context/embeds.md` | embed routes, shell, and host bridge paths |
-| `server` | `context/server-runtime.md`, `context/workspace-apis.md`, `context/workspace-runtime-lifecycle.md` | `cmd/kenn-forge/`, `internal/daemonruntime/`, `internal/runtimelock/`, `internal/server/`, `internal/apiclient/generated/` |
+| `server` | `context/server-runtime.md`, `context/workspace-apis.md`, `context/workspace-runtime-lifecycle.md` | `cmd/kenn-forge/`, `internal/daemonruntime/`, `internal/runtimelock/`; server/workspace-owned paths in `internal/config/`, `internal/workspace/`, `internal/agentactivity/`, `internal/server/`, `internal/apiclient/generated/`, `frontend/`, and `packages/ui/`, including shared app and configuration files |
 | `errors` | `context/error-handling.md` | error envelopes and frontend error branching |
 | `retries` | `context/retries-and-backoffs.md` | retry, backoff, and single-flight paths |
-| `testing` | `context/testing-basics.md`, `context/testing.md` | server API/E2E packages and test helpers |
+| `testing` | `context/testing-basics.md`, `context/testing.md` | repository test files; `Makefile`, `.golangci.yml`, CI/test tooling, and helpers under `.github/workflows/`, `tools/`, `scripts/`, `internal/testutil/`, `frontend/`, and `packages/ui/` |
 | `docs-authoring` | `context/docs-authoring.md` | user docs, screenshots, and Zensical configuration |
 | `pull-requests` | `context/pull-request-workflow.md` | push and pull-request delivery workflow |
-| `frontend` | `context/ui-design-system.md`, `context/ui-interaction-contracts.md`, `context/vscode-workflow-panel-interaction-spec.md` | `frontend/src/` |
+| `frontend` | `context/ui-design-system.md`, `context/ui-interaction-contracts.md`, `context/vscode-workflow-panel-interaction-spec.md` | `frontend/src/`, `packages/ui/src/` |
 | `inline-review` | `context/inline-review-comments.md` | review-owned paths in `internal/db/`, `internal/github/`, `internal/platform/`, `internal/server/`, and `packages/ui/` |
 | `mobile` | `context/mobile-ux.md` | frontend `/m` routes and phone-first components |
 | `kata` | `context/kata-mode.md`, `context/workspace-apis.md` | `internal/kata/`; Kata-owned paths in `internal/server/`, `internal/config/`, and `frontend/`, including shared app and configuration files |

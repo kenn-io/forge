@@ -3,11 +3,9 @@
 Use this document when writing or running Go tests, choosing common test
 fixtures, or changing shell-script coverage.
 
-Common commands are `make test`, `make test-short`, `make lint`, and `make vet`.
-
-- Pass `-shuffle=on` when invoking `go test` directly; the Make targets already
-  include it. Do not pass redundant `-count=1`. Use `-count=N` only when `N > 1`
-  for repeated runs.
+- Pass `-shuffle=on` when invoking `go test` directly; `make test` and
+  `make test-short` already include it. Do not pass redundant `-count=1`; use
+  `-count=N` only when `N > 1` for repeated runs.
 - Do not use `-v` unless the user requests it or a particular failure genuinely
   needs verbose output.
 - Prefer table-driven Go tests. Use testify `require` for preconditions and
@@ -17,9 +15,8 @@ Common commands are `make test`, `make test-short`, `make lint`, and `make vet`.
   more than three assertions, create `assert := assert.New(t)` and use the
   helper methods thereafter.
 - Prefer the generated Go API client for integration-style API tests.
-- Use the package's established database helper: `openTestDB(t)` inside
-  `internal/db` and the routed fixture guidance elsewhere. Give every test its
-  own `t.TempDir()` and keep tests fast and isolated.
+- Use established package fixtures instead of opening databases directly. Use
+  `t.TempDir()` when a test needs filesystem isolation.
 - Shell-script tests must execute the script against controlled inputs and
   assert observable output, side effects, or exit status. Do not grep scripts,
   workflows, config, or docs for expected implementation text.

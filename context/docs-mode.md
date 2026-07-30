@@ -22,9 +22,8 @@ filesystem operations, search, and git pull/publish behavior.
 
 ## Filesystem And HTTP Boundary
 
-- Every Docs API read, browse, mutation, and git operation requires a loopback
-  client even when the daemon is configured with a wider listener
-  (`internal/server/server.go::Server.isDocsReadAPIRequest`).
+- Docs browse, reads, mutations, and git operations require a loopback client
+  (`internal/server/server.go::Server.ServeHTTP`).
 - The registry accepts markdown files and an allowlist of raster image blobs,
   not arbitrary files. SVG stays excluded because same-origin SVG can execute
   script (`internal/docs/folder.go::imageExts`).
@@ -32,13 +31,11 @@ filesystem operations, search, and git pull/publish behavior.
   writes, renames, deletes, search, and blob serving must not escape the
   registered root or traverse ignored content
   (`internal/docs/folder.go::Registry.resolve`).
-- File writes are atomic and in-process mutations are serialized across folders;
-  create and rename never overwrite an existing destination
-  (`internal/docs/folder.go::Registry.WriteFile`).
-- Docs mutations retain the origin/CSRF boundary, and file writes stay JSON-wrapped
-  rather than bypassing the mutation content-type gate with raw markdown
-  (`internal/server/server.go::Server.isMutatingDocsAPIRequest`,
-  `internal/server/docsapi/routes.go::docsWriteFileInput`).
+- Writes use atomic sibling-temp renames; create and rename serialize their
+  no-clobber critical sections across folders and never overwrite a destination
+  (`internal/docs/folder.go::Registry`).
+- Docs mutations retain origin/CSRF; file writes stay JSON-wrapped, not raw markdown
+  (`internal/server/server.go::Server.isMutatingDocsAPIRequest`, `internal/server/docsapi/routes.go::docsWriteFileInput`).
 - Public operations use Huma and generated clients; blob responses remain binary
   rather than being modeled as JSON
   (`internal/server/docsapi/routes.go::docsBlobOutput`).
@@ -51,10 +48,9 @@ filesystem operations, search, and git pull/publish behavior.
 - Status rejects command-bearing worktree attributes; changes and publish also
   reject command-bearing local config before inspecting or staging content
   (`internal/docs/git.go::Registry.GitStatus`, `internal/docs/git_publish.go::Registry.GitChanges`).
-- Publish handles markdown changes only. Unrelated staged files, partial stages,
-  conflicts, missing upstreams, and diverged branches block the operation rather
-  than being folded into a Docs commit
-  (`internal/docs/git_publish.go::Registry.GitPublish`).
+- Publish stages markdown changes only. Unrelated or partial stages, conflicts,
+  and missing upstreams block before commit; rejected pushes can leave a local
+  commit for recovery (`internal/docs/git_publish.go::Registry.GitPublish`).
 - Push the branch's configured upstream; repository-wide `push.default` or
   `remote.pushDefault` must not redirect publication
   (`internal/docs/git_publish.go::Registry.currentUpstreamPushTarget`).

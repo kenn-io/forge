@@ -7,10 +7,9 @@ published review-thread ingestion, or review controls in shared diff UI.
   complete local draft; do not depend on provider-native pending drafts
   (`internal/db/queries_review.go::DB.GetOrCreateMRReviewDraft`,
   `internal/server/pullapi/diff_review_handlers.go::Handler.publishDiffReviewDraft`).
-- Provider support is capability-gated per action and operation. Missing draft
-  mutation, thread-read, thread-resolution, or review-action support returns the
-  typed unsupported-capability path rather than enabling partial behavior
-  (`internal/platform/types.go::Capabilities`).
+- Unsupported draft mutations, thread resolutions, and review actions return
+  typed capability errors; thread ingestion is skipped when reads are unavailable
+  (`internal/server/pullapi/diff_review_handlers.go::Handler.publishDiffReviewDraft`).
 - Bind drafts to the full provider reference, pull request number, and diff head
   SHA. Reject publish when the saved diff head is stale
   (`internal/server/pullapi/diff_review_handlers.go::Handler.publishDiffReviewDraft`).

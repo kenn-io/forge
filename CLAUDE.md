@@ -38,18 +38,19 @@ only routes to them.
 | Database schema migrations | `context/db-migrations.md` |
 | Deferred merge behavior | `context/deferred-merge.md` |
 | Embed routes or host bridges | `context/embeds.md` |
+| Daemon startup, discovery, host/origin validation, or SSE replay | `context/server-runtime.md` |
 | API failures or frontend error branching | `context/error-handling.md` |
 | Retries, rate limits, scheduling, or single-flight work | `context/retries-and-backoffs.md` |
 | Go test commands, assertions, fixtures, or shell tests | `context/testing-basics.md` |
 | Test lanes, provider tests, API contracts, or HTTP tests | `context/testing.md` |
-| Agent hooks, session bootstrap, or dependency installation | `context/agent-bootstrap.md` |
+| Repository-controlled session bootstrap or dependency installation | `context/agent-bootstrap.md` |
 | User documentation, screenshots, or the Zensical site | `context/docs-authoring.md` |
 | Pushing, opening a pull request, or changing PR metadata, comments, or review threads | `context/pull-request-workflow.md` |
 | Frontend visual design or component conventions | `context/ui-design-system.md` |
 | Frontend interaction, route state, persistence, or input semantics | `context/ui-interaction-contracts.md` |
 | Phone routes, narrow layouts, or touch UX | `context/mobile-ux.md` |
 | Workflow or terminal panel interaction models | `context/vscode-workflow-panel-interaction-spec.md` |
-| Workspace APIs, creation, or item identity | `context/workspace-apis.md` |
+| Workspace APIs, creation, item identity, lifecycle hooks, or generated launch context | `context/workspace-apis.md` |
 | Workspace deletion, runtime sessions, tmux, or terminal UI | `context/workspace-runtime-lifecycle.md` |
 | Inline diff review drafts, comments, or threads | `context/inline-review-comments.md` |
 | Kata task authority, daemon integration, task UI, or Kata workspaces | `context/kata-mode.md`, `context/workspace-apis.md` |

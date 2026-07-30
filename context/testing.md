@@ -5,14 +5,6 @@ HTTP contract tests, or working on race and integration-test architecture. For
 everyday Go test construction and commands, also read
 [`context/testing-basics.md`](./testing-basics.md).
 
-## Go assertion style
-
-Go tests use `testify` consistently. Import
-`github.com/stretchr/testify/assert` without an alias and create local helpers
-as `assert := assert.New(t)` when a test has more than three assertions.
-Aliasing the `assert` package, including `Assert`, is not allowed and is
-enforced by golangci-lint's `importas` rule.
-
 Test server constructors that create a Workspace manager must apply their
 isolated test tmux command; they must never fall back to the host tmux server
 (`internal/server/kataapi/test_helpers_test.go::newKataTestServer`).

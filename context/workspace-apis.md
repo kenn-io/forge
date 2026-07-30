@@ -9,6 +9,9 @@ embedder protocol for arbitrary host state.
 
 - Persist a middleman workspace entry for a tracked item.
 - Materialize that entry as a local Git worktree plus tmux session.
+- Persist the source repo's internal incarnation ID on every workspace; managed
+  clone selection must not parse the path, so legacy failed workspaces can retry
+  after migration (`internal/workspace/manager.go::Manager.workspaceRepositoryID`).
 - Let the UI reopen the same workspace from `/workspaces` or `/terminal/:id`.
 - Carry enough item metadata to render the correct sidebar behavior.
 - Keep Workspace and Projects request state below the root server composition

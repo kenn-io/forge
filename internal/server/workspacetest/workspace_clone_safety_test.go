@@ -140,6 +140,7 @@ func TestWorkspaceRetryLegacyUnknownHeadRepoLeavesBranchUntrackedE2E(t *testing.
 	const workspaceID = "legacy-unknown-head-repo"
 	require.NoError(fixture.database.InsertWorkspace(ctx, &db.Workspace{
 		ID:              workspaceID,
+		RepoID:          repo.ID,
 		Platform:        "github",
 		PlatformHost:    "github.com",
 		RepoOwner:       "acme",

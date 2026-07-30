@@ -111,9 +111,13 @@ func (s *Handler) enqueueDeferredMerge(
 	if err != nil {
 		return deferMergePRBody{}, err
 	}
-	if err := s.requireSyncerCapability(*repo, capabilityMergeMutation); err != nil {
+	ctx, releaseMutation, err := s.requireSyncerCapability(
+		ctx, *repo, capabilityMergeMutation,
+	)
+	if err != nil {
 		return deferMergePRBody{}, err
 	}
+	defer releaseMutation()
 	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, number)
 	if err != nil {
 		return deferMergePRBody{}, httpapi.Internal("get pull request failed")

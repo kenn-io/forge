@@ -5730,7 +5730,27 @@ func (s *Syncer) persistRepoIdentityResolution(
 		persistedRepo,
 		resolution.resolvedRepo,
 	)
+	s.publishReconciledRepoIdentity(resolution, repo)
 	return repo, repoID, resolution.resolvedRepo, persistedRepo, nil
+}
+
+func (s *Syncer) publishReconciledRepoIdentity(
+	resolution repoIdentityResolution,
+	authoritative RepoRef,
+) {
+	s.reposMu.Lock()
+	defer s.reposMu.Unlock()
+	if s.reposGeneration != resolution.generation {
+		return
+	}
+	key := repoPriorityKey(resolution.repo)
+	for i := range s.repos {
+		if repoPriorityKey(s.repos[i]) != key {
+			continue
+		}
+		s.repos[i] = authoritative
+		return
+	}
 }
 
 func authoritativeRepoRef(
@@ -10471,6 +10491,76 @@ func (s *Syncer) IsTrackedRepoOnProvider(
 ) bool {
 	_, ok := s.trackedRepoByIdentity(kind, owner, name, host)
 	return ok
+}
+
+// HoldRepoMutationIncarnation acquires a read lease for a repository-backed
+// provider mutation. The lease validates that the row loaded by the HTTP
+// handler still represents the configured repository after the incarnation
+// gate is acquired. Callers must hold the returned lease through the provider
+// write and any resulting persistence.
+func (s *Syncer) HoldRepoMutationIncarnation(
+	ctx context.Context,
+	loaded db.Repo,
+) (context.Context, func(), error) {
+	loadedRef := repoRefFromPersistedRepo(&loaded)
+	ctx, configured, release, err := s.holdCurrentRepoIncarnationRead(
+		ctx,
+		loadedRef,
+	)
+	if err != nil {
+		return ctx, func() {}, err
+	}
+	releaseWithError := func(err error) (context.Context, func(), error) {
+		release()
+		return ctx, func() {}, err
+	}
+
+	persisted, err := s.db.GetRepoByID(ctx, loaded.ID)
+	if err != nil {
+		return releaseWithError(
+			fmt.Errorf("reload repository incarnation: %w", err),
+		)
+	}
+	if persisted == nil ||
+		!sameLoadedRepositoryIncarnation(loaded, *persisted) ||
+		!repoRefMatchesIdentity(
+			configured,
+			platform.Kind(persisted.Platform),
+			persisted.PlatformHost,
+			persisted.Owner,
+			persisted.Name,
+		) ||
+		!repoRefMatchesPersistedProviderID(
+			configured,
+			persisted.PlatformRepoID,
+		) {
+		return releaseWithError(fmt.Errorf(
+			"%w: repository changed while preparing provider mutation",
+			ErrConfiguredRepoIdentityChanged,
+		))
+	}
+	return ctx, release, nil
+}
+
+func repoRefMatchesPersistedProviderID(repo RepoRef, persistedID string) bool {
+	if persistedID == "" ||
+		(repo.PlatformExternalID == "" && repo.PlatformRepoID == 0) {
+		return true
+	}
+	if repo.PlatformExternalID == persistedID {
+		return true
+	}
+	return repo.PlatformRepoID > 0 &&
+		strconv.FormatInt(repo.PlatformRepoID, 10) == persistedID
+}
+
+func sameLoadedRepositoryIncarnation(loaded, persisted db.Repo) bool {
+	return loaded.ID == persisted.ID &&
+		strings.EqualFold(loaded.Platform, persisted.Platform) &&
+		canonicalRepoHost(loaded.PlatformHost) ==
+			canonicalRepoHost(persisted.PlatformHost) &&
+		loaded.RepoPathKey == persisted.RepoPathKey &&
+		loaded.PlatformRepoID == persisted.PlatformRepoID
 }
 
 // SyncRepoOnProvider performs the index sync for one configured repository.

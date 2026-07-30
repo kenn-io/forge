@@ -312,6 +312,7 @@ func (m *Manager) insertWorkspaceForRepo(
 	if currentRepo == nil || currentRepo.ID != expectedRepoID {
 		return retiredWorkspaceInvalidState()
 	}
+	ws.RepoID = expectedRepoID
 	return m.db.InsertWorkspace(ctx, ws)
 }
 
@@ -387,6 +388,7 @@ func (m *Manager) Create(
 
 	ws := &Workspace{
 		ID:           id,
+		RepoID:       repo.ID,
 		Platform:     repo.Platform,
 		PlatformHost: platformHost,
 		RepoOwner:    owner,
@@ -468,6 +470,7 @@ func (m *Manager) CreateIssue(
 
 	ws := &Workspace{
 		ID:              id,
+		RepoID:          repo.ID,
 		Platform:        repo.Platform,
 		PlatformHost:    platformHost,
 		RepoOwner:       owner,
@@ -661,6 +664,7 @@ func (m *Manager) CreateKataTask(
 
 	ws := &Workspace{
 		ID:              id,
+		RepoID:          repo.ID,
 		Platform:        repo.Platform,
 		PlatformHost:    platformHost,
 		RepoOwner:       owner,
@@ -743,6 +747,7 @@ func (m *Manager) CreateAdHoc(
 
 	ws := &Workspace{
 		ID:              id,
+		RepoID:          repo.ID,
 		Platform:        repo.Platform,
 		PlatformHost:    platformHost,
 		RepoOwner:       owner,
@@ -849,27 +854,10 @@ func workspaceCloneNamespace(platform string, repoID int64) string {
 }
 
 func (m *Manager) workspaceRepositoryID(ws *Workspace) (int64, error) {
-	relative, err := filepath.Rel(
-		filepath.Clean(m.worktreeDir),
-		filepath.Clean(ws.WorktreePath),
-	)
-	if err != nil {
-		return 0, fmt.Errorf("resolve workspace repository incarnation: %w", err)
+	if ws.RepoID <= 0 {
+		return 0, fmt.Errorf("workspace has no repository incarnation")
 	}
-	if relative == ".." ||
-		strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-		return 0, fmt.Errorf("workspace path is outside managed worktree directory")
-	}
-	repoDir := filepath.Base(filepath.Dir(relative))
-	repoIDText, ok := strings.CutPrefix(repoDir, "repo-")
-	if !ok {
-		return 0, fmt.Errorf("workspace path has no repository incarnation")
-	}
-	repoID, err := strconv.ParseInt(repoIDText, 10, 64)
-	if err != nil || repoID <= 0 {
-		return 0, fmt.Errorf("workspace path has invalid repository incarnation")
-	}
-	return repoID, nil
+	return ws.RepoID, nil
 }
 
 func (m *Manager) branchInspectionDir(

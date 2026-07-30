@@ -27,6 +27,9 @@ reconciliation when available.
 - Hold one per-full-path incarnation gate across provider-ID reconciliation
   and every operation that can publish path-keyed state
   (`internal/github/sync.go::repoIncarnationGate`).
+- Provider mutations revalidate the loaded repo ID under an incarnation read
+  lease held through write and persistence, so replacement cannot retarget
+  same-number items (`internal/github/sync.go::Syncer.HoldRepoMutationIncarnation`).
 - Configuration cutovers serialize and lock the union of outgoing and incoming
   paths exclusively before reconciliation or publication
   (`internal/github/sync.go::lockRepoConfigurationCutover`).

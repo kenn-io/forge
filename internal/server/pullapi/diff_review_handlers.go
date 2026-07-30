@@ -172,9 +172,13 @@ func (s *Handler) applyReviewSuggestions(
 	if err != nil {
 		return nil, err
 	}
-	if err := s.requireSyncerCapability(*repo, capabilityReviewSuggestionApplication); err != nil {
+	ctx, releaseMutation, err := s.requireSyncerCapability(
+		ctx, *repo, capabilityReviewSuggestionApplication,
+	)
+	if err != nil {
 		return nil, err
 	}
+	defer releaseMutation()
 	if err := s.requireReviewSuggestionCapabilities(*repo); err != nil {
 		return nil, err
 	}
@@ -497,6 +501,13 @@ func (s *Handler) publishDiffReviewDraft(
 	if mr == nil {
 		return nil, huma.Error404NotFound("pull request not found")
 	}
+	ctx, releaseMutation, err := s.requireSyncerCapability(
+		ctx, *repo, capabilityReviewDraftMutation,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer releaseMutation()
 	action, err := parseReviewAction(input.Body.Action)
 	if err != nil {
 		return nil, err

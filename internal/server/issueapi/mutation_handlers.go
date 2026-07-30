@@ -25,9 +25,13 @@ func (s *Handler) postIssueComment(ctx context.Context, input *postIssueCommentI
 	if err != nil {
 		return nil, err
 	}
-	if err := s.requireSyncerCapability(*repo, capabilityCommentMutation); err != nil {
+	ctx, releaseMutation, err := s.requireSyncerCapability(
+		ctx, *repo, capabilityCommentMutation,
+	)
+	if err != nil {
 		return nil, err
 	}
+	defer releaseMutation()
 	mutator, err := s.syncer.CommentMutator(httpapi.ProviderKind(*repo), httpapi.ProviderHost(*repo))
 	if err != nil {
 		return nil, httpapi.UnsupportedCapability(*repo, capabilityCommentMutation)
@@ -60,9 +64,13 @@ func (s *Handler) editIssueComment(ctx context.Context, input *editIssueCommentI
 	if err != nil {
 		return nil, err
 	}
-	if err := s.requireSyncerCapability(*repo, capabilityCommentMutation); err != nil {
+	ctx, releaseMutation, err := s.requireSyncerCapability(
+		ctx, *repo, capabilityCommentMutation,
+	)
+	if err != nil {
 		return nil, err
 	}
+	defer releaseMutation()
 	mutator, err := s.syncer.CommentMutator(httpapi.ProviderKind(*repo), httpapi.ProviderHost(*repo))
 	if err != nil {
 		return nil, httpapi.UnsupportedCapability(*repo, capabilityCommentMutation)
@@ -102,9 +110,13 @@ func (s *Handler) deleteIssueComment(ctx context.Context, input *deleteIssueComm
 	if err != nil {
 		return nil, err
 	}
-	if err := s.requireSyncerCapability(*repo, capabilityCommentMutation); err != nil {
+	ctx, releaseMutation, err := s.requireSyncerCapability(
+		ctx, *repo, capabilityCommentMutation,
+	)
+	if err != nil {
 		return nil, err
 	}
+	defer releaseMutation()
 	mutator, err := s.syncer.CommentMutator(httpapi.ProviderKind(*repo), httpapi.ProviderHost(*repo))
 	if err != nil {
 		return nil, httpapi.UnsupportedCapability(*repo, capabilityCommentMutation)
@@ -154,9 +166,13 @@ func (s *Handler) setIssueLabels(ctx context.Context, input *setIssueLabelsInput
 	if issue == nil {
 		return nil, httpapi.NotFound(httpapi.CodeIssueNotFound, "issue not found", nil)
 	}
-	if s.syncer == nil {
-		return nil, httpapi.UnsupportedCapability(*repo, capabilityLabelMutation)
+	ctx, releaseMutation, err := s.requireSyncerCapability(
+		ctx, *repo, capabilityLabelMutation,
+	)
+	if err != nil {
+		return nil, err
 	}
+	defer releaseMutation()
 	mutator, err := s.syncer.LabelMutator(httpapi.ProviderKind(*repo), httpapi.ProviderHost(*repo))
 	if err != nil {
 		return nil, httpapi.UnsupportedCapability(*repo, capabilityLabelMutation)
@@ -249,6 +265,13 @@ func (s *Handler) setIssueAssignees(ctx context.Context, input *setIssueAssignee
 	if issue == nil {
 		return nil, httpapi.NotFound(httpapi.CodeIssueNotFound, "issue not found", nil)
 	}
+	ctx, releaseMutation, err := s.requireSyncerCapability(
+		ctx, *repo, capabilityAssigneeMutation,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer releaseMutation()
 	mutator, err := s.syncer.AssigneeMutator(httpapi.ProviderKind(*repo), httpapi.ProviderHost(*repo))
 	if err != nil {
 		return nil, httpapi.UnsupportedCapability(*repo, capabilityAssigneeMutation)
@@ -316,9 +339,13 @@ func (s *Handler) setIssueGitHubState(ctx context.Context, input *githubStateInp
 	if issue == nil {
 		return nil, httpapi.NotFound(httpapi.CodeIssueNotFound, "issue not found", nil)
 	}
-	if err := s.requireSyncerCapability(*repo, capabilityStateMutation); err != nil {
+	ctx, releaseMutation, err := s.requireSyncerCapability(
+		ctx, *repo, capabilityStateMutation,
+	)
+	if err != nil {
 		return nil, err
 	}
+	defer releaseMutation()
 	mutator, err := s.syncer.StateMutator(httpapi.ProviderKind(*repo), httpapi.ProviderHost(*repo))
 	if err != nil {
 		return nil, httpapi.UnsupportedCapability(*repo, capabilityStateMutation)

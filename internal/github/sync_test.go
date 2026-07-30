@@ -3898,6 +3898,131 @@ func TestSyncNotificationsForRepoRejectsConfiguredProviderIDMismatch(t *testing.
 	assert.Equal(oldRepo.PlatformExternalID, repos[0].PlatformRepoID)
 }
 
+func TestRepositoryReplacementPublishesIdentityForDetailAndNotifications(
+	t *testing.T,
+) {
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	oldRepo := RepoRef{
+		Platform: platform.KindGitHub, PlatformHost: "github.com",
+		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+		PlatformExternalID: "repo-old",
+	}
+	newRepo := oldRepo
+	newRepo.PlatformExternalID = "repo-new"
+	_, err := d.UpsertRepoByProviderID(
+		t.Context(),
+		platform.DBRepoIdentity(platformRepoRef(oldRepo)),
+	)
+	require.NoError(err)
+	var notificationCalls atomic.Int32
+	client := &mockClient{
+		getRepositoryFn: func(
+			context.Context, string, string,
+		) (*gh.Repository, error) {
+			return &gh.Repository{
+				NodeID: new(newRepo.PlatformExternalID),
+				Name:   new(newRepo.Name),
+				Owner:  &gh.User{Login: new(newRepo.Owner)},
+			}, nil
+		},
+		getPullRequestFn: func(
+			context.Context, string, string, int,
+		) (*gh.PullRequest, error) {
+			return buildOpenPR(1, time.Now().UTC()), nil
+		},
+		listNotificationsFn: func(
+			context.Context,
+			NotificationListOptions,
+		) ([]NotificationThread, bool, error) {
+			notificationCalls.Add(1)
+			return nil, false, nil
+		},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client},
+		d,
+		nil,
+		[]RepoRef{oldRepo},
+		time.Minute,
+		nil,
+		nil,
+	)
+	t.Cleanup(syncer.Stop)
+
+	_, _, _, _, err = syncer.reconcileRepoIdentity(t.Context(), oldRepo)
+	require.NoError(err)
+	tracked := syncer.TrackedRepos()
+	require.Len(tracked, 1)
+	assert.Equal(newRepo.PlatformExternalID, tracked[0].PlatformExternalID)
+
+	require.NoError(syncer.SyncMROnProvider(
+		t.Context(),
+		platform.KindGitHub,
+		"github.com",
+		"acme",
+		"widget",
+		1,
+	))
+	require.NoError(syncer.syncNotificationsForRepo(
+		t.Context(),
+		platform.KindGitHub,
+		"github.com",
+		client,
+		map[string]RepoRef{},
+		oldRepo,
+		time.Now().UTC(),
+	))
+	assert.Positive(notificationCalls.Load())
+	repos, err := d.ListRepos(t.Context())
+	require.NoError(err)
+	require.Len(repos, 1)
+	assert.Equal(newRepo.PlatformExternalID, repos[0].PlatformRepoID)
+}
+
+func TestHoldRepoMutationIncarnationRejectsLoadedReplacement(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	oldRepo := RepoRef{
+		Platform: platform.KindGitHub, PlatformHost: "github.com",
+		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+		PlatformExternalID: "repo-old",
+	}
+	newRepo := oldRepo
+	newRepo.PlatformExternalID = "repo-new"
+	oldRepoID, err := d.UpsertRepoByProviderID(
+		t.Context(),
+		platform.DBRepoIdentity(platformRepoRef(oldRepo)),
+	)
+	require.NoError(err)
+	loaded, err := d.GetRepoByID(t.Context(), oldRepoID)
+	require.NoError(err)
+	require.NotNil(loaded)
+	syncer := NewSyncer(
+		map[string]Client{"github.com": &mockClient{}},
+		d,
+		nil,
+		[]RepoRef{oldRepo},
+		time.Minute,
+		nil,
+		nil,
+	)
+	t.Cleanup(syncer.Stop)
+	_, err = d.UpsertRepoByProviderID(
+		t.Context(),
+		platform.DBRepoIdentity(platformRepoRef(newRepo)),
+	)
+	require.NoError(err)
+
+	_, release, err := syncer.HoldRepoMutationIncarnation(
+		t.Context(),
+		*loaded,
+	)
+	defer release()
+	require.ErrorIs(err, ErrConfiguredRepoIdentityChanged)
+}
+
 func TestRepoSyncMarksClosedLinkedNotificationsDone(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

@@ -60,6 +60,13 @@ func (s *Handler) setPullAssignees(
 		return nil, httpapi.NotFound(httpapi.CodePullNotFound, "pull not found", nil)
 	}
 
+	ctx, releaseMutation, err := s.requireSyncerCapability(
+		ctx, *repo, capabilityAssigneeMutation,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer releaseMutation()
 	mutator, err := s.syncer.AssigneeMutator(repoProviderKind(*repo), repoProviderHost(*repo))
 	if err != nil {
 		return nil, unsupportedCapabilityProblem(*repo, capabilityAssigneeMutation)
@@ -102,6 +109,13 @@ func (s *Handler) setPullReviewers(
 		return nil, httpapi.NotFound(httpapi.CodePullNotFound, "pull not found", nil)
 	}
 
+	ctx, releaseMutation, err := s.requireSyncerCapability(
+		ctx, *repo, capabilityReviewerMutation,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer releaseMutation()
 	mutator, err := s.syncer.ReviewerMutator(repoProviderKind(*repo), repoProviderHost(*repo))
 	if err != nil {
 		return nil, unsupportedCapabilityProblem(*repo, capabilityReviewerMutation)

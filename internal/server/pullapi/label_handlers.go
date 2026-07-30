@@ -47,9 +47,13 @@ func (s *Handler) setPullLabels(
 		return nil, httpapi.NotFound(httpapi.CodePullNotFound, "pull not found", nil)
 	}
 
-	if s.syncer == nil {
-		return nil, unsupportedCapabilityProblem(*repo, capabilityLabelMutation)
+	ctx, releaseMutation, err := s.requireSyncerCapability(
+		ctx, *repo, capabilityLabelMutation,
+	)
+	if err != nil {
+		return nil, err
 	}
+	defer releaseMutation()
 	mutator, err := s.syncer.LabelMutator(repoProviderKind(*repo), repoProviderHost(*repo))
 	if err != nil {
 		return nil, unsupportedCapabilityProblem(*repo, capabilityLabelMutation)

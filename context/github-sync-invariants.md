@@ -66,6 +66,9 @@ what "current" means.
   exclusively through reconciliation, and configuration cutover supersedes an
   older provider observation
   (`internal/github/sync.go::reconcileRepoIdentityWithIncarnationGate`).
+- Reconciliation publishes its authoritative ID only while the configuration
+  generation is unchanged, so later detail and notification work uses the same
+  identity (`internal/github/sync.go::Syncer.publishReconciledRepoIdentity`).
 - A configured repository path is an authorization boundary. If provider
   resolution returns a different path, all provider reads and mutations for
   that path fail closed until configuration selects a different path

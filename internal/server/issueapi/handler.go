@@ -4,6 +4,7 @@ package issueapi
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"time"
 
@@ -120,14 +121,31 @@ func (s *Handler) operations(repo db.Repo) httpapi.RepoOperations {
 	return s.repoOperations(repo)
 }
 
-func (s *Handler) requireSyncerCapability(repo db.Repo, capability string) error {
+func (s *Handler) requireSyncerCapability(
+	ctx context.Context,
+	repo db.Repo,
+	capability string,
+) (context.Context, func(), error) {
 	if s.syncer == nil || !s.syncer.IsTrackedRepoOnProvider(
 		httpapi.ProviderKind(repo),
 		httpapi.ProviderHost(repo),
 		repo.Owner,
 		repo.Name,
 	) {
-		return httpapi.UnsupportedCapability(repo, capability)
+		return ctx, func() {}, httpapi.UnsupportedCapability(repo, capability)
 	}
-	return nil
+	leaseCtx, release, err := s.syncer.HoldRepoMutationIncarnation(ctx, repo)
+	if err == nil {
+		return leaseCtx, release, nil
+	}
+	if errors.Is(err, ghclient.ErrConfiguredRepoIdentityChanged) {
+		return ctx, func() {}, httpapi.Conflict(
+			httpapi.CodeConflict,
+			"repository changed; reload and try again",
+			map[string]any{"reason": "repository_changed"},
+		)
+	}
+	return ctx, func() {}, httpapi.Internal(
+		"validate repository incarnation failed",
+	)
 }

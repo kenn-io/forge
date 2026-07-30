@@ -1208,6 +1208,7 @@ func kataWorkspaceItemKeyPart(value string) string {
 // pull request, provider issue, or external Kata task.
 type Workspace struct {
 	ID                 string
+	RepoID             int64
 	Platform           string
 	PlatformHost       string
 	RepoOwner          string

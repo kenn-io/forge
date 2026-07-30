@@ -5244,7 +5244,8 @@ func scanWorkspace(scanner interface{ Scan(...any) error }) (*Workspace, error) 
 	var ws Workspace
 	var kataMetadataJSON string
 	err := scanner.Scan(
-		&ws.ID, &ws.Platform, &ws.PlatformHost, &ws.RepoOwner, &ws.RepoName,
+		&ws.ID, &ws.RepoID,
+		&ws.Platform, &ws.PlatformHost, &ws.RepoOwner, &ws.RepoName,
 		&ws.ItemType, &ws.ItemNumber, &ws.ItemKey, &ws.AssociatedPRNumber,
 		&ws.GitHeadRef, &ws.MRHeadRepo, &ws.WorkspaceBranch,
 		&ws.WorktreePath, &ws.TmuxSession, &ws.TerminalBackend, &ws.Status,
@@ -5298,14 +5299,16 @@ func (d *DB) InsertWorkspace(
 	}
 	_, err = d.rw.ExecContext(ctx, `
 		INSERT INTO middleman_workspaces
-		    (id, platform, platform_host, repo_owner, repo_name,
+		    (id, repo_incarnation_id,
+		     platform, platform_host, repo_owner, repo_name,
 		     repo_owner_key, repo_name_key, repo_path_key,
 		     item_type, item_number, item_key, associated_pr_number,
 		     git_head_ref, mr_head_repo, workspace_branch,
 		     worktree_path, tmux_session, terminal_backend, status,
 		     error_message, kata_metadata)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		ws.ID, ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
+		VALUES (?, NULLIF(?, 0), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		ws.ID, ws.RepoID,
+		ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 		repoOwnerKey, repoNameKey, repoPathKey,
 		ws.ItemType, ws.ItemNumber, itemKey, ws.AssociatedPRNumber,
 		ws.GitHeadRef, ws.MRHeadRepo, ws.WorkspaceBranch,
@@ -5324,7 +5327,8 @@ func (d *DB) GetWorkspace(
 	ctx context.Context, id string,
 ) (*Workspace, error) {
 	ws, err := scanWorkspace(d.ro.QueryRowContext(ctx, `
-		SELECT id, platform, platform_host, repo_owner, repo_name,
+		SELECT id, COALESCE(repo_incarnation_id, 0),
+		       platform, platform_host, repo_owner, repo_name,
 		       item_type, item_number, item_key, associated_pr_number,
 		       git_head_ref, mr_head_repo, workspace_branch,
 		       worktree_path, tmux_session, terminal_backend, status,
@@ -5370,7 +5374,8 @@ func (d *DB) getWorkspaceByMR(
 	provider = strings.ToLower(strings.TrimSpace(provider))
 	platformHost, owner, name = canonicalRepoLookupIdentifier(platformHost, owner, name)
 	ws, err := scanWorkspace(d.ro.QueryRowContext(ctx, `
-		SELECT id, platform, platform_host, repo_owner, repo_name,
+		SELECT id, COALESCE(repo_incarnation_id, 0),
+		       platform, platform_host, repo_owner, repo_name,
 		       item_type, item_number, item_key, associated_pr_number,
 		       git_head_ref, mr_head_repo, workspace_branch,
 		       worktree_path, tmux_session, terminal_backend, status,
@@ -5422,7 +5427,8 @@ func (d *DB) getWorkspaceByIssue(
 	provider = strings.ToLower(strings.TrimSpace(provider))
 	platformHost, owner, name = canonicalRepoLookupIdentifier(platformHost, owner, name)
 	ws, err := scanWorkspace(d.ro.QueryRowContext(ctx, `
-		SELECT id, platform, platform_host, repo_owner, repo_name,
+		SELECT id, COALESCE(repo_incarnation_id, 0),
+		       platform, platform_host, repo_owner, repo_name,
 		       item_type, item_number, item_key, associated_pr_number,
 		       git_head_ref, mr_head_repo, workspace_branch,
 		       worktree_path, tmux_session, terminal_backend, status,
@@ -5456,7 +5462,8 @@ func (d *DB) GetWorkspaceByItemKeyForProvider(
 	}
 	platformHost, owner, name = canonicalRepoLookupIdentifier(platformHost, owner, name)
 	ws, err := scanWorkspace(d.ro.QueryRowContext(ctx, `
-		SELECT id, platform, platform_host, repo_owner, repo_name,
+		SELECT id, COALESCE(repo_incarnation_id, 0),
+		       platform, platform_host, repo_owner, repo_name,
 		       item_type, item_number, item_key, associated_pr_number,
 		       git_head_ref, mr_head_repo, workspace_branch,
 		       worktree_path, tmux_session, terminal_backend, status,
@@ -5498,7 +5505,8 @@ func (d *DB) listWorkspaces(
 	activeOnly bool,
 ) ([]Workspace, error) {
 	query := `
-		SELECT id, platform, platform_host, repo_owner, repo_name,
+		SELECT id, COALESCE(repo_incarnation_id, 0),
+		       platform, platform_host, repo_owner, repo_name,
 		       item_type, item_number, item_key, associated_pr_number,
 		       git_head_ref, mr_head_repo, workspace_branch,
 		       worktree_path, tmux_session, terminal_backend, status,
@@ -6157,7 +6165,8 @@ func (d *DB) DeleteRetiredWorkspaceWithActiveWorktreeOwner(
 // workspaceSummaryColumns is the SELECT list shared by
 // ListWorkspaceSummaries and GetWorkspaceSummary.
 const workspaceSummaryColumns = `
-	w.id, w.platform, w.platform_host, w.repo_owner, w.repo_name,
+	w.id, COALESCE(w.repo_incarnation_id, 0),
+	w.platform, w.platform_host, w.repo_owner, w.repo_name,
 	w.item_type, w.item_number, w.item_key, w.associated_pr_number,
 	w.git_head_ref, w.mr_head_repo, w.workspace_branch,
 	w.worktree_path, w.tmux_session, w.terminal_backend, w.status,
@@ -6208,7 +6217,8 @@ func scanWorkspaceSummary(
 	var kataMetadataJSON string
 	var itemLastActivityAt sql.NullString
 	err := scanner.Scan(
-		&s.ID, &s.Platform, &s.PlatformHost, &s.RepoOwner, &s.RepoName,
+		&s.ID, &s.RepoID,
+		&s.Platform, &s.PlatformHost, &s.RepoOwner, &s.RepoName,
 		&s.ItemType, &s.ItemNumber, &s.ItemKey, &s.AssociatedPRNumber,
 		&s.GitHeadRef, &s.MRHeadRepo, &s.WorkspaceBranch,
 		&s.WorktreePath, &s.TmuxSession, &s.TerminalBackend, &s.Status,

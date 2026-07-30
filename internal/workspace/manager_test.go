@@ -3100,6 +3100,7 @@ func TestCleanupFallsBackToManagedCloneWhenConfiguredBaseInvalid(t *testing.T) {
 	mgr.SetWorktreeBasePathResolver(staticBaseResolver(filepath.Join(t.TempDir(), "missing")))
 	ws := &Workspace{
 		ID:              "ws-cleanup-managed-fallback",
+		RepoID:          repoID,
 		Platform:        "github",
 		PlatformHost:    "github.com",
 		RepoOwner:       "acme",
@@ -3152,6 +3153,7 @@ func TestCleanupUsesProviderScopedManagedClone(t *testing.T) {
 	mgr.SetClones(clones)
 	ws := &Workspace{
 		ID:              "ws-cleanup-provider-scoped-managed",
+		RepoID:          repoID,
 		Platform:        "gitlab",
 		PlatformHost:    host,
 		RepoOwner:       "acme",
@@ -5868,6 +5870,78 @@ func TestManagerRequestRetrySkipsGitCleanupWhenCloneMissing(t *testing.T) {
 	assert.Nil(got.ErrorMessage)
 }
 
+func TestManagerRetryUsesPersistedIncarnationForLegacyWorktreePath(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	_, remote := setupLocalWorktreeBaseWithRemoteForWorkspaceGitTest(
+		t, "feature/legacy-retry",
+	)
+	repoID := seedRepo(t, d, "github.com", "acme", "widget")
+	require.NoError(d.UpdateRepoProviderMetadata(
+		ctx,
+		repoID,
+		db.RepoProviderMetadata{
+			CloneURL:      remote,
+			DefaultBranch: "main",
+		},
+	))
+	seedIssue(t, d, repoID, 7, "Retry legacy workspace")
+	worktreeRoot := t.TempDir()
+	legacyWorktreePath := filepath.Join(
+		worktreeRoot,
+		"github",
+		"github.com",
+		"acme",
+		"widget",
+		"issue-7",
+	)
+	errorMessage := "setup failed before worktree creation"
+	ws := &Workspace{
+		ID:              "ws-legacy-retry",
+		RepoID:          repoID,
+		Platform:        "github",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		ItemType:        db.WorkspaceItemTypeIssue,
+		ItemNumber:      7,
+		GitHeadRef:      "middleman/issue-7-retry-legacy-workspace",
+		WorkspaceBranch: workspaceBranchUnknown,
+		WorktreePath:    legacyWorktreePath,
+		TmuxSession:     "middleman-ws-legacy-retry",
+		Status:          "error",
+		ErrorMessage:    &errorMessage,
+	}
+	require.NoError(d.InsertWorkspace(ctx, ws))
+	clones := gitclone.New(filepath.Join(t.TempDir(), "clones"), nil)
+	tmuxScript, _ := writeRecorderScript(t)
+	mgr := NewManager(d, worktreeRoot)
+	mgr.SetClones(clones)
+	mgr.SetTmuxCommand([]string{tmuxScript})
+
+	retry, startNow, err := mgr.RequestRetry(ctx, ws.ID)
+	require.NoError(err)
+	require.True(startNow)
+	require.NoError(mgr.Setup(ctx, retry))
+
+	stored, err := d.GetWorkspace(ctx, ws.ID)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal("ready", stored.Status)
+	assert.Equal(repoID, stored.RepoID)
+	assert.DirExists(legacyWorktreePath)
+	cloneDir, err := clones.ClonePathInNamespace(
+		workspaceCloneNamespace("github", repoID),
+		"github.com",
+		"acme",
+		"widget",
+	)
+	require.NoError(err)
+	assert.DirExists(cloneDir)
+}
+
 func TestIssueRetryCleansLeakedUnknownBranchAndUsesIssueBranch(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -5903,6 +5977,7 @@ func TestIssueRetryCleansLeakedUnknownBranchAndUsesIssueBranch(t *testing.T) {
 
 	ws := &Workspace{
 		ID:              "ws-issue-retry-unknown",
+		RepoID:          repoID,
 		PlatformHost:    host,
 		RepoOwner:       owner,
 		RepoName:        name,
@@ -6851,6 +6926,7 @@ func TestManagerCleanupForDeleteAcquiresRepoLock(t *testing.T) {
 
 	ws := &Workspace{
 		ID:           "ws-cleanup-lock",
+		RepoID:       repoID,
 		PlatformHost: host,
 		RepoOwner:    owner,
 		RepoName:     name,

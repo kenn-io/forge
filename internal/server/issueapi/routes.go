@@ -65,9 +65,13 @@ func (s *Handler) createIssue(ctx context.Context, input *createIssueInput) (*cr
 	if err != nil {
 		return nil, err
 	}
-	if err := s.requireSyncerCapability(*repo, capabilityIssueMutation); err != nil {
+	ctx, releaseMutation, err := s.requireSyncerCapability(
+		ctx, *repo, capabilityIssueMutation,
+	)
+	if err != nil {
 		return nil, err
 	}
+	defer releaseMutation()
 	mutator, err := s.syncer.IssueMutator(httpapi.ProviderKind(*repo), httpapi.ProviderHost(*repo))
 	if err != nil {
 		return nil, httpapi.UnsupportedCapability(*repo, capabilityIssueMutation)
@@ -182,9 +186,13 @@ func (s *Handler) editIssueContent(ctx context.Context, input *editIssueContentI
 	if err != nil {
 		return nil, err
 	}
-	if err := s.requireSyncerCapability(*repo, capabilityStateMutation); err != nil {
+	ctx, releaseMutation, err := s.requireSyncerCapability(
+		ctx, *repo, capabilityStateMutation,
+	)
+	if err != nil {
 		return nil, err
 	}
+	defer releaseMutation()
 	mutator, err := s.syncer.IssueContentMutator(httpapi.ProviderKind(*repo), httpapi.ProviderHost(*repo))
 	if err != nil {
 		return nil, httpapi.UnsupportedCapability(*repo, capabilityStateMutation)

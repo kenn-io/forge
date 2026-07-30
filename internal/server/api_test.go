@@ -6741,6 +6741,115 @@ func TestAPIMergePRRejectsNilProviderPayload(t *testing.T) {
 	assert.Nil(mr.MergedAt)
 }
 
+func TestAPIMergeHoldsRepositoryIncarnationThroughProviderMutation(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	oldRepo := ghclient.RepoRef{
+		Platform: platform.KindGitHub, PlatformHost: "github.com",
+		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+		PlatformExternalID: "repo-old",
+	}
+	newRepo := oldRepo
+	newRepo.PlatformExternalID = "repo-new"
+	mergeStarted := make(chan struct{})
+	releaseMerge := make(chan struct{})
+	var releaseMergeOnce sync.Once
+	releaseProviderMutation := func() {
+		releaseMergeOnce.Do(func() { close(releaseMerge) })
+	}
+	defer releaseProviderMutation()
+	mock := &mockGH{
+		mergePullRequestFn: func(
+			context.Context,
+			string,
+			string,
+			int,
+			string,
+			string,
+			string,
+		) (*gh.PullRequestMergeResult, error) {
+			close(mergeStarted)
+			<-releaseMerge
+			merged := true
+			sha := "merged-sha"
+			return &gh.PullRequestMergeResult{
+				Merged: &merged,
+				SHA:    &sha,
+			}, nil
+		},
+	}
+	srv, database := setupTestServerWithRepos(t, mock, []ghclient.RepoRef{oldRepo})
+	_, err := database.UpsertRepoByProviderID(
+		t.Context(),
+		platform.DBRepoIdentity(platform.RepoRef{
+			Platform:           oldRepo.Platform,
+			Host:               oldRepo.PlatformHost,
+			Owner:              oldRepo.Owner,
+			Name:               oldRepo.Name,
+			RepoPath:           oldRepo.RepoPath,
+			PlatformExternalID: oldRepo.PlatformExternalID,
+		}),
+	)
+	require.NoError(err)
+	expectedHeadSHA := "reviewed-sha"
+	seedPR(t, database, "acme", "widget", 1, withSeedPRHeadSHA(expectedHeadSHA))
+	client := setupTestClient(t, srv)
+
+	type mergeResult struct {
+		response *generated.MergePullResponse
+		err      error
+	}
+	mergeDone := make(chan mergeResult, 1)
+	go func() {
+		response, mergeErr := client.HTTP.MergePullWithResponse(
+			t.Context(), "gh",
+			"acme",
+			"widget",
+			1,
+			generated.MergePullJSONRequestBody{
+				Method:          "squash",
+				ExpectedHeadSha: &expectedHeadSHA,
+			},
+		)
+		mergeDone <- mergeResult{response: response, err: mergeErr}
+	}()
+	select {
+	case <-mergeStarted:
+	case <-time.After(time.Second):
+		require.Fail("merge did not reach provider mutation")
+	}
+
+	cutoverDone := make(chan error, 1)
+	go func() {
+		cutoverDone <- srv.syncer.SetReposWithContext(
+			t.Context(),
+			[]ghclient.RepoRef{newRepo},
+			false,
+		)
+	}()
+	cutoverCompletedEarly := false
+	select {
+	case cutoverErr := <-cutoverDone:
+		require.NoError(cutoverErr)
+		cutoverCompletedEarly = true
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	releaseProviderMutation()
+	result := <-mergeDone
+	require.NoError(result.err)
+	require.NotNil(result.response)
+	require.Equal(http.StatusOK, result.response.StatusCode(), string(result.response.Body))
+	if !cutoverCompletedEarly {
+		require.NoError(<-cutoverDone)
+	}
+	assert.False(
+		cutoverCompletedEarly,
+		"repository replacement crossed an in-flight provider mutation",
+	)
+	assert.Equal(newRepo.PlatformExternalID, srv.syncer.TrackedRepos()[0].PlatformExternalID)
+}
+
 func TestAPICreateIssueUsesPlatformHost(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

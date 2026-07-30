@@ -2,10 +2,12 @@ package pullapi
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
 	"go.kenn.io/middleman/internal/db"
+	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/platform"
 	"go.kenn.io/middleman/internal/server/httpapi"
 )
@@ -62,16 +64,33 @@ func (s *Handler) capabilitiesForRepo(repo db.Repo) httpapi.ProviderCapabilities
 	return s.resolver.Ref(repo).Capabilities
 }
 
-func (s *Handler) requireSyncerCapability(repo db.Repo, capability string) error {
+func (s *Handler) requireSyncerCapability(
+	ctx context.Context,
+	repo db.Repo,
+	capability string,
+) (context.Context, func(), error) {
 	if s.syncer == nil || !s.syncer.IsTrackedRepoOnProvider(
 		repoProviderKind(repo),
 		repoProviderHost(repo),
 		repo.Owner,
 		repo.Name,
 	) {
-		return httpapi.UnsupportedCapability(repo, capability)
+		return ctx, func() {}, httpapi.UnsupportedCapability(repo, capability)
 	}
-	return nil
+	leaseCtx, release, err := s.syncer.HoldRepoMutationIncarnation(ctx, repo)
+	if err == nil {
+		return leaseCtx, release, nil
+	}
+	if errors.Is(err, ghclient.ErrConfiguredRepoIdentityChanged) {
+		return ctx, func() {}, httpapi.Conflict(
+			httpapi.CodeConflict,
+			"repository changed; reload and try again",
+			map[string]any{"reason": "repository_changed"},
+		)
+	}
+	return ctx, func() {}, httpapi.Internal(
+		"validate repository incarnation failed",
+	)
 }
 
 func unsupportedCapabilityProblem(repo db.Repo, capability string) huma.StatusError {

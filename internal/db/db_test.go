@@ -467,6 +467,55 @@ func TestOpenIdempotent(t *testing.T) {
 	d2.Close()
 }
 
+func TestOpenBackfillsWorkspaceRepositoryIncarnation(t *testing.T) {
+	require := require.New(t)
+	path := filepath.Join(t.TempDir(), "workspace-upgrade.db")
+	openAtVersionForTest(t, path, 43, func(raw *sql.DB) {
+		_, err := raw.Exec(`
+			INSERT INTO middleman_repos (
+				id, platform, platform_host, platform_repo_id,
+				owner, name, repo_path, owner_key, name_key, repo_path_key
+			) VALUES (
+				42, 'github', 'github.com', 'repo-42',
+				'acme', 'widget', 'acme/widget',
+				'acme', 'widget', 'acme/widget'
+			)`)
+		require.NoError(err)
+		_, err = raw.Exec(`
+			INSERT INTO middleman_workspaces (
+				id, platform, platform_host, repo_owner, repo_name,
+				repo_owner_key, repo_name_key, repo_path_key,
+				item_type, item_number, item_key, git_head_ref,
+				worktree_path, tmux_session, status, error_message
+			) VALUES (
+				'legacy-failed-workspace',
+				'github', 'github.com', 'acme', 'widget',
+				'acme', 'widget', 'acme/widget',
+				'pull_request', 7, '7', 'feature',
+				'/tmp/legacy-failed-workspace',
+				'middleman-legacy-failed-workspace',
+				'error', 'setup failed'
+			)`)
+		require.NoError(err)
+	})
+
+	d, err := Open(path)
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(d.Close()) })
+	ws, err := d.GetWorkspace(t.Context(), "legacy-failed-workspace")
+	require.NoError(err)
+	require.NotNil(ws)
+	require.EqualValues(42, ws.RepoID)
+	var integrity string
+	require.NoError(d.ReadDB().QueryRow(`PRAGMA integrity_check`).Scan(&integrity))
+	require.Equal("ok", integrity)
+	var foreignKeyViolations int
+	require.NoError(d.ReadDB().QueryRow(
+		`SELECT COUNT(*) FROM pragma_foreign_key_check`,
+	).Scan(&foreignKeyViolations))
+	require.Zero(foreignKeyViolations)
+}
+
 func TestOpenCreatesSchemaMigrationsTable(t *testing.T) {
 	require := require.New(t)
 	d := openDBWithMigrations(t)

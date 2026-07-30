@@ -812,9 +812,13 @@ func (s *Handler) editPRContent(
 	if err != nil {
 		return nil, err
 	}
-	if err := s.requireSyncerCapability(*repo, capabilityStateMutation); err != nil {
+	ctx, releaseMutation, err := s.requireSyncerCapability(
+		ctx, *repo, capabilityStateMutation,
+	)
+	if err != nil {
 		return nil, err
 	}
+	defer releaseMutation()
 
 	mutator, err := s.syncer.MergeRequestContentMutator(
 		repoProviderKind(*repo), repoProviderHost(*repo),
@@ -890,9 +894,13 @@ func (s *Handler) postComment(ctx context.Context, input *postCommentInput) (*po
 	if err != nil {
 		return nil, err
 	}
-	if err := s.requireSyncerCapability(*repo, capabilityCommentMutation); err != nil {
+	ctx, releaseMutation, err := s.requireSyncerCapability(
+		ctx, *repo, capabilityCommentMutation,
+	)
+	if err != nil {
 		return nil, err
 	}
+	defer releaseMutation()
 
 	mutator, err := s.syncer.CommentMutator(
 		repoProviderKind(*repo), repoProviderHost(*repo),
@@ -945,9 +953,13 @@ func (s *Handler) editComment(ctx context.Context, input *editCommentInput) (*ed
 	if err != nil {
 		return nil, err
 	}
-	if err := s.requireSyncerCapability(*repo, capabilityCommentMutation); err != nil {
+	ctx, releaseMutation, err := s.requireSyncerCapability(
+		ctx, *repo, capabilityCommentMutation,
+	)
+	if err != nil {
 		return nil, err
 	}
+	defer releaseMutation()
 
 	mutator, err := s.syncer.CommentMutator(
 		repoProviderKind(*repo), repoProviderHost(*repo),
@@ -1005,9 +1017,13 @@ func (s *Handler) deleteComment(ctx context.Context, input *deleteCommentInput) 
 	if err != nil {
 		return nil, err
 	}
-	if err := s.requireSyncerCapability(*repo, capabilityCommentMutation); err != nil {
+	ctx, releaseMutation, err := s.requireSyncerCapability(
+		ctx, *repo, capabilityCommentMutation,
+	)
+	if err != nil {
 		return nil, err
 	}
+	defer releaseMutation()
 	mutator, err := s.syncer.CommentMutator(repoProviderKind(*repo), repoProviderHost(*repo))
 	if err != nil {
 		return nil, unsupportedCapabilityProblem(*repo, capabilityCommentMutation)
@@ -1051,9 +1067,13 @@ func (s *Handler) replyToDiscussion(ctx context.Context, input *replyToDiscussio
 	if err != nil {
 		return nil, err
 	}
-	if err := s.requireSyncerCapability(*repo, capabilityThreadReply); err != nil {
+	ctx, releaseMutation, err := s.requireSyncerCapability(
+		ctx, *repo, capabilityThreadReply,
+	)
+	if err != nil {
 		return nil, err
 	}
+	defer releaseMutation()
 
 	// Verify the MR exists locally before calling the provider to avoid
 	// creating upstream replies for untracked or non-existent PRs.
@@ -1155,9 +1175,13 @@ func (s *Handler) resolveDiscussion(ctx context.Context, input *resolveDiscussio
 	if err != nil {
 		return nil, err
 	}
-	if err := s.requireSyncerCapability(*repo, capabilityThreadResolve); err != nil {
+	ctx, releaseMutation, err := s.requireSyncerCapability(
+		ctx, *repo, capabilityThreadResolve,
+	)
+	if err != nil {
 		return nil, err
 	}
+	defer releaseMutation()
 
 	// Verify the MR exists locally before calling the provider to avoid
 	// resolving discussions on untracked or non-existent PRs.
@@ -1213,9 +1237,13 @@ func (s *Handler) approvePR(ctx context.Context, input *approvePRInput) (*action
 	if err != nil {
 		return nil, err
 	}
-	if err := s.requireSyncerCapability(*repo, capabilityReviewMutation); err != nil {
+	ctx, releaseMutation, err := s.requireSyncerCapability(
+		ctx, *repo, capabilityReviewMutation,
+	)
+	if err != nil {
 		return nil, err
 	}
+	defer releaseMutation()
 	mutator, err := s.syncer.ReviewMutator(
 		repoProviderKind(*repo), repoProviderHost(*repo),
 	)
@@ -1284,9 +1312,13 @@ func (s *Handler) requestChangesPR(ctx context.Context, input *requestChangesPRI
 	if err != nil {
 		return nil, err
 	}
-	if err := s.requireSyncerCapability(*repo, capabilityReviewMutation); err != nil {
+	ctx, releaseMutation, err := s.requireSyncerCapability(
+		ctx, *repo, capabilityReviewMutation,
+	)
+	if err != nil {
 		return nil, err
 	}
+	defer releaseMutation()
 	caps := s.capabilitiesForRepo(*repo)
 	if !reviewActionSupported(caps, platform.ReviewActionRequestChanges) {
 		return nil, httpapi.UnsupportedCapability(*repo, "review_action_request_changes")
@@ -1372,9 +1404,13 @@ func (s *Handler) approveWorkflows(ctx context.Context, input *repoNumberInput) 
 	if err != nil {
 		return nil, err
 	}
-	if err := s.requireSyncerCapability(*repo, capabilityWorkflowApproval); err != nil {
+	ctx, releaseMutation, err := s.requireSyncerCapability(
+		ctx, *repo, capabilityWorkflowApproval,
+	)
+	if err != nil {
 		return nil, err
 	}
+	defer releaseMutation()
 	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
 		return nil, httpapi.Internal("get pull request failed")
@@ -1481,9 +1517,13 @@ func (s *Handler) readyForReview(ctx context.Context, input *repoNumberInput) (*
 	if err != nil {
 		return nil, err
 	}
-	if err := s.requireSyncerCapability(*repo, capabilityReadyForReview); err != nil {
+	ctx, releaseMutation, err := s.requireSyncerCapability(
+		ctx, *repo, capabilityReadyForReview,
+	)
+	if err != nil {
 		return nil, err
 	}
+	defer releaseMutation()
 	mutator, err := s.syncer.ReadyForReviewMutator(
 		repoProviderKind(*repo), repoProviderHost(*repo),
 	)
@@ -1575,9 +1615,13 @@ func (s *Handler) mergePRWithBody(
 	if err != nil {
 		return mergePRBody{}, err
 	}
-	if err := s.requireSyncerCapability(*repo, capabilityMergeMutation); err != nil {
+	ctx, releaseMutation, err := s.requireSyncerCapability(
+		ctx, *repo, capabilityMergeMutation,
+	)
+	if err != nil {
 		return mergePRBody{}, err
 	}
+	defer releaseMutation()
 	mutator, err := s.syncer.MergeMutator(
 		repoProviderKind(*repo), repoProviderHost(*repo),
 	)
@@ -1931,9 +1975,13 @@ func (s *Handler) setPRGitHubState(
 	if err != nil {
 		return nil, err
 	}
-	if err := s.requireSyncerCapability(*repo, requiredCapability); err != nil {
+	ctx, releaseMutation, err := s.requireSyncerCapability(
+		ctx, *repo, requiredCapability,
+	)
+	if err != nil {
 		return nil, err
 	}
+	defer releaseMutation()
 
 	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {

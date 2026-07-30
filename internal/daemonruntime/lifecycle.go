@@ -30,9 +30,6 @@ func NewManager(
 		Store:    StartLockStore(store, dataDir),
 		FindFunc: discovery.find,
 		Start: func(ctx context.Context) error {
-			if _, err := runtimelock.EnsureAuthToken(dataDir); err != nil {
-				return fmt.Errorf("ensure auth token: %w", err)
-			}
 			if start == nil {
 				return errors.New("middleman daemon is not running")
 			}

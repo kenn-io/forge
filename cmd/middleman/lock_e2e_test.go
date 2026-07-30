@@ -13,9 +13,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/kit/daemon"
 
+	"go.kenn.io/middleman/internal/daemonruntime"
 	"go.kenn.io/middleman/internal/procutil"
 	"go.kenn.io/middleman/internal/runtimelock"
 )
@@ -99,6 +101,75 @@ func TestStartBackgroundSerializesAndReusesCompatibleRuntime(t *testing.T) {
 	require.NoError(err)
 	require.Len(recordsAfter, 1)
 	require.Equal(record.PID, recordsAfter[0].PID)
+}
+
+// TestForegroundAndBackgroundStartShareAuthToken protects a fresh data
+// directory started through both lifecycle paths at once. If token creation
+// has multiple winners, discovery cannot authenticate the runtime that won the
+// authoritative data-directory lock.
+func TestForegroundAndBackgroundStartShareAuthToken(t *testing.T) {
+	require := require.New(t)
+	bin := buildMiddleman(t)
+	root := t.TempDir()
+	dataDir := filepath.Join(root, "data")
+	runtimeDir := filepath.Join(root, "config-home")
+	require.NoError(os.MkdirAll(runtimeDir, 0o700))
+	t.Setenv("MIDDLEMAN_HOME", runtimeDir)
+	configPath := filepath.Join(runtimeDir, "config.toml")
+	writeMinimalConfig(t, configPath, dataDir, reserveFreePort(t))
+	store := daemon.RuntimeStore{Dir: runtimeDir}
+
+	foreground := procutil.Command(bin, "serve", "--config", configPath)
+	var foregroundStderr bytes.Buffer
+	foreground.Stderr = &foregroundStderr
+	foreground.Env = append(os.Environ(), "MIDDLEMAN_LOG_LEVEL=warn")
+	background := procutil.Command(
+		bin, "start", "--background", "--config", configPath,
+	)
+	var backgroundStderr bytes.Buffer
+	background.Stderr = &backgroundStderr
+	background.Env = append(os.Environ(), "MIDDLEMAN_LOG_LEVEL=warn")
+	t.Cleanup(func() {
+		records, _ := store.List()
+		for _, record := range records {
+			if process, findErr := os.FindProcess(record.PID); findErr == nil {
+				_ = process.Kill()
+			}
+		}
+		if foreground.Process != nil {
+			_ = foreground.Process.Kill()
+			_ = foreground.Wait()
+		}
+	})
+
+	gate := make(chan struct{})
+	foregroundStarted := make(chan error, 1)
+	backgroundDone := make(chan error, 1)
+	go func() {
+		<-gate
+		foregroundStarted <- foreground.Start()
+	}()
+	go func() {
+		<-gate
+		backgroundDone <- background.Run()
+	}()
+	close(gate)
+	require.NoError(<-foregroundStarted)
+	require.NoError(<-backgroundDone, backgroundStderr.String())
+
+	records, err := store.List()
+	require.NoError(err)
+	require.Len(records, 1)
+	record := records[0]
+	token, err := runtimelock.ReadAuthToken(dataDir)
+	require.NoError(err)
+	proof, err := daemon.NewProof([]byte(token))
+	require.NoError(err)
+	ping, err := proof.Probe(t.Context(), record, daemon.ProbeOptions{
+		Path: daemonruntime.ProofPingPath,
+	})
+	require.NoError(err)
+	assert.Equal(t, record.PID, ping.PID)
 }
 
 // reserveFreePort opens a listener on 127.0.0.1:0, closes it, and

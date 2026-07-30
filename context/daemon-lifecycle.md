@@ -8,6 +8,9 @@
   identity for the same resolved `data_dir`; starts serialize per data
   directory through the shared daemon manager without blocking unrelated
   instances (`internal/daemonruntime/lifecycle.go::NewManager`).
+- Lifecycle startup mints the API token under the authoritative data-directory
+  lock; atomic serialized publication makes concurrent paths retain one
+  credential (`internal/runtimelock/token.go::EnsureAuthToken`).
 - Config loading establishes the canonical `data_dir` identity used by startup
   and reload comparisons (`internal/config/config.go::load`).
 

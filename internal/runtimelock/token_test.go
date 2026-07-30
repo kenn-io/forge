@@ -2,11 +2,52 @@ package runtimelock
 
 import (
 	"os"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// TestEnsureAuthTokenConcurrentCallersReuseWinner protects startup callers
+// that reach a fresh data directory together. If creation is a read-then-write
+// race, callers can retain different tokens from the one left on disk.
+func TestEnsureAuthTokenConcurrentCallersReuseWinner(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	const callers = 32
+	dir := t.TempDir()
+	gate := make(chan struct{})
+	tokens := make(chan string, callers)
+	errs := make(chan error, callers)
+	var ready sync.WaitGroup
+	ready.Add(callers)
+
+	for range callers {
+		go func() {
+			ready.Done()
+			<-gate
+			token, err := EnsureAuthToken(dir)
+			tokens <- token
+			errs <- err
+		}()
+	}
+	ready.Wait()
+	close(gate)
+
+	winner := ""
+	for range callers {
+		require.NoError(<-errs)
+		token := <-tokens
+		if winner == "" {
+			winner = token
+		}
+		assert.Equal(winner, token)
+	}
+	onDisk, err := ReadAuthToken(dir)
+	require.NoError(err)
+	assert.Equal(winner, onDisk)
+}
 
 // TestEnsureAuthToken pins the token contract thin clients rely on:
 // minted once with user-only permissions, stable across restarts.

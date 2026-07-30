@@ -7,6 +7,7 @@ const (
 	lockFileName     = "middleman.lock"
 	metadataFileName = "middleman.run.json"
 	metadataTmpFile  = ".middleman.run.json.tmp"
+	authTokenLock    = ".auth_token.lock"
 )
 
 // LockPath returns the absolute path of the lock file under dataDir.
@@ -14,6 +15,10 @@ const (
 // existence implies nothing about liveness.
 func LockPath(dataDir string) string {
 	return filepath.Join(dataDir, lockFileName)
+}
+
+func authTokenLockPath(dataDir string) string {
+	return filepath.Join(dataDir, authTokenLock)
 }
 
 // MetadataPath returns the absolute path of the runtime metadata file

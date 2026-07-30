@@ -30,7 +30,7 @@ Package, workspace, Rust crate, socket, browser-storage, and build identifiers u
 
 Frontend-injected globals and browser-persisted keys move to a Kenn Forge namespace. The application transfers existing browser values once and then removes the legacy keys.
 
-Historical database migrations must remain structurally valid. Existing migrations may receive harmless prose updates, but identifiers whose alteration could invalidate already-applied migration history remain unchanged and are documented as legacy exceptions.
+Historical database migrations must remain structurally valid. Existing migrations may receive harmless prose updates, but identifiers whose alteration could invalidate already-applied migration history remain unchanged and are documented as legacy exceptions. This includes shipped SQLite schema names and the current SQL statements that address them; renaming those internal objects would add upgrade risk without changing the product identity users encounter.
 
 ## Compatibility Boundary
 
@@ -72,7 +72,7 @@ The codemod must be deterministic and safe to rerun. It rejects path collisions,
 
 Manual changes after the codemod are limited to semantic implementation work—the filesystem and browser migrations—and compile or test fixes that cannot be expressed safely as declarative mappings.
 
-The old product name may remain only in an explicit allowlist for legacy migration code, legacy-input fixtures, and migration documentation. The allowlist must be narrow enough that newly introduced live identifiers fail the audit.
+The old product name may remain only in an explicit allowlist for codemod mappings, legacy migration code, persisted SQLite schema identifiers and their SQL references, legacy-input fixtures, and migration documentation. The allowlist must be narrow enough that newly introduced live product identifiers fail the audit.
 
 ## Maintained Source Scope
 

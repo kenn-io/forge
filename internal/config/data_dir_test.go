@@ -14,9 +14,10 @@ import (
 // loading leaves a relative path untouched, startup and reload can compare the
 // same directory as two different instances after the working directory moves.
 func TestLoadCanonicalizesDataDir(t *testing.T) {
+	require := require.New(t)
 	root := t.TempDir()
-	require.NoError(t, os.Mkdir(filepath.Join(root, "state"), 0o700))
-	require.NoError(t, os.WriteFile(
+	require.NoError(os.Mkdir(filepath.Join(root, "state"), 0o700))
+	require.NoError(os.WriteFile(
 		filepath.Join(root, "config.toml"),
 		[]byte("data_dir = \"./state\"\n"),
 		0o600,
@@ -24,9 +25,9 @@ func TestLoadCanonicalizesDataDir(t *testing.T) {
 	t.Chdir(root)
 
 	cfg, err := Load(filepath.Join(root, "config.toml"))
-	require.NoError(t, err)
+	require.NoError(err)
 	expected, err := filepath.EvalSymlinks(filepath.Join(root, "state"))
-	require.NoError(t, err)
+	require.NoError(err)
 
 	assert.Equal(t, expected, cfg.DataDir)
 }

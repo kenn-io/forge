@@ -43,6 +43,8 @@ func TestBackgroundManagerRejectsMismatchedPingIdentity(t *testing.T) {
 // bearer before the endpoint proves possession of the daemon token, a process
 // that inherits the recorded loopback port can steal the persistent token.
 func TestBackgroundDiscoveryDoesNotDiscloseBearerBeforeProof(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
 	var receivedAuthorization atomic.Value
 	var requests atomic.Int32
 	attacker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -60,17 +62,17 @@ func TestBackgroundDiscoveryDoesNotDiscloseBearerBeforeProof(t *testing.T) {
 			Version: "v-test", DataDir: dataDir, RequireAuth: true,
 		},
 	)
-	require.NoError(t, err)
+	require.NoError(err)
 	manager := newDiscoveryManager(
 		t, dataDir, "daemon-secret", identity.Record, "v-test",
 	)
 
 	_, _, compatible, err := manager.Find(t.Context())
 
-	require.NoError(t, err)
-	assert.False(t, compatible)
-	assert.NotZero(t, requests.Load())
-	assert.Empty(t, receivedAuthorization.Load())
+	require.NoError(err)
+	assert.False(compatible)
+	assert.NotZero(requests.Load())
+	assert.Empty(receivedAuthorization.Load())
 }
 
 func newDiscoveryManager(

@@ -6,7 +6,9 @@
 
 **Approved spec/design:** `docs/superpowers/specs/2026-07-30-kenn-forge-rename-design.md`
 
-**Architecture:** A repository-local Go codemod performs deterministic path and content rewrites and enforces a narrow legacy-name allowlist. Runtime compatibility is isolated in one config migration boundary that moves the old default home, renames product-specific data files in default or custom data directories, and rewrites known built-in config values. A frontend bootstrap migration transfers browser storage before application modules initialize.
+**Architecture:** A repository-local Go codemod performs deterministic path and content rewrites and enforces a narrow legacy-name allowlist. Runtime compatibility is limited to a lock-gated SQLite relocation; the ordinary schema chain then renames live database objects.
+
+> **Maintainer simplification:** The detailed filesystem and browser migration work in Tasks 3 and 4 below is superseded and must not be implemented. The only persisted-state migration is: refuse while `middleman.lock` is held, move `middleman.db` plus SQLite sidecars to the selected Kenn Forge data directory as `forge.db`, and run migration 44. Do not migrate config, auth files, worktrees, ignore files, or browser storage.
 
 **Tech Stack:** Go 1.26, Cobra, BurntSushi TOML, gofrs/flock, SQLite, Svelte 5, TypeScript, Vite+, Vitest, Bun, Rust/Cargo.
 
@@ -14,7 +16,7 @@
 
 - Product copy is “Kenn Forge”; the primary CLI is `kenn-forge`; the Go module is `go.kenn.io/forge`.
 - New environment variables use `KENN_FORGE_*`; no legacy command or environment fallback is permitted.
-- The default home is `~/.kenn/forge/`; only the old default home moves, while explicit config and data directory choices remain authoritative.
+- The default home is `~/.kenn/forge/`; only the old default database moves there, while an explicitly configured data directory keeps its database in place.
 - The GitHub repository rename is deferred; do not change the current Git remote or perform external repository mutations.
 - Shipped migration files are immutable. One new forward migration renames live `middleman_*` schema objects to `forge_*`; old schema names remain only in migration history and reversible migration statements.
 - Landed dated design and implementation-plan artifacts remain historical records and are excluded from mechanical prose rewriting.
@@ -209,6 +211,8 @@ git commit -m "refactor: establish the Kenn Forge product identity"
 
 ### Task 3: Migrate Filesystem State on First Use
 
+**Superseded.** Do not execute the detailed steps below. Implement only the database-only migration in the maintainer-simplification note above.
+
 **Files:**
 - Create: `internal/config/legacy_migration.go`
 - Create: `internal/config/legacy_migration_test.go`
@@ -311,6 +315,8 @@ git commit -m "feat: migrate existing state into Kenn Forge"
 ```
 
 ### Task 4: Transfer Browser-Persisted State Before App Initialization
+
+**Superseded.** Do not execute this task; browser storage is intentionally outside the compatibility boundary.
 
 **Files:**
 - Create: `frontend/src/lib/utils/kennForgeStorageMigration.ts`

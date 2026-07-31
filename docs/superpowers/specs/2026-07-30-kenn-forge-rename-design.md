@@ -28,33 +28,21 @@ The renamed product uses these canonical identifiers:
 
 Package, workspace, Rust crate, socket, browser-storage, and build identifiers use `kenn-forge`, `kenn_forge`, or `forge` according to the syntax and surrounding convention. User-facing prose uses “Kenn Forge”; shell examples use `kenn-forge`.
 
-Frontend-injected globals and browser-persisted keys move to a Kenn Forge namespace. The application transfers existing `localStorage` and `sessionStorage` values once and then removes the legacy keys.
-
 Historical database migrations must remain structurally valid and may not be edited. One new forward migration renames every live `middleman_*` SQLite table, trigger, and index to a `forge_*` identity, migrates both legacy workspace sentinels, and makes current-schema SQL use only the new names. Legacy schema names remain inside immutable historical migrations, the new migration's reversible source-side statements, and the narrow bootstrap queries required to recognize pre-`schema_migrations` version 1–3 databases.
 
 ## Compatibility Boundary
 
-Compatibility covers persisted user data only. There is no legacy executable, command alias, environment-variable fallback, or permanent dual-read path. Users must update shell, service, and automation configuration from the old environment prefix to `KENN_FORGE_`.
+Compatibility covers the persisted SQLite database only. There is no legacy executable, command alias, environment-variable fallback, browser-storage transfer, config rewrite, or permanent dual-read path. Users must update shell, service, and automation configuration from the old environment prefix to `KENN_FORGE_`.
 
-An explicitly supplied `--config` path, a `KENN_FORGE_HOME` override, and an explicitly configured custom `data_dir` remain authoritative. The migration moves only the old default home. If a migrated config points at a custom data directory, that directory stays where the user placed it.
+An explicitly supplied config with a custom `data_dir` remains authoritative: its database is renamed in place. Without an explicit config or `KENN_FORGE_HOME`, the old default database moves from `~/.config/middleman/middleman.db` to `~/.kenn/forge/forge.db`.
 
-## First-Run Filesystem Migration
+## First-Run Database Migration
 
-Before loading its default config, `kenn-forge` compares the old default home at `~/.config/middleman/` with the new default at `~/.kenn/forge/`.
+Before server startup creates or loads Kenn Forge config, it checks for the legacy database. If `middleman.db` exists, it attempts to acquire `middleman.lock` in the same data directory. A held lock means the Middleman daemon is active, so startup fails without moving anything.
 
-When the old home exists and the new home is absent or empty, startup performs a one-shot migration. An empty destination is adopted only after verifying that it contains no entries; a nonempty destination conflicts.
+With the lock held, startup moves the SQLite main file and any WAL/SHM sidecars to the selected Kenn Forge data directory under the `forge.db` name. If `forge.db` already exists, startup reports a conflict instead of combining databases. No other files or persisted browser/config state are migrated.
 
-1. Resolve the legacy config and custom `data_dir`, then acquire and retain the legacy lock at its original stable pathname. If an old daemon holds it, stop with an actionable error; do not terminate it.
-2. Move the old home's contents into the new location without moving or unlinking the held legacy lock file itself.
-3. Rename live product files, including the database, to their Kenn Forge names.
-4. Discard stale runtime metadata rather than publishing it as Kenn Forge state. Leave the inactive legacy lock file in place after releasing it so migration never creates a split-lock inode race.
-5. Rewrite known built-in config values: an exact old default `data_dir` becomes the new default, built-in token-variable references receive the `KENN_FORGE_` prefix, and every absolute path-valued config entry located beneath the old home is rebased beneath the new home.
-6. Preserve the database, auth material, repository state, worktrees, clones, docs configuration, and all other user-owned state.
-7. Write migration state sufficient to diagnose and safely resume an interrupted attempt.
-
-If both homes contain data, startup must fail instead of silently merging them. A fresh installation with no old home creates the new home normally. Registered Docs folders migrate a root `.middlemanignore` to `.kenn-forgeignore` in place; both names present is an explicit collision, not a dual-read fallback.
-
-The normal path uses per-entry renames while the old lock remains held at its original pathname. A cross-filesystem layout uses a staged copy that preserves permissions and validates the staged tree before publishing the new home entries and removing their old copies. An interrupted migration must either resume safely or stop with specific recovery instructions; it must not select between two ambiguous databases.
+Opening the relocated database runs the ordinary SQLite migration chain. Migration 44 renames its live tables, indexes, triggers, and workspace sentinel values to the Forge identity.
 
 ## Rename Codemod
 
@@ -70,9 +58,9 @@ The broad source rename is performed by a repository-local codemod rather than a
 
 The codemod must be deterministic and safe to rerun. It rejects path collisions, applies path moves and content edits in a stable order, and finishes with a stale-name audit. Tests cover its mapping behavior, determinism, collision handling, and allowlist enforcement.
 
-Manual changes after the codemod are limited to semantic implementation work—the filesystem and browser migrations—and compile or test fixes that cannot be expressed safely as declarative mappings.
+Manual changes after the codemod are limited to the database migration semantics and compile or test fixes that cannot be expressed safely as declarative mappings.
 
-The old product name may remain only in an explicit allowlist for codemod mappings, immutable historical migrations, the forward/reverse schema-rename migration, legacy schema-bootstrap queries, legacy filesystem/browser migration code, persisted generated-agent-context markers, legacy-input fixtures, migration documentation, and landed dated design/plan artifacts that record the product as it existed when they were written. The allowlist must be narrow enough that newly introduced live product identifiers fail the audit.
+The old product name may remain only in an explicit allowlist for codemod mappings, immutable historical migrations, the forward/reverse schema-rename migration, legacy schema-bootstrap queries, the database relocation boundary, legacy-input fixtures, migration documentation, and landed dated design/plan artifacts that record the product as it existed when they were written. The allowlist must be narrow enough that newly introduced live product identifiers fail the audit.
 
 ## Maintained Source Scope
 
@@ -92,16 +80,13 @@ Existing externally managed resources, such as a previously created GitHub App s
 
 ## Failure Handling
 
-Migration errors fail closed and identify the conflicting or incomplete path. Kenn Forge never silently combines old and new databases, kills an existing daemon, falls back to legacy environment variables, or guesses whether a custom directory should move.
-
-The migration implementation exposes small filesystem operations behind testable boundaries so collision, active-daemon, rename, staged-copy, validation, and recovery behavior can be exercised without touching a real home directory.
+Migration errors fail closed and identify the conflicting path. Kenn Forge never silently combines old and new databases, kills an existing daemon, or falls back to legacy environment variables.
 
 ## Verification
 
 Verification includes:
 
-- table-driven tests for default-home migration, custom data directories, destination collisions, active-daemon refusal, staged cross-filesystem behavior, and interrupted recovery;
-- browser tests for one-time persisted-key transfer and cleanup;
+- focused tests for default database relocation, custom data-directory renaming, destination collisions, and active-daemon refusal;
 - CLI and build tests proving all three binaries use their new identities;
 - codemod tests for deterministic output, path collisions, and stale-name allowlisting;
 - repository-wide stale-name auditing;

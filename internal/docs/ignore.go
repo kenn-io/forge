@@ -2,9 +2,7 @@ package docs
 
 import (
 	"errors"
-	"fmt"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -25,9 +23,8 @@ var baselineIgnore = []string{
 }
 
 const (
-	gitIgnoreFilename    = ".gitignore"
-	forgeIgnoreFilename  = ".kenn-forgeignore"
-	legacyIgnoreFilename = "." + "middle" + "manignore"
+	gitIgnoreFilename   = ".gitignore"
+	forgeIgnoreFilename = ".kenn-forgeignore"
 )
 
 // ignoreLayer is one ignore source's compiled patterns, anchored at
@@ -56,9 +53,6 @@ type folderIgnore struct {
 // just to throw the rules away). Missing/unreadable .gitignore files
 // are skipped silently; only top-level walk errors propagate.
 func loadFolderIgnore(root string) (*folderIgnore, error) {
-	if err := migrateLegacyIgnore(root); err != nil {
-		return nil, err
-	}
 	fi := &folderIgnore{
 		layers: []ignoreLayer{
 			{dir: "", ig: gitignore.CompileIgnoreLines(baselineIgnore...)},
@@ -112,22 +106,6 @@ func loadFolderIgnore(root string) (*folderIgnore, error) {
 		return nil, err
 	}
 	return fi, nil
-}
-
-func migrateLegacyIgnore(root string) error {
-	legacyPath := filepath.Join(root, legacyIgnoreFilename)
-	canonicalPath := filepath.Join(root, forgeIgnoreFilename)
-	if _, err := os.Stat(legacyPath); errors.Is(err, os.ErrNotExist) {
-		return nil
-	} else if err != nil {
-		return err
-	}
-	if _, err := os.Stat(canonicalPath); err == nil {
-		return fmt.Errorf("both legacy ignore file %s and Kenn Forge ignore file %s exist", legacyPath, canonicalPath)
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	return os.Rename(legacyPath, canonicalPath)
 }
 
 // Match reports whether relPath (forward-slashed, root-relative)

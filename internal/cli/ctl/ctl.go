@@ -247,7 +247,10 @@ func resolveServer(cfg *viper.Viper) (string, error) {
 	if raw := strings.TrimSpace(cfg.GetString("server")); raw != "" {
 		return strings.TrimRight(raw, "/"), nil
 	}
-	forgeCfg, err := configpkg.LoadOrCreate(configpkg.DefaultConfigPath())
+	if err := configpkg.EnsureDefault(configpkg.DefaultConfigPath()); err != nil {
+		return "", fmt.Errorf("ensure kenn-forge config: %w", err)
+	}
+	forgeCfg, err := configpkg.Load(configpkg.DefaultConfigPath())
 	if err != nil {
 		return "", fmt.Errorf("load kenn-forge config: %w", err)
 	}

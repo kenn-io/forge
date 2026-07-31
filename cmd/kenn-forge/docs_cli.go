@@ -62,7 +62,7 @@ func newDocsListFoldersCommand(out io.Writer) *cobra.Command {
 }
 
 func listDocsFolders(configPath string, out io.Writer) error {
-	cfg, err := config.LoadExisting(configPath)
+	cfg, err := config.Load(configPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) && configPath == config.DefaultConfigPath() {
 			_, _ = fmt.Fprintln(out, "(no config file found)")
@@ -128,7 +128,10 @@ func addDocsFolder(configPath, id, name, daemon, path string, out io.Writer) err
 		return fmt.Errorf("%s is not a directory", abs)
 	}
 
-	cfg, err := config.LoadOrCreate(configPath)
+	if err := config.EnsureDefault(configPath); err != nil {
+		return fmt.Errorf("ensure config: %w", err)
+	}
+	cfg, err := config.Load(configPath)
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
@@ -184,7 +187,7 @@ func newDocsRemoveFolderCommand(out io.Writer) *cobra.Command {
 }
 
 func removeDocsFolder(configPath, id string, out io.Writer) error {
-	cfg, err := config.LoadExisting(configPath)
+	cfg, err := config.Load(configPath)
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}

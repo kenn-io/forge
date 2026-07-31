@@ -16,7 +16,7 @@ type daemonHTTPClient struct {
 }
 
 func discoverDaemonHTTP(configPath string, timeout time.Duration) (daemonHTTPClient, error) {
-	cfg, err := config.LoadExisting(configPath)
+	cfg, err := config.Load(configPath)
 	if err != nil {
 		return daemonHTTPClient{}, fmt.Errorf("load config: %w", err)
 	}

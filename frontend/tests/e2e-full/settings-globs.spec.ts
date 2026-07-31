@@ -183,7 +183,7 @@ test("settings imports a selected subset from a repository glob", async ({ page 
 test("settings promotes a glob match to a persisted exact repo with a local clone", async ({ page }) => {
   localRepo = realpathSync(mkdtempSync(path.join(os.tmpdir(), "mm-promote-clone-")));
   git(localRepo, "init");
-  git(localRepo, "remote", "add", "origin", "https://github.com/roborev-dev/forge.git");
+  git(localRepo, "remote", "add", "origin", "https://github.com/roborev-dev/kenn-forge.git");
 
   await page.goto(`${isolatedServer!.info.base_url}/settings`);
   await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });

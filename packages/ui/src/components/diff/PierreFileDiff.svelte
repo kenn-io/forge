@@ -12,7 +12,7 @@
     ThemeTypes,
     Virtualizer,
   } from "@pierre/diffs";
-  import { onMount, tick } from "svelte";
+  import { onMount, tick, untrack } from "svelte";
   import type { DiffFile } from "../../api/types.js";
   import {
     appThemeType,
@@ -29,11 +29,16 @@
     renderedCodeSide as renderedPierreCodeSide,
   } from "./pierre-dom.js";
   import { diffTokenizeMaxLineLength, getPierreDiffWorkerPool } from "./pierre-worker-pool.js";
+  import type {
+    DiffContextPrefetchScheduler,
+    DiffContextPrefetchTaskHandle,
+  } from "./diff-context-prefetch.js";
   import type { WorkerPoolManager } from "@pierre/diffs/worker";
 
   interface Props {
     file: DiffFile | null | undefined;
     active?: boolean;
+    contextPrefetchScheduler?: DiffContextPrefetchScheduler | undefined;
     viewMode?: "unified" | "split";
     wordWrap?: boolean;
     tabWidth?: number;
@@ -86,6 +91,7 @@
   const {
     file = null,
     active = true,
+    contextPrefetchScheduler = undefined,
     viewMode = "unified",
     wordWrap = false,
     tabWidth = 4,
@@ -109,6 +115,7 @@
   let fullContextFileDiff: FileDiffMetadata | undefined;
   let fullContextRendered = false;
   let contextLoadPromise: Promise<{ oldFile: FileContents; newFile: FileContents }> | undefined;
+  let contextPrefetchHandle: DiffContextPrefetchTaskHandle | undefined;
   let contextError: string | null = $state(null);
   let syntaxContextLoadFailedFileKey = $state("");
   let themeType = $state<ThemeTypes>(appThemeType());
@@ -321,6 +328,31 @@
   });
 
   $effect(() => {
+    const scheduler = contextPrefetchScheduler;
+    const requestFileKey = fileKey;
+    if (
+      !scheduler ||
+      !needsFullContextForSyntax ||
+      fullContext ||
+      syntaxContextLoadFailedFileKey === requestFileKey
+    ) return;
+    const handle = scheduler.schedule(
+      requestFileKey,
+      untrack(() => active) ? "foreground" : "background",
+      (signal) => loadFullContextForSyntax(requestFileKey, signal),
+    );
+    contextPrefetchHandle = handle;
+    return () => {
+      if (contextPrefetchHandle === handle) contextPrefetchHandle = undefined;
+      handle.cancel();
+    };
+  });
+
+  $effect(() => {
+    contextPrefetchHandle?.setPriority(active ? "foreground" : "background");
+  });
+
+  $effect(() => {
     const currentRenderRetryTick = renderRetryTick;
     if (currentRenderRetryTick < 0) return;
     if (emptyTextualDiff) {
@@ -337,7 +369,13 @@
     if (pierreDiff instanceof VirtualizedFileDiff && isHostInScrollViewport()) {
       pierreDiff.setVisibility(true);
     }
-    if (active && needsFullContextForSyntax && !fullContext && syntaxContextLoadFailedFileKey !== fileKey) {
+    if (
+      !contextPrefetchScheduler &&
+      active &&
+      needsFullContextForSyntax &&
+      !fullContext &&
+      syntaxContextLoadFailedFileKey !== fileKey
+    ) {
       rendered = false;
       clearRenderedDomState();
       void loadFullContextForSyntax(fileKey);
@@ -963,41 +1001,52 @@
 
   async function loadFullContext(
     requestFileKey: string,
+    signal?: AbortSignal,
   ): Promise<{ oldFile: FileContents; newFile: FileContents } | undefined> {
     if (fullContext) return fullContext;
-    const promise = contextLoadPromise ??= fetchFullContext();
+    const promise = contextLoadPromise ??= fetchFullContext(signal);
     try {
       const context = await promise;
-      if (fileKey !== requestFileKey || contextLoadPromise !== promise) return undefined;
+      if (
+        signal?.aborted ||
+        fileKey !== requestFileKey ||
+        contextLoadPromise !== promise
+      ) return undefined;
       fullContext = context;
     } catch (err) {
       if (contextLoadPromise === promise) {
         contextLoadPromise = undefined;
       }
-      if (fileKey !== requestFileKey) return undefined;
+      if (signal?.aborted || fileKey !== requestFileKey) return undefined;
       throw err;
     }
     return fullContext;
   }
 
-  async function loadFullContextForSyntax(requestFileKey: string): Promise<void> {
+  async function loadFullContextForSyntax(
+    requestFileKey: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
     try {
-      const context = await loadFullContext(requestFileKey);
-      if (!context || fileKey !== requestFileKey) return;
+      const context = await loadFullContext(requestFileKey, signal);
+      if (!context || signal?.aborted || fileKey !== requestFileKey) return;
       await tick();
-      if (fileKey !== requestFileKey || fullContextRendered) return;
+      if (signal?.aborted || fileKey !== requestFileKey || fullContextRendered) return;
       renderFullContext(context);
     } catch (err) {
-      if (fileKey !== requestFileKey) return;
+      if (signal?.aborted || fileKey !== requestFileKey) return;
       syntaxContextLoadFailedFileKey = requestFileKey;
       contextError = err instanceof Error ? err.message : "unknown error";
     }
   }
 
-  async function fetchFullContext(): Promise<{ oldFile: FileContents; newFile: FileContents }> {
+  async function fetchFullContext(
+    signal?: AbortSignal,
+  ): Promise<{ oldFile: FileContents; newFile: FileContents }> {
     if (!loadFileText) {
       throw new Error("Context loading is unavailable");
     }
+    if (signal?.aborted) throw signal.reason;
     contextError = null;
     debugPierreDiff("fetch full context start", {
       path: renderFile.path,

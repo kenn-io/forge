@@ -9,6 +9,16 @@ import {
   type DiffStoreOptions,
 } from "../../stores/diff.svelte.js";
 
+const prefetchScheduler = vi.hoisted(() => ({
+  dispose: vi.fn(),
+  reset: vi.fn(),
+  schedule: vi.fn(),
+}));
+
+vi.mock("./diff-context-prefetch.js", () => ({
+  createDiffContextPrefetchScheduler: () => prefetchScheduler,
+}));
+
 vi.mock("./DiffFile.svelte", async () => ({
   default: (await import("./DiffViewTestFile.svelte")).default,
 }));
@@ -122,6 +132,27 @@ describe("DiffView", () => {
   afterEach(() => {
     vi.useRealTimers();
     cleanup();
+    prefetchScheduler.dispose.mockReset();
+    prefetchScheduler.reset.mockReset();
+    prefetchScheduler.schedule.mockReset();
+  });
+
+  it("resets context prefetch when the file-preview generation changes", async () => {
+    const diff = createDiffStore();
+    renderDiffView(diff);
+    expect(prefetchScheduler.reset).not.toHaveBeenCalled();
+
+    diff.resetToHead();
+
+    await waitFor(() => expect(prefetchScheduler.reset).toHaveBeenCalledOnce());
+  });
+
+  it("disposes context prefetch when the diff view unmounts", () => {
+    const result = renderDiffView(createDiffStore());
+
+    result.unmount();
+
+    expect(prefetchScheduler.dispose).toHaveBeenCalledOnce();
   });
 
   it("uses the workspace file list for keyboard navigation", async () => {

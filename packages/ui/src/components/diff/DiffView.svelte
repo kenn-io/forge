@@ -12,6 +12,7 @@
   const diffReviewDraft = stores.diffReviewDraft;
   import { ScrollBox } from "@kenn-io/kit-ui";
   import DiffFileComponent from "./DiffFile.svelte";
+  import { createDiffContextPrefetchScheduler } from "./diff-context-prefetch.js";
   import DiffReviewDraftTray from "./DiffReviewDraftTray.svelte";
 
   interface Props {
@@ -72,6 +73,8 @@
   let scrollRestoreRaf = 0;
   let scrollTargetRaf = 0;
   let virtualizerWakeRaf = 0;
+  const contextPrefetchScheduler = createDiffContextPrefetchScheduler({ concurrency: 4 });
+  let contextPrefetchIdentity = "";
   let scrollTargetRun = 0;
   let scrollingToTarget: DiffScrollTarget | null = null;
   let restoredScrollScope = "";
@@ -96,6 +99,7 @@
       cancelAnimationFrame(scrollRestoreRaf);
       cancelAnimationFrame(scrollTargetRaf);
       cancelAnimationFrame(virtualizerWakeRaf);
+      contextPrefetchScheduler.dispose();
       diffStore.clearDiff();
       diffReviewDraft?.clear();
     };
@@ -111,6 +115,7 @@
   const reviewWarning = $derived(diffReviewDraft?.getWarning() ?? null);
   const tabWidth = $derived(diffStore.getTabWidth());
   const wordWrap = $derived(diffStore.getWordWrap());
+  const filePreviewGeneration = $derived(diffStore.getFilePreviewGeneration());
   const scopeKind = $derived(
     "getScope" in diffStore ? diffStore.getScope().kind : "head",
   );
@@ -125,6 +130,19 @@
   const diffScrollScopeKey = $derived(
     `${provider}\0${platformHost ?? ""}\0${repoPath}\0${number}\0${diffHeadSHA ?? ""}`,
   );
+  const nextContextPrefetchIdentity = $derived(
+    `${provider}\0${platformHost ?? ""}\0${repoPath}\0${number}\0${filePreviewGeneration}`,
+  );
+
+  $effect(() => {
+    const nextIdentity = nextContextPrefetchIdentity;
+    if (!contextPrefetchIdentity) {
+      contextPrefetchIdentity = nextIdentity;
+    } else if (contextPrefetchIdentity !== nextIdentity) {
+      contextPrefetchIdentity = nextIdentity;
+      contextPrefetchScheduler.reset();
+    }
+  });
 
   $effect(() => {
     const nextRef = { provider, platformHost, owner, name, repoPath };
@@ -616,6 +634,7 @@
             {#each visibleFiles as file (file.path)}
               <DiffFileComponent
                 {file}
+                {contextPrefetchScheduler}
                 {provider}
                 {platformHost}
                 {owner}

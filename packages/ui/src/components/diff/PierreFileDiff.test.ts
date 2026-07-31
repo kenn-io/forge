@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, waitFor } from "@testing-library/svelte";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vite-plus/test";
 import type { DiffLineAnnotation, FileDiffOptions, Virtualizer } from "@pierre/diffs";
 import type { DiffFile } from "../../api/types.js";
+import type { DiffContextPrefetchScheduler, DiffContextPrefetchTaskHandle } from "./diff-context-prefetch.js";
 
 type GlobalWithCSSStyleSheet = {
   CSSStyleSheet?: {
@@ -103,6 +104,7 @@ const pierre = (() => {
     setOptions = (options?: FileDiffOptions<unknown>) => {
       lastOptions = options;
     };
+    setMetrics = () => {};
     setSelectedLines = () => {};
     setThemeType = () => {};
   }
@@ -310,6 +312,31 @@ function makeSyntaxStateGapFile(): DiffFile {
   };
 }
 
+function capturingPrefetchScheduler(): {
+  cancel: ReturnType<typeof vi.fn>;
+  run: () => ((signal: AbortSignal) => Promise<void>) | undefined;
+  scheduler: DiffContextPrefetchScheduler;
+  setPriority: ReturnType<typeof vi.fn>;
+} {
+  let capturedRun: ((signal: AbortSignal) => Promise<void>) | undefined;
+  const cancel = vi.fn();
+  const setPriority = vi.fn();
+  const handle: DiffContextPrefetchTaskHandle = { cancel, setPriority };
+  return {
+    cancel,
+    run: () => capturedRun,
+    scheduler: {
+      dispose: vi.fn(),
+      reset: vi.fn(),
+      schedule: vi.fn((_id, _priority, run) => {
+        capturedRun = run;
+        return handle;
+      }),
+    },
+    setPriority,
+  };
+}
+
 describe("PierreFileDiff", () => {
   afterEach(() => {
     vi.useRealTimers();
@@ -396,6 +423,107 @@ describe("PierreFileDiff", () => {
 
     await Promise.resolve();
     expect(loadFileText).not.toHaveBeenCalled();
+  });
+
+  it("registers offscreen syntax context for proactive prefetch", async () => {
+    const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
+    const prefetch = capturingPrefetchScheduler();
+    const loadFileText = vi.fn(async () => "full file text");
+
+    render(PierreFileDiff, {
+      props: {
+        file: makeSyntaxStateGapFile(),
+        active: false,
+        contextPrefetchScheduler: prefetch.scheduler,
+        loadFileText,
+        virtualizer: {} as Virtualizer,
+      },
+    });
+
+    const run = await waitFor(() => {
+      expect(prefetch.run()).toBeTypeOf("function");
+      return prefetch.run()!;
+    });
+    expect(loadFileText).not.toHaveBeenCalled();
+
+    await run(new AbortController().signal);
+    expect(loadFileText).toHaveBeenCalledTimes(2);
+  });
+
+  it("cancels proactive prefetch registration on cleanup", async () => {
+    const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
+    const prefetch = capturingPrefetchScheduler();
+    const result = render(PierreFileDiff, {
+      props: {
+        file: makeSyntaxStateGapFile(),
+        active: false,
+        contextPrefetchScheduler: prefetch.scheduler,
+        loadFileText: async () => "full file text",
+        virtualizer: {} as Virtualizer,
+      },
+    });
+    await waitFor(() => expect(prefetch.run()).toBeTypeOf("function"));
+
+    result.unmount();
+
+    expect(prefetch.cancel).toHaveBeenCalledOnce();
+  });
+
+  it("does not apply syntax context after proactive prefetch is aborted", async () => {
+    const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
+    const prefetch = capturingPrefetchScheduler();
+    const releases: Array<(value: string) => void> = [];
+    const loadFileText = vi.fn(() => new Promise<string>((resolve) => releases.push(resolve)));
+    render(PierreFileDiff, {
+      props: {
+        file: makeSyntaxStateGapFile(),
+        active: false,
+        contextPrefetchScheduler: prefetch.scheduler,
+        loadFileText,
+        virtualizer: {} as Virtualizer,
+      },
+    });
+    const run = await waitFor(() => {
+      expect(prefetch.run()).toBeTypeOf("function");
+      return prefetch.run()!;
+    });
+    const controller = new AbortController();
+    const task = run(controller.signal);
+    await waitFor(() => expect(loadFileText).toHaveBeenCalledTimes(2));
+    const sparseRenderCount = pierre.renderCount();
+
+    controller.abort();
+    releases.forEach((release) => release("full file text"));
+    await task;
+
+    expect(pierre.renderCount()).toBe(sparseRenderCount);
+    expect(document.querySelector(".context-error")).toBeNull();
+  });
+
+  it("loads manual context expansion without waiting for proactive prefetch", async () => {
+    const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
+    const prefetch = capturingPrefetchScheduler();
+    const loadFileText = vi.fn(async () => "full file text");
+    render(PierreFileDiff, {
+      props: {
+        file: makeSyntaxStateGapFile(),
+        active: false,
+        contextPrefetchScheduler: prefetch.scheduler,
+        loadFileText,
+        virtualizer: {} as Virtualizer,
+      },
+    });
+
+    const expandButton = await waitFor(() => {
+      const button = document
+        .querySelector(".pierre-diff")
+        ?.shadowRoot?.querySelector<HTMLElement>("[data-expand-button]");
+      expect(button).toBeTruthy();
+      return button!;
+    });
+    await fireEvent.click(expandButton);
+
+    await waitFor(() => expect(loadFileText).toHaveBeenCalledTimes(2));
   });
 
   it("shows the empty textual state for metadata-only patches", async () => {

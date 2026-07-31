@@ -16,6 +16,7 @@
     type ReviewThread,
   } from "./review-thread-context.js";
   import PierreFileDiff from "./PierreFileDiff.svelte";
+  import type { DiffContextPrefetchScheduler } from "./diff-context-prefetch.js";
 
   const stores = getStores();
   const diffStore = stores.diff;
@@ -23,6 +24,7 @@
 
   interface Props {
     file: DiffFileType;
+    contextPrefetchScheduler?: DiffContextPrefetchScheduler | undefined;
     provider: string;
     platformHost?: string | undefined;
     owner: string;
@@ -41,6 +43,7 @@
 
   const {
     file,
+    contextPrefetchScheduler,
     provider,
     platformHost,
     owner,
@@ -586,6 +589,7 @@
             <PierreFileDiff
               {file}
               active={inViewport}
+              {contextPrefetchScheduler}
               {viewMode}
               {wordWrap}
               {tabWidth}

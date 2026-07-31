@@ -82,7 +82,7 @@ describe("WorkspaceRightSidebar", () => {
     vi.restoreAllMocks();
   });
 
-  it("preserves the workspace diff base and selected commit across refreshes", async () => {
+  it("opens pull request diffs against the merge target and preserves the selected commit across refreshes", async () => {
     const calls: string[] = [];
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -128,11 +128,6 @@ describe("WorkspaceRightSidebar", () => {
 
     const { rerender } = renderSidebar();
 
-    await waitFor(() => {
-      expect(calls.some((url) => url.endsWith("/api/v1/workspaces/ws-1/diff?base=head"))).toBe(true);
-    });
-
-    await fireEvent.click(screen.getByRole("button", { name: "Compare with merge target" }));
     await waitFor(() => {
       expect(calls.some((url) => url.endsWith("/api/v1/workspaces/ws-1/diff?base=merge-target"))).toBe(true);
     });

@@ -39,7 +39,9 @@
   }: Props = $props();
   const { diff } = getStores();
 
-  let selectedBase = $state<WorkspaceDiffBase>("head");
+  // This is intentionally the initial base because the panel is keyed by workspace ID.
+  // svelte-ignore state_referenced_locally
+  let selectedBase = $state<WorkspaceDiffBase>(showMergeTarget ? "merge-target" : "head");
   const base = $derived(
     !showMergeTarget && selectedBase === "merge-target" ? "head" : selectedBase
   );

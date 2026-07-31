@@ -2105,6 +2105,41 @@ func buildAppState(
 			return
 		}
 		if r.Method == http.MethodPost &&
+			r.URL.Path == "/__e2e/pr-diff-context/large-head" {
+			repo, err := database.GetRepoByIdentity(
+				r.Context(), db.GitHubRepoIdentity("github.com", "acme", "widgets"),
+			)
+			if err != nil || repo == nil {
+				http.Error(w, "repo not found", http.StatusNotFound)
+				return
+			}
+			if err := database.UpdateDiffSHAs(
+				r.Context(), repo.ID, 1,
+				diffRepo.ContextHeadSHA, diffRepo.BaseSHA, diffRepo.BaseSHA,
+			); err != nil {
+				http.Error(w, "update diff shas", http.StatusInternalServerError)
+				return
+			}
+			if err := database.UpdatePlatformSHAs(
+				r.Context(), repo.ID, 1,
+				diffRepo.ContextHeadSHA, diffRepo.BaseSHA,
+			); err != nil {
+				http.Error(w, "update platform shas", http.StatusInternalServerError)
+				return
+			}
+			patchFixturePRSHAs(
+				fc, "acme", "widgets", 1,
+				diffRepo.ContextHeadSHA, diffRepo.BaseSHA,
+			)
+			w.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(w).Encode(map[string]string{
+				"head_sha": diffRepo.ContextHeadSHA,
+			}); err != nil {
+				slog.Warn("write e2e response", "err", err)
+			}
+			return
+		}
+		if r.Method == http.MethodPost &&
 			r.URL.Path == "/__e2e/pr-review-thread-regroup/add-reply" {
 			repo, err := database.GetRepoByIdentity(
 				r.Context(), db.GitHubRepoIdentity("github.com", "acme", "widgets"),

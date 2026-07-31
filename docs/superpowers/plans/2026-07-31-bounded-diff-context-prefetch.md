@@ -15,7 +15,9 @@
 - Run at most four full-context file tasks concurrently.
 - Foreground files inside the existing 600px observer margin outrank queued background files.
 - Background work starts only from a deferred background callback.
-- Reset and teardown cancel queued work and fence stale active completions.
+- Reset and teardown cancel queued work and fence stale active completions while
+  retaining their slots until the shared requests settle.
+- A failed speculative request retries only after the file becomes foreground.
 - Manual context expansion remains immediate.
 - Preserve standalone `PierreFileDiff` behavior when no scheduler is supplied.
 
@@ -32,7 +34,7 @@
 
 - Produces: `createDiffContextPrefetchScheduler({ concurrency, scheduleDeferred? })`
 - Produces: `DiffContextPrefetchScheduler.schedule(id, priority, run)` returning a handle with `setPriority(priority)` and `cancel()`
-- Produces: `DiffContextPrefetchScheduler.reset()` and `dispose()`
+- Produces: `DiffContextPrefetchScheduler.reset()`, `setGeneration(identity)`, and `dispose()`
 - Priority values are `"foreground" | "background"`; task callbacks receive an `AbortSignal`
 
 - [x] **Step 1: Write failing scheduler tests**
@@ -42,8 +44,8 @@
   foreground work runs before queued background work, `setPriority()` promotes
   and immediately starts queued work, background registration waits for the
   injected deferred callback, reset aborts active signals while removing queued
-  work, and stale completion from the prior generation does not consume slots
-  in the new generation.
+  work, and stale completion from the prior generation retains its slot until
+  settlement without mutating the new generation.
 
 - [x] **Step 2: Run the scheduler test and verify RED**
 
@@ -56,8 +58,9 @@
   Use two ordered queues, one active-task map, one scheduled-idle cancellation
   function, and a monotonically increasing generation. Foreground scheduling
   drains synchronously. Background scheduling requests one idle drain. Task
-  settlement releases a slot only when its generation is current, then drains
-  foreground work before arranging the next idle drain.
+  settlement always releases its global slot, while only current-generation
+  queues remain eligible to drain. `setGeneration()` is idempotent so both the
+  view and mounted components can align before scheduling.
 
 - [x] **Step 4: Run the scheduler test and verify GREEN**
 
@@ -102,19 +105,20 @@
 
   Create one four-worker scheduler in `DiffView`. Define its identity as
   provider, platform host, repository path, item number, and
-  `diffStore.getFilePreviewGeneration()`, reset when that identity changes,
-  dispose it on unmount, and pass it through `DiffFile`.
+  `diffStore.getFilePreviewGeneration()`, align when that identity changes,
+  dispose it on unmount, and pass the scheduler and identity through `DiffFile`.
   `PierreFileDiff` registers only when full syntax context is needed, promotes
   the handle when `active` changes, and cancels on dependency cleanup. Thread
   the task signal through the syntax loader and check it before every state
   write, full-context render, and error update; do not pass it into the shared
   preview-cache request. Keep the existing direct visible-load branch when no
-  scheduler is present.
+  scheduler is present. Treat a background failure as speculative and register
+  one foreground retry before using the existing terminal failure latch.
 
   Mock the scheduler factory in `DiffView.test.ts`, change the store's reactive
   file-preview generation through a real `createDiffStore`, and assert that the
-  existing scheduler resets. This proves the complete reset wiring rather than
-  only the pure scheduler method.
+  existing scheduler aligns. This proves the complete generation wiring rather
+  than only the pure scheduler method.
 
 - [x] **Step 4: Run component and scheduler tests and verify GREEN**
 
@@ -122,7 +126,29 @@
 
   Expected: PASS with no warnings.
 
-### Task 3: Verification and commit
+### Task 3: Full-stack context-prefetch regression
+
+**Files:**
+
+- Modify: `internal/testutil/diff_repo.go`
+- Modify: `cmd/e2e-server/main.go`
+- Modify: `frontend/tests/e2e-full/diff-view.spec.ts`
+
+- [x] **Step 1: Add a real syntax-gap fixture revision**
+
+  Keep the default and alternate fixture heads unchanged. Add a third revision
+  with eight modified TypeScript files whose separated hunks carry syntax state,
+  plus an isolated E2E endpoint that selects that revision.
+
+- [x] **Step 2: Prove the workflow through the real HTTP API**
+
+  Hold real file-preview responses, trigger a whitespace refresh, and assert
+  unresolved work never exceeds four file tasks/eight side requests across the
+  generation boundary. Release the responses, verify a distant file's two sides
+  were proactively requested, then scroll to it and assert no loading placeholder
+  remains.
+
+### Task 4: Verification and commit
 
 **Files:**
 

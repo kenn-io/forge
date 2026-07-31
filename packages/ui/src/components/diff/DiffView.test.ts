@@ -13,6 +13,7 @@ const prefetchScheduler = vi.hoisted(() => ({
   dispose: vi.fn(),
   reset: vi.fn(),
   schedule: vi.fn(),
+  setGeneration: vi.fn(),
 }));
 
 vi.mock("./diff-context-prefetch.js", () => ({
@@ -135,16 +136,20 @@ describe("DiffView", () => {
     prefetchScheduler.dispose.mockReset();
     prefetchScheduler.reset.mockReset();
     prefetchScheduler.schedule.mockReset();
+    prefetchScheduler.setGeneration.mockReset();
   });
 
-  it("resets context prefetch when the file-preview generation changes", async () => {
+  it("aligns context prefetch when the file-preview generation changes", async () => {
     const diff = createDiffStore();
     renderDiffView(diff);
-    expect(prefetchScheduler.reset).not.toHaveBeenCalled();
+    await waitFor(() => expect(prefetchScheduler.setGeneration).toHaveBeenCalledOnce());
 
     diff.resetToHead();
 
-    await waitFor(() => expect(prefetchScheduler.reset).toHaveBeenCalledOnce());
+    await waitFor(() => expect(prefetchScheduler.setGeneration).toHaveBeenCalledTimes(2));
+    expect(prefetchScheduler.setGeneration).toHaveBeenLastCalledWith(
+      ["github", "github.com", "acme/widgets", "1", "1"].join("\0"),
+    );
   });
 
   it("disposes context prefetch when the diff view unmounts", () => {

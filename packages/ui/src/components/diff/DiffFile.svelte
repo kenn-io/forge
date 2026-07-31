@@ -24,6 +24,7 @@
 
   interface Props {
     file: DiffFileType;
+    contextPrefetchIdentity?: string | undefined;
     contextPrefetchScheduler?: DiffContextPrefetchScheduler | undefined;
     provider: string;
     platformHost?: string | undefined;
@@ -43,6 +44,7 @@
 
   const {
     file,
+    contextPrefetchIdentity = "",
     contextPrefetchScheduler,
     provider,
     platformHost,
@@ -589,6 +591,7 @@
             <PierreFileDiff
               {file}
               active={inViewport}
+              {contextPrefetchIdentity}
               {contextPrefetchScheduler}
               {viewMode}
               {wordWrap}

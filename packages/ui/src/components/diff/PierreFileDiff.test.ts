@@ -315,23 +315,27 @@ function makeSyntaxStateGapFile(): DiffFile {
 function capturingPrefetchScheduler(): {
   cancel: ReturnType<typeof vi.fn>;
   run: () => ((signal: AbortSignal) => Promise<void>) | undefined;
+  schedule: ReturnType<typeof vi.fn>;
   scheduler: DiffContextPrefetchScheduler;
   setPriority: ReturnType<typeof vi.fn>;
 } {
   let capturedRun: ((signal: AbortSignal) => Promise<void>) | undefined;
   const cancel = vi.fn();
   const setPriority = vi.fn();
+  const schedule = vi.fn((_id, _priority, run) => {
+    capturedRun = run;
+    return handle;
+  });
   const handle: DiffContextPrefetchTaskHandle = { cancel, setPriority };
   return {
     cancel,
     run: () => capturedRun,
+    schedule,
     scheduler: {
       dispose: vi.fn(),
       reset: vi.fn(),
-      schedule: vi.fn((_id, _priority, run) => {
-        capturedRun = run;
-        return handle;
-      }),
+      schedule,
+      setGeneration: vi.fn(),
     },
     setPriority,
   };
@@ -448,6 +452,42 @@ describe("PierreFileDiff", () => {
 
     await run(new AbortController().signal);
     expect(loadFileText).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries a failed speculative prefetch after the file becomes active", async () => {
+    const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
+    const prefetch = capturingPrefetchScheduler();
+    const loadFileText = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("temporary preview failure"))
+      .mockRejectedValueOnce(new Error("temporary preview failure"))
+      .mockResolvedValue("full file text");
+    const view = render(PierreFileDiff, {
+      props: {
+        file: makeSyntaxStateGapFile(),
+        active: false,
+        contextPrefetchScheduler: prefetch.scheduler,
+        loadFileText,
+        virtualizer: {} as Virtualizer,
+      },
+    });
+
+    const backgroundRun = await waitFor(() => {
+      expect(prefetch.run()).toBeTypeOf("function");
+      return prefetch.run()!;
+    });
+    await backgroundRun(new AbortController().signal);
+
+    expect(document.querySelector(".context-error")).toBeNull();
+    await view.rerender({ active: true });
+    const foregroundRun = await waitFor(() => {
+      expect(prefetch.schedule).toHaveBeenCalledTimes(2);
+      return prefetch.run()!;
+    });
+    await foregroundRun(new AbortController().signal);
+
+    expect(loadFileText).toHaveBeenCalledTimes(4);
+    expect(document.querySelector(".context-error")).toBeNull();
   });
 
   it("cancels proactive prefetch registration on cleanup", async () => {

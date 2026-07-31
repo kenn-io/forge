@@ -130,6 +130,8 @@ describe("diff context prefetch scheduler", () => {
     scheduler.schedule("current", "foreground", currentTask.run);
     scheduler.schedule("waiting", "foreground", waitingTask.run);
 
+    expect(starts).toEqual(["old"]);
+
     oldTask.resolve();
     await Promise.resolve();
     await Promise.resolve();
@@ -139,6 +141,51 @@ describe("diff context prefetch scheduler", () => {
     await Promise.resolve();
     await Promise.resolve();
     expect(starts).toEqual(["old", "current", "waiting"]);
+  });
+
+  it("keeps unresolved work inside the concurrency ceiling across repeated resets", async () => {
+    const starts: string[] = [];
+    const oldTasks = [controlledTask(starts, "old-1"), controlledTask(starts, "old-2")];
+    const abandonedTasks = [controlledTask(starts, "abandoned-1"), controlledTask(starts, "abandoned-2")];
+    const currentTasks = [controlledTask(starts, "current-1"), controlledTask(starts, "current-2")];
+    const scheduler = createDiffContextPrefetchScheduler({ concurrency: 2 });
+
+    oldTasks.forEach((task, index) => scheduler.schedule(`old-${index}`, "foreground", task.run));
+    scheduler.reset();
+    abandonedTasks.forEach((task, index) => scheduler.schedule(`abandoned-${index}`, "foreground", task.run));
+    scheduler.reset();
+    currentTasks.forEach((task, index) => scheduler.schedule(`current-${index}`, "foreground", task.run));
+
+    expect(starts).toEqual(["old-1", "old-2"]);
+
+    oldTasks[0]!.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(starts).toEqual(["old-1", "old-2", "current-1"]);
+
+    oldTasks[1]!.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(starts).toEqual(["old-1", "old-2", "current-1", "current-2"]);
+  });
+
+  it("aligns mounted task registration with the latest diff generation", async () => {
+    const starts: string[] = [];
+    const oldTask = controlledTask(starts, "old");
+    const currentTask = controlledTask(starts, "current");
+    const scheduler = createDiffContextPrefetchScheduler({ concurrency: 1 });
+
+    scheduler.setGeneration("old-diff");
+    scheduler.schedule("old", "foreground", oldTask.run);
+    scheduler.setGeneration("current-diff");
+    scheduler.schedule("current", "foreground", currentTask.run);
+    scheduler.setGeneration("current-diff");
+
+    expect(starts).toEqual(["old"]);
+    oldTask.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(starts).toEqual(["old", "current"]);
   });
 
   it("cancels an individual queued task", () => {

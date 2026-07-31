@@ -30,6 +30,7 @@
   } from "./pierre-dom.js";
   import { diffTokenizeMaxLineLength, getPierreDiffWorkerPool } from "./pierre-worker-pool.js";
   import type {
+    DiffContextPrefetchPriority,
     DiffContextPrefetchScheduler,
     DiffContextPrefetchTaskHandle,
   } from "./diff-context-prefetch.js";
@@ -38,6 +39,7 @@
   interface Props {
     file: DiffFile | null | undefined;
     active?: boolean;
+    contextPrefetchIdentity?: string | undefined;
     contextPrefetchScheduler?: DiffContextPrefetchScheduler | undefined;
     viewMode?: "unified" | "split";
     wordWrap?: boolean;
@@ -91,6 +93,7 @@
   const {
     file = null,
     active = true,
+    contextPrefetchIdentity = "",
     contextPrefetchScheduler = undefined,
     viewMode = "unified",
     wordWrap = false,
@@ -117,6 +120,7 @@
   let contextLoadPromise: Promise<{ oldFile: FileContents; newFile: FileContents }> | undefined;
   let contextPrefetchHandle: DiffContextPrefetchTaskHandle | undefined;
   let contextError: string | null = $state(null);
+  let syntaxContextPrefetchFailedFileKey = $state("");
   let syntaxContextLoadFailedFileKey = $state("");
   let themeType = $state<ThemeTypes>(appThemeType());
   let rendered = $state(false);
@@ -139,7 +143,9 @@
   const maxImmediateRenderRetries = 5;
 
   const renderFile = $derived(file ? diffFileWithPatch(file) : emptyFile);
-  const fileKey = $derived(`${renderFile.path}\0${renderFile.old_path}\0${renderFile.patch}`);
+  const fileKey = $derived(
+    `${renderFile.path}\0${renderFile.old_path}\0${renderFile.patch}\0${contextPrefetchIdentity}`,
+  );
   const fileHunks = $derived(renderFile.hunks ?? []);
   const pierreFile = $derived.by<FileDiffMetadata | undefined>(() => {
     return parsePierreFileDiff(renderFile, {
@@ -305,6 +311,7 @@
     cleanUpPierreDiff();
     contextLoadPromise = undefined;
     contextError = null;
+    syntaxContextPrefetchFailedFileKey = "";
     syntaxContextLoadFailedFileKey = "";
     fullContext = undefined;
     fullContextFileDiff = undefined;
@@ -330,16 +337,23 @@
   $effect(() => {
     const scheduler = contextPrefetchScheduler;
     const requestFileKey = fileKey;
+    scheduler?.setGeneration(contextPrefetchIdentity);
+    const retryForeground = syntaxContextPrefetchFailedFileKey === requestFileKey;
     if (
       !scheduler ||
       !needsFullContextForSyntax ||
       fullContext ||
-      syntaxContextLoadFailedFileKey === requestFileKey
+      syntaxContextLoadFailedFileKey === requestFileKey ||
+      (retryForeground && !active)
     ) return;
     const handle = scheduler.schedule(
       requestFileKey,
-      untrack(() => active) ? "foreground" : "background",
-      (signal) => loadFullContextForSyntax(requestFileKey, signal),
+      retryForeground || untrack(() => active) ? "foreground" : "background",
+      (signal) => loadFullContextForSyntax(
+        requestFileKey,
+        signal,
+        untrack(() => active) ? "foreground" : "background",
+      ),
     );
     contextPrefetchHandle = handle;
     return () => {
@@ -1026,6 +1040,7 @@
   async function loadFullContextForSyntax(
     requestFileKey: string,
     signal?: AbortSignal,
+    priority: DiffContextPrefetchPriority = "foreground",
   ): Promise<void> {
     try {
       const context = await loadFullContext(requestFileKey, signal);
@@ -1035,6 +1050,10 @@
       renderFullContext(context);
     } catch (err) {
       if (signal?.aborted || fileKey !== requestFileKey) return;
+      if (priority === "background") {
+        syntaxContextPrefetchFailedFileKey = requestFileKey;
+        return;
+      }
       syntaxContextLoadFailedFileKey = requestFileKey;
       contextError = err instanceof Error ? err.message : "unknown error";
     }

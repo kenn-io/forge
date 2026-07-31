@@ -8,6 +8,7 @@ export interface DiffContextPrefetchTaskHandle {
 export interface DiffContextPrefetchScheduler {
   dispose(): void;
   reset(): void;
+  setGeneration(identity: string): void;
   schedule(
     id: string,
     priority: DiffContextPrefetchPriority,
@@ -37,6 +38,7 @@ export function createDiffContextPrefetchScheduler(options: SchedulerOptions = {
 
   const scheduleDeferred = options.scheduleDeferred ?? scheduleBrowserBackgroundTurn;
   let generation = 0;
+  let sourceGeneration: string | undefined;
   let disposed = false;
   let cancelDeferred: (() => void) | undefined;
   const foregroundQueue: PrefetchTask[] = [];
@@ -64,7 +66,7 @@ export function createDiffContextPrefetchScheduler(options: SchedulerOptions = {
 
   function settle(task: PrefetchTask): void {
     task.state = "settled";
-    if (disposed || task.generation !== generation || !active.delete(task)) return;
+    if (!active.delete(task) || disposed) return;
     drainForeground();
     scheduleBackground();
   }
@@ -108,7 +110,6 @@ export function createDiffContextPrefetchScheduler(options: SchedulerOptions = {
     for (const task of active) cancelTask(task);
     foregroundQueue.length = 0;
     backgroundQueue.length = 0;
-    active.clear();
   }
 
   return {
@@ -119,6 +120,11 @@ export function createDiffContextPrefetchScheduler(options: SchedulerOptions = {
     },
     reset(): void {
       if (!disposed) resetTasks();
+    },
+    setGeneration(identity): void {
+      if (disposed || sourceGeneration === identity) return;
+      sourceGeneration = identity;
+      resetTasks();
     },
     schedule(id, priority, run): DiffContextPrefetchTaskHandle {
       if (disposed) {

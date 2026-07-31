@@ -4072,6 +4072,78 @@ test.describe("diff view (git-backed)", () => {
     await expect(treeFileItems(page)).toHaveCount(4);
   });
 
+  test("bounds proactive syntax context across refreshes and prepares distant files", async ({ page }) => {
+    const server = await startIsolatedE2EServer();
+    let releasePreviewRequests = (): void => {};
+    const previewGate = new Promise<void>((resolve) => {
+      releasePreviewRequests = resolve;
+    });
+    let activePreviewRequests = 0;
+    let maxActivePreviewRequests = 0;
+    const previewRequests: Array<{ path: string; side: string }> = [];
+    const previewPattern = "**/api/v1/pulls/github/acme/widgets/1/file-preview**";
+
+    try {
+      const seeded = await page.request.post(`${server.info.base_url}/__e2e/pr-diff-context/large-head`);
+      expect(seeded.ok()).toBe(true);
+
+      await page.route(previewPattern, async (route) => {
+        const url = new URL(route.request().url());
+        previewRequests.push({
+          path: url.searchParams.get("path") ?? "",
+          side: url.searchParams.get("side") ?? "",
+        });
+        activePreviewRequests += 1;
+        maxActivePreviewRequests = Math.max(maxActivePreviewRequests, activePreviewRequests);
+        try {
+          await previewGate;
+          const response = await route.fetch();
+          await route.fulfill({ response });
+        } finally {
+          activePreviewRequests -= 1;
+        }
+      });
+
+      await page.goto(`${server.info.base_url}/pulls/github/acme/widgets/1/files`);
+      await waitForDiffLoaded(page);
+      await expect.poll(() => activePreviewRequests, { timeout: 15_000 }).toBe(8);
+
+      const refreshed = page.waitForRequest((request) => {
+        const url = new URL(request.url());
+        return url.pathname.endsWith("/diff") && url.searchParams.get("whitespace") === "hide";
+      });
+      await openDiffFilterMenu(page);
+      await page.getByRole("switch", { name: "Hide whitespace changes" }).click();
+      await refreshed;
+      await page.waitForTimeout(750);
+
+      expect(previewRequests).toHaveLength(8);
+      expect(maxActivePreviewRequests).toBe(8);
+
+      releasePreviewRequests();
+      const distantPath = "src/context/file_07.ts";
+      await expect
+        .poll(
+          () =>
+            new Set(previewRequests.filter((request) => request.path === distantPath).map((request) => request.side))
+              .size,
+          { timeout: 15_000 },
+        )
+        .toBe(2);
+
+      const distantFile = page.locator(`[data-file-path="${distantPath}"]`);
+      await distantFile.scrollIntoViewIfNeeded();
+      await expect(distantFile.locator(".pierre-diff-loading")).toHaveCount(0);
+      await expect.poll(() => previewRequests.length, { timeout: 15_000 }).toBe(24);
+      await expect.poll(() => activePreviewRequests, { timeout: 15_000 }).toBe(0);
+      expect(maxActivePreviewRequests).toBeLessThanOrEqual(8);
+    } finally {
+      releasePreviewRequests();
+      await page.unrouteAll({ behavior: "ignoreErrors" });
+      await server.stop();
+    }
+  });
+
   test("category filter counts and filtering come from the real diff API", async ({ page }) => {
     const server = await startIsolatedE2EServer();
     try {

@@ -74,7 +74,6 @@
   let scrollTargetRaf = 0;
   let virtualizerWakeRaf = 0;
   const contextPrefetchScheduler = createDiffContextPrefetchScheduler({ concurrency: 4 });
-  let contextPrefetchIdentity = "";
   let scrollTargetRun = 0;
   let scrollingToTarget: DiffScrollTarget | null = null;
   let restoredScrollScope = "";
@@ -135,13 +134,7 @@
   );
 
   $effect(() => {
-    const nextIdentity = nextContextPrefetchIdentity;
-    if (!contextPrefetchIdentity) {
-      contextPrefetchIdentity = nextIdentity;
-    } else if (contextPrefetchIdentity !== nextIdentity) {
-      contextPrefetchIdentity = nextIdentity;
-      contextPrefetchScheduler.reset();
-    }
+    contextPrefetchScheduler.setGeneration(nextContextPrefetchIdentity);
   });
 
   $effect(() => {
@@ -635,6 +628,7 @@
               <DiffFileComponent
                 {file}
                 {contextPrefetchScheduler}
+                contextPrefetchIdentity={nextContextPrefetchIdentity}
                 {provider}
                 {platformHost}
                 {owner}

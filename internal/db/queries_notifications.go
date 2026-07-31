@@ -860,8 +860,7 @@ func (d *DB) ReopenNotificationAckPropagation(ctx context.Context, id int64, que
 // NotificationRepoRef identifies one repository whose queued acknowledgements
 // share a credential.
 type NotificationRepoRef struct {
-	Owner string
-	Name  string
+	RepoID int64
 }
 
 // DeferQueuedNotificationAcksForRepos defers queued acknowledgements for the
@@ -889,8 +888,8 @@ func (d *DB) DeferQueuedNotificationAcksForRepos(
 	args := []any{errText, now, nextAttemptAt, nextAttemptAt, platform, host}
 	placeholders := make([]string, 0, len(repos))
 	for _, repo := range repos {
-		placeholders = append(placeholders, "(LOWER(?), LOWER(?))")
-		args = append(args, repo.Owner, repo.Name)
+		placeholders = append(placeholders, "?")
+		args = append(args, repo.RepoID)
 	}
 	_, err = d.rw.ExecContext(ctx, `UPDATE forge_notification_items
 		SET source_ack_error = ?, source_ack_last_attempt_at = ?,
@@ -903,7 +902,7 @@ func (d *DB) DeferQueuedNotificationAcksForRepos(
 		  AND source_ack_queued_at IS NOT NULL
 		  AND source_ack_synced_at IS NULL
 		  AND source_ack_error != 'max_attempts_exceeded'
-		  AND (LOWER(repo_owner), LOWER(repo_name)) IN (`+
+		  AND repo_id IN (`+
 		strings.Join(placeholders, ", ")+`)`, args...)
 	if err != nil {
 		return fmt.Errorf("defer queued notification acks for repos: %w", err)

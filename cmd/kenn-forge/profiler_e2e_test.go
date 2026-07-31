@@ -58,7 +58,7 @@ func TestServeStartsProfilerListenerE2E(t *testing.T) {
 	waitForFile(t, runtimelock.MetadataPath(dataDir), 10*time.Second)
 	healthBody := waitForHTTPBody(
 		t,
-		fmt.Sprintf("http://127.0.0.1:%d/healthz", appPort),
+		fmt.Sprintf("http://127.0.0.1:%d/livez", appPort),
 		10*time.Second,
 	)
 	profilerBody := waitForHTTPBody(

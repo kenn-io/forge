@@ -230,11 +230,12 @@ func TestResolveStartupReposExpandsConfiguredGlobs(t *testing.T) {
 	)
 
 	assert.Equal([]ghclient.RepoRef{{
-		Platform:     "github",
-		Owner:        "roborev-dev",
-		Name:         "kenn-forge",
-		PlatformHost: "github.com",
-		RepoPath:     "roborev-dev/kenn-forge",
+		Platform:        "github",
+		Owner:           "roborev-dev",
+		Name:            "kenn-forge",
+		ConfiguredGlobs: []ghclient.ConfiguredRepoGlob{{Owner: "roborev-dev", Name: "*"}},
+		PlatformHost:    "github.com",
+		RepoPath:        "roborev-dev/kenn-forge",
 	}}, repos)
 }
 
@@ -410,12 +411,18 @@ func TestResolveStartupReposPrefersRenamedExactRouteOverGlob(t *testing.T) {
 			)
 
 			require.Equal([]ghclient.RepoRef{{
-				Platform:           platform.KindGitLab,
-				PlatformHost:       "gitlab.example.com",
-				Owner:              "acme-tools",
-				Name:               "current-widget",
-				CredentialOwner:    "acme",
-				CredentialName:     "legacy-widget",
+				Platform:        platform.KindGitLab,
+				PlatformHost:    "gitlab.example.com",
+				Owner:           "acme-tools",
+				Name:            "current-widget",
+				CredentialOwner: "acme",
+				CredentialName:  "legacy-widget",
+				ConfiguredRoutes: []ghclient.ConfiguredRepoRoute{{
+					Owner: "acme", Name: "legacy-widget", RepoPath: "acme/legacy-widget",
+				}},
+				ConfiguredGlobs: []ghclient.ConfiguredRepoGlob{{
+					Owner: "acme-tools", Name: "*",
+				}},
 				RepoPath:           "acme-tools/current-widget",
 				PlatformExternalID: "project-42",
 			}}, repos)
@@ -445,16 +452,18 @@ func TestResolveStartupReposFallsBackToDBForOfflineGlobs(t *testing.T) {
 
 	assert.ElementsMatch([]ghclient.RepoRef{
 		{
-			Platform:     platform.KindGitHub,
-			Owner:        "acme",
-			Name:         "widgets",
-			PlatformHost: "github.com",
+			Platform:        platform.KindGitHub,
+			Owner:           "acme",
+			Name:            "widgets",
+			ConfiguredGlobs: []ghclient.ConfiguredRepoGlob{{Owner: "acme", Name: "*"}},
+			PlatformHost:    "github.com",
 		},
 		{
-			Platform:     platform.KindGitHub,
-			Owner:        "acme",
-			Name:         "tools",
-			PlatformHost: "github.com",
+			Platform:        platform.KindGitHub,
+			Owner:           "acme",
+			Name:            "tools",
+			ConfiguredGlobs: []ghclient.ConfiguredRepoGlob{{Owner: "acme", Name: "*"}},
+			PlatformHost:    "github.com",
 		},
 	}, repos)
 }

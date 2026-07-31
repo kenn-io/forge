@@ -45,11 +45,12 @@ func TestResolveConfiguredRepos_ExpandsGlobAndSkipsArchived(t *testing.T) {
 	require.Len(t, result.Configured, 1)
 	assert.Equal(1, result.Configured[0].MatchedRepoCount)
 	assert.Equal([]RepoRef{{
-		Platform:     platform.KindGitHub,
-		Owner:        "acme",
-		Name:         "widgets-api",
-		PlatformHost: "github.com",
-		RepoPath:     "acme/widgets-api",
+		Platform:        platform.KindGitHub,
+		Owner:           "acme",
+		Name:            "widgets-api",
+		ConfiguredGlobs: []ConfiguredRepoGlob{{Owner: "acme", Name: "widgets-*"}},
+		PlatformHost:    "github.com",
+		RepoPath:        "acme/widgets-api",
 	}}, result.Expanded)
 }
 
@@ -92,8 +93,17 @@ func TestResolveConfiguredRepos_DeduplicatesExactAndGlobMatches(t *testing.T) {
 
 	assert.Len(result.Expanded, 2)
 	assert.ElementsMatch([]RepoRef{
-		{Platform: platform.KindGitHub, Owner: "acme", Name: "widgets", PlatformHost: "github.com", RepoPath: "acme/widgets"},
-		{Platform: platform.KindGitHub, Owner: "acme", Name: "widgets-api", PlatformHost: "github.com", RepoPath: "acme/widgets-api"},
+		{
+			Platform: platform.KindGitHub, Owner: "acme", Name: "widgets",
+			ConfiguredRoutes: []ConfiguredRepoRoute{{Owner: "acme", Name: "widgets", RepoPath: "acme/widgets"}},
+			ConfiguredGlobs:  []ConfiguredRepoGlob{{Owner: "acme", Name: "widgets*"}},
+			PlatformHost:     "github.com", RepoPath: "acme/widgets",
+		},
+		{
+			Platform: platform.KindGitHub, Owner: "acme", Name: "widgets-api",
+			ConfiguredGlobs: []ConfiguredRepoGlob{{Owner: "acme", Name: "widgets*"}},
+			PlatformHost:    "github.com", RepoPath: "acme/widgets-api",
+		},
 	}, result.Expanded)
 }
 
@@ -160,11 +170,13 @@ func TestResolveConfiguredRepos_DeduplicatesOwnerCase(t *testing.T) {
 	)
 
 	assert.Equal([]RepoRef{{
-		Platform:     platform.KindGitHub,
-		Owner:        "acme",
-		Name:         "widgets",
-		PlatformHost: "github.com",
-		RepoPath:     "acme/widgets",
+		Platform:         platform.KindGitHub,
+		Owner:            "acme",
+		Name:             "widgets",
+		ConfiguredRoutes: []ConfiguredRepoRoute{{Owner: "acme", Name: "widgets", RepoPath: "acme/widgets"}},
+		ConfiguredGlobs:  []ConfiguredRepoGlob{{Owner: "acme", Name: "widgets*"}},
+		PlatformHost:     "github.com",
+		RepoPath:         "acme/widgets",
 	}}, result.Expanded)
 }
 
@@ -243,11 +255,12 @@ func TestResolveConfiguredRepos_MatchesRepoNamesCaseInsensitively(t *testing.T) 
 	require.Len(t, result.Configured, 1)
 	assert.Equal(1, result.Configured[0].MatchedRepoCount)
 	assert.Equal([]RepoRef{{
-		Platform:     platform.KindGitHub,
-		Owner:        "acme",
-		Name:         "widget-api",
-		PlatformHost: "github.com",
-		RepoPath:     "acme/widget-api",
+		Platform:        platform.KindGitHub,
+		Owner:           "acme",
+		Name:            "widget-api",
+		ConfiguredGlobs: []ConfiguredRepoGlob{{Owner: "acme", Name: "widget-*"}},
+		PlatformHost:    "github.com",
+		RepoPath:        "acme/widget-api",
 	}}, result.Expanded)
 }
 
@@ -393,10 +406,11 @@ func TestFallbackConfiguredRepoRefsPreservesProviderIdentity(t *testing.T) {
 	})
 
 	assert.Equal([]RepoRef{{
-		Platform:     platform.KindGitLab,
-		PlatformHost: "code.example.com",
-		Owner:        "acme",
-		Name:         "widget",
+		Platform:         platform.KindGitLab,
+		PlatformHost:     "code.example.com",
+		Owner:            "acme",
+		Name:             "widget",
+		ConfiguredRoutes: []ConfiguredRepoRoute{{Owner: "acme", Name: "widget", RepoPath: "acme/widget"}},
 	}}, got)
 }
 
@@ -422,7 +436,11 @@ func TestFallbackConfiguredRepoRefsPreservesRenamedRepositoryByCredentialRoute(
 		Name:         "widget",
 	})
 
-	require.Equal(t, previous, got)
+	expected := previous
+	expected[0].ConfiguredRoutes = []ConfiguredRepoRoute{{
+		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+	}}
+	require.Equal(t, expected, got)
 }
 
 func TestFallbackConfiguredRepoRefsSynthesizesNonGitHubProvider(t *testing.T) {
@@ -468,10 +486,11 @@ func TestFallbackConfiguredRepoRefsGlobFiltersByProvider(t *testing.T) {
 	})
 
 	assert.Equal([]RepoRef{{
-		Platform:     platform.KindGitLab,
-		PlatformHost: "code.example.com",
-		Owner:        "acme",
-		Name:         "widget-api",
+		Platform:        platform.KindGitLab,
+		PlatformHost:    "code.example.com",
+		Owner:           "acme",
+		Name:            "widget-api",
+		ConfiguredGlobs: []ConfiguredRepoGlob{{Owner: "acme", Name: "widget-*"}},
 	}}, got)
 }
 

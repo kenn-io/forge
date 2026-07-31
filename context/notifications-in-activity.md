@@ -131,6 +131,9 @@ Rules:
 - Newer unread GitHub activity clears queued/synced/error propagation fields and reactivates row.
 - Failure updates must be guarded by queued generation just like success updates.
 - Rate-limit/secondary-limit errors should pause retry without burning normal per-row attempts across batch.
+- Credential-bucket rate-limit deferral selects queued rows by internal
+  repository ID, never by mutable owner/name routes.
+  (`internal/db/queries_notifications.go::DB.DeferQueuedNotificationAcksForRepos`)
 - Retry cap failures should stop automatic retries, clear `source_ack_next_attempt_at`, and preserve local done/read state.
 
 ## Sync Behavior
@@ -146,7 +149,9 @@ Rules:
 - Notification sync failures should update notification sync status so UI can surface them.
 - Top-level manual sync also triggers notification sync.
 - `/notifications/sync` triggers only notification sync and returns `202` once accepted.
-- Sync watermark identity is per repository: `(platform, platform_host, repo_owner, repo_name)`, with owner/name lowercased to match `notificationRepoKey`. One repository's failing or unroutable credential route must not hold back watermark advancement for healthy repositories on the same host.
+- Sync watermark identity is the internal repository ID. One repository's
+  failing or unroutable credential route must not hold back watermark
+  advancement for healthy repositories on the same host.
 - A repository with no watermark yet full-syncs (GitHub `All: true`) without resetting siblings; later syncs use its persisted watermark/overlap to avoid full backlog scans.
 - GitHub notification pagination must run until the provider reports no next page; do not use a fixed page cap for either the primary repo notification list or the participating-only annotation scan. A fixed cap can pin the watermark forever on large backlogs. The guardrail is the shared sync budget/rate reserve (`internal/github/notifications_sync.go::ensureNotificationPageBudget`), which should stop sync explicitly when upstream budget is exhausted (`internal/github/sync_test.go::TestSyncNotificationsReadsAllRepositoryNotificationPages`, `internal/github/sync_test.go::TestSyncNotificationsReadsAllParticipatingNotificationPages`).
 - Notification sync and read propagation should stop with server lifecycle before shared services are torn down.

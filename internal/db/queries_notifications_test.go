@@ -722,9 +722,70 @@ func TestNotificationPlatformScopedOperationsRejectBlankPlatform(t *testing.T) {
 
 	err = d.DeferQueuedNotificationAcksForRepos(
 		t.Context(), "", "github.com",
-		[]NotificationRepoRef{{Owner: "acme", Name: "widget"}}, now, "later",
+		[]NotificationRepoRef{{RepoID: 1}}, now, "later",
 	)
 	require.ErrorContains(err, "notification platform is required")
+}
+
+func TestDeferQueuedNotificationAcksFollowsRepositoryIdentityAcrossRouteReuse(
+	t *testing.T,
+) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	now := time.Date(2026, 7, 31, 10, 0, 0, 0, time.UTC)
+	originalID, err := d.UpsertRepoByProviderID(ctx, RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "repository-original", Owner: "acme", Name: "widget",
+		RepoPath: "acme/widget",
+	})
+	require.NoError(err)
+	original := notificationFixture("original-thread", "mention", now)
+	original.RepoID = &originalID
+	require.NoError(d.UpsertNotifications(ctx, []Notification{original}))
+
+	_, err = d.UpsertRepoByProviderID(ctx, RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "repository-original", Owner: "acme", Name: "renamed-widget",
+		RepoPath: "acme/renamed-widget",
+	})
+	require.NoError(err)
+	replacementID, err := d.UpsertRepoByProviderID(ctx, RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "repository-replacement", Owner: "acme", Name: "widget",
+		RepoPath: "acme/widget",
+	})
+	require.NoError(err)
+	replacement := notificationFixture("replacement-thread", "mention", now)
+	replacement.RepoID = &replacementID
+	require.NoError(d.UpsertNotifications(ctx, []Notification{replacement}))
+
+	items, err := d.ListNotifications(ctx, ListNotificationsOpts{State: "all"})
+	require.NoError(err)
+	require.Len(items, 2)
+	ids := make([]int64, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, item.ID)
+	}
+	_, err = d.QueueNotificationIDsRead(ctx, ids, now.Add(time.Minute))
+	require.NoError(err)
+	nextAttemptAt := now.Add(time.Hour)
+	require.NoError(d.DeferQueuedNotificationAcksForRepos(
+		ctx, "github", "github.com",
+		[]NotificationRepoRef{{RepoID: originalID}},
+		nextAttemptAt, "rate_limited",
+	))
+
+	items, err = d.ListNotifications(ctx, ListNotificationsOpts{State: "all"})
+	require.NoError(err)
+	require.Len(items, 2)
+	byThread := make(map[string]Notification, len(items))
+	for _, item := range items {
+		byThread[item.PlatformNotificationID] = item
+	}
+	assert.Equal("rate_limited", byThread["original-thread"].SourceAckError)
+	assert.Empty(byThread["replacement-thread"].SourceAckError)
 }
 
 func TestNotificationSyncWatermarksAreScopedByRepoIdentity(t *testing.T) {

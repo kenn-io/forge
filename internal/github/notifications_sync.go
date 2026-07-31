@@ -806,14 +806,17 @@ func (s *Syncer) ackRepoBuckets(
 	byNotification := make(map[int64]string, len(queued))
 	seen := make(map[string]struct{})
 	write := kind == platform.KindGitHub
-	add := func(bucket, owner, name string) {
-		key := bucket + "\x00" + strings.ToLower(owner) + "/" + strings.ToLower(name)
+	add := func(bucket string, repoID int64) {
+		if repoID <= 0 {
+			return
+		}
+		key := fmt.Sprintf("%s\x00%d", bucket, repoID)
 		if _, ok := seen[key]; ok {
 			return
 		}
 		seen[key] = struct{}{}
 		byBucket[bucket] = append(byBucket[bucket], db.NotificationRepoRef{
-			Owner: owner, Name: name,
+			RepoID: repoID,
 		})
 	}
 	for _, notification := range queued {
@@ -842,7 +845,7 @@ func (s *Syncer) ackRepoBuckets(
 			continue
 		}
 		byNotification[notification.ID] = bucket
-		add(bucket, repo.Owner, repo.Name)
+		add(bucket, repo.RepoID)
 	}
 	for _, repo := range s.TrackedRepos() {
 		if repoPlatform(repo) != kind || repoHost(repo) != host {
@@ -855,7 +858,7 @@ func (s *Syncer) ackRepoBuckets(
 		if _, relevant := byBucket[bucket]; !relevant {
 			continue
 		}
-		add(bucket, repo.Owner, repo.Name)
+		add(bucket, repo.RepoID)
 	}
 	return byBucket, byNotification
 }

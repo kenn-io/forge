@@ -33,6 +33,9 @@ routing and display coordinates.
   reconcile aliases from the complete configuration snapshot. Exact settings
   match configured coordinates; globs match resolved coordinates.
   (`internal/db/queries.go::ReconcileRepoConfiguredRoutes`)
+- Glob discovery grants membership only while the resolved route matches an
+  originating pattern; globs never become durable route aliases.
+  (`internal/github/sync.go::repoMatchesConfiguredGlobs`)
 - When resolved configuration entries overlap, exact entries beat globs; among
   exact entries, the current direct route beats a rename alias.
   (`internal/github/repo_config_resolver.go::PreferConfiguredRepoCandidate`)

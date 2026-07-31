@@ -1794,11 +1794,17 @@ func TestResolveReposForReloadPrefersRenamedExactRouteOverGlob(t *testing.T) {
 
 			require.Empty(skipped)
 			require.Equal([]ghclient.RepoRef{{
-				Platform:           platform.KindGitHub,
-				Owner:              "acme-tools",
-				Name:               "current-widget",
-				CredentialOwner:    "acme",
-				CredentialName:     "legacy-widget",
+				Platform:        platform.KindGitHub,
+				Owner:           "acme-tools",
+				Name:            "current-widget",
+				CredentialOwner: "acme",
+				CredentialName:  "legacy-widget",
+				ConfiguredRoutes: []ghclient.ConfiguredRepoRoute{{
+					Owner: "acme", Name: "legacy-widget", RepoPath: "acme/legacy-widget",
+				}},
+				ConfiguredGlobs: []ghclient.ConfiguredRepoGlob{{
+					Owner: "acme-tools", Name: "*",
+				}},
 				PlatformHost:       "github.com",
 				RepoPath:           "acme-tools/current-widget",
 				PlatformExternalID: "R_42",

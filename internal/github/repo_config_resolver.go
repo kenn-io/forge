@@ -39,6 +39,7 @@ func canonicalRepoRef(repo RepoRef) RepoRef {
 		CredentialOwner:    strings.TrimSpace(repo.CredentialOwner),
 		CredentialName:     strings.TrimSpace(repo.CredentialName),
 		ConfiguredRoutes:   slices.Clone(repo.ConfiguredRoutes),
+		ConfiguredGlobs:    slices.Clone(repo.ConfiguredGlobs),
 		PlatformHost:       canonicalRepoHost(repo.PlatformHost),
 		RepoPath:           strings.TrimSpace(repo.RepoPath),
 		PlatformRepoID:     repo.PlatformRepoID,
@@ -100,14 +101,14 @@ func FallbackConfiguredRepoRefs(
 			if repoPlatform(repo) == kind &&
 				sameConfiguredRepoHost(repoHost(repo), host) &&
 				strings.EqualFold(credentialPath, repoPath) {
-				return []RepoRef{repo}
+				return []RepoRef{exactFallbackRepoRef(repo, raw)}
 			}
 		}
 		for _, repo := range previous {
 			if repoPlatform(repo) == kind &&
 				sameConfiguredRepoHost(repoHost(repo), host) &&
 				strings.EqualFold(repoPathOrFullName(repo), repoPath) {
-				return []RepoRef{repo}
+				return []RepoRef{exactFallbackRepoRef(repo, raw)}
 			}
 		}
 		return []RepoRef{fallbackRepoRef(raw, kind, host)}
@@ -127,9 +128,34 @@ func FallbackConfiguredRepoRefs(
 		if err != nil || !matched {
 			continue
 		}
+		repo.CredentialOwner = ""
+		repo.CredentialName = ""
+		repo.ConfiguredRoutes = nil
+		repo.ConfiguredGlobs = []ConfiguredRepoGlob{{
+			Owner: strings.TrimSpace(raw.Owner),
+			Name:  strings.TrimSpace(raw.Name),
+		}}
 		fallback = append(fallback, repo)
 	}
 	return fallback
+}
+
+func exactFallbackRepoRef(repo RepoRef, raw config.Repo) RepoRef {
+	owner := strings.TrimSpace(raw.Owner)
+	name := strings.TrimSpace(raw.Name)
+	repo.ConfiguredGlobs = nil
+	repo.ConfiguredRoutes = []ConfiguredRepoRoute{{
+		Owner: owner, Name: name, RepoPath: owner + "/" + name,
+	}}
+	if !strings.EqualFold(repo.Owner, owner) ||
+		!strings.EqualFold(repo.Name, name) {
+		repo.CredentialOwner = owner
+		repo.CredentialName = name
+	} else {
+		repo.CredentialOwner = ""
+		repo.CredentialName = ""
+	}
+	return repo
 }
 
 func fallbackRepoRef(raw config.Repo, kind platform.Kind, host string) RepoRef {
@@ -253,11 +279,12 @@ func MergeConfiguredRepoCandidate(
 		routes,
 		configuredRoutesForCandidate(candidate, candidateIsGlob)...,
 	)
-	if len(routes) > 1 {
-		winner.ConfiguredRoutes = routes
-	} else if len(winner.ConfiguredRoutes) > 0 {
+	if len(routes) > 0 {
 		winner.ConfiguredRoutes = routes
 	}
+	winner.ConfiguredGlobs = appendUniqueConfiguredGlobs(
+		slices.Clone(existing.ConfiguredGlobs), candidate.ConfiguredGlobs...,
+	)
 	return winner, winnerIsGlob
 }
 
@@ -303,6 +330,22 @@ func appendUniqueConfiguredRoutes(
 		}
 	}
 	return routes
+}
+
+func appendUniqueConfiguredGlobs(
+	globs []ConfiguredRepoGlob,
+	candidates ...ConfiguredRepoGlob,
+) []ConfiguredRepoGlob {
+	for _, candidate := range candidates {
+		found := slices.ContainsFunc(globs, func(current ConfiguredRepoGlob) bool {
+			return strings.EqualFold(current.Owner, candidate.Owner) &&
+				strings.EqualFold(current.Name, candidate.Name)
+		})
+		if !found {
+			globs = append(globs, candidate)
+		}
+	}
+	return globs
 }
 
 func repoUsesDirectCredentialRoute(repo RepoRef) bool {
@@ -434,6 +477,12 @@ func repoRefFromRepository(
 		WebURL:             repo.WebURL,
 		CloneURL:           repo.CloneURL,
 		DefaultBranch:      repo.DefaultBranch,
+	}
+	if raw.HasNameGlob() {
+		ref.ConfiguredGlobs = []ConfiguredRepoGlob{{
+			Owner: strings.TrimSpace(raw.Owner),
+			Name:  strings.TrimSpace(raw.Name),
+		}}
 	}
 	if !raw.HasNameGlob() &&
 		(!strings.EqualFold(ref.Owner, raw.Owner) ||

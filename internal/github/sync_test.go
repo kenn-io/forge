@@ -22,6 +22,7 @@ import (
 	"github.com/shurcooL/githubv4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/platform"
@@ -1050,6 +1051,7 @@ type syncTestReadProvider struct {
 type syncTestRepositoryReadProvider struct {
 	*syncTestReadProvider
 	repository         platform.Repository
+	repositories       []platform.Repository
 	repositoryErr      error
 	getRepositoryFn    func(context.Context, platform.RepoRef) (platform.Repository, error)
 	getRepositoryCalls atomic.Int32
@@ -1152,7 +1154,7 @@ func (p *syncTestRepositoryReadProvider) ListRepositories(
 	string,
 	platform.RepositoryListOptions,
 ) ([]platform.Repository, error) {
-	return nil, nil
+	return p.repositories, nil
 }
 
 func (p *syncTestReadProvider) ListOpenMergeRequests(
@@ -7165,6 +7167,116 @@ func TestResolveActiveRepositoryDiscardsSupersededGeneration(t *testing.T) {
 	require.Len(snapshots, 1)
 	require.Len(snapshots[0], 1)
 	require.Equal("newer-project", snapshots[0][0].Name)
+}
+
+func TestResolveActiveRepositoryDropsGlobMatchRenamedOutsidePattern(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	initial := platform.Repository{
+		Ref: platform.RepoRef{
+			Platform: platform.KindGitLab, Host: "gitlab.example.com",
+			Owner: "group", Name: "service-api", RepoPath: "group/service-api",
+			PlatformExternalID: "repository-42",
+		},
+		PlatformExternalID: "repository-42",
+	}
+	provider := &syncTestRepositoryReadProvider{
+		syncTestReadProvider: &syncTestReadProvider{
+			syncTestProvider: syncTestProvider{
+				kind: platform.KindGitLab, host: "gitlab.example.com",
+			},
+		},
+		repositories: []platform.Repository{initial},
+	}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	resolved := ResolveConfiguredReposWithRegistry(ctx, registry, []config.Repo{{
+		Platform: "gitlab", PlatformHost: "gitlab.example.com",
+		Owner: "group", Name: "service-*",
+	}})
+	require.Empty(resolved.Warnings)
+	require.Len(resolved.Expanded, 1)
+	configured := resolved.Expanded[0]
+	repoID, err := database.UpsertRepoByProviderID(
+		ctx, platform.DBRepositoryIdentity(initial),
+	)
+	require.NoError(err)
+	configured.RepoID = repoID
+	provider.repository = platform.Repository{
+		Ref: platform.RepoRef{
+			Platform: platform.KindGitLab, Host: "gitlab.example.com",
+			Owner: "group", Name: "utility", RepoPath: "group/utility",
+			PlatformExternalID: "repository-42",
+		},
+		PlatformExternalID: "repository-42",
+	}
+	syncer := NewSyncerWithRegistry(
+		registry, database, nil, []RepoRef{configured}, time.Minute, nil, nil,
+	)
+
+	_, _, err = syncer.resolveActiveRepository(ctx, configured)
+	require.Error(err)
+	require.Empty(syncer.TrackedRepos())
+}
+
+func TestResolveActiveRepositoryKeepsGlobMatchWithoutPersistingAlias(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	initial := platform.Repository{
+		Ref: platform.RepoRef{
+			Platform: platform.KindGitLab, Host: "gitlab.example.com",
+			Owner: "group", Name: "service-api", RepoPath: "group/service-api",
+			PlatformExternalID: "repository-42",
+		},
+		PlatformExternalID: "repository-42",
+	}
+	provider := &syncTestRepositoryReadProvider{
+		syncTestReadProvider: &syncTestReadProvider{
+			syncTestProvider: syncTestProvider{
+				kind: platform.KindGitLab, host: "gitlab.example.com",
+			},
+		},
+		repositories: []platform.Repository{initial},
+	}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	resolved := ResolveConfiguredReposWithRegistry(ctx, registry, []config.Repo{{
+		Platform: "gitlab", PlatformHost: "gitlab.example.com",
+		Owner: "group", Name: "service-*",
+	}})
+	require.Empty(resolved.Warnings)
+	require.Len(resolved.Expanded, 1)
+	configured := resolved.Expanded[0]
+	repoID, err := database.UpsertRepoByProviderID(
+		ctx, platform.DBRepositoryIdentity(initial),
+	)
+	require.NoError(err)
+	configured.RepoID = repoID
+	provider.repository = platform.Repository{
+		Ref: platform.RepoRef{
+			Platform: platform.KindGitLab, Host: "gitlab.example.com",
+			Owner: "group", Name: "service-worker", RepoPath: "group/service-worker",
+			PlatformExternalID: "repository-42",
+		},
+		PlatformExternalID: "repository-42",
+	}
+	syncer := NewSyncerWithRegistry(
+		registry, database, nil, []RepoRef{configured}, time.Minute, nil, nil,
+	)
+
+	active, _, err := syncer.resolveActiveRepository(ctx, configured)
+	require.NoError(err)
+	require.Equal("service-worker", active.Name)
+	require.Len(syncer.TrackedRepos(), 1)
+	var routeCount int
+	err = database.ReadDB().QueryRowContext(
+		ctx, `SELECT COUNT(*) FROM forge_repository_config_routes WHERE repo_id = ?`,
+		repoID,
+	).Scan(&routeCount)
+	require.NoError(err)
+	require.Zero(routeCount)
 }
 
 func TestResolveActiveRepositoryDeduplicatesConvergedConfiguredRoutes(t *testing.T) {
@@ -17637,6 +17749,122 @@ func TestProcessQueuedNotificationReadsDefersOnlyRateLimitedIdentity(t *testing.
 		"another owner's exhausted PAT must not defer this ack")
 	check.NotNil(byThread["healthy-thread"].SourceAckSyncedAt,
 		"the healthy owner's ack propagated in the same pass")
+}
+
+func TestNotificationRateLimitDeferralSurvivesRenameAndRouteReuse(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	originalID, err := database.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "repository-original", Owner: "acme", Name: "widget",
+		RepoPath: "acme/widget",
+	})
+	require.NoError(err)
+	now := time.Date(2026, 7, 31, 10, 0, 0, 0, time.UTC)
+	queuedAt := now.Add(time.Minute)
+	number := 7
+	require.NoError(database.UpsertNotifications(ctx, []db.Notification{
+		{
+			Platform: "github", PlatformHost: "github.com",
+			PlatformNotificationID: "original-one", RepoID: &originalID,
+			RepoOwner: "acme", RepoName: "widget", SubjectType: "PullRequest",
+			SubjectTitle: "First", ItemNumber: &number, ItemType: "pr",
+			Reason: "mention", Unread: true, SourceUpdatedAt: now, SyncedAt: now,
+		},
+		{
+			Platform: "github", PlatformHost: "github.com",
+			PlatformNotificationID: "original-two", RepoID: &originalID,
+			RepoOwner: "acme", RepoName: "widget", SubjectType: "PullRequest",
+			SubjectTitle: "Second", ItemNumber: &number, ItemType: "pr",
+			Reason: "mention", Unread: true, SourceUpdatedAt: now, SyncedAt: now,
+		},
+	}))
+	items, err := database.ListNotifications(ctx, db.ListNotificationsOpts{State: "all"})
+	require.NoError(err)
+	require.Len(items, 2)
+	ids := []int64{items[0].ID, items[1].ID}
+	_, err = database.QueueNotificationIDsRead(ctx, ids, queuedAt)
+	require.NoError(err)
+	queued, err := database.ListQueuedNotificationAcks(
+		ctx, "github", "github.com", 10, queuedAt,
+	)
+	require.NoError(err)
+	require.Len(queued, 2)
+	syncer := NewSyncer(
+		map[string]Client{"github.com": &mockClient{}}, database, nil,
+		[]RepoRef{{
+			Platform: platform.KindGitHub, PlatformHost: "github.com",
+			RepoID: originalID, Owner: "acme", Name: "widget",
+			PlatformExternalID: "repository-original",
+		}},
+		time.Minute, nil, nil,
+	)
+	bucketRepos, notificationBuckets := syncer.ackRepoBuckets(
+		ctx, platform.KindGitHub, "github.com", queued,
+	)
+	bucket := notificationBuckets[queued[0].ID]
+	require.NotEmpty(bucket)
+	require.Equal([]db.NotificationRepoRef{{RepoID: originalID}}, bucketRepos[bucket])
+
+	_, err = database.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "repository-original", Owner: "acme", Name: "renamed-widget",
+		RepoPath: "acme/renamed-widget",
+	})
+	require.NoError(err)
+	replacementID, err := database.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "repository-replacement", Owner: "acme", Name: "widget",
+		RepoPath: "acme/widget",
+	})
+	require.NoError(err)
+	replacement := db.Notification{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformNotificationID: "replacement", RepoID: &replacementID,
+		RepoOwner: "acme", RepoName: "widget", SubjectType: "PullRequest",
+		SubjectTitle: "Replacement", ItemNumber: &number, ItemType: "pr",
+		Reason: "mention", Unread: true, SourceUpdatedAt: now, SyncedAt: now,
+	}
+	require.NoError(database.UpsertNotifications(ctx, []db.Notification{replacement}))
+	items, err = database.ListNotifications(ctx, db.ListNotificationsOpts{State: "all"})
+	require.NoError(err)
+	var replacementNotificationID int64
+	for _, item := range items {
+		if item.PlatformNotificationID == "replacement" {
+			replacementNotificationID = item.ID
+		}
+	}
+	require.Positive(replacementNotificationID)
+	_, err = database.QueueNotificationIDsRead(
+		ctx, []int64{replacementNotificationID}, queuedAt,
+	)
+	require.NoError(err)
+	resetAt := now.Add(time.Hour)
+	limited, err := syncer.deferQueuedNotificationAckOnError(
+		ctx, platform.KindGitHub, "github.com", bucket, bucketRepos[bucket],
+		queued[0], &gh.RateLimitError{
+			Rate: gh.Rate{Reset: gh.Timestamp{Time: resetAt}},
+			Response: &http.Response{
+				StatusCode: http.StatusForbidden,
+				Request:    httptest.NewRequest(http.MethodPatch, "https://api.github.com/notifications/threads/original-one", nil),
+			},
+			Message: "API rate limit exceeded",
+		},
+	)
+	require.NoError(err)
+	require.True(limited)
+
+	items, err = database.ListNotifications(ctx, db.ListNotificationsOpts{State: "all"})
+	require.NoError(err)
+	byThread := make(map[string]db.Notification, len(items))
+	for _, item := range items {
+		byThread[item.PlatformNotificationID] = item
+	}
+	assert.Equal("rate_limited", byThread["original-one"].SourceAckError)
+	assert.Equal("rate_limited", byThread["original-two"].SourceAckError)
+	assert.Empty(byThread["replacement"].SourceAckError)
 }
 
 // Deferral must be scoped even for queued rows this pass never reaches. With a

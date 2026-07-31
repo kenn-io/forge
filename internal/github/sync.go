@@ -9,6 +9,7 @@ import (
 	"maps"
 	"net/http"
 	"net/url"
+	"path"
 	"reflect"
 	"slices"
 	"strconv"
@@ -243,7 +244,11 @@ type RepoRef struct {
 	// ConfiguredRoutes retains every exact configuration route that resolved
 	// to this immutable repository identity. It is populated when configured
 	// entries converge so all aliases survive restart and reload.
-	ConfiguredRoutes   []ConfiguredRepoRoute
+	ConfiguredRoutes []ConfiguredRepoRoute
+	// ConfiguredGlobs retains the glob entries that discovered this repository.
+	// Unlike exact routes, globs are membership constraints rather than aliases:
+	// a later provider rename must still match at least one active pattern.
+	ConfiguredGlobs    []ConfiguredRepoGlob
 	PlatformHost       string
 	RepoPath           string
 	PlatformRepoID     int64
@@ -257,6 +262,11 @@ type ConfiguredRepoRoute struct {
 	Owner    string
 	Name     string
 	RepoPath string
+}
+
+type ConfiguredRepoGlob struct {
+	Owner string
+	Name  string
 }
 
 // PartialSyncError reports a repo sync cycle whose index scan completed but
@@ -5452,6 +5462,7 @@ func repoRefFromStoredRepository(
 		CredentialOwner:    configured.CredentialOwner,
 		CredentialName:     configured.CredentialName,
 		ConfiguredRoutes:   slices.Clone(configured.ConfiguredRoutes),
+		ConfiguredGlobs:    slices.Clone(configured.ConfiguredGlobs),
 		PlatformHost:       stored.PlatformHost,
 		RepoPath:           stored.RepoPath,
 		PlatformRepoID:     configured.PlatformRepoID,
@@ -5568,6 +5579,10 @@ func compactTrackedRepositoriesByID(repos []RepoRef) []RepoRef {
 					compacted[existingIndex] = repo
 				}
 				compacted[existingIndex].ConfiguredRoutes = routes
+				compacted[existingIndex].ConfiguredGlobs = appendUniqueConfiguredGlobs(
+					slices.Clone(compacted[existingIndex].ConfiguredGlobs),
+					repo.ConfiguredGlobs...,
+				)
 				continue
 			}
 			seen[repo.RepoID] = len(compacted)
@@ -5642,7 +5657,10 @@ func (s *Syncer) saveConfiguredRoutes(
 	repoID int64,
 	repo RepoRef,
 ) error {
-	routes := configuredRoutesForCandidate(repo, false)
+	routes := exactConfiguredRoutes(repo)
+	if len(routes) == 0 && len(repo.ConfiguredGlobs) > 0 {
+		return nil
+	}
 	if len(routes) == 0 {
 		return s.db.SaveRepoConfiguredRoute(
 			ctx, repoID, configuredRouteIdentity(repo),
@@ -5668,7 +5686,7 @@ func configuredRouteBindings(repos []RepoRef) []db.RepoConfiguredRouteBinding {
 		if repo.RepoID <= 0 {
 			continue
 		}
-		for _, route := range configuredRoutesForCandidate(repo, false) {
+		for _, route := range exactConfiguredRoutes(repo) {
 			bindings = append(bindings, db.RepoConfiguredRouteBinding{
 				RepoID: repo.RepoID,
 				Route: db.RepoIdentity{
@@ -5679,6 +5697,63 @@ func configuredRouteBindings(repos []RepoRef) []db.RepoConfiguredRouteBinding {
 		}
 	}
 	return bindings
+}
+
+func exactConfiguredRoutes(repo RepoRef) []ConfiguredRepoRoute {
+	if len(repo.ConfiguredRoutes) > 0 {
+		return slices.Clone(repo.ConfiguredRoutes)
+	}
+	if len(repo.ConfiguredGlobs) > 0 {
+		return nil
+	}
+	return configuredRoutesForCandidate(repo, false)
+}
+
+func repoMatchesConfiguredGlobs(repo RepoRef, identity db.RepoIdentity) bool {
+	if len(repo.ConfiguredGlobs) == 0 || len(repo.ConfiguredRoutes) > 0 {
+		return true
+	}
+	for _, configured := range repo.ConfiguredGlobs {
+		if !strings.EqualFold(configured.Owner, identity.Owner) {
+			continue
+		}
+		matched, err := path.Match(
+			canonicalRepoPattern(configured.Name),
+			canonicalRepoName(identity.Name),
+		)
+		if err == nil && matched {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Syncer) removeTrackedRepositoryLocked(
+	ctx context.Context,
+	resolution repositoryResolution,
+) error {
+	s.reposMu.Lock()
+	repos := slices.DeleteFunc(slices.Clone(s.repos), func(repo RepoRef) bool {
+		return configuredRepositoryKey(repo) == resolution.key
+	})
+	s.reposMu.Unlock()
+	if err := s.replaceRepositoryCredentialAliases(repos); err != nil {
+		return err
+	}
+	if s.archiveLifecycle != nil {
+		refs := make([]platform.RepoRef, 0, len(repos))
+		for _, repo := range repos {
+			refs = append(refs, platformRepoRef(repo))
+		}
+		if err := s.archiveLifecycle.EnsureConfigured(ctx, refs); err != nil {
+			return fmt.Errorf("reconcile archive discovery after glob mismatch: %w", err)
+		}
+	}
+	s.reposMu.Lock()
+	s.repos = repos
+	s.reposGeneration++
+	s.reposMu.Unlock()
+	return nil
 }
 
 func (s *Syncer) publishResolvedRepositoryLocked(
@@ -5745,6 +5820,18 @@ func (s *Syncer) resolveActiveRepository(
 	)
 	if !tracked {
 		return RepoRef{}, nil, errRepositoryResolutionSuperseded
+	}
+	if !repoMatchesConfiguredGlobs(current, identity) {
+		if !sameGeneration || !repoRefsEqual(current, resolution.configured) {
+			return RepoRef{}, nil, errRepositoryResolutionSuperseded
+		}
+		if err := s.removeTrackedRepositoryLocked(ctx, resolution); err != nil {
+			return RepoRef{}, nil, err
+		}
+		return RepoRef{}, nil, fmt.Errorf(
+			"configured repository glob no longer matches %s/%s: %w",
+			identity.Owner, identity.Name, errRepositoryResolutionSuperseded,
+		)
 	}
 	if repoRefMatchesResolvedIdentity(current, identity) {
 		_, active, release, leaseErr := s.leaseActiveRepositoryByID(

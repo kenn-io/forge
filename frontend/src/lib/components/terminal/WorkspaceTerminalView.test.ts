@@ -160,6 +160,10 @@ vi.mock("@kenn-forge/ui/stores/flash", () => ({
   showFlash: mocks.showFlash,
 }));
 
+vi.mock("../../../../../packages/ui/src/components/detail/PullDetail.svelte", async () => ({
+  default: (await import("../../../../../packages/ui/src/views/PRListViewTestPullDetail.svelte")).default,
+}));
+
 // The harness pairs the view with the session terminal pool, which WorkspaceHost
 // mounts in the app. Terminals live in the pool now, so the view on its own
 // renders portal slots and no terminal would ever appear.
@@ -1167,7 +1171,7 @@ describe("WorkspaceTerminalView", () => {
   it("prewarms a selected fleet diff and reloads it when the remote watch advances", async () => {
     window.__BASE_PATH__ = window.location.origin;
     localStorage.setItem("kenn-forge-workspace-sidebar-open", "true");
-    localStorage.setItem("kenn-forge-workspace-sidebar-tab", "diff");
+    localStorage.setItem("kenn-forge-workspace-sidebar-tab:fleet:member:ws-1", "diff");
     const changed = deferred<Response>();
     let watchCalls = 0;
     const fetchMock = vi.fn().mockImplementation((input: Request | URL | string) => {
@@ -1215,7 +1219,7 @@ describe("WorkspaceTerminalView", () => {
   it("retries a fleet diff watch while the workspace transitions from creating to ready", async () => {
     window.__BASE_PATH__ = window.location.origin;
     localStorage.setItem("kenn-forge-workspace-sidebar-open", "true");
-    localStorage.setItem("kenn-forge-workspace-sidebar-tab", "diff");
+    localStorage.setItem("kenn-forge-workspace-sidebar-tab:fleet:member:ws-1", "diff");
     vi.spyOn(Math, "random").mockReturnValue(0);
     let watchCalls = 0;
     const fetchMock = vi.fn().mockImplementation((input: Request | URL | string) => {
@@ -1267,7 +1271,7 @@ describe("WorkspaceTerminalView", () => {
   it("removes the old sidebar and waits for matching runtime before loading the new diff", async () => {
     window.__BASE_PATH__ = window.location.origin;
     localStorage.setItem("kenn-forge-workspace-sidebar-open", "true");
-    localStorage.setItem("kenn-forge-workspace-sidebar-tab", "diff");
+    localStorage.setItem("kenn-forge-workspace-sidebar-tab:ws-1", "diff");
     const workspaceB = { ...workspaceResponse, id: "ws-2", git_head_ref: "feature/two" };
     const workspaceBGate = deferred<typeof workspaceB>();
     const runtimeBGate = deferred<ReturnType<typeof runtimeWithStaleSession>>();
@@ -1341,7 +1345,7 @@ describe("WorkspaceTerminalView", () => {
   it("renders matching workspace details when runtime loading fails", async () => {
     window.__BASE_PATH__ = window.location.origin;
     localStorage.setItem("kenn-forge-workspace-sidebar-open", "true");
-    localStorage.setItem("kenn-forge-workspace-sidebar-tab", "diff");
+    localStorage.setItem("kenn-forge-workspace-sidebar-tab:ws-1", "diff");
     const loadWorkspaceDiff = vi.spyOn(mocks.diffStore, "loadWorkspaceDiff").mockResolvedValue();
 
     vi.stubGlobal(
@@ -2101,6 +2105,62 @@ describe("WorkspaceTerminalView", () => {
     await fireEvent.click(collapseButton);
 
     expect(onToggleSidebar).toHaveBeenCalledTimes(1);
+  });
+
+  it("remembers the selected details tab for each workspace", async () => {
+    window.__BASE_PATH__ = window.location.origin;
+    const adhocWorkspace = {
+      ...workspaceResponse,
+      id: "ws-2",
+      item_type: "adhoc",
+      item_number: 0,
+      associated_pr_number: null,
+      git_head_ref: "feature/adhoc",
+      tmux_session: "kenn-forge-ws-2",
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: Request | URL | string) => {
+        const url = input instanceof Request ? input.url : String(input);
+        const { pathname } = new URL(url, "http://localhost");
+        if (pathname.endsWith("/workspaces/ws-1")) {
+          return Promise.resolve(Response.json(workspaceResponse));
+        }
+        if (pathname.endsWith("/workspaces/ws-2")) {
+          return Promise.resolve(Response.json(adhocWorkspace));
+        }
+        if (pathname.endsWith("/api/v1/workspaces")) {
+          return Promise.resolve(Response.json({ workspaces: [workspaceResponse, adhocWorkspace] }));
+        }
+        return Promise.resolve(Response.json({}));
+      }),
+    );
+
+    const view = render(WorkspaceTerminalView, {
+      props: { workspaceId: "ws-1" },
+      context: new Map([
+        [
+          STORES_KEY,
+          {
+            diff: mocks.diffStore,
+            roborevDaemon: { isAvailable: () => false },
+          },
+        ],
+      ]),
+    });
+
+    const prButton = await screen.findByRole("button", { name: "PR" });
+    await fireEvent.click(prButton);
+    expect(prButton.classList.contains("active")).toBe(true);
+
+    await view.rerender({ workspaceId: "ws-2" });
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "PR" })).toBeNull();
+      expect(screen.getByRole("button", { name: "Diff" }).classList.contains("active")).toBe(true);
+    });
+
+    await view.rerender({ workspaceId: "ws-1" });
+    await waitFor(() => expect(screen.getByRole("button", { name: "PR" }).classList.contains("active")).toBe(true));
   });
 
   it("disables middle-pane workspace controls while the selected workspace is deleting", async () => {

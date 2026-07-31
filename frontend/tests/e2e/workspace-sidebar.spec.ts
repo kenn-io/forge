@@ -2,6 +2,12 @@ import { expect, test } from "@playwright/test";
 
 import { mockApi } from "./support/mockApi";
 
+function clearWorkspaceSidebarTabStorage(): void {
+  for (const key of Object.keys(localStorage)) {
+    if (key.startsWith("kenn-forge-workspace-sidebar-tab:")) localStorage.removeItem(key);
+  }
+}
+
 function workspaceRepoRef(owner = "acme", name = "widgets", host = "github.com", provider = "github") {
   return {
     provider,
@@ -861,8 +867,8 @@ test("provider-aware detail mocks enforce provider and host identity", async ({ 
 
 test.describe("terminal state icons", () => {
   test.beforeEach(async ({ page }) => {
+    await page.addInitScript(clearWorkspaceSidebarTabStorage);
     await page.addInitScript(() => {
-      localStorage.removeItem("kenn-forge-workspace-sidebar-tab");
       localStorage.removeItem("kenn-forge-workspace-sidebar-open");
       localStorage.removeItem("kenn-forge-workspace-sidebar-width");
     });
@@ -1481,9 +1487,9 @@ test.describe("terminal state icons", () => {
 
 test.describe("workspace launch home", () => {
   test.beforeEach(async ({ page }) => {
+    await page.addInitScript(clearWorkspaceSidebarTabStorage);
     await page.addInitScript(() => {
       localStorage.removeItem("kenn-forge-workspace-list-sidebar-width");
-      localStorage.removeItem("kenn-forge-workspace-sidebar-tab");
       localStorage.removeItem("kenn-forge-workspace-sidebar-open");
       localStorage.removeItem("kenn-forge-workspace-sidebar-width");
     });
@@ -2569,9 +2575,9 @@ test.describe("workspace launch home", () => {
 test.describe("sidebar toggle behavior", () => {
   test.beforeEach(async ({ page }) => {
     // Clear any persisted sidebar state before each test.
+    await page.addInitScript(clearWorkspaceSidebarTabStorage);
     await page.addInitScript(() => {
       localStorage.removeItem("kenn-forge-workspace-list-sidebar-width");
-      localStorage.removeItem("kenn-forge-workspace-sidebar-tab");
       localStorage.removeItem("kenn-forge-workspace-sidebar-open");
       localStorage.removeItem("kenn-forge-workspace-sidebar-width");
     });
@@ -2869,9 +2875,9 @@ test.describe("sidebar toggle behavior", () => {
 
 test.describe("workspace list fleet inventory", () => {
   test.beforeEach(async ({ page }) => {
+    await page.addInitScript(clearWorkspaceSidebarTabStorage);
     await page.addInitScript(() => {
       localStorage.removeItem("kenn-forge-workspace-list-sidebar-width");
-      localStorage.removeItem("kenn-forge-workspace-sidebar-tab");
       localStorage.removeItem("kenn-forge-workspace-sidebar-open");
       localStorage.removeItem("kenn-forge-workspace-sidebar-width");
     });
@@ -3137,8 +3143,8 @@ test.describe("sidebar persistence", () => {
   });
 
   async function clearSidebarStorage(page: import("@playwright/test").Page): Promise<void> {
+    await page.evaluate(clearWorkspaceSidebarTabStorage);
     await page.evaluate(() => {
-      localStorage.removeItem("kenn-forge-workspace-sidebar-tab");
       localStorage.removeItem("kenn-forge-workspace-sidebar-open");
       localStorage.removeItem("kenn-forge-workspace-sidebar-width");
     });
@@ -3176,7 +3182,7 @@ test.describe("sidebar persistence", () => {
     await expect(reviewsBtn).toHaveClass(/active/);
 
     // Verify localStorage
-    const tab = await page.evaluate(() => localStorage.getItem("kenn-forge-workspace-sidebar-tab"));
+    const tab = await page.evaluate(() => localStorage.getItem("kenn-forge-workspace-sidebar-tab:ws-123"));
     expect(tab).toBe("reviews");
 
     // Reload
@@ -3230,8 +3236,8 @@ test.describe("sidebar persistence", () => {
 
 test.describe("sidebar PR tab", () => {
   test.beforeEach(async ({ page }) => {
+    await page.addInitScript(clearWorkspaceSidebarTabStorage);
     await page.addInitScript(() => {
-      localStorage.removeItem("kenn-forge-workspace-sidebar-tab");
       localStorage.removeItem("kenn-forge-workspace-sidebar-open");
       localStorage.removeItem("kenn-forge-workspace-sidebar-width");
     });
@@ -3270,8 +3276,8 @@ test.describe("sidebar PR tab", () => {
 
 test.describe("workspace list bubble opens right sidebar", () => {
   test.beforeEach(async ({ page }) => {
+    await page.addInitScript(clearWorkspaceSidebarTabStorage);
     await page.addInitScript(() => {
-      localStorage.removeItem("kenn-forge-workspace-sidebar-tab");
       localStorage.removeItem("kenn-forge-workspace-sidebar-open");
       localStorage.removeItem("kenn-forge-workspace-sidebar-width");
     });
@@ -3835,8 +3841,8 @@ test.describe("workspace list sorting", () => {
 
 test.describe("delayed-response navigation", () => {
   test.beforeEach(async ({ page }) => {
+    await page.addInitScript(clearWorkspaceSidebarTabStorage);
     await page.addInitScript(() => {
-      localStorage.removeItem("kenn-forge-workspace-sidebar-tab");
       localStorage.removeItem("kenn-forge-workspace-sidebar-open");
       localStorage.removeItem("kenn-forge-workspace-sidebar-width");
     });
@@ -4447,8 +4453,8 @@ test.describe("delayed-response navigation", () => {
 
 test.describe("issue workspace sidebar", () => {
   test.beforeEach(async ({ page }) => {
+    await page.addInitScript(clearWorkspaceSidebarTabStorage);
     await page.addInitScript(() => {
-      localStorage.removeItem("kenn-forge-workspace-sidebar-tab");
       localStorage.removeItem("kenn-forge-workspace-sidebar-open");
       localStorage.removeItem("kenn-forge-workspace-sidebar-width");
     });
@@ -4603,7 +4609,7 @@ test.describe("issue workspace sidebar", () => {
 
     await page.addInitScript(() => {
       localStorage.setItem("kenn-forge-workspace-sidebar-open", "true");
-      localStorage.setItem("kenn-forge-workspace-sidebar-tab", "issue");
+      localStorage.setItem("kenn-forge-workspace-sidebar-tab:ws-issue-7", "issue");
 
       const instances: Array<{
         listeners: Map<string, Set<(event: MessageEvent) => void>>;
@@ -4708,8 +4714,8 @@ test.describe("issue workspace sidebar", () => {
 
 test.describe("sidebar Reviews tab", () => {
   test.beforeEach(async ({ page }) => {
+    await page.addInitScript(clearWorkspaceSidebarTabStorage);
     await page.addInitScript(() => {
-      localStorage.removeItem("kenn-forge-workspace-sidebar-tab");
       localStorage.removeItem("kenn-forge-workspace-sidebar-open");
       localStorage.removeItem("kenn-forge-workspace-sidebar-width");
     });

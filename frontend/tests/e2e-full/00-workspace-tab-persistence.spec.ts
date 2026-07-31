@@ -64,6 +64,22 @@ async function createIssueWorkspace(api: APIRequestContext, issueNumber: number)
   return createdWorkspace;
 }
 
+async function createPullWorkspace(api: APIRequestContext, pullNumber: number): Promise<WorkspaceStatusResponse> {
+  const createResponse = await api.post("/api/v1/workspaces", {
+    data: {
+      provider: "github",
+      platform_host: "github.com",
+      owner: "acme",
+      name: "widgets",
+      mr_number: pullNumber,
+    },
+  });
+  expect(createResponse.status()).toBe(202);
+  const createdWorkspace = (await createResponse.json()) as WorkspaceStatusResponse;
+  await waitForWorkspaceReady(api, createdWorkspace.id);
+  return createdWorkspace;
+}
+
 async function clickPierreExpander(file: Locator, separatorIndex: number): Promise<void> {
   const expander = file
     .locator(".pierre-diff [data-separator][data-expand-index]")
@@ -214,6 +230,45 @@ test.describe("workspace tab persistence", () => {
 
       await page.goto(`${isolatedServer.info.base_url}/terminal/${firstWorkspace.id}`);
       await expect(terminalTab).toHaveAttribute("aria-selected", "true");
+    } finally {
+      await api?.dispose();
+      await isolatedServer?.stop();
+    }
+  });
+
+  test("restores each workspace's selected details tab after navigation", async ({ page }) => {
+    test.skip(
+      !hasCommand("git") || !hasCommand("tmux", ["-V"]),
+      "git and tmux are required for the real workspace flow",
+    );
+
+    let isolatedServer: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    try {
+      isolatedServer = await startIsolatedWorkspaceE2EServer();
+      api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
+
+      const pullWorkspace = await createPullWorkspace(api, 1);
+      const issueWorkspace = await createIssueWorkspace(api, 11);
+      const detailsToggle = (label: "Diff" | "Issue" | "PR") =>
+        page.locator(".terminal-view .panel-toggle-group .panel-toggle-btn", { hasText: label });
+
+      await page.goto(`${isolatedServer.info.base_url}/terminal/${pullWorkspace.id}`);
+      await detailsToggle("PR").click();
+      await expect(detailsToggle("PR")).toHaveClass(/active/);
+
+      await page.locator(".workspace-list-sidebar .ws-row", { hasText: "Add dark mode support" }).click();
+      await expect(page).toHaveURL(new RegExp(`/terminal/${issueWorkspace.id}$`));
+      await detailsToggle("Issue").click();
+      await expect(detailsToggle("Issue")).toHaveClass(/active/);
+
+      await page.locator(".workspace-list-sidebar .ws-row", { hasText: "Add widget caching layer" }).click();
+      await expect(page).toHaveURL(new RegExp(`/terminal/${pullWorkspace.id}$`));
+      await expect(detailsToggle("PR")).toHaveClass(/active/);
+
+      await page.locator(".workspace-list-sidebar .ws-row", { hasText: "Add dark mode support" }).click();
+      await expect(page).toHaveURL(new RegExp(`/terminal/${issueWorkspace.id}$`));
+      await expect(detailsToggle("Issue")).toHaveClass(/active/);
     } finally {
       await api?.dispose();
       await isolatedServer?.stop();

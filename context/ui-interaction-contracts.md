@@ -178,6 +178,9 @@ Persisted controls must state their scope clearly.
 
 - Browser-local preferences belong in `localStorage` only when the behavior is
   intentionally per-browser and not worth server settings.
+- The workspace details tab is keyed by host-aware workspace identity; an unsupported
+  tab may fall back only for the current live workspace, never rewrite another
+  workspace's choice (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::sidebarTabStorageKey`).
 - URL query state belongs in the route only when deep-linking or back/forward
   navigation is part of the feature contract.
 - Server-backed settings belong in the API only when the preference should

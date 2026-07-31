@@ -346,7 +346,7 @@
     total: number;
   }>({ status: "loading", total: 0 });
 
-  const SIDEBAR_TAB_KEY = "kenn-forge-workspace-sidebar-tab";
+  const SIDEBAR_TAB_KEY_PREFIX = "kenn-forge-workspace-sidebar-tab:";
   const SIDEBAR_OPEN_KEY = "kenn-forge-workspace-sidebar-open";
   const SIDEBAR_WIDTH_KEY = "kenn-forge-workspace-sidebar-width";
   const WORKSPACE_LIST_WIDTH_KEY =
@@ -438,12 +438,17 @@
       : DEFAULT_WORKSPACE_LIST_WIDTH;
   }
 
-  function loadSidebarTab(): SidebarTab {
-    const v = readLocalStorage(SIDEBAR_TAB_KEY);
+  function sidebarTabStorageKey(storageId: string): string {
+    return `${SIDEBAR_TAB_KEY_PREFIX}${storageId}`;
+  }
+
+  function loadSidebarTab(storageId: string): SidebarTab {
+    const v = readLocalStorage(sidebarTabStorageKey(storageId));
     if (v === "diff") return "diff";
     if (v === "pr") return "pr";
     if (v === "issue") return "issue";
     if (v === "reviews") return "reviews";
+    if (v === "kata_task") return "kata_task";
     return "diff";
   }
 
@@ -466,7 +471,11 @@
       : DEFAULT_SIDEBAR_WIDTH;
   }
 
-  let sidebarTab = $state<SidebarTab>(loadSidebarTab());
+  let selectedSidebarTabs = $state.raw<Record<string, SidebarTab>>({});
+  const sidebarTab = $derived.by(() => {
+    const storageId = workspaceStorageId(workspaceId, workspaceHostKey);
+    return selectedSidebarTabs[storageId] ?? loadSidebarTab(storageId);
+  });
   let sidebarOpen = $state(loadSidebarOpen());
   let sidebarWidth = $state(loadSidebarWidth());
   let workspaceListWidth = $state(loadWorkspaceListWidth());
@@ -1121,9 +1130,6 @@
   );
 
   $effect(() => {
-    writeLocalStorage(SIDEBAR_TAB_KEY, sidebarTab);
-  });
-  $effect(() => {
     writeLocalStorage(
       SIDEBAR_OPEN_KEY,
       String(sidebarOpen),
@@ -1160,9 +1166,22 @@
     if (sidebarOpen && sidebarTab === tab) {
       sidebarOpen = false;
     } else {
-      sidebarTab = tab;
+      setSidebarTab(tab);
       sidebarOpen = true;
     }
+  }
+
+  function setSidebarTab(
+    tab: SidebarTab,
+    targetId: string | undefined = undefined,
+    targetHostKey?: string,
+  ): void {
+    const storageId = workspaceStorageId(
+      targetId ?? workspaceId,
+      targetId === undefined ? workspaceHostKey : targetHostKey,
+    );
+    selectedSidebarTabs = { ...selectedSidebarTabs, [storageId]: tab };
+    writeLocalStorage(sidebarTabStorageKey(storageId), tab);
   }
 
   function openItemSidebar(
@@ -1176,7 +1195,7 @@
       targetId !== workspaceId ||
       (targetHostKey ?? undefined) !== workspaceHostKey
     ) {
-      sidebarTab = tab;
+      setSidebarTab(tab, targetId, targetHostKey);
       sidebarOpen = true;
       if (targetHostKey) {
         navigate(
@@ -1493,7 +1512,7 @@
 
   function workspaceStorageId(
     id: string,
-    hostKey: string | undefined = workspaceHostKey,
+    hostKey: string | undefined,
   ): string {
     return hostKey ? `fleet:${encodeURIComponent(hostKey)}:${id}` : id;
   }
@@ -1691,7 +1710,7 @@
   function rememberActiveTab(key: WorkflowTabKey): void {
     if (!workspaceId) return;
     writeLocalStorage(
-      `${ACTIVE_WORKSPACE_TAB_KEY_PREFIX}${workspaceStorageId(workspaceId)}`,
+      `${ACTIVE_WORKSPACE_TAB_KEY_PREFIX}${workspaceStorageId(workspaceId, workspaceHostKey)}`,
       key,
     );
   }
@@ -1751,7 +1770,7 @@
 
   function syncSidebarTabForWorkspace(ws: Workspace): void {
     if (!isSidebarTabSupported(ws, sidebarTab)) {
-      sidebarTab = defaultSidebarTab();
+      setSidebarTab(defaultSidebarTab());
     }
   }
 
@@ -3301,9 +3320,9 @@
   });
 
   $effect(() => {
-    if (!workspace) return;
+    if (!workspaceLive || !workspace) return;
     if (!isSidebarTabSupported(workspace, sidebarTab)) {
-      sidebarTab = defaultSidebarTab();
+      setSidebarTab(defaultSidebarTab());
     }
   });
 

@@ -46,7 +46,7 @@ Opening the relocated database runs the ordinary SQLite migration chain. Migrati
 
 ## Rename Codemod
 
-The broad source rename is performed by a repository-local codemod rather than a sequence of manual edits. The tool contains declarative, ordered mappings for:
+The broad source rename is performed by a temporary repository-local codemod rather than a sequence of manual edits. The codemod is removed after applying and verifying the rename; it is an implementation aid, not a maintained product tool. It contains declarative, ordered mappings for:
 
 - command directories, filenames, and generated/build paths;
 - the Go module and all internal imports;

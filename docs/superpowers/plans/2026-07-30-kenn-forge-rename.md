@@ -9,6 +9,8 @@
 **Architecture:** A repository-local Go codemod performs deterministic path and content rewrites and enforces a narrow legacy-name allowlist. Runtime compatibility is limited to a lock-gated SQLite relocation; the ordinary schema chain then renames live database objects.
 
 > **Maintainer simplification:** The detailed filesystem and browser migration work in Tasks 3 and 4 below is superseded and must not be implemented. The only persisted-state migration is: refuse while `middleman.lock` is held, move `middleman.db` plus SQLite sidecars to the selected Kenn Forge data directory as `forge.db`, and run migration 44. Do not migrate config, auth files, worktrees, ignore files, or browser storage.
+>
+> The Task 1 codemod is a temporary implementation aid. Remove `tools/renameforge` after the mechanical rename and migration generation are verified; it must not ship in the pull request.
 
 **Tech Stack:** Go 1.26, Cobra, BurntSushi TOML, gofrs/flock, SQLite, Svelte 5, TypeScript, Vite+, Vitest, Bun, Rust/Cargo.
 

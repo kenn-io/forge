@@ -337,7 +337,7 @@
     if (pierreDiff instanceof VirtualizedFileDiff && isHostInScrollViewport()) {
       pierreDiff.setVisibility(true);
     }
-    if (needsFullContextForSyntax && !fullContext && syntaxContextLoadFailedFileKey !== fileKey) {
+    if (active && needsFullContextForSyntax && !fullContext && syntaxContextLoadFailedFileKey !== fileKey) {
       rendered = false;
       clearRenderedDomState();
       void loadFullContextForSyntax(fileKey);

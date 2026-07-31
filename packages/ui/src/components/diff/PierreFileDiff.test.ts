@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/svelte";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vite-plus/test";
-import type { DiffLineAnnotation, FileDiffOptions } from "@pierre/diffs";
+import type { DiffLineAnnotation, FileDiffOptions, Virtualizer } from "@pierre/diffs";
 import type { DiffFile } from "../../api/types.js";
 
 type GlobalWithCSSStyleSheet = {
@@ -379,6 +379,23 @@ describe("PierreFileDiff", () => {
       expect(document.querySelector(".context-error")?.textContent).toContain("preview failed");
       expect(pierre.renderCount()).toBe(1);
     });
+  });
+
+  it("does not preload syntax context for an offscreen virtualized diff", async () => {
+    const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
+    const loadFileText = vi.fn(async () => "full file text");
+
+    render(PierreFileDiff, {
+      props: {
+        file: makeSyntaxStateGapFile(),
+        active: false,
+        loadFileText,
+        virtualizer: {} as Virtualizer,
+      },
+    });
+
+    await Promise.resolve();
+    expect(loadFileText).not.toHaveBeenCalled();
   });
 
   it("shows the empty textual state for metadata-only patches", async () => {

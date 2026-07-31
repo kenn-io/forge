@@ -234,6 +234,12 @@ fallback repository listing.
 - Updated issue scans query one second before the durable watermark while keeping cursor identity bound to the original boundary. Updated pull-request scans run newest-first across the same overlap. (`internal/github/pages.go::ListIssuesPage`, `internal/github/pages.go::ListMergeRequestsPage`)
 - Durable pull-request inventory bypasses the process-local list ETag cache. Archive cursors require response bodies, so a bodyless `304 Not Modified` must not turn an unchanged maintenance scan into a retryable failure. (`internal/github/pages.go::liveClient.ListInventoryPullRequestsPage`)
 - Repository probes classify only authentication/access/not-found responses; transient probe failures remain retryable and non-destructive. Issue and pull-request lookups compare the response repository with the requested source identity so transfers become moved outcomes instead of source-owned snapshots. (`internal/github/pages.go::archiveRepositoryProbeError`, `internal/github/pages.go::githubArchiveDestination`)
+- A previously-open issue whose GitHub-classified lookup is a true removal
+  (not_found, no destination) is tombstoned closed locally; otherwise it would
+  fail every cycle forever. Transfers and provider-neutral bare 404s (GitLab
+  hides inaccessible items behind 404) keep failing the cycle so maintainers
+  see them in repo sync health
+  (`internal/github/sync.go::tombstoneRemovedIssue`).
 - Archive REST and GraphQL failures must preserve typed authentication and reset-aware rate-limit errors so scheduling defers rather than hot-looping generic retries. (`internal/github/pages.go::archiveTransportError`)
 - GitHub archive code owns historical identity inventory only; hydration must invoke ordinary item sync instead of adding archive-specific lookup, normalization, or persistence. (`internal/github/pages.go::ListIssuesPage`, `internal/github/sync.go::SyncArchiveItem`)
 - Archive item hydration bypasses persisted parent-detail ETags; an unchanged parent representation does not prove that legacy lifecycle timelines are complete. (`internal/github/sync.go::SyncArchiveItem`)
@@ -367,6 +373,14 @@ response never overwrites an App installation pool
 - Background admission gates on the routed credential's own reserve; the local
   `sync_budget_per_hour` ceiling is separate and is reported apart from provider
   quota (`internal/github/sync.go::backgroundQuotaAvailability`).
+- List discovery (open PR/issue lists, repo identity resolve) spends the local
+  ceiling's essential reserve; optional spend (details, fast-sync, archive)
+  stops at limit minus reserve so it can never starve discovery
+  (`internal/github/budget.go::TrySpendEssential`).
+- A list fetch refused by the local ceiling must not evict list ETags: nothing
+  reached the wire, so eviction would only turn recovery cycles into
+  unconditional refetches that deepen the exhaustion
+  (`internal/github/sync.go::indexSyncRepo`).
 - Archive pacing uses the smaller of the local hourly surplus, the routed
   credential's paced required-resource quota, and its current remaining
   headroom after the provider reserve; a high local ceiling must not enlarge

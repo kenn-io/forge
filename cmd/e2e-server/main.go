@@ -1249,7 +1249,7 @@ func buildAppState(
 		Reset:     time.Now().Add(40 * time.Minute),
 	})
 
-	budget := ghclient.NewSyncBudget(500)
+	budget := ghclient.NewSyncBudgetWithEssentialReserve(500)
 	budget.Spend(75)
 
 	gitLabIssue, gitLabIssueEvents := gitLabReadOnlyIssueFixture(

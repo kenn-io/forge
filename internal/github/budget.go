@@ -40,8 +40,15 @@ func detailWorstCaseAttemptCost(kind platform.Kind, itemType QueueItemType) int 
 // counted requests before any wire attempt, so no provider response — and
 // therefore no provider-driven reset — can arrive to release it.
 type SyncBudget struct {
-	mu                   sync.Mutex
-	limit                int
+	mu    sync.Mutex
+	limit int
+	// reserve is the slice of limit held back for essential spend (the
+	// list fetches that discover new and closed items). Optional
+	// background work — detail refreshes, fast-sync, archive — refuses
+	// beyond limit-reserve so it can never starve discovery within the
+	// configured ceiling. Zero unless constructed with
+	// NewSyncBudgetWithEssentialReserve.
+	reserve              int
 	spent                int
 	archiveSpent         int
 	providerArchiveSpent map[providerArchiveWindow]int
@@ -69,6 +76,41 @@ func NewSyncBudget(limit int) *SyncBudget {
 	}
 }
 
+// essentialReserveDenominator sizes the essential reserve as a fraction of
+// the configured hourly limit: limit/10. With steady-state list fetches
+// riding warm ETags (304s are refunded), a tenth of the ceiling comfortably
+// covers the lists that actually changed plus transient in-flight spend.
+const essentialReserveDenominator = 10
+
+// NewSyncBudgetWithEssentialReserve returns a budget that holds back a
+// slice of the hourly limit for essential spend (list discovery). Optional
+// background work refuses beyond limit minus the reserve; TrySpendEssential
+// may spend up to the full limit.
+func NewSyncBudgetWithEssentialReserve(limit int) *SyncBudget {
+	b := NewSyncBudget(limit)
+	b.reserve = limit / essentialReserveDenominator
+	return b
+}
+
+// TrySpendEssential is TrySpend for essential requests: it may consume the
+// reserved headroom that optional spend cannot touch.
+func (b *SyncBudget) TrySpendEssential(n int) (BudgetWindow, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.rollLocked()
+	if n < 0 || b.spent+n > b.limit {
+		return 0, false
+	}
+	b.spent += n
+	return b.window, true
+}
+
+// optionalLimitLocked is the ceiling for non-essential spend. Must be
+// called with mu held.
+func (b *SyncBudget) optionalLimitLocked() int {
+	return b.limit - b.reserve
+}
+
 // rollLocked clears spend once the local hourly window has elapsed.
 // Must be called with mu held.
 func (b *SyncBudget) rollLocked() {
@@ -86,7 +128,7 @@ func (b *SyncBudget) CanSpend(n int) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.rollLocked()
-	return b.spent+n <= b.limit
+	return b.spent+n <= b.optionalLimitLocked()
 }
 
 // TrySpend atomically checks and increments the budget. It reports whether the
@@ -96,7 +138,7 @@ func (b *SyncBudget) TrySpend(n int) (BudgetWindow, bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.rollLocked()
-	if n < 0 || b.spent+n > b.limit {
+	if n < 0 || b.spent+n > b.optionalLimitLocked() {
 		return 0, false
 	}
 	b.spent += n
@@ -180,7 +222,7 @@ func (b *SyncBudget) ProviderArchiveSpendAvailable(
 	ceilingRemaining := b.providerArchiveSpendCeiling(
 		now, &window.ResetAt, localLiveFloor, window.Limit, providerReserve,
 	) - providerArchiveSpent
-	localRemaining := b.limit - max(localLiveFloor, 0) - b.spent
+	localRemaining := b.optionalLimitLocked() - max(localLiveFloor, 0) - b.spent
 	providerHeadroom := window.Remaining - max(providerReserve, 0)
 	return max(min(ceilingRemaining, localRemaining, providerHeadroom), 0)
 }
@@ -220,7 +262,7 @@ func (b *SyncBudget) providerArchiveSpendCeiling(
 		return 0
 	}
 	elapsedFraction := 1 - float64(remaining)/float64(time.Hour)
-	localSurplus := b.limit - max(localLiveFloor, 0)
+	localSurplus := b.optionalLimitLocked() - max(localLiveFloor, 0)
 	providerSurplus := providerLimit - max(providerReserve, 0)
 	surplus := min(localSurplus, providerSurplus)
 	if surplus <= 0 {
@@ -249,7 +291,7 @@ func (b *SyncBudget) ArchiveSpendAvailable(now time.Time, resetAt *time.Time, li
 func (b *SyncBudget) LocalArchiveSpendAvailable(liveFloor int) int {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return max(b.limit-max(liveFloor, 0)-b.spent, 0)
+	return max(b.optionalLimitLocked()-max(liveFloor, 0)-b.spent, 0)
 }
 
 func (b *SyncBudget) SpendArchive(n int) {
@@ -260,7 +302,7 @@ func (b *SyncBudget) TrySpendArchive(n int) (BudgetWindow, bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.rollLocked()
-	if n < 0 || b.spent+n > b.limit {
+	if n < 0 || b.spent+n > b.optionalLimitLocked() {
 		return 0, false
 	}
 	b.spent += n
@@ -309,7 +351,7 @@ func (b *SyncBudget) ArchiveSpent() int {
 }
 
 func (b *SyncBudget) archiveSpendCeiling(now time.Time, resetAt *time.Time, liveFloor int) int {
-	if resetAt == nil || liveFloor >= b.limit {
+	if resetAt == nil || liveFloor >= b.optionalLimitLocked() {
 		return 0
 	}
 	remaining := resetAt.Sub(now)
@@ -317,12 +359,12 @@ func (b *SyncBudget) archiveSpendCeiling(now time.Time, resetAt *time.Time, live
 		return 0
 	}
 	elapsedFraction := 1 - float64(remaining)/float64(time.Hour)
-	surplus := b.limit - max(liveFloor, 0)
+	surplus := b.optionalLimitLocked() - max(liveFloor, 0)
 	return int(math.Floor(float64(surplus) * elapsedFraction * elapsedFraction))
 }
 
 func (b *SyncBudget) archiveSpendAvailable(now time.Time, resetAt *time.Time, liveFloor int) int {
 	ceilingRemaining := b.archiveSpendCeiling(now, resetAt, liveFloor) - b.archiveSpent
-	liveRemaining := b.limit - max(liveFloor, 0) - b.spent
+	liveRemaining := b.optionalLimitLocked() - max(liveFloor, 0) - b.spent
 	return max(min(ceilingRemaining, liveRemaining), 0)
 }

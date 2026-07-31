@@ -333,7 +333,7 @@ func buildProviderStartup(
 			}
 			if budgetPerHour > 0 {
 				if _, ok := startup.budgets[rateKey]; !ok {
-					startup.budgets[rateKey] = github.NewSyncBudget(budgetPerHour)
+					startup.budgets[rateKey] = github.NewSyncBudgetWithEssentialReserve(budgetPerHour)
 				}
 			}
 		}
@@ -808,7 +808,7 @@ func ensureGitHubIdentityRuntime(
 		),
 	}
 	if budgetPerHour > 0 {
-		runtime.budget = github.NewSyncBudget(budgetPerHour)
+		runtime.budget = github.NewSyncBudgetWithEssentialReserve(budgetPerHour)
 		runtime.rest.SetOnWindowReset(runtime.budget.Reset)
 	}
 	startup.githubIdentities[key] = runtime

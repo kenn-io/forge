@@ -164,9 +164,12 @@ func (t *syncBudgetTransport) RoundTrip(req *http.Request) (*http.Response, erro
 	var window ghsync.BudgetWindow
 	if counted {
 		var reserved bool
-		if archive {
+		switch {
+		case archive:
 			window, reserved = t.budget.TrySpendArchive(1)
-		} else {
+		case ghsync.IsEssentialSyncBudgetContext(req.Context()):
+			window, reserved = t.budget.TrySpendEssential(1)
+		default:
 			window, reserved = t.budget.TrySpend(1)
 		}
 		if !reserved {

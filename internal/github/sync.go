@@ -5164,7 +5164,9 @@ func (s *Syncer) syncRepoIdentity(ctx context.Context, repo RepoRef) (db.RepoIde
 	if err != nil {
 		return db.RepoIdentity{}, nil, err
 	}
-	resolved, err := reader.GetRepository(ctx, platformRepoRef(repo))
+	// A refused identity resolve aborts the whole repo sync before the
+	// list fetches, so it shares their essential budget reserve.
+	resolved, err := reader.GetRepository(WithEssentialSyncBudget(ctx), platformRepoRef(repo))
 	if err != nil {
 		return db.RepoIdentity{}, nil, err
 	}
@@ -5996,6 +5998,12 @@ func (s *Syncer) indexSyncRepo(
 	var attemptedScope failScope
 	var failedScope failScope
 	var disabledScope failScope
+	// Failures caused by the local budget refusing a list fetch before
+	// any wire attempt. They fail the cycle but must not evict list
+	// ETags: nothing upstream was touched, so the cached validators are
+	// still correct and eviction would only add unconditional-refetch
+	// spend to an already-exhausted window.
+	var budgetRefusedScope failScope
 
 	preferNativeStacks := s.preferGitHubNativeStacks.Load() &&
 		repoPlatform(repo) == platform.KindGitHub
@@ -6025,14 +6033,17 @@ func (s *Syncer) indexSyncRepo(
 		}
 		mrProviderAttempted = true
 		var openMRs []platform.MergeRequest
+		// Discovery of new and closed PRs rides the essential budget
+		// reserve so optional background spend cannot starve it.
+		listCtx := WithEssentialSyncBudget(ctx)
 		if nativeReader, ok := mrReader.(interface {
 			ListOpenMergeRequestsWithNativeStackHints(
 				context.Context, platform.RepoRef,
 			) ([]platform.MergeRequest, map[int]*NativeStackHint, error)
 		}); preferNativeStacks && ok {
-			openMRs, nativeStackHints, err = nativeReader.ListOpenMergeRequestsWithNativeStackHints(ctx, platformRef)
+			openMRs, nativeStackHints, err = nativeReader.ListOpenMergeRequestsWithNativeStackHints(listCtx, platformRef)
 		} else {
-			openMRs, err = mrReader.ListOpenMergeRequests(ctx, platformRef)
+			openMRs, err = mrReader.ListOpenMergeRequests(listCtx, platformRef)
 		}
 		mrListBlocked := false
 		if err != nil {
@@ -6043,6 +6054,13 @@ func (s *Syncer) indexSyncRepo(
 			// produced the cached etag.
 			if IsNotModified(err) {
 				prListUnchanged = true
+			} else if errors.Is(err, platform.ErrSyncBudgetExhausted) {
+				// The local budget refused the request before any wire
+				// attempt, so the cached list validators are still
+				// correct. Marking the repo failed would evict them and
+				// force an unconditional refetch next cycle — extra
+				// spend exactly when the budget is already exhausted.
+				return fmt.Errorf("list open PRs: %w", err)
 			} else if s.recordRepositoryFeatureDisabled(
 				repo, platform.RepositoryFeatureMergeRequests, err,
 			) {
@@ -6175,20 +6193,25 @@ func (s *Syncer) indexSyncRepo(
 			ListOpenGitHubIssues(context.Context, platform.RepoRef) ([]*gh.Issue, error)
 		})
 		var issueListErr error
+		// Same essential-reserve treatment as the open-PR list.
+		issueListCtx := WithEssentialSyncBudget(ctx)
 		if rawIssueReader, ok := issueReader.(interface {
 			ListOpenGitHubIssues(context.Context, platform.RepoRef) ([]*gh.Issue, error)
 		}); ok && hasGitHubClient {
 			// Keep GitHub's ETag-gated bulk path so index sync retains the
 			// provider-only fields used by per-item detail refreshes. The raw
 			// reader performs the same contract checks before persistence.
-			ghIssues, issueListErr = rawIssueReader.ListOpenGitHubIssues(ctx, platformRef)
+			ghIssues, issueListErr = rawIssueReader.ListOpenGitHubIssues(issueListCtx, platformRef)
 		} else {
-			openIssues, issueListErr = issueReader.ListOpenIssues(ctx, platformRef)
+			openIssues, issueListErr = issueReader.ListOpenIssues(issueListCtx, platformRef)
 		}
 		if issueListErr != nil {
 			if IsNotModified(issueListErr) {
 				// 304: open issue list unchanged, skip.
 				issueListUnchanged = true
+			} else if errors.Is(issueListErr, platform.ErrSyncBudgetExhausted) {
+				failedScope |= failIssues
+				budgetRefusedScope |= failIssues
 			} else if s.recordRepositoryFeatureDisabled(
 				repo, platform.RepositoryFeatureIssues, issueListErr,
 			) {
@@ -6286,11 +6309,12 @@ func (s *Syncer) indexSyncRepo(
 		mrProbe.clear()
 	}
 
-	if failedScope != 0 {
+	if evictScope := failedScope &^ budgetRefusedScope; evictScope != 0 {
 		// One or more per-item steps failed. Record which paths
 		// failed so the next cycle forces an unconditional refetch
-		// only for the affected list endpoints.
-		s.markRepoFailed(repo, failedScope)
+		// only for the affected list endpoints. Budget-refused list
+		// fetches are excluded: their cached validators are intact.
+		s.markRepoFailed(repo, evictScope)
 	}
 	succeededScope := attemptedScope &^ failedScope &^ disabledScope
 	if succeededScope != 0 {
@@ -9486,6 +9510,14 @@ func (s *Syncer) fetchAndUpdateClosedIssue(
 	// lookup classification so removed, inaccessible, and moved items
 	// surface typed outcomes instead of generic upstream failures.
 	if outcomeErr := s.issueFetchOutcomeError(ctx, repo, number, ghIssue, err); outcomeErr != nil {
+		// A not_found without a destination is a true removal and gets a
+		// terminal local state. A transfer carries the destination and
+		// keeps failing the cycle so the maintainer sees the moved item
+		// in repo sync health instead of it silently closing here.
+		if errors.Is(outcomeErr, platform.ErrNotFound) &&
+			lookupDestination(outcomeErr) == nil {
+			return s.tombstoneRemovedIssue(ctx, repo, repoID, number)
+		}
 		return fmt.Errorf("get closed issue #%d: %w", number, outcomeErr)
 	}
 	if err != nil {
@@ -9514,6 +9546,53 @@ func (s *Syncer) fetchAndUpdateClosedIssue(
 	return s.markClosedLinkedNotificationsDone(ctx)
 }
 
+// lookupDestination extracts the transfer destination from a typed lookup
+// error, or nil when the error carries none (a true removal).
+func lookupDestination(err error) *platform.RepoRef {
+	var pErr *platform.Error
+	if errors.As(err, &pErr) && pErr != nil {
+		return pErr.Destination
+	}
+	return nil
+}
+
+// tombstoneRemovedIssue closes the local copy of a previously-open issue
+// whose provider lookup is explicitly classified as not present (deleted or
+// transferred upstream). Without a terminal state the number stays
+// "previously open" forever: every cycle re-fetches it, fails the repo's
+// issue sync, and spends a lookup plus repository probe on an item that can
+// never resolve.
+func (s *Syncer) tombstoneRemovedIssue(
+	ctx context.Context, repo RepoRef, repoID int64, number int,
+) error {
+	existing, err := s.db.GetIssueByRepoIDAndNumber(ctx, repoID, number)
+	if err != nil {
+		return fmt.Errorf("get removed issue #%d: %w", number, err)
+	}
+	if existing == nil || existing.State != "open" {
+		return nil
+	}
+	now := time.Now().UTC()
+	tombstone := *existing
+	tombstone.State = "closed"
+	if tombstone.ClosedAt == nil {
+		tombstone.ClosedAt = &now
+	}
+	// Upstream is gone; there is no detail left to fetch, so keep the
+	// detail drain from retrying the lookup.
+	if tombstone.DetailFetchedAt == nil {
+		tombstone.DetailFetchedAt = &now
+	}
+	if _, _, _, err := s.commitIssueParentSnapshot(ctx, repo, &tombstone); err != nil {
+		return fmt.Errorf("tombstone removed issue #%d: %w", number, err)
+	}
+	slog.Info("issue removed upstream; closed local copy",
+		"repo", repo.Owner+"/"+repo.Name,
+		"number", number,
+	)
+	return nil
+}
+
 func (s *Syncer) fetchAndUpdateClosedPlatformIssue(
 	ctx context.Context,
 	repo RepoRef,
@@ -9526,6 +9605,10 @@ func (s *Syncer) fetchAndUpdateClosedPlatformIssue(
 	}
 	issue, err := issueReader.GetIssue(ctx, platformRepoRef(repo), number)
 	if err != nil {
+		// No tombstone here: a bare provider 404 is ambiguous on the
+		// neutral path (GitLab hides inaccessible items behind 404), so
+		// the row is retained and the failure surfaces as partial. Only
+		// GitHub's classified lookup can distinguish a true removal.
 		return fmt.Errorf("get closed issue #%d: %w", number, err)
 	}
 	normalized := platform.DBIssue(repoID, issue)

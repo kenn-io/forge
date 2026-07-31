@@ -12192,13 +12192,19 @@ type partialFailureMock struct {
 	issuesCached         bool
 	prsCached            bool
 	listOpenIssuesFn     func(context.Context, string, string) ([]*gh.Issue, error)
+	listOpenPRsFn        func(context.Context, string, string) ([]*gh.PullRequest, error)
+	listIssueCommentsFn  func(context.Context, string, string, int) ([]*gh.IssueComment, error)
+	listReviewsFn        func(context.Context, string, string, int) ([]*gh.PullRequestReview, error)
 	listOpenPRsErr       error // injected error for ListOpenPullRequests
 	listIssueCommentsErr error // injected error for ListIssueComments
 	listReviewsErr       error // injected error for ListReviews (MR timeline)
 	getIssueErr          error // injected error for GetIssue (closure path)
 }
 
-func (m *partialFailureMock) ListOpenPullRequests(_ context.Context, _, _ string) ([]*gh.PullRequest, error) {
+func (m *partialFailureMock) ListOpenPullRequests(ctx context.Context, owner, repo string) ([]*gh.PullRequest, error) {
+	if m.listOpenPRsFn != nil {
+		return m.listOpenPRsFn(ctx, owner, repo)
+	}
 	if m.listOpenPRsErr != nil {
 		return nil, m.listOpenPRsErr
 	}
@@ -12223,7 +12229,10 @@ func (m *partialFailureMock) ListOpenIssues(ctx context.Context, owner, repo str
 	return m.openIssues, nil
 }
 
-func (m *partialFailureMock) ListIssueComments(_ context.Context, _, _ string, _ int) ([]*gh.IssueComment, error) {
+func (m *partialFailureMock) ListIssueComments(ctx context.Context, owner, repo string, number int) ([]*gh.IssueComment, error) {
+	if m.listIssueCommentsFn != nil {
+		return m.listIssueCommentsFn(ctx, owner, repo, number)
+	}
 	if m.listIssueCommentsErr != nil {
 		return nil, m.listIssueCommentsErr
 	}
@@ -12242,7 +12251,10 @@ func (m *partialFailureMock) ListIssueCommentsIfChanged(
 	return m.ListIssueComments(ctx, owner, repo, number)
 }
 
-func (m *partialFailureMock) ListReviews(_ context.Context, _, _ string, _ int) ([]*gh.PullRequestReview, error) {
+func (m *partialFailureMock) ListReviews(ctx context.Context, owner, repo string, number int) ([]*gh.PullRequestReview, error) {
+	if m.listReviewsFn != nil {
+		return m.listReviewsFn(ctx, owner, repo, number)
+	}
 	if m.listReviewsErr != nil {
 		return nil, m.listReviewsErr
 	}
@@ -12720,6 +12732,244 @@ func TestSyncerMRListFailureMarksRepoFailed(t *testing.T) {
 
 	_, flagged = syncer.failedRepos.Load(repoFailKey(repos[0]))
 	assert.False(flagged, "failedRepos must be cleared after successful retry")
+}
+
+// TestSyncerRemovedIssueTombstonedInsteadOfFailing verifies that an issue
+// deleted upstream (open in a previous cycle, absent from the open list,
+// direct lookup classified not_found) is closed locally instead of failing
+// the repo's issue sync. Without the tombstone the number stays "previously
+// open" forever: every cycle re-fetches it, fails the repo, and spends a
+// lookup plus repository probe on an item that can never resolve.
+func TestSyncerRemovedIssueTombstonedInsteadOfFailing(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	repos := []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}
+
+	issueNumber := 7
+	issueTitle := "will be deleted upstream"
+	issueState := "open"
+	issueURL := "https://github.com/owner/repo/issues/7"
+	issueBody := ""
+	issueID := int64(777)
+	openIssue := &gh.Issue{
+		ID:        &issueID,
+		Number:    &issueNumber,
+		Title:     &issueTitle,
+		State:     &issueState,
+		HTMLURL:   &issueURL,
+		Body:      &issueBody,
+		CreatedAt: makeTimestamp(now),
+		UpdatedAt: makeTimestamp(now),
+	}
+
+	var getIssueCalls atomic.Int32
+	mc := &partialFailureMock{}
+	mc.openPRs = []*gh.PullRequest{}
+	mc.openIssues = []*gh.Issue{openIssue}
+	mc.comments = []*gh.IssueComment{}
+	mc.getIssueFn = func(context.Context, string, string, int) (*gh.Issue, error) {
+		getIssueCalls.Add(1)
+		return nil, &gh.ErrorResponse{
+			Response: &http.Response{StatusCode: http.StatusNotFound},
+			Message:  "Not Found",
+		}
+	}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc},
+		d, nil, repos, time.Minute, nil, nil,
+	)
+
+	// Cycle 1: issue is open and synced.
+	syncer.RunOnce(ctx)
+	issue, err := d.GetIssue(ctx, "github", "github.com", "owner", "repo", issueNumber)
+	require.NoError(err)
+	require.NotNil(issue)
+	require.Equal("open", issue.State)
+
+	// Cycle 2: issue vanished from the open list; direct lookup 404s.
+	mc.openIssues = []*gh.Issue{}
+	mc.issuesCached = false
+	syncer.RunOnce(ctx)
+
+	_, flagged := syncer.failedRepos.Load(repoFailKey(repos[0]))
+	assert.False(flagged,
+		"removed issue must not mark the repo failed")
+	issue, err = d.GetIssue(ctx, "github", "github.com", "owner", "repo", issueNumber)
+	require.NoError(err)
+	require.NotNil(issue, "local copy should remain as a tombstone")
+	assert.Equal("closed", issue.State,
+		"removed issue must be closed locally")
+	callsAfterTombstone := getIssueCalls.Load()
+
+	// Cycle 3: closure detection no longer retries the removed issue.
+	mc.issuesCached = false
+	syncer.RunOnce(ctx)
+	assert.Equal(callsAfterTombstone, getIssueCalls.Load(),
+		"tombstoned issue must not be re-fetched")
+}
+
+// TestSyncerBudgetRefusedPRListSkipsETagEviction verifies that when the
+// open-PR list fetch is refused by the local sync budget ceiling, the repo
+// is not marked for ETag eviction: the refusal happened before any wire
+// attempt, so the cached list validators are still correct and the next
+// cycle must reuse them instead of forcing an unconditional refetch that
+// spends budget the refusal just proved is unavailable.
+func TestSyncerBudgetRefusedPRListSkipsETagEviction(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	repos := []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}
+
+	mc := &partialFailureMock{}
+	mc.openPRs = []*gh.PullRequest{buildOpenPR(1, now)}
+	mc.comments = []*gh.IssueComment{}
+	mc.reviews = []*gh.PullRequestReview{}
+	mc.commits = []*gh.RepositoryCommit{}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc},
+		d, nil, repos, time.Minute, nil, nil,
+	)
+
+	// Cycle 1: clean sync warms the list caches.
+	syncer.RunOnce(ctx)
+	require.True(mc.prsCached, "first cycle should warm the PR list cache")
+	_, flagged := syncer.failedRepos.Load(repoFailKey(repos[0]))
+	require.False(flagged, "clean cycle must not flag the repo")
+
+	// Cycle 2: the budget transport refuses the PR list before any I/O.
+	mc.listOpenPRsErr = fmt.Errorf(
+		"Get %q: %w",
+		"https://api.github.com/repos/owner/repo/pulls",
+		platform.ErrSyncBudgetExhausted,
+	)
+	syncer.RunOnce(ctx)
+
+	_, flagged = syncer.failedRepos.Load(repoFailKey(repos[0]))
+	assert.False(flagged,
+		"budget refusal must not mark the repo for ETag eviction")
+	assert.Contains(syncer.Status().LastError, "list open PRs",
+		"budget refusal must still surface as a sync error")
+
+	// Cycle 3: budget available again. The list must go through the
+	// conditional path (warm cache → 304), not an eviction-forced refetch.
+	mc.listOpenPRsErr = nil
+	invalidateBefore := mc.invalidateCalls.Load()
+	syncer.RunOnce(ctx)
+
+	assert.Equal(invalidateBefore, mc.invalidateCalls.Load(),
+		"recovery cycle must not invalidate list ETags")
+	assert.True(mc.prsCached, "cached PR list validator must stay warm")
+}
+
+// TestSyncerBudgetRefusedIssueListSkipsETagEviction verifies the same
+// no-eviction rule for the open-issue list: a budget refusal fails the
+// cycle but leaves the issue list validators warm for the next cycle.
+func TestSyncerBudgetRefusedIssueListSkipsETagEviction(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	repos := []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}
+
+	mc := &partialFailureMock{}
+	mc.openPRs = []*gh.PullRequest{buildOpenPR(1, now)}
+	mc.comments = []*gh.IssueComment{}
+	mc.reviews = []*gh.PullRequestReview{}
+	mc.commits = []*gh.RepositoryCommit{}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc},
+		d, nil, repos, time.Minute, nil, nil,
+	)
+
+	// Cycle 1: clean sync warms both list caches.
+	syncer.RunOnce(ctx)
+	require.True(mc.issuesCached, "first cycle should warm the issue list cache")
+
+	// Cycle 2: budget refuses the issue list; the PR list stays warm (304).
+	mc.listOpenIssuesErr = fmt.Errorf(
+		"Get %q: %w",
+		"https://api.github.com/repos/owner/repo/issues",
+		platform.ErrSyncBudgetExhausted,
+	)
+	syncer.RunOnce(ctx)
+
+	_, flagged := syncer.failedRepos.Load(repoFailKey(repos[0]))
+	assert.False(flagged,
+		"budget refusal must not mark the repo for ETag eviction")
+
+	// Cycle 3: budget available again — no eviction-forced refetch.
+	mc.listOpenIssuesErr = nil
+	invalidateBefore := mc.invalidateCalls.Load()
+	syncer.RunOnce(ctx)
+
+	assert.Equal(invalidateBefore, mc.invalidateCalls.Load(),
+		"recovery cycle must not invalidate list ETags")
+	assert.True(mc.issuesCached, "cached issue list validator must stay warm")
+}
+
+// TestSyncerListFetchesUseEssentialBudgetContext verifies that the open-PR
+// and open-issue list fetches — the calls that discover new and closed items
+// — run under the essential sync-budget context so they can spend the
+// reserved headroom, while per-item detail fetches stay optional.
+func TestSyncerListFetchesUseEssentialBudgetContext(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	repos := []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}
+
+	var prListEssential, issueListEssential atomic.Bool
+	var reviewsCalled, reviewsEssential atomic.Bool
+
+	mc := &partialFailureMock{}
+	// openPRs also backs the mock's GetPullRequest for the detail drain.
+	mc.openPRs = []*gh.PullRequest{buildOpenPR(1, now)}
+	mc.listOpenPRsFn = func(fnCtx context.Context, _, _ string) ([]*gh.PullRequest, error) {
+		prListEssential.Store(IsEssentialSyncBudgetContext(fnCtx))
+		return mc.openPRs, nil
+	}
+	mc.listOpenIssuesFn = func(fnCtx context.Context, _, _ string) ([]*gh.Issue, error) {
+		issueListEssential.Store(IsEssentialSyncBudgetContext(fnCtx))
+		return nil, nil
+	}
+	mc.listReviewsFn = func(fnCtx context.Context, _, _ string, _ int) ([]*gh.PullRequestReview, error) {
+		reviewsCalled.Store(true)
+		reviewsEssential.Store(IsEssentialSyncBudgetContext(fnCtx))
+		return []*gh.PullRequestReview{}, nil
+	}
+	mc.comments = []*gh.IssueComment{}
+	mc.commits = []*gh.RepositoryCommit{}
+	ciState := "success"
+	mc.ciStatus = &gh.CombinedStatus{State: &ciState}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc},
+		d, nil, repos, time.Minute, nil, testBudget(10000),
+	)
+	syncer.RunOnce(ctx)
+
+	assert.True(prListEssential.Load(),
+		"open-PR list fetch must run under the essential budget context")
+	assert.True(issueListEssential.Load(),
+		"open-issue list fetch must run under the essential budget context")
+	require.True(reviewsCalled.Load(),
+		"PR timeline reviews fetch should have run")
+	assert.False(reviewsEssential.Load(),
+		"detail fetches must stay on the optional budget")
 }
 
 // TestSyncerMRDetailFailureRetries verifies that when fetchMRDetail

@@ -137,6 +137,45 @@ func TestBudgetTransport_CountsArchiveContextSeparately(t *testing.T) {
 	assert.True(IsArchiveSyncBudgetContext(req.Context()))
 }
 
+func TestBudgetTransportEssentialContextSpendsReserve(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	budget := NewSyncBudgetWithEssentialReserve(10) // reserve 1
+	bt := WrapSyncBudgetTransport(roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       http.NoBody,
+			Header:     make(http.Header),
+			Request:    req,
+		}, nil
+	}), budget)
+
+	send := func(ctx context.Context) error {
+		req, err := http.NewRequestWithContext(
+			ctx, http.MethodGet,
+			"https://api.github.com/repos/acme/widget/pulls", nil,
+		)
+		require.NoError(err)
+		_, err = bt.RoundTrip(req)
+		return err
+	}
+
+	// Optional counted requests exhaust the optional ceiling (limit-reserve).
+	optionalCtx := WithSyncBudget(t.Context())
+	for range 9 {
+		require.NoError(send(optionalCtx))
+	}
+	require.ErrorIs(send(optionalCtx), platform.ErrSyncBudgetExhausted)
+
+	// An essential list fetch still goes through on the reserve.
+	essentialCtx := WithEssentialSyncBudget(optionalCtx)
+	require.NoError(send(essentialCtx))
+
+	// The full limit still bounds essential spend.
+	assert.ErrorIs(send(essentialCtx), platform.ErrSyncBudgetExhausted)
+}
+
 func TestBudgetTransport_SkipsNotModifiedResponses(t *testing.T) {
 	assert := assert.New(t)
 

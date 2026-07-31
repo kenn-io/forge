@@ -40,6 +40,40 @@ func TestSyncBudgetWorstCase(t *testing.T) {
 	assert.True(t, b.CanSpend(IssueDetailWorstCase)) // 2 <= 5 remaining
 }
 
+func TestSyncBudgetEssentialReserve(t *testing.T) {
+	assert := assert.New(t)
+
+	// A tenth of the limit is held back for essential spend.
+	b := NewSyncBudgetWithEssentialReserve(100)
+	_, ok := b.TrySpend(90)
+	assert.True(ok, "optional spend may use the limit minus the reserve")
+	_, ok = b.TrySpend(1)
+	assert.False(ok, "optional spend must stop at the essential reserve")
+
+	_, ok = b.TrySpendEssential(10)
+	assert.True(ok, "essential spend may consume the reserved headroom")
+	_, ok = b.TrySpendEssential(1)
+	assert.False(ok, "essential spend must stop at the full limit")
+}
+
+func TestSyncBudgetEssentialReserveBoundsArchiveSpend(t *testing.T) {
+	assert := assert.New(t)
+
+	b := NewSyncBudgetWithEssentialReserve(100)
+	_, ok := b.TrySpendArchive(91)
+	assert.False(ok, "archive spend must not consume the essential reserve")
+	_, ok = b.TrySpendArchive(90)
+	assert.True(ok)
+}
+
+func TestSyncBudgetDefaultConstructorHasNoReserve(t *testing.T) {
+	assert := assert.New(t)
+
+	b := NewSyncBudget(100)
+	_, ok := b.TrySpend(100)
+	assert.True(ok, "budgets without an essential reserve keep full-limit spend")
+}
+
 func TestArchiveLiveFloorReservesWorstCaseWireAttempts(t *testing.T) {
 	assert := assert.New(t)
 	assert.Equal(24, archiveLiveFloor(platform.KindGitHub))

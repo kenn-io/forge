@@ -6,7 +6,7 @@ filesystem operations, search, and git pull/publish behavior.
 ## Ownership And Configuration
 
 - Docs is a non-provider mode. Files remain on disk under explicitly configured
-  folder roots; middleman stores folder registration, not document content.
+  folder roots; Kenn Forge stores folder registration, not document content.
 - Folder IDs are stable URL-segment identities. Paths are normalized to absolute,
   symlink-resolved roots before entering the live registry
   (`internal/docs/folder.go::NewRegistry`).

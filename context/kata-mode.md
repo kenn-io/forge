@@ -8,19 +8,19 @@ contracts remain in [`ui-interaction-contracts.md`](./ui-interaction-contracts.m
 ## Ownership
 
 - Kata is a non-provider mode. Task data remains in external Kata daemons and
-  must not be copied into middleman's provider registry or SQLite task tables.
-- Middleman persists only its own workspace links and browser preferences; Kata
+  must not be copied into Kenn Forge's provider registry or SQLite task tables.
+- Kenn Forge persists only its own workspace links and browser preferences; Kata
   task, snapshot, and cursor authority remains external or process-local
   (`internal/server/kata_snapshot_cache.go::newKataSnapshotCacheWithConfig`).
 
 ## Daemon Discovery
 
 - `$KATA_HOME/config.toml` is the daemon catalog and source of the active daemon;
-  middleman config and legacy URL environment variables are not catalog
+  Kenn Forge config and legacy URL environment variables are not catalog
   authorities (`internal/kata/catalog.go::LoadCatalog`).
 - A catalog entry is either a static remote URL or `local = true`, never both.
   Local entries resolve dynamically from live Kata runtime records so daemon
-  restarts and Unix-socket rotation do not require a middleman restart
+  restarts and Unix-socket rotation do not require a Kenn Forge restart
   (`internal/kata/runtime.go::DiscoverLocalDaemonURL`).
 - Local runtime records may resolve only to loopback HTTP or local Unix sockets;
   a process record does not make a non-local address trusted
@@ -30,7 +30,7 @@ contracts remain in [`ui-interaction-contracts.md`](./ui-interaction-contracts.m
 
 ## Selection And Transport
 
-- Browser requests select daemons by middleman's private selector header. The
+- Browser requests select daemons by Kenn Forge's private selector header. The
   proxy strips that header and browser credentials before forwarding and injects
   only the selected daemon's resolved auth
   (`internal/server/kataapi/proxy.go::selectKataProxyDaemon`).

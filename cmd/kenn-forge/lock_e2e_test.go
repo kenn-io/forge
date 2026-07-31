@@ -25,7 +25,7 @@ import (
 	"go.kenn.io/forge/internal/runtimelock"
 )
 
-// buildMiddleman compiles the kenn-forge binary into a per-test temp dir
+// buildForge compiles the kenn-forge binary into a per-test temp dir
 // and returns the absolute path. The build runs once per test via
 // t.TempDir.
 func buildForge(t *testing.T) string {

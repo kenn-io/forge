@@ -119,7 +119,7 @@ func TestArchiveServiceEnsureConfiguredSeedsFreshRepository(t *testing.T) {
 	assert.Equal(db.ArchiveOperatorStateActive, states[0].OperatorState)
 }
 
-func TestArchiveServiceEnsureConfiguredMergesRenamedRepositoryAtExistingDestination(t *testing.T) {
+func TestArchiveServiceEnsureConfiguredKeepsArchiveWithStableRepositoryID(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -133,21 +133,139 @@ func TestArchiveServiceEnsureConfiguredMergesRenamedRepositoryAtExistingDestinat
 
 	sourceID, err := database.UpsertRepoByProviderID(t.Context(), platform.DBRepoIdentity(previous))
 	require.NoError(err)
-	destinationID, err := database.UpsertRepo(t.Context(), platform.DBRepoIdentity(staleDestination))
+	destinationID, err := database.UpsertRepoByProviderID(
+		t.Context(),
+		platform.DBRepoIdentity(staleDestination),
+	)
 	require.NoError(err)
+	require.NoError(database.EnsureDiscoveryArchives(
+		t.Context(),
+		[]int64{sourceID, destinationID},
+		now,
+	))
+	require.NoError(database.StartFullArchives(
+		t.Context(),
+		[]int64{sourceID},
+		now,
+	))
 	provider := newArchiveServiceProvider(current.Platform, current.Host)
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
 	service := newArchiveTestService(t, database, registry, []platform.RepoRef{current}, nil, now)
 
-	require.NoError(service.EnsureConfigured(t.Context(), []platform.RepoRef{current}))
+	require.NoError(service.EnsureConfigured(
+		t.Context(),
+		[]platform.RepoRef{current},
+	))
+
 	repos, err := database.ListRepos(t.Context())
 	require.NoError(err)
 	require.Len(repos, 1)
-	assert.Equal(destinationID, repos[0].ID)
+	assert.Equal(sourceID, repos[0].ID)
 	assert.Equal("repo-current", repos[0].PlatformRepoID)
 	assert.Equal("current", repos[0].Name)
-	assert.NotEqual(sourceID, destinationID)
+
+	destination, err := database.GetRepoByID(
+		t.Context(),
+		destinationID,
+	)
+	require.NoError(err)
+	require.NotNil(destination)
+	require.NotNil(destination.RetiredAt)
+	require.NotNil(destination.RetiredReplacementID)
+	assert.Equal(sourceID, *destination.RetiredReplacementID)
+	assert.Equal("repo-obsolete", destination.PlatformRepoID)
+
+	states, err := database.ListArchiveRepoStates(
+		t.Context(),
+		[]int64{sourceID, destinationID},
+	)
+	require.NoError(err)
+	require.Len(states, 2)
+	assert.Equal(sourceID, states[0].RepoID)
+	assert.Equal(db.ArchiveCollectionModeFull, states[0].CollectionMode)
+	assert.Equal(db.ArchiveOperatorStateActive, states[0].OperatorState)
+	assert.Equal(destinationID, states[1].RepoID)
+	assert.Equal(db.ArchiveOperatorStatePaused, states[1].OperatorState)
+	require.NotNil(states[1].LastErrorCode)
+	assert.Equal(
+		string(db.ArchiveErrorCodeConfigurationRemoved),
+		*states[1].LastErrorCode,
+	)
+}
+
+func TestArchiveServiceEnsureConfiguredStartsFreshReplacementArchive(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	now := time.Date(2026, 7, 30, 12, 0, 0, 0, time.UTC)
+	oldRef := archiveServiceRef(platform.KindGitHub, "github.test", "project")
+	oldRef.PlatformExternalID = "repo-old"
+	newRef := oldRef
+	newRef.PlatformExternalID = "repo-new"
+
+	provider := newArchiveServiceProvider(oldRef.Platform, oldRef.Host)
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	service := newArchiveTestService(
+		t,
+		database,
+		registry,
+		[]platform.RepoRef{newRef},
+		nil,
+		now,
+	)
+
+	require.NoError(service.EnsureConfigured(
+		t.Context(),
+		[]platform.RepoRef{oldRef},
+	))
+	oldRepo, err := database.GetRepoByIdentity(
+		t.Context(),
+		platform.DBRepoIdentity(oldRef),
+	)
+	require.NoError(err)
+	require.NotNil(oldRepo)
+	require.NoError(database.StartFullArchives(
+		t.Context(),
+		[]int64{oldRepo.ID},
+		now,
+	))
+
+	require.NoError(service.EnsureConfigured(
+		t.Context(),
+		[]platform.RepoRef{newRef},
+	))
+	newRepo, err := database.GetRepoByIdentity(
+		t.Context(),
+		platform.DBRepoIdentity(newRef),
+	)
+	require.NoError(err)
+	require.NotNil(newRepo)
+	assert.NotEqual(oldRepo.ID, newRepo.ID)
+	assert.Equal("repo-new", newRepo.PlatformRepoID)
+
+	states, err := database.ListArchiveRepoStates(
+		t.Context(),
+		[]int64{oldRepo.ID, newRepo.ID},
+	)
+	require.NoError(err)
+	require.Len(states, 2)
+	assert.Equal(oldRepo.ID, states[0].RepoID)
+	assert.Equal(db.ArchiveCollectionModeFull, states[0].CollectionMode)
+	assert.Equal(db.ArchiveOperatorStatePaused, states[0].OperatorState)
+	assert.Equal(newRepo.ID, states[1].RepoID)
+	assert.Equal(db.ArchiveCollectionModeDiscovery, states[1].CollectionMode)
+	assert.Equal(db.ArchiveOperatorStateActive, states[1].OperatorState)
+	assert.Nil(states[1].InitialStartedAt)
+	assert.Nil(states[1].InitialCompletedAt)
+	assert.Equal(db.ArchiveCoverageUnknown, states[1].IssuesCoverage)
+	assert.Equal(db.ArchiveCoverageUnknown, states[1].MergeRequestsCoverage)
+
+	statuses, err := service.Status(t.Context(), nil)
+	require.NoError(err)
+	require.Len(statuses, 1)
+	assert.Equal(newRepo.ID, statuses[0].RepoID)
 }
 
 func TestArchiveServiceAllScopeAndWakeLifecycle(t *testing.T) {

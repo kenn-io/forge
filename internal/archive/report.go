@@ -17,10 +17,11 @@ import (
 var ErrEmptyReportScope = errors.New("archive report repository scope is empty")
 
 type ReportOptions struct {
-	Start        time.Time
-	End          time.Time
-	Repositories []platform.RepoRef
-	Detailed     bool
+	Start         time.Time
+	End           time.Time
+	Repositories  []platform.RepoRef
+	RepositoryIDs []int64
+	Detailed      bool
 }
 
 func (s *Service) Report(ctx context.Context, opts ReportOptions) (report.Model, error) {
@@ -38,7 +39,13 @@ func (s *Service) report(
 	opts.Start = opts.Start.UTC()
 	opts.End = opts.End.UTC()
 
-	var requestedIDs []int64
+	if len(opts.Repositories) > 0 && len(opts.RepositoryIDs) > 0 {
+		return report.Model{}, errors.New("archive report repository routes and IDs are mutually exclusive")
+	}
+	if err := validateRepositoryIDs(opts.RepositoryIDs); err != nil {
+		return report.Model{}, err
+	}
+	requestedIDs := normalizeRepositoryIDs(opts.RepositoryIDs)
 	if len(opts.Repositories) > 0 {
 		resolved, err := s.resolveRepositories(ctx, opts.Repositories, false)
 		if err != nil {
@@ -111,7 +118,7 @@ func buildArchiveReport(
 		repoIndexes[row.RepoID] = i
 		model.Repositories[i] = report.Repository{
 			Repository: reportRepositoryRef(
-				row.Platform, row.PlatformHost, row.Owner, row.Name, row.RepoPath,
+				row.RepoID, row.Platform, row.PlatformHost, row.Owner, row.Name, row.RepoPath,
 			),
 			Coverage: reportCoverage(row),
 		}
@@ -151,7 +158,7 @@ func buildArchiveReport(
 		for i, row := range activityRows {
 			model.Activity[i] = report.Activity{
 				Repository: reportRepositoryRef(
-					row.Platform, row.PlatformHost, row.Owner, row.Name, row.RepoPath,
+					row.RepoID, row.Platform, row.PlatformHost, row.Owner, row.Name, row.RepoPath,
 				),
 				Kind: report.ActivityKind(row.Kind), ItemNumber: row.ItemNumber,
 				ProviderExternalID: row.ProviderExternalID, Title: row.Title,
@@ -185,9 +192,10 @@ func reportCoverage(row db.ArchiveReportRepositoryRow) report.Coverage {
 	}
 }
 
-func reportRepositoryRef(provider, host, owner, name, repoPath string) report.RepositoryRef {
+func reportRepositoryRef(repoID int64, provider, host, owner, name, repoPath string) report.RepositoryRef {
 	return report.RepositoryRef{
-		Provider: provider, PlatformHost: host, Owner: owner, Name: name, RepoPath: repoPath,
+		RepositoryID: repoID, Provider: provider, PlatformHost: host,
+		Owner: owner, Name: name, RepoPath: repoPath,
 	}
 }
 

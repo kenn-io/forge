@@ -110,7 +110,8 @@ func LoadArchiveReportRepositories(
 		return nil, err
 	}
 	rows, err := tx.QueryContext(ctx, fmt.Sprintf(`
-		SELECT id, platform, platform_host, owner, name, repo_path
+		SELECT id, platform, platform_host,
+			COALESCE(retired_owner, owner), COALESCE(retired_name, name), repo_path
 		FROM forge_repos
 		WHERE id IN (%s)
 		ORDER BY platform, platform_host, owner, name, id`, sqlPlaceholders(len(ids))),
@@ -270,7 +271,9 @@ func archiveReportActivityQuery(
 		WITH scope(repo_id) AS (VALUES %s),
 		bounds(start_at, end_at) AS (VALUES (?, ?)),
 		activity AS (
-			SELECT r.id AS repo_id, r.platform, r.platform_host, r.owner, r.name, r.repo_path,
+			SELECT r.id AS repo_id, r.platform, r.platform_host,
+				COALESCE(r.retired_owner, r.owner) AS owner,
+				COALESCE(r.retired_name, r.name) AS name, r.repo_path,
 				'issue' AS kind, i.number AS item_number,
 				COALESCE(NULLIF(i.platform_external_id, ''), 'issue:number:' || i.number) AS provider_external_id,
 				i.title, i.author, '' AS actor, i.created_at AS occurred_at, i.body, i.url,
@@ -283,7 +286,8 @@ func archiveReportActivityQuery(
 			CROSS JOIN bounds b
 			WHERE i.created_at >= b.start_at AND i.created_at < b.end_at
 			UNION ALL
-			SELECT r.id, r.platform, r.platform_host, r.owner, r.name, r.repo_path,
+			SELECT r.id, r.platform, r.platform_host,
+				COALESCE(r.retired_owner, r.owner), COALESCE(r.retired_name, r.name), r.repo_path,
 				'issue_closed', i.number,
 				COALESCE(NULLIF(i.platform_external_id, ''), 'issue:number:' || i.number),
 				i.title, i.author,
@@ -302,7 +306,8 @@ func archiveReportActivityQuery(
 			CROSS JOIN bounds b
 			WHERE i.closed_at >= b.start_at AND i.closed_at < b.end_at
 			UNION ALL
-			SELECT r.id, r.platform, r.platform_host, r.owner, r.name, r.repo_path,
+			SELECT r.id, r.platform, r.platform_host,
+				COALESCE(r.retired_owner, r.owner), COALESCE(r.retired_name, r.name), r.repo_path,
 				'merge_request', mr.number,
 				COALESCE(NULLIF(mr.platform_external_id, ''), 'merge_request:number:' || mr.number),
 				mr.title, mr.author, '', mr.created_at, mr.body, mr.url,
@@ -314,7 +319,8 @@ func archiveReportActivityQuery(
 			CROSS JOIN bounds b
 			WHERE mr.created_at >= b.start_at AND mr.created_at < b.end_at
 			UNION ALL
-			SELECT r.id, r.platform, r.platform_host, r.owner, r.name, r.repo_path,
+			SELECT r.id, r.platform, r.platform_host,
+				COALESCE(r.retired_owner, r.owner), COALESCE(r.retired_name, r.name), r.repo_path,
 				'merge_request_merged', mr.number,
 				COALESCE(NULLIF(mr.platform_external_id, ''), 'merge_request:number:' || mr.number),
 				mr.title, mr.author,
@@ -334,7 +340,8 @@ func archiveReportActivityQuery(
 			CROSS JOIN bounds b
 			WHERE mr.merged_at >= b.start_at AND mr.merged_at < b.end_at
 			UNION ALL
-			SELECT r.id, r.platform, r.platform_host, r.owner, r.name, r.repo_path,
+			SELECT r.id, r.platform, r.platform_host,
+				COALESCE(r.retired_owner, r.owner), COALESCE(r.retired_name, r.name), r.repo_path,
 				'ordinary_comment', i.number,
 				COALESCE(NULLIF(e.platform_external_id, ''), e.dedupe_key),
 				i.title, e.author, '', e.created_at, e.body,
@@ -349,7 +356,8 @@ func archiveReportActivityQuery(
 			WHERE e.event_type = 'issue_comment'
 			  AND e.created_at >= b.start_at AND e.created_at < b.end_at
 			UNION ALL
-			SELECT r.id, r.platform, r.platform_host, r.owner, r.name, r.repo_path,
+			SELECT r.id, r.platform, r.platform_host,
+				COALESCE(r.retired_owner, r.owner), COALESCE(r.retired_name, r.name), r.repo_path,
 				CASE e.event_type
 					WHEN 'issue_comment' THEN 'ordinary_comment'
 					WHEN 'review' THEN 'review'

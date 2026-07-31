@@ -43,7 +43,7 @@ func (s *Handler) setPullAssignees(
 	ctx context.Context,
 	input *setPullAssigneesInput,
 ) (*setAssigneesOutput, error) {
-	repo, names, err := s.resolveUserMutationRequest(
+	repo, names, release, err := s.resolveUserMutationRequest(
 		ctx,
 		input.Provider, input.PlatformHost, input.Owner, input.Name,
 		capabilityAssigneeMutation, "body.assignees", input.Body.Assignees,
@@ -51,6 +51,7 @@ func (s *Handler) setPullAssignees(
 	if err != nil {
 		return nil, err
 	}
+	defer release()
 
 	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
@@ -85,7 +86,7 @@ func (s *Handler) setPullReviewers(
 	ctx context.Context,
 	input *setPullReviewersInput,
 ) (*setReviewersOutput, error) {
-	repo, names, err := s.resolveUserMutationRequest(
+	repo, names, release, err := s.resolveUserMutationRequest(
 		ctx,
 		input.Provider, input.PlatformHost, input.Owner, input.Name,
 		capabilityReviewerMutation, "body.reviewers", input.Body.Reviewers,
@@ -93,6 +94,7 @@ func (s *Handler) setPullReviewers(
 	if err != nil {
 		return nil, err
 	}
+	defer release()
 
 	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
@@ -167,19 +169,20 @@ func (s *Handler) resolveUserMutationRequest(
 	capability string,
 	field string,
 	raw *[]string,
-) (*db.Repo, []string, error) {
-	repo, err := s.lookupRepoByProviderRoute(ctx, provider, platformHost, owner, name)
+) (*db.Repo, []string, func(), error) {
+	repo, release, err := s.leaseRepoRouteCapability(
+		ctx, provider, platformHost, owner, name, capability,
+	)
 	if err != nil {
-		return nil, nil, providerRouteLookupError(err)
-	}
-	if !capabilityEnabled(s.capabilitiesForRepo(*repo), capability) {
-		return nil, nil, unsupportedCapabilityProblem(*repo, capability)
+		return nil, nil, nil, err
 	}
 	if s.syncer == nil {
-		return nil, nil, unsupportedCapabilityProblem(*repo, capability)
+		release()
+		return nil, nil, nil, unsupportedCapabilityProblem(*repo, capability)
 	}
 	if raw == nil {
-		return nil, nil, httpapi.Validation(field, "value must be an array of usernames")
+		release()
+		return nil, nil, nil, httpapi.Validation(field, "value must be an array of usernames")
 	}
 
 	seen := make(map[string]struct{}, len(*raw))
@@ -187,16 +190,18 @@ func (s *Handler) resolveUserMutationRequest(
 	for _, value := range *raw {
 		username := strings.TrimSpace(value)
 		if username == "" {
-			return nil, nil, httpapi.Validation(field, "usernames must not be empty")
+			release()
+			return nil, nil, nil, httpapi.Validation(field, "usernames must not be empty")
 		}
 		key := strings.ToLower(username)
 		if _, ok := seen[key]; ok {
-			return nil, nil, httpapi.Validation(field, fmt.Sprintf("duplicate username %q", username))
+			release()
+			return nil, nil, nil, httpapi.Validation(field, fmt.Sprintf("duplicate username %q", username))
 		}
 		seen[key] = struct{}{}
 		resolved = append(resolved, username)
 	}
-	return repo, resolved, nil
+	return repo, resolved, release, nil
 }
 
 // diffUserNames returns the entries of want that are absent from have,

@@ -260,6 +260,7 @@ jobs:
           fail-on-error: false
 
       - name: Run integration tests (git-dependent)
+        if: ${{ !cancelled() }}
         run: |
           mkdir -p tmp
           go tool gotestsum --format pkgname-and-test-fails --jsonfile=tmp/test-integration-output.json -- -tags integration ./... -run '^TestIntegration' -shuffle=on -parallel=4

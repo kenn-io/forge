@@ -804,7 +804,7 @@ func (s *Handler) editPRContent(
 		return nil, httpapi.Validation("body.title", "title must not be blank")
 	}
 
-	repo, err := s.requireRepoRouteCapability(
+	repo, release, err := s.leaseRepoRouteCapability(
 		ctx,
 		input.Provider, input.PlatformHost, input.Owner, input.Name,
 		capabilityStateMutation,
@@ -812,6 +812,7 @@ func (s *Handler) editPRContent(
 	if err != nil {
 		return nil, err
 	}
+	defer release()
 	if err := s.requireSyncerCapability(*repo, capabilityStateMutation); err != nil {
 		return nil, err
 	}
@@ -859,7 +860,7 @@ func (s *Handler) editPRContent(
 		updatedAt = updatedMR.UpdatedAt.UTC()
 	}
 	if err := s.db.UpdateMRTitleBody(
-		ctx, mr.ID, newTitle, newBody, updatedAt,
+		ctx, repo.ID, mr.ID, newTitle, newBody, updatedAt,
 	); err != nil {
 		return nil, httpapi.Internal("update title/body failed")
 	}
@@ -882,7 +883,7 @@ func (s *Handler) postComment(ctx context.Context, input *postCommentInput) (*po
 		return nil, httpapi.Validation("body.body", "comment body must not be empty")
 	}
 
-	repo, err := s.requireRepoRouteCapability(
+	repo, release, err := s.leaseRepoRouteCapability(
 		ctx,
 		input.Provider, input.PlatformHost, input.Owner, input.Name,
 		capabilityCommentMutation,
@@ -890,6 +891,7 @@ func (s *Handler) postComment(ctx context.Context, input *postCommentInput) (*po
 	if err != nil {
 		return nil, err
 	}
+	defer release()
 	if err := s.requireSyncerCapability(*repo, capabilityCommentMutation); err != nil {
 		return nil, err
 	}
@@ -937,7 +939,7 @@ func (s *Handler) editComment(ctx context.Context, input *editCommentInput) (*ed
 		return nil, httpapi.Validation("body.body", "comment body must not be empty")
 	}
 
-	repo, err := s.requireRepoRouteCapability(
+	repo, release, err := s.leaseRepoRouteCapability(
 		ctx,
 		input.Provider, input.PlatformHost, input.Owner, input.Name,
 		capabilityCommentMutation,
@@ -945,6 +947,7 @@ func (s *Handler) editComment(ctx context.Context, input *editCommentInput) (*ed
 	if err != nil {
 		return nil, err
 	}
+	defer release()
 	if err := s.requireSyncerCapability(*repo, capabilityCommentMutation); err != nil {
 		return nil, err
 	}
@@ -997,7 +1000,7 @@ func (s *Handler) editComment(ctx context.Context, input *editCommentInput) (*ed
 }
 
 func (s *Handler) deleteComment(ctx context.Context, input *deleteCommentInput) (*deleteCommentOutput, error) {
-	repo, err := s.requireRepoRouteCapability(
+	repo, release, err := s.leaseRepoRouteCapability(
 		ctx,
 		input.Provider, input.PlatformHost, input.Owner, input.Name,
 		capabilityCommentMutation,
@@ -1005,6 +1008,7 @@ func (s *Handler) deleteComment(ctx context.Context, input *deleteCommentInput) 
 	if err != nil {
 		return nil, err
 	}
+	defer release()
 	if err := s.requireSyncerCapability(*repo, capabilityCommentMutation); err != nil {
 		return nil, err
 	}
@@ -1043,7 +1047,7 @@ func (s *Handler) replyToDiscussion(ctx context.Context, input *replyToDiscussio
 		return nil, httpapi.Validation("body.body", "reply body must not be empty")
 	}
 
-	repo, err := s.requireRepoRouteCapability(
+	repo, release, err := s.leaseRepoRouteCapability(
 		ctx,
 		input.Provider, input.PlatformHost, input.Owner, input.Name,
 		capabilityThreadReply,
@@ -1051,6 +1055,7 @@ func (s *Handler) replyToDiscussion(ctx context.Context, input *replyToDiscussio
 	if err != nil {
 		return nil, err
 	}
+	defer release()
 	if err := s.requireSyncerCapability(*repo, capabilityThreadReply); err != nil {
 		return nil, err
 	}
@@ -1147,7 +1152,7 @@ func (s *Handler) resolveDiscussion(ctx context.Context, input *resolveDiscussio
 		return nil, err
 	}
 
-	repo, err := s.requireRepoRouteCapability(
+	repo, release, err := s.leaseRepoRouteCapability(
 		ctx,
 		input.Provider, input.PlatformHost, input.Owner, input.Name,
 		capabilityThreadResolve,
@@ -1155,6 +1160,7 @@ func (s *Handler) resolveDiscussion(ctx context.Context, input *resolveDiscussio
 	if err != nil {
 		return nil, err
 	}
+	defer release()
 	if err := s.requireSyncerCapability(*repo, capabilityThreadResolve); err != nil {
 		return nil, err
 	}
@@ -1205,7 +1211,7 @@ func (s *Handler) resolveDiscussion(ctx context.Context, input *resolveDiscussio
 }
 
 func (s *Handler) approvePR(ctx context.Context, input *approvePRInput) (*actionStatusOutput, error) {
-	repo, err := s.requireRepoRouteCapability(
+	repo, release, err := s.leaseRepoRouteCapability(
 		ctx,
 		input.Provider, input.PlatformHost, input.Owner, input.Name,
 		capabilityReviewMutation,
@@ -1213,6 +1219,7 @@ func (s *Handler) approvePR(ctx context.Context, input *approvePRInput) (*action
 	if err != nil {
 		return nil, err
 	}
+	defer release()
 	if err := s.requireSyncerCapability(*repo, capabilityReviewMutation); err != nil {
 		return nil, err
 	}
@@ -1264,6 +1271,7 @@ func (s *Handler) approvePR(ctx context.Context, input *approvePRInput) (*action
 	event := platform.DBMREvent(mr.ID, platformEvent)
 	_ = s.db.UpsertMREvents(ctx, []db.MREvent{event})
 
+	release()
 	if syncErr := s.syncer.SyncMROnProvider(
 		ctx,
 		repoProviderKind(*repo), repoProviderHost(*repo),
@@ -1276,7 +1284,7 @@ func (s *Handler) approvePR(ctx context.Context, input *approvePRInput) (*action
 }
 
 func (s *Handler) requestChangesPR(ctx context.Context, input *requestChangesPRInput) (*actionStatusOutput, error) {
-	repo, err := s.requireRepoRouteCapability(
+	repo, release, err := s.leaseRepoRouteCapability(
 		ctx,
 		input.Provider, input.PlatformHost, input.Owner, input.Name,
 		capabilityReviewMutation,
@@ -1284,6 +1292,7 @@ func (s *Handler) requestChangesPR(ctx context.Context, input *requestChangesPRI
 	if err != nil {
 		return nil, err
 	}
+	defer release()
 	if err := s.requireSyncerCapability(*repo, capabilityReviewMutation); err != nil {
 		return nil, err
 	}
@@ -1328,6 +1337,7 @@ func (s *Handler) requestChangesPR(ctx context.Context, input *requestChangesPRI
 		)
 	}
 
+	release()
 	if syncErr := s.syncer.SyncMROnProvider(
 		ctx,
 		repoProviderKind(*repo), repoProviderHost(*repo),
@@ -1364,7 +1374,7 @@ func approvalReviewHeadSHA(mr *db.MergeRequest, clientSHA string) string {
 }
 
 func (s *Handler) approveWorkflows(ctx context.Context, input *repoNumberInput) (*actionStatusOutput, error) {
-	repo, err := s.requireRepoRouteCapability(
+	repo, release, err := s.leaseRepoRouteCapability(
 		ctx,
 		input.Provider, input.PlatformHost, input.Owner, input.Name,
 		capabilityWorkflowApproval,
@@ -1372,6 +1382,7 @@ func (s *Handler) approveWorkflows(ctx context.Context, input *repoNumberInput) 
 	if err != nil {
 		return nil, err
 	}
+	defer release()
 	if err := s.requireSyncerCapability(*repo, capabilityWorkflowApproval); err != nil {
 		return nil, err
 	}
@@ -1432,6 +1443,7 @@ func (s *Handler) approveWorkflows(ctx context.Context, input *repoNumberInput) 
 			ctx, platformRepoRefFromDB(*repo), strconv.FormatInt(run.GetID(), 10),
 		); err != nil {
 			if approvedCount > 0 {
+				release()
 				if syncErr := s.syncer.SyncMROnProvider(
 					context.WithoutCancel(ctx),
 					repoProviderKind(*repo), repoProviderHost(*repo),
@@ -1449,6 +1461,7 @@ func (s *Handler) approveWorkflows(ctx context.Context, input *repoNumberInput) 
 		approvedCount++
 	}
 
+	release()
 	if syncErr := s.syncer.SyncMROnProvider(
 		context.WithoutCancel(ctx),
 		repoProviderKind(*repo), repoProviderHost(*repo),
@@ -1473,7 +1486,7 @@ func (s *Handler) approveWorkflows(ctx context.Context, input *repoNumberInput) 
 }
 
 func (s *Handler) readyForReview(ctx context.Context, input *repoNumberInput) (*actionStatusOutput, error) {
-	repo, err := s.requireRepoRouteCapability(
+	repo, release, err := s.leaseRepoRouteCapability(
 		ctx,
 		input.Provider, input.PlatformHost, input.Owner, input.Name,
 		capabilityReadyForReview,
@@ -1481,6 +1494,7 @@ func (s *Handler) readyForReview(ctx context.Context, input *repoNumberInput) (*
 	if err != nil {
 		return nil, err
 	}
+	defer release()
 	if err := s.requireSyncerCapability(*repo, capabilityReadyForReview); err != nil {
 		return nil, err
 	}
@@ -1504,6 +1518,7 @@ func (s *Handler) readyForReview(ctx context.Context, input *repoNumberInput) (*
 			staleState = errors.As(err, &ghErr) && ghErr != nil && ghErr.Response != nil && ghErr.Response.StatusCode == http.StatusNotFound
 		}
 		if staleState {
+			release()
 			if syncErr := s.syncer.SyncMROnProvider(
 				context.WithoutCancel(ctx),
 				repoProviderKind(*repo), repoProviderHost(*repo),
@@ -1540,6 +1555,7 @@ func (s *Handler) readyForReview(ctx context.Context, input *repoNumberInput) (*
 		)
 	}
 
+	release()
 	normalized := platform.DBMergeRequest(repo.ID, pr)
 	if mrID, _, accepted, upsertErr := s.syncer.CommitMergeRequestParentSnapshot(
 		ctx, mergeRequestRepoRef(*repo), normalized,
@@ -1567,7 +1583,7 @@ func (s *Handler) mergePRWithBody(
 	number int,
 	body mergePRInputBody,
 ) (mergePRBody, error) {
-	repo, err := s.requireRepoRouteCapability(
+	repo, release, err := s.leaseRepoRouteCapability(
 		ctx,
 		provider, platformHost, owner, name,
 		capabilityMergeMutation,
@@ -1575,6 +1591,18 @@ func (s *Handler) mergePRWithBody(
 	if err != nil {
 		return mergePRBody{}, err
 	}
+	defer release()
+	return s.mergePRWithLeasedRepository(ctx, repo, number, body)
+}
+
+// mergePRWithLeasedRepository performs the provider mutation and persistence
+// against the exact repository incarnation protected by the caller's lease.
+func (s *Handler) mergePRWithLeasedRepository(
+	ctx context.Context,
+	repo *db.Repo,
+	number int,
+	body mergePRInputBody,
+) (mergePRBody, error) {
 	if err := s.requireSyncerCapability(*repo, capabilityMergeMutation); err != nil {
 		return mergePRBody{}, err
 	}
@@ -1612,7 +1640,7 @@ func (s *Handler) mergePRWithBody(
 	if err != nil {
 		if status, message, ok := mergeHTTPErrorStatus(err); ok {
 			slog.Error("provider merge failed",
-				"owner", owner, "repo", name,
+				"owner", repo.Owner, "repo", repo.Name,
 				"number", number, "method", body.Method,
 				"status", status,
 				"message", message,
@@ -1654,7 +1682,7 @@ func (s *Handler) mergePRWithBody(
 			)
 		}
 		slog.Error("provider merge transport error",
-			"owner", owner, "repo", name,
+			"owner", repo.Owner, "repo", repo.Name,
 			"number", number, "method", body.Method,
 			"err", err)
 		return mergePRBody{}, httpapi.ProviderCallProblemWithDetail(
@@ -1923,7 +1951,7 @@ func (s *Handler) setPRGitHubState(
 	if input.Body.State == "draft" {
 		requiredCapability = capabilityDraftMutation
 	}
-	repo, err := s.requireRepoRouteCapability(
+	repo, release, err := s.leaseRepoRouteCapability(
 		ctx,
 		input.Provider, input.PlatformHost, input.Owner, input.Name,
 		requiredCapability,
@@ -1931,6 +1959,7 @@ func (s *Handler) setPRGitHubState(
 	if err != nil {
 		return nil, err
 	}
+	defer release()
 	if err := s.requireSyncerCapability(*repo, requiredCapability); err != nil {
 		return nil, err
 	}
@@ -2010,6 +2039,11 @@ func (s *Handler) setPRGitHubState(
 							string(repoProviderKind(*repo)), repoProviderHost(*repo),
 						)
 					}
+					// CommitMergeRequestParentSnapshot owns its reconciliation
+					// read lease. Drop the mutation lease before entering it: a
+					// queued writer closes read admission, so recursively taking
+					// another read lease here would deadlock behind that writer.
+					release()
 					_, _, _, _ = s.syncer.CommitMergeRequestParentSnapshot(
 						ctx, mergeRequestRepoRef(*repo), normalized,
 					)
@@ -2066,12 +2100,14 @@ func (s *Handler) getCommits(ctx context.Context, input *repoNumberInput) (*getC
 		return nil, httpapi.ServiceUnavailable("commits not available: clone manager not configured")
 	}
 
-	repo, err := s.lookupRepoByProviderRoute(
+	leaseCtx, repo, release, err := s.leaseRepoByProviderRoute(
 		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
 	)
 	if err != nil {
-		return nil, providerRouteLookupError(err)
+		return nil, err
 	}
+	defer release()
+	ctx = leaseCtx
 	shas, err := s.db.GetDiffSHAsByRepoID(ctx, repo.ID, input.Number)
 	if err != nil {
 		return nil, httpapi.Internal("failed to look up PR")
@@ -2083,10 +2119,8 @@ func (s *Handler) getCommits(ctx context.Context, input *repoNumberInput) (*getC
 		return nil, httpapi.NotFound(httpapi.CodeNotFound, "commits not available for this pull request", nil)
 	}
 
-	host := repoProviderHost(*repo)
-	commits, err := s.clones.ListCommits(
-		ctx, string(repoProviderKind(*repo)), host, repo.Owner, repo.Name,
-		shas.MergeBaseSHA, shas.DiffHeadSHA,
+	commits, err := s.repositoryClone(*repo).ListCommits(
+		ctx, shas.MergeBaseSHA, shas.DiffHeadSHA,
 	)
 	if err != nil {
 		if errors.Is(err, gitclone.ErrNotFound) {
@@ -2127,6 +2161,7 @@ type getDiffInput struct {
 type getDiffOutput = httpapi.BodyOutput[diffResponse]
 
 type resolvedDiffRange struct {
+	repoID   int64
 	platform string
 	host     string
 	owner    string
@@ -2139,13 +2174,8 @@ type resolvedDiffRange struct {
 func (s *Handler) resolveDiffRange(
 	ctx context.Context,
 	input *getDiffInput,
+	repo db.Repo,
 ) (*resolvedDiffRange, error) {
-	repo, err := s.lookupRepoByProviderRoute(
-		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
-	)
-	if err != nil {
-		return nil, providerRouteLookupError(err)
-	}
 	shas, err := s.db.GetDiffSHAsByRepoID(ctx, repo.ID, input.Number)
 	if err != nil {
 		return nil, httpapi.Internal("failed to look up PR")
@@ -2157,7 +2187,7 @@ func (s *Handler) resolveDiffRange(
 		return nil, httpapi.NotFound(httpapi.CodeNotFound, "diff not available for this pull request", nil)
 	}
 
-	host := repoProviderHost(*repo)
+	host := repoProviderHost(repo)
 	diffFrom := shas.MergeBaseSHA
 	diffTo := shas.DiffHeadSHA
 
@@ -2171,13 +2201,11 @@ func (s *Handler) resolveDiffRange(
 
 	case hasCommit && !hasFrom && !hasTo:
 		if _, err := s.validateSHAs(
-			ctx, string(repoProviderKind(*repo)), host, input, shas, input.Commit,
+			ctx, repo, shas, input.Commit,
 		); err != nil {
 			return nil, err
 		}
-		parent, err := s.clones.ParentOf(
-			ctx, string(repoProviderKind(*repo)), host, repo.Owner, repo.Name, input.Commit,
-		)
+		parent, err := s.repositoryClone(repo).ParentOf(ctx, input.Commit)
 		if err != nil {
 			return nil, httpapi.Internal("failed to resolve parent: " + err.Error())
 		}
@@ -2186,7 +2214,7 @@ func (s *Handler) resolveDiffRange(
 
 	case !hasCommit && hasFrom && hasTo:
 		indexMap, err := s.validateSHAs(
-			ctx, string(repoProviderKind(*repo)), host, input, shas,
+			ctx, repo, shas,
 			input.From, input.To,
 		)
 		if err != nil {
@@ -2196,9 +2224,7 @@ func (s *Handler) resolveDiffRange(
 		if indexMap[input.From] <= indexMap[input.To] {
 			return nil, httpapi.Validation("query", "invalid range: 'from' must be older than 'to'")
 		}
-		parent, err := s.clones.ParentOf(
-			ctx, string(repoProviderKind(*repo)), host, repo.Owner, repo.Name, input.From,
-		)
+		parent, err := s.repositoryClone(repo).ParentOf(ctx, input.From)
 		if err != nil {
 			return nil, httpapi.Internal("failed to resolve parent: " + err.Error())
 		}
@@ -2210,7 +2236,8 @@ func (s *Handler) resolveDiffRange(
 	}
 
 	return &resolvedDiffRange{
-		platform: string(repoProviderKind(*repo)),
+		repoID:   repo.ID,
+		platform: string(repoProviderKind(repo)),
 		host:     host,
 		owner:    repo.Owner,
 		name:     repo.Name,
@@ -2224,15 +2251,29 @@ func (s *Handler) getDiff(ctx context.Context, input *getDiffInput) (*getDiffOut
 	if s.clones == nil {
 		return nil, httpapi.ServiceUnavailable("diff view not available: clone manager not configured")
 	}
+	leaseCtx, repo, release, err := s.leaseRepoByProviderRoute(
+		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+	ctx = leaseCtx
 
-	resolved, err := s.resolveDiffRange(ctx, input)
+	resolved, err := s.resolveDiffRange(ctx, input, *repo)
 	if err != nil {
 		return nil, err
 	}
 
 	hideWhitespace := input.Whitespace == "hide"
-	result, err := s.clones.Diff(
-		ctx, resolved.platform, resolved.host, resolved.owner, resolved.name,
+	result, err := s.clones.RepositoryClone(
+		resolved.repoID,
+		resolved.platform,
+		resolved.host,
+		resolved.owner,
+		resolved.name,
+	).Diff(
+		ctx,
 		resolved.fromSHA, resolved.toSHA, hideWhitespace,
 	)
 	if err != nil {
@@ -2281,6 +2322,14 @@ func (s *Handler) getFilePreview(ctx context.Context, input *getFilePreviewInput
 	if side != "" && side != "old" && side != "new" {
 		return nil, httpapi.Validation("query.side", "side must be old or new")
 	}
+	leaseCtx, repo, release, err := s.leaseRepoByProviderRoute(
+		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+	ctx = leaseCtx
 
 	resolved, err := s.resolveDiffRange(ctx, &getDiffInput{
 		Provider:     input.Provider,
@@ -2291,19 +2340,21 @@ func (s *Handler) getFilePreview(ctx context.Context, input *getFilePreviewInput
 		Commit:       input.Commit,
 		From:         input.From,
 		To:           input.To,
-	})
+	}, *repo)
 	if err != nil {
 		return nil, err
 	}
 
 	previewRef := resolved.toSHA
 	previewPath := input.Path
-	files, err := s.clones.DiffFiles(
-		ctx,
+	files, err := s.clones.RepositoryClone(
+		resolved.repoID,
 		resolved.platform,
 		resolved.host,
 		resolved.owner,
 		resolved.name,
+	).DiffFiles(
+		ctx,
 		resolved.fromSHA,
 		resolved.toSHA,
 	)
@@ -2348,12 +2399,14 @@ func (s *Handler) getFilePreview(ctx context.Context, input *getFilePreviewInput
 		return nil, httpapi.NotFound(httpapi.CodeNotFound, "file preview not available: file is not changed in this diff", nil)
 	}
 
-	content, err := s.clones.FileContent(
-		ctx,
+	content, err := s.clones.RepositoryClone(
+		resolved.repoID,
 		resolved.platform,
 		resolved.host,
 		resolved.owner,
 		resolved.name,
+	).FileContent(
+		ctx,
 		previewRef,
 		previewPath,
 		maxFilePreviewBytes,
@@ -2416,12 +2469,14 @@ func (s *Handler) getFiles(ctx context.Context, input *getFilesInput) (*getFiles
 		return nil, httpapi.ServiceUnavailable("files view not available: clone manager not configured")
 	}
 
-	repo, err := s.lookupRepoByProviderRoute(
+	leaseCtx, repo, release, err := s.leaseRepoByProviderRoute(
 		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
 	)
 	if err != nil {
-		return nil, providerRouteLookupError(err)
+		return nil, err
 	}
+	defer release()
+	ctx = leaseCtx
 	shas, err := s.db.GetDiffSHAsByRepoID(ctx, repo.ID, input.Number)
 	if err != nil {
 		return nil, httpapi.Internal("failed to look up PR")
@@ -2433,9 +2488,8 @@ func (s *Handler) getFiles(ctx context.Context, input *getFilesInput) (*getFiles
 		return nil, httpapi.NotFound(httpapi.CodeNotFound, "file list not available for this pull request", nil)
 	}
 
-	host := repoProviderHost(*repo)
-	files, err := s.clones.DiffFiles(
-		ctx, string(repoProviderKind(*repo)), host, repo.Owner, repo.Name,
+	files, err := s.repositoryClone(*repo).DiffFiles(
+		ctx,
 		shas.MergeBaseSHA, shas.DiffHeadSHA,
 	)
 	if err != nil {
@@ -2456,13 +2510,12 @@ func (s *Handler) getFiles(ctx context.Context, input *getFilesInput) (*getFiles
 // Returns a SHA -> index map (newest-first order) so callers can check range ordering.
 func (s *Handler) validateSHAs(
 	ctx context.Context,
-	platformName, host string,
-	input *getDiffInput,
+	repo db.Repo,
 	shas *db.DiffSHAs,
 	userSHAs ...string,
 ) (map[string]int, error) {
-	commits, err := s.clones.ListCommits(
-		ctx, platformName, host, input.Owner, input.Name,
+	commits, err := s.repositoryClone(repo).ListCommits(
+		ctx,
 		shas.MergeBaseSHA, shas.DiffHeadSHA,
 	)
 	if err != nil {

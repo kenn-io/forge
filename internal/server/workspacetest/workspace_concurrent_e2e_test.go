@@ -64,7 +64,7 @@ func TestWorkspaceConcurrentSameRepoOperationsE2E(t *testing.T) {
 			if resp.StatusCode() != http.StatusAccepted || resp.JSON202 == nil {
 				created <- createResult{
 					num: num,
-					err: assertableStatusErr(resp.StatusCode()),
+					err: assertableStatusErr(resp.StatusCode(), resp.Body),
 				}
 				return
 			}
@@ -119,7 +119,10 @@ func TestWorkspaceConcurrentSameRepoOperationsE2E(t *testing.T) {
 		case err != nil:
 			opOut <- opResult{op: "delete", err: err}
 		case resp.StatusCode() != http.StatusNoContent:
-			opOut <- opResult{op: "delete", err: assertableStatusErr(resp.StatusCode())}
+			opOut <- opResult{
+				op:  "delete",
+				err: assertableStatusErr(resp.StatusCode(), resp.Body),
+			}
 		default:
 			opOut <- opResult{op: "delete"}
 		}
@@ -130,7 +133,10 @@ func TestWorkspaceConcurrentSameRepoOperationsE2E(t *testing.T) {
 		case err != nil:
 			opOut <- opResult{op: "retry", err: err}
 		case resp.StatusCode() != http.StatusAccepted || resp.JSON202 == nil:
-			opOut <- opResult{op: "retry", err: assertableStatusErr(resp.StatusCode())}
+			opOut <- opResult{
+				op:  "retry",
+				err: assertableStatusErr(resp.StatusCode(), resp.Body),
+			}
 		default:
 			waitForWorkspaceReady(t, ctx, client, retryTarget.Id)
 			opOut <- opResult{op: "retry"}
@@ -164,16 +170,21 @@ func TestWorkspaceConcurrentSameRepoOperationsE2E(t *testing.T) {
 
 // assertableStatusErr lets the goroutines surface unexpected status
 // codes without calling t.Fatal off the test goroutine.
-func assertableStatusErr(status int) error {
-	return &unexpectedStatusError{status: status}
+func assertableStatusErr(status int, body []byte) error {
+	return &unexpectedStatusError{status: status, body: strings.TrimSpace(string(body))}
 }
 
 type unexpectedStatusError struct {
 	status int
+	body   string
 }
 
 func (e *unexpectedStatusError) Error() string {
-	return "unexpected HTTP status: " + strings.TrimSpace(http.StatusText(e.status))
+	message := "unexpected HTTP status: " + strings.TrimSpace(http.StatusText(e.status))
+	if e.body != "" {
+		message += ": " + e.body
+	}
+	return message
 }
 
 // listBareWorktrees counts entries in `git worktree list --porcelain`

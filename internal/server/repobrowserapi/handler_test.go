@@ -15,6 +15,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
 	ghclient "go.kenn.io/forge/internal/github"
@@ -263,7 +264,15 @@ func TestRepoBrowserReadsStayPinnedAfterBranchAdvances(t *testing.T) {
 	)
 	advancedSHA := testGitSHA(t, work, "HEAD")
 	serverRepoBrowserGit(t, work, "push", "origin", "main")
-	clones.RefreshRepoBrowserClones(t.Context())
+	clones.RefreshRepoBrowserClones(
+		t.Context(),
+		func(
+			_ context.Context,
+			repo gitclone.RepoBrowserRepoRef,
+		) (gitclone.RepoBrowserRepoRef, func(), bool, error) {
+			return repo, func() {}, true, nil
+		},
+	)
 
 	branchBlob := repoBrowserRequest(t, srv, http.MethodGet,
 		"/api/v1/repo/github/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&path=README.md",
@@ -685,6 +694,169 @@ func TestRepoBrowserStartupRefreshSeedsExistingClone(t *testing.T) {
 	assert.Equal("# Updated\n", body.Blob.Content)
 }
 
+func TestRepoBrowserRefreshRouteReplacementKeepsRetiredClonePinnedThroughHTTP(
+	t *testing.T,
+) {
+	acquireRepoBrowserTestSlot(t)
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+	database := dbtest.Open(t)
+	remote, oldWork := setupServerRepoBrowserGitRepo(t)
+	oldSHA := testGitSHA(t, oldWork, "main")
+	oldRepoID, err := database.UpsertRepoByProviderID(
+		ctx,
+		db.RepoIdentity{
+			Platform:       "github",
+			PlatformHost:   "github.com",
+			PlatformRepoID: "R_old",
+			Owner:          "acme",
+			Name:           "widgets",
+			RepoPath:       "acme/widgets",
+		},
+	)
+	require.NoError(err)
+	require.NoError(database.UpdateRepoProviderMetadata(
+		ctx,
+		oldRepoID,
+		db.RepoProviderMetadata{
+			WebURL:        "https://github.com/acme/widgets",
+			CloneURL:      remote,
+			DefaultBranch: "main",
+		},
+	))
+
+	clones := gitclone.New(filepath.Join(t.TempDir(), "clones"), nil)
+	syncer := ghclient.NewSyncer(
+		nil,
+		database,
+		nil,
+		nil,
+		time.Minute,
+		nil,
+		nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := server.New(
+		database,
+		syncer,
+		nil,
+		"/",
+		&config.Config{SyncInterval: "20ms"},
+		server.ServerOptions{
+			Clones: clones,
+			HostCheck: server.HostCheckOptions{
+				Bind: config.HostKey{Host: "127.0.0.1", Port: "8091"},
+				Allowed: []config.HostKey{
+					{Host: "example.com"},
+				},
+			},
+		},
+	)
+	t.Cleanup(func() {
+		shutdownCtx, cancel := context.WithTimeout(
+			context.Background(),
+			5*time.Second,
+		)
+		defer cancel()
+		require.NoError(srv.Shutdown(shutdownCtx))
+	})
+
+	oldResponse := repoBrowserRequest(
+		t,
+		srv,
+		http.MethodGet,
+		"/api/v1/repo/github/acme/widgets/browser/refs",
+	)
+	require.Equal(http.StatusOK, oldResponse.Code, oldResponse.Body.String())
+	var oldBody repobrowserapi.RepoBrowserRefsResponse
+	require.NoError(json.Unmarshal(oldResponse.Body.Bytes(), &oldBody))
+	require.Equal(oldSHA, oldBody.DefaultRef.SHA)
+
+	replacementRepoID, err := database.UpsertRepoByProviderID(
+		ctx,
+		db.RepoIdentity{
+			Platform:       "github",
+			PlatformHost:   "github.com",
+			PlatformRepoID: "R_new",
+			Owner:          "acme",
+			Name:           "widgets",
+			RepoPath:       "acme/widgets",
+		},
+	)
+	require.NoError(err)
+	require.NotEqual(oldRepoID, replacementRepoID)
+
+	replacementRemote, replacementWork := setupServerRepoBrowserGitRepo(t)
+	require.NoError(os.WriteFile(
+		filepath.Join(replacementWork, "README.md"),
+		[]byte("# Replacement\n"),
+		0o644,
+	))
+	serverRepoBrowserGit(t, replacementWork, "add", ".")
+	serverRepoBrowserGit(t, replacementWork, "commit", "-m", "replacement")
+	serverRepoBrowserGit(t, replacementWork, "push", "origin", "main")
+	replacementSHA := testGitSHA(t, replacementWork, "main")
+	require.NotEqual(oldSHA, replacementSHA)
+	require.NoError(os.Rename(remote, remote+".retired"))
+	require.NoError(os.Rename(replacementRemote, remote))
+	require.NoError(database.UpdateRepoProviderMetadata(
+		ctx,
+		replacementRepoID,
+		db.RepoProviderMetadata{
+			WebURL:        "https://github.com/acme/widgets",
+			CloneURL:      remote,
+			DefaultBranch: "main",
+		},
+	))
+
+	newResponse := repoBrowserRequest(
+		t,
+		srv,
+		http.MethodGet,
+		"/api/v1/repo/github/acme/widgets/browser/refs",
+	)
+	require.Equal(http.StatusOK, newResponse.Code, newResponse.Body.String())
+	var newBody repobrowserapi.RepoBrowserRefsResponse
+	require.NoError(json.Unmarshal(newResponse.Body.Bytes(), &newBody))
+	require.Equal(replacementSHA, newBody.DefaultRef.SHA)
+
+	oldRef := gitclone.RepoBrowserRepoRef{
+		RepoID:    oldRepoID,
+		Provider:  "github",
+		Host:      "github.com",
+		Owner:     "acme",
+		Name:      "widgets",
+		RepoPath:  "acme/widgets",
+		RemoteURL: remote,
+	}
+	require.Never(
+		func() bool {
+			resolved, resolveErr := clones.ResolveRepoBrowserRef(
+				ctx,
+				oldRef,
+				gitclone.RepoBrowserRef{
+					Type: gitclone.RepoBrowserRefBranch,
+					Name: "main",
+				},
+			)
+			return resolveErr == nil && resolved.SHA == replacementSHA
+		},
+		150*time.Millisecond,
+		10*time.Millisecond,
+	)
+	resolved, err := clones.ResolveRepoBrowserRef(
+		ctx,
+		oldRef,
+		gitclone.RepoBrowserRef{
+			Type: gitclone.RepoBrowserRefBranch,
+			Name: "main",
+		},
+	)
+	require.NoError(err)
+	assert.Equal(oldSHA, resolved.SHA)
+}
+
 func TestRepoBrowserStartupRefreshHonorsDisabledBackgroundMonitors(t *testing.T) {
 	acquireRepoBrowserTestSlot(t)
 	require := require.New(t)
@@ -732,6 +904,7 @@ func TestRepoBrowserStartupRefreshHonorsDisabledBackgroundMonitors(t *testing.T)
 
 	require.Never(func() bool {
 		resolved, err := disabledClones.ResolveRepoBrowserRef(t.Context(), gitclone.RepoBrowserRepoRef{
+			RepoID:    repoID,
 			Provider:  "github",
 			Host:      "github.com",
 			Owner:     "acme",

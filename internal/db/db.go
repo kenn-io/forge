@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"sync"
+	"sync/atomic"
 
 	"go.kenn.io/forge/internal/db/dbupgrade"
 	_ "modernc.org/sqlite"
@@ -30,6 +31,13 @@ type mergeRequestSnapshotLockKey struct {
 type mergeRequestSnapshotLock struct {
 	token chan struct{}
 	refs  int
+}
+
+type repositoryReconciliationReadLeaseContextKey struct{}
+
+type repositoryReconciliationReadLease struct {
+	db     *DB
+	active atomic.Bool
 }
 
 // Open opens (or creates) a SQLite database at path, enables WAL mode, and
@@ -108,21 +116,48 @@ func (d *DB) WriteDB() *sql.DB { return d.rw }
 func (d *DB) LockRepositoryReconciliationRead(
 	ctx context.Context,
 ) (func(), error) {
+	_, release, err := d.LeaseRepositoryReconciliationRead(ctx)
+	return release, err
+}
+
+// LeaseRepositoryReconciliationRead returns a context that identifies the
+// active lease to nested repository-aware helpers. A nested acquisition on the
+// same DB becomes a no-op, avoiding RWMutex read recursion when a writer has
+// already closed admission to new readers.
+func (d *DB) LeaseRepositoryReconciliationRead(
+	ctx context.Context,
+) (context.Context, func(), error) {
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+	if existing, ok := ctx.Value(
+		repositoryReconciliationReadLeaseContextKey{},
+	).(*repositoryReconciliationReadLease); ok &&
+		existing.db == d && existing.active.Load() {
+		return ctx, func() {}, nil
 	}
 	d.mrReconcileGate.Lock()
 	d.mrReconcileMu.RLock()
 	d.mrReconcileGate.Unlock()
 	if err := ctx.Err(); err != nil {
 		d.mrReconcileMu.RUnlock()
-		return nil, err
+		return nil, nil, err
 	}
 
+	lease := &repositoryReconciliationReadLease{db: d}
+	lease.active.Store(true)
 	var once sync.Once
-	return func() {
-		once.Do(d.mrReconcileMu.RUnlock)
-	}, nil
+	release := func() {
+		once.Do(func() {
+			lease.active.Store(false)
+			d.mrReconcileMu.RUnlock()
+		})
+	}
+	return context.WithValue(
+		ctx,
+		repositoryReconciliationReadLeaseContextKey{},
+		lease,
+	), release, nil
 }
 
 func (d *DB) lockRepositoryReconciliationWrite() func() {

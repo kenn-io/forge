@@ -120,6 +120,8 @@ func TestAPIArchiveStartPauseStatusAndReport(t *testing.T) {
 	assert.Equal(int64(1), reportResponse.JSON200.Totals.MergeRequestsMerged)
 	require.NotNil(reportResponse.JSON200.Repositories)
 	require.Len(*reportResponse.JSON200.Repositories, 1)
+	require.NotNil((*reportResponse.JSON200.Repositories)[0].Repository.RepositoryId)
+	assert.Equal(repo.ID, *(*reportResponse.JSON200.Repositories)[0].Repository.RepositoryId)
 	assert.Equal(generated.ArchiveReportCoverageResponseIssuesSupported,
 		(*reportResponse.JSON200.Repositories)[0].Coverage.Issues)
 	assert.Equal(generated.ArchiveReportCoverageResponseMergeRequestsSupported,
@@ -153,6 +155,18 @@ func TestAPIArchiveStartPauseStatusAndReport(t *testing.T) {
 	require.NotNil(statusResponse.JSON200)
 	require.Len(*statusResponse.JSON200, 1)
 	assert.Equal("github", (*statusResponse.JSON200)[0].Repository.Provider)
+	require.NotNil((*statusResponse.JSON200)[0].Repository.RepositoryId)
+	assert.Equal(repo.ID, *(*statusResponse.JSON200)[0].Repository.RepositoryId)
+
+	repositoryIDs := []int64{repo.ID}
+	statusByID, err := client.HTTP.ListArchiveStatusWithResponse(
+		t.Context(), &generated.ListArchiveStatusParams{RepoId: &repositoryIDs},
+	)
+	require.NoError(err)
+	require.NotNil(statusByID.JSON200)
+	require.Len(*statusByID.JSON200, 1)
+	require.NotNil((*statusByID.JSON200)[0].Repository.RepositoryId)
+	assert.Equal(repo.ID, *(*statusByID.JSON200)[0].Repository.RepositoryId)
 
 	resetAt := time.Now().UTC().Add(time.Hour).Truncate(time.Second)
 	_, err = database.WriteDB().ExecContext(t.Context(), `

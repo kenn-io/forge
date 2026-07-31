@@ -128,6 +128,15 @@ func TestNormalizeIssue_ExtractsAssignees(t *testing.T) {
 	require.Equal([]string{"alice", "bob"}, issue.Assignees)
 }
 
+func TestNormalizeIssueRejectsPullRequestPayload(t *testing.T) {
+	require := require.New(t)
+
+	_, err := NormalizeIssue(platform.RepoRef{}, &gh.Issue{
+		PullRequestLinks: &gh.PullRequestLinks{},
+	})
+	require.ErrorIs(err, ErrIssueIsPullRequest)
+}
+
 func TestNormalizeIssue_EmptyAssignees(t *testing.T) {
 	require := require.New(t)
 

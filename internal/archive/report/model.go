@@ -24,6 +24,7 @@ const (
 )
 
 type RepositoryRef struct {
+	RepositoryID int64  `json:"repository_id"`
 	Provider     string `json:"provider"`
 	PlatformHost string `json:"platform_host"`
 	Owner        string `json:"owner"`

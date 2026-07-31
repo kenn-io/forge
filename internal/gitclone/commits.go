@@ -42,7 +42,13 @@ func (m *Manager) ListCommits(
 	if err != nil {
 		return nil, err
 	}
+	return m.listCommitsInDir(ctx, dir, mergeBase, headSHA)
+}
 
+func (m *Manager) listCommitsInDir(
+	ctx context.Context,
+	dir, mergeBase, headSHA string,
+) ([]Commit, error) {
 	args := []string{"log", "--first-parent", "--format=" + commitLogFormat}
 	if mergeBase == emptyTreeSHA {
 		// Empty tree is not a commit — list all ancestors of head.
@@ -57,6 +63,18 @@ func (m *Manager) ListCommits(
 	}
 
 	return parseCommitLog(out)
+}
+
+// ListCommits returns commits from this repository incarnation.
+func (r RepositoryClone) ListCommits(
+	ctx context.Context,
+	mergeBase, headSHA string,
+) ([]Commit, error) {
+	dir, err := r.ClonePath()
+	if err != nil {
+		return nil, err
+	}
+	return r.manager.listCommitsInDir(ctx, dir, mergeBase, headSHA)
 }
 
 const (
@@ -134,6 +152,23 @@ func (m *Manager) CommitTimelineSinceTag(
 	if err != nil {
 		return 0, nil, err
 	}
+	return m.commitTimelineSinceTagInDir(
+		ctx,
+		dir,
+		platform,
+		host,
+		owner,
+		name,
+		tagName,
+		limit,
+	)
+}
+
+func (m *Manager) commitTimelineSinceTagInDir(
+	ctx context.Context,
+	dir, platform, host, owner, name, tagName string,
+	limit int,
+) (int, []CommitTimelinePoint, error) {
 	if err := m.fetchTimelineTag(
 		ctx, platform, host, owner, name, dir, tagName,
 	); err != nil {
@@ -189,6 +224,34 @@ func (m *Manager) CommitTimelineSinceTag(
 		return 0, nil, err
 	}
 	return count, points, nil
+}
+
+// CommitTimelineSinceTag returns a timeline from this repository incarnation.
+func (r RepositoryClone) CommitTimelineSinceTag(
+	ctx context.Context,
+	tagName string,
+	limit int,
+) (int, []CommitTimelinePoint, error) {
+	if tagName == "" {
+		return 0, nil, nil
+	}
+	if limit < 1 {
+		limit = 1
+	}
+	dir, err := r.ClonePath()
+	if err != nil {
+		return 0, nil, err
+	}
+	return r.manager.commitTimelineSinceTagInDir(
+		ctx,
+		dir,
+		r.platform,
+		r.host,
+		r.owner,
+		r.name,
+		tagName,
+		limit,
+	)
 }
 
 func (m *Manager) fetchTimelineTag(
@@ -257,6 +320,13 @@ func (m *Manager) ParentOf(
 	if err != nil {
 		return "", err
 	}
+	return m.parentOfInDir(ctx, dir, sha)
+}
+
+func (m *Manager) parentOfInDir(
+	ctx context.Context,
+	dir, sha string,
+) (string, error) {
 	out, err := m.git(ctx, dir,
 		"rev-list", "--parents", "-n", "1", "--end-of-options", sha,
 	)
@@ -272,4 +342,16 @@ func (m *Manager) ParentOf(
 		return emptyTreeSHA, nil
 	}
 	return fields[1], nil
+}
+
+// ParentOf returns a commit's first parent from this repository incarnation.
+func (r RepositoryClone) ParentOf(
+	ctx context.Context,
+	sha string,
+) (string, error) {
+	dir, err := r.ClonePath()
+	if err != nil {
+		return "", err
+	}
+	return r.manager.parentOfInDir(ctx, dir, sha)
 }

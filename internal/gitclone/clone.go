@@ -30,6 +30,8 @@ import (
 // network connection inside one sync interval.
 const ensureCloneTimeout = 15 * time.Minute
 
+const repositoryIncarnationNamespace = "repository-incarnations"
+
 // ErrNotFound is returned when a git ref or object cannot be resolved.
 var ErrNotFound = errors.New("git object not found")
 
@@ -66,16 +68,61 @@ type Manager struct {
 	repoBrowserRefreshSF singleflight.Group
 	repoBrowserMu        sync.Mutex
 	repoBrowserRepos     map[string]RepoBrowserRepoRef
+	repoBrowserRefreshFn func(context.Context, RepoBrowserRepoRef) error
+	credentialAliasesMu  sync.RWMutex
+	credentialAliases    map[string]CredentialAlias
+	localReadTestMu      sync.RWMutex
+	beforeLocalReadTest  func()
+}
+
+// CredentialAlias selects configured credentials independently from the
+// current provider route used as the remote endpoint.
+type CredentialAlias struct {
+	Platform        string
+	Host            string
+	Owner           string
+	Name            string
+	CredentialOwner string
+	CredentialName  string
 }
 
 // New creates a Manager that stores bare clones under baseDir. A nil resolver
 // means all operations proceed without auth.
 func New(baseDir string, routes RouteResolver) *Manager {
 	return &Manager{
-		baseDir:          baseDir,
-		routes:           routes,
-		repoBrowserRepos: make(map[string]RepoBrowserRepoRef),
+		baseDir:           baseDir,
+		routes:            routes,
+		repoBrowserRepos:  make(map[string]RepoBrowserRepoRef),
+		credentialAliases: make(map[string]CredentialAlias),
 	}
+}
+
+// ReplaceCredentialAliases atomically replaces managed-Git credential
+// bindings for provider-side repository renames.
+func (m *Manager) ReplaceCredentialAliases(aliases []CredentialAlias) {
+	if m == nil {
+		return
+	}
+	next := make(map[string]CredentialAlias, len(aliases))
+	for _, alias := range aliases {
+		if strings.TrimSpace(alias.CredentialOwner) == "" ||
+			strings.TrimSpace(alias.CredentialName) == "" {
+			continue
+		}
+		next[credentialAliasKey(
+			alias.Platform, alias.Host, alias.Owner, alias.Name,
+		)] = alias
+	}
+	m.credentialAliasesMu.Lock()
+	m.credentialAliases = next
+	m.credentialAliasesMu.Unlock()
+}
+
+func credentialAliasKey(platform, host, owner, name string) string {
+	return strings.ToLower(strings.TrimSpace(platform)) + "\x00" +
+		strings.ToLower(strings.TrimSpace(host)) + "\x00" +
+		strings.ToLower(strings.TrimSpace(owner)) + "\x00" +
+		strings.ToLower(strings.TrimSpace(name))
 }
 
 // ClonePath returns the filesystem path for a repo's bare clone.
@@ -83,9 +130,131 @@ func New(baseDir string, routes RouteResolver) *Manager {
 func (m *Manager) ClonePath(
 	platform, host, owner, name string,
 ) (string, error) {
+	binding := cloneStorageBinding{
+		namespace: cloneNamespaceForPlatform(platform),
+		host:      host,
+		owner:     owner,
+		name:      name,
+	}
 	return m.ClonePathInNamespace(
-		cloneNamespaceForPlatform(platform), host, owner, name,
+		binding.namespace,
+		binding.host,
+		binding.owner,
+		binding.name,
 	)
+}
+
+type cloneStorageBinding struct {
+	namespace string
+	host      string
+	owner     string
+	name      string
+}
+
+// RepositoryClone is an immutable handle to one repository incarnation's
+// managed bare clone. Routing coordinates select credentials and the remote;
+// repositoryID alone selects local storage.
+type RepositoryClone struct {
+	manager      *Manager
+	repositoryID int64
+	platform     string
+	host         string
+	owner        string
+	name         string
+}
+
+// RepositoryClone returns an immutable clone handle for one internal
+// repository ID.
+func (m *Manager) RepositoryClone(
+	repositoryID int64,
+	platform, host, owner, name string,
+) RepositoryClone {
+	return RepositoryClone{
+		manager:      m,
+		repositoryID: repositoryID,
+		platform:     platform,
+		host:         host,
+		owner:        owner,
+		name:         name,
+	}
+}
+
+func (r RepositoryClone) storage() (cloneStorageBinding, error) {
+	if r.manager == nil {
+		return cloneStorageBinding{}, fmt.Errorf("repository clone manager is required")
+	}
+	if r.repositoryID <= 0 {
+		return cloneStorageBinding{}, fmt.Errorf("repository clone id must be positive")
+	}
+	return cloneStorageBinding{
+		namespace: repositoryIncarnationNamespace,
+		host:      "local",
+		owner:     "repositories",
+		name:      fmt.Sprintf("repo-%d", r.repositoryID),
+	}, nil
+}
+
+// ClonePath returns the incarnation-scoped bare clone path.
+func (r RepositoryClone) ClonePath() (string, error) {
+	storage, err := r.storage()
+	if err != nil {
+		return "", err
+	}
+	return r.manager.ClonePathInNamespace(
+		storage.namespace,
+		storage.host,
+		storage.owner,
+		storage.name,
+	)
+}
+
+// EnsureClone creates or refreshes this repository incarnation's bare clone.
+func (r RepositoryClone) EnsureClone(
+	ctx context.Context,
+	remoteURL string,
+) error {
+	if err := validateRemoteURLIdentity(
+		r.host, r.owner, r.name, remoteURL,
+	); err != nil {
+		return err
+	}
+	storage, err := r.storage()
+	if err != nil {
+		return err
+	}
+	return r.manager.ensureCloneInStorage(
+		ctx,
+		storage,
+		r.platform,
+		r.host,
+		r.owner,
+		r.name,
+		remoteURL,
+	)
+}
+
+// RevParse resolves a ref inside this repository incarnation.
+func (r RepositoryClone) RevParse(
+	ctx context.Context,
+	ref string,
+) (string, error) {
+	clonePath, err := r.ClonePath()
+	if err != nil {
+		return "", err
+	}
+	return r.manager.revParseInDir(ctx, clonePath, ref)
+}
+
+// MergeBase computes a merge base inside this repository incarnation.
+func (r RepositoryClone) MergeBase(
+	ctx context.Context,
+	sha1, sha2 string,
+) (string, error) {
+	clonePath, err := r.ClonePath()
+	if err != nil {
+		return "", err
+	}
+	return r.manager.mergeBaseInDir(ctx, clonePath, sha1, sha2)
 }
 
 func cloneNamespaceForPlatform(platform string) string {
@@ -166,9 +335,20 @@ func validateCloneNamespace(namespace string) error {
 func (m *Manager) EnsureClone(
 	ctx context.Context, platform, host, owner, name, remoteURL string,
 ) error {
-	return m.EnsureCloneInNamespace(
-		ctx, cloneNamespaceForPlatform(platform),
-		platform, host, owner, name, remoteURL,
+	binding := cloneStorageBinding{
+		namespace: cloneNamespaceForPlatform(platform),
+		host:      host,
+		owner:     owner,
+		name:      name,
+	}
+	return m.ensureCloneInStorage(
+		ctx,
+		binding,
+		platform,
+		host,
+		owner,
+		name,
+		remoteURL,
 	)
 }
 
@@ -177,7 +357,27 @@ func (m *Manager) EnsureClone(
 func (m *Manager) EnsureCloneInNamespace(
 	ctx context.Context, namespace, platform, host, owner, name, remoteURL string,
 ) error {
-	namespace = strings.TrimSpace(namespace)
+	return m.ensureCloneInStorage(
+		ctx,
+		cloneStorageBinding{
+			namespace: strings.TrimSpace(namespace),
+			host:      host,
+			owner:     owner,
+			name:      name,
+		},
+		platform,
+		host,
+		owner,
+		name,
+		remoteURL,
+	)
+}
+
+func (m *Manager) ensureCloneInStorage(
+	ctx context.Context,
+	storage cloneStorageBinding,
+	platform, host, owner, name, remoteURL string,
+) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -190,17 +390,33 @@ func (m *Manager) EnsureCloneInNamespace(
 	if err := validateRemoteURLIdentity(host, owner, name, remoteURL); err != nil {
 		return err
 	}
-	if _, err := m.ClonePathInNamespace(namespace, host, owner, name); err != nil {
+	if _, err := m.ClonePathInNamespace(
+		storage.namespace,
+		storage.host,
+		storage.owner,
+		storage.name,
+	); err != nil {
 		return err
 	}
-	key := ensureCloneKey(namespace, host, owner, name)
+	key := ensureCloneKey(
+		storage.namespace,
+		storage.host,
+		storage.owner,
+		storage.name,
+	)
 	ch := m.ensureSF.DoChan(key, func() (any, error) {
 		opCtx, cancel := context.WithTimeout(
 			context.WithoutCancel(ctx), ensureCloneTimeout,
 		)
 		defer cancel()
-		return nil, m.ensureCloneNowInNamespace(
-			opCtx, namespace, platform, host, owner, name, remoteURL,
+		return nil, m.ensureCloneNowInStorage(
+			opCtx,
+			storage,
+			platform,
+			host,
+			owner,
+			name,
+			remoteURL,
 		)
 	})
 	select {
@@ -219,10 +435,17 @@ func ensureCloneKey(namespace, host, owner, name string) string {
 // fresh bare clone or refresh an existing one. Always called from
 // inside the singleflight slot opened by EnsureClone, which has
 // already validated the caller's remoteURL.
-func (m *Manager) ensureCloneNowInNamespace(
-	ctx context.Context, namespace, platform, host, owner, name, remoteURL string,
+func (m *Manager) ensureCloneNowInStorage(
+	ctx context.Context,
+	storage cloneStorageBinding,
+	platform, host, owner, name, remoteURL string,
 ) error {
-	clonePath, err := m.ClonePathInNamespace(namespace, host, owner, name)
+	clonePath, err := m.ClonePathInNamespace(
+		storage.namespace,
+		storage.host,
+		storage.owner,
+		storage.name,
+	)
 	if err != nil {
 		return err
 	}
@@ -236,8 +459,28 @@ func (m *Manager) ensureCloneNowInNamespace(
 	// belongs to the expected host: catches a clone whose config
 	// was rewritten after creation.
 	if out, err := m.git(ctx, clonePath, "config", "--get", "remote.origin.url"); err == nil {
-		if err := validateRemoteURLIdentity(host, owner, name, strings.TrimSpace(string(out))); err != nil {
-			return err
+		storedOrigin := strings.TrimSpace(string(out))
+		if err := validateRemoteURLIdentity(host, owner, name, storedOrigin); err != nil {
+			// The repository-incarnation path is selected from the active
+			// repository's immutable internal ID. That binding authorizes an
+			// origin update after a provider-side rename even after restart,
+			// when the prior route is no longer present in memory.
+			if storage.namespace != repositoryIncarnationNamespace {
+				return err
+			}
+			if _, setErr := m.git(
+				ctx,
+				clonePath,
+				"remote",
+				"set-url",
+				"origin",
+				remoteURL,
+			); setErr != nil {
+				return fmt.Errorf(
+					"update managed clone origin after repository rename: %w",
+					setErr,
+				)
+			}
 		}
 	}
 	m.ensureRefspecs(ctx, clonePath)
@@ -404,6 +647,13 @@ func (m *Manager) RevParse(
 	if err != nil {
 		return "", err
 	}
+	return m.revParseInDir(ctx, clonePath, ref)
+}
+
+func (m *Manager) revParseInDir(
+	ctx context.Context,
+	clonePath, ref string,
+) (string, error) {
 	out, err := m.git(ctx, clonePath, "rev-parse", "--verify", ref)
 	if err != nil {
 		return "", fmt.Errorf("git rev-parse %s: %w", ref, err)
@@ -419,6 +669,13 @@ func (m *Manager) MergeBase(
 	if err != nil {
 		return "", err
 	}
+	return m.mergeBaseInDir(ctx, clonePath, sha1, sha2)
+}
+
+func (m *Manager) mergeBaseInDir(
+	ctx context.Context,
+	clonePath, sha1, sha2 string,
+) (string, error) {
 	out, err := m.git(ctx, clonePath, "merge-base", sha1, sha2)
 	if err != nil {
 		return "", fmt.Errorf("git merge-base %s %s: %w", sha1, sha2, err)
@@ -448,7 +705,27 @@ func validateRemoteURLIdentity(expectedHost, owner, name, remoteURL string) erro
 func (m *Manager) git(
 	ctx context.Context, dir string, args ...string,
 ) ([]byte, error) {
+	m.localReadTestMu.RLock()
+	hook := m.beforeLocalReadTest
+	m.localReadTestMu.RUnlock()
+	if hook != nil {
+		hook()
+	}
 	return m.gitWithInput(ctx, dir, nil, args...)
+}
+
+// SetBeforeLocalReadForTest installs a hook immediately before local Git
+// reads. It exists only to coordinate concurrency regression tests.
+func (m *Manager) SetBeforeLocalReadForTest(fn func()) func() {
+	m.localReadTestMu.Lock()
+	previous := m.beforeLocalReadTest
+	m.beforeLocalReadTest = fn
+	m.localReadTestMu.Unlock()
+	return func() {
+		m.localReadTestMu.Lock()
+		m.beforeLocalReadTest = previous
+		m.localReadTestMu.Unlock()
+	}
 }
 
 // RunGitForRepo runs a networked Git command with the repository route's
@@ -673,6 +950,14 @@ func (m *Manager) sourceForRepo(
 ) tokenauth.Source {
 	if m.routes == nil {
 		return nil
+	}
+	key := credentialAliasKey(platform, host, owner, name)
+	m.credentialAliasesMu.RLock()
+	alias, ok := m.credentialAliases[key]
+	m.credentialAliasesMu.RUnlock()
+	if ok {
+		owner = alias.CredentialOwner
+		name = alias.CredentialName
 	}
 	return m.routes.SourceForRepo(platform, host, owner, name)
 }

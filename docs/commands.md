@@ -74,9 +74,11 @@ response body.
 kenn-forge archive start --all
 kenn-forge archive start --repo 'github|github.com/owner/repo'
 kenn-forge archive status --json
+kenn-forge archive status --repo-id 42
 kenn-forge archive pause --all
 kenn-forge archive report --days 7
 kenn-forge archive report --start 2026-07-01 --end 2026-07-07 --verbose
+kenn-forge archive report --days 7 --repo-id 42
 ```
 
 Archive collection runs in the background within each provider host's normal
@@ -88,7 +90,8 @@ Reports use only kenn-forge's local archive, so they make no provider requests,
 but the kenn-forge daemon must be running. `--days` uses rolling 24-hour UTC
 periods. Date-only ranges include both named dates; RFC3339 ranges use an
 inclusive start and exclusive end. Reports default to Markdown; use
-`--format json`, `--output PATH`, and repeated fully qualified `--repo` filters
+`--format json`, `--output PATH`, repeated fully qualified `--repo` filters,
+and repeated immutable `--repo-id` filters
 as needed.
 
 Starting from an existing kenn-forge database discovers historical issues, pull

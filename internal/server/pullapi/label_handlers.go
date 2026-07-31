@@ -27,7 +27,7 @@ func (s *Handler) setPullLabels(
 	ctx context.Context,
 	input *setPullLabelsInput,
 ) (*setLabelsOutput, error) {
-	repo, names, err := s.resolveRequestedLabelNames(
+	repo, names, release, err := s.resolveRequestedLabelNames(
 		ctx,
 		input.Provider,
 		input.PlatformHost,
@@ -38,6 +38,7 @@ func (s *Handler) setPullLabels(
 	if err != nil {
 		return nil, err
 	}
+	defer release()
 
 	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
@@ -85,31 +86,34 @@ func (s *Handler) resolveRequestedLabelNames(
 	owner string,
 	name string,
 	names []string,
-) (*db.Repo, []string, error) {
-	repo, err := s.lookupRepoByProviderRoute(ctx, provider, platformHost, owner, name)
+) (*db.Repo, []string, func(), error) {
+	repo, release, err := s.leaseRepoRouteCapability(
+		ctx, provider, platformHost, owner, name, capabilityReadLabels,
+	)
 	if err != nil {
-		return nil, nil, providerRouteLookupError(err)
+		return nil, nil, nil, err
 	}
 	caps := s.capabilitiesForRepo(*repo)
-	if !capabilityEnabled(caps, capabilityReadLabels) {
-		return nil, nil, unsupportedCapabilityProblem(*repo, capabilityReadLabels)
-	}
 	if !capabilityEnabled(caps, capabilityLabelMutation) {
-		return nil, nil, unsupportedCapabilityProblem(*repo, capabilityLabelMutation)
+		release()
+		return nil, nil, nil, unsupportedCapabilityProblem(*repo, capabilityLabelMutation)
 	}
 	if names == nil {
-		return nil, nil, httpapi.Validation("body.labels", "labels must be an array")
+		release()
+		return nil, nil, nil, httpapi.Validation("body.labels", "labels must be an array")
 	}
 
 	catalog, freshness, err := s.db.ListRepoLabelCatalog(ctx, repo.ID)
 	if err != nil {
-		return nil, nil, httpapi.Internal("list repo labels failed")
+		release()
+		return nil, nil, nil, httpapi.Internal("list repo labels failed")
 	}
 	if labelCatalogStale(freshness, time.Now().UTC()) && s.syncer != nil {
 		_ = s.syncer.RefreshRepoLabelCatalog(ctx, *repo)
 		catalog, _, err = s.db.ListRepoLabelCatalog(ctx, repo.ID)
 		if err != nil {
-			return nil, nil, httpapi.Internal("list repo labels failed")
+			release()
+			return nil, nil, nil, httpapi.Internal("list repo labels failed")
 		}
 	}
 	catalogByName := make(map[string]struct{}, len(catalog))
@@ -122,15 +126,18 @@ func (s *Handler) resolveRequestedLabelNames(
 	for _, raw := range names {
 		labelName := strings.TrimSpace(raw)
 		if labelName == "" {
-			return nil, nil, httpapi.Validation("body.labels", "label names must not be empty")
+			release()
+			return nil, nil, nil, httpapi.Validation("body.labels", "label names must not be empty")
 		}
 		if _, ok := seen[labelName]; ok {
-			return nil, nil, httpapi.Validation(
+			release()
+			return nil, nil, nil, httpapi.Validation(
 				"body.labels", fmt.Sprintf("duplicate label %q", labelName),
 			)
 		}
 		if _, ok := catalogByName[labelName]; !ok {
-			return nil, nil, httpapi.NewProblem(
+			release()
+			return nil, nil, nil, httpapi.NewProblem(
 				http.StatusBadRequest,
 				httpapi.CodeValidationError,
 				fmt.Sprintf("label %q is not in the repository label catalog", labelName),
@@ -140,7 +147,7 @@ func (s *Handler) resolveRequestedLabelNames(
 		seen[labelName] = struct{}{}
 		resolved = append(resolved, labelName)
 	}
-	return repo, resolved, nil
+	return repo, resolved, release, nil
 }
 
 func labelCatalogStale(freshness db.LabelCatalogFreshness, now time.Time) bool {

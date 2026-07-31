@@ -4604,6 +4604,8 @@ export interface components {
             platform_host: string;
             provider: string;
             repo_path: string;
+            /** Format: int64 */
+            repository_id?: number;
         };
         ArchiveStatusResponse: {
             active_phases: ("issue_inventory" | "merge_request_inventory" | "hydration" | "prompt_maintenance")[] | null;
@@ -8027,6 +8029,8 @@ export interface operations {
                 end: string;
                 /** @description Repeated provider|platform_host/repo_path filters. */
                 repo?: string[] | null;
+                /** @description Repeated immutable repository incarnation IDs. */
+                repo_id?: number[] | null;
                 verbose?: boolean;
             };
             header?: never;
@@ -8093,6 +8097,8 @@ export interface operations {
             query?: {
                 /** @description Repeated provider|platform_host/repo_path filters. */
                 repo?: string[] | null;
+                /** @description Repeated immutable repository incarnation IDs. */
+                repo_id?: number[] | null;
             };
             header?: never;
             path?: never;

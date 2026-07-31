@@ -20,6 +20,58 @@ func TestRepositoryResolverRejectsUnavailableStore(t *testing.T) {
 	require.ErrorIs(t, err, ErrRepositoryStoreUnavailable)
 }
 
+func TestRepositoryResolverActiveLeaseBlocksRepositoryReplacement(t *testing.T) {
+	require := require.New(t)
+	database := dbtest.Open(t)
+	oldID, err := database.UpsertRepoByProviderID(t.Context(), db.RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "repository-old",
+		Owner:          "acme",
+		Name:           "widget",
+		RepoPath:       "acme/widget",
+	})
+	require.NoError(err)
+	resolver := NewRepositoryResolver(RepositoryResolverDeps{DB: database})
+
+	repo, release, err := resolver.LeaseActiveRepository(t.Context(), oldID)
+	require.NoError(err)
+	require.NotNil(repo)
+	require.NotNil(release)
+
+	writeStarted := make(chan struct{})
+	restore := database.SetBeforeRepositoryReconciliationWriteLockForTest(func() {
+		select {
+		case <-writeStarted:
+		default:
+			close(writeStarted)
+		}
+	})
+	t.Cleanup(restore)
+	replacementDone := make(chan error, 1)
+	go func() {
+		_, err := database.UpsertRepoByProviderID(t.Context(), db.RepoIdentity{
+			Platform:       "github",
+			PlatformHost:   "github.com",
+			PlatformRepoID: "repository-replacement",
+			Owner:          "acme",
+			Name:           "widget",
+			RepoPath:       "acme/widget",
+		})
+		replacementDone <- err
+	}()
+	<-writeStarted
+
+	select {
+	case err := <-replacementDone:
+		require.Fail("repository replacement completed while active lease was held", err)
+	default:
+	}
+
+	release()
+	require.NoError(<-replacementDone)
+}
+
 func TestRepositoryResolverOwnsCapabilityFallbackPolicy(t *testing.T) {
 	assert := assert.New(t)
 	resolver := NewRepositoryResolver(RepositoryResolverDeps{

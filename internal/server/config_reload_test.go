@@ -1749,6 +1749,64 @@ func TestConfigReload_NewRepoEntersSyncerTrackedSet(t *testing.T) {
 	assert.Equal("globex/engine", archiveLifecycle.ensured[1].RepoPath)
 }
 
+func TestResolveReposForReloadPrefersRenamedExactRouteOverGlob(t *testing.T) {
+	canonical := &gh.Repository{
+		Name:     new("current-widget"),
+		NodeID:   new("R_42"),
+		Owner:    &gh.User{Login: new("acme-tools")},
+		FullName: new("acme-tools/current-widget"),
+		Archived: new(false),
+	}
+	mock := &mockGH{
+		getRepositoryFn: func(
+			context.Context, string, string,
+		) (*gh.Repository, error) {
+			return canonical, nil
+		},
+		listReposByOwnerFn: func(
+			context.Context, string,
+		) ([]*gh.Repository, error) {
+			return []*gh.Repository{canonical}, nil
+		},
+	}
+	srv, _, _ := setupTestServerWithConfigContent(
+		t, validReloadConfig, mock,
+	)
+	exact := config.Repo{
+		Owner:    "acme",
+		Name:     "legacy-widget",
+		TokenEnv: "EXACT_ROUTE_TOKEN",
+	}
+	glob := config.Repo{Owner: "acme-tools", Name: "*"}
+
+	for _, test := range []struct {
+		name  string
+		repos []config.Repo
+	}{
+		{name: "exact first", repos: []config.Repo{exact, glob}},
+		{name: "glob first", repos: []config.Repo{glob, exact}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			require := require.New(t)
+			resolved, skipped := srv.resolveReposForReload(
+				t.Context(), test.repos, nil,
+			)
+
+			require.Empty(skipped)
+			require.Equal([]ghclient.RepoRef{{
+				Platform:           platform.KindGitHub,
+				Owner:              "acme-tools",
+				Name:               "current-widget",
+				CredentialOwner:    "acme",
+				CredentialName:     "legacy-widget",
+				PlatformHost:       "github.com",
+				RepoPath:           "acme-tools/current-widget",
+				PlatformExternalID: "R_42",
+			}}, resolved)
+		})
+	}
+}
+
 func TestConfigReload_GlobFailureKeepsPreviouslyTrackedMatches(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

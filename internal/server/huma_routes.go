@@ -459,19 +459,27 @@ func (s *Server) getRepoCommitDiff(
 		return nil, httpapi.ServiceUnavailable("diff view not available: clone manager not configured")
 	}
 
-	repo, err := s.repoResolver.LookupRoute(
+	leaseCtx, repo, release, err := s.repoResolver.LeaseRouteContext(
 		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
 	)
 	if err != nil {
 		return nil, httpapi.ProviderRouteLookupError(err)
 	}
+	defer release()
+	ctx = leaseCtx
 
-	host := httpapi.ProviderHost(*repo)
 	if !isFullGitObjectID(input.SHA) {
 		return nil, httpapi.Validation("path.sha", "commit SHA must be a full object ID")
 	}
 
-	sha, err := s.clones.ResolveCommit(ctx, string(httpapi.ProviderKind(*repo)), host, repo.Owner, repo.Name, input.SHA)
+	clone := s.clones.RepositoryClone(
+		repo.ID,
+		string(httpapi.ProviderKind(*repo)),
+		httpapi.ProviderHost(*repo),
+		repo.Owner,
+		repo.Name,
+	)
+	sha, err := clone.ResolveCommit(ctx, input.SHA)
 	if err != nil {
 		if errors.Is(err, gitclone.ErrNotFound) {
 			return nil, httpapi.NotFound(httpapi.CodeNotFound, "diff not available: referenced commit not found", nil)
@@ -480,7 +488,7 @@ func (s *Server) getRepoCommitDiff(
 		return nil, httpapi.Upstream("failed to compute diff", "", "")
 	}
 
-	parent, err := s.clones.ParentOf(ctx, string(httpapi.ProviderKind(*repo)), host, repo.Owner, repo.Name, sha)
+	parent, err := clone.ParentOf(ctx, sha)
 	if err != nil {
 		if errors.Is(err, gitclone.ErrNotFound) {
 			return nil, httpapi.NotFound(httpapi.CodeNotFound, "diff not available: referenced commit not found", nil)
@@ -490,7 +498,7 @@ func (s *Server) getRepoCommitDiff(
 	}
 
 	hideWhitespace := input.Whitespace == "hide"
-	result, err := s.clones.Diff(ctx, string(httpapi.ProviderKind(*repo)), host, repo.Owner, repo.Name, parent, sha, hideWhitespace)
+	result, err := clone.Diff(ctx, parent, sha, hideWhitespace)
 	if err != nil {
 		if errors.Is(err, gitclone.ErrNotFound) {
 			return nil, httpapi.NotFound(httpapi.CodeNotFound, "diff not available: referenced commit not found", nil)
@@ -1076,6 +1084,14 @@ func (s *Server) syncPR(ctx context.Context, input *repoNumberInput) (*syncPROut
 			"sync PR: "+syncErr.Error(),
 		)
 	}
+	leaseCtx, repo, release, err := s.repoResolver.LeaseRouteContext(
+		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
+	)
+	if err != nil {
+		return nil, httpapi.ProviderRouteLookupError(err)
+	}
+	defer release()
+	ctx = leaseCtx
 
 	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
@@ -1158,6 +1174,14 @@ func (s *Server) syncIssue(ctx context.Context, input *issueRepoNumberInput) (*s
 			"sync issue: "+err.Error(),
 		)
 	}
+	leaseCtx, repo, release, err := s.repoResolver.LeaseRouteContext(
+		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
+	)
+	if err != nil {
+		return nil, httpapi.ProviderRouteLookupError(err)
+	}
+	defer release()
+	ctx = leaseCtx
 
 	issue, err := s.db.GetIssueByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {

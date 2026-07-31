@@ -59,12 +59,13 @@ func (s *Handler) createIssue(ctx context.Context, input *createIssueInput) (*cr
 	if title == "" {
 		return nil, httpapi.Validation("body.title", "issue title must not be empty")
 	}
-	repo, err := s.resolver.RequireRouteCapability(
+	repo, release, err := s.resolver.LeaseRouteCapability(
 		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name, capabilityIssueMutation,
 	)
 	if err != nil {
 		return nil, err
 	}
+	defer release()
 	if err := s.requireSyncerCapability(*repo, capabilityIssueMutation); err != nil {
 		return nil, err
 	}
@@ -176,12 +177,13 @@ func (s *Handler) editIssueContent(ctx context.Context, input *editIssueContentI
 	if input.Body.Title != nil && strings.TrimSpace(*input.Body.Title) == "" {
 		return nil, httpapi.Validation("body.title", "title must not be blank")
 	}
-	repo, err := s.resolver.RequireRouteCapability(
+	repo, release, err := s.resolver.LeaseRouteCapability(
 		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name, capabilityStateMutation,
 	)
 	if err != nil {
 		return nil, err
 	}
+	defer release()
 	if err := s.requireSyncerCapability(*repo, capabilityStateMutation); err != nil {
 		return nil, err
 	}
@@ -216,7 +218,9 @@ func (s *Handler) editIssueContent(ctx context.Context, input *editIssueContentI
 	if !updated.UpdatedAt.IsZero() {
 		updatedAt = updated.UpdatedAt.UTC()
 	}
-	if err := s.db.UpdateIssueTitleBody(ctx, issue.ID, newTitle, newBody, updatedAt); err != nil {
+	if err := s.db.UpdateIssueTitleBody(
+		ctx, repo.ID, issue.ID, newTitle, newBody, updatedAt,
+	); err != nil {
 		return nil, httpapi.Internal("update title/body failed")
 	}
 	issue, err = s.db.GetIssueByRepoIDAndNumber(ctx, repo.ID, input.Number)

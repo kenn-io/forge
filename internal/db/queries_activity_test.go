@@ -1272,3 +1272,84 @@ func TestListActivityNotificationRepoFiltersApplyBeforeUnionLimit(t *testing.T) 
 	require.NoError(err)
 	assert.Empty(none)
 }
+
+func TestActivityNotificationRepoFilterFollowsStableRepositoryRename(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := baseTime()
+
+	repoID, err := d.UpsertRepoByProviderID(ctx, RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "repository-42",
+		Owner:          "acme",
+		Name:           "legacy-widget",
+	})
+	require.NoError(err)
+	item := notificationFixture("renamed-activity", "mention", now)
+	item.RepoID = &repoID
+	item.RepoName = "legacy-widget"
+	require.NoError(d.UpsertNotifications(ctx, []Notification{item}))
+
+	renamedID, err := d.UpsertRepoByProviderID(ctx, RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "repository-42",
+		Owner:          "acme",
+		Name:           "widget",
+	})
+	require.NoError(err)
+	require.Equal(repoID, renamedID)
+
+	items, err := d.ListActivity(ctx, ListActivityOpts{
+		Limit: 50,
+		Types: []string{"notification"},
+		NotificationRepoFilters: []NotificationRepoFilter{{
+			Platform:     "github",
+			PlatformHost: "github.com",
+			RepoOwner:    "acme",
+			RepoName:     "widget",
+		}},
+	})
+	require.NoError(err)
+	require.Len(items, 1)
+	require.Equal("Please review the widget", items[0].ItemTitle)
+}
+
+func TestListActivityHidesRetiredRepositoryIncarnations(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+
+	oldRepoID, err := d.UpsertRepoByProviderID(ctx, RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "repository-old",
+		Owner:          "acme",
+		Name:           "widget",
+	})
+	require.NoError(err)
+	insertTestMRWithOptions(t, d, testMR(
+		oldRepoID, 1, withMRTitle("Old repository activity"),
+	))
+
+	newRepoID, err := d.UpsertRepoByProviderID(ctx, RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "repository-new",
+		Owner:          "acme",
+		Name:           "widget",
+	})
+	require.NoError(err)
+	insertTestMRWithOptions(t, d, testMR(
+		newRepoID, 2, withMRTitle("New repository activity"),
+	))
+
+	items, err := d.ListActivity(ctx, ListActivityOpts{Limit: 50})
+	require.NoError(err)
+	require.Len(items, 1)
+	assert.Equal(2, items[0].ItemNumber)
+	assert.Equal("New repository activity", items[0].ItemTitle)
+}

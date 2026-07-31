@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"slices"
 	"strings"
 
 	"go.kenn.io/forge/internal/config"
@@ -32,8 +33,12 @@ func canonicalRepoRef(repo RepoRef) RepoRef {
 	kind := repoPlatform(repo)
 	out := RepoRef{
 		Platform:           kind,
+		RepoID:             repo.RepoID,
 		Owner:              strings.TrimSpace(repo.Owner),
 		Name:               strings.TrimSpace(repo.Name),
+		CredentialOwner:    strings.TrimSpace(repo.CredentialOwner),
+		CredentialName:     strings.TrimSpace(repo.CredentialName),
+		ConfiguredRoutes:   slices.Clone(repo.ConfiguredRoutes),
 		PlatformHost:       canonicalRepoHost(repo.PlatformHost),
 		RepoPath:           strings.TrimSpace(repo.RepoPath),
 		PlatformRepoID:     repo.PlatformRepoID,
@@ -76,6 +81,11 @@ type ResolveConfiguredReposResult struct {
 	Warnings   []error
 }
 
+type configuredRepoCandidateIndex struct {
+	index  int
+	isGlob bool
+}
+
 func FallbackConfiguredRepoRefs(
 	previous []RepoRef,
 	raw config.Repo,
@@ -84,6 +94,15 @@ func FallbackConfiguredRepoRefs(
 	host := raw.PlatformHostOrDefault()
 	repoPath := configuredRepoPath(raw)
 	if !raw.HasNameGlob() {
+		for _, repo := range previous {
+			credentialPath := strings.TrimSpace(repo.CredentialOwner) + "/" +
+				strings.TrimSpace(repo.CredentialName)
+			if repoPlatform(repo) == kind &&
+				sameConfiguredRepoHost(repoHost(repo), host) &&
+				strings.EqualFold(credentialPath, repoPath) {
+				return []RepoRef{repo}
+			}
+		}
 		for _, repo := range previous {
 			if repoPlatform(repo) == kind &&
 				sameConfiguredRepoHost(repoHost(repo), host) &&
@@ -153,7 +172,7 @@ func resolveConfiguredRepos(
 	registry *platform.Registry,
 	repos []config.Repo,
 ) ResolveConfiguredReposResult {
-	seen := make(map[string]struct{})
+	seen := make(map[string]configuredRepoCandidateIndex)
 	result := ResolveConfiguredReposResult{
 		Configured: make([]ConfiguredRepoStatus, 0, len(repos)),
 	}
@@ -168,7 +187,7 @@ func resolveConfiguredRepos(
 		}
 		result.Configured = append(result.Configured, status)
 		for _, repo := range expanded {
-			appendExpandedRepo(&result.Expanded, seen, repo)
+			appendExpandedRepo(&result.Expanded, seen, repo, raw.HasNameGlob())
 		}
 	}
 
@@ -189,6 +208,110 @@ func ResolveConfiguredRepoWithRegistry(
 	repo config.Repo,
 ) (ConfiguredRepoStatus, []RepoRef, error) {
 	return resolveConfiguredRepo(ctx, registry, repo)
+}
+
+// PreferConfiguredRepoCandidate reports whether candidate should replace an
+// existing configured reference that resolved to the same repository route.
+// Exact entries retain repository-scoped credential aliases when they overlap
+// globs. Among exact entries, a current direct route wins over a rename alias.
+func PreferConfiguredRepoCandidate(
+	existing RepoRef,
+	existingIsGlob bool,
+	candidate RepoRef,
+	candidateIsGlob bool,
+) bool {
+	if existingIsGlob != candidateIsGlob {
+		return !candidateIsGlob
+	}
+	if existingIsGlob {
+		return false
+	}
+	return repoUsesDirectCredentialRoute(candidate) &&
+		!repoUsesDirectCredentialRoute(existing)
+}
+
+// MergeConfiguredRepoCandidate combines two configured entries that resolve
+// to the same provider route. Exact entries outrank globs, and every distinct
+// exact route is retained for durable alias persistence.
+func MergeConfiguredRepoCandidate(
+	existing RepoRef,
+	existingIsGlob bool,
+	candidate RepoRef,
+	candidateIsGlob bool,
+) (RepoRef, bool) {
+	replace := PreferConfiguredRepoCandidate(
+		existing, existingIsGlob, candidate, candidateIsGlob,
+	)
+	winner := existing
+	winnerIsGlob := existingIsGlob
+	if replace {
+		winner = candidate
+		winnerIsGlob = candidateIsGlob
+	}
+	routes := configuredRoutesForCandidate(existing, existingIsGlob)
+	routes = appendUniqueConfiguredRoutes(
+		routes,
+		configuredRoutesForCandidate(candidate, candidateIsGlob)...,
+	)
+	if len(routes) > 1 {
+		winner.ConfiguredRoutes = routes
+	} else if len(winner.ConfiguredRoutes) > 0 {
+		winner.ConfiguredRoutes = routes
+	}
+	return winner, winnerIsGlob
+}
+
+func configuredRoutesForCandidate(repo RepoRef, isGlob bool) []ConfiguredRepoRoute {
+	routes := slices.Clone(repo.ConfiguredRoutes)
+	if isGlob {
+		return routes
+	}
+	owner := strings.TrimSpace(repo.CredentialOwner)
+	name := strings.TrimSpace(repo.CredentialName)
+	if owner == "" || name == "" {
+		owner = strings.TrimSpace(repo.Owner)
+		name = strings.TrimSpace(repo.Name)
+	}
+	return appendUniqueConfiguredRoutes(routes, ConfiguredRepoRoute{
+		Owner: owner, Name: name, RepoPath: owner + "/" + name,
+	})
+}
+
+func appendUniqueConfiguredRoutes(
+	routes []ConfiguredRepoRoute,
+	candidates ...ConfiguredRepoRoute,
+) []ConfiguredRepoRoute {
+	for _, candidate := range candidates {
+		key := strings.ToLower(strings.TrimSpace(candidate.RepoPath))
+		if key == "" {
+			key = strings.ToLower(strings.TrimSpace(candidate.Owner) + "/" + strings.TrimSpace(candidate.Name))
+			candidate.RepoPath = strings.TrimSpace(candidate.Owner) + "/" + strings.TrimSpace(candidate.Name)
+		}
+		found := false
+		for _, current := range routes {
+			currentKey := strings.ToLower(strings.TrimSpace(current.RepoPath))
+			if currentKey == "" {
+				currentKey = strings.ToLower(strings.TrimSpace(current.Owner) + "/" + strings.TrimSpace(current.Name))
+			}
+			if currentKey == key {
+				found = true
+				break
+			}
+		}
+		if !found {
+			routes = append(routes, candidate)
+		}
+	}
+	return routes
+}
+
+func repoUsesDirectCredentialRoute(repo RepoRef) bool {
+	if strings.TrimSpace(repo.CredentialOwner) == "" ||
+		strings.TrimSpace(repo.CredentialName) == "" {
+		return true
+	}
+	return strings.EqualFold(repo.CredentialOwner, repo.Owner) &&
+		strings.EqualFold(repo.CredentialName, repo.Name)
 }
 
 func resolveConfiguredRepo(
@@ -312,6 +435,12 @@ func repoRefFromRepository(
 		CloneURL:           repo.CloneURL,
 		DefaultBranch:      repo.DefaultBranch,
 	}
+	if !raw.HasNameGlob() &&
+		(!strings.EqualFold(ref.Owner, raw.Owner) ||
+			!strings.EqualFold(ref.Name, raw.Name)) {
+		ref.CredentialOwner = strings.TrimSpace(raw.Owner)
+		ref.CredentialName = strings.TrimSpace(raw.Name)
+	}
 	if ref.PlatformRepoID == 0 {
 		ref.PlatformRepoID = repo.Ref.PlatformID
 	}
@@ -340,15 +469,22 @@ func repoRefFromRepository(
 
 func appendExpandedRepo(
 	dst *[]RepoRef,
-	seen map[string]struct{},
+	seen map[string]configuredRepoCandidateIndex,
 	repo RepoRef,
+	isGlob bool,
 ) {
 	repo = canonicalRepoRef(repo)
 	key := string(repoPlatform(repo)) + "\x00" + repo.PlatformHost + "\x00" + repo.Owner + "\x00" + repo.Name
-	if _, ok := seen[key]; ok {
+	if current, ok := seen[key]; ok {
+		merged, mergedIsGlob := MergeConfiguredRepoCandidate(
+			(*dst)[current.index], current.isGlob, repo, isGlob,
+		)
+		(*dst)[current.index] = merged
+		current.isGlob = mergedIsGlob
+		seen[key] = current
 		return
 	}
-	seen[key] = struct{}{}
+	seen[key] = configuredRepoCandidateIndex{index: len(*dst), isGlob: isGlob}
 	*dst = append(*dst, repo)
 }
 

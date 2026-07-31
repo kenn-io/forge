@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -2187,6 +2188,66 @@ name = "widget"
 	assert.Equal("worker", cfg2.Repos[2].Name)
 }
 
+func TestBulkRepoImportSerializesWithConfigReload(t *testing.T) {
+	require := require.New(t)
+	srv, _, _ := setupTestServerWithConfigContent(t, `
+sync_interval = "5m"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "widget"
+`, &mockGH{})
+
+	srv.configReloadMu.Lock()
+	srv.cfgMu.Lock()
+	staleReload := cloneReloadedConfig(srv.cfg)
+	srv.cfgMu.Unlock()
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := srv.applyBulkExactRepos(t.Context(), []resolvedBulkRepo{{
+			Config: config.Repo{Owner: "acme", Name: "api"},
+			Ref: ghclient.RepoRef{
+				Platform:           platform.KindGitHub,
+				PlatformHost:       "github.com",
+				Owner:              "acme",
+				Name:               "api",
+				RepoPath:           "acme/api",
+				PlatformExternalID: "repo-42",
+			},
+		}})
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		require.NoError(err)
+		// Model the watcher publishing the snapshot it loaded before the
+		// import. Without serialization this discards the newer repo.
+		srv.cfgMu.Lock()
+		*srv.cfg = staleReload
+		srv.cfgMu.Unlock()
+		srv.configReloadMu.Unlock()
+	case <-time.After(100 * time.Millisecond):
+		// The import is correctly waiting for the reload to publish. Once
+		// released it must base its update on that published snapshot.
+		srv.cfgMu.Lock()
+		*srv.cfg = staleReload
+		srv.cfgMu.Unlock()
+		srv.configReloadMu.Unlock()
+		require.NoError(<-done)
+	}
+
+	srv.cfgMu.Lock()
+	repos := slices.Clone(srv.cfg.Repos)
+	srv.cfgMu.Unlock()
+	require.Len(repos, 2)
+	require.Equal("api", repos[1].Name)
+}
+
 func TestHandleBulkAddReposPersistsGitLabProviderIdentity(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -2287,6 +2348,75 @@ func TestWorktreeBasePathResolverMatchesProviderIdentity(t *testing.T) {
 	require.NoError(err)
 	require.True(ok)
 	assert.Equal("/tmp/gitlab-widget", got)
+}
+
+func TestRenamedExactRepoRetainsSettingsMatchAndWorktreeBasePath(t *testing.T) {
+	require := require.New(t)
+	renamed := ghclient.RepoRef{
+		Platform:        platform.KindGitHub,
+		PlatformHost:    "github.com",
+		Owner:           "acme-tools",
+		Name:            "current-widget",
+		RepoPath:        "acme-tools/current-widget",
+		CredentialOwner: "acme",
+		CredentialName:  "legacy-widget",
+	}
+	raw := config.Repo{
+		Owner:            "acme",
+		Name:             "legacy-widget",
+		WorktreeBasePath: "/tmp/acme-widget",
+	}
+	database := dbtest.Open(t)
+	syncer := ghclient.NewSyncer(
+		nil, database, nil, []ghclient.RepoRef{renamed}, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := &Server{
+		cfg:    &config.Config{Repos: []config.Repo{raw}},
+		db:     database,
+		syncer: syncer,
+	}
+
+	require.Equal(1, matchedRepoCount(raw, syncer.TrackedRepos()))
+	got, ok, err := srv.worktreeBasePathForRepo(
+		t.Context(), "github", "github.com", "acme-tools", "current-widget",
+	)
+	require.NoError(err)
+	require.True(ok)
+	require.Equal("/tmp/acme-widget", got)
+}
+
+func TestRemovingOtherConfigKeepsRenamedExactRepoTracked(t *testing.T) {
+	require := require.New(t)
+	database := dbtest.Open(t)
+	renamed := ghclient.RepoRef{
+		Platform:        platform.KindGitHub,
+		PlatformHost:    "github.com",
+		Owner:           "acme-tools",
+		Name:            "current-widget",
+		RepoPath:        "acme-tools/current-widget",
+		CredentialOwner: "acme",
+		CredentialName:  "legacy-widget",
+	}
+	other := ghclient.RepoRef{
+		Platform:     platform.KindGitHub,
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "other",
+		RepoPath:     "acme/other",
+	}
+	syncer := ghclient.NewSyncer(
+		nil, database, nil, []ghclient.RepoRef{renamed, other}, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := &Server{db: database, syncer: syncer}
+
+	srv.removeConfigRepos([]config.Repo{{
+		Owner: "acme",
+		Name:  "legacy-widget",
+	}})
+
+	require.Equal([]ghclient.RepoRef{renamed}, syncer.TrackedRepos())
 }
 
 func TestHandleBulkAddReposPersistsGiteaProviderIdentity(t *testing.T) {

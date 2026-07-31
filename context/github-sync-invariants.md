@@ -18,20 +18,35 @@ and provider capability rules, start with
 ## Identity Rules
 
 GitHub entities in kenn-forge are not identified by owner/name/number alone.
-The provider-neutral identity is `(platform, platform_host, owner, name)`;
-this document focuses on GitHub-specific default-host behavior and GitHub-only
-sync optimizations.
+The stable GitHub repository ID, scoped by host, owns one immutable internal
+repository ID. Owner/name are mutable routing and display coordinates; this
+document focuses on GitHub-specific default-host behavior and GitHub-only sync
+optimizations.
 
-- Repository identity is `(github, platform_host, owner, name)`.
-- PR and issue identity is `(github, platform_host, owner, name, number)`.
+- Repository data identity is `(github, platform_host, platform_repo_id)`.
+- Persisted PR and issue identity is `(internal_repo_id, number)`.
+- Provider API routing remains `(github, platform_host, owner, name, number)`.
 - Workspace association repair and list filtering must preserve that
-  provider/host-aware identity.
+  internal repository incarnation.
 - GitHub owner/name are case-folded lookup keys; do not apply that rule to
   providers whose metadata preserves nested or mixed-case paths.
 
 Rules:
 
-- Treat `platform_host` as part of every persisted GitHub object identity.
+- Treat `platform_host` and the stable provider repository ID as the upstream
+  repository identity; never overwrite a stored stable ID from metadata.
+- A new stable ID at the same route creates a fresh local repository
+  incarnation. Retired activity remains stored but is hidden from default
+  lists, and the new incarnation receives clean archive, notification, ETag,
+  workspace, and managed-clone state.
+- A route change with the same stable ID preserves the internal repository ID
+  and repository-owned history. Keep the configured lookup route as a
+  credential/identity alias while provider reads use the current resolved
+  route; if both routes are configured, tracked-ref deduplication prefers the
+  direct current route. (`internal/github/sync.go::compactTrackedRepositoriesByID`)
+- Tracked `RepoRef` lists are concurrent snapshots; constructors and publishers
+  must copy their slices before mutation.
+  (`internal/github/sync.go::publishResolvedRepository`)
 - When a caller explicitly supplies `platform_host`, honor it all the way
   through query, sync, and response shaping.
 - Only fall back to the default host when the request truly omits host and the
@@ -41,6 +56,11 @@ Rules:
   compatibility paths.
 - Do not constrain repo-scoped listing queries to one host unless the caller
   asked for that host.
+- GitHub issue-list clients must continue filtering payloads with
+  `PullRequestLinks` before page normalization. `NormalizeIssue` also rejects
+  those payloads as a persistence backstop, but it is not a list filter: letting
+  a pull request reach it would fail the entire issue page.
+  (`internal/github/client.go`, `internal/platform/github/normalize.go`)
 
 ## Freshness Rules
 
@@ -55,6 +75,9 @@ what "current" means.
 - Budgeted detail drain treats each queue item's worst-case cost as soft admission;
   provider pagination and child hydration may exceed it because the transport counts
   actual wire attempts (`internal/github/sync.go::drainDetailQueue`).
+- Detail-queue work is bound to the repository ID selected during index sync
+  and holds that incarnation stable through provider, clone, and persistence
+  work (`internal/github/sync.go::drainDetailQueueItems`).
 
 For pull requests, that means:
 
@@ -296,6 +319,10 @@ has a tracked repository. Ownerless APIs may use only the host fallback; never
 borrow an arbitrary owner PAT. Repository notifications use the user/write
 identity. App-only routes may read, but notifications and mutations remain
 disabled until restart establishes a stable user identity.
+After a repository rename, notification list options carry the current
+owner/name for provider filtering separately from the configured owner/name
+used to select an exact credential route.
+(`internal/github/auth_router.go::RoutedClient.ListNotifications`)
 
 Notification sync watermarks are per repository identity, never host-wide: a
 repository whose credential route is unavailable or exhausted reports its error
@@ -344,7 +371,8 @@ Managed Git uses exact-repository or owner PAT routes with mutation context and
 must never expose an App installation token to smart HTTP. Thread full provider,
 host, owner, and repository identity through clone/fetch and local reads, passing
 the normalized platform (`repoPlatform(repo)`) so an unqualified GitHub ref still
-picks its credential route instead of none;
+picks its credential route instead of none; a same-ID rename changes the remote
+endpoint but retains the configured exact credential route;
 partition non-GitHub clone storage by provider on shared hosts. Before injecting
 a PAT into workspace fetch or push, require the branch upstream to be `origin`,
 reject repository-local URL rewrites, and validate every origin fetch/push URL.
@@ -354,6 +382,12 @@ run git with no credential, which succeeds against any public repository and
 spends no identity's budget. A route resolver that cannot serve a repository must
 return a source whose `Token` reports the missing route
 (`cmd/kenn-forge/provider_startup.go::missingRouteTokenSource`).
+
+Repository-browser refreshes hold the active repository lease until shared
+singleflight Git work has actually stopped, including caller cancellation.
+Restart seeding may repoint an incarnation-scoped clone to a same-ID renamed
+origin locally, but network refresh belongs to the retrying background loop.
+(`internal/gitclone/repo_browser.go::Manager.RefreshRepoBrowserClones`)
 
 Token-file rotation within the same GitHub user is hot-reloadable. Changing the
 authenticated user, adding a write identity to an App-only route, or adding or

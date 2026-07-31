@@ -195,6 +195,7 @@ func TestSyncArchiveItemClassifiesOnlyConfirmedParentNotFound(t *testing.T) {
 	ref := platform.RepoRef{
 		Platform: platform.KindGitLab, Host: "gitlab.example.com",
 		Owner: "group", Name: "project", RepoPath: "group/project",
+		PlatformExternalID: "gid://gitlab/Project/42",
 	}
 	issue := platform.Issue{
 		Repo: ref, PlatformID: 7, PlatformExternalID: "issue-7", Number: 7,
@@ -211,16 +212,16 @@ func TestSyncArchiveItemClassifiesOnlyConfirmedParentNotFound(t *testing.T) {
 	}{
 		{
 			name: "accessible repository confirms missing parent", getIssueErr: platform.ErrNotFound,
-			wantNotPresent: true, wantRepoQueries: 1,
+			wantNotPresent: true, wantRepoQueries: 2,
 		},
 		{
 			name:           "provider metadata already confirms missing parent",
 			getIssueErr:    errors.Join(platform.ErrLookupNotPresent, platform.ErrNotFound),
-			wantNotPresent: true,
+			wantNotPresent: true, wantRepoQueries: 1,
 		},
 		{
 			name: "child event not found stays retryable", issues: []platform.Issue{issue},
-			listEventsErr: platform.ErrNotFound,
+			listEventsErr: platform.ErrNotFound, wantRepoQueries: 1,
 		},
 		{
 			name: "missing repository does not prove missing parent", getIssueErr: platform.ErrNotFound,
@@ -759,7 +760,15 @@ esac
 		PlatformHost: "github.com",
 		CloneURL:     "https://github.com/acme/widgets.git",
 	}
-	clonePath, err := clones.ClonePath("github", "github.com", repo.Owner, repo.Name)
+	repoID, err := database.UpsertRepo(
+		t.Context(),
+		db.GitHubRepoIdentity("github.com", repo.Owner, repo.Name),
+	)
+	require.NoError(err)
+	repo.RepoID = repoID
+	clonePath, err := clones.RepositoryClone(
+		repoID, "github", "github.com", repo.Owner, repo.Name,
+	).ClonePath()
 	require.NoError(err)
 	require.NoError(os.MkdirAll(clonePath, 0o755))
 	require.NoError(os.WriteFile(
@@ -767,11 +776,6 @@ esac
 		[]byte("ref: refs/heads/main\n"),
 		0o644,
 	))
-	repoID, err := database.UpsertRepo(
-		t.Context(),
-		db.GitHubRepoIdentity("github.com", repo.Owner, repo.Name),
-	)
-	require.NoError(err)
 	syncer := NewSyncer(
 		map[string]Client{"github.com": &mockClient{}},
 		database,
@@ -1047,6 +1051,7 @@ type syncTestRepositoryReadProvider struct {
 	*syncTestReadProvider
 	repository         platform.Repository
 	repositoryErr      error
+	getRepositoryFn    func(context.Context, platform.RepoRef) (platform.Repository, error)
 	getRepositoryCalls atomic.Int32
 }
 
@@ -1132,10 +1137,13 @@ func (p *syncTestReadProvider) Capabilities() platform.Capabilities {
 }
 
 func (p *syncTestRepositoryReadProvider) GetRepository(
-	context.Context,
-	platform.RepoRef,
+	ctx context.Context,
+	ref platform.RepoRef,
 ) (platform.Repository, error) {
 	p.getRepositoryCalls.Add(1)
+	if p.getRepositoryFn != nil {
+		return p.getRepositoryFn(ctx, ref)
+	}
 	return p.repository, p.repositoryErr
 }
 
@@ -2068,11 +2076,13 @@ func TestSyncNotificationsContinuesAfterRepoErrorOnSameHost(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	database := openTestDB(t)
+	repoIDs := make(map[string]int64)
 	for _, name := range []string{"broken", "widget"} {
-		_, err := database.UpsertRepo(
+		repoID, err := database.UpsertRepo(
 			t.Context(), db.GitHubRepoIdentity("github.com", "acme", name),
 		)
 		require.NoError(err)
+		repoIDs[name] = repoID
 	}
 	boom := errors.New("bad scoped credential")
 	number := 7
@@ -2115,12 +2125,12 @@ func TestSyncNotificationsContinuesAfterRepoErrorOnSameHost(t *testing.T) {
 	assert.Equal("thread-ok", items[0].PlatformNotificationID)
 
 	brokenWatermark, watermarkErr := database.GetNotificationSyncWatermark(
-		t.Context(), "github", "github.com", "acme", "broken",
+		t.Context(), repoIDs["broken"],
 	)
 	require.NoError(watermarkErr)
 	assert.Nil(brokenWatermark, "a failing repository must not advance its own watermark")
 	widgetWatermark, watermarkErr := database.GetNotificationSyncWatermark(
-		t.Context(), "github", "github.com", "acme", "widget",
+		t.Context(), repoIDs["widget"],
 	)
 	require.NoError(watermarkErr)
 	require.NotNil(widgetWatermark,
@@ -2128,16 +2138,178 @@ func TestSyncNotificationsContinuesAfterRepoErrorOnSameHost(t *testing.T) {
 	assert.False(widgetWatermark.LastSuccessfulSyncAt.IsZero())
 }
 
+func TestSyncNotificationsBlocksRepositoryReplacementThroughPersistence(
+	t *testing.T,
+) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	const (
+		oldProviderID = "R_old"
+		newProviderID = "R_new"
+	)
+	oldRepoID, err := database.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: oldProviderID,
+		Owner:          "acme",
+		Name:           "widget",
+		RepoPath:       "acme/widget",
+	})
+	require.NoError(err)
+
+	fetchStarted := make(chan struct{})
+	continueFetch := make(chan struct{})
+	number := 7
+	now := time.Date(2026, 7, 30, 12, 0, 0, 0, time.UTC)
+	client := &mockClient{
+		getRepositoryFn: func(
+			context.Context,
+			string,
+			string,
+		) (*gh.Repository, error) {
+			owner := "acme"
+			name := "widget"
+			nodeID := oldProviderID
+			return &gh.Repository{
+				NodeID: &nodeID,
+				Name:   &name,
+				Owner:  &gh.User{Login: &owner},
+			}, nil
+		},
+		listNotificationsFn: func(
+			_ context.Context,
+			opts NotificationListOptions,
+		) ([]NotificationThread, bool, error) {
+			if opts.Participating {
+				return nil, false, nil
+			}
+			close(fetchStarted)
+			<-continueFetch
+			return []NotificationThread{{
+				ID:           "thread-7",
+				RepoOwner:    "acme",
+				RepoName:     "widget",
+				SubjectType:  "PullRequest",
+				SubjectTitle: "Review requested",
+				WebURL:       "https://github.com/acme/widget/pull/7",
+				ItemNumber:   &number,
+				ItemType:     "pr",
+				Reason:       "mention",
+				Unread:       true,
+				UpdatedAt:    now,
+			}}, false, nil
+		},
+	}
+	configured := RepoRef{
+		Platform:           platform.KindGitHub,
+		PlatformHost:       "github.com",
+		Owner:              "acme",
+		Name:               "widget",
+		RepoPath:           "acme/widget",
+		RepoID:             oldRepoID,
+		PlatformExternalID: oldProviderID,
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client},
+		database,
+		nil,
+		[]RepoRef{configured},
+		time.Minute,
+		nil,
+		nil,
+	)
+	t.Cleanup(syncer.Stop)
+
+	syncDone := make(chan error, 1)
+	go func() {
+		syncDone <- syncer.syncNotificationsForRepo(
+			ctx,
+			platform.KindGitHub,
+			"github.com",
+			client,
+			configured,
+			now,
+		)
+	}()
+	<-fetchStarted
+
+	writeAttempted := make(chan struct{})
+	restoreWriteLockHook := database.SetBeforeRepositoryReconciliationWriteLockForTest(
+		func() { close(writeAttempted) },
+	)
+	defer restoreWriteLockHook()
+	replacementDone := make(chan error, 1)
+	go func() {
+		_, replacementErr := database.UpsertRepoByProviderID(
+			ctx,
+			db.RepoIdentity{
+				Platform:       "github",
+				PlatformHost:   "github.com",
+				PlatformRepoID: newProviderID,
+				Owner:          "acme",
+				Name:           "widget",
+				RepoPath:       "acme/widget",
+			},
+		)
+		replacementDone <- replacementErr
+	}()
+	<-writeAttempted
+
+	var (
+		replacementErr       error
+		replacementCompleted bool
+	)
+	select {
+	case replacementErr = <-replacementDone:
+		replacementCompleted = true
+	case <-time.After(250 * time.Millisecond):
+	}
+	close(continueFetch)
+	require.NoError(<-syncDone)
+	if !replacementCompleted {
+		replacementErr = <-replacementDone
+	}
+	require.NoError(replacementErr)
+	assert.False(
+		replacementCompleted,
+		"replacement must wait for notification persistence and watermark advancement",
+	)
+
+	active, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
+		Platform:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+	})
+	require.NoError(err)
+	require.NotNil(active)
+	assert.NotEqual(oldRepoID, active.ID)
+	assert.Equal(newProviderID, active.PlatformRepoID)
+	activeWatermark, err := database.GetNotificationSyncWatermark(
+		ctx,
+		active.ID,
+	)
+	require.NoError(err)
+	assert.Nil(
+		activeWatermark,
+		"the replacement incarnation must start with a fresh notification watermark",
+	)
+}
+
 func TestSyncNotificationsSkipsUnroutedRepoAndAdvancesRoutedSibling(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	database := openTestDB(t)
+	repoIDs := make(map[string]int64)
 	for _, identity := range []db.RepoIdentity{
 		db.GitHubRepoIdentity("github.com", "acme", "widget"),
 		db.GitHubRepoIdentity("github.com", "unrouted", "thing"),
 	} {
-		_, err := database.UpsertRepo(t.Context(), identity)
+		repoID, err := database.UpsertRepo(t.Context(), identity)
 		require.NoError(err)
+		repoIDs[identity.Name] = repoID
 	}
 	number := 7
 	client := &mockClient{
@@ -2175,13 +2347,13 @@ func TestSyncNotificationsSkipsUnroutedRepoAndAdvancesRoutedSibling(t *testing.T
 	err = syncer.SyncNotifications(t.Context())
 	require.Error(err, "the unrouted repository must surface its failure")
 	widgetWatermark, wmErr := database.GetNotificationSyncWatermark(
-		t.Context(), "github", "github.com", "acme", "widget",
+		t.Context(), repoIDs["widget"],
 	)
 	require.NoError(wmErr)
 	require.NotNil(widgetWatermark,
 		"a routed sibling must sync and advance despite an unroutable repository on the host")
 	unroutedWatermark, wmErr := database.GetNotificationSyncWatermark(
-		t.Context(), "github", "github.com", "unrouted", "thing",
+		t.Context(), repoIDs["thing"],
 	)
 	require.NoError(wmErr)
 	assert.Nil(unroutedWatermark)
@@ -3051,6 +3223,200 @@ func TestProcessQueuedNotificationReadsStopsRetryMetadataAtMaxAttempts(t *testin
 	assert.Empty(queued)
 }
 
+func TestProcessQueuedNotificationReadsUsesRenamedRepositoryCredentialAlias(
+	t *testing.T,
+) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	repoID, err := d.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "repo-stable", Owner: "acme", Name: "widget",
+		RepoPath: "acme/widget",
+	})
+	require.NoError(err)
+	_, err = d.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "repo-stable", Owner: "acme-tools", Name: "renamed-widget",
+		RepoPath: "acme-tools/renamed-widget",
+	})
+	require.NoError(err)
+	now := time.Date(2026, 7, 31, 10, 0, 0, 0, time.UTC)
+	number := 7
+	require.NoError(d.UpsertNotifications(ctx, []db.Notification{{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformNotificationID: "thread-renamed", RepoID: &repoID,
+		RepoOwner: "acme-tools", RepoName: "renamed-widget",
+		SubjectType: "PullRequest", SubjectTitle: "Review requested",
+		ItemNumber: &number, ItemType: "pr", Reason: "mention",
+		Unread: true, SourceUpdatedAt: now, SyncedAt: now,
+	}}))
+	items, err := d.ListNotifications(ctx, db.ListNotificationsOpts{State: "all"})
+	require.NoError(err)
+	require.Len(items, 1)
+	_, err = d.QueueNotificationIDsRead(ctx, []int64{items[0].ID}, now.Add(time.Minute))
+	require.NoError(err)
+
+	var fetched []string
+	var marked []string
+	provider := &mockClient{
+		getNotificationThreadFn: func(
+			_ context.Context, threadID string,
+		) (NotificationThread, error) {
+			fetched = append(fetched, threadID)
+			return NotificationThread{ID: threadID, UpdatedAt: now}, nil
+		},
+		markNotificationThreadReadFn: func(
+			_ context.Context, threadID string,
+		) error {
+			marked = append(marked, threadID)
+			return nil
+		},
+	}
+	router, err := NewHostRouter("github.com", &Route{
+		Key:           RouteKey{Host: "github.com", Owner: "acme", Name: "widget"},
+		Client:        provider,
+		ReadIdentity:  IdentityKey{Host: "github.com", Principal: "user:1"},
+		WriteIdentity: IdentityKey{Host: "github.com", Principal: "user:1"},
+	})
+	require.NoError(err)
+	routed, err := NewRoutedClient(router)
+	require.NoError(err)
+	syncer := NewSyncer(
+		map[string]Client{"github.com": routed}, d, nil,
+		[]RepoRef{{
+			Platform: platform.KindGitHub, PlatformHost: "github.com",
+			RepoID: repoID, Owner: "acme-tools", Name: "renamed-widget",
+			CredentialOwner: "acme", CredentialName: "widget",
+			PlatformExternalID: "repo-stable",
+		}},
+		time.Minute, nil, nil,
+	)
+	syncer.SetGitHubRouters(map[string]*HostRouter{"github.com": router})
+
+	require.NoError(syncer.ProcessQueuedNotificationReads(
+		ctx, platform.KindGitHub, "github.com", 10,
+	))
+	assert.Equal([]string{"thread-renamed", "thread-renamed"}, fetched)
+	assert.Equal([]string{"thread-renamed"}, marked)
+	queued, err := d.ListQueuedNotificationAcks(
+		ctx, "github", "github.com", 10, now.Add(time.Hour),
+	)
+	require.NoError(err)
+	assert.Empty(queued)
+}
+
+func TestProcessQueuedNotificationReadsLeasesRepositoryThroughPersistence(
+	t *testing.T,
+) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	repoID, err := d.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "repo-original", Owner: "acme", Name: "widget",
+		RepoPath: "acme/widget",
+	})
+	require.NoError(err)
+	now := time.Date(2026, 7, 31, 10, 0, 0, 0, time.UTC)
+	number := 7
+	require.NoError(d.UpsertNotifications(ctx, []db.Notification{{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformNotificationID: "thread-race", RepoID: &repoID,
+		RepoOwner: "acme", RepoName: "widget",
+		SubjectType: "PullRequest", SubjectTitle: "Review requested",
+		ItemNumber: &number, ItemType: "pr", Reason: "mention",
+		Unread: true, SourceUpdatedAt: now, SyncedAt: now,
+	}}))
+	items, err := d.ListNotifications(ctx, db.ListNotificationsOpts{State: "all"})
+	require.NoError(err)
+	require.Len(items, 1)
+	_, err = d.QueueNotificationIDsRead(ctx, []int64{items[0].ID}, now.Add(time.Minute))
+	require.NoError(err)
+
+	fetchStarted := make(chan struct{})
+	continueFetch := make(chan struct{})
+	var blockFirstFetch sync.Once
+	provider := &mockClient{
+		getNotificationThreadFn: func(
+			_ context.Context, threadID string,
+		) (NotificationThread, error) {
+			blockFirstFetch.Do(func() {
+				close(fetchStarted)
+				<-continueFetch
+			})
+			return NotificationThread{ID: threadID, UpdatedAt: now}, nil
+		},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": provider}, d, nil,
+		[]RepoRef{{
+			Platform: platform.KindGitHub, PlatformHost: "github.com",
+			RepoID: repoID, Owner: "acme", Name: "widget",
+			PlatformExternalID: "repo-original",
+		}},
+		time.Minute, nil, nil,
+	)
+	ackDone := make(chan error, 1)
+	go func() {
+		ackDone <- syncer.ProcessQueuedNotificationReads(
+			ctx, platform.KindGitHub, "github.com", 10,
+		)
+	}()
+	select {
+	case <-fetchStarted:
+	case <-time.After(2 * time.Second):
+		require.Fail("notification acknowledgement did not fetch")
+	}
+
+	writeLockAttempted := make(chan struct{})
+	d.SetBeforeRepositoryReconciliationWriteLockForTest(
+		func() { close(writeLockAttempted) },
+	)
+	replacementDone := make(chan error, 1)
+	go func() {
+		_, replaceErr := d.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+			Platform: "github", PlatformHost: "github.com",
+			PlatformRepoID: "repo-replacement", Owner: "acme", Name: "widget",
+			RepoPath: "acme/widget",
+		})
+		replacementDone <- replaceErr
+	}()
+	select {
+	case <-writeLockAttempted:
+	case <-time.After(2 * time.Second):
+		require.Fail("repository replacement did not queue")
+	}
+	replacedDuringFetch := false
+	select {
+	case err := <-replacementDone:
+		require.NoError(err)
+		replacedDuringFetch = true
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(continueFetch)
+	select {
+	case err := <-ackDone:
+		require.NoError(err)
+	case <-time.After(2 * time.Second):
+		require.Fail("notification acknowledgement did not finish")
+	}
+	if !replacedDuringFetch {
+		select {
+		case err := <-replacementDone:
+			require.NoError(err)
+		case <-time.After(2 * time.Second):
+			require.Fail("repository replacement did not resume")
+		}
+	}
+	assert.False(
+		replacedDuringFetch,
+		"repository replacement must wait for notification persistence",
+	)
+}
+
 func TestProcessQueuedNotificationReadsPausesOnRateLimitWithoutConsumingAttempts(t *testing.T) {
 	require := require.New(t)
 	check := assert.New(t)
@@ -3515,11 +3881,11 @@ func TestSyncNotificationsUsesPersistedSinceWatermark(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
-	_, err := d.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := d.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	watermark := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
 	lastFullSyncAt := time.Now().UTC()
-	require.NoError(d.UpdateNotificationSyncWatermark(t.Context(), "github", "github.com", "acme", "widget", watermark, &lastFullSyncAt))
+	require.NoError(d.UpdateNotificationSyncWatermark(t.Context(), repoID, watermark, &lastFullSyncAt))
 	var seen []NotificationListOptions
 	syncer := NewSyncer(
 		map[string]Client{
@@ -3562,11 +3928,11 @@ func TestSyncNotificationsDoesPeriodicFullSyncForReadState(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
-	_, err := d.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := d.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	watermark := time.Now().UTC().Add(-2 * notificationFullSyncInterval)
 	lastFullSyncAt := watermark
-	require.NoError(d.UpdateNotificationSyncWatermark(t.Context(), "github", "github.com", "acme", "widget", watermark, &lastFullSyncAt))
+	require.NoError(d.UpdateNotificationSyncWatermark(t.Context(), repoID, watermark, &lastFullSyncAt))
 	var seen []NotificationListOptions
 	syncer := NewSyncer(
 		map[string]Client{
@@ -3605,13 +3971,13 @@ func TestSyncNotificationsNewRepoFullSyncsWithoutResettingSiblings(t *testing.T)
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
-	_, err := d.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := d.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	_, err = d.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "new-repo"))
 	require.NoError(err)
 	watermark := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
 	lastFullSyncAt := time.Now().UTC()
-	require.NoError(d.UpdateNotificationSyncWatermark(t.Context(), "github", "github.com", "acme", "widget", watermark, &lastFullSyncAt))
+	require.NoError(d.UpdateNotificationSyncWatermark(t.Context(), repoID, watermark, &lastFullSyncAt))
 	var seen []NotificationListOptions
 	syncer := NewSyncer(
 		map[string]Client{
@@ -5449,7 +5815,7 @@ func TestCommitMergeRequestParentSnapshotBlocksRepositoryReconciliationThroughRe
 		Name:           "old-name",
 	})
 	require.NoError(err)
-	destinationID, err := d.UpsertRepo(ctx, db.RepoIdentity{
+	_, err = d.UpsertRepo(ctx, db.RepoIdentity{
 		Platform:     "gitlab",
 		PlatformHost: "gitlab.com",
 		Owner:        "new-group",
@@ -5529,7 +5895,7 @@ func TestCommitMergeRequestParentSnapshotBlocksRepositoryReconciliationThroughRe
 	assert.Equal(forkURL, *reclassified.MRHeadRepo)
 
 	moved, err := d.GetMergeRequestByRepoIDAndNumber(
-		ctx, destinationID, stored.Number,
+		ctx, sourceID, stored.Number,
 	)
 	require.NoError(err)
 	require.NotNil(moved)
@@ -5612,7 +5978,7 @@ func TestReclassifyWorkspaceHeadRepoTrustBlocksRepositoryReconciliation(t *testi
 		Name:           "old-name",
 	})
 	require.NoError(err)
-	destinationID, err := d.UpsertRepo(ctx, db.RepoIdentity{
+	_, err = d.UpsertRepo(ctx, db.RepoIdentity{
 		Platform:     "gitlab",
 		PlatformHost: "gitlab.com",
 		Owner:        "new-group",
@@ -5716,7 +6082,7 @@ func TestReclassifyWorkspaceHeadRepoTrustBlocksRepositoryReconciliation(t *testi
 	assert.Equal(forkURL, *reclassified.MRHeadRepo)
 
 	moved, err := d.GetMergeRequestByRepoIDAndNumber(
-		ctx, destinationID, stored.Number,
+		ctx, sourceID, stored.Number,
 	)
 	require.NoError(err)
 	require.NotNil(moved)
@@ -6617,6 +6983,635 @@ func TestSyncRepoUsesProviderIDToPreserveRenamedRepo(t *testing.T) {
 	assert.Equal("new-group/new-project", repos[0].RepoPath)
 }
 
+func TestPublishResolvedRepositoryDoesNotMutateConfiguredInput(t *testing.T) {
+	require := require.New(t)
+
+	configured := RepoRef{
+		Platform:           platform.KindGitLab,
+		PlatformHost:       "gitlab.example.com",
+		Owner:              "old-group",
+		Name:               "old-project",
+		RepoPath:           "old-group/old-project",
+		PlatformExternalID: "gid://gitlab/Project/42",
+	}
+	repos := []RepoRef{configured}
+	syncer := NewSyncerWithRegistry(
+		nil, openTestDB(t), nil, repos, time.Minute, nil, nil,
+	)
+	resolved := configured
+	resolved.RepoID = 42
+	resolved.Owner = "new-group"
+	resolved.Name = "new-project"
+	resolved.RepoPath = "new-group/new-project"
+
+	resolution, err := syncer.beginRepositoryResolution(configured)
+	require.NoError(err)
+	syncer.repoPublicationMu.Lock()
+	require.NoError(syncer.publishResolvedRepositoryLocked(
+		t.Context(),
+		resolution,
+		resolved,
+	))
+	syncer.repoPublicationMu.Unlock()
+	require.Equal([]RepoRef{configured}, repos)
+	require.Equal([]RepoRef{resolved}, syncer.TrackedRepos())
+}
+
+func TestCompactTrackedRepositoriesPrefersCurrentConfiguredRouteAfterRename(
+	t *testing.T,
+) {
+	require := require.New(t)
+	alias := RepoRef{
+		Platform:           platform.KindGitHub,
+		PlatformHost:       "github.com",
+		RepoID:             42,
+		Owner:              "acme-tools",
+		Name:               "renamed-widget",
+		RepoPath:           "acme-tools/renamed-widget",
+		CredentialOwner:    "acme",
+		CredentialName:     "widget",
+		PlatformExternalID: "R_stable",
+	}
+	direct := alias
+	direct.CredentialOwner = ""
+	direct.CredentialName = ""
+
+	require.Equal(
+		[]RepoRef{direct},
+		compactTrackedRepositoriesByID([]RepoRef{alias, direct}),
+	)
+}
+
+type repositoryPublicationArchiveRecorder struct {
+	mu      sync.Mutex
+	ensured [][]platform.RepoRef
+}
+
+func (*repositoryPublicationArchiveRecorder) RunEligible(context.Context) error {
+	return nil
+}
+
+func (r *repositoryPublicationArchiveRecorder) EnsureConfigured(
+	_ context.Context,
+	refs []platform.RepoRef,
+) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.ensured = append(r.ensured, slices.Clone(refs))
+	return nil
+}
+
+func (*repositoryPublicationArchiveRecorder) RetryAuthentication(
+	context.Context,
+	[]platform.RepoRef,
+) error {
+	return nil
+}
+
+func (r *repositoryPublicationArchiveRecorder) snapshots() [][]platform.RepoRef {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([][]platform.RepoRef, len(r.ensured))
+	for i := range r.ensured {
+		out[i] = slices.Clone(r.ensured[i])
+	}
+	return out
+}
+
+func TestResolveActiveRepositoryDiscardsSupersededGeneration(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	configured := RepoRef{
+		Platform:     platform.KindGitLab,
+		PlatformHost: "gitlab.example.com",
+		Owner:        "group",
+		Name:         "configured-project",
+		RepoPath:     "group/configured-project",
+	}
+	firstStarted := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	var calls atomic.Int32
+	provider := &syncTestRepositoryReadProvider{
+		syncTestReadProvider: &syncTestReadProvider{
+			syncTestProvider: syncTestProvider{
+				kind: platform.KindGitLab,
+				host: "gitlab.example.com",
+			},
+		},
+		getRepositoryFn: func(
+			ctx context.Context,
+			_ platform.RepoRef,
+		) (platform.Repository, error) {
+			call := calls.Add(1)
+			name := "newer-project"
+			if call == 1 {
+				close(firstStarted)
+				select {
+				case <-releaseFirst:
+				case <-ctx.Done():
+					return platform.Repository{}, ctx.Err()
+				}
+				name = "older-project"
+			}
+			return platform.Repository{
+				Ref: platform.RepoRef{
+					Platform:           platform.KindGitLab,
+					Host:               "gitlab.example.com",
+					Owner:              "group",
+					Name:               name,
+					RepoPath:           "group/" + name,
+					PlatformExternalID: "repository-42",
+				},
+				PlatformExternalID: "repository-42",
+			}, nil
+		},
+	}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	syncer := NewSyncerWithRegistry(
+		registry,
+		database,
+		nil,
+		[]RepoRef{configured},
+		time.Minute,
+		nil,
+		nil,
+	)
+	archiveRecorder := &repositoryPublicationArchiveRecorder{}
+	syncer.archiveLifecycle = archiveRecorder
+
+	firstDone := make(chan error, 1)
+	go func() {
+		_, _, err := syncer.resolveActiveRepository(ctx, configured)
+		firstDone <- err
+	}()
+	<-firstStarted
+
+	_, _, err = syncer.resolveActiveRepository(ctx, configured)
+	require.NoError(err)
+	close(releaseFirst)
+	require.Error(<-firstDone)
+
+	tracked := syncer.TrackedRepos()
+	require.Len(tracked, 1)
+	require.Equal("newer-project", tracked[0].Name)
+	stored, err := database.GetRepoByID(ctx, tracked[0].RepoID)
+	require.NoError(err)
+	require.NotNil(stored)
+	require.Equal("newer-project", stored.Name)
+
+	snapshots := archiveRecorder.snapshots()
+	require.Len(snapshots, 1)
+	require.Len(snapshots[0], 1)
+	require.Equal("newer-project", snapshots[0][0].Name)
+}
+
+func TestResolveActiveRepositoryDeduplicatesConvergedConfiguredRoutes(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	configured := []RepoRef{
+		{
+			Platform:     platform.KindGitLab,
+			PlatformHost: "gitlab.example.com",
+			Owner:        "group",
+			Name:         "legacy-project",
+			RepoPath:     "group/legacy-project",
+		},
+		{
+			Platform:     platform.KindGitLab,
+			PlatformHost: "gitlab.example.com",
+			Owner:        "group",
+			Name:         "current-project",
+			RepoPath:     "group/current-project",
+		},
+	}
+	provider := &syncTestRepositoryReadProvider{
+		syncTestReadProvider: &syncTestReadProvider{
+			syncTestProvider: syncTestProvider{
+				kind: platform.KindGitLab,
+				host: "gitlab.example.com",
+			},
+		},
+		repository: platform.Repository{
+			Ref: platform.RepoRef{
+				Platform:           platform.KindGitLab,
+				Host:               "gitlab.example.com",
+				Owner:              "group",
+				Name:               "current-project",
+				RepoPath:           "group/current-project",
+				PlatformExternalID: "repository-42",
+			},
+			PlatformExternalID: "repository-42",
+		},
+	}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	syncer := NewSyncerWithRegistry(
+		registry,
+		database,
+		nil,
+		configured,
+		time.Minute,
+		nil,
+		nil,
+	)
+
+	_, _, err = syncer.resolveActiveRepository(ctx, configured[0])
+	require.NoError(err)
+	_, _, err = syncer.resolveActiveRepository(ctx, configured[1])
+	require.NoError(err)
+
+	tracked := syncer.TrackedRepos()
+	require.Len(tracked, 1)
+	require.Positive(tracked[0].RepoID)
+	require.Equal("current-project", tracked[0].Name)
+}
+
+func TestResolveActiveRepositoryPersistsConfiguredRouteAfterRename(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	configured := RepoRef{
+		Platform:     platform.KindGitLab,
+		PlatformHost: "gitlab.example.com",
+		Owner:        "group",
+		Name:         "legacy-project",
+		RepoPath:     "group/legacy-project",
+	}
+	provider := &syncTestRepositoryReadProvider{
+		syncTestReadProvider: &syncTestReadProvider{
+			syncTestProvider: syncTestProvider{
+				kind: platform.KindGitLab,
+				host: "gitlab.example.com",
+			},
+		},
+		repository: platform.Repository{
+			Ref: platform.RepoRef{
+				Platform:           platform.KindGitLab,
+				Host:               "gitlab.example.com",
+				Owner:              "group",
+				Name:               "current-project",
+				RepoPath:           "group/current-project",
+				PlatformExternalID: "repository-42",
+			},
+			PlatformExternalID: "repository-42",
+		},
+	}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	syncer := NewSyncerWithRegistry(
+		registry, database, nil, []RepoRef{configured}, time.Minute, nil, nil,
+	)
+
+	resolved, _, err := syncer.resolveActiveRepository(ctx, configured)
+	require.NoError(err)
+
+	var repoID int64
+	var owner, name string
+	err = database.ReadDB().QueryRowContext(ctx, `
+		SELECT repo_id, owner, name
+		FROM forge_repository_config_routes
+		WHERE platform = ? AND platform_host = ? AND repo_path_key = ?`,
+		"gitlab", "gitlab.example.com", "group/legacy-project",
+	).Scan(&repoID, &owner, &name)
+	require.NoError(err)
+	require.Equal(resolved.RepoID, repoID)
+	require.Equal("group", owner)
+	require.Equal("legacy-project", name)
+}
+
+func TestResolveActiveRepositoryBackfillsConfiguredRouteForStoredRename(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	repoID, err := database.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+		Platform:       "gitlab",
+		PlatformHost:   "gitlab.example.com",
+		PlatformRepoID: "repository-42",
+		Owner:          "group",
+		Name:           "current-project",
+		RepoPath:       "group/current-project",
+	})
+	require.NoError(err)
+	configured := RepoRef{
+		Platform:           platform.KindGitLab,
+		RepoID:             repoID,
+		PlatformHost:       "gitlab.example.com",
+		Owner:              "group",
+		Name:               "current-project",
+		RepoPath:           "group/current-project",
+		CredentialOwner:    "group",
+		CredentialName:     "legacy-project",
+		PlatformExternalID: "repository-42",
+	}
+	provider := &syncTestRepositoryReadProvider{
+		syncTestReadProvider: &syncTestReadProvider{
+			syncTestProvider: syncTestProvider{
+				kind: platform.KindGitLab,
+				host: "gitlab.example.com",
+			},
+		},
+		repository: platform.Repository{
+			Ref: platform.RepoRef{
+				Platform:           platform.KindGitLab,
+				Host:               "gitlab.example.com",
+				Owner:              "group",
+				Name:               "current-project",
+				RepoPath:           "group/current-project",
+				PlatformExternalID: "repository-42",
+			},
+			PlatformExternalID: "repository-42",
+		},
+	}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	syncer := NewSyncerWithRegistry(
+		registry, database, nil, []RepoRef{configured}, time.Minute, nil, nil,
+	)
+
+	_, _, err = syncer.resolveActiveRepository(ctx, configured)
+	require.NoError(err)
+
+	var aliasedRepoID int64
+	err = database.ReadDB().QueryRowContext(ctx, `
+		SELECT repo_id
+		FROM forge_repository_config_routes
+		WHERE platform = ? AND platform_host = ? AND repo_path_key = ?`,
+		"gitlab", "gitlab.example.com", "group/legacy-project",
+	).Scan(&aliasedRepoID)
+	require.NoError(err)
+	require.Equal(repoID, aliasedRepoID)
+}
+
+func TestSetReposWithContextDoesNotMutateConfiguredInput(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	configured := RepoRef{
+		Platform:     platform.KindGitHub,
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		RepoPath:     "acme/widget",
+	}
+	repos := []RepoRef{configured}
+	repoID, err := database.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "repository-42",
+		Owner:          "acme",
+		Name:           "widget",
+		RepoPath:       "acme/widget",
+	})
+	require.NoError(err)
+	syncer := NewSyncerWithRegistry(
+		nil, database, nil, nil, time.Minute, nil, nil,
+	)
+
+	require.NoError(syncer.SetReposWithContext(ctx, repos, false))
+
+	require.Equal([]RepoRef{configured}, repos)
+	tracked := syncer.TrackedRepos()
+	require.Len(tracked, 1)
+	require.Equal(repoID, tracked[0].RepoID)
+	require.Equal("repository-42", tracked[0].PlatformExternalID)
+}
+
+func TestSetReposWithContextPersistsAllConvergedExactRoutes(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	repoID, err := database.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "repository-42", Owner: "acme", Name: "current",
+		RepoPath: "acme/current",
+	})
+	require.NoError(err)
+	syncer := NewSyncerWithRegistry(nil, database, nil, nil, time.Minute, nil, nil)
+
+	require.NoError(syncer.SetReposWithContext(ctx, []RepoRef{{
+		Platform: platform.KindGitHub, PlatformHost: "github.com",
+		Owner: "acme", Name: "current", RepoPath: "acme/current",
+		PlatformExternalID: "repository-42",
+		ConfiguredRoutes: []ConfiguredRepoRoute{
+			{Owner: "acme", Name: "legacy", RepoPath: "acme/legacy"},
+			{Owner: "acme", Name: "current", RepoPath: "acme/current"},
+		},
+	}}, false))
+
+	legacy, err := database.GetRepoByConfiguredRoute(ctx, db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		Owner: "acme", Name: "legacy", RepoPath: "acme/legacy",
+	})
+	require.NoError(err)
+	require.NotNil(legacy)
+	require.Equal(repoID, legacy.ID)
+}
+
+func TestSyncRepoReplacesPathWithNewRepositoryIncarnation(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	now := time.Date(2026, 7, 30, 12, 0, 0, 0, time.UTC)
+
+	oldID, err := d.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+		Platform:       "gitlab",
+		PlatformHost:   "gitlab.example.com",
+		PlatformRepoID: "gid://gitlab/Project/old",
+		Owner:          "group",
+		Name:           "project",
+		RepoPath:       "group/project",
+	})
+	require.NoError(err)
+	oldMR := &db.MergeRequest{
+		RepoID: oldID, PlatformID: 1001, PlatformExternalID: "old-mr",
+		Number: 7, Title: "old incarnation", State: db.MergeRequestStateOpen,
+		HeadBranch: "old-feature", BaseBranch: "main",
+		CreatedAt: now.Add(-time.Hour), UpdatedAt: now.Add(-time.Hour),
+		LastActivityAt: now.Add(-time.Hour),
+	}
+	_, err = d.UpsertMergeRequest(ctx, oldMR)
+	require.NoError(err)
+
+	ref := RepoRef{
+		Platform:           platform.KindGitLab,
+		PlatformHost:       "gitlab.example.com",
+		Owner:              "group",
+		Name:               "project",
+		RepoPath:           "group/project",
+		PlatformExternalID: "gid://gitlab/Project/old",
+	}
+	provider := &syncTestRepositoryReadProvider{
+		syncTestReadProvider: &syncTestReadProvider{
+			syncTestProvider: syncTestProvider{
+				kind: platform.KindGitLab,
+				host: "gitlab.example.com",
+			},
+			mergeRequests: []platform.MergeRequest{{
+				Repo: platform.RepoRef{
+					Platform: platform.KindGitLab,
+					Host:     "gitlab.example.com",
+					Owner:    "group",
+					Name:     "project",
+					RepoPath: "group/project",
+				},
+				PlatformID: 2001, PlatformExternalID: "new-mr",
+				Number: 7, Title: "new incarnation",
+				State:      string(db.MergeRequestStateOpen),
+				HeadBranch: "new-feature", BaseBranch: "main",
+				CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+			}},
+		},
+		repository: platform.Repository{
+			Ref: platform.RepoRef{
+				Platform:           platform.KindGitLab,
+				Host:               "gitlab.example.com",
+				Owner:              "group",
+				Name:               "project",
+				RepoPath:           "group/project",
+				PlatformExternalID: "gid://gitlab/Project/new",
+			},
+			PlatformExternalID: "gid://gitlab/Project/new",
+		},
+	}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	syncer := NewSyncerWithRegistry(
+		registry,
+		d,
+		nil,
+		[]RepoRef{ref},
+		time.Minute,
+		nil,
+		nil,
+	)
+
+	require.NoError(syncer.syncRepo(ctx, ref))
+
+	active, err := d.GetRepoByIdentity(ctx, db.RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.example.com",
+		Owner:        "group",
+		Name:         "project",
+	})
+	require.NoError(err)
+	require.NotNil(active)
+	assert.NotEqual(oldID, active.ID)
+	assert.Equal("gid://gitlab/Project/new", active.PlatformRepoID)
+
+	retired, err := d.GetRepoByID(ctx, oldID)
+	require.NoError(err)
+	require.NotNil(retired)
+	require.NotNil(retired.RetiredAt)
+	require.NotNil(retired.RetiredReplacementID)
+	assert.Equal(active.ID, *retired.RetiredReplacementID)
+
+	oldStored, err := d.GetMergeRequestByRepoIDAndNumber(ctx, oldID, 7)
+	require.NoError(err)
+	require.NotNil(oldStored)
+	assert.Equal("old incarnation", oldStored.Title)
+
+	newStored, err := d.GetMergeRequestByRepoIDAndNumber(ctx, active.ID, 7)
+	require.NoError(err)
+	require.NotNil(newStored)
+	assert.Equal("new incarnation", newStored.Title)
+
+	listed, err := d.ListMergeRequests(ctx, db.ListMergeRequestsOpts{State: "all"})
+	require.NoError(err)
+	require.Len(listed, 1)
+	assert.Equal(active.ID, listed[0].RepoID)
+
+	tracked, ok := syncer.trackedRepoByIdentity(
+		platform.KindGitLab,
+		"group",
+		"project",
+		"gitlab.example.com",
+	)
+	require.True(ok)
+	assert.Equal(active.ID, tracked.RepoID)
+	assert.Equal("gid://gitlab/Project/new", tracked.PlatformExternalID)
+}
+
+func TestSyncRepoDetectsOriginalPathReuseAfterRename(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	configured := RepoRef{
+		Platform:     platform.KindGitLab,
+		PlatformHost: "gitlab.example.com",
+		Owner:        "group",
+		Name:         "legacy-project",
+		RepoPath:     "group/legacy-project",
+	}
+	original := platform.Repository{
+		Ref: platform.RepoRef{
+			Platform:           platform.KindGitLab,
+			Host:               "gitlab.example.com",
+			Owner:              "group",
+			Name:               "current-project",
+			RepoPath:           "group/current-project",
+			PlatformExternalID: "gid://gitlab/Project/42",
+		},
+		PlatformExternalID: "gid://gitlab/Project/42",
+	}
+	replacement := platform.Repository{
+		Ref: platform.RepoRef{
+			Platform:           platform.KindGitLab,
+			Host:               "gitlab.example.com",
+			Owner:              "group",
+			Name:               "legacy-project",
+			RepoPath:           "group/legacy-project",
+			PlatformExternalID: "gid://gitlab/Project/84",
+		},
+		PlatformExternalID: "gid://gitlab/Project/84",
+	}
+	current := original
+	provider := &syncTestRepositoryReadProvider{
+		syncTestReadProvider: &syncTestReadProvider{
+			syncTestProvider: syncTestProvider{
+				kind: platform.KindGitLab,
+				host: "gitlab.example.com",
+			},
+		},
+		getRepositoryFn: func(
+			_ context.Context,
+			ref platform.RepoRef,
+		) (platform.Repository, error) {
+			assert.Equal("group/legacy-project", ref.RepoPath)
+			return current, nil
+		},
+	}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	syncer := NewSyncerWithRegistry(
+		registry,
+		database,
+		nil,
+		[]RepoRef{configured},
+		time.Minute,
+		nil,
+		nil,
+	)
+
+	require.NoError(syncer.syncRepo(ctx, configured))
+	current = replacement
+	require.NoError(syncer.syncRepo(ctx, syncer.TrackedRepos()[0]))
+
+	repos, err := database.ListRepos(ctx)
+	require.NoError(err)
+	require.Len(repos, 2)
+	byProviderID := make(map[string]db.Repo, len(repos))
+	for _, repo := range repos {
+		byProviderID[repo.PlatformRepoID] = repo
+	}
+	assert.Equal("group/current-project", byProviderID["gid://gitlab/Project/42"].RepoPath)
+	assert.Equal("group/legacy-project", byProviderID["gid://gitlab/Project/84"].RepoPath)
+}
+
 func TestRepoReconciliationDefersTrustUntilPostRenameSnapshot(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -6683,9 +7678,9 @@ func TestRepoReconciliationDefersTrustUntilPostRenameSnapshot(t *testing.T) {
 		RepoPath:       "new-group/new-project",
 	})
 	require.NoError(err)
-	assert.Equal(destinationID, reconciledID)
+	assert.Equal(sourceID, reconciledID)
 
-	merged, err := d.GetMergeRequestByRepoIDAndNumber(ctx, destinationID, 7)
+	merged, err := d.GetMergeRequestByRepoIDAndNumber(ctx, sourceID, 7)
 	require.NoError(err)
 	require.NotNil(merged)
 	assert.Equal("newer old-identity snapshot", merged.Title)
@@ -6731,7 +7726,7 @@ func TestRepoReconciliationDefersTrustUntilPostRenameSnapshot(t *testing.T) {
 	require.True(accepted)
 	assert.Greater(revision, merged.SnapshotRevision)
 
-	merged, err = d.GetMergeRequestByRepoIDAndNumber(ctx, destinationID, 7)
+	merged, err = d.GetMergeRequestByRepoIDAndNumber(ctx, sourceID, 7)
 	require.NoError(err)
 	require.NotNil(merged)
 	assert.True(merged.HeadRepoIdentityStale)
@@ -6757,7 +7752,7 @@ func TestRepoReconciliationDefersTrustUntilPostRenameSnapshot(t *testing.T) {
 	require.True(accepted)
 	assert.Positive(revision)
 
-	merged, err = d.GetMergeRequestByRepoIDAndNumber(ctx, destinationID, 7)
+	merged, err = d.GetMergeRequestByRepoIDAndNumber(ctx, sourceID, 7)
 	require.NoError(err)
 	require.NotNil(merged)
 	assert.False(merged.HeadRepoIdentityStale)
@@ -6946,7 +7941,16 @@ func TestSyncRepoRefreshesProviderRepoSettingsWhenIdentityKnown(t *testing.T) {
 			},
 		},
 		repository: platform.Repository{
-			ViewerCanMerge: &viewerCanMerge,
+			Ref: platform.RepoRef{
+				Platform:           platform.KindGitLab,
+				Host:               "gitlab.example.com",
+				Owner:              "group",
+				Name:               "project",
+				RepoPath:           "group/project",
+				PlatformExternalID: "gid://gitlab/Project/42",
+			},
+			PlatformExternalID: "gid://gitlab/Project/42",
+			ViewerCanMerge:     &viewerCanMerge,
 		},
 	}
 	registry, err := platform.NewRegistry(provider)
@@ -6995,7 +7999,15 @@ func TestSyncRepoUsesProviderCloneURLForNestedGitLabRepo(t *testing.T) {
 	syncer := NewSyncerWithRegistry(registry, d, clones, []RepoRef{repo}, time.Minute, nil, nil)
 
 	require.NoError(syncer.syncRepo(ctx, repo))
-	clonePath, err := clones.ClonePath("gitlab", "gitlab.example.com", "group/subgroup", "project")
+	tracked := syncer.TrackedRepos()
+	require.Len(tracked, 1)
+	clonePath, err := clones.RepositoryClone(
+		tracked[0].RepoID,
+		"gitlab",
+		"gitlab.example.com",
+		"group/subgroup",
+		"project",
+	).ClonePath()
 	require.NoError(err)
 	require.FileExists(filepath.Join(clonePath, "HEAD"))
 }
@@ -7018,6 +8030,7 @@ func TestDetailDrainUsesProviderCloneURLForNestedGitLabRepo(t *testing.T) {
 	}
 	repoID, err := d.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
 	require.NoError(err)
+	repo.RepoID = repoID
 	_, err = d.UpsertMergeRequest(ctx, &db.MergeRequest{
 		RepoID:         repoID,
 		PlatformID:     1001,
@@ -7063,7 +8076,13 @@ func TestDetailDrainUsesProviderCloneURLForNestedGitLabRepo(t *testing.T) {
 	syncer.drainDetailQueue(ctx, map[string]bool{rateKey: true}, syncer.TrackedRepos())
 
 	assert.Equal(int32(1), provider.getMRCalls.Load())
-	clonePath, err := clones.ClonePath("gitlab", "gitlab.example.com", "group/subgroup", "project")
+	clonePath, err := clones.RepositoryClone(
+		repoID,
+		"gitlab",
+		"gitlab.example.com",
+		"group/subgroup",
+		"project",
+	).ClonePath()
 	require.NoError(err)
 	require.FileExists(filepath.Join(clonePath, "HEAD"))
 }
@@ -9957,8 +10976,7 @@ func TestFetchMRDetailUsesPersistedPullRequestETag(t *testing.T) {
 	})
 	require.NoError(err)
 	require.NoError(d.UpsertHTTPEtag(
-		ctx, "github", "github.com", "owner", "repo",
-		"pull_request", 1, `"etag-v1"`,
+		ctx, repoID, "pull_request", 1, `"etag-v1"`,
 	))
 
 	mc := &conditionalPRTrackingClient{notModified: true}
@@ -10014,8 +11032,7 @@ func TestFetchMRDetailDoesNotBackfillMergedActorOn304(t *testing.T) {
 	})
 	require.NoError(err)
 	require.NoError(d.UpsertHTTPEtag(
-		ctx, "github", "github.com", "owner", "repo",
-		"pull_request", 1, `"etag-v1"`,
+		ctx, repoID, "pull_request", 1, `"etag-v1"`,
 	))
 
 	mc := &conditionalPRTrackingClient{
@@ -10081,8 +11098,7 @@ func TestWatchedSyncMRUsesPersistedPullRequestETag(t *testing.T) {
 	})
 	require.NoError(err)
 	require.NoError(d.UpsertHTTPEtag(
-		ctx, "github", "github.com", "owner", "repo",
-		"pull_request", 1, `"etag-v1"`,
+		ctx, repoID, "pull_request", 1, `"etag-v1"`,
 	))
 
 	mc := &conditionalPRTrackingClient{notModified: true}
@@ -10140,8 +11156,7 @@ func TestWatchedSyncMRDoesNotBackfillMergedActorOn304(t *testing.T) {
 	})
 	require.NoError(err)
 	require.NoError(d.UpsertHTTPEtag(
-		ctx, "github", "github.com", "owner", "repo",
-		"pull_request", 1, `"etag-v1"`,
+		ctx, repoID, "pull_request", 1, `"etag-v1"`,
 	))
 
 	mc := &conditionalPRTrackingClient{
@@ -10205,8 +11220,7 @@ func TestSyncMRBypassesPersistedPullRequestETag(t *testing.T) {
 	})
 	require.NoError(err)
 	require.NoError(d.UpsertHTTPEtag(
-		ctx, "github", "github.com", "owner", "repo",
-		"pull_request", 1, `"etag-v1"`,
+		ctx, repoID, "pull_request", 1, `"etag-v1"`,
 	))
 
 	ciState := "success"
@@ -10257,8 +11271,7 @@ func TestFetchMRDetailPersistsPullRequestETag(t *testing.T) {
 	require.NoError(err)
 
 	etag, err := d.GetHTTPEtag(
-		ctx, "github", "github.com", "owner", "repo",
-		"pull_request", 1,
+		ctx, repoID, "pull_request", 1,
 	)
 	require.NoError(err)
 	assert.Equal(`"etag-v2"`, etag)
@@ -10274,8 +11287,7 @@ func TestFetchMRDetailDoesNotPersistPullRequestETagWhenDetailRefreshFails(t *tes
 	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", repo.Owner, repo.Name))
 	require.NoError(err)
 	require.NoError(d.UpsertHTTPEtag(
-		ctx, "github", "github.com", "owner", "repo",
-		"pull_request", 1, `"etag-v1"`,
+		ctx, repoID, "pull_request", 1, `"etag-v1"`,
 	))
 
 	updatedAt := time.Date(2024, 6, 1, 10, 0, 0, 0, time.UTC)
@@ -10292,8 +11304,7 @@ func TestFetchMRDetailDoesNotPersistPullRequestETagWhenDetailRefreshFails(t *tes
 	require.Error(err)
 
 	etag, err := d.GetHTTPEtag(
-		ctx, "github", "github.com", "owner", "repo",
-		"pull_request", 1,
+		ctx, repoID, "pull_request", 1,
 	)
 	require.NoError(err)
 	assert.Equal(`"etag-v1"`, etag)
@@ -10325,8 +11336,7 @@ func TestFetchIssueDetailUsesPersistedIssueETag(t *testing.T) {
 	})
 	require.NoError(err)
 	require.NoError(d.UpsertHTTPEtag(
-		ctx, "github", "github.com", "owner", "repo",
-		"issue", 1, `"issue-etag-v1"`,
+		ctx, repoID, "issue", 1, `"issue-etag-v1"`,
 	))
 
 	mc := &conditionalIssueTrackingClient{notModified: true}
@@ -10366,8 +11376,7 @@ func TestSyncArchiveIssueBypassesPersistedETagForLifecycleBackfill(t *testing.T)
 	_, err = database.UpsertIssue(ctx, normalized)
 	require.NoError(err)
 	require.NoError(database.UpsertHTTPEtag(
-		ctx, "github", "github.com", "owner", "repo",
-		"issue", 7, `"legacy-etag"`,
+		ctx, repoID, "issue", 7, `"legacy-etag"`,
 	))
 
 	client := &conditionalIssueLifecycleClient{
@@ -10489,8 +11498,7 @@ func TestFetchIssueDetailPersistsIssueETag(t *testing.T) {
 	require.NoError(err)
 
 	etag, err := d.GetHTTPEtag(
-		ctx, "github", "github.com", "owner", "repo",
-		"issue", 1,
+		ctx, repoID, "issue", 1,
 	)
 	require.NoError(err)
 	assert.Equal(`"issue-etag-v2"`, etag)
@@ -10506,8 +11514,7 @@ func TestFetchIssueDetailDoesNotPersistIssueETagWhenDetailRefreshFails(t *testin
 	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", repo.Owner, repo.Name))
 	require.NoError(err)
 	require.NoError(d.UpsertHTTPEtag(
-		ctx, "github", "github.com", "owner", "repo",
-		"issue", 1, `"issue-etag-v1"`,
+		ctx, repoID, "issue", 1, `"issue-etag-v1"`,
 	))
 
 	updatedAt := time.Date(2024, 6, 1, 10, 0, 0, 0, time.UTC)
@@ -10540,8 +11547,7 @@ func TestFetchIssueDetailDoesNotPersistIssueETagWhenDetailRefreshFails(t *testin
 	require.Error(err)
 
 	etag, err := d.GetHTTPEtag(
-		ctx, "github", "github.com", "owner", "repo",
-		"issue", 1,
+		ctx, repoID, "issue", 1,
 	)
 	require.NoError(err)
 	assert.Equal(`"issue-etag-v1"`, etag)
@@ -11003,6 +12009,451 @@ func TestDetailQueueDerivesPendingCIFromCachedChecks(t *testing.T) {
 	queue := BuildQueue(items, now)
 	require.Len(queue, 1)
 	assert.Equal(1, queue[0].Number)
+}
+
+func TestDetailQueueBindsItemsToRepositoryIncarnation(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	repoID, err := database.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "R_original",
+		Owner:          "acme",
+		Name:           "widget",
+		RepoPath:       "acme/widget",
+	})
+	require.NoError(err)
+	now := time.Now().UTC().Truncate(time.Second)
+	_, err = database.UpsertIssue(ctx, &db.Issue{
+		RepoID: repoID, PlatformID: 701, Number: 7,
+		Title: "queued detail", Author: "ada", State: "open",
+		CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+	})
+	require.NoError(err)
+	repo := RepoRef{
+		Platform: platform.KindGitHub, PlatformHost: "github.com",
+		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+		RepoID: repoID, PlatformExternalID: "R_original",
+	}
+	syncer := NewSyncer(nil, database, nil, []RepoRef{repo}, time.Minute, nil, nil)
+
+	items := syncer.buildDetailQueueItems(ctx, syncer.TrackedRepos())
+
+	require.Len(items, 1)
+	require.Equal(repoID, items[0].RepoID)
+}
+
+func TestDetailQueueRejectsItemFromReplacedRepositoryIncarnation(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	repoID, err := database.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "R_original",
+		Owner:          "acme",
+		Name:           "widget",
+		RepoPath:       "acme/widget",
+	})
+	require.NoError(err)
+	now := time.Now().UTC().Truncate(time.Second)
+	_, err = database.UpsertIssue(ctx, &db.Issue{
+		RepoID: repoID, PlatformID: 701, Number: 7,
+		Title: "queued detail", Author: "ada", State: "open",
+		CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+	})
+	require.NoError(err)
+	repo := RepoRef{
+		Platform: platform.KindGitHub, PlatformHost: "github.com",
+		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+		RepoID: repoID, PlatformExternalID: "R_original",
+	}
+	var fetches atomic.Int32
+	client := &mockClient{getIssueFn: func(context.Context, string, string, int) (*gh.Issue, error) {
+		fetches.Add(1)
+		return nil, errors.New("must not fetch a replacement through a stale queue item")
+	}}
+	budgets := testBudget(100)
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client}, database, nil,
+		[]RepoRef{repo}, time.Minute, nil, budgets,
+	)
+	items := syncer.buildDetailQueueItems(ctx, syncer.TrackedRepos())
+	require.Len(items, 1)
+	_, err = database.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "R_replacement",
+		Owner:          "acme",
+		Name:           "widget",
+		RepoPath:       "acme/widget",
+	})
+	require.NoError(err)
+
+	syncer.drainDetailQueueItems(ctx, map[string]bool{"github.com": true}, items)
+
+	assert.Zero(fetches.Load())
+	active, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", Owner: "acme", Name: "widget",
+	})
+	require.NoError(err)
+	require.NotNil(active)
+	assert.Equal("R_replacement", active.PlatformRepoID)
+}
+
+func TestDetailQueueFollowsSameIncarnationRenameWithConfiguredCredential(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	repoID, err := database.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "R_stable",
+		Owner:          "acme",
+		Name:           "widget",
+		RepoPath:       "acme/widget",
+	})
+	require.NoError(err)
+	now := time.Now().UTC().Truncate(time.Second)
+	_, err = database.UpsertIssue(ctx, &db.Issue{
+		RepoID: repoID, PlatformID: 701, Number: 7,
+		Title: "queued detail", Author: "ada", State: "open",
+		CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+	})
+	require.NoError(err)
+	provider := &mockClient{getIssueFn: func(
+		_ context.Context, owner, name string, number int,
+	) (*gh.Issue, error) {
+		assert.Equal("acme-tools", owner)
+		assert.Equal("renamed-widget", name)
+		assert.Equal(7, number)
+		return buildOpenIssue(number, now), nil
+	}}
+	router, err := NewHostRouter("github.com", &Route{
+		Key:          RouteKey{Host: "github.com", Owner: "acme", Name: "widget"},
+		Client:       provider,
+		ReadIdentity: IdentityKey{Host: "github.com", Principal: "user:1"},
+	})
+	require.NoError(err)
+	routed, err := NewRoutedClient(router)
+	require.NoError(err)
+	budgets := testBudget(100)
+	rateBucket := RateBucketKey("github", "github.com", "user:1")
+	budgets[rateBucket] = budgets["github.com"]
+	syncer := NewSyncer(
+		map[string]Client{"github.com": routed}, database, nil,
+		[]RepoRef{{
+			Platform: platform.KindGitHub, PlatformHost: "github.com",
+			Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+			RepoID: repoID, PlatformExternalID: "R_stable",
+		}},
+		time.Minute, nil, budgets,
+	)
+	syncer.SetGitHubRouters(map[string]*HostRouter{"github.com": router})
+	items := syncer.buildDetailQueueItems(ctx, syncer.TrackedRepos())
+	require.Len(items, 1)
+	_, err = database.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "R_stable",
+		Owner:          "acme-tools",
+		Name:           "renamed-widget",
+		RepoPath:       "acme-tools/renamed-widget",
+	})
+	require.NoError(err)
+	require.NoError(syncer.SetReposWithContext(ctx, []RepoRef{{
+		Platform: platform.KindGitHub, PlatformHost: "github.com",
+		Owner: "acme-tools", Name: "renamed-widget",
+		CredentialOwner: "acme", CredentialName: "widget",
+		RepoPath: "acme-tools/renamed-widget",
+	}}, false))
+
+	syncer.drainDetailQueueItems(ctx, map[string]bool{rateBucket: true}, items)
+
+	issue, err := database.GetIssueByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(issue)
+	assert.NotNil(issue.DetailFetchedAt)
+}
+
+func TestDetailQueueLeasesRepositoryThroughProviderAndPersistence(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	repoID, err := database.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "R_original",
+		Owner:          "acme",
+		Name:           "widget",
+		RepoPath:       "acme/widget",
+	})
+	require.NoError(err)
+	now := time.Now().UTC().Truncate(time.Second)
+	_, err = database.UpsertIssue(ctx, &db.Issue{
+		RepoID: repoID, PlatformID: 701, Number: 7,
+		Title: "queued detail", Author: "ada", State: "open",
+		CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+	})
+	require.NoError(err)
+	repo := RepoRef{
+		Platform: platform.KindGitHub, PlatformHost: "github.com",
+		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+		RepoID: repoID, PlatformExternalID: "R_original",
+	}
+	fetchStarted := make(chan struct{})
+	continueFetch := make(chan struct{})
+	client := &mockClient{getIssueFn: func(context.Context, string, string, int) (*gh.Issue, error) {
+		close(fetchStarted)
+		<-continueFetch
+		return buildOpenIssue(7, now), nil
+	}}
+	budgets := testBudget(100)
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client}, database, nil,
+		[]RepoRef{repo}, time.Minute, nil, budgets,
+	)
+	items := syncer.buildDetailQueueItems(ctx, syncer.TrackedRepos())
+	require.Len(items, 1)
+	drainDone := make(chan struct{})
+	go func() {
+		syncer.drainDetailQueueItems(ctx, map[string]bool{"github.com": true}, items)
+		close(drainDone)
+	}()
+	<-fetchStarted
+
+	writeAttempted := make(chan struct{})
+	restoreWriteLockHook := database.SetBeforeRepositoryReconciliationWriteLockForTest(
+		func() { close(writeAttempted) },
+	)
+	defer restoreWriteLockHook()
+	replacementDone := make(chan error, 1)
+	go func() {
+		_, replacementErr := database.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+			Platform:       "github",
+			PlatformHost:   "github.com",
+			PlatformRepoID: "R_replacement",
+			Owner:          "acme",
+			Name:           "widget",
+			RepoPath:       "acme/widget",
+		})
+		replacementDone <- replacementErr
+	}()
+	<-writeAttempted
+
+	var (
+		replacementErr       error
+		replacementCompleted bool
+	)
+	select {
+	case replacementErr = <-replacementDone:
+		replacementCompleted = true
+	case <-time.After(250 * time.Millisecond):
+	}
+	close(continueFetch)
+	<-drainDone
+	if !replacementCompleted {
+		replacementErr = <-replacementDone
+	}
+	require.NoError(replacementErr)
+	assert.False(
+		replacementCompleted,
+		"repository replacement must wait for detail fetch and persistence",
+	)
+}
+
+func TestFullSyncLeasesRepositoryThroughProviderAndPersistence(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	repoID, err := database.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "R_original",
+		Owner:          "acme",
+		Name:           "widget",
+		RepoPath:       "acme/widget",
+	})
+	require.NoError(err)
+	repo := RepoRef{
+		Platform: platform.KindGitHub, PlatformHost: "github.com",
+		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+		RepoID: repoID, PlatformExternalID: "R_original",
+	}
+	providerStarted := make(chan struct{})
+	continueProvider := make(chan struct{})
+	client := &mockClient{
+		getRepositoryFn: func(context.Context, string, string) (*gh.Repository, error) {
+			owner := "acme"
+			name := "widget"
+			nodeID := "R_original"
+			return &gh.Repository{
+				NodeID: &nodeID, Name: &name, Owner: &gh.User{Login: &owner},
+			}, nil
+		},
+		listOpenPRsFn: func(context.Context, string, string) ([]*gh.PullRequest, error) {
+			close(providerStarted)
+			<-continueProvider
+			return nil, nil
+		},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client}, database, nil,
+		[]RepoRef{repo}, time.Minute, nil, testBudget(100),
+	)
+
+	syncDone := make(chan error, 1)
+	go func() { syncDone <- syncer.syncRepo(ctx, repo) }()
+	<-providerStarted
+
+	writeAttempted := make(chan struct{})
+	restoreWriteLockHook := database.SetBeforeRepositoryReconciliationWriteLockForTest(
+		func() { close(writeAttempted) },
+	)
+	defer restoreWriteLockHook()
+	replacementDone := make(chan error, 1)
+	go func() {
+		_, replacementErr := database.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+			Platform:       "github",
+			PlatformHost:   "github.com",
+			PlatformRepoID: "R_replacement",
+			Owner:          "acme",
+			Name:           "widget",
+			RepoPath:       "acme/widget",
+		})
+		replacementDone <- replacementErr
+	}()
+	<-writeAttempted
+
+	var (
+		replacementErr       error
+		replacementCompleted bool
+	)
+	select {
+	case replacementErr = <-replacementDone:
+		replacementCompleted = true
+	case <-time.After(250 * time.Millisecond):
+	}
+	close(continueProvider)
+	require.NoError(<-syncDone)
+	if !replacementCompleted {
+		replacementErr = <-replacementDone
+	}
+	require.NoError(replacementErr)
+	assert.False(
+		replacementCompleted,
+		"repository replacement must wait for the full sync",
+	)
+}
+
+func TestStandaloneItemSyncsLeaseRepositoryThroughProviderAndPersistence(
+	t *testing.T,
+) {
+	for _, itemType := range []string{"merge request", "issue"} {
+		t.Run(itemType, func(t *testing.T) {
+			require := require.New(t)
+			assert := assert.New(t)
+			ctx := t.Context()
+			database := openTestDB(t)
+			repoID, err := database.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+				Platform:       "github",
+				PlatformHost:   "github.com",
+				PlatformRepoID: "R_original",
+				Owner:          "acme",
+				Name:           "widget",
+				RepoPath:       "acme/widget",
+			})
+			require.NoError(err)
+			repo := RepoRef{
+				Platform: platform.KindGitHub, PlatformHost: "github.com",
+				Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+				RepoID: repoID, PlatformExternalID: "R_original",
+			}
+			providerStarted := make(chan struct{})
+			continueProvider := make(chan struct{})
+			now := time.Now().UTC().Truncate(time.Second)
+			client := &mockClient{
+				getRepositoryFn: func(context.Context, string, string) (*gh.Repository, error) {
+					owner := "acme"
+					name := "widget"
+					nodeID := "R_original"
+					return &gh.Repository{
+						NodeID: &nodeID, Name: &name, Owner: &gh.User{Login: &owner},
+					}, nil
+				},
+			}
+			var syncer *Syncer
+			var syncItem func() error
+			switch itemType {
+			case "merge request":
+				client.getPullRequestFn = func(context.Context, string, string, int) (*gh.PullRequest, error) {
+					close(providerStarted)
+					<-continueProvider
+					return buildOpenPR(7, now), nil
+				}
+				syncItem = func() error { return syncer.SyncMR(ctx, "acme", "widget", 7) }
+			case "issue":
+				client.getIssueFn = func(context.Context, string, string, int) (*gh.Issue, error) {
+					close(providerStarted)
+					<-continueProvider
+					return buildOpenIssue(7, now), nil
+				}
+				syncItem = func() error { return syncer.SyncIssue(ctx, "acme", "widget", 7) }
+			}
+			syncer = NewSyncer(
+				map[string]Client{"github.com": client}, database, nil,
+				[]RepoRef{repo}, time.Minute, nil, testBudget(100),
+			)
+
+			syncDone := make(chan error, 1)
+			go func() { syncDone <- syncItem() }()
+			<-providerStarted
+
+			writeAttempted := make(chan struct{})
+			restoreWriteLockHook := database.SetBeforeRepositoryReconciliationWriteLockForTest(
+				func() { close(writeAttempted) },
+			)
+			defer restoreWriteLockHook()
+			replacementDone := make(chan error, 1)
+			go func() {
+				_, replacementErr := database.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+					Platform:       "github",
+					PlatformHost:   "github.com",
+					PlatformRepoID: "R_replacement",
+					Owner:          "acme",
+					Name:           "widget",
+					RepoPath:       "acme/widget",
+				})
+				replacementDone <- replacementErr
+			}()
+			<-writeAttempted
+
+			var (
+				replacementErr       error
+				replacementCompleted bool
+			)
+			select {
+			case replacementErr = <-replacementDone:
+				replacementCompleted = true
+			case <-time.After(250 * time.Millisecond):
+			}
+			close(continueProvider)
+			require.NoError(<-syncDone)
+			if !replacementCompleted {
+				replacementErr = <-replacementDone
+			}
+			require.NoError(replacementErr)
+			assert.False(
+				replacementCompleted,
+				"repository replacement must wait for item sync",
+			)
+		})
+	}
 }
 
 func TestDetailDrainRespectsBudget(t *testing.T) {

@@ -46,33 +46,70 @@ func initTestRepo(t *testing.T, dir string) {
 	gitRun(t, dir, "commit", "-m", "initial commit")
 }
 
-// setupBareClone creates a bare clone of sourceDir under clonesDir/owner/name.git,
-// adds the pull refspec, and fetches.
-func setupBareClone(t *testing.T, sourceDir, clonesDir, owner, name string) *gitclone.Manager {
+// setupBareClone creates a repository row and a bare clone of sourceDir in its
+// immutable repository-incarnation namespace, adds the pull refspec, and
+// fetches.
+func setupBareClone(
+	t *testing.T,
+	ctx context.Context,
+	sourceDir, clonesDir, owner, name string,
+	d *db.DB,
+) (*gitclone.Manager, int64) {
 	t.Helper()
+	repoID, err := d.UpsertRepo(
+		ctx, db.GitHubRepoIdentity("github.com", owner, name),
+	)
+	require.NoError(t, err)
 	mgr := gitclone.New(clonesDir, nil)
-	barePath, err := mgr.ClonePath("github", "github.com", owner, name)
+	barePath, err := mgr.RepositoryClone(
+		repoID, "github", "github.com", owner, name,
+	).ClonePath()
 	require.NoError(t, err)
 	gitRun(t, "", "clone", "--bare", sourceDir, barePath)
 	gitRun(t, barePath, "config", "--add", "remote.origin.fetch",
 		"+refs/pull/*/head:refs/pull/*/head")
 	gitRun(t, barePath, "remote", "set-url", "origin", sourceDir)
 	gitRun(t, barePath, "fetch", "--prune", "origin")
-	return mgr
+	return mgr, repoID
 }
 
 // setupSyncer creates a syncer with a real DB, bare clone manager, and mock client.
 // It runs one sync cycle to create the repo row, then returns the syncer and repo ID.
-func setupSyncer(t *testing.T, ctx context.Context, mgr *gitclone.Manager) (*Syncer, int64) {
+func setupSyncer(
+	t *testing.T,
+	ctx context.Context,
+	sourceDir, clonesDir string,
+) (*Syncer, int64) {
 	t.Helper()
 	d := openTestDB(t)
+	mgr, repoID := setupBareClone(
+		t, ctx, sourceDir, clonesDir, "owner", "repo", d,
+	)
 	mc := &mockClient{}
-	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, mgr, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, testBudget(500))
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc},
+		d,
+		mgr,
+		[]RepoRef{mergedDiffRepoRef(repoID)},
+		time.Minute,
+		nil,
+		testBudget(500),
+	)
 	syncer.RunOnce(ctx) // creates repo row
 	repoRow, err := d.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
 	require.NoError(t, err)
 	require.NotNil(t, repoRow)
-	return syncer, repoRow.ID
+	require.Equal(t, repoID, repoRow.ID)
+	return syncer, repoID
+}
+
+func mergedDiffRepoRef(repoID int64) RepoRef {
+	return RepoRef{
+		RepoID:       repoID,
+		Owner:        "owner",
+		Name:         "repo",
+		PlatformHost: "github.com",
+	}
 }
 
 // insertMergedPR inserts a merged PR with empty diff SHAs into the DB.
@@ -121,11 +158,10 @@ func TestIntegrationComputeMergedPRDiffSHAs_MergeCommit(t *testing.T) {
 	// Create pull ref.
 	gitRun(t, sourceDir, "update-ref", "refs/pull/1/head", prHead)
 
-	mgr := setupBareClone(t, sourceDir, clonesDir, "owner", "repo")
-	syncer, repoID := setupSyncer(t, ctx, mgr)
+	syncer, repoID := setupSyncer(t, ctx, sourceDir, clonesDir)
 	mrID, revision := insertMergedPR(t, ctx, syncer.db, repoID, 1, prHead)
 
-	require.NoError(syncer.computeMergedMRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoID, mrID, revision, 1, prHead, "", mergeCommit, false))
+	require.NoError(syncer.computeMergedMRDiffSHAs(ctx, mergedDiffRepoRef(repoID), repoID, mrID, revision, 1, prHead, "", mergeCommit, false))
 
 	shas, err := syncer.db.GetDiffSHAs(ctx, "github", "github.com", "owner", "repo", 1)
 	require.NoError(err)
@@ -159,21 +195,20 @@ func TestIntegrationComputeMergedPRDiffSHAs_ForceOverwritesIncorrectSHAs(t *test
 
 	gitRun(t, sourceDir, "update-ref", "refs/pull/1/head", prHead)
 
-	mgr := setupBareClone(t, sourceDir, clonesDir, "owner", "repo")
-	syncer, repoID := setupSyncer(t, ctx, mgr)
+	syncer, repoID := setupSyncer(t, ctx, sourceDir, clonesDir)
 	mrID, revision := insertMergedPR(t, ctx, syncer.db, repoID, 1, prHead)
 
 	// Seed incorrect diff SHAs (simulating prior SyncMR regression).
 	require.NoError(syncer.db.UpdateDiffSHAs(ctx, repoID, 1, "bad-head", "bad-base", "bad-merge-base"))
 
 	// Without force, the existing (incorrect) SHAs are preserved.
-	require.NoError(syncer.computeMergedMRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoID, mrID, revision, 1, prHead, "", mergeCommit, false))
+	require.NoError(syncer.computeMergedMRDiffSHAs(ctx, mergedDiffRepoRef(repoID), repoID, mrID, revision, 1, prHead, "", mergeCommit, false))
 	shas, err := syncer.db.GetDiffSHAs(ctx, "github", "github.com", "owner", "repo", 1)
 	require.NoError(err)
 	assert.Equal("bad-head", shas.DiffHeadSHA, "force=false should not overwrite existing SHAs")
 
 	// With force, the incorrect SHAs are replaced with correct values.
-	require.NoError(syncer.computeMergedMRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoID, mrID, revision, 1, prHead, "", mergeCommit, true))
+	require.NoError(syncer.computeMergedMRDiffSHAs(ctx, mergedDiffRepoRef(repoID), repoID, mrID, revision, 1, prHead, "", mergeCommit, true))
 	shas, err = syncer.db.GetDiffSHAs(ctx, "github", "github.com", "owner", "repo", 1)
 	require.NoError(err)
 	require.NotNil(shas)
@@ -207,11 +242,10 @@ func TestIntegrationComputeMergedPRDiffSHAs_SquashMerge(t *testing.T) {
 
 	gitRun(t, sourceDir, "update-ref", "refs/pull/2/head", prHead)
 
-	mgr := setupBareClone(t, sourceDir, clonesDir, "owner", "repo")
-	syncer, repoID := setupSyncer(t, ctx, mgr)
+	syncer, repoID := setupSyncer(t, ctx, sourceDir, clonesDir)
 	mrID, revision := insertMergedPR(t, ctx, syncer.db, repoID, 2, prHead)
 
-	require.NoError(syncer.computeMergedMRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoID, mrID, revision, 2, prHead, "", squashCommit, false))
+	require.NoError(syncer.computeMergedMRDiffSHAs(ctx, mergedDiffRepoRef(repoID), repoID, mrID, revision, 2, prHead, "", squashCommit, false))
 
 	shas, err := syncer.db.GetDiffSHAs(ctx, "github", "github.com", "owner", "repo", 2)
 	require.NoError(err)
@@ -259,11 +293,10 @@ func TestIntegrationComputeMergedPRDiffSHAs_RebaseMerge(t *testing.T) {
 	// Pull ref points to original (pre-rebase) PR head.
 	gitRun(t, sourceDir, "update-ref", "refs/pull/3/head", prHead)
 
-	mgr := setupBareClone(t, sourceDir, clonesDir, "owner", "repo")
-	syncer, repoID := setupSyncer(t, ctx, mgr)
+	syncer, repoID := setupSyncer(t, ctx, sourceDir, clonesDir)
 	mrID, revision := insertMergedPR(t, ctx, syncer.db, repoID, 3, prHead)
 
-	require.NoError(syncer.computeMergedMRDiffSHAs(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoID, mrID, revision, 3, prHead, "", rebaseLastCommit, false))
+	require.NoError(syncer.computeMergedMRDiffSHAs(ctx, mergedDiffRepoRef(repoID), repoID, mrID, revision, 3, prHead, "", rebaseLastCommit, false))
 
 	shas, err := syncer.db.GetDiffSHAs(ctx, "github", "github.com", "owner", "repo", 3)
 	require.NoError(err)
@@ -306,7 +339,10 @@ func TestIntegrationSyncOpenToMergedTransition(t *testing.T) {
 	gitRun(t, sourceDir, "update-ref", "refs/pull/10/head", prHead)
 
 	// Set up bare clone BEFORE the merge -- reflects the pre-merge state.
-	mgr := setupBareClone(t, sourceDir, clonesDir, "owner", "repo")
+	d := openTestDB(t)
+	mgr, repoID := setupBareClone(
+		t, ctx, sourceDir, clonesDir, "owner", "repo", d,
+	)
 
 	now := time.Now().UTC()
 	number := 10
@@ -341,8 +377,15 @@ func TestIntegrationSyncOpenToMergedTransition(t *testing.T) {
 		openPRs: []*gh.PullRequest{openPR},
 	}
 
-	d := openTestDB(t)
-	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, mgr, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, testBudget(500))
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc},
+		d,
+		mgr,
+		[]RepoRef{mergedDiffRepoRef(repoID)},
+		time.Minute,
+		nil,
+		testBudget(500),
+	)
 	syncer.RunOnce(ctx)
 
 	pr, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", number)
@@ -364,7 +407,9 @@ func TestIntegrationSyncOpenToMergedTransition(t *testing.T) {
 	postmergeBaseSHA := gitRun(t, sourceDir, "rev-parse", "main")
 
 	// Re-fetch the bare clone to pick up the merge commit.
-	barePath, err := mgr.ClonePath("github", "github.com", "owner", "repo")
+	barePath, err := mgr.RepositoryClone(
+		repoID, "github", "github.com", "owner", "repo",
+	).ClonePath()
 	require.NoError(err)
 	gitRun(t, barePath, "fetch", "--prune", "origin")
 
@@ -475,7 +520,9 @@ func TestIntegrationSyncFirstSeenMergedPR(t *testing.T) {
 	postmergeBaseSHA := gitRun(t, sourceDir, "rev-parse", "main")
 
 	// Set up bare clone (post-merge state).
-	mgr := setupBareClone(t, sourceDir, clonesDir, "owner", "repo")
+	mgr, repoID := setupBareClone(
+		t, ctx, sourceDir, clonesDir, "owner", "repo", d,
+	)
 
 	closedState := "closed"
 	merged := true
@@ -500,7 +547,15 @@ func TestIntegrationSyncFirstSeenMergedPR(t *testing.T) {
 	// diff SHAs are empty.
 	mc.openPRs = nil
 	mc.singlePR = mergedPR
-	syncer2 := NewSyncer(map[string]Client{"github.com": mc}, d, mgr, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, nil)
+	syncer2 := NewSyncer(
+		map[string]Client{"github.com": mc},
+		d,
+		mgr,
+		[]RepoRef{mergedDiffRepoRef(repoID)},
+		time.Minute,
+		nil,
+		nil,
+	)
 	syncer2.RunOnce(ctx)
 
 	shas, err := d.GetDiffSHAs(ctx, "github", "github.com", "owner", "repo", number)
@@ -539,7 +594,10 @@ func TestIntegrationSyncMRWrapsDiffFailureAsDiffSyncError(t *testing.T) {
 	prHead := gitRun(t, sourceDir, "rev-parse", "HEAD")
 	gitRun(t, sourceDir, "update-ref", "refs/pull/42/head", prHead)
 
-	mgr := setupBareClone(t, sourceDir, clonesDir, "owner", "repo")
+	d := openTestDB(t)
+	mgr, repoID := setupBareClone(
+		t, ctx, sourceDir, clonesDir, "owner", "repo", d,
+	)
 
 	// Now merge in the source repo *after* the bare clone has snapshotted,
 	// so the merge commit is unreachable from the clone.
@@ -552,7 +610,9 @@ func TestIntegrationSyncMRWrapsDiffFailureAsDiffSyncError(t *testing.T) {
 	// `git fetch` succeeds but the merge commit never enters the clone.
 	emptyRemote := t.TempDir()
 	initTestRepo(t, emptyRemote)
-	barePath, err := mgr.ClonePath("github", "github.com", "owner", "repo")
+	barePath, err := mgr.RepositoryClone(
+		repoID, "github", "github.com", "owner", "repo",
+	).ClonePath()
 	require.NoError(err)
 	gitRun(t, barePath, "remote", "set-url", "origin", emptyRemote)
 
@@ -582,9 +642,8 @@ func TestIntegrationSyncMRWrapsDiffFailureAsDiffSyncError(t *testing.T) {
 	}
 
 	mc := &mockClient{singlePR: mergedPR}
-	d := openTestDB(t)
 	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, mgr,
-		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+		[]RepoRef{mergedDiffRepoRef(repoID)},
 		time.Minute, nil, nil)
 
 	err = syncer.SyncMR(ctx, "owner", "repo", number)
@@ -648,7 +707,10 @@ func TestIntegrationSyncItemByNumberReturnsTypeOnDiffSyncError(t *testing.T) {
 	prHead := gitRun(t, sourceDir, "rev-parse", "HEAD")
 	gitRun(t, sourceDir, "update-ref", "refs/pull/77/head", prHead)
 
-	mgr := setupBareClone(t, sourceDir, clonesDir, "owner", "repo")
+	d := openTestDB(t)
+	mgr, repoID := setupBareClone(
+		t, ctx, sourceDir, clonesDir, "owner", "repo", d,
+	)
 
 	gitRun(t, sourceDir, "checkout", "main")
 	gitRun(t, sourceDir, "merge", "--no-ff", "feature", "-m", "Merge feature")
@@ -659,7 +721,9 @@ func TestIntegrationSyncItemByNumberReturnsTypeOnDiffSyncError(t *testing.T) {
 	// reach it via fetch.
 	emptyRemote := t.TempDir()
 	initTestRepo(t, emptyRemote)
-	barePath, err := mgr.ClonePath("github", "github.com", "owner", "repo")
+	barePath, err := mgr.RepositoryClone(
+		repoID, "github", "github.com", "owner", "repo",
+	).ClonePath()
 	require.NoError(err)
 	gitRun(t, barePath, "remote", "set-url", "origin", emptyRemote)
 
@@ -697,9 +761,8 @@ func TestIntegrationSyncItemByNumberReturnsTypeOnDiffSyncError(t *testing.T) {
 			}, nil
 		},
 	}
-	d := openTestDB(t)
 	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, mgr,
-		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+		[]RepoRef{mergedDiffRepoRef(repoID)},
 		time.Minute, nil, nil)
 
 	itemType, err := syncer.SyncItemByNumber(ctx, "owner", "repo", number)

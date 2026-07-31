@@ -131,7 +131,8 @@ const projectSelectColumns = `p.id, p.display_name, p.local_path,
         r.platform, r.platform_host, r.owner, r.name`
 
 const projectFromJoin = `FROM forge_projects p
-        LEFT JOIN forge_repos r ON r.id = p.repo_id`
+        LEFT JOIN forge_repos r ON r.id = p.repo_id
+                                  AND r.retired_at IS NULL`
 
 // GetProjectByID returns one project by its server-assigned id, joining the
 // linked forge_repos row to populate PlatformIdentity when present.

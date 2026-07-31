@@ -24,6 +24,13 @@ func (m *Manager) DiffFiles(
 	if err != nil {
 		return nil, err
 	}
+	return m.diffFilesInDir(ctx, clonePath, mergeBase, headSHA)
+}
+
+func (m *Manager) diffFilesInDir(
+	ctx context.Context,
+	clonePath, mergeBase, headSHA string,
+) ([]DiffFile, error) {
 	rawOut, err := m.git(ctx, clonePath,
 		DiffArgs("--raw", "-z", "-M", "-C",
 			"--find-copies-harder", "--end-of-options", mergeBase, headSHA,
@@ -58,6 +65,18 @@ func (m *Manager) DiffFiles(
 	m.markGenerated(ctx, clonePath, headSHA, files)
 	SortDiffFiles(files)
 	return files, nil
+}
+
+// DiffFiles returns file metadata from this repository incarnation.
+func (r RepositoryClone) DiffFiles(
+	ctx context.Context,
+	mergeBase, headSHA string,
+) ([]DiffFile, error) {
+	clonePath, err := r.ClonePath()
+	if err != nil {
+		return nil, err
+	}
+	return r.manager.diffFilesInDir(ctx, clonePath, mergeBase, headSHA)
 }
 
 // SortDiffFiles orders files the same way Git path lists and the Pierre file
@@ -152,7 +171,14 @@ func (m *Manager) Diff(
 	if err != nil {
 		return nil, err
 	}
+	return m.diffInDir(ctx, clonePath, mergeBase, headSHA, hideWhitespace)
+}
 
+func (m *Manager) diffInDir(
+	ctx context.Context,
+	clonePath, mergeBase, headSHA string,
+	hideWhitespace bool,
+) (*DiffResult, error) {
 	// Step 1: Compute whitespace-only file count.
 	wsCount, err := m.computeWhitespaceOnlyCount(
 		ctx, clonePath, mergeBase, headSHA)
@@ -216,6 +242,25 @@ func (m *Manager) Diff(
 		WhitespaceOnlyCount: wsCount,
 		Files:               files,
 	}, nil
+}
+
+// Diff returns a structured diff from this repository incarnation.
+func (r RepositoryClone) Diff(
+	ctx context.Context,
+	mergeBase, headSHA string,
+	hideWhitespace bool,
+) (*DiffResult, error) {
+	clonePath, err := r.ClonePath()
+	if err != nil {
+		return nil, err
+	}
+	return r.manager.diffInDir(
+		ctx,
+		clonePath,
+		mergeBase,
+		headSHA,
+		hideWhitespace,
+	)
 }
 
 func (m *Manager) markGenerated(
@@ -344,6 +389,14 @@ func (m *Manager) FileContent(
 	if err != nil {
 		return nil, err
 	}
+	return m.fileContentInDir(ctx, clonePath, ref, filePath, maxBytes)
+}
+
+func (m *Manager) fileContentInDir(
+	ctx context.Context,
+	clonePath, ref, filePath string,
+	maxBytes int64,
+) (*FileContent, error) {
 	object := ref + ":" + filePath
 	sizeOut, err := m.git(ctx, clonePath, "cat-file", "-s", object)
 	if err != nil {
@@ -365,6 +418,25 @@ func (m *Manager) FileContent(
 		Data: data,
 		Size: size,
 	}, nil
+}
+
+// FileContent reads a blob from this repository incarnation.
+func (r RepositoryClone) FileContent(
+	ctx context.Context,
+	ref, filePath string,
+	maxBytes int64,
+) (*FileContent, error) {
+	clonePath, err := r.ClonePath()
+	if err != nil {
+		return nil, err
+	}
+	return r.manager.fileContentInDir(
+		ctx,
+		clonePath,
+		ref,
+		filePath,
+		maxBytes,
+	)
 }
 
 // parseRawZPaths extracts just the file paths from --raw -z output.

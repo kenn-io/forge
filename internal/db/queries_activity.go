@@ -142,16 +142,14 @@ func (d *DB) ListActivity(
 			       COALESCE(mr.state, iss.state, '')
 			FROM forge_notification_items n
 			JOIN forge_repos r
-			       ON r.platform = n.platform
-			      AND r.platform_host = n.platform_host
-			      AND r.owner = n.repo_owner
-			      AND r.name = n.repo_name
+			       ON r.id = n.repo_id
 			LEFT JOIN forge_merge_requests mr
 			       ON n.item_type = 'pr' AND mr.repo_id = r.id AND mr.number = n.item_number
 			LEFT JOIN forge_issues iss
 			       ON n.item_type = 'issue' AND iss.repo_id = r.id AND iss.number = n.item_number
 			WHERE n.item_type IN ('pr', 'issue') AND n.item_number IS NOT NULL
-			      AND n.reason != 'author'` + notificationScope
+			      AND n.reason != 'author'
+			      AND r.retired_at IS NULL` + notificationScope
 	}
 
 	query := fmt.Sprintf(`
@@ -182,6 +180,7 @@ func (d *DB) ListActivity(
 			       '' AS subject_state
 			FROM forge_merge_requests p
 			JOIN forge_repos r ON p.repo_id = r.id
+			WHERE r.retired_at IS NULL
 			UNION ALL
 			SELECT 'new_issue', 'issue', i.id,
 			       r.platform, r.platform_host, r.owner, r.name, r.repo_path_key,
@@ -197,6 +196,7 @@ func (d *DB) ListActivity(
 			       ''
 			FROM forge_issues i
 			JOIN forge_repos r ON i.repo_id = r.id
+			WHERE r.retired_at IS NULL
 			UNION ALL
 			SELECT CASE e.event_type
 			           WHEN 'issue_comment' THEN 'comment'
@@ -219,6 +219,7 @@ func (d *DB) ListActivity(
 			JOIN forge_repos r ON p.repo_id = r.id
 			WHERE e.event_type IN (
 				'issue_comment', 'review', 'commit', 'force_push')
+			  AND r.retired_at IS NULL
 			UNION ALL
 			SELECT 'comment', 'ise', e.id,
 			       r.platform, r.platform_host, r.owner, r.name, r.repo_path_key,
@@ -236,6 +237,7 @@ func (d *DB) ListActivity(
 			JOIN forge_issues i ON e.issue_id = i.id
 			JOIN forge_repos r ON i.repo_id = r.id
 			WHERE e.event_type = 'issue_comment'
+			  AND r.retired_at IS NULL
 			UNION ALL
 			SELECT 'default_branch_commit', 'bc', bc.id,
 			       r.platform, r.platform_host, r.owner, r.name, r.repo_path_key,
@@ -253,6 +255,7 @@ func (d *DB) ListActivity(
 			       ''
 			FROM forge_branch_commits bc
 			JOIN forge_repos r ON bc.repo_id = r.id
+			WHERE r.retired_at IS NULL
 			UNION ALL
 			SELECT 'default_branch_force_push', 'bfp', bfp.id,
 			       r.platform, r.platform_host, r.owner, r.name, r.repo_path_key,
@@ -268,6 +271,7 @@ func (d *DB) ListActivity(
 			       ''
 			FROM forge_branch_force_pushes bfp
 			JOIN forge_repos r ON bfp.repo_id = r.id
+			WHERE r.retired_at IS NULL
 			%[3]s
 		) unified
 		%[2]s
@@ -388,7 +392,11 @@ func activityNotificationRepoFilterCondition(filters []NotificationRepoFilter, a
 		if platform == "" || owner == "" || name == "" {
 			continue
 		}
-		groups = append(groups, "(n.platform = ? AND n.platform_host = ? AND n.repo_owner = ? AND n.repo_name = ?)")
+		groups = append(
+			groups,
+			"(r.platform = ? AND r.platform_host = ? AND "+
+				"r.owner_key = ? AND r.name_key = ?)",
+		)
 		*args = append(*args, platform, host, owner, name)
 	}
 	if len(groups) == 0 {

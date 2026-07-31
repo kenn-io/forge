@@ -42,6 +42,84 @@ func TestRepoBrowserListRefsDisambiguatesBranchAndTag(t *testing.T) {
 	assert.Contains(refs, RepoBrowserRef{Type: RepoBrowserRefTag, Name: "release", SHA: mainSHA})
 }
 
+func TestRepoBrowserCloneNamespaceUsesRepositoryIncarnationID(t *testing.T) {
+	require := require.New(t)
+	base := RepoBrowserRepoRef{
+		Provider:  "github",
+		Host:      "github.com",
+		Owner:     "acme",
+		Name:      "widget",
+		RepoPath:  "acme/widget",
+		RemoteURL: "https://github.com/acme/widget.git",
+	}
+	first := base
+	second := base
+	first.RepoID = 41
+	second.RepoID = 42
+
+	require.NotEqual(
+		repoBrowserCloneNamespace(first),
+		repoBrowserCloneNamespace(second),
+	)
+	manager := New(t.TempDir(), nil)
+	firstPath, err := manager.repoBrowserClonePath(first)
+	require.NoError(err)
+	secondPath, err := manager.repoBrowserClonePath(second)
+	require.NoError(err)
+	require.NotEqual(firstPath, secondPath)
+
+	renamed := first
+	renamed.Owner = "acme-tools"
+	renamed.Name = "renamed-widget"
+	renamed.RepoPath = "acme-tools/renamed-widget"
+	renamedPath, err := manager.repoBrowserClonePath(renamed)
+	require.NoError(err)
+	require.Equal(firstPath, renamedPath)
+}
+
+func TestEnsureRepoBrowserCloneRepointsOriginAfterRename(t *testing.T) {
+	require := require.New(t)
+	mgr, repo, _ := setupRepoBrowserTestRepo(t)
+	clonePath, err := mgr.repoBrowserClonePath(repo)
+	require.NoError(err)
+	commitTestRun(t, clonePath, "git", "remote", "set-url", "origin",
+		"https://github.com/acme/widgets.git")
+
+	renamed := repo
+	renamed.Owner = "acme-tools"
+	renamed.Name = "renamed-widget"
+	renamed.RepoPath = "acme-tools/renamed-widget"
+
+	require.NoError(mgr.EnsureRepoBrowserClone(t.Context(), renamed))
+	out, err := mgr.git(t.Context(), clonePath, "config", "--get", "remote.origin.url")
+	require.NoError(err)
+	require.Equal(renamed.RemoteURL, strings.TrimSpace(string(out)))
+}
+
+func TestRegisterExistingRepoBrowserCloneRepointsOriginAfterRestartRename(t *testing.T) {
+	require := require.New(t)
+	mgr, repo, _ := setupRepoBrowserTestRepo(t)
+	clonePath, err := mgr.repoBrowserClonePath(repo)
+	require.NoError(err)
+	remoteURL := repo.RemoteURL
+	commitTestRun(t, clonePath, "git", "remote", "set-url", "origin",
+		"https://github.com/acme/widgets.git")
+	require.NoError(os.Rename(remoteURL, remoteURL+".offline"))
+
+	renamed := repo
+	renamed.Owner = "acme-tools"
+	renamed.Name = "renamed-widget"
+	renamed.RepoPath = "acme-tools/renamed-widget"
+	restarted := New(mgr.baseDir, nil)
+
+	registered, err := restarted.RegisterExistingRepoBrowserClone(t.Context(), renamed)
+	require.NoError(err)
+	require.True(registered)
+	out, err := restarted.git(t.Context(), clonePath, "config", "--get", "remote.origin.url")
+	require.NoError(err)
+	require.Equal(renamed.RemoteURL, strings.TrimSpace(string(out)))
+}
+
 func TestRepoBrowserListRefsCapsLargeRefSets(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -82,7 +160,33 @@ func TestRefreshRepoBrowserClonesRefreshesRegisteredRepos(t *testing.T) {
 
 	commitTestRun(t, work, "git", "tag", "v1.0.0", mainSHA)
 	commitTestRun(t, work, "git", "push", "origin", "refs/tags/v1.0.0")
-	mgr.RefreshRepoBrowserClones(t.Context())
+	releasedAfterRefresh := false
+	mgr.RefreshRepoBrowserClones(
+		t.Context(),
+		func(
+			_ context.Context,
+			registered RepoBrowserRepoRef,
+		) (RepoBrowserRepoRef, func(), bool, error) {
+			require.Equal(repo.RepoID, registered.RepoID)
+			return repo, func() {
+				refs, _, _, err := mgr.ListRepoBrowserRefs(
+					t.Context(),
+					repo,
+					"main",
+				)
+				require.NoError(err)
+				releasedAfterRefresh = assert.Contains(
+					refs,
+					RepoBrowserRef{
+						Type: RepoBrowserRefTag,
+						Name: "v1.0.0",
+						SHA:  mainSHA,
+					},
+				)
+			}, true, nil
+		},
+	)
+	require.True(releasedAfterRefresh)
 
 	refs, _, truncated, err := mgr.ListRepoBrowserRefs(t.Context(), repo, "main")
 	require.NoError(err)
@@ -105,7 +209,10 @@ func TestRefreshRepoBrowserClonesUsesSeededExistingClones(t *testing.T) {
 	registered, err := restarted.RegisterExistingRepoBrowserClone(t.Context(), repo)
 	require.NoError(err)
 	require.True(registered)
-	restarted.RefreshRepoBrowserClones(t.Context())
+	restarted.RefreshRepoBrowserClones(
+		t.Context(),
+		passthroughRepoBrowserRefreshAuthorizer,
+	)
 
 	resolved, err := restarted.ResolveRepoBrowserRef(t.Context(), repo, RepoBrowserRef{
 		Type: RepoBrowserRefBranch,
@@ -113,6 +220,13 @@ func TestRefreshRepoBrowserClonesUsesSeededExistingClones(t *testing.T) {
 	})
 	require.NoError(err)
 	assert.Equal(updatedSHA, resolved.SHA)
+}
+
+func passthroughRepoBrowserRefreshAuthorizer(
+	_ context.Context,
+	repo RepoBrowserRepoRef,
+) (RepoBrowserRepoRef, func(), bool, error) {
+	return repo, func() {}, true, nil
 }
 
 func TestEnsureRepoBrowserCloneDoesNotRefreshExistingClone(t *testing.T) {
@@ -149,6 +263,81 @@ func TestRepoBrowserScheduledRefreshContextStaysCancelable(t *testing.T) {
 	require.ErrorIs(err, context.Canceled)
 	repos := mgr.repoBrowserReposSnapshot()
 	assert.Empty(repos)
+}
+
+func TestRepoBrowserScheduledRefreshKeepsAuthorizationUntilJoinedWorkStops(
+	t *testing.T,
+) {
+	require := require.New(t)
+	assert := assert.New(t)
+	mgr, repo, _ := setupRepoBrowserTestRepo(t)
+	workStarted := make(chan struct{})
+	stopWork := make(chan struct{})
+	mgr.repoBrowserRefreshFn = func(
+		context.Context,
+		RepoBrowserRepoRef,
+	) error {
+		close(workStarted)
+		<-stopWork
+		return nil
+	}
+	detachedDone := make(chan error, 1)
+	go func() {
+		detachedDone <- mgr.refreshRepoBrowserClone(
+			context.Background(),
+			repo,
+			repoBrowserRefreshDetachCaller,
+		)
+	}()
+	<-workStarted
+
+	refreshCtx, cancelRefresh := context.WithCancel(t.Context())
+	authorized := make(chan struct{})
+	released := make(chan struct{})
+	refreshDone := make(chan struct{})
+	go func() {
+		defer close(refreshDone)
+		mgr.RefreshRepoBrowserClones(
+			refreshCtx,
+			func(
+				context.Context,
+				RepoBrowserRepoRef,
+			) (RepoBrowserRepoRef, func(), bool, error) {
+				close(authorized)
+				return repo, func() { close(released) }, true, nil
+			},
+		)
+	}()
+	<-authorized
+	cancelRefresh()
+
+	releasedBeforeWorkStopped := false
+	select {
+	case <-released:
+		releasedBeforeWorkStopped = true
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(stopWork)
+	select {
+	case <-detachedDone:
+	case <-time.After(2 * time.Second):
+		require.Fail("detached refresh did not stop")
+	}
+	select {
+	case <-refreshDone:
+	case <-time.After(2 * time.Second):
+		require.Fail("scheduled refresh did not stop")
+	}
+
+	assert.False(
+		releasedBeforeWorkStopped,
+		"authorization must remain held until joined singleflight work stops",
+	)
+	select {
+	case <-released:
+	default:
+		require.Fail("authorization was not released after refresh work stopped")
+	}
 }
 
 func TestRepoBrowserRequestRefreshWorkDetachesCallerCancellation(t *testing.T) {
@@ -618,6 +807,7 @@ func setupRepoBrowserTestRepo(t *testing.T) (*Manager, RepoBrowserRepoRef, strin
 
 	mgr := New(filepath.Join(dir, "clones"), nil)
 	repo := RepoBrowserRepoRef{
+		RepoID:    42,
 		Provider:  "github",
 		Host:      "github.com",
 		Owner:     "acme",

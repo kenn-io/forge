@@ -822,13 +822,13 @@ func (d *DB) MarkRepoLabelCatalogSynced(ctx context.Context, repoID int64, synce
 }
 
 func (d *DB) ReplaceIssueLabels(ctx context.Context, repoID, issueID int64, labels []Label) error {
-	return d.Tx(ctx, func(tx *sql.Tx) error {
+	return d.withActiveRepositoryTx(ctx, repoID, func(tx *sql.Tx) error {
 		return replaceIssueLabelsTx(ctx, tx, repoID, issueID, labels)
 	})
 }
 
 func (d *DB) ReplaceMergeRequestLabels(ctx context.Context, repoID, mrID int64, labels []Label) error {
-	return d.Tx(ctx, func(tx *sql.Tx) error {
+	return d.withActiveRepositoryTx(ctx, repoID, func(tx *sql.Tx) error {
 		return replaceMergeRequestLabelsTx(ctx, tx, repoID, mrID, labels)
 	})
 }
@@ -917,6 +917,7 @@ func (d *DB) PurgeOtherHosts(ctx context.Context, keepHost string) error {
 	return d.Tx(ctx, func(tx *sql.Tx) error {
 		queries := []string{
 			`DELETE FROM forge_starred_items WHERE repo_id IN (SELECT id FROM forge_repos WHERE platform_host != ?)`,
+			`DELETE FROM forge_workspaces WHERE repo_id IN (SELECT id FROM forge_repos WHERE platform_host != ?)`,
 			`DELETE FROM forge_mr_worktree_links WHERE merge_request_id IN (SELECT id FROM forge_merge_requests WHERE repo_id IN (SELECT id FROM forge_repos WHERE platform_host != ?))`,
 			`DELETE FROM forge_item_workflow_state WHERE repo_id IN (SELECT id FROM forge_repos WHERE platform_host != ?)`,
 			`DELETE FROM forge_mr_events WHERE merge_request_id IN (SELECT id FROM forge_merge_requests WHERE repo_id IN (SELECT id FROM forge_repos WHERE platform_host != ?))`,
@@ -969,17 +970,7 @@ func upsertRepoIdentityTx(ctx context.Context, tx *sql.Tx, identity RepoIdentity
 		     owner, name, repo_path,
 		     owner_key, name_key, repo_path_key
 		 )
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-		 ON CONFLICT(platform, platform_host, owner, name) DO UPDATE SET
-		     repo_path = excluded.repo_path,
-		     owner_key = excluded.owner_key,
-		     name_key = excluded.name_key,
-		     repo_path_key = excluded.repo_path_key,
-		     platform_repo_id = CASE
-		         WHEN forge_repos.platform_repo_id = ''
-		         THEN excluded.platform_repo_id
-		         ELSE forge_repos.platform_repo_id
-		     END`,
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		identity.Platform, identity.PlatformHost, identity.PlatformRepoID,
 		identity.Owner, identity.Name, identity.RepoPath,
 		identity.OwnerKey, identity.NameKey, identity.RepoPathKey,
@@ -991,11 +982,15 @@ func upsertRepoIdentityTx(ctx context.Context, tx *sql.Tx, identity RepoIdentity
 	err = tx.QueryRowContext(ctx,
 		`SELECT id FROM forge_repos
 		 WHERE platform = ? AND platform_host = ?
-		   AND owner_key = ? AND name_key = ?`,
+		   AND owner_key = ? AND name_key = ?
+		   AND retired_at IS NULL`,
 		identity.Platform, identity.PlatformHost, identity.OwnerKey, identity.NameKey,
 	).Scan(&id)
 	if err != nil {
 		return 0, fmt.Errorf("get repo id after upsert: %w", err)
+	}
+	if err := adoptUnscopedNotificationsTx(ctx, tx, id, identity); err != nil {
+		return 0, err
 	}
 	return id, nil
 }
@@ -1031,23 +1026,33 @@ func (d *DB) UpsertRepoByProviderID(ctx context.Context, identity RepoIdentity) 
 			if err != nil {
 				return err
 			}
-			targetIdentity, err := lookupRepoIdentityByIDTx(ctx, tx, targetID)
-			if err != nil {
+			if err := retireRepoTx(ctx, tx, targetID); err != nil {
 				return err
 			}
-			if err := mergeRepoRowsTx(ctx, tx, sourceID, targetID); err != nil {
+			if err := updateRepoIdentityTx(ctx, tx, sourceID, identity); err != nil {
 				return err
 			}
-			if err := updateRepoIdentityTx(ctx, tx, targetID, identity); err != nil {
+			if err := activateRepoTx(ctx, tx, sourceID); err != nil {
 				return err
 			}
-			if err := updateWorkspaceRepoIdentityTx(ctx, tx, sourceIdentity, identity); err != nil {
+			if err := updateWorkspaceRepoIdentityTx(
+				ctx,
+				tx,
+				sourceID,
+				sourceIdentity,
+				identity,
+			); err != nil {
 				return err
 			}
-			if err := updateWorkspaceRepoIdentityTx(ctx, tx, targetIdentity, identity); err != nil {
+			if err := setRepoRetiredReplacementTx(
+				ctx,
+				tx,
+				targetID,
+				sourceID,
+			); err != nil {
 				return err
 			}
-			id = targetID
+			id = sourceID
 			return nil
 		}
 
@@ -1059,7 +1064,12 @@ func (d *DB) UpsertRepoByProviderID(ctx context.Context, identity RepoIdentity) 
 			if err := updateRepoIdentityTx(ctx, tx, sourceID, identity); err != nil {
 				return err
 			}
-			if err := updateWorkspaceRepoIdentityTx(ctx, tx, sourceIdentity, identity); err != nil {
+			if err := activateRepoTx(ctx, tx, sourceID); err != nil {
+				return err
+			}
+			if err := updateWorkspaceRepoIdentityTx(
+				ctx, tx, sourceID, sourceIdentity, identity,
+			); err != nil {
 				return err
 			}
 			id = sourceID
@@ -1071,10 +1081,34 @@ func (d *DB) UpsertRepoByProviderID(ctx context.Context, identity RepoIdentity) 
 			if err != nil {
 				return err
 			}
+			if conflictErr := repositoryIdentityConflict(
+				targetID,
+				targetIdentity,
+				identity,
+			); conflictErr != nil {
+				if err := retireRepoTx(ctx, tx, targetID); err != nil {
+					return err
+				}
+				id, err = upsertRepoIdentityTx(ctx, tx, identity)
+				if err != nil {
+					return err
+				}
+				if err := setRepoRetiredReplacementTx(
+					ctx,
+					tx,
+					targetID,
+					id,
+				); err != nil {
+					return err
+				}
+				return nil
+			}
 			if err := updateRepoIdentityTx(ctx, tx, targetID, identity); err != nil {
 				return err
 			}
-			if err := updateWorkspaceRepoIdentityTx(ctx, tx, targetIdentity, identity); err != nil {
+			if err := updateWorkspaceRepoIdentityTx(
+				ctx, tx, targetID, targetIdentity, identity,
+			); err != nil {
 				return err
 			}
 			id = targetID
@@ -1088,6 +1122,142 @@ func (d *DB) UpsertRepoByProviderID(ctx context.Context, identity RepoIdentity) 
 		return 0, err
 	}
 	return id, nil
+}
+
+func retireRepoTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	repoID int64,
+) error {
+	result, err := tx.ExecContext(ctx, `
+		UPDATE forge_repos
+		SET retired_at = CURRENT_TIMESTAMP,
+		    retired_replacement_id = NULL,
+		    retired_owner = owner,
+		    retired_name = name,
+		    owner = '',
+		    name = printf('__retired_repository_%d__', id),
+		    owner_key = '',
+		    name_key = lower(printf('__retired_repository_%d__', id))
+		WHERE id = ? AND retired_at IS NULL`,
+		repoID,
+	)
+	if err != nil {
+		return fmt.Errorf("retire repository incarnation: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("read retired repository result: %w", err)
+	}
+	if affected != 1 {
+		return fmt.Errorf("retire repository incarnation %d: active row not found", repoID)
+	}
+	return nil
+}
+
+func activateRepoTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	repoID int64,
+) error {
+	_, err := tx.ExecContext(ctx, `
+		UPDATE forge_repos
+		SET retired_at = NULL,
+		    retired_replacement_id = NULL,
+		    retired_owner = NULL,
+		    retired_name = NULL
+		WHERE id = ?`,
+		repoID,
+	)
+	if err != nil {
+		return fmt.Errorf("activate repository incarnation: %w", err)
+	}
+	return nil
+}
+
+func setRepoRetiredReplacementTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	retiredRepoID int64,
+	replacementRepoID int64,
+) error {
+	_, err := tx.ExecContext(ctx, `
+		UPDATE forge_repos
+		SET retired_replacement_id = ?
+		WHERE id = ? AND retired_at IS NOT NULL`,
+		replacementRepoID,
+		retiredRepoID,
+	)
+	if err != nil {
+		return fmt.Errorf("link retired repository replacement: %w", err)
+	}
+	return nil
+}
+
+func requireActiveRepoTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	repoID int64,
+	expectedProviderID string,
+) error {
+	var storedProviderID string
+	var retiredAt sql.NullTime
+	err := tx.QueryRowContext(ctx, `
+		SELECT platform_repo_id, retired_at
+		FROM forge_repos
+		WHERE id = ?`,
+		repoID,
+	).Scan(&storedProviderID, &retiredAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("repository incarnation %d not found", repoID)
+	}
+	if err != nil {
+		return fmt.Errorf("load repository incarnation %d: %w", repoID, err)
+	}
+	if retiredAt.Valid {
+		return fmt.Errorf("%w: repository %d", ErrRepositoryRetired, repoID)
+	}
+	if expectedProviderID != "" &&
+		storedProviderID != "" &&
+		storedProviderID != expectedProviderID {
+		return fmt.Errorf(
+			"repository incarnation %d provider id is %q, not %q",
+			repoID,
+			storedProviderID,
+			expectedProviderID,
+		)
+	}
+	return nil
+}
+
+func (d *DB) withActiveRepositoryTx(
+	ctx context.Context,
+	repoID int64,
+	write func(*sql.Tx) error,
+) error {
+	return d.Tx(ctx, func(tx *sql.Tx) error {
+		if err := requireActiveRepoTx(ctx, tx, repoID, ""); err != nil {
+			return err
+		}
+		return write(tx)
+	})
+}
+
+func repositoryIdentityConflict(
+	repoID int64,
+	existing RepoIdentity,
+	incoming RepoIdentity,
+) error {
+	if incoming.PlatformRepoID == "" ||
+		existing.PlatformRepoID == "" ||
+		existing.PlatformRepoID == incoming.PlatformRepoID {
+		return nil
+	}
+	return &RepoIdentityConflictError{
+		ExistingRepoID: repoID,
+		Existing:       existing,
+		Incoming:       incoming,
+	}
 }
 
 func lookupRepoIDByProviderIDTx(
@@ -1125,7 +1295,8 @@ func lookupRepoIDByIdentityTx(
 		 WHERE platform = ?
 		   AND platform_host = ?
 		   AND owner_key = ?
-		   AND name_key = ?`,
+		   AND name_key = ?
+		   AND retired_at IS NULL`,
 		identity.Platform, identity.PlatformHost, identity.OwnerKey, identity.NameKey,
 	).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -1145,7 +1316,9 @@ func lookupRepoIdentityByIDTx(
 	var identity RepoIdentity
 	err := tx.QueryRowContext(ctx,
 		`SELECT platform, platform_host, platform_repo_id,
-		        owner, name, repo_path,
+		        COALESCE(retired_owner, owner),
+		        COALESCE(retired_name, name),
+		        repo_path,
 		        owner_key, name_key, repo_path_key
 		 FROM forge_repos
 		 WHERE id = ?`,
@@ -1168,6 +1341,14 @@ func updateRepoIdentityTx(
 	identity RepoIdentity,
 ) error {
 	identity = canonicalRepoIdentity(identity)
+	if err := validateRepoProviderIDWriteTx(
+		ctx,
+		tx,
+		repoID,
+		identity.PlatformRepoID,
+	); err != nil {
+		return err
+	}
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE forge_merge_requests
 		SET head_repo_identity_stale = 1,
@@ -1218,12 +1399,67 @@ func updateRepoIdentityTx(
 	if err != nil {
 		return fmt.Errorf("update repo identity: %w", err)
 	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE forge_notification_items
+		SET repo_owner = ?, repo_name = ?
+		WHERE repo_id = ?`,
+		identity.OwnerKey,
+		identity.NameKey,
+		repoID,
+	); err != nil {
+		return fmt.Errorf("update renamed repository notification route: %w", err)
+	}
+	return adoptUnscopedNotificationsTx(ctx, tx, repoID, identity)
+}
+
+func adoptUnscopedNotificationsTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	repoID int64,
+	identity RepoIdentity,
+) error {
+	identity = canonicalRepoIdentity(identity)
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE forge_notification_items
+		SET repo_id = ?
+		WHERE repo_id IS NULL
+		  AND platform = ?
+		  AND platform_host = ?
+		  AND repo_owner = ?
+		  AND repo_name = ?`,
+		repoID,
+		identity.Platform,
+		identity.PlatformHost,
+		identity.OwnerKey,
+		identity.NameKey,
+	); err != nil {
+		return fmt.Errorf("associate notifications with repository incarnation: %w", err)
+	}
 	return nil
+}
+
+func validateRepoProviderIDWriteTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	repoID int64,
+	incomingProviderID string,
+) error {
+	if incomingProviderID == "" {
+		return nil
+	}
+	existing, err := lookupRepoIdentityByIDTx(ctx, tx, repoID)
+	if err != nil {
+		return err
+	}
+	incoming := existing
+	incoming.PlatformRepoID = incomingProviderID
+	return repositoryIdentityConflict(repoID, existing, incoming)
 }
 
 func updateWorkspaceRepoIdentityTx(
 	ctx context.Context,
 	tx *sql.Tx,
+	repoID int64,
 	from, to RepoIdentity,
 ) error {
 	from = canonicalRepoIdentity(from)
@@ -1237,10 +1473,6 @@ func updateWorkspaceRepoIdentityTx(
 		return nil
 	}
 
-	if err := mergeWorkspaceRowsForIdentityChangeTx(ctx, tx, from, to); err != nil {
-		return err
-	}
-
 	_, err := tx.ExecContext(ctx,
 		`UPDATE forge_workspaces
 		 SET platform_host = ?,
@@ -1249,982 +1481,17 @@ func updateWorkspaceRepoIdentityTx(
 		     repo_owner_key = ?,
 		     repo_name_key = ?,
 		     repo_path_key = ?
-		 WHERE platform_host = ?
-		   AND repo_path_key = ?`,
+		 WHERE repo_id = ?`,
 		to.PlatformHost,
 		to.Owner,
 		to.Name,
 		to.OwnerKey,
 		to.NameKey,
 		to.RepoPathKey,
-		from.PlatformHost,
-		from.RepoPathKey,
+		repoID,
 	)
 	if err != nil {
 		return fmt.Errorf("update workspace repo identity: %w", err)
-	}
-	return nil
-}
-
-func mergeWorkspaceRowsForIdentityChangeTx(
-	ctx context.Context,
-	tx *sql.Tx,
-	from, to RepoIdentity,
-) error {
-	rows, err := tx.QueryContext(ctx,
-		`SELECT source.id, target.id
-		 FROM forge_workspaces AS source
-		 JOIN forge_workspaces AS target
-		   ON target.platform_host = ?
-		  AND target.repo_path_key = ?
-		  AND target.item_type = source.item_type
-		  AND target.item_key = source.item_key
-		 WHERE source.platform_host = ?
-		   AND source.repo_path_key = ?
-		   AND source.id <> target.id`,
-		to.PlatformHost,
-		to.RepoPathKey,
-		from.PlatformHost,
-		from.RepoPathKey,
-	)
-	if err != nil {
-		return fmt.Errorf("list workspace identity merge targets: %w", err)
-	}
-
-	type workspaceMerge struct {
-		sourceID string
-		targetID string
-	}
-	var merges []workspaceMerge
-	for rows.Next() {
-		var merge workspaceMerge
-		if err := rows.Scan(&merge.sourceID, &merge.targetID); err != nil {
-			_ = rows.Close()
-			return fmt.Errorf("scan workspace identity merge target: %w", err)
-		}
-		merges = append(merges, merge)
-	}
-	if err := rows.Close(); err != nil {
-		return fmt.Errorf("close workspace identity merge targets: %w", err)
-	}
-	if err := rows.Err(); err != nil {
-		return fmt.Errorf("iterate workspace identity merge targets: %w", err)
-	}
-
-	for _, merge := range merges {
-		if _, err := tx.ExecContext(ctx,
-			`UPDATE forge_workspace_setup_events
-			 SET workspace_id = ?
-			 WHERE workspace_id = ?`,
-			merge.targetID,
-			merge.sourceID,
-		); err != nil {
-			return fmt.Errorf("move workspace setup events: %w", err)
-		}
-		if _, err := tx.ExecContext(ctx,
-			`UPDATE forge_workspace_runtime_sessions
-			 SET workspace_id = ?
-			 WHERE workspace_id = ?`,
-			merge.targetID,
-			merge.sourceID,
-		); err != nil {
-			return fmt.Errorf("move workspace runtime sessions: %w", err)
-		}
-		if _, err := tx.ExecContext(ctx,
-			`DELETE FROM forge_workspaces
-			 WHERE id = ?`,
-			merge.sourceID,
-		); err != nil {
-			return fmt.Errorf("delete merged workspace row: %w", err)
-		}
-	}
-
-	return nil
-}
-
-func mergeRepoLabelNameConflictsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64) error {
-	rows, err := tx.QueryContext(ctx, `
-		SELECT conflict.id, target.id
-		FROM forge_labels AS source
-		JOIN forge_labels AS target
-		  ON target.repo_id = ?
-		 AND (
-		     source.platform_id IS NOT NULL
-		     AND target.platform_id IS NOT NULL
-		     AND source.platform_id = target.platform_id
-		     OR (
-		         source.platform_external_id <> ''
-		         AND target.platform_external_id <> ''
-		         AND source.platform_external_id = target.platform_external_id
-		     )
-		 )
-		JOIN forge_labels AS conflict
-		  ON conflict.repo_id = ?
-		 AND conflict.name = source.name
-		 AND conflict.id <> target.id
-		WHERE source.repo_id = ?
-		  AND source.catalog_present = 1`,
-		toRepoID, toRepoID, fromRepoID,
-	)
-	if err != nil {
-		return fmt.Errorf("list label name conflicts: %w", err)
-	}
-	defer rows.Close()
-
-	type mergePair struct {
-		fromID int64
-		toID   int64
-	}
-	pairs := []mergePair{}
-	for rows.Next() {
-		var pair mergePair
-		if err := rows.Scan(&pair.fromID, &pair.toID); err != nil {
-			return fmt.Errorf("scan label name conflict: %w", err)
-		}
-		pairs = append(pairs, pair)
-	}
-	if err := rows.Err(); err != nil {
-		return fmt.Errorf("iterate label name conflicts: %w", err)
-	}
-	for _, pair := range pairs {
-		if err := mergeLabelRowAssociationsTx(ctx, tx, pair.fromID, pair.toID); err != nil {
-			return fmt.Errorf("merge destination label name conflict: %w", err)
-		}
-	}
-	return nil
-}
-
-func mergeRepoMergeRequestDraftsTx(
-	ctx context.Context,
-	tx *sql.Tx,
-	sourceMRID, targetMRID int64,
-) error {
-	var sourceDraftID int64
-	var sourceUpdatedAt string
-	err := tx.QueryRowContext(ctx, `
-		SELECT id, updated_at
-		FROM forge_mr_review_drafts
-		WHERE merge_request_id = ?`,
-		sourceMRID,
-	).Scan(&sourceDraftID, &sourceUpdatedAt)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("look up source review draft: %w", err)
-	}
-
-	var targetDraftID int64
-	var targetUpdatedAt string
-	err = tx.QueryRowContext(ctx, `
-		SELECT id, updated_at
-		FROM forge_mr_review_drafts
-		WHERE merge_request_id = ?`,
-		targetMRID,
-	).Scan(&targetDraftID, &targetUpdatedAt)
-	if errors.Is(err, sql.ErrNoRows) {
-		if _, err := tx.ExecContext(ctx, `
-			UPDATE forge_mr_review_drafts
-			SET merge_request_id = ?
-			WHERE id = ?`,
-			targetMRID, sourceDraftID,
-		); err != nil {
-			return fmt.Errorf("move source review draft: %w", err)
-		}
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("look up target review draft: %w", err)
-	}
-
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE forge_mr_review_draft_comments
-		SET draft_id = ?
-		WHERE draft_id = ?`,
-		targetDraftID, sourceDraftID,
-	); err != nil {
-		return fmt.Errorf("merge source review draft comments: %w", err)
-	}
-	if sourceUpdatedAt > targetUpdatedAt {
-		if _, err := tx.ExecContext(ctx, `
-			UPDATE forge_mr_review_drafts
-			SET body = source.body,
-			    action = source.action,
-			    updated_at = source.updated_at
-			FROM forge_mr_review_drafts AS source
-			WHERE forge_mr_review_drafts.id = ?
-			  AND source.id = ?`,
-			targetDraftID, sourceDraftID,
-		); err != nil {
-			return fmt.Errorf("copy newer source review draft: %w", err)
-		}
-	}
-	if _, err := tx.ExecContext(ctx,
-		`DELETE FROM forge_mr_review_drafts WHERE id = ?`,
-		sourceDraftID,
-	); err != nil {
-		return fmt.Errorf("delete merged source review draft: %w", err)
-	}
-	return nil
-}
-
-func mergeRepoMergeRequestChildrenTx(
-	ctx context.Context,
-	tx *sql.Tx,
-	sourceMRID, targetMRID int64,
-) error {
-	if err := mergeRepoMergeRequestDraftsTx(
-		ctx, tx, sourceMRID, targetMRID,
-	); err != nil {
-		return err
-	}
-
-	steps := []struct {
-		name string
-		sql  string
-		args []any
-	}{
-		{
-			name: "merge merge request labels",
-			sql: `INSERT OR IGNORE INTO forge_merge_request_labels (
-			          merge_request_id, label_id
-			      )
-			      SELECT ?, label_id
-			      FROM forge_merge_request_labels
-			      WHERE merge_request_id = ?`,
-			args: []any{targetMRID, sourceMRID},
-		},
-		{
-			name: "drop duplicate source merge request events",
-			sql: `DELETE FROM forge_mr_events AS source
-			      WHERE source.merge_request_id = ?
-			        AND EXISTS (
-			            SELECT 1
-			            FROM forge_mr_events AS target
-			            WHERE target.merge_request_id = ?
-			              AND (
-			                  target.dedupe_key = source.dedupe_key
-			                  OR (
-			                      source.platform_external_id <> ''
-			                      AND target.event_type = source.event_type
-			                      AND target.platform_external_id = source.platform_external_id
-			                  )
-			              )
-			        )`,
-			args: []any{sourceMRID, targetMRID},
-		},
-		{
-			name: "move merge request events",
-			sql:  `UPDATE forge_mr_events SET merge_request_id = ? WHERE merge_request_id = ?`,
-			args: []any{targetMRID, sourceMRID},
-		},
-		{
-			name: "move merge request worktree links",
-			sql:  `UPDATE forge_mr_worktree_links SET merge_request_id = ? WHERE merge_request_id = ?`,
-			args: []any{targetMRID, sourceMRID},
-		},
-		{
-			name: "drop source stack membership when target is already stacked",
-			sql: `DELETE FROM forge_stack_members
-			      WHERE merge_request_id = ?
-			        AND EXISTS (
-			            SELECT 1
-			            FROM forge_stack_members
-			            WHERE merge_request_id = ?
-			        )`,
-			args: []any{sourceMRID, targetMRID},
-		},
-		{
-			name: "move merge request stack membership",
-			sql:  `UPDATE forge_stack_members SET merge_request_id = ? WHERE merge_request_id = ?`,
-			args: []any{targetMRID, sourceMRID},
-		},
-		{
-			name: "copy newer duplicate review threads",
-			sql: `UPDATE forge_mr_review_threads AS target
-			      SET provider_review_id = source.provider_review_id,
-			          provider_comment_id = source.provider_comment_id,
-			          path = source.path,
-			          old_path = source.old_path,
-			          side = source.side,
-			          start_side = source.start_side,
-			          start_line = source.start_line,
-			          line = source.line,
-			          old_line = source.old_line,
-			          new_line = source.new_line,
-			          line_type = source.line_type,
-			          diff_head_sha = source.diff_head_sha,
-			          commit_sha = source.commit_sha,
-			          body = source.body,
-			          author_login = source.author_login,
-			          resolved = source.resolved,
-			          created_at = source.created_at,
-			          updated_at = source.updated_at,
-			          resolved_at = source.resolved_at,
-			          metadata_json = source.metadata_json
-			      FROM forge_mr_review_threads AS source
-			      WHERE target.merge_request_id = ?
-			        AND source.merge_request_id = ?
-			        AND target.provider_thread_id = source.provider_thread_id
-			        AND source.updated_at >= target.updated_at`,
-			args: []any{targetMRID, sourceMRID},
-		},
-		{
-			name: "drop duplicate source review threads",
-			sql: `DELETE FROM forge_mr_review_threads AS source
-			      WHERE source.merge_request_id = ?
-			        AND EXISTS (
-			            SELECT 1
-			            FROM forge_mr_review_threads AS target
-			            WHERE target.merge_request_id = ?
-			              AND target.provider_thread_id = source.provider_thread_id
-			        )`,
-			args: []any{sourceMRID, targetMRID},
-		},
-		{
-			name: "move merge request review threads",
-			sql:  `UPDATE forge_mr_review_threads SET merge_request_id = ? WHERE merge_request_id = ?`,
-			args: []any{targetMRID, sourceMRID},
-		},
-	}
-	for _, step := range steps {
-		if _, err := tx.ExecContext(ctx, step.sql, step.args...); err != nil {
-			return fmt.Errorf("%s: %w", step.name, err)
-		}
-	}
-	return nil
-}
-
-func copyMergeRequestSnapshotTx(
-	ctx context.Context,
-	tx *sql.Tx,
-	sourceMRID, targetMRID int64,
-) error {
-	_, err := tx.ExecContext(ctx, `
-		UPDATE forge_merge_requests AS target
-		SET (
-		    platform_id, platform_external_id, number, url, title, author,
-		    author_display_name, state, is_draft, is_locked, body,
-		    head_branch, base_branch, additions, deletions, files_changed,
-		    merge_commit_sha, comment_count,
-		    review_decision, ci_status, ci_checks_json, platform_head_sha,
-		    platform_base_sha, diff_head_sha, diff_base_sha, merge_base_sha,
-		    head_repo_clone_url, mergeable_state, created_at, updated_at,
-		    last_activity_at, merged_at, closed_at, detail_fetched_at,
-		    ci_had_pending, workflow_approval_checked_at,
-		    workflow_approval_head_sha, workflow_approval_required,
-		    workflow_approval_count, assignees_json, reviewers_json,
-		    head_repo_identity_stale, snapshot_revision
-		) = (
-		    SELECT
-		        platform_id, platform_external_id, number, url, title, author,
-		        author_display_name, state, is_draft, is_locked, body,
-		        head_branch, base_branch, additions, deletions, files_changed,
-		        merge_commit_sha, comment_count,
-		        review_decision, ci_status, ci_checks_json, platform_head_sha,
-		        platform_base_sha, diff_head_sha, diff_base_sha, merge_base_sha,
-		        head_repo_clone_url, mergeable_state, created_at, updated_at,
-		        last_activity_at, merged_at, closed_at, detail_fetched_at,
-		        ci_had_pending, workflow_approval_checked_at,
-		        workflow_approval_head_sha, workflow_approval_required,
-		        workflow_approval_count, assignees_json, reviewers_json,
-		        1, MAX(source.snapshot_revision, target.snapshot_revision) + 1
-		    FROM forge_merge_requests AS source
-		    WHERE source.id = ?
-		)
-		WHERE target.id = ?`,
-		sourceMRID, targetMRID,
-	)
-	if err != nil {
-		return fmt.Errorf("copy winning merge request snapshot: %w", err)
-	}
-	return nil
-}
-
-func mergeRepoMergeRequestCollisionsTx(
-	ctx context.Context,
-	tx *sql.Tx,
-	fromRepoID, toRepoID int64,
-) error {
-	rows, err := tx.QueryContext(ctx, `
-		SELECT source.id, target.id, source.updated_at >= target.updated_at
-		FROM forge_merge_requests AS source
-		JOIN forge_merge_requests AS target
-		  ON target.repo_id = ?
-		 AND (
-		     target.number = source.number
-		     OR target.platform_id = source.platform_id
-		 )
-		WHERE source.repo_id = ?
-		ORDER BY source.id, target.id`,
-		toRepoID, fromRepoID,
-	)
-	if err != nil {
-		return fmt.Errorf("list merge request reconciliation collisions: %w", err)
-	}
-	type collision struct {
-		sourceID   int64
-		targetID   int64
-		sourceWins bool
-	}
-	var collisions []collision
-	sourceTargets := make(map[int64]int64)
-	targetSources := make(map[int64]int64)
-	for rows.Next() {
-		var c collision
-		if err := rows.Scan(&c.sourceID, &c.targetID, &c.sourceWins); err != nil {
-			_ = rows.Close()
-			return fmt.Errorf("scan merge request reconciliation collision: %w", err)
-		}
-		if prior, ok := sourceTargets[c.sourceID]; ok && prior != c.targetID {
-			_ = rows.Close()
-			return fmt.Errorf(
-				"ambiguous merge request reconciliation: source %d matches targets %d and %d",
-				c.sourceID, prior, c.targetID,
-			)
-		}
-		if prior, ok := targetSources[c.targetID]; ok && prior != c.sourceID {
-			_ = rows.Close()
-			return fmt.Errorf(
-				"ambiguous merge request reconciliation: target %d matches sources %d and %d",
-				c.targetID, prior, c.sourceID,
-			)
-		}
-		sourceTargets[c.sourceID] = c.targetID
-		targetSources[c.targetID] = c.sourceID
-		collisions = append(collisions, c)
-	}
-	if err := rows.Close(); err != nil {
-		return fmt.Errorf("close merge request reconciliation collisions: %w", err)
-	}
-	if err := rows.Err(); err != nil {
-		return fmt.Errorf("iterate merge request reconciliation collisions: %w", err)
-	}
-
-	for _, c := range collisions {
-		if err := mergeRepoMergeRequestChildrenTx(
-			ctx, tx, c.sourceID, c.targetID,
-		); err != nil {
-			return err
-		}
-		if c.sourceWins {
-			if err := copyMergeRequestSnapshotTx(
-				ctx, tx, c.sourceID, c.targetID,
-			); err != nil {
-				return err
-			}
-		}
-		if _, err := tx.ExecContext(ctx,
-			`DELETE FROM forge_merge_requests WHERE id = ?`,
-			c.sourceID,
-		); err != nil {
-			return fmt.Errorf("delete merged source merge request: %w", err)
-		}
-	}
-	return nil
-}
-
-func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64) error {
-	if fromRepoID == toRepoID {
-		return nil
-	}
-	if err := mergeRepoMergeRequestCollisionsTx(
-		ctx, tx, fromRepoID, toRepoID,
-	); err != nil {
-		return err
-	}
-
-	steps := []struct {
-		name string
-		sql  string
-		args []any
-	}{
-		{
-			name: "clear stale source label catalog membership",
-			sql: `UPDATE forge_labels
-			      SET catalog_present = 0
-			      WHERE repo_id = ?
-			        AND COALESCE((SELECT label_catalog_synced_at FROM forge_repos WHERE id = ?), '') <=
-			            COALESCE((SELECT label_catalog_synced_at FROM forge_repos WHERE id = ?), '')`,
-			args: []any{fromRepoID, fromRepoID, toRepoID},
-		},
-		{
-			name: "clear stale destination label catalog membership",
-			sql: `UPDATE forge_labels
-			      SET catalog_present = 0
-			      WHERE repo_id = ?
-			        AND COALESCE((SELECT label_catalog_synced_at FROM forge_repos WHERE id = ?), '') >
-			            COALESCE((SELECT label_catalog_synced_at FROM forge_repos WHERE id = ?), '')`,
-			args: []any{toRepoID, fromRepoID, toRepoID},
-		},
-		{
-			name: "copy source repo metadata",
-			sql: `UPDATE forge_repos
-			      SET web_url = CASE
-			              WHEN web_url = ''
-			              THEN (SELECT web_url FROM forge_repos WHERE id = ?)
-			              ELSE web_url
-			          END,
-			          clone_url = CASE
-			              WHEN clone_url = ''
-			              THEN (SELECT clone_url FROM forge_repos WHERE id = ?)
-			              ELSE clone_url
-			          END,
-			          default_branch = CASE
-			              WHEN default_branch = ''
-			              THEN (SELECT default_branch FROM forge_repos WHERE id = ?)
-			              ELSE default_branch
-			          END,
-			          label_catalog_synced_at = CASE
-			              WHEN (SELECT label_catalog_synced_at FROM forge_repos WHERE id = ?) > COALESCE(label_catalog_synced_at, '')
-			              THEN (SELECT label_catalog_synced_at FROM forge_repos WHERE id = ?)
-			              ELSE label_catalog_synced_at
-			          END,
-			          label_catalog_checked_at = CASE
-			              WHEN (SELECT label_catalog_checked_at FROM forge_repos WHERE id = ?) > COALESCE(label_catalog_checked_at, '')
-			              THEN (SELECT label_catalog_checked_at FROM forge_repos WHERE id = ?)
-			              ELSE label_catalog_checked_at
-			          END,
-			          label_catalog_sync_error = CASE
-			              WHEN (SELECT label_catalog_checked_at FROM forge_repos WHERE id = ?) > COALESCE(label_catalog_checked_at, '')
-			              THEN (SELECT label_catalog_sync_error FROM forge_repos WHERE id = ?)
-			              ELSE label_catalog_sync_error
-			          END
-			      WHERE id = ?`,
-			args: []any{fromRepoID, fromRepoID, fromRepoID, fromRepoID, fromRepoID, fromRepoID, fromRepoID, fromRepoID, fromRepoID, toRepoID},
-		},
-		{
-			name: "move merge requests",
-			sql: `UPDATE forge_merge_requests
-			      SET repo_id = ?,
-			          head_repo_identity_stale = 1,
-			          snapshot_revision = snapshot_revision + 1
-			      WHERE repo_id = ?`,
-			args: []any{toRepoID, fromRepoID},
-		},
-		{
-			name: "move issues",
-			sql: `UPDATE forge_issues
-			      SET repo_id = ?
-			      WHERE repo_id = ?
-			        AND NOT EXISTS (
-			            SELECT 1
-			            FROM forge_issues AS target
-			            WHERE target.repo_id = ?
-			              AND (
-			                  target.number = forge_issues.number
-			                  OR target.platform_id = forge_issues.platform_id
-			              )
-			        )`,
-			args: []any{toRepoID, fromRepoID, toRepoID},
-		},
-		{
-			name: "drop duplicate issues",
-			sql:  `DELETE FROM forge_issues WHERE repo_id = ?`,
-			args: []any{fromRepoID},
-		},
-		{
-			name: "move labels",
-			sql: `UPDATE forge_labels
-			      SET repo_id = ?
-			      WHERE repo_id = ?
-			        AND NOT EXISTS (
-			            SELECT 1
-			            FROM forge_labels AS target
-			            WHERE target.repo_id = ?
-			              AND (
-			                  target.name = forge_labels.name
-			                  OR (
-			                      target.platform_id IS NOT NULL
-			                      AND forge_labels.platform_id IS NOT NULL
-			                      AND target.platform_id = forge_labels.platform_id
-			                  )
-			                  OR (
-			                      target.platform_external_id <> ''
-			                      AND forge_labels.platform_external_id <> ''
-			                      AND target.platform_external_id = forge_labels.platform_external_id
-			                  )
-			              )
-			        )`,
-			args: []any{toRepoID, fromRepoID, toRepoID},
-		},
-		{
-			name: "copy duplicate label catalog metadata",
-			sql: `UPDATE forge_labels AS target
-			      SET name = COALESCE((
-			              SELECT source.name
-			              FROM forge_labels AS source
-			              WHERE source.repo_id = ?
-			                AND source.catalog_present = 1
-			                AND (
-			                    source.name = target.name
-			                    OR (
-			                        source.platform_id IS NOT NULL
-			                        AND target.platform_id IS NOT NULL
-			                        AND source.platform_id = target.platform_id
-			                    )
-			                    OR (
-			                        source.platform_external_id <> ''
-			                        AND target.platform_external_id <> ''
-			                        AND source.platform_external_id = target.platform_external_id
-			                    )
-			                )
-			              ORDER BY source.catalog_seen_at DESC
-			              LIMIT 1
-			          ), name),
-			          description = COALESCE((
-			              SELECT source.description
-			              FROM forge_labels AS source
-			              WHERE source.repo_id = ?
-			                AND source.catalog_present = 1
-			                AND (
-			                    source.name = target.name
-			                    OR (
-			                        source.platform_id IS NOT NULL
-			                        AND target.platform_id IS NOT NULL
-			                        AND source.platform_id = target.platform_id
-			                    )
-			                    OR (
-			                        source.platform_external_id <> ''
-			                        AND target.platform_external_id <> ''
-			                        AND source.platform_external_id = target.platform_external_id
-			                    )
-			                )
-			              ORDER BY source.catalog_seen_at DESC
-			              LIMIT 1
-			          ), description),
-			          color = COALESCE((
-			              SELECT source.color
-			              FROM forge_labels AS source
-			              WHERE source.repo_id = ?
-			                AND source.catalog_present = 1
-			                AND (
-			                    source.name = target.name
-			                    OR (
-			                        source.platform_id IS NOT NULL
-			                        AND target.platform_id IS NOT NULL
-			                        AND source.platform_id = target.platform_id
-			                    )
-			                    OR (
-			                        source.platform_external_id <> ''
-			                        AND target.platform_external_id <> ''
-			                        AND source.platform_external_id = target.platform_external_id
-			                    )
-			                )
-			              ORDER BY source.catalog_seen_at DESC
-			              LIMIT 1
-			          ), color),
-			          is_default = COALESCE((
-			              SELECT source.is_default
-			              FROM forge_labels AS source
-			              WHERE source.repo_id = ?
-			                AND source.catalog_present = 1
-			                AND (
-			                    source.name = target.name
-			                    OR (
-			                        source.platform_id IS NOT NULL
-			                        AND target.platform_id IS NOT NULL
-			                        AND source.platform_id = target.platform_id
-			                    )
-			                    OR (
-			                        source.platform_external_id <> ''
-			                        AND target.platform_external_id <> ''
-			                        AND source.platform_external_id = target.platform_external_id
-			                    )
-			                )
-			              ORDER BY source.catalog_seen_at DESC
-			              LIMIT 1
-			          ), is_default),
-			          updated_at = COALESCE((
-			              SELECT source.updated_at
-			              FROM forge_labels AS source
-			              WHERE source.repo_id = ?
-			                AND source.catalog_present = 1
-			                AND (
-			                    source.name = target.name
-			                    OR (
-			                        source.platform_id IS NOT NULL
-			                        AND target.platform_id IS NOT NULL
-			                        AND source.platform_id = target.platform_id
-			                    )
-			                    OR (
-			                        source.platform_external_id <> ''
-			                        AND target.platform_external_id <> ''
-			                        AND source.platform_external_id = target.platform_external_id
-			                    )
-			                )
-			              ORDER BY source.catalog_seen_at DESC
-			              LIMIT 1
-			          ), updated_at),
-			          catalog_present = CASE
-			              WHEN catalog_present = 1 OR EXISTS (
-			                  SELECT 1
-			                  FROM forge_labels AS source
-			                  WHERE source.repo_id = ?
-			                    AND source.catalog_present = 1
-			                    AND (
-			                        source.name = target.name
-			                        OR (
-			                            source.platform_id IS NOT NULL
-			                            AND target.platform_id IS NOT NULL
-			                            AND source.platform_id = target.platform_id
-			                        )
-			                        OR (
-			                            source.platform_external_id <> ''
-			                            AND target.platform_external_id <> ''
-			                            AND source.platform_external_id = target.platform_external_id
-			                        )
-			                    )
-			              )
-			              THEN 1
-			              ELSE catalog_present
-			          END,
-			          catalog_seen_at = CASE
-			              WHEN catalog_seen_at IS NULL
-			              THEN (
-			                  SELECT MAX(source.catalog_seen_at)
-			                  FROM forge_labels AS source
-			                  WHERE source.repo_id = ?
-			                    AND (
-			                        source.name = target.name
-			                        OR (
-			                            source.platform_id IS NOT NULL
-			                            AND target.platform_id IS NOT NULL
-			                            AND source.platform_id = target.platform_id
-			                        )
-			                        OR (
-			                            source.platform_external_id <> ''
-			                            AND target.platform_external_id <> ''
-			                            AND source.platform_external_id = target.platform_external_id
-			                        )
-			                    )
-			              )
-			              WHEN (
-			                  SELECT MAX(source.catalog_seen_at)
-			                  FROM forge_labels AS source
-			                  WHERE source.repo_id = ?
-			                    AND (
-			                        source.name = target.name
-			                        OR (
-			                            source.platform_id IS NOT NULL
-			                            AND target.platform_id IS NOT NULL
-			                            AND source.platform_id = target.platform_id
-			                        )
-			                        OR (
-			                            source.platform_external_id <> ''
-			                            AND target.platform_external_id <> ''
-			                            AND source.platform_external_id = target.platform_external_id
-			                        )
-			                    )
-			              ) > catalog_seen_at
-			              THEN (
-			                  SELECT MAX(source.catalog_seen_at)
-			                  FROM forge_labels AS source
-			                  WHERE source.repo_id = ?
-			                    AND (
-			                        source.name = target.name
-			                        OR (
-			                            source.platform_id IS NOT NULL
-			                            AND target.platform_id IS NOT NULL
-			                            AND source.platform_id = target.platform_id
-			                        )
-			                        OR (
-			                            source.platform_external_id <> ''
-			                            AND target.platform_external_id <> ''
-			                            AND source.platform_external_id = target.platform_external_id
-			                        )
-			                    )
-			              )
-			              ELSE catalog_seen_at
-			          END
-			      WHERE target.repo_id = ?
-			        AND EXISTS (
-			            SELECT 1
-			            FROM forge_labels AS source
-			            WHERE source.repo_id = ?
-			              AND (
-			                  source.name = target.name
-			                  OR (
-			                      source.platform_id IS NOT NULL
-			                      AND target.platform_id IS NOT NULL
-			                      AND source.platform_id = target.platform_id
-			                  )
-			                  OR (
-			                      source.platform_external_id <> ''
-			                      AND target.platform_external_id <> ''
-			                      AND source.platform_external_id = target.platform_external_id
-			                  )
-			              )
-			        )`,
-			args: []any{fromRepoID, fromRepoID, fromRepoID, fromRepoID, fromRepoID, fromRepoID, fromRepoID, fromRepoID, fromRepoID, toRepoID, fromRepoID},
-		},
-		{
-			name: "copy issue label associations to duplicate labels",
-			sql: `WITH source_label_targets AS (
-			          SELECT source.id AS source_label_id,
-			                 target.id AS target_label_id,
-			                 ROW_NUMBER() OVER (
-			                     PARTITION BY source.id
-			                     ORDER BY
-			                         CASE
-			                             WHEN target.platform_id IS NOT NULL
-			                                  AND source.platform_id IS NOT NULL
-			                                  AND target.platform_id = source.platform_id
-			                             THEN 0
-			                             WHEN target.platform_external_id <> ''
-			                                  AND source.platform_external_id <> ''
-			                                  AND target.platform_external_id = source.platform_external_id
-			                             THEN 1
-			                             ELSE 2
-			                         END,
-			                         target.id
-			                 ) AS target_rank
-			          FROM forge_labels AS source
-			          JOIN forge_labels AS target
-			              ON target.repo_id = ?
-			             AND (
-			                 target.name = source.name
-			                 OR (
-			                     target.platform_id IS NOT NULL
-			                     AND source.platform_id IS NOT NULL
-			                     AND target.platform_id = source.platform_id
-			                 )
-			                 OR (
-			                     target.platform_external_id <> ''
-			                     AND source.platform_external_id <> ''
-			                     AND target.platform_external_id = source.platform_external_id
-			                 )
-			             )
-			          WHERE source.repo_id = ?
-			      )
-			      INSERT INTO forge_issue_labels (issue_id, label_id)
-			      SELECT il.issue_id, slt.target_label_id
-			      FROM forge_issue_labels AS il
-			      JOIN source_label_targets AS slt
-			          ON slt.source_label_id = il.label_id
-			         AND slt.target_rank = 1
-			      ON CONFLICT(issue_id, label_id) DO NOTHING`,
-			args: []any{toRepoID, fromRepoID},
-		},
-		{
-			name: "copy merge request label associations to duplicate labels",
-			sql: `WITH source_label_targets AS (
-			          SELECT source.id AS source_label_id,
-			                 target.id AS target_label_id,
-			                 ROW_NUMBER() OVER (
-			                     PARTITION BY source.id
-			                     ORDER BY
-			                         CASE
-			                             WHEN target.platform_id IS NOT NULL
-			                                  AND source.platform_id IS NOT NULL
-			                                  AND target.platform_id = source.platform_id
-			                             THEN 0
-			                             WHEN target.platform_external_id <> ''
-			                                  AND source.platform_external_id <> ''
-			                                  AND target.platform_external_id = source.platform_external_id
-			                             THEN 1
-			                             ELSE 2
-			                         END,
-			                         target.id
-			                 ) AS target_rank
-			          FROM forge_labels AS source
-			          JOIN forge_labels AS target
-			              ON target.repo_id = ?
-			             AND (
-			                 target.name = source.name
-			                 OR (
-			                     target.platform_id IS NOT NULL
-			                     AND source.platform_id IS NOT NULL
-			                     AND target.platform_id = source.platform_id
-			                 )
-			                 OR (
-			                     target.platform_external_id <> ''
-			                     AND source.platform_external_id <> ''
-			                     AND target.platform_external_id = source.platform_external_id
-			                 )
-			             )
-			          WHERE source.repo_id = ?
-			      )
-			      INSERT INTO forge_merge_request_labels (merge_request_id, label_id)
-			      SELECT mrl.merge_request_id, slt.target_label_id
-			      FROM forge_merge_request_labels AS mrl
-			      JOIN source_label_targets AS slt
-			          ON slt.source_label_id = mrl.label_id
-			         AND slt.target_rank = 1
-			      ON CONFLICT(merge_request_id, label_id) DO NOTHING`,
-			args: []any{toRepoID, fromRepoID},
-		},
-		{
-			name: "drop duplicate labels",
-			sql:  `DELETE FROM forge_labels WHERE repo_id = ?`,
-			args: []any{fromRepoID},
-		},
-		{
-			name: "copy starred items",
-			sql: `INSERT OR IGNORE INTO forge_starred_items (
-			          item_type, repo_id, number, starred_at
-			      )
-			      SELECT item_type, ?, number, starred_at
-			      FROM forge_starred_items
-			      WHERE repo_id = ?`,
-			args: []any{toRepoID, fromRepoID},
-		},
-		{
-			name: "delete source starred items",
-			sql:  `DELETE FROM forge_starred_items WHERE repo_id = ?`,
-			args: []any{fromRepoID},
-		},
-		{
-			name: "move stacks",
-			sql: `UPDATE forge_stacks
-			      SET repo_id = ?
-			      WHERE repo_id = ?
-			        AND NOT EXISTS (
-			            SELECT 1
-			            FROM forge_stacks AS target
-			            WHERE target.repo_id = ?
-			              AND target.base_number = forge_stacks.base_number
-			        )`,
-			args: []any{toRepoID, fromRepoID, toRepoID},
-		},
-		{
-			name: "drop duplicate stacks",
-			sql:  `DELETE FROM forge_stacks WHERE repo_id = ?`,
-			args: []any{fromRepoID},
-		},
-		{
-			name: "move repo overview",
-			sql: `UPDATE forge_repo_overviews
-			      SET repo_id = ?
-			      WHERE repo_id = ?
-			        AND NOT EXISTS (
-			            SELECT 1
-			            FROM forge_repo_overviews AS target
-			            WHERE target.repo_id = ?
-			        )`,
-			args: []any{toRepoID, fromRepoID, toRepoID},
-		},
-		{
-			name: "drop duplicate repo overview",
-			sql:  `DELETE FROM forge_repo_overviews WHERE repo_id = ?`,
-			args: []any{fromRepoID},
-		},
-		{
-			name: "delete source repo",
-			sql:  `DELETE FROM forge_repos WHERE id = ?`,
-			args: []any{fromRepoID},
-		},
-	}
-
-	for _, step := range steps {
-		if step.name == "copy duplicate label catalog metadata" {
-			if err := mergeRepoLabelNameConflictsTx(ctx, tx, fromRepoID, toRepoID); err != nil {
-				return err
-			}
-		}
-		if _, err := tx.ExecContext(ctx, step.sql, step.args...); err != nil {
-			return fmt.Errorf("%s: %w", step.name, err)
-		}
 	}
 	return nil
 }
@@ -2233,7 +1500,9 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 func (d *DB) ListRepos(ctx context.Context) ([]Repo, error) {
 	rows, err := d.ro.QueryContext(ctx,
 		`SELECT id, platform, platform_host, platform_repo_id,
-		        owner, name, repo_path,
+		        COALESCE(retired_owner, owner),
+		        COALESCE(retired_name, name),
+		        repo_path,
 		        owner_key, name_key, repo_path_key,
 		        web_url, clone_url, default_branch,
 		        last_sync_started_at, last_sync_completed_at,
@@ -2242,7 +1511,9 @@ func (d *DB) ListRepos(ctx context.Context) ([]Repo, error) {
 		        label_catalog_synced_at, label_catalog_checked_at,
 		        label_catalog_sync_error,
 		        created_at
-		 FROM forge_repos ORDER BY owner, name, platform, platform_host`,
+		 FROM forge_repos
+		 WHERE retired_at IS NULL
+		 ORDER BY owner, name, platform, platform_host`,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("list repos: %w", err)
@@ -2303,23 +1574,38 @@ func (d *DB) UpdateRepoProviderMetadata(
 	repoID int64,
 	metadata RepoProviderMetadata,
 ) error {
-	_, err := d.rw.ExecContext(ctx,
-		`UPDATE forge_repos
-		 SET platform_repo_id = ?,
-		     web_url = ?,
-		     clone_url = ?,
-		     default_branch = ?
-		 WHERE id = ?`,
-		metadata.PlatformRepoID,
-		metadata.WebURL,
-		metadata.CloneURL,
-		metadata.DefaultBranch,
-		repoID,
-	)
-	if err != nil {
-		return fmt.Errorf("update repo provider metadata: %w", err)
-	}
-	return nil
+	return d.Tx(ctx, func(tx *sql.Tx) error {
+		if err := validateRepoProviderIDWriteTx(
+			ctx,
+			tx,
+			repoID,
+			metadata.PlatformRepoID,
+		); err != nil {
+			return err
+		}
+		_, err := tx.ExecContext(ctx,
+			`UPDATE forge_repos
+			 SET platform_repo_id = CASE
+			         WHEN ? <> ''
+			         THEN ?
+			         ELSE platform_repo_id
+			     END,
+			     web_url = ?,
+			     clone_url = ?,
+			     default_branch = ?
+			 WHERE id = ?`,
+			metadata.PlatformRepoID,
+			metadata.PlatformRepoID,
+			metadata.WebURL,
+			metadata.CloneURL,
+			metadata.DefaultBranch,
+			repoID,
+		)
+		if err != nil {
+			return fmt.Errorf("update repo provider metadata: %w", err)
+		}
+		return nil
+	})
 }
 
 // GetRepoByIdentity returns the repo for the provider-qualified identity,
@@ -2341,7 +1627,8 @@ func (d *DB) GetRepoByIdentity(ctx context.Context, identity RepoIdentity) (*Rep
 		 FROM forge_repos
 		 WHERE platform = ?
 		   AND platform_host = ?
-		   AND repo_path_key = ?`,
+		   AND repo_path_key = ?
+		   AND retired_at IS NULL`,
 		identity.Platform, identity.PlatformHost, identity.RepoPathKey,
 	).Scan(
 		&r.ID, &r.Platform, &r.PlatformHost, &r.PlatformRepoID,
@@ -2366,21 +1653,35 @@ func (d *DB) GetRepoByIdentity(ctx context.Context, identity RepoIdentity) (*Rep
 	return &r, nil
 }
 
-// GetRepoByID returns the repo with the given ID, or nil if not found.
-func (d *DB) GetRepoByID(ctx context.Context, id int64) (*Repo, error) {
+// GetRepoByConfiguredRoute returns the active repository previously resolved
+// from an exact configuration route, or nil when the route has no saved alias.
+func (d *DB) GetRepoByConfiguredRoute(
+	ctx context.Context,
+	identity RepoIdentity,
+) (*Repo, error) {
+	identity = canonicalRepoIdentity(identity)
 	var r Repo
-	err := d.ro.QueryRowContext(ctx,
-		`SELECT id, platform, platform_host, platform_repo_id,
-		        owner, name, repo_path,
-		        owner_key, name_key, repo_path_key,
-		        web_url, clone_url, default_branch,
-		        last_sync_started_at, last_sync_completed_at,
-		        last_sync_error, allow_squash_merge, allow_merge_commit,
-		        allow_rebase_merge, viewer_can_merge,
-		        label_catalog_synced_at, label_catalog_checked_at,
-		        label_catalog_sync_error,
-		        created_at
-		 FROM forge_repos WHERE id = ?`, id,
+	err := d.ro.QueryRowContext(ctx, `
+		SELECT repo.id, repo.platform, repo.platform_host, repo.platform_repo_id,
+		       repo.owner, repo.name, repo.repo_path,
+		       repo.owner_key, repo.name_key, repo.repo_path_key,
+		       repo.web_url, repo.clone_url, repo.default_branch,
+		       repo.last_sync_started_at, repo.last_sync_completed_at,
+		       repo.last_sync_error,
+		       repo.allow_squash_merge, repo.allow_merge_commit,
+		       repo.allow_rebase_merge, repo.viewer_can_merge,
+		       repo.label_catalog_synced_at, repo.label_catalog_checked_at,
+		       repo.label_catalog_sync_error,
+		       repo.created_at
+		FROM forge_repository_config_routes AS configured
+		JOIN forge_repos AS repo ON repo.id = configured.repo_id
+		WHERE configured.platform = ?
+		  AND configured.platform_host = ?
+		  AND configured.repo_path_key = ?
+		  AND repo.retired_at IS NULL`,
+		identity.Platform,
+		identity.PlatformHost,
+		identity.RepoPathKey,
 	).Scan(
 		&r.ID, &r.Platform, &r.PlatformHost, &r.PlatformRepoID,
 		&r.Owner, &r.Name, &r.RepoPath,
@@ -2398,10 +1699,177 @@ func (d *DB) GetRepoByID(ctx context.Context, id int64) (*Repo, error) {
 		return nil, nil
 	}
 	if err != nil {
+		return nil, fmt.Errorf("get repo by configured route: %w", err)
+	}
+	normalizeRepoTimestamps(&r)
+	return &r, nil
+}
+
+// GetRepoByID returns the repo with the given ID, or nil if not found.
+func (d *DB) GetRepoByID(ctx context.Context, id int64) (*Repo, error) {
+	var r Repo
+	err := d.ro.QueryRowContext(ctx,
+		`SELECT id, platform, platform_host, platform_repo_id,
+		        COALESCE(retired_owner, owner),
+		        COALESCE(retired_name, name),
+		        repo_path,
+		        owner_key, name_key, repo_path_key,
+		        web_url, clone_url, default_branch,
+		        last_sync_started_at, last_sync_completed_at,
+		        last_sync_error, allow_squash_merge, allow_merge_commit,
+		        allow_rebase_merge, viewer_can_merge,
+		        label_catalog_synced_at, label_catalog_checked_at,
+		        label_catalog_sync_error,
+		        retired_at, retired_replacement_id,
+		        created_at
+		 FROM forge_repos WHERE id = ?`, id,
+	).Scan(
+		&r.ID, &r.Platform, &r.PlatformHost, &r.PlatformRepoID,
+		&r.Owner, &r.Name, &r.RepoPath,
+		&r.OwnerKey, &r.NameKey, &r.RepoPathKey,
+		&r.WebURL, &r.CloneURL, &r.DefaultBranch,
+		&r.LastSyncStartedAt, &r.LastSyncCompletedAt,
+		&r.LastSyncError,
+		&r.AllowSquashMerge, &r.AllowMergeCommit, &r.AllowRebaseMerge,
+		&r.ViewerCanMerge,
+		&r.LabelCatalogSyncedAt, &r.LabelCatalogCheckedAt,
+		&r.LabelCatalogSyncError,
+		&r.RetiredAt, &r.RetiredReplacementID,
+		&r.CreatedAt,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
 		return nil, fmt.Errorf("get repo by id: %w", err)
 	}
 	normalizeRepoTimestamps(&r)
 	return &r, nil
+}
+
+// SaveRepoConfiguredRoute records the exact configuration route that selected
+// an active repository whose provider path has changed. Matching routes need
+// no alias and remove only that route's stale binding; a repository may have
+// several exact configured routes.
+func (d *DB) SaveRepoConfiguredRoute(
+	ctx context.Context,
+	repoID int64,
+	configured RepoIdentity,
+) error {
+	configured = canonicalRepoIdentity(configured)
+	return d.Tx(ctx, func(tx *sql.Tx) error {
+		var current RepoIdentity
+		err := tx.QueryRowContext(ctx, `
+			SELECT platform, platform_host, platform_repo_id,
+			       owner, name, repo_path,
+			       owner_key, name_key, repo_path_key
+			FROM forge_repos
+			WHERE id = ? AND retired_at IS NULL`, repoID,
+		).Scan(
+			&current.Platform, &current.PlatformHost, &current.PlatformRepoID,
+			&current.Owner, &current.Name, &current.RepoPath,
+			&current.OwnerKey, &current.NameKey, &current.RepoPathKey,
+		)
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrRepositoryRetired
+		}
+		if err != nil {
+			return fmt.Errorf("get repo for configured route: %w", err)
+		}
+		current = canonicalRepoIdentity(current)
+		if current.Platform != configured.Platform ||
+			current.PlatformHost != configured.PlatformHost {
+			return fmt.Errorf("configured route provider does not match repository")
+		}
+
+		if _, err := tx.ExecContext(ctx, `
+			DELETE FROM forge_repository_config_routes
+			WHERE platform = ? AND platform_host = ? AND repo_path_key = ?`,
+			configured.Platform,
+			configured.PlatformHost,
+			configured.RepoPathKey,
+		); err != nil {
+			return fmt.Errorf("clear configured repository route: %w", err)
+		}
+		if current.RepoPathKey == configured.RepoPathKey {
+			return nil
+		}
+
+		_, err = tx.ExecContext(ctx, `
+			INSERT INTO forge_repository_config_routes (
+				repo_id, platform, platform_host,
+				owner, name, repo_path, repo_path_key
+			) VALUES (?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(platform, platform_host, repo_path_key) DO UPDATE SET
+				repo_id = excluded.repo_id,
+				owner = excluded.owner,
+				name = excluded.name,
+				repo_path = excluded.repo_path`,
+			repoID,
+			configured.Platform,
+			configured.PlatformHost,
+			configured.Owner,
+			configured.Name,
+			configured.RepoPath,
+			configured.RepoPathKey,
+		)
+		if err != nil {
+			return fmt.Errorf("save configured repository route: %w", err)
+		}
+		return nil
+	})
+}
+
+type RepoConfiguredRouteBinding struct {
+	RepoID int64
+	Route  RepoIdentity
+}
+
+// ReconcileRepoConfiguredRoutes atomically replaces durable aliases with the
+// complete exact-route configuration. Direct current routes need no alias.
+func (d *DB) ReconcileRepoConfiguredRoutes(
+	ctx context.Context,
+	bindings []RepoConfiguredRouteBinding,
+) error {
+	return d.Tx(ctx, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM forge_repository_config_routes`); err != nil {
+			return fmt.Errorf("clear configured repository routes: %w", err)
+		}
+		for _, binding := range bindings {
+			configured := canonicalRepoIdentity(binding.Route)
+			var platformName, platformHost, currentPathKey string
+			err := tx.QueryRowContext(ctx, `
+				SELECT platform, platform_host, repo_path_key
+				FROM forge_repos
+				WHERE id = ? AND retired_at IS NULL`, binding.RepoID,
+			).Scan(&platformName, &platformHost, &currentPathKey)
+			if errors.Is(err, sql.ErrNoRows) {
+				return ErrRepositoryRetired
+			}
+			if err != nil {
+				return fmt.Errorf("get repo for configured route reconciliation: %w", err)
+			}
+			if platformName != configured.Platform || platformHost != configured.PlatformHost {
+				return fmt.Errorf("configured route provider does not match repository")
+			}
+			if currentPathKey == configured.RepoPathKey {
+				continue
+			}
+			_, err = tx.ExecContext(ctx, `
+				INSERT INTO forge_repository_config_routes (
+					repo_id, platform, platform_host,
+					owner, name, repo_path, repo_path_key
+				) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+				binding.RepoID, configured.Platform, configured.PlatformHost,
+				configured.Owner, configured.Name, configured.RepoPath,
+				configured.RepoPathKey,
+			)
+			if err != nil {
+				return fmt.Errorf("save configured repository route: %w", err)
+			}
+		}
+		return nil
+	})
 }
 
 func normalizeRepoTimestamps(r *Repo) {
@@ -2424,6 +1892,10 @@ func normalizeRepoTimestamps(r *Repo) {
 	if r.LabelCatalogCheckedAt != nil {
 		t := r.LabelCatalogCheckedAt.UTC()
 		r.LabelCatalogCheckedAt = &t
+	}
+	if r.RetiredAt != nil {
+		t := r.RetiredAt.UTC()
+		r.RetiredAt = &t
 	}
 }
 
@@ -2500,40 +1972,46 @@ func marshalUserNamesJSON(names []string) string {
 // UpdateMergeRequestAssignees persists a provider-confirmed assignee set
 // after a mutation so the next sync does not revert the edit.
 func (d *DB) UpdateMergeRequestAssignees(ctx context.Context, repoID, mrID int64, assignees []string) error {
-	_, err := d.rw.ExecContext(ctx,
-		`UPDATE forge_merge_requests SET assignees_json = ? WHERE id = ? AND repo_id = ?`,
-		marshalUserNamesJSON(assignees), mrID, repoID,
-	)
-	if err != nil {
-		return fmt.Errorf("update merge request assignees: %w", err)
-	}
-	return nil
+	return d.withActiveRepositoryTx(ctx, repoID, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx,
+			`UPDATE forge_merge_requests SET assignees_json = ? WHERE id = ? AND repo_id = ?`,
+			marshalUserNamesJSON(assignees), mrID, repoID,
+		)
+		if err != nil {
+			return fmt.Errorf("update merge request assignees: %w", err)
+		}
+		return nil
+	})
 }
 
 // UpdateMergeRequestReviewers persists a provider-confirmed
 // requested-reviewer set after a mutation.
 func (d *DB) UpdateMergeRequestReviewers(ctx context.Context, repoID, mrID int64, reviewers []string) error {
-	_, err := d.rw.ExecContext(ctx,
-		`UPDATE forge_merge_requests SET reviewers_json = ? WHERE id = ? AND repo_id = ?`,
-		marshalUserNamesJSON(reviewers), mrID, repoID,
-	)
-	if err != nil {
-		return fmt.Errorf("update merge request reviewers: %w", err)
-	}
-	return nil
+	return d.withActiveRepositoryTx(ctx, repoID, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx,
+			`UPDATE forge_merge_requests SET reviewers_json = ? WHERE id = ? AND repo_id = ?`,
+			marshalUserNamesJSON(reviewers), mrID, repoID,
+		)
+		if err != nil {
+			return fmt.Errorf("update merge request reviewers: %w", err)
+		}
+		return nil
+	})
 }
 
 // UpdateIssueAssignees persists a provider-confirmed assignee set on an
 // issue after a mutation.
 func (d *DB) UpdateIssueAssignees(ctx context.Context, repoID, issueID int64, assignees []string) error {
-	_, err := d.rw.ExecContext(ctx,
-		`UPDATE forge_issues SET assignees_json = ? WHERE id = ? AND repo_id = ?`,
-		marshalUserNamesJSON(assignees), issueID, repoID,
-	)
-	if err != nil {
-		return fmt.Errorf("update issue assignees: %w", err)
-	}
-	return nil
+	return d.withActiveRepositoryTx(ctx, repoID, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx,
+			`UPDATE forge_issues SET assignees_json = ? WHERE id = ? AND repo_id = ?`,
+			marshalUserNamesJSON(assignees), issueID, repoID,
+		)
+		if err != nil {
+			return fmt.Errorf("update issue assignees: %w", err)
+		}
+		return nil
+	})
 }
 
 func (d *DB) UpsertMergeRequest(ctx context.Context, mr *MergeRequest) (int64, error) {
@@ -2721,6 +2199,9 @@ func upsertMergeRequestParentTx(
 	tx *sql.Tx,
 	mr *MergeRequest,
 ) (int64, int64, bool, error) {
+	if err := requireActiveRepoTx(ctx, tx, mr.RepoID, ""); err != nil {
+		return 0, 0, false, err
+	}
 	canonicalizeMergeRequestTimestamps(mr)
 	id, revision, accepted, err := upsertMergeRequestSnapshot(ctx, tx, mr)
 	return id, revision, accepted, err
@@ -2796,6 +2277,7 @@ func (d *DB) GetMergeRequest(
 		    ON s.item_type = 'pr' AND s.repo_id = p.repo_id AND s.number = p.number
 		WHERE r.platform = ? AND r.platform_host = ?
 		  AND r.owner_key = ? AND r.name_key = ?
+		  AND r.retired_at IS NULL
 		  AND p.number = ?`,
 		platform, platformHost, owner, name, number,
 	).Scan(
@@ -2899,7 +2381,7 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 	if state == "" {
 		state = "open"
 	}
-	var conds []string
+	conds := []string{"r.retired_at IS NULL"}
 	var args []any
 
 	switch state {
@@ -3363,21 +2845,24 @@ type IssueDerivedFields struct {
 // Derived fields (CommentCount, CIStatus, etc.) are untouched.
 func (d *DB) UpdateMRTitleBody(
 	ctx context.Context,
+	repoID int64,
 	id int64,
 	title, body string,
 	updatedAt time.Time,
 ) error {
-	_, err := d.rw.ExecContext(ctx, `
-		UPDATE forge_merge_requests
-		SET title = ?, body = ?, updated_at = ?,
-		    last_activity_at = MAX(last_activity_at, ?)
-		WHERE id = ? AND updated_at <= ?`,
-		title, body, updatedAt, updatedAt, id, updatedAt,
-	)
-	if err != nil {
-		return fmt.Errorf("update mr title/body: %w", err)
-	}
-	return nil
+	return d.withActiveRepositoryTx(ctx, repoID, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, `
+			UPDATE forge_merge_requests
+			SET title = ?, body = ?, updated_at = ?,
+			    last_activity_at = MAX(last_activity_at, ?)
+			WHERE id = ? AND repo_id = ? AND updated_at <= ?`,
+			title, body, updatedAt, updatedAt, id, repoID, updatedAt,
+		)
+		if err != nil {
+			return fmt.Errorf("update mr title/body: %w", err)
+		}
+		return nil
+	})
 }
 
 // UpdateIssueTitleBody updates only the title, body, updated_at, and
@@ -3385,21 +2870,24 @@ func (d *DB) UpdateMRTitleBody(
 // MAX(existing, updatedAt) so list ordering reflects the edit.
 func (d *DB) UpdateIssueTitleBody(
 	ctx context.Context,
+	repoID int64,
 	id int64,
 	title, body string,
 	updatedAt time.Time,
 ) error {
-	_, err := d.rw.ExecContext(ctx, `
-		UPDATE forge_issues
-		SET title = ?, body = ?, updated_at = ?,
-		    last_activity_at = MAX(last_activity_at, ?)
-		WHERE id = ? AND updated_at <= ?`,
-		title, body, updatedAt, updatedAt, id, updatedAt,
-	)
-	if err != nil {
-		return fmt.Errorf("update issue title/body: %w", err)
-	}
-	return nil
+	return d.withActiveRepositoryTx(ctx, repoID, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, `
+			UPDATE forge_issues
+			SET title = ?, body = ?, updated_at = ?,
+			    last_activity_at = MAX(last_activity_at, ?)
+			WHERE id = ? AND repo_id = ? AND updated_at <= ?`,
+			title, body, updatedAt, updatedAt, id, repoID, updatedAt,
+		)
+		if err != nil {
+			return fmt.Errorf("update issue title/body: %w", err)
+		}
+		return nil
+	})
 }
 
 // UpdateMRDerivedFields writes computed fields back to the merge_requests row.
@@ -3659,17 +3147,19 @@ func (d *DB) UpdateMRState(
 	mergedAt, closedAt *time.Time,
 ) error {
 	now := time.Now().UTC()
-	_, err := d.rw.ExecContext(ctx, `
-		UPDATE forge_merge_requests
-		SET state = ?, merged_at = ?, closed_at = ?,
-		    updated_at = ?, last_activity_at = ?
-		WHERE repo_id = ? AND number = ?`,
-		state, mergedAt, closedAt, now, now, repoID, number,
-	)
-	if err != nil {
-		return fmt.Errorf("update mr state: %w", err)
-	}
-	return nil
+	return d.withActiveRepositoryTx(ctx, repoID, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, `
+			UPDATE forge_merge_requests
+			SET state = ?, merged_at = ?, closed_at = ?,
+			    updated_at = ?, last_activity_at = ?
+			WHERE repo_id = ? AND number = ?`,
+			state, mergedAt, closedAt, now, now, repoID, number,
+		)
+		if err != nil {
+			return fmt.Errorf("update mr state: %w", err)
+		}
+		return nil
+	})
 }
 
 // UpdateMRDraftState records a provider-confirmed draft flag without
@@ -3680,6 +3170,9 @@ func (d *DB) UpdateMRDraftState(ctx context.Context, repoID int64, number int, i
 		return fmt.Errorf("begin update mr draft state: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := requireActiveRepoTx(ctx, tx, repoID, ""); err != nil {
+		return err
+	}
 
 	var updatedAt time.Time
 	var lastActivityAt time.Time
@@ -3760,6 +3253,9 @@ func upsertIssueParentTx(
 	tx *sql.Tx,
 	issue *Issue,
 ) (int64, int64, bool, error) {
+	if err := requireActiveRepoTx(ctx, tx, issue.RepoID, ""); err != nil {
+		return 0, 0, false, err
+	}
 	canonicalizeIssueTimestamps(issue)
 	var issueID, revision int64
 	err := tx.QueryRowContext(ctx, `
@@ -3832,6 +3328,7 @@ func (d *DB) GetIssue(
 		    ON w.repo_id = i.repo_id AND w.item_type = 'issue' AND w.item_number = i.number
 		WHERE r.platform = ? AND r.platform_host = ?
 		  AND r.owner_key = ? AND r.name_key = ?
+		  AND r.retired_at IS NULL
 		  AND i.number = ?`,
 		platform, platformHost, owner, name, number,
 	).Scan(
@@ -3915,7 +3412,7 @@ func (d *DB) ListIssues(
 	if state == "" {
 		state = "open"
 	}
-	var conds []string
+	conds := []string{"r.retired_at IS NULL"}
 	var args []any
 
 	switch state {
@@ -4100,16 +3597,18 @@ func (d *DB) UpdateIssueState(
 	closedAt *time.Time,
 ) error {
 	now := time.Now().UTC()
-	_, err := d.rw.ExecContext(ctx, `
-		UPDATE forge_issues SET state = ?, closed_at = ?,
-		    updated_at = ?, last_activity_at = ?
-		WHERE repo_id = ? AND number = ?`,
-		state, closedAt, now, now, repoID, number,
-	)
-	if err != nil {
-		return fmt.Errorf("update issue state: %w", err)
-	}
-	return nil
+	return d.withActiveRepositoryTx(ctx, repoID, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, `
+			UPDATE forge_issues SET state = ?, closed_at = ?,
+			    updated_at = ?, last_activity_at = ?
+			WHERE repo_id = ? AND number = ?`,
+			state, closedAt, now, now, repoID, number,
+		)
+		if err != nil {
+			return fmt.Errorf("update issue state: %w", err)
+		}
+		return nil
+	})
 }
 
 // GetPreviouslyOpenIssueNumbers returns issue numbers that are open in the DB
@@ -4157,20 +3656,17 @@ func (d *DB) CountOpenIssuesForRepo(ctx context.Context, repoID int64) (int, err
 
 func (d *DB) GetHTTPEtag(
 	ctx context.Context,
-	platform, platformHost, owner, name, resourceType string,
+	repoID int64,
+	resourceType string,
 	resourceNumber int,
 ) (string, error) {
-	platformHost, owner, name = canonicalRepoLookupIdentifier(platformHost, owner, name)
 	var etag string
 	err := d.ro.QueryRowContext(ctx,
 		`SELECT etag FROM forge_http_etags
-		WHERE platform = ?
-		  AND platform_host = ?
-		  AND owner_key = ?
-		  AND name_key = ?
+		WHERE repo_id = ?
 		  AND resource_type = ?
 		  AND resource_number = ?`,
-		platform, platformHost, owner, name, resourceType, resourceNumber,
+		repoID, resourceType, resourceNumber,
 	).Scan(&etag)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
@@ -4183,27 +3679,23 @@ func (d *DB) GetHTTPEtag(
 
 func (d *DB) UpsertHTTPEtag(
 	ctx context.Context,
-	platform, platformHost, owner, name, resourceType string,
+	repoID int64,
+	resourceType string,
 	resourceNumber int,
 	etag string,
 ) error {
 	if etag == "" {
 		return nil
 	}
-	platformHost, owner, name = canonicalRepoLookupIdentifier(platformHost, owner, name)
 	_, err := d.rw.ExecContext(ctx,
 		`INSERT INTO forge_http_etags (
-			platform, platform_host, owner_key, name_key,
-			resource_type, resource_number, etag, fetched_at
+			repo_id, resource_type, resource_number, etag, fetched_at
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
-		ON CONFLICT (
-			platform, platform_host, owner_key, name_key,
-			resource_type, resource_number
-		) DO UPDATE SET
+		VALUES (?, ?, ?, ?, datetime('now'))
+		ON CONFLICT (repo_id, resource_type, resource_number) DO UPDATE SET
 			etag = excluded.etag,
 			fetched_at = excluded.fetched_at`,
-		platform, platformHost, owner, name, resourceType, resourceNumber, etag,
+		repoID, resourceType, resourceNumber, etag,
 	)
 	if err != nil {
 		return fmt.Errorf("upsert http etag: %w", err)
@@ -4495,6 +3987,7 @@ func (d *DB) ListCommentAutocompleteUsers(
 			SELECT id
 			FROM forge_repos
 			WHERE platform = ? AND platform_host = ? AND owner_key = ? AND name_key = ?
+			  AND retired_at IS NULL
 		), candidates AS (
 			SELECT mr.author AS login, mr.last_activity_at AS last_seen
 			FROM forge_merge_requests mr
@@ -4572,6 +4065,7 @@ func (d *DB) ListCommentAutocompleteReferences(
 			SELECT id
 			FROM forge_repos
 			WHERE platform = ? AND platform_host = ? AND owner_key = ? AND name_key = ?
+			  AND retired_at IS NULL
 		), candidates AS (
 			SELECT 'pull' AS kind, mr.number, mr.title, mr.state, mr.last_activity_at
 			FROM forge_merge_requests mr
@@ -4898,31 +4392,64 @@ func canonicalWorkspacePlatform(provider string) string {
 	return provider
 }
 
-func (d *DB) canonicalizeWorkspaceRepo(
+func canonicalizeWorkspaceRepo(
 	ctx context.Context,
+	queryer interface {
+		QueryRowContext(context.Context, string, ...any) *sql.Row
+	},
+	expectedRepoID *int64,
 	provider, platformHost, owner, name string,
-) (string, string, string, string, string, string, string, error) {
+) (*int64, string, string, string, string, string, string, string, error) {
 	provider = strings.ToLower(strings.TrimSpace(provider))
 	host, ownerKey, nameKey := canonicalRepoLookupIdentifier(platformHost, owner, name)
 	pathKey := ownerKey + "/" + nameKey
 
+	var matchedRepoID int64
 	var matchedProvider, displayOwner, displayName, repoOwnerKey, repoNameKey, repoPathKey string
-	err := d.ro.QueryRowContext(ctx, `
-		SELECT platform, owner, name, owner_key, name_key, repo_path_key
-		FROM forge_repos
-		WHERE platform_host = ? AND repo_path_key = ?
-		  AND (? = '' OR platform = ?)
-		ORDER BY CASE WHEN platform <> 'github' THEN 0 ELSE 1 END, id
-		LIMIT 1`,
-		host, pathKey, provider, provider,
-	).Scan(&matchedProvider, &displayOwner, &displayName, &repoOwnerKey, &repoNameKey, &repoPathKey)
+	var row *sql.Row
+	if expectedRepoID != nil {
+		row = queryer.QueryRowContext(ctx, `
+			SELECT id, platform, owner, name, owner_key, name_key, repo_path_key
+			FROM forge_repos
+			WHERE id = ? AND retired_at IS NULL`,
+			*expectedRepoID,
+		)
+	} else {
+		row = queryer.QueryRowContext(ctx, `
+			SELECT id, platform, owner, name, owner_key, name_key, repo_path_key
+			FROM forge_repos
+			WHERE platform_host = ? AND repo_path_key = ?
+			  AND retired_at IS NULL
+			  AND (? = '' OR platform = ?)
+			ORDER BY CASE WHEN platform <> 'github' THEN 0 ELSE 1 END, id
+			LIMIT 1`,
+			host, pathKey, provider, provider,
+		)
+	}
+	err := row.Scan(
+		&matchedRepoID,
+		&matchedProvider,
+		&displayOwner,
+		&displayName,
+		&repoOwnerKey,
+		&repoNameKey,
+		&repoPathKey,
+	)
 	if errors.Is(err, sql.ErrNoRows) {
-		return canonicalWorkspacePlatform(provider), host, ownerKey, nameKey, ownerKey, nameKey, pathKey, nil
+		if expectedRepoID != nil {
+			return nil, "", "", "", "", "", "", "", ErrRepositoryRetired
+		}
+		return nil, canonicalWorkspacePlatform(provider), host, ownerKey, nameKey,
+			ownerKey, nameKey, pathKey, nil
 	}
 	if err != nil {
-		return "", "", "", "", "", "", "", fmt.Errorf("lookup workspace repo identity: %w", err)
+		return nil, "", "", "", "", "", "", "", fmt.Errorf(
+			"lookup workspace repo identity: %w",
+			err,
+		)
 	}
-	return matchedProvider, host, displayOwner, displayName, repoOwnerKey, repoNameKey, repoPathKey, nil
+	return &matchedRepoID, matchedProvider, host, displayOwner, displayName,
+		repoOwnerKey, repoNameKey, repoPathKey, nil
 }
 
 func workspaceItemKeyForInsert(ws *Workspace) (string, error) {
@@ -4965,7 +4492,9 @@ func scanWorkspace(scanner interface{ Scan(...any) error }) (*Workspace, error) 
 	var ws Workspace
 	var kataMetadataJSON string
 	err := scanner.Scan(
-		&ws.ID, &ws.Platform, &ws.PlatformHost, &ws.RepoOwner, &ws.RepoName,
+		&ws.ID, &ws.RepoID,
+		&ws.Platform, &ws.PlatformHost, &ws.RepoOwner, &ws.RepoName,
+		&ws.LegacyCloneOwner, &ws.LegacyCloneName,
 		&ws.ItemType, &ws.ItemNumber, &ws.ItemKey, &ws.AssociatedPRNumber,
 		&ws.GitHeadRef, &ws.MRHeadRepo, &ws.WorkspaceBranch,
 		&ws.WorktreePath, &ws.TmuxSession, &ws.TerminalBackend, &ws.Status,
@@ -4992,11 +4521,20 @@ func scanWorkspace(scanner interface{ Scan(...any) error }) (*Workspace, error) 
 func (d *DB) InsertWorkspace(
 	ctx context.Context, ws *Workspace,
 ) error {
+	tx, err := d.rw.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin insert workspace: %w", err)
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
 	var repoOwnerKey, repoNameKey, repoPathKey string
-	var err error
-	ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
-		repoOwnerKey, repoNameKey, repoPathKey, err = d.canonicalizeWorkspaceRepo(
+	ws.RepoID, ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
+		repoOwnerKey, repoNameKey, repoPathKey, err = canonicalizeWorkspaceRepo(
 		ctx,
+		tx,
+		ws.RepoID,
 		ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 	)
 	if err != nil {
@@ -5013,16 +4551,16 @@ func (d *DB) InsertWorkspace(
 	if err != nil {
 		return fmt.Errorf("encode workspace kata metadata: %w", err)
 	}
-	_, err = d.rw.ExecContext(ctx, `
+	_, err = tx.ExecContext(ctx, `
 		INSERT INTO forge_workspaces
-		    (id, platform, platform_host, repo_owner, repo_name,
+		    (id, repo_id, platform, platform_host, repo_owner, repo_name,
 		     repo_owner_key, repo_name_key, repo_path_key,
 		     item_type, item_number, item_key, associated_pr_number,
 		     git_head_ref, mr_head_repo, workspace_branch,
 		     worktree_path, tmux_session, terminal_backend, status,
 		     error_message, kata_metadata)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		ws.ID, ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		ws.ID, ws.RepoID, ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 		repoOwnerKey, repoNameKey, repoPathKey,
 		ws.ItemType, ws.ItemNumber, itemKey, ws.AssociatedPRNumber,
 		ws.GitHeadRef, ws.MRHeadRepo, ws.WorkspaceBranch,
@@ -5031,6 +4569,9 @@ func (d *DB) InsertWorkspace(
 	)
 	if err != nil {
 		return fmt.Errorf("insert workspace: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit insert workspace: %w", err)
 	}
 	ws.ItemKey = itemKey
 	return nil
@@ -5041,7 +4582,9 @@ func (d *DB) GetWorkspace(
 	ctx context.Context, id string,
 ) (*Workspace, error) {
 	ws, err := scanWorkspace(d.ro.QueryRowContext(ctx, `
-		SELECT id, platform, platform_host, repo_owner, repo_name,
+		SELECT id, repo_id, platform, platform_host, repo_owner, repo_name,
+		       COALESCE(legacy_clone_owner, ''),
+		       COALESCE(legacy_clone_name, ''),
 		       item_type, item_number, item_key, associated_pr_number,
 		       git_head_ref, mr_head_repo, workspace_branch,
 		       worktree_path, tmux_session, terminal_backend, status,
@@ -5087,15 +4630,21 @@ func (d *DB) getWorkspaceByMR(
 	provider = strings.ToLower(strings.TrimSpace(provider))
 	platformHost, owner, name = canonicalRepoLookupIdentifier(platformHost, owner, name)
 	ws, err := scanWorkspace(d.ro.QueryRowContext(ctx, `
-		SELECT id, platform, platform_host, repo_owner, repo_name,
-		       item_type, item_number, item_key, associated_pr_number,
-		       git_head_ref, mr_head_repo, workspace_branch,
-		       worktree_path, tmux_session, terminal_backend, status,
-		       error_message, created_at, kata_metadata
-			FROM forge_workspaces
-			WHERE platform_host = ? AND repo_owner_key = ?
-			  AND repo_name_key = ? AND item_type = ? AND item_number = ?
-			  AND (? = '' OR platform = ?)`,
+		SELECT w.id, w.repo_id, w.platform, w.platform_host,
+		       w.repo_owner, w.repo_name,
+		       COALESCE(w.legacy_clone_owner, ''),
+		       COALESCE(w.legacy_clone_name, ''),
+		       w.item_type, w.item_number, w.item_key,
+		       w.associated_pr_number,
+		       w.git_head_ref, w.mr_head_repo, w.workspace_branch,
+		       w.worktree_path, w.tmux_session, w.terminal_backend,
+		       w.status, w.error_message, w.created_at, w.kata_metadata
+		FROM forge_workspaces AS w
+		JOIN forge_repos AS r ON r.id = w.repo_id
+		WHERE r.platform_host = ? AND r.owner_key = ?
+		  AND r.name_key = ? AND w.item_type = ? AND w.item_number = ?
+		  AND r.retired_at IS NULL
+		  AND (? = '' OR r.platform = ?)`,
 		platformHost, owner, name, WorkspaceItemTypePullRequest, mrNumber,
 		provider, provider,
 	))
@@ -5138,15 +4687,21 @@ func (d *DB) getWorkspaceByIssue(
 	provider = strings.ToLower(strings.TrimSpace(provider))
 	platformHost, owner, name = canonicalRepoLookupIdentifier(platformHost, owner, name)
 	ws, err := scanWorkspace(d.ro.QueryRowContext(ctx, `
-		SELECT id, platform, platform_host, repo_owner, repo_name,
-		       item_type, item_number, item_key, associated_pr_number,
-		       git_head_ref, mr_head_repo, workspace_branch,
-		       worktree_path, tmux_session, terminal_backend, status,
-		       error_message, created_at, kata_metadata
-		FROM forge_workspaces
-		WHERE platform_host = ? AND repo_owner_key = ?
-		  AND repo_name_key = ? AND item_type = ? AND item_number = ?
-		  AND (? = '' OR platform = ?)`,
+		SELECT w.id, w.repo_id, w.platform, w.platform_host,
+		       w.repo_owner, w.repo_name,
+		       COALESCE(w.legacy_clone_owner, ''),
+		       COALESCE(w.legacy_clone_name, ''),
+		       w.item_type, w.item_number, w.item_key,
+		       w.associated_pr_number,
+		       w.git_head_ref, w.mr_head_repo, w.workspace_branch,
+		       w.worktree_path, w.tmux_session, w.terminal_backend,
+		       w.status, w.error_message, w.created_at, w.kata_metadata
+		FROM forge_workspaces AS w
+		JOIN forge_repos AS r ON r.id = w.repo_id
+		WHERE r.platform_host = ? AND r.owner_key = ?
+		  AND r.name_key = ? AND w.item_type = ? AND w.item_number = ?
+		  AND r.retired_at IS NULL
+		  AND (? = '' OR r.platform = ?)`,
 		platformHost, owner, name, WorkspaceItemTypeIssue, issueNumber,
 		provider, provider,
 	))
@@ -5171,15 +4726,21 @@ func (d *DB) GetWorkspaceByItemKeyForProvider(
 	}
 	platformHost, owner, name = canonicalRepoLookupIdentifier(platformHost, owner, name)
 	ws, err := scanWorkspace(d.ro.QueryRowContext(ctx, `
-		SELECT id, platform, platform_host, repo_owner, repo_name,
-		       item_type, item_number, item_key, associated_pr_number,
-		       git_head_ref, mr_head_repo, workspace_branch,
-		       worktree_path, tmux_session, terminal_backend, status,
-		       error_message, created_at, kata_metadata
-		FROM forge_workspaces
-		WHERE platform_host = ? AND repo_owner_key = ?
-		  AND repo_name_key = ? AND item_type = ? AND item_key = ?
-		  AND (? = '' OR platform = ?)`,
+		SELECT w.id, w.repo_id, w.platform, w.platform_host,
+		       w.repo_owner, w.repo_name,
+		       COALESCE(w.legacy_clone_owner, ''),
+		       COALESCE(w.legacy_clone_name, ''),
+		       w.item_type, w.item_number, w.item_key,
+		       w.associated_pr_number,
+		       w.git_head_ref, w.mr_head_repo, w.workspace_branch,
+		       w.worktree_path, w.tmux_session, w.terminal_backend,
+		       w.status, w.error_message, w.created_at, w.kata_metadata
+		FROM forge_workspaces AS w
+		JOIN forge_repos AS r ON r.id = w.repo_id
+		WHERE r.platform_host = ? AND r.owner_key = ?
+		  AND r.name_key = ? AND w.item_type = ? AND w.item_key = ?
+		  AND r.retired_at IS NULL
+		  AND (? = '' OR r.platform = ?)`,
 		platformHost, owner, name, itemType, itemKey, provider, provider,
 	))
 	if errors.Is(err, sql.ErrNoRows) {
@@ -5197,13 +4758,18 @@ func (d *DB) ListWorkspaces(
 	ctx context.Context,
 ) ([]Workspace, error) {
 	rows, err := d.ro.QueryContext(ctx, `
-		SELECT id, platform, platform_host, repo_owner, repo_name,
+		SELECT w.id, w.repo_id, w.platform, w.platform_host,
+		       w.repo_owner, w.repo_name,
+		       COALESCE(w.legacy_clone_owner, ''),
+		       COALESCE(w.legacy_clone_name, ''),
 		       item_type, item_number, item_key, associated_pr_number,
 		       git_head_ref, mr_head_repo, workspace_branch,
 		       worktree_path, tmux_session, terminal_backend, status,
-		       error_message, created_at, kata_metadata
-		FROM forge_workspaces
-		ORDER BY created_at DESC`,
+		       error_message, w.created_at, kata_metadata
+		FROM forge_workspaces AS w
+		LEFT JOIN forge_repos AS r ON r.id = w.repo_id
+		WHERE w.repo_id IS NULL OR r.retired_at IS NULL
+		ORDER BY w.created_at DESC`,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("list workspaces: %w", err)
@@ -5426,7 +4992,15 @@ func (d *DB) StartWorkspaceRetry(
 		UPDATE forge_workspaces
 		SET status = 'creating',
 		    error_message = NULL
-		WHERE id = ? AND status = 'error'`, id,
+		WHERE id = ? AND status = 'error'
+		  AND (
+		      repo_id IS NULL OR EXISTS (
+		          SELECT 1
+		          FROM forge_repos r
+		          WHERE r.id = forge_workspaces.repo_id
+		            AND r.retired_at IS NULL
+		      )
+		  )`, id,
 	)
 	if err != nil {
 		return false, fmt.Errorf("start workspace retry: %w", err)
@@ -5437,7 +5011,25 @@ func (d *DB) StartWorkspaceRetry(
 			"start workspace retry rows affected: %w", err,
 		)
 	}
-	return affected == 1, nil
+	if affected == 1 {
+		return true, nil
+	}
+	var retired bool
+	if err := d.ro.QueryRowContext(ctx, `
+		SELECT EXISTS (
+		    SELECT 1
+		    FROM forge_workspaces w
+		    JOIN forge_repos r ON r.id = w.repo_id
+		    WHERE w.id = ? AND r.retired_at IS NOT NULL
+		)`,
+		id,
+	).Scan(&retired); err != nil {
+		return false, fmt.Errorf("check workspace repository retirement: %w", err)
+	}
+	if retired {
+		return false, ErrRepositoryRetired
+	}
+	return false, nil
 }
 
 // SetWorkspaceAssociatedPRNumberIfNull stores a workspace's first detected
@@ -5751,7 +5343,8 @@ func (d *DB) DeleteWorkspace(
 // workspaceSummaryColumns is the SELECT list shared by
 // ListWorkspaceSummaries and GetWorkspaceSummary.
 const workspaceSummaryColumns = `
-	w.id, w.platform, w.platform_host, w.repo_owner, w.repo_name,
+	w.id, w.repo_id, w.platform, w.platform_host, w.repo_owner, w.repo_name,
+	COALESCE(w.legacy_clone_owner, ''), COALESCE(w.legacy_clone_name, ''),
 	w.item_type, w.item_number, w.item_key, w.associated_pr_number,
 	w.git_head_ref, w.mr_head_repo, w.workspace_branch,
 	w.worktree_path, w.tmux_session, w.terminal_backend, w.status,
@@ -5781,10 +5374,7 @@ const workspaceSummaryColumns = `
 const workspaceSummaryJoins = `
 	FROM forge_workspaces w
 	LEFT JOIN forge_repos r
-	    ON r.platform = w.platform
-	   AND r.platform_host = w.platform_host
-	   AND r.owner_key = w.repo_owner_key
-	   AND r.name_key = w.repo_name_key
+	    ON r.id = w.repo_id
 	LEFT JOIN forge_merge_requests m
 	    ON m.repo_id = r.id
 	   AND m.number = w.item_number
@@ -5801,7 +5391,9 @@ func scanWorkspaceSummary(
 	var kataMetadataJSON string
 	var itemLastActivityAt sql.NullString
 	err := scanner.Scan(
-		&s.ID, &s.Platform, &s.PlatformHost, &s.RepoOwner, &s.RepoName,
+		&s.ID, &s.RepoID,
+		&s.Platform, &s.PlatformHost, &s.RepoOwner, &s.RepoName,
+		&s.LegacyCloneOwner, &s.LegacyCloneName,
 		&s.ItemType, &s.ItemNumber, &s.ItemKey, &s.AssociatedPRNumber,
 		&s.GitHeadRef, &s.MRHeadRepo, &s.WorkspaceBranch,
 		&s.WorktreePath, &s.TmuxSession, &s.TerminalBackend, &s.Status,
@@ -5851,6 +5443,7 @@ func (d *DB) ListWorkspaceSummaries(
 ) ([]WorkspaceSummary, error) {
 	query := "SELECT " + workspaceSummaryColumns +
 		workspaceSummaryJoins +
+		"\nWHERE w.repo_id IS NULL OR r.retired_at IS NULL" +
 		"\nORDER BY w.created_at DESC"
 	rows, err := d.ro.QueryContext(ctx, query)
 	if err != nil {

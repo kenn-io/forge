@@ -11,6 +11,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/platform"
+	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
@@ -103,9 +104,10 @@ func TestAutoAssignWorkspaceItemPreservesExistingAssignees(t *testing.T) {
 	syncer := ghclient.NewSyncerWithRegistry(registry, database, nil, nil, time.Hour, nil, nil)
 	t.Cleanup(syncer.Stop)
 	handler := New(Deps{
-		DB:     database,
-		Syncer: syncer,
-		Config: ConfigSnapshot{AutoAssignOnCreate: true},
+		DB:       database,
+		Resolver: httpapi.NewRepositoryResolver(httpapi.RepositoryResolverDeps{DB: database}),
+		Syncer:   syncer,
+		Config:   ConfigSnapshot{AutoAssignOnCreate: true},
 	})
 	repo, err := database.GetRepoByIdentity(t.Context(), repoIdentity)
 	require.NoError(err)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strconv"
 	"strings"
@@ -103,7 +104,7 @@ func (s *Handler) enqueueDeferredMerge(
 	if maxWait <= 0 {
 		maxWait = defaultDeferredMergeMaxWait
 	}
-	repo, err := s.requireRepoRouteCapability(
+	repo, release, err := s.leaseRepoRouteCapability(
 		ctx,
 		provider, platformHost, owner, name,
 		capabilityMergeMutation,
@@ -111,6 +112,7 @@ func (s *Handler) enqueueDeferredMerge(
 	if err != nil {
 		return deferMergePRBody{}, err
 	}
+	defer release()
 	if err := s.requireSyncerCapability(*repo, capabilityMergeMutation); err != nil {
 		return deferMergePRBody{}, err
 	}
@@ -264,6 +266,20 @@ func (s *Handler) refreshDeferredMergeCI(
 	pendingKeys []deferredMergeCheckKey,
 	queuedTarget deferredMergeTargetSnapshot,
 ) (string, error) {
+	leaseCtx, activeRepo, release, err := s.resolver.LeaseActiveRepositoryContext(
+		ctx,
+		repo.ID,
+	)
+	if err != nil {
+		return "", fmt.Errorf("lease queued repository incarnation: %w", err)
+	}
+	if activeRepo == nil {
+		return "", errors.New("queued repository incarnation is no longer active")
+	}
+	defer release()
+	ctx = leaseCtx
+	repo = *activeRepo
+
 	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, number)
 	if err != nil {
 		return "", err
@@ -390,6 +406,22 @@ func (s *Handler) completeDeferredMerge(
 	queuedTarget deferredMergeTargetSnapshot,
 	handle *deferredMergeHandle,
 ) {
+	leaseCtx, activeRepo, release, err := s.resolver.LeaseActiveRepositoryContext(
+		ctx,
+		repo.ID,
+	)
+	if err != nil {
+		s.broadcastDeferredMergeFailure(repo, number, deferredMergeHeadSHA(body, queuedTarget.HeadSHA), "lease queued repository incarnation: "+err.Error(), handle)
+		return
+	}
+	if activeRepo == nil {
+		s.broadcastDeferredMergeFailure(repo, number, deferredMergeHeadSHA(body, queuedTarget.HeadSHA), "queued repository incarnation is no longer active", handle)
+		return
+	}
+	defer release()
+	ctx = leaseCtx
+	repo = *activeRepo
+
 	if err := s.ensureDeferredMergeTargetUnchanged(ctx, repo, number, queuedTarget); err != nil {
 		if errors.Is(err, errDeferredMergeTargetMerged) {
 			return
@@ -397,7 +429,7 @@ func (s *Handler) completeDeferredMerge(
 		s.broadcastDeferredMergeFailure(repo, number, deferredMergeHeadSHA(body, queuedTarget.HeadSHA), err.Error(), handle)
 		return
 	}
-	result, err := s.mergePRWithBody(ctx, string(repoProviderKind(repo)), repoProviderHost(repo), repo.Owner, repo.Name, number, body)
+	result, err := s.mergePRWithLeasedRepository(ctx, activeRepo, number, body)
 	if err != nil {
 		s.broadcastDeferredMergeFailure(repo, number, deferredMergeHeadSHA(body, queuedTarget.HeadSHA), err.Error(), handle)
 		return

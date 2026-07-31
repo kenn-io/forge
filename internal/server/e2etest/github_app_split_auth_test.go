@@ -70,6 +70,7 @@ func TestGitHubAppSplitAuthE2E(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = fmt.Fprint(w, `{
 				"id": 4242001,
+				"node_id": "4242001",
 				"name": "kenn-forge",
 				"full_name": "kenn-io/kenn-forge",
 				"owner": {"login": "kenn-io"},
@@ -674,6 +675,7 @@ func TestGitHubAppNoUserCredentialGatesWritesE2E(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = fmt.Fprint(w, `{
 				"id": 4242001,
+				"node_id": "4242001",
 				"name": "kenn-forge",
 				"full_name": "kenn-io/kenn-forge",
 				"owner": {"login": "kenn-io"},

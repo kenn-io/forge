@@ -6,6 +6,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/platform"
 	"go.kenn.io/forge/internal/server/httpapi"
 )
@@ -51,6 +52,15 @@ func (s *Handler) requireRepoRouteCapability(
 	)
 }
 
+func (s *Handler) leaseRepoRouteCapability(
+	ctx context.Context,
+	provider, platformHost, owner, name, capability string,
+) (*db.Repo, func(), error) {
+	return s.resolver.LeaseRouteCapability(
+		ctx, provider, platformHost, owner, name, capability,
+	)
+}
+
 func capabilityEnabled(
 	caps httpapi.ProviderCapabilitiesResponse,
 	capability string,
@@ -79,6 +89,29 @@ func repoProviderKind(repo db.Repo) platform.Kind {
 
 func repoProviderHost(repo db.Repo) string {
 	return httpapi.ProviderHost(repo)
+}
+
+func (s *Handler) repositoryClone(repo db.Repo) gitclone.RepositoryClone {
+	return s.clones.RepositoryClone(
+		repo.ID,
+		string(repoProviderKind(repo)),
+		repoProviderHost(repo),
+		repo.Owner,
+		repo.Name,
+	)
+}
+
+func (s *Handler) leaseRepoByProviderRoute(
+	ctx context.Context,
+	provider, platformHost, owner, name string,
+) (context.Context, *db.Repo, func(), error) {
+	leaseCtx, repo, release, err := s.resolver.LeaseRouteContext(
+		ctx, provider, platformHost, owner, name,
+	)
+	if err != nil {
+		return ctx, nil, nil, providerRouteLookupError(err)
+	}
+	return leaseCtx, repo, release, nil
 }
 
 func platformRepoRefFromDB(repo db.Repo) platform.RepoRef {

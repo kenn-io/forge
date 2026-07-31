@@ -21,6 +21,7 @@ const (
 // item that may need a detail fetch.
 type QueueItem struct {
 	Type         QueueItemType
+	RepoID       int64
 	Platform     platform.Kind
 	RepoOwner    string
 	RepoName     string

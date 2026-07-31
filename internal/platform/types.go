@@ -235,12 +235,14 @@ type Tag struct {
 }
 
 type NotificationListOptions struct {
-	Since         *time.Time
-	All           bool
-	Participating bool
-	Page          int
-	RepoOwner     string
-	RepoName      string
+	Since           *time.Time
+	All             bool
+	Participating   bool
+	Page            int
+	RepoOwner       string
+	RepoName        string
+	CredentialOwner string
+	CredentialName  string
 }
 
 type NotificationThread struct {

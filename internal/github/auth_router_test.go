@@ -19,14 +19,15 @@ import (
 
 type routeRecordingClient struct {
 	Client
-	marker         string
-	calls          []string
-	snapshot       *RateLimitSnapshot
-	snapshotErr    error
-	snapshotSource tokenauth.Source
-	snapshotToken  string
-	userSource     tokenauth.Source
-	userToken      string
+	marker           string
+	calls            []string
+	notificationOpts []NotificationListOptions
+	snapshot         *RateLimitSnapshot
+	snapshotErr      error
+	snapshotSource   tokenauth.Source
+	snapshotToken    string
+	userSource       tokenauth.Source
+	userToken        string
 }
 
 func (c *routeRecordingClient) GetRepository(
@@ -340,10 +341,44 @@ func (c *routeRecordingClient) bypassNotificationReadRateReserve() bool {
 }
 
 func (c *routeRecordingClient) ListNotifications(
-	_ context.Context, _ NotificationListOptions,
+	_ context.Context, opts NotificationListOptions,
 ) ([]NotificationThread, bool, error) {
 	c.calls = append(c.calls, "notifications")
+	c.notificationOpts = append(c.notificationOpts, opts)
 	return nil, false, nil
+}
+
+func TestRoutedClientListsRenamedRepoNotificationsWithConfiguredCredential(
+	t *testing.T,
+) {
+	require := require.New(t)
+	assert := assert.New(t)
+	exactClient := &routeRecordingClient{marker: "exact"}
+	router, err := NewHostRouter("github.com", &Route{
+		Key: RouteKey{
+			Host:  "github.com",
+			Owner: "acme",
+			Name:  "widget",
+		},
+		Client: exactClient,
+	})
+	require.NoError(err)
+	client, err := NewRoutedClient(router)
+	require.NoError(err)
+
+	_, _, err = client.ListNotifications(
+		t.Context(),
+		NotificationListOptions{
+			RepoOwner:       "acme-tools",
+			RepoName:        "renamed-widget",
+			CredentialOwner: "acme",
+			CredentialName:  "widget",
+		},
+	)
+	require.NoError(err)
+	require.Len(exactClient.notificationOpts, 1)
+	assert.Equal("acme-tools", exactClient.notificationOpts[0].RepoOwner)
+	assert.Equal("renamed-widget", exactClient.notificationOpts[0].RepoName)
 }
 
 func TestHostRouterSelectsExactOwnerAndFallbackRoutes(t *testing.T) {

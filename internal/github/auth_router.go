@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 
 	gh "github.com/google/go-github/v89/github"
 	"go.kenn.io/forge/internal/platform"
@@ -70,6 +71,17 @@ type HostRouter struct {
 	owners          map[string]*Route
 	repos           map[string]*Route
 	discoveryOwners map[string]Client
+	aliasesMu       sync.RWMutex
+	aliases         map[string]*Route
+}
+
+// CredentialAlias selects credentials through a configured repository route
+// while provider requests continue to address the repository's current route.
+type CredentialAlias struct {
+	Owner           string
+	Name            string
+	CredentialOwner string
+	CredentialName  string
 }
 
 func NewHostRouter(host string, routes ...*Route) (*HostRouter, error) {
@@ -78,6 +90,7 @@ func NewHostRouter(host string, routes ...*Route) (*HostRouter, error) {
 		owners:          make(map[string]*Route),
 		repos:           make(map[string]*Route),
 		discoveryOwners: make(map[string]Client),
+		aliases:         make(map[string]*Route),
 	}
 	for _, route := range routes {
 		if route == nil {
@@ -169,6 +182,12 @@ func (r *HostRouter) RouteForRepo(owner, name string) (*Route, error) {
 		if route := r.repos[repoRouteMapKey(owner, name)]; route != nil {
 			return route, nil
 		}
+		r.aliasesMu.RLock()
+		alias := r.aliases[repoRouteMapKey(owner, name)]
+		r.aliasesMu.RUnlock()
+		if alias != nil {
+			return alias, nil
+		}
 	}
 	route, err := r.RouteForOwner(owner)
 	if err != nil {
@@ -177,6 +196,45 @@ func (r *HostRouter) RouteForRepo(owner, name string) (*Route, error) {
 		}
 	}
 	return route, err
+}
+
+// ReplaceCredentialAliases atomically replaces the provider-route to
+// configured-credential-route bindings derived from the tracked repository
+// set. Directly configured exact routes always take precedence over aliases.
+func (r *HostRouter) ReplaceCredentialAliases(
+	aliases []CredentialAlias,
+) error {
+	if r == nil {
+		return nil
+	}
+	next := make(map[string]*Route, len(aliases))
+	for _, alias := range aliases {
+		if strings.TrimSpace(alias.Owner) == "" ||
+			strings.TrimSpace(alias.Name) == "" ||
+			strings.TrimSpace(alias.CredentialOwner) == "" ||
+			strings.TrimSpace(alias.CredentialName) == "" {
+			continue
+		}
+		route, err := r.configuredRouteForRepo(
+			alias.CredentialOwner,
+			alias.CredentialName,
+		)
+		if err != nil {
+			return err
+		}
+		next[repoRouteMapKey(alias.Owner, alias.Name)] = route
+	}
+	r.aliasesMu.Lock()
+	r.aliases = next
+	r.aliasesMu.Unlock()
+	return nil
+}
+
+func (r *HostRouter) configuredRouteForRepo(owner, name string) (*Route, error) {
+	if route := r.repos[repoRouteMapKey(owner, name)]; route != nil {
+		return route, nil
+	}
+	return r.RouteForOwner(owner)
 }
 
 func (r *HostRouter) ReadIdentityForRepo(owner, name string) (IdentityKey, error) {
@@ -600,7 +658,13 @@ func (c *RoutedClient) ListNotifications(ctx context.Context, opts NotificationL
 	var client Client
 	var err error
 	if opts.RepoOwner != "" && opts.RepoName != "" {
-		client, err = c.routeForRepo(opts.RepoOwner, opts.RepoName)
+		routeOwner := opts.RepoOwner
+		routeName := opts.RepoName
+		if opts.CredentialOwner != "" && opts.CredentialName != "" {
+			routeOwner = opts.CredentialOwner
+			routeName = opts.CredentialName
+		}
+		client, err = c.routeForRepo(routeOwner, routeName)
 	} else {
 		client, err = c.fallbackClient()
 	}

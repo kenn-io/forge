@@ -19,6 +19,18 @@ func (s *Handler) autoAssignWorkspaceItem(
 	if !s.configSnapshot().AutoAssignOnCreate || s.syncer == nil {
 		return nil
 	}
+	if s.resolver == nil {
+		return fmt.Errorf("repository resolver unavailable")
+	}
+	activeRepo, release, err := s.resolver.LeaseActiveRepository(ctx, repo.ID)
+	if err != nil {
+		return fmt.Errorf("lease active repository: %w", err)
+	}
+	if activeRepo == nil {
+		return fmt.Errorf("repository is no longer active")
+	}
+	defer release()
+	repo = *activeRepo
 
 	kind := httpapi.ProviderKind(repo)
 	host := httpapi.ProviderHost(repo)

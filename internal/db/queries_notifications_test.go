@@ -519,6 +519,80 @@ func TestNotificationsHideUnmonitoredRepos(t *testing.T) {
 	assert.Zero(summary.Unread)
 }
 
+func TestNotificationRepoFilterFollowsStableRepositoryRename(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
+
+	repoID, err := d.UpsertRepoByProviderID(ctx, RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "repository-42",
+		Owner:          "acme",
+		Name:           "legacy-widget",
+	})
+	require.NoError(err)
+	item := notificationFixture("renamed", "mention", now)
+	item.RepoID = &repoID
+	item.RepoName = "legacy-widget"
+	require.NoError(d.UpsertNotifications(ctx, []Notification{item}))
+
+	renamedID, err := d.UpsertRepoByProviderID(ctx, RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "repository-42",
+		Owner:          "acme",
+		Name:           "widget",
+	})
+	require.NoError(err)
+	require.Equal(repoID, renamedID)
+
+	items, err := d.ListNotifications(ctx, ListNotificationsOpts{
+		State: "all",
+		Repos: []NotificationRepoFilter{{
+			Platform:     "github",
+			PlatformHost: "github.com",
+			RepoOwner:    "acme",
+			RepoName:     "widget",
+		}},
+	})
+	require.NoError(err)
+	require.Len(items, 1)
+	require.Equal("renamed", items[0].PlatformNotificationID)
+
+	var owner string
+	var name string
+	require.NoError(d.ReadDB().QueryRowContext(ctx, `
+		SELECT repo_owner, repo_name
+		FROM forge_notification_items
+		WHERE repo_id = ?`,
+		repoID,
+	).Scan(&owner, &name))
+	require.Equal("acme", owner)
+	require.Equal("widget", name)
+
+	pullRequest := testMR(repoID, 7, withMRTitle("renamed pull request"))
+	pullRequest.State = MergeRequestStateClosed
+	pullRequest.ClosedAt = &now
+	_, err = d.UpsertMergeRequest(ctx, pullRequest)
+	require.NoError(err)
+	require.NoError(d.MarkClosedLinkedNotificationsDone(ctx, now))
+
+	items, err = d.ListNotifications(ctx, ListNotificationsOpts{
+		State: "all",
+		Repos: []NotificationRepoFilter{{
+			Platform:     "github",
+			PlatformHost: "github.com",
+			RepoOwner:    "acme",
+			RepoName:     "widget",
+		}},
+	})
+	require.NoError(err)
+	require.Len(items, 1)
+	require.NotNil(items[0].DoneAt)
+}
+
 func TestNotificationSummaryRepoFacetsIncludePlatformHost(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -640,19 +714,7 @@ func TestNotificationPlatformScopedOperationsRejectBlankPlatform(t *testing.T) {
 	d := openTestDB(t)
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
 
-	_, err := d.GetNotificationSyncWatermark(t.Context(), "", "github.com", "acme", "widget")
-	require.ErrorContains(err, "notification platform is required")
-
-	err = d.UpdateNotificationSyncWatermark(t.Context(), "", "github.com", "acme", "widget", now, nil)
-	require.ErrorContains(err, "notification platform is required")
-
-	_, err = d.GetNotificationSyncWatermark(t.Context(), "github", "github.com", "", "widget")
-	require.ErrorContains(err, "repository owner and name")
-
-	err = d.UpdateNotificationSyncWatermark(t.Context(), "github", "github.com", "acme", "", now, nil)
-	require.ErrorContains(err, "repository owner and name")
-
-	err = d.MarkNotificationsAcknowledged(t.Context(), "", "github.com", []string{"thread-1"}, now)
+	err := d.MarkNotificationsAcknowledged(t.Context(), "", "github.com", []string{"thread-1"}, now)
 	require.ErrorContains(err, "notification platform is required")
 
 	_, err = d.ListQueuedNotificationAcks(t.Context(), "", "github.com", 10, now)
@@ -668,35 +730,109 @@ func TestNotificationPlatformScopedOperationsRejectBlankPlatform(t *testing.T) {
 func TestNotificationSyncWatermarksAreScopedByRepoIdentity(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
+	ctx := t.Context()
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
 	full := now.Add(-time.Hour)
 
-	require.NoError(d.UpdateNotificationSyncWatermark(t.Context(), "github", "code.example.com", "acme", "widget", now, &full))
-	require.NoError(d.UpdateNotificationSyncWatermark(t.Context(), "gitlab", "code.example.com", "acme", "widget", now.Add(time.Minute), nil))
-	require.NoError(d.UpdateNotificationSyncWatermark(t.Context(), "github", "code.example.com", "acme", "gadget", now.Add(2*time.Minute), nil))
+	githubID, err := d.UpsertRepoByProviderID(ctx, RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "code.example.com",
+		PlatformRepoID: "github-widget",
+		Owner:          "acme",
+		Name:           "widget",
+	})
+	require.NoError(err)
+	gitlabID, err := d.UpsertRepoByProviderID(ctx, RepoIdentity{
+		Platform:       "gitlab",
+		PlatformHost:   "code.example.com",
+		PlatformRepoID: "gitlab-widget",
+		Owner:          "acme",
+		Name:           "widget",
+	})
+	require.NoError(err)
+	siblingID, err := d.UpsertRepoByProviderID(ctx, RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "code.example.com",
+		PlatformRepoID: "github-gadget",
+		Owner:          "acme",
+		Name:           "gadget",
+	})
+	require.NoError(err)
+	require.NoError(d.UpdateNotificationSyncWatermark(ctx, githubID, now, &full))
+	require.NoError(d.UpdateNotificationSyncWatermark(ctx, gitlabID, now.Add(time.Minute), nil))
+	require.NoError(d.UpdateNotificationSyncWatermark(ctx, siblingID, now.Add(2*time.Minute), nil))
 
-	githubWatermark, err := d.GetNotificationSyncWatermark(t.Context(), "github", "code.example.com", "Acme", "Widget")
+	githubWatermark, err := d.GetNotificationSyncWatermark(ctx, githubID)
 	require.NoError(err)
 	require.NotNil(githubWatermark)
-	require.Equal("github", githubWatermark.Platform)
-	require.Equal("acme", githubWatermark.RepoOwner)
+	require.Equal(githubID, githubWatermark.RepoID)
 	require.Equal(now, githubWatermark.LastSuccessfulSyncAt)
 	require.NotNil(githubWatermark.LastFullSyncAt)
 
-	gitlabWatermark, err := d.GetNotificationSyncWatermark(t.Context(), "gitlab", "code.example.com", "acme", "widget")
+	gitlabWatermark, err := d.GetNotificationSyncWatermark(ctx, gitlabID)
 	require.NoError(err)
 	require.NotNil(gitlabWatermark)
-	require.Equal("gitlab", gitlabWatermark.Platform)
+	require.Equal(gitlabID, gitlabWatermark.RepoID)
 	require.Equal(now.Add(time.Minute), gitlabWatermark.LastSuccessfulSyncAt)
 
-	siblingWatermark, err := d.GetNotificationSyncWatermark(t.Context(), "github", "code.example.com", "acme", "gadget")
+	siblingWatermark, err := d.GetNotificationSyncWatermark(ctx, siblingID)
 	require.NoError(err)
 	require.NotNil(siblingWatermark)
 	require.Equal(now.Add(2*time.Minute), siblingWatermark.LastSuccessfulSyncAt)
 
-	missing, err := d.GetNotificationSyncWatermark(t.Context(), "github", "code.example.com", "acme", "other")
+	missing, err := d.GetNotificationSyncWatermark(ctx, siblingID+1000)
 	require.NoError(err)
 	require.Nil(missing)
+}
+
+func TestRepositoryReplacementScopesNotificationWatermarkByInternalID(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := baseTime()
+
+	oldID, err := d.UpsertRepoByProviderID(ctx, RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "repo-old",
+		Owner:          "acme",
+		Name:           "widget",
+	})
+	require.NoError(err)
+	require.NoError(d.UpdateNotificationSyncWatermark(ctx, oldID, now, &now))
+	historicalNotification := notificationFixture("old-thread", "mention", now)
+	historicalNotification.RepoID = &oldID
+	require.NoError(d.UpsertNotifications(
+		ctx,
+		[]Notification{historicalNotification},
+	))
+
+	newID, err := d.UpsertRepoByProviderID(ctx, RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "repo-new",
+		Owner:          "acme",
+		Name:           "widget",
+	})
+	require.NoError(err)
+
+	newWatermark, err := d.GetNotificationSyncWatermark(ctx, newID)
+	require.NoError(err)
+	assert.Nil(newWatermark)
+
+	oldWatermark, err := d.GetNotificationSyncWatermark(ctx, oldID)
+	require.NoError(err)
+	require.NotNil(oldWatermark)
+	assert.Equal(oldID, oldWatermark.RepoID)
+	assert.Equal(now.UTC(), oldWatermark.LastSuccessfulSyncAt)
+
+	notifications, err := d.ListNotifications(
+		ctx,
+		ListNotificationsOpts{State: "all"},
+	)
+	require.NoError(err)
+	assert.Empty(notifications)
 }
 
 func TestQueuedNotificationAcksStayWithinPlatformAndHost(t *testing.T) {

@@ -69,6 +69,42 @@ func TestListWorktreesForBranchMatch_ReturnsRepoLinkedWorktrees(t *testing.T) {
 	assert.Equal("widget", ref.Name)
 }
 
+func TestListWorktreesForBranchMatchExcludesRetiredRepository(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	oldRepoID, err := d.UpsertRepoByProviderID(ctx, RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "repository-old",
+		Owner:          "acme",
+		Name:           "widget",
+		RepoPath:       "acme/widget",
+	})
+	require.NoError(err)
+	project := createLinkedProject(t, d, "linked", oldRepoID)
+	_, err = d.CreateProjectWorktree(ctx, CreateProjectWorktreeInput{
+		ProjectID: project.ID,
+		Branch:    "feature",
+		Path:      filepath.Join(t.TempDir(), "wt-feature"),
+	})
+	require.NoError(err)
+
+	_, err = d.UpsertRepoByProviderID(ctx, RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "repository-replacement",
+		Owner:          "acme",
+		Name:           "widget",
+		RepoPath:       "acme/widget",
+	})
+	require.NoError(err)
+
+	refs, err := d.ListWorktreesForBranchMatch(ctx)
+	require.NoError(err)
+	assert.Empty(t, refs)
+}
+
 // TestListWorktreeLinkPRs_JoinsLinkedMergeRequestDisplayFields verifies the
 // snapshot-side read returns each worktree link joined to its merge request's
 // display fields, keyed by the worktree key the snapshot overlays onto

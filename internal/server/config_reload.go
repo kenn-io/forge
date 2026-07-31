@@ -655,8 +655,12 @@ func (s *Server) resolveReposForReload(
 	if s.syncer == nil {
 		return nil, nil
 	}
+	type resolvedCandidate struct {
+		index  int
+		isGlob bool
+	}
 	resolved := make([]ghclient.RepoRef, 0, len(repos))
-	seen := make(map[string]struct{}, len(repos))
+	seen := make(map[string]resolvedCandidate, len(repos))
 	skipped := make([]string, 0)
 
 	for _, raw := range repos {
@@ -691,10 +695,22 @@ func (s *Server) resolveReposForReload(
 				strings.ToLower(canonicalReloadHost(repo)) + "\x00" +
 				strings.ToLower(repo.Owner) + "\x00" +
 				strings.ToLower(repo.Name)
-			if _, ok := seen[key]; ok {
+			if current, ok := seen[key]; ok {
+				merged, mergedIsGlob := ghclient.MergeConfiguredRepoCandidate(
+					resolved[current.index],
+					current.isGlob,
+					repo,
+					raw.HasNameGlob(),
+				)
+				resolved[current.index] = merged
+				current.isGlob = mergedIsGlob
+				seen[key] = current
 				continue
 			}
-			seen[key] = struct{}{}
+			seen[key] = resolvedCandidate{
+				index:  len(resolved),
+				isGlob: raw.HasNameGlob(),
+			}
 			resolved = append(resolved, repo)
 		}
 	}

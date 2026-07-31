@@ -19,12 +19,13 @@ func (s *Handler) postIssueComment(ctx context.Context, input *postIssueCommentI
 	if strings.TrimSpace(input.Body.Body) == "" {
 		return nil, httpapi.Validation("body.body", "comment body must not be empty")
 	}
-	repo, err := s.resolver.RequireRouteCapability(
+	repo, release, err := s.resolver.LeaseRouteCapability(
 		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name, capabilityCommentMutation,
 	)
 	if err != nil {
 		return nil, err
 	}
+	defer release()
 	if err := s.requireSyncerCapability(*repo, capabilityCommentMutation); err != nil {
 		return nil, err
 	}
@@ -54,12 +55,13 @@ func (s *Handler) editIssueComment(ctx context.Context, input *editIssueCommentI
 	if strings.TrimSpace(input.Body.Body) == "" {
 		return nil, httpapi.Validation("body.body", "comment body must not be empty")
 	}
-	repo, err := s.resolver.RequireRouteCapability(
+	repo, release, err := s.resolver.LeaseRouteCapability(
 		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name, capabilityCommentMutation,
 	)
 	if err != nil {
 		return nil, err
 	}
+	defer release()
 	if err := s.requireSyncerCapability(*repo, capabilityCommentMutation); err != nil {
 		return nil, err
 	}
@@ -96,12 +98,13 @@ func (s *Handler) editIssueComment(ctx context.Context, input *editIssueCommentI
 }
 
 func (s *Handler) deleteIssueComment(ctx context.Context, input *deleteIssueCommentInput) (*deleteIssueCommentOutput, error) {
-	repo, err := s.resolver.RequireRouteCapability(
+	repo, release, err := s.resolver.LeaseRouteCapability(
 		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name, capabilityCommentMutation,
 	)
 	if err != nil {
 		return nil, err
 	}
+	defer release()
 	if err := s.requireSyncerCapability(*repo, capabilityCommentMutation); err != nil {
 		return nil, err
 	}
@@ -141,12 +144,13 @@ func (s *Handler) lookupIssueID(ctx context.Context, repo *db.Repo, number int) 
 }
 
 func (s *Handler) setIssueLabels(ctx context.Context, input *setIssueLabelsInput) (*setLabelsOutput, error) {
-	repo, names, err := s.resolveRequestedLabelNames(
+	repo, names, release, err := s.resolveRequestedLabelNames(
 		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name, input.Body.LabelNames(),
 	)
 	if err != nil {
 		return nil, err
 	}
+	defer release()
 	issue, err := s.db.GetIssueByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
 		return nil, httpapi.Internal("get issue failed")
@@ -182,30 +186,33 @@ func (s *Handler) resolveRequestedLabelNames(
 	ctx context.Context,
 	provider, platformHost, owner, name string,
 	names []string,
-) (*db.Repo, []string, error) {
-	repo, err := s.resolver.LookupRoute(ctx, provider, platformHost, owner, name)
+) (*db.Repo, []string, func(), error) {
+	repo, release, err := s.resolver.LeaseRouteCapability(
+		ctx, provider, platformHost, owner, name, capabilityReadLabels,
+	)
 	if err != nil {
-		return nil, nil, httpapi.ProviderRouteLookupError(err)
+		return nil, nil, nil, err
 	}
 	caps := s.resolver.CapabilitiesForRepo(*repo)
-	if !httpapi.CapabilityEnabled(caps, capabilityReadLabels) {
-		return nil, nil, httpapi.UnsupportedCapability(*repo, capabilityReadLabels)
-	}
 	if !httpapi.CapabilityEnabled(caps, capabilityLabelMutation) {
-		return nil, nil, httpapi.UnsupportedCapability(*repo, capabilityLabelMutation)
+		release()
+		return nil, nil, nil, httpapi.UnsupportedCapability(*repo, capabilityLabelMutation)
 	}
 	if names == nil {
-		return nil, nil, httpapi.Validation("body.labels", "labels must be an array")
+		release()
+		return nil, nil, nil, httpapi.Validation("body.labels", "labels must be an array")
 	}
 	catalog, freshness, err := s.db.ListRepoLabelCatalog(ctx, repo.ID)
 	if err != nil {
-		return nil, nil, httpapi.Internal("list repo labels failed")
+		release()
+		return nil, nil, nil, httpapi.Internal("list repo labels failed")
 	}
 	if labelCatalogStale(freshness, time.Now().UTC()) && s.syncer != nil {
 		_ = s.syncer.RefreshRepoLabelCatalog(ctx, *repo)
 		catalog, _, err = s.db.ListRepoLabelCatalog(ctx, repo.ID)
 		if err != nil {
-			return nil, nil, httpapi.Internal("list repo labels failed")
+			release()
+			return nil, nil, nil, httpapi.Internal("list repo labels failed")
 		}
 	}
 	catalogByName := make(map[string]struct{}, len(catalog))
@@ -217,13 +224,16 @@ func (s *Handler) resolveRequestedLabelNames(
 	for _, raw := range names {
 		label := strings.TrimSpace(raw)
 		if label == "" {
-			return nil, nil, httpapi.Validation("body.labels", "label names must not be empty")
+			release()
+			return nil, nil, nil, httpapi.Validation("body.labels", "label names must not be empty")
 		}
 		if _, ok := seen[label]; ok {
-			return nil, nil, httpapi.Validation("body.labels", fmt.Sprintf("duplicate label %q", label))
+			release()
+			return nil, nil, nil, httpapi.Validation("body.labels", fmt.Sprintf("duplicate label %q", label))
 		}
 		if _, ok := catalogByName[label]; !ok {
-			return nil, nil, httpapi.NewProblem(
+			release()
+			return nil, nil, nil, httpapi.NewProblem(
 				http.StatusBadRequest, httpapi.CodeValidationError,
 				fmt.Sprintf("label %q is not in the repository label catalog", label),
 				map[string]any{"field": "body.labels", "label": label},
@@ -232,16 +242,17 @@ func (s *Handler) resolveRequestedLabelNames(
 		seen[label] = struct{}{}
 		resolved = append(resolved, label)
 	}
-	return repo, resolved, nil
+	return repo, resolved, release, nil
 }
 
 func (s *Handler) setIssueAssignees(ctx context.Context, input *setIssueAssigneesInput) (*setAssigneesOutput, error) {
-	repo, names, err := s.resolveAssignees(
+	repo, names, release, err := s.resolveAssignees(
 		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name, input.Body.Assignees,
 	)
 	if err != nil {
 		return nil, err
 	}
+	defer release()
 	issue, err := s.db.GetIssueByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
 		return nil, httpapi.Internal("get issue failed")
@@ -269,46 +280,51 @@ func (s *Handler) resolveAssignees(
 	ctx context.Context,
 	provider, platformHost, owner, name string,
 	raw *[]string,
-) (*db.Repo, []string, error) {
-	repo, err := s.resolver.RequireRouteCapability(
+) (*db.Repo, []string, func(), error) {
+	repo, release, err := s.resolver.LeaseRouteCapability(
 		ctx, provider, platformHost, owner, name, capabilityAssigneeMutation,
 	)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if s.syncer == nil {
-		return nil, nil, httpapi.UnsupportedCapability(*repo, capabilityAssigneeMutation)
+		release()
+		return nil, nil, nil, httpapi.UnsupportedCapability(*repo, capabilityAssigneeMutation)
 	}
 	if raw == nil {
-		return nil, nil, httpapi.Validation("body.assignees", "value must be an array of usernames")
+		release()
+		return nil, nil, nil, httpapi.Validation("body.assignees", "value must be an array of usernames")
 	}
 	seen := make(map[string]struct{}, len(*raw))
 	resolved := make([]string, 0, len(*raw))
 	for _, value := range *raw {
 		username := strings.TrimSpace(value)
 		if username == "" {
-			return nil, nil, httpapi.Validation("body.assignees", "usernames must not be empty")
+			release()
+			return nil, nil, nil, httpapi.Validation("body.assignees", "usernames must not be empty")
 		}
 		key := strings.ToLower(username)
 		if _, ok := seen[key]; ok {
-			return nil, nil, httpapi.Validation("body.assignees", fmt.Sprintf("duplicate username %q", username))
+			release()
+			return nil, nil, nil, httpapi.Validation("body.assignees", fmt.Sprintf("duplicate username %q", username))
 		}
 		seen[key] = struct{}{}
 		resolved = append(resolved, username)
 	}
-	return repo, resolved, nil
+	return repo, resolved, release, nil
 }
 
 func (s *Handler) setIssueGitHubState(ctx context.Context, input *githubStateInput) (*githubStateOutput, error) {
 	if input.Body.State != "open" && input.Body.State != "closed" {
 		return nil, httpapi.Validation("body.state", "state must be 'open' or 'closed'", "open", "closed")
 	}
-	repo, err := s.resolver.RequireRouteCapability(
+	repo, release, err := s.resolver.LeaseRouteCapability(
 		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name, capabilityStateMutation,
 	)
 	if err != nil {
 		return nil, err
 	}
+	defer release()
 	issue, err := s.db.GetIssueByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
 		return nil, httpapi.Internal("get issue: " + err.Error())

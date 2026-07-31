@@ -164,7 +164,7 @@ func (s *Handler) applyReviewSuggestions(
 	ctx context.Context,
 	input *applyReviewSuggestionInput,
 ) (*applyReviewSuggestionOutput, error) {
-	repo, err := s.requireRepoRouteCapability(
+	repo, release, err := s.leaseRepoRouteCapability(
 		ctx,
 		input.Provider, input.PlatformHost, input.Owner, input.Name,
 		capabilityReviewSuggestionApplication,
@@ -172,6 +172,7 @@ func (s *Handler) applyReviewSuggestions(
 	if err != nil {
 		return nil, err
 	}
+	defer release()
 	if err := s.requireSyncerCapability(*repo, capabilityReviewSuggestionApplication); err != nil {
 		return nil, err
 	}
@@ -482,7 +483,7 @@ func (s *Handler) publishDiffReviewDraft(
 	ctx context.Context,
 	input *publishDiffReviewDraftInput,
 ) (*actionStatusOutput, error) {
-	repo, err := s.requireRepoRouteCapability(
+	repo, release, err := s.leaseRepoRouteCapability(
 		ctx,
 		input.Provider, input.PlatformHost, input.Owner, input.Name,
 		capabilityReviewDraftMutation,
@@ -490,6 +491,7 @@ func (s *Handler) publishDiffReviewDraft(
 	if err != nil {
 		return nil, err
 	}
+	defer release()
 	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("get pull request failed")
@@ -687,7 +689,7 @@ func (s *Handler) setDiffReviewThreadResolved(
 	if err != nil {
 		return nil, err
 	}
-	repo, err := s.requireRepoRouteCapability(
+	repo, release, err := s.leaseRepoRouteCapability(
 		ctx,
 		input.Provider, input.PlatformHost, input.Owner, input.Name,
 		capabilityReviewThreadResolution,
@@ -695,6 +697,7 @@ func (s *Handler) setDiffReviewThreadResolved(
 	if err != nil {
 		return nil, err
 	}
+	defer release()
 	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("get pull request failed")

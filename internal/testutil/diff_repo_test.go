@@ -1,11 +1,13 @@
 package testutil
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	gitcmd "go.kenn.io/kit/git/cmd"
 )
@@ -54,4 +56,38 @@ func TestSetupDiffRepoDoesNotLeakIntoHostGitDir(t *testing.T) {
 	r.Equal(string(before), string(after),
 		"SetupDiffRepo mutated the host .git/config via leaked GIT_DIR")
 	r.NoError(setupErr, "SetupDiffRepo should succeed under hook-simulated env")
+}
+
+func TestSetupDiffRepoUsesRepositoryIncarnationClonePath(t *testing.T) {
+	r := require.New(t)
+
+	fixtureDir := t.TempDir()
+	database := dbtest.OpenAt(t, filepath.Join(fixtureDir, "test.db"))
+
+	result, err := SetupDiffRepo(t.Context(), fixtureDir, database)
+	r.NoError(err)
+
+	repo, err := database.GetRepoByIdentity(
+		t.Context(),
+		db.GitHubRepoIdentity("github.com", "acme", "widgets"),
+	)
+	r.NoError(err)
+	r.NotNil(repo)
+
+	clonePath, err := result.Manager.RepositoryClone(
+		repo.ID, "github", "github.com", "acme", "widgets",
+	).ClonePath()
+	r.NoError(err)
+	r.Equal(
+		filepath.Join(
+			fixtureDir,
+			"clones",
+			"repository-incarnations",
+			"local",
+			"repositories",
+			fmt.Sprintf("repo-%d.git", repo.ID),
+		),
+		clonePath,
+	)
+	r.FileExists(filepath.Join(clonePath, "HEAD"))
 }

@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	gh "github.com/google/go-github/v89/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/config"
@@ -423,6 +424,346 @@ func TestNotificationsAPIExposesBackgroundSyncStatus(t *testing.T) {
 		}
 		return !body.Sync.Running && strings.Contains(body.Sync.LastError, "notification API unavailable")
 	}, 2*time.Second, 20*time.Millisecond)
+}
+
+func TestNotificationsSyncAPIRoutesRenameThroughConfiguredCredential(
+	t *testing.T,
+) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+	const providerID = "R_stable"
+	database := openTestDB(t)
+	repoID, err := database.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: providerID,
+		Owner:          "acme",
+		Name:           "widget",
+		RepoPath:       "acme/widget",
+	})
+	require.NoError(err)
+	renamedID, err := database.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: providerID,
+		Owner:          "acme-tools",
+		Name:           "renamed-widget",
+		RepoPath:       "acme-tools/renamed-widget",
+	})
+	require.NoError(err)
+	require.Equal(repoID, renamedID)
+
+	var repositoryLookups []string
+	var notificationOpts []ghclient.NotificationListOptions
+	number := 7
+	now := time.Date(2026, 7, 30, 12, 0, 0, 0, time.UTC)
+	provider := &mockGH{
+		getRepositoryFn: func(
+			_ context.Context,
+			owner string,
+			name string,
+		) (*gh.Repository, error) {
+			repositoryLookups = append(repositoryLookups, owner+"/"+name)
+			resolvedOwner := "acme-tools"
+			resolvedName := "renamed-widget"
+			return &gh.Repository{
+				NodeID:   new(providerID),
+				Owner:    &gh.User{Login: &resolvedOwner},
+				Name:     &resolvedName,
+				Archived: new(bool),
+			}, nil
+		},
+		listNotificationsFn: func(
+			_ context.Context,
+			opts ghclient.NotificationListOptions,
+		) ([]ghclient.NotificationThread, bool, error) {
+			notificationOpts = append(notificationOpts, opts)
+			if opts.Participating {
+				return nil, false, nil
+			}
+			return []ghclient.NotificationThread{{
+				ID:           "thread-7",
+				RepoOwner:    "acme-tools",
+				RepoName:     "renamed-widget",
+				SubjectType:  "PullRequest",
+				SubjectTitle: "Review requested",
+				WebURL:       "https://github.com/acme-tools/renamed-widget/pull/7",
+				ItemNumber:   &number,
+				ItemType:     "pr",
+				Reason:       "mention",
+				Unread:       true,
+				UpdatedAt:    now,
+			}}, false, nil
+		},
+	}
+	router, err := ghclient.NewHostRouter("github.com", &ghclient.Route{
+		Key: ghclient.RouteKey{
+			Host:  "github.com",
+			Owner: "acme",
+			Name:  "widget",
+		},
+		Client: provider,
+		ReadIdentity: ghclient.IdentityKey{
+			Host: "github.com", Principal: "user:1",
+		},
+		WriteIdentity: ghclient.IdentityKey{
+			Host: "github.com", Principal: "user:1",
+		},
+	})
+	require.NoError(err)
+	routed, err := ghclient.NewRoutedClient(router)
+	require.NoError(err)
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": routed},
+		database,
+		nil,
+		[]ghclient.RepoRef{{
+			Platform:           "github",
+			PlatformHost:       "github.com",
+			RepoID:             repoID,
+			Owner:              "acme-tools",
+			Name:               "renamed-widget",
+			RepoPath:           "acme-tools/renamed-widget",
+			CredentialOwner:    "acme",
+			CredentialName:     "widget",
+			PlatformExternalID: providerID,
+		}},
+		time.Minute,
+		nil,
+		nil,
+	)
+	t.Cleanup(syncer.Stop)
+	syncer.SetGitHubRouters(map[string]*ghclient.HostRouter{
+		"github.com": router,
+	})
+	syncDone := make(chan struct{}, 1)
+	syncer.SetOnNotificationSyncComplete(func() {
+		select {
+		case syncDone <- struct{}{}:
+		default:
+		}
+	})
+	srv := New(
+		database,
+		syncer,
+		nil,
+		"/",
+		notificationsEnabledConfig(),
+		ServerOptions{},
+	)
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	response, err := http.Post(
+		ts.URL+"/api/v1/notifications/sync",
+		"application/json",
+		nil,
+	)
+	require.NoError(err)
+	defer response.Body.Close()
+	require.Equal(http.StatusAccepted, response.StatusCode)
+	select {
+	case <-syncDone:
+	case <-time.After(2 * time.Second):
+		require.Fail("notification sync did not complete")
+	}
+	assert.Empty(syncer.NotificationSyncStatus().LastError)
+	assert.Equal([]string{"acme/widget"}, repositoryLookups)
+	require.Len(notificationOpts, 2)
+	for _, opts := range notificationOpts {
+		assert.Equal("acme-tools", opts.RepoOwner)
+		assert.Equal("renamed-widget", opts.RepoName)
+		assert.Equal("acme", opts.CredentialOwner)
+		assert.Equal("widget", opts.CredentialName)
+	}
+	items, err := database.ListNotifications(
+		ctx,
+		db.ListNotificationsOpts{State: "all"},
+	)
+	require.NoError(err)
+	require.Len(items, 1)
+	require.NotNil(items[0].RepoID)
+	assert.Equal(repoID, *items[0].RepoID)
+	assert.Equal("acme-tools", items[0].RepoOwner)
+	assert.Equal("renamed-widget", items[0].RepoName)
+}
+
+func TestNotificationsSyncAPIHoldsRepositoryLeaseThroughProviderFetch(
+	t *testing.T,
+) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+	const (
+		oldProviderID = "R_old"
+		newProviderID = "R_new"
+	)
+	database := openTestDB(t)
+	oldRepoID, err := database.UpsertRepoByProviderID(
+		ctx,
+		db.RepoIdentity{
+			Platform:       "github",
+			PlatformHost:   "github.com",
+			PlatformRepoID: oldProviderID,
+			Owner:          "acme",
+			Name:           "widget",
+			RepoPath:       "acme/widget",
+		},
+	)
+	require.NoError(err)
+	fetchStarted := make(chan struct{})
+	continueFetch := make(chan struct{})
+	number := 7
+	now := time.Date(2026, 7, 30, 12, 0, 0, 0, time.UTC)
+	provider := &mockGH{
+		getRepositoryFn: func(
+			context.Context,
+			string,
+			string,
+		) (*gh.Repository, error) {
+			owner := "acme"
+			name := "widget"
+			return &gh.Repository{
+				NodeID:   new(oldProviderID),
+				Owner:    &gh.User{Login: &owner},
+				Name:     &name,
+				Archived: new(bool),
+			}, nil
+		},
+		listNotificationsFn: func(
+			_ context.Context,
+			opts ghclient.NotificationListOptions,
+		) ([]ghclient.NotificationThread, bool, error) {
+			if opts.Participating {
+				return nil, false, nil
+			}
+			close(fetchStarted)
+			<-continueFetch
+			return []ghclient.NotificationThread{{
+				ID:           "thread-7",
+				RepoOwner:    "acme",
+				RepoName:     "widget",
+				SubjectType:  "PullRequest",
+				SubjectTitle: "Review requested",
+				WebURL:       "https://github.com/acme/widget/pull/7",
+				ItemNumber:   &number,
+				ItemType:     "pr",
+				Reason:       "mention",
+				Unread:       true,
+				UpdatedAt:    now,
+			}}, false, nil
+		},
+	}
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": provider},
+		database,
+		nil,
+		[]ghclient.RepoRef{{
+			Platform:           "github",
+			PlatformHost:       "github.com",
+			RepoID:             oldRepoID,
+			Owner:              "acme",
+			Name:               "widget",
+			RepoPath:           "acme/widget",
+			PlatformExternalID: oldProviderID,
+		}},
+		time.Minute,
+		nil,
+		nil,
+	)
+	t.Cleanup(syncer.Stop)
+	syncDone := make(chan struct{}, 1)
+	syncer.SetOnNotificationSyncComplete(func() {
+		select {
+		case syncDone <- struct{}{}:
+		default:
+		}
+	})
+	srv := New(
+		database,
+		syncer,
+		nil,
+		"/",
+		notificationsEnabledConfig(),
+		ServerOptions{},
+	)
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	response, err := http.Post(
+		ts.URL+"/api/v1/notifications/sync",
+		"application/json",
+		nil,
+	)
+	require.NoError(err)
+	defer response.Body.Close()
+	require.Equal(http.StatusAccepted, response.StatusCode)
+	select {
+	case <-fetchStarted:
+	case <-time.After(2 * time.Second):
+		close(continueFetch)
+		require.Fail("notification sync did not reach the provider")
+	}
+
+	writeAttempted := make(chan struct{})
+	restore := database.SetBeforeRepositoryReconciliationWriteLockForTest(
+		func() { close(writeAttempted) },
+	)
+	defer restore()
+	replacementDone := make(chan error, 1)
+	go func() {
+		_, replacementErr := database.UpsertRepoByProviderID(
+			ctx,
+			db.RepoIdentity{
+				Platform:       "github",
+				PlatformHost:   "github.com",
+				PlatformRepoID: newProviderID,
+				Owner:          "acme",
+				Name:           "widget",
+				RepoPath:       "acme/widget",
+			},
+		)
+		replacementDone <- replacementErr
+	}()
+	<-writeAttempted
+
+	replacementCompletedEarly := false
+	select {
+	case replacementErr := <-replacementDone:
+		require.NoError(replacementErr)
+		replacementCompletedEarly = true
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(continueFetch)
+	select {
+	case <-syncDone:
+	case <-time.After(2 * time.Second):
+		require.Fail("notification sync did not complete")
+	}
+	if !replacementCompletedEarly {
+		require.NoError(<-replacementDone)
+	}
+	assert.False(
+		replacementCompletedEarly,
+		"replacement must wait for provider fetch and notification persistence",
+	)
+	active, err := database.GetRepoByIdentity(
+		ctx,
+		db.RepoIdentity{
+			Platform: "github", PlatformHost: "github.com",
+			Owner: "acme", Name: "widget",
+		},
+	)
+	require.NoError(err)
+	require.NotNil(active)
+	assert.NotEqual(oldRepoID, active.ID)
+	assert.Equal(newProviderID, active.PlatformRepoID)
+	watermark, err := database.GetNotificationSyncWatermark(ctx, active.ID)
+	require.NoError(err)
+	assert.Nil(watermark)
 }
 
 func TestGlobalSyncExposesNotificationSyncFailure(t *testing.T) {

@@ -747,7 +747,11 @@ func resolveStartupRepos(
 	registry *platform.Registry,
 	database *db.DB,
 ) []ghclient.RepoRef {
-	seen := make(map[string]struct{})
+	type resolvedCandidate struct {
+		index  int
+		isGlob bool
+	}
+	seen := make(map[string]resolvedCandidate)
 	repos := make([]ghclient.RepoRef, 0, len(cfg.Repos))
 	for _, raw := range cfg.Repos {
 		_, expanded, err := ghclient.ResolveConfiguredRepoWithRegistry(
@@ -760,7 +764,9 @@ func resolveStartupRepos(
 					ctx, database, raw,
 				)
 			} else {
-				expanded = ghclient.FallbackConfiguredRepoRefs(nil, raw)
+				expanded = fallbackExactFromDB(
+					ctx, database, raw,
+				)
 			}
 		}
 		for _, repo := range expanded {
@@ -768,14 +774,65 @@ func resolveStartupRepos(
 				strings.ToLower(repoHost(repo)) + "\x00" +
 				strings.ToLower(repo.Owner) + "\x00" +
 				strings.ToLower(repo.Name)
-			if _, ok := seen[key]; ok {
+			if current, ok := seen[key]; ok {
+				merged, mergedIsGlob := ghclient.MergeConfiguredRepoCandidate(
+					repos[current.index],
+					current.isGlob,
+					repo,
+					raw.HasNameGlob(),
+				)
+				repos[current.index] = merged
+				current.isGlob = mergedIsGlob
+				seen[key] = current
 				continue
 			}
-			seen[key] = struct{}{}
+			seen[key] = resolvedCandidate{
+				index:  len(repos),
+				isGlob: raw.HasNameGlob(),
+			}
 			repos = append(repos, repo)
 		}
 	}
 	return repos
+}
+
+func fallbackExactFromDB(
+	ctx context.Context,
+	database *db.DB,
+	raw config.Repo,
+) []ghclient.RepoRef {
+	if database != nil {
+		repoPath := strings.TrimSpace(raw.RepoPath)
+		if repoPath == "" {
+			repoPath = strings.Trim(raw.Owner+"/"+raw.Name, "/")
+		}
+		stored, err := database.GetRepoByConfiguredRoute(ctx, db.RepoIdentity{
+			Platform:     raw.PlatformOrDefault(),
+			PlatformHost: raw.PlatformHostOrDefault(),
+			Owner:        raw.Owner,
+			Name:         raw.Name,
+			RepoPath:     repoPath,
+		})
+		if err != nil {
+			slog.Warn("fallback exact repo from db", "err", err)
+		} else if stored != nil {
+			return []ghclient.RepoRef{{
+				Platform:           platform.Kind(stored.Platform),
+				RepoID:             stored.ID,
+				Owner:              stored.Owner,
+				Name:               stored.Name,
+				CredentialOwner:    raw.Owner,
+				CredentialName:     raw.Name,
+				PlatformHost:       stored.PlatformHost,
+				RepoPath:           stored.RepoPath,
+				PlatformExternalID: stored.PlatformRepoID,
+				WebURL:             stored.WebURL,
+				CloneURL:           stored.CloneURL,
+				DefaultBranch:      stored.DefaultBranch,
+			}}
+		}
+	}
+	return ghclient.FallbackConfiguredRepoRefs(nil, raw)
 }
 
 func providerHostKey(platformName, host string) string {

@@ -304,12 +304,28 @@ func TestArchiveCLISubcommandsUseGeneratedDaemonContract(t *testing.T) {
 			wantOut:   "[]",
 		},
 		{
+			name: "status incarnation filters", args: []string{"status", "--config", cfgPath,
+				"--repo-id", "41", "--repo-id", "42"},
+			wantMethod: http.MethodGet, wantPath: "/base/api/v1/archive/status",
+			wantQuery: url.Values{"repo_id": {"41", "42"}}, wantOut: "[]",
+		},
+		{
 			name: "report days json", args: []string{"report", "--config", cfgPath, "--days", "2", "--format", "json", "--verbose"},
 			wantMethod: http.MethodGet, wantPath: "/base/api/v1/archive/report",
 			wantQuery: url.Values{
 				"start": {"2026-07-11T15:30:00Z"}, "end": {"2026-07-13T15:30:00Z"}, "verbose": {"true"},
 			},
 			wantOut: `"merge_commit_sha": "abc123"`,
+		},
+		{
+			name: "report incarnation filter", args: []string{"report", "--config", cfgPath,
+				"--days", "2", "--format", "json", "--repo-id", "42"},
+			wantMethod: http.MethodGet, wantPath: "/base/api/v1/archive/report",
+			wantQuery: url.Values{
+				"start": {"2026-07-11T15:30:00Z"}, "end": {"2026-07-13T15:30:00Z"},
+				"repo_id": {"42"},
+			},
+			wantOut: `"merge_requests_merged": 1`,
 		},
 	}
 	for _, tt := range tests {

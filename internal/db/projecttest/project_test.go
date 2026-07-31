@@ -74,6 +74,42 @@ func TestCreateProjectLinkedToRepo(t *testing.T) {
 	assert.Equal("github.com", roundTrip.PlatformIdentity.Host)
 }
 
+func TestProjectLinkedToRetiredRepositoryHasNoPlatformIdentity(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	oldRepoID, err := d.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "repository-old",
+		Owner:          "acme",
+		Name:           "widget",
+		RepoPath:       "acme/widget",
+	})
+	require.NoError(err)
+	project, err := d.CreateProject(ctx, db.CreateProjectInput{
+		DisplayName: "widget",
+		LocalPath:   "/tmp/widget",
+		RepoID:      sql.NullInt64{Int64: oldRepoID, Valid: true},
+	})
+	require.NoError(err)
+	require.NotNil(project.PlatformIdentity)
+
+	_, err = d.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "repository-replacement",
+		Owner:          "acme",
+		Name:           "widget",
+		RepoPath:       "acme/widget",
+	})
+	require.NoError(err)
+
+	after, err := d.GetProjectByID(ctx, project.ID)
+	require.NoError(err)
+	assert.Nil(t, after.PlatformIdentity)
+}
+
 func TestCreateProjectFKSetNullOnRepoDelete(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

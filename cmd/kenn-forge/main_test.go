@@ -260,6 +260,169 @@ func TestResolveStartupReposKeepsExactReposWhenResolutionFails(t *testing.T) {
 	}}, repos)
 }
 
+func TestResolveStartupReposRestoresRenamedExactRepoWhenOffline(t *testing.T) {
+	require := require.New(t)
+	database := dbtest.Open(t)
+	ctx := t.Context()
+	repoID, err := database.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "R_42",
+		Owner:          "acme-tools",
+		Name:           "current-widget",
+		RepoPath:       "acme-tools/current-widget",
+	})
+	require.NoError(err)
+	require.NoError(database.SaveRepoConfiguredRoute(ctx, repoID, db.RepoIdentity{
+		Platform:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "legacy-widget",
+		RepoPath:     "acme/legacy-widget",
+	}))
+	cfg := &config.Config{Repos: []config.Repo{{
+		Owner: "acme",
+		Name:  "legacy-widget",
+	}}}
+
+	repos := resolveStartupRepos(
+		ctx,
+		cfg,
+		mustProviderRegistry(t, nil),
+		database,
+	)
+
+	require.Equal([]ghclient.RepoRef{{
+		Platform:           platform.KindGitHub,
+		RepoID:             repoID,
+		Owner:              "acme-tools",
+		Name:               "current-widget",
+		CredentialOwner:    "acme",
+		CredentialName:     "legacy-widget",
+		PlatformHost:       "github.com",
+		RepoPath:           "acme-tools/current-widget",
+		PlatformExternalID: "R_42",
+	}}, repos)
+}
+
+func TestResolveStartupReposPrefersDirectRouteOverRenameAlias(t *testing.T) {
+	require := require.New(t)
+	reader := mainTestRepositoryReader{
+		kind: platform.KindGitLab,
+		host: "gitlab.example.com",
+		getRepository: func(platform.RepoRef) (platform.Repository, error) {
+			return platform.Repository{
+				Ref: platform.RepoRef{
+					Platform: platform.KindGitLab,
+					Host:     "gitlab.example.com",
+					Owner:    "acme-tools",
+					Name:     "current-widget",
+					RepoPath: "acme-tools/current-widget",
+				},
+				PlatformExternalID: "project-42",
+			}, nil
+		},
+	}
+	cfg := &config.Config{Repos: []config.Repo{
+		{
+			Platform:     "gitlab",
+			PlatformHost: "gitlab.example.com",
+			Owner:        "acme",
+			Name:         "legacy-widget",
+			TokenEnv:     "LEGACY_ROUTE_TOKEN",
+		},
+		{
+			Platform:     "gitlab",
+			PlatformHost: "gitlab.example.com",
+			Owner:        "acme-tools",
+			Name:         "current-widget",
+			TokenEnv:     "CURRENT_ROUTE_TOKEN",
+		},
+	}}
+
+	repos := resolveStartupRepos(
+		t.Context(), cfg, mustProviderRegistry(t, nil, reader), nil,
+	)
+
+	require.Equal([]ghclient.RepoRef{{
+		Platform:     platform.KindGitLab,
+		PlatformHost: "gitlab.example.com",
+		Owner:        "acme-tools",
+		Name:         "current-widget",
+		ConfiguredRoutes: []ghclient.ConfiguredRepoRoute{
+			{Owner: "acme", Name: "legacy-widget", RepoPath: "acme/legacy-widget"},
+			{Owner: "acme-tools", Name: "current-widget", RepoPath: "acme-tools/current-widget"},
+		},
+		RepoPath:           "acme-tools/current-widget",
+		PlatformExternalID: "project-42",
+	}}, repos)
+}
+
+func TestResolveStartupReposPrefersRenamedExactRouteOverGlob(t *testing.T) {
+	canonical := platform.Repository{
+		Ref: platform.RepoRef{
+			Platform: platform.KindGitLab,
+			Host:     "gitlab.example.com",
+			Owner:    "acme-tools",
+			Name:     "current-widget",
+			RepoPath: "acme-tools/current-widget",
+		},
+		PlatformExternalID: "project-42",
+	}
+	reader := mainTestRepositoryReader{
+		kind: platform.KindGitLab,
+		host: "gitlab.example.com",
+		getRepository: func(platform.RepoRef) (platform.Repository, error) {
+			return canonical, nil
+		},
+		listRepositories: func(string) ([]platform.Repository, error) {
+			return []platform.Repository{canonical}, nil
+		},
+	}
+	exact := config.Repo{
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.example.com",
+		Owner:        "acme",
+		Name:         "legacy-widget",
+		TokenEnv:     "EXACT_ROUTE_TOKEN",
+	}
+	glob := config.Repo{
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.example.com",
+		Owner:        "acme-tools",
+		Name:         "*",
+	}
+
+	for _, test := range []struct {
+		name  string
+		repos []config.Repo
+	}{
+		{name: "exact first", repos: []config.Repo{exact, glob}},
+		{name: "glob first", repos: []config.Repo{glob, exact}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			require := require.New(t)
+			repos := resolveStartupRepos(
+				t.Context(),
+				&config.Config{Repos: test.repos},
+				mustProviderRegistry(t, nil, reader),
+				nil,
+			)
+
+			require.Equal([]ghclient.RepoRef{{
+				Platform:           platform.KindGitLab,
+				PlatformHost:       "gitlab.example.com",
+				Owner:              "acme-tools",
+				Name:               "current-widget",
+				CredentialOwner:    "acme",
+				CredentialName:     "legacy-widget",
+				RepoPath:           "acme-tools/current-widget",
+				PlatformExternalID: "project-42",
+			}}, repos)
+		})
+	}
+}
+
 func TestResolveStartupReposFallsBackToDBForOfflineGlobs(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -650,8 +813,10 @@ func mustProviderRegistry(
 }
 
 type mainTestRepositoryReader struct {
-	kind platform.Kind
-	host string
+	kind             platform.Kind
+	host             string
+	getRepository    func(platform.RepoRef) (platform.Repository, error)
+	listRepositories func(string) ([]platform.Repository, error)
 }
 
 func (r mainTestRepositoryReader) Platform() platform.Kind {
@@ -670,6 +835,9 @@ func (r mainTestRepositoryReader) GetRepository(
 	_ context.Context,
 	ref platform.RepoRef,
 ) (platform.Repository, error) {
+	if r.getRepository != nil {
+		return r.getRepository(ref)
+	}
 	return platform.Repository{Ref: ref}, nil
 }
 
@@ -678,6 +846,9 @@ func (r mainTestRepositoryReader) ListRepositories(
 	owner string,
 	_ platform.RepositoryListOptions,
 ) ([]platform.Repository, error) {
+	if r.listRepositories != nil {
+		return r.listRepositories(owner)
+	}
 	return []platform.Repository{{
 		Ref: platform.RepoRef{
 			Platform: r.kind,
@@ -762,7 +933,7 @@ func TestRootNestedHelpExposesCommandFlags(t *testing.T) {
 		{name: "version", args: []string{"version", "--help"}, want: []string{"--json"}},
 		{name: "config read", args: []string{"config", "read", "--help"}, want: []string{"--config"}},
 		{name: "docs add", args: []string{"docs", "add-folder", "--help"}, want: []string{"--config", "--id", "--name", "--daemon"}},
-		{name: "archive report", args: []string{"archive", "report", "--help"}, want: []string{"--days", "--start", "--end", "--format", "--repo"}},
+		{name: "archive report", args: []string{"archive", "report", "--help"}, want: []string{"--days", "--start", "--end", "--format", "--repo", "--repo-id"}},
 		{name: "agent hook run", args: []string{"agent-hook", "run", "--help"}, want: []string{"--agent", "--config", "--source"}},
 		{name: "status", args: []string{"status", "--help"}, want: []string{"--config", "--json"}},
 		{name: "start", args: []string{"start", "--help"}, want: []string{"--background", "--config"}},

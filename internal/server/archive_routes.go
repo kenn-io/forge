@@ -17,6 +17,7 @@ import (
 )
 
 type archiveRepositoryRef struct {
+	RepositoryID int64  `json:"repository_id,omitempty" required:"false"`
 	Provider     string `json:"provider"`
 	PlatformHost string `json:"platform_host"`
 	Owner        string `json:"owner"`
@@ -32,14 +33,16 @@ type archiveMutationBody struct {
 type archiveMutationInput struct{ Body archiveMutationBody }
 
 type archiveStatusInput struct {
-	Repositories []string `query:"repo,explode" doc:"Repeated provider|platform_host/repo_path filters."`
+	Repositories  []string `query:"repo,explode" doc:"Repeated provider|platform_host/repo_path filters."`
+	RepositoryIDs []int64  `query:"repo_id,explode" doc:"Repeated immutable repository incarnation IDs."`
 }
 
 type archiveReportInput struct {
-	Start        string   `query:"start" required:"true" doc:"Inclusive UTC RFC3339 boundary."`
-	End          string   `query:"end" required:"true" doc:"Exclusive UTC RFC3339 boundary."`
-	Repositories []string `query:"repo,explode" doc:"Repeated provider|platform_host/repo_path filters."`
-	Verbose      bool     `query:"verbose"`
+	Start         string   `query:"start" required:"true" doc:"Inclusive UTC RFC3339 boundary."`
+	End           string   `query:"end" required:"true" doc:"Exclusive UTC RFC3339 boundary."`
+	Repositories  []string `query:"repo,explode" doc:"Repeated provider|platform_host/repo_path filters."`
+	RepositoryIDs []int64  `query:"repo_id,explode" doc:"Repeated immutable repository incarnation IDs."`
+	Verbose       bool     `query:"verbose"`
 }
 
 type archiveCoverageResponse struct {
@@ -240,11 +243,22 @@ func (s *Server) listArchiveStatus(
 	if s.archive == nil {
 		return nil, httpapi.ServiceUnavailable("archive service not configured")
 	}
+	if len(input.Repositories) > 0 && len(input.RepositoryIDs) > 0 {
+		return nil, httpapi.Validation("query.repo_id", "repo and repo_id are mutually exclusive")
+	}
+	if err := validateArchiveRepositoryIDs(input.RepositoryIDs); err != nil {
+		return nil, err
+	}
 	refs, err := archiveQueryRefs(input.Repositories)
 	if err != nil {
 		return nil, err
 	}
-	statuses, err := s.archive.Status(ctx, refs)
+	var statuses []archive.Status
+	if len(input.RepositoryIDs) > 0 {
+		statuses, err = s.archive.StatusByRepositoryIDs(ctx, input.RepositoryIDs)
+	} else {
+		statuses, err = s.archive.Status(ctx, refs)
+	}
 	if err != nil {
 		return nil, archiveOperationProblem(err)
 	}
@@ -269,17 +283,33 @@ func (s *Server) getArchiveReport(
 	if !start.Before(end) {
 		return nil, httpapi.Validation("query.end", "end must be after start")
 	}
+	if len(input.Repositories) > 0 && len(input.RepositoryIDs) > 0 {
+		return nil, httpapi.Validation("query.repo_id", "repo and repo_id are mutually exclusive")
+	}
+	if err := validateArchiveRepositoryIDs(input.RepositoryIDs); err != nil {
+		return nil, err
+	}
 	refs, err := archiveQueryRefs(input.Repositories)
 	if err != nil {
 		return nil, err
 	}
 	model, err := s.archive.Report(ctx, archive.ReportOptions{
-		Start: start, End: end, Repositories: refs, Detailed: input.Verbose,
+		Start: start, End: end, Repositories: refs,
+		RepositoryIDs: input.RepositoryIDs, Detailed: input.Verbose,
 	})
 	if err != nil {
 		return nil, archiveOperationProblem(err)
 	}
 	return &archiveReportOutput{Body: archiveReportModelResponse(model)}, nil
+}
+
+func validateArchiveRepositoryIDs(repoIDs []int64) error {
+	for _, repoID := range repoIDs {
+		if repoID <= 0 {
+			return httpapi.Validation("query.repo_id", "repository IDs must be positive")
+		}
+	}
+	return nil
 }
 
 func archiveMutationRefs(body archiveMutationBody) ([]platform.RepoRef, bool, error) {
@@ -349,7 +379,8 @@ func archiveStatusResponses(statuses []archive.Status) []archiveStatusResponse {
 		counts := status.Progress.Counts
 		responses[i] = archiveStatusResponse{
 			Repository: archiveRepositoryRef{
-				Provider: string(status.Repo.Platform), PlatformHost: status.Repo.Host,
+				RepositoryID: status.RepoID,
+				Provider:     string(status.Repo.Platform), PlatformHost: status.Repo.Host,
 				Owner: status.Repo.Owner, Name: status.Repo.Name, RepoPath: status.Repo.RepoPath,
 			},
 			CollectionMode: status.State.CollectionMode, OperatorState: status.State.OperatorState,
@@ -458,7 +489,8 @@ func archiveReportModelResponse(model report.Model) archiveReportResponse {
 
 func archiveReportRepository(ref report.RepositoryRef) archiveRepositoryRef {
 	return archiveRepositoryRef{
-		Provider: ref.Provider, PlatformHost: ref.PlatformHost, Owner: ref.Owner,
+		RepositoryID: ref.RepositoryID,
+		Provider:     ref.Provider, PlatformHost: ref.PlatformHost, Owner: ref.Owner,
 		Name: ref.Name, RepoPath: ref.RepoPath,
 	}
 }

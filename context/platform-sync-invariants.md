@@ -7,17 +7,44 @@ provider interfaces, and the checklist for adding a new provider, read
 
 ## Identity
 
-Repository identity is `(platform, platform_host, owner, name)`, with
-`repo_path` as the provider-canonical full path and provider IDs used for
-reconciliation when available.
+Repository data identity is the provider's stable repository ID scoped by
+`(platform, platform_host)`. Kenn Forge assigns each such identity one immutable
+internal repository ID. `(owner, name)` and `repo_path` are mutable provider
+routing and display coordinates.
 
 - `platform` is the provider kind named in the canonical provider list in
   `CLAUDE.md`.
 - `platform_host` is the normalized host for that provider. Preserve ports.
 - `owner` and `name` are provider-canonical display/config fields.
 - `repo_path` carries the full provider path when `owner/name` is not enough.
-- `platform_repo_id` / provider external IDs are stable provider identities;
-  prefer them for rename reconciliation, but never drop human-readable fields.
+- `platform_repo_id` / provider external IDs are stable provider identities.
+  Provider-owned children, archive state, notification progress, conditional
+  request state, workspaces, and managed Git storage are scoped by the internal
+  repository ID.
+- A stable provider ID follows a rename while preserving the internal
+  repository ID and all repository-owned history. A different stable provider
+  ID observed at an occupied route creates a fresh internal repository
+  incarnation; the prior incarnation and its history are retained but retired
+  from default lists. (`internal/db/queries.go::UpsertRepoByProviderID`)
+- Keep configured lookup coordinates separate from resolved display/routing
+  coordinates; live identity verification always queries the configured route
+  so later path reuse becomes a new incarnation. (`internal/github/sync.go::syncRepoIdentity`)
+- Persist every exact configured-to-resolved route binding across restarts and
+  reconcile aliases from the complete configuration snapshot. Exact settings
+  match configured coordinates; globs match resolved coordinates.
+  (`internal/db/queries.go::ReconcileRepoConfiguredRoutes`)
+- When resolved configuration entries overlap, exact entries beat globs; among
+  exact entries, the current direct route beats a rename alias.
+  (`internal/github/repo_config_resolver.go::PreferConfiguredRepoCandidate`)
+- Publish resolved tracked routes and reconcile archive configuration as one
+  generation-fenced transition; delayed reads cannot restore superseded routes.
+  (`internal/github/sync.go::resolveActiveRepository`)
+- Renaming a stable provider ID into an occupied route retires the destination
+  incarnation without merging its provider-owned data into the source.
+- Every non-empty provider ID written to an existing repository row, including
+  ordinary upserts and provider-metadata refreshes, must pass the same conflict
+  check. Metadata updates may fill an empty stable ID but never replace one.
+  (`internal/db/queries.go::validateRepoProviderIDWriteTx`)
 
 GitLab nested namespaces make `repo_path` mandatory for reliable addressing:
 `group/subgroup/project` has owner `group/subgroup` and name `project`.
@@ -29,10 +56,18 @@ provider-canonical owner/name casing; do not lowercase them like GitLab.
 `repo_path` is normally `owner/name` and is primarily a canonicalization aid for
 URL-parsed config or provider responses.
 
-Do not identify repos, merge requests, issues, events, stars, workspaces, or
-activity rows by owner/name/number alone. Thread the full provider ref through
-requests, sync queues, persistence, and responses. Dedupe keys for items and
-events must be scoped by persisted repo ID or full provider identity.
+Do not identify repositories or repository-owned rows by owner/name/number.
+Thread the full provider route through requests and sync queues, but scope
+persistence, caches, archives, notifications, workspaces, and item/event dedupe
+by the persisted internal repository ID.
+Background work retaining a mutable route must reauthorize its active internal ID
+and hold authorization through provider/Git access and persistence; queued routes
+can outlive ownership. (`internal/db/db.go::LockRepositoryReconciliationRead`)
+Provider mutations hold a capability-aware active-repository lease through the
+provider write and direct local persistence, releasing it before any nested sync
+acquires its own lease. (`internal/server/httpapi/repository_resolver.go::RepositoryResolver.LeaseRouteCapability`)
+Provider-owned parent and mutation-result writes must reject a retired internal
+repository ID. (`internal/db/queries.go::requireActiveRepoTx`)
 
 ## Provider Hosts And Tokens
 
@@ -86,9 +121,14 @@ Managed Git authorization is selected by full `(platform, platform_host, owner,
 name)` identity. GitHub smart HTTP uses mutation/user candidates and never an
 App installation token. Exact repository routes beat owner routes, which beat
 the unscoped host fallback. Non-GitHub providers use their provider-host
-fallback. Clone storage and singleflight keys must partition providers sharing a
-host, and authenticated workspace operations must validate the effective origin
-fetch and push destinations before resolving a credential.
+fallback. Repository-owned clone storage is selected by internal repository ID
+through an immutable handle; mutable routes select only the remote and
+credential. (`internal/gitclone/clone.go::Manager.RepositoryClone`)
+Do not adopt route-keyed legacy clones into repository-owned storage without an
+explicit association to the same internal repository ID; path identity alone
+cannot distinguish a rename from route reuse.
+Authenticated workspace operations must validate the effective origin fetch and
+push destinations before resolving a credential.
 
 Minimum read scope should cover repository metadata, merge requests or pull
 requests, issues, comments, commits, tags, releases, and CI/status data. Write
@@ -109,6 +149,13 @@ registry helpers return typed errors for missing providers or capabilities.
   the operation context (`internal/platform/gitlab/client.go::NewClient`).
 - Resolve opaque provider repo IDs by `repo_path` before numeric-only operations
   (`internal/platform/gitlab/client.go::projectScopedArg`).
+- A full repository sync must use the live stable ID when the provider supports
+  repository reads, even when configuration already carries an ID. Providers
+  that explicitly do not support repository reads may use a configured stable
+  ID; a claimed repository read that returns no stable ID fails closed.
+  Repositories whose index sync fails are excluded from that run's detail drain.
+  (`internal/github/sync.go::syncRepoIdentity`,
+  `internal/github/sync.go::reposWithSuccessfulIndexSync`)
 - `priority_repo` reorders a full run; `only_repo` restricts every repo-derived
   phase and must not delay full-run cadence. Resolve both by full identity, and
   never fall back from invalid exclusive scope. (`internal/github/sync.go::runOnce`)
@@ -179,17 +226,18 @@ registry helpers return typed errors for missing providers or capabilities.
   path.
 - Provider-supplied web URLs, clone URLs, default branches, platform ids, and
   external ids should be persisted when available instead of reconstructed from
-  host/owner/name. Every settings-refresh branch must write this metadata:
-  repo resolution pre-fills the platform repo id, so the identity sync never
-  re-resolves the repository and whichever refresh branch runs is the row's
-  only metadata writer. A branch that skips the write leaves default_branch
-  empty forever, which silently degrades the worktree diff sampler to a bare
-  HEAD diff (0/0 sidebar stats).
+  host/owner/name. Every settings-refresh branch must write this metadata; a
+  branch that skips the write leaves `default_branch` empty and silently
+  degrades branch activity. (`internal/github/sync.go::refreshRepoSettings`)
 - Child datasets and detail/CI/diff freshness writes are fenced to the parent snapshot revision. Complete comments and inline review sets replace; submitted reviews remain additive. (`internal/db/queries_snapshot_children.go::CommitMergeRequestChildSnapshot`)
 
 ## Historical Archive
 
-- Archive is a scheduling and progress mode over normal sync, not a second sync engine; completeness is repository and item progress scoped by full repository identity. (`internal/db/queries_archive.go::GetArchiveProgress`)
+- Archive is a scheduling and progress mode over normal sync, not a second sync
+  engine; completeness is repository and item progress scoped by internal
+  repository ID. A replacement incarnation starts fresh discovery while the
+  retired archive remains available for explicit historical inspection.
+  (`internal/db/queries_archive.go::GetArchiveProgress`)
 - Created-order inventory calls require the historical capability; updated-order maintenance traversal does not. Each returns one bounded identity page with an advancing opaque cursor or explicit exhaustion. (`internal/platform/reader_validation.go::pageReaderValidation.prepare`)
 - Hydration admits one item and invokes canonical item sync; only a successful complete sync records an archive outcome. Do not add archive-specific content paths. (`internal/archive/hydrate.go::hydrateItem`)
 - Only parent lookups explicitly classified as removed, moved, or inaccessible are terminal. Generic and child-dataset not-found responses remain retries; a successful non-GitHub feature-metadata confirmation doubles as repository-accessibility evidence and must not be repeated before marking the parent absent. Canonical item content stays untouched. (`internal/archive/hydrate.go::archiveTerminalSyncOutcome`, `internal/platform/gitealike/feature_disabled.go::Provider.repositoryItemLookupError`,
@@ -314,6 +362,9 @@ partial review dataset or report an incomplete explicit sync as successful
 Repository import requests and route/query shapes should carry
 `provider`, `platform_host`, and either `repo_path` or exact `owner/name`.
 
+- Repository imports must serialize read-modify-save with config reload
+  publication; an older watcher snapshot must not overwrite a later import.
+  (`internal/server/repo_import_handlers.go::Server.applyBulkExactRepos`)
 - Provider-aware item routes use `/pulls/{provider}/{owner}/{name}/{number}`,
   `/issues/{provider}/{owner}/{name}/{number}`, and `/repo/{provider}/{owner}/{name}`.
 - Non-default hosts use the `/host/{platform_host}/...` route prefix.

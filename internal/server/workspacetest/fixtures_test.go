@@ -29,6 +29,7 @@ type workspaceServerFixture struct {
 	server           *server.Server
 	client           *apiclient.Client
 	database         *db.DB
+	repoID           int64
 	bare             string
 	remote           string
 	agentActivityDir string
@@ -87,7 +88,16 @@ func setupWorkspaceServerFixture(
 
 	bareDir := filepath.Join(dir, "clones")
 	require.NoError(t, os.MkdirAll(bareDir, 0o755))
-	bare := filepath.Join(bareDir, "github.com", "acme", "widget.git")
+	repoID, err := database.UpsertRepo(
+		t.Context(),
+		db.GitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(t, err)
+	clones := gitclone.New(bareDir, nil)
+	bare, err := clones.RepositoryClone(
+		repoID, "github", "github.com", "acme", "widget",
+	).ClonePath()
+	require.NoError(t, err)
 	runGit(t, dir, "clone", "--bare", remote, bare)
 	runGit(
 		t, bare, "remote", "set-url", "origin",
@@ -98,7 +108,6 @@ func setupWorkspaceServerFixture(
 		"url."+remote+".insteadOf", "https://github.com/acme/widget.git",
 	)
 
-	clones := gitclone.New(bareDir, nil)
 	worktreeDir := filepath.Join(dir, "worktrees")
 	repos := []ghclient.RepoRef{
 		{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
@@ -139,6 +148,7 @@ func setupWorkspaceServerFixture(
 		server:           srv,
 		client:           client,
 		database:         database,
+		repoID:           repoID,
 		bare:             bare,
 		remote:           remote,
 		agentActivityDir: filepath.Join(dir, "agent-activity"),

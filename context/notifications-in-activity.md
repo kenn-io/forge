@@ -37,12 +37,19 @@ Notifications are user-scoped at provider level but repo-scoped in kenn-forge.
 Rules:
 
 - Persist notification item identity as `(platform, platform_host, platform_notification_id)`.
-- Treat repository identity as `(platform, platform_host, repo_owner, repo_name)` everywhere notifications are filtered, joined, or summarized.
+- Bind each notification to the active internal repository ID when its provider
+  route is known. Keep provider/host/owner/name as routing and display fields,
+  not repository ownership.
 - `platform` is required. Blank provider/platform values are errors, not implicit GitHub defaults.
 - Show notifications only for current monitored repo set from config/syncer repo refs.
 - Historical notifications for removed repos may stay in SQLite but must not appear in `unread`, `active`, `read`, `done`, or `all` unless future explicit `include_unmonitored` contract exists.
-- `repo_id` is enrichment/optimization, not visibility authority.
-- Sync watermarks are keyed by full repository identity `(platform, platform_host, repo_owner, repo_name)`, never by host alone.
+- `repo_id` is the visibility authority. Notifications without a resolved
+  repository ID remain hidden until an active repository adopts them.
+- Sync watermarks are keyed by internal repository ID, never by host or mutable
+  route alone.
+- After a same-ID repository rename, provider notification filters use the
+  current owner/name while exact credential selection retains the configured
+  pre-rename owner/name until configuration adopts the new route.
 - Repo facets and filters must be host-qualified when host ambiguity is possible, e.g. `github.com/acme/widget`.
 
 ## Persistence Shape
@@ -67,7 +74,14 @@ Rules:
 
 - `done_at` and `done_reason` remain kenn-forge-local triage state.
 - `source_*` fields track provider-side activity and acknowledgement propagation state.
-- The notification schema ships as a single migration, `000035_notifications.*`; do not split future assumptions across deleted branch-only migrations. Branch databases that already applied the abandoned notification migration at version 34 are repaired at startup by ensuring the current `000034_fleet_integration` artifacts exist before the database is accepted. Migration `000040` rebuilt the watermark table to per-repository identity and retired the host-wide `sync_cursor`/`tracked_repos_key` columns; old host-wide rows are dropped because they cannot be attributed to a repository.
+- The notification schema ships as a single migration,
+  `000035_notifications.*`; do not split future assumptions across deleted
+  branch-only migrations. Branch databases that already applied the abandoned
+  notification migration at version 34 are repaired at startup by ensuring the
+  current `000034_fleet_integration` artifacts exist before the database is
+  accepted. Migration `000040` retired the host-wide
+  `sync_cursor`/`tracked_repos_key` columns. Migration `000045` keys watermarks
+  by internal repository ID and discards the prior path-keyed cache.
 
 ## Triage State Model
 
@@ -109,6 +123,9 @@ Rules:
 - The registry's `NotificationReader`/`NotificationMutator` accessors gate on the declared capability flags, not interface satisfaction, because stubs satisfy the interfaces.
 - The sync engine intentionally requires BOTH `ReadNotifications` and `NotificationMutation` to select a provider: listing and read-ack propagation are treated as one feature today. A future read-only provider (list without upstream mark-read) would split this — select listing on `ReadNotifications` and propagation on `NotificationMutation` separately. Until such a provider exists the coupling keeps the path simple.
 - Propagation workers must revalidate queued generation before calling provider.
+- Propagation resolves the active repository by queued `repo_id` and holds its
+  incarnation stable through refetch, mark-read, and local persistence.
+  (`internal/github/notifications_sync.go::Syncer.ProcessQueuedNotificationReads`)
 - Stale queued work must not mark newer provider activity read.
 - After successful propagation, stale GitHub sync payloads with `unread=true` and `source_updated_at <= source_ack_generation_at` must preserve local read state.
 - Newer unread GitHub activity clears queued/synced/error propagation fields and reactivates row.

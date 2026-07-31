@@ -1457,9 +1457,10 @@ func buildAppState(
 	rootHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost &&
 			r.URL.Path == "/__e2e/issue-workspace/reused-branch" {
-			clonePath, err := diffRepo.Manager.ClonePath(
+			clonePath, err := diffRepo.Manager.RepositoryClone(
+				diffRepo.RepositoryID,
 				"github", "github.com", "acme", "widgets",
-			)
+			).ClonePath()
 			if err != nil {
 				http.Error(w, "resolve fixture clone", http.StatusInternalServerError)
 				return
@@ -1496,9 +1497,10 @@ func buildAppState(
 			forkSnapshot := *mr
 			forkSnapshot.HeadRepoCloneURL = "https://github.com/forker/widgets.git"
 			forkSnapshot.UpdatedAt = time.Now().UTC()
-			clonePath, err := diffRepo.Manager.ClonePath(
+			clonePath, err := diffRepo.Manager.RepositoryClone(
+				diffRepo.RepositoryID,
 				"github", "github.com", "acme", "widgets",
-			)
+			).ClonePath()
 			if err != nil {
 				http.Error(w, "resolve fixture clone", http.StatusInternalServerError)
 				return

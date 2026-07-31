@@ -45,6 +45,30 @@ func (r testRouteResolver) FallbackSource(host string) tokenauth.Source {
 	return r.fallback[host]
 }
 
+func TestRepositoryCredentialAliasKeepsRenamedCloneOnConfiguredRoute(
+	t *testing.T,
+) {
+	assert := assert.New(t)
+	configured := &mutableTestTokenSource{token: "configured-token"}
+	mgr := New(t.TempDir(), testRouteResolver{
+		repos: map[string]tokenauth.Source{
+			"github.com/acme/widget": configured,
+		},
+	})
+	mgr.ReplaceCredentialAliases([]CredentialAlias{{
+		Platform: "github", Host: "github.com",
+		Owner: "acme-tools", Name: "renamed-widget",
+		CredentialOwner: "acme", CredentialName: "widget",
+	}})
+
+	assert.Same(
+		configured,
+		mgr.sourceForRepo(
+			"github", "github.com", "acme-tools", "renamed-widget",
+		),
+	)
+}
+
 func TestGitOwnerRoutesSelectAndInvalidateOnlyTheirSource(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

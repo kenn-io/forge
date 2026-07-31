@@ -64,9 +64,31 @@ func (s *Handler) runWorkspaceBranchAction(
 	if err != nil {
 		return nil, err
 	}
+	if summary.RepoID == nil || *summary.RepoID <= 0 || s.resolver == nil {
+		return nil, httpapi.Conflict(
+			httpapi.CodeConflict,
+			"workspace repository incarnation is unavailable",
+			nil,
+		)
+	}
+	leaseCtx, repo, release, err := s.resolver.LeaseActiveRepositoryContext(
+		ctx, *summary.RepoID,
+	)
+	if err != nil {
+		return nil, httpapi.Internal("lease workspace repository: " + err.Error())
+	}
+	if repo == nil {
+		return nil, httpapi.Conflict(
+			httpapi.CodeConflict,
+			"workspace repository incarnation is retired",
+			nil,
+		)
+	}
+	defer release()
+	ctx = leaseCtx
 	if err := action(
-		ctx, summary.Platform, summary.PlatformHost,
-		summary.RepoOwner, summary.RepoName,
+		ctx, repo.Platform, repo.PlatformHost,
+		repo.Owner, repo.Name,
 		summary.WorktreePath,
 	); err != nil {
 		return nil, workspaceBranchActionProblem(err)

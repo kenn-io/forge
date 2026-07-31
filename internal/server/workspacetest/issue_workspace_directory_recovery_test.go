@@ -1,6 +1,7 @@
 package workspacetest
 
 import (
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -23,7 +24,8 @@ func TestIssueWorkspaceRecoversExpectedDirectory(t *testing.T) {
 	branch := "kenn-forge/issue-7"
 	expectedPath := filepath.Join(
 		fixture.worktreeDir,
-		"github", "github.com", "acme", "widget", "issue-7",
+		"github", "github.com", "acme", "widget",
+		fmt.Sprintf("repo-%d", fixture.repoID), "issue-7",
 	)
 	runGit(
 		t, fixture.bare,
@@ -163,7 +165,8 @@ func TestIssueWorkspaceDirectoryRecoveryReasons(t *testing.T) {
 			seedIssue(t, fixture.database, "acme", "widget", 7, "open")
 			expectedPath := filepath.Join(
 				fixture.worktreeDir,
-				"github", "github.com", "acme", "widget", "issue-7",
+				"github", "github.com", "acme", "widget",
+				fmt.Sprintf("repo-%d", fixture.repoID), "issue-7",
 			)
 			tt.prepare(t, fixture, expectedPath)
 
@@ -209,7 +212,8 @@ func TestIssueWorkspaceConflictRejectsAlternateBranchForExistingDirectory(t *tes
 	branch := "kenn-forge/issue-7-original-title"
 	expectedPath := filepath.Join(
 		fixture.worktreeDir,
-		"github", "github.com", "acme", "widget", "issue-7",
+		"github", "github.com", "acme", "widget",
+		fmt.Sprintf("repo-%d", fixture.repoID), "issue-7",
 	)
 	runGit(t, fixture.bare, "worktree", "add", expectedPath, "-b", branch, "main")
 

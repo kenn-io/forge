@@ -38,6 +38,7 @@ func (d *DB) ListWorktreesForBranchMatch(ctx context.Context) ([]WorktreeRepoRef
 		JOIN forge_projects p ON p.id = w.project_id
 		JOIN forge_repos r ON r.id = p.repo_id
 		WHERE w.branch != ''
+		  AND r.retired_at IS NULL
 		  AND w.branch != 'detached'
 		  AND w.branch NOT LIKE 'detached/%'
 		  AND w.is_stale = 0

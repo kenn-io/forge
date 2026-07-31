@@ -130,25 +130,9 @@ func (s *Server) buildLocalSettingsResponse() settingsResponse {
 func matchedRepoCount(
 	raw config.Repo, tracked []ghclient.RepoRef,
 ) int {
-	host := raw.PlatformHostOrDefault()
-	provider := raw.PlatformOrDefault()
 	count := 0
 	for _, repo := range tracked {
-		if !strings.EqualFold(repoProvider(repo), provider) ||
-			!samePlatformHost(repo.PlatformHost, host) ||
-			!strings.EqualFold(repo.Owner, raw.Owner) {
-			continue
-		}
-		if raw.HasNameGlob() {
-			matched, _ := path.Match(
-				strings.ToLower(raw.Name),
-				strings.ToLower(repo.Name),
-			)
-			if matched {
-				count++
-			}
-		} else if strings.EqualFold(trackedRepoPath(repo), configRepoPath(raw)) ||
-			strings.EqualFold(repo.Name, raw.Name) {
+		if repoMatchesConfig(repo, raw) {
 			count++
 		}
 	}
@@ -245,11 +229,20 @@ func (s *Server) worktreeBasePathForRepo(
 	ctx context.Context, provider, platformHost, owner, name string,
 ) (string, bool, error) {
 	if s.cfg != nil {
-		target := config.Repo{
-			Platform:     provider,
+		target := ghclient.RepoRef{
+			Platform:     platform.Kind(provider),
 			PlatformHost: platformHost,
 			Owner:        owner,
 			Name:         name,
+			RepoPath:     strings.Trim(owner+"/"+name, "/"),
+		}
+		if s.syncer != nil {
+			for _, tracked := range s.syncer.TrackedRepos() {
+				if sameTrackedRoute(tracked, target) {
+					target = tracked
+					break
+				}
+			}
 		}
 		configuredPath := func() string {
 			s.cfgMu.Lock()
@@ -258,7 +251,7 @@ func (s *Server) worktreeBasePathForRepo(
 				if repo.HasNameGlob() || strings.TrimSpace(repo.WorktreeBasePath) == "" {
 					continue
 				}
-				if sameConfiguredRepo(repo, target) {
+				if repoMatchesConfig(target, repo) {
 					return repo.WorktreeBasePath
 				}
 			}
@@ -301,19 +294,35 @@ func repoMatchesConfig(
 ) bool {
 	host := raw.PlatformHostOrDefault()
 	if !strings.EqualFold(repoProvider(repo), raw.PlatformOrDefault()) ||
-		!samePlatformHost(repo.PlatformHost, host) ||
-		!strings.EqualFold(repo.Owner, raw.Owner) {
+		!samePlatformHost(repo.PlatformHost, host) {
 		return false
 	}
 	if raw.HasNameGlob() {
+		if !strings.EqualFold(repo.Owner, raw.Owner) {
+			return false
+		}
 		matched, _ := path.Match(
 			strings.ToLower(raw.Name),
 			strings.ToLower(repo.Name),
 		)
 		return matched
 	}
+	if repo.CredentialOwner != "" && repo.CredentialName != "" {
+		configuredPath := strings.Trim(
+			repo.CredentialOwner+"/"+repo.CredentialName,
+			"/",
+		)
+		return strings.EqualFold(configuredPath, configRepoPath(raw))
+	}
 	return strings.EqualFold(trackedRepoPath(repo), configRepoPath(raw)) ||
-		strings.EqualFold(repo.Name, raw.Name)
+		(strings.EqualFold(repo.Owner, raw.Owner) &&
+			strings.EqualFold(repo.Name, raw.Name))
+}
+
+func sameTrackedRoute(left, right ghclient.RepoRef) bool {
+	return strings.EqualFold(repoProvider(left), repoProvider(right)) &&
+		samePlatformHost(left.PlatformHost, right.PlatformHost) &&
+		strings.EqualFold(trackedRepoPath(left), trackedRepoPath(right))
 }
 
 func configRepoPath(raw config.Repo) string {

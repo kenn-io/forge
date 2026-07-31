@@ -3,6 +3,7 @@ package db
 import (
 	"cmp"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -53,6 +54,8 @@ type Repo struct {
 	LabelCatalogSyncedAt  *time.Time
 	LabelCatalogCheckedAt *time.Time
 	LabelCatalogSyncError string
+	RetiredAt             *time.Time
+	RetiredReplacementID  *int64
 	CreatedAt             time.Time
 }
 
@@ -70,6 +73,27 @@ type RepoIdentity struct {
 	OwnerKey       string
 	NameKey        string
 	RepoPathKey    string
+}
+
+var ErrRepositoryRetired = errors.New("repository incarnation is retired")
+
+// RepoIdentityConflictError reports an attempted reconciliation into a path
+// already owned by a different stable provider repository.
+type RepoIdentityConflictError struct {
+	ExistingRepoID int64
+	Existing       RepoIdentity
+	Incoming       RepoIdentity
+}
+
+func (e *RepoIdentityConflictError) Error() string {
+	return fmt.Sprintf(
+		"repository identity conflict for %s|%s/%s: stored provider id %q, incoming provider id %q",
+		e.Incoming.Platform,
+		e.Incoming.PlatformHost,
+		e.Incoming.RepoPath,
+		e.Existing.PlatformRepoID,
+		e.Incoming.PlatformRepoID,
+	)
 }
 
 type RepoProviderMetadata struct {
@@ -1014,10 +1038,7 @@ type NotificationSummary struct {
 // identity so one unavailable credential route cannot block watermark
 // advancement for healthy repositories sharing the host.
 type NotificationSyncWatermark struct {
-	Platform             string
-	PlatformHost         string
-	RepoOwner            string
-	RepoName             string
+	RepoID               int64
 	LastSuccessfulSyncAt time.Time
 	LastFullSyncAt       *time.Time
 }
@@ -1208,10 +1229,13 @@ func kataWorkspaceItemKeyPart(value string) string {
 // pull request, provider issue, or external Kata task.
 type Workspace struct {
 	ID                 string
+	RepoID             *int64
 	Platform           string
 	PlatformHost       string
 	RepoOwner          string
 	RepoName           string
+	LegacyCloneOwner   string
+	LegacyCloneName    string
 	ItemType           string
 	ItemNumber         int
 	ItemKey            string

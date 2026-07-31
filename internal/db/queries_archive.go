@@ -694,21 +694,25 @@ func listArchiveRepoStates(
 	repoIDs []int64,
 ) ([]ArchiveRepoState, error) {
 	query := `
-		SELECT repo_id, collection_mode, operator_state,
-			initial_started_at, initial_completed_at,
-			maintenance_watermark, maintenance_succeeded_at,
-			prompt_scan_started_at, prompt_since,
-			issues_coverage, merge_requests_coverage,
-			comments_coverage, reviews_coverage, inline_comments_coverage,
-			last_error_code, last_error_detail, next_retry_at,
-			created_at, updated_at
-		FROM forge_archive_repos`
+		SELECT ar.repo_id, ar.collection_mode, ar.operator_state,
+			ar.initial_started_at, ar.initial_completed_at,
+			ar.maintenance_watermark, ar.maintenance_succeeded_at,
+			ar.prompt_scan_started_at, ar.prompt_since,
+			ar.issues_coverage, ar.merge_requests_coverage,
+			ar.comments_coverage, ar.reviews_coverage,
+			ar.inline_comments_coverage,
+			ar.last_error_code, ar.last_error_detail, ar.next_retry_at,
+			ar.created_at, ar.updated_at
+		FROM forge_archive_repos ar`
 	var args []any
 	if len(repoIDs) > 0 {
-		query += " WHERE repo_id IN (" + sqlPlaceholders(len(repoIDs)) + ")"
+		query += " WHERE ar.repo_id IN (" + sqlPlaceholders(len(repoIDs)) + ")"
 		args = archiveRepoIDArgs(repoIDs)
+	} else {
+		query += ` JOIN forge_repos r ON r.id = ar.repo_id
+			WHERE r.retired_at IS NULL`
 	}
-	query += " ORDER BY repo_id"
+	query += " ORDER BY ar.repo_id"
 	rows, err := queryer.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list archive repo states: %w", err)

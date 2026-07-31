@@ -35,9 +35,9 @@ embedder protocol for arbitrary host state.
   - Directory recovery accepts no path and applies only when the workspace row
     is absent; an occupied deterministic path conflicts with its actual branch,
     and choosing another branch cannot relocate it (`internal/workspace/manager.go::Manager.CreateIssue`).
-  - Recovery validates repository provenance before persistence and again during
-    setup; the managed clone's deterministic path is not identity without a
-    matching origin (`internal/workspace/manager.go::Manager.existingWorktreeUsesManagedClone`).
+  - Recovery accepts incarnation-scoped and pre-incarnation managed clones only
+    after validating the repository ID, Git common directory, origin, linked
+    worktree, and branch (`internal/workspace/manager.go::Manager.existingWorkspaceWorktreeProvenance`).
   - Pending recovery uses a Git-invalid branch marker and must adopt that
     directory without create/cleanup fallback; retry/delete preserve it until setup
     publishes the real branch and ready status (`internal/workspace/manager.go::workspaceRequiresExistingDirectory`).
@@ -206,6 +206,12 @@ Persisted workspace `worktree_path` values should be absolute. Workspace setup
 runs `git worktree add` from the managed clone or configured base checkout, so
 relative paths would be interpreted relative to that Git directory while later
 API reads interpret them relative to the kenn-forge server process.
+Workspace setup authorizes the workspace's stored repository ID and holds that
+incarnation stable through clone, worktree, terminal, and persistence side
+effects (`internal/workspace/manager.go::Manager.SetupWithWorktreeBasePath`).
+Networked workspace branch actions likewise lease the stored repository ID;
+retired workspaces remain available only for local inspection and cleanup
+(`internal/server/workspaceapi/workspace_branch_actions.go::Handler.runWorkspaceBranchAction`).
 
 Keep Git worktree and merge-request lifecycle semantics in
 `go.kenn.io/kit/git/managed`; Kenn Forge supplies application policy instead of

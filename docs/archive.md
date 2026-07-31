@@ -24,7 +24,9 @@ There is no manual cursor-reset command. Invalid cursors, provider page limits, 
 
 ## Status and coverage
 
-`kenn-forge archive status` reports repository-scoped progress using the full provider identity. Common states are:
+`kenn-forge archive status` reports repository-scoped progress using the full
+provider identity. Use `--repo-id` to inspect a retained historical repository
+incarnation that no longer owns its former route. Common states are:
 
 - **current** — supported inventory and item hydration are complete;
 - **partial** — one or more inventory scopes or items are unsupported or terminally blocked;
@@ -37,7 +39,12 @@ Error details are sanitized. Removing a repository from configuration pauses its
 
 ## Reports
 
-`kenn-forge archive report` reads SQLite for a UTC time range and optional repository filters. Summary output aggregates activity and contributors. Verbose output includes individual records. JSON output is available for automation.
+`kenn-forge archive report` reads SQLite for a UTC time range and optional
+repository filters. Route filters select the current repository at a path;
+`--repo-id` selects one immutable repository incarnation, including retained
+history after route reuse. Summary output aggregates activity and contributors.
+Verbose output includes individual records. JSON output is available for
+automation.
 
 Reports reflect supported coverage. Check archive status before treating a report as complete.
 

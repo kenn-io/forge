@@ -20,7 +20,13 @@ func (m *Manager) ResolveDefaultBranch(
 	if err != nil {
 		return "", "", err
 	}
+	return m.resolveDefaultBranchInDir(ctx, dir, preferred)
+}
 
+func (m *Manager) resolveDefaultBranchInDir(
+	ctx context.Context,
+	dir, preferred string,
+) (branch string, ref string, err error) {
 	preferred = strings.TrimSpace(preferred)
 	if preferred != "" {
 		for _, candidate := range branchActivityRefCandidates(preferred) {
@@ -50,6 +56,18 @@ func (m *Manager) ResolveDefaultBranch(
 	return branch, sha, nil
 }
 
+// ResolveDefaultBranch resolves this repository incarnation's default branch.
+func (r RepositoryClone) ResolveDefaultBranch(
+	ctx context.Context,
+	preferred string,
+) (branch string, ref string, err error) {
+	dir, err := r.ClonePath()
+	if err != nil {
+		return "", "", err
+	}
+	return r.manager.resolveDefaultBranchInDir(ctx, dir, preferred)
+}
+
 func defaultBranchNameForResolvedCandidate(preferred, candidate string) string {
 	if branch, ok := strings.CutPrefix(preferred, "origin/"); ok &&
 		branch != "" &&
@@ -69,11 +87,30 @@ func (m *Manager) ResolveRef(
 	if err != nil {
 		return "", err
 	}
+	return m.resolveRefInClone(ctx, dir, ref)
+}
+
+func (m *Manager) resolveRefInClone(
+	ctx context.Context,
+	dir, ref string,
+) (string, error) {
 	refName, err := m.resolveBranchActivityRef(ctx, dir, ref)
 	if err != nil {
 		return "", err
 	}
 	return m.resolveRefInDir(ctx, dir, refName)
+}
+
+// ResolveRef resolves a branch, ref, or SHA in this repository incarnation.
+func (r RepositoryClone) ResolveRef(
+	ctx context.Context,
+	ref string,
+) (string, error) {
+	dir, err := r.ClonePath()
+	if err != nil {
+		return "", err
+	}
+	return r.manager.resolveRefInClone(ctx, dir, ref)
 }
 
 // ResolveCommit resolves objectID directly to a commit SHA without branch
@@ -89,6 +126,18 @@ func (m *Manager) ResolveCommit(
 	return m.resolveRefInDir(ctx, dir, objectID)
 }
 
+// ResolveCommit resolves an object directly in this repository incarnation.
+func (r RepositoryClone) ResolveCommit(
+	ctx context.Context,
+	objectID string,
+) (string, error) {
+	dir, err := r.ClonePath()
+	if err != nil {
+		return "", err
+	}
+	return r.manager.resolveRefInDir(ctx, dir, objectID)
+}
+
 // IsAncestor reports whether ancestor is reachable from descendant.
 func (m *Manager) IsAncestor(
 	ctx context.Context,
@@ -98,7 +147,14 @@ func (m *Manager) IsAncestor(
 	if err != nil {
 		return false, err
 	}
-	_, err = m.git(ctx, dir,
+	return m.isAncestorInDir(ctx, dir, ancestor, descendant)
+}
+
+func (m *Manager) isAncestorInDir(
+	ctx context.Context,
+	dir, ancestor, descendant string,
+) (bool, error) {
+	_, err := m.git(ctx, dir,
 		"merge-base", "--is-ancestor", ancestor, descendant,
 	)
 	if err == nil {
@@ -108,6 +164,18 @@ func (m *Manager) IsAncestor(
 		return false, nil
 	}
 	return false, fmt.Errorf("check ancestor %s..%s: %w", ancestor, descendant, err)
+}
+
+// IsAncestor reports ancestry inside this repository incarnation.
+func (r RepositoryClone) IsAncestor(
+	ctx context.Context,
+	ancestor, descendant string,
+) (bool, error) {
+	dir, err := r.ClonePath()
+	if err != nil {
+		return false, err
+	}
+	return r.manager.isAncestorInDir(ctx, dir, ancestor, descendant)
 }
 
 // ListBranchCommitsSince returns first-parent commits for a branch/ref newest
@@ -123,6 +191,23 @@ func (m *Manager) ListBranchCommitsSince(
 	if err != nil {
 		return nil, err
 	}
+	return m.listBranchCommitsSinceInDir(
+		ctx,
+		dir,
+		ref,
+		since,
+		afterSHA,
+		maxCount,
+	)
+}
+
+func (m *Manager) listBranchCommitsSinceInDir(
+	ctx context.Context,
+	dir, ref string,
+	since time.Time,
+	afterSHA string,
+	maxCount int,
+) ([]Commit, error) {
 	refName, err := m.resolveBranchActivityRef(ctx, dir, ref)
 	if err != nil {
 		return nil, err
@@ -142,6 +227,29 @@ func (m *Manager) ListBranchCommitsSince(
 		return nil, fmt.Errorf("list branch commits %s: %w", ref, err)
 	}
 	return parseCommitLog(out)
+}
+
+// ListBranchCommitsSince lists branch commits from this repository
+// incarnation.
+func (r RepositoryClone) ListBranchCommitsSince(
+	ctx context.Context,
+	ref string,
+	since time.Time,
+	afterSHA string,
+	maxCount int,
+) ([]Commit, error) {
+	dir, err := r.ClonePath()
+	if err != nil {
+		return nil, err
+	}
+	return r.manager.listBranchCommitsSinceInDir(
+		ctx,
+		dir,
+		ref,
+		since,
+		afterSHA,
+		maxCount,
+	)
 }
 
 func (m *Manager) resolveBranchActivityRef(

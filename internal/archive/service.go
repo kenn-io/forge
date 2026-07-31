@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -229,6 +230,45 @@ func (s *Service) Status(ctx context.Context, refs []platform.RepoRef) ([]Status
 	return s.statusResolved(ctx, resolved)
 }
 
+// StatusByRepositoryIDs reads archive state for immutable repository
+// incarnations, including retired history that is no longer route-addressable.
+func (s *Service) StatusByRepositoryIDs(ctx context.Context, repoIDs []int64) ([]Status, error) {
+	if err := validateRepositoryIDs(repoIDs); err != nil {
+		return nil, err
+	}
+	repoIDs = normalizeRepositoryIDs(repoIDs)
+	if len(repoIDs) == 0 {
+		return []Status{}, nil
+	}
+	return s.statusByIDs(ctx, repoIDs)
+}
+
+func validateRepositoryIDs(repoIDs []int64) error {
+	for _, repoID := range repoIDs {
+		if repoID <= 0 {
+			return errors.New("repository IDs must be positive")
+		}
+	}
+	return nil
+}
+
+func normalizeRepositoryIDs(repoIDs []int64) []int64 {
+	seen := make(map[int64]struct{}, len(repoIDs))
+	result := make([]int64, 0, len(repoIDs))
+	for _, repoID := range repoIDs {
+		if repoID <= 0 {
+			continue
+		}
+		if _, ok := seen[repoID]; ok {
+			continue
+		}
+		seen[repoID] = struct{}{}
+		result = append(result, repoID)
+	}
+	slices.Sort(result)
+	return result
+}
+
 func (s *Service) configuredRepositories(ctx context.Context) ([]platform.RepoRef, error) {
 	if s.configured == nil {
 		return nil, errors.New("archive configured repository source is required")
@@ -248,6 +288,27 @@ func (s *Service) statusAll(ctx context.Context) ([]Status, error) {
 	ids := make([]int64, len(states))
 	for i := range states {
 		ids[i] = states[i].RepoID
+	}
+	return s.statusByIDs(ctx, ids)
+}
+
+func (s *Service) statusByIDs(ctx context.Context, ids []int64) ([]Status, error) {
+	states, err := s.db.ListArchiveRepoStates(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	if len(states) != len(ids) {
+		found := make(map[int64]struct{}, len(states))
+		for _, state := range states {
+			found[state.RepoID] = struct{}{}
+		}
+		missing := make([]int64, 0, len(ids)-len(states))
+		for _, id := range ids {
+			if _, ok := found[id]; !ok {
+				missing = append(missing, id)
+			}
+		}
+		return nil, &db.ArchiveRepoStateNotFoundError{RepoIDs: missing}
 	}
 	progress, err := s.db.GetArchiveProgress(ctx, db.ArchiveProgressOpts{RepoIDs: ids, Now: s.now()})
 	if err != nil {

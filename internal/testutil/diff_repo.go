@@ -15,6 +15,7 @@ import (
 
 // DiffRepoResult holds the SHAs from the test repo for use in assertions.
 type DiffRepoResult struct {
+	RepositoryID int64
 	BaseSHA      string // merge-base / base branch tip
 	HeadSHA      string // PR head commit
 	AltHeadSHA   string // newer PR head commit used by E2E refresh tests
@@ -41,8 +42,6 @@ func SetupDiffRepo(
 ) (*DiffRepoResult, error) {
 	workDir := filepath.Join(tmpDir, "workrepo")
 	cloneBase := filepath.Join(tmpDir, "clones")
-	barePath := filepath.Join(
-		cloneBase, "github.com", "acme", "widgets.git")
 
 	if err := os.MkdirAll(workDir, 0o755); err != nil {
 		return nil, fmt.Errorf("mkdir work: %w", err)
@@ -158,6 +157,21 @@ func SetupDiffRepo(
 		return nil, fmt.Errorf("rev-parse alternate head: %w", err)
 	}
 
+	// Seed the repository before creating its managed clone so the fixture
+	// uses the same immutable repository-incarnation namespace as production.
+	repoID, err := d.UpsertRepo(
+		ctx, db.GitHubRepoIdentity("github.com", "acme", "widgets"))
+	if err != nil {
+		return nil, fmt.Errorf("upsert repo: %w", err)
+	}
+	mgr := gitclone.New(cloneBase, nil)
+	barePath, err := mgr.RepositoryClone(
+		repoID, "github", "github.com", "acme", "widgets",
+	).ClonePath()
+	if err != nil {
+		return nil, fmt.Errorf("resolve managed clone path: %w", err)
+	}
+
 	// Clone as bare to the path the clone manager expects.
 	if err := os.MkdirAll(
 		filepath.Dir(barePath), 0o755); err != nil {
@@ -169,11 +183,6 @@ func SetupDiffRepo(
 	}
 
 	// Seed database with the real SHAs for acme/widgets PR #1.
-	repoID, err := d.UpsertRepo(
-		ctx, db.GitHubRepoIdentity("github.com", "acme", "widgets"))
-	if err != nil {
-		return nil, fmt.Errorf("upsert repo: %w", err)
-	}
 	if err := d.UpdateDiffSHAs(
 		ctx, repoID, 1, headSHA, baseSHA, baseSHA); err != nil {
 		return nil, fmt.Errorf("update diff SHAs: %w", err)
@@ -195,9 +204,8 @@ func SetupDiffRepo(
 		return nil, fmt.Errorf("update repo provider metadata: %w", err)
 	}
 
-	mgr := gitclone.New(cloneBase, nil)
-
 	return &DiffRepoResult{
+		RepositoryID: repoID,
 		BaseSHA:      baseSHA,
 		HeadSHA:      headSHA,
 		AltHeadSHA:   altHeadSHA,

@@ -212,10 +212,11 @@ func (h *Handler) listRepoBrowserRefsFor(
 	ctx context.Context,
 	provider, platformHost, owner, name, repoPath string,
 ) (*httpapi.BodyOutput[RepoBrowserRefsResponse], error) {
-	repo, repoRef, err := h.ensureRepoBrowserClone(ctx, provider, platformHost, owner, name, repoPath)
+	repo, repoRef, release, err := h.ensureRepoBrowserClone(ctx, provider, platformHost, owner, name, repoPath)
 	if err != nil {
 		return nil, repoBrowserProblem(err)
 	}
+	defer release()
 	refs, defaultRef, truncated, err := h.clones.ListRepoBrowserRefs(ctx, repoRef, repo.DefaultBranch)
 	if err != nil {
 		return nil, repoBrowserProblem(err)
@@ -247,10 +248,11 @@ func (h *Handler) listRepoBrowserTreeFor(
 	provider, platformHost, owner, name, repoPath string,
 	ref gitclone.RepoBrowserRef,
 ) (*httpapi.BodyOutput[RepoBrowserTreeResponse], error) {
-	repo, repoRef, err := h.ensureRepoBrowserClone(ctx, provider, platformHost, owner, name, repoPath)
+	repo, repoRef, release, err := h.ensureRepoBrowserClone(ctx, provider, platformHost, owner, name, repoPath)
 	if err != nil {
 		return nil, repoBrowserProblem(err)
 	}
+	defer release()
 	resolvedRef, err := h.resolveRepoBrowserReadRef(ctx, repoRef, ref)
 	if err != nil {
 		return nil, repoBrowserProblem(err)
@@ -287,10 +289,11 @@ func (h *Handler) getRepoBrowserBlobFor(
 	ref gitclone.RepoBrowserRef,
 	path string,
 ) (*httpapi.BodyOutput[RepoBrowserBlobResponse], error) {
-	repo, repoRef, err := h.ensureRepoBrowserClone(ctx, provider, platformHost, owner, name, repoPath)
+	repo, repoRef, release, err := h.ensureRepoBrowserClone(ctx, provider, platformHost, owner, name, repoPath)
 	if err != nil {
 		return nil, repoBrowserProblem(err)
 	}
+	defer release()
 	resolvedRef, err := h.resolveRepoBrowserReadRef(ctx, repoRef, ref)
 	if err != nil {
 		return nil, repoBrowserProblem(err)
@@ -329,10 +332,11 @@ func (h *Handler) getRepoBrowserAssetFor(
 	if !repoBrowserAssetRefIsImmutable(ref) {
 		return nil, repoBrowserProblem(errRepoBrowserMutableAssetRef)
 	}
-	_, repoRef, err := h.ensureRepoBrowserClone(ctx, provider, platformHost, owner, name, repoPath)
+	_, repoRef, release, err := h.ensureRepoBrowserClone(ctx, provider, platformHost, owner, name, repoPath)
 	if err != nil {
 		return nil, repoBrowserProblem(err)
 	}
+	defer release()
 	resolvedRef, err := h.resolveRepoBrowserReadRef(ctx, repoRef, ref)
 	if err != nil {
 		return nil, repoBrowserProblem(err)
@@ -389,10 +393,11 @@ func (h *Handler) getRepoBrowserLastChangedFor(
 	ref gitclone.RepoBrowserRef,
 	paths []string,
 ) (*httpapi.BodyOutput[RepoBrowserLastChangedResponse], error) {
-	repo, repoRef, err := h.ensureRepoBrowserClone(ctx, provider, platformHost, owner, name, repoPath)
+	repo, repoRef, release, err := h.ensureRepoBrowserClone(ctx, provider, platformHost, owner, name, repoPath)
 	if err != nil {
 		return nil, repoBrowserProblem(err)
 	}
+	defer release()
 	resolvedRef, err := h.resolveRepoBrowserReadRef(ctx, repoRef, ref)
 	if err != nil {
 		return nil, repoBrowserProblem(err)
@@ -428,10 +433,11 @@ func (h *Handler) getRepoBrowserHistoryFor(
 	ref gitclone.RepoBrowserRef,
 	path string,
 ) (*httpapi.BodyOutput[RepoBrowserHistoryResponse], error) {
-	repo, repoRef, err := h.ensureRepoBrowserClone(ctx, provider, platformHost, owner, name, repoPath)
+	repo, repoRef, release, err := h.ensureRepoBrowserClone(ctx, provider, platformHost, owner, name, repoPath)
 	if err != nil {
 		return nil, repoBrowserProblem(err)
 	}
+	defer release()
 	resolvedRef, err := h.resolveRepoBrowserReadRef(ctx, repoRef, ref)
 	if err != nil {
 		return nil, repoBrowserProblem(err)
@@ -468,10 +474,11 @@ func (h *Handler) getRepoBrowserCommitFor(
 	ref gitclone.RepoBrowserRef,
 	path, sha string,
 ) (*httpapi.BodyOutput[RepoBrowserCommitResponse], error) {
-	repo, repoRef, err := h.ensureRepoBrowserClone(ctx, provider, platformHost, owner, name, repoPath)
+	repo, repoRef, release, err := h.ensureRepoBrowserClone(ctx, provider, platformHost, owner, name, repoPath)
 	if err != nil {
 		return nil, repoBrowserProblem(err)
 	}
+	defer release()
 	resolvedRef, err := h.resolveRepoBrowserReadRef(ctx, repoRef, ref)
 	if err != nil {
 		return nil, repoBrowserProblem(err)
@@ -491,22 +498,31 @@ func (h *Handler) getRepoBrowserCommitFor(
 func (h *Handler) ensureRepoBrowserClone(
 	ctx context.Context,
 	provider, platformHost, owner, name, repoPath string,
-) (*db.Repo, gitclone.RepoBrowserRepoRef, error) {
+) (*db.Repo, gitclone.RepoBrowserRepoRef, func(), error) {
 	if h.clones == nil {
-		return nil, gitclone.RepoBrowserRepoRef{}, errRepoBrowserCloneUnavailable
+		return nil, gitclone.RepoBrowserRepoRef{}, nil, errRepoBrowserCloneUnavailable
 	}
 	if h.resolver == nil {
-		return nil, gitclone.RepoBrowserRepoRef{}, httpapi.ErrRepositoryStoreUnavailable
+		return nil, gitclone.RepoBrowserRepoRef{}, nil, httpapi.ErrRepositoryStoreUnavailable
 	}
 	repoPath = canonicalRepoBrowserRepoPath(owner, name, repoPath)
 	repo, err := h.resolver.Lookup(ctx, provider, platformHost, repoPath)
 	if err != nil {
-		return nil, gitclone.RepoBrowserRepoRef{}, err
+		return nil, gitclone.RepoBrowserRepoRef{}, nil, err
+	}
+	repo, release, err := h.resolver.LeaseActiveRepository(ctx, repo.ID)
+	if err != nil {
+		return nil, gitclone.RepoBrowserRepoRef{}, nil, err
+	}
+	if repo == nil {
+		return nil, gitclone.RepoBrowserRepoRef{}, nil, httpapi.ErrRepoNotFound
 	}
 	if strings.TrimSpace(repo.CloneURL) == "" {
-		return nil, gitclone.RepoBrowserRepoRef{}, errRepoBrowserCloneUnavailable
+		release()
+		return nil, gitclone.RepoBrowserRepoRef{}, nil, errRepoBrowserCloneUnavailable
 	}
 	repoRef := gitclone.RepoBrowserRepoRef{
+		RepoID:    repo.ID,
 		Provider:  repo.Platform,
 		Host:      repo.PlatformHost,
 		Owner:     repo.Owner,
@@ -515,9 +531,10 @@ func (h *Handler) ensureRepoBrowserClone(
 		RemoteURL: repo.CloneURL,
 	}
 	if err := h.clones.EnsureRepoBrowserClone(ctx, repoRef); err != nil {
-		return nil, gitclone.RepoBrowserRepoRef{}, err
+		release()
+		return nil, gitclone.RepoBrowserRepoRef{}, nil, err
 	}
-	return repo, repoRef, nil
+	return repo, repoRef, release, nil
 }
 
 func (h *Handler) repoRefFromRepo(repo db.Repo) httpapi.RepoRefResponse {

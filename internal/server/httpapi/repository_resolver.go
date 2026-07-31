@@ -50,6 +50,54 @@ func (r *RepositoryResolver) RequireRouteCapability(
 	return repo, nil
 }
 
+// LeaseRouteCapability resolves an active repository and prevents route
+// reconciliation from replacing it until release. Mutation handlers must hold
+// the returned lease through the provider call and local persistence.
+func (r *RepositoryResolver) LeaseRouteCapability(
+	ctx context.Context,
+	provider, platformHost, owner, name, capability string,
+) (*db.Repo, func(), error) {
+	repo, err := r.LookupRoute(ctx, provider, platformHost, owner, name)
+	if err != nil {
+		return nil, nil, ProviderRouteLookupError(err)
+	}
+	leased, release, err := r.LeaseActiveRepository(ctx, repo.ID)
+	if err != nil {
+		return nil, nil, ProviderRouteLookupError(err)
+	}
+	if leased == nil {
+		return nil, nil, ProviderRouteLookupError(ErrRepoNotFound)
+	}
+	if !CapabilityEnabled(r.Ref(*leased).Capabilities, capability) {
+		release()
+		return nil, nil, UnsupportedCapability(*leased, capability)
+	}
+	return leased, release, nil
+}
+
+// LeaseRouteContext resolves a repository route, revalidates the selected
+// incarnation under the reconciliation read lease, and returns a context that
+// nested repository-aware operations can reuse.
+func (r *RepositoryResolver) LeaseRouteContext(
+	ctx context.Context,
+	provider, platformHost, owner, name string,
+) (context.Context, *db.Repo, func(), error) {
+	repo, err := r.LookupRoute(ctx, provider, platformHost, owner, name)
+	if err != nil {
+		return ctx, nil, nil, err
+	}
+	leaseCtx, leased, release, err := r.LeaseActiveRepositoryContext(
+		ctx, repo.ID,
+	)
+	if err != nil {
+		return ctx, nil, nil, err
+	}
+	if leased == nil {
+		return ctx, nil, nil, ErrRepoNotFound
+	}
+	return leaseCtx, leased, release, nil
+}
+
 func ProviderRouteLookupError(err error) error {
 	if errors.Is(err, ErrRepoPathRequired) {
 		return BadRequest(CodeBadRequest, err.Error(), nil)
@@ -207,6 +255,42 @@ func (r *RepositoryResolver) List(ctx context.Context) ([]db.Repo, error) {
 		return nil, ErrRepositoryStoreUnavailable
 	}
 	return r.db.ListRepos(ctx)
+}
+
+// LeaseActiveRepository keeps one repository incarnation active until release.
+// Replacement reconciliation cannot retire or reuse its route while the lease
+// is held.
+func (r *RepositoryResolver) LeaseActiveRepository(
+	ctx context.Context,
+	repoID int64,
+) (*db.Repo, func(), error) {
+	_, repo, release, err := r.LeaseActiveRepositoryContext(ctx, repoID)
+	return repo, release, err
+}
+
+// LeaseActiveRepositoryContext returns a context that identifies the active
+// reconciliation lease to nested repository-aware persistence helpers.
+func (r *RepositoryResolver) LeaseActiveRepositoryContext(
+	ctx context.Context,
+	repoID int64,
+) (context.Context, *db.Repo, func(), error) {
+	if r == nil || r.db == nil {
+		return nil, nil, nil, ErrRepositoryStoreUnavailable
+	}
+	leaseCtx, release, err := r.db.LeaseRepositoryReconciliationRead(ctx)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	repo, err := r.db.GetRepoByID(leaseCtx, repoID)
+	if err != nil {
+		release()
+		return nil, nil, nil, err
+	}
+	if repo == nil || repo.RetiredAt != nil {
+		release()
+		return ctx, nil, nil, nil
+	}
+	return leaseCtx, repo, release, nil
 }
 
 func (r *RepositoryResolver) Ref(repo db.Repo) RepoRefResponse {

@@ -97,6 +97,36 @@ func TestResolveConfiguredRepos_DeduplicatesExactAndGlobMatches(t *testing.T) {
 	}, result.Expanded)
 }
 
+func TestResolveConfiguredReposPreservesConvergedExactRoutes(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	client := &mockClient{getRepositoryFn: func(
+		_ context.Context, _, _ string,
+	) (*gh.Repository, error) {
+		return &gh.Repository{
+			ID: new(int64(42)), NodeID: new("R_stable"),
+			Name: new("current"), Owner: &gh.User{Login: new("acme")},
+			Archived: new(false),
+		}, nil
+	}}
+
+	result := ResolveConfiguredRepos(
+		t.Context(), map[string]Client{"github.com": client},
+		[]config.Repo{
+			{Owner: "acme", Name: "legacy"},
+			{Owner: "acme", Name: "current"},
+		},
+	)
+
+	require.Empty(result.Warnings)
+	require.Len(result.Expanded, 1)
+	assert.Equal([]ConfiguredRepoRoute{
+		{Owner: "acme", Name: "legacy", RepoPath: "acme/legacy"},
+		{Owner: "acme", Name: "current", RepoPath: "acme/current"},
+	}, result.Expanded[0].ConfiguredRoutes)
+	assert.Empty(result.Expanded[0].CredentialOwner)
+}
+
 func TestResolveConfiguredRepos_DeduplicatesOwnerCase(t *testing.T) {
 	assert := assert.New(t)
 	client := &mockClient{
@@ -368,6 +398,31 @@ func TestFallbackConfiguredRepoRefsPreservesProviderIdentity(t *testing.T) {
 		Owner:        "acme",
 		Name:         "widget",
 	}}, got)
+}
+
+func TestFallbackConfiguredRepoRefsPreservesRenamedRepositoryByCredentialRoute(
+	t *testing.T,
+) {
+	previous := []RepoRef{{
+		Platform:           platform.KindGitHub,
+		PlatformHost:       "github.com",
+		RepoID:             42,
+		Owner:              "acme-tools",
+		Name:               "renamed-widget",
+		RepoPath:           "acme-tools/renamed-widget",
+		CredentialOwner:    "acme",
+		CredentialName:     "widget",
+		PlatformExternalID: "R_stable",
+	}}
+
+	got := FallbackConfiguredRepoRefs(previous, config.Repo{
+		Platform:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+	})
+
+	require.Equal(t, previous, got)
 }
 
 func TestFallbackConfiguredRepoRefsSynthesizesNonGitHubProvider(t *testing.T) {

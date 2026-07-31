@@ -1533,6 +1533,101 @@ func TestDeferMergeEndpointRejectsClosedPullRequest(t *testing.T) {
 	}
 }
 
+func TestDeferredMergeLeasesQueuedRepositoryDuringProviderRefresh(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
+	ref := platform.RepoRef{
+		Platform:           platform.KindGitLab,
+		Host:               "gitlab.example.com",
+		Owner:              "group",
+		Name:               "project",
+		RepoPath:           "group/project",
+		PlatformID:         4242,
+		PlatformExternalID: "gid://gitlab/Project/4242",
+		DefaultBranch:      "main",
+	}
+	ciStarted := make(chan struct{})
+	ciRelease := make(chan struct{})
+	provider := &deferredMergeTestProvider{
+		deferredMergeProviderBase: deferredMergeProviderBase{
+			ref: ref,
+			ciChecks: map[string][]platform.CICheck{
+				"head-sha": {{
+					App: "GitLab", Name: "pipeline", Status: "completed", Conclusion: "success",
+				}},
+			},
+		},
+		mergeCh:   make(chan deferredMergeTestMergeCall, 1),
+		ciStarted: ciStarted,
+		ciRelease: ciRelease,
+	}
+	_, database, _, client := newDeferredMergeRouteServer(t, provider, ref, now, []db.CICheck{{
+		App: "GitLab", Name: "pipeline", Status: "in_progress",
+	}})
+
+	expectedHeadSHA := "head-sha"
+	resp, err := client.HTTP.DeferMergePullOnHostWithResponse(
+		ctx,
+		ref.Host,
+		"gitlab",
+		ref.Owner,
+		ref.Name,
+		7,
+		generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA},
+	)
+	require.NoError(err)
+	require.Equal(202, resp.StatusCode(), string(resp.Body))
+	select {
+	case <-ciStarted:
+	case <-time.After(time.Second):
+		require.FailNow("timed out waiting for deferred CI refresh to start")
+	}
+
+	writeAttempted := make(chan struct{})
+	restoreWriteLockHook := database.SetBeforeRepositoryReconciliationWriteLockForTest(
+		func() { close(writeAttempted) },
+	)
+	defer restoreWriteLockHook()
+	replacementDone := make(chan error, 1)
+	go func() {
+		_, replacementErr := database.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+			Platform:       "gitlab",
+			PlatformHost:   ref.Host,
+			PlatformRepoID: "gid://gitlab/Project/8484",
+			Owner:          ref.Owner,
+			Name:           ref.Name,
+			RepoPath:       ref.RepoPath,
+		})
+		replacementDone <- replacementErr
+	}()
+	<-writeAttempted
+
+	var (
+		replacementErr       error
+		replacementCompleted bool
+	)
+	select {
+	case replacementErr = <-replacementDone:
+		replacementCompleted = true
+	case <-time.After(250 * time.Millisecond):
+	}
+	close(ciRelease)
+	if !replacementCompleted {
+		replacementErr = <-replacementDone
+	}
+	require.NoError(replacementErr)
+	require.False(
+		replacementCompleted,
+		"repository replacement must wait for deferred CI refresh persistence",
+	)
+	select {
+	case call := <-provider.mergeCh:
+		require.Failf("unexpected merge", "merge call: %+v", call)
+	case <-time.After(100 * time.Millisecond):
+	}
+}
+
 func TestDeferMergeEndpointBroadcastsFailureWhenTargetClosedWhileWaiting(t *testing.T) {
 	require := require.New(t)
 	ctx := t.Context()

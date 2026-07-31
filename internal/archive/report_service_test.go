@@ -102,6 +102,51 @@ func TestArchiveServiceReportFiltersFullRepositoryIdentityAndRejectsEmptyScope(t
 	assert.ErrorIs(err, ErrEmptyReportScope)
 }
 
+func TestArchiveServiceReadsRetiredHistoryByRepositoryID(t *testing.T) {
+	require := require.New(t)
+	database := dbtest.Open(t)
+	ctx := t.Context()
+	now := time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC)
+	ref := archiveServiceRef(platform.KindGitHub, "github.test", "repo")
+	ref.PlatformExternalID = "R_old"
+	oldID, err := database.UpsertRepoByProviderID(ctx, platform.DBRepoIdentity(ref))
+	require.NoError(err)
+	provider := newArchiveServiceProvider(ref.Platform, ref.Host)
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	service := newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, nil, now)
+	require.NoError(service.EnsureConfigured(ctx, []platform.RepoRef{ref}))
+	_, err = database.UpsertIssue(ctx, &db.Issue{
+		RepoID: oldID, Number: 1, Title: "Historical issue", Author: "sam",
+		State: "open", CreatedAt: archiveTestTime(), UpdatedAt: archiveTestTime(),
+	})
+	require.NoError(err)
+
+	replacement := ref
+	replacement.PlatformExternalID = "R_new"
+	newID, err := database.UpsertRepoByProviderID(ctx, platform.DBRepoIdentity(replacement))
+	require.NoError(err)
+	require.NotEqual(oldID, newID)
+
+	statuses, err := service.StatusByRepositoryIDs(ctx, []int64{oldID})
+	require.NoError(err)
+	require.Len(statuses, 1)
+	require.Equal(oldID, statuses[0].RepoID)
+	require.Equal("owner", statuses[0].Repo.Owner)
+	require.Equal("repo", statuses[0].Repo.Name)
+
+	model, err := service.Report(ctx, ReportOptions{
+		Start: archiveTestTime().Add(-time.Hour), End: archiveTestTime().Add(time.Hour),
+		RepositoryIDs: []int64{oldID}, Detailed: true,
+	})
+	require.NoError(err)
+	require.Len(model.Repositories, 1)
+	require.Equal(oldID, model.Repositories[0].Repository.RepositoryID)
+	require.Equal("owner/repo", model.Repositories[0].Repository.RepoPath)
+	require.Len(model.Activity, 1)
+	require.Equal(oldID, model.Activity[0].Repository.RepositoryID)
+}
+
 func TestArchiveServiceReportUsesRangeEndAsDeterministicStatusTime(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

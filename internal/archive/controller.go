@@ -13,5 +13,6 @@ type Controller interface {
 	Pause(context.Context, []platform.RepoRef) ([]Status, error)
 	PauseAll(context.Context) ([]Status, error)
 	Status(context.Context, []platform.RepoRef) ([]Status, error)
+	StatusByRepositoryIDs(context.Context, []int64) ([]Status, error)
 	Report(context.Context, ReportOptions) (report.Model, error)
 }

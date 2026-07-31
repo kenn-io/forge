@@ -142,6 +142,8 @@ type mockGH struct {
 	getRateLimitSnapshotFn     func(context.Context) (*ghclient.RateLimitSnapshot, error)
 	getRepositoryFn            func(context.Context, string, string) (*gh.Repository, error)
 	getPullRequestFn           func(context.Context, string, string, int) (*gh.PullRequest, error)
+	getIssueFn                 func(context.Context, string, string, int) (*gh.Issue, error)
+	editIssueFn                func(context.Context, string, string, int, string) (*gh.Issue, error)
 	listOpenPullRequestsFn     func(context.Context, string, string) ([]*gh.PullRequest, error)
 	listReposByOwnerFn         func(context.Context, string) ([]*gh.Repository, error)
 	mergePullRequestFn         func(context.Context, string, string, int, string, string, string, string) (*gh.PullRequestMergeResult, error)
@@ -188,7 +190,15 @@ func (m *mockGH) ListTags(context.Context, string, string, int) ([]*gh.Repositor
 func (m *mockGH) ListOpenIssues(context.Context, string, string) ([]*gh.Issue, error) {
 	return nil, nil
 }
-func (m *mockGH) GetIssue(context.Context, string, string, int) (*gh.Issue, error) {
+func (m *mockGH) GetIssue(
+	ctx context.Context,
+	owner string,
+	repo string,
+	number int,
+) (*gh.Issue, error) {
+	if m.getIssueFn != nil {
+		return m.getIssueFn(ctx, owner, repo, number)
+	}
 	return nil, nil
 }
 func (m *mockGH) CreateIssue(context.Context, string, string, string, string) (*gh.Issue, error) {
@@ -319,7 +329,13 @@ func (m *mockGH) MergePullRequest(ctx context.Context, owner, repo string, numbe
 func (m *mockGH) EditPullRequest(context.Context, string, string, int, ghclient.EditPullRequestOpts) (*gh.PullRequest, error) {
 	return nil, nil
 }
-func (m *mockGH) EditIssue(context.Context, string, string, int, string) (*gh.Issue, error) {
+
+func (m *mockGH) EditIssue(
+	ctx context.Context, owner, repo string, number int, state string,
+) (*gh.Issue, error) {
+	if m.editIssueFn != nil {
+		return m.editIssueFn(ctx, owner, repo, number, state)
+	}
 	return nil, nil
 }
 func (m *mockGH) EditIssueContent(context.Context, string, string, int, *string, *string) (*gh.Issue, error) {

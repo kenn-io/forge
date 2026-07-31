@@ -4,8 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -50,6 +48,7 @@ const (
 )
 
 type RepoBrowserRepoRef struct {
+	RepoID    int64
 	Provider  string
 	Host      string
 	Owner     string
@@ -57,6 +56,11 @@ type RepoBrowserRepoRef struct {
 	RepoPath  string
 	RemoteURL string
 }
+
+type RepoBrowserRefreshAuthorizer func(
+	context.Context,
+	RepoBrowserRepoRef,
+) (RepoBrowserRepoRef, func(), bool, error)
 
 type RepoBrowserRef struct {
 	Type         RepoBrowserRefType `json:"type" doc:"Selected ref type: branch, tag, or commit."`
@@ -754,7 +758,13 @@ func (m *Manager) resolveRepoBrowserRef(
 }
 
 func (m *Manager) repoBrowserClonePath(repo RepoBrowserRepoRef) (string, error) {
-	return m.ClonePathInNamespace(repoBrowserCloneNamespace(repo), repo.Host, repo.Owner, repo.Name)
+	storage, err := repoBrowserCloneStorage(repo)
+	if err != nil {
+		return "", err
+	}
+	return m.ClonePathInNamespace(
+		storage.namespace, storage.host, storage.owner, storage.name,
+	)
 }
 
 func (m *Manager) EnsureRepoBrowserClone(ctx context.Context, repo RepoBrowserRepoRef) error {
@@ -774,6 +784,7 @@ type repoBrowserRefreshWorkMode uint8
 const (
 	repoBrowserRefreshRespectCaller repoBrowserRefreshWorkMode = iota
 	repoBrowserRefreshDetachCaller
+	repoBrowserRefreshHoldAuthorization
 )
 
 func repoBrowserRefreshWorkParent(ctx context.Context, mode repoBrowserRefreshWorkMode) context.Context {
@@ -791,23 +802,36 @@ func (m *Manager) refreshRepoBrowserClone(
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	namespace := repoBrowserCloneNamespace(repo)
+	storage, err := repoBrowserCloneStorage(repo)
+	if err != nil {
+		return err
+	}
 	if err := validateRemoteURLIdentity(repo.Host, repo.Owner, repo.Name, repo.RemoteURL); err != nil {
 		return err
 	}
-	if _, err := m.ClonePathInNamespace(namespace, repo.Host, repo.Owner, repo.Name); err != nil {
+	if _, err := m.ClonePathInNamespace(
+		storage.namespace, storage.host, storage.owner, storage.name,
+	); err != nil {
 		return err
 	}
-	key := ensureCloneKey(namespace, repo.Host, repo.Owner, repo.Name)
+	key := ensureCloneKey(
+		repoBrowserCloneNamespace(repo),
+		storage.host,
+		storage.owner,
+		storage.name,
+	)
 	ch := m.repoBrowserRefreshSF.DoChan(key, func() (any, error) {
 		opCtx, cancel := context.WithTimeout(
 			repoBrowserRefreshWorkParent(ctx, mode),
 			ensureCloneTimeout,
 		)
 		defer cancel()
-		if err := m.ensureCloneNowInNamespace(
+		if m.repoBrowserRefreshFn != nil {
+			return nil, m.repoBrowserRefreshFn(opCtx, repo)
+		}
+		if err := m.ensureCloneNowInStorage(
 			opCtx,
-			namespace,
+			storage,
 			repo.Provider,
 			repo.Host,
 			repo.Owner,
@@ -830,25 +854,60 @@ func (m *Manager) refreshRepoBrowserClone(
 			return res.Err
 		}
 	case <-ctx.Done():
+		if mode == repoBrowserRefreshHoldAuthorization {
+			<-ch
+		}
 		return ctx.Err()
 	}
 	m.registerRepoBrowserRepo(repo)
 	return nil
 }
 
-func (m *Manager) RefreshRepoBrowserClones(ctx context.Context) {
+func (m *Manager) RefreshRepoBrowserClones(
+	ctx context.Context,
+	authorize RepoBrowserRefreshAuthorizer,
+) {
+	if authorize == nil {
+		return
+	}
 	for _, repo := range m.repoBrowserReposSnapshot() {
 		if err := ctx.Err(); err != nil {
 			return
 		}
-		if err := m.refreshRepoBrowserClone(ctx, repo, repoBrowserRefreshRespectCaller); err != nil {
+		authorized, release, active, err := authorize(ctx, repo)
+		if err != nil {
+			slog.Warn("repo browser clone refresh authorization failed",
+				"repository_id", repo.RepoID,
+				"err", err)
+			continue
+		}
+		if !active {
+			m.removeRepoBrowserRepo(repo)
+			continue
+		}
+		if release == nil {
+			release = func() {}
+		}
+		err = m.refreshRepoBrowserClone(
+			ctx,
+			authorized,
+			repoBrowserRefreshHoldAuthorization,
+		)
+		release()
+		if err != nil {
 			slog.Warn("repo browser clone refresh failed",
-				"provider", repo.Provider,
-				"host", repo.Host,
-				"repo", repo.RepoPath,
+				"provider", authorized.Provider,
+				"host", authorized.Host,
+				"repo", authorized.RepoPath,
 				"err", err)
 		}
 	}
+}
+
+func (m *Manager) removeRepoBrowserRepo(repo RepoBrowserRepoRef) {
+	m.repoBrowserMu.Lock()
+	defer m.repoBrowserMu.Unlock()
+	delete(m.repoBrowserRepos, repoBrowserCloneNamespace(repo))
 }
 
 func (m *Manager) RegisterExistingRepoBrowserClone(ctx context.Context, repo RepoBrowserRepoRef) (bool, error) {
@@ -869,7 +928,19 @@ func (m *Manager) RegisterExistingRepoBrowserClone(ctx context.Context, repo Rep
 	}
 	if out, err := m.git(ctx, dir, "config", "--get", "remote.origin.url"); err == nil {
 		if err := validateRemoteURLIdentity(repo.Host, repo.Owner, repo.Name, strings.TrimSpace(string(out))); err != nil {
-			return false, err
+			if _, setErr := m.git(
+				ctx,
+				dir,
+				"remote",
+				"set-url",
+				"origin",
+				repo.RemoteURL,
+			); setErr != nil {
+				return false, fmt.Errorf(
+					"update registered repo browser origin after repository rename: %w",
+					setErr,
+				)
+			}
 		}
 	}
 	m.ensureRefspecs(ctx, dir)
@@ -881,11 +952,10 @@ func (m *Manager) ensureRepoBrowserCloneLocal(ctx context.Context, repo RepoBrow
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	namespace := repoBrowserCloneNamespace(repo)
 	if err := validateRemoteURLIdentity(repo.Host, repo.Owner, repo.Name, repo.RemoteURL); err != nil {
 		return err
 	}
-	dir, err := m.ClonePathInNamespace(namespace, repo.Host, repo.Owner, repo.Name)
+	dir, err := m.repoBrowserClonePath(repo)
 	if err != nil {
 		return err
 	}
@@ -896,7 +966,11 @@ func (m *Manager) ensureRepoBrowserCloneLocal(ctx context.Context, repo RepoBrow
 	}
 	if out, err := m.git(ctx, dir, "config", "--get", "remote.origin.url"); err == nil {
 		if err := validateRemoteURLIdentity(repo.Host, repo.Owner, repo.Name, strings.TrimSpace(string(out))); err != nil {
-			return err
+			return m.refreshRepoBrowserClone(
+				ctx,
+				repo,
+				repoBrowserRefreshDetachCaller,
+			)
 		}
 	}
 	m.ensureRefspecs(ctx, dir)
@@ -938,13 +1012,26 @@ func (m *Manager) fetchRepoBrowserTags(
 }
 
 func repoBrowserCloneNamespace(repo RepoBrowserRepoRef) string {
-	identity := strings.Join([]string{
-		strings.TrimSpace(repo.Provider),
-		strings.TrimSpace(repo.Host),
-		strings.Trim(strings.TrimSpace(repo.RepoPath), "/"),
-	}, "\x00")
-	sum := sha256.Sum256([]byte(identity))
-	return "repo-browser-" + hex.EncodeToString(sum[:8])
+	if repo.RepoID <= 0 {
+		return ""
+	}
+	return "repo-browser-repository-" + strconv.FormatInt(repo.RepoID, 10)
+}
+
+func repoBrowserCloneStorage(
+	repo RepoBrowserRepoRef,
+) (cloneStorageBinding, error) {
+	if repo.RepoID <= 0 {
+		return cloneStorageBinding{}, errors.New(
+			"repo browser repository ID is required",
+		)
+	}
+	return cloneStorageBinding{
+		namespace: repositoryIncarnationNamespace,
+		host:      "local",
+		owner:     "repo-browser",
+		name:      "repo-" + strconv.FormatInt(repo.RepoID, 10),
+	}, nil
 }
 
 func (m *Manager) resolveRepoBrowserDefaultBranch(

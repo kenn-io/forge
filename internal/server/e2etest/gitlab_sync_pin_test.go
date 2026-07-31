@@ -9,6 +9,7 @@ package e2etest
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -85,12 +86,12 @@ func TestGitLabNormalSyncEnablesHeadBoundMutations(t *testing.T) {
 		path := r.URL.EscapedPath()
 		switch {
 		case path == "/api/v4/projects/acme%2Fwidget" && r.Method == http.MethodGet:
-			writeGitLabJSON(w, `{
+			writeGitLabJSON(w, fmt.Sprintf(`{
 				"id": 4242, "path": "widget", "path_with_namespace": "acme/widget",
 				"web_url": "https://gitlab.com/acme/widget",
-				"http_url_to_repo": "https://gitlab.com/acme/widget.git",
+				"http_url_to_repo": %q,
 				"default_branch": "main"
-			}`)
+			}`, cloneURL))
 		case path == "/api/v4/projects/4242/merge_requests" && r.Method == http.MethodGet:
 			writeGitLabJSON(w, `[`+mrJSON+`]`)
 		case path == "/api/v4/projects/4242/merge_requests/7" && r.Method == http.MethodGet:

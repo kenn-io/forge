@@ -1719,6 +1719,101 @@ func TestAPIMergePRStoresUTCTimestamps(t *testing.T) {
 	assertTimePtrEqualsUTC(t, pr.ClosedAt, handlerNow)
 }
 
+func TestAPIMergePRHoldsRepositoryLeaseThroughProviderMutation(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	mergeStarted := make(chan struct{})
+	allowMerge := make(chan struct{})
+	mock := &mockGH{
+		mergePullRequestFn: func(
+			context.Context, string, string, int, string, string, string,
+		) (*gh.PullRequestMergeResult, error) {
+			close(mergeStarted)
+			<-allowMerge
+			return &gh.PullRequestMergeResult{
+				Merged: new(true),
+				SHA:    new("merged-sha"),
+			}, nil
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	expectedHeadSHA := "reviewed-sha"
+	seedPR(t, database, "acme", "widget", 1, withSeedPRHeadSHA(expectedHeadSHA))
+	oldRepoID, err := database.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "repository-old",
+		Owner:          "acme",
+		Name:           "widget",
+		RepoPath:       "acme/widget",
+	})
+	require.NoError(err)
+	client := setupTestClient(t, srv)
+
+	mergeDone := make(chan error, 1)
+	go func() {
+		resp, err := client.HTTP.MergePullWithResponse(
+			ctx, "gh", "acme", "widget", 1,
+			generated.MergePRInputBody{
+				Method:          "squash",
+				ExpectedHeadSha: &expectedHeadSHA,
+			},
+		)
+		if err == nil && resp.StatusCode() != http.StatusOK {
+			err = fmt.Errorf("merge status %d: %s", resp.StatusCode(), resp.Body)
+		}
+		mergeDone <- err
+	}()
+	<-mergeStarted
+
+	replacementStarted := make(chan struct{})
+	restore := database.SetBeforeRepositoryReconciliationWriteLockForTest(func() {
+		select {
+		case <-replacementStarted:
+		default:
+			close(replacementStarted)
+		}
+	})
+	t.Cleanup(restore)
+	replacementDone := make(chan error, 1)
+	go func() {
+		_, err := database.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+			Platform:       "github",
+			PlatformHost:   "github.com",
+			PlatformRepoID: "repository-replacement",
+			Owner:          "acme",
+			Name:           "widget",
+			RepoPath:       "acme/widget",
+		})
+		replacementDone <- err
+	}()
+	<-replacementStarted
+
+	var earlyReplacementErr error
+	replacementCompletedEarly := false
+	select {
+	case earlyReplacementErr = <-replacementDone:
+		replacementCompletedEarly = true
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	close(allowMerge)
+	require.NoError(<-mergeDone)
+	if !replacementCompletedEarly {
+		require.NoError(<-replacementDone)
+	}
+	require.False(
+		replacementCompletedEarly,
+		"repository replacement completed during provider mutation: %v",
+		earlyReplacementErr,
+	)
+
+	oldRepo, err := database.GetRepoByID(ctx, oldRepoID)
+	require.NoError(err)
+	require.NotNil(oldRepo)
+	require.NotNil(oldRepo.RetiredAt)
+}
+
 func TestAPIClientConstruction(t *testing.T) {
 	srv, _ := setupTestServer(t)
 	client := setupTestClient(t, srv)
@@ -4614,6 +4709,15 @@ func TestAPIGitLabSyncReadsTokenFileAfterRotation(t *testing.T) {
 		tokens = append(tokens, r.Header.Get("Private-Token"))
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.EscapedPath() {
+		case "/api/v4/projects/group%2Fproject":
+			_, _ = fmt.Fprint(w, `{
+				"id": 42,
+				"path": "project",
+				"path_with_namespace": "group/project",
+				"web_url": "https://gitlab.example.com/group/project",
+				"http_url_to_repo": "https://gitlab.example.com/group/project.git",
+				"default_branch": "main"
+			}`)
 		case "/api/v4/projects/42/merge_requests/7":
 			_, _ = fmt.Fprint(w, `{
 				"id": 7001,
@@ -6111,7 +6215,18 @@ func TestAPIListRepoSummariesIncludesSyncedReleaseTimeline(t *testing.T) {
 	runGit(t, work, "push", "--tags", "origin", "main")
 
 	clones := gitclone.New(filepath.Join(dir, "clones"), nil)
-	clonePath, err := clones.ClonePath("github", "github.com", "acme", "widgets")
+	repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "repo-acme-widgets",
+		Owner:          "acme",
+		Name:           "widgets",
+		RepoPath:       "acme/widgets",
+	})
+	require.NoError(err)
+	clonePath, err := clones.RepositoryClone(
+		repoID, "github", "github.com", "acme", "widgets",
+	).ClonePath()
 	require.NoError(err)
 	require.NoError(os.MkdirAll(filepath.Dir(clonePath), 0o755))
 	runGit(t, dir, "clone", "--bare", remote, clonePath)
@@ -6443,6 +6558,103 @@ func TestAPICreateIssue(t *testing.T) {
 	require.Len(issue.Labels, 1)
 	assert.Equal("enhancement", issue.Labels[0].Name)
 	assert.Equal("a2eeef", issue.Labels[0].Color)
+}
+
+func TestAPICreateIssueHoldsRepositoryLeaseThroughProviderMutation(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	createStarted := make(chan struct{})
+	allowCreate := make(chan struct{})
+	mock := &mockGH{
+		createIssueFn: func(
+			context.Context, string, string, string, string,
+		) (*gh.Issue, error) {
+			close(createStarted)
+			<-allowCreate
+			number := 27
+			title := "New issue"
+			state := "open"
+			now := gh.Timestamp{Time: time.Now().UTC()}
+			return &gh.Issue{
+				Number:    &number,
+				Title:     &title,
+				State:     &state,
+				CreatedAt: &now,
+				UpdatedAt: &now,
+			}, nil
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	oldRepoID, err := database.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "repository-old",
+		Owner:          "acme",
+		Name:           "widget",
+		RepoPath:       "acme/widget",
+	})
+	require.NoError(err)
+	client := setupTestClient(t, srv)
+
+	createDone := make(chan error, 1)
+	go func() {
+		resp, err := client.HTTP.CreateIssueWithResponse(
+			ctx, "gh", "acme", "widget",
+			generated.CreateIssueJSONRequestBody{Title: "New issue"},
+		)
+		if err == nil && resp.StatusCode() != http.StatusCreated {
+			err = fmt.Errorf("create issue status %d: %s", resp.StatusCode(), resp.Body)
+		}
+		createDone <- err
+	}()
+	<-createStarted
+
+	replacementStarted := make(chan struct{})
+	restore := database.SetBeforeRepositoryReconciliationWriteLockForTest(func() {
+		select {
+		case <-replacementStarted:
+		default:
+			close(replacementStarted)
+		}
+	})
+	t.Cleanup(restore)
+	replacementDone := make(chan error, 1)
+	go func() {
+		_, err := database.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+			Platform:       "github",
+			PlatformHost:   "github.com",
+			PlatformRepoID: "repository-replacement",
+			Owner:          "acme",
+			Name:           "widget",
+			RepoPath:       "acme/widget",
+		})
+		replacementDone <- err
+	}()
+	<-replacementStarted
+
+	var earlyReplacementErr error
+	replacementCompletedEarly := false
+	select {
+	case earlyReplacementErr = <-replacementDone:
+		replacementCompletedEarly = true
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	close(allowCreate)
+	require.NoError(<-createDone)
+	if !replacementCompletedEarly {
+		require.NoError(<-replacementDone)
+	}
+	require.False(
+		replacementCompletedEarly,
+		"repository replacement completed during provider mutation: %v",
+		earlyReplacementErr,
+	)
+
+	oldRepo, err := database.GetRepoByID(ctx, oldRepoID)
+	require.NoError(err)
+	require.NotNil(oldRepo)
+	require.NotNil(oldRepo.RetiredAt)
 }
 
 func TestAPICreateIssueRejectsNilProviderPayload(t *testing.T) {
@@ -7939,7 +8151,7 @@ func TestAPIGitLabDisabledIssueCooldownPersistsThroughHTTPAndSQLite(t *testing.T
 	providerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.EscapedPath() {
-		case "/api/v4/projects/42":
+		case "/api/v4/projects/42", "/api/v4/projects/group%2Fproject":
 			metadataCalls.Add(1)
 			_, _ = io.WriteString(w, `{
 				"id":42,"path":"project","path_with_namespace":"group/project",
@@ -8882,8 +9094,7 @@ func TestAPISyncPRBypassesPullRequestETagForCIRefresh(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(repo)
 	require.NoError(database.UpsertHTTPEtag(
-		t.Context(), "github", "github.com", "acme", "widget",
-		"pull_request", 1, `"etag-v1"`,
+		t.Context(), repo.ID, "pull_request", 1, `"etag-v1"`,
 	))
 
 	rr := doJSON(t, srv, http.MethodPost, "/api/v1/pulls/gh/acme/widget/1/sync", nil)
@@ -10865,8 +11076,7 @@ func TestE2ELargeRepoSkipsGraphQLAndUsesConditionalPRDetail(t *testing.T) {
 		require.NoError(err)
 	}
 	require.NoError(database.UpsertHTTPEtag(
-		ctx, "github", "github.com", "acme", "widget",
-		"pull_request", 1, `"etag-v1"`,
+		ctx, repoID, "pull_request", 1, `"etag-v1"`,
 	))
 
 	syncer := ghclient.NewSyncer(
@@ -10910,8 +11120,7 @@ func TestE2ELargeRepoSkipsGraphQLAndUsesConditionalPRDetail(t *testing.T) {
 	assert.Equal("detail comment", detailResp.Events[0].Body)
 
 	etag, err := database.GetHTTPEtag(
-		ctx, "github", "github.com", "acme", "widget",
-		"pull_request", 1,
+		ctx, repoID, "pull_request", 1,
 	)
 	require.NoError(err)
 	assert.Equal(`"etag-v2"`, etag)
@@ -11026,8 +11235,7 @@ func TestE2ELargeRepoSkipsGraphQLAndUsesConditionalIssueDetail(t *testing.T) {
 		require.NoError(err)
 	}
 	require.NoError(database.UpsertHTTPEtag(
-		ctx, "github", "github.com", "acme", "widget",
-		"issue", 1, `"issue-etag-v1"`,
+		ctx, repoID, "issue", 1, `"issue-etag-v1"`,
 	))
 
 	syncer := ghclient.NewSyncer(
@@ -11071,8 +11279,7 @@ func TestE2ELargeRepoSkipsGraphQLAndUsesConditionalIssueDetail(t *testing.T) {
 	assert.Equal("issue detail comment", detailResp.Events[0].Body)
 
 	etag, err := database.GetHTTPEtag(
-		ctx, "github", "github.com", "acme", "widget",
-		"issue", 1,
+		ctx, repoID, "issue", 1,
 	)
 	require.NoError(err)
 	assert.Equal(`"issue-etag-v2"`, etag)
@@ -13367,6 +13574,107 @@ func TestAPIClosePR422AlreadyClosed(t *testing.T) {
 
 	pr, _ := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
 	require.Equal(db.MergeRequestStateClosed, pr.State)
+}
+
+func TestAPIClosePR422RecoveryDoesNotNestRepositoryLease(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	state := "closed"
+	var database *db.DB
+	writeLockAttempted := make(chan struct{})
+	reconciliationDone := make(chan error, 1)
+	var startReconciliation sync.Once
+	mock := &mockGH{
+		editPullRequestFn: func(
+			context.Context,
+			string,
+			string,
+			int,
+			ghclient.EditPullRequestOpts,
+		) (*gh.PullRequest, error) {
+			return nil, make422Error()
+		},
+		getPullRequestFn: func(
+			_ context.Context, _, _ string, _ int,
+		) (*gh.PullRequest, error) {
+			startReconciliation.Do(func() {
+				go func() {
+					_, err := database.UpsertRepoByProviderID(
+						ctx,
+						db.RepoIdentity{
+							Platform:       "github",
+							PlatformHost:   "github.com",
+							PlatformRepoID: "repo-stable",
+							Owner:          "acme-tools",
+							Name:           "renamed-widget",
+							RepoPath:       "acme-tools/renamed-widget",
+						},
+					)
+					reconciliationDone <- err
+				}()
+			})
+			select {
+			case <-writeLockAttempted:
+			case <-time.After(2 * time.Second):
+				require.Fail("repository reconciliation did not queue")
+			}
+			now := gh.Timestamp{Time: time.Now().UTC()}
+			return &gh.PullRequest{
+				ID: new(int64(1000)), Number: new(1), State: &state,
+				Title: new("PR"), HTMLURL: new("https://example.com/pull/1"),
+				User:      &gh.User{Login: new("user-a")},
+				Head:      &gh.PullRequestBranch{Ref: new("feature")},
+				Base:      &gh.PullRequestBranch{Ref: new("main")},
+				CreatedAt: &now, UpdatedAt: &now, ClosedAt: &now,
+			}, nil
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	seedPR(t, database, "acme", "widget", 1)
+	_, err := database.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "repo-stable",
+		Owner:          "acme",
+		Name:           "widget",
+		RepoPath:       "acme/widget",
+	})
+	require.NoError(err)
+	database.SetBeforeRepositoryReconciliationWriteLockForTest(
+		func() { close(writeLockAttempted) },
+	)
+
+	type result struct {
+		status int
+		err    error
+	}
+	responseDone := make(chan result, 1)
+	client := setupTestClient(t, srv)
+	go func() {
+		response, requestErr := client.HTTP.SetPrGithubStateWithResponse(
+			ctx, "gh", "acme", "widget", 1,
+			generated.SetPrGithubStateJSONRequestBody{State: "closed"},
+		)
+		status := 0
+		if response != nil {
+			status = response.StatusCode()
+		}
+		responseDone <- result{status: status, err: requestErr}
+	}()
+
+	select {
+	case got := <-responseDone:
+		require.NoError(got.err)
+		require.Equal(http.StatusOK, got.status)
+	case <-time.After(2 * time.Second):
+		require.Fail("422 recovery deadlocked behind its nested read lease")
+	}
+	select {
+	case err := <-reconciliationDone:
+		require.NoError(err)
+	case <-time.After(2 * time.Second):
+		require.Fail("repository reconciliation did not resume")
+	}
 }
 
 func TestAPIMarkPRDraftPersistsDraftFlag(t *testing.T) {
@@ -20427,7 +20735,16 @@ func TestAPIGetFilesAndDiffMarkGeneratedFilesE2E(t *testing.T) {
 	database := dbtest.Open(t)
 
 	bareDir := filepath.Join(dir, "clones")
-	bare := filepath.Join(bareDir, "github.com", "acme", "widget.git")
+	repoID, err := database.UpsertRepo(
+		ctx,
+		db.GitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	clones := gitclone.New(bareDir, nil)
+	bare, err := clones.RepositoryClone(
+		repoID, "github", "github.com", "acme", "widget",
+	).ClonePath()
+	require.NoError(err)
 	require.NoError(os.MkdirAll(filepath.Dir(bare), 0o755))
 
 	work := filepath.Join(dir, "work")
@@ -20468,7 +20785,6 @@ func TestAPIGetFilesAndDiffMarkGeneratedFilesE2E(t *testing.T) {
 	runGit(t, work, "push", "origin", "feature")
 	headSHA := testGitSHA(t, work, "HEAD")
 
-	clones := gitclone.New(bareDir, nil)
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": &mockGH{}},
 		database, nil, defaultTestRepos, time.Minute, nil, nil,
@@ -20479,13 +20795,6 @@ func TestAPIGetFilesAndDiffMarkGeneratedFilesE2E(t *testing.T) {
 	client := setupTestClient(t, srv)
 
 	seedPR(t, database, "acme", "widget", 1)
-	repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
-		Platform:     "github",
-		PlatformHost: "github.com",
-		Owner:        "acme",
-		Name:         "widget",
-	})
-	require.NoError(err)
 	require.NoError(database.UpdateDiffSHAs(ctx, repoID, 1, headSHA, mergeBase, mergeBase))
 
 	filesResp, err := client.HTTP.GetPullFilesWithResponse(
@@ -20546,7 +20855,16 @@ func TestAPILocalReadEndpointsServeDuringTokenRotationE2E(t *testing.T) {
 	database := dbtest.Open(t)
 
 	bareDir := filepath.Join(dir, "clones")
-	bare := filepath.Join(bareDir, "github.com", "acme", "widget.git")
+	repoID, err := database.UpsertRepo(
+		ctx,
+		db.GitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	clones := gitclone.New(bareDir, nil)
+	bare, err := clones.RepositoryClone(
+		repoID, "github", "github.com", "acme", "widget",
+	).ClonePath()
+	require.NoError(err)
 	require.NoError(os.MkdirAll(filepath.Dir(bare), 0o755))
 
 	work := filepath.Join(dir, "work")
@@ -20581,7 +20899,7 @@ func TestAPILocalReadEndpointsServeDuringTokenRotationE2E(t *testing.T) {
 		}, tokenauth.Options{}),
 	}
 
-	clones := gitclone.New(bareDir, gitclone.HostSources{"github.com": source})
+	clones = gitclone.New(bareDir, gitclone.HostSources{"github.com": source})
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": &mockGH{}},
 		database, nil, defaultTestRepos, time.Minute, nil, nil,
@@ -20592,8 +20910,6 @@ func TestAPILocalReadEndpointsServeDuringTokenRotationE2E(t *testing.T) {
 	client := setupTestClient(t, srv)
 
 	seedPR(t, database, "acme", "widget", 1)
-	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
-	require.NoError(err)
 	require.NoError(database.UpdateDiffSHAs(ctx, repoID, 1, headSHA, mergeBase, mergeBase))
 
 	// Rotation in progress: the token file is briefly empty. Any attempt to
@@ -21513,7 +21829,16 @@ func setupTestServerWithClonesAndServer(t *testing.T) (
 
 	bareDir := filepath.Join(dir, "clones")
 	require.NoError(t, os.MkdirAll(bareDir, 0o755))
-	bare := filepath.Join(bareDir, "github.com", "acme", "widget.git")
+	repoID, err := database.UpsertRepo(
+		t.Context(),
+		db.GitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(t, err)
+	clones := gitclone.New(bareDir, nil)
+	bare, err := clones.RepositoryClone(
+		repoID, "github", "github.com", "acme", "widget",
+	).ClonePath()
+	require.NoError(t, err)
 
 	tmpWork := filepath.Join(dir, "work")
 	runGit(t, dir, "init", "--bare", "--initial-branch=main", bare)
@@ -21545,7 +21870,6 @@ func setupTestServerWithClonesAndServer(t *testing.T) (
 		sha = testGitSHA(t, tmpWork, sha+"^1")
 	}
 
-	clones := gitclone.New(bareDir, nil)
 	mock := &mockGH{}
 	repos := []ghclient.RepoRef{{Platform: "github", Owner: "acme", Name: "widget", PlatformHost: "github.com"}}
 	syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": mock}, database, nil, repos, time.Minute, nil, nil)
@@ -21554,8 +21878,6 @@ func setupTestServerWithClonesAndServer(t *testing.T) (
 
 	seedPR(t, database, "acme", "widget", 1)
 	ctx := t.Context()
-	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
-	require.NoError(t, err)
 	require.NoError(t, database.UpdateDiffSHAs(ctx, repoID, 1, headSHA, mergeBase, mergeBase))
 
 	client = setupTestClient(t, srv)
@@ -21645,11 +21967,135 @@ func TestAPIGetRepoCommitDiff(t *testing.T) {
 	assert.Equal("content 3", body.Files[0].Hunks[0].Lines[0].Content)
 }
 
+func TestAPIGetRepoCommitDiffHoldsRepositoryLeaseThroughCloneRead(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	_, database, _, _, commitSHAs, srv := setupTestServerWithClonesAndServer(t)
+	oldRepo, err := database.GetRepoByIdentity(
+		ctx,
+		db.GitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	require.NotNil(oldRepo)
+	_, err = database.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "repository-old",
+		Owner:          "acme",
+		Name:           "widget",
+		RepoPath:       "acme/widget",
+	})
+	require.NoError(err)
+
+	readStarted := make(chan struct{})
+	allowRead := make(chan struct{})
+	var blockRead sync.Once
+	restoreReadHook := srv.clones.SetBeforeLocalReadForTest(func() {
+		blockRead.Do(func() {
+			close(readStarted)
+			<-allowRead
+		})
+	})
+	t.Cleanup(restoreReadHook)
+
+	responseDone := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		req := httptest.NewRequest(
+			http.MethodGet,
+			"/api/v1/repo/gh/acme/widget/commits/"+commitSHAs[2]+"/diff",
+			nil,
+		)
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		responseDone <- rr
+	}()
+	<-readStarted
+
+	replacementStarted := make(chan struct{})
+	restoreWriteHook := database.SetBeforeRepositoryReconciliationWriteLockForTest(func() {
+		select {
+		case <-replacementStarted:
+		default:
+			close(replacementStarted)
+		}
+	})
+	t.Cleanup(restoreWriteHook)
+	replacementDone := make(chan error, 1)
+	go func() {
+		_, err := database.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+			Platform:       "github",
+			PlatformHost:   "github.com",
+			PlatformRepoID: "repository-replacement",
+			Owner:          "acme",
+			Name:           "widget",
+			RepoPath:       "acme/widget",
+		})
+		replacementDone <- err
+	}()
+	<-replacementStarted
+
+	var earlyReplacementErr error
+	replacementCompletedEarly := false
+	select {
+	case earlyReplacementErr = <-replacementDone:
+		replacementCompletedEarly = true
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	close(allowRead)
+	rr := <-responseDone
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	if !replacementCompletedEarly {
+		require.NoError(<-replacementDone)
+	}
+	require.False(
+		replacementCompletedEarly,
+		"repository replacement completed while the diff still read the old clone: %v",
+		earlyReplacementErr,
+	)
+}
+
+func TestAPIGetRepoCommitDiffDoesNotReuseRetiredIncarnationClone(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	_, database, _, _, commitSHAs, srv := setupTestServerWithClonesAndServer(t)
+	_, err := database.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "repository-old", Owner: "acme", Name: "widget",
+		RepoPath: "acme/widget",
+	})
+	require.NoError(err)
+	_, err = database.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "repository-replacement", Owner: "acme", Name: "widget",
+		RepoPath: "acme/widget",
+	})
+	require.NoError(err)
+
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/api/v1/repo/gh/acme/widget/commits/"+commitSHAs[2]+"/diff",
+		nil,
+	)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	require.NotEqual(http.StatusOK, rr.Code, rr.Body.String())
+}
+
 func TestAPIGetRepoCommitDiffRejectsOptionLikeSHA(t *testing.T) {
 	require := require.New(t)
 
-	_, _, _, _, _, srv := setupTestServerWithClonesAndServer(t)
-	clonePath, err := srv.clones.ClonePath("github", "github.com", "acme", "widget")
+	_, database, _, _, _, srv := setupTestServerWithClonesAndServer(t)
+	repo, err := database.GetRepoByIdentity(
+		t.Context(),
+		db.GitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	require.NotNil(repo)
+	clonePath, err := srv.clones.RepositoryClone(
+		repo.ID, "github", "github.com", "acme", "widget",
+	).ClonePath()
 	require.NoError(err)
 	configPath := filepath.Join(clonePath, "config")
 	before, err := os.ReadFile(configPath)
@@ -21912,7 +22358,17 @@ func TestAPIGetDiff_RootCommit(t *testing.T) {
 
 	bareDir := filepath.Join(dir, "clones")
 	require.NoError(os.MkdirAll(bareDir, 0o755))
-	bare := filepath.Join(bareDir, "github.com", "acme", "rootrepo.git")
+	ctx := t.Context()
+	repoID, err := database.UpsertRepo(
+		ctx,
+		db.GitHubRepoIdentity("github.com", "acme", "rootrepo"),
+	)
+	require.NoError(err)
+	clones := gitclone.New(bareDir, nil)
+	bare, err := clones.RepositoryClone(
+		repoID, "github", "github.com", "acme", "rootrepo",
+	).ClonePath()
+	require.NoError(err)
 	tmpWork := filepath.Join(dir, "work")
 	runGit(t, dir, "init", "--bare", "--initial-branch=main", bare)
 	runGit(t, dir, "clone", bare, tmpWork)
@@ -21930,7 +22386,6 @@ func TestAPIGetDiff_RootCommit(t *testing.T) {
 	runGit(t, tmpWork, "push", "origin", "main")
 	headSHA := testGitSHA(t, tmpWork, "HEAD")
 
-	clones := gitclone.New(bareDir, nil)
 	mock := &mockGH{}
 	repos := []ghclient.RepoRef{{Owner: "acme", Name: "rootrepo", PlatformHost: "github.com"}}
 	syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": mock}, database, nil, repos, time.Minute, nil, nil)
@@ -21938,9 +22393,6 @@ func TestAPIGetDiff_RootCommit(t *testing.T) {
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{Clones: clones})
 
 	seedPR(t, database, "acme", "rootrepo", 1)
-	ctx := t.Context()
-	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "rootrepo"))
-	require.NoError(err)
 	require.NoError(database.UpdateDiffSHAs(ctx, repoID, 1, headSHA, "4b825dc642cb6eb9a060e54bf8d69288fbee4904", "4b825dc642cb6eb9a060e54bf8d69288fbee4904"))
 
 	client := setupTestClient(t, srv)
@@ -23674,13 +24126,26 @@ func setupWorkspaceServerFixtureWithMockHostAndOptions(
 
 	bareDir := filepath.Join(dir, "clones")
 	require.NoError(t, os.MkdirAll(bareDir, 0o755))
-	bare := filepath.Join(
-		bareDir, platformHost, "acme", "widget.git",
+	repoID, err := database.UpsertRepo(
+		t.Context(),
+		db.RepoIdentity{
+			Platform:       "github",
+			PlatformHost:   platformHost,
+			PlatformRepoID: "repo-acme-widget",
+			Owner:          "acme",
+			Name:           "widget",
+			RepoPath:       "acme/widget",
+		},
 	)
+	require.NoError(t, err)
+	clones := gitclone.New(bareDir, nil)
+	bare, err := clones.RepositoryClone(
+		repoID, "github", platformHost, "acme", "widget",
+	).ClonePath()
+	require.NoError(t, err)
 	runGit(t, dir, "clone", "--bare", remote, bare)
 	runGit(t, bare, "remote", "set-url", "origin", gitLocalRemoteURL(remote))
 
-	clones := gitclone.New(bareDir, nil)
 	worktreeDir := filepath.Join(dir, "worktrees")
 	repos := []ghclient.RepoRef{
 		{Owner: "acme", Name: "widget", PlatformHost: platformHost},
@@ -29160,9 +29625,22 @@ func TestWorkspaceCreateReusesExistingWorktreeThroughAPI(t *testing.T) {
 	}}}
 	fixture := setupWorkspaceServerFixture(t, cfg)
 	ctx := t.Context()
+	fixture.server.syncer.RunOnce(ctx)
+	seedPROnHost(
+		t, fixture.database,
+		platformHost, "acme", "widget", prNumber,
+		withSeedPRHeadRepoCloneURL("https://"+platformHost+"/acme/widget.git"),
+	)
+	activeRepo, err := fixture.database.GetRepoByIdentity(
+		ctx,
+		db.GitHubRepoIdentity(platformHost, "acme", "widget"),
+	)
+	require.NoError(err)
+	require.NotNil(activeRepo)
 	existingBranch := syntheticPRWorktreeBranchForTest(prNumber)
 	worktreePath := filepath.Join(
 		fixture.worktrees, "github", platformHost, "acme", "widget",
+		fmt.Sprintf("repo-%d", activeRepo.ID),
 		fmt.Sprintf("pr-%d", prNumber),
 	)
 	runGit(
@@ -29170,12 +29648,6 @@ func TestWorkspaceCreateReusesExistingWorktreeThroughAPI(t *testing.T) {
 		"worktree", "add", worktreePath, "-b", existingBranch, "main",
 	)
 	wantSHA := testGitSHA(t, worktreePath, "HEAD")
-	seedPROnHost(
-		t, fixture.database,
-		platformHost, "acme", "widget", prNumber,
-		withSeedPRHeadRepoCloneURL("https://"+platformHost+"/acme/widget.git"),
-	)
-
 	createResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
 		generated.CreateWorkspaceInputBody{
@@ -29222,8 +29694,21 @@ func TestWorkspaceRetryReusesExistingLocalHeadBranchThroughAPI(t *testing.T) {
 	}}}
 	fixture := setupWorkspaceServerFixture(t, cfg)
 	ctx := t.Context()
+	fixture.server.syncer.RunOnce(ctx)
+	seedPROnHost(
+		t, fixture.database,
+		platformHost, "acme", "widget", prNumber,
+		withSeedPRHeadRepoCloneURL("https://"+platformHost+"/acme/widget.git"),
+	)
+	activeRepo, err := fixture.database.GetRepoByIdentity(
+		ctx,
+		db.GitHubRepoIdentity(platformHost, "acme", "widget"),
+	)
+	require.NoError(err)
+	require.NotNil(activeRepo)
 	worktreePath := filepath.Join(
 		fixture.worktrees, "github", platformHost, "acme", "widget",
+		fmt.Sprintf("repo-%d", activeRepo.ID),
 		fmt.Sprintf("pr-%d", prNumber),
 	)
 	runGit(
@@ -29232,12 +29717,6 @@ func TestWorkspaceRetryReusesExistingLocalHeadBranchThroughAPI(t *testing.T) {
 		"-b", "feature", "refs/remotes/origin/feature",
 	)
 	wantSHA := testGitSHA(t, worktreePath, "HEAD")
-	seedPROnHost(
-		t, fixture.database,
-		platformHost, "acme", "widget", prNumber,
-		withSeedPRHeadRepoCloneURL("https://"+platformHost+"/acme/widget.git"),
-	)
-
 	createResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
 		generated.CreateWorkspaceInputBody{

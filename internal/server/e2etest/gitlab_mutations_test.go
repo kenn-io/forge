@@ -426,6 +426,18 @@ func assertNoGitLabRepoPathLookup(t *testing.T, recorder *gitlabAPIRecorder) {
 	assert.False(t, lookedUp, "GitLab mutations must use the stored project id without path lookup")
 }
 
+func assertGitLabRepoIdentityRevalidated(t *testing.T, recorder *gitlabAPIRecorder) {
+	t.Helper()
+	assert.True(
+		t,
+		recorder.findEventually(
+			http.MethodGet,
+			"/api/v4/projects/acme%2Fwidget",
+		),
+		"post-mutation sync must revalidate the configured repository route",
+	)
+}
+
 func TestGitLabMutationCommentPostAndEdit(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -650,7 +662,7 @@ func TestGitLabMutationApprove(t *testing.T) {
 	note, ok := recorder.find(http.MethodPost, "/api/v4/projects/4242/merge_requests/7/notes")
 	require.True(ok, "approval body was not posted as a note")
 	assert.Contains(note.Body, `"body":"ship it"`)
-	assertNoGitLabRepoPathLookup(t, recorder)
+	assertGitLabRepoIdentityRevalidated(t, recorder)
 
 	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
 	require.NoError(err)

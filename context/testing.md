@@ -321,6 +321,10 @@ Real-Git test packages use `gitsafe.RunIsolatedMain` in `TestMain`: one empty co
 Use `Runner` where code strips Git variables, and `MutableRunner` only for global config
 mutations (`internal/testutil/gitsafe/gitsafe.go::RunIsolatedMain`).
 
+Managed-clone fixtures must bind the persisted repository ID before resolving
+their clone path; route-keyed fixture storage is abandoned once runtime setup
+binds the incarnation (`internal/testutil/diff_repo.go::SetupDiffRepo`).
+
 Real tmux and PTY tests can still run in parallel when each test owns its
 session names, temp dirs, sockets, and cleanup. If the bottleneck is external
 resource pressure rather than correctness, keep `t.Parallel()` and gate the

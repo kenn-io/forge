@@ -129,21 +129,26 @@ func runArchiveMutation(command string, daemonFlags archiveDaemonFlags, all bool
 func newArchiveStatusCommand(stdout io.Writer) *cobra.Command {
 	flags := archiveDaemonFlags{}
 	var repositories archiveStringList
+	var repositoryIDs []int64
 	cmd := &cobra.Command{
 		Use:   "status",
 		Short: "Show repository archive status",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runArchiveStatus(flags, repositories, stdout)
+			return runArchiveStatus(flags, repositories, repositoryIDs, stdout)
 		},
 	}
 	addArchiveDaemonFlags(cmd, &flags)
 	cmd.Flags().Bool("json", false, "emit JSON (status output is always JSON)")
 	cmd.Flags().Var(&repositories, "repo", "provider|host/repo_path; repeat for multiple repositories")
+	cmd.Flags().Int64SliceVar(&repositoryIDs, "repo-id", nil, "immutable repository incarnation ID; repeat for multiple repositories")
 	return cmd
 }
 
-func runArchiveStatus(daemonFlags archiveDaemonFlags, repositories []string, stdout io.Writer) error {
+func runArchiveStatus(daemonFlags archiveDaemonFlags, repositories []string, repositoryIDs []int64, stdout io.Writer) error {
+	if len(repositories) > 0 && len(repositoryIDs) > 0 {
+		return errors.New("--repo and --repo-id are mutually exclusive")
+	}
 	refs, err := parseArchiveRepositoryRefs(repositories)
 	if err != nil {
 		return err
@@ -156,6 +161,9 @@ func runArchiveStatus(daemonFlags archiveDaemonFlags, repositories []string, std
 	if len(refs) > 0 {
 		values := archiveRepositoryFilters(refs)
 		params.Repo = &values
+	}
+	if len(repositoryIDs) > 0 {
+		params.RepoId = &repositoryIDs
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), daemonFlags.timeout)
 	defer cancel()
@@ -170,14 +178,15 @@ func runArchiveStatus(daemonFlags archiveDaemonFlags, repositories []string, std
 }
 
 type archiveReportOptions struct {
-	daemonFlags  archiveDaemonFlags
-	days         int
-	startValue   string
-	endValue     string
-	format       string
-	verbose      bool
-	output       string
-	repositories archiveStringList
+	daemonFlags   archiveDaemonFlags
+	days          int
+	startValue    string
+	endValue      string
+	format        string
+	verbose       bool
+	output        string
+	repositories  archiveStringList
+	repositoryIDs []int64
 }
 
 func newArchiveReportCommand(stdout io.Writer, now func() time.Time) *cobra.Command {
@@ -198,10 +207,14 @@ func newArchiveReportCommand(stdout io.Writer, now func() time.Time) *cobra.Comm
 	cmd.Flags().BoolVar(&opts.verbose, "verbose", false, "include bounded activity details")
 	cmd.Flags().StringVar(&opts.output, "output", "", "write output atomically to this file")
 	cmd.Flags().Var(&opts.repositories, "repo", "provider|host/repo_path; repeat for multiple repositories")
+	cmd.Flags().Int64SliceVar(&opts.repositoryIDs, "repo-id", nil, "immutable repository incarnation ID; repeat for multiple repositories")
 	return cmd
 }
 
 func runArchiveReport(opts archiveReportOptions, daysSet bool, stdout io.Writer, now func() time.Time) error {
+	if len(opts.repositories) > 0 && len(opts.repositoryIDs) > 0 {
+		return errors.New("--repo and --repo-id are mutually exclusive")
+	}
 	if daysSet && opts.days <= 0 {
 		return errors.New("--days must be positive")
 	}
@@ -226,6 +239,9 @@ func runArchiveReport(opts archiveReportOptions, daysSet bool, stdout io.Writer,
 	if len(refs) > 0 {
 		values := archiveRepositoryFilters(refs)
 		params.Repo = &values
+	}
+	if len(opts.repositoryIDs) > 0 {
+		params.RepoId = &opts.repositoryIDs
 	}
 	if opts.verbose {
 		params.Verbose = &opts.verbose
@@ -435,8 +451,13 @@ func archiveOptionalIntPointer(value *int64) *int {
 }
 
 func archiveReportRepositoryRefFromAPI(input generated.ArchiveRepositoryRef) report.RepositoryRef {
+	repositoryID := int64(0)
+	if input.RepositoryId != nil {
+		repositoryID = *input.RepositoryId
+	}
 	return report.RepositoryRef{
-		Provider: input.Provider, PlatformHost: input.PlatformHost, Owner: input.Owner,
+		RepositoryID: repositoryID,
+		Provider:     input.Provider, PlatformHost: input.PlatformHost, Owner: input.Owner,
 		Name: input.Name, RepoPath: input.RepoPath,
 	}
 }

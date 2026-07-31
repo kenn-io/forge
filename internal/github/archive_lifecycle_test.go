@@ -1258,7 +1258,19 @@ func TestSyncRepoRegistersReadAndWriteIdentityProviderWork(t *testing.T) {
 		<-release
 		return nil, errors.New("stop after identity resolution")
 	}}
-	syncer := NewSyncer(map[string]Client{"github.com": mc}, database, nil, nil, time.Hour, nil, nil)
+	repo := RepoRef{
+		Platform: platform.KindGitHub, PlatformHost: "github.com",
+		Owner: "acme", Name: "widget",
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc},
+		database,
+		nil,
+		[]RepoRef{repo},
+		time.Hour,
+		nil,
+		nil,
+	)
 	t.Cleanup(syncer.Stop)
 	router, err := NewHostRouter("github.com", &Route{
 		Key:           RouteKey{Host: "github.com", Owner: "acme"},
@@ -1268,10 +1280,6 @@ func TestSyncRepoRegistersReadAndWriteIdentityProviderWork(t *testing.T) {
 	})
 	require.NoError(err)
 	syncer.SetGitHubRouters(map[string]*HostRouter{"github.com": router})
-	repo := RepoRef{
-		Platform: platform.KindGitHub, PlatformHost: "github.com",
-		Owner: "acme", Name: "widget",
-	}
 
 	done := make(chan error, 1)
 	go func() { done <- syncer.syncRepo(t.Context(), repo) }()

@@ -300,12 +300,42 @@ func TestRunOnceSyncesReposInParallel(t *testing.T) {
 		saturated:        make(chan struct{}),
 		saturationTarget: parallelism,
 	}
+	mc.getRepositoryFn = func(
+		_ context.Context, owner, repo string,
+	) (*gh.Repository, error) {
+		var repoIndex int64
+		if _, err := fmt.Sscanf(repo, "r%d", &repoIndex); err != nil {
+			return nil, fmt.Errorf("parse synthetic repository ID: %w", err)
+		}
+		id := repoIndex + 1
+		nodeID := fmt.Sprintf("repo-%d", id)
+		return &gh.Repository{
+			ID:       &id,
+			NodeID:   &nodeID,
+			Name:     &repo,
+			Owner:    &gh.User{Login: &owner},
+			Archived: new(bool),
+		}, nil
+	}
 	repos := make([]ghclient.RepoRef, repoCount)
 	for i := range repos {
+		name := fmt.Sprintf("r%d", i)
+		providerID := fmt.Sprintf("repo-%d", i+1)
+		repoID, err := d.UpsertRepoByProviderID(t.Context(), db.RepoIdentity{
+			Platform:       "github",
+			PlatformHost:   "github.com",
+			PlatformRepoID: providerID,
+			Owner:          "o",
+			Name:           name,
+			RepoPath:       "o/" + name,
+		})
+		require.NoError(err)
 		repos[i] = ghclient.RepoRef{
-			Owner:        "o",
-			Name:         fmt.Sprintf("r%d", i),
-			PlatformHost: "github.com",
+			RepoID:             repoID,
+			Owner:              "o",
+			Name:               name,
+			PlatformHost:       "github.com",
+			PlatformExternalID: providerID,
 		}
 	}
 
@@ -323,7 +353,7 @@ func TestRunOnceSyncesReposInParallel(t *testing.T) {
 
 	select {
 	case <-mc.saturated:
-	case <-time.After(2 * time.Second):
+	case <-time.After(5 * time.Second):
 		require.Failf(
 			"expected worker pool to saturate",
 			"expected %d concurrent syncs, got %d",

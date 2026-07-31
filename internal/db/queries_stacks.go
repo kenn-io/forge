@@ -115,7 +115,7 @@ func (d *DB) ReplaceStackMembers(ctx context.Context, stackID int64, members []S
 // ListStacksWithMembers returns stacks with repo info and their members.
 // Only stacks that have at least one open member are returned.
 func (d *DB) ListStacksWithMembers(ctx context.Context, repoFilter string) ([]StackWithRepo, map[int64][]StackMemberWithPR, error) {
-	var conds []string
+	conds := []string{"r.retired_at IS NULL"}
 	var args []any
 	if repoFilter != "" {
 		pathKey := canonicalRepoPathKey(repoFilter)
@@ -125,7 +125,9 @@ func (d *DB) ListStacksWithMembers(ctx context.Context, repoFilter string) ([]St
 		if strings.Count(pathKey, "/") > 1 {
 			var exists int
 			err := d.ro.QueryRowContext(ctx,
-				`SELECT 1 FROM forge_repos WHERE repo_path_key = ? LIMIT 1`,
+				`SELECT 1 FROM forge_repos
+				 WHERE repo_path_key = ? AND retired_at IS NULL
+				 LIMIT 1`,
 				pathKey,
 			).Scan(&exists)
 			if errors.Is(err, sql.ErrNoRows) {

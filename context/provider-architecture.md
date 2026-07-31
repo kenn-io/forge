@@ -249,11 +249,10 @@ implemented notification source today.
 Rules:
 
 - Notification item identity is `(platform, platform_host, platform_notification_id)`.
-- Notification repo scope is `(platform, platform_host, repo_owner, repo_name)`.
-- Sync watermarks are keyed by full repository identity
-  `(platform, platform_host, repo_owner, repo_name)`, never by host alone; one
-  repository's sync failure must not block watermark advancement for healthy
-  repositories on the same host.
+- Notification repo ownership and sync watermarks are keyed by internal
+  repository ID. Provider/host/owner/name remain routing and display fields;
+  one repository incarnation's sync failure must not block watermark
+  advancement for healthy repositories on the same host.
 - Blank provider values are invalid in notification paths. Do not add fallback
   behavior that silently treats missing provider as GitHub.
 - If server/API keeps GitHub-shaped response fields for compatibility, contain

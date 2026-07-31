@@ -42,6 +42,13 @@ func TestTokenFileRotationE2EConfigStartupAndHTTPSync(t *testing.T) {
 		tokens = append(tokens, r.Header.Get("Private-Token"))
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.EscapedPath() {
+		case "/api/v4/projects/group%2Fproject":
+			_, _ = fmt.Fprint(w, `{
+				"id": 42,
+				"path": "project",
+				"path_with_namespace": "group/project",
+				"web_url": "https://gitlab.example.com/group/project"
+			}`)
 		case "/api/v4/projects/42/merge_requests/7":
 			_, _ = fmt.Fprint(w, `{
 				"id": 7001,
@@ -184,6 +191,13 @@ func TestInvalidReloadKeepsLiveTokenSourceE2E(t *testing.T) {
 		tokens = append(tokens, r.Header.Get("Private-Token"))
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.EscapedPath() {
+		case "/api/v4/projects/group%2Fproject":
+			_, _ = fmt.Fprint(w, `{
+				"id": 42,
+				"path": "project",
+				"path_with_namespace": "group/project",
+				"web_url": "https://gitlab.example.com/group/project"
+			}`)
 		case "/api/v4/projects/42/merge_requests/7":
 			_, _ = fmt.Fprint(w, `{
 				"id": 7001,

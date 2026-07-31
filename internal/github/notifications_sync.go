@@ -274,7 +274,7 @@ func (s *Syncer) syncNotificationsForHost(ctx context.Context, kind platform.Kin
 	var repoErrs []error
 	for _, repo := range trackedRepos {
 		if err := s.syncNotificationsForRepo(
-			ctx, kind, host, client, tracked, repo, startedAt,
+			ctx, kind, host, client, repo, startedAt,
 		); err != nil {
 			repoErrs = append(repoErrs, err)
 		}
@@ -287,13 +287,52 @@ func (s *Syncer) syncNotificationsForRepo(
 	kind platform.Kind,
 	host string,
 	client notificationClient,
-	tracked map[string]RepoRef,
 	repo RepoRef,
 	startedAt time.Time,
 ) error {
+	resolvedRepo, _, err := s.resolveActiveRepository(ctx, repo)
+	if err != nil {
+		return fmt.Errorf(
+			"resolve notification repository %s/%s on %s: %w",
+			repo.Owner,
+			repo.Name,
+			host,
+			err,
+		)
+	}
+	repo = resolvedRepo
+	releaseReconciliation, err := s.db.LockRepositoryReconciliationRead(ctx)
+	if err != nil {
+		return fmt.Errorf(
+			"lease notification repository %s/%s on %s: %w",
+			repo.Owner,
+			repo.Name,
+			host,
+			err,
+		)
+	}
+	defer releaseReconciliation()
+	stored, err := s.db.GetRepoByID(ctx, repo.RepoID)
+	if err != nil {
+		return fmt.Errorf(
+			"reauthorize notification repository %s/%s on %s: %w",
+			repo.Owner,
+			repo.Name,
+			host,
+			err,
+		)
+	}
+	if stored == nil || stored.RetiredAt != nil {
+		return fmt.Errorf(
+			"%w: repository %d",
+			db.ErrRepositoryRetired,
+			repo.RepoID,
+		)
+	}
+	repo = repoRefFromStoredRepository(repo, stored, nil)
 	platformName := string(kind)
 	watermark, err := s.db.GetNotificationSyncWatermark(
-		ctx, platformName, host, repo.Owner, repo.Name,
+		ctx, repo.RepoID,
 	)
 	if err != nil {
 		return fmt.Errorf(
@@ -318,11 +357,13 @@ func (s *Syncer) syncNotificationsForRepo(
 			return err
 		}
 		threads, hasNext, err := client.ListNotifications(ctx, NotificationListOptions{
-			All:       true,
-			Since:     since,
-			Page:      page,
-			RepoOwner: repo.Owner,
-			RepoName:  repo.Name,
+			All:             true,
+			Since:           since,
+			Page:            page,
+			RepoOwner:       repo.Owner,
+			RepoName:        repo.Name,
+			CredentialOwner: repo.CredentialOwner,
+			CredentialName:  repo.CredentialName,
 		})
 		if err != nil {
 			return fmt.Errorf(
@@ -343,8 +384,10 @@ func (s *Syncer) syncNotificationsForRepo(
 				thread.Participating = true
 			}
 			key := notificationRepoKey(platformName, host, thread.RepoOwner, thread.RepoName)
-			trackedRepo, ok := tracked[key]
-			if !ok {
+			resolvedKey := notificationRepoKey(
+				platformName, host, repo.Owner, repo.Name,
+			)
+			if key != resolvedKey {
 				continue
 			}
 			// Only notifications anchored to a PR or issue have an in-app
@@ -362,7 +405,7 @@ func (s *Syncer) syncNotificationsForRepo(
 			if thread.Reason == "author" {
 				continue
 			}
-			notification, err := s.notificationToDB(ctx, host, trackedRepo, thread, now)
+			notification, err := s.notificationToDB(ctx, host, repo, thread, now)
 			if err != nil {
 				return fmt.Errorf(
 					"normalize notification %s for %s/%s on %s page %d: %w",
@@ -380,7 +423,7 @@ func (s *Syncer) syncNotificationsForRepo(
 	}
 	lastFullSyncAt := watermarkLastFullSyncAt(watermark, startedAt, fullSync)
 	if err := s.db.UpdateNotificationSyncWatermark(
-		ctx, platformName, host, repo.Owner, repo.Name, startedAt, lastFullSyncAt,
+		ctx, repo.RepoID, startedAt, lastFullSyncAt,
 	); err != nil {
 		return fmt.Errorf(
 			"store notification sync watermark for %s/%s on %s: %w",
@@ -404,12 +447,14 @@ func (s *Syncer) listParticipatingNotificationIDs(
 				return nil, err
 			}
 			threads, hasNext, err := client.ListNotifications(ctx, NotificationListOptions{
-				All:           true,
-				Participating: true,
-				Since:         since,
-				Page:          page,
-				RepoOwner:     repo.Owner,
-				RepoName:      repo.Name,
+				All:             true,
+				Participating:   true,
+				Since:           since,
+				Page:            page,
+				RepoOwner:       repo.Owner,
+				RepoName:        repo.Name,
+				CredentialOwner: repo.CredentialOwner,
+				CredentialName:  repo.CredentialName,
 			})
 			if err != nil {
 				return nil, fmt.Errorf("list participating notifications for %s/%s on %s page %d: %w", repo.Owner, repo.Name, host, page, err)
@@ -598,7 +643,7 @@ func (s *Syncer) ProcessQueuedNotificationReads(ctx context.Context, kind platfo
 	// could overlap these requests. Rows whose repository no longer resolves
 	// to a route register nothing: their wire calls fail closed at routing
 	// without upstream I/O.
-	bucketRepos, ackBuckets := s.ackRepoBuckets(kind, host, queued)
+	bucketRepos, ackBuckets := s.ackRepoBuckets(ctx, kind, host, queued)
 	seenBuckets := make(map[string]struct{}, len(bucketRepos))
 	for _, notification := range queued {
 		bucket, ok := ackBuckets[notification.ID]
@@ -618,126 +663,129 @@ func (s *Syncer) ProcessQueuedNotificationReads(ctx context.Context, kind platfo
 	exhausted := make(map[string]struct{}, len(seenBuckets))
 	var rateLimitErr error
 	for _, notification := range queued {
-		bucket := ackBuckets[notification.ID]
+		bucket, ok := ackBuckets[notification.ID]
+		if !ok || notification.RepoID == nil {
+			continue
+		}
 		if _, stop := exhausted[bucket]; stop {
 			continue
 		}
-		// Each queued ack spends a refetch, the mark-read, and a
-		// reconciliation refetch on this row's credential. Stop before
-		// crossing that credential's reserve instead of discovering it as a
-		// per-row rate-limit error partway through the acknowledgement.
-		//
-		// Exhausting one credential's headroom stops only that bucket. Other
-		// credentials on this host keep propagating, matching how an actual
-		// rate-limit response is handled below.
-		if err := s.ensureNotificationBudget(RepoRef{
-			Platform: kind, PlatformHost: host,
-			Owner: notification.RepoOwner, Name: notification.RepoName,
-		}, client, notificationAckWorstCaseRequests); err != nil {
+		leaseCtx, repo, release, err := s.leaseActiveRepositoryByID(
+			ctx, *notification.RepoID,
+		)
+		if errors.Is(err, db.ErrRepositoryRetired) ||
+			errors.Is(err, errRepositoryResolutionSuperseded) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		notification.RepoOwner = repo.Owner
+		notification.RepoName = repo.Name
+		limited, limitedErr, processErr := s.processQueuedNotificationRead(
+			leaseCtx, kind, host, bucket, bucketRepos[bucket],
+			client, repo, notification,
+		)
+		release()
+		if processErr != nil {
+			return processErr
+		}
+		if limited {
 			exhausted[bucket] = struct{}{}
 			if rateLimitErr == nil {
-				rateLimitErr = err
+				rateLimitErr = limitedErr
 			}
-			continue
-		}
-		current, err := s.db.NotificationAckPropagationCurrent(ctx, notification.ID, notification.SourceAckQueuedAt, notification.SourceUpdatedAt)
-		if err != nil {
-			return err
-		}
-		if !current {
-			continue
-		}
-		remote, advanced, err := s.fetchAdvancedNotificationThread(ctx, host, client, notification)
-		if err != nil {
-			// The pre-ack refetch spends the same upstream budget as the
-			// mark-read call, so a rate limit here must defer the queued ack
-			// rather than retry the same due row every tick. Only this refetch
-			// API error routes through backoff; the persistence error below
-			// surfaces normally so a failed local refresh is not hidden.
-			limited, deferErr := s.deferQueuedNotificationAckOnError(
-				ctx, kind, host, bucket, bucketRepos[bucket], notification, err,
-			)
-			if deferErr != nil {
-				return deferErr
-			}
-			if limited {
-				exhausted[bucket] = struct{}{}
-				rateLimitErr = fmt.Errorf(
-					"notification read propagation rate limited for %s/%s on %s: %w",
-					notification.RepoOwner, notification.RepoName, host, err,
-				)
-			}
-			continue
-		}
-		if advanced {
-			// New activity arrived since the read was queued. Refresh local
-			// state from the upstream thread, preserving its read/unread flag
-			// so a thread the user already read upstream is not resurrected,
-			// and skip the mark-read so we never ack unseen activity.
-			if err := s.persistReopenedNotification(ctx, host, notification, remote, false); err != nil {
-				return err
-			}
-			continue
-		}
-		markRead := client.MarkNotificationThreadRead
-		if routed, ok := client.(routedNotificationReadMarker); ok {
-			markRead = func(ctx context.Context, threadID string) error {
-				return routed.MarkNotificationThreadReadForRepo(
-					ctx, notification.RepoOwner, notification.RepoName, threadID,
-				)
-			}
-		}
-		if err := markRead(ctx, notification.PlatformNotificationID); err != nil {
-			limited, deferErr := s.deferQueuedNotificationAckOnError(
-				ctx, kind, host, bucket, bucketRepos[bucket], notification, err,
-			)
-			if deferErr != nil {
-				return deferErr
-			}
-			if limited {
-				exhausted[bucket] = struct{}{}
-				rateLimitErr = fmt.Errorf(
-					"notification read propagation rate limited for %s/%s on %s: %w",
-					notification.RepoOwner, notification.RepoName, host, err,
-				)
-			}
-			continue
-		}
-		// Reconciliation refetch: if the thread advanced between the pre-ack
-		// refetch and the mark-read, our PATCH may have read newer activity
-		// the user never saw, so force it back to unread. Do not clear the
-		// queued ack until this refetch proves there was no newer activity.
-		remote, advanced, err = s.fetchAdvancedNotificationThread(ctx, host, client, notification)
-		if err != nil {
-			limited, deferErr := s.reopenNotificationAfterPostAckRefetchError(
-				ctx, kind, host, bucket, bucketRepos[bucket], notification, err,
-			)
-			if deferErr != nil {
-				return deferErr
-			}
-			if limited {
-				exhausted[bucket] = struct{}{}
-				rateLimitErr = fmt.Errorf(
-					"notification read propagation rate limited for %s/%s on %s: %w",
-					notification.RepoOwner, notification.RepoName, host, err,
-				)
-			}
-			continue
-		}
-		if advanced {
-			if err := s.persistReopenedNotification(ctx, host, notification, remote, true); err != nil {
-				return err
-			}
-			continue
-		}
-		syncedAt := time.Now().UTC()
-		if err := s.db.MarkNotificationAckPropagationResult(ctx, notification.ID, notification.SourceAckQueuedAt, notification.SourceUpdatedAt, &syncedAt, "", nil); err != nil {
-			return err
 		}
 	}
 	// Healthy credentials finished their rows; still report the rate limit so
 	// the caller records the host's sync error rather than claiming success.
 	return rateLimitErr
+}
+
+func (s *Syncer) processQueuedNotificationRead(
+	ctx context.Context,
+	kind platform.Kind,
+	host string,
+	bucket string,
+	bucketRepos []db.NotificationRepoRef,
+	client notificationClient,
+	repo RepoRef,
+	notification db.Notification,
+) (bool, error, error) {
+	if err := s.ensureNotificationBudget(
+		repo, client, notificationAckWorstCaseRequests,
+	); err != nil {
+		return true, err, nil
+	}
+	current, err := s.db.NotificationAckPropagationCurrent(
+		ctx, notification.ID, notification.SourceAckQueuedAt,
+		notification.SourceUpdatedAt,
+	)
+	if err != nil || !current {
+		return false, nil, err
+	}
+	remote, advanced, err := s.fetchAdvancedNotificationThread(
+		ctx, host, client, notification,
+	)
+	if err != nil {
+		limited, deferErr := s.deferQueuedNotificationAckOnError(
+			ctx, kind, host, bucket, bucketRepos, notification, err,
+		)
+		return limited, notificationAckRateLimitError(host, notification, err, limited), deferErr
+	}
+	if advanced {
+		return false, nil, s.persistReopenedNotification(
+			ctx, host, notification, remote, false,
+		)
+	}
+	markRead := client.MarkNotificationThreadRead
+	if routed, ok := client.(routedNotificationReadMarker); ok {
+		markRead = func(ctx context.Context, threadID string) error {
+			return routed.MarkNotificationThreadReadForRepo(
+				ctx, notification.RepoOwner, notification.RepoName, threadID,
+			)
+		}
+	}
+	if err := markRead(ctx, notification.PlatformNotificationID); err != nil {
+		limited, deferErr := s.deferQueuedNotificationAckOnError(
+			ctx, kind, host, bucket, bucketRepos, notification, err,
+		)
+		return limited, notificationAckRateLimitError(host, notification, err, limited), deferErr
+	}
+	remote, advanced, err = s.fetchAdvancedNotificationThread(
+		ctx, host, client, notification,
+	)
+	if err != nil {
+		limited, deferErr := s.reopenNotificationAfterPostAckRefetchError(
+			ctx, kind, host, bucket, bucketRepos, notification, err,
+		)
+		return limited, notificationAckRateLimitError(host, notification, err, limited), deferErr
+	}
+	if advanced {
+		return false, nil, s.persistReopenedNotification(
+			ctx, host, notification, remote, true,
+		)
+	}
+	syncedAt := time.Now().UTC()
+	return false, nil, s.db.MarkNotificationAckPropagationResult(
+		ctx, notification.ID, notification.SourceAckQueuedAt,
+		notification.SourceUpdatedAt, &syncedAt, "", nil,
+	)
+}
+
+func notificationAckRateLimitError(
+	host string,
+	notification db.Notification,
+	cause error,
+	limited bool,
+) error {
+	if !limited {
+		return nil
+	}
+	return fmt.Errorf(
+		"notification read propagation rate limited for %s/%s on %s: %w",
+		notification.RepoOwner, notification.RepoName, host, cause,
+	)
 }
 
 // ackRepoBuckets groups the repositories whose queued acknowledgements share a
@@ -749,7 +797,10 @@ func (s *Syncer) ProcessQueuedNotificationReads(ctx context.Context, kind platfo
 // always present, so deferral works even for a syncer with no tracked repos,
 // while the tracked list also reaches queued rows this batch did not include.
 func (s *Syncer) ackRepoBuckets(
-	kind platform.Kind, host string, queued []db.Notification,
+	ctx context.Context,
+	kind platform.Kind,
+	host string,
+	queued []db.Notification,
 ) (map[string][]db.NotificationRepoRef, map[int64]string) {
 	byBucket := make(map[string][]db.NotificationRepoRef)
 	byNotification := make(map[int64]string, len(queued))
@@ -766,15 +817,32 @@ func (s *Syncer) ackRepoBuckets(
 		})
 	}
 	for _, notification := range queued {
-		bucket, err := s.bucketKeyForRepo(RepoRef{
-			Platform: kind, PlatformHost: host,
-			Owner: notification.RepoOwner, Name: notification.RepoName,
-		}, write)
+		if notification.RepoID == nil {
+			continue
+		}
+		stored, err := s.db.GetRepoByID(ctx, *notification.RepoID)
+		if err != nil || stored == nil || stored.RetiredAt != nil {
+			continue
+		}
+		repo := RepoRef{
+			Platform: platform.Kind(stored.Platform), RepoID: stored.ID,
+			PlatformHost: stored.PlatformHost, Owner: stored.Owner, Name: stored.Name,
+			RepoPath: stored.RepoPath, PlatformExternalID: stored.PlatformRepoID,
+		}
+		if tracked, ok := s.trackedRepoForActiveRepository(repo); ok {
+			repo.CredentialOwner = tracked.CredentialOwner
+			repo.CredentialName = tracked.CredentialName
+			repo.PlatformRepoID = tracked.PlatformRepoID
+		}
+		if repoPlatform(repo) != kind || repoHost(repo) != host {
+			continue
+		}
+		bucket, err := s.bucketKeyForRepo(repo, write)
 		if err != nil {
 			continue
 		}
 		byNotification[notification.ID] = bucket
-		add(bucket, notification.RepoOwner, notification.RepoName)
+		add(bucket, repo.Owner, repo.Name)
 	}
 	for _, repo := range s.TrackedRepos() {
 		if repoPlatform(repo) != kind || repoHost(repo) != host {

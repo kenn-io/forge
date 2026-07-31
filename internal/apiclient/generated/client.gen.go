@@ -1306,6 +1306,7 @@ type ArchiveRepositoryRef struct {
 	PlatformHost string `json:"platform_host"`
 	Provider     string `json:"provider"`
 	RepoPath     string `json:"repo_path"`
+	RepositoryId *int64 `json:"repository_id,omitempty"`
 }
 
 // ArchiveStatusResponse defines model for ArchiveStatusResponse.
@@ -4295,14 +4296,20 @@ type GetArchiveReportParams struct {
 	End string `form:"end" json:"end"`
 
 	// Repo Repeated provider|platform_host/repo_path filters.
-	Repo    *[]string `form:"repo,omitempty" json:"repo,omitempty"`
-	Verbose *bool     `form:"verbose,omitempty" json:"verbose,omitempty"`
+	Repo *[]string `form:"repo,omitempty" json:"repo,omitempty"`
+
+	// RepoId Repeated immutable repository incarnation IDs.
+	RepoId  *[]int64 `form:"repo_id,omitempty" json:"repo_id,omitempty"`
+	Verbose *bool    `form:"verbose,omitempty" json:"verbose,omitempty"`
 }
 
 // ListArchiveStatusParams defines parameters for ListArchiveStatus.
 type ListArchiveStatusParams struct {
 	// Repo Repeated provider|platform_host/repo_path filters.
 	Repo *[]string `form:"repo,omitempty" json:"repo,omitempty"`
+
+	// RepoId Repeated immutable repository incarnation IDs.
+	RepoId *[]int64 `form:"repo_id,omitempty" json:"repo_id,omitempty"`
 }
 
 // BrowseDocsFoldersParams defines parameters for BrowseDocsFolders.
@@ -11537,6 +11544,18 @@ func NewGetArchiveReportRequest(server string, params *GetArchiveReportParams) (
 
 		}
 
+		if params.RepoId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "repo_id", *params.RepoId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "array", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
 		if params.Verbose != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "verbose", *params.Verbose, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
@@ -11634,6 +11653,18 @@ func NewListArchiveStatusRequest(server string, params *ListArchiveStatusParams)
 		if params.Repo != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "repo", *params.Repo, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "array", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.RepoId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "repo_id", *params.RepoId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "array", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {

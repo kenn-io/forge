@@ -9,6 +9,7 @@ import (
 	"maps"
 	"net/http"
 	"net/url"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -230,10 +231,19 @@ func (e *DiffSyncError) UserMessage() string {
 
 // RepoRef identifies a repository on a configured provider.
 type RepoRef struct {
-	Platform           platform.Kind
-	RepoID             int64
-	Owner              string
-	Name               string
+	Platform platform.Kind
+	RepoID   int64
+	Owner    string
+	Name     string
+	// CredentialOwner and CredentialName retain the configured route used
+	// to select repository-scoped credentials when the provider reports a
+	// newer display path for the same stable repository ID.
+	CredentialOwner string
+	CredentialName  string
+	// ConfiguredRoutes retains every exact configuration route that resolved
+	// to this immutable repository identity. It is populated when configured
+	// entries converge so all aliases survive restart and reload.
+	ConfiguredRoutes   []ConfiguredRepoRoute
 	PlatformHost       string
 	RepoPath           string
 	PlatformRepoID     int64
@@ -241,6 +251,12 @@ type RepoRef struct {
 	WebURL             string
 	CloneURL           string
 	DefaultBranch      string
+}
+
+type ConfiguredRepoRoute struct {
+	Owner    string
+	Name     string
+	RepoPath string
 }
 
 // PartialSyncError reports a repo sync cycle whose index scan completed but
@@ -487,6 +503,8 @@ type Syncer struct {
 	rateLimitSnapshotRefresh map[string]time.Time
 	repos                    []RepoRef
 	reposMu                  sync.Mutex
+	repoPublicationMu        sync.Mutex
+	reposGeneration          uint64 // guarded by reposMu
 	interval                 time.Duration
 	watchInterval            time.Duration
 	watchedMRs               []WatchedMR
@@ -802,7 +820,7 @@ func NewSyncerWithRegistry(
 		clones:                   clones,
 		rateTrackers:             rateTrackers,
 		budgets:                  budgets,
-		repos:                    repos,
+		repos:                    slices.Clone(repos),
 		interval:                 interval,
 		rateLimitSnapshotRefresh: make(map[string]time.Time),
 		branchActivityRetention:  defaultBranchActivityRetention,
@@ -2936,6 +2954,42 @@ func (s *Syncer) SetClock(now func() time.Time) {
 // host fallback fetchers.
 func (s *Syncer) SetGitHubRouters(routers map[string]*HostRouter) {
 	s.routers = routers
+	if err := s.replaceRepositoryCredentialAliases(s.TrackedRepos()); err != nil {
+		slog.Warn("publish repository credential aliases", "err", err)
+	}
+}
+
+func (s *Syncer) replaceRepositoryCredentialAliases(repos []RepoRef) error {
+	httpAliases := make(map[string][]CredentialAlias)
+	cloneAliases := make([]gitclone.CredentialAlias, 0, len(repos))
+	for _, repo := range repos {
+		if repoPlatform(repo) != platform.KindGitHub ||
+			repo.CredentialOwner == "" || repo.CredentialName == "" ||
+			configuredRouteMatchesResolved(repo) {
+			continue
+		}
+		host := repoHost(repo)
+		httpAliases[host] = append(httpAliases[host], CredentialAlias{
+			Owner: repo.Owner, Name: repo.Name,
+			CredentialOwner: repo.CredentialOwner,
+			CredentialName:  repo.CredentialName,
+		})
+		cloneAliases = append(cloneAliases, gitclone.CredentialAlias{
+			Platform: string(platform.KindGitHub), Host: host,
+			Owner: repo.Owner, Name: repo.Name,
+			CredentialOwner: repo.CredentialOwner,
+			CredentialName:  repo.CredentialName,
+		})
+	}
+	for host, router := range s.routers {
+		if err := router.ReplaceCredentialAliases(httpAliases[host]); err != nil {
+			return fmt.Errorf("replace GitHub credential aliases for %s: %w", host, err)
+		}
+	}
+	if s.clones != nil {
+		s.clones.ReplaceCredentialAliases(cloneAliases)
+	}
+	return nil
 }
 
 // fetcherFor returns the GitHub GraphQL fetcher selected for a repository's
@@ -3038,10 +3092,16 @@ func (s *Syncer) identityForRepo(repo RepoRef, write bool) (IdentityKey, error) 
 	if router == nil {
 		return HostIdentity(host), nil
 	}
-	if write {
-		return router.WriteIdentityForRepo(repo.Owner, repo.Name)
+	owner := repo.Owner
+	name := repo.Name
+	if repo.CredentialOwner != "" && repo.CredentialName != "" {
+		owner = repo.CredentialOwner
+		name = repo.CredentialName
 	}
-	return router.ReadIdentityForRepo(repo.Owner, repo.Name)
+	if write {
+		return router.WriteIdentityForRepo(owner, name)
+	}
+	return router.ReadIdentityForRepo(owner, name)
 }
 
 func (s *Syncer) bucketKeyForRepo(repo RepoRef, write bool) (string, error) {
@@ -3226,6 +3286,16 @@ func cloneRemoteURL(repo RepoRef) string {
 		repoPath = strings.Trim(repo.Owner+"/"+repo.Name, "/")
 	}
 	return fmt.Sprintf("https://%s/%s.git", repoHost(repo), strings.Trim(repoPath, "/"))
+}
+
+func (s *Syncer) repositoryClone(repo RepoRef) gitclone.RepositoryClone {
+	return s.clones.RepositoryClone(
+		repo.RepoID,
+		string(repoPlatform(repo)),
+		repoHost(repo),
+		repo.Owner,
+		repo.Name,
+	)
 }
 
 func (s *Syncer) optionalGitHubClientFor(repo RepoRef) (Client, bool) {
@@ -3568,6 +3638,106 @@ func (s *Syncer) trackedRepoByIdentity(
 	return RepoRef{}, false
 }
 
+func (s *Syncer) trackedRepoByID(repoID int64) (RepoRef, bool) {
+	if repoID <= 0 {
+		return RepoRef{}, false
+	}
+	s.reposMu.Lock()
+	defer s.reposMu.Unlock()
+	for _, repo := range s.repos {
+		if repo.RepoID == repoID {
+			return repo, true
+		}
+	}
+	return RepoRef{}, false
+}
+
+func (s *Syncer) trackedRepoForActiveRepository(active RepoRef) (RepoRef, bool) {
+	if active.RepoID <= 0 {
+		return RepoRef{}, false
+	}
+	if tracked, ok := s.trackedRepoByID(active.RepoID); ok {
+		return tracked, true
+	}
+	// NewSyncer accepts unresolved references for tests and bootstrapping.
+	// They have no repository ID yet, so recognize one only by the active
+	// stored route. Once an ID is present, path equality must never override it.
+	s.reposMu.Lock()
+	defer s.reposMu.Unlock()
+	for _, tracked := range s.repos {
+		if tracked.RepoID != 0 ||
+			repoPlatform(tracked) != repoPlatform(active) ||
+			!strings.EqualFold(repoHost(tracked), repoHost(active)) ||
+			!strings.EqualFold(tracked.Owner, active.Owner) ||
+			!strings.EqualFold(tracked.Name, active.Name) {
+			continue
+		}
+		return tracked, true
+	}
+	return RepoRef{}, false
+}
+
+func (s *Syncer) leaseTrackedRepositoryByID(
+	ctx context.Context,
+	repoID int64,
+) (context.Context, RepoRef, func(), error) {
+	leaseCtx, active, release, err := s.leaseActiveRepositoryByID(ctx, repoID)
+	if err != nil {
+		return nil, RepoRef{}, nil, err
+	}
+	tracked, ok := s.trackedRepoForActiveRepository(active)
+	if !ok {
+		release()
+		return nil, RepoRef{}, nil, errRepositoryResolutionSuperseded
+	}
+	tracked.Owner = active.Owner
+	tracked.Name = active.Name
+	tracked.RepoPath = active.RepoPath
+	tracked.PlatformHost = active.PlatformHost
+	tracked.PlatformExternalID = active.PlatformExternalID
+	return leaseCtx, tracked, release, nil
+}
+
+func (s *Syncer) leaseActiveRepositoryByID(
+	ctx context.Context,
+	repoID int64,
+) (context.Context, RepoRef, func(), error) {
+	leaseCtx, release, err := s.db.LeaseRepositoryReconciliationRead(ctx)
+	if err != nil {
+		return nil, RepoRef{}, nil, err
+	}
+	stored, err := s.db.GetRepoByID(leaseCtx, repoID)
+	if err != nil {
+		release()
+		return nil, RepoRef{}, nil, err
+	}
+	if stored == nil || stored.RetiredAt != nil {
+		release()
+		return nil, RepoRef{}, nil, db.ErrRepositoryRetired
+	}
+	repo := RepoRef{
+		Platform:           platform.Kind(stored.Platform),
+		RepoID:             stored.ID,
+		Owner:              stored.Owner,
+		Name:               stored.Name,
+		PlatformHost:       stored.PlatformHost,
+		RepoPath:           stored.RepoPath,
+		PlatformExternalID: stored.PlatformRepoID,
+		WebURL:             stored.WebURL,
+		CloneURL:           stored.CloneURL,
+		DefaultBranch:      stored.DefaultBranch,
+	}
+	if tracked, ok := s.trackedRepoForActiveRepository(repo); ok {
+		repo.CredentialOwner = tracked.CredentialOwner
+		repo.CredentialName = tracked.CredentialName
+		repo.PlatformRepoID = tracked.PlatformRepoID
+		if repo.CloneURL == "" {
+			repo.CloneURL = tracked.CloneURL
+		}
+	}
+	return leaseCtx, repo, release, nil
+}
+
 func detailRepoKey(kind platform.Kind, host, owner, name string) string {
 	if kind == "" {
 		kind = platform.KindGitHub
@@ -3604,9 +3774,16 @@ func (s *Syncer) HostForRepo(owner, name string) string {
 func (s *Syncer) SetRepos(repos []RepoRef) {
 	if err := s.SetReposWithContext(context.Background(), repos, false); err != nil {
 		slog.Warn("update archive repositories", "err", err)
+		s.repoPublicationMu.Lock()
 		s.reposMu.Lock()
-		s.repos = slices.Clone(repos)
+		repos = compactTrackedRepositoriesByID(repos)
+		if aliasErr := s.replaceRepositoryCredentialAliases(repos); aliasErr != nil {
+			slog.Warn("publish repository credential aliases", "err", aliasErr)
+		}
+		s.repos = repos
+		s.reposGeneration++
 		s.reposMu.Unlock()
+		s.repoPublicationMu.Unlock()
 		s.WakeArchive()
 	}
 }
@@ -3615,6 +3792,10 @@ func (s *Syncer) SetRepos(repos []RepoRef) {
 // configured repository set to sync workers. Credential reloads may also make
 // authentication-blocked work eligible without resetting archive progress.
 func (s *Syncer) SetReposWithContext(ctx context.Context, repos []RepoRef, retryAuthentication bool) error {
+	s.repoPublicationMu.Lock()
+	defer s.repoPublicationMu.Unlock()
+
+	repos = slices.Clone(repos)
 	refs := make([]platform.RepoRef, 0, len(repos))
 	for _, repo := range repos {
 		refs = append(refs, platformRepoRef(repo))
@@ -3629,8 +3810,39 @@ func (s *Syncer) SetReposWithContext(ctx context.Context, repos []RepoRef, retry
 			}
 		}
 	}
+	for i := range repos {
+		if s.db == nil {
+			break
+		}
+		stored, err := s.db.GetRepoByIdentity(
+			ctx,
+			platform.DBRepoIdentity(platformRepoRef(repos[i])),
+		)
+		if err != nil {
+			return fmt.Errorf(
+				"load configured repository %s: %w",
+				platformRepoRef(repos[i]).DisplayName(),
+				err,
+			)
+		}
+		if stored != nil {
+			repos[i] = repoRefFromStoredRepository(repos[i], stored, nil)
+		}
+	}
+	if s.db != nil {
+		bindings := configuredRouteBindings(repos)
+		if err := s.db.ReconcileRepoConfiguredRoutes(ctx, bindings); err != nil {
+			return fmt.Errorf("reconcile configured repository routes: %w", err)
+		}
+	}
 	s.reposMu.Lock()
-	s.repos = slices.Clone(repos)
+	repos = compactTrackedRepositoriesByID(repos)
+	if err := s.replaceRepositoryCredentialAliases(repos); err != nil {
+		s.reposMu.Unlock()
+		return err
+	}
+	s.repos = repos
+	s.reposGeneration++
 	s.reposMu.Unlock()
 	s.WakeArchive()
 	return nil
@@ -4667,6 +4879,10 @@ type runState struct {
 	// regardless of worker completion order. Each index is written
 	// by exactly one worker, so no mutex is needed.
 	results []RepoSyncResult
+	// resolvedRepos mirrors results and records the authoritative repository
+	// incarnation/path returned by the live identity lookup. Post-index detail
+	// drains must use this slice rather than the configured path snapshot.
+	resolvedRepos []RepoRef
 	// exhausted collects buckets that crossed their reserve while the pass
 	// was running. Eligibility is computed once before dispatch, so without
 	// this the detail and comment drains would keep spending a credential the
@@ -4755,7 +4971,10 @@ func (s *Syncer) runWorker(
 		slog.Info("syncing repo", "repo", repoName)
 		nativeResultKey := repoFailKey(repo)
 		s.nativeStackResults.Delete(nativeResultKey)
-		err := s.syncRepo(ctx, repo)
+		resolvedRepo, err := s.syncRepoResolved(ctx, repo)
+		if err == nil {
+			state.resolvedRepos[item.index] = resolvedRepo
+		}
 		if nativeResult, ok := s.nativeStackResults.LoadAndDelete(nativeResultKey); ok {
 			state.results[item.index].GitHubNativeStacks = nativeResult.(*GitHubNativeStackSyncResult)
 		}
@@ -4934,6 +5153,7 @@ func (s *Syncer) runOnce(
 
 	work := make(chan repoWork)
 	results := make([]RepoSyncResult, total)
+	resolvedRepos := slices.Clone(repos)
 	for i, r := range repos {
 		host := r.PlatformHost
 		if host == "" {
@@ -4967,14 +5187,15 @@ func (s *Syncer) runOnce(
 	)
 
 	state := &runState{
-		completed: &completed,
-		maxShown:  &maxShown,
-		errMu:     &errMu,
-		lastErr:   &lastErr,
-		canceled:  &canceled,
-		total:     total,
-		results:   results,
-		exhausted: &sync.Map{},
+		completed:     &completed,
+		maxShown:      &maxShown,
+		errMu:         &errMu,
+		lastErr:       &lastErr,
+		canceled:      &canceled,
+		total:         total,
+		results:       results,
+		resolvedRepos: resolvedRepos,
+		exhausted:     &sync.Map{},
 	}
 	for range workers {
 		wg.Go(func() {
@@ -5026,15 +5247,19 @@ dispatch:
 		// bucket rather than trusting only the workers' markers: the last
 		// repository on a credential can spend the headroom with no later
 		// repository left to observe it.
-		s.revokeExhaustedBuckets(eligibleBuckets, state, repos)
-		s.drainDetailQueue(ctx, eligibleBuckets, repos)
+		s.revokeExhaustedBuckets(eligibleBuckets, state, resolvedRepos)
+		s.drainDetailQueue(
+			ctx,
+			eligibleBuckets,
+			reposWithSuccessfulIndexSync(resolvedRepos, results),
+		)
 	}
 
 	if !canceled.Load() && ctx.Err() == nil {
 		// The detail drain spends the same credentials, so re-check again
 		// before the comment drain rather than reusing a map the drain that
 		// just ran may have invalidated.
-		s.revokeExhaustedBuckets(eligibleBuckets, state, repos)
+		s.revokeExhaustedBuckets(eligibleBuckets, state, resolvedRepos)
 		s.drainPendingCommentSyncs(ctx, eligibleBuckets)
 	}
 
@@ -5084,6 +5309,19 @@ dispatch:
 		LastRunAt: time.Now().UTC(),
 		LastError: lastErr,
 	})
+}
+
+func reposWithSuccessfulIndexSync(
+	repos []RepoRef,
+	results []RepoSyncResult,
+) []RepoRef {
+	successful := make([]RepoRef, 0, len(repos))
+	for i, repo := range repos {
+		if i < len(results) && results[i].Error == "" {
+			successful = append(successful, repo)
+		}
+	}
+	return successful
 }
 
 func prioritizeRepos(repos, priorityRepos []RepoRef) []RepoRef {
@@ -5156,25 +5394,417 @@ func repoPriorityKey(repo RepoRef) string {
 }
 
 func (s *Syncer) syncRepoIdentity(ctx context.Context, repo RepoRef) (db.RepoIdentity, *platform.Repository, error) {
-	identity := platform.DBRepoIdentity(platformRepoRef(repo))
-	if identity.PlatformRepoID != "" {
-		return identity, nil, nil
-	}
+	configured := platform.DBRepoIdentity(platformRepoRef(repo))
 	reader, err := s.clients.RepositoryReader(repoPlatform(repo), repoHost(repo))
 	if err != nil {
+		if errors.Is(err, platform.ErrUnsupportedCapability) {
+			if configured.PlatformRepoID == "" && s.db != nil {
+				stored, lookupErr := s.db.GetRepoByIdentity(ctx, configured)
+				if lookupErr != nil {
+					return db.RepoIdentity{}, nil, lookupErr
+				}
+				if stored != nil {
+					configured.PlatformRepoID = stored.PlatformRepoID
+				}
+			}
+			return configured, nil, nil
+		}
 		return db.RepoIdentity{}, nil, err
 	}
+	lookupRef := platformRepoRef(repo)
+	if repo.CredentialOwner != "" && repo.CredentialName != "" {
+		lookupRef.Owner = repo.CredentialOwner
+		lookupRef.Name = repo.CredentialName
+		lookupRef.RepoPath = strings.Trim(
+			repo.CredentialOwner+"/"+repo.CredentialName,
+			"/",
+		)
+	}
+	// Repository identity verification must resolve the configured route, not
+	// a cached stable ID. Resolving the old ID after a path takeover would
+	// faithfully return the old repository at its new route and fail to detect
+	// the replacement now occupying the configured path.
+	lookupRef.PlatformID = 0
+	lookupRef.PlatformExternalID = ""
 	// A refused identity resolve aborts the whole repo sync before the
 	// list fetches, so it shares their essential budget reserve.
-	resolved, err := reader.GetRepository(WithEssentialSyncBudget(ctx), platformRepoRef(repo))
+	resolved, err := reader.GetRepository(WithEssentialSyncBudget(ctx), lookupRef)
 	if err != nil {
 		return db.RepoIdentity{}, nil, err
 	}
-	identity = platform.DBRepositoryIdentity(resolved)
+	identity := platform.DBRepositoryIdentity(resolved)
 	if identity.PlatformRepoID == "" {
 		return db.RepoIdentity{}, nil, fmt.Errorf("provider returned no repo id")
 	}
 	return identity, &resolved, nil
+}
+
+func repoRefFromStoredRepository(
+	configured RepoRef,
+	stored *db.Repo,
+	resolved *platform.Repository,
+) RepoRef {
+	ref := RepoRef{
+		Platform:           platform.Kind(stored.Platform),
+		RepoID:             stored.ID,
+		Owner:              stored.Owner,
+		Name:               stored.Name,
+		CredentialOwner:    configured.CredentialOwner,
+		CredentialName:     configured.CredentialName,
+		ConfiguredRoutes:   slices.Clone(configured.ConfiguredRoutes),
+		PlatformHost:       stored.PlatformHost,
+		RepoPath:           stored.RepoPath,
+		PlatformRepoID:     configured.PlatformRepoID,
+		PlatformExternalID: stored.PlatformRepoID,
+		WebURL:             stored.WebURL,
+		CloneURL:           stored.CloneURL,
+		DefaultBranch:      stored.DefaultBranch,
+	}
+	if ref.WebURL == "" {
+		ref.WebURL = configured.WebURL
+	}
+	if ref.CloneURL == "" {
+		ref.CloneURL = configured.CloneURL
+	}
+	if ref.DefaultBranch == "" {
+		ref.DefaultBranch = configured.DefaultBranch
+	}
+	if (ref.CredentialOwner == "" || ref.CredentialName == "") &&
+		(!strings.EqualFold(configured.Owner, stored.Owner) ||
+			!strings.EqualFold(configured.Name, stored.Name)) {
+		ref.CredentialOwner = configured.Owner
+		ref.CredentialName = configured.Name
+	}
+	if resolved != nil {
+		if resolved.PlatformID != 0 {
+			ref.PlatformRepoID = resolved.PlatformID
+		} else if resolved.Ref.PlatformID != 0 {
+			ref.PlatformRepoID = resolved.Ref.PlatformID
+		}
+		if resolved.WebURL != "" {
+			ref.WebURL = resolved.WebURL
+		}
+		if resolved.CloneURL != "" {
+			ref.CloneURL = resolved.CloneURL
+		}
+		if resolved.DefaultBranch != "" {
+			ref.DefaultBranch = resolved.DefaultBranch
+		}
+	}
+	return canonicalRepoRef(ref)
+}
+
+func sameTrackedRepository(left, right RepoRef) bool {
+	if left.RepoID != 0 && right.RepoID != 0 {
+		return left.RepoID == right.RepoID
+	}
+	return repoPriorityKey(left) == repoPriorityKey(right)
+}
+
+var errRepositoryResolutionSuperseded = errors.New(
+	"repository identity resolution superseded by newer tracked state",
+)
+
+type repositoryResolution struct {
+	configured RepoRef
+	key        string
+	generation uint64
+}
+
+func configuredRepositoryKey(repo RepoRef) string {
+	if repo.CredentialOwner == "" || repo.CredentialName == "" {
+		return repoPriorityKey(repo)
+	}
+	configured := repo
+	configured.Owner = repo.CredentialOwner
+	configured.Name = repo.CredentialName
+	configured.RepoPath = repo.CredentialOwner + "/" + repo.CredentialName
+	return repoPriorityKey(configured)
+}
+
+func (s *Syncer) beginRepositoryResolution(
+	requested RepoRef,
+) (repositoryResolution, error) {
+	s.repoPublicationMu.Lock()
+	defer s.repoPublicationMu.Unlock()
+
+	s.reposMu.Lock()
+	defer s.reposMu.Unlock()
+	currentIndex := slices.IndexFunc(s.repos, func(current RepoRef) bool {
+		return repoRefsEqual(current, requested)
+	})
+	if currentIndex < 0 {
+		for i, current := range s.repos {
+			if sameTrackedRepository(current, requested) {
+				currentIndex = i
+				break
+			}
+		}
+	}
+	if currentIndex >= 0 {
+		current := s.repos[currentIndex]
+		key := configuredRepositoryKey(current)
+		return repositoryResolution{
+			configured: current,
+			key:        key,
+			generation: s.reposGeneration,
+		}, nil
+	}
+	return repositoryResolution{}, errRepositoryResolutionSuperseded
+}
+
+func compactTrackedRepositoriesByID(repos []RepoRef) []RepoRef {
+	compacted := make([]RepoRef, 0, len(repos))
+	seen := make(map[int64]int, len(repos))
+	for _, repo := range repos {
+		if repo.RepoID > 0 {
+			if existingIndex, ok := seen[repo.RepoID]; ok {
+				routes := appendUniqueConfiguredRoutes(
+					slices.Clone(compacted[existingIndex].ConfiguredRoutes),
+					repo.ConfiguredRoutes...,
+				)
+				if !configuredRouteMatchesResolved(compacted[existingIndex]) &&
+					configuredRouteMatchesResolved(repo) {
+					compacted[existingIndex] = repo
+				}
+				compacted[existingIndex].ConfiguredRoutes = routes
+				continue
+			}
+			seen[repo.RepoID] = len(compacted)
+		}
+		compacted = append(compacted, repo)
+	}
+	return compacted
+}
+
+func repoRefsEqual(left, right RepoRef) bool {
+	return reflect.DeepEqual(left, right)
+}
+
+func configuredRouteMatchesResolved(repo RepoRef) bool {
+	if repo.CredentialOwner == "" || repo.CredentialName == "" {
+		return true
+	}
+	return strings.EqualFold(repo.CredentialOwner, repo.Owner) &&
+		strings.EqualFold(repo.CredentialName, repo.Name)
+}
+
+func (s *Syncer) currentRepositoryForResolution(
+	resolution repositoryResolution,
+) (RepoRef, bool, bool) {
+	s.reposMu.Lock()
+	defer s.reposMu.Unlock()
+	for _, repo := range s.repos {
+		if configuredRepositoryKey(repo) == resolution.key {
+			return repo, true, s.reposGeneration == resolution.generation
+		}
+	}
+	return RepoRef{}, false, s.reposGeneration == resolution.generation
+}
+
+func repoRefMatchesResolvedIdentity(
+	repo RepoRef,
+	identity db.RepoIdentity,
+) bool {
+	current := platform.DBRepoIdentity(platformRepoRef(repo))
+	if repo.RepoID <= 0 ||
+		current.PlatformRepoID == "" ||
+		identity.PlatformRepoID == "" ||
+		current.PlatformRepoID != identity.PlatformRepoID {
+		return false
+	}
+	resolved := RepoRef{
+		Platform:           platform.Kind(identity.Platform),
+		PlatformHost:       identity.PlatformHost,
+		Owner:              identity.Owner,
+		Name:               identity.Name,
+		RepoPath:           identity.RepoPath,
+		PlatformExternalID: identity.PlatformRepoID,
+	}
+	return repoPriorityKey(repo) == repoPriorityKey(resolved)
+}
+
+func configuredRouteIdentity(repo RepoRef) db.RepoIdentity {
+	if repo.CredentialOwner == "" || repo.CredentialName == "" {
+		return platform.DBRepoIdentity(platformRepoRef(repo))
+	}
+	return platform.DBRepoIdentity(platform.RepoRef{
+		Platform: repo.Platform,
+		Host:     repo.PlatformHost,
+		Owner:    repo.CredentialOwner,
+		Name:     repo.CredentialName,
+		RepoPath: repo.CredentialOwner + "/" + repo.CredentialName,
+	})
+}
+
+func (s *Syncer) saveConfiguredRoutes(
+	ctx context.Context,
+	repoID int64,
+	repo RepoRef,
+) error {
+	routes := configuredRoutesForCandidate(repo, false)
+	if len(routes) == 0 {
+		return s.db.SaveRepoConfiguredRoute(
+			ctx, repoID, configuredRouteIdentity(repo),
+		)
+	}
+	for _, route := range routes {
+		if err := s.db.SaveRepoConfiguredRoute(ctx, repoID, db.RepoIdentity{
+			Platform:     string(repoPlatform(repo)),
+			PlatformHost: repoHost(repo),
+			Owner:        route.Owner,
+			Name:         route.Name,
+			RepoPath:     route.RepoPath,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func configuredRouteBindings(repos []RepoRef) []db.RepoConfiguredRouteBinding {
+	bindings := make([]db.RepoConfiguredRouteBinding, 0)
+	for _, repo := range repos {
+		if repo.RepoID <= 0 {
+			continue
+		}
+		for _, route := range configuredRoutesForCandidate(repo, false) {
+			bindings = append(bindings, db.RepoConfiguredRouteBinding{
+				RepoID: repo.RepoID,
+				Route: db.RepoIdentity{
+					Platform: string(repoPlatform(repo)), PlatformHost: repoHost(repo),
+					Owner: route.Owner, Name: route.Name, RepoPath: route.RepoPath,
+				},
+			})
+		}
+	}
+	return bindings
+}
+
+func (s *Syncer) publishResolvedRepositoryLocked(
+	ctx context.Context,
+	resolution repositoryResolution,
+	resolved RepoRef,
+) error {
+	s.reposMu.Lock()
+	repos := slices.Clone(s.repos)
+	for i := range repos {
+		if configuredRepositoryKey(repos[i]) != resolution.key {
+			continue
+		}
+		repos[i] = resolved
+		break
+	}
+	repos = compactTrackedRepositoriesByID(repos)
+	changed := !slices.EqualFunc(repos, s.repos, repoRefsEqual)
+	s.reposMu.Unlock()
+
+	if !changed {
+		return nil
+	}
+	if err := s.replaceRepositoryCredentialAliases(repos); err != nil {
+		return err
+	}
+	if s.archiveLifecycle != nil {
+		refs := make([]platform.RepoRef, 0, len(repos))
+		for _, repo := range repos {
+			refs = append(refs, platformRepoRef(repo))
+		}
+		if err := s.archiveLifecycle.EnsureConfigured(ctx, refs); err != nil {
+			return fmt.Errorf(
+				"reseed archive discovery after repository identity change: %w",
+				err,
+			)
+		}
+	}
+
+	s.reposMu.Lock()
+	s.repos = repos
+	s.reposGeneration++
+	s.reposMu.Unlock()
+	return nil
+}
+
+func (s *Syncer) resolveActiveRepository(
+	ctx context.Context,
+	configured RepoRef,
+) (RepoRef, *platform.Repository, error) {
+	resolution, err := s.beginRepositoryResolution(configured)
+	if err != nil {
+		return RepoRef{}, nil, err
+	}
+	identity, resolved, err := s.syncRepoIdentity(ctx, resolution.configured)
+	if err != nil {
+		return RepoRef{}, nil, err
+	}
+
+	s.repoPublicationMu.Lock()
+	defer s.repoPublicationMu.Unlock()
+	current, tracked, sameGeneration := s.currentRepositoryForResolution(
+		resolution,
+	)
+	if !tracked {
+		return RepoRef{}, nil, errRepositoryResolutionSuperseded
+	}
+	if repoRefMatchesResolvedIdentity(current, identity) {
+		_, active, release, leaseErr := s.leaseActiveRepositoryByID(
+			ctx,
+			current.RepoID,
+		)
+		if leaseErr != nil {
+			return RepoRef{}, nil, leaseErr
+		}
+		release()
+		if repoRefMatchesResolvedIdentity(active, identity) {
+			if err := s.saveConfiguredRoutes(
+				ctx, active.RepoID, resolution.configured,
+			); err != nil {
+				return RepoRef{}, nil, err
+			}
+			return active, resolved, nil
+		}
+	}
+	if !sameGeneration && !repoRefsEqual(current, resolution.configured) {
+		return RepoRef{}, nil, errRepositoryResolutionSuperseded
+	}
+
+	var repoID int64
+	if identity.PlatformRepoID == "" {
+		repoID, err = s.db.UpsertRepo(ctx, identity)
+	} else {
+		repoID, err = s.db.UpsertRepoByProviderID(ctx, identity)
+	}
+	if err != nil {
+		return RepoRef{}, nil, err
+	}
+	stored, err := s.db.GetRepoByID(ctx, repoID)
+	if err != nil {
+		return RepoRef{}, nil, err
+	}
+	if stored == nil || stored.RetiredAt != nil {
+		return RepoRef{}, nil, fmt.Errorf(
+			"repository incarnation %d is not active",
+			repoID,
+		)
+	}
+	authoritative := repoRefFromStoredRepository(
+		resolution.configured,
+		stored,
+		resolved,
+	)
+	if err := s.saveConfiguredRoutes(
+		ctx, repoID, resolution.configured,
+	); err != nil {
+		return RepoRef{}, nil, err
+	}
+	if err := s.publishResolvedRepositoryLocked(
+		ctx,
+		resolution,
+		authoritative,
+	); err != nil {
+		return RepoRef{}, nil, err
+	}
+	return authoritative, resolved, nil
 }
 
 // syncRepo syncs one repository: open PRs, timeline events, and stale closures.
@@ -5186,9 +5816,22 @@ func (s *Syncer) markClosedLinkedNotificationsDone(ctx context.Context) error {
 }
 
 func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
+	_, err := s.syncRepoResolved(ctx, repo)
+	return err
+}
+
+func (s *Syncer) syncRepoResolved(
+	ctx context.Context,
+	repo RepoRef,
+) (RepoRef, error) {
 	bucket, err := s.bucketKeyForRepo(repo, false)
 	if err != nil {
-		return fmt.Errorf("resolve sync credential route for %s/%s: %w", repo.Owner, repo.Name, err)
+		return RepoRef{}, fmt.Errorf(
+			"resolve sync credential route for %s/%s: %w",
+			repo.Owner,
+			repo.Name,
+			err,
+		)
 	}
 	releaseProviderWork := s.beginProviderWork(bucket, archive.PriorityNormalIndex)
 	defer releaseProviderWork()
@@ -5205,23 +5848,38 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 		}
 	}
 
-	repoIdentity, resolvedRepo, err := s.syncRepoIdentity(ctx, repo)
+	resolvedRef, resolvedRepo, err := s.resolveActiveRepository(ctx, repo)
 	if err != nil {
-		return fmt.Errorf("resolve repo identity %s/%s: %w", repo.Owner, repo.Name, err)
+		return RepoRef{}, fmt.Errorf(
+			"resolve repo identity %s/%s: %w",
+			repo.Owner,
+			repo.Name,
+			err,
+		)
 	}
-	repoID, err := s.db.UpsertRepoByProviderID(ctx, repoIdentity)
+	leaseCtx, repo, releaseRepository, err := s.leaseTrackedRepositoryByID(
+		ctx,
+		resolvedRef.RepoID,
+	)
 	if err != nil {
-		return fmt.Errorf("upsert repo %s/%s by provider id: %w", repo.Owner, repo.Name, err)
+		return RepoRef{}, fmt.Errorf(
+			"lease resolved repo identity %s/%s: %w",
+			resolvedRef.Owner,
+			resolvedRef.Name,
+			err,
+		)
 	}
+	defer releaseRepository()
+	ctx = leaseCtx
+	repoID := repo.RepoID
 
 	s.refreshRepoSettings(ctx, repo, repoID, resolvedRepo)
 
 	if err := s.db.UpdateRepoSyncStarted(ctx, repoID, time.Now().UTC()); err != nil {
-		return fmt.Errorf("mark sync started for %s/%s: %w", repo.Owner, repo.Name, err)
+		return RepoRef{}, fmt.Errorf("mark sync started for %s/%s: %w", repo.Owner, repo.Name, err)
 	}
 
 	// Fetch bare clone before PR data so refs are available for merge-base.
-	host := repoHost(repo)
 	cloneFetchOK := false
 	defaultBranch := s.defaultBranchForActivity(ctx, repoID, repo)
 	var previousTip *db.BranchTip
@@ -5238,7 +5896,8 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 		}
 	}
 	if s.clones != nil {
-		if err := s.clones.EnsureClone(ctx, string(repoPlatform(repo)), host, repo.Owner, repo.Name, cloneRemoteURL(repo)); err != nil {
+		clone := s.repositoryClone(repo)
+		if err := clone.EnsureClone(ctx, cloneRemoteURL(repo)); err != nil {
 			slog.Warn("bare clone fetch failed",
 				"repo", repo.Owner+"/"+repo.Name, "err", err,
 			)
@@ -5274,7 +5933,7 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 		slog.Error("mark sync completed", "repo", repo.Owner+"/"+repo.Name, "err", err)
 	}
 
-	return syncErr
+	return repo, syncErr
 }
 
 func (s *Syncer) defaultBranchForActivity(ctx context.Context, repoID int64, repo RepoRef) string {
@@ -5302,14 +5961,8 @@ func (s *Syncer) syncDefaultBranchActivity(
 	if s.clones == nil {
 		return
 	}
-	host := repoHost(repo)
-	branch, currentTip, err := s.clones.ResolveDefaultBranch(
-		ctx,
-		string(repoPlatform(repo)), host,
-		repo.Owner,
-		repo.Name,
-		preferredBranch,
-	)
+	clone := s.repositoryClone(repo)
+	branch, currentTip, err := clone.ResolveDefaultBranch(ctx, preferredBranch)
 	if err != nil {
 		slog.Warn("resolve default branch activity ref failed",
 			"repo", repo.Owner+"/"+repo.Name,
@@ -5347,11 +6000,8 @@ func (s *Syncer) syncDefaultBranchActivity(
 		afterSHA = previousTip.TipSHA
 		beforeObservedAt = previousTip.ObservedAt
 		if previousTip.TipSHA != currentTip {
-			ancestor, err := s.clones.IsAncestor(
+			ancestor, err := clone.IsAncestor(
 				ctx,
-				string(repoPlatform(repo)), host,
-				repo.Owner,
-				repo.Name,
 				previousTip.TipSHA,
 				currentTip,
 			)
@@ -5367,11 +6017,8 @@ func (s *Syncer) syncDefaultBranchActivity(
 		}
 	}
 
-	gitCommits, err := s.clones.ListBranchCommitsSince(
+	gitCommits, err := clone.ListBranchCommitsSince(
 		ctx,
-		string(repoPlatform(repo)), host,
-		repo.Owner,
-		repo.Name,
 		branch,
 		retentionStart,
 		afterSHA,
@@ -5787,14 +6434,9 @@ func (s *Syncer) addRepoOverviewTimeline(
 	if len(tags) == 0 || s.clones == nil || !cloneFetchOK {
 		return
 	}
-	host := repo.PlatformHost
-	if host == "" {
-		host = "github.com"
-	}
 	latestTag := tags[0]
-	count, _, countErr := s.clones.CommitTimelineSinceTag(
-		ctx, string(repoPlatform(repo)), host, repo.Owner, repo.Name, latestTag, 1,
-	)
+	clone := s.repositoryClone(repo)
+	count, _, countErr := clone.CommitTimelineSinceTag(ctx, latestTag, 1)
 	if countErr != nil {
 		slog.Warn("count commits since latest version failed",
 			"repo", repo.Owner+"/"+repo.Name,
@@ -5805,9 +6447,8 @@ func (s *Syncer) addRepoOverviewTimeline(
 	}
 
 	timelineTag := tags[len(tags)-1]
-	_, points, err := s.clones.CommitTimelineSinceTag(
-		ctx, string(repoPlatform(repo)), host, repo.Owner, repo.Name,
-		timelineTag, repoOverviewTimelineLimit,
+	_, points, err := clone.CommitTimelineSinceTag(
+		ctx, timelineTag, repoOverviewTimelineLimit,
 	)
 	if err != nil {
 		slog.Warn("build repo commit timeline failed",
@@ -7389,17 +8030,12 @@ func (s *Syncer) syncOpenMRFromBulk(
 	}
 
 	// Diff SHAs.
-	repoHost := repo.PlatformHost
-	if repoHost == "" {
-		repoHost = "github.com"
-	}
 	if s.clones != nil && cloneFetchOK {
 		headSHA := normalized.PlatformHeadSHA
 		baseSHA := normalized.PlatformBaseSHA
 		if headSHA != "" && baseSHA != "" {
-			mb, mbErr := s.clones.MergeBase(
-				ctx, string(repoPlatform(repo)), repoHost, repo.Owner,
-				repo.Name, baseSHA, headSHA,
+			mb, mbErr := s.repositoryClone(repo).MergeBase(
+				ctx, baseSHA, headSHA,
 			)
 			if mbErr != nil {
 				slog.Warn("merge-base computation failed",
@@ -7649,7 +8285,7 @@ func (s *Syncer) fetchMRDetail(
 	}
 
 	fullPR, newETag, notModified, err := s.getPullRequestForDetail(
-		ctx, client, repo, number,
+		ctx, client, repo, repoID, number,
 	)
 	calls++
 	// Route fetch failures and detected transfers through the canonical
@@ -7708,17 +8344,12 @@ func (s *Syncer) fetchMRDetail(
 	}
 
 	// Diff SHAs if clone available.
-	cloneRepoHost := repo.PlatformHost
-	if cloneRepoHost == "" {
-		cloneRepoHost = "github.com"
-	}
 	if s.clones != nil && cloneFetchOK {
 		headSHA := normalized.PlatformHeadSHA
 		baseSHA := normalized.PlatformBaseSHA
 		if headSHA != "" && baseSHA != "" {
-			mb, mbErr := s.clones.MergeBase(
-				ctx, string(repoPlatform(repo)), cloneRepoHost, repo.Owner,
-				repo.Name, baseSHA, headSHA,
+			mb, mbErr := s.repositoryClone(repo).MergeBase(
+				ctx, baseSHA, headSHA,
 			)
 			if mbErr != nil {
 				slog.Warn("merge-base computation failed",
@@ -7827,8 +8458,7 @@ func (s *Syncer) fetchMRDetail(
 
 	if newETag != "" {
 		if err := s.db.UpsertHTTPEtag(
-			ctx, string(repoPlatform(repo)), repoHost(repo),
-			repo.Owner, repo.Name, "pull_request", number, newETag,
+			ctx, repoID, "pull_request", number, newETag,
 		); err != nil {
 			slog.Warn("persist pull request ETag failed",
 				"repo", repo.Owner+"/"+repo.Name,
@@ -7845,6 +8475,7 @@ func (s *Syncer) getPullRequestForDetail(
 	ctx context.Context,
 	client Client,
 	repo RepoRef,
+	repoID int64,
 	number int,
 ) (*gh.PullRequest, string, bool, error) {
 	conditional, ok := client.(conditionalPullRequestGetter)
@@ -7854,8 +8485,7 @@ func (s *Syncer) getPullRequestForDetail(
 	}
 
 	etag, err := s.db.GetHTTPEtag(
-		ctx, string(repoPlatform(repo)), repoHost(repo),
-		repo.Owner, repo.Name, "pull_request", number,
+		ctx, repoID, "pull_request", number,
 	)
 	if err != nil {
 		slog.Warn("load pull request ETag failed",
@@ -8182,7 +8812,7 @@ func (s *Syncer) fetchIssueDetail(
 	}
 
 	ghIssue, newETag, notModified, err := s.getIssueForDetail(
-		ctx, client, repo, number,
+		ctx, client, repo, repoID, number,
 	)
 	calls++
 	// Route fetch failures and detected transfers through the canonical
@@ -8257,8 +8887,7 @@ func (s *Syncer) fetchIssueDetail(
 
 	if newETag != "" {
 		if err := s.db.UpsertHTTPEtag(
-			ctx, string(repoPlatform(repo)), repoHost(repo),
-			repo.Owner, repo.Name, "issue", number, newETag,
+			ctx, repoID, "issue", number, newETag,
 		); err != nil {
 			slog.Warn("persist issue ETag failed",
 				"repo", repo.Owner+"/"+repo.Name,
@@ -8275,6 +8904,7 @@ func (s *Syncer) getIssueForDetail(
 	ctx context.Context,
 	client Client,
 	repo RepoRef,
+	repoID int64,
 	number int,
 ) (*gh.Issue, string, bool, error) {
 	if IsArchiveSyncBudgetContext(ctx) {
@@ -8288,8 +8918,7 @@ func (s *Syncer) getIssueForDetail(
 	}
 
 	etag, err := s.db.GetHTTPEtag(
-		ctx, string(repoPlatform(repo)), repoHost(repo),
-		repo.Owner, repo.Name, "issue", number,
+		ctx, repoID, "issue", number,
 	)
 	if err != nil {
 		slog.Warn("load issue ETag failed",
@@ -9640,6 +10269,14 @@ func (s *Syncer) drainDetailQueue(
 		return
 	}
 
+	s.drainDetailQueueItems(ctx, eligibleBuckets, items)
+}
+
+func (s *Syncer) drainDetailQueueItems(
+	ctx context.Context,
+	eligibleBuckets map[string]bool,
+	items []QueueItem,
+) {
 	queue := BuildQueue(items, time.Now())
 	if len(queue) == 0 {
 		return
@@ -9653,127 +10290,126 @@ func (s *Syncer) drainDetailQueue(
 			return
 		}
 		qi := &queue[i]
-		repo := RepoRef{
-			Owner: qi.RepoOwner, Name: qi.RepoName,
-			Platform: qi.Platform, PlatformHost: qi.PlatformHost,
-		}
-		host := repoHost(repo)
-		if tracked, ok := s.trackedRepoByIdentity(qi.Platform, qi.RepoOwner, qi.RepoName, host); ok {
-			repo = tracked
-			repo.Owner = qi.RepoOwner
-			repo.Name = qi.RepoName
-			repo.PlatformHost = host
-		}
-		// Resolve the credential bucket from the tracked repository. Routing
-		// keys off the owner and host that survive tracking, not the raw
-		// queue row, so this must follow the lookup above.
-		bucket, err := s.bucketKeyForRepo(repo, false)
-		if err != nil || !eligibleBuckets[bucket] {
+		leaseCtx, repo, release, err := s.leaseTrackedRepositoryByID(ctx, qi.RepoID)
+		if errors.Is(err, db.ErrRepositoryRetired) ||
+			errors.Is(err, errRepositoryResolutionSuperseded) {
 			continue
 		}
-		feature := platform.RepositoryFeatureIssues
-		if qi.Type == QueueItemPR {
-			feature = platform.RepositoryFeatureMergeRequests
-		}
-		probe, due := s.beginRepositoryFeatureProbe(ctx, repo, feature)
-		if !due {
-			continue
-		}
-		if exhausted[bucket] {
-			probe.abandon()
-			continue
-		}
-
-		budget := s.budgets[bucket]
-		if budget == nil {
-			probe.abandon()
-			continue
-		}
-
-		// Soft admission gate: check if the budget has nominal
-		// capacity for this item. The transport layer handles
-		// actual per-RoundTrip accounting; this prevents starting
-		// work we almost certainly can't afford.
-		worstCase := qi.WorstCaseCost()
-		if !budget.CanSpend(worstCase) {
-			probe.abandon()
-			exhausted[bucket] = true
-			continue
-		}
-		// The provider reserve is re-read per item alongside the local
-		// ceiling. A drain can be many items long, so a credential that had
-		// headroom when the drain started can reach its reserve partway
-		// through.
-		if s.backgroundReserveExhausted(repo, QuotaResourceREST, false) {
-			probe.abandon()
-			exhausted[bucket] = true
-			continue
-		}
-		// The provider reserve is re-read per item alongside the local
-		// ceiling. A drain can be many items long, so a credential that had
-		// headroom when the drain started can reach its reserve partway
-		// through.
-		repoID, err := s.db.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
 		if err != nil {
-			probe.abandon()
-			slog.Warn("detail drain: upsert repo failed",
-				"repo", qi.RepoOwner+"/"+qi.RepoName,
+			slog.Warn("detail drain: lease repository failed",
+				"repo_id", qi.RepoID,
 				"err", err,
 			)
 			continue
 		}
+		s.drainDetailQueueItem(leaseCtx, eligibleBuckets, exhausted, repo, qi)
+		release()
+	}
+}
 
-		// Compute diff SHAs if clone available.
-		cloneFetchOK := false
-		if s.clones != nil {
-			if cloneErr := s.clones.EnsureClone(
-				ctx, string(repoPlatform(repo)), host, qi.RepoOwner, qi.RepoName,
-				cloneRemoteURL(repo),
-			); cloneErr != nil {
-				slog.Warn("detail drain: bare clone failed",
-					"repo", qi.RepoOwner+"/"+qi.RepoName,
-					"err", cloneErr,
-				)
-			} else {
-				cloneFetchOK = true
-			}
-		}
-		providerCalls := 0
-		if qi.Type == QueueItemPR {
-			providerCalls, err = s.fetchMRDetail(
-				ctx, repo, repoID, qi.Number, cloneFetchOK,
+func (s *Syncer) drainDetailQueueItem(
+	ctx context.Context,
+	eligibleBuckets map[string]bool,
+	exhausted map[string]bool,
+	repo RepoRef,
+	qi *QueueItem,
+) {
+	// Resolve the credential bucket from the tracked repository. Routing
+	// uses the current endpoint together with the configured credential
+	// identity retained on the incarnation-bound repository reference.
+	bucket, err := s.bucketKeyForRepo(repo, false)
+	if err != nil || !eligibleBuckets[bucket] {
+		return
+	}
+	feature := platform.RepositoryFeatureIssues
+	if qi.Type == QueueItemPR {
+		feature = platform.RepositoryFeatureMergeRequests
+	}
+	probe, due := s.beginRepositoryFeatureProbe(ctx, repo, feature)
+	if !due {
+		return
+	}
+	if exhausted[bucket] {
+		probe.abandon()
+		return
+	}
+
+	budget := s.budgets[bucket]
+	if budget == nil {
+		probe.abandon()
+		return
+	}
+
+	// Soft admission gate: check if the budget has nominal
+	// capacity for this item. The transport layer handles
+	// actual per-RoundTrip accounting; this prevents starting
+	// work we almost certainly can't afford.
+	worstCase := qi.WorstCaseCost()
+	if !budget.CanSpend(worstCase) {
+		probe.abandon()
+		exhausted[bucket] = true
+		return
+	}
+	// The provider reserve is re-read per item alongside the local
+	// ceiling. A drain can be many items long, so a credential that had
+	// headroom when the drain started can reach its reserve partway
+	// through.
+	if s.backgroundReserveExhausted(repo, QuotaResourceREST, false) {
+		probe.abandon()
+		exhausted[bucket] = true
+		return
+	}
+
+	// Compute diff SHAs if clone available.
+	cloneFetchOK := false
+	if s.clones != nil {
+		if cloneErr := s.repositoryClone(repo).EnsureClone(
+			ctx,
+			cloneRemoteURL(repo),
+		); cloneErr != nil {
+			slog.Warn("detail drain: bare clone failed",
+				"repo", qi.RepoOwner+"/"+qi.RepoName,
+				"err", cloneErr,
 			)
 		} else {
-			providerCalls, err = s.fetchIssueDetail(
-				ctx, repo, repoID, qi.Number,
-			)
+			cloneFetchOK = true
 		}
+	}
+	providerCalls := 0
+	if qi.Type == QueueItemPR {
+		providerCalls, err = s.fetchMRDetail(
+			ctx, repo, qi.RepoID, qi.Number, cloneFetchOK,
+		)
+	} else {
+		providerCalls, err = s.fetchIssueDetail(
+			ctx, repo, qi.RepoID, qi.Number,
+		)
+	}
 
-		if err != nil {
-			disabledErr := repositoryFeatureDisabledError(repo, feature, err)
-			disabled := disabledErr != nil &&
-				s.recordRepositoryFeatureDisabled(repo, feature, disabledErr)
-			if providerCalls > 0 {
-				probe.release()
-			} else {
-				probe.abandon()
-			}
-			if disabled {
-				continue
-			}
-			slog.Warn("detail drain: fetch failed",
-				"repo", qi.RepoOwner+"/"+qi.RepoName,
-				"number", qi.Number,
-				"type", qi.Type,
-				"err", err,
-			)
-			continue
-		}
+	if err != nil {
+		disabledErr := repositoryFeatureDisabledError(repo, feature, err)
+		disabled := disabledErr != nil &&
+			s.recordRepositoryFeatureDisabled(repo, feature, disabledErr)
 		if providerCalls > 0 {
 			probe.release()
 		} else {
 			probe.abandon()
 		}
+		if disabled {
+			return
+		}
+		slog.Warn("detail drain: fetch failed",
+			"repo", qi.RepoOwner+"/"+qi.RepoName,
+			"number", qi.Number,
+			"type", qi.Type,
+			"err", err,
+		)
+		return
+	}
+	if providerCalls > 0 {
+		probe.release()
+	} else {
+		probe.abandon()
 	}
 }
 
@@ -9832,6 +10468,7 @@ func (s *Syncer) buildDetailQueueItems(
 		ciHadPending := pr.CIHadPending || ciHasPending(pr.CIChecksJSON)
 		items = append(items, QueueItem{
 			Type:            QueueItemPR,
+			RepoID:          pr.RepoID,
 			Platform:        platform.Kind(repo.Platform),
 			RepoOwner:       repo.Owner,
 			RepoName:        repo.Name,
@@ -9872,6 +10509,7 @@ func (s *Syncer) buildDetailQueueItems(
 		}
 		items = append(items, QueueItem{
 			Type:            QueueItemIssue,
+			RepoID:          issue.RepoID,
 			Platform:        platform.Kind(repo.Platform),
 			RepoOwner:       repo.Owner,
 			RepoName:        repo.Name,
@@ -10057,6 +10695,29 @@ func (s *Syncer) syncMRForRepo(
 		defer releaseProviderWork()
 	}
 
+	resolvedRepo, _, err := s.resolveActiveRepository(ctx, repo)
+	if err != nil {
+		return fmt.Errorf(
+			"resolve repo identity %s/%s: %w",
+			repo.Owner,
+			repo.Name,
+			err,
+		)
+	}
+	leaseCtx, repo, releaseRepository, err := s.leaseTrackedRepositoryByID(
+		ctx,
+		resolvedRepo.RepoID,
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"lease resolved repo identity %s/%s: %w",
+			resolvedRepo.Owner,
+			resolvedRepo.Name,
+			err,
+		)
+	}
+	defer releaseRepository()
+	ctx = leaseCtx
 	owner := repo.Owner
 	name := repo.Name
 	mrReader, err := s.mergeRequestReaderFor(repo)
@@ -10064,10 +10725,7 @@ func (s *Syncer) syncMRForRepo(
 		return fmt.Errorf("resolve merge request reader for %s/%s: %w", owner, name, err)
 	}
 
-	repoID, err := s.db.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
-	if err != nil {
-		return fmt.Errorf("upsert repo %s/%s: %w", owner, name, err)
-	}
+	repoID := repo.RepoID
 
 	// Preserve derived fields that provider detail doesn't populate. CI is
 	// refreshed later in this sync path; keeping the previous values here
@@ -10092,7 +10750,7 @@ func (s *Syncer) syncMRForRepo(
 				*providerAttempted = true
 			}
 			ghPR, newETag, notModified, err = s.getPullRequestForDetail(
-				ctx, client, repo, number,
+				ctx, client, repo, repoID, number,
 			)
 			// Same canonical lookup classification as the raw
 			// GetGitHubPullRequest branch below.
@@ -10326,8 +10984,7 @@ func (s *Syncer) syncMRForRepo(
 	}
 	if newETag != "" {
 		if err := s.db.UpsertHTTPEtag(
-			ctx, string(repoPlatform(repo)), repoHost(repo),
-			repo.Owner, repo.Name, "pull_request", number, newETag,
+			ctx, repoID, "pull_request", number, newETag,
 		); err != nil {
 			slog.Warn("persist pull request ETag failed",
 				"repo", repo.Owner+"/"+repo.Name,
@@ -10441,8 +11098,8 @@ func (s *Syncer) syncMRDiff(
 	if s.clones == nil {
 		return nil
 	}
-	host := repoHost(repo)
-	if err := s.clones.EnsureClone(ctx, string(repoPlatform(repo)), host, repo.Owner, repo.Name, cloneRemoteURL(repo)); err != nil {
+	clone := s.repositoryClone(repo)
+	if err := clone.EnsureClone(ctx, cloneRemoteURL(repo)); err != nil {
 		return &DiffSyncError{
 			Code: DiffSyncCodeCloneUnavailable,
 			Err:  fmt.Errorf("ensure bare clone for #%d: %w", number, err),
@@ -10462,7 +11119,11 @@ func (s *Syncer) syncMRDiff(
 	if normalized.PlatformHeadSHA == "" || normalized.PlatformBaseSHA == "" {
 		return nil
 	}
-	mb, err := s.clones.MergeBase(ctx, string(repoPlatform(repo)), host, repo.Owner, repo.Name, normalized.PlatformBaseSHA, normalized.PlatformHeadSHA)
+	mb, err := clone.MergeBase(
+		ctx,
+		normalized.PlatformBaseSHA,
+		normalized.PlatformHeadSHA,
+	)
 	if err != nil {
 		return &DiffSyncError{
 			Code: DiffSyncCodeMergeBaseFailed,
@@ -10506,20 +11167,24 @@ func (s *Syncer) syncProviderMRDiff(
 	if normalized.PlatformHeadSHA == "" || normalized.PlatformBaseSHA == "" {
 		return nil
 	}
-	host := repoHost(repo)
+	clone := s.repositoryClone(repo)
 	// List sync already fetched the repo clone once for this cycle;
 	// refetching per MR would turn one repo sync into N network
 	// round-trips. Per-MR detail syncs have no prior fetch and pass
 	// ensureClone.
 	if ensureClone {
-		if err := s.clones.EnsureClone(ctx, string(repoPlatform(repo)), host, repo.Owner, repo.Name, cloneRemoteURL(repo)); err != nil {
+		if err := clone.EnsureClone(ctx, cloneRemoteURL(repo)); err != nil {
 			return &DiffSyncError{
 				Code: DiffSyncCodeCloneUnavailable,
 				Err:  fmt.Errorf("ensure bare clone for #%d: %w", number, err),
 			}
 		}
 	}
-	mb, err := s.clones.MergeBase(ctx, string(repoPlatform(repo)), host, repo.Owner, repo.Name, normalized.PlatformBaseSHA, normalized.PlatformHeadSHA)
+	mb, err := clone.MergeBase(
+		ctx,
+		normalized.PlatformBaseSHA,
+		normalized.PlatformHeadSHA,
+	)
 	if err != nil {
 		return &DiffSyncError{
 			Code: DiffSyncCodeMergeBaseFailed,
@@ -10629,10 +11294,30 @@ func (s *Syncer) syncIssueForRepo(
 		defer releaseProviderWork()
 	}
 
-	repoID, err := s.db.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
+	resolvedRepo, _, err := s.resolveActiveRepository(ctx, repo)
 	if err != nil {
-		return fmt.Errorf("upsert repo %s/%s: %w", repo.Owner, repo.Name, err)
+		return fmt.Errorf(
+			"resolve repo identity %s/%s: %w",
+			repo.Owner,
+			repo.Name,
+			err,
+		)
 	}
+	leaseCtx, repo, releaseRepository, err := s.leaseTrackedRepositoryByID(
+		ctx,
+		resolvedRepo.RepoID,
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"lease resolved repo identity %s/%s: %w",
+			resolvedRepo.Owner,
+			resolvedRepo.Name,
+			err,
+		)
+	}
+	defer releaseRepository()
+	ctx = leaseCtx
+	repoID := repo.RepoID
 
 	providerCalls, err := s.fetchIssueDetail(ctx, repo, repoID, number)
 	if providerAttempted != nil && providerCalls > 0 {
@@ -10721,7 +11406,17 @@ func (s *Syncer) SyncItemByNumber(
 			owner, name, repoPlatform(repo), repo.PlatformHost,
 		)
 	}
-
+	repo, _, err = s.resolveActiveRepository(ctx, repo)
+	if err != nil {
+		return "", fmt.Errorf(
+			"resolve repo identity %s/%s: %w",
+			owner,
+			name,
+			err,
+		)
+	}
+	owner = repo.Owner
+	name = repo.Name
 	// GitHub's Issues API returns both issues and PRs. If the
 	// response has PullRequestLinks, it's a PR.
 	client, err := s.clientFor(repo)
@@ -10834,10 +11529,6 @@ func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID 
 	// is always a pre-merge commit on the base branch lineage, and the pull
 	// ref always points to the original PR head. We only do this when no diff
 	// SHAs exist yet; PRs synced while open already have valid diff SHAs.
-	closedHost := repo.PlatformHost
-	if closedHost == "" {
-		closedHost = "github.com"
-	}
 	if s.clones != nil && cloneFetchOK {
 		headSHA := ghPR.GetHead().GetSHA()
 		baseSHA := ghPR.GetBase().GetSHA()
@@ -10857,7 +11548,9 @@ func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID 
 				)
 			}
 		} else if headSHA != "" && baseSHA != "" {
-			mb, err := s.clones.MergeBase(ctx, string(repoPlatform(repo)), closedHost, repo.Owner, repo.Name, baseSHA, headSHA)
+			mb, err := s.repositoryClone(repo).MergeBase(
+				ctx, baseSHA, headSHA,
+			)
 			if err != nil {
 				slog.Warn("merge-base for closed PR failed",
 					"repo", repo.Owner+"/"+repo.Name,
@@ -11053,12 +11746,9 @@ func (s *Syncer) computeMergedMRDiffSHAs(
 	// Resolve the PR head from the pull ref. GitHub keeps these refs
 	// indefinitely, pointing to the original PR head commit regardless
 	// of merge strategy.
-	mergedHost := repo.PlatformHost
-	if mergedHost == "" {
-		mergedHost = "github.com"
-	}
 	pullRef := fmt.Sprintf("refs/pull/%d/head", number)
-	prHead, err := s.clones.RevParse(ctx, string(repoPlatform(repo)), mergedHost, repo.Owner, repo.Name, pullRef)
+	clone := s.repositoryClone(repo)
+	prHead, err := clone.RevParse(ctx, pullRef)
 	if err != nil {
 		return &DiffSyncError{
 			Code: DiffSyncCodeCommitUnreachable,
@@ -11069,7 +11759,7 @@ func (s *Syncer) computeMergedMRDiffSHAs(
 	// Use the merge commit's first parent as the base for merge-base.
 	// This avoids the post-merge ancestor problem where prHead is reachable
 	// from the current base branch tip (making merge-base return prHead).
-	preMergeBase, err := s.clones.RevParse(ctx, string(repoPlatform(repo)), mergedHost, repo.Owner, repo.Name, mergeCommitSHA+"^1")
+	preMergeBase, err := clone.RevParse(ctx, mergeCommitSHA+"^1")
 	if err != nil {
 		return &DiffSyncError{
 			Code: DiffSyncCodeCommitUnreachable,
@@ -11077,7 +11767,7 @@ func (s *Syncer) computeMergedMRDiffSHAs(
 		}
 	}
 
-	mb, err := s.clones.MergeBase(ctx, string(repoPlatform(repo)), mergedHost, repo.Owner, repo.Name, preMergeBase, prHead)
+	mb, err := clone.MergeBase(ctx, preMergeBase, prHead)
 	if err != nil {
 		return &DiffSyncError{
 			Code: DiffSyncCodeMergeBaseFailed,

@@ -712,6 +712,9 @@ components:
           type: string
         repo_path:
           type: string
+        repository_id:
+          format: int64
+          type: integer
       required:
         - provider
         - platform_host
@@ -8196,6 +8199,18 @@ paths:
             type:
               - array
               - "null"
+        - description: Repeated immutable repository incarnation IDs.
+          explode: true
+          in: query
+          name: repo_id
+          schema:
+            description: Repeated immutable repository incarnation IDs.
+            items:
+              format: int64
+              type: integer
+            type:
+              - array
+              - "null"
         - explode: false
           in: query
           name: verbose
@@ -8258,6 +8273,18 @@ paths:
             description: Repeated provider|platform_host/repo_path filters.
             items:
               type: string
+            type:
+              - array
+              - "null"
+        - description: Repeated immutable repository incarnation IDs.
+          explode: true
+          in: query
+          name: repo_id
+          schema:
+            description: Repeated immutable repository incarnation IDs.
+            items:
+              format: int64
+              type: integer
             type:
               - array
               - "null"

@@ -367,7 +367,11 @@ func lookupNotificationRepoIDTx(ctx context.Context, tx *sql.Tx, platform, host,
 	var id int64
 	err := tx.QueryRowContext(ctx, `
 		SELECT id FROM forge_repos
-		WHERE platform = ? AND platform_host = ? AND owner = ? AND name = ?`, platform, host, owner, name).Scan(&id)
+		WHERE platform = ? AND platform_host = ?
+		  AND owner_key = ? AND name_key = ?
+		  AND retired_at IS NULL`,
+		platform, host, owner, name,
+	).Scan(&id)
 	if err == nil {
 		return id, true, nil
 	}
@@ -378,7 +382,11 @@ func lookupNotificationRepoIDTx(ctx context.Context, tx *sql.Tx, platform, host,
 }
 
 func notificationWhere(opts ListNotificationsOpts) (string, []any, error) {
-	clauses := []string{}
+	clauses := []string{`EXISTS (
+		SELECT 1 FROM forge_repos active_repo
+		WHERE active_repo.id = n.repo_id
+		  AND active_repo.retired_at IS NULL
+	)`}
 	args := []any{}
 	if len(opts.Repos) > 0 {
 		repoClauses := make([]string, 0, len(opts.Repos))
@@ -397,7 +405,15 @@ func notificationWhere(opts ListNotificationsOpts) (string, []any, error) {
 				continue
 			}
 			seen[key] = struct{}{}
-			repoClauses = append(repoClauses, "(n.platform = ? AND n.platform_host = ? AND n.repo_owner = ? AND n.repo_name = ?)")
+			repoClauses = append(repoClauses, `n.repo_id IN (
+				SELECT filtered_repo.id
+				FROM forge_repos filtered_repo
+				WHERE filtered_repo.platform = ?
+				  AND filtered_repo.platform_host = ?
+				  AND filtered_repo.owner_key = ?
+				  AND filtered_repo.name_key = ?
+				  AND filtered_repo.retired_at IS NULL
+			)`)
 			args = append(args, platform, host, owner, name)
 		}
 		if len(repoClauses) == 0 {
@@ -405,14 +421,6 @@ func notificationWhere(opts ListNotificationsOpts) (string, []any, error) {
 		} else {
 			clauses = append(clauses, "("+strings.Join(repoClauses, " OR ")+")")
 		}
-	} else {
-		clauses = append(clauses, `EXISTS (
-			SELECT 1 FROM forge_repos r
-			WHERE r.platform = n.platform
-			  AND r.platform_host = n.platform_host
-			  AND r.owner = n.repo_owner
-			  AND r.name = n.repo_name
-		)`)
 	}
 	if opts.Platform != "" {
 		platform, err := canonicalizeRequiredNotificationPlatform(opts.Platform)
@@ -664,42 +672,25 @@ func scanReturnedNotificationIDs(rows *sql.Rows, action string) ([]int64, error)
 	return ids, nil
 }
 
-func canonicalizeNotificationRepo(owner, name string) (string, string, error) {
-	owner = strings.ToLower(strings.TrimSpace(owner))
-	name = strings.ToLower(strings.TrimSpace(name))
-	if owner == "" || name == "" {
-		return "", "", fmt.Errorf("notification sync watermark requires repository owner and name")
-	}
-	return owner, name, nil
-}
-
-func (d *DB) GetNotificationSyncWatermark(ctx context.Context, platform, host, owner, name string) (*NotificationSyncWatermark, error) {
-	var err error
-	platform, host, err = canonicalizeNotificationPlatformHost(platform, host)
-	if err != nil {
-		return nil, err
-	}
-	owner, name, err = canonicalizeNotificationRepo(owner, name)
-	if err != nil {
-		return nil, err
-	}
+func (d *DB) GetNotificationSyncWatermark(
+	ctx context.Context,
+	repoID int64,
+) (*NotificationSyncWatermark, error) {
 	var rawLastSuccessful string
 	var rawLastFull sql.NullString
-	err = d.ro.QueryRowContext(ctx, `
+	err := d.ro.QueryRowContext(ctx, `
 		SELECT last_successful_sync_at, last_full_sync_at
 		FROM forge_notification_sync_watermarks
-		WHERE platform = ? AND platform_host = ? AND repo_owner = ? AND repo_name = ?`,
-		platform, host, owner, name).Scan(&rawLastSuccessful, &rawLastFull)
+		WHERE repo_id = ?`,
+		repoID,
+	).Scan(&rawLastSuccessful, &rawLastFull)
 	if err == nil {
 		lastSuccessful, parseErr := parseDBTime(rawLastSuccessful)
 		if parseErr != nil {
 			return nil, fmt.Errorf("parse notification sync watermark: %w", parseErr)
 		}
 		state := NotificationSyncWatermark{
-			Platform:             platform,
-			PlatformHost:         host,
-			RepoOwner:            owner,
-			RepoName:             name,
+			RepoID:               repoID,
 			LastSuccessfulSyncAt: canonicalUTCTime(lastSuccessful),
 		}
 		if rawLastFull.Valid && rawLastFull.String != "" {
@@ -718,25 +709,23 @@ func (d *DB) GetNotificationSyncWatermark(ctx context.Context, platform, host, o
 	return nil, fmt.Errorf("get notification sync watermark: %w", err)
 }
 
-func (d *DB) UpdateNotificationSyncWatermark(ctx context.Context, platform, host, owner, name string, syncedAt time.Time, lastFullSyncedAt *time.Time) error {
-	var err error
-	platform, host, err = canonicalizeNotificationPlatformHost(platform, host)
-	if err != nil {
-		return err
-	}
-	owner, name, err = canonicalizeNotificationRepo(owner, name)
-	if err != nil {
-		return err
-	}
+func (d *DB) UpdateNotificationSyncWatermark(
+	ctx context.Context,
+	repoID int64,
+	syncedAt time.Time,
+	lastFullSyncedAt *time.Time,
+) error {
 	syncedAt = canonicalUTCTime(syncedAt)
 	lastFullValue := nullableNotificationTime(lastFullSyncedAt)
-	_, err = d.rw.ExecContext(ctx, `
-		INSERT INTO forge_notification_sync_watermarks (platform, platform_host, repo_owner, repo_name, last_successful_sync_at, last_full_sync_at)
-		VALUES (?, ?, ?, ?, ?, ?)
-		ON CONFLICT(platform, platform_host, repo_owner, repo_name) DO UPDATE SET
+	_, err := d.rw.ExecContext(ctx, `
+		INSERT INTO forge_notification_sync_watermarks (
+			repo_id, last_successful_sync_at, last_full_sync_at
+		)
+		VALUES (?, ?, ?)
+		ON CONFLICT(repo_id) DO UPDATE SET
 			last_successful_sync_at = excluded.last_successful_sync_at,
 			last_full_sync_at = excluded.last_full_sync_at`,
-		platform, host, owner, name, syncedAt, lastFullValue)
+		repoID, syncedAt, lastFullValue)
 	if err != nil {
 		return fmt.Errorf("update notification sync watermark: %w", err)
 	}
@@ -775,6 +764,7 @@ func (d *DB) ListQueuedNotificationAcks(ctx context.Context, platform, host stri
 	}
 	limit = normalizedNotificationLimit(limit)
 	rows, err := d.ro.QueryContext(ctx, fmt.Sprintf(`SELECT %s FROM forge_notification_items n
+		JOIN forge_repos r ON r.id = n.repo_id AND r.retired_at IS NULL
 		WHERE n.platform = ?
 		  AND n.platform_host = ?
 		  AND n.source_ack_queued_at IS NOT NULL
@@ -932,10 +922,8 @@ func (d *DB) MarkClosedLinkedNotificationsDone(ctx context.Context, now time.Tim
 		  AND EXISTS (
 		    SELECT 1 FROM forge_repos r
 		    JOIN forge_merge_requests mr ON mr.repo_id = r.id AND mr.number = forge_notification_items.item_number
-		    WHERE r.platform = forge_notification_items.platform
-		      AND r.platform_host = forge_notification_items.platform_host
-		      AND r.owner = forge_notification_items.repo_owner
-		      AND r.name = forge_notification_items.repo_name
+		    WHERE r.id = forge_notification_items.repo_id
+		      AND r.retired_at IS NULL
 		      AND (mr.state IN ('closed', 'merged') OR mr.merged_at IS NOT NULL OR mr.closed_at IS NOT NULL)
 		  )`, now)
 	if err != nil {
@@ -950,10 +938,8 @@ func (d *DB) MarkClosedLinkedNotificationsDone(ctx context.Context, now time.Tim
 		  AND EXISTS (
 		    SELECT 1 FROM forge_repos r
 		    JOIN forge_issues i ON i.repo_id = r.id AND i.number = forge_notification_items.item_number
-		    WHERE r.platform = forge_notification_items.platform
-		      AND r.platform_host = forge_notification_items.platform_host
-		      AND r.owner = forge_notification_items.repo_owner
-		      AND r.name = forge_notification_items.repo_name
+		    WHERE r.id = forge_notification_items.repo_id
+		      AND r.retired_at IS NULL
 		      AND (i.state = 'closed' OR i.closed_at IS NOT NULL)
 		  )`, now)
 	if err != nil {

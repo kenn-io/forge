@@ -33,8 +33,18 @@ This paragraph is the single place CLAUDE.md enumerates supported providers. Do 
 New features must work across every supported provider to the extent each provider's API allows. Concrete rules:
 
 - Provider-specific capability differences go behind the capability model in `internal/platform`. Declare capabilities in `Capabilities()`, check them before mutations, and return typed `unsupported_capability` errors when a provider can't satisfy an operation. Do not silently fall back to GitHub-only behavior for other providers.
-- Repository identity is always the quad `(provider, platform_host, owner, repo)`. In code and schema this same quad is always represented as `(platform, platform_host, owner, name)`. There is no repository identity without both provider and host. The host may be omitted from a user-facing route only when the route helper is intentionally using the provider's default host; the logical identity still includes the normalized host.
-- Never identify, route, cache, dedupe, query, persist, or compare repositories, pull requests, merge requests, issues, comments, checks, releases, workspaces, activity, or events by owner/repo/number alone. Every repo-scoped path and data structure must carry provider and host as well as owner and repo.
+- Repository data identity is the provider's stable repository ID, scoped by
+  `(provider, platform_host)`, and persisted as one immutable internal
+  repository ID. `(owner, repo)` and `repo_path` are mutable display and routing
+  coordinates. A provider ID change at an occupied route creates a new local
+  incarnation and retires the old one; a route change with the same provider ID
+  preserves the local incarnation.
+- Never identify, cache, dedupe, persist, or compare repository-owned pull
+  requests, merge requests, issues, comments, checks, releases, workspaces,
+  activity, archives, notifications, or Git clones by owner/repo/number alone.
+  Persisted ownership uses the internal repository ID. Provider calls and routes
+  still carry provider, host, owner, and repo because those coordinates select
+  an endpoint and credential.
 - Repo-scoped routes use provider-aware paths like `/pulls/{provider}/{owner}/{name}/{number}`, with `/host/{platform_host}/...` for non-default or self-hosted instances.
 - GitHub-only optimizations (GraphQL bulk fetch, ETag recovery, detailed diff behavior) stay in `internal/github/` and remain optional around the neutral persistence path.
 - Frontend stores and components must thread the full provider ref (`provider`, `platformHost`, `owner`, `name`, `repoPath`) through the shared route helpers in `packages/ui/src/api/provider-routes.ts`. Do not hand-build `/api/v1` URLs or assume GitHub defaults inside components.

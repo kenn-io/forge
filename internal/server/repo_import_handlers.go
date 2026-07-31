@@ -547,6 +547,9 @@ func (s *Server) applyBulkExactRepos(
 	ctx context.Context,
 	resolved []resolvedBulkRepo,
 ) (settingsResponse, error) {
+	s.configReloadMu.Lock()
+	defer s.configReloadMu.Unlock()
+
 	s.cfgMu.Lock()
 	existing := exactConfiguredRepoSet(s.cfg.Repos)
 	addConfigs := make([]config.Repo, 0, len(resolved))

@@ -666,10 +666,151 @@ func TestOpenMigratesRateLimitsToPrincipals(t *testing.T) {
 	require.NoError(err)
 	require.Zero(watermarkRows,
 		"host-wide watermarks cannot be attributed to repositories and are dropped")
+	repoID, err := database.UpsertRepoByProviderID(t.Context(), RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "repo-widget",
+		Owner:          "acme",
+		Name:           "widget",
+	})
+	require.NoError(err)
 	require.NoError(database.UpdateNotificationSyncWatermark(
-		t.Context(), "github", "github.com", "acme", "widget",
-		time.Now().UTC(), nil,
+		t.Context(), repoID, time.Now().UTC(), nil,
 	))
+
+	var integrity string
+	require.NoError(database.ReadDB().QueryRow(`PRAGMA integrity_check`).Scan(&integrity))
+	require.Equal("ok", integrity)
+	rows, err := database.ReadDB().Query(`PRAGMA foreign_key_check`)
+	require.NoError(err)
+	defer rows.Close()
+	require.False(rows.Next())
+}
+
+func TestOpenMigratesRepositoryOwnedStateToIncarnationIDs(t *testing.T) {
+	require := require.New(t)
+	path := filepath.Join(t.TempDir(), "repository-incarnation-v43.db")
+	openAtVersionForTest(t, path, 43, func(raw *sql.DB) {
+		_, err := raw.Exec(`
+			INSERT INTO middleman_repos (
+				id, platform, platform_host, platform_repo_id,
+				owner, name, repo_path, owner_key, name_key, repo_path_key
+			) VALUES (
+				1, 'github', 'github.com', 'repository-1',
+				'acme', 'widget', 'acme/widget',
+				'acme', 'widget', 'acme/widget'
+			)`)
+		require.NoError(err)
+		_, err = raw.Exec(`
+			INSERT INTO middleman_workspaces (
+				id, platform, platform_host, repo_owner, repo_name,
+				repo_owner_key, repo_name_key, repo_path_key,
+				item_type, item_number, item_key, git_head_ref,
+				worktree_path, tmux_session, status
+			) VALUES (
+				'workspace-1', 'github', 'github.com', 'acme', 'widget',
+				'acme', 'widget', 'acme/widget',
+				'pull_request', 7, '7', 'feature/example',
+				'/tmp/workspace-1', 'workspace-1', 'ready'
+			)`)
+		require.NoError(err)
+		_, err = raw.Exec(`
+			INSERT INTO middleman_notification_items (
+				platform, platform_host, platform_notification_id,
+				repo_owner, repo_name, subject_type, subject_title,
+				item_type, reason, source_updated_at, synced_at
+			) VALUES (
+				'github', 'github.com', 'notification-1',
+				'acme', 'widget', 'PullRequest', 'Review requested',
+				'pr', 'review_requested',
+				'2026-07-30T10:00:00Z', '2026-07-30T10:00:00Z'
+			)`)
+		require.NoError(err)
+		_, err = raw.Exec(`
+			INSERT INTO middleman_notification_items (
+				platform, platform_host, platform_notification_id,
+				repo_owner, repo_name, subject_type, subject_title,
+				item_type, reason, source_updated_at, synced_at
+			) VALUES (
+				'github', 'github.com', 'notification-unscoped',
+				'acme', 'unconfigured', 'Issue', 'Unconfigured repository',
+				'issue', 'subscribed',
+				'2026-07-30T10:00:00Z', '2026-07-30T10:00:00Z'
+			)`)
+		require.NoError(err)
+		_, err = raw.Exec(`
+			INSERT INTO middleman_http_etags (
+				platform, platform_host, owner_key, name_key,
+				resource_type, resource_number, etag
+			) VALUES (
+				'github', 'github.com', 'acme', 'widget',
+				'pull_request', 7, '"etag-v1"'
+			)`)
+		require.NoError(err)
+		_, err = raw.Exec(`
+			INSERT INTO middleman_notification_sync_watermarks (
+				platform, platform_host, repo_owner, repo_name,
+				last_successful_sync_at
+			) VALUES (
+				'github', 'github.com', 'acme', 'widget',
+				'2026-07-30T10:00:00Z'
+			)`)
+		require.NoError(err)
+	})
+
+	database, err := Open(path)
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(database.Close()) })
+
+	var workspaceRepoID int64
+	var workspacePath, legacyCloneOwner, legacyCloneName string
+	require.NoError(database.ReadDB().QueryRow(`
+		SELECT repo_id, worktree_path,
+		       legacy_clone_owner, legacy_clone_name
+		FROM forge_workspaces
+		WHERE id = 'workspace-1'
+	`).Scan(
+		&workspaceRepoID,
+		&workspacePath,
+		&legacyCloneOwner,
+		&legacyCloneName,
+	))
+	require.Equal(int64(1), workspaceRepoID)
+	require.Equal("/tmp/workspace-1", workspacePath)
+	require.Equal("acme", legacyCloneOwner)
+	require.Equal("widget", legacyCloneName)
+	workspace, err := database.GetWorkspace(t.Context(), "workspace-1")
+	require.NoError(err)
+	require.NotNil(workspace)
+	require.Equal("acme", workspace.LegacyCloneOwner)
+	require.Equal("widget", workspace.LegacyCloneName)
+
+	var notificationRepoID int64
+	require.NoError(database.ReadDB().QueryRow(`
+		SELECT repo_id
+		FROM forge_notification_items
+		WHERE platform_notification_id = 'notification-1'
+	`).Scan(&notificationRepoID))
+	require.Equal(int64(1), notificationRepoID)
+
+	var unscopedRepoID sql.NullInt64
+	require.NoError(database.ReadDB().QueryRow(`
+		SELECT repo_id
+		FROM forge_notification_items
+		WHERE platform_notification_id = 'notification-unscoped'
+	`).Scan(&unscopedRepoID))
+	require.False(unscopedRepoID.Valid)
+
+	for _, table := range []string{
+		"forge_http_etags",
+		"forge_notification_sync_watermarks",
+	} {
+		var count int
+		require.NoError(database.ReadDB().QueryRow(
+			"SELECT COUNT(*) FROM " + table,
+		).Scan(&count))
+		require.Zero(count)
+	}
 
 	var integrity string
 	require.NoError(database.ReadDB().QueryRow(`PRAGMA integrity_check`).Scan(&integrity))

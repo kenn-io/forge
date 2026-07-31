@@ -1,6 +1,9 @@
 <script lang="ts">
   import { FilterDropdown } from "@kenn-io/kit-ui";
-  import type { DetailActivityViewMode } from "../../stores/detail-activity-view.svelte.js";
+  import type {
+    DetailActivityViewMode,
+    DetailTimelineOrder,
+  } from "../../stores/detail-activity-view.svelte.js";
   import {
     activePRTimelineFilterCount,
     DEFAULT_PR_TIMELINE_FILTER,
@@ -10,11 +13,13 @@
   interface Props {
     viewMode: DetailActivityViewMode;
     onViewChange: (mode: DetailActivityViewMode) => void;
+    timelineOrder?: DetailTimelineOrder;
+    onOrderChange?: (order: DetailTimelineOrder) => void;
     filter?: PRTimelineFilterState;
     onFilterChange?: (filter: PRTimelineFilterState) => void;
   }
 
-  let { viewMode, onViewChange, filter, onFilterChange }: Props = $props();
+  let { viewMode, onViewChange, timelineOrder, onOrderChange, filter, onFilterChange }: Props = $props();
 
   const activeFilterCount = $derived(
     filter ? activePRTimelineFilterCount(filter) : 0,
@@ -24,6 +29,9 @@
   );
   const hasPRFilters = $derived(
     filter !== undefined && onFilterChange !== undefined,
+  );
+  const hasOrderControls = $derived(
+    timelineOrder !== undefined && onOrderChange !== undefined,
   );
 
   function updateFilter(patch: Partial<PRTimelineFilterState>): void {
@@ -55,6 +63,29 @@
         },
       ],
     },
+    ...(hasOrderControls
+      ? [
+          {
+            title: "Order",
+            items: [
+              {
+                id: "order-grouped",
+                label: "Grouped",
+                active: timelineOrder === "grouped",
+                closeOnSelect: true,
+                onSelect: () => onOrderChange?.("grouped"),
+              },
+              {
+                id: "order-chronological",
+                label: "Strict date order",
+                active: timelineOrder === "chronological",
+                closeOnSelect: true,
+                onSelect: () => onOrderChange?.("chronological"),
+              },
+            ],
+          },
+        ]
+      : []),
     ...(hasPRFilters && filter
       ? [
           {
@@ -125,7 +156,7 @@
 <FilterDropdown
   label="View"
   detail={currentViewDetail}
-  active={viewMode === "compact" || activeFilterCount > 0}
+  active={viewMode === "compact" || timelineOrder === "chronological" || activeFilterCount > 0}
   badgeCount={activeFilterCount}
   title={hasPRFilters
     ? "View and filter activity"

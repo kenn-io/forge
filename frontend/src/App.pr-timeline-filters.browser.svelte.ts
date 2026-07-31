@@ -453,6 +453,27 @@ describe("PR timeline filters", () => {
     expect(inDetail('[title="View and filter activity"]')[0]?.textContent ?? "").toContain("1");
   });
 
+  it("orders the timeline strictly by date when strict date order is selected", async () => {
+    await mountTimeline("/pulls/github/acme/widgets/1");
+    await vi.waitFor(() => expect(detailText(".kit-timeline")).toContain("Same timestamp reviewer note"), WAIT);
+
+    // Grouped default: the follow-up force push pulls its rebase commit above
+    // the reviewer note that was written before the push.
+    expect(detailText(".kit-timeline").indexOf("fix: finish cache rebase after follow-up force push")).toBeLessThan(
+      detailText(".kit-timeline").indexOf("Same timestamp reviewer note"),
+    );
+
+    await openViewMenu();
+    await toggleBucket("Strict date order");
+
+    await vi.waitFor(() => {
+      expect(detailText(".kit-timeline").indexOf("Same timestamp reviewer note")).toBeLessThan(
+        detailText(".kit-timeline").indexOf("fix: finish cache rebase after follow-up force push"),
+      );
+    }, WAIT);
+    expect(localStorage.getItem("kenn-forge-detail-timeline-order")).toBe("chronological");
+  });
+
   it("keeps commit rows when other event buckets are hidden", async () => {
     await mountTimeline("/pulls/github/acme/widgets/1");
     await vi.waitFor(() => expect(detailText(".kit-timeline")).toContain("feat: add cache store"), WAIT);

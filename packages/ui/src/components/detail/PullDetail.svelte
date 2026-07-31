@@ -2831,6 +2831,8 @@
           <DetailActivityViewMenu
             viewMode={detailActivityView.getMode()}
             onViewChange={(mode) => detailActivityView.setMode(mode)}
+            timelineOrder={detailActivityView.getOrder()}
+            onOrderChange={(order) => detailActivityView.setOrder(order)}
             filter={timelineFilter}
             onFilterChange={updateTimelineFilter}
           />
@@ -2851,6 +2853,7 @@
             filtered={hasActiveTimelineFilters}
             showCommitDetails={timelineFilter.showCommitDetails}
             activityViewMode={detailActivityView.getMode()}
+            timelineOrder={detailActivityView.getOrder()}
             onEditComment={capabilities.comment_mutation && !stalePR && !editCommentGate.unavailable
               ? editTimelineComment
               : undefined}

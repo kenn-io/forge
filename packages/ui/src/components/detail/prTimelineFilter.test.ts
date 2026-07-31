@@ -358,4 +358,57 @@ describe("DetailActivityViewMenu", () => {
     expect(screen.getByRole("button", { name: /force pushes/i })).toBeTruthy();
     expect(screen.getByRole("button", { name: /hide bot activity/i })).toBeTruthy();
   });
+
+  it("offers timeline order options when order state is provided", async () => {
+    const onOrderChange = vi.fn();
+    render(DetailActivityViewMenu, {
+      props: {
+        viewMode: "normal",
+        onViewChange: vi.fn(),
+        filter: DEFAULT_PR_TIMELINE_FILTER,
+        onFilterChange: vi.fn(),
+        timelineOrder: "grouped",
+        onOrderChange,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: /view/i }));
+    await fireEvent.click(screen.getByRole("button", { name: /strict date order/i }));
+
+    expect(onOrderChange).toHaveBeenCalledWith("chronological");
+    expect(document.querySelector(".kit-filter-dropdown__panel")).toBeNull();
+  });
+
+  it("switches back to grouped order from the order section", async () => {
+    const onOrderChange = vi.fn();
+    render(DetailActivityViewMenu, {
+      props: {
+        viewMode: "normal",
+        onViewChange: vi.fn(),
+        filter: DEFAULT_PR_TIMELINE_FILTER,
+        onFilterChange: vi.fn(),
+        timelineOrder: "chronological",
+        onOrderChange,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: /view/i }));
+    await fireEvent.click(screen.getByRole("button", { name: /grouped/i }));
+
+    expect(onOrderChange).toHaveBeenCalledWith("grouped");
+  });
+
+  it("omits timeline order options when order state is not provided", async () => {
+    render(DetailActivityViewMenu, {
+      props: {
+        viewMode: "normal",
+        onViewChange: vi.fn(),
+      },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: /view/i }));
+
+    expect(screen.queryByRole("button", { name: /strict date order/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /grouped/i })).toBeNull();
+  });
 });

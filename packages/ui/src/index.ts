@@ -99,7 +99,7 @@ export type { RepoBrowserStoreOptions } from "./stores/repo-browser.svelte.js";
 export { createDiffReviewDraftStore } from "./stores/diff-review-draft.svelte.js";
 export { createGroupingStore } from "./stores/grouping.svelte.js";
 export { createDetailActivityViewStore } from "./stores/detail-activity-view.svelte.js";
-export type { DetailActivityViewMode } from "./stores/detail-activity-view.svelte.js";
+export type { DetailActivityViewMode, DetailTimelineOrder } from "./stores/detail-activity-view.svelte.js";
 export { classifyPR, groupByWorkflow, workflowGroupOrder, workflowGroupLabels } from "./stores/workflow.svelte.js";
 export type { WorkflowGroup, WorkflowGroupEntry } from "./stores/workflow.svelte.js";
 export { createCollapsedReposStore } from "./stores/collapsedRepos.svelte.js";

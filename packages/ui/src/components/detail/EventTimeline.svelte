@@ -11,7 +11,10 @@
   import { untrack } from "svelte";
   import { slide } from "svelte/transition";
   import type { IssueEvent, PREvent } from "../../api/types.js";
-  import type { DetailActivityViewMode } from "../../stores/detail-activity-view.svelte.js";
+  import type {
+    DetailActivityViewMode,
+    DetailTimelineOrder,
+  } from "../../stores/detail-activity-view.svelte.js";
   import { pushModalFrame } from "../../stores/keyboard/modal-stack.svelte.js";
   import type { StoreInstances } from "../../types.js";
   import { renderMarkdown, renderMarkdownSync } from "../../utils/markdown.js";
@@ -61,6 +64,7 @@
     filtered?: boolean;
     showCommitDetails?: boolean;
     activityViewMode?: DetailActivityViewMode;
+    timelineOrder?: DetailTimelineOrder;
     onEditComment?: ((event: PREvent | IssueEvent, body: string) => Promise<boolean>) | undefined;
     onDeleteComment?: ((event: PREvent | IssueEvent) => Promise<string | null>) | undefined;
     onApplySuggestion?: ((input: ApplySuggestionRequest) => Promise<boolean | SuggestionApplyResult>) | undefined;
@@ -87,6 +91,7 @@
     filtered = false,
     showCommitDetails = true,
     activityViewMode = "normal",
+    timelineOrder = "grouped",
     onEditComment,
     onDeleteComment,
     onApplySuggestion,
@@ -582,11 +587,24 @@
     });
   }
 
+  function orderEventsForDisplay(
+    sourceEvents: Array<PREvent | IssueEvent>,
+    orderingSourceEvents: Array<PREvent | IssueEvent>,
+  ): Array<PREvent | IssueEvent> {
+    // Strict date order keeps events at their own timestamps instead of
+    // clamping re-pushed commits into force-push generations, so recent
+    // comments stay above older commit batches.
+    if (timelineOrder === "chronological") {
+      return [...sourceEvents].sort(compareEventsDescending);
+    }
+    return orderEventsForForcePushBoundaries(sourceEvents, orderingSourceEvents);
+  }
+
   function buildTimelineEntries(
     sourceEvents: Array<PREvent | IssueEvent>,
     orderingSourceEvents: Array<PREvent | IssueEvent>,
   ): TimelineEntry[] {
-    const orderedEvents = orderEventsForForcePushBoundaries(sourceEvents, orderingSourceEvents);
+    const orderedEvents = orderEventsForDisplay(sourceEvents, orderingSourceEvents);
     const threads: Array<{ id: string; events: Array<PREvent | IssueEvent> }> = [];
 
     for (const event of orderedEvents) {
@@ -658,7 +676,7 @@
     sourceEvents: Array<PREvent | IssueEvent>,
     orderingSourceEvents: Array<PREvent | IssueEvent>,
   ): TimelineEntry[] {
-    return orderEventsForForcePushBoundaries(sourceEvents, orderingSourceEvents).map((event) => ({
+    return orderEventsForDisplay(sourceEvents, orderingSourceEvents).map((event) => ({
       key: `compact-event-${event.ID}`,
       event,
       reviewThread: reviewThreadFor(event) ?? undefined,

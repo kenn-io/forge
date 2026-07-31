@@ -1703,6 +1703,102 @@ describe("EventTimeline", () => {
     expect(text.indexOf("ccccccc -> fffffff")).toBeLessThan(text.indexOf("old C2 before rebase"));
   });
 
+  it("keeps strictly chronological order when timelineOrder is chronological", () => {
+    const oldHead = "cccccccccccccccccccccccccccccccccccccccc";
+    const newHead = "ffffffffffffffffffffffffffffffffffffffff";
+    const events = [
+      makeEvent({
+        ID: 7,
+        EventType: "force_push",
+        Author: "alice",
+        Summary: "ccccccc -> fffffff",
+        CreatedAt: "2024-06-01T12:00:00Z",
+        MetadataJSON: JSON.stringify({
+          before_sha: oldHead,
+          after_sha: newHead,
+        }),
+      }),
+      makeEvent({
+        ID: 4,
+        EventType: "issue_comment",
+        Author: "bob",
+        Body: "comment between commits and push",
+        CreatedAt: "2024-06-01T11:00:00Z",
+      }),
+      makeEvent({
+        ID: 6,
+        EventType: "commit",
+        Summary: newHead,
+        Body: "new C3 after rebase",
+        CreatedAt: "2024-06-01T10:03:00Z",
+      }),
+      makeEvent({
+        ID: 3,
+        EventType: "commit",
+        Summary: oldHead,
+        Body: "old C3 before rebase",
+        CreatedAt: "2024-06-01T10:02:00Z",
+      }),
+    ];
+
+    const grouped = render(EventTimeline, { props: { events } });
+    const groupedText = grouped.container.textContent ?? "";
+    expect(groupedText.indexOf("new C3 after rebase")).toBeLessThan(
+      groupedText.indexOf("comment between commits and push"),
+    );
+    cleanup();
+
+    const chronological = render(EventTimeline, {
+      props: { events, timelineOrder: "chronological" },
+    });
+    const text = chronological.container.textContent ?? "";
+    expect(text.indexOf("ccccccc -> fffffff")).toBeLessThan(text.indexOf("comment between commits and push"));
+    expect(text.indexOf("comment between commits and push")).toBeLessThan(text.indexOf("new C3 after rebase"));
+    expect(text.indexOf("new C3 after rebase")).toBeLessThan(text.indexOf("old C3 before rebase"));
+  });
+
+  it("keeps strictly chronological order in compact view when timelineOrder is chronological", () => {
+    const oldHead = "cccccccccccccccccccccccccccccccccccccccc";
+    const newHead = "ffffffffffffffffffffffffffffffffffffffff";
+    const { container } = render(EventTimeline, {
+      props: {
+        events: [
+          makeEvent({
+            ID: 7,
+            EventType: "force_push",
+            Author: "alice",
+            Summary: "ccccccc -> fffffff",
+            CreatedAt: "2024-06-01T12:00:00Z",
+            MetadataJSON: JSON.stringify({
+              before_sha: oldHead,
+              after_sha: newHead,
+            }),
+          }),
+          makeEvent({
+            ID: 4,
+            EventType: "issue_comment",
+            Author: "bob",
+            Body: "comment between commits and push",
+            CreatedAt: "2024-06-01T11:00:00Z",
+          }),
+          makeEvent({
+            ID: 6,
+            EventType: "commit",
+            Summary: newHead,
+            Body: "new C3 after rebase",
+            CreatedAt: "2024-06-01T10:03:00Z",
+          }),
+        ],
+        activityViewMode: "compact",
+        timelineOrder: "chronological",
+      },
+    });
+
+    const text = container.textContent ?? "";
+    expect(text.indexOf("ccccccc -> fffffff")).toBeLessThan(text.indexOf("comment between commits and push"));
+    expect(text.indexOf("comment between commits and push")).toBeLessThan(text.indexOf("new C3 after rebase"));
+  });
+
   it("orders force-push generations from commit ancestry even when database IDs are not generation order", () => {
     const oldHead = "cccccccccccccccccccccccccccccccccccccccc";
     const newHead = "ffffffffffffffffffffffffffffffffffffffff";

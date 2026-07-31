@@ -1,5 +1,5 @@
 version = 1
 
 [project]
-identity = "github.com/kenn-io/kenn-forge"
+identity = "github.com/kenn-io/middleman"
 name = "kenn-forge"

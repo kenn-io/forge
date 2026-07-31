@@ -24226,7 +24226,7 @@ func TestWorkspaceServerFixtureCleansUpTmuxSessions(t *testing.T) {
 		if len(argv) >= 3 &&
 			argv[0] == "kill-session" &&
 			argv[1] == "-t" &&
-			strings.HasPrefix(argv[2], "kenn-forge-") {
+			strings.HasPrefix(argv[2], "forge-") {
 			killed = true
 			break
 		}
@@ -25622,7 +25622,7 @@ for a in "$@"; do
 done
 if [ "$mode" = "display-message" ]; then
   case "$target" in
-    kenn-forge-????????????????-*) printf '⠴ t3code-b5014b03\n' ;;
+    forge-????????????????-*) printf '⠴ t3code-b5014b03\n' ;;
     *) printf 'idle\n' ;;
   esac
   exit 0
@@ -25754,8 +25754,8 @@ for a in "$@"; do
 done
 case "$1" in
   list-sessions)
-    printf 'kenn-forge-0000000000000001:%%s\n' "$KENN_FORGE_TMUX_OWNER"
-    printf 'kenn-forge-0000000000000001-0123456789abcdef:%%s\n' "$KENN_FORGE_TMUX_OWNER"
+    printf 'middleman-0000000000000001:%%s\n' "$KENN_FORGE_TMUX_OWNER"
+    printf 'forge-0000000000000001-0123456789abcdef:%%s\n' "$KENN_FORGE_TMUX_OWNER"
     exit 0
     ;;
   kill-session)
@@ -25781,7 +25781,7 @@ exit 0
 		GitHeadRef:      "feature",
 		WorkspaceBranch: "feature",
 		WorktreePath:    filepath.Join(worktreeDir, "acme-widget-1"),
-		TmuxSession:     "kenn-forge-0000000000000001",
+		TmuxSession:     "middleman-0000000000000001",
 		Status:          "ready",
 	}
 	require.NoError(database.InsertWorkspace(t.Context(), ws))
@@ -25802,17 +25802,17 @@ exit 0
 			func(argv []string) bool {
 				return slices.Equal(argv, []string{
 					"kill-session", "-t",
-					"kenn-forge-0000000000000001-0123456789abcdef",
+					"forge-0000000000000001-0123456789abcdef",
 				})
 			},
 		)
 	}, 2*time.Second, 20*time.Millisecond)
 	argvs := readTmuxRecord(t, record)
 	assert.Contains(argvs, []string{
-		"kill-session", "-t", "kenn-forge-0000000000000001-0123456789abcdef",
+		"kill-session", "-t", "forge-0000000000000001-0123456789abcdef",
 	})
 	assert.NotContains(argvs, []string{
-		"kill-session", "-t", "kenn-forge-0000000000000001",
+		"kill-session", "-t", "middleman-0000000000000001",
 	})
 }
 
@@ -25842,7 +25842,7 @@ done
 if [ "$1" = "-u" ]; then shift; fi
 case "$1" in
   list-sessions)
-    printf '%s\n' 'kenn-forge-0000000000000001-e81d3b0e9d82feaa'
+    printf '%s\n' 'forge-0000000000000001-e81d3b0e9d82feaa'
     exit 0
     ;;
   show-options)
@@ -25856,7 +25856,7 @@ case "$1" in
 esac
 if [ "$mode" = "display-message" ]; then
   case "$target" in
-    kenn-forge-????????????????-*) printf '⠴ t3code-b5014b03\n' ;;
+    forge-????????????????-*) printf '⠴ t3code-b5014b03\n' ;;
     *) printf 'idle\n' ;;
   esac
   exit 0
@@ -25956,7 +25956,7 @@ case "$1" in
     ;;
   set-option)
     case "$target" in
-      kenn-forge-????????????????-*)
+      forge-????????????????-*)
         echo "owner marker denied" >&2
         exit 42
         ;;
@@ -26042,14 +26042,14 @@ exit 0
 
 func runtimeTmuxSessionNameForTest(workspaceID string, targetKey string) string {
 	sum := sha256.Sum256([]byte(targetKey))
-	return "kenn-forge-" + workspaceID + "-" + hex.EncodeToString(sum[:8])
+	return "forge-" + workspaceID + "-" + hex.EncodeToString(sum[:8])
 }
 
 func isRuntimeTmuxSessionNameForWorkspace(
 	workspaceID string,
 	sessionName string,
 ) bool {
-	suffix := strings.TrimPrefix(sessionName, "kenn-forge-"+workspaceID+"-")
+	suffix := strings.TrimPrefix(sessionName, "forge-"+workspaceID+"-")
 	return suffix != sessionName &&
 		len(suffix) == 16 &&
 		strings.IndexFunc(suffix, func(r rune) bool {
@@ -26293,7 +26293,7 @@ if [ "$1" = "show-option" ]; then
 fi
 if [ "$1" = "kill-session" ]; then
   case "$target" in
-    kenn-forge-????????????????-*)
+    forge-????????????????-*)
       echo "permission denied" >&2
       exit 42
       ;;
@@ -26908,7 +26908,7 @@ func TestWorkspaceListPrunesMissingTmuxSessionsE2E(t *testing.T) {
 	body := "#!/bin/sh\n" +
 		`for a in "$@"; do` + "\n" +
 		`  if [ "$a" = "list-sessions" ]; then` + "\n" +
-		`    printf 'kenn-forge-0000000000000001\nkenn-forge-0000000000000002-e81d3b0e9d82feaa\n'` + "\n" +
+		`    printf 'forge-0000000000000001\nforge-0000000000000002-e81d3b0e9d82feaa\n'` + "\n" +
 		`    exit 0` + "\n" +
 		`  fi` + "\n" +
 		"done\n" +
@@ -26929,7 +26929,7 @@ func TestWorkspaceListPrunesMissingTmuxSessionsE2E(t *testing.T) {
 		ItemNumber:   1,
 		GitHeadRef:   "feature/stale",
 		WorktreePath: filepath.Join(dir, "stale"),
-		TmuxSession:  "kenn-forge-0000000000000002",
+		TmuxSession:  "forge-0000000000000002",
 		Status:       "ready",
 	}))
 	runtimeSession := runtimeTmuxSessionNameForTest(

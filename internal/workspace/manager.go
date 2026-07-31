@@ -357,7 +357,7 @@ func (m *Manager) Create(
 			m.worktreeDir, repo.Platform, platformHost, owner, name,
 			fmt.Sprintf("pr-%d", mrNumber),
 		),
-		TmuxSession:     "kenn-forge-" + id,
+		TmuxSession:     "forge-" + id,
 		TerminalBackend: m.PreferredTerminalBackend(),
 		Status:          "creating",
 	}
@@ -435,7 +435,7 @@ func (m *Manager) CreateIssue(
 			m.worktreeDir, repo.Platform, platformHost, owner, name,
 			fmt.Sprintf("issue-%d", issueNumber),
 		),
-		TmuxSession:     "kenn-forge-" + id,
+		TmuxSession:     "forge-" + id,
 		TerminalBackend: m.PreferredTerminalBackend(),
 		Status:          "creating",
 	}
@@ -628,7 +628,7 @@ func (m *Manager) CreateKataTask(
 			m.worktreeDir, repo.Platform, platformHost, owner, name,
 			"kata-"+branchID,
 		),
-		TmuxSession:     "kenn-forge-" + id,
+		TmuxSession:     "forge-" + id,
 		TerminalBackend: m.PreferredTerminalBackend(),
 		Status:          "creating",
 		KataMetadata:    &metadata,
@@ -710,7 +710,7 @@ func (m *Manager) CreateAdHoc(
 			m.worktreeDir, repo.Platform, platformHost, owner, name,
 			adHocWorktreeDirName(gitHeadRef),
 		),
-		TmuxSession:     "kenn-forge-" + id,
+		TmuxSession:     "forge-" + id,
 		TerminalBackend: m.PreferredTerminalBackend(),
 		Status:          "creating",
 	}
@@ -3125,30 +3125,30 @@ func (m *Manager) PruneMissingTmuxSessions(ctx context.Context) (bool, error) {
 }
 
 func isWorkspaceTmuxSessionName(session string) bool {
-	const prefix = "kenn-forge-"
-	if len(session) != len(prefix)+16 ||
-		!strings.HasPrefix(session, prefix) {
-		return false
+	for _, prefix := range []string{"forge-", "middleman-"} {
+		if len(session) == len(prefix)+16 &&
+			strings.HasPrefix(session, prefix) &&
+			isLowerHex(session[len(prefix):]) {
+			return true
+		}
 	}
-	return isLowerHex(session[len(prefix):])
+	return false
 }
 
 func isForgeWorkspaceTmuxSessionName(session string) bool {
 	if isWorkspaceTmuxSessionName(session) {
 		return true
 	}
-	const prefix = "kenn-forge-"
-	// Runtime session names intentionally only match the current opaque
-	// kenn-forge-<workspace-id>-<target-key-hash> shape. Old readable
-	// target suffixes are not supported; stored DB rows are authoritative
-	// for restart activity and cleanup.
-	if len(session) != len(prefix)+16+1+16 ||
-		!strings.HasPrefix(session, prefix) ||
-		session[len(prefix)+16] != '-' {
-		return false
+	for _, prefix := range []string{"forge-", "middleman-"} {
+		if len(session) == len(prefix)+16+1+16 &&
+			strings.HasPrefix(session, prefix) &&
+			session[len(prefix)+16] == '-' &&
+			isLowerHex(session[len(prefix):len(prefix)+16]) &&
+			isLowerHex(session[len(prefix)+17:]) {
+			return true
+		}
 	}
-	return isLowerHex(session[len(prefix):len(prefix)+16]) &&
-		isLowerHex(session[len(prefix)+17:])
+	return false
 }
 
 func isLowerHex(value string) bool {

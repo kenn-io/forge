@@ -25,7 +25,7 @@
   import type {
     LaunchTarget,
     RuntimeSession,
-  } from "@middleman/ui/api/types";
+  } from "@kenn-forge/ui/api/types";
   import {
     getWorkspaceRuntime,
     launchWorkspaceSession,
@@ -115,8 +115,8 @@
     type InlineDockMode,
     type PaneSurfaceKey,
     type SplitResizeEvent,
-    type WorkspaceItemIdentity, } from "@middleman/ui";
-  import { getStackDepth } from "@middleman/ui/stores/keyboard/modal-stack";
+    type WorkspaceItemIdentity, } from "@kenn-forge/ui";
+  import { getStackDepth } from "@kenn-forge/ui/stores/keyboard/modal-stack";
   import ChevronsDownIcon from "@lucide/svelte/icons/chevrons-down";
   import ChevronsUpIcon from "@lucide/svelte/icons/chevrons-up";
   import PanelBottomCloseIcon from "@lucide/svelte/icons/panel-bottom-close";
@@ -128,11 +128,11 @@
   import { apiErrorMessage, client } from "../../api/runtime.js";
   import { updateSettings } from "../../api/settings.js";
   import type { KataWorkspaceMetadata } from "../../api/kata/workspaces.js";
-  import { showFlash } from "@middleman/ui/stores/flash";
+  import { showFlash } from "@kenn-forge/ui/stores/flash";
   import {
     consumeWorkspaceLaunch,
     pendingWorkspaceLaunchTarget,
-  } from "@middleman/ui/stores/workspace-create-pending";
+  } from "@kenn-forge/ui/stores/workspace-create-pending";
   import { createTerminalZoomController } from "./terminalZoom";
 
   interface Workspace {
@@ -346,16 +346,16 @@
     total: number;
   }>({ status: "loading", total: 0 });
 
-  const SIDEBAR_TAB_KEY = "middleman-workspace-sidebar-tab";
-  const SIDEBAR_OPEN_KEY = "middleman-workspace-sidebar-open";
-  const SIDEBAR_WIDTH_KEY = "middleman-workspace-sidebar-width";
+  const SIDEBAR_TAB_KEY = "kenn-forge-workspace-sidebar-tab";
+  const SIDEBAR_OPEN_KEY = "kenn-forge-workspace-sidebar-open";
+  const SIDEBAR_WIDTH_KEY = "kenn-forge-workspace-sidebar-width";
   const WORKSPACE_LIST_WIDTH_KEY =
-    "middleman-workspace-list-sidebar-width";
+    "kenn-forge-workspace-list-sidebar-width";
   const ACTIVE_WORKSPACE_TAB_KEY_PREFIX =
-    "middleman-workspace-active-tab:";
+    "kenn-forge-workspace-active-tab:";
   const TERMINAL_LAYOUT_KEY_PREFIX =
-    "middleman-workspace-terminal-layout:";
-  const WORKFLOW_PRESETS_KEY = "middleman-workspace-layout-presets";
+    "kenn-forge-workspace-terminal-layout:";
+  const WORKFLOW_PRESETS_KEY = "kenn-forge-workspace-layout-presets";
   const PLAIN_SHELL_TARGET = "plain_shell";
   type EmptyLaunchTargetsState = "idle" | "loading" | "loaded" | "error";
   let emptyLaunchTargets = $state.raw<LaunchTarget[]>([]);

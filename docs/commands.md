@@ -57,12 +57,12 @@ Reports whether a kenn-forge daemon is running.
 ## API relay
 
 ```sh
-middleman api GET /api/v1/pulls
-middleman api POST /api/v1/sync
-middleman api GET /api/v1/version
+kenn-forge api GET /api/v1/pulls
+kenn-forge api POST /api/v1/sync
+kenn-forge api GET /api/v1/version
 ```
 
-`middleman api` discovers the running daemon from the selected config and
+`kenn-forge api` discovers the running daemon from the selected config and
 relays one request. Use `-i` to include the HTTP status line, `--timeout` to
 bound the request, and `--config` when the daemon uses another config file.
 Non-2xx responses return a distinct failure exit code while preserving the
@@ -119,10 +119,10 @@ These commands manage `[[doc_folders]]` in the config file.
 ## Agent activity hooks
 
 ```sh
-middleman agent-hook install
-middleman agent-hook install --agent codex
-middleman agent-hook uninstall
-middleman agent-hook uninstall --agent codex
+kenn-forge agent-hook install
+kenn-forge agent-hook install --agent codex
+kenn-forge agent-hook uninstall
+kenn-forge agent-hook uninstall --agent codex
 ```
 
 With no `--agent`, install or remove every supported integration. Installed

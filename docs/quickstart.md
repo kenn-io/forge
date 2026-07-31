@@ -9,7 +9,7 @@
 ## Build
 
 ```sh
-git clone https://github.com/kenn-io/forge.git
+git clone https://github.com/kenn-io/middleman.git kenn-forge
 cd kenn-forge
 make build
 ```

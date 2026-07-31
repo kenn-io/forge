@@ -5,8 +5,8 @@ site_author = "Kenn Software LLC"
 copyright = 'Copyright &copy; 2026 <a href="https://kenn.io">Kenn Software LLC</a>. Elastic License 2.0.'
 docs_dir = "docs"
 site_dir = "site"
-repo_url = "https://github.com/kenn-io/kenn-forge"
-repo_name = "kenn-io/kenn-forge"
+repo_url = "https://github.com/kenn-io/middleman"
+repo_name = "kenn-io/middleman"
 extra_css = ["stylesheets/extra.css"]
 use_directory_urls = true
 nav = [

@@ -1493,7 +1493,7 @@ func (m *Manager) launchCommand(
 
 func tmuxSessionName(workspaceID string, targetKey string) string {
 	sum := sha256.Sum256([]byte(targetKey))
-	return "kenn-forge-" + tmuxSessionSafeComponent(workspaceID) + "-" +
+	return "forge-" + tmuxSessionSafeComponent(workspaceID) + "-" +
 		hex.EncodeToString(sum[:8])
 }
 

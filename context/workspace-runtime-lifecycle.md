@@ -89,6 +89,8 @@ still exists.
 - During kenn-forge shutdown, detach/restart behavior is different: do not treat
   normal server shutdown as a natural user exit that should erase recoverable
   base runtime state.
+- New tmux sessions use the `forge-` prefix; persisted `middleman-` session
+  names remain valid and must not be rewritten (`internal/workspace/`).
 - Every tmux client attach must force UTF-8; service launchers may omit locale
   variables, causing tmux to replace non-ASCII output before WebSocket transport
   (`internal/workspace/localruntime/tmux_launcher.go::tmuxAttachSessionCommand`).

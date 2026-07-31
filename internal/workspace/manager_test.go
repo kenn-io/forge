@@ -165,7 +165,7 @@ func TestCreate(t *testing.T) {
 	assert.Equal("feature/thing", ws.GitHeadRef)
 	assert.Nil(ws.MRHeadRepo)
 	assert.Contains(ws.WorktreePath, "pr-42")
-	assert.Equal("kenn-forge-"+ws.ID, ws.TmuxSession)
+	assert.Equal("forge-"+ws.ID, ws.TmuxSession)
 
 	// Verify persisted in DB.
 	got, err := d.GetWorkspace(ctx, ws.ID)
@@ -4627,11 +4627,11 @@ func TestManagerReapOrphanTmuxSessionsKillsUnknownManagedSessions(t *testing.T) 
 		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
 		`for a in "$@"; do` + "\n" +
 		`  if [ "$a" = "list-sessions" ]; then` + "\n" +
-		`    printf 'kenn-forge-0000000000000001:%s\n' "$KENN_FORGE_TMUX_OWNER"` + "\n" +
-		`    printf 'kenn-forge-ffffffffffffffff\n'` + "\n" +
-		`    printf 'kenn-forge-aaaaaaaaaaaaaaaa-0123456789abcdef:%s\n' "$KENN_FORGE_TMUX_OWNER"` + "\n" +
-		`    printf 'kenn-forge-aaaaaaaaaaaaaaaa-claude:%s\n' "$KENN_FORGE_TMUX_OWNER"` + "\n" +
-		`    printf 'kenn-forge-notes\nother-session\n'` + "\n" +
+		`    printf 'forge-0000000000000001:%s\n' "$KENN_FORGE_TMUX_OWNER"` + "\n" +
+		`    printf 'forge-ffffffffffffffff\n'` + "\n" +
+		`    printf 'forge-aaaaaaaaaaaaaaaa-0123456789abcdef:%s\n' "$KENN_FORGE_TMUX_OWNER"` + "\n" +
+		`    printf 'forge-aaaaaaaaaaaaaaaa-claude:%s\n' "$KENN_FORGE_TMUX_OWNER"` + "\n" +
+		`    printf 'forge-notes\nother-session\n'` + "\n" +
 		`    exit 0` + "\n" +
 		`  fi` + "\n" +
 		"done\n" +
@@ -4653,7 +4653,7 @@ func TestManagerReapOrphanTmuxSessionsKillsUnknownManagedSessions(t *testing.T) 
 		ItemNumber:   1,
 		GitHeadRef:   "feature/live",
 		WorktreePath: filepath.Join(t.TempDir(), "live"),
-		TmuxSession:  "kenn-forge-0000000000000001",
+		TmuxSession:  "forge-0000000000000001",
 		Status:       "ready",
 	}
 	require.NoError(d.InsertWorkspace(context.Background(), live))
@@ -4672,17 +4672,17 @@ func TestManagerReapOrphanTmuxSessionsKillsUnknownManagedSessions(t *testing.T) 
 	assert.Equal(
 		[]string{
 			"wrap", "kill-session", "-t",
-			"kenn-forge-aaaaaaaaaaaaaaaa-0123456789abcdef",
+			"forge-aaaaaaaaaaaaaaaa-0123456789abcdef",
 		},
 		argvs[1],
 	)
 	assert.NotContains(argvs, []string{
 		"wrap", "show-options", "-qv", "-t",
-		"kenn-forge-aaaaaaaaaaaaaaaa-claude", "@forge_owner",
+		"forge-aaaaaaaaaaaaaaaa-claude", "@forge_owner",
 	})
 	assert.NotContains(argvs, []string{
 		"wrap", "kill-session", "-t",
-		"kenn-forge-aaaaaaaaaaaaaaaa-claude",
+		"forge-aaaaaaaaaaaaaaaa-claude",
 	})
 }
 
@@ -4699,9 +4699,9 @@ func TestManagerReapOrphanTmuxSessionsKeepsStoredRuntimeSessions(
 		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
 		`for a in "$@"; do` + "\n" +
 		`  if [ "$a" = "list-sessions" ]; then` + "\n" +
-		`    printf 'kenn-forge-0000000000000001:%s\n' "$KENN_FORGE_TMUX_OWNER"` + "\n" +
-		`    printf 'kenn-forge-0000000000000001-57de4cf40144bdf7:%s\n' "$KENN_FORGE_TMUX_OWNER"` + "\n" +
-		`    printf 'kenn-forge-aaaaaaaaaaaaaaaa-c857d09db23e6822:%s\n' "$KENN_FORGE_TMUX_OWNER"` + "\n" +
+		`    printf 'middleman-0000000000000001:%s\n' "$KENN_FORGE_TMUX_OWNER"` + "\n" +
+		`    printf 'middleman-0000000000000001-57de4cf40144bdf7:%s\n' "$KENN_FORGE_TMUX_OWNER"` + "\n" +
+		`    printf 'forge-aaaaaaaaaaaaaaaa-c857d09db23e6822:%s\n' "$KENN_FORGE_TMUX_OWNER"` + "\n" +
 		`    exit 0` + "\n" +
 		`  fi` + "\n" +
 		"done\n" +
@@ -4723,12 +4723,12 @@ func TestManagerReapOrphanTmuxSessionsKeepsStoredRuntimeSessions(
 		ItemNumber:   1,
 		GitHeadRef:   "feature/live",
 		WorktreePath: filepath.Join(t.TempDir(), "live"),
-		TmuxSession:  "kenn-forge-0000000000000001",
+		TmuxSession:  "middleman-0000000000000001",
 		Status:       "ready",
 	}))
 	recordRuntimeTmuxSessionForTest(
 		t, d, "0000000000000001", "0000000000000001_codex",
-		"codex", "kenn-forge-0000000000000001-57de4cf40144bdf7",
+		"codex", "middleman-0000000000000001-57de4cf40144bdf7",
 		time.Time{},
 	)
 
@@ -4737,11 +4737,11 @@ func TestManagerReapOrphanTmuxSessionsKeepsStoredRuntimeSessions(
 	argvs := readRecorderArgv(t, record)
 	assert.Contains(argvs, []string{
 		"wrap", "kill-session", "-t",
-		"kenn-forge-aaaaaaaaaaaaaaaa-c857d09db23e6822",
+		"forge-aaaaaaaaaaaaaaaa-c857d09db23e6822",
 	})
 	assert.NotContains(argvs, []string{
 		"wrap", "kill-session", "-t",
-		"kenn-forge-0000000000000001-57de4cf40144bdf7",
+		"middleman-0000000000000001-57de4cf40144bdf7",
 	})
 }
 
@@ -4884,7 +4884,7 @@ func TestManagerTmuxSessionListSurvivesTmux36Sanitization(t *testing.T) {
 		`done` + "\n" +
 		`for a in "$@"; do` + "\n" +
 		`  if [ "$a" = "list-sessions" ]; then` + "\n" +
-		`    for name in kenn-forge-0000000000000001 kenn-forge-aaaaaaaaaaaaaaaa; do` + "\n" +
+		`    for name in middleman-0000000000000001 forge-aaaaaaaaaaaaaaaa; do` + "\n" +
 		`      printf '%s\n' "$fmt" \` + "\n" +
 		`        | sed -e "s|#{session_name}|$name|" \` + "\n" +
 		`              -e "s|#{@forge_owner}|$KENN_FORGE_TMUX_OWNER|" \` + "\n" +
@@ -4912,7 +4912,7 @@ func TestManagerTmuxSessionListSurvivesTmux36Sanitization(t *testing.T) {
 		ItemNumber:   1,
 		GitHeadRef:   "feature/live",
 		WorktreePath: filepath.Join(t.TempDir(), "live"),
-		TmuxSession:  "kenn-forge-0000000000000001",
+		TmuxSession:  "middleman-0000000000000001",
 		Status:       "ready",
 	}))
 
@@ -4927,10 +4927,10 @@ func TestManagerTmuxSessionListSurvivesTmux36Sanitization(t *testing.T) {
 	require.NoError(mgr.ReapOrphanTmuxSessions(ctx))
 	argvs := readRecorderArgv(t, record)
 	assert.Contains(argvs, []string{
-		"wrap", "kill-session", "-t", "kenn-forge-aaaaaaaaaaaaaaaa",
+		"wrap", "kill-session", "-t", "forge-aaaaaaaaaaaaaaaa",
 	})
 	assert.NotContains(argvs, []string{
-		"wrap", "kill-session", "-t", "kenn-forge-0000000000000001",
+		"wrap", "kill-session", "-t", "middleman-0000000000000001",
 	})
 }
 

@@ -76,8 +76,8 @@ describe("KataProjectMappingsSettings", () => {
             provider: "github",
             platform_host: "github.com",
             owner: "kenn-io",
-            name: "kenn-forge",
-            repo_path: "kenn-io/kenn-forge",
+            name: "middleman",
+            repo_path: "kenn-io/middleman",
             capabilities: defaultProviderCapabilities,
           },
         },
@@ -89,8 +89,8 @@ describe("KataProjectMappingsSettings", () => {
             provider: "github",
             platform_host: "github.com",
             owner: "kenn-io",
-            name: "kenn-forge",
-            repo_path: "kenn-io/kenn-forge",
+            name: "middleman",
+            repo_path: "kenn-io/middleman",
             capabilities: defaultProviderCapabilities,
           },
         },
@@ -103,7 +103,7 @@ describe("KataProjectMappingsSettings", () => {
 
     await waitFor(() => {
       expect(screen.getByText("Registered project")).toBeTruthy();
-      expect(screen.getByText("kenn-io/kenn-forge")).toBeTruthy();
+      expect(screen.getByText("kenn-io/middleman")).toBeTruthy();
     });
     await fireEvent.click(screen.getByRole("button", { name: "Add override" }));
 
@@ -119,7 +119,7 @@ describe("KataProjectMappingsSettings", () => {
         project_uid: "project-kata",
         provider: "github",
         platform_host: "github.com",
-        repo_path: "kenn-io/kenn-forge",
+        repo_path: "kenn-io/middleman",
       },
     ];
     mockUpdateSettings.mockResolvedValue({ kata_projects: savedMappings });
@@ -133,8 +133,8 @@ describe("KataProjectMappingsSettings", () => {
             provider: "github",
             platform_host: "github.com",
             owner: "kenn-io",
-            name: "kenn-forge",
-            repo_path: "kenn-io/kenn-forge",
+            name: "middleman",
+            repo_path: "kenn-io/middleman",
             capabilities: defaultProviderCapabilities,
           },
         },
@@ -176,9 +176,9 @@ describe("KataProjectMappingsSettings", () => {
     const query = screen.getByRole("combobox", { name: pickerName });
     await fireEvent.input(query, { target: { value: "middle" } });
 
-    expect(screen.getByRole("option", { name: "Kenn Forge · kenn-io/kenn-forge" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "Kenn Forge · kenn-io/middleman" })).toBeTruthy();
     expect(screen.queryByRole("option", { name: "Tools · acme/tools" })).toBeNull();
-    await fireEvent.mouseDown(screen.getByRole("option", { name: "Kenn Forge · kenn-io/kenn-forge" }));
+    await fireEvent.mouseDown(screen.getByRole("option", { name: "Kenn Forge · kenn-io/middleman" }));
 
     await fireEvent.click(screen.getByRole("button", { name: "Save Kata mappings" }));
 

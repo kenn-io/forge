@@ -99,7 +99,7 @@ and neutral results with direct links to provider runs when available.
 ### Build and run
 
 ```sh
-git clone https://github.com/kenn-io/forge.git
+git clone https://github.com/kenn-io/middleman.git kenn-forge
 cd kenn-forge
 make build
 ```

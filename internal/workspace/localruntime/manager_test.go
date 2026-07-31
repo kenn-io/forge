@@ -566,7 +566,7 @@ func TestManagerRestoreTmuxSessionRestoresPlainShellRuntimeSession(t *testing.T)
 	err := mgr.RestoreRuntimeSessions(context.Background(), []RestoredRuntimeSession{{
 		WorkspaceID: "ws-1",
 		SessionKey:  "ws-1_shell-restored",
-		TmuxSession: "kenn-forge-ws-1-shell",
+		TmuxSession: "middleman-ws-1-shell",
 		TargetKey:   string(LaunchTargetPlainShell),
 		CreatedAt:   createdAt,
 	}})
@@ -579,7 +579,7 @@ func TestManagerRestoreTmuxSessionRestoresPlainShellRuntimeSession(t *testing.T)
 	assert.Equal(string(LaunchTargetPlainShell), shell.TargetKey)
 	assert.Equal(LaunchTargetPlainShell, shell.Kind)
 	assert.Equal("Shell", shell.Label)
-	assert.Equal("kenn-forge-ws-1-shell", shell.TmuxSession)
+	assert.Equal("middleman-ws-1-shell", shell.TmuxSession)
 	assert.Equal(createdAt, shell.CreatedAt)
 }
 
@@ -825,7 +825,7 @@ func TestTmuxSessionNameUsesOpaqueTargetHash(t *testing.T) {
 	assert.NotContains(fooSlash, "foo")
 	assert.NotContains(fooSlash, "/")
 	assert.NotContains(fooColon, ":")
-	assert.Contains(fooSlash, "kenn-forge-ws-alpha-")
+	assert.True(strings.HasPrefix(fooSlash, "forge-ws-alpha-"))
 }
 
 func TestManagerLaunchCommandFailsWhenOwnerMarkingFailsDuringCreate(t *testing.T) {

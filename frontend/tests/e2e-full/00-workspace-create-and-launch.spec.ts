@@ -25,6 +25,26 @@ const workspaceTestTimeoutMs = 120_000;
 const agentKey = "e2e-agent";
 const agentLabel = "E2E Agent";
 
+type LaunchDialogProbe = {
+  phase?: string;
+  firstAppearancePhase?: string | null;
+};
+
+async function launchDialogFirstAppearance(page: Page): Promise<string | null> {
+  return page.evaluate(
+    () =>
+      (Reflect.get(window, "__middlemanCreateLaunchDialogProbe") as LaunchDialogProbe | undefined)
+        ?.firstAppearancePhase ?? null,
+  );
+}
+
+async function setLaunchDialogProbePhase(page: Page, phase: string): Promise<void> {
+  await page.evaluate((nextPhase) => {
+    const probe = Reflect.get(window, "__middlemanCreateLaunchDialogProbe") as LaunchDialogProbe | undefined;
+    if (probe) probe.phase = nextPhase;
+  }, phase);
+}
+
 function hasCommand(command: string, args: string[] = ["--version"]): boolean {
   try {
     execFileSync(command, args, { stdio: "ignore" });
@@ -162,7 +182,7 @@ test.describe("workspace create-and-launch full stack", () => {
     }
   });
 
-  test("explicit PR agent selection launches and persists without a dialog in the narrow drawer", async ({ page }) => {
+  test("explicit PR agent selection never opens a transient dialog and fits the narrow drawer", async ({ page }) => {
     test.skip(
       !hasCommand("git") || !hasCommand("tmux", ["-V"]) || !hasCommand("sh", ["-c", ":"]),
       "git, tmux, and sh are required for the real workspace runtime flow",
@@ -170,12 +190,50 @@ test.describe("workspace create-and-launch full stack", () => {
 
     let server: IsolatedE2EServer | null = null;
     let api: APIRequestContext | null = null;
+    const createResponseGate: { release: (() => void) | null } = { release: null };
+    const launchResponseGate: { release: (() => void) | null } = { release: null };
     try {
       server = await startIsolatedWorkspaceE2EServer();
       api = await playwrightRequest.newContext({
         baseURL: server.info.base_url,
       });
       await configureAgent(page, server.info.base_url);
+
+      const createResponseRelease = new Promise<void>((resolve) => {
+        createResponseGate.release = resolve;
+      });
+      let markCreateResponseHeld!: () => void;
+      const createResponseHeld = new Promise<void>((resolve) => {
+        markCreateResponseHeld = resolve;
+      });
+      await page.route("**/api/v1/workspaces", async (route) => {
+        if (route.request().method() !== "POST") {
+          await route.continue();
+          return;
+        }
+        const response = await route.fetch();
+        markCreateResponseHeld();
+        await createResponseRelease;
+        await route.fulfill({ response });
+      });
+
+      const launchResponseRelease = new Promise<void>((resolve) => {
+        launchResponseGate.release = resolve;
+      });
+      let markLaunchRequestHeld!: () => void;
+      const launchRequestHeld = new Promise<void>((resolve) => {
+        markLaunchRequestHeld = resolve;
+      });
+      await page.route("**/api/v1/workspaces/*/runtime/sessions", async (route) => {
+        if (route.request().method() !== "POST") {
+          await route.continue();
+          return;
+        }
+        markLaunchRequestHeld();
+        await launchResponseRelease;
+        const response = await route.fetch();
+        await route.fulfill({ response });
+      });
 
       const launchResponsePromise = page.waitForResponse(
         (response) =>
@@ -198,6 +256,31 @@ test.describe("workspace create-and-launch full stack", () => {
       await expect(create.locator("..")).toHaveCSS("max-width", "100%");
       await expect(create.locator("span")).toHaveCSS("text-overflow", "ellipsis");
       await expect(options).toHaveCSS("flex-shrink", "0");
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await page.reload();
+      await expect(page.locator(".pull-detail")).toBeVisible();
+
+      // An end-state absence assertion can miss a dialog that mounts for one
+      // render and closes when either startup response arrives. Record every
+      // added launcher node so the transient startup state remains observable.
+      await page.evaluate(() => {
+        const selector = '[role="dialog"][aria-label="Launch a session"]';
+        const initiallyPresent = document.querySelector(selector) !== null;
+        const state = {
+          phase: "create-pending",
+          firstAppearancePhase: initiallyPresent ? "initial" : null,
+        };
+        Reflect.set(window, "__middlemanCreateLaunchDialogProbe", state);
+        new MutationObserver((records) => {
+          for (const record of records) {
+            for (const node of record.addedNodes) {
+              if (node instanceof Element && (node.matches(selector) || node.querySelector(selector) !== null)) {
+                state.firstAppearancePhase ??= state.phase;
+              }
+            }
+          }
+        }).observe(document.body, { childList: true, subtree: true });
+      });
 
       const createResponsePromise = page.waitForResponse(
         (response) => response.request().method() === "POST" && response.url().endsWith("/api/v1/workspaces"),
@@ -205,12 +288,44 @@ test.describe("workspace create-and-launch full stack", () => {
       await options.click();
       await expect(page.getByRole("menuitem", { name: agentLabel })).toBeVisible();
       await page.getByRole("menuitem", { name: agentLabel }).click();
+
+      await createResponseHeld;
+      await expect(page.locator(".detail-pane-workspace-slot")).toBeVisible();
+      await expect(page.getByRole("button", { name: "Launch session" })).toBeVisible();
+      await page.evaluate(
+        () =>
+          new Promise<void>((resolve) => {
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+          }),
+      );
+      const launcherAppearedBeforeCreateResponse = await launchDialogFirstAppearance(page);
+      expect(launcherAppearedBeforeCreateResponse).toBeNull();
+      await setLaunchDialogProbePhase(page, "create-response-released");
+      createResponseGate.release?.();
+      createResponseGate.release = null;
+
       const createResponse = await createResponsePromise;
       expect(createResponse.status(), await createResponse.text()).toBe(202);
       const created = (await createResponse.json()) as WorkspaceResponse;
       expect(created.created).toBe(true);
       expect(created.mr_head_repo_kind).toBe("same_repo");
       await waitForWorkspaceReady(api, created.id);
+      await expect(page.locator(".detail-pane-workspace-slot")).toBeVisible();
+      await expect(page.getByRole("button", { name: "Launch session" })).toBeVisible();
+
+      await launchRequestHeld;
+      await setLaunchDialogProbePhase(page, "launch-request-held");
+      await page.evaluate(
+        () =>
+          new Promise<void>((resolve) => {
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+          }),
+      );
+      const launcherAppearedWhilePending = await launchDialogFirstAppearance(page);
+      expect(launcherAppearedWhilePending).toBeNull();
+      await setLaunchDialogProbePhase(page, "launch-response-released");
+      launchResponseGate.release?.();
+      launchResponseGate.release = null;
 
       const launchResponse = await launchResponsePromise;
       expect(launchResponse.status(), await launchResponse.text()).toBe(200);
@@ -220,7 +335,12 @@ test.describe("workspace create-and-launch full stack", () => {
       await expect
         .poll(() => page.evaluate(() => document.activeElement?.closest(".terminal-container") !== null))
         .toBe(true);
+      const launcherEverAppeared = await launchDialogFirstAppearance(page);
+      expect(launcherEverAppeared).toBeNull();
     } finally {
+      createResponseGate.release?.();
+      launchResponseGate.release?.();
+      await page.unrouteAll({ behavior: "ignoreErrors" });
       await api?.dispose();
       await server?.stop();
     }

@@ -5,7 +5,7 @@ import { ACTIONS_KEY, API_CLIENT_KEY, NAVIGATE_KEY, STORES_KEY, UI_CONFIG_KEY } 
 import { createDetailActivityViewStore } from "../../stores/detail-activity-view.svelte.js";
 import { dismissFlash, getFlashes } from "../../stores/flash.svelte.js";
 import {
-  consumeWorkspaceLaunch,
+  discardWorkspaceLaunch,
   markWorkspaceIdDeleted,
   nextWorkspaceLifecycleTick,
   recordWorkspaceCreated,
@@ -560,7 +560,7 @@ describe("IssueDetail inline workspace handoff", () => {
     resolvePost({ data: { id: "ws-new", status: "creating", created: true } });
 
     await waitFor(() => expect(controller.recordCreated).toHaveBeenCalled());
-    expect(consumeWorkspaceLaunch("ws-new")).toBeNull();
+    expect(discardWorkspaceLaunch("ws-new", undefined)).toBeNull();
   });
 
   it("queues the agent selected from Create Workspace options", async () => {
@@ -578,7 +578,7 @@ describe("IssueDetail inline workspace handoff", () => {
     resolvePost({ data: { id: "ws-new", status: "creating" } });
 
     await waitFor(() => expect(controller.recordCreated).toHaveBeenCalled());
-    expect(consumeWorkspaceLaunch("ws-new")).toBe("codex");
+    expect(discardWorkspaceLaunch("ws-new", undefined)).toBe("codex");
   });
 
   it("retains the selected agent when reusing an existing branch", async () => {
@@ -605,7 +605,7 @@ describe("IssueDetail inline workspace handoff", () => {
     );
     await waitFor(() => expect(apiClient.POST).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(controller.recordCreated).toHaveBeenCalled());
-    expect(consumeWorkspaceLaunch("ws-existing")).toBe("codex");
+    expect(discardWorkspaceLaunch("ws-existing", undefined)).toBe("codex");
   });
 
   it("publishes a confirmed creation even after the selection changed", async () => {

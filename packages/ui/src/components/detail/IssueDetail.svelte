@@ -801,7 +801,7 @@
         };
         recordWorkspaceCreated(requestIdentity, createdRef);
         if (launchTargetKey) {
-          queueWorkspaceLaunch(createdRef.id, launchTargetKey);
+          queueWorkspaceLaunch(createdRef.id, launchTargetKey, undefined);
         }
         inlineWorkspace?.recordCreated(requestIdentity, createdRef);
       }

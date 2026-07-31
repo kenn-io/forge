@@ -1621,7 +1621,7 @@
         ),
       );
       if (launchTargetKey) {
-        queueWorkspaceLaunch(created.id, launchTargetKey);
+        queueWorkspaceLaunch(created.id, launchTargetKey, undefined);
       }
       openWorkspace(created.id);
     } catch (err) {

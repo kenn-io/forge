@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import {
-  consumeWorkspaceLaunch,
+  discardWorkspaceLaunch,
   resetWorkspaceCreatePendingForTest,
 } from "@kenn-forge/ui/stores/workspace-create-pending";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -129,7 +129,7 @@ describe("NewWorkspaceDialog", () => {
     await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
     await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
     await waitFor(() => expect(mockPost).toHaveBeenCalled());
-    expect(consumeWorkspaceLaunch("ws-new")).toBeNull();
+    expect(discardWorkspaceLaunch("ws-new", undefined)).toBeNull();
   });
 
   it("retains an agent choice through suggested-branch retry", async () => {
@@ -159,7 +159,7 @@ describe("NewWorkspaceDialog", () => {
     );
     await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
     await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(2));
-    expect(consumeWorkspaceLaunch("ws-second")).toBe("codex");
+    expect(discardWorkspaceLaunch("ws-second", undefined)).toBe("codex");
   });
 
   it("sends the typed branch name", async () => {
@@ -330,11 +330,11 @@ describe("NewWorkspaceDialog", () => {
 
     expect(mockNavigate).not.toHaveBeenCalled();
     expect(onCreated).not.toHaveBeenCalled();
-    expect(consumeWorkspaceLaunch("ws-stale")).toBe("codex");
+    expect(discardWorkspaceLaunch("ws-stale", undefined)).toBe("codex");
 
     await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith("ws-new"));
-    expect(consumeWorkspaceLaunch("ws-new")).toBeNull();
+    expect(discardWorkspaceLaunch("ws-new", undefined)).toBeNull();
   });
 
   it("keeps the form locked when a stale create resolves under a newer one", async () => {

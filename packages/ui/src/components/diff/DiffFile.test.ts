@@ -1933,6 +1933,12 @@ describe("DiffFile", () => {
   it("renders unmatched review threads at the file header", () => {
     renderDiffFile(
       makeFile({
+        patch: `diff --git a/src/foo.ts b/src/foo.ts
+--- a/src/foo.ts
++++ b/src/foo.ts
+@@ -60,1 +60,1 @@
+ visible context
+`,
         hunks: [
           {
             old_start: 60,

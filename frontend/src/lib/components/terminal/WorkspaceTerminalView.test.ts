@@ -9,7 +9,8 @@ import {
   startTabbedPanelTabDrag,
 } from "@kenn-forge/ui";
 import {
-  consumeWorkspaceLaunch,
+  discardWorkspaceLaunch,
+  pendingWorkspaceLaunchTarget,
   queueWorkspaceLaunch,
   resetWorkspaceCreatePendingForTest,
 } from "@kenn-forge/ui/stores/workspace-create-pending";
@@ -2577,7 +2578,7 @@ describe("WorkspaceTerminalView", () => {
     await waitFor(() => expect(window.location.pathname).toBe("/workspaces"));
   });
   it("launches an explicitly queued target without a confirmation modal", async () => {
-    queueWorkspaceLaunch("ws-1", "codex");
+    queueWorkspaceLaunch("ws-1", "codex", undefined);
     mocks.getWorkspaceRuntime
       .mockResolvedValueOnce(runtimeWithCodexTarget())
       .mockResolvedValue(runtimeWithCodexTarget(true, [runningSession]));
@@ -2598,13 +2599,85 @@ describe("WorkspaceTerminalView", () => {
     ).toBeNull();
   });
 
+  it("keeps the empty-workspace launcher closed while an explicit launch starts", async () => {
+    const launchRequest = deferred<typeof runningSession>();
+    queueWorkspaceLaunch("ws-1", "codex", undefined);
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget());
+    mocks.launchWorkspaceSession.mockReturnValue(launchRequest.promise);
+    claimForPrs();
+
+    render(WorkspaceTerminalView, {
+      props: { workspaceId: "ws-1", paneSurface: "prs" as const },
+    });
+
+    await waitFor(() => expect(mocks.launchWorkspaceSession).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole("dialog", { name: "Launch a session" })).toBeNull();
+  });
+
+  it("does not apply a local launch intent to a same-ID fleet workspace", async () => {
+    queueWorkspaceLaunch("ws-1", "codex", undefined);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: Request | URL | string) => {
+        const path = fetchPath(input);
+        if (path.endsWith("/fleet/hosts/member/workspaces/ws-1")) {
+          return Promise.resolve(Response.json({ ...workspaceResponse, fleet_host_key: "member" }));
+        }
+        if (path.endsWith("/api/v1/workspaces")) {
+          return Promise.resolve(Response.json({ workspaces: [] }));
+        }
+        return Promise.resolve(Response.json({}));
+      }),
+    );
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget());
+
+    render(WorkspaceTerminalView, {
+      props: { workspaceId: "ws-1", workspaceHostKey: "member", paneSurface: "prs" as const },
+    });
+
+    expect(await screen.findByRole("dialog", { name: "Launch a session" })).toBeTruthy();
+    expect(mocks.launchWorkspaceSession).not.toHaveBeenCalled();
+    expect(pendingWorkspaceLaunchTarget("ws-1", undefined)).toBe("codex");
+  });
+
+  it("settles only the claimed workspace intent after navigating during launch", async () => {
+    const launchRequest = deferred<typeof runningSession>();
+    const workspaceB = { ...workspaceResponse, id: "ws-2", status: "provisioning" };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: Request | URL | string) => {
+        const path = fetchPath(input);
+        if (path.endsWith("/workspaces/ws-1")) return Promise.resolve(Response.json(workspaceResponse));
+        if (path.endsWith("/workspaces/ws-2")) return Promise.resolve(Response.json(workspaceB));
+        if (path.endsWith("/api/v1/workspaces")) {
+          return Promise.resolve(Response.json({ workspaces: [workspaceResponse, workspaceB] }));
+        }
+        return Promise.resolve(Response.json({}));
+      }),
+    );
+    queueWorkspaceLaunch("ws-1", "codex", undefined);
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget());
+    mocks.launchWorkspaceSession.mockReturnValue(launchRequest.promise);
+
+    const view = render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+    await waitFor(() => expect(mocks.launchWorkspaceSession).toHaveBeenCalledWith("ws-1", "codex", expect.anything()));
+
+    await view.rerender({ workspaceId: "ws-2" });
+    await screen.findByText("Setting up workspace...");
+    queueWorkspaceLaunch("ws-2", "codex", undefined);
+    launchRequest.resolve(runningSession);
+
+    await waitFor(() => expect(pendingWorkspaceLaunchTarget("ws-1", undefined)).toBeNull());
+    expect(pendingWorkspaceLaunchTarget("ws-2", undefined)).toBe("codex");
+  });
+
   it("reacts when intent is queued after an already-ready workspace renders", async () => {
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget());
     mocks.launchWorkspaceSession.mockResolvedValue(runningSession);
     render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
     await screen.findByRole("tab", { name: "Home" });
 
-    queueWorkspaceLaunch("ws-1", "codex");
+    queueWorkspaceLaunch("ws-1", "codex", undefined);
 
     await waitFor(() => {
       expect(mocks.launchWorkspaceSession).toHaveBeenCalledTimes(1);
@@ -2612,7 +2685,7 @@ describe("WorkspaceTerminalView", () => {
   });
 
   it("allows an explicit fork-workspace launch", async () => {
-    queueWorkspaceLaunch("ws-1", "codex");
+    queueWorkspaceLaunch("ws-1", "codex", undefined);
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget());
     mocks.launchWorkspaceSession.mockResolvedValue(runningSession);
     const forkWorkspaceResponse = { ...workspaceResponse, mr_head_repo_kind: "fork" };
@@ -2669,7 +2742,7 @@ describe("WorkspaceTerminalView", () => {
   });
 
   it("consumes unavailable explicit intent and flashes its reason", async () => {
-    queueWorkspaceLaunch("ws-1", "codex");
+    queueWorkspaceLaunch("ws-1", "codex", undefined);
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget(false));
     render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
     await screen.findByRole("tab", { name: "Home" });
@@ -2677,11 +2750,11 @@ describe("WorkspaceTerminalView", () => {
     expect(mocks.showFlash).toHaveBeenCalledWith(expect.stringContaining("Codex is not configured"), {
       tone: "danger",
     });
-    expect(consumeWorkspaceLaunch("ws-1")).toBeNull();
+    expect(discardWorkspaceLaunch("ws-1", undefined)).toBeNull();
   });
 
   it("consumes missing explicit intent and flashes a generic reason", async () => {
-    queueWorkspaceLaunch("ws-1", "missing");
+    queueWorkspaceLaunch("ws-1", "missing", undefined);
     mocks.getWorkspaceRuntime.mockResolvedValue({ launch_targets: [], sessions: [] });
     render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
     await screen.findByRole("tab", { name: "Home" });
@@ -2689,17 +2762,17 @@ describe("WorkspaceTerminalView", () => {
     expect(mocks.showFlash).toHaveBeenCalledWith(expect.stringContaining("is not available in this workspace"), {
       tone: "danger",
     });
-    expect(consumeWorkspaceLaunch("ws-1")).toBeNull();
+    expect(discardWorkspaceLaunch("ws-1", undefined)).toBeNull();
   });
 
   it("consumes explicit intent without launching when a session exists", async () => {
-    queueWorkspaceLaunch("ws-1", "codex");
+    queueWorkspaceLaunch("ws-1", "codex", undefined);
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget(true, [runningSession]));
     render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
     await screen.findByRole("tab", { name: /Helper/ });
     expect(mocks.launchWorkspaceSession).not.toHaveBeenCalled();
     expect(mocks.showFlash).not.toHaveBeenCalled();
-    expect(consumeWorkspaceLaunch("ws-1")).toBeNull();
+    expect(discardWorkspaceLaunch("ws-1", undefined)).toBeNull();
   });
 
   it("publishes the session the pane is showing, so a keyboard command can promote it", async () => {

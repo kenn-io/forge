@@ -181,7 +181,7 @@
       }
       const workspaceId = data.id;
       if (launchTargetKey) {
-        queueWorkspaceLaunch(workspaceId, launchTargetKey);
+        queueWorkspaceLaunch(workspaceId, launchTargetKey, undefined);
       }
       // The workspace exists either way, so it stays the last-used repo; only
       // the navigation is abandoned when the user moved on.

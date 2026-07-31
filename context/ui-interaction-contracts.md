@@ -90,12 +90,15 @@ Interactive surfaces must agree on which item is selected.
   begun controller-less must surface on an inline surface after a layout
   switch, where no recordCreated override ever ran
   (`frontend/src/lib/stores/workspace-host.svelte.ts::effectiveRef`).
-- An explicit create-and-launch intent must be published before presentation
-  liveness checks and remain reactive after a workspace is already ready; layout
-  churn or branch reuse must not silently discard the command
+- An explicit create-and-launch intent is keyed by `(workspaceHostKey, workspaceId)`
+  and must be published before presentation liveness checks; ID-only state collides
+  local and fleet workspaces, while layout churn must not discard the command
   (`packages/ui/src/components/workspace/WorkspaceCreateSplitButton.svelte::selectTarget`,
   `packages/ui/src/stores/workspace-create-pending.svelte.ts::queueWorkspaceLaunch`,
   `frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::pendingWorkspaceLaunchTarget`).
+  Once claimed, the intent stays globally pending until its ownership token settles it:
+  sibling views suppress their empty fallback and may discard only unclaimed intents
+  (`packages/ui/src/stores/workspace-create-pending.svelte.ts::completeWorkspaceLaunch`).
 - Inline surface claims come only from live selection effects (the list
   views' claim effects, which react to recorded overrides); async responses
   record overrides and tombstones but never claim a surface themselves, and
@@ -114,9 +117,9 @@ Interactive surfaces must agree on which item is selected.
   surface immediately and reconcile the tombstone away — an ID-less tombstone
   would mask it forever, because the workspace-absent envelope it waits for
   never arrives once the item has a new workspace.
-- Automatic empty-pane launchers stay closed during inline workspace deletion:
-  runtime sessions disappear before the host is removed, and that teardown gap
-  is not a launchable empty workspace (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::autoOpenLauncher`).
+- Automatic empty-pane launchers stay closed during inline workspace deletion
+  and explicit create-and-launch startup: teardown and pre-session gaps are not
+  launchable empty workspaces (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::autoOpenLauncher`).
 - Catalog-backed routes must normalize missing selections even when the catalog
   is empty: select the first available item or `null`, and clear dependent route
   identity (`frontend/src/lib/components/docs/DocsWorkspace.svelte::loadFolders`).

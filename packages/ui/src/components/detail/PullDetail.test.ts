@@ -6,7 +6,7 @@ import { createDetailActivityViewStore } from "../../stores/detail-activity-view
 import { createDetailStore } from "../../stores/detail.svelte.js";
 import { dismissFlash, getFlashes } from "../../stores/flash.svelte.js";
 import {
-  consumeWorkspaceLaunch,
+  discardWorkspaceLaunch,
   markWorkspaceIdDeleted,
   nextWorkspaceLifecycleTick,
   recordWorkspaceCreated,
@@ -1580,7 +1580,7 @@ describe("PullDetail inline workspace handoff", () => {
     resolvePost({ data: { id: "ws-new", status: "creating", created: true } });
 
     await waitFor(() => expect(navigate).toHaveBeenCalledWith("/terminal/ws-new"));
-    expect(consumeWorkspaceLaunch("ws-new")).toBeNull();
+    expect(discardWorkspaceLaunch("ws-new", undefined)).toBeNull();
   });
 
   it("queues the agent selected from Create Workspace options", async () => {
@@ -1599,7 +1599,7 @@ describe("PullDetail inline workspace handoff", () => {
     resolvePost({ data: { id: "ws-new", status: "creating" } });
 
     await waitFor(() => expect(navigate).toHaveBeenCalledWith("/terminal/ws-new"));
-    expect(consumeWorkspaceLaunch("ws-new")).toBe("codex");
+    expect(discardWorkspaceLaunch("ws-new", undefined)).toBe("codex");
   });
 
   it("publishes a confirmed creation even after the selection changed", async () => {

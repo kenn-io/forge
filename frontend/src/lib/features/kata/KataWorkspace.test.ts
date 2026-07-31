@@ -3,7 +3,7 @@ import { tick } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import {
-  consumeWorkspaceLaunch,
+  discardWorkspaceLaunch,
   resetWorkspaceCreatePendingForTest,
 } from "@kenn-forge/ui/stores/workspace-create-pending";
 import type { KataTaskLink } from "../../api/kata/taskTypes.js";
@@ -206,7 +206,7 @@ describe("KataWorkspace snapshot authority", () => {
     await fireEvent.click(screen.getByRole("menuitem", { name: "Codex" }));
 
     await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/terminal/workspace-1"));
-    expect(consumeWorkspaceLaunch("workspace-1")).toBe("codex");
+    expect(discardWorkspaceLaunch("workspace-1", undefined)).toBe("codex");
   });
 
   it("does not queue a launch for the standard create action", async () => {
@@ -241,7 +241,7 @@ describe("KataWorkspace snapshot authority", () => {
     await fireEvent.click(await screen.findByRole("button", { name: "Create workspace" }));
 
     await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/terminal/workspace-existing"));
-    expect(consumeWorkspaceLaunch("workspace-existing")).toBeNull();
+    expect(discardWorkspaceLaunch("workspace-existing", undefined)).toBeNull();
   });
 
   it("renders canonical catalog identity when selected detail protocol omits summary-only fields", async () => {

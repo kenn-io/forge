@@ -130,7 +130,10 @@
   import type { KataWorkspaceMetadata } from "../../api/kata/workspaces.js";
   import { showFlash } from "@kenn-forge/ui/stores/flash";
   import {
-    consumeWorkspaceLaunch,
+    claimWorkspaceLaunch,
+    completeWorkspaceLaunch,
+    discardWorkspaceLaunch,
+    isWorkspaceCreatePending,
     pendingWorkspaceLaunchTarget,
   } from "@kenn-forge/ui/stores/workspace-create-pending";
   import { createTerminalZoomController } from "./terminalZoom";
@@ -677,6 +680,15 @@
     launcherState = { workspaceKey: viewWorkspaceKey, auto: false };
   }
 
+  function createOrLaunchPending(): boolean {
+    const identity = workspaceIdentitySnapshot(workspaceId);
+    return (
+      (identity !== undefined && isWorkspaceCreatePending(identity)) ||
+      pendingWorkspaceLaunchTarget(workspaceId, workspaceHostKey) !== null ||
+      launchingKey !== null
+    );
+  }
+
   /**
    * The view's own fallback when a pane has nothing left to render.
    *
@@ -697,6 +709,11 @@
     // Runtime teardown can reach any of the automatic fallback paths before the
     // deleted inline host is removed. It is not an empty workspace to relaunch.
     if (deletingSelectedWorkspace || forceDeleting) return;
+    // A split-button selection already chose what to launch. Creation can publish
+    // the ready workspace before its POST response hands the choice to the
+    // workspace-ID launch queue, and the runtime stays empty until that launch
+    // produces its first session.
+    if (createOrLaunchPending()) return;
     if (launcherAutoOpenedFor.includes(viewWorkspaceKey)) return;
     launcherAutoOpenedFor = [...launcherAutoOpenedFor, viewWorkspaceKey];
     launcherState = { workspaceKey: viewWorkspaceKey, auto: true };
@@ -773,6 +790,7 @@
     const openState = launcherState;
     const autoOpened = launcherAutoOpenedFor.includes(workspaceKey);
     const deletionPending = deletingSelectedWorkspace || forceDeleting;
+    const createOrLaunchIsPending = createOrLaunchPending();
     untrack(() => {
       if (tabs.length > 0 && activeMissing) selectWorkspaceTab(tabs[0]!.key);
       // A docked terminal is not a workflow tab but is very much on screen, so an
@@ -787,7 +805,7 @@
       }
       // Deletion tears down the runtime before the inline host disappears. That
       // sessionless gap is not an empty workspace asking what to launch next.
-      if (deletionPending) return;
+      if (deletionPending || createOrLaunchIsPending) return;
       // Once per workspace: reopening a launcher the user dismissed would trap them
       // in it, while a different session-less workspace still gets one.
       if (openState?.workspaceKey === workspaceKey || autoOpened) return;
@@ -3548,17 +3566,17 @@
   $effect(() => {
     if (!workspaceId || !runtimeLive || workspace?.status !== "ready") return;
     if (actionsBlocked || launchingKey !== null) return;
-    const targetKey = pendingWorkspaceLaunchTarget(workspaceId);
+    const targetKey = pendingWorkspaceLaunchTarget(workspaceId, workspaceHostKey);
     if (targetKey === null) return;
     if (runtimeSessions.length > 0) {
-      consumeWorkspaceLaunch(workspaceId);
+      discardWorkspaceLaunch(workspaceId, workspaceHostKey);
       return;
     }
     const target = launchTargets.find(
       (candidate) => candidate.key === targetKey,
     );
     if (!target || target.kind !== "agent" || !target.available) {
-      consumeWorkspaceLaunch(workspaceId);
+      if (discardWorkspaceLaunch(workspaceId, workspaceHostKey) === null) return;
       const reason =
         target?.disabled_reason ?? "is not available in this workspace";
       showFlash(`Agent "${targetKey}" could not launch: ${reason}`, {
@@ -3566,8 +3584,9 @@
       });
       return;
     }
-    if (consumeWorkspaceLaunch(workspaceId) === null) return;
-    void handleLaunch(targetKey);
+    const claim = claimWorkspaceLaunch(workspaceId, workspaceHostKey);
+    if (claim === null) return;
+    void handleLaunch(claim.targetKey).finally(() => completeWorkspaceLaunch(claim));
   });
 </script>
 

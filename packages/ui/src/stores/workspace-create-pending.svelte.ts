@@ -39,8 +39,17 @@ let deletedIds = $state<ReadonlySet<string>>(new Set());
 
 type PendingWorkspaceLaunch = {
   workspaceId: string;
+  workspaceHostKey: string | undefined;
   targetKey: string;
+  claimToken: symbol | null;
 };
+
+export type WorkspaceLaunchClaim = Readonly<{
+  workspaceId: string;
+  workspaceHostKey: string | undefined;
+  targetKey: string;
+  token: symbol;
+}>;
 
 let pendingWorkspaceLaunches = $state<PendingWorkspaceLaunch[]>([]);
 
@@ -55,24 +64,74 @@ export function isWorkspaceIdDeleted(workspaceId: string): boolean {
   return deletedIds.has(workspaceId);
 }
 
-export function queueWorkspaceLaunch(workspaceId: string, targetKey: string): void {
+function workspaceLaunchMatches(
+  entry: PendingWorkspaceLaunch,
+  workspaceId: string,
+  workspaceHostKey: string | undefined,
+): boolean {
+  return entry.workspaceId === workspaceId && entry.workspaceHostKey === workspaceHostKey;
+}
+
+export function queueWorkspaceLaunch(
+  workspaceId: string,
+  targetKey: string,
+  workspaceHostKey: string | undefined,
+): void {
   const normalized = targetKey.trim();
   if (!workspaceId || !normalized) return;
   pendingWorkspaceLaunches = [
-    ...pendingWorkspaceLaunches.filter((entry) => entry.workspaceId !== workspaceId),
-    { workspaceId, targetKey: normalized },
+    ...pendingWorkspaceLaunches.filter((entry) => !workspaceLaunchMatches(entry, workspaceId, workspaceHostKey)),
+    { workspaceId, workspaceHostKey, targetKey: normalized, claimToken: null },
   ];
 }
 
-export function pendingWorkspaceLaunchTarget(workspaceId: string): string | null {
-  return pendingWorkspaceLaunches.find((entry) => entry.workspaceId === workspaceId)?.targetKey ?? null;
+export function pendingWorkspaceLaunchTarget(workspaceId: string, workspaceHostKey: string | undefined): string | null {
+  return (
+    pendingWorkspaceLaunches.find((entry) => workspaceLaunchMatches(entry, workspaceId, workspaceHostKey))?.targetKey ??
+    null
+  );
 }
 
-export function consumeWorkspaceLaunch(workspaceId: string): string | null {
-  const targetKey = pendingWorkspaceLaunchTarget(workspaceId);
-  if (targetKey === null) return null;
-  pendingWorkspaceLaunches = pendingWorkspaceLaunches.filter((entry) => entry.workspaceId !== workspaceId);
-  return targetKey;
+export function claimWorkspaceLaunch(
+  workspaceId: string,
+  workspaceHostKey: string | undefined,
+): WorkspaceLaunchClaim | null {
+  const entry = pendingWorkspaceLaunches.find((candidate) =>
+    workspaceLaunchMatches(candidate, workspaceId, workspaceHostKey),
+  );
+  if (!entry || entry.claimToken !== null) return null;
+  // Keep the entry visible while one view owns the request. A second live view
+  // for the same workspace must suppress its empty-state launcher without
+  // starting a duplicate session.
+  const token = Symbol("workspace-launch-claim");
+  pendingWorkspaceLaunches = pendingWorkspaceLaunches.map((candidate) =>
+    workspaceLaunchMatches(candidate, workspaceId, workspaceHostKey) ? { ...candidate, claimToken: token } : candidate,
+  );
+  return { workspaceId, workspaceHostKey, targetKey: entry.targetKey, token };
+}
+
+export function discardWorkspaceLaunch(workspaceId: string, workspaceHostKey: string | undefined): string | null {
+  const entry = pendingWorkspaceLaunches.find((candidate) =>
+    workspaceLaunchMatches(candidate, workspaceId, workspaceHostKey),
+  );
+  if (!entry || entry.claimToken !== null) return null;
+  pendingWorkspaceLaunches = pendingWorkspaceLaunches.filter(
+    (entry) => !workspaceLaunchMatches(entry, workspaceId, workspaceHostKey),
+  );
+  return entry.targetKey;
+}
+
+export function completeWorkspaceLaunch(claim: WorkspaceLaunchClaim): boolean {
+  const owned = pendingWorkspaceLaunches.some(
+    (entry) =>
+      workspaceLaunchMatches(entry, claim.workspaceId, claim.workspaceHostKey) && entry.claimToken === claim.token,
+  );
+  if (!owned) return false;
+  pendingWorkspaceLaunches = pendingWorkspaceLaunches.filter(
+    (entry) =>
+      !workspaceLaunchMatches(entry, claim.workspaceId, claim.workspaceHostKey) || entry.claimToken !== claim.token,
+  );
+  return true;
 }
 
 export function beginWorkspaceCreate(identity: WorkspaceItemIdentity): void {

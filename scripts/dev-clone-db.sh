@@ -40,7 +40,7 @@ else:
     if forge_home:
         source_data_dir = Path(forge_home).expanduser().resolve()
     else:
-        source_data_dir = Path.home() / ".config" / "kenn-forge"
+        source_data_dir = Path.home() / ".kenn" / "forge"
 
 source_db = source_data_dir / "forge.db"
 if not source_db.exists():

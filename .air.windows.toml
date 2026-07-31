@@ -3,7 +3,7 @@ tmp_dir = "tmp"
 
 [build]
 cmd = "sh.exe ./scripts/dev-backend-build.sh"
-entrypoint = "./tmp/forge.exe"
+entrypoint = "./tmp/kenn-forge.exe"
 delay = 500
 exclude_dir = [
   "frontend",

@@ -22,13 +22,14 @@ async function sqlite(dbPath, sql) {
 
 test("dev-clone-db copies source database and rewrites cloned config", async () => {
   const tmp = await mkdtemp(path.join(os.tmpdir(), "kenn-forge-dev-clone-test-"));
-  const sourceHome = path.join(tmp, "source");
+  const home = path.join(tmp, "home");
+  const sourceHome = path.join(home, ".kenn", "forge");
   const cloneDir = await realpath(path.join(tmp, "clone", ".."));
   const resolvedCloneDir = path.join(cloneDir, "clone");
   await mkdir(sourceHome, { recursive: true });
   await writeFile(
     path.join(sourceHome, "config.toml"),
-    'host = "127.0.0.1"\nport = 8091\ndata_dir = "' + sourceHome + '"\n',
+    'host = "127.0.0.1"\nport = 8091\n',
   );
   await sqlite(
     path.join(sourceHome, "forge.db"),
@@ -38,7 +39,8 @@ test("dev-clone-db copies source database and rewrites cloned config", async () 
   const { stdout } = await execFileAsync("bash", ["scripts/dev-clone-db.sh"], {
     env: {
       ...process.env,
-      KENN_FORGE_CONFIG: path.join(sourceHome, "config.toml"),
+      HOME: home,
+      KENN_FORGE_CONFIG: "",
       KENN_FORGE_DEV_CLONE_DIR: resolvedCloneDir,
       KENN_FORGE_DEV_CLONE_PORT: "8123",
     },

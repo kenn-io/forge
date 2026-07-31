@@ -47,7 +47,7 @@ base_path = "/kenn-forge/"
     const explicitConfigPath = path.join(makeTempDir(), "custom.toml");
 
     writeConfig(
-      path.join(home, ".config", "kenn-forge"),
+      path.join(home, ".kenn", "forge"),
       `
 port = 9234
 `,
@@ -77,7 +77,7 @@ port = 9456
   it("falls back to the default config path under HOME", () => {
     const home = makeTempDir();
     writeConfig(
-      path.join(home, ".config", "kenn-forge"),
+      path.join(home, ".kenn", "forge"),
       `
 port = 9234
 `,

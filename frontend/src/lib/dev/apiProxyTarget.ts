@@ -47,7 +47,7 @@ function resolveConfigPath(env: DevEnv): string {
   }
 
   const home = env.HOME?.trim() || os.homedir();
-  return path.join(home, ".config", "kenn-forge", "config.toml");
+  return path.join(home, ".kenn", "forge", "config.toml");
 }
 
 function buildDevApiUrl(config: ForgeConfigFields): string {

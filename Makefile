@@ -391,7 +391,7 @@ install-hooks:
 
 # Clean build artifacts
 clean:
-	rm -f kenn-forge forge.exe
+	rm -f kenn-forge kenn-forge.exe
 	rm -rf internal/web/dist dist/
 
 # Show help

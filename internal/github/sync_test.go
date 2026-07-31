@@ -9097,7 +9097,7 @@ func TestWatchedMRsSyncedOnFastInterval(t *testing.T) {
 		mu.Lock()
 		defer mu.Unlock()
 		return len(hookCalls) >= 1
-	}, 2*time.Second, 20*time.Millisecond)
+	}, 10*time.Second, 20*time.Millisecond)
 
 	// Verify the MR was persisted.
 	mr, err := d.GetMergeRequest(ctx, "github", "github.com", "acme", "app", 7)

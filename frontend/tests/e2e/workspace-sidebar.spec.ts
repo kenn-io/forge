@@ -1951,6 +1951,7 @@ test.describe("workspace launch home", () => {
     test.setTimeout(60_000);
     await page.addInitScript(() => {
       type RecordedSocket = {
+        receiveReplayReady: () => void;
         sent: unknown[];
         url: string;
       };
@@ -1983,7 +1984,17 @@ test.describe("workspace launch home", () => {
           if (!this.url.includes("/ws/v1/workspaces/")) {
             return new NativeWebSocket(url, protocols);
           }
-          this.record = { url: this.url, sent: [] };
+          this.record = {
+            receiveReplayReady: () => {
+              const replayReady = new MessageEvent("message", {
+                data: JSON.stringify({ type: "replay_ready" }),
+              });
+              this.dispatchEvent(replayReady);
+              this.onmessage?.(replayReady);
+            },
+            url: this.url,
+            sent: [],
+          };
           recordedSockets.push(this.record);
           queueMicrotask(() => {
             const event = new Event("open");
@@ -2020,6 +2031,40 @@ test.describe("workspace launch home", () => {
     await launchTarget.click();
 
     await expect(page.locator(".terminal-container .xterm")).toBeVisible();
+    await page.evaluate(() => {
+      for (const socket of (
+        window as unknown as {
+          __kenn_forgeRecordedTerminalSockets: Array<{
+            receiveReplayReady: () => void;
+            sent: unknown[];
+          }>;
+        }
+      ).__kenn_forgeRecordedTerminalSockets) {
+        socket.receiveReplayReady();
+      }
+    });
+    await expect
+      .poll(async () =>
+        page.evaluate(() =>
+          (
+            window as unknown as {
+              __kenn_forgeRecordedTerminalSockets: Array<{
+                sent: unknown[];
+              }>;
+            }
+          ).__kenn_forgeRecordedTerminalSockets.some((socket) =>
+            socket.sent.some((frame) => {
+              if (typeof frame !== "string") return false;
+              try {
+                return JSON.parse(frame).type === "refresh";
+              } catch {
+                return false;
+              }
+            }),
+          ),
+        ),
+      )
+      .toBe(true);
     await page.evaluate(() => {
       for (const socket of (
         window as unknown as {

@@ -15,6 +15,7 @@ const {
   mouseDragObserveTerminalData,
   mouseDragReset,
   resizeObserverCallbacks,
+  webLinksAddonCtor,
   xtermFitAddons,
   xtermInstances,
   xtermOnDataHandlers,
@@ -34,6 +35,7 @@ const {
   mouseDragObserveTerminalData: vi.fn(),
   mouseDragReset: vi.fn(),
   resizeObserverCallbacks: [] as ResizeObserverCallback[],
+  webLinksAddonCtor: vi.fn(),
   xtermFitAddons: [] as Array<{ fit: ReturnType<typeof vi.fn>; proposeDimensions: ReturnType<typeof vi.fn> }>,
   xtermInstances: [] as Array<{
     clearTextureAtlas: ReturnType<typeof vi.fn>;
@@ -201,6 +203,13 @@ vi.mock("@xterm/addon-ligatures/lib/addon-ligatures.mjs", () => ({
   }),
 }));
 
+vi.mock("@xterm/addon-web-links", () => ({
+  WebLinksAddon: vi.fn().mockImplementation(function (handler, options) {
+    webLinksAddonCtor(handler, options);
+    return { dispose: vi.fn() };
+  }),
+}));
+
 vi.mock("@xterm/addon-webgl", () => ({
   WebglAddon: vi.fn().mockImplementation(function (options) {
     mockWebglCtor(options);
@@ -242,6 +251,7 @@ describe("TerminalPane", () => {
     mouseDragObserveTerminalData.mockReset();
     mouseDragReset.mockReset();
     resizeObserverCallbacks.length = 0;
+    webLinksAddonCtor.mockReset();
     xtermFitAddons.length = 0;
     xtermInstances.length = 0;
     xtermTerminalCtor.mockReset();
@@ -276,6 +286,7 @@ describe("TerminalPane", () => {
 
   afterEach(() => {
     cleanup();
+    vi.restoreAllMocks();
     vi.useRealTimers();
     vi.unstubAllGlobals();
     if (originalDocumentFonts) {
@@ -294,6 +305,46 @@ describe("TerminalPane", () => {
     render(TerminalPane, { props: { workspaceId: "ws-123" } });
 
     await waitFor(() => expect(xtermTerminalCtor).toHaveBeenCalled());
+  });
+
+  it("uses the same safe opener for detected URLs and OSC 8 links", async () => {
+    render(TerminalPane, { props: { workspaceId: "ws-123" } });
+    await waitFor(() => expect(xtermTerminalCtor).toHaveBeenCalled());
+
+    const linkHandler = xtermTerminalCtor.mock.calls[0]![0].linkHandler;
+
+    expect(webLinksAddonCtor.mock.calls[0]![0]).toBe(linkHandler.activate);
+    expect(webLinksAddonCtor.mock.calls[0]![1]).toEqual({
+      hover: linkHandler.hover,
+      leave: linkHandler.leave,
+    });
+  });
+
+  it("discloses a hovered link target and its activation modifier", async () => {
+    const view = render(TerminalPane, { props: { workspaceId: "ws-123" } });
+    await waitFor(() => expect(xtermTerminalCtor).toHaveBeenCalled());
+    const linkHandler = xtermTerminalCtor.mock.calls[0]![0].linkHandler;
+
+    linkHandler.hover(new MouseEvent("mouseover"), "https://example.com/hidden");
+    await tick();
+
+    expect(view.getByText("https://example.com/hidden")).toBeTruthy();
+    expect(view.getByText(`${/Mac/.test(navigator.platform) ? "Cmd" : "Ctrl"}+Click to open link`)).toBeTruthy();
+  });
+
+  it("opens only modified HTTP links in a new isolated tab", async () => {
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+    render(TerminalPane, { props: { workspaceId: "ws-123" } });
+    await waitFor(() => expect(xtermTerminalCtor).toHaveBeenCalled());
+    const activate = xtermTerminalCtor.mock.calls[0]![0].linkHandler.activate;
+    const modifier = /Mac/.test(navigator.platform) ? { metaKey: true } : { ctrlKey: true };
+
+    activate(new MouseEvent("click"), "https://example.com/no-modifier");
+    activate(new MouseEvent("click", modifier), "javascript:alert(document.domain)");
+    activate(new MouseEvent("click", modifier), "https://example.com/docs");
+
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(open).toHaveBeenCalledWith("https://example.com/docs", "_blank", "noopener,noreferrer");
   });
 
   it("forwards accepted tmux OSC 52 text to the authorized clipboard writer", async () => {

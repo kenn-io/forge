@@ -3,8 +3,10 @@
   import { getStores } from "@kenn-forge/ui";
   import { showFlash } from "@kenn-forge/ui/stores/flash";
   import { Terminal } from "@xterm/xterm";
+  import type { ILinkHandler } from "@xterm/xterm";
   import { FitAddon } from "@xterm/addon-fit";
   import { LigaturesAddon } from "@xterm/addon-ligatures/lib/addon-ligatures.mjs";
+  import { WebLinksAddon } from "@xterm/addon-web-links";
   import { WebglAddon } from "@xterm/addon-webgl";
   import "@xterm/xterm/css/xterm.css";
   import { workspaceTmuxWebSocketPath } from "../../api/workspace-runtime.js";
@@ -58,9 +60,12 @@
   const { settings: settingsStore } = getStores();
 
   const basePath = (window.__BASE_PATH__ ?? "/").replace(/\/$/, "");
+  const terminalLinkUsesMetaKey = /Mac/.test(navigator.platform);
+  const terminalLinkModifierLabel = terminalLinkUsesMetaKey ? "Cmd" : "Ctrl";
 
   let containerEl: HTMLDivElement;
   let terminal: Terminal | null = $state(null);
+  let hoveredTerminalLink: string | null = $state(null);
   let fitAddon: FitAddon | null = null;
   let ligaturesAddon: LigaturesAddon | null = null;
   let webglAddon: WebglAddon | null = null;
@@ -151,6 +156,37 @@
     });
     return true;
   }
+
+  function openTerminalLink(event: MouseEvent, uri: string): void {
+    const modifierPressed = terminalLinkUsesMetaKey
+      ? event.metaKey
+      : event.ctrlKey;
+    if (!modifierPressed) return;
+
+    let url: URL;
+    try {
+      url = new URL(uri);
+    } catch {
+      return;
+    }
+    if (url.protocol !== "http:" && url.protocol !== "https:") return;
+
+    window.open(url.href, "_blank", "noopener,noreferrer");
+  }
+
+  function showTerminalLink(_event: MouseEvent, uri: string): void {
+    hoveredTerminalLink = uri;
+  }
+
+  function hideTerminalLink(): void {
+    hoveredTerminalLink = null;
+  }
+
+  const terminalLinkHandler: ILinkHandler = {
+    activate: openTerminalLink,
+    hover: showTerminalLink,
+    leave: hideTerminalLink,
+  };
 
   function handleTerminalPointerDown(event: PointerEvent): void {
     if (disposed || disabled || event.button !== 0 || !event.isTrusted) return;
@@ -806,6 +842,7 @@
         scrollback: terminalScrollback,
         letterSpacing: terminalLetterSpacing,
         lineHeight: terminalLineHeight,
+        linkHandler: terminalLinkHandler,
         minimumContrastRatio: TERMINAL_MINIMUM_CONTRAST_RATIO,
         rescaleOverlappingGlyphs: true,
         scrollOnEraseInDisplay: true,
@@ -824,6 +861,12 @@
       const fit = new FitAddon();
       fitAddon = fit;
       term.loadAddon(fit);
+      term.loadAddon(
+        new WebLinksAddon(openTerminalLink, {
+          hover: showTerminalLink,
+          leave: hideTerminalLink,
+        }),
+      );
 
       if (terminalFontLigatures) {
         ligaturesAddon = new LigaturesAddon();
@@ -960,13 +1003,54 @@
   onlostpointercapture={handleTerminalLostPointerCapture}
   onkeydowncapture={handleTerminalKeyDown}
   onfocusout={handleTerminalFocusOut}
-></div>
+>
+  {#if hoveredTerminalLink}
+    <div class="terminal-link-tooltip">
+      <span>{hoveredTerminalLink}</span>
+      <small>{terminalLinkModifierLabel}+Click to open link</small>
+    </div>
+    {/if}
+</div>
 
 <style>
   .terminal-container {
+    position: relative;
     width: 100%;
     height: 100%;
     background: var(--terminal-bg);
+  }
+
+  .terminal-link-tooltip {
+    position: absolute;
+    z-index: 5;
+    bottom: var(--space-4);
+    left: var(--space-4);
+    display: flex;
+    max-width: calc(100% - (2 * var(--space-4)));
+    flex-direction: column;
+    gap: var(--space-1);
+    padding: var(--space-2) var(--space-3);
+    overflow: hidden;
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    font-size: var(--font-size-sm);
+    line-height: 1.25;
+    pointer-events: none;
+    background: var(--bg-surface);
+    border: var(--border-width) solid var(--border-default);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-md);
+  }
+
+  .terminal-link-tooltip span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .terminal-link-tooltip small {
+    color: var(--text-muted);
+    font-size: inherit;
   }
 
   .terminal-container :global(.xterm),

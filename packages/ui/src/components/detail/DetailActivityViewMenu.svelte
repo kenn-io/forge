@@ -69,18 +69,13 @@
             title: "Order",
             items: [
               {
-                id: "order-grouped",
-                label: "Grouped",
-                active: timelineOrder === "grouped",
-                closeOnSelect: true,
-                onSelect: () => onOrderChange?.("grouped"),
-              },
-              {
                 id: "order-chronological",
                 label: "Strict date order",
                 active: timelineOrder === "chronological",
-                closeOnSelect: true,
-                onSelect: () => onOrderChange?.("chronological"),
+                onSelect: () =>
+                  onOrderChange?.(
+                    timelineOrder === "chronological" ? "grouped" : "chronological",
+                  ),
               },
             ],
           },

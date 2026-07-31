@@ -329,6 +329,13 @@ Intent:
 
 Do not add native `<select>` controls for visible app UI; use `SelectDropdown` instead. This is enforced by `frontend/src/no-native-select.test.ts`, which scans the component source trees and fails when a native `<select>` element is reintroduced. There is no allowlist or per-component exemption: if `SelectDropdown` cannot express a case, extend the primitive rather than reaching for a native `<select>`.
 
+### FilterDropdown menu rows
+
+A binary view mode in a `FilterDropdown` menu is one toggle row named for the
+non-default state ("Strict date order", "Hide bot activity"), checked when
+active. Do not add a row for the default state, an exclusive radio pair, or an
+opaque single-word label for default behavior.
+
 ### Overlays
 
 Use shared overlay primitives for dropdowns, popovers, menus, tooltips, and similar floating controls.

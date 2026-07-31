@@ -24,8 +24,8 @@ func TestLiveGraphQLQueriesValidateAgainstGitHub(t *testing.T) {
 
 	var prQuery gqlPRQuery[gqlPR]
 	vars := map[string]any{
-		"owner":    githubv4.String("wesm"),
-		"name":     githubv4.String("kenn-forge"),
+		"owner":    githubv4.String("kenn-io"),
+		"name":     githubv4.String("middleman"),
 		"pageSize": githubv4.Int(1),
 		"cursor":   (*githubv4.String)(nil),
 	}

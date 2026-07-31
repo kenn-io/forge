@@ -93,6 +93,7 @@
   const encoder = new TextEncoder();
   const clipboardWriter = createTerminalClipboardWriter(
     createBrowserTerminalClipboardPort(),
+    { onPointerGestureTimeout: cancelTerminalPointerGesture },
   );
   const mouseDragAutoscroll = createTmuxMouseDragAutoscroll({
     send(data) {

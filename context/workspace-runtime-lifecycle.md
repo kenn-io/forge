@@ -111,8 +111,11 @@ stale tabs.
   would require custom prefilters, nonblocking write separation, and handler-order coupling to preserve current
   rejection, parser-progress, and read-denial guarantees.
 - Terminal clipboard authority is revoked on focus loss, pane inactivity/parking, disablement, or window focus/visibility
-  loss; captured pointer drags retain authority only while the pane stays active, and a watchdog bounds missing releases
-  (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::cancelTerminalClipboardAuthorization`).
+  loss; revocation also stops in-flight browser-to-loopback fallback chains before their next stage
+  (`frontend/src/lib/components/terminal/terminalClipboardWriter.ts::createTerminalClipboardWriter`).
+- Captured pointer drags retain authority only while the pane stays active; their watchdog also releases browser capture,
+  so a missing release cannot shield later focus loss
+  (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::cancelTerminalPointerGesture`).
 - Host clipboard writes require a local browser; trusted loopback proxies must report exactly one client IP assigned
   to the host, because the proxy's loopback `RemoteAddr` alone does not establish browser locality
   (`internal/server/terminal_clipboard_access.go::isLocalTerminalClipboardRequest`).

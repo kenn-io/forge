@@ -150,15 +150,20 @@ describe("terminal clipboard writer", () => {
   it("revokes a pointer authorization when its watchdog expires", async () => {
     vi.useFakeTimers();
     const { port, deferredWrites, writeLocalText, writeText } = createPort();
-    const writer = createTerminalClipboardWriter(port);
+    const onPointerGestureTimeout = vi.fn();
+    const writer = createTerminalClipboardWriter(port, { onPointerGestureTimeout });
 
     writer.beginPointerGesture();
     await vi.advanceTimersByTimeAsync(60_001);
 
+    expect(onPointerGestureTimeout).toHaveBeenCalledTimes(1);
     await expect(writer.write("late write")).resolves.toBe("unauthorized");
     await expect(deferredWrites[0]).rejects.toMatchObject({ name: "AbortError" });
     expect(writeText).not.toHaveBeenCalled();
     expect(writeLocalText).not.toHaveBeenCalled();
+
+    writer.authorizeKeyboardGesture();
+    await expect(writer.write("later keyboard write")).resolves.toBe("written");
   });
 
   it("clears a rejected authorization so a later gesture can retry", async () => {
@@ -247,6 +252,53 @@ describe("terminal clipboard writer", () => {
     await expect(writer.write("late write")).resolves.toBe("unauthorized");
     expect(writeText).not.toHaveBeenCalled();
     pending.resolve();
+  });
+
+  it("does not start a direct fallback after focus loss during a deferred write", async () => {
+    const deferredWrite = deferred<void>();
+    const deferredWrites: Array<Promise<string>> = [];
+    const writeText = vi.fn(async () => undefined);
+    const writeLocalText = vi.fn(async () => undefined);
+    const writer = createTerminalClipboardWriter({
+      beginDeferredWrite(text) {
+        deferredWrites.push(text);
+        return deferredWrite.promise;
+      },
+      writeLocalText,
+      writeText,
+    });
+
+    writer.authorizeKeyboardGesture();
+    const copied = writer.write("stale terminal write");
+    await expect(deferredWrites[0]).resolves.toBe("stale terminal write");
+    writer.cancelAuthorization();
+    deferredWrite.reject(new DOMException("denied", "NotAllowedError"));
+
+    await expect(copied).resolves.toBe("unauthorized");
+    expect(writeText).not.toHaveBeenCalled();
+    expect(writeLocalText).not.toHaveBeenCalled();
+  });
+
+  it("does not start a loopback fallback after focus loss during a direct write", async () => {
+    const directWrite = deferred<void>();
+    const writeText = vi.fn(() => directWrite.promise);
+    const writeLocalText = vi.fn(async () => undefined);
+    const writer = createTerminalClipboardWriter({
+      beginDeferredWrite() {
+        throw new DOMException("unsupported", "NotSupportedError");
+      },
+      writeLocalText,
+      writeText,
+    });
+
+    writer.authorizeKeyboardGesture();
+    const copied = writer.write("stale terminal write");
+    await vi.waitFor(() => expect(writeText).toHaveBeenCalledWith("stale terminal write"));
+    writer.cancelAuthorization();
+    directWrite.reject(new DOMException("denied", "NotAllowedError"));
+
+    await expect(copied).resolves.toBe("unauthorized");
+    expect(writeLocalText).not.toHaveBeenCalled();
   });
 
   it("falls back to writeText when deferred clipboard setup is unavailable", async () => {

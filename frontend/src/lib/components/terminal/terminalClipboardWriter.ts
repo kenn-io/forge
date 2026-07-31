@@ -20,6 +20,10 @@ export interface TerminalClipboardWriter {
   dispose(): void;
 }
 
+export interface TerminalClipboardWriterOptions {
+  onPointerGestureTimeout?: () => void;
+}
+
 export type TerminalClipboardWriteResult = "written" | "unauthorized" | "blocked";
 
 interface PendingClipboardWrite {
@@ -55,7 +59,10 @@ export function createBrowserTerminalClipboardPort(): TerminalClipboardPort {
   };
 }
 
-export function createTerminalClipboardWriter(port: TerminalClipboardPort): TerminalClipboardWriter {
+export function createTerminalClipboardWriter(
+  port: TerminalClipboardPort,
+  options: TerminalClipboardWriterOptions = {},
+): TerminalClipboardWriter {
   let pending: PendingClipboardWrite | null = null;
   let expirationTimer: ReturnType<typeof setTimeout> | null = null;
   let pointerGestureTimer: ReturnType<typeof setTimeout> | null = null;
@@ -63,6 +70,7 @@ export function createTerminalClipboardWriter(port: TerminalClipboardPort): Term
   let pointerAuthorizationPending = false;
   let pointerGestureAuthorizationConsumed = false;
   let disposed = false;
+  let revocationGeneration = 0;
 
   function clearExpiration(): void {
     if (expirationTimer === null) return;
@@ -137,10 +145,16 @@ export function createTerminalClipboardWriter(port: TerminalClipboardPort): Term
 
   function cancelPointerGesture(): void {
     if (!pointerGestureActive && !pointerAuthorizationPending) return;
+    revocationGeneration += 1;
     clearPointerGestureTimer();
     pointerGestureActive = false;
     pointerGestureAuthorizationConsumed = false;
     if (pointerAuthorizationPending) expirePending();
+  }
+
+  function timeoutPointerGesture(): void {
+    cancelPointerGesture();
+    options.onPointerGestureTimeout?.();
   }
 
   return {
@@ -152,9 +166,10 @@ export function createTerminalClipboardWriter(port: TerminalClipboardPort): Term
       clearExpiration();
       arm();
       pointerAuthorizationPending = pending !== null;
-      pointerGestureTimer = setTimeout(cancelPointerGesture, POINTER_GESTURE_WATCHDOG_MS);
+      pointerGestureTimer = setTimeout(timeoutPointerGesture, POINTER_GESTURE_WATCHDOG_MS);
     },
     cancelAuthorization() {
+      revocationGeneration += 1;
       clearPointerGestureTimer();
       pointerGestureActive = false;
       pointerGestureAuthorizationConsumed = false;
@@ -187,19 +202,27 @@ export function createTerminalClipboardWriter(port: TerminalClipboardPort): Term
       const authorized = pending;
       pending = null;
       if (!authorized) return "unauthorized";
+      const writeGeneration = revocationGeneration;
       if (pointerGestureActive && pointerAuthorizationPending) {
         pointerGestureAuthorizationConsumed = true;
       }
       pointerAuthorizationPending = false;
 
       authorized.resolve(text);
-      if (await authorized.outcome) return "written";
-      if (await writeDirect(text)) return "written";
-      return (await writeLocal(text)) ? "written" : "blocked";
+      const deferredWritten = await authorized.outcome;
+      if (disposed || writeGeneration !== revocationGeneration) return "unauthorized";
+      if (deferredWritten) return "written";
+      const directWritten = await writeDirect(text);
+      if (disposed || writeGeneration !== revocationGeneration) return "unauthorized";
+      if (directWritten) return "written";
+      const localWritten = await writeLocal(text);
+      if (disposed || writeGeneration !== revocationGeneration) return "unauthorized";
+      return localWritten ? "written" : "blocked";
     },
     dispose() {
       if (disposed) return;
       disposed = true;
+      revocationGeneration += 1;
       clearPointerGestureTimer();
       pointerGestureActive = false;
       pointerAuthorizationPending = false;

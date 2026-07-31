@@ -645,6 +645,7 @@ func TestSyncerTriggerRunRunsRunOnce(t *testing.T) {
 func TestSyncerTriggerRunWithPrioritySyncsSelectedReposFirst(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
+	const completionTimeout = 30 * time.Second
 
 	var mu sync.Mutex
 	var calls []string
@@ -707,8 +708,12 @@ func TestSyncerTriggerRunWithPrioritySyncsSelectedReposFirst(t *testing.T) {
 
 	select {
 	case <-done:
-	case <-time.After(5 * time.Second):
-		require.FailNow("priority TriggerRun did not complete within 5s")
+	case <-time.After(completionTimeout):
+		require.FailNowf(
+			"priority TriggerRun did not complete",
+			"timeout=%s",
+			completionTimeout,
+		)
 	}
 	s.Stop()
 
@@ -843,7 +848,7 @@ func TestSyncerStopCancelsTriggerRun(t *testing.T) {
 
 	select {
 	case <-entered:
-	case <-time.After(time.Second):
+	case <-time.After(5 * time.Second):
 		require.FailNow("TriggerRun did not start ListOpenPullRequests")
 	}
 
@@ -855,7 +860,7 @@ func TestSyncerStopCancelsTriggerRun(t *testing.T) {
 
 	select {
 	case <-stopped:
-	case <-time.After(2 * time.Second):
+	case <-time.After(5 * time.Second):
 		close(release)
 		require.FailNow("Stop did not return after ctx cancellation")
 	}

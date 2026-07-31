@@ -815,6 +815,24 @@ describe("TerminalPane", () => {
     expect(mouseDragReset).toHaveBeenCalledTimes(1);
   });
 
+  it("does not redraw tmux when a same-size renderer reconnects", async () => {
+    render(TerminalPane, { props: { workspaceId: "ws-123", active: true } });
+
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
+    const firstSocket = mockSockets[0]!;
+    firstSocket.onopen?.();
+    vi.useFakeTimers();
+
+    firstSocket.onclose?.();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(mockSockets).toHaveLength(2);
+    const reconnectedSocket = mockSockets[1]!;
+
+    expect(reconnectedSocket.url).not.toMatch(/[?&](?:cols|rows)=/);
+    reconnectedSocket.onopen?.();
+    expect(reconnectedSocket.sent.map(String)).not.toContainEqual(expect.stringContaining('"type":"refresh"'));
+  });
+
   it("aborts a partial OSC sequence before writing output from a reconnected socket", async () => {
     render(TerminalPane, { props: { workspaceId: "ws-123" } });
 
@@ -841,6 +859,39 @@ describe("TerminalPane", () => {
       typeof data === "string" ? data : new TextDecoder().decode(data),
     );
     expect(writtenChunks).toEqual(["\x1b]52;c;cGFydGlhbA==", "\x18", "fresh session output"]);
+    expect(terminal.write.mock.calls[1]![0]).toEqual(new Uint8Array([0x18]));
+  });
+
+  it("clears an incomplete UTF-8 byte before replaying it into the same terminal", async () => {
+    render(TerminalPane, { props: { workspaceId: "ws-123" } });
+
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
+    const terminal = xtermInstances[0]!;
+    const firstSocket = mockSockets[0]!;
+    terminal.write.mockClear();
+    vi.useFakeTimers();
+    const binaryMessage = (bytes: number[]): MessageEvent => {
+      const data = new Uint8Array(new window.ArrayBuffer(bytes.length));
+      data.set(bytes);
+      return new MessageEvent("message", { data: data.buffer });
+    };
+
+    firstSocket.onmessage?.(binaryMessage([0xe2]));
+    firstSocket.onclose?.();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(mockSockets).toHaveLength(2);
+
+    // The new subscriber replays the prefix before live output completes the
+    // rune. The byte CAN between them must clear xterm's streaming decoder.
+    mockSockets[1]!.onmessage?.(binaryMessage([0xe2]));
+    mockSockets[1]!.onmessage?.(binaryMessage([0x98, 0x83]));
+
+    expect(terminal.write.mock.calls.map(([data]) => Array.from(data as Uint8Array))).toEqual([
+      [0xe2],
+      [0x18],
+      [0xe2],
+      [0x98, 0x83],
+    ]);
   });
 
   it("revokes pointer clipboard authorization when the window loses focus", async () => {

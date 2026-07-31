@@ -117,6 +117,9 @@ owner:
 - Use full-stack e2e or server/API tests when the disputed fact is produced by
   backend persistence, sync, capabilities, normalization, route middleware, or
   wire serialization.
+- Real-tmux Playwright tests observe user-visible state through the per-instance socket;
+  never replace global key bindings, which can leak into developer sessions and prove only event receipt
+  (`frontend/tests/e2e-full/00-inline-workspace-continuity.spec.ts::expectWheelScroll`).
 
 A UI regression can be sufficiently covered by a backend/server test for the
 real runtime path plus a component or Vitest browser test for presentation. Do

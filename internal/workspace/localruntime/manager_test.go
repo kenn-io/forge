@@ -1,6 +1,7 @@
 package localruntime
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -2263,6 +2264,494 @@ func TestSessionSubscribeReplaysBufferedOutput(t *testing.T) {
 	case <-time.After(100 * time.Millisecond):
 		assert.Fail("subscriber did not receive new output after replay")
 	}
+}
+
+func TestSessionSubscribeReplayTruncationPreservesUTF8Boundary(t *testing.T) {
+	s := &session{subscribers: make(map[chan []byte]struct{})}
+	// U+201B ends in 0x9b. If truncation retains only that continuation byte,
+	// the replay scanner mistakes it for a raw C1 CSI and treats the following
+	// text as a bracketed-paste mode change.
+	prefix := []byte("\xe2\x80\x9b?2004h")
+	output := append(prefix, bytes.Repeat([]byte("x"), maxSessionOutputReplay+2-len(prefix))...)
+	s.broadcast(output)
+
+	ch, cancel := s.subscribe()
+	t.Cleanup(cancel)
+
+	select {
+	case data := <-ch:
+		assert := assert.New(t)
+		assert.Equal(byte('?'), data[0])
+		assert.NotContains(string(data), "\x1b[?2004l")
+	case <-time.After(100 * time.Millisecond):
+		assert.Fail(t, "subscriber did not receive replay")
+	}
+}
+
+func TestSessionSubscribeReplayTruncationPreservesRawC1(t *testing.T) {
+	s := &session{subscribers: make(map[chan []byte]struct{})}
+	prefix := []byte("xx\x9b?2004h")
+	output := append(prefix, bytes.Repeat([]byte("x"), maxSessionOutputReplay+2-len(prefix))...)
+	s.broadcast(output)
+
+	ch, cancel := s.subscribe()
+	t.Cleanup(cancel)
+
+	select {
+	case data := <-ch:
+		assert.Equal(t, byte(0x9b), data[0])
+	case <-time.After(100 * time.Millisecond):
+		assert.Fail(t, "subscriber did not receive replay")
+	}
+}
+
+func TestSessionSubscribeRestoresInputModesAfterReplayTruncation(t *testing.T) {
+	s := &session{subscribers: make(map[chan []byte]struct{})}
+	modeSequence := "\x1b[?1000;1006;2004h"
+	s.broadcast([]byte(modeSequence))
+	s.broadcast(bytes.Repeat([]byte("x"), maxSessionOutputReplay+1))
+
+	ch, cancel := s.subscribe()
+	t.Cleanup(cancel)
+
+	select {
+	case data := <-ch:
+		assert := assert.New(t)
+		assert.Len(data, maxSessionOutputReplay+len(modeSequence))
+		assert.Equal(modeSequence, string(data[maxSessionOutputReplay:]))
+	case <-time.After(100 * time.Millisecond):
+		assert.Fail(t, "subscriber did not receive replay")
+	}
+}
+
+func TestSessionSubscribeRestoresDisabledInputModesAfterReplayTruncation(t *testing.T) {
+	s := &session{subscribers: make(map[chan []byte]struct{})}
+	s.broadcast([]byte("\x1b[?1003;1004;1016;2004h"))
+	s.broadcast([]byte("\x1b[?1000;1004;1006;2004l"))
+	s.broadcast(bytes.Repeat([]byte("x"), maxSessionOutputReplay+1))
+
+	ch, cancel := s.subscribe()
+	t.Cleanup(cancel)
+
+	select {
+	case data := <-ch:
+		resetSequence := "\x1b[?1000;1004;1006;2004l"
+		assert := assert.New(t)
+		assert.Len(data, maxSessionOutputReplay+len(resetSequence))
+		assert.Equal(resetSequence, string(data[maxSessionOutputReplay:]))
+	case <-time.After(100 * time.Millisecond):
+		assert.Fail(t, "subscriber did not receive replay")
+	}
+}
+
+func TestSessionSubscribeOverridesStaleReplayInputModes(t *testing.T) {
+	s := &session{subscribers: make(map[chan []byte]struct{})}
+	s.broadcast([]byte("\x1b[?1000l"))
+	s.mu.Lock()
+	s.outputBuffer = []byte("screen\x1b[?1000h")
+	s.mu.Unlock()
+
+	ch, cancel := s.subscribe()
+	t.Cleanup(cancel)
+
+	select {
+	case data := <-ch:
+		assert.Equal(t, "screen\x1b[?1000h\x1b[?1000l", string(data))
+	case <-time.After(100 * time.Millisecond):
+		assert.Fail(t, "subscriber did not receive replay")
+	}
+}
+
+func TestSessionSubscribeDoesNotSynthesizeDuplicateRetainedFocusMode(t *testing.T) {
+	s := &session{subscribers: make(map[chan []byte]struct{})}
+	s.broadcast([]byte("screen\x1b[?1004h\x1b[?1004h"))
+
+	ch, cancel := s.subscribe()
+	t.Cleanup(cancel)
+
+	select {
+	case data := <-ch:
+		assert.Equal(t, 2, bytes.Count(data, []byte("\x1b[?1004h")))
+	case <-time.After(100 * time.Millisecond):
+		assert.Fail(t, "subscriber did not receive replay")
+	}
+}
+
+func TestSessionSubscribePreservesSplitTerminalData(t *testing.T) {
+	tests := []struct {
+		name         string
+		candidate    string
+		continuation string
+	}{
+		{
+			name:         "tracked private mode CSI",
+			candidate:    "\x1b[?1004",
+			continuation: "h",
+		},
+		{
+			name:         "ordinary CSI",
+			candidate:    "\x1b[31",
+			continuation: "m",
+		},
+		{
+			name:         "ordinary CSI with executable C0",
+			candidate:    "\x1b[31\x07",
+			continuation: "m",
+		},
+		{
+			name:         "ordinary CSI with DEL",
+			candidate:    "\x1b[31\x7f",
+			continuation: "m",
+		},
+		{
+			name:         "Unicode split inside CSI",
+			candidate:    "\x1b[?2004\xe2",
+			continuation: "\x98\x83h",
+		},
+		{
+			name:         "OSC",
+			candidate:    "\x1b]0;partial title",
+			continuation: "\x07",
+		},
+		{
+			name:         "OSC terminated by ST",
+			candidate:    "\x1b]0;partial title",
+			continuation: "\x1b\\",
+		},
+		{
+			name:         "OSC split inside ST",
+			candidate:    "\x1b]0;partial title\x1b",
+			continuation: "\\",
+		},
+		{
+			name:         "DCS",
+			candidate:    "\x1bP1;2|partial data",
+			continuation: "\x1b\\",
+		},
+		{
+			name:         "DCS split inside ST",
+			candidate:    "\x1bP1;2|partial data\x1b",
+			continuation: "\\",
+		},
+		{
+			name:         "ESC with intermediate",
+			candidate:    "\x1b(",
+			continuation: "B",
+		},
+		{
+			name:         "UTF-8 C1 CSI",
+			candidate:    "\xc2\x9b31",
+			continuation: "m",
+		},
+		{
+			name:         "UTF-8 C1 OSC",
+			candidate:    "\xc2\x9d0;partial title",
+			continuation: "\xc2\x9c",
+		},
+		{
+			name:         "UTF-8 C1 DCS",
+			candidate:    "\xc2\x901;2|partial data",
+			continuation: "\xc2\x9c",
+		},
+		{
+			name:         "UTF-8 code point",
+			candidate:    "\xe2\x82",
+			continuation: "\xac",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &session{subscribers: make(map[chan []byte]struct{})}
+			s.broadcast([]byte("\x1b[?1000h"))
+			s.broadcast(bytes.Repeat([]byte("x"), maxSessionOutputReplay+1))
+			s.broadcast([]byte(tt.candidate))
+
+			ch, cancel := s.subscribe()
+			t.Cleanup(cancel)
+
+			assert := assert.New(t)
+			select {
+			case data := <-ch:
+				assert.True(bytes.HasSuffix(data, []byte("\x1b[?1000h"+tt.candidate)))
+			case <-time.After(100 * time.Millisecond):
+				assert.Fail("subscriber did not receive replay")
+			}
+
+			s.broadcast([]byte(tt.continuation))
+			select {
+			case data := <-ch:
+				assert.Equal(tt.continuation, string(data))
+			case <-time.After(100 * time.Millisecond):
+				assert.Fail("subscriber did not receive split sequence continuation")
+			}
+		})
+	}
+}
+
+func TestSessionSubscribePlacesTransitionsAfterCompleteOrDiscardedC1Data(t *testing.T) {
+	tests := []struct {
+		name          string
+		controlString string
+	}{
+		{
+			name:          "UTF-8 C1 controls",
+			controlString: "\xc2\x9d0;complete title\xc2\x9c",
+		},
+		{
+			name:          "raw C1 controls",
+			controlString: "\x9d0;complete title\x9c",
+		},
+		{
+			name:          "raw C1 CSI prefix",
+			controlString: "\x9b31",
+		},
+		{
+			name:          "raw C1 OSC prefix",
+			controlString: "\x9d0;partial title",
+		},
+		{
+			name:          "raw C1 DCS prefix",
+			controlString: "\x901;2|partial data",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &session{subscribers: make(map[chan []byte]struct{})}
+			s.broadcast([]byte("\x1b[?1000h"))
+			s.broadcast(bytes.Repeat([]byte("x"), maxSessionOutputReplay+1))
+			s.broadcast([]byte(tt.controlString))
+
+			ch, cancel := s.subscribe()
+			t.Cleanup(cancel)
+
+			select {
+			case data := <-ch:
+				assert.True(t, bytes.HasSuffix(data, []byte(tt.controlString+"\x1b[?1000h")))
+			case <-time.After(100 * time.Millisecond):
+				assert.Fail(t, "subscriber did not receive replay")
+			}
+		})
+	}
+}
+
+func TestSessionSubscribeRestoresInputModesWhileAlternateScreenActive(t *testing.T) {
+	s := &session{subscribers: make(map[chan []byte]struct{})}
+	s.broadcast([]byte("\x1b[?1000;1006h"))
+	s.broadcast([]byte("\x1b[?1049h\x1b[Hcodex screen"))
+
+	ch, cancel := s.subscribe()
+	t.Cleanup(cancel)
+
+	select {
+	case data := <-ch:
+		assert.Equal(t, "\x1b[?1000;1006h", string(data))
+	case <-time.After(100 * time.Millisecond):
+		assert.Fail(t, "subscriber did not receive input mode replay")
+	}
+}
+
+func TestSessionSubscribeIgnoresUTF8ContinuationWhileAlternateScreenActive(t *testing.T) {
+	s := &session{subscribers: make(map[chan []byte]struct{})}
+	s.broadcast([]byte("\x1b[?1049h"))
+	s.broadcast([]byte("\xd8"))
+	s.broadcast([]byte("\x9b"))
+
+	ch, cancel := s.subscribe()
+	t.Cleanup(cancel)
+
+	select {
+	case data := <-ch:
+		assert.Failf(
+			t,
+			"subscriber received a phantom C1 sequence",
+			"unexpected replay: %q",
+			string(data),
+		)
+	case <-time.After(25 * time.Millisecond):
+	}
+}
+
+func TestSessionSubscribePreservesSplitUTF8C1WhileAlternateScreenActive(t *testing.T) {
+	s := &session{subscribers: make(map[chan []byte]struct{})}
+	s.broadcast([]byte("\x1b[?1049h"))
+	s.broadcast([]byte("\xc2"))
+
+	ch, cancel := s.subscribe()
+	t.Cleanup(cancel)
+
+	select {
+	case data := <-ch:
+		assert.Equal(t, "\xc2", string(data))
+	case <-time.After(100 * time.Millisecond):
+		assert.Fail(t, "subscriber did not receive split UTF-8 C1 prefix")
+	}
+}
+
+func TestSessionSubscribePreservesSplitTerminalDataWhileAlternateScreenActive(t *testing.T) {
+	tests := []struct {
+		name         string
+		candidate    string
+		continuation string
+	}{
+		{
+			name:         "tracked input mode",
+			candidate:    "\x1b[?2004",
+			continuation: "h",
+		},
+		{
+			name:         "ordinary CSI",
+			candidate:    "\x1b[31",
+			continuation: "m",
+		},
+		{
+			name:         "Unicode split inside CSI",
+			candidate:    "\x1b[?2004\xe2",
+			continuation: "\x98\x83h",
+		},
+		{
+			name:         "OSC",
+			candidate:    "\x1b]0;partial title",
+			continuation: "\x07",
+		},
+		{
+			name:         "OSC terminated by ST",
+			candidate:    "\x1b]0;partial title",
+			continuation: "\x1b\\",
+		},
+		{
+			name:         "DCS",
+			candidate:    "\x1bP1;2|partial data",
+			continuation: "\x1b\\",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &session{subscribers: make(map[chan []byte]struct{})}
+			s.broadcast([]byte("\x1b[?1000h"))
+			s.broadcast([]byte("\x1b[?1049h"))
+			s.broadcast([]byte(tt.candidate))
+
+			ch, cancel := s.subscribe()
+			t.Cleanup(cancel)
+
+			assert := assert.New(t)
+			select {
+			case data := <-ch:
+				assert.Equal("\x1b[?1000h"+tt.candidate, string(data))
+			case <-time.After(100 * time.Millisecond):
+				assert.Fail("subscriber did not receive terminal replay")
+			}
+
+			s.broadcast([]byte(tt.continuation))
+			select {
+			case data := <-ch:
+				assert.Equal(tt.continuation, string(data))
+			case <-time.After(100 * time.Millisecond):
+				assert.Fail("subscriber did not receive split sequence continuation")
+			}
+		})
+	}
+}
+
+func TestSessionSubscribeDropsRawC1TailWhileAlternateScreenActive(t *testing.T) {
+	tests := []struct {
+		name      string
+		candidate string
+	}{
+		{name: "CSI", candidate: "\x9b31"},
+		{name: "OSC", candidate: "\x9d0;partial title"},
+		{name: "DCS", candidate: "\x901;2|partial data"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &session{subscribers: make(map[chan []byte]struct{})}
+			s.broadcast([]byte("\x1b[?1000h"))
+			s.broadcast([]byte("\x1b[?1049h"))
+			s.broadcast([]byte(tt.candidate))
+
+			ch, cancel := s.subscribe()
+			t.Cleanup(cancel)
+
+			select {
+			case data := <-ch:
+				assert.Equal(t, "\x1b[?1000h", string(data))
+			case <-time.After(100 * time.Millisecond):
+				assert.Fail(t, "subscriber did not receive terminal replay")
+			}
+		})
+	}
+}
+
+func TestSessionSubscribeAfterCloseCombinesReplayAndInputModes(t *testing.T) {
+	s := &session{subscribers: make(map[chan []byte]struct{})}
+	modeSequence := "\x1b[?1000;1006h"
+	s.broadcast([]byte(modeSequence))
+	s.broadcast(bytes.Repeat([]byte("x"), maxSessionOutputReplay+1))
+	s.closeSubscribers()
+
+	ch, cancel := s.subscribe()
+	t.Cleanup(cancel)
+
+	assert := assert.New(t)
+	select {
+	case data, ok := <-ch:
+		assert.True(ok)
+		assert.Len(data, maxSessionOutputReplay+len(modeSequence))
+		assert.Equal(modeSequence, string(data[maxSessionOutputReplay:]))
+	case <-time.After(100 * time.Millisecond):
+		assert.Fail("expected replay before channel close")
+	}
+	select {
+	case _, ok := <-ch:
+		assert.False(ok)
+	case <-time.After(100 * time.Millisecond):
+		assert.Fail("expected channel to close after replay")
+	}
+}
+
+func TestSessionSubscribeWithoutInputModesPreservesReplay(t *testing.T) {
+	s := &session{subscribers: make(map[chan []byte]struct{})}
+	s.broadcast([]byte("startup-banner\r\n$ "))
+
+	ch, cancel := s.subscribe()
+	t.Cleanup(cancel)
+
+	select {
+	case data := <-ch:
+		assert.Equal(t, "startup-banner\r\n$ ", string(data))
+	case <-time.After(100 * time.Millisecond):
+		assert.Fail(t, "subscriber did not receive replay")
+	}
+}
+
+func TestSessionInputModeReplayIsSubscriberOnly(t *testing.T) {
+	s := &session{subscribers: make(map[chan []byte]struct{})}
+	ch, cancel := s.subscribe()
+	t.Cleanup(cancel)
+	raw := []byte("screen\x1b[?1000;1006h")
+
+	s.broadcast(raw)
+
+	assert := assert.New(t)
+	select {
+	case data := <-ch:
+		assert.Equal(raw, data)
+	case <-time.After(100 * time.Millisecond):
+		assert.Fail("subscriber did not receive live output")
+	}
+	select {
+	case data := <-ch:
+		assert.Failf("subscriber received synthesized live output", "output: %q", data)
+	case <-time.After(25 * time.Millisecond):
+	}
+	s.mu.Lock()
+	replay := bytes.Clone(s.outputBuffer)
+	s.mu.Unlock()
+	assert.Equal(raw, replay)
 }
 
 func TestSessionSubscribeSkipsReplayWhileAlternateScreenActive(t *testing.T) {

@@ -332,7 +332,9 @@ Keyboard handlers must have one clear owner for each key press.
   Ownership is revoked by any other element's focus claim, and by a park that
   settles with no destination (the pane closed) — a cross-flush transfer's
   transient no-destination park keeps it. A restore fires only into unclaimed
-  focus (`frontend/src/lib/components/terminal/PooledSessionTerminal.svelte`).
+  focus and after the attachment's `inert` removal commits, since browsers
+  silently ignore focus inside inert subtrees
+  (`frontend/src/lib/components/terminal/PooledSessionTerminal.svelte`).
 - A slot's `visible` means PAINTED, never FOCUSED. It gates INTERACTIVITY — an
   invisible slot's terminal is `inert`, dead to pointer and keyboard — so a
   container that reports only its focused session makes the other halves of a

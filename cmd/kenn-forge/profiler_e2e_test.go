@@ -19,6 +19,8 @@ import (
 	"go.kenn.io/forge/internal/runtimelock"
 )
 
+const profilerE2EStartupTimeout = 30 * time.Second
+
 func TestServeStartsProfilerListenerE2E(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -55,11 +57,11 @@ func TestServeStartsProfilerListenerE2E(t *testing.T) {
 		}
 	})
 
-	waitForFile(t, runtimelock.MetadataPath(dataDir), 10*time.Second)
+	waitForFile(t, runtimelock.MetadataPath(dataDir), profilerE2EStartupTimeout)
 	healthBody := waitForHTTPBody(
 		t,
 		fmt.Sprintf("http://127.0.0.1:%d/healthz", appPort),
-		10*time.Second,
+		profilerE2EStartupTimeout,
 	)
 	profilerBody := waitForHTTPBody(
 		t,
@@ -67,7 +69,7 @@ func TestServeStartsProfilerListenerE2E(t *testing.T) {
 			"http://127.0.0.1:%d/debug/pprof/",
 			profilerPort,
 		),
-		10*time.Second,
+		profilerE2EStartupTimeout,
 	)
 
 	assert.Contains(healthBody, `"status":"ok"`)

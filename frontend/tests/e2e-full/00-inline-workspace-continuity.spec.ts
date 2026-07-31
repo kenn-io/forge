@@ -17,9 +17,10 @@
 // input is broken (and canvas readback is unavailable anyway: xterm.js's
 // WebGL renderer owns the canvas GL context).
 
-import { existsSync, readFileSync } from "node:fs";
+import { closeSync, constants, existsSync, openSync, readFileSync, writeFileSync, writeSync } from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
+import { load as loadToml } from "js-toml";
 import {
   expect,
   request as playwrightRequest,
@@ -38,6 +39,23 @@ type WorkspaceStatusResponse = {
   error_message?: string | null;
 };
 
+type E2ETmuxConfig = {
+  tmux?: {
+    command?: string[];
+  };
+};
+
+type RuntimeSessionResponse = {
+  sessions: Array<{
+    key: string;
+    status: string;
+  }> | null;
+};
+
+type RuntimeAttachSpecResponse = {
+  tmux_session: string;
+};
+
 type TerminalControlFrame = {
   active: boolean | undefined;
   cols: number | undefined;
@@ -45,10 +63,21 @@ type TerminalControlFrame = {
   type: "refresh" | "resize" | "resize_active";
 };
 
+type TerminalOutputObserver = {
+  cursorReports: () => string[];
+  inputIncludes: (text: string) => boolean;
+  inputOccurrences: (text: string) => number;
+  reconnectedSessionModes: (workspaceId: string) => string[];
+  sessionOutputIncludes: (workspaceId: string, text: string) => boolean;
+};
+
 const lockedWorkspaceTestTimeoutMs = 120_000;
 const ZOOMED_TERMINAL_FONT_SIZE = 16;
 const SAFARI_ISSUE_TITLE = "Widget rendering broken on Safari";
 const DARK_MODE_ISSUE_TITLE = "Add dark mode support";
+const ESCAPE = "\u001b";
+const cursorReportPattern = new RegExp(`${ESCAPE}\\[\\??[0-9]+;[0-9]+R`, "g");
+const privateModePattern = new RegExp(`${ESCAPE}\\[\\?[0-9;]*[hl]`, "g");
 
 function hasCommand(command: string, args: string[] = ["--version"]): boolean {
   try {
@@ -86,6 +115,83 @@ function observeTerminalControlFrames(page: Page): TerminalControlFrame[] {
   return frames;
 }
 
+function observeTerminalOutput(page: Page): TerminalOutputObserver {
+  const streams: Array<{ url: string; output: string; input: string }> = [];
+  const isWorkspaceSessionStream = (url: string, workspaceId: string) => {
+    const pathname = new URL(url).pathname;
+    return (
+      pathname.includes(`/workspaces/${encodeURIComponent(workspaceId)}/runtime/sessions/`) &&
+      pathname.endsWith("/terminal")
+    );
+  };
+  page.on("websocket", (socket) => {
+    const stream = { url: socket.url(), output: "", input: "" };
+    streams.push(stream);
+    const decoder = new TextDecoder();
+    socket.on("framereceived", ({ payload }) => {
+      const chunk = typeof payload === "string" ? payload : decoder.decode(payload, { stream: true });
+      stream.output = (stream.output + chunk).slice(-128 * 1024);
+    });
+    socket.on("framesent", ({ payload }) => {
+      if (typeof payload === "string") {
+        try {
+          const control = JSON.parse(payload) as { type?: string };
+          if (control.type) return;
+        } catch {
+          // Raw string terminal input is not a JSON control.
+        }
+      }
+      const chunk = typeof payload === "string" ? payload : new TextDecoder().decode(payload);
+      stream.input = (stream.input + chunk).slice(-128 * 1024);
+    });
+  });
+  return {
+    cursorReports: () =>
+      streams.flatMap((stream) => Array.from(stream.input.matchAll(cursorReportPattern), ([report]) => report)),
+    inputIncludes: (text: string) => streams.some((stream) => stream.input.includes(text)),
+    inputOccurrences: (text: string) =>
+      streams.reduce((total, stream) => total + stream.input.split(text).length - 1, 0),
+    reconnectedSessionModes: (workspaceId: string) =>
+      streams
+        .filter((stream) => isWorkspaceSessionStream(stream.url, workspaceId))
+        .slice(1)
+        .flatMap((stream) => Array.from(stream.output.matchAll(privateModePattern), ([mode]) => mode)),
+    sessionOutputIncludes: (workspaceId: string, text: string) =>
+      streams.some((stream) => isWorkspaceSessionStream(stream.url, workspaceId) && stream.output.includes(text)),
+  };
+}
+
+async function readWebSocketUntil(url: string, expectedText: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const socket = new WebSocket(url);
+    socket.binaryType = "arraybuffer";
+    let output = "";
+    const timeout = setTimeout(() => {
+      socket.close();
+      reject(new Error(`timed out waiting for replay from ${new URL(url).pathname}`));
+    }, 15_000);
+    socket.addEventListener("message", async (event) => {
+      let chunk: string;
+      if (typeof event.data === "string") {
+        chunk = event.data;
+      } else if (event.data instanceof ArrayBuffer) {
+        chunk = new TextDecoder().decode(event.data);
+      } else {
+        chunk = new TextDecoder().decode(await event.data.arrayBuffer());
+      }
+      output += chunk;
+      if (!output.includes(expectedText)) return;
+      clearTimeout(timeout);
+      socket.close();
+      resolve(output);
+    });
+    socket.addEventListener("error", () => {
+      clearTimeout(timeout);
+      reject(new Error(`failed to read replay from ${new URL(url).pathname}`));
+    });
+  });
+}
+
 async function waitForWorkspaceReady(api: APIRequestContext, workspaceId: string): Promise<WorkspaceStatusResponse> {
   for (let attempt = 0; attempt < 100; attempt += 1) {
     const response = await api.get(`/api/v1/workspaces/${workspaceId}`);
@@ -109,6 +215,19 @@ async function createIssueWorkspace(api: APIRequestContext, issueNumber: number)
   // Return the ready-state GET body: the 202 payload predates worktree
   // provisioning, so only the polled response carries worktree_path.
   return waitForWorkspaceReady(api, workspace.id);
+}
+
+async function runningRuntimeTmuxSession(api: APIRequestContext, workspaceId: string): Promise<string> {
+  const response = await api.get(`/api/v1/workspaces/${workspaceId}/runtime`);
+  expect(response.ok()).toBe(true);
+  const runtime = (await response.json()) as RuntimeSessionResponse;
+  const running = runtime.sessions?.filter((session) => session.status === "running") ?? [];
+  expect(running).toHaveLength(1);
+  const attachResponse = await api.get(
+    `/api/v1/workspaces/${workspaceId}/runtime/sessions/${encodeURIComponent(running[0]!.key)}/attach-spec`,
+  );
+  expect(attachResponse.ok()).toBe(true);
+  return ((await attachResponse.json()) as RuntimeAttachSpecResponse).tmux_session;
 }
 
 /**
@@ -143,6 +262,21 @@ async function openTerminalPanel(page: Page): Promise<Locator> {
   return container;
 }
 
+async function ensureTerminalPanelOpen(page: Page): Promise<Locator> {
+  const container = page
+    .locator(".terminal-panel.open .terminal-container, .sole-embedded-session .terminal-container")
+    .first();
+  const openButton = page.getByRole("button", { name: "Open terminal panel" });
+  const closeButton = page.getByRole("button", { name: "Close terminal panel" }).first();
+  await expect.poll(async () => (await openButton.isVisible()) || (await closeButton.isVisible())).toBe(true);
+  if (await openButton.isVisible()) {
+    await openButton.click();
+  }
+  await expect(container).toBeVisible();
+  await expect(container.locator("canvas, .xterm-screen").first()).toBeVisible();
+  return container;
+}
+
 /**
  * Put the whole workspace away.
  *
@@ -159,6 +293,91 @@ async function typeIntoTerminal(page: Page, container: Locator, command: string)
   await container.click({ position: { x: 10, y: 10 } });
   await page.keyboard.type(command);
   await page.keyboard.press("Enter");
+}
+
+async function runAttachedTmuxCommand(page: Page, command: string): Promise<void> {
+  await page.keyboard.press("Control+b");
+  await page.keyboard.press(":");
+  await page.keyboard.type(command);
+  await page.keyboard.press("Enter");
+}
+
+function runE2ETmuxCommand(server: IsolatedE2EServer, args: string[]): string {
+  const config = loadToml(readFileSync(server.info.config_path, "utf8")) as E2ETmuxConfig;
+  const [command, ...prefix] = config.tmux?.command ?? [];
+  if (!command) throw new Error("e2e tmux command is unavailable");
+  return execFileSync(command, [...prefix, ...args], { encoding: "utf8" }).trim();
+}
+
+function writeTmuxClientTTY(server: IsolatedE2EServer, tmuxSession: string, data: Uint8Array): void {
+  const clientTTY = runE2ETmuxCommand(server, ["list-clients", "-t", tmuxSession, "-F", "#{client_tty}"]);
+  const fd = openSync(clientTTY, constants.O_WRONLY | constants.O_NOCTTY);
+  try {
+    writeSync(fd, data);
+  } finally {
+    closeSync(fd);
+  }
+}
+
+function tmuxPassthroughFormat(payloadFormat: string): string {
+  return `\\033Ptmux;${payloadFormat}\\033\\\\`;
+}
+
+async function expectWheelScroll(
+  page: Page,
+  container: Locator,
+  server: IsolatedE2EServer,
+  tmuxSession: string,
+): Promise<void> {
+  await expect(container.locator(".xterm.enable-mouse-events")).toBeVisible();
+  const screen = container.locator(".xterm-screen");
+  const box = await screen.boundingBox();
+  expect(box).not.toBeNull();
+  await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+  await page.mouse.wheel(0, -120);
+  await expect
+    .poll(
+      () =>
+        runE2ETmuxCommand(server, [
+          "display-message",
+          "-p",
+          "-t",
+          tmuxSession,
+          "#{pane_in_mode}:#{scroll_position}:#{alternate_on}:#{mouse_any_flag}",
+        ]),
+      { timeout: 15_000 },
+    )
+    .toMatch(/^1:0:0:0$/);
+  await page.mouse.wheel(0, -120);
+  await expect
+    .poll(
+      () =>
+        runE2ETmuxCommand(server, [
+          "display-message",
+          "-p",
+          "-t",
+          tmuxSession,
+          "#{pane_in_mode}:#{scroll_position}:#{alternate_on}:#{mouse_any_flag}",
+        ]),
+      { timeout: 15_000 },
+    )
+    .toMatch(/^1:[1-9]\d*:0:0$/);
+}
+
+function exitTmuxCopyMode(server: IsolatedE2EServer, tmuxSession: string): void {
+  runE2ETmuxCommand(server, ["send-keys", "-t", tmuxSession, "-X", "cancel"]);
+}
+
+async function dispatchTerminalPaste(container: Locator, text: string): Promise<void> {
+  await container.locator(".xterm-helper-textarea").evaluate((textarea, pastedText) => {
+    const paste = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(paste, "clipboardData", {
+      value: {
+        getData: (format: string) => (format === "text/plain" ? pastedText : ""),
+      },
+    });
+    textarea.dispatchEvent(paste);
+  }, text);
 }
 
 // Types a command that creates a marker file in the workspace worktree and
@@ -942,7 +1161,7 @@ test.describe("inline workspace pane continuity", () => {
       const workspace = await createIssueWorkspace(api, 10);
 
       await page.goto(`${isolatedServer.info.base_url}/workspaces/embed/terminal/${workspace.id}`);
-      const dockContainer = await openTerminalPanel(page);
+      await openTerminalPanel(page);
       await page.getByRole("button", { name: "New terminal" }).click();
       const moveSession = page.getByRole("button", { name: /^Move (?!terminal panel).+ to workflow$/ }).first();
       await expect(moveSession).toBeVisible();
@@ -1297,6 +1516,667 @@ test.describe("inline workspace pane continuity", () => {
       await expect(page.locator('[data-continuity="witness-a"]')).toHaveCount(0);
       await expect(page.locator(".workspace-list-sidebar .ws-row.selected")).toContainText(DARK_MODE_ISSUE_TITLE);
     } finally {
+      await api?.dispose();
+      await isolatedServer?.stop();
+    }
+  });
+
+  test("tmux wheel scrolling survives local workspace renderer replacement", async ({ page }) => {
+    test.skip(
+      !hasCommand("git") || !hasCommand("tmux", ["-V"]),
+      "git and tmux are required for the real workspace flow",
+    );
+
+    let isolatedServer: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    try {
+      const output = observeTerminalOutput(page);
+      isolatedServer = await startIsolatedWorkspaceE2EServer();
+      api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
+      const workspaceA = await createIssueWorkspace(api, 10);
+      const workspaceB = await createIssueWorkspace(api, 11);
+
+      await page.goto(`${isolatedServer.info.base_url}/terminal/${workspaceA.id}`);
+      const initialA = await openTerminalPanel(page);
+      const runtimeTmuxSessionA = await runningRuntimeTmuxSession(api, workspaceA.id);
+      await initialA.click({ position: { x: 10, y: 10 } });
+      await runAttachedTmuxCommand(page, "set-option -g mouse off");
+      await runAttachedTmuxCommand(page, "set-option -g mouse on");
+      await expect(initialA.locator(".xterm.enable-mouse-events")).toBeVisible();
+
+      const replaySentinel = "mode-replay-output-complete";
+      await typeIntoTerminal(
+        page,
+        initialA,
+        `printf '\\033[?2004h'; yes '0123456789abcdef0123456789abcdef' | head -n 5000; printf '\\nmode-replay-output-%s\\n' complete; while IFS= read -r _; do :; done`,
+      );
+      await expect
+        .poll(() => output.sessionOutputIncludes(workspaceA.id, replaySentinel), { timeout: 15_000 })
+        .toBe(true);
+
+      await expectWheelScroll(page, initialA, isolatedServer, runtimeTmuxSessionA);
+      exitTmuxCopyMode(isolatedServer, runtimeTmuxSessionA);
+      await initialA.evaluate((element) => {
+        element.setAttribute("data-continuity", "mouse-before-standalone-switch");
+      });
+
+      await page.locator(".workspace-list-sidebar .ws-row", { hasText: DARK_MODE_ISSUE_TITLE }).click();
+      await expect(page).toHaveURL(new RegExp(`/terminal/${workspaceB.id}$`));
+      const containerB = await openTerminalPanel(page);
+      await typeMarkerCommand(page, containerB, workspaceB.worktree_path, "mouse-replay-switch-b");
+
+      await page.locator(".workspace-list-sidebar .ws-row", { hasText: SAFARI_ISSUE_TITLE }).click();
+      await expect(page).toHaveURL(new RegExp(`/terminal/${workspaceA.id}$`));
+      const returnedA = page.locator(".terminal-panel.open .terminal-container").first();
+      await expect(returnedA).toBeVisible();
+      await expect(page.locator('[data-continuity="mouse-before-standalone-switch"]')).toHaveCount(0);
+      await expectWheelScroll(page, returnedA, isolatedServer, runtimeTmuxSessionA);
+      exitTmuxCopyMode(isolatedServer, runtimeTmuxSessionA);
+      const standalonePaste = "standalone-bracketed-paste";
+      await dispatchTerminalPaste(returnedA, standalonePaste);
+      await expect
+        .poll(() => output.inputIncludes(`\x1b[200~${standalonePaste}\x1b[201~`), { timeout: 15_000 })
+        .toBe(true);
+
+      await returnedA.evaluate((element) => {
+        element.setAttribute("data-continuity", "mouse-before-inline-switch");
+      });
+      await selectIssueByTitle(page, DARK_MODE_ISSUE_TITLE);
+      await expect(page.locator(".detail-pane-workspace-slot .terminal-container")).toBeVisible();
+      await selectIssueByTitle(page, SAFARI_ISSUE_TITLE);
+
+      const inlineA = page.locator(".detail-pane-workspace-slot .terminal-container").first();
+      await expect(inlineA).toBeVisible();
+      await expect(page.locator('[data-continuity="mouse-before-inline-switch"]')).toHaveCount(0);
+      await expectWheelScroll(page, inlineA, isolatedServer, runtimeTmuxSessionA);
+      exitTmuxCopyMode(isolatedServer, runtimeTmuxSessionA);
+      const inlinePaste = "inline-bracketed-paste";
+      await dispatchTerminalPaste(inlineA, inlinePaste);
+      await expect.poll(() => output.inputIncludes(`\x1b[200~${inlinePaste}\x1b[201~`), { timeout: 15_000 }).toBe(true);
+      await page.keyboard.press("Control+c");
+    } finally {
+      await api?.dispose();
+      await isolatedServer?.stop();
+    }
+  });
+
+  test("terminal replay preserves split data through a real tmux websocket boundary", async ({ page }) => {
+    test.skip(
+      !hasCommand("git") || !hasCommand("tmux", ["-V"]),
+      "git and tmux are required for the real workspace flow",
+    );
+
+    const cases = [
+      {
+        name: "partial-utf8",
+        candidateFormat: "replay-partial-utf8:\\033\\033[He\\314",
+        continuationFormat: "\\201\\033\\033[6n",
+        pasteText: null,
+        entersAlternateScreen: false,
+        evictsCandidateFromReplay: false,
+        expectsBracketedPaste: false,
+        expectsCursorReport: true,
+      },
+      {
+        name: "incomplete-csi",
+        candidateFormat: "replay-incomplete-csi:\\033\\033[?2004",
+        continuationFormat: "h",
+        pasteText: "incomplete-csi-bracketed-paste",
+        entersAlternateScreen: false,
+        evictsCandidateFromReplay: false,
+        expectsBracketedPaste: true,
+        expectsCursorReport: false,
+      },
+      {
+        name: "unicode-interrupted-csi",
+        candidateFormat: "replay-unicode-interrupted-csi:\\033\\033[?2004\\342\\230\\203h",
+        continuationFormat: "\\033\\033[6n",
+        pasteText: "unicode-interrupted-csi-paste",
+        entersAlternateScreen: true,
+        evictsCandidateFromReplay: true,
+        expectsBracketedPaste: false,
+        expectsCursorReport: true,
+      },
+      {
+        name: "alternate-screen-incomplete-csi",
+        candidateFormat: "",
+        continuationFormat: "",
+        directPrecondition: "\x1b[?1000l;1002l;1003l",
+        directCandidate: "\x1b[?1049h\rsame-renderer-alt-csi:\x1b[?1003h\x1b[5",
+        directContinuation: "C\x1b[6n",
+        pasteText: null,
+        entersAlternateScreen: false,
+        evictsCandidateFromReplay: false,
+        expectsBracketedPaste: false,
+        expectsCursorReport: true,
+        expectedCursorColumn: "28",
+      },
+      {
+        name: "osc-split-st",
+        candidateFormat: "\\033\\033]0;replay-osc-split-st\\033\\033",
+        continuationFormat: "\\\\\\033\\033[6n",
+        pasteText: null,
+        entersAlternateScreen: false,
+        evictsCandidateFromReplay: false,
+        expectsBracketedPaste: false,
+        expectsCursorReport: true,
+      },
+      {
+        name: "dcs-split-st",
+        candidateFormat: "replay-dcs-split-st:\\033\\033P$qm\\033\\033",
+        continuationFormat: "\\\\\\033\\033[6n",
+        pasteText: null,
+        entersAlternateScreen: false,
+        evictsCandidateFromReplay: false,
+        expectsBracketedPaste: false,
+        expectsCursorReport: true,
+      },
+    ] as const;
+
+    await page.addInitScript(() => {
+      const refreshSuppressedFor = new Set<string>();
+      const runtimeSockets: Array<{ url: string; socket: WebSocket; receivedFrames: number }> = [];
+      (
+        window as unknown as {
+          __suppressRuntimeRefresh: (workspaceId: string) => void;
+        }
+      ).__suppressRuntimeRefresh = (workspaceId: string) => {
+        refreshSuppressedFor.add(workspaceId);
+      };
+      (
+        window as unknown as {
+          __disconnectRuntime: (workspaceId: string) => number;
+          __runtimeReconnectReady: (workspaceId: string, previousCount: number) => boolean;
+        }
+      ).__disconnectRuntime = (workspaceId: string) => {
+        const matching = runtimeSockets.filter(({ url }) => url.includes(`/workspaces/${workspaceId}/`));
+        matching.at(-1)?.socket.close();
+        return matching.length;
+      };
+      (
+        window as unknown as {
+          __runtimeReconnectReady: (workspaceId: string, previousCount: number) => boolean;
+        }
+      ).__runtimeReconnectReady = (workspaceId: string, previousCount: number) => {
+        const matching = runtimeSockets.filter(({ url }) => url.includes(`/workspaces/${workspaceId}/`));
+        const latest = matching.at(-1);
+        return (
+          matching.length > previousCount && latest?.socket.readyState === WebSocket.OPEN && latest.receivedFrames > 0
+        );
+      };
+      const Native = window.WebSocket;
+      class RefreshSuppressingWebSocket extends Native {
+        readonly suppressRefresh: boolean;
+
+        constructor(url: string | URL, protocols?: string | string[]) {
+          const rewritten = new URL(String(url));
+          const suppressRefresh = [...refreshSuppressedFor].some((id) =>
+            rewritten.pathname.includes(`/workspaces/${id}/`),
+          );
+          if (suppressRefresh) {
+            rewritten.searchParams.delete("cols");
+            rewritten.searchParams.delete("rows");
+          }
+          super(rewritten, protocols);
+          this.suppressRefresh = suppressRefresh;
+          if (rewritten.pathname.includes("/runtime/sessions/")) {
+            const entry = { url: rewritten.toString(), socket: this as WebSocket, receivedFrames: 0 };
+            runtimeSockets.push(entry);
+            this.addEventListener("message", () => {
+              entry.receivedFrames += 1;
+            });
+          }
+        }
+
+        override send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void {
+          if (this.suppressRefresh && typeof data === "string") {
+            try {
+              if ((JSON.parse(data) as { type?: string }).type === "refresh") return;
+            } catch {
+              // Forward non-JSON terminal input unchanged.
+            }
+          }
+          Native.prototype.send.call(this, data);
+        }
+      }
+      window.WebSocket = RefreshSuppressingWebSocket as unknown as typeof WebSocket;
+    });
+
+    for (const boundary of cases) {
+      let isolatedServer: IsolatedE2EServer | null = null;
+      let api: APIRequestContext | null = null;
+      let helperFinishPath: string | null = null;
+      try {
+        const output = observeTerminalOutput(page);
+        isolatedServer = await startIsolatedWorkspaceE2EServer();
+        api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
+        const workspaceA = await createIssueWorkspace(api, 10);
+        const workspaceB = await createIssueWorkspace(api, 11);
+
+        await page.goto(`${isolatedServer.info.base_url}/terminal/${workspaceA.id}`);
+        let containerA = await openTerminalPanel(page);
+        const tmuxSessionA = await runningRuntimeTmuxSession(api, workspaceA.id);
+        runE2ETmuxCommand(isolatedServer, ["set-option", "-p", "-t", tmuxSessionA, "allow-passthrough", "on"]);
+        runE2ETmuxCommand(isolatedServer, ["set-option", "-t", tmuxSessionA, "status", "off"]);
+        await page.evaluate((workspaceId) => {
+          (
+            window as unknown as {
+              __suppressRuntimeRefresh?: (id: string) => void;
+            }
+          ).__suppressRuntimeRefresh?.(workspaceId);
+        }, workspaceA.id);
+
+        runE2ETmuxCommand(isolatedServer, ["set-option", "-g", "-t", tmuxSessionA, "mouse", "off"]);
+        runE2ETmuxCommand(isolatedServer, ["set-option", "-g", "-t", tmuxSessionA, "mouse", "on"]);
+        await expect(containerA.locator(".xterm.enable-mouse-events")).toBeVisible();
+
+        const readyPath = path.join(workspaceA.worktree_path, `${boundary.name}-ready`);
+        const continuePath = path.join(workspaceA.worktree_path, `${boundary.name}-continue`);
+        const donePath = path.join(workspaceA.worktree_path, `${boundary.name}-done`);
+        helperFinishPath = path.join(workspaceA.worktree_path, `${boundary.name}-finish`);
+        const helperPath = path.join(workspaceA.worktree_path, `${boundary.name}-helper.sh`);
+        const completionMarker = `${boundary.name}-complete`;
+        const command = [
+          "i=0",
+          `while [ "$i" -lt 2500 ]; do printf '${tmuxPassthroughFormat("0123456789abcdef0123456789abcdef\\r\\n")}'; i=$((i+1)); done`,
+          ...(boundary.entersAlternateScreen ? [`printf '${tmuxPassthroughFormat("\\033\\033[?1049h")}'`] : []),
+          ...(boundary.evictsCandidateFromReplay ? [`printf '${tmuxPassthroughFormat("\\033\\033[?2004l")}'`] : []),
+          ...("directCandidate" in boundary ? [] : [`printf '${tmuxPassthroughFormat(boundary.candidateFormat)}'`]),
+          ...(boundary.evictsCandidateFromReplay
+            ? [
+                "i=0",
+                `while [ "$i" -lt 2500 ]; do printf '${tmuxPassthroughFormat("fedcba9876543210fedcba9876543210\\r\\n")}'; i=$((i+1)); done`,
+              ]
+            : []),
+          `touch '${readyPath}'`,
+          `while [ ! -f '${continuePath}' ]; do sleep 0.05; done`,
+          `printf '${tmuxPassthroughFormat(boundary.continuationFormat)}'`,
+          `printf '\\r\\n${completionMarker}\\r\\n'`,
+          `touch '${donePath}'`,
+          `while [ ! -f '${helperFinishPath}' ]; do sleep 0.05; done`,
+        ].join("\n");
+        writeFileSync(helperPath, `${command}\n`, "utf8");
+
+        await typeIntoTerminal(page, containerA, `sh '${helperPath}'`);
+        await expect.poll(() => existsSync(readyPath), { timeout: 15_000 }).toBe(true);
+        if ("directCandidate" in boundary) {
+          writeTmuxClientTTY(isolatedServer, tmuxSessionA, new TextEncoder().encode(boundary.directPrecondition));
+          await expect(containerA.locator(".xterm.enable-mouse-events")).toHaveCount(0);
+          writeTmuxClientTTY(isolatedServer, tmuxSessionA, new TextEncoder().encode(boundary.directCandidate));
+          await expect
+            .poll(() => output.sessionOutputIncludes(workspaceA.id, "same-renderer-alt-csi:"), { timeout: 15_000 })
+            .toBe(true);
+          await expect(containerA.locator(".xterm.enable-mouse-events")).toBeVisible();
+        } else if (!boundary.evictsCandidateFromReplay) {
+          await expect
+            .poll(() => output.sessionOutputIncludes(workspaceA.id, `replay-${boundary.name}`), { timeout: 15_000 })
+            .toBe(true);
+        }
+        await containerA.evaluate((element, name) => {
+          element.setAttribute("data-replay-boundary", name);
+        }, boundary.name);
+
+        if ("directCandidate" in boundary) {
+          const previousConnectionCount = await page.evaluate((workspaceId) => {
+            return (
+              window as unknown as {
+                __disconnectRuntime: (id: string) => number;
+              }
+            ).__disconnectRuntime(workspaceId);
+          }, workspaceA.id);
+          await expect
+            .poll(() =>
+              page.evaluate(
+                ({ workspaceId, previousConnectionCount }) =>
+                  (
+                    window as unknown as {
+                      __runtimeReconnectReady: (id: string, count: number) => boolean;
+                    }
+                  ).__runtimeReconnectReady(workspaceId, previousConnectionCount),
+                { workspaceId: workspaceA.id, previousConnectionCount },
+              ),
+            )
+            .toBe(true);
+        } else {
+          await page.locator(".workspace-list-sidebar .ws-row", { hasText: DARK_MODE_ISSUE_TITLE }).click();
+          await expect(page).toHaveURL(new RegExp(`/terminal/${workspaceB.id}$`));
+          await ensureTerminalPanelOpen(page);
+          await page.locator(".workspace-list-sidebar .ws-row", { hasText: SAFARI_ISSUE_TITLE }).click();
+          await expect(page).toHaveURL(new RegExp(`/terminal/${workspaceA.id}$`));
+        }
+
+        containerA = await ensureTerminalPanelOpen(page);
+        await expect(page.locator(`[data-replay-boundary="${boundary.name}"]`)).toHaveCount(
+          "directCandidate" in boundary ? 1 : 0,
+        );
+        await expect(containerA.locator(".xterm.enable-mouse-events")).toBeVisible();
+        await containerA.locator(".xterm-helper-textarea").focus();
+        const bracketedPaste = boundary.pasteText === null ? null : `\x1b[200~${boundary.pasteText}\x1b[201~`;
+        const bracketedPasteOccurrencesBeforeContinuation =
+          bracketedPaste === null ? 0 : output.inputOccurrences(bracketedPaste);
+        const pasteTextOccurrencesBeforeContinuation =
+          boundary.pasteText === null ? 0 : output.inputOccurrences(boundary.pasteText);
+        const cursorReportsBeforeContinuation = output.cursorReports().length;
+
+        if ("directContinuation" in boundary) {
+          writeTmuxClientTTY(isolatedServer, tmuxSessionA, new TextEncoder().encode(boundary.directContinuation));
+        }
+        writeFileSync(continuePath, "continue\n", "utf8");
+        await expect.poll(() => existsSync(donePath), { timeout: 15_000 }).toBe(true);
+        await expect
+          .poll(() => output.sessionOutputIncludes(workspaceA.id, completionMarker), { timeout: 15_000 })
+          .toBe(true);
+        if (boundary.pasteText !== null && bracketedPaste !== null) {
+          await dispatchTerminalPaste(containerA, boundary.pasteText);
+          await expect
+            .poll(() => output.inputOccurrences(boundary.pasteText))
+            .toBeGreaterThan(pasteTextOccurrencesBeforeContinuation);
+          if (boundary.expectsBracketedPaste) {
+            await expect
+              .poll(() => output.inputOccurrences(bracketedPaste))
+              .toBeGreaterThan(bracketedPasteOccurrencesBeforeContinuation);
+          } else {
+            expect(output.inputOccurrences(bracketedPaste)).toBe(bracketedPasteOccurrencesBeforeContinuation);
+          }
+        }
+        if (boundary.expectsCursorReport) {
+          await expect.poll(() => output.cursorReports().length).toBeGreaterThan(cursorReportsBeforeContinuation);
+          if ("expectedCursorColumn" in boundary) {
+            const cursorColumn = /^\x1b\[\??\d+;(\d+)R$/.exec(output.cursorReports().at(-1) ?? "")?.[1];
+            expect(cursorColumn).toBe(boundary.expectedCursorColumn);
+          }
+        }
+        writeFileSync(helperFinishPath, "finish\n", "utf8");
+        helperFinishPath = null;
+      } finally {
+        if (helperFinishPath !== null) {
+          writeFileSync(helperFinishPath, "finish\n", "utf8");
+        }
+        await api?.dispose();
+        await isolatedServer?.stop();
+      }
+    }
+  });
+
+  test("same renderer reconnect applies mouse mode disabled while offline", async ({ page }) => {
+    test.skip(
+      !hasCommand("git") || !hasCommand("tmux", ["-V"]),
+      "git and tmux are required for the real workspace flow",
+    );
+
+    let isolatedServer: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    let helperFinishPath: string | null = null;
+    try {
+      await page.addInitScript(() => {
+        const log: Array<{ url: string; closed: boolean; socket: WebSocket; sent: string[] }> = [];
+        (window as unknown as { __reconnectWsLog: typeof log }).__reconnectWsLog = log;
+        const Native = window.WebSocket;
+        class TrackedWebSocket extends Native {
+          constructor(url: string | URL, protocols?: string | string[]) {
+            super(url, protocols);
+            const entry = { url: String(url), closed: false, socket: this, sent: [] };
+            log.push(entry);
+            this.addEventListener("close", () => {
+              entry.closed = true;
+            });
+          }
+
+          override send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void {
+            const entry = log.find((candidate) => candidate.socket === this);
+            if (entry && typeof data === "string") entry.sent.push(data);
+            super.send(data);
+          }
+        }
+        window.WebSocket = TrackedWebSocket as unknown as typeof WebSocket;
+        (
+          window as unknown as {
+            __closeRuntimeSockets: (workspaceId: string) => void;
+          }
+        ).__closeRuntimeSockets = (workspaceId: string) => {
+          for (const entry of log) {
+            if (entry.url.includes(`/workspaces/${workspaceId}/runtime/sessions/`)) {
+              entry.socket.close();
+            }
+          }
+        };
+      });
+
+      isolatedServer = await startIsolatedWorkspaceE2EServer();
+      api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
+      const workspace = await createIssueWorkspace(api, 10);
+      const output = observeTerminalOutput(page);
+
+      const runtimeSockets = () =>
+        page.evaluate((workspaceId) => {
+          const log =
+            (
+              window as unknown as {
+                __reconnectWsLog?: Array<{ url: string; closed: boolean; sent: string[] }>;
+              }
+            ).__reconnectWsLog ?? [];
+          return log
+            .filter((entry) => entry.url.includes(`/workspaces/${workspaceId}/runtime/sessions/`))
+            .map(({ url, closed, sent }) => ({ url, closed, sent }));
+        }, workspace.id);
+
+      await page.goto(`${isolatedServer.info.base_url}/terminal/${workspace.id}`);
+      const container = await openTerminalPanel(page);
+      const disableSignal = path.join(workspace.worktree_path, "same-renderer-disable-signal");
+      const replayReady = path.join(workspace.worktree_path, "same-renderer-replay-ready");
+      const helperDone = path.join(workspace.worktree_path, "same-renderer-helper-done");
+      helperFinishPath = path.join(workspace.worktree_path, "same-renderer-helper-finish");
+      const helperPath = path.join(workspace.worktree_path, "same-renderer-helper.sh");
+      const offlineOutputMarker = "same-renderer-offline-output-complete";
+      const canonicalReconnectReset = new RegExp(`${ESCAPE}\\[\\?1;1000;(?:[0-9]+;)*1006l`);
+      writeFileSync(
+        helperPath,
+        `${[
+          `printf '${tmuxPassthroughFormat("\\033\\033[?1h")}'`,
+          `while [ ! -f '${disableSignal}' ]; do sleep 0.05; done`,
+          `printf '${tmuxPassthroughFormat("\\033\\033[?1l")}'`,
+          "yes '0123456789abcdef0123456789abcdef' | head -n 2500",
+          `printf '\\r\\n${offlineOutputMarker}\\r\\n'`,
+          `touch '${replayReady}'`,
+          `while [ ! -f '${helperFinishPath}' ]; do sleep 0.05; done`,
+          `touch '${helperDone}'`,
+        ].join("\n")}\n`,
+        "utf8",
+      );
+      const tmuxSession = await runningRuntimeTmuxSession(api, workspace.id);
+      runE2ETmuxCommand(isolatedServer, ["set-option", "-p", "-t", tmuxSession, "allow-passthrough", "on"]);
+      await typeIntoTerminal(page, container, `sh '${helperPath}'`);
+      runE2ETmuxCommand(isolatedServer, ["set-option", "-g", "-t", tmuxSession, "mouse", "on"]);
+      await expect(container.locator(".xterm.enable-mouse-events")).toBeVisible();
+      const applicationCursorUp = "\x1bOA";
+      const normalCursorUp = "\x1b[A";
+      const applicationCursorUpBefore = output.inputOccurrences(applicationCursorUp);
+      await container.locator(".xterm-helper-textarea").focus();
+      await page.keyboard.press("ArrowUp");
+      await expect.poll(() => output.inputOccurrences(applicationCursorUp)).toBeGreaterThan(applicationCursorUpBefore);
+      await container.evaluate((element) => {
+        element.setAttribute("data-same-renderer-reconnect", "witness");
+      });
+      await expect.poll(async () => (await runtimeSockets()).length).toBe(1);
+      const runtimeSocketURL = (await runtimeSockets())[0]!.url;
+
+      await page.context().setOffline(true);
+      await page.evaluate((workspaceId) => {
+        (
+          window as unknown as {
+            __closeRuntimeSockets?: (id: string) => void;
+          }
+        ).__closeRuntimeSockets?.(workspaceId);
+      }, workspace.id);
+      await expect.poll(async () => (await runtimeSockets())[0]?.closed).toBe(true);
+
+      runE2ETmuxCommand(isolatedServer, ["set-option", "-g", "-t", tmuxSession, "mouse", "off"]);
+      writeFileSync(disableSignal, "disable\n", "utf8");
+      await expect.poll(() => existsSync(replayReady), { timeout: 15_000 }).toBe(true);
+      const replay = await readWebSocketUntil(runtimeSocketURL, offlineOutputMarker);
+      expect(replay).toContain(offlineOutputMarker);
+      expect(replay).toMatch(canonicalReconnectReset);
+
+      await page.context().setOffline(false);
+      await expect.poll(async () => (await runtimeSockets()).length, { timeout: 15_000 }).toBeGreaterThan(1);
+      await expect
+        .poll(() => output.reconnectedSessionModes(workspace.id).some((mode) => canonicalReconnectReset.test(mode)), {
+          timeout: 15_000,
+        })
+        .toBe(true);
+      const reconnectSocket = (await runtimeSockets()).at(-1);
+      expect(reconnectSocket).toBeDefined();
+      expect(new URL(reconnectSocket!.url).searchParams.has("cols")).toBe(false);
+      expect(new URL(reconnectSocket!.url).searchParams.has("rows")).toBe(false);
+      expect(reconnectSocket!.sent.filter((frame) => frame.includes('"type":"refresh"'))).toEqual([]);
+      await expect(page.locator('[data-same-renderer-reconnect="witness"]')).toBeVisible();
+      await expect(container.locator(".xterm.enable-mouse-events")).toHaveCount(0);
+      const normalCursorUpBefore = output.inputOccurrences(normalCursorUp);
+      await container.locator(".xterm-helper-textarea").focus();
+      await page.keyboard.press("ArrowUp");
+      await expect.poll(() => output.inputOccurrences(normalCursorUp)).toBeGreaterThan(normalCursorUpBefore);
+      writeFileSync(helperFinishPath, "finish\n", "utf8");
+      await expect.poll(() => existsSync(helperDone), { timeout: 15_000 }).toBe(true);
+      await page.keyboard.press("Control+c");
+      await typeMarkerCommand(page, container, workspace.worktree_path, "same-renderer-reconnect-input");
+    } finally {
+      await page.context().setOffline(false);
+      if (helperFinishPath !== null) {
+        writeFileSync(helperFinishPath, "finish\n", "utf8");
+      }
+      await api?.dispose();
+      await isolatedServer?.stop();
+    }
+  });
+
+  test("same renderer reconnect completes replayed UTF-8 before later output", async ({ page }) => {
+    test.skip(
+      !hasCommand("git") || !hasCommand("tmux", ["-V"]),
+      "git and tmux are required for the real workspace flow",
+    );
+
+    await page.addInitScript(() => {
+      const runtimeConnections = new Map<string, number>();
+      const sockets: Array<{ url: string; closed: boolean; socket: WebSocket }> = [];
+      (
+        window as unknown as {
+          __splitReplaySockets: typeof sockets;
+        }
+      ).__splitReplaySockets = sockets;
+      const Native = window.WebSocket;
+      class SplitReplayWebSocket extends Native {
+        constructor(url: string | URL, protocols?: string | string[]) {
+          super(url, protocols);
+          const socketURL = String(url);
+          if (!socketURL.includes("/runtime/sessions/")) return;
+
+          const connectionNumber = runtimeConnections.get(socketURL.split("?")[0]!) ?? 0;
+          runtimeConnections.set(socketURL.split("?")[0]!, connectionNumber + 1);
+          const entry = { url: socketURL, closed: false, socket: this };
+          sockets.push(entry);
+          this.addEventListener("close", () => {
+            entry.closed = true;
+          });
+          if (connectionNumber === 0) return;
+
+          let replayPrefixDelivered = false;
+          let continuationDelivered = false;
+          let fallbackTimer: number | null = null;
+          const deliver = (bytes: Uint8Array) => {
+            this.onmessage?.(new MessageEvent("message", { data: bytes.buffer }));
+          };
+          const deliverContinuation = () => {
+            if (continuationDelivered) return;
+            continuationDelivered = true;
+            if (fallbackTimer !== null) window.clearTimeout(fallbackTimer);
+            deliver(new Uint8Array([0x98, 0x83, 0x41, 0x1b, 0x5b, 0x36, 0x6e]));
+          };
+          this.addEventListener("message", (event) => {
+            if (!(event.data instanceof ArrayBuffer)) return;
+            if (!replayPrefixDelivered) {
+              event.stopImmediatePropagation();
+              replayPrefixDelivered = true;
+              const text = new TextEncoder().encode("\x1b[?1049h\r\x1b[2Ksame-renderer-split-utf8:");
+              const prefix = new Uint8Array(text.length + 1);
+              prefix.set(text);
+              prefix[text.length] = 0xe2;
+              deliver(prefix);
+              fallbackTimer = window.setTimeout(deliverContinuation, 500);
+              return;
+            }
+            if (!continuationDelivered) queueMicrotask(deliverContinuation);
+          });
+        }
+      }
+      window.WebSocket = SplitReplayWebSocket as unknown as typeof WebSocket;
+      (
+        window as unknown as {
+          __closeSplitReplaySockets: (workspaceId: string) => void;
+        }
+      ).__closeSplitReplaySockets = (workspaceId: string) => {
+        for (const entry of sockets) {
+          if (entry.url.includes(`/workspaces/${workspaceId}/runtime/sessions/`)) {
+            entry.socket.close();
+          }
+        }
+      };
+    });
+
+    let isolatedServer: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    try {
+      isolatedServer = await startIsolatedWorkspaceE2EServer();
+      api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
+      const workspace = await createIssueWorkspace(api, 10);
+      const output = observeTerminalOutput(page);
+      const runtimeSockets = () =>
+        page.evaluate((workspaceId) => {
+          const sockets =
+            (
+              window as unknown as {
+                __splitReplaySockets?: Array<{ url: string; closed: boolean; socket: WebSocket }>;
+              }
+            ).__splitReplaySockets ?? [];
+          return sockets
+            .filter((entry) => entry.url.includes(`/workspaces/${workspaceId}/runtime/sessions/`))
+            .map(({ url, closed, socket }) => ({ url, closed, readyState: socket.readyState }));
+        }, workspace.id);
+
+      await page.goto(`${isolatedServer.info.base_url}/terminal/${workspace.id}`);
+      const container = await openTerminalPanel(page);
+      await expect.poll(async () => (await runtimeSockets()).length).toBe(1);
+      await container.evaluate((element) => {
+        element.setAttribute("data-split-replay-renderer", "witness");
+      });
+      const cursorReportsBefore = output.cursorReports().length;
+
+      await page.context().setOffline(true);
+      await page.evaluate((workspaceId) => {
+        (
+          window as unknown as {
+            __closeSplitReplaySockets?: (id: string) => void;
+          }
+        ).__closeSplitReplaySockets?.(workspaceId);
+      }, workspace.id);
+      await expect.poll(async () => (await runtimeSockets())[0]?.closed).toBe(true);
+
+      await page.context().setOffline(false);
+      await expect
+        .poll(async () => (await runtimeSockets()).filter((socket) => socket.readyState === WebSocket.OPEN).length, {
+          timeout: 15_000,
+        })
+        .toBe(1);
+      await expect(page.locator('[data-split-replay-renderer="witness"]')).toBeVisible();
+      const reconnectedSocket = (await runtimeSockets()).at(-1);
+      expect(reconnectedSocket).toBeDefined();
+
+      await expect.poll(() => output.cursorReports().length, { timeout: 15_000 }).toBeGreaterThan(cursorReportsBefore);
+      const cursorColumn = /^\x1b\[\??\d+;(\d+)R$/.exec(output.cursorReports().at(-1) ?? "")?.[1];
+      expect(cursorColumn).toBe("28");
+      expect(new URL(reconnectedSocket!.url).searchParams.has("cols")).toBe(false);
+      expect(new URL(reconnectedSocket!.url).searchParams.has("rows")).toBe(false);
+    } finally {
+      await page.context().setOffline(false);
       await api?.dispose();
       await isolatedServer?.stop();
     }

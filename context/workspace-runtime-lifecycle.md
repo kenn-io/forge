@@ -94,6 +94,27 @@ still exists.
 - Every tmux client attach must force UTF-8; service launchers may omit locale
   variables, causing tmux to replace non-ASCII output before WebSocket transport
   (`internal/workspace/localruntime/tmux_launcher.go::tmuxAttachSessionCommand`).
+- Local-runtime reconnects restore browser-generated cursor-key, mouse, focus,
+  and paste DEC modes from session-wide PTY state, not bounded screen replay
+  (`internal/workspace/localruntime/manager.go::session.subscribe`).
+- Mode transitions precede one session-wide UTF-8-aware VT tail even in the
+  alternate screen; retain split-rune introducers and decoded C1 controls/ST
+  (`internal/workspace/localruntime/terminal_sequence_tail.go::trailingIncompleteTerminalDataLen`).
+- Mode replay must mirror xterm.js 6 effective semantics: DEC private save/restore
+  and ignored 1005/1015 encodings cannot re-enable modes or displace 1006/1016
+  (`internal/workspace/localruntime/terminal_input_modes.go::terminalInputModeState.observe`).
+- Recognize C1 CSI only as decoded U+009B; valid non-C1 UTF-8 invalidates pending
+  controls, while standalone continuation bytes are decoder-discarded
+  (`internal/workspace/localruntime/terminal_input_modes.go::terminalInputModeState.observe`).
+- Send reconnect cancellation to xterm as bytes, not text; only binary input
+  clears its streaming UTF-8 decoder before replay
+  (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::cancelPendingTerminalSequence`).
+- A same-renderer reconnect with unchanged geometry must omit initial size and
+  refresh controls; tmux redraw output can interrupt a retained VT/UTF-8 tail
+  (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::connect`).
+- In xterm.js 6, DECSTR resets cursor keys, focus reporting, and bracketed paste,
+  but leaves the mouse service's protocol and encoding unchanged
+  (`internal/workspace/localruntime/terminal_input_modes.go::terminalInputModeState.softReset`).
 
 ## UI Contract Rules
 
@@ -227,6 +248,9 @@ behavior.
   runs clone/setup in a background goroutine; if the test returns first, that
   goroutine can keep writing into the test's `t.TempDir` clone path and race
   `RemoveAll` teardown, failing intermittently with "directory not empty".
+- Test fixtures must force-delete created workspaces before handler shutdown;
+  shutdown preserves durable base tmux sessions, so temp-dir cleanup alone leaks
+  sessions (`internal/server/kataapi/test_helpers_test.go::newKataTestServer`).
 - Use tmux wrappers/fakes for missing-session and dead-server cases.
 - Add frontend or Playwright coverage when the regression is visible in tab
   selection, shell drawer state, or workspace navigation.

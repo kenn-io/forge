@@ -106,8 +106,24 @@
       requested === "explicit" || (requested === "soft" && !focusIsSacred(document.activeElement));
     const unclaimed = document.activeElement === null || document.activeElement === document.body;
     if (!granted && !(ownsFocus && unclaimed)) return;
-    terminalPane?.focus();
-    if (!node.contains(document.activeElement)) node.focus();
+    const focusAtDecision = document.activeElement;
+    void (async () => {
+      // The active/attached state that admitted this effect also removes
+      // inert. Wait for that DOM update before asking xterm to focus; browsers
+      // silently ignore focus() inside an inert subtree.
+      await tick();
+      if (!attached || !active || wrapper !== node || node.inert) return;
+      if (
+        requested !== "explicit" &&
+        document.activeElement !== focusAtDecision &&
+        (focusIsSacred(document.activeElement) ||
+          (document.activeElement !== null && document.activeElement !== document.body))
+      ) {
+        return;
+      }
+      terminalPane?.focus();
+      if (!node.contains(document.activeElement)) node.focus();
+    })();
   });
 
   // The wrapper is reparented out of this component's own fragment, so Svelte

@@ -17,6 +17,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
@@ -123,8 +124,18 @@ func newKataTestServer(
 	server := &Server{Handler: handler, http: mux, workspaceAPI: workspaceHandler}
 	handler.Start(t.Context())
 	t.Cleanup(func() {
-		require.NoError(t, handler.Shutdown(context.Background()))
-		require.NoError(t, workspaceHandler.Shutdown(context.Background()))
+		assert := assert.New(t)
+		if workspaces != nil {
+			stored, err := database.ListWorkspaces(context.Background())
+			if assert.NoError(err) {
+				for _, ws := range stored {
+					_, err := workspaces.Delete(context.Background(), ws.ID, true, nil)
+					assert.NoError(err)
+				}
+			}
+		}
+		assert.NoError(handler.Shutdown(context.Background()))
+		assert.NoError(workspaceHandler.Shutdown(context.Background()))
 	})
 	return server
 }

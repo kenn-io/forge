@@ -27057,18 +27057,11 @@ func TestWorkspaceRuntimePlainShellRecordFailureCleansCreatedTmuxShellE2E(t *tes
 	}, 2*time.Second, 20*time.Millisecond)
 	require.Eventually(func() bool {
 		entries, readErr := os.ReadDir(stateDir)
-		if readErr != nil {
+		if readErr != nil || len(entries) != len(initialState) {
 			return false
 		}
-		currentState := make(map[string]bool, len(entries))
 		for _, entry := range entries {
-			currentState[entry.Name()] = true
-		}
-		if len(currentState) != len(initialState) {
-			return false
-		}
-		for name := range initialState {
-			if !currentState[name] {
+			if !initialState[entry.Name()] {
 				return false
 			}
 		}

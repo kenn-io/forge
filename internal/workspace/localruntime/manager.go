@@ -17,6 +17,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/creack/pty/v2"
 
@@ -177,6 +178,8 @@ type session struct {
 	outputClosed          bool
 	alternateScreenActive bool
 	alternateScreenTail   []byte
+	terminalSequenceTail  []byte
+	inputModes            terminalInputModeState
 	lifecycleMu           sync.Mutex
 	lifecycleClosed       bool
 	stopRequested         bool
@@ -1770,6 +1773,7 @@ func (s *session) broadcast(data []byte) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	s.inputModes.observe(chunk)
 	s.appendReplayOutputLocked(chunk)
 
 	for ch := range s.subscribers {
@@ -1789,6 +1793,8 @@ type alternateScreenEvent struct {
 }
 
 func (s *session) appendReplayOutputLocked(chunk []byte) {
+	s.updateTerminalSequenceTailLocked(chunk)
+
 	// Alternate-screen TUIs are stateful. Replaying a suffix of their
 	// screen history into a fresh terminal can corrupt the attach, so
 	// keep only normal-screen output for future subscribers.
@@ -1821,11 +1827,42 @@ func (s *session) appendReplayOutputLocked(chunk []byte) {
 	s.alternateScreenTail = trailingBytes(scan, maxAlternateScreenSequenceLen-1)
 }
 
+func (s *session) updateTerminalSequenceTailLocked(chunk []byte) {
+	scan := append(slices.Clone(s.terminalSequenceTail), chunk...)
+	tailLen := trailingIncompleteTerminalDataLen(scan)
+	if tailLen == 0 || tailLen > maxSessionOutputReplay {
+		s.terminalSequenceTail = nil
+		return
+	}
+	s.terminalSequenceTail = slices.Clone(scan[len(scan)-tailLen:])
+}
+
 func (s *session) appendOutputBufferLocked(chunk []byte) {
 	s.outputBuffer = append(s.outputBuffer, chunk...)
 	if extra := len(s.outputBuffer) - maxSessionOutputReplay; extra > 0 {
-		s.outputBuffer = slices.Clone(s.outputBuffer[extra:])
+		start := replaySuffixStart(s.outputBuffer, extra)
+		s.outputBuffer = slices.Clone(s.outputBuffer[start:])
 	}
+}
+
+// replaySuffixStart advances a size-based cutoff only when it demonstrably
+// splits a valid UTF-8 rune. Invalid continuation bytes are preserved because
+// terminals may use them as raw C1 controls.
+func replaySuffixStart(data []byte, start int) int {
+	if start <= 0 || start >= len(data) || utf8.RuneStart(data[start]) {
+		return start
+	}
+	for candidate := start - 1; candidate >= max(0, start-utf8.UTFMax+1); candidate-- {
+		if !utf8.RuneStart(data[candidate]) {
+			continue
+		}
+		_, size := utf8.DecodeRune(data[candidate:])
+		if size > 1 && candidate+size > start {
+			return candidate + size
+		}
+		return start
+	}
+	return start
 }
 
 func alternateScreenEvents(data []byte) []alternateScreenEvent {
@@ -1874,8 +1911,25 @@ func (s *session) subscribe() (<-chan []byte, func()) {
 
 	s.mu.Lock()
 	info := s.info
-	if len(s.outputBuffer) > 0 && !s.alternateScreenActive {
-		replay := slices.Clone(s.outputBuffer)
+	replay := make([]byte, 0)
+	if !s.alternateScreenActive {
+		replay = append(replay, s.outputBuffer...)
+	}
+	var replayModes terminalInputModeState
+	replayModes.observe(replay)
+	if pendingLen := trailingIncompleteTerminalDataLen(replay); pendingLen > 0 {
+		stableLen := len(replay) - pendingLen
+		pending := slices.Clone(replay[stableLen:])
+		replay = slices.Clone(replay[:stableLen])
+		replay = s.inputModes.appendTransitions(replay, replayModes)
+		replay = append(replay, pending...)
+	} else {
+		replay = s.inputModes.appendTransitions(replay, replayModes)
+	}
+	if s.alternateScreenActive {
+		replay = append(replay, s.terminalSequenceTail...)
+	}
+	if len(replay) > 0 {
 		ch <- replay
 		slog.Debug(
 			"runtime terminal replay queued",

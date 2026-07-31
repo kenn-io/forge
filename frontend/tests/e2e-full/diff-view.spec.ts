@@ -2930,7 +2930,7 @@ test.describe("diff view", () => {
     await expect.poll(() => renderedDiffFilePaths(page)).toEqual(expectedFileOrder);
   });
 
-  test("stale diff warning stays clear of file controls without shifting diff content", async ({ page }) => {
+  test("stale diff warning occupies space only while visible", async ({ page }) => {
     let fixture = staleDiff;
     await mockDiffApi(page, () => fixture);
     await navigateToDiff(page);
@@ -2957,13 +2957,14 @@ test.describe("diff view", () => {
     fixture = smallDiff;
     await openDiffFilterMenu(page);
     await page.getByRole("switch", { name: "Hide whitespace changes" }).click();
-    await expect(banner).not.toBeVisible();
-    await expect(banner).toHaveAttribute("aria-hidden", "true");
+    await expect(banner).toHaveCount(0);
 
-    expect(await diffBody.boundingBox()).toEqual(staleBounds);
+    const freshBounds = await diffBody.boundingBox();
+    expect(freshBounds).not.toBeNull();
+    expect(freshBounds!.y).toBeLessThan(staleBounds!.y);
   });
 
-  test("stale diff warning does not shift content when the initial diff loads", async ({ page }) => {
+  test("stale diff warning enters the layout when the initial stale diff loads", async ({ page }) => {
     let releaseDiffResponse: () => void = () => {};
     const diffResponseReleased = new Promise<void>((resolve) => {
       releaseDiffResponse = resolve;
@@ -2987,7 +2988,9 @@ test.describe("diff view", () => {
     releaseDiffResponse();
     await waitForDiffLoaded(page);
     await expect(page.locator(".stale-banner")).toBeVisible();
-    expect(await diffBody.boundingBox()).toEqual(loadingBounds);
+    const staleBounds = await diffBody.boundingBox();
+    expect(staleBounds).not.toBeNull();
+    expect(staleBounds!.y).toBeGreaterThan(loadingBounds!.y);
   });
 
   test("error state shown when diff API fails", async ({ page }) => {
@@ -4054,8 +4057,7 @@ test.describe("diff view (git-backed)", () => {
     await page.locator(".diff-file").first().waitFor({ state: "visible", timeout: 10_000 });
 
     const banner = page.locator(".stale-banner");
-    await expect(banner).not.toBeVisible();
-    await expect(banner).toHaveAttribute("aria-hidden", "true");
+    await expect(banner).toHaveCount(0);
   });
 
   test("real diff loads and renders all changed files", async ({ page }) => {

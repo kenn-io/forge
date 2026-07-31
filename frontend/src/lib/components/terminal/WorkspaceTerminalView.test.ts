@@ -1206,7 +1206,7 @@ describe("WorkspaceTerminalView", () => {
     await waitFor(() => expect(loadWorkspaceDiff.mock.calls.length).toBeGreaterThan(beforeChange));
     expect(loadWorkspaceDiff).toHaveBeenLastCalledWith(
       "ws-1",
-      "merge-target",
+      "head",
       false,
       expect.objectContaining({ workspaceHostKey: "member", preserveVisible: true }),
     );
@@ -1257,7 +1257,7 @@ describe("WorkspaceTerminalView", () => {
     await waitFor(() => {
       expect(loadWorkspaceDiff).toHaveBeenLastCalledWith(
         "ws-1",
-        "merge-target",
+        "head",
         false,
         expect.objectContaining({ workspaceHostKey: "member", preserveVisible: true }),
       );
@@ -1309,9 +1309,7 @@ describe("WorkspaceTerminalView", () => {
       props: { workspaceId: "ws-1" },
       context: new Map([[STORES_KEY, { diff: mocks.diffStore }]]),
     });
-    await waitFor(() =>
-      expect(loadWorkspaceDiff).toHaveBeenCalledWith("ws-1", "merge-target", false, expect.anything()),
-    );
+    await waitFor(() => expect(loadWorkspaceDiff).toHaveBeenCalledWith("ws-1", "head", false, expect.anything()));
 
     await rerender({ workspaceId: "ws-2" });
 
@@ -1336,9 +1334,7 @@ describe("WorkspaceTerminalView", () => {
     expect(loadWorkspaceDiff).toHaveBeenCalledTimes(1);
 
     runtimeBGate.resolve(runtimeWithStaleSession());
-    await waitFor(() =>
-      expect(loadWorkspaceDiff).toHaveBeenCalledWith("ws-2", "merge-target", false, expect.anything()),
-    );
+    await waitFor(() => expect(loadWorkspaceDiff).toHaveBeenCalledWith("ws-2", "head", false, expect.anything()));
     expect(screen.queryByText("Loading workspace details...")).toBeNull();
   });
 
@@ -1374,9 +1370,7 @@ describe("WorkspaceTerminalView", () => {
     });
 
     expect(await screen.findByText("runtime unavailable")).toBeTruthy();
-    await waitFor(() =>
-      expect(loadWorkspaceDiff).toHaveBeenCalledWith("ws-1", "merge-target", false, expect.anything()),
-    );
+    await waitFor(() => expect(loadWorkspaceDiff).toHaveBeenCalledWith("ws-1", "head", false, expect.anything()));
     expect(screen.queryByText("Loading workspace details...")).toBeNull();
   });
 

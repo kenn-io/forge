@@ -18,6 +18,8 @@ Use this document as the intent-level guide for frontend UI work in `middleman`.
 - PR detail background refresh has one progress surface: the metadata-row
   `Syncing` indicator; do not add a second stale-data banner or spinner
   (`packages/ui/src/components/detail/PullDetail.svelte`).
+- Inline conditional notices occupy layout only while active; do not reserve
+  invisible rows for them (`packages/ui/src/components/diff/DiffView.svelte`).
 
 ## Sources of truth
 

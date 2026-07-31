@@ -82,7 +82,7 @@ describe("WorkspaceRightSidebar", () => {
     vi.restoreAllMocks();
   });
 
-  it("opens pull request diffs against the merge target and preserves the selected commit across refreshes", async () => {
+  it("preserves the workspace diff base and selected commit across refreshes", async () => {
     const calls: string[] = [];
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -128,6 +128,11 @@ describe("WorkspaceRightSidebar", () => {
 
     const { rerender } = renderSidebar();
 
+    await waitFor(() => {
+      expect(calls.some((url) => url.endsWith("/api/v1/workspaces/ws-1/diff?base=head"))).toBe(true);
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Compare with merge target" }));
     await waitFor(() => {
       expect(calls.some((url) => url.endsWith("/api/v1/workspaces/ws-1/diff?base=merge-target"))).toBe(true);
     });
@@ -193,6 +198,30 @@ describe("WorkspaceRightSidebar", () => {
     expect(screen.getByRole("button", { name: "Compare with merge target" }).hasAttribute("disabled")).toBe(true);
     expect(screen.getByRole("button", { name: /Select commit range/ }).hasAttribute("disabled")).toBe(true);
     expect(screen.getByRole("button", { name: "More diff filters" }).hasAttribute("disabled")).toBe(true);
+  });
+
+  it("does not reserve an empty stale-warning row in workspace diffs", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+
+      if (url.includes("/api/roborev/api/repos")) {
+        return Response.json({ repos: [] });
+      }
+      if (url.includes("/api/v1/workspaces/ws-1/files")) {
+        return Response.json({ stale: false, whitespace_only_count: 0, files: [] });
+      }
+      if (url.includes("/api/v1/workspaces/ws-1/diff")) {
+        return Response.json({ stale: false, whitespace_only_count: 0, files: [] });
+      }
+      return Response.json({}, { status: 404 });
+    });
+
+    renderSidebar();
+
+    await waitFor(() => expect(screen.getByText("No changed files match this category.")).toBeTruthy());
+    expect(
+      screen.queryByText("Diff may be outdated -- showing changes as of an earlier version of this PR."),
+    ).toBeNull();
   });
 
   it("omits merge target diffs for kata workspaces without an associated PR", async () => {

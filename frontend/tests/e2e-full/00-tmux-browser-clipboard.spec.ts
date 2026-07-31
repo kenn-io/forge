@@ -1,4 +1,6 @@
 import { execFileSync } from "node:child_process";
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import {
   expect,
   request as playwrightRequest,
@@ -12,6 +14,7 @@ import { startIsolatedWorkspaceE2EServer, type IsolatedE2EServer } from "./suppo
 type WorkspaceStatusResponse = {
   id: string;
   status: string;
+  worktree_path: string;
   error_message?: string | null;
 };
 
@@ -53,6 +56,16 @@ async function createIssueWorkspace(api: APIRequestContext, issueNumber: number)
   return waitForWorkspaceReady(api, workspace.id);
 }
 
+async function launchDockedShell(api: APIRequestContext, workspaceId: string): Promise<void> {
+  const response = await api.post(`/api/v1/workspaces/${workspaceId}/runtime/sessions`, {
+    data: {
+      target_key: "plain_shell",
+      display_region: "terminal",
+    },
+  });
+  expect(response.status(), await response.text()).toBe(200);
+}
+
 async function openTerminalPanel(page: Page): Promise<Locator> {
   await page.getByRole("button", { name: "Open terminal panel" }).click();
   const container = page.locator(".terminal-panel.open .terminal-container");
@@ -62,14 +75,20 @@ async function openTerminalPanel(page: Page): Promise<Locator> {
 }
 
 async function selectTopBarTab(page: Page, label: string): Promise<void> {
-  await page.locator(".kit-top-bar__tabs .kit-top-bar__tab", { hasText: label }).click();
+  const tab = page.locator(".kit-top-bar__tabs .kit-top-bar__tab", { hasText: label });
+  if (await tab.isVisible()) {
+    await tab.click();
+    return;
+  }
+  await page.locator(".kit-top-bar__nav-select .kit-select-dropdown__trigger").click();
+  await page.getByRole("option", { name: label, exact: true }).click();
 }
 
 async function selectIssueByTitle(page: Page, title: string): Promise<void> {
   await selectTopBarTab(page, "Issues");
   const issue = page.locator(".issue-item").filter({ hasText: title }).first();
   await issue.click();
-  await issue.click();
+  await expect(page.locator(".issue-detail")).toBeVisible();
 }
 
 function observeTerminalOutput(page: Page): {
@@ -177,6 +196,18 @@ async function emitApplicationOsc52(
   await page.keyboard.type(`printf '${shellOctal(`\x1b]52;c;${payload}\x07${marker}\n`)}'`);
   await page.keyboard.press("Enter");
   await expect.poll(() => output.includes(marker), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS }).toBe(true);
+}
+
+async function scheduleApplicationOsc52(page: Page, container: Locator): Promise<string> {
+  const marker = "late parked osc52 complete";
+  const value = "late parked terminal write";
+  const payload = Buffer.from(value).toString("base64");
+  await container.click({ position: { x: 10, y: 10 } });
+  await page.keyboard.type(
+    `while [ ! -f .clipboard-osc52-gate ]; do sleep 0.05; done; printf '${shellOctal(`\x1b]52;c;${payload}\x07${marker}\n`)}'`,
+  );
+  await page.keyboard.press("Enter");
+  return marker;
 }
 
 async function runAttachedTmuxCommand(page: Page, command: string): Promise<void> {
@@ -459,6 +490,65 @@ test("tmux blocks application OSC 52 while keyboard copy reaches the clipboard",
       await copyMarkerWithTmuxKeys(page, tabTerminal, output, keyboardMarker);
       await expect.poll(() => readBrowserClipboard(page), { timeout: 15_000 }).toBe(keyboardMarker);
     }
+  } finally {
+    await api?.dispose();
+    await isolatedServer?.stop();
+  }
+});
+
+test("a parked pooled terminal cannot overwrite a newer detail clipboard copy", async ({ page, browserName }) => {
+  test.skip(browserName !== "chromium", "Clipboard ordering assertions require Chromium permissions");
+  test.skip(!hasCommand("git") || !hasCommand("tmux", ["-V"]), "git and tmux are required for the real workspace flow");
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+
+  let isolatedServer: IsolatedE2EServer | null = null;
+  let api: APIRequestContext | null = null;
+  try {
+    isolatedServer = await startIsolatedWorkspaceE2EServer();
+    api = await playwrightRequest.newContext({
+      baseURL: isolatedServer.info.base_url,
+    });
+    const workspace = await createIssueWorkspace(api, 10);
+    await launchDockedShell(api, workspace.id);
+    await launchDockedShell(api, workspace.id);
+    const output = observeTerminalOutput(page);
+
+    await page.setViewportSize({ width: 1800, height: 900 });
+    await page.goto(`${isolatedServer.info.base_url}/issues/github/acme/widgets/10`);
+    await expect(page.locator(".detail-pane-workspace-slot .workspace-host-wrapper")).toBeVisible();
+    await openTerminalPanel(page);
+    const chosenLeaf = page
+      .locator('.terminal-panel.open .terminal-leaf:has(button[aria-label$=" to a pane"])')
+      .first();
+    const dockedTerminal = chosenLeaf.locator(".terminal-container");
+    await expect(dockedTerminal).toBeVisible();
+    const promote = chosenLeaf.getByRole("button", { name: /^Move .+ to a pane$/ });
+    await expect(promote).toBeVisible();
+    await dockedTerminal.evaluate((element) => element.setAttribute("data-clipboard-park-witness", "live-terminal"));
+    await promote.click();
+
+    const terminal = page.locator('.session-terminal-slot [data-clipboard-park-witness="live-terminal"]');
+    await expect(terminal).toBeVisible();
+
+    const lateWriteMarker = await scheduleApplicationOsc52(page, terminal);
+    await expect.poll(() => output.activeSocketCount()).toBeGreaterThan(0);
+    const activeSocketsBeforePark = output.activeSocketCount();
+    const promotedLeaf = page.locator(".tabbed-panel-leaf").filter({ has: terminal });
+    await promotedLeaf
+      .locator('[data-testid^="pane-hide-session:"]')
+      .evaluate((element) => (element as HTMLElement).click());
+    await expect(page.locator('.session-pool-parking [data-clipboard-park-witness="live-terminal"]')).toHaveCount(1);
+    await expect.poll(() => output.activeSocketCount()).toBe(activeSocketsBeforePark);
+
+    const copyButton = page.getByRole("button", { name: "Copy issue #10 link" });
+    await copyButton.click();
+    await expect(copyButton).toHaveAttribute("title", "Copied!");
+    await expect.poll(() => readBrowserClipboard(page)).toBe("https://github.com/acme/widgets/issues/10");
+
+    await writeFile(join(workspace.worktree_path, ".clipboard-osc52-gate"), "go", { mode: 0o600 });
+    await expect.poll(() => output.includes(lateWriteMarker), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS }).toBe(true);
+    await page.waitForTimeout(250);
+    expect(await readBrowserClipboard(page)).toBe("https://github.com/acme/widgets/issues/10");
   } finally {
     await api?.dispose();
     await isolatedServer?.stop();

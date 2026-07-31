@@ -39,6 +39,7 @@ const uiStoreDetailActivityView = path.resolve(
   "../packages/ui/src/stores/detail-activity-view.svelte.ts",
 );
 const uiStoreSettings = path.resolve(process.cwd(), "../packages/ui/src/stores/settings.svelte.ts");
+const uiModalStack = path.resolve(process.cwd(), "../packages/ui/src/stores/keyboard/modal-stack.svelte.ts");
 
 function devApiUrlPlugin(url: string): Plugin {
   return {
@@ -315,6 +316,10 @@ const config = {
       {
         find: /^@kenn-forge\/ui\/stores\/settings$/,
         replacement: uiStoreSettings,
+      },
+      {
+        find: /^@kenn-forge\/ui\/stores\/keyboard\/modal-stack$/,
+        replacement: uiModalStack,
       },
     ],
   },

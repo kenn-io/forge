@@ -228,6 +228,11 @@
     }
   }
 
+  $effect(() => {
+    if (active && !disabled) return;
+    cancelTerminalClipboardAuthorization();
+  });
+
   function handleTerminalKeyDown(event: KeyboardEvent): void {
     if (disposed || disabled || event.isComposing || !event.isTrusted) return;
     clipboardWriter.authorizeKeyboardGesture();

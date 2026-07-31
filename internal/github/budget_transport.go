@@ -215,9 +215,16 @@ func WithEssentialSyncBudget(ctx context.Context) context.Context {
 	return context.WithValue(ctx, essentialSyncBudgetKey{}, true)
 }
 
+// WithoutEssentialSyncBudget demotes a context back to optional spend. List
+// implementations use it for per-item enrichment lookups nested inside an
+// essential list fetch, so enrichment cannot drain the discovery reserve.
+func WithoutEssentialSyncBudget(ctx context.Context) context.Context {
+	return context.WithValue(ctx, essentialSyncBudgetKey{}, false)
+}
+
 func IsEssentialSyncBudgetContext(ctx context.Context) bool {
-	_, ok := ctx.Value(essentialSyncBudgetKey{}).(bool)
-	return ok
+	essential, ok := ctx.Value(essentialSyncBudgetKey{}).(bool)
+	return ok && essential
 }
 
 func WithArchiveSyncBudget(ctx context.Context) context.Context {

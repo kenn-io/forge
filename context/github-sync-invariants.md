@@ -376,7 +376,10 @@ response never overwrites an App installation pool
 - List discovery (open PR/issue lists, repo identity resolve) spends the local
   ceiling's essential reserve; optional spend (details, fast-sync, archive)
   stops at limit minus reserve so it can never starve discovery
-  (`internal/github/budget.go::TrySpendEssential`).
+  (`internal/github/budget.go::TrySpendEssential`). Per-item enrichment nested
+  inside an essential list fetch is demoted back to optional and degrades on
+  refusal instead of failing the list
+  (`internal/github/budget_transport.go::WithoutEssentialSyncBudget`).
 - A list fetch refused by the local ceiling must not evict list ETags: nothing
   reached the wire, so eviction would only turn recovery cycles into
   unconditional refetches that deepen the exhaustion

@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -155,6 +156,61 @@ func TestClientListOpenMergeRequestsPopulatesForkHeadRepoCloneURL(t *testing.T) 
 		"/api/v4/projects/42/merge_requests",
 		"/api/v4/projects/77",
 	}, paths)
+}
+
+// TestClientListOpenMergeRequestsEnrichmentStaysOptional verifies that the
+// per-MR source-project clone URL lookups inside the open-MR list run on the
+// optional budget, not the essential reserve, and that a budget-refused
+// lookup degrades to an unknown head repo instead of discarding the fetched
+// list. Otherwise a repository with many uncached fork MRs could drain the
+// discovery reserve on enrichment or lose the whole list to one refusal.
+func TestClientListOpenMergeRequestsEnrichmentStaysOptional(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	var forkLookups atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.EscapedPath() {
+		case "/api/v4/projects/42/merge_requests":
+			writeJSON(w, `[
+				{"id": 1001, "iid": 7, "project_id": 42, "source_project_id": 77, "target_project_id": 42, "source_branch": "feature/auth", "target_branch": "main", "title": "Fork MR", "state": "opened"}
+			]`)
+		case "/api/v4/projects/77":
+			forkLookups.Add(1)
+			writeJSON(w, `{
+				"id": 77,
+				"path": "project",
+				"path_with_namespace": "fork/project",
+				"http_url_to_repo": "https://gitlab.example.com/fork/project.git"
+			}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	// Reserve of 3: enough that a wrongly-essential enrichment lookup would
+	// succeed on the reserve; the optional ceiling is fully spent.
+	budget := ghsync.NewSyncBudgetWithEssentialReserve(30)
+	budget.Spend(27)
+	client := newTestClient(t, server.URL, WithSyncBudget(budget))
+	ref := platform.RepoRef{
+		Platform:   platform.KindGitLab,
+		Host:       "gitlab.example.com",
+		RepoPath:   "group/project",
+		PlatformID: 42,
+		CloneURL:   "https://gitlab.example.com/group/project.git",
+	}
+
+	ctx := ghsync.WithEssentialSyncBudget(ghsync.WithSyncBudget(context.Background()))
+	mrs, err := client.ListOpenMergeRequests(ctx, ref)
+	require.NoError(err,
+		"a budget-refused enrichment must not discard the fetched list")
+	require.Len(mrs, 1)
+	assert.True(mrs[0].HeadRepoCloneURLUnknown,
+		"refused enrichment must degrade to an unknown head repo")
+	assert.Empty(mrs[0].HeadRepoCloneURL)
+	assert.Zero(forkLookups.Load(),
+		"enrichment must not spend the essential reserve")
 }
 
 func TestClientListOpenMergeRequestsContinuesWhenForkHeadRepoLookupFails(t *testing.T) {

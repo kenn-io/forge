@@ -204,13 +204,27 @@
     mouseDragAutoscroll.endPointerGesture();
   }
 
-  function handleWindowBlur(): void {
+  function cancelTerminalClipboardAuthorization(): void {
     cancelTerminalPointerGesture();
+    clipboardWriter.cancelAuthorization();
+  }
+
+  function handleTerminalFocusOut(event: FocusEvent): void {
+    // Pointer capture owns an active drag even when focus moves outside the
+    // terminal bounds. Its release/grace path revokes the authorization.
+    if (activePointerId !== null) return;
+    const nextTarget = event.relatedTarget;
+    if (nextTarget instanceof Node && containerEl.contains(nextTarget)) return;
+    cancelTerminalClipboardAuthorization();
+  }
+
+  function handleWindowBlur(): void {
+    cancelTerminalClipboardAuthorization();
   }
 
   function handleDocumentVisibilityChange(): void {
     if (document.visibilityState !== "visible") {
-      cancelTerminalPointerGesture();
+      cancelTerminalClipboardAuthorization();
     }
   }
 
@@ -910,6 +924,7 @@
   onpointerdowncapture={handleTerminalPointerDown}
   onlostpointercapture={handleTerminalLostPointerCapture}
   onkeydowncapture={handleTerminalKeyDown}
+  onfocusout={handleTerminalFocusOut}
 ></div>
 
 <style>

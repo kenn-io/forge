@@ -12,6 +12,7 @@ export interface TerminalClipboardPort {
 
 export interface TerminalClipboardWriter {
   beginPointerGesture(): void;
+  cancelAuthorization(): void;
   cancelPointerGesture(): void;
   endPointerGesture(): void;
   authorizeKeyboardGesture(): void;
@@ -152,6 +153,12 @@ export function createTerminalClipboardWriter(port: TerminalClipboardPort): Term
       arm();
       pointerAuthorizationPending = pending !== null;
       pointerGestureTimer = setTimeout(cancelPointerGesture, POINTER_GESTURE_WATCHDOG_MS);
+    },
+    cancelAuthorization() {
+      clearPointerGestureTimer();
+      pointerGestureActive = false;
+      pointerGestureAuthorizationConsumed = false;
+      expirePending();
     },
     cancelPointerGesture,
     endPointerGesture() {

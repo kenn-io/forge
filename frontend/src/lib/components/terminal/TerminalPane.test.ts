@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 
 const {
   clipboardWriteText,
+  clipboardWriterCancelAuthorization,
   clipboardWriterCancelPointerGesture,
   clipboardWriterDispose,
   clipboardWriterWrite,
@@ -22,6 +23,7 @@ const {
   xtermOpen,
 } = vi.hoisted(() => ({
   clipboardWriteText: vi.fn(),
+  clipboardWriterCancelAuthorization: vi.fn(),
   clipboardWriterCancelPointerGesture: vi.fn(),
   clipboardWriterDispose: vi.fn(),
   clipboardWriterWrite: vi.fn(),
@@ -129,6 +131,7 @@ vi.mock("./terminalClipboardWriter.js", () => ({
   createBrowserTerminalClipboardPort: vi.fn(() => ({})),
   createTerminalClipboardWriter: vi.fn(() => ({
     beginPointerGesture: vi.fn(),
+    cancelAuthorization: clipboardWriterCancelAuthorization,
     cancelPointerGesture: clipboardWriterCancelPointerGesture,
     endPointerGesture: vi.fn(),
     authorizeKeyboardGesture: vi.fn(),
@@ -227,6 +230,7 @@ describe("TerminalPane", () => {
     fitDimensions = { cols: 80, rows: 24 };
     ligaturesAddonCtor.mockReset();
     clipboardWriteText.mockReset();
+    clipboardWriterCancelAuthorization.mockReset();
     clipboardWriterCancelPointerGesture.mockReset();
     clipboardWriterDispose.mockReset();
     clipboardWriterWrite.mockReset().mockResolvedValue("unauthorized");
@@ -859,6 +863,18 @@ describe("TerminalPane", () => {
 
     expect(clipboardWriterCancelPointerGesture).toHaveBeenCalledTimes(1);
     visibilityState.mockRestore();
+  });
+
+  it("revokes pending terminal clipboard writes when focus leaves the terminal", async () => {
+    const { container } = render(TerminalPane, { props: { workspaceId: "ws-123" } });
+    await waitFor(() => expect(xtermTerminalCtor).toHaveBeenCalled());
+    const terminalContainer = container.querySelector<HTMLElement>(".terminal-container");
+    const outsideButton = document.createElement("button");
+    container.append(outsideButton);
+
+    terminalContainer!.dispatchEvent(new FocusEvent("focusout", { bubbles: true, relatedTarget: outsideButton }));
+
+    expect(clipboardWriterCancelAuthorization).toHaveBeenCalledTimes(1);
   });
 
   it("does not attach xterm sessions with unavailable initial status", async () => {

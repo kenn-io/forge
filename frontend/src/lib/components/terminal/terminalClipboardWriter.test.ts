@@ -198,6 +198,19 @@ describe("terminal clipboard writer", () => {
     expect(writeLocalText).not.toHaveBeenCalled();
   });
 
+  it("revokes keyboard authorization when terminal focus is lost", async () => {
+    const { port, deferredWrites, writeLocalText, writeText } = createPort();
+    const writer = createTerminalClipboardWriter(port);
+
+    writer.authorizeKeyboardGesture();
+    writer.cancelAuthorization();
+
+    await expect(writer.write("late terminal write")).resolves.toBe("unauthorized");
+    await expect(deferredWrites[0]).rejects.toMatchObject({ name: "AbortError" });
+    expect(writeText).not.toHaveBeenCalled();
+    expect(writeLocalText).not.toHaveBeenCalled();
+  });
+
   it("does not shorten keyboard authorization for an unrelated pointer release", async () => {
     vi.useFakeTimers();
     const { port, deferredWrites, writeLocalText, writeText } = createPort();

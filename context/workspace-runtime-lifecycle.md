@@ -110,9 +110,9 @@ stale tabs.
 - Keep OSC 52 validation synchronous and ahead of gesture consumption; replacing it with `@xterm/addon-clipboard`
   would require custom prefilters, nonblocking write separation, and handler-order coupling to preserve current
   rejection, parser-progress, and read-denial guarantees.
-- Pointer clipboard authority and keyboard authority created during it must remain timed and revocable through release
-  grace on capture, focus, or visibility loss; a watchdog bounds missing releases
-  (`frontend/src/lib/components/terminal/terminalClipboardWriter.ts::createTerminalClipboardWriter`).
+- Terminal keyboard clipboard authority is revoked when focus leaves the terminal; captured pointer drags retain authority
+  through release grace, while window focus or visibility loss revokes both and a watchdog bounds missing releases
+  (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::handleTerminalFocusOut`).
 - Host clipboard writes require a local browser; trusted loopback proxies must report exactly one client IP assigned
   to the host, because the proxy's loopback `RemoteAddr` alone does not establish browser locality
   (`internal/server/terminal_clipboard_access.go::isLocalTerminalClipboardRequest`).

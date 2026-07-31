@@ -112,6 +112,71 @@ func TestForwardAvailableRuntimeOutputBoundsBlockedWrite(t *testing.T) {
 	require.ErrorIs(err, context.DeadlineExceeded)
 }
 
+func TestServeRuntimeTerminalTranslatesReplayBoundary(t *testing.T) {
+	require := require.New(t)
+	output := make(chan []byte, 1)
+	output <- nil
+	attachment := localruntime.NewAttachmentForTesting(
+		localruntime.AttachmentForTestingOptions{
+			Output: output,
+			Done:   make(chan struct{}),
+		},
+	)
+	wsURL, _ := runtimeTerminalTestServer(t, attachment)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	require.NoError(err)
+	defer conn.Close(websocket.StatusNormalClosure, "done")
+
+	typ, data, err := conn.Read(ctx)
+	require.NoError(err)
+	require.Equal(websocket.MessageText, typ)
+	var msg struct {
+		Type string `json:"type"`
+	}
+	require.NoError(json.Unmarshal(data, &msg))
+	require.Equal("replay_ready", msg.Type)
+}
+
+func TestServeRuntimeTerminalReplayBoundaryDefersInitialResize(t *testing.T) {
+	require := require.New(t)
+	output := make(chan []byte, 1)
+	output <- nil
+	resizeCalled := make(chan struct{}, 1)
+	attachment := localruntime.NewAttachmentForTesting(
+		localruntime.AttachmentForTestingOptions{
+			Output: output,
+			Done:   make(chan struct{}),
+			Resize: func(_, _ int) error {
+				resizeCalled <- struct{}{}
+				return nil
+			},
+		},
+	)
+	wsURL, _ := runtimeTerminalTestServer(t, attachment)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	conn, _, err := websocket.Dial(
+		ctx,
+		wsURL+"?cols=177&rows=41&replay_boundary=1",
+		nil,
+	)
+	require.NoError(err)
+	defer conn.Close(websocket.StatusNormalClosure, "done")
+
+	typ, _, err := conn.Read(ctx)
+	require.NoError(err)
+	require.Equal(websocket.MessageText, typ)
+	select {
+	case <-resizeCalled:
+		require.Fail("initial resize ran before the replay boundary")
+	default:
+	}
+}
+
 func TestServeRuntimeTerminalClosedOutputStillReportsSessionExit(t *testing.T) {
 	require := require.New(t)
 	output := make(chan []byte)

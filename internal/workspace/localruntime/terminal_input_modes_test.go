@@ -160,6 +160,26 @@ func TestTerminalInputModeStateObserve(t *testing.T) {
 			want:          "",
 		},
 		{
+			name:          "discarded BOM preserves CSI candidate",
+			currentChunks: []string{"\x1b[?2004", "\xef", "\xbb", "\xbf", "h"},
+			want:          "\x1b[?2004h",
+		},
+		{
+			name:          "discarded overlong scalar preserves CSI candidate",
+			currentChunks: []string{"\x1b[?2004", "\xe0", "\x80", "\x80", "h"},
+			want:          "\x1b[?2004h",
+		},
+		{
+			name:          "discarded surrogate preserves CSI candidate",
+			currentChunks: []string{"\x1b[?2004", "\xed", "\xa0", "\x80", "h"},
+			want:          "\x1b[?2004h",
+		},
+		{
+			name:          "discarded out of range scalar preserves CSI candidate",
+			currentChunks: []string{"\x1b[?2004", "\xf4", "\x90", "\x80", "\x80", "h"},
+			want:          "\x1b[?2004h",
+		},
+		{
 			name:          "ignores executable controls inside CSI",
 			currentChunks: []string{"\x1b[?\x001\x7fh"},
 			want:          "\x1b[?1h",

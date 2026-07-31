@@ -2409,6 +2409,16 @@ func TestSessionSubscribePreservesSplitTerminalData(t *testing.T) {
 			continuation: "\x98\x83h",
 		},
 		{
+			name:         "discarded BOM inside CSI",
+			candidate:    "\x1b[?2004\xef\xbb\xbf",
+			continuation: "h",
+		},
+		{
+			name:         "discarded invalid scalar inside CSI",
+			candidate:    "\x1b[?2004\xed\xa0\x80",
+			continuation: "h",
+		},
+		{
 			name:         "OSC",
 			candidate:    "\x1b]0;partial title",
 			continuation: "\x07",
@@ -2467,7 +2477,7 @@ func TestSessionSubscribePreservesSplitTerminalData(t *testing.T) {
 			s.broadcast(bytes.Repeat([]byte("x"), maxSessionOutputReplay+1))
 			s.broadcast([]byte(tt.candidate))
 
-			ch, cancel := s.subscribe()
+			ch, cancel := s.subscribeWithReplayBoundary()
 			t.Cleanup(cancel)
 
 			assert := assert.New(t)
@@ -2485,7 +2495,35 @@ func TestSessionSubscribePreservesSplitTerminalData(t *testing.T) {
 			case <-time.After(100 * time.Millisecond):
 				assert.Fail("subscriber did not receive split sequence continuation")
 			}
+			select {
+			case data := <-ch:
+				assert.Nil(data)
+			case <-time.After(100 * time.Millisecond):
+				assert.Fail("subscriber did not receive replay boundary")
+			}
 		})
+	}
+}
+
+func TestSessionSubscribeReplayBoundaryReadyWithoutPendingTail(t *testing.T) {
+	s := &session{subscribers: make(map[chan []byte]struct{})}
+	s.broadcast([]byte("complete replay"))
+
+	ch, cancel := s.subscribeWithReplayBoundary()
+	t.Cleanup(cancel)
+
+	assert := assert.New(t)
+	select {
+	case data := <-ch:
+		assert.Equal("complete replay", string(data))
+	case <-time.After(100 * time.Millisecond):
+		assert.Fail("subscriber did not receive replay")
+	}
+	select {
+	case data := <-ch:
+		assert.Nil(data)
+	case <-time.After(100 * time.Millisecond):
+		assert.Fail("subscriber did not receive replay boundary")
 	}
 }
 
@@ -2574,18 +2612,32 @@ func TestSessionSubscribeIgnoresUTF8ContinuationWhileAlternateScreenActive(t *te
 }
 
 func TestSessionSubscribePreservesSplitUTF8C1WhileAlternateScreenActive(t *testing.T) {
+	assert := assert.New(t)
 	s := &session{subscribers: make(map[chan []byte]struct{})}
 	s.broadcast([]byte("\x1b[?1049h"))
 	s.broadcast([]byte("\xc2"))
 
-	ch, cancel := s.subscribe()
+	ch, cancel := s.subscribeWithReplayBoundary()
 	t.Cleanup(cancel)
 
 	select {
 	case data := <-ch:
-		assert.Equal(t, "\xc2", string(data))
+		assert.Equal("\xc2", string(data))
 	case <-time.After(100 * time.Millisecond):
-		assert.Fail(t, "subscriber did not receive split UTF-8 C1 prefix")
+		assert.Fail("subscriber did not receive split UTF-8 C1 prefix")
+	}
+	s.broadcast([]byte("\x9b?1h"))
+	select {
+	case data := <-ch:
+		assert.Equal("\x9b?1h", string(data))
+	case <-time.After(100 * time.Millisecond):
+		assert.Fail("subscriber did not receive split UTF-8 C1 continuation")
+	}
+	select {
+	case data := <-ch:
+		assert.Nil(data)
+	case <-time.After(100 * time.Millisecond):
+		assert.Fail("subscriber did not receive replay boundary")
 	}
 }
 
@@ -2611,6 +2663,16 @@ func TestSessionSubscribePreservesSplitTerminalDataWhileAlternateScreenActive(t 
 			continuation: "\x98\x83h",
 		},
 		{
+			name:         "discarded BOM inside CSI",
+			candidate:    "\x1b[?2004\xef\xbb\xbf",
+			continuation: "h",
+		},
+		{
+			name:         "discarded invalid scalar inside CSI",
+			candidate:    "\x1b[?2004\xed\xa0\x80",
+			continuation: "h",
+		},
+		{
 			name:         "OSC",
 			candidate:    "\x1b]0;partial title",
 			continuation: "\x07",
@@ -2634,7 +2696,7 @@ func TestSessionSubscribePreservesSplitTerminalDataWhileAlternateScreenActive(t 
 			s.broadcast([]byte("\x1b[?1049h"))
 			s.broadcast([]byte(tt.candidate))
 
-			ch, cancel := s.subscribe()
+			ch, cancel := s.subscribeWithReplayBoundary()
 			t.Cleanup(cancel)
 
 			assert := assert.New(t)
@@ -2651,6 +2713,12 @@ func TestSessionSubscribePreservesSplitTerminalDataWhileAlternateScreenActive(t 
 				assert.Equal(tt.continuation, string(data))
 			case <-time.After(100 * time.Millisecond):
 				assert.Fail("subscriber did not receive split sequence continuation")
+			}
+			select {
+			case data := <-ch:
+				assert.Nil(data)
+			case <-time.After(100 * time.Millisecond):
+				assert.Fail("subscriber did not receive replay boundary")
 			}
 		})
 	}

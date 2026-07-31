@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 )
 
@@ -443,6 +444,16 @@ command = ["sh", "-c", "exit 0"]
 		stored, err = database.GetWorkspace(t.Context(), created.ID)
 		return err == nil && stored != nil && stored.Status == "ready"
 	}, 10*time.Second, 25*time.Millisecond)
+	privateTmuxArgs := append(
+		append([]string{}, kataAPITestTmuxCommand[1:]...),
+		"has-session", "-t", stored.TmuxSession,
+	)
+	require.NoError(procutil.CommandContext(
+		t.Context(), kataAPITestTmuxCommand[0], privateTmuxArgs...,
+	).Run())
+	require.Error(procutil.CommandContext(
+		t.Context(), "tmux", "has-session", "-t", stored.TmuxSession,
+	).Run())
 	commonDir := strings.TrimSpace(gitOutput(t, stored.WorktreePath, "rev-parse", "--git-common-dir"))
 	if !filepath.IsAbs(commonDir) {
 		commonDir = filepath.Join(stored.WorktreePath, commonDir)

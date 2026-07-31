@@ -164,29 +164,30 @@ var (
 )
 
 type session struct {
-	mu                    sync.Mutex
-	info                  SessionInfo
-	cmd                   *exec.Cmd
-	ptmx                  *os.File
-	pty                   ptyownerruntime.PTY
-	lifecycle             sessionLifecycle
-	tmuxSession           string
-	done                  chan struct{}
-	outputDone            chan struct{}
-	subscribers           map[chan []byte]struct{}
-	outputBuffer          []byte
-	outputClosed          bool
-	alternateScreenActive bool
-	alternateScreenTail   []byte
-	terminalSequenceTail  []byte
-	inputModes            terminalInputModeState
-	lifecycleMu           sync.Mutex
-	lifecycleClosed       bool
-	stopRequested         bool
-	nextAttachmentID      uint64
-	resizeOwnerID         uint64
-	resizeOwnerPriority   ResizePriority
-	resizeAttachments     map[uint64]resizeAttachment
+	mu                        sync.Mutex
+	info                      SessionInfo
+	cmd                       *exec.Cmd
+	ptmx                      *os.File
+	pty                       ptyownerruntime.PTY
+	lifecycle                 sessionLifecycle
+	tmuxSession               string
+	done                      chan struct{}
+	outputDone                chan struct{}
+	subscribers               map[chan []byte]struct{}
+	outputBuffer              []byte
+	outputClosed              bool
+	alternateScreenActive     bool
+	alternateScreenTail       []byte
+	terminalSequenceTail      []byte
+	inputModes                terminalInputModeState
+	lifecycleMu               sync.Mutex
+	lifecycleClosed           bool
+	stopRequested             bool
+	nextAttachmentID          uint64
+	resizeOwnerID             uint64
+	resizeOwnerPriority       ResizePriority
+	resizeAttachments         map[uint64]resizeAttachment
+	replayBoundarySubscribers map[chan []byte]struct{}
 }
 
 type ResizePriority int
@@ -199,6 +200,7 @@ const (
 type AttachSessionOptions struct {
 	ResizePriority ResizePriority
 	ResizeActive   bool
+	ReplayBoundary bool
 }
 
 type resizeAttachment struct {
@@ -1775,12 +1777,29 @@ func (s *session) broadcast(data []byte) {
 
 	s.inputModes.observe(chunk)
 	s.appendReplayOutputLocked(chunk)
+	replayReady := len(s.terminalSequenceTail) == 0
 
 	for ch := range s.subscribers {
 		select {
 		case ch <- chunk:
 		default:
 			delete(s.subscribers, ch)
+			delete(s.replayBoundarySubscribers, ch)
+			close(ch)
+			continue
+		}
+		if !replayReady {
+			continue
+		}
+		if _, pending := s.replayBoundarySubscribers[ch]; !pending {
+			continue
+		}
+		select {
+		case ch <- nil:
+			delete(s.replayBoundarySubscribers, ch)
+		default:
+			delete(s.subscribers, ch)
+			delete(s.replayBoundarySubscribers, ch)
 			close(ch)
 		}
 	}
@@ -1907,6 +1926,14 @@ func trailingBytes(data []byte, maxLen int) []byte {
 }
 
 func (s *session) subscribe() (<-chan []byte, func()) {
+	return s.subscribeInternal(false)
+}
+
+func (s *session) subscribeWithReplayBoundary() (<-chan []byte, func()) {
+	return s.subscribeInternal(true)
+}
+
+func (s *session) subscribeInternal(replayBoundary bool) (<-chan []byte, func()) {
 	ch := make(chan []byte, 64)
 
 	s.mu.Lock()
@@ -1938,6 +1965,16 @@ func (s *session) subscribe() (<-chan []byte, func()) {
 			"bytes", len(replay),
 		)
 	}
+	if replayBoundary {
+		if s.outputClosed || len(s.terminalSequenceTail) == 0 {
+			ch <- nil
+		} else {
+			if s.replayBoundarySubscribers == nil {
+				s.replayBoundarySubscribers = make(map[chan []byte]struct{})
+			}
+			s.replayBoundarySubscribers[ch] = struct{}{}
+		}
+	}
 	if s.outputClosed {
 		close(ch)
 		s.mu.Unlock()
@@ -1958,6 +1995,7 @@ func (s *session) subscribe() (<-chan []byte, func()) {
 		info := s.info
 		if _, ok := s.subscribers[ch]; ok {
 			delete(s.subscribers, ch)
+			delete(s.replayBoundarySubscribers, ch)
 			close(ch)
 		}
 		subscriberCount := len(s.subscribers)
@@ -2079,6 +2117,13 @@ func (s *session) closeSubscribers() {
 	}
 	s.outputClosed = true
 	for ch := range s.subscribers {
+		if _, pending := s.replayBoundarySubscribers[ch]; pending {
+			select {
+			case ch <- nil:
+			default:
+			}
+			delete(s.replayBoundarySubscribers, ch)
+		}
 		delete(s.subscribers, ch)
 		close(ch)
 	}
@@ -2317,7 +2362,13 @@ func attachToSession(
 		return nil, fmt.Errorf("session %q is not running", key)
 	}
 
-	output, unsubscribe := s.subscribe()
+	var output <-chan []byte
+	var unsubscribe func()
+	if options.ReplayBoundary {
+		output, unsubscribe = s.subscribeWithReplayBoundary()
+	} else {
+		output, unsubscribe = s.subscribe()
+	}
 	resizeAttachmentID := s.registerResizeAttachment(
 		options.ResizePriority,
 		options.ResizeActive,

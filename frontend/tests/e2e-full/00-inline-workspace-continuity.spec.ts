@@ -295,13 +295,6 @@ async function typeIntoTerminal(page: Page, container: Locator, command: string)
   await page.keyboard.press("Enter");
 }
 
-async function runAttachedTmuxCommand(page: Page, command: string): Promise<void> {
-  await page.keyboard.press("Control+b");
-  await page.keyboard.press(":");
-  await page.keyboard.type(command);
-  await page.keyboard.press("Enter");
-}
-
 function runE2ETmuxCommand(server: IsolatedE2EServer, args: string[]): string {
   const config = loadToml(readFileSync(server.info.config_path, "utf8")) as E2ETmuxConfig;
   const [command, ...prefix] = config.tmux?.command ?? [];
@@ -1540,8 +1533,8 @@ test.describe("inline workspace pane continuity", () => {
       const initialA = await openTerminalPanel(page);
       const runtimeTmuxSessionA = await runningRuntimeTmuxSession(api, workspaceA.id);
       await initialA.click({ position: { x: 10, y: 10 } });
-      await runAttachedTmuxCommand(page, "set-option -g mouse off");
-      await runAttachedTmuxCommand(page, "set-option -g mouse on");
+      runE2ETmuxCommand(isolatedServer, ["set-option", "-g", "-t", runtimeTmuxSessionA, "mouse", "off"]);
+      runE2ETmuxCommand(isolatedServer, ["set-option", "-g", "-t", runtimeTmuxSessionA, "mouse", "on"]);
       await expect(initialA.locator(".xterm.enable-mouse-events")).toBeVisible();
 
       const replaySentinel = "mode-replay-output-complete";
@@ -1909,16 +1902,30 @@ test.describe("inline workspace pane continuity", () => {
     let helperFinishPath: string | null = null;
     try {
       await page.addInitScript(() => {
-        const log: Array<{ url: string; closed: boolean; socket: WebSocket; sent: string[] }> = [];
+        const log: Array<{
+          url: string;
+          closed: boolean;
+          replayReady: boolean;
+          socket: WebSocket;
+          sent: string[];
+        }> = [];
         (window as unknown as { __reconnectWsLog: typeof log }).__reconnectWsLog = log;
         const Native = window.WebSocket;
         class TrackedWebSocket extends Native {
           constructor(url: string | URL, protocols?: string | string[]) {
             super(url, protocols);
-            const entry = { url: String(url), closed: false, socket: this, sent: [] };
+            const entry = { url: String(url), closed: false, replayReady: false, socket: this, sent: [] };
             log.push(entry);
             this.addEventListener("close", () => {
               entry.closed = true;
+            });
+            this.addEventListener("message", (event) => {
+              if (typeof event.data !== "string") return;
+              try {
+                entry.replayReady = (JSON.parse(event.data) as { type?: string }).type === "replay_ready";
+              } catch {
+                // Non-JSON text frame; the renderer ignores it too.
+              }
             });
           }
 
@@ -1952,12 +1959,17 @@ test.describe("inline workspace pane continuity", () => {
           const log =
             (
               window as unknown as {
-                __reconnectWsLog?: Array<{ url: string; closed: boolean; sent: string[] }>;
+                __reconnectWsLog?: Array<{
+                  url: string;
+                  closed: boolean;
+                  replayReady: boolean;
+                  sent: string[];
+                }>;
               }
             ).__reconnectWsLog ?? [];
           return log
             .filter((entry) => entry.url.includes(`/workspaces/${workspaceId}/runtime/sessions/`))
-            .map(({ url, closed, sent }) => ({ url, closed, sent }));
+            .map(({ url, closed, replayReady, sent }) => ({ url, closed, replayReady, sent }));
         }, workspace.id);
 
       await page.goto(`${isolatedServer.info.base_url}/terminal/${workspace.id}`);
@@ -2026,9 +2038,21 @@ test.describe("inline workspace pane continuity", () => {
         .toBe(true);
       const reconnectSocket = (await runtimeSockets()).at(-1);
       expect(reconnectSocket).toBeDefined();
+      expect(new URL(reconnectSocket!.url).searchParams.get("replay_boundary")).toBe("1");
       expect(new URL(reconnectSocket!.url).searchParams.has("cols")).toBe(false);
       expect(new URL(reconnectSocket!.url).searchParams.has("rows")).toBe(false);
-      expect(reconnectSocket!.sent.filter((frame) => frame.includes('"type":"refresh"'))).toEqual([]);
+      await expect.poll(async () => (await runtimeSockets()).at(-1)?.replayReady).toBe(true);
+      await expect
+        .poll(
+          async () =>
+            (await runtimeSockets()).at(-1)?.sent.filter((frame) => frame.includes('"type":"refresh"')).length,
+        )
+        .toBe(1);
+      const refresh = JSON.parse(
+        (await runtimeSockets()).at(-1)!.sent.find((frame) => frame.includes('"type":"refresh"'))!,
+      ) as TerminalControlFrame;
+      expect(refresh.cols).toBeGreaterThan(0);
+      expect(refresh.rows).toBeGreaterThan(0);
       await expect(page.locator('[data-same-renderer-reconnect="witness"]')).toBeVisible();
       await expect(container.locator(".xterm.enable-mouse-events")).toHaveCount(0);
       const normalCursorUpBefore = output.inputOccurrences(normalCursorUp);
@@ -2092,6 +2116,18 @@ test.describe("inline workspace pane continuity", () => {
             deliver(new Uint8Array([0x98, 0x83, 0x41, 0x1b, 0x5b, 0x36, 0x6e]));
           };
           this.addEventListener("message", (event) => {
+            if (typeof event.data === "string") {
+              try {
+                if ((JSON.parse(event.data) as { type?: string }).type !== "replay_ready") return;
+              } catch {
+                return;
+              }
+              if (continuationDelivered) return;
+              event.stopImmediatePropagation();
+              deliverContinuation();
+              this.onmessage?.(new MessageEvent("message", { data: event.data }));
+              return;
+            }
             if (!(event.data instanceof ArrayBuffer)) return;
             if (!replayPrefixDelivered) {
               event.stopImmediatePropagation();
@@ -2173,6 +2209,7 @@ test.describe("inline workspace pane continuity", () => {
       await expect.poll(() => output.cursorReports().length, { timeout: 15_000 }).toBeGreaterThan(cursorReportsBefore);
       const cursorColumn = /^\x1b\[\??\d+;(\d+)R$/.exec(output.cursorReports().at(-1) ?? "")?.[1];
       expect(cursorColumn).toBe("28");
+      expect(new URL(reconnectedSocket!.url).searchParams.get("replay_boundary")).toBe("1");
       expect(new URL(reconnectedSocket!.url).searchParams.has("cols")).toBe(false);
       expect(new URL(reconnectedSocket!.url).searchParams.has("rows")).toBe(false);
     } finally {

@@ -67,11 +67,11 @@ func (s *terminalInputModeState) consumeUTF8Byte(current byte) bool {
 			s.utf8Pending[s.utf8PendingLen] = current
 			s.utf8PendingLen++
 			if s.utf8PendingLen == s.utf8ExpectedLen {
-				decoded, _ := utf8.DecodeRune(s.pendingUTF8())
+				decoded, size := utf8.DecodeRune(s.pendingUTF8())
 				s.clearUTF8()
 				if decoded == '\u009b' {
 					s.observeControlByte('\x9b')
-				} else {
+				} else if !isXtermDiscardedUTF8(decoded, size) {
 					s.pending = nil
 				}
 			}
@@ -95,6 +95,10 @@ func (s *terminalInputModeState) consumeUTF8Byte(current byte) bool {
 		// bytes and invalid leading bytes before VT parsing.
 		return current >= utf8.RuneSelf
 	}
+}
+
+func isXtermDiscardedUTF8(decoded rune, size int) bool {
+	return decoded == '\ufeff' || decoded == utf8.RuneError && size == 1
 }
 
 func (s *terminalInputModeState) startUTF8(current byte, expectedLen uint8) {

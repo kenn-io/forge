@@ -67,6 +67,7 @@ func (s *Handler) handleWorkspaceRuntimeSessionTerminal(
 		localruntime.AttachSessionOptions{
 			ResizePriority: runtimeTerminalResizePriority(r),
 			ResizeActive:   parseRuntimeTerminalResizeActive(r),
+			ReplayBoundary: parseRuntimeTerminalReplayBoundary(r),
 		},
 	)
 	if err != nil {
@@ -101,6 +102,11 @@ func ParseRuntimeTerminalResizeActive(r *http.Request) bool {
 	return parseRuntimeTerminalResizeActive(r)
 }
 
+func parseRuntimeTerminalReplayBoundary(r *http.Request) bool {
+	raw := r.URL.Query().Get("replay_boundary")
+	return raw == "1" || raw == "true"
+}
+
 func (s *Handler) serveRuntimeTerminal(
 	w http.ResponseWriter,
 	r *http.Request,
@@ -124,7 +130,8 @@ func (s *Handler) serveRuntimeTerminal(
 		"session_key", info.Key,
 		"target_key", info.TargetKey,
 	)
-	if cols, rows, ok := parseRuntimeTerminalSize(r); ok {
+	if cols, rows, ok := parseRuntimeTerminalSize(r); ok &&
+		!parseRuntimeTerminalReplayBoundary(r) {
 		logWebsocketDebug(
 			"runtime terminal initial resize",
 			"workspace_id", info.WorkspaceID,
@@ -325,8 +332,13 @@ func bridgeRuntimeAttachment(
 				if !ok {
 					return
 				}
+				messageType := websocket.MessageBinary
+				if data == nil {
+					messageType = websocket.MessageText
+					data = []byte(`{"type":"replay_ready"}`)
+				}
 				if err := conn.Write(
-					ctx, websocket.MessageBinary, data,
+					ctx, messageType, data,
 				); err != nil {
 					logWebsocketDebug(
 						"runtime terminal websocket write ended",

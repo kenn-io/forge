@@ -93,10 +93,13 @@ func trailingIncompleteTerminalDataLen(data []byte) int {
 				return len(data) - start
 			}
 			decoded, size := utf8.DecodeRune(data[index:])
-			if decoded == utf8.RuneError && size == 1 {
-				// xterm discards invalid standalone bytes in binary writes;
-				// they neither start nor interrupt a VT control sequence.
+			if isXtermDiscardedUTF8(decoded, size) {
+				// Xterm's binary decoder drops invalid scalars and BOM before
+				// VT parsing, so they neither start nor interrupt a control.
 				index++
+				if size > 1 {
+					index += size - 1
+				}
 				continue
 			}
 			if decoded >= '\u0080' && decoded <= '\u009f' {

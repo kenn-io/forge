@@ -104,14 +104,18 @@ still exists.
   and ignored 1005/1015 encodings cannot re-enable modes or displace 1006/1016
   (`internal/workspace/localruntime/terminal_input_modes.go::terminalInputModeState.observe`).
 - Recognize C1 CSI only as decoded U+009B; valid non-C1 UTF-8 invalidates pending
-  controls, while standalone continuation bytes are decoder-discarded
+  controls, while invalid scalars, BOM, and standalone continuation bytes are
+  decoder-discarded without reaching the VT parser
   (`internal/workspace/localruntime/terminal_input_modes.go::terminalInputModeState.observe`).
 - Send reconnect cancellation to xterm as bytes, not text; only binary input
   clears its streaming UTF-8 decoder before replay
   (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::cancelPendingTerminalSequence`).
-- A same-renderer reconnect with unchanged geometry must omit initial size and
-  refresh controls; tmux redraw output can interrupt a retained VT/UTF-8 tail
-  (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::connect`).
+- Direct local-runtime sessions request a subscriber-only replay boundary and
+  withhold resize/refresh controls until xterm parses it; the backend queues the
+  boundary only after the retained VT/UTF-8 tail reaches ground. Fresh legacy
+  and Fleet attachments still receive dimensions on every connection
+  (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::connect`,
+  `internal/workspace/localruntime/manager.go::session.subscribeInternal`).
 - In xterm.js 6, DECSTR resets cursor keys, focus reporting, and bracketed paste,
   but leaves the mouse service's protocol and encoding unchanged
   (`internal/workspace/localruntime/terminal_input_modes.go::terminalInputModeState.softReset`).
@@ -248,9 +252,9 @@ behavior.
   runs clone/setup in a background goroutine; if the test returns first, that
   goroutine can keep writing into the test's `t.TempDir` clone path and race
   `RemoveAll` teardown, failing intermittently with "directory not empty".
-- Test fixtures must force-delete created workspaces before handler shutdown;
-  shutdown preserves durable base tmux sessions, so temp-dir cleanup alone leaks
-  sessions (`internal/server/kataapi/test_helpers_test.go::newKataTestServer`).
+- Kata API fixtures must use their package-private tmux server and force-delete
+  created workspaces; shutdown preserves durable base sessions, so temp-dir
+  cleanup alone leaks (`internal/server/kataapi/testmain_test.go::TestMain`).
 - Use tmux wrappers/fakes for missing-session and dead-server cases.
 - Add frontend or Playwright coverage when the regression is visible in tab
   selection, shell drawer state, or workspace navigation.

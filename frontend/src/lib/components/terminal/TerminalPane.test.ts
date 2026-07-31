@@ -58,6 +58,7 @@ let configuredLetterSpacing = 0;
 let configuredCursorBlink = true;
 let configuredFontLigatures = false;
 let mockSockets: MockWebSocket[] = [];
+let initialTerminalDimensions = { cols: 80, rows: 24 };
 // What the fit addon measures the region as. undefined models a container with
 // no content box (a parked terminal), for which the real addon proposes nothing.
 let fitDimensions: { cols: number; rows: number } | undefined = { cols: 80, rows: 24 };
@@ -154,8 +155,8 @@ vi.mock("@xterm/xterm", () => ({
   Terminal: vi.fn().mockImplementation(function (options) {
     xtermTerminalCtor(options);
     const terminal = {
-      cols: 80,
-      rows: 24,
+      cols: initialTerminalDimensions.cols,
+      rows: initialTerminalDimensions.rows,
       modes: { bracketedPasteMode: false },
       options: { ...options },
       clearTextureAtlas: vi.fn(),
@@ -227,6 +228,7 @@ describe("TerminalPane", () => {
     configuredLetterSpacing = 0;
     configuredCursorBlink = true;
     configuredFontLigatures = false;
+    initialTerminalDimensions = { cols: 80, rows: 24 };
     fitDimensions = { cols: 80, rows: 24 };
     ligaturesAddonCtor.mockReset();
     clipboardWriteText.mockReset();
@@ -815,8 +817,22 @@ describe("TerminalPane", () => {
     expect(mouseDragReset).toHaveBeenCalledTimes(1);
   });
 
-  it("does not redraw tmux when a same-size renderer reconnects", async () => {
-    render(TerminalPane, { props: { workspaceId: "ws-123", active: true } });
+  it.each([
+    {
+      name: "legacy workspace terminal",
+      props: { workspaceId: "ws-123", active: true },
+    },
+    {
+      name: "Fleet session",
+      props: {
+        websocketPath: "/ws/v1/fleet/hosts/peer/workspaces/ws-123/runtime/sessions/ws-123%3Ashell/terminal",
+        active: true,
+      },
+    },
+  ])("resends dimensions without a client refresh when a $name reconnects", async ({ props }) => {
+    initialTerminalDimensions = { cols: 177, rows: 41 };
+    fitDimensions = initialTerminalDimensions;
+    render(TerminalPane, { props });
 
     await waitFor(() => expect(mockSockets).toHaveLength(1));
     const firstSocket = mockSockets[0]!;
@@ -828,9 +844,45 @@ describe("TerminalPane", () => {
     expect(mockSockets).toHaveLength(2);
     const reconnectedSocket = mockSockets[1]!;
 
-    expect(reconnectedSocket.url).not.toMatch(/[?&](?:cols|rows)=/);
+    const reconnectURL = new URL(reconnectedSocket.url);
+    expect(reconnectURL.searchParams.get("cols")).toBe("177");
+    expect(reconnectURL.searchParams.get("rows")).toBe("41");
     reconnectedSocket.onopen?.();
     expect(reconnectedSocket.sent.map(String)).not.toContainEqual(expect.stringContaining('"type":"refresh"'));
+  });
+
+  it("waits for replay parsing before resizing a reconnected local runtime session", async () => {
+    initialTerminalDimensions = { cols: 177, rows: 41 };
+    fitDimensions = initialTerminalDimensions;
+    render(TerminalPane, {
+      props: {
+        websocketPath: "/ws/v1/workspaces/ws-123/runtime/sessions/ws-123%3Ashell/terminal",
+        active: true,
+      },
+    });
+
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
+    const firstSocket = mockSockets[0]!;
+    expect(new URL(firstSocket.url).searchParams.get("replay_boundary")).toBe("1");
+    expect(new URL(firstSocket.url).searchParams.has("cols")).toBe(false);
+    firstSocket.onopen?.();
+    expect(firstSocket.sent.map(String)).not.toContainEqual(expect.stringContaining('"type":"refresh"'));
+
+    firstSocket.onmessage?.(new MessageEvent("message", { data: JSON.stringify({ type: "replay_ready" }) }));
+    const firstBoundaryCallback = xtermInstances[0]!.write.mock.calls.at(-1)?.[1] as (() => void) | undefined;
+    expect(firstBoundaryCallback).toBeTypeOf("function");
+    firstBoundaryCallback?.();
+    expect(firstSocket.sent.map(String)).toContain(JSON.stringify({ type: "refresh", cols: 177, rows: 41 }));
+
+    vi.useFakeTimers();
+    firstSocket.onclose?.();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(mockSockets).toHaveLength(2);
+    const reconnectedSocket = mockSockets[1]!;
+    const reconnectURL = new URL(reconnectedSocket.url);
+    expect(reconnectURL.searchParams.get("replay_boundary")).toBe("1");
+    expect(reconnectURL.searchParams.has("cols")).toBe(false);
+    expect(reconnectURL.searchParams.has("rows")).toBe(false);
   });
 
   it("aborts a partial OSC sequence before writing output from a reconnected socket", async () => {

@@ -211,11 +211,11 @@
   }
 
   function handleTerminalFocusOut(event: FocusEvent): void {
-    // Pointer capture owns an active drag even when focus moves outside the
-    // terminal bounds. Its release/grace path revokes the authorization.
-    if (activePointerId !== null) return;
     const nextTarget = event.relatedTarget;
     if (nextTarget instanceof Node && containerEl.contains(nextTarget)) return;
+    // Pointer capture can briefly produce a focusout without a destination.
+    // A concrete external target is an actual focus transfer and must revoke.
+    if (nextTarget === null && activePointerId !== null) return;
     cancelTerminalClipboardAuthorization();
   }
 

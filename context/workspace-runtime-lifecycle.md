@@ -110,11 +110,11 @@ stale tabs.
 - Keep OSC 52 validation synchronous and ahead of gesture consumption; replacing it with `@xterm/addon-clipboard`
   would require custom prefilters, nonblocking write separation, and handler-order coupling to preserve current
   rejection, parser-progress, and read-denial guarantees.
-- Terminal clipboard authority is revoked on focus loss, pane inactivity/parking, disablement, or window focus/visibility
-  loss; revocation also stops in-flight browser-to-loopback fallback chains before their next stage
+- Terminal clipboard authority is revoked on concrete external focus transfer, pane inactivity/parking, disablement, or
+  window focus/visibility loss; revocation also stops in-flight browser-to-loopback fallback chains before their next stage
   (`frontend/src/lib/components/terminal/terminalClipboardWriter.ts::createTerminalClipboardWriter`).
-- Captured pointer drags retain authority only while the pane stays active; their watchdog also releases browser capture,
-  so a missing release cannot shield later focus loss
+- Captured pointer drags retain authority only through internal or destinationless focus movement while the pane stays
+  active; their watchdog also releases browser capture, so a missing release cannot shield later focus loss
   (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::cancelTerminalPointerGesture`).
 - Host clipboard writes require a local browser; trusted loopback proxies must report exactly one client IP assigned
   to the host, because the proxy's loopback `RemoteAddr` alone does not establish browser locality

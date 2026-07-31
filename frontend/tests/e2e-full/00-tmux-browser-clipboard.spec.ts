@@ -574,6 +574,69 @@ test("visible terminal focus loss revokes keyboard authorization after a missed 
   }
 });
 
+test("visible detail copy wins when focus leaves a pointer-captured terminal", async ({ page, browserName }) => {
+  test.skip(browserName !== "chromium", "Clipboard ordering assertions require Chromium permissions");
+  test.skip(!hasCommand("git") || !hasCommand("tmux", ["-V"]), "git and tmux are required for the real workspace flow");
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+
+  let isolatedServer: IsolatedE2EServer | null = null;
+  let api: APIRequestContext | null = null;
+  let pointerIsDown = false;
+  try {
+    isolatedServer = await startIsolatedWorkspaceE2EServer();
+    api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
+    const workspace = await createIssueWorkspace(api, 10);
+    await launchDockedShell(api, workspace.id);
+    await launchDockedShell(api, workspace.id);
+    const output = observeTerminalOutput(page);
+
+    await page.setViewportSize({ width: 1800, height: 900 });
+    await page.goto(`${isolatedServer.info.base_url}/issues/github/acme/widgets/10`);
+    await expect(page.locator(".detail-pane-workspace-slot .workspace-host-wrapper")).toBeVisible();
+    await openTerminalPanel(page);
+    const chosenLeaf = page
+      .locator('.terminal-panel.open .terminal-leaf:has(button[aria-label$=" to a pane"])')
+      .first();
+    const dockedTerminal = chosenLeaf.locator(".terminal-container");
+    await expect(dockedTerminal).toBeVisible();
+    await chosenLeaf.getByRole("button", { name: /^Move .+ to a pane$/ }).click();
+    const terminal = page.locator(".session-terminal-slot .terminal-container");
+    await expect(terminal).toBeVisible();
+
+    const lateWriteMarker = await scheduleApplicationOsc52(page, terminal);
+    const bounds = await terminal.boundingBox();
+    if (!bounds) throw new Error("promoted terminal has no pointer bounds");
+    await page.mouse.move(bounds.x + 10, bounds.y + 10);
+    await beginCapturedPointerGesture(page, terminal);
+    pointerIsDown = true;
+
+    const copyButton = page.getByRole("button", { name: "Copy issue #10 link" });
+    await copyButton.evaluate((element) => (element as HTMLElement).focus());
+    await expect.poll(() => copyButton.evaluate((element) => document.activeElement === element)).toBe(true);
+    await expect
+      .poll(() =>
+        terminal.evaluate((element) => {
+          const target = element as HTMLElement;
+          return target.hasPointerCapture(Number(target.dataset.playwrightPointerId));
+        }),
+      )
+      .toBe(false);
+    await page.keyboard.press("Enter");
+    await expect(copyButton).toHaveAttribute("title", "Copied!");
+
+    await writeFile(join(workspace.worktree_path, ".clipboard-osc52-gate"), "go", { mode: 0o600 });
+    await expect.poll(() => output.includes(lateWriteMarker), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS }).toBe(true);
+    await page.waitForTimeout(250);
+    await page.mouse.up();
+    pointerIsDown = false;
+    expect(await readBrowserClipboard(page)).toBe("https://github.com/acme/widgets/issues/10");
+  } finally {
+    if (pointerIsDown) await page.mouse.up();
+    await api?.dispose();
+    await isolatedServer?.stop();
+  }
+});
+
 test("a parked pooled terminal cannot overwrite a newer detail clipboard copy", async ({ page, browserName }) => {
   test.skip(browserName !== "chromium", "Clipboard ordering assertions require Chromium permissions");
   test.skip(!hasCommand("git") || !hasCommand("tmux", ["-V"]), "git and tmux are required for the real workspace flow");

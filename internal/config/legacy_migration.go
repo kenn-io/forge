@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 	"github.com/gofrs/flock"
@@ -16,8 +17,11 @@ const (
 	forgeDatabaseFile  = "forge.db"
 )
 
-// LoadOrCreate relocates a legacy database before creating or loading config.
+// LoadOrCreate relocates legacy config and database state before loading it.
 func LoadOrCreate(path string) (*Config, error) {
+	if err := migrateLegacyConfig(path); err != nil {
+		return nil, err
+	}
 	if err := migrateLegacyDatabase(path); err != nil {
 		return nil, err
 	}
@@ -88,10 +92,17 @@ func legacyDatabaseDirectories(configPath string) (string, string, error) {
 			return "", "", err
 		}
 		if os.Getenv("KENN_FORGE_HOME") == "" && filepath.Clean(configPath) == filepath.Clean(DefaultConfigPath()) {
-			oldDefault := filepath.Join(homeDir(), ".config", "middleman")
 			exists, err := legacyDatabaseExists(dataDir)
 			if err != nil || exists {
 				return dataDir, dataDir, err
+			}
+			oldDefault := legacyDefaultHome()
+			legacyDataDir, mapped := legacyDataDirectory(dataDir, oldDefault)
+			if mapped && filepath.Clean(legacyDataDir) != filepath.Clean(dataDir) {
+				exists, err = legacyDatabaseExists(legacyDataDir)
+				if err != nil || exists {
+					return legacyDataDir, dataDir, err
+				}
 			}
 			exists, err = legacyDatabaseExists(oldDefault)
 			if err != nil || exists {
@@ -105,7 +116,18 @@ func legacyDatabaseDirectories(configPath string) (string, string, error) {
 	if os.Getenv("KENN_FORGE_HOME") != "" || filepath.Clean(configPath) != filepath.Clean(DefaultConfigPath()) {
 		return "", "", nil
 	}
-	return filepath.Join(homeDir(), ".config", "middleman"), DefaultDataDir(), nil
+	return legacyDefaultHome(), DefaultDataDir(), nil
+}
+
+func legacyDataDirectory(dataDir, oldDefault string) (string, bool) {
+	relative, err := filepath.Rel(DefaultDataDir(), dataDir)
+	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return "", false
+	}
+	if relative == "." {
+		return oldDefault, true
+	}
+	return filepath.Join(oldDefault, relative), true
 }
 
 func legacyDatabaseExists(dataDir string) (bool, error) {

@@ -16,6 +16,10 @@ and the root event stream.
   credential (`internal/runtimelock/token.go::EnsureAuthToken`).
 - Config loading establishes the canonical `data_dir` identity used by startup
   and reload comparisons (`internal/config/config.go::load`).
+- Default-home upgrades copy the legacy config and its referenced credential
+  files before marking completion and relocating the database; explicit config
+  paths and `KENN_FORGE_HOME` never relocate config
+  (`internal/config/legacy_migration.go::migrateLegacyConfig`).
 
 ## Startup Lock
 

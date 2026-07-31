@@ -947,28 +947,7 @@ func homeDir() string {
 	return h
 }
 
-// EnsureDefault creates a default config file at path if it does not exist.
-// The file contains sensible defaults. Repos can be added later through the
-// settings UI.
-//
-// Writes to a temp file first, then hard-links into place so the target
-// path is never left empty or partially written.
-func EnsureDefault(path string) error {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return fmt.Errorf("creating config directory: %w", err)
-	}
-
-	tmp, err := os.CreateTemp(dir, ".config-*.tmp")
-	if err != nil {
-		if _, statErr := os.Stat(path); statErr == nil {
-			return nil
-		}
-		return fmt.Errorf("creating temp config: %w", err)
-	}
-	tmpPath := tmp.Name()
-	defer os.Remove(tmpPath)
-
+func defaultConfigContents() string {
 	const defaultConfig = `# kenn-forge configuration
 # See https://github.com/wesm/kenn-forge for documentation.
 
@@ -1038,7 +1017,32 @@ batch_size = 25
 [tmux]
 agent_sessions = true
 `
-	if _, err := tmp.WriteString(defaultConfig); err != nil {
+	return defaultConfig
+}
+
+// EnsureDefault creates a default config file at path if it does not exist.
+// The file contains sensible defaults. Repos can be added later through the
+// settings UI.
+//
+// Writes to a temp file first, then hard-links into place so the target
+// path is never left empty or partially written.
+func EnsureDefault(path string) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("creating config directory: %w", err)
+	}
+
+	tmp, err := os.CreateTemp(dir, ".config-*.tmp")
+	if err != nil {
+		if _, statErr := os.Stat(path); statErr == nil {
+			return nil
+		}
+		return fmt.Errorf("creating temp config: %w", err)
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+
+	if _, err := tmp.WriteString(defaultConfigContents()); err != nil {
 		tmp.Close()
 		return fmt.Errorf("writing default config: %w", err)
 	}

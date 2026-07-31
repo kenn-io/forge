@@ -2,6 +2,7 @@ package config_test
 
 import (
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -22,8 +23,16 @@ func TestLegacyDatabaseRelocationAppliesSchemaIdentityMigration(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("KENN_FORGE_HOME", "")
-	legacyPath := filepath.Join(home, ".config", "middleman", "middleman.db")
+	legacyHome := filepath.Join(home, ".config", "middleman")
+	legacyDataDir := filepath.Join(legacyHome, "state")
+	forgeDataDir := filepath.Join(home, ".kenn", "forge", "state")
+	legacyPath := filepath.Join(legacyDataDir, "middleman.db")
 	require.NoError(os.MkdirAll(filepath.Dir(legacyPath), 0o700))
+	legacyConfig := fmt.Sprintf(
+		"data_dir = %q\n[[repos]]\nowner = \"acme\"\nname = \"widget\"\n",
+		legacyDataDir,
+	)
+	require.NoError(os.WriteFile(filepath.Join(legacyHome, "config.toml"), []byte(legacyConfig), 0o600))
 
 	database := dbtest.OpenAt(t, legacyPath)
 	_, err := database.WriteDB().Exec(`
@@ -54,6 +63,12 @@ func TestLegacyDatabaseRelocationAppliesSchemaIdentityMigration(t *testing.T) {
 
 	cfg, err := config.LoadOrCreate(config.DefaultConfigPath())
 	require.NoError(err)
+	canonicalForgeDataDir, err := filepath.EvalSymlinks(forgeDataDir)
+	require.NoError(err)
+	require.Len(cfg.Repos, 1)
+	assert.Equal("acme", cfg.Repos[0].Owner)
+	assert.Equal("widget", cfg.Repos[0].Name)
+	assert.Equal(canonicalForgeDataDir, cfg.DataDir)
 	forgePath := filepath.Join(cfg.DataDir, "forge.db")
 	database = dbtest.OpenWithMigrationsAt(t, forgePath)
 

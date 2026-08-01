@@ -540,7 +540,36 @@ if (typeof window !== "undefined") {
 // history.replaceState() writes from the Activity store, popstate (browser
 // Back/Forward), and initial load — so it stays current regardless of how
 // Activity is entered or left.
-let lastActivityRoute = "/";
+const LAST_ACTIVITY_ROUTE_STORAGE_KEY = "kenn-forge:last-activity-route";
+
+function isRestorableActivityRoute(routePath: string): boolean {
+  if (!routePath.startsWith("/") || routePath.startsWith("//")) return false;
+  const pathEnd = [routePath.indexOf("?"), routePath.indexOf("#")]
+    .filter((index) => index >= 0)
+    .reduce((first, index) => Math.min(first, index), routePath.length);
+  const pathname = routePath.slice(0, pathEnd).replace(/\/+$/, "") || "/";
+  return pathname === "/" && parseRoute(routePath).page === "activity";
+}
+
+function readLastActivityRoute(): string {
+  try {
+    const storedRoute = sessionStorage.getItem(LAST_ACTIVITY_ROUTE_STORAGE_KEY);
+    return storedRoute && isRestorableActivityRoute(storedRoute) ? storedRoute : "/";
+  } catch {
+    return "/";
+  }
+}
+
+function persistLastActivityRoute(activityRoute: string): void {
+  try {
+    sessionStorage.setItem(LAST_ACTIVITY_ROUTE_STORAGE_KEY, activityRoute);
+  } catch {
+    // Storage can be blocked in private or embedded contexts. The in-memory
+    // route still preserves Activity state for ordinary navigation.
+  }
+}
+
+let lastActivityRoute = readLastActivityRoute();
 
 export function getLastActivityRoute(): string {
   return lastActivityRoute;
@@ -548,8 +577,10 @@ export function getLastActivityRoute(): string {
 
 function rememberActivityRoute(): void {
   const currentPath = currentLocationPath();
-  if (route.page === "activity" && parseRoute(currentPath).page === "activity") {
-    lastActivityRoute = stripBase(currentPath);
+  const activityRoute = stripBase(currentPath);
+  if (route.page === "activity" && isRestorableActivityRoute(activityRoute)) {
+    lastActivityRoute = activityRoute;
+    persistLastActivityRoute(lastActivityRoute);
   }
 }
 

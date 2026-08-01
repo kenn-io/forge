@@ -210,6 +210,262 @@ exec "$@"
 	assert.Equal(1, listBareWorktrees(t, fixture.bare))
 }
 
+// TestWorkspaceRetryDuringFailedDeleteReplaysSetupE2E covers a retry accepted
+// while a DELETE is in flight and the DELETE then fails. The retry has already
+// moved the row to "creating", so its queued setup must replay once deletion
+// admission reopens; dropping it would leave the workspace stuck in
+// "creating" with no worker attached.
+func TestWorkspaceRetryDuringFailedDeleteReplaysSetupE2E(t *testing.T) {
+	t.Parallel()
+	acquireWorkspaceGitSlot(t)
+
+	require := require.New(t)
+	assert := assert.New(t)
+	if len(workspaceTestTmuxCommand) == 0 {
+		t.Skip("tmux not available")
+	}
+
+	dir := t.TempDir()
+	started := dir + "/delete-started"
+	release := dir + "/delete-release"
+	claim := dir + "/delete-claim"
+	wrapper := dir + "/tmux-wrapper.sh"
+	// The first kill-session pauses until released and then fails, so the
+	// DELETE reaches destructive cleanup and errors out of it.
+	require.NoError(os.WriteFile(wrapper, []byte(`#!/bin/sh
+started=$1
+release=$2
+claim=$3
+shift 3
+is_kill=false
+for arg in "$@"; do
+  if [ "$arg" = "kill-session" ]; then
+    is_kill=true
+  fi
+done
+if [ "$is_kill" = true ] && mkdir "$claim" 2>/dev/null; then
+  : > "$started"
+  while [ ! -e "$release" ]; do
+    sleep 0.01
+  done
+  echo "forced kill-session failure" >&2
+  exit 1
+fi
+exec "$@"
+`), 0o700))
+	defer func() {
+		_ = os.WriteFile(release, []byte("release\n"), 0o600)
+	}()
+
+	tmuxCommand := []string{wrapper, started, release, claim}
+	tmuxCommand = append(tmuxCommand, workspaceTestTmuxCommand...)
+	cfg := &config.Config{}
+	cfg.Tmux.Command = tmuxCommand
+	fixture := setupWorkspaceServerFixture(t, cfg)
+	ctx := t.Context()
+
+	createResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     1,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.NotNil(createResp.JSON202)
+	ws := waitForWorkspaceReady(t, ctx, fixture.client, createResp.JSON202.Id)
+
+	msg := "forced error for retry during failed delete"
+	require.NoError(fixture.database.UpdateWorkspaceStatus(
+		ctx, ws.Id, "error", &msg,
+	))
+
+	type deleteResult struct {
+		status int
+		err    error
+	}
+	deleteDone := make(chan deleteResult, 1)
+	go func() {
+		force := true
+		resp, deleteErr := fixture.client.HTTP.DeleteWorkspaceWithResponse(
+			ctx, ws.Id, &generated.DeleteWorkspaceParams{Force: &force},
+		)
+		if deleteErr != nil {
+			deleteDone <- deleteResult{err: deleteErr}
+			return
+		}
+		deleteDone <- deleteResult{status: resp.StatusCode()}
+	}()
+
+	require.Eventually(func() bool {
+		_, statErr := os.Stat(started)
+		return statErr == nil
+	}, 5*time.Second, 10*time.Millisecond)
+
+	retryResp, err := fixture.client.HTTP.RetryWorkspaceWithResponse(ctx, ws.Id)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, retryResp.StatusCode())
+	require.Never(func() bool {
+		_, statErr := os.Lstat(ws.WorktreePath)
+		return statErr == nil
+	}, time.Second, 10*time.Millisecond,
+		"retry recreated the worktree while deletion was in flight")
+
+	require.NoError(os.WriteFile(release, []byte("release\n"), 0o600))
+	var result deleteResult
+	select {
+	case result = <-deleteDone:
+	case <-time.After(10 * time.Second):
+		require.FailNow("delete did not finish after terminal cleanup resumed")
+	}
+	require.NoError(result.err)
+	require.Equal(http.StatusInternalServerError, result.status)
+
+	recovered := waitForWorkspaceReady(t, ctx, fixture.client, ws.Id)
+	assert.Equal("ready", recovered.Status)
+	_, err = os.Lstat(recovered.WorktreePath)
+	require.NoError(err)
+	assert.Equal(2, listBareWorktrees(t, fixture.bare))
+}
+
+// TestWorkspaceFailedConcurrentDeleteKeepsSetupBlockedE2E covers two DELETEs
+// racing on one workspace: one fails fast on the dirty preflight while the
+// other is still inside destructive cleanup. The failed request must not
+// reopen setup admission, so a retry accepted during the overlap cannot
+// materialize a worktree for the row the surviving DELETE removes.
+func TestWorkspaceFailedConcurrentDeleteKeepsSetupBlockedE2E(t *testing.T) {
+	t.Parallel()
+	acquireWorkspaceGitSlot(t)
+
+	require := require.New(t)
+	assert := assert.New(t)
+	if len(workspaceTestTmuxCommand) == 0 {
+		t.Skip("tmux not available")
+	}
+
+	dir := t.TempDir()
+	started := dir + "/delete-started"
+	release := dir + "/delete-release"
+	claim := dir + "/delete-claim"
+	wrapper := dir + "/tmux-wrapper.sh"
+	require.NoError(os.WriteFile(wrapper, []byte(`#!/bin/sh
+started=$1
+release=$2
+claim=$3
+shift 3
+is_kill=false
+for arg in "$@"; do
+  if [ "$arg" = "kill-session" ]; then
+    is_kill=true
+  fi
+done
+if [ "$is_kill" = true ] && mkdir "$claim" 2>/dev/null; then
+  : > "$started"
+  while [ ! -e "$release" ]; do
+    sleep 0.01
+  done
+fi
+exec "$@"
+`), 0o700))
+	defer func() {
+		_ = os.WriteFile(release, []byte("release\n"), 0o600)
+	}()
+
+	tmuxCommand := []string{wrapper, started, release, claim}
+	tmuxCommand = append(tmuxCommand, workspaceTestTmuxCommand...)
+	cfg := &config.Config{}
+	cfg.Tmux.Command = tmuxCommand
+	fixture := setupWorkspaceServerFixture(t, cfg)
+	ctx := t.Context()
+
+	createResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     1,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.NotNil(createResp.JSON202)
+	ws := waitForWorkspaceReady(t, ctx, fixture.client, createResp.JSON202.Id)
+
+	msg := "forced error for concurrent delete overlap"
+	require.NoError(fixture.database.UpdateWorkspaceStatus(
+		ctx, ws.Id, "error", &msg,
+	))
+	// An untracked file makes the second, non-force DELETE fail its dirty
+	// preflight while the first DELETE is paused in destructive cleanup.
+	require.NoError(os.WriteFile(
+		ws.WorktreePath+"/untracked.txt", []byte("dirty\n"), 0o600,
+	))
+
+	type deleteResult struct {
+		status int
+		err    error
+	}
+	deleteDone := make(chan deleteResult, 1)
+	go func() {
+		force := true
+		resp, deleteErr := fixture.client.HTTP.DeleteWorkspaceWithResponse(
+			ctx, ws.Id, &generated.DeleteWorkspaceParams{Force: &force},
+		)
+		if deleteErr != nil {
+			deleteDone <- deleteResult{err: deleteErr}
+			return
+		}
+		deleteDone <- deleteResult{status: resp.StatusCode()}
+	}()
+
+	require.Eventually(func() bool {
+		_, statErr := os.Stat(started)
+		return statErr == nil
+	}, 5*time.Second, 10*time.Millisecond)
+
+	noForce := false
+	dirtyResp, err := fixture.client.HTTP.DeleteWorkspaceWithResponse(
+		ctx, ws.Id, &generated.DeleteWorkspaceParams{Force: &noForce},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusConflict, dirtyResp.StatusCode())
+
+	retryResp, err := fixture.client.HTTP.RetryWorkspaceWithResponse(ctx, ws.Id)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, retryResp.StatusCode())
+	require.Never(func() bool {
+		_, statErr := os.Lstat(ws.WorktreePath)
+		return statErr == nil
+	}, time.Second, 10*time.Millisecond,
+		"retry recreated the worktree after the failed delete unblocked setup")
+
+	require.NoError(os.WriteFile(release, []byte("release\n"), 0o600))
+	var result deleteResult
+	select {
+	case result = <-deleteDone:
+	case <-time.After(10 * time.Second):
+		require.FailNow("force-delete did not finish after terminal cleanup resumed")
+	}
+	require.NoError(result.err)
+	require.Equal(http.StatusNoContent, result.status)
+
+	require.Never(func() bool {
+		_, statErr := os.Lstat(ws.WorktreePath)
+		return statErr == nil
+	}, time.Second, 10*time.Millisecond,
+		"queued setup resurrected the worktree after successful deletion")
+	stored, err := fixture.database.GetWorkspace(ctx, ws.Id)
+	require.NoError(err)
+	assert.Nil(stored)
+	assert.Equal(1, listBareWorktrees(t, fixture.bare))
+}
+
 // TestWorkspaceConcurrentSameRepoOperationsE2E exercises the per-repo
 // worktree lock through the public API and SQLite. Two PRs in the same
 // repo are created concurrently, then one is retried while the other is

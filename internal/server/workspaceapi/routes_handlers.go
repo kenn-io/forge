@@ -387,11 +387,25 @@ func (s *Handler) runWorkspaceSetupWithBasePath(ws *workspace.Workspace, basePat
 	}
 }
 
+// workspaceDeletion tracks concurrent DELETE requests for one workspace ID.
+// Setup admission stays closed while any deletion is active and permanently
+// once one succeeds; done is closed when the last active deletion finishes so
+// setup dispatchers queued behind a failed deletion can replay.
+type workspaceDeletion struct {
+	active    int
+	succeeded bool
+	closed    bool
+	done      chan struct{}
+}
+
 func (s *Handler) beginWorkspaceSetup(workspaceID string) (chan struct{}, bool) {
 	s.workspaceSetupMu.Lock()
 	defer s.workspaceSetupMu.Unlock()
-	if s.workspaceDeleting[workspaceID] {
-		return nil, false
+	if deletion := s.workspaceDeleting[workspaceID]; deletion != nil {
+		if deletion.succeeded {
+			return nil, false
+		}
+		return deletion.done, false
 	}
 	if done, ok := s.workspaceSetupDone[workspaceID]; ok {
 		return done, false
@@ -412,16 +426,37 @@ func (s *Handler) finishWorkspaceSetup(workspaceID string, done chan struct{}) {
 
 func (s *Handler) markWorkspaceDeleting(workspaceID string) <-chan struct{} {
 	s.workspaceSetupMu.Lock()
-	s.workspaceDeleting[workspaceID] = true
-	done := s.workspaceSetupDone[workspaceID]
-	s.workspaceSetupMu.Unlock()
-	return done
+	defer s.workspaceSetupMu.Unlock()
+	deletion := s.workspaceDeleting[workspaceID]
+	if deletion == nil {
+		deletion = &workspaceDeletion{done: make(chan struct{})}
+		s.workspaceDeleting[workspaceID] = deletion
+	}
+	deletion.active++
+	return s.workspaceSetupDone[workspaceID]
 }
 
-func (s *Handler) unmarkWorkspaceDeleting(workspaceID string) {
+func (s *Handler) finishWorkspaceDeleting(workspaceID string, succeeded bool) {
 	s.workspaceSetupMu.Lock()
-	delete(s.workspaceDeleting, workspaceID)
-	s.workspaceSetupMu.Unlock()
+	defer s.workspaceSetupMu.Unlock()
+	deletion := s.workspaceDeleting[workspaceID]
+	if deletion == nil {
+		return
+	}
+	deletion.active--
+	if succeeded {
+		deletion.succeeded = true
+	}
+	if deletion.active > 0 {
+		return
+	}
+	if !deletion.closed {
+		close(deletion.done)
+		deletion.closed = true
+	}
+	if !deletion.succeeded {
+		delete(s.workspaceDeleting, workspaceID)
+	}
 }
 
 func waitForWorkspaceSetup(ctx context.Context, done <-chan struct{}) error {
@@ -2420,13 +2455,10 @@ func (s *Handler) deleteWorkspace(
 
 	setupDone := s.markWorkspaceDeleting(input.ID)
 	deleted := false
-	defer func() {
-		// Keep successful deletions marked so setup dispatchers already queued on
-		// the old generation cannot reopen admission after the row is gone.
-		if !deleted {
-			s.unmarkWorkspaceDeleting(input.ID)
-		}
-	}()
+	// A successful deletion keeps admission closed permanently so queued setup
+	// dispatchers cannot recreate resources for the removed row; a failed one
+	// reopens admission only after every concurrent deletion has finished.
+	defer func() { s.finishWorkspaceDeleting(input.ID, deleted) }()
 
 	if s.runtime != nil {
 		// Block new launches before the dirty preflight; existing

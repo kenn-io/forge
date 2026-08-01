@@ -136,7 +136,7 @@ type Handler struct {
 	workspaceEnrichmentDisabled    bool
 	workspaceSetupMu               sync.Mutex
 	workspaceSetupDone             map[string]chan struct{}
-	workspaceDeleting              map[string]bool
+	workspaceDeleting              map[string]*workspaceDeletion
 	workspaceTmuxPrunedAt          time.Time
 	workspaceTmuxPrunePending      bool
 	workspaceTmuxPruneInFlight     bool
@@ -183,7 +183,7 @@ func New(deps Deps) *Handler {
 		workspaceEnrichmentSlots:       make(chan struct{}, tmuxProbeMaxConcurrency),
 		workspaceEnrichmentDisabled:    deps.EnrichmentDisabled,
 		workspaceSetupDone:             make(map[string]chan struct{}),
-		workspaceDeleting:              make(map[string]bool),
+		workspaceDeleting:              make(map[string]*workspaceDeletion),
 		tmuxActivity:                   newTmuxActivityTracker(now),
 		lifecycleCtx:                   lifecycleCtx,
 		lifecycleCancel:                lifecycleCancel,

@@ -138,7 +138,11 @@ embedder protocol for arbitrary host state.
 - `DELETE /workspaces/{id}`: tear down a kenn-forge-managed workspace and its
   local resources.
   - Force-delete blocks new setup generations before joining the current worker,
-    so creation or retry cannot materialize resources after cleanup and row removal
+    so creation or retry cannot materialize resources after cleanup and row removal.
+    Deletions are reference-counted per workspace ID; setup dispatched during
+    deletion queues and replays only if every concurrent deletion fails — one
+    success closes admission permanently, and a dropped replay would strand an
+    accepted retry in "creating"
     (`internal/server/workspaceapi/routes_handlers.go::Handler.deleteWorkspace`).
   - Setup rejects occupied destinations before clone/fetch and again under the
     repo lock before mutation. Branch creation and failed-add cleanup use ref

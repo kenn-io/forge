@@ -3251,6 +3251,16 @@ func gitDirHasLiveWorktree(
 	if !isDirectory {
 		return false, nil
 	}
+	isRoot, err := worktreePathIsRoot(ctx, worktreePath)
+	if err != nil {
+		if isGitWorktreeAbsent(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("inspect workspace worktree root: %w", err)
+	}
+	if !isRoot {
+		return false, nil
+	}
 	commonDir, err := worktreeCommonGitDir(ctx, worktreePath)
 	if err != nil {
 		if isGitWorktreeAbsent(err) {
@@ -3273,7 +3283,28 @@ func gitDirHasLiveWorktree(
 	if current != candidate {
 		return false, nil
 	}
-	return gitDirOwnsLinkedWorktree(ctx, candidateCommonDir, worktreePath)
+	metadataDir, ok, err := worktreeRegistrationMetadataDir(
+		ctx, candidateCommonDir, worktreePath,
+	)
+	if err != nil || !ok {
+		return false, err
+	}
+	currentGitDir, err := worktreeGitDir(ctx, worktreePath)
+	if err != nil {
+		if isGitWorktreeAbsent(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("inspect workspace git dir: %w", err)
+	}
+	currentRegistration, err := canonicalFilesystemPath(currentGitDir)
+	if err != nil {
+		return false, fmt.Errorf("resolve workspace git dir: %w", err)
+	}
+	expectedRegistration, err := canonicalFilesystemPath(metadataDir)
+	if err != nil {
+		return false, fmt.Errorf("resolve workspace registration: %w", err)
+	}
+	return currentRegistration == expectedRegistration, nil
 }
 
 func worktreeGitDir(ctx context.Context, worktreePath string) (string, error) {

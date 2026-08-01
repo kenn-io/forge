@@ -25,6 +25,33 @@ func setupLifecycleWorkspaceServer(t *testing.T) (*apiclient.Client, *db.DB, str
 	return fixture.client, fixture.database, fixture.bare, fixture.remote
 }
 
+func TestWorkspaceForceDeleteToleratesCorruptWorktreeGitfileE2E(t *testing.T) {
+	t.Parallel()
+	acquireWorkspaceGitSlot(t)
+
+	require := require.New(t)
+	assert := assert.New(t)
+	client, database, _, _ := setupLifecycleWorkspaceServer(t)
+	ctx := t.Context()
+	ws := createReadyWorkspace(t, ctx, client)
+
+	gitfile := filepath.Join(ws.WorktreePath, ".git")
+	require.FileExists(gitfile)
+	require.NoError(os.Truncate(gitfile, 0))
+
+	force := true
+	deleteResp, err := client.HTTP.DeleteWorkspaceWithResponse(
+		ctx, ws.Id, &generated.DeleteWorkspaceParams{Force: &force},
+	)
+	require.NoError(err)
+	require.Equal(
+		http.StatusNoContent, deleteResp.StatusCode(), string(deleteResp.Body),
+	)
+	stored, err := database.GetWorkspace(ctx, ws.Id)
+	require.NoError(err)
+	assert.Nil(stored)
+}
+
 // TestWorkspaceForceDeleteQuarantinesReplacedWorktreeAndAllowsRecreateE2E
 // covers the user-visible recovery path when a workspace directory no longer
 // contains the linked worktree registered by its managed clone.

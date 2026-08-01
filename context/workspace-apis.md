@@ -151,8 +151,9 @@ embedder protocol for arbitrary host state.
   - An unmarked live registration is ambiguous after upgrade: delete and retry return
     conflict and retain the workspace row; only registrations without a live worktree
     may be cleared as stale (`internal/workspace/manager.go::gitDirOwnsCleanupWorktree`).
-  - Symlinked Git roots are live but never owned; they conflict instead of entering
-    stale-registration cleanup (`internal/workspace/manager.go::gitDirHasLiveWorktree`).
+  - Only exact Git roots whose `.git` matches their registration are live; symlinked
+    roots may be live but are never owned, so they conflict instead of entering stale
+    cleanup (`internal/workspace/manager.go::gitDirHasLiveWorktree`).
   - Pre-lock cleanup resolution is advisory. Revalidate marker identity and current
     live/stale state as the first locked action (`internal/workspace/manager.go::currentWorkspaceCleanupState`).
   - A force delete retains the workspace row when Git cannot remove a live owned

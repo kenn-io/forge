@@ -3057,6 +3057,11 @@ func TestCleanupQuarantinesPlainWorkspaceNestedInRepository(t *testing.T) {
 
 	parentRepo := setupLocalWorktreeBaseForWorkspaceGitTest(t, "feature/thing")
 	worktreePath := filepath.Join(parentRepo, "managed", "workspace")
+	runWorkspaceTestGit(
+		t, parentRepo,
+		"worktree", "add", worktreePath, "-b", "topic/stale-nested", "HEAD",
+	)
+	require.NoError(os.RemoveAll(worktreePath))
 	require.NoError(os.MkdirAll(worktreePath, 0o755))
 	require.NoError(os.WriteFile(
 		filepath.Join(worktreePath, "leftover.txt"), []byte("preserve me\n"), 0o644,

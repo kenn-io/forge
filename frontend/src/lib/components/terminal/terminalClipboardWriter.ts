@@ -14,6 +14,7 @@ export interface TerminalClipboardWriter {
   beginPointerGesture(): void;
   cancelAuthorization(): void;
   cancelPointerGesture(): void;
+  confirmPointerSelection(): void;
   endPointerGesture(): void;
   authorizeKeyboardGesture(): void;
   write(text: string): Promise<TerminalClipboardWriteResult>;
@@ -31,6 +32,7 @@ interface PendingClipboardWrite {
   reject(reason: unknown): void;
   outcome: Promise<boolean>;
   failed: boolean;
+  source: "keyboard" | "pointer-confirmed" | "pointer-prepared";
 }
 
 export function createBrowserTerminalClipboardPort(): TerminalClipboardPort {
@@ -97,8 +99,12 @@ export function createTerminalClipboardWriter(
     expirationTimer = setTimeout(expirePending, delayMs);
   }
 
-  function arm(): void {
-    if (disposed || (pending && !pending.failed)) return;
+  function arm(source: PendingClipboardWrite["source"]): void {
+    if (disposed) return;
+    if (pending && !pending.failed) {
+      pending.source = source;
+      return;
+    }
     if (pending) expirePending();
 
     let resolve!: (text: string) => void;
@@ -118,7 +124,13 @@ export function createTerminalClipboardWriter(
     } catch {
       outcome = Promise.resolve(false);
     }
-    const armed = { resolve, reject, outcome, failed: false };
+    const armed = {
+      resolve,
+      reject,
+      outcome,
+      failed: false,
+      source,
+    };
     pending = armed;
     void outcome.then((written) => {
       if (!written) armed.failed = true;
@@ -164,7 +176,7 @@ export function createTerminalClipboardWriter(
       pointerGestureActive = true;
       pointerGestureAuthorizationConsumed = false;
       clearExpiration();
-      arm();
+      arm("pointer-prepared");
       pointerAuthorizationPending = pending !== null;
       pointerGestureTimer = setTimeout(timeoutPointerGesture, POINTER_GESTURE_WATCHDOG_MS);
     },
@@ -176,12 +188,23 @@ export function createTerminalClipboardWriter(
       expirePending();
     },
     cancelPointerGesture,
+    confirmPointerSelection() {
+      if (disposed || !pointerGestureActive) return;
+      if (pending?.source === "pointer-prepared") pending.source = "pointer-confirmed";
+    },
     endPointerGesture() {
       if (disposed || !pointerGestureActive) return;
       clearPointerGestureTimer();
       pointerGestureActive = false;
+      const selectionConfirmed = pointerGestureAuthorizationConsumed || pending?.source === "pointer-confirmed";
+      if (!selectionConfirmed) {
+        if (pending?.source === "pointer-prepared") expirePending();
+        pointerAuthorizationPending = false;
+        pointerGestureAuthorizationConsumed = false;
+        return;
+      }
       if (!pointerGestureAuthorizationConsumed) {
-        arm();
+        arm("pointer-confirmed");
       }
       pointerAuthorizationPending = pending !== null;
       pointerGestureAuthorizationConsumed = false;
@@ -189,7 +212,7 @@ export function createTerminalClipboardWriter(
     },
     authorizeKeyboardGesture() {
       if (disposed) return;
-      arm();
+      arm("keyboard");
       if (pending) {
         pointerAuthorizationPending = pointerGestureActive;
         scheduleExpiration(KEYBOARD_AUTHORIZATION_MS);
@@ -200,6 +223,7 @@ export function createTerminalClipboardWriter(
 
       clearExpiration();
       const authorized = pending;
+      if (authorized?.source === "pointer-prepared") return "unauthorized";
       pending = null;
       if (!authorized) return "unauthorized";
       const writeGeneration = revocationGeneration;

@@ -109,6 +109,7 @@ async function selectIssueByTitle(page: Page, title: string): Promise<void> {
 
 function observeTerminalOutput(page: Page): {
   includes(text: string): boolean;
+  count(text: string): number;
   inputIncludes(text: string): boolean;
   dimensionsForLatestInput(): TerminalDimensions | null;
   activeSocketCount(): number;
@@ -181,6 +182,7 @@ function observeTerminalOutput(page: Page): {
   });
   return {
     includes: (text: string) => streams.some((stream) => stream.output.includes(text)),
+    count: (text: string) => streams.reduce((total, stream) => total + stream.output.split(text).length - 1, 0),
     inputIncludes: (text: string) => streams.some((stream) => stream.input.includes(text)),
     activeSocketCount: () => streams.filter((stream) => !stream.closed).length,
     dimensionsForLatestInput: () => {
@@ -299,6 +301,22 @@ async function interceptDeniedBrowserClipboard(page: Page): Promise<string[]> {
       writeText: { configurable: true, value: denied },
     });
   });
+  return captureTerminalClipboardFallback(page);
+}
+
+async function denyCurrentPageBrowserClipboardWrites(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const clipboard = navigator.clipboard;
+    if (!clipboard) return;
+    const denied = () => Promise.reject(new DOMException("denied", "NotAllowedError"));
+    Object.defineProperties(clipboard, {
+      write: { configurable: true, value: denied },
+      writeText: { configurable: true, value: denied },
+    });
+  });
+}
+
+async function captureTerminalClipboardFallback(page: Page): Promise<string[]> {
   const fallbackWrites: string[] = [];
   await page.route("**/api/v1/terminal/clipboard", async (route) => {
     const request = route.request();
@@ -396,6 +414,28 @@ async function dragTerminalCells(page: Page, container: Locator, cellCount: numb
   await page.mouse.move(points.start.x, points.start.y);
   await beginCapturedPointerGesture(page, container);
   await page.mouse.move(points.end.x, points.end.y, { steps: 10 });
+  await page.mouse.up();
+}
+
+async function jitterFirstTerminalCell(page: Page, container: Locator): Promise<void> {
+  const start = await container.evaluate((element) => {
+    const screen = element.querySelector<HTMLElement>(".xterm-screen");
+    const textarea = element.querySelector<HTMLElement>(".xterm-helper-textarea");
+    if (!screen || !textarea) throw new Error("xterm cell geometry unavailable");
+    const bounds = screen.getBoundingClientRect();
+    const cellBounds = textarea.getBoundingClientRect();
+    if (cellBounds.width <= 0 || cellBounds.height <= 0) {
+      throw new Error("xterm cell geometry is empty");
+    }
+    return {
+      x: bounds.left + cellBounds.width * 0.5,
+      y: bounds.top + cellBounds.height * 0.5,
+    };
+  });
+
+  await page.mouse.move(start.x, start.y);
+  await beginCapturedPointerGesture(page, container);
+  await page.mouse.move(start.x + 1, start.y);
   await page.mouse.up();
 }
 
@@ -656,10 +696,14 @@ test("visible detail copy wins when focus leaves a pointer-captured terminal", a
   }
 });
 
-test("PR comment copy wins before a delayed terminal clipboard write", async ({ page, browserName }) => {
-  test.skip(browserName !== "chromium", "Clipboard ordering assertions require Chromium permissions");
+test("PR comment copy survives a terminal focus click", async ({ page, browserName }) => {
   test.skip(!hasCommand("git") || !hasCommand("tmux", ["-V"]), "git and tmux are required for the real workspace flow");
-  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  let fallbackWrites: string[] = [];
+  if (browserName === "chromium") {
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  } else {
+    fallbackWrites = await captureTerminalClipboardFallback(page);
+  }
 
   let isolatedServer: IsolatedE2EServer | null = null;
   let api: APIRequestContext | null = null;
@@ -684,7 +728,7 @@ test("PR comment copy wins before a delayed terminal clipboard write", async ({ 
     const terminal = page.locator(".session-terminal-slot .terminal-container");
     await expect(terminal).toBeVisible();
 
-    const lateWriteMarker = await scheduleTmuxClipboardWrite(page, terminal);
+    await enableTmuxMouseAndRenderMarker(page, terminal, output, "focus click marker");
     const copiedComment =
       "Guard the cache fallback before returning stale data.\n\nExpanded context explains stale data handling.";
     const commentCard = page.locator(".pull-detail .kit-comment-card", {
@@ -696,21 +740,21 @@ test("PR comment copy wins before a delayed terminal clipboard write", async ({ 
       .locator('button[aria-label="Copy comment"], button[aria-label="Copied"]');
     await copyButton.evaluate((element) => element.scrollIntoView({ block: "center", inline: "nearest" }));
     await commentCard.hover();
-    expect(await terminal.evaluate((element) => element.contains(document.activeElement))).toBe(true);
-    // Model platforms where clicking a button does not focus it: keep the real
-    // pointer click and production handler while preventing only default focus.
-    await copyButton.evaluate((element) => {
-      element.addEventListener("mousedown", (event) => event.preventDefault(), { once: true });
-    });
     await copyButton.click();
-    expect(await terminal.evaluate((element) => element.contains(document.activeElement))).toBe(true);
+    await expect(copyButton).toHaveAttribute("aria-label", "Copied");
+    if (browserName === "firefox") await denyCurrentPageBrowserClipboardWrites(page);
 
-    await writeFile(join(workspace.worktree_path, ".clipboard-osc52-gate"), "go", { mode: 0o600 });
-    await expect.poll(() => output.includes(lateWriteMarker), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS }).toBe(true);
-    await expect.poll(() => output.includes("\x1b]52;"), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS }).toBe(true);
+    const osc52Count = output.count("\x1b]52;");
+    await jitterFirstTerminalCell(page, terminal);
+    await expect
+      .poll(() => output.count("\x1b]52;"), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS })
+      .toBeGreaterThan(osc52Count);
     await page.waitForTimeout(250);
-    const clipboardText = await readBrowserClipboard(page);
-    expect(clipboardText).toBe(copiedComment);
+    if (browserName === "firefox") {
+      expect(fallbackWrites).toEqual([]);
+    } else {
+      expect(await readBrowserClipboard(page)).toBe(copiedComment);
+    }
   } finally {
     await api?.dispose();
     await isolatedServer?.stop();

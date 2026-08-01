@@ -6,6 +6,7 @@ const {
   clipboardWriteText,
   clipboardWriterCancelAuthorization,
   clipboardWriterCancelPointerGesture,
+  clipboardWriterConfirmPointerSelection,
   clipboardWriterDispose,
   clipboardWriterWrite,
   ligaturesAddonCtor,
@@ -25,6 +26,7 @@ const {
   clipboardWriteText: vi.fn(),
   clipboardWriterCancelAuthorization: vi.fn(),
   clipboardWriterCancelPointerGesture: vi.fn(),
+  clipboardWriterConfirmPointerSelection: vi.fn(),
   clipboardWriterDispose: vi.fn(),
   clipboardWriterWrite: vi.fn(),
   ligaturesAddonCtor: vi.fn(),
@@ -134,6 +136,7 @@ vi.mock("./terminalClipboardWriter.js", () => ({
     beginPointerGesture: vi.fn(),
     cancelAuthorization: clipboardWriterCancelAuthorization,
     cancelPointerGesture: clipboardWriterCancelPointerGesture,
+    confirmPointerSelection: clipboardWriterConfirmPointerSelection,
     endPointerGesture: vi.fn(),
     authorizeKeyboardGesture: vi.fn(),
     write: clipboardWriterWrite,
@@ -234,6 +237,7 @@ describe("TerminalPane", () => {
     clipboardWriteText.mockReset();
     clipboardWriterCancelAuthorization.mockReset();
     clipboardWriterCancelPointerGesture.mockReset();
+    clipboardWriterConfirmPointerSelection.mockReset();
     clipboardWriterDispose.mockReset();
     clipboardWriterWrite.mockReset().mockResolvedValue("unauthorized");
     mockShowFlash.mockReset();

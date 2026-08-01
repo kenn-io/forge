@@ -71,7 +71,21 @@ describe("browser terminal clipboard port", () => {
 });
 
 describe("terminal clipboard writer", () => {
-  it("keeps one pointer authorization alive through a long drag", async () => {
+  it("does not authorize a terminal write from an unconfirmed pointer gesture", async () => {
+    const { port, deferredWrites, writeLocalText, writeText } = createPort();
+    const writer = createTerminalClipboardWriter(port);
+
+    writer.beginPointerGesture();
+    const copied = writer.write("focus-click character");
+    writer.endPointerGesture();
+
+    await expect(copied).resolves.toBe("unauthorized");
+    await expect(deferredWrites[0]).rejects.toMatchObject({ name: "AbortError" });
+    expect(writeText).not.toHaveBeenCalled();
+    expect(writeLocalText).not.toHaveBeenCalled();
+  });
+
+  it("keeps one confirmed pointer authorization alive through a long drag", async () => {
     vi.useFakeTimers();
     const { port, deferredWrites, writeLocalText, writeText } = createPort();
     const writer = createTerminalClipboardWriter(port);
@@ -79,6 +93,7 @@ describe("terminal clipboard writer", () => {
     writer.beginPointerGesture();
     await vi.advanceTimersByTimeAsync(30_000);
     expect(deferredWrites).toHaveLength(1);
+    writer.confirmPointerSelection();
     writer.endPointerGesture();
     const copied = writer.write("pointer selection");
 
@@ -97,6 +112,7 @@ describe("terminal clipboard writer", () => {
     const writer = createTerminalClipboardWriter(port);
 
     writer.beginPointerGesture();
+    writer.confirmPointerSelection();
     await expect(writer.write("first write")).resolves.toBe("written");
     writer.endPointerGesture();
 
@@ -138,6 +154,7 @@ describe("terminal clipboard writer", () => {
     const writer = createTerminalClipboardWriter(port);
 
     writer.beginPointerGesture();
+    writer.confirmPointerSelection();
     await expect(writer.write("pointer write")).resolves.toBe("written");
     writer.authorizeKeyboardGesture();
     writer.cancelPointerGesture();
@@ -312,6 +329,7 @@ describe("terminal clipboard writer", () => {
     });
 
     writer.beginPointerGesture();
+    writer.confirmPointerSelection();
 
     await expect(writer.write("fallback")).resolves.toBe("written");
     expect(writeText).toHaveBeenCalledWith("fallback");
@@ -351,6 +369,7 @@ describe("terminal clipboard writer", () => {
     });
 
     writer.beginPointerGesture();
+    writer.confirmPointerSelection();
     const copied = writer.write("blocked");
     deferredWrite.reject(new DOMException("denied", "NotAllowedError"));
 

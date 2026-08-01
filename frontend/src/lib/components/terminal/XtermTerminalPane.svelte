@@ -90,6 +90,7 @@
   let sawFirstBytes = false;
   let clipboardFailureReported = false;
   let activePointerId: number | null = null;
+  let pointerOrigin: { clientX: number; clientY: number } | null = null;
   let explicitFocusRequested = false;
   const encoder = new TextEncoder();
   const clipboardWriter = createTerminalClipboardWriter(
@@ -123,6 +124,7 @@
   const TERMINAL_MINIMUM_CONTRAST_RATIO = 4.5;
   const TERMINAL_FONT_WAIT_MS = 300;
   const TERMINAL_FONT_LOAD_GLYPHS = "0MWim@#";
+  const POINTER_SELECTION_INTENT_PX = 4;
   const TERMINAL_SEQUENCE_CANCEL = new Uint8Array([0x18]);
 
   function isAttachableInitialStatus(status: string | undefined): boolean {
@@ -158,6 +160,7 @@
       cancelTerminalPointerGesture();
     }
     activePointerId = event.pointerId;
+    pointerOrigin = { clientX: event.clientX, clientY: event.clientY };
     clipboardWriter.beginPointerGesture();
     try {
       containerEl.setPointerCapture(event.pointerId);
@@ -169,6 +172,7 @@
   function handleTerminalPointerEnd(event: PointerEvent): void {
     if (!event.isTrusted || activePointerId !== event.pointerId) return;
     activePointerId = null;
+    pointerOrigin = null;
     releaseTerminalPointerCapture(event.pointerId);
     clipboardWriter.endPointerGesture();
     mouseDragAutoscroll.endPointerGesture();
@@ -188,6 +192,7 @@
     if (pointerId !== undefined && activePointerId !== pointerId) return;
     const capturedPointerId = activePointerId;
     activePointerId = null;
+    pointerOrigin = null;
     if (capturedPointerId !== null) {
       releaseTerminalPointerCapture(capturedPointerId);
     }
@@ -202,6 +207,7 @@
   function handleTerminalLostPointerCapture(event: PointerEvent): void {
     if (activePointerId !== event.pointerId) return;
     activePointerId = null;
+    pointerOrigin = null;
     clipboardWriter.cancelPointerGesture();
     mouseDragAutoscroll.endPointerGesture();
   }
@@ -248,6 +254,14 @@
 
   function handleWindowPointerMove(event: PointerEvent): void {
     if (disposed || disabled || !terminal) return;
+    if (activePointerId === event.pointerId && pointerOrigin !== null) {
+      const deltaX = event.clientX - pointerOrigin.clientX;
+      const deltaY = event.clientY - pointerOrigin.clientY;
+      if (deltaX * deltaX + deltaY * deltaY >= POINTER_SELECTION_INTENT_PX ** 2) {
+        clipboardWriter.confirmPointerSelection();
+        pointerOrigin = null;
+      }
+    }
     const screen = containerEl.querySelector<HTMLElement>(".xterm-screen");
     const bounds = (screen ?? containerEl).getBoundingClientRect();
     mouseDragAutoscroll.updatePointer({
@@ -693,6 +707,7 @@
 
   function cleanup(): void {
     disposed = true;
+    pointerOrigin = null;
     clipboardWriter.dispose();
     mouseDragAutoscroll.dispose();
     if (resizeObserver) {

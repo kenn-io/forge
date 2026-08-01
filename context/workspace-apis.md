@@ -137,6 +137,9 @@ embedder protocol for arbitrary host state.
   (`packages/ui/src/stores/detail.svelte.ts::applyRefreshedDetail`).
 - `DELETE /workspaces/{id}`: tear down a kenn-forge-managed workspace and its
   local resources.
+  - Force-delete joins any registered setup worker before filesystem and row
+    cleanup, so accepted creation cannot materialize resources after deletion
+    (`internal/server/workspaceapi/routes_handlers.go::Handler.deleteWorkspace`).
   - Setup rejects occupied destinations before clone/fetch and again under the
     repo lock before mutation. Branch creation and failed-add cleanup use ref
     compare-and-swap so changed branches survive (`internal/workspace/manager.go::createBranchAndAddWorktree`).

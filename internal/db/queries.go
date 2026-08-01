@@ -5246,7 +5246,7 @@ func (d *DB) UpdateWorkspaceStatus(
 func (d *DB) UpdateWorkspaceBranch(
 	ctx context.Context, id, branch string,
 ) error {
-	_, err := d.rw.ExecContext(ctx, `
+	result, err := d.rw.ExecContext(ctx, `
 		UPDATE forge_workspaces
 		SET workspace_branch = ?
 		WHERE id = ?`,
@@ -5254,6 +5254,13 @@ func (d *DB) UpdateWorkspaceBranch(
 	)
 	if err != nil {
 		return fmt.Errorf("update workspace branch: %w", err)
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("read workspace branch update result: %w", err)
+	}
+	if rowsAffected == 0 {
+		return fmt.Errorf("workspace %q not found", id)
 	}
 	return nil
 }

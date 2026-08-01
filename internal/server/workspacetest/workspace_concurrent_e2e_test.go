@@ -3,16 +3,97 @@ package workspacetest
 import (
 	"context"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/forge/internal/apiclient/generated"
+	"go.kenn.io/forge/internal/workspace"
 	gitcmd "go.kenn.io/kit/git/cmd"
 )
+
+func TestWorkspaceForceDeleteWaitsForInFlightSetupE2E(t *testing.T) {
+	t.Parallel()
+	acquireWorkspaceGitSlot(t)
+
+	require := require.New(t)
+	assert := assert.New(t)
+	fixture := setupWorkspaceServerFixture(t, nil)
+	ctx := t.Context()
+
+	lockManager := workspace.NewFileLockManager()
+	held, err := lockManager.Acquire(ctx, fixture.bare)
+	require.NoError(err)
+	unlocked := false
+	defer func() {
+		if !unlocked {
+			_ = held.Unlock()
+		}
+	}()
+
+	createResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     1,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.NotNil(createResp.JSON202)
+	ws := createResp.JSON202
+
+	type deleteResult struct {
+		status int
+		err    error
+	}
+	deleteDone := make(chan deleteResult, 1)
+	go func() {
+		force := true
+		resp, deleteErr := fixture.client.HTTP.DeleteWorkspaceWithResponse(
+			ctx, ws.Id, &generated.DeleteWorkspaceParams{Force: &force},
+		)
+		if deleteErr != nil {
+			deleteDone <- deleteResult{err: deleteErr}
+			return
+		}
+		deleteDone <- deleteResult{status: resp.StatusCode()}
+	}()
+
+	select {
+	case result := <-deleteDone:
+		require.NoError(result.err)
+		require.FailNow("force-delete returned while workspace setup was paused")
+	case <-time.After(500 * time.Millisecond):
+	}
+
+	require.NoError(held.Unlock())
+	unlocked = true
+
+	var result deleteResult
+	select {
+	case result = <-deleteDone:
+	case <-time.After(10 * time.Second):
+		require.FailNow("force-delete did not finish after workspace setup resumed")
+	}
+	require.NoError(result.err)
+	assert.Equal(http.StatusNoContent, result.status)
+
+	stored, err := fixture.database.GetWorkspace(ctx, ws.Id)
+	require.NoError(err)
+	assert.Nil(stored)
+	_, err = os.Lstat(ws.WorktreePath)
+	require.ErrorIs(err, os.ErrNotExist)
+	assert.Equal(1, listBareWorktrees(t, fixture.bare))
+}
 
 // TestWorkspaceConcurrentSameRepoOperationsE2E exercises the per-repo
 // worktree lock through the public API and SQLite. Two PRs in the same

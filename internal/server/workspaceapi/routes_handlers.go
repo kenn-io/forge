@@ -294,7 +294,19 @@ func (s *Handler) runWorkspaceSetup(ws *workspace.Workspace) {
 }
 
 func (s *Handler) runWorkspaceSetupWithBasePath(ws *workspace.Workspace, basePath string) {
-	s.runBackground(func(bgCtx context.Context) {
+	done, start := s.beginWorkspaceSetup(ws.ID)
+	if !start {
+		s.runBackground(func(ctx context.Context) {
+			select {
+			case <-done:
+				s.runWorkspaceSetupWithBasePath(ws, basePath)
+			case <-ctx.Done():
+			}
+		})
+		return
+	}
+	if !s.runBackground(func(bgCtx context.Context) {
+		defer s.finishWorkspaceSetup(ws.ID, done)
 		for {
 			setupErr := s.workspaces.SetupWithWorktreeBasePath(bgCtx, ws, basePath)
 			summary, getErr := s.workspaces.GetSummary(
@@ -367,7 +379,46 @@ func (s *Handler) runWorkspaceSetupWithBasePath(ws *workspace.Workspace, basePat
 				Data: s.toWorkspaceResponse(bgCtx, summary),
 			})
 		}
-	})
+	}) {
+		s.finishWorkspaceSetup(ws.ID, done)
+	}
+}
+
+func (s *Handler) beginWorkspaceSetup(workspaceID string) (chan struct{}, bool) {
+	s.workspaceSetupMu.Lock()
+	defer s.workspaceSetupMu.Unlock()
+	if done, ok := s.workspaceSetupDone[workspaceID]; ok {
+		return done, false
+	}
+	done := make(chan struct{})
+	s.workspaceSetupDone[workspaceID] = done
+	return done, true
+}
+
+func (s *Handler) finishWorkspaceSetup(workspaceID string, done chan struct{}) {
+	s.workspaceSetupMu.Lock()
+	if s.workspaceSetupDone[workspaceID] == done {
+		delete(s.workspaceSetupDone, workspaceID)
+		close(done)
+	}
+	s.workspaceSetupMu.Unlock()
+}
+
+func (s *Handler) waitForWorkspaceSetup(
+	ctx context.Context, workspaceID string,
+) error {
+	s.workspaceSetupMu.Lock()
+	done := s.workspaceSetupDone[workspaceID]
+	s.workspaceSetupMu.Unlock()
+	if done == nil {
+		return nil
+	}
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // RunWorkspaceSetupWithBasePath starts asynchronous materialization for a
@@ -2362,6 +2413,9 @@ func (s *Handler) deleteWorkspace(
 			s.runtime.EndStopping(input.ID)
 		}
 	}()
+	if err := s.waitForWorkspaceSetup(ctx, input.ID); err != nil {
+		return nil, httpapi.Internal("wait for workspace setup: " + err.Error())
+	}
 	dirty, err := s.workspaces.Delete(
 		ctx, input.ID, input.Force,
 		func(stopCtx context.Context) {

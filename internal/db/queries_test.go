@@ -4665,6 +4665,16 @@ func TestWorkspaceCRUD(t *testing.T) {
 	assert.Nil(noSuch)
 }
 
+func TestUpdateWorkspaceBranchRejectsMissingWorkspace(t *testing.T) {
+	d := openTestDB(t)
+
+	err := d.UpdateWorkspaceBranch(
+		t.Context(), "missing-workspace", "feature/example",
+	)
+
+	require.Error(t, err)
+}
+
 func TestUpdateWorkspaceMRHeadRepo(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

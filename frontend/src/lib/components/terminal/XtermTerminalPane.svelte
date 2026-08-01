@@ -464,12 +464,13 @@
     if (!size || !terminal) return;
 
     fitAddon?.fit();
-    terminal.refresh(0, Math.max(0, size.rows - 1));
+    const fittedSize = { cols: terminal.cols, rows: terminal.rows };
+    terminal.refresh(0, Math.max(0, fittedSize.rows - 1));
     // The server resizes on a refresh's dimensions too, so a delivered refresh
     // counts as the size the PTY now has.
-    if (sendRefresh(size.cols, size.rows)) {
-      sentCols = size.cols;
-      sentRows = size.rows;
+    if (sendRefresh(fittedSize.cols, fittedSize.rows)) {
+      sentCols = fittedSize.cols;
+      sentRows = fittedSize.rows;
     }
   }
 
@@ -578,17 +579,19 @@
     if (!resizeActive || !size || !terminal) return;
 
     fitAddon?.fit();
-    terminal.refresh(0, Math.max(0, size.rows - 1));
-    // Compare the MEASUREMENT, not a read-back of terminal.cols: fit() applies
-    // these same numbers, and the measurement is what the size should be.
+    const fittedSize = { cols: terminal.cols, rows: terminal.rows };
+    terminal.refresh(0, Math.max(0, fittedSize.rows - 1));
+    // Report the dimensions fit() actually applied. It takes its own fresh
+    // measurement, so the region can cross a row or column boundary after the
+    // authority preflight above but before xterm is resized.
     // Re-send unchanged dimensions when reclaiming authority because another
     // attachment may have resized the PTY while this region had no geometry.
-    if (!authorityChanged && size.cols === sentCols && size.rows === sentRows) return;
+    if (!authorityChanged && fittedSize.cols === sentCols && fittedSize.rows === sentRows) return;
     // Recorded only once the socket carried it — a resize computed before the
     // socket opened would otherwise be suppressed forever as already sent.
-    if (sendResize(size.cols, size.rows)) {
-      sentCols = size.cols;
-      sentRows = size.rows;
+    if (sendResize(fittedSize.cols, fittedSize.rows)) {
+      sentCols = fittedSize.cols;
+      sentRows = fittedSize.rows;
     }
   }
 

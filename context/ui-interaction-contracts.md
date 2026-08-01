@@ -354,7 +354,9 @@ Keyboard handlers must have one clear owner for each key press.
   only once the socket carried it, or a resize computed before the socket opened
   is suppressed forever and the PTY keeps its launch default. Synchronize
   authority on every measurement because geometry changes independently of
-  painted state; reclaiming authority must push even an unchanged size
+  painted state; reclaiming authority must push even an unchanged size. The
+  preflight measurement establishes authority only: send xterm's dimensions
+  after `fit()`, which measures again and may cross a cell boundary
   (`frontend/src/lib/components/terminal/TerminalSplitTree.svelte::terminal-leaf-body`,
   `frontend/src/lib/components/terminal/XtermTerminalPane.svelte::resizeVisibleTerminal`).
 - A promoted session is recorded ONCE, in the detail surface's stored pane tree.

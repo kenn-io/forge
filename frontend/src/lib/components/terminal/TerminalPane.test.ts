@@ -159,7 +159,10 @@ vi.mock("./tmuxMouseDragAutoscroll.js", () => ({
 vi.mock("@xterm/xterm", () => ({
   Terminal: vi.fn().mockImplementation(function (options) {
     xtermTerminalCtor(options);
-    const terminal = {
+    // The real xterm Terminal is a class instance, which Svelte leaves opaque.
+    // Keep the double equally opaque so fit updates the same object the pane reads.
+    class MockTerminal {}
+    const terminal = Object.assign(new MockTerminal(), {
       cols: initialTerminalDimensions.cols,
       rows: initialTerminalDimensions.rows,
       modes: { bracketedPasteMode: false },
@@ -182,7 +185,7 @@ vi.mock("@xterm/xterm", () => ({
       },
       refresh: vi.fn(),
       write: vi.fn(),
-    };
+    });
     xtermInstances.push(terminal);
     return terminal;
   }),
@@ -193,7 +196,16 @@ vi.mock("@xterm/addon-fit", () => ({
     // proposeDimensions is the pane's measurement of its own region: the real
     // addon returns undefined, or a zero, for a container with no content box
     // (a parked terminal), and the pane only pushes a size when it gets one.
-    const addon = { fit: vi.fn(), proposeDimensions: vi.fn(() => fitDimensions) };
+    const terminal = xtermInstances.at(-1);
+    const addon = {
+      fit: vi.fn(() => {
+        const fitted = addon.proposeDimensions();
+        if (!terminal || !fitted) return;
+        terminal.cols = fitted.cols;
+        terminal.rows = fitted.rows;
+      }),
+      proposeDimensions: vi.fn(() => fitDimensions),
+    };
     xtermFitAddons.push(addon);
     return addon;
   }),
@@ -764,6 +776,28 @@ describe("TerminalPane", () => {
     expect(resizeFramesOf(mockSockets[0]!)).toEqual([JSON.stringify({ type: "resize", cols: 120, rows: 50 })]);
   });
 
+  it("reports the dimensions that fit actually applies when the region changes between measurements", async () => {
+    render(TerminalPane, { props: { workspaceId: "ws-123" } });
+
+    await waitFor(() => expect(resizeObserverCallbacks).toHaveLength(1));
+    const terminal = xtermInstances[0]!;
+    const fitAddon = xtermFitAddons[0]!;
+    mockSockets[0]!.onopen?.();
+    mockSockets[0]!.sent = [];
+    fitDimensions = undefined;
+    resizeObserverCallbacks[0]!([], {} as ResizeObserver);
+    fitAddon.proposeDimensions.mockReturnValueOnce({ cols: 80, rows: 24 }).mockReturnValue({ cols: 80, rows: 25 });
+
+    resizeObserverCallbacks[0]!([], {} as ResizeObserver);
+
+    expect(terminal.rows).toBe(25);
+    expect(mockSockets[0]!.sent.map(String)).toEqual([
+      JSON.stringify({ type: "resize_active", active: false }),
+      JSON.stringify({ type: "resize_active", active: true }),
+      JSON.stringify({ type: "resize", cols: 80, rows: 25 }),
+    ]);
+  });
+
   it("sends a size measured before socket open once the connection opens", async () => {
     // The first measurement lands before the socket opens. Recording it as sent
     // anyway would let the dedupe suppress it forever, leaving the PTY at the
@@ -938,6 +972,32 @@ describe("TerminalPane", () => {
     expect(reconnectURL.searchParams.get("replay_boundary")).toBe("1");
     expect(reconnectURL.searchParams.has("cols")).toBe(false);
     expect(reconnectURL.searchParams.has("rows")).toBe(false);
+  });
+
+  it("refreshes tmux with the dimensions fit applies after replay", async () => {
+    initialTerminalDimensions = { cols: 177, rows: 41 };
+    fitDimensions = initialTerminalDimensions;
+    render(TerminalPane, {
+      props: {
+        websocketPath: "/ws/v1/workspaces/ws-123/runtime/sessions/ws-123%3Ashell/terminal",
+        active: true,
+      },
+    });
+
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
+    const terminal = xtermInstances[0]!;
+    const fitAddon = xtermFitAddons[0]!;
+    const socket = mockSockets[0]!;
+    socket.onopen?.();
+    socket.sent = [];
+    fitAddon.proposeDimensions.mockReturnValueOnce({ cols: 177, rows: 41 }).mockReturnValue({ cols: 177, rows: 42 });
+
+    socket.onmessage?.(new MessageEvent("message", { data: JSON.stringify({ type: "replay_ready" }) }));
+    const boundaryCallback = terminal.write.mock.calls.at(-1)?.[1] as (() => void) | undefined;
+    boundaryCallback?.();
+
+    expect(terminal.rows).toBe(42);
+    expect(socket.sent.map(String)).toContain(JSON.stringify({ type: "refresh", cols: 177, rows: 42 }));
   });
 
   it("aborts a partial OSC sequence before writing output from a reconnected socket", async () => {

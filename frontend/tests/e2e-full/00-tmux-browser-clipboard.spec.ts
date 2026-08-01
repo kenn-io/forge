@@ -1,6 +1,8 @@
 import { execFileSync } from "node:child_process";
+import { closeSync, constants, openSync, readFileSync, writeSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { load as loadToml } from "js-toml";
 import {
   expect,
   request as playwrightRequest,
@@ -27,6 +29,23 @@ type TerminalLinkOpen = {
   url: string;
   target: string | undefined;
   features: string | undefined;
+};
+
+type E2ETmuxConfig = {
+  tmux?: {
+    command?: string[];
+  };
+};
+
+type RuntimeSessionResponse = {
+  sessions: Array<{
+    key: string;
+    status: string;
+  }> | null;
+};
+
+type RuntimeAttachSpecResponse = {
+  tmux_session: string;
 };
 
 let clipboardProbeSequence = 0;
@@ -70,6 +89,19 @@ async function launchDockedShell(api: APIRequestContext, workspaceId: string): P
     },
   });
   expect(response.status(), await response.text()).toBe(200);
+}
+
+async function runningRuntimeTmuxSession(api: APIRequestContext, workspaceId: string): Promise<string> {
+  const response = await api.get(`/api/v1/workspaces/${workspaceId}/runtime`);
+  expect(response.ok()).toBe(true);
+  const runtime = (await response.json()) as RuntimeSessionResponse;
+  const running = runtime.sessions?.filter((session) => session.status === "running") ?? [];
+  expect(running).toHaveLength(1);
+  const attachResponse = await api.get(
+    `/api/v1/workspaces/${workspaceId}/runtime/sessions/${encodeURIComponent(running[0]!.key)}/attach-spec`,
+  );
+  expect(attachResponse.ok()).toBe(true);
+  return ((await attachResponse.json()) as RuntimeAttachSpecResponse).tmux_session;
 }
 
 async function openTerminalPanel(page: Page): Promise<Locator> {
@@ -191,8 +223,21 @@ function shellOctal(text: string): string {
   return Array.from(new TextEncoder().encode(text), (byte) => `\\${byte.toString(8).padStart(3, "0")}`).join("");
 }
 
-function tmuxPassthroughSequence(payload: string): string {
-  return `\x1bPtmux;${payload.replaceAll("\x1b", "\x1b\x1b")}\x1b\\`;
+function runE2ETmuxCommand(server: IsolatedE2EServer, args: string[]): string {
+  const config = loadToml(readFileSync(server.info.config_path, "utf8")) as E2ETmuxConfig;
+  const [command, ...prefix] = config.tmux?.command ?? [];
+  if (!command) throw new Error("e2e tmux command is unavailable");
+  return execFileSync(command, [...prefix, ...args], { encoding: "utf8" }).trim();
+}
+
+function writeTmuxClientTTY(server: IsolatedE2EServer, tmuxSession: string, data: Uint8Array): void {
+  const clientTTY = runE2ETmuxCommand(server, ["list-clients", "-t", tmuxSession, "-F", "#{client_tty}"]);
+  const fd = openSync(clientTTY, constants.O_WRONLY | constants.O_NOCTTY);
+  try {
+    writeSync(fd, data);
+  } finally {
+    closeSync(fd);
+  }
 }
 
 async function interceptTerminalLinkOpens(page: Page): Promise<void> {
@@ -227,6 +272,27 @@ async function renderTerminalLink(
   await container.locator(".xterm-helper-textarea").focus();
   await page.keyboard.type(`clear; printf '${shellOctal(`${renderedText}\n${marker}\n`)}'`);
   await page.keyboard.press("Enter");
+  await expect.poll(() => output.includes(marker), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS }).toBe(true);
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      }),
+  );
+  const dimensions = output.dimensionsForLatestInput();
+  if (!dimensions) throw new Error(`terminal dimensions unavailable for link marker ${marker}`);
+  return dimensions;
+}
+
+async function renderRawTerminalLink(
+  page: Page,
+  output: ReturnType<typeof observeTerminalOutput>,
+  server: IsolatedE2EServer,
+  tmuxSession: string,
+  renderedText: string,
+  marker: string,
+): Promise<TerminalDimensions> {
+  writeTmuxClientTTY(server, tmuxSession, new TextEncoder().encode(`\x1b[2J\x1b[H${renderedText}\r\n${marker}\r\n`));
   await expect.poll(() => output.includes(marker), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS }).toBe(true);
   await page.evaluate(
     () =>
@@ -543,8 +609,7 @@ test("real xterm links disclose destinations and require a modified click", asyn
 
     await page.goto(`${isolatedServer.info.base_url}/terminal/${workspace.id}`);
     const terminal = await openTerminalPanel(page);
-    await terminal.locator(".xterm-helper-textarea").focus();
-    await runAttachedTmuxCommand(page, "set-option -p allow-passthrough on");
+    const tmuxSession = await runningRuntimeTmuxSession(api, workspace.id);
     const usesMetaKey = await page.evaluate(() => /Mac/.test(navigator.platform));
     const modifier = usesMetaKey ? "Meta" : "Control";
     const modifierLabel = usesMetaKey ? "Cmd" : "Ctrl";
@@ -553,21 +618,25 @@ test("real xterm links disclose destinations and require a modified click", asyn
         destination: "https://example.com/detected-link",
         renderedText: "https://example.com/detected-link",
         marker: "detected-link-ready",
+        raw: false,
       },
       {
         destination: "https://example.org/osc8-destination",
-        renderedText: tmuxPassthroughSequence(
-          "\x1b]8;;https://example.org/osc8-destination\x07Open release notes\x1b]8;;\x07",
-        ),
+        renderedText: "\x1b]8;;https://example.org/osc8-destination\x07Open release notes\x1b]8;;\x07",
         marker: "osc8-link-ready",
+        raw: true,
       },
     ];
 
     for (const link of links) {
       await page.mouse.move(1, 1);
       await expect(terminal.locator(".terminal-link-tooltip")).toHaveCount(0);
-      const dimensions = await renderTerminalLink(page, terminal, output, link.renderedText, link.marker);
-      expect(output.includes(link.destination)).toBe(true);
+      const dimensions = link.raw
+        ? await renderRawTerminalLink(page, output, isolatedServer, tmuxSession, link.renderedText, link.marker)
+        : await renderTerminalLink(page, terminal, output, link.renderedText, link.marker);
+      expect(output.includes(link.destination), `${link.marker} destination did not reach the terminal stream`).toBe(
+        true,
+      );
       const point = await terminalCellCenter(terminal, dimensions, 4, 0);
       const resetPoint = await terminalCellCenter(terminal, dimensions, 4, 2);
 
@@ -601,6 +670,50 @@ test("real xterm links disclose destinations and require a modified click", asyn
         })),
       );
   } finally {
+    await api?.dispose();
+    await isolatedServer?.stop();
+  }
+});
+
+test("modified non-link terminal drags retain pointer capture through outside release", async ({ page }) => {
+  test.skip(!hasCommand("git") || !hasCommand("tmux", ["-V"]), "git and tmux are required for the real workspace flow");
+
+  let isolatedServer: IsolatedE2EServer | null = null;
+  let api: APIRequestContext | null = null;
+  let modifierDown = false;
+  let pointerDown = false;
+  let modifier: "Meta" | "Control" | null = null;
+  try {
+    isolatedServer = await startIsolatedWorkspaceE2EServer();
+    api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
+    const workspace = await createIssueWorkspace(api, 10);
+
+    await page.goto(`${isolatedServer.info.base_url}/terminal/${workspace.id}`);
+    const terminal = await openTerminalPanel(page);
+    const screen = await terminal.locator(".xterm-screen").boundingBox();
+    if (!screen) throw new Error("xterm screen geometry unavailable");
+    modifier = (await page.evaluate(() => /Mac/.test(navigator.platform))) ? "Meta" : "Control";
+
+    await page.mouse.move(screen.x + screen.width / 2, screen.y + screen.height / 2);
+    await page.keyboard.down(modifier);
+    modifierDown = true;
+    pointerDown = true;
+    await beginCapturedPointerGesture(page, terminal);
+
+    await page.mouse.move(screen.x - 20, screen.y - 20, { steps: 5 });
+    await page.mouse.up();
+    pointerDown = false;
+    await expect
+      .poll(() =>
+        terminal.evaluate((element) => {
+          const target = element as HTMLElement;
+          return target.hasPointerCapture(Number(target.dataset.playwrightPointerId));
+        }),
+      )
+      .toBe(false);
+  } finally {
+    if (pointerDown) await page.mouse.up();
+    if (modifierDown && modifier) await page.keyboard.up(modifier);
     await api?.dispose();
     await isolatedServer?.stop();
   }

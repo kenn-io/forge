@@ -194,9 +194,10 @@
     if (activePointerId !== null) {
       cancelTerminalPointerGesture();
     }
-    // Pointer capture retargets mouseup to the container, preventing xterm's
-    // linkifier from seeing the matching release and activating the link.
-    if (terminalLinkModifierPressed(event)) return;
+    // Over an active link, pointer capture retargets mouseup to the container
+    // and prevents xterm's linkifier from activating it. Modified non-link
+    // gestures still need the normal clipboard and drag lifecycle below.
+    if (hoveredTerminalLink !== null && terminalLinkModifierPressed(event)) return;
     activePointerId = event.pointerId;
     clipboardWriter.beginPointerGesture();
     try {

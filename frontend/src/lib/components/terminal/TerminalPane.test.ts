@@ -980,6 +980,19 @@ describe("TerminalPane", () => {
     expect(clipboardWriterCancelAuthorization).toHaveBeenCalledTimes(1);
   });
 
+  it("revokes pending terminal clipboard writes before an outside click copies text", async () => {
+    render(TerminalPane, { props: { workspaceId: "ws-123" } });
+    await waitFor(() => expect(xtermTerminalCtor).toHaveBeenCalled());
+    clipboardWriterCancelAuthorization.mockClear();
+
+    const outsideButton = document.createElement("button");
+    document.body.append(outsideButton);
+    outsideButton.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+
+    expect(clipboardWriterCancelAuthorization).toHaveBeenCalledTimes(1);
+    outsideButton.remove();
+  });
+
   it("does not attach xterm sessions with unavailable initial status", async () => {
     render(TerminalPane, {
       props: {

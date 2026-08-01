@@ -220,6 +220,12 @@
     cancelTerminalClipboardAuthorization();
   }
 
+  function handleDocumentPointerDown(event: PointerEvent): void {
+    const target = event.target;
+    if (target instanceof Node && containerEl.contains(target)) return;
+    cancelTerminalClipboardAuthorization();
+  }
+
   function handleWindowBlur(): void {
     cancelTerminalClipboardAuthorization();
   }
@@ -951,7 +957,10 @@
   onpointerup={handleTerminalPointerEnd}
   onpointercancel={handleTerminalPointerCancel}
 />
-<svelte:document onvisibilitychange={handleDocumentVisibilityChange} />
+<svelte:document
+  onpointerdowncapture={handleDocumentPointerDown}
+  onvisibilitychange={handleDocumentVisibilityChange}
+/>
 
 <div
   class="terminal-container"

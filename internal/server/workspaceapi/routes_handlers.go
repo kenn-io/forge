@@ -786,16 +786,37 @@ func (s *Handler) refreshWorkspace(
 	if s.workspaceDiffCache != nil {
 		s.workspaceDiffCache.RevalidateWorkspace(input.ID)
 	}
-
-	provider := strings.TrimSpace(summary.Platform)
-	if provider == "" {
-		provider = string(platform.KindGitHub)
+	if summary.RepoID == nil || *summary.RepoID <= 0 || s.resolver == nil {
+		return nil, httpapi.Conflict(
+			httpapi.CodeConflict,
+			"workspace repository incarnation is unavailable",
+			nil,
+		)
 	}
-	repo, err := s.lookupRepoByProviderRoute(
-		ctx, provider, summary.PlatformHost, summary.RepoOwner, summary.RepoName,
-	)
+	repoID := *summary.RepoID
+	activeRepo := func() (*db.Repo, error) {
+		_, repo, release, leaseErr := s.resolver.LeaseActiveRepositoryContext(
+			ctx, repoID,
+		)
+		if leaseErr != nil {
+			return nil, httpapi.Internal(
+				"lease workspace repository: " + leaseErr.Error(),
+			)
+		}
+		if repo == nil {
+			return nil, httpapi.Conflict(
+				httpapi.CodeConflict,
+				"workspace repository incarnation is retired",
+				nil,
+			)
+		}
+		snapshot := *repo
+		release()
+		return &snapshot, nil
+	}
+	repo, err := activeRepo()
 	if err != nil {
-		return nil, providerRouteLookupError(err)
+		return nil, err
 	}
 	kind := repoProviderKind(*repo)
 	host := repoProviderHost(*repo)
@@ -807,6 +828,12 @@ func (s *Handler) refreshWorkspace(
 		); err != nil {
 			return nil, err
 		}
+		repo, err = activeRepo()
+		if err != nil {
+			return nil, err
+		}
+		kind = repoProviderKind(*repo)
+		host = repoProviderHost(*repo)
 	case db.WorkspaceItemTypePullRequest:
 		// The PR detail sync runs after the repo index refresh below so the
 		// workspace response reflects the latest indexed PR row and diff.
@@ -825,6 +852,12 @@ func (s *Handler) refreshWorkspace(
 	); err != nil {
 		return nil, err
 	}
+	repo, err = activeRepo()
+	if err != nil {
+		return nil, err
+	}
+	kind = repoProviderKind(*repo)
+	host = repoProviderHost(*repo)
 
 	if s.workspacePRMonitor != nil {
 		update, changed, err := s.workspacePRMonitor.RefreshWorkspaceAssociation(
@@ -852,6 +885,9 @@ func (s *Handler) refreshWorkspace(
 		if err := s.refreshWorkspacePullRequest(
 			ctx, kind, host, repo.Owner, repo.Name, prNumber,
 		); err != nil {
+			return nil, err
+		}
+		if _, err := activeRepo(); err != nil {
 			return nil, err
 		}
 		refreshed, err = s.workspaces.GetSummary(ctx, input.ID)

@@ -795,6 +795,51 @@ func TestHandleAddRepo(t *testing.T) {
 	require.Len(t, cfg2.Repos, 2)
 }
 
+func TestHandleAddExactRepoRebuildsOverlappingGlobProvenance(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	mock := &mockGH{
+		listReposByOwnerFn: func(
+			_ context.Context, owner string,
+		) ([]*gh.Repository, error) {
+			return []*gh.Repository{{
+				Name:     new("widget"),
+				NodeID:   new("repo-acme-widget"),
+				Owner:    &gh.User{Login: new(owner)},
+				Archived: new(false),
+			}}, nil
+		},
+	}
+	srv, _, _ := setupTestServerWithConfigContent(t, `
+sync_interval = "5m"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "*"
+`, mock)
+	srv.syncer.Stop()
+
+	rr := doJSON(t, srv, http.MethodPost, "/api/v1/repos", map[string]string{
+		"provider": "github",
+		"host":     "github.com",
+		"owner":    "acme",
+		"name":     "widget",
+	})
+	require.Equal(http.StatusCreated, rr.Code, rr.Body.String())
+
+	tracked := srv.syncer.TrackedRepos()
+	require.Len(tracked, 1)
+	assert.Equal([]ghclient.ConfiguredRepoRoute{{
+		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+	}}, tracked[0].ConfiguredRoutes)
+	assert.Equal([]ghclient.ConfiguredRepoGlob{{
+		Owner: "acme", Name: "*",
+	}}, tracked[0].ConfiguredGlobs)
+}
+
 func TestHandleAddRepoTriggersImmediateSyncDuringCooldown(t *testing.T) {
 	require := require.New(t)
 
@@ -916,6 +961,69 @@ func TestHandleDeleteRepo(t *testing.T) {
 	require.NoError(err)
 	require.Len(cfg2.Repos, 1)
 	assert.Equal(t, "other-org", cfg2.Repos[0].Owner)
+}
+
+func TestHandleDeleteOverlappingRepoRebuildsConfigurationProvenance(
+	t *testing.T,
+) {
+	for _, tc := range []struct {
+		name       string
+		deletePath string
+		wantRoutes []ghclient.ConfiguredRepoRoute
+		wantGlobs  []ghclient.ConfiguredRepoGlob
+	}{
+		{
+			name:       "remove exact keeps glob only",
+			deletePath: "/api/v1/repo/gh/acme/widget",
+			wantGlobs: []ghclient.ConfiguredRepoGlob{{
+				Owner: "acme", Name: "*",
+			}},
+		},
+		{
+			name:       "remove glob keeps exact only",
+			deletePath: "/api/v1/repo/gh/acme/*",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			mock := &mockGH{
+				listReposByOwnerFn: func(
+					_ context.Context, owner string,
+				) ([]*gh.Repository, error) {
+					return []*gh.Repository{{
+						Name:     new("widget"),
+						NodeID:   new("repo-acme-widget"),
+						Owner:    &gh.User{Login: new(owner)},
+						Archived: new(false),
+					}}, nil
+				},
+			}
+			srv, _, _ := setupTestServerWithConfigContent(t, `
+sync_interval = "5m"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "*"
+
+[[repos]]
+owner = "acme"
+name = "widget"
+`, mock)
+			srv.syncer.Stop()
+
+			rr := doJSON(t, srv, http.MethodDelete, tc.deletePath, nil)
+			require.Equal(http.StatusNoContent, rr.Code, rr.Body.String())
+
+			tracked := srv.syncer.TrackedRepos()
+			require.Len(tracked, 1)
+			assert.Equal(tc.wantRoutes, tracked[0].ConfiguredRoutes)
+			assert.Equal(tc.wantGlobs, tracked[0].ConfiguredGlobs)
+		})
+	}
 }
 
 func TestHandleDeleteRepoPreservesKataProjectMappings(t *testing.T) {
@@ -2386,37 +2494,55 @@ func TestRenamedExactRepoRetainsSettingsMatchAndWorktreeBasePath(t *testing.T) {
 	require.Equal("/tmp/acme-widget", got)
 }
 
-func TestRemovingOtherConfigKeepsRenamedExactRepoTracked(t *testing.T) {
+func TestHandleDeleteOtherRepoKeepsRenamedExactRepoTracked(t *testing.T) {
+	assert := assert.New(t)
 	require := require.New(t)
-	database := dbtest.Open(t)
-	renamed := ghclient.RepoRef{
-		Platform:        platform.KindGitHub,
-		PlatformHost:    "github.com",
-		Owner:           "acme-tools",
-		Name:            "current-widget",
-		RepoPath:        "acme-tools/current-widget",
-		CredentialOwner: "acme",
-		CredentialName:  "legacy-widget",
-	}
-	other := ghclient.RepoRef{
-		Platform:     platform.KindGitHub,
-		PlatformHost: "github.com",
-		Owner:        "acme",
-		Name:         "other",
-		RepoPath:     "acme/other",
-	}
-	syncer := ghclient.NewSyncer(
-		nil, database, nil, []ghclient.RepoRef{renamed, other}, time.Minute, nil, nil,
+	mock := &mockGH{getRepositoryFn: func(
+		_ context.Context, owner, repo string,
+	) (*gh.Repository, error) {
+		if owner == "acme" && repo == "legacy-widget" {
+			return &gh.Repository{
+				Name:     new("current-widget"),
+				NodeID:   new("repo-acme-widget"),
+				Owner:    &gh.User{Login: new("acme-tools")},
+				Archived: new(false),
+			}, nil
+		}
+		nodeID := "repo-" + owner + "-" + repo
+		return &gh.Repository{
+			Name:     new(repo),
+			NodeID:   &nodeID,
+			Owner:    &gh.User{Login: new(owner)},
+			Archived: new(false),
+		}, nil
+	}}
+	srv, _, _ := setupTestServerWithConfigContent(t, `
+sync_interval = "5m"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "legacy-widget"
+
+[[repos]]
+owner = "acme"
+name = "other"
+`, mock)
+	srv.syncer.Stop()
+
+	rr := doJSON(
+		t, srv, http.MethodDelete, "/api/v1/repo/gh/acme/other", nil,
 	)
-	t.Cleanup(syncer.Stop)
-	srv := &Server{db: database, syncer: syncer}
+	require.Equal(http.StatusNoContent, rr.Code, rr.Body.String())
 
-	srv.removeConfigRepos([]config.Repo{{
-		Owner: "acme",
-		Name:  "legacy-widget",
-	}})
-
-	require.Equal([]ghclient.RepoRef{renamed}, syncer.TrackedRepos())
+	tracked := srv.syncer.TrackedRepos()
+	require.Len(tracked, 1)
+	assert.Equal("acme-tools", tracked[0].Owner)
+	assert.Equal("current-widget", tracked[0].Name)
+	assert.Equal("acme", tracked[0].CredentialOwner)
+	assert.Equal("legacy-widget", tracked[0].CredentialName)
 }
 
 func TestHandleBulkAddReposPersistsGiteaProviderIdentity(t *testing.T) {

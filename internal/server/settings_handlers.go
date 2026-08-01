@@ -139,83 +139,6 @@ func matchedRepoCount(
 	return count
 }
 
-// mergeTrackedRepos adds repos to the syncer's tracked set,
-// deduplicating by host/owner/name.
-func (s *Server) mergeTrackedRepos(add []ghclient.RepoRef) {
-	current := s.syncer.TrackedRepos()
-	seen := make(map[string]struct{}, len(current))
-	for _, r := range current {
-		seen[trackedRepoKey(r)] = struct{}{}
-	}
-	for _, r := range add {
-		key := trackedRepoKey(r)
-		if _, ok := seen[key]; ok {
-			continue
-		}
-		seen[key] = struct{}{}
-		current = append(current, r)
-	}
-	s.syncer.SetRepos(current)
-}
-
-// replaceGlobRepos removes repos that only match the refreshed
-// glob entry, preserves repos still matched by other config
-// entries, then adds the newly resolved matches.
-func (s *Server) replaceGlobRepos(
-	raw config.Repo,
-	expanded []ghclient.RepoRef,
-	configured []config.Repo,
-) {
-	current := s.syncer.TrackedRepos()
-	kept := make([]ghclient.RepoRef, 0, len(current))
-	seen := make(map[string]struct{}, len(current)+len(expanded))
-	for _, repo := range current {
-		if repoMatchesConfig(repo, raw) &&
-			!repoMatchesOtherConfig(repo, raw, configured) {
-			continue
-		}
-		appendTrackedRepo(&kept, seen, repo)
-	}
-	for _, repo := range expanded {
-		appendTrackedRepo(&kept, seen, repo)
-	}
-	s.syncer.SetRepos(kept)
-}
-
-// removeConfigRepos keeps only tracked repos that match at
-// least one of the remaining config entries.
-func (s *Server) removeConfigRepos(
-	remaining []config.Repo,
-) {
-	current := s.syncer.TrackedRepos()
-	kept := make([]ghclient.RepoRef, 0, len(current))
-	for _, repo := range current {
-		for _, raw := range remaining {
-			if repoMatchesConfig(repo, raw) {
-				kept = append(kept, repo)
-				break
-			}
-		}
-	}
-	s.syncer.SetRepos(kept)
-}
-
-func repoMatchesOtherConfig(
-	repo ghclient.RepoRef,
-	target config.Repo,
-	configured []config.Repo,
-) bool {
-	for _, raw := range configured {
-		if sameConfiguredRepo(raw, target) {
-			continue
-		}
-		if repoMatchesConfig(repo, raw) {
-			return true
-		}
-	}
-	return false
-}
-
 func sameConfiguredRepo(left, right config.Repo) bool {
 	return strings.EqualFold(left.PlatformOrDefault(), right.PlatformOrDefault()) &&
 		samePlatformHost(
@@ -339,19 +262,6 @@ func trackedRepoPath(repo ghclient.RepoRef) string {
 	return repo.Owner + "/" + repo.Name
 }
 
-func appendTrackedRepo(
-	dst *[]ghclient.RepoRef,
-	seen map[string]struct{},
-	repo ghclient.RepoRef,
-) {
-	key := trackedRepoKey(repo)
-	if _, ok := seen[key]; ok {
-		return
-	}
-	seen[key] = struct{}{}
-	*dst = append(*dst, repo)
-}
-
 func repoProvider(repo ghclient.RepoRef) string {
 	provider := string(repo.Platform)
 	if provider == "" {
@@ -398,6 +308,43 @@ func (s *Server) persistResolvedRepos(
 		}
 	}
 	return nil
+}
+
+func (s *Server) replaceTrackedReposFromConfig(
+	ctx context.Context,
+	configured []config.Repo,
+	previous []ghclient.RepoRef,
+) error {
+	for {
+		resolved, skipped := s.resolveReposForReload(ctx, configured, previous)
+		if len(skipped) > 0 {
+			return fmt.Errorf(
+				"configured repository providers require a daemon restart: %s",
+				strings.Join(skipped, ", "),
+			)
+		}
+
+		s.configReloadMu.Lock()
+		s.cfgMu.Lock()
+		current := slices.Clone(s.cfg.Repos)
+		s.cfgMu.Unlock()
+		if !slices.Equal(current, configured) {
+			s.configReloadMu.Unlock()
+			configured = current
+			previous = append(s.syncer.TrackedRepos(), previous...)
+			continue
+		}
+		if err := s.persistResolvedRepos(ctx, resolved); err != nil {
+			s.configReloadMu.Unlock()
+			return err
+		}
+		if err := s.syncer.SetReposWithContext(ctx, resolved, false); err != nil {
+			s.configReloadMu.Unlock()
+			return fmt.Errorf("replace configured repositories: %w", err)
+		}
+		s.configReloadMu.Unlock()
+		return nil
+	}
 }
 
 func samePlatformHost(left, right string) bool {
@@ -664,13 +611,16 @@ func (s *Server) addConfiguredRepo(
 	if err != nil {
 		return nil, classifyResolveProblem(err)
 	}
+	previous := append(s.syncer.TrackedRepos(), expanded...)
 
 	// Re-acquire lock and apply the addition to current state
 	// so concurrent activity/settings changes are not lost.
+	s.configReloadMu.Lock()
 	s.cfgMu.Lock()
 	for _, rp := range s.cfg.Repos {
 		if sameConfiguredRepo(rp, newRepo) {
 			s.cfgMu.Unlock()
+			s.configReloadMu.Unlock()
 			return nil, httpapi.BadRequest(httpapi.CodeBadRequest,
 				input.Body.Owner+"/"+input.Body.Name+
 					" is already configured", nil)
@@ -680,16 +630,22 @@ func (s *Server) addConfiguredRepo(
 	if err := s.cfg.Validate(); err != nil {
 		s.cfg.Repos = s.cfg.Repos[:len(s.cfg.Repos)-1]
 		s.cfgMu.Unlock()
+		s.configReloadMu.Unlock()
 		return nil, httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), nil)
 	}
 	if err := s.cfg.Save(s.cfgPath); err != nil {
 		s.cfg.Repos = s.cfg.Repos[:len(s.cfg.Repos)-1]
 		s.cfgMu.Unlock()
+		s.configReloadMu.Unlock()
 		return nil, httpapi.Internal("save config: " + err.Error())
 	}
-	s.mergeTrackedRepos(expanded)
+	configured := slices.Clone(s.cfg.Repos)
 	s.applyWorkspaceConfigLocked()
 	s.cfgMu.Unlock()
+	s.configReloadMu.Unlock()
+	if err := s.replaceTrackedReposFromConfig(ctx, configured, previous); err != nil {
+		return nil, httpapi.Internal("apply configured repositories: " + err.Error())
+	}
 
 	s.syncer.TriggerRun(context.WithoutCancel(ctx))
 	return &settingsOutput{Body: s.buildLocalSettingsResponse()}, nil
@@ -701,7 +657,6 @@ func (s *Server) refreshConfiguredRepo(
 	if s.cfgPath == "" {
 		return nil, httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
 	}
-
 	owner := input.Owner
 	name := input.Name
 	provider, err := normalizeRouteProvider(input.Provider)
@@ -744,6 +699,7 @@ func (s *Server) refreshConfiguredRepo(
 	if err != nil {
 		return nil, classifyResolveProblem(err)
 	}
+	previous := append(s.syncer.TrackedRepos(), expanded...)
 
 	// Re-acquire cfgMu and verify the target glob still exists
 	// in the config before applying the resolved matches.
@@ -767,12 +723,10 @@ func (s *Server) refreshConfiguredRepo(
 		return nil, httpapi.NotFound(httpapi.CodeRepoNotFound,
 			owner+"/"+name+" is no longer configured", nil)
 	}
-	if err := s.persistResolvedRepos(ctx, expanded); err != nil {
-		s.cfgMu.Unlock()
-		return nil, httpapi.Internal("persist resolved repos: " + err.Error())
-	}
-	s.replaceGlobRepos(*target, expanded, currentRepos)
 	s.cfgMu.Unlock()
+	if err := s.replaceTrackedReposFromConfig(ctx, currentRepos, previous); err != nil {
+		return nil, httpapi.Internal("apply configured repositories: " + err.Error())
+	}
 
 	s.syncer.TriggerRun(context.WithoutCancel(ctx))
 	return &settingsOutput{Body: s.buildLocalSettingsResponse()}, nil
@@ -881,12 +835,11 @@ func (s *Server) updateConfiguredRepoWorktreeBasePath(
 }
 
 func (s *Server) deleteConfiguredRepo(
-	_ context.Context, input *repoConfigInput,
+	ctx context.Context, input *repoConfigInput,
 ) (*struct{}, error) {
 	if s.cfgPath == "" {
 		return nil, httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
 	}
-
 	owner := input.Owner
 	name := input.Name
 	provider, err := normalizeRouteProvider(input.Provider)
@@ -900,6 +853,7 @@ func (s *Server) deleteConfiguredRepo(
 		Name:         name,
 	}
 
+	s.configReloadMu.Lock()
 	s.cfgMu.Lock()
 	idx := -1
 	for i, rp := range s.cfg.Repos {
@@ -913,6 +867,7 @@ func (s *Server) deleteConfiguredRepo(
 	}
 	if idx == -1 {
 		s.cfgMu.Unlock()
+		s.configReloadMu.Unlock()
 		return nil, httpapi.NotFound(httpapi.CodeRepoNotFound,
 			owner+"/"+name+" is not configured", nil)
 	}
@@ -924,11 +879,18 @@ func (s *Server) deleteConfiguredRepo(
 	if err := s.cfg.Save(s.cfgPath); err != nil {
 		s.cfg.Repos = prevRepos
 		s.cfgMu.Unlock()
+		s.configReloadMu.Unlock()
 		return nil, httpapi.Internal("save config: " + err.Error())
 	}
-	s.removeConfigRepos(s.cfg.Repos)
+	configured := slices.Clone(s.cfg.Repos)
 	s.applyWorkspaceConfigLocked()
 	s.cfgMu.Unlock()
+	s.configReloadMu.Unlock()
+	if err := s.replaceTrackedReposFromConfig(
+		ctx, configured, s.syncer.TrackedRepos(),
+	); err != nil {
+		return nil, httpapi.Internal("apply configured repositories: " + err.Error())
+	}
 
 	return nil, nil
 }

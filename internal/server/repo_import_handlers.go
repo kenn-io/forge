@@ -548,7 +548,12 @@ func (s *Server) applyBulkExactRepos(
 	resolved []resolvedBulkRepo,
 ) (settingsResponse, error) {
 	s.configReloadMu.Lock()
-	defer s.configReloadMu.Unlock()
+	configLocked := true
+	defer func() {
+		if configLocked {
+			s.configReloadMu.Unlock()
+		}
+	}()
 
 	s.cfgMu.Lock()
 	existing := exactConfiguredRepoSet(s.cfg.Repos)
@@ -588,14 +593,15 @@ func (s *Server) applyBulkExactRepos(
 			"save config: " + err.Error(),
 		)}
 	}
-	if err := s.persistResolvedRepos(ctx, addRefs); err != nil {
-		s.cfg.Repos = prev
-		s.cfgMu.Unlock()
-		return settingsResponse{}, &bulkApplyError{problem: httpapi.Internal(err.Error())}
-	}
-	s.mergeTrackedRepos(addRefs)
+	configured := slices.Clone(s.cfg.Repos)
 	s.applyWorkspaceConfigLocked()
 	s.cfgMu.Unlock()
+	s.configReloadMu.Unlock()
+	configLocked = false
+	previous := append(s.syncer.TrackedRepos(), addRefs...)
+	if err := s.replaceTrackedReposFromConfig(ctx, configured, previous); err != nil {
+		return settingsResponse{}, &bulkApplyError{problem: httpapi.Internal(err.Error())}
+	}
 
 	return s.buildLocalSettingsResponse(), nil
 }

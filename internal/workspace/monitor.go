@@ -139,16 +139,14 @@ func (m *PRMonitor) detectAssociatedPR(
 	if currentBranch == "" {
 		return 0, false, nil
 	}
-	repo, err := m.db.GetRepoByIdentity(ctx, db.RepoIdentity{
-		Platform:     workspaceProvider(ws),
-		PlatformHost: ws.PlatformHost,
-		Owner:        ws.RepoOwner,
-		Name:         ws.RepoName,
-	})
+	if ws.RepoID == nil || *ws.RepoID <= 0 {
+		return 0, false, nil
+	}
+	repo, err := m.db.GetRepoByID(ctx, *ws.RepoID)
 	if err != nil {
 		return 0, false, fmt.Errorf("get repo: %w", err)
 	}
-	if repo == nil {
+	if repo == nil || repo.RetiredAt != nil {
 		return 0, false, nil
 	}
 	candidates, err := m.db.ListMergeRequests(ctx, db.ListMergeRequestsOpts{

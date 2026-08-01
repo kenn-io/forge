@@ -28443,6 +28443,23 @@ func TestWorkspaceRuntimeSessionTerminalTmuxBackedWebSocketE2E(
 	assert.True(
 		isRuntimeTmuxSessionNameForWorkspace(ws.Id, stored[0].TmuxSession),
 	)
+	tmuxState := func() ([]byte, error) {
+		tmuxArgs := append(
+			slices.Clone(tmuxCommand[1:]),
+			"display-message", "-p", "-t", stored[0].TmuxSession,
+			"#{session_attached}:#{pane_dead}:#{pane_dead_status}",
+		)
+		return procutil.Command(tmuxCommand[0], tmuxArgs...).CombinedOutput()
+	}
+	var readyState []byte
+	var readyErr error
+	require.Eventuallyf(func() bool {
+		readyState, readyErr = tmuxState()
+		return readyErr == nil && strings.HasPrefix(string(readyState), "1:0:")
+	}, 5*time.Second, 10*time.Millisecond,
+		"runtime tmux client did not attach: state=%q err=%v",
+		readyState, readyErr,
+	)
 
 	ts := httptest.NewServer(srv)
 	t.Cleanup(ts.Close)
@@ -28454,29 +28471,55 @@ func TestWorkspaceRuntimeSessionTerminalTmuxBackedWebSocketE2E(
 	require.NoError(err)
 	defer conn.Close(websocket.StatusNormalClosure, "done")
 
-	writeResize := func() error {
-		t.Helper()
-		resize, err := json.Marshal(map[string]any{
-			"type": "resize",
-			"cols": 177,
-			"rows": 41,
-		})
-		require.NoError(err)
-		return conn.Write(ctx, websocket.MessageText, resize)
+	refresh, err := json.Marshal(map[string]any{
+		"type": "refresh",
+		"cols": 177,
+		"rows": 41,
+	})
+	require.NoError(err)
+	writeRefresh := func(writeCtx context.Context) error {
+		return conn.Write(writeCtx, websocket.MessageText, refresh)
 	}
-	probeSize := func() error {
-		if err := writeResize(); err != nil {
+	probeSize := func(writeCtx context.Context) error {
+		if err := writeRefresh(writeCtx); err != nil {
 			return err
 		}
-		return conn.Write(ctx, websocket.MessageBinary, []byte("probe\n"))
+		return conn.Write(writeCtx, websocket.MessageBinary, []byte("probe\n"))
 	}
-	require.NoError(probeSize())
+	probeCtx, stopProbes := context.WithCancel(ctx)
+	probeDone := make(chan struct{})
+	probeErr := make(chan error, 1)
+	go func() {
+		defer close(probeDone)
+		ticker := time.NewTicker(250 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			if err := probeSize(probeCtx); err != nil {
+				select {
+				case probeErr <- err:
+				default:
+				}
+				return
+			}
+			select {
+			case <-probeCtx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
+	defer func() {
+		stopProbes()
+		<-probeDone
+	}()
 	readCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
 	var got strings.Builder
+	var terminalReadErr error
 	for {
 		typ, data, readErr := conn.Read(readCtx)
 		if readErr != nil {
+			terminalReadErr = readErr
 			break
 		}
 		if typ != websocket.MessageBinary {
@@ -28489,11 +28532,26 @@ func TestWorkspaceRuntimeSessionTerminalTmuxBackedWebSocketE2E(
 		if strings.Contains(got.String(), "size:40:177:probe") {
 			return
 		}
-		if err := probeSize(); err != nil {
-			break
-		}
 	}
-	require.Contains(got.String(), "size:40:177:probe")
+	var terminalWriteErr error
+	select {
+	case terminalWriteErr = <-probeErr:
+	default:
+	}
+	finalTmuxState, tmuxErr := tmuxState()
+	if !strings.Contains(got.String(), "size:40:177:probe") {
+		terminalOutput := got.String()
+		if len(terminalOutput) > 4096 {
+			terminalOutput = terminalOutput[len(terminalOutput)-4096:]
+		}
+		require.FailNowf(
+			"terminal output did not contain resized probe",
+			"terminal output: %q; read ended: %v; probe write: %v; "+
+				"sessions: %#v; tmux state: %q (%v)",
+			terminalOutput, terminalReadErr, terminalWriteErr,
+			srv.runtime.ListSessions(ws.Id), finalTmuxState, tmuxErr,
+		)
+	}
 }
 
 func createReadyWorkspace(
@@ -29007,6 +29065,52 @@ func TestWorkspaceManualRefreshDiscoversAndSyncsAssociatedPR(t *testing.T) {
 	require.NotNil(pr)
 	assert.Equal(prTitleFromDetail, pr.Title)
 	assert.Equal(headSHA, pr.PlatformHeadSHA)
+}
+
+func TestWorkspaceManualRefreshRejectsRetiredRepositoryIncarnation(t *testing.T) {
+	t.Parallel()
+	acquireRootWorkspaceGitSlot(t)
+
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	fixture := setupWorkspaceServerFixtureWithMockHostAndOptions(
+		t, nil, &mockGH{}, "github.com",
+		ServerOptions{
+			PtyOwnerInProcess:                  true,
+			DisableWorkspaceBackgroundMonitors: true,
+		},
+	)
+	ws := createReadyWorkspace(t, ctx, fixture.client)
+	stored, err := fixture.database.GetWorkspace(ctx, ws.Id)
+	require.NoError(err)
+	require.NotNil(stored)
+	require.NotNil(stored.RepoID)
+	oldRepoID := *stored.RepoID
+
+	replacementID, err := fixture.database.UpsertRepoByProviderID(
+		ctx,
+		db.RepoIdentity{
+			Platform:       "github",
+			PlatformHost:   "github.com",
+			PlatformRepoID: "repo-replacement",
+			Owner:          "acme",
+			Name:           "widget",
+			RepoPath:       "acme/widget",
+		},
+	)
+	require.NoError(err)
+	require.NotEqual(oldRepoID, replacementID)
+
+	rr := doJSON(
+		t, fixture.server, http.MethodPost,
+		"/api/v1/workspaces/"+ws.Id+"/refresh", nil,
+	)
+	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
+	var problem rawProblemDetail
+	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
+	assert.Equal("conflict", problem.Code)
+	assert.Contains(problem.Detail, "repository incarnation is retired")
 }
 
 func TestKataWorkspaceManualRefreshDiscoversAndSyncsAssociatedPR(t *testing.T) {

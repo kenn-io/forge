@@ -295,6 +295,9 @@ func (s *Handler) runWorkspaceSetup(ws *workspace.Workspace) {
 
 func (s *Handler) runWorkspaceSetupWithBasePath(ws *workspace.Workspace, basePath string) {
 	done, start := s.beginWorkspaceSetup(ws.ID)
+	if done == nil {
+		return
+	}
 	if !start {
 		s.runBackground(func(ctx context.Context) {
 			select {
@@ -387,6 +390,9 @@ func (s *Handler) runWorkspaceSetupWithBasePath(ws *workspace.Workspace, basePat
 func (s *Handler) beginWorkspaceSetup(workspaceID string) (chan struct{}, bool) {
 	s.workspaceSetupMu.Lock()
 	defer s.workspaceSetupMu.Unlock()
+	if s.workspaceDeleting[workspaceID] {
+		return nil, false
+	}
 	if done, ok := s.workspaceSetupDone[workspaceID]; ok {
 		return done, false
 	}
@@ -404,12 +410,21 @@ func (s *Handler) finishWorkspaceSetup(workspaceID string, done chan struct{}) {
 	s.workspaceSetupMu.Unlock()
 }
 
-func (s *Handler) waitForWorkspaceSetup(
-	ctx context.Context, workspaceID string,
-) error {
+func (s *Handler) markWorkspaceDeleting(workspaceID string) <-chan struct{} {
 	s.workspaceSetupMu.Lock()
+	s.workspaceDeleting[workspaceID] = true
 	done := s.workspaceSetupDone[workspaceID]
 	s.workspaceSetupMu.Unlock()
+	return done
+}
+
+func (s *Handler) unmarkWorkspaceDeleting(workspaceID string) {
+	s.workspaceSetupMu.Lock()
+	delete(s.workspaceDeleting, workspaceID)
+	s.workspaceSetupMu.Unlock()
+}
+
+func waitForWorkspaceSetup(ctx context.Context, done <-chan struct{}) error {
 	if done == nil {
 		return nil
 	}
@@ -2403,6 +2418,16 @@ func (s *Handler) deleteWorkspace(
 		return nil, httpapi.ServiceUnavailable("workspace manager not configured")
 	}
 
+	setupDone := s.markWorkspaceDeleting(input.ID)
+	deleted := false
+	defer func() {
+		// Keep successful deletions marked so setup dispatchers already queued on
+		// the old generation cannot reopen admission after the row is gone.
+		if !deleted {
+			s.unmarkWorkspaceDeleting(input.ID)
+		}
+	}()
+
 	if s.runtime != nil {
 		// Block new launches before the dirty preflight; existing
 		// sessions are stopped only after the preflight passes.
@@ -2413,7 +2438,7 @@ func (s *Handler) deleteWorkspace(
 			s.runtime.EndStopping(input.ID)
 		}
 	}()
-	if err := s.waitForWorkspaceSetup(ctx, input.ID); err != nil {
+	if err := waitForWorkspaceSetup(ctx, setupDone); err != nil {
 		return nil, httpapi.Internal("wait for workspace setup: " + err.Error())
 	}
 	dirty, err := s.workspaces.Delete(
@@ -2442,5 +2467,6 @@ func (s *Handler) deleteWorkspace(
 			"workspace has uncommitted changes: "+strings.Join(dirty, ", "), nil)
 	}
 
+	deleted = true
 	return nil, nil
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/forge/internal/apiclient/generated"
+	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/workspace"
 	gitcmd "go.kenn.io/kit/git/cmd"
 )
@@ -83,6 +84,120 @@ func TestWorkspaceForceDeleteWaitsForInFlightSetupE2E(t *testing.T) {
 	case result = <-deleteDone:
 	case <-time.After(10 * time.Second):
 		require.FailNow("force-delete did not finish after workspace setup resumed")
+	}
+	require.NoError(result.err)
+	assert.Equal(http.StatusNoContent, result.status)
+
+	stored, err := fixture.database.GetWorkspace(ctx, ws.Id)
+	require.NoError(err)
+	assert.Nil(stored)
+	_, err = os.Lstat(ws.WorktreePath)
+	require.ErrorIs(err, os.ErrNotExist)
+	assert.Equal(1, listBareWorktrees(t, fixture.bare))
+}
+
+func TestWorkspaceForceDeleteRejectsConcurrentRetrySetupE2E(t *testing.T) {
+	t.Parallel()
+	acquireWorkspaceGitSlot(t)
+
+	require := require.New(t)
+	assert := assert.New(t)
+	if len(workspaceTestTmuxCommand) == 0 {
+		t.Skip("tmux not available")
+	}
+
+	dir := t.TempDir()
+	started := dir + "/delete-started"
+	release := dir + "/delete-release"
+	claim := dir + "/delete-claim"
+	wrapper := dir + "/tmux-wrapper.sh"
+	require.NoError(os.WriteFile(wrapper, []byte(`#!/bin/sh
+started=$1
+release=$2
+claim=$3
+shift 3
+is_kill=false
+for arg in "$@"; do
+  if [ "$arg" = "kill-session" ]; then
+    is_kill=true
+  fi
+done
+if [ "$is_kill" = true ] && mkdir "$claim" 2>/dev/null; then
+  : > "$started"
+  while [ ! -e "$release" ]; do
+    sleep 0.01
+  done
+fi
+exec "$@"
+`), 0o700))
+	defer func() {
+		_ = os.WriteFile(release, []byte("release\n"), 0o600)
+	}()
+
+	tmuxCommand := []string{wrapper, started, release, claim}
+	tmuxCommand = append(tmuxCommand, workspaceTestTmuxCommand...)
+	cfg := &config.Config{}
+	cfg.Tmux.Command = tmuxCommand
+	fixture := setupWorkspaceServerFixture(t, cfg)
+	ctx := t.Context()
+
+	createResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     1,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.NotNil(createResp.JSON202)
+	ws := waitForWorkspaceReady(t, ctx, fixture.client, createResp.JSON202.Id)
+
+	msg := "forced error for delete and retry overlap"
+	require.NoError(fixture.database.UpdateWorkspaceStatus(
+		ctx, ws.Id, "error", &msg,
+	))
+
+	type deleteResult struct {
+		status int
+		err    error
+	}
+	deleteDone := make(chan deleteResult, 1)
+	go func() {
+		force := true
+		resp, deleteErr := fixture.client.HTTP.DeleteWorkspaceWithResponse(
+			ctx, ws.Id, &generated.DeleteWorkspaceParams{Force: &force},
+		)
+		if deleteErr != nil {
+			deleteDone <- deleteResult{err: deleteErr}
+			return
+		}
+		deleteDone <- deleteResult{status: resp.StatusCode()}
+	}()
+
+	require.Eventually(func() bool {
+		_, statErr := os.Stat(started)
+		return statErr == nil
+	}, 5*time.Second, 10*time.Millisecond)
+
+	retryResp, err := fixture.client.HTTP.RetryWorkspaceWithResponse(ctx, ws.Id)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, retryResp.StatusCode())
+	require.Never(func() bool {
+		_, statErr := os.Lstat(ws.WorktreePath)
+		return statErr == nil
+	}, time.Second, 10*time.Millisecond,
+		"retry recreated the worktree while deletion was paused")
+
+	require.NoError(os.WriteFile(release, []byte("release\n"), 0o600))
+	var result deleteResult
+	select {
+	case result = <-deleteDone:
+	case <-time.After(10 * time.Second):
+		require.FailNow("force-delete did not finish after terminal cleanup resumed")
 	}
 	require.NoError(result.err)
 	assert.Equal(http.StatusNoContent, result.status)

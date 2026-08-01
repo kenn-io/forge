@@ -158,10 +158,7 @@
   }
 
   function openTerminalLink(event: MouseEvent, uri: string): void {
-    const modifierPressed = terminalLinkUsesMetaKey
-      ? event.metaKey
-      : event.ctrlKey;
-    if (!modifierPressed) return;
+    if (!terminalLinkModifierPressed(event)) return;
 
     let url: URL;
     try {
@@ -172,6 +169,10 @@
     if (url.protocol !== "http:" && url.protocol !== "https:") return;
 
     window.open(url.href, "_blank", "noopener,noreferrer");
+  }
+
+  function terminalLinkModifierPressed(event: MouseEvent): boolean {
+    return terminalLinkUsesMetaKey ? event.metaKey : event.ctrlKey;
   }
 
   function showTerminalLink(_event: MouseEvent, uri: string): void {
@@ -193,6 +194,9 @@
     if (activePointerId !== null) {
       cancelTerminalPointerGesture();
     }
+    // Pointer capture retargets mouseup to the container, preventing xterm's
+    // linkifier from seeing the matching release and activating the link.
+    if (terminalLinkModifierPressed(event)) return;
     activePointerId = event.pointerId;
     clipboardWriter.beginPointerGesture();
     try {

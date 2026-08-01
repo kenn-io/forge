@@ -1,6 +1,6 @@
 # VS Code Workflow Panel Interaction Spec
 
-Use this document when changing Middleman's workflow groups, workflow tabs,
+Use this document when changing Kenn Forge's workflow groups, workflow tabs,
 terminal groups, terminal splits, or related panel interaction semantics.
 
 Primary source: `microsoft/vscode` revision `6b1e5513a8b`.

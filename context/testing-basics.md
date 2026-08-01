@@ -22,4 +22,4 @@ fixtures, or changing shell-script coverage.
   workflows, config, or docs for expected implementation text.
 - Use provider live or container fixtures only when fake transports cannot
   catch endpoint or authentication drift. GitHub GraphQL validation is gated by
-  `MIDDLEMAN_LIVE_GITHUB_TESTS=1`.
+  `KENN_FORGE_LIVE_GITHUB_TESTS=1`.

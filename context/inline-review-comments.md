@@ -3,7 +3,7 @@
 Use this document for inline pull-request diff comments, local review drafts,
 published review-thread ingestion, or review controls in shared diff UI.
 
-- Staged review comments are local Middleman data. Provider clients publish a
+- Staged review comments are local Kenn Forge data. Provider clients publish a
   complete local draft; do not depend on provider-native pending drafts
   (`internal/db/queries_review.go::DB.GetOrCreateMRReviewDraft`,
   `internal/server/pullapi/diff_review_handlers.go::Handler.publishDiffReviewDraft`).

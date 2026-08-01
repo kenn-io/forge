@@ -54,7 +54,7 @@ and the root event stream.
 - Loopback TCP is the required cross-platform transport; Unix sockets and
   named pipes are not lifecycle requirements. Background startup rejects
   non-loopback listeners before launching
-  (`cmd/middleman/start_background.go::validateBackgroundConfig`).
+  (`cmd/kenn-forge/start_background.go::validateBackgroundConfig`).
 - Only the startup-bound bearer with exact loopback authority/peer and no
   forwarding headers bypasses proxy Host interpretation; cookies never qualify,
   and the bearer remains available when general API auth is off

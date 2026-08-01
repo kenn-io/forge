@@ -3,6 +3,7 @@
   import type { ChipSize, ChipTone } from "@kenn-io/kit-ui";
   import DesignSystemTabbedPanelDemo from "./DesignSystemTabbedPanelDemo.svelte";
   import DesignSystemTypeaheadDemo from "./DesignSystemTypeaheadDemo.svelte";
+  import OnboardingPrototypeGallery from "./OnboardingPrototypeGallery.svelte";
 
   interface ChipVariant {
     name: string;
@@ -37,6 +38,21 @@
         workflows.
       </p>
     </header>
+
+    <section class="prototype-section" aria-labelledby="onboarding-prototypes-title">
+      <div class="section-header">
+        <div>
+          <p class="section-kicker">First-run exploration</p>
+          <h2 id="onboarding-prototypes-title">Onboarding prototypes</h2>
+        </div>
+        <p class="section-copy">
+          Three routes from an authenticated GitHub CLI to configured repos,
+          useful pull requests, and a first workspace.
+        </p>
+      </div>
+
+      <OnboardingPrototypeGallery />
+    </section>
 
     <section class="card" aria-labelledby="tabbed-panel-title">
       <div class="section-header">
@@ -208,7 +224,7 @@
   }
 
   .page-shell {
-    max-width: 1120px;
+    max-width: 1280px;
     margin: 0 auto;
     padding: 32px 24px 48px;
     display: grid;
@@ -260,6 +276,12 @@
     padding: 20px;
     display: grid;
     gap: var(--space-6);
+  }
+
+  .prototype-section {
+    display: grid;
+    gap: var(--space-6);
+    padding: var(--space-6) 0 var(--space-7);
   }
 
   .grid {

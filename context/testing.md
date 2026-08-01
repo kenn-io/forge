@@ -8,6 +8,10 @@ as `assert := assert.New(t)` when a test has more than three assertions.
 Aliasing the `assert` package, including `Assert`, is not allowed and is
 enforced by golangci-lint's `importas` rule.
 
+Test server constructors that create a Workspace manager must apply their
+isolated test tmux command; they must never fall back to the host tmux server
+(`internal/server/kataapi/test_helpers_test.go::newKataTestServer`).
+
 ## Live GraphQL validation
 
 GraphQL query shape changes must be validated against GitHub's live GraphQL API before they are merged. The local test suite includes a gated live test:

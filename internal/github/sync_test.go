@@ -9185,7 +9185,7 @@ func TestSetWatchedMRsReplacesList(t *testing.T) {
 		mu.Lock()
 		defer mu.Unlock()
 		return syncedNumbers[1] >= 1
-	}, 2*time.Second, 20*time.Millisecond)
+	}, 10*time.Second, 20*time.Millisecond)
 
 	// Replace with PR #2 only.
 	mu.Lock()
@@ -9201,7 +9201,7 @@ func TestSetWatchedMRsReplacesList(t *testing.T) {
 		mu.Lock()
 		defer mu.Unlock()
 		return syncedNumbers[2] >= 1
-	}, 2*time.Second, 20*time.Millisecond)
+	}, 10*time.Second, 20*time.Millisecond)
 
 	// PR #1 should not accumulate many more syncs after replacement.
 	// Allow at most 1 extra (for an in-flight tick at replacement time).

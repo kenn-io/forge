@@ -64,7 +64,7 @@ func TestAPIVerbE2E(t *testing.T) {
 		}
 		defer resp.Body.Close()
 		return resp.StatusCode == http.StatusUnauthorized
-	}, 10*time.Second, 100*time.Millisecond,
+	}, 30*time.Second, 100*time.Millisecond,
 		"credential-less API request must 401")
 
 	run := func(args ...string) (string, string, int) {

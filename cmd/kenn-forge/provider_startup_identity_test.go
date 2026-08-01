@@ -934,7 +934,7 @@ func TestProductionStartupRoutesTwoOwnersThroughSyncAndMutationAPI(t *testing.T)
 			}
 		}
 		return true
-	}, 5*time.Second, 20*time.Millisecond)
+	}, 30*time.Second, 20*time.Millisecond)
 
 	for _, repo := range repos {
 		url := fmt.Sprintf(

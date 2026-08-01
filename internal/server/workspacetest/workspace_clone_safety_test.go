@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -24,14 +25,12 @@ func setupLifecycleWorkspaceServer(t *testing.T) (*apiclient.Client, *db.DB, str
 	return fixture.client, fixture.database, fixture.bare, fixture.remote
 }
 
-// TestWorkspaceForceDeleteToleratesCorruptWorktreeGitfileE2E verifies a
-// workspace whose worktree .git gitfile was left empty by an
-// interrupted "git worktree add" (the daemon canceling background
-// setup at shutdown) can still be force-deleted through the API. Git
-// rejects such a worktree with "invalid gitfile format", which the
-// delete path's worktree-ownership probe surfaced as a 500 before the
-// fix — leaving the workspace permanently undeletable.
-func TestWorkspaceForceDeleteToleratesCorruptWorktreeGitfileE2E(t *testing.T) {
+// TestWorkspaceForceDeleteQuarantinesReplacedWorktreeAndAllowsRecreateE2E
+// covers the user-visible recovery path when a workspace directory no longer
+// contains the linked worktree registered by its managed clone.
+func TestWorkspaceForceDeleteQuarantinesReplacedWorktreeAndAllowsRecreateE2E(
+	t *testing.T,
+) {
 	t.Parallel()
 	acquireWorkspaceGitSlot(t)
 
@@ -39,14 +38,17 @@ func TestWorkspaceForceDeleteToleratesCorruptWorktreeGitfileE2E(t *testing.T) {
 	assert := assert.New(t)
 
 	client, database, _, _ := setupLifecycleWorkspaceServer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, client)
+	worktreePath := ws.WorktreePath
 
-	gitfile := filepath.Join(ws.WorktreePath, ".git")
-	require.FileExists(gitfile)
-	// Truncate the worktree's .git gitfile to reproduce the corrupt
-	// state an interrupted "git worktree add" leaves behind.
-	require.NoError(os.Truncate(gitfile, 0))
+	require.NoError(os.RemoveAll(worktreePath))
+	require.NoError(os.MkdirAll(worktreePath, 0o755))
+	require.NoError(os.WriteFile(
+		filepath.Join(worktreePath, "recover.txt"),
+		[]byte("preserve me\n"),
+		0o644,
+	))
 
 	force := true
 	delResp, err := client.HTTP.DeleteWorkspaceWithResponse(
@@ -60,6 +62,612 @@ func TestWorkspaceForceDeleteToleratesCorruptWorktreeGitfileE2E(t *testing.T) {
 	got, err := database.GetWorkspace(ctx, ws.Id)
 	require.NoError(err)
 	assert.Nil(got)
+	_, err = os.Lstat(worktreePath)
+	require.ErrorIs(err, os.ErrNotExist)
+	recoveryPaths, err := filepath.Glob(worktreePath + ".orphaned-*")
+	require.NoError(err)
+	require.Len(recoveryPaths, 1)
+	contents, err := os.ReadFile(filepath.Join(recoveryPaths[0], "recover.txt"))
+	require.NoError(err)
+	assert.Equal("preserve me\n", string(contents))
+
+	recreateCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	recreated := createReadyWorkspace(t, recreateCtx, client)
+	assert.NotEqual(ws.Id, recreated.Id)
+	assert.Equal(worktreePath, recreated.WorktreePath)
+	require.FileExists(filepath.Join(recreated.WorktreePath, ".git"))
+}
+
+func TestWorkspaceForceDeleteQuarantinesReplacementFileAndAllowsRecreateE2E(
+	t *testing.T,
+) {
+	t.Parallel()
+	acquireWorkspaceGitSlot(t)
+
+	require := require.New(t)
+	assert := assert.New(t)
+
+	client, database, _, _ := setupLifecycleWorkspaceServer(t)
+	ctx := t.Context()
+	ws := createReadyWorkspace(t, ctx, client)
+	worktreePath := ws.WorktreePath
+
+	require.NoError(os.RemoveAll(worktreePath))
+	require.NoError(os.WriteFile(
+		worktreePath, []byte("preserve replacement file\n"), 0o644,
+	))
+
+	force := true
+	deleteResp, err := client.HTTP.DeleteWorkspaceWithResponse(
+		ctx, ws.Id, &generated.DeleteWorkspaceParams{Force: &force},
+	)
+	require.NoError(err)
+	require.Equal(
+		http.StatusNoContent, deleteResp.StatusCode(), string(deleteResp.Body),
+	)
+
+	stored, err := database.GetWorkspace(ctx, ws.Id)
+	require.NoError(err)
+	assert.Nil(stored)
+	_, err = os.Lstat(worktreePath)
+	require.ErrorIs(err, os.ErrNotExist)
+	recoveryPaths, err := filepath.Glob(worktreePath + ".orphaned-*")
+	require.NoError(err)
+	require.Len(recoveryPaths, 1)
+	contents, err := os.ReadFile(recoveryPaths[0])
+	require.NoError(err)
+	assert.Equal("preserve replacement file\n", string(contents))
+
+	recreated := createReadyWorkspace(t, ctx, client)
+	assert.NotEqual(ws.Id, recreated.Id)
+	assert.Equal(worktreePath, recreated.WorktreePath)
+	require.FileExists(filepath.Join(recreated.WorktreePath, ".git"))
+}
+
+func TestWorkspaceForceDeleteReplacementCloneClearsManagedRegistrationE2E(
+	t *testing.T,
+) {
+	t.Parallel()
+	acquireWorkspaceGitSlot(t)
+
+	require := require.New(t)
+	assert := assert.New(t)
+	fixture := setupWorkspaceServerFixture(t, nil)
+	ctx := t.Context()
+
+	// Force setup onto the managed fallback branch so deletion has both a
+	// linked-worktree registration and a Kenn Forge branch to clear.
+	runGit(t, fixture.bare, "update-ref", "refs/heads/feature", "refs/heads/main")
+	ws := createReadyWorkspace(t, ctx, fixture.client)
+	worktreePath := ws.WorktreePath
+	assert.Equal(
+		"kenn-forge/pr-1",
+		workspaceGitOutput(t, worktreePath, "branch", "--show-current"),
+	)
+
+	require.NoError(os.RemoveAll(worktreePath))
+	runGit(t, filepath.Dir(worktreePath), "clone", fixture.remote, worktreePath)
+	runGit(
+		t, worktreePath, "remote", "set-url", "origin",
+		"https://github.com/acme/widget.git",
+	)
+	require.NoError(os.WriteFile(
+		filepath.Join(worktreePath, "foreign.txt"), []byte("preserve me\n"), 0o644,
+	))
+	foreignHead := testGitSHA(t, worktreePath, "HEAD")
+
+	force := true
+	deleteResp, err := fixture.client.HTTP.DeleteWorkspaceWithResponse(
+		ctx, ws.Id, &generated.DeleteWorkspaceParams{Force: &force},
+	)
+	require.NoError(err)
+	require.Equal(
+		http.StatusNoContent, deleteResp.StatusCode(), string(deleteResp.Body),
+	)
+
+	stored, err := fixture.database.GetWorkspace(ctx, ws.Id)
+	require.NoError(err)
+	assert.Nil(stored)
+	assert.Equal(foreignHead, testGitSHA(t, worktreePath, "HEAD"))
+	contents, err := os.ReadFile(filepath.Join(worktreePath, "foreign.txt"))
+	require.NoError(err)
+	assert.Equal("preserve me\n", string(contents))
+	assert.NotContains(
+		workspaceGitOutput(t, fixture.bare, "worktree", "list", "--porcelain"),
+		worktreePath,
+	)
+	requireGitRefMissing(t, fixture.bare, "refs/heads/kenn-forge/pr-1")
+
+	require.NoError(os.RemoveAll(worktreePath))
+	recreated := createReadyWorkspace(t, ctx, fixture.client)
+	assert.Equal(worktreePath, recreated.WorktreePath)
+	assert.Equal(
+		"kenn-forge/pr-1",
+		workspaceGitOutput(t, worktreePath, "branch", "--show-current"),
+	)
+}
+
+func TestWorkspaceForceDeletePreservesSameOriginForeignLinkedWorktreeE2E(
+	t *testing.T,
+) {
+	t.Parallel()
+	acquireWorkspaceGitSlot(t)
+
+	require := require.New(t)
+	assert := assert.New(t)
+	fixture := setupWorkspaceServerFixture(t, nil)
+	ctx := t.Context()
+
+	runGit(t, fixture.bare, "update-ref", "refs/heads/feature", "refs/heads/main")
+	ws := createReadyWorkspace(t, ctx, fixture.client)
+	worktreePath := ws.WorktreePath
+	assert.Equal(
+		"kenn-forge/pr-1",
+		workspaceGitOutput(t, worktreePath, "branch", "--show-current"),
+	)
+
+	require.NoError(os.RemoveAll(worktreePath))
+	foreignGitDir := filepath.Join(t.TempDir(), "foreign.git")
+	runGit(t, filepath.Dir(foreignGitDir), "clone", "--bare", fixture.remote, foreignGitDir)
+	runGit(
+		t, foreignGitDir, "remote", "set-url", "origin",
+		"https://github.com/acme/widget.git",
+	)
+	runGit(
+		t, foreignGitDir, "worktree", "add", worktreePath,
+		"-b", "foreign/scratch", "HEAD",
+	)
+	require.NoError(os.WriteFile(
+		filepath.Join(worktreePath, "base.txt"), []byte("foreign dirty data\n"), 0o644,
+	))
+	foreignHead := testGitSHA(t, worktreePath, "HEAD")
+
+	force := true
+	deleteResp, err := fixture.client.HTTP.DeleteWorkspaceWithResponse(
+		ctx, ws.Id, &generated.DeleteWorkspaceParams{Force: &force},
+	)
+	require.NoError(err)
+	require.Equal(
+		http.StatusNoContent, deleteResp.StatusCode(), string(deleteResp.Body),
+	)
+
+	stored, err := fixture.database.GetWorkspace(ctx, ws.Id)
+	require.NoError(err)
+	assert.Nil(stored)
+	require.FileExists(filepath.Join(worktreePath, ".git"))
+	contents, err := os.ReadFile(filepath.Join(worktreePath, "base.txt"))
+	require.NoError(err)
+	assert.Equal("foreign dirty data\n", string(contents))
+	assert.Equal(foreignHead, testGitSHA(t, worktreePath, "HEAD"))
+	assert.Contains(
+		workspaceGitOutput(t, worktreePath, "status", "--porcelain"),
+		"M base.txt",
+	)
+	assert.Contains(
+		workspaceGitOutput(t, foreignGitDir, "worktree", "list", "--porcelain"),
+		worktreePath,
+	)
+	assert.NotContains(
+		workspaceGitOutput(t, fixture.bare, "worktree", "list", "--porcelain"),
+		worktreePath,
+	)
+	requireGitRefMissing(t, fixture.bare, "refs/heads/kenn-forge/pr-1")
+
+	runGit(t, foreignGitDir, "worktree", "remove", "--force", worktreePath)
+	recreated := createReadyWorkspace(t, ctx, fixture.client)
+	assert.Equal(worktreePath, recreated.WorktreePath)
+	assert.Equal(
+		"kenn-forge/pr-1",
+		workspaceGitOutput(t, worktreePath, "branch", "--show-current"),
+	)
+}
+
+func TestWorkspaceForceDeletePreservesForeignLinkedWorktreeAfterManagedPruneE2E(
+	t *testing.T,
+) {
+	t.Parallel()
+	acquireWorkspaceGitSlot(t)
+
+	require := require.New(t)
+	assert := assert.New(t)
+	fixture := setupWorkspaceServerFixture(t, nil)
+	ctx := t.Context()
+
+	runGit(t, fixture.bare, "update-ref", "refs/heads/feature", "refs/heads/main")
+	ws := createReadyWorkspace(t, ctx, fixture.client)
+	worktreePath := ws.WorktreePath
+	assert.Equal(
+		"kenn-forge/pr-1",
+		workspaceGitOutput(t, worktreePath, "branch", "--show-current"),
+	)
+
+	require.NoError(os.RemoveAll(worktreePath))
+	runGit(t, fixture.bare, "worktree", "prune")
+	assert.NotContains(
+		workspaceGitOutput(t, fixture.bare, "worktree", "list", "--porcelain"),
+		worktreePath,
+	)
+
+	foreignGitDir := filepath.Join(t.TempDir(), "foreign.git")
+	runGit(t, filepath.Dir(foreignGitDir), "clone", "--bare", fixture.remote, foreignGitDir)
+	runGit(
+		t, foreignGitDir, "remote", "set-url", "origin",
+		"https://github.com/acme/widget.git",
+	)
+	runGit(
+		t, foreignGitDir, "worktree", "add", worktreePath,
+		"-b", "foreign/scratch", "HEAD",
+	)
+	require.NoError(os.WriteFile(
+		filepath.Join(worktreePath, "base.txt"), []byte("foreign dirty data\n"), 0o644,
+	))
+	foreignHead := testGitSHA(t, worktreePath, "HEAD")
+
+	force := true
+	deleteResp, err := fixture.client.HTTP.DeleteWorkspaceWithResponse(
+		ctx, ws.Id, &generated.DeleteWorkspaceParams{Force: &force},
+	)
+	require.NoError(err)
+	require.Equal(
+		http.StatusNoContent, deleteResp.StatusCode(), string(deleteResp.Body),
+	)
+
+	stored, err := fixture.database.GetWorkspace(ctx, ws.Id)
+	require.NoError(err)
+	assert.Nil(stored)
+	require.FileExists(filepath.Join(worktreePath, ".git"))
+	contents, err := os.ReadFile(filepath.Join(worktreePath, "base.txt"))
+	require.NoError(err)
+	assert.Equal("foreign dirty data\n", string(contents))
+	assert.Equal(foreignHead, testGitSHA(t, worktreePath, "HEAD"))
+	assert.Contains(
+		workspaceGitOutput(t, worktreePath, "status", "--porcelain"),
+		"M base.txt",
+	)
+	assert.Contains(
+		workspaceGitOutput(t, foreignGitDir, "worktree", "list", "--porcelain"),
+		worktreePath,
+	)
+}
+
+func TestWorkspaceForceDeleteRejectsSameRepoReplacementAfterManagedPruneE2E(
+	t *testing.T,
+) {
+	t.Parallel()
+	acquireWorkspaceGitSlot(t)
+
+	require := require.New(t)
+	assert := assert.New(t)
+	fixture := setupWorkspaceServerFixture(t, nil)
+	ctx := t.Context()
+
+	runGit(t, fixture.bare, "update-ref", "refs/heads/feature", "refs/heads/main")
+	ws := createReadyWorkspace(t, ctx, fixture.client)
+	worktreePath := ws.WorktreePath
+	assert.Equal(
+		"kenn-forge/pr-1",
+		workspaceGitOutput(t, worktreePath, "branch", "--show-current"),
+	)
+
+	require.NoError(os.RemoveAll(worktreePath))
+	runGit(t, fixture.bare, "worktree", "prune")
+	runGit(
+		t, fixture.bare, "worktree", "add", worktreePath,
+		"-b", "foreign/scratch", "HEAD",
+	)
+	require.NoError(os.WriteFile(
+		filepath.Join(worktreePath, "base.txt"), []byte("foreign dirty data\n"), 0o644,
+	))
+	foreignHead := testGitSHA(t, worktreePath, "HEAD")
+
+	force := true
+	deleteResp, err := fixture.client.HTTP.DeleteWorkspaceWithResponse(
+		ctx, ws.Id, &generated.DeleteWorkspaceParams{Force: &force},
+	)
+	require.NoError(err)
+	require.Equal(
+		http.StatusConflict, deleteResp.StatusCode(), string(deleteResp.Body),
+	)
+
+	stored, err := fixture.database.GetWorkspace(ctx, ws.Id)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal(ws.Id, stored.ID)
+	require.FileExists(filepath.Join(worktreePath, ".git"))
+	contents, err := os.ReadFile(filepath.Join(worktreePath, "base.txt"))
+	require.NoError(err)
+	assert.Equal("foreign dirty data\n", string(contents))
+	assert.Equal(foreignHead, testGitSHA(t, worktreePath, "HEAD"))
+	assert.Contains(
+		workspaceGitOutput(t, worktreePath, "status", "--porcelain"),
+		"M base.txt",
+	)
+	assert.Contains(
+		workspaceGitOutput(t, fixture.bare, "worktree", "list", "--porcelain"),
+		worktreePath,
+	)
+	assert.Equal(
+		foreignHead,
+		testGitSHA(t, fixture.bare, "refs/heads/foreign/scratch"),
+	)
+}
+
+func TestWorkspaceForceDeleteRejectsPreMarkerWorkspaceAfterUpgradeE2E(
+	t *testing.T,
+) {
+	t.Parallel()
+	acquireWorkspaceGitSlot(t)
+
+	require := require.New(t)
+	assert := assert.New(t)
+	fixture := setupWorkspaceServerFixture(t, nil)
+	ctx := t.Context()
+
+	runGit(t, fixture.bare, "update-ref", "refs/heads/feature", "refs/heads/main")
+	ws := createReadyWorkspace(t, ctx, fixture.client)
+	worktreePath := ws.WorktreePath
+	assert.Equal(
+		"kenn-forge/pr-1",
+		workspaceGitOutput(t, worktreePath, "branch", "--show-current"),
+	)
+	metadataDir := workspaceGitOutput(
+		t, worktreePath,
+		"rev-parse", "--path-format=absolute", "--git-dir",
+	)
+	require.NoError(os.Remove(filepath.Join(metadataDir, "kenn-forge-workspace-id")))
+
+	force := true
+	deleteResp, err := fixture.client.HTTP.DeleteWorkspaceWithResponse(
+		ctx, ws.Id, &generated.DeleteWorkspaceParams{Force: &force},
+	)
+	require.NoError(err)
+	require.Equal(
+		http.StatusConflict, deleteResp.StatusCode(), string(deleteResp.Body),
+	)
+
+	stored, err := fixture.database.GetWorkspace(ctx, ws.Id)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal(ws.Id, stored.ID)
+	require.FileExists(filepath.Join(worktreePath, ".git"))
+	assert.Equal(
+		"kenn-forge/pr-1",
+		workspaceGitOutput(t, worktreePath, "branch", "--show-current"),
+	)
+	assert.Contains(
+		workspaceGitOutput(t, fixture.bare, "worktree", "list", "--porcelain"),
+		worktreePath,
+	)
+	assert.Equal(
+		testGitSHA(t, worktreePath, "HEAD"),
+		testGitSHA(t, fixture.bare, "refs/heads/kenn-forge/pr-1"),
+	)
+}
+
+func TestWorkspaceForceDeleteRetainsLockedWorktreeE2E(t *testing.T) {
+	t.Parallel()
+	acquireWorkspaceGitSlot(t)
+
+	require := require.New(t)
+	assert := assert.New(t)
+	fixture := setupWorkspaceServerFixture(t, nil)
+	ctx := t.Context()
+
+	ws := createReadyWorkspace(t, ctx, fixture.client)
+	runGit(
+		t, fixture.bare, "worktree", "lock", "--reason", "test lock",
+		ws.WorktreePath,
+	)
+
+	force := true
+	deleteResp, err := fixture.client.HTTP.DeleteWorkspaceWithResponse(
+		ctx, ws.Id, &generated.DeleteWorkspaceParams{Force: &force},
+	)
+	require.NoError(err)
+	require.Equal(
+		http.StatusInternalServerError,
+		deleteResp.StatusCode(),
+		string(deleteResp.Body),
+	)
+
+	stored, err := fixture.database.GetWorkspace(ctx, ws.Id)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal(ws.Id, stored.ID)
+	require.FileExists(filepath.Join(ws.WorktreePath, ".git"))
+	assert.Contains(
+		workspaceGitOutput(t, fixture.bare, "worktree", "list", "--porcelain"),
+		ws.WorktreePath,
+	)
+	metadataDir := workspaceGitOutput(
+		t, ws.WorktreePath,
+		"rev-parse", "--path-format=absolute", "--git-dir",
+	)
+	marker, err := os.ReadFile(filepath.Join(metadataDir, "kenn-forge-workspace-id"))
+	require.NoError(err)
+	assert.Equal(ws.Id+"\n", string(marker))
+
+	runGit(t, fixture.bare, "worktree", "unlock", ws.WorktreePath)
+	deleteResp, err = fixture.client.HTTP.DeleteWorkspaceWithResponse(
+		ctx, ws.Id, &generated.DeleteWorkspaceParams{Force: &force},
+	)
+	require.NoError(err)
+	require.Equal(
+		http.StatusNoContent, deleteResp.StatusCode(), string(deleteResp.Body),
+	)
+	stored, err = fixture.database.GetWorkspace(ctx, ws.Id)
+	require.NoError(err)
+	assert.Nil(stored)
+}
+
+func TestWorkspaceForceDeleteRejectsSymlinkToSameRepoWorktreeE2E(
+	t *testing.T,
+) {
+	t.Parallel()
+	acquireWorkspaceGitSlot(t)
+
+	require := require.New(t)
+	assert := assert.New(t)
+	fixture := setupWorkspaceServerFixture(t, nil)
+	ctx := t.Context()
+
+	ws := createReadyWorkspace(t, ctx, fixture.client)
+	worktreePath := ws.WorktreePath
+	require.NoError(os.RemoveAll(worktreePath))
+	runGit(t, fixture.bare, "worktree", "prune")
+
+	targetPath := filepath.Join(t.TempDir(), "replacement-worktree")
+	runGit(
+		t, fixture.bare, "worktree", "add", targetPath,
+		"-b", "foreign/symlink-target", "HEAD",
+	)
+	require.NoError(os.WriteFile(
+		filepath.Join(targetPath, "base.txt"), []byte("foreign dirty data\n"), 0o644,
+	))
+	require.NoError(os.Symlink(targetPath, worktreePath))
+	foreignHead := testGitSHA(t, targetPath, "HEAD")
+
+	force := true
+	deleteResp, err := fixture.client.HTTP.DeleteWorkspaceWithResponse(
+		ctx, ws.Id, &generated.DeleteWorkspaceParams{Force: &force},
+	)
+	require.NoError(err)
+	require.Equal(
+		http.StatusConflict, deleteResp.StatusCode(), string(deleteResp.Body),
+	)
+
+	stored, err := fixture.database.GetWorkspace(ctx, ws.Id)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal(ws.Id, stored.ID)
+	pathInfo, err := os.Lstat(worktreePath)
+	require.NoError(err)
+	assert.NotZero(pathInfo.Mode() & os.ModeSymlink)
+	contents, err := os.ReadFile(filepath.Join(targetPath, "base.txt"))
+	require.NoError(err)
+	assert.Equal("foreign dirty data\n", string(contents))
+	assert.Equal(foreignHead, testGitSHA(t, targetPath, "HEAD"))
+	assert.Contains(
+		workspaceGitOutput(t, fixture.bare, "worktree", "list", "--porcelain"),
+		targetPath,
+	)
+}
+
+func TestWorkspaceRetryRejectsPreMarkerWorkspaceAfterUpgradeE2E(
+	t *testing.T,
+) {
+	t.Parallel()
+	acquireWorkspaceGitSlot(t)
+
+	require := require.New(t)
+	assert := assert.New(t)
+	fixture := setupWorkspaceServerFixture(t, nil)
+	ctx := t.Context()
+
+	ws := createReadyWorkspace(t, ctx, fixture.client)
+	metadataDir := workspaceGitOutput(
+		t, ws.WorktreePath,
+		"rev-parse", "--path-format=absolute", "--git-dir",
+	)
+	require.NoError(os.Remove(filepath.Join(metadataDir, "kenn-forge-workspace-id")))
+	errorMessage := "simulate setup failure before upgrade"
+	require.NoError(fixture.database.UpdateWorkspaceStatus(
+		ctx, ws.Id, "error", &errorMessage,
+	))
+
+	retryResp, err := fixture.client.HTTP.RetryWorkspaceWithResponse(ctx, ws.Id)
+	require.NoError(err)
+	require.Equal(
+		http.StatusConflict, retryResp.StatusCode(), string(retryResp.Body),
+	)
+
+	stored, err := fixture.database.GetWorkspace(ctx, ws.Id)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal("error", stored.Status)
+	require.NotNil(stored.ErrorMessage)
+	assert.NotEmpty(*stored.ErrorMessage)
+	require.FileExists(filepath.Join(ws.WorktreePath, ".git"))
+	assert.Contains(
+		workspaceGitOutput(t, fixture.bare, "worktree", "list", "--porcelain"),
+		ws.WorktreePath,
+	)
+}
+
+func TestWorkspaceCreateOccupiedPathCreatesNoBranchesE2E(t *testing.T) {
+	t.Parallel()
+	acquireWorkspaceGitSlot(t)
+
+	require := require.New(t)
+	assert := assert.New(t)
+	fixture := setupWorkspaceServerFixture(t, nil)
+	ctx := t.Context()
+
+	const (
+		mrNumber        = 2
+		preferredBranch = "topic/occupied-path"
+		fallbackBranch  = "kenn-forge/pr-2"
+	)
+	seedPRWithHeadRepo(
+		t, fixture.database, "github.com", "acme", "widget", mrNumber,
+		"https://github.com/contributor/widget.git",
+	)
+	headSHA := testGitSHA(t, fixture.remote, "refs/heads/feature")
+	runGit(t, fixture.remote, "update-ref", "refs/pull/2/head", headSHA)
+	_, err := fixture.database.WriteDB().ExecContext(
+		ctx,
+		`UPDATE forge_merge_requests SET head_branch = ? WHERE number = ?`,
+		preferredBranch, mrNumber,
+	)
+	require.NoError(err)
+
+	worktreePath := filepath.Join(
+		fixture.worktreeDir, "github", "github.com", "acme", "widget", "pr-2",
+	)
+	require.NoError(os.MkdirAll(worktreePath, 0o755))
+	require.NoError(os.WriteFile(
+		filepath.Join(worktreePath, "keep.txt"), []byte("preserve me\n"), 0o644,
+	))
+
+	createResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     mrNumber,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.NotNil(createResp.JSON202)
+
+	var errored *generated.WorkspaceResponse
+	require.Eventually(func() bool {
+		getResp, getErr := fixture.client.HTTP.GetWorkspaceWithResponse(
+			ctx, createResp.JSON202.Id,
+		)
+		if getErr != nil || getResp.JSON200 == nil ||
+			getResp.JSON200.Status != "error" {
+			return false
+		}
+		errored = getResp.JSON200
+		return true
+	}, 10*time.Second, 25*time.Millisecond)
+	require.NotNil(errored.ErrorMessage)
+	assert.NotEmpty(*errored.ErrorMessage)
+
+	stored, err := fixture.database.GetWorkspace(ctx, createResp.JSON202.Id)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal("error", stored.Status)
+	contents, err := os.ReadFile(filepath.Join(worktreePath, "keep.txt"))
+	require.NoError(err)
+	assert.Equal("preserve me\n", string(contents))
+	requireGitRefMissing(t, fixture.bare, "refs/heads/"+preferredBranch)
+	requireGitRefMissing(t, fixture.bare, "refs/heads/"+fallbackBranch)
 }
 
 func TestWorkspaceCreateSameRepoHeadCloneURLTracksOriginBranchE2E(t *testing.T) {
@@ -115,6 +723,19 @@ func TestWorkspaceCreateSameRepoHeadCloneURLTracksOriginBranchE2E(t *testing.T) 
 			"config", "--get", "branch.feature.merge",
 		),
 	)
+}
+
+func requireGitRefMissing(t *testing.T, dir, ref string) {
+	t.Helper()
+
+	_, stderr, err := gitcmd.New().Run(
+		t.Context(), dir, nil, "show-ref", "--verify", "--quiet", ref,
+	)
+	var exitErr *exec.ExitError
+	require.ErrorAs(
+		t, err, &exitErr, "git ref %q unexpectedly exists: %s", ref, stderr,
+	)
+	require.Equal(t, 1, exitErr.ExitCode(), "git show-ref failed: %s", stderr)
 }
 
 func TestWorkspaceRetryLegacyUnknownHeadRepoLeavesBranchUntrackedE2E(t *testing.T) {

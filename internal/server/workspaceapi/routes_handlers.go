@@ -1526,6 +1526,9 @@ func (s *Handler) retryWorkspace(
 		if errors.Is(err, workspace.ErrWorkspaceInvalidState) {
 			return nil, httpapi.Conflict(httpapi.CodeConflict, err.Error(), nil)
 		}
+		if errors.Is(err, workspace.ErrWorkspaceOwnershipUnproven) {
+			return nil, httpapi.Conflict(httpapi.CodeConflict, err.Error(), nil)
+		}
 		return nil, httpapi.Internal("retry workspace: " + err.Error())
 	}
 	s.invalidateWorkspaceEnrichment(ws.ID)
@@ -2374,6 +2377,9 @@ func (s *Handler) deleteWorkspace(
 	if err != nil {
 		if errors.Is(err, workspace.ErrWorkspaceNotFound) {
 			return nil, httpapi.NotFound(httpapi.CodeWorkspaceNotFound, err.Error(), nil)
+		}
+		if errors.Is(err, workspace.ErrWorkspaceOwnershipUnproven) {
+			return nil, httpapi.Conflict(httpapi.CodeConflict, err.Error(), nil)
 		}
 		return nil, httpapi.Internal("delete workspace: " + err.Error())
 	}

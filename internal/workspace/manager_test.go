@@ -1689,8 +1689,9 @@ func TestSetupDoesNotReuseUnconfiguredMatchingOriginWorktree(t *testing.T) {
 
 	err = mgr.Setup(t.Context(), ws)
 
-	require.Error(err)
-	assert.Contains(err.Error(), "clone manager not set")
+	var recoveryErr *WorkspaceDirectoryRecoveryError
+	require.ErrorAs(err, &recoveryErr)
+	assert.Equal(WorkspaceDirectoryRepositoryMismatch, recoveryErr.Reason)
 	got, getErr := d.GetWorkspace(t.Context(), ws.ID)
 	require.NoError(getErr)
 	require.NotNil(got)
@@ -1838,6 +1839,51 @@ func TestSetupReusesExistingLocalBasePRHeadBranchWithoutManagingIt(t *testing.T)
 	exists, err := localBranchExists(t.Context(), localRepo, "feature/thing")
 	require.NoError(err)
 	assert.True(exists)
+}
+
+func TestSetupRejectsOrphanedWorkspacePathBeforeCreatingBranches(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	wtDir := t.TempDir()
+
+	localRepo, _, platformHost := setupHTTPWorktreeBaseForWorkspaceGitTest(
+		t, "feature/thing",
+	)
+	repoID := seedRepo(t, d, platformHost, "acme", "widget")
+	seedMR(t, d, repoID, 42, "feature/thing")
+
+	mgr := NewManager(d, wtDir)
+	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
+	ws, err := mgr.Create(
+		t.Context(), "github", platformHost, "acme", "widget", 42,
+	)
+	require.NoError(err)
+	require.NoError(os.MkdirAll(ws.WorktreePath, 0o755))
+	staleGitDir := filepath.Join(t.TempDir(), "removed", "worktrees", "pr-42")
+	require.NoError(os.WriteFile(
+		filepath.Join(ws.WorktreePath, ".git"),
+		[]byte("gitdir: "+staleGitDir+"\n"),
+		0o644,
+	))
+	require.NoError(os.WriteFile(
+		filepath.Join(ws.WorktreePath, "keep.txt"), []byte("preserve me\n"), 0o644,
+	))
+
+	err = mgr.Setup(t.Context(), ws)
+
+	var recoveryErr *WorkspaceDirectoryRecoveryError
+	if assert.ErrorAs(err, &recoveryErr) {
+		assert.Equal(WorkspaceDirectoryNotLinkedWorktree, recoveryErr.Reason)
+	}
+	contents, readErr := os.ReadFile(filepath.Join(ws.WorktreePath, "keep.txt"))
+	require.NoError(readErr)
+	assert.Equal("preserve me\n", string(contents))
+	for _, branch := range []string{ws.GitHeadRef, syntheticPRWorktreeBranch(42)} {
+		exists, branchErr := localBranchExists(t.Context(), localRepo, branch)
+		require.NoError(branchErr)
+		assert.False(exists, "setup must not create branch %q", branch)
+	}
 }
 
 func TestSetupRejectsExistingPRWorktreeOnUnexpectedBranch(t *testing.T) {
@@ -2576,7 +2622,7 @@ func TestFetchWorkspaceBaseDisablesGitHooks(t *testing.T) {
 	assert.Contains(calls[1], "set-head")
 }
 
-func TestCleanupUsesExistingWorktreeGitDirWhenConfiguredBaseChanges(t *testing.T) {
+func TestCleanupPreservesExistingWorktreeWhenConfiguredBaseChanges(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -2606,11 +2652,10 @@ func TestCleanupUsesExistingWorktreeGitDirWhenConfiguredBaseChanges(t *testing.T
 
 	require.NoError(mgr.cleanupWorkspaceArtifactsForDelete(t.Context(), ws))
 
-	_, err := os.Stat(worktreePath)
-	assert.True(os.IsNotExist(err), "cleanup should remove original worktree")
+	assert.DirExists(worktreePath)
 	actualExists, err := localBranchExists(t.Context(), actualRepo, branch)
 	require.NoError(err)
-	assert.False(actualExists)
+	assert.True(actualExists, "cleanup must preserve the unconfigured worktree")
 	wrongExists, err := localBranchExists(t.Context(), wrongRepo, branch)
 	require.NoError(err)
 	assert.True(wrongExists, "cleanup must not delete branch from current settings repo")
@@ -2702,6 +2747,75 @@ func TestCleanupDoesNotTrustStaleLocalBaseRegistrationForReplacementClone(t *tes
 	require.NoError(err)
 }
 
+func TestCleanupDeleteLockedRevalidatesOwnershipAfterPlanRace(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	const branch = "kenn-forge/pr-42"
+	localRepo, _ := setupLocalWorktreeBaseWithRemoteForWorkspaceGitTest(
+		t, "feature/thing",
+	)
+	worktreePath := filepath.Join(t.TempDir(), "workspace")
+	runWorkspaceTestGit(
+		t, localRepo,
+		"worktree", "add", worktreePath, "-b", branch, "HEAD",
+	)
+
+	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
+	ws := &Workspace{
+		ID:              "ws-delete-lock-race",
+		Platform:        "github",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		ItemType:        db.WorkspaceItemTypePullRequest,
+		ItemNumber:      42,
+		GitHeadRef:      "feature/thing",
+		WorkspaceBranch: branch,
+		WorktreePath:    worktreePath,
+	}
+	require.NoError(writeWorkspaceOwnershipMarker(t.Context(), localRepo, ws))
+	gitDir, owned, err := mgr.workspaceCleanupGitDir(t.Context(), ws)
+	require.NoError(err)
+	require.True(owned)
+	require.NotEmpty(gitDir)
+
+	require.NoError(os.RemoveAll(worktreePath))
+	runWorkspaceTestGit(t, localRepo, "worktree", "prune")
+	runWorkspaceTestGit(
+		t, localRepo,
+		"worktree", "add", worktreePath,
+		"-b", "foreign/race-replacement", "HEAD",
+	)
+	require.NoError(os.WriteFile(
+		filepath.Join(worktreePath, "foreign.txt"), []byte("keep me\n"), 0o644,
+	))
+	foreignHead := strings.TrimSpace(string(
+		runWorkspaceTestGit(t, worktreePath, "rev-parse", "HEAD"),
+	))
+
+	err = mgr.cleanupWorkspaceArtifactsForDeleteLocked(
+		t.Context(), gitDir, ws,
+	)
+
+	require.ErrorIs(err, ErrWorkspaceOwnershipUnproven)
+	require.FileExists(filepath.Join(worktreePath, ".git"))
+	contents, err := os.ReadFile(filepath.Join(worktreePath, "foreign.txt"))
+	require.NoError(err)
+	assert.Equal("keep me\n", string(contents))
+	assert.Equal(
+		foreignHead,
+		strings.TrimSpace(string(
+			runWorkspaceTestGit(t, worktreePath, "rev-parse", "HEAD"),
+		)),
+	)
+	assert.Contains(
+		string(runWorkspaceTestGit(t, localRepo, "worktree", "list", "--porcelain")),
+		worktreePath,
+	)
+}
+
 func TestCleanupIgnoresInvalidConfiguredBaseWhenWorktreeAbsent(t *testing.T) {
 	require := require.New(t)
 
@@ -2752,6 +2866,7 @@ func TestCleanupSucceedsWhenWorkspacePathReplacedByNonGitDirectory(t *testing.T)
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			assert := assert.New(t)
 			require := require.New(t)
 
 			localRepo := setupLocalWorktreeBaseForWorkspaceGitTest(t, "feature/thing")
@@ -2775,8 +2890,158 @@ func TestCleanupSucceedsWhenWorkspacePathReplacedByNonGitDirectory(t *testing.T)
 			}
 
 			require.NoError(mgr.cleanupWorkspaceArtifactsForDelete(t.Context(), ws))
+			_, err := os.Lstat(worktreePath)
+			require.ErrorIs(err, os.ErrNotExist)
+			recoveryPaths, err := filepath.Glob(worktreePath + ".orphaned-*")
+			require.NoError(err)
+			require.Len(recoveryPaths, 1)
+			if tt.name == "plain directory" {
+				contents, err := os.ReadFile(filepath.Join(recoveryPaths[0], "leftover.txt"))
+				require.NoError(err)
+				assert.Equal("not a repo", string(contents))
+			} else {
+				contents, err := os.ReadFile(filepath.Join(recoveryPaths[0], ".git"))
+				require.NoError(err)
+				assert.Contains(string(contents), "gitdir:")
+			}
 		})
 	}
+}
+
+func TestQuarantineOrphanedWorkspacePathPreservesSymlinkToFile(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	parent := t.TempDir()
+	targetPath := filepath.Join(parent, "replacement-target")
+	worktreePath := filepath.Join(parent, "workspace")
+	require.NoError(os.WriteFile(
+		targetPath, []byte("preserve target\n"), 0o644,
+	))
+	require.NoError(os.Symlink(targetPath, worktreePath))
+
+	require.NoError(quarantineOrphanedWorkspacePath(t.Context(), worktreePath))
+	_, err := os.Lstat(worktreePath)
+	require.ErrorIs(err, os.ErrNotExist)
+	recoveryPaths, err := filepath.Glob(worktreePath + ".orphaned-*")
+	require.NoError(err)
+	require.Len(recoveryPaths, 1)
+	recoveryInfo, err := os.Lstat(recoveryPaths[0])
+	require.NoError(err)
+	assert.NotZero(recoveryInfo.Mode() & os.ModeSymlink)
+	contents, err := os.ReadFile(targetPath)
+	require.NoError(err)
+	assert.Equal("preserve target\n", string(contents))
+}
+
+func TestQuarantineOrphanedWorkspacePathPreservesBareRepository(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	worktreePath := filepath.Join(t.TempDir(), "workspace.git")
+	runWorkspaceTestGit(t, filepath.Dir(worktreePath), "init", "--bare", worktreePath)
+
+	require.NoError(quarantineOrphanedWorkspacePath(t.Context(), worktreePath))
+	_, err := os.Lstat(worktreePath)
+	require.ErrorIs(err, os.ErrNotExist)
+	recoveryPaths, err := filepath.Glob(worktreePath + ".orphaned-*")
+	require.NoError(err)
+	require.Len(recoveryPaths, 1)
+	bare, err := gitIsBareRepository(t.Context(), recoveryPaths[0])
+	require.NoError(err)
+	assert.True(bare)
+}
+
+func TestRemoveStaleWorktreeRegistrationMetadataResolvesRelativeGitdir(
+	t *testing.T,
+) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	cloneDir := setupBareCloneForWorkspaceGitTest(t)
+	runWorkspaceTestGit(t, cloneDir, "config", "worktree.useRelativePaths", "true")
+	worktreeRoot, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(err)
+	worktreePath := filepath.Join(worktreeRoot, "workspace")
+	runWorkspaceTestGit(
+		t, cloneDir, "worktree", "add", worktreePath, "-b", "topic/relative", "HEAD",
+	)
+	metadataRoot := strings.TrimSpace(string(runWorkspaceTestGit(
+		t, cloneDir,
+		"rev-parse", "--path-format=absolute", "--git-path", "worktrees",
+	)))
+	entries, err := os.ReadDir(metadataRoot)
+	require.NoError(err)
+	require.Len(entries, 1)
+	metadataDir := filepath.Join(metadataRoot, entries[0].Name())
+	gitFile, err := os.ReadFile(filepath.Join(metadataDir, "gitdir"))
+	require.NoError(err)
+	assert.False(filepath.IsAbs(strings.TrimSpace(string(gitFile))))
+	require.NoError(os.RemoveAll(worktreePath))
+
+	require.NoError(removeStaleWorktreeRegistrationMetadata(
+		t.Context(), cloneDir, worktreePath,
+	))
+	_, err = os.Lstat(metadataDir)
+	require.ErrorIs(err, os.ErrNotExist)
+	tracked, err := gitDirTracksWorktreePath(t.Context(), cloneDir, worktreePath)
+	require.NoError(err)
+	assert.False(tracked)
+}
+
+func TestCleanupQuarantinesPlainWorkspaceNestedInRepository(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	parentRepo := setupLocalWorktreeBaseForWorkspaceGitTest(t, "feature/thing")
+	worktreePath := filepath.Join(parentRepo, "managed", "workspace")
+	require.NoError(os.MkdirAll(worktreePath, 0o755))
+	require.NoError(os.WriteFile(
+		filepath.Join(worktreePath, "leftover.txt"), []byte("preserve me\n"), 0o644,
+	))
+
+	mgr := NewManager(openTestDB(t), filepath.Join(parentRepo, "managed"))
+	mgr.SetWorktreeBasePathResolver(staticBaseResolver(parentRepo))
+	ws := &Workspace{
+		ID:              "ws-cleanup-nested-plain-dir",
+		Platform:        "github",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		ItemType:        db.WorkspaceItemTypePullRequest,
+		ItemNumber:      99,
+		GitHeadRef:      "feature/thing",
+		WorkspaceBranch: "kenn-forge/pr-99",
+		WorktreePath:    worktreePath,
+	}
+
+	require.NoError(mgr.cleanupWorkspaceArtifactsForDelete(t.Context(), ws))
+	_, err := os.Lstat(worktreePath)
+	require.ErrorIs(err, os.ErrNotExist)
+	recoveryPaths, err := filepath.Glob(worktreePath + ".orphaned-*")
+	require.NoError(err)
+	require.Len(recoveryPaths, 1)
+	contents, err := os.ReadFile(filepath.Join(recoveryPaths[0], "leftover.txt"))
+	require.NoError(err)
+	assert.Equal("preserve me\n", string(contents))
+}
+
+func TestNextWorkspaceRecoveryPathAvoidsCollisions(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	worktreePath := filepath.Join(t.TempDir(), "workspace")
+	now := time.Date(2026, time.July, 31, 17, 15, 30, 0, time.UTC)
+	want := worktreePath + ".orphaned-20260731T171530Z"
+
+	got, err := nextWorkspaceRecoveryPath(worktreePath, now)
+	require.NoError(err)
+	assert.Equal(want, got)
+	require.NoError(os.WriteFile(want, []byte("occupied"), 0o600))
+
+	got, err = nextWorkspaceRecoveryPath(worktreePath, now)
+	require.NoError(err)
+	assert.Equal(want+"-2", got)
 }
 
 func TestCleanupFallsBackToManagedCloneWhenConfiguredBaseInvalid(t *testing.T) {
@@ -3359,6 +3624,7 @@ func TestAddWorktreeLocalBaseFetchesPullRefWhenHeadBranchDeleted(t *testing.T) {
 
 	mgr := NewManager(openTestDB(t), t.TempDir())
 	ws := &Workspace{
+		ID:           "ws-add-fetches-pull-ref",
 		Platform:     "github",
 		PlatformHost: platformHost,
 		ItemType:     db.WorkspaceItemTypePullRequest,
@@ -3407,6 +3673,7 @@ func TestAddWorktreeLocalBaseIgnoresStalePullRefWhenFetchFails(t *testing.T) {
 	)
 	mgr := NewManager(openTestDB(t), t.TempDir())
 	ws := &Workspace{
+		ID:           "ws-add-ignores-stale-pull-ref",
 		Platform:     "github",
 		PlatformHost: "127.0.0.1",
 		ItemType:     db.WorkspaceItemTypePullRequest,
@@ -5605,6 +5872,7 @@ func TestIssueRetryCleansLeakedUnknownBranchAndUsesIssueBranch(t *testing.T) {
 		WorktreePath:    staleWorktree,
 		Status:          "error",
 	}
+	require.NoError(writeWorkspaceOwnershipMarker(t.Context(), cloneDir, ws))
 	require.NoError(mgr.cleanupWorkspaceArtifactsForRetry(t.Context(), ws))
 
 	exists, err = localBranchExists(
@@ -6313,6 +6581,7 @@ func TestManagerAddWorktreeAcquiresRepoLock(t *testing.T) {
 	require.NoError(err)
 
 	ws := &Workspace{
+		ID:           "ws-add-worktree-lock",
 		ItemType:     db.WorkspaceItemTypePullRequest,
 		ItemNumber:   7,
 		GitHeadRef:   "feature/lock-probe",
@@ -6337,6 +6606,97 @@ func TestManagerAddWorktreeAcquiresRepoLock(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		require.FailNow("addWorktree did not finish after lock release")
 	}
+}
+
+func TestManagerAddWorktreeRechecksOccupiedPathAfterWaitingForLock(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	cloneDir := setupBareCloneForWorkspaceGitTest(t)
+	const (
+		preferredBranch = "feature/occupied-after-preflight"
+		prNumber        = 73
+	)
+	configureSameRepoPRRefs(t, cloneDir, preferredBranch, prNumber)
+	mgr := NewManager(openTestDB(t), t.TempDir())
+	ws := &Workspace{
+		ID:           "ws-add-worktree-occupied-after-preflight",
+		ItemType:     db.WorkspaceItemTypePullRequest,
+		ItemNumber:   prNumber,
+		GitHeadRef:   preferredBranch,
+		WorktreePath: filepath.Join(t.TempDir(), "wt"),
+	}
+
+	held, err := mgr.locks.Acquire(t.Context(), cloneDir)
+	require.NoError(err)
+	done := make(chan error, 1)
+	go func() {
+		_, err := mgr.addWorktree(t.Context(), cloneDir, false, ws)
+		done <- err
+	}()
+
+	select {
+	case <-done:
+		require.FailNow("addWorktree completed while the per-repo lock was held")
+	case <-time.After(80 * time.Millisecond):
+	}
+	require.NoError(os.MkdirAll(ws.WorktreePath, 0o755))
+	require.NoError(os.WriteFile(
+		filepath.Join(ws.WorktreePath, "keep.txt"), []byte("preserve me\n"), 0o644,
+	))
+	require.NoError(held.Unlock())
+
+	select {
+	case err := <-done:
+		require.Error(err)
+	case <-time.After(5 * time.Second):
+		require.FailNow("addWorktree did not finish after lock release")
+	}
+	contents, err := os.ReadFile(filepath.Join(ws.WorktreePath, "keep.txt"))
+	require.NoError(err)
+	assert.Equal("preserve me\n", string(contents))
+	for _, branch := range []string{
+		preferredBranch, syntheticPRWorktreeBranch(prNumber),
+	} {
+		exists, branchErr := localBranchExists(t.Context(), cloneDir, branch)
+		require.NoError(branchErr)
+		assert.False(exists, "addWorktree must not leak branch %q", branch)
+	}
+}
+
+func TestAddPreferredWorktreeRemovesBranchCreatedByFailedAdd(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	cloneDir := setupBareCloneForWorkspaceGitTest(t)
+	const (
+		preferredBranch = "contributor/occupied-path"
+		prNumber        = 74
+	)
+	configureForkPRRefs(t, cloneDir, preferredBranch, prNumber)
+	headRepo := "https://github.com/contributor/widget.git"
+	ws := &Workspace{
+		ID:           "ws-failed-preferred-add",
+		Platform:     "github",
+		ItemType:     db.WorkspaceItemTypePullRequest,
+		ItemNumber:   prNumber,
+		GitHeadRef:   preferredBranch,
+		MRHeadRepo:   &headRepo,
+		WorktreePath: filepath.Join(t.TempDir(), "occupied"),
+	}
+	require.NoError(os.MkdirAll(ws.WorktreePath, 0o755))
+	require.NoError(os.WriteFile(
+		filepath.Join(ws.WorktreePath, "keep.txt"), []byte("preserve me\n"), 0o644,
+	))
+	mgr := NewManager(openTestDB(t), t.TempDir())
+
+	_, err := mgr.addPreferredWorktree(t.Context(), cloneDir, false, ws)
+
+	require.Error(err)
+	contents, err := os.ReadFile(filepath.Join(ws.WorktreePath, "keep.txt"))
+	require.NoError(err)
+	assert.Equal("preserve me\n", string(contents))
+	exists, err := localBranchExists(t.Context(), cloneDir, preferredBranch)
+	require.NoError(err)
+	assert.False(exists, "a failed add must remove only the branch it created")
 }
 
 func TestManagerCleanupForDeleteAcquiresRepoLock(t *testing.T) {

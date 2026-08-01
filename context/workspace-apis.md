@@ -137,6 +137,22 @@ embedder protocol for arbitrary host state.
   (`packages/ui/src/stores/detail.svelte.ts::applyRefreshedDetail`).
 - `DELETE /workspaces/{id}`: tear down a kenn-forge-managed workspace and its
   local resources.
+  - Setup rejects occupied destinations before clone/fetch and again under the
+    repo lock before `git worktree add`; failed adds delete only branches absent
+    before the command because Git may create `-b` first (`internal/workspace/manager.go::Manager.addWorktree`).
+  - Destructive worktree removal requires a matching persisted workspace-ID marker;
+    repo, origin, branch, path, and self-registration are not ownership. Preserve
+    unmarked or mismatched roots (`internal/workspace/manager.go::Manager.workspaceCleanupGitDir`).
+  - An unmarked live registration is ambiguous after upgrade: delete and retry return
+    conflict and retain the workspace row; only registrations without a live worktree
+    may be cleared as stale (`internal/workspace/manager.go::gitDirOwnsCleanupWorktree`).
+  - Symlinked Git roots are live but never owned; they conflict instead of entering
+    stale-registration cleanup (`internal/workspace/manager.go::gitDirHasLiveWorktree`).
+  - Pre-lock cleanup resolution is advisory. Revalidate marker identity and current
+    live/stale state as the first locked action (`internal/workspace/manager.go::currentWorkspaceCleanupState`).
+  - A force delete retains the workspace row when Git cannot remove a live owned
+    worktree; only errors proving the worktree is already absent or corrupt may
+    continue to branch and row cleanup (`internal/workspace/manager.go::Manager.cleanupWorkspaceArtifactsForDeleteLocked`).
 
 ## Data Model Intent
 

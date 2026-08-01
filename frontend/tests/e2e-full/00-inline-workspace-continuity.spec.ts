@@ -302,14 +302,27 @@ function runE2ETmuxCommand(server: IsolatedE2EServer, args: string[]): string {
   return execFileSync(command, [...prefix, ...args], { encoding: "utf8" }).trim();
 }
 
-function writeTmuxClientTTY(server: IsolatedE2EServer, tmuxSession: string, data: Uint8Array): void {
-  const clientTTY = runE2ETmuxCommand(server, ["list-clients", "-t", tmuxSession, "-F", "#{client_tty}"]);
+function tmuxClientTTY(server: IsolatedE2EServer, tmuxSession: string): string {
+  return runE2ETmuxCommand(server, ["list-clients", "-t", tmuxSession, "-F", "#{client_tty}"]);
+}
+
+function writeTTY(clientTTY: string, data: Uint8Array): void {
   const fd = openSync(clientTTY, constants.O_WRONLY | constants.O_NOCTTY);
   try {
     writeSync(fd, data);
   } finally {
     closeSync(fd);
   }
+}
+
+function tmuxServerPID(server: IsolatedE2EServer, tmuxSession: string): number {
+  const pid = Number(runE2ETmuxCommand(server, ["display-message", "-p", "-t", tmuxSession, "#{pid}"]));
+  if (!Number.isInteger(pid) || pid <= 0) throw new Error(`invalid tmux server PID: ${pid}`);
+  return pid;
+}
+
+function processState(pid: number): string {
+  return execFileSync("ps", ["-o", "state=", "-p", String(pid)], { encoding: "utf8" }).trim();
 }
 
 function tmuxPassthroughFormat(payloadFormat: string): string {
@@ -1739,6 +1752,8 @@ test.describe("inline workspace pane continuity", () => {
       let isolatedServer: IsolatedE2EServer | null = null;
       let api: APIRequestContext | null = null;
       let helperFinishPath: string | null = null;
+      let stoppedTmuxServerPID: number | null = null;
+      let directClientTTY: string | null = null;
       try {
         const output = observeTerminalOutput(page);
         isolatedServer = await startIsolatedWorkspaceE2EServer();
@@ -1793,9 +1808,21 @@ test.describe("inline workspace pane continuity", () => {
         await typeIntoTerminal(page, containerA, `sh '${helperPath}'`);
         await expect.poll(() => existsSync(readyPath), { timeout: 15_000 }).toBe(true);
         if ("directCandidate" in boundary) {
-          writeTmuxClientTTY(isolatedServer, tmuxSessionA, new TextEncoder().encode(boundary.directPrecondition));
+          const clientTTY = tmuxClientTTY(isolatedServer, tmuxSessionA);
+          directClientTTY = clientTTY;
+          const serverPID = tmuxServerPID(isolatedServer, tmuxSessionA);
+          stoppedTmuxServerPID = serverPID;
+          // Keep tmux's own cursor redraw from overtaking the deliberately incomplete CSI.
+          process.kill(serverPID, "SIGSTOP");
+          await expect.poll(() => processState(serverPID), { timeout: 15_000 }).toMatch(/^T/);
+          const stoppedServerMarker = `${boundary.name}-server-stopped`;
+          writeTTY(clientTTY, new TextEncoder().encode(stoppedServerMarker));
+          await expect
+            .poll(() => output.sessionOutputIncludes(workspaceA.id, stoppedServerMarker), { timeout: 15_000 })
+            .toBe(true);
+          writeTTY(clientTTY, new TextEncoder().encode(boundary.directPrecondition));
           await expect(containerA.locator(".xterm.enable-mouse-events")).toHaveCount(0);
-          writeTmuxClientTTY(isolatedServer, tmuxSessionA, new TextEncoder().encode(boundary.directCandidate));
+          writeTTY(clientTTY, new TextEncoder().encode(boundary.directCandidate));
           await expect
             .poll(() => output.sessionOutputIncludes(workspaceA.id, "same-renderer-alt-csi:"), { timeout: 15_000 })
             .toBe(true);
@@ -1852,7 +1879,12 @@ test.describe("inline workspace pane continuity", () => {
         const cursorReportsBeforeContinuation = output.cursorReports().length;
 
         if ("directContinuation" in boundary) {
-          writeTmuxClientTTY(isolatedServer, tmuxSessionA, new TextEncoder().encode(boundary.directContinuation));
+          if (directClientTTY === null) throw new Error("direct tmux client TTY is unavailable");
+          writeTTY(directClientTTY, new TextEncoder().encode(boundary.directContinuation));
+          if (stoppedTmuxServerPID !== null) {
+            process.kill(stoppedTmuxServerPID, "SIGCONT");
+            stoppedTmuxServerPID = null;
+          }
         }
         writeFileSync(continuePath, "continue\n", "utf8");
         await expect.poll(() => existsSync(donePath), { timeout: 15_000 }).toBe(true);
@@ -1882,6 +1914,9 @@ test.describe("inline workspace pane continuity", () => {
         writeFileSync(helperFinishPath, "finish\n", "utf8");
         helperFinishPath = null;
       } finally {
+        if (stoppedTmuxServerPID !== null) {
+          process.kill(stoppedTmuxServerPID, "SIGCONT");
+        }
         if (helperFinishPath !== null) {
           writeFileSync(helperFinishPath, "finish\n", "utf8");
         }

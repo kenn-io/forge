@@ -376,7 +376,9 @@
   {#snippet right()}
     <HeaderIconButton onclick={openPalette} title="Open command palette">
       <SearchIcon size="14" strokeWidth="1.75" aria-hidden="true" />
-      <KbdBadge binding={{ key: "K", ctrlOrMeta: true }} />
+      <span class="command-palette-shortcut">
+        <KbdBadge binding={{ key: "K", ctrlOrMeta: true }} />
+      </span>
     </HeaderIconButton>
     {#if !getUIConfig().hideSync}
       <div class="sync-split" bind:this={syncControlEl}>
@@ -499,6 +501,15 @@
     border: 1px solid var(--border-default);
     background: var(--bg-surface);
     transition: background 0.15s, color 0.15s, border-color 0.15s;
+  }
+
+  .command-palette-shortcut {
+    display: contents;
+  }
+
+  .command-palette-shortcut :global(.kit-kbd-badge) {
+    border-color: transparent;
+    background: transparent;
   }
 
   .sync-btn {

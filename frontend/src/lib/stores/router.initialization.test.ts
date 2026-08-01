@@ -127,6 +127,37 @@ describe("router initialization", () => {
     expect(new URL(router.getLastActivityRoute(), "https://example.com").searchParams.get("view")).toBe("threaded");
   });
 
+  it("restores stored Activity filters when SPA navigation enters from Settings", async () => {
+    window.__BASE_PATH__ = "/kenn-forge/";
+    window.sessionStorage.setItem(
+      "kenn-forge:last-activity-route",
+      "/?types=new_pr,comment,review,force_push&notif=0&hide_branch=1",
+    );
+    const router = await importRouterAt("/kenn-forge/settings");
+
+    router.navigate("/?view=threaded");
+    const restoredURL = new URL(window.location.href);
+
+    expect(restoredURL.pathname).toBe("/kenn-forge/");
+    expect(restoredURL.searchParams.get("view")).toBe("threaded");
+    expect(restoredURL.searchParams.get("types")).toBe("new_pr,comment,review,force_push");
+    expect(restoredURL.searchParams.get("notif")).toBe("0");
+    expect(restoredURL.searchParams.get("hide_branch")).toBe("1");
+  });
+
+  it("restores stored Activity filters when Back or Forward enters Activity", async () => {
+    window.__BASE_PATH__ = "/kenn-forge/";
+    window.sessionStorage.setItem("kenn-forge:last-activity-route", "/?types=new_pr,comment,review,force_push");
+    await importRouterAt("/kenn-forge/settings");
+
+    window.history.pushState(null, "", "/kenn-forge/?view=threaded");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    const restoredURL = new URL(window.location.href);
+
+    expect(restoredURL.searchParams.get("view")).toBe("threaded");
+    expect(restoredURL.searchParams.get("types")).toBe("new_pr,comment,review,force_push");
+  });
+
   it.each(["/workspaces", "/unexpected", "//", "///?types=new_pr", "//example.com/?types=new_pr"])(
     "ignores an invalid stored Activity route: %s",
     async (storedRoute) => {

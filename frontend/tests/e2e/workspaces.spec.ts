@@ -180,6 +180,30 @@ test("Activity filters survive navigation to a URL that only sets the view", asy
   ).not.toHaveClass(/\bactive\b/);
 });
 
+test("Settings Back to app restores Activity filters after a reload", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("switch", { name: "Issues" }).click();
+  await page.locator(".activity-feed .kit-filter-dropdown__btn", { hasText: "View" }).click();
+  await page
+    .locator(".activity-feed .kit-filter-dropdown__panel")
+    .getByRole("button", { name: "Commits", exact: true })
+    .click();
+  const activityTypes = new URL(page.url()).searchParams.get("types");
+  expect(activityTypes).not.toBeNull();
+
+  await page.locator('button[title="Settings"]').click();
+  await expect(page.getByRole("button", { name: "Back to app" })).toBeVisible();
+  await page.reload();
+  await page.getByRole("button", { name: "Back to app" }).click();
+
+  await expect.poll(() => new URL(page.url()).searchParams.get("types")).toBe(activityTypes);
+  await expect(page.getByRole("switch", { name: "Issues" })).not.toBeChecked();
+  await page.locator(".activity-feed .kit-filter-dropdown__btn", { hasText: "View" }).click();
+  await expect(
+    page.locator(".activity-feed .kit-filter-dropdown__panel").getByRole("button", { name: "Commits", exact: true }),
+  ).not.toHaveClass(/\bactive\b/);
+});
+
 test("repo selector renders icon and still filters repos", async ({ page }) => {
   await page.goto("/pulls");
 

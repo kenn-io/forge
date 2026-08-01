@@ -693,6 +693,7 @@ export function navigate(path: string, state?: Record<string, unknown>): void {
   const fullPath = basePrefix + path;
   history.pushState(state ?? null, "", fullPath);
   route = parseRoute(fullPath);
+  restoreMissingActivityFilters();
   // Record the workspace destination too: leaving it via browser
   // Back/Forward skips navigate(), and the popstate handler only
   // remembers the route it lands on — a terminal visit exited that way
@@ -896,6 +897,7 @@ export function replaceUrl(path: string): void {
 if (typeof window !== "undefined") {
   window.addEventListener("popstate", () => {
     route = parseRoute(currentLocationPath());
+    restoreMissingActivityFilters();
     rememberActivityRoute();
     rememberWorkspaceRoute();
     fireRouteChange(route);

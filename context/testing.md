@@ -120,6 +120,9 @@ owner:
 - Real-tmux Playwright tests observe user-visible state through the per-instance socket;
   never replace global key bindings, which can leak into developer sessions and prove only event receipt
   (`frontend/tests/e2e-full/00-inline-workspace-continuity.spec.ts::expectWheelScroll`).
+- Clipboard-race tests must emit OSC 52 through the attached tmux client, not print
+  an application OSC 52 sequence that tmux blocks, and must assert the socket observed
+  OSC 52 before trusting clipboard ordering (`frontend/tests/e2e-full/00-tmux-browser-clipboard.spec.ts::typeScheduledTmuxClipboardWrite`).
 
 A UI regression can be sufficiently covered by a backend/server test for the
 real runtime path plus a component or Vitest browser test for presentation. Do

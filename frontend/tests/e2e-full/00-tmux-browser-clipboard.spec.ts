@@ -24,6 +24,7 @@ type TerminalDimensions = {
 };
 
 let clipboardProbeSequence = 0;
+let tmuxClipboardWriteSequence = 0;
 const TERMINAL_OUTPUT_TIMEOUT_MS = 15_000;
 
 function hasCommand(command: string, args: string[] = ["--version"]): boolean {
@@ -221,9 +222,11 @@ async function scheduleTmuxClipboardWrite(page: Page, container: Locator): Promi
 async function typeScheduledTmuxClipboardWrite(page: Page): Promise<string> {
   const marker = "late terminal osc52 complete";
   const value = "late terminal write";
+  tmuxClipboardWriteSequence += 1;
+  const channel = `kenn-forge-clipboard-write-${process.pid}-${tmuxClipboardWriteSequence}`;
   await runAttachedTmuxCommand(
     page,
-    `run-shell -b "while [ ! -f .clipboard-osc52-gate ]; do sleep 0.05; done; tmux set-buffer -w -t '#{client_name}' '${value}'; tmux display-message -t '#{client_name}' '${marker}'"`,
+    `run-shell -b "while [ ! -f .clipboard-osc52-gate ]; do sleep 0.05; done; tmux wait-for -S '${channel}'" ; wait-for '${channel}' ; set-buffer -w '${value}' ; display-message '${marker}'`,
   );
   return marker;
 }
@@ -641,6 +644,7 @@ test("visible detail copy wins when focus leaves a pointer-captured terminal", a
 
     await writeFile(join(workspace.worktree_path, ".clipboard-osc52-gate"), "go", { mode: 0o600 });
     await expect.poll(() => output.includes(lateWriteMarker), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS }).toBe(true);
+    await expect.poll(() => output.includes("\x1b]52;"), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS }).toBe(true);
     await page.waitForTimeout(250);
     await page.mouse.up();
     pointerIsDown = false;
@@ -764,6 +768,7 @@ test("a parked pooled terminal cannot overwrite a newer detail clipboard copy", 
 
     await writeFile(join(workspace.worktree_path, ".clipboard-osc52-gate"), "go", { mode: 0o600 });
     await expect.poll(() => output.includes(lateWriteMarker), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS }).toBe(true);
+    await expect.poll(() => output.includes("\x1b]52;"), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS }).toBe(true);
     await page.waitForTimeout(250);
     expect(await readBrowserClipboard(page)).toBe("https://github.com/acme/widgets/issues/10");
   } finally {

@@ -1232,14 +1232,14 @@ func (m *Manager) RefreshWorkspaceHeadRepoSnapshot(
 func (m *Manager) reuseExistingWorkspaceWorktree(
 	ctx context.Context, ws *Workspace,
 ) (string, bool, error) {
-	info, err := os.Stat(ws.WorktreePath)
+	info, err := os.Lstat(ws.WorktreePath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return "", false, nil
 		}
 		return "", false, fmt.Errorf("stat existing worktree: %w", err)
 	}
-	if !info.IsDir() {
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return "", false, nil
 	}
 	commonDir, err := worktreeCommonGitDir(ctx, ws.WorktreePath)
@@ -1270,6 +1270,11 @@ func (m *Manager) reuseExistingWorkspaceWorktree(
 	}
 	var branch string
 	if err := m.withRepoLockForGitDir(ctx, commonDir, func() error {
+		if err := m.revalidateExistingWorkspaceWorktree(
+			ctx, commonDir, localBase, ws,
+		); err != nil {
+			return err
+		}
 		useMergeRequestHeadRef, refreshErr := m.refreshExistingWorkspaceWorktree(
 			ctx, commonDir, ws,
 		)
@@ -1301,6 +1306,71 @@ func (m *Manager) reuseExistingWorkspaceWorktree(
 		return "", false, err
 	}
 	return branch, true, nil
+}
+
+func (m *Manager) revalidateExistingWorkspaceWorktree(
+	ctx context.Context,
+	expectedCommonDir string,
+	expectedLocalBase bool,
+	ws *Workspace,
+) error {
+	info, err := os.Lstat(ws.WorktreePath)
+	if errors.Is(err, os.ErrNotExist) {
+		return &WorkspaceDirectoryRecoveryError{
+			Reason: WorkspaceDirectoryMissing,
+		}
+	}
+	if err != nil {
+		return fmt.Errorf("stat existing worktree under repository lock: %w", err)
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return &WorkspaceDirectoryRecoveryError{
+			Reason: WorkspaceDirectoryNotLinkedWorktree,
+		}
+	}
+	currentCommonDir, err := worktreeCommonGitDir(ctx, ws.WorktreePath)
+	if err != nil {
+		if isGitWorktreeAbsent(err) {
+			return &WorkspaceDirectoryRecoveryError{
+				Reason: WorkspaceDirectoryNotLinkedWorktree,
+			}
+		}
+		return fmt.Errorf("inspect existing worktree under repository lock: %w", err)
+	}
+	current, err := canonicalFilesystemPath(currentCommonDir)
+	if err != nil {
+		return fmt.Errorf("resolve existing worktree repository: %w", err)
+	}
+	expected, err := canonicalFilesystemPath(expectedCommonDir)
+	if err != nil {
+		return fmt.Errorf("resolve expected worktree repository: %w", err)
+	}
+	if current != expected {
+		return &WorkspaceDirectoryRecoveryError{
+			Reason: WorkspaceDirectoryRepositoryMismatch,
+		}
+	}
+	owned, err := gitDirOwnsLinkedWorktree(ctx, currentCommonDir, ws.WorktreePath)
+	if err != nil {
+		return fmt.Errorf("revalidate existing linked worktree: %w", err)
+	}
+	if !owned {
+		return &WorkspaceDirectoryRecoveryError{
+			Reason: WorkspaceDirectoryNotLinkedWorktree,
+		}
+	}
+	localBase, reusable, err := m.existingWorkspaceWorktreeProvenance(
+		ctx, currentCommonDir, ws,
+	)
+	if err != nil {
+		return fmt.Errorf("revalidate existing worktree provenance: %w", err)
+	}
+	if !reusable || localBase != expectedLocalBase {
+		return &WorkspaceDirectoryRecoveryError{
+			Reason: WorkspaceDirectoryRepositoryMismatch,
+		}
+	}
+	return nil
 }
 
 func (m *Manager) ensureWorkspacePathAvailable(

@@ -140,6 +140,9 @@ embedder protocol for arbitrary host state.
   - Setup rejects occupied destinations before clone/fetch and again under the
     repo lock before `git worktree add`; failed adds delete only branches absent
     before the command because Git may create `-b` first (`internal/workspace/manager.go::Manager.addWorktree`).
+  - Existing-worktree reuse accepts only a non-symlink worktree root and revalidates
+    its repository and provenance under the repo lock before refresh or ownership
+    marking (`internal/workspace/manager.go::Manager.reuseExistingWorkspaceWorktree`).
   - Destructive worktree removal requires a matching persisted workspace-ID marker;
     repo, origin, branch, path, and self-registration are not ownership. Preserve
     unmarked or mismatched roots (`internal/workspace/manager.go::Manager.workspaceCleanupGitDir`).

@@ -554,6 +554,69 @@ func TestWorkspaceForceDeleteRejectsSymlinkToSameRepoWorktreeE2E(
 	)
 }
 
+func TestWorkspaceCreateRejectsSymlinkedReusableWorktreeE2E(t *testing.T) {
+	t.Parallel()
+	acquireWorkspaceGitSlot(t)
+
+	require := require.New(t)
+	assert := assert.New(t)
+	fixture := setupWorkspaceServerFixture(t, nil)
+	ctx := t.Context()
+
+	worktreePath := filepath.Join(
+		fixture.worktreeDir, "github", "github.com", "acme", "widget", "pr-1",
+	)
+	targetPath := filepath.Join(t.TempDir(), "linked-worktree")
+	runGit(t, fixture.bare, "worktree", "add", targetPath, "feature")
+	require.NoError(os.MkdirAll(filepath.Dir(worktreePath), 0o755))
+	require.NoError(os.Symlink(targetPath, worktreePath))
+	wantHead := testGitSHA(t, targetPath, "HEAD")
+
+	createResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			Provider:     "github",
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     1,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.NotNil(createResp.JSON202)
+
+	var terminal *generated.WorkspaceResponse
+	require.Eventually(func() bool {
+		getResp, getErr := fixture.client.HTTP.GetWorkspaceWithResponse(
+			ctx, createResp.JSON202.Id,
+		)
+		if getErr != nil || getResp.JSON200 == nil ||
+			getResp.JSON200.Status == "creating" {
+			return false
+		}
+		terminal = getResp.JSON200
+		return true
+	}, 10*time.Second, 25*time.Millisecond)
+	require.NotNil(terminal)
+	assert.Equal("error", terminal.Status)
+
+	pathInfo, err := os.Lstat(worktreePath)
+	require.NoError(err)
+	assert.NotZero(pathInfo.Mode() & os.ModeSymlink)
+	assert.Equal(wantHead, testGitSHA(t, targetPath, "HEAD"))
+	assert.Contains(
+		workspaceGitOutput(t, fixture.bare, "worktree", "list", "--porcelain"),
+		targetPath,
+	)
+	metadataDir := workspaceGitOutput(
+		t, targetPath,
+		"rev-parse", "--path-format=absolute", "--git-dir",
+	)
+	_, err = os.Lstat(filepath.Join(metadataDir, "kenn-forge-workspace-id"))
+	assert.ErrorIs(err, os.ErrNotExist)
+}
+
 func TestWorkspaceRetryRejectsPreMarkerWorkspaceAfterUpgradeE2E(
 	t *testing.T,
 ) {

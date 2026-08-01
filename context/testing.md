@@ -123,6 +123,9 @@ owner:
 - Clipboard-race tests must emit OSC 52 through the attached tmux client, not print
   an application OSC 52 sequence that tmux blocks, and must assert the socket observed
   OSC 52 before trusting clipboard ordering (`frontend/tests/e2e-full/00-tmux-browser-clipboard.spec.ts::typeScheduledTmuxClipboardWrite`).
+- Keep focus-click selection intent and delayed outside-copy revocation as separate real-tmux
+  regressions; the delayed case must retain terminal DOM focus so `focusout` cannot mask a
+  broken outside-pointerdown handler (`frontend/tests/e2e-full/00-tmux-browser-clipboard.spec.ts`).
 
 A UI regression can be sufficiently covered by a backend/server test for the
 real runtime path plus a component or Vitest browser test for presentation. Do

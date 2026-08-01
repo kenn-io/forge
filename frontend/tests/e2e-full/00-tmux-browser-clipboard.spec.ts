@@ -72,6 +72,33 @@ async function createPullWorkspace(api: APIRequestContext, pullNumber: number): 
   return waitForWorkspaceReady(api, workspace.id);
 }
 
+async function openPullDetailWithPromotedTerminal(
+  page: Page,
+  api: APIRequestContext,
+  baseUrl: string,
+): Promise<{
+  workspace: WorkspaceStatusResponse;
+  output: ReturnType<typeof observeTerminalOutput>;
+  terminal: Locator;
+}> {
+  const workspace = await createPullWorkspace(api, 1);
+  await launchDockedShell(api, workspace.id);
+  await launchDockedShell(api, workspace.id);
+  const output = observeTerminalOutput(page);
+
+  await page.setViewportSize({ width: 1800, height: 900 });
+  await page.goto(`${baseUrl}/pulls/github/acme/widgets/1`);
+  await expect(page.locator(".detail-pane-workspace-slot .workspace-host-wrapper")).toBeVisible();
+  await openTerminalPanel(page);
+  const chosenLeaf = page.locator('.terminal-panel.open .terminal-leaf:has(button[aria-label$=" to a pane"])').first();
+  await expect(chosenLeaf.locator(".terminal-container")).toBeVisible();
+  await chosenLeaf.getByRole("button", { name: /^Move .+ to a pane$/ }).click();
+  const terminal = page.locator(".session-terminal-slot .terminal-container");
+  await expect(terminal).toBeVisible();
+
+  return { workspace, output, terminal };
+}
+
 async function launchDockedShell(api: APIRequestContext, workspaceId: string): Promise<void> {
   const response = await api.post(`/api/v1/workspaces/${workspaceId}/runtime/sessions`, {
     data: {
@@ -710,23 +737,7 @@ test("PR comment copy survives a terminal focus click", async ({ page, browserNa
   try {
     isolatedServer = await startIsolatedWorkspaceE2EServer();
     api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
-    const workspace = await createPullWorkspace(api, 1);
-    await launchDockedShell(api, workspace.id);
-    await launchDockedShell(api, workspace.id);
-    const output = observeTerminalOutput(page);
-
-    await page.setViewportSize({ width: 1800, height: 900 });
-    await page.goto(`${isolatedServer.info.base_url}/pulls/github/acme/widgets/1`);
-    await expect(page.locator(".detail-pane-workspace-slot .workspace-host-wrapper")).toBeVisible();
-    await openTerminalPanel(page);
-    const chosenLeaf = page
-      .locator('.terminal-panel.open .terminal-leaf:has(button[aria-label$=" to a pane"])')
-      .first();
-    const dockedTerminal = chosenLeaf.locator(".terminal-container");
-    await expect(dockedTerminal).toBeVisible();
-    await chosenLeaf.getByRole("button", { name: /^Move .+ to a pane$/ }).click();
-    const terminal = page.locator(".session-terminal-slot .terminal-container");
-    await expect(terminal).toBeVisible();
+    const { output, terminal } = await openPullDetailWithPromotedTerminal(page, api, isolatedServer.info.base_url);
 
     await enableTmuxMouseAndRenderMarker(page, terminal, output, "focus click marker");
     const copiedComment =
@@ -755,6 +766,55 @@ test("PR comment copy survives a terminal focus click", async ({ page, browserNa
     } else {
       expect(await readBrowserClipboard(page)).toBe(copiedComment);
     }
+  } finally {
+    await api?.dispose();
+    await isolatedServer?.stop();
+  }
+});
+
+test("outside PR comment copy revokes a delayed terminal write before focus changes", async ({ page, browserName }) => {
+  test.skip(browserName !== "chromium", "Clipboard ordering assertions require Chromium permissions");
+  test.skip(!hasCommand("git") || !hasCommand("tmux", ["-V"]), "git and tmux are required for the real workspace flow");
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+
+  let isolatedServer: IsolatedE2EServer | null = null;
+  let api: APIRequestContext | null = null;
+  try {
+    isolatedServer = await startIsolatedWorkspaceE2EServer();
+    api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
+    const { workspace, output, terminal } = await openPullDetailWithPromotedTerminal(
+      page,
+      api,
+      isolatedServer.info.base_url,
+    );
+
+    const lateWriteMarker = await scheduleTmuxClipboardWrite(page, terminal);
+    const copiedComment =
+      "Guard the cache fallback before returning stale data.\n\nExpanded context explains stale data handling.";
+    const commentCard = page.locator(".pull-detail .kit-comment-card", {
+      hasText: "Guard the cache fallback before returning stale data.",
+    });
+    await expect(commentCard).toBeVisible();
+    const copyButton = commentCard
+      .locator(":scope > .kit-card__header > .kit-card__actions")
+      .locator('button[aria-label="Copy comment"], button[aria-label="Copied"]');
+    await copyButton.evaluate((element) => element.scrollIntoView({ block: "center", inline: "nearest" }));
+    await commentCard.hover();
+    expect(await terminal.evaluate((element) => element.contains(document.activeElement))).toBe(true);
+    // Keep DOM focus in the terminal so only outside pointerdown revocation can
+    // prevent the delayed terminal write from racing the real comment copy.
+    await copyButton.evaluate((element) => {
+      element.addEventListener("mousedown", (event) => event.preventDefault(), { once: true });
+    });
+    await copyButton.click();
+    await expect(copyButton).toHaveAttribute("aria-label", "Copied");
+    expect(await terminal.evaluate((element) => element.contains(document.activeElement))).toBe(true);
+
+    await writeFile(join(workspace.worktree_path, ".clipboard-osc52-gate"), "go", { mode: 0o600 });
+    await expect.poll(() => output.includes(lateWriteMarker), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS }).toBe(true);
+    await expect.poll(() => output.includes("\x1b]52;"), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS }).toBe(true);
+    await page.waitForTimeout(250);
+    expect(await readBrowserClipboard(page)).toBe(copiedComment);
   } finally {
     await api?.dispose();
     await isolatedServer?.stop();

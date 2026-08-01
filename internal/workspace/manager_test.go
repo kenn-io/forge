@@ -3502,6 +3502,37 @@ func TestAddWorktreeLockedRecordsOwnershipBeforeReturning(t *testing.T) {
 	require.True(owned, "the registration must be marked before addWorktreeLocked returns")
 }
 
+func TestOwnedWorktreeAddRollsBackWhenOwnershipMarkerFails(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	cloneDir := setupBareCloneForWorkspaceGitTest(t)
+	branch := syntheticPRWorktreeBranch(46)
+	ws := &Workspace{
+		ItemType:     db.WorkspaceItemTypePullRequest,
+		ItemNumber:   46,
+		WorktreePath: filepath.Join(t.TempDir(), "worktree"),
+	}
+	mgr := NewManager(openTestDB(t), t.TempDir())
+
+	_, err := mgr.runOwnedGitWorktreeAddCreatingBranch(
+		t.Context(), cloneDir, ws, branch, "main",
+	)
+	require.Error(err)
+	require.ErrorIs(err, errWorkspaceOwnershipMarker)
+	_, statErr := os.Lstat(ws.WorktreePath)
+	require.ErrorIs(statErr, os.ErrNotExist)
+	tracked, trackErr := gitDirTracksWorktreePath(
+		t.Context(), cloneDir, ws.WorktreePath,
+	)
+	require.NoError(trackErr)
+	assert.False(tracked)
+	_, exists, refErr := gitRefSHA(
+		t.Context(), cloneDir, "refs/heads/"+branch,
+	)
+	require.NoError(refErr)
+	assert.False(exists)
+}
+
 // divergentCommitForWorkspaceGitTest creates a commit that is not the PR head so
 // a branch pointing at it makes addPreferredWorktree reject the preferred name.
 func divergentCommitForWorkspaceGitTest(

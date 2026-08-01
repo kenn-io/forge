@@ -141,7 +141,8 @@ embedder protocol for arbitrary host state.
     repo lock before mutation. Branch creation and failed-add cleanup use ref
     compare-and-swap so changed branches survive (`internal/workspace/manager.go::createBranchAndAddWorktree`).
   - New registrations receive their workspace-ID marker before fallible post-add
-    configuration (`internal/workspace/manager.go::Manager.runOwnedGitWorktreeAdd`).
+    configuration; marker failure rolls back the exact registration and any unchanged
+    created branch under the repo lock (`internal/workspace/manager.go::Manager.runOwnedGitWorktreeAdd`).
   - Existing-worktree reuse accepts only a non-symlink worktree root and revalidates
     its repository and provenance under the repo lock before refresh or ownership
     marking (`internal/workspace/manager.go::Manager.reuseExistingWorkspaceWorktree`).

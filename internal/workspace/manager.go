@@ -2328,6 +2328,65 @@ func isSyntheticPRWorktreeBranch(mrNumber int, branch string) bool {
 	return err == nil
 }
 
+// cleanupUnmarkedWorktreeAdd rolls back a worktree whose ownership marker
+// could not be published. Callers hold the repository lock. The exact live
+// registration must still be present and unmarked before it can be removed.
+func cleanupUnmarkedWorktreeAdd(
+	ctx context.Context,
+	cloneDir string,
+	ws *Workspace,
+	branch, branchSHA string,
+) error {
+	cleanupCtx, cancel := cleanupContext(ctx)
+	defer cancel()
+	live, err := gitDirHasLiveWorktree(
+		cleanupCtx, cloneDir, ws.WorktreePath,
+	)
+	if err != nil {
+		return fmt.Errorf("verify failed worktree registration: %w", err)
+	}
+	if !live {
+		return fmt.Errorf(
+			"%w: %s", ErrWorkspaceOwnershipUnproven, ws.WorktreePath,
+		)
+	}
+	metadataDir, ok, err := worktreeRegistrationMetadataDir(
+		cleanupCtx, cloneDir, ws.WorktreePath,
+	)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return errors.New("failed worktree registration metadata not found")
+	}
+	_, marked, err := readWorkspaceOwnershipMarker(
+		filepath.Join(metadataDir, workspaceOwnershipMarkerFile),
+	)
+	if err != nil {
+		return err
+	}
+	if marked {
+		return fmt.Errorf(
+			"%w: %s", ErrWorkspaceOwnershipUnproven, ws.WorktreePath,
+		)
+	}
+	if err := runGitWithoutHooks(
+		cleanupCtx, cloneDir,
+		"worktree", "remove", "--force", ws.WorktreePath,
+	); err != nil {
+		return fmt.Errorf("remove failed worktree: %w", err)
+	}
+	if branch == "" {
+		return nil
+	}
+	if err := deleteWorkspaceBranchIfMatches(
+		cleanupCtx, cloneDir, branch, branchSHA,
+	); err != nil {
+		return fmt.Errorf("remove failed worktree branch: %w", err)
+	}
+	return nil
+}
+
 // cleanupOwnedWorktreeAddOnUpstreamFailure rolls back a marked worktree after
 // post-add configuration fails. Callers hold the repository lock. An empty
 // branch leaves a pre-existing user-owned branch in place.
@@ -2709,7 +2768,13 @@ func (m *Manager) cleanupWorkspaceArtifactsForRetry(
 		return err
 	}
 	if !ok {
-		return nil
+		gitDir, ok, err = m.workspaceRegisteredCleanupGitDir(ctx, ws)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return nil
+		}
 	}
 
 	return m.withRepoLockForGitDir(ctx, gitDir, func() error {
@@ -4548,7 +4613,15 @@ func (m *Manager) runOwnedGitWorktreeAdd(
 		return err
 	}
 	if err := writeWorkspaceOwnershipMarker(ctx, dir, ws); err != nil {
-		return fmt.Errorf("%w: %w", errWorkspaceOwnershipMarker, err)
+		markerErr := fmt.Errorf("%w: %w", errWorkspaceOwnershipMarker, err)
+		cleanupErr := cleanupUnmarkedWorktreeAdd(ctx, dir, ws, "", "")
+		if cleanupErr != nil {
+			return errors.Join(
+				markerErr,
+				fmt.Errorf("roll back unmarked worktree: %w", cleanupErr),
+			)
+		}
+		return markerErr
 	}
 	return nil
 }
@@ -4575,7 +4648,17 @@ func (m *Manager) runOwnedGitWorktreeAddCreatingBranch(
 		return "", err
 	}
 	if err := writeWorkspaceOwnershipMarker(ctx, dir, ws); err != nil {
-		return "", fmt.Errorf("%w: %w", errWorkspaceOwnershipMarker, err)
+		markerErr := fmt.Errorf("%w: %w", errWorkspaceOwnershipMarker, err)
+		cleanupErr := cleanupUnmarkedWorktreeAdd(
+			ctx, dir, ws, branch, branchSHA,
+		)
+		if cleanupErr != nil {
+			return "", errors.Join(
+				markerErr,
+				fmt.Errorf("roll back unmarked worktree: %w", cleanupErr),
+			)
+		}
+		return "", markerErr
 	}
 	return branchSHA, nil
 }

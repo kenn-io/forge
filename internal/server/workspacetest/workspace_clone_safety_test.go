@@ -685,6 +685,50 @@ func TestWorkspaceRetryRejectsPreMarkerWorkspaceAfterUpgradeE2E(
 	)
 }
 
+func TestWorkspaceRetryCleansStalePreMarkerRegistrationE2E(t *testing.T) {
+	t.Parallel()
+	acquireWorkspaceGitSlot(t)
+
+	require := require.New(t)
+	assert := assert.New(t)
+	fixture := setupWorkspaceServerFixture(t, nil)
+	ctx := t.Context()
+
+	ws := createReadyWorkspace(t, ctx, fixture.client)
+	branch := workspaceGitOutput(t, ws.WorktreePath, "branch", "--show-current")
+	metadataDir := workspaceGitOutput(
+		t, ws.WorktreePath,
+		"rev-parse", "--path-format=absolute", "--git-dir",
+	)
+	require.NoError(os.Remove(filepath.Join(metadataDir, "kenn-forge-workspace-id")))
+	require.NoError(os.RemoveAll(ws.WorktreePath))
+	errorMessage := "simulate missing worktree after upgrade"
+	require.NoError(fixture.database.UpdateWorkspaceStatus(
+		ctx, ws.Id, "error", &errorMessage,
+	))
+
+	retryResp, err := fixture.client.HTTP.RetryWorkspaceWithResponse(ctx, ws.Id)
+	require.NoError(err)
+	require.Equal(
+		http.StatusAccepted, retryResp.StatusCode(), string(retryResp.Body),
+	)
+
+	ready := waitForWorkspaceReady(t, ctx, fixture.client, ws.Id)
+	assert.Equal(branch, workspaceGitOutput(
+		t, ready.WorktreePath, "branch", "--show-current",
+	))
+	require.FileExists(filepath.Join(ready.WorktreePath, ".git"))
+	newMetadataDir := workspaceGitOutput(
+		t, ready.WorktreePath,
+		"rev-parse", "--path-format=absolute", "--git-dir",
+	)
+	marker, err := os.ReadFile(filepath.Join(
+		newMetadataDir, "kenn-forge-workspace-id",
+	))
+	require.NoError(err)
+	assert.Equal(ws.Id+"\n", string(marker))
+}
+
 func TestWorkspaceCreateOccupiedPathCreatesNoBranchesE2E(t *testing.T) {
 	t.Parallel()
 	acquireWorkspaceGitSlot(t)

@@ -306,6 +306,27 @@ function tmuxClientTTY(server: IsolatedE2EServer, tmuxSession: string): string {
   return runE2ETmuxCommand(server, ["list-clients", "-t", tmuxSession, "-F", "#{client_tty}"]);
 }
 
+function tmuxClientPtyGeometries(server: IsolatedE2EServer): Array<{ rows: number; cols: number }> {
+  const clientTTYs = runE2ETmuxCommand(server, ["list-clients", "-F", "#{client_tty}"])
+    .split("\n")
+    .filter(Boolean);
+  return clientTTYs.map((clientTTY) => {
+    const fd = openSync(clientTTY, constants.O_RDONLY | constants.O_NOCTTY);
+    try {
+      const [rows, cols] = execFileSync("stty", ["size"], {
+        encoding: "utf8",
+        stdio: [fd, "pipe", "pipe"],
+      })
+        .trim()
+        .split(/\s+/)
+        .map(Number);
+      return { rows: rows!, cols: cols! };
+    } finally {
+      closeSync(fd);
+    }
+  });
+}
+
 function writeTTY(clientTTY: string, data: Uint8Array): void {
   const fd = openSync(clientTTY, constants.O_WRONLY | constants.O_NOCTTY);
   try {
@@ -418,6 +439,49 @@ async function readPtyGeometry(
   expect(rows).toBeGreaterThan(0);
   expect(cols).toBeGreaterThan(0);
   return { rows: rows!, cols: cols! };
+}
+
+async function readTerminalScreenSize(container: Locator): Promise<{ width: number; height: number }> {
+  return container.evaluate((element) => {
+    const screen = element.querySelector<HTMLElement>(".xterm-screen");
+    if (!screen) throw new Error("xterm screen geometry unavailable");
+    const bounds = screen.getBoundingClientRect();
+    if (bounds.width <= 0 || bounds.height <= 0) throw new Error("xterm screen geometry is empty");
+    return { width: bounds.width, height: bounds.height };
+  });
+}
+
+async function crossTerminalCellBoundary(container: Locator): Promise<void> {
+  await container.evaluate((element) => {
+    const terminalContainer = element as HTMLElement;
+    const originalGetComputedStyle = window.getComputedStyle;
+    const previousHeight = originalGetComputedStyle.call(window, terminalContainer).height;
+    const resizeHandle = document.querySelector<HTMLElement>(
+      '.terminal-panel.open [role="separator"][aria-label="Resize terminal panel"]',
+    );
+    if (!resizeHandle) throw new Error("terminal resize handle unavailable");
+
+    resizeHandle.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "ArrowUp" }));
+
+    window.getComputedStyle = ((target: Element, pseudoElement?: string | null) => {
+      const style = originalGetComputedStyle.call(window, target, pseudoElement);
+      if (target !== terminalContainer) return style;
+
+      window.getComputedStyle = originalGetComputedStyle;
+      terminalContainer.dataset.fitBoundaryCrossed = "true";
+      return new Proxy(style, {
+        get(styleDeclaration, property) {
+          if (property === "height") return previousHeight;
+          if (property === "getPropertyValue") {
+            return (name: string) =>
+              name === "height" ? previousHeight : styleDeclaration.getPropertyValue(name);
+          }
+          const value = Reflect.get(styleDeclaration, property, styleDeclaration);
+          return typeof value === "function" ? value.bind(styleDeclaration) : value;
+        },
+      });
+    }) as typeof window.getComputedStyle;
+  });
 }
 
 async function waitForPtyColumnsBelow(
@@ -534,6 +598,66 @@ test.describe("inline workspace pane continuity", () => {
         );
         expect(afterPty.rows).toBeGreaterThan(beforePtys[index]!.rows);
       }
+    } finally {
+      await api?.dispose();
+      await isolatedServer?.stop();
+    }
+  });
+
+  test("a fitted resize frame and the PTY agree after crossing a cell boundary", async ({ page }) => {
+    test.skip(
+      !hasCommand("git") || !hasCommand("tmux", ["-V"]),
+      "git and tmux are required for the real workspace flow",
+    );
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    let isolatedServer: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    try {
+      const controlFrames = observeTerminalControlFrames(page);
+      isolatedServer = await startIsolatedWorkspaceE2EServer();
+      api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
+      const workspace = await createIssueWorkspace(api, 10);
+      for (let index = 0; index < 2; index += 1) {
+        const launch = await api.post(`/api/v1/workspaces/${workspace.id}/runtime/sessions`, {
+          data: { target_key: "plain_shell", display_region: "terminal" },
+        });
+        expect(launch.status(), await launch.text()).toBe(200);
+      }
+
+      await page.goto(`${isolatedServer.info.base_url}/issues/github/acme/widgets/10`);
+      const terminal = await openTerminalPanel(page);
+      await expect
+        .poll(() => controlFrames.filter((frame) => frame.type === "resize" || frame.type === "refresh").length)
+        .toBeGreaterThan(0);
+      const initialFrame = controlFrames.filter((frame) => frame.type === "resize" || frame.type === "refresh").at(-1)!;
+      expect(initialFrame.cols).toBeGreaterThan(0);
+      expect(initialFrame.rows).toBeGreaterThan(0);
+      const before = await readTerminalScreenSize(terminal);
+      const cellWidth = before.width / initialFrame.cols!;
+      const cellHeight = before.height / initialFrame.rows!;
+      const resizeFramesBeforeBoundary = controlFrames.filter((frame) => frame.type === "resize").length;
+
+      // Reproduce the real race deterministically: the preflight sees the old
+      // container height while FitAddon.fit() sees the new height after it has
+      // crossed at least one cell boundary.
+      await crossTerminalCellBoundary(terminal);
+      await expect(terminal).toHaveAttribute("data-fit-boundary-crossed", "true");
+      await expect
+        .poll(() => controlFrames.filter((frame) => frame.type === "resize").length)
+        .toBeGreaterThan(resizeFramesBeforeBoundary);
+
+      const after = await readTerminalScreenSize(terminal);
+      const renderedRows = Math.round(after.height / cellHeight);
+      const renderedCols = Math.round(after.width / cellWidth);
+      const fittedFrame = controlFrames.filter((frame) => frame.type === "resize")[resizeFramesBeforeBoundary]!;
+
+      expect(renderedRows).toBeGreaterThan(initialFrame.rows!);
+      expect(renderedCols).toBe(initialFrame.cols);
+      expect(fittedFrame).toMatchObject({ cols: renderedCols, rows: renderedRows });
+      await expect
+        .poll(() => tmuxClientPtyGeometries(isolatedServer!))
+        .toContainEqual({ cols: renderedCols, rows: renderedRows });
     } finally {
       await api?.dispose();
       await isolatedServer?.stop();

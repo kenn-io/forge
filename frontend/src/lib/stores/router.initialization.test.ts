@@ -109,6 +109,24 @@ describe("router initialization", () => {
     expect(reloadedRouter.getLastActivityRoute()).toBe(activityRoute);
   });
 
+  it("restores stored Activity filters when a base-path URL only sets the view", async () => {
+    window.__BASE_PATH__ = "/kenn-forge/";
+    window.sessionStorage.setItem(
+      "kenn-forge:last-activity-route",
+      "/?view=flat&types=new_pr,comment,review,force_push&notif=0&hide_branch=1",
+    );
+
+    const router = await importRouterAt("/kenn-forge/?view=threaded");
+    const restoredURL = new URL(window.location.href);
+
+    expect(restoredURL.pathname).toBe("/kenn-forge/");
+    expect(restoredURL.searchParams.get("view")).toBe("threaded");
+    expect(restoredURL.searchParams.get("types")).toBe("new_pr,comment,review,force_push");
+    expect(restoredURL.searchParams.get("notif")).toBe("0");
+    expect(restoredURL.searchParams.get("hide_branch")).toBe("1");
+    expect(new URL(router.getLastActivityRoute(), "https://example.com").searchParams.get("view")).toBe("threaded");
+  });
+
   it.each(["/workspaces", "/unexpected", "//", "///?types=new_pr", "//example.com/?types=new_pr"])(
     "ignores an invalid stored Activity route: %s",
     async (storedRoute) => {

@@ -541,6 +541,7 @@ if (typeof window !== "undefined") {
 // Back/Forward), and initial load — so it stays current regardless of how
 // Activity is entered or left.
 const LAST_ACTIVITY_ROUTE_STORAGE_KEY = "kenn-forge:last-activity-route";
+const RESTORABLE_ACTIVITY_FILTER_PARAMS = ["types", "notif", "hide_branch"] as const;
 
 function isRestorableActivityRoute(routePath: string): boolean {
   if (!routePath.startsWith("/") || routePath.startsWith("//")) return false;
@@ -571,6 +572,28 @@ function persistLastActivityRoute(activityRoute: string): void {
 
 let lastActivityRoute = readLastActivityRoute();
 
+function restoreMissingActivityFilters(): void {
+  if (route.page !== "activity") return;
+
+  const currentRoute = stripBase(currentLocationPath());
+  if (!isRestorableActivityRoute(currentRoute) || !isRestorableActivityRoute(lastActivityRoute)) return;
+
+  const currentURL = new URL(currentRoute, "https://example.invalid");
+  const storedURL = new URL(lastActivityRoute, "https://example.invalid");
+  let restored = false;
+  for (const param of RESTORABLE_ACTIVITY_FILTER_PARAMS) {
+    if (!currentURL.searchParams.has(param) && storedURL.searchParams.has(param)) {
+      currentURL.searchParams.set(param, storedURL.searchParams.get(param)!);
+      restored = true;
+    }
+  }
+  if (!restored) return;
+
+  const restoredRoute = `${currentURL.pathname}${currentURL.search}${currentURL.hash}`;
+  history.replaceState(history.state, "", basePrefix + restoredRoute);
+  route = parseRoute(restoredRoute);
+}
+
 export function getLastActivityRoute(): string {
   return lastActivityRoute;
 }
@@ -584,7 +607,9 @@ function rememberActivityRoute(): void {
   }
 }
 
-// Seed the cache when the app loads directly on an Activity URL.
+// Restore omitted session filters before the Activity store hydrates, then
+// seed the route cache from the resulting URL.
+restoreMissingActivityFilters();
 rememberActivityRoute();
 
 // Same contract as lastActivityRoute, for the Workspaces tab: remember the

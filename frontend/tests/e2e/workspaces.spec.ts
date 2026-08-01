@@ -158,6 +158,28 @@ test("Activity filters survive a reload while viewing Workspaces", async ({ page
   ).not.toHaveClass(/\bactive\b/);
 });
 
+test("Activity filters survive navigation to a URL that only sets the view", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("switch", { name: "Issues" }).click();
+
+  await page.locator(".activity-feed .kit-filter-dropdown__btn", { hasText: "View" }).click();
+  await page
+    .locator(".activity-feed .kit-filter-dropdown__panel")
+    .getByRole("button", { name: "Commits", exact: true })
+    .click();
+  const activityTypes = new URL(page.url()).searchParams.get("types");
+  expect(activityTypes).not.toBeNull();
+
+  await page.goto("/?view=threaded");
+
+  await expect.poll(() => new URL(page.url()).searchParams.get("types")).toBe(activityTypes);
+  await expect(page.getByRole("switch", { name: "Issues" })).not.toBeChecked();
+  await page.locator(".activity-feed .kit-filter-dropdown__btn", { hasText: "View" }).click();
+  await expect(
+    page.locator(".activity-feed .kit-filter-dropdown__panel").getByRole("button", { name: "Commits", exact: true }),
+  ).not.toHaveClass(/\bactive\b/);
+});
+
 test("repo selector renders icon and still filters repos", async ({ page }) => {
   await page.goto("/pulls");
 

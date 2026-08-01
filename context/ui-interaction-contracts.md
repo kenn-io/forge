@@ -186,10 +186,9 @@ Persisted controls must state their scope clearly.
   workspace's choice (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::sidebarTabStorageKey`).
 - URL query state belongs in the route only when deep-linking or back/forward
   navigation is part of the feature contract.
-- Activity filters remain URL-backed, while the last validated Activity route
-  is remembered in `sessionStorage` so a reload from another mode restores the
-  same view. Invalid or blocked storage falls back to `/` without breaking
-  in-memory navigation (`frontend/src/lib/stores/router.svelte.ts::readLastActivityRoute`).
+- Activity filters remain URL-backed and session-scoped. Missing filter params on a
+  partial Activity URL inherit the last validated route before store hydration, while
+  explicit URL values win (`frontend/src/lib/stores/router.svelte.ts::restoreMissingActivityFilters`).
 - Server-backed settings belong in the API only when the preference should
   follow the user/config rather than one browser session.
 - Concurrent controls for one server-backed settings object must share a

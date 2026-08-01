@@ -138,14 +138,16 @@ embedder protocol for arbitrary host state.
 - `DELETE /workspaces/{id}`: tear down a kenn-forge-managed workspace and its
   local resources.
   - Setup rejects occupied destinations before clone/fetch and again under the
-    repo lock before `git worktree add`; failed adds delete only branches absent
-    before the command because Git may create `-b` first (`internal/workspace/manager.go::Manager.addWorktree`).
+    repo lock before mutation. Branch creation and failed-add cleanup use ref
+    compare-and-swap so changed branches survive (`internal/workspace/manager.go::createBranchAndAddWorktree`).
+  - New registrations receive their workspace-ID marker before fallible post-add
+    configuration (`internal/workspace/manager.go::Manager.runOwnedGitWorktreeAdd`).
   - Existing-worktree reuse accepts only a non-symlink worktree root and revalidates
     its repository and provenance under the repo lock before refresh or ownership
     marking (`internal/workspace/manager.go::Manager.reuseExistingWorkspaceWorktree`).
-  - Destructive worktree removal requires a matching persisted workspace-ID marker;
-    repo, origin, branch, path, and self-registration are not ownership. Preserve
-    unmarked or mismatched roots (`internal/workspace/manager.go::Manager.workspaceCleanupGitDir`).
+  - Destructive worktree removal, including setup rollback, requires a matching
+    persisted workspace-ID marker under the repo lock; preserve unmarked or mismatched
+    roots (`internal/workspace/manager.go::Manager.rollbackWorktree`).
   - An unmarked live registration is ambiguous after upgrade: delete and retry return
     conflict and retain the workspace row; only registrations without a live worktree
     may be cleared as stale (`internal/workspace/manager.go::gitDirOwnsCleanupWorktree`).

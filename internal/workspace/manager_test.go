@@ -3321,6 +3321,7 @@ func TestAddPreferredWorktreeRejectsUnsafeBranchName(t *testing.T) {
 	cloneDir := setupBareCloneForWorkspaceGitTest(t)
 	mgr := NewManager(openTestDB(t), t.TempDir())
 	ws := &Workspace{
+		ID:           "ws-unsafe-branch",
 		ItemType:     db.WorkspaceItemTypePullRequest,
 		ItemNumber:   42,
 		GitHeadRef:   "-unsafe",
@@ -3377,6 +3378,7 @@ func TestAddWorktreeUsesFallbackWhenLocalBasePreferredBranchCheckedOut(t *testin
 	)
 	mgr := NewManager(openTestDB(t), t.TempDir())
 	ws := &Workspace{
+		ID:           "ws-local-base-fallback",
 		ItemType:     db.WorkspaceItemTypePullRequest,
 		ItemNumber:   42,
 		GitHeadRef:   branch,
@@ -3462,6 +3464,37 @@ func TestAddWorktreeFallbackBranchTracksPRHeadBranch(t *testing.T) {
 	require.True(ok, "divergence probe must resolve @{upstream}")
 	assert.Equal(0, div.Ahead)
 	assert.Equal(0, div.Behind)
+}
+
+func TestAddWorktreeLockedRecordsOwnershipBeforeReturning(t *testing.T) {
+	require := require.New(t)
+	cloneDir := setupBareCloneForWorkspaceGitTest(t)
+	const (
+		prNumber   = 45
+		headBranch = "feature/owned-registration"
+	)
+	configureSameRepoPRRefs(t, cloneDir, headBranch, prNumber)
+	ws := &Workspace{
+		ID:              "ws-owned-registration",
+		Platform:        "github",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		ItemType:        db.WorkspaceItemTypePullRequest,
+		ItemNumber:      prNumber,
+		GitHeadRef:      headBranch,
+		WorkspaceBranch: workspaceBranchUnknown,
+		WorktreePath:    filepath.Join(t.TempDir(), "worktree"),
+	}
+	mgr := NewManager(openTestDB(t), t.TempDir())
+
+	_, err := mgr.addWorktreeLocked(t.Context(), cloneDir, false, ws)
+	require.NoError(err)
+	owned, err := workspaceRegistrationMatches(
+		t.Context(), cloneDir, ws.WorktreePath, ws.ID,
+	)
+	require.NoError(err)
+	require.True(owned, "the registration must be marked before addWorktreeLocked returns")
 }
 
 // divergentCommitForWorkspaceGitTest creates a commit that is not the PR head so
@@ -4128,16 +4161,17 @@ func TestRollbackWorktreeDeletesBranchWhenContextCanceled(t *testing.T) {
 
 	cloneDir := setupBareCloneForWorkspaceGitTest(t)
 	branch := syntheticPRWorktreeBranch(42)
-	require.NoError(runGitWithoutHooks(
-		t.Context(), cloneDir,
-		"branch", branch, "main",
-	))
-
 	ws := &Workspace{
+		ID:           "ws-canceled-rollback",
 		ItemType:     db.WorkspaceItemTypePullRequest,
 		ItemNumber:   42,
-		WorktreePath: filepath.Join(t.TempDir(), "missing-worktree"),
+		WorktreePath: filepath.Join(t.TempDir(), "worktree"),
 	}
+	runWorkspaceTestGit(
+		t, cloneDir,
+		"worktree", "add", ws.WorktreePath, "-b", branch, "main",
+	)
+	require.NoError(writeWorkspaceOwnershipMarker(t.Context(), cloneDir, ws))
 	mgr := NewManager(openTestDB(t), t.TempDir())
 
 	ctx, cancel := context.WithCancel(t.Context())
@@ -4150,6 +4184,46 @@ func TestRollbackWorktreeDeletesBranchWhenContextCanceled(t *testing.T) {
 	)
 	require.NoError(err)
 	assert.False(exists)
+}
+
+func TestRollbackWorktreePreservesReplacementWithoutOwnershipMarker(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	cloneDir := setupBareCloneForWorkspaceGitTest(t)
+	branch := syntheticPRWorktreeBranch(43)
+	ws := &Workspace{
+		ID:           "ws-replaced-before-rollback",
+		ItemType:     db.WorkspaceItemTypePullRequest,
+		ItemNumber:   43,
+		WorktreePath: filepath.Join(t.TempDir(), "worktree"),
+	}
+	runWorkspaceTestGit(
+		t, cloneDir,
+		"worktree", "add", ws.WorktreePath, "-b", branch, "main",
+	)
+	require.NoError(writeWorkspaceOwnershipMarker(t.Context(), cloneDir, ws))
+	runWorkspaceTestGit(
+		t, cloneDir, "worktree", "remove", "--force", ws.WorktreePath,
+	)
+	runWorkspaceTestGit(t, cloneDir, "worktree", "add", ws.WorktreePath, branch)
+	require.NoError(os.WriteFile(
+		filepath.Join(ws.WorktreePath, "replacement.txt"),
+		[]byte("uncommitted replacement\n"), 0o644,
+	))
+
+	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr.rollbackWorktree(t.Context(), cloneDir, ws, branch)
+
+	contents, err := os.ReadFile(filepath.Join(ws.WorktreePath, "replacement.txt"))
+	require.NoError(err)
+	assert.Equal("uncommitted replacement\n", string(contents))
+	branchSHA, exists, err := gitRefSHA(
+		t.Context(), cloneDir, "refs/heads/"+branch,
+	)
+	require.NoError(err)
+	assert.True(exists)
+	assert.NotEmpty(branchSHA)
 }
 
 func TestLocalBranchExistsIgnoresInheritedGitEnv(t *testing.T) {
@@ -6759,6 +6833,48 @@ func TestAddPreferredWorktreeRemovesBranchCreatedByFailedAdd(t *testing.T) {
 	exists, err := localBranchExists(t.Context(), cloneDir, preferredBranch)
 	require.NoError(err)
 	assert.False(exists, "a failed add must remove only the branch it created")
+}
+
+func TestFailedWorktreeAddPreservesConcurrentlyChangedBranch(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	cloneDir := setupBareCloneForWorkspaceGitTest(t)
+	const branch = "feature/concurrent-owner"
+	divergentSHA := divergentCommitForWorkspaceGitTest(
+		t, cloneDir,
+		strings.TrimSpace(string(runWorkspaceTestGit(t, cloneDir, "rev-parse", "main"))),
+	)
+	realGit, err := exec.LookPath("git")
+	require.NoError(err)
+	fakeDir := t.TempDir()
+	fakeGit := filepath.Join(fakeDir, "git")
+	require.NoError(os.WriteFile(fakeGit, []byte(`#!/bin/sh
+set -eu
+case " $* " in
+  *" worktree add "*)
+    "$KENN_FORGE_TEST_REAL_GIT" --git-dir="$KENN_FORGE_TEST_GIT_DIR" \
+      update-ref "$KENN_FORGE_TEST_BRANCH_REF" "$KENN_FORGE_TEST_BRANCH_SHA"
+    exit 128
+    ;;
+esac
+exec "$KENN_FORGE_TEST_REAL_GIT" "$@"
+`), 0o755))
+	t.Setenv("KENN_FORGE_TEST_REAL_GIT", realGit)
+	t.Setenv("KENN_FORGE_TEST_GIT_DIR", cloneDir)
+	t.Setenv("KENN_FORGE_TEST_BRANCH_REF", "refs/heads/"+branch)
+	t.Setenv("KENN_FORGE_TEST_BRANCH_SHA", divergentSHA)
+	t.Setenv("PATH", fakeDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	err = runGitWorktreeAddCreatingBranch(
+		t.Context(), cloneDir, filepath.Join(t.TempDir(), "worktree"), branch, "main",
+	)
+	require.Error(err)
+	branchSHA, exists, err := gitRefSHA(
+		t.Context(), cloneDir, "refs/heads/"+branch,
+	)
+	require.NoError(err)
+	assert.True(exists)
+	assert.Equal(divergentSHA, branchSHA)
 }
 
 func TestManagerCleanupForDeleteAcquiresRepoLock(t *testing.T) {

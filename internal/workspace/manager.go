@@ -154,6 +154,7 @@ var (
 	ErrWorkspaceDuplicate         = errors.New("workspace already exists")
 	ErrWorkspaceInvalidState      = errors.New("workspace invalid state")
 	ErrWorkspaceOwnershipUnproven = errors.New("workspace worktree ownership cannot be verified")
+	errWorkspaceOwnershipMarker   = errors.New("workspace ownership marker failed")
 	// ErrInvalidBranchName lets HTTP handlers map a rejected branch to a
 	// validation response with errors.Is instead of matching on the git
 	// message this error carries.
@@ -2005,12 +2006,6 @@ func (m *Manager) addWorktree(
 		if addErr != nil {
 			return addErr
 		}
-		if err := writeWorkspaceOwnershipMarker(ctx, cloneDir, ws); err != nil {
-			cleanupWorktreeAddOnUpstreamFailure(
-				ctx, cloneDir, ws.WorktreePath, branch,
-			)
-			return fmt.Errorf("record workspace ownership: %w", err)
-		}
 		return nil
 	})
 	return branch, err
@@ -2034,6 +2029,9 @@ func (m *Manager) addWorktreeLocked(
 	branch, err := m.addPreferredWorktree(ctx, cloneDir, localBase, ws)
 	if err == nil {
 		return branch, nil
+	}
+	if errors.Is(err, errWorkspaceOwnershipMarker) {
+		return "", err
 	}
 	fallbackBranch := syntheticPRWorktreeBranch(ws.ItemNumber)
 	// Providers may not retain a synthetic MR head ref. Try to populate the
@@ -2094,6 +2092,9 @@ func (m *Manager) addFallbackWorktree(
 		return branch, nil
 	}
 	fallbackErr := err
+	if errors.Is(err, errWorkspaceOwnershipMarker) {
+		return "", err
+	}
 
 	// Uniquifying leaves the colliding branch untouched: it may be a live
 	// workspace's checkout or a user branch kenn-forge never created.
@@ -2106,10 +2107,13 @@ func (m *Manager) addFallbackWorktree(
 		if err == nil {
 			return branch, nil
 		}
+		if errors.Is(err, errWorkspaceOwnershipMarker) {
+			return "", err
+		}
 	}
 
-	if detachErr := runGitWorktreeAdd(
-		ctx, cloneDir, ws.WorktreePath, "--detach", startRef,
+	if detachErr := m.runOwnedGitWorktreeAdd(
+		ctx, cloneDir, ws, "--detach", startRef,
 	); detachErr != nil {
 		return "", fmt.Errorf(
 			"%w; detached checkout failed: %w", fallbackErr, detachErr,
@@ -2129,18 +2133,21 @@ func (m *Manager) addFallbackBranchWorktree(
 	ws *Workspace,
 	branch, startRef string,
 ) (string, error) {
-	if err := runGitWorktreeAddCreatingBranch(
-		ctx, cloneDir, ws.WorktreePath, branch, startRef,
-	); err != nil {
+	branchSHA, err := m.runOwnedGitWorktreeAddCreatingBranch(
+		ctx, cloneDir, ws, branch, startRef,
+	)
+	if err != nil {
 		return "", err
 	}
 	if err := configureFallbackBranchUpstream(
 		ctx, cloneDir, ws, branch,
 	); err != nil {
-		cleanupWorktreeAddOnUpstreamFailure(
-			ctx, cloneDir, ws.WorktreePath, branch,
+		cleanupErr := cleanupOwnedWorktreeAddOnUpstreamFailure(
+			ctx, cloneDir, ws, branch, branchSHA,
 		)
-		return "", fmt.Errorf("configure branch upstream: %w", err)
+		return "", errors.Join(
+			fmt.Errorf("configure branch upstream: %w", err), cleanupErr,
+		)
 	}
 	return branch, nil
 }
@@ -2153,16 +2160,16 @@ func (m *Manager) addIssueWorktree(
 		workspaceBranch = ws.GitHeadRef
 	}
 	if workspaceBranch == "" {
-		if err := runGitWorktreeAdd(
-			ctx, cloneDir, ws.WorktreePath, ws.GitHeadRef,
+		if err := m.runOwnedGitWorktreeAdd(
+			ctx, cloneDir, ws, ws.GitHeadRef,
 		); err != nil {
 			return "", err
 		}
 		return "", nil
 	}
 	startRef := workspaceStartRef(ws)
-	if err := runGitWorktreeAddCreatingBranch(
-		ctx, cloneDir, ws.WorktreePath, workspaceBranch, startRef,
+	if _, err := m.runOwnedGitWorktreeAddCreatingBranch(
+		ctx, cloneDir, ws, workspaceBranch, startRef,
 	); err != nil {
 		return "", err
 	}
@@ -2179,8 +2186,8 @@ func (m *Manager) addPreferredWorktree(
 	}
 
 	if ws.MRHeadRepo != nil {
-		err := runGitWorktreeAddCreatingBranch(
-			ctx, cloneDir, ws.WorktreePath,
+		_, err := m.runOwnedGitWorktreeAddCreatingBranch(
+			ctx, cloneDir, ws,
 			ws.GitHeadRef, workspaceStartRef(ws),
 		)
 		if err != nil {
@@ -2204,19 +2211,22 @@ func (m *Manager) addPreferredWorktree(
 		return "", err
 	}
 	if !exists {
-		if err := runGitWorktreeAddCreatingBranch(
-			ctx, cloneDir, ws.WorktreePath, ws.GitHeadRef, startRef,
-		); err != nil {
+		branchSHA, err := m.runOwnedGitWorktreeAddCreatingBranch(
+			ctx, cloneDir, ws, ws.GitHeadRef, startRef,
+		)
+		if err != nil {
 			return "", err
 		}
 		if err := setBranchUpstream(
 			ctx, ws.WorktreePath, ws.GitHeadRef,
 			"origin", "refs/heads/"+ws.GitHeadRef,
 		); err != nil {
-			cleanupWorktreeAddOnUpstreamFailure(
-				ctx, cloneDir, ws.WorktreePath, ws.GitHeadRef,
+			cleanupErr := cleanupOwnedWorktreeAddOnUpstreamFailure(
+				ctx, cloneDir, ws, ws.GitHeadRef, branchSHA,
 			)
-			return "", fmt.Errorf("configure branch upstream: %w", err)
+			return "", errors.Join(
+				fmt.Errorf("configure branch upstream: %w", err), cleanupErr,
+			)
 		}
 		return ws.GitHeadRef, nil
 	}
@@ -2239,8 +2249,8 @@ func (m *Manager) addPreferredWorktree(
 		}
 	}
 
-	if err := runGitWorktreeAdd(
-		ctx, cloneDir, ws.WorktreePath, ws.GitHeadRef,
+	if err := m.runOwnedGitWorktreeAdd(
+		ctx, cloneDir, ws, ws.GitHeadRef,
 	); err != nil {
 		return "", err
 	}
@@ -2252,10 +2262,12 @@ func (m *Manager) addPreferredWorktree(
 		); err != nil {
 			// Empty branch: the branch pre-existed this workspace and
 			// stays in place; only the worktree is rolled back.
-			cleanupWorktreeAddOnUpstreamFailure(
-				ctx, cloneDir, ws.WorktreePath, "",
+			cleanupErr := cleanupOwnedWorktreeAddOnUpstreamFailure(
+				ctx, cloneDir, ws, "", "",
 			)
-			return "", fmt.Errorf("configure branch upstream: %w", err)
+			return "", errors.Join(
+				fmt.Errorf("configure branch upstream: %w", err), cleanupErr,
+			)
 		}
 	}
 
@@ -2316,26 +2328,43 @@ func isSyntheticPRWorktreeBranch(mrNumber int, branch string) bool {
 	return err == nil
 }
 
-// cleanupWorktreeAddOnUpstreamFailure rolls back a just-added worktree (and,
-// when kenn-forge created it, its branch) after configuring the branch
-// upstream failed. Callers must already hold the per-repo lock for cloneDir.
-// An empty branch leaves a pre-existing user-owned branch in place.
-func cleanupWorktreeAddOnUpstreamFailure(
-	ctx context.Context, cloneDir, worktreePath, branch string,
-) {
+// cleanupOwnedWorktreeAddOnUpstreamFailure rolls back a marked worktree after
+// post-add configuration fails. Callers hold the repository lock. An empty
+// branch leaves a pre-existing user-owned branch in place.
+func cleanupOwnedWorktreeAddOnUpstreamFailure(
+	ctx context.Context,
+	cloneDir string,
+	ws *Workspace,
+	branch, branchSHA string,
+) error {
 	cleanupCtx, cancel := cleanupContext(ctx)
 	defer cancel()
-	_ = runGitWithoutHooks(
-		cleanupCtx, cloneDir,
-		"worktree", "remove", "--force", worktreePath,
+	owned, err := workspaceRegistrationMatches(
+		cleanupCtx, cloneDir, ws.WorktreePath, ws.ID,
 	)
-	if branch == "" {
-		return
+	if err != nil {
+		return fmt.Errorf("verify failed worktree ownership: %w", err)
 	}
-	_ = runGitWithoutHooks(
+	if !owned {
+		return fmt.Errorf(
+			"%w: %s", ErrWorkspaceOwnershipUnproven, ws.WorktreePath,
+		)
+	}
+	if err := runGitWithoutHooks(
 		cleanupCtx, cloneDir,
-		"branch", "-D", "--", branch,
-	)
+		"worktree", "remove", "--force", ws.WorktreePath,
+	); err != nil {
+		return fmt.Errorf("remove failed worktree: %w", err)
+	}
+	if branch == "" {
+		return nil
+	}
+	if err := deleteWorkspaceBranchIfMatches(
+		cleanupCtx, cloneDir, branch, branchSHA,
+	); err != nil {
+		return fmt.Errorf("remove failed worktree branch: %w", err)
+	}
+	return nil
 }
 
 // configureFallbackBranchUpstream points the synthetic PR fallback branch at
@@ -4481,28 +4510,98 @@ func runGitWorktreeAdd(
 	return runGitWithoutHooks(ctx, dir, gitArgs...)
 }
 
+func (m *Manager) runOwnedGitWorktreeAdd(
+	ctx context.Context, dir string, ws *Workspace, args ...string,
+) error {
+	if err := runGitWorktreeAdd(ctx, dir, ws.WorktreePath, args...); err != nil {
+		return err
+	}
+	if err := writeWorkspaceOwnershipMarker(ctx, dir, ws); err != nil {
+		return fmt.Errorf("%w: %w", errWorkspaceOwnershipMarker, err)
+	}
+	return nil
+}
+
 func runGitWorktreeAddCreatingBranch(
 	ctx context.Context, dir, worktreePath, branch, startRef string,
 ) error {
-	existed, err := localBranchExists(ctx, dir, branch)
+	_, err := createBranchAndAddWorktree(
+		ctx, dir, worktreePath, branch, startRef,
+	)
+	return err
+}
+
+func (m *Manager) runOwnedGitWorktreeAddCreatingBranch(
+	ctx context.Context,
+	dir string,
+	ws *Workspace,
+	branch, startRef string,
+) (string, error) {
+	branchSHA, err := createBranchAndAddWorktree(
+		ctx, dir, ws.WorktreePath, branch, startRef,
+	)
 	if err != nil {
-		return fmt.Errorf("inspect worktree branch %q: %w", branch, err)
+		return "", err
+	}
+	if err := writeWorkspaceOwnershipMarker(ctx, dir, ws); err != nil {
+		return "", fmt.Errorf("%w: %w", errWorkspaceOwnershipMarker, err)
+	}
+	return branchSHA, nil
+}
+
+func createBranchAndAddWorktree(
+	ctx context.Context, dir, worktreePath, branch, startRef string,
+) (string, error) {
+	if err := validateLocalBranchName(ctx, dir, branch); err != nil {
+		return "", err
+	}
+	startSHA, ok, err := gitRefSHA(ctx, dir, startRef)
+	if err != nil {
+		return "", fmt.Errorf("resolve worktree start ref %q: %w", startRef, err)
+	}
+	if !ok {
+		return "", fmt.Errorf("worktree start ref %q not found", startRef)
+	}
+	branchRef := "refs/heads/" + branch
+	zeroOID := strings.Repeat("0", len(startSHA))
+	if err := runGitWithoutHooks(
+		ctx, dir, "update-ref", branchRef, startSHA, zeroOID,
+	); err != nil {
+		return "", fmt.Errorf("create worktree branch %q: %w", branch, err)
 	}
 	addErr := runGitWorktreeAdd(
-		ctx, dir, worktreePath, "-b", branch, startRef,
+		ctx, dir, worktreePath, branch,
 	)
-	if addErr == nil || existed {
-		return addErr
+	if addErr == nil {
+		return startSHA, nil
 	}
-	if cleanupErr := deleteWorkspaceBranchStrict(
-		ctx, dir, branch,
+	if cleanupErr := deleteWorkspaceBranchIfMatches(
+		ctx, dir, branch, startSHA,
 	); cleanupErr != nil {
-		return errors.Join(
+		return "", errors.Join(
 			addErr,
 			fmt.Errorf("clean up failed worktree branch: %w", cleanupErr),
 		)
 	}
-	return addErr
+	return "", addErr
+}
+
+func deleteWorkspaceBranchIfMatches(
+	ctx context.Context, dir, branch, expectedSHA string,
+) error {
+	if strings.TrimSpace(expectedSHA) == "" {
+		return errors.New("expected branch SHA is required")
+	}
+	if err := validateLocalBranchName(ctx, dir, branch); err != nil {
+		return err
+	}
+	if err := runGitWithoutHooks(
+		ctx, dir,
+		"update-ref", "-d", "refs/heads/"+branch, expectedSHA,
+	); err != nil {
+		return fmt.Errorf("delete git branch %q if unchanged: %w", branch, err)
+	}
+	return nil
 }
 
 // runBuiltCmd runs a pre-built exec.Cmd and wraps any failure with
@@ -4658,12 +4757,32 @@ func (m *Manager) rollbackWorktree(
 	cleanupCtx, cancel := cleanupContext(ctx)
 	defer cancel()
 	err := m.withRepoLockForGitDir(cleanupCtx, cloneDir, func() error {
+		owned, err := workspaceRegistrationMatches(
+			cleanupCtx, cloneDir, ws.WorktreePath, ws.ID,
+		)
+		if err != nil {
+			return fmt.Errorf("verify rollback worktree ownership: %w", err)
+		}
+		if !owned {
+			slog.Warn("rollback: preserved worktree without matching ownership marker",
+				"workspace_id", ws.ID, "path", ws.WorktreePath)
+			return nil
+		}
 		if err := runGitWithoutHooks(
 			cleanupCtx, cloneDir,
 			"worktree", "remove", "--force", ws.WorktreePath,
 		); err != nil {
+			if isGitWorktreeAbsent(err) {
+				if staleErr := removeStaleWorktreeRegistrationMetadata(
+					cleanupCtx, cloneDir, ws.WorktreePath,
+				); staleErr == nil {
+					m.deleteWorkspaceBranches(cleanupCtx, cloneDir, ws, branch)
+					return nil
+				}
+			}
 			slog.Warn("rollback: worktree remove failed",
 				"path", ws.WorktreePath, "err", err)
+			return nil
 		}
 		m.deleteWorkspaceBranches(cleanupCtx, cloneDir, ws, branch)
 		return nil

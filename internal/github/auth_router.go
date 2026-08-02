@@ -73,7 +73,15 @@ type HostRouter struct {
 	discoveryOwners map[string]Client
 
 	aliasMu     sync.RWMutex
-	repoAliases map[string]RouteKey
+	repoAliases map[string]repoCredentialAlias
+}
+
+// repoCredentialAlias maps a provider-resolved route back to the configured
+// route whose credential it should use, recording which repository (by
+// stable provider ID) created the mapping.
+type repoCredentialAlias struct {
+	configured     RouteKey
+	providerRepoID string
 }
 
 func NewHostRouter(host string, routes ...*Route) (*HostRouter, error) {
@@ -196,7 +204,7 @@ func (r *HostRouter) repoCredentialAliasTarget(owner, name string) (RouteKey, bo
 	r.aliasMu.RLock()
 	defer r.aliasMu.RUnlock()
 	target, ok := r.repoAliases[repoRouteMapKey(owner, name)]
-	return target, ok
+	return target.configured, ok
 }
 
 func (r *HostRouter) ReadIdentityForRepo(owner, name string) (IdentityKey, error) {
@@ -1005,8 +1013,12 @@ func (c *RoutedClient) ListIssueTimelineEvents(ctx context.Context, owner, repo 
 // provider-resolved owner/name onto the configured repository identity it
 // replaced. Provider APIs keep receiving the resolved names; only credential
 // selection follows the configured route. Alias chains flatten, so repeated
-// renames still resolve to the original configured identity.
-func (r *HostRouter) RegisterRepoCredentialAlias(owner, name string, configured RouteKey) {
+// renames still resolve to the original configured identity. providerRepoID
+// records which repository the alias belongs to, so a replacement repository
+// reusing the route can displace it.
+func (r *HostRouter) RegisterRepoCredentialAlias(
+	owner, name string, configured RouteKey, providerRepoID string,
+) {
 	if r == nil {
 		return
 	}
@@ -1014,13 +1026,36 @@ func (r *HostRouter) RegisterRepoCredentialAlias(owner, name string, configured 
 	r.aliasMu.Lock()
 	defer r.aliasMu.Unlock()
 	if target, ok := r.repoAliases[repoRouteMapKey(configured.Owner, configured.Name)]; ok {
-		configured = target
+		configured = target.configured
 	}
 	if key == repoRouteMapKey(configured.Owner, configured.Name) {
 		return
 	}
 	if r.repoAliases == nil {
-		r.repoAliases = make(map[string]RouteKey)
+		r.repoAliases = make(map[string]repoCredentialAlias)
 	}
-	r.repoAliases[key] = configured
+	r.repoAliases[key] = repoCredentialAlias{
+		configured:     configured,
+		providerRepoID: providerRepoID,
+	}
+}
+
+// ClearDisplacedRepoCredentialAlias removes a credential alias recorded by a
+// different repository than the one now occupying the route, so a
+// replacement repository cannot inherit the displaced repository's
+// credential. An unknown occupant identity leaves the alias untouched.
+func (r *HostRouter) ClearDisplacedRepoCredentialAlias(
+	owner, name, providerRepoID string,
+) {
+	if r == nil || providerRepoID == "" {
+		return
+	}
+	key := repoRouteMapKey(owner, name)
+	r.aliasMu.Lock()
+	defer r.aliasMu.Unlock()
+	alias, ok := r.repoAliases[key]
+	if !ok || alias.providerRepoID == providerRepoID {
+		return
+	}
+	delete(r.repoAliases, key)
 }

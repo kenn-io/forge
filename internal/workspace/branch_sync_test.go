@@ -11,6 +11,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/testutil/gitfake"
 	"go.kenn.io/forge/internal/tokenauth"
@@ -236,4 +237,45 @@ exec "$real" "$@"
 	require.NoError(err)
 	require.True(ok)
 	assert.Equal(Divergence{}, div)
+}
+
+func seedAmbiguousBranchSyncRoute(t *testing.T, d *db.DB) {
+	t.Helper()
+	now := time.Now().UTC()
+	_, _, err := d.ReconcileRepositoryObservation(t.Context(), db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "repo-old",
+		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+	}, now)
+	require.NoError(t, err)
+	_, _, err = d.ReconcileRepositoryObservation(t.Context(), db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "repo-new",
+		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+	}, now.Add(time.Hour))
+	require.NoError(t, err)
+}
+
+func TestPushWorktreeBranchRejectsAmbiguousRoute(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	seedAmbiguousBranchSyncRoute(t, d)
+	mgr := NewManager(d, t.TempDir())
+
+	err := mgr.PushWorktreeBranch(
+		t.Context(), "github", "github.com", "acme", "widget", t.TempDir(),
+	)
+	require.ErrorContains(err, "historical occupants",
+		"push must fail closed on a route with contested history")
+}
+
+func TestPullWorktreeBranchRejectsAmbiguousRoute(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	seedAmbiguousBranchSyncRoute(t, d)
+	mgr := NewManager(d, t.TempDir())
+
+	err := mgr.PullWorktreeBranch(
+		t.Context(), "github", "github.com", "acme", "widget", t.TempDir(),
+	)
+	require.ErrorContains(err, "historical occupants",
+		"pull must fail closed on a route with contested history")
 }

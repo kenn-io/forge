@@ -137,7 +137,7 @@ func TestNormalSyncRejectsIssueCommentsAfterParentAdvances(t *testing.T) {
 	}}))
 
 	applied, err := (&Syncer{db: database}).commitIssueCommentsSnapshot(
-		ctx, repo, 1, stale.SnapshotRevision, []db.IssueEvent{{
+		ctx, repo, issueID, 1, stale.SnapshotRevision, []db.IssueEvent{{
 			IssueID: issueID, EventType: "issue_comment", DedupeKey: "stale-comment",
 			CreatedAt: oldUpdatedAt,
 		}}, nil, nil,
@@ -186,7 +186,7 @@ func TestNormalSyncRejectsAllMergeRequestChildrenAfterParentAdvances(t *testing.
 	}}))
 
 	applied, err := (&Syncer{db: database}).commitMergeRequestDatasets(
-		ctx, repo, 1, staleRevision,
+		ctx, repo, mrID, 1, staleRevision,
 		[]db.MREvent{{EventType: "issue_comment", DedupeKey: "stale-comment", CreatedAt: oldUpdatedAt}}, true,
 		[]db.MREvent{{EventType: "review", DedupeKey: "stale-review", CreatedAt: oldUpdatedAt}},
 		[]db.MREvent{{EventType: "review_comment", DedupeKey: "stale-inline", CreatedAt: oldUpdatedAt}},
@@ -17574,4 +17574,130 @@ func TestCommitIssueParentSnapshotRejectsDisplacedRepository(t *testing.T) {
 	)
 	require.ErrorContains(err, "route",
 		"a displaced repository must not receive the route's new data")
+}
+
+func TestCommitIssueCommentsSnapshotBindsToParentID(t *testing.T) {
+	require := require.New(t)
+	database := openTestDB(t)
+	ctx := t.Context()
+	now := time.Now().UTC()
+	displaced, _, err := database.ReconcileRepositoryObservation(ctx, db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "repo-old",
+		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+	}, now)
+	require.NoError(err)
+	oldIssueID, oldRevision, accepted, err := database.UpsertIssueSnapshotWithLabels(
+		ctx, &db.Issue{
+			RepoID: displaced.Repository.ID, PlatformID: 5001, Number: 5,
+			URL: "https://github.com/acme/widget/issues/5", Title: "displaced",
+			Author: "ada", State: "open",
+			CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+		},
+	)
+	require.NoError(err)
+	require.True(accepted)
+	replacement, _, err := database.ReconcileRepositoryObservation(ctx, db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "repo-new",
+		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+	}, now.Add(time.Hour))
+	require.NoError(err)
+	newIssueID, _, accepted, err := database.UpsertIssueSnapshotWithLabels(
+		ctx, &db.Issue{
+			RepoID: replacement.Repository.ID, PlatformID: 5002, Number: 5,
+			URL: "https://github.com/acme/widget/issues/5", Title: "replacement",
+			Author: "bo", State: "open",
+			CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+		},
+	)
+	require.NoError(err)
+	require.True(accepted)
+
+	syncer := &Syncer{db: database}
+	applied, err := syncer.commitIssueCommentsSnapshot(
+		ctx,
+		RepoRef{
+			Platform: platform.KindGitHub, PlatformHost: "github.com",
+			Owner: "acme", Name: "widget",
+		},
+		oldIssueID, 5, oldRevision,
+		[]db.IssueEvent{{
+			IssueID: oldIssueID, EventType: "comment", Author: "ada",
+			Body: "stale comment", CreatedAt: now, DedupeKey: "comment-1",
+		}},
+		nil, nil,
+	)
+	require.NoError(err)
+	require.True(applied)
+
+	oldEvents, err := database.ListIssueEvents(ctx, oldIssueID)
+	require.NoError(err)
+	require.Len(oldEvents, 1,
+		"child snapshot must attach to the parent the caller fetched for")
+	newEvents, err := database.ListIssueEvents(ctx, newIssueID)
+	require.NoError(err)
+	require.Empty(newEvents,
+		"the replacement repository's issue must not receive the stale comments")
+}
+
+func TestCommitMergeRequestDatasetsBindsToParentID(t *testing.T) {
+	require := require.New(t)
+	database := openTestDB(t)
+	ctx := t.Context()
+	now := time.Now().UTC()
+	displaced, _, err := database.ReconcileRepositoryObservation(ctx, db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "repo-old",
+		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+	}, now)
+	require.NoError(err)
+	oldMRID, oldRevision, accepted, err := database.UpsertMergeRequestSnapshotWithLabels(
+		ctx, &db.MergeRequest{
+			RepoID: displaced.Repository.ID, PlatformID: 7001, Number: 7,
+			URL: "https://github.com/acme/widget/pull/7", Title: "displaced",
+			Author: "ada", State: "open", HeadBranch: "feature", BaseBranch: "main",
+			CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+		},
+	)
+	require.NoError(err)
+	require.True(accepted)
+	replacement, _, err := database.ReconcileRepositoryObservation(ctx, db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "repo-new",
+		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+	}, now.Add(time.Hour))
+	require.NoError(err)
+	newMRID, _, accepted, err := database.UpsertMergeRequestSnapshotWithLabels(
+		ctx, &db.MergeRequest{
+			RepoID: replacement.Repository.ID, PlatformID: 7002, Number: 7,
+			URL: "https://github.com/acme/widget/pull/7", Title: "replacement",
+			Author: "bo", State: "open", HeadBranch: "feature", BaseBranch: "main",
+			CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+		},
+	)
+	require.NoError(err)
+	require.True(accepted)
+
+	syncer := &Syncer{db: database}
+	applied, err := syncer.commitMergeRequestDatasets(
+		ctx,
+		RepoRef{
+			Platform: platform.KindGitHub, PlatformHost: "github.com",
+			Owner: "acme", Name: "widget",
+		},
+		oldMRID, 7, oldRevision,
+		[]db.MREvent{{
+			MergeRequestID: oldMRID, EventType: "comment", Author: "ada",
+			Body: "stale comment", CreatedAt: now, DedupeKey: "comment-1",
+		}},
+		true, nil, nil, nil, false, nil, nil,
+	)
+	require.NoError(err)
+	require.True(applied)
+
+	oldEvents, err := database.ListMREvents(ctx, oldMRID)
+	require.NoError(err)
+	require.Len(oldEvents, 1,
+		"child snapshot must attach to the parent the caller fetched for")
+	newEvents, err := database.ListMREvents(ctx, newMRID)
+	require.NoError(err)
+	require.Empty(newEvents,
+		"the replacement repository's MR must not receive the stale datasets")
 }

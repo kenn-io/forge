@@ -823,6 +823,11 @@ func (m *Manager) branchInspectionDir(
 		return "", false, false, nil
 	}
 
+	if err := m.verifyRepoRouteUnoccupied(
+		ctx, platform, platformHost, owner, name,
+	); err != nil {
+		return "", false, false, err
+	}
 	if err := m.clones.EnsureCloneInNamespace(
 		ctx, workspaceCloneNamespace(platform), platform, platformHost,
 		owner, name, remoteURL,
@@ -928,8 +933,22 @@ func (m *Manager) Setup(
 func (m *Manager) verifyWorkspaceRouteUnoccupied(
 	ctx context.Context, ws *Workspace,
 ) error {
-	collision, err := m.db.WorkspaceRepoRouteHasHistoricalOccupants(
+	return m.verifyRepoRouteUnoccupied(
 		ctx, ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
+	)
+}
+
+// verifyRepoRouteUnoccupied fails closed on routes with contested history so
+// network git operations cannot exchange data with a route's new occupant.
+// Managers without a database (unmanaged local checkouts) skip the check.
+func (m *Manager) verifyRepoRouteUnoccupied(
+	ctx context.Context, provider, platformHost, owner, name string,
+) error {
+	if m.db == nil {
+		return nil
+	}
+	collision, err := m.db.WorkspaceRepoRouteHasHistoricalOccupants(
+		ctx, provider, platformHost, owner, name,
 	)
 	if err != nil {
 		return fmt.Errorf("verify workspace repository route: %w", err)
@@ -937,7 +956,7 @@ func (m *Manager) verifyWorkspaceRouteUnoccupied(
 	if collision {
 		return fmt.Errorf(
 			"workspace repository route has historical occupants: %s/%s",
-			ws.RepoOwner, ws.RepoName,
+			owner, name,
 		)
 	}
 	return nil

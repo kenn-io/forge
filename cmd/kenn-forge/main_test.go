@@ -227,6 +227,7 @@ func TestResolveStartupReposExpandsConfiguredGlobs(t *testing.T) {
 		cfg,
 		mustProviderRegistry(t, map[string]ghclient.Client{"github.com": client}),
 		nil,
+		nil,
 	)
 
 	assert.Equal([]ghclient.RepoRef{{
@@ -248,6 +249,7 @@ func TestResolveStartupReposKeepsExactReposWhenResolutionFails(t *testing.T) {
 		t.Context(),
 		cfg,
 		mustProviderRegistry(t, nil),
+		nil,
 		nil,
 	)
 
@@ -281,7 +283,7 @@ func TestResolveStartupReposFallsBackToDBForOfflineGlobs(t *testing.T) {
 	}
 
 	repos := resolveStartupRepos(
-		ctx, cfg, mustProviderRegistry(t, nil), database,
+		ctx, cfg, mustProviderRegistry(t, nil), database, nil,
 	)
 
 	assert.ElementsMatch([]ghclient.RepoRef{
@@ -315,7 +317,7 @@ func TestResolveStartupReposUsesProviderRegistryForGitLab(t *testing.T) {
 		host: "gitlab.com",
 	})
 
-	repos := resolveStartupRepos(t.Context(), cfg, registry, nil)
+	repos := resolveStartupRepos(t.Context(), cfg, registry, nil, nil)
 
 	assert.Equal([]ghclient.RepoRef{{
 		Platform:     platform.KindGitLab,
@@ -593,6 +595,7 @@ func TestStartupFallbackKeepsPersistedGlobMatchesInAPIs(t *testing.T) {
 		cfg,
 		mustProviderRegistry(t, map[string]ghclient.Client{"github.com": client}),
 		database,
+		nil,
 	)
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": client},

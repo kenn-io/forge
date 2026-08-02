@@ -1268,32 +1268,28 @@ func (s *Syncer) CommitMergeRequestParentSnapshot(
 	return mrID, revision, accepted, err
 }
 
+// commitIssueCommentsSnapshot binds the child snapshot to the parent issue ID
+// the caller fetched for. Resolving the parent by route here would let a
+// concurrent route replacement redirect stale comments onto the replacement
+// repository's issue when snapshot revisions coincide.
 func (s *Syncer) commitIssueCommentsSnapshot(
 	ctx context.Context,
-	repo RepoRef,
+	_ RepoRef,
+	issueID int64,
 	number int,
 	expectedRevision int64,
 	events []db.IssueEvent,
 	otherEvents []db.IssueEvent,
 	derived *db.IssueDerivedFields,
 ) (bool, error) {
-	parent, err := s.db.GetIssue(
-		ctx, string(repoPlatform(repo)), repoHost(repo), repo.Owner, repo.Name, number,
-	)
-	if err != nil || parent == nil {
-		if err != nil {
-			return false, err
-		}
-		return false, fmt.Errorf("issue #%d is missing before comment replacement", number)
-	}
 	for i := range events {
-		events[i].IssueID = parent.ID
+		events[i].IssueID = issueID
 	}
 	for i := range otherEvents {
-		otherEvents[i].IssueID = parent.ID
+		otherEvents[i].IssueID = issueID
 	}
 	applied, err := s.db.CommitIssueChildSnapshot(ctx, db.IssueChildSnapshot{
-		IssueID: parent.ID, ExpectedRevision: expectedRevision,
+		IssueID: issueID, ExpectedRevision: expectedRevision,
 		Comments: events, OtherEvents: otherEvents, DerivedFields: derived,
 	})
 	if err != nil {
@@ -1302,9 +1298,13 @@ func (s *Syncer) commitIssueCommentsSnapshot(
 	return applied, nil
 }
 
+// commitMergeRequestDatasets binds the child snapshot to the parent MR ID the
+// caller fetched for — see commitIssueCommentsSnapshot for why the route must
+// not resolve the parent.
 func (s *Syncer) commitMergeRequestDatasets(
 	ctx context.Context,
-	repo RepoRef,
+	_ RepoRef,
+	mrID int64,
 	number int,
 	expectedRevision int64,
 	comments []db.MREvent,
@@ -1316,22 +1316,13 @@ func (s *Syncer) commitMergeRequestDatasets(
 	otherEvents []db.MREvent,
 	derived *db.MRDerivedFields,
 ) (bool, error) {
-	parent, err := s.db.GetMergeRequest(
-		ctx, string(repoPlatform(repo)), repoHost(repo), repo.Owner, repo.Name, number,
-	)
-	if err != nil || parent == nil {
-		if err != nil {
-			return false, err
-		}
-		return false, fmt.Errorf("merge request #%d is missing before dataset persistence", number)
-	}
 	for _, events := range [][]db.MREvent{comments, reviews, inline, otherEvents} {
 		for i := range events {
-			events[i].MergeRequestID = parent.ID
+			events[i].MergeRequestID = mrID
 		}
 	}
 	applied, err := s.db.CommitMergeRequestChildSnapshot(ctx, db.MergeRequestChildSnapshot{
-		MergeRequestID: parent.ID, ExpectedRevision: expectedRevision,
+		MergeRequestID: mrID, ExpectedRevision: expectedRevision,
 		Comments: comments, CommentsComplete: commentsComplete, Reviews: reviews,
 		InlineComments: inline, ReviewThreads: threads, InlineCommentsComplete: inlineComplete,
 		OtherEvents: otherEvents, DerivedFields: derived,
@@ -5399,6 +5390,7 @@ func repoRefFromCatalog(previous RepoRef, stored db.Repo, resolved *platform.Rep
 }
 
 func (s *Syncer) publishResolvedRepository(previous, resolved RepoRef) {
+	s.clearDisplacedCredentialAlias(resolved)
 	s.aliasRenamedCredentialRoute(previous, resolved)
 	s.reposMu.Lock()
 	defer s.reposMu.Unlock()
@@ -5430,7 +5422,24 @@ func (s *Syncer) aliasRenamedCredentialRoute(previous, resolved RepoRef) {
 		Host:  repoHost(previous),
 		Owner: previous.Owner,
 		Name:  previous.Name,
-	})
+	}, resolved.PlatformExternalID)
+}
+
+// clearDisplacedCredentialAlias drops a credential alias for the resolved
+// repository's route when a different repository recorded it — a replacement
+// repository on a reused route must not inherit the displaced repository's
+// credential.
+func (s *Syncer) clearDisplacedCredentialAlias(resolved RepoRef) {
+	if repoPlatform(resolved) != platform.KindGitHub {
+		return
+	}
+	router := s.routers[repoHost(resolved)]
+	if router == nil {
+		return
+	}
+	router.ClearDisplacedRepoCredentialAlias(
+		resolved.Owner, resolved.Name, resolved.PlatformExternalID,
+	)
 }
 
 // syncRepo syncs one repository: open PRs, timeline events, and stale closures.
@@ -7734,7 +7743,7 @@ func (s *Syncer) syncOpenMRFromBulk(
 	}
 	if bulk.CommentsComplete || bulk.ReviewsComplete || len(events) > 0 {
 		applied, err := s.commitMergeRequestDatasets(
-			ctx, repo, number, revision,
+			ctx, repo, mrID, number, revision,
 			comments, bulk.CommentsComplete,
 			reviews,
 			nil, nil, false, events, derived,
@@ -8303,7 +8312,7 @@ func (s *Syncer) syncProviderMRDetailExtras(
 			return calls, false, fmt.Errorf("dedupe merged lifecycle events for MR #%d: %w", number, err)
 		}
 		applied, commitErr := s.commitMergeRequestDatasets(
-			ctx, repo, number, expectedRevision,
+			ctx, repo, mrID, number, expectedRevision,
 			comments, true,
 			reviews,
 			nil, nil, false, dbEvents, nil,
@@ -8394,7 +8403,7 @@ func (s *Syncer) syncProviderMRReviewThreads(
 	}
 	events, dbThreads := platform.DBReviewThreads(threads)
 	applied, err := s.commitMergeRequestDatasets(
-		ctx, repo, number, expectedRevision, nil, false, nil, events, dbThreads, true, nil, nil,
+		ctx, repo, mrID, number, expectedRevision, nil, false, nil, events, dbThreads, true, nil, nil,
 	)
 	if err != nil {
 		return calls, err
@@ -8612,7 +8621,7 @@ func (s *Syncer) fetchProviderIssueDetail(
 				dbEvents = append(dbEvents, dbEvent)
 			}
 		}
-		applied, commitErr := s.commitIssueCommentsSnapshot(ctx, repo, number, revision, comments, dbEvents, nil)
+		applied, commitErr := s.commitIssueCommentsSnapshot(ctx, repo, issueID, number, revision, comments, dbEvents, nil)
 		if commitErr != nil {
 			return calls, fmt.Errorf("replace provider issue comments for #%d: %w", number, commitErr)
 		}
@@ -8754,7 +8763,7 @@ func (s *Syncer) refreshTimeline(
 		LastActivityAt: lastActivityAt,
 	}
 	applied, err := s.commitMergeRequestDatasets(
-		ctx, repo, number, expectedRevision,
+		ctx, repo, mrID, number, expectedRevision,
 		commentEvents, true,
 		reviewEvents,
 		nil, nil, false, events, &derived,
@@ -9152,7 +9161,7 @@ func (s *Syncer) replacePRCommentEvents(
 		events = append(events, event)
 	}
 	applied, err := s.commitMergeRequestDatasets(
-		ctx, repo, number, expectedRevision, events, true, nil, nil, nil, false, nil, derived,
+		ctx, repo, mrID, number, expectedRevision, events, true, nil, nil, nil, false, nil, derived,
 	)
 	return applied, err
 }
@@ -9172,7 +9181,7 @@ func (s *Syncer) replaceIssueCommentEvents(
 		event := NormalizeIssueCommentEvent(issueID, c)
 		events = append(events, event)
 	}
-	return s.commitIssueCommentsSnapshot(ctx, repo, number, expectedRevision, events, otherEvents, derived)
+	return s.commitIssueCommentsSnapshot(ctx, repo, issueID, number, expectedRevision, events, otherEvents, derived)
 }
 
 // resolveDisplayName returns the GitHub display name for a
@@ -9436,7 +9445,7 @@ func (s *Syncer) syncOpenPlatformIssue(
 			dbEvents = append(dbEvents, dbEvent)
 		}
 	}
-	applied, err := s.commitIssueCommentsSnapshot(ctx, repo, issue.Number, revision, comments, dbEvents, nil)
+	applied, err := s.commitIssueCommentsSnapshot(ctx, repo, issueID, issue.Number, revision, comments, dbEvents, nil)
 	if err != nil {
 		return fmt.Errorf("replace issue comments for #%d: %w", issue.Number, err)
 	}

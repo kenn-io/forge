@@ -64,6 +64,11 @@ func (m *Manager) branchSyncGit(
 func (m *Manager) PushWorktreeBranch(
 	ctx context.Context, platformName, platformHost, owner, name, dir string,
 ) error {
+	if err := m.verifyRepoRouteUnoccupied(
+		ctx, platformName, platformHost, owner, name,
+	); err != nil {
+		return err
+	}
 	return pushWorktreeBranch(
 		ctx, m.branchSyncGit(platformName, platformHost, owner, name), dir,
 	)
@@ -77,6 +82,11 @@ func (m *Manager) PushWorktreeBranch(
 func (m *Manager) PullWorktreeBranch(
 	ctx context.Context, platformName, platformHost, owner, name, dir string,
 ) error {
+	if err := m.verifyRepoRouteUnoccupied(
+		ctx, platformName, platformHost, owner, name,
+	); err != nil {
+		return err
+	}
 	return pullWorktreeBranch(
 		ctx, m.branchSyncGit(platformName, platformHost, owner, name), dir,
 	)

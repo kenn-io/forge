@@ -138,6 +138,9 @@ describe("OnboardingFlow", () => {
     const callbacks = renderFlow(fixture.stores);
 
     expect(callbacks.onStart).toHaveBeenCalledOnce();
+    expect(screen.getByRole("heading", { name: "Connect a code forge" })).toBeTruthy();
+    expect(mocks.listUserRepositories).not.toHaveBeenCalled();
+    await fireEvent.click(screen.getByRole("button", { name: "Continue with GitHub" }));
     await waitFor(() =>
       expect(screen.getByRole("heading", { name: "Choose the repositories you maintain" })).toBeTruthy(),
     );
@@ -177,7 +180,7 @@ describe("OnboardingFlow", () => {
     };
     renderFlow(storeFixture().stores);
 
-    expect(screen.getByRole("heading", { name: "Connect the GitHub CLI" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Connect a code forge" })).toBeTruthy();
     expect(screen.getByText("gh auth login")).toBeTruthy();
     expect(mocks.listUserRepositories).not.toHaveBeenCalled();
 
@@ -196,10 +199,34 @@ describe("OnboardingFlow", () => {
     };
     const callbacks = renderFlow(storeFixture().stores);
 
-    await fireEvent.click(screen.getByRole("button", { name: "Configure another provider" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Configure Forgejo" }));
 
-    expect(callbacks.onDismiss).toHaveBeenCalledOnce();
+    expect(callbacks.onDismiss).not.toHaveBeenCalled();
+    expect(callbacks.onComplete).not.toHaveBeenCalled();
     expect(mocks.navigate).toHaveBeenCalledWith("/settings");
+  });
+
+  it("keeps a missing gh installation on the provider readiness step", () => {
+    mocks.tooling.value = {
+      git: { available: true, version: "2.50" },
+      gh: { available: false, authenticated: false },
+      glab: { available: false, authenticated: false },
+    };
+    renderFlow(storeFixture().stores);
+
+    expect(screen.getByRole("heading", { name: "Connect a code forge" })).toBeTruthy();
+    expect(screen.getByText(/is not installed/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Check again" })).toBeTruthy();
+    expect(mocks.listUserRepositories).not.toHaveBeenCalled();
+  });
+
+  it("resumes configured repositories at first sync without provider confirmation", async () => {
+    const fixture = storeFixture({ configured: true });
+    renderFlow(fixture.stores);
+
+    await waitFor(() => expect(fixture.triggerSync).toHaveBeenCalledOnce());
+    expect(screen.queryByRole("heading", { name: "Connect a code forge" })).toBeNull();
+    expect(mocks.listUserRepositories).not.toHaveBeenCalled();
   });
 
   it("discovers and configures repositories for the authenticated GitHub host", async () => {
@@ -219,6 +246,7 @@ describe("OnboardingFlow", () => {
     ]);
     renderFlow(storeFixture().stores);
 
+    await fireEvent.click(screen.getByRole("button", { name: "Continue with GitHub" }));
     await waitFor(() => expect(screen.getByText("acme/forge")).toBeTruthy());
     await fireEvent.click(screen.getByText("acme/forge"));
     await fireEvent.click(screen.getByRole("button", { name: "Configure 1 repository" }));
@@ -236,6 +264,19 @@ describe("OnboardingFlow", () => {
         repo_path: "acme/forge",
       },
     ]);
+  });
+
+  it("keeps the repository picker connected to provider settings", async () => {
+    const callbacks = renderFlow(storeFixture().stores);
+    await fireEvent.click(screen.getByRole("button", { name: "Continue with GitHub" }));
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: "Choose the repositories you maintain" })).toBeTruthy(),
+    );
+
+    await fireEvent.click(screen.getByRole("button", { name: "Configure repositories in Settings" }));
+
+    expect(callbacks.onDismiss).not.toHaveBeenCalled();
+    expect(mocks.navigate).toHaveBeenCalledWith("/settings");
   });
 
   it("shows pull loading failures instead of an empty successful result", async () => {
@@ -256,10 +297,12 @@ describe("OnboardingFlow", () => {
     expect(mocks.navigate).toHaveBeenCalledWith("/pulls/github/acme/forge/42");
   });
 
-  it("gives every setup milestone an accessible state label", () => {
+  it("gives every setup milestone an accessible state label", async () => {
     renderFlow(storeFixture().stores);
 
-    expect(screen.getByRole("listitem", { name: "GitHub ready: complete" })).toBeTruthy();
+    expect(screen.getByRole("listitem", { name: "Code forge: current" })).toBeTruthy();
+    await fireEvent.click(screen.getByRole("button", { name: "Continue with GitHub" }));
+    expect(screen.getByRole("listitem", { name: "Code forge: complete" })).toBeTruthy();
     expect(screen.getByRole("listitem", { name: "Choose repos: current" })).toBeTruthy();
     expect(screen.getByRole("listitem", { name: "First sync: upcoming" })).toBeTruthy();
   });

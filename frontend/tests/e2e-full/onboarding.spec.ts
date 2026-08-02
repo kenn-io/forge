@@ -21,6 +21,13 @@ type PullRow = {
   };
 };
 
+type RepoSummary = {
+  Platform: string;
+  PlatformHost: string;
+  Owner: string;
+  Name: string;
+};
+
 function hasCommand(command: string, args: string[] = ["--version"]): boolean {
   try {
     execFileSync(command, args, { stdio: "ignore" });
@@ -66,6 +73,7 @@ async function prepareGitHubOnboarding(page: Page, platformHost: string): Promis
     const url = new URL(route.request().url());
     expect(url.searchParams.get("provider")).toBe("github");
     expect(url.searchParams.get("platform_host")).toBe(platformHost);
+    expect(url.searchParams.get("limit")).toBe("1000");
     await route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
@@ -84,6 +92,8 @@ async function prepareGitHubOnboarding(page: Page, platformHost: string): Promis
 async function configureWidgetRepository(page: Page, baseURL: string): Promise<void> {
   await page.setViewportSize({ width: 700, height: 900 });
   await page.goto(`${baseURL}/`);
+  await expect(page.getByRole("heading", { name: "Connect a code forge" })).toBeVisible();
+  await page.getByRole("button", { name: "Continue with GitHub" }).click();
   await expect(page.getByRole("heading", { name: "Choose the repositories you maintain" })).toBeVisible();
   await expect(page.getByRole("listitem", { name: "Choose repos: current" })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(
@@ -227,14 +237,78 @@ test("missing gh stays usable on the mobile entry route", async ({ page }) => {
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(`${server.info.base_url}/m`);
-    await expect(page.getByRole("heading", { name: "Connect the GitHub CLI" })).toBeVisible();
-    await expect(page.getByRole("listitem", { name: "GitHub ready: current" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Connect a code forge" })).toBeVisible();
+    await expect(page.getByRole("listitem", { name: "Code forge: current" })).toBeVisible();
+    for (const provider of ["GitHub", "GitLab", "Forgejo", "Gitea"]) {
+      await expect(page.getByRole("img", { name: provider })).toBeVisible();
+    }
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth),
     ).toBe(true);
 
-    await page.getByRole("button", { name: "Configure another provider" }).click();
+    await page.getByRole("button", { name: "Configure Forgejo" }).click();
     await expect(page).toHaveURL(`${server.info.base_url}/settings`);
+  } finally {
+    await server?.stop();
+  }
+});
+
+test("Forgejo setup returns from repository settings and syncs the complete provider identity", async ({ page }) => {
+  test.setTimeout(120_000);
+
+  let server: IsolatedE2EServer | null = null;
+  try {
+    server = await startIsolatedE2EServerWithOptions();
+    await removeConfiguredRepositories(page, server.info.base_url);
+    await page.addInitScript(() => {
+      localStorage.removeItem("kenn-forge:first-run-onboarding");
+      sessionStorage.removeItem("kenn-forge:first-run-onboarding");
+    });
+
+    await page.goto(`${server.info.base_url}/`);
+    await expect(page.getByRole("heading", { name: "Connect a code forge" })).toBeVisible();
+    await page.getByRole("button", { name: "Configure Forgejo" }).click();
+    await expect(page).toHaveURL(`${server.info.base_url}/settings`);
+    expect(await page.evaluate(() => localStorage.getItem("kenn-forge:first-run-onboarding"))).toBe("active");
+
+    await page.getByRole("button", { name: "Add repositories…" }).click();
+    const dialog = page.getByRole("dialog", { name: "Add repositories" });
+    await dialog.getByRole("combobox", { name: /Provider/ }).click();
+    await dialog.getByRole("option", { name: "Forgejo" }).click();
+    await expect(dialog.getByLabel("Host")).toHaveValue("codeberg.org");
+    await dialog.getByLabel("Repository pattern").fill("forge-lab/*");
+    await dialog.getByRole("button", { name: "Preview" }).click();
+    await expect(dialog.getByText("forge-lab/service")).toBeVisible();
+    await dialog.getByRole("button", { name: "Add selected repositories" }).click();
+    await page.getByRole("button", { name: "Back to app" }).click();
+
+    await expect(page.getByRole("heading", { name: "First sync is underway" })).toBeVisible({ timeout: 30_000 });
+    const settingsResponse = await page.request.get(`${server.info.base_url}/api/v1/settings`);
+    expect(settingsResponse.ok()).toBe(true);
+    const settings = (await settingsResponse.json()) as { repos: ConfiguredRepo[] };
+    expect(settings.repos).toContainEqual(
+      expect.objectContaining({
+        provider: "forgejo",
+        platform_host: "codeberg.org",
+        owner: "forge-lab",
+        name: "service",
+        repo_path: "forge-lab/service",
+      }),
+    );
+    await expect
+      .poll(async () => {
+        const response = await page.request.get(`${server!.info.base_url}/api/v1/repos`);
+        expect(response.ok()).toBe(true);
+        const repos = (await response.json()) as RepoSummary[];
+        return repos.some(
+          (repo) =>
+            repo.Platform === "forgejo" &&
+            repo.PlatformHost === "codeberg.org" &&
+            repo.Owner === "forge-lab" &&
+            repo.Name === "service",
+        );
+      })
+      .toBe(true);
   } finally {
     await server?.stop();
   }

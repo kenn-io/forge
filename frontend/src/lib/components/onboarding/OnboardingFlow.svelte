@@ -27,6 +27,7 @@
   import { bulkAddRepos } from "../../api/settings.ts";
   import { navigate } from "../../stores/router.svelte.ts";
   import { resolveToolingStatus } from "../../stores/tooling-status.svelte.ts";
+  import ProviderReadinessStep from "./ProviderReadinessStep.svelte";
 
   type Phase = "repos" | "sync" | "pulls" | "workspace";
   type StepId = "auth" | Phase;
@@ -40,7 +41,7 @@
   }
 
   const steps: Array<{ id: StepId; label: string }> = [
-    { id: "auth", label: "GitHub ready" },
+    { id: "auth", label: "Code forge" },
     { id: "repos", label: "Choose repos" },
     { id: "sync", label: "First sync" },
     { id: "pulls", label: "Open a PR" },
@@ -58,6 +59,7 @@
   let selectedRepositories = $state<string[]>([]);
   let repositoriesLoading = $state(false);
   let repositoryError = $state<string | null>(null);
+  let providerConfirmed = $state(false);
   let ghVerified = $state(false);
   let toolingRetrying = $state(false);
   let toolingRetryError = $state<string | null>(null);
@@ -78,12 +80,15 @@
 
   const tooling = $derived(resolveToolingStatus());
   const gh = $derived(tooling?.gh);
+  const hasConfiguredRepos = $derived(stores.settings.hasConfiguredRepos());
   const ghReady = $derived(
-    stores.settings.hasConfiguredRepos()
+    hasConfiguredRepos
       || ghVerified
       || (gh?.available === true && gh.authenticated === true),
   );
-  const activeStep = $derived<StepId>(ghReady ? phase : "auth");
+  const activeStep = $derived<StepId>(
+    hasConfiguredRepos || providerConfirmed ? phase : "auth",
+  );
   const syncState = $derived(stores.sync.getSyncState());
   const visibleRepositories = $derived.by(() => {
     const query = repositoryFilter.trim().toLowerCase();
@@ -289,8 +294,13 @@
   }
 
   function configureAnotherProvider(): void {
-    onDismiss();
     navigate("/settings");
+  }
+
+  async function continueWithGitHub(): Promise<void> {
+    providerConfirmed = true;
+    await tick();
+    headingEl?.focus();
   }
 
   function openSelectedPullView(): void {
@@ -320,7 +330,12 @@
     toolingRetrying = true;
     toolingRetryError = null;
     const verified = await loadRepositories();
-    if (verified) ghVerified = true;
+    if (verified) {
+      ghVerified = true;
+      providerConfirmed = true;
+      await tick();
+      headingEl?.focus();
+    }
     else toolingRetryError = repositoryError;
     toolingRetrying = false;
   }
@@ -336,7 +351,7 @@
   }
 
   $effect(() => {
-    if (phase !== "repos" || !ghReady || repoLoadStarted) return;
+    if (phase !== "repos" || !providerConfirmed || !ghReady || repoLoadStarted) return;
     void loadRepositories();
   });
 
@@ -390,70 +405,44 @@
         {/each}
       </ol>
 
-      <div class="identity" class:identity-ready={ghReady}>
+      <div class="identity" class:identity-ready={ghReady || hasConfiguredRepos}>
         {#if tooling === undefined}
-          <Spinner size={14} label="Checking gh" />
-          <div><strong>Checking gh</strong><span>Local tooling</span></div>
+          <Spinner size={14} label="Checking code forge tooling" />
+          <div><strong>Checking code forge</strong><span>Local tooling</span></div>
+        {:else if hasConfiguredRepos}
+          <CircleCheckIcon size={16} aria-hidden="true" />
+          <div><strong>Code forge configured</strong><span>Repositories ready</span></div>
         {:else if ghReady}
           <CircleCheckIcon size={16} aria-hidden="true" />
           <div>
-            <strong>gh authenticated</strong>
+            <strong>Code forge available</strong>
             <span>{gh?.host || "github.com"}{gh?.user ? ` · @${gh.user}` : ""}</span>
           </div>
         {:else}
           <AlertTriangleIcon size={16} aria-hidden="true" />
           <div>
-            <strong>gh needs attention</strong>
-            <span>Required for repository discovery</span>
+            <strong>Code forge setup needed</strong>
+            <span>Choose a provider to continue</span>
           </div>
         {/if}
       </div>
     </aside>
 
     <main class="onboarding-main">
-      {#if !ghReady}
+      {#if activeStep === "auth"}
         <div class="step-heading">
           <p class="step-number">STEP 1 OF 5</p>
-          <h1 {@attach captureHeading} tabindex="-1">Connect the GitHub CLI</h1>
-          <p>Kenn Forge uses the existing local <code>gh</code> session. No token is copied into the browser.</p>
+          <h1 {@attach captureHeading} tabindex="-1">Connect a code forge</h1>
+          <p>Choose how Kenn Forge should reach the repositories you maintain. Credentials stay on this host.</p>
         </div>
-
-        {#if tooling === undefined}
-          <div class="tooling-state" role="status">
-            <Spinner size={18} label="Checking gh authentication" />
-            <div><strong>Checking this host</strong><span>Looking for an authenticated gh installation.</span></div>
-          </div>
-        {:else}
-          <div class="tooling-state tooling-state--warning">
-            <AlertTriangleIcon size={18} aria-hidden="true" />
-            <div>
-              <strong>{gh?.available ? "gh is not authenticated" : "gh is not installed"}</strong>
-              <span>
-                {gh?.available
-                  ? "Run gh auth login in a terminal, then check again."
-                  : "Install the GitHub CLI on this host, then check again."}
-              </span>
-            </div>
-          </div>
-          {#if gh?.available}
-            <pre class="command"><code>gh auth login</code></pre>
-          {/if}
-          {#if toolingRetryError}
-            <p class="inline-error tooling-retry-error" role="alert">{toolingRetryError}</p>
-          {/if}
-          <div class="auth-actions">
-            <Button
-              tone="info"
-              surface="solid"
-              disabled={toolingRetrying}
-              onclick={() => void retryTooling()}
-            >
-              {#if toolingRetrying}<Spinner size={13} />{/if}
-              Check again
-            </Button>
-            <Button onclick={configureAnotherProvider}>Configure another provider</Button>
-          </div>
-        {/if}
+        <ProviderReadinessStep
+          {tooling}
+          retrying={toolingRetrying}
+          retryError={toolingRetryError}
+          onContinueGitHub={() => void continueWithGitHub()}
+          onCheckAgain={() => void retryTooling()}
+          onOpenSettings={configureAnotherProvider}
+        />
       {:else if phase === "repos"}
         <div class="step-heading">
           <p class="step-number">STEP 2 OF 5</p>
@@ -509,15 +498,18 @@
         {/if}
         <div class="step-actions">
           <span>{selectedCountLabel()} selected</span>
-          <Button
-            tone="info"
-            surface="solid"
-            disabled={selectedRepositories.length === 0 || configureBusy}
-            onclick={() => void configureRepositories()}
-          >
-            {#if configureBusy}<Spinner size={13} />{/if}
-            Configure {selectedCountLabel()}
-          </Button>
+          <div class="repo-actions">
+            <Button onclick={configureAnotherProvider}>Configure repositories in Settings</Button>
+            <Button
+              tone="info"
+              surface="solid"
+              disabled={selectedRepositories.length === 0 || configureBusy}
+              onclick={() => void configureRepositories()}
+            >
+              {#if configureBusy}<Spinner size={13} />{/if}
+              Configure {selectedCountLabel()}
+            </Button>
+          </div>
         </div>
       {:else if phase === "sync"}
         <div class="step-heading compact-heading">
@@ -843,7 +835,6 @@
     font-family: var(--font-mono);
   }
 
-  .tooling-state,
   .recovery {
     display: flex;
     align-items: center;
@@ -854,43 +845,18 @@
     background: var(--bg-surface);
   }
 
-  .tooling-state--warning {
-    color: var(--accent-yellow);
-  }
-
-  .tooling-state div,
   .recovery div {
     display: grid;
     gap: var(--space-2);
   }
 
-  .tooling-state strong,
   .recovery strong {
     color: var(--text-primary);
   }
 
-  .tooling-state span,
   .recovery span {
     color: var(--text-muted);
     font-size: var(--font-size-sm);
-  }
-
-  .command {
-    margin: var(--space-5) 0;
-    padding: var(--space-4);
-    border-radius: var(--radius-md);
-    background: var(--bg-inset);
-    color: var(--text-secondary);
-  }
-
-  .tooling-retry-error {
-    margin-bottom: var(--space-4);
-  }
-
-  .auth-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-3);
   }
 
   .repo-search {
@@ -1012,6 +978,13 @@
 
   .step-actions--end {
     justify-content: flex-end;
+  }
+
+  .repo-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: var(--space-3);
   }
 
   .sync-summary {
@@ -1252,6 +1225,7 @@
     }
 
     .step-actions,
+    .repo-actions,
     .launch-actions,
     .recovery {
       align-items: stretch;

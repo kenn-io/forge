@@ -78,6 +78,9 @@ Every action remains a native button or link with visible focus treatment.
   readiness page until the user continues.
 - Component tests prove missing `gh` remains stable, the settings handoff keeps
   onboarding active, and configured repositories resume at sync.
+- A real-backend Playwright scenario opens Repositories settings from a
+  non-GitHub provider path, configures a repository, returns to an eligible
+  route, and proves first sync uses the complete provider and host identity.
 - The existing real-backend onboarding test continues to prove repository
   persistence, interrupted resume, sync, pull loading, and workspace creation.
 - Isolated Playwright captures document the missing-tool readiness screen and

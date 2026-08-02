@@ -31,8 +31,9 @@ probe failures remain stable recovery states and never count as completion.
 The readiness status and its action row use separate vertical groups so the
 next action is visually distinct.
 
-The route trigger, provider/host identity, dismissal, and workspace completion
-rules from ADR 0002 remain unchanged.
+This decision supersedes ADR 0002's GitHub-specific first-step scope. Its route
+trigger, provider/host identity, dismissal, and workspace completion rules
+remain unchanged.
 
 ## Consequences
 

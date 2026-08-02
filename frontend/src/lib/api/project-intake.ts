@@ -4,6 +4,10 @@ import { apiErrorMessage, client } from "./runtime.ts";
 
 export type ProjectResponse = components["schemas"]["ProjectResponse"];
 export type UserRepository = components["schemas"]["UserRepository"];
+export interface DiscoveredUserRepository extends UserRepository {
+  provider: "github";
+  platform_host: string;
+}
 type ProblemError = components["schemas"]["ProblemError"];
 type RepoValidation = components["schemas"]["FilesystemValidateRepoOutputBody"];
 
@@ -89,12 +93,37 @@ export async function cloneProject(
   return data;
 }
 
-export async function listUserRepositories(): Promise<UserRepository[]> {
+export interface UserRepositoryDiscoveryOptions {
+  provider: "github";
+  platformHost: string;
+}
+
+export function listUserRepositories(options: UserRepositoryDiscoveryOptions): Promise<DiscoveredUserRepository[]>;
+export function listUserRepositories(): Promise<UserRepository[]>;
+export async function listUserRepositories(
+  options?: UserRepositoryDiscoveryOptions,
+): Promise<Array<UserRepository | DiscoveredUserRepository>> {
   const { data, error } = await client.GET("/platform/user-repositories", {
-    params: { query: { limit: 100 } },
+    params: {
+      query: {
+        ...(options
+          ? {
+              provider: options.provider,
+              platform_host: options.platformHost,
+            }
+          : {}),
+        limit: 100,
+      },
+    },
   });
   if (!data) {
     throw new Error(apiErrorMessage(error, "Couldn't load GitHub repositories."));
   }
-  return data.repositories ?? [];
+  const repositories = data.repositories ?? [];
+  if (!options) return repositories;
+  return repositories.map((repository) => ({
+    ...repository,
+    provider: options.provider,
+    platform_host: options.platformHost,
+  }));
 }

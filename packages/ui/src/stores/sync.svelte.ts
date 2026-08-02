@@ -102,6 +102,10 @@ export function createSyncStore(opts: SyncStoreOptions) {
   async function runTriggeredSync(request: SyncRequest): Promise<void> {
     const previous = status;
 
+    // A poll that began before this request cannot describe the triggered run.
+    // Move the generation before publishing the optimistic running state so an
+    // older idle response cannot announce a false completion.
+    sseGeneration++;
     status = {
       running: true,
       last_run_at: previous?.last_run_at ?? "",

@@ -29,6 +29,9 @@
   let syncStarted = $state(false);
   let openedPull = $state<number | null>(null);
   let workspaceCreated = $state(false);
+  const visiblePullRequests = $derived(
+    pullRequests.filter((pull) => selectedRepositories.includes(pull.repo)),
+  );
 
   function toggleRepository(repository: string): void {
     selectedRepositories = selectedRepositories.includes(repository)
@@ -40,6 +43,10 @@
     if (selectedRepositories.length === 0) return;
     syncStarted = true;
     choosingRepositories = false;
+    if (!visiblePullRequests.some((pull) => pull.number === openedPull)) {
+      openedPull = null;
+      workspaceCreated = false;
+    }
   }
 </script>
 
@@ -157,10 +164,10 @@
         <div class="pr-layout">
           <section class="pr-list" aria-label="Pull requests">
             <div class="list-toolbar">
-              <div><strong>Pull requests</strong><span>{pullRequests.length}</span></div>
+              <div><strong>Pull requests</strong><span>{visiblePullRequests.length}</span></div>
               <span class="sync-progress"><RefreshCwIcon size={12} /> First sync · 68%</span>
             </div>
-            {#each pullRequests as pull (pull.number)}
+            {#each visiblePullRequests as pull (pull.number)}
               <button
                 type="button"
                 class:selected={openedPull === pull.number}
@@ -174,6 +181,9 @@
                 </span>
               </button>
             {/each}
+            {#if visiblePullRequests.length === 0}
+              <p class="rail-hint">No open pull requests in the selected repositories.</p>
+            {/if}
           </section>
 
           <section class="pr-detail" aria-label="Pull request detail">
@@ -184,7 +194,7 @@
                 <span>Review context and workspace actions appear here.</span>
               </div>
             {:else}
-              {@const pull = pullRequests.find((candidate) => candidate.number === openedPull)!}
+              {@const pull = visiblePullRequests.find((candidate) => candidate.number === openedPull)!}
               <div class="detail-header">
                 <span class="detail-repo">{pull.repo} · #{pull.number}</span>
                 <h3>{pull.title}</h3>

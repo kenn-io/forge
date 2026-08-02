@@ -10,11 +10,29 @@
   type Task = "connect" | "repos" | "work";
 
   const repositoryOptions = ["acme/forge", "acme/docs", "acme/runtime"];
+  const pullRequests = [
+    {
+      number: 248,
+      title: "Keep workspace activity across reloads",
+      repo: "acme/forge",
+      status: "CI passed",
+    },
+    {
+      number: 91,
+      title: "Clarify repository setup in quickstart",
+      repo: "acme/docs",
+      status: "Review ready",
+    },
+  ];
 
   let activeTask = $state<Task>("connect");
   let selectedRepositories = $state<string[]>(["acme/forge", "acme/docs"]);
   let syncStarted = $state(false);
   let workspaceLaunched = $state(false);
+  const availablePulls = $derived(
+    pullRequests.filter((pull) => selectedRepositories.includes(pull.repo)),
+  );
+  const activePull = $derived(availablePulls[0] ?? null);
 
   function toggleRepository(repository: string): void {
     selectedRepositories = selectedRepositories.includes(repository)
@@ -28,6 +46,7 @@
 
   function moveToWork(): void {
     syncStarted = true;
+    workspaceLaunched = false;
     activeTask = "work";
   }
 </script>
@@ -121,17 +140,21 @@
               finishes. Open one, review its state, then create an isolated
               workspace without losing that context.
             </p>
-            <ol class="mini-steps">
-              <li><CircleCheckIcon size={15} /><span><strong>First sync</strong> · open PRs ready, history at 68%</span></li>
-              <li><CircleCheckIcon size={15} /><span><strong>PR #248 opened</strong> · CI and review state visible</span></li>
-              <li class:complete={workspaceLaunched}>
-                {#if workspaceLaunched}<CircleCheckIcon size={15} />{:else}<TerminalIcon size={15} />{/if}
-                <span><strong>{workspaceLaunched ? "Workspace ready" : "Create workspace"}</strong> · isolated worktree and shell</span>
-              </li>
-            </ol>
-            <button type="button" class="primary" onclick={() => { workspaceLaunched = true; }}>
-              {workspaceLaunched ? "Open workspace" : "Create workspace for PR #248"}
-            </button>
+            {#if activePull}
+              <ol class="mini-steps">
+                <li><CircleCheckIcon size={15} /><span><strong>First sync</strong> · open PRs ready, history at 68%</span></li>
+                <li><CircleCheckIcon size={15} /><span><strong>PR #{activePull.number} opened</strong> · CI and review state visible</span></li>
+                <li class:complete={workspaceLaunched}>
+                  {#if workspaceLaunched}<CircleCheckIcon size={15} />{:else}<TerminalIcon size={15} />{/if}
+                  <span><strong>{workspaceLaunched ? "Workspace ready" : "Create workspace"}</strong> · isolated worktree and shell</span>
+                </li>
+              </ol>
+              <button type="button" class="primary" onclick={() => { workspaceLaunched = true; }}>
+                {workspaceLaunched ? "Open workspace" : `Create workspace for PR #${activePull.number}`}
+              </button>
+            {:else}
+              <p>No open pull requests were found in the selected repositories.</p>
+            {/if}
           </div>
         </article>
       {/if}
@@ -179,18 +202,22 @@
           <RefreshCwIcon size={13} />
           <span><strong>First sync</strong><small>{syncStarted ? "Open PRs ready · history 68%" : "Starts after repository setup"}</small></span>
         </div>
-        <Card level="raised" padding="none" class="preview-card">
-          <div class="preview-pr">
-            <div class="pr-heading"><GitPullRequestIcon size={16} /><span>acme/forge #248</span></div>
-            <h3>Keep workspace activity across reloads</h3>
-            <div class="pr-meta"><span class="passed">CI passed</span><span>Review requested</span></div>
-            <div class="workspace-preview">
-              <TerminalIcon size={16} />
-              <span><strong>{workspaceLaunched ? "Workspace ready" : "Workspace"}</strong><small>{workspaceLaunched ? "Shell · running" : "Create from this PR"}</small></span>
-              <span class="arrow">→</span>
+        {#if activePull}
+          <Card level="raised" padding="none" class="preview-card">
+            <div class="preview-pr">
+              <div class="pr-heading"><GitPullRequestIcon size={16} /><span>{activePull.repo} #{activePull.number}</span></div>
+              <h3>{activePull.title}</h3>
+              <div class="pr-meta"><span class:passed={activePull.status === "CI passed"}>{activePull.status}</span><span>Review requested</span></div>
+              <div class="workspace-preview">
+                <TerminalIcon size={16} />
+                <span><strong>{workspaceLaunched ? "Workspace ready" : "Workspace"}</strong><small>{workspaceLaunched ? "Shell · running" : "Create from this PR"}</small></span>
+                <span class="arrow">→</span>
+              </div>
             </div>
-          </div>
-        </Card>
+          </Card>
+        {:else}
+          <p class="preview-note">No open pull requests found.</p>
+        {/if}
       {/if}
     </aside>
   </div>

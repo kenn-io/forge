@@ -7,16 +7,6 @@ authenticated `gh` CLI to configured repositories, a useful pull-request view,
 and a first workspace. The output is a contained, interactive mockup gallery,
 not a production onboarding implementation.
 
-## Selected direction
-
-Prototype A, the focused linear setup path, is implemented as the primary
-first-run experience. It appears when loaded settings contain no repositories,
-uses the authenticated local `gh` session for explicit repository selection,
-and continues through first sync, a real pull request, and workspace creation.
-Active, dismissed, and completed state is browser-local so interrupted setup
-resumes without replaying onboarding for established installations. The other
-prototypes remain references for resumability and durable help.
-
 ## Research signals
 
 - [GitHub Desktop's getting-started guide](https://docs.github.com/en/desktop/overview/getting-started-with-github-desktop)

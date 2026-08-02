@@ -3,6 +3,53 @@ import type { ForgeClient } from "../types.js";
 import { createSyncStore } from "./sync.svelte.js";
 
 describe("sync store", () => {
+  it("ignores a status poll that started before a triggered sync", async () => {
+    let resolveOldStatus!: (value: { data: { running: boolean; last_run_at: string; last_error: string } }) => void;
+    let resolveTrigger!: (value: { error: undefined }) => void;
+    let syncStatusCalls = 0;
+    const get = vi.fn((path: string) => {
+      if (path === "/rate-limits") {
+        return Promise.resolve({ data: { provider_pools: {}, local_ceilings: {} } });
+      }
+      syncStatusCalls += 1;
+      if (syncStatusCalls === 1) {
+        return new Promise((resolve) => {
+          resolveOldStatus = resolve;
+        });
+      }
+      return Promise.resolve({
+        data: { running: true, last_run_at: "2026-08-02T20:00:00Z", last_error: "" },
+      });
+    });
+    const post = vi.fn(
+      () =>
+        new Promise<{ error: undefined }>((resolve) => {
+          resolveTrigger = resolve;
+        }),
+    );
+    const store = createSyncStore({
+      client: { GET: get, POST: post } as unknown as ForgeClient,
+    });
+    const completed = vi.fn();
+    store.subscribeSyncComplete(completed);
+
+    const oldPoll = store.refreshSyncStatus();
+    await vi.waitFor(() => expect(syncStatusCalls).toBe(1));
+    const triggered = store.triggerSync();
+    await vi.waitFor(() => expect(store.getSyncState()?.running).toBe(true));
+
+    resolveOldStatus({
+      data: { running: false, last_run_at: "2026-08-02T19:00:00Z", last_error: "" },
+    });
+    await oldPoll;
+
+    expect(store.getSyncState()?.running).toBe(true);
+    expect(completed).not.toHaveBeenCalled();
+
+    resolveTrigger({ error: undefined });
+    await triggered;
+  });
+
   it("passes selected repo filters as sync priorities", async () => {
     const post = vi.fn(async () => ({ error: undefined }));
     const get = vi.fn(async (path: string) => {

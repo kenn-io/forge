@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from "svelte";
   import OnboardingChecklistPrototype from "./OnboardingChecklistPrototype.svelte";
   import OnboardingGuidePrototype from "./OnboardingGuidePrototype.svelte";
   import OnboardingWizardPrototype from "./OnboardingWizardPrototype.svelte";
@@ -44,6 +45,26 @@
 
   let active = $state<PrototypeId>("wizard");
   const activePrototype = $derived(prototypes[active]);
+
+  async function selectAndFocus(prototypeId: PrototypeId): Promise<void> {
+    active = prototypeId;
+    await tick();
+    document.getElementById(`prototype-tab-${prototypeId}`)?.focus();
+  }
+
+  function handleTabKey(event: KeyboardEvent, prototypeId: PrototypeId): void {
+    const currentIndex = prototypeOrder.indexOf(prototypeId);
+    let nextIndex: number | null = null;
+    if (event.key === "ArrowRight") nextIndex = (currentIndex + 1) % prototypeOrder.length;
+    else if (event.key === "ArrowLeft") nextIndex = (currentIndex - 1 + prototypeOrder.length) % prototypeOrder.length;
+    else if (event.key === "Home") nextIndex = 0;
+    else if (event.key === "End") nextIndex = prototypeOrder.length - 1;
+    if (nextIndex === null) return;
+    const nextPrototype = prototypeOrder[nextIndex];
+    if (!nextPrototype) return;
+    event.preventDefault();
+    void selectAndFocus(nextPrototype);
+  }
 </script>
 
 <div class="prototype-gallery">
@@ -59,6 +80,7 @@
         aria-selected={active === prototype.id}
         tabindex={active === prototype.id ? 0 : -1}
         onclick={() => { active = prototype.id; }}
+        onkeydown={(event) => handleTabKey(event, prototype.id)}
       >
         <span>{prototype.eyebrow}</span>
         <strong>{prototype.label}</strong>

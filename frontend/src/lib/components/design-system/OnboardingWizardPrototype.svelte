@@ -15,6 +15,15 @@
     updated: string;
   }
 
+  interface PrototypePull {
+    number: number;
+    title: string;
+    repo: string;
+    updated: string;
+    status: string;
+    branch: string;
+  }
+
   const repositories: Repository[] = [
     {
       name: "acme/forge",
@@ -41,6 +50,24 @@
       updated: "4 days ago",
     },
   ];
+  const pullRequests: PrototypePull[] = [
+    {
+      number: 248,
+      title: "Keep workspace activity across reloads",
+      repo: "acme/forge",
+      updated: "18 min ago",
+      status: "CI passed",
+      branch: "maintain-workspace-activity",
+    },
+    {
+      number: 91,
+      title: "Clarify quickstart repository setup",
+      repo: "acme/docs",
+      updated: "2 hr ago",
+      status: "Review",
+      branch: "clarify-repository-setup",
+    },
+  ];
 
   const steps = [
     { id: "auth", label: "GitHub ready" },
@@ -53,11 +80,19 @@
   let phase = $state<Phase>("repos");
   let filter = $state("");
   let selected = $state<string[]>(["acme/docs"]);
+  let selectedPullNumber = $state<number | null>(null);
+  let workspaceCreated = $state(false);
 
   const visibleRepositories = $derived(
     repositories.filter((repository) =>
       repository.name.toLowerCase().includes(filter.trim().toLowerCase()),
     ),
+  );
+  const availablePulls = $derived(
+    pullRequests.filter((pull) => selected.includes(pull.repo)),
+  );
+  const selectedPull = $derived(
+    availablePulls.find((pull) => pull.number === selectedPullNumber) ?? null,
   );
 
   function toggleRepository(name: string): void {
@@ -76,6 +111,12 @@
 
   function repositoryCountLabel(): string {
     return `${selected.length} ${selected.length === 1 ? "repository" : "repositories"}`;
+  }
+
+  function openPull(pull: PrototypePull): void {
+    selectedPullNumber = pull.number;
+    workspaceCreated = false;
+    phase = "workspace";
   }
 </script>
 
@@ -203,7 +244,7 @@
         <div class="first-result">
           <div>
             <span class="result-label">READY NOW</span>
-            <strong>3 open pull requests found</strong>
+            <strong>{availablePulls.length} open {availablePulls.length === 1 ? "pull request" : "pull requests"} found</strong>
             <p>You do not need to wait for the full sync.</p>
           </div>
           <button type="button" class="primary-action" onclick={() => { phase = "pulls"; }}>
@@ -219,32 +260,28 @@
 
         <Card level="raised" padding="none" class="pulls-shell">
           <div class="pulls-title-row">
-            <span>Open pull requests</span><span>3</span>
+            <span>Open pull requests</span><span>{availablePulls.length}</span>
           </div>
-          <button class="pull-row selected-pull" type="button" onclick={() => { phase = "workspace"; }}>
-            <GitPullRequestIcon size={16} aria-hidden="true" />
-            <span>
-              <strong>Keep workspace activity across reloads</strong>
-              <small>acme/forge #248 · updated 18 min ago</small>
-            </span>
-            <span class="ci-ok">CI passed</span>
-          </button>
-          <button class="pull-row" type="button">
-            <GitPullRequestIcon size={16} aria-hidden="true" />
-            <span>
-              <strong>Clarify quickstart repository setup</strong>
-              <small>acme/docs #91 · updated 2 hr ago</small>
-            </span>
-            <span>Review</span>
-          </button>
+          {#each availablePulls as pull (pull.number)}
+            <button class="pull-row" type="button" onclick={() => openPull(pull)}>
+              <GitPullRequestIcon size={16} aria-hidden="true" />
+              <span>
+                <strong>{pull.title}</strong>
+                <small>{pull.repo} #{pull.number} · updated {pull.updated}</small>
+              </span>
+              <span class:ci-ok={pull.status === "CI passed"}>{pull.status}</span>
+            </button>
+          {/each}
+          {#if availablePulls.length === 0}
+            <p class="action-hint">No open pull requests in the selected repositories.</p>
+          {/if}
         </Card>
-        <p class="action-hint">Open PR #248 to continue to a workspace.</p>
-      {:else}
+      {:else if selectedPull}
         <div class="step-heading compact-heading">
           <p class="step-number">STEP 5 OF 5</p>
-          <h2>Your first workspace is ready</h2>
+          <h2>Start your first workspace</h2>
           <p>
-            Kenn Forge will create an isolated worktree for PR #248 and keep
+            Kenn Forge will create an isolated worktree for PR #{selectedPull.number} and keep
             the terminal beside its review context.
           </p>
         </div>
@@ -253,18 +290,18 @@
           <div class="workspace-header">
             <div class="terminal-mark"><TerminalIcon size={18} /></div>
             <div>
-              <strong>acme/forge · PR #248</strong>
-              <span>maintain-workspace-activity</span>
+              <strong>{selectedPull.repo} · PR #{selectedPull.number}</strong>
+              <span>{selectedPull.branch}</span>
             </div>
-            <span class="ready-label">READY</span>
+            <span class="ready-label">{workspaceCreated ? "READY" : "TO CREATE"}</span>
           </div>
           <div class="workspace-path">
             <span>Worktree</span>
-            <code>~/.kenn/forge/worktrees/acme/forge/pr-248</code>
+            <code>~/.kenn/forge/worktrees/{selectedPull.repo}/pr-{selectedPull.number}</code>
           </div>
           <div class="launch-actions">
-            <button type="button" class="primary-action">
-              <TerminalIcon size={14} aria-hidden="true" /> Launch shell
+            <button type="button" class="primary-action" onclick={() => { workspaceCreated = true; }}>
+              <TerminalIcon size={14} aria-hidden="true" /> {workspaceCreated ? "Launch shell" : "Create workspace"}
             </button>
             <button type="button" class="secondary-action">Open PR first</button>
           </div>
@@ -697,11 +734,6 @@
 
   .pull-row:last-child {
     border-bottom: 0;
-  }
-
-  .selected-pull {
-    background: color-mix(in srgb, var(--accent-blue) 8%, var(--bg-surface));
-    color: var(--accent-blue);
   }
 
   .pull-row > span:first-of-type {

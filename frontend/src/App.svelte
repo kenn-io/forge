@@ -189,6 +189,7 @@
     appReady
       && stores?.settings.isSettingsLoaded() === true
       && shouldStartOnboarding(
+        getPage(),
         stores.settings.hasConfiguredRepos(),
         onboardingState,
       ),

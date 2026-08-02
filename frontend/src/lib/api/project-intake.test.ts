@@ -124,4 +124,38 @@ describe("project-intake api", () => {
 
     await expect(listUserRepositories()).resolves.toEqual([]);
   });
+
+  it("keeps the requested provider host on every discovered repository", async () => {
+    mocks.get.mockResolvedValue({
+      data: {
+        repositories: [
+          {
+            name_with_owner: "acme/forge",
+            ssh_url: "git@ghe.example.com:acme/forge.git",
+            default_branch: "main",
+          },
+        ],
+      },
+      error: undefined,
+    });
+
+    await expect(listUserRepositories({ provider: "github", platformHost: "ghe.example.com" })).resolves.toEqual([
+      {
+        name_with_owner: "acme/forge",
+        ssh_url: "git@ghe.example.com:acme/forge.git",
+        default_branch: "main",
+        provider: "github",
+        platform_host: "ghe.example.com",
+      },
+    ]);
+    expect(mocks.get).toHaveBeenCalledWith("/platform/user-repositories", {
+      params: {
+        query: {
+          provider: "github",
+          platform_host: "ghe.example.com",
+          limit: 100,
+        },
+      },
+    });
+  });
 });

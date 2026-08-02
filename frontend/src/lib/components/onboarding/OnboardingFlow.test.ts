@@ -55,7 +55,7 @@ function pullRequest(): PullRequest {
   } as PullRequest;
 }
 
-function storeFixture(options: { configured?: boolean; pulls?: PullRequest[] } = {}) {
+function storeFixture(options: { configured?: boolean; pulls?: PullRequest[]; pullsError?: string | null } = {}) {
   let configured = options.configured ?? false;
   const pulls = options.pulls ?? [pullRequest()];
   const setConfiguredRepos = vi.fn(() => {
@@ -80,6 +80,7 @@ function storeFixture(options: { configured?: boolean; pulls?: PullRequest[] } =
     pulls: {
       loadPulls,
       getPulls: () => pulls,
+      getError: () => options.pullsError ?? null,
     },
   } as unknown as StoreInstances;
   return { stores, setConfiguredRepos, triggerSync, loadPulls };
@@ -114,11 +115,15 @@ describe("OnboardingFlow", () => {
         name_with_owner: "acme/forge",
         ssh_url: "git@github.com:acme/forge.git",
         default_branch: "main",
+        provider: "github",
+        platform_host: "github.com",
       },
       {
         name_with_owner: "acme/docs",
         ssh_url: "git@github.com:acme/docs.git",
         default_branch: "main",
+        provider: "github",
+        platform_host: "github.com",
       },
     ]);
     mocks.bulkAddRepos.mockResolvedValue({ repos: [{ repo_path: "acme/forge" }] });
@@ -181,6 +186,82 @@ describe("OnboardingFlow", () => {
       expect(screen.getByRole("heading", { name: "Choose the repositories you maintain" })).toBeTruthy(),
     );
     expect(mocks.listUserRepositories).toHaveBeenCalledOnce();
+  });
+
+  it("hands non-GitHub setup to regular repository configuration", async () => {
+    mocks.tooling.value = {
+      git: { available: true, version: "2.50" },
+      gh: { available: false, authenticated: false },
+      glab: { available: true, authenticated: true, host: "gitlab.example.com", user: "maintainer" },
+    };
+    const callbacks = renderFlow(storeFixture().stores);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Configure another provider" }));
+
+    expect(callbacks.onDismiss).toHaveBeenCalledOnce();
+    expect(mocks.navigate).toHaveBeenCalledWith("/settings");
+  });
+
+  it("discovers and configures repositories for the authenticated GitHub host", async () => {
+    mocks.tooling.value = {
+      git: { available: true, version: "2.50" },
+      gh: { available: true, authenticated: true, host: "ghe.example.com", user: "maintainer" },
+      glab: { available: false, authenticated: false },
+    };
+    mocks.listUserRepositories.mockResolvedValue([
+      {
+        name_with_owner: "acme/forge",
+        ssh_url: "git@ghe.example.com:acme/forge.git",
+        default_branch: "main",
+        provider: "github",
+        platform_host: "ghe.example.com",
+      },
+    ]);
+    renderFlow(storeFixture().stores);
+
+    await waitFor(() => expect(screen.getByText("acme/forge")).toBeTruthy());
+    await fireEvent.click(screen.getByText("acme/forge"));
+    await fireEvent.click(screen.getByRole("button", { name: "Configure 1 repository" }));
+
+    expect(mocks.listUserRepositories).toHaveBeenCalledWith({
+      provider: "github",
+      platformHost: "ghe.example.com",
+    });
+    expect(mocks.bulkAddRepos).toHaveBeenCalledWith([
+      {
+        provider: "github",
+        host: "ghe.example.com",
+        owner: "acme",
+        name: "forge",
+        repo_path: "acme/forge",
+      },
+    ]);
+  });
+
+  it("shows pull loading failures instead of an empty successful result", async () => {
+    renderFlow(storeFixture({ configured: true, pulls: [], pullsError: "pull request API unavailable" }).stores);
+
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("pull request API unavailable"));
+    expect(screen.queryByText("No open pull requests yet")).toBeNull();
+  });
+
+  it("treats opening the PR detail as a handoff rather than activation completion", async () => {
+    const callbacks = renderFlow(storeFixture({ configured: true }).stores);
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Open a pull request" })).toBeTruthy());
+    await fireEvent.click(screen.getByRole("button", { name: "Continue with PR #42" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Open PR first" }));
+
+    expect(callbacks.onDismiss).toHaveBeenCalledOnce();
+    expect(callbacks.onComplete).not.toHaveBeenCalled();
+    expect(mocks.navigate).toHaveBeenCalledWith("/pulls/github/acme/forge/42");
+  });
+
+  it("gives every setup milestone an accessible state label", () => {
+    renderFlow(storeFixture().stores);
+
+    expect(screen.getByRole("listitem", { name: "GitHub ready: complete" })).toBeTruthy();
+    expect(screen.getByRole("listitem", { name: "Choose repos: current" })).toBeTruthy();
+    expect(screen.getByRole("listitem", { name: "First sync: upcoming" })).toBeTruthy();
   });
 
   it("lets experienced users leave the focused setup", async () => {

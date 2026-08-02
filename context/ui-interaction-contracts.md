@@ -782,6 +782,8 @@ breakage.
 
 Related docs:
 
+- [`docs/adr/0002-focused-github-first-run.md`](../docs/adr/0002-focused-github-first-run.md)
+  for first-run trigger, dismissal, identity, and completion policy.
 - [`context/ui-design-system.md`](./ui-design-system.md) for visual primitives
   and styling guidance.
 - [`context/notifications-in-activity.md`](./notifications-in-activity.md) for

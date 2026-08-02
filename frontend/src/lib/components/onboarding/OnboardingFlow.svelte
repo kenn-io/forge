@@ -21,7 +21,7 @@
 
   import {
     listUserRepositories,
-    type UserRepository,
+    type DiscoveredUserRepository,
   } from "../../api/project-intake.ts";
   import { createPullRequestWorkspace } from "../../api/onboarding.ts";
   import { bulkAddRepos } from "../../api/settings.ts";
@@ -53,7 +53,7 @@
   );
   let headingEl: HTMLHeadingElement | undefined;
 
-  let repositories = $state.raw<UserRepository[]>([]);
+  let repositories = $state.raw<DiscoveredUserRepository[]>([]);
   let repositoryFilter = $state("");
   let selectedRepositories = $state<string[]>([]);
   let repositoriesLoading = $state(false);
@@ -138,7 +138,10 @@
     repositoriesLoading = true;
     repositoryError = null;
     try {
-      repositories = await listUserRepositories();
+      repositories = await listUserRepositories({
+        provider: "github",
+        platformHost: gh?.host || "github.com",
+      });
       const available = new Set(
         repositories.map((repository) => repository.name_with_owner),
       );
@@ -185,8 +188,8 @@
         selectedRepositoryRows.map((repository) => {
           const identity = splitRepositoryPath(repository.name_with_owner);
           return {
-            provider: "github",
-            host: gh?.host || "github.com",
+            provider: repository.provider,
+            host: repository.platform_host,
             owner: identity.owner,
             name: identity.name,
             repo_path: repository.name_with_owner,
@@ -225,42 +228,40 @@
     void startSync();
   }
 
-  async function finishSync(): Promise<void> {
-    if (syncFinishing) return;
-    syncFinishing = true;
+  async function loadAvailablePulls(): Promise<void> {
     pullsLoading = true;
     pullsError = null;
     try {
       await stores.pulls.loadPulls();
-      availablePulls = stores.pulls
-        .getPulls()
-        .filter((pull) => pull.State === "open")
-        .slice(0, 8);
-      selectedPull = availablePulls[0] ?? null;
+      const loadError = stores.pulls.getError();
+      if (loadError) {
+        pullsError = loadError;
+        availablePulls = [];
+        selectedPull = null;
+      } else {
+        availablePulls = stores.pulls
+          .getPulls()
+          .filter((pull) => pull.State === "open")
+          .slice(0, 8);
+        selectedPull = availablePulls[0] ?? null;
+      }
     } catch (error) {
       pullsError = errorMessage(error);
     } finally {
       pullsLoading = false;
-      syncFinishing = false;
     }
+  }
+
+  async function finishSync(): Promise<void> {
+    if (syncFinishing) return;
+    syncFinishing = true;
+    await loadAvailablePulls();
+    syncFinishing = false;
     await moveTo("pulls");
   }
 
   async function retryPullLoad(): Promise<void> {
-    pullsLoading = true;
-    pullsError = null;
-    try {
-      await stores.pulls.loadPulls();
-      availablePulls = stores.pulls
-        .getPulls()
-        .filter((pull) => pull.State === "open")
-        .slice(0, 8);
-      selectedPull = availablePulls[0] ?? null;
-    } catch (error) {
-      pullsError = errorMessage(error);
-    } finally {
-      pullsLoading = false;
-    }
+    await loadAvailablePulls();
   }
 
   function selectPull(pull: PullRequest): void {
@@ -278,13 +279,18 @@
   }
 
   function openPullView(pull: PullRequest): void {
-    onComplete();
+    onDismiss();
     navigate(pullRoute(pull));
   }
 
   function finishWithoutPull(): void {
-    onComplete();
+    onDismiss();
     navigate("/pulls");
+  }
+
+  function configureAnotherProvider(): void {
+    onDismiss();
+    navigate("/settings");
   }
 
   function openSelectedPullView(): void {
@@ -367,6 +373,7 @@
           <li
             class:active={state === "active"}
             class:done={state === "done"}
+            aria-label={`${step.label}: ${state === "done" ? "complete" : state === "active" ? "current" : "upcoming"}`}
             aria-current={state === "active" ? "step" : undefined}
           >
             <span class="step-icon" aria-hidden="true">
@@ -434,15 +441,18 @@
           {#if toolingRetryError}
             <p class="inline-error tooling-retry-error" role="alert">{toolingRetryError}</p>
           {/if}
-          <Button
-            tone="info"
-            surface="solid"
-            disabled={toolingRetrying}
-            onclick={() => void retryTooling()}
-          >
-            {#if toolingRetrying}<Spinner size={13} />{/if}
-            Check again
-          </Button>
+          <div class="auth-actions">
+            <Button
+              tone="info"
+              surface="solid"
+              disabled={toolingRetrying}
+              onclick={() => void retryTooling()}
+            >
+              {#if toolingRetrying}<Spinner size={13} />{/if}
+              Check again
+            </Button>
+            <Button onclick={configureAnotherProvider}>Configure another provider</Button>
+          </div>
         {/if}
       {:else if phase === "repos"}
         <div class="step-heading">
@@ -611,7 +621,9 @@
                 <strong>{selectedPull.repo.repo_path} · PR #{selectedPull.Number}</strong>
                 <span>{selectedPull.HeadBranch}</span>
               </div>
-              <span class="ready-label">READY</span>
+              <span class="ready-label">
+                {selectedPull.workspace?.status?.toUpperCase() || "TO CREATE"}
+              </span>
             </div>
             <div class="workspace-context">
               <span>Pull request</span>
@@ -873,6 +885,12 @@
 
   .tooling-retry-error {
     margin-bottom: var(--space-4);
+  }
+
+  .auth-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
   }
 
   .repo-search {

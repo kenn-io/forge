@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 
 	gh "github.com/google/go-github/v89/github"
 	"go.kenn.io/forge/internal/platform"
@@ -70,6 +71,9 @@ type HostRouter struct {
 	owners          map[string]*Route
 	repos           map[string]*Route
 	discoveryOwners map[string]Client
+
+	aliasMu     sync.RWMutex
+	repoAliases map[string]RouteKey
 }
 
 func NewHostRouter(host string, routes ...*Route) (*HostRouter, error) {
@@ -169,6 +173,15 @@ func (r *HostRouter) RouteForRepo(owner, name string) (*Route, error) {
 		if route := r.repos[repoRouteMapKey(owner, name)]; route != nil {
 			return route, nil
 		}
+		if configured, ok := r.repoCredentialAliasTarget(owner, name); ok {
+			key := repoRouteMapKey(configured.Owner, configured.Name)
+			if route := r.repos[key]; route != nil {
+				return route, nil
+			}
+			// Fall through to owner and fallback resolution on the
+			// configured identity, not the resolved one.
+			owner = configured.Owner
+		}
 	}
 	route, err := r.RouteForOwner(owner)
 	if err != nil {
@@ -177,6 +190,13 @@ func (r *HostRouter) RouteForRepo(owner, name string) (*Route, error) {
 		}
 	}
 	return route, err
+}
+
+func (r *HostRouter) repoCredentialAliasTarget(owner, name string) (RouteKey, bool) {
+	r.aliasMu.RLock()
+	defer r.aliasMu.RUnlock()
+	target, ok := r.repoAliases[repoRouteMapKey(owner, name)]
+	return target, ok
 }
 
 func (r *HostRouter) ReadIdentityForRepo(owner, name string) (IdentityKey, error) {
@@ -979,4 +999,28 @@ func (c *RoutedClient) ListIssueTimelineEvents(ctx context.Context, owner, repo 
 		return nil, fmt.Errorf("GitHub route for %s/%s does not support issue timeline events", owner, repo)
 	}
 	return lister.ListIssueTimelineEvents(ctx, owner, repo, number)
+}
+
+// RegisterRepoCredentialAlias routes credential selection for a
+// provider-resolved owner/name onto the configured repository identity it
+// replaced. Provider APIs keep receiving the resolved names; only credential
+// selection follows the configured route. Alias chains flatten, so repeated
+// renames still resolve to the original configured identity.
+func (r *HostRouter) RegisterRepoCredentialAlias(owner, name string, configured RouteKey) {
+	if r == nil {
+		return
+	}
+	key := repoRouteMapKey(owner, name)
+	r.aliasMu.Lock()
+	defer r.aliasMu.Unlock()
+	if target, ok := r.repoAliases[repoRouteMapKey(configured.Owner, configured.Name)]; ok {
+		configured = target
+	}
+	if key == repoRouteMapKey(configured.Owner, configured.Name) {
+		return
+	}
+	if r.repoAliases == nil {
+		r.repoAliases = make(map[string]RouteKey)
+	}
+	r.repoAliases[key] = configured
 }

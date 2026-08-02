@@ -50,7 +50,9 @@ func TestE2E_WorktreeLinkChangeReachesSSE(t *testing.T) {
 	t.Cleanup(ts.Close)
 
 	repoID, err := database.UpsertRepo(
-		ctx, dbpkg.GitHubRepoIdentity("github.com", "acme", "widget"),
+		ctx, verifiedRepoIdentity(
+			dbpkg.GitHubRepoIdentity("github.com", "acme", "widget"),
+		),
 	)
 	require.NoError(err)
 	project, err := database.CreateProject(ctx, dbpkg.CreateProjectInput{

@@ -7,9 +7,11 @@ provider interfaces, and the checklist for adding a new provider, read
 
 ## Identity
 
-Repository identity is `(platform, platform_host, owner, name)`, with
-`repo_path` as the provider-canonical full path and provider IDs used for
-reconciliation when available.
+Provider-verified repository identity is
+`(platform, platform_host, platform_repo_id)`. Owner, name, and `repo_path` are
+mutable routes; route reuse must create a distinct catalog entry rather than
+combining repository-owned history
+(`internal/db/repository_catalog.go::ReconcileRepositoryObservation`).
 
 - `platform` is the provider kind named in the canonical provider list in
   `CLAUDE.md`.
@@ -17,7 +19,12 @@ reconciliation when available.
 - `owner` and `name` are provider-canonical display/config fields.
 - `repo_path` carries the full provider path when `owner/name` is not enough.
 - `platform_repo_id` / provider external IDs are stable provider identities;
-  prefer them for rename reconciliation, but never drop human-readable fields.
+  preserve human-readable route history across renames and replacements.
+- Rows without a verified provider ID remain inactive legacy records. Never
+  infer their identity from a matching route.
+- Timestamp provider observations before the identity lookup starts; a delayed
+  response must not supersede a newer route observation
+  (`internal/github/sync.go::Syncer.syncRepoIdentity`).
 
 GitLab nested namespaces make `repo_path` mandatory for reliable addressing:
 `group/subgroup/project` has owner `group/subgroup` and name `project`.
@@ -29,10 +36,10 @@ provider-canonical owner/name casing; do not lowercase them like GitLab.
 `repo_path` is normally `owner/name` and is primarily a canonicalization aid for
 URL-parsed config or provider responses.
 
-Do not identify repos, merge requests, issues, events, stars, workspaces, or
-activity rows by owner/name/number alone. Thread the full provider ref through
-requests, sync queues, persistence, and responses. Dedupe keys for items and
-events must be scoped by persisted repo ID or full provider identity.
+Scope repository-owned data by internal repository ID; route-facing requests
+still carry the full provider ref. Provider workspaces remain route-keyed and
+must fail closed once a route has historical occupants
+(`internal/db/queries.go::DB.workspaceRouteHasHistoricalOccupants`).
 
 ## Provider Hosts And Tokens
 

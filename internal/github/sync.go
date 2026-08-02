@@ -802,7 +802,7 @@ func NewSyncerWithRegistry(
 		clones:                   clones,
 		rateTrackers:             rateTrackers,
 		budgets:                  budgets,
-		repos:                    repos,
+		repos:                    slices.Clone(repos),
 		interval:                 interval,
 		rateLimitSnapshotRefresh: make(map[string]time.Time),
 		branchActivityRetention:  defaultBranchActivityRetention,
@@ -5155,26 +5155,196 @@ func repoPriorityKey(repo RepoRef) string {
 	)
 }
 
-func (s *Syncer) syncRepoIdentity(ctx context.Context, repo RepoRef) (db.RepoIdentity, *platform.Repository, error) {
+func (s *Syncer) syncRepoIdentity(
+	ctx context.Context,
+	repo RepoRef,
+) (db.RepoIdentity, *platform.Repository, time.Time, error) {
+	observedAt := time.Now().UTC()
 	identity := platform.DBRepoIdentity(platformRepoRef(repo))
-	if identity.PlatformRepoID != "" {
-		return identity, nil, nil
-	}
 	reader, err := s.clients.RepositoryReader(repoPlatform(repo), repoHost(repo))
 	if err != nil {
-		return db.RepoIdentity{}, nil, err
+		if identity.PlatformRepoID != "" && errors.Is(err, platform.ErrUnsupportedCapability) {
+			return identity, nil, observedAt, nil
+		}
+		return db.RepoIdentity{}, nil, time.Time{}, err
 	}
 	// A refused identity resolve aborts the whole repo sync before the
 	// list fetches, so it shares their essential budget reserve.
 	resolved, err := reader.GetRepository(WithEssentialSyncBudget(ctx), platformRepoRef(repo))
 	if err != nil {
-		return db.RepoIdentity{}, nil, err
+		return db.RepoIdentity{}, nil, time.Time{}, err
 	}
 	identity = platform.DBRepositoryIdentity(resolved)
 	if identity.PlatformRepoID == "" {
-		return db.RepoIdentity{}, nil, fmt.Errorf("provider returned no repo id")
+		return db.RepoIdentity{}, nil, time.Time{}, fmt.Errorf("provider returned no repo id")
 	}
-	return identity, &resolved, nil
+	return identity, &resolved, observedAt, nil
+}
+
+func (s *Syncer) reconcileRepoIdentity(
+	ctx context.Context,
+	repo RepoRef,
+) (RepoRef, int64, *platform.Repository, error) {
+	previousID := int64(0)
+	previous, err := s.db.ResolveActiveRepositoryRoute(
+		ctx, platform.DBRepoIdentity(platformRepoRef(repo)),
+	)
+	if err != nil {
+		return RepoRef{}, 0, nil, err
+	}
+	if previous != nil {
+		previousID = previous.Repository.ID
+	}
+	identity, resolved, observedAt, err := s.syncRepoIdentity(ctx, repo)
+	if err != nil {
+		return RepoRef{}, 0, nil, err
+	}
+	entry, accepted, err := s.db.ReconcileRepositoryObservation(ctx, identity, observedAt)
+	if err != nil {
+		return RepoRef{}, 0, nil, err
+	}
+	if !accepted {
+		// The catalog holds a newer observation, so this snapshot's
+		// metadata is stale even when the route is unchanged. Dropping
+		// it makes refreshRepoSettings refetch from the provider.
+		resolved = nil
+		if entry.Lifecycle != db.RepositoryLifecycleActive {
+			// The stale observation resolved to a repository a route
+			// replacement has displaced. Syncing would fetch the reused
+			// route's content into the preserved repository's history.
+			return RepoRef{}, 0, nil, fmt.Errorf(
+				"repository identity observation for %s/%s is stale and "+
+					"resolves to %s catalog entry %d; awaiting revalidation",
+				repo.Owner, repo.Name, entry.Lifecycle, entry.Repository.ID,
+			)
+		}
+	}
+	authoritative := repoRefFromCatalog(repo, entry.Repository, resolved)
+	s.publishResolvedRepository(repo, authoritative)
+	if err := s.reconcileArchiveRepositoryIfNeeded(
+		ctx, previousID, entry.Repository.ID,
+	); err != nil {
+		return RepoRef{}, 0, nil, err
+	}
+	return authoritative, entry.Repository.ID, resolved, nil
+}
+
+func (s *Syncer) reconcileArchiveRepositoryIfNeeded(
+	ctx context.Context,
+	previousID int64,
+	repoID int64,
+) error {
+	if s.archiveLifecycle == nil {
+		return nil
+	}
+	needsReconcile := previousID != 0 && previousID != repoID
+	if !needsReconcile {
+		states, err := s.db.ListArchiveRepoStates(ctx, []int64{repoID})
+		if err != nil {
+			return fmt.Errorf("inspect archive repository state: %w", err)
+		}
+		needsReconcile = len(states) == 0
+	}
+	if !needsReconcile {
+		return nil
+	}
+	s.reposMu.Lock()
+	tracked := slices.Clone(s.repos)
+	s.reposMu.Unlock()
+	refs := make([]platform.RepoRef, 0, len(tracked))
+	for _, trackedRepo := range tracked {
+		refs = append(refs, platformRepoRef(trackedRepo))
+	}
+	if err := s.archiveLifecycle.EnsureConfigured(ctx, refs); err != nil {
+		return fmt.Errorf("reconcile archive repository replacement: %w", err)
+	}
+	s.WakeArchive()
+	return nil
+}
+
+func repoRefFromCatalog(previous RepoRef, stored db.Repo, resolved *platform.Repository) RepoRef {
+	repo := RepoRef{
+		Platform:           platform.Kind(stored.Platform),
+		RepoID:             stored.ID,
+		Owner:              stored.Owner,
+		Name:               stored.Name,
+		PlatformHost:       stored.PlatformHost,
+		RepoPath:           stored.RepoPath,
+		PlatformExternalID: stored.PlatformRepoID,
+		WebURL:             stored.WebURL,
+		CloneURL:           stored.CloneURL,
+		DefaultBranch:      stored.DefaultBranch,
+	}
+	if repo.PlatformRepoID == 0 {
+		repo.PlatformRepoID = previous.PlatformRepoID
+	}
+	if repo.WebURL == "" {
+		repo.WebURL = previous.WebURL
+	}
+	if repo.CloneURL == "" {
+		repo.CloneURL = previous.CloneURL
+	}
+	if repo.DefaultBranch == "" {
+		repo.DefaultBranch = previous.DefaultBranch
+	}
+	if resolved == nil {
+		return repo
+	}
+	repo.PlatformRepoID = resolved.PlatformID
+	if repo.PlatformRepoID == 0 {
+		repo.PlatformRepoID = resolved.Ref.PlatformID
+	}
+	if resolved.WebURL != "" {
+		repo.WebURL = resolved.WebURL
+	} else if resolved.Ref.WebURL != "" {
+		repo.WebURL = resolved.Ref.WebURL
+	}
+	if resolved.CloneURL != "" {
+		repo.CloneURL = resolved.CloneURL
+	} else if resolved.Ref.CloneURL != "" {
+		repo.CloneURL = resolved.Ref.CloneURL
+	}
+	if resolved.DefaultBranch != "" {
+		repo.DefaultBranch = resolved.DefaultBranch
+	} else if resolved.Ref.DefaultBranch != "" {
+		repo.DefaultBranch = resolved.Ref.DefaultBranch
+	}
+	return repo
+}
+
+func (s *Syncer) publishResolvedRepository(previous, resolved RepoRef) {
+	s.aliasRenamedCredentialRoute(previous, resolved)
+	s.reposMu.Lock()
+	defer s.reposMu.Unlock()
+	for i := range s.repos {
+		if repoPriorityKey(s.repos[i]) == repoPriorityKey(previous) {
+			s.repos[i] = resolved
+			return
+		}
+	}
+}
+
+// aliasRenamedCredentialRoute keeps GitHub credential selection on the
+// configured repository identity when reconciliation publishes a renamed or
+// transferred route. Provider APIs receive the resolved owner/name; the
+// credential router resolves it back to the configured route.
+func (s *Syncer) aliasRenamedCredentialRoute(previous, resolved RepoRef) {
+	if repoPlatform(resolved) != platform.KindGitHub {
+		return
+	}
+	if strings.EqualFold(previous.Owner, resolved.Owner) &&
+		strings.EqualFold(previous.Name, resolved.Name) {
+		return
+	}
+	router := s.routers[repoHost(resolved)]
+	if router == nil {
+		return
+	}
+	router.RegisterRepoCredentialAlias(resolved.Owner, resolved.Name, RouteKey{
+		Host:  repoHost(previous),
+		Owner: previous.Owner,
+		Name:  previous.Name,
+	})
 }
 
 // syncRepo syncs one repository: open PRs, timeline events, and stale closures.
@@ -5205,14 +5375,11 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 		}
 	}
 
-	repoIdentity, resolvedRepo, err := s.syncRepoIdentity(ctx, repo)
+	resolvedRef, repoID, resolvedRepo, err := s.reconcileRepoIdentity(ctx, repo)
 	if err != nil {
 		return fmt.Errorf("resolve repo identity %s/%s: %w", repo.Owner, repo.Name, err)
 	}
-	repoID, err := s.db.UpsertRepoByProviderID(ctx, repoIdentity)
-	if err != nil {
-		return fmt.Errorf("upsert repo %s/%s by provider id: %w", repo.Owner, repo.Name, err)
-	}
+	repo = resolvedRef
 
 	s.refreshRepoSettings(ctx, repo, repoID, resolvedRepo)
 
@@ -9647,6 +9814,9 @@ func (s *Syncer) drainDetailQueue(
 
 	// Track which hosts are exhausted so we skip quickly.
 	exhausted := make(map[string]bool)
+	verifiedRepos := make(map[string]RepoRef)
+	verifiedRepoIDs := make(map[string]int64)
+	rejectedRepos := make(map[string]bool)
 
 	for i := range queue {
 		if ctx.Err() != nil {
@@ -9709,16 +9879,35 @@ func (s *Syncer) drainDetailQueue(
 			exhausted[bucket] = true
 			continue
 		}
-		// The provider reserve is re-read per item alongside the local
-		// ceiling. A drain can be many items long, so a credential that had
-		// headroom when the drain started can reach its reserve partway
-		// through.
-		repoID, err := s.db.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
-		if err != nil {
+		repoKey := detailRepoKey(repoPlatform(repo), host, qi.RepoOwner, qi.RepoName)
+		if rejectedRepos[repoKey] {
 			probe.abandon()
-			slog.Warn("detail drain: upsert repo failed",
+			continue
+		}
+		repoID, verified := verifiedRepoIDs[repoKey]
+		if verified {
+			repo = verifiedRepos[repoKey]
+		} else {
+			resolvedRepo, resolvedRepoID, _, resolveErr := s.reconcileRepoIdentity(ctx, repo)
+			if resolveErr != nil {
+				probe.abandon()
+				rejectedRepos[repoKey] = true
+				slog.Warn("detail drain: verify repo identity failed",
+					"repo", qi.RepoOwner+"/"+qi.RepoName,
+					"err", resolveErr,
+				)
+				continue
+			}
+			repo = resolvedRepo
+			repoID = resolvedRepoID
+			verifiedRepos[repoKey] = repo
+			verifiedRepoIDs[repoKey] = repoID
+		}
+		if repoID == 0 {
+			probe.abandon()
+			rejectedRepos[repoKey] = true
+			slog.Warn("detail drain: verified repo has no database identity",
 				"repo", qi.RepoOwner+"/"+qi.RepoName,
-				"err", err,
 			)
 			continue
 		}
@@ -9891,9 +10080,8 @@ func (s *Syncer) buildDetailQueueItems(
 // IsTrackedRepo checks whether the given repo is in the configured list.
 func (s *Syncer) IsTrackedRepo(owner, name string) bool {
 	s.reposMu.Lock()
-	repos := s.repos
-	s.reposMu.Unlock()
-	for _, r := range repos {
+	defer s.reposMu.Unlock()
+	for _, r := range s.repos {
 		if strings.EqualFold(r.Owner, owner) &&
 			strings.EqualFold(r.Name, name) {
 			return true
@@ -10064,10 +10252,11 @@ func (s *Syncer) syncMRForRepo(
 		return fmt.Errorf("resolve merge request reader for %s/%s: %w", owner, name, err)
 	}
 
-	repoID, err := s.db.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
+	resolvedRef, repoID, _, err := s.reconcileRepoIdentity(ctx, repo)
 	if err != nil {
-		return fmt.Errorf("upsert repo %s/%s: %w", owner, name, err)
+		return fmt.Errorf("resolve repo identity %s/%s: %w", owner, name, err)
 	}
+	repo = resolvedRef
 
 	// Preserve derived fields that provider detail doesn't populate. CI is
 	// refreshed later in this sync path; keeping the previous values here
@@ -10629,10 +10818,13 @@ func (s *Syncer) syncIssueForRepo(
 		defer releaseProviderWork()
 	}
 
-	repoID, err := s.db.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
+	resolvedRef, repoID, _, err := s.reconcileRepoIdentity(ctx, repo)
 	if err != nil {
-		return fmt.Errorf("upsert repo %s/%s: %w", repo.Owner, repo.Name, err)
+		return fmt.Errorf(
+			"resolve repo identity %s/%s: %w", repo.Owner, repo.Name, err,
+		)
 	}
+	repo = resolvedRef
 
 	providerCalls, err := s.fetchIssueDetail(ctx, repo, repoID, number)
 	if providerAttempted != nil && providerCalls > 0 {

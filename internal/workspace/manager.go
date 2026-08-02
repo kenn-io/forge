@@ -54,6 +54,9 @@ type Manager struct {
 	deletedSummaryIDs         map[string]bool
 	worktreeBaseResolver      WorktreeBasePathResolver
 	afterHeadRepoSnapshotRead func()
+	// beforeSetupRouteRevalidation runs right before setup's final route
+	// re-validation; tests use it to interleave a route replacement.
+	beforeSetupRouteRevalidation func()
 }
 
 // WorktreeBasePathResolver resolves a tracked remote repository to a
@@ -918,6 +921,24 @@ func (m *Manager) Setup(
 	return m.SetupWithWorktreeBasePath(ctx, ws, "")
 }
 
+func (m *Manager) verifyWorkspaceRouteUnoccupied(
+	ctx context.Context, ws *Workspace,
+) error {
+	collision, err := m.db.WorkspaceRepoRouteHasHistoricalOccupants(
+		ctx, ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
+	)
+	if err != nil {
+		return fmt.Errorf("verify workspace repository route: %w", err)
+	}
+	if collision {
+		return fmt.Errorf(
+			"workspace repository route has historical occupants: %s/%s",
+			ws.RepoOwner, ws.RepoName,
+		)
+	}
+	return nil
+}
+
 // SetupWithWorktreeBasePath sets up a workspace from the exact checkout that
 // justified a caller's repository resolution. An empty path uses the manager's
 // normal repository-identity resolver.
@@ -930,6 +951,12 @@ func (m *Manager) SetupWithWorktreeBasePath(
 		ws.ID, workspaceSetupStageSetup, "started",
 		"starting workspace setup",
 	)
+	// Setup is the chokepoint for every path that fetches code — initial
+	// creation, retries, and recovery — so it re-checks the same route
+	// fail-closed condition InsertWorkspace enforced at creation time.
+	if err := m.verifyWorkspaceRouteUnoccupied(ctx, ws); err != nil {
+		return m.failSetup(ctx, ws.ID, workspaceSetupStageSetup, err)
+	}
 	if err := m.RefreshWorkspaceHeadRepo(ctx, ws); err != nil {
 		return m.failSetup(
 			ctx, ws.ID, workspaceSetupStageSetup,
@@ -998,6 +1025,18 @@ func (m *Manager) SetupWithWorktreeBasePath(
 				fmt.Errorf("clear untrusted branch upstream: %w", branchErr),
 			)
 		}
+	}
+	if m.beforeSetupRouteRevalidation != nil {
+		m.beforeSetupRouteRevalidation()
+	}
+	// The route can be reconciled away while the clone runs (setup holds no
+	// reconciliation lock — clones can take minutes), so re-check before
+	// declaring the workspace ready.
+	if routeErr := m.verifyWorkspaceRouteUnoccupied(ctx, ws); routeErr != nil {
+		if !reusedWorktree {
+			m.rollbackWorktree(ctx, gitDir, ws, branch)
+		}
+		return m.failSetup(ctx, ws.ID, workspaceSetupStageWorktree, routeErr)
 	}
 	persistedBranch := branch
 	if workspaceUsesOriginHead(ws) && ws.WorkspaceBranch == "" {

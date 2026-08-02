@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -84,11 +85,12 @@ func TestGitLabNormalSyncEnablesHeadBoundMutations(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		path := r.URL.EscapedPath()
 		switch {
-		case path == "/api/v4/projects/acme%2Fwidget" && r.Method == http.MethodGet:
+		case (path == "/api/v4/projects/acme%2Fwidget" || path == "/api/v4/projects/4242") &&
+			r.Method == http.MethodGet:
 			writeGitLabJSON(w, `{
 				"id": 4242, "path": "widget", "path_with_namespace": "acme/widget",
 				"web_url": "https://gitlab.com/acme/widget",
-				"http_url_to_repo": "https://gitlab.com/acme/widget.git",
+				"http_url_to_repo": `+strconv.Quote(cloneURL)+`,
 				"default_branch": "main"
 			}`)
 		case path == "/api/v4/projects/4242/merge_requests" && r.Method == http.MethodGet:

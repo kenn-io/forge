@@ -378,7 +378,7 @@ func setupArchiveTestServer(
 	database := dbtest.Open(t)
 	ref := platform.RepoRef{
 		Platform: platform.KindGitHub, Host: "github.test", Owner: "owner",
-		Name: "repo", RepoPath: "owner/repo",
+		Name: "repo", RepoPath: "owner/repo", PlatformExternalID: "repo-owner-repo",
 	}
 	_, err := database.UpsertRepo(t.Context(), platform.DBRepoIdentity(ref))
 	require.NoError(t, err)

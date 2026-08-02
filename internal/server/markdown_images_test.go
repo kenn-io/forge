@@ -46,7 +46,7 @@ func TestMarkdownImageRouteFetchesThroughProvider(t *testing.T) {
 	}}
 	srv, database := setupTestServerWithMock(t, mock)
 	srv.markdownImages = newMarkdownImageCache(t.TempDir())
-	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	_, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
 	rr := repoBrowserRequest(t, srv, http.MethodGet,
@@ -109,7 +109,7 @@ func TestMarkdownImageRouteFetchesThroughRoutedRepositoryCredential(t *testing.T
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	srv.markdownImages = newMarkdownImageCache(t.TempDir())
 	_, err = database.UpsertRepo(
-		t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"),
+		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(err)
 
@@ -135,7 +135,7 @@ func TestMarkdownImageRouteMapsProviderDeadlineToUpstreamError(t *testing.T) {
 	}}
 	srv, database := setupTestServerWithMock(t, mock)
 	srv.markdownImages = newMarkdownImageCache(t.TempDir())
-	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	_, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(t, err)
 
 	rr := repoBrowserRequest(

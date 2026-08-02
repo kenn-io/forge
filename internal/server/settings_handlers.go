@@ -375,11 +375,12 @@ func (s *Server) persistResolvedRepos(
 	for _, repo := range repos {
 		if _, err := s.db.UpsertRepo(
 			ctx, db.RepoIdentity{
-				Platform:     repoProvider(repo),
-				PlatformHost: repo.PlatformHost,
-				Owner:        repo.Owner,
-				Name:         repo.Name,
-				RepoPath:     repo.RepoPath,
+				Platform:       repoProvider(repo),
+				PlatformHost:   repo.PlatformHost,
+				PlatformRepoID: repo.PlatformExternalID,
+				Owner:          repo.Owner,
+				Name:           repo.Name,
+				RepoPath:       repo.RepoPath,
 			},
 		); err != nil {
 			return fmt.Errorf(

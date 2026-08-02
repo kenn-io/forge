@@ -13,7 +13,7 @@ func TestResolveItemNumber(t *testing.T) {
 	database := openTestDB(t)
 	ctx := t.Context()
 
-	repoID, err := database.UpsertRepo(ctx, GitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := database.UpsertRepo(ctx, verifiedTestRepoIdentity("github", "github.com", "acme", "widget"))
 	require.NoError(err)
 
 	// Seed a PR at number 10

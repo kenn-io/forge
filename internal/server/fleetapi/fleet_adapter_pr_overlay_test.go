@@ -27,8 +27,7 @@ func TestBuildLocalRawOverlaysBranchMatchedPR(t *testing.T) {
 	ctx := context.Background()
 	now := time.Date(2026, 6, 9, 12, 0, 0, 0, time.UTC)
 
-	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
-	require.NoError(err)
+	repoID := seedActiveLinkRepo(t, database)
 	proj, err := database.CreateProject(ctx, db.CreateProjectInput{
 		DisplayName: "widget",
 		LocalPath:   filepath.Join(t.TempDir(), "widget"),
@@ -83,8 +82,7 @@ func TestRecomputeThenSnapshotShowsBranchMatchedPR(t *testing.T) {
 	ctx := context.Background()
 	now := time.Date(2026, 6, 9, 12, 0, 0, 0, time.UTC)
 
-	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
-	require.NoError(err)
+	repoID := seedActiveLinkRepo(t, database)
 	proj, err := database.CreateProject(ctx, db.CreateProjectInput{
 		DisplayName: "widget",
 		LocalPath:   filepath.Join(t.TempDir(), "widget"),
@@ -156,8 +154,7 @@ func TestSnapshotEndpointCarriesPREnrichment(t *testing.T) {
 	ctx := t.Context()
 	now := time.Date(2026, 6, 9, 12, 0, 0, 0, time.UTC)
 
-	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
-	require.NoError(err)
+	repoID := seedActiveLinkRepo(t, database)
 	proj, err := database.CreateProject(ctx, db.CreateProjectInput{
 		DisplayName: "widget",
 		LocalPath:   filepath.Join(t.TempDir(), "widget"),
@@ -213,9 +210,8 @@ func TestSnapshotEndpointCarriesWorkspacePREnrichment(t *testing.T) {
 	ctx := t.Context()
 	now := time.Date(2026, 6, 9, 12, 0, 0, 0, time.UTC)
 
-	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
-	require.NoError(err)
-	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
+	repoID := seedActiveLinkRepo(t, database)
+	_, err := database.UpsertMergeRequest(ctx, &db.MergeRequest{
 		RepoID: repoID, PlatformID: 1, Number: 7, Title: "Add feature",
 		Author: "a", State: db.MergeRequestStateOpen, CIStatus: "success",
 		HeadBranch: "feature", BaseBranch: "main",

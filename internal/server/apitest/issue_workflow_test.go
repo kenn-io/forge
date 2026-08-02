@@ -120,7 +120,9 @@ func TestIssueSyncResponseIncludesWorkflow(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	srv, database, providerClient, _ := setupTestServerWithFixtureClient(t)
 
-	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := database.UpsertRepo(
+		ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+	)
 	require.NoError(err)
 	_, err = database.SetItemWorkflowState(ctx, db.SetItemWorkflowStateParams{
 		RepoID:     repoID,
@@ -153,7 +155,7 @@ func TestIssueSyncResponseIncludesWorkflow(t *testing.T) {
 	client := setupTestClient(t, srv)
 	resp, err := client.HTTP.SyncIssueWithResponse(ctx, "gh", "acme", "widget", 8)
 	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
+	require.Equal(http.StatusOK, resp.StatusCode(), string(resp.Body))
 
 	var body map[string]any
 	decodeIssueWorkflowBody(t, resp.Body, &body)

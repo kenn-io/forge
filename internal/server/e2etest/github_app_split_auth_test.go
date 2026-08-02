@@ -70,6 +70,7 @@ func TestGitHubAppSplitAuthE2E(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = fmt.Fprint(w, `{
 				"id": 4242001,
+				"node_id": "R_kenn_forge",
 				"name": "kenn-forge",
 				"full_name": "kenn-io/kenn-forge",
 				"owner": {"login": "kenn-io"},
@@ -236,7 +237,7 @@ repository_selection = "all"
 		RepoPath:           "kenn-io/kenn-forge",
 		PlatformHost:       "github.com",
 		PlatformRepoID:     4242001,
-		PlatformExternalID: "4242001",
+		PlatformExternalID: "R_kenn_forge",
 		DefaultBranch:      "main",
 	}
 	repoID, err := database.UpsertRepo(t.Context(), platform.DBRepoIdentity(platform.RepoRef{
@@ -246,7 +247,7 @@ repository_selection = "all"
 		Name:               "kenn-forge",
 		RepoPath:           "kenn-io/kenn-forge",
 		PlatformID:         4242001,
-		PlatformExternalID: "4242001",
+		PlatformExternalID: "R_kenn_forge",
 		DefaultBranch:      "main",
 	}))
 	require.NoError(err)
@@ -674,6 +675,7 @@ func TestGitHubAppNoUserCredentialGatesWritesE2E(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = fmt.Fprint(w, `{
 				"id": 4242001,
+				"node_id": "R_kenn_forge",
 				"name": "kenn-forge",
 				"full_name": "kenn-io/kenn-forge",
 				"owner": {"login": "kenn-io"},
@@ -758,7 +760,7 @@ repository_selection = "all"
 		RepoPath:           "kenn-io/kenn-forge",
 		PlatformHost:       "github.com",
 		PlatformRepoID:     4242001,
-		PlatformExternalID: "4242001",
+		PlatformExternalID: "R_kenn_forge",
 		DefaultBranch:      "main",
 	}
 	repoID, err := database.UpsertRepo(t.Context(), platform.DBRepoIdentity(platform.RepoRef{
@@ -768,7 +770,7 @@ repository_selection = "all"
 		Name:               "kenn-forge",
 		RepoPath:           "kenn-io/kenn-forge",
 		PlatformID:         4242001,
-		PlatformExternalID: "4242001",
+		PlatformExternalID: "R_kenn_forge",
 		DefaultBranch:      "main",
 	}))
 	require.NoError(err)

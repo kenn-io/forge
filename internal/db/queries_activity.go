@@ -142,10 +142,15 @@ func (d *DB) ListActivity(
 			       COALESCE(mr.state, iss.state, '')
 			FROM forge_notification_items n
 			JOIN forge_repos r
-			       ON r.platform = n.platform
-			      AND r.platform_host = n.platform_host
-			      AND r.owner = n.repo_owner
-			      AND r.name = n.repo_name
+			       ON r.lifecycle_state = 'active'
+			      AND (
+			          n.repo_id = r.id
+			          OR (n.repo_id IS NULL
+			              AND r.platform = n.platform
+			              AND r.platform_host = n.platform_host
+			              AND r.owner_key = n.repo_owner
+			              AND r.name_key = n.repo_name)
+			      )
 			LEFT JOIN forge_merge_requests mr
 			       ON n.item_type = 'pr' AND mr.repo_id = r.id AND mr.number = n.item_number
 			LEFT JOIN forge_issues iss
@@ -181,7 +186,7 @@ func (d *DB) ListActivity(
 			       '' AS activity_url,
 			       '' AS subject_state
 			FROM forge_merge_requests p
-			JOIN forge_repos r ON p.repo_id = r.id
+			JOIN forge_repos r ON p.repo_id = r.id AND r.lifecycle_state = 'active'
 			UNION ALL
 			SELECT 'new_issue', 'issue', i.id,
 			       r.platform, r.platform_host, r.owner, r.name, r.repo_path_key,
@@ -196,7 +201,7 @@ func (d *DB) ListActivity(
 			       '',
 			       ''
 			FROM forge_issues i
-			JOIN forge_repos r ON i.repo_id = r.id
+			JOIN forge_repos r ON i.repo_id = r.id AND r.lifecycle_state = 'active'
 			UNION ALL
 			SELECT CASE e.event_type
 			           WHEN 'issue_comment' THEN 'comment'
@@ -216,7 +221,7 @@ func (d *DB) ListActivity(
 			       ''
 			FROM forge_mr_events e
 			JOIN forge_merge_requests p ON e.merge_request_id = p.id
-			JOIN forge_repos r ON p.repo_id = r.id
+			JOIN forge_repos r ON p.repo_id = r.id AND r.lifecycle_state = 'active'
 			WHERE e.event_type IN (
 				'issue_comment', 'review', 'commit', 'force_push')
 			UNION ALL
@@ -234,7 +239,7 @@ func (d *DB) ListActivity(
 			       ''
 			FROM forge_issue_events e
 			JOIN forge_issues i ON e.issue_id = i.id
-			JOIN forge_repos r ON i.repo_id = r.id
+			JOIN forge_repos r ON i.repo_id = r.id AND r.lifecycle_state = 'active'
 			WHERE e.event_type = 'issue_comment'
 			UNION ALL
 			SELECT 'default_branch_commit', 'bc', bc.id,
@@ -252,7 +257,7 @@ func (d *DB) ListActivity(
 			       '',
 			       ''
 			FROM forge_branch_commits bc
-			JOIN forge_repos r ON bc.repo_id = r.id
+			JOIN forge_repos r ON bc.repo_id = r.id AND r.lifecycle_state = 'active'
 			UNION ALL
 			SELECT 'default_branch_force_push', 'bfp', bfp.id,
 			       r.platform, r.platform_host, r.owner, r.name, r.repo_path_key,
@@ -267,7 +272,7 @@ func (d *DB) ListActivity(
 			       '',
 			       ''
 			FROM forge_branch_force_pushes bfp
-			JOIN forge_repos r ON bfp.repo_id = r.id
+			JOIN forge_repos r ON bfp.repo_id = r.id AND r.lifecycle_state = 'active'
 			%[3]s
 		) unified
 		%[2]s
@@ -378,6 +383,11 @@ func activityRepoFilterCondition(filters []RepoFilter, args *[]any) string {
 	return "(" + strings.Join(groups, " OR ") + ")"
 }
 
+// activityNotificationRepoFilterCondition scopes the notification union to
+// the requested repositories. It matches on the joined canonical repository
+// r, not the notification's cached route fields, so linked rows stay visible
+// after a rename; unlinked legacy rows join r through those same cached
+// fields, which keeps them equivalent.
 func activityNotificationRepoFilterCondition(filters []NotificationRepoFilter, args *[]any) string {
 	var groups []string
 	for _, filter := range filters {
@@ -388,7 +398,7 @@ func activityNotificationRepoFilterCondition(filters []NotificationRepoFilter, a
 		if platform == "" || owner == "" || name == "" {
 			continue
 		}
-		groups = append(groups, "(n.platform = ? AND n.platform_host = ? AND n.repo_owner = ? AND n.repo_name = ?)")
+		groups = append(groups, "(r.platform = ? AND r.platform_host = ? AND r.owner_key = ? AND r.name_key = ?)")
 		*args = append(*args, platform, host, owner, name)
 	}
 	if len(groups) == 0 {

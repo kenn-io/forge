@@ -618,6 +618,278 @@ func TestSchemaIdentityMigrationPreservesDataAndIsReversible(t *testing.T) {
 	require.NoError(raw.Close())
 }
 
+func TestRepositoryCatalogMigrationPreservesDataAndIndexes(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	dbPath := filepath.Join(t.TempDir(), "repository-catalog-v44.db")
+
+	openAtVersionForTest(t, dbPath, 44, func(raw *sql.DB) {
+		_, err := raw.Exec(`
+			INSERT INTO forge_repos (
+				id, platform, platform_host, platform_repo_id,
+				owner, name, repo_path, owner_key, name_key, repo_path_key,
+				created_at
+			) VALUES
+				(1, 'github', 'github.com', 'provider-1',
+				 'org-a', 'project-a', 'org-a/project-a',
+				 'org-a', 'project-a', 'org-a/project-a',
+				 '2026-01-01T00:00:00Z'),
+				(2, 'github', 'github.com', '',
+				 'org-a', 'legacy-project', 'org-a/legacy-project',
+				 'org-a', 'legacy-project', 'org-a/legacy-project',
+				 '2026-01-02T00:00:00Z');
+
+			INSERT INTO forge_issues (
+				id, repo_id, platform_id, number,
+				created_at, updated_at, last_activity_at
+			) VALUES (
+				11, 1, 101, 1,
+				'2026-01-03T00:00:00Z', '2026-01-03T00:00:00Z',
+				'2026-01-03T00:00:00Z'
+			);
+
+			INSERT INTO forge_merge_requests (
+				id, repo_id, platform_id, number,
+				created_at, updated_at, last_activity_at
+			) VALUES (
+				12, 1, 102, 2,
+				'2026-01-04T00:00:00Z', '2026-01-04T00:00:00Z',
+				'2026-01-04T00:00:00Z'
+			);
+
+			INSERT INTO forge_archive_repos (
+				repo_id, collection_mode, operator_state,
+				created_at, updated_at
+			) VALUES (
+				1, 'full', 'active',
+				'2026-01-05T00:00:00Z', '2026-01-05T00:00:00Z'
+			);
+
+			INSERT INTO forge_archive_items (
+				repo_id, item_type, item_number, provider_item_id,
+				provider_created_at, provider_updated_at, lifecycle_state
+			) VALUES (
+				1, 'issue', 1, 'issue-101',
+				'2026-01-03T00:00:00Z', '2026-01-03T00:00:00Z', 'active'
+			)
+		`)
+		require.NoError(err)
+	})
+
+	database, err := Open(dbPath)
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(database.Close()) })
+
+	rows, err := database.ReadDB().Query(`
+		SELECT r.id, r.platform_repo_id, r.lifecycle_state,
+		       rr.repo_path, rr.is_current
+		FROM forge_repos r
+		JOIN forge_repo_routes rr ON rr.repo_id = r.id
+		ORDER BY r.id`)
+	require.NoError(err)
+	defer rows.Close()
+
+	type migratedRoute struct {
+		repoID         int64
+		providerRepoID string
+		lifecycle      string
+		repoPath       string
+		current        bool
+	}
+	var got []migratedRoute
+	for rows.Next() {
+		var row migratedRoute
+		require.NoError(rows.Scan(
+			&row.repoID,
+			&row.providerRepoID,
+			&row.lifecycle,
+			&row.repoPath,
+			&row.current,
+		))
+		got = append(got, row)
+	}
+	require.NoError(rows.Err())
+	assert.Equal([]migratedRoute{
+		{1, "provider-1", "active", "org-a/project-a", true},
+		{2, "", "inactive", "org-a/legacy-project", false},
+	}, got)
+
+	var issueRepoID, mergeRequestRepoID, archiveRepoID, archiveItemRepoID int64
+	require.NoError(database.ReadDB().QueryRow(
+		`SELECT repo_id FROM forge_issues WHERE id = 11`,
+	).Scan(&issueRepoID))
+	require.NoError(database.ReadDB().QueryRow(
+		`SELECT repo_id FROM forge_merge_requests WHERE id = 12`,
+	).Scan(&mergeRequestRepoID))
+	require.NoError(database.ReadDB().QueryRow(
+		`SELECT repo_id FROM forge_archive_repos WHERE repo_id = 1`,
+	).Scan(&archiveRepoID))
+	require.NoError(database.ReadDB().QueryRow(
+		`SELECT repo_id FROM forge_archive_items WHERE provider_item_id = 'issue-101'`,
+	).Scan(&archiveItemRepoID))
+	assert.Equal(int64(1), issueRepoID)
+	assert.Equal(int64(1), mergeRequestRepoID)
+	assert.Equal(int64(1), archiveRepoID)
+	assert.Equal(int64(1), archiveItemRepoID)
+
+	assertIndexForTest(t, database.ReadDB(), "forge_repos",
+		"idx_repos_platform_repo_id",
+		[]string{"platform", "platform_host", "platform_repo_id"}, true)
+	assertIndexForTest(t, database.ReadDB(), "forge_repo_routes",
+		"idx_repo_routes_current_path",
+		[]string{"platform", "platform_host", "repo_path_key"}, true)
+	assertIndexForTest(t, database.ReadDB(), "forge_repo_routes",
+		"idx_repo_routes_current_repo", []string{"repo_id"}, true)
+	assertUniqueIndexForTest(t, database.ReadDB(), "forge_repos",
+		"idx_repos_platform_repo_id", true)
+	assertUniqueIndexForTest(t, database.ReadDB(), "forge_repo_routes",
+		"idx_repo_routes_current_path", true)
+	assertUniqueIndexForTest(t, database.ReadDB(), "forge_repo_routes",
+		"idx_repo_routes_current_repo", true)
+
+	var removedPathIndex int
+	require.NoError(database.ReadDB().QueryRow(`
+		SELECT COUNT(*) FROM sqlite_schema
+		WHERE type = 'index' AND name = 'idx_repos_provider_path_key'
+	`).Scan(&removedPathIndex))
+	assert.Zero(removedPathIndex)
+
+	var repoTableSQL string
+	require.NoError(database.ReadDB().QueryRow(`
+		SELECT sql FROM sqlite_schema
+		WHERE type = 'table' AND name = 'forge_repos'
+	`).Scan(&repoTableSQL))
+	assert.NotContains(repoTableSQL,
+		"UNIQUE(platform, platform_host, owner, name)")
+	for _, trigger := range []string{
+		"forge_repos_casefold_insert",
+		"forge_repos_casefold_update",
+		"forge_workspaces_casefold_insert",
+		"forge_workspaces_casefold_update",
+	} {
+		var triggerCount int
+		require.NoError(database.ReadDB().QueryRow(`
+			SELECT COUNT(*) FROM sqlite_schema
+			WHERE type = 'trigger' AND name = ?`, trigger,
+		).Scan(&triggerCount))
+		assert.Equal(1, triggerCount)
+	}
+	assertDatabaseIntegrityForTest(t, database.ReadDB())
+}
+
+func TestRepositoryCatalogMigrationDownRestoresRouteIdentity(t *testing.T) {
+	require := require.New(t)
+	dbPath := filepath.Join(t.TempDir(), "repository-catalog-v45.db")
+	database, err := Open(dbPath)
+	require.NoError(err)
+	_, err = database.WriteDB().Exec(`
+		INSERT INTO forge_repos (
+			platform, platform_host, platform_repo_id,
+			owner, name, repo_path, owner_key, name_key, repo_path_key
+		) VALUES (
+			'github', 'github.com', 'provider-1',
+			'org-a', 'project-a', 'org-a/project-a',
+			'org-a', 'project-a', 'org-a/project-a'
+		)`)
+	require.NoError(err)
+	require.NoError(database.Close())
+
+	raw, migrator := openMigratorForTest(t, dbPath)
+	raw.SetMaxOpenConns(1)
+	_, err = raw.Exec(`PRAGMA foreign_keys = OFF`)
+	require.NoError(err)
+	require.NoError(migrator.Migrate(44))
+	_, err = raw.Exec(`PRAGMA foreign_keys = ON`)
+	require.NoError(err)
+
+	assert.False(t, tableExistsForTest(t, raw, "forge_repo_routes"))
+	hasLifecycle, err := hasColumn(raw, "forge_repos", "lifecycle_state")
+	require.NoError(err)
+	assert.False(t, hasLifecycle)
+	assertIndexForTest(t, raw, "forge_repos", "idx_repos_platform_repo_id",
+		[]string{"platform", "platform_host", "platform_repo_id"}, true)
+	assertUniqueIndexForTest(t, raw, "forge_repos",
+		"idx_repos_platform_repo_id", true)
+	assertIndexForTest(t, raw, "forge_repos", "idx_repos_provider_path_key",
+		[]string{"platform", "platform_host", "repo_path_key"}, true)
+	assertUniqueIndexForTest(t, raw, "forge_repos",
+		"idx_repos_provider_path_key", true)
+	_, err = raw.Exec(`
+		INSERT INTO forge_repos (
+			platform, platform_host, platform_repo_id,
+			owner, name, repo_path, owner_key, name_key, repo_path_key
+		) VALUES (
+			'github', 'github.com', 'provider-2',
+			'org-a', 'project-a', 'org-a/project-b',
+			'org-a', 'project-b', 'org-a/project-b'
+		)`)
+	require.Error(err)
+	assertDatabaseIntegrityForTest(t, raw)
+	require.NoError(raw.Close())
+}
+
+func TestRepositoryCatalogMigrationDownRejectsRouteCollisions(t *testing.T) {
+	require := require.New(t)
+	dbPath := filepath.Join(t.TempDir(), "repository-catalog-collision-v45.db")
+	database, err := Open(dbPath)
+	require.NoError(err)
+	_, err = database.WriteDB().Exec(`
+		INSERT INTO forge_repos (
+			id, platform, platform_host, platform_repo_id,
+			owner, name, repo_path, owner_key, name_key, repo_path_key,
+			lifecycle_state
+		) VALUES
+			(1, 'github', 'github.com', 'provider-old',
+			 'org-a', 'project-a', 'org-a/project-a',
+			 'org-a', 'project-a', 'org-a/project-a', 'inactive'),
+			(2, 'github', 'github.com', 'provider-new',
+			 'org-a', 'project-a', 'org-a/project-a',
+			 'org-a', 'project-a', 'org-a/project-a', 'active');
+		INSERT INTO forge_repo_routes (
+			repo_id, platform, platform_host,
+			owner, name, repo_path, owner_key, name_key, repo_path_key,
+			is_current, first_seen_at, last_seen_at
+		) VALUES
+			(1, 'github', 'github.com',
+			 'org-a', 'project-a', 'org-a/project-a',
+			 'org-a', 'project-a', 'org-a/project-a',
+			 0, '2026-01-01T00:00:00Z', '2026-02-01T00:00:00Z'),
+			(2, 'github', 'github.com',
+			 'org-a', 'project-a', 'org-a/project-a',
+			 'org-a', 'project-a', 'org-a/project-a',
+			 1, '2026-02-02T00:00:00Z', '2026-02-02T00:00:00Z');
+		INSERT INTO forge_issues (
+			id, repo_id, platform_id, number,
+			created_at, updated_at, last_activity_at
+		) VALUES (
+			11, 1, 101, 1,
+			'2026-01-03T00:00:00Z', '2026-01-03T00:00:00Z',
+			'2026-01-03T00:00:00Z'
+		)`)
+	require.NoError(err)
+	require.NoError(database.Close())
+
+	raw, migrator := openMigratorForTest(t, dbPath)
+	raw.SetMaxOpenConns(1)
+	_, err = raw.Exec(`PRAGMA foreign_keys = OFF`)
+	require.NoError(err)
+	err = migrator.Migrate(44)
+	require.Error(err)
+	_, enableErr := raw.Exec(`PRAGMA foreign_keys = ON`)
+	require.NoError(enableErr)
+
+	var repositoryCount, issueCount int
+	require.NoError(raw.QueryRow(`SELECT COUNT(*) FROM forge_repos`).Scan(
+		&repositoryCount,
+	))
+	require.NoError(raw.QueryRow(`SELECT COUNT(*) FROM forge_issues`).Scan(
+		&issueCount,
+	))
+	assert.Equal(t, 2, repositoryCount)
+	assert.Equal(t, 1, issueCount)
+	require.NoError(raw.Close())
+}
+
 func TestOpenMigratesRateLimitsToPrincipals(t *testing.T) {
 	require := require.New(t)
 	path := filepath.Join(t.TempDir(), "rate-v38.db")
@@ -902,11 +1174,14 @@ func TestOpenCasefoldsDuplicateRepositoryRows(t *testing.T) {
 	require.NoError(err)
 	t.Cleanup(func() { require.NoError(d.Close()) })
 
-	repos, err := d.ListRepos(t.Context())
+	repos, err := d.ListRepositoryCatalog(
+		t.Context(), RepositoryCatalogFilter{},
+	)
 	require.NoError(err)
 	require.Len(repos, 1)
-	require.Equal("org", repos[0].Owner)
-	require.Equal("foo", repos[0].Name)
+	require.Equal("org", repos[0].Repository.Owner)
+	require.Equal("foo", repos[0].Repository.Name)
+	require.Equal(RepositoryLifecycleInactive, repos[0].Lifecycle)
 
 	var prCount int
 	err = d.ReadDB().QueryRow(`SELECT COUNT(*) FROM forge_merge_requests`).Scan(&prCount)
@@ -1405,6 +1680,24 @@ func assertIndexForTest(
 	assert.Equal(expectedColumns, actualColumns)
 }
 
+func assertUniqueIndexForTest(
+	t *testing.T,
+	db *sql.DB,
+	table string,
+	index string,
+	expectedUnique bool,
+) {
+	t.Helper()
+	var actualUnique bool
+	err := db.QueryRow(`
+		SELECT "unique"
+		FROM pragma_index_list(?)
+		WHERE name = ?`, table, index,
+	).Scan(&actualUnique)
+	require.NoError(t, err)
+	assert.Equal(t, expectedUnique, actualUnique)
+}
+
 func archiveItemInsertForTest(
 	itemType string,
 	itemNumber int,
@@ -1608,6 +1901,24 @@ func openAtVersionForTest(t *testing.T, dbPath string, version uint, seed func(*
 	}
 	seed(raw)
 	require.NoError(raw.Close())
+}
+
+func openMigratorForTest(t *testing.T, dbPath string) (*sql.DB, *migrate.Migrate) {
+	t.Helper()
+	require := require.New(t)
+	raw, err := sql.Open("sqlite", dbPath+"?_pragma=foreign_keys(1)")
+	require.NoError(err)
+	sourceDriver, err := iofs.New(migrationFiles, "migrations")
+	require.NoError(err)
+	databaseDriver, err := migratesqlite.WithInstance(raw, &migratesqlite.Config{
+		MigrationsTable: migrationTableName,
+	})
+	require.NoError(err)
+	migrator, err := migrate.NewWithInstance(
+		"iofs", sourceDriver, "sqlite", databaseDriver,
+	)
+	require.NoError(err)
+	return raw, migrator
 }
 
 func assertDatabaseIntegrityForTest(t *testing.T, raw *sql.DB) {

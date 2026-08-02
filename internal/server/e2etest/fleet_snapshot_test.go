@@ -964,10 +964,11 @@ func TestFleetOperationProxyRoutesSelfNestedOwnerE2E(t *testing.T) {
 	ctx := context.Background()
 
 	repoID, err := database.UpsertRepo(ctx, dbpkg.RepoIdentity{
-		Platform:     "gitlab",
-		PlatformHost: "gitlab.com",
-		Owner:        "group/subgroup",
-		Name:         "widget",
+		Platform:       "gitlab",
+		PlatformHost:   "gitlab.com",
+		PlatformRepoID: "gid://gitlab/Project/7007",
+		Owner:          "group/subgroup",
+		Name:           "widget",
 	})
 	require.NoError(err)
 	now := time.Now().UTC().Truncate(time.Second)
@@ -1274,7 +1275,9 @@ func TestFleetSnapshotDraftFoldE2E(t *testing.T) {
 	ts, database := bootFleetServer(t, nil)
 	ctx := context.Background()
 
-	repoID, err := database.UpsertRepo(ctx, dbpkg.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := database.UpsertRepo(ctx, verifiedRepoIdentity(
+		dbpkg.GitHubRepoIdentity("github.com", "acme", "widget"),
+	))
 	require.NoError(err)
 
 	now := time.Now().UTC().Truncate(time.Second)

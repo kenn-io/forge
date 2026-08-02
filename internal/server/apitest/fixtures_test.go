@@ -22,7 +22,10 @@ import (
 )
 
 var defaultTestRepos = []ghclient.RepoRef{
-	{Platform: "github", Owner: "acme", Name: "widget", PlatformHost: "github.com"},
+	{
+		Platform: "github", Owner: "acme", Name: "widget",
+		PlatformHost: "github.com", PlatformExternalID: "repo-acme-widget",
+	},
 }
 
 func setupTestServer(t *testing.T) (*server.Server, *db.DB) {
@@ -133,7 +136,7 @@ func seedPR(t *testing.T, database *db.DB, owner, name string, number int, opts 
 	t.Helper()
 	ctx := t.Context()
 
-	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", owner, name))
+	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", owner, name))
 	require.NoError(t, err)
 
 	numberText := strconv.Itoa(number)
@@ -190,7 +193,7 @@ func seedPROnHost(
 	t.Helper()
 	ctx := t.Context()
 
-	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity(host, owner, name))
+	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity(host, owner, name))
 	require.NoError(t, err)
 
 	now := time.Now().UTC().Truncate(time.Second)
@@ -226,7 +229,7 @@ func seedPROnHost(
 func seedIssue(t *testing.T, database *db.DB, owner, name string, number int, state string) int64 {
 	t.Helper()
 	ctx := t.Context()
-	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", owner, name))
+	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", owner, name))
 	require.NoError(t, err)
 
 	now := time.Now().UTC().Truncate(time.Second)
@@ -257,7 +260,7 @@ func seedIssueWithLabels(t *testing.T, database *db.DB, owner, name string, numb
 func seedIssueWithAssignees(t *testing.T, database *db.DB, owner, name string, number int, state string, assigneesJSON string) int64 {
 	t.Helper()
 	ctx := t.Context()
-	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", owner, name))
+	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", owner, name))
 	require.NoError(t, err)
 
 	now := time.Now().UTC().Truncate(time.Second)
@@ -274,4 +277,10 @@ func seedIssueWithAssignees(t *testing.T, database *db.DB, owner, name string, n
 	issueID, err := database.UpsertIssue(ctx, issue)
 	require.NoError(t, err)
 	return issueID
+}
+
+func verifiedGitHubRepoIdentity(host, owner, name string) db.RepoIdentity {
+	identity := db.GitHubRepoIdentity(host, owner, name)
+	identity.PlatformRepoID = "repo-" + owner + "-" + name
+	return identity
 }

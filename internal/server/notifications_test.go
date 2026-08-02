@@ -21,7 +21,7 @@ import (
 func seedServerNotification(t *testing.T, database *db.DB) int64 {
 	t.Helper()
 	require := require.New(t)
-	repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	number := 42
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
@@ -129,7 +129,7 @@ func TestNotificationsAPIMapsNeutralFieldsToExistingGitHubJSON(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	database := openTestDB(t)
-	repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
 	number := 42
@@ -191,7 +191,7 @@ func TestNotificationsAPIShowsClosedLinkedItemsAsDone(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	database := openTestDB(t)
-	repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
 	closedAt := now.Add(time.Hour)
@@ -243,7 +243,7 @@ func TestNotificationsAPIReclosesLinkedItemsAfterUndone(t *testing.T) {
 	require := require.New(t)
 	check := assert.New(t)
 	database := openTestDB(t)
-	repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
 	closedAt := now.Add(time.Hour)
@@ -298,9 +298,9 @@ func TestNotificationsAPIUsesActiveTrackedRepos(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	database := openTestDB(t)
-	trackedRepoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	trackedRepoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
-	removedRepoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "removed"))
+	removedRepoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "removed"))
 	require.NoError(err)
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
 	require.NoError(database.UpsertNotifications(t.Context(), []db.Notification{
@@ -337,9 +337,9 @@ func TestNotificationsAPIAcceptsProviderAndHostQualifiedRepoFilter(t *testing.T)
 	require := require.New(t)
 	assert := assert.New(t)
 	database := openTestDB(t)
-	githubRepoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	githubRepoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
-	gheRepoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("ghe.example.com", "acme", "widget"))
+	gheRepoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("ghe.example.com", "acme", "widget"))
 	require.NoError(err)
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
 	require.NoError(database.UpsertNotifications(t.Context(), []db.Notification{
@@ -534,9 +534,9 @@ func TestNotificationsAPIRejectsNilConfigAccess(t *testing.T) {
 func TestNotificationsAPIBulkMutationsScopeToTrackedRepos(t *testing.T) {
 	require := require.New(t)
 	database := openTestDB(t)
-	trackedRepoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	trackedRepoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
-	removedRepoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "removed"))
+	removedRepoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "removed"))
 	require.NoError(err)
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
 	require.NoError(database.UpsertNotifications(t.Context(), []db.Notification{
@@ -704,4 +704,58 @@ func TestNotificationsAPIBulkReportsMissingIDs(t *testing.T) {
 			tt.verify(t.Context(), check, database, id)
 		})
 	}
+}
+
+func TestNotificationsAPIRouteFieldsFollowRepositoryRename(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := openTestDB(t)
+	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
+	_, _, err := database.ReconcileRepositoryObservation(t.Context(), db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "R_widget", Owner: "acme", Name: "widget",
+	}, now)
+	require.NoError(err)
+	number := 42
+	require.NoError(database.UpsertNotifications(t.Context(), []db.Notification{{
+		Platform:               "github",
+		PlatformHost:           "github.com",
+		PlatformNotificationID: "thread-rename",
+		RepoOwner:              "acme",
+		RepoName:               "widget",
+		SubjectType:            "PullRequest",
+		SubjectTitle:           "Review requested",
+		WebURL:                 "https://github.com/acme/widget/pull/42",
+		ItemNumber:             &number,
+		ItemType:               "pr",
+		ItemAuthor:             "octocat",
+		Reason:                 "review_requested",
+		Unread:                 true,
+		Participating:          true,
+		SourceUpdatedAt:        now,
+		SyncedAt:               now,
+	}}))
+	_, _, err = database.ReconcileRepositoryObservation(t.Context(), db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "R_widget", Owner: "acme", Name: "gadget",
+	}, now.Add(time.Hour))
+	require.NoError(err)
+
+	s := New(database, nil, nil, "/", notificationsEnabledConfig(), ServerOptions{})
+	ts := httptest.NewServer(s)
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/api/v1/notifications?state=unread")
+	require.NoError(err)
+	defer resp.Body.Close()
+	require.Equal(http.StatusOK, resp.StatusCode)
+	var listed notificationsResponse
+	require.NoError(json.NewDecoder(resp.Body).Decode(&listed))
+	require.Len(listed.Items, 1)
+	assert.Equal("acme", listed.Items[0].RepoOwner)
+	assert.Equal("gadget", listed.Items[0].RepoName)
+	assert.Equal("acme/gadget", listed.Items[0].RepoPath)
+	assert.Equal(1, listed.Summary.ByRepo["github.com/acme/gadget"],
+		"summary must group by the current route")
+	assert.NotContains(listed.Summary.ByRepo, "github.com/acme/widget")
 }

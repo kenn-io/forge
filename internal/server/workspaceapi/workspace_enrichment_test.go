@@ -89,8 +89,10 @@ func TestWorkspaceEnrichmentRestoresDivergenceAfterObserverHealsUpstream(t *test
 	runGit(t, worktree, "config", "--unset", "branch.feature.merge")
 
 	database := dbtest.Open(t)
+	identity := db.GitHubRepoIdentity("github.com", "acme", "widget")
+	identity.PlatformRepoID = "repo-acme-widget"
 	repoID, err := database.UpsertRepo(
-		t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"),
+		t.Context(), identity,
 	)
 	require.NoError(err)
 	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)

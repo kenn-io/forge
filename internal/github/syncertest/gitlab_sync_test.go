@@ -287,6 +287,14 @@ func TestGitLabArchiveIssueLifecyclePersistsCloseActorInReport(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.EscapedPath() {
+		case "/api/v4/projects/42":
+			_, _ = w.Write([]byte(`{
+				"id": 42,
+				"path": "project",
+				"path_with_namespace": "group/project",
+				"web_url": "https://gitlab.example.com/group/project",
+				"default_branch": "main"
+			}`))
 		case "/api/v4/projects/42/issues/7":
 			_, _ = w.Write([]byte(`{
 				"id": 2001, "iid": 7, "project_id": 42,

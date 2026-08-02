@@ -125,7 +125,9 @@ func (d *DB) ListStacksWithMembers(ctx context.Context, repoFilter string) ([]St
 		if strings.Count(pathKey, "/") > 1 {
 			var exists int
 			err := d.ro.QueryRowContext(ctx,
-				`SELECT 1 FROM forge_repos WHERE repo_path_key = ? LIMIT 1`,
+				`SELECT 1 FROM forge_repos
+				 WHERE repo_path_key = ? AND lifecycle_state = 'active'
+				 LIMIT 1`,
 				pathKey,
 			).Scan(&exists)
 			if errors.Is(err, sql.ErrNoRows) {
@@ -142,6 +144,7 @@ func (d *DB) ListStacksWithMembers(ctx context.Context, repoFilter string) ([]St
 		SELECT 1 FROM forge_stack_members sm2
 		JOIN forge_merge_requests p2 ON p2.id = sm2.merge_request_id
 		WHERE sm2.stack_id = s.id AND p2.state = 'open')`)
+	conds = append(conds, "r.lifecycle_state = 'active'")
 
 	where := "WHERE " + strings.Join(conds, " AND ")
 

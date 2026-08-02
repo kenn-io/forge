@@ -1077,12 +1077,19 @@ func setupTestServerWithMock(t *testing.T, mock *mockGH) (*Server, *db.DB) {
 
 var defaultTestRepos = []ghclient.RepoRef{
 	{
-		Platform:     "github",
-		Owner:        "acme",
-		Name:         "widget",
-		PlatformHost: "github.com",
-		CloneURL:     "https://github.com/acme/widget.git",
+		Platform:           "github",
+		Owner:              "acme",
+		Name:               "widget",
+		PlatformHost:       "github.com",
+		PlatformExternalID: "repo-acme-widget",
+		CloneURL:           "https://github.com/acme/widget.git",
 	},
+}
+
+func verifiedGitHubRepoIdentity(host, owner, name string) db.RepoIdentity {
+	identity := db.GitHubRepoIdentity(host, owner, name)
+	identity.PlatformRepoID = "repo-" + strings.ToLower(owner+"-"+name)
+	return identity
 }
 
 func setupTestServerWithRepos(
@@ -1097,6 +1104,24 @@ func setupTestServerWithReposAndOptions(
 	t.Helper()
 
 	database := dbtest.Open(t)
+	repos = append([]ghclient.RepoRef(nil), repos...)
+	for i := range repos {
+		repo := &repos[i]
+		if repo.PlatformExternalID == "" {
+			repo.PlatformExternalID = "repo-" + repo.Owner + "-" + repo.Name
+		}
+		_, err := database.UpsertRepo(
+			t.Context(), platform.DBRepoIdentity(platform.RepoRef{
+				Platform:           platform.Kind(repo.Platform),
+				Host:               repo.PlatformHost,
+				Owner:              repo.Owner,
+				Name:               repo.Name,
+				RepoPath:           repo.RepoPath,
+				PlatformExternalID: repo.PlatformExternalID,
+			}),
+		)
+		require.NoError(t, err)
+	}
 
 	syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": mock}, database, nil, repos, time.Minute, nil, nil)
 	// Drain any TriggerRun goroutines (fired by handlers like
@@ -1279,7 +1304,7 @@ func seedPR(t *testing.T, database *db.DB, owner, name string, number int, opts 
 	t.Helper()
 	ctx := t.Context()
 
-	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", owner, name))
+	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", owner, name))
 	require.NoError(t, err)
 
 	numberText := strconv.Itoa(number)
@@ -1783,7 +1808,7 @@ func TestAPIPullResponsesNormalizeMissingKanbanStateToNew(t *testing.T) {
 	srv, database := setupTestServer(t)
 	ctx := t.Context()
 
-	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	now := time.Now().UTC().Truncate(time.Second)
 	mrID, err := database.UpsertMergeRequest(ctx, &db.MergeRequest{
@@ -1835,7 +1860,7 @@ func TestAPIGetPullIncludesCIChecks(t *testing.T) {
 	srv, database := setupTestServer(t)
 	ctx := t.Context()
 
-	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	now := time.Now().UTC().Truncate(time.Second)
 	checksJSON := `[{"name":"build","status":"completed","conclusion":"success","url":"https://ci.example/build"},` +
@@ -1878,7 +1903,7 @@ func TestAPIGetPullToleratesMalformedCIChecks(t *testing.T) {
 	srv, database := setupTestServer(t)
 	ctx := t.Context()
 
-	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	now := time.Now().UTC().Truncate(time.Second)
 	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
@@ -3097,7 +3122,7 @@ func TestAPIApproveWorkflows(t *testing.T) {
 
 	srv, database := setupTestServerWithMock(t, mock)
 	seedPR(t, database, "acme", "widget", 1)
-	repo, err := database.GetRepoByIdentity(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repo, err := database.GetRepoByIdentity(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotNil(repo)
 	require.NoError(database.UpdateMRWorkflowApproval(
@@ -3642,7 +3667,7 @@ func TestAPIGetPullNoDiffWarningWhenSHAsPresent(t *testing.T) {
 
 	seedPR(t, database, "acme", "widget", 2)
 
-	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	headSHA := "deadbeef00000000000000000000000000000001"
 	baseSHA := "deadbeef00000000000000000000000000000010"
@@ -3691,7 +3716,7 @@ func TestAPIGetPullEmitsStaleDiffWarning(t *testing.T) {
 
 	seedPR(t, database, "acme", "widget", 3)
 
-	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	// Platform reports the latest head; the recorded diff SHAs are from
 	// an earlier push that no longer matches.
@@ -3742,7 +3767,7 @@ func TestAPIGetPullEmitsStaleDiffWarningOnBaseDrift(t *testing.T) {
 
 	seedPR(t, database, "acme", "widget", 4)
 
-	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	// Head matches, but the platform base advanced past the recorded
 	// diff base — for example a merge landed on main after the diff
@@ -3796,7 +3821,7 @@ func TestAPIGetPullEmitsStaleDiffWarningOnMergedPR(t *testing.T) {
 
 	seedPR(t, database, "acme", "widget", 5)
 
-	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	now := time.Now().UTC().Truncate(time.Second)
 	mergedAt := now
@@ -3849,7 +3874,7 @@ func TestAPIGetPullEmitsDiffWarningWhenSHAsMissingClosed(t *testing.T) {
 
 	seedPR(t, database, "acme", "widget", 6)
 
-	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	now := time.Now().UTC().Truncate(time.Second)
 	closedAt := now
@@ -3896,7 +3921,7 @@ func TestAPIGetPullEmitsStaleDiffWarningOnClosedPR(t *testing.T) {
 
 	seedPR(t, database, "acme", "widget", 7)
 
-	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	now := time.Now().UTC().Truncate(time.Second)
 	closedAt := now
@@ -3947,7 +3972,7 @@ func TestAPIGetPullNoDiffWarningOnMergedPRWithBaseDrift(t *testing.T) {
 
 	seedPR(t, database, "acme", "widget", 8)
 
-	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	now := time.Now().UTC().Truncate(time.Second)
 	mergedAt := now
@@ -4042,7 +4067,7 @@ func TestAPISyncPRSanitizesDiffFailureWarning(t *testing.T) {
 	t.Cleanup(syncer.Stop)
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 
-	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	_, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	client := setupTestClient(t, srv)
 	resp, err := client.HTTP.SyncPullWithResponse(
@@ -4113,7 +4138,7 @@ func TestAPIListRepos(t *testing.T) {
 	srv, database := setupTestServer(t)
 	client := setupTestClient(t, srv)
 
-	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	_, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
 	resp, err := client.HTTP.ListReposWithResponse(t.Context())
@@ -4125,6 +4150,82 @@ func TestAPIListRepos(t *testing.T) {
 	require.Equal("widget", (*resp.JSON200)[0].Name)
 }
 
+func TestAPIRouteReuseServesOnlyCurrentRepository(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	ctx := t.Context()
+
+	oldEntry, err := database.GetRepositoryByProviderID(
+		ctx, "github", "github.com", "repo-acme-widget",
+	)
+	require.NoError(err)
+	require.NotNil(oldEntry)
+	seedPRForRepo(
+		t, database, oldEntry.Repository.ID,
+		"github.com", "acme", "widget", 7,
+		withSeedPRTitle("historical pull request"),
+	)
+	seedIssueForRepo(
+		t, database, oldEntry.Repository.ID,
+		"github.com", "acme", "widget", 8, "open", "historical issue",
+	)
+
+	newEntry, _, err := database.ReconcileRepositoryObservation(ctx, db.RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "repo-acme-widget-replacement",
+		Owner:          "acme",
+		Name:           "widget",
+	}, time.Now().UTC().Add(time.Second))
+	require.NoError(err)
+	require.NotNil(newEntry)
+	seedPRForRepo(
+		t, database, newEntry.Repository.ID,
+		"github.com", "acme", "widget", 7,
+		withSeedPRTitle("current pull request"),
+	)
+	seedIssueForRepo(
+		t, database, newEntry.Repository.ID,
+		"github.com", "acme", "widget", 8, "open", "current issue",
+	)
+
+	repos := doJSON(t, srv, http.MethodGet, "/api/v1/repos", nil)
+	require.Equal(http.StatusOK, repos.Code, repos.Body.String())
+	var repoBody []map[string]any
+	require.NoError(json.NewDecoder(repos.Body).Decode(&repoBody))
+	require.Len(repoBody, 1)
+
+	pulls := doJSON(t, srv, http.MethodGet, "/api/v1/pulls", nil)
+	require.Equal(http.StatusOK, pulls.Code, pulls.Body.String())
+	var pullBody []pullapi.MergeRequestResponse
+	require.NoError(json.NewDecoder(pulls.Body).Decode(&pullBody))
+	require.Len(pullBody, 1)
+	assert.Equal("current pull request", pullBody[0].Title)
+	pullDetail := doJSON(
+		t, srv, http.MethodGet, "/api/v1/pulls/gh/acme/widget/7", nil,
+	)
+	require.Equal(http.StatusOK, pullDetail.Code, pullDetail.Body.String())
+	var pullDetailBody pullapi.MergeRequestDetailResponse
+	require.NoError(json.NewDecoder(pullDetail.Body).Decode(&pullDetailBody))
+	require.NotNil(pullDetailBody.MergeRequest)
+	assert.Equal("current pull request", pullDetailBody.MergeRequest.Title)
+
+	issues := doJSON(t, srv, http.MethodGet, "/api/v1/issues", nil)
+	require.Equal(http.StatusOK, issues.Code, issues.Body.String())
+	var issueBody []issueapi.IssueResponse
+	require.NoError(json.NewDecoder(issues.Body).Decode(&issueBody))
+	require.Len(issueBody, 1)
+	assert.Equal("current issue", issueBody[0].Title)
+
+	historical, err := database.GetMergeRequestByRepoIDAndNumber(
+		ctx, oldEntry.Repository.ID, 7,
+	)
+	require.NoError(err)
+	require.NotNil(historical)
+	assert.Equal("historical pull request", historical.Title)
+}
+
 func TestAPIConfiguredRepoFiltersUseProviderIdentity(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -4133,19 +4234,21 @@ func TestAPIConfiguredRepoFiltersUseProviderIdentity(t *testing.T) {
 	client := setupTestClientWithBaseURL(t, srv, "http://127.0.0.1:8091")
 
 	_, err := database.UpsertRepo(ctx, db.RepoIdentity{
-		Platform:     "github",
-		PlatformHost: "github.com",
-		Owner:        "acme",
-		Name:         "widget",
-		RepoPath:     "acme/widget",
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "github-widget",
+		Owner:          "acme",
+		Name:           "widget",
+		RepoPath:       "acme/widget",
 	})
 	require.NoError(err)
 	_, err = database.UpsertRepo(ctx, db.RepoIdentity{
-		Platform:     "gitea",
-		PlatformHost: "github.com",
-		Owner:        "acme",
-		Name:         "widget",
-		RepoPath:     "acme/widget",
+		Platform:       "gitea",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "gitea-widget",
+		Owner:          "acme",
+		Name:           "widget",
+		RepoPath:       "acme/widget",
 	})
 	require.NoError(err)
 	srv.syncer.SetRepos([]ghclient.RepoRef{{
@@ -4614,6 +4717,14 @@ func TestAPIGitLabSyncReadsTokenFileAfterRotation(t *testing.T) {
 		tokens = append(tokens, r.Header.Get("Private-Token"))
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.EscapedPath() {
+		case "/api/v4/projects/42":
+			_, _ = fmt.Fprint(w, `{
+				"id": 42,
+				"path": "project",
+				"path_with_namespace": "group/project",
+				"web_url": "https://gitlab.example.com/group/project",
+				"default_branch": "main"
+			}`)
 		case "/api/v4/projects/42/merge_requests/7":
 			_, _ = fmt.Fprint(w, `{
 				"id": 7001,
@@ -4795,7 +4906,7 @@ func TestAPIGitHubSyncReadsCloneTokenFileAfterRotation(t *testing.T) {
 	}
 
 	database := dbtest.Open(t)
-	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	clones := gitclone.New(filepath.Join(dir, "clones"), gitclone.HostSources{
 		"github.com": source,
@@ -5955,7 +6066,7 @@ func TestAPIListRepoSummaries(t *testing.T) {
 
 	_, err := testutil.SeedFixtures(context.Background(), database)
 	require.NoError(err)
-	widgetsRepo, err := database.GetRepoByIdentity(context.Background(), db.GitHubRepoIdentity("github.com", "acme", "widgets"))
+	widgetsRepo, err := database.GetRepoByIdentity(context.Background(), verifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
 	require.NoError(err)
 	require.NotNil(widgetsRepo)
 	publishedAt := time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC)
@@ -6056,7 +6167,7 @@ platform_host = "ghe.example.com"
 `, &mockGH{})
 
 	_, err := database.UpsertRepo(
-		t.Context(), db.GitHubRepoIdentity("ghe.example.com", "acme", "widgets"),
+		t.Context(), verifiedGitHubRepoIdentity("ghe.example.com", "acme", "widgets"),
 	)
 	require.NoError(err)
 	srv.syncer.SetRepos([]ghclient.RepoRef{{
@@ -6279,7 +6390,7 @@ func TestAPIListRepoSummariesClearsStaleOverviewWhenTagFallbackFails(t *testing.
 
 	database := dbtest.Open(t)
 
-	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "tagless"))
+	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "tagless"))
 	require.NoError(err)
 
 	publishedAt := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
@@ -6406,7 +6517,7 @@ func TestAPICreateIssue(t *testing.T) {
 	)
 	client := setupTestClient(t, srv)
 
-	_, err := database.UpsertRepo(context.Background(), db.GitHubRepoIdentity("github.com", "acme", "widgets"))
+	_, err := database.UpsertRepo(context.Background(), verifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
 	require.NoError(err)
 
 	resp, err := client.HTTP.CreateIssueWithResponse(
@@ -6462,7 +6573,7 @@ func TestAPICreateIssueRejectsNilProviderPayload(t *testing.T) {
 	)
 	client := setupTestClient(t, srv)
 
-	repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widgets"))
+	repoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
 	require.NoError(err)
 
 	resp, err := client.HTTP.CreateIssueWithResponse(
@@ -6796,9 +6907,9 @@ func TestAPICreateIssueUsesPlatformHost(t *testing.T) {
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 
-	_, err := database.UpsertRepo(context.Background(), db.GitHubRepoIdentity("github.com", "acme", "widgets"))
+	_, err := database.UpsertRepo(context.Background(), verifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
 	require.NoError(err)
-	enterpriseRepoID, err := database.UpsertRepo(context.Background(), db.GitHubRepoIdentity("ghe.example.com", "acme", "widgets"))
+	enterpriseRepoID, err := database.UpsertRepo(context.Background(), verifiedGitHubRepoIdentity("ghe.example.com", "acme", "widgets"))
 	require.NoError(err)
 
 	client := setupTestClient(t, srv)
@@ -7253,7 +7364,7 @@ func TestAPICommentAutocomplete(t *testing.T) {
 	srv, database := setupTestServer(t)
 	ctx := t.Context()
 
-	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	prID, err := database.UpsertMergeRequest(ctx, &db.MergeRequest{
 		RepoID:         repoID,
@@ -7321,10 +7432,11 @@ func TestAPICommentAutocomplete(t *testing.T) {
 	assert.Equal(http.StatusBadRequest, bangRR.Code, bangRR.Body.String())
 
 	gitlabRepoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
-		Platform:     "gitlab",
-		PlatformHost: "gitlab.example.com",
-		Owner:        "group",
-		Name:         "project",
+		Platform:       "gitlab",
+		PlatformHost:   "gitlab.example.com",
+		PlatformRepoID: "gid://gitlab/Project/42",
+		Owner:          "group",
+		Name:           "project",
 	})
 	require.NoError(err)
 	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
@@ -7385,7 +7497,7 @@ func TestAPICommentAutocompleteUsesRepoPlatformHost(t *testing.T) {
 	srv, database := setupTestServer(t)
 	ctx := t.Context()
 
-	githubRepoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	githubRepoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
 		RepoID:         githubRepoID,
@@ -7403,7 +7515,7 @@ func TestAPICommentAutocompleteUsesRepoPlatformHost(t *testing.T) {
 	})
 	require.NoError(err)
 
-	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("ghe.example.com", "acme", "widget"))
+	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("ghe.example.com", "acme", "widget"))
 	require.NoError(err)
 	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
 		RepoID:         repoID,
@@ -7439,19 +7551,21 @@ func TestAPICommentAutocompleteReferencesScopesByProvider(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 
 	githubRepoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
-		Platform:     "github",
-		PlatformHost: "github.com",
-		Owner:        "acme",
-		Name:         "widget",
-		RepoPath:     "acme/widget",
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "repo-github-widget",
+		Owner:          "acme",
+		Name:           "widget",
+		RepoPath:       "acme/widget",
 	})
 	require.NoError(err)
 	giteaRepoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
-		Platform:     "gitea",
-		PlatformHost: "github.com",
-		Owner:        "acme",
-		Name:         "widget",
-		RepoPath:     "acme/widget",
+		Platform:       "gitea",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "repo-gitea-widget",
+		Owner:          "acme",
+		Name:           "widget",
+		RepoPath:       "acme/widget",
 	})
 	require.NoError(err)
 
@@ -7503,19 +7617,21 @@ func TestAPICommentAutocompleteGitLabMergeRequestReferencesScopesByProvider(t *t
 	now := time.Now().UTC().Truncate(time.Second)
 
 	giteaRepoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
-		Platform:     "gitea",
-		PlatformHost: "gitlab.example.com",
-		Owner:        "acme",
-		Name:         "widget",
-		RepoPath:     "acme/widget",
+		Platform:       "gitea",
+		PlatformHost:   "gitlab.example.com",
+		PlatformRepoID: "repo-gitea-widget",
+		Owner:          "acme",
+		Name:           "widget",
+		RepoPath:       "acme/widget",
 	})
 	require.NoError(err)
 	gitlabRepoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
-		Platform:     "gitlab",
-		PlatformHost: "gitlab.example.com",
-		Owner:        "acme",
-		Name:         "widget",
-		RepoPath:     "acme/widget",
+		Platform:       "gitlab",
+		PlatformHost:   "gitlab.example.com",
+		PlatformRepoID: "repo-gitlab-widget",
+		Owner:          "acme",
+		Name:           "widget",
+		RepoPath:       "acme/widget",
 	})
 	require.NoError(err)
 
@@ -7798,7 +7914,7 @@ func TestAPITriggerSyncStopsDetailDrainAfterDisabledIndexResult(t *testing.T) {
 		Owner: "acme", Name: "widget",
 	}
 	repoID, err := database.UpsertRepo(
-		ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"),
+		ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(err)
 	for _, number := range []int{1, 2} {
@@ -7886,7 +8002,7 @@ func TestAPIRepositorySyncRecoversDisabledIssueScopeThroughSQLite(t *testing.T) 
 	assert.Equal(int32(1), issueListCalls.Load(),
 		"background sync must suppress the disabled issue scope")
 	repo, err := database.GetRepoByIdentity(
-		ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"),
+		ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(err)
 	require.NotNil(repo)
@@ -8192,7 +8308,7 @@ func TestAPIReadyForReview(t *testing.T) {
 	)
 	client := setupTestClient(t, srv)
 
-	repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
 	now := time.Now().UTC().Truncate(time.Second)
@@ -8381,7 +8497,7 @@ func TestOpenAPIEndpointReflectsHumaContract(t *testing.T) {
 func seedIssue(t *testing.T, database *db.DB, owner, name string, number int, state string) int64 {
 	t.Helper()
 	ctx := t.Context()
-	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", owner, name))
+	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", owner, name))
 	require.NoError(t, err)
 
 	now := time.Now().UTC().Truncate(time.Second)
@@ -8426,7 +8542,7 @@ func seedIssueWithLabels(t *testing.T, database *db.DB, owner, name string, numb
 	t.Helper()
 	ctx := t.Context()
 	issueID := seedIssue(t, database, owner, name, number, state)
-	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", owner, name))
+	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", owner, name))
 	require.NoError(t, err)
 	require.NoError(t, database.ReplaceIssueLabels(ctx, repo.ID, issueID, labels))
 	return issueID
@@ -8440,7 +8556,7 @@ func seedIssueOnHost(
 	t.Helper()
 	ctx := context.Background()
 
-	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity(host, owner, name))
+	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity(host, owner, name))
 	require.NoError(t, err)
 
 	return seedIssueForRepo(t, database, repoID, host, owner, name, number, state, title)
@@ -8484,7 +8600,7 @@ func TestAPIClosePR(t *testing.T) {
 	handlerNow := testEDTTime(9, 15)
 	setTestServerNow(t, srv, handlerNow)
 	seedPR(t, database, "acme", "widget", 1)
-	repo, err := database.GetRepoByIdentity(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repo, err := database.GetRepoByIdentity(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	updatedAt := handlerNow.Add(-time.Hour)
 	number := 1
@@ -8532,7 +8648,7 @@ func TestAPIReopenPR(t *testing.T) {
 	ctx := t.Context()
 
 	// Close it first.
-	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	now := time.Now()
 	require.NoError(database.UpdateMRState(ctx, repo.ID, 1, "closed", nil, &now))
@@ -8557,7 +8673,7 @@ func TestAPIClosePRRejectsMerged(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1)
 	ctx := t.Context()
 
-	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	now := time.Now()
 	require.NoError(database.UpdateMRState(ctx, repo.ID, 1, "merged", &now, &now))
@@ -8769,7 +8885,7 @@ func TestAPISyncPRPreservesCIStatusWhileRefreshingCI(t *testing.T) {
 
 	srv, database := setupTestServerWithMock(t, mock)
 	seedPR(t, database, "acme", "widget", 1, withSeedPRHeadSHA("abc123"))
-	repo, err := database.GetRepoByIdentity(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repo, err := database.GetRepoByIdentity(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotNil(repo)
 	existingChecksJSON := `[{"name":"tests","status":"completed","conclusion":"success"}]`
@@ -8878,7 +8994,7 @@ func TestAPISyncPRBypassesPullRequestETagForCIRefresh(t *testing.T) {
 		withSeedPRHeadSHA(headSHA),
 		withSeedPRCI("failure", `[{"name":"tests","status":"completed","conclusion":"failure"}]`),
 	)
-	repo, err := database.GetRepoByIdentity(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repo, err := database.GetRepoByIdentity(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotNil(repo)
 	require.NoError(database.UpsertHTTPEtag(
@@ -8938,7 +9054,7 @@ func TestAPISyncPRClearsCIWhenHeadSHAChanges(t *testing.T) {
 
 	srv, database := setupTestServerWithMock(t, mock)
 	seedPR(t, database, "acme", "widget", 1, withSeedPRHeadSHA("oldhead"))
-	repo, err := database.GetRepoByIdentity(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repo, err := database.GetRepoByIdentity(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotNil(repo)
 	existingChecksJSON := `[{"name":"tests","status":"completed","conclusion":"success"}]`
@@ -9162,7 +9278,7 @@ func TestAPIReadyForReviewDoesNotGetRevertedByStaleSync(t *testing.T) {
 	srv, database := setupTestServerWithMock(t, mock)
 	client := setupTestClient(t, srv)
 
-	repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
 	prID, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
@@ -9292,7 +9408,7 @@ func TestAPIMarkDraftDoesNotGetRevertedByStaleSync(t *testing.T) {
 	srv, database := setupTestServerWithMock(t, mock)
 	client := setupTestClient(t, srv)
 
-	repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
 	prID, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
@@ -9489,7 +9605,7 @@ func TestAPISyncIssueNilUpdatedAtFallsBackToCreatedAt(t *testing.T) {
 
 	srv, database := setupTestServerWithMock(t, mock)
 	seedIssue(t, database, "acme", "widget", 9, "open")
-	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	_, err = database.WriteDB().ExecContext(ctx, `
 		UPDATE forge_issues
@@ -9535,7 +9651,7 @@ func TestAPIListPullsSearchByNumber(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 290, withSeedPRTitle("another change"))
 	seedPR(t, database, "tools", "worker", 301, withSeedPRTitle("repair bug"))
 	seedPR(t, database, "docs", "reader", 302, withSeedPRTitle("can't reproduce"))
-	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NoError(database.ReplaceMergeRequestLabels(ctx, repo.ID, prID, []db.Label{{
 		PlatformID: 200,
@@ -9600,7 +9716,7 @@ func TestAPIListIssuesSearchByNumber(t *testing.T) {
 	seedIssueOnHost(t, database, "github.com", "acme", "widget", 290, "open", "another change")
 	seedIssueOnHost(t, database, "github.com", "tools", "worker", 301, "open", "triage bug")
 	seedIssueOnHost(t, database, "github.com", "docs", "reader", 302, "open", "O'Reilly reference")
-	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NoError(database.ReplaceIssueLabels(ctx, repo.ID, issueID, []db.Label{{
 		PlatformID: 300,
@@ -9801,17 +9917,19 @@ func TestAPIListPullsAcceptsProviderQualifiedRepoFilter(t *testing.T) {
 	ctx := t.Context()
 
 	githubRepo, err := database.UpsertRepo(ctx, db.RepoIdentity{
-		Platform:     "github",
-		PlatformHost: "github.com",
-		Owner:        "acme",
-		Name:         "widget",
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "github-widget",
+		Owner:          "acme",
+		Name:           "widget",
 	})
 	require.NoError(err)
 	giteaRepo, err := database.UpsertRepo(ctx, db.RepoIdentity{
-		Platform:     "gitea",
-		PlatformHost: "github.com",
-		Owner:        "acme",
-		Name:         "widget",
+		Platform:       "gitea",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "gitea-widget",
+		Owner:          "acme",
+		Name:           "widget",
 	})
 	require.NoError(err)
 	seedPRForRepo(t, database, githubRepo, "github.com", "acme", "widget", 1)
@@ -9952,17 +10070,19 @@ func TestAPIListIssuesAcceptsProviderQualifiedRepoFilter(t *testing.T) {
 	ctx := t.Context()
 
 	githubRepo, err := database.UpsertRepo(ctx, db.RepoIdentity{
-		Platform:     "github",
-		PlatformHost: "github.com",
-		Owner:        "acme",
-		Name:         "widget",
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "github-widget",
+		Owner:          "acme",
+		Name:           "widget",
 	})
 	require.NoError(err)
 	giteaRepo, err := database.UpsertRepo(ctx, db.RepoIdentity{
-		Platform:     "gitea",
-		PlatformHost: "github.com",
-		Owner:        "acme",
-		Name:         "widget",
+		Platform:       "gitea",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "gitea-widget",
+		Owner:          "acme",
+		Name:           "widget",
 	})
 	require.NoError(err)
 	seedIssueForRepo(t, database, githubRepo, "github.com", "acme", "widget", 1, "open", "GitHub issue")
@@ -10051,10 +10171,11 @@ func TestAPIGetIssueWorkspaceUsesProviderScopedLookup(t *testing.T) {
 	database := dbtest.Open(t)
 	for _, provider := range []string{"github", "gitlab"} {
 		repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
-			Platform:     provider,
-			PlatformHost: "forge.example.com",
-			Owner:        "acme",
-			Name:         "widget",
+			Platform:       provider,
+			PlatformHost:   "forge.example.com",
+			PlatformRepoID: "repo-" + provider + "-widget",
+			Owner:          "acme",
+			Name:           "widget",
 		})
 		require.NoError(err)
 		_, err = database.UpsertIssue(ctx, &db.Issue{
@@ -10135,10 +10256,11 @@ func TestAPIGetPRWorkspaceUsesProviderScopedLookup(t *testing.T) {
 	database := dbtest.Open(t)
 	for _, provider := range []string{"github", "gitlab"} {
 		repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
-			Platform:     provider,
-			PlatformHost: "forge.example.com",
-			Owner:        "acme",
-			Name:         "widget",
+			Platform:       provider,
+			PlatformHost:   "forge.example.com",
+			PlatformRepoID: "repo-" + provider + "-widget",
+			Owner:          "acme",
+			Name:           "widget",
 		})
 		require.NoError(err)
 		_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
@@ -10430,7 +10552,7 @@ func TestAPISyncIssueUsesPlatformHostQuery(t *testing.T) {
 	require.NotNil(withOps.Repo.Operations,
 		"issue sync response must include repo.operations")
 
-	githubRepo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	githubRepo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotNil(githubRepo)
 	githubIssue, err := database.GetIssueByRepoIDAndNumber(
@@ -10440,7 +10562,7 @@ func TestAPISyncIssueUsesPlatformHostQuery(t *testing.T) {
 	require.NotNil(githubIssue)
 	assert.Equal("GitHub stale issue", githubIssue.Title)
 
-	ghesRepo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("ghe.example.com", "acme", "widget"))
+	ghesRepo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("ghe.example.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotNil(ghesRepo)
 	ghesIssue, err := database.GetIssueByRepoIDAndNumber(
@@ -10545,7 +10667,7 @@ func TestAPISetIssueStateUsesPlatformHostBody(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
 
-	githubRepo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	githubRepo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotNil(githubRepo)
 	githubIssue, err := database.GetIssueByRepoIDAndNumber(
@@ -10555,7 +10677,7 @@ func TestAPISetIssueStateUsesPlatformHostBody(t *testing.T) {
 	require.NotNil(githubIssue)
 	assert.Equal("open", githubIssue.State)
 
-	ghesRepo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("ghe.example.com", "acme", "widget"))
+	ghesRepo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("ghe.example.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotNil(ghesRepo)
 	ghesIssue, err := database.GetIssueByRepoIDAndNumber(
@@ -10580,7 +10702,7 @@ func TestAPIIssueDataFromGraphQLSync(t *testing.T) {
 	client := setupTestClient(t, srv)
 
 	// Seed DB directly — same shape as GraphQL sync output.
-	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
 	now := time.Now().UTC().Truncate(time.Second)
@@ -10843,7 +10965,7 @@ func TestE2ELargeRepoSkipsGraphQLAndUsesConditionalPRDetail(t *testing.T) {
 	defer gqlSrv.Close()
 
 	database := dbtest.Open(t)
-	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	for number := 1; number <= 100; number++ {
 		_, err := database.UpsertMergeRequest(ctx, &db.MergeRequest{
@@ -11003,7 +11125,7 @@ func TestE2ELargeRepoSkipsGraphQLAndUsesConditionalIssueDetail(t *testing.T) {
 	defer gqlSrv.Close()
 
 	database := dbtest.Open(t)
-	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	for number := 1; number <= 100; number++ {
 		var fetchedAt *time.Time
@@ -11161,7 +11283,13 @@ func TestE2EGraphQLIssueSyncTrustsTotalCount(t *testing.T) {
 	// detector's slower execution) the fresh GraphQL data would be
 	// blocked and the assertion below would read back the stale 5
 	// — a test-only flake, not a production bug.
-	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "repo-acme-widget",
+		Owner:          "acme",
+		Name:           "widget",
+	})
 	require.NoError(err)
 	stale := now.Add(-time.Second)
 	_, err = database.UpsertIssue(ctx, &db.Issue{
@@ -13240,7 +13368,7 @@ func TestAPISetIssueGitHubStateReturns404WhenNoClientConfigured(t *testing.T) {
 	srv, database := setupTestServerWithRepos(t, &mockGH{}, repos)
 	ctx := t.Context()
 
-	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("ghe.corp.com", "acme", "widget"))
+	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("ghe.corp.com", "acme", "widget"))
 	require.NoError(err)
 	_, err = database.UpsertIssue(ctx, &db.Issue{
 		RepoID:         repoID,
@@ -13765,7 +13893,7 @@ func TestResolveItem_NotFoundOnGitHub(t *testing.T) {
 	}
 	repos := []ghclient.RepoRef{{Owner: "acme", Name: "widget"}}
 	srv, database := setupTestServerWithRepos(t, mock, repos)
-	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	_, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	client := setupTestClient(t, srv)
 
@@ -13788,7 +13916,7 @@ func TestResolveItem_GitHubServerError(t *testing.T) {
 	}
 	repos := []ghclient.RepoRef{{Owner: "acme", Name: "widget"}}
 	srv, database := setupTestServerWithRepos(t, mock, repos)
-	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	_, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	client := setupTestClient(t, srv)
 
@@ -13838,7 +13966,7 @@ func TestAPIGetMRImportMetadata(t *testing.T) {
 	srv, database := setupTestServer(t)
 	ctx := t.Context()
 
-	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
 	now := time.Now().UTC().Truncate(time.Second)
@@ -14001,11 +14129,12 @@ func TestProviderPullRouteResolvesEscapedGitLabRepoPath(t *testing.T) {
 
 	repoPath := "Group/SubGroup/SubGroup 2/My_Project.v2"
 	repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
-		Platform:     "gitlab",
-		PlatformHost: "gitlab.example.com:8443",
-		Owner:        "Group/SubGroup/SubGroup 2",
-		Name:         "My_Project.v2",
-		RepoPath:     repoPath,
+		Platform:       "gitlab",
+		PlatformHost:   "gitlab.example.com:8443",
+		PlatformRepoID: "gid://gitlab/Project/12000",
+		Owner:          "Group/SubGroup/SubGroup 2",
+		Name:           "My_Project.v2",
+		RepoPath:       repoPath,
 	})
 	require.NoError(err)
 	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
@@ -14774,7 +14903,7 @@ func TestAPIResolveItemMapsLookupOutcomes(t *testing.T) {
 			}
 			srv, database := setupTestServerWithMock(t, mock)
 			_, err := database.UpsertRepo(
-				ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"),
+				ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 			)
 			require.NoError(err)
 
@@ -20292,11 +20421,12 @@ func TestProviderIssueRouteGeneratedClientEscapesGitLabRepoPath(t *testing.T) {
 	repoPath := "Team One/Sub Team/project+#1"
 	number := int64(7)
 	repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
-		Platform:     provider,
-		PlatformHost: host,
-		Owner:        "Team One/Sub Team",
-		Name:         "project+#1",
-		RepoPath:     repoPath,
+		Platform:       provider,
+		PlatformHost:   host,
+		PlatformRepoID: "gid://gitlab/Project/7000",
+		Owner:          "Team One/Sub Team",
+		Name:           "project+#1",
+		RepoPath:       repoPath,
 	})
 	require.NoError(err)
 	_, err = database.UpsertIssue(ctx, &db.Issue{
@@ -20336,11 +20466,12 @@ func TestProviderIssueRouteHandlesNestedGitLabRepoPathOverHTTP(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 
 	repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
-		Platform:     "gitlab",
-		PlatformHost: "git.example.com",
-		Owner:        "group/subgroup",
-		Name:         "project",
-		RepoPath:     "group/subgroup/project",
+		Platform:       "gitlab",
+		PlatformHost:   "git.example.com",
+		PlatformRepoID: "gid://gitlab/Project/7007",
+		Owner:          "group/subgroup",
+		Name:           "project",
+		RepoPath:       "group/subgroup/project",
 	})
 	require.NoError(err)
 	_, err = database.UpsertIssue(ctx, &db.Issue{
@@ -20592,7 +20723,7 @@ func TestAPILocalReadEndpointsServeDuringTokenRotationE2E(t *testing.T) {
 	client := setupTestClient(t, srv)
 
 	seedPR(t, database, "acme", "widget", 1)
-	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NoError(database.UpdateDiffSHAs(ctx, repoID, 1, headSHA, mergeBase, mergeBase))
 
@@ -21311,7 +21442,7 @@ func TestAPIGetPullDetailLoaded(t *testing.T) {
 	// Insert a second PR with DetailFetchedAt set.
 	ctx := t.Context()
 	now := time.Now().UTC().Truncate(time.Second)
-	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
 		RepoID:          repoID,
@@ -21346,7 +21477,7 @@ func TestAPIGetPullDetailIncludesDiffSummaryRevisionFields(t *testing.T) {
 
 	srv, database := setupTestServer(t)
 	ctx := t.Context()
-	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
 	now := time.Now().UTC().Truncate(time.Second)
@@ -21554,7 +21685,7 @@ func setupTestServerWithClonesAndServer(t *testing.T) (
 
 	seedPR(t, database, "acme", "widget", 1)
 	ctx := t.Context()
-	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(t, err)
 	require.NoError(t, database.UpdateDiffSHAs(ctx, repoID, 1, headSHA, mergeBase, mergeBase))
 
@@ -21939,7 +22070,7 @@ func TestAPIGetDiff_RootCommit(t *testing.T) {
 
 	seedPR(t, database, "acme", "rootrepo", 1)
 	ctx := t.Context()
-	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "rootrepo"))
+	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "rootrepo"))
 	require.NoError(err)
 	require.NoError(database.UpdateDiffSHAs(ctx, repoID, 1, headSHA, "4b825dc642cb6eb9a060e54bf8d69288fbee4904", "4b825dc642cb6eb9a060e54bf8d69288fbee4904"))
 
@@ -22057,9 +22188,9 @@ func TestAPIListActivityScopesNotificationsToTrackedRepos(t *testing.T) {
 	base := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
 	number := 7
 
-	trackedRepoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	trackedRepoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
-	removedRepoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "removed"))
+	removedRepoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "removed"))
 	require.NoError(err)
 	insertTestActivityPR(t, database, trackedRepoID, "acme", "widget", number, "Tracked notification", base)
 	insertTestActivityPR(t, database, removedRepoID, "acme", "removed", number, "Removed notification", base)
@@ -22124,7 +22255,7 @@ func TestAPIListActivityReturnsDefaultBranchActivity(t *testing.T) {
 	srv, database := setupTestServer(t)
 	ctx := t.Context()
 	base := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
-	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
 	committedAt := base.Add(10 * time.Minute)
@@ -22187,7 +22318,7 @@ func TestAPIListActivityCapsDefaultBranchCommitMetadata(t *testing.T) {
 	srv, database := setupTestServer(t)
 	ctx := t.Context()
 	base := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
-	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
 	committedAt := base.Add(10 * time.Minute)
@@ -22340,36 +22471,39 @@ func TestAPIListActivityReturnsProviderCompareURLsForDefaultBranchForcePushes(t 
 	}{
 		{
 			name:     "github",
-			identity: db.GitHubRepoIdentity("github.com", "acme", "github-widget"),
+			identity: verifiedGitHubRepoIdentity("github.com", "acme", "github-widget"),
 			wantURL:  "https://github.com/acme/github-widget/compare/" + beforeSHA + "..." + afterSHA,
 		},
 		{
 			name: "forgejo",
 			identity: db.RepoIdentity{
-				Platform:     "forgejo",
-				PlatformHost: "codeberg.org",
-				Owner:        "acme",
-				Name:         "forgejo-widget",
+				Platform:       "forgejo",
+				PlatformHost:   "codeberg.org",
+				PlatformRepoID: "forgejo-widget",
+				Owner:          "acme",
+				Name:           "forgejo-widget",
 			},
 			wantURL: "https://codeberg.org/acme/forgejo-widget/compare/" + beforeSHA + "..." + afterSHA,
 		},
 		{
 			name: "gitea",
 			identity: db.RepoIdentity{
-				Platform:     "gitea",
-				PlatformHost: "gitea.com",
-				Owner:        "acme",
-				Name:         "gitea-widget",
+				Platform:       "gitea",
+				PlatformHost:   "gitea.com",
+				PlatformRepoID: "gitea-widget",
+				Owner:          "acme",
+				Name:           "gitea-widget",
 			},
 			wantURL: "https://gitea.com/acme/gitea-widget/compare/" + beforeSHA + "..." + afterSHA,
 		},
 		{
 			name: "gitlab",
 			identity: db.RepoIdentity{
-				Platform:     "gitlab",
-				PlatformHost: "gitlab.com",
-				Owner:        "acme/platform",
-				Name:         "gitlab-widget",
+				Platform:       "gitlab",
+				PlatformHost:   "gitlab.com",
+				PlatformRepoID: "gitlab-widget",
+				Owner:          "acme/platform",
+				Name:           "gitlab-widget",
 			},
 			wantURL: "https://gitlab.com/acme/platform/gitlab-widget/-/compare/" + beforeSHA + "..." + afterSHA,
 		},
@@ -22424,7 +22558,7 @@ func TestAPIListActivityCanHideDefaultBranchActivity(t *testing.T) {
 	client := setupTestClient(t, srv)
 	ctx := t.Context()
 	base := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
-	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	seedPR(t, database, "acme", "widget", 1, withSeedPRTimes(base, base, base))
 	require.NoError(database.UpsertBranchCommits(ctx, []db.BranchCommit{{
@@ -22495,17 +22629,19 @@ func TestAPIListActivityAcceptsProviderQualifiedRepoFilter(t *testing.T) {
 	ctx := t.Context()
 
 	githubRepo, err := database.UpsertRepo(ctx, db.RepoIdentity{
-		Platform:     "github",
-		PlatformHost: "github.com",
-		Owner:        "acme",
-		Name:         "widget",
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "github-widget",
+		Owner:          "acme",
+		Name:           "widget",
 	})
 	require.NoError(err)
 	giteaRepo, err := database.UpsertRepo(ctx, db.RepoIdentity{
-		Platform:     "gitea",
-		PlatformHost: "github.com",
-		Owner:        "acme",
-		Name:         "widget",
+		Platform:       "gitea",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "gitea-widget",
+		Owner:          "acme",
+		Name:           "widget",
 	})
 	require.NoError(err)
 	seedPRForRepo(t, database, githubRepo, "github.com", "acme", "widget", 1)
@@ -22537,10 +22673,11 @@ func TestAPIListActivityKeepsProviderNamedHostsProviderQualified(t *testing.T) {
 	ctx := t.Context()
 
 	repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
-		Platform:     "github",
-		PlatformHost: "gitea",
-		Owner:        "acme/team",
-		Name:         "widget",
+		Platform:       "github",
+		PlatformHost:   "gitea",
+		PlatformRepoID: "github-widget",
+		Owner:          "acme/team",
+		Name:           "widget",
 	})
 	require.NoError(err)
 	seedPRForRepo(t, database, repoID, "gitea", "acme/team", "widget", 1)
@@ -22621,7 +22758,7 @@ func seedStackedPRState(
 ) int64 {
 	t.Helper()
 	ctx := t.Context()
-	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", owner, name))
+	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", owner, name))
 	require.NoError(t, err)
 	cloneURL := fmt.Sprintf("https://github.com/%s/%s.git", owner, name)
 	require.NoError(t, database.UpdateRepoProviderMetadata(ctx, repoID, db.RepoProviderMetadata{
@@ -22656,7 +22793,7 @@ func seedStackedPRState(
 func runStackDetection(t *testing.T, database *db.DB, owner, name string) {
 	t.Helper()
 	ctx := t.Context()
-	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", owner, name))
+	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", owner, name))
 	require.NoError(t, err)
 	require.NotNil(t, repo)
 	require.NoError(t, stacks.RunDetection(ctx, database, repo.ID))
@@ -22798,7 +22935,7 @@ func TestAPIStackBaseConflictMarksDownstreamPRsDirty(t *testing.T) {
 	seedStackedPR(t, database, "acme", "widget", 11, "feat/api-retry", "feat/api-base", db.MergeRequestStateOpen, "success", "APPROVED")
 	runStackDetection(t, database, "acme", "widget")
 
-	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotNil(repo)
 	assert.Empty(requireMR(t, database, repo.ID, 11).MergeableState)
@@ -24012,7 +24149,7 @@ func TestListWorkspacesIncludesItemLastActivityAt(t *testing.T) {
 	client, database, _, _ := setupTestServerWithWorkspaces(t)
 	ctx := t.Context()
 
-	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotNil(repo)
 
@@ -24125,7 +24262,7 @@ func TestListWorkspacesIncludesKataMetadata(t *testing.T) {
 	client, database, _, _ := setupTestServerWithWorkspaces(t)
 	ctx := t.Context()
 
-	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotNil(repo)
 
@@ -28527,7 +28664,7 @@ func TestWorkspaceManualRefreshDiscoversAndSyncsAssociatedPR(t *testing.T) {
 	require.NotNil(stored.AssociatedPRNumber)
 	assert.Equal(42, *stored.AssociatedPRNumber)
 
-	repo, err := fixture.database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repo, err := fixture.database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotNil(repo)
 	pr, err := fixture.database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 42)
@@ -28677,7 +28814,7 @@ func TestKataWorkspaceManualRefreshDiscoversAndSyncsAssociatedPR(t *testing.T) {
 
 	repo, err := fixture.database.GetRepoByIdentity(
 		ctx,
-		db.GitHubRepoIdentity("github.com", "acme", "widget"),
+		verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(err)
 	require.NotNil(repo)
@@ -28765,7 +28902,7 @@ func TestWorkspaceRefreshProceedsThroughIssueScopePartialSyncFailure(t *testing.
 		"the targeted PR-detail refresh must still run")
 
 	repo, err := fixture.database.GetRepoByIdentity(
-		ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"),
+		ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(err)
 	require.NotNil(repo)
@@ -28839,7 +28976,7 @@ func TestWorkspaceRefreshAbortsOnMergeRequestScopePartialSyncFailure(t *testing.
 	ws := createReadyWorkspace(t, ctx, fixture.client)
 
 	repo, err := fixture.database.GetRepoByIdentity(
-		ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"),
+		ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(err)
 	require.NotNil(repo)
@@ -28872,7 +29009,7 @@ func TestWorkspaceRefreshAbortsOnMergeRequestScopePartialSyncFailure(t *testing.
 		"no detail refresh may land on the workspace PR row")
 
 	refreshedRepo, err := fixture.database.GetRepoByIdentity(
-		ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"),
+		ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(err)
 	require.NotNil(refreshedRepo)
@@ -29088,10 +29225,11 @@ func TestWorkspaceCreateGitLabUsesSpecificMergeRequestHeadRefE2E(
 	fixture := setupWorkspaceServerFixtureWithHost(t, nil, platformHost)
 	ctx := t.Context()
 	repoID, err := fixture.database.UpsertRepo(ctx, db.RepoIdentity{
-		Platform:     string(platform.KindGitLab),
-		PlatformHost: platformHost,
-		Owner:        "acme",
-		Name:         "widget",
+		Platform:       string(platform.KindGitLab),
+		PlatformHost:   platformHost,
+		PlatformRepoID: "gid://gitlab/Project/57",
+		Owner:          "acme",
+		Name:           "widget",
 	})
 	require.NoError(err)
 	require.NoError(fixture.database.UpdateRepoProviderMetadata(
@@ -29515,7 +29653,7 @@ func seedPROnHost(
 	t.Helper()
 	ctx := t.Context()
 
-	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity(host, owner, name))
+	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity(host, owner, name))
 	require.NoError(t, err)
 
 	return seedPRForRepo(t, database, repoID, host, owner, name, number, opts...)
@@ -29663,7 +29801,7 @@ func TestAPIEditPRPreservesDerivedFields(t *testing.T) {
 	ctx := t.Context()
 
 	// Seed non-default derived fields so we can detect clobbering.
-	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	now := time.Now().UTC().Truncate(time.Second)
 	require.NoError(database.UpdateMRDerivedFields(ctx, repo.ID, 1, db.MRDerivedFields{
@@ -29751,7 +29889,7 @@ func TestAPIEditIssueMissing404(t *testing.T) {
 	// Register the repo without the issue.
 	_, err := database.UpsertRepo(
 		t.Context(),
-		db.GitHubRepoIdentity("github.com", "acme", "widget"),
+		verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(err)
 
@@ -29782,7 +29920,7 @@ func TestMergeBlocksPredecessorPreservedByNativeStackOverlapFallback(t *testing.
 	seedStackedPR(t, database, "acme", "widget", 101, "feature/b", "feature/a", db.MergeRequestStateMerged, "", "")
 	tipHeadSHA := "sha102"
 	seedStackedPR(t, database, "acme", "widget", 102, "feature/c", "feature/b", db.MergeRequestStateOpen, "", "")
-	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotNil(repo)
 	now := time.Now().UTC()
@@ -29897,10 +30035,18 @@ func TestMergeBlocksPredecessorRestoredWhenNativeStackAgesOut(t *testing.T) {
 		},
 	}
 	srv, database := setupTestServerWithMock(t, mock)
+	_, err := database.UpsertRepo(ctx, db.RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "repo-acme-widget",
+		Owner:          "acme",
+		Name:           "widget",
+	})
+	require.NoError(err)
 	// PR 900 is merged, so the stale native chain shows PR 101 following a
 	// finished predecessor.
 	seedStackedPR(t, database, "acme", "widget", 900, "feature/z", "main", db.MergeRequestStateMerged, "", "")
-	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotNil(repo)
 	require.NoError(database.ReplaceGitHubNativeStack(ctx, db.GitHubNativeStack{
@@ -30022,7 +30168,7 @@ func TestMergeBlocksPredecessorWhenNativeStackRefreshIsPartial(t *testing.T) {
 	}
 	srv, database := setupTestServerWithMock(t, mock)
 	seedStackedPR(t, database, "acme", "widget", 900, "feature/z", "main", db.MergeRequestStateMerged, "", "")
-	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotNil(repo)
 	require.NoError(database.ReplaceGitHubNativeStack(ctx, db.GitHubNativeStack{

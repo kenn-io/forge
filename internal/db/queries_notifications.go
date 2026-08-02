@@ -366,8 +366,15 @@ func (d *DB) FilterNotificationIDs(ctx context.Context, ids []int64, repos []Not
 func lookupNotificationRepoIDTx(ctx context.Context, tx *sql.Tx, platform, host, owner, name string) (int64, bool, error) {
 	var id int64
 	err := tx.QueryRowContext(ctx, `
-		SELECT id FROM forge_repos
-		WHERE platform = ? AND platform_host = ? AND owner = ? AND name = ?`, platform, host, owner, name).Scan(&id)
+		SELECT rr.repo_id
+		FROM forge_repo_routes rr
+		JOIN forge_repos r ON r.id = rr.repo_id
+		WHERE rr.platform = ? AND rr.platform_host = ?
+		  AND rr.owner_key = ? AND rr.name_key = ?
+		  AND rr.is_current = 1
+		  AND r.lifecycle_state = 'active'`,
+		platform, host, owner, name,
+	).Scan(&id)
 	if err == nil {
 		return id, true, nil
 	}
@@ -397,7 +404,23 @@ func notificationWhere(opts ListNotificationsOpts) (string, []any, error) {
 				continue
 			}
 			seen[key] = struct{}{}
-			repoClauses = append(repoClauses, "(n.platform = ? AND n.platform_host = ? AND n.repo_owner = ? AND n.repo_name = ?)")
+			repoClauses = append(repoClauses, `EXISTS (
+				SELECT 1
+				FROM forge_repo_routes rr
+				JOIN forge_repos r ON r.id = rr.repo_id
+				WHERE rr.platform = ? AND rr.platform_host = ?
+				  AND rr.owner_key = ? AND rr.name_key = ?
+				  AND rr.is_current = 1
+				  AND r.lifecycle_state = 'active'
+				  AND (
+				      n.repo_id = rr.repo_id
+				      OR (n.repo_id IS NULL
+				          AND n.platform = rr.platform
+				          AND n.platform_host = rr.platform_host
+				          AND n.repo_owner = rr.owner_key
+				          AND n.repo_name = rr.name_key)
+				  )
+			)`)
 			args = append(args, platform, host, owner, name)
 		}
 		if len(repoClauses) == 0 {
@@ -407,11 +430,19 @@ func notificationWhere(opts ListNotificationsOpts) (string, []any, error) {
 		}
 	} else {
 		clauses = append(clauses, `EXISTS (
-			SELECT 1 FROM forge_repos r
-			WHERE r.platform = n.platform
-			  AND r.platform_host = n.platform_host
-			  AND r.owner = n.repo_owner
-			  AND r.name = n.repo_name
+			SELECT 1
+			FROM forge_repo_routes rr
+			JOIN forge_repos r ON r.id = rr.repo_id
+			WHERE rr.is_current = 1
+			  AND r.lifecycle_state = 'active'
+			  AND (
+			      n.repo_id = rr.repo_id
+			      OR (n.repo_id IS NULL
+			          AND n.platform = rr.platform
+			          AND n.platform_host = rr.platform_host
+			          AND n.repo_owner = rr.owner_key
+			          AND n.repo_name = rr.name_key)
+			  )
 		)`)
 	}
 	if opts.Platform != "" {
@@ -427,13 +458,32 @@ func notificationWhere(opts ListNotificationsOpts) (string, []any, error) {
 		clauses = append(clauses, "n.platform_host = ?")
 		args = append(args, host)
 	}
+	// Rows linked to a catalog entry answer route filters through the
+	// current route, so renames don't orphan them; cached notification
+	// fields only serve unlinked legacy rows.
 	if opts.RepoOwner != "" {
-		clauses = append(clauses, "n.repo_owner = ?")
-		args = append(args, strings.ToLower(opts.RepoOwner))
+		clauses = append(clauses, `(
+			(n.repo_id IS NOT NULL AND EXISTS (
+				SELECT 1 FROM forge_repo_routes rr
+				WHERE rr.repo_id = n.repo_id
+				  AND rr.is_current = 1
+				  AND rr.owner_key = ?))
+			OR (n.repo_id IS NULL AND n.repo_owner = ?)
+		)`)
+		owner := strings.ToLower(opts.RepoOwner)
+		args = append(args, owner, owner)
 	}
 	if opts.RepoName != "" {
-		clauses = append(clauses, "n.repo_name = ?")
-		args = append(args, strings.ToLower(opts.RepoName))
+		clauses = append(clauses, `(
+			(n.repo_id IS NOT NULL AND EXISTS (
+				SELECT 1 FROM forge_repo_routes rr
+				WHERE rr.repo_id = n.repo_id
+				  AND rr.is_current = 1
+				  AND rr.name_key = ?))
+			OR (n.repo_id IS NULL AND n.repo_name = ?)
+		)`)
+		name := strings.ToLower(opts.RepoName)
+		args = append(args, name, name)
 	}
 	switch opts.State {
 	case "", "unread":
@@ -545,7 +595,16 @@ func (d *DB) NotificationSummary(ctx context.Context, opts ListNotificationsOpts
 	if err := scanNotificationCounts(ctx, d.ro, fmt.Sprintf("SELECT n.reason, COUNT(*) FROM forge_notification_items n WHERE %s GROUP BY n.reason", where), args, summary.ByReason); err != nil {
 		return summary, err
 	}
-	if err := scanNotificationCounts(ctx, d.ro, fmt.Sprintf("SELECT n.platform_host || '/' || n.repo_owner || '/' || n.repo_name, COUNT(*) FROM forge_notification_items n WHERE %s GROUP BY n.platform_host, n.repo_owner, n.repo_name", where), args, summary.ByRepo); err != nil {
+	// Linked rows group under their canonical route so renames don't split
+	// counts between old and new names; cached fields serve unlinked rows.
+	if err := scanNotificationCounts(ctx, d.ro, fmt.Sprintf(`SELECT
+		COALESCE(
+			r.platform_host || '/' || r.owner_key || '/' || r.name_key,
+			n.platform_host || '/' || n.repo_owner || '/' || n.repo_name
+		), COUNT(*)
+		FROM forge_notification_items n
+		LEFT JOIN forge_repos r ON r.id = n.repo_id
+		WHERE %s GROUP BY 1`, where), args, summary.ByRepo); err != nil {
 		return summary, err
 	}
 	return summary, nil
@@ -932,10 +991,15 @@ func (d *DB) MarkClosedLinkedNotificationsDone(ctx context.Context, now time.Tim
 		  AND EXISTS (
 		    SELECT 1 FROM forge_repos r
 		    JOIN forge_merge_requests mr ON mr.repo_id = r.id AND mr.number = forge_notification_items.item_number
-		    WHERE r.platform = forge_notification_items.platform
-		      AND r.platform_host = forge_notification_items.platform_host
-		      AND r.owner = forge_notification_items.repo_owner
-		      AND r.name = forge_notification_items.repo_name
+		    WHERE r.lifecycle_state = 'active'
+		      AND (
+		          forge_notification_items.repo_id = r.id
+		          OR (forge_notification_items.repo_id IS NULL
+		              AND r.platform = forge_notification_items.platform
+		              AND r.platform_host = forge_notification_items.platform_host
+		              AND r.owner_key = forge_notification_items.repo_owner
+		              AND r.name_key = forge_notification_items.repo_name)
+		      )
 		      AND (mr.state IN ('closed', 'merged') OR mr.merged_at IS NOT NULL OR mr.closed_at IS NOT NULL)
 		  )`, now)
 	if err != nil {
@@ -950,10 +1014,15 @@ func (d *DB) MarkClosedLinkedNotificationsDone(ctx context.Context, now time.Tim
 		  AND EXISTS (
 		    SELECT 1 FROM forge_repos r
 		    JOIN forge_issues i ON i.repo_id = r.id AND i.number = forge_notification_items.item_number
-		    WHERE r.platform = forge_notification_items.platform
-		      AND r.platform_host = forge_notification_items.platform_host
-		      AND r.owner = forge_notification_items.repo_owner
-		      AND r.name = forge_notification_items.repo_name
+		    WHERE r.lifecycle_state = 'active'
+		      AND (
+		          forge_notification_items.repo_id = r.id
+		          OR (forge_notification_items.repo_id IS NULL
+		              AND r.platform = forge_notification_items.platform
+		              AND r.platform_host = forge_notification_items.platform_host
+		              AND r.owner_key = forge_notification_items.repo_owner
+		              AND r.name_key = forge_notification_items.repo_name)
+		      )
 		      AND (i.state = 'closed' OR i.closed_at IS NOT NULL)
 		  )`, now)
 	if err != nil {

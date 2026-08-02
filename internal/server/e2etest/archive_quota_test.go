@@ -101,10 +101,12 @@ func TestArchiveAPIStopsProviderBurstAtObservedQuotaHeadroomE2E(t *testing.T) {
 	syncRef := ghclient.RepoRef{
 		Platform: platform.KindGitHub, PlatformHost: "github.com",
 		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+		PlatformExternalID: "repo-acme-widget",
 	}
 	ref := platform.RepoRef{
 		Platform: platform.KindGitHub, Host: "github.com",
 		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+		PlatformExternalID: "repo-acme-widget",
 	}
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry,

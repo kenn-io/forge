@@ -22,13 +22,14 @@ func newMidStackMergeFixture(
 	ctx := t.Context()
 	now := time.Date(2026, 7, 24, 12, 0, 0, 0, time.UTC)
 	ref := platform.RepoRef{
-		Platform:      platform.KindGitLab,
-		Host:          "gitlab.example.com",
-		Owner:         "group",
-		Name:          "project",
-		RepoPath:      "group/project",
-		PlatformID:    4242,
-		DefaultBranch: "main",
+		Platform:           platform.KindGitLab,
+		Host:               "gitlab.example.com",
+		Owner:              "group",
+		Name:               "project",
+		RepoPath:           "group/project",
+		PlatformID:         4242,
+		PlatformExternalID: "4242",
+		DefaultBranch:      "main",
 	}
 	provider := &deferredMergeTestProvider{
 		deferredMergeProviderBase: deferredMergeProviderBase{

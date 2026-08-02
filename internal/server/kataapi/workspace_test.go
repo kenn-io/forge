@@ -19,6 +19,12 @@ import (
 	"go.kenn.io/forge/internal/server/workspaceapi"
 )
 
+func verifiedGitHubRepoIdentity(host, owner, name string) db.RepoIdentity {
+	identity := db.GitHubRepoIdentity(host, owner, name)
+	identity.PlatformRepoID = "repo-" + owner + "-" + name
+	return identity
+}
+
 func setupWorkspaceTestServerWithConfigContent(
 	t *testing.T, cfgContent string, mock *mockGH,
 ) (*Server, *db.DB, string) {
@@ -55,7 +61,7 @@ name = "widget"
 worktree_base_path = %q
 `, cloneDir)
 	srv, database, _ := setupTestServerWithConfigContent(t, cfg, &mockGH{})
-	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	_, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
 	resp, err := srv.kataWorkspaceTargetForMetadata(t.Context(), db.WorkspaceKataMetadata{
@@ -105,7 +111,7 @@ name = "widget"
 worktree_base_path = %q
 `, cloneDir)
 	srv, database, _ := setupTestServerWithConfigContent(t, cfg, &mockGH{})
-	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	_, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
 	resp, err := srv.kataWorkspaceTargetForMetadata(t.Context(), db.WorkspaceKataMetadata{
@@ -145,7 +151,7 @@ name = "widget"
 worktree_base_path = %q
 `, cloneDir)
 	srv, database, _ := setupTestServerWithConfigContent(t, cfg, &mockGH{})
-	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	_, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
 	resp, err := srv.kataWorkspaceTargetForMetadata(t.Context(), db.WorkspaceKataMetadata{
@@ -183,7 +189,7 @@ name = "widget"
 worktree_base_path = %q
 `, cloneDir)
 	srv, database, _ := setupTestServerWithConfigContent(t, cfg, &mockGH{})
-	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	_, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
 	resp, err := srv.kataWorkspaceTargetForMetadata(t.Context(), db.WorkspaceKataMetadata{
@@ -226,7 +232,7 @@ name = "widget"
 worktree_base_path = %q
 `, cloneDir)
 	srv, database, _ := setupTestServerWithConfigContent(t, cfg, &mockGH{})
-	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	_, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
 	resp, err := srv.kataWorkspaceTargetForMetadata(t.Context(), db.WorkspaceKataMetadata{
@@ -273,9 +279,9 @@ name = "other"
 worktree_base_path = %q
 `, nameOnlyClone, identityClone)
 	srv, database, _ := setupTestServerWithConfigContent(t, cfg, &mockGH{})
-	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	_, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
-	_, err = database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "other"))
+	_, err = database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "other"))
 	require.NoError(err)
 
 	resp, err := srv.kataWorkspaceTargetForMetadata(t.Context(), db.WorkspaceKataMetadata{
@@ -305,7 +311,7 @@ port = 8091
 owner = "acme"
 name = "kenn-forge"
 `, &mockGH{})
-	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "kenn-forge"))
+	_, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "kenn-forge"))
 	require.NoError(err)
 
 	resp, err := srv.kataWorkspaceTargetForMetadata(t.Context(), db.WorkspaceKataMetadata{
@@ -341,7 +347,7 @@ github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 `, &mockGH{})
-	repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "kata"))
+	repoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "kata"))
 	require.NoError(err)
 	projectPath := t.TempDir()
 	_, err = database.CreateProject(t.Context(), db.CreateProjectInput{
@@ -381,7 +387,7 @@ github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
 `, &mockGH{})
-	repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "kata"))
+	repoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "kata"))
 	require.NoError(err)
 	for _, localPath := range []string{t.TempDir(), t.TempDir()} {
 		_, err = database.CreateProject(t.Context(), db.CreateProjectInput{
@@ -419,7 +425,7 @@ port = 8091
 [tmux]
 command = ["sh", "-c", "exit 0"]
 `, &mockGH{})
-	repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity(platformHost, "acme", "widget"))
+	repoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity(platformHost, "acme", "widget"))
 	require.NoError(err)
 	_, err = database.CreateProject(t.Context(), db.CreateProjectInput{
 		DisplayName: "Widget",
@@ -481,7 +487,7 @@ provider = "github"
 platform_host = "github.com"
 repo_path = "acme/old"
 `, &mockGH{})
-	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "old"))
+	_, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "old"))
 	require.NoError(err)
 
 	resolution, err := srv.resolveKataWorkspaceRepoResolution(t.Context(), db.WorkspaceKataMetadata{
@@ -510,7 +516,7 @@ name = "exact"
 owner = "acme"
 name = "glob-*"
 `, &mockGH{})
-	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "glob-match"))
+	_, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "glob-match"))
 	require.NoError(err)
 
 	targets, err := srv.kataMappingTargets(t.Context())
@@ -556,7 +562,7 @@ provider = "github"
 platform_host = "github.com"
 repo_path = "acme/kenn-forge"
 `, &mockGH{})
-	repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "kenn-forge"))
+	repoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "kenn-forge"))
 	require.NoError(err)
 	_, err = database.CreateProject(t.Context(), db.CreateProjectInput{
 		DisplayName: "Kenn Forge",
@@ -599,9 +605,9 @@ name = "kenn-forge"
 owner = "forks"
 name = "kenn-forge"
 `, &mockGH{})
-	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "kenn-forge"))
+	_, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "kenn-forge"))
 	require.NoError(err)
-	_, err = database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "forks", "kenn-forge"))
+	_, err = database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "forks", "kenn-forge"))
 	require.NoError(err)
 
 	resp, err := srv.kataWorkspaceTargetForMetadata(t.Context(), db.WorkspaceKataMetadata{
@@ -655,9 +661,9 @@ port = 8091
 owner = "acme"
 name = "kenn-*"
 `, &mockGH{})
-	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "kenn-forge"))
+	_, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "kenn-forge"))
 	require.NoError(err)
-	_, err = database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "middle-earth"))
+	_, err = database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "middle-earth"))
 	require.NoError(err)
 
 	resp, err := srv.kataWorkspaceTargetForMetadata(t.Context(), db.WorkspaceKataMetadata{
@@ -694,9 +700,9 @@ name = "kenn-*"
 owner = "forks"
 name = "kenn-*"
 `, &mockGH{})
-	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "kenn-forge"))
+	_, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "kenn-forge"))
 	require.NoError(err)
-	_, err = database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "forks", "kenn-forge"))
+	_, err = database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "forks", "kenn-forge"))
 	require.NoError(err)
 
 	resp, err := srv.kataWorkspaceTargetForMetadata(t.Context(), db.WorkspaceKataMetadata{
@@ -728,9 +734,9 @@ name = "kenn-forge"
 owner = "forks"
 name = "kenn-*"
 `, &mockGH{})
-	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "kenn-forge"))
+	_, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "kenn-forge"))
 	require.NoError(err)
-	_, err = database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "forks", "kenn-forge"))
+	_, err = database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "forks", "kenn-forge"))
 	require.NoError(err)
 
 	resp, err := srv.kataWorkspaceTargetForMetadata(t.Context(), db.WorkspaceKataMetadata{
@@ -766,7 +772,7 @@ name = "widget"
 worktree_base_path = %q
 `, cloneDir)
 	srv, database, _ := setupTestServerWithConfigContent(t, cfg, &mockGH{})
-	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	_, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
 	resp, err := srv.kataWorkspaceTargetForMetadata(t.Context(), db.WorkspaceKataMetadata{
@@ -863,9 +869,9 @@ name = "other"
 worktree_base_path = %q
 `, firstClone, secondClone)
 	srv, database, _ := setupTestServerWithConfigContent(t, cfg, &mockGH{})
-	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	_, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
-	_, err = database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "other"))
+	_, err = database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "other"))
 	require.NoError(err)
 
 	resp, err := srv.kataWorkspaceTargetForMetadata(t.Context(), db.WorkspaceKataMetadata{
@@ -916,11 +922,11 @@ owner = "acme"
 name = "kenn-forge"
 `, firstClone, secondClone)
 	srv, database, _ := setupTestServerWithConfigContent(t, cfg, &mockGH{})
-	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	_, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
-	_, err = database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "other"))
+	_, err = database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "other"))
 	require.NoError(err)
-	_, err = database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "kenn-forge"))
+	_, err = database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "kenn-forge"))
 	require.NoError(err)
 
 	resp, err := srv.kataWorkspaceTargetForMetadata(t.Context(), db.WorkspaceKataMetadata{
@@ -964,9 +970,9 @@ name = "other"
 worktree_base_path = %q
 `, firstClone, secondClone)
 	srv, database, _ := setupTestServerWithConfigContent(t, cfg, &mockGH{})
-	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	_, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
-	_, err = database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "other"))
+	_, err = database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "other"))
 	require.NoError(err)
 
 	resp, err := srv.kataWorkspaceTargetForMetadata(t.Context(), db.WorkspaceKataMetadata{
@@ -1020,7 +1026,7 @@ provider = "github"
 platform_host = "github.com"
 repo_path = "acme/widget"
 `, &mockGH{})
-	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	_, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	itemKey := db.KataWorkspaceItemKey(db.WorkspaceKataMetadata{
 		DaemonID:   "desktop",
@@ -1085,7 +1091,7 @@ provider = "github"
 platform_host = "github.com"
 repo_path = "acme/widget"
 `, &mockGH{})
-	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	_, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
 	rr := doJSON(t, srv, http.MethodPost, "/api/v1/kata/workspaces", map[string]any{
@@ -1147,7 +1153,7 @@ owner = "acme"
 name = %q
 `, configuredRepoName)
 	srv, database, _ := setupWorkspaceTestServerWithConfigContent(t, cfg, &mockGH{})
-	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "kenn-forge"))
+	_, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "kenn-forge"))
 	require.NoError(err)
 
 	metadata := db.WorkspaceKataMetadata{
@@ -1216,7 +1222,7 @@ provider = "github"
 platform_host = "github.com"
 repo_path = "acme/widget"
 `, &mockGH{})
-	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	_, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
 	body := map[string]any{

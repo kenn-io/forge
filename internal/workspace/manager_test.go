@@ -50,8 +50,10 @@ func seedRepo(
 	host, owner, name string,
 ) int64 {
 	t.Helper()
+	identity := db.GitHubRepoIdentity(host, owner, name)
+	identity.PlatformRepoID = "repo-" + owner + "-" + name
 	id, err := d.UpsertRepo(
-		t.Context(), db.GitHubRepoIdentity(host, owner, name),
+		t.Context(), identity,
 	)
 	require.NoError(t, err)
 	return id
@@ -299,11 +301,12 @@ func TestCreatePRHeadRepoClassification(t *testing.T) {
 				repoName = "widget"
 			}
 			repoID, err := d.UpsertRepo(t.Context(), db.RepoIdentity{
-				Platform:     provider,
-				PlatformHost: platformHost,
-				Owner:        owner,
-				Name:         repoName,
-				RepoPath:     owner + "/" + repoName,
+				Platform:       provider,
+				PlatformHost:   platformHost,
+				PlatformRepoID: "repo-" + provider + "-" + owner + "-" + repoName,
+				Owner:          owner,
+				Name:           repoName,
+				RepoPath:       owner + "/" + repoName,
 			})
 			require.NoError(err)
 			seedMRWithHeadRepo(
@@ -423,7 +426,9 @@ func TestRefreshWorkspaceHeadRepoPersistsUnknownWhenRepoIsMissing(t *testing.T) 
 	assert.Empty(*stored.MRHeadRepo)
 }
 
-func TestRefreshWorkspaceHeadRepoPreservesTrustAfterRepositoryRename(t *testing.T) {
+func TestRefreshWorkspaceHeadRepoLeavesRouteKeyedWorkspaceAfterRepositoryRename(
+	t *testing.T,
+) {
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -453,27 +458,29 @@ func TestRefreshWorkspaceHeadRepoPreservesTrustAfterRepositoryRename(t *testing.
 	}
 	require.NoError(d.InsertWorkspace(ctx, ws))
 
-	_, err = d.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+	_, _, err = d.ReconcileRepositoryObservation(ctx, db.RepoIdentity{
 		Platform:       "gitlab",
 		PlatformHost:   "gitlab.com",
 		PlatformRepoID: providerRepoID,
 		Owner:          "new-group",
 		Name:           "new-name",
-	})
+	}, time.Now().UTC())
 	require.NoError(err)
 
 	mgr := NewManager(d, t.TempDir())
 	require.NoError(mgr.RefreshWorkspaceHeadRepo(ctx, ws))
 
-	assert.Equal("new-group", ws.RepoOwner)
-	assert.Equal("new-name", ws.RepoName)
-	assert.Nil(ws.MRHeadRepo)
+	assert.Equal("old-group", ws.RepoOwner)
+	assert.Equal("old-name", ws.RepoName)
+	require.NotNil(ws.MRHeadRepo)
+	assert.Empty(*ws.MRHeadRepo)
 	stored, err := d.GetWorkspace(ctx, ws.ID)
 	require.NoError(err)
 	require.NotNil(stored)
-	assert.Equal("new-group", stored.RepoOwner)
-	assert.Equal("new-name", stored.RepoName)
-	assert.Nil(stored.MRHeadRepo)
+	assert.Equal("old-group", stored.RepoOwner)
+	assert.Equal("old-name", stored.RepoName)
+	require.NotNil(stored.MRHeadRepo)
+	assert.Empty(*stored.MRHeadRepo)
 }
 
 func TestRefreshWorkspaceHeadRepoBlocksRepositoryReconciliation(t *testing.T) {
@@ -538,14 +545,14 @@ func TestRefreshWorkspaceHeadRepoBlocksRepositoryReconciliation(t *testing.T) {
 	defer restoreWriteLockHook()
 	reconciliationDone := make(chan error, 1)
 	go func() {
-		_, upsertErr := d.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+		_, _, reconcileErr := d.ReconcileRepositoryObservation(ctx, db.RepoIdentity{
 			Platform:       "gitlab",
 			PlatformHost:   "gitlab.com",
 			PlatformRepoID: providerRepoID,
 			Owner:          "new-group",
 			Name:           "new-name",
-		})
-		reconciliationDone <- upsertErr
+		}, time.Now().UTC())
+		reconciliationDone <- reconcileErr
 	}()
 	select {
 	case <-writeLockAttempted:
@@ -576,13 +583,13 @@ func TestRefreshWorkspaceHeadRepoBlocksRepositoryReconciliation(t *testing.T) {
 	stored, err := d.GetWorkspace(ctx, ws.ID)
 	require.NoError(err)
 	require.NotNil(stored)
-	assert.Equal("new-group", stored.RepoOwner)
-	assert.Equal("new-name", stored.RepoName)
+	assert.Equal("old-group", stored.RepoOwner)
+	assert.Equal("old-name", stored.RepoName)
 	require.NotNil(stored.MRHeadRepo)
 	assert.Equal(forkURL, *stored.MRHeadRepo)
 }
 
-func TestRefreshWorkspaceHeadRepoRetriesWhenMissingRepoAppears(t *testing.T) {
+func TestRefreshWorkspaceHeadRepoRefreshesWhenMissingRepoAppearsLater(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -601,21 +608,18 @@ func TestRefreshWorkspaceHeadRepoRetriesWhenMissingRepoAppears(t *testing.T) {
 	require.NoError(d.InsertWorkspace(t.Context(), ws))
 	mgr := NewManager(d, t.TempDir())
 	forkURL := "https://github.com/contributor/widget.git"
-	var repoCreated bool
-	mgr.afterHeadRepoSnapshotRead = func() {
-		if repoCreated {
-			return
-		}
-		repoCreated = true
-		repoID := seedRepo(t, d, "github.com", "acme", "widget")
-		seedMRWithHeadRepo(
-			t, d, repoID, ws.ItemNumber, ws.GitHeadRef, forkURL,
-		)
-	}
+
+	require.NoError(mgr.RefreshWorkspaceHeadRepo(t.Context(), ws))
+	require.NotNil(ws.MRHeadRepo)
+	assert.Empty(*ws.MRHeadRepo)
+
+	repoID := seedRepo(t, d, "github.com", "acme", "widget")
+	seedMRWithHeadRepo(
+		t, d, repoID, ws.ItemNumber, ws.GitHeadRef, forkURL,
+	)
 
 	require.NoError(mgr.RefreshWorkspaceHeadRepo(t.Context(), ws))
 
-	assert.True(repoCreated)
 	require.NotNil(ws.MRHeadRepo)
 	assert.Equal(forkURL, *ws.MRHeadRepo)
 	stored, err := d.GetWorkspace(t.Context(), ws.ID)
@@ -2336,17 +2340,19 @@ func TestCreateIssueUsesProviderQualifiedRepo(t *testing.T) {
 	ctx := t.Context()
 
 	_, err := d.UpsertRepo(ctx, db.RepoIdentity{
-		Platform:     "github",
-		PlatformHost: "forge.example.com",
-		Owner:        "acme",
-		Name:         "widget",
+		Platform:       "github",
+		PlatformHost:   "forge.example.com",
+		PlatformRepoID: "repo-github-widget",
+		Owner:          "acme",
+		Name:           "widget",
 	})
 	require.NoError(err)
 	gitlabRepoID, err := d.UpsertRepo(ctx, db.RepoIdentity{
-		Platform:     "gitlab",
-		PlatformHost: "forge.example.com",
-		Owner:        "acme",
-		Name:         "widget",
+		Platform:       "gitlab",
+		PlatformHost:   "forge.example.com",
+		PlatformRepoID: "repo-gitlab-widget",
+		Owner:          "acme",
+		Name:           "widget",
 	})
 	require.NoError(err)
 	seedIssue(t, d, gitlabRepoID, 7, "GitLab issue")
@@ -2372,10 +2378,11 @@ func TestCreateIssueUsesProviderCloneURLForNamespacedManagedClone(t *testing.T) 
 	)
 
 	repoID, err := d.UpsertRepo(ctx, db.RepoIdentity{
-		Platform:     "gitlab",
-		PlatformHost: "gitlab.example.com",
-		Owner:        "group",
-		Name:         "project",
+		Platform:       "gitlab",
+		PlatformHost:   "gitlab.example.com",
+		PlatformRepoID: "repo-gitlab-project",
+		Owner:          "group",
+		Name:           "project",
 	})
 	require.NoError(err)
 	require.NoError(d.UpdateRepoProviderMetadata(
@@ -2419,17 +2426,19 @@ func TestCreateUsesProviderQualifiedRepo(t *testing.T) {
 	worktreeDir := t.TempDir()
 
 	_, err := d.UpsertRepo(ctx, db.RepoIdentity{
-		Platform:     "github",
-		PlatformHost: "forge.example.com",
-		Owner:        "acme",
-		Name:         "widget",
+		Platform:       "github",
+		PlatformHost:   "forge.example.com",
+		PlatformRepoID: "repo-github-widget",
+		Owner:          "acme",
+		Name:           "widget",
 	})
 	require.NoError(err)
 	gitlabRepoID, err := d.UpsertRepo(ctx, db.RepoIdentity{
-		Platform:     "gitlab",
-		PlatformHost: "forge.example.com",
-		Owner:        "acme",
-		Name:         "widget",
+		Platform:       "gitlab",
+		PlatformHost:   "forge.example.com",
+		PlatformRepoID: "repo-gitlab-widget",
+		Owner:          "acme",
+		Name:           "widget",
 	})
 	require.NoError(err)
 	seedMR(t, d, gitlabRepoID, 42, "feature/gitlab")
@@ -6966,4 +6975,45 @@ func TestManagerCleanupForDeleteAcquiresRepoLock(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		require.FailNow("cleanupWorkspaceArtifactsForDelete did not finish after release")
 	}
+}
+
+// TestSetupFailsClosedWhenRepositoryRouteReused verifies that setup — the
+// chokepoint for every code-fetching path, including retries — refuses to
+// operate on a workspace whose stored route now has historical occupants.
+func TestSetupFailsClosedWhenRepositoryRouteReused(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	observedAt := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+	_, _, err := d.ReconcileRepositoryObservation(t.Context(), db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "provider-old",
+		Owner:          "acme", Name: "widget",
+	}, observedAt)
+	require.NoError(err)
+	ws := &Workspace{
+		ID: "ws-route-reuse", Platform: "github",
+		PlatformHost: "github.com",
+		RepoOwner:    "acme", RepoName: "widget",
+		ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 7,
+		GitHeadRef:   "feature/reuse",
+		WorktreePath: filepath.Join(t.TempDir(), "ws-route-reuse"),
+		TmuxSession:  "ws-route-reuse",
+		Status:       "creating",
+	}
+	require.NoError(d.InsertWorkspace(t.Context(), ws))
+	_, _, err = d.ReconcileRepositoryObservation(t.Context(), db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "provider-new",
+		Owner:          "acme", Name: "widget",
+	}, observedAt.Add(time.Hour))
+	require.NoError(err)
+
+	mgr := NewManager(d, t.TempDir())
+	err = mgr.Setup(t.Context(), ws)
+	require.ErrorContains(err, "historical occupants")
+	stored, getErr := d.GetWorkspace(t.Context(), ws.ID)
+	require.NoError(getErr)
+	require.NotNil(stored)
+	assert.Equal("error", stored.Status)
 }

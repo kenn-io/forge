@@ -100,7 +100,8 @@ func setupGitLabMutationServer(
 		w.Header().Set("Content-Type", "application/json")
 		path := r.URL.EscapedPath()
 		switch {
-		case path == "/api/v4/projects/acme%2Fwidget" && r.Method == http.MethodGet:
+		case (path == "/api/v4/projects/acme%2Fwidget" || path == "/api/v4/projects/4242") &&
+			r.Method == http.MethodGet:
 			writeGitLabJSON(w, `{
 				"id": 4242,
 				"path": "widget",

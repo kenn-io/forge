@@ -68,7 +68,7 @@ func TestBuildLocalRawSynthesizedProjectFillsDefaultBranchFromSyncedRepo(t *test
 	ctx := context.Background()
 
 	repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com",
+		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "repo-o-synced",
 		Owner: "o", Name: "synced", RepoPath: "o/synced",
 	})
 	require.NoError(err)

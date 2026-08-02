@@ -1265,3 +1265,33 @@ func TestHostRouterKeepsAuthorizationRoutesSeparateFromSharedIdentity(t *testing
 	assert.NotSame(gotA.Client, gotB.Client)
 	assert.Equal(gotA.ReadIdentity, gotB.ReadIdentity)
 }
+
+func TestHostRouterRepoCredentialAliasFollowsRename(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	router, err := NewHostRouter("github.com",
+		&Route{
+			Key:          RouteKey{Host: "github.com", Owner: "acme", Name: "widget"},
+			ReadIdentity: IdentityKey{Host: "github.com", Principal: "widget-bot"},
+		},
+		&Route{
+			Key:          RouteKey{Host: "github.com"},
+			ReadIdentity: IdentityKey{Host: "github.com", Principal: "fallback-bot"},
+		},
+	)
+	require.NoError(err)
+
+	router.RegisterRepoCredentialAlias("acme", "gadget",
+		RouteKey{Host: "github.com", Owner: "acme", Name: "widget"})
+	identity, err := router.ReadIdentityForRepo("acme", "gadget")
+	require.NoError(err)
+	assert.Equal("widget-bot", identity.Principal)
+
+	// A second rename that targets the first alias still lands on the
+	// configured route.
+	router.RegisterRepoCredentialAlias("acme", "gizmo",
+		RouteKey{Host: "github.com", Owner: "acme", Name: "gadget"})
+	identity, err = router.ReadIdentityForRepo("acme", "gizmo")
+	require.NoError(err)
+	assert.Equal("widget-bot", identity.Principal)
+}

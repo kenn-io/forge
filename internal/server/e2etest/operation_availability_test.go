@@ -33,7 +33,9 @@ func TestPullDetailReportsPausedRateTrackerE2E(t *testing.T) {
 	)
 	t.Cleanup(syncer.Stop)
 
-	repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	identity := db.GitHubRepoIdentity("github.com", "acme", "widget")
+	identity.PlatformRepoID = "repo-acme-widget"
+	repoID, err := database.UpsertRepo(t.Context(), identity)
 	require.NoError(err)
 	_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
 		RepoID:         repoID,

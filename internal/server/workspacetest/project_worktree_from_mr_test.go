@@ -84,6 +84,9 @@ func seedMergeRequestForRepo(
 ) {
 	t.Helper()
 	ctx := t.Context()
+	if identity.PlatformRepoID == "" {
+		identity.PlatformRepoID = "repo-" + identity.Owner + "-" + identity.Name
+	}
 	repoID, err := database.UpsertRepo(ctx, identity)
 	Require.NoError(t, err)
 	now := time.Now().UTC().Truncate(time.Second)
@@ -128,11 +131,11 @@ func TestCreateWorktreeFromMergeRequestRoute(t *testing.T) {
 	headSHA := lifecycleRouteGit(t, origin, "rev-parse", "feature-x")
 	lifecycleRouteGit(t, origin, "checkout", "-q", "main")
 
-	projectID := registerIdentifiedProject(t, ts, clone)
 	// Providers report the hosted clone URL even when this project uses a
 	// local mirror as origin.
 	seedMergeRequest(t, database, 42, "feature-x", headSHA,
 		"https://github.com/acme/widget.git")
+	projectID := registerIdentifiedProject(t, ts, clone)
 
 	dest := filepath.Join(t.TempDir(), "wt")
 	body := mustMarshal(t, map[string]any{
@@ -200,9 +203,9 @@ func TestCreateWorktreeFromMergeRequestRouteRejectsChangedHead(t *testing.T) {
 	lifecycleRouteGit(t, origin, "update-ref", "refs/pull/44/head", newHeadSHA)
 	lifecycleRouteGit(t, origin, "checkout", "-q", "main")
 
-	projectID := registerIdentifiedProject(t, ts, clone)
 	seedMergeRequest(t, database, 44, "feature-moved", staleSHA,
 		"https://github.com/acme/widget.git")
+	projectID := registerIdentifiedProject(t, ts, clone)
 	destination := filepath.Join(t.TempDir(), "wt")
 	body := mustMarshal(t, map[string]any{
 		"number": 44,
@@ -237,13 +240,13 @@ func TestCreateWorktreeFromGitLabMergeRequestRefRoute(t *testing.T) {
 	clone := filepath.Join(t.TempDir(), "clone")
 	lifecycleRouteGit(t, filepath.Dir(origin), "clone", "-q", origin, clone)
 
-	projectID := registerPlatformProject(
-		t, ts, clone, "gitlab", "gitlab.example.com", "acme", "widget",
-	)
 	seedMergeRequestForRepo(t, database, db.RepoIdentity{
 		Platform: "gitlab", PlatformHost: "gitlab.example.com",
 		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
 	}, 55, "", headSHA, "")
+	projectID := registerPlatformProject(
+		t, ts, clone, "gitlab", "gitlab.example.com", "acme", "widget",
+	)
 
 	dest := filepath.Join(t.TempDir(), "wt")
 	resp := httpDo(t, ts, http.MethodPost,
@@ -283,8 +286,8 @@ func TestCreateWorktreeFromRelativeForkRoutePersistsAbsoluteTracking(t *testing.
 	relativeFork, err := filepath.Rel(clone, fork)
 	require.NoError(err)
 
-	projectID := registerIdentifiedProject(t, ts, clone)
 	seedMergeRequest(t, database, 45, "relative-head", headSHA, relativeFork)
+	projectID := registerIdentifiedProject(t, ts, clone)
 	dest := filepath.Join(t.TempDir(), "wt")
 	resp := httpDo(t, ts, http.MethodPost,
 		"/api/v1/projects/"+projectID+"/worktrees/from-merge-request",
@@ -314,11 +317,15 @@ func TestCreateWorktreeFromMergeRequestRouteUnknownNumber(t *testing.T) {
 	require := Require.New(t)
 	assert := assert.New(t)
 
-	srv, _ := setupProjectServer(t)
+	srv, database := setupProjectServer(t)
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
 	repo := initLifecycleRouteRepo(t)
+	_, err := database.UpsertRepo(
+		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
 	projectID := registerIdentifiedProject(t, ts, repo)
 
 	dest := filepath.Join(t.TempDir(), "wt")
@@ -411,9 +418,17 @@ func TestCreateWorktreeFromMergeRequestRouteSyncsOnDemand(t *testing.T) {
 		Base: &gh.PullRequestBranch{Ref: &baseRef},
 	}}
 	database := dbtest.Open(t)
+	ref := ghclient.RepoRef{
+		Platform: "github", PlatformHost: "github.com", Owner: "acme", Name: "widget",
+		PlatformExternalID: "repo-acme-widget",
+	}
+	_, err := database.UpsertRepo(
+		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": mock}, database, nil,
-		[]ghclient.RepoRef{{Platform: "github", PlatformHost: "github.com", Owner: "acme", Name: "widget"}},
+		[]ghclient.RepoRef{ref},
 		time.Minute, nil, nil,
 	)
 	t.Cleanup(syncer.Stop)

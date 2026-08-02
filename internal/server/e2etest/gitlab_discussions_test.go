@@ -28,11 +28,12 @@ func TestGetPRDetailIncludesThreadID(t *testing.T) {
 	srv, database := setupTestServer(t)
 
 	repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
-		Platform:     "gitlab",
-		PlatformHost: "gitlab.com",
-		Owner:        "acme",
-		Name:         "widget",
-		RepoPath:     "acme/widget",
+		Platform:       "gitlab",
+		PlatformHost:   "gitlab.com",
+		PlatformRepoID: "gid://gitlab/Project/4242",
+		Owner:          "acme",
+		Name:           "widget",
+		RepoPath:       "acme/widget",
 	})
 	require.NoError(err)
 
@@ -859,11 +860,12 @@ func TestDiscussionEndpointsRequireCapability(t *testing.T) {
 	srv, database := setupTestServer(t)
 
 	repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
-		Platform:     "github",
-		PlatformHost: "github.com",
-		Owner:        "acme",
-		Name:         "widget",
-		RepoPath:     "acme/widget",
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "repo-acme-widget",
+		Owner:          "acme",
+		Name:           "widget",
+		RepoPath:       "acme/widget",
 	})
 	require.NoError(err)
 

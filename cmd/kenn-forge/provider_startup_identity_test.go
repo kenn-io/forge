@@ -1013,12 +1013,15 @@ func TestProductionStartupRoutesExposeRotatedPATThroughRepoAPI(t *testing.T) {
 	assert.Equal("user:123", uncoveredRoute.writeIdentity.Principal)
 
 	repos := []github.RepoRef{
-		{Owner: "acme", Name: "covered", PlatformHost: "github.com"},
-		{Owner: "acme", Name: "uncovered", PlatformHost: "github.com"},
+		{Owner: "acme", Name: "covered", PlatformHost: "github.com", PlatformExternalID: "repo-acme-covered"},
+		{Owner: "acme", Name: "uncovered", PlatformHost: "github.com", PlatformExternalID: "repo-acme-uncovered"},
 	}
 	for _, repo := range repos {
 		_, err := database.UpsertRepo(
-			t.Context(), db.GitHubRepoIdentity(repo.PlatformHost, repo.Owner, repo.Name),
+			t.Context(), db.RepoIdentity{
+				Platform: "github", PlatformHost: repo.PlatformHost,
+				PlatformRepoID: repo.PlatformExternalID, Owner: repo.Owner, Name: repo.Name,
+			},
 		)
 		require.NoError(err)
 	}

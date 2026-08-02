@@ -127,13 +127,40 @@ func (s *Service) EnsureConfigured(ctx context.Context, refs []platform.RepoRef)
 	}
 	for _, ref := range refs {
 		identity := platform.DBRepoIdentity(ref)
-		var err error
-		if identity.PlatformRepoID != "" {
-			_, err = s.db.UpsertRepoByProviderID(ctx, identity)
-		} else {
-			_, err = s.db.UpsertRepo(ctx, identity)
+		// Captured before any provider lookup so a slow resolve cannot
+		// stamp its route data newer than intervening sync observations.
+		observedAt := time.Now().UTC()
+		// Config-asserted and provider-verified identities may move
+		// routes; a catalog-cached identity resolves read-only.
+		authoritative := identity.PlatformRepoID != ""
+		if identity.PlatformRepoID == "" {
+			stored, err := s.db.ResolveActiveRepositoryRoute(ctx, identity)
+			if err != nil {
+				return fmt.Errorf("resolve stored archive repository %s: %w", archiveRepoIdentityKey(ref), err)
+			}
+			if stored != nil && stored.Repository.PlatformRepoID != "" {
+				identity.PlatformRepoID = stored.Repository.PlatformRepoID
+			} else {
+				reader, err := s.registry.RepositoryReader(ref.Platform, ref.Host)
+				if err != nil {
+					return fmt.Errorf("resolve archive repository %s: %w", archiveRepoIdentityKey(ref), err)
+				}
+				resolved, err := reader.GetRepository(ctx, ref)
+				if err != nil {
+					return fmt.Errorf("resolve archive repository %s: %w", archiveRepoIdentityKey(ref), err)
+				}
+				identity = platform.DBRepositoryIdentity(resolved)
+				if identity.PlatformRepoID == "" {
+					return fmt.Errorf("resolve archive repository %s: provider returned no repository id", archiveRepoIdentityKey(ref))
+				}
+				authoritative = true
+			}
 		}
-		if err != nil {
+		if authoritative {
+			if _, _, err := s.db.ReconcileRepositoryObservation(ctx, identity, observedAt); err != nil {
+				return fmt.Errorf("seed archive repository %s: %w", archiveRepoIdentityKey(ref), err)
+			}
+		} else if _, err := s.db.UpsertRepoByProviderID(ctx, identity); err != nil {
 			return fmt.Errorf("seed archive repository %s: %w", archiveRepoIdentityKey(ref), err)
 		}
 	}

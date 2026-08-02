@@ -295,7 +295,7 @@ func TestWorkspaceRuntimeLaunchWritesIssueAndKataAgentContextE2E(t *testing.T) {
 
 func seedServerWorkspaceRepo(t *testing.T, d *db.DB) int64 {
 	t.Helper()
-	repoID, err := d.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := d.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(t, err)
 	return repoID
 }

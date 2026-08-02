@@ -311,19 +311,21 @@ func TestListItemWorkflowStatesRepoFiltersUseCasefoldKeys(t *testing.T) {
 	base := baseTime()
 
 	firstRepo, err := d.UpsertRepo(ctx, RepoIdentity{
-		Platform:     "gitlab",
-		PlatformHost: "gitlab.example.com",
-		Owner:        "Group/SubGroup",
-		Name:         "Project.Special",
-		RepoPath:     "Group/SubGroup/Project.Special",
+		Platform:       "gitlab",
+		PlatformHost:   "gitlab.example.com",
+		PlatformRepoID: "gitlab-first",
+		Owner:          "Group/SubGroup",
+		Name:           "Project.Special",
+		RepoPath:       "Group/SubGroup/Project.Special",
 	})
 	require.NoError(err)
 	secondRepo, err := d.UpsertRepo(ctx, RepoIdentity{
-		Platform:     "gitlab",
-		PlatformHost: "gitlab.example.com",
-		Owner:        "Other/SubGroup",
-		Name:         "Project.Special",
-		RepoPath:     "Other/SubGroup/Project.Special",
+		Platform:       "gitlab",
+		PlatformHost:   "gitlab.example.com",
+		PlatformRepoID: "gitlab-second",
+		Owner:          "Other/SubGroup",
+		Name:           "Project.Special",
+		RepoPath:       "Other/SubGroup/Project.Special",
 	})
 	require.NoError(err)
 	insertTestIssue(t, d, firstRepo, 1, "matched issue", base.Add(time.Hour))

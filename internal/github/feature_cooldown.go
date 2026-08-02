@@ -13,10 +13,11 @@ import (
 const repositoryFeatureProbeInterval = 24 * time.Hour
 
 type repositoryFeatureCooldownKey struct {
-	platform platform.Kind
-	host     string
-	repoPath string
-	feature  string
+	platform       platform.Kind
+	host           string
+	providerRepoID string
+	repoPath       string
+	feature        string
 }
 
 type repositoryFeatureCooldowns struct {
@@ -30,11 +31,17 @@ type repositoryFeatureCooldownState struct {
 	nextProbe   time.Time
 	generation  uint64
 	reservation uint64
+	// providerRepoID identifies the repository that recorded the state;
+	// empty when it was recorded from a route-only (unresolved) ref.
+	providerRepoID string
 }
 
 type repositoryFeatureProbe struct {
-	cooldowns   *repositoryFeatureCooldowns
+	cooldowns *repositoryFeatureCooldowns
+	// key is where the governing state lives; keys is the repo's full key
+	// set, so clear can also drop entries recorded alongside it.
 	key         repositoryFeatureCooldownKey
+	keys        []repositoryFeatureCooldownKey
 	generation  uint64
 	reservation uint64
 	bypass      bool
@@ -62,7 +69,12 @@ func repositoryFeatureCooldownBypassFromContext(
 	return bypass, ok
 }
 
-func repositoryFeatureKey(repo RepoRef, feature string) repositoryFeatureCooldownKey {
+// repositoryFeatureKeys returns the cooldown keys for a repository. The
+// provider-ID key comes first: it survives renames and keeps a replacement
+// repository on a reused route from inheriting the displaced repository's
+// cooldown. States are recorded under every returned key so refs that
+// predate identity resolution (route-only) still observe them.
+func repositoryFeatureKeys(repo RepoRef, feature string) []repositoryFeatureCooldownKey {
 	if repoPlatform(repo) == platform.KindGitHub {
 		repo = canonicalRepoRef(repo)
 		if repo.Owner != "" && repo.Name != "" {
@@ -70,12 +82,45 @@ func repositoryFeatureKey(repo RepoRef, feature string) repositoryFeatureCooldow
 		}
 	}
 	ref := platformRepoRef(repo)
-	return repositoryFeatureCooldownKey{
+	routeKey := repositoryFeatureCooldownKey{
 		platform: ref.Platform,
 		host:     ref.Host,
 		repoPath: ref.RepoPath,
 		feature:  feature,
 	}
+	if ref.PlatformExternalID == "" {
+		return []repositoryFeatureCooldownKey{routeKey}
+	}
+	idKey := repositoryFeatureCooldownKey{
+		platform:       ref.Platform,
+		host:           ref.Host,
+		providerRepoID: ref.PlatformExternalID,
+		feature:        feature,
+	}
+	return []repositoryFeatureCooldownKey{idKey, routeKey}
+}
+
+// lookupState returns the state governing a probe and the key it lives at.
+// The provider-ID key wins; a route-key state applies only when its recorder
+// is unknown (route-only record) or is this same repository — a different
+// recorder means a displaced repository's cooldown that must not transfer.
+func (c *repositoryFeatureCooldowns) lookupState(
+	keys []repositoryFeatureCooldownKey,
+) (repositoryFeatureCooldownKey, repositoryFeatureCooldownState, bool) {
+	primary := keys[0]
+	if state, ok := c.states[primary]; ok {
+		return primary, state, true
+	}
+	for _, key := range keys[1:] {
+		state, ok := c.states[key]
+		if !ok {
+			continue
+		}
+		if state.providerRepoID == "" || state.providerRepoID == primary.providerRepoID {
+			return key, state, true
+		}
+	}
+	return primary, repositoryFeatureCooldownState{}, false
 }
 
 func (c *repositoryFeatureCooldowns) beginProbeWithRetry(
@@ -87,18 +132,19 @@ func (c *repositoryFeatureCooldowns) beginProbeWithRetry(
 ) (repositoryFeatureProbe, bool, time.Time) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	key := repositoryFeatureKey(repo, feature)
-	state, ok := c.states[key]
+	keys := repositoryFeatureKeys(repo, feature)
+	key, state, ok := c.lookupState(keys)
 	if bypassEnabled && (!ok || state.generation <= bypass.throughGeneration) {
 		return repositoryFeatureProbe{
 			cooldowns:  c,
 			key:        key,
+			keys:       keys,
 			generation: state.generation,
 			bypass:     true,
 		}, true, time.Time{}
 	}
 	if !ok {
-		return repositoryFeatureProbe{cooldowns: c, key: key}, true, time.Time{}
+		return repositoryFeatureProbe{cooldowns: c, key: key, keys: keys}, true, time.Time{}
 	}
 	if state.reservation != 0 {
 		return repositoryFeatureProbe{}, false, now.Add(time.Second)
@@ -112,6 +158,7 @@ func (c *repositoryFeatureCooldowns) beginProbeWithRetry(
 	return repositoryFeatureProbe{
 		cooldowns:   c,
 		key:         key,
+		keys:        keys,
 		generation:  state.generation,
 		reservation: state.reservation,
 	}, true, time.Time{}
@@ -141,9 +188,14 @@ func (c *repositoryFeatureCooldowns) deferUntil(repo RepoRef, feature string, ne
 		c.states = make(map[repositoryFeatureCooldownKey]repositoryFeatureCooldownState)
 	}
 	c.nextGeneration++
-	c.states[repositoryFeatureKey(repo, feature)] = repositoryFeatureCooldownState{
-		nextProbe:  nextProbe,
-		generation: c.nextGeneration,
+	keys := repositoryFeatureKeys(repo, feature)
+	state := repositoryFeatureCooldownState{
+		nextProbe:      nextProbe,
+		generation:     c.nextGeneration,
+		providerRepoID: keys[0].providerRepoID,
+	}
+	for _, key := range keys {
+		c.states[key] = state
 	}
 }
 
@@ -191,6 +243,17 @@ func (probe repositoryFeatureProbe) clear() {
 		return
 	}
 	delete(probe.cooldowns.states, probe.key)
+	// Entries recorded alongside this state (deferUntil writes every key
+	// with one generation) must clear together, or the repo stays cooled
+	// under its other key after a successful probe.
+	for _, key := range probe.keys {
+		if key == probe.key {
+			continue
+		}
+		if sibling, ok := probe.cooldowns.states[key]; ok && sibling.generation == probe.generation {
+			delete(probe.cooldowns.states, key)
+		}
+	}
 }
 
 func (s *Syncer) beginRepositoryFeatureProbe(

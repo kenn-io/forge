@@ -572,7 +572,7 @@ prefer_github_native_stacks = true
 	ctx := t.Context()
 	seedStackedPR(t, database, "acme", "widget", 10, "feat/base", "main", db.MergeRequestStateOpen, "", "")
 	seedStackedPR(t, database, "acme", "widget", 11, "feat/tip", "feat/base", db.MergeRequestStateOpen, "", "")
-	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotNil(repo)
 	now := time.Now().UTC()
@@ -1149,11 +1149,15 @@ func TestHandleRefreshRepoPersistsExpandedReposBeforeAsyncSync(t *testing.T) {
 		) ([]*gh.Repository, error) {
 			repos := []*gh.Repository{
 				{
+					ID:       new(int64(101)),
+					NodeID:   new("repo-101"),
 					Name:     new("kenn-forge"),
 					Owner:    &gh.User{Login: new(owner)},
 					Archived: new(false),
 				},
 				{
+					ID:       new(int64(102)),
+					NodeID:   new("repo-102"),
 					Name:     new("archived"),
 					Owner:    &gh.User{Login: new(owner)},
 					Archived: new(true),
@@ -1161,6 +1165,8 @@ func TestHandleRefreshRepoPersistsExpandedReposBeforeAsyncSync(t *testing.T) {
 			}
 			if includeRefreshRepo.Load() {
 				repos = append(repos, &gh.Repository{
+					ID:       new(int64(103)),
+					NodeID:   new("repo-103"),
 					Name:     new("review-bot"),
 					Owner:    &gh.User{Login: new(owner)},
 					Archived: new(false),
@@ -2344,12 +2350,13 @@ port = 8091
 	assert.True(srv.syncer.IsTrackedRepoOnHost("Team", "Service", "gitea.example.com"))
 
 	ref := platform.RepoRef{
-		Platform:   platform.KindGitea,
-		Host:       "gitea.example.com",
-		Owner:      "Team",
-		Name:       "Service",
-		RepoPath:   "Team/Service",
-		PlatformID: 6262,
+		Platform:           platform.KindGitea,
+		Host:               "gitea.example.com",
+		Owner:              "Team",
+		Name:               "Service",
+		RepoPath:           "Team/Service",
+		PlatformID:         6262,
+		PlatformExternalID: "6262",
 	}
 	dbRepo, err := database.GetRepoByIdentity(t.Context(), platform.DBRepoIdentity(ref))
 	require.NoError(err)
@@ -2675,7 +2682,7 @@ prefer_github_native_stacks = true
 	ctx := t.Context()
 	seedStackedPR(t, database, "acme", "widget", 10, "feat/base", "main", db.MergeRequestStateOpen, "", "")
 	seedStackedPR(t, database, "acme", "widget", 11, "feat/tip", "feat/base", db.MergeRequestStateOpen, "", "")
-	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotNil(repo)
 	now := time.Now().UTC()
@@ -2740,7 +2747,7 @@ prefer_github_native_stacks = true
 	ctx := t.Context()
 	seedStackedPR(t, database, "acme", "widget", 10, "feat/base", "main", db.MergeRequestStateOpen, "", "")
 	seedStackedPR(t, database, "acme", "widget", 11, "feat/tip", "feat/base", db.MergeRequestStateOpen, "", "")
-	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotNil(repo)
 	now := time.Now().UTC()
@@ -2793,7 +2800,7 @@ prefer_github_native_stacks = true
 	// "removed" is absent from config, so the syncer never tracked it.
 	seedStackedPR(t, database, "acme", "removed", 10, "feat/base", "main", db.MergeRequestStateOpen, "", "")
 	seedStackedPR(t, database, "acme", "removed", 11, "feat/tip", "feat/base", db.MergeRequestStateOpen, "", "")
-	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "removed"))
+	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "removed"))
 	require.NoError(err)
 	require.NotNil(repo)
 	now := time.Now().UTC()
@@ -2845,7 +2852,7 @@ func TestNewServerRestoresProjectionWhenNativeStacksBootDisabled(t *testing.T) {
 	database := dbtest.Open(t)
 	seedStackedPR(t, database, "acme", "widget", 10, "feat/base", "main", db.MergeRequestStateOpen, "", "")
 	seedStackedPR(t, database, "acme", "widget", 11, "feat/tip", "feat/base", db.MergeRequestStateOpen, "", "")
-	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotNil(repo)
 	now := time.Now().UTC()

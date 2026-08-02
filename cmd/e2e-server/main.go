@@ -1103,6 +1103,7 @@ func buildAppState(
 		if owner == "import-lab" {
 			return []*gh.Repository{
 				{
+					NodeID:      new("repo-import-lab-api"),
 					Name:        new("api"),
 					Owner:       &gh.User{Login: new(owner)},
 					Description: new("Import API"),
@@ -1111,6 +1112,7 @@ func buildAppState(
 					PushedAt:    &pushedForge,
 				},
 				{
+					NodeID:      new("repo-import-lab-worker"),
 					Name:        new("worker"),
 					Owner:       &gh.User{Login: new(owner)},
 					Description: new("Import worker"),
@@ -1119,6 +1121,7 @@ func buildAppState(
 					PushedAt:    &pushedWorker,
 				},
 				{
+					NodeID:      new("repo-import-lab-archived"),
 					Name:        new("archived"),
 					Owner:       &gh.User{Login: new(owner)},
 					Description: new("Archived import fixture"),
@@ -1134,6 +1137,7 @@ func buildAppState(
 
 		repos := []*gh.Repository{
 			{
+				NodeID:      new("repo-roborev-dev-kenn-forge"),
 				Name:        new("kenn-forge"),
 				Owner:       &gh.User{Login: new(owner)},
 				Description: new("Main dashboard"),
@@ -1142,6 +1146,7 @@ func buildAppState(
 				PushedAt:    &pushedForge,
 			},
 			{
+				NodeID:      new("repo-roborev-dev-worker"),
 				Name:        new("worker"),
 				Owner:       &gh.User{Login: new(owner)},
 				Description: new("Background jobs"),
@@ -1150,6 +1155,7 @@ func buildAppState(
 				PushedAt:    &pushedWorker,
 			},
 			{
+				NodeID:      new("repo-roborev-dev-archived"),
 				Name:        new("archived"),
 				Owner:       &gh.User{Login: new(owner)},
 				Description: new("Archived service"),
@@ -1160,6 +1166,7 @@ func buildAppState(
 		}
 		if includeRefreshRepo, _ := ctx.Value(globRefreshContextKey{}).(bool); includeRefreshRepo {
 			repos = append(repos, &gh.Repository{
+				NodeID:      new("repo-roborev-dev-review-bot"),
 				Name:        new("review-bot"),
 				Owner:       &gh.User{Login: new(owner)},
 				Description: new("Review automation"),
@@ -1221,7 +1228,14 @@ func buildAppState(
 	)
 	for _, repo := range startupResolved.Expanded {
 		if _, err := database.UpsertRepo(
-			ctx, db.GitHubRepoIdentity(repo.PlatformHost, repo.Owner, repo.Name),
+			ctx, db.RepoIdentity{
+				Platform:       string(repo.Platform),
+				PlatformHost:   repo.PlatformHost,
+				PlatformRepoID: repo.PlatformExternalID,
+				Owner:          repo.Owner,
+				Name:           repo.Name,
+				RepoPath:       repo.RepoPath,
+			},
 		); err != nil {
 			return nil, fmt.Errorf("seed startup repo %s/%s: %w", repo.Owner, repo.Name, err)
 		}
@@ -1322,12 +1336,13 @@ func buildAppState(
 							Name:     "service",
 							RepoPath: "forge-lab/service",
 						},
-						Description:   "Forgejo service",
-						Private:       false,
-						UpdatedAt:     forgeUpdated,
-						DefaultBranch: "main",
-						WebURL:        "https://codeberg.org/forge-lab/service",
-						CloneURL:      "https://codeberg.org/forge-lab/service.git",
+						PlatformExternalID: "forgejo-repo-service",
+						Description:        "Forgejo service",
+						Private:            false,
+						UpdatedAt:          forgeUpdated,
+						DefaultBranch:      "main",
+						WebURL:             "https://codeberg.org/forge-lab/service",
+						CloneURL:           "https://codeberg.org/forge-lab/service.git",
 					},
 					{
 						Ref: platform.RepoRef{
@@ -1337,7 +1352,8 @@ func buildAppState(
 							Name:     "archived",
 							RepoPath: "forge-lab/archived",
 						},
-						Archived: true,
+						PlatformExternalID: "forgejo-repo-archived",
+						Archived:           true,
 					},
 				},
 			},
@@ -1356,12 +1372,13 @@ func buildAppState(
 							Name:     "service",
 							RepoPath: "gitea-team/service",
 						},
-						Description:   "Gitea service",
-						Private:       false,
-						UpdatedAt:     giteaUpdated,
-						DefaultBranch: "main",
-						WebURL:        "https://gitea.com/gitea-team/service",
-						CloneURL:      "https://gitea.com/gitea-team/service.git",
+						PlatformExternalID: "gitea-repo-service",
+						Description:        "Gitea service",
+						Private:            false,
+						UpdatedAt:          giteaUpdated,
+						DefaultBranch:      "main",
+						WebURL:             "https://gitea.com/gitea-team/service",
+						CloneURL:           "https://gitea.com/gitea-team/service.git",
 					},
 					{
 						Ref: platform.RepoRef{
@@ -1371,9 +1388,10 @@ func buildAppState(
 							Name:     "private-service",
 							RepoPath: "gitea-team/private-service",
 						},
-						Description: "Private Gitea service",
-						Private:     true,
-						UpdatedAt:   giteaUpdated.Add(-time.Hour),
+						PlatformExternalID: "gitea-repo-private-service",
+						Description:        "Private Gitea service",
+						Private:            true,
+						UpdatedAt:          giteaUpdated.Add(-time.Hour),
 					},
 					{
 						Ref: platform.RepoRef{
@@ -1383,7 +1401,8 @@ func buildAppState(
 							Name:     "archived",
 							RepoPath: "gitea-team/archived",
 						},
-						Archived: true,
+						PlatformExternalID: "gitea-repo-archived",
+						Archived:           true,
 					},
 				},
 			},

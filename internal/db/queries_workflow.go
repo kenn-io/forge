@@ -316,7 +316,7 @@ func (d *DB) ListItemWorkflowStates(
 		           CAST(COALESCE(w.updated_at, p.last_activity_at) AS TEXT) AS sort_key,
 		           CAST(p.last_activity_at AS TEXT) AS activity_key
 		    FROM forge_merge_requests p
-		    JOIN forge_repos r ON r.id = p.repo_id
+		    JOIN forge_repos r ON r.id = p.repo_id AND r.lifecycle_state = 'active'
 		    LEFT JOIN forge_item_workflow_state w
 		        ON w.repo_id = p.repo_id AND w.item_type = 'pr' AND w.item_number = p.number
 		    %s
@@ -333,7 +333,7 @@ func (d *DB) ListItemWorkflowStates(
 		           CAST(COALESCE(w.updated_at, i.last_activity_at) AS TEXT) AS sort_key,
 		           CAST(i.last_activity_at AS TEXT) AS activity_key
 		    FROM forge_issues i
-		    JOIN forge_repos r ON r.id = i.repo_id
+		    JOIN forge_repos r ON r.id = i.repo_id AND r.lifecycle_state = 'active'
 		    LEFT JOIN forge_item_workflow_state w
 		        ON w.repo_id = i.repo_id AND w.item_type = 'issue' AND w.item_number = i.number
 		    %s

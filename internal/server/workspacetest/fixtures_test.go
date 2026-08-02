@@ -237,7 +237,7 @@ func seedPRWithHeadRepo(
 	t.Helper()
 	ctx := t.Context()
 
-	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity(host, owner, name))
+	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity(host, owner, name))
 	require.NoError(t, err)
 
 	now := time.Now().UTC().Truncate(time.Second)
@@ -279,7 +279,7 @@ func seedIssue(
 	ctx := t.Context()
 
 	repoID, err := database.UpsertRepo(
-		ctx, db.GitHubRepoIdentity("github.com", owner, name),
+		ctx, verifiedGitHubRepoIdentity("github.com", owner, name),
 	)
 	require.NoError(t, err)
 
@@ -302,6 +302,12 @@ func seedIssue(
 	issueID, err := database.UpsertIssue(ctx, issue)
 	require.NoError(t, err)
 	return issueID
+}
+
+func verifiedGitHubRepoIdentity(host, owner, name string) db.RepoIdentity {
+	identity := db.GitHubRepoIdentity(host, owner, name)
+	identity.PlatformRepoID = "repo-" + owner + "-" + name
+	return identity
 }
 
 func createReadyWorkspace(

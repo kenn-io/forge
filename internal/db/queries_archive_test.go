@@ -106,6 +106,63 @@ func TestArchiveDiscoveryLifecyclePreservesExistingState(t *testing.T) {
 	assert.Equal(now.Add(2*time.Hour), preserved[0].UpdatedAt)
 }
 
+func TestQueueArchivePromptByIdentityTargetsCurrentRouteOccupant(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := openTestDB(t)
+	ctx := t.Context()
+	now := archiveTestTime()
+	oldEntry, _, err := database.ReconcileRepositoryObservation(ctx, RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "R_old", Owner: "acme", Name: "widget",
+	}, now)
+	require.NoError(err)
+	require.NoError(database.EnsureDiscoveryArchives(
+		ctx, []int64{oldEntry.Repository.ID}, now,
+	))
+	require.NoError(database.StartFullArchives(
+		ctx, []int64{oldEntry.Repository.ID}, now,
+	))
+
+	newEntry, _, err := database.ReconcileRepositoryObservation(ctx, RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "R_new", Owner: "acme", Name: "widget",
+	}, now.Add(time.Minute))
+	require.NoError(err)
+	require.NoError(database.ReconcileDiscoveryArchives(
+		ctx, []int64{newEntry.Repository.ID}, now.Add(time.Minute),
+	))
+	require.NoError(database.StartFullArchives(
+		ctx, []int64{newEntry.Repository.ID}, now.Add(time.Minute),
+	))
+	maintenanceSucceededAt := now.Add(2 * time.Minute)
+	_, err = database.WriteDB().ExecContext(ctx, `
+		UPDATE forge_archive_repos
+		SET maintenance_succeeded_at = ?
+		WHERE repo_id = ?`, maintenanceSucceededAt, newEntry.Repository.ID)
+	require.NoError(err)
+
+	require.NoError(database.QueueArchivePromptByIdentity(ctx, RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		Owner: "acme", Name: "widget",
+	}, now.Add(3*time.Minute)))
+
+	states, err := database.ListArchiveRepoStates(
+		ctx, []int64{oldEntry.Repository.ID, newEntry.Repository.ID},
+	)
+	require.NoError(err)
+	require.Len(states, 2)
+	stateByRepoID := map[int64]ArchiveRepoState{}
+	for _, state := range states {
+		stateByRepoID[state.RepoID] = state
+	}
+	assert.Equal(
+		ArchiveOperatorStatePaused,
+		stateByRepoID[oldEntry.Repository.ID].OperatorState,
+	)
+	assert.Nil(stateByRepoID[newEntry.Repository.ID].MaintenanceSucceededAt)
+}
+
 func TestStartFullArchiveCompletesEmptyFinishedInventory(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

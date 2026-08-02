@@ -673,9 +673,14 @@ func queueArchivePromptByIdentity(
 			maintenance_succeeded_at = NULL, updated_at = MAX(updated_at, ?)
 		WHERE collection_mode = 'full' AND operator_state = 'active'
 		  AND repo_id = (
-			SELECT id FROM forge_repos
-			WHERE platform = ? AND platform_host = ? AND owner = ? AND name = ?
-		  )`, now.UTC(), identity.Platform, identity.PlatformHost, identity.Owner, identity.Name)
+			SELECT r.id
+			FROM forge_repos r
+			JOIN forge_repo_routes rr
+			  ON rr.repo_id = r.id AND rr.is_current = 1
+			WHERE r.lifecycle_state = 'active'
+			  AND rr.platform = ? AND rr.platform_host = ?
+			  AND rr.repo_path_key = ?
+		  )`, now.UTC(), identity.Platform, identity.PlatformHost, identity.RepoPathKey)
 	if err != nil {
 		return fmt.Errorf("queue archive prompt destination: %w", err)
 	}

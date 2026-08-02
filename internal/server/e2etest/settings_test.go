@@ -835,8 +835,10 @@ name = "widget"
 	require.NoError(err)
 
 	database := dbtest.Open(t)
+	identity := db.GitHubRepoIdentity(platformHost, "acme", "widget")
+	identity.PlatformRepoID = "repo-acme-widget"
 	repoID, err := database.UpsertRepo(
-		t.Context(), db.GitHubRepoIdentity(platformHost, "acme", "widget"),
+		t.Context(), identity,
 	)
 	require.NoError(err)
 	seed(database, repoID)
@@ -844,7 +846,10 @@ name = "widget"
 	syncer := github.NewSyncer(
 		map[string]github.Client{"github.com": &mockGH{}},
 		database, nil,
-		[]github.RepoRef{{Owner: "acme", Name: "widget", PlatformHost: platformHost}},
+		[]github.RepoRef{{
+			Owner: "acme", Name: "widget", PlatformHost: platformHost,
+			PlatformExternalID: "repo-acme-widget",
+		}},
 		time.Minute, nil, nil,
 	)
 	t.Cleanup(syncer.Stop)

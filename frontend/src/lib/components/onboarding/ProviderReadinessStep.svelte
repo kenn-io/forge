@@ -26,6 +26,8 @@
   const glab = $derived(tooling?.glab);
   const ghReady = $derived(gh?.available === true && gh.authenticated === true);
   const glabReady = $derived(glab?.available === true && glab.authenticated === true);
+  const ghHost = $derived(gh?.host || "github.com");
+  const ghLoginCommand = $derived(ghHost === "github.com" ? "gh auth login" : `gh auth login --hostname ${ghHost}`);
 
   function accountLabel(tool: { host?: string; user?: string } | undefined, fallbackHost: string): string {
     const host = tool?.host || fallbackHost;
@@ -53,7 +55,7 @@
         {:else if ghReady}
           <span><code>gh</code> authenticated · {accountLabel(gh, "github.com")}</span>
         {:else if gh?.available}
-          <span><code>gh</code> is not authenticated. Sign in from a terminal, then check again.</span>
+          <span><code>gh</code> is not authenticated for <code>{ghHost}</code>. Sign in from a terminal, then check again.</span>
         {:else}
           <span><code>gh</code> is not installed. Install the GitHub CLI on this host, then check again.</span>
         {/if}
@@ -109,7 +111,7 @@
   </div>
 
   {#if !ghReady && gh?.available}
-    <pre class="command"><code>gh auth login</code></pre>
+    <pre class="command"><code>{ghLoginCommand}</code></pre>
   {/if}
 
   {#if retryError}

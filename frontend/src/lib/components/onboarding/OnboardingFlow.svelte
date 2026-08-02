@@ -406,12 +406,12 @@
       </ol>
 
       <div class="identity" class:identity-ready={ghReady || hasConfiguredRepos}>
-        {#if tooling === undefined}
-          <Spinner size={14} label="Checking code forge tooling" />
-          <div><strong>Checking code forge</strong><span>Local tooling</span></div>
-        {:else if hasConfiguredRepos}
+        {#if hasConfiguredRepos}
           <CircleCheckIcon size={16} aria-hidden="true" />
           <div><strong>Code forge configured</strong><span>Repositories ready</span></div>
+        {:else if tooling === undefined}
+          <Spinner size={14} label="Checking code forge tooling" />
+          <div><strong>Checking code forge</strong><span>Local tooling</span></div>
         {:else if ghReady}
           <CircleCheckIcon size={16} aria-hidden="true" />
           <div>

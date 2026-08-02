@@ -191,6 +191,18 @@ describe("OnboardingFlow", () => {
     expect(mocks.listUserRepositories).toHaveBeenCalledOnce();
   });
 
+  it("keeps enterprise GitHub recovery on the detected host", () => {
+    mocks.tooling.value = {
+      git: { available: true, version: "2.50" },
+      gh: { available: true, authenticated: false, host: "ghe.example.com" },
+      glab: { available: false, authenticated: false },
+    };
+    renderFlow(storeFixture().stores);
+
+    expect(screen.getByText("ghe.example.com")).toBeTruthy();
+    expect(screen.getByText("gh auth login --hostname ghe.example.com")).toBeTruthy();
+  });
+
   it("hands non-GitHub setup to regular repository configuration", async () => {
     mocks.tooling.value = {
       git: { available: true, version: "2.50" },
@@ -227,6 +239,14 @@ describe("OnboardingFlow", () => {
     await waitFor(() => expect(fixture.triggerSync).toHaveBeenCalledOnce());
     expect(screen.queryByRole("heading", { name: "Connect a code forge" })).toBeNull();
     expect(mocks.listUserRepositories).not.toHaveBeenCalled();
+  });
+
+  it("reports configured repositories while the CLI probe is unavailable", () => {
+    mocks.tooling.value = undefined;
+    renderFlow(storeFixture({ configured: true }).stores);
+
+    expect(screen.getByText("Code forge configured")).toBeTruthy();
+    expect(screen.queryByText("Checking code forge")).toBeNull();
   });
 
   it("discovers and configures repositories for the authenticated GitHub host", async () => {

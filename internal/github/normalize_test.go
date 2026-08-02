@@ -39,6 +39,35 @@ func TestNormalizeIssueNilInputReturnsError(t *testing.T) {
 	require.ErrorContains(t, err, "nil issue")
 }
 
+func TestNormalizeCommentVisibilityMetadata(t *testing.T) {
+	comment := &gh.IssueComment{ID: new(int64(73))}
+	visibility := CommentVisibility{Hidden: true, Reason: "OFF_TOPIC"}
+
+	tests := []struct {
+		name      string
+		normalize func() string
+	}{
+		{
+			name: "pull request comment",
+			normalize: func() string {
+				return NormalizeCommentEventWithVisibility(1, comment, visibility).MetadataJSON
+			},
+		},
+		{
+			name: "issue comment",
+			normalize: func() string {
+				return NormalizeIssueCommentEventWithVisibility(1, comment, visibility).MetadataJSON
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.JSONEq(t, `{"provider_hidden":true,"provider_hidden_reason":"OFF_TOPIC"}`, tt.normalize())
+		})
+	}
+}
+
 func TestNormalizePR_OpenPR(t *testing.T) {
 	assert := assert.New(t)
 	now := time.Now().UTC().Truncate(time.Second)

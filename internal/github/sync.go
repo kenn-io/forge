@@ -8493,6 +8493,7 @@ func (s *Syncer) syncOpenIssueFromBulk(
 		applied, err := s.replaceIssueCommentEvents(
 			ctx, repo, number, issueID, revision, bulk.Comments,
 			normalizeIssueTimelineEvents(issueID, bulk.TimelineEvents), &derived,
+			bulk.CommentVisibility,
 		)
 		if err != nil {
 			return fmt.Errorf(
@@ -8517,7 +8518,7 @@ func (s *Syncer) syncOpenIssueFromBulk(
 	} else {
 		// Timeline data truncated — fall back to detail fetch.
 		if err := s.refreshIssueTimeline(
-			ctx, repo, issueID, revision, bulk.Issue,
+			ctx, repo, issueID, revision, bulk.Issue, bulk.CommentVisibility,
 		); err != nil {
 			if errors.Is(err, errParentSnapshotAdvanced) {
 				return nil
@@ -8695,7 +8696,9 @@ func (s *Syncer) syncOpenMRFromBulk(
 		return fmt.Errorf("load commit order for MR #%d: %w", number, err)
 	}
 	for _, c := range bulk.Comments {
-		comments = append(comments, NormalizeCommentEvent(mrID, c))
+		comments = append(comments, NormalizeCommentEventWithVisibility(
+			mrID, c, bulk.CommentVisibility[c.GetID()],
+		))
 	}
 	for _, r := range bulk.Reviews {
 		reviews = append(reviews, NormalizeReviewEvent(mrID, r))
@@ -9514,7 +9517,7 @@ func (s *Syncer) fetchIssueDetail(
 	}
 
 	if err := s.refreshIssueTimeline(
-		ctx, repo, issueID, revision, ghIssue,
+		ctx, repo, issueID, revision, ghIssue, nil,
 	); err != nil {
 		calls++ // comments
 		if errors.Is(err, errParentSnapshotAdvanced) {
@@ -9739,8 +9742,14 @@ func (s *Syncer) refreshTimeline(
 	if err != nil {
 		return fmt.Errorf("load commit order for MR #%d: %w", number, err)
 	}
+	commentVisibility, err := s.storedPRCommentVisibility(ctx, mrID)
+	if err != nil {
+		return fmt.Errorf("load stored comment visibility for MR #%d: %w", number, err)
+	}
 	for _, c := range comments {
-		commentEvents = append(commentEvents, NormalizeCommentEvent(mrID, c))
+		commentEvents = append(commentEvents, NormalizeCommentEventWithVisibility(
+			mrID, c, commentVisibility[c.GetID()],
+		))
 	}
 	for _, r := range reviews {
 		reviewEvents = append(reviewEvents, NormalizeReviewEvent(mrID, r))
@@ -10172,10 +10181,18 @@ func (s *Syncer) replacePRCommentEvents(
 	expectedRevision int64,
 	comments []*gh.IssueComment,
 	derived *db.MRDerivedFields,
+	visibility map[int64]CommentVisibility,
 ) (bool, error) {
+	if visibility == nil {
+		var err error
+		visibility, err = s.storedPRCommentVisibility(ctx, mrID)
+		if err != nil {
+			return false, err
+		}
+	}
 	events := make([]db.MREvent, 0, len(comments))
 	for _, c := range comments {
-		event := NormalizeCommentEvent(mrID, c)
+		event := NormalizeCommentEventWithVisibility(mrID, c, visibility[c.GetID()])
 		events = append(events, event)
 	}
 	applied, err := s.commitMergeRequestDatasets(
@@ -10193,13 +10210,75 @@ func (s *Syncer) replaceIssueCommentEvents(
 	comments []*gh.IssueComment,
 	otherEvents []db.IssueEvent,
 	derived *db.IssueDerivedFields,
+	visibility map[int64]CommentVisibility,
 ) (bool, error) {
+	if visibility == nil {
+		var err error
+		visibility, err = s.storedIssueCommentVisibility(ctx, issueID)
+		if err != nil {
+			return false, err
+		}
+	}
 	events := make([]db.IssueEvent, 0, len(comments))
 	for _, c := range comments {
-		event := NormalizeIssueCommentEvent(issueID, c)
+		event := NormalizeIssueCommentEventWithVisibility(issueID, c, visibility[c.GetID()])
 		events = append(events, event)
 	}
 	return s.commitIssueCommentsSnapshot(ctx, repo, issueID, number, expectedRevision, events, otherEvents, derived)
+}
+
+func (s *Syncer) storedPRCommentVisibility(
+	ctx context.Context,
+	mrID int64,
+) (map[int64]CommentVisibility, error) {
+	visibility := make(map[int64]CommentVisibility)
+	existing, err := s.db.ListMREvents(ctx, mrID)
+	if err != nil {
+		return nil, fmt.Errorf("list existing PR comments before visibility-preserving replacement: %w", err)
+	}
+	for _, event := range existing {
+		if event.EventType != "issue_comment" || event.PlatformID == nil {
+			continue
+		}
+		if state, ok := commentVisibilityFromMetadata(event.MetadataJSON); ok {
+			visibility[*event.PlatformID] = state
+		}
+	}
+	return visibility, nil
+}
+
+func (s *Syncer) storedIssueCommentVisibility(
+	ctx context.Context,
+	issueID int64,
+) (map[int64]CommentVisibility, error) {
+	visibility := make(map[int64]CommentVisibility)
+	existing, err := s.db.ListIssueEvents(ctx, issueID)
+	if err != nil {
+		return nil, fmt.Errorf("list existing issue comments before visibility-preserving replacement: %w", err)
+	}
+	for _, event := range existing {
+		if event.EventType != "issue_comment" || event.PlatformID == nil {
+			continue
+		}
+		if state, ok := commentVisibilityFromMetadata(event.MetadataJSON); ok {
+			visibility[*event.PlatformID] = state
+		}
+	}
+	return visibility, nil
+}
+
+func commentVisibilityFromMetadata(metadataJSON string) (CommentVisibility, bool) {
+	if metadataJSON == "" {
+		return CommentVisibility{}, false
+	}
+	var metadata struct {
+		Hidden bool   `json:"provider_hidden"`
+		Reason string `json:"provider_hidden_reason"`
+	}
+	if err := json.Unmarshal([]byte(metadataJSON), &metadata); err != nil || !metadata.Hidden {
+		return CommentVisibility{}, false
+	}
+	return CommentVisibility{Hidden: true, Reason: metadata.Reason}, true
 }
 
 // resolveDisplayName returns the GitHub display name for a
@@ -10515,7 +10594,7 @@ func (s *Syncer) syncOpenIssue(
 		return nil
 	}
 
-	if err := s.refreshIssueTimeline(ctx, repo, issueID, revision, ghIssue); err != nil {
+	if err := s.refreshIssueTimeline(ctx, repo, issueID, revision, ghIssue, nil); err != nil {
 		if errors.Is(err, errParentSnapshotAdvanced) {
 			return nil
 		}
@@ -10530,6 +10609,7 @@ func (s *Syncer) refreshIssueTimeline(
 	issueID int64,
 	expectedRevision int64,
 	ghIssue *gh.Issue,
+	visibility map[int64]CommentVisibility,
 ) error {
 	if ghIssue == nil {
 		return fmt.Errorf("nil issue")
@@ -10579,7 +10659,7 @@ func (s *Syncer) refreshIssueTimeline(
 		}
 	}
 	applied, err := s.replaceIssueCommentEvents(
-		ctx, repo, number, issueID, expectedRevision, comments, otherEvents, &derived,
+		ctx, repo, number, issueID, expectedRevision, comments, otherEvents, &derived, visibility,
 	)
 	if err != nil {
 		return fmt.Errorf(
@@ -10742,7 +10822,7 @@ func (s *Syncer) persistPRComments(
 		LastActivityAt: computePRCommentRefreshLastActivity(pr, comments, nonCommentLatest),
 	}
 	applied, err := s.replacePRCommentEvents(
-		ctx, repo, pr.Number, pr.ID, pr.SnapshotRevision, comments, &derived,
+		ctx, repo, pr.Number, pr.ID, pr.SnapshotRevision, comments, &derived, nil,
 	)
 	if err != nil {
 		return fmt.Errorf("replace PR comment events: %w", err)
@@ -10764,7 +10844,7 @@ func (s *Syncer) persistIssueComments(
 		LastActivityAt: computeIssueCommentRefreshLastActivity(issue, comments),
 	}
 	applied, err := s.replaceIssueCommentEvents(
-		ctx, repo, issue.Number, issue.ID, issue.SnapshotRevision, comments, nil, &derived,
+		ctx, repo, issue.Number, issue.ID, issue.SnapshotRevision, comments, nil, &derived, nil,
 	)
 	if err != nil {
 		return fmt.Errorf("replace issue comment events: %w", err)

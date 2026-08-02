@@ -444,6 +444,7 @@ const config = {
       "@lucide/svelte/icons/download",
       "@lucide/svelte/icons/ellipsis",
       "@lucide/svelte/icons/eraser",
+      "@lucide/svelte/icons/eye-off",
       "@lucide/svelte/icons/external-link",
       "@lucide/svelte/icons/file-search",
       "@lucide/svelte/icons/file-text",

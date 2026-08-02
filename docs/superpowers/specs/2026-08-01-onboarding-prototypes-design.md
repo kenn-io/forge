@@ -7,6 +7,14 @@ authenticated `gh` CLI to configured repositories, a useful pull-request view,
 and a first workspace. The output is a contained, interactive mockup gallery,
 not a production onboarding implementation.
 
+## Selected direction
+
+Prototype A, the focused linear setup path, is the direction selected for a
+production design pass. Preserve its five-step activation sequence and clear
+handoff into the regular application. The other prototypes remain useful
+references for resumability and durable help, but are not the primary first-run
+experience.
+
 ## Research signals
 
 - [GitHub Desktop's getting-started guide](https://docs.github.com/en/desktop/overview/getting-started-with-github-desktop)

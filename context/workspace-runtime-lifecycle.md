@@ -139,11 +139,12 @@ stale tabs.
   or window focus/visibility loss; pointerdown capture closes the race before a competing browser copy starts, and
   revocation also stops in-flight browser-to-loopback fallback chains before their next stage
   (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::handleDocumentPointerDown`).
-- Terminal pointerdown only prepares clipboard access; movement of at least four CSS pixels confirms selection intent,
-  while a zero-motion or sub-threshold focus click expires without reaching browser or loopback clipboard fallbacks.
+- Terminal pointerdown only prepares clipboard access; selection intent requires movement of roughly one rendered
+  terminal cell rather than a fixed CSS-pixel threshold, so physical focus-click jitter expires without reaching
+  browser or loopback clipboard fallbacks.
   Confirmed captured drags retain authority only through internal or destinationless focus movement while the pane stays
   active; their watchdog also releases browser capture, so a missing release cannot shield later focus loss
-  (`frontend/src/lib/components/terminal/terminalClipboardWriter.ts::confirmPointerSelection`).
+  (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::hasPointerSelectionIntent`).
 - Host clipboard writes require a local browser; trusted loopback proxies must report exactly one client IP assigned
   to the host, because the proxy's loopback `RemoteAddr` alone does not establish browser locality
   (`internal/server/terminal_clipboard_access.go::isLocalTerminalClipboardRequest`).

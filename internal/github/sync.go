@@ -4018,6 +4018,13 @@ func (s *Syncer) bulkGraphQLAllowed(
 	return !backoff
 }
 
+// SyncWatchedMRs runs one synchronous pass of the fast detail-refresh lane.
+// Embedders normally call Start to run this lane on its configured cadence;
+// this method is available when an immediate pass is required.
+func (s *Syncer) SyncWatchedMRs(ctx context.Context) {
+	s.syncWatchedMRs(ctx)
+}
+
 func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 	ctx = WithSyncBudget(ctx)
 

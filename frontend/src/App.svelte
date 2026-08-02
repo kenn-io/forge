@@ -41,6 +41,7 @@
   import WorkspaceEmbedShell from "./lib/components/terminal/WorkspaceEmbedShell.svelte";
   import WorkspaceFirstRunPanel from "./lib/components/terminal/WorkspaceFirstRunPanel.svelte";
   import DesignSystemPage from "./lib/components/design-system/DesignSystemPage.svelte";
+  import OnboardingFlow from "./lib/components/onboarding/OnboardingFlow.svelte";
   import KataFeature from "./lib/features/kata/KataFeature.svelte";
   import RepoBrowserFeature from "./lib/features/repo-browser/RepoBrowserFeature.svelte";
   import { fetchKataDaemons } from "./lib/api/kata/daemons.js";
@@ -121,6 +122,12 @@
   } from "./lib/stores/embed-config.svelte.js";
   import { getSettings } from "./lib/api/settings.js";
   import { shouldUseFullAppShell } from "./lib/utils/appShell.js";
+  import {
+    readOnboardingState,
+    shouldStartOnboarding,
+    writeOnboardingState,
+    type OnboardingState,
+  } from "./lib/onboarding/onboarding-state.js";
   import { registerScopedActions } from "./lib/stores/keyboard/registry.svelte.js";
   import {
     defaultActions,
@@ -152,6 +159,7 @@
   let docsLoading = $state(false);
   let docsLoadError = $state<string | null>(null);
   let docsRetryFailures = 0;
+  let onboardingState = $state<OnboardingState | null>(readOnboardingState());
   let docsRoute = $state<DocsRouteState>({
     mode: "docs",
     folder: null,
@@ -177,6 +185,30 @@
     };
   };
   const docsAPI = createDocsAPI();
+  const onboardingActive = $derived(
+    appReady
+      && stores?.settings.isSettingsLoaded() === true
+      && shouldStartOnboarding(
+        stores.settings.hasConfiguredRepos(),
+        onboardingState,
+      ),
+  );
+
+  function startOnboarding(): void {
+    if (onboardingState === "active") return;
+    onboardingState = "active";
+    writeOnboardingState("active");
+  }
+
+  function dismissOnboarding(): void {
+    onboardingState = "dismissed";
+    writeOnboardingState("dismissed");
+  }
+
+  function completeOnboarding(): void {
+    onboardingState = "complete";
+    writeOnboardingState("complete");
+  }
 
   function stopFullAppShell() {
     fullShellStores?.events.disconnect();
@@ -550,6 +582,7 @@
   }
 
   function flashTopOffset(): string {
+    if (onboardingActive) return "0";
     if (shouldUseFocusPresentation() || isHeaderHidden()) return "0";
     if (isMobilePage(getPage()) || shouldUseResponsiveMobileActivityPresentation()) {
       return renderedMobileHeaderHeight > 0 ? `${renderedMobileHeaderHeight}px` : "0";
@@ -991,7 +1024,15 @@
        through the shared store stay visible in every presentation, not just
        the desktop shell. -->
   <FlashBanner top={flashTopOffset()} />
-  {#if shouldUseFocusPresentation()}
+  {#if onboardingActive && stores}
+    <OnboardingFlow
+      {stores}
+      iconSrc={appIconSrc}
+      onStart={startOnboarding}
+      onDismiss={dismissOnboarding}
+      onComplete={completeOnboarding}
+    />
+  {:else if shouldUseFocusPresentation()}
     {@const r = getRoute()}
     <main
       class="focus-layout"
@@ -1302,17 +1343,19 @@
     {/if}
   {/if}
 
-    <Palette
-      modeSearch={runModePaletteSearch}
-      onOpenKataIssue={openKataIssue}
-      onOpenDoc={openDoc}
-    />
-    <Cheatsheet />
-    <NewWorkspaceDialog
-      open={isNewWorkspaceDialogOpen()}
-      seedRepo={getNewWorkspaceSeedRepo()}
-      onClose={closeNewWorkspaceDialog}
-    />
+    {#if !onboardingActive}
+      <Palette
+        modeSearch={runModePaletteSearch}
+        onOpenKataIssue={openKataIssue}
+        onOpenDoc={openDoc}
+      />
+      <Cheatsheet />
+      <NewWorkspaceDialog
+        open={isNewWorkspaceDialogOpen()}
+        seedRepo={getNewWorkspaceSeedRepo()}
+        onClose={closeNewWorkspaceDialog}
+      />
+    {/if}
   </Provider>
 {/if}
 

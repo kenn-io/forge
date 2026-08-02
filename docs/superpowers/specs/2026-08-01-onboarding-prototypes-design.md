@@ -9,11 +9,13 @@ not a production onboarding implementation.
 
 ## Selected direction
 
-Prototype A, the focused linear setup path, is the direction selected for a
-production design pass. Preserve its five-step activation sequence and clear
-handoff into the regular application. The other prototypes remain useful
-references for resumability and durable help, but are not the primary first-run
-experience.
+Prototype A, the focused linear setup path, is implemented as the primary
+first-run experience. It appears when loaded settings contain no repositories,
+uses the authenticated local `gh` session for explicit repository selection,
+and continues through first sync, a real pull request, and workspace creation.
+Active, dismissed, and completed state is browser-local so interrupted setup
+resumes without replaying onboarding for established installations. The other
+prototypes remain references for resumability and durable help.
 
 ## Research signals
 

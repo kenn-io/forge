@@ -120,6 +120,13 @@ test("first run reaches a ready PR workspace", async ({ page }) => {
     await expect(page.getByRole("heading", { name: "Open a pull request" })).toBeVisible({ timeout: 30_000 });
     await expect(page.getByText("Add widget caching layer", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: /Continue with PR/ }).click();
+    await page.getByRole("button", { name: "Open PR first" }).click();
+    await expect(page).toHaveURL(/\/pulls\/github\/acme\/widgets\/1$/);
+
+    await page.evaluate(() => sessionStorage.removeItem("kenn-forge:first-run-onboarding"));
+    await page.goto(`${server.info.base_url}/`);
+    await expect(page.getByRole("heading", { name: "Open a pull request" })).toBeVisible({ timeout: 30_000 });
+    await page.getByRole("button", { name: /Continue with PR/ }).click();
     await page.getByRole("button", { name: "Create workspace" }).click();
 
     await expect(page).toHaveURL(/\/terminal\/[^/]+$/, { timeout: 30_000 });

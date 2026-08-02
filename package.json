@@ -35,8 +35,5 @@
       "onFail": "download"
     }
   },
-  "packageManager": "bun@1.3.14",
-  "patchedDependencies": {
-    "@xterm/addon-webgl@0.19.0": "patches/@xterm%2Faddon-webgl@0.19.0.patch"
-  }
+  "packageManager": "bun@1.3.14"
 }

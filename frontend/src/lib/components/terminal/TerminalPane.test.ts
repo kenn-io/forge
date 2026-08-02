@@ -471,7 +471,6 @@ describe("TerminalPane", () => {
       expect.objectContaining({
         allowProposedApi: true,
         allowTransparency: false,
-        customGlyphs: true,
         cursorBlink: true,
         fontSize: 14,
         scrollback: 1000,
@@ -481,9 +480,12 @@ describe("TerminalPane", () => {
         rescaleOverlappingGlyphs: true,
         scrollOnEraseInDisplay: true,
         smoothScrollDuration: 0,
+        vtExtensions: {
+          kittyKeyboard: true,
+        },
       }),
     );
-    expect(mockWebglCtor).toHaveBeenCalledWith(undefined);
+    expect(mockWebglCtor).toHaveBeenCalledWith({ customGlyphs: true });
   });
 
   it("uses configured terminal metrics for xterm.js", async () => {

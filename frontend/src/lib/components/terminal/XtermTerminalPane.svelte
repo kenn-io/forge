@@ -494,7 +494,7 @@
       return;
     }
     try {
-      const wgl = new WebglAddon();
+      const wgl = new WebglAddon({ customGlyphs: true });
       wgl.onContextLoss(() => {
         wgl.dispose();
         if (webglAddon === wgl) webglAddon = null;
@@ -863,7 +863,6 @@
         // before a user enables ligatures at runtime.
         allowProposedApi: true,
         allowTransparency: false,
-        customGlyphs: true,
         cursorBlink: terminalCursorBlink,
         drawBoldTextInBrightColors: true,
         fontFamily: terminalFontFamily,
@@ -876,6 +875,9 @@
         rescaleOverlappingGlyphs: true,
         scrollOnEraseInDisplay: true,
         smoothScrollDuration: TERMINAL_SMOOTH_SCROLL_DURATION,
+        vtExtensions: {
+          kittyKeyboard: true,
+        },
         disableStdin: disabled,
       });
       terminal = term;

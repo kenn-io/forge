@@ -236,6 +236,9 @@ Keyboard handlers must have one clear owner for each key press.
   because focus also rests on the session wrapper. Popovers close from their own
   window Escape listeners, not from the registry
   (`frontend/src/lib/utils/keyboardShortcuts.ts::isTerminalKeyboardTarget`).
+- xterm must advertise the Kitty keyboard protocol so terminal applications can
+  negotiate detailed key reports instead of misreading legacy cursor input
+  (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::start`).
 - Modal frames outrank page-level shortcuts. When a modal, drawer, popover, or
   command surface is active, route and list navigation should run only through
   actions explicitly registered for that active surface.

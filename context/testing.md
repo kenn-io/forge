@@ -170,6 +170,9 @@ and materialize `node_modules` from the lockfile before invoking baked `vp`
 (`.github/workflows/ci.yml::ensure_playwright_image`, `.github/docker/playwright/Dockerfile:3`).
 Frontend unit tests use the runner's 14 guaranteed cores; the previous single-worker
 cap was for the retired memory-constrained runner (`frontend/vite.config.ts::resolveUnitTestWorkers`).
+Threaded unit tests must not start and stop a complete Vite/Rolldown dev server merely
+to exercise plugin middleware; native handles can survive worker teardown under CI
+concurrency (`frontend/src/lib/dev/healthcheckPlugin.test.ts::startServer`).
 When a frontend unit run exits without a summary, download the
 `frontend-unit-diagnostics` artifact: it contains any available Vitest output,
 Python-collected wall and child CPU time, Node fatal reports, and pre/post
@@ -238,6 +241,9 @@ WebSocket dimensions; resize frames can lag an inline pane's rendered size
 When a real-tmux browser test moves one session between terminal hosts, close
 the old WebSocket before mounting the next host and reassert mouse mode; concurrent
 clients change tmux sizing and mode delivery (`frontend/tests/e2e-full/00-tmux-browser-clipboard.spec.ts:524`).
+Terminal-emulator protocol negotiation tests must use the PTY-owner e2e option;
+tmux consumes application mode sequences and changes the boundary under test
+(`frontend/tests/e2e-full/00-terminal-kitty-keyboard.spec.ts::kittyCursorProbeCommand`).
 
 A full-stack test claiming a user-triggered mutation works must drive the actual
 control and observe its request or visible result; `page.request` proves only the

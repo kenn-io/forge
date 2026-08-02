@@ -32,6 +32,7 @@ import (
 	"go.kenn.io/forge/internal/platform"
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/profiler"
+	"go.kenn.io/forge/internal/ptyowner"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/stacks"
 	"go.kenn.io/forge/internal/testutil"
@@ -813,6 +814,7 @@ type appOptions struct {
 	fleetKey             string
 	visibleImportedModes bool
 	providerCollision    bool
+	preferPtyOwner       bool
 }
 
 // appState bundles everything one logical e2e server instance owns:
@@ -828,6 +830,7 @@ type appState struct {
 	cfgPath     string
 	worktreeDir string
 	tmuxCommand []string
+	ptyOwner    bool
 	clones      *gitclone.Manager
 	handlerWG   sync.WaitGroup
 }
@@ -933,7 +936,7 @@ func (st *appState) close() {
 		slog.Warn("server shutdown", "err", err)
 	}
 	st.waitForHandlers()
-	cleanupE2EWorkspaces(st.database, st.clones, st.worktreeDir, st.tmuxCommand)
+	cleanupE2EWorkspaces(st.database, st.clones, st.worktreeDir, st.tmuxCommand, st.ptyOwner)
 	if err := st.database.Close(); err != nil {
 		slog.Warn("close database", "err", err)
 	}
@@ -1051,6 +1054,10 @@ func buildAppState(
 			RepoPath:     "acme/widgets",
 		})
 	}
+	tmuxCommand := instanceTmuxCommand()
+	if opts.preferPtyOwner {
+		tmuxCommand = []string{filepath.Join(tmpDir, "missing-tmux")}
+	}
 	cfg := &config.Config{
 		SyncInterval:        "5m",
 		GitHubTokenEnv:      "KENN_FORGE_GITHUB_TOKEN",
@@ -1067,7 +1074,7 @@ func buildAppState(
 		// (parallel Playwright workers, multiple worktrees) never
 		// contend on one tmux server. This is what lets workspace
 		// tests run unserialized.
-		Tmux: config.Tmux{Command: instanceTmuxCommand()},
+		Tmux: config.Tmux{Command: tmuxCommand},
 	}
 	cfg.Fleet.Key = strings.TrimSpace(opts.fleetKey)
 	if opts.visibleImportedModes {
@@ -1445,6 +1452,7 @@ func buildAppState(
 			Clones:                        diffRepo.Manager,
 			WorktreeDir:                   e2eWorktreeDir,
 			HostCheckAllowLoopbackAnyPort: true,
+			PtyOwnerInProcess:             opts.preferPtyOwner,
 		},
 	)
 	// Mirror production wiring so notification syncs nudge an open activity
@@ -2185,6 +2193,7 @@ func buildAppState(
 		cfgPath:     cfgPath,
 		worktreeDir: e2eWorktreeDir,
 		tmuxCommand: cfg.TmuxCommand(),
+		ptyOwner:    opts.preferPtyOwner,
 		clones:      diffRepo.Manager,
 	}, nil
 }
@@ -2311,6 +2320,7 @@ func run(
 				FleetKey             *string `json:"fleet_key"`
 				VisibleImportedModes *bool   `json:"visible_imported_modes"`
 				ProviderCollision    *bool   `json:"provider_collision"`
+				PreferPtyOwner       *bool   `json:"prefer_pty_owner"`
 			}
 			// An empty body resets to the startup options; a
 			// non-empty body must be valid JSON so option typos
@@ -2341,6 +2351,9 @@ func run(
 			}
 			if req.ProviderCollision != nil {
 				opts.providerCollision = *req.ProviderCollision
+			}
+			if req.PreferPtyOwner != nil {
+				opts.preferPtyOwner = *req.PreferPtyOwner
 			}
 
 			// Build against the process ctx, not r.Context(): a
@@ -2473,6 +2486,7 @@ func cleanupE2EWorkspaces(
 	clones *gitclone.Manager,
 	worktreeDir string,
 	tmuxCmd []string,
+	preferPtyOwner bool,
 ) {
 	if database == nil || worktreeDir == "" {
 		return
@@ -2482,6 +2496,11 @@ func cleanupE2EWorkspaces(
 
 	manager := workspace.NewManager(database, worktreeDir)
 	manager.SetTmuxCommand(tmuxCmd)
+	if preferPtyOwner {
+		manager.SetPtyOwnerClient(&ptyowner.Client{
+			Root: filepath.Join(filepath.Dir(worktreeDir), "pty-owner"),
+		})
+	}
 	if clones != nil {
 		manager.SetClones(clones)
 	}

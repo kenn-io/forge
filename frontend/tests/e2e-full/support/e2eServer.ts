@@ -29,6 +29,7 @@ export type IsolatedE2EServerOptions = {
   fleetKey?: string;
   visibleImportedModes?: boolean;
   providerCollision?: boolean;
+  preferPtyOwner?: boolean;
   // Spawn a dedicated server process and kill it on stop() instead of
   // leasing from the per-worker pool. Required when the test depends
   // on process environment the server must inherit at spawn time
@@ -396,6 +397,7 @@ export async function ensureE2EServer(): Promise<E2EServerInfo> {
         fleetKey: "",
         visibleImportedModes: true,
         providerCollision: false,
+        preferPtyOwner: false,
       });
       // Permanently leased: this is the worker's shared server; the
       // isolated-server pool must never hand it out or reset it.
@@ -468,6 +470,7 @@ type PooledServerOptions = {
   fleetKey: string;
   visibleImportedModes: boolean;
   providerCollision: boolean;
+  preferPtyOwner: boolean;
 };
 
 type PooledServer = {
@@ -485,6 +488,7 @@ const defaultPooledOptions: PooledServerOptions = {
   fleetKey: "",
   visibleImportedModes: false,
   providerCollision: false,
+  preferPtyOwner: false,
 };
 
 // Env vars that steer a spawned e2e server's behavior. A pooled
@@ -516,6 +520,7 @@ function normalizedPooledOptions(options: IsolatedE2EServerOptions): PooledServe
     fleetKey: options.fleetKey ?? "",
     visibleImportedModes: options.visibleImportedModes ?? false,
     providerCollision: options.providerCollision ?? false,
+    preferPtyOwner: options.preferPtyOwner ?? false,
   };
 }
 
@@ -524,7 +529,8 @@ function samePooledOptions(a: PooledServerOptions, b: PooledServerOptions): bool
     a.host === b.host &&
     a.fleetKey === b.fleetKey &&
     a.visibleImportedModes === b.visibleImportedModes &&
-    a.providerCollision === b.providerCollision
+    a.providerCollision === b.providerCollision &&
+    a.preferPtyOwner === b.preferPtyOwner
   );
 }
 
@@ -592,6 +598,7 @@ async function postReset(baseURL: string, options: PooledServerOptions): Promise
         fleet_key: options.fleetKey,
         visible_imported_modes: options.visibleImportedModes,
         provider_collision: options.providerCollision,
+        prefer_pty_owner: options.preferPtyOwner,
       }),
     );
   });
@@ -633,6 +640,9 @@ async function spawnPooledServer(options: PooledServerOptions): Promise<PooledSe
     ...(options.visibleImportedModes ? { visibleImportedModes: true } : {}),
     ...(options.providerCollision ? { providerCollision: true } : {}),
   });
+  if (options.preferPtyOwner) {
+    started.info = await postReset(started.info.base_url, options);
+  }
   // The info is in memory now; the temp dir is no longer needed.
   await rm(infoDir, { force: true, recursive: true });
 
@@ -659,6 +669,9 @@ export async function startIsolatedE2EServerWithOptions(
     const infoDir = mkdtempSync(path.join(os.tmpdir(), "kenn-forge-e2e-"));
     const infoFile = path.join(infoDir, "server-info.json");
     const started = await spawnServer(infoFile, options);
+    if (options.preferPtyOwner) {
+      started.info = await postReset(started.info.base_url, normalizedPooledOptions(options));
+    }
     return {
       info: started.info,
       stop: async () => {

@@ -1,67 +1,22 @@
 // @vitest-environment node
 
-import { createServer as createNetServer, type AddressInfo } from "node:net";
-import { createServer, mergeConfig, type ViteDevServer } from "vite";
+import { createServer as createHttpServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import type { AddressInfo } from "node:net";
+import type { ViteDevServer } from "vite";
 import { afterEach, describe, expect, it } from "vite-plus/test";
-import config from "../../../vite.config";
+import { healthcheckPlugin } from "./healthcheckPlugin";
+
+type NextFunction = (err?: unknown) => void;
+type Middleware = (req: IncomingMessage, res: ServerResponse, next: NextFunction) => void;
 
 describe("healthcheckPlugin", () => {
-  let server: ViteDevServer | undefined;
+  let server: Server | undefined;
 
   afterEach(async () => {
-    if (server) {
-      await server.close();
-      server = undefined;
-    }
-  });
-
-  async function startServer() {
-    const port = await reserveLoopbackPort();
-
-    server = await createServer({
-      ...mergeConfig(config, {
-        appType: "custom",
-        clearScreen: false,
-        configFile: false,
-        logLevel: "error",
-        server: {
-          host: "127.0.0.1",
-          port,
-        },
-      }),
-    });
-
-    await server.listen();
-
-    const address = server.httpServer?.address() as AddressInfo | null;
-    if (!address) {
-      throw new Error("expected Vite test server to listen on a TCP address");
-    }
-
-    return `http://127.0.0.1:${address.port}`;
-  }
-
-  async function reserveLoopbackPort(): Promise<number> {
-    const probe = createNetServer();
+    const activeServer = server;
+    if (!activeServer) return;
     await new Promise<void>((resolve, reject) => {
-      probe.once("error", reject);
-      probe.listen(0, "127.0.0.1", () => {
-        probe.off("error", reject);
-        resolve();
-      });
-    });
-
-    const address = probe.address() as AddressInfo | null;
-    if (!address) {
-      await new Promise<void>((resolve) => probe.close(() => resolve()));
-      throw new Error("expected loopback port probe to listen on a TCP address");
-    }
-
-    const port = address.port;
-    await new Promise<void>((resolve, reject) => {
-      probe.once("error", reject);
-      probe.close((error) => {
-        probe.off("error", reject);
+      activeServer.close((error) => {
         if (error) {
           reject(error);
           return;
@@ -69,7 +24,49 @@ describe("healthcheckPlugin", () => {
         resolve();
       });
     });
-    return port;
+    server = undefined;
+  });
+
+  async function startServer() {
+    let middleware: Middleware | undefined;
+    const configureServer = healthcheckPlugin().configureServer;
+    if (typeof configureServer !== "function") {
+      throw new Error("expected healthcheck plugin to configure the dev server");
+    }
+
+    const registerMiddleware = configureServer as (server: ViteDevServer) => void;
+    registerMiddleware({
+      middlewares: {
+        use(handler: Middleware) {
+          middleware = handler;
+        },
+      },
+    } as unknown as ViteDevServer);
+    const registeredMiddleware = middleware;
+    if (!registeredMiddleware) {
+      throw new Error("expected healthcheck plugin to register middleware");
+    }
+
+    const testServer = createHttpServer((req, res) => {
+      registeredMiddleware(req, res, () => {
+        res.statusCode = 404;
+        res.end();
+      });
+    });
+    server = testServer;
+    await new Promise<void>((resolve, reject) => {
+      testServer.once("error", reject);
+      testServer.listen(0, "127.0.0.1", () => {
+        testServer.off("error", reject);
+        resolve();
+      });
+    });
+
+    const address = testServer.address() as AddressInfo | null;
+    if (!address) {
+      throw new Error("expected healthcheck test server to listen on a TCP address");
+    }
+    return `http://127.0.0.1:${address.port}`;
   }
 
   it("serves health endpoints", async () => {
@@ -80,5 +77,5 @@ describe("healthcheckPlugin", () => {
       expect(response.status).toBe(200);
       await expect(response.json()).resolves.toEqual({ status: "ok" });
     }
-  }, 30_000);
+  });
 });

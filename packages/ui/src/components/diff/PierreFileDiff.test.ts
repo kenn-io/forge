@@ -2,7 +2,11 @@ import { cleanup, fireEvent, render, waitFor } from "@testing-library/svelte";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vite-plus/test";
 import type { DiffLineAnnotation, FileDiffOptions, Virtualizer } from "@pierre/diffs";
 import type { DiffFile } from "../../api/types.js";
-import type { DiffContextPrefetchScheduler, DiffContextPrefetchTaskHandle } from "./diff-context-prefetch.js";
+import {
+  createDiffContextPrefetchScheduler,
+  type DiffContextPrefetchScheduler,
+  type DiffContextPrefetchTaskHandle,
+} from "./diff-context-prefetch.js";
 
 type GlobalWithCSSStyleSheet = {
   CSSStyleSheet?: {
@@ -452,6 +456,78 @@ describe("PierreFileDiff", () => {
 
     await run(new AbortController().signal);
     expect(loadFileText).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps an active syntax-gap diff hidden while scheduled context is pending", async () => {
+    const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
+    const prefetch = capturingPrefetchScheduler();
+    const releases: Array<(value: string) => void> = [];
+    const loadFileText = vi.fn(() => new Promise<string>((resolve) => releases.push(resolve)));
+
+    render(PierreFileDiff, {
+      props: {
+        file: makeSyntaxStateGapFile(),
+        active: true,
+        contextPrefetchScheduler: prefetch.scheduler,
+        loadFileText,
+      },
+    });
+
+    const run = await waitFor(() => {
+      expect(prefetch.run()).toBeTypeOf("function");
+      return prefetch.run()!;
+    });
+    const task = run(new AbortController().signal);
+    await waitFor(() => expect(loadFileText).toHaveBeenCalledTimes(2));
+
+    expect(pierre.renderCount()).toBe(0);
+    expect(document.querySelector(".pierre-diff-loading")).not.toBeNull();
+
+    releases.forEach((release) => release("full file text"));
+    await task;
+
+    await waitFor(() => {
+      expect(pierre.renderCount()).toBe(1);
+      expect(document.querySelector(".pierre-diff-loading")).toBeNull();
+    });
+  });
+
+  it("keeps the scheduler slot until both paired previews settle", async () => {
+    const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
+    const scheduler = createDiffContextPrefetchScheduler({ concurrency: 1 });
+    let releaseNewPreview = (_value: string): void => {};
+    const loadFileText = vi.fn((side: "old" | "new") => {
+      if (side === "old") return Promise.reject(new Error("old preview failed"));
+      return new Promise<string>((resolve) => {
+        releaseNewPreview = resolve;
+      });
+    });
+
+    render(PierreFileDiff, {
+      props: {
+        file: makeSyntaxStateGapFile(),
+        active: true,
+        contextPrefetchScheduler: scheduler,
+        loadFileText,
+      },
+    });
+
+    await waitFor(() => expect(loadFileText).toHaveBeenCalledTimes(2));
+    let queuedTaskStarted = false;
+    scheduler.schedule("queued", "foreground", async () => {
+      queuedTaskStarted = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(queuedTaskStarted).toBe(false);
+
+    releaseNewPreview("full file text");
+
+    await waitFor(() => {
+      expect(queuedTaskStarted).toBe(true);
+      expect(document.querySelector(".context-error")?.textContent).toContain("old preview failed");
+      expect(pierre.renderCount()).toBe(1);
+    });
   });
 
   it("retries a failed speculative prefetch after the file becomes active", async () => {

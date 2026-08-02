@@ -307,9 +307,7 @@ function tmuxClientTTY(server: IsolatedE2EServer, tmuxSession: string): string {
 }
 
 function tmuxClientPtyGeometries(server: IsolatedE2EServer): Array<{ rows: number; cols: number }> {
-  const clientTTYs = runE2ETmuxCommand(server, ["list-clients", "-F", "#{client_tty}"])
-    .split("\n")
-    .filter(Boolean);
+  const clientTTYs = runE2ETmuxCommand(server, ["list-clients", "-F", "#{client_tty}"]).split("\n").filter(Boolean);
   return clientTTYs.map((clientTTY) => {
     const fd = openSync(clientTTY, constants.O_RDONLY | constants.O_NOCTTY);
     try {
@@ -473,8 +471,7 @@ async function crossTerminalCellBoundary(container: Locator): Promise<void> {
         get(styleDeclaration, property) {
           if (property === "height") return previousHeight;
           if (property === "getPropertyValue") {
-            return (name: string) =>
-              name === "height" ? previousHeight : styleDeclaration.getPropertyValue(name);
+            return (name: string) => (name === "height" ? previousHeight : styleDeclaration.getPropertyValue(name));
           }
           const value = Reflect.get(styleDeclaration, property, styleDeclaration);
           return typeof value === "function" ? value.bind(styleDeclaration) : value;

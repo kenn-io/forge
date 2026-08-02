@@ -384,7 +384,6 @@
       pierreDiff.setVisibility(true);
     }
     if (
-      !contextPrefetchScheduler &&
       active &&
       needsFullContextForSyntax &&
       !fullContext &&
@@ -392,7 +391,7 @@
     ) {
       rendered = false;
       clearRenderedDomState();
-      void loadFullContextForSyntax(fileKey);
+      if (!contextPrefetchScheduler) void loadFullContextForSyntax(fileKey);
       return;
     }
     const nextRenderAttemptKey = [
@@ -1071,10 +1070,14 @@
       path: renderFile.path,
       status: renderFile.status,
     });
-    const [oldContents, newContents] = await Promise.all([
+    const [oldResult, newResult] = await Promise.allSettled([
       renderFile.status === "added" ? Promise.resolve("") : loadFileText("old"),
       renderFile.status === "deleted" ? Promise.resolve("") : loadFileText("new"),
     ]);
+    if (oldResult.status === "rejected") throw oldResult.reason;
+    if (newResult.status === "rejected") throw newResult.reason;
+    const oldContents = oldResult.value;
+    const newContents = newResult.value;
     const context = {
       oldFile: pierreFileContents(renderFile.old_path || renderFile.path, oldContents, "full-old"),
       newFile: pierreFileContents(renderFile.path, newContents, "full-new"),

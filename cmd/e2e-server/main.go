@@ -1242,7 +1242,14 @@ func buildAppState(
 	}
 	if !strings.EqualFold(defaultPlatformHost, "github.com") {
 		if _, err := database.UpsertRepo(
-			ctx, db.GitHubRepoIdentity(defaultPlatformHost, "enterprise", "service"),
+			ctx, db.RepoIdentity{
+				Platform:       "github",
+				PlatformHost:   defaultPlatformHost,
+				PlatformRepoID: "e2e-enterprise-service",
+				Owner:          "enterprise",
+				Name:           "service",
+				RepoPath:       "enterprise/service",
+			},
 		); err != nil {
 			return nil, fmt.Errorf("seed default-host repo: %w", err)
 		}

@@ -876,7 +876,8 @@ func (s *Syncer) ConfiguredRepositories(context.Context) ([]platform.RepoRef, er
 		host := repoHost(repo)
 		refs = append(refs, platform.RepoRef{
 			Platform: kind, Host: host, Owner: repo.Owner, Name: repo.Name,
-			RepoPath: repo.Owner + "/" + repo.Name,
+			RepoPath:           repo.Owner + "/" + repo.Name,
+			PlatformExternalID: repo.PlatformExternalID,
 		})
 	}
 	return refs, nil
@@ -900,6 +901,7 @@ func (s *Syncer) Admit(
 	repo := RepoRef{
 		Platform: ref.Platform, PlatformHost: ref.Host,
 		Owner: ref.Owner, Name: ref.Name, RepoPath: ref.RepoPath,
+		PlatformExternalID: ref.PlatformExternalID,
 	}
 	probe, due, featureRetryAt := s.beginRepositoryFeatureProbeWithRetry(ctx, repo, feature)
 	if !due {

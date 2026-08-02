@@ -3826,19 +3826,44 @@ func (d *DB) workspaceRouteHasHistoricalOccupants(
 ) (bool, error) {
 	provider = strings.ToLower(strings.TrimSpace(provider))
 	var collision bool
+	// A route is ambiguous when any of its records belongs to a repository
+	// other than its current occupant — including a vacated route whose
+	// only records are historical (rename observed, replacement not yet
+	// cataloged). Legacy route-only repositories (no provider ID) record
+	// their route as non-current without being vacated, so a record with
+	// no occupant counts only when its repository is cataloged.
 	err := d.ro.QueryRowContext(ctx, `
 		SELECT EXISTS (
 			SELECT 1
-			FROM forge_repo_routes current
-			JOIN forge_repo_routes historical
-			  ON historical.platform = current.platform
-			 AND historical.platform_host = current.platform_host
-			 AND historical.repo_path_key = current.repo_path_key
-			 AND historical.repo_id <> current.repo_id
-			WHERE current.platform_host = ?
-			  AND current.repo_path_key = ?
-			  AND current.is_current = 1
-			  AND (? = '' OR current.platform = ?)
+			FROM forge_repo_routes historical
+			WHERE historical.platform_host = ?
+			  AND historical.repo_path_key = ?
+			  AND (? = '' OR historical.platform = ?)
+			  AND NOT EXISTS (
+				SELECT 1
+				FROM forge_repo_routes current
+				WHERE current.platform = historical.platform
+				  AND current.platform_host = historical.platform_host
+				  AND current.repo_path_key = historical.repo_path_key
+				  AND current.is_current = 1
+				  AND current.repo_id = historical.repo_id
+			  )
+			  AND (
+				EXISTS (
+					SELECT 1
+					FROM forge_repo_routes occupant
+					WHERE occupant.platform = historical.platform
+					  AND occupant.platform_host = historical.platform_host
+					  AND occupant.repo_path_key = historical.repo_path_key
+					  AND occupant.is_current = 1
+				)
+				OR EXISTS (
+					SELECT 1
+					FROM forge_repos repo
+					WHERE repo.id = historical.repo_id
+					  AND repo.platform_repo_id <> ''
+				)
+			  )
 		)`,
 		platformHost, repoPathKey, provider, provider,
 	).Scan(&collision)

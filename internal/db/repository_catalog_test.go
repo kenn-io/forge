@@ -1160,3 +1160,41 @@ func TestDeactivateRepositoryObservationAdvancesWatermarkWhenAlreadyInactive(t *
 	require.NotNil(stale)
 	assert.Equal(RepositoryLifecycleInactive, stale.Lifecycle)
 }
+
+func TestWorkspaceRouteWithOnlyHistoricalOccupantsIsAmbiguous(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	reconcileCatalogRepository(
+		t, d, "provider-1", "org-a", "project-a", baseTime(),
+	)
+	reconcileCatalogRepository(
+		t, d, "provider-1", "org-a", "project-b", baseTime().Add(time.Hour),
+	)
+
+	vacated, err := d.WorkspaceRepoRouteHasHistoricalOccupants(
+		t.Context(), "github", "github.com", "org-a", "project-a",
+	)
+	require.NoError(err)
+	assert.True(vacated,
+		"a vacated route must stay ambiguous until its next occupant is cataloged")
+
+	current, err := d.WorkspaceRepoRouteHasHistoricalOccupants(
+		t.Context(), "github", "github.com", "org-a", "project-b",
+	)
+	require.NoError(err)
+	assert.False(current,
+		"a route wholly owned by its current occupant is unambiguous")
+
+	_, err = d.UpsertRepo(t.Context(), RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		Owner: "org-a", Name: "legacy",
+	})
+	require.NoError(err)
+	legacy, err := d.WorkspaceRepoRouteHasHistoricalOccupants(
+		t.Context(), "github", "github.com", "org-a", "legacy",
+	)
+	require.NoError(err)
+	assert.False(legacy,
+		"a legacy route-only repository is uncataloged, not vacated")
+}

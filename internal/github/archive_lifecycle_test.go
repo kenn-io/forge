@@ -1457,3 +1457,53 @@ func TestSyncerConfiguredRepositoriesCarryFullProviderIdentity(t *testing.T) {
 		Owner: "group/subgroup", Name: "project", RepoPath: "group/subgroup/project",
 	}, refs[0])
 }
+
+func TestArchiveAdmitNotDeferredByDisplacedRepositoryCooldown(t *testing.T) {
+	require := require.New(t)
+	database := dbtest.Open(t)
+	key := RateBucketKey("github", "github.test", "host")
+	tracker := NewPlatformRateTracker(database, "github", "github.test", "host", "rest")
+	now := time.Now().UTC()
+	tracker.UpdateFromRate(Rate{Limit: 5000, Remaining: 4999, Reset: now.Add(time.Minute)})
+	syncer := NewSyncerWithRegistry(
+		nil, database, nil, nil, time.Hour,
+		map[string]*RateTracker{key: tracker},
+		map[string]*SyncBudget{key: NewSyncBudget(100)},
+	)
+	syncer.now = func() time.Time { return now }
+	displaced := RepoRef{
+		Platform: platform.KindGitHub, PlatformHost: "github.test",
+		Owner: "acme", Name: "widget", PlatformExternalID: "R_old",
+	}
+	syncer.featureCooldowns.deferUntil(
+		displaced, platform.RepositoryFeatureIssues, now.Add(time.Hour),
+	)
+
+	ref := platform.RepoRef{
+		Platform: platform.KindGitHub, Host: "github.test",
+		Owner: "acme", Name: "widget", PlatformExternalID: "R_new",
+	}
+	admission, err := syncer.Admit(t.Context(), ref, db.ArchiveItemTypeIssue, 1)
+	require.NoError(err)
+	require.Nil(admission.FeatureDeferred,
+		"a replacement repository must not inherit the displaced repository's cooldown")
+	require.True(admission.Allowed)
+	t.Cleanup(func() { admission.Complete(nil, true) })
+}
+
+func TestConfiguredRepositoriesCarryStableProviderIdentity(t *testing.T) {
+	require := require.New(t)
+	database := dbtest.Open(t)
+	syncer := NewSyncer(
+		nil, database, nil, []RepoRef{{
+			Platform: platform.KindGitHub, PlatformHost: "github.test",
+			Owner: "acme", Name: "widget", PlatformExternalID: "R_1",
+		}}, time.Minute, nil, nil,
+	)
+
+	refs, err := syncer.ConfiguredRepositories(t.Context())
+	require.NoError(err)
+	require.Len(refs, 1)
+	require.Equal("R_1", refs[0].PlatformExternalID,
+		"archive scheduling needs the stable provider identity for cooldown keys")
+}

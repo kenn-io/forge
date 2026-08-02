@@ -483,6 +483,55 @@ describe("EventTimeline", () => {
     expect(bodyWrap!.querySelector(".kit-card")).toBeNull();
   });
 
+  it("defaults provider-hidden comments to a collapsed reason notice", async () => {
+    const { container } = render(EventTimeline, {
+      props: {
+        events: [
+          makeEvent({
+            Body: "This comment stays available on demand.",
+            EventType: "issue_comment",
+            MetadataJSON: JSON.stringify({
+              provider_hidden: true,
+              provider_hidden_reason: "OFF_TOPIC",
+            }),
+          }),
+        ],
+      },
+    });
+
+    expect(screen.getByText("Hidden on GitHub: Off-topic")).toBeTruthy();
+    expect(screen.queryByText("This comment stays available on demand.")).toBeNull();
+    expect(container.querySelector(".provider-hidden-notice svg")).toBeTruthy();
+
+    const toggle = screen.getByRole("button", { name: "Show comment" });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    await fireEvent.click(toggle);
+
+    expect(screen.getByText("This comment stays available on demand.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Collapse" }).getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("does not preview provider-hidden comment text in compact rows", async () => {
+    const { container } = render(EventTimeline, {
+      props: {
+        activityViewMode: "compact",
+        events: [
+          makeEvent({
+            Body: "A compact hidden comment body.",
+            EventType: "issue_comment",
+            MetadataJSON: JSON.stringify({ provider_hidden: true }),
+          }),
+        ],
+      },
+    });
+
+    expect(container.querySelector(".compact-hidden-summary")?.textContent).toContain("Hidden on GitHub");
+    expect(container.textContent).not.toContain("A compact hidden comment body.");
+
+    await fireEvent.click(screen.getByTitle("Expand activity"));
+    expect(screen.getByText("A compact hidden comment body.")).toBeTruthy();
+  });
+
   it("groups discussion comments with the root comment first and reverse-chronological replies", () => {
     const { container } = renderTimeline({
       props: {

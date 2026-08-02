@@ -74,6 +74,45 @@ func TestAdaptPR(t *testing.T) {
 	assert.Equal("merge-admin", pr.GetMergedBy().GetLogin())
 }
 
+func TestConvertGQLCommentsPreservesMinimizedVisibility(t *testing.T) {
+	reason := githubv4.ReportedContentClassifiersOffTopic
+	comment := gqlComment{
+		DatabaseId:      73,
+		IsMinimized:     true,
+		MinimizedReason: &reason,
+	}
+
+	tests := []struct {
+		name    string
+		convert func() map[int64]CommentVisibility
+	}{
+		{
+			name: "pull request",
+			convert: func() map[int64]CommentVisibility {
+				input := gqlPR{}
+				input.Comments.Nodes = []gqlComment{comment}
+				return convertGQLPR(&input).CommentVisibility
+			},
+		},
+		{
+			name: "issue",
+			convert: func() map[int64]CommentVisibility {
+				input := gqlIssue{}
+				input.Comments.Nodes = []gqlComment{comment}
+				return convertGQLIssue(&input).CommentVisibility
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			visibility := tt.convert()
+			require.Contains(t, visibility, int64(73))
+			assert.Equal(t, CommentVisibility{Hidden: true, Reason: "OFF_TOPIC"}, visibility[73])
+		})
+	}
+}
+
 func TestAdaptComment(t *testing.T) {
 	assert := assert.New(t)
 	now := time.Now().UTC().Truncate(time.Second)

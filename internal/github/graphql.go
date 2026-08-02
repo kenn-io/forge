@@ -140,12 +140,14 @@ func (r gqlReviewRequest) Login() string {
 }
 
 type gqlComment struct {
-	DatabaseId int64
-	Author     struct{ Login string }
-	Body       string
-	URL        string `graphql:"url"`
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
+	DatabaseId      int64
+	Author          struct{ Login string }
+	Body            string
+	URL             string `graphql:"url"`
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+	IsMinimized     bool
+	MinimizedReason *githubv4.ReportedContentClassifiers
 }
 
 type gqlReview struct {
@@ -642,11 +644,12 @@ type RepoBulkResult struct {
 // GraphQL query. CommentsComplete indicates whether the comments
 // connection was fully paginated.
 type BulkIssue struct {
-	Issue            *gh.Issue
-	Comments         []*gh.IssueComment
-	TimelineEvents   []PullRequestTimelineEvent
-	CommentsComplete bool
-	TimelineComplete bool
+	Issue             *gh.Issue
+	Comments          []*gh.IssueComment
+	CommentVisibility map[int64]CommentVisibility
+	TimelineEvents    []PullRequestTimelineEvent
+	CommentsComplete  bool
+	TimelineComplete  bool
 }
 
 // BulkPR holds a PR and its nested data from a single GraphQL query.
@@ -663,29 +666,53 @@ type BulkPR struct {
 	// or empty when the repository enforces no decision). It is computed by the
 	// provider over the PR's full review history, so it does not depend on the
 	// Reviews connection being complete.
-	ReviewDecision   string
-	Comments         []*gh.IssueComment
-	Reviews          []*gh.PullRequestReview
-	Commits          []*gh.RepositoryCommit
-	TimelineEvents   []PullRequestTimelineEvent
-	CheckRuns        []*gh.CheckRun
-	Statuses         []*gh.RepoStatus
-	CommentsComplete bool
-	ReviewsComplete  bool
-	CommitsComplete  bool
-	TimelineComplete bool
-	CIComplete       bool
+	ReviewDecision    string
+	Comments          []*gh.IssueComment
+	CommentVisibility map[int64]CommentVisibility
+	Reviews           []*gh.PullRequestReview
+	Commits           []*gh.RepositoryCommit
+	TimelineEvents    []PullRequestTimelineEvent
+	CheckRuns         []*gh.CheckRun
+	Statuses          []*gh.RepoStatus
+	CommentsComplete  bool
+	ReviewsComplete   bool
+	CommitsComplete   bool
+	TimelineComplete  bool
+	CIComplete        bool
+}
+
+// CommentVisibility carries GitHub GraphQL-only moderation state alongside
+// the REST-shaped comment objects used by the existing sync pipeline.
+type CommentVisibility struct {
+	Hidden bool
+	Reason string
+}
+
+func gqlCommentVisibility(comment *gqlComment) (CommentVisibility, bool) {
+	if !comment.IsMinimized {
+		return CommentVisibility{}, false
+	}
+	reason := ""
+	if comment.MinimizedReason != nil {
+		reason = string(*comment.MinimizedReason)
+	}
+	return CommentVisibility{Hidden: true, Reason: reason}, true
 }
 
 func convertGQLIssue(gql *gqlIssue) BulkIssue {
 	bulk := BulkIssue{
-		Issue:            adaptIssue(gql),
-		CommentsComplete: !gql.Comments.PageInfo.HasNextPage,
-		TimelineComplete: !gql.TimelineItems.PageInfo.HasNextPage,
+		Issue:             adaptIssue(gql),
+		CommentVisibility: make(map[int64]CommentVisibility),
+		CommentsComplete:  !gql.Comments.PageInfo.HasNextPage,
+		TimelineComplete:  !gql.TimelineItems.PageInfo.HasNextPage,
 	}
 
 	for i := range gql.Comments.Nodes {
-		bulk.Comments = append(bulk.Comments, adaptComment(&gql.Comments.Nodes[i]))
+		comment := &gql.Comments.Nodes[i]
+		bulk.Comments = append(bulk.Comments, adaptComment(comment))
+		if visibility, ok := gqlCommentVisibility(comment); ok {
+			bulk.CommentVisibility[comment.DatabaseId] = visibility
+		}
 	}
 	for i := range gql.TimelineItems.Nodes {
 		event, ok := adaptIssueTimelineEvent(&gql.TimelineItems.Nodes[i])
@@ -1065,16 +1092,21 @@ func cursorVar(cursor *string) *githubv4.String {
 
 func convertGQLPR(gql *gqlPR) BulkPR {
 	bulk := BulkPR{
-		PR:               adaptPR(gql),
-		ReviewDecision:   gql.ReviewDecision,
-		CommentsComplete: !gql.Comments.PageInfo.HasNextPage,
-		ReviewsComplete:  !gql.Reviews.PageInfo.HasNextPage,
-		CommitsComplete:  !gql.AllCommits.PageInfo.HasNextPage,
-		TimelineComplete: !gql.TimelineItems.PageInfo.HasNextPage,
+		PR:                adaptPR(gql),
+		ReviewDecision:    gql.ReviewDecision,
+		CommentVisibility: make(map[int64]CommentVisibility),
+		CommentsComplete:  !gql.Comments.PageInfo.HasNextPage,
+		ReviewsComplete:   !gql.Reviews.PageInfo.HasNextPage,
+		CommitsComplete:   !gql.AllCommits.PageInfo.HasNextPage,
+		TimelineComplete:  !gql.TimelineItems.PageInfo.HasNextPage,
 	}
 
 	for i := range gql.Comments.Nodes {
-		bulk.Comments = append(bulk.Comments, adaptComment(&gql.Comments.Nodes[i]))
+		comment := &gql.Comments.Nodes[i]
+		bulk.Comments = append(bulk.Comments, adaptComment(comment))
+		if visibility, ok := gqlCommentVisibility(comment); ok {
+			bulk.CommentVisibility[comment.DatabaseId] = visibility
+		}
 	}
 	for i := range gql.Reviews.Nodes {
 		bulk.Reviews = append(bulk.Reviews, adaptReview(&gql.Reviews.Nodes[i]))

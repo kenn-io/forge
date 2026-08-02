@@ -120,6 +120,28 @@ func NormalizeCommentEvent(mrID int64, c *gh.IssueComment) db.MREvent {
 	return dbMREvent(mrID, event)
 }
 
+func normalizeCommentVisibilityMetadata(visibility CommentVisibility) string {
+	if !visibility.Hidden {
+		return ""
+	}
+	metadata := map[string]any{"provider_hidden": true}
+	if visibility.Reason != "" {
+		metadata["provider_hidden_reason"] = visibility.Reason
+	}
+	encoded, _ := json.Marshal(metadata)
+	return string(encoded)
+}
+
+func NormalizeCommentEventWithVisibility(
+	mrID int64,
+	c *gh.IssueComment,
+	visibility CommentVisibility,
+) db.MREvent {
+	event := NormalizeCommentEvent(mrID, c)
+	event.MetadataJSON = normalizeCommentVisibilityMetadata(visibility)
+	return event
+}
+
 // NormalizeReviewEvent converts a GitHub PullRequestReview to a db.MREvent.
 func NormalizeReviewEvent(mrID int64, r *gh.PullRequestReview) db.MREvent {
 	event := platformgithub.NormalizeReviewEvent(platform.RepoRef{}, 0, r)
@@ -427,6 +449,16 @@ func dbCIChecks(checks []platform.CICheck) []db.CICheck {
 func NormalizeIssueCommentEvent(issueID int64, c *gh.IssueComment) db.IssueEvent {
 	event := platformgithub.NormalizeIssueCommentEvent(platform.RepoRef{}, 0, c)
 	return dbIssueEvent(issueID, event)
+}
+
+func NormalizeIssueCommentEventWithVisibility(
+	issueID int64,
+	c *gh.IssueComment,
+	visibility CommentVisibility,
+) db.IssueEvent {
+	event := NormalizeIssueCommentEvent(issueID, c)
+	event.MetadataJSON = normalizeCommentVisibilityMetadata(visibility)
+	return event
 }
 
 // loginOrEmpty returns the GitHub login for a user, or "" if user is nil.

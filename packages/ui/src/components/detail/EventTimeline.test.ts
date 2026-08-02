@@ -1767,6 +1767,56 @@ describe("EventTimeline", () => {
     expect(text).not.toContain("old C2 before rebase");
   });
 
+  it("collapses only the rewound-away commits when a force push resets to an older commit", () => {
+    const commit1 = "1111111111111111111111111111111111111111";
+    const commit3 = "3333333333333333333333333333333333333333";
+    const { container } = render(EventTimeline, {
+      props: {
+        events: [
+          makeEvent({
+            ID: 9,
+            EventType: "force_push",
+            Author: "alice",
+            Summary: "3333333 -> 1111111",
+            CreatedAt: "2024-06-01T12:00:00Z",
+            MetadataJSON: JSON.stringify({
+              before_sha: commit3,
+              after_sha: commit1,
+            }),
+          }),
+          makeEvent({
+            ID: 3,
+            EventType: "commit",
+            Summary: commit3,
+            Body: "commit three rewound away",
+            CreatedAt: "2024-06-01T10:03:00Z",
+          }),
+          makeEvent({
+            ID: 2,
+            EventType: "commit",
+            Summary: "2222222222222222222222222222222222222222",
+            Body: "commit two rewound away",
+            CreatedAt: "2024-06-01T10:02:00Z",
+          }),
+          makeEvent({
+            ID: 1,
+            EventType: "commit",
+            Summary: commit1,
+            Body: "commit one still current",
+            CreatedAt: "2024-06-01T10:01:00Z",
+          }),
+        ],
+        timelineOrder: "chronological",
+      },
+    });
+
+    const text = container.textContent ?? "";
+    expect(text).toContain("2 commits replaced by a later force push");
+    expect(text).not.toContain("commit three rewound away");
+    expect(text).not.toContain("commit two rewound away");
+    expect(text).toContain("commit one still current");
+  });
+
   it("expands collapsed obsolete commits on demand in strict date order", async () => {
     const oldHead = "cccccccccccccccccccccccccccccccccccccccc";
     const newHead = "ffffffffffffffffffffffffffffffffffffffff";

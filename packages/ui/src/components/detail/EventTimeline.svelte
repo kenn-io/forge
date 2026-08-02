@@ -321,6 +321,7 @@
     eventID: number;
     orderCommitID: number;
     startAfterCommitID: number;
+    beforeCommitID?: number | undefined;
     afterCommitID?: number | undefined;
     endAtCommitID?: number | undefined;
     pushedAt: number;
@@ -437,6 +438,7 @@
             eventID: event.ID,
             orderCommitID: afterOrder,
             startAfterCommitID: 0,
+            beforeCommitID: beforeOrder,
             afterCommitID: afterOrder,
             endAtCommitID: afterOrder,
             pushedAt: eventSortValue(event),
@@ -448,6 +450,7 @@
           eventID: event.ID,
           orderCommitID: beforeOrder,
           startAfterCommitID: beforeOrder,
+          beforeCommitID: beforeOrder,
           afterCommitID: afterCommit ? commitOrder(afterCommit) : undefined,
           pushedAt: eventSortValue(event),
           usesAfterAnchor: false,
@@ -602,16 +605,40 @@
   }
 
   // A commit is obsolete once a later force push replaced the lineage it
-  // belongs to; the cutoff is the newest commit any force-push generation
-  // starts after. Grouped mode already communicates this by sorting those
-  // commits below their force-push row, so the cutoff only drives the
-  // collapsed runs in strict date order.
-  function obsoleteCommitCutoff(orderingSourceEvents: Array<PREvent | IssueEvent>): number {
+  // belongs to. Each boundary contributes an explicit commit-order range:
+  // a push that rewinds to an older known commit only removes the commits
+  // between the new and old heads, while a forward push (or one whose old
+  // head never synced) obsoletes everything up to the commits it replaced.
+  // Grouped mode already communicates this by sorting those commits below
+  // their force-push row, so the ranges only drive the collapsed runs in
+  // strict date order.
+  type ObsoleteCommitRange = {
+    startAfter: number;
+    endAt: number;
+  };
+
+  function obsoleteCommitRanges(orderingSourceEvents: Array<PREvent | IssueEvent>): ObsoleteCommitRange[] {
     const generations = buildForcePushGenerations(buildForcePushBoundaries(orderingSourceEvents));
-    return generations.reduce(
-      (cutoff, generation) => Math.max(cutoff, generation.effectiveStartAfterCommitID),
-      0,
-    );
+    const ranges: ObsoleteCommitRange[] = [];
+    for (const generation of generations) {
+      if (generation.beforeCommitID !== undefined) {
+        const rewindsToKnownCommit =
+          generation.afterCommitID !== undefined && generation.afterCommitID < generation.beforeCommitID;
+        ranges.push({
+          startAfter: rewindsToKnownCommit ? generation.afterCommitID ?? 0 : 0,
+          endAt: generation.beforeCommitID,
+        });
+        continue;
+      }
+      if (generation.effectiveStartAfterCommitID > 0) {
+        ranges.push({ startAfter: 0, endAt: generation.effectiveStartAfterCommitID });
+      }
+    }
+    return ranges;
+  }
+
+  function isObsoleteCommitOrder(order: number, ranges: ObsoleteCommitRange[]): boolean {
+    return ranges.some((range) => order > range.startAfter && order <= range.endAt);
   }
 
   function collapseObsoleteCommitEntries(
@@ -619,8 +646,8 @@
     orderingSourceEvents: Array<PREvent | IssueEvent>,
     keyPrefix: string,
   ): TimelineEntry[] {
-    const cutoff = obsoleteCommitCutoff(orderingSourceEvents);
-    if (cutoff <= 0) return entries;
+    const ranges = obsoleteCommitRanges(orderingSourceEvents);
+    if (ranges.length === 0) return entries;
 
     const collapsed: TimelineEntry[] = [];
     let run: Array<PREvent | IssueEvent> = [];
@@ -637,7 +664,7 @@
     };
 
     for (const entry of entries) {
-      if (entry.event.EventType === "commit" && commitOrder(entry.event) <= cutoff) {
+      if (entry.event.EventType === "commit" && isObsoleteCommitOrder(commitOrder(entry.event), ranges)) {
         run = [...run, entry.event];
         continue;
       }

@@ -1623,6 +1623,31 @@ func (p *gitHubClientProvider) ListRepositories(
 	return out, nil
 }
 
+// mergeRequestsDisabledByRepository classifies a pulls-list 404 against the
+// repository record. GitHub issues-only repositories report
+// has_pull_requests=false and return a bare 404 from the pulls API for every
+// credential, so without this probe the sync retries the repo as a hard
+// failure every cycle and never reaches its issue phase. A repository that
+// cannot be read, or that does not report the field, keeps the original
+// error: only an explicit has_pull_requests=false is proof.
+func (p *gitHubClientProvider) mergeRequestsDisabledByRepository(
+	ctx context.Context,
+	ref platform.RepoRef,
+	err error,
+) error {
+	if githubStatusCode(err) != http.StatusNotFound {
+		return nil
+	}
+	repo, repoErr := p.client.GetRepository(ctx, ref.Owner, ref.Name)
+	if repoErr != nil || repo == nil || repo.HasPullRequests == nil ||
+		repo.GetHasPullRequests() {
+		return nil
+	}
+	return platform.RepositoryFeatureDisabled(
+		platform.KindGitHub, p.host, platform.RepositoryFeatureMergeRequests, err,
+	)
+}
+
 func (p *gitHubClientProvider) ListOpenMergeRequests(
 	ctx context.Context,
 	ref platform.RepoRef,
@@ -1632,6 +1657,9 @@ func (p *gitHubClientProvider) ListOpenMergeRequests(
 		if disabledErr := githubRepositoryFeatureDisabled(
 			p.host, platform.RepositoryFeatureMergeRequests, err,
 		); disabledErr != nil {
+			return nil, disabledErr
+		}
+		if disabledErr := p.mergeRequestsDisabledByRepository(ctx, ref, err); disabledErr != nil {
 			return nil, disabledErr
 		}
 		return nil, err
@@ -1666,6 +1694,9 @@ func (p *gitHubClientProvider) ListOpenMergeRequestsWithNativeStackHints(
 		if disabledErr := githubRepositoryFeatureDisabled(
 			p.host, platform.RepositoryFeatureMergeRequests, err,
 		); disabledErr != nil {
+			return nil, nil, disabledErr
+		}
+		if disabledErr := p.mergeRequestsDisabledByRepository(ctx, ref, err); disabledErr != nil {
 			return nil, nil, disabledErr
 		}
 		return nil, nil, err

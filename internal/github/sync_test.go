@@ -12734,6 +12734,89 @@ func TestSyncerMRListFailureMarksRepoFailed(t *testing.T) {
 	assert.False(flagged, "failedRepos must be cleared after successful retry")
 }
 
+// TestSyncerIssuesOnlyRepoDisablesMergeRequestFeature verifies that a
+// repository with pull requests disabled (GitHub issues-only repositories
+// report has_pull_requests=false and 404 on the pulls API) enters the
+// merge-request feature cooldown instead of hard-failing every cycle, and
+// that its issues still sync in the same cycle. Without the classification
+// the pulls 404 aborts the repo sync before the issue phase, so an
+// issues-only tracker never syncs the one thing it exists for.
+func TestSyncerIssuesOnlyRepoDisablesMergeRequestFeature(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	repos := []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}
+
+	issueNumber := 7
+	issueTitle := "product issue"
+	issueState := "open"
+	issueURL := "https://github.com/owner/repo/issues/7"
+	issueBody := ""
+	issueID := int64(777)
+	openIssue := &gh.Issue{
+		ID:        &issueID,
+		Number:    &issueNumber,
+		Title:     &issueTitle,
+		State:     &issueState,
+		HTMLURL:   &issueURL,
+		Body:      &issueBody,
+		CreatedAt: makeTimestamp(now),
+		UpdatedAt: makeTimestamp(now),
+	}
+
+	var prListCalls atomic.Int32
+	mc := &partialFailureMock{}
+	mc.listOpenPRsFn = func(context.Context, string, string) ([]*gh.PullRequest, error) {
+		prListCalls.Add(1)
+		return nil, &gh.ErrorResponse{
+			Response: &http.Response{StatusCode: http.StatusNotFound},
+			Message:  "Not Found",
+		}
+	}
+	mc.getRepositoryFn = func(_ context.Context, owner, repo string) (*gh.Repository, error) {
+		id := int64(1)
+		nodeID := "repo-" + owner + "-" + repo
+		prsDisabled := false
+		return &gh.Repository{
+			ID:              &id,
+			NodeID:          &nodeID,
+			Name:            &repo,
+			Owner:           &gh.User{Login: &owner},
+			HasPullRequests: &prsDisabled,
+		}, nil
+	}
+	mc.openIssues = []*gh.Issue{openIssue}
+	mc.comments = []*gh.IssueComment{}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc},
+		d, nil, repos, time.Minute, nil, nil,
+	)
+
+	// Cycle 1: pulls 404 classifies as feature-disabled; issues still sync.
+	syncer.RunOnce(ctx)
+
+	issue, err := d.GetIssue(ctx, "github", "github.com", "owner", "repo", issueNumber)
+	require.NoError(err)
+	require.NotNil(issue,
+		"issues must sync even though the pulls API is unavailable")
+	assert.Equal("open", issue.State)
+
+	assert.Empty(syncer.Status().LastError,
+		"an issues-only repository is not a sync failure")
+	_, flagged := syncer.failedRepos.Load(repoFailKey(repos[0]))
+	assert.False(flagged, "feature-disabled must not mark the repo failed")
+	callsAfterFirstCycle := prListCalls.Load()
+
+	// Cycle 2: the merge-request feature cooldown skips the pulls list.
+	syncer.RunOnce(ctx)
+	assert.Equal(callsAfterFirstCycle, prListCalls.Load(),
+		"deferred merge-request feature must not re-probe next cycle")
+}
+
 // TestSyncerRemovedIssueTombstonedInsteadOfFailing verifies that an issue
 // deleted upstream (open in a previous cycle, absent from the open list,
 // direct lookup classified not_found) is closed locally instead of failing

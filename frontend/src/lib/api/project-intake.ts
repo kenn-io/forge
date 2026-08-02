@@ -112,7 +112,7 @@ export async function listUserRepositories(
               platform_host: options.platformHost,
             }
           : {}),
-        limit: 100,
+        limit: 1000,
       },
     },
   });

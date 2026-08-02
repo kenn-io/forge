@@ -153,7 +153,7 @@ describe("project-intake api", () => {
         query: {
           provider: "github",
           platform_host: "ghe.example.com",
-          limit: 100,
+          limit: 1000,
         },
       },
     });

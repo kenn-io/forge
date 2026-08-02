@@ -38,7 +38,6 @@ export function readOnboardingState(): OnboardingState | null {
 export function writeOnboardingState(state: OnboardingState): void {
   try {
     if (state === "dismissed") {
-      localStorage.removeItem(ONBOARDING_STORAGE_KEY);
       sessionStorage.setItem(ONBOARDING_STORAGE_KEY, state);
     } else {
       sessionStorage.removeItem(ONBOARDING_STORAGE_KEY);

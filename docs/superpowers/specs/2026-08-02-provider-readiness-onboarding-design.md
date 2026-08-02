@@ -41,7 +41,9 @@ resumes at first sync using the configured provider and host identity.
 GitHub repository discovery remains inline because the current
 `/platform/user-repositories` onboarding endpoint implements authenticated
 GitHub discovery. The readiness screen must not imply equivalent automatic
-discovery for providers that use the existing import flow.
+discovery for providers that use the existing import flow. The picker requests
+the endpoint's bounded 1,000-repository maximum and keeps a Repositories
+settings escape for accounts whose target repository is not discoverable.
 
 ## State and recovery
 

@@ -28,12 +28,10 @@ describe("first-run onboarding state", () => {
   });
 
   it("keeps dismissal session-scoped while persisting active and complete states", () => {
+    writeOnboardingState("active");
     writeOnboardingState("dismissed");
     expect(readOnboardingState()).toBe("dismissed");
     sessionStorage.clear();
-    expect(readOnboardingState()).toBeNull();
-
-    writeOnboardingState("active");
     expect(readOnboardingState()).toBe("active");
 
     writeOnboardingState("complete");

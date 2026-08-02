@@ -7017,3 +7017,70 @@ func TestSetupFailsClosedWhenRepositoryRouteReused(t *testing.T) {
 	require.NotNil(stored)
 	assert.Equal("error", stored.Status)
 }
+
+func TestRefreshWorkspaceHeadRepoSnapshotSurvivesQueuedReconciliation(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	repoID := seedRepo(t, d, "github.com", "acme", "widget")
+	seedMRWithHeadRepo(
+		t, d, repoID, 42, "feature/thing", "https://github.com/acme/widget.git",
+	)
+	ws := &Workspace{
+		ID:           "ws-refresh-queued-writer",
+		Platform:     "github",
+		PlatformHost: "github.com",
+		RepoOwner:    "acme",
+		RepoName:     "widget",
+		ItemType:     db.WorkspaceItemTypePullRequest,
+		ItemNumber:   42,
+		GitHeadRef:   "feature/thing",
+		WorktreePath: t.TempDir(),
+		Status:       "ready",
+	}
+	require.NoError(d.InsertWorkspace(t.Context(), ws))
+
+	mgr := NewManager(d, t.TempDir())
+	writerQueued := make(chan struct{})
+	restoreHook := d.SetBeforeRepositoryReconciliationWriteLockForTest(func() {
+		close(writerQueued)
+	})
+	defer restoreHook()
+	writerDone := make(chan error, 1)
+	var interleaved bool
+	mgr.beforeHeadRepoSnapshotRepoLookup = func() {
+		if interleaved {
+			return
+		}
+		interleaved = true
+		go func() {
+			_, _, err := d.ReconcileRepositoryObservation(
+				context.Background(), db.RepoIdentity{
+					Platform: "github", PlatformHost: "github.com",
+					PlatformRepoID: "repo-acme-other",
+					Owner:          "acme", Name: "other",
+					RepoPath: "acme/other",
+				}, time.Now().UTC(),
+			)
+			writerDone <- err
+		}()
+		<-writerQueued
+	}
+
+	refreshDone := make(chan error, 1)
+	go func() {
+		_, err := mgr.RefreshWorkspaceHeadRepoSnapshot(context.Background(), ws)
+		refreshDone <- err
+	}()
+	select {
+	case err := <-refreshDone:
+		require.NoError(err)
+	case <-time.After(10 * time.Second):
+		require.Fail("head-repo refresh deadlocked behind a queued reconciliation writer")
+	}
+	select {
+	case err := <-writerDone:
+		require.NoError(err)
+	case <-time.After(10 * time.Second):
+		require.Fail("reconciliation writer never completed")
+	}
+}

@@ -1144,11 +1144,90 @@ func (s *Syncer) higherPriorityProviderWorkActive(key string, threshold archive.
 	return false
 }
 
+// verifyRepoRouteOwnershipUnderReconciliationRead confirms, while the caller
+// holds the reconciliation read lock, that repoID may keep persisting data
+// fetched from the given route. A concurrent reconciliation can hand the
+// route to a replacement repository mid-sync; committing this pass's snapshot
+// would then write the replacement's data into the displaced repository.
+func (s *Syncer) verifyRepoRouteOwnershipUnderReconciliationRead(
+	ctx context.Context,
+	repo RepoRef,
+	repoID int64,
+) error {
+	if repo.Owner == "" || repo.Name == "" {
+		// Callers without a fetch route still get an identity check
+		// against the repository's own recorded route.
+		row, err := s.db.GetRepoByID(ctx, repoID)
+		if err != nil {
+			return err
+		}
+		if row == nil {
+			return fmt.Errorf(
+				"repository %d is missing: dropping stale snapshot", repoID,
+			)
+		}
+		repo = RepoRef{
+			Platform:     platform.Kind(row.Platform),
+			PlatformHost: row.PlatformHost,
+			Owner:        row.Owner,
+			Name:         row.Name,
+		}
+	}
+	occupant, err := s.db.GetRepoByIdentityUnderRepositoryReconciliationRead(
+		ctx, db.RepoIdentity{
+			Platform:     string(repoPlatform(repo)),
+			PlatformHost: repoHost(repo),
+			RepoPath:     repo.Owner + "/" + repo.Name,
+		},
+	)
+	if err != nil {
+		return err
+	}
+	if occupant != nil {
+		if occupant.ID == repoID {
+			return nil
+		}
+		return fmt.Errorf(
+			"repository route %s/%s now belongs to repository %d, not %d: dropping stale snapshot",
+			repo.Owner, repo.Name, occupant.ID, repoID,
+		)
+	}
+	row, err := s.db.GetRepoByID(ctx, repoID)
+	if err != nil {
+		return err
+	}
+	if row == nil {
+		return fmt.Errorf(
+			"repository %d for route %s/%s is missing: dropping stale snapshot",
+			repoID, repo.Owner, repo.Name,
+		)
+	}
+	if row.PlatformRepoID != "" {
+		return fmt.Errorf(
+			"repository route %s/%s no longer belongs to cataloged repository %d: dropping stale snapshot",
+			repo.Owner, repo.Name, repoID,
+		)
+	}
+	// Legacy route-only repositories never occupy a catalog route; their
+	// writes stay bound by route exactly as before cataloging.
+	return nil
+}
+
 func (s *Syncer) commitIssueParentSnapshot(
 	ctx context.Context,
-	_ RepoRef,
+	repo RepoRef,
 	issue *db.Issue,
 ) (int64, int64, bool, error) {
+	releaseReconciliation, err := s.db.LockRepositoryReconciliationRead(ctx)
+	if err != nil {
+		return 0, 0, false, err
+	}
+	defer releaseReconciliation()
+	if err := s.verifyRepoRouteOwnershipUnderReconciliationRead(
+		ctx, repo, issue.RepoID,
+	); err != nil {
+		return 0, 0, false, err
+	}
 	return s.db.UpsertIssueSnapshotWithLabels(ctx, issue)
 }
 
@@ -1168,6 +1247,11 @@ func (s *Syncer) CommitMergeRequestParentSnapshot(
 	}
 	defer releaseReconciliation()
 
+	if err := s.verifyRepoRouteOwnershipUnderReconciliationRead(
+		ctx, repo, mr.RepoID,
+	); err != nil {
+		return 0, 0, false, err
+	}
 	mrID, revision, accepted, err :=
 		s.db.UpsertMergeRequestSnapshotWithLabelsUnderRepositoryReconciliationRead(
 			ctx, mr,

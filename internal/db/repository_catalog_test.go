@@ -686,7 +686,7 @@ func TestReconcileRepositoryObservationReplacesAndReactivates(t *testing.T) {
 	assert.Equal(oldRepo.Repository.ID, issueRepoID)
 }
 
-func TestReconcileRepositoryObservationLeavesLegacyRouteStranded(t *testing.T) {
+func TestReconcileRepositoryObservationAdoptionKeepsLegacyContent(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -720,12 +720,14 @@ func TestReconcileRepositoryObservationLeavesLegacyRouteStranded(t *testing.T) {
 	canonical := reconcileCatalogRepository(
 		t, d, "provider-new", "org-a", "project-a", baseTime(),
 	)
-	assert.NotEqual(legacyID, canonical.Repository.ID)
+	assert.Equal(legacyID, canonical.Repository.ID,
+		"first verification adopts the legacy row instead of stranding it")
 	var issueRepoID int64
 	require.NoError(d.ReadDB().QueryRow(
 		`SELECT repo_id FROM forge_issues WHERE number = 1`,
 	).Scan(&issueRepoID))
-	assert.Equal(legacyID, issueRepoID)
+	assert.Equal(canonical.Repository.ID, issueRepoID,
+		"content linked to the legacy row stays bound to the adopted identity")
 }
 
 func TestReconcileRepositoryObservationRollsBackOnRouteWriteFailure(t *testing.T) {
@@ -1197,4 +1199,30 @@ func TestWorkspaceRouteWithOnlyHistoricalOccupantsIsAmbiguous(t *testing.T) {
 	require.NoError(err)
 	assert.False(legacy,
 		"a legacy route-only repository is uncataloged, not vacated")
+}
+
+func TestReconcileRepositoryObservationAdoptsLegacyRouteOnlyRepository(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	legacyID, err := d.UpsertRepo(t.Context(), RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		Owner: "org-a", Name: "project-a",
+	})
+	require.NoError(err)
+
+	entry := reconcileCatalogRepository(
+		t, d, "provider-1", "org-a", "project-a", baseTime(),
+	)
+
+	assert.Equal(legacyID, entry.Repository.ID,
+		"first verification must adopt the legacy route-only row, not strand it")
+	assert.Equal("provider-1", entry.Repository.PlatformRepoID)
+	assert.Equal(RepositoryLifecycleActive, entry.Lifecycle)
+	collision, err := d.WorkspaceRepoRouteHasHistoricalOccupants(
+		t.Context(), "github", "github.com", "org-a", "project-a",
+	)
+	require.NoError(err)
+	assert.False(collision,
+		"an adopted route has a single owner and must stay unambiguous")
 }

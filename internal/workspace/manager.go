@@ -57,6 +57,10 @@ type Manager struct {
 	// beforeSetupRouteRevalidation runs right before setup's final route
 	// re-validation; tests use it to interleave a route replacement.
 	beforeSetupRouteRevalidation func()
+	// beforeHeadRepoSnapshotRepoLookup runs right before the head-repo
+	// refresh resolves the workspace repository; tests use it to queue a
+	// reconciliation writer against the held read lock.
+	beforeHeadRepoSnapshotRepoLookup func()
 }
 
 // WorktreeBasePathResolver resolves a tracked remote repository to a
@@ -1136,17 +1140,16 @@ func (m *Manager) RefreshWorkspaceHeadRepoSnapshot(
 	if ws == nil {
 		return nil, ErrWorkspaceNotFound
 	}
+	releaseReconciliation, err :=
+		m.db.LockRepositoryReconciliationRead(ctx)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"lock repository reconciliation for head classification: %w",
+			err,
+		)
+	}
+	defer releaseReconciliation()
 	if ws.ID != "" {
-		releaseReconciliation, err :=
-			m.db.LockRepositoryReconciliationRead(ctx)
-		if err != nil {
-			return nil, fmt.Errorf(
-				"lock repository reconciliation for head classification: %w",
-				err,
-			)
-		}
-		defer releaseReconciliation()
-
 		current, err := m.db.GetWorkspace(ctx, ws.ID)
 		if err != nil {
 			return nil, fmt.Errorf(
@@ -1162,7 +1165,10 @@ func (m *Manager) RefreshWorkspaceHeadRepoSnapshot(
 		return nil, nil
 	}
 	for {
-		repo, err := m.workspaceRepo(
+		if m.beforeHeadRepoSnapshotRepoLookup != nil {
+			m.beforeHeadRepoSnapshotRepoLookup()
+		}
+		repo, err := m.workspaceRepoUnderReconciliationRead(
 			ctx, ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 		)
 		if err != nil {
@@ -1777,19 +1783,42 @@ func (m *Manager) workspaceRepo(
 	ctx context.Context,
 	provider, platformHost, owner, name string,
 ) (*db.Repo, error) {
-	provider = strings.TrimSpace(provider)
-	if provider == "" {
-		return nil, fmt.Errorf("provider is required")
-	}
-	kind, err := platform.NormalizeKind(provider)
+	identity, err := workspaceRepoIdentity(provider, platformHost, owner, name)
 	if err != nil {
 		return nil, err
 	}
-	return m.db.GetRepoByIdentity(ctx, db.RepoIdentity{
+	return m.db.GetRepoByIdentity(ctx, identity)
+}
+
+// workspaceRepoUnderReconciliationRead is workspaceRepo for callers already
+// holding the repository reconciliation read lock.
+func (m *Manager) workspaceRepoUnderReconciliationRead(
+	ctx context.Context,
+	provider, platformHost, owner, name string,
+) (*db.Repo, error) {
+	identity, err := workspaceRepoIdentity(provider, platformHost, owner, name)
+	if err != nil {
+		return nil, err
+	}
+	return m.db.GetRepoByIdentityUnderRepositoryReconciliationRead(ctx, identity)
+}
+
+func workspaceRepoIdentity(
+	provider, platformHost, owner, name string,
+) (db.RepoIdentity, error) {
+	provider = strings.TrimSpace(provider)
+	if provider == "" {
+		return db.RepoIdentity{}, fmt.Errorf("provider is required")
+	}
+	kind, err := platform.NormalizeKind(provider)
+	if err != nil {
+		return db.RepoIdentity{}, err
+	}
+	return db.RepoIdentity{
 		Platform:     string(kind),
 		PlatformHost: platformHost,
 		RepoPath:     owner + "/" + name,
-	})
+	}, nil
 }
 
 func validateNoExecutableLocalGitConfig(ctx context.Context, dir string) error {

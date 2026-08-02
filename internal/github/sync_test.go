@@ -17504,3 +17504,74 @@ func TestReconcileRepoIdentityAbortsWhenRejectedObservationIsInactive(t *testing
 	_, _, _, err = syncer.reconcileRepoIdentity(ctx, repo)
 	require.ErrorContains(err, "stale")
 }
+
+func seedDisplacedRepository(t *testing.T, database *db.DB) int64 {
+	t.Helper()
+	now := time.Now().UTC()
+	displaced, _, err := database.ReconcileRepositoryObservation(
+		t.Context(), db.RepoIdentity{
+			Platform: "github", PlatformHost: "github.com",
+			PlatformRepoID: "repo-old",
+			Owner:          "acme", Name: "widget", RepoPath: "acme/widget",
+		}, now,
+	)
+	require.NoError(t, err)
+	_, _, err = database.ReconcileRepositoryObservation(
+		t.Context(), db.RepoIdentity{
+			Platform: "github", PlatformHost: "github.com",
+			PlatformRepoID: "repo-new",
+			Owner:          "acme", Name: "widget", RepoPath: "acme/widget",
+		}, now.Add(time.Hour),
+	)
+	require.NoError(t, err)
+	return displaced.Repository.ID
+}
+
+func TestCommitMergeRequestParentSnapshotRejectsDisplacedRepository(t *testing.T) {
+	require := require.New(t)
+	database := openTestDB(t)
+	displacedID := seedDisplacedRepository(t, database)
+	syncer := NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
+	now := time.Now().UTC()
+
+	_, _, _, err := syncer.CommitMergeRequestParentSnapshot(
+		t.Context(),
+		RepoRef{
+			Platform: platform.KindGitHub, PlatformHost: "github.com",
+			Owner: "acme", Name: "widget",
+		},
+		&db.MergeRequest{
+			RepoID: displacedID, PlatformID: 7001, Number: 7,
+			URL:   "https://github.com/acme/widget/pull/7",
+			Title: "stale sync write", Author: "ada", State: "open",
+			HeadBranch: "feature", BaseBranch: "main",
+			CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+		},
+	)
+	require.ErrorContains(err, "route",
+		"a displaced repository must not receive the route's new data")
+}
+
+func TestCommitIssueParentSnapshotRejectsDisplacedRepository(t *testing.T) {
+	require := require.New(t)
+	database := openTestDB(t)
+	displacedID := seedDisplacedRepository(t, database)
+	syncer := NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
+	now := time.Now().UTC()
+
+	_, _, _, err := syncer.commitIssueParentSnapshot(
+		t.Context(),
+		RepoRef{
+			Platform: platform.KindGitHub, PlatformHost: "github.com",
+			Owner: "acme", Name: "widget",
+		},
+		&db.Issue{
+			RepoID: displacedID, PlatformID: 8001, Number: 8,
+			URL:   "https://github.com/acme/widget/issues/8",
+			Title: "stale sync write", Author: "ada", State: "open",
+			CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+		},
+	)
+	require.ErrorContains(err, "route",
+		"a displaced repository must not receive the route's new data")
+}

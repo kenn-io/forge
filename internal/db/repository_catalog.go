@@ -131,12 +131,22 @@ func (d *DB) ResolveActiveRepositoryRoute(
 	ctx context.Context,
 	identity RepoIdentity,
 ) (*RepositoryCatalogEntry, error) {
-	identity = canonicalRepoIdentity(identity)
 	release, err := d.LockRepositoryReconciliationRead(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer release()
+	return d.resolveActiveRepositoryRoute(ctx, identity)
+}
+
+// resolveActiveRepositoryRoute is ResolveActiveRepositoryRoute without the
+// reconciliation read lock, for callers that already hold it — nested
+// acquisition deadlocks behind a queued reconciliation writer.
+func (d *DB) resolveActiveRepositoryRoute(
+	ctx context.Context,
+	identity RepoIdentity,
+) (*RepositoryCatalogEntry, error) {
+	identity = canonicalRepoIdentity(identity)
 	if strings.TrimSpace(identity.Platform) == "" ||
 		strings.TrimSpace(identity.PlatformHost) == "" ||
 		strings.TrimSpace(identity.Owner) == "" ||
@@ -353,6 +363,24 @@ func (d *DB) ReconcileRepositoryObservation(
 				ctx, tx, repoID, observedAt,
 			); err != nil {
 				return err
+			}
+		} else if legacyID, legacyFound, legacyErr := legacyRepositoryIDByRouteTx(
+			ctx, tx, identity,
+		); legacyErr != nil {
+			return legacyErr
+		} else if legacyFound {
+			// First verification of a route-only repository: adopt the
+			// legacy row so rows linked to it (projects, merge requests,
+			// workspaces) stay bound to the verified identity instead of
+			// being stranded on an inactive duplicate.
+			repoID = legacyID
+			if _, err := tx.ExecContext(ctx, `
+				UPDATE forge_repos
+				SET platform_repo_id = ?, lifecycle_state = 'active'
+				WHERE id = ?`,
+				identity.PlatformRepoID, repoID,
+			); err != nil {
+				return fmt.Errorf("adopt legacy repository: %w", err)
 			}
 		} else {
 			result, err := tx.ExecContext(ctx, `
@@ -624,6 +652,36 @@ func deactivateCurrentRepositoryRouteTx(
 		return fmt.Errorf("deactivate repository: %w", err)
 	}
 	return nil
+}
+
+// legacyRepositoryIDByRouteTx finds a route-only repository (no provider ID)
+// recorded at the given route.
+func legacyRepositoryIDByRouteTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	identity RepoIdentity,
+) (int64, bool, error) {
+	var id int64
+	err := tx.QueryRowContext(ctx, `
+		SELECT id
+		FROM forge_repos
+		WHERE platform = ?
+		  AND platform_host = ?
+		  AND platform_repo_id = ''
+		  AND repo_path_key = ?
+		ORDER BY id
+		LIMIT 1`,
+		identity.Platform,
+		identity.PlatformHost,
+		identity.RepoPathKey,
+	).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, fmt.Errorf("lookup legacy repository route: %w", err)
+	}
+	return id, true, nil
 }
 
 func activateRepositoryRouteTx(

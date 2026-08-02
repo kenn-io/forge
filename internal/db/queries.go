@@ -1265,6 +1265,20 @@ func (d *DB) UpdateRepoProviderMetadata(
 // or nil if not found.
 func (d *DB) GetRepoByIdentity(ctx context.Context, identity RepoIdentity) (*Repo, error) {
 	entry, err := d.ResolveActiveRepositoryRoute(ctx, identity)
+	return repoFromCatalogEntry(entry, err)
+}
+
+// GetRepoByIdentityUnderRepositoryReconciliationRead is GetRepoByIdentity for
+// callers that already hold LockRepositoryReconciliationRead — acquiring the
+// lock again deadlocks behind a queued reconciliation writer.
+func (d *DB) GetRepoByIdentityUnderRepositoryReconciliationRead(
+	ctx context.Context, identity RepoIdentity,
+) (*Repo, error) {
+	entry, err := d.resolveActiveRepositoryRoute(ctx, identity)
+	return repoFromCatalogEntry(entry, err)
+}
+
+func repoFromCatalogEntry(entry *RepositoryCatalogEntry, err error) (*Repo, error) {
 	if err != nil {
 		return nil, fmt.Errorf("get repo by identity: %w", err)
 	}

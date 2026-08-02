@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS idx_forge_notification_items_pr_activity;

@@ -38,6 +38,72 @@ func notificationFixture(threadID, reason string, updated time.Time) Notificatio
 	}
 }
 
+func TestLatestOpenPRNotificationActivity(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := time.Date(2026, 8, 2, 12, 0, 0, 0, time.UTC)
+
+	repoID := seedNotificationRepo(t, d)
+	otherRepoID, err := d.UpsertRepo(
+		ctx,
+		GitHubRepoIdentity("ghe.example.com", "acme", "widget"),
+	)
+	require.NoError(err)
+
+	seedMR := func(repoID int64, number int, state MergeRequestState, activity time.Time) int64 {
+		id, upsertErr := d.UpsertMergeRequest(ctx, &MergeRequest{
+			RepoID: repoID, PlatformID: int64(number), Number: number,
+			Title: "PR", Author: "octocat", State: state,
+			HeadBranch: "feature", BaseBranch: "main",
+			CreatedAt: now.Add(-24 * time.Hour), UpdatedAt: activity,
+			LastActivityAt: activity,
+		})
+		require.NoError(upsertErr)
+		return id
+	}
+	oldActivity := now.Add(-2 * time.Hour)
+	openID := seedMR(repoID, 7, MergeRequestStateOpen, oldActivity)
+	seedMR(repoID, 8, MergeRequestStateClosed, oldActivity)
+	otherHostID := seedMR(otherRepoID, 7, MergeRequestStateOpen, oldActivity)
+	seedMR(repoID, 9, MergeRequestStateOpen, oldActivity)
+
+	first := notificationFixture("first", "mention", now.Add(-10*time.Minute))
+	latest := notificationFixture("latest", "comment", now.Add(-5*time.Minute))
+	closed := notificationFixture("closed", "mention", now.Add(-4*time.Minute))
+	closed.ItemNumber = new(8)
+	issue := notificationFixture("issue", "mention", now.Add(-3*time.Minute))
+	issue.ItemType = "issue"
+	otherHost := notificationFixture("other-host", "mention", now.Add(-2*time.Minute))
+	otherHost.PlatformHost = "ghe.example.com"
+	otherHost.RepoID = &otherRepoID
+	mismatchedIdentity := notificationFixture("mismatched", "mention", now.Add(-time.Minute))
+	mismatchedIdentity.RepoID = &repoID
+	mismatchedIdentity.PlatformHost = "ghe.example.com"
+	unresolved := notificationFixture("unresolved", "mention", now)
+	unresolved.RepoOwner = "missing"
+	unresolved.RepoName = "repo"
+	expired := notificationFixture("expired", "mention", now.Add(-5*time.Hour))
+	expired.ItemNumber = new(9)
+
+	require.NoError(d.UpsertNotifications(ctx, []Notification{
+		first, latest, closed, issue, otherHost, mismatchedIdentity, unresolved, expired,
+	}))
+
+	got, err := d.LatestOpenPRNotificationActivity(ctx, now.Add(-4*time.Hour))
+	require.NoError(err)
+	assert.ElementsMatch([]MergeRequestNotificationActivity{
+		{MergeRequestID: openID, SourceUpdatedAt: latest.SourceUpdatedAt},
+		{MergeRequestID: otherHostID, SourceUpdatedAt: otherHost.SourceUpdatedAt},
+	}, got)
+
+	stored, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal(oldActivity, stored.LastActivityAt)
+}
+
 func TestNotificationsListFiltersSearchAndPriority(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)

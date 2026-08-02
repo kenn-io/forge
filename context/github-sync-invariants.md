@@ -71,6 +71,10 @@ For pull requests, that means:
   a slower cadence so the Activity view stays fresh without spending the same
   request rate on hours-old rows. A missing `detail_fetched_at` remains due
   immediately (`internal/github/sync.go::activeMRDueForFastSync`).
+- Linked PR notifications may advance fast-sync scheduling through
+  `source_updated_at`, but that timestamp is only a staleness hint. Combine it
+  with authoritative PR activity for admission and cadence; never persist it as
+  `last_activity_at` (`internal/github/sync.go::recentlyActiveOpenMRs`).
 - GitHub detail ETags reduce both payload work and kenn-forge's eager-refresh
   budget spend for unchanged PRs; the sync budget transport does not count
   `304 Not Modified` responses (`internal/github/budget_transport.go::budgetTransport`).

@@ -9339,6 +9339,79 @@ func TestWatchedMRsThrottleRecentlyActiveOpenPRsByActivityAge(t *testing.T) {
 	}, got)
 }
 
+func TestWatchedMRsUseNotificationActivityForHotPRCadence(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := time.Date(2026, 8, 2, 12, 0, 0, 0, time.UTC)
+
+	repoID, err := d.UpsertRepo(ctx, db.RepoIdentity{
+		Platform:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "app",
+	})
+	require.NoError(err)
+
+	seedMR := func(number int, state db.MergeRequestState, detailFetchedAt time.Time) {
+		_, upsertErr := d.UpsertMergeRequest(ctx, &db.MergeRequest{
+			RepoID: repoID, PlatformID: int64(number), Number: number,
+			Title: "PR", Author: "octo", State: state,
+			HeadBranch: "feature", BaseBranch: "main",
+			CreatedAt: now.Add(-24 * time.Hour),
+			UpdatedAt: now.Add(-5 * time.Hour), LastActivityAt: now.Add(-5 * time.Hour),
+			DetailFetchedAt: &detailFetchedAt,
+		})
+		require.NoError(upsertErr)
+	}
+	seedMR(1, db.MergeRequestStateOpen, now.Add(-time.Minute))
+	seedMR(2, db.MergeRequestStateOpen, now.Add(-2*time.Minute))
+	seedMR(3, db.MergeRequestStateOpen, now.Add(-2*time.Minute))
+	seedMR(4, db.MergeRequestStateClosed, now.Add(-2*time.Minute))
+
+	notification := func(id string, number int, updatedAt time.Time) db.Notification {
+		return db.Notification{
+			Platform: "github", PlatformHost: "github.com",
+			PlatformNotificationID: id,
+			RepoID:                 &repoID,
+			RepoOwner:              "acme",
+			RepoName:               "app",
+			SubjectType:            "PullRequest",
+			SubjectTitle:           "PR activity",
+			ItemNumber:             &number,
+			ItemType:               "pr",
+			Reason:                 "comment",
+			Unread:                 true,
+			SourceUpdatedAt:        updatedAt,
+			SyncedAt:               updatedAt,
+		}
+	}
+	require.NoError(d.UpsertNotifications(ctx, []db.Notification{
+		notification("hot-not-due", 1, now.Add(-10*time.Minute)),
+		notification("hot-due", 2, now.Add(-10*time.Minute)),
+		notification("expired", 3, now.Add(-5*time.Hour)),
+		notification("closed", 4, now.Add(-10*time.Minute)),
+	}))
+
+	syncer := NewSyncer(
+		map[string]Client{}, d, nil,
+		[]RepoRef{{
+			Platform: platform.KindGitHub, PlatformHost: "github.com",
+			Owner: "acme", Name: "app",
+		}},
+		time.Hour, nil, nil,
+	)
+	syncer.SetWatchInterval(2 * time.Minute)
+	syncer.SetActiveMRWindow(4 * time.Hour)
+
+	got := syncer.watchedMRsForFastSync(ctx, now)
+	assert.Equal([]WatchedMR{{
+		Platform: platform.KindGitHub, PlatformHost: "github.com",
+		Owner: "acme", Name: "app", Number: 2,
+	}}, got)
+}
+
 func TestWatchedMRsNotifyOnceAfterFastSync(t *testing.T) {
 	assert := assert.New(t)
 	d := openTestDB(t)

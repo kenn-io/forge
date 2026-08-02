@@ -2887,6 +2887,89 @@ func TestAPISyncPRPreservesMergeableStateWhenRefreshHasNoAnswer(t *testing.T) {
 	}
 }
 
+func TestAPIEnqueuePRSyncQueuesOneRerun(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	firstStarted := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	secondDone := make(chan struct{})
+	var calls atomic.Int64
+
+	mock := &mockGH{
+		getPullRequestFn: func(ctx context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+			call := calls.Add(1)
+			if call == 1 {
+				close(firstStarted)
+				select {
+				case <-releaseFirst:
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
+			}
+
+			id := int64(2000 + call)
+			sha := fmt.Sprintf("head-%d", call)
+			state := "open"
+			title := "Async synced PR"
+			url := "https://github.com/acme/widget/pull/1"
+			now := gh.Timestamp{Time: time.Now().UTC()}
+			pr := &gh.PullRequest{
+				ID: &id, Number: &number, State: &state, Title: &title,
+				HTMLURL: &url, UpdatedAt: &now, CreatedAt: &now,
+				Head: &gh.PullRequestBranch{SHA: &sha, Ref: new("feature")},
+				Base: &gh.PullRequestBranch{Ref: new("main")},
+			}
+			if call == 2 {
+				close(secondDone)
+			}
+			return pr, nil
+		},
+	}
+
+	srv, database := setupTestServerWithMock(t, mock)
+	seedPR(t, database, "acme", "widget", 1)
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.EnqueuePrSyncWithResponse(
+		t.Context(), "gh", "acme", "widget", 1,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, resp.StatusCode())
+	require.Eventually(func() bool {
+		select {
+		case <-firstStarted:
+			return true
+		default:
+			return false
+		}
+	}, time.Second, time.Millisecond)
+
+	for range 3 {
+		resp, err = client.HTTP.EnqueuePrSyncWithResponse(
+			t.Context(), "gh", "acme", "widget", 1,
+		)
+		require.NoError(err)
+		require.Equal(http.StatusAccepted, resp.StatusCode())
+	}
+	close(releaseFirst)
+
+	require.Eventually(func() bool {
+		select {
+		case <-secondDone:
+			return true
+		default:
+			return false
+		}
+	}, time.Second, time.Millisecond)
+	assert.Equal(int64(2), calls.Load())
+	assert.Never(
+		func() bool { return calls.Load() > 2 },
+		100*time.Millisecond,
+		time.Millisecond,
+		"duplicate async sync requests must collapse to one pending rerun",
+	)
+}
+
 // TestAPIEnqueuePRSyncPersistsWorkflowApproval verifies that the
 // background sync path (POST /sync/async) computes and persists
 // workflow approval state so a subsequent DB-only GET sees it. The

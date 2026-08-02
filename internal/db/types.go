@@ -980,6 +980,14 @@ type Notification struct {
 	SourceAckNextAttemptAt   *time.Time
 }
 
+// MergeRequestNotificationActivity is the newest notification timestamp
+// linked to one open merge request. It is a scheduling hint, not authoritative
+// merge-request activity.
+type MergeRequestNotificationActivity struct {
+	MergeRequestID  int64
+	SourceUpdatedAt time.Time
+}
+
 type ListNotificationsOpts struct {
 	Platform     string
 	PlatformHost string

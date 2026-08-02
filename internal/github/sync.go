@@ -4184,13 +4184,26 @@ func (s *Syncer) recentlyActiveOpenMRs(
 		return nil
 	}
 	cutoff := now.Add(-window)
+	notificationActivity := make(map[int64]time.Time)
+	hints, err := s.db.LatestOpenPRNotificationActivity(ctx, cutoff)
+	if err != nil {
+		slog.Warn("fast-sync active MR notification activity failed", "err", err)
+	} else {
+		for _, hint := range hints {
+			notificationActivity[hint.MergeRequestID] = hint.SourceUpdatedAt
+		}
+	}
 	repoByID := make(map[int64]*db.Repo)
 	var watched []WatchedMR
 	for _, pr := range prs {
-		if pr.LastActivityAt.Before(cutoff) {
+		effectiveActivityAt := pr.LastActivityAt
+		if hint := notificationActivity[pr.ID]; hint.After(effectiveActivityAt) {
+			effectiveActivityAt = hint
+		}
+		if effectiveActivityAt.Before(cutoff) {
 			continue
 		}
-		if !activeMRDueForFastSync(pr, now, hotInterval) {
+		if !activeMRDueForFastSync(pr, effectiveActivityAt, now, hotInterval) {
 			continue
 		}
 		repo, ok := repoByID[pr.RepoID]
@@ -4224,11 +4237,16 @@ func (s *Syncer) recentlyActiveOpenMRs(
 	return watched
 }
 
-func activeMRDueForFastSync(pr db.MergeRequest, now time.Time, hotInterval time.Duration) bool {
+func activeMRDueForFastSync(
+	pr db.MergeRequest,
+	effectiveActivityAt time.Time,
+	now time.Time,
+	hotInterval time.Duration,
+) bool {
 	if pr.DetailFetchedAt == nil {
 		return true
 	}
-	interval := activeMRRefreshInterval(pr.LastActivityAt, now, hotInterval)
+	interval := activeMRRefreshInterval(effectiveActivityAt, now, hotInterval)
 	return !pr.DetailFetchedAt.Add(interval).After(now)
 }
 

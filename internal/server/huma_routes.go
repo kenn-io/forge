@@ -1117,7 +1117,7 @@ func (s *Server) enqueuePRSync(ctx context.Context, input *repoNumberInput) (*ac
 	host := httpapi.ProviderHost(*repo)
 	key := "pr:" + string(kind) + ":" + host + ":" + repo.RepoPath +
 		"#" + strconv.Itoa(input.Number)
-	s.enqueueDetailSync(
+	s.enqueueDetailSyncOrRerun(
 		key,
 		[]any{
 			"type", "pr",

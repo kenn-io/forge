@@ -568,9 +568,11 @@ an available target with `key: "codex"` before continuing.
 Add `ensureSyntheticCodexWorkspace(page, baseURL)` that:
 
 1. Configures the synthetic agent.
-2. Reuses the `acme/widgets#1` workspace when present, or posts
-   `{ provider: "github", platform_host: "github.com", owner: "acme",
-   name: "widgets", mr_number: 1 }` to `POST /api/v1/workspaces`.
+2. Reuses a workspace only when `(provider, platform_host, owner, name,
+   item_type, item_number)` matches `(github, github.com, acme, widgets,
+   pull_request, 1)`. Otherwise, it posts `{ provider: "github",
+   platform_host: "github.com", owner: "acme", name: "widgets",
+   mr_number: 1 }` to `POST /api/v1/workspaces`.
 3. Polls `GET /api/v1/workspaces/{id}` until status is `ready`, failing on
    `error`.
 4. Reads `GET /api/v1/workspaces/{id}/runtime` and posts

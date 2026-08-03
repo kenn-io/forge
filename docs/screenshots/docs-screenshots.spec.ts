@@ -179,6 +179,7 @@ const firstRunCases: CaptureCase[] = [
     readySelector: ".onboarding",
     readyText: "Connect a code forge",
     requiredSelector: ".provider-readiness",
+    requiredButtonName: "Continue with GitHub",
     description:
       "First-run code forge readiness with an authenticated synthetic GitHub account and other provider paths.",
   },
@@ -189,6 +190,7 @@ const firstRunCases: CaptureCase[] = [
     readySelector: ".onboarding",
     readyText: "Connect a code forge",
     requiredSelector: ".provider-readiness",
+    requiredButtonName: "Continue with GitHub",
     description:
       "First-run code forge readiness in dark mode with an authenticated synthetic GitHub account and other provider paths.",
   },

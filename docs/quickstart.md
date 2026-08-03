@@ -81,7 +81,7 @@ In PowerShell:
 
 ```powershell
 $env:KENN_FORGE_GITHUB_TOKEN = 'ghp_your_token_here'
-.\kenn-forge.exe
+kenn-forge.exe
 ```
 
 For another provider or host, set its token environment variable before

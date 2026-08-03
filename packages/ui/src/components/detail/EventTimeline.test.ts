@@ -1904,6 +1904,100 @@ describe("EventTimeline", () => {
     expect(text).not.toContain("new lineage commit one displaced");
   });
 
+  it("retires the active lineage after repeated force-push alternation", () => {
+    const oldCommit1 = "a111111111111111111111111111111111111111";
+    const oldCommit2 = "a222222222222222222222222222222222222222";
+    const oldCommit3 = "a333333333333333333333333333333333333333";
+    const newCommit1 = "b111111111111111111111111111111111111111";
+    const newCommit2 = "b222222222222222222222222222222222222222";
+    const newCommit3 = "b333333333333333333333333333333333333333";
+    const { container } = render(EventTimeline, {
+      props: {
+        events: [
+          makeEvent({
+            ID: 9,
+            EventType: "force_push",
+            Summary: "a333333 -> b333333",
+            CreatedAt: "2024-06-01T14:00:00Z",
+            MetadataJSON: JSON.stringify({ before_sha: oldCommit3, after_sha: newCommit3 }),
+          }),
+          makeEvent({
+            ID: 8,
+            EventType: "force_push",
+            Summary: "b333333 -> a333333",
+            CreatedAt: "2024-06-01T13:00:00Z",
+            MetadataJSON: JSON.stringify({ before_sha: newCommit3, after_sha: oldCommit3 }),
+          }),
+          makeEvent({
+            ID: 7,
+            EventType: "force_push",
+            Summary: "a333333 -> b333333",
+            CreatedAt: "2024-06-01T12:00:00Z",
+            MetadataJSON: JSON.stringify({ before_sha: oldCommit3, after_sha: newCommit3 }),
+          }),
+          makeEvent({
+            ID: 6,
+            EventType: "commit",
+            Summary: newCommit3,
+            Body: "new lineage commit three current again",
+            CreatedAt: "2024-06-01T10:06:00Z",
+            MetadataJSON: JSON.stringify({ commit_order: 3, commit_order_key: 6 }),
+          }),
+          makeEvent({
+            ID: 5,
+            EventType: "commit",
+            Summary: newCommit2,
+            Body: "new lineage commit two current again",
+            CreatedAt: "2024-06-01T10:05:00Z",
+            MetadataJSON: JSON.stringify({ commit_order: 2, commit_order_key: 5 }),
+          }),
+          makeEvent({
+            ID: 4,
+            EventType: "commit",
+            Summary: newCommit1,
+            Body: "new lineage commit one current again",
+            CreatedAt: "2024-06-01T10:04:00Z",
+            MetadataJSON: JSON.stringify({ commit_order: 1, commit_order_key: 4 }),
+          }),
+          makeEvent({
+            ID: 3,
+            EventType: "commit",
+            Summary: oldCommit3,
+            Body: "old lineage commit three displaced again",
+            CreatedAt: "2024-06-01T10:03:00Z",
+            MetadataJSON: JSON.stringify({ commit_order: 3, commit_order_key: 3 }),
+          }),
+          makeEvent({
+            ID: 2,
+            EventType: "commit",
+            Summary: oldCommit2,
+            Body: "old lineage commit two displaced again",
+            CreatedAt: "2024-06-01T10:02:00Z",
+            MetadataJSON: JSON.stringify({ commit_order: 2, commit_order_key: 2 }),
+          }),
+          makeEvent({
+            ID: 1,
+            EventType: "commit",
+            Summary: oldCommit1,
+            Body: "old lineage commit one displaced again",
+            CreatedAt: "2024-06-01T10:01:00Z",
+            MetadataJSON: JSON.stringify({ commit_order: 1, commit_order_key: 1 }),
+          }),
+        ],
+        timelineOrder: "chronological",
+      },
+    });
+
+    const text = container.textContent ?? "";
+    expect(text).toContain("3 commits replaced by a later force push");
+    expect(text).toContain("new lineage commit three current again");
+    expect(text).toContain("new lineage commit two current again");
+    expect(text).toContain("new lineage commit one current again");
+    expect(text).not.toContain("old lineage commit three displaced again");
+    expect(text).not.toContain("old lineage commit two displaced again");
+    expect(text).not.toContain("old lineage commit one displaced again");
+  });
+
   it("preserves unrelated obsolete commits when a later rewind targets current lineage", () => {
     const commits = [
       "1111111111111111111111111111111111111111",

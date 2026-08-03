@@ -114,15 +114,18 @@ test.describe("PR timeline filters", () => {
     ]);
   });
 
-  test("collapses only rewound commits from the SQLite-backed timeline", async ({ page }) => {
+  test("collapses the displaced lineage after SQLite-backed force-push alternation", async ({ page }) => {
     await openPRTimelinePath(page, "/pulls/github/acme/widgets/6");
     const menu = await openActivityViewMenu(page);
     await menu.getByRole("button", { name: "Strict date order" }).click();
 
-    await expect(page.getByText("2 commits replaced by a later force push", { exact: true })).toBeVisible();
-    await expect(page.getByText("dashboard base remains current", { exact: true })).toBeVisible();
-    await expect(page.getByText("dashboard filters rewound away", { exact: true })).toHaveCount(0);
-    await expect(page.getByText("dashboard widgets rewound away", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("3 commits replaced by a later force push", { exact: true })).toBeVisible();
+    await expect(page.getByText("dashboard new base current again", { exact: true })).toBeVisible();
+    await expect(page.getByText("dashboard new filters current again", { exact: true })).toBeVisible();
+    await expect(page.getByText("dashboard new widgets current again", { exact: true })).toBeVisible();
+    await expect(page.getByText("dashboard old base displaced again", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("dashboard old filters displaced again", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("dashboard old widgets displaced again", { exact: true })).toHaveCount(0);
   });
 
   test("persists compact activity layout across PR and issue detail views", async ({ page }) => {

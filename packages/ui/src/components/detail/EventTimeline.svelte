@@ -639,9 +639,13 @@
       const restoresObsoleteLineage = after !== undefined && restoreGenerationContaining(after);
 
       if (before !== undefined) {
+        // A transition can restore its after lineage and retire its before
+        // lineage at the same time. Rewinds retire only the suffix after the
+        // restored ancestor; lineage switches retire the complete active
+        // generation through the displaced head.
         if (after !== undefined && after < before) {
           addGenerationThrough(before, after);
-        } else if (!restoresObsoleteLineage) {
+        } else {
           addGenerationThrough(before);
         }
         continue;

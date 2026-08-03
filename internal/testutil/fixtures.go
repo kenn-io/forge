@@ -800,49 +800,100 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 		return nil, fmt.Errorf("upsert widgets PR#2 events: %w", err)
 	}
 
-	// widgets PR#6: a rewind force-push removes only the commits after the restored base
-	w6Commit1 := "6666111111111111111111111111111111111111"
-	w6Commit2 := "6666222222222222222222222222222222222222"
-	w6Commit3 := "6666333333333333333333333333333333333333"
+	// widgets PR#6: repeated force pushes replace, restore, then replace the old lineage again
+	w6OldCommit1 := "6666a111111111111111111111111111111111"
+	w6OldCommit2 := "6666a222222222222222222222222222222222"
+	w6OldCommit3 := "6666a333333333333333333333333333333333"
+	w6NewCommit1 := "6666b111111111111111111111111111111111"
+	w6NewCommit2 := "6666b222222222222222222222222222222222"
+	w6NewCommit3 := "6666b333333333333333333333333333333333"
 	err = d.UpsertMREvents(ctx, []db.MREvent{
 		{
 			MergeRequestID: w6ID,
 			EventType:      "commit",
 			Author:         "carol",
-			Summary:        w6Commit1,
-			Body:           "dashboard base remains current",
+			Summary:        w6OldCommit1,
+			Body:           "dashboard old base displaced again",
 			MetadataJSON:   `{"commit_order":1,"commit_order_key":1}`,
 			CreatedAt:      w6Created.Add(time.Hour),
-			DedupeKey:      "w6-commit-1",
+			DedupeKey:      "w6-old-commit-1",
 		},
 		{
 			MergeRequestID: w6ID,
 			EventType:      "commit",
 			Author:         "carol",
-			Summary:        w6Commit2,
-			Body:           "dashboard filters rewound away",
+			Summary:        w6OldCommit2,
+			Body:           "dashboard old filters displaced again",
 			MetadataJSON:   `{"commit_order":2,"commit_order_key":2}`,
 			CreatedAt:      w6Created.Add(2 * time.Hour),
-			DedupeKey:      "w6-commit-2",
+			DedupeKey:      "w6-old-commit-2",
 		},
 		{
 			MergeRequestID: w6ID,
 			EventType:      "commit",
 			Author:         "carol",
-			Summary:        w6Commit3,
-			Body:           "dashboard widgets rewound away",
+			Summary:        w6OldCommit3,
+			Body:           "dashboard old widgets displaced again",
 			MetadataJSON:   `{"commit_order":3,"commit_order_key":3}`,
 			CreatedAt:      w6Created.Add(3 * time.Hour),
-			DedupeKey:      "w6-commit-3",
+			DedupeKey:      "w6-old-commit-3",
+		},
+		{
+			MergeRequestID: w6ID,
+			EventType:      "commit",
+			Author:         "carol",
+			Summary:        w6NewCommit1,
+			Body:           "dashboard new base current again",
+			MetadataJSON:   `{"commit_order":1,"commit_order_key":4}`,
+			CreatedAt:      w6Created.Add(4 * time.Hour),
+			DedupeKey:      "w6-new-commit-1",
+		},
+		{
+			MergeRequestID: w6ID,
+			EventType:      "commit",
+			Author:         "carol",
+			Summary:        w6NewCommit2,
+			Body:           "dashboard new filters current again",
+			MetadataJSON:   `{"commit_order":2,"commit_order_key":5}`,
+			CreatedAt:      w6Created.Add(5 * time.Hour),
+			DedupeKey:      "w6-new-commit-2",
+		},
+		{
+			MergeRequestID: w6ID,
+			EventType:      "commit",
+			Author:         "carol",
+			Summary:        w6NewCommit3,
+			Body:           "dashboard new widgets current again",
+			MetadataJSON:   `{"commit_order":3,"commit_order_key":6}`,
+			CreatedAt:      w6Created.Add(6 * time.Hour),
+			DedupeKey:      "w6-new-commit-3",
 		},
 		{
 			MergeRequestID: w6ID,
 			EventType:      "force_push",
 			Author:         "carol",
-			Summary:        "6666333 -> 6666111",
-			MetadataJSON:   fmt.Sprintf(`{"before_sha":%q,"after_sha":%q,"ref":"wip/dashboard"}`, w6Commit3, w6Commit1),
-			CreatedAt:      w6Created.Add(4 * time.Hour),
+			Summary:        "6666a33 -> 6666b33",
+			MetadataJSON:   fmt.Sprintf(`{"before_sha":%q,"after_sha":%q,"ref":"wip/dashboard"}`, w6OldCommit3, w6NewCommit3),
+			CreatedAt:      w6Created.Add(7 * time.Hour),
 			DedupeKey:      "w6-force-push-1",
+		},
+		{
+			MergeRequestID: w6ID,
+			EventType:      "force_push",
+			Author:         "carol",
+			Summary:        "6666b33 -> 6666a33",
+			MetadataJSON:   fmt.Sprintf(`{"before_sha":%q,"after_sha":%q,"ref":"wip/dashboard"}`, w6NewCommit3, w6OldCommit3),
+			CreatedAt:      w6Created.Add(8 * time.Hour),
+			DedupeKey:      "w6-force-push-2",
+		},
+		{
+			MergeRequestID: w6ID,
+			EventType:      "force_push",
+			Author:         "carol",
+			Summary:        "6666a33 -> 6666b33",
+			MetadataJSON:   fmt.Sprintf(`{"before_sha":%q,"after_sha":%q,"ref":"wip/dashboard"}`, w6OldCommit3, w6NewCommit3),
+			CreatedAt:      w6Created.Add(9 * time.Hour),
+			DedupeKey:      "w6-force-push-3",
 		},
 	})
 	if err != nil {

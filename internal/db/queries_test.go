@@ -4148,6 +4148,172 @@ func TestGetWorkspaceByMRForProviderDisambiguatesProvider(t *testing.T) {
 	assert.Nil(miss)
 }
 
+func workspaceLinkageTestDB(t *testing.T) *DB {
+	t.Helper()
+	d := openTestDB(t)
+	_, err := d.UpsertRepo(t.Context(), RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "repo-acme-widget",
+		Owner:          "acme",
+		Name:           "widget",
+	})
+	require.NoError(t, err)
+	return d
+}
+
+func insertWorkspaceLinkageFixture(
+	t *testing.T,
+	d *DB,
+	ws Workspace,
+	createdAt time.Time,
+) {
+	t.Helper()
+	require.NoError(t, d.InsertWorkspace(t.Context(), &ws))
+	_, err := d.WriteDB().ExecContext(
+		t.Context(),
+		`UPDATE forge_workspaces SET created_at = ? WHERE id = ?`,
+		createdAt.UTC(), ws.ID,
+	)
+	require.NoError(t, err)
+}
+
+func TestGetWorkspaceLinkedToMRForProviderSelection(t *testing.T) {
+	base := time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)
+
+	t.Run("associated fallback keeps direct lookup isolated", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+		d := workspaceLinkageTestDB(t)
+		associatedPR := 42
+		insertWorkspaceLinkageFixture(t, d, Workspace{
+			ID:                 "associated-issue",
+			Platform:           "github",
+			PlatformHost:       "github.com",
+			RepoOwner:          "acme",
+			RepoName:           "widget",
+			ItemType:           WorkspaceItemTypeIssue,
+			ItemNumber:         7,
+			AssociatedPRNumber: &associatedPR,
+			GitHeadRef:         "issue-7",
+			WorkspaceBranch:    "issue-7",
+			WorktreePath:       "/tmp/associated-issue",
+			TmuxSession:        "associated-issue",
+			Status:             "ready",
+		}, base)
+
+		linked, err := d.GetWorkspaceLinkedToMRForProvider(
+			t.Context(), "GITHUB", "GITHUB.COM", "ACME", "WIDGET", associatedPR,
+		)
+		require.NoError(err)
+		require.NotNil(linked)
+		assert.Equal("associated-issue", linked.ID)
+
+		direct, err := d.GetWorkspaceByMRForProvider(
+			t.Context(), "github", "github.com", "acme", "widget", associatedPR,
+		)
+		require.NoError(err)
+		assert.Nil(direct)
+	})
+
+	t.Run("newest associated wins regardless of status with stable ID tie", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+		d := workspaceLinkageTestDB(t)
+		associatedPR := 42
+		insertWorkspaceLinkageFixture(t, d, Workspace{
+			ID:                 "associated-ready",
+			Platform:           "github",
+			PlatformHost:       "github.com",
+			RepoOwner:          "acme",
+			RepoName:           "widget",
+			ItemType:           WorkspaceItemTypeIssue,
+			ItemNumber:         7,
+			AssociatedPRNumber: &associatedPR,
+			GitHeadRef:         "issue-7",
+			WorkspaceBranch:    "issue-7",
+			WorktreePath:       "/tmp/associated-ready",
+			TmuxSession:        "associated-ready",
+			Status:             "ready",
+		}, base)
+		for _, fixture := range []struct {
+			id     string
+			status string
+		}{
+			{id: "associated-error", status: "error"},
+			{id: "associated-z-creating", status: "creating"},
+		} {
+			insertWorkspaceLinkageFixture(t, d, Workspace{
+				ID:                 fixture.id,
+				Platform:           "github",
+				PlatformHost:       "github.com",
+				RepoOwner:          "acme",
+				RepoName:           "widget",
+				ItemType:           WorkspaceItemTypeAdHoc,
+				ItemNumber:         0,
+				ItemKey:            AdHocWorkspaceItemKey(fixture.id),
+				AssociatedPRNumber: &associatedPR,
+				GitHeadRef:         fixture.id,
+				WorkspaceBranch:    fixture.id,
+				WorktreePath:       "/tmp/" + fixture.id,
+				TmuxSession:        fixture.id,
+				Status:             fixture.status,
+			}, base.Add(time.Minute))
+		}
+
+		linked, err := d.GetWorkspaceLinkedToMRForProvider(
+			t.Context(), "github", "github.com", "acme", "widget", associatedPR,
+		)
+		require.NoError(err)
+		require.NotNil(linked)
+		assert.Equal("associated-z-creating", linked.ID)
+		assert.Equal("creating", linked.Status)
+	})
+
+	t.Run("direct workspace wins regardless of creation time", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+		d := workspaceLinkageTestDB(t)
+		associatedPR := 42
+		insertWorkspaceLinkageFixture(t, d, Workspace{
+			ID:                 "new-associated",
+			Platform:           "github",
+			PlatformHost:       "github.com",
+			RepoOwner:          "acme",
+			RepoName:           "widget",
+			ItemType:           WorkspaceItemTypeIssue,
+			ItemNumber:         7,
+			AssociatedPRNumber: &associatedPR,
+			GitHeadRef:         "issue-7",
+			WorkspaceBranch:    "issue-7",
+			WorktreePath:       "/tmp/new-associated",
+			TmuxSession:        "new-associated",
+			Status:             "ready",
+		}, base.Add(time.Hour))
+		insertWorkspaceLinkageFixture(t, d, Workspace{
+			ID:              "old-direct",
+			Platform:        "github",
+			PlatformHost:    "github.com",
+			RepoOwner:       "acme",
+			RepoName:        "widget",
+			ItemType:        WorkspaceItemTypePullRequest,
+			ItemNumber:      associatedPR,
+			GitHeadRef:      "feature",
+			WorkspaceBranch: "pr-42",
+			WorktreePath:    "/tmp/old-direct",
+			TmuxSession:     "old-direct",
+			Status:          "ready",
+		}, base)
+
+		linked, err := d.GetWorkspaceLinkedToMRForProvider(
+			t.Context(), "github", "github.com", "acme", "widget", associatedPR,
+		)
+		require.NoError(err)
+		require.NotNil(linked)
+		assert.Equal("old-direct", linked.ID)
+	})
+}
+
 func TestFreshWorkspaceRuntimeSessionSchemaIncludesTmuxSession(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

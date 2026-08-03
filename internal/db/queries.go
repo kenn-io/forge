@@ -4104,6 +4104,67 @@ func (d *DB) GetWorkspaceByMRForProvider(
 	)
 }
 
+// GetWorkspaceLinkedToMRForProvider returns the workspace represented on MR
+// detail surfaces. A workspace created directly for the MR takes precedence;
+// otherwise the newest issue, Kata-task, or ad-hoc workspace with a persisted
+// association is returned. Status does not affect selection, and ID ordering
+// only makes equal creation timestamps deterministic.
+func (d *DB) GetWorkspaceLinkedToMRForProvider(
+	ctx context.Context,
+	provider, platformHost, owner, name string,
+	mrNumber int,
+) (*Workspace, error) {
+	provider = strings.ToLower(strings.TrimSpace(provider))
+	platformHost, owner, name = canonicalRepoLookupIdentifier(platformHost, owner, name)
+	collision, err := d.workspaceRouteHasHistoricalOccupants(
+		ctx, provider, platformHost, owner+"/"+name,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if collision {
+		return nil, nil
+	}
+	ws, err := scanWorkspace(d.ro.QueryRowContext(ctx, `
+		SELECT id, platform, platform_host, repo_owner, repo_name,
+		       item_type, item_number, item_key, associated_pr_number,
+		       git_head_ref, mr_head_repo, workspace_branch,
+		       worktree_path, tmux_session, terminal_backend, status,
+		       error_message, created_at, kata_metadata
+			FROM forge_workspaces
+			WHERE platform_host = ? AND repo_owner_key = ?
+			  AND repo_name_key = ?
+			  AND (
+			    (item_type = ? AND item_number = ?)
+			    OR (
+			      item_type IN (?, ?, ?)
+			      AND associated_pr_number = ?
+			    )
+			  )
+			  AND (? = '' OR platform = ?)
+			ORDER BY CASE
+			           WHEN item_type = ? AND item_number = ? THEN 0
+			           ELSE 1
+			         END,
+			         created_at DESC,
+			         id DESC
+			LIMIT 1`,
+		platformHost, owner, name,
+		WorkspaceItemTypePullRequest, mrNumber,
+		WorkspaceItemTypeIssue, WorkspaceItemTypeKataTask, WorkspaceItemTypeAdHoc,
+		mrNumber,
+		provider, provider,
+		WorkspaceItemTypePullRequest, mrNumber,
+	))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get workspace linked to MR: %w", err)
+	}
+	return ws, nil
+}
+
 func (d *DB) getWorkspaceByMR(
 	ctx context.Context,
 	provider, platformHost, owner, name string,

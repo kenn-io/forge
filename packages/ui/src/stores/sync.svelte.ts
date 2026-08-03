@@ -19,6 +19,10 @@ export function createSyncStore(opts: SyncStoreOptions) {
   let onSyncCompleteOnce: (() => void) | null = null;
   const syncCompleteListeners = new Set<() => void>();
   let currentIntervalMs = 30_000;
+  // The trigger endpoint acknowledges before the sync goroutine necessarily
+  // updates server status. Until the server observes or completes that run,
+  // an unchanged idle response is still describing the previous run.
+  let triggeredSyncLastRunAt: string | null = null;
   // Monotonic counter incremented by SSE pushes. Poll results
   // captured before an SSE update are stale and must be dropped.
   let sseGeneration = 0;
@@ -47,9 +51,17 @@ export function createSyncStore(opts: SyncStoreOptions) {
   }
 
   function applySyncStatus(next: SyncStatus | null): void {
-    status = next;
+    const isRunning = next?.running ?? false;
+    if (triggeredSyncLastRunAt !== null) {
+      const nextLastRunAt = next?.last_run_at ?? "";
+      if (isRunning || lastRunAdvanced(triggeredSyncLastRunAt, nextLastRunAt)) {
+        triggeredSyncLastRunAt = null;
+      } else {
+        return;
+      }
+    }
 
-    const isRunning = status?.running ?? false;
+    status = next;
 
     if (wasRunning && !isRunning) {
       if (onSyncCompleteOnce) {
@@ -99,6 +111,12 @@ export function createSyncStore(opts: SyncStoreOptions) {
     error?: { detail?: string | undefined; title?: string | undefined } | undefined;
   }>;
 
+  function lastRunAdvanced(previous: string, next: string): boolean {
+    if (next === "") return false;
+    if (previous === "") return true;
+    return Date.parse(next) > Date.parse(previous);
+  }
+
   async function runTriggeredSync(request: SyncRequest): Promise<void> {
     const previous = status;
 
@@ -106,9 +124,10 @@ export function createSyncStore(opts: SyncStoreOptions) {
     // Move the generation before publishing the optimistic running state so an
     // older idle response cannot announce a false completion.
     sseGeneration++;
+    triggeredSyncLastRunAt = previous?.last_run_at ?? "";
     status = {
       running: true,
-      last_run_at: previous?.last_run_at ?? "",
+      last_run_at: triggeredSyncLastRunAt,
       last_error: "",
     };
     wasRunning = true;
@@ -121,6 +140,7 @@ export function createSyncStore(opts: SyncStoreOptions) {
       }
       await refreshSyncStatus();
     } catch (err) {
+      triggeredSyncLastRunAt = null;
       status = {
         running: false,
         last_run_at: previous?.last_run_at ?? "",

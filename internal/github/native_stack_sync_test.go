@@ -84,7 +84,7 @@ func TestRefreshGitHubNativeStackCacheReusesConsistentCache(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
-	repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widgets"))
+	repoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
 	require.NoError(err)
 	now := time.Date(2026, time.July, 24, 12, 0, 0, 0, time.UTC)
 	require.NoError(database.ReplaceGitHubNativeStack(t.Context(), db.GitHubNativeStack{
@@ -162,7 +162,7 @@ func TestRefreshGitHubNativeStackCacheStopsAfterTargetIsFoundOrPassed(t *testing
 			assert := assert.New(t)
 			require := require.New(t)
 			database := openTestDB(t)
-			repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widgets"))
+			repoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
 			require.NoError(err)
 			client := &nativeStackSyncTestClient{
 				mockClient: &mockClient{}, pages: map[int]NativeStackPage{1: tc.page},
@@ -194,7 +194,7 @@ func TestRefreshGitHubNativeStackCacheStopsAfterTargetIsFoundOrPassed(t *testing
 func TestRefreshGitHubNativeStackCacheTreatsPreviewNotFoundAsFallback(t *testing.T) {
 	require := require.New(t)
 	database := openTestDB(t)
-	repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widgets"))
+	repoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
 	require.NoError(err)
 	client := &nativeStackSyncTestClient{
 		mockClient: &mockClient{},
@@ -214,7 +214,7 @@ func TestRefreshGitHubNativeStackCacheTreatsPreviewNotFoundAsFallback(t *testing
 func TestRefreshGitHubNativeStackCacheDoesNotReconfirmSuspectCacheAfterNotModified(t *testing.T) {
 	require := require.New(t)
 	database := openTestDB(t)
-	repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widgets"))
+	repoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
 	require.NoError(err)
 	now := time.Date(2026, time.July, 24, 12, 0, 0, 0, time.UTC)
 	require.NoError(database.ReplaceGitHubNativeStack(t.Context(), db.GitHubNativeStack{
@@ -266,7 +266,7 @@ func TestRefreshGitHubNativeStackCacheRefetchesUnobservableMembersOnSchedule(t *
 			assert := assert.New(t)
 			require := require.New(t)
 			database := openTestDB(t)
-			repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widgets"))
+			repoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
 			require.NoError(err)
 			// PR 100 is merged, so no open-PR hint can attest to its position.
 			require.NoError(database.ReplaceGitHubNativeStack(t.Context(), db.GitHubNativeStack{
@@ -325,7 +325,7 @@ func TestRefreshGitHubNativeStackCacheExpiresConfirmationsReusedByNotModified(t 
 			assert := assert.New(t)
 			require := require.New(t)
 			database := openTestDB(t)
-			repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widgets"))
+			repoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
 			require.NoError(err)
 			// PR 100 is merged, so the confirmation covers membership that an
 			// unchanged pull-request list can never contradict.
@@ -362,7 +362,7 @@ func TestRefreshGitHubNativeStackCacheKeepsDeadlineTiedToStackObservation(t *tes
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
-	repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widgets"))
+	repoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
 	require.NoError(err)
 	observed := time.Date(2026, time.July, 24, 0, 0, 0, 0, time.UTC)
 	// The row is already 11 hours old and still holds a merged member.
@@ -407,7 +407,13 @@ func TestRunOnceWithdrawsAgedNativeStacksFromProjectionInput(t *testing.T) {
 	require := require.New(t)
 	database := openTestDB(t)
 	observed := time.Date(2026, time.July, 24, 0, 0, 0, 0, time.UTC)
-	repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "owner", "repo"))
+	repoID, err := database.UpsertRepo(t.Context(), db.RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "repo-owner-repo",
+		Owner:          "owner",
+		Name:           "repo",
+	})
 	require.NoError(err)
 	// The cached stack claims a merged leading member, which no open-PR hint can
 	// attest to, and it was last observed 11 hours ago.
@@ -473,7 +479,7 @@ func TestRefreshGitHubNativeStackCacheMarksFailedPersistenceIncomplete(t *testin
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
-	repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widgets"))
+	repoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
 	require.NoError(err)
 	now := time.Date(2026, time.July, 24, 12, 0, 0, 0, time.UTC)
 	ctx, cancel := context.WithCancel(t.Context())
@@ -511,7 +517,7 @@ func TestRefreshGitHubNativeStackCacheRejectsMemberClaimedByAnotherStack(t *test
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
-	repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widgets"))
+	repoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
 	require.NoError(err)
 	now := time.Date(2026, time.July, 24, 12, 0, 0, 0, time.UTC)
 	// Cached stack 42 still lists PR 103 from when it was closed.
@@ -554,7 +560,7 @@ func TestRefreshGitHubNativeStackCacheDoesNotReuseIncompleteRefreshAfterNotModif
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
-	repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widgets"))
+	repoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
 	require.NoError(err)
 	now := time.Date(2026, time.July, 24, 12, 0, 0, 0, time.UTC)
 	require.NoError(database.ReplaceGitHubNativeStack(t.Context(), db.GitHubNativeStack{
@@ -960,7 +966,7 @@ func TestRunOncePersistsPullRequestsWhenHintIsUnclaimed(t *testing.T) {
 	require.NotNil(results[0].GitHubNativeStacks)
 	assert.Empty(results[0].GitHubNativeStacks.ConfirmedNumbers,
 		"unclaimed pull requests confirm no stack")
-	repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "owner", "repo"))
+	repoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "owner", "repo"))
 	require.NoError(err)
 	for _, number := range []int{101, 102} {
 		mr, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, number)

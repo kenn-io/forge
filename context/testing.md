@@ -1,12 +1,9 @@
 # Testing
 
-## Go assertion style
-
-Go tests use `testify` consistently. Import
-`github.com/stretchr/testify/assert` without an alias and create local helpers
-as `assert := assert.New(t)` when a test has more than three assertions.
-Aliasing the `assert` package, including `Assert`, is not allowed and is
-enforced by golangci-lint's `importas` rule.
+Use this document when choosing test boundaries or lanes, changing provider or
+HTTP contract tests, or working on race and integration-test architecture. For
+everyday Go test construction and commands, also read
+[`context/testing-basics.md`](./testing-basics.md).
 
 Test server constructors that create a Workspace manager must apply their
 isolated test tmux command; they must never fall back to the host tmux server
@@ -130,6 +127,11 @@ owner:
 - Keep focus-click selection intent and delayed outside-copy revocation as separate real-tmux
   regressions; the delayed case must retain terminal DOM focus so `focusout` cannot mask a
   broken outside-pointerdown handler (`frontend/tests/e2e-full/00-tmux-browser-clipboard.spec.ts`).
+
+Mock the API only when the behavior is owned by the frontend or the seeded
+server cannot produce the state. Use `frontend/src/test/mockApiFetch.ts` rather
+than forking the Playwright fixture, and do not assert backend-computed values
+through hand-written frontend data.
 
 A UI regression can be sufficiently covered by a backend/server test for the
 real runtime path plus a component or Vitest browser test for presentation. Do

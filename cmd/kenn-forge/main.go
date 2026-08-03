@@ -515,7 +515,7 @@ func run(opts serve.Options) error {
 	}
 
 	repos := resolveStartupRepos(
-		ctx, cfg, startup.registry, database,
+		ctx, cfg, startup.registry, database, startup.githubRouters,
 	)
 	slog.Debug("startup repos resolved", "count", len(repos))
 
@@ -746,6 +746,7 @@ func resolveStartupRepos(
 	cfg *config.Config,
 	registry *platform.Registry,
 	database *db.DB,
+	githubRouters map[string]*ghclient.HostRouter,
 ) []ghclient.RepoRef {
 	seen := make(map[string]struct{})
 	repos := make([]ghclient.RepoRef, 0, len(cfg.Repos))
@@ -762,6 +763,10 @@ func resolveStartupRepos(
 			} else {
 				expanded = ghclient.FallbackConfiguredRepoRefs(nil, raw)
 			}
+		} else {
+			ghclient.RegisterConfiguredRepoCredentialAliases(
+				githubRouters, raw, expanded,
+			)
 		}
 		for _, repo := range expanded {
 			key := string(repoPlatform(repo)) + "\x00" +

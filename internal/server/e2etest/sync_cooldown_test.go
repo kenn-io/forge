@@ -379,14 +379,18 @@ func TestRefreshRepoE2ETriggersImmediateSyncDuringCooldown(t *testing.T) {
 		listReposByOwnerFn: func(
 			_ context.Context, owner string,
 		) ([]*gh.Repository, error) {
+			kennForgeID := "repo-" + owner + "-kenn-forge"
 			repos := []*gh.Repository{{
 				Name:     new("kenn-forge"),
+				NodeID:   &kennForgeID,
 				Owner:    &gh.User{Login: new(owner)},
 				Archived: new(false),
 			}}
 			if includeRefreshRepo.Load() {
+				reviewBotID := "repo-" + owner + "-review-bot"
 				repos = append(repos, &gh.Repository{
 					Name:     new("review-bot"),
+					NodeID:   &reviewBotID,
 					Owner:    &gh.User{Login: new(owner)},
 					Archived: new(false),
 				})

@@ -46,9 +46,13 @@ name = "tools"
 	client, err := apiclient.NewWithHTTPClient(ts.URL, ts.Client())
 	require.NoError(err)
 
-	widgetRepoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	widgetRepoID, err := database.UpsertRepo(t.Context(), verifiedRepoIdentity(
+		db.GitHubRepoIdentity("github.com", "acme", "widget"),
+	))
 	require.NoError(err)
-	toolsRepoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "tools"))
+	toolsRepoID, err := database.UpsertRepo(t.Context(), verifiedRepoIdentity(
+		db.GitHubRepoIdentity("github.com", "acme", "tools"),
+	))
 	require.NoError(err)
 
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
@@ -208,7 +212,9 @@ name = "widget"
 	client, err := apiclient.NewWithHTTPClient(ts.URL, ts.Client())
 	require.NoError(err)
 
-	repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := database.UpsertRepo(t.Context(), verifiedRepoIdentity(
+		db.GitHubRepoIdentity("github.com", "acme", "widget"),
+	))
 	require.NoError(err)
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
 	numberOne := 7

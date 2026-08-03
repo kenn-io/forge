@@ -54,6 +54,13 @@ type Manager struct {
 	deletedSummaryIDs         map[string]bool
 	worktreeBaseResolver      WorktreeBasePathResolver
 	afterHeadRepoSnapshotRead func()
+	// beforeSetupRouteRevalidation runs right before setup's final route
+	// re-validation; tests use it to interleave a route replacement.
+	beforeSetupRouteRevalidation func()
+	// beforeHeadRepoSnapshotRepoLookup runs right before the head-repo
+	// refresh resolves the workspace repository; tests use it to queue a
+	// reconciliation writer against the held read lock.
+	beforeHeadRepoSnapshotRepoLookup func()
 }
 
 // WorktreeBasePathResolver resolves a tracked remote repository to a
@@ -816,6 +823,11 @@ func (m *Manager) branchInspectionDir(
 		return "", false, false, nil
 	}
 
+	if err := m.verifyRepoRouteUnoccupied(
+		ctx, platform, platformHost, owner, name,
+	); err != nil {
+		return "", false, false, err
+	}
 	if err := m.clones.EnsureCloneInNamespace(
 		ctx, workspaceCloneNamespace(platform), platform, platformHost,
 		owner, name, remoteURL,
@@ -918,6 +930,38 @@ func (m *Manager) Setup(
 	return m.SetupWithWorktreeBasePath(ctx, ws, "")
 }
 
+func (m *Manager) verifyWorkspaceRouteUnoccupied(
+	ctx context.Context, ws *Workspace,
+) error {
+	return m.verifyRepoRouteUnoccupied(
+		ctx, ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
+	)
+}
+
+// verifyRepoRouteUnoccupied fails closed on routes with contested history so
+// network git operations cannot exchange data with a route's new occupant.
+// Managers without a database (unmanaged local checkouts) skip the check.
+func (m *Manager) verifyRepoRouteUnoccupied(
+	ctx context.Context, provider, platformHost, owner, name string,
+) error {
+	if m.db == nil {
+		return nil
+	}
+	collision, err := m.db.WorkspaceRepoRouteHasHistoricalOccupants(
+		ctx, provider, platformHost, owner, name,
+	)
+	if err != nil {
+		return fmt.Errorf("verify workspace repository route: %w", err)
+	}
+	if collision {
+		return fmt.Errorf(
+			"workspace repository route has historical occupants: %s/%s",
+			owner, name,
+		)
+	}
+	return nil
+}
+
 // SetupWithWorktreeBasePath sets up a workspace from the exact checkout that
 // justified a caller's repository resolution. An empty path uses the manager's
 // normal repository-identity resolver.
@@ -930,6 +974,12 @@ func (m *Manager) SetupWithWorktreeBasePath(
 		ws.ID, workspaceSetupStageSetup, "started",
 		"starting workspace setup",
 	)
+	// Setup is the chokepoint for every path that fetches code — initial
+	// creation, retries, and recovery — so it re-checks the same route
+	// fail-closed condition InsertWorkspace enforced at creation time.
+	if err := m.verifyWorkspaceRouteUnoccupied(ctx, ws); err != nil {
+		return m.failSetup(ctx, ws.ID, workspaceSetupStageSetup, err)
+	}
 	if err := m.RefreshWorkspaceHeadRepo(ctx, ws); err != nil {
 		return m.failSetup(
 			ctx, ws.ID, workspaceSetupStageSetup,
@@ -998,6 +1048,18 @@ func (m *Manager) SetupWithWorktreeBasePath(
 				fmt.Errorf("clear untrusted branch upstream: %w", branchErr),
 			)
 		}
+	}
+	if m.beforeSetupRouteRevalidation != nil {
+		m.beforeSetupRouteRevalidation()
+	}
+	// The route can be reconciled away while the clone runs (setup holds no
+	// reconciliation lock — clones can take minutes), so re-check before
+	// declaring the workspace ready.
+	if routeErr := m.verifyWorkspaceRouteUnoccupied(ctx, ws); routeErr != nil {
+		if !reusedWorktree {
+			m.rollbackWorktree(ctx, gitDir, ws, branch)
+		}
+		return m.failSetup(ctx, ws.ID, workspaceSetupStageWorktree, routeErr)
 	}
 	persistedBranch := branch
 	if workspaceUsesOriginHead(ws) && ws.WorkspaceBranch == "" {
@@ -1097,17 +1159,16 @@ func (m *Manager) RefreshWorkspaceHeadRepoSnapshot(
 	if ws == nil {
 		return nil, ErrWorkspaceNotFound
 	}
+	releaseReconciliation, err :=
+		m.db.LockRepositoryReconciliationRead(ctx)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"lock repository reconciliation for head classification: %w",
+			err,
+		)
+	}
+	defer releaseReconciliation()
 	if ws.ID != "" {
-		releaseReconciliation, err :=
-			m.db.LockRepositoryReconciliationRead(ctx)
-		if err != nil {
-			return nil, fmt.Errorf(
-				"lock repository reconciliation for head classification: %w",
-				err,
-			)
-		}
-		defer releaseReconciliation()
-
 		current, err := m.db.GetWorkspace(ctx, ws.ID)
 		if err != nil {
 			return nil, fmt.Errorf(
@@ -1123,7 +1184,10 @@ func (m *Manager) RefreshWorkspaceHeadRepoSnapshot(
 		return nil, nil
 	}
 	for {
-		repo, err := m.workspaceRepo(
+		if m.beforeHeadRepoSnapshotRepoLookup != nil {
+			m.beforeHeadRepoSnapshotRepoLookup()
+		}
+		repo, err := m.workspaceRepoUnderReconciliationRead(
 			ctx, ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 		)
 		if err != nil {
@@ -1738,19 +1802,42 @@ func (m *Manager) workspaceRepo(
 	ctx context.Context,
 	provider, platformHost, owner, name string,
 ) (*db.Repo, error) {
-	provider = strings.TrimSpace(provider)
-	if provider == "" {
-		return nil, fmt.Errorf("provider is required")
-	}
-	kind, err := platform.NormalizeKind(provider)
+	identity, err := workspaceRepoIdentity(provider, platformHost, owner, name)
 	if err != nil {
 		return nil, err
 	}
-	return m.db.GetRepoByIdentity(ctx, db.RepoIdentity{
+	return m.db.GetRepoByIdentity(ctx, identity)
+}
+
+// workspaceRepoUnderReconciliationRead is workspaceRepo for callers already
+// holding the repository reconciliation read lock.
+func (m *Manager) workspaceRepoUnderReconciliationRead(
+	ctx context.Context,
+	provider, platformHost, owner, name string,
+) (*db.Repo, error) {
+	identity, err := workspaceRepoIdentity(provider, platformHost, owner, name)
+	if err != nil {
+		return nil, err
+	}
+	return m.db.GetRepoByIdentityUnderRepositoryReconciliationRead(ctx, identity)
+}
+
+func workspaceRepoIdentity(
+	provider, platformHost, owner, name string,
+) (db.RepoIdentity, error) {
+	provider = strings.TrimSpace(provider)
+	if provider == "" {
+		return db.RepoIdentity{}, fmt.Errorf("provider is required")
+	}
+	kind, err := platform.NormalizeKind(provider)
+	if err != nil {
+		return db.RepoIdentity{}, err
+	}
+	return db.RepoIdentity{
 		Platform:     string(kind),
 		PlatformHost: platformHost,
 		RepoPath:     owner + "/" + name,
-	})
+	}, nil
 }
 
 func validateNoExecutableLocalGitConfig(ctx context.Context, dir string) error {

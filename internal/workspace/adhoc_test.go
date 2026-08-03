@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -279,4 +280,50 @@ func TestAgentContextForAdHocWorkspaceBeforeSetup(t *testing.T) {
 
 	assert.Contains(rendered, "Working branch: spike/thing")
 	assert.NotContains(rendered, workspaceBranchUnknown)
+}
+
+// TestSetupFailsClosedWhenRouteReplacedMidSetup interleaves a route
+// replacement between setup's initial collision check and its final
+// persist, verifying the re-validation catches replacements that land
+// while the clone and worktree work is in flight.
+func TestSetupFailsClosedWhenRouteReplacedMidSetup(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	d := openTestDB(t)
+	localRepo, _, platformHost := setupHTTPWorktreeBaseForWorkspaceGitTest(
+		t, "feature/other",
+	)
+	seedRepo(t, d, platformHost, "acme", "widget")
+
+	tmuxScript, _ := writeRecorderScript(t)
+	mgr := NewManager(d, t.TempDir())
+	mgr.SetTmuxCommand([]string{tmuxScript})
+	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
+
+	ws, err := mgr.CreateAdHoc(
+		t.Context(), "github", platformHost, "acme", "widget",
+		CreateAdHocOptions{BranchName: "spike/replaced"},
+	)
+	require.NoError(err)
+
+	mgr.beforeSetupRouteRevalidation = func() {
+		_, _, replaceErr := d.ReconcileRepositoryObservation(
+			t.Context(), db.RepoIdentity{
+				Platform:       "github",
+				PlatformHost:   platformHost,
+				PlatformRepoID: "repo-acme-widget-replacement",
+				Owner:          "acme",
+				Name:           "widget",
+			}, time.Now().UTC(),
+		)
+		require.NoError(replaceErr)
+	}
+
+	err = mgr.Setup(t.Context(), ws)
+	require.ErrorContains(err, "historical occupants")
+	stored, getErr := d.GetWorkspace(t.Context(), ws.ID)
+	require.NoError(getErr)
+	require.NotNil(stored)
+	assert.Equal("error", stored.Status)
 }

@@ -159,7 +159,9 @@ func TestE2E_DetailTimelineReturnsForcePushCommitOrderingMetadata(t *testing.T) 
 func seedAssignmentTimelineItems(t *testing.T, database *db.DB) (int64, int64) {
 	t.Helper()
 	ctx := t.Context()
-	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	identity := db.GitHubRepoIdentity("github.com", "acme", "widget")
+	identity.PlatformRepoID = "repo-acme-widget"
+	repoID, err := database.UpsertRepo(ctx, identity)
 	require.NoError(t, err)
 
 	now := time.Now().UTC().Truncate(time.Second)

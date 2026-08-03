@@ -72,10 +72,11 @@ func TestAutoAssignWorkspaceItemPreservesExistingAssignees(t *testing.T) {
 
 	database := dbtest.Open(t)
 	repoIdentity := db.RepoIdentity{
-		Platform:     string(platform.KindGitLab),
-		PlatformHost: "git.example.test",
-		Owner:        "acme",
-		Name:         "widget",
+		Platform:       string(platform.KindGitLab),
+		PlatformHost:   "git.example.test",
+		PlatformRepoID: "repo-acme-widget",
+		Owner:          "acme",
+		Name:           "widget",
 	}
 	repoID, err := database.UpsertRepo(t.Context(), repoIdentity)
 	require.NoError(err)

@@ -42,11 +42,12 @@ func TestRepositoryResolverBuildsCanonicalRef(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)
 	repoID, err := database.UpsertRepo(t.Context(), db.RepoIdentity{
-		Platform:     "gitlab",
-		PlatformHost: "gitlab.example.com",
-		Owner:        "group/subgroup",
-		Name:         "widget",
-		RepoPath:     "group/subgroup/widget",
+		Platform:       "gitlab",
+		PlatformHost:   "gitlab.example.com",
+		PlatformRepoID: "repo-group-subgroup-widget",
+		Owner:          "group/subgroup",
+		Name:           "widget",
+		RepoPath:       "group/subgroup/widget",
 	})
 	require.NoError(err)
 	require.Positive(repoID)
@@ -108,11 +109,12 @@ func TestRepositoryResolverRequireRouteCapabilityUsesCanonicalContract(t *testin
 	require := require.New(t)
 	database := dbtest.Open(t)
 	_, err := database.UpsertRepo(t.Context(), db.RepoIdentity{
-		Platform:     "gitlab",
-		PlatformHost: "gitlab.example.com",
-		Owner:        "group",
-		Name:         "project",
-		RepoPath:     "group/project",
+		Platform:       "gitlab",
+		PlatformHost:   "gitlab.example.com",
+		PlatformRepoID: "repo-group-project",
+		Owner:          "group",
+		Name:           "project",
+		RepoPath:       "group/project",
 	})
 	require.NoError(err)
 	resolver := NewRepositoryResolver(RepositoryResolverDeps{

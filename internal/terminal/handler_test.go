@@ -29,8 +29,10 @@ func seedRepo(
 	host, owner, name string,
 ) int64 {
 	t.Helper()
+	identity := db.GitHubRepoIdentity(host, owner, name)
+	identity.PlatformRepoID = "repo-" + owner + "-" + name
 	id, err := d.UpsertRepo(
-		t.Context(), db.GitHubRepoIdentity(host, owner, name),
+		t.Context(), identity,
 	)
 	require.NoError(t, err)
 	return id

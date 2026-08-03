@@ -15,13 +15,14 @@ import (
 
 // DiffRepoResult holds the SHAs from the test repo for use in assertions.
 type DiffRepoResult struct {
-	BaseSHA      string // merge-base / base branch tip
-	HeadSHA      string // PR head commit
-	AltHeadSHA   string // newer PR head commit used by E2E refresh tests
-	Manager      *gitclone.Manager
-	FileCount    int // number of changed files (excluding whitespace-only when hidden)
-	AddedFiles   []string
-	DeletedFiles []string
+	BaseSHA        string // merge-base / base branch tip
+	HeadSHA        string // PR head commit
+	AltHeadSHA     string // newer PR head commit used by E2E refresh tests
+	ContextHeadSHA string // large syntax-gap revision used by diff context E2E tests
+	Manager        *gitclone.Manager
+	FileCount      int // number of changed files (excluding whitespace-only when hidden)
+	AddedFiles     []string
+	DeletedFiles   []string
 }
 
 // SetupDiffRepo creates a git repository with known commits and wires
@@ -81,6 +82,15 @@ func SetupDiffRepo(
 	if err := writeFile(workDir,
 		"docs/guide.md", guideMarkdownContent()); err != nil {
 		return nil, err
+	}
+	for i := range 8 {
+		if err := writeFile(
+			workDir,
+			fmt.Sprintf("src/context/file_%02d.ts", i),
+			diffContextFileContent(i, false),
+		); err != nil {
+			return nil, err
+		}
 	}
 
 	if err := git(ctx, workDir, "add", "-A"); err != nil {
@@ -158,6 +168,28 @@ func SetupDiffRepo(
 		return nil, fmt.Errorf("rev-parse alternate head: %w", err)
 	}
 
+	for i := range 8 {
+		if err := writeFile(
+			workDir,
+			fmt.Sprintf("src/context/file_%02d.ts", i),
+			diffContextFileContent(i, true),
+		); err != nil {
+			return nil, err
+		}
+	}
+	if err := git(ctx, workDir, "add", "-A"); err != nil {
+		return nil, err
+	}
+	if err := git(ctx, workDir,
+		"commit", "-m", "test: add sparse syntax context fixtures"); err != nil {
+		return nil, err
+	}
+
+	contextHeadSHA, err := revParse(ctx, workDir, "HEAD")
+	if err != nil {
+		return nil, fmt.Errorf("rev-parse context head: %w", err)
+	}
+
 	// Clone as bare to the path the clone manager expects.
 	if err := os.MkdirAll(
 		filepath.Dir(barePath), 0o755); err != nil {
@@ -198,14 +230,42 @@ func SetupDiffRepo(
 	mgr := gitclone.New(cloneBase, nil)
 
 	return &DiffRepoResult{
-		BaseSHA:      baseSHA,
-		HeadSHA:      headSHA,
-		AltHeadSHA:   altHeadSHA,
-		Manager:      mgr,
-		FileCount:    4,
-		AddedFiles:   []string{"internal/cache.go"},
-		DeletedFiles: []string{"config.yaml"},
+		BaseSHA:        baseSHA,
+		HeadSHA:        headSHA,
+		AltHeadSHA:     altHeadSHA,
+		ContextHeadSHA: contextHeadSHA,
+		Manager:        mgr,
+		FileCount:      4,
+		AddedFiles:     []string{"internal/cache.go"},
+		DeletedFiles:   []string{"config.yaml"},
 	}, nil
+}
+
+func diffContextFileContent(index int, changed bool) string {
+	marker := "old"
+	if changed {
+		marker = "new"
+	}
+	lines := []string{
+		fmt.Sprintf("export function renderFile%02d() {", index),
+		"  const html = `",
+		"    <section>",
+		fmt.Sprintf("      <p>%s context %02d</p>", marker, index),
+	}
+	for line := range 16 {
+		lines = append(lines, fmt.Sprintf("      <span>stable %02d</span>", line))
+	}
+	lines = append(lines,
+		"    </section>",
+		"  `;",
+		"  return html;",
+		"}",
+	)
+	for line := range 24 {
+		lines = append(lines, fmt.Sprintf("// stable filler %02d", line))
+	}
+	lines = append(lines, fmt.Sprintf("export const tail%02d = %q;", index, marker))
+	return strings.Join(lines, "\n") + "\n"
 }
 
 func git(ctx context.Context, dir string, args ...string) error {

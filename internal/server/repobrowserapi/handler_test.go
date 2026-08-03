@@ -130,11 +130,12 @@ func TestRepoBrowserCloneCacheSeparatesProvidersWithSameHostAndPath(t *testing.T
 		{provider: "gitlab", cloneURL: gitlabRemote},
 	} {
 		repoID, err := database.UpsertRepo(t.Context(), db.RepoIdentity{
-			Platform:     repo.provider,
-			PlatformHost: "git.example.com",
-			Owner:        "acme",
-			Name:         "widgets",
-			RepoPath:     "acme/widgets",
+			Platform:       repo.provider,
+			PlatformHost:   "git.example.com",
+			PlatformRepoID: "repo-" + repo.provider + "-acme-widgets",
+			Owner:          "acme",
+			Name:           "widgets",
+			RepoPath:       "acme/widgets",
 		})
 		require.NoError(err)
 		require.NoError(database.UpdateRepoProviderMetadata(
@@ -625,7 +626,7 @@ func TestRepoBrowserStartupRefreshSeedsExistingClone(t *testing.T) {
 	assert := assert.New(t)
 	database := dbtest.Open(t)
 	remote, work := setupServerRepoBrowserGitRepo(t)
-	repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widgets"))
+	repoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
 	require.NoError(err)
 	require.NoError(database.UpdateRepoProviderMetadata(
 		t.Context(),
@@ -690,7 +691,7 @@ func TestRepoBrowserStartupRefreshHonorsDisabledBackgroundMonitors(t *testing.T)
 	require := require.New(t)
 	database := dbtest.Open(t)
 	remote, work := setupServerRepoBrowserGitRepo(t)
-	repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widgets"))
+	repoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
 	require.NoError(err)
 	require.NoError(database.UpdateRepoProviderMetadata(
 		t.Context(),
@@ -788,11 +789,12 @@ func setupRepoBrowserServerWithClones(
 	remote, work := setupServerRepoBrowserGitRepo(t)
 	owner, name := splitServerRepoPathForTest(repoPath)
 	repoID, err := database.UpsertRepo(t.Context(), db.RepoIdentity{
-		Platform:     provider,
-		PlatformHost: host,
-		Owner:        owner,
-		Name:         name,
-		RepoPath:     repoPath,
+		Platform:       provider,
+		PlatformHost:   host,
+		PlatformRepoID: "repo-" + provider + "-" + owner + "-" + name,
+		Owner:          owner,
+		Name:           name,
+		RepoPath:       repoPath,
 	})
 	require.NoError(t, err)
 	require.NoError(t, database.UpdateRepoProviderMetadata(
@@ -814,6 +816,12 @@ func setupRepoBrowserServerWithClones(
 		require.NoError(t, srv.Shutdown(ctx))
 	})
 	return srv, work, clones
+}
+
+func verifiedGitHubRepoIdentity(host, owner, name string) db.RepoIdentity {
+	identity := db.GitHubRepoIdentity(host, owner, name)
+	identity.PlatformRepoID = "repo-" + owner + "-" + name
+	return identity
 }
 
 func setupServerRepoBrowserGitRepo(t *testing.T) (remote string, work string) {

@@ -364,10 +364,11 @@ func TestAPIAssigneeAndReviewerMutationsAreCapabilityGated(t *testing.T) {
 	})
 
 	_, err = database.UpsertRepo(t.Context(), db.RepoIdentity{
-		Platform:     "forgejo",
-		PlatformHost: "codeberg.org",
-		Owner:        "acme",
-		Name:         "widget",
+		Platform:       "forgejo",
+		PlatformHost:   "codeberg.org",
+		PlatformRepoID: "repo-acme-widget",
+		Owner:          "acme",
+		Name:           "widget",
 	})
 	require.NoError(err)
 

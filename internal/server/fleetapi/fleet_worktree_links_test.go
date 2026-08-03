@@ -26,13 +26,21 @@ func (f *fakeWatchedMRSetter) SetWatchedMRs(mrs []ghclient.WatchedMR) {
 	f.calls = append(f.calls, mrs)
 }
 
+func seedActiveLinkRepo(t *testing.T, d *realdb.DB) int64 {
+	t.Helper()
+	identity := realdb.GitHubRepoIdentity("github.com", "acme", "widget")
+	identity.PlatformRepoID = "R_widget"
+	repoID, err := d.UpsertRepoByProviderID(t.Context(), identity)
+	require.NoError(t, err)
+	return repoID
+}
+
 // seedLinkRepoProjectWorktree registers a github-linked project with one
 // worktree on the given branch and returns the repo id and worktree path.
 func seedLinkRepoProjectWorktree(t *testing.T, d *realdb.DB, branch string) (int64, string) {
 	t.Helper()
 	ctx := t.Context()
-	repoID, err := d.UpsertRepo(ctx, realdb.GitHubRepoIdentity("github.com", "acme", "widget"))
-	require.NoError(t, err)
+	repoID := seedActiveLinkRepo(t, d)
 	proj, err := d.CreateProject(ctx, realdb.CreateProjectInput{
 		DisplayName: "widget",
 		LocalPath:   filepath.Join(t.TempDir(), "widget"),
@@ -225,8 +233,7 @@ func TestRegisterWorktreeRecomputesBranchMatchLinks(t *testing.T) {
 	ctx := context.Background()
 	now := time.Date(2026, 6, 9, 12, 0, 0, 0, time.UTC)
 
-	repoID, err := database.UpsertRepo(ctx, realdb.GitHubRepoIdentity("github.com", "acme", "widget"))
-	require.NoError(err)
+	repoID := seedActiveLinkRepo(t, database)
 	proj, err := database.CreateProject(ctx, realdb.CreateProjectInput{
 		DisplayName: "widget",
 		LocalPath:   filepath.Join(t.TempDir(), "widget"),
@@ -266,8 +273,7 @@ func TestDeleteProjectWorktreeRecomputesBranchMatchLinks(t *testing.T) {
 	ctx := context.Background()
 	now := time.Date(2026, 6, 9, 12, 0, 0, 0, time.UTC)
 
-	repoID, err := database.UpsertRepo(ctx, realdb.GitHubRepoIdentity("github.com", "acme", "widget"))
-	require.NoError(err)
+	repoID := seedActiveLinkRepo(t, database)
 	proj, err := database.CreateProject(ctx, realdb.CreateProjectInput{
 		DisplayName: "widget",
 		LocalPath:   filepath.Join(t.TempDir(), "widget"),

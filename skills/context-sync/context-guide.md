@@ -50,12 +50,15 @@ The size ceilings below are per-doc; these are per-change:
 
 kenn-forge's durable agent context lives in two places:
 
-- **Root `CLAUDE.md`** — the hub. Project overview, architecture, the single canonical
-  provider list, non-provider modes, project structure, key files, dev/test commands,
-  conventions, git/PR workflow, and routing references into `context/`.
+- **Root `CLAUDE.md`** — the hub. A compact project model, the single canonical provider
+  list, non-provider ownership boundary, universal conventions, Git workflow, and
+  trigger-oriented routing references into `context/`.
 - **`context/*.md`** — topic docs. One concern each (provider sync invariants, error
   handling, db migrations, retries, testing discipline, UI design system, mobile UX,
   etc.). Deep enough to hold real rationale; narrow enough to load only when relevant.
+
+The README, Makefile, and source tree own discoverable inventories, key-file lists, and
+development commands. Do not copy them into the always-loaded hub.
 
 Specs and plans live under `docs/superpowers/specs/` and `docs/superpowers/plans/`;
 durable, dated decisions live under `docs/adr/`.
@@ -133,16 +136,23 @@ Silencing a failing guard without recording the decision is forbidden.
 
 | Content type | Store in | Why |
 |--------------|----------|-----|
-| Project shape, canonical provider list, modes, key files, workflow | root `CLAUDE.md` | The always-loaded hub |
+| Compact project model, canonical provider list, universal workflow | root `CLAUDE.md` | The always-loaded hub |
+| Agent hook and dependency bootstrap constraints | `context/agent-bootstrap.md` | Session startup safety |
+| TOML config save invariants | `context/config-persistence.md` | Whole-file persistence |
 | Provider-neutral sync identity, tokens, freshness, route shape | `context/platform-sync-invariants.md` | Cross-provider invariants |
 | New-provider checklist, package layout | `context/provider-architecture.md` | Onboarding a provider |
 | GitHub-only sync behavior (GraphQL, ETag) | `context/github-sync-invariants.md` | Isolated optimization |
+| Activity notification sync, persistence, and presentation | `context/notifications-in-activity.md` | User-scoped notification state |
 | Schema evolution rules | `context/db-migrations.md` | Migrations are the source of truth |
 | Daemon startup, Host validation, SSE replay | `context/server-runtime.md` | Root server lifecycle and request boundary |
 | API error envelopes + frontend branching | `context/error-handling.md` | Stable contract |
 | Retry/backoff/single-flight | `context/retries-and-backoffs.md` | Upstream flakiness |
-| HTTP test discipline (apitest vs e2etest) | `context/testing.md` | Wire-level testing |
+| Test commands and common Go conventions | `context/testing-basics.md` | Everyday test construction |
+| Test lanes and HTTP discipline | `context/testing.md` | Boundary and integration testing |
+| User docs, screenshots, and Zensical workflow | `context/docs-authoring.md` | Documentation delivery |
+| Push and pull-request metadata policy | `context/pull-request-workflow.md` | Public delivery workflow |
 | UI/TS/Svelte conventions, interaction contracts | `context/ui-design-system.md`, `context/ui-interaction-contracts.md` | Frontend consistency |
+| Inline review draft and thread contracts | `context/inline-review-comments.md` | Provider-aware review behavior |
 | Phone-first mobile workflow | `context/mobile-ux.md` | `/m` is its own UX |
 | Kata daemon integration | `context/kata-mode.md`, `context/workspace-apis.md` | External authority and workspace contracts |
 | Docs mode integration | `context/docs-mode.md` | Local filesystem and git-publish boundary |
@@ -163,9 +173,9 @@ deleting substance. They are not a mandate to shrink today's docs.
 | `docs/adr/*` entry | ~80 | One decision |
 | `docs/superpowers/specs/*` | as needed | Design surface, archived after landing |
 
-The root `CLAUDE.md` is the hub and is allowed to be long, but it should stay a router
-and a conventions list — push any concern that grows rationale into a `context/` doc and
-reference it.
+The root `CLAUDE.md` should remain near 100 lines and behave as a router plus a concise
+universal conventions list. Push conditional procedures or rationale into a topic doc
+and route them by task trigger.
 
 ## When to Update Context
 

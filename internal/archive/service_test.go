@@ -119,7 +119,7 @@ func TestArchiveServiceEnsureConfiguredSeedsFreshRepository(t *testing.T) {
 	assert.Equal(db.ArchiveOperatorStateActive, states[0].OperatorState)
 }
 
-func TestArchiveServiceEnsureConfiguredMergesRenamedRepositoryAtExistingDestination(t *testing.T) {
+func TestArchiveServiceEnsureConfiguredPreservesRenamedRepositoryAtExistingDestination(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -141,13 +141,34 @@ func TestArchiveServiceEnsureConfiguredMergesRenamedRepositoryAtExistingDestinat
 	service := newArchiveTestService(t, database, registry, []platform.RepoRef{current}, nil, now)
 
 	require.NoError(service.EnsureConfigured(t.Context(), []platform.RepoRef{current}))
-	repos, err := database.ListRepos(t.Context())
+	repos, err := database.ListRepositoryCatalog(
+		t.Context(), db.RepositoryCatalogFilter{},
+	)
 	require.NoError(err)
-	require.Len(repos, 1)
-	assert.Equal(destinationID, repos[0].ID)
-	assert.Equal("repo-current", repos[0].PlatformRepoID)
-	assert.Equal("current", repos[0].Name)
+	require.Len(repos, 2)
 	assert.NotEqual(sourceID, destinationID)
+
+	active, err := database.ResolveActiveRepositoryRoute(
+		t.Context(), platform.DBRepoIdentity(current),
+	)
+	require.NoError(err)
+	require.NotNil(active)
+	assert.Equal(sourceID, active.Repository.ID)
+	assert.Equal("repo-current", active.Repository.PlatformRepoID)
+	assert.Equal("current", active.Repository.Name)
+
+	stale, err := database.GetRepositoryByProviderID(
+		t.Context(), "github", "github.test", "repo-obsolete",
+	)
+	require.NoError(err)
+	require.NotNil(stale)
+	assert.Equal(destinationID, stale.Repository.ID)
+	assert.Equal(db.RepositoryLifecycleInactive, stale.Lifecycle)
+
+	states, err := database.ListArchiveRepoStates(t.Context(), []int64{sourceID, destinationID})
+	require.NoError(err)
+	require.Len(states, 1)
+	assert.Equal(sourceID, states[0].RepoID)
 }
 
 func TestArchiveServiceAllScopeAndWakeLifecycle(t *testing.T) {
@@ -877,7 +898,10 @@ func newArchiveTestService(t *testing.T, database *db.DB, registry *platform.Reg
 }
 
 func archiveServiceRef(kind platform.Kind, host, name string) platform.RepoRef {
-	return platform.RepoRef{Platform: kind, Host: host, Owner: "owner", Name: name, RepoPath: "owner/" + name}
+	return platform.RepoRef{
+		Platform: kind, Host: host, Owner: "owner", Name: name,
+		RepoPath: "owner/" + name, PlatformExternalID: "repo-" + host + "-" + name,
+	}
 }
 
 func archiveServiceSeedRepo(t *testing.T, database *db.DB, ref platform.RepoRef) int64 {

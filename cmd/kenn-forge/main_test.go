@@ -227,6 +227,7 @@ func TestResolveStartupReposExpandsConfiguredGlobs(t *testing.T) {
 		cfg,
 		mustProviderRegistry(t, map[string]ghclient.Client{"github.com": client}),
 		nil,
+		nil,
 	)
 
 	assert.Equal([]ghclient.RepoRef{{
@@ -249,6 +250,7 @@ func TestResolveStartupReposKeepsExactReposWhenResolutionFails(t *testing.T) {
 		cfg,
 		mustProviderRegistry(t, nil),
 		nil,
+		nil,
 	)
 
 	assert.Equal([]ghclient.RepoRef{{
@@ -267,9 +269,13 @@ func TestResolveStartupReposFallsBackToDBForOfflineGlobs(t *testing.T) {
 	database := dbtest.Open(t)
 
 	ctx := t.Context()
-	_, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widgets"))
+	widgets := db.GitHubRepoIdentity("github.com", "acme", "widgets")
+	widgets.PlatformRepoID = "R_widgets"
+	_, err := database.UpsertRepoByProviderID(ctx, widgets)
 	require.NoError(err)
-	_, err = database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "tools"))
+	tools := db.GitHubRepoIdentity("github.com", "acme", "tools")
+	tools.PlatformRepoID = "R_tools"
+	_, err = database.UpsertRepoByProviderID(ctx, tools)
 	require.NoError(err)
 
 	cfg := &config.Config{
@@ -277,7 +283,7 @@ func TestResolveStartupReposFallsBackToDBForOfflineGlobs(t *testing.T) {
 	}
 
 	repos := resolveStartupRepos(
-		ctx, cfg, mustProviderRegistry(t, nil), database,
+		ctx, cfg, mustProviderRegistry(t, nil), database, nil,
 	)
 
 	assert.ElementsMatch([]ghclient.RepoRef{
@@ -311,7 +317,7 @@ func TestResolveStartupReposUsesProviderRegistryForGitLab(t *testing.T) {
 		host: "gitlab.com",
 	})
 
-	repos := resolveStartupRepos(t.Context(), cfg, registry, nil)
+	repos := resolveStartupRepos(t.Context(), cfg, registry, nil, nil)
 
 	assert.Equal([]ghclient.RepoRef{{
 		Platform:     platform.KindGitLab,
@@ -551,13 +557,13 @@ func TestStartupFallbackKeepsPersistedGlobMatchesInAPIs(t *testing.T) {
 	dir := t.TempDir()
 	database := dbtest.Open(t)
 
-	_, err := database.UpsertRepo(
-		t.Context(), db.GitHubRepoIdentity("github.com", "roborev-dev", "kenn-forge"),
-	)
+	forge := db.GitHubRepoIdentity("github.com", "roborev-dev", "kenn-forge")
+	forge.PlatformRepoID = "R_kenn_forge"
+	_, err := database.UpsertRepoByProviderID(t.Context(), forge)
 	require.NoError(err)
-	_, err = database.UpsertRepo(
-		t.Context(), db.GitHubRepoIdentity("github.com", "roborev-dev", "worker"),
-	)
+	worker := db.GitHubRepoIdentity("github.com", "roborev-dev", "worker")
+	worker.PlatformRepoID = "R_worker"
+	_, err = database.UpsertRepoByProviderID(t.Context(), worker)
 	require.NoError(err)
 
 	cfgPath := filepath.Join(dir, "config.toml")
@@ -589,6 +595,7 @@ func TestStartupFallbackKeepsPersistedGlobMatchesInAPIs(t *testing.T) {
 		cfg,
 		mustProviderRegistry(t, map[string]ghclient.Client{"github.com": client}),
 		database,
+		nil,
 	)
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": client},

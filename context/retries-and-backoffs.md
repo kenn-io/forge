@@ -1,5 +1,8 @@
 # Retries, Backoff, and Single-Flight Dedup
 
+Use this document for transient upstream retries, rate-limit gates, scheduling
+cadence, or single-flight request deduplication.
+
 kenn-forge has three distinct wait patterns. Keep them separate:
 
 - **Transient retry** — short bounded retries for flaky upstream failures.

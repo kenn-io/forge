@@ -199,6 +199,11 @@ fallback repository listing.
   requests off still enters the cooldown.
   (`internal/github/native_stacks.go::decodeNativeStackHint`,
   `internal/github/sync.go::ListOpenMergeRequestsWithNativeStackHints`)
+- GitHub repositories can have pull requests disabled (issues-only trackers):
+  the pulls API 404s for every credential. A pulls-list 404 classifies as
+  merge-requests feature disabled only when the repository probe reads back
+  `has_pull_requests=false`; a bare 404 stays a transient failure
+  (`internal/github/sync.go::mergeRequestsDisabledByRepository`).
 - Preview-only GraphQL fields must be absent from disabled query shapes;
   `@include(false)` does not bypass schema validation on servers without those
   fields. Schema rejection drops the fields for that host instead of abandoning

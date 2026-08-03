@@ -54,6 +54,7 @@ func seedLinkedProject(
 ) (*dbpkg.Project, int64) {
 	t.Helper()
 	ctx := context.Background()
+	identity = verifiedRepoIdentity(identity)
 	repoID, err := database.UpsertRepo(ctx, identity)
 	require.NoError(t, err)
 	project, err := database.CreateProject(ctx, dbpkg.CreateProjectInput{
@@ -64,6 +65,14 @@ func seedLinkedProject(
 	})
 	require.NoError(t, err)
 	return project, repoID
+}
+
+func verifiedRepoIdentity(identity dbpkg.RepoIdentity) dbpkg.RepoIdentity {
+	if identity.PlatformRepoID == "" {
+		identity.PlatformRepoID = "test-" + identity.Platform + "-" +
+			identity.PlatformHost + "-" + identity.Owner + "-" + identity.Name
+	}
+	return identity
 }
 
 // registerWorktree registers a registry-only worktree through the HTTP API and

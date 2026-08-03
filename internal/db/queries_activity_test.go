@@ -131,17 +131,19 @@ func TestListActivity(t *testing.T) {
 		base := baseTime()
 
 		githubRepo, err := d.UpsertRepo(ctx, RepoIdentity{
-			Platform:     "github",
-			PlatformHost: "github.com",
-			Owner:        "acme",
-			Name:         "widgets",
+			Platform:       "github",
+			PlatformHost:   "github.com",
+			PlatformRepoID: "github-widgets",
+			Owner:          "acme",
+			Name:           "widgets",
 		})
 		require.NoError(err)
 		giteaRepo, err := d.UpsertRepo(ctx, RepoIdentity{
-			Platform:     "gitea",
-			PlatformHost: "github.com",
-			Owner:        "acme",
-			Name:         "widgets",
+			Platform:       "gitea",
+			PlatformHost:   "github.com",
+			PlatformRepoID: "gitea-widgets",
+			Owner:          "acme",
+			Name:           "widgets",
 		})
 		require.NoError(err)
 		insertTestMR(t, d, githubRepo, 1, "github provider", base)
@@ -1271,4 +1273,70 @@ func TestListActivityNotificationRepoFiltersApplyBeforeUnionLimit(t *testing.T) 
 	})
 	require.NoError(err)
 	assert.Empty(none)
+}
+
+func TestListActivityNotificationRepoFilterFollowsRename(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	base := baseTime()
+	number := 7
+
+	_, _, err := d.ReconcileRepositoryObservation(ctx, RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "R_widget", Owner: "acme", Name: "widget",
+	}, base)
+	require.NoError(err)
+	require.NoError(d.UpsertNotifications(ctx, []Notification{{
+		Platform:               "github",
+		PlatformHost:           "github.com",
+		PlatformNotificationID: "ntf-renamed",
+		RepoOwner:              "acme",
+		RepoName:               "widget",
+		SubjectType:            "PullRequest",
+		SubjectTitle:           "Renamed notification",
+		WebURL:                 "https://github.com/acme/widget/pull/7",
+		ItemNumber:             &number,
+		ItemType:               "pr",
+		ItemAuthor:             "carol",
+		Reason:                 "mention",
+		Unread:                 true,
+		SourceUpdatedAt:        base.Add(10 * time.Minute),
+		SyncedAt:               base.Add(10 * time.Minute),
+	}}))
+	_, _, err = d.ReconcileRepositoryObservation(ctx, RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "R_widget", Owner: "acme", Name: "gadget",
+	}, base.Add(time.Hour))
+	require.NoError(err)
+
+	renamed, err := d.ListActivity(ctx, ListActivityOpts{
+		Limit: 50,
+		Types: []string{"notification"},
+		NotificationRepoFilters: []NotificationRepoFilter{{
+			Platform:     "github",
+			PlatformHost: "github.com",
+			RepoOwner:    "acme",
+			RepoName:     "gadget",
+		}},
+	})
+	require.NoError(err)
+	require.Len(renamed, 1,
+		"linked notification must be filterable by the current route")
+	assert.Equal("gadget", renamed[0].RepoName)
+
+	stale, err := d.ListActivity(ctx, ListActivityOpts{
+		Limit: 50,
+		Types: []string{"notification"},
+		NotificationRepoFilters: []NotificationRepoFilter{{
+			Platform:     "github",
+			PlatformHost: "github.com",
+			RepoOwner:    "acme",
+			RepoName:     "widget",
+		}},
+	})
+	require.NoError(err)
+	assert.Empty(stale,
+		"linked notifications must not answer to historical routes")
 }

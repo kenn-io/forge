@@ -584,7 +584,7 @@ async function dragTerminalCells(page: Page, container: Locator, cellCount: numb
   await page.mouse.up();
 }
 
-async function jitterFirstTerminalCell(page: Page, container: Locator): Promise<void> {
+async function clickTerminalWithPointerJitter(page: Page, container: Locator, horizontalJitter = 5): Promise<void> {
   const start = await container.evaluate((element) => {
     const screen = element.querySelector<HTMLElement>(".xterm-screen");
     const textarea = element.querySelector<HTMLElement>(".xterm-helper-textarea");
@@ -602,7 +602,8 @@ async function jitterFirstTerminalCell(page: Page, container: Locator): Promise<
 
   await page.mouse.move(start.x, start.y);
   await beginCapturedPointerGesture(page, container);
-  await page.mouse.move(start.x + 1, start.y);
+  // A physical focus click can slip a few pixels while the button is down.
+  await page.mouse.move(start.x + horizontalJitter, start.y);
   await page.mouse.up();
 }
 
@@ -987,7 +988,7 @@ test("visible detail copy wins when focus leaves a pointer-captured terminal", a
   }
 });
 
-test("PR comment copy survives a terminal focus click", async ({ page, browserName }) => {
+test("PR comment copy survives 5px terminal focus jitter at default geometry", async ({ page, browserName }) => {
   test.skip(!hasCommand("git") || !hasCommand("tmux", ["-V"]), "git and tmux are required for the real workspace flow");
   let fallbackWrites: string[] = [];
   if (browserName === "chromium") {
@@ -1020,7 +1021,11 @@ test("PR comment copy survives a terminal focus click", async ({ page, browserNa
     if (browserName === "firefox") await denyCurrentPageBrowserClipboardWrites(page);
 
     const osc52Count = output.count("\x1b]52;");
-    await jitterFirstTerminalCell(page, terminal);
+    const cellWidth = await terminal
+      .locator(".xterm-helper-textarea")
+      .evaluate((element) => element.getBoundingClientRect().width);
+    expect(cellWidth).toBeGreaterThan(5);
+    await clickTerminalWithPointerJitter(page, terminal);
     await expect
       .poll(() => output.count("\x1b]52;"), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS })
       .toBeGreaterThan(osc52Count);

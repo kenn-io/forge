@@ -1,5 +1,8 @@
 # Database Migrations
 
+Use this document before creating, editing, reviewing, or validating database
+schema migrations.
+
 - **Shipped migrations are immutable.** A migration has shipped when it exists on `origin/main`, a tag or release branch, or a production database; correct it with a new forward migration.
 - **Each PR introduces at most one migration.** Amend a PR-local migration in place instead of stacking fix-ups.
 
@@ -13,6 +16,9 @@
 - Keep `.down.sql` honest. If the data cleanup is one-way, say that in the down migration and only undo reversible schema artifacts such as triggers or indexes.
 - Validate migrations through `db.Open()` and application-level tests. Do not test `golang-migrate` internals.
 - For SQLite, remember that adding constraints to existing columns usually requires a table rebuild. Do not add fill, repair, or validation triggers as a shortcut around fixing current write paths or rebuilding a table when a real schema invariant is required.
+- A SQLite parent-table rebuild must drop and recreate dependent triggers, and
+  foreign keys must be disabled before golang-migrate starts its transaction
+  (`internal/db/migrations.go::runRepositoryCatalogMigration`).
 - A recorded migration version and the physical schema must match. There is no
   supported "partially upgraded" schema state for new migrations.
 - Never use a no-op SQL migration as a version marker for schema work that is

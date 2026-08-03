@@ -361,3 +361,40 @@ func sameConfiguredRepoHost(left, right string) bool {
 	}
 	return strings.EqualFold(left, right)
 }
+
+// RegisterConfiguredRepoCredentialAliases keeps credential selection on the
+// configured route when startup resolution followed a provider rename. The
+// syncer registers the same alias when it observes a rename live, but startup
+// resolution can adopt the new route before any sync runs — without the
+// alias, credential routing has no route for the resolved owner/name and the
+// first sync fails on hosts with no owner or fallback route.
+func RegisterConfiguredRepoCredentialAliases(
+	routers map[string]*HostRouter,
+	raw config.Repo,
+	expanded []RepoRef,
+) {
+	if raw.HasNameGlob() {
+		return
+	}
+	if platform.Kind(raw.PlatformOrDefault()) != platform.KindGitHub {
+		return
+	}
+	configured := RouteKey{
+		Host:  canonicalRepoHost(raw.PlatformHostOrDefault()),
+		Owner: canonicalRepoOwner(strings.TrimSpace(raw.Owner)),
+		Name:  canonicalRepoName(strings.TrimSpace(raw.Name)),
+	}
+	for _, repo := range expanded {
+		if strings.EqualFold(repo.Owner, configured.Owner) &&
+			strings.EqualFold(repo.Name, configured.Name) {
+			continue
+		}
+		router := routers[repoHost(repo)]
+		if router == nil {
+			continue
+		}
+		router.RegisterRepoCredentialAlias(
+			repo.Owner, repo.Name, configured, repo.PlatformExternalID,
+		)
+	}
+}

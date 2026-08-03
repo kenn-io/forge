@@ -37,7 +37,7 @@ func newCompleteReviewSyncFixture(t *testing.T, reviewCount int) completeReviewS
 		Platform: platform.KindGitea, PlatformHost: "gitea.test",
 		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
 	}
-	repoID, err := database.UpsertRepo(t.Context(), platform.DBRepoIdentity(platformRepoRef(repo)))
+	repoID, err := database.UpsertRepo(t.Context(), verifiedDBRepoIdentity(platformRepoRef(repo)))
 	require.NoError(err)
 	mrID, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
 		RepoID: repoID, PlatformID: 7, PlatformExternalID: "mr-7", Number: 7,

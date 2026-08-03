@@ -244,11 +244,12 @@ func TestPRMonitorRunOnceFallsBackToLocalHeadSHAWhenUpstreamRepoMetadataMissing(
 	ctx := context.Background()
 
 	repoID, err := d.UpsertRepo(ctx, db.RepoIdentity{
-		Platform:     "gitlab",
-		PlatformHost: "gitlab.com",
-		Owner:        "Group/SubGroup",
-		Name:         "Project",
-		RepoPath:     "Group/SubGroup/Project",
+		Platform:       "gitlab",
+		PlatformHost:   "gitlab.com",
+		PlatformRepoID: "gid://gitlab/Project/42",
+		Owner:          "Group/SubGroup",
+		Name:           "Project",
+		RepoPath:       "Group/SubGroup/Project",
 	})
 	require.NoError(err)
 	seedIssue(t, d, repoID, 7, "Track workspace association")
@@ -569,17 +570,19 @@ func TestPRMonitorRunOnceScopesCandidatesByWorkspaceProvider(t *testing.T) {
 	ctx := context.Background()
 
 	githubRepoID, err := d.UpsertRepo(ctx, db.RepoIdentity{
-		Platform:     "github",
-		PlatformHost: "git.example.com",
-		Owner:        "acme",
-		Name:         "widget",
+		Platform:       "github",
+		PlatformHost:   "git.example.com",
+		PlatformRepoID: "repo-github-widget",
+		Owner:          "acme",
+		Name:           "widget",
 	})
 	require.NoError(err)
 	gitlabRepoID, err := d.UpsertRepo(ctx, db.RepoIdentity{
-		Platform:     "gitlab",
-		PlatformHost: "git.example.com",
-		Owner:        "acme",
-		Name:         "widget",
+		Platform:       "gitlab",
+		PlatformHost:   "git.example.com",
+		PlatformRepoID: "repo-gitlab-widget",
+		Owner:          "acme",
+		Name:           "widget",
 	})
 	require.NoError(err)
 	seedIssue(t, d, gitlabRepoID, 7, "Track workspace association")

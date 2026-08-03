@@ -270,6 +270,8 @@ func (s *Server) toNotificationResponse(ctx context.Context, n db.Notification, 
 		if repo := repoCache[*n.RepoID]; repo != nil {
 			resp.Provider = repo.Platform
 			resp.PlatformHost = repo.PlatformHost
+			resp.RepoOwner = repo.Owner
+			resp.RepoName = repo.Name
 			resp.RepoPath = repo.RepoPath
 		}
 	}

@@ -17,12 +17,13 @@ import (
 )
 
 const (
-	firstLegacySchemaVersion       = 1
-	latestLegacySchemaVersion      = 3
-	migrationTableName             = "schema_migrations"
-	recreateDatabaseInstruction    = "delete the database file and let kenn-forge recreate it"
-	timestampRepairGateVersion     = 10
-	workspaceSetupMigrationVersion = 11
+	firstLegacySchemaVersion          = 1
+	latestLegacySchemaVersion         = 3
+	migrationTableName                = "schema_migrations"
+	recreateDatabaseInstruction       = "delete the database file and let kenn-forge recreate it"
+	timestampRepairGateVersion        = 10
+	workspaceSetupMigrationVersion    = 11
+	repositoryCatalogMigrationVersion = 45
 )
 
 //go:embed migrations/*.sql
@@ -117,6 +118,22 @@ func runMigrations(rw *sql.DB) (int, error) {
 		return migratedb.NilVersion, wrapMigrationError(fmt.Errorf("create migrator: %w", err))
 	}
 
+	if version < repositoryCatalogMigrationVersion &&
+		latest >= repositoryCatalogMigrationVersion {
+		if err := m.Migrate(repositoryCatalogMigrationVersion - 1); err != nil &&
+			!errors.Is(err, migrate.ErrNoChange) {
+			return migratedb.NilVersion, wrapMigrationError(
+				fmt.Errorf(
+					"apply migrations through repository catalog prerequisite: %w",
+					err,
+				),
+			)
+		}
+		if err := runRepositoryCatalogMigration(rw, m); err != nil {
+			return migratedb.NilVersion, wrapMigrationError(err)
+		}
+	}
+
 	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		return migratedb.NilVersion, wrapMigrationError(fmt.Errorf("apply migrations: %w", err))
 	}
@@ -145,6 +162,45 @@ func runMigrations(rw *sql.DB) (int, error) {
 	}
 
 	return startVersion, nil
+}
+
+func runRepositoryCatalogMigration(
+	rw *sql.DB,
+	m *migrate.Migrate,
+) error {
+	if _, err := rw.Exec(`PRAGMA foreign_keys = OFF`); err != nil {
+		return fmt.Errorf(
+			"disable foreign keys for repository catalog migration: %w",
+			err,
+		)
+	}
+	migrationErr := m.Migrate(repositoryCatalogMigrationVersion)
+	_, enableErr := rw.Exec(`PRAGMA foreign_keys = ON`)
+	if migrationErr != nil && !errors.Is(migrationErr, migrate.ErrNoChange) {
+		return errors.Join(
+			fmt.Errorf("apply repository catalog migration: %w", migrationErr),
+			enableErr,
+		)
+	}
+	if enableErr != nil {
+		return fmt.Errorf(
+			"re-enable foreign keys after repository catalog migration: %w",
+			enableErr,
+		)
+	}
+	var violations int
+	if err := rw.QueryRow(
+		`SELECT COUNT(*) FROM pragma_foreign_key_check`,
+	).Scan(&violations); err != nil {
+		return fmt.Errorf("check repository catalog foreign keys: %w", err)
+	}
+	if violations != 0 {
+		return fmt.Errorf(
+			"repository catalog migration left %d foreign key violations",
+			violations,
+		)
+	}
+	return nil
 }
 
 func latestMigrationVersion() (int, error) {

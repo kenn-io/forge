@@ -18,17 +18,19 @@ func TestSyncCompletedHookUsesProviderQualifiedRepoIdentity(t *testing.T) {
 	ctx := t.Context()
 
 	_, err := d.UpsertRepo(ctx, realdb.RepoIdentity{
-		Platform:     "github",
-		PlatformHost: "code.example.com",
-		Owner:        "org",
-		Name:         "repo",
+		Platform:       "github",
+		PlatformHost:   "code.example.com",
+		PlatformRepoID: "github-org-repo",
+		Owner:          "org",
+		Name:           "repo",
 	})
 	require.NoError(err)
 	gitlabRepoID, err := d.UpsertRepo(ctx, realdb.RepoIdentity{
-		Platform:     "gitlab",
-		PlatformHost: "code.example.com",
-		Owner:        "org",
-		Name:         "repo",
+		Platform:       "gitlab",
+		PlatformHost:   "code.example.com",
+		PlatformRepoID: "gitlab-org-repo",
+		Owner:          "org",
+		Name:           "repo",
 	})
 	require.NoError(err)
 	require.NoError(d.UpdateRepoProviderMetadata(ctx, gitlabRepoID, realdb.RepoProviderMetadata{
@@ -109,10 +111,11 @@ func TestSyncCompletedHookDistinguishesPartialScopeFailures(t *testing.T) {
 			ctx := t.Context()
 
 			repoID, err := d.UpsertRepo(ctx, realdb.RepoIdentity{
-				Platform:     "github",
-				PlatformHost: "github.com",
-				Owner:        "org",
-				Name:         "repo",
+				Platform:       "github",
+				PlatformHost:   "github.com",
+				PlatformRepoID: "github-org-repo",
+				Owner:          "org",
+				Name:           "repo",
 			})
 			require.NoError(err)
 			require.NoError(d.UpdateRepoProviderMetadata(ctx, repoID, realdb.RepoProviderMetadata{

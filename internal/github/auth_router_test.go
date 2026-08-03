@@ -13,6 +13,7 @@ import (
 	gh "github.com/google/go-github/v89/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/platform"
 	"go.kenn.io/forge/internal/tokenauth"
 )
@@ -1264,4 +1265,86 @@ func TestHostRouterKeepsAuthorizationRoutesSeparateFromSharedIdentity(t *testing
 	require.NoError(err)
 	assert.NotSame(gotA.Client, gotB.Client)
 	assert.Equal(gotA.ReadIdentity, gotB.ReadIdentity)
+}
+
+func TestHostRouterRepoCredentialAliasFollowsRename(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	router, err := NewHostRouter("github.com",
+		&Route{
+			Key:          RouteKey{Host: "github.com", Owner: "acme", Name: "widget"},
+			ReadIdentity: IdentityKey{Host: "github.com", Principal: "widget-bot"},
+		},
+		&Route{
+			Key:          RouteKey{Host: "github.com"},
+			ReadIdentity: IdentityKey{Host: "github.com", Principal: "fallback-bot"},
+		},
+	)
+	require.NoError(err)
+
+	router.RegisterRepoCredentialAlias("acme", "gadget",
+		RouteKey{Host: "github.com", Owner: "acme", Name: "widget"}, "R_1")
+	identity, err := router.ReadIdentityForRepo("acme", "gadget")
+	require.NoError(err)
+	assert.Equal("widget-bot", identity.Principal)
+
+	// A second rename that targets the first alias still lands on the
+	// configured route.
+	router.RegisterRepoCredentialAlias("acme", "gizmo",
+		RouteKey{Host: "github.com", Owner: "acme", Name: "gadget"}, "R_1")
+	identity, err = router.ReadIdentityForRepo("acme", "gizmo")
+	require.NoError(err)
+	assert.Equal("widget-bot", identity.Principal)
+}
+
+func TestRegisterConfiguredRepoCredentialAliasesRoutesRenamedRepo(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	router, err := NewHostRouter("github.com",
+		&Route{
+			Key:          RouteKey{Host: "github.com", Owner: "acme", Name: "widget"},
+			ReadIdentity: IdentityKey{Host: "github.com", Principal: "widget-bot"},
+		},
+	)
+	require.NoError(err)
+
+	RegisterConfiguredRepoCredentialAliases(
+		map[string]*HostRouter{"github.com": router},
+		config.Repo{Owner: "acme", Name: "widget"},
+		[]RepoRef{{
+			Platform: platform.KindGitHub, PlatformHost: "github.com",
+			Owner: "acme", Name: "gadget", PlatformExternalID: "R_1",
+		}},
+	)
+
+	identity, err := router.ReadIdentityForRepo("acme", "gadget")
+	require.NoError(err,
+		"startup resolution to a renamed route must reuse the configured credential")
+	assert.Equal("widget-bot", identity.Principal)
+}
+
+func TestPublishResolvedRepositoryClearsDisplacedCredentialAlias(t *testing.T) {
+	require := require.New(t)
+	router, err := NewHostRouter("github.com",
+		&Route{
+			Key:          RouteKey{Host: "github.com", Owner: "acme", Name: "old-widget"},
+			ReadIdentity: IdentityKey{Host: "github.com", Principal: "old-widget-bot"},
+		},
+	)
+	require.NoError(err)
+	// The displaced repository R_old was renamed onto acme/widget earlier
+	// and aliased credential selection back to its configured route.
+	router.RegisterRepoCredentialAlias("acme", "widget",
+		RouteKey{Host: "github.com", Owner: "acme", Name: "old-widget"}, "R_old")
+
+	syncer := &Syncer{routers: map[string]*HostRouter{"github.com": router}}
+	replacement := RepoRef{
+		Platform: platform.KindGitHub, PlatformHost: "github.com",
+		Owner: "acme", Name: "widget", PlatformExternalID: "R_new",
+	}
+	syncer.publishResolvedRepository(replacement, replacement)
+
+	_, err = router.ReadIdentityForRepo("acme", "widget")
+	require.Error(err,
+		"a replacement repository must not inherit the displaced repository's credential alias")
 }

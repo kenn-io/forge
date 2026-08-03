@@ -11,7 +11,7 @@ import (
 func seedAssigneeTestMR(t *testing.T, d *DB, updatedAt time.Time, assigneesJSON, reviewersJSON string) (int64, int64) {
 	t.Helper()
 	ctx := t.Context()
-	repoID, err := d.UpsertRepo(ctx, GitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := d.UpsertRepo(ctx, verifiedTestRepoIdentity("github", "github.com", "acme", "widget"))
 	require.NoError(t, err)
 	mrID, err := d.UpsertMergeRequest(ctx, &MergeRequest{
 		RepoID:         repoID,
@@ -135,7 +135,7 @@ func TestUpdateIssueAssigneesPersistsMutationResults(t *testing.T) {
 	d := openTestDB(t)
 	ctx := t.Context()
 	now := time.Date(2026, 6, 1, 10, 0, 0, 0, time.UTC)
-	repoID, err := d.UpsertRepo(ctx, GitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := d.UpsertRepo(ctx, verifiedTestRepoIdentity("github", "github.com", "acme", "widget"))
 	require.NoError(err)
 	issueID, err := d.UpsertIssue(ctx, &Issue{
 		RepoID:         repoID,

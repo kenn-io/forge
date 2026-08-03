@@ -190,7 +190,7 @@ func TestCooldownSkippedIssueScopePreservesRetryUntilSuccessfulProbe(t *testing.
 		[]RepoRef{repo}, time.Minute, nil, nil,
 	)
 	syncer.now = func() time.Time { return now }
-	repoID, err := database.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
+	repoID, err := database.UpsertRepo(ctx, verifiedDBRepoIdentity(platformRepoRef(repo)))
 	require.NoError(err)
 	syncer.markRepoFailed(repo, failIssues)
 	require.True(syncer.recordRepositoryFeatureDisabled(
@@ -255,7 +255,7 @@ func TestIndexReaderResolutionFailureAbandonsExpiredFeatureProbeReservation(t *t
 				registry, database, nil, []RepoRef{repo}, time.Minute, nil, nil,
 			)
 			syncer.now = func() time.Time { return now }
-			repoID, err := database.UpsertRepo(t.Context(), platform.DBRepoIdentity(platformRepoRef(repo)))
+			repoID, err := database.UpsertRepo(t.Context(), verifiedDBRepoIdentity(platformRepoRef(repo)))
 			require.NoError(err)
 			require.True(syncer.recordRepositoryFeatureDisabled(
 				repo,
@@ -401,7 +401,7 @@ func TestDisabledIssueCooldownSkipsDetailDrain(t *testing.T) {
 		Platform: platform.KindGitHub, PlatformHost: "github.com",
 		Owner: "acme", Name: "widget",
 	}
-	repoID, err := database.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
+	repoID, err := database.UpsertRepo(ctx, verifiedDBRepoIdentity(platformRepoRef(repo)))
 	require.NoError(err)
 	_, err = database.UpsertIssue(ctx, &db.Issue{
 		RepoID: repoID, PlatformID: 1001, Number: 1,
@@ -440,7 +440,7 @@ func TestDetailBudgetDenialAbandonsExpiredFeatureProbeReservation(t *testing.T) 
 		Platform: platform.KindGitHub, PlatformHost: "github.com",
 		Owner: "acme", Name: "widget",
 	}
-	repoID, err := database.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
+	repoID, err := database.UpsertRepo(ctx, verifiedDBRepoIdentity(platformRepoRef(repo)))
 	require.NoError(err)
 	_, err = database.UpsertIssue(ctx, &db.Issue{
 		RepoID: repoID, PlatformID: 1001, Number: 1,
@@ -490,7 +490,7 @@ func TestWrappedRawDisabledIssueResponseStopsDetailDrainAndStartsCooldown(t *tes
 		Platform: platform.KindGitHub, PlatformHost: "github.com",
 		Owner: "acme", Name: "widget",
 	}
-	repoID, err := database.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
+	repoID, err := database.UpsertRepo(ctx, verifiedDBRepoIdentity(platformRepoRef(repo)))
 	require.NoError(err)
 	for _, number := range []int{1, 2} {
 		_, err = database.UpsertIssue(ctx, &db.Issue{
@@ -542,7 +542,7 @@ func TestWrappedRawDisabledMergeRequestTimelineStopsDetailDrainAndStartsCooldown
 		Platform: platform.KindGitHub, PlatformHost: "github.com",
 		Owner: "acme", Name: "widget",
 	}
-	repoID, err := database.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
+	repoID, err := database.UpsertRepo(ctx, verifiedDBRepoIdentity(platformRepoRef(repo)))
 	require.NoError(err)
 	for _, number := range []int{1, 2} {
 		_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
@@ -594,7 +594,7 @@ func TestDisabledPRCooldownDoesNotExhaustIssueDetailBudget(t *testing.T) {
 		Platform: platform.KindGitHub, PlatformHost: "github.com",
 		Owner: "acme", Name: "widget",
 	}
-	repoID, err := database.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
+	repoID, err := database.UpsertRepo(ctx, verifiedDBRepoIdentity(platformRepoRef(repo)))
 	require.NoError(err)
 	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
 		RepoID: repoID, PlatformID: 1001, Number: 7,
@@ -750,7 +750,7 @@ func TestCommentRefreshWithoutProviderAttemptAbandonsExpiredFeatureProbeReservat
 				Platform: platform.KindGitHub, PlatformHost: "github.com",
 				Owner: "acme", Name: "widget",
 			}
-			repoID, err := database.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
+			repoID, err := database.UpsertRepo(ctx, verifiedDBRepoIdentity(platformRepoRef(repo)))
 			require.NoError(err)
 			if tc.feature == platform.RepositoryFeatureMergeRequests {
 				_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
@@ -863,7 +863,7 @@ func TestConcurrentDisabledRenewalAfterNotModifiedListSkipsPRCommentRefresh(t *t
 		Platform: platform.KindGitHub, PlatformHost: "github.com",
 		Owner: "acme", Name: "widget",
 	}
-	repoID, err := database.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
+	repoID, err := database.UpsertRepo(ctx, verifiedDBRepoIdentity(platformRepoRef(repo)))
 	require.NoError(err)
 	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
 		RepoID: repoID, PlatformID: 1001, Number: 7,
@@ -919,7 +919,7 @@ func TestDisabledIssueCooldownSkipsQueuedComments(t *testing.T) {
 		Platform: platform.KindGitHub, PlatformHost: "github.com",
 		Owner: "acme", Name: "widget",
 	}
-	repoID, err := database.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
+	repoID, err := database.UpsertRepo(ctx, verifiedDBRepoIdentity(platformRepoRef(repo)))
 	require.NoError(err)
 	_, err = database.UpsertIssue(ctx, &db.Issue{
 		RepoID: repoID, PlatformID: 1001, Number: 1,
@@ -964,9 +964,9 @@ func TestExpiredIssueCommentProbeRenewsDisabledCooldown(t *testing.T) {
 	now := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
 	repo := RepoRef{
 		Platform: platform.KindGitHub, PlatformHost: "github.com",
-		Owner: "acme", Name: "widget",
+		Owner: "acme", Name: "widget", PlatformExternalID: "repo-acme-widget",
 	}
-	repoID, err := database.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
+	repoID, err := database.UpsertRepo(ctx, verifiedDBRepoIdentity(platformRepoRef(repo)))
 	require.NoError(err)
 	_, err = database.UpsertIssue(ctx, &db.Issue{
 		RepoID: repoID, PlatformID: 1001, Number: 1,
@@ -1049,4 +1049,52 @@ func TestDisabledIssueCooldownDoesNotCrossProviderHostOrScope(t *testing.T) {
 		Owner: "acme", Name: "other-widget",
 	}, platform.RepositoryFeatureIssues)
 	assert.True(due)
+}
+
+// TestFeatureCooldownNotInheritedAcrossRouteReplacement pins cooldown
+// identity to the stable provider repository ID: a new repository reusing a
+// disabled repository's route must not inherit its cooldown, while the same
+// repository keeps its cooldown across a rename. Routes only identify
+// repositories that have never been provider-verified.
+func TestFeatureCooldownNotInheritedAcrossRouteReplacement(t *testing.T) {
+	assert := assert.New(t)
+	now := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
+	c := &repositoryFeatureCooldowns{}
+	oldRepo := RepoRef{
+		Platform: platform.KindGitHub, PlatformHost: "github.com",
+		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+		PlatformExternalID: "R_old",
+	}
+	c.deferUntil(oldRepo, "issues", now.Add(24*time.Hour))
+
+	replacement := oldRepo
+	replacement.PlatformExternalID = "R_new"
+	_, due := c.beginProbe(
+		replacement, "issues", now.Add(time.Minute),
+		repositoryFeatureCooldownBypass{}, false,
+	)
+	assert.True(due,
+		"route replacement must not inherit the displaced repository's cooldown")
+
+	renamed := oldRepo
+	renamed.Name = "gadget"
+	renamed.RepoPath = "acme/gadget"
+	_, due = c.beginProbe(
+		renamed, "issues", now.Add(time.Minute),
+		repositoryFeatureCooldownBypass{}, false,
+	)
+	assert.False(due,
+		"renamed repository must keep its cooldown via its provider ID")
+
+	unverified := RepoRef{
+		Platform: platform.KindGitHub, PlatformHost: "github.com",
+		Owner: "acme", Name: "legacy", RepoPath: "acme/legacy",
+	}
+	c.deferUntil(unverified, "issues", now.Add(24*time.Hour))
+	_, due = c.beginProbe(
+		unverified, "issues", now.Add(time.Minute),
+		repositoryFeatureCooldownBypass{}, false,
+	)
+	assert.False(due,
+		"unverified repositories still cool down by route")
 }

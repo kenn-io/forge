@@ -27,11 +27,11 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 	now := time.Now().UTC()
 
 	// --- Repos ---
-	widgetsID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widgets"))
+	widgetsID, err := d.UpsertRepo(ctx, fixtureRepoIdentity("acme", "widgets"))
 	if err != nil {
 		return nil, fmt.Errorf("upsert acme/widgets: %w", err)
 	}
-	toolsID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "tools"))
+	toolsID, err := d.UpsertRepo(ctx, fixtureRepoIdentity("acme", "tools"))
 	if err != nil {
 		return nil, fmt.Errorf("upsert acme/tools: %w", err)
 	}
@@ -43,7 +43,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 	}); err != nil {
 		return nil, fmt.Errorf("update acme/tools metadata: %w", err)
 	}
-	_, err = d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "archived"))
+	_, err = d.UpsertRepo(ctx, fixtureRepoIdentity("acme", "archived"))
 	if err != nil {
 		return nil, fmt.Errorf("upsert acme/archived: %w", err)
 	}
@@ -1210,6 +1210,16 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 		},
 	}
 	return result, nil
+}
+
+func fixtureRepoIdentity(owner, name string) db.RepoIdentity {
+	return db.RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "repo-" + owner + "-" + name,
+		Owner:          owner,
+		Name:           name,
+	}
 }
 
 func buildGHReview(id int64, login, state string, submittedAt time.Time) *gh.PullRequestReview {

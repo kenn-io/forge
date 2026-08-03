@@ -69,7 +69,7 @@ func setupSyncer(t *testing.T, ctx context.Context, mgr *gitclone.Manager) (*Syn
 	mc := &mockClient{}
 	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, mgr, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, testBudget(500))
 	syncer.RunOnce(ctx) // creates repo row
-	repoRow, err := d.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
+	repoRow, err := d.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "owner", "repo"))
 	require.NoError(t, err)
 	require.NotNil(t, repoRow)
 	return syncer, repoRow.ID

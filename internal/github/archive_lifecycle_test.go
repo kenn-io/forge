@@ -235,6 +235,7 @@ func TestArchivePreemptedItemRecordsNoFailureAndCompletesOnNextPass(t *testing.T
 	ref := platform.RepoRef{
 		Platform: platform.KindGitHub, Host: "github.test",
 		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+		PlatformExternalID: "repo-1",
 	}
 	provider := &preemptibleArchiveProvider{
 		archiveWorkerProvider: &archiveWorkerProvider{ref: ref},
@@ -251,6 +252,7 @@ func TestArchivePreemptedItemRecordsNoFailureAndCompletesOnNextPass(t *testing.T
 	syncer := NewSyncerWithRegistry(registry, database, nil, []RepoRef{{
 		Platform: ref.Platform, PlatformHost: ref.Host,
 		Owner: ref.Owner, Name: ref.Name, RepoPath: ref.RepoPath,
+		PlatformExternalID: ref.PlatformExternalID,
 	}}, time.Hour, map[string]*RateTracker{key: tracker}, map[string]*SyncBudget{key: budget})
 	syncer.now = func() time.Time { return now }
 
@@ -605,6 +607,7 @@ func TestArchiveWorkerAdvancesRealServiceAfterStart(t *testing.T) {
 	ref := platform.RepoRef{
 		Platform: platform.KindGitHub, Host: "github.test",
 		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+		PlatformExternalID: "repo-1",
 	}
 	provider := &archiveWorkerProvider{ref: ref}
 	registry, err := platform.NewRegistry(provider)
@@ -612,6 +615,7 @@ func TestArchiveWorkerAdvancesRealServiceAfterStart(t *testing.T) {
 	syncer := NewSyncerWithRegistry(registry, database, nil, []RepoRef{{
 		Platform: ref.Platform, PlatformHost: ref.Host,
 		Owner: ref.Owner, Name: ref.Name, RepoPath: ref.RepoPath,
+		PlatformExternalID: ref.PlatformExternalID,
 	}}, time.Hour, nil, nil)
 	service, err := archive.NewService(database, registry, nil, syncer, nil, nil)
 	require.NoError(err)
@@ -666,6 +670,77 @@ func TestSetReposSeedsArchiveDiscoveryAndRetriesCredentialsBeforeCutover(t *test
 	assert.Equal("group/subgroup/project", recorder.ensured[0].RepoPath)
 	assert.Equal(recorder.ensured, recorder.retried)
 	assert.Equal(repos, syncer.TrackedRepos())
+}
+
+func TestSyncRepoReplacementReconcilesArchiveLifecycle(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	database := dbtest.Open(t)
+	configured := RepoRef{
+		Platform: platform.KindGitLab, PlatformHost: "gitlab.test",
+		Owner: "group", Name: "project", RepoPath: "group/project",
+		PlatformExternalID: "gid://gitlab/Project/old",
+	}
+	provider := &syncTestRepositoryReadProvider{
+		syncTestReadProvider: &syncTestReadProvider{
+			syncTestProvider: syncTestProvider{
+				kind: platform.KindGitLab, host: "gitlab.test",
+			},
+		},
+		repository: platform.Repository{
+			Ref: platform.RepoRef{
+				Platform: platform.KindGitLab, Host: "gitlab.test",
+				Owner: "group", Name: "project", RepoPath: "group/project",
+			},
+			PlatformExternalID: "gid://gitlab/Project/old",
+		},
+	}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	syncer := NewSyncerWithRegistry(
+		registry, database, nil, []RepoRef{configured}, time.Hour, nil, nil,
+	)
+	service, err := archive.NewService(database, registry, nil, syncer, nil, nil)
+	require.NoError(err)
+	syncer.SetArchiveService(service)
+	require.NoError(service.EnsureConfigured(
+		ctx, []platform.RepoRef{platformRepoRef(configured)},
+	))
+	oldEntry, err := database.GetRepositoryByProviderID(
+		ctx, "gitlab", "gitlab.test", "gid://gitlab/Project/old",
+	)
+	require.NoError(err)
+	require.NotNil(oldEntry)
+
+	provider.repository.PlatformExternalID = "gid://gitlab/Project/new"
+	require.NoError(syncer.syncRepo(ctx, configured))
+
+	newEntry, err := database.GetRepositoryByProviderID(
+		ctx, "gitlab", "gitlab.test", "gid://gitlab/Project/new",
+	)
+	require.NoError(err)
+	require.NotNil(newEntry)
+	states, err := database.ListArchiveRepoStates(ctx, nil)
+	require.NoError(err)
+	require.Len(states, 2)
+	stateByRepoID := map[int64]db.ArchiveRepoState{}
+	for _, state := range states {
+		stateByRepoID[state.RepoID] = state
+	}
+	assert.Equal(
+		db.ArchiveOperatorStatePaused,
+		stateByRepoID[oldEntry.Repository.ID].OperatorState,
+	)
+	require.NotNil(stateByRepoID[oldEntry.Repository.ID].LastErrorCode)
+	assert.Equal(
+		string(db.ArchiveErrorCodeConfigurationRemoved),
+		*stateByRepoID[oldEntry.Repository.ID].LastErrorCode,
+	)
+	assert.Equal(
+		db.ArchiveOperatorStateActive,
+		stateByRepoID[newEntry.Repository.ID].OperatorState,
+	)
 }
 
 func TestArchiveAdmissionSharesSyncBudgetAndProviderReserve(t *testing.T) {
@@ -1301,7 +1376,7 @@ func TestProcessQueuedNotificationReadsHoldsWriteIdentityProviderWork(t *testing
 	assert := assert.New(t)
 	database := dbtest.Open(t)
 	repoID, err := database.UpsertRepo(
-		t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"),
+		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(err)
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
@@ -1381,4 +1456,54 @@ func TestSyncerConfiguredRepositoriesCarryFullProviderIdentity(t *testing.T) {
 		Platform: platform.KindGitLab, Host: "gitlab.test",
 		Owner: "group/subgroup", Name: "project", RepoPath: "group/subgroup/project",
 	}, refs[0])
+}
+
+func TestArchiveAdmitNotDeferredByDisplacedRepositoryCooldown(t *testing.T) {
+	require := require.New(t)
+	database := dbtest.Open(t)
+	key := RateBucketKey("github", "github.test", "host")
+	tracker := NewPlatformRateTracker(database, "github", "github.test", "host", "rest")
+	now := time.Now().UTC()
+	tracker.UpdateFromRate(Rate{Limit: 5000, Remaining: 4999, Reset: now.Add(time.Minute)})
+	syncer := NewSyncerWithRegistry(
+		nil, database, nil, nil, time.Hour,
+		map[string]*RateTracker{key: tracker},
+		map[string]*SyncBudget{key: NewSyncBudget(100)},
+	)
+	syncer.now = func() time.Time { return now }
+	displaced := RepoRef{
+		Platform: platform.KindGitHub, PlatformHost: "github.test",
+		Owner: "acme", Name: "widget", PlatformExternalID: "R_old",
+	}
+	syncer.featureCooldowns.deferUntil(
+		displaced, platform.RepositoryFeatureIssues, now.Add(time.Hour),
+	)
+
+	ref := platform.RepoRef{
+		Platform: platform.KindGitHub, Host: "github.test",
+		Owner: "acme", Name: "widget", PlatformExternalID: "R_new",
+	}
+	admission, err := syncer.Admit(t.Context(), ref, db.ArchiveItemTypeIssue, 1)
+	require.NoError(err)
+	require.Nil(admission.FeatureDeferred,
+		"a replacement repository must not inherit the displaced repository's cooldown")
+	require.True(admission.Allowed)
+	t.Cleanup(func() { admission.Complete(nil, true) })
+}
+
+func TestConfiguredRepositoriesCarryStableProviderIdentity(t *testing.T) {
+	require := require.New(t)
+	database := dbtest.Open(t)
+	syncer := NewSyncer(
+		nil, database, nil, []RepoRef{{
+			Platform: platform.KindGitHub, PlatformHost: "github.test",
+			Owner: "acme", Name: "widget", PlatformExternalID: "R_1",
+		}}, time.Minute, nil, nil,
+	)
+
+	refs, err := syncer.ConfiguredRepositories(t.Context())
+	require.NoError(err)
+	require.Len(refs, 1)
+	require.Equal("R_1", refs[0].PlatformExternalID,
+		"archive scheduling needs the stable provider identity for cooldown keys")
 }

@@ -129,8 +129,8 @@
   const TERMINAL_MINIMUM_CONTRAST_RATIO = 4.5;
   const TERMINAL_FONT_WAIT_MS = 300;
   const TERMINAL_FONT_LOAD_GLYPHS = "0MWim@#";
-  const POINTER_SELECTION_INTENT_PX = 4;
   const TERMINAL_SEQUENCE_CANCEL = new Uint8Array([0x18]);
+  const POINTER_SELECTION_INTENT_MIN_PX = 4;
 
   function isAttachableInitialStatus(status: string | undefined): boolean {
     return status === undefined || status === "running" || status === "starting";
@@ -293,15 +293,27 @@
     clipboardWriter.authorizeKeyboardGesture();
   }
 
+  function hasPointerSelectionIntent(event: PointerEvent): boolean {
+    if (pointerOrigin === null) return false;
+    const cell = containerEl.querySelector<HTMLElement>(".xterm-helper-textarea")?.getBoundingClientRect();
+    if (!cell || cell.width <= 0 || cell.height <= 0) return false;
+
+    const deltaX = event.clientX - pointerOrigin.clientX;
+    const deltaY = event.clientY - pointerOrigin.clientY;
+    const pixelsMovedSquared = deltaX * deltaX + deltaY * deltaY;
+    const columnsMoved = deltaX / cell.width;
+    const rowsMoved = deltaY / cell.height;
+    return (
+      pixelsMovedSquared >= POINTER_SELECTION_INTENT_MIN_PX ** 2 &&
+      columnsMoved * columnsMoved + rowsMoved * rowsMoved >= 1
+    );
+  }
+
   function handleWindowPointerMove(event: PointerEvent): void {
     if (disposed || disabled || !terminal) return;
-    if (activePointerId === event.pointerId && pointerOrigin !== null) {
-      const deltaX = event.clientX - pointerOrigin.clientX;
-      const deltaY = event.clientY - pointerOrigin.clientY;
-      if (deltaX * deltaX + deltaY * deltaY >= POINTER_SELECTION_INTENT_PX ** 2) {
-        clipboardWriter.confirmPointerSelection();
-        pointerOrigin = null;
-      }
+    if (activePointerId === event.pointerId && hasPointerSelectionIntent(event)) {
+      clipboardWriter.confirmPointerSelection();
+      pointerOrigin = null;
     }
     const screen = containerEl.querySelector<HTMLElement>(".xterm-screen");
     const bounds = (screen ?? containerEl).getBoundingClientRect();

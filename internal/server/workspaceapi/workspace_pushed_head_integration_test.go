@@ -239,8 +239,10 @@ func pushedHeadPullRequest(title, headSHA string) *gh.PullRequest {
 
 func seedPushedHeadIntegrationPR(t *testing.T, database *db.DB, oldHead string) int64 {
 	t.Helper()
+	identity := db.GitHubRepoIdentity("github.com", "acme", "widget")
+	identity.PlatformRepoID = "repo-acme-widget"
 	repoID, err := database.UpsertRepo(
-		t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"),
+		t.Context(), identity,
 	)
 	require.NoError(t, err)
 	now := time.Date(2026, 5, 20, 12, 0, 0, 0, time.UTC)

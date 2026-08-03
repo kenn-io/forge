@@ -65,11 +65,12 @@ func run(ctx context.Context, args []string) error {
 		return err
 	}
 	repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
-		Platform:     "github",
-		PlatformHost: "github.com",
-		Owner:        "acme",
-		Name:         "fleet-widget",
-		RepoPath:     "acme/fleet-widget",
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: "e2e-fleet-widget",
+		Owner:          "acme",
+		Name:           "fleet-widget",
+		RepoPath:       "acme/fleet-widget",
 	})
 	if err != nil {
 		return fmt.Errorf("upsert repo: %w", err)

@@ -87,3 +87,5 @@ and the root event stream.
 - Long-lived HTTP and WebSocket contracts derive from the Huma registrations;
   catch-all proxies declare finite streaming variants on their operation, and
   tracing consumes the same inventory (`internal/server/transport_inventory.go::NewTransportInventory`).
+- An annotated proxy stream is served only when the request explicitly accepts
+  its declared media type (`internal/server/httpapi/transport.go::ValidateTransportAccept`).

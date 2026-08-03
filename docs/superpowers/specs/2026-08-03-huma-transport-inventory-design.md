@@ -70,9 +70,13 @@ The schema is versioned:
 
 Routes are sorted by method, path, transport, and media type before encoding.
 The optional `query` object identifies values that select a streaming mode on
-an otherwise ordinary endpoint.
+an otherwise ordinary endpoint; every listed string key/value must match.
+Consumers ignore unknown additive fields. A new required field, changed matching
+semantics, or new transport kind increments `schema_version`.
 Duplicate entries, malformed absolute paths, unknown metadata shapes, and
 unsupported transport values are generation errors.
+Annotated proxy streams require a matching explicit `Accept` media type at
+runtime and return HTTP 406 before proxying when it is absent or rejected.
 
 ### Developer and CI command
 
@@ -99,4 +103,5 @@ Focused Forge tests will prove that:
 - Exposing live connection counts or request details at runtime.
 - Defining how a particular embedding host implements its transport.
 - Maintaining a Markdown or hand-written JSON route list.
-- Changing terminal, stream replay, proxy, or authorization semantics.
+- Changing terminal, stream replay, or authorization semantics beyond the
+  declared proxy-stream content negotiation.

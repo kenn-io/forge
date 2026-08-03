@@ -3,7 +3,10 @@ package httpapi
 import (
 	"fmt"
 	"maps"
+	"net/http"
 	"slices"
+	"strconv"
+	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 )
@@ -54,4 +57,54 @@ func TransportRoutes(op *huma.Operation) ([]TransportRoute, error) {
 		cloned[i].Query = maps.Clone(cloned[i].Query)
 	}
 	return cloned, nil
+}
+
+// ValidateTransportAccept reports whether a request satisfies the media type
+// declared by a matching proxy-only stream variant.
+func ValidateTransportAccept(op *huma.Operation, request *http.Request) (bool, error) {
+	routes, err := TransportRoutes(op)
+	if err != nil {
+		return false, err
+	}
+	for _, route := range routes {
+		if route.Transport != TransportHTTPStream ||
+			route.Method != request.Method || route.Path != request.URL.Path {
+			continue
+		}
+		matches := true
+		for key, value := range route.Query {
+			if request.URL.Query().Get(key) != value {
+				matches = false
+				break
+			}
+		}
+		if matches {
+			return acceptsMediaType(request.Header.Get("Accept"), route.Accept), nil
+		}
+	}
+	return true, nil
+}
+
+func acceptsMediaType(header string, required string) bool {
+	for mediaRange := range strings.SplitSeq(header, ",") {
+		parts := strings.Split(mediaRange, ";")
+		if !strings.EqualFold(strings.TrimSpace(parts[0]), required) {
+			continue
+		}
+		accepted := true
+		for _, parameter := range parts[1:] {
+			name, value, ok := strings.Cut(parameter, "=")
+			if !ok || !strings.EqualFold(strings.TrimSpace(name), "q") {
+				continue
+			}
+			quality, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
+			if err != nil || quality <= 0 {
+				accepted = false
+			}
+		}
+		if accepted {
+			return true
+		}
+	}
+	return false
 }

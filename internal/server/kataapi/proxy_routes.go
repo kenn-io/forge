@@ -37,6 +37,15 @@ func (h *Handler) registerKataProxyAPI(api huma.API) {
 		}
 		api.Adapter().Handle(op, func(ctx huma.Context) {
 			r, w := humago.Unwrap(ctx)
+			accepted, err := httpapi.ValidateTransportAccept(op, r)
+			if err != nil {
+				http.Error(w, "invalid transport metadata", http.StatusInternalServerError)
+				return
+			}
+			if !accepted {
+				http.Error(w, "streaming route requires an explicit Accept header", http.StatusNotAcceptable)
+				return
+			}
 			proxy.ServeHTTP(w, r)
 		})
 	}

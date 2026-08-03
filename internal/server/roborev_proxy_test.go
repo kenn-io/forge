@@ -98,6 +98,29 @@ func TestRoborevProxyForwarding(t *testing.T) {
 	assert.JSONEq(`{"jobs":[{"id":1}]}`, rr.Body.String())
 }
 
+func TestRoborevProxyRejectsDeclaredStreamsWithoutAccept(t *testing.T) {
+	var upstreamRequests atomic.Int64
+	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		upstreamRequests.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer daemon.Close()
+
+	srv := setupTestServerWithRoborev(t, daemon.URL)
+	for _, target := range []string{
+		"/api/roborev/api/stream/events",
+		"/api/roborev/api/job/output?job_id=7&stream=1",
+	} {
+		t.Run(target, func(t *testing.T) {
+			rr := doJSON(t, srv, http.MethodGet, target, nil)
+
+			assert.Equal(t, http.StatusNotAcceptable, rr.Code)
+			assert.Contains(t, rr.Body.String(), "requires an explicit Accept header")
+		})
+	}
+	assert.Zero(t, upstreamRequests.Load())
+}
+
 func TestRoborevProxyE2EForwardsSubpathAndNonGETMethod(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -311,6 +334,7 @@ func TestRoborevProxyCancelsIdleUpstreamBeforeReconnect(t *testing.T) {
 			nil,
 		)
 		require.NoError(err)
+		req.Header.Set("Accept", "application/x-ndjson")
 		done := make(chan error, 1)
 		go func() {
 			resp, requestErr := http.DefaultClient.Do(req)

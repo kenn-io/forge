@@ -381,7 +381,11 @@ func (m *Manager) Launch(
 	}, launch.Command, cwd, m.currentStripEnvVars())
 	if err != nil {
 		if launch.TmuxCreated {
-			_ = m.killTmuxSession(ctx, launch.TmuxSession)
+			cleanupCtx, cancel := context.WithTimeout(
+				context.WithoutCancel(ctx), 5*time.Second,
+			)
+			_ = m.killTmuxSession(cleanupCtx, launch.TmuxSession)
+			cancel()
 		}
 		slog.Debug(
 			"runtime launch start failed",
@@ -769,6 +773,22 @@ func (m *Manager) Stop(
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+// RollbackLaunch stops a newly launched session after its caller fails to
+// persist the session metadata. A short-lived attachment can disappear from
+// the in-memory session map before persistence returns, so rollback falls back
+// to the tmux session recorded in the launch result.
+func (m *Manager) RollbackLaunch(ctx context.Context, info SessionInfo) error {
+	stopErr := m.Stop(ctx, info.WorkspaceID, info.Key)
+	if errors.Is(stopErr, ErrSessionNotFound) {
+		stopErr = nil
+	}
+	// Stop normally removes the tmux backend itself. Repeat the idempotent
+	// backend cleanup using the launch result so a watcher racing with Stop
+	// cannot strand the session between lookup and cleanup.
+	tmuxErr := m.killTmuxSession(ctx, info.TmuxSession)
+	return errors.Join(stopErr, tmuxErr)
 }
 
 // Detach removes an in-memory runtime session attachment without stopping the

@@ -86,6 +86,9 @@ still exists.
   gone state to be cleaned up, not as a reason to preserve stale runtime rows.
 - During explicit delete or stop flows, forgetting the persisted row is part of
   cleanup.
+- A tmux backend created for a launch must be removed if launch or metadata
+  persistence fails; cleanup must survive request cancellation and in-memory
+  session exit (`internal/workspace/localruntime/manager.go::RollbackLaunch`).
 - During kenn-forge shutdown, detach/restart behavior is different: do not treat
   normal server shutdown as a natural user exit that should erase recoverable
   base runtime state.

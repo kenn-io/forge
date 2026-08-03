@@ -1642,6 +1642,10 @@ func TestReuseExistingWorkspaceWorktreeRechecksSymlinkAfterLock(t *testing.T) {
 
 	mgr := NewManager(d, wtDir)
 	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
+	readyForRepoLock := make(chan struct{})
+	mgr.beforeExistingWorktreeRepoLock = func() {
+		close(readyForRepoLock)
+	}
 	ws, err := mgr.Create(t.Context(), "github", platformHost, "acme", "widget", 42)
 	require.NoError(err)
 	existingBranch := syntheticPRWorktreeBranch(42)
@@ -1667,9 +1671,14 @@ func TestReuseExistingWorkspaceWorktreeRechecksSymlinkAfterLock(t *testing.T) {
 	}()
 
 	select {
-	case <-done:
-		require.FailNow("worktree reuse completed while the repository lock was held")
-	case <-time.After(80 * time.Millisecond):
+	case <-readyForRepoLock:
+	case result := <-done:
+		require.FailNowf(
+			"worktree reuse completed before repository lock acquisition",
+			"reused=%t err=%v", result.reused, result.err,
+		)
+	case <-time.After(5 * time.Second):
+		require.FailNow("worktree reuse did not reach repository lock acquisition")
 	}
 	targetPath := filepath.Join(wtDir, "replacement-target")
 	require.NoError(os.Rename(ws.WorktreePath, targetPath))

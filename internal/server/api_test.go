@@ -25241,6 +25241,9 @@ func buildRustPtyManagerForTest(t *testing.T) string {
 	if err != nil {
 		t.Skip("cargo not available")
 	}
+	if err := procutil.Command(cargo, "--version").Run(); err != nil {
+		t.Skipf("cargo not usable: %v", err)
+	}
 	root := repoRootForTest(t)
 	cmd := procutil.Command(cargo, "build", "-p", "kenn-forge-pty-manager")
 	cmd.Dir = root
@@ -27150,6 +27153,10 @@ func TestWorkspaceRuntimePlainShellRecordFailureCleansCreatedTmuxShellE2E(t *tes
 	require := require.New(t)
 
 	tmuxPath := writeFakeWorkspaceRuntimeTmux(t)
+	attachGate := filepath.Join(t.TempDir(), "attach-gate")
+	require.NoError(os.WriteFile(attachGate, []byte("wait"), 0o600))
+	t.Setenv("KENN_FORGE_FAKE_TMUX_ATTACH_GATE", attachGate)
+	t.Setenv("KENN_FORGE_FAKE_TMUX_ATTACH_EXIT", "1")
 	cfg := &config.Config{
 		Tmux: config.Tmux{Command: []string{tmuxPath}},
 		Shell: config.Shell{
@@ -27170,16 +27177,37 @@ func TestWorkspaceRuntimePlainShellRecordFailureCleansCreatedTmuxShellE2E(t *tes
 	tx, err := fixture.database.WriteDB().BeginTx(ctx, &sql.TxOptions{})
 	require.NoError(err)
 	defer func() { _ = tx.Rollback() }()
-	recordCtx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	recordCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	failedResp, err := fixture.client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
-		recordCtx, ws.Id,
-		generated.LaunchWorkspaceRuntimeSessionInputBody{
-			TargetKey: string(localruntime.LaunchTargetPlainShell),
-		},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusInternalServerError, failedResp.StatusCode())
+	type launchResult struct {
+		response *generated.LaunchWorkspaceRuntimeSessionResponse
+		err      error
+	}
+	launchDone := make(chan launchResult, 1)
+	go func() {
+		response, launchErr := fixture.client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
+			recordCtx, ws.Id,
+			generated.LaunchWorkspaceRuntimeSessionInputBody{
+				TargetKey: string(localruntime.LaunchTargetPlainShell),
+			},
+		)
+		launchDone <- launchResult{response: response, err: launchErr}
+	}()
+	require.Eventually(func() bool {
+		entries, readErr := os.ReadDir(stateDir)
+		return readErr == nil && len(entries) > len(initialState)
+	}, 2*time.Second, 20*time.Millisecond)
+	require.Eventually(func() bool {
+		return len(fixture.server.runtime.ListSessions(ws.Id)) > 0
+	}, 2*time.Second, 20*time.Millisecond)
+	require.NoError(os.Remove(attachGate))
+	require.Eventually(func() bool {
+		return len(fixture.server.runtime.ListSessions(ws.Id)) == 0
+	}, 2*time.Second, 20*time.Millisecond)
+	cancel()
+	result := <-launchDone
+	require.NoError(result.err)
+	require.Equal(http.StatusInternalServerError, result.response.StatusCode())
 	require.NoError(tx.Rollback())
 
 	require.Eventually(func() bool {
@@ -28273,6 +28301,14 @@ case "$cmd" in
       exit 1
     fi
     printf 'attached:%s\n' "$session"
+    if [ -n "${KENN_FORGE_FAKE_TMUX_ATTACH_GATE:-}" ]; then
+      while [ -e "$KENN_FORGE_FAKE_TMUX_ATTACH_GATE" ]; do
+        sleep 0.01
+      done
+    fi
+    if [ "${KENN_FORGE_FAKE_TMUX_ATTACH_EXIT:-}" = "1" ]; then
+      exit 0
+    fi
     while [ -e "$state_dir/$session" ]; do
       if IFS= read -r line; then
         printf 'fake-tmux:%s\n' "$line"

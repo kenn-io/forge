@@ -136,7 +136,11 @@ func (m *Manager) EnsureCommandSession(
 	}, launch.Command, spec.CWD, stripEnvVars)
 	if err != nil {
 		if launch.TmuxCreated {
-			_ = m.killTmuxSession(ctx, launch.TmuxSession)
+			cleanupCtx, cancel := context.WithTimeout(
+				context.WithoutCancel(ctx), 5*time.Second,
+			)
+			_ = m.killTmuxSession(cleanupCtx, launch.TmuxSession)
+			cancel()
 		}
 		return SessionInfo{}, err
 	}

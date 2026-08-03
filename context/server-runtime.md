@@ -81,3 +81,9 @@ and the root event stream.
 - A cursor older than the ring or ahead of the current process head emits
   `reconnect.stale`; the client must discard incremental assumptions and perform
   an authoritative refetch (`internal/server/server.go::Server.handleSSE`).
+
+## Long-Lived Transport Inventory
+
+- Long-lived HTTP and WebSocket contracts derive from the Huma registrations;
+  catch-all proxies declare finite streaming variants on their operation, and
+  tracing consumes the same inventory (`internal/server/transport_inventory.go::NewTransportInventory`).

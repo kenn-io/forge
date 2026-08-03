@@ -69,6 +69,8 @@ The schema is versioned:
 ```
 
 Routes are sorted by method, path, transport, and media type before encoding.
+The optional `query` object identifies values that select a streaming mode on
+an otherwise ordinary endpoint.
 Duplicate entries, malformed absolute paths, unknown metadata shapes, and
 unsupported transport values are generation errors.
 

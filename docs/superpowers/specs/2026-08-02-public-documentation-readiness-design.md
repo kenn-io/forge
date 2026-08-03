@@ -32,8 +32,10 @@ Audit and revise the complete public documentation surface:
 - the Zensical navigation, styles, screenshot cases, and screenshot guidance
 
 ADRs, implementation plans, design specs, reports, and `context/` documents
-remain internal. This work may update their links only when a public page would
-otherwise point readers into internal material.
+remain internal. The docs build must not copy them into its staged source or
+emit them under `site/`. Build-only screenshot specs and guidance also stay out
+of the published site. This work may update internal links only when a public
+page would otherwise point readers into internal material.
 
 ## Information Architecture
 
@@ -41,6 +43,11 @@ otherwise point readers into internal material.
 links to releases and the documentation site, shows the shortest supported
 start path, and sends detailed questions to the public guide. It must not
 duplicate the configuration or workflow reference.
+
+Public repository, source, and release links use the canonical
+`https://github.com/kenn-io/forge` repository. The Zensical header keeps the
+`kenn-forge` brand text and typography while the reader scrolls. It must not
+replace the brand with the current page title.
 
 The documentation home answers three questions in order: what the product is,
 how to start, and where to find a task-specific guide. Quick Start takes a new
@@ -51,6 +58,9 @@ build for contributors and unreleased builds.
 The remaining pages keep their current subject boundaries:
 
 - Workflows describes routine use of the product.
+- The code-reviewer guide shows the handoff from review to a configured coding
+  agent such as Codex. Kenn Forge automatically creates and tracks the Git
+  worktree for the pull-request branch.
 - Configuration documents durable settings and credentials.
 - Commands documents the supported CLI surface.
 - Archive and Fleet cover their advanced operating models.
@@ -94,11 +104,21 @@ The visual inventory should cover distinct user questions, not every mode:
   overview
 - issue triage
 - code review
+- the code-reviewer's **Create Workspace** menu with a configured Codex launch
+  target
+- the resulting Workspaces view with the pull-request worktree selected and
+  its Codex session available
 
 Existing issue-triage and code-review captures must be regenerated from the
 current UI. Add or replace the first-run and overview captures only when they
 improve the surrounding instructions. Each image needs specific alt text and a
 caption that explains what the reader should notice.
+
+Workspace captures use a synthetic Codex agent on the isolated seeded server.
+They must not start a live Codex process, read agent credentials, or capture a
+developer terminal. The reviewer guide keeps the review overview, then shows
+the direct agent launch and the managed-worktree result as two light/dark
+figures. It does not add a terminal-content screenshot.
 
 ## Implementation Boundaries
 
@@ -119,11 +139,16 @@ Verification covers source text, generated artifacts, and the rendered site:
 - Run the docs build and its screenshot Playwright cases against the isolated
   seeded backend.
 - Run the docs build script tests.
+- Confirm the staged source and rendered site contain only the public Markdown
+  pages, public styles, and generated workflow images. In particular,
+  `superpowers/`, `adr/`, `reports/`, and `screenshots/` must not be published.
 - Inspect every generated SVG in light and dark mode for current UI, stable
   data, clipped content, loading states, and private information.
 - Inspect the rendered Zensical site at desktop and phone widths.
 - Check navigation, internal links, code blocks, headings, image paths, alt
   text, and theme switching in rendered output.
+- Confirm scrolling does not change the Zensical header brand or font.
+- Confirm public repository and release links target `kenn-io/forge`.
 - Confirm generated screenshot assets remain untracked.
 
 The work is complete when a new user can install Kenn Forge, finish onboarding,

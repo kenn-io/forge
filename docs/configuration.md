@@ -1,111 +1,86 @@
 # Configuration
 
-kenn-forge reads TOML from:
+Kenn Forge reads `~/.kenn/forge/config.toml`. Set `KENN_FORGE_HOME` to move
+both config and app data. Most users only need repositories, credentials, and
+optional modes.
 
-```text
-~/.kenn/forge/config.toml
-```
-
-Set `KENN_FORGE_HOME` to use a different config and data directory. Most users
-only need repositories, tokens, and optional modes.
-
-## Basic server settings
-
-```toml
-sync_interval = "5m"
-host = "127.0.0.1"
-port = 8091
-base_path = "/"
-```
-
-- `sync_interval`: how often provider data is refreshed.
-- `host` and `port`: where the local daemon listens.
-- `base_path`: URL prefix when serving behind a reverse proxy.
-- `data_dir`: local database and app state location. Leave unset for the
-  default; set `KENN_FORGE_HOME` to relocate both config and data, or use an
-  absolute `data_dir` path to move only app state.
-
-For a trusted reverse proxy or a larger SSE replay window, use:
-
-```toml
-allowed_hosts = ["kenn-forge.example.com", "proxy.example.com:8091"]
-trust_reverse_proxy = true
-sse_buffer_size = 256
-```
-
-`allowed_hosts` accepts exact host-and-port values beyond the listener's
-loopback names. With `trust_reverse_proxy`, both the direct request host and
-the forwarded public host must be accepted. `sse_buffer_size` defaults to 256
-events and accepts 16 through 16384. Restart kenn-forge after changing these
-startup settings.
+Use Settings for routine changes. Edit TOML for provider hosts and advanced
+options. Restart Kenn Forge after changing startup settings.
 
 ## Repositories
 
-GitHub repositories can use the default provider settings:
+A GitHub repository on `github.com` needs only its owner and name:
 
 ```toml
 [[repos]]
-owner = "kenn-io"
-name = "kenn-forge"
+owner = "team"
+name = "service"
 ```
 
-You can also paste a repository URL into `owner` or `name`; kenn-forge normalizes
-common HTTPS and SSH forms.
+You can paste a common HTTPS or SSH repository URL into `owner` or `name`.
+Kenn Forge normalizes it.
 
-For providers or hosts outside the default GitHub host, set `platform` and
-`platform_host`:
+Set the provider and host for other services or self-hosted instances:
 
 ```toml
+[[platforms]]
+type = "gitlab"
+host = "gitlab.example.com"
+token_env = "GITLAB_EXAMPLE_TOKEN"
+
 [[repos]]
 platform = "gitlab"
-platform_host = "gitlab.com"
+platform_host = "gitlab.example.com"
 owner = "group/subgroup"
 name = "project"
 repo_path = "group/subgroup/project"
 ```
 
-For self-hosted providers, declare the host once:
+Repository identity includes `platform`, `platform_host`, `owner`, and `name`.
+Keep `repo_path` when the provider uses nested namespaces or canonical casing.
 
-```toml
-[[platforms]]
-type = "forgejo"
-host = "forgejo.internal.example"
-token_env = "FORGEJO_INTERNAL_TOKEN"
+## Credentials
 
-[[repos]]
-platform = "forgejo"
-platform_host = "forgejo.internal.example"
-owner = "team"
-name = "service"
-```
-
-## Tokens
-
-Token lookup is scoped by provider and host. Use one of these sources:
+Credentials are scoped by provider and host:
 
 ```toml
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 
 [[platforms]]
-type = "gitlab"
-host = "gitlab.com"
-token_env = "KENN_FORGE_GITLAB_TOKEN"
+type = "forgejo"
+host = "forge.example.com"
+token_env = "FORGE_EXAMPLE_TOKEN"
 
 [[repos]]
 owner = "team"
-name = "private-repo"
-token_file = "~/.kenn/forge/tokens/private-repo"
+name = "private-service"
+token_file = "~/.kenn/forge/tokens/private-service"
 ```
 
-For GitHub, kenn-forge can also fall back to
-`gh auth token --hostname HOST`. The unscoped `gh auth token` fallback applies
-only to `github.com`; authenticate another host with
-`gh auth login --hostname HOST`.
+An exact repository `token_file` or `token_env` takes priority over broader
+credentials. Empty files and variables are skipped. Token files are read on
+each request, so replacing a file atomically rotates that credential.
 
-### GitHub tokens by owner
+For GitHub, Kenn Forge can run `gh auth token --hostname HOST`. The unscoped
+fallback applies only to `github.com`. Authenticate another host with:
 
-Fine-grained PATs can expand access across owners without giving one token every
-repository. This advanced feature is configured in TOML only:
+```sh
+gh auth login --hostname HOST
+```
+
+Public-host defaults are:
+
+- GitHub `github.com`: `KENN_FORGE_GITHUB_TOKEN`, then the GitHub CLI.
+- GitLab `gitlab.com`: no implicit variable. Configure a token source.
+- Forgejo `codeberg.org`: `KENN_FORGE_FORGEJO_TOKEN`.
+- Gitea `gitea.com`: `KENN_FORGE_GITEA_TOKEN`.
+
+Grant read access for monitoring. Add write access only for comments, reviews,
+state changes, edits, or merges.
+
+### GitHub credentials by owner
+
+Map fine-grained PATs to owners when one token cannot read every repository:
 
 ```toml
 [[github_owner_tokens]]
@@ -117,53 +92,33 @@ owner = "org-b"
 token_file = "~/.kenn/forge/tokens/org-b"
 ```
 
-Authorization is selected by GitHub host and repository owner. An exact
-repository `token_env` or `token_file` wins; a covered GitHub App installation
-handles reads; the owner PAT handles uncovered reads and user-attributed writes;
-then the host fallback and GitHub CLI are tried.
+Owner mappings are configured in TOML only.
 
-For an App installed on only selected repositories, `selected_repos` is a
-startup routing snapshot. After changing repository access on GitHub, rerun
-`kenn-forge-github-app install` and restart kenn-forge. Until then, newly granted
-repositories continue on their PAT route, while revoked App access can surface
-as a repository 404. Kenn Forge does not retry a PAT after that 404 because the
-same response can also mean that the repository is absent or private.
+GitHub selects credentials by host and owner. Exact repository credentials win.
+A covered GitHub App handles reads. Owner PATs handle uncovered reads and
+user-attributed writes. Host credentials and the GitHub CLI follow.
 
-Rate limits and sync budgets are accounted by authenticated identity, not by
-configuration entry. PATs issued to the same GitHub user share that user's
-budget and rate state. Different users and App installations have separate
-host-and-identity budgets. Owner mappings are not editable in the UI.
+PATs for the same GitHub user share one rate limit and sync budget. Different
+users and App installations have separate budgets. Restart after routing an
+owner to a PAT from a different GitHub user.
 
-Replacing a PAT with another token for the same GitHub user can be applied from
-a token file. Restart kenn-forge after changing a route to a different GitHub
-user so identity-scoped budgets, mutation availability, and snapshots are
-rebuilt safely.
+### GitHub App reads
 
-Use read access for monitoring. Add write access only when you want kenn-forge to
-comment, approve, close, reopen, edit, or merge.
-
-For GitHub rate-limit isolation, use the companion CLI:
+Use the companion CLI to keep sync reads off your personal rate limit:
 
 ```sh
 kenn-forge-github-app create
+kenn-forge-github-app install
 kenn-forge-github-app list
 ```
 
-The app credentials are written to `[[github_apps]]` in the same config file.
+The CLI writes `[[github_apps]]` entries. Mutations still use a user PAT.
+After changing selected repository access on GitHub, run
+`kenn-forge-github-app install` again and restart Kenn Forge.
 
-### Pull request stacks
-
-```toml
-[pull_requests]
-prefer_github_native_stacks = true
-allow_mid_stack_merges = false
-```
-
-The native-stack option opts into GitHub's read-only stack preview data when it
-is complete and usable; kenn-forge keeps branch-based detection as the fallback.
-It does not create, reorder, or mutate GitHub stacks. Mid-stack merging stays
-blocked by default because merging a later branch first can invalidate earlier
-stack members.
+Selected repository access is a startup routing snapshot. New grants use the
+PAT route until refresh. Revoked App access can return 404, and Kenn Forge does
+not retry that response with a PAT because 404 can also mean missing or private.
 
 ## Activity defaults
 
@@ -178,10 +133,9 @@ default_branch_retention_days = 90
 default_branch_max_commits = 5000
 ```
 
-These settings control the initial Activity feed state and how much
-default-branch commit activity is retained locally.
+These values set the initial Activity view and local default-branch retention.
 
-## Modes
+## App modes
 
 ```toml
 [modes]
@@ -195,14 +149,12 @@ reviews = true
 workspaces = true
 ```
 
-Set a mode to `false` to hide it from the app. Kata and Docs default to hidden
-because they depend on external or local sources.
+Set a mode to `false` to hide it. Kata and Docs start hidden because they need
+external or local sources.
 
 ## Workspace agents
 
-Workspace launch cards include the built-in agents (Codex, Claude, Gemini,
-opencode, aider) that are found on `PATH`. Add custom agents or override a
-built-in command with `[[agents]]` entries:
+Kenn Forge detects built-in agents on `PATH`. Add or override an agent with:
 
 ```toml
 [[agents]]
@@ -211,11 +163,11 @@ label = "Review Agent"
 command = ["review-agent", "--fast"]
 ```
 
-Custom agents are also editable in the app under Settings → Agents.
+You can also edit agents under **Settings → Agents**.
 
 ## Docs folders
 
-Register markdown folders from the CLI:
+Register local Markdown folders from the CLI:
 
 ```sh
 kenn-forge docs add-folder --name Notes ~/notes
@@ -223,7 +175,7 @@ kenn-forge docs list-folders
 kenn-forge docs remove-folder notes
 ```
 
-This writes `[[doc_folders]]` entries:
+The equivalent config is:
 
 ```toml
 [[doc_folders]]
@@ -233,15 +185,52 @@ path = "/Users/you/notes"
 daemon = "kata-main"
 ```
 
-`daemon` is optional. Set it when task references in that folder must always
-open against one Kata daemon instead of the currently selected daemon.
+`daemon` is optional. Set it when task links in this folder always belong to
+one Kata daemon.
+
+## Server and storage
+
+```toml
+sync_interval = "5m"
+host = "127.0.0.1"
+port = 8091
+base_path = "/"
+```
+
+- `sync_interval` controls provider refreshes.
+- `host` and `port` set the listener.
+- `base_path` adds a URL prefix behind a reverse proxy.
+- `data_dir` moves app data while leaving config under `KENN_FORGE_HOME`.
+
+For a trusted reverse proxy or a larger SSE replay window:
+
+```toml
+allowed_hosts = ["forge.example.com", "proxy.example.com:8091"]
+trust_reverse_proxy = true
+sse_buffer_size = 256
+```
+
+`allowed_hosts` accepts exact host and port values. A trusted proxy must
+present accepted direct and forwarded hosts. `sse_buffer_size` defaults to 256
+and accepts 16 through 16384.
+
+## Pull request stacks
+
+```toml
+[pull_requests]
+prefer_github_native_stacks = true
+allow_mid_stack_merges = false
+```
+
+Native GitHub stack data improves read-only detection when complete. Branch
+relationships remain the fallback. Kenn Forge does not create or reorder
+stacks. Mid-stack merges stay blocked by default.
 
 ## Telemetry
 
-kenn-forge sends limited anonymous telemetry by default: daemon activity, app
-load view names, version, commit, OS/arch, and an anonymous install ID.
-
-It does not send repo names, PR or issue content, tokens, usernames, hostnames,
+Kenn Forge sends limited anonymous telemetry by default: daemon activity, app
+view names, version, commit, OS and architecture, and an anonymous install ID.
+It does not send repository names, item content, tokens, usernames, hostnames,
 or paths.
 
 Disable telemetry with:

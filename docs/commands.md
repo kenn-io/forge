@@ -1,74 +1,62 @@
 # Commands
 
-## Serve the app
+Run `kenn-forge --help` for the complete command tree. Most commands accept
+`--config`, `--server`, and `--timeout` where they apply.
+
+## Start and inspect the daemon
 
 ```sh
 kenn-forge
 kenn-forge serve
-kenn-forge serve -config /path/to/config.toml
-```
-
-Without a subcommand, `kenn-forge` starts the daemon and web UI.
-
-Use the idempotent background lifecycle when a caller needs to ensure the app
-is available without treating an existing compatible process as an error:
-
-```sh
+kenn-forge serve --config /path/to/config.toml
 kenn-forge start --background
-kenn-forge start --background --config /path/to/config.toml
+kenn-forge status
+kenn-forge status --json
 ```
 
-The command waits for the ready daemon identity before returning. Direct
-foreground starts retain their duplicate-process error behavior. Background
-startup requires a loopback listener. It verifies the recorded endpoint with a
-credential-free challenge before reusing the process, including when general
-API authentication is disabled.
+`kenn-forge` and `kenn-forge serve` run in the foreground. Background start
+returns after the daemon publishes its ready identity. It requires a loopback
+listener and safely reuses a compatible running process.
 
-## Version
+Direct foreground starts still reject a second process using the same data
+directory.
+
+## Check build information
 
 ```sh
 kenn-forge version
 kenn-forge version --json
 ```
 
-Prints the version, commit, and build date. Use `--json` for fleet inventory
-and other integrations. The JSON contract is a single object written to stdout:
+The JSON object contains `name`, `version`, `commit`, and `buildDate`.
+`buildDate` is a UTC RFC3339 timestamp or `unknown` for an uninjected build.
+This command does not read config or connect to a daemon.
 
-| Field | Type | Description |
-| --- | --- | --- |
-| `name` | string | Canonical tool name, always `kenn-forge` |
-| `version` | string | Semantic version for a release build; development identifier otherwise |
-| `commit` | string | Build commit identifier |
-| `buildDate` | string | UTC RFC3339 timestamp for a release build; `unknown` when not injected |
+## Query and sync data
 
-The command does not read configuration, connect to a daemon, or require a
-workspace.
-
-## Status
+The CLI includes commands for `activity`, `issues`, `pulls`, `repos`,
+`repo-summaries`, `stacks`, `workspaces`, `rate-limits`, and `sync`. Use the
+command help before scripting an output shape:
 
 ```sh
-kenn-forge status
-kenn-forge status -json
-kenn-forge status -config /path/to/config.toml
+kenn-forge pulls --help
+kenn-forge sync --help
 ```
 
-Reports whether a kenn-forge daemon is running.
-
-## API relay
+## Relay an API request
 
 ```sh
-kenn-forge api GET /api/v1/pulls
-kenn-forge api POST /api/v1/sync
+kenn-forge api list
 kenn-forge api GET /api/v1/version
+kenn-forge api POST /api/v1/sync
+kenn-forge api -i GET /api/v1/pulls
 ```
 
-`kenn-forge api` discovers the running daemon from the selected config and
-relays one request. Use `-i` to include the HTTP status line, `--timeout` to
-bound the request, and `--config` when the daemon uses another config file.
-Non-2xx responses return a distinct failure exit code while preserving the
-response body.
+`kenn-forge api` discovers the selected daemon and supplies its local
+credential. Use `--data @-` to read a request body from stdin. Exit status 0
+means 2xx, 1 means another HTTP status, and 2 means no request was made.
 
-## Historical activity archive
+## Manage historical archives
 
 ```sh
 kenn-forge archive start --all
@@ -79,33 +67,21 @@ kenn-forge archive report --days 7
 kenn-forge archive report --start 2026-07-01 --end 2026-07-07 --verbose
 ```
 
-Archive collection runs in the background within each provider host's normal
-sync budget. Status reports `current`, `partial`, or blocked work honestly; a
-provider that cannot supply a required dataset remains partial rather than
-being treated as complete.
+Use repeated `--repo` flags for multiple repositories. Reports default to
+Markdown. Add `--format json` or `--output PATH` when needed.
 
-Reports use only kenn-forge's local archive, so they make no provider requests,
-but the kenn-forge daemon must be running. `--days` uses rolling 24-hour UTC
-periods. Date-only ranges include both named dates; RFC3339 ranges use an
-inclusive start and exclusive end. Reports default to Markdown; use
-`--format json`, `--output PATH`, and repeated fully qualified `--repo` filters
-as needed.
+See [Historical activity archive](archive.md) for coverage and status rules.
 
-Starting from an existing kenn-forge database discovers historical issues, pull
-or merge requests, comments, and supported review activity. No import from an
-older standalone archive is required.
-
-## Config
+## Read configuration
 
 ```sh
 kenn-forge config read port
-kenn-forge config read -config /path/to/config.toml port
+kenn-forge config read --config /path/to/config.toml port
 ```
 
-The current CLI exposes a small read surface. Use the Settings UI or edit the
-TOML file for normal configuration changes.
+Use Settings or edit TOML for normal configuration changes.
 
-## Docs folders
+## Manage Docs folders
 
 ```sh
 kenn-forge docs list-folders
@@ -114,9 +90,9 @@ kenn-forge docs add-folder --id project --daemon kata-main ~/project-docs
 kenn-forge docs remove-folder project
 ```
 
-These commands manage `[[doc_folders]]` in the config file.
+These commands manage `[[doc_folders]]` in the selected config file.
 
-## Agent activity hooks
+## Install agent activity hooks
 
 ```sh
 kenn-forge agent-hook install
@@ -125,11 +101,11 @@ kenn-forge agent-hook uninstall
 kenn-forge agent-hook uninstall --agent codex
 ```
 
-With no `--agent`, install or remove every supported integration. Installed
-hooks forward lifecycle activity to the running daemon; Codex asks for one
-manual review of the installed commands through `/hooks`.
+Without `--agent`, install or remove every supported integration. Installed
+hooks send lifecycle activity to the running daemon. Codex asks you to review
+the installed commands through `/hooks` once.
 
-## GitHub App credentials
+## Manage GitHub App credentials
 
 ```sh
 kenn-forge-github-app create
@@ -140,5 +116,6 @@ kenn-forge-github-app delete
 kenn-forge-github-app open
 ```
 
-Use this companion CLI when you want kenn-forge sync reads to use GitHub App
-installation tokens instead of your personal access token rate limit.
+Use this companion CLI when sync reads should use GitHub App installation
+tokens. Comments, reviews, state changes, and merges still use the user PAT
+chain.

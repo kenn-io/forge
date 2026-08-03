@@ -70,4 +70,7 @@ Repositories panel in Settings. Kenn Forge stores its config and data under
 - [Commands](docs/commands.md)
 - [Troubleshooting](docs/troubleshooting.md)
 
-Kenn Forge is licensed under the [Elastic License 2.0](LICENSE).
+Kenn Forge is licensed under the [Elastic License 2.0](LICENSE). Contributions
+made before the relicense remain available under the MIT License; see
+[NOTICE](NOTICE). Contact [Kenn Software](https://kenn.io) at info@kenn.io for
+commercial licensing.

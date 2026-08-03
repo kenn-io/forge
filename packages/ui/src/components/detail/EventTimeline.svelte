@@ -604,41 +604,55 @@
     return orderEventsForForcePushBoundaries(sourceEvents, orderingSourceEvents);
   }
 
-  // A commit is obsolete once a later force push replaced the lineage it
-  // belongs to. Each boundary contributes an explicit commit-order range:
-  // a push that rewinds to an older known commit only removes the commits
-  // between the new and old heads, while a forward push (or one whose old
-  // head never synced) obsoletes everything up to the commits it replaced.
-  // Grouped mode already communicates this by sorting those commits below
-  // their force-push row, so the ranges only drive the collapsed runs in
-  // strict date order.
-  type ObsoleteCommitRange = {
-    startAfter: number;
-    endAt: number;
-  };
-
-  function obsoleteCommitRanges(orderingSourceEvents: Array<PREvent | IssueEvent>): ObsoleteCommitRange[] {
+  // Grouped mode communicates replaced lineages by sorting commits below
+  // their force-push row. Strict date order instead replays the pushes to
+  // decide which stable commit orders are obsolete after the latest event.
+  // A later after-sha may restore part of a previously removed lineage, so
+  // obsolete state cannot be a permanent union of every removed range.
+  function obsoleteCommitOrders(orderingSourceEvents: Array<PREvent | IssueEvent>): Set<number> {
+    const commitOrders = orderingSourceEvents
+      .filter((event) => event.EventType === "commit")
+      .map(commitOrder);
     const generations = buildForcePushGenerations(buildForcePushBoundaries(orderingSourceEvents));
-    const ranges: ObsoleteCommitRange[] = [];
+    generations.sort((a, b) => a.pushedAt - b.pushedAt || a.eventID - b.eventID);
+
+    const obsolete = new Set<number>();
+    const addThrough = (endAt: number, startAfter = 0): void => {
+      for (const order of commitOrders) {
+        if (order > startAfter && order <= endAt) obsolete.add(order);
+      }
+    };
+    const restoreBetween = (startAt: number, endAt: number): void => {
+      for (const order of commitOrders) {
+        if (order >= startAt && order <= endAt) obsolete.delete(order);
+      }
+    };
+
     for (const generation of generations) {
-      if (generation.beforeCommitID !== undefined) {
-        const rewindsToKnownCommit =
-          generation.afterCommitID !== undefined && generation.afterCommitID < generation.beforeCommitID;
-        ranges.push({
-          startAfter: rewindsToKnownCommit ? generation.afterCommitID ?? 0 : 0,
-          endAt: generation.beforeCommitID,
-        });
+      const before = generation.beforeCommitID;
+      const after = generation.afterCommitID;
+      const restoresObsoleteLineage = after !== undefined && obsolete.has(after);
+
+      if (before !== undefined) {
+        if (restoresObsoleteLineage && after !== undefined) {
+          restoreBetween(Math.min(before, after), Math.max(before, after));
+        }
+        if (after !== undefined && after < before) {
+          addThrough(before, after);
+        } else if (!restoresObsoleteLineage) {
+          addThrough(before);
+        }
         continue;
       }
-      if (generation.effectiveStartAfterCommitID > 0) {
-        ranges.push({ startAfter: 0, endAt: generation.effectiveStartAfterCommitID });
+      if (restoresObsoleteLineage && after !== undefined) {
+        obsolete.delete(after);
+        continue;
+      }
+      if (!restoresObsoleteLineage && generation.effectiveStartAfterCommitID > 0) {
+        addThrough(generation.effectiveStartAfterCommitID);
       }
     }
-    return ranges;
-  }
-
-  function isObsoleteCommitOrder(order: number, ranges: ObsoleteCommitRange[]): boolean {
-    return ranges.some((range) => order > range.startAfter && order <= range.endAt);
+    return obsolete;
   }
 
   function collapseObsoleteCommitEntries(
@@ -646,8 +660,8 @@
     orderingSourceEvents: Array<PREvent | IssueEvent>,
     keyPrefix: string,
   ): TimelineEntry[] {
-    const ranges = obsoleteCommitRanges(orderingSourceEvents);
-    if (ranges.length === 0) return entries;
+    const obsoleteOrders = obsoleteCommitOrders(orderingSourceEvents);
+    if (obsoleteOrders.size === 0) return entries;
 
     const collapsed: TimelineEntry[] = [];
     let run: Array<PREvent | IssueEvent> = [];
@@ -664,7 +678,7 @@
     };
 
     for (const entry of entries) {
-      if (entry.event.EventType === "commit" && isObsoleteCommitOrder(commitOrder(entry.event), ranges)) {
+      if (entry.event.EventType === "commit" && obsoleteOrders.has(commitOrder(entry.event))) {
         run = [...run, entry.event];
         continue;
       }

@@ -3610,8 +3610,8 @@ func (m *Manager) Get(
 	return m.db.GetWorkspace(ctx, id)
 }
 
-// GetByMRForProvider returns the workspace for a specific provider-scoped MR,
-// or nil.
+// GetByMRForProvider returns the workspace represented on a provider-scoped
+// MR detail surface, or nil.
 func (m *Manager) GetByMRForProvider(
 	ctx context.Context,
 	provider, platformHost, owner, name string,
@@ -3621,7 +3621,7 @@ func (m *Manager) GetByMRForProvider(
 	if err != nil {
 		return nil, err
 	}
-	return m.db.GetWorkspaceByMRForProvider(
+	return m.db.GetWorkspaceLinkedToMRForProvider(
 		ctx, string(kind), platformHost, owner, name, mrNumber,
 	)
 }

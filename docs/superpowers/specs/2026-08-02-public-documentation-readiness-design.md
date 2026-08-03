@@ -69,6 +69,14 @@ The remaining pages keep their current subject boundaries:
 
 Navigation labels should use the terms shown in the UI. Cross-links should
 move readers to the next useful task without repeating the destination page.
+Fleet belongs under an **Advanced / experimental** navigation group rather
+than beside the main setup and workflow pages. Its URL and existing links stay
+unchanged.
+
+On first load, Zensical should follow the browser's `prefers-color-scheme`
+value. A reader's explicit light or dark selection overrides that default and
+persists across visits. The initial page paint must use the selected scheme so
+dark-mode readers do not see a light flash.
 
 ## Content Rules
 
@@ -147,6 +155,10 @@ Verification covers source text, generated artifacts, and the rendered site:
 - Inspect the rendered Zensical site at desktop and phone widths.
 - Check navigation, internal links, code blocks, headings, image paths, alt
   text, and theme switching in rendered output.
+- Confirm Fleet renders under **Advanced / experimental**, not as a primary
+  navigation item.
+- Confirm first paint follows light and dark browser preferences, then confirm
+  an explicit theme choice persists and takes priority.
 - Confirm scrolling does not change the Zensical header brand or font.
 - Confirm public repository and release links target `kenn-io/forge`.
 - Confirm generated screenshot assets remain untracked.

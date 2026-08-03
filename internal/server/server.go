@@ -781,6 +781,7 @@ func newServer(
 		roborevConfig = &config.Config{}
 	}
 	s.roborevRepositories = newRoborevRepositoryProbe(
+		s.bgCtx,
 		roborevConfig.RoborevEndpoint(),
 		workspaceConfigSnapshot(cfg, nil).KnownPlatformHosts,
 	)

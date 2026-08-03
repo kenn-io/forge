@@ -337,6 +337,71 @@ describe("RepoSummaryPage", () => {
     expect(screen.queryByRole("img", { name: "GitHub" })).toBeNull();
   });
 
+  it("shows the Roborev hook indicator only on the matching repository card", async () => {
+    const widgets = repoSummaryFixture({
+      provider: "github",
+      platformHost: "github.com",
+      owner: "Acme",
+      name: "Widgets",
+    });
+    const tools = repoSummaryFixture({
+      provider: "github",
+      platformHost: "github.com",
+      owner: "acme",
+      name: "tools",
+    });
+    mockGet.mockImplementation((path: string) => {
+      if (path === "/roborev/configured-repositories") {
+        return Promise.resolve({
+          data: {
+            repositories: [
+              {
+                provider: "github",
+                platform_host: "github.com",
+                repo_path: "acme/widgets",
+                owner: "acme",
+                name: "widgets",
+              },
+            ],
+          },
+          error: undefined,
+        });
+      }
+      return Promise.resolve({ data: [widgets, tools], error: undefined });
+    });
+
+    render(RepoSummaryPage);
+
+    await screen.findByRole("button", { name: /Acme\s*\/\s*Widgets/ });
+    const indicator = await screen.findByRole("img", { name: "Roborev hooks installed" });
+    expect(indicator.getAttribute("title")).toBe("Roborev hooks installed");
+    expect(indicator.closest(".repo-card")?.querySelector(".repo-card__identity")?.textContent).toMatch(
+      /Acme\s*\/\s*Widgets/,
+    );
+    expect(screen.getAllByRole("img", { name: "Roborev hooks installed" })).toHaveLength(1);
+  });
+
+  it("keeps repository cards visible when the optional Roborev lookup fails", async () => {
+    const widgets = repoSummaryFixture({
+      provider: "github",
+      platformHost: "github.com",
+      owner: "acme",
+      name: "widgets",
+    });
+    mockGet.mockImplementation((path: string) => {
+      if (path === "/roborev/configured-repositories") {
+        return Promise.resolve({ data: undefined, error: { detail: "unavailable" } });
+      }
+      return Promise.resolve({ data: [widgets], error: undefined });
+    });
+
+    render(RepoSummaryPage);
+
+    expect(await screen.findByRole("button", { name: /acme\s*\/\s*widgets/ })).toBeTruthy();
+    expect(screen.queryByRole("img", { name: "Roborev hooks installed" })).toBeNull();
+    expect(screen.queryByText("Couldn’t load repositories")).toBeNull();
+  });
+
   it("keeps cached output visible when a sync issue exists", async () => {
     mockGet.mockResolvedValue({
       data: [

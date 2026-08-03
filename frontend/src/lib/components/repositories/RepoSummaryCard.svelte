@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Button, Chip, operationGate } from "@kenn-forge/ui";
   import { Card, formatRelativeTime, type ChipTone } from "@kenn-io/kit-ui";
-  import { ExternalLinkIcon, FolderTreeIcon } from "../../icons.js";
+  import { BotIcon, ExternalLinkIcon, FolderTreeIcon } from "../../icons.js";
   import ProviderIcon from "../provider/ProviderIcon.svelte";
   import RepoMetricGrid from "./RepoMetricGrid.svelte";
   import {
@@ -27,6 +27,7 @@
   interface Props {
     summary: RepoSummaryCard;
     showProviderIcon?: boolean;
+    roborevConfigured?: boolean;
     onviewprs: () => void;
     onviewissues: () => void;
     onviewrepo: () => void;
@@ -37,6 +38,7 @@
   let {
     summary,
     showProviderIcon = false,
+    roborevConfigured = false,
     onviewprs,
     onviewissues,
     onviewrepo,
@@ -379,6 +381,16 @@
     {:else}
       <span>Not synced yet</span>
     {/if}
+    {#if roborevConfigured}
+      <span
+        class="repo-card__roborev"
+        role="img"
+        aria-label="Roborev hooks installed"
+        title="Roborev hooks installed"
+      >
+        <BotIcon size={16} strokeWidth={2} aria-hidden="true" />
+      </span>
+    {/if}
   </footer>
   </Card>
 </article>
@@ -719,6 +731,12 @@
 
   .repo-card__status--error {
     color: var(--accent-red);
+  }
+
+  .repo-card__roborev {
+    display: inline-flex;
+    margin-left: auto;
+    color: var(--text-secondary);
   }
 
   :global(.chip--release) {

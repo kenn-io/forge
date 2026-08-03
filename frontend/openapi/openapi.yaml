@@ -6704,6 +6704,8 @@ components:
           format: uri
           readOnly: true
           type: string
+        complete:
+          type: boolean
         repositories:
           items:
             $ref: "#/components/schemas/RoborevConfiguredRepositoryResponse"
@@ -6712,6 +6714,7 @@ components:
             - "null"
       required:
         - repositories
+        - complete
       type: object
     RoborevConfiguredRepositoryResponse:
       additionalProperties: false

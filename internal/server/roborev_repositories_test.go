@@ -5,10 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -112,6 +115,46 @@ func TestRoborevRepositoryProbeCoalescesConcurrentRequests(t *testing.T) {
 	assert.Equal(int32(1), calls.Load())
 }
 
+func TestRoborevRepositoryProbeCallerCancellationDoesNotPoisonWaiters(t *testing.T) {
+	require := require.New(t)
+	started := make(chan struct{})
+	release := make(chan struct{})
+	waiterJoined := make(chan struct{})
+	probe := newRoborevRepositoryProbeWithDeps(nil, roborevRepositoryProbeDeps{
+		now:               time.Now,
+		onWaitForInFlight: func() { close(waiterJoined) },
+		loadInventory: func(ctx context.Context) ([]roborevTrackedRepository, error) {
+			close(started)
+			select {
+			case <-release:
+				return []roborevTrackedRepository{}, nil
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		},
+		resolveHookPath: func(context.Context, string) (string, error) { return "", nil },
+		inspectHook:     func(string) (bool, error) { return false, nil },
+	})
+
+	leaderCtx, cancelLeader := context.WithCancel(t.Context())
+	leader := make(chan error, 1)
+	go func() {
+		_, err := probe.configuredRepositories(leaderCtx)
+		leader <- err
+	}()
+	<-started
+	waiter := make(chan error, 1)
+	go func() {
+		_, err := probe.configuredRepositories(t.Context())
+		waiter <- err
+	}()
+	<-waiterJoined
+	cancelLeader()
+	require.ErrorIs(<-leader, context.Canceled)
+	close(release)
+	require.NoError(<-waiter)
+}
+
 func TestRoborevRepositoryProbeBoundsHookResolution(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -200,6 +243,10 @@ func TestInspectRoborevPostCommitHook(t *testing.T) {
 		{name: "legacy variable command", content: "#!/bin/sh\n\"$ROBOREV\" enqueue --quiet\n", mode: 0o755, want: true},
 		{name: "legacy direct command", content: "#!/bin/sh\nroborev enqueue --quiet\n", mode: 0o755, want: true},
 		{name: "unrelated executable", content: "#!/bin/sh\necho hello\n", mode: 0o755, want: false},
+		{name: "partial post commit command", content: "#!/bin/sh\nroborev post-commit-disabled\n", mode: 0o755, want: false},
+		{name: "partial enqueue command", content: "#!/bin/sh\nroborev enqueue-old\n", mode: 0o755, want: false},
+		{name: "commented command", content: "#!/bin/sh\n# roborev post-commit\n", mode: 0o755, want: false},
+		{name: "command in string", content: "#!/bin/sh\necho 'roborev post-commit'\n", mode: 0o755, want: false},
 		{name: "non executable", content: "#!/bin/sh\nroborev post-commit\n", mode: 0o644, want: runtime.GOOS == "windows"},
 	}
 	for _, tt := range tests {
@@ -224,6 +271,54 @@ func TestInspectRoborevPostCommitHook(t *testing.T) {
 	assert.False(directory)
 }
 
+func TestLoadRoborevRepositoryInventoryValidatesCompleteEnvelope(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want []roborevTrackedRepository
+	}{
+		{
+			name: "valid",
+			body: `{"repos":[{"root_path":"/repo","identity":"https://github.com/acme/widgets.git"}],"total_count":1}`,
+			want: []roborevTrackedRepository{{RootPath: "/repo", Identity: "https://github.com/acme/widgets.git"}},
+		},
+		{name: "valid null repos", body: `{"repos":null,"total_count":0}`, want: []roborevTrackedRepository{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = io.WriteString(w, tt.body)
+			}))
+			defer server.Close()
+			got, err := loadRoborevRepositoryInventory(server.Client(), server.URL)(t.Context())
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+
+	invalid := []string{
+		`{}`,
+		`{"repos":[],"total_count":1}`,
+		`{"repos":[{"root_path":"/repo"}],"total_count":1}`,
+		`{"repos":[],"total_count":0} trailing`,
+	}
+	for _, body := range invalid {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = io.WriteString(w, body)
+		}))
+		_, err := loadRoborevRepositoryInventory(server.Client(), server.URL)(t.Context())
+		server.Close()
+		require.Error(t, err, body)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, strings.Repeat(" ", roborevInventoryMaxBytes+1))
+	}))
+	defer server.Close()
+	_, err := loadRoborevRepositoryInventory(server.Client(), server.URL)(t.Context())
+	assert.Error(t, err, "oversized inventory must be rejected")
+}
+
 func TestListRoborevConfiguredRepositories(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -243,13 +338,45 @@ func TestListRoborevConfiguredRepositories(t *testing.T) {
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 	var body struct {
 		Repositories []roborevConfiguredRepositoryResponse `json:"repositories"`
+		Complete     bool                                  `json:"complete"`
 	}
 	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
 	require.Len(body.Repositories, 1)
+	assert.True(body.Complete)
 	assert.Equal("github", body.Repositories[0].Provider)
 	assert.Equal("github.com", body.Repositories[0].PlatformHost)
 	assert.Equal("acme/widgets", body.Repositories[0].RepoPath)
 	assert.NotContains(rr.Body.String(), "/checkout/widgets")
+}
+
+func TestListRoborevConfiguredRepositoriesMarksPartialResultsIncomplete(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	srv := setupTestServerWithRoborev(t, "http://127.0.0.1:1")
+	srv.roborevRepositories = newRoborevRepositoryProbeWithDeps(nil, roborevRepositoryProbeDeps{
+		now: time.Now,
+		loadInventory: func(context.Context) ([]roborevTrackedRepository, error) {
+			return []roborevTrackedRepository{
+				{RootPath: "/configured", Identity: "https://github.com/acme/widgets.git"},
+				{RootPath: "/unresolved", Identity: "https://github.com/acme/tools.git"},
+			}, nil
+		},
+		resolveHookPath: func(_ context.Context, root string) (string, error) {
+			if root == "/unresolved" {
+				return "", errors.New("temporary git failure")
+			}
+			return "/hooks/post-commit", nil
+		},
+		inspectHook: func(string) (bool, error) { return true, nil },
+	})
+
+	rr := doJSON(t, srv, http.MethodGet, "/api/v1/roborev/configured-repositories", nil)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	var body roborevConfiguredRepositoriesResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
+	require.Len(body.Repositories, 1)
+	assert.Equal("acme/widgets", body.Repositories[0].RepoPath)
+	assert.False(body.Complete)
 }
 
 func TestListRoborevConfiguredRepositoriesReturnsTypedUnavailableWithoutBlockingSummaries(t *testing.T) {

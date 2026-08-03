@@ -7308,6 +7308,7 @@ export interface components {
              * @example /api/v1/schemas/RoborevConfiguredRepositoriesResponse.json
              */
             readonly $schema?: string;
+            complete: boolean;
             repositories: components["schemas"]["RoborevConfiguredRepositoryResponse"][] | null;
         };
         RoborevConfiguredRepositoryResponse: {

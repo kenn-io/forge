@@ -6,6 +6,7 @@ import type {
   RepoSummaryIssue,
   RepoSummaryReleaseResponse,
 } from "@kenn-forge/ui/api/types";
+import { canonicalProvider } from "@kenn-forge/ui/api/provider-routes";
 
 export type RepoSummaryCard = Omit<RepoSummary, "active_authors" | "recent_issues" | "commit_timeline" | "releases"> & {
   active_authors: RepoSummaryAuthor[];
@@ -79,7 +80,15 @@ export function repoKey(summary: {
 export function repoStateKey(summary: {
   repo: { provider: string; platform_host: string; repo_path: string };
 }): string {
-  return `${summary.repo.provider}|${summary.repo.platform_host}/${summary.repo.repo_path}`;
+  return providerRepoStateKey(summary.repo);
+}
+
+export function providerRepoStateKey(repo: { provider: string; platform_host: string; repo_path: string }): string {
+  const provider = canonicalProvider(repo.provider.trim());
+  const host = repo.platform_host.trim().toLowerCase();
+  const rawPath = repo.repo_path.trim().replace(/^\/+|\/+$/g, "");
+  const path = provider === "github" ? rawPath.toLowerCase() : rawPath;
+  return `${provider}|${host}/${path}`;
 }
 
 export function shouldShowPlatformHost(summary: {

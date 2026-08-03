@@ -414,6 +414,7 @@ const config = {
       "@lucide/svelte/icons/arrow-up-right",
       "@lucide/svelte/icons/ban",
       "@lucide/svelte/icons/box",
+      "@lucide/svelte/icons/bot",
       "@lucide/svelte/icons/calendar",
       "@lucide/svelte/icons/calendar-clock",
       "@lucide/svelte/icons/calendar-days",

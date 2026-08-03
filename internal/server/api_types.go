@@ -65,6 +65,7 @@ type roborevConfiguredRepositoryResponse struct {
 
 type roborevConfiguredRepositoriesResponse struct {
 	Repositories []roborevConfiguredRepositoryResponse `json:"repositories"`
+	Complete     bool                                  `json:"complete"`
 }
 
 type repoSummaryResponse struct {

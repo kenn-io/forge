@@ -32,7 +32,8 @@ GitHub repositories can continue to omit `repo_path` when the path is exactly
 `owner/name`.
 
 Forgejo and Gitea use GitHub-like two-segment repository paths. Preserve
-provider-canonical owner/name casing; do not lowercase them like GitLab.
+provider-canonical repository-path casing unless provider metadata explicitly
+opts into case folding (`internal/platform/metadata.go::LowercaseRepoNames`).
 `repo_path` is normally `owner/name` and is primarily a canonicalization aid for
 URL-parsed config or provider responses.
 

@@ -124,6 +124,11 @@ Reach for a singleflight slot whenever multiple in-process call sites
 hit the same upstream resource. Prefer dedup over retry — it removes
 the cause, retry just absorbs the effect.
 
+Roborev configured-repository discovery retains successful inventory and
+definitive hook results for the process lifetime; only transient failures retry
+after cooldown. Shared refresh work is lifecycle-bound and independently
+cancelable by each waiter (`internal/server/roborev_repositories.go::roborevRepositoryProbe`).
+
 ## Tests
 
 Test the policy decisions, not the library. For retry that means the

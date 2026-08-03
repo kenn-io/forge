@@ -109,19 +109,27 @@ func ParseRemoteURLWithKnownPlatforms(remote string, known []KnownPlatformHost) 
 	if owner == "" || name == "" {
 		return nil
 	}
+	if platformpkg.LowercaseRepoNames(platformpkg.Kind(platform)) {
+		owner = strings.ToLower(owner)
+		name = strings.ToLower(name)
+	}
 
 	return &db.PlatformIdentity{
 		Platform: platform,
 		Host:     host,
-		Owner:    strings.ToLower(owner),
-		Name:     strings.ToLower(name),
+		Owner:    owner,
+		Name:     name,
 	}
 }
 
 func resolvePlatform(host string, known []KnownPlatformHost) (string, bool) {
 	for _, candidate := range known {
 		if strings.EqualFold(candidate.Host, host) && strings.TrimSpace(candidate.Platform) != "" {
-			return strings.ToLower(strings.TrimSpace(candidate.Platform)), true
+			kind, err := platformpkg.NormalizeKind(candidate.Platform)
+			if err != nil {
+				return "", false
+			}
+			return string(kind), true
 		}
 	}
 	for _, kind := range []platformpkg.Kind{

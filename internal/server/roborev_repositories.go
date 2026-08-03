@@ -25,7 +25,7 @@ func (s *Server) listRoborevConfiguredRepositories(
 	ctx context.Context,
 	_ *struct{},
 ) (*roborevConfiguredRepositoriesOutput, error) {
-	repositories, err := s.roborevRepositories.configuredRepositories(ctx)
+	repositories, complete, err := s.roborevRepositories.configuredRepositorySnapshot(ctx)
 	if err != nil {
 		return nil, httpapi.ServiceUnavailable("roborev repository configuration unavailable")
 	}
@@ -34,6 +34,7 @@ func (s *Server) listRoborevConfiguredRepositories(
 	}
 	return &roborevConfiguredRepositoriesOutput{Body: roborevConfiguredRepositoriesResponse{
 		Repositories: repositories,
+		Complete:     complete,
 	}}, nil
 }
 
@@ -42,6 +43,8 @@ const (
 	roborevProbeRetryCooldown = 30 * time.Second
 	roborevInventoryMaxBytes  = 2 << 20
 	roborevHookMaxBytes       = 64 << 10
+	roborevRefreshTimeout     = 2 * time.Minute
+	roborevGitProbeTimeout    = 5 * time.Second
 )
 
 type roborevTrackedRepository struct {
@@ -50,8 +53,8 @@ type roborevTrackedRepository struct {
 }
 
 type roborevRepositoryInventory struct {
-	Repos      []roborevTrackedRepository `json:"repos"`
-	TotalCount int                        `json:"total_count"`
+	Repos      json.RawMessage `json:"repos"`
+	TotalCount *int            `json:"total_count"`
 }
 
 type roborevRepositoryProbeDeps struct {
@@ -71,6 +74,7 @@ type roborevCheckoutProbeState struct {
 
 type roborevRepositoryProbe struct {
 	mu                  sync.Mutex
+	lifecycleCtx        context.Context
 	knownHosts          []projects.KnownPlatformHost
 	deps                roborevRepositoryProbeDeps
 	inventoryLoaded     bool
@@ -81,11 +85,12 @@ type roborevRepositoryProbe struct {
 }
 
 func newRoborevRepositoryProbe(
+	lifecycleCtx context.Context,
 	endpoint string,
 	knownHosts []projects.KnownPlatformHost,
 ) *roborevRepositoryProbe {
 	client := &http.Client{Timeout: 2 * time.Second}
-	return newRoborevRepositoryProbeWithDeps(knownHosts, roborevRepositoryProbeDeps{
+	return newRoborevRepositoryProbeWithContextAndDeps(lifecycleCtx, knownHosts, roborevRepositoryProbeDeps{
 		now:             time.Now,
 		loadInventory:   loadRoborevRepositoryInventory(client, endpoint),
 		resolveHookPath: resolveRoborevHookPath,
@@ -97,19 +102,38 @@ func newRoborevRepositoryProbeWithDeps(
 	knownHosts []projects.KnownPlatformHost,
 	deps roborevRepositoryProbeDeps,
 ) *roborevRepositoryProbe {
+	return newRoborevRepositoryProbeWithContextAndDeps(context.Background(), knownHosts, deps)
+}
+
+func newRoborevRepositoryProbeWithContextAndDeps(
+	lifecycleCtx context.Context,
+	knownHosts []projects.KnownPlatformHost,
+	deps roborevRepositoryProbeDeps,
+) *roborevRepositoryProbe {
 	if deps.now == nil {
 		deps.now = time.Now
 	}
 	return &roborevRepositoryProbe{
-		knownHosts: slices.Clone(knownHosts),
-		deps:       deps,
-		checkouts:  make(map[string]roborevCheckoutProbeState),
+		lifecycleCtx: lifecycleCtx,
+		knownHosts:   slices.Clone(knownHosts),
+		deps:         deps,
+		checkouts:    make(map[string]roborevCheckoutProbeState),
 	}
 }
 
 func (p *roborevRepositoryProbe) configuredRepositories(
 	ctx context.Context,
 ) ([]roborevConfiguredRepositoryResponse, error) {
+	repositories, _, err := p.configuredRepositorySnapshot(ctx)
+	return repositories, err
+}
+
+func (p *roborevRepositoryProbe) configuredRepositorySnapshot(
+	ctx context.Context,
+) ([]roborevConfiguredRepositoryResponse, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, false, err
+	}
 	for {
 		p.mu.Lock()
 		if wait := p.inFlight; wait != nil {
@@ -121,7 +145,7 @@ func (p *roborevRepositoryProbe) configuredRepositories(
 			case <-wait:
 				continue
 			case <-ctx.Done():
-				return nil, ctx.Err()
+				return nil, false, ctx.Err()
 			}
 		}
 
@@ -129,28 +153,39 @@ func (p *roborevRepositoryProbe) configuredRepositories(
 		if !p.inventoryLoaded && p.inventoryErr != nil && now.Before(p.inventoryRetryAfter) {
 			err := p.inventoryErr
 			p.mu.Unlock()
-			return nil, err
+			return nil, false, err
 		}
 		if !p.needsProbeLocked(now) {
 			configured := p.configuredLocked()
+			complete := p.completeLocked()
 			p.mu.Unlock()
-			return configured, nil
+			return configured, complete, nil
 		}
-		p.inFlight = make(chan struct{})
+		wait := make(chan struct{})
+		p.inFlight = wait
 		p.mu.Unlock()
 
-		err := p.refresh(ctx, now)
-
-		p.mu.Lock()
-		close(p.inFlight)
-		p.inFlight = nil
-		configured := p.configuredLocked()
-		p.mu.Unlock()
-		if err != nil {
-			return nil, err
+		go p.runRefresh(now, wait)
+		select {
+		case <-wait:
+			continue
+		case <-ctx.Done():
+			return nil, false, ctx.Err()
 		}
-		return configured, nil
 	}
+}
+
+func (p *roborevRepositoryProbe) runRefresh(now time.Time, wait chan struct{}) {
+	ctx, cancel := context.WithTimeout(p.lifecycleCtx, roborevRefreshTimeout)
+	defer cancel()
+	_ = p.refresh(ctx, now)
+
+	p.mu.Lock()
+	if p.inFlight == wait {
+		close(wait)
+		p.inFlight = nil
+	}
+	p.mu.Unlock()
 }
 
 func (p *roborevRepositoryProbe) needsProbeLocked(now time.Time) bool {
@@ -303,6 +338,18 @@ func (p *roborevRepositoryProbe) configuredLocked() []roborevConfiguredRepositor
 	return result
 }
 
+func (p *roborevRepositoryProbe) completeLocked() bool {
+	if !p.inventoryLoaded {
+		return false
+	}
+	for _, state := range p.checkouts {
+		if !state.definitive {
+			return false
+		}
+	}
+	return true
+}
+
 func roborevCheckoutKey(repository roborevTrackedRepository) string {
 	return repository.RootPath + "\x00" + repository.Identity
 }
@@ -329,16 +376,38 @@ func loadRoborevRepositoryInventory(
 		if response.StatusCode < 200 || response.StatusCode >= 300 {
 			return nil, fmt.Errorf("roborev repository inventory returned status %d", response.StatusCode)
 		}
-		var inventory roborevRepositoryInventory
-		reader := io.LimitReader(response.Body, roborevInventoryMaxBytes+1)
-		if err := json.NewDecoder(reader).Decode(&inventory); err != nil {
+		content, err := io.ReadAll(io.LimitReader(response.Body, roborevInventoryMaxBytes+1))
+		if err != nil || len(content) > roborevInventoryMaxBytes {
 			return nil, errors.New("decode roborev repository inventory")
 		}
-		return inventory.Repos, nil
+		var inventory roborevRepositoryInventory
+		if err := json.Unmarshal(content, &inventory); err != nil || inventory.Repos == nil || inventory.TotalCount == nil {
+			return nil, errors.New("decode roborev repository inventory")
+		}
+		var repositories []roborevTrackedRepository
+		if err := json.Unmarshal(inventory.Repos, &repositories); err != nil {
+			return nil, errors.New("decode roborev repository inventory")
+		}
+		if repositories == nil {
+			repositories = []roborevTrackedRepository{}
+		}
+		if *inventory.TotalCount != len(repositories) {
+			return nil, errors.New("decode roborev repository inventory")
+		}
+		for i := range repositories {
+			repositories[i].RootPath = strings.TrimSpace(repositories[i].RootPath)
+			repositories[i].Identity = strings.TrimSpace(repositories[i].Identity)
+			if repositories[i].RootPath == "" || repositories[i].Identity == "" {
+				return nil, errors.New("decode roborev repository inventory")
+			}
+		}
+		return repositories, nil
 	}
 }
 
 func resolveRoborevHookPath(ctx context.Context, root string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, roborevGitProbeTimeout)
+	defer cancel()
 	command := procutil.CommandContext(
 		ctx,
 		"git",
@@ -386,13 +455,33 @@ func inspectRoborevPostCommitHook(path string) (bool, error) {
 	}
 	for line := range strings.SplitSeq(strings.ToLower(string(content)), "\n") {
 		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "# roborev post-commit hook") ||
-			strings.HasPrefix(line, "roborev post-commit") ||
-			strings.HasPrefix(line, "\"$roborev\" post-commit") ||
-			strings.HasPrefix(line, "roborev enqueue") ||
-			strings.HasPrefix(line, "\"$roborev\" enqueue") {
+		if strings.HasPrefix(line, "# roborev post-commit hook") {
+			return true, nil
+		}
+		if strings.HasPrefix(line, "#") {
+			continue
+		}
+		if hasShellCommandPrefix(line, "roborev post-commit") ||
+			hasShellCommandPrefix(line, "\"$roborev\" post-commit") ||
+			hasShellCommandPrefix(line, "roborev enqueue") ||
+			hasShellCommandPrefix(line, "\"$roborev\" enqueue") {
 			return true, nil
 		}
 	}
 	return false, nil
+}
+
+func hasShellCommandPrefix(line, prefix string) bool {
+	if !strings.HasPrefix(line, prefix) {
+		return false
+	}
+	if len(line) == len(prefix) {
+		return true
+	}
+	switch line[len(prefix)] {
+	case ' ', '\t', '>', '|', '&', ';':
+		return true
+	default:
+		return false
+	}
 }

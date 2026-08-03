@@ -1,4 +1,5 @@
 export { default as AlertIcon } from "@lucide/svelte/icons/alert-triangle";
+export { default as BotIcon } from "@lucide/svelte/icons/bot";
 export { default as ChevronDownIcon } from "@lucide/svelte/icons/chevron-down";
 export { default as ExternalLinkIcon } from "@lucide/svelte/icons/external-link";
 export { default as FolderTreeIcon } from "@lucide/svelte/icons/folder-tree";

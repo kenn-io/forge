@@ -3721,6 +3721,7 @@ type ResolveItemResponse struct {
 type RoborevConfiguredRepositoriesResponse struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema       *string                                `json:"$schema,omitempty"`
+	Complete     bool                                   `json:"complete"`
 	Repositories *[]RoborevConfiguredRepositoryResponse `json:"repositories"`
 }
 

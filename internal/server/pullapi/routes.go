@@ -456,6 +456,12 @@ func (s *Handler) getPull(ctx context.Context, input *repoNumberInput) (*getPull
 	if err != nil {
 		return nil, err
 	}
+	if err := s.db.RecordHotMergeRequestView(ctx, mr.ID, s.now().UTC()); err != nil {
+		slog.Warn("record hot pull request view",
+			"merge_request_id", mr.ID,
+			"err", err,
+		)
+	}
 
 	return &getPullOutput{Body: body}, nil
 }

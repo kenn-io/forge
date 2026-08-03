@@ -21424,6 +21424,52 @@ func TestAPIGetPullDetailLoaded(t *testing.T) {
 	assertRFC3339UTC(t, *resp2.JSON200.DetailFetchedAt, now)
 }
 
+func TestAPIGetPullDetailRecordsHotView(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+
+	srv, database := setupTestServer(t)
+	seedPR(t, database, "acme", "widget", 1)
+	client := setupTestClient(t, srv)
+
+	repo, err := database.GetRepoByIdentity(
+		ctx,
+		db.GitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	require.NotNil(repo)
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 1)
+	require.NoError(err)
+	require.NotNil(mr)
+
+	resp, err := client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", 1)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+
+	hotIDs, err := database.ListHotMergeRequestIDs(ctx, 10)
+	require.NoError(err)
+	assert.Equal([]int64{mr.ID}, hotIDs)
+
+	closedAt := time.Now().UTC()
+	require.NoError(database.UpdateMRState(
+		ctx,
+		repo.ID,
+		1,
+		string(db.MergeRequestStateClosed),
+		nil,
+		&closedAt,
+	))
+
+	resp, err = client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", 1)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+
+	hotIDs, err = database.ListHotMergeRequestIDs(ctx, 10)
+	require.NoError(err)
+	assert.Empty(hotIDs, "reading a terminal PR must not restore hot membership")
+}
+
 func TestAPIGetPullDetailIncludesDiffSummaryRevisionFields(t *testing.T) {
 	require := require.New(t)
 

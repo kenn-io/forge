@@ -9280,7 +9280,7 @@ func TestWatchedMRsIncludeRecentlyActiveOpenPRs(t *testing.T) {
 	}, got)
 }
 
-func TestWatchedMRsThrottleRecentlyActiveOpenPRsByActivityAge(t *testing.T) {
+func TestWatchedMRsUsePersistedHotAndWarmCadences(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -9295,8 +9295,8 @@ func TestWatchedMRsThrottleRecentlyActiveOpenPRsByActivityAge(t *testing.T) {
 	})
 	require.NoError(err)
 
-	seedMR := func(number int, lastActivity time.Time, detailFetchedAt *time.Time) {
-		_, upsertErr := d.UpsertMergeRequest(ctx, &db.MergeRequest{
+	seedMR := func(number int, lastActivity time.Time, detailFetchedAt *time.Time) int64 {
+		id, upsertErr := d.UpsertMergeRequest(ctx, &db.MergeRequest{
 			RepoID: repoID, PlatformID: int64(number), Number: number,
 			Title: "PR", Author: "octo", State: db.MergeRequestStateOpen,
 			HeadBranch: "feature", BaseBranch: "main",
@@ -9305,15 +9305,23 @@ func TestWatchedMRsThrottleRecentlyActiveOpenPRsByActivityAge(t *testing.T) {
 			DetailFetchedAt: detailFetchedAt,
 		})
 		require.NoError(upsertErr)
+		return id
 	}
 	hotNotDue := now.Add(-1 * time.Minute)
 	hotDue := now.Add(-2 * time.Minute)
-	warmNotDue := now.Add(-4 * time.Minute)
-	warmDue := now.Add(-5 * time.Minute)
-	seedMR(1, now.Add(-10*time.Minute), &hotNotDue)
-	seedMR(2, now.Add(-10*time.Minute), &hotDue)
+	warmNotDue := now.Add(-9 * time.Minute)
+	warmDue := now.Add(-10 * time.Minute)
+	hotNotDueID := seedMR(1, now.Add(-10*time.Minute), &hotNotDue)
+	hotDueID := seedMR(2, now.Add(-10*time.Minute), &hotDue)
 	seedMR(3, now.Add(-45*time.Minute), &warmNotDue)
 	seedMR(4, now.Add(-45*time.Minute), &warmDue)
+	hotOutsideWindowID := seedMR(5, now.Add(-5*time.Hour), &hotDue)
+	seedMR(6, now.Add(-45*time.Minute), nil)
+	hotNeverFetchedID := seedMR(7, now.Add(-5*time.Hour), nil)
+	require.NoError(d.RecordHotMergeRequestView(ctx, hotNotDueID, now.Add(-3*time.Minute)))
+	require.NoError(d.RecordHotMergeRequestView(ctx, hotDueID, now.Add(-2*time.Minute)))
+	require.NoError(d.RecordHotMergeRequestView(ctx, hotOutsideWindowID, now.Add(-time.Minute)))
+	require.NoError(d.RecordHotMergeRequestView(ctx, hotNeverFetchedID, now))
 
 	syncer := NewSyncer(
 		map[string]Client{}, d, nil,
@@ -9330,20 +9338,28 @@ func TestWatchedMRsThrottleRecentlyActiveOpenPRsByActivityAge(t *testing.T) {
 	assert.ElementsMatch([]WatchedMR{
 		{
 			Platform: platform.KindGitHub, PlatformHost: "github.com",
-			Owner: "acme", Name: "app", Number: 1,
-		},
-		{
-			Platform: platform.KindGitHub, PlatformHost: "github.com",
 			Owner: "acme", Name: "app", Number: 2,
 		},
 		{
 			Platform: platform.KindGitHub, PlatformHost: "github.com",
 			Owner: "acme", Name: "app", Number: 4,
 		},
+		{
+			Platform: platform.KindGitHub, PlatformHost: "github.com",
+			Owner: "acme", Name: "app", Number: 5,
+		},
+		{
+			Platform: platform.KindGitHub, PlatformHost: "github.com",
+			Owner: "acme", Name: "app", Number: 6,
+		},
+		{
+			Platform: platform.KindGitHub, PlatformHost: "github.com",
+			Owner: "acme", Name: "app", Number: 7,
+		},
 	}, got)
 }
 
-func TestWatchedMRsUseNotificationActivityForHotPRCadence(t *testing.T) {
+func TestWatchedMRsUseNotificationActivityForWarmPRCadence(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -9369,10 +9385,10 @@ func TestWatchedMRsUseNotificationActivityForHotPRCadence(t *testing.T) {
 		})
 		require.NoError(upsertErr)
 	}
-	seedMR(1, db.MergeRequestStateOpen, now.Add(-time.Minute))
-	seedMR(2, db.MergeRequestStateOpen, now.Add(-2*time.Minute))
-	seedMR(3, db.MergeRequestStateOpen, now.Add(-2*time.Minute))
-	seedMR(4, db.MergeRequestStateClosed, now.Add(-2*time.Minute))
+	seedMR(1, db.MergeRequestStateOpen, now.Add(-9*time.Minute))
+	seedMR(2, db.MergeRequestStateOpen, now.Add(-10*time.Minute))
+	seedMR(3, db.MergeRequestStateOpen, now.Add(-10*time.Minute))
+	seedMR(4, db.MergeRequestStateClosed, now.Add(-10*time.Minute))
 
 	notification := func(id string, number int, updatedAt time.Time) db.Notification {
 		return db.Notification{
@@ -9413,10 +9429,6 @@ func TestWatchedMRsUseNotificationActivityForHotPRCadence(t *testing.T) {
 	assert.ElementsMatch([]WatchedMR{
 		{
 			Platform: platform.KindGitHub, PlatformHost: "github.com",
-			Owner: "acme", Name: "app", Number: 1,
-		},
-		{
-			Platform: platform.KindGitHub, PlatformHost: "github.com",
 			Owner: "acme", Name: "app", Number: 2,
 		},
 	}, got)
@@ -9454,6 +9466,93 @@ func TestWatchedMRsNotifyOnceAfterFastSync(t *testing.T) {
 	syncer.syncWatchedMRs(t.Context())
 
 	assert.Equal(1, calls)
+}
+
+func TestSyncWatchedMRsSerializesConcurrentPasses(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	now := time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)
+
+	entered := make(chan struct{}, 2)
+	release := make(chan struct{})
+	var inFlight atomic.Int32
+	var maxInFlight atomic.Int32
+	mc := &mockClient{
+		openPRs:  []*gh.PullRequest{},
+		comments: []*gh.IssueComment{},
+		reviews:  []*gh.PullRequestReview{},
+		commits:  []*gh.RepositoryCommit{},
+		getPullRequestFn: func(
+			_ context.Context,
+			_, _ string,
+			_ int,
+		) (*gh.PullRequest, error) {
+			current := inFlight.Add(1)
+			for observed := maxInFlight.Load(); current > observed; observed = maxInFlight.Load() {
+				if maxInFlight.CompareAndSwap(observed, current) {
+					break
+				}
+			}
+			entered <- struct{}{}
+			<-release
+			inFlight.Add(-1)
+			return buildOpenPR(5, now), nil
+		},
+	}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil,
+		[]RepoRef{{
+			Owner: "acme", Name: "app", PlatformHost: "github.com",
+		}},
+		time.Hour, nil, nil,
+	)
+	syncer.SetWatchInterval(2 * time.Minute)
+	syncer.SetWatchedMRs([]WatchedMR{{
+		Owner: "acme", Name: "app", Number: 5, PlatformHost: "github.com",
+	}})
+
+	firstDone := make(chan struct{})
+	go func() {
+		defer close(firstDone)
+		syncer.SyncWatchedMRs(t.Context())
+	}()
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		require.FailNow("first watched pass did not enter provider work")
+	}
+
+	secondDone := make(chan struct{})
+	secondStarted := make(chan struct{})
+	go func() {
+		defer close(secondDone)
+		close(secondStarted)
+		syncer.SyncWatchedMRs(t.Context())
+	}()
+	<-secondStarted
+
+	secondEntered := false
+	select {
+	case <-entered:
+		secondEntered = true
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(release)
+
+	for name, done := range map[string]<-chan struct{}{
+		"first": firstDone, "second": secondDone,
+	} {
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			require.Failf("watched pass did not finish", "%s pass timed out", name)
+		}
+	}
+
+	assert.False(secondEntered, "a second watched pass entered provider work concurrently")
+	assert.Equal(int32(1), maxInFlight.Load())
 }
 
 func TestWatchedMRsSkipRateLimitedHost(t *testing.T) {

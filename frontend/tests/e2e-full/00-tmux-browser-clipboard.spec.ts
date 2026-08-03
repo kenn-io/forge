@@ -584,7 +584,7 @@ async function dragTerminalCells(page: Page, container: Locator, cellCount: numb
   await page.mouse.up();
 }
 
-async function clickTerminalWithPointerJitter(page: Page, container: Locator): Promise<void> {
+async function clickTerminalWithPointerJitter(page: Page, container: Locator, horizontalJitter = 5): Promise<void> {
   const start = await container.evaluate((element) => {
     const screen = element.querySelector<HTMLElement>(".xterm-screen");
     const textarea = element.querySelector<HTMLElement>(".xterm-helper-textarea");
@@ -603,7 +603,7 @@ async function clickTerminalWithPointerJitter(page: Page, container: Locator): P
   await page.mouse.move(start.x, start.y);
   await beginCapturedPointerGesture(page, container);
   // A physical focus click can slip a few pixels while the button is down.
-  await page.mouse.move(start.x + 5, start.y);
+  await page.mouse.move(start.x + horizontalJitter, start.y);
   await page.mouse.up();
 }
 
@@ -988,7 +988,10 @@ test("visible detail copy wins when focus leaves a pointer-captured terminal", a
   }
 });
 
-test("PR comment copy survives a terminal focus click", async ({ page, browserName }) => {
+test("PR comment copy survives terminal focus jitter at the smallest supported cell geometry", async ({
+  page,
+  browserName,
+}) => {
   test.skip(!hasCommand("git") || !hasCommand("tmux", ["-V"]), "git and tmux are required for the real workspace flow");
   let fallbackWrites: string[] = [];
   if (browserName === "chromium") {
@@ -1002,6 +1005,21 @@ test("PR comment copy survives a terminal focus click", async ({ page, browserNa
   try {
     isolatedServer = await startIsolatedWorkspaceE2EServer();
     api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
+    const settingsResponse = await api.get("/api/v1/settings");
+    expect(settingsResponse.ok()).toBe(true);
+    const settings = (await settingsResponse.json()) as {
+      terminal: Record<string, unknown>;
+    };
+    const saveSettingsResponse = await api.put("/api/v1/settings", {
+      data: {
+        terminal: {
+          ...settings.terminal,
+          font_size: 8,
+          letter_spacing: -2,
+        },
+      },
+    });
+    expect(saveSettingsResponse.ok()).toBe(true);
     const { output, terminal } = await openPullDetailWithPromotedTerminal(page, api, isolatedServer.info.base_url);
 
     await enableTmuxMouseAndRenderMarker(page, terminal, output, "focus click marker");
@@ -1021,7 +1039,12 @@ test("PR comment copy survives a terminal focus click", async ({ page, browserNa
     if (browserName === "firefox") await denyCurrentPageBrowserClipboardWrites(page);
 
     const osc52Count = output.count("\x1b]52;");
-    await clickTerminalWithPointerJitter(page, terminal);
+    const cellWidth = await terminal
+      .locator(".xterm-helper-textarea")
+      .evaluate((element) => element.getBoundingClientRect().width);
+    const subFourPixelJitter = 3;
+    expect(cellWidth).toBeLessThan(subFourPixelJitter);
+    await clickTerminalWithPointerJitter(page, terminal, subFourPixelJitter);
     await expect
       .poll(() => output.count("\x1b]52;"), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS })
       .toBeGreaterThan(osc52Count);

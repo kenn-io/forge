@@ -130,6 +130,7 @@
   const TERMINAL_FONT_WAIT_MS = 300;
   const TERMINAL_FONT_LOAD_GLYPHS = "0MWim@#";
   const TERMINAL_SEQUENCE_CANCEL = new Uint8Array([0x18]);
+  const POINTER_SELECTION_INTENT_MIN_PX = 4;
 
   function isAttachableInitialStatus(status: string | undefined): boolean {
     return status === undefined || status === "running" || status === "starting";
@@ -297,9 +298,15 @@
     const cell = containerEl.querySelector<HTMLElement>(".xterm-helper-textarea")?.getBoundingClientRect();
     if (!cell || cell.width <= 0 || cell.height <= 0) return false;
 
-    const columnsMoved = (event.clientX - pointerOrigin.clientX) / cell.width;
-    const rowsMoved = (event.clientY - pointerOrigin.clientY) / cell.height;
-    return columnsMoved * columnsMoved + rowsMoved * rowsMoved >= 1;
+    const deltaX = event.clientX - pointerOrigin.clientX;
+    const deltaY = event.clientY - pointerOrigin.clientY;
+    const pixelsMovedSquared = deltaX * deltaX + deltaY * deltaY;
+    const columnsMoved = deltaX / cell.width;
+    const rowsMoved = deltaY / cell.height;
+    return (
+      pixelsMovedSquared >= POINTER_SELECTION_INTENT_MIN_PX ** 2 &&
+      columnsMoved * columnsMoved + rowsMoved * rowsMoved >= 1
+    );
   }
 
   function handleWindowPointerMove(event: PointerEvent): void {

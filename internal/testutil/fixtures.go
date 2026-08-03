@@ -289,7 +289,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 
 	// widgets#6: open draft, carol
 	w6Created := now.Add(-3 * 24 * time.Hour)
-	_, err = d.UpsertMergeRequest(ctx, &db.MergeRequest{
+	w6ID, err := d.UpsertMergeRequest(ctx, &db.MergeRequest{
 		RepoID:            widgetsID,
 		PlatformID:        1006,
 		Number:            6,
@@ -798,6 +798,55 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 	})
 	if err != nil {
 		return nil, fmt.Errorf("upsert widgets PR#2 events: %w", err)
+	}
+
+	// widgets PR#6: a rewind force-push removes only the commits after the restored base
+	w6Commit1 := "6666111111111111111111111111111111111111"
+	w6Commit2 := "6666222222222222222222222222222222222222"
+	w6Commit3 := "6666333333333333333333333333333333333333"
+	err = d.UpsertMREvents(ctx, []db.MREvent{
+		{
+			MergeRequestID: w6ID,
+			EventType:      "commit",
+			Author:         "carol",
+			Summary:        w6Commit1,
+			Body:           "dashboard base remains current",
+			MetadataJSON:   `{"commit_order":1,"commit_order_key":1}`,
+			CreatedAt:      w6Created.Add(time.Hour),
+			DedupeKey:      "w6-commit-1",
+		},
+		{
+			MergeRequestID: w6ID,
+			EventType:      "commit",
+			Author:         "carol",
+			Summary:        w6Commit2,
+			Body:           "dashboard filters rewound away",
+			MetadataJSON:   `{"commit_order":2,"commit_order_key":2}`,
+			CreatedAt:      w6Created.Add(2 * time.Hour),
+			DedupeKey:      "w6-commit-2",
+		},
+		{
+			MergeRequestID: w6ID,
+			EventType:      "commit",
+			Author:         "carol",
+			Summary:        w6Commit3,
+			Body:           "dashboard widgets rewound away",
+			MetadataJSON:   `{"commit_order":3,"commit_order_key":3}`,
+			CreatedAt:      w6Created.Add(3 * time.Hour),
+			DedupeKey:      "w6-commit-3",
+		},
+		{
+			MergeRequestID: w6ID,
+			EventType:      "force_push",
+			Author:         "carol",
+			Summary:        "6666333 -> 6666111",
+			MetadataJSON:   fmt.Sprintf(`{"before_sha":%q,"after_sha":%q,"ref":"wip/dashboard"}`, w6Commit3, w6Commit1),
+			CreatedAt:      w6Created.Add(4 * time.Hour),
+			DedupeKey:      "w6-force-push-1",
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("upsert widgets PR#6 events: %w", err)
 	}
 
 	// tools PR#1: 1 comment (alice)

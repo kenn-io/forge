@@ -114,6 +114,17 @@ test.describe("PR timeline filters", () => {
     ]);
   });
 
+  test("collapses only rewound commits from the SQLite-backed timeline", async ({ page }) => {
+    await openPRTimelinePath(page, "/pulls/github/acme/widgets/6");
+    const menu = await openActivityViewMenu(page);
+    await menu.getByRole("button", { name: "Strict date order" }).click();
+
+    await expect(page.getByText("2 commits replaced by a later force push", { exact: true })).toBeVisible();
+    await expect(page.getByText("dashboard base remains current", { exact: true })).toBeVisible();
+    await expect(page.getByText("dashboard filters rewound away", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("dashboard widgets rewound away", { exact: true })).toHaveCount(0);
+  });
+
   test("persists compact activity layout across PR and issue detail views", async ({ page }) => {
     await openPRTimeline(page);
     const menu = await openActivityViewMenu(page);

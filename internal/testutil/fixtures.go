@@ -800,10 +800,12 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 		return nil, fmt.Errorf("upsert widgets PR#2 events: %w", err)
 	}
 
-	// widgets PR#6: repeated force pushes replace, restore, then replace the old lineage again
+	// widgets PR#6: a rewind splits the old lineage before replacement and full-head restoration
 	w6OldCommit1 := "6666a111111111111111111111111111111111"
 	w6OldCommit2 := "6666a222222222222222222222222222222222"
 	w6OldCommit3 := "6666a333333333333333333333333333333333"
+	w6OldCommit4 := "6666a444444444444444444444444444444444"
+	w6OldCommit5 := "6666a555555555555555555555555555555555"
 	w6NewCommit1 := "6666b111111111111111111111111111111111"
 	w6NewCommit2 := "6666b222222222222222222222222222222222"
 	w6NewCommit3 := "6666b333333333333333333333333333333333"
@@ -813,7 +815,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 			EventType:      "commit",
 			Author:         "carol",
 			Summary:        w6OldCommit1,
-			Body:           "dashboard old base displaced again",
+			Body:           "dashboard original base restored",
 			MetadataJSON:   `{"commit_order":1,"commit_order_key":1}`,
 			CreatedAt:      w6Created.Add(time.Hour),
 			DedupeKey:      "w6-old-commit-1",
@@ -823,7 +825,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 			EventType:      "commit",
 			Author:         "carol",
 			Summary:        w6OldCommit2,
-			Body:           "dashboard old filters displaced again",
+			Body:           "dashboard original filters restored",
 			MetadataJSON:   `{"commit_order":2,"commit_order_key":2}`,
 			CreatedAt:      w6Created.Add(2 * time.Hour),
 			DedupeKey:      "w6-old-commit-2",
@@ -833,7 +835,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 			EventType:      "commit",
 			Author:         "carol",
 			Summary:        w6OldCommit3,
-			Body:           "dashboard old widgets displaced again",
+			Body:           "dashboard original widgets restored",
 			MetadataJSON:   `{"commit_order":3,"commit_order_key":3}`,
 			CreatedAt:      w6Created.Add(3 * time.Hour),
 			DedupeKey:      "w6-old-commit-3",
@@ -842,10 +844,30 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 			MergeRequestID: w6ID,
 			EventType:      "commit",
 			Author:         "carol",
-			Summary:        w6NewCommit1,
-			Body:           "dashboard new base current again",
-			MetadataJSON:   `{"commit_order":1,"commit_order_key":4}`,
+			Summary:        w6OldCommit4,
+			Body:           "dashboard original charts restored",
+			MetadataJSON:   `{"commit_order":4,"commit_order_key":4}`,
 			CreatedAt:      w6Created.Add(4 * time.Hour),
+			DedupeKey:      "w6-old-commit-4",
+		},
+		{
+			MergeRequestID: w6ID,
+			EventType:      "commit",
+			Author:         "carol",
+			Summary:        w6OldCommit5,
+			Body:           "dashboard original head restored",
+			MetadataJSON:   `{"commit_order":5,"commit_order_key":5}`,
+			CreatedAt:      w6Created.Add(5 * time.Hour),
+			DedupeKey:      "w6-old-commit-5",
+		},
+		{
+			MergeRequestID: w6ID,
+			EventType:      "commit",
+			Author:         "carol",
+			Summary:        w6NewCommit1,
+			Body:           "dashboard replacement base displaced",
+			MetadataJSON:   `{"commit_order":1,"commit_order_key":6}`,
+			CreatedAt:      w6Created.Add(6 * time.Hour),
 			DedupeKey:      "w6-new-commit-1",
 		},
 		{
@@ -853,9 +875,9 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 			EventType:      "commit",
 			Author:         "carol",
 			Summary:        w6NewCommit2,
-			Body:           "dashboard new filters current again",
-			MetadataJSON:   `{"commit_order":2,"commit_order_key":5}`,
-			CreatedAt:      w6Created.Add(5 * time.Hour),
+			Body:           "dashboard replacement filters displaced",
+			MetadataJSON:   `{"commit_order":2,"commit_order_key":7}`,
+			CreatedAt:      w6Created.Add(7 * time.Hour),
 			DedupeKey:      "w6-new-commit-2",
 		},
 		{
@@ -863,36 +885,36 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 			EventType:      "commit",
 			Author:         "carol",
 			Summary:        w6NewCommit3,
-			Body:           "dashboard new widgets current again",
-			MetadataJSON:   `{"commit_order":3,"commit_order_key":6}`,
-			CreatedAt:      w6Created.Add(6 * time.Hour),
+			Body:           "dashboard replacement widgets displaced",
+			MetadataJSON:   `{"commit_order":3,"commit_order_key":8}`,
+			CreatedAt:      w6Created.Add(8 * time.Hour),
 			DedupeKey:      "w6-new-commit-3",
 		},
 		{
 			MergeRequestID: w6ID,
 			EventType:      "force_push",
 			Author:         "carol",
-			Summary:        "6666a33 -> 6666b33",
-			MetadataJSON:   fmt.Sprintf(`{"before_sha":%q,"after_sha":%q,"ref":"wip/dashboard"}`, w6OldCommit3, w6NewCommit3),
-			CreatedAt:      w6Created.Add(7 * time.Hour),
+			Summary:        "6666a55 -> 6666a33",
+			MetadataJSON:   fmt.Sprintf(`{"before_sha":%q,"after_sha":%q,"ref":"wip/dashboard"}`, w6OldCommit5, w6OldCommit3),
+			CreatedAt:      w6Created.Add(9 * time.Hour),
 			DedupeKey:      "w6-force-push-1",
 		},
 		{
 			MergeRequestID: w6ID,
 			EventType:      "force_push",
 			Author:         "carol",
-			Summary:        "6666b33 -> 6666a33",
-			MetadataJSON:   fmt.Sprintf(`{"before_sha":%q,"after_sha":%q,"ref":"wip/dashboard"}`, w6NewCommit3, w6OldCommit3),
-			CreatedAt:      w6Created.Add(8 * time.Hour),
+			Summary:        "6666a33 -> 6666b33",
+			MetadataJSON:   fmt.Sprintf(`{"before_sha":%q,"after_sha":%q,"ref":"wip/dashboard"}`, w6OldCommit3, w6NewCommit3),
+			CreatedAt:      w6Created.Add(10 * time.Hour),
 			DedupeKey:      "w6-force-push-2",
 		},
 		{
 			MergeRequestID: w6ID,
 			EventType:      "force_push",
 			Author:         "carol",
-			Summary:        "6666a33 -> 6666b33",
-			MetadataJSON:   fmt.Sprintf(`{"before_sha":%q,"after_sha":%q,"ref":"wip/dashboard"}`, w6OldCommit3, w6NewCommit3),
-			CreatedAt:      w6Created.Add(9 * time.Hour),
+			Summary:        "6666b33 -> 6666a55",
+			MetadataJSON:   fmt.Sprintf(`{"before_sha":%q,"after_sha":%q,"ref":"wip/dashboard"}`, w6NewCommit3, w6OldCommit5),
+			CreatedAt:      w6Created.Add(11 * time.Hour),
 			DedupeKey:      "w6-force-push-3",
 		},
 	})

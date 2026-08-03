@@ -14,33 +14,34 @@ proves SQLite-stored metadata reaches the rendered timeline correctly.
 
 ## Design
 
-Replay force pushes in chronological event order and maintain explicit
-per-commit obsolete state keyed by stable commit order. A rewind from a known
-`before_sha` to an earlier known `after_sha` marks only the orders in
-`(after, before]` obsolete. When a later force push points `after_sha` into a
-previously obsolete lineage, clear the restored orders between the current and
-restored heads. Other replacement and missing-anchor cases retain their current
-collapse semantics.
+Replay force pushes in chronological event order while retaining a lineage ID
+for each stable commit order and an obsolete set per lineage. A rewind from a
+known `before_sha` to an earlier known `after_sha` marks only the orders in
+`(after, before]` obsolete without discarding their lineage identity. A
+replacement retires the active lineage and activates the lineage containing its
+`after_sha`.
 
-Use an explicit set rather than normalized interval algebra. Timeline event
-collections are bounded, and the set makes add/remove behavior for restoration
-direct and testable without introducing range-splitting edge cases.
+Restoring a previously obsolete `after_sha` clears every obsolete order in that
+lineage through the restored head. Orders later than the restored head remain
+obsolete, and obsolete orders belonging to other lineages are unchanged. This
+preserves ancestry when a rewind and later replacement split one lineage across
+multiple obsolete ranges.
 
 ## Tests
 
-Add a focused component regression that performs a rewind followed by a force
-push restoring the old head. In strict date order, the commits removed by the
-rewind must initially be candidates for collapse but must render normally after
-the restoration event is included. This test catches any implementation that
-only accumulates obsolete state.
+Add focused component regressions that rewind a lineage, replace it, and restore
+its pre-rewind head. Every ancestor through that head must render normally even
+when the rewind split the lineage into multiple obsolete ranges. A companion
+case restores an intermediate head and verifies that later descendants remain
+obsolete.
 
 Add a dedicated rewind timeline to the existing SQLite-backed widgets PR #6
 fixture. Store real `before_sha` and `after_sha` force-push metadata and literal,
 stable `commit_order_key` values on its commits. Extend the full-stack
 Playwright timeline suite to open that PR, select Strict date order, and verify
-that only the rewound commits are collapsed while the rewind target remains
-visible. Using PR #6 avoids changing the existing force-push ordering fixtures
-and their unrelated assertions.
+that the original lineage is fully restored while the replacement lineage is
+collapsed. Using PR #6 avoids changing the existing force-push ordering
+fixtures and their unrelated assertions.
 
 ## Verification
 

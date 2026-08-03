@@ -607,54 +607,115 @@
   // Grouped mode communicates replaced lineages by sorting commits below
   // their force-push row. Strict date order instead replays the pushes to
   // decide which stable commit orders are obsolete after the latest event.
-  // A later after-sha may restore part of a previously removed lineage, so
-  // obsolete state cannot be a permanent union of every removed range.
+  // Rewinds can split one lineage into multiple obsolete ranges, so replay
+  // preserves lineage identity separately from each range's obsolete state.
   function obsoleteCommitOrders(orderingSourceEvents: Array<PREvent | IssueEvent>): Set<number> {
-    const commitOrders = orderingSourceEvents
-      .filter((event) => event.EventType === "commit")
-      .map(commitOrder);
+    const commitOrders = [
+      ...new Set(
+        orderingSourceEvents
+          .filter((event) => event.EventType === "commit")
+          .map(commitOrder),
+      ),
+    ].sort((a, b) => a - b);
     const generations = buildForcePushGenerations(buildForcePushBoundaries(orderingSourceEvents));
     generations.sort((a, b) => a.pushedAt - b.pushedAt || a.eventID - b.eventID);
 
-    const obsoleteGenerations: Set<number>[] = [];
-    const isObsolete = (order: number): boolean =>
-      obsoleteGenerations.some((generation) => generation.has(order));
-    const addGenerationThrough = (endAt: number, startAfter = 0): void => {
-      const generation = new Set<number>();
+    const lineageByOrder = new Map<number, number>();
+    const obsoleteByLineage = new Map<number, Set<number>>();
+    let activeLineage = 0;
+    let activeHead = 0;
+    let nextLineage = 1;
+
+    const assignLineageBetween = (lineage: number, startAfter: number, endAt: number): void => {
       for (const order of commitOrders) {
-        if (order > startAfter && order <= endAt && !isObsolete(order)) generation.add(order);
+        if (order > startAfter && order <= endAt && !lineageByOrder.has(order)) {
+          lineageByOrder.set(order, lineage);
+        }
       }
-      if (generation.size > 0) obsoleteGenerations.push(generation);
     };
-    const restoreGenerationContaining = (order: number): boolean => {
-      const index = obsoleteGenerations.findIndex((generation) => generation.has(order));
-      if (index < 0) return false;
-      obsoleteGenerations.splice(index, 1);
-      return true;
+    const retireLineageBetween = (lineage: number, startAfter: number, endAt: number): void => {
+      let obsolete = obsoleteByLineage.get(lineage);
+      for (const order of commitOrders) {
+        if (order <= startAfter || order > endAt || lineageByOrder.get(order) !== lineage) continue;
+        obsolete ??= new Set<number>();
+        obsolete.add(order);
+      }
+      if (obsolete) obsoleteByLineage.set(lineage, obsolete);
+    };
+    const restoreLineageThrough = (lineage: number, endAt: number): void => {
+      const obsolete = obsoleteByLineage.get(lineage);
+      if (!obsolete) return;
+      for (const order of obsolete) {
+        if (order <= endAt) obsolete.delete(order);
+      }
+      if (obsolete.size === 0) obsoleteByLineage.delete(lineage);
+    };
+    const ensureActiveHead = (order: number): void => {
+      const knownLineage = lineageByOrder.get(order);
+      if (knownLineage !== undefined) {
+        activeLineage = knownLineage;
+      } else {
+        const startAfter = activeHead > 0 && order > activeHead ? activeHead : 0;
+        assignLineageBetween(activeLineage, startAfter, order);
+      }
+      activeHead = order;
+    };
+    const createLineageThrough = (order: number, startAfter: number): number => {
+      const lineage = nextLineage;
+      nextLineage += 1;
+      assignLineageBetween(lineage, startAfter, order);
+      return lineage;
     };
 
     for (const generation of generations) {
       const before = generation.beforeCommitID;
       const after = generation.afterCommitID;
-      const restoresObsoleteLineage = after !== undefined && restoreGenerationContaining(after);
 
       if (before !== undefined) {
-        // A transition can restore its after lineage and retire its before
-        // lineage at the same time. Rewinds retire only the suffix after the
-        // restored ancestor; lineage switches retire the complete active
-        // generation through the displaced head.
-        if (after !== undefined && after < before) {
-          addGenerationThrough(before, after);
-        } else {
-          addGenerationThrough(before);
+        ensureActiveHead(before);
+      }
+
+      if (after === undefined) {
+        if (before !== undefined) {
+          retireLineageBetween(activeLineage, 0, before);
+          activeLineage = nextLineage;
+          nextLineage += 1;
         }
+        activeHead = before ?? activeHead;
         continue;
       }
-      if (!restoresObsoleteLineage && generation.effectiveStartAfterCommitID > 0) {
-        addGenerationThrough(generation.effectiveStartAfterCommitID);
+
+      let afterLineage = lineageByOrder.get(after);
+      if (afterLineage === undefined) {
+        if (before !== undefined && after < before) {
+          assignLineageBetween(activeLineage, 0, after);
+          afterLineage = activeLineage;
+        } else {
+          afterLineage = createLineageThrough(after, before ?? activeHead);
+        }
       }
+
+      if (before === undefined) {
+        if (afterLineage !== activeLineage && generation.effectiveStartAfterCommitID > 0) {
+          retireLineageBetween(activeLineage, 0, generation.effectiveStartAfterCommitID);
+        }
+        restoreLineageThrough(afterLineage, after);
+        activeLineage = afterLineage;
+        activeHead = after;
+        continue;
+      }
+
+      if (afterLineage === activeLineage) {
+        restoreLineageThrough(activeLineage, after);
+        if (after < before) retireLineageBetween(activeLineage, after, before);
+      } else {
+        restoreLineageThrough(afterLineage, after);
+        retireLineageBetween(activeLineage, 0, before);
+        activeLineage = afterLineage;
+      }
+      activeHead = after;
     }
-    return new Set(obsoleteGenerations.flatMap((generation) => [...generation]));
+    return new Set([...obsoleteByLineage.values()].flatMap((obsolete) => [...obsolete]));
   }
 
   function collapseObsoleteCommitEntries(

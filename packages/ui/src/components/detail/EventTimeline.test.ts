@@ -1904,6 +1904,129 @@ describe("EventTimeline", () => {
     expect(text).not.toContain("new lineage commit one displaced");
   });
 
+  it("restores every ancestor when a pre-rewind head becomes current again", () => {
+    const oldCommits = [1, 2, 3, 4, 5].map((order) => `a${String(order).repeat(39)}`);
+    const replacementCommits = [1, 2, 3].map((order) => `b${String(order).repeat(39)}`);
+    const { container } = render(EventTimeline, {
+      props: {
+        events: [
+          makeEvent({
+            ID: 11,
+            EventType: "force_push",
+            Summary: "b333333 -> a555555",
+            CreatedAt: "2024-06-01T14:00:00Z",
+            MetadataJSON: JSON.stringify({ before_sha: replacementCommits[2], after_sha: oldCommits[4] }),
+          }),
+          makeEvent({
+            ID: 10,
+            EventType: "force_push",
+            Summary: "a333333 -> b333333",
+            CreatedAt: "2024-06-01T13:00:00Z",
+            MetadataJSON: JSON.stringify({ before_sha: oldCommits[2], after_sha: replacementCommits[2] }),
+          }),
+          makeEvent({
+            ID: 9,
+            EventType: "force_push",
+            Summary: "a555555 -> a333333",
+            CreatedAt: "2024-06-01T12:00:00Z",
+            MetadataJSON: JSON.stringify({ before_sha: oldCommits[4], after_sha: oldCommits[2] }),
+          }),
+          ...replacementCommits.map((summary, index) =>
+            makeEvent({
+              ID: index + 6,
+              EventType: "commit",
+              Summary: summary,
+              Body: `replacement lineage commit ${index + 1} displaced`,
+              CreatedAt: `2024-06-01T10:0${index + 6}:00Z`,
+              MetadataJSON: JSON.stringify({ commit_order: index + 1, commit_order_key: index + 6 }),
+            }),
+          ),
+          ...oldCommits.map((summary, index) =>
+            makeEvent({
+              ID: index + 1,
+              EventType: "commit",
+              Summary: summary,
+              Body: `original lineage commit ${index + 1} restored`,
+              CreatedAt: `2024-06-01T10:0${index + 1}:00Z`,
+              MetadataJSON: JSON.stringify({ commit_order: index + 1, commit_order_key: index + 1 }),
+            }),
+          ),
+        ],
+        timelineOrder: "chronological",
+      },
+    });
+
+    const text = container.textContent ?? "";
+    expect(text).toContain("3 commits replaced by a later force push");
+    for (const order of [1, 2, 3, 4, 5]) {
+      expect(text).toContain(`original lineage commit ${order} restored`);
+    }
+    for (const order of [1, 2, 3]) {
+      expect(text).not.toContain(`replacement lineage commit ${order} displaced`);
+    }
+  });
+
+  it("keeps descendants obsolete when restoring an intermediate lineage head", () => {
+    const oldCommits = [1, 2, 3, 4].map((order) => `c${String(order).repeat(39)}`);
+    const replacementCommits = [1, 2].map((order) => `d${String(order).repeat(39)}`);
+    const { container } = render(EventTimeline, {
+      props: {
+        events: [
+          makeEvent({
+            ID: 9,
+            EventType: "force_push",
+            Summary: "d222222 -> c333333",
+            CreatedAt: "2024-06-01T14:00:00Z",
+            MetadataJSON: JSON.stringify({ before_sha: replacementCommits[1], after_sha: oldCommits[2] }),
+          }),
+          makeEvent({
+            ID: 8,
+            EventType: "force_push",
+            Summary: "c222222 -> d222222",
+            CreatedAt: "2024-06-01T13:00:00Z",
+            MetadataJSON: JSON.stringify({ before_sha: oldCommits[1], after_sha: replacementCommits[1] }),
+          }),
+          makeEvent({
+            ID: 7,
+            EventType: "force_push",
+            Summary: "c444444 -> c222222",
+            CreatedAt: "2024-06-01T12:00:00Z",
+            MetadataJSON: JSON.stringify({ before_sha: oldCommits[3], after_sha: oldCommits[1] }),
+          }),
+          ...replacementCommits.map((summary, index) =>
+            makeEvent({
+              ID: index + 5,
+              EventType: "commit",
+              Summary: summary,
+              Body: `replacement descendant ${index + 1}`,
+              CreatedAt: `2024-06-01T10:0${index + 5}:00Z`,
+              MetadataJSON: JSON.stringify({ commit_order: index + 1, commit_order_key: index + 5 }),
+            }),
+          ),
+          ...oldCommits.map((summary, index) =>
+            makeEvent({
+              ID: index + 1,
+              EventType: "commit",
+              Summary: summary,
+              Body: `original ancestor ${index + 1}`,
+              CreatedAt: `2024-06-01T10:0${index + 1}:00Z`,
+              MetadataJSON: JSON.stringify({ commit_order: index + 1, commit_order_key: index + 1 }),
+            }),
+          ),
+        ],
+        timelineOrder: "chronological",
+      },
+    });
+
+    const text = container.textContent ?? "";
+    expect(text).toContain("original ancestor 1");
+    expect(text).toContain("original ancestor 2");
+    expect(text).toContain("original ancestor 3");
+    expect(text).not.toContain("original ancestor 4");
+    expect(text).not.toContain("replacement descendant 1");
+    expect(text).not.toContain("replacement descendant 2");
+  });
+
   it("retires the active lineage after repeated force-push alternation", () => {
     const oldCommit1 = "a111111111111111111111111111111111111111";
     const oldCommit2 = "a222222222222222222222222222222222222222";

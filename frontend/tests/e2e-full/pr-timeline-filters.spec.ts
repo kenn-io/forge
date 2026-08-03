@@ -114,18 +114,20 @@ test.describe("PR timeline filters", () => {
     ]);
   });
 
-  test("collapses the displaced lineage after SQLite-backed force-push alternation", async ({ page }) => {
+  test("restores every ancestor of a pre-rewind head through SQLite", async ({ page }) => {
     await openPRTimelinePath(page, "/pulls/github/acme/widgets/6");
     const menu = await openActivityViewMenu(page);
     await menu.getByRole("button", { name: "Strict date order" }).click();
 
     await expect(page.getByText("3 commits replaced by a later force push", { exact: true })).toBeVisible();
-    await expect(page.getByText("dashboard new base current again", { exact: true })).toBeVisible();
-    await expect(page.getByText("dashboard new filters current again", { exact: true })).toBeVisible();
-    await expect(page.getByText("dashboard new widgets current again", { exact: true })).toBeVisible();
-    await expect(page.getByText("dashboard old base displaced again", { exact: true })).toHaveCount(0);
-    await expect(page.getByText("dashboard old filters displaced again", { exact: true })).toHaveCount(0);
-    await expect(page.getByText("dashboard old widgets displaced again", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("dashboard original base restored", { exact: true })).toBeVisible();
+    await expect(page.getByText("dashboard original filters restored", { exact: true })).toBeVisible();
+    await expect(page.getByText("dashboard original widgets restored", { exact: true })).toBeVisible();
+    await expect(page.getByText("dashboard original charts restored", { exact: true })).toBeVisible();
+    await expect(page.getByText("dashboard original head restored", { exact: true })).toBeVisible();
+    await expect(page.getByText("dashboard replacement base displaced", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("dashboard replacement filters displaced", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("dashboard replacement widgets displaced", { exact: true })).toHaveCount(0);
   });
 
   test("persists compact activity layout across PR and issue detail views", async ({ page }) => {

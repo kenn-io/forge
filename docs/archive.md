@@ -43,11 +43,12 @@ kenn-forge archive status --json
 Common states:
 
 - **current**: supported inventory and item details are complete.
-- **partial**: some scopes or items are unsupported or blocked.
+- **partial**: completed archival has unsupported or inaccessible coverage.
 - **running**: archive work is ready or in progress.
 - **waiting_for_budget**: live work or provider limits consume the safe budget.
 - **paused**: configuration or an operator paused new work.
-- **blocked**: a provider, cursor, access, or contract error needs attention.
+- **blocked**: work cannot advance until a provider, cursor, access, or contract
+  error receives attention.
 
 Errors identify the affected scope without exposing credentials. Removing a
 repository pauses its archive state but keeps data and progress. Adding the

@@ -52,6 +52,8 @@ host = "forge.example.com"
 token_env = "FORGE_EXAMPLE_TOKEN"
 
 [[repos]]
+platform = "forgejo"
+platform_host = "forge.example.com"
 owner = "team"
 name = "private-service"
 token_file = "~/.kenn/forge/tokens/private-service"

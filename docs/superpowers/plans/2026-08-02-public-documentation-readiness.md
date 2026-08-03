@@ -98,7 +98,10 @@ git diff --check
 node node_modules/vite-plus/bin/vp exec -- node --test scripts/build-docs.test.mjs scripts/docs-screenshots-command.test.mjs
 \`\`\`
 
-Run \`scripts/context-sync --check\`, inspect the intended diff, then commit only the four Task 1 files with a conventional \`docs:\` subject and a rationale-focused body.
+Invoke the repository-local `context-sync` skill with `--commit`. Run the
+structural `scripts/context-sync --check` first, then perform the semantic
+commit review. Include any required context updates and commit the Task 1
+files with a conventional `docs:` subject and a rationale-focused body.
 
 ---
 
@@ -209,7 +212,9 @@ git diff --check
 node node_modules/vite-plus/bin/vp exec -- node --test scripts/build-docs.test.mjs scripts/docs-screenshots-command.test.mjs
 \`\`\`
 
-Run \`scripts/context-sync --check\`, inspect the intended diff, then commit only the eight Task 2 files with a conventional \`docs:\` subject and a rationale-focused body.
+Invoke the repository-local `context-sync` skill with `--commit`. Include any
+required context updates, then commit the Task 2 files with a conventional
+`docs:` subject and a rationale-focused body.
 
 ---
 
@@ -268,7 +273,8 @@ Run:
 
 \`\`\`bash
 node node_modules/vite-plus/bin/vp exec -- node --test scripts/build-docs.test.mjs scripts/docs-screenshots-command.test.mjs
-node node_modules/vite-plus/bin/vp exec -- playwright test --config docs/screenshots/playwright.config.ts --project=chromium
+mkdir -p tmp/docs-screenshots
+env KENN_FORGE_DOCS_SCREENSHOT_DIR=tmp/docs-screenshots node node_modules/vite-plus/bin/vp exec -- playwright test --config docs/screenshots/playwright.config.ts --project=chromium
 node scripts/build-docs.mjs
 \`\`\`
 
@@ -294,7 +300,10 @@ Use \`superpowers:verification-before-completion\` before reporting success.
 
 - [ ] **Step 8: Commit the visuals and final corrections**
 
-Run \`scripts/context-sync --check\`, inspect the intended diff, and commit the screenshot generator, screenshot guidance, styles, and final page corrections with a conventional \`docs:\` subject and a rationale-focused body.
+Invoke the repository-local `context-sync` skill with `--commit`. Include any
+required context updates, then commit the screenshot generator, screenshot
+guidance, styles, and final page corrections with a conventional `docs:`
+subject and a rationale-focused body.
 
 ---
 

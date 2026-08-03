@@ -39,11 +39,10 @@ Build the current source when no release is published:
 ```sh
 git clone https://github.com/kenn-io/middleman.git kenn-forge
 cd kenn-forge
-make build
+make install
 ```
 
-Source builds require Go 1.26+ and [Bun](https://bun.sh/). Run `make install`
-to install an optimized build.
+Source builds require Go 1.26+ and [Bun](https://bun.sh/).
 
 ## Start
 
@@ -55,12 +54,15 @@ kenn-forge
 ```
 
 Open `http://127.0.0.1:8091`. First-run setup connects a code forge, adds
-repositories, runs the first sync, opens a pull request, and can create a local
-workspace.
+repositories, runs the first sync, and opens a pull request.
 
-GitLab, Forgejo, Gitea, self-hosted providers, and explicit token setup use the
-Repositories panel in Settings. Kenn Forge stores its config and data under
-`~/.kenn/forge/` by default.
+The Repositories panel selects provider hosts and repository patterns. Configure
+non-GitHub and explicit credentials through environment variables or
+`~/.kenn/forge/config.toml`; see [Configuration](docs/configuration.md).
+
+Local workspaces require Git and tmux on a Unix-like host. The Windows release
+supports the dashboard and provider actions. Use WSL or a remote Unix-like Kenn
+Forge host when you need workspace sessions.
 
 ## Documentation
 

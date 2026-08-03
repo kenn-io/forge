@@ -79,6 +79,22 @@ directory.
 
 Restart the hub after changing API authentication or SSH peer entries.
 
+## Open an authenticated hub
+
+When `require_auth = true`, read the hub token from
+`<data_dir>/auth_token`. The default path is
+`~/.kenn/forge/auth_token`.
+
+Open the hub once with the token in the query string:
+
+```text
+http://127.0.0.1:8091/?auth_token=<token>
+```
+
+Kenn Forge exchanges the token for an HttpOnly browser cookie, then redirects
+to the clean URL. The cookie also authenticates terminal WebSocket requests.
+Do not share the tokenized URL.
+
 ## Use the fleet
 
 Open the hub UI. Fleet-aware views show the host that owns each resource.

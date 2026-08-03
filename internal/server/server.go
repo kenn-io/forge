@@ -212,6 +212,7 @@ type Server struct {
 	pullLifecycle          pullLifecycle
 	workspaceAPI           *workspaceapi.Handler
 	markdownImages         *markdownImageCache
+	roborevRepositories    *roborevRepositoryProbe
 
 	// toolingStatus caches the assembled CLI tooling probe;
 	// toolingRun overrides the probe subprocess runner in tests.
@@ -775,6 +776,14 @@ func newServer(
 		bgDeadline:              bgDeadline,
 		workspaceDependentsDone: make(chan struct{}),
 	}
+	roborevConfig := cfg
+	if roborevConfig == nil {
+		roborevConfig = &config.Config{}
+	}
+	s.roborevRepositories = newRoborevRepositoryProbe(
+		roborevConfig.RoborevEndpoint(),
+		workspaceConfigSnapshot(cfg, nil).KnownPlatformHosts,
+	)
 	s.workspaceDependentsCtx, s.workspaceDependentsCancel = context.WithCancel(s.bgCtx)
 	s.workspaceLifecycleCtx, s.workspaceLifecycleCancel = context.WithCancel(context.Background())
 	s.kataLifecycleCtx, s.kataLifecycleCancel = context.WithCancel(context.Background())

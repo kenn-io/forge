@@ -55,6 +55,18 @@ type repoSummaryCommitPointResponse struct {
 	CommittedAt string `json:"committed_at"`
 }
 
+type roborevConfiguredRepositoryResponse struct {
+	Provider     string `json:"provider"`
+	PlatformHost string `json:"platform_host"`
+	RepoPath     string `json:"repo_path"`
+	Owner        string `json:"owner"`
+	Name         string `json:"name"`
+}
+
+type roborevConfiguredRepositoriesResponse struct {
+	Repositories []roborevConfiguredRepositoryResponse `json:"repositories"`
+}
+
 type repoSummaryResponse struct {
 	Repo                 httpapi.RepoRefResponse          `json:"repo"`
 	PlatformHost         string                           `json:"platform_host"`

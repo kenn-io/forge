@@ -100,6 +100,8 @@ type listReposOutput = httpapi.BodyOutput[[]repoResponse]
 
 type listRepoSummariesOutput = httpapi.BodyOutput[[]repoSummaryResponse]
 
+type roborevConfiguredRepositoriesOutput = httpapi.BodyOutput[roborevConfiguredRepositoriesResponse]
+
 type acceptedOutput = httpapi.AcceptedStatusOutput
 
 type syncPROutput = httpapi.BodyOutput[pullapi.MergeRequestDetailResponse]
@@ -318,6 +320,14 @@ func (s *Server) registerAPI(api huma.API) {
 		Summary:     "Get roborev status",
 		Tags:        []string{"Roborev"},
 	}, s.getRoborevStatus)
+	huma.Register(api, huma.Operation{
+		OperationID:   "list-roborev-configured-repositories",
+		Method:        http.MethodGet,
+		Path:          "/roborev/configured-repositories",
+		DefaultStatus: http.StatusOK,
+		Summary:       "List repositories configured for Roborev",
+		Tags:          []string{"Roborev"},
+	}, s.listRoborevConfiguredRepositories)
 
 	s.workspaceAPI.Register(api)
 

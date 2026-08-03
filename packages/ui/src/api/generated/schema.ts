@@ -3693,6 +3693,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/roborev/configured-repositories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List repositories configured for Roborev */
+        get: operations["list-roborev-configured-repositories"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/roborev/status": {
         parameters: {
             query?: never;
@@ -7283,6 +7300,22 @@ export interface components {
             /** Format: int64 */
             number: number;
             repo_tracked: boolean;
+        };
+        RoborevConfiguredRepositoriesResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/RoborevConfiguredRepositoriesResponse.json
+             */
+            readonly $schema?: string;
+            repositories: components["schemas"]["RoborevConfiguredRepositoryResponse"][] | null;
+        };
+        RoborevConfiguredRepositoryResponse: {
+            name: string;
+            owner: string;
+            platform_host: string;
+            provider: string;
+            repo_path: string;
         };
         RoborevStatusResponse: {
             /**
@@ -16307,6 +16340,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RepoSummaryResponse"][] | null;
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "list-roborev-configured-repositories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoborevConfiguredRepositoriesResponse"];
                 };
             };
             /** @description Error */

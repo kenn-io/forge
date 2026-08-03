@@ -3717,6 +3717,22 @@ type ResolveItemResponse struct {
 	RepoTracked bool   `json:"repo_tracked"`
 }
 
+// RoborevConfiguredRepositoriesResponse defines model for RoborevConfiguredRepositoriesResponse.
+type RoborevConfiguredRepositoriesResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema       *string                                `json:"$schema,omitempty"`
+	Repositories *[]RoborevConfiguredRepositoryResponse `json:"repositories"`
+}
+
+// RoborevConfiguredRepositoryResponse defines model for RoborevConfiguredRepositoryResponse.
+type RoborevConfiguredRepositoryResponse struct {
+	Name         string `json:"name"`
+	Owner        string `json:"owner"`
+	PlatformHost string `json:"platform_host"`
+	Provider     string `json:"provider"`
+	RepoPath     string `json:"repo_path"`
+}
+
 // RoborevStatusResponse defines model for RoborevStatusResponse.
 type RoborevStatusResponse struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -6394,6 +6410,9 @@ type ClientInterface interface {
 
 	// ListRepoSummaries request
 	ListRepoSummaries(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListRoborevConfiguredRepositories request
+	ListRoborevConfiguredRepositories(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetRoborevStatus request
 	GetRoborevStatus(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -10595,6 +10614,18 @@ func (c *Client) PreviewRepos(ctx context.Context, body PreviewReposJSONRequestB
 
 func (c *Client) ListRepoSummaries(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListRepoSummariesRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListRoborevConfiguredRepositories(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListRoborevConfiguredRepositoriesRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -27039,6 +27070,33 @@ func NewListRepoSummariesRequest(server string) (*http.Request, error) {
 	return req, nil
 }
 
+// NewListRoborevConfiguredRepositoriesRequest generates requests for ListRoborevConfiguredRepositories
+func NewListRoborevConfiguredRepositoriesRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/roborev/configured-repositories")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetRoborevStatusRequest generates requests for GetRoborevStatus
 func NewGetRoborevStatusRequest(server string) (*http.Request, error) {
 	var err error
@@ -29897,6 +29955,9 @@ type ClientWithResponsesInterface interface {
 
 	// ListRepoSummariesWithResponse request
 	ListRepoSummariesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListRepoSummariesResponse, error)
+
+	// ListRoborevConfiguredRepositoriesWithResponse request
+	ListRoborevConfiguredRepositoriesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListRoborevConfiguredRepositoriesResponse, error)
 
 	// GetRoborevStatusWithResponse request
 	GetRoborevStatusWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetRoborevStatusResponse, error)
@@ -35561,6 +35622,29 @@ func (r ListRepoSummariesResponse) StatusCode() int {
 	return 0
 }
 
+type ListRoborevConfiguredRepositoriesResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *RoborevConfiguredRepositoriesResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r ListRoborevConfiguredRepositoriesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListRoborevConfiguredRepositoriesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type GetRoborevStatusResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
@@ -39469,6 +39553,15 @@ func (c *ClientWithResponses) ListRepoSummariesWithResponse(ctx context.Context,
 		return nil, err
 	}
 	return ParseListRepoSummariesResponse(rsp)
+}
+
+// ListRoborevConfiguredRepositoriesWithResponse request returning *ListRoborevConfiguredRepositoriesResponse
+func (c *ClientWithResponses) ListRoborevConfiguredRepositoriesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListRoborevConfiguredRepositoriesResponse, error) {
+	rsp, err := c.ListRoborevConfiguredRepositories(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListRoborevConfiguredRepositoriesResponse(rsp)
 }
 
 // GetRoborevStatusWithResponse request returning *GetRoborevStatusResponse
@@ -47652,6 +47745,39 @@ func ParseListRepoSummariesResponse(rsp *http.Response) (*ListRepoSummariesRespo
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest []RepoSummaryResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListRoborevConfiguredRepositoriesResponse parses an HTTP response from a ListRoborevConfiguredRepositoriesWithResponse call
+func ParseListRoborevConfiguredRepositoriesResponse(rsp *http.Response) (*ListRoborevConfiguredRepositoriesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListRoborevConfiguredRepositoriesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest RoborevConfiguredRepositoriesResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

@@ -4253,6 +4253,9 @@ func activeMRDueForFastSync(
 	if pr.DetailFetchedAt == nil {
 		return true
 	}
+	if now.Sub(effectiveActivityAt) <= activeMRHotActivityWindow {
+		return true
+	}
 	interval := activeMRRefreshInterval(effectiveActivityAt, now, hotInterval)
 	return !pr.DetailFetchedAt.Add(interval).After(now)
 }

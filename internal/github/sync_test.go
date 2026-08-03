@@ -9330,6 +9330,10 @@ func TestWatchedMRsThrottleRecentlyActiveOpenPRsByActivityAge(t *testing.T) {
 	assert.ElementsMatch([]WatchedMR{
 		{
 			Platform: platform.KindGitHub, PlatformHost: "github.com",
+			Owner: "acme", Name: "app", Number: 1,
+		},
+		{
+			Platform: platform.KindGitHub, PlatformHost: "github.com",
 			Owner: "acme", Name: "app", Number: 2,
 		},
 		{
@@ -9406,10 +9410,16 @@ func TestWatchedMRsUseNotificationActivityForHotPRCadence(t *testing.T) {
 	syncer.SetActiveMRWindow(4 * time.Hour)
 
 	got := syncer.watchedMRsForFastSync(ctx, now)
-	assert.Equal([]WatchedMR{{
-		Platform: platform.KindGitHub, PlatformHost: "github.com",
-		Owner: "acme", Name: "app", Number: 2,
-	}}, got)
+	assert.ElementsMatch([]WatchedMR{
+		{
+			Platform: platform.KindGitHub, PlatformHost: "github.com",
+			Owner: "acme", Name: "app", Number: 1,
+		},
+		{
+			Platform: platform.KindGitHub, PlatformHost: "github.com",
+			Owner: "acme", Name: "app", Number: 2,
+		},
+	}, got)
 }
 
 func TestWatchedMRsNotifyOnceAfterFastSync(t *testing.T) {

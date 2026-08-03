@@ -356,14 +356,15 @@ func (d *DB) LatestOpenPRNotificationActivity(
 	rows, err := d.ro.QueryContext(ctx, `
 		SELECT mr.id, MAX(n.source_updated_at)
 		FROM forge_notification_items n
-		JOIN forge_repos r
-		  ON r.id = n.repo_id
-		 AND r.platform = n.platform
-		 AND r.platform_host = n.platform_host
-		 AND r.owner_key = lower(n.repo_owner)
-		 AND r.name_key = lower(n.repo_name)
+		LEFT JOIN forge_repo_routes rr
+		  ON n.repo_id IS NULL
+		 AND rr.platform = n.platform
+		 AND rr.platform_host = n.platform_host
+		 AND rr.owner_key = lower(n.repo_owner)
+		 AND rr.name_key = lower(n.repo_name)
+		 AND rr.is_current = 1
 		JOIN forge_merge_requests mr
-		  ON mr.repo_id = r.id
+		  ON mr.repo_id = COALESCE(n.repo_id, rr.repo_id)
 		 AND mr.number = n.item_number
 		WHERE n.item_type = 'pr'
 		  AND n.source_updated_at >= ?

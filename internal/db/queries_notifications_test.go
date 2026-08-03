@@ -80,9 +80,10 @@ func TestLatestOpenPRNotificationActivity(t *testing.T) {
 	otherHost := notificationFixture("other-host", "mention", now.Add(-2*time.Minute))
 	otherHost.PlatformHost = "ghe.example.com"
 	otherHost.RepoID = &otherRepoID
-	mismatchedIdentity := notificationFixture("mismatched", "mention", now.Add(-time.Minute))
-	mismatchedIdentity.RepoID = &repoID
-	mismatchedIdentity.PlatformHost = "ghe.example.com"
+	linkedWithStaleRoute := notificationFixture("stale-route", "mention", now.Add(-time.Minute))
+	linkedWithStaleRoute.RepoID = &repoID
+	linkedWithStaleRoute.RepoOwner = "former-owner"
+	linkedWithStaleRoute.RepoName = "former-name"
 	unresolved := notificationFixture("unresolved", "mention", now)
 	unresolved.RepoOwner = "missing"
 	unresolved.RepoName = "repo"
@@ -90,13 +91,13 @@ func TestLatestOpenPRNotificationActivity(t *testing.T) {
 	expired.ItemNumber = new(9)
 
 	require.NoError(d.UpsertNotifications(ctx, []Notification{
-		first, latest, closed, issue, otherHost, mismatchedIdentity, unresolved, expired,
+		first, latest, closed, issue, otherHost, linkedWithStaleRoute, unresolved, expired,
 	}))
 
 	got, err := d.LatestOpenPRNotificationActivity(ctx, now.Add(-4*time.Hour))
 	require.NoError(err)
 	assert.ElementsMatch([]MergeRequestNotificationActivity{
-		{MergeRequestID: openID, SourceUpdatedAt: latest.SourceUpdatedAt},
+		{MergeRequestID: openID, SourceUpdatedAt: linkedWithStaleRoute.SourceUpdatedAt},
 		{MergeRequestID: otherHostID, SourceUpdatedAt: otherHost.SourceUpdatedAt},
 	}, got)
 
@@ -104,6 +105,102 @@ func TestLatestOpenPRNotificationActivity(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(stored)
 	assert.Equal(oldActivity, stored.LastActivityAt)
+}
+
+func TestLatestOpenPRNotificationActivityFollowsLinkedRepositoryRename(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)
+
+	entry, _, err := d.ReconcileRepositoryObservation(ctx, RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "R_widget", Owner: "acme", Name: "widget",
+	}, now)
+	require.NoError(err)
+	require.NotNil(entry)
+	repoID := entry.Repository.ID
+	mrID, err := d.UpsertMergeRequest(ctx, &MergeRequest{
+		RepoID: repoID, PlatformID: 7, Number: 7,
+		Title: "PR", Author: "octocat", State: MergeRequestStateOpen,
+		HeadBranch: "feature", BaseBranch: "main",
+		CreatedAt: now.Add(-24 * time.Hour), UpdatedAt: now,
+		LastActivityAt: now,
+	})
+	require.NoError(err)
+	notification := notificationFixture("rename", "comment", now.Add(time.Minute))
+	require.NoError(d.UpsertNotifications(ctx, []Notification{notification}))
+
+	_, _, err = d.ReconcileRepositoryObservation(ctx, RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "R_widget", Owner: "acme", Name: "gadget",
+	}, now.Add(2*time.Minute))
+	require.NoError(err)
+
+	got, err := d.LatestOpenPRNotificationActivity(ctx, now.Add(-time.Hour))
+	require.NoError(err)
+	assert.Equal([]MergeRequestNotificationActivity{{
+		MergeRequestID: mrID, SourceUpdatedAt: notification.SourceUpdatedAt,
+	}}, got)
+}
+
+func TestLatestOpenPRNotificationActivityKeepsLinkedIdentityAcrossRouteReuse(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)
+
+	oldEntry, _, err := d.ReconcileRepositoryObservation(ctx, RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "R_old", Owner: "acme", Name: "widget",
+	}, now)
+	require.NoError(err)
+	require.NotNil(oldEntry)
+	oldMRID, err := d.UpsertMergeRequest(ctx, &MergeRequest{
+		RepoID: oldEntry.Repository.ID, PlatformID: 7, Number: 7,
+		Title: "Old PR", Author: "octocat", State: MergeRequestStateOpen,
+		HeadBranch: "old-feature", BaseBranch: "main",
+		CreatedAt: now.Add(-24 * time.Hour), UpdatedAt: now,
+		LastActivityAt: now,
+	})
+	require.NoError(err)
+	linked := notificationFixture("linked-old", "comment", now.Add(time.Minute))
+	require.NoError(d.UpsertNotifications(ctx, []Notification{linked}))
+
+	_, _, err = d.ReconcileRepositoryObservation(ctx, RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "R_old", Owner: "acme", Name: "gadget",
+	}, now.Add(2*time.Minute))
+	require.NoError(err)
+	newEntry, _, err := d.ReconcileRepositoryObservation(ctx, RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "R_new", Owner: "acme", Name: "widget",
+	}, now.Add(3*time.Minute))
+	require.NoError(err)
+	require.NotNil(newEntry)
+	newMRID, err := d.UpsertMergeRequest(ctx, &MergeRequest{
+		RepoID: newEntry.Repository.ID, PlatformID: 7, Number: 7,
+		Title: "New PR", Author: "octocat", State: MergeRequestStateOpen,
+		HeadBranch: "new-feature", BaseBranch: "main",
+		CreatedAt: now.Add(-time.Hour), UpdatedAt: now.Add(3 * time.Minute),
+		LastActivityAt: now.Add(3 * time.Minute),
+	})
+	require.NoError(err)
+	legacy := notificationFixture("legacy-new", "mention", now.Add(4*time.Minute))
+	require.NoError(d.UpsertNotifications(ctx, []Notification{legacy}))
+	_, err = d.rw.ExecContext(ctx, `
+		UPDATE forge_notification_items SET repo_id = NULL
+		WHERE platform_notification_id = ?`, legacy.PlatformNotificationID)
+	require.NoError(err)
+
+	got, err := d.LatestOpenPRNotificationActivity(ctx, now.Add(-time.Hour))
+	require.NoError(err)
+	assert.ElementsMatch([]MergeRequestNotificationActivity{
+		{MergeRequestID: oldMRID, SourceUpdatedAt: linked.SourceUpdatedAt},
+		{MergeRequestID: newMRID, SourceUpdatedAt: legacy.SourceUpdatedAt},
+	}, got)
 }
 
 func TestNotificationsListFiltersSearchAndPriority(t *testing.T) {

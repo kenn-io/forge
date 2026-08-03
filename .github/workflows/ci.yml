@@ -349,6 +349,12 @@ jobs:
   race:
     name: go test -race
     runs-on: ${{ github.repository == 'kenn-io/forge' && (github.event_name == 'push' && github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && 'kenn-linux-x64-public' || 'ubuntu-latest' }}
+    # Cap package fan-out like test_go, but lower: the race detector multiplies
+    # CPU and memory per package, and unbounded fan-out starves servers that
+    # tests boot with their own startup deadlines.
+    env:
+      GOMAXPROCS: ${{ github.repository == 'kenn-io/forge' && (github.event_name == 'push' && github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && '4' || '2' }}
+      GOFLAGS: ${{ github.repository == 'kenn-io/forge' && (github.event_name == 'push' && github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && '-p=4' || '-p=2' }}
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true'
     steps:

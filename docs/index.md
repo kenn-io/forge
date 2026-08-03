@@ -11,6 +11,12 @@ Use Kenn Forge to answer four daily questions:
 - What can I review, update, or merge now?
 - Which branch or task should I open locally?
 
+<figure class="workflow-shot">
+  <img class="workflow-shot__image workflow-shot__image--light" src="assets/generated/maintainer-overview-light.svg" alt="Kenn Forge Activity feed with recent repository changes in light mode">
+  <img class="workflow-shot__image workflow-shot__image--dark" src="assets/generated/maintainer-overview-dark.svg" alt="Kenn Forge Activity feed with recent repository changes in dark mode">
+  <figcaption>Activity turns recent repository changes into one maintainer queue.</figcaption>
+</figure>
+
 ## Start here
 
 New users should follow the [Quick Start](quickstart.md). It covers

@@ -98,6 +98,12 @@ Open `http://127.0.0.1:8091`. Kenn Forge creates
 The setup flow leads to a synced pull request and, on a host with Git and tmux,
 a working local workspace:
 
+<figure class="workflow-shot">
+  <img class="workflow-shot__image workflow-shot__image--light" src="assets/generated/first-run-light.svg" alt="Kenn Forge code forge readiness step in light mode">
+  <img class="workflow-shot__image workflow-shot__image--dark" src="assets/generated/first-run-dark.svg" alt="Kenn Forge code forge readiness step in dark mode">
+  <figcaption>First run checks the GitHub CLI and routes other providers through repository setup.</figcaption>
+</figure>
+
 1. **Connect a code forge.** Continue with an authenticated GitHub CLI, or
    open Settings for another provider or host.
 2. **Choose repositories.** GitHub users can select discovered repositories.

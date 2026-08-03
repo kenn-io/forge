@@ -1,9 +1,10 @@
 <script lang="ts">
   import { Button, Chip, operationGate } from "@kenn-forge/ui";
   import { Card, formatRelativeTime, type ChipTone } from "@kenn-io/kit-ui";
-  import { BotIcon, ExternalLinkIcon, FolderTreeIcon } from "../../icons.js";
+  import { ExternalLinkIcon, FolderTreeIcon } from "../../icons.js";
   import ProviderIcon from "../provider/ProviderIcon.svelte";
   import RepoMetricGrid from "./RepoMetricGrid.svelte";
+  import RoborevIcon from "./RoborevIcon.svelte";
   import {
     displayReleaseName,
     isStaleRelease,
@@ -388,7 +389,7 @@
         aria-label="Roborev hooks installed"
         title="Roborev hooks installed"
       >
-        <BotIcon size={16} strokeWidth={2} aria-hidden="true" />
+        <RoborevIcon />
       </span>
     {/if}
   </footer>

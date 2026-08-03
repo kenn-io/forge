@@ -5,7 +5,6 @@ import * as icons from "./icons.ts";
 
 const approvedIconNames = [
   "AlertIcon",
-  "BotIcon",
   "ChevronDownIcon",
   "ExternalLinkIcon",
   "FolderTreeIcon",

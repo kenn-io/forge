@@ -616,43 +616,41 @@
     const generations = buildForcePushGenerations(buildForcePushBoundaries(orderingSourceEvents));
     generations.sort((a, b) => a.pushedAt - b.pushedAt || a.eventID - b.eventID);
 
-    const obsolete = new Set<number>();
-    const addThrough = (endAt: number, startAfter = 0): void => {
+    const obsoleteGenerations: Set<number>[] = [];
+    const isObsolete = (order: number): boolean =>
+      obsoleteGenerations.some((generation) => generation.has(order));
+    const addGenerationThrough = (endAt: number, startAfter = 0): void => {
+      const generation = new Set<number>();
       for (const order of commitOrders) {
-        if (order > startAfter && order <= endAt) obsolete.add(order);
+        if (order > startAfter && order <= endAt && !isObsolete(order)) generation.add(order);
       }
+      if (generation.size > 0) obsoleteGenerations.push(generation);
     };
-    const restoreBetween = (startAt: number, endAt: number): void => {
-      for (const order of commitOrders) {
-        if (order >= startAt && order <= endAt) obsolete.delete(order);
-      }
+    const restoreGenerationContaining = (order: number): boolean => {
+      const index = obsoleteGenerations.findIndex((generation) => generation.has(order));
+      if (index < 0) return false;
+      obsoleteGenerations.splice(index, 1);
+      return true;
     };
 
     for (const generation of generations) {
       const before = generation.beforeCommitID;
       const after = generation.afterCommitID;
-      const restoresObsoleteLineage = after !== undefined && obsolete.has(after);
+      const restoresObsoleteLineage = after !== undefined && restoreGenerationContaining(after);
 
       if (before !== undefined) {
-        if (restoresObsoleteLineage && after !== undefined) {
-          restoreBetween(Math.min(before, after), Math.max(before, after));
-        }
         if (after !== undefined && after < before) {
-          addThrough(before, after);
+          addGenerationThrough(before, after);
         } else if (!restoresObsoleteLineage) {
-          addThrough(before);
+          addGenerationThrough(before);
         }
-        continue;
-      }
-      if (restoresObsoleteLineage && after !== undefined) {
-        obsolete.delete(after);
         continue;
       }
       if (!restoresObsoleteLineage && generation.effectiveStartAfterCommitID > 0) {
-        addThrough(generation.effectiveStartAfterCommitID);
+        addGenerationThrough(generation.effectiveStartAfterCommitID);
       }
     }
-    return obsolete;
+    return new Set(obsoleteGenerations.flatMap((generation) => [...generation]));
   }
 
   function collapseObsoleteCommitEntries(

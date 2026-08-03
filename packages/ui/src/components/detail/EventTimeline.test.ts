@@ -1817,48 +1817,75 @@ describe("EventTimeline", () => {
     expect(text).toContain("commit one still current");
   });
 
-  it("restores rewound commits when a later force push restores that lineage", () => {
-    const commit1 = "1111111111111111111111111111111111111111";
-    const commit2 = "2222222222222222222222222222222222222222";
-    const commit3 = "3333333333333333333333333333333333333333";
+  it("restores every commit from an obsolete lineage when its head becomes current again", () => {
+    const oldCommit1 = "a111111111111111111111111111111111111111";
+    const oldCommit2 = "a222222222222222222222222222222222222222";
+    const oldCommit3 = "a333333333333333333333333333333333333333";
+    const newCommit1 = "b111111111111111111111111111111111111111";
+    const newCommit2 = "b222222222222222222222222222222222222222";
+    const newCommit3 = "b333333333333333333333333333333333333333";
     const { container } = render(EventTimeline, {
       props: {
         events: [
           makeEvent({
-            ID: 5,
+            ID: 8,
             EventType: "force_push",
-            Summary: "1111111 -> 3333333",
+            Summary: "b333333 -> a333333",
             CreatedAt: "2024-06-01T13:00:00Z",
-            MetadataJSON: JSON.stringify({ before_sha: commit1, after_sha: commit3 }),
+            MetadataJSON: JSON.stringify({ before_sha: newCommit3, after_sha: oldCommit3 }),
+          }),
+          makeEvent({
+            ID: 7,
+            EventType: "force_push",
+            Summary: "a333333 -> b333333",
+            CreatedAt: "2024-06-01T12:00:00Z",
+            MetadataJSON: JSON.stringify({ before_sha: oldCommit3, after_sha: newCommit3 }),
+          }),
+          makeEvent({
+            ID: 6,
+            EventType: "commit",
+            Summary: newCommit3,
+            Body: "new lineage commit three displaced",
+            CreatedAt: "2024-06-01T10:06:00Z",
+            MetadataJSON: JSON.stringify({ commit_order: 3, commit_order_key: 6 }),
+          }),
+          makeEvent({
+            ID: 5,
+            EventType: "commit",
+            Summary: newCommit2,
+            Body: "new lineage commit two displaced",
+            CreatedAt: "2024-06-01T10:05:00Z",
+            MetadataJSON: JSON.stringify({ commit_order: 2, commit_order_key: 5 }),
           }),
           makeEvent({
             ID: 4,
-            EventType: "force_push",
-            Summary: "3333333 -> 1111111",
-            CreatedAt: "2024-06-01T12:00:00Z",
-            MetadataJSON: JSON.stringify({ before_sha: commit3, after_sha: commit1 }),
+            EventType: "commit",
+            Summary: newCommit1,
+            Body: "new lineage commit one displaced",
+            CreatedAt: "2024-06-01T10:04:00Z",
+            MetadataJSON: JSON.stringify({ commit_order: 1, commit_order_key: 4 }),
           }),
           makeEvent({
             ID: 3,
             EventType: "commit",
-            Summary: commit3,
-            Body: "commit three restored",
+            Summary: oldCommit3,
+            Body: "old lineage commit three restored",
             CreatedAt: "2024-06-01T10:03:00Z",
             MetadataJSON: JSON.stringify({ commit_order: 3, commit_order_key: 3 }),
           }),
           makeEvent({
             ID: 2,
             EventType: "commit",
-            Summary: commit2,
-            Body: "commit two restored",
+            Summary: oldCommit2,
+            Body: "old lineage commit two restored",
             CreatedAt: "2024-06-01T10:02:00Z",
             MetadataJSON: JSON.stringify({ commit_order: 2, commit_order_key: 2 }),
           }),
           makeEvent({
             ID: 1,
             EventType: "commit",
-            Summary: commit1,
-            Body: "commit one remains current",
+            Summary: oldCommit1,
+            Body: "old lineage commit one restored",
             CreatedAt: "2024-06-01T10:01:00Z",
             MetadataJSON: JSON.stringify({ commit_order: 1, commit_order_key: 1 }),
           }),
@@ -1868,10 +1895,13 @@ describe("EventTimeline", () => {
     });
 
     const text = container.textContent ?? "";
-    expect(text).not.toContain("commits replaced by a later force push");
-    expect(text).toContain("commit three restored");
-    expect(text).toContain("commit two restored");
-    expect(text).toContain("commit one remains current");
+    expect(text).toContain("3 commits replaced by a later force push");
+    expect(text).toContain("old lineage commit three restored");
+    expect(text).toContain("old lineage commit two restored");
+    expect(text).toContain("old lineage commit one restored");
+    expect(text).not.toContain("new lineage commit three displaced");
+    expect(text).not.toContain("new lineage commit two displaced");
+    expect(text).not.toContain("new lineage commit one displaced");
   });
 
   it("preserves unrelated obsolete commits when a later rewind targets current lineage", () => {

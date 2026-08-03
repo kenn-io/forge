@@ -23,8 +23,15 @@ request. Selection must therefore be explicit and deterministic.
 
 ## Selected Design
 
-Broaden the existing provider-scoped merge-request workspace lookup. Within
-the requested repository identity and pull-request number, it selects:
+Add a provider-scoped database lookup dedicated to pull-detail linkage. The
+workspace manager's `GetByMRForProvider` method will use this new lookup, while
+the existing database `GetWorkspaceByMRForProvider` lookup remains direct-PR
+only. In particular, merge-request sync continues to use the existing lookup
+when reclassifying a direct PR workspace's head-repository trust; it must not
+write that classification onto issue, Kata, or ad-hoc workspace rows.
+
+Within the requested repository identity and pull-request number, the new
+pull-detail lookup selects:
 
 1. The directly PR-backed workspace, when one exists.
 2. Otherwise, the newest non-PR workspace whose `associated_pr_number`
@@ -32,7 +39,13 @@ the requested repository identity and pull-request number, it selects:
 
 Direct PR ownership has precedence regardless of creation time. Associated
 fallback candidates are limited to the item types that support later PR
-association: issue, Kata task, and ad-hoc work.
+association: issue, Kata task, and ad-hoc work. Workspace ID order is an
+arbitrary but stable tie-breaker; it does not imply creation order.
+
+Status does not affect selection. A newer associated workspace in `creating`
+or `error` state wins over an older `ready` workspace, matching the direct
+lookup's behavior and allowing the existing `{ id, status }` response to
+explain the selected workspace's current state.
 
 The lookup retains the current provider normalization, case-folded repository
 route matching, and historical-route collision check. It does not infer an
@@ -41,10 +54,10 @@ association from branch names during a pull-detail read; the persisted
 
 ## Data Flow
 
-The database lookup returns the selected workspace through the existing
-workspace manager method. Pull detail continues to convert that workspace to
-the existing lightweight `{ id, status }` reference. No response schema,
-generated client, or Svelte component changes are required.
+The dedicated database lookup returns the selected workspace through the
+existing workspace manager method. Pull detail continues to convert that
+workspace to the existing lightweight `{ id, status }` reference. No response
+schema, generated client, or Svelte component changes are required.
 
 Activity already loads the canonical pull-detail endpoint and claims a
 workspace when that response contains the reference. Once the backend lookup
@@ -58,11 +71,15 @@ continues to fail closed and returns no workspace.
 
 ## Testing
 
-- Add a database regression proving a later-associated workspace is returned
-  for its pull request.
+- Add a database regression proving the pull-detail-specific lookup returns a
+  later-associated workspace for its pull request.
 - Prove a direct PR workspace wins over newer associated candidates.
 - Prove the newest associated workspace wins when no direct workspace exists,
-  including the deterministic tie-breaker.
+  including the deterministic tie-breaker and status-independent selection.
+- Keep the existing direct-only database lookup returning no workspace when
+  only an associated workspace exists.
+- Add a merge-request sync regression proving head-repository trust
+  reclassification does not update an associated-only workspace.
 - Add an API regression proving pull detail emits the selected workspace
   reference for a later-associated workspace.
 - Retain the existing Activity component coverage that proves a workspace
@@ -79,3 +96,4 @@ tests must fail for the missing association before the query changes.
 - Reassigning a workspace's original item type or item identity.
 - Adding route-compatibility aliases or fallback inference.
 - Changing repository route-reuse safety or workspace lifecycle behavior.
+- Changing merge-request sync or head-repository trust classification.

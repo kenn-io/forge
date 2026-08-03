@@ -34,7 +34,7 @@ func run(ctx context.Context, stderr io.Writer) int {
 	comparisonRef := baseRef
 	prBaseRef := os.Getenv("KENN_FORGE_MIGRATION_PR_BASE_REF")
 	if prBaseRef != "" {
-		comparisonRef = prBaseRef
+		comparisonRef = pullRequestComparisonRef(ctx, prBaseRef)
 	}
 	migrationDir := strings.TrimRight(getenvDefault("KENN_FORGE_MIGRATION_DIR", defaultMigrationDir), "/")
 
@@ -307,6 +307,17 @@ func migrationIdentityFromPath(path string) (string, string, bool) {
 
 func sortedKeys(values map[string]struct{}) []string {
 	return slices.Sorted(maps.Keys(values))
+}
+
+func pullRequestComparisonRef(ctx context.Context, fallback string) string {
+	githubRef := os.Getenv("GITHUB_REF")
+	if !strings.HasPrefix(githubRef, "refs/pull/") || !strings.HasSuffix(githubRef, "/merge") {
+		return fallback
+	}
+	if _, err := git(ctx, "rev-parse", "--verify", "--quiet", "HEAD^2"); err != nil {
+		return fallback
+	}
+	return "HEAD^1"
 }
 
 func getenvDefault(key, fallback string) string {

@@ -10,12 +10,17 @@
 
 **Tech Stack:** Markdown, Zensical, TypeScript, Playwright, Node.js, Vite+, Python-based \`unslop\` validation
 
+**Execution status:** Tasks 1 through 3 are complete in commits through
+`7d0a3cd87`. Resume at Task 4; do not repeat the earlier rewrites or eight
+existing captures.
+
 ## Global Constraints
 
 - Apply the \`unslop\` crisp preset to every public Markdown page.
 - Preserve commands, paths, provider names, defaults, limits, URLs, and security boundaries exactly unless repository evidence proves they are stale.
 - Keep paragraphs short, lead with actions or facts, and describe user outcomes instead of implementation details.
-- Keep ADRs, plans, specs, reports, and \`context/\` documents out of the public navigation.
+- Keep ADRs, plans, specs, reports, \`context/\`, and build tooling out of
+  both the staged Zensical input and rendered public site.
 - Generate screenshots only from isolated seeded servers. Never use a live developer app or private data.
 - Keep generated SVG files untracked. Commit only their Playwright cases, page references, styles, and build guidance.
 - Do not change production onboarding behavior or add product features.
@@ -307,30 +312,422 @@ subject and a rationale-focused body.
 
 ---
 
-### Task 4: Publish the stacked pull request
+### Task 4: Close public-site and reviewer-workspace gaps
+
+**Files:**
+- Modify: `scripts/build-docs.mjs`
+- Modify: `scripts/build-docs.test.mjs`
+- Modify: `docs/zensical.toml`
+- Modify: `docs/stylesheets/extra.css`
+- Modify: `README.md`
+- Modify: `docs/quickstart.md`
+- Modify: `docs/workflows/code-reviewer.md`
+- Modify: `docs/screenshots/docs-screenshots.spec.ts`
+- Modify: `docs/screenshots/README.md`
+- Create: `docs/site/docs-site.spec.ts`
+- Create: `docs/site/playwright.config.ts`
+
+**Interfaces:**
+- Consumes: `stageDocsSource(sourceDir, destinationDir)`,
+  `startIsolatedWorkspaceE2EServer()`, the seeded `acme/widgets#1` pull
+  request, and the existing `captureCase()` SVG serializer
+- Produces: a public-only staged docs tree and four additional generated SVGs:
+  `code-reviewer-agent-launch-{light,dark}.svg` and
+  `workspace-codex-session-{light,dark}.svg`
+
+- [ ] **Step 1: Prove internal docs leak through staging**
+
+Extend `scripts/build-docs.test.mjs` so its fixture contains public inputs and
+internal inputs:
+
+```js
+await mkdir(path.join(source, "stylesheets"), { recursive: true });
+await mkdir(path.join(source, "workflows"), { recursive: true });
+await mkdir(path.join(source, "superpowers", "plans"), { recursive: true });
+await mkdir(path.join(source, "adr"), { recursive: true });
+await mkdir(path.join(source, "reports"), { recursive: true });
+await mkdir(path.join(source, "screenshots"), { recursive: true });
+await writeFile(path.join(source, "index.md"), "# Docs\n");
+await writeFile(path.join(source, "workflows", "code-reviewer.md"), "# Reviewer\n");
+await writeFile(path.join(source, "stylesheets", "extra.css"), ":root {}\n");
+await writeFile(path.join(source, "superpowers", "plans", "private.md"), "# Private\n");
+await writeFile(path.join(source, "adr", "0001-private.md"), "# Private\n");
+await writeFile(path.join(source, "reports", "private.md"), "# Private\n");
+await writeFile(path.join(source, "screenshots", "README.md"), "# Build only\n");
+await writeFile(path.join(source, "workflows", "internal.md"), "# Private\n");
+await writeFile(path.join(source, "stylesheets", "internal.css"), ":root {}\n");
+```
+
+After `stageDocsSource()`, assert that `index.md`, the workflow page, and the
+stylesheet exist. Assert `ENOENT` for every internal fixture path and for a
+stale `assets/generated/stale.svg`. The rejected fixtures must include
+`workflows/internal.md` and `stylesheets/internal.css`, proving that allowed
+directories are traversal paths rather than recursive publication roots.
+
+- [ ] **Step 2: Run the staging test and verify the leak is detected**
+
+Run:
+
+```bash
+node node_modules/vite-plus/bin/vp exec -- node --test scripts/build-docs.test.mjs
+```
+
+Expected: FAIL because the current recursive copy stages
+`superpowers/plans/private.md`.
+
+- [ ] **Step 3: Stage only explicit public inputs**
+
+In `scripts/build-docs.mjs`, replace the generated-asset-only filter with:
+
+```js
+const publishedFiles = new Set([
+  "archive.md",
+  "commands.md",
+  "configuration.md",
+  "federated-fleet.md",
+  "index.md",
+  "quickstart.md",
+  "stylesheets/extra.css",
+  "troubleshooting.md",
+  "workflows/code-reviewer.md",
+  "workflows/issue-triager.md",
+  "workflows.md",
+]);
+const publishedDirectoryEntries = new Set(["stylesheets", "workflows"]);
+
+function isPublishedDocsInput(sourceDir, candidate) {
+  const relative = path.relative(sourceDir, candidate);
+  if (relative === "") return true;
+  return publishedFiles.has(relative) || publishedDirectoryEntries.has(relative);
+}
+```
+
+Use `isPublishedDocsInput` as the `cp` filter. Continue copying
+`zensical.toml` separately and generating `assets/generated/` only in the
+staged tree. The two directory entries allow `cp` to traverse to explicitly
+listed files; they do not publish unlisted descendants.
+
+- [ ] **Step 4: Verify the public staging boundary**
+
+Run the test from Step 2 again.
+
+Expected: PASS with public pages and styles preserved and every internal input
+absent.
+
+- [ ] **Step 5: Add a rendered-site header regression test**
+
+Create `docs/site/playwright.config.ts` with one Chromium project and a local
+static server:
+
+```ts
+import { defineConfig, devices } from "@playwright/test";
+
+const siteDir = process.env.KENN_FORGE_DOCS_SITE_DIR;
+if (!siteDir) throw new Error("KENN_FORGE_DOCS_SITE_DIR must point to rendered site output");
+
+export default defineConfig({
+  testDir: ".",
+  testMatch: "docs-site.spec.ts",
+  workers: 1,
+  use: {
+    baseURL: "http://127.0.0.1:4178",
+  },
+  projects: [
+    {
+      name: "chromium",
+      use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 800 } },
+    },
+  ],
+  webServer: {
+    command: "python3 -m http.server 4178 --bind 127.0.0.1",
+    cwd: siteDir,
+    url: "http://127.0.0.1:4178",
+    reuseExistingServer: false,
+  },
+});
+```
+
+Create `docs/site/docs-site.spec.ts` with a test that opens `/`, records the
+visible first `.md-header__topic` text, `fontFamily`, `fontWeight`, and
+`transform`, scrolls to 500px, waits for the 400ms Zensical transition, and
+asserts the following at both `{ width: 1280, height: 800 }` and
+`{ width: 390, height: 844 }`:
+
+```ts
+await expect(brand).toHaveText("kenn-forge");
+await expect(brand).toBeVisible();
+await expect(pageTitle).toBeHidden();
+expect(after.fontFamily).toBe(before.fontFamily);
+expect(after.fontWeight).toBe(before.fontWeight);
+expect(after.transform).toBe("none");
+```
+
+Run against the current rendered `site/`:
+
+```bash
+env KENN_FORGE_DOCS_SITE_DIR=site \
+  node node_modules/vite-plus/bin/vp exec -- playwright test \
+  --config docs/site/playwright.config.ts --project=chromium
+```
+
+Expected: FAIL because Zensical hides `kenn-forge` and shows the regular-weight
+`Kenn Forge` page topic after scrolling.
+
+- [ ] **Step 6: Keep header branding stable**
+
+Append this minimal override to `docs/stylesheets/extra.css`:
+
+```css
+.md-header__topic:first-child {
+  opacity: 1;
+  pointer-events: auto;
+  transform: none;
+  z-index: 0;
+}
+
+.md-header__topic + .md-header__topic {
+  display: none;
+}
+```
+
+Rebuild with `node scripts/build-docs.mjs`, then rerun the rendered-site test
+from Step 5 at 1280px and at 390px. Both viewports must keep the same visible,
+unclipped `kenn-forge` brand.
+
+After `uvx zensical build` in `scripts/build-docs.mjs`, invoke this
+rendered-site Playwright project with
+`KENN_FORGE_DOCS_SITE_DIR=path.join(stagingRoot, "site")`. The docs build must
+fail if the rendered-site test fails.
+
+- [ ] **Step 7: Correct public repository and release links**
+
+Add a second test to `docs/site/docs-site.spec.ts` that requires the rendered
+home repository link to target `https://github.com/kenn-io/forge` and the
+Quick Start `GitHub Releases` link to target
+`https://github.com/kenn-io/forge/releases`. Run the rendered-site project.
+
+Expected before the URL edit: FAIL because both links still target
+`kenn-io/middleman`.
+
+Record the original constraints and banned-pattern result before editing:
+
+```bash
+for docs_file in README.md docs/quickstart.md; do
+  python3 /Users/mariusvniekerk/.agents/skills/unslop/scripts/extract_constraints.py "$docs_file"
+  python3 /Users/mariusvniekerk/.agents/skills/unslop/scripts/banned_phrase_scan.py "$docs_file"
+done
+```
+
+Replace public `kenn-io/middleman` URLs with `kenn-io/forge` in
+`README.md`, `docs/quickstart.md`, and `docs/zensical.toml`. This includes
+release URLs, source clone commands, `repo_url`, and `repo_name`. Do not
+rewrite historical internal plans or specs.
+
+Run:
+
+```bash
+if rg -n 'github\.com/kenn-io/middleman|repo_name = "kenn-io/middleman"' \
+  README.md docs/index.md docs/quickstart.md docs/configuration.md \
+  docs/commands.md docs/workflows.md docs/workflows docs/archive.md \
+  docs/federated-fleet.md docs/troubleshooting.md docs/zensical.toml; then
+  exit 1
+fi
+```
+
+Expected: no matches and exit 0. Rebuild the site and rerun the rendered-site
+project. Both canonical-link assertions must pass.
+
+- [ ] **Step 8: Add synthetic Codex workspace preparation**
+
+In `docs/screenshots/docs-screenshots.spec.ts`, extend `CaptureCase.name`
+with `code-reviewer-agent-launch` and `workspace-codex-session`. Add optional
+`prepare(page, baseURL)` and `afterReady(page)` callbacks. Call `prepare`
+before navigation and `afterReady` after stable selectors and loading checks,
+but before SVG serialization.
+
+Add `configureSyntheticCodexAgent(page, baseURL)` that writes this agent
+through `PUT /api/v1/settings`:
+
+```ts
+{
+  agents: [
+    {
+      key: "codex",
+      label: "Codex",
+      command: ["/bin/sh", "-lc", "while :; do sleep 3600; done"],
+      enabled: true,
+    },
+  ],
+}
+```
+
+Assert the update returns status 200 and its `launch_targets` array contains
+an available target with `key: "codex"` before continuing.
+
+Add `ensureSyntheticCodexWorkspace(page, baseURL)` that:
+
+1. Configures the synthetic agent.
+2. Reuses the `acme/widgets#1` workspace when present, or posts
+   `{ provider: "github", platform_host: "github.com", owner: "acme",
+   name: "widgets", mr_number: 1 }` to `POST /api/v1/workspaces`.
+3. Polls `GET /api/v1/workspaces/{id}` until status is `ready`, failing on
+   `error`.
+4. Reads `GET /api/v1/workspaces/{id}/runtime` and posts
+   `{ target_key: "codex" }` to
+   `POST /api/v1/workspaces/{id}/runtime/sessions` only when needed.
+5. Returns the workspace ID.
+
+The command is a synthetic long-running shell. It must never invoke the
+installed `codex` binary or read developer configuration or credentials.
+
+- [ ] **Step 9: Add the reviewer-to-Codex captures**
+
+Add light and dark `code-reviewer-agent-launch` cases at
+`/pulls/github/acme/widgets/1`. Their `prepare` callback configures the
+synthetic agent. Their `afterReady` callback clicks the accessible
+`Create Workspace options` button and waits for the `Codex` menu item.
+
+Add light and dark `workspace-codex-session` cases at `/workspaces`. Their
+`prepare` callback calls `ensureSyntheticCodexWorkspace`. Their
+`readySelector` is `.workspace-list-sidebar` with ready text
+`Add widget caching layer`. Their `afterReady` callback selects that row and
+waits for both `.workspace-list-sidebar .ws-row.selected` and the `Codex` tab
+inside the `Workflow panes` region.
+
+Update `docs/screenshots/README.md` with the four filenames and the rule that
+the Codex process is synthetic.
+
+- [ ] **Step 10: Expand the code-reviewer workflow**
+
+Before editing, run constraint extraction and the banned-pattern scan on
+`docs/workflows/code-reviewer.md`.
+
+In `docs/workflows/code-reviewer.md`, replace the short local-verification
+paragraph with:
+
+```markdown
+## Move from review into a coding agent
+
+Open **Create Workspace** and choose a configured agent such as Codex. Kenn
+Forge automatically creates and tracks a Git worktree for the pull-request
+branch, then launches the agent in that worktree. You do not need to run
+`git worktree add` or manage a separate checkout.
+```
+
+Place the `code-reviewer-agent-launch` light/dark figure after that paragraph.
+Follow it with a short paragraph explaining that Workspaces keeps the branch,
+session, and review context together, then place the
+`workspace-codex-session` light/dark figure. Use specific alt text and
+one-sentence captions.
+
+- [ ] **Step 11: Verify all captures and rendered output**
+
+Run:
+
+```bash
+env KENN_FORGE_DOCS_SCREENSHOT_DIR=tmp/docs-screenshots \
+  node node_modules/vite-plus/bin/vp exec -- playwright test \
+  --config docs/screenshots/playwright.config.ts --project=chromium
+node scripts/build-docs.mjs
+```
+
+Expected: 12 screenshot cases pass and Zensical builds the public site. Inspect
+all four new SVGs in light and dark mode. Confirm the menu shows Codex, the
+Workspaces capture shows the selected PR worktree and Codex session, no terminal
+content or private data appears, and every app icon renders standalone.
+
+Serve `site/` and inspect `/workflows/code-reviewer/` at 1280px and 390px.
+Verify both new figures load, their alt text and captions match the workflow,
+theme switching selects the correct light/dark assets, navigation contains only
+public pages, and scrolling keeps `kenn-forge` unchanged. Inspect the rendered
+home and Quick Start links and confirm their resolved `href` values target
+`kenn-io/forge`.
+
+Confirm these paths do not exist:
+
+```bash
+test ! -e site/superpowers
+test ! -e site/adr
+test ! -e site/reports
+test ! -e site/screenshots
+```
+
+Also request `/superpowers/`, `/adr/`, `/reports/`, and `/screenshots/`
+from the served site and confirm each returns 404.
+
+- [ ] **Step 12: Run final prose and repository verification**
+
+Run the `unslop` banned-pattern and readability checks over all 11 public
+Markdown pages. For `README.md`, `docs/quickstart.md`, and
+`docs/workflows/code-reviewer.md`, compare the final file with its Task 4
+baseline:
+
+```bash
+for docs_file in README.md docs/quickstart.md docs/workflows/code-reviewer.md; do
+  python3 /Users/mariusvniekerk/.agents/skills/unslop/scripts/diff_check.py \
+    <(git show HEAD:"$docs_file") "$docs_file"
+  python3 /Users/mariusvniekerk/.agents/skills/unslop/scripts/validate_preservation.py \
+    <(git show HEAD:"$docs_file") "$docs_file"
+done
+```
+
+Review every reported URL change against the canonical `kenn-io/forge`
+decision. No unrelated command, path, provider fact, or workflow claim may be
+lost. Then run:
+
+```bash
+git diff --check
+node node_modules/vite-plus/bin/vp exec -- node --test scripts/*.test.mjs scripts/*.test.ts
+git status --short
+```
+
+Use `superpowers:verification-before-completion`. Invoke the repository-local
+`context-sync --commit` workflow, then commit Task 4 with a conventional
+subject and rationale-focused body.
+
+---
+
+### Task 5: Publish the stacked pull request
 
 **Files:**
 - No repository file changes expected
 
 **Interfaces:**
-- Consumes: the verified commits from Tasks 1 through 3 and onboarding PR #816
+- Consumes: the verified commits from Tasks 1 through 4 and onboarding PR #816
 - Produces: a pushed branch and a pull request whose base is \`t3code/design-onboarding-mockups\`
 
 - [ ] **Step 1: Scrub public metadata and the complete diff**
 
 The repository references a \`scrub-private-data\` skill that is not installed in this session. Perform the fallback manually with \`git diff origin/t3code/design-onboarding-mockups...HEAD\`, \`git log\`, and targeted searches for home paths, private hosts, credentials, runner topology, and private project names. Generic seeded names such as \`acme/widgets\` are allowed.
 
-- [ ] **Step 2: Push and link the stack**
+- [ ] **Step 2: Push and create the attributed pull request**
 
-Push \`t3code/refine-onboarding-documentation\` to \`origin\`. Use non-interactive \`gh stack link --base main --open 816 t3code/refine-onboarding-documentation\` so the new PR is based on \`t3code/design-onboarding-mockups\` and linked above PR #816.
+Push `t3code/refine-onboarding-documentation` to `origin`. Create the pull
+request with `gh pr create`, base `t3code/design-onboarding-mockups`, a concise
+title, and only this style of user-visible summary:
 
-- [ ] **Step 3: Set concise public PR metadata**
+```markdown
+- Adds a release-first setup path and provider-aware onboarding guidance
+- Organizes daily maintainer, archive, fleet, and recovery workflows
+- Adds current first-run, review, workspace, and activity visuals
 
-Use \`gh pr edit\` to set a concise title and a body containing only a bulleted summary of user-visible documentation changes. Do not include a test plan, checklist, implementation detail, or marketing language. End any GitHub-authored text with:
-
-\`\`\`html
 <sup>generated by a clanker</sup>
-\`\`\`
+```
+
+Supply `--base`, `--head`, `--title`, and `--body` so the command cannot prompt.
+Capture the returned PR number. The attribution footer must be present at
+creation time; do not create the PR through `gh stack link`.
+
+- [ ] **Step 3: Link the existing pull requests**
+
+Run:
+
+```bash
+gh stack link --base main --open --remote origin 816 "$pr_number"
+```
+
+Both arguments are existing PRs in bottom-to-top order. This links the new PR
+above #816 without generating or replacing its title or body.
 
 - [ ] **Step 4: Verify the remote stack**
 

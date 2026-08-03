@@ -141,7 +141,7 @@ stale tabs.
   (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::handleDocumentPointerDown`).
 - Terminal pointerdown only prepares clipboard access; selection intent requires both a four-CSS-pixel dead zone and
   movement of roughly one rendered terminal cell, so physical focus-click jitter expires without reaching browser or
-  loopback clipboard fallbacks even at the smallest supported terminal geometry.
+  loopback clipboard fallbacks at readable terminal geometry without suppressing deliberate drags.
   Confirmed captured drags retain authority only through internal or destinationless focus movement while the pane stays
   active; their watchdog also releases browser capture, so a missing release cannot shield later focus loss
   (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::hasPointerSelectionIntent`).

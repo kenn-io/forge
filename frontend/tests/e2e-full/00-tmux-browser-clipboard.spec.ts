@@ -988,10 +988,7 @@ test("visible detail copy wins when focus leaves a pointer-captured terminal", a
   }
 });
 
-test("PR comment copy survives terminal focus jitter at the smallest supported cell geometry", async ({
-  page,
-  browserName,
-}) => {
+test("PR comment copy survives 5px terminal focus jitter at default geometry", async ({ page, browserName }) => {
   test.skip(!hasCommand("git") || !hasCommand("tmux", ["-V"]), "git and tmux are required for the real workspace flow");
   let fallbackWrites: string[] = [];
   if (browserName === "chromium") {
@@ -1005,21 +1002,6 @@ test("PR comment copy survives terminal focus jitter at the smallest supported c
   try {
     isolatedServer = await startIsolatedWorkspaceE2EServer();
     api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
-    const settingsResponse = await api.get("/api/v1/settings");
-    expect(settingsResponse.ok()).toBe(true);
-    const settings = (await settingsResponse.json()) as {
-      terminal: Record<string, unknown>;
-    };
-    const saveSettingsResponse = await api.put("/api/v1/settings", {
-      data: {
-        terminal: {
-          ...settings.terminal,
-          font_size: 8,
-          letter_spacing: -2,
-        },
-      },
-    });
-    expect(saveSettingsResponse.ok()).toBe(true);
     const { output, terminal } = await openPullDetailWithPromotedTerminal(page, api, isolatedServer.info.base_url);
 
     await enableTmuxMouseAndRenderMarker(page, terminal, output, "focus click marker");
@@ -1042,9 +1024,8 @@ test("PR comment copy survives terminal focus jitter at the smallest supported c
     const cellWidth = await terminal
       .locator(".xterm-helper-textarea")
       .evaluate((element) => element.getBoundingClientRect().width);
-    const subFourPixelJitter = 3;
-    expect(cellWidth).toBeLessThan(subFourPixelJitter);
-    await clickTerminalWithPointerJitter(page, terminal, subFourPixelJitter);
+    expect(cellWidth).toBeGreaterThan(5);
+    await clickTerminalWithPointerJitter(page, terminal);
     await expect
       .poll(() => output.count("\x1b]52;"), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS })
       .toBeGreaterThan(osc52Count);

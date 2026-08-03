@@ -10,6 +10,9 @@ screenshots, or the Zensical site.
   docs build and must not be tracked in Git. Playwright captures in
   `docs/screenshots/` use the real seeded e2e backend, not mocked API fixtures
   or a developer daemon.
+- Vercel deployments must package the locally built and verified site because
+  screenshot generation depends on that real e2e runtime.
+  (`scripts/prepare-docs-deploy.mjs::prepareDocsDeployment`)
 - Verify screenshot asset-path findings against rendered `site/` output because
   Zensical can rewrite raw HTML paths when `use_directory_urls` is enabled.
 - Zensical resolves `docs_dir` and `site_dir` relative to the config file. To

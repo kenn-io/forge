@@ -38,6 +38,7 @@ DEV_CLONE_FRONTEND_PORT ?= 5175
 
 .PHONY: ensure-embed-dir ensure-tmp-dir check-air air-install build build-release install \
         rust-pty-manager rust-test vite-plus-install frontend-deps check-vite-plus-bin frontend githubapp-frontend frontend-dev frontend-dev-bun frontend-check frontend-check-no-deps api-generate roborev-api-generate \
+        docs-build docs-deploy-build docs-deploy-staging docs-deploy \
         dev dev-ephemeral dev-ephemeral-stop test test-short test-integration test-e2e test-e2e-roborev test-fleet-container test-fleet-drive-container test-gitlab-container gitlab-fixture-bake vet lint nilaway testify-helper-check \
         profile-workspace-switch otel-lgtm \
         frontend-api-client-check font-size-token-check huma-route-check migration-history-check playwright-version-check script-tests guardrail-check race-times tidy svelte-skills svelte-skills-sync clean install-hooks help \
@@ -165,6 +166,20 @@ frontend-check-no-deps: check-vite-plus-bin
 	$(VITE_PLUS_BIN) lint frontend packages/ui packages/github-app-ui '!frontend/dist/**' '!packages/github-app-ui/dist/**' '!frontend/test-results/**' '!packages/github-app-ui/test-results/**' '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern --threads=1
 	cd frontend && node node_modules/@kenn-io/kit-ui/bin/kit-ui-check.mjs src ../packages/ui/src
 	$(VITE_PLUS_BIN) run svelte-check
+
+# Build and verify the public documentation, including generated screenshots.
+docs-build: frontend-deps
+	node scripts/build-docs.mjs
+
+# Package the locally verified site for Vercel's prebuilt deployment path.
+docs-deploy-build: frontend-deps
+	node scripts/prepare-docs-deploy.mjs
+
+docs-deploy-staging: docs-deploy-build
+	vercel deploy --prebuilt
+
+docs-deploy: docs-deploy-build
+	vercel deploy --prebuilt --prod
 
 # Prevent production frontend code from bypassing generated API clients
 frontend-api-client-check: check-vite-plus-bin
@@ -414,6 +429,9 @@ help:
 	@echo "  frontend-dev   - Install deps and run Vite dev server, logging to tmp/logs/frontend-dev.log (honors KENN_FORGE_CONFIG)"
 	@echo "  frontend-dev-bun - Install deps with Bun and run Vite+ dev server (honors KENN_FORGE_CONFIG)"
 	@echo "  frontend-check - Run Vite+ format, lint, type, and Svelte checks for frontend and packages/ui"
+	@echo "  docs-build     - Build and verify the public documentation site"
+	@echo "  docs-deploy-staging - Build and deploy a Vercel preview"
+	@echo "  docs-deploy    - Build and deploy the production documentation site"
 	@echo "  frontend-api-client-check - Prevent manual /api/v1 frontend calls outside generated clients"
 	@echo "  font-size-token-check - Enforce --font-size design tokens in frontend styles"
 	@echo "  api-generate   - Regenerate checked-in OpenAPI and TS schema"

@@ -37,6 +37,7 @@ cmd/e2e-server/e2e-server.exe
 /target/
 /site/
 /docs/assets/generated/
+/.vercel/
 .claude/worktrees/
 .claude/settings.local.json
 .superset

@@ -14,6 +14,7 @@ test("docs staging includes only public site inputs", async (t) => {
   const staged = path.join(root, "staged");
   await mkdir(path.join(source, "stylesheets"), { recursive: true });
   await mkdir(path.join(source, "workflows"), { recursive: true });
+  await mkdir(path.join(source, "overrides"), { recursive: true });
   await mkdir(path.join(source, "assets", "generated"), { recursive: true });
   await mkdir(path.join(source, "superpowers", "plans"), { recursive: true });
   await mkdir(path.join(source, "adr"), { recursive: true });
@@ -22,6 +23,8 @@ test("docs staging includes only public site inputs", async (t) => {
   await writeFile(path.join(source, "index.md"), "# Docs\n");
   await writeFile(path.join(source, "workflows", "code-reviewer.md"), "# Reviewer\n");
   await writeFile(path.join(source, "stylesheets", "extra.css"), ":root {}\n");
+  await writeFile(path.join(source, "overrides", "main.html"), "<script>palette</script>\n");
+  await writeFile(path.join(source, "overrides", "internal.html"), "<script>private</script>\n");
   await writeFile(path.join(source, "assets", "generated", "stale.svg"), "<svg />\n");
   await writeFile(path.join(source, "superpowers", "plans", "private.md"), "# Private\n");
   await writeFile(path.join(source, "adr", "0001-private.md"), "# Private\n");
@@ -35,6 +38,10 @@ test("docs staging includes only public site inputs", async (t) => {
   assert.equal(await readFile(path.join(staged, "index.md"), "utf8"), "# Docs\n");
   assert.equal(await readFile(path.join(staged, "workflows", "code-reviewer.md"), "utf8"), "# Reviewer\n");
   assert.equal(await readFile(path.join(staged, "stylesheets", "extra.css"), "utf8"), ":root {}\n");
+  assert.equal(
+    await readFile(path.join(staged, "overrides", "main.html"), "utf8"),
+    "<script>palette</script>\n",
+  );
 
   for (const internalPath of [
     "assets/generated/stale.svg",
@@ -44,6 +51,7 @@ test("docs staging includes only public site inputs", async (t) => {
     "screenshots/README.md",
     "workflows/internal.md",
     "stylesheets/internal.css",
+    "overrides/internal.html",
   ]) {
     await assert.rejects(readFile(path.join(staged, internalPath), "utf8"), { code: "ENOENT" });
   }

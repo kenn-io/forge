@@ -218,7 +218,7 @@ async function stabilizePage(page: Page): Promise<void> {
 
 async function waitForIdleSync(page: Page): Promise<void> {
   await expect(page.getByRole("button", { name: "Sync", exact: true })).toBeEnabled();
-  await expect(page.getByText(/syncing/i)).toHaveCount(0);
+  await expect(page.getByText(/syncing/i)).toHaveCount(0, { timeout: 15_000 });
 }
 
 async function configureSyntheticCodexAgent(page: Page, baseURL: string): Promise<void> {

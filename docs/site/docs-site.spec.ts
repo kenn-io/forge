@@ -6,6 +6,10 @@ type HeaderStyle = {
   transform: string;
 };
 
+type FirstFrameWindow = Window & {
+  __firstFrameScheme?: Promise<string | null>;
+};
+
 test("keeps the site brand stable while scrolling", async ({ page }) => {
   for (const viewport of [
     { width: 1280, height: 800 },
@@ -75,4 +79,58 @@ test("places Fleet under advanced and experimental navigation", async ({ page })
   await expect(
     primaryNav.locator(":scope > ul > li > a.md-nav__link", { hasText: "Fleet" }),
   ).toHaveCount(0);
+});
+
+test("applies the browser theme before the runtime bundle", async ({ browser }) => {
+  for (const preference of [
+    { colorScheme: "light" as const, expected: "default" },
+    { colorScheme: "dark" as const, expected: "slate" },
+  ]) {
+    const context = await browser.newContext({ colorScheme: preference.colorScheme });
+    await context.addInitScript(() => {
+      const target = window as FirstFrameWindow;
+      target.__firstFrameScheme = new Promise((resolve) => {
+        requestAnimationFrame(() => {
+          resolve(document.body?.getAttribute("data-md-color-scheme") ?? null);
+        });
+      });
+    });
+    const page = await context.newPage();
+    await page.route("**/assets/javascripts/bundle.*.min.js", (route) => route.abort());
+
+    await page.goto("/");
+    const firstFrameScheme = await page.evaluate(() =>
+      (window as FirstFrameWindow).__firstFrameScheme,
+    );
+    expect(firstFrameScheme).toBe(preference.expected);
+    await context.close();
+  }
+});
+
+test("keeps following system theme changes until the reader chooses", async ({ browser }) => {
+  const context = await browser.newContext({ colorScheme: "dark" });
+  const page = await context.newPage();
+  await page.goto("/");
+  await expect(page.locator("body")).toHaveAttribute("data-md-color-scheme", "slate");
+
+  await page.emulateMedia({ colorScheme: "light" });
+  await expect(page.locator("body")).toHaveAttribute("data-md-color-scheme", "default");
+
+  await page.reload();
+  await expect(page.locator("body")).toHaveAttribute("data-md-color-scheme", "default");
+  await context.close();
+});
+
+test("persists an explicit light override on a dark system", async ({ browser }) => {
+  const context = await browser.newContext({ colorScheme: "dark" });
+  const page = await context.newPage();
+  await page.goto("/");
+  await expect(page.locator("body")).toHaveAttribute("data-md-color-scheme", "slate");
+
+  await page.locator('label[title="Switch to light mode"]').click();
+  await expect(page.locator("body")).toHaveAttribute("data-md-color-scheme", "default");
+
+  await page.reload();
+  await expect(page.locator("body")).toHaveAttribute("data-md-color-scheme", "default");
+  await context.close();
 });

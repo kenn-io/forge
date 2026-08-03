@@ -14,13 +14,14 @@ const publishedFiles = new Set([
   "federated-fleet.md",
   "index.md",
   "quickstart.md",
+  path.join("overrides", "main.html"),
   path.join("stylesheets", "extra.css"),
   "troubleshooting.md",
   path.join("workflows", "code-reviewer.md"),
   path.join("workflows", "issue-triager.md"),
   "workflows.md",
 ]);
-const publishedDirectoryEntries = new Set(["stylesheets", "workflows"]);
+const publishedDirectoryEntries = new Set(["overrides", "stylesheets", "workflows"]);
 
 function isPublishedDocsInput(sourceDir, candidate) {
   const relative = path.relative(sourceDir, candidate);

@@ -1,10 +1,20 @@
 import { cleanup, render, screen } from "@testing-library/svelte";
-import { afterEach, describe, expect, it } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import DesignSystemPage from "./DesignSystemPage.svelte";
 
 describe("DesignSystemPage", () => {
-  afterEach(cleanup);
+  beforeEach(() => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json([])),
+    );
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
 
   it("places the onboarding prototype gallery on the design-system surface", () => {
     render(DesignSystemPage);

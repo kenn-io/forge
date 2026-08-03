@@ -512,9 +512,10 @@ Expected before the URL edit: FAIL because both links still target
 Record the original constraints and banned-pattern result before editing:
 
 ```bash
+: "${UNSLOP_SKILL_DIR:?set UNSLOP_SKILL_DIR to the installed unslop skill directory}"
 for docs_file in README.md docs/quickstart.md; do
-  python3 /Users/mariusvniekerk/.agents/skills/unslop/scripts/extract_constraints.py "$docs_file"
-  python3 /Users/mariusvniekerk/.agents/skills/unslop/scripts/banned_phrase_scan.py "$docs_file"
+  python3 "$UNSLOP_SKILL_DIR/scripts/extract_constraints.py" "$docs_file"
+  python3 "$UNSLOP_SKILL_DIR/scripts/banned_phrase_scan.py" "$docs_file"
 done
 ```
 
@@ -663,10 +664,11 @@ Markdown pages. For `README.md`, `docs/quickstart.md`, and
 baseline:
 
 ```bash
+: "${UNSLOP_SKILL_DIR:?set UNSLOP_SKILL_DIR to the installed unslop skill directory}"
 for docs_file in README.md docs/quickstart.md docs/workflows/code-reviewer.md; do
-  python3 /Users/mariusvniekerk/.agents/skills/unslop/scripts/diff_check.py \
+  python3 "$UNSLOP_SKILL_DIR/scripts/diff_check.py" \
     <(git show HEAD:"$docs_file") "$docs_file"
-  python3 /Users/mariusvniekerk/.agents/skills/unslop/scripts/validate_preservation.py \
+  python3 "$UNSLOP_SKILL_DIR/scripts/validate_preservation.py" \
     <(git show HEAD:"$docs_file") "$docs_file"
 done
 ```

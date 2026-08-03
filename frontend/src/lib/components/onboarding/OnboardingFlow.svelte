@@ -52,6 +52,7 @@
   let phase = $state<Phase>(
     untrack(() => stores.settings.hasConfiguredRepos()) ? "sync" : "repos",
   );
+  let hadConfiguredRepos = untrack(() => stores.settings.hasConfiguredRepos());
   let headingEl: HTMLHeadingElement | undefined;
 
   let repositories = $state.raw<DiscoveredUserRepository[]>([]);
@@ -353,6 +354,14 @@
   $effect(() => {
     if (phase !== "repos" || !providerConfirmed || !ghReady || repoLoadStarted) return;
     void loadRepositories();
+  });
+
+  $effect(() => {
+    const configured = hasConfiguredRepos;
+    const becameConfigured = configured && !hadConfiguredRepos;
+    hadConfiguredRepos = configured;
+    if (!becameConfigured || phase !== "repos") return;
+    void moveTo("sync").then(startSync);
   });
 
   onMount(() => {

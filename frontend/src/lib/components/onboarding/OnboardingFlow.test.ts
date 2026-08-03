@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/svelte";
-import type { StoreInstances } from "@kenn-forge/ui";
+import { createSettingsStore, type StoreInstances } from "@kenn-forge/ui";
 import type { PullRequest } from "@kenn-forge/ui/api/types";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
@@ -55,19 +55,27 @@ function pullRequest(): PullRequest {
   } as PullRequest;
 }
 
+function configuredRepo() {
+  return {
+    provider: "github",
+    platform_host: "github.com",
+    owner: "acme",
+    name: "forge",
+    repo_path: "acme/forge",
+    is_glob: false,
+    matched_repo_count: 1,
+  };
+}
+
 function storeFixture(options: { configured?: boolean; pulls?: PullRequest[]; pullsError?: string | null } = {}) {
-  let configured = options.configured ?? false;
   const pulls = options.pulls ?? [pullRequest()];
-  const setConfiguredRepos = vi.fn(() => {
-    configured = true;
-  });
+  const settings = createSettingsStore();
+  const setConfiguredRepos = vi.spyOn(settings, "setConfiguredRepos");
+  if (options.configured) settings.setConfiguredRepos([configuredRepo()]);
   const triggerSync = vi.fn(async () => {});
   const loadPulls = vi.fn(async () => {});
   const stores = {
-    settings: {
-      hasConfiguredRepos: () => configured,
-      setConfiguredRepos,
-    },
+    settings,
     sync: {
       getSyncState: () => ({
         running: false,
@@ -83,7 +91,8 @@ function storeFixture(options: { configured?: boolean; pulls?: PullRequest[]; pu
       getError: () => options.pullsError ?? null,
     },
   } as unknown as StoreInstances;
-  return { stores, setConfiguredRepos, triggerSync, loadPulls };
+  const configureExternally = () => settings.setConfiguredRepos([configuredRepo()]);
+  return { stores, setConfiguredRepos, triggerSync, loadPulls, configureExternally };
 }
 
 function renderFlow(stores: StoreInstances) {
@@ -239,6 +248,21 @@ describe("OnboardingFlow", () => {
     await waitFor(() => expect(fixture.triggerSync).toHaveBeenCalledOnce());
     expect(screen.queryByRole("heading", { name: "Connect a code forge" })).toBeNull();
     expect(mocks.listUserRepositories).not.toHaveBeenCalled();
+  });
+
+  it("starts sync when repositories become configured while onboarding remains mounted", async () => {
+    const fixture = storeFixture();
+    renderFlow(fixture.stores);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Continue with GitHub" }));
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: "Choose the repositories you maintain" })).toBeTruthy(),
+    );
+
+    fixture.configureExternally();
+
+    await waitFor(() => expect(fixture.triggerSync).toHaveBeenCalledOnce());
+    expect(screen.queryByRole("heading", { name: "Choose the repositories you maintain" })).toBeNull();
   });
 
   it("reports configured repositories while the CLI probe is unavailable", () => {

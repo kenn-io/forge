@@ -67,6 +67,36 @@ describe("sync store", () => {
     expect(completed).toHaveBeenCalledOnce();
   });
 
+  it("does not complete a triggered sync from stale idle status when local status was null", async () => {
+    const staleLastRunAt = "2026-08-02T19:00:00Z";
+    const get = vi.fn(async (path: string) => {
+      if (path === "/sync/status") {
+        return {
+          data: { running: false, last_run_at: staleLastRunAt, last_error: "" },
+        };
+      }
+      return { data: { provider_pools: {}, local_ceilings: {} } };
+    });
+    const store = createSyncStore({
+      client: {
+        GET: get,
+        POST: vi.fn(async () => ({ error: undefined })),
+      } as unknown as ForgeClient,
+    });
+    const completed = vi.fn();
+    store.subscribeSyncComplete(completed);
+
+    await store.triggerSync();
+
+    expect(get.mock.calls.filter(([path]) => path === "/sync/status")).toHaveLength(2);
+    expect(store.getSyncState()).toEqual({
+      running: true,
+      last_run_at: staleLastRunAt,
+      last_error: "",
+    });
+    expect(completed).not.toHaveBeenCalled();
+  });
+
   it("ignores a status poll that started before a triggered sync", async () => {
     let resolveOldStatus!: (value: { data: { running: boolean; last_run_at: string; last_error: string } }) => void;
     let resolveTrigger!: (value: { error: undefined }) => void;

@@ -22,7 +22,9 @@ export function createSyncStore(opts: SyncStoreOptions) {
   // The trigger endpoint acknowledges before the sync goroutine necessarily
   // updates server status. Until the server observes or completes that run,
   // an unchanged idle response is still describing the previous run.
-  let triggeredSyncLastRunAt: string | null = null;
+  // undefined means no triggered run is guarded; null means the run started
+  // without an authoritative completion baseline.
+  let triggeredSyncLastRunAt: string | null | undefined;
   // Monotonic counter incremented by SSE pushes. Poll results
   // captured before an SSE update are stale and must be dropped.
   let sseGeneration = 0;
@@ -52,10 +54,10 @@ export function createSyncStore(opts: SyncStoreOptions) {
 
   function applySyncStatus(next: SyncStatus | null): void {
     const isRunning = next?.running ?? false;
-    if (triggeredSyncLastRunAt !== null) {
+    if (triggeredSyncLastRunAt !== undefined) {
       const nextLastRunAt = next?.last_run_at ?? "";
-      if (isRunning || lastRunAdvanced(triggeredSyncLastRunAt, nextLastRunAt)) {
-        triggeredSyncLastRunAt = null;
+      if (isRunning || (triggeredSyncLastRunAt !== null && lastRunAdvanced(triggeredSyncLastRunAt, nextLastRunAt))) {
+        triggeredSyncLastRunAt = undefined;
       } else {
         return;
       }
@@ -117,17 +119,28 @@ export function createSyncStore(opts: SyncStoreOptions) {
     return Date.parse(next) > Date.parse(previous);
   }
 
+  async function fetchSyncStatus(): Promise<SyncStatus | null> {
+    try {
+      const { data, error } = await apiClient.GET("/sync/status");
+      return !error && data ? data : null;
+    } catch {
+      return null;
+    }
+  }
+
   async function runTriggeredSync(request: SyncRequest): Promise<void> {
-    const previous = status;
+    const localPrevious = status;
+    const baselineStatus = localPrevious ?? (await fetchSyncStatus());
+    const baselineLastRunAt = baselineStatus?.last_run_at ?? null;
 
     // A poll that began before this request cannot describe the triggered run.
     // Move the generation before publishing the optimistic running state so an
     // older idle response cannot announce a false completion.
     sseGeneration++;
-    triggeredSyncLastRunAt = previous?.last_run_at ?? "";
+    triggeredSyncLastRunAt = baselineLastRunAt;
     status = {
       running: true,
-      last_run_at: triggeredSyncLastRunAt,
+      last_run_at: baselineLastRunAt ?? "",
       last_error: "",
     };
     wasRunning = true;
@@ -140,10 +153,10 @@ export function createSyncStore(opts: SyncStoreOptions) {
       }
       await refreshSyncStatus();
     } catch (err) {
-      triggeredSyncLastRunAt = null;
+      triggeredSyncLastRunAt = undefined;
       status = {
         running: false,
-        last_run_at: previous?.last_run_at ?? "",
+        last_run_at: localPrevious?.last_run_at ?? baselineLastRunAt ?? "",
         last_error: err instanceof Error ? err.message : "failed to trigger sync",
       };
       wasRunning = false;

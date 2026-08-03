@@ -1,4 +1,4 @@
-<!-- Canonical Roborev favicon mark: https://roborev.io/assets/static/favicon.svg -->
+<!-- Canonical Roborev favicon geometry, adapted to the surrounding neutral icon color. -->
 <script lang="ts">
   interface Props {
     size?: number;
@@ -15,9 +15,8 @@
   fill="none"
   aria-hidden="true"
 >
-  <rect width="32" height="32" fill="#0a0a0a" />
-  <circle cx="13" cy="13" r="10" stroke="#00ff9f" stroke-width="2" fill="#0a0a0a" />
-  <rect x="21" y="21" width="10" height="3" fill="#00ff9f" transform="rotate(45 21 21)" />
-  <rect x="9" y="11" width="3" height="3" fill="#00ff9f" />
-  <rect x="14" y="11" width="3" height="3" fill="#00ff9f" />
+  <circle cx="13" cy="13" r="10" stroke="currentColor" stroke-width="2" />
+  <rect x="21" y="21" width="10" height="3" fill="currentColor" transform="rotate(45 21 21)" />
+  <rect x="9" y="11" width="3" height="3" fill="currentColor" />
+  <rect x="14" y="11" width="3" height="3" fill="currentColor" />
 </svg>

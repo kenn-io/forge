@@ -20,7 +20,7 @@ Provider capabilities vary. Kenn Forge shows unsupported actions as unavailable.
 ## Install a release
 
 Download the archive for your system from
-[GitHub Releases](https://github.com/kenn-io/middleman/releases). Releases
+[GitHub Releases](https://github.com/kenn-io/forge/releases). Releases
 include a `SHA256SUMS` file.
 
 | System | Architecture | Archive |
@@ -37,7 +37,7 @@ your `PATH`.
 Build the current source when no release is published:
 
 ```sh
-git clone https://github.com/kenn-io/middleman.git kenn-forge
+git clone https://github.com/kenn-io/forge.git kenn-forge
 cd kenn-forge
 make install
 ```

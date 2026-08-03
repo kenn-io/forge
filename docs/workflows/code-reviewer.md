@@ -26,8 +26,24 @@ Select an item to open its description, timeline, actions, and diff.
 
 Unsupported actions remain visible but unavailable.
 
-## Verify locally
+## Move from review into a coding agent
 
-Choose **Create Workspace** when the review needs local verification or
-follow-up changes. Kenn Forge creates a worktree for the pull-request head.
-Run a shell or configured agent, then return to the review.
+Open **Create Workspace** and choose a configured agent such as Codex. Kenn
+Forge automatically creates and tracks a Git worktree for the pull-request
+branch, then launches the agent there. You do not need to run
+`git worktree add` or manage a separate checkout.
+
+<figure class="workflow-shot">
+  <img class="workflow-shot__image workflow-shot__image--light" src="../assets/generated/code-reviewer-agent-launch-light.svg" alt="Kenn Forge pull-request detail with the Create Workspace menu open to Codex in light mode">
+  <img class="workflow-shot__image workflow-shot__image--dark" src="../assets/generated/code-reviewer-agent-launch-dark.svg" alt="Kenn Forge pull-request detail with the Create Workspace menu open to Codex in dark mode">
+  <figcaption>Create the review worktree and launch Codex from the pull-request view.</figcaption>
+</figure>
+
+**Workspaces** keeps the branch, session, and review links together. Return to
+the pull request after local verification or follow-up changes.
+
+<figure class="workflow-shot">
+  <img class="workflow-shot__image workflow-shot__image--light" src="../assets/generated/workspace-codex-session-light.svg" alt="Kenn Forge Workspaces view with a pull-request worktree and running Codex session in light mode">
+  <img class="workflow-shot__image workflow-shot__image--dark" src="../assets/generated/workspace-codex-session-dark.svg" alt="Kenn Forge Workspaces view with a pull-request worktree and running Codex session in dark mode">
+  <figcaption>Workspaces tracks the pull-request branch and its running Codex session.</figcaption>
+</figure>

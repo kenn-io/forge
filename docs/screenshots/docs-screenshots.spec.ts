@@ -12,7 +12,13 @@ const outputDir = process.env.KENN_FORGE_DOCS_SCREENSHOT_DIR;
 type ThemeName = "light" | "dark";
 
 type CaptureCase = {
-  name: "maintainer-overview" | "issue-triager" | "code-reviewer" | "first-run";
+  name:
+    | "maintainer-overview"
+    | "issue-triager"
+    | "code-reviewer"
+    | "code-reviewer-agent-launch"
+    | "workspace-codex-session"
+    | "first-run";
   theme: ThemeName;
   path: string;
   readySelector: string;
@@ -21,8 +27,30 @@ type CaptureCase = {
   requiredButtonName?: string;
   loadingText?: RegExp;
   waitForSync?: boolean;
+  prepare?: (page: Page, baseURL: string) => Promise<void>;
+  afterReady?: (page: Page) => Promise<void>;
   description: string;
 };
+
+async function openCodexLaunchMenu(page: Page): Promise<void> {
+  await page.getByRole("button", { name: "Create Workspace options" }).click();
+  await expect(page.getByRole("menuitem", { name: "Codex" })).toBeVisible();
+}
+
+async function showCodexWorkspace(page: Page): Promise<void> {
+  const row = page.locator(".workspace-list-sidebar .ws-row", { hasText: "Add widget caching layer" });
+  await row.click();
+  await expect(row).toHaveClass(/\bselected\b/);
+  await expect(page.getByRole("region", { name: "Workflow panes" }).getByRole("tab", { name: "Codex" })).toBeVisible();
+
+  const syntheticPath = "/worktrees/github/github.com/acme/widgets/pr-1";
+  await page.locator(".meta-chip.mono.path").evaluate((element, replacement) => {
+    const pathText = Array.from(element.childNodes).find((node) => node.nodeType === Node.TEXT_NODE);
+    if (!pathText) throw new Error("workspace path text node was not found");
+    pathText.textContent = replacement;
+    element.setAttribute("title", replacement);
+  }, syntheticPath);
+}
 
 const cases: CaptureCase[] = [
   {
@@ -93,6 +121,54 @@ const cases: CaptureCase[] = [
     description:
       "Code review view in dark mode with recent PR activity, review state, CI context, and workspace creation in one pane.",
   },
+  {
+    name: "code-reviewer-agent-launch",
+    theme: "light",
+    path: "/pulls/github/acme/widgets/1",
+    readySelector: ".pull-detail .detail-title",
+    readyText: "Add widget caching layer",
+    loadingText: /Loading discussion/i,
+    waitForSync: true,
+    prepare: configureSyntheticCodexAgent,
+    afterReady: openCodexLaunchMenu,
+    description: "Code review view with the Create Workspace menu open to launch a configured Codex agent.",
+  },
+  {
+    name: "code-reviewer-agent-launch",
+    theme: "dark",
+    path: "/pulls/github/acme/widgets/1",
+    readySelector: ".pull-detail .detail-title",
+    readyText: "Add widget caching layer",
+    loadingText: /Loading discussion/i,
+    waitForSync: true,
+    prepare: configureSyntheticCodexAgent,
+    afterReady: openCodexLaunchMenu,
+    description:
+      "Code review view in dark mode with the Create Workspace menu open to launch a configured Codex agent.",
+  },
+  {
+    name: "workspace-codex-session",
+    theme: "light",
+    path: "/workspaces",
+    readySelector: ".workspace-list-sidebar",
+    readyText: "Add widget caching layer",
+    waitForSync: true,
+    prepare: ensureSyntheticCodexWorkspace,
+    afterReady: showCodexWorkspace,
+    description: "Workspaces view with the pull request worktree selected and its Codex session available.",
+  },
+  {
+    name: "workspace-codex-session",
+    theme: "dark",
+    path: "/workspaces",
+    readySelector: ".workspace-list-sidebar",
+    readyText: "Add widget caching layer",
+    waitForSync: true,
+    prepare: ensureSyntheticCodexWorkspace,
+    afterReady: showCodexWorkspace,
+    description:
+      "Workspaces view in dark mode with the pull request worktree selected and its Codex session available.",
+  },
 ];
 
 const firstRunCases: CaptureCase[] = [
@@ -141,6 +217,140 @@ async function stabilizePage(page: Page): Promise<void> {
 async function waitForIdleSync(page: Page): Promise<void> {
   await expect(page.getByRole("button", { name: "Sync", exact: true })).toBeEnabled();
   await expect(page.getByText(/syncing/i)).toHaveCount(0);
+}
+
+async function configureSyntheticCodexAgent(page: Page, baseURL: string): Promise<void> {
+  const desiredAgent = {
+    key: "codex",
+    label: "Codex",
+    command: ["/bin/sh", "-lc", "while :; do sleep 3600; done"],
+    enabled: true,
+  };
+  const currentResponse = await page.request.get(`${baseURL}/api/v1/settings`);
+  if (currentResponse.status() !== 200) {
+    throw new Error(`GET settings returned ${currentResponse.status()}: ${await currentResponse.text()}`);
+  }
+  const currentSettings = (await currentResponse.json()) as {
+    agents: Array<typeof desiredAgent>;
+    launch_targets: Array<{ key: string; available: boolean }>;
+  };
+  const currentAgent = currentSettings.agents.find((agent) => agent.key === desiredAgent.key);
+  if (
+    currentAgent?.label === desiredAgent.label &&
+    currentAgent.enabled === desiredAgent.enabled &&
+    JSON.stringify(currentAgent.command) === JSON.stringify(desiredAgent.command)
+  ) {
+    expect(currentSettings.launch_targets).toEqual(
+      expect.arrayContaining([expect.objectContaining({ key: "codex", available: true })]),
+    );
+    return;
+  }
+
+  const response = await page.request.put(`${baseURL}/api/v1/settings`, {
+    data: { agents: [desiredAgent] },
+  });
+  if (response.status() !== 200) {
+    throw new Error(`PUT settings returned ${response.status()}: ${await response.text()}`);
+  }
+  const settings = (await response.json()) as {
+    launch_targets: Array<{ key: string; available: boolean }>;
+  };
+  expect(settings.launch_targets).toEqual(
+    expect.arrayContaining([expect.objectContaining({ key: "codex", available: true })]),
+  );
+}
+
+async function waitForBackendIdleSync(page: Page, baseURL: string): Promise<void> {
+  await expect
+    .poll(
+      async () => {
+        const response = await page.request.get(`${baseURL}/api/v1/sync/status`);
+        if (response.status() !== 200) {
+          throw new Error(`GET sync status returned ${response.status()}: ${await response.text()}`);
+        }
+        return ((await response.json()) as { running: boolean }).running;
+      },
+      { timeout: 60_000 },
+    )
+    .toBe(false);
+}
+
+type WorkspaceResponse = {
+  id: string;
+  status: string;
+  error_message?: string | null;
+  item_type?: string;
+  item_number?: number;
+  repo?: {
+    provider: string;
+    platform_host: string;
+    owner: string;
+    name: string;
+  };
+};
+
+async function ensureSyntheticCodexWorkspace(page: Page, baseURL: string): Promise<void> {
+  await configureSyntheticCodexAgent(page, baseURL);
+  const listResponse = await page.request.get(`${baseURL}/api/v1/workspaces`);
+  if (listResponse.status() !== 200) {
+    throw new Error(`GET workspaces returned ${listResponse.status()}: ${await listResponse.text()}`);
+  }
+  const listed = (await listResponse.json()) as { workspaces: WorkspaceResponse[] };
+  let workspace = listed.workspaces.find(
+    (candidate) =>
+      candidate.repo?.provider === "github" &&
+      candidate.repo.platform_host === "github.com" &&
+      candidate.repo.owner === "acme" &&
+      candidate.repo.name === "widgets" &&
+      candidate.item_type === "pull_request" &&
+      candidate.item_number === 1,
+  );
+
+  if (!workspace) {
+    const createResponse = await page.request.post(`${baseURL}/api/v1/workspaces`, {
+      data: {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "widgets",
+        mr_number: 1,
+      },
+    });
+    if (createResponse.status() !== 202) {
+      throw new Error(`POST workspace returned ${createResponse.status()}: ${await createResponse.text()}`);
+    }
+    workspace = (await createResponse.json()) as WorkspaceResponse;
+  }
+
+  for (let attempt = 0; attempt < 100 && workspace.status !== "ready"; attempt += 1) {
+    const statusResponse = await page.request.get(`${baseURL}/api/v1/workspaces/${workspace.id}`);
+    if (statusResponse.status() !== 200) {
+      throw new Error(`GET workspace returned ${statusResponse.status()}: ${await statusResponse.text()}`);
+    }
+    workspace = (await statusResponse.json()) as WorkspaceResponse;
+    if (workspace.status === "error") {
+      throw new Error(workspace.error_message ?? `workspace ${workspace.id} failed to become ready`);
+    }
+    if (workspace.status !== "ready") {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
+  expect(workspace.status).toBe("ready");
+
+  const runtimeResponse = await page.request.get(`${baseURL}/api/v1/workspaces/${workspace.id}/runtime`);
+  if (runtimeResponse.status() !== 200) {
+    throw new Error(`GET workspace runtime returned ${runtimeResponse.status()}: ${await runtimeResponse.text()}`);
+  }
+  const runtime = (await runtimeResponse.json()) as { sessions?: Array<{ target_key: string }> };
+  if (!(runtime.sessions ?? []).some((session) => session.target_key === "codex")) {
+    const launchResponse = await page.request.post(
+      `${baseURL}/api/v1/workspaces/${workspace.id}/runtime/sessions`,
+      { data: { target_key: "codex" } },
+    );
+    if (launchResponse.status() !== 200) {
+      throw new Error(`POST runtime session returned ${launchResponse.status()}: ${await launchResponse.text()}`);
+    }
+  }
 }
 
 async function removeConfiguredRepositories(page: Page, baseURL: string): Promise<void> {
@@ -329,6 +539,10 @@ body {
 
 async function captureCase(page: Page, baseURL: string, capture: CaptureCase): Promise<void> {
   await preparePage(page, capture.theme);
+  await capture.prepare?.(page, baseURL);
+  if (capture.waitForSync) {
+    await waitForBackendIdleSync(page, baseURL);
+  }
   await page.goto(`${baseURL}${capture.path}`);
   await stabilizePage(page);
   await expect(page.locator(capture.readySelector)).toContainText(capture.readyText);
@@ -344,6 +558,7 @@ async function captureCase(page: Page, baseURL: string, capture: CaptureCase): P
   if (capture.waitForSync) {
     await waitForIdleSync(page);
   }
+  await capture.afterReady?.(page);
   await expect
     .poll(() => page.evaluate(() => document.documentElement.classList.contains("dark")))
     .toBe(capture.theme === "dark");
@@ -364,6 +579,7 @@ async function captureCase(page: Page, baseURL: string, capture: CaptureCase): P
   expect(svg).not.toMatch(/\b(?:aria-label|title)="Syncing"/);
   expect(svg).not.toMatch(/<img[^>]+src="(?:https?:|\/)/i);
   expect(svg).not.toMatch(/data:image\/(?:avif|gif|jpe?g|png|webp)/i);
+  expect(svg).not.toMatch(/\/var\/folders|kenn-forge-e2e-\d+/i);
   await writeFile(path.join(outputDir!, `${capture.name}-${capture.theme}.svg`), svg);
 }
 

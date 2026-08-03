@@ -5,7 +5,7 @@ Install Kenn Forge, connect a code forge, and open your first workspace.
 ## Install a release
 
 Download the archive for your system from
-[GitHub Releases](https://github.com/kenn-io/middleman/releases). Each release
+[GitHub Releases](https://github.com/kenn-io/forge/releases). Each release
 also includes `SHA256SUMS`.
 
 | System | Architecture | Archive |
@@ -50,7 +50,7 @@ If the Releases page has no published version, build from source.
 Source builds require Go 1.26+ and [Bun](https://bun.sh/).
 
 ```sh
-git clone https://github.com/kenn-io/middleman.git kenn-forge
+git clone https://github.com/kenn-io/forge.git kenn-forge
 cd kenn-forge
 make build
 ```

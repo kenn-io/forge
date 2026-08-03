@@ -7,16 +7,31 @@ import { fileURLToPath } from "node:url";
 const scriptPath = fileURLToPath(import.meta.url);
 const repoRoot = path.resolve(path.dirname(scriptPath), "..");
 
-function isGeneratedAsset(sourceDir, candidate) {
+const publishedFiles = new Set([
+  "archive.md",
+  "commands.md",
+  "configuration.md",
+  "federated-fleet.md",
+  "index.md",
+  "quickstart.md",
+  path.join("stylesheets", "extra.css"),
+  "troubleshooting.md",
+  path.join("workflows", "code-reviewer.md"),
+  path.join("workflows", "issue-triager.md"),
+  "workflows.md",
+]);
+const publishedDirectoryEntries = new Set(["stylesheets", "workflows"]);
+
+function isPublishedDocsInput(sourceDir, candidate) {
   const relative = path.relative(sourceDir, candidate);
-  const generatedDir = path.join("assets", "generated");
-  return relative === generatedDir || relative.startsWith(`${generatedDir}${path.sep}`);
+  if (relative === "") return true;
+  return publishedFiles.has(relative) || publishedDirectoryEntries.has(relative);
 }
 
 export async function stageDocsSource(sourceDir, destinationDir) {
   await cp(sourceDir, destinationDir, {
     recursive: true,
-    filter: (candidate) => !isGeneratedAsset(sourceDir, candidate) && path.basename(candidate) !== "zensical.toml",
+    filter: (candidate) => isPublishedDocsInput(sourceDir, candidate),
   });
 }
 
@@ -71,6 +86,28 @@ export async function buildDocs() {
     );
 
     await run("uvx", ["zensical", "build"], { cwd: stagingRoot, env: process.env });
+    await run(
+      process.execPath,
+      [
+        path.join(repoRoot, "node_modules", "vite-plus", "bin", "vp"),
+        "exec",
+        "--",
+        "playwright",
+        "test",
+        "--config",
+        path.join(repoRoot, "docs", "site", "playwright.config.ts"),
+        "--project=chromium",
+        "--output",
+        path.join(stagingRoot, "site-test-results"),
+      ],
+      {
+        cwd: repoRoot,
+        env: {
+          ...process.env,
+          KENN_FORGE_DOCS_SITE_DIR: path.join(stagingRoot, "site"),
+        },
+      },
+    );
 
     await rm(siteDir, { recursive: true, force: true });
     await cp(path.join(stagingRoot, "site"), siteDir, { recursive: true });

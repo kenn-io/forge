@@ -156,5 +156,6 @@ func isNoUpstreamMessage(stderr string) bool {
 	return strings.Contains(s, "no upstream configured") ||
 		strings.Contains(s, "unknown revision") ||
 		strings.Contains(s, "no such ref") ||
-		strings.Contains(s, "ambiguous argument")
+		strings.Contains(s, "ambiguous argument") ||
+		strings.Contains(s, "head does not point to a branch")
 }

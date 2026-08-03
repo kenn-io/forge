@@ -10,6 +10,7 @@ repo_name = "kenn-io/middleman"
 extra_css = ["stylesheets/extra.css"]
 use_directory_urls = true
 nav = [
+  {"Overview" = "index.md"},
   {"Quick Start" = "quickstart.md"},
   {"Workflows" = [
     {"Overview" = "workflows.md"},

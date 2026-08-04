@@ -116,3 +116,18 @@ jobs:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: bunx --bun vercel@58.0.0 promote "$DEPLOYMENT_URL" --yes --token "$VERCEL_TOKEN"
+
+      - name: Verify promoted release remains latest
+        env:
+          EXPECTED_SHA: ${{ needs.validate-release.outputs.release-sha }}
+          EXPECTED_TAG: ${{ needs.validate-release.outputs.release-tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          latest_tag="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)"
+          git fetch --force origin "refs/tags/$latest_tag:refs/tags/$latest_tag"
+          latest_sha="$(git rev-list -n 1 "refs/tags/$latest_tag")"
+          if [ "$latest_tag" != "$EXPECTED_TAG" ] || [ "$latest_sha" != "$EXPECTED_SHA" ]; then
+            echo "A newer release was published during promotion; its deployment must reconcile production." >&2
+            exit 1
+          fi

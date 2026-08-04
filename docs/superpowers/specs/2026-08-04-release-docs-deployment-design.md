@@ -31,13 +31,20 @@ deployment with domain promotion disabled. This preserves the production
 build environment without allowing build completion order to choose the live
 site.
 
-The GitHub release-publication job and Vercel promotion job use the same
-repository-wide `docs-production` concurrency group. This prevents another CI
-release from being published between the final check and promotion. Immediately
-before promotion, the workflow queries GitHub's latest stable release, refetches
-its tag, peels annotated tags to a commit, and requires both tag name and commit
-SHA to equal the validated values. A superseded run may finish building, but it
-cannot claim `forge.kenn.io` after a newer CI release is published.
+Promotion jobs use the repository-wide `docs-production` concurrency group;
+superseded pending promotions may be discarded because only the newest release
+should claim the alias. Immediately before promotion, the workflow queries
+GitHub's latest stable release, refetches its tag, peels annotated tags to a
+commit, and requires both tag name and commit SHA to equal the validated values.
+
+GitHub release publication is not placed in that concurrency group because
+GitHub concurrency retains only one pending job and could discard an essential
+release. A newer release can therefore publish while promotion runs. The
+workflow checks the exact tag and SHA again immediately after promotion and
+fails visibly when superseded; the newer release's automatically triggered
+deployment reconciles `forge.kenn.io` when it succeeds. Production is
+intentionally eventually consistent across that external check-and-promote
+boundary.
 
 ## Failure and Recovery
 

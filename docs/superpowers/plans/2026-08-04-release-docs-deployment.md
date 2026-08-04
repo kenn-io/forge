@@ -51,8 +51,8 @@ and a `workflow_run` trigger for a completed `Release`. Require
 On the fresh build runner, check out
 `github.event.workflow_run.head_sha`, run `vercel deploy --prod --skip-domain`,
 capture the deployment URL, then pass it to a `promote` job using the shared
-`docs-production` concurrency group. Put the `Release` workflow's publication
-job in the same group so another CI release cannot publish during promotion.
+`docs-production` concurrency group. Keep GitHub release publication outside
+that group because concurrency may discard pending jobs.
 
 - [x] **Step 4: Recheck release freshness before promotion**
 
@@ -61,7 +61,9 @@ Set up the pinned Bun runtime before the freshness check. Then query
 only the read-only GitHub token. Refetch and peel the tag, require its name and
 commit to equal `needs.validate-release.outputs.release-tag` and
 `needs.validate-release.outputs.release-sha`, and run `vercel promote` in the
-immediately following step.
+immediately following step. Query and peel the latest tag again immediately
+after promotion; fail visibly if a newer release was published, allowing that
+release's successful deployment to reconcile the alias.
 
 - [x] **Step 5: Validate workflow syntax**
 

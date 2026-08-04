@@ -890,7 +890,7 @@
       return commitTitle(event.Body) || event.Summary;
     }
     if (event.EventType === "cross_referenced") {
-      return metadataString(parseMetadata(event), "source_title") ?? event.Summary;
+      return crossReferenceLabel(parseMetadata(event), event.Summary);
     }
     if (isLifecycleTransitionEvent(event.EventType)) {
       return "";
@@ -920,6 +920,17 @@
     if (typeof value !== "string") return null;
     const parsed = parseInt(value, 10);
     return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+  }
+
+  function crossReferenceLabel(metadata: Record<string, unknown>, fallback: string): string {
+    const title = metadataString(metadata, "source_title");
+    const owner = metadataString(metadata, "source_owner");
+    const name = metadataString(metadata, "source_repo");
+    const number = metadataNumber(metadata, "source_number");
+    const reference = owner && name && number !== null ? `${owner}/${name}#${number}` : null;
+
+    if (title && reference) return `${title} ${reference}`;
+    return title ?? fallback;
   }
 
   type CrossReferenceLink = {
@@ -1931,7 +1942,7 @@
             </Card>
           {:else if event.EventType === "cross_referenced"}
             {@const sourceUrl = metadataString(metadata, "source_url")}
-            {@const sourceTitle = metadataString(metadata, "source_title") ?? event.Summary}
+            {@const sourceLabel = crossReferenceLabel(metadata, event.Summary)}
             {@const sourceLink = crossReferenceLink(metadata, sourceUrl)}
             <CommentCard
               class="event-card--compact"
@@ -1948,10 +1959,10 @@
                   rel={sourceLink.internal ? undefined : "noopener noreferrer"}
                   {...(sourceLink.dataAttributes ?? {})}
                 >
-                  {sourceTitle}
+                  {sourceLabel}
                 </a>
               {:else}
-                <span class="system-event-summary">{sourceTitle}</span>
+                <span class="system-event-summary">{sourceLabel}</span>
               {/if}
             </CommentCard>
           {:else}

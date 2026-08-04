@@ -2487,7 +2487,7 @@ describe("EventTimeline", () => {
     expect(screen.getByText("Title changed")).toBeTruthy();
     expect(screen.getByText("Base changed")).toBeTruthy();
     expect(screen.getByText("Referenced")).toBeTruthy();
-    expect(screen.getByText("Related bug")).toBeTruthy();
+    expect(screen.getByText("Related bug other/repo#77")).toBeTruthy();
     expect(screen.queryByText("Assigned")).toBeNull();
     expect(screen.getByText("self-assigned this")).toBeTruthy();
     expect(document.querySelectorAll(".event--compact").length).toBe(5);
@@ -2524,7 +2524,7 @@ describe("EventTimeline", () => {
     });
 
     const link = screen.getByRole("link", {
-      name: "Add shared git tooling packages",
+      name: "Add shared git tooling packages kenn-io/kit#1",
     });
     const assert = expect.soft;
     assert(link.getAttribute("href")).toBe("/pulls/github/kenn-io/kit/1");
@@ -2569,7 +2569,7 @@ describe("EventTimeline", () => {
     });
 
     const link = screen.getByRole("link", {
-      name: "Add shared git tooling packages",
+      name: "Add shared git tooling packages kenn-io/kit#1",
     });
     const assert = expect.soft;
     assert(link.closest(".event-card--compact-row")).toBeTruthy();

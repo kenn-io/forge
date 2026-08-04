@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan directly in the current agent, task-by-task. Never use subagent-driven development. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Copy the legacy config and credential files it references so kenn-forge starts with the same repositories and authentication.
+**Goal:** Copy the legacy config and credential files it references so Kenn Forge starts with the same repositories and authentication.
 
 **Approved spec/design:** `docs/superpowers/specs/2026-07-31-legacy-config-migration-design.md`
 
@@ -13,7 +13,7 @@
 ## Constraints
 
 - Leave legacy source files intact.
-- Never replace a conflicting kenn-forge config or credential file.
+- Never replace a conflicting Kenn Forge config or credential file.
 - Do not migrate custom config paths or `KENN_FORGE_HOME` installations.
 - Preserve repository settings, credential contents, and file permissions.
 

@@ -23,7 +23,7 @@ not a production onboarding implementation.
   pairs a focused setup task with a tailored configuration guide, then ends at
   the first useful product surface rather than at "setup complete."
 
-Together these suggest that kenn-forge should treat the first visible pull
+Together these suggest that Kenn Forge should treat the first visible pull
 request and first launchable workspace as activation milestones. Repository
 configuration alone is not the finish line.
 
@@ -54,7 +54,7 @@ complete the flow.
 
 ## Prototype B: Activation checklist in the app shell
 
-The normal kenn-forge top bar and pull-request layout appear immediately. A
+The normal Kenn Forge top bar and pull-request layout appear immediately. A
 persistent setup rail occupies one side and advances as the user completes
 real actions. Repository selection happens inline; the main pane changes from
 an explanatory empty state to a populated PR list, then points at the existing
@@ -84,7 +84,7 @@ without implementation notes. Interactions are deliberately shallow and
 reversible: selecting repositories, advancing mock progress, and switching
 guide steps.
 
-The gallery inherits kenn-forge's theme tokens and system typography. The
+The gallery inherits Kenn Forge's theme tokens and system typography. The
 color strategy is restrained: neutral application chrome, one blue action and
 selection accent, and semantic green/warning status only. Layouts target a
 desktop maintainer working in the normal app shell; the gallery itself remains

@@ -48,12 +48,11 @@ tree during the Vercel build.
 
 Author the terminal content once by running the maintainer's real Codex CLI in
 an isolated synthetic repository against a small widget-cache task. Sanitize
-the useful excerpt into generic static fixture text, then inject that frozen
-transcript, prompt composer, and model/path status as terminal DOM before SVG
-serialization. The overlay is required because terminal canvas pixels do not
-survive the DOM serializer. The checked-in fixture must contain no real
-repository names, paths, credentials, session identifiers, or user data. Local
-and Vercel screenshot builds never start Codex or require agent credentials.
+the useful excerpt into generic static fixture text, then make the synthetic
+Codex session print that frozen transcript before its long-running wait. The
+checked-in fixture must contain no real repository names, paths, credentials,
+session identifiers, or user data. Local and Vercel screenshot builds never
+start Codex or require agent credentials.
 
 ## Implementation boundaries
 
@@ -77,9 +76,7 @@ it, and focus returns to the opener. With `showModal` disabled before page
 initialization, the same suite must prove the original theme-specific image
 stays visible without a trigger or dialog. The generated screenshot suite must prove
 the first capture contains Activity, the selected pull request, the selected
-ready workspace, and the Codex session in both themes. It also verifies that
-the transcript, composer, and model/path status remain inside the terminal
-bounds and survive SVG serialization.
+ready workspace, and the Codex session in both themes.
 
 Run the docs script tests, all 12 generated screenshot cases, the complete
 rendered-site suite, and the final Vercel build. Inspect the first light and dark

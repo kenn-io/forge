@@ -2,15 +2,15 @@
 
 ## Goal
 
-Prepare kenn-forge's public documentation for people encountering the product
-for the first time. The finished site should explain what kenn-forge does, get
+Prepare Kenn Forge's public documentation for people encountering the product
+for the first time. The finished site should explain what Kenn Forge does, get
 a new user into the app, and support the main maintainer workflows without
 requiring them to read internal design or implementation notes.
 
 ## Audience
 
 The primary reader maintains repositories and is comfortable with a terminal,
-but does not know kenn-forge's architecture or configuration model. Advanced
+but does not know Kenn Forge's architecture or configuration model. Advanced
 operators still need accurate references for provider hosts, archives, fleet
 operation, and troubleshooting.
 
@@ -59,7 +59,7 @@ The remaining pages keep their current subject boundaries:
 
 - Workflows describes routine use of the product.
 - The code-reviewer guide shows the handoff from review to a configured coding
-  agent such as Codex. kenn-forge automatically creates and tracks the Git
+  agent such as Codex. Kenn Forge automatically creates and tracks the Git
   worktree for the pull-request branch.
 - Configuration documents durable settings and credentials.
 - Commands documents the supported CLI surface.
@@ -163,6 +163,6 @@ Verification covers source text, generated artifacts, and the rendered site:
 - Confirm public repository and release links target `kenn-io/forge`.
 - Confirm generated screenshot assets remain untracked.
 
-The work is complete when a new user can install kenn-forge, finish onboarding,
+The work is complete when a new user can install Kenn Forge, finish onboarding,
 understand the main workflows, and reach accurate advanced references without
 encountering stale UI or internal project language.

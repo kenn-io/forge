@@ -2,7 +2,7 @@
 
 ## Goal
 
-Generate a deterministic, machine-readable inventory of kenn-forge's
+Generate a deterministic, machine-readable inventory of Kenn Forge's
 long-lived HTTP and WebSocket routes from the Huma operations that register
 them. Embedding hosts and transport proxies can use the inventory in contract
 tests without maintaining a second route list.

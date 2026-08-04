@@ -8,7 +8,7 @@
 
 **Architecture:** A small gallery component owns prototype selection and delegates each direction to a focused, state-local Svelte component. `DesignSystemPage.svelte` only places the gallery; the prototypes make no API calls and share no state with the real app.
 
-**Tech Stack:** Svelte 5 runes, TypeScript, Vitest with Testing Library, existing kenn-forge theme tokens, Lucide Svelte icons.
+**Tech Stack:** Svelte 5 runes, TypeScript, Vitest with Testing Library, existing Kenn Forge theme tokens, Lucide Svelte icons.
 
 ## Global Constraints
 
@@ -85,7 +85,7 @@ describe("OnboardingPrototypeGallery", () => {
     render(OnboardingPrototypeGallery);
     await fireEvent.click(screen.getByRole("tab", { name: "Start guide" }));
     await fireEvent.click(screen.getByRole("button", { name: "2. Add repositories" }));
-    expect(screen.getByRole("heading", { name: "Choose what kenn-forge should track" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Choose what Kenn Forge should track" })).toBeTruthy();
   });
 });
 ```
@@ -139,7 +139,7 @@ repository multi-select, first-sync handoff, and a mock PR-to-workspace action.
 
 - [ ] **Step 3: Implement the in-shell checklist**
 
-Add a kenn-forge-like top bar and a resumable activation rail that explicitly
+Add a Kenn Forge-like top bar and a resumable activation rail that explicitly
 shows authenticated `gh`, repository selection, first-sync progress, the first
 opened PR, and a contextual workspace milestone. Inline repository selection
 populates the mock PR list without leaving the shell.

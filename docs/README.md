@@ -12,13 +12,14 @@ generated screenshots are ignored local artifacts.
 ## Publishing
 
 The Vercel project serves production deployments at `forge.kenn.io`. A
-successful tagged release deploys the tagged checkout through the Vercel CLI,
-so the public guide stays aligned with downloadable binaries. The workflow
-requires the tagged commit to belong to `main` and enters the protected
-`docs-production` environment before receiving Vercel credentials. The project
-has no Vercel Git integration. Each remote build installs the screenshot
-runtime, generates the workflow screenshots from the seeded e2e server,
-verifies the rendered site, and publishes `site/`.
+successful tagged release starts a default-branch workflow that verifies the
+released commit belongs to `main` and still backs GitHub's latest release. It
+builds that exact checkout on Vercel without changing the production alias,
+then rechecks the latest release in a serialized promotion job. No GitHub
+environment or human approval is required. The project has no Vercel Git
+integration. Each remote build installs the screenshot runtime, generates the
+workflow screenshots from the seeded e2e server, verifies the rendered site,
+and publishes `site/`.
 
 To reproduce that remote build after installing its dependencies, run:
 
@@ -52,3 +53,8 @@ make docs-deploy
 These targets send the current repository source to Vercel and use the same
 install and build commands as release deployments. Run production deployments
 from a tagged checkout so the site continues to describe the latest release.
+
+If an automatic build or promotion fails after the GitHub release is
+published, rerun the `Deploy documentation` workflow. The manual production
+target remains the recovery path when Vercel or GitHub cannot complete the
+automatic workflow.

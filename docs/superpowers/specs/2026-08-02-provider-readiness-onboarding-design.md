@@ -3,7 +3,7 @@
 ## Goal
 
 Put a provider-aware readiness checkpoint before repository selection so an
-empty kenn-forge installation explains how its code forge connects, remains
+empty Kenn Forge installation explains how its code forge connects, remains
 usable without `gh`, and preserves a focused route to synced pull requests and
 a workspace.
 

@@ -21555,6 +21555,40 @@ func TestAPIGetPullDetailLoaded(t *testing.T) {
 	assertRFC3339UTC(t, *resp2.JSON200.DetailFetchedAt, now)
 }
 
+func TestAPIGetPullDetailIncludesAssociatedWorkspace(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+	client, database, _, _ := setupTestServerWithWorkspaces(t)
+
+	associatedPR := 1
+	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
+		ID:                 "associated-workspace",
+		Platform:           "github",
+		PlatformHost:       "github.com",
+		RepoOwner:          "acme",
+		RepoName:           "widget",
+		ItemType:           db.WorkspaceItemTypeAdHoc,
+		ItemKey:            db.AdHocWorkspaceItemKey("feature-link"),
+		AssociatedPRNumber: &associatedPR,
+		GitHeadRef:         "feature-link",
+		WorkspaceBranch:    "feature-link",
+		WorktreePath:       filepath.Join(t.TempDir(), "associated-workspace"),
+		TmuxSession:        "associated-workspace",
+		Status:             "ready",
+	}))
+
+	resp, err := client.HTTP.GetPullWithResponse(
+		ctx, "gh", "acme", "widget", int64(associatedPR),
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode(), string(resp.Body))
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.Workspace)
+	assert.Equal("associated-workspace", resp.JSON200.Workspace.Id)
+	assert.Equal("ready", resp.JSON200.Workspace.Status)
+}
+
 func TestAPIGetPullDetailRecordsHotView(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

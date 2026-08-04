@@ -5820,6 +5820,57 @@ func TestReclassifyWorkspaceHeadRepoTrustRetriesAfterRevisionChange(t *testing.T
 	assert.Equal("https://github.com/forker/repo.git", *reclassified.MRHeadRepo)
 }
 
+func TestReclassifyWorkspaceHeadRepoTrustIgnoresAssociatedWorkspace(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	now := time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)
+	repoID, err := d.UpsertRepo(
+		ctx, verifiedGitHubRepoIdentity("github.com", "owner", "repo"),
+	)
+	require.NoError(err)
+	_, err = d.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID: repoID, PlatformID: 1002, PlatformExternalID: "mr-1", Number: 1,
+		Title: "Fork PR", State: db.MergeRequestStateOpen,
+		HeadBranch: "feature", BaseBranch: "main",
+		HeadRepoCloneURL: "https://github.com/new-fork/repo.git",
+		CreatedAt:        now, UpdatedAt: now, LastActivityAt: now,
+	})
+	require.NoError(err)
+
+	associatedPR := 1
+	oldHeadRepo := "https://github.com/old-fork/repo.git"
+	ws := &db.Workspace{
+		ID:                 "ws-associated-reclassification-guard",
+		Platform:           "github",
+		PlatformHost:       "github.com",
+		RepoOwner:          "owner",
+		RepoName:           "repo",
+		ItemType:           db.WorkspaceItemTypeAdHoc,
+		ItemKey:            db.AdHocWorkspaceItemKey("feature"),
+		AssociatedPRNumber: &associatedPR,
+		MRHeadRepo:         &oldHeadRepo,
+		WorkspaceBranch:    "feature",
+		WorktreePath:       t.TempDir(),
+		Status:             "ready",
+	}
+	require.NoError(d.InsertWorkspace(ctx, ws))
+
+	syncer := &Syncer{db: d}
+	syncer.reclassifyWorkspaceHeadRepoTrust(ctx, RepoRef{
+		Platform: platform.KindGitHub, PlatformHost: "github.com",
+		Owner: "owner", Name: "repo",
+	}, repoID, associatedPR)
+
+	stored, err := d.GetWorkspace(ctx, ws.ID)
+	require.NoError(err)
+	require.NotNil(stored)
+	require.NotNil(stored.MRHeadRepo)
+	assert.Equal(oldHeadRepo, *stored.MRHeadRepo)
+}
+
 func TestReclassifyWorkspaceHeadRepoTrustKeepsHistoryBoundDuringReconciliation(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

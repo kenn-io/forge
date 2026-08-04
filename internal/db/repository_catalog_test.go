@@ -241,6 +241,11 @@ func TestWorkspaceRouteLookupAndCreationFailClosedAfterReplacement(t *testing.T)
 	)
 	require.NoError(err)
 	assert.Nil(byRoute)
+	linkedByRoute, err := d.GetWorkspaceLinkedToMRForProvider(
+		t.Context(), "github", "github.com", "org-a", "project-a", 7,
+	)
+	require.NoError(err)
+	assert.Nil(linkedByRoute)
 
 	err = d.InsertWorkspace(t.Context(), &Workspace{
 		ID: "replacement-workspace", Platform: "github",

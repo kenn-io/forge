@@ -126,6 +126,16 @@ func TestWorktreeDivergenceWithoutUpstream(t *testing.T) {
 	assert.New(t).Equal(Divergence{}, div)
 }
 
+func TestWorktreeDivergenceDetachedHead(t *testing.T) {
+	work := setupDivergenceWorktree(t)
+	runWorkspaceTestGit(t, work, "checkout", "--detach")
+
+	div, ok, err := WorktreeDivergence(t.Context(), work)
+	require.NoError(t, err)
+	assert.False(t, ok, "expected ok=false for detached HEAD")
+	assert.Equal(t, Divergence{}, div)
+}
+
 func TestWorktreeUnpushedSHAsInSync(t *testing.T) {
 	work := setupDivergenceWorktree(t)
 
@@ -183,6 +193,16 @@ func TestWorktreeUnpushedSHAsWithoutUpstream(t *testing.T) {
 	require.NoError(err)
 	assert.New(t).False(ok, "expected ok=false for branch without upstream")
 	assert.New(t).Nil(unpushed)
+}
+
+func TestWorktreeUnpushedSHAsDetachedHead(t *testing.T) {
+	work := setupDivergenceWorktree(t)
+	runWorkspaceTestGit(t, work, "checkout", "--detach")
+
+	unpushed, ok, err := WorktreeUnpushedSHAs(t.Context(), work)
+	require.NoError(t, err)
+	assert.False(t, ok, "expected ok=false for detached HEAD")
+	assert.Nil(t, unpushed)
 }
 
 func revParseTestSHA(t *testing.T, dir, ref string) string {

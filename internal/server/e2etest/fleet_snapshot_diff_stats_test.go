@@ -52,14 +52,14 @@ func runGit(t *testing.T, dir string, args ...string) {
 	require.NoError(t, err, "git %v failed: %s%s", args, out, stderr)
 }
 
-// TestFleetSnapshotBranchDiffForSyncedRepoE2E covers the full chain behind the
-// workspace sidebar's +/- chips: a GitHub sync with a pre-resolved repo
-// identity persists the provider default branch, the worktree stats sampler
-// resolves an orphan workspace's diff base from that synced row, and the
-// snapshot API reports the branch-relative diff counts. A regression anywhere
-// in that wiring reproduces the user-visible failure where committed work
-// sampled 0/0 because the repo row had no default branch.
-func TestFleetSnapshotBranchDiffForSyncedRepoE2E(t *testing.T) {
+// TestFleetSnapshotDetachedWorktreeDiffForSyncedRepoE2E covers the full chain
+// behind the workspace sidebar's +/- chips: a GitHub sync with a pre-resolved
+// repo identity persists the provider default branch, the worktree stats
+// sampler resolves an orphan workspace's diff base from that synced row, and
+// the snapshot API reports the diff even when HEAD is detached. A regression
+// anywhere in that wiring either loses the sample on the expected unavailable-
+// upstream result or measures committed work against the wrong base.
+func TestFleetSnapshotDetachedWorktreeDiffForSyncedRepoE2E(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not available")
 	}
@@ -83,6 +83,7 @@ func TestFleetSnapshotBranchDiffForSyncedRepoE2E(t *testing.T) {
 	))
 	runGit(t, featDir, "add", ".")
 	runGit(t, featDir, "commit", "-m", "feature work")
+	runGit(t, featDir, "checkout", "--detach")
 
 	database := dbtest.Open(t)
 	// The pre-filled external id reproduces the modern resolution shape:

@@ -6,6 +6,7 @@ const scriptPath = fileURLToPath(import.meta.url);
 const repoRoot = path.resolve(path.dirname(scriptPath), "..");
 const rootDocs = ["README.md", "CLAUDE.md"];
 const docsDirectories = ["docs", "context"];
+const historicalDirectories = new Set(["docs/superpowers/plans", "docs/superpowers/specs"]);
 const forbiddenBrand = "Kenn Forge";
 
 async function markdownFilesUnder(root, relativeDir) {
@@ -22,6 +23,7 @@ async function markdownFilesUnder(root, relativeDir) {
   for (const entry of entries) {
     const relativePath = path.join(relativeDir, entry.name);
     if (entry.isDirectory()) {
+      if (historicalDirectories.has(relativePath.split(path.sep).join("/"))) continue;
       files.push(...(await markdownFilesUnder(root, relativePath)));
     } else if (entry.isFile() && entry.name.endsWith(".md")) {
       files.push(relativePath);

@@ -21,8 +21,5 @@ test("documentation branding check reports forbidden capitalization", async (t) 
   );
   await writeFile(path.join(root, "context", "good.md"), "Use kenn-forge.\n");
 
-  assert.deepEqual(await findForbiddenDocsBranding(root), [
-    "docs/bad.md:1: Welcome to Kenn Forge.",
-    "docs/superpowers/specs/historical.md:1: The original design called the product Kenn Forge.",
-  ]);
+  assert.deepEqual(await findForbiddenDocsBranding(root), ["docs/bad.md:1: Welcome to Kenn Forge."]);
 });

@@ -199,7 +199,7 @@ Expected: the lightbox interaction and dark-theme asset tests pass.
 
 **Interfaces:**
 - Consumes: a one-time `codex exec --ephemeral` run in an isolated synthetic widget-cache repository.
-- Produces: deterministic terminal text printed by the synthetic Codex agent command before its long-running wait.
+- Produces: deterministic transcript and TUI footer DOM that survives screenshot SVG serialization.
 
 - [ ] **Step 1: Run real Codex once in a synthetic repository**
 
@@ -211,11 +211,11 @@ Extract only generic task, inspection, implementation, and passing-test lines. R
 
 - [ ] **Step 3: Write a failing screenshot-content assertion**
 
-Require the `workspace-codex-session` and `maintainer-overview` SVGs to contain the frozen task summary and passing-test result. Run the light maintainer capture and verify it fails while the synthetic session still prints no content.
+Require the `workspace-codex-session` and `maintainer-overview` SVGs to contain the frozen task summary, passing-test result, prompt composer, model, and sanitized repository path. Run the light maintainer capture and verify it fails while the terminal canvas remains absent from DOM serialization.
 
-- [ ] **Step 4: Print the frozen transcript from the synthetic session**
+- [ ] **Step 4: Inject the frozen Codex view into the terminal DOM**
 
-Replace the synthetic Codex target's silent loop with a shell command that prints the sanitized static transcript and then enters the existing long-running wait. Do not invoke Codex from the generated screenshot suite or Vercel build.
+Inject a static terminal overlay containing the sanitized transcript and the composer/model/path footer captured from the one-off real session. Keep the synthetic target's long-running wait only for session lifecycle. Do not invoke Codex from the generated screenshot suite or Vercel build because terminal canvas pixels are not preserved by the SVG serializer.
 
 - [ ] **Step 5: Verify and inspect both themed captures**
 

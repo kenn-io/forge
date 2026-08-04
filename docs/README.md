@@ -11,11 +11,12 @@ generated screenshots are ignored local artifacts.
 
 ## Publishing
 
-The Vercel project serves production deployments at `forge.kenn.io`. Its Git
-integration builds pull requests as previews and builds `main` for production.
-Each remote build installs the screenshot runtime, generates the workflow
-screenshots from the seeded e2e server, verifies the rendered site, and
-publishes `site/`.
+The Vercel project serves production deployments at `forge.kenn.io`. A
+successful tagged release deploys the tagged checkout through the Vercel CLI,
+so the public guide stays aligned with downloadable binaries. The project has
+no Vercel Git integration. Each remote build installs the screenshot runtime,
+generates the workflow screenshots from the seeded e2e server, verifies the
+rendered site, and publishes `site/`.
 
 To reproduce that remote build after installing its dependencies, run:
 
@@ -24,8 +25,8 @@ make docs-vercel-build
 ```
 
 The Vercel install command targets Amazon Linux. On other development hosts,
-use `make docs-build`; the exact Amazon Linux install and build path is
-verified by Vercel previews.
+use `make docs-build`; on-demand Vercel previews verify the exact Amazon Linux
+install and build path.
 
 For a manual deployment, link a checkout to the project once from the
 repository root:
@@ -46,5 +47,6 @@ Start a production build with:
 make docs-deploy
 ```
 
-These targets send the repository source to Vercel and use the same install and
-build commands as Git-triggered deployments.
+These targets send the current repository source to Vercel and use the same
+install and build commands as release deployments. Run production deployments
+from a tagged checkout so the site continues to describe the latest release.

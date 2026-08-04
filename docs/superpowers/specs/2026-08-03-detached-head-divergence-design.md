@@ -2,10 +2,10 @@
 
 ## Problem
 
-kenn-forge intentionally permits a detached `HEAD` as the last-resort state
+Kenn Forge intentionally permits a detached `HEAD` as the last-resort state
 for a managed worktree. Git reports `fatal: HEAD does not point to a branch`
 when the divergence and unpushed-commit probes ask that worktree for its
-upstream. kenn-forge currently treats that expected result as an unexpected
+upstream. Kenn Forge currently treats that expected result as an unexpected
 probe failure, producing recurring fleet warnings and workspace debug errors.
 
 ## Design

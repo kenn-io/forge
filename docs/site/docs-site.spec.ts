@@ -126,13 +126,24 @@ test("keeps generated workflow screenshots static", async ({ page }) => {
   await page.goto("/assets/generated/maintainer-overview-light.svg");
 
   await expect
-    .poll(() => page.evaluate(() => document.getAnimations().filter((animation) => animation.playState === "running").length))
+    .poll(() =>
+      page.evaluate(() => document.getAnimations().filter((animation) => animation.playState === "running").length),
+    )
     .toBe(0);
 });
 
-test("links to the canonical kenn-forge downloads", async ({ page }) => {
-  await page.route("https://api.github.com/repos/kenn-io/forge/releases/latest", (route) =>
-    route.fulfill({
+test("links to the canonical kenn-forge downloads", async ({ browser }) => {
+  const linuxUserAgent =
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 " + "(KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36";
+  const context = await browser.newContext({ userAgent: linuxUserAgent });
+  const page = await context.newPage();
+  let releaseResponse: (() => void) | undefined;
+  const releaseGate = new Promise<void>((resolve) => {
+    releaseResponse = resolve;
+  });
+  await page.route("https://api.github.com/repos/kenn-io/forge/releases/latest", async (route) => {
+    await releaseGate;
+    await route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
         tag_name: "v1.2.3",
@@ -151,14 +162,20 @@ test("links to the canonical kenn-forge downloads", async ({ page }) => {
           },
         ],
       }),
-    }),
-  );
+    });
+  });
 
   await page.goto("/");
   await expect(page.locator('a[href="https://github.com/kenn-io/forge"]').first()).toBeVisible();
   await expect(page.getByRole("link", { name: "Download latest release" })).toHaveAttribute(
     "href",
     "https://github.com/kenn-io/forge/releases",
+  );
+
+  releaseResponse?.();
+  await expect(page.getByRole("link", { name: "Download for Linux x86-64" })).toHaveAttribute(
+    "href",
+    "https://downloads.example/forge-linux-amd64.tar.gz",
   );
   await expect(page.locator("[data-download-version]")).toHaveText("v1.2.3 · ");
 
@@ -175,6 +192,17 @@ test("links to the canonical kenn-forge downloads", async ({ page }) => {
     "href",
     "https://github.com/kenn-io/forge/releases",
   );
+  await context.close();
+
+  const fallbackContext = await browser.newContext({ userAgent: linuxUserAgent });
+  const fallbackPage = await fallbackContext.newPage();
+  await fallbackPage.route("https://api.github.com/repos/kenn-io/forge/releases/latest", (route) => route.abort());
+  await fallbackPage.goto("/");
+  await expect(fallbackPage.getByRole("link", { name: "Download latest release" })).toHaveAttribute(
+    "href",
+    "https://github.com/kenn-io/forge/releases",
+  );
+  await fallbackContext.close();
 });
 
 test("places Fleet under advanced and experimental navigation", async ({ page }) => {

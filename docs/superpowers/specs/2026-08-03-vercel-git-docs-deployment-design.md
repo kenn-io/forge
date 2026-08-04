@@ -1,17 +1,22 @@
-# Vercel Git Documentation Deployment
+# Vercel Release Documentation Deployment
 
 ## Goal
 
-Publish kenn-forge documentation at `forge.kenn.io` through a direct Vercel build.
-Pull requests receive previews and pushes to `main` receive production
-deployments without a GitHub Actions deployment job or Vercel credentials in
-GitHub.
+Publish kenn-forge documentation at `forge.kenn.io` through a direct Vercel
+build of the latest tagged release. Production follows successful releases,
+while previews remain an explicit maintainer action.
 
 ## Architecture
 
 The applied `kenn-forge-docs` Vercel project remains the hosting authority and
 uses the kenn-forge repository root as its build root. The existing
 `forge.kenn.io` project domain and DNS-only Cloudflare CNAME remain unchanged.
+The project has no Git repository connection or Vercel GitHub App dependency.
+
+The tagged-release workflow uploads its checkout as a source deployment with
+the Vercel CLI after release publication succeeds. Repository secrets provide
+the Vercel token, organization ID, and project ID; kenn-ops owns their
+GitHub-encrypted values and the project connection state.
 
 The root `vercel.json` owns the install command, build command, `site/` output,
 and trailing-slash behavior. Vercel builds the same public documentation
@@ -60,10 +65,12 @@ existing `go run` e2e-server behavior. `make docs-vercel-build` reproduces the
 remote build order after the Vercel install script has populated dependencies
 and local tools.
 
-Vercel automatically builds pull-request commits and `main`. The manual
-preview and production Make targets remain operator escape hatches that submit
-ordinary source deployments, allowing Vercel to run the same install and build
-commands as Git-triggered deployments.
+`.github/workflows/release.yml` deploys production only after its release job
+succeeds, using the exact tagged checkout that produced the downloadable
+binaries. The manual preview target provides on-demand source previews without
+PR comments or deployment statuses from a GitHub App. The manual production
+target remains an operator escape hatch for a tagged checkout. All three paths
+run the same Vercel install and build commands.
 
 ## Failure Handling
 
@@ -73,26 +80,26 @@ errors. The build fails for frontend errors, Go compilation errors, screenshot
 capture errors, Zensical errors, or rendered-site browser failures. A failed
 preview or production build never falls back to stale pages or screenshots.
 
-The Vercel Git connection requires the Vercel GitHub integration to have access
-to the kenn-forge repository. Infrastructure configuration reports that provider
-error without introducing a compatibility path or moving deployment
-credentials into GitHub Actions.
+Missing or invalid Vercel credentials fail the deployment job without changing
+the existing production deployment. Vercel credentials are unavailable to
+ordinary CI and are consumed only by the release deployment step.
 
 ## Verification
 
 A focused unit test proves that `PLAYWRIGHT_E2E_SERVER_BINARY` selects the
 explicit executable and omits `go run` arguments. Script tests continue to
-exercise the public-source staging boundary. A local `docs-vercel-build` run,
-when the Linux dependencies are available, proves the full frontend, binary,
-screenshot, Zensical, and rendered-site sequence.
+exercise the public-source staging boundary. Workflow lint verifies the
+release-job dependency and Vercel CLI invocation. A local `docs-vercel-build`
+run, when the Linux dependencies are available, proves the full frontend,
+binary, screenshot, Zensical, and rendered-site sequence.
 
 ## Rollout
 
-1. Merge the kenn-forge direct-build configuration.
-2. Apply the Vercel project configuration that connects the repository root and
-   selects `main` as the production branch.
-3. Confirm a preview completes the direct screenshot build.
-4. Confirm the first production deployment serves `forge.kenn.io`.
+1. Apply the reviewed kenn-ops change that removes the Git connection and
+   provisions the encrypted GitHub Actions secrets.
+2. Merge the kenn-forge direct-build and release-workflow configuration.
+3. Confirm an on-demand preview completes the direct screenshot build.
+4. Confirm the next successful tagged release updates `forge.kenn.io`.
 
 No resource replacement, DNS migration, generated-asset branch, prebuilt
-deployment path, or GitHub Actions deployment secret is part of this change.
+deployment path, or Vercel GitHub App is part of this change.

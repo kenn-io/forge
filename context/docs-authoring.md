@@ -20,9 +20,16 @@ screenshots, or the Zensical site.
   copied into `internal/web/dist`, then pass the prebuilt binary through
   `PLAYWRIGHT_E2E_SERVER_BINARY` so screenshot readiness excludes Go compile
   time. (`scripts/vercel-build-docs.sh`)
+- Production documentation deploys only after the tagged release job succeeds,
+  using the tagged checkout through the Vercel CLI. PR previews are on-demand;
+  the project has no Vercel GitHub App connection.
+  (`.github/workflows/release.yml::deploy-docs`)
 - Download links retain a static GitHub Releases fallback and enhance to the
   matching `browser_download_url` returned by the latest-release API because a
-  release or the API may be unavailable. (`docs/overrides/main.html::assetFor`)
+  release or the API may be unavailable. Automatic platform selection occurs
+  only when the browser exposes an unambiguous OS and architecture; otherwise
+  the Releases fallback and explicit Quick Start artifact choices remain.
+  (`docs/overrides/main.html::assetFor`)
 - Verify screenshot asset-path findings against rendered `site/` output because
   Zensical can rewrite raw HTML paths when `use_directory_urls` is enabled.
 - Zensical resolves `docs_dir` and `site_dir` relative to the config file. To

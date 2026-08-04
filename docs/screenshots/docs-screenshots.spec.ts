@@ -116,6 +116,7 @@ async function embedSyntheticCodexTranscript(workspace: Locator): Promise<void> 
     prompt.append(promptMarker, promptText);
 
     const status = document.createElement("div");
+    status.setAttribute("aria-label", "Codex model and workspace status");
     status.style.cssText = [
       "display: flex",
       "align-items: center",
@@ -703,6 +704,24 @@ async function captureCase(page: Page, baseURL: string, capture: CaptureCase): P
     .poll(() => page.evaluate(() => document.documentElement.classList.contains("dark")))
     .toBe(capture.theme === "dark");
 
+  if (capture.name === "workspace-codex-session" || capture.name === "maintainer-overview") {
+    const terminal = page.locator(".docs-codex-transcript:visible").first();
+    const composer = terminal.getByLabel("Codex prompt composer");
+    const status = terminal.getByLabel("Codex model and workspace status");
+    await expect(composer).toContainText("Summarize recent commits");
+    await expect(status).toContainText(/gpt-5\.6-sol high\s*·\s*~\/src\/kenn-io\/forge/);
+    const [terminalBox, composerBox, statusBox] = await Promise.all([
+      terminal.boundingBox(),
+      composer.boundingBox(),
+      status.boundingBox(),
+    ]);
+    expect(terminalBox).not.toBeNull();
+    expect(composerBox).not.toBeNull();
+    expect(statusBox).not.toBeNull();
+    expect(composerBox!.y + composerBox!.height).toBeLessThanOrEqual(terminalBox!.y + terminalBox!.height);
+    expect(statusBox!.y + statusBox!.height).toBeLessThanOrEqual(terminalBox!.y + terminalBox!.height);
+  }
+
   const svg = await svgDOMSnapshot(page, {
     title: `${capture.name} ${capture.theme}`,
     description: capture.description,
@@ -723,6 +742,9 @@ async function captureCase(page: Page, baseURL: string, capture: CaptureCase): P
   if (capture.name === "workspace-codex-session" || capture.name === "maintainer-overview") {
     expect(svg).toContain("Implemented in-flight request coalescing.");
     expect(svg).toContain("3 passed, 0 failed.");
+    expect(svg).toContain("Summarize recent commits");
+    expect(svg).toContain("gpt-5.6-sol high");
+    expect(svg).toContain("~/src/kenn-io/forge");
   }
   await writeFile(path.join(outputDir!, `${capture.name}-${capture.theme}.svg`), svg);
 }

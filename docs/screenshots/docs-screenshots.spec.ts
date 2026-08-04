@@ -58,25 +58,88 @@ async function embedSyntheticCodexTranscript(workspace: Locator): Promise<void> 
     const existing = element.querySelector(".docs-codex-transcript");
     if (existing) existing.remove();
 
-    const content = document.createElement("pre");
+    const content = document.createElement("div");
     content.className = "docs-codex-transcript";
     content.setAttribute("aria-label", "Synthetic Codex session transcript");
-    content.textContent = transcript;
     content.style.cssText = [
       "position: absolute",
       "inset: 0",
       "z-index: 3",
       "box-sizing: border-box",
-      "margin: 0",
-      "padding: 18px 22px",
       "overflow: hidden",
       "background: #0d1117",
       "color: #c9d1d9",
       'font-family: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace',
-      "font-size: 13px",
-      "line-height: 1.5",
+      "font-size: 12.5px",
+      "line-height: 1.4",
+      "display: flex",
+      "flex-direction: column",
+    ].join("; ");
+
+    const output = document.createElement("pre");
+    output.textContent = transcript;
+    output.style.cssText = [
+      "box-sizing: border-box",
+      "flex: 1 1 auto",
+      "min-height: 0",
+      "margin: 0",
+      "padding: 14px 22px 6px",
+      "overflow: hidden",
+      "color: inherit",
+      "font: inherit",
       "white-space: pre-wrap",
     ].join("; ");
+
+    const composer = document.createElement("div");
+    composer.setAttribute("aria-label", "Codex prompt composer");
+    composer.style.cssText = ["box-sizing: border-box", "flex: 0 0 auto", "margin: 0 12px 10px"].join("; ");
+
+    const prompt = document.createElement("div");
+    prompt.style.cssText = [
+      "box-sizing: border-box",
+      "display: flex",
+      "align-items: center",
+      "gap: 10px",
+      "min-height: 44px",
+      "padding: 10px 14px",
+      "border: 1px solid #444b55",
+      "background: #343941",
+    ].join("; ");
+
+    const promptMarker = document.createElement("span");
+    promptMarker.textContent = "›";
+    promptMarker.style.cssText = "color: #f0f3f6; font-weight: 700";
+
+    const promptText = document.createElement("span");
+    promptText.textContent = "Summarize recent commits";
+    promptText.style.cssText = "color: #9da4ad";
+    prompt.append(promptMarker, promptText);
+
+    const status = document.createElement("div");
+    status.style.cssText = [
+      "display: flex",
+      "align-items: center",
+      "gap: 8px",
+      "padding: 3px 14px 0",
+      "font-size: 12.5px",
+      "line-height: 1.4",
+    ].join("; ");
+
+    const model = document.createElement("span");
+    model.textContent = "gpt-5.6-sol high";
+    model.style.cssText = "color: #f6e2b7";
+
+    const separator = document.createElement("span");
+    separator.textContent = "·";
+    separator.style.cssText = "color: #6e7681";
+
+    const workingDirectory = document.createElement("span");
+    workingDirectory.textContent = "~/src/kenn-io/forge";
+    workingDirectory.style.cssText = "color: #abdfa7";
+    status.append(model, separator, workingDirectory);
+
+    composer.append(prompt, status);
+    content.append(output, composer);
     element.appendChild(content);
   }, syntheticCodexTranscript);
 }
@@ -422,10 +485,9 @@ async function ensureSyntheticCodexWorkspace(page: Page, baseURL: string): Promi
   }
   const runtime = (await runtimeResponse.json()) as { sessions?: Array<{ target_key: string }> };
   if (!(runtime.sessions ?? []).some((session) => session.target_key === "codex")) {
-    const launchResponse = await page.request.post(
-      `${baseURL}/api/v1/workspaces/${workspace.id}/runtime/sessions`,
-      { data: { target_key: "codex" } },
-    );
+    const launchResponse = await page.request.post(`${baseURL}/api/v1/workspaces/${workspace.id}/runtime/sessions`, {
+      data: { target_key: "codex" },
+    });
     if (launchResponse.status() !== 200) {
       throw new Error(`POST runtime session returned ${launchResponse.status()}: ${await launchResponse.text()}`);
     }

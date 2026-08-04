@@ -44,7 +44,9 @@ before serialization.
 The visible Codex pane contains a short static transcript derived from a
 one-time real Codex run in a synthetic widget-cache repository. The capture
 harness injects the sanitized text into the terminal DOM because canvas pixels
-cannot be preserved by the SVG serializer. Docs builds never run Codex or read
+cannot be preserved by the SVG serializer. Its prompt composer and model/path
+status reproduce the same captured Codex TUI with the temporary path replaced
+by the public synthetic repository path. Docs builds never run Codex or read
 agent credentials.
 
 Dark captures must render as dark when opened as standalone SVG files. The

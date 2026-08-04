@@ -13,6 +13,7 @@
 - Preserve at least 300 pixels for the terminal whenever the container permits it.
 - Preserve the existing 280-pixel detail-pane minimum whenever the container permits it.
 - Persist only explicit user resize intent, never an automatic viewport constraint.
+- Disable resizing while the available detail-pane maximum is below 280 pixels.
 - Do not change API, database, provider, or terminal runtime behavior.
 
 ---
@@ -63,3 +64,37 @@ repository's focused frontend checks identified by package scripts.
 Review the complete diff, run context-sync commit mode and the public-data scrub,
 commit with rationale-focused history, push `pr-pane-collapsing`, and open a
 pull request against the repository default branch.
+
+---
+
+### Task 2: Reject Resizing During Exceptional Constraints
+
+**Files:**
+- Modify: `frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte:1258-1300,4020-4030`
+- Test: `frontend/tests/e2e/workspace-sidebar.spec.ts`
+
+**Interfaces:**
+- Consumes: `rightSidebarAriaMax`, `MIN_SIDEBAR_WIDTH`, `SplitResizeHandle.disabled`
+- Produces: `rightSidebarResizeDisabled`, which prevents constrained resize events from changing the preference
+
+- [ ] **Step 1: Extend the app-shell regression**
+
+After constraining the rendered pane below 280 pixels, drag the real sidebar
+resize handle before restoring the viewport. Assert that local storage remains
+`"400"` and that the rendered pane returns to 400 pixels.
+
+- [ ] **Step 2: Verify the regression fails**
+
+Run the focused Chromium Playwright test. Expected: local storage contains the
+temporary constrained width after the drag.
+
+- [ ] **Step 3: Disable and guard constrained resizing**
+
+Derive a disabled state when the current layout maximum is below 280 pixels,
+pass it to `SplitResizeHandle`, and return from `handleSidebarResize` while that
+state is active.
+
+- [ ] **Step 4: Verify the regression and affected frontend suites**
+
+Run the focused test, the complete workspace sidebar Chromium spec, both full
+Vitest projects, the Svelte analyzer, and the repository frontend checks.

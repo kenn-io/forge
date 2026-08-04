@@ -3289,6 +3289,17 @@ test.describe("sidebar persistence", () => {
 
     await page.setViewportSize({ width: 900, height: 720 });
     await expect.poll(() => rightSidebar.evaluate((el) => el.offsetWidth)).toBeLessThan(280);
+
+    const handle = page.locator(".sidebar-resize-handle");
+    const box = await handle.boundingBox();
+    expect(box).toBeTruthy();
+    if (box) {
+      await page.mouse.move(box.x + 2, box.y + box.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(box.x - 40, box.y + box.height / 2);
+      await page.mouse.up();
+    }
+
     await expect
       .poll(() => page.evaluate(() => localStorage.getItem("kenn-forge-workspace-sidebar-width")))
       .toBe("400");

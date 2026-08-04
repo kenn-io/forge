@@ -1263,6 +1263,9 @@
   const rightSidebarAriaMin = $derived(
     Math.min(MIN_SIDEBAR_WIDTH, rightSidebarAriaMax),
   );
+  const rightSidebarResizeDisabled = $derived(
+    rightSidebarAriaMax < MIN_SIDEBAR_WIDTH,
+  );
   // The saved width records user intent. A narrow window or a wider workspace
   // list may temporarily leave less room, but that layout constraint must not
   // replace the preference and strand the pane at its constrained width after
@@ -1289,6 +1292,7 @@
   }
 
   function handleSidebarResize(event: SplitResizeEvent): void {
+    if (rightSidebarResizeDisabled) return;
     preferredRightSidebarWidth = Math.max(
       sidebarResizeMinWidth,
       Math.min(
@@ -4022,6 +4026,7 @@
               ariaValueMin={rightSidebarAriaMin}
               ariaValueMax={rightSidebarAriaMax}
               ariaValueNow={renderedRightSidebarWidth}
+              disabled={rightSidebarResizeDisabled}
               onResizeStart={handleSidebarResizeStart}
               onResize={handleSidebarResize}
             />

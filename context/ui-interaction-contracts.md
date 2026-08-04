@@ -222,9 +222,9 @@ Whenever a control persists, document and test:
 - where it persists
 - whether it is global, per-view, or per-item
 - what happens after navigating away and back
-- for layout dimensions, clamp stale values on restore, but keep temporary
-  container constraints separate from the saved preference so widening restores
-  user intent (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::renderedRightSidebarWidth`)
+- for layout dimensions, clamp stale values on restore; temporary constraints
+  and resize input below a valid minimum must not replace the saved preference
+  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::renderedRightSidebarWidth`)
 
 ## Keyboard Scope Precedence
 

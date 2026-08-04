@@ -23,13 +23,18 @@ terminal minimum, the rendered pane may temporarily become narrower. This
 preserves the existing terminal usability contract without converting a
 transient constraint into durable state.
 
+While the available maximum is below 280 pixels, the resize handle is disabled
+and the resize handler rejects any event already in flight. A temporarily
+constrained width is not a valid user preference and must never be persisted.
+
 ## Verification
 
 Add a real-browser regression that opens the Workspaces detail pane with a
 saved preferred width, narrows the available row until the rendered pane is
 below its minimum, and then widens it again. Assert that the rendered pane
 returns to the saved preference and that local storage never changes during
-the temporary constraint.
+the temporary constraint, including after attempting to drag the constrained
+resize handle.
 
 Retain the existing pointer-resize persistence and left-sidebar reclamping
 coverage. No API, database, provider, or terminal runtime behavior changes.

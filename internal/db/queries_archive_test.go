@@ -1325,6 +1325,38 @@ func TestArchiveDBBoundariesNormalizeTimestampsToUTC(t *testing.T) {
 	assert.Equal(1, progress[0].Counts.DueItemCount)
 }
 
+func TestClaimArchiveItemCarriesAttemptCount(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := archiveTestTime()
+	repoID := insertTestRepo(t, d, "acme", "attempt-count")
+	require.NoError(d.EnsureDiscoveryArchives(ctx, []int64{repoID}, now))
+	require.NoError(d.StartFullArchives(ctx, []int64{repoID}, now))
+	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 1, now)
+	insertArchiveProgressForTest(t, d, repoID, ArchiveItemTypeIssue, 1, ArchiveDatasetLookup, ArchiveDatasetProgressPending)
+
+	fresh, err := d.ClaimArchiveItem(ctx, ClaimArchiveItemOpts{RepoIDs: []int64{repoID}, Now: now})
+	require.NoError(err)
+	require.NotNil(fresh)
+	assert.Zero(fresh.AttemptCount)
+
+	progress, err := d.GetDatasetProgress(ctx, repoID, ArchiveItemTypeIssue, 1, ArchiveDatasetLookup)
+	require.NoError(err)
+	for range 2 {
+		require.NoError(d.FailArchiveItemSync(ctx, ArchiveItemSyncCommit{
+			RepoID: repoID, ItemType: ArchiveItemTypeIssue, ItemNumber: 1,
+			ScanGeneration: progress.ScanGeneration, ErrorDetail: "boom", Now: now,
+		}, ArchiveErrorCodeTransient, nil, false))
+	}
+
+	claim, err := d.ClaimArchiveItem(ctx, ClaimArchiveItemOpts{RepoIDs: []int64{repoID}, Now: now})
+	require.NoError(err)
+	require.NotNil(claim)
+	assert.Equal(2, claim.AttemptCount)
+}
+
 func TestScanScopedRepositoryFailureIsClaimFenced(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

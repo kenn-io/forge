@@ -183,6 +183,24 @@ func (p *gitHubClientProvider) issueLookupOutcomeError(
 	return nil
 }
 
+// issuePullRequestOutcomeError classifies an issue fetch whose number
+// resolved to a pull request. REST serves pull requests from the issues
+// endpoint, but an issue number that resolves to a pull request is not an
+// issue: surfacing it as present hands downstream issue reads (GraphQL
+// timeline, comments) a number they can never resolve, so hydration retries
+// forever. Callers that dispatch on the fetched item's kind (issue vs pull
+// request) must not apply this; it is for reads that require an issue.
+func (p *gitHubClientProvider) issuePullRequestOutcomeError(
+	ref platform.RepoRef,
+	number int,
+	issue *gh.Issue,
+) error {
+	if issue == nil || !issue.IsPullRequest() {
+		return nil
+	}
+	return p.lookupNotPresentError(ref, number, lookupRemoved, nil)
+}
+
 // mergeRequestLookupOutcomeError is the merge-request counterpart to
 // issueLookupOutcomeError.
 func (p *gitHubClientProvider) mergeRequestLookupOutcomeError(

@@ -737,6 +737,71 @@ func TestArchivePausePreventsFutureProviderReads(t *testing.T) {
 	assert.Empty(t, provider.calls)
 }
 
+func TestArchiveHydrationRetryClassifierReceivesStoredAttemptCount(t *testing.T) {
+	require := require.New(t)
+	database := dbtest.Open(t)
+	now := time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC)
+	ref := archiveServiceRef(platform.KindGitHub, "github.test", "repo")
+	archiveServiceSeedRepo(t, database, ref)
+	provider := newArchiveServiceProvider(ref.Platform, ref.Host)
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	classifier := &recordingRetryClassifier{}
+	service, err := NewService(
+		database, registry, nil,
+		archiveFailingItemSource{archiveTestSource{refs: []platform.RepoRef{ref}}},
+		classifier, fixedClock{value: now},
+	)
+	require.NoError(err)
+	require.NoError(service.EnsureConfigured(t.Context(), []platform.RepoRef{ref}))
+	_, err = service.Start(t.Context(), []platform.RepoRef{ref})
+	require.NoError(err)
+
+	// Early polls run inventory bootstrap pages and succeed; hydration
+	// failures begin once an item is claimable, so poll until three
+	// failures have been classified.
+	for range 8 {
+		_ = service.RunEligible(t.Context())
+		if len(classifier.recorded()) >= 3 {
+			break
+		}
+	}
+
+	attempts := classifier.recorded()
+	require.GreaterOrEqual(len(attempts), 3)
+	assert.Equal(t, []int{0, 1, 2}, attempts[:3],
+		"each retry must classify with the item's stored attempt count so backoff can grow")
+}
+
+type recordingRetryClassifier struct {
+	mu       sync.Mutex
+	attempts []int
+}
+
+func (c *recordingRetryClassifier) Classify(_ error, attempt int, _ time.Time) RetryDecision {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.attempts = append(c.attempts, attempt)
+	return RetryDecision{Code: db.ArchiveErrorCodeTransient}
+}
+
+func (c *recordingRetryClassifier) recorded() []int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]int(nil), c.attempts...)
+}
+
+type archiveFailingItemSource struct{ archiveTestSource }
+
+func (archiveFailingItemSource) SyncArchiveItem(
+	context.Context,
+	platform.RepoRef,
+	db.ArchiveItemType,
+	int,
+) (bool, error) {
+	return true, errors.New("transient provider failure")
+}
+
 type archiveTestSource struct{ refs []platform.RepoRef }
 
 func (s archiveTestSource) ConfiguredRepositories(context.Context) ([]platform.RepoRef, error) {

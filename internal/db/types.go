@@ -457,6 +457,7 @@ type ArchiveItemWork struct {
 	ItemNumber        int
 	ProviderCreatedAt time.Time
 	ScanGeneration    int64
+	AttemptCount      int
 }
 
 type ArchiveStatus string

@@ -812,7 +812,7 @@ func (d *DB) claimArchiveItem(
 
 const dueArchiveItemsQuery = `
 	SELECT ai.repo_id, ai.item_type, ai.item_number, ai.provider_created_at,
-		p.scan_generation
+		p.scan_generation, p.attempt_count
 	FROM forge_archive_dataset_progress p
 	JOIN forge_archive_items ai
 	  ON ai.repo_id = p.repo_id AND ai.item_type = p.item_type AND ai.item_number = p.item_number
@@ -847,7 +847,7 @@ func claimArchiveItemForRepo(
 		ctx, query, args...,
 	).Scan(
 		&work.RepoID, &work.ItemType, &work.ItemNumber,
-		&work.ProviderCreatedAt, &work.ScanGeneration,
+		&work.ProviderCreatedAt, &work.ScanGeneration, &work.AttemptCount,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil

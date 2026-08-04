@@ -92,6 +92,8 @@ func TestGitHubLiveGetMapsLookupOutcomes(t *testing.T) {
 			http.Error(w, `{"message":"Forbidden"}`, http.StatusForbidden)
 		case "/api/v3/repos/acme/widget/issues/10":
 			_, _ = w.Write([]byte(`{"id":10,"node_id":"I_10","number":10,"repository_url":"https://api.github.com/repos/other/place","title":"moved","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-02T00:00:00Z"}`))
+		case "/api/v3/repos/acme/widget/issues/11":
+			_, _ = w.Write([]byte(`{"id":11,"node_id":"PR_11","number":11,"repository_url":"https://api.github.com/repos/acme/widget","title":"actually a pull request","pull_request":{"url":"https://api.github.com/repos/acme/widget/pulls/11"},"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-02T00:00:00Z"}`))
 		case "/api/v3/repos/acme/widget/pulls/10":
 			_, _ = w.Write([]byte(`{"id":10,"number":10,"title":"moved","state":"open","base":{"repo":{"url":"https://api.github.com/repos/other/place"}},"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-02T00:00:00Z"}`))
 		case "/api/v3/repos/acme/widget":
@@ -139,6 +141,16 @@ func TestGitHubLiveGetMapsLookupOutcomes(t *testing.T) {
 	var typedRemovedErr *platform.Error
 	require.ErrorAs(removedIssueErr, &typedRemovedErr)
 	assert.Nil(typedRemovedErr.Destination)
+
+	// An issue number that resolves to a pull request is not an issue:
+	// the lookup must classify it removed instead of surfacing PR-flavored
+	// issue data that downstream GraphQL issue reads can never resolve.
+	_, prFlavoredErr := provider.GetIssue(t.Context(), ref, 11)
+	require.ErrorIs(prFlavoredErr, platform.ErrNotFound)
+	require.ErrorIs(prFlavoredErr, platform.ErrLookupNotPresent)
+	var typedPRFlavoredErr *platform.Error
+	require.ErrorAs(prFlavoredErr, &typedPRFlavoredErr)
+	assert.Nil(typedPRFlavoredErr.Destination)
 }
 
 func TestGitHubArchiveDestinationIgnoresRepoCasing(t *testing.T) {

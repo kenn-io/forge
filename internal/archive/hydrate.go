@@ -58,7 +58,7 @@ func (s *Service) hydrateItem(
 		}
 		return s.db.CommitArchiveItemSync(ctx, commit)
 	}
-	return s.recordItemSyncFailure(ctx, commit, syncErr)
+	return s.recordItemSyncFailure(ctx, commit, work.AttemptCount, syncErr)
 }
 
 func archiveTerminalSyncOutcome(
@@ -96,9 +96,10 @@ func archiveSyncErrorCode(err error) string {
 func (s *Service) recordItemSyncFailure(
 	ctx context.Context,
 	commit db.ArchiveItemSyncCommit,
+	attempt int,
 	cause error,
 ) error {
-	decision := s.retries.Classify(cause, 0, s.now())
+	decision := s.retries.Classify(cause, attempt, s.now())
 	if decision.Code == "" {
 		decision.Code = db.ArchiveErrorCodeTransient
 	}

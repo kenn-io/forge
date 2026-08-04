@@ -2076,6 +2076,9 @@ func (p *gitHubClientProvider) GetGitHubIssue(
 	if outcomeErr := p.issueLookupOutcomeError(ctx, ref, number, issue, err); outcomeErr != nil {
 		return nil, outcomeErr
 	}
+	if outcomeErr := p.issuePullRequestOutcomeError(ref, number, issue); outcomeErr != nil {
+		return nil, outcomeErr
+	}
 	return issue, nil
 }
 
@@ -8513,6 +8516,11 @@ func (s *Syncer) fetchIssueDetail(
 	if provider, ok := issueReader.(*gitHubClientProvider); ok {
 		if outcomeErr := provider.issueLookupOutcomeError(
 			ctx, platformRepoRef(repo), number, ghIssue, err,
+		); outcomeErr != nil {
+			return calls, fmt.Errorf("get issue #%d: %w", number, outcomeErr)
+		}
+		if outcomeErr := provider.issuePullRequestOutcomeError(
+			platformRepoRef(repo), number, ghIssue,
 		); outcomeErr != nil {
 			return calls, fmt.Errorf("get issue #%d: %w", number, outcomeErr)
 		}

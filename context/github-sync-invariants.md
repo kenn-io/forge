@@ -64,13 +64,19 @@ For pull requests, that means:
   persisted activity, not just one subset of the detail payload.
 - Background sync cooldowns are allowed, but user-initiated refreshes must still
   be able to promote a stronger sync intent over an in-flight background fetch.
-- Recently active open PRs in the fast-sync lane are cadence-gated by activity
-  age, not just by membership in `active_pr_window`
-  (`internal/github/sync.go::activeMRRefreshInterval`). Hot PRs use
-  `active_pr_refresh_interval`; older PRs still inside the window fall back to
-  a slower cadence so the Activity view stays fresh without spending the same
-  request rate on hours-old rows. A missing `detail_fetched_at` remains due
-  immediately (`internal/github/sync.go::activeMRDueForFastSync`).
+- The hot set is the last 10 unique open PR details viewed and persists across
+  restarts. Hot and explicit workspace-linked PRs use the configured watched cadence;
+  terminal PRs are evicted immediately (`internal/db/queries_hot_merge_requests.go::RecordHotMergeRequestView`).
+- Other recently active PRs are warm and detail-age gated at 10 minutes;
+  never-fetched hot or warm PRs are immediately due
+  (`internal/github/sync.go::hotAndWarmOpenMRs`).
+- Linked PR notifications may advance fast-sync scheduling through
+  `source_updated_at`, but that timestamp is only a staleness hint. Combine it
+  with authoritative PR activity for warm admission; never persist it as
+  `last_activity_at` (`internal/github/sync.go::hotAndWarmOpenMRs`).
+- Scheduled and immediate watched-MR passes are serialized for the full pass so
+  provider work and host cadence state have one owner
+  (`internal/github/sync.go::syncWatchedMRs`).
 - GitHub detail ETags reduce both payload work and kenn-forge's eager-refresh
   budget spend for unchanged PRs; the sync budget transport does not count
   `304 Not Modified` responses (`internal/github/budget_transport.go::budgetTransport`).

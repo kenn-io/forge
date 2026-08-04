@@ -16,6 +16,10 @@ import (
 // terminal attach gets its own bounded span instead (internal/tracing).
 func otelTraceable(basePath string) func(*http.Request) bool {
 	prefix := strings.TrimSuffix(basePath, "/")
+	inventory, err := NewTransportInventory()
+	if err != nil {
+		panic("build transport inventory: " + err.Error())
+	}
 	return func(r *http.Request) bool {
 		if strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
 			return false
@@ -24,21 +28,12 @@ func otelTraceable(basePath string) func(*http.Request) bool {
 		if prefix != "" && strings.HasPrefix(path, prefix+"/") {
 			path = strings.TrimPrefix(path, prefix)
 		}
-		if r.Method == http.MethodGet {
-			switch path {
-			case "/api/v1/events":
-				return false
-			case "/api/v1/kata/proxy/api/v1/events/stream":
-				return false
-			case "/api/roborev/api/stream/events":
-				return false
-			case "/api/roborev/api/job/output":
-				return r.URL.Query().Get("stream") != "1"
-			}
+		if path != r.URL.Path {
+			cloned := r.Clone(r.Context())
+			cloned.URL.Path = path
+			r = cloned
 		}
-		return r.Method != http.MethodPost ||
-			path != "/api/roborev/api/sync/now" ||
-			r.URL.Query().Get("stream") != "1"
+		return !inventory.matchesHTTPStream(r)
 	}
 }
 

@@ -297,6 +297,16 @@ make api-generate
 Then review generated Go and TypeScript client diffs for operation-name
 renames and update checked-in callers that use generated method/type names.
 
+For long-lived transport registration changes, run:
+
+```sh
+go test ./internal/server -run 'TestTransportInventory|TestOTelTraceable' -shuffle=on
+go run ./cmd/kenn-forge-transport-inventory
+```
+
+The generated inventory must come from Huma registration metadata; do not add
+a hand-maintained route snapshot.
+
 Do not duplicate full-stack e2e tests across default-host and
 `/host/{platform_host}` route forms when the host route is only a generic
 wrapper. Add host-specific e2e coverage only for custom host logic, route

@@ -5,11 +5,12 @@ site_author = "Kenn Software LLC"
 copyright = 'Copyright &copy; 2026 <a href="https://kenn.io">Kenn Software LLC</a>. Elastic License 2.0.'
 docs_dir = "docs"
 site_dir = "site"
-repo_url = "https://github.com/kenn-io/middleman"
-repo_name = "kenn-io/middleman"
+repo_url = "https://github.com/kenn-io/forge"
+repo_name = "kenn-io/forge"
 extra_css = ["stylesheets/extra.css"]
 use_directory_urls = true
 nav = [
+  {"Overview" = "index.md"},
   {"Quick Start" = "quickstart.md"},
   {"Workflows" = [
     {"Overview" = "workflows.md"},
@@ -18,7 +19,9 @@ nav = [
   ]},
   {"Configuration" = "configuration.md"},
   {"Commands" = "commands.md"},
-  {"Fleet" = "federated-fleet.md"},
+  {"Advanced / experimental" = [
+    {"Fleet" = "federated-fleet.md"},
+  ]},
   {"Archive" = "archive.md"},
   {"Troubleshooting" = "troubleshooting.md"},
 ]
@@ -27,6 +30,7 @@ nav = [
 homepage = "/"
 
 [project.theme]
+custom_dir = "docs/overrides"
 variant = "modern"
 features = [
   "navigation.instant",
@@ -38,16 +42,25 @@ features = [
 ]
 
 [[project.theme.palette]]
+media = "(prefers-color-scheme)"
+scheme = "default"
+primary = "custom"
+accent = "custom"
+toggle = { icon = "material/brightness-auto", name = "Switch to light mode" }
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: light)"
 scheme = "default"
 primary = "custom"
 accent = "custom"
 toggle = { icon = "material/weather-night", name = "Switch to dark mode" }
 
 [[project.theme.palette]]
+media = "(prefers-color-scheme: dark)"
 scheme = "slate"
 primary = "custom"
 accent = "custom"
-toggle = { icon = "material/weather-sunny", name = "Switch to light mode" }
+toggle = { icon = "material/brightness-auto", name = "Use system theme" }
 
 [project.theme.icon]
 repo = "fontawesome/brands/github"

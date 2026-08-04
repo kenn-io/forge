@@ -44,6 +44,7 @@ func TestOpenAndSchema(t *testing.T) {
 		"forge_archive_items",
 		"forge_repos",
 		"forge_merge_requests",
+		"forge_hot_merge_requests",
 		"forge_mr_events",
 		"forge_item_workflow_state",
 		"forge_labels",

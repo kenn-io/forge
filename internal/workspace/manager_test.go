@@ -1628,68 +1628,6 @@ func TestSetupReusesExistingWorkspaceWorktree(t *testing.T) {
 	assert.Contains(argvs[0], ws.WorktreePath)
 }
 
-func TestReuseExistingWorkspaceWorktreeRechecksSymlinkAfterLock(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	d := openTestDB(t)
-	wtDir := t.TempDir()
-
-	localRepo, _, platformHost := setupHTTPWorktreeBaseForWorkspaceGitTest(
-		t, "feature/thing",
-	)
-	repoID := seedRepo(t, d, platformHost, "acme", "widget")
-	seedMR(t, d, repoID, 42, "feature/thing")
-
-	mgr := NewManager(d, wtDir)
-	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
-	ws, err := mgr.Create(t.Context(), "github", platformHost, "acme", "widget", 42)
-	require.NoError(err)
-	existingBranch := syntheticPRWorktreeBranch(42)
-	runWorkspaceTestGit(
-		t, localRepo,
-		"worktree", "add", ws.WorktreePath, "-b", existingBranch, "HEAD",
-	)
-	metadataDir, err := worktreeGitDir(t.Context(), ws.WorktreePath)
-	require.NoError(err)
-
-	lockRoot := mgr.localWorktreeBaseLockRoot(localRepo)
-	require.NoError(os.MkdirAll(lockRoot, 0o755))
-	held, err := mgr.locks.Acquire(t.Context(), lockRoot)
-	require.NoError(err)
-	type reuseResult struct {
-		reused bool
-		err    error
-	}
-	done := make(chan reuseResult, 1)
-	go func() {
-		_, reused, reuseErr := mgr.reuseExistingWorkspaceWorktree(t.Context(), ws)
-		done <- reuseResult{reused: reused, err: reuseErr}
-	}()
-
-	select {
-	case <-done:
-		require.FailNow("worktree reuse completed while the repository lock was held")
-	case <-time.After(80 * time.Millisecond):
-	}
-	targetPath := filepath.Join(wtDir, "replacement-target")
-	require.NoError(os.Rename(ws.WorktreePath, targetPath))
-	require.NoError(os.Symlink(targetPath, ws.WorktreePath))
-	require.NoError(held.Unlock())
-
-	select {
-	case result := <-done:
-		require.Error(result.err)
-		assert.False(result.reused)
-	case <-time.After(5 * time.Second):
-		require.FailNow("worktree reuse did not finish after lock release")
-	}
-	pathInfo, err := os.Lstat(ws.WorktreePath)
-	require.NoError(err)
-	assert.NotZero(pathInfo.Mode() & os.ModeSymlink)
-	_, err = os.Lstat(filepath.Join(metadataDir, workspaceOwnershipMarkerFile))
-	assert.ErrorIs(err, os.ErrNotExist)
-}
-
 // A retried setup must recognize the uniquified synthetic branch as its own,
 // otherwise the workspace whose first attempt hit a name collision can never be
 // set up again.

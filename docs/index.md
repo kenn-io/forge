@@ -1,51 +1,54 @@
-# kenn-forge user docs
+# Kenn Forge
 
-kenn-forge is a local-first maintainer console for repositories you watch every
-day. It syncs pull requests, merge requests, issues, reviews, comments, CI
-signals, releases, and activity into SQLite, then gives you one browser UI for
-triage and action.
+Kenn Forge gives maintainers one local console for repository activity, pull
+requests, issues, reviews, and working sessions. It syncs provider data into
+SQLite and serves the UI from a single binary.
 
-Use it when you already know your forge and want one place to answer: what
-changed, what needs me, what can be merged, and what local work should I open
-next?
+Use Kenn Forge to answer four daily questions:
+
+- What changed across the repositories I maintain?
+- Which pull requests and issues need attention?
+- What can I review, update, or merge now?
+- Which branch or task should I open locally?
+
+<figure class="workflow-shot">
+  <img class="workflow-shot__image workflow-shot__image--light" src="assets/generated/maintainer-overview-light.svg" alt="Kenn Forge Activity feed with recent repository changes in light mode">
+  <img class="workflow-shot__image workflow-shot__image--dark" src="assets/generated/maintainer-overview-dark.svg" alt="Kenn Forge Activity feed with recent repository changes in dark mode">
+  <figcaption>Activity turns recent repository changes into one maintainer queue.</figcaption>
+</figure>
 
 ## Start here
 
-- [Quick start](quickstart.md): build, run, add repositories, and open the UI.
-- [Configuration](configuration.md): repositories, provider hosts, tokens, modes,
-  docs folders, and telemetry.
-- [Workflows](workflows.md): common ways to use Activity, PRs, issues, reviews,
-  workspaces, Kata, Docs, and fleet views.
-- [Commands](commands.md): CLI commands for serving, status, historical
-  archives, docs folders, and GitHub App credentials.
-- [Troubleshooting](troubleshooting.md): startup, auth, sync, config, database,
-  and mode issues.
+New users should follow the [Quick Start](quickstart.md). It covers
+installation, provider setup, repository selection, the first sync, and
+workspace creation.
 
-## What kenn-forge can do
+Returning users can jump to a task:
 
-- Show a cross-repository Activity feed with comment, review, commit, PR, and
-  issue activity.
-- Build and report on a resumable local archive of historical issues, pull or
-  merge requests, comments, and supported review activity.
-- Browse PRs/MRs and issues with filters, keyboard navigation, details, comments,
-  review actions, state changes, and merge actions where the provider supports
-  them.
-- Move with the command palette and view-specific keyboard shortcuts.
-- Inspect diffs, changed files, CI status, branch metadata, review state, labels,
-  and release signals without leaving the console.
-- Track local PR workflow status without mutating provider labels or projects.
-- Launch and attach to local workspace sessions for repository work.
-- Browse repository source, branches, and files from the UI.
-- Use optional modes for Kata task daemons and local markdown docs.
-- Federate kenn-forge daemons so one machine can view and act on items owned by
-  another machine.
-- Run as one local daemon with an embedded web app, local SQLite storage, and a
-  single TOML config file.
+- [Triage an issue](workflows/issue-triager.md)
+- [Review a pull request](workflows/code-reviewer.md)
+- [Run daily maintainer workflows](workflows.md)
+- [Change repositories, tokens, or modes](configuration.md)
+- [Fix startup, authentication, or sync problems](troubleshooting.md)
 
-## What kenn-forge is not
+## Main views
 
-- It is not a hosted service.
-- It is not a replacement data source for your forge, Kata, or local docs.
-  Those systems remain the source of truth.
-- It is not a general multi-user server by default. It binds to loopback unless
-  you configure otherwise.
+**Activity** collects recent comments, reviews, commits, and state changes.
+Filter by time, repository, item type, event type, or text.
+
+**Pulls** and **Issues** combine lists, details, discussion, provider actions,
+and workspace creation. Unsupported provider actions remain visible but
+unavailable.
+
+**Workspaces** opens local shells and configured agents against repository
+worktrees. **Repos** browses configured source. Optional **Kata** and **Docs**
+modes connect external task daemons and local Markdown folders.
+
+## Advanced use
+
+- [Command reference](commands.md)
+- [Historical activity archives](archive.md)
+- [Federated fleets](federated-fleet.md)
+
+Kenn Forge runs on your machine. Your provider, Kata daemons, and local files
+remain the source of truth.

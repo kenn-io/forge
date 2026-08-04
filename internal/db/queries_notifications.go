@@ -345,6 +345,55 @@ func (d *DB) UpsertNotifications(ctx context.Context, notifications []Notificati
 	})
 }
 
+// LatestOpenPRNotificationActivity returns the newest notification timestamp
+// linked to each open merge request. Notification timestamps only indicate
+// that provider detail may be stale; callers must not persist them as
+// merge-request activity.
+func (d *DB) LatestOpenPRNotificationActivity(
+	ctx context.Context,
+	since time.Time,
+) ([]MergeRequestNotificationActivity, error) {
+	rows, err := d.ro.QueryContext(ctx, `
+		SELECT mr.id, MAX(n.source_updated_at)
+		FROM forge_notification_items n
+		LEFT JOIN forge_repo_routes rr
+		  ON n.repo_id IS NULL
+		 AND rr.platform = n.platform
+		 AND rr.platform_host = n.platform_host
+		 AND rr.owner_key = lower(n.repo_owner)
+		 AND rr.name_key = lower(n.repo_name)
+		 AND rr.is_current = 1
+		JOIN forge_merge_requests mr
+		  ON mr.repo_id = COALESCE(n.repo_id, rr.repo_id)
+		 AND mr.number = n.item_number
+		WHERE n.item_type = 'pr'
+		  AND n.source_updated_at >= ?
+		  AND mr.state = 'open'
+		GROUP BY mr.id`, canonicalUTCTime(since))
+	if err != nil {
+		return nil, fmt.Errorf("list latest open PR notification activity: %w", err)
+	}
+	defer rows.Close()
+
+	var activity []MergeRequestNotificationActivity
+	for rows.Next() {
+		var item MergeRequestNotificationActivity
+		var sourceUpdatedAt string
+		if err := rows.Scan(&item.MergeRequestID, &sourceUpdatedAt); err != nil {
+			return nil, fmt.Errorf("scan latest open PR notification activity: %w", err)
+		}
+		item.SourceUpdatedAt, err = parseDBTime(sourceUpdatedAt)
+		if err != nil {
+			return nil, fmt.Errorf("parse latest open PR notification activity: %w", err)
+		}
+		activity = append(activity, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list latest open PR notification activity rows: %w", err)
+	}
+	return activity, nil
+}
+
 func (d *DB) FilterNotificationIDs(ctx context.Context, ids []int64, repos []NotificationRepoFilter) ([]int64, error) {
 	if len(ids) == 0 {
 		return nil, nil

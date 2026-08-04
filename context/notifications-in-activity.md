@@ -37,7 +37,8 @@ Notifications are user-scoped at provider level but repo-scoped in kenn-forge.
 Rules:
 
 - Persist notification item identity as `(platform, platform_host, platform_notification_id)`.
-- Treat repository identity as `(platform, platform_host, repo_owner, repo_name)` everywhere notifications are filtered, joined, or summarized.
+- Route-facing notification filters and summaries resolve through the repository's current `(platform, platform_host, repo_owner, repo_name)` route.
+- For subject joins, a non-null `repo_id` is authoritative across renames and route reuse; only legacy null IDs fall back through the current route (`internal/db/queries_notifications.go::DB.LatestOpenPRNotificationActivity`).
 - `platform` is required. Blank provider/platform values are errors, not implicit GitHub defaults.
 - Show notifications only for current monitored repo set from config/syncer repo refs.
 - Historical notifications for removed repos may stay in SQLite but must not appear in `unread`, `active`, `read`, `done`, or `all` unless future explicit `include_unmonitored` contract exists.

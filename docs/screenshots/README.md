@@ -7,7 +7,7 @@ used by the user workflow docs. They use the real seeded e2e backend from
 Run from the repository root:
 
 ```sh
-node node_modules/vite-plus/bin/vp run docs:build
+node scripts/build-docs.mjs
 ```
 
 The build stages the docs in a temporary directory, writes the generated SVGs
@@ -21,6 +21,21 @@ must not embed PNG, JPEG, or other raster screenshot payloads:
 - `issue-triager-dark.svg`
 - `code-reviewer-light.svg`
 - `code-reviewer-dark.svg`
+- `maintainer-overview-light.svg`
+- `maintainer-overview-dark.svg`
+- `first-run-light.svg`
+- `first-run-dark.svg`
+- `code-reviewer-agent-launch-light.svg`
+- `code-reviewer-agent-launch-dark.svg`
+- `workspace-codex-session-light.svg`
+- `workspace-codex-session-dark.svg`
+
+Workflow captures use a configured seeded server. First-run captures use a
+second isolated server with its repositories removed and a synthetic tooling
+response. Neither path reads a developer config, database, or running daemon.
+The workspace cases configure a synthetic Codex target backed by an isolated
+long-running shell. They never start the installed Codex binary or read agent
+credentials.
 
 Dark captures must render as dark when opened as standalone SVG files. The
 capture task preserves the live root theme class and computed CSS custom

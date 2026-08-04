@@ -441,7 +441,17 @@ test("full app initializes after navigating away from an initial embed route", a
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
-        repos: [],
+        repos: [
+          {
+            provider: "github",
+            platform_host: "github.com",
+            owner: "acme",
+            name: "widgets",
+            repo_path: "acme/widgets",
+            is_glob: false,
+            matched_repo_count: 1,
+          },
+        ],
         activity: {
           view_mode: "threaded",
           time_range: "7d",
@@ -511,7 +521,17 @@ test("full app reinitializes after navigating through an embed route", async ({ 
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
-        repos: [],
+        repos: [
+          {
+            provider: "github",
+            platform_host: "github.com",
+            owner: "acme",
+            name: "widgets",
+            repo_path: "acme/widgets",
+            is_glob: false,
+            matched_repo_count: 1,
+          },
+        ],
         activity: {
           view_mode: "threaded",
           time_range: "7d",

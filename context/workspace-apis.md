@@ -188,6 +188,12 @@ embedder protocol for arbitrary host state.
   not collide in the same watched repo.
 - `item_last_activity_at`: the synced provider item activity timestamp for the
   owning PR or issue, when kenn-forge has that owner item row.
+- Pull detail prefers a direct PR workspace, then the newest persisted issue,
+  Kata, or ad-hoc PR association; status is not a selection input
+  (`internal/db/queries.go::DB.GetWorkspaceLinkedToMRForProvider`).
+- Merge-request sync limits head-repo trust writes to direct PR workspaces;
+  association-only rows are presentation links, not sync write targets
+  (`internal/github/sync.go::Syncer.reclassifyWorkspaceHeadRepoTrustUnderRepositoryReconciliationRead`).
 
 These fields exist so PR-backed workspaces show PR/Reviews sidebars, while
 issue-backed workspaces show the issue sidebar and disable the PR/reviews path.

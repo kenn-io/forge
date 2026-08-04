@@ -1471,6 +1471,8 @@ func buildAppState(
 		"github.com":        gqlFetcher,
 		defaultPlatformHost: gqlFetcher,
 	})
+	syncer.SetWatchInterval(cfg.ActivePRRefreshDuration())
+	syncer.SetActiveMRWindow(cfg.ActivePRWindowDuration())
 
 	srv := server.NewWithConfig(
 		database, syncer, diffRepo.Manager, assets, cfg, cfgPath,
@@ -1484,6 +1486,9 @@ func buildAppState(
 	// Mirror production wiring so notification syncs nudge an open activity
 	// feed to reload (the feed's incremental poll skips backfilled rows).
 	syncer.SetOnNotificationSyncComplete(func() {
+		srv.Hub().Broadcast(server.Event{Type: "data_changed", Data: struct{}{}})
+	})
+	syncer.SetOnWatchedMRSyncCompleted(func() {
 		srv.Hub().Broadcast(server.Event{Type: "data_changed", Data: struct{}{}})
 	})
 	var failNextRepoBrowserTree atomic.Bool
@@ -1637,6 +1642,106 @@ func buildAppState(
 				return
 			}
 			srv.Hub().Broadcast(server.Event{Type: "data_changed", Data: struct{}{}})
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if r.Method == http.MethodPost &&
+			r.URL.Path == "/__e2e/activity/viewed-hot-fast-sync" {
+			if srv.SubscriberCount() == 0 {
+				http.Error(w, "event stream not connected", http.StatusConflict)
+				return
+			}
+			mr, err := database.GetMergeRequest(
+				r.Context(), "github", "github.com", "acme", "widgets", 1,
+			)
+			if err != nil || mr == nil {
+				http.Error(w, "pull request not found", http.StatusNotFound)
+				return
+			}
+
+			now := time.Now().UTC()
+			if _, err := database.WriteDB().ExecContext(r.Context(), `
+				UPDATE forge_merge_requests
+				SET last_activity_at = ?, detail_fetched_at = ?
+				WHERE id = ?`, now.Add(-5*time.Hour), now.Add(-3*time.Minute), mr.ID); err != nil {
+				http.Error(w, "make pull request detail stale", http.StatusInternalServerError)
+				return
+			}
+			if _, err := fc.CreateIssueComment(
+				r.Context(), "acme", "widgets", 1,
+				"Viewed hot fast-sync comment",
+			); err != nil {
+				http.Error(w, "create provider pull request comment", http.StatusInternalServerError)
+				return
+			}
+
+			syncer.SyncWatchedMRs(r.Context())
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if r.Method == http.MethodPost &&
+			r.URL.Path == "/__e2e/activity/notification-fast-sync" {
+			if srv.SubscriberCount() == 0 {
+				http.Error(w, "event stream not connected", http.StatusConflict)
+				return
+			}
+			mr, err := database.GetMergeRequest(
+				r.Context(), "github", "github.com", "acme", "widgets", 1,
+			)
+			if err != nil || mr == nil {
+				http.Error(w, "pull request not found", http.StatusNotFound)
+				return
+			}
+
+			now := time.Now().UTC()
+			if _, err := database.WriteDB().ExecContext(r.Context(), `
+				UPDATE forge_merge_requests
+				SET last_activity_at = ?, detail_fetched_at = ?
+				WHERE id = ?`,
+				now.Add(-5*time.Hour), now.Add(-10*time.Minute), mr.ID,
+			); err != nil {
+				http.Error(w, "make pull request detail stale", http.StatusInternalServerError)
+				return
+			}
+			if _, err := database.WriteDB().ExecContext(r.Context(), `
+				DELETE FROM forge_hot_merge_requests
+				WHERE merge_request_id = ?`, mr.ID); err != nil {
+				http.Error(w, "clear pull request hot view", http.StatusInternalServerError)
+				return
+			}
+			if _, err := fc.CreateIssueComment(
+				r.Context(), "acme", "widgets", 1,
+				"Notification-driven fast-sync comment",
+			); err != nil {
+				http.Error(w, "create provider pull request comment", http.StatusInternalServerError)
+				return
+			}
+			number := 1
+			repoID := mr.RepoID
+			if err := database.UpsertNotifications(r.Context(), []db.Notification{{
+				Platform:               "github",
+				PlatformHost:           "github.com",
+				PlatformNotificationID: "notif-activity-fast-sync-1",
+				RepoID:                 &repoID,
+				RepoOwner:              "acme",
+				RepoName:               "widgets",
+				SubjectType:            "PullRequest",
+				SubjectTitle:           "Add widget caching layer",
+				WebURL:                 "https://github.com/acme/widgets/pull/1",
+				ItemNumber:             &number,
+				ItemType:               "pr",
+				ItemAuthor:             "alice",
+				Reason:                 "comment",
+				Unread:                 true,
+				Participating:          true,
+				SourceUpdatedAt:        now,
+				SyncedAt:               now,
+			}}); err != nil {
+				http.Error(w, "persist pull request notification", http.StatusInternalServerError)
+				return
+			}
+
+			syncer.SyncWatchedMRs(r.Context())
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}

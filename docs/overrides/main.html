@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block extrahead %}
+  <script>
+    (function () {
+      var stored = __md_get("__palette");
+      var color = stored && stored.color;
+      if (!color || color.media === "(prefers-color-scheme)") {
+        var light = matchMedia("(prefers-color-scheme: light)").matches;
+        color = {
+          media: "(prefers-color-scheme)",
+          scheme: light ? "default" : "slate",
+          primary: "custom",
+          accent: "custom",
+        };
+      }
+
+      new MutationObserver(function (_, observer) {
+        if (!document.body) return;
+        for (var key in color) document.body.setAttribute("data-md-color-" + key, color[key]);
+        observer.disconnect();
+      }).observe(document.documentElement, { childList: true });
+    })();
+  </script>
+{% endblock %}

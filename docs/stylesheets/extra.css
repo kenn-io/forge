@@ -38,3 +38,14 @@
 [data-md-color-scheme="slate"] .workflow-shot__image--dark {
   display: block !important;
 }
+
+.md-header__topic:first-child {
+  opacity: 1;
+  pointer-events: auto;
+  transform: none;
+  z-index: 0;
+}
+
+.md-header__topic + .md-header__topic {
+  display: none;
+}

@@ -115,6 +115,33 @@ func TestAllowsBaseOnlyMigrationAddedAfterChildDiverged(t *testing.T) {
 	assert.Empty(t, stderr.String())
 }
 
+func TestAllowsCurrentBaseMigrationsInSyntheticPRMerge(t *testing.T) {
+	isolateGitEnvironment(t)
+	repo := initRepoWithMainMigration(t)
+	t.Chdir(repo)
+	gitCommand(t, "branch", "stale-base", "main")
+	t.Setenv("KENN_FORGE_MIGRATION_BASE_REF", "main")
+	t.Setenv("KENN_FORGE_MIGRATION_PR_BASE_REF", "stale-base")
+	t.Setenv("GITHUB_REF", "refs/pull/123/merge")
+
+	writeFile(t, repo, "feature.txt", "feature\n")
+	gitCommand(t, "add", "feature.txt")
+	gitCommand(t, "commit", "-qm", "add feature")
+
+	gitCommand(t, "checkout", "main")
+	writeFile(t, repo, "internal/db/migrations/000002_main.up.sql", "main up\n")
+	writeFile(t, repo, "internal/db/migrations/000002_main.down.sql", "main down\n")
+	writeFile(t, repo, "internal/db/migrations/000003_main.up.sql", "main up\n")
+	writeFile(t, repo, "internal/db/migrations/000003_main.down.sql", "main down\n")
+	gitCommand(t, "add", "internal/db/migrations")
+	gitCommand(t, "commit", "-qm", "advance main migrations")
+	gitCommand(t, "merge", "--no-ff", "feature", "-m", "synthetic pull request merge")
+
+	var stderr bytes.Buffer
+	assert.Zero(t, run(t.Context(), &stderr))
+	assert.Empty(t, stderr.String())
+}
+
 func TestBlocksNewMigrationWhenNumberAlreadyExistsOnMain(t *testing.T) {
 	assert := assert.New(t)
 	isolateGitEnvironment(t)

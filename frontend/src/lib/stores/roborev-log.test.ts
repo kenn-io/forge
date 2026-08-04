@@ -61,6 +61,7 @@ describe("createLogStore", () => {
     await store.startStreaming(77);
 
     expect(fetchMock).toHaveBeenCalledWith("http://roborev.test/api/job/output?job_id=77&stream=1", {
+      headers: { Accept: "application/x-ndjson" },
       signal: expect.any(AbortSignal),
     });
     expect(store.getLines()).toEqual([

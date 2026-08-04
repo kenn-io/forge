@@ -50,6 +50,7 @@ export function createLogStore(opts: LogStoreOptions) {
 
     try {
       const resp = await fetch(url, {
+        headers: { Accept: "application/x-ndjson" },
         signal: abortController.signal,
       });
       if (!resp.ok || !resp.body) {

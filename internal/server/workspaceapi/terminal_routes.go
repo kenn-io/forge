@@ -12,9 +12,22 @@ import (
 // RegisterTerminal registers workspace terminal websocket routes on either
 // the REST or websocket-prefixed Huma API.
 func (h *Handler) RegisterTerminal(api huma.API) {
-	handler := &terminal.Handler{
-		Workspaces:  h.workspaces,
-		TmuxCommand: slices.Clone(h.tmuxCmd),
+	h.registerTerminal(api, h != nil && h.runtime != nil)
+}
+
+// RegisterTerminalInventory registers every terminal operation against a
+// tooling-only API that records route contracts and never serves requests.
+func RegisterTerminalInventory(api huma.API) {
+	(*Handler)(nil).registerTerminal(api, true)
+}
+
+func (h *Handler) registerTerminal(api huma.API, includeRuntime bool) {
+	var handler *terminal.Handler
+	if h != nil {
+		handler = &terminal.Handler{
+			Workspaces:  h.workspaces,
+			TmuxCommand: slices.Clone(h.tmuxCmd),
+		}
 	}
 	op := &huma.Operation{
 		OperationID: "connect-workspace-terminal",
@@ -23,11 +36,14 @@ func (h *Handler) RegisterTerminal(api huma.API) {
 		Hidden:      true,
 	}
 	api.Adapter().Handle(op, func(ctx huma.Context) {
+		if handler == nil {
+			panic("workspace terminal inventory handler cannot serve requests")
+		}
 		r, w := humago.Unwrap(ctx)
 		handler.ServeHTTP(w, r)
 	})
 
-	if h.runtime == nil {
+	if !includeRuntime {
 		return
 	}
 	sessionOp := &huma.Operation{
@@ -37,6 +53,9 @@ func (h *Handler) RegisterTerminal(api huma.API) {
 		Hidden:      true,
 	}
 	api.Adapter().Handle(sessionOp, func(ctx huma.Context) {
+		if h == nil {
+			panic("runtime terminal inventory handler cannot serve requests")
+		}
 		r, w := humago.Unwrap(ctx)
 		h.handleWorkspaceRuntimeSessionTerminal(w, r)
 	})

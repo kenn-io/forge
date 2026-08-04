@@ -6,7 +6,7 @@ schema migrations.
 - **Shipped migrations are immutable.** A migration has shipped when it exists on `origin/main`, a tag or release branch, or a production database; correct it with a new forward migration.
 - **Each PR introduces at most one migration.** Amend a PR-local migration in place instead of stacking fix-ups.
 
-`go run ./tools/migrationhistorycheck` enforces edits to the comparison base, duplicate migration numbers, and multiple new migrations. CI compares against the immediate PR base so stacked PRs may each own one migration; local hooks inspect staged changes. The checker cannot identify production use or refs it was not given, so refresh tags and release branches before deciding a migration is PR-local. When uncertain, treat it as immutable.
+`go run ./tools/migrationhistorycheck` enforces edits to the comparison base, duplicate migration numbers, and multiple new migrations. In GitHub's synthetic PR merge checkout, CI compares against the merge commit's first parent so migrations added to the target branch after the PR opened remain inherited; other PR and local-hook runs use the supplied comparison ref. This preserves one migration per stacked PR while local hooks inspect staged changes. The checker cannot identify production use or refs it was not given, so refresh tags and release branches before deciding a migration is PR-local. When uncertain, treat it as immutable.
 
 ## Rules
 

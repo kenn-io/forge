@@ -1,8 +1,8 @@
-# Kenn Forge Agent Instructions
+# kenn-forge Agent Instructions
 
 ## Project Model
 
-Kenn Forge is a local-first maintainer console. A Go/Huma server syncs
+kenn-forge is a local-first maintainer console. A Go/Huma server syncs
 provider-backed pull requests, issues, and activity into SQLite and serves an
 embedded Svelte 5 SPA. Kata and Docs are separate first-class modes whose data
 remains owned by their external or filesystem domains. The project builds

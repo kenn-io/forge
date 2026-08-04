@@ -1,14 +1,14 @@
-# Kenn Forge Rename Implementation Plan
+# kenn-forge Rename Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan directly in the current agent, task-by-task. Never use subagent-driven development. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Rename the maintained product and source tree to Kenn Forge, ship the `kenn-forge` CLI and `go.kenn.io/forge` module, and migrate persisted user state into the new identity.
+**Goal:** Rename the maintained product and source tree to kenn-forge, ship the `kenn-forge` CLI and `go.kenn.io/forge` module, and migrate persisted user state into the new identity.
 
 **Approved spec/design:** `docs/superpowers/specs/2026-07-30-kenn-forge-rename-design.md`
 
 **Architecture:** A repository-local Go codemod performs deterministic path and content rewrites and enforces a narrow legacy-name allowlist. Runtime compatibility is limited to a lock-gated SQLite relocation; the ordinary schema chain then renames live database objects.
 
-> **Maintainer simplification:** The detailed filesystem and browser migration work in Tasks 3 and 4 below is superseded and must not be implemented. The only persisted-state migration is: refuse while `middleman.lock` is held, move `middleman.db` plus SQLite sidecars to the selected Kenn Forge data directory as `forge.db`, and run migration 44. Do not migrate config, auth files, worktrees, ignore files, or browser storage.
+> **Maintainer simplification:** The detailed filesystem and browser migration work in Tasks 3 and 4 below is superseded and must not be implemented. The only persisted-state migration is: refuse while `middleman.lock` is held, move `middleman.db` plus SQLite sidecars to the selected kenn-forge data directory as `forge.db`, and run migration 44. Do not migrate config, auth files, worktrees, ignore files, or browser storage.
 >
 > The Task 1 codemod is a temporary implementation aid. Remove `tools/renameforge` after the mechanical rename and migration generation are verified; it must not ship in the pull request.
 
@@ -16,7 +16,7 @@
 
 ## Global Constraints
 
-- Product copy is “Kenn Forge”; the primary CLI is `kenn-forge`; the Go module is `go.kenn.io/forge`.
+- Product copy is “kenn-forge”; the primary CLI is `kenn-forge`; the Go module is `go.kenn.io/forge`.
 - New environment variables use `KENN_FORGE_*`; no legacy command or environment fallback is permitted.
 - The default home is `~/.kenn/forge/`; only the old default database moves there, while an explicitly configured data directory keeps its database in place.
 - The GitHub repository rename is deferred; do not change the current Git remote or perform external repository mutations.
@@ -65,7 +65,7 @@ func TestRewriteAppliesCanonicalMappings(t *testing.T) {
 			path: "README.md",
 			body: "Middleman reads MIDDLEMAN_GITHUB_TOKEN.\n",
 			wantPath: "README.md",
-			wantBody: "Kenn Forge reads KENN_FORGE_GITHUB_TOKEN.\n",
+			wantBody: "kenn-forge reads KENN_FORGE_GITHUB_TOKEN.\n",
 		},
 	}
 	// Materialize each case, call Rewrite, and compare path and bytes.
@@ -90,7 +90,7 @@ var contentRules = []Rule{
 	{Old: "middleman-github-app", New: "kenn-forge-github-app"},
 	{Old: "middleman-openapi", New: "kenn-forge-openapi"},
 	{Old: "MIDDLEMAN", New: "KENN_FORGE"},
-	{Old: "Middleman", New: "Kenn Forge"},
+	{Old: "Middleman", New: "kenn-forge"},
 }
 ```
 
@@ -112,7 +112,7 @@ Run the repository-local `context-sync --commit` workflow, then the required com
 
 ```bash
 git add tools/renameforge
-git commit -m "build: make the Kenn Forge rename reproducible"
+git commit -m "build: make the kenn-forge rename reproducible"
 ```
 
 ### Task 2: Apply the Canonical Source Rename
@@ -186,7 +186,7 @@ Run: `make api-generate`
 
 Run: `cargo check --manifest-path rust/pty-manager/Cargo.toml`
 
-Expected: package locks, generated OpenAPI clients, and Rust metadata refer only to canonical Kenn Forge identities outside approved legacy boundaries.
+Expected: package locks, generated OpenAPI clients, and Rust metadata refer only to canonical kenn-forge identities outside approved legacy boundaries.
 
 - [ ] **Step 7: Use the required Svelte analysis workflow on mechanically changed components**
 
@@ -208,7 +208,7 @@ Run the repository-local `context-sync --commit` workflow and required commit wo
 
 ```bash
 git add -A
-git commit -m "refactor: establish the Kenn Forge product identity"
+git commit -m "refactor: establish the kenn-forge product identity"
 ```
 
 ### Task 3: Migrate Filesystem State on First Use
@@ -313,7 +313,7 @@ Run the repository-local `context-sync --commit` workflow and required commit wo
 
 ```bash
 git add internal/config internal/runtimelock cmd/kenn-forge cmd/kenn-forge-github-app internal/cli tools/devephemeral
-git commit -m "feat: migrate existing state into Kenn Forge"
+git commit -m "feat: migrate existing state into kenn-forge"
 ```
 
 ### Task 4: Transfer Browser-Persisted State Before App Initialization
@@ -448,7 +448,7 @@ If the final audit or context sync changed files, use the required commit workfl
 
 ```bash
 git add -A
-git commit -m "docs: align Kenn Forge development context"
+git commit -m "docs: align kenn-forge development context"
 ```
 
 If there is no final diff, do not create an empty commit. Do not push, open a pull request, rename the GitHub repository, or monitor CI unless separately requested.

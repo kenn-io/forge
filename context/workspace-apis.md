@@ -55,7 +55,7 @@ embedder protocol for arbitrary host state.
   identity; selected detail, history, graph, and workspace target belong to the
   same accepted snapshot, while query, owner, and label remain local presentation
   state (`internal/server/kata_snapshot_frontend.go::kataTaskSnapshot`).
-- Kenn Forge persists no Kata task, snapshot, or cursor state. Its only Kata
+- kenn-forge persists no Kata task, snapshot, or cursor state. Its only Kata
   authority storage is a bounded, non-touching in-memory TTL cache
   (`internal/server/kata_snapshot_cache.go::newKataSnapshotCacheWithConfig`).
 - Global Kata issue/event reads establish workspace authority and invalidation;
@@ -204,7 +204,7 @@ owning provider item has not synced yet, the summary leaves
 
 Kata task repository resolution is deliberately exact. Manual settings mappings
 key by optional daemon ID plus Kata project UID and point to a known repository
-identity, including registered Kenn Forge Projects. Removing a watched repo does
+identity, including registered kenn-forge Projects. Removing a watched repo does
 not delete an override because a registered Project may still own that identity
 (`internal/config/config.go::validateKataProjectRepoMappings`,
 `internal/server/kataapi/workspace.go::Handler.kataManualWorkspaceTarget`). Automatic
@@ -217,7 +217,7 @@ only allowed per clone when that clone has no usable `project.uid` or
 `project.identity`, and then exactly one case-insensitive `project.name` match
 is required. If no `.kata.toml` mapping matches, the
 resolver may fall back to a case-insensitive exact match between the Kata
-project and exactly one non-stale registered Kenn Forge Project with provider
+project and exactly one non-stale registered kenn-forge Project with provider
 identity; use `.kata.toml` before display/repository name. Distinct matching
 registered checkout paths are ambiguous. A unique registered match carries its
 checkout through workspace creation, while a configured clone carries its own
@@ -241,7 +241,7 @@ relative paths would be interpreted relative to that Git directory while later
 API reads interpret them relative to the kenn-forge server process.
 
 Keep Git worktree and merge-request lifecycle semantics in
-`go.kenn.io/kit/git/managed`; Kenn Forge supplies application policy instead of
+`go.kenn.io/kit/git/managed`; kenn-forge supplies application policy instead of
 maintaining a local lifecycle fork (`internal/server/projects_handlers.go::createWorktreeOnDisk`).
 Classify same-repository merge requests with the provider-hosted project
 identity, not the effective origin URL: the origin may be a local mirror
@@ -262,7 +262,7 @@ Claude receives context-only `CLAUDE.local.md` because its local file is additiv
 No instruction file is written during setup.
 
 The first-line marker owns refreshes; ownership detection is root-confined and
-reads only the bounded marker prefix. Kenn Forge updates only marked files.
+reads only the bounded marker prefix. kenn-forge updates only marked files.
 Unmarked `AGENTS.override.md`/`CLAUDE.local.md` files, symlinks, and root
 `AGENTS.md`/`CLAUDE.md` stay untouched. The content carries source identity
 (kind, repo, item number, URL) and PR push target facts agents cannot read from
@@ -476,7 +476,7 @@ server check exactly.
 An unavailable branch name must never fail workspace creation: an unusable PR
 head branch degrades to `kenn-forge/pr-<n>`, then to a numbered variant of it,
 then to a detached checkout with no managed branch
-(`internal/workspace/manager.go::addFallbackWorktree`). Kenn Forge owns the
+(`internal/workspace/manager.go::addFallbackWorktree`). kenn-forge owns the
 synthetic name and its numbered variants and may delete them during cleanup;
 any other pre-existing branch is user-owned and must keep pointing where it did.
 

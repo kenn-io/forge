@@ -325,6 +325,34 @@ describe("ensureEmbeddedFrontend", () => {
   });
 });
 
+describe("e2eServerCommand", () => {
+  it("runs an explicitly prebuilt server binary without go run arguments", () => {
+    const e2eServerCommand = (
+      e2eServerModule as {
+        e2eServerCommand?: (
+          infoFile: string,
+          env?: NodeJS.ProcessEnv,
+        ) => { command: string; args: string[]; prebuilt: boolean };
+      }
+    ).e2eServerCommand;
+
+    expect(e2eServerCommand).toBeTypeOf("function");
+    if (!e2eServerCommand) {
+      return;
+    }
+
+    expect(
+      e2eServerCommand("/tmp/server-info.json", {
+        PLAYWRIGHT_E2E_SERVER_BINARY: "/tmp/kenn-forge-e2e-server",
+      }),
+    ).toEqual({
+      command: "/tmp/kenn-forge-e2e-server",
+      args: ["-port", "0", "-server-info-file", "/tmp/server-info.json"],
+      prebuilt: true,
+    });
+  });
+});
+
 describe("getReusableServerInfo", () => {
   it("accepts a reachable server even when the response is slower than the poll interval", async () => {
     const getReusableServerInfo = (

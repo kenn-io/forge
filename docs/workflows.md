@@ -51,7 +51,7 @@ split, resize, hide, or maximize panes as the task changes.
 ## Track local pull-request state
 
 Set a workflow status from the pull-request detail and filter the list by one
-or more statuses. This status stays in Kenn Forge. It does not change provider
+or more statuses. This status stays in kenn-forge. It does not change provider
 labels, milestones, projects, or fields.
 
 ## Work with issues
@@ -71,7 +71,7 @@ workspace** action. A workspace creates a worktree. Choose an agent from the
 action menu to create and launch in one step.
 
 New workspaces can start from any tracked repository. Choose a branch name or
-let Kenn Forge create one from the default branch.
+let kenn-forge create one from the default branch.
 
 Workspaces use tmux-backed sessions for durable attachment. Launch more shells
 or agents from the workspace header. Promote a session into the detail layout
@@ -106,7 +106,7 @@ Files remain on disk inside the configured folders.
 
 ## Use a fleet
 
-A hub can combine snapshots from other Kenn Forge daemons. Supported actions
+A hub can combine snapshots from other kenn-forge daemons. Supported actions
 route back to the machine that owns the resource. Sessions expose local or
 remote attach commands.
 

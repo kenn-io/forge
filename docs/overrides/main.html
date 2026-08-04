@@ -22,3 +22,90 @@
     })();
   </script>
 {% endblock %}
+{% block scripts %}
+  {{ super() }}
+  <script>
+    (function () {
+      if (
+        typeof HTMLDialogElement === "undefined" ||
+        typeof HTMLDialogElement.prototype.showModal !== "function"
+      ) {
+        return;
+      }
+
+      var opener = null;
+      var dialog = document.createElement("dialog");
+      dialog.className = "workflow-shot-lightbox";
+      dialog.setAttribute("aria-label", "Expanded workflow screenshot");
+
+      var panel = document.createElement("div");
+      panel.className = "workflow-shot-lightbox__panel";
+
+      var image = document.createElement("img");
+      image.className = "workflow-shot-lightbox__image";
+
+      var closeButton = document.createElement("button");
+      closeButton.type = "button";
+      closeButton.className = "workflow-shot-lightbox__close";
+      closeButton.setAttribute("aria-label", "Close expanded screenshot");
+      closeButton.textContent = "Close";
+
+      panel.appendChild(image);
+      panel.appendChild(closeButton);
+      dialog.appendChild(panel);
+
+      function enhanceWorkflowShots() {
+        if (!dialog.isConnected) document.body.appendChild(dialog);
+
+        var images = document.querySelectorAll("figure.workflow-shot img.workflow-shot__image");
+        for (var index = 0; index < images.length; index += 1) {
+          var shot = images[index];
+          if (shot.parentElement && shot.parentElement.classList.contains("workflow-shot__trigger")) continue;
+
+          var trigger = document.createElement("button");
+          trigger.type = "button";
+          trigger.className = "workflow-shot__trigger";
+          trigger.classList.add(
+            shot.classList.contains("workflow-shot__image--dark")
+              ? "workflow-shot__trigger--dark"
+              : "workflow-shot__trigger--light",
+          );
+          trigger.setAttribute("aria-label", "View " + shot.alt + " at full size");
+          shot.parentNode.insertBefore(trigger, shot);
+          trigger.appendChild(shot);
+        }
+      }
+
+      document.addEventListener("click", function (event) {
+        var target = event.target instanceof Element ? event.target : null;
+        var trigger = target && target.closest(".workflow-shot__trigger");
+        if (!trigger) return;
+
+        var shot = trigger.querySelector("img.workflow-shot__image");
+        if (!shot) return;
+
+        opener = trigger;
+        image.src = shot.currentSrc || shot.src;
+        image.alt = shot.alt;
+        dialog.showModal();
+      });
+
+      closeButton.addEventListener("click", function () {
+        dialog.close();
+      });
+      dialog.addEventListener("click", function (event) {
+        if (event.target === dialog) dialog.close();
+      });
+      dialog.addEventListener("close", function () {
+        if (opener && opener.isConnected) opener.focus();
+      });
+
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", enhanceWorkflowShots, { once: true });
+      } else {
+        enhanceWorkflowShots();
+      }
+      if (typeof document$ !== "undefined") document$.subscribe(enhanceWorkflowShots);
+    })();
+  </script>
+{% endblock %}

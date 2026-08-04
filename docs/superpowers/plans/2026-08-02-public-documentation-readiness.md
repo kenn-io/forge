@@ -471,7 +471,7 @@ env KENN_FORGE_DOCS_SITE_DIR=site \
 ```
 
 Expected: FAIL because Zensical hides `kenn-forge` and shows the regular-weight
-`Kenn Forge` page topic after scrolling.
+`kenn-forge` page topic after scrolling.
 
 - [ ] **Step 6: Keep header branding stable**
 

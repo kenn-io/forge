@@ -72,7 +72,7 @@ Rules:
 
 ## Triage State Model
 
-Kenn Forge stores local workflow state separately from GitHub state. These states drive the notification list/mutation API; the Activity feed surfaces unread vs read via the row's `item_state`.
+kenn-forge stores local workflow state separately from GitHub state. These states drive the notification list/mutation API; the Activity feed surfaces unread vs read via the row's `item_state`.
 
 - `unread`: `done_at IS NULL AND unread = 1`.
 - `active`: `done_at IS NULL`, regardless of unread.

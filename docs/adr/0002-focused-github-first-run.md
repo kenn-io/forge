@@ -8,7 +8,7 @@ Accepted
 
 ## Context
 
-An empty Kenn Forge installation previously exposed disconnected empty states.
+An empty kenn-forge installation previously exposed disconnected empty states.
 The onboarding prototype comparison identified a focused linear path as the
 clearest way to reach useful maintainer work with an already-installed `gh`.
 Kata, Docs, repositories, settings, reviews, and existing workspace routes are

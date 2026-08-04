@@ -1,7 +1,7 @@
 # Agent Bootstrap
 
 Use this document only for committed repository hooks that bootstrap frontend
-dependencies at session start. For Kenn Forge's user-level lifecycle-hook relay
+dependencies at session start. For kenn-forge's user-level lifecycle-hook relay
 or generated launch context, read [`workspace-apis.md`](./workspace-apis.md).
 
 Repo-controlled `SessionStart` hooks may bootstrap frontend dependencies when

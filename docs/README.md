@@ -11,24 +11,36 @@ generated screenshots are ignored local artifacts.
 
 ## Publishing
 
-The Vercel project serves production deployments at `forge.kenn.io`. Link a
-checkout to that project once from the repository root:
+The Vercel project serves production deployments at `forge.kenn.io`. Its Git
+integration builds pull requests as previews and builds `main` for production.
+Each remote build installs the screenshot runtime, generates the workflow
+screenshots from the seeded e2e server, verifies the rendered site, and
+publishes `site/`.
+
+To reproduce that remote build after installing its dependencies, run:
+
+```sh
+make docs-vercel-build
+```
+
+For a manual deployment, link a checkout to the project once from the
+repository root:
 
 ```sh
 vercel link
 ```
 
-Build, verify, and create a preview deployment with:
+Start a preview build with:
 
 ```sh
 make docs-deploy-staging
 ```
 
-Publish the same locally verified build path to production with:
+Start a production build with:
 
 ```sh
 make docs-deploy
 ```
 
-These targets package `site/` as Vercel prebuilt output, so Vercel receives the
-exact pages and screenshots that passed the local docs checks.
+These targets send the repository source to Vercel and use the same install and
+build commands as Git-triggered deployments.

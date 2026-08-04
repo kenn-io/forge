@@ -47,6 +47,7 @@ const pollIntervalMs = 100;
 const reachabilityTimeoutMs = 1_000;
 const ownedServerEnvVar = "PLAYWRIGHT_E2E_SERVER_OWNED";
 const frontendReadyEnvVar = "PLAYWRIGHT_E2E_FRONTEND_READY";
+const serverBinaryEnvVar = "PLAYWRIGHT_E2E_SERVER_BINARY";
 const defaultPlatformHost = "github.com";
 
 type ManagedChildLike = {
@@ -285,6 +286,26 @@ async function removeServerInfo(filePath: string): Promise<void> {
   await rm(filePath, { force: true });
 }
 
+export function e2eServerCommand(
+  infoFile: string,
+  env: NodeJS.ProcessEnv = process.env,
+): { command: string; args: string[]; prebuilt: boolean } {
+  const prebuiltBinary = env[serverBinaryEnvVar]?.trim();
+  if (prebuiltBinary) {
+    return {
+      command: prebuiltBinary,
+      args: ["-port", "0", "-server-info-file", infoFile],
+      prebuilt: true,
+    };
+  }
+
+  return {
+    command: "go",
+    args: ["run", "./cmd/e2e-server", "-port", "0", "-server-info-file", infoFile],
+    prebuilt: false,
+  };
+}
+
 async function spawnServer(
   infoFile: string,
   options: IsolatedE2EServerOptions = {},
@@ -292,9 +313,12 @@ async function spawnServer(
   child: ChildProcess;
   info: E2EServerInfo;
 }> {
-  await ensureEmbeddedFrontend();
+  const invocation = e2eServerCommand(infoFile);
+  if (!invocation.prebuilt) {
+    await ensureEmbeddedFrontend();
+  }
 
-  const args = ["run", "./cmd/e2e-server", "-port", "0", "-server-info-file", infoFile];
+  const args = invocation.args;
   if (options.defaultPlatformHost) {
     args.push("-default-platform-host", options.defaultPlatformHost);
   }
@@ -311,7 +335,7 @@ async function spawnServer(
     args.push("-roborev", process.env.ROBOREV_ENDPOINT);
   }
 
-  const child = spawn("go", args, {
+  const child = spawn(invocation.command, args, {
     cwd: repoRoot,
     stdio: "inherit",
     env: process.env,

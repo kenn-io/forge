@@ -12,6 +12,7 @@ test("docs staging includes only public site inputs", async (t) => {
 
   const source = path.join(root, "source");
   const staged = path.join(root, "staged");
+  const favicon = path.join(root, "frontend", "public", "favicon.svg");
   await mkdir(path.join(source, "stylesheets"), { recursive: true });
   await mkdir(path.join(source, "workflows"), { recursive: true });
   await mkdir(path.join(source, "overrides"), { recursive: true });
@@ -20,6 +21,7 @@ test("docs staging includes only public site inputs", async (t) => {
   await mkdir(path.join(source, "adr"), { recursive: true });
   await mkdir(path.join(source, "reports"), { recursive: true });
   await mkdir(path.join(source, "screenshots"), { recursive: true });
+  await mkdir(path.dirname(favicon), { recursive: true });
   await writeFile(path.join(source, "index.md"), "# Docs\n");
   await writeFile(path.join(source, "workflows", "code-reviewer.md"), "# Reviewer\n");
   await writeFile(path.join(source, "stylesheets", "extra.css"), ":root {}\n");
@@ -32,15 +34,17 @@ test("docs staging includes only public site inputs", async (t) => {
   await writeFile(path.join(source, "screenshots", "README.md"), "# Build only\n");
   await writeFile(path.join(source, "workflows", "internal.md"), "# Private\n");
   await writeFile(path.join(source, "stylesheets", "internal.css"), ":root {}\n");
+  await writeFile(favicon, "<svg><title>canonical favicon</title></svg>\n");
 
-  await stageDocsSource(source, staged);
+  await stageDocsSource(source, staged, favicon);
 
   assert.equal(await readFile(path.join(staged, "index.md"), "utf8"), "# Docs\n");
   assert.equal(await readFile(path.join(staged, "workflows", "code-reviewer.md"), "utf8"), "# Reviewer\n");
   assert.equal(await readFile(path.join(staged, "stylesheets", "extra.css"), "utf8"), ":root {}\n");
+  assert.equal(await readFile(path.join(staged, "overrides", "main.html"), "utf8"), "<script>palette</script>\n");
   assert.equal(
-    await readFile(path.join(staged, "overrides", "main.html"), "utf8"),
-    "<script>palette</script>\n",
+    await readFile(path.join(staged, "assets", "favicon.svg"), "utf8"),
+    "<svg><title>canonical favicon</title></svg>\n",
   );
 
   for (const internalPath of [

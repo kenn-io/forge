@@ -8,7 +8,7 @@ Check the daemon:
 kenn-forge status
 ```
 
-If another Kenn Forge process uses the same `data_dir`, the startup
+If another kenn-forge process uses the same `data_dir`, the startup
 banner shows the existing daemon. Use the reported URL instead of starting a
 second daemon with the same data directory.
 
@@ -56,7 +56,7 @@ without exposing token material.
 
 Actions such as approve, merge, close, reopen, or comment require both provider
 support and token permission. If the provider does not support an action,
-Kenn Forge reports an unsupported capability instead of trying a GitHub-specific
+kenn-forge reports an unsupported capability instead of trying a GitHub-specific
 fallback.
 
 ## GitHub sync hits rate limits
@@ -82,16 +82,16 @@ read-only until startup establishes a stable write identity.
 ## A repository feature stays unavailable
 
 When a provider definitively reports that issues or pull requests are disabled,
-Kenn Forge cools that repository feature down for 24 hours instead of retrying a
+kenn-forge cools that repository feature down for 24 hours instead of retrying a
 permanent failure every sync. Other repository data continues syncing. Use an
 explicit repository sync after re-enabling the feature to bypass the cooldown
 and clear it on success.
 
 ## An issue workspace directory already exists
 
-If an issue workspace row was lost but its expected Kenn Forge worktree is still
+If an issue workspace row was lost but its expected kenn-forge worktree is still
 on disk, choose **Use Existing Directory** in the branch-conflict dialog. This
-only re-registers the deterministic Kenn Forge-managed directory after verifying
+only re-registers the deterministic kenn-forge-managed directory after verifying
 its repository and branch. It does not reset the branch, clean files, or remove
 untracked work. Use **Use Existing Branch** only when the branch is not already
 checked out in that directory.
@@ -113,7 +113,7 @@ docs = true
 
 ## Kata mode has no daemons
 
-Kenn Forge does not store Kata daemon definitions. Check Kata's own config:
+kenn-forge does not store Kata daemon definitions. Check Kata's own config:
 
 ```text
 ~/.kata/config.toml
@@ -123,7 +123,7 @@ or set `KATA_HOME` before starting kenn-forge.
 
 ## The database will not migrate
 
-Kenn Forge stores synced data in:
+kenn-forge stores synced data in:
 
 ```text
 ~/.kenn/forge/forge.db

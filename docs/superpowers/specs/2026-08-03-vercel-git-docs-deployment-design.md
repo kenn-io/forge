@@ -2,74 +2,90 @@
 
 ## Goal
 
-Publish Forge documentation at `forge.kenn.io` through the same remote-build
-model used by Roborev and AgentsView. Pull requests receive Vercel previews,
-and pushes to `main` receive production deployments without a GitHub Actions
-deployment job or Vercel credentials in GitHub.
+Publish kenn-forge documentation at `forge.kenn.io` through a direct Vercel build.
+Pull requests receive previews and pushes to `main` receive production
+deployments without a GitHub Actions deployment job or Vercel credentials in
+GitHub.
 
 ## Architecture
 
-The applied `kenn-forge-docs` Vercel project remains the hosting authority.
-OpenTofu updates that project in place to connect `kenn-io/forge`, use `main`
-as the production branch, and set `docs/` as the project root. The existing
+The applied `kenn-forge-docs` Vercel project remains the hosting authority and
+uses the kenn-forge repository root as its build root. The existing
 `forge.kenn.io` project domain and DNS-only Cloudflare CNAME remain unchanged.
 
-`docs/vercel.json` owns the remote install, build, output, and trailing-slash
-settings. Vercel installs the pinned Zensical toolchain with `uv`, runs a docs
-build wrapper, and publishes `docs/site/`. The build stages only the explicit
-public documentation allowlist; internal plans, specifications, ADRs, reports,
+The root `vercel.json` owns the install command, build command, `site/` output,
+and trailing-slash behavior. Vercel builds the same public documentation
+allowlist as local development; internal plans, specifications, ADRs, reports,
 and screenshot tooling never enter the rendered site.
+
+## Remote Toolchain
+
+Vercel's Amazon Linux install phase adds `tmux`, `nspr`, and `nss`, selects the
+correct `amd64` or `arm64` Go archive, and installs Go 1.26.3 into the ignored
+`.vercel/` tool directory. It also installs `uv`, materializes the Bun
+workspace from the frozen lockfile, and installs Playwright Chromium.
+
+The build phase prepends the repository-local Go and uv directories to
+`PATH`. It does not mutate a developer toolchain or depend on tools installed
+outside the checkout.
 
 ## Generated Screenshots
 
-The Vercel builder does not run Forge's Go, tmux, and Playwright screenshot
-stack. Maintainers generate the twelve workflow SVGs locally from the real
-seeded e2e backend and publish them to the force-updated orphan branch
-`docs-generated-assets`, matching the reference projects.
+Every Vercel deployment generates the workflow screenshots from the real
+seeded e2e backend. There is no generated-asset branch, checked-in screenshot
+fallback, or prebuilt deployment artifact.
 
-The remote build fetches that branch, validates the exact expected asset
-manifest, and hydrates `docs/assets/generated/` before staging the public site.
-Generated screenshots remain ignored on the main branch. Asset regeneration is
-maintainer-triggered; Vercel Git integration remains responsible only for docs
-source previews and production builds.
+The short Vercel build command delegates to `scripts/vercel-build-docs.sh`.
+That wrapper first compiles the frontend and copies it into
+`internal/web/dist`. Only then does it compile `cmd/e2e-server`, ensuring the
+binary embeds the current SPA. `PLAYWRIGHT_E2E_SERVER_BINARY` points the
+screenshot harness at that prebuilt binary, so the harness's readiness timeout
+measures server startup rather than a cold `go run` compile.
+
+After screenshot capture, the build runs Zensical from the staged project and
+executes the rendered-site Chromium checks before copying verified output to
+`site/`.
 
 ## Local and Remote Workflows
 
-`make docs-build` remains the full local verification path: regenerate
-screenshots, build Zensical, and run rendered-site browser checks. Separate
-asset-branch targets generate, validate, and optionally push the orphan asset
-commit without switching the maintainer's current branch.
+`make docs-build` remains the ordinary local verification path and may use the
+existing `go run` e2e-server behavior. `make docs-vercel-build` reproduces the
+remote build order after the Vercel install script has populated dependencies
+and local tools.
 
-Vercel automatically builds pull-request commits and `main`. The existing
-manual preview and production Make targets remain available as operator escape
-hatches and invoke ordinary remote Vercel builds, not prebuilt uploads.
+Vercel automatically builds pull-request commits and `main`. The manual
+preview and production Make targets remain operator escape hatches that submit
+ordinary source deployments, allowing Vercel to run the same install and build
+commands as Git-triggered deployments.
 
 ## Failure Handling
 
-Remote builds fail when the asset branch cannot be fetched, any expected SVG is
-missing, an unexpected asset is present, the pinned toolchain cannot install,
-or Zensical rejects the staged public site. A failed preview or production
-build never falls back to stale checked-in screenshots.
+Installation fails for unsupported CPU architectures, missing Amazon Linux
+packages, tool downloads, frozen-lockfile drift, or Chromium installation
+errors. The build fails for frontend errors, Go compilation errors, screenshot
+capture errors, Zensical errors, or rendered-site browser failures. A failed
+preview or production build never falls back to stale pages or screenshots.
 
 The Vercel Git connection requires the Vercel GitHub integration to have access
-to `kenn-io/forge`. OpenTofu reports that provider error without creating a
-compatibility path or moving deployment credentials into GitHub Actions.
+to the kenn-forge repository. Infrastructure configuration reports that provider
+error without introducing a compatibility path or moving deployment
+credentials into GitHub Actions.
 
 ## Verification
 
-Script tests exercise public-source staging, strict asset hydration, and orphan
-branch creation using temporary repositories. The full local docs build proves
-all screenshot captures, Zensical output, and rendered-site browser behavior.
-Mocked OpenTofu tests preserve the repository connection, production branch,
-project root, custom domain, and DNS-only CNAME contract.
+A focused unit test proves that `PLAYWRIGHT_E2E_SERVER_BINARY` selects the
+explicit executable and omits `go run` arguments. Script tests continue to
+exercise the public-source staging boundary. A local `docs-vercel-build` run,
+when the Linux dependencies are available, proves the full frontend, binary,
+screenshot, Zensical, and rendered-site sequence.
 
 ## Rollout
 
-1. Merge the Forge deployment changes and seed `docs-generated-assets` with all
-   twelve expected SVGs.
-2. Apply the updated `kenn-ops` Vercel project configuration, which connects
-   the repository and starts Git-triggered builds against complete `main`.
-3. Confirm the first production deployment serves `forge.kenn.io`.
+1. Merge the kenn-forge direct-build configuration.
+2. Apply the Vercel project configuration that connects the repository root and
+   selects `main` as the production branch.
+3. Confirm a preview completes the direct screenshot build.
+4. Confirm the first production deployment serves `forge.kenn.io`.
 
-No resource replacement, DNS migration, or GitHub Actions deployment secret is
-part of this change.
+No resource replacement, DNS migration, generated-asset branch, prebuilt
+deployment path, or GitHub Actions deployment secret is part of this change.

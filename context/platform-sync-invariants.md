@@ -105,7 +105,7 @@ review suggestion application, or ready-for-review.
 
 ## Sync Capabilities
 
-Kenn Forge reads repositories, merge requests, issues, releases, tags, CI, and
+kenn-forge reads repositories, merge requests, issues, releases, tags, CI, and
 timeline/comment-like events through provider capability interfaces in
 `internal/platform`. Providers implement only supported optional interfaces;
 registry helpers return typed errors for missing providers or capabilities.
@@ -155,7 +155,7 @@ registry helpers return typed errors for missing providers or capabilities.
   (`internal/server/detail_sync.go::enqueueDetailSyncOrRerun`).
 - Unexpected or ambiguous mutation outcomes trigger an immediate best-effort
   authoritative detail refresh; ordinary periodic sync is the eventual recovery
-  path if that refresh fails or still observes stale provider state. Kenn Forge
+  path if that refresh fails or still observes stale provider state. kenn-forge
   must not persist a local mutation fence that can indefinitely block future
   actions. Provider snapshots use ordinary timestamp ordering, and expected-head
   binding remains the mutation integrity boundary.
@@ -260,7 +260,7 @@ grouping rather than flattening it into Notes
 `internal/platform/gitlab/normalize.go::NormalizeMergeRequestDiscussions`).
 
 GitLab API calls address projects by numeric id or URL-escaped path with
-slashes. Kenn Forge should prefer the stored provider id after resolution and
+slashes. kenn-forge should prefer the stored provider id after resolution and
 preserve `path_with_namespace` as `repo_path`.
 
 GitLab private Markdown upload web URLs do not accept API-token authentication.
@@ -284,7 +284,7 @@ GitLab merge reports use `merge_commit_sha`, falling back to `squash_commit_sha`
 ## Forgejo And Gitea Shape
 
 Forgejo and Gitea use owner/name repository addressing in the REST and SDK
-surfaces. Kenn Forge should still persist provider repo IDs and external object
+surfaces. kenn-forge should still persist provider repo IDs and external object
 IDs when available, but route and config identity should remain
 `(provider, host, owner, name)` with optional `repo_path` for canonical display.
 

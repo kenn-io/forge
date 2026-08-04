@@ -1,10 +1,10 @@
-# Kenn Forge
+# kenn-forge
 
-Kenn Forge gives maintainers one local console for repository activity, pull
+kenn-forge gives maintainers one local console for repository activity, pull
 requests, issues, reviews, and working sessions. It syncs provider data into
 SQLite and serves the UI from a single binary.
 
-Use Kenn Forge to answer four daily questions:
+Use kenn-forge to answer four daily questions:
 
 - What changed across the repositories I maintain?
 - Which pull requests and issues need attention?
@@ -12,9 +12,9 @@ Use Kenn Forge to answer four daily questions:
 - Which branch or task should I open locally?
 
 <figure class="workflow-shot">
-  <img class="workflow-shot__image workflow-shot__image--light" src="assets/generated/maintainer-overview-light.svg" alt="Kenn Forge Activity feed with recent repository changes in light mode">
-  <img class="workflow-shot__image workflow-shot__image--dark" src="assets/generated/maintainer-overview-dark.svg" alt="Kenn Forge Activity feed with recent repository changes in dark mode">
-  <figcaption>Activity turns recent repository changes into one maintainer queue.</figcaption>
+  <img class="workflow-shot__image workflow-shot__image--light" src="assets/generated/maintainer-overview-light.svg" alt="kenn-forge Activity with a selected pull request, live workspace, and coding-agent session in light mode">
+  <img class="workflow-shot__image workflow-shot__image--dark" src="assets/generated/maintainer-overview-dark.svg" alt="kenn-forge Activity with a selected pull request, live workspace, and coding-agent session in dark mode">
+  <figcaption>Activity keeps the selected pull request beside its live workspace and coding-agent session.</figcaption>
 </figure>
 
 ## Start here
@@ -50,5 +50,5 @@ modes connect external task daemons and local Markdown folders.
 - [Historical activity archives](archive.md)
 - [Federated fleets](federated-fleet.md)
 
-Kenn Forge runs on your machine. Your provider, Kata daemons, and local files
+kenn-forge runs on your machine. Your provider, Kata daemons, and local files
 remain the source of truth.

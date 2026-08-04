@@ -1,11 +1,11 @@
 # Configuration
 
-Kenn Forge reads `~/.kenn/forge/config.toml`. Set `KENN_FORGE_HOME` to move
+kenn-forge reads `~/.kenn/forge/config.toml`. Set `KENN_FORGE_HOME` to move
 both config and app data. Most users only need repositories, credentials, and
 optional modes.
 
 Use Settings for routine changes. Edit TOML for provider hosts and advanced
-options. Restart Kenn Forge after changing startup settings.
+options. Restart kenn-forge after changing startup settings.
 
 ## Repositories
 
@@ -18,7 +18,7 @@ name = "service"
 ```
 
 You can paste a common HTTPS or SSH repository URL into `owner` or `name`.
-Kenn Forge normalizes it.
+kenn-forge normalizes it.
 
 Set the provider and host for other services or self-hosted instances:
 
@@ -63,7 +63,7 @@ An exact repository `token_file` or `token_env` takes priority over broader
 credentials. Empty files and variables are skipped. Token files are read on
 each request, so replacing a file atomically rotates that credential.
 
-For GitHub, Kenn Forge can run `gh auth token --hostname HOST`. The unscoped
+For GitHub, kenn-forge can run `gh auth token --hostname HOST`. The unscoped
 fallback applies only to `github.com`. Authenticate another host with:
 
 ```sh
@@ -116,10 +116,10 @@ kenn-forge-github-app list
 
 The CLI writes `[[github_apps]]` entries. Mutations still use a user PAT.
 After changing selected repository access on GitHub, run
-`kenn-forge-github-app install` again and restart Kenn Forge.
+`kenn-forge-github-app install` again and restart kenn-forge.
 
 Selected repository access is a startup routing snapshot. New grants use the
-PAT route until refresh. Revoked App access can return 404, and Kenn Forge does
+PAT route until refresh. Revoked App access can return 404, and kenn-forge does
 not retry that response with a PAT because 404 can also mean missing or private.
 
 ## Activity defaults
@@ -156,7 +156,7 @@ external or local sources.
 
 ## Workspace agents
 
-Kenn Forge detects built-in agents on `PATH`. Add or override an agent with:
+kenn-forge detects built-in agents on `PATH`. Add or override an agent with:
 
 ```toml
 [[agents]]
@@ -225,12 +225,12 @@ allow_mid_stack_merges = false
 ```
 
 Native GitHub stack data improves read-only detection when complete. Branch
-relationships remain the fallback. Kenn Forge does not create or reorder
+relationships remain the fallback. kenn-forge does not create or reorder
 stacks. Mid-stack merges stay blocked by default.
 
 ## Telemetry
 
-Kenn Forge sends limited anonymous telemetry by default: daemon activity, app
+kenn-forge sends limited anonymous telemetry by default: daemon activity, app
 view names, version, commit, OS and architecture, and an anonymous install ID.
 It does not send repository names, item content, tokens, usernames, hostnames,
 or paths.

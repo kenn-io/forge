@@ -13,7 +13,7 @@ management, tmux persistence, and workspace terminal UI behavior.
 
 ## Runtime Model
 
-Kenn Forge manages three related but different things:
+kenn-forge manages three related but different things:
 
 - The persisted workspace record and worktree.
 - The base workspace `tmux` terminal, which is durable and reconnectable.

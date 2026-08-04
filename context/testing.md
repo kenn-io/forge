@@ -139,7 +139,7 @@ not require a duplicate full-stack browser test when it would only replay data
 that is already proven at those two boundaries.
 
 Agent lifecycle hooks have no full agent-launch E2E: kit covers config formats and
-profile mappings, while Kenn Forge tests all-profile selection, normalized relay, and HTTP
+profile mappings, while kenn-forge tests all-profile selection, normalized relay, and HTTP
 handling as independent external seams (`cmd/kenn-forge/agent_hook_cli_test.go::TestAgentHookRunNormalizesGeminiLifecyclePayload`, `internal/server/workspaceapi/agent_hook_test.go::TestReceiveAgentHookRecordsActivityAndGeneratesClaudeContext`).
 
 A leaf renders a body per tab and hides the inactive ones, so which bodies exist
@@ -196,6 +196,10 @@ Full-stack e2e serves the frontend embedded in the e2e-server binary
 (`internal/web/dist`), not live sources: run `make frontend` before building
 `cmd/e2e-server` locally, or the suite silently validates a stale bundle and
 passes on frontend changes that CI then fails.
+Set `PLAYWRIGHT_E2E_SERVER_BINARY` to an explicit prebuilt `cmd/e2e-server`
+binary when startup must exclude `go run` compilation, such as Vercel's docs
+screenshot build. Build the frontend before compiling that binary so it embeds
+the current SPA.
 
 Mounting `KataWorkspace.svelte` in Vitest always fetches the daemon roster and
 opens the live SSE event stream; mock both fetch routes (see

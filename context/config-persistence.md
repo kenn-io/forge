@@ -1,6 +1,6 @@
 # Config Persistence Invariants
 
-Use this document when adding or changing config fields that Kenn Forge saves
+Use this document when adding or changing config fields that kenn-forge saves
 back to TOML.
 
 - `configFile` in `internal/config/config.go` is the hand-maintained subset of `Config` that `Save` writes to disk. A `Config` field absent from `configFile` (or from the `Save` initializer) loads from TOML fine but is silently dropped on the next save or restart.

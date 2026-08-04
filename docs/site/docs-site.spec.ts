@@ -51,6 +51,58 @@ test("keeps the site brand stable while scrolling", async ({ page }) => {
   }
 });
 
+test("serves the canonical favicon", async ({ page }) => {
+  await page.goto("/");
+
+  const faviconHref = await page.locator("link[rel~='icon']").getAttribute("href");
+  const faviconURL = new URL(faviconHref ?? "", page.url());
+  expect(faviconURL.pathname).toBe("/assets/favicon.svg");
+  const response = await page.request.get(faviconURL.toString());
+  expect(response.ok()).toBe(true);
+  expect(await response.text()).toContain('aria-label="kenn-forge"');
+});
+
+test("opens only the active generated workflow screenshot in a lightbox", async ({ page }) => {
+  await page.goto("/");
+
+  const trigger = page.getByRole("button", {
+    name: /View kenn-forge Activity.*at full size/i,
+  });
+  const dialog = page.getByRole("dialog", { name: "Expanded workflow screenshot" });
+
+  await trigger.click();
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator("img")).toHaveAttribute("src", /maintainer-overview-light\.svg$/);
+  await dialog.getByRole("button", { name: "Close expanded screenshot" }).click();
+  await expect(dialog).toBeHidden();
+  await expect(trigger).toBeFocused();
+
+  await trigger.click();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(trigger).toBeFocused();
+
+  await trigger.click();
+  await dialog.click({ position: { x: 2, y: 2 } });
+  await expect(dialog).toBeHidden();
+  await expect(trigger).toBeFocused();
+});
+
+test("opens the dark generated workflow screenshot for the active theme", async ({ browser }) => {
+  const context = await browser.newContext({ colorScheme: "dark" });
+  const page = await context.newPage();
+  await page.goto("/");
+
+  const trigger = page.getByRole("button", {
+    name: /View kenn-forge Activity.*dark mode.*at full size/i,
+  });
+  await trigger.click();
+
+  const dialog = page.getByRole("dialog", { name: "Expanded workflow screenshot" });
+  await expect(dialog.locator("img")).toHaveAttribute("src", /maintainer-overview-dark\.svg$/);
+  await context.close();
+});
+
 test("links to the canonical Forge repository and releases", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator('a[href="https://github.com/kenn-io/forge"]').first()).toBeVisible();
@@ -72,13 +124,8 @@ test("places Fleet under advanced and experimental navigation", async ({ page })
   await expect(advancedLabel).toBeVisible();
 
   const advancedItem = advancedLabel.locator("xpath=ancestor::li[1]");
-  await expect(advancedItem.getByRole("link", { name: "Fleet" })).toHaveAttribute(
-    "href",
-    /federated-fleet\/$/,
-  );
-  await expect(
-    primaryNav.locator(":scope > ul > li > a.md-nav__link", { hasText: "Fleet" }),
-  ).toHaveCount(0);
+  await expect(advancedItem.getByRole("link", { name: "Fleet" })).toHaveAttribute("href", /federated-fleet\/$/);
+  await expect(primaryNav.locator(":scope > ul > li > a.md-nav__link", { hasText: "Fleet" })).toHaveCount(0);
 });
 
 test("applies the browser theme before the runtime bundle", async ({ browser }) => {
@@ -99,9 +146,7 @@ test("applies the browser theme before the runtime bundle", async ({ browser }) 
     await page.route("**/assets/javascripts/bundle.*.min.js", (route) => route.abort());
 
     await page.goto("/");
-    const firstFrameScheme = await page.evaluate(() =>
-      (window as FirstFrameWindow).__firstFrameScheme,
-    );
+    const firstFrameScheme = await page.evaluate(() => (window as FirstFrameWindow).__firstFrameScheme);
     expect(firstFrameScheme).toBe(preference.expected);
     await context.close();
   }

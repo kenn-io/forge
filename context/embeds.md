@@ -3,9 +3,9 @@
 Use this document for embed routes, host-owned panels, the workspace bridge, or
 embed-shell startup behavior.
 
-Kenn Forge embed routes are intended to run in an isolated browser context, such
-as an iframe, WebView, or host-owned panel that loads one Kenn Forge document per
-surface. They are not designed for multiple Kenn Forge instances mounted into the
+kenn-forge embed routes are intended to run in an isolated browser context, such
+as an iframe, WebView, or host-owned panel that loads one kenn-forge document per
+surface. They are not designed for multiple kenn-forge instances mounted into the
 same `window`.
 
 The embed shell is intentionally smaller than the standalone app shell. It

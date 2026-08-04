@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-Kenn Forge moves timestamps through several layers:
+kenn-forge moves timestamps through several layers:
 
 - GitHub API payloads
 - Go normalization and persistence
@@ -20,7 +20,7 @@ Without a documented rule, timezone logic can leak into the wrong layer and crea
 
 ## Decision
 
-Kenn Forge will use UTC as the canonical representation for datetimes across storage and API boundaries.
+kenn-forge will use UTC as the canonical representation for datetimes across storage and API boundaries.
 
 - Store kenn-forge-owned datetimes in UTC.
 - Serialize API datetimes as UTC RFC3339.

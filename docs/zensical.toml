@@ -32,6 +32,7 @@ homepage = "/"
 [project.theme]
 custom_dir = "docs/overrides"
 variant = "modern"
+favicon = "assets/favicon.svg"
 features = [
   "navigation.instant",
   "navigation.instant.progress",

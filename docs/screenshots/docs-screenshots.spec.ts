@@ -52,28 +52,30 @@ async function showCodexWorkspace(page: Page): Promise<void> {
   }, syntheticPath);
 }
 
+async function showActivityCodexWorkspace(page: Page): Promise<void> {
+  const prRow = page
+    .locator(".activity-row")
+    .filter({ has: page.locator(".badge", { hasText: "PR" }) })
+    .filter({ hasText: "Add widget caching layer" })
+    .first();
+  await prRow.click();
+
+  const detail = page.locator(".activity-detail");
+  await expect(page.locator(".activity-shell.activity-shell--split")).toBeVisible();
+  await expect(detail.locator(".detail-title")).toContainText("Add widget caching layer");
+
+  const workspace = page.locator(".detail-pane-workspace-slot .workspace-host-wrapper");
+  await expect(workspace).toBeVisible();
+  const workflow = workspace.getByRole("region", { name: "Workflow panes" });
+  const codexTab = workflow.getByRole("tab", { name: "Codex" });
+  await expect(codexTab).toBeVisible();
+  await codexTab.click();
+  await expect(codexTab).toHaveAttribute("aria-selected", "true");
+  await expect(workspace.locator(".terminal-view")).toBeVisible();
+  await waitForIdleSync(page);
+}
+
 const cases: CaptureCase[] = [
-  {
-    name: "maintainer-overview",
-    theme: "light",
-    path: "/",
-    readySelector: ".activity-feed",
-    readyText: "Add widget caching layer",
-    loadingText: /Loading activity/i,
-    waitForSync: true,
-    description: "Activity overview with recent pull request and issue context across seeded repositories.",
-  },
-  {
-    name: "maintainer-overview",
-    theme: "dark",
-    path: "/",
-    readySelector: ".activity-feed",
-    readyText: "Add widget caching layer",
-    loadingText: /Loading activity/i,
-    waitForSync: true,
-    description:
-      "Activity overview in dark mode with recent pull request and issue context across seeded repositories.",
-  },
   {
     name: "issue-triager",
     theme: "light",
@@ -168,6 +170,32 @@ const cases: CaptureCase[] = [
     afterReady: showCodexWorkspace,
     description:
       "Workspaces view in dark mode with the pull request worktree selected and its Codex session available.",
+  },
+  {
+    name: "maintainer-overview",
+    theme: "light",
+    path: "/",
+    readySelector: ".activity-feed",
+    readyText: "Add widget caching layer",
+    loadingText: /Loading activity/i,
+    waitForSync: true,
+    prepare: ensureSyntheticCodexWorkspace,
+    afterReady: showActivityCodexWorkspace,
+    description:
+      "Activity with a selected pull request, its live workspace, and the workspace's selected Codex session.",
+  },
+  {
+    name: "maintainer-overview",
+    theme: "dark",
+    path: "/",
+    readySelector: ".activity-feed",
+    readyText: "Add widget caching layer",
+    loadingText: /Loading activity/i,
+    waitForSync: true,
+    prepare: ensureSyntheticCodexWorkspace,
+    afterReady: showActivityCodexWorkspace,
+    description:
+      "Activity in dark mode with a selected pull request, its live workspace, and the workspace's selected Codex session.",
   },
 ];
 

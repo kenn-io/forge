@@ -4,8 +4,8 @@ Find the issue that needs attention now. Recent activity matters more than
 arrival order.
 
 <figure class="workflow-shot">
-  <img class="workflow-shot__image workflow-shot__image--light" src="../assets/generated/issue-triager-light.svg" alt="Kenn Forge issue detail in light mode">
-  <img class="workflow-shot__image workflow-shot__image--dark" src="../assets/generated/issue-triager-dark.svg" alt="Kenn Forge issue detail in dark mode">
+  <img class="workflow-shot__image workflow-shot__image--light" src="../assets/generated/issue-triager-light.svg" alt="kenn-forge issue detail in light mode">
+  <img class="workflow-shot__image workflow-shot__image--dark" src="../assets/generated/issue-triager-dark.svg" alt="kenn-forge issue detail in dark mode">
   <figcaption>Review issue context, state, labels, and workspace actions in one view.</figcaption>
 </figure>
 
@@ -27,6 +27,6 @@ labels, assignees, comments, and state.
 
 ## Start implementation
 
-Choose **Create Workspace** from the issue detail. Kenn Forge creates a local
+Choose **Create Workspace** from the issue detail. kenn-forge creates a local
 worktree and opens **Workspaces**. Start a shell or configured agent on that
 branch.

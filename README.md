@@ -1,6 +1,6 @@
 # kenn-forge
 
-Kenn Forge is a local maintainer console for pull requests, issues, reviews,
+kenn-forge is a local maintainer console for pull requests, issues, reviews,
 activity, and local workspaces. It syncs the repositories you maintain into a
 local SQLite database and serves the UI from one binary.
 
@@ -13,9 +13,9 @@ Start with the [user guide](docs/index.md) for setup and workflows.
 - Work with issues without leaving the console.
 - Create local workspaces for hands-on review or implementation.
 - Connect optional Kata task daemons and local Markdown folders.
-- View and operate remote Kenn Forge daemons through a federated fleet.
+- View and operate remote kenn-forge daemons through a federated fleet.
 
-Provider capabilities vary. Kenn Forge shows unsupported actions as unavailable.
+Provider capabilities vary. kenn-forge shows unsupported actions as unavailable.
 
 ## Install a release
 
@@ -72,7 +72,7 @@ Forge host when you need workspace sessions.
 - [Commands](docs/commands.md)
 - [Troubleshooting](docs/troubleshooting.md)
 
-Kenn Forge is licensed under the [Elastic License 2.0](LICENSE). Contributions
+kenn-forge is licensed under the [Elastic License 2.0](LICENSE). Contributions
 made before the relicense remain available under the MIT License; see
 [NOTICE](NOTICE). Contact [Kenn Software](https://kenn.io) at info@kenn.io for
 commercial licensing.

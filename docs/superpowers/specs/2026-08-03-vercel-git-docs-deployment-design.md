@@ -14,9 +14,12 @@ uses the kenn-forge repository root as its build root. The existing
 The project has no Git repository connection or Vercel GitHub App dependency.
 
 The tagged-release workflow uploads its checkout as a source deployment with
-the Vercel CLI after release publication succeeds. Repository secrets provide
-the Vercel token, organization ID, and project ID; kenn-ops owns their
-GitHub-encrypted values and the project connection state.
+the Vercel CLI after release publication succeeds. Before credentials become
+available, the workflow proves that the tagged commit is reachable from
+protected `main` and enters the protected `docs-production` environment.
+Environment secrets provide the Vercel token, organization ID, and project ID;
+kenn-ops owns their GitHub-encrypted values, environment protection, protected
+release tags, and the project connection state.
 
 The root `vercel.json` owns the install command, build command, `site/` output,
 and trailing-slash behavior. Vercel builds the same public documentation
@@ -67,10 +70,11 @@ and local tools.
 
 `.github/workflows/release.yml` deploys production only after its release job
 succeeds, using the exact tagged checkout that produced the downloadable
-binaries. The manual preview target provides on-demand source previews without
-PR comments or deployment statuses from a GitHub App. The manual production
-target remains an operator escape hatch for a tagged checkout. All three paths
-run the same Vercel install and build commands.
+binaries. A tag outside protected `main` fails before the environment releases
+Vercel credentials. The manual preview target provides on-demand source
+previews without PR comments or deployment statuses from a GitHub App. The
+manual production target remains an operator escape hatch for a tagged
+checkout. All three paths run the same Vercel install and build commands.
 
 ## Failure Handling
 
@@ -80,9 +84,10 @@ errors. The build fails for frontend errors, Go compilation errors, screenshot
 capture errors, Zensical errors, or rendered-site browser failures. A failed
 preview or production build never falls back to stale pages or screenshots.
 
-Missing or invalid Vercel credentials fail the deployment job without changing
-the existing production deployment. Vercel credentials are unavailable to
-ordinary CI and are consumed only by the release deployment step.
+Missing or invalid Vercel credentials, an unapproved production environment,
+or a tagged commit outside `main` fails the deployment job without changing the
+existing production deployment. Vercel credentials are unavailable to ordinary
+CI and are consumed only by the release deployment step.
 
 ## Verification
 
@@ -95,8 +100,9 @@ binary, screenshot, Zensical, and rendered-site sequence.
 
 ## Rollout
 
-1. Apply the reviewed kenn-ops change that removes the Git connection and
-   provisions the encrypted GitHub Actions secrets.
+1. Apply the reviewed kenn-ops change that removes the Git connection, protects
+   release tags, and provisions the protected `docs-production` environment
+   with its encrypted GitHub Actions secrets and required approval.
 2. Merge the kenn-forge direct-build and release-workflow configuration.
 3. Confirm an on-demand preview completes the direct screenshot build.
 4. Confirm the next successful tagged release updates `forge.kenn.io`.

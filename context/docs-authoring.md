@@ -21,8 +21,10 @@ screenshots, or the Zensical site.
   `PLAYWRIGHT_E2E_SERVER_BINARY` so screenshot readiness excludes Go compile
   time. (`scripts/vercel-build-docs.sh`)
 - Production documentation deploys only after the tagged release job succeeds,
-  using the tagged checkout through the Vercel CLI. PR previews are on-demand;
-  the project has no Vercel GitHub App connection.
+  the tagged commit is verified as reachable from protected `main`, and the
+  `docs-production` environment gate admits the job. The Vercel credentials
+  belong to that protected environment. PR previews are on-demand; the project
+  has no Vercel GitHub App connection.
   (`.github/workflows/release.yml::deploy-docs`)
 - Download links retain a static GitHub Releases fallback and enhance to the
   matching `browser_download_url` returned by the latest-release API because a

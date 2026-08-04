@@ -74,11 +74,11 @@
 
       function detectedTarget() {
         var userAgent = navigator.userAgent.toLowerCase();
-        var architecture = "";
-        if (/arm64|aarch64/.test(userAgent)) architecture = "arm64";
-        if (/x86_64|win64|x64|amd64/.test(userAgent)) architecture = "amd64";
+        var arm64 = /arm64|aarch64/.test(userAgent);
+        var amd64 = /x86_64|win64|x64|amd64/.test(userAgent);
+        var architecture = arm64 === amd64 ? "" : arm64 ? "arm64" : "amd64";
 
-        if (/windows/.test(userAgent)) return "windows-amd64";
+        if (/windows/.test(userAgent) && architecture === "amd64") return "windows-amd64";
         if (/linux/.test(userAgent) && architecture) return "linux-" + architecture;
         if (/macintosh|mac os x/.test(userAgent) && architecture) return "darwin-" + architecture;
         return null;

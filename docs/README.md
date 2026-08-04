@@ -13,10 +13,12 @@ generated screenshots are ignored local artifacts.
 
 The Vercel project serves production deployments at `forge.kenn.io`. A
 successful tagged release deploys the tagged checkout through the Vercel CLI,
-so the public guide stays aligned with downloadable binaries. The project has
-no Vercel Git integration. Each remote build installs the screenshot runtime,
-generates the workflow screenshots from the seeded e2e server, verifies the
-rendered site, and publishes `site/`.
+so the public guide stays aligned with downloadable binaries. The workflow
+requires the tagged commit to belong to `main` and enters the protected
+`docs-production` environment before receiving Vercel credentials. The project
+has no Vercel Git integration. Each remote build installs the screenshot
+runtime, generates the workflow screenshots from the seeded e2e server,
+verifies the rendered site, and publishes `site/`.
 
 To reproduce that remote build after installing its dependencies, run:
 

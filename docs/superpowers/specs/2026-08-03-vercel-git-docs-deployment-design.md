@@ -22,8 +22,10 @@ and screenshot tooling never enter the rendered site.
 
 Vercel's Amazon Linux install phase adds `tmux`, `nspr`, and `nss`, selects the
 correct `amd64` or `arm64` Go archive, and installs Go 1.26.3 into the ignored
-`.vercel/` tool directory. It also installs `uv`, materializes the Bun
-workspace from the frozen lockfile, and installs Playwright Chromium.
+`.vercel/` tool directory. It also installs uv 0.12.1, materializes the Bun
+workspace from the frozen lockfile, and installs Playwright Chromium. The docs
+build resolves Zensical 0.0.51 explicitly instead of selecting the newest
+release.
 
 The build phase prepends the repository-local Go and uv directories to
 `PATH`. It does not mutate a developer toolchain or depend on tools installed
@@ -45,6 +47,11 @@ measures server startup rather than a cold `go run` compile.
 After screenshot capture, the build runs Zensical from the staged project and
 executes the rendered-site Chromium checks before copying verified output to
 `site/`.
+
+The first verified cold preview completed on Vercel's 4-core, 8 GB Amazon
+Linux builder in about three minutes. Later previews restore Vercel's build
+cache, but the install remains correct without it and stays bounded by the
+platform build timeout.
 
 ## Local and Remote Workflows
 

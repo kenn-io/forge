@@ -17,6 +17,9 @@ screenshots, or the Zensical site.
   copied into `internal/web/dist`, then pass the prebuilt binary through
   `PLAYWRIGHT_E2E_SERVER_BINARY` so screenshot readiness excludes Go compile
   time. (`scripts/vercel-build-docs.sh`)
+- Download links retain a static GitHub Releases fallback and enhance to the
+  matching `browser_download_url` returned by the latest-release API because a
+  release or the API may be unavailable. (`docs/overrides/main.html::assetFor`)
 - Verify screenshot asset-path findings against rendered `site/` output because
   Zensical can rewrite raw HTML paths when `use_directory_urls` is enabled.
 - Zensical resolves `docs_dir` and `site_dir` relative to the config file. To

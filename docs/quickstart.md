@@ -4,17 +4,22 @@ Install kenn-forge, connect a code forge, and open your first workspace.
 
 ## Install a release
 
-Download the archive for your system from
+<div class="docs-actions">
+  <a class="md-button md-button--primary" data-download-current href="https://github.com/kenn-io/forge/releases">Download latest release</a>
+  <a class="md-button" href="https://github.com/kenn-io/forge/releases">All releases</a>
+</div>
+
+Download the archive for your system below or browse
 [GitHub Releases](https://github.com/kenn-io/forge/releases). Each release
-also includes `SHA256SUMS`.
+also includes <a data-download-asset="checksums" href="https://github.com/kenn-io/forge/releases"><code>SHA256SUMS</code></a>.
 
 | System | Architecture | Archive |
 | --- | --- | --- |
-| Linux | x86-64 | `forge_<version>_linux_amd64.tar.gz` |
-| Linux | ARM64 | `forge_<version>_linux_arm64.tar.gz` |
-| macOS | Intel | `forge_<version>_darwin_amd64.tar.gz` |
-| macOS | Apple silicon | `forge_<version>_darwin_arm64.tar.gz` |
-| Windows | x86-64 | `forge_<version>_windows_amd64.zip` |
+| Linux | x86-64 | <a data-download-asset="linux-amd64" href="https://github.com/kenn-io/forge/releases"><code>forge_&lt;version&gt;_linux_amd64.tar.gz</code></a> |
+| Linux | ARM64 | <a data-download-asset="linux-arm64" href="https://github.com/kenn-io/forge/releases"><code>forge_&lt;version&gt;_linux_arm64.tar.gz</code></a> |
+| macOS | Intel | <a data-download-asset="darwin-amd64" href="https://github.com/kenn-io/forge/releases"><code>forge_&lt;version&gt;_darwin_amd64.tar.gz</code></a> |
+| macOS | Apple silicon | <a data-download-asset="darwin-arm64" href="https://github.com/kenn-io/forge/releases"><code>forge_&lt;version&gt;_darwin_arm64.tar.gz</code></a> |
+| Windows | x86-64 | <a data-download-asset="windows-amd64" href="https://github.com/kenn-io/forge/releases"><code>forge_&lt;version&gt;_windows_amd64.zip</code></a> |
 
 Verify the downloaded archive against `SHA256SUMS`.
 

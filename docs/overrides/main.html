@@ -21,6 +21,127 @@
       }).observe(document.documentElement, { childList: true });
     })();
   </script>
+  <script>
+    (function () {
+      var api = "https://api.github.com/repos/kenn-io/forge/releases/latest";
+      var cacheKey = "kenn-forge:release";
+      var cacheMaxAge = 60 * 60 * 1000;
+      var currentRelease = null;
+      var assetSuffixes = {
+        "linux-amd64": "_linux_amd64.tar.gz",
+        "linux-arm64": "_linux_arm64.tar.gz",
+        "darwin-amd64": "_darwin_amd64.tar.gz",
+        "darwin-arm64": "_darwin_arm64.tar.gz",
+        "windows-amd64": "_windows_amd64.zip",
+        checksums: "SHA256SUMS",
+      };
+      var platformLabels = {
+        "linux-amd64": "Linux x86-64",
+        "linux-arm64": "Linux ARM64",
+        "darwin-amd64": "macOS Intel",
+        "darwin-arm64": "macOS Apple silicon",
+        "windows-amd64": "Windows x86-64",
+      };
+
+      function readCachedRelease() {
+        try {
+          var raw = localStorage.getItem(cacheKey);
+          if (!raw) return null;
+          var cached = JSON.parse(raw);
+          return Date.now() - cached.at <= cacheMaxAge ? cached.value : null;
+        } catch (_) {
+          return null;
+        }
+      }
+
+      function writeCachedRelease(release) {
+        try {
+          localStorage.setItem(cacheKey, JSON.stringify({ at: Date.now(), value: release }));
+        } catch (_) {
+          // The static Releases links remain usable when storage is unavailable.
+        }
+      }
+
+      function assetFor(release, target) {
+        var suffix = assetSuffixes[target];
+        if (!suffix || !release || !Array.isArray(release.assets)) return null;
+        for (var index = 0; index < release.assets.length; index += 1) {
+          var asset = release.assets[index];
+          if (asset && typeof asset.name === "string" && asset.name.endsWith(suffix)) return asset;
+        }
+        return null;
+      }
+
+      function detectedTarget() {
+        var userAgent = navigator.userAgent.toLowerCase();
+        var architecture = "";
+        if (/arm64|aarch64/.test(userAgent)) architecture = "arm64";
+        if (/x86_64|win64|x64|amd64/.test(userAgent)) architecture = "amd64";
+
+        if (/windows/.test(userAgent)) return "windows-amd64";
+        if (/linux/.test(userAgent) && architecture) return "linux-" + architecture;
+        if (/macintosh|mac os x/.test(userAgent) && architecture) return "darwin-" + architecture;
+        return null;
+      }
+
+      function renderDownloads() {
+        if (!currentRelease) return;
+
+        var links = document.querySelectorAll("[data-download-asset]");
+        for (var index = 0; index < links.length; index += 1) {
+          var link = links[index];
+          var asset = assetFor(currentRelease, link.getAttribute("data-download-asset"));
+          if (asset && typeof asset.browser_download_url === "string") {
+            link.href = asset.browser_download_url;
+          }
+        }
+
+        var versionLabels = document.querySelectorAll("[data-download-version]");
+        for (var versionIndex = 0; versionIndex < versionLabels.length; versionIndex += 1) {
+          versionLabels[versionIndex].textContent = currentRelease.tag_name + " · ";
+        }
+
+        var target = detectedTarget();
+        var currentAsset = target && assetFor(currentRelease, target);
+        if (!currentAsset || typeof currentAsset.browser_download_url !== "string") return;
+
+        var currentLinks = document.querySelectorAll("[data-download-current]");
+        for (var currentIndex = 0; currentIndex < currentLinks.length; currentIndex += 1) {
+          currentLinks[currentIndex].href = currentAsset.browser_download_url;
+          currentLinks[currentIndex].textContent = "Download for " + platformLabels[target];
+        }
+      }
+
+      currentRelease = readCachedRelease();
+
+      function startDownloadRendering() {
+        renderDownloads();
+        if (typeof document$ !== "undefined") document$.subscribe(renderDownloads);
+      }
+
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", startDownloadRendering, { once: true });
+      } else {
+        startDownloadRendering();
+      }
+
+      if (!currentRelease) {
+        fetch(api, { headers: { Accept: "application/vnd.github+json" } })
+          .then(function (response) {
+            return response.ok ? response.json() : null;
+          })
+          .then(function (release) {
+            if (!release) return;
+            currentRelease = release;
+            writeCachedRelease(release);
+            renderDownloads();
+          })
+          .catch(function () {
+            // The static Releases links remain usable when GitHub is unavailable.
+          });
+      }
+    })();
+  </script>
 {% endblock %}
 {% block scripts %}
   {{ super() }}
@@ -36,10 +157,15 @@
       var opener = null;
       var dialog = document.createElement("dialog");
       dialog.className = "workflow-shot-lightbox";
-      dialog.setAttribute("aria-label", "Expanded workflow screenshot");
+      dialog.setAttribute("aria-labelledby", "workflow-shot-lightbox-title");
 
       var panel = document.createElement("div");
       panel.className = "workflow-shot-lightbox__panel";
+
+      var title = document.createElement("h2");
+      title.id = "workflow-shot-lightbox-title";
+      title.className = "workflow-shot-lightbox__title";
+      title.textContent = "Expanded workflow screenshot";
 
       var image = document.createElement("img");
       image.className = "workflow-shot-lightbox__image";
@@ -50,6 +176,7 @@
       closeButton.setAttribute("aria-label", "Close expanded screenshot");
       closeButton.textContent = "Close";
 
+      panel.appendChild(title);
       panel.appendChild(image);
       panel.appendChild(closeButton);
       dialog.appendChild(panel);

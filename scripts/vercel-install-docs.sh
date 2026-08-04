@@ -7,6 +7,7 @@ tools_root="$repo_root/.vercel/tools"
 tools_bin="$tools_root/bin"
 go_root="$tools_root/go"
 go_version="1.26.3"
+uv_version="0.12.1"
 
 case "$(uname -m)" in
   x86_64)
@@ -38,7 +39,7 @@ rm -rf "$go_root"
 tar -C "$tools_root" -xzf "$go_archive"
 rm -f "$go_archive"
 
-curl -LsSf https://astral.sh/uv/install.sh \
+curl -LsSf "https://astral.sh/uv/${uv_version}/install.sh" \
   | env UV_INSTALL_DIR="$tools_bin" UV_NO_MODIFY_PATH=1 sh
 
 cd "$repo_root"

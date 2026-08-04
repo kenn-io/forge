@@ -72,6 +72,8 @@ test("opens only the active generated workflow screenshot in a lightbox", async 
 
   await trigger.click();
   await expect(dialog).toBeVisible();
+  await expect(dialog).toHaveAttribute("aria-labelledby", "workflow-shot-lightbox-title");
+  await expect(dialog.locator("#workflow-shot-lightbox-title")).toHaveText("Expanded workflow screenshot");
   await expect(dialog.locator("img")).toHaveAttribute("src", /maintainer-overview-light\.svg$/);
   await dialog.getByRole("button", { name: "Close expanded screenshot" }).click();
   await expect(dialog).toBeHidden();
@@ -103,11 +105,72 @@ test("opens the dark generated workflow screenshot for the active theme", async 
   await context.close();
 });
 
-test("links to the canonical Forge repository and releases", async ({ page }) => {
+test("keeps generated workflow screenshots inline without native dialog support", async ({ browser }) => {
+  const context = await browser.newContext({ colorScheme: "light" });
+  await context.addInitScript(() => {
+    Object.defineProperty(HTMLDialogElement.prototype, "showModal", {
+      configurable: true,
+      value: undefined,
+    });
+  });
+  const page = await context.newPage();
+  await page.goto("/");
+
+  await expect(page.locator("figure.workflow-shot img.workflow-shot__image--light")).toBeVisible();
+  await expect(page.locator(".workflow-shot__trigger")).toHaveCount(0);
+  await expect(page.locator("dialog.workflow-shot-lightbox")).toHaveCount(0);
+  await context.close();
+});
+
+test("keeps generated workflow screenshots static", async ({ page }) => {
+  await page.goto("/assets/generated/maintainer-overview-light.svg");
+
+  await expect
+    .poll(() => page.evaluate(() => document.getAnimations().filter((animation) => animation.playState === "running").length))
+    .toBe(0);
+});
+
+test("links to the canonical kenn-forge downloads", async ({ page }) => {
+  await page.route("https://api.github.com/repos/kenn-io/forge/releases/latest", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        tag_name: "v1.2.3",
+        assets: [
+          {
+            name: "forge_1.2.3_linux_amd64.tar.gz",
+            browser_download_url: "https://downloads.example/forge-linux-amd64.tar.gz",
+          },
+          {
+            name: "forge_1.2.3_darwin_arm64.tar.gz",
+            browser_download_url: "https://downloads.example/forge-darwin-arm64.tar.gz",
+          },
+          {
+            name: "SHA256SUMS",
+            browser_download_url: "https://downloads.example/SHA256SUMS",
+          },
+        ],
+      }),
+    }),
+  );
+
   await page.goto("/");
   await expect(page.locator('a[href="https://github.com/kenn-io/forge"]').first()).toBeVisible();
+  await expect(page.getByRole("link", { name: "Download latest release" })).toHaveAttribute(
+    "href",
+    "https://github.com/kenn-io/forge/releases",
+  );
+  await expect(page.locator("[data-download-version]")).toHaveText("v1.2.3 · ");
 
   await page.goto("/quickstart/");
+  await expect(page.getByRole("link", { name: "forge_<version>_linux_amd64.tar.gz" })).toHaveAttribute(
+    "href",
+    "https://downloads.example/forge-linux-amd64.tar.gz",
+  );
+  await expect(page.getByRole("link", { name: "SHA256SUMS" })).toHaveAttribute(
+    "href",
+    "https://downloads.example/SHA256SUMS",
+  );
   await expect(page.getByRole("link", { name: "GitHub Releases" })).toHaveAttribute(
     "href",
     "https://github.com/kenn-io/forge/releases",

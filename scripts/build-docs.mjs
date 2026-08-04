@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const scriptPath = fileURLToPath(import.meta.url);
 const repoRoot = path.resolve(path.dirname(scriptPath), "..");
+const zensicalVersion = "0.0.51";
 
 const publishedFiles = new Set([
   "archive.md",
@@ -88,7 +89,10 @@ export async function buildDocs() {
       },
     );
 
-    await run("uvx", ["zensical", "build"], { cwd: stagingRoot, env: process.env });
+    await run("uvx", ["--from", `zensical==${zensicalVersion}`, "zensical", "build"], {
+      cwd: stagingRoot,
+      env: process.env,
+    });
     await run(
       process.execPath,
       [

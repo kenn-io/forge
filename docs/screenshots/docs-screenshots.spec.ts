@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -10,6 +10,20 @@ import {
 const outputDir = process.env.KENN_FORGE_DOCS_SCREENSHOT_DIR;
 
 type ThemeName = "light" | "dark";
+
+const syntheticCodexTranscript = [
+  "› Implement in-flight request coalescing for the widget cache.",
+  "",
+  "• Inspected",
+  "  └ cache.mjs",
+  "  └ cache.test.mjs",
+  "",
+  "• Implemented in-flight request coalescing.",
+  "  └ Concurrent loads share one request.",
+  "  └ Failed requests clear so later calls retry.",
+  "",
+  "Test result: node --test — 3 passed, 0 failed.",
+].join("\n");
 
 type CaptureCase = {
   name:
@@ -37,11 +51,46 @@ async function openCodexLaunchMenu(page: Page): Promise<void> {
   await expect(page.getByRole("menuitem", { name: "Codex" })).toBeVisible();
 }
 
+async function embedSyntheticCodexTranscript(workspace: Locator): Promise<void> {
+  const terminal = workspace.locator(".terminal-container:visible").first();
+  await expect(terminal).toBeVisible();
+  await terminal.evaluate((element, transcript) => {
+    const existing = element.querySelector(".docs-codex-transcript");
+    if (existing) existing.remove();
+
+    const content = document.createElement("pre");
+    content.className = "docs-codex-transcript";
+    content.setAttribute("aria-label", "Synthetic Codex session transcript");
+    content.textContent = transcript;
+    content.style.cssText = [
+      "position: absolute",
+      "inset: 0",
+      "z-index: 3",
+      "box-sizing: border-box",
+      "margin: 0",
+      "padding: 18px 22px",
+      "overflow: hidden",
+      "background: #0d1117",
+      "color: #c9d1d9",
+      'font-family: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace',
+      "font-size: 13px",
+      "line-height: 1.5",
+      "white-space: pre-wrap",
+    ].join("; ");
+    element.appendChild(content);
+  }, syntheticCodexTranscript);
+}
+
 async function showCodexWorkspace(page: Page): Promise<void> {
   const row = page.locator(".workspace-list-sidebar .ws-row", { hasText: "Add widget caching layer" });
   await row.click();
   await expect(row).toHaveClass(/\bselected\b/);
-  await expect(page.getByRole("region", { name: "Workflow panes" }).getByRole("tab", { name: "Codex" })).toBeVisible();
+  const workspace = page.locator(".terminal-view");
+  const codexTab = workspace.getByRole("region", { name: "Workflow panes" }).getByRole("tab", { name: "Codex" });
+  await expect(codexTab).toBeVisible();
+  await codexTab.click();
+  await expect(codexTab).toHaveAttribute("aria-selected", "true");
+  await embedSyntheticCodexTranscript(workspace);
 
   const syntheticPath = "/worktrees/github/github.com/acme/widgets/pr-1";
   await page.locator(".meta-chip.mono.path").evaluate((element, replacement) => {
@@ -72,6 +121,7 @@ async function showActivityCodexWorkspace(page: Page): Promise<void> {
   await codexTab.click();
   await expect(codexTab).toHaveAttribute("aria-selected", "true");
   await expect(workspace.locator(".terminal-view")).toBeVisible();
+  await embedSyntheticCodexTranscript(workspace);
   await waitForIdleSync(page);
 }
 
@@ -235,9 +285,8 @@ async function stabilizePage(page: Page): Promise<void> {
   await page.addStyleTag({
     content: `
       *, *::before, *::after {
-        animation-duration: 0.001s !important;
-        animation-delay: 0s !important;
-        transition-duration: 0s !important;
+        animation: none !important;
+        transition: none !important;
         caret-color: transparent !important;
       }
     `,
@@ -517,9 +566,8 @@ body {
 *,
 *::before,
 *::after {
-  animation-duration: 0.001s !important;
-  animation-delay: 0s !important;
-  transition-duration: 0s !important;
+  animation: none !important;
+  transition: none !important;
   caret-color: transparent !important;
 }
 `;
@@ -610,6 +658,10 @@ async function captureCase(page: Page, baseURL: string, capture: CaptureCase): P
   expect(svg).not.toMatch(/<img[^>]+src="(?:https?:|\/)/i);
   expect(svg).not.toMatch(/data:image\/(?:avif|gif|jpe?g|png|webp)/i);
   expect(svg).not.toMatch(/\/var\/folders|kenn-forge-e2e-\d+/i);
+  if (capture.name === "workspace-codex-session" || capture.name === "maintainer-overview") {
+    expect(svg).toContain("Implemented in-flight request coalescing.");
+    expect(svg).toContain("3 passed, 0 failed.");
+  }
   await writeFile(path.join(outputDir!, `${capture.name}-${capture.theme}.svg`), svg);
 }
 

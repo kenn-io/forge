@@ -191,32 +191,64 @@ Expected: the lightbox interaction and dark-theme asset tests pass.
 
 ---
 
-### Task 3: Verify and deliver both deployment pull requests
+### Task 3: Freeze an authentic synthetic Codex transcript
+
+**Files:**
+- Modify: `docs/screenshots/docs-screenshots.spec.ts`
+- Modify: `docs/screenshots/README.md`
+
+**Interfaces:**
+- Consumes: a one-time `codex exec --ephemeral` run in an isolated synthetic widget-cache repository.
+- Produces: deterministic terminal text printed by the synthetic Codex agent command before its long-running wait.
+
+- [ ] **Step 1: Run real Codex once in a synthetic repository**
+
+Create an ignored scratch Git repository containing a deliberately incomplete widget cache and Node built-in tests for successful-result caching, concurrent-load coalescing, and failed-load eviction. Run the installed Codex CLI with `--ephemeral`, `--ignore-user-config`, and `--sandbox workspace-write`, asking it to implement the cache and run `node --test`.
+
+- [ ] **Step 2: Sanitize a short transcript fixture**
+
+Extract only generic task, inspection, implementation, and passing-test lines. Remove the scratch path, session identifiers, timing/token data, environment details, and any user or real-repository data. Keep the text short enough to remain legible in the selected Codex pane.
+
+- [ ] **Step 3: Write a failing screenshot-content assertion**
+
+Require the `workspace-codex-session` and `maintainer-overview` SVGs to contain the frozen task summary and passing-test result. Run the light maintainer capture and verify it fails while the synthetic session still prints no content.
+
+- [ ] **Step 4: Print the frozen transcript from the synthetic session**
+
+Replace the synthetic Codex target's silent loop with a shell command that prints the sanitized static transcript and then enters the existing long-running wait. Do not invoke Codex from the generated screenshot suite or Vercel build.
+
+- [ ] **Step 5: Verify and inspect both themed captures**
+
+Run both `maintainer-overview` captures, assert the frozen transcript is embedded in each SVG, and visually confirm the coding-agent pane is readable in light and dark mode.
+
+---
+
+### Task 4: Verify and deliver both deployment pull requests
 
 **Files:**
 - Verify all Forge branch changes already in the working tree.
-- Verify: `/Users/mariusvniekerk/src/kenn-io/kenn-ops/workspaces/kenn-io-website/main.tf`
-- Verify: `/Users/mariusvniekerk/src/kenn-io/kenn-ops/workspaces/kenn-io-website/tests/smoke.tftest.hcl`
+- Verify in a checkout of `kenn-io/kenn-ops`: `workspaces/kenn-io-website/main.tf`
+- Verify in a checkout of `kenn-io/kenn-ops`: `workspaces/kenn-io-website/tests/smoke.tftest.hcl`
 
 **Interfaces:**
 - Consumes: `scripts/vercel-build-docs.sh`, `vercel.json`, and the already-applied `forge.kenn.io` infrastructure definition.
 - Produces: one verified Vercel preview and updated Forge PR #830 and kenn-ops PR #103.
 
-- [x] **Step 1: Run the complete local docs verification**
+- [ ] **Step 1: Run the complete local docs verification**
 
 Run the script unit tests, branding guard, all generated captures, rendered-site tests, formatting checks, shell checks, and `git diff --check`. The exact build wrapper `scripts/vercel-build-docs.sh` must finish with 12 screenshot cases and the complete rendered-site suite passing.
 
-- [x] **Step 2: Inspect the rendered behavior locally**
+- [ ] **Step 2: Inspect the rendered behavior locally**
 
 Serve `site/`, inspect the home page in light and dark themes, open and close the lightbox by each supported path, and confirm the first image shows Activity, selected PR, live workspace, and selected Codex session.
 
-- [x] **Step 3: Create one final Vercel preview**
+- [ ] **Step 3: Create one final Vercel preview**
 
 Run Vercel from the Forge worktree with the linked `kenn-forge-docs` project. Wait for completion and verify HTTP 200, the canonical favicon, the active-theme lightbox asset, the first workflow composition, and successful screenshot/site tests in the build log.
 
 - [x] **Step 4: Validate kenn-ops without applying infrastructure**
 
-From `/Users/mariusvniekerk/src/kenn-io/kenn-ops/workspaces/kenn-io-website`, run `tofu fmt -check -diff .`, `tofu validate`, `tofu test -test-directory=tests`, and `git diff --check`. Do not apply OpenTofu and do not stage `.kata.toml`.
+From `workspaces/kenn-io-website` in the kenn-ops checkout, run `tofu fmt -check -diff .`, `tofu validate`, `tofu test -test-directory=tests`, and `git diff --check`. Do not apply OpenTofu and do not stage `.kata.toml`. Infrastructure changes remain a separate commit and PR in that repository.
 
 - [ ] **Step 5: Commit and push the final changes**
 

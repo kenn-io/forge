@@ -23,6 +23,10 @@ To reproduce that remote build after installing its dependencies, run:
 make docs-vercel-build
 ```
 
+The Vercel install command targets Amazon Linux. On other development hosts,
+use `make docs-build`; the exact Amazon Linux install and build path is
+verified by Vercel previews.
+
 For a manual deployment, link a checkout to the project once from the
 repository root:
 

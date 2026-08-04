@@ -4,6 +4,7 @@ on:
   workflow_run:
     workflows: [Release]
     types: [completed]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -11,8 +12,9 @@ permissions:
 jobs:
   validate-release:
     if: >-
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'push'
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
     outputs:
       release-sha: ${{ steps.release.outputs.sha }}
@@ -22,29 +24,29 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: main
 
       - name: Verify released source
         id: release
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+          WORKFLOW_RUN_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
           git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
-          if ! git merge-base --is-ancestor "$RELEASE_SHA" refs/remotes/origin/main; then
-            echo "Refusing to deploy documentation from a release commit outside main." >&2
-            exit 1
-          fi
-
           latest_tag="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)"
           git fetch --force origin "refs/tags/$latest_tag:refs/tags/$latest_tag"
           latest_sha="$(git rev-list -n 1 "refs/tags/$latest_tag")"
-          if [ "$latest_sha" != "$RELEASE_SHA" ]; then
-            echo "Refusing to deploy $RELEASE_SHA because $latest_tag points to $latest_sha." >&2
+          release_sha="${WORKFLOW_RUN_SHA:-$latest_sha}"
+          if ! git merge-base --is-ancestor "$release_sha" refs/remotes/origin/main; then
+            echo "Refusing to deploy documentation from a release commit outside main." >&2
             exit 1
           fi
-          echo "sha=$RELEASE_SHA" >> "$GITHUB_OUTPUT"
+          if [ "$latest_sha" != "$release_sha" ]; then
+            echo "Refusing to deploy $release_sha because $latest_tag points to $latest_sha." >&2
+            exit 1
+          fi
+          echo "sha=$release_sha" >> "$GITHUB_OUTPUT"
           echo "tag=$latest_tag" >> "$GITHUB_OUTPUT"
 
   build:
@@ -56,7 +58,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ needs.validate-release.outputs.release-sha }}
 
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
@@ -76,9 +78,9 @@ jobs:
   promote:
     needs: [validate-release, build]
     runs-on: ubuntu-latest
-    concurrency:
-      group: docs-production
-      cancel-in-progress: false
+    permissions:
+      actions: write
+      contents: read
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -99,13 +101,15 @@ jobs:
           set -euo pipefail
           latest_tag="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)"
           if [ "$latest_tag" != "$EXPECTED_TAG" ]; then
-            echo "Refusing to promote $EXPECTED_TAG because the latest release is $latest_tag." >&2
+            gh workflow run deploy-docs.yml --repo "$GITHUB_REPOSITORY" --ref main
+            echo "Refusing to promote $EXPECTED_TAG because the latest release is $latest_tag; reconciliation dispatched." >&2
             exit 1
           fi
           git fetch --force origin "refs/tags/$latest_tag:refs/tags/$latest_tag"
           latest_sha="$(git rev-list -n 1 "refs/tags/$latest_tag")"
           if [ "$latest_sha" != "$EXPECTED_SHA" ]; then
-            echo "Refusing to promote $EXPECTED_SHA because $latest_tag points to $latest_sha." >&2
+            gh workflow run deploy-docs.yml --repo "$GITHUB_REPOSITORY" --ref main
+            echo "Refusing to promote $EXPECTED_SHA because $latest_tag points to $latest_sha; reconciliation dispatched." >&2
             exit 1
           fi
 
@@ -128,6 +132,7 @@ jobs:
           git fetch --force origin "refs/tags/$latest_tag:refs/tags/$latest_tag"
           latest_sha="$(git rev-list -n 1 "refs/tags/$latest_tag")"
           if [ "$latest_tag" != "$EXPECTED_TAG" ] || [ "$latest_sha" != "$EXPECTED_SHA" ]; then
-            echo "A newer release was published during promotion; its deployment must reconcile production." >&2
+            gh workflow run deploy-docs.yml --repo "$GITHUB_REPOSITORY" --ref main
+            echo "A newer release was published during promotion; reconciliation dispatched." >&2
             exit 1
           fi

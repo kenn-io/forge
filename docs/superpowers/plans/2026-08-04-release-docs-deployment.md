@@ -6,7 +6,7 @@
 
 **Approved spec/design:** `docs/superpowers/specs/2026-08-04-release-docs-deployment-design.md`
 
-**Architecture:** Keep binary publication in the tag-triggered `Release` workflow and move documentation deployment to a default-branch `workflow_run` workflow. Validate release provenance without Vercel credentials, build without aliasing, and serialize a latest-release-guarded promotion.
+**Architecture:** Keep binary publication in the tag-triggered `Release` workflow and move documentation deployment to a default-branch `workflow_run` workflow. Validate release provenance without Vercel credentials, build without aliasing, and automatically reconcile a promotion that becomes stale.
 
 **Tech Stack:** GitHub Actions, GitHub CLI, Git, Bun, Vercel CLI
 
@@ -30,7 +30,7 @@
 
 **Interfaces:**
 - Consumes: the completed `Release` workflow run's `head_sha`.
-- Produces: `validate-release` outputs `release-tag` and `release-sha`; `build` outputs `deployment-url`; `promote` assigns the production alias.
+- Produces: `validate-release` outputs `release-tag` and `release-sha`; `build` outputs `deployment-url`; `promote` assigns the production alias or dispatches latest-release reconciliation.
 
 - [x] **Step 1: Remove Vercel deployment from the tag-loaded workflow**
 
@@ -49,10 +49,11 @@ and a `workflow_run` trigger for a completed `Release`. Require
 - [x] **Step 3: Separate production building from promotion**
 
 On the fresh build runner, check out
-`github.event.workflow_run.head_sha`, run `vercel deploy --prod --skip-domain`,
-capture the deployment URL, then pass it to a `promote` job using the shared
-`docs-production` concurrency group. Keep GitHub release publication outside
-that group because concurrency may discard pending jobs.
+`needs.validate-release.outputs.release-sha`, run
+`vercel deploy --prod --skip-domain`, capture the deployment URL, then pass it
+to the `promote` job. Do not use GitHub concurrency for release publication or
+promotion, because it may discard the only pending attempt when builds finish
+out of order.
 
 - [x] **Step 4: Recheck release freshness before promotion**
 
@@ -62,8 +63,9 @@ only the read-only GitHub token. Refetch and peel the tag, require its name and
 commit to equal `needs.validate-release.outputs.release-tag` and
 `needs.validate-release.outputs.release-sha`, and run `vercel promote` in the
 immediately following step. Query and peel the latest tag again immediately
-after promotion; fail visibly if a newer release was published, allowing that
-release's successful deployment to reconcile the alias.
+after promotion. Give only the promotion job `actions: write`; when either
+freshness check is stale, dispatch `deploy-docs.yml` on `main` so a non-lossy
+trusted run resolves and deploys the actual latest release.
 
 - [x] **Step 5: Validate workflow syntax**
 

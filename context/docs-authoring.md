@@ -21,8 +21,8 @@ screenshots, or the Zensical site.
   `PLAYWRIGHT_E2E_SERVER_BINARY` so screenshot readiness excludes Go compile
   time. (`scripts/vercel-build-docs.sh`)
 - Production docs use a default-branch `workflow_run`; the released SHA must be
-  on `main` and latest before build and before/after serialized promotion. A
-  newer successful deployment reconciles the alias. No Vercel Git app or GitHub environment. (`.github/workflows/deploy-docs.yml`)
+  on `main` and latest before build and before/after promotion. A stale attempt
+  dispatches trusted latest-release reconciliation. No Vercel Git app or GitHub environment. (`.github/workflows/deploy-docs.yml`)
 - Download links retain a static GitHub Releases fallback and enhance to the
   matching `browser_download_url` returned by the latest-release API because a
   release or the API may be unavailable. Automatic platform selection occurs

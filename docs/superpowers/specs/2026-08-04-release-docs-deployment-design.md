@@ -31,20 +31,22 @@ deployment with domain promotion disabled. This preserves the production
 build environment without allowing build completion order to choose the live
 site.
 
-Promotion jobs use the repository-wide `docs-production` concurrency group;
-superseded pending promotions may be discarded because only the newest release
-should claim the alias. Immediately before promotion, the workflow queries
-GitHub's latest stable release, refetches its tag, peels annotated tags to a
-commit, and requires both tag name and commit SHA to equal the validated values.
+Promotion attempts are not placed in a GitHub concurrency group because GitHub
+retains only one pending job and can discard the latest release's only attempt
+when builds finish out of order. Immediately before promotion, the workflow
+queries GitHub's latest stable release, refetches its tag, peels annotated tags
+to a commit, and requires both tag name and commit SHA to equal the validated
+values.
 
-GitHub release publication is not placed in that concurrency group because
-GitHub concurrency retains only one pending job and could discard an essential
-release. A newer release can therefore publish while promotion runs. The
-workflow checks the exact tag and SHA again immediately after promotion and
-fails visibly when superseded; the newer release's automatically triggered
-deployment reconciles `forge.kenn.io` when it succeeds. Production is
-intentionally eventually consistent across that external check-and-promote
-boundary.
+A newer release can publish while promotion runs because GitHub release state
+and Vercel aliasing have no shared atomic lock. The workflow checks the exact
+tag and SHA again immediately after promotion. A stale check before or after
+promotion uses its read-only repository access plus `actions: write` to
+dispatch the same trusted default-branch workflow. That reconciliation run
+resolves the actual latest release itself, then builds and promotes it.
+Production is intentionally eventually consistent across the external
+check-and-promote boundary, with no lossy queue that can discard the only
+reconciliation attempt.
 
 ## Failure and Recovery
 

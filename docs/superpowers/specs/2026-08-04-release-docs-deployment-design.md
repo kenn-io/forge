@@ -31,11 +31,13 @@ deployment with domain promotion disabled. This preserves the production
 build environment without allowing build completion order to choose the live
 site.
 
-A separate promotion job uses the shared `docs-production` concurrency group.
-Immediately before promotion it queries GitHub's latest release again and
-requires the tag to equal the one validated for this run. A superseded run may
-finish building, but it cannot claim `forge.kenn.io` after a newer release is
-published.
+The GitHub release-publication job and Vercel promotion job use the same
+repository-wide `docs-production` concurrency group. This prevents another CI
+release from being published between the final check and promotion. Immediately
+before promotion, the workflow queries GitHub's latest stable release, refetches
+its tag, peels annotated tags to a commit, and requires both tag name and commit
+SHA to equal the validated values. A superseded run may finish building, but it
+cannot claim `forge.kenn.io` after a newer CI release is published.
 
 ## Failure and Recovery
 
@@ -43,7 +45,9 @@ A failed validation does not expose Vercel credentials. A failed build or
 promotion leaves the existing production alias unchanged. Maintainers can
 rerun the `Deploy documentation` workflow after a transient failure. If the
 automatic path is unavailable, `make docs-deploy` from the latest tagged
-checkout remains the recovery path.
+checkout remains the operator-controlled recovery path. “Latest” means the
+non-draft, non-prerelease release returned by GitHub's latest-release endpoint;
+superseded unaliased Vercel deployments may remain in deployment history.
 
 ## Verification
 

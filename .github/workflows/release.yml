@@ -157,6 +157,9 @@ jobs:
   release:
     needs: [build-linux, build]
     runs-on: ubuntu-latest
+    concurrency:
+      group: docs-production
+      cancel-in-progress: false
     permissions:
       contents: write
     steps:

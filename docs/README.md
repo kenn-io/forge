@@ -15,7 +15,9 @@ The Vercel project serves production deployments at `forge.kenn.io`. A
 successful tagged release starts a default-branch workflow that verifies the
 released commit belongs to `main` and still backs GitHub's latest release. It
 builds that exact checkout on Vercel without changing the production alias,
-then rechecks the latest release in a serialized promotion job. No GitHub
+then rechecks the latest release tag and commit in a serialized promotion job.
+GitHub release publication and Vercel promotion share the same concurrency
+group, closing the interval between that check and promotion. No GitHub
 environment or human approval is required. The project has no Vercel Git
 integration. Each remote build installs the screenshot runtime, generates the
 workflow screenshots from the seeded e2e server, verifies the rendered site,

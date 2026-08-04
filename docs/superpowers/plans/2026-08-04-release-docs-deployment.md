@@ -14,7 +14,8 @@
 
 - Do not use a GitHub deployment environment or human approval gate.
 - Do not expose Vercel credentials to the tag-loaded release workflow.
-- Build and promote only the latest published release reachable from `main`.
+- Admit a build only while its release is latest; superseded unaliased builds
+  may finish, but only the latest validated tag and SHA may be promoted.
 - Do not add Windows architecture tests as part of this review repair.
 - Do not add workflow contract tests as part of this review repair.
 - Preserve landed dated plans and specifications.
@@ -29,7 +30,7 @@
 
 **Interfaces:**
 - Consumes: the completed `Release` workflow run's `head_sha`.
-- Produces: `validate-release` outputs `release-tag`; `build` outputs `deployment-url`; `promote` assigns the production alias.
+- Produces: `validate-release` outputs `release-tag` and `release-sha`; `build` outputs `deployment-url`; `promote` assigns the production alias.
 
 - [x] **Step 1: Remove Vercel deployment from the tag-loaded workflow**
 
@@ -50,14 +51,17 @@ and a `workflow_run` trigger for a completed `Release`. Require
 On the fresh build runner, check out
 `github.event.workflow_run.head_sha`, run `vercel deploy --prod --skip-domain`,
 capture the deployment URL, then pass it to a `promote` job using the shared
-`docs-production` concurrency group.
+`docs-production` concurrency group. Put the `Release` workflow's publication
+job in the same group so another CI release cannot publish during promotion.
 
 - [x] **Step 4: Recheck release freshness before promotion**
 
 Set up the pinned Bun runtime before the freshness check. Then query
-`repos/$GITHUB_REPOSITORY/releases/latest` in a credential-free step, require
-its tag to equal `needs.validate-release.outputs.release-tag`, and run
-`vercel promote` in the immediately following step.
+`repos/$GITHUB_REPOSITORY/releases/latest` without Vercel credentials, using
+only the read-only GitHub token. Refetch and peel the tag, require its name and
+commit to equal `needs.validate-release.outputs.release-tag` and
+`needs.validate-release.outputs.release-sha`, and run `vercel promote` in the
+immediately following step.
 
 - [x] **Step 5: Validate workflow syntax**
 

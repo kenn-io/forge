@@ -17,38 +17,46 @@ not express (permanent union, head-only restore, alternation, partial restore,
 split ancestry), and further counterexamples remain constructible, such as
 rebases that reuse a subset of commits under new SHAs.
 
-The information being reconstructed already exists exactly in the sync path:
-every complete sync fetches the provider's current commit list for the merge
-request, which is precisely the set of commits reachable from the current
-head. A stored commit event whose SHA is absent from that list is obsolete; a
-present one is live. No inference is required.
+The question the UI asks is whether a stored commit is still reachable from
+the merge request's current head. The provider's commit list cannot answer it:
+that list is the base-to-head comparison, so base advancement or retargeting
+removes commits from the list while they remain reachable from the head, and a
+list-diff design would wrongly collapse live commits (roborev jobs 9625 and
+9626). Diff sync, however, already maintains a local bare clone and fetches
+the current head, and git answers reachability exactly.
 
 ## Design
 
 ### Sync stamping
 
-A helper beside `commitOrderAssigner` in `internal/github/sync.go` takes the
-stored MR events (already loaded by every commit-syncing path) and the current
-provider commit SHA set, and returns updated copies of stored commit events
-whose `obsolete` metadata flag must change:
+A helper on the syncer stamps stored commit events from local-clone ancestry.
+It runs where diff sync has just resolved the merge request's current head
+against the clone, and it is guarded by the clone containing that head: the
+head's ancestor closure is then complete, so a stored commit SHA that is not
+an ancestor of the head (`git merge-base --is-ancestor` via the existing
+`gitclone.Manager` primitives) is genuinely unreachable, including SHAs absent
+from the clone entirely.
 
-- SHA absent from the current list: set `obsolete: true` in the event's
-  metadata JSON, beside the existing `commit_order_key`.
-- SHA present in the current list: remove the flag. Restoration is symmetric
-  and recomputed on every complete sync, so any push pattern converges to the
-  provider's truth.
+- SHA not an ancestor of the current head: set `obsolete: true` in the
+  event's metadata JSON, beside the existing `commit_order_key`.
+- SHA an ancestor of the current head: remove the flag. Stamping is
+  recomputed from scratch on every round, so any push pattern (alternation,
+  partial restore, split ancestry) and any base movement converges to the
+  git-verified truth.
 
-Updated copies join the same `UpsertMREvents` batch as the freshly synced
-events. The existing conflict path already refreshes `metadata_json`, and the
-batch commits inside the same revision-guarded dataset transaction, so
-concurrency and epoch safety are inherited unchanged.
+Updated copies of changed events join the same `UpsertMREvents` batch as the
+freshly synced events. The existing conflict path already refreshes
+`metadata_json`, and the batch commits inside the same revision-guarded
+dataset transaction, so concurrency and epoch safety are inherited unchanged.
 
-Stamping requires a known-complete current commit list. The bulk GraphQL path
-gates on its commits-complete flag; the other paths stamp only where the
-client returns the full list, verified per path during implementation. An
-incomplete round skips stamping entirely: flags may go stale, never wrong.
-The generic provider extras path is shared, so GitLab, Forgejo, and Gitea
-inherit stamping the same way they inherit `commit_order_key`.
+When the clone is unavailable or does not contain the current head, stamping
+skips and flags keep the state of the last verified round — the same soft
+dependency diff sync already has. A skipped round can leave a restored commit
+collapsed (or a removed one visible) until the next verified round; flags
+reflect the last verified sync, not live provider state. Ancestry stamping is
+provider-agnostic: any provider whose merge requests get diff sync inherits
+it, with GitHub wired first alongside the existing `commit_order_key`
+stamping.
 
 ### Frontend collapse
 
@@ -61,22 +69,28 @@ which-commits-are-obsolete decision moves to the backend.
 ### Data lifecycle
 
 An absent flag means not collapsed. Live merge requests backfill on their next
-complete sync because flags are recomputed each round. Merge requests that
-never sync again do not collapse; there is no frontend fallback to the old
-heuristic.
+verified round because flags are recomputed each time. Merge requests that
+never sync again, or whose diff sync is unavailable, do not collapse; there is
+no frontend fallback to the old heuristic.
 
 ## Tests
 
-- Go sync tests through real SQLite: replace a lineage and assert flags set on
-  the removed commits; push back and assert flags cleared and set on the
-  displaced replacement (alternation); restore a subset and assert only absent
-  SHAs stay flagged; an incomplete commit list skips stamping and leaves prior
-  flags untouched.
+- Go stamping tests through real SQLite and a real git clone fixture: replace
+  a lineage and assert flags set on the removed commits; push back and assert
+  flags cleared and set on the displaced replacement (alternation); restore a
+  subset and assert only unreachable SHAs stay flagged; advance or retarget
+  the base without a force push and assert nothing is stamped obsolete; a
+  clone missing the current head skips stamping and leaves prior flags
+  untouched.
 - Component test: flagged commits collapse in strict date order and unflagged
   commits render normally, with no replay scenarios.
-- Full stack: the SQLite-backed browser fixture seeds `obsolete` metadata on a
-  replaced lineage, and the Playwright timeline case verifies the flag
-  survives the database and detail API into strict-date rendering.
+- Full stack, real computation: an integration test drives the real sync path
+  with successive head states and asserts the stamped flags surface through
+  the detail API, so the test fails if stamping is missing or unwired rather
+  than only proving metadata propagation.
+- Full stack, browser boundary: the SQLite-backed fixture seeds `obsolete`
+  metadata on a replaced lineage, and the Playwright timeline case verifies
+  the flag survives the database and detail API into strict-date rendering.
 
 ## Verification
 

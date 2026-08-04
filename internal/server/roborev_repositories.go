@@ -233,7 +233,7 @@ func (p *roborevRepositoryProbe) refresh(ctx context.Context, now time.Time) err
 		}
 	}
 	p.mu.Unlock()
-	p.probeCheckouts(ctx, now, due)
+	p.probeCheckouts(ctx, due)
 	return nil
 }
 
@@ -245,7 +245,6 @@ type roborevHookPathResult struct {
 
 func (p *roborevRepositoryProbe) probeCheckouts(
 	ctx context.Context,
-	now time.Time,
 	repositories []roborevTrackedRepository,
 ) {
 	jobs := make(chan roborevTrackedRepository)
@@ -272,15 +271,16 @@ func (p *roborevRepositoryProbe) probeCheckouts(
 	resolved := make(map[string][]roborevTrackedRepository)
 	for result := range results {
 		if result.err != nil {
-			p.recordCheckoutResult(result.repository, false, false, now)
+			p.recordCheckoutResult(result.repository, false, false, p.deps.now())
 			continue
 		}
 		resolved[result.path] = append(resolved[result.path], result.repository)
 	}
 	for path, matching := range resolved {
 		installed, err := p.deps.inspectHook(path)
+		completedAt := p.deps.now()
 		for _, repository := range matching {
-			p.recordCheckoutResult(repository, installed, err == nil, now)
+			p.recordCheckoutResult(repository, installed, err == nil, completedAt)
 		}
 	}
 }
@@ -397,7 +397,7 @@ func loadRoborevRepositoryInventory(
 		for i := range repositories {
 			repositories[i].RootPath = strings.TrimSpace(repositories[i].RootPath)
 			repositories[i].Identity = strings.TrimSpace(repositories[i].Identity)
-			if repositories[i].RootPath == "" || repositories[i].Identity == "" {
+			if repositories[i].RootPath == "" {
 				return nil, errors.New("decode roborev repository inventory")
 			}
 		}

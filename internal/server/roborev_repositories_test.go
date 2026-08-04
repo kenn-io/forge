@@ -230,6 +230,42 @@ func TestRoborevRepositoryProbeRetriesTransientCheckoutFailureAfterCooldown(t *t
 	assert.Equal(int32(2), failingCalls.Load())
 }
 
+func TestRoborevRepositoryProbeStartsCheckoutCooldownWhenFailureCompletes(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	start := time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)
+	var nowNanos atomic.Int64
+	nowNanos.Store(start.UnixNano())
+	var calls atomic.Int32
+	probe := newRoborevRepositoryProbeWithDeps(nil, roborevRepositoryProbeDeps{
+		now: func() time.Time { return time.Unix(0, nowNanos.Load()).UTC() },
+		loadInventory: func(context.Context) ([]roborevTrackedRepository, error) {
+			return []roborevTrackedRepository{
+				{RootPath: "/slow", Identity: "https://github.com/acme/widgets.git"},
+			}, nil
+		},
+		resolveHookPath: func(context.Context, string) (string, error) {
+			if calls.Add(1) == 1 {
+				nowNanos.Store(start.Add(roborevProbeRetryCooldown + time.Second).UnixNano())
+				return "", errors.New("slow git failure")
+			}
+			return "/hooks/post-commit", nil
+		},
+		inspectHook: func(string) (bool, error) { return true, nil },
+	})
+
+	first, err := probe.configuredRepositories(t.Context())
+	require.NoError(err)
+	assert.Empty(first)
+	assert.Equal(int32(1), calls.Load())
+
+	nowNanos.Store(start.Add(2*roborevProbeRetryCooldown + time.Second).UnixNano())
+	second, err := probe.configuredRepositories(t.Context())
+	require.NoError(err)
+	assert.Len(second, 1)
+	assert.Equal(int32(2), calls.Load())
+}
+
 func TestInspectRoborevPostCommitHook(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -282,6 +318,14 @@ func TestLoadRoborevRepositoryInventoryValidatesCompleteEnvelope(t *testing.T) {
 			body: `{"repos":[{"root_path":"/repo","identity":"https://github.com/acme/widgets.git"}],"total_count":1}`,
 			want: []roborevTrackedRepository{{RootPath: "/repo", Identity: "https://github.com/acme/widgets.git"}},
 		},
+		{
+			name: "valid mixed identity availability",
+			body: `{"repos":[{"root_path":"/repo","identity":"https://github.com/acme/widgets.git"},{"root_path":"/local"}],"total_count":2}`,
+			want: []roborevTrackedRepository{
+				{RootPath: "/repo", Identity: "https://github.com/acme/widgets.git"},
+				{RootPath: "/local"},
+			},
+		},
 		{name: "valid null repos", body: `{"repos":null,"total_count":0}`, want: []roborevTrackedRepository{}},
 	}
 	for _, tt := range tests {
@@ -299,7 +343,7 @@ func TestLoadRoborevRepositoryInventoryValidatesCompleteEnvelope(t *testing.T) {
 	invalid := []string{
 		`{}`,
 		`{"repos":[],"total_count":1}`,
-		`{"repos":[{"root_path":"/repo"}],"total_count":1}`,
+		`{"repos":[{"identity":"https://github.com/acme/widgets.git"}],"total_count":1}`,
 		`{"repos":[],"total_count":0} trailing`,
 	}
 	for _, body := range invalid {

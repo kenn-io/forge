@@ -251,6 +251,71 @@ describe("WorkspaceTerminalView hostVisible", () => {
     }
   });
 
+  it("restores the preferred sidebar width after a temporary visible constraint", async () => {
+    const api = createMockApiFetch([workspaceRoutes()]);
+    const originalFetch = globalThis.fetch;
+    const originalEventSource = globalThis.EventSource;
+    globalThis.fetch = api.fetch;
+    globalThis.EventSource = NoopEventSource as unknown as typeof EventSource;
+
+    const settingsStore = {
+      getTerminalFontSize: () => DEFAULT_TERMINAL_SETTINGS.font_size,
+      getTerminalSettings: () => DEFAULT_TERMINAL_SETTINGS,
+    };
+    const diffStore = createDiffStore();
+
+    localStorage.removeItem("kenn-forge-workspace-sidebar-open");
+    localStorage.setItem("kenn-forge-workspace-sidebar-width", "400");
+
+    const target = document.createElement("div");
+    target.style.width = "804px";
+    target.style.height = "600px";
+    document.body.appendChild(target);
+
+    const instance = mount(WorkspaceTerminalView, {
+      target,
+      props: {
+        workspaceId: "ws-1",
+        hideWorkspaceList: true,
+        hideRightSidebar: false,
+      },
+      context: new Map([[STORES_KEY, { settings: settingsStore, diff: diffStore }]]),
+    });
+
+    const resizeWindow = () => {
+      window.dispatchEvent(new Event("resize"));
+      flushSync();
+    };
+
+    try {
+      await vi.waitFor(() => {
+        expect(document.querySelector(".header-btn.danger")).not.toBeNull();
+      }, WAIT);
+
+      await page.getByRole("button", { name: "Diff", exact: true }).click();
+      const sidebar = document.querySelector<HTMLElement>(".right-sidebar");
+      expect(sidebar).not.toBeNull();
+      expect(sidebar!.style.width).toBe("400px");
+
+      target.style.width = "404px";
+      resizeWindow();
+      await vi.waitFor(() => expect(sidebar!.style.width).toBe("100px"), WAIT);
+      expect(localStorage.getItem("kenn-forge-workspace-sidebar-width")).toBe("400");
+
+      target.style.width = "804px";
+      resizeWindow();
+      await vi.waitFor(() => expect(sidebar!.style.width).toBe("400px"), WAIT);
+      expect(localStorage.getItem("kenn-forge-workspace-sidebar-width")).toBe("400");
+    } finally {
+      flushSync(() => unmount(instance));
+      target.remove();
+      localStorage.removeItem("kenn-forge-workspace-sidebar-open");
+      localStorage.removeItem("kenn-forge-workspace-sidebar-width");
+      globalThis.fetch = originalFetch;
+      globalThis.EventSource = originalEventSource;
+    }
+  });
+
   it("parking closes toolbar menus and their nested modal instead of leaving an invisible stack", async () => {
     const api = createMockApiFetch([workspaceRoutes()]);
     const originalFetch = globalThis.fetch;

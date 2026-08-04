@@ -222,9 +222,9 @@ Whenever a control persists, document and test:
 - where it persists
 - whether it is global, per-view, or per-item
 - what happens after navigating away and back
-- for layout dimensions, clamping on restore and whenever container bounds
-  change, with the normalized value re-persisted so stale geometry cannot return
-  (`frontend/src/lib/components/kata/KataResizableSash.svelte::clampSize`)
+- for layout dimensions, clamp stale values on restore, but keep temporary
+  container constraints separate from the saved preference so widening restores
+  user intent (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::renderedRightSidebarWidth`)
 
 ## Keyboard Scope Precedence
 

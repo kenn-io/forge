@@ -480,7 +480,7 @@
     return selectedSidebarTabs[storageId] ?? loadSidebarTab(storageId);
   });
   let sidebarOpen = $state(loadSidebarOpen());
-  let sidebarWidth = $state(loadSidebarWidth());
+  let preferredRightSidebarWidth = $state(loadSidebarWidth());
   let workspaceListWidth = $state(loadWorkspaceListWidth());
   const currentWorkspaceListWidth = $derived(
     clampWorkspaceListWidth(
@@ -1156,7 +1156,7 @@
   $effect(() => {
     writeLocalStorage(
       SIDEBAR_WIDTH_KEY,
-      String(sidebarWidth),
+      String(preferredRightSidebarWidth),
     );
   });
   $effect(() => {
@@ -1239,11 +1239,6 @@
     } else {
       workspaceListWidth = clamped;
     }
-    requestAnimationFrame(() => {
-      if (containerEl) {
-        clampRightSidebarWidth(containerEl.clientWidth);
-      }
-    });
   }
 
   let containerEl = $state<HTMLElement | null>(null);
@@ -1263,57 +1258,27 @@
   const rightSidebarAriaMax = $derived(
     containerWidth > 0
       ? maxRightSidebarWidth(containerWidth)
-      : Math.max(MIN_SIDEBAR_WIDTH, sidebarWidth),
+      : Math.max(MIN_SIDEBAR_WIDTH, preferredRightSidebarWidth),
   );
   const rightSidebarAriaMin = $derived(
     Math.min(MIN_SIDEBAR_WIDTH, rightSidebarAriaMax),
   );
-
-  function clampRightSidebarWidth(
-    containerWidth: number,
-  ): void {
-    const maxW = maxRightSidebarWidth(containerWidth);
-    if (sidebarWidth > maxW) {
-      sidebarWidth = maxW;
-    }
-  }
-
-  // Keep the terminal usable when the main layout
-  // shrinks, including when the left workspace list
-  // is resized after the right sidebar is already open.
-  // Gated on hostVisible: a parked host sits in a display:none parking
-  // node where clientWidth is 0, and clamping against that zero would
-  // collapse (and persist) the sidebar width. hostVisible flipping back
-  // on reruns the clamp against real geometry.
-  $effect(() => {
-    if (!hostVisible || hideRightSidebar) return;
-    if (!containerEl || !sidebarOpen) return;
-
-    clampRightSidebarWidth(containerEl.clientWidth);
-  });
-
-  $effect(() => {
-    if (!hostVisible || hideRightSidebar) return;
-    if (!sidebarOpen) return;
-
-    function onResize(): void {
-      if (containerEl) {
-        clampRightSidebarWidth(containerEl.clientWidth);
-      }
-    }
-
-    window.addEventListener("resize", onResize);
-    return () => {
-      window.removeEventListener("resize", onResize);
-    };
-  });
+  // The saved width records user intent. A narrow window or a wider workspace
+  // list may temporarily leave less room, but that layout constraint must not
+  // replace the preference and strand the pane at its constrained width after
+  // space returns.
+  const renderedRightSidebarWidth = $derived(
+    containerWidth > 0
+      ? Math.min(preferredRightSidebarWidth, maxRightSidebarWidth(containerWidth))
+      : preferredRightSidebarWidth,
+  );
 
   let sidebarResizeStartWidth = 0;
   let sidebarResizeMinWidth = MIN_SIDEBAR_WIDTH;
   let sidebarResizeMaxWidth = 9999;
 
   function handleSidebarResizeStart(): void {
-    sidebarResizeStartWidth = sidebarWidth;
+    sidebarResizeStartWidth = renderedRightSidebarWidth;
     sidebarResizeMaxWidth = containerEl
       ? maxRightSidebarWidth(containerEl.clientWidth)
       : 9999;
@@ -1324,7 +1289,7 @@
   }
 
   function handleSidebarResize(event: SplitResizeEvent): void {
-    sidebarWidth = Math.max(
+    preferredRightSidebarWidth = Math.max(
       sidebarResizeMinWidth,
       Math.min(
         sidebarResizeMaxWidth,
@@ -4056,13 +4021,13 @@
               orientation="horizontal"
               ariaValueMin={rightSidebarAriaMin}
               ariaValueMax={rightSidebarAriaMax}
-              ariaValueNow={sidebarWidth}
+              ariaValueNow={renderedRightSidebarWidth}
               onResizeStart={handleSidebarResizeStart}
               onResize={handleSidebarResize}
             />
             <div
               class="right-sidebar"
-              style="width: {sidebarWidth}px"
+              style="width: {renderedRightSidebarWidth}px"
             >
               {#if workspaceDetailsReady && workspace}
                 {#snippet kataTaskPanel()}

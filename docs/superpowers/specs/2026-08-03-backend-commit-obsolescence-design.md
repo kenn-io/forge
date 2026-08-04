@@ -44,10 +44,11 @@ from the clone entirely.
   partial restore, split ancestry) and any base movement converges to the
   git-verified truth.
 
-Updated copies of changed events join the same `UpsertMREvents` batch as the
-freshly synced events. The existing conflict path already refreshes
-`metadata_json`, and the batch commits inside the same revision-guarded
-dataset transaction, so concurrency and epoch safety are inherited unchanged.
+Updated copies of changed events are upserted through the existing
+`UpsertMREvents` conflict path, which already refreshes `metadata_json` by
+dedupe key, immediately after the diff snapshot for the same head applies.
+Flags are recomputed from scratch on every verified round, so a concurrent
+sync can only briefly interleave states that the next round repairs.
 
 When the clone is unavailable or does not contain the current head, stamping
 skips and flags keep the state of the last verified round — the same soft

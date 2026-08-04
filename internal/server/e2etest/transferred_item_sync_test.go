@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/apiclient"
+	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/testutil/dbtest"
@@ -22,8 +24,9 @@ import (
 // post-transfer shape.
 type transferSyncMockGH struct {
 	*mockGH
-	openIssues []*gh.Issue
-	issue      *gh.Issue
+	openIssues    []*gh.Issue
+	issue         *gh.Issue
+	getIssueCalls atomic.Int32
 }
 
 func (m *transferSyncMockGH) ListOpenIssues(
@@ -35,7 +38,110 @@ func (m *transferSyncMockGH) ListOpenIssues(
 func (m *transferSyncMockGH) GetIssue(
 	context.Context, string, string, int,
 ) (*gh.Issue, error) {
+	m.getIssueCalls.Add(1)
 	return m.issue, nil
+}
+
+// TestRepositorySyncTombstonesPRShapedStaleIssueE2E guards the complete
+// closure-detection path: a repository sync must close a SQLite issue whose
+// vanished number now resolves to a pull request, then leave it ineligible for
+// the same provider lookup on later syncs.
+func TestRepositorySyncTombstonesPRShapedStaleIssueE2E(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+
+	now := time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC)
+	issueNumber := 7
+	issueID := int64(777)
+	openState := "open"
+	body := ""
+	pullURL := "https://api.github.com/repos/acme/widget/pulls/7"
+	mock := &transferSyncMockGH{
+		mockGH: &mockGH{},
+		issue: &gh.Issue{
+			ID:               &issueID,
+			Number:           &issueNumber,
+			Title:            new("now a pull request"),
+			State:            &openState,
+			HTMLURL:          new("https://github.com/acme/widget/pull/7"),
+			RepositoryURL:    new("https://api.github.com/repos/acme/widget"),
+			Body:             &body,
+			CreatedAt:        &gh.Timestamp{Time: now},
+			UpdatedAt:        &gh.Timestamp{Time: now},
+			PullRequestLinks: &gh.PullRequestLinks{URL: &pullURL},
+		},
+	}
+	database := dbtest.Open(t)
+	repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "repo-acme-widget",
+		Owner:          "acme", Name: "widget", RepoPath: "acme/widget",
+	})
+	require.NoError(err)
+	_, err = database.UpsertIssue(ctx, &db.Issue{
+		RepoID: repoID, PlatformID: issueID, PlatformExternalID: "I_777",
+		Number: issueNumber, URL: "https://github.com/acme/widget/issues/7",
+		Title: "stale issue", Author: "author", State: "open",
+		CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+	})
+	require.NoError(err)
+
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": mock}, database, nil,
+		[]ghclient.RepoRef{{
+			Owner: "acme", Name: "widget", PlatformHost: "github.com",
+			PlatformExternalID: "repo-acme-widget",
+		}},
+		time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{
+		HostCheckAllowLoopbackAnyPort: true,
+	})
+	forge := httptest.NewServer(srv)
+	t.Cleanup(forge.Close)
+	api, err := apiclient.NewWithHTTPClient(forge.URL, forge.Client())
+	require.NoError(err)
+
+	triggerSync := func(after *time.Time) time.Time {
+		t.Helper()
+		response, err := api.HTTP.TriggerSyncWithResponse(
+			ctx, nil,
+			func(_ context.Context, req *http.Request) error {
+				req.Header.Set("Content-Type", "application/json")
+				return nil
+			},
+		)
+		require.NoError(err)
+		require.Equal(http.StatusAccepted, response.StatusCode(), string(response.Body))
+
+		var completedAt time.Time
+		require.Eventually(func() bool {
+			status, err := api.HTTP.GetSyncStatusWithResponse(ctx)
+			if err != nil || status.StatusCode() != http.StatusOK || status.JSON200 == nil ||
+				status.JSON200.Running || status.JSON200.LastRunAt == nil {
+				return false
+			}
+			completedAt = *status.JSON200.LastRunAt
+			return after == nil || completedAt.After(*after)
+		}, 5*time.Second, 10*time.Millisecond)
+		return completedAt
+	}
+
+	firstSync := triggerSync(nil)
+	issue, err := api.HTTP.GetIssueWithResponse(
+		ctx, "gh", "acme", "widget", int64(issueNumber),
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, issue.StatusCode(), string(issue.Body))
+	require.NotNil(issue.JSON200)
+	assert.Equal("closed", issue.JSON200.Issue.State)
+	assert.Equal(int32(1), mock.getIssueCalls.Load())
+
+	triggerSync(&firstSync)
+	assert.Equal(int32(1), mock.getIssueCalls.Load(),
+		"a tombstoned issue must not be fetched by the next repository sync")
 }
 
 // TestTransferredIssueObservableViaAPIE2E is the HTTP boundary counterpart of

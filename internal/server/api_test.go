@@ -4571,6 +4571,153 @@ func TestAPIGitLabClosedSyncPersistsMergedActorForImmediateDetail(t *testing.T) 
 	assert.True(event.CreatedAt.Equal(mergedAt))
 }
 
+func TestAPIScheduledMergedActorRepairRefreshesOpenDetail(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Second)
+	mergedAt := now.Add(-time.Minute)
+
+	database := dbtest.Open(t)
+	ref := platform.RepoRef{
+		Platform:           platform.KindGitLab,
+		Host:               "gitlab.example.com",
+		Owner:              "group",
+		Name:               "project",
+		RepoPath:           "group/project",
+		PlatformID:         4242,
+		PlatformExternalID: "gid://gitlab/Project/4242",
+		WebURL:             "https://gitlab.example.com/group/project",
+		CloneURL:           "https://gitlab.example.com/group/project.git",
+		DefaultBranch:      "main",
+	}
+	repoID, err := database.UpsertRepo(ctx, platform.DBRepoIdentity(ref))
+	require.NoError(err)
+	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:             repoID,
+		PlatformID:         7001,
+		PlatformExternalID: "gid://gitlab/MergeRequest/7001",
+		Number:             7,
+		URL:                "https://gitlab.example.com/group/project/-/merge_requests/7",
+		Title:              "Delayed merged actor",
+		Author:             "ada",
+		State:              db.MergeRequestStateMerged,
+		HeadBranch:         "feature/gitlab",
+		BaseBranch:         "main",
+		PlatformHeadSHA:    "abc123",
+		CreatedAt:          now.Add(-time.Hour),
+		UpdatedAt:          mergedAt,
+		LastActivityAt:     mergedAt,
+		MergedAt:           &mergedAt,
+		ClosedAt:           &mergedAt,
+	})
+	require.NoError(err)
+	providerMR := platform.MergeRequest{
+		Repo:               ref,
+		PlatformID:         7001,
+		PlatformExternalID: "gid://gitlab/MergeRequest/7001",
+		Number:             7,
+		URL:                "https://gitlab.example.com/group/project/-/merge_requests/7",
+		Title:              "Delayed merged actor",
+		Author:             "ada",
+		State:              "merged",
+		HeadBranch:         "feature/gitlab",
+		BaseBranch:         "main",
+		HeadSHA:            "abc123",
+		CreatedAt:          now.Add(-time.Hour),
+		UpdatedAt:          mergedAt,
+		LastActivityAt:     mergedAt,
+		MergedAt:           &mergedAt,
+		ClosedAt:           &mergedAt,
+	}
+	provider := &apiTestGitLabProvider{
+		ref:                ref,
+		mergeRequestDetail: map[int]platform.MergeRequest{7: providerMR},
+	}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	repo := ghclient.RepoRef{
+		Platform:           platform.KindGitLab,
+		Owner:              ref.Owner,
+		Name:               ref.Name,
+		PlatformHost:       ref.Host,
+		RepoPath:           ref.RepoPath,
+		PlatformRepoID:     ref.PlatformID,
+		PlatformExternalID: ref.PlatformExternalID,
+		WebURL:             ref.WebURL,
+		CloneURL:           ref.CloneURL,
+		DefaultBranch:      ref.DefaultBranch,
+	}
+	syncer := ghclient.NewSyncerWithRegistry(
+		registry, database, nil, []ghclient.RepoRef{repo}, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	srv.now = func() time.Time { return now }
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	client := setupTestClient(t, srv)
+
+	changed, err := syncer.BackfillMergedActorEventOnProvider(ctx, repoID, 7)
+	require.NoError(err)
+	require.False(changed, "the initial provider response has no merged actor")
+	before, err := client.HTTP.GetPullOnHostWithResponse(
+		ctx, ref.Host, "gitlab", ref.Owner, ref.Name, 7,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, before.StatusCode(), string(before.Body))
+	require.NotNil(before.JSON200)
+	require.NotNil(before.JSON200.Events)
+	require.Len(*before.JSON200.Events, 1)
+	assert.Empty((*before.JSON200.Events)[0].Author)
+
+	events, _ := srv.Hub().Subscribe(ctx, false)
+	provider.mu.Lock()
+	providerMR.MergedBy = "merge-admin"
+	provider.mergeRequestDetail[7] = providerMR
+	provider.mu.Unlock()
+	syncer.RunOnce(ctx)
+
+	var refreshPayload struct {
+		Provider     string   `json:"provider"`
+		PlatformHost string   `json:"platform_host"`
+		RepoPath     string   `json:"repo_path"`
+		Owner        string   `json:"owner"`
+		Name         string   `json:"name"`
+		Number       int      `json:"number"`
+		HeadSHA      string   `json:"head_sha"`
+		SyncedAt     string   `json:"synced_at"`
+		Warnings     []string `json:"warnings"`
+	}
+	select {
+	case event := <-events:
+		require.Equal("pr_detail_refreshed", event.Event.Type)
+		raw, marshalErr := json.Marshal(event.Event.Data)
+		require.NoError(marshalErr)
+		require.NoError(json.Unmarshal(raw, &refreshPayload))
+	default:
+		require.Fail("scheduled merged-actor repair did not refresh the open detail")
+	}
+	assert.Equal("gitlab", refreshPayload.Provider)
+	assert.Equal(ref.Host, refreshPayload.PlatformHost)
+	assert.Equal(ref.RepoPath, refreshPayload.RepoPath)
+	assert.Equal(ref.Owner, refreshPayload.Owner)
+	assert.Equal(ref.Name, refreshPayload.Name)
+	assert.Equal(7, refreshPayload.Number)
+	assert.Equal("abc123", refreshPayload.HeadSHA)
+	assert.Equal(now.Format(time.RFC3339), refreshPayload.SyncedAt)
+	assert.Empty(refreshPayload.Warnings)
+
+	after, err := client.HTTP.GetPullOnHostWithResponse(
+		ctx, ref.Host, "gitlab", ref.Owner, ref.Name, 7,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, after.StatusCode(), string(after.Body))
+	require.NotNil(after.JSON200)
+	require.NotNil(after.JSON200.Events)
+	require.Len(*after.JSON200.Events, 1)
+	assert.Equal("merge-admin", (*after.JSON200.Events)[0].Author)
+}
+
 func TestAPIGitLabDirectSyncPersistsMergedActorForImmediateDetail(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

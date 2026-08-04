@@ -486,6 +486,8 @@ type Syncer struct {
 	rateLimitSnapshotRefresh map[string]time.Time
 	repos                    []RepoRef
 	reposMu                  sync.Mutex
+	mergedActorCursorMu      sync.Mutex
+	mergedActorCursors       map[int64]mergedActorSweepState
 	interval                 time.Duration
 	watchInterval            time.Duration
 	watchedMRs               []WatchedMR
@@ -527,7 +529,10 @@ type Syncer struct {
 	// onWatchedMRSyncCompleted fires once after a watched-MR fast-sync
 	// pass refreshes at least one MR.
 	onWatchedMRSyncCompleted func()
-	onStatusChange           func(status *SyncStatus)
+	// onMergedActorRepaired fires after scheduled reconciliation persists an
+	// authored merge event so consumers can refresh the affected detail.
+	onMergedActorRepaired func(context.Context, int64, int)
+	onStatusChange        func(status *SyncStatus)
 	// onNotificationSyncComplete fires after each notification sync run
 	// (periodic, manual, or sidecar) so the server can broadcast the same
 	// data-change signal the normal sync uses. Notification sync can insert
@@ -2979,6 +2984,16 @@ func (s *Syncer) SetOnWatchedMRSyncCompleted(fn func()) {
 	s.onWatchedMRSyncCompleted = fn
 }
 
+// SetOnMergedActorRepaired registers a callback invoked after scheduled
+// reconciliation persists an authored merged event. RunOnce can process
+// repositories in parallel, so the callback must be concurrency-safe.
+// Register it before Start or RunOnce.
+func (s *Syncer) SetOnMergedActorRepaired(
+	fn func(context.Context, int64, int),
+) {
+	s.onMergedActorRepaired = fn
+}
+
 // SetParallelism sets the maximum number of repos synced
 // concurrently in RunOnce. Values <= 0 are clamped to 1
 // (sequential).
@@ -3699,6 +3714,30 @@ func (s *Syncer) trackedRepoByIdentity(
 			strings.EqualFold(r.Name, name) &&
 			strings.EqualFold(rHost, host) {
 			return r, true
+		}
+	}
+	return RepoRef{}, false
+}
+
+func (s *Syncer) trackedRepoByProviderID(
+	kind platform.Kind,
+	host, providerID string,
+) (RepoRef, bool) {
+	if kind == "" {
+		kind = platform.KindGitHub
+	}
+	host = repoHost(RepoRef{Platform: kind, PlatformHost: host})
+	providerID = strings.TrimSpace(providerID)
+	if providerID == "" {
+		return RepoRef{}, false
+	}
+	s.reposMu.Lock()
+	defer s.reposMu.Unlock()
+	for _, repo := range s.repos {
+		if repoPlatform(repo) == kind &&
+			strings.EqualFold(repoHost(repo), host) &&
+			strings.TrimSpace(repo.PlatformExternalID) == providerID {
+			return repo, true
 		}
 	}
 	return RepoRef{}, false
@@ -6423,8 +6462,11 @@ func (s *Syncer) indexSyncRepo(
 		}
 
 		if prListUnchanged {
-			// 304 — nothing to do. The detail drain handles CI
-			// updates for PRs with pending checks via priority scoring.
+			// The open list is unchanged, but repair work is independent
+			// of that ETag and must continue advancing on every healthy MR
+			// sync cycle. The detail drain handles CI updates for PRs with
+			// pending checks via priority scoring.
+			s.reconcileMergedActorEvents(ctx, repo, repoID)
 		} else if !mrListBlocked {
 			// GraphQL path: if fetcher available and not rate-limited,
 			// do a bulk fetch that replaces both index upsert and
@@ -6749,10 +6791,290 @@ func (s *Syncer) syncMergeRequestsFromList(
 		}
 	}
 
+	s.reconcileMergedActorEvents(ctx, repo, repoID)
+
 	if hadItemFailure {
 		return fmt.Errorf("one or more merge request sync items failed")
 	}
 	progress.done()
+	return nil
+}
+
+// mergedActorBackfillPerSync caps how many merged MRs are re-fetched per
+// sync cycle to backfill a missing merged actor; mergedActorBackfillWindow
+// bounds how far back the backfill looks so a provider that never reports
+// the actor cannot cause an unbounded refetch loop.
+const (
+	mergedActorBackfillPerSync       = 10
+	mergedActorBackfillWindow        = 90 * 24 * time.Hour
+	mergedActorBackfillSweepInterval = time.Hour
+)
+
+type mergedActorSweepState struct {
+	Cursor    db.MergedMRMissingActorCursor
+	RestartAt time.Time
+}
+
+// reconcileMergedActorEvents backfills authored merged events for MRs that
+// were marked merged without one. Merges performed through forge itself
+// eagerly write state=merged, which suppresses the open->closed transition
+// in syncMergeRequestsFromList — the only sync path that fetches the MR
+// with its merged_by actor. Failures are logged, not propagated: this is a
+// repair pass and must not fail an otherwise healthy sync cycle.
+//
+// Each cycle takes the next batch below the per-repo sweep cursor instead
+// of a fixed newest-first batch: candidates whose provider permanently
+// reports no actor (e.g. the merging account was deleted) would otherwise
+// occupy every batch and starve older candidates. An exhausted sweep retains
+// a bounded cooldown, so persistent candidates are retried once per interval,
+// not once per sync cycle.
+func (s *Syncer) reconcileMergedActorEvents(
+	ctx context.Context,
+	repo RepoRef,
+	repoID int64,
+) {
+	now := s.nowUTC()
+	since := now.Add(-mergedActorBackfillWindow)
+	cursor, ready := s.mergedActorSweepCursor(repoID, now)
+	if !ready {
+		return
+	}
+	missing, err := s.db.GetMergedMRNumbersMissingMergedActor(
+		ctx, repoID, since, cursor,
+		mergedActorBackfillPerSync,
+	)
+	if err != nil {
+		slog.Error("list merged MRs missing merged actor",
+			"repo", repo.Owner+"/"+repo.Name, "err", err)
+		return
+	}
+	if len(missing) < mergedActorBackfillPerSync {
+		s.setMergedActorSweepState(repoID, mergedActorSweepState{
+			RestartAt: now.Add(mergedActorBackfillSweepInterval),
+		})
+	} else {
+		last := missing[len(missing)-1]
+		s.setMergedActorSweepState(repoID, mergedActorSweepState{
+			Cursor: db.MergedMRMissingActorCursor{
+				MergedAt:       last.MergedAt,
+				MergeRequestID: last.MergeRequestID,
+			},
+		})
+	}
+	for _, candidate := range missing {
+		changed, err := s.backfillMergedActorEvent(ctx, repo, repoID, candidate.Number)
+		if err != nil {
+			slog.Warn("backfill merged actor failed",
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", candidate.Number,
+				"err", err)
+			continue
+		}
+		if changed && s.onMergedActorRepaired != nil {
+			s.onMergedActorRepaired(ctx, repoID, candidate.Number)
+		}
+	}
+}
+
+// mergedActorSweepCursor returns the exclusive composite upper bound for the
+// repo's next backfill batch. Exhausted sweeps retain a cooldown before a new
+// sweep starts from the top of the window; the initial timestamp sits ahead of
+// now so a merge stamped by a marginally faster clock is still swept.
+func (s *Syncer) mergedActorSweepCursor(
+	repoID int64,
+	now time.Time,
+) (db.MergedMRMissingActorCursor, bool) {
+	s.mergedActorCursorMu.Lock()
+	defer s.mergedActorCursorMu.Unlock()
+	state, ok := s.mergedActorCursors[repoID]
+	if ok && !state.RestartAt.IsZero() {
+		if now.Before(state.RestartAt) {
+			return db.MergedMRMissingActorCursor{}, false
+		}
+		delete(s.mergedActorCursors, repoID)
+		ok = false
+	}
+	if !ok {
+		return db.MergedMRMissingActorCursor{
+			MergedAt:       now.Add(time.Hour),
+			MergeRequestID: 1<<63 - 1,
+		}, true
+	}
+	return state.Cursor, true
+}
+
+func (s *Syncer) setMergedActorSweepState(
+	repoID int64,
+	state mergedActorSweepState,
+) {
+	s.mergedActorCursorMu.Lock()
+	defer s.mergedActorCursorMu.Unlock()
+	if s.mergedActorCursors == nil {
+		s.mergedActorCursors = make(map[int64]mergedActorSweepState)
+	}
+	s.mergedActorCursors[repoID] = state
+}
+
+// BackfillMergedActorEventOnProvider records the authored merged lifecycle
+// event for one MR by re-fetching it from the provider, reporting whether an
+// event was inserted. The merge mutation calls this in the background after
+// a successful merge: its eager state=merged write both suppresses the
+// sync-side closed transition and advances updated_at past the provider's,
+// so a full snapshot resync would be rejected as stale and never persist the
+// actor. The provider target is resolved from the stable repository row for
+// repoID so a configuration rename between the mutation and this background
+// pass cannot fetch from a different repository than the row being updated.
+func (s *Syncer) BackfillMergedActorEventOnProvider(
+	ctx context.Context,
+	repoID int64,
+	number int,
+) (bool, error) {
+	stored, err := s.db.GetRepoByID(ctx, repoID)
+	if err != nil {
+		return false, fmt.Errorf("get repo %d for merged-actor backfill: %w", repoID, err)
+	}
+	if stored == nil {
+		return false, fmt.Errorf("repo %d is not known for merged-actor backfill", repoID)
+	}
+	kind := platform.Kind(stored.Platform)
+	providerID := strings.TrimSpace(stored.PlatformRepoID)
+	if providerID == "" {
+		return false, fmt.Errorf(
+			"repo %d has no stable provider ID for merged-actor backfill", repoID,
+		)
+	}
+	repo, ok := s.trackedRepoByProviderID(kind, stored.PlatformHost, providerID)
+	if !ok {
+		routed, routeOK := s.trackedRepoByIdentity(
+			kind, stored.Owner, stored.Name, stored.PlatformHost,
+		)
+		if !routeOK {
+			return false, fmt.Errorf(
+				"repo %s/%s on %s/%s with provider ID %q is not tracked",
+				stored.Owner, stored.Name, stored.Platform, stored.PlatformHost, providerID,
+			)
+		}
+		if routedID := strings.TrimSpace(routed.PlatformExternalID); routedID != "" {
+			return false, fmt.Errorf(
+				"tracked repo %s/%s provider ID %q does not match stored provider ID %q",
+				stored.Owner, stored.Name, routedID, providerID,
+			)
+		}
+		repo = routed
+	}
+	repo = repoRefForMergedActorBackfill(repo, *stored)
+	bucket, err := s.bucketKeyForRepo(repo, false)
+	if err != nil {
+		return false, fmt.Errorf(
+			"resolve merged-actor credential route for %s/%s: %w",
+			repo.Owner, repo.Name, err,
+		)
+	}
+	releaseProviderWork := s.beginProviderWork(bucket, archive.PriorityActiveDetail)
+	defer releaseProviderWork()
+	return s.backfillMergedActorEvent(ctx, repo, repoID, number)
+}
+
+// repoRefForMergedActorBackfill preserves the current provider-verified route
+// while attaching stable identity and non-routing metadata from persistence.
+func repoRefForMergedActorBackfill(tracked RepoRef, stored db.Repo) RepoRef {
+	repo := tracked
+	repo.Platform = platform.Kind(stored.Platform)
+	repo.PlatformHost = stored.PlatformHost
+	repo.RepoID = stored.ID
+	repo.PlatformExternalID = stored.PlatformRepoID
+	if repo.WebURL == "" {
+		repo.WebURL = stored.WebURL
+	}
+	if repo.CloneURL == "" {
+		repo.CloneURL = stored.CloneURL
+	}
+	if repo.DefaultBranch == "" {
+		repo.DefaultBranch = stored.DefaultBranch
+	}
+	return repo
+}
+
+// backfillMergedActorEvent persists the authored merged event from a fresh
+// provider fetch, bypassing the parent-snapshot staleness gate — the event
+// is keyed to the MR row and does not depend on snapshot acceptance. It
+// reports whether an event was inserted.
+func (s *Syncer) backfillMergedActorEvent(
+	ctx context.Context,
+	repo RepoRef,
+	repoID int64,
+	number int,
+) (bool, error) {
+	stored, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoID, number)
+	if err != nil {
+		return false, fmt.Errorf("get MR #%d for merged-actor backfill: %w", number, err)
+	}
+	if stored == nil {
+		return false, nil
+	}
+	mrReader, err := s.mergeRequestReaderFor(repo)
+	if err != nil {
+		return false, fmt.Errorf(
+			"resolve merge request reader for %s/%s: %w", repo.Owner, repo.Name, err,
+		)
+	}
+	mr, err := mrReader.GetMergeRequest(ctx, platformRepoRef(repo), number)
+	if err != nil {
+		return false, fmt.Errorf("get MR #%d for merged-actor backfill: %w", number, err)
+	}
+	storedRepo, err := s.db.GetRepoByID(ctx, repoID)
+	if err != nil {
+		return false, fmt.Errorf("get repo %d for merged-actor identity check: %w", repoID, err)
+	}
+	if storedRepo == nil {
+		return false, fmt.Errorf("repo %d disappeared during merged-actor backfill", repoID)
+	}
+	if err := s.verifyMergedActorBackfillIdentity(
+		ctx, repo, strings.TrimSpace(storedRepo.PlatformRepoID),
+	); err != nil {
+		return false, err
+	}
+	inserted, err := s.persistMergedActorEvent(
+		ctx, stored.ID, 0, mr.MergedBy, stored.MergedAt,
+	)
+	if err != nil {
+		return false, fmt.Errorf(
+			"persist merged lifecycle event for MR #%d: %w", number, err,
+		)
+	}
+	return inserted, nil
+}
+
+func (s *Syncer) verifyMergedActorBackfillIdentity(
+	ctx context.Context,
+	repo RepoRef,
+	expectedProviderID string,
+) error {
+	if expectedProviderID == "" {
+		return errors.New("merged-actor backfill requires a stable provider ID")
+	}
+	reader, err := s.clients.RepositoryReader(repoPlatform(repo), repoHost(repo))
+	if err != nil {
+		return fmt.Errorf("resolve repository reader for merged-actor identity check: %w", err)
+	}
+	observed, err := reader.GetRepository(ctx, platformRepoRef(repo))
+	if err != nil {
+		return fmt.Errorf(
+			"verify repository identity before merged-actor persistence: %w", err,
+		)
+	}
+	observedProviderID := strings.TrimSpace(
+		platform.DBRepositoryIdentity(observed).PlatformRepoID,
+	)
+	if observedProviderID == "" {
+		return errors.New("provider returned no repository ID during merged-actor identity check")
+	}
+	if observedProviderID != expectedProviderID {
+		return fmt.Errorf(
+			"repository route %s/%s changed provider ID from %q to %q during merged-actor backfill",
+			repo.Owner, repo.Name, expectedProviderID, observedProviderID,
+		)
+	}
 	return nil
 }
 
@@ -7433,6 +7755,8 @@ func (s *Syncer) doSyncRepoGraphQL(
 			failedScope |= failMR
 		}
 	}
+
+	s.reconcileMergedActorEvents(ctx, repo, repoID)
 
 	if failedScope != 0 {
 		return fmt.Errorf("GraphQL sync had partial failures")
@@ -11285,17 +11609,6 @@ func (s *Syncer) filterDuplicateMergedLifecycleEvents(
 	return out, nil
 }
 
-func (s *Syncer) authoredMergedLifecycleEventExists(
-	ctx context.Context,
-	mrID int64,
-) (bool, error) {
-	events, err := s.db.ListMREvents(ctx, mrID)
-	if err != nil {
-		return false, err
-	}
-	return authoredMergedLifecycleEventExists(events), nil
-}
-
 func authoredMergedLifecycleEventExists(events []db.MREvent) bool {
 	return slices.ContainsFunc(events, isAuthoredMergedLifecycleEvent)
 }
@@ -11336,13 +11649,6 @@ func (s *Syncer) persistMergedActorEvent(
 	if actor == "" {
 		return false, nil
 	}
-	exists, err := s.authoredMergedLifecycleEventExists(ctx, mrID)
-	if err != nil {
-		return false, err
-	}
-	if exists {
-		return false, nil
-	}
 	event := NormalizeTimelineEvent(mrID, PullRequestTimelineEvent{
 		EventType: "merged",
 		Actor:     actor,
@@ -11351,10 +11657,7 @@ func (s *Syncer) persistMergedActorEvent(
 	if event == nil {
 		return false, nil
 	}
-	if err := s.db.UpsertMREvents(ctx, []db.MREvent{*event}); err != nil {
-		return false, err
-	}
-	return true, nil
+	return s.db.UpsertMergedActorEvent(ctx, *event)
 }
 
 func (s *Syncer) fetchAndUpdateClosedMergeRequest(

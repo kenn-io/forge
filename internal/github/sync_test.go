@@ -8456,7 +8456,8 @@ func TestSyncOpenMRFromBulkSkipsMergedActorFallbackWhenAuthoredMergedEventExists
 	assert.Equal("merged", events[0].EventType)
 	assert.Equal("merge-admin", events[0].Author)
 	assert.Equal("timeline-existing", events[0].DedupeKey)
-	assert.True(events[0].CreatedAt.Equal(existingMergedAt))
+	assert.True(events[0].CreatedAt.Equal(incomingMergedAt),
+		"the authored event must follow an accepted merged_at correction")
 }
 
 func TestFetchProviderMRDetailSyncsReviewThreads(t *testing.T) {
@@ -12246,6 +12247,57 @@ func TestSyncerHandles304OnPRList(t *testing.T) {
 	require.Len(results, 1)
 	assert.Empty(results[0].Error,
 		"304 on open-PR list must not surface as a sync error")
+}
+
+func TestSyncerReconcilesMergedActorOnPRList304(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	now := time.Date(2024, 6, 5, 12, 0, 0, 0, time.UTC)
+
+	repoID, err := d.UpsertRepo(
+		ctx, verifiedGitHubRepoIdentity("github.com", "owner", "repo"),
+	)
+	require.NoError(err)
+	pr := buildOpenPR(7, now)
+	normalizedPR, err := NormalizePR(repoID, pr)
+	require.NoError(err)
+	_, err = d.UpsertMergeRequest(ctx, normalizedPR)
+	require.NoError(err)
+	mergedAt := now.Add(time.Minute)
+	require.NoError(d.UpdateMRState(ctx, repoID, 7, "merged", &mergedAt, &mergedAt))
+
+	merged := true
+	actor := "merge-admin"
+	pr.State = new("closed")
+	pr.Merged = &merged
+	pr.MergedAt = makeTimestamp(mergedAt)
+	pr.ClosedAt = makeTimestamp(mergedAt)
+	pr.UpdatedAt = makeTimestamp(mergedAt)
+	pr.MergedBy = &gh.User{Login: &actor}
+	mc := &mockClient{listOpenPRsErr: notModifiedErr(), singlePR: pr}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil,
+		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+		time.Minute, nil, nil,
+	)
+	syncer.SetClock(func() time.Time { return now.Add(time.Hour) })
+
+	syncer.RunOnce(ctx)
+
+	stored, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(stored)
+	events, err := d.ListMREvents(ctx, stored.ID)
+	require.NoError(err)
+	require.Condition(func() bool {
+		for _, event := range events {
+			if event.EventType == "merged" && event.Author == actor {
+				return true
+			}
+		}
+		return false
+	}, "a successful 304 sync must still reconcile missing merged actors")
 }
 
 // TestSyncerHandles304OnIssueList verifies the same short-circuit
@@ -18061,4 +18113,430 @@ func TestCommitMergeRequestDatasetsBindsToParentID(t *testing.T) {
 	require.NoError(err)
 	require.Empty(newEvents,
 		"the replacement repository's MR must not receive the stale datasets")
+}
+
+func TestReconcileMergedActorEventsBackfillsForgeMergedMR(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	repoID, err := d.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", "owner", "repo"))
+	require.NoError(err)
+	now := time.Date(2024, 6, 5, 12, 0, 0, 0, time.UTC)
+
+	// Simulate a merge performed through forge: the mutation eagerly marks
+	// the MR merged, so the sync's open->closed transition never fires and
+	// no authored merged event is ever written.
+	pr := buildOpenPR(7, now)
+	normalizedPR, err := NormalizePR(repoID, pr)
+	require.NoError(err)
+	_, err = d.UpsertMergeRequest(ctx, normalizedPR)
+	require.NoError(err)
+	mergedAt := now.Add(time.Minute)
+	require.NoError(d.UpdateMRState(ctx, repoID, 7, "merged", &mergedAt, &mergedAt))
+
+	merged := true
+	mergedBy := "merge-admin"
+	pr.State = new("closed")
+	pr.Merged = &merged
+	pr.MergedAt = makeTimestamp(mergedAt)
+	pr.ClosedAt = makeTimestamp(mergedAt)
+	pr.UpdatedAt = makeTimestamp(mergedAt)
+	pr.MergedBy = &gh.User{Login: &mergedBy}
+	mc := &mockClient{singlePR: pr}
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, nil)
+	syncer.SetClock(func() time.Time { return now.Add(time.Hour) })
+
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+	syncer.reconcileMergedActorEvents(ctx, repo, repoID)
+
+	stored, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 7)
+	require.NoError(err)
+	events, err := d.ListMREvents(ctx, stored.ID)
+	require.NoError(err)
+	require.NotEmpty(events)
+	found := false
+	for _, event := range events {
+		if event.EventType == "merged" && event.Author == "merge-admin" {
+			found = true
+		}
+	}
+	assert.True(found, "authored merged event must be backfilled")
+}
+
+func TestReconcileMergedActorEventsEnrichesActorlessMergedEvent(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	now := time.Date(2024, 6, 5, 12, 0, 0, 0, time.UTC)
+
+	repoID, err := d.UpsertRepo(
+		ctx, verifiedGitHubRepoIdentity("github.com", "owner", "repo"),
+	)
+	require.NoError(err)
+	pr := buildOpenPR(7, now)
+	normalizedPR, err := NormalizePR(repoID, pr)
+	require.NoError(err)
+	_, err = d.UpsertMergeRequest(ctx, normalizedPR)
+	require.NoError(err)
+	mergedAt := now.Add(time.Minute)
+	require.NoError(d.UpdateMRState(ctx, repoID, 7, "merged", &mergedAt, &mergedAt))
+	stored, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NoError(d.UpsertMREvents(ctx, []db.MREvent{{
+		MergeRequestID: stored.ID,
+		EventType:      "merged",
+		Summary:        "merged this",
+		CreatedAt:      mergedAt.Add(time.Minute),
+		DedupeKey:      "provider-merged-event",
+	}}))
+
+	merged := true
+	actor := "merge-admin"
+	pr.State = new("closed")
+	pr.Merged = &merged
+	pr.MergedAt = makeTimestamp(mergedAt)
+	pr.MergedBy = &gh.User{Login: &actor}
+	mc := &mockClient{singlePR: pr}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil,
+		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+		time.Minute, nil, nil,
+	)
+	syncer.SetClock(func() time.Time { return now.Add(time.Hour) })
+
+	syncer.reconcileMergedActorEvents(
+		ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, repoID,
+	)
+
+	events, err := d.ListMREvents(ctx, stored.ID)
+	require.NoError(err)
+	mergedEvents := make([]db.MREvent, 0, 1)
+	for _, event := range events {
+		if event.EventType == "merged" {
+			mergedEvents = append(mergedEvents, event)
+		}
+	}
+	require.Len(mergedEvents, 1)
+	require.Equal("provider-merged-event", mergedEvents[0].DedupeKey)
+	require.Equal("merge-admin", mergedEvents[0].Author)
+	require.Equal(mergedAt, mergedEvents[0].CreatedAt)
+}
+
+func TestBackfillMergedActorRejectsReusedRepositoryRoute(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	now := time.Date(2024, 6, 5, 12, 0, 0, 0, time.UTC)
+	displacedID := seedDisplacedRepository(t, d)
+
+	pr := buildOpenPR(7, now)
+	normalizedPR, err := NormalizePR(displacedID, pr)
+	require.NoError(err)
+	_, err = d.UpsertMergeRequest(ctx, normalizedPR)
+	require.NoError(err)
+	mergedAt := now.Add(time.Minute)
+	require.NoError(d.UpdateMRState(ctx, displacedID, 7, "merged", &mergedAt, &mergedAt))
+
+	providerCalls := 0
+	mc := &mockClient{getPullRequestFn: func(
+		_ context.Context, _, _ string, _ int,
+	) (*gh.PullRequest, error) {
+		providerCalls++
+		merged := true
+		actor := "replacement-admin"
+		pr.State = new("closed")
+		pr.Merged = &merged
+		pr.MergedAt = makeTimestamp(mergedAt)
+		pr.MergedBy = &gh.User{Login: &actor}
+		return pr, nil
+	}}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil,
+		[]RepoRef{{
+			Platform: platform.KindGitHub, PlatformHost: "github.com",
+			PlatformExternalID: "repo-new",
+			Owner:              "acme", Name: "widget", RepoPath: "acme/widget",
+		}},
+		time.Minute, nil, nil,
+	)
+
+	inserted, err := syncer.BackfillMergedActorEventOnProvider(ctx, displacedID, 7)
+	require.ErrorContains(err, "provider ID")
+	require.False(inserted)
+	require.Zero(providerCalls,
+		"a route replacement must be rejected before fetching its pull request")
+}
+
+func TestBackfillMergedActorUsesProviderMatchedRouteAfterRename(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	now := time.Date(2024, 6, 5, 12, 0, 0, 0, time.UTC)
+	providerID := "repo-stable"
+
+	repoID, err := d.UpsertRepo(ctx, db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", PlatformRepoID: providerID,
+		Owner: "acme", Name: "old-name", RepoPath: "acme/old-name",
+	})
+	require.NoError(err)
+	pr := buildOpenPR(7, now)
+	normalizedPR, err := NormalizePR(repoID, pr)
+	require.NoError(err)
+	_, err = d.UpsertMergeRequest(ctx, normalizedPR)
+	require.NoError(err)
+	mergedAt := now.Add(time.Minute)
+	require.NoError(d.UpdateMRState(ctx, repoID, 7, "merged", &mergedAt, &mergedAt))
+
+	merged := true
+	actor := "merge-admin"
+	pr.State = new("closed")
+	pr.Merged = &merged
+	pr.MergedAt = makeTimestamp(mergedAt)
+	pr.MergedBy = &gh.User{Login: &actor}
+	mc := &mockClient{
+		getPullRequestFn: func(_ context.Context, owner, name string, _ int) (*gh.PullRequest, error) {
+			if owner != "acme" || name != "new-name" {
+				return nil, fmt.Errorf("backfill used stale route %s/%s", owner, name)
+			}
+			return pr, nil
+		},
+		getRepositoryFn: func(_ context.Context, owner, name string) (*gh.Repository, error) {
+			if owner != "acme" || name != "new-name" {
+				return nil, fmt.Errorf("identity check used stale route %s/%s", owner, name)
+			}
+			id := int64(42)
+			return &gh.Repository{
+				ID: &id, NodeID: &providerID, Name: &name,
+				Owner: &gh.User{Login: &owner},
+			}, nil
+		},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil,
+		[]RepoRef{{
+			Platform: platform.KindGitHub, PlatformHost: "github.com",
+			PlatformExternalID: providerID,
+			Owner:              "acme", Name: "new-name", RepoPath: "acme/new-name",
+		}},
+		time.Minute, nil, nil,
+	)
+
+	inserted, err := syncer.BackfillMergedActorEventOnProvider(ctx, repoID, 7)
+	require.NoError(err)
+	require.True(inserted)
+}
+
+func TestBackfillMergedActorRevalidatesProviderIdentityBeforePersisting(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	now := time.Date(2024, 6, 5, 12, 0, 0, 0, time.UTC)
+	providerID := "repo-old"
+
+	repoID, err := d.UpsertRepo(ctx, db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", PlatformRepoID: providerID,
+		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+	})
+	require.NoError(err)
+	pr := buildOpenPR(7, now)
+	normalizedPR, err := NormalizePR(repoID, pr)
+	require.NoError(err)
+	_, err = d.UpsertMergeRequest(ctx, normalizedPR)
+	require.NoError(err)
+	mergedAt := now.Add(time.Minute)
+	require.NoError(d.UpdateMRState(ctx, repoID, 7, "merged", &mergedAt, &mergedAt))
+
+	merged := true
+	actor := "replacement-admin"
+	pr.State = new("closed")
+	pr.Merged = &merged
+	pr.MergedAt = makeTimestamp(mergedAt)
+	pr.MergedBy = &gh.User{Login: &actor}
+	replacementID := "repo-new"
+	mc := &mockClient{
+		getPullRequestFn: func(context.Context, string, string, int) (*gh.PullRequest, error) {
+			return pr, nil
+		},
+		getRepositoryFn: func(_ context.Context, owner, name string) (*gh.Repository, error) {
+			id := int64(43)
+			return &gh.Repository{
+				ID: &id, NodeID: &replacementID, Name: &name,
+				Owner: &gh.User{Login: &owner},
+			}, nil
+		},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil,
+		[]RepoRef{{
+			Platform: platform.KindGitHub, PlatformHost: "github.com",
+			PlatformExternalID: providerID,
+			Owner:              "acme", Name: "widget", RepoPath: "acme/widget",
+		}},
+		time.Minute, nil, nil,
+	)
+
+	inserted, err := syncer.BackfillMergedActorEventOnProvider(ctx, repoID, 7)
+	require.ErrorContains(err, "provider ID")
+	require.False(inserted)
+	stored, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	events, err := d.ListMREvents(ctx, stored.ID)
+	require.NoError(err)
+	require.Empty(events, "replacement repository actor must not be persisted")
+}
+
+func TestBackfillMergedActorVerifiesRouteWhenTrackedProviderIDMissing(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	now := time.Date(2024, 6, 5, 12, 0, 0, 0, time.UTC)
+
+	repoID, err := d.UpsertRepo(
+		ctx, verifiedGitHubRepoIdentity("github.com", "owner", "repo"),
+	)
+	require.NoError(err)
+	pr := buildOpenPR(7, now)
+	normalizedPR, err := NormalizePR(repoID, pr)
+	require.NoError(err)
+	_, err = d.UpsertMergeRequest(ctx, normalizedPR)
+	require.NoError(err)
+	mergedAt := now.Add(time.Minute)
+	require.NoError(d.UpdateMRState(ctx, repoID, 7, "merged", &mergedAt, &mergedAt))
+
+	merged := true
+	actor := "merge-admin"
+	pr.State = new("closed")
+	pr.Merged = &merged
+	pr.MergedAt = makeTimestamp(mergedAt)
+	pr.MergedBy = &gh.User{Login: &actor}
+	mc := &mockClient{singlePR: pr}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil,
+		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+		time.Minute, nil, nil,
+	)
+
+	inserted, err := syncer.BackfillMergedActorEventOnProvider(ctx, repoID, 7)
+	require.NoError(err)
+	require.True(inserted)
+}
+
+func TestReconcileMergedActorEventsSweepsPastPersistentlyMissingActors(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	repoID, err := d.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", "owner", "repo"))
+	require.NoError(err)
+	now := time.Date(2024, 6, 5, 12, 0, 0, 0, time.UTC)
+
+	// Twelve forge-merged MRs missing the actor. The provider permanently
+	// reports no merged_by for the ten newest (e.g. the merging account was
+	// deleted), so a fixed newest-first batch would retry them every cycle
+	// and never reach the two oldest.
+	actorless := map[int]bool{}
+	for number := 3; number <= 12; number++ {
+		actorless[number] = true
+	}
+	for number := 1; number <= 12; number++ {
+		pr := buildOpenPR(number, now)
+		normalizedPR, err := NormalizePR(repoID, pr)
+		require.NoError(err)
+		_, err = d.UpsertMergeRequest(ctx, normalizedPR)
+		require.NoError(err)
+		mergedAt := now.Add(time.Duration(number) * time.Minute)
+		require.NoError(d.UpdateMRState(ctx, repoID, number, "merged", &mergedAt, &mergedAt))
+	}
+
+	mc := &mockClient{
+		getPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+			pr := buildOpenPR(number, now)
+			merged := true
+			mergedAt := now.Add(time.Duration(number) * time.Minute)
+			pr.State = new("closed")
+			pr.Merged = &merged
+			pr.MergedAt = makeTimestamp(mergedAt)
+			pr.ClosedAt = makeTimestamp(mergedAt)
+			pr.UpdatedAt = makeTimestamp(mergedAt)
+			if !actorless[number] {
+				actor := "merge-admin"
+				pr.MergedBy = &gh.User{Login: &actor}
+			}
+			return pr, nil
+		},
+	}
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, nil)
+	syncer.SetClock(func() time.Time { return now.Add(time.Hour) })
+
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+	syncer.reconcileMergedActorEvents(ctx, repo, repoID)
+	syncer.reconcileMergedActorEvents(ctx, repo, repoID)
+
+	for _, number := range []int{1, 2} {
+		stored, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, number)
+		require.NoError(err)
+		require.NotNil(stored)
+		events, err := d.ListMREvents(ctx, stored.ID)
+		require.NoError(err)
+		found := false
+		for _, event := range events {
+			if event.EventType == "merged" && event.Author == "merge-admin" {
+				found = true
+			}
+		}
+		assert.True(found,
+			"MR #%d must receive its merged actor even while newer candidates stay unresolved", number)
+	}
+}
+
+func TestReconcileMergedActorEventsCoolsDownAfterSweepExhaustion(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	now := time.Date(2024, 6, 5, 12, 0, 0, 0, time.UTC)
+	clock := now.Add(time.Hour)
+
+	repoID, err := d.UpsertRepo(
+		ctx, verifiedGitHubRepoIdentity("github.com", "owner", "repo"),
+	)
+	require.NoError(err)
+	pr := buildOpenPR(7, now)
+	normalizedPR, err := NormalizePR(repoID, pr)
+	require.NoError(err)
+	_, err = d.UpsertMergeRequest(ctx, normalizedPR)
+	require.NoError(err)
+	mergedAt := now.Add(time.Minute)
+	require.NoError(d.UpdateMRState(ctx, repoID, 7, "merged", &mergedAt, &mergedAt))
+
+	providerCalls := 0
+	mc := &mockClient{getPullRequestFn: func(
+		_ context.Context, _, _ string, _ int,
+	) (*gh.PullRequest, error) {
+		providerCalls++
+		merged := true
+		pr.State = new("closed")
+		pr.Merged = &merged
+		pr.MergedAt = makeTimestamp(mergedAt)
+		pr.MergedBy = nil
+		return pr, nil
+	}}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil,
+		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+		time.Minute, nil, nil,
+	)
+	syncer.SetClock(func() time.Time { return clock })
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+
+	syncer.reconcileMergedActorEvents(ctx, repo, repoID)
+	require.Equal(1, providerCalls)
+	clock = clock.Add(59 * time.Minute)
+	syncer.reconcileMergedActorEvents(ctx, repo, repoID)
+	require.Equal(1, providerCalls, "an exhausted sweep must retain its cooldown")
+	clock = clock.Add(time.Minute)
+	syncer.reconcileMergedActorEvents(ctx, repo, repoID)
+	require.Equal(2, providerCalls, "a new sweep must start after the bounded cooldown")
 }

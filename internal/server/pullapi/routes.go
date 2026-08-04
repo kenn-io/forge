@@ -613,7 +613,11 @@ func withSyntheticMRLifecycleEvents(mr db.MergeRequest, events []db.MREvent) []d
 	hasLifecycleEvent := func(eventType string, createdAt time.Time) bool {
 		createdAt = createdAt.UTC()
 		for _, event := range events {
-			if event.EventType == eventType && event.CreatedAt.UTC().Equal(createdAt) {
+			if event.EventType != eventType {
+				continue
+			}
+			if event.CreatedAt.UTC().Equal(createdAt) ||
+				(eventType == "merged" && strings.TrimSpace(event.Author) != "") {
 				return true
 			}
 		}
@@ -1680,6 +1684,52 @@ func (s *Handler) mergePRWithBody(
 	// (A deferred worker completing through this same path supersedes its
 	// own handle, which is a no-op by the time it broadcasts completion.)
 	s.supersedeDeferredMerge(deferredMergeKey(*repo, number))
+
+	// The eager state write above suppresses the sync-side open->closed
+	// transition — the path that records who merged. Backfill the authored
+	// merged event from the provider so the actor is not lost, and target the
+	// affected detail once it lands: the merge response returns before this
+	// completes, so an already-open detail would otherwise keep showing the
+	// synthetic actorless merge event.
+	repoID := repo.ID
+	s.runBackground(func(bgCtx context.Context) {
+		changed, err := s.syncer.BackfillMergedActorEventOnProvider(bgCtx, repoID, number)
+		if err != nil {
+			slog.Warn("record merged actor after merge",
+				"owner", repo.Owner, "repo", repo.Name,
+				"number", number, "err", err)
+			return
+		}
+		if !changed {
+			return
+		}
+		currentRepo, err := s.db.GetRepoByID(bgCtx, repoID)
+		if err != nil || currentRepo == nil {
+			slog.Warn("load repository for merged-actor detail refresh",
+				"repo_id", repoID, "number", number, "err", err)
+			return
+		}
+		currentMR, err := s.db.GetMergeRequestByRepoIDAndNumber(bgCtx, repoID, number)
+		if err != nil || currentMR == nil {
+			slog.Warn("load pull request for merged-actor detail refresh",
+				"repo_id", repoID, "number", number, "err", err)
+			return
+		}
+		s.publish(Event{
+			Type: "pr_detail_refreshed",
+			Data: workspaceapi.PRDetailRefreshedPayload{
+				Provider:     currentRepo.Platform,
+				PlatformHost: currentRepo.PlatformHost,
+				RepoPath:     currentRepo.RepoPath,
+				Owner:        currentRepo.Owner,
+				Name:         currentRepo.Name,
+				Number:       number,
+				HeadSHA:      currentMR.PlatformHeadSHA,
+				SyncedAt:     formatUTCRFC3339(s.now().UTC()),
+				Warnings:     []string{},
+			},
+		})
+	})
 
 	return mergePRBody{
 		Merged:  result.Merged,

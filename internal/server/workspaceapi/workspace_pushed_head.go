@@ -65,6 +65,9 @@ type prDetailRefreshedPayload struct {
 	Warnings     []string `json:"warnings"`
 }
 
+// PRDetailRefreshedPayload is shared with pull-request event producers.
+type PRDetailRefreshedPayload = prDetailRefreshedPayload
+
 type prCIRefreshQueuedPayload struct {
 	Provider     string `json:"provider"`
 	PlatformHost string `json:"platform_host"`

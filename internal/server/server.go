@@ -785,6 +785,9 @@ func newServer(
 		roborevConfig.RoborevEndpoint(),
 		workspaceConfigSnapshot(cfg, nil).KnownPlatformHosts,
 	)
+	if syncer != nil {
+		syncer.SetOnMergedActorRepaired(s.broadcastMergedActorDetailRefresh)
+	}
 	s.workspaceDependentsCtx, s.workspaceDependentsCancel = context.WithCancel(s.bgCtx)
 	s.workspaceLifecycleCtx, s.workspaceLifecycleCancel = context.WithCancel(context.Background())
 	s.kataLifecycleCtx, s.kataLifecycleCancel = context.WithCancel(context.Background())

@@ -1989,7 +1989,13 @@ func upsertMREventsTx(ctx context.Context, tx *sql.Tx, events []MREvent) error {
 			    platform_id   = excluded.platform_id,
 			    platform_external_id = excluded.platform_external_id,
 			    event_type    = excluded.event_type,
-			    author        = excluded.author,
+			    author        = CASE
+			        WHEN forge_mr_events.event_type = 'merged'
+			         AND excluded.event_type = 'merged'
+			         AND TRIM(excluded.author) = ''
+			        THEN forge_mr_events.author
+			        ELSE excluded.author
+			    END,
 			    summary       = excluded.summary,
 			    body          = excluded.body,
 			    metadata_json = excluded.metadata_json,
@@ -2014,14 +2020,156 @@ func upsertMREventsTx(ctx context.Context, tx *sql.Tx, events []MREvent) error {
 	for i := range events {
 		e := &events[i]
 		canonicalizeMREventTimestamps(e)
+		authoredMerge := e.EventType == "merged" && strings.TrimSpace(e.Author) != ""
+		if e.EventType == "merged" && !authoredMerge {
+			var authoredExists bool
+			if err := tx.QueryRowContext(ctx, `
+				SELECT EXISTS (
+					SELECT 1 FROM forge_mr_events
+					WHERE merge_request_id = ? AND event_type = 'merged'
+					  AND TRIM(author) != ''
+				)`, e.MergeRequestID).Scan(&authoredExists); err != nil {
+				return fmt.Errorf("check authored merged event: %w", err)
+			}
+			if authoredExists {
+				continue
+			}
+		}
+		if authoredMerge {
+			var canonicalDedupeKey string
+			err := tx.QueryRowContext(ctx, `
+				SELECT dedupe_key FROM forge_mr_events
+				WHERE merge_request_id = ? AND event_type = 'merged'
+				  AND TRIM(author) != ''
+				ORDER BY id LIMIT 1`, e.MergeRequestID).Scan(&canonicalDedupeKey)
+			switch {
+			case err == nil:
+				e.DedupeKey = canonicalDedupeKey
+			case !errors.Is(err, sql.ErrNoRows):
+				return fmt.Errorf("find canonical authored merged event: %w", err)
+			}
+		}
 		if _, err := stmt.ExecContext(ctx,
 			e.MergeRequestID, e.PlatformID, e.PlatformExternalID, e.EventType, e.Author, e.Summary, e.Body,
 			e.MetadataJSON, e.CreatedAt, e.DedupeKey, e.DirectURL, e.ThreadID, e.PositionJSON, e.Resolvable, e.Resolved,
 		); err != nil {
 			return fmt.Errorf("insert mr event (dedupe_key=%s): %w", e.DedupeKey, err)
 		}
+		if authoredMerge {
+			if _, err := tx.ExecContext(ctx, `
+				DELETE FROM forge_mr_events
+				WHERE merge_request_id = ? AND event_type = 'merged'
+				  AND id != (
+				      SELECT id FROM forge_mr_events
+				      WHERE merge_request_id = ? AND event_type = 'merged'
+				        AND TRIM(author) != ''
+				      ORDER BY id LIMIT 1
+				  )`, e.MergeRequestID, e.MergeRequestID); err != nil {
+				return fmt.Errorf("delete duplicate merged events: %w", err)
+			}
+		}
 	}
 	return nil
+}
+
+// UpsertMergedActorEvent atomically enriches an existing actorless merged
+// lifecycle event or inserts the authored event when no merged event exists.
+// Any extra actorless merged rows are removed so one merge transition remains.
+func (d *DB) UpsertMergedActorEvent(
+	ctx context.Context,
+	event MREvent,
+) (bool, error) {
+	event.Author = strings.TrimSpace(event.Author)
+	if event.MergeRequestID == 0 || event.EventType != "merged" || event.Author == "" {
+		return false, nil
+	}
+	canonicalizeMREventTimestamps(&event)
+	changed := false
+	err := d.Tx(ctx, func(tx *sql.Tx) error {
+		var parentState string
+		var parentMergedAt sql.NullString
+		err := tx.QueryRowContext(ctx, `
+			SELECT state, merged_at
+			FROM forge_merge_requests
+			WHERE id = ?`, event.MergeRequestID).Scan(&parentState, &parentMergedAt)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("read merged-event parent state: %w", err)
+		}
+		if parentState != string(MergeRequestStateMerged) || !parentMergedAt.Valid {
+			return nil
+		}
+		currentMergedAt, err := parseDBTime(parentMergedAt.String)
+		if err != nil {
+			return fmt.Errorf("parse merged-event parent time: %w", err)
+		}
+		event.CreatedAt = currentMergedAt
+
+		var authoredID int64
+		err = tx.QueryRowContext(ctx, `
+			SELECT id FROM forge_mr_events
+			WHERE merge_request_id = ? AND event_type = 'merged'
+			  AND TRIM(author) != ''
+			ORDER BY id LIMIT 1`, event.MergeRequestID).Scan(&authoredID)
+		switch {
+		case err == nil:
+			if _, updateErr := tx.ExecContext(ctx, `
+				UPDATE forge_mr_events
+				SET author = ?,
+				    summary = CASE WHEN TRIM(summary) = '' THEN ? ELSE summary END,
+				    created_at = ?
+				WHERE id = ?`, event.Author, event.Summary, event.CreatedAt, authoredID); updateErr != nil {
+				return fmt.Errorf("align authored merged event: %w", updateErr)
+			}
+			if _, deleteErr := tx.ExecContext(ctx, `
+				DELETE FROM forge_mr_events
+				WHERE merge_request_id = ? AND event_type = 'merged'
+				  AND id != ?`, event.MergeRequestID, authoredID); deleteErr != nil {
+				return fmt.Errorf("delete duplicate merged events: %w", deleteErr)
+			}
+			changed = true
+			return nil
+		case !errors.Is(err, sql.ErrNoRows):
+			return fmt.Errorf("find authored merged event: %w", err)
+		}
+
+		var actorlessID int64
+		err = tx.QueryRowContext(ctx, `
+			SELECT id FROM forge_mr_events
+			WHERE merge_request_id = ? AND event_type = 'merged'
+			  AND TRIM(author) = ''
+			ORDER BY id LIMIT 1`, event.MergeRequestID).Scan(&actorlessID)
+		switch {
+		case err == nil:
+			if _, err := tx.ExecContext(ctx, `
+				UPDATE forge_mr_events
+				SET author = ?,
+				    summary = CASE WHEN TRIM(summary) = '' THEN ? ELSE summary END,
+				    created_at = ?
+				WHERE id = ?`, event.Author, event.Summary, event.CreatedAt, actorlessID); err != nil {
+				return fmt.Errorf("enrich actorless merged event: %w", err)
+			}
+			if _, err := tx.ExecContext(ctx, `
+				DELETE FROM forge_mr_events
+				WHERE merge_request_id = ? AND event_type = 'merged'
+				  AND id != ?`, event.MergeRequestID, actorlessID); err != nil {
+				return fmt.Errorf("delete duplicate merged events: %w", err)
+			}
+			changed = true
+			return nil
+		case !errors.Is(err, sql.ErrNoRows):
+			return fmt.Errorf("find actorless merged event: %w", err)
+		}
+
+		if err := upsertMREventsTx(ctx, tx, []MREvent{event}); err != nil {
+			return err
+		}
+		changed = true
+		return nil
+	})
+	return changed, err
 }
 
 func (d *DB) MRCommentEventExists(
@@ -2258,6 +2406,70 @@ func (d *DB) GetPreviouslyOpenMRNumbers(
 		}
 	}
 	return closed, rows.Err()
+}
+
+// MergedMRMissingActorCursor is the exclusive upper bound for one page of
+// merged MRs missing an actor. MergeRequestID breaks ties between rows with
+// the same merged timestamp.
+type MergedMRMissingActorCursor struct {
+	MergedAt       time.Time
+	MergeRequestID int64
+}
+
+// MergedMRMissingActor is one merged MR whose events lack an authored
+// "merged" lifecycle event. Its timestamp and stable row ID form the cursor
+// for the next page.
+type MergedMRMissingActor struct {
+	MergeRequestID int64
+	Number         int
+	MergedAt       time.Time
+}
+
+// GetMergedMRNumbersMissingMergedActor returns merged MRs (merged at or after
+// mergedSince and before the composite cursor) whose events lack an authored
+// "merged" lifecycle event, newest merged first, capped at limit. Merges
+// performed through forge itself mark the MR merged eagerly, which suppresses
+// the sync-side open->closed transition that records the acting user — these
+// MRs are the gap this query finds so sync can backfill the actor from the
+// provider. The mergedBefore bound lets the caller sweep the whole window
+// across cycles: candidates whose provider permanently reports no actor would
+// otherwise occupy every newest-first batch and starve older candidates.
+func (d *DB) GetMergedMRNumbersMissingMergedActor(
+	ctx context.Context,
+	repoID int64,
+	mergedSince time.Time,
+	before MergedMRMissingActorCursor,
+	limit int,
+) ([]MergedMRMissingActor, error) {
+	rows, err := d.ro.QueryContext(ctx,
+		`SELECT mr.id, mr.number, mr.merged_at FROM forge_merge_requests mr
+		 WHERE mr.repo_id = ? AND mr.state = 'merged'
+		   AND mr.merged_at >= ?
+		   AND (mr.merged_at < ? OR (mr.merged_at = ? AND mr.id < ?))
+		   AND NOT EXISTS (
+		     SELECT 1 FROM forge_mr_events e
+		     WHERE e.merge_request_id = mr.id
+		       AND e.event_type = 'merged' AND TRIM(e.author) != ''
+		   )
+		 ORDER BY mr.merged_at DESC, mr.id DESC LIMIT ?`,
+		repoID, mergedSince, before.MergedAt, before.MergedAt,
+		before.MergeRequestID, limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get merged mrs missing merged actor: %w", err)
+	}
+	defer rows.Close()
+
+	var missing []MergedMRMissingActor
+	for rows.Next() {
+		var row MergedMRMissingActor
+		if err := rows.Scan(&row.MergeRequestID, &row.Number, &row.MergedAt); err != nil {
+			return nil, fmt.Errorf("scan merged mr missing actor: %w", err)
+		}
+		row.MergedAt = row.MergedAt.UTC()
+		missing = append(missing, row)
+	}
+	return missing, rows.Err()
 }
 
 func (d *DB) CountOpenMergeRequestsForRepo(ctx context.Context, repoID int64) (int, error) {

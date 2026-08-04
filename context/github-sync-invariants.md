@@ -105,6 +105,20 @@ For pull requests, that means:
 
 PR timeline storage is intentionally selective.
 
+- Merged-actor repair is independent of open-list freshness: run it after every successful
+  MR index cycle, preserve the provider-matched route, revalidate stored provider identity
+  before persistence, use parent timing, and cool down completed sweeps. (`internal/github/sync.go::reconcileMergedActorEvents`)
+- Keep one canonical merged lifecycle row across dedupe keys: authored rows dominate
+  actorless refreshes, and later authored snapshots update the retained row.
+  (`internal/db/queries.go::upsertMREventsTx`)
+- Actor repair uses transaction-current parent timing and rejects non-merged parents.
+  (`internal/db/queries.go::UpsertMergedActorEvent`)
+- Merged-actor provider reads are active-detail work and preempt archive leases.
+  (`internal/github/sync.go::BackfillMergedActorEventOnProvider`)
+- Successful immediate and scheduled actor repairs target `pr_detail_refreshed` with canonical
+  repository identity; broad `data_changed` does not refresh an open detail. (`internal/server/`)
+- Detail synthesis treats any authored merge as canonical regardless of timestamp, since
+  stored rows may predate parent-time realignment. (`internal/server/pullapi/routes.go::withSyntheticMRLifecycleEvents`)
 - Keep the existing event families stable: comments, reviews, commits, force
   pushes, and the currently supported PR system events.
 - Review comments are UI-aware but are not part of the stored sync model unless

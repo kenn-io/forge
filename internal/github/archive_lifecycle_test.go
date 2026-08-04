@@ -1353,6 +1353,78 @@ func TestLiveProviderWorkCancelsAndWaitsForArchiveRequest(t *testing.T) {
 	}
 }
 
+func TestBackfillMergedActorCancelsAndWaitsForArchiveRequest(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	database := dbtest.Open(t)
+	now := time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)
+	ref := platform.RepoRef{
+		Platform: platform.KindGitLab, Host: "gitlab.test",
+		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+	}
+	provider := &blockingPriorityProvider{
+		syncTestProvider: syncTestProvider{kind: ref.Platform, host: ref.Host},
+		ref:              ref, operation: priorityWorkMR,
+		started: make(chan struct{}), release: make(chan struct{}),
+	}
+	releaseProvider := sync.OnceFunc(func() { close(provider.release) })
+	t.Cleanup(releaseProvider)
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
+		Platform: string(ref.Platform), PlatformHost: ref.Host,
+		PlatformRepoID: "repo-1", Owner: ref.Owner, Name: ref.Name, RepoPath: ref.RepoPath,
+	})
+	require.NoError(err)
+	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID: repoID, PlatformID: 7, PlatformExternalID: "mr-7", Number: 7,
+		Title: "Synthetic MR", State: db.MergeRequestStateMerged,
+		CreatedAt: now, UpdatedAt: now, LastActivityAt: now, MergedAt: &now,
+	})
+	require.NoError(err)
+	key := RateBucketKey(string(ref.Platform), ref.Host, "host")
+	syncer := NewSyncerWithRegistry(
+		registry, database, nil, []RepoRef{{
+			Platform: ref.Platform, PlatformHost: ref.Host, PlatformExternalID: "repo-1",
+			Owner: ref.Owner, Name: ref.Name, RepoPath: ref.RepoPath,
+		}}, time.Hour, nil, map[string]*SyncBudget{key: NewSyncBudget(10)},
+	)
+	t.Cleanup(syncer.Stop)
+
+	archiveCtx, releaseArchive, allowed := syncer.tryBeginArchiveProviderRequest(ctx, key)
+	require.True(allowed)
+	done := make(chan error, 1)
+	go func() {
+		_, backfillErr := syncer.BackfillMergedActorEventOnProvider(ctx, repoID, 7)
+		done <- backfillErr
+	}()
+
+	select {
+	case <-archiveCtx.Done():
+	case <-provider.started:
+		releaseProvider()
+		releaseArchive()
+		require.NoError(<-done)
+		require.Fail("merged-actor backfill overlapped an active archive request")
+	case <-time.After(time.Second):
+		releaseArchive()
+		require.Fail("merged-actor backfill did not cancel the active archive request")
+	}
+	select {
+	case <-provider.started:
+		require.Fail("merged-actor backfill started before the archive lease released")
+	case <-time.After(25 * time.Millisecond):
+	}
+	releaseArchive()
+	select {
+	case <-provider.started:
+	case <-time.After(time.Second):
+		require.Fail("merged-actor backfill did not proceed after the archive lease released")
+	}
+	releaseProvider()
+	require.NoError(<-done)
+}
+
 func TestArchiveAdmissionDefersToForegroundSyncEntryPoints(t *testing.T) {
 	for _, tc := range []struct {
 		name      string

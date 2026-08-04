@@ -393,6 +393,148 @@ func TestUpsertMREventsUpdatesExistingEventBody(t *testing.T) {
 	assert.Equal("edited body", events[0].Body)
 }
 
+func TestUpsertMREventsPreservesEnrichedMergedActor(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	repoID := insertTestRepo(t, d, "acme", "widget")
+	mrID := insertTestMR(t, d, repoID, 1, "pr", baseTime())
+
+	event := MREvent{
+		MergeRequestID: mrID,
+		EventType:      "merged",
+		Author:         "merge-admin",
+		Summary:        "merged this",
+		CreatedAt:      baseTime(),
+		DedupeKey:      "provider-merged-event",
+	}
+	require.NoError(d.UpsertMREvents(ctx, []MREvent{event}))
+	event.Author = ""
+	require.NoError(d.UpsertMREvents(ctx, []MREvent{event}))
+
+	events, err := d.ListMREvents(ctx, mrID)
+	require.NoError(err)
+	require.Len(events, 1)
+	require.Equal("merge-admin", events[0].Author)
+}
+
+func TestUpsertMREventsRejectsDistinctActorlessMergeAfterAuthoredMerge(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	repoID := insertTestRepo(t, d, "acme", "widget")
+	mrID := insertTestMR(t, d, repoID, 1, "pr", baseTime())
+
+	require.NoError(d.UpsertMREvents(ctx, []MREvent{{
+		MergeRequestID: mrID,
+		EventType:      "merged",
+		Author:         "merge-admin",
+		Summary:        "merged this",
+		CreatedAt:      baseTime(),
+		DedupeKey:      "authored-merge",
+	}}))
+	require.NoError(d.UpsertMREvents(ctx, []MREvent{{
+		MergeRequestID: mrID,
+		EventType:      "merged",
+		Summary:        "merged this",
+		CreatedAt:      baseTime().Add(time.Minute),
+		DedupeKey:      "actorless-provider-refresh",
+	}}))
+
+	events, err := d.ListMREvents(ctx, mrID)
+	require.NoError(err)
+	require.Len(events, 1)
+	require.Equal("authored-merge", events[0].DedupeKey)
+	require.Equal("merge-admin", events[0].Author)
+}
+
+func TestUpsertMREventsDeduplicatesDistinctAuthoredMergeEvents(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	repoID := insertTestRepo(t, d, "acme", "widget")
+	mrID := insertTestMR(t, d, repoID, 1, "pr", baseTime())
+
+	require.NoError(d.UpsertMREvents(ctx, []MREvent{
+		{
+			MergeRequestID: mrID,
+			EventType:      "merged",
+			Author:         "first-admin",
+			Summary:        "merged this",
+			CreatedAt:      baseTime(),
+			DedupeKey:      "first-authored-merge",
+		},
+		{
+			MergeRequestID: mrID,
+			EventType:      "merged",
+			Author:         "second-admin",
+			Summary:        "merged this",
+			CreatedAt:      baseTime().Add(time.Minute),
+			DedupeKey:      "second-authored-merge",
+		},
+	}))
+
+	events, err := d.ListMREvents(ctx, mrID)
+	require.NoError(err)
+	require.Len(events, 1)
+	require.Equal("first-authored-merge", events[0].DedupeKey)
+	require.Equal("second-admin", events[0].Author)
+	require.Equal(baseTime().Add(time.Minute), events[0].CreatedAt)
+}
+
+func TestUpsertMergedActorEventUsesCurrentParentMergedAt(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	repoID := insertTestRepo(t, d, "acme", "widget")
+	initialMergedAt := baseTime()
+	mrID := insertTestMRWithOptions(t, d, testMR(repoID, 1, func(mr *MergeRequest) {
+		mr.State = MergeRequestStateMerged
+		mr.MergedAt = &initialMergedAt
+	}))
+	currentMergedAt := initialMergedAt.Add(time.Hour)
+	require.NoError(d.UpdateMRState(
+		ctx, repoID, 1, "merged", &currentMergedAt, &currentMergedAt,
+	))
+
+	changed, err := d.UpsertMergedActorEvent(ctx, MREvent{
+		MergeRequestID: mrID,
+		EventType:      "merged",
+		Author:         "merge-admin",
+		Summary:        "merged this",
+		CreatedAt:      initialMergedAt,
+		DedupeKey:      "stale-provider-event",
+	})
+	require.NoError(err)
+	require.True(changed)
+	events, err := d.ListMREvents(ctx, mrID)
+	require.NoError(err)
+	require.Len(events, 1)
+	require.Equal(currentMergedAt, events[0].CreatedAt)
+}
+
+func TestUpsertMergedActorEventRejectsNonMergedParent(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	repoID := insertTestRepo(t, d, "acme", "widget")
+	mrID := insertTestMR(t, d, repoID, 1, "pr", baseTime())
+
+	changed, err := d.UpsertMergedActorEvent(ctx, MREvent{
+		MergeRequestID: mrID,
+		EventType:      "merged",
+		Author:         "merge-admin",
+		Summary:        "merged this",
+		CreatedAt:      baseTime(),
+		DedupeKey:      "stale-provider-event",
+	})
+	require.NoError(err)
+	require.False(changed)
+	events, err := d.ListMREvents(ctx, mrID)
+	require.NoError(err)
+	require.Empty(events)
+}
+
 func TestUpsertMREventsUpdatesExistingReviewState(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -5170,4 +5312,108 @@ func TestUpsertIssue_NormalizesEmptyAssigneesJSON(t *testing.T) {
 	issues, err := d.ListIssues(ctx, ListIssuesOpts{Assignee: "anyone", State: "all"})
 	require.NoError(err)
 	assert.Empty(issues)
+}
+
+func TestGetMergedMRNumbersMissingMergedActor(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	repoID := insertTestRepo(t, d, "acme", "widget")
+	base := baseTime()
+	mergedOpt := func(at time.Time) testMROpt {
+		return func(mr *MergeRequest) {
+			mr.State = MergeRequestStateMerged
+			mr.MergedAt = &at
+		}
+	}
+
+	// #1: merged through forge — state merged, no events at all.
+	insertTestMRWithOptions(t, d, testMR(repoID, 1, mergedOpt(base.Add(time.Hour))))
+	// #2: merged with the actor already recorded.
+	id2 := insertTestMRWithOptions(t, d, testMR(repoID, 2, mergedOpt(base.Add(2*time.Hour))))
+	require.NoError(d.UpsertMREvents(ctx, []MREvent{{
+		MergeRequestID: id2,
+		EventType:      "merged",
+		Author:         "merge-admin",
+		Summary:        "merged this",
+		CreatedAt:      base.Add(2 * time.Hour),
+		DedupeKey:      "evt-2",
+	}}))
+	// #3: still open.
+	insertTestMR(t, d, repoID, 3, "open", base)
+	// #4: merged with an actor-less merged event — still needs the actor.
+	id4 := insertTestMRWithOptions(t, d, testMR(repoID, 4, mergedOpt(base.Add(3*time.Hour))))
+	require.NoError(d.UpsertMREvents(ctx, []MREvent{{
+		MergeRequestID: id4,
+		EventType:      "merged",
+		Summary:        "merged this",
+		CreatedAt:      base.Add(3 * time.Hour),
+		DedupeKey:      "evt-4",
+	}}))
+	// #5: merged before the cutoff — out of scope.
+	insertTestMRWithOptions(t, d, testMR(repoID, 5, mergedOpt(base.Add(-time.Hour))))
+
+	horizon := base.Add(100 * time.Hour)
+	rows, err := d.GetMergedMRNumbersMissingMergedActor(ctx, repoID, base,
+		MergedMRMissingActorCursor{MergedAt: horizon, MergeRequestID: 1<<63 - 1}, 10)
+	require.NoError(err)
+	require.Len(rows, 2)
+	assert.Equal(4, rows[0].Number)
+	assert.Equal(base.Add(3*time.Hour), rows[0].MergedAt)
+	assert.Equal(1, rows[1].Number)
+	assert.Equal(base.Add(time.Hour), rows[1].MergedAt)
+
+	limited, err := d.GetMergedMRNumbersMissingMergedActor(ctx, repoID, base,
+		MergedMRMissingActorCursor{MergedAt: horizon, MergeRequestID: 1<<63 - 1}, 1)
+	require.NoError(err)
+	require.Len(limited, 1)
+	assert.Equal(4, limited[0].Number)
+
+	// The mergedBefore bound is the sweep cursor: excluding the newest
+	// candidate's merged_at must surface the older candidate it was hiding.
+	older, err := d.GetMergedMRNumbersMissingMergedActor(
+		ctx, repoID, base,
+		MergedMRMissingActorCursor{
+			MergedAt:       rows[0].MergedAt,
+			MergeRequestID: rows[0].MergeRequestID,
+		}, 10,
+	)
+	require.NoError(err)
+	require.Len(older, 1)
+	assert.Equal(1, older[0].Number)
+}
+
+func TestGetMergedMRNumbersMissingMergedActorPaginatesTiedTimestamps(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	repoID := insertTestRepo(t, d, "acme", "widget")
+	mergedAt := baseTime().Add(time.Hour)
+	for number := 1; number <= 12; number++ {
+		insertTestMRWithOptions(t, d, testMR(repoID, number, func(mr *MergeRequest) {
+			mr.State = MergeRequestStateMerged
+			mr.MergedAt = &mergedAt
+		}))
+	}
+
+	first, err := d.GetMergedMRNumbersMissingMergedActor(
+		ctx, repoID, baseTime(), MergedMRMissingActorCursor{
+			MergedAt: mergedAt.Add(time.Hour), MergeRequestID: 1<<63 - 1,
+		}, 10,
+	)
+	require.NoError(err)
+	require.Len(first, 10)
+
+	second, err := d.GetMergedMRNumbersMissingMergedActor(
+		ctx, repoID, baseTime(), MergedMRMissingActorCursor{
+			MergedAt:       first[len(first)-1].MergedAt,
+			MergeRequestID: first[len(first)-1].MergeRequestID,
+		}, 10,
+	)
+	require.NoError(err)
+	require.Len(second, 2,
+		"the next page must retain rows tied with the previous page's timestamp")
 }

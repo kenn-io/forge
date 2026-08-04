@@ -42,9 +42,34 @@ func (p *deferredMergeProviderBase) Host() string {
 
 func (p *deferredMergeProviderBase) Capabilities() platform.Capabilities {
 	return platform.Capabilities{
+		ReadRepositories:  true,
 		ReadMergeRequests: true,
 		ReadCI:            true,
 	}
+}
+
+func (p *deferredMergeProviderBase) GetRepository(
+	context.Context,
+	platform.RepoRef,
+) (platform.Repository, error) {
+	return platform.Repository{
+		Ref:                p.ref,
+		PlatformID:         p.ref.PlatformID,
+		PlatformExternalID: p.ref.PlatformExternalID,
+		DefaultBranch:      p.ref.DefaultBranch,
+	}, nil
+}
+
+func (p *deferredMergeProviderBase) ListRepositories(
+	ctx context.Context,
+	_ string,
+	_ platform.RepositoryListOptions,
+) ([]platform.Repository, error) {
+	repo, err := p.GetRepository(ctx, p.ref)
+	if err != nil {
+		return nil, err
+	}
+	return []platform.Repository{repo}, nil
 }
 
 func (p *deferredMergeProviderBase) ListOpenMergeRequests(
@@ -270,11 +295,13 @@ func newDeferredMergeRouteServer(
 		database,
 		nil,
 		[]ghclient.RepoRef{{
-			Platform:     platform.KindGitLab,
-			PlatformHost: ref.Host,
-			Owner:        ref.Owner,
-			Name:         ref.Name,
-			RepoPath:     ref.RepoPath,
+			Platform:           platform.KindGitLab,
+			PlatformHost:       ref.Host,
+			Owner:              ref.Owner,
+			Name:               ref.Name,
+			RepoPath:           ref.RepoPath,
+			PlatformRepoID:     ref.PlatformID,
+			PlatformExternalID: ref.PlatformExternalID,
 		}},
 		time.Minute,
 		nil,
@@ -1848,4 +1875,170 @@ func mustDeferredMergeChecksJSON(t *testing.T, checks []db.CICheck) string {
 	raw, err := json.Marshal(checks)
 	require.NoError(t, err)
 	return string(raw)
+}
+
+func TestImmediateMergeRecordsMergedActor(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
+	ref := platform.RepoRef{
+		Platform:           platform.KindGitLab,
+		Host:               "gitlab.example.com",
+		Owner:              "group",
+		Name:               "project",
+		RepoPath:           "group/project",
+		PlatformID:         4242,
+		PlatformExternalID: "gid://gitlab/Project/4242",
+		DefaultBranch:      "main",
+	}
+	mergedAt := now.Add(time.Minute)
+	provider := &deferredMergeTestProvider{
+		deferredMergeProviderBase: deferredMergeProviderBase{
+			ref: ref,
+			// The provider view after the merge lands: merged, with the
+			// acting user. The post-merge background resync must persist
+			// this actor as an authored merged event — the eager local
+			// state write otherwise suppresses the sync-side transition
+			// that records it.
+			mergeRequests: []platform.MergeRequest{{
+				Repo:           ref,
+				PlatformID:     7001,
+				Number:         7,
+				URL:            "https://gitlab.example.com/group/project/-/merge_requests/7",
+				Title:          "Merge me",
+				Author:         "ada",
+				State:          "merged",
+				MergedAt:       &mergedAt,
+				MergedBy:       "merge-admin",
+				HeadBranch:     "feature",
+				BaseBranch:     "main",
+				HeadSHA:        "head-sha",
+				BaseSHA:        "base-sha",
+				CreatedAt:      now,
+				UpdatedAt:      mergedAt,
+				LastActivityAt: mergedAt,
+			}},
+		},
+		mergeCh: make(chan deferredMergeTestMergeCall, 1),
+	}
+	srv, database, repoID, client := newDeferredMergeRouteServer(
+		t,
+		provider,
+		ref,
+		now,
+		[]db.CICheck{{App: "GitLab", Name: "pipeline", Status: "completed", Conclusion: "success"}},
+	)
+	events, _ := srv.Hub().Subscribe(ctx, false)
+
+	expectedHeadSHA := "head-sha"
+	mergeResp, err := client.HTTP.MergePullOnHostWithResponse(
+		ctx,
+		ref.Host,
+		"gitlab",
+		ref.Owner,
+		ref.Name,
+		7,
+		generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA},
+	)
+	require.NoError(err)
+	require.Equal(200, mergeResp.StatusCode(), string(mergeResp.Body))
+
+	stored, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(stored)
+
+	require.Eventually(func() bool {
+		events, err := database.ListMREvents(ctx, stored.ID)
+		require.NoError(err)
+		for _, event := range events {
+			if event.EventType == "merged" && event.Author == "merge-admin" {
+				return true
+			}
+		}
+		return false
+	}, 3*time.Second, 50*time.Millisecond,
+		"no authored merged event recorded after immediate merge")
+
+	detailResp, err := client.HTTP.GetPullOnHostWithResponse(
+		ctx, ref.Host, "gitlab", ref.Owner, ref.Name, 7,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, detailResp.StatusCode(), string(detailResp.Body))
+	require.NotNil(detailResp.JSON200)
+	require.NotNil(detailResp.JSON200.Events)
+	mergedEvents := make([]generated.MergeRequestEventResponse, 0, 1)
+	for _, event := range *detailResp.JSON200.Events {
+		if event.EventType == "merged" {
+			mergedEvents = append(mergedEvents, event)
+		}
+	}
+	require.Len(mergedEvents, 1,
+		"detail must not combine an authored event with a synthetic merge event")
+	require.Equal("merge-admin", mergedEvents[0].Author)
+	require.True(mergedEvents[0].CreatedAt.Equal(now))
+	require.NotNil(detailResp.JSON200.MergeRequest.MergedAt)
+	require.True(detailResp.JSON200.MergeRequest.MergedAt.Equal(mergedEvents[0].CreatedAt))
+
+	// Simulate a later accepted provider snapshot replacing the eager local
+	// merge timestamp. Existing databases may briefly contain an authored
+	// event at the old time; the detail response must still show one merge.
+	require.NoError(database.UpdateMRState(
+		ctx, repoID, 7, "merged", &mergedAt, &mergedAt,
+	))
+	detailResp, err = client.HTTP.GetPullOnHostWithResponse(
+		ctx, ref.Host, "gitlab", ref.Owner, ref.Name, 7,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, detailResp.StatusCode(), string(detailResp.Body))
+	require.NotNil(detailResp.JSON200)
+	require.NotNil(detailResp.JSON200.Events)
+	mergedEvents = mergedEvents[:0]
+	for _, event := range *detailResp.JSON200.Events {
+		if event.EventType == "merged" {
+			mergedEvents = append(mergedEvents, event)
+		}
+	}
+	require.Len(mergedEvents, 1,
+		"detail must not synthesize a second merge beside an authored event")
+	require.Equal("merge-admin", mergedEvents[0].Author)
+
+	// The merge response returns before the background backfill lands, so
+	// clients that reload immediately still hold the synthetic actorless
+	// event. The successful backfill must target the canonical detail identity.
+	var refreshPayload struct {
+		Provider     string   `json:"provider"`
+		PlatformHost string   `json:"platform_host"`
+		RepoPath     string   `json:"repo_path"`
+		Owner        string   `json:"owner"`
+		Name         string   `json:"name"`
+		Number       int      `json:"number"`
+		HeadSHA      string   `json:"head_sha"`
+		SyncedAt     string   `json:"synced_at"`
+		Warnings     []string `json:"warnings"`
+	}
+	require.Eventually(func() bool {
+		select {
+		case event := <-events:
+			if event.Event.Type != "pr_detail_refreshed" {
+				return false
+			}
+			raw, err := json.Marshal(event.Event.Data)
+			if err != nil {
+				return false
+			}
+			return json.Unmarshal(raw, &refreshPayload) == nil
+		default:
+			return false
+		}
+	}, 3*time.Second, 50*time.Millisecond,
+		"merged-actor backfill must target the open detail view")
+	require.Equal("gitlab", refreshPayload.Provider)
+	require.Equal(ref.Host, refreshPayload.PlatformHost)
+	require.Equal(ref.RepoPath, refreshPayload.RepoPath)
+	require.Equal(ref.Owner, refreshPayload.Owner)
+	require.Equal(ref.Name, refreshPayload.Name)
+	require.Equal(7, refreshPayload.Number)
+	require.Equal("head-sha", refreshPayload.HeadSHA)
+	require.Equal(now.Format(time.RFC3339), refreshPayload.SyncedAt)
+	require.Empty(refreshPayload.Warnings)
 }

@@ -5,9 +5,10 @@
 
 ## Goal
 
-Merge GitHub pull requests through GitHub's supported asynchronous merge API so
-GitHub-native stacked pull requests can be merged from Kenn Forge without
-weakening the existing reviewed-head guarantee.
+Merge GitHub.com pull requests through GitHub's supported asynchronous merge
+API so GitHub-native stacked pull requests can be merged from Kenn Forge
+without weakening the existing reviewed-head guarantee or regressing GitHub
+Enterprise Server hosts.
 
 ## Background
 
@@ -30,10 +31,18 @@ endpoints or introduce browser-cookie authentication into the daemon.
 
 ## Provider Behavior
 
-All GitHub merges will use the asynchronous endpoint, regardless of whether
-Kenn Forge currently recognizes the pull request as a native stack member.
-Using one path avoids a stale stack-membership check and matches GitHub's
-documented support for ordinary pull requests at the same endpoint.
+All GitHub.com merges will use the asynchronous endpoint, regardless of
+whether Kenn Forge currently recognizes the pull request as a native stack
+member. Using one path on that host avoids a stale stack-membership check and
+matches GitHub's documented support for ordinary pull requests at the same
+endpoint.
+
+GitHub Enterprise Server hosts will continue using the existing synchronous
+merge endpoint. Their deployed versions may not expose `merge-async` or accept
+API version `2026-03-10`, and GitHub does not advertise this operation through
+the provider capability data Kenn Forge currently reads. The implementation
+will select the asynchronous path only for the normalized `github.com` host; it
+will not probe and retry through a second mutation endpoint after a failure.
 
 The request will:
 
@@ -110,6 +119,8 @@ Focused GitHub client tests will cover:
 
 - the `merge-async` route, API-version header, request body, merge action, and
   reviewed-head binding;
+- preservation of the synchronous merge route for a custom GitHub Enterprise
+  host;
 - an immediate `merged` response;
 - `pending` followed by `merged` polling;
 - a terminal failure, including a stack-rebase-required message;
@@ -118,6 +129,12 @@ Focused GitHub client tests will cover:
 - cancellation while polling; and
 - an unexpected merge-queue result that must not be recorded as merged.
 
+Full-stack HTTP-and-SQLite tests with a fake GitHub upstream will exercise the
+Kenn Forge merge route through terminal success and terminal failure, asserting
+that only success persists merged state. Deferred merge coverage will drive the
+same asynchronous provider path after CI passes and assert terminal persistence
+and completion behavior.
+
 Existing provider and pull API tests remain the regression suite for server
-error mapping, local state updates, mid-stack safeguards, and deferred merges.
-No public Kenn Forge route or frontend response shape changes are required.
+error mapping, mid-stack safeguards, and other deferred-merge invariants. No
+public Kenn Forge route or frontend response shape changes are required.

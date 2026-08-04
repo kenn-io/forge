@@ -22,10 +22,10 @@ type Divergence struct {
 // WorktreeDivergence computes ahead/behind counts between the
 // worktree at dir and its `@{upstream}` tracking branch.
 //
-// The second return value is false when the branch has no upstream
-// configured — that is a normal state for fresh issue branches and
-// not an error. The error return is reserved for unexpected git
-// failures (missing worktree, command crashed, parse failure).
+// The second return value is false when upstream data is unavailable — either
+// HEAD is detached or the branch has no upstream configured. Those are normal
+// states, not errors. The error return is reserved for unexpected git failures
+// (missing worktree, command crashed, parse failure).
 func WorktreeDivergence(
 	ctx context.Context, dir string,
 ) (Divergence, bool, error) {
@@ -97,10 +97,11 @@ func WorktreeDivergence(
 // worktree's HEAD but not from its `@{upstream}` tracking branch — the commits
 // that have not been pushed yet.
 //
-// The second return value is false when the branch has no upstream configured.
-// Callers cannot infer push status in that case: a fresh branch has pushed
-// nothing, but a fork PR head also has no upstream while already existing on a
-// remote. The error return is reserved for unexpected git failures.
+// The second return value is false when upstream data is unavailable because
+// HEAD is detached or the branch has no upstream configured. Callers cannot
+// infer push status in that case: a fresh branch has pushed nothing, but a fork
+// PR head also has no upstream while already existing on a remote. The error
+// return is reserved for unexpected git failures.
 func WorktreeUnpushedSHAs(
 	ctx context.Context, dir string,
 ) (map[string]struct{}, bool, error) {

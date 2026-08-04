@@ -23,7 +23,9 @@ Kenn Forge manages three related but different things:
 
 Rules:
 
-- The base workspace `tmux` tab is part of the durable workspace experience.
+- The base workspace tmux session remains durable backend state, but production
+  workspace terminal panes are pooled runtime sessions; do not treat the primary
+  terminal endpoint as a mounted SPA workflow (`frontend/src/lib/components/terminal/PooledSessionTerminal.svelte`).
 - Launched agent sessions and shell sessions are not durable after natural exit.
 - The shell drawer is a singleton per workspace, but a tmux-backed shell should
   survive kenn-forge server restarts until the shell exits or the workspace is

@@ -27,6 +27,7 @@
     primaryTerminalFontFamily,
   } from "./terminalFontFamily.js";
   import { createInitialFocusIntent } from "./terminal-focus.js";
+  import { supportsReplayBoundary } from "./terminalReplayBoundary.js";
   import {
     clearSharedTerminalTextureAtlas,
     registerTerminalTextureAtlasParticipant,
@@ -399,19 +400,6 @@
     return `${proto}://${location.host}${withBasePath(withConnectionParams)}`;
   }
 
-  function supportsReplayBoundary(): boolean {
-    if (!websocketPath) return false;
-    try {
-      const pathname = new URL(websocketPath, window.location.href).pathname;
-      return (
-        !pathname.includes("/fleet/hosts/") &&
-        /\/workspaces\/[^/]+\/runtime\/sessions\/[^/]+\/terminal$/.test(pathname)
-      );
-    } catch {
-      return false;
-    }
-  }
-
   function withBasePath(path: string): string {
     const normalizedPath = path.startsWith("/") ? path : `/${path}`;
     if (!basePath) return normalizedPath;
@@ -639,7 +627,7 @@
     mouseDragAutoscroll.reset();
     const cols = terminal.cols;
     const rows = terminal.rows;
-    const replayBoundary = supportsReplayBoundary();
+    const replayBoundary = supportsReplayBoundary(websocketPath);
     const url = buildWsUrl(replayBoundary ? null : { cols, rows }, replayBoundary);
     if (!url) return;
     const socket = new WebSocket(url);

@@ -2,9 +2,12 @@ package github
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -226,6 +229,103 @@ func (p *preemptibleArchiveProvider) GetIssue(
 		return platform.Issue{}, ctx.Err()
 	}
 	return p.archiveWorkerProvider.GetIssue(ctx, ref, number)
+}
+
+func TestArchiveHydrationPRShapedIssueBecomesTerminalInSQLite(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	now := time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC)
+	ref := platform.RepoRef{
+		Platform: platform.KindGitHub, Host: "github.com",
+		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+		PlatformExternalID: "R_widget",
+	}
+	var hydrationCalls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/graphql":
+			var request struct {
+				Query string `json:"query"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				http.Error(w, `{"message":"invalid GraphQL request"}`, http.StatusBadRequest)
+				return
+			}
+			switch {
+			case strings.Contains(request.Query, "issues(first: 100"):
+				_, _ = w.Write([]byte(`{"data":{"repository":{"issues":{"nodes":[{"id":"I_11","databaseId":11,"number":11,"title":"historical issue identity","state":"CLOSED","body":"","url":"https://github.com/acme/widget/issues/11","author":{"login":"author"},"createdAt":"2025-01-01T00:00:00Z","updatedAt":"2025-01-02T00:00:00Z","closedAt":"2025-01-02T00:00:00Z","comments":{"totalCount":0},"labels":{"nodes":[]},"assignees":{"nodes":[]}}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}`))
+			case strings.Contains(request.Query, "pullRequests(first: 100"):
+				_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequests":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}`))
+			default:
+				http.Error(w, `{"message":"unexpected GraphQL query"}`, http.StatusBadRequest)
+			}
+		case "/api/v3/repos/acme/widget":
+			_, _ = w.Write([]byte(`{"id":1,"node_id":"R_widget","name":"widget","full_name":"acme/widget","owner":{"login":"acme"}}`))
+		case "/api/v3/repos/acme/widget/pulls":
+			_, _ = w.Write([]byte(`[]`))
+		case "/api/v3/repos/acme/widget/issues/11":
+			hydrationCalls.Add(1)
+			_, _ = w.Write([]byte(`{"id":11,"node_id":"PR_11","number":11,"repository_url":"https://api.github.com/repos/acme/widget","html_url":"https://github.com/acme/widget/pull/11","title":"actually a pull request","state":"closed","user":{"login":"author"},"pull_request":{"url":"https://api.github.com/repos/acme/widget/pulls/11"},"created_at":"2025-01-01T00:00:00Z","updated_at":"2025-01-02T00:00:00Z","closed_at":"2025-01-02T00:00:00Z"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	provider := newArchiveTestGitHubProvider(t, server.URL)
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	syncer := NewSyncerWithRegistry(
+		registry, database, nil,
+		[]RepoRef{{
+			Platform: ref.Platform, PlatformHost: ref.Host,
+			Owner: ref.Owner, Name: ref.Name, RepoPath: ref.RepoPath,
+			PlatformExternalID: ref.PlatformExternalID,
+		}},
+		time.Hour, nil, nil,
+	)
+	syncer.now = func() time.Time { return now }
+	service, err := archive.NewService(
+		database, registry, nil, syncer, nil,
+		archiveLifecycleClock{now: func() time.Time { return now }},
+	)
+	require.NoError(err)
+	require.NoError(service.EnsureConfigured(t.Context(), []platform.RepoRef{ref}))
+	_, err = service.Start(t.Context(), []platform.RepoRef{ref})
+	require.NoError(err)
+
+	require.NoError(service.RunEligible(t.Context())) // issue inventory
+	require.NoError(service.RunEligible(t.Context())) // pull-request inventory
+	require.NoError(service.RunEligible(t.Context())) // issue hydration
+
+	repo, err := database.GetRepoByIdentity(t.Context(), platform.DBRepoIdentity(ref))
+	require.NoError(err)
+	require.NotNil(repo)
+	progress, err := database.GetDatasetProgress(
+		t.Context(), repo.ID, db.ArchiveItemTypeIssue, 11, db.ArchiveDatasetLookup,
+	)
+	require.NoError(err)
+	assert.Equal(db.ArchiveDatasetProgressTerminal, progress.Status)
+	assert.Zero(progress.AttemptCount)
+	assert.Nil(progress.NextRetryAt)
+	require.NotNil(progress.LastErrorCode)
+	assert.Equal(string(platform.ErrCodeNotFound), *progress.LastErrorCode)
+	assert.NotNil(progress.CompletedAt)
+
+	var lifecycle db.ArchiveLifecycleState
+	require.NoError(database.ReadDB().QueryRowContext(t.Context(), `
+		SELECT lifecycle_state FROM forge_archive_items
+		WHERE repo_id = ? AND item_type = ? AND item_number = ?`,
+		repo.ID, db.ArchiveItemTypeIssue, 11,
+	).Scan(&lifecycle))
+	assert.Equal(db.ArchiveLifecycleStateRemovedUpstream, lifecycle)
+	assert.Equal(int32(1), hydrationCalls.Load())
+
+	require.NoError(service.RunEligible(t.Context()))
+	assert.Equal(int32(1), hydrationCalls.Load(),
+		"terminal archive lookup must not hydrate the PR-shaped issue again")
 }
 
 func TestArchivePreemptedItemRecordsNoFailureAndCompletesOnNextPass(t *testing.T) {

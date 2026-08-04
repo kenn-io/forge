@@ -13439,6 +13439,50 @@ func TestSyncerRemovedIssueTombstonedInsteadOfFailing(t *testing.T) {
 		"tombstoned issue must not be re-fetched")
 }
 
+// TestFetchAndUpdateClosedIssueTombstonesPRShapedResponse verifies that the
+// issue-only closure path does not normalize a pull request returned by the
+// Issues API back into an issue. Without the tombstone, the stale open row
+// remains eligible for the same lookup on every repository sync.
+func TestFetchAndUpdateClosedIssueTombstonesPRShapedResponse(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+
+	now := time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC)
+	repo := RepoRef{
+		Platform: platform.KindGitHub, PlatformHost: "github.com",
+		Owner: "owner", Name: "repo",
+	}
+	repoID, err := database.UpsertRepo(
+		ctx, verifiedGitHubRepoIdentity("github.com", repo.Owner, repo.Name),
+	)
+	require.NoError(err)
+	issue := buildOpenIssue(7, now)
+	normalized, err := NormalizeIssue(repoID, issue)
+	require.NoError(err)
+	_, err = database.UpsertIssue(ctx, normalized)
+	require.NoError(err)
+
+	pullURL := "https://api.github.com/repos/owner/repo/pulls/7"
+	issue.PullRequestLinks = &gh.PullRequestLinks{URL: &pullURL}
+	client := &mockClient{
+		getIssueFn: func(context.Context, string, string, int) (*gh.Issue, error) {
+			return issue, nil
+		},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client}, database, nil,
+		[]RepoRef{repo}, time.Minute, nil, nil,
+	)
+
+	require.NoError(syncer.fetchAndUpdateClosedIssue(ctx, repo, repoID, 7))
+	stored, err := database.GetIssueByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal("closed", stored.State)
+}
+
 // TestSyncerBudgetRefusedPRListSkipsETagEviction verifies that when the
 // open-PR list fetch is refused by the local sync budget ceiling, the repo
 // is not marked for ETag eviction: the refusal happened before any wire

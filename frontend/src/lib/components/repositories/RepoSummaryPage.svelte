@@ -25,6 +25,7 @@
   import RepoIssueModal from "./RepoIssueModal.svelte";
   import {
     normalizeSummaries,
+    providerRepoStateKey,
     repoKey,
     repoStateKey,
     isStaleRelease,
@@ -42,6 +43,7 @@
   const initialFilters = loadRepoSummaryFilters();
 
   let summaries = $state<RepoSummaryCardData[]>([]);
+  let roborevConfiguredRepos = $state.raw<Set<string>>(new Set());
   let loading = $state(true);
   let loadError = $state<string | null>(null);
   let composerSummary = $state<RepoSummaryCardData | null>(null);
@@ -193,6 +195,18 @@
       loadError = err instanceof Error ? err.message : "failed to load repositories";
     } finally {
       loading = false;
+    }
+  }
+
+  async function loadRoborevConfiguredRepositories(): Promise<void> {
+    try {
+      const { data, error } = await client.GET("/roborev/configured-repositories");
+      if (error || !data) return;
+      roborevConfiguredRepos = new Set(
+        (data.repositories ?? []).map(providerRepoStateKey),
+      );
+    } catch {
+      // Roborev is optional; repository summaries remain authoritative.
     }
   }
 
@@ -377,6 +391,7 @@
 
   onMount(() => {
     void loadSummaries();
+    void loadRoborevConfiguredRepositories();
     const unsubscribe =
       stores.sync.subscribeSyncComplete(() => {
         void loadSummaries();
@@ -522,6 +537,7 @@
       {#each filteredSummaries as summary (repoStateKey(summary))}
         <RepoSummaryCard
           {summary}
+          roborevConfigured={roborevConfiguredRepos.has(repoStateKey(summary))}
           showProviderIcon={showProviderIcons}
           onviewprs={() =>
             filterAndNavigate(summary, "/pulls")}

@@ -6694,6 +6694,48 @@ components:
         - number
         - repo_tracked
       type: object
+    RoborevConfiguredRepositoriesResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/RoborevConfiguredRepositoriesResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        complete:
+          type: boolean
+        repositories:
+          items:
+            $ref: "#/components/schemas/RoborevConfiguredRepositoryResponse"
+          type:
+            - array
+            - "null"
+      required:
+        - repositories
+        - complete
+      type: object
+    RoborevConfiguredRepositoryResponse:
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        owner:
+          type: string
+        platform_host:
+          type: string
+        provider:
+          type: string
+        repo_path:
+          type: string
+      required:
+        - provider
+        - platform_host
+        - repo_path
+        - owner
+        - name
+      type: object
     RoborevStatusResponse:
       additionalProperties: false
       properties:
@@ -18200,6 +18242,25 @@ paths:
       summary: List repository summaries
       tags:
         - Repositories
+  /roborev/configured-repositories:
+    get:
+      operationId: list-roborev-configured-repositories
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoborevConfiguredRepositoriesResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: List repositories configured for Roborev
+      tags:
+        - Roborev
   /roborev/status:
     get:
       operationId: get-roborev-status

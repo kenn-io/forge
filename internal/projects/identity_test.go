@@ -60,6 +60,52 @@ func TestParseRemoteURL_OtherHosts(t *testing.T) {
 	}
 }
 
+func TestParseRemoteURL_PreservesCaseForCaseSensitiveProviders(t *testing.T) {
+	tests := []struct {
+		name     string
+		remote   string
+		known    []KnownPlatformHost
+		provider string
+		owner    string
+		repo     string
+	}{
+		{
+			name:     "gitlab",
+			remote:   "https://gitlab.com/Group/Subgroup/Service.git",
+			provider: "gitlab",
+			owner:    "Group/Subgroup",
+			repo:     "Service",
+		},
+		{
+			name:     "forgejo",
+			remote:   "https://codeberg.org/Acme/Service.git",
+			provider: "forgejo",
+			owner:    "Acme",
+			repo:     "Service",
+		},
+		{
+			name:     "gitea",
+			remote:   "https://git.example.com/Acme/Service.git",
+			known:    []KnownPlatformHost{{Platform: "gitea", Host: "git.example.com"}},
+			provider: "gitea",
+			owner:    "Acme",
+			repo:     "Service",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			identity := ParseRemoteURLWithKnownPlatforms(tt.remote, tt.known)
+			require.NotNil(identity)
+			assert.Equal(tt.provider, identity.Platform)
+			assert.Equal(tt.owner, identity.Owner)
+			assert.Equal(tt.repo, identity.Name)
+		})
+	}
+}
+
 func TestParseRemoteURL_ConfiguredSelfHostedGitLab(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

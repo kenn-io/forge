@@ -1,9 +1,43 @@
 import { describe, expect, it } from "vite-plus/test";
 import type { RepoSummary } from "@kenn-forge/ui/api/types";
 
-import { defaultProviderCapabilities, normalizeSummaries, repoKey, shouldShowPlatformHost } from "./repoSummary.js";
+import {
+  defaultProviderCapabilities,
+  normalizeSummaries,
+  providerRepoStateKey,
+  repoKey,
+  shouldShowPlatformHost,
+} from "./repoSummary.js";
 
 describe("repo summary labels", () => {
+  it("canonicalizes provider aliases while preserving case-sensitive repository paths", () => {
+    const stored = {
+      provider: "fj",
+      platform_host: "CODEBERG.org",
+      repo_path: "MixedCase/Service",
+    };
+
+    expect(providerRepoStateKey(stored)).toBe("forgejo|codeberg.org/MixedCase/Service");
+    expect(
+      providerRepoStateKey({
+        provider: "forgejo",
+        platform_host: "codeberg.org",
+        repo_path: "MixedCase/Service",
+      }),
+    ).toBe(providerRepoStateKey(stored));
+    expect(stored.repo_path).toBe("MixedCase/Service");
+  });
+
+  it("case-folds GitHub repository paths for identity comparison", () => {
+    expect(
+      providerRepoStateKey({
+        provider: "gh",
+        platform_host: "GITHUB.COM",
+        repo_path: "Acme/Widgets",
+      }),
+    ).toBe("github|github.com/acme/widgets");
+  });
+
   it("hides github.com when it is the default platform host", () => {
     const summary = {
       platform_host: "github.com",

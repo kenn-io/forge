@@ -293,12 +293,17 @@ fallback repository listing.
   registers the repo credential alias for the recovered route so repo-scoped
   credentials do not fall through to owner or host routes. Config-entry
   matching (glob refresh, entry removal) honors provenance the same way — a
-  renamed repo still belongs to its exact entry — and removal clears
-  provenance whose entry no longer exists, so a stale claim cannot bind a
-  future entry with the same path to the wrong repository.
-  Publications locate their tracked slot by stable identity first and refuse
-  the route fallback across conflicting ids, so a stale sync of a
-  renamed-away repository cannot overwrite the route successor's state.
+  renamed repo still belongs to its exact entry, scoped to the entry's
+  provider and host since the same path can be configured on several — and
+  removal clears provenance whose entry no longer exists, so a stale claim
+  cannot bind a future entry with the same path to the wrong repository.
+  Publications locate their tracked slot by stable identity first, keyed on
+  the resolved id: the provider response says whose data this is, so a
+  lookup through a reused route lands on the tracked successor, never on
+  the repository the snapshot named. The route fallback may displace the
+  snapshot's own entry — configured-route reuse replaces the occupant and
+  the archive lifecycle pauses the old repository — but never an entry
+  whose id conflicts with the snapshot.
   (`internal/github/repo_config_resolver.go::FallbackConfiguredRepoRefs`,
   `internal/github/repo_config_resolver.go::ExpandedRepoSet`,
   `internal/github/sync.go::repoRefFromCatalog`,

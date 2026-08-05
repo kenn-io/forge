@@ -10428,6 +10428,44 @@ func TestPublishResolvedRepositoryDoesNotOverwriteRouteSuccessor(t *testing.T) {
 	assert.False(got.Archived)
 }
 
+func TestPublishResolvedRepositoryLandsCrossIdentityLookupOnSuccessor(t *testing.T) {
+	assert := assert.New(t)
+	d := openTestDB(t)
+	renamed := RepoRef{
+		Owner: "acme", Name: "tools-new", PlatformHost: "github.com",
+		RepoPath: "acme/tools-new", PlatformExternalID: "repo-x",
+	}
+	successor := RepoRef{
+		Owner: "acme", Name: "tools", PlatformHost: "github.com",
+		RepoPath: "acme/tools", PlatformExternalID: "repo-y",
+	}
+	syncer := NewSyncer(
+		map[string]Client{}, d, nil,
+		[]RepoRef{renamed, successor}, time.Hour, nil, nil,
+	)
+
+	// An in-flight lookup keyed by the old route resolved the successor:
+	// the snapshot carries the renamed repo's id, the response the
+	// successor's. The publication belongs to the successor — it must not
+	// overwrite the renamed repository's entry.
+	previous := RepoRef{
+		Owner: "acme", Name: "tools", PlatformHost: "github.com",
+		RepoPath: "acme/tools", PlatformExternalID: "repo-x",
+	}
+	resolved := successor
+	resolved.DefaultBranch = "main"
+	syncer.publishResolvedRepository(previous, resolved, true)
+
+	byID := make(map[string]RepoRef)
+	for _, repo := range syncer.TrackedRepos() {
+		byID[repo.PlatformExternalID] = repo
+	}
+	assert.Len(byID, 2, "the renamed repository must not be overwritten")
+	assert.Equal("tools-new", byID["repo-x"].Name)
+	assert.Equal("main", byID["repo-y"].DefaultBranch,
+		"the publication lands on the repository the provider identified")
+}
+
 func TestPublishResolvedRepositoryPreservesNewerConfiguredRepoPath(t *testing.T) {
 	assert := assert.New(t)
 	d := openTestDB(t)

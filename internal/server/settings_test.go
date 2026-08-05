@@ -451,7 +451,11 @@ func TestHandleUpdateSettingsPublishesPullConfigOnlyAfterPersistence(t *testing.
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 	require.True(srv.pullAPI.ConfigSnapshot().AllowMidStackMerges)
 
+	// Swapped under the reload lock: the config watcher goroutine reads
+	// cfgPath under configReloadMu.
+	srv.configReloadMu.Lock()
 	srv.cfgPath = t.TempDir()
+	srv.configReloadMu.Unlock()
 	disabled := config.PullRequests{AllowMidStackMerges: false}
 	rr = doJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
 		PullRequests: &disabled,
@@ -1846,6 +1850,63 @@ name = "*"
 	require.True(t, srv.syncer.IsTrackedRepo("acme", "tools-new"))
 	assert.Empty(t, trackedRepoProvenancePath(srv, "acme", "tools-new"),
 		"provenance must clear when its exact entry is removed")
+}
+
+func TestHandleDeleteExactEntryIgnoresSamePathOnOtherHost(t *testing.T) {
+	mock := &mockGH{
+		getRepositoryFn: func(
+			_ context.Context, owner, repo string,
+		) (*gh.Repository, error) {
+			return &gh.Repository{
+				Name:  new(repo),
+				Owner: &gh.User{Login: new(owner)},
+			}, nil
+		},
+		listReposByOwnerFn: func(
+			_ context.Context, owner string,
+		) ([]*gh.Repository, error) {
+			return []*gh.Repository{{
+				Name:  new("tools-new"),
+				Owner: &gh.User{Login: new(owner)},
+			}}, nil
+		},
+	}
+	srv, _, _ := setupTestServerWithConfigContent(t, `
+sync_interval = "5m"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "tools"
+
+[[repos]]
+owner = "acme"
+name = "*"
+
+[[repos]]
+owner = "acme"
+name = "tools"
+platform_host = "ghe.example.com"
+`, mock)
+
+	srv.syncer.SetRepos([]ghclient.RepoRef{{
+		Platform: platform.KindGitHub, Owner: "acme", Name: "tools-new",
+		PlatformHost: "github.com", RepoPath: "acme/tools-new",
+		PlatformExternalID: "repo-x", ConfiguredRepoPath: "acme/tools",
+	}})
+
+	// The remaining acme/tools entry lives on a different host; it cannot
+	// keep the deleted github.com entry's provenance alive.
+	rr := doJSON(
+		t, srv, http.MethodDelete,
+		"/api/v1/repo/gh/acme/tools", nil,
+	)
+	require.Equal(t, http.StatusNoContent, rr.Code, rr.Body.String())
+	require.True(t, srv.syncer.IsTrackedRepo("acme", "tools-new"))
+	assert.Empty(t, trackedRepoProvenancePath(srv, "acme", "tools-new"),
+		"an entry with the same path on another host must not retain provenance")
 }
 
 func TestHandleDeleteRepoUsesProviderHostQuery(t *testing.T) {

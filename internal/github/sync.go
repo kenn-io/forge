@@ -5586,7 +5586,7 @@ func (s *Syncer) publishResolvedRepository(
 	s.aliasRenamedCredentialRoute(previous, resolved)
 	s.reposMu.Lock()
 	defer s.reposMu.Unlock()
-	i, ok := s.trackedRepoSlotLocked(previous)
+	i, ok := s.trackedRepoSlotLocked(previous, resolved)
 	if !ok {
 		return
 	}
@@ -5612,20 +5612,34 @@ func (s *Syncer) publishResolvedRepository(
 
 // trackedRepoSlotLocked locates the tracked entry a publication should land
 // on: stable provider identity first — a renamed route must still find its
-// repository — then the route key, rejected when both sides carry different
-// ids because that means the route was reused by another repository whose
-// tracked state a stale publication must not overwrite. Callers hold reposMu.
-func (s *Syncer) trackedRepoSlotLocked(previous RepoRef) (int, bool) {
+// repository — then the route key, rejected when the ids conflict because
+// that means the route was reused by another repository whose tracked state
+// a stale publication must not overwrite. The resolved id outranks the
+// snapshot id: the provider response says whose data this is, so a lookup
+// keyed by a reused route lands on the successor, never on the repository
+// the snapshot named. Callers hold reposMu.
+func (s *Syncer) trackedRepoSlotLocked(previous, resolved RepoRef) (int, bool) {
 	previousID := strings.TrimSpace(previous.PlatformExternalID)
-	if previousID != "" {
+	resolvedID := strings.TrimSpace(resolved.PlatformExternalID)
+	lookupID := resolvedID
+	if lookupID == "" {
+		lookupID = previousID
+	}
+	if lookupID != "" {
 		for i := range s.repos {
 			if repoPlatform(s.repos[i]) == repoPlatform(previous) &&
 				strings.EqualFold(repoHost(s.repos[i]), repoHost(previous)) &&
-				strings.TrimSpace(s.repos[i].PlatformExternalID) == previousID {
+				strings.TrimSpace(s.repos[i].PlatformExternalID) == lookupID {
 				return i, true
 			}
 		}
 	}
+	// Route fallback: landing on the entry this operation snapshotted is
+	// legitimate even under a new resolved identity — a configured route
+	// reused by a replacement repository displaces its tracked occupant,
+	// and the archive lifecycle pauses the old repository. Landing on an
+	// entry whose id conflicts with the snapshot is not: that entry is a
+	// different repository this publication knows nothing about.
 	for i := range s.repos {
 		if repoPriorityKey(s.repos[i]) != repoPriorityKey(previous) {
 			continue

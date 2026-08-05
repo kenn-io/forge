@@ -310,11 +310,13 @@ func (s *Server) startConfigWatcher() {
 // event. The daemon stays running on the previous in-memory config when
 // the reload fails so an editor mid-save cannot crash the process.
 func (s *Server) handleConfigFileChanged() {
+	s.configReloadMu.Lock()
+	defer s.configReloadMu.Unlock()
+	// Checked under the reload lock: cfgPath is settled at construction,
+	// but tests swap it to exercise persistence failures.
 	if s.cfgPath == "" {
 		return
 	}
-	s.configReloadMu.Lock()
-	defer s.configReloadMu.Unlock()
 
 	event := s.applyConfigChange(s.bgCtx)
 	s.hub.Broadcast(Event{

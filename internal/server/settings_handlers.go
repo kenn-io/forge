@@ -342,7 +342,7 @@ func repoMatchesConfig(
 	// A provider-side rename moves the tracked route (possibly across
 	// owners) away from the configured path; provenance still ties the
 	// repo to its exact entry.
-	if repoMatchesConfigProvenance(repo, raw) {
+	if repoConfiguredPathMatches(repo, raw) {
 		return true
 	}
 	if !strings.EqualFold(repo.Owner, raw.Owner) {
@@ -359,7 +359,18 @@ func repoMatchesConfig(
 		strings.EqualFold(repo.Name, raw.Name)
 }
 
+// repoMatchesConfigProvenance reports whether raw is the exact entry the
+// tracked repo's provenance names — provider- and host-scoped, since the
+// same path can be configured on multiple providers or hosts.
 func repoMatchesConfigProvenance(
+	repo ghclient.RepoRef, raw config.Repo,
+) bool {
+	return strings.EqualFold(repoProvider(repo), raw.PlatformOrDefault()) &&
+		samePlatformHost(repo.PlatformHost, raw.PlatformHostOrDefault()) &&
+		repoConfiguredPathMatches(repo, raw)
+}
+
+func repoConfiguredPathMatches(
 	repo ghclient.RepoRef, raw config.Repo,
 ) bool {
 	return !raw.HasNameGlob() && repo.ConfiguredRepoPath != "" &&

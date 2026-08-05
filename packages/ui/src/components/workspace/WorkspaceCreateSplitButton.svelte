@@ -182,9 +182,6 @@
       style={menuStyle}
       {@attach portalMenu}
     >
-      <li role="none" class="create-menu-heading">
-        <span aria-hidden="true">Create and launch</span>
-      </li>
       {#each agentTargets as target (target.key)}
         <li role="none">
           <button
@@ -292,15 +289,6 @@
     margin: 0;
     padding: var(--space-2);
     list-style: none;
-  }
-
-  .create-menu-heading {
-    padding: var(--space-2) var(--space-3);
-    color: var(--text-faint);
-    font-size: var(--font-size-3xs);
-    font-weight: 600;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
   }
 
   .create-menu button {

@@ -79,7 +79,7 @@ describe("WorkspaceCreateSplitButton", () => {
     expect(screen.getByRole("menuitem", { name: "Codex" }).getAttribute("aria-describedby")).toBeNull();
   });
 
-  it("offers only agents and passes the chosen target", async () => {
+  it("offers only agents without a redundant visible heading and passes the chosen target", async () => {
     const onCreate = vi.fn();
     render(WorkspaceCreateSplitButton, {
       props: { label: "Create Workspace", launchTargets: targets, onCreate },
@@ -87,6 +87,7 @@ describe("WorkspaceCreateSplitButton", () => {
 
     await fireEvent.click(screen.getByRole("button", { name: "Create Workspace options" }));
 
+    expect(screen.queryByText("Create and launch")).toBeNull();
     expect(screen.queryByRole("menuitem", { name: "Shell" })).toBeNull();
 
     await fireEvent.click(screen.getByRole("menuitem", { name: "Codex" }));

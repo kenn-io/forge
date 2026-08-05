@@ -979,6 +979,60 @@ func TestSyncReusedRouteResolvingSuccessorKeepsBothReposTracked(t *testing.T) {
 	assert.NotEqual(oldEntry.Repository.ID, newEntry.Repository.ID)
 }
 
+func TestSyncRouteReplacementIgnoresDisplacedArchivedFlipE2E(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	database := dbtest.Open(t)
+	// The tracked occupant of the configured route was archived after this
+	// sync pass snapshotted it, and the route meanwhile resolves to an
+	// untracked replacement repository. The displaced repo's archived flip
+	// must not stamp the replacement, which would silently exclude it from
+	// live sync.
+	displaced := RepoRef{
+		Platform: platform.KindGitLab, PlatformHost: "gitlab.test",
+		Owner: "group", Name: "project", RepoPath: "group/project",
+		PlatformExternalID: "gid://gitlab/Project/old", Archived: true,
+	}
+	provider := &syncTestRepositoryReadProvider{
+		syncTestReadProvider: &syncTestReadProvider{
+			syncTestProvider: syncTestProvider{
+				kind: platform.KindGitLab, host: "gitlab.test",
+			},
+		},
+		repository: platform.Repository{
+			Ref: platform.RepoRef{
+				Platform: platform.KindGitLab, Host: "gitlab.test",
+				Owner: "group", Name: "project", RepoPath: "group/project",
+			},
+			PlatformExternalID: "gid://gitlab/Project/new",
+			Archived:           false,
+		},
+	}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	syncer := NewSyncerWithRegistry(
+		registry, database, nil, []RepoRef{displaced}, time.Hour, nil, nil,
+	)
+	service, err := archive.NewService(database, registry, nil, syncer, nil, nil)
+	require.NoError(err)
+	syncer.SetArchiveService(service)
+	_, err = service.EnsureConfigured(
+		ctx, []platform.RepoRef{platformRepoRef(displaced)},
+	)
+	require.NoError(err)
+
+	snapshot := displaced
+	snapshot.Archived = false
+	require.NoError(syncer.syncRepo(ctx, snapshot))
+
+	tracked := syncer.TrackedRepos()
+	require.Len(tracked, 1)
+	assert.Equal("gid://gitlab/Project/new", tracked[0].PlatformExternalID)
+	assert.False(tracked[0].Archived,
+		"the replacement keeps its authoritative unarchived state")
+}
+
 func TestArchiveAdmissionSharesSyncBudgetAndProviderReserve(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

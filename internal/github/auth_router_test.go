@@ -1342,7 +1342,7 @@ func TestPublishResolvedRepositoryClearsDisplacedCredentialAlias(t *testing.T) {
 		Platform: platform.KindGitHub, PlatformHost: "github.com",
 		Owner: "acme", Name: "widget", PlatformExternalID: "R_new",
 	}
-	syncer.publishResolvedRepository(replacement, replacement)
+	syncer.publishResolvedRepository(replacement, replacement, true)
 
 	_, err = router.ReadIdentityForRepo("acme", "widget")
 	require.Error(err,

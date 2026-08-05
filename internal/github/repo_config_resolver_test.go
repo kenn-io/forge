@@ -130,6 +130,34 @@ func TestExpandedRepoSetPrefersResolvedOverFallbackDuplicates(t *testing.T) {
 	assert.Equal([]RepoRef{resolved}, set.Refs())
 }
 
+func TestExpandedRepoSetReconcilesRenamedRouteByProviderIdentity(t *testing.T) {
+	assert := assert.New(t)
+	// A fallback ref keeps the old route of a renamed repo; the resolved
+	// duplicate arrives under the new route with the same stable provider
+	// id. Route-keyed dedup alone would track both and sync them twice.
+	fallback := RepoRef{
+		Platform: platform.KindGitHub, Owner: "acme", Name: "old-name",
+		PlatformHost: "github.com", RepoPath: "acme/old-name",
+		PlatformExternalID: "repo-x",
+	}
+	resolved := RepoRef{
+		Platform: platform.KindGitHub, Owner: "acme", Name: "new-name",
+		PlatformHost: "github.com", RepoPath: "acme/new-name",
+		PlatformExternalID: "repo-x", Archived: true,
+	}
+
+	set := NewExpandedRepoSet()
+	set.Add(fallback, false)
+	set.Add(resolved, true)
+	assert.Equal([]RepoRef{resolved}, set.Refs())
+
+	// The resolved route survives a later fallback under the old route.
+	set = NewExpandedRepoSet()
+	set.Add(resolved, true)
+	set.Add(fallback, false)
+	assert.Equal([]RepoRef{resolved}, set.Refs())
+}
+
 func TestResolveConfiguredRepos_DeduplicatesExactAndGlobMatches(t *testing.T) {
 	assert := assert.New(t)
 	client := &mockClient{

@@ -4975,7 +4975,7 @@ func TestSyncerOwnsConstructorRepositorySlice(t *testing.T) {
 	syncer.publishResolvedRepository(repos[0], RepoRef{
 		Platform: platform.KindGitHub, PlatformHost: "github.com",
 		Owner: "org-a", Name: "new-name", RepoPath: "org-a/new-name",
-	})
+	}, true)
 
 	assert.Equal("old-name", repos[0].Name)
 	assert.Equal("org-a/old-name", repos[0].RepoPath)
@@ -5054,8 +5054,8 @@ func TestIsTrackedRepoConcurrentPublishResolvedRepository(t *testing.T) {
 	wg.Go(func() {
 		<-start
 		for range iterations {
-			syncer.publishResolvedRepository(orig, renamed)
-			syncer.publishResolvedRepository(renamed, orig)
+			syncer.publishResolvedRepository(orig, renamed, true)
+			syncer.publishResolvedRepository(renamed, orig, true)
 		}
 	})
 	for range 4 {
@@ -10304,6 +10304,33 @@ func TestRepoRefFromCatalogKeepsArchived(t *testing.T) {
 	assert.False(repoRefFromCatalog(previous, stored, &platform.Repository{
 		Archived: false,
 	}).Archived)
+}
+
+func TestPublishResolvedRepositoryPreservesNewerArchivedState(t *testing.T) {
+	assert := assert.New(t)
+	d := openTestDB(t)
+	tracked := RepoRef{
+		Owner: "acme", Name: "frozen", PlatformHost: "github.com",
+		RepoPath: "acme/frozen", Archived: true,
+	}
+	syncer := NewSyncer(
+		map[string]Client{}, d, nil, []RepoRef{tracked}, time.Hour, nil, nil,
+	)
+
+	// A sync that began before the repo was marked archived publishes a
+	// catalog identity built from its stale snapshot. Without fresh
+	// provider metadata the currently tracked archived flag must survive.
+	stale := tracked
+	stale.Archived = false
+	syncer.publishResolvedRepository(stale, stale, false)
+	assert.True(syncer.TrackedRepos()[0].Archived,
+		"a stale catalog republication must not clear archived state")
+
+	// Fresh provider metadata is authoritative in both directions.
+	unarchived := tracked
+	unarchived.Archived = false
+	syncer.publishResolvedRepository(tracked, unarchived, true)
+	assert.False(syncer.TrackedRepos()[0].Archived)
 }
 
 func TestRunOnceScopesGitHubProviderReserveToRepoCredential(t *testing.T) {
@@ -18037,7 +18064,7 @@ func TestPublishResolvedRepositoryAliasesCredentialRoute(t *testing.T) {
 	renamed := configured
 	renamed.Name = "gadget"
 	renamed.RepoPath = "acme/gadget"
-	syncer.publishResolvedRepository(configured, renamed)
+	syncer.publishResolvedRepository(configured, renamed, true)
 
 	identity, ok := syncer.ReadIdentityForRepo(renamed)
 	require.True(ok)

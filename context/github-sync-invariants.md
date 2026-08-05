@@ -266,6 +266,16 @@ fallback repository listing.
   `internal/github/sync.go::watchedMRsForFastSync`,
   `internal/server/settings_handlers.go::mergeTrackedRepos`,
   `internal/server/settings_handlers.go::replaceGlobRepos`)
+- Tracked-set deduplication reconciles by stable provider id when one is
+  present, falling back to the route key: a renamed route must collapse onto
+  the same tracked entry, never sync or archive-seed the repository twice.
+  Provider-resolved refs replace fallback-derived duplicates; fallback refs
+  never overwrite resolved ones. (`internal/github/repo_config_resolver.go::ExpandedRepoSet`,
+  `internal/server/settings_handlers.go::trackedRepoIndex`)
+- Catalog republication without fresh provider metadata preserves the
+  currently tracked archived flag: a sync that began before a newer archived
+  flip must not clear it when its own snapshot predates the flip.
+  (`internal/github/sync.go::publishResolvedRepository`)
   Archived state refreshes wherever resolution already happens (startup,
   config reload, settings add/refresh) and must survive catalog
   republication, which cannot read it from the store. GitLab namespace

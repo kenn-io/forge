@@ -1066,6 +1066,30 @@ name = "*"
 		"archived repo open MRs must not enter fast sync after refresh")
 }
 
+func TestMergeTrackedReposReconcilesRenamedRouteByProviderIdentity(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, _, _ := setupTestServerWithConfig(t)
+	srv.syncer.SetRepos([]ghclient.RepoRef{{
+		Platform: platform.KindGitHub, Owner: "acme", Name: "old-name",
+		PlatformHost: "github.com", RepoPath: "acme/old-name",
+		PlatformExternalID: "repo-x",
+	}})
+
+	// The same stable provider id resolves under a renamed route: the
+	// tracked set must reconcile to one entry, not sync both routes.
+	srv.mergeTrackedRepos([]ghclient.RepoRef{{
+		Platform: platform.KindGitHub, Owner: "acme", Name: "new-name",
+		PlatformHost: "github.com", RepoPath: "acme/new-name",
+		PlatformExternalID: "repo-x", Archived: true,
+	}})
+
+	tracked := srv.syncer.TrackedRepos()
+	require.Len(tracked, 1)
+	assert.Equal("new-name", tracked[0].Name)
+	assert.True(tracked[0].Archived)
+}
+
 func trackedRepoArchived(srv *Server, owner, name string) bool {
 	for _, repo := range srv.syncer.TrackedRepos() {
 		if strings.EqualFold(repo.Owner, owner) && strings.EqualFold(repo.Name, name) {

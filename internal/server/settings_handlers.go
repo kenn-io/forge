@@ -156,22 +156,24 @@ func matchedRepoCount(
 }
 
 // mergeTrackedRepos adds repos to the syncer's tracked set, deduplicating by
-// host/owner/name. An already-tracked repo takes the freshly resolved
-// metadata so provider state transitions (renames, archived flips) apply
-// without a daemon restart.
+// stable provider id when present and host/owner/name otherwise. An
+// already-tracked repo takes the freshly resolved metadata so provider state
+// transitions (renames, archived flips) apply without a daemon restart.
 func (s *Server) mergeTrackedRepos(add []ghclient.RepoRef) {
 	current := s.syncer.TrackedRepos()
-	index := make(map[string]int, len(current))
+	byRoute := make(map[string]int, len(current))
+	byIdentity := make(map[string]int, len(current))
 	for i, r := range current {
-		index[trackedRepoKey(r)] = i
+		indexTrackedRepo(byRoute, byIdentity, r, i)
 	}
 	for _, r := range add {
-		key := trackedRepoKey(r)
-		if i, ok := index[key]; ok {
+		if i, ok := trackedRepoIndex(byRoute, byIdentity, r); ok {
+			unindexTrackedRepo(byRoute, byIdentity, current[i])
 			current[i] = r
+			indexTrackedRepo(byRoute, byIdentity, r, i)
 			continue
 		}
-		index[key] = len(current)
+		indexTrackedRepo(byRoute, byIdentity, r, len(current))
 		current = append(current, r)
 	}
 	s.syncer.SetRepos(current)
@@ -187,28 +189,29 @@ func (s *Server) replaceGlobRepos(
 ) {
 	current := s.syncer.TrackedRepos()
 	kept := make([]ghclient.RepoRef, 0, len(current))
-	index := make(map[string]int, len(current)+len(expanded))
+	byRoute := make(map[string]int, len(current)+len(expanded))
+	byIdentity := make(map[string]int, len(current)+len(expanded))
 	for _, repo := range current {
 		if repoMatchesConfig(repo, raw) &&
 			!repoMatchesOtherConfig(repo, raw, configured) {
 			continue
 		}
-		key := trackedRepoKey(repo)
-		if _, ok := index[key]; ok {
+		if _, ok := trackedRepoIndex(byRoute, byIdentity, repo); ok {
 			continue
 		}
-		index[key] = len(kept)
+		indexTrackedRepo(byRoute, byIdentity, repo, len(kept))
 		kept = append(kept, repo)
 	}
 	// Freshly resolved matches overwrite refs kept for overlapping config
 	// entries so provider state transitions (renames, archived flips) apply.
 	for _, repo := range expanded {
-		key := trackedRepoKey(repo)
-		if i, ok := index[key]; ok {
+		if i, ok := trackedRepoIndex(byRoute, byIdentity, repo); ok {
+			unindexTrackedRepo(byRoute, byIdentity, kept[i])
 			kept[i] = repo
+			indexTrackedRepo(byRoute, byIdentity, repo, i)
 			continue
 		}
-		index[key] = len(kept)
+		indexTrackedRepo(byRoute, byIdentity, repo, len(kept))
 		kept = append(kept, repo)
 	}
 	s.syncer.SetRepos(kept)
@@ -369,6 +372,49 @@ func trackedRepoKey(repo ghclient.RepoRef) string {
 	return repoProvider(repo) + "\x00" +
 		trackedRepoHost(repo) + "\x00" +
 		strings.ToLower(strings.Trim(trackedRepoPath(repo), "/ "))
+}
+
+// trackedRepoIdentityKey keys a tracked repo by its stable provider id, so a
+// renamed route reconciles onto the same entry instead of tracking the
+// repository twice. Empty when the ref carries no provider id.
+func trackedRepoIdentityKey(repo ghclient.RepoRef) string {
+	if strings.TrimSpace(repo.PlatformExternalID) == "" {
+		return ""
+	}
+	return repoProvider(repo) + "\x00" +
+		trackedRepoHost(repo) + "\x00" + repo.PlatformExternalID
+}
+
+// trackedRepoIndex locates repo in current, matching by stable provider id
+// first and falling back to the route key.
+func trackedRepoIndex(
+	byRoute, byIdentity map[string]int, repo ghclient.RepoRef,
+) (int, bool) {
+	if key := trackedRepoIdentityKey(repo); key != "" {
+		if i, ok := byIdentity[key]; ok {
+			return i, true
+		}
+	}
+	i, ok := byRoute[trackedRepoKey(repo)]
+	return i, ok
+}
+
+func indexTrackedRepo(
+	byRoute, byIdentity map[string]int, repo ghclient.RepoRef, slot int,
+) {
+	byRoute[trackedRepoKey(repo)] = slot
+	if key := trackedRepoIdentityKey(repo); key != "" {
+		byIdentity[key] = slot
+	}
+}
+
+func unindexTrackedRepo(
+	byRoute, byIdentity map[string]int, repo ghclient.RepoRef,
+) {
+	delete(byRoute, trackedRepoKey(repo))
+	if key := trackedRepoIdentityKey(repo); key != "" {
+		delete(byIdentity, key)
+	}
 }
 
 func (s *Server) persistResolvedRepos(

@@ -343,39 +343,83 @@ func appendExpandedRepo(
 }
 
 // ExpandedRepoSet accumulates configured-repo expansions across config
-// entries, deduplicating by platform/host/owner/name. A provider-resolved
-// ref replaces a fallback-derived duplicate from an earlier entry, so a
-// transient resolve failure on one entry cannot freeze stale metadata (an
-// archived flip, a rename) when an overlapping entry resolved successfully.
-// Fallback refs never overwrite resolved ones; same-class duplicates keep
-// the first entry.
+// entries, deduplicating by platform/host/owner/name and — when a stable
+// provider id is present — by platform/host/provider-id, so a renamed route
+// cannot track the same repository twice. A provider-resolved ref replaces a
+// fallback-derived duplicate from an earlier entry, so a transient resolve
+// failure on one entry cannot freeze stale metadata (an archived flip, a
+// rename) when an overlapping entry resolved successfully. Fallback refs
+// never overwrite resolved ones; same-class duplicates keep the first entry.
 type ExpandedRepoSet struct {
-	refs     []RepoRef
-	index    map[string]int
-	resolved map[string]bool
+	refs       []RepoRef
+	resolved   []bool
+	byRoute    map[string]int
+	byIdentity map[string]int
 }
 
 func NewExpandedRepoSet() *ExpandedRepoSet {
 	return &ExpandedRepoSet{
-		index:    make(map[string]int),
-		resolved: make(map[string]bool),
+		byRoute:    make(map[string]int),
+		byIdentity: make(map[string]int),
 	}
 }
 
-func (s *ExpandedRepoSet) Add(repo RepoRef, providerResolved bool) {
+func expandedRepoRouteKey(repo RepoRef) string {
 	canonical := canonicalRepoRef(repo)
-	key := string(repoPlatform(canonical)) + "\x00" + canonical.PlatformHost +
+	return string(repoPlatform(canonical)) + "\x00" + canonical.PlatformHost +
 		"\x00" + canonical.Owner + "\x00" + canonical.Name
-	if i, ok := s.index[key]; ok {
-		if providerResolved && !s.resolved[key] {
-			s.refs[i] = repo
-			s.resolved[key] = true
+}
+
+func expandedRepoIdentityKey(repo RepoRef) string {
+	if strings.TrimSpace(repo.PlatformExternalID) == "" {
+		return ""
+	}
+	canonical := canonicalRepoRef(repo)
+	return string(repoPlatform(canonical)) + "\x00" + canonical.PlatformHost +
+		"\x00" + canonical.PlatformExternalID
+}
+
+func (s *ExpandedRepoSet) Add(repo RepoRef, providerResolved bool) {
+	routeKey := expandedRepoRouteKey(repo)
+	identityKey := expandedRepoIdentityKey(repo)
+	slot, ok := -1, false
+	if identityKey != "" {
+		slot, ok = lookupSlot(s.byIdentity, identityKey)
+	}
+	if !ok {
+		slot, ok = lookupSlot(s.byRoute, routeKey)
+	}
+	if ok {
+		if providerResolved && !s.resolved[slot] {
+			old := s.refs[slot]
+			delete(s.byRoute, expandedRepoRouteKey(old))
+			if oldIdentity := expandedRepoIdentityKey(old); oldIdentity != "" {
+				delete(s.byIdentity, oldIdentity)
+			}
+			s.refs[slot] = repo
+			s.resolved[slot] = true
+			s.byRoute[routeKey] = slot
+			if identityKey != "" {
+				s.byIdentity[identityKey] = slot
+			}
 		}
 		return
 	}
-	s.index[key] = len(s.refs)
-	s.resolved[key] = providerResolved
+	slot = len(s.refs)
 	s.refs = append(s.refs, repo)
+	s.resolved = append(s.resolved, providerResolved)
+	s.byRoute[routeKey] = slot
+	if identityKey != "" {
+		s.byIdentity[identityKey] = slot
+	}
+}
+
+func lookupSlot(index map[string]int, key string) (int, bool) {
+	i, ok := index[key]
+	if !ok {
+		return -1, false
+	}
+	return i, true
 }
 
 func (s *ExpandedRepoSet) Refs() []RepoRef {

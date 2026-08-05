@@ -5476,7 +5476,7 @@ func (s *Syncer) reconcileRepoIdentity(
 		}
 	}
 	authoritative := repoRefFromCatalog(repo, entry.Repository, resolved)
-	s.publishResolvedRepository(repo, authoritative)
+	s.publishResolvedRepository(repo, authoritative, resolved != nil)
 	if err := s.reconcileArchiveRepositoryIfNeeded(
 		ctx, previousID, entry.Repository.ID,
 	); err != nil {
@@ -5572,13 +5572,22 @@ func repoRefFromCatalog(previous RepoRef, stored db.Repo, resolved *platform.Rep
 	return repo
 }
 
-func (s *Syncer) publishResolvedRepository(previous, resolved RepoRef) {
+func (s *Syncer) publishResolvedRepository(
+	previous, resolved RepoRef, archivedAuthoritative bool,
+) {
 	s.clearDisplacedCredentialAlias(resolved)
 	s.aliasRenamedCredentialRoute(previous, resolved)
 	s.reposMu.Lock()
 	defer s.reposMu.Unlock()
 	for i := range s.repos {
 		if repoPriorityKey(s.repos[i]) == repoPriorityKey(previous) {
+			if !archivedAuthoritative {
+				// Without fresh provider metadata the archived flag was
+				// reconstructed from the operation's snapshot, which may
+				// predate a newer flip on the tracked ref. The current
+				// tracked state stays authoritative.
+				resolved.Archived = s.repos[i].Archived
+			}
 			s.repos[i] = resolved
 			return
 		}

@@ -88,6 +88,35 @@ func TestArchiveWorkPrioritiesPreserveForegroundOrdering(t *testing.T) {
 	assert.Less(PriorityFullArchive, PriorityDiscoveryInventory)
 }
 
+func TestRunEligibleSkipsUnresolvableConfiguredRef(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	now := archiveTestTime()
+	healthy := archiveServiceRef(platform.KindGitHub, "github.test", "healthy")
+	ghost := platform.RepoRef{
+		Platform: platform.KindGitHub, Host: "github.test",
+		Owner: "owner", Name: "ghost", RepoPath: "owner/ghost",
+	}
+	healthyID := archiveServiceSeedRepo(t, database, healthy)
+	provider := newArchiveServiceProvider(healthy.Platform, healthy.Host)
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	service := newArchiveTestService(
+		t, database, registry, []platform.RepoRef{healthy, ghost}, &archiveTestAdmission{}, now,
+	)
+	requireEnsureConfigured(t, service, []platform.RepoRef{healthy})
+	_, err = service.Start(t.Context(), []platform.RepoRef{healthy})
+	require.NoError(err)
+
+	require.NoError(service.RunEligible(t.Context()))
+
+	states, err := database.ListArchiveRepoStates(t.Context(), []int64{healthyID})
+	require.NoError(err)
+	require.Len(states, 1)
+	assert.True(states[0].IssueInventory.Complete())
+}
+
 func TestArchiveBootstrapFeatureDeferralSkipsToNextRepository(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

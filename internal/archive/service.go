@@ -430,6 +430,38 @@ func (s *Service) resolveRepositories(ctx context.Context, refs []platform.RepoR
 	return resolved, nil
 }
 
+// resolveRepositoriesTolerant resolves each reference independently and drops
+// the ones that fail, so a configured entry whose seeding was skipped cannot
+// starve archive work for every healthy repository. Failures are logged at
+// debug level: the worker polls every second and EnsureConfigured already
+// warns once per reconciliation for the same repositories.
+func (s *Service) resolveRepositoriesTolerant(ctx context.Context, refs []platform.RepoRef, requireArchive bool) ([]resolvedRepository, error) {
+	resolved := make([]resolvedRepository, 0, len(refs))
+	seen := make(map[string]struct{}, len(refs))
+	for _, ref := range refs {
+		key := archiveRepoIdentityKey(ref)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		repo, err := s.resolveRepository(ctx, ref, requireArchive)
+		if err != nil {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			slog.Debug("skip unresolvable archive repository",
+				"platform", ref.Platform, "host", ref.Host,
+				"owner", ref.Owner, "name", ref.Name, "error", err)
+			continue
+		}
+		resolved = append(resolved, *repo)
+	}
+	sort.Slice(resolved, func(i, j int) bool {
+		return archiveRepoIdentityKey(resolved[i].Ref) < archiveRepoIdentityKey(resolved[j].Ref)
+	})
+	return resolved, nil
+}
+
 func (s *Service) resolveRepository(ctx context.Context, ref platform.RepoRef, requireArchive bool) (*resolvedRepository, error) {
 	if err := validateArchiveRepoRef(ref); err != nil {
 		return nil, err

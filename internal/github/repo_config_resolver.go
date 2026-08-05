@@ -39,6 +39,7 @@ func canonicalRepoRef(repo RepoRef) RepoRef {
 		CloneURL:           strings.TrimSpace(repo.CloneURL),
 		DefaultBranch:      strings.TrimSpace(repo.DefaultBranch),
 		Archived:           repo.Archived,
+		ConfiguredRepoPath: strings.TrimSpace(repo.ConfiguredRepoPath),
 	}
 	if kind == platform.KindGitHub {
 		out.Owner = canonicalRepoOwner(out.Owner)
@@ -82,6 +83,18 @@ func FallbackConfiguredRepoRefs(
 	host := raw.PlatformHostOrDefault()
 	repoPath := configuredRepoPath(raw)
 	if !raw.HasNameGlob() {
+		// Provenance first: a provider-side rename moves the tracked route
+		// away from the configured path, but the tracked ref still records
+		// which config entry it was resolved from. Falling back to it keeps
+		// the provider identity and archived state instead of synthesizing
+		// an identity-less live duplicate under the stale route.
+		for _, repo := range previous {
+			if repoPlatform(repo) == kind &&
+				sameConfiguredRepoHost(repoHost(repo), host) &&
+				strings.EqualFold(repo.ConfiguredRepoPath, repoPath) {
+				return []RepoRef{repo}
+			}
+		}
 		for _, repo := range previous {
 			if repoPlatform(repo) == kind &&
 				sameConfiguredRepoHost(repoHost(repo), host) &&
@@ -113,11 +126,12 @@ func FallbackConfiguredRepoRefs(
 
 func fallbackRepoRef(raw config.Repo, kind platform.Kind, host string) RepoRef {
 	repo := RepoRef{
-		Platform:     kind,
-		Owner:        strings.TrimSpace(raw.Owner),
-		Name:         strings.TrimSpace(raw.Name),
-		PlatformHost: strings.ToLower(strings.TrimSpace(host)),
-		RepoPath:     strings.TrimSpace(configuredRepoPath(raw)),
+		Platform:           kind,
+		Owner:              strings.TrimSpace(raw.Owner),
+		Name:               strings.TrimSpace(raw.Name),
+		PlatformHost:       strings.ToLower(strings.TrimSpace(host)),
+		RepoPath:           strings.TrimSpace(configuredRepoPath(raw)),
+		ConfiguredRepoPath: configuredRepoPath(raw),
 	}
 	if kind == "" {
 		kind = platform.KindGitHub
@@ -301,6 +315,7 @@ func repoRefFromRepository(
 		CloneURL:           repo.CloneURL,
 		DefaultBranch:      repo.DefaultBranch,
 		Archived:           repo.Archived,
+		ConfiguredRepoPath: configuredRepoPath(raw),
 	}
 	if ref.PlatformRepoID == 0 {
 		ref.PlatformRepoID = repo.Ref.PlatformID

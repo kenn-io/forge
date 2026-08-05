@@ -272,6 +272,15 @@ fallback repository listing.
   Provider-resolved refs replace fallback-derived duplicates; fallback refs
   never overwrite resolved ones. (`internal/github/repo_config_resolver.go::ExpandedRepoSet`,
   `internal/server/settings_handlers.go::trackedRepoIndex`)
+- Every config-resolved ref records the config-entry path it came from
+  (`RepoRef.ConfiguredRepoPath`), and catalog republication preserves it. When
+  an exact entry cannot resolve, the fallback matches previously tracked refs
+  by that provenance before the route path: a provider-side rename moves the
+  tracked route away from the configured path, and without the provenance
+  match the fallback would synthesize an identity-less live ref — dropping the
+  archived flag and duplicating the repository next to a resolved overlapping
+  entry. (`internal/github/repo_config_resolver.go::FallbackConfiguredRepoRefs`,
+  `internal/github/sync.go::repoRefFromCatalog`)
 - Catalog republication without fresh provider metadata preserves the
   currently tracked archived flag: a sync that began before a newer archived
   flip must not clear it when its own snapshot predates the flip.
@@ -300,6 +309,13 @@ fallback repository listing.
   While an unresolvable ref persists in config, genuinely removed repos keep
   collecting; the recurring deferral warning is the operator signal.
   (`internal/archive/service.go::EnsureConfigured`)
+- The archive worker poll resolves configured repositories tolerantly: a ref
+  that seeding skipped stays in the syncer's tracked set, so an all-or-nothing
+  resolve would fail every one-second pass and starve archive work for all
+  healthy repositories. Repository-scoped resolution failures are dropped
+  (debug-logged; seeding already warned), and only context cancellation
+  aborts the pass. (`internal/archive/scheduler.go::RunEligible`,
+  `internal/archive/service.go::resolveRepositoriesTolerant`)
 - Initial issue and pull-request inventory includes all states in stable created-time ascending order; issue enumeration excludes PR-shaped rows. (`internal/github/pages.go::ListIssuesPage`, `internal/github/pages.go::ListMergeRequestsPage`)
 - Every issue-only GitHub lookup rejects a PR-shaped Issues API response before normalization; `SyncItemByNumber` is the kind-dispatching exception. (`internal/github/pages.go::gitHubClientProvider.issuePullRequestOutcomeError`, `internal/github/sync.go::SyncItemByNumber`)
 - Updated issue scans query one second before the durable watermark while keeping cursor identity bound to the original boundary. Updated pull-request scans run newest-first across the same overlap. (`internal/github/pages.go::ListIssuesPage`, `internal/github/pages.go::ListMergeRequestsPage`)

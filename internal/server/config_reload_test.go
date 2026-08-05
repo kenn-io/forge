@@ -1829,6 +1829,49 @@ func TestConfigReload_ResolvedArchivedStateReplacesFallbackDuplicate(t *testing.
 		"repo resolved as archived must be excluded from notification polling")
 }
 
+func TestConfigReload_FallbackKeepsRenamedArchivedTrackedRepo(t *testing.T) {
+	require := require.New(t)
+
+	srv, _, cfgPath := setupTestServerWithConfigContent(
+		t, validReloadConfig, &mockGH{
+			// The exact entry cannot resolve during the reload; the
+			// previously tracked repo was renamed provider-side, so its
+			// route no longer matches the configured path.
+			getRepositoryFn: func(
+				context.Context, string, string,
+			) (*gh.Repository, error) {
+				return nil, errors.New("temporary repo lookup failure")
+			},
+		},
+	)
+	waitForConfigWatcher(t, srv, 2*time.Second)
+	stream := streamConfigEvents(t, srv)
+	defer stream.Close()
+
+	srv.syncer.SetRepos([]ghclient.RepoRef{{
+		Owner:              "acme",
+		Name:               "widget-next",
+		PlatformHost:       "github.com",
+		RepoPath:           "acme/widget-next",
+		PlatformExternalID: "repo-acme-widget",
+		ConfiguredRepoPath: "acme/widget",
+		Archived:           true,
+	}})
+
+	writeConfigToml(t, cfgPath, validReloadConfigChangedActivity)
+
+	ev := waitForConfigEvent(t, stream, 2*time.Second)
+	require.True(ev.Valid)
+
+	require.True(trackedRepoArchived(srv, "acme", "widget-next"),
+		"fallback must keep the renamed archived tracked repo, not"+
+			" synthesize a live duplicate under the stale configured route")
+	for _, repo := range srv.syncer.TrackedRepos() {
+		require.NotEqual("widget", repo.Name,
+			"stale configured route must not be tracked as a duplicate")
+	}
+}
+
 func TestConfigReload_GlobFailureKeepsPreviouslyTrackedMatches(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

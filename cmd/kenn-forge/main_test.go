@@ -232,19 +232,21 @@ func TestResolveStartupReposExpandsConfiguredGlobs(t *testing.T) {
 
 	assert.Equal([]ghclient.RepoRef{
 		{
-			Platform:     "github",
-			Owner:        "roborev-dev",
-			Name:         "kenn-forge",
-			PlatformHost: "github.com",
-			RepoPath:     "roborev-dev/kenn-forge",
+			Platform:           "github",
+			Owner:              "roborev-dev",
+			Name:               "kenn-forge",
+			PlatformHost:       "github.com",
+			RepoPath:           "roborev-dev/kenn-forge",
+			ConfiguredRepoPath: "roborev-dev/*",
 		},
 		{
-			Platform:     "github",
-			Owner:        "roborev-dev",
-			Name:         "archived",
-			PlatformHost: "github.com",
-			RepoPath:     "roborev-dev/archived",
-			Archived:     true,
+			Platform:           "github",
+			Owner:              "roborev-dev",
+			Name:               "archived",
+			PlatformHost:       "github.com",
+			RepoPath:           "roborev-dev/archived",
+			Archived:           true,
+			ConfiguredRepoPath: "roborev-dev/*",
 		},
 	}, repos)
 }
@@ -297,6 +299,7 @@ func TestResolveStartupReposPrefersResolvedOverFallbackDuplicates(t *testing.T) 
 		RepoPath:           "acme/archived",
 		PlatformExternalID: "repo-acme-archived",
 		Archived:           true,
+		ConfiguredRepoPath: "acme/*",
 	}}, repos)
 }
 
@@ -315,11 +318,12 @@ func TestResolveStartupReposKeepsExactReposWhenResolutionFails(t *testing.T) {
 	)
 
 	assert.Equal([]ghclient.RepoRef{{
-		Platform:     "github",
-		Owner:        "roborev-dev",
-		Name:         "kenn-forge",
-		PlatformHost: "github.com",
-		RepoPath:     "roborev-dev/kenn-forge",
+		Platform:           "github",
+		Owner:              "roborev-dev",
+		Name:               "kenn-forge",
+		PlatformHost:       "github.com",
+		RepoPath:           "roborev-dev/kenn-forge",
+		ConfiguredRepoPath: "roborev-dev/kenn-forge",
 	}}, repos)
 }
 
@@ -381,11 +385,12 @@ func TestResolveStartupReposUsesProviderRegistryForGitLab(t *testing.T) {
 	repos := resolveStartupRepos(t.Context(), cfg, registry, nil, nil)
 
 	assert.Equal([]ghclient.RepoRef{{
-		Platform:     platform.KindGitLab,
-		PlatformHost: "gitlab.com",
-		Owner:        "group/subgroup",
-		Name:         "project",
-		RepoPath:     "group/subgroup/project",
+		Platform:           platform.KindGitLab,
+		PlatformHost:       "gitlab.com",
+		Owner:              "group/subgroup",
+		Name:               "project",
+		RepoPath:           "group/subgroup/project",
+		ConfiguredRepoPath: "group/subgroup/project",
 	}}, repos)
 }
 

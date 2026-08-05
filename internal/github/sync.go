@@ -244,6 +244,11 @@ type RepoRef struct {
 	// Archived marks a provider-archived repository: configured for archive
 	// collection only, skipped by live sync.
 	Archived bool
+	// ConfiguredRepoPath is the config-entry path this ref was resolved
+	// from. It correlates a tracked repository with its config entry after
+	// a provider-side rename, so a transient resolve failure falls back to
+	// the tracked ref instead of synthesizing an identity-less duplicate.
+	ConfiguredRepoPath string
 }
 
 // PartialSyncError reports a repo sync cycle whose index scan completed but
@@ -5530,9 +5535,11 @@ func repoRefFromCatalog(previous RepoRef, stored db.Repo, resolved *platform.Rep
 		WebURL:             stored.WebURL,
 		CloneURL:           stored.CloneURL,
 		DefaultBranch:      stored.DefaultBranch,
-		// The repo catalog does not record archived state; without a fresh
-		// provider resolve, the previously tracked flag stands.
-		Archived: previous.Archived,
+		// The repo catalog does not record archived state or config-entry
+		// provenance; without a fresh provider resolve, the previously
+		// tracked values stand.
+		Archived:           previous.Archived,
+		ConfiguredRepoPath: previous.ConfiguredRepoPath,
 	}
 	if repo.PlatformRepoID == 0 {
 		repo.PlatformRepoID = previous.PlatformRepoID

@@ -10306,6 +10306,26 @@ func TestRepoRefFromCatalogKeepsArchived(t *testing.T) {
 	}).Archived)
 }
 
+func TestRepoRefFromCatalogKeepsConfiguredRepoPath(t *testing.T) {
+	assert := assert.New(t)
+	previous := RepoRef{
+		Owner: "acme", Name: "tools-new",
+		PlatformHost:       "github.com",
+		ConfiguredRepoPath: "acme/tools",
+	}
+	stored := db.Repo{
+		ID: 7, Platform: "github", PlatformHost: "github.com",
+		Owner: "acme", Name: "tools-new",
+	}
+
+	// Catalog republication must not erase the config-entry provenance
+	// that correlates a renamed route with its config entry on reload.
+	assert.Equal("acme/tools",
+		repoRefFromCatalog(previous, stored, nil).ConfiguredRepoPath)
+	assert.Equal("acme/tools",
+		repoRefFromCatalog(previous, stored, &platform.Repository{}).ConfiguredRepoPath)
+}
+
 func TestPublishResolvedRepositoryPreservesNewerArchivedState(t *testing.T) {
 	assert := assert.New(t)
 	d := openTestDB(t)

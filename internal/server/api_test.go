@@ -4431,6 +4431,7 @@ func TestAPIGitLabConfiguredRepoSyncThroughProviderRegistry(t *testing.T) {
 		WebURL:             "https://gitlab.example.com/group/subgroup/project",
 		CloneURL:           "https://gitlab.example.com/group/subgroup/project.git",
 		DefaultBranch:      "main",
+		ConfiguredRepoPath: "group/subgroup/project",
 	}}, repos)
 
 	syncer := ghclient.NewSyncerWithRegistry(

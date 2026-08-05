@@ -76,7 +76,9 @@ func (s *Service) RunEligible(ctx context.Context) error {
 	}
 	// Configuration reconciliation runs at startup and on configuration reload.
 	// The one-second worker poll must remain read-only when no work is eligible.
-	resolved, err := s.resolveRepositories(ctx, refs, true)
+	// Resolution failures are repository-scoped: a configured entry that seeding
+	// skipped must not block archive work for every healthy repository.
+	resolved, err := s.resolveRepositoriesTolerant(ctx, refs, true)
 	if err != nil {
 		return err
 	}

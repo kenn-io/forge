@@ -10,8 +10,13 @@
   } from "../../api/problems.js";
   import { providerItemPath, providerRouteParams, type ProviderRouteRef } from "../../api/provider-routes.js";
   import { getClient } from "../../context.js";
+  import type { WorkspaceCleanupResult } from "../../api/types.js";
   import { showFlash } from "../../stores/flash.svelte.js";
   import { pushModalFrame } from "../../stores/keyboard/modal-stack.svelte.js";
+  import {
+    readDeleteWorkspaceAfterMergePreference,
+    writeDeleteWorkspaceAfterMergePreference,
+  } from "./mergeWorkspaceCleanupPreference.js";
 
   const client = getClient();
 
@@ -44,10 +49,12 @@
      * queue) and the modal offers an immediate merge instead.
      */
     alreadyQueued?: boolean;
+    /** Whether this pull request currently has a linked workspace. */
+    workspacePresent?: boolean;
     /** Warning shown when the configured override permits a mid-stack merge. */
     midStackWarning?: string | undefined;
     onclose: () => void;
-    onmerged: () => void;
+    onmerged: (cleanup?: WorkspaceCleanupResult) => void;
     /** Called when a deferred merge was accepted and now waits on CI. */
     onqueued: () => void;
     onstateconflict?: ((
@@ -66,7 +73,7 @@
     allowSquash, allowMerge, allowRebase,
     expectedHeadSha, requireHeadPin = false, routeGeneration = 0,
     deferUntilChecksPass = false,
-    alreadyQueued = false, midStackWarning,
+    alreadyQueued = false, workspacePresent = false, midStackWarning,
     onclose, onmerged, onqueued, onstateconflict,
   }: Props = $props();
 
@@ -91,6 +98,7 @@
     commit_message: string;
     method: Method;
     expected_head_sha?: string;
+    delete_workspace_after_merge: boolean;
   };
 
   function buildMethods(): MethodOption[] {
@@ -131,6 +139,9 @@
   let selectedMethod = $state<Method>(methods[0]?.value ?? "squash");
   let commitTitle = $state(initialCommitTitle());
   let commitMessage = $state(initialCommitMessage());
+  let deleteWorkspaceAfterMerge = $state(
+    untrack(() => (workspacePresent ? readDeleteWorkspaceAfterMergePreference() : true)),
+  );
 
   let activeMergeSubmission = $state<"deferred" | "immediate" | null>(null);
   let error = $state<string | null>(null);
@@ -141,6 +152,7 @@
       commit_title: commitTitle,
       commit_message: commitMessage,
       method: selectedMethod,
+      delete_workspace_after_merge: workspacePresent && deleteWorkspaceAfterMerge,
       ...(pinnedHeadShaAtOpen !== "" && { expected_head_sha: pinnedHeadShaAtOpen }),
     };
   }
@@ -178,7 +190,7 @@
       // the request when the synced head has moved past it.
       const params = mergeParams();
       const ref = { provider, platformHost, owner, name, repoPath };
-      const { error } = await client.POST(providerItemPath("pulls", ref, deferred ? "/merge/deferred" : "/merge"), {
+      const { data, error } = await client.POST(providerItemPath("pulls", ref, deferred ? "/merge/deferred" : "/merge"), {
         params: { path: { ...providerRouteParams(ref), number } },
         body: params,
       });
@@ -192,7 +204,7 @@
         onqueued();
         return;
       }
-      onmerged();
+      onmerged(data?.workspace_cleanup);
     } catch (err) {
       showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
     } finally {
@@ -288,6 +300,20 @@
           rows={8}
         ></textarea>
       </div>
+
+      {#if workspacePresent}
+        <label class="cleanup-option">
+          <input
+            type="checkbox"
+            checked={deleteWorkspaceAfterMerge}
+            onchange={(event) => {
+              deleteWorkspaceAfterMerge = event.currentTarget.checked;
+              writeDeleteWorkspaceAfterMergePreference(deleteWorkspaceAfterMerge);
+            }}
+          />
+          <span>Delete workspace after merge</span>
+        </label>
+      {/if}
 
       {#if error}
         <p class="merge-error">{error}</p>
@@ -431,6 +457,15 @@
     display: flex;
     gap: 6px;
     flex-wrap: wrap;
+  }
+
+  .cleanup-option {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2, 8px);
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+    cursor: pointer;
   }
 
   .method-option {

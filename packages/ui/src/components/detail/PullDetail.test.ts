@@ -400,6 +400,7 @@ describe("PullDetail approvals", () => {
     markdownMockState.pending = false;
     markdownMockState.pendingPromise = new Promise<string>(() => undefined);
     cleanup();
+    for (const item of getFlashes()) dismissFlash(item.id);
     vi.useRealTimers();
   });
 
@@ -1202,6 +1203,62 @@ describe("PullDetail approvals", () => {
 
     expect(screen.getByRole("dialog", { name: "Merge Pull Request" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Merge after CI is complete" })).toBeTruthy();
+  });
+
+  it("warns after a successful merge when workspace cleanup fails", async () => {
+    const detail = pullDetail();
+    detail.repo.capabilities.merge_mutation = true;
+    detail.workspace = { id: "ws-1", status: "ready" };
+    const apiClient = {
+      GET: vi.fn(async () => ({
+        data: {
+          AllowSquashMerge: true,
+          AllowMergeCommit: false,
+          AllowRebaseMerge: false,
+          ViewerCanMerge: true,
+        },
+      })),
+      POST: vi.fn(async () => ({
+        data: {
+          merged: true,
+          sha: "merge-sha",
+          message: "merged",
+          workspace_cleanup: {
+            workspace_id: "ws-1",
+            status: "failed",
+            warning: "workspace has uncommitted changes",
+          },
+        },
+        error: undefined,
+      })),
+    };
+    const { detailStore } = renderPullDetail(
+      detail,
+      {
+        AllowSquashMerge: true,
+        AllowMergeCommit: false,
+        AllowRebaseMerge: false,
+        ViewerCanMerge: true,
+      },
+      apiClient,
+    );
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Squash and merge" }));
+    await fireEvent.click(
+      within(screen.getByRole("dialog", { name: "Merge Pull Request" })).getByRole("button", {
+        name: "Squash and merge",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(getFlashes()).toContainEqual(
+        expect.objectContaining({
+          message: expect.stringMatching(/merged.*workspace was not pruned.*uncommitted changes/i),
+          tone: "warning",
+        }),
+      );
+      expect(detailStore.loadDetail).toHaveBeenCalled();
+    });
   });
 
   it("opens the merge modal in deferred mode when aggregate CI is pending without check rows", async () => {

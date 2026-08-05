@@ -61,6 +61,7 @@ describe("MergeModal modal frame integration", () => {
 describe("MergeModal head pinning", () => {
   beforeEach(() => {
     resetModalStack();
+    localStorage.clear();
   });
 
   afterEach(() => {
@@ -202,6 +203,7 @@ describe("MergeModal head pinning", () => {
     const onqueued = vi.fn();
     renderModal(post, {
       deferUntilChecksPass: true,
+      workspacePresent: true,
       onclose,
       onqueued,
     });
@@ -212,6 +214,7 @@ describe("MergeModal head pinning", () => {
     const [path, init] = post.mock.calls[0];
     expect(path).toBe("/pulls/{provider}/{owner}/{name}/{number}/merge/deferred");
     expect(init.body.method).toBe("squash");
+    expect(init.body.delete_workspace_after_merge).toBe(true);
     expect(onqueued).toHaveBeenCalledTimes(1);
     expect(onclose).not.toHaveBeenCalled();
   });
@@ -286,5 +289,63 @@ describe("MergeModal head pinning", () => {
     const [path] = post.mock.calls[0];
     expect(path).toBe("/pulls/{provider}/{owner}/{name}/{number}/merge/deferred");
     expect(onqueued).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows a checked cleanup option only when the pull request has a workspace", () => {
+    const post = vi.fn();
+    const withoutWorkspace = renderModal(post);
+
+    expect(screen.queryByRole("checkbox", { name: "Delete workspace after merge" })).toBeNull();
+    withoutWorkspace.unmount();
+
+    renderModal(post, { workspacePresent: true });
+    const checkbox = screen.getByRole<HTMLInputElement>("checkbox", { name: "Delete workspace after merge" });
+    expect(checkbox.checked).toBe(true);
+  });
+
+  it("restores and persists the cleanup preference", async () => {
+    localStorage.setItem("kenn-forge:merge:delete-workspace-after-merge", "false");
+    const post = vi.fn().mockResolvedValue({ data: {}, error: undefined, response: new Response("{}") });
+    renderModal(post, { workspacePresent: true });
+    const checkbox = screen.getByRole<HTMLInputElement>("checkbox", { name: "Delete workspace after merge" });
+
+    expect(checkbox.checked).toBe(false);
+    await confirmMerge();
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    expect(post.mock.calls[0]?.[1].body.delete_workspace_after_merge).toBe(false);
+
+    await fireEvent.click(checkbox);
+
+    expect(localStorage.getItem("kenn-forge:merge:delete-workspace-after-merge")).toBe("true");
+  });
+
+  it("sends the cleanup choice with an immediate merge", async () => {
+    const post = vi.fn().mockResolvedValue({ data: {}, error: undefined, response: new Response("{}") });
+    renderModal(post, { workspacePresent: true });
+
+    await confirmMerge();
+
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    const [, init] = post.mock.calls[0];
+    expect(init.body.delete_workspace_after_merge).toBe(true);
+  });
+
+  it("passes immediate cleanup results to the merged callback", async () => {
+    const cleanupResult = {
+      workspace_id: "ws-1",
+      status: "failed" as const,
+      warning: "workspace has uncommitted changes",
+    };
+    const post = vi.fn().mockResolvedValue({
+      data: { workspace_cleanup: cleanupResult },
+      error: undefined,
+      response: new Response("{}"),
+    });
+    const onmerged = vi.fn();
+    renderModal(post, { workspacePresent: true, onmerged });
+
+    await confirmMerge();
+
+    await waitFor(() => expect(onmerged).toHaveBeenCalledWith(cleanupResult));
   });
 });

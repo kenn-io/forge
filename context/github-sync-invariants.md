@@ -270,11 +270,14 @@ fallback repository listing.
 - GitHub archive code owns historical identity inventory only; hydration must invoke ordinary item sync instead of adding archive-specific lookup, normalization, or persistence. (`internal/github/pages.go::ListIssuesPage`, `internal/github/sync.go::SyncArchiveItem`)
 - Archive item hydration bypasses persisted parent-detail ETags; an unchanged parent representation does not prove that legacy lifecycle timelines are complete. (`internal/github/sync.go::SyncArchiveItem`)
 - Archive issue hydration treats timeline failures as hard errors; ordinary issue refresh remains best-effort for that optional dataset. (`internal/github/sync.go::refreshIssueTimeline`)
-- Archive requests use shared sync budgets above `archiveLiveFloor`: GitHub uses
-  the credential-aware provider pacing below, while headerless Gitealike hosts
-  use configured local hourly surplus. The transport attributes every attempt,
-  and live work preempts the archive lease.
-  (`internal/github/budget.go::ProviderArchiveSpendAvailable`,
+- GitHub archive hydration paces off provider quota alone: availability is
+  remaining minus the archive reserve (`max(limit/5, RateReserveBuffer)`),
+  enforced at admission and again at every wire attempt. Headerless Gitealike
+  hosts spend configured local hourly surplus above `archiveLiveFloor`.
+  Attempts covered by a registry reservation do not debit the local ceiling —
+  `sync_budget_per_hour` meters live sync only — and live work preempts the
+  archive lease.
+  (`internal/github/budget.go::ArchiveProviderReserve`,
   `internal/github/budget.go::LocalArchiveSpendAvailable`,
   `internal/github/sync.go::Admit`)
 - A GitHub issue without `updated_at` uses `created_at` as both its freshness and initial activity boundary; zero timestamps must not bypass monotonic snapshot acceptance. (`internal/platform/github/normalize.go::NormalizeIssue`)
@@ -400,7 +403,8 @@ response never overwrites an App installation pool
   `sync_budget_per_hour` ceiling is separate and is reported apart from provider
   quota (`internal/github/sync.go::backgroundQuotaAvailability`).
 - List discovery (open PR/issue lists, repo identity resolve) spends the local
-  ceiling's essential reserve; optional spend (details, fast-sync, archive)
+  ceiling's essential reserve; optional spend (details, fast-sync, headerless
+  archive)
   stops at limit minus reserve so it can never starve discovery
   (`internal/github/budget.go::TrySpendEssential`). Per-item enrichment nested
   inside an essential list fetch is demoted back to optional and degrades on
@@ -410,14 +414,13 @@ response never overwrites an App installation pool
   reached the wire, so eviction would only turn recovery cycles into
   unconditional refetches that deepen the exhaustion
   (`internal/github/sync.go::indexSyncRepo`).
-- Archive pacing uses the smaller of the local hourly surplus, the routed
-  credential's paced required-resource quota, and its current remaining
-  headroom after the provider reserve; a high local ceiling must not enlarge
-  the provider envelope. Each archive attempt atomically reserves live headroom;
-  an unobserved reservation remains deducted until a current header accounts
-  for it or that resource window rolls. The first header in a newer window uses
-  total reported usage as its conservative request-cost bound. Persistent spend
-  is keyed by resource and reset window, so staggered resets cannot erase charges
+- Archive pacing on the provider path is the routed credential's remaining
+  required-resource headroom above the archive reserve; the local ceiling
+  neither enlarges nor shrinks the provider envelope. Each archive attempt
+  atomically reserves live headroom; an unobserved reservation remains
+  deducted until a current header accounts for it or that resource window
+  rolls. The first header in a newer window uses total reported usage as its
+  conservative request-cost bound
   (`internal/github/sync.go::Admit`,
   `internal/github/quota.go::quotaTransport`).
 - Outside the archive attempt guard above, there is one background reserve

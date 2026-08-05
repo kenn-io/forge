@@ -5165,9 +5165,11 @@ func (s *Syncer) runOnce(
 	if bypassNextSyncAfter {
 		nextAfter = nil
 	}
-	repos = s.reconcileArchivedRepos(
-		ctx, repos, s.repoEligibility(repos, nextAfter),
-	)
+	// Computed over the selected set before still-archived refs drop
+	// out, so buckets holding only archived repositories keep an entry
+	// for the cadence advance below.
+	archivedEligibility := s.repoEligibility(repos, nextAfter)
+	repos = s.reconcileArchivedRepos(ctx, repos, archivedEligibility)
 	repos = prioritizeRepos(repos, priorityRepos)
 
 	total := len(repos)
@@ -5309,9 +5311,15 @@ dispatch:
 		s.RefreshRateLimitSnapshots(rateLimitSnapshotCtx)
 	}
 	if onlyRepos == nil {
-		s.advanceNextSync(
-			eligibleBuckets, s.nextSyncAfter, s.interval,
-		)
+		// Archived-only buckets are absent from eligibleBuckets — their
+		// refs dropped out before it was computed — but an attempted
+		// archived refresh must advance the bucket's cadence gate too,
+		// or the refresh would rerun every base interval regardless of
+		// throttle factor. The post-reconciliation value wins for
+		// buckets present in both maps.
+		advance := maps.Clone(archivedEligibility)
+		maps.Copy(advance, eligibleBuckets)
+		s.advanceNextSync(advance, s.nextSyncAfter, s.interval)
 	}
 
 	slog.Info("sync complete", "repos", total)

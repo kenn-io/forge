@@ -338,7 +338,12 @@ fallback repository listing.
   same credential-bucket eligibility that gates dispatch — a throttled,
   reserve-exhausted, or next-sync-deferred bucket defers its archived
   refreshes without a provider call, so they cannot spend essential sync
-  budget a live repository's dispatch would be denied. In the other direction, a
+  budget a live repository's dispatch would be denied. An attempted archived
+  refresh also advances the bucket's next-sync cadence gate — including for
+  buckets holding only archived repositories, which drop out of the pass
+  before dispatch eligibility is computed — so the refresh honors the
+  bucket's throttle factor instead of rerunning every base interval. In the
+  other direction, a
   live repository whose in-pass identity resolution reports archived stops
   before any clone, overview, label, or item syncing — the publication has
   already flipped the tracked flag, and the pass must not sync an archived

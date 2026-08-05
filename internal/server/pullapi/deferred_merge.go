@@ -60,19 +60,20 @@ type deferredMergeTargetSnapshot struct {
 }
 
 type DeferredMergeCompletedPayload struct {
-	Provider     string `json:"provider"`
-	PlatformHost string `json:"platform_host"`
-	RepoPath     string `json:"repo_path"`
-	Owner        string `json:"owner"`
-	Name         string `json:"name"`
-	Number       int    `json:"number"`
-	HeadSHA      string `json:"head_sha"`
-	Status       string `json:"status"`
-	Merged       bool   `json:"merged,omitempty"`
-	SHA          string `json:"sha,omitempty"`
-	Message      string `json:"message,omitempty"`
-	Error        string `json:"error,omitempty"`
-	CompletedAt  string `json:"completed_at"`
+	Provider         string                  `json:"provider"`
+	PlatformHost     string                  `json:"platform_host"`
+	RepoPath         string                  `json:"repo_path"`
+	Owner            string                  `json:"owner"`
+	Name             string                  `json:"name"`
+	Number           int                     `json:"number"`
+	HeadSHA          string                  `json:"head_sha"`
+	Status           string                  `json:"status"`
+	Merged           bool                    `json:"merged,omitempty"`
+	SHA              string                  `json:"sha,omitempty"`
+	Message          string                  `json:"message,omitempty"`
+	Error            string                  `json:"error,omitempty"`
+	CompletedAt      string                  `json:"completed_at"`
+	WorkspaceCleanup *WorkspaceCleanupResult `json:"workspace_cleanup,omitempty"`
 }
 
 func (s *Handler) deferMergePR(
@@ -180,6 +181,15 @@ func (s *Handler) enqueueDeferredMerge(
 			map[string]any{"reason": "no_pending_checks"},
 		)
 	}
+	cleanupPlan, err := s.captureWorkspaceCleanupPlan(
+		ctx,
+		*repo,
+		number,
+		body.DeleteWorkspaceAfterMerge,
+	)
+	if err != nil {
+		return deferMergePRBody{}, httpapi.Internal("capture workspace cleanup: " + err.Error())
+	}
 	key := deferredMergeKey(*repo, number)
 	handle, marked := s.markDeferredMergeInFlight(key)
 	if !marked {
@@ -191,7 +201,18 @@ func (s *Handler) enqueueDeferredMerge(
 	}
 	started := s.runBackground(func(bgCtx context.Context) {
 		defer s.clearDeferredMergeInFlight(key, handle)
-		s.runDeferredMerge(bgCtx, *repo, number, body, pendingKeys, queuedTarget, pollInterval, maxWait, handle)
+		s.runDeferredMerge(
+			bgCtx,
+			*repo,
+			number,
+			body,
+			cleanupPlan,
+			pendingKeys,
+			queuedTarget,
+			pollInterval,
+			maxWait,
+			handle,
+		)
 	})
 	if !started {
 		s.clearDeferredMergeInFlight(key, handle)
@@ -208,6 +229,7 @@ func (s *Handler) runDeferredMerge(
 	repo db.Repo,
 	number int,
 	body mergePRInputBody,
+	cleanupPlan workspaceCleanupPlan,
 	pendingKeys []deferredMergeCheckKey,
 	queuedTarget deferredMergeTargetSnapshot,
 	pollInterval time.Duration,
@@ -232,7 +254,7 @@ func (s *Handler) runDeferredMerge(
 		}
 		switch state {
 		case "passed":
-			s.completeDeferredMerge(ctx, repo, number, body, queuedTarget, handle)
+			s.completeDeferredMerge(ctx, repo, number, body, cleanupPlan, queuedTarget, handle)
 			return
 		case "failed":
 			s.broadcastDeferredMergeFailure(repo, number, deferredMergeHeadSHA(body, queuedTarget.HeadSHA), "a current CI check failed; merge was not performed", handle)
@@ -387,6 +409,7 @@ func (s *Handler) completeDeferredMerge(
 	repo db.Repo,
 	number int,
 	body mergePRInputBody,
+	cleanupPlan workspaceCleanupPlan,
 	queuedTarget deferredMergeTargetSnapshot,
 	handle *deferredMergeHandle,
 ) {
@@ -397,7 +420,19 @@ func (s *Handler) completeDeferredMerge(
 		s.broadcastDeferredMergeFailure(repo, number, deferredMergeHeadSHA(body, queuedTarget.HeadSHA), err.Error(), handle)
 		return
 	}
-	result, err := s.mergePRWithBody(ctx, string(repoProviderKind(repo)), repoProviderHost(repo), repo.Owner, repo.Name, number, body)
+	if handle.isSuperseded() {
+		return
+	}
+	result, err := s.mergePRWithBody(
+		ctx,
+		string(repoProviderKind(repo)),
+		repoProviderHost(repo),
+		repo.Owner,
+		repo.Name,
+		number,
+		body,
+		&cleanupPlan,
+	)
 	if err != nil {
 		s.broadcastDeferredMergeFailure(repo, number, deferredMergeHeadSHA(body, queuedTarget.HeadSHA), err.Error(), handle)
 		return
@@ -410,18 +445,19 @@ func (s *Handler) completeDeferredMerge(
 	s.publish(Event{
 		Type: "deferred_merge_completed",
 		Data: DeferredMergeCompletedPayload{
-			Provider:     string(repoProviderKind(repo)),
-			PlatformHost: repoProviderHost(repo),
-			RepoPath:     repo.RepoPath,
-			Owner:        repo.Owner,
-			Name:         repo.Name,
-			Number:       number,
-			HeadSHA:      deferredMergeHeadSHA(body, queuedTarget.HeadSHA),
-			Status:       "merged",
-			Merged:       result.Merged,
-			SHA:          result.SHA,
-			Message:      result.Message,
-			CompletedAt:  formatUTCRFC3339(s.now().UTC()),
+			Provider:         string(repoProviderKind(repo)),
+			PlatformHost:     repoProviderHost(repo),
+			RepoPath:         repo.RepoPath,
+			Owner:            repo.Owner,
+			Name:             repo.Name,
+			Number:           number,
+			HeadSHA:          deferredMergeHeadSHA(body, queuedTarget.HeadSHA),
+			Status:           "merged",
+			Merged:           result.Merged,
+			SHA:              result.SHA,
+			Message:          result.Message,
+			CompletedAt:      formatUTCRFC3339(s.now().UTC()),
+			WorkspaceCleanup: result.WorkspaceCleanup,
 		},
 	})
 }

@@ -296,12 +296,22 @@ type mergePRInputBody struct {
 	// For head-binding providers, merge rejects missing, stale, or
 	// mismatched reviewed-head assertions before provider mutation.
 	ExpectedHeadSHA string `json:"expected_head_sha,omitempty"`
+	// DeleteWorkspaceAfterMerge requests safe, non-force cleanup of the
+	// workspace linked when the merge is accepted.
+	DeleteWorkspaceAfterMerge bool `json:"delete_workspace_after_merge,omitempty"`
+}
+
+type WorkspaceCleanupResult struct {
+	WorkspaceID string `json:"workspace_id,omitempty"`
+	Status      string `json:"status" enum:"deleted,already_absent,not_found_at_submission,failed"`
+	Warning     string `json:"warning,omitempty"`
 }
 
 type mergePRBody struct {
-	Merged  bool   `json:"merged"`
-	SHA     string `json:"sha"`
-	Message string `json:"message"`
+	Merged           bool                    `json:"merged"`
+	SHA              string                  `json:"sha"`
+	Message          string                  `json:"message"`
+	WorkspaceCleanup *WorkspaceCleanupResult `json:"workspace_cleanup,omitempty"`
 }
 
 type mergePROutput = httpapi.BodyOutput[mergePRBody]
@@ -1561,7 +1571,16 @@ func (s *Handler) readyForReview(ctx context.Context, input *repoNumberInput) (*
 }
 
 func (s *Handler) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutput, error) {
-	result, err := s.mergePRWithBody(ctx, input.Provider, input.PlatformHost, input.Owner, input.Name, input.Number, input.Body)
+	result, err := s.mergePRWithBody(
+		ctx,
+		input.Provider,
+		input.PlatformHost,
+		input.Owner,
+		input.Name,
+		input.Number,
+		input.Body,
+		nil,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -1576,6 +1595,7 @@ func (s *Handler) mergePRWithBody(
 	name string,
 	number int,
 	body mergePRInputBody,
+	capturedCleanup *workspaceCleanupPlan,
 ) (mergePRBody, error) {
 	repo, err := s.requireRepoRouteCapability(
 		ctx,
@@ -1608,6 +1628,20 @@ func (s *Handler) mergePRWithBody(
 	expectedHeadSHA, err := s.preflightMergePR(repo, mr, number, body)
 	if err != nil {
 		return mergePRBody{}, err
+	}
+	cleanupPlan := workspaceCleanupPlan{}
+	if capturedCleanup != nil {
+		cleanupPlan = *capturedCleanup
+	} else {
+		cleanupPlan, err = s.captureWorkspaceCleanupPlan(
+			ctx,
+			*repo,
+			number,
+			body.DeleteWorkspaceAfterMerge,
+		)
+		if err != nil {
+			return mergePRBody{}, httpapi.Internal("capture workspace cleanup: " + err.Error())
+		}
 	}
 
 	result, err := mutator.MergeMergeRequest(
@@ -1684,6 +1718,7 @@ func (s *Handler) mergePRWithBody(
 	// (A deferred worker completing through this same path supersedes its
 	// own handle, which is a no-op by the time it broadcasts completion.)
 	s.supersedeDeferredMerge(deferredMergeKey(*repo, number))
+	workspaceCleanup := s.executeWorkspaceCleanup(ctx, cleanupPlan)
 
 	// The eager state write above suppresses the sync-side open->closed
 	// transition — the path that records who merged. Backfill the authored
@@ -1732,9 +1767,10 @@ func (s *Handler) mergePRWithBody(
 	})
 
 	return mergePRBody{
-		Merged:  result.Merged,
-		SHA:     result.SHA,
-		Message: result.Message,
+		Merged:           result.Merged,
+		SHA:              result.SHA,
+		Message:          result.Message,
+		WorkspaceCleanup: workspaceCleanup,
 	}, nil
 }
 

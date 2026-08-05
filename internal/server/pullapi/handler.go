@@ -34,6 +34,7 @@ type Deps struct {
 	Config               ConfigSnapshot
 	Now                  func() time.Time
 	DeferredMergeMaxWait time.Duration
+	DeleteWorkspace      func(context.Context, string, bool) ([]string, error)
 
 	FleetSelfKey                  func(string) string
 	FilterRepos                   func([]db.Repo) []db.Repo
@@ -49,12 +50,13 @@ type Deps struct {
 }
 
 type Handler struct {
-	db         *db.DB
-	resolver   *httpapi.RepositoryResolver
-	syncer     *ghclient.Syncer
-	clones     *gitclone.Manager
-	workspaces *workspace.Manager
-	now        func() time.Time
+	db              *db.DB
+	resolver        *httpapi.RepositoryResolver
+	syncer          *ghclient.Syncer
+	clones          *gitclone.Manager
+	workspaces      *workspace.Manager
+	deleteWorkspace func(context.Context, string, bool) ([]string, error)
+	now             func() time.Time
 
 	fleetSelfKey                  func(string) string
 	filterRepos                   func([]db.Repo) []db.Repo
@@ -99,6 +101,7 @@ func New(deps Deps) *Handler {
 		syncer:                        deps.Syncer,
 		clones:                        deps.Clones,
 		workspaces:                    deps.Workspaces,
+		deleteWorkspace:               deps.DeleteWorkspace,
 		now:                           now,
 		fleetSelfKey:                  deps.FleetSelfKey,
 		filterRepos:                   deps.FilterRepos,

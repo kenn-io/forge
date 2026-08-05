@@ -2,6 +2,7 @@ package github
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -146,6 +147,12 @@ type gqlComment struct {
 	URL             string `graphql:"url"`
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
+	IsMinimized     bool
+	MinimizedReason *githubv4.ReportedContentClassifiers
+}
+
+type gqlCommentVisibilityNode struct {
+	DatabaseId      int64
 	IsMinimized     bool
 	MinimizedReason *githubv4.ReportedContentClassifiers
 }
@@ -310,6 +317,28 @@ type gqlIssueQuery struct {
 			Nodes      []gqlIssue
 			PageInfo   pageInfo
 		} `graphql:"issues(first: $pageSize, states: OPEN, after: $cursor)"`
+	} `graphql:"repository(owner: $owner, name: $name)"`
+}
+
+type gqlPRCommentPageQuery struct {
+	Repository struct {
+		PullRequest *struct {
+			Comments struct {
+				Nodes    []gqlCommentVisibilityNode
+				PageInfo pageInfo
+			} `graphql:"comments(first: 100, after: $cursor)"`
+		} `graphql:"pullRequest(number: $number)"`
+	} `graphql:"repository(owner: $owner, name: $name)"`
+}
+
+type gqlIssueCommentPageQuery struct {
+	Repository struct {
+		Issue *struct {
+			Comments struct {
+				Nodes    []gqlCommentVisibilityNode
+				PageInfo pageInfo
+			} `graphql:"comments(first: 100, after: $cursor)"`
+		} `graphql:"issue(number: $number)"`
 	} `graphql:"repository(owner: $owner, name: $name)"`
 }
 
@@ -689,12 +718,19 @@ type CommentVisibility struct {
 }
 
 func gqlCommentVisibility(comment *gqlComment) CommentVisibility {
-	if !comment.IsMinimized {
+	return commentVisibility(comment.IsMinimized, comment.MinimizedReason)
+}
+
+func commentVisibility(
+	isMinimized bool,
+	minimizedReason *githubv4.ReportedContentClassifiers,
+) CommentVisibility {
+	if !isMinimized {
 		return CommentVisibility{}
 	}
 	reason := ""
-	if comment.MinimizedReason != nil {
-		reason = string(*comment.MinimizedReason)
+	if minimizedReason != nil {
+		reason = string(*minimizedReason)
 	}
 	return CommentVisibility{Hidden: true, Reason: reason}
 }
@@ -977,7 +1013,11 @@ func (g *GraphQLFetcher) fetchRepoPRsWithPageSize(
 		}
 		result.PullRequests = make([]BulkPR, 0, len(gqlPRs))
 		for i := range gqlPRs {
-			result.PullRequests = append(result.PullRequests, convertGQLPRWithNativeStacks(&gqlPRs[i]))
+			bulk := convertGQLPRWithNativeStacks(&gqlPRs[i])
+			if err := g.completePRCommentVisibility(ctx, owner, name, &gqlPRs[i].gqlPR, &bulk); err != nil {
+				return nil, err
+			}
+			result.PullRequests = append(result.PullRequests, bulk)
 		}
 	} else {
 		gqlPRs, err := fetchGraphQLPullRequestPages[gqlPR](
@@ -988,7 +1028,11 @@ func (g *GraphQLFetcher) fetchRepoPRsWithPageSize(
 		}
 		result.PullRequests = make([]BulkPR, 0, len(gqlPRs))
 		for i := range gqlPRs {
-			result.PullRequests = append(result.PullRequests, convertGQLPR(&gqlPRs[i]))
+			bulk := convertGQLPR(&gqlPRs[i])
+			if err := g.completePRCommentVisibility(ctx, owner, name, &gqlPRs[i], &bulk); err != nil {
+				return nil, err
+			}
+			result.PullRequests = append(result.PullRequests, bulk)
 		}
 	}
 	progress.done()
@@ -1075,9 +1119,96 @@ func (g *GraphQLFetcher) fetchRepoIssuesWithPageSize(
 	}
 	for i := range gqlIssues {
 		bulk := convertGQLIssue(&gqlIssues[i])
+		if err := g.completeIssueCommentVisibility(ctx, owner, name, &gqlIssues[i], &bulk); err != nil {
+			return nil, err
+		}
 		result.Issues = append(result.Issues, bulk)
 	}
 	return result, nil
+}
+
+func (g *GraphQLFetcher) completePRCommentVisibility(
+	ctx context.Context,
+	owner, name string,
+	pr *gqlPR,
+	bulk *BulkPR,
+) error {
+	if bulk.CommentsComplete {
+		return nil
+	}
+	comments, err := fetchAllPages(ctx, func(
+		ctx context.Context, cursor *string,
+	) ([]gqlCommentVisibilityNode, pageInfo, error) {
+		after := pr.Comments.PageInfo.EndCursor
+		if cursor != nil {
+			after = *cursor
+		}
+		var q gqlPRCommentPageQuery
+		err := g.client.Query(ctx, &q, map[string]any{
+			"owner": githubv4.String(owner), "name": githubv4.String(name),
+			"number": githubv4.Int(pr.Number), "cursor": cursorVar(&after),
+		})
+		if err != nil {
+			return nil, pageInfo{}, err
+		}
+		if q.Repository.PullRequest == nil {
+			return nil, pageInfo{}, fmt.Errorf("paginate comments for pull request #%d: missing pull request", pr.Number)
+		}
+		return q.Repository.PullRequest.Comments.Nodes,
+			q.Repository.PullRequest.Comments.PageInfo, nil
+	})
+	if err != nil {
+		return fmt.Errorf("paginate comments for pull request #%d: %w", pr.Number, err)
+	}
+	mergeCommentVisibility(bulk.CommentVisibility, comments)
+	return nil
+}
+
+func (g *GraphQLFetcher) completeIssueCommentVisibility(
+	ctx context.Context,
+	owner, name string,
+	issue *gqlIssue,
+	bulk *BulkIssue,
+) error {
+	if bulk.CommentsComplete {
+		return nil
+	}
+	comments, err := fetchAllPages(ctx, func(
+		ctx context.Context, cursor *string,
+	) ([]gqlCommentVisibilityNode, pageInfo, error) {
+		after := issue.Comments.PageInfo.EndCursor
+		if cursor != nil {
+			after = *cursor
+		}
+		var q gqlIssueCommentPageQuery
+		err := g.client.Query(ctx, &q, map[string]any{
+			"owner": githubv4.String(owner), "name": githubv4.String(name),
+			"number": githubv4.Int(issue.Number), "cursor": cursorVar(&after),
+		})
+		if err != nil {
+			return nil, pageInfo{}, err
+		}
+		if q.Repository.Issue == nil {
+			return nil, pageInfo{}, fmt.Errorf("paginate comments for issue #%d: missing issue", issue.Number)
+		}
+		return q.Repository.Issue.Comments.Nodes,
+			q.Repository.Issue.Comments.PageInfo, nil
+	})
+	if err != nil {
+		return fmt.Errorf("paginate comments for issue #%d: %w", issue.Number, err)
+	}
+	mergeCommentVisibility(bulk.CommentVisibility, comments)
+	return nil
+}
+
+func mergeCommentVisibility(
+	visibility map[int64]CommentVisibility,
+	comments []gqlCommentVisibilityNode,
+) {
+	for i := range comments {
+		comment := &comments[i]
+		visibility[comment.DatabaseId] = commentVisibility(comment.IsMinimized, comment.MinimizedReason)
+	}
 }
 
 func cursorVar(cursor *string) *githubv4.String {

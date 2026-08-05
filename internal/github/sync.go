@@ -3205,8 +3205,11 @@ func githubReviewThreadComment(
 		DirectURL:         comment.URL,
 		Range:             githubReviewLineRange(thread, comment),
 		Resolved:          thread.IsResolved,
-		CreatedAt:         createdAt,
-		UpdatedAt:         updatedAt,
+		MetadataJSON: normalizeCommentVisibilityMetadata(CommentVisibility{
+			Hidden: comment.IsMinimized, Reason: comment.MinimizedReason,
+		}),
+		CreatedAt: createdAt,
+		UpdatedAt: updatedAt,
 	}
 }
 
@@ -9257,7 +9260,7 @@ func (s *Syncer) syncOpenMRFromBulk(
 	if err != nil {
 		return fmt.Errorf("dedupe merged lifecycle events for MR #%d: %w", number, err)
 	}
-	allComplete := bulk.CommentsComplete &&
+	bulkAllComplete := bulk.CommentsComplete &&
 		bulk.ReviewsComplete &&
 		bulk.CommitsComplete &&
 		bulk.TimelineComplete &&
@@ -9271,7 +9274,7 @@ func (s *Syncer) syncOpenMRFromBulk(
 		}
 		// ReviewDecision is already resolved on normalized (and carried into
 		// fields above) independent of nested-connection completeness.
-		if allComplete {
+		if bulkAllComplete {
 			fields.LastActivityAt = computeLastActivity(
 				bulk.PR, bulk.Comments, bulk.Reviews, bulk.Commits, bulk.TimelineEvents,
 			)
@@ -9300,6 +9303,44 @@ func (s *Syncer) syncOpenMRFromBulk(
 			return nil
 		}
 	}
+	commentsComplete := bulk.CommentsComplete
+	if !commentsComplete {
+		client, err := s.clientFor(repo)
+		if err != nil {
+			return fmt.Errorf("resolve client for %s/%s: %w", repo.Owner, repo.Name, err)
+		}
+		restComments, err := client.ListIssueComments(ctx, repo.Owner, repo.Name, number)
+		if err != nil {
+			return fmt.Errorf("list comments for MR #%d: %w", number, err)
+		}
+		nonCommentLatest, err := s.db.GetMRLatestNonCommentEventTime(ctx, mrID)
+		if err != nil {
+			return fmt.Errorf("latest non-comment event for MR #%d: %w", number, err)
+		}
+		fields := db.MRDerivedFields{
+			ReviewDecision: normalized.ReviewDecision,
+			CommentCount:   len(restComments),
+			LastActivityAt: computePRCommentRefreshLastActivity(
+				normalized, restComments, nonCommentLatest,
+			),
+		}
+		applied, err := s.replacePRCommentEvents(
+			ctx, repo, number, mrID, revision, restComments, &fields,
+			bulk.CommentVisibility,
+		)
+		if err != nil {
+			return fmt.Errorf("replace REST comments for MR #%d: %w", number, err)
+		}
+		if !applied {
+			return nil
+		}
+		commentsComplete = true
+	}
+	allComplete := commentsComplete &&
+		bulk.ReviewsComplete &&
+		bulk.CommitsComplete &&
+		bulk.TimelineComplete &&
+		bulk.CIComplete
 	if _, err := s.persistMergedTransitionEvent(ctx, mrID, revision, bulk.PR, normalized.MergedAt); err != nil {
 		return fmt.Errorf("persist merged lifecycle event for MR #%d: %w", number, err)
 	}

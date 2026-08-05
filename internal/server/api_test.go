@@ -2317,6 +2317,8 @@ func TestAPIGitHubSyncPersistsReviewThreadsThroughPullDetail(t *testing.T) {
 					Body:             "inline note",
 					AuthorLogin:      "reviewer",
 					CommitID:         commentCommitSHA,
+					IsMinimized:      true,
+					MinimizedReason:  "OFF_TOPIC",
 					CreatedAt:        now,
 					UpdatedAt:        now,
 				}},
@@ -2336,6 +2338,7 @@ func TestAPIGitHubSyncPersistsReviewThreadsThroughPullDetail(t *testing.T) {
 	require.Len(*resp.JSON200.Events, 1)
 	event := (*resp.JSON200.Events)[0]
 	assert.Equal("review_comment", event.EventType)
+	assert.JSONEq(`{"provider_hidden":true,"provider_hidden_reason":"OFF_TOPIC"}`, event.MetadataJSON)
 	assert.Equal("3312100450", event.PlatformExternalID)
 	require.NotNil(event.ThreadID)
 	assert.Equal("PRRT_1", *event.ThreadID)
@@ -2344,6 +2347,8 @@ func TestAPIGitHubSyncPersistsReviewThreadsThroughPullDetail(t *testing.T) {
 	assert.Equal("right", event.DiffThread.Side)
 	assert.Equal(int64(line), event.DiffThread.Line)
 	assert.Equal("inline note", event.DiffThread.Body)
+	require.NotNil(event.DiffThread.MetadataJson)
+	assert.JSONEq(`{"provider_hidden":true,"provider_hidden_reason":"OFF_TOPIC"}`, *event.DiffThread.MetadataJson)
 	require.NotNil(event.DiffThread.DiffHeadSha)
 	assert.Equal(commentCommitSHA, *event.DiffThread.DiffHeadSha)
 	require.NotNil(event.DiffThread.CommitSha)
@@ -7355,6 +7360,7 @@ func TestAPIEditPrCommentUpdatesGitHubAndLocalTimeline(t *testing.T) {
 		EventType:      "issue_comment",
 		Author:         "maintainer",
 		Body:           "original body",
+		MetadataJSON:   `{"provider_hidden":true,"provider_hidden_reason":"OFF_TOPIC"}`,
 		CreatedAt:      createdAt,
 		DedupeKey:      "comment-9876",
 	}}))
@@ -7375,6 +7381,7 @@ func TestAPIEditPrCommentUpdatesGitHubAndLocalTimeline(t *testing.T) {
 	require.Len(events, 1)
 	assert.Equal("edited body", events[0].Body)
 	assert.Equal("maintainer", events[0].Author)
+	assert.JSONEq(`{"provider_hidden":true,"provider_hidden_reason":"OFF_TOPIC"}`, events[0].MetadataJSON)
 	require.NotNil(events[0].PlatformID)
 	assert.Equal(commentID, *events[0].PlatformID)
 }
@@ -7441,13 +7448,14 @@ func TestAPIEditIssueCommentUpdatesGitHubAndLocalTimeline(t *testing.T) {
 	srv, database := setupTestServerWithMock(t, mock)
 	issueID := seedIssue(t, database, "acme", "widget", 5, "open")
 	require.NoError(database.UpsertIssueEvents(t.Context(), []db.IssueEvent{{
-		IssueID:    issueID,
-		PlatformID: &commentID,
-		EventType:  "issue_comment",
-		Author:     "maintainer",
-		Body:       "original issue body",
-		CreatedAt:  createdAt,
-		DedupeKey:  "issue-comment-1234",
+		IssueID:      issueID,
+		PlatformID:   &commentID,
+		EventType:    "issue_comment",
+		Author:       "maintainer",
+		Body:         "original issue body",
+		MetadataJSON: `{"provider_hidden":true,"provider_hidden_reason":"OFF_TOPIC"}`,
+		CreatedAt:    createdAt,
+		DedupeKey:    "issue-comment-1234",
 	}}))
 
 	req := httptest.NewRequest(
@@ -7466,6 +7474,7 @@ func TestAPIEditIssueCommentUpdatesGitHubAndLocalTimeline(t *testing.T) {
 	require.Len(events, 1)
 	assert.Equal("edited issue body", events[0].Body)
 	assert.Equal("maintainer", events[0].Author)
+	assert.JSONEq(`{"provider_hidden":true,"provider_hidden_reason":"OFF_TOPIC"}`, events[0].MetadataJSON)
 	require.NotNil(events[0].PlatformID)
 	assert.Equal(commentID, *events[0].PlatformID)
 }
@@ -11629,6 +11638,14 @@ func TestE2EGraphQLIssueSyncTrustsTotalCount(t *testing.T) {
 		body, _ := io.ReadAll(r.Body)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(200)
+		if bytes.Contains(body, []byte("issue(number:")) {
+			_, _ = w.Write([]byte(`{"data":{"repository":{"issue":{"comments":{"nodes":[{
+				"databaseId":902,
+				"isMinimized":false,
+				"minimizedReason":null
+			}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}`))
+			return
+		}
 		if bytes.Contains(body, []byte("pullRequests")) {
 			_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequests":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`))
 			return
@@ -12889,6 +12906,14 @@ func TestE2EIssueDetailPreservesHiddenCommentsAcrossIncompleteGraphQLRefresh(t *
 		body, _ := io.ReadAll(r.Body)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
+		if bytes.Contains(body, []byte("issue(number:")) {
+			_, _ = w.Write([]byte(`{"data":{"repository":{"issue":{"comments":{"nodes":[{
+				"databaseId":9132,
+				"isMinimized":true,
+				"minimizedReason":"OFF_TOPIC"
+			}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}`))
+			return
+		}
 		if bytes.Contains(body, []byte("pullRequests")) {
 			_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequests":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`))
 			return
@@ -13460,6 +13485,179 @@ func TestE2EPRDetailRemovesDeletedCommentOnGraphQLBulkSync(t *testing.T) {
 	require.Equal(now.Add(time.Minute).UTC(), secondResp.JSON200.MergeRequest.LastActivityAt.UTC())
 	require.NotNil(secondResp.JSON200.Events)
 	require.Empty(*secondResp.JSON200.Events)
+}
+
+func TestE2EPRDetailPreservesHiddenCommentsAcrossIncompleteGraphQLRefresh(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+
+	now := time.Date(2026, 8, 5, 11, 30, 0, 0, time.UTC)
+	firstUpdatedAt := now.Format(time.RFC3339)
+	secondUpdatedAt := now.Add(time.Minute).Format(time.RFC3339)
+	currentUpdatedAt := firstUpdatedAt
+	firstVisibility := `"isMinimized":true,"minimizedReason":"OFF_TOPIC"`
+
+	commentsJSON := func() string {
+		return `{"nodes":[{
+			"databaseId":9231,
+			"author":{"login":"commenter"},
+			"body":"visible after moderation review",
+			"url":"https://github.com/acme/widget/pull/177#issuecomment-9231",
+			"createdAt":"` + now.Add(time.Minute).Format(time.RFC3339) + `",
+			"updatedAt":"` + now.Add(time.Minute).Format(time.RFC3339) + `",
+			` + firstVisibility + `
+		}],"pageInfo":{"hasNextPage":true,"endCursor":"cursor"}}`
+	}
+
+	gqlSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if bytes.Contains(body, []byte("pullRequest(number:")) {
+			_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequest":{"comments":{"nodes":[{
+				"databaseId":9232,
+				"isMinimized":true,
+				"minimizedReason":"OFF_TOPIC"
+			}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}`))
+			return
+		}
+		if bytes.Contains(body, []byte("pullRequests")) {
+			resp := `{"data":{"repository":{"pullRequests":{"nodes":[{
+				"databaseId":177100,
+				"number":177,
+				"title":"Moderated PR comments",
+				"state":"OPEN",
+				"isDraft":false,
+				"body":"GraphQL moderation state",
+				"url":"https://github.com/acme/widget/pull/177",
+				"author":{"login":"heidi"},
+				"createdAt":"` + firstUpdatedAt + `",
+				"updatedAt":"` + currentUpdatedAt + `",
+				"mergedAt":null,
+				"closedAt":null,
+				"additions":1,
+				"deletions":0,
+				"mergeable":"MERGEABLE",
+				"reviewDecision":"",
+				"headRefName":"feature/moderated-comments",
+				"baseRefName":"main",
+				"headRefOid":"deadbeef",
+				"baseRefOid":"feedface",
+				"headRepository":{"url":"https://github.com/acme/widget"},
+				"labels":{"nodes":[]},
+				"comments":` + commentsJSON() + `,
+				"reviews":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}},
+				"allCommits":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}},
+				"lastCommit":{"nodes":[]},
+				"timelineItems":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}
+			}],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`
+			_, _ = w.Write([]byte(resp))
+			return
+		}
+		_, _ = w.Write([]byte(`{"data":{"repository":{"issues":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`))
+	}))
+	defer gqlSrv.Close()
+
+	prID := int64(177100)
+	prNumber := 177
+	prTitle := "Moderated PR comments"
+	prState := "open"
+	prURL := "https://github.com/acme/widget/pull/177"
+	prTime := gh.Timestamp{Time: now}
+	commentAuthor := "commenter"
+	firstCommentID := int64(9231)
+	secondCommentID := int64(9232)
+	firstCommentBody := "visible after moderation review"
+	secondCommentBody := "outside the first GraphQL page"
+	firstCommentTime := gh.Timestamp{Time: now.Add(time.Minute)}
+	secondCommentTime := gh.Timestamp{Time: now.Add(2 * time.Minute)}
+	restComments := []*gh.IssueComment{
+		{
+			ID: &firstCommentID, Body: &firstCommentBody,
+			User:      &gh.User{Login: &commentAuthor},
+			CreatedAt: &firstCommentTime, UpdatedAt: &firstCommentTime,
+		},
+		{
+			ID: &secondCommentID, Body: &secondCommentBody,
+			User:      &gh.User{Login: &commentAuthor},
+			CreatedAt: &secondCommentTime, UpdatedAt: &secondCommentTime,
+		},
+	}
+	var restCommentCalls atomic.Int32
+	mock := &mockGH{
+		listOpenPullRequestsFn: func(_ context.Context, _, _ string) ([]*gh.PullRequest, error) {
+			updatedAt, err := time.Parse(time.RFC3339, currentUpdatedAt)
+			require.NoError(err)
+			return []*gh.PullRequest{{
+				ID: &prID, Number: &prNumber, Title: &prTitle, State: &prState,
+				HTMLURL: &prURL, User: &gh.User{Login: new("heidi")},
+				CreatedAt: &prTime, UpdatedAt: &gh.Timestamp{Time: updatedAt},
+				Head: &gh.PullRequestBranch{Ref: new("feature/moderated-comments"), SHA: new("deadbeef")},
+				Base: &gh.PullRequestBranch{Ref: new("main")},
+			}}, nil
+		},
+		listOpenIssuesFn: func(_ context.Context, _, _ string) ([]*gh.Issue, error) {
+			return nil, &gh.ErrorResponse{Response: &http.Response{StatusCode: http.StatusNotModified}}
+		},
+		listIssueCommentsFn: func(_ context.Context, _, _ string, number int) ([]*gh.IssueComment, error) {
+			require.Equal(prNumber, number)
+			restCommentCalls.Add(1)
+			return restComments, nil
+		},
+	}
+
+	database := dbtest.Open(t)
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": mock},
+		database, nil, defaultTestRepos, time.Minute, nil,
+		map[string]*ghclient.SyncBudget{"github.com": ghclient.NewSyncBudget(10000)},
+	)
+	t.Cleanup(syncer.Stop)
+	syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{
+		"github.com": ghclient.NewGraphQLFetcherWithClient(
+			githubv4.NewEnterpriseClient(gqlSrv.URL, gqlSrv.Client()), nil,
+		),
+	})
+
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	client := setupTestClient(t, srv)
+
+	srv.syncer.RunOnce(ctx)
+	assert.Equal(int32(1), restCommentCalls.Load())
+	firstResp, err := client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", int64(prNumber))
+	require.NoError(err)
+	require.Equal(http.StatusOK, firstResp.StatusCode())
+	require.NotNil(firstResp.JSON200)
+	require.NotNil(firstResp.JSON200.Events)
+	require.Len(*firstResp.JSON200.Events, 2)
+	firstMetadata := make(map[int64]string, len(*firstResp.JSON200.Events))
+	for _, event := range *firstResp.JSON200.Events {
+		require.NotNil(event.PlatformID)
+		firstMetadata[*event.PlatformID] = event.MetadataJSON
+	}
+	assert.Contains(firstMetadata[firstCommentID], `"provider_hidden":true`)
+	assert.Contains(firstMetadata[secondCommentID], `"provider_hidden":true`)
+
+	currentUpdatedAt = secondUpdatedAt
+	firstVisibility = `"isMinimized":false,"minimizedReason":null`
+	srv.syncer.RunOnce(ctx)
+	assert.Equal(int32(2), restCommentCalls.Load())
+	secondResp, err := client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", int64(prNumber))
+	require.NoError(err)
+	require.Equal(http.StatusOK, secondResp.StatusCode())
+	require.NotNil(secondResp.JSON200)
+	require.NotNil(secondResp.JSON200.Events)
+	require.Len(*secondResp.JSON200.Events, 2)
+	secondMetadata := make(map[int64]string, len(*secondResp.JSON200.Events))
+	for _, event := range *secondResp.JSON200.Events {
+		require.NotNil(event.PlatformID)
+		secondMetadata[*event.PlatformID] = event.MetadataJSON
+	}
+	assert.NotContains(secondMetadata[firstCommentID], `"provider_hidden":true`)
+	assert.Contains(secondMetadata[secondCommentID], `"provider_hidden":true`)
+	assert.Contains(secondMetadata[secondCommentID], `"provider_hidden_reason":"OFF_TOPIC"`)
 }
 
 // TestE2EGraphQLBulkSyncAppliesAuthoritativeReviewDecisionOverIncompleteReviews

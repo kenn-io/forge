@@ -89,6 +89,19 @@ func (s *Handler) editIssueComment(ctx context.Context, input *editIssueCommentI
 	}
 	providerEvent.IssueNumber = input.Number
 	event := platform.DBIssueEvent(issueID, providerEvent)
+	existingEvents, err := s.db.ListIssueEvents(ctx, issueID)
+	if err != nil {
+		return nil, httpapi.Internal("load existing comment metadata failed")
+	}
+	for _, existing := range existingEvents {
+		if existing.EventType == "issue_comment" && existing.PlatformID != nil &&
+			*existing.PlatformID == input.CommentID {
+			event.MetadataJSON = platform.PreserveProviderHiddenMetadata(
+				existing.MetadataJSON, event.MetadataJSON,
+			)
+			break
+		}
+	}
 	if err := s.db.UpsertIssueEvents(ctx, []db.IssueEvent{event}); err != nil {
 		return nil, httpapi.Internal("persist edited comment failed")
 	}

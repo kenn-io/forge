@@ -53,6 +53,11 @@ type Client struct {
 
 type PreviewOptions struct {
 	Limit int
+	// IncludeArchived keeps archived projects in the listing.
+	// Import previews leave it unset so archived projects stay
+	// hidden; configuration enumeration sets it so archived
+	// repositories can match configured globs.
+	IncludeArchived bool
 }
 
 type PreviewResult struct {
@@ -339,7 +344,10 @@ func (c *Client) ListRepositories(
 	owner string,
 	opts platform.RepositoryListOptions,
 ) ([]platform.Repository, error) {
-	preview, err := c.PreviewNamespace(ctx, owner, PreviewOptions{Limit: opts.Limit})
+	preview, err := c.PreviewNamespace(ctx, owner, PreviewOptions{
+		Limit:           opts.Limit,
+		IncludeArchived: true,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -360,7 +368,7 @@ func (c *Client) PreviewNamespace(
 	ctx, cancel := c.withForegroundTimeout(ctx)
 	defer cancel()
 
-	result, err := c.previewGroup(ctx, namespace, result)
+	result, err := c.previewGroup(ctx, namespace, result, opts.IncludeArchived)
 	if err == nil {
 		return result.finish(), nil
 	}
@@ -371,7 +379,7 @@ func (c *Client) PreviewNamespace(
 		return PreviewResult{}, err
 	}
 	result = PreviewResult{Limit: limit, Truncated: capped}
-	result, err = c.previewUser(ctx, namespace, result)
+	result, err = c.previewUser(ctx, namespace, result, opts.IncludeArchived)
 	if err != nil {
 		return PreviewResult{}, mapGitLabError("preview_user", err)
 	}
@@ -764,16 +772,19 @@ func (c *Client) previewGroup(
 	ctx context.Context,
 	namespace string,
 	result PreviewResult,
+	includeArchived bool,
 ) (PreviewResult, error) {
-	archived := false
 	includeSubGroups := true
 	opt := &gitlab.ListGroupProjectsOptions{
-		Archived:         &archived,
 		IncludeSubGroups: &includeSubGroups,
 		ListOptions: gitlab.ListOptions{
 			Page:    1,
 			PerPage: pageSizeForRemaining(result.Limit),
 		},
+	}
+	if !includeArchived {
+		archived := false
+		opt.Archived = &archived
 	}
 	for {
 		projects, resp, err := c.api.Groups.ListGroupProjects(namespace, opt, gitlab.WithContext(ctx))
@@ -785,7 +796,7 @@ func (c *Client) previewGroup(
 			}
 			return result, err
 		}
-		result = appendPreviewProjects(result, c.host, namespace, projects)
+		result = appendPreviewProjects(result, c.host, namespace, projects, includeArchived)
 		if result.ReturnedCount >= result.Limit {
 			result.Truncated = true
 			return result, nil
@@ -802,14 +813,17 @@ func (c *Client) previewUser(
 	ctx context.Context,
 	namespace string,
 	result PreviewResult,
+	includeArchived bool,
 ) (PreviewResult, error) {
-	archived := false
 	opt := &gitlab.ListProjectsOptions{
-		Archived: &archived,
 		ListOptions: gitlab.ListOptions{
 			Page:    1,
 			PerPage: pageSizeForRemaining(result.Limit),
 		},
+	}
+	if !includeArchived {
+		archived := false
+		opt.Archived = &archived
 	}
 	for {
 		projects, resp, err := c.api.Projects.ListUserProjects(namespace, opt, gitlab.WithContext(ctx))
@@ -821,7 +835,7 @@ func (c *Client) previewUser(
 			}
 			return result, err
 		}
-		result = appendPreviewProjects(result, c.host, namespace, projects)
+		result = appendPreviewProjects(result, c.host, namespace, projects, includeArchived)
 		if result.ReturnedCount >= result.Limit {
 			result.Truncated = true
 			return result, nil
@@ -839,13 +853,14 @@ func appendPreviewProjects(
 	host string,
 	namespace string,
 	projects []*gitlab.Project,
+	includeArchived bool,
 ) PreviewResult {
 	for _, project := range projects {
 		if project == nil {
 			continue
 		}
 		result.ScannedCount++
-		if project.Archived {
+		if project.Archived && !includeArchived {
 			continue
 		}
 		if !namespaceMatches(namespace, project.PathWithNamespace) {

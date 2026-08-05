@@ -5158,10 +5158,10 @@ func (s *Syncer) runOnce(
 	s.reposMu.Lock()
 	repos := slices.Clone(s.repos)
 	s.reposMu.Unlock()
-	repos = excludeArchivedRepos(repos)
 	if onlyRepos != nil {
 		repos = selectRepos(repos, onlyRepos)
 	}
+	repos = s.reconcileArchivedRepos(ctx, repos)
 	repos = prioritizeRepos(repos, priorityRepos)
 
 	total := len(repos)
@@ -5368,6 +5368,48 @@ func prioritizeRepos(repos, priorityRepos []RepoRef) []RepoRef {
 // excludeArchivedRepos drops provider-archived repositories from a live sync
 // pass. Archived repos stay tracked in s.repos for archive collection and
 // API surfaces; only live polling skips them.
+// reconcileArchivedRepos refreshes provider metadata for archived
+// tracked refs so an upstream unarchive is observed during normal
+// sync passes. Refs the provider still reports archived (or whose
+// metadata refresh fails) stay excluded from the pass; refs that
+// resolved unarchived rejoin it with fresh metadata.
+func (s *Syncer) reconcileArchivedRepos(
+	ctx context.Context, repos []RepoRef,
+) []RepoRef {
+	live := make([]RepoRef, 0, len(repos))
+	skipped := make([]string, 0)
+	for _, repo := range repos {
+		if !repo.Archived {
+			live = append(live, repo)
+			continue
+		}
+		if ctx.Err() != nil {
+			skipped = append(skipped, repo.Owner+"/"+repo.Name)
+			continue
+		}
+		resolved, _, _, err := s.reconcileRepoIdentity(ctx, repo)
+		if err != nil {
+			slog.Debug("archived repo metadata refresh failed",
+				"repo", repo.Owner+"/"+repo.Name, "err", err,
+			)
+			skipped = append(skipped, repo.Owner+"/"+repo.Name)
+			continue
+		}
+		if resolved.Archived {
+			skipped = append(skipped, repo.Owner+"/"+repo.Name)
+			continue
+		}
+		slog.Info("repo unarchived upstream; resuming live sync",
+			"repo", resolved.Owner+"/"+resolved.Name,
+		)
+		live = append(live, resolved)
+	}
+	if len(skipped) > 0 {
+		slog.Debug("skipping archived repos in live sync", "repos", skipped)
+	}
+	return live
+}
+
 func excludeArchivedRepos(repos []RepoRef) []RepoRef {
 	live := make([]RepoRef, 0, len(repos))
 	skipped := make([]string, 0)
@@ -5738,6 +5780,15 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 		return fmt.Errorf("resolve repo identity %s/%s: %w", repo.Owner, repo.Name, err)
 	}
 	repo = resolvedRef
+	if repo.Archived {
+		// Identity resolution already published the archived flag, so
+		// the repo drops out of future passes; stop before any live
+		// clone, overview, or item syncing touches the archived repo.
+		slog.Info("repo archived upstream; skipping live sync",
+			"repo", repo.Owner+"/"+repo.Name,
+		)
+		return nil
+	}
 
 	s.refreshRepoSettings(ctx, repo, repoID, resolvedRepo)
 

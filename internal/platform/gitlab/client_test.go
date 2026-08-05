@@ -615,6 +615,29 @@ func TestPreviewNamespaceUsesGroupFirstFallbackPaginatesAndFiltersArchived(t *te
 	}, paths)
 }
 
+func TestListRepositoriesIncludesArchivedProjects(t *testing.T) {
+	assert := assert.New(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Empty(r.URL.Query().Get("archived"),
+			"configuration enumeration must not filter archived projects server-side")
+		writeJSON(w, `[
+			{"id": 1, "path": "one", "path_with_namespace": "kenn-forge/one", "archived": false},
+			{"id": 2, "path": "old", "path_with_namespace": "kenn-forge/old", "archived": true}
+		]`)
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server.URL)
+	repos, err := client.ListRepositories(
+		context.Background(), "kenn-forge", platform.RepositoryListOptions{},
+	)
+	require.NoError(t, err)
+
+	require.Len(t, repos, 2)
+	assert.False(repos[0].Archived)
+	assert.True(repos[1].Archived)
+}
+
 func TestPreviewNamespaceFallsBackToUserProjectsAfterGroupNotFound(t *testing.T) {
 	assert := assert.New(t)
 	var paths []string

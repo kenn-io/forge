@@ -323,11 +323,24 @@ fallback repository listing.
   metadata. (`internal/github/sync.go::publishResolvedRepository`)
   Archived state refreshes wherever resolution already happens (startup,
   config reload, settings add/refresh) and must survive catalog
-  republication, which cannot read it from the store. GitLab namespace
-  listings filter archived projects server-side, so GitLab globs cannot see
-  them; exact GitLab refs work. (`internal/github/repo_config_resolver.go::resolveConfiguredRepo`,
-  `internal/github/sync.go::excludeArchivedRepos`,
+  republication, which cannot read it from the store. GitLab configuration
+  enumeration lists namespaces with archived projects included — the
+  server-side `archived=false` filter and the client-side drop apply only to
+  import previews — so GitLab globs match archived projects like GitHub
+  globs do. (`internal/github/repo_config_resolver.go::resolveConfiguredRepo`,
+  `internal/platform/gitlab/client.go::ListRepositories`,
   `internal/github/sync.go::repoRefFromCatalog`)
+- Archived state transitions are observed during normal sync passes, not
+  only at resolution sites: each pass reconciles archived tracked refs with
+  metadata-only identity resolution, so an upstream unarchive returns the
+  repository to live syncing without a restart or reload, while refs still
+  archived (or whose refresh fails) stay excluded. In the other direction, a
+  live repository whose in-pass identity resolution reports archived stops
+  before any clone, overview, label, or item syncing — the publication has
+  already flipped the tracked flag, and the pass must not sync an archived
+  repository's content on the way out.
+  (`internal/github/sync.go::reconcileArchivedRepos`,
+  `internal/github/sync.go::syncRepo`)
 - Archive seeding degrades per repository: a ref that fails validation,
   provider resolution, or catalog reconciliation is logged with its identity
   and skipped, never fatal — one bad configured entry must not crash-loop the

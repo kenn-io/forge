@@ -10258,6 +10258,20 @@ func TestRunOnceSkipsArchivedRepos(t *testing.T) {
 		comments: []*gh.IssueComment{},
 		reviews:  []*gh.PullRequestReview{},
 		commits:  []*gh.RepositoryCommit{},
+		getRepositoryFn: func(
+			_ context.Context, owner, repo string,
+		) (*gh.Repository, error) {
+			id := int64(1)
+			nodeID := "repo-" + owner + "-" + repo
+			archived := repo == "frozen"
+			return &gh.Repository{
+				ID:       &id,
+				NodeID:   &nodeID,
+				Name:     &repo,
+				Owner:    &gh.User{Login: &owner},
+				Archived: &archived,
+			}, nil
+		},
 	}
 	repos := []RepoRef{
 		{Owner: "acme", Name: "live", PlatformHost: "github.com"},
@@ -10280,6 +10294,88 @@ func TestRunOnceSkipsArchivedRepos(t *testing.T) {
 		"archived repo should not produce a live sync result")
 	assert.Equal("live", gotResults[0].Name)
 	assert.True(ghMock.listOpenPRsCalled.Load())
+}
+
+func TestRunOnceRestoresLiveSyncForUnarchivedRepo(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+
+	// The default mockClient GetRepository reports the repo unarchived,
+	// so the tracked archived flag is stale.
+	ghMock := &mockClient{
+		openPRs:  []*gh.PullRequest{},
+		comments: []*gh.IssueComment{},
+		reviews:  []*gh.PullRequestReview{},
+		commits:  []*gh.RepositoryCommit{},
+	}
+	repos := []RepoRef{
+		{Owner: "acme", Name: "thawed", PlatformHost: "github.com", Archived: true},
+	}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": ghMock}, d, nil, repos,
+		time.Minute, nil, nil,
+	)
+
+	var gotResults []RepoSyncResult
+	syncer.SetOnSyncCompleted(func(results []RepoSyncResult) {
+		gotResults = results
+	})
+
+	syncer.RunOnce(t.Context())
+
+	require.Len(gotResults, 1,
+		"provider-unarchived repo should rejoin the live pass")
+	assert.Equal("thawed", gotResults[0].Name)
+	assert.True(ghMock.listOpenPRsCalled.Load())
+	tracked := syncer.TrackedRepos()
+	require.Len(tracked, 1)
+	assert.False(tracked[0].Archived,
+		"tracked ref should be live again after the provider unarchives")
+}
+
+func TestRunOnceStopsLiveSyncWhenRepoArchivesMidPass(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+
+	archived := true
+	ghMock := &mockClient{
+		openPRs:  []*gh.PullRequest{},
+		comments: []*gh.IssueComment{},
+		reviews:  []*gh.PullRequestReview{},
+		commits:  []*gh.RepositoryCommit{},
+		getRepositoryFn: func(
+			_ context.Context, owner, repo string,
+		) (*gh.Repository, error) {
+			id := int64(1)
+			nodeID := "repo-" + owner + "-" + repo
+			return &gh.Repository{
+				ID:       &id,
+				NodeID:   &nodeID,
+				Name:     &repo,
+				Owner:    &gh.User{Login: &owner},
+				Archived: &archived,
+			}, nil
+		},
+	}
+	repos := []RepoRef{
+		{Owner: "acme", Name: "closing", PlatformHost: "github.com"},
+	}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": ghMock}, d, nil, repos,
+		time.Minute, nil, nil,
+	)
+
+	syncer.RunOnce(t.Context())
+
+	assert.False(ghMock.listOpenPRsCalled.Load(),
+		"live item sync must stop once resolution reports the repo archived")
+	tracked := syncer.TrackedRepos()
+	require.Len(tracked, 1)
+	assert.True(tracked[0].Archived)
 }
 
 func TestRepoRefFromCatalogKeepsArchived(t *testing.T) {

@@ -2180,6 +2180,44 @@ func TestSyncNotificationsContinuesAfterRepoErrorOnSameHost(t *testing.T) {
 	assert.False(widgetWatermark.LastSuccessfulSyncAt.IsZero())
 }
 
+func TestSyncNotificationsSkipsArchivedRepos(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	database := openTestDB(t)
+	for _, name := range []string{"frozen", "widget"} {
+		_, err := database.UpsertRepo(
+			t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", name),
+		)
+		require.NoError(err)
+	}
+	var listedRepos sync.Map
+	client := &mockClient{
+		listNotificationsFn: func(
+			_ context.Context, opts NotificationListOptions,
+		) ([]NotificationThread, bool, error) {
+			if opts.RepoName != "" {
+				listedRepos.Store(opts.RepoName, true)
+			}
+			return nil, false, nil
+		},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client}, database, nil,
+		[]RepoRef{
+			{Owner: "acme", Name: "frozen", PlatformHost: "github.com", Archived: true},
+			{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
+		},
+		time.Minute, nil, nil,
+	)
+
+	require.NoError(syncer.SyncNotifications(t.Context()))
+	_, listedWidget := listedRepos.Load("widget")
+	assert.True(listedWidget, "live repo notifications should sync")
+	_, listedFrozen := listedRepos.Load("frozen")
+	assert.False(listedFrozen,
+		"archived repo must not receive notification polling")
+}
+
 func TestSyncNotificationsSkipsUnroutedRepoAndAdvancesRoutedSibling(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -9554,6 +9592,53 @@ func TestSetWatchedMRsReplacesList(t *testing.T) {
 	mu.Unlock()
 	assert.LessOrEqual(countPR1After, countPR1Before+1,
 		"PR #1 should stop being synced after watch list replacement")
+}
+
+func TestWatchedMRsForFastSyncSkipsArchivedRepos(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := time.Date(2026, 6, 24, 12, 0, 0, 0, time.UTC)
+
+	liveID, err := d.UpsertRepo(ctx, db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "repo-acme-live", Owner: "acme", Name: "live",
+	})
+	require.NoError(err)
+	frozenID, err := d.UpsertRepo(ctx, db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "repo-acme-frozen", Owner: "acme", Name: "frozen",
+	})
+	require.NoError(err)
+	seedMR := func(repoID int64, number int) {
+		_, upsertErr := d.UpsertMergeRequest(ctx, &db.MergeRequest{
+			RepoID: repoID, PlatformID: int64(number), Number: number,
+			Title: "PR", Author: "octo", State: db.MergeRequestStateOpen,
+			HeadBranch: "feature", BaseBranch: "main",
+			CreatedAt: now.Add(-24 * time.Hour),
+			UpdatedAt: now.Add(-30 * time.Minute), LastActivityAt: now.Add(-30 * time.Minute),
+		})
+		require.NoError(upsertErr)
+	}
+	seedMR(liveID, 1)
+	seedMR(frozenID, 2)
+
+	syncer := NewSyncer(
+		map[string]Client{}, d, nil,
+		[]RepoRef{
+			{Platform: platform.KindGitHub, PlatformHost: "github.com", Owner: "acme", Name: "live"},
+			{Platform: platform.KindGitHub, PlatformHost: "github.com", Owner: "acme", Name: "frozen", Archived: true},
+		},
+		time.Hour, nil, nil,
+	)
+	syncer.SetActiveMRWindow(4 * time.Hour)
+
+	got := syncer.watchedMRsForFastSync(ctx, now)
+	assert.ElementsMatch([]WatchedMR{{
+		Platform: platform.KindGitHub, PlatformHost: "github.com",
+		Owner: "acme", Name: "live", Number: 1,
+	}}, got, "open MRs on archived repos must not enter fast sync")
 }
 
 func TestWatchedMRsIncludeRecentlyActiveOpenPRs(t *testing.T) {

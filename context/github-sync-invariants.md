@@ -257,7 +257,15 @@ fallback repository listing.
 - The legacy closed-item backfill is retired; configured repositories seed durable archive discovery before sync cutover, with no cursor translation. (`internal/github/sync.go::SetReposWithContext`)
 - Provider-archived repositories are configurable and archive-only: resolution
   accepts them (exact and glob) with `RepoRef.Archived` set, live sync skips
-  them, and archive discovery/hydration treat them like any configured repo.
+  them — the bulk sync pass, notification polling, and watched-MR fast sync
+  alike — and archive discovery/hydration treat them like any configured repo.
+  Settings add/refresh merges apply freshly resolved metadata to
+  already-tracked refs, so an archived flip (either direction) takes effect
+  without a daemon restart even when exact and glob entries overlap.
+  (`internal/github/notifications_sync.go::SyncNotifications`,
+  `internal/github/sync.go::watchedMRsForFastSync`,
+  `internal/server/settings_handlers.go::mergeTrackedRepos`,
+  `internal/server/settings_handlers.go::replaceGlobRepos`)
   Archived state refreshes wherever resolution already happens (startup,
   config reload, settings add/refresh) and must survive catalog
   republication, which cannot read it from the store. GitLab namespace

@@ -834,6 +834,121 @@ name = "widget"
 		"archived repo is tracked archive-only after add")
 }
 
+func TestHandleAddRepoRefreshesArchivedStateForTrackedRepo(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	archivedNow := atomic.Bool{}
+	mock := &mockGH{
+		getRepositoryFn: func(
+			_ context.Context, owner, repo string,
+		) (*gh.Repository, error) {
+			return &gh.Repository{
+				Name:     new(repo),
+				Owner:    &gh.User{Login: new(owner)},
+				Archived: new(archivedNow.Load()),
+			}, nil
+		},
+		listReposByOwnerFn: func(
+			_ context.Context, owner string,
+		) ([]*gh.Repository, error) {
+			return []*gh.Repository{{
+				Name:     new("widget"),
+				Owner:    &gh.User{Login: new(owner)},
+				Archived: new(archivedNow.Load()),
+			}}, nil
+		},
+	}
+	srv, _, _ := setupTestServerWithConfigContent(t, `
+sync_interval = "5m"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "*"
+`, mock)
+	require.True(srv.syncer.IsTrackedRepo("acme", "widget"))
+
+	// The repo gets archived on the provider; adding an overlapping exact
+	// entry must refresh the tracked ref, not keep the stale live one.
+	archivedNow.Store(true)
+	rr := doJSON(t, srv, http.MethodPost, "/api/v1/repos", map[string]string{
+		"provider": "github",
+		"host":     "github.com",
+		"owner":    "acme",
+		"name":     "widget",
+	})
+	require.Equal(http.StatusCreated, rr.Code, rr.Body.String())
+
+	assert.True(trackedRepoArchived(srv, "acme", "widget"),
+		"overlapping add must apply fresh archived state")
+}
+
+func TestHandleRefreshRepoUpdatesArchivedStateForOverlappingEntries(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	archivedNow := atomic.Bool{}
+	mock := &mockGH{
+		getRepositoryFn: func(
+			_ context.Context, owner, repo string,
+		) (*gh.Repository, error) {
+			return &gh.Repository{
+				Name:     new(repo),
+				Owner:    &gh.User{Login: new(owner)},
+				Archived: new(archivedNow.Load()),
+			}, nil
+		},
+		listReposByOwnerFn: func(
+			_ context.Context, owner string,
+		) ([]*gh.Repository, error) {
+			return []*gh.Repository{{
+				Name:     new("widget"),
+				Owner:    &gh.User{Login: new(owner)},
+				Archived: new(archivedNow.Load()),
+			}}, nil
+		},
+	}
+	srv, _, _ := setupTestServerWithConfigContent(t, `
+sync_interval = "5m"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "widget"
+
+[[repos]]
+owner = "acme"
+name = "*"
+`, mock)
+	require.True(srv.syncer.IsTrackedRepo("acme", "widget"))
+	require.False(trackedRepoArchived(srv, "acme", "widget"))
+
+	// widget matches both the exact entry and the glob; a refresh after the
+	// provider archives it must update the tracked ref even though the
+	// exact entry keeps it in the tracked set.
+	archivedNow.Store(true)
+	rr := doJSON(
+		t, srv, http.MethodPost,
+		"/api/v1/repo/gh/acme/*/refresh", nil,
+	)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+	assert.True(trackedRepoArchived(srv, "acme", "widget"),
+		"glob refresh must apply fresh archived state to overlapping repos")
+}
+
+func trackedRepoArchived(srv *Server, owner, name string) bool {
+	for _, repo := range srv.syncer.TrackedRepos() {
+		if strings.EqualFold(repo.Owner, owner) && strings.EqualFold(repo.Name, name) {
+			return repo.Archived
+		}
+	}
+	return false
+}
+
 func TestHandleAddRepoTriggersImmediateSyncDuringCooldown(t *testing.T) {
 	require := require.New(t)
 

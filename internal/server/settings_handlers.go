@@ -155,20 +155,23 @@ func matchedRepoCount(
 	return count
 }
 
-// mergeTrackedRepos adds repos to the syncer's tracked set,
-// deduplicating by host/owner/name.
+// mergeTrackedRepos adds repos to the syncer's tracked set, deduplicating by
+// host/owner/name. An already-tracked repo takes the freshly resolved
+// metadata so provider state transitions (renames, archived flips) apply
+// without a daemon restart.
 func (s *Server) mergeTrackedRepos(add []ghclient.RepoRef) {
 	current := s.syncer.TrackedRepos()
-	seen := make(map[string]struct{}, len(current))
-	for _, r := range current {
-		seen[trackedRepoKey(r)] = struct{}{}
+	index := make(map[string]int, len(current))
+	for i, r := range current {
+		index[trackedRepoKey(r)] = i
 	}
 	for _, r := range add {
 		key := trackedRepoKey(r)
-		if _, ok := seen[key]; ok {
+		if i, ok := index[key]; ok {
+			current[i] = r
 			continue
 		}
-		seen[key] = struct{}{}
+		index[key] = len(current)
 		current = append(current, r)
 	}
 	s.syncer.SetRepos(current)
@@ -184,16 +187,29 @@ func (s *Server) replaceGlobRepos(
 ) {
 	current := s.syncer.TrackedRepos()
 	kept := make([]ghclient.RepoRef, 0, len(current))
-	seen := make(map[string]struct{}, len(current)+len(expanded))
+	index := make(map[string]int, len(current)+len(expanded))
 	for _, repo := range current {
 		if repoMatchesConfig(repo, raw) &&
 			!repoMatchesOtherConfig(repo, raw, configured) {
 			continue
 		}
-		appendTrackedRepo(&kept, seen, repo)
+		key := trackedRepoKey(repo)
+		if _, ok := index[key]; ok {
+			continue
+		}
+		index[key] = len(kept)
+		kept = append(kept, repo)
 	}
+	// Freshly resolved matches overwrite refs kept for overlapping config
+	// entries so provider state transitions (renames, archived flips) apply.
 	for _, repo := range expanded {
-		appendTrackedRepo(&kept, seen, repo)
+		key := trackedRepoKey(repo)
+		if i, ok := index[key]; ok {
+			kept[i] = repo
+			continue
+		}
+		index[key] = len(kept)
+		kept = append(kept, repo)
 	}
 	s.syncer.SetRepos(kept)
 }
@@ -328,19 +344,6 @@ func trackedRepoPath(repo ghclient.RepoRef) string {
 		return strings.TrimSpace(repo.RepoPath)
 	}
 	return repo.Owner + "/" + repo.Name
-}
-
-func appendTrackedRepo(
-	dst *[]ghclient.RepoRef,
-	seen map[string]struct{},
-	repo ghclient.RepoRef,
-) {
-	key := trackedRepoKey(repo)
-	if _, ok := seen[key]; ok {
-		return
-	}
-	seen[key] = struct{}{}
-	*dst = append(*dst, repo)
 }
 
 func repoProvider(repo ghclient.RepoRef) string {

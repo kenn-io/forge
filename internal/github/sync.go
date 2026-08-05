@@ -4345,7 +4345,38 @@ func (s *Syncer) watchedMRsForFastSync(ctx context.Context, now time.Time) []Wat
 	for _, mr := range s.hotAndWarmOpenMRs(ctx, now, activeWindow, watchInt) {
 		watched.add(mr)
 	}
-	return watched.slice()
+	items := watched.slice()
+	archived := s.archivedRepoKeys()
+	if len(archived) == 0 {
+		return items
+	}
+	live := make([]WatchedMR, 0, len(items))
+	for _, mr := range items {
+		key := detailRepoKey(
+			watchedMRPlatform(mr), watchedMRHost(mr), mr.Owner, mr.Name,
+		)
+		if _, ok := archived[key]; ok {
+			continue
+		}
+		live = append(live, mr)
+	}
+	return live
+}
+
+// archivedRepoKeys returns detailRepoKey identities for tracked archived
+// repositories so live lanes (fast sync, notifications) can skip them.
+func (s *Syncer) archivedRepoKeys() map[string]struct{} {
+	s.reposMu.Lock()
+	defer s.reposMu.Unlock()
+	keys := make(map[string]struct{})
+	for _, repo := range s.repos {
+		if repo.Archived {
+			keys[detailRepoKey(
+				repoPlatform(repo), repo.PlatformHost, repo.Owner, repo.Name,
+			)] = struct{}{}
+		}
+	}
+	return keys
 }
 
 func (s *Syncer) watchSettingsLocked() (time.Duration, time.Duration) {

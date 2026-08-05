@@ -130,7 +130,7 @@ func (s *Syncer) NotificationSyncStatus() NotificationSyncStatus {
 
 func (s *Syncer) SyncNotifications(ctx context.Context) error {
 	ctx = WithSyncBudget(ctx)
-	repos := s.TrackedRepos()
+	repos := excludeArchivedRepos(s.TrackedRepos())
 	tracked := make(map[string]RepoRef, len(repos))
 	for _, repo := range repos {
 		platformName := string(repoPlatform(repo))
@@ -776,7 +776,7 @@ func (s *Syncer) ackRepoBuckets(
 		byNotification[notification.ID] = bucket
 		add(bucket, notification.RepoOwner, notification.RepoName)
 	}
-	for _, repo := range s.TrackedRepos() {
+	for _, repo := range excludeArchivedRepos(s.TrackedRepos()) {
 		if repoPlatform(repo) != kind || repoHost(repo) != host {
 			continue
 		}

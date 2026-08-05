@@ -10466,6 +10466,51 @@ func TestPublishResolvedRepositoryLandsCrossIdentityLookupOnSuccessor(t *testing
 		"the publication lands on the repository the provider identified")
 }
 
+func TestPublishResolvedRepositoryCrossIdentityUsesAuthoritativeArchived(t *testing.T) {
+	assert := assert.New(t)
+	d := openTestDB(t)
+	renamed := RepoRef{
+		Owner: "acme", Name: "tools-new", PlatformHost: "github.com",
+		RepoPath: "acme/tools-new", PlatformExternalID: "repo-x",
+	}
+	successor := RepoRef{
+		Owner: "acme", Name: "tools", PlatformHost: "github.com",
+		RepoPath: "acme/tools", PlatformExternalID: "repo-y", Archived: true,
+	}
+	syncer := NewSyncer(
+		map[string]Client{}, d, nil,
+		[]RepoRef{renamed, successor}, time.Hour, nil, nil,
+	)
+
+	// The publication lands on the successor, but the snapshot belongs to
+	// the renamed repository — its archived flag says nothing about the
+	// successor, so authoritative resolved metadata applies.
+	previous := RepoRef{
+		Owner: "acme", Name: "tools", PlatformHost: "github.com",
+		RepoPath: "acme/tools", PlatformExternalID: "repo-x",
+	}
+	resolved := successor
+	resolved.Archived = false
+	syncer.publishResolvedRepository(previous, resolved, true)
+	for _, repo := range syncer.TrackedRepos() {
+		if repo.PlatformExternalID == "repo-y" {
+			assert.False(repo.Archived,
+				"authoritative metadata must apply on a cross-identity landing")
+		}
+	}
+
+	// Without fresh provider metadata the successor's tracked flag stands.
+	stale := resolved
+	stale.Archived = true
+	syncer.publishResolvedRepository(previous, stale, false)
+	for _, repo := range syncer.TrackedRepos() {
+		if repo.PlatformExternalID == "repo-y" {
+			assert.False(repo.Archived,
+				"non-authoritative publication must preserve the successor's state")
+		}
+	}
+}
+
 func TestPublishResolvedRepositoryPreservesNewerConfiguredRepoPath(t *testing.T) {
 	assert := assert.New(t)
 	d := openTestDB(t)

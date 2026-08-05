@@ -906,6 +906,79 @@ func TestSyncRepoReplacementReconcilesArchiveLifecycle(t *testing.T) {
 	)
 }
 
+func TestSyncReusedRouteResolvingSuccessorKeepsBothReposTracked(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	database := dbtest.Open(t)
+	// The renamed repository moved to a new route; a different repository
+	// reused its old route. Both are tracked. A sync of the old route
+	// whose snapshot still carries the renamed repository's id resolves
+	// the successor — neither repository may be lost or duplicated.
+	renamed := RepoRef{
+		Platform: platform.KindGitLab, PlatformHost: "gitlab.test",
+		Owner: "group", Name: "project-moved", RepoPath: "group/project-moved",
+		PlatformExternalID: "gid://gitlab/Project/old",
+	}
+	successor := RepoRef{
+		Platform: platform.KindGitLab, PlatformHost: "gitlab.test",
+		Owner: "group", Name: "project", RepoPath: "group/project",
+		PlatformExternalID: "gid://gitlab/Project/new",
+	}
+	provider := &syncTestRepositoryReadProvider{
+		syncTestReadProvider: &syncTestReadProvider{
+			syncTestProvider: syncTestProvider{
+				kind: platform.KindGitLab, host: "gitlab.test",
+			},
+		},
+		repository: platform.Repository{
+			Ref: platform.RepoRef{
+				Platform: platform.KindGitLab, Host: "gitlab.test",
+				Owner: "group", Name: "project", RepoPath: "group/project",
+			},
+			PlatformExternalID: "gid://gitlab/Project/new",
+		},
+	}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	syncer := NewSyncerWithRegistry(
+		registry, database, nil, []RepoRef{renamed, successor}, time.Hour, nil, nil,
+	)
+	service, err := archive.NewService(database, registry, nil, syncer, nil, nil)
+	require.NoError(err)
+	syncer.SetArchiveService(service)
+	_, err = service.EnsureConfigured(ctx, []platform.RepoRef{
+		platformRepoRef(renamed), platformRepoRef(successor),
+	})
+	require.NoError(err)
+
+	stale := successor
+	stale.PlatformExternalID = renamed.PlatformExternalID
+	require.NoError(syncer.syncRepo(ctx, stale))
+
+	tracked := syncer.TrackedRepos()
+	require.Len(tracked, 2, "neither repository may be lost or duplicated")
+	byID := map[string]RepoRef{}
+	for _, repo := range tracked {
+		byID[repo.PlatformExternalID] = repo
+	}
+	assert.Equal("project-moved", byID["gid://gitlab/Project/old"].Name,
+		"the renamed repository keeps its tracked entry")
+	assert.Equal("project", byID["gid://gitlab/Project/new"].Name)
+
+	oldEntry, err := database.GetRepositoryByProviderID(
+		ctx, "gitlab", "gitlab.test", "gid://gitlab/Project/old",
+	)
+	require.NoError(err)
+	require.NotNil(oldEntry)
+	newEntry, err := database.GetRepositoryByProviderID(
+		ctx, "gitlab", "gitlab.test", "gid://gitlab/Project/new",
+	)
+	require.NoError(err)
+	require.NotNil(newEntry)
+	assert.NotEqual(oldEntry.Repository.ID, newEntry.Repository.ID)
+}
+
 func TestArchiveAdmissionSharesSyncBudgetAndProviderReserve(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

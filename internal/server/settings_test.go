@@ -1909,6 +1909,65 @@ platform_host = "ghe.example.com"
 		"an entry with the same path on another host must not retain provenance")
 }
 
+func TestHandleDeleteExactEntryIgnoresSamePathOnOtherProvider(t *testing.T) {
+	mock := &mockGH{
+		getRepositoryFn: func(
+			_ context.Context, owner, repo string,
+		) (*gh.Repository, error) {
+			return &gh.Repository{
+				Name:  new(repo),
+				Owner: &gh.User{Login: new(owner)},
+			}, nil
+		},
+		listReposByOwnerFn: func(
+			_ context.Context, owner string,
+		) ([]*gh.Repository, error) {
+			return []*gh.Repository{{
+				Name:  new("tools-new"),
+				Owner: &gh.User{Login: new(owner)},
+			}}, nil
+		},
+	}
+	srv, _, _ := setupTestServerWithConfigContent(t, `
+sync_interval = "5m"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "tools"
+
+[[repos]]
+owner = "acme"
+name = "*"
+
+[[repos]]
+platform = "gitlab"
+platform_host = "github.com"
+owner = "acme"
+name = "tools"
+`, mock)
+
+	srv.syncer.SetRepos([]ghclient.RepoRef{{
+		Platform: platform.KindGitHub, Owner: "acme", Name: "tools-new",
+		PlatformHost: "github.com", RepoPath: "acme/tools-new",
+		PlatformExternalID: "repo-x", ConfiguredRepoPath: "acme/tools",
+	}})
+
+	// The remaining acme/tools entry shares the host but belongs to a
+	// different provider; it cannot keep the deleted GitHub entry's
+	// provenance alive.
+	rr := doJSON(
+		t, srv, http.MethodDelete,
+		"/api/v1/repo/gh/acme/tools", nil,
+	)
+	require.Equal(t, http.StatusNoContent, rr.Code, rr.Body.String())
+	require.True(t, srv.syncer.IsTrackedRepo("acme", "tools-new"))
+	assert.Empty(t, trackedRepoProvenancePath(srv, "acme", "tools-new"),
+		"an entry with the same path on another provider must not retain provenance")
+}
+
 func TestHandleDeleteRepoUsesProviderHostQuery(t *testing.T) {
 	require := require.New(t)
 	srv, _, _ := setupTestServerWithConfigContent(t, `

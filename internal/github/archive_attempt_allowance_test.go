@@ -116,7 +116,7 @@ func TestArchiveProviderAttemptAllowanceUsesObservedQuotaCost(t *testing.T) {
 	reset := time.Now().UTC().Add(time.Hour).Truncate(time.Second)
 	for _, resource := range []QuotaResource{QuotaResourceREST, QuotaResourceGraphQL} {
 		registry.UpdateSnapshot(identity, resource, Rate{
-			Limit: 5000, Remaining: 203, Reset: reset,
+			Limit: 5000, Remaining: 1003, Reset: reset,
 		})
 	}
 	var calls atomic.Int32
@@ -125,7 +125,7 @@ func TestArchiveProviderAttemptAllowanceUsesObservedQuotaCost(t *testing.T) {
 		return &http.Response{
 			StatusCode: http.StatusOK,
 			Body:       io.NopCloser(strings.NewReader("{}")),
-			Header:     quotaTestHeaders(5000, 201, reset),
+			Header:     quotaTestHeaders(5000, 1001, reset),
 			Request:    req,
 		}, nil
 	})
@@ -139,7 +139,6 @@ func TestArchiveProviderAttemptAllowanceUsesObservedQuotaCost(t *testing.T) {
 		3,
 		identity,
 		[]QuotaResource{QuotaResourceREST, QuotaResourceGraphQL},
-		RateReserveBuffer,
 	)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.github.test/repos/o/r", nil)
@@ -157,13 +156,13 @@ func TestArchiveProviderAttemptAllowanceUsesObservedQuotaCost(t *testing.T) {
 	assert.Zero(budget.ArchiveSpent())
 	pool, ok := registry.Get(identity, QuotaResourceREST)
 	require.True(ok)
-	assert.Equal(201, pool.Remaining)
+	assert.Equal(1001, pool.Remaining)
 	assert.Equal(2, pool.AttemptCost)
 	window, ok := registry.PacingWindow(
 		identity, []QuotaResource{QuotaResourceREST, QuotaResourceGraphQL},
 	)
 	require.True(ok)
-	assert.Equal(201, window.Remaining)
+	assert.Equal(1001, window.Remaining)
 }
 
 func TestArchiveProviderQuotaCostPersistsAcrossAdmissions(t *testing.T) {
@@ -207,7 +206,6 @@ func TestArchiveProviderQuotaCostPersistsAcrossAdmissions(t *testing.T) {
 		1200,
 		identity,
 		resources,
-		RateReserveBuffer,
 	)
 	req, err := http.NewRequestWithContext(
 		ctx, http.MethodGet, "https://api.github.test/repos/o/r", nil,
@@ -228,7 +226,6 @@ func TestArchiveProviderQuotaCostPersistsAcrossAdmissions(t *testing.T) {
 		1198,
 		identity,
 		resources,
-		RateReserveBuffer,
 	)
 	req, err = http.NewRequestWithContext(
 		ctx, http.MethodGet, "https://api.github.test/repos/o/r", nil,
@@ -253,13 +250,13 @@ func TestArchiveProviderHeaderlessReservationsProtectReserveAcrossAdmissions(t *
 	resources := []QuotaResource{QuotaResourceREST, QuotaResourceGraphQL}
 	for _, resource := range resources {
 		registry.UpdateSnapshot(identity, resource, Rate{
-			Limit: 5000, Remaining: RateReserveBuffer + 1, Reset: reset,
+			Limit: 5000, Remaining: ArchiveProviderReserve(5000) + 1, Reset: reset,
 		})
 	}
 	window, ok := registry.PacingWindow(identity, resources)
 	require.True(ok)
 	budget := NewSyncBudget(100000)
-	assert.Equal(RateReserveBuffer+1, window.Remaining)
+	assert.Equal(ArchiveProviderReserve(5000)+1, window.Remaining)
 
 	var calls atomic.Int32
 	base := roundTripFunc(func(req *http.Request) (*http.Response, error) {
@@ -281,7 +278,6 @@ func TestArchiveProviderHeaderlessReservationsProtectReserveAcrossAdmissions(t *
 			1,
 			identity,
 			resources,
-			RateReserveBuffer,
 		)
 		req, err := http.NewRequestWithContext(
 			ctx, http.MethodGet, "https://api.github.test/repos/o/r", nil,
@@ -294,7 +290,7 @@ func TestArchiveProviderHeaderlessReservationsProtectReserveAcrossAdmissions(t *
 	require.NoError(request())
 	window, ok = registry.PacingWindow(identity, resources)
 	require.True(ok)
-	assert.Equal(RateReserveBuffer, window.Remaining)
+	assert.Equal(ArchiveProviderReserve(5000), window.Remaining)
 	require.ErrorIs(request(), platform.ErrArchiveAttemptBudget)
 	assert.Equal(int32(1), calls.Load())
 }
@@ -308,11 +304,11 @@ func TestArchiveProviderAttemptAllowanceResetsObservedCostWithQuotaWindow(t *tes
 	nextReset := firstReset.Add(time.Hour)
 	for _, resource := range []QuotaResource{QuotaResourceREST, QuotaResourceGraphQL} {
 		registry.UpdateSnapshot(identity, resource, Rate{
-			Limit: 5000, Remaining: 210, Reset: firstReset,
+			Limit: 5000, Remaining: 1010, Reset: firstReset,
 		})
 	}
 	currentReset := firstReset
-	currentRemaining := 208
+	currentRemaining := 1008
 	var calls atomic.Int32
 	base := roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		calls.Add(1)
@@ -333,7 +329,6 @@ func TestArchiveProviderAttemptAllowanceResetsObservedCostWithQuotaWindow(t *tes
 		3,
 		identity,
 		[]QuotaResource{QuotaResourceREST, QuotaResourceGraphQL},
-		RateReserveBuffer,
 	)
 	request := func() error {
 		req, err := http.NewRequestWithContext(
@@ -352,10 +347,10 @@ func TestArchiveProviderAttemptAllowanceResetsObservedCostWithQuotaWindow(t *tes
 	assert.Equal(2, pool.AttemptCost)
 
 	registry.UpdateSnapshot(identity, QuotaResourceREST, Rate{
-		Limit: 5000, Remaining: 210, Reset: nextReset,
+		Limit: 5000, Remaining: 1010, Reset: nextReset,
 	})
 	currentReset = nextReset
-	currentRemaining = 209
+	currentRemaining = 1009
 	require.NoError(request())
 
 	pool, ok = registry.Get(identity, QuotaResourceREST)
@@ -405,7 +400,6 @@ func TestArchiveProviderAttemptAllowanceSeedsCostAcrossQuotaWindowReset(t *testi
 			10,
 			identity,
 			resources,
-			RateReserveBuffer,
 		)
 		req, err := http.NewRequestWithContext(
 			ctx, http.MethodPost, "https://api.github.test/graphql", nil,
@@ -456,7 +450,6 @@ func TestArchiveProviderAttemptAllowanceRechecksEveryRequiredPool(t *testing.T) 
 		10,
 		identity,
 		[]QuotaResource{QuotaResourceREST, QuotaResourceGraphQL},
-		RateReserveBuffer,
 	)
 
 	// Concurrent GraphQL work reaches the reserve after admission but before

@@ -27,7 +27,6 @@ type archiveAttemptAllowance struct {
 type archiveProviderAttemptConfig struct {
 	identity  IdentityKey
 	resources []QuotaResource
-	reserve   int
 }
 
 type archiveProviderAttemptReservation struct {
@@ -55,11 +54,10 @@ func WithArchiveProviderAttemptAllowance(
 	attempts int,
 	identity IdentityKey,
 	resources []QuotaResource,
-	reserve int,
 ) context.Context {
 	allowance := &archiveAttemptAllowance{
 		provider: &archiveProviderAttemptConfig{
-			identity: identity, resources: slices.Clone(resources), reserve: max(reserve, 0),
+			identity: identity, resources: slices.Clone(resources),
 		},
 	}
 	allowance.remaining.Store(int64(attempts))
@@ -123,7 +121,7 @@ func reserveArchiveProviderAttempt(
 		resources = config.resources
 	}
 	quota, allowed := registry.reserveArchiveAttempt(
-		identity, resources, resource, config.reserve,
+		identity, resources, resource,
 	)
 	if !allowed {
 		return req, archiveProviderAttemptReservation{}, false

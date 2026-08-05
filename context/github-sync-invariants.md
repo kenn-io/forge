@@ -271,10 +271,12 @@ fallback repository listing.
 - Archive item hydration bypasses persisted parent-detail ETags; an unchanged parent representation does not prove that legacy lifecycle timelines are complete. (`internal/github/sync.go::SyncArchiveItem`)
 - Archive issue hydration treats timeline failures as hard errors; ordinary issue refresh remains best-effort for that optional dataset. (`internal/github/sync.go::refreshIssueTimeline`)
 - GitHub archive admission with a known registry pacing window paces off
-  provider quota alone: availability is remaining minus the archive reserve
-  (`max(limit/5, RateReserveBuffer)`), enforced at admission and again at
-  every wire attempt, and attempts covered by a registry reservation do not
-  debit the local ceiling. An active registry whose combined window is
+  provider quota alone: availability is the minimum across required resources
+  of remaining minus that pool's own archive reserve
+  (`max(limit/5, RateReserveBuffer)` of that pool's limit), enforced at
+  admission and again at every wire attempt. Reserves are per pool — the
+  smallest pool's reserve must not be applied to a larger pool. Attempts
+  covered by a registry reservation do not debit the local ceiling. An active registry whose combined window is
   incomplete or expired defers admission as provider-quota-unknown; it never
   falls through to local pacing. Every other archive path — headerless
   Gitealike hosts, GitHub without registry-based pacing (nil registry or
@@ -419,8 +421,8 @@ response never overwrites an App installation pool
   reached the wire, so eviction would only turn recovery cycles into
   unconditional refetches that deepen the exhaustion
   (`internal/github/sync.go::indexSyncRepo`).
-- Archive pacing on the provider path is the routed credential's remaining
-  required-resource headroom above the archive reserve; the local ceiling
+- Archive pacing on the provider path is the routed credential's minimum
+  per-pool headroom above each resource's own archive reserve; the local ceiling
   neither enlarges nor shrinks the provider envelope. Each archive attempt
   atomically reserves live headroom; an unobserved reservation remains
   deducted until a current header accounts for it or that resource window

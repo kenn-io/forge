@@ -340,7 +340,7 @@ func TestBudgetTransportSkipsLocalDebitForProviderReservedAttempts(t *testing.T)
 	ctx := WithArchiveProviderAttemptAllowance(
 		WithArchiveSyncBudget(t.Context()), 10,
 		IdentityKey{Host: "github.test", Principal: "user:7"},
-		[]QuotaResource{QuotaResourceREST}, 1000,
+		[]QuotaResource{QuotaResourceREST},
 	)
 	allowance, ok := ctx.Value(archiveAttemptAllowanceKey{}).(*archiveAttemptAllowance)
 	require.True(ok)

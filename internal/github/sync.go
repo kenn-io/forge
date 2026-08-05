@@ -941,23 +941,18 @@ func (s *Syncer) Admit(
 	var providerResetAt *time.Time
 	var providerPacingWindow *QuotaPacingWindow
 	var providerResources []QuotaResource
-	providerReserve := 0
 	identity, identityErr := s.identityForRepo(repo, false)
 	if ref.Platform == platform.KindGitHub && s.quotaRegistry != nil && identityErr == nil {
 		providerResources = []QuotaResource{QuotaResourceREST, QuotaResourceGraphQL}
 		pacingWindow, pacingKnown := s.quotaRegistry.PacingWindow(identity, providerResources)
-		providerReserve = ArchiveProviderReserve(pacingWindow.Limit)
-		availability := s.quotaRegistry.CheckReserve(
-			identity, providerResources, cost, providerReserve,
-		)
-		if !availability.Allowed || !pacingKnown {
+		if !pacingKnown || pacingWindow.ArchiveHeadroom < cost {
 			probe.abandon()
 			retryAt := now.Add(time.Minute)
 			detail := "provider rate reserve reached"
-			if !availability.Known || !pacingKnown {
+			if !pacingKnown {
 				detail = "provider quota unknown"
-			} else if availability.ResetAt != nil && availability.ResetAt.After(now) {
-				retryAt = availability.ResetAt.UTC()
+			} else if pacingWindow.ResetAt.After(now) {
+				retryAt = pacingWindow.ResetAt.UTC()
 			}
 			return archive.AdmissionResult{RetryAt: &retryAt, Detail: detail}, nil
 		}
@@ -980,8 +975,9 @@ func (s *Syncer) Admit(
 	available := 0
 	if providerPacingWindow != nil {
 		// Provider quota is authoritative: archive may spend everything above
-		// the archive reserve, and the local sync budget meters live sync only.
-		available = max(providerPacingWindow.Remaining-providerReserve, 0)
+		// each pool's own archive reserve, and the local sync budget meters
+		// live sync only.
+		available = max(providerPacingWindow.ArchiveHeadroom, 0)
 	} else if budget != nil {
 		liveFloor := archiveLiveFloor(ref.Platform)
 		if resetAt == nil &&
@@ -1011,7 +1007,7 @@ func (s *Syncer) Admit(
 	if !completeGitealikeMR {
 		if providerPacingWindow != nil {
 			requestCtx = WithArchiveProviderAttemptAllowance(
-				requestCtx, available, identity, providerResources, providerReserve,
+				requestCtx, available, identity, providerResources,
 			)
 		} else {
 			requestCtx = WithArchiveAttemptAllowance(requestCtx, available)

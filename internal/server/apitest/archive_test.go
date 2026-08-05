@@ -532,3 +532,51 @@ func TestAPIArchivePacingReportsPartiallyKnownCredentials(t *testing.T) {
 	assert.Zero(rows[0].Available)
 	assert.Empty(rows[0].ResetAt)
 }
+
+// With unequal pool limits, the reported reserve and availability come from
+// per-pool headroom: a large pool at its own limit/5 floor zeroes archive
+// availability even though the smallest pool still has headroom.
+func TestAPIArchivePacingUsesPerPoolReserves(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
+	t.Cleanup(syncer.Stop)
+	registry := ghclient.NewQuotaRegistry()
+	identity := ghclient.IdentityKey{Host: "github.test", Principal: "user:7"}
+	reset := time.Now().UTC().Add(30 * time.Minute).Truncate(time.Second)
+	registry.UpdateSnapshot(identity, ghclient.QuotaResourceREST,
+		ghclient.Rate{Limit: 15000, Remaining: 3000, Reset: reset})
+	registry.UpdateSnapshot(identity, ghclient.QuotaResourceGraphQL,
+		ghclient.Rate{Limit: 5000, Remaining: 4800, Reset: reset})
+	syncer.SetQuotaRegistry(registry)
+	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		require.NoError(srv.Shutdown(ctx))
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/archive/pacing", http.NoBody)
+	req.Host = "forge.test"
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	var rows []struct {
+		Known     bool `json:"known"`
+		Limit     int  `json:"limit"`
+		Remaining int  `json:"remaining"`
+		Reserve   int  `json:"reserve"`
+		Available int  `json:"available"`
+	}
+	require.NoError(json.Unmarshal(rr.Body.Bytes(), &rows))
+	require.Len(rows, 1)
+	row := rows[0]
+	assert.True(row.Known)
+	assert.Equal(5000, row.Limit)
+	assert.Equal(3000, row.Remaining)
+	// REST (15000-limit) sits at its 3000 reserve, so nothing is available;
+	// the reported reserve is the quota held back at that binding pool.
+	assert.Equal(3000, row.Reserve)
+	assert.Zero(row.Available)
+}

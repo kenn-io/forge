@@ -1790,3 +1790,28 @@ func TestGitHubArchiveAdmissionDefersAtArchiveReserve(t *testing.T) {
 	require.NotNil(denied.RetryAt)
 	assert.Equal(reset, *denied.RetryAt)
 }
+
+// A pool sitting at its own limit/5 reserve blocks admission even when the
+// smallest-limit pool still has headroom: reserves are per pool, and the
+// min-limit pool's reserve must not be applied to a larger pool.
+func TestGitHubArchiveAdmissionHonorsEachPoolsOwnReserve(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	now := time.Date(2026, 7, 28, 18, 30, 0, 0, time.UTC)
+	reset := now.Add(30 * time.Minute)
+	syncer, registry, ref := newProviderQuotaAdmissionSyncer(
+		t, now, NewSyncBudget(100000),
+	)
+	identity := IdentityKey{Host: "github.test", Principal: "user:7"}
+	registry.UpdateSnapshot(identity, QuotaResourceREST,
+		Rate{Limit: 15000, Remaining: 3000, Reset: reset})
+	registry.UpdateSnapshot(identity, QuotaResourceGraphQL,
+		Rate{Limit: 5000, Remaining: 4800, Reset: reset})
+
+	denied, err := syncer.Admit(t.Context(), ref, db.ArchiveItemTypeIssue, 1)
+	require.NoError(err)
+	assert.False(denied.Allowed)
+	assert.Contains(denied.Detail, "provider rate reserve")
+	require.NotNil(denied.RetryAt)
+	assert.Equal(reset, *denied.RetryAt)
+}

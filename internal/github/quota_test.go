@@ -543,3 +543,40 @@ func TestSnapshotRefreshDropsTheCachedReserveVerdict(t *testing.T) {
 		syncer.backgroundReserveExhausted(repo, QuotaResourceREST, false),
 		"a fresh snapshot must take effect without waiting out the window")
 }
+
+// Archive headroom is computed per pool — remaining minus that pool's own
+// reserve — and the window carries the minimum. Taking min(limit) and
+// min(remaining) from different pools would understate a larger pool's
+// reserve and admit spend below its floor.
+func TestQuotaRegistryPacingWindowArchiveHeadroomIsPerPool(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	now := time.Date(2026, 7, 28, 18, 0, 0, 0, time.UTC)
+	registry := NewQuotaRegistry()
+	registry.now = func() time.Time { return now }
+	reset := now.Add(30 * time.Minute)
+	// REST sits exactly at its own limit/5 reserve (3000); GraphQL has plenty.
+	registry.UpdateSnapshot(quotaTestUser, QuotaResourceREST, Rate{
+		Limit: 15000, Remaining: 3000, Reset: reset,
+	})
+	registry.UpdateSnapshot(quotaTestUser, QuotaResourceGraphQL, Rate{
+		Limit: 5000, Remaining: 4800, Reset: reset,
+	})
+
+	window, ok := registry.PacingWindow(
+		quotaTestUser, []QuotaResource{QuotaResourceREST, QuotaResourceGraphQL},
+	)
+
+	require.True(ok)
+	assert.Zero(window.ArchiveHeadroom)
+
+	// With REST above its reserve, GraphQL's headroom (4800-1000) binds.
+	registry.UpdateSnapshot(quotaTestUser, QuotaResourceREST, Rate{
+		Limit: 15000, Remaining: 8000, Reset: reset,
+	})
+	window, ok = registry.PacingWindow(
+		quotaTestUser, []QuotaResource{QuotaResourceREST, QuotaResourceGraphQL},
+	)
+	require.True(ok)
+	assert.Equal(3800, window.ArchiveHeadroom)
+}

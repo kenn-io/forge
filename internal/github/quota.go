@@ -205,10 +205,16 @@ type QuotaAvailability struct {
 }
 
 type QuotaPacingWindow struct {
-	Limit          int
-	Remaining      int
-	ResetAt        time.Time
-	ResourceResets map[QuotaResource]time.Time
+	Limit     int
+	Remaining int
+	// ArchiveHeadroom is the archive spend this credential may admit: the
+	// minimum across required resources of remaining minus that pool's own
+	// archive reserve. Reserves are per pool — applying the smallest pool's
+	// reserve to a larger pool would admit spend below the larger pool's
+	// floor. Negative when the binding pool sits below its reserve.
+	ArchiveHeadroom int
+	ResetAt         time.Time
+	ResourceResets  map[QuotaResource]time.Time
 }
 
 func (r *QuotaRegistry) PacingWindow(
@@ -237,6 +243,10 @@ func (r *QuotaRegistry) PacingWindow(
 		remaining := r.effectiveRemainingLocked(key, pool)
 		if index == 0 || remaining < window.Remaining {
 			window.Remaining = remaining
+		}
+		headroom := remaining - ArchiveProviderReserve(pool.Limit)
+		if index == 0 || headroom < window.ArchiveHeadroom {
+			window.ArchiveHeadroom = headroom
 		}
 		if pool.ResetAt.After(window.ResetAt) {
 			window.ResetAt = pool.ResetAt
@@ -284,11 +294,14 @@ func (r *QuotaRegistry) CheckReserve(
 	return availability
 }
 
+// reserveArchiveAttempt reserves one wire attempt's cost against the target
+// resource pool. Every required pool must stay above its own archive reserve
+// (`ArchiveProviderReserve` of that pool's limit) — reserves are per pool, so
+// a larger pool keeps its proportionally larger floor.
 func (r *QuotaRegistry) reserveArchiveAttempt(
 	identity IdentityKey,
 	resources []QuotaResource,
 	resource QuotaResource,
-	reserve int,
 ) (quotaReservation, bool) {
 	if r == nil || identity.Principal == "" {
 		return quotaReservation{}, false
@@ -311,7 +324,7 @@ func (r *QuotaRegistry) reserveArchiveAttempt(
 			target = pool
 			continue
 		}
-		if remaining <= reserve {
+		if remaining <= ArchiveProviderReserve(pool.Limit) {
 			return quotaReservation{}, false
 		}
 	}
@@ -319,7 +332,7 @@ func (r *QuotaRegistry) reserveArchiveAttempt(
 		return quotaReservation{}, false
 	}
 	cost := max(target.AttemptCost, 1)
-	if r.effectiveRemainingLocked(targetKey, target)-cost < reserve {
+	if r.effectiveRemainingLocked(targetKey, target)-cost < ArchiveProviderReserve(target.Limit) {
 		return quotaReservation{}, false
 	}
 	key := quotaReservationKey{quotaKey: targetKey, resetAt: target.ResetAt.UTC()}

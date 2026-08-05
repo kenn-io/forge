@@ -238,12 +238,14 @@ func (s *Server) listArchivePacing(
 			Source:       "provider",
 		}
 		if window, ok := registry.PacingWindow(pool.Identity, resources); ok {
-			reserve := ghclient.ArchiveProviderReserve(window.Limit)
 			status.Known = true
 			status.Limit = window.Limit
 			status.Remaining = window.Remaining
-			status.Reserve = reserve
-			status.Available = max(window.Remaining-reserve, 0)
+			// Headroom is per pool (remaining minus that pool's limit/5
+			// reserve); the reported reserve is the quota held back at the
+			// binding pool.
+			status.Reserve = window.Remaining - window.ArchiveHeadroom
+			status.Available = max(window.ArchiveHeadroom, 0)
 			status.ResetAt = formatUTCRFC3339(window.ResetAt)
 		}
 		statuses = append(statuses, status)

@@ -17189,12 +17189,15 @@ func TestAPIPublishReviewDraftPersistsProviderReviewThreads(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	line := 42
 	replyLine := 43
+	hiddenRootMetadata := `{"provider_hidden":true,"provider_hidden_reason":"OFF_TOPIC"}`
+	hiddenReplyMetadata := `{"provider_hidden":true,"provider_hidden_reason":"ABUSE"}`
 	provider.reviewThreads = []platform.MergeRequestReviewThread{
 		{
 			ProviderThreadID:  "thread-7",
 			ProviderCommentID: "comment-7",
 			Body:              "Published inline comment",
 			AuthorLogin:       "ada",
+			MetadataJSON:      hiddenRootMetadata,
 			Range: platform.DiffReviewLineRange{
 				Path:        "internal/server/api_test.go",
 				Side:        "right",
@@ -17211,6 +17214,7 @@ func TestAPIPublishReviewDraftPersistsProviderReviewThreads(t *testing.T) {
 			ProviderCommentID: "comment-reply",
 			Body:              "Reply should not replace original",
 			AuthorLogin:       "grace",
+			MetadataJSON:      hiddenReplyMetadata,
 			Range: platform.DiffReviewLineRange{
 				Path:        "internal/server/api_test.go",
 				Side:        "right",
@@ -17261,6 +17265,7 @@ func TestAPIPublishReviewDraftPersistsProviderReviewThreads(t *testing.T) {
 	assert.Equal("Published inline comment", threads[0].Body)
 	assert.Equal("ada", threads[0].AuthorLogin)
 	assert.Equal(42, threads[0].Range.Line)
+	assert.JSONEq(hiddenRootMetadata, threads[0].MetadataJSON)
 	events, err := database.ListMREvents(ctx, mr.ID)
 	require.NoError(err)
 	require.NotEmpty(events)
@@ -17268,11 +17273,13 @@ func TestAPIPublishReviewDraftPersistsProviderReviewThreads(t *testing.T) {
 	assert.Equal("review_comment", events[0].EventType)
 	assert.Equal("comment-reply", events[0].PlatformExternalID)
 	assert.Equal("Reply should not replace original", events[0].Body)
+	assert.JSONEq(hiddenReplyMetadata, events[0].MetadataJSON)
 	require.NotNil(events[0].ThreadID)
 	assert.Equal("thread-7", *events[0].ThreadID)
 	assert.Equal("review_comment", events[1].EventType)
 	assert.Equal("comment-7", events[1].PlatformExternalID)
 	assert.Equal("Published inline comment", events[1].Body)
+	assert.JSONEq(hiddenRootMetadata, events[1].MetadataJSON)
 	require.NotNil(events[1].ThreadID)
 	assert.Equal("thread-7", *events[1].ThreadID)
 }

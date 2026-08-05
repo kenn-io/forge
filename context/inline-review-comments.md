@@ -25,6 +25,9 @@ published review-thread ingestion, or review controls in shared diff UI.
 - Published review parts appear in the selected pull request timeline, not as
   standalone global activity rows
   (`internal/server/pullapi/diff_review_handlers.go::Handler.ingestDiffReviewThreads`).
+- Provider moderation metadata belongs to both thread rows and their corresponding
+  timeline events; ingestion must not let either representation clear or bypass it
+  (`internal/server/pullapi/diff_review_handlers.go::Handler.ingestDiffReviewThreads`).
 - Workspace diffs reuse the renderer with review mode disabled. They must not
   expose composers, draft trays, publish actions, or thread-resolution controls,
   and replacing a pull-request diff with workspace state clears the draft store

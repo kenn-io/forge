@@ -1560,18 +1560,25 @@ func TestListPullRequestReviewThreads(t *testing.T) {
 	var calls int
 	var methods []string
 	var contentTypes []string
+	var queries []string
 	mux := http.NewServeMux()
 	mux.HandleFunc("/graphql", func(w http.ResponseWriter, r *http.Request) {
 		calls++
 		methods = append(methods, r.Method)
 		contentTypes = append(contentTypes, r.Header.Get("Content-Type"))
+		var request graphQLRequest
+		if !assert.NoError(json.NewDecoder(r.Body).Decode(&request)) {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		queries = append(queries, request.Query)
 		w.Header().Set("Content-Type", "application/json")
 		if calls == 1 {
-			_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequest":{"reviewThreads":{"edges":[{"cursor":"thread-1","node":{"id":"PRRT_1","isResolved":false,"isOutdated":false,"path":"src/main.go","line":12,"originalLine":12,"startLine":10,"originalStartLine":10,"diffSide":"RIGHT","comments":{"nodes":[{"id":"PRRC_1","databaseId":101,"fullDatabaseId":"3312100450","body":"inline note","path":"src/main.go","line":12,"originalLine":12,"subjectType":"LINE","diffHunk":"@@","url":"https://github.example/pr#discussion_r101","author":{"login":"reviewer"},"commit":{"oid":"head-sha"},"originalCommit":{"oid":"original-sha"},"pullRequestReview":{"databaseId":201},"createdAt":"2026-05-27T16:01:31Z","updatedAt":"2026-05-27T16:02:31Z"}],"pageInfo":{"hasNextPage":true,"endCursor":"comment-cursor-1"}}}}],"pageInfo":{"hasNextPage":true,"endCursor":"cursor-1"}}}}}}`))
+			_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequest":{"reviewThreads":{"edges":[{"cursor":"thread-1","node":{"id":"PRRT_1","isResolved":false,"isOutdated":false,"path":"src/main.go","line":12,"originalLine":12,"startLine":10,"originalStartLine":10,"diffSide":"RIGHT","comments":{"nodes":[{"id":"PRRC_1","databaseId":101,"fullDatabaseId":"3312100450","body":"inline note","path":"src/main.go","line":12,"originalLine":12,"subjectType":"LINE","diffHunk":"@@","url":"https://github.example/pr#discussion_r101","author":{"login":"reviewer"},"commit":{"oid":"head-sha"},"originalCommit":{"oid":"original-sha"},"pullRequestReview":{"databaseId":201},"isMinimized":true,"minimizedReason":"OFF_TOPIC","createdAt":"2026-05-27T16:01:31Z","updatedAt":"2026-05-27T16:02:31Z"}],"pageInfo":{"hasNextPage":true,"endCursor":"comment-cursor-1"}}}}],"pageInfo":{"hasNextPage":true,"endCursor":"cursor-1"}}}}}}`))
 			return
 		}
 		if calls == 2 {
-			_, _ = w.Write([]byte(`{"data":{"node":{"comments":{"nodes":[{"id":"PRRC_1_REPLY","databaseId":103,"fullDatabaseId":3312100451,"body":"reply note","path":"src/main.go","line":12,"originalLine":12,"subjectType":"LINE","diffHunk":"@@","url":"https://github.example/pr#discussion_r103","author":{"login":"maintainer"},"commit":{"oid":"head-sha"},"originalCommit":{"oid":"original-sha"},"pullRequestReview":{"databaseId":201},"createdAt":"2026-05-27T16:03:31Z","updatedAt":"2026-05-27T16:04:31Z"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}`))
+			_, _ = w.Write([]byte(`{"data":{"node":{"comments":{"nodes":[{"id":"PRRC_1_REPLY","databaseId":103,"fullDatabaseId":3312100451,"body":"reply note","path":"src/main.go","line":12,"originalLine":12,"subjectType":"LINE","diffHunk":"@@","url":"https://github.example/pr#discussion_r103","author":{"login":"maintainer"},"commit":{"oid":"head-sha"},"originalCommit":{"oid":"original-sha"},"pullRequestReview":{"databaseId":201},"isMinimized":true,"minimizedReason":"ABUSE","createdAt":"2026-05-27T16:03:31Z","updatedAt":"2026-05-27T16:04:31Z"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}`))
 			return
 		}
 		_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequest":{"reviewThreads":{"edges":[{"cursor":"thread-2","node":{"id":"PRRT_2","isResolved":true,"isOutdated":true,"path":"README.md","line":3,"originalLine":3,"startLine":null,"originalStartLine":null,"diffSide":"LEFT","comments":{"nodes":[{"id":"PRRC_2","databaseId":102,"fullDatabaseId":102,"body":"old note","path":"README.md","line":3,"originalLine":3,"subjectType":"FILE","diffHunk":"","url":"https://github.example/pr#discussion_r102","author":{"login":"maintainer"},"commit":{"oid":"new-head"},"originalCommit":{"oid":"old-head"},"pullRequestReview":{"databaseId":202},"createdAt":"2026-05-27T17:01:31Z","updatedAt":"2026-05-27T17:02:31Z"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}`))
@@ -1603,9 +1610,13 @@ func TestListPullRequestReviewThreads(t *testing.T) {
 	assert.Equal("reviewer", threads[0].Comments[0].AuthorLogin)
 	assert.Equal("head-sha", threads[0].Comments[0].CommitID)
 	assert.Equal("original-sha", threads[0].Comments[0].OriginalCommitID)
+	assert.True(threads[0].Comments[0].IsMinimized)
+	assert.Equal("OFF_TOPIC", threads[0].Comments[0].MinimizedReason)
 	assert.Equal(int64(3312100451), threads[0].Comments[1].DatabaseID)
 	assert.Equal("reply note", threads[0].Comments[1].Body)
 	assert.Equal("maintainer", threads[0].Comments[1].AuthorLogin)
+	assert.True(threads[0].Comments[1].IsMinimized)
+	assert.Equal("ABUSE", threads[0].Comments[1].MinimizedReason)
 	assert.True(threads[1].IsResolved)
 	assert.True(threads[1].IsOutdated)
 	assert.Equal("LEFT", threads[1].Side)
@@ -1613,6 +1624,11 @@ func TestListPullRequestReviewThreads(t *testing.T) {
 	assert.Equal(3, calls)
 	assert.Equal([]string{http.MethodPost, http.MethodPost, http.MethodPost}, methods)
 	assert.Equal([]string{"application/json", "application/json", "application/json"}, contentTypes)
+	require.Len(queries, 3)
+	for _, query := range queries {
+		assert.Contains(query, "isMinimized")
+		assert.Contains(query, "minimizedReason")
+	}
 }
 
 func TestListPullRequestReviewThreadsScopesPaginatedCommentAuthByOwner(t *testing.T) {

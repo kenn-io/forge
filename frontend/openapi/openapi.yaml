@@ -1598,6 +1598,8 @@ components:
           type: integer
         line_type:
           type: string
+        metadata_json:
+          type: string
         new_line:
           format: int64
           type: integer

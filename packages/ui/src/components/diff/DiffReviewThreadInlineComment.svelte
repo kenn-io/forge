@@ -1,11 +1,12 @@
 <script lang="ts">
   import { Button } from "@kenn-io/kit-ui";
+  import EyeOffIcon from "@lucide/svelte/icons/eye-off";
   import MessageSquareReplyIcon from "@lucide/svelte/icons/message-square-reply";
   import SendIcon from "@lucide/svelte/icons/send";
   import XIcon from "@lucide/svelte/icons/x";
   import { tick } from "svelte";
   import type { ReviewThread } from "./review-thread-context.js";
-  import { reviewThreadLineLabel } from "./review-thread-context.js";
+  import { reviewThreadLineLabel, reviewThreadProviderHiddenState } from "./review-thread-context.js";
 
   interface Props {
     thread: ReviewThread;
@@ -27,6 +28,15 @@
   let error = $state<string | null>(null);
   let textareaEl: HTMLTextAreaElement | undefined = $state();
   let panelWidth = $state<string | undefined>();
+  let hiddenExpanded = $state(false);
+  const hiddenState = $derived(reviewThreadProviderHiddenState(thread));
+  const bodyVisible = $derived(hiddenState === null || hiddenExpanded);
+
+  function providerHiddenLabel(reason: string | null): string {
+    if (!reason) return "Hidden on GitHub";
+    const label = reason === "OFF_TOPIC" ? "off-topic" : reason.toLowerCase().replaceAll("_", " ");
+    return `Hidden on GitHub: ${label.charAt(0).toUpperCase()}${label.slice(1)}`;
+  }
 
   function setupThreadLayout(node: HTMLDivElement): { destroy: () => void } {
     let animationFrame = 0;
@@ -124,7 +134,7 @@
 <div
   class="inline-review-thread"
   class:inline-review-thread--file-level={fileLevel}
-  class:inline-review-thread--idle-reply={canReply && !thread.resolved && !replying}
+  class:inline-review-thread--idle-reply={bodyVisible && canReply && !thread.resolved && !replying}
   data-review-thread-id={thread.id}
   use:setupThreadLayout
   style:--inline-review-thread-width={panelWidth}
@@ -143,13 +153,29 @@
   {#if thread.author_login}
     <div class="review-thread-author">{thread.author_login}</div>
   {/if}
-  <p
-    class="review-thread-body"
-    class:review-thread-body--with-idle-reply={canReply && !thread.resolved && !replying}
-  >
-    {thread.body}
-  </p>
-  {#if canReply && !thread.resolved}
+  {#if hiddenState}
+    <div class="provider-hidden-notice">
+      <EyeOffIcon size={14} aria-hidden="true" />
+      <span>{providerHiddenLabel(hiddenState.reason)}</span>
+      <button
+        class="provider-hidden-toggle"
+        type="button"
+        onclick={() => (hiddenExpanded = !hiddenExpanded)}
+        aria-expanded={hiddenExpanded}
+      >
+        {hiddenExpanded ? "Collapse" : "Show comment"}
+      </button>
+    </div>
+  {/if}
+  {#if bodyVisible}
+    <p
+      class="review-thread-body"
+      class:review-thread-body--with-idle-reply={canReply && !thread.resolved && !replying}
+    >
+      {thread.body}
+    </p>
+  {/if}
+  {#if bodyVisible && canReply && !thread.resolved}
     {#if replying}
       <div class="review-thread-reply">
         <textarea
@@ -296,6 +322,24 @@
 
   .review-thread-body--with-idle-reply {
     padding-right: 118px;
+  }
+
+  .provider-hidden-notice {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 6px;
+    color: var(--text-muted);
+    font-size: var(--font-size-xs);
+  }
+
+  .provider-hidden-toggle {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--accent-blue);
+    font: inherit;
+    cursor: pointer;
   }
 
   .review-thread-reply {

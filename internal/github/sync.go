@@ -9787,6 +9787,20 @@ func (s *Syncer) refreshTimeline(
 	if err != nil {
 		return fmt.Errorf("load stored comment visibility for MR #%d: %w", number, err)
 	}
+	if fetcher := s.fetcherFor(repo); fetcher != nil {
+		observed, visibilityErr := fetcher.FetchPullRequestCommentVisibility(
+			ctx, repo.Owner, repo.Name, number,
+		)
+		if visibilityErr != nil {
+			slog.Warn("current PR comment visibility fetch failed; preserving stored state",
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", number,
+				"err", visibilityErr,
+			)
+		} else {
+			commentVisibility = observed
+		}
+	}
 	for _, c := range comments {
 		commentEvents = append(commentEvents, NormalizeCommentEventWithVisibility(
 			mrID, c, commentVisibility[c.GetID()],
@@ -10669,7 +10683,28 @@ func (s *Syncer) refreshIssueTimeline(
 			"list comments for issue #%d: %w", number, err,
 		)
 	}
-	if visibility != nil {
+	if visibility == nil {
+		visibility, err = s.storedIssueCommentVisibility(ctx, issueID)
+		if err != nil {
+			return fmt.Errorf(
+				"load stored comment visibility for issue #%d: %w", number, err,
+			)
+		}
+		if fetcher := s.fetcherFor(repo); fetcher != nil {
+			observed, visibilityErr := fetcher.FetchIssueCommentVisibility(
+				ctx, repo.Owner, repo.Name, number,
+			)
+			if visibilityErr != nil {
+				slog.Warn("current issue comment visibility fetch failed; preserving stored state",
+					"repo", repo.Owner+"/"+repo.Name,
+					"number", number,
+					"err", visibilityErr,
+				)
+			} else {
+				visibility = observed
+			}
+		}
+	} else {
 		storedVisibility, err := s.storedIssueCommentVisibility(ctx, issueID)
 		if err != nil {
 			return fmt.Errorf(

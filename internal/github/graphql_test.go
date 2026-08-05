@@ -2,6 +2,7 @@ package github
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -199,6 +200,51 @@ func TestGraphQLFetcherPaginatesCommentVisibility(t *testing.T) {
 			visibility := tt.complete(t, fetcher)
 
 			assert.Equal(t, "comment-100", cursor)
+			assert.Equal(t, CommentVisibility{Hidden: true, Reason: "ABUSE"}, visibility[202])
+		})
+	}
+}
+
+func TestGraphQLFetcherFetchesCurrentCommentVisibility(t *testing.T) {
+	tests := []struct {
+		name     string
+		queryKey string
+		fetch    func(context.Context, *GraphQLFetcher) (map[int64]CommentVisibility, error)
+	}{
+		{
+			name:     "pull request",
+			queryKey: "pullRequest(number:",
+			fetch: func(ctx context.Context, fetcher *GraphQLFetcher) (map[int64]CommentVisibility, error) {
+				return fetcher.FetchPullRequestCommentVisibility(ctx, "owner", "repo", 7)
+			},
+		},
+		{
+			name:     "issue",
+			queryKey: "issue(number:",
+			fetch: func(ctx context.Context, fetcher *GraphQLFetcher) (map[int64]CommentVisibility, error) {
+				return fetcher.FetchIssueCommentVisibility(ctx, "owner", "repo", 8)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body, _ := io.ReadAll(r.Body)
+				require.Contains(t, string(body), tt.queryKey)
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = fmt.Fprint(w, `{"data":{"repository":{`+map[string]string{
+					"pullRequest(number:": `"pullRequest":{"comments":{"nodes":[{"databaseId":202,"isMinimized":true,"minimizedReason":"ABUSE"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}`,
+					"issue(number:":       `"issue":{"comments":{"nodes":[{"databaseId":202,"isMinimized":true,"minimizedReason":"ABUSE"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}`,
+				}[tt.queryKey]+`}}}`)
+			}))
+			defer srv.Close()
+
+			fetcher := NewGraphQLFetcherWithClient(
+				githubv4.NewEnterpriseClient(srv.URL, srv.Client()), nil,
+			)
+			visibility, err := tt.fetch(t.Context(), fetcher)
+			require.NoError(t, err)
 			assert.Equal(t, CommentVisibility{Hidden: true, Reason: "ABUSE"}, visibility[202])
 		})
 	}

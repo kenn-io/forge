@@ -2085,6 +2085,7 @@
               {#if !isThreadCollapsed(entry)}
                 <ol class="thread-replies" aria-label="Threaded replies">
                   {#each entry.replies as reply, index (reply.ID)}
+                    {@const replyHiddenState = providerHiddenState(reply)}
                     <li
                       class="thread-reply"
                       class:thread-reply--first={index === 0}
@@ -2104,7 +2105,12 @@
                             {@render eventActions(reply, undefined)}
                           </span>
                         </div>
-                        {@render eventBody(reply, true)}
+                        {#if replyHiddenState}
+                          {@render providerHiddenNotice(reply, replyHiddenState)}
+                        {/if}
+                        {#if !replyHiddenState || isProviderHiddenExpanded(reply) || editingId === reply.ID}
+                          {@render eventBody(reply, true)}
+                        {/if}
                       </div>
                     </li>
                   {/each}

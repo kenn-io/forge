@@ -15064,6 +15064,118 @@ func TestFetchIssueDetailRemovesDeletedCommentDuringFullRefresh(t *testing.T) {
 	assert.Empty(events)
 }
 
+func currentCommentVisibilityServer(t *testing.T, item string, commentID int64) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		if !strings.Contains(string(body), item+"(number:") {
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"errors":[{"message":"unexpected GraphQL query"}]}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintf(w, `{"data":{"repository":{"%s":{"comments":{"nodes":[{"databaseId":%d,"isMinimized":true,"minimizedReason":"ABUSE"}],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}}`, item, commentID)
+	}))
+}
+
+func TestFetchMRDetailUsesCurrentCommentVisibility(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+	repoID, err := d.UpsertRepo(ctx, verifiedGitHubRepoIdentity(repo.PlatformHost, repo.Owner, repo.Name))
+	require.NoError(err)
+
+	now := time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC)
+	commentID := int64(18201)
+	commentBody := "hidden after the REST detail refresh"
+	commentAuthor := "reviewer"
+	mock := &mockClient{
+		comments: []*gh.IssueComment{{
+			ID: &commentID, Body: &commentBody, User: &gh.User{Login: &commentAuthor},
+			CreatedAt: makeTimestamp(now), UpdatedAt: makeTimestamp(now),
+		}},
+		getPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+			require.Equal(1, number)
+			return buildOpenPR(1, now), nil
+		},
+	}
+	gqlSrv := currentCommentVisibilityServer(t, "pullRequest", commentID)
+	defer gqlSrv.Close()
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mock}, d, nil, []RepoRef{repo},
+		time.Minute, nil, nil,
+	)
+	syncer.SetFetchers(map[string]*GraphQLFetcher{
+		"github.com": NewGraphQLFetcherWithClient(
+			githubv4.NewEnterpriseClient(gqlSrv.URL, gqlSrv.Client()), nil,
+		),
+	})
+
+	_, err = syncer.fetchMRDetail(ctx, repo, repoID, 1, false)
+	require.NoError(err)
+
+	mr, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)
+	require.NoError(err)
+	require.NotNil(mr)
+	events, err := d.ListMREvents(ctx, mr.ID)
+	require.NoError(err)
+	require.Len(events, 1)
+	assert.JSONEq(`{"provider_hidden":true,"provider_hidden_reason":"ABUSE"}`, events[0].MetadataJSON)
+}
+
+func TestFetchIssueDetailUsesCurrentCommentVisibility(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+	repoID, err := d.UpsertRepo(ctx, verifiedGitHubRepoIdentity(repo.PlatformHost, repo.Owner, repo.Name))
+	require.NoError(err)
+
+	now := time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC)
+	issueID := int64(18300)
+	issueNumber := 8
+	commentID := int64(18301)
+	commentBody := "hidden after the REST detail refresh"
+	commentAuthor := "reviewer"
+	mock := &mockClient{
+		comments: []*gh.IssueComment{{
+			ID: &commentID, Body: &commentBody, User: &gh.User{Login: &commentAuthor},
+			CreatedAt: makeTimestamp(now), UpdatedAt: makeTimestamp(now),
+		}},
+		getIssueFn: func(_ context.Context, _, _ string, number int) (*gh.Issue, error) {
+			require.Equal(issueNumber, number)
+			issue := buildOpenIssue(issueNumber, now)
+			issue.ID = &issueID
+			return issue, nil
+		},
+	}
+	gqlSrv := currentCommentVisibilityServer(t, "issue", commentID)
+	defer gqlSrv.Close()
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mock}, d, nil, []RepoRef{repo},
+		time.Minute, nil, nil,
+	)
+	syncer.SetFetchers(map[string]*GraphQLFetcher{
+		"github.com": NewGraphQLFetcherWithClient(
+			githubv4.NewEnterpriseClient(gqlSrv.URL, gqlSrv.Client()), nil,
+		),
+	})
+
+	_, err = syncer.fetchIssueDetail(ctx, repo, repoID, issueNumber)
+	require.NoError(err)
+
+	issue, err := d.GetIssue(ctx, "github", "github.com", repo.Owner, repo.Name, issueNumber)
+	require.NoError(err)
+	require.NotNil(issue)
+	events, err := d.ListIssueEvents(ctx, issue.ID)
+	require.NoError(err)
+	require.Len(events, 1)
+	assert.JSONEq(`{"provider_hidden":true,"provider_hidden_reason":"ABUSE"}`, events[0].MetadataJSON)
+}
+
 func TestSyncOpenMRFromBulkRemovesDeletedCommentsWhenCommentsAreComplete(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

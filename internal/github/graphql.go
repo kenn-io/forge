@@ -1136,32 +1136,56 @@ func (g *GraphQLFetcher) completePRCommentVisibility(
 	if bulk.CommentsComplete {
 		return nil
 	}
+	startAfter := nonEmptyCursor(pr.Comments.PageInfo.EndCursor)
+	visibility, err := g.fetchPRCommentVisibility(ctx, owner, name, pr.Number, startAfter)
+	if err != nil {
+		return fmt.Errorf("paginate comments for pull request #%d: %w", pr.Number, err)
+	}
+	mergeCommentVisibilityMap(bulk.CommentVisibility, visibility)
+	return nil
+}
+
+// FetchPullRequestCommentVisibility returns the current moderation state for
+// every comment on a pull request, including closed pull requests and pages
+// beyond the first 100 comments.
+func (g *GraphQLFetcher) FetchPullRequestCommentVisibility(
+	ctx context.Context,
+	owner, name string,
+	number int,
+) (map[int64]CommentVisibility, error) {
+	ctx = tokenauth.WithGitHubOwner(ctx, owner)
+	return g.fetchPRCommentVisibility(ctx, owner, name, number, nil)
+}
+
+func (g *GraphQLFetcher) fetchPRCommentVisibility(
+	ctx context.Context,
+	owner, name string,
+	number int,
+	startAfter *string,
+) (map[int64]CommentVisibility, error) {
 	comments, err := fetchAllPages(ctx, func(
 		ctx context.Context, cursor *string,
 	) ([]gqlCommentVisibilityNode, pageInfo, error) {
-		after := pr.Comments.PageInfo.EndCursor
-		if cursor != nil {
-			after = *cursor
-		}
 		var q gqlPRCommentPageQuery
 		err := g.client.Query(ctx, &q, map[string]any{
 			"owner": githubv4.String(owner), "name": githubv4.String(name),
-			"number": githubv4.Int(pr.Number), "cursor": cursorVar(&after),
+			"number": githubv4.Int(number), "cursor": commentVisibilityCursor(startAfter, cursor),
 		})
 		if err != nil {
 			return nil, pageInfo{}, err
 		}
 		if q.Repository.PullRequest == nil {
-			return nil, pageInfo{}, fmt.Errorf("paginate comments for pull request #%d: missing pull request", pr.Number)
+			return nil, pageInfo{}, fmt.Errorf("fetch comments for pull request #%d: missing pull request", number)
 		}
 		return q.Repository.PullRequest.Comments.Nodes,
 			q.Repository.PullRequest.Comments.PageInfo, nil
 	})
 	if err != nil {
-		return fmt.Errorf("paginate comments for pull request #%d: %w", pr.Number, err)
+		return nil, err
 	}
-	mergeCommentVisibility(bulk.CommentVisibility, comments)
-	return nil
+	visibility := make(map[int64]CommentVisibility, len(comments))
+	mergeCommentVisibility(visibility, comments)
+	return visibility, nil
 }
 
 func (g *GraphQLFetcher) completeIssueCommentVisibility(
@@ -1173,32 +1197,78 @@ func (g *GraphQLFetcher) completeIssueCommentVisibility(
 	if bulk.CommentsComplete {
 		return nil
 	}
+	startAfter := nonEmptyCursor(issue.Comments.PageInfo.EndCursor)
+	visibility, err := g.fetchIssueCommentVisibility(ctx, owner, name, issue.Number, startAfter)
+	if err != nil {
+		return fmt.Errorf("paginate comments for issue #%d: %w", issue.Number, err)
+	}
+	mergeCommentVisibilityMap(bulk.CommentVisibility, visibility)
+	return nil
+}
+
+// FetchIssueCommentVisibility returns the current moderation state for every
+// comment on an issue, including closed issues and pages beyond the first 100
+// comments.
+func (g *GraphQLFetcher) FetchIssueCommentVisibility(
+	ctx context.Context,
+	owner, name string,
+	number int,
+) (map[int64]CommentVisibility, error) {
+	ctx = tokenauth.WithGitHubOwner(ctx, owner)
+	return g.fetchIssueCommentVisibility(ctx, owner, name, number, nil)
+}
+
+func (g *GraphQLFetcher) fetchIssueCommentVisibility(
+	ctx context.Context,
+	owner, name string,
+	number int,
+	startAfter *string,
+) (map[int64]CommentVisibility, error) {
 	comments, err := fetchAllPages(ctx, func(
 		ctx context.Context, cursor *string,
 	) ([]gqlCommentVisibilityNode, pageInfo, error) {
-		after := issue.Comments.PageInfo.EndCursor
-		if cursor != nil {
-			after = *cursor
-		}
 		var q gqlIssueCommentPageQuery
 		err := g.client.Query(ctx, &q, map[string]any{
 			"owner": githubv4.String(owner), "name": githubv4.String(name),
-			"number": githubv4.Int(issue.Number), "cursor": cursorVar(&after),
+			"number": githubv4.Int(number), "cursor": commentVisibilityCursor(startAfter, cursor),
 		})
 		if err != nil {
 			return nil, pageInfo{}, err
 		}
 		if q.Repository.Issue == nil {
-			return nil, pageInfo{}, fmt.Errorf("paginate comments for issue #%d: missing issue", issue.Number)
+			return nil, pageInfo{}, fmt.Errorf("fetch comments for issue #%d: missing issue", number)
 		}
 		return q.Repository.Issue.Comments.Nodes,
 			q.Repository.Issue.Comments.PageInfo, nil
 	})
 	if err != nil {
-		return fmt.Errorf("paginate comments for issue #%d: %w", issue.Number, err)
+		return nil, err
 	}
-	mergeCommentVisibility(bulk.CommentVisibility, comments)
-	return nil
+	visibility := make(map[int64]CommentVisibility, len(comments))
+	mergeCommentVisibility(visibility, comments)
+	return visibility, nil
+}
+
+func nonEmptyCursor(cursor string) *string {
+	if cursor == "" {
+		return nil
+	}
+	return &cursor
+}
+
+func commentVisibilityCursor(startAfter, cursor *string) *githubv4.String {
+	if cursor != nil {
+		return cursorVar(cursor)
+	}
+	return cursorVar(startAfter)
+}
+
+func mergeCommentVisibilityMap(
+	dst, src map[int64]CommentVisibility,
+) {
+	for id, visibility := range src {
+		dst[id] = visibility
+	}
 }
 
 func mergeCommentVisibility(

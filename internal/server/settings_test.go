@@ -1735,6 +1735,119 @@ name = "tools"
 	assert.False(t, srv.syncer.IsTrackedRepo("roborev-dev", "kenn-forge"))
 }
 
+func TestHandleDeleteGlobKeepsRenamedExactEntryRepo(t *testing.T) {
+	mock := &mockGH{
+		getRepositoryFn: func(
+			_ context.Context, owner, repo string,
+		) (*gh.Repository, error) {
+			return &gh.Repository{
+				Name:  new(repo),
+				Owner: &gh.User{Login: new(owner)},
+			}, nil
+		},
+		listReposByOwnerFn: func(
+			_ context.Context, owner string,
+		) ([]*gh.Repository, error) {
+			return []*gh.Repository{{
+				Name:  new("tools"),
+				Owner: &gh.User{Login: new(owner)},
+			}}, nil
+		},
+	}
+	srv, _, _ := setupTestServerWithConfigContent(t, `
+sync_interval = "5m"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "tools"
+
+[[repos]]
+owner = "acme"
+name = "*"
+`, mock)
+
+	// The exact entry's repo was renamed provider-side; only provenance
+	// still ties the tracked ref to the entry. A second repo matches only
+	// the glob.
+	srv.syncer.SetRepos([]ghclient.RepoRef{
+		{
+			Platform: platform.KindGitHub, Owner: "acme", Name: "tools-new",
+			PlatformHost: "github.com", RepoPath: "acme/tools-new",
+			PlatformExternalID: "repo-x", ConfiguredRepoPath: "acme/tools",
+		},
+		{
+			Platform: platform.KindGitHub, Owner: "acme", Name: "widgets",
+			PlatformHost: "github.com", RepoPath: "acme/widgets",
+			PlatformExternalID: "repo-w",
+		},
+	})
+
+	rr := doJSON(
+		t, srv, http.MethodDelete,
+		"/api/v1/repo/gh/acme/*", nil,
+	)
+	require.Equal(t, http.StatusNoContent, rr.Code, rr.Body.String())
+	assert.True(t, srv.syncer.IsTrackedRepo("acme", "tools-new"),
+		"deleting the glob must keep the renamed repo its exact entry still claims")
+	assert.False(t, srv.syncer.IsTrackedRepo("acme", "widgets"))
+}
+
+func TestHandleDeleteExactEntryClearsProvenanceOnGlobKeptRepo(t *testing.T) {
+	mock := &mockGH{
+		getRepositoryFn: func(
+			_ context.Context, owner, repo string,
+		) (*gh.Repository, error) {
+			return &gh.Repository{
+				Name:  new(repo),
+				Owner: &gh.User{Login: new(owner)},
+			}, nil
+		},
+		listReposByOwnerFn: func(
+			_ context.Context, owner string,
+		) ([]*gh.Repository, error) {
+			return []*gh.Repository{{
+				Name:  new("tools-new"),
+				Owner: &gh.User{Login: new(owner)},
+			}}, nil
+		},
+	}
+	srv, _, _ := setupTestServerWithConfigContent(t, `
+sync_interval = "5m"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "tools"
+
+[[repos]]
+owner = "acme"
+name = "*"
+`, mock)
+
+	srv.syncer.SetRepos([]ghclient.RepoRef{{
+		Platform: platform.KindGitHub, Owner: "acme", Name: "tools-new",
+		PlatformHost: "github.com", RepoPath: "acme/tools-new",
+		PlatformExternalID: "repo-x", ConfiguredRepoPath: "acme/tools",
+	}})
+
+	// Removing the exact entry keeps the repo through the glob, but its
+	// provenance now points at a config entry that no longer exists and
+	// must not survive to claim a future entry with the same path.
+	rr := doJSON(
+		t, srv, http.MethodDelete,
+		"/api/v1/repo/gh/acme/tools", nil,
+	)
+	require.Equal(t, http.StatusNoContent, rr.Code, rr.Body.String())
+	require.True(t, srv.syncer.IsTrackedRepo("acme", "tools-new"))
+	assert.Empty(t, trackedRepoProvenancePath(srv, "acme", "tools-new"),
+		"provenance must clear when its exact entry is removed")
+}
+
 func TestHandleDeleteRepoUsesProviderHostQuery(t *testing.T) {
 	require := require.New(t)
 	srv, _, _ := setupTestServerWithConfigContent(t, `

@@ -763,6 +763,14 @@ func resolveStartupRepos(
 				expanded = fallbackExactFromDB(ctx, database, raw)
 				if len(expanded) == 0 {
 					expanded = ghclient.FallbackConfiguredRepoRefs(nil, raw)
+				} else {
+					// The catalog recovered a stable identity on a renamed
+					// route; without the alias, repo-scoped credentials for
+					// the configured route would fall through to owner or
+					// host credentials.
+					ghclient.RegisterConfiguredRepoCredentialAliases(
+						githubRouters, raw, expanded,
+					)
 				}
 			}
 		} else {

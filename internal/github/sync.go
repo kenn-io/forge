@@ -5586,29 +5586,57 @@ func (s *Syncer) publishResolvedRepository(
 	s.aliasRenamedCredentialRoute(previous, resolved)
 	s.reposMu.Lock()
 	defer s.reposMu.Unlock()
-	for i := range s.repos {
-		if repoPriorityKey(s.repos[i]) == repoPriorityKey(previous) {
-			if s.repos[i].Archived != previous.Archived {
-				// A concurrent resolution flipped archived state after this
-				// operation snapshotted the ref. The in-flight provider
-				// response cannot be ordered against that flip, so the newer
-				// tracked value stands even over fresh provider metadata.
-				resolved.Archived = s.repos[i].Archived
-			} else if !archivedAuthoritative {
-				// Without fresh provider metadata the archived flag was
-				// reconstructed from the operation's snapshot, which may
-				// predate a newer flip on the tracked ref. The current
-				// tracked state stays authoritative.
-				resolved.Archived = s.repos[i].Archived
+	i, ok := s.trackedRepoSlotLocked(previous)
+	if !ok {
+		return
+	}
+	if s.repos[i].Archived != previous.Archived {
+		// A concurrent resolution flipped archived state after this
+		// operation snapshotted the ref. The in-flight provider
+		// response cannot be ordered against that flip, so the newer
+		// tracked value stands even over fresh provider metadata.
+		resolved.Archived = s.repos[i].Archived
+	} else if !archivedAuthoritative {
+		// Without fresh provider metadata the archived flag was
+		// reconstructed from the operation's snapshot, which may
+		// predate a newer flip on the tracked ref. The current
+		// tracked state stays authoritative.
+		resolved.Archived = s.repos[i].Archived
+	}
+	// Config-entry provenance is authored only by configuration
+	// resolution; a publication built from an older snapshot must
+	// not overwrite a value a concurrent reload just updated.
+	resolved.ConfiguredRepoPath = s.repos[i].ConfiguredRepoPath
+	s.repos[i] = resolved
+}
+
+// trackedRepoSlotLocked locates the tracked entry a publication should land
+// on: stable provider identity first — a renamed route must still find its
+// repository — then the route key, rejected when both sides carry different
+// ids because that means the route was reused by another repository whose
+// tracked state a stale publication must not overwrite. Callers hold reposMu.
+func (s *Syncer) trackedRepoSlotLocked(previous RepoRef) (int, bool) {
+	previousID := strings.TrimSpace(previous.PlatformExternalID)
+	if previousID != "" {
+		for i := range s.repos {
+			if repoPlatform(s.repos[i]) == repoPlatform(previous) &&
+				strings.EqualFold(repoHost(s.repos[i]), repoHost(previous)) &&
+				strings.TrimSpace(s.repos[i].PlatformExternalID) == previousID {
+				return i, true
 			}
-			// Config-entry provenance is authored only by configuration
-			// resolution; a publication built from an older snapshot must
-			// not overwrite a value a concurrent reload just updated.
-			resolved.ConfiguredRepoPath = s.repos[i].ConfiguredRepoPath
-			s.repos[i] = resolved
-			return
 		}
 	}
+	for i := range s.repos {
+		if repoPriorityKey(s.repos[i]) != repoPriorityKey(previous) {
+			continue
+		}
+		trackedID := strings.TrimSpace(s.repos[i].PlatformExternalID)
+		if trackedID != "" && previousID != "" && trackedID != previousID {
+			continue
+		}
+		return i, true
+	}
+	return 0, false
 }
 
 // aliasRenamedCredentialRoute keeps GitHub credential selection on the

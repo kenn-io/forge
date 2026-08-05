@@ -375,6 +375,47 @@ func TestResolveStartupReposRecoversRenamedExactEntryFromCatalog(t *testing.T) {
 	assert.Equal("acme/tools", repos[0].ConfiguredRepoPath)
 }
 
+func TestResolveStartupReposRegistersCredentialAliasForCatalogFallback(t *testing.T) {
+	require := require.New(t)
+	database := dbtest.Open(t)
+	now := time.Now().UTC()
+	before := db.GitHubRepoIdentity("github.com", "acme", "tools")
+	before.PlatformRepoID = "repo-acme-tools"
+	_, _, err := database.ReconcileRepositoryObservation(
+		t.Context(), before, now.Add(-time.Hour),
+	)
+	require.NoError(err)
+	after := db.GitHubRepoIdentity("github.com", "acme", "tools-new")
+	after.PlatformRepoID = "repo-acme-tools"
+	_, _, err = database.ReconcileRepositoryObservation(t.Context(), after, now)
+	require.NoError(err)
+
+	client := getRepoFailingClient{&testutil.FixtureClient{}}
+	router, err := ghclient.NewHostRouter("github.com", &ghclient.Route{
+		Key:    ghclient.RouteKey{Host: "github.com", Owner: "acme", Name: "tools"},
+		Client: client,
+	})
+	require.NoError(err)
+	cfg := &config.Config{Repos: []config.Repo{{Owner: "acme", Name: "tools"}}}
+
+	repos := resolveStartupRepos(
+		t.Context(),
+		cfg,
+		mustProviderRegistry(t, map[string]ghclient.Client{"github.com": client}),
+		database,
+		map[string]*ghclient.HostRouter{"github.com": router},
+	)
+
+	require.Len(repos, 1)
+	require.Equal("tools-new", repos[0].Name)
+	// The recovered renamed route must keep resolving to the exact entry's
+	// repo-scoped credential instead of falling through to owner or host
+	// routes.
+	route, err := router.RouteForRepo("acme", "tools-new")
+	require.NoError(err)
+	require.Equal("tools", route.Key.Name)
+}
+
 func TestResolveStartupReposFallsBackToDBForOfflineGlobs(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

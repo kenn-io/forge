@@ -289,7 +289,16 @@ fallback repository listing.
   a route reused by a different repository must not inherit the displaced
   repository's provenance, or two refs would claim the same config entry.
   Startup — which has no tracked set — recovers a failed exact entry's
-  stable identity through catalog route history before synthesizing.
+  stable identity through catalog route history before synthesizing, and
+  registers the repo credential alias for the recovered route so repo-scoped
+  credentials do not fall through to owner or host routes. Config-entry
+  matching (glob refresh, entry removal) honors provenance the same way — a
+  renamed repo still belongs to its exact entry — and removal clears
+  provenance whose entry no longer exists, so a stale claim cannot bind a
+  future entry with the same path to the wrong repository.
+  Publications locate their tracked slot by stable identity first and refuse
+  the route fallback across conflicting ids, so a stale sync of a
+  renamed-away repository cannot overwrite the route successor's state.
   (`internal/github/repo_config_resolver.go::FallbackConfiguredRepoRefs`,
   `internal/github/repo_config_resolver.go::ExpandedRepoSet`,
   `internal/github/sync.go::repoRefFromCatalog`,

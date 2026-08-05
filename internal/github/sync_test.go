@@ -10375,6 +10375,59 @@ func TestPublishResolvedRepositoryPreservesMidflightArchivedFlip(t *testing.T) {
 		"a mid-flight archived flip must not be clobbered by an older publication")
 }
 
+func TestPublishResolvedRepositoryMatchesByStableIdentityFirst(t *testing.T) {
+	assert := assert.New(t)
+	d := openTestDB(t)
+	tracked := RepoRef{
+		Owner: "acme", Name: "tools-new", PlatformHost: "github.com",
+		RepoPath: "acme/tools-new", PlatformExternalID: "repo-x",
+	}
+	syncer := NewSyncer(
+		map[string]Client{}, d, nil, []RepoRef{tracked}, time.Hour, nil, nil,
+	)
+
+	// A slower operation publishes with a snapshot bearing the old route
+	// after the tracked ref already moved to the renamed one. The stable
+	// provider id still locates the tracked entry.
+	previous := RepoRef{
+		Owner: "acme", Name: "tools", PlatformHost: "github.com",
+		RepoPath: "acme/tools", PlatformExternalID: "repo-x",
+	}
+	resolved := tracked
+	resolved.DefaultBranch = "main"
+	syncer.publishResolvedRepository(previous, resolved, true)
+	assert.Equal("main", syncer.TrackedRepos()[0].DefaultBranch,
+		"identity match must publish onto the renamed tracked entry")
+}
+
+func TestPublishResolvedRepositoryDoesNotOverwriteRouteSuccessor(t *testing.T) {
+	assert := assert.New(t)
+	d := openTestDB(t)
+	successor := RepoRef{
+		Owner: "acme", Name: "tools", PlatformHost: "github.com",
+		RepoPath: "acme/tools", PlatformExternalID: "repo-y",
+	}
+	syncer := NewSyncer(
+		map[string]Client{}, d, nil, []RepoRef{successor}, time.Hour, nil, nil,
+	)
+
+	// A stale sync of the renamed-away repository publishes with the old
+	// route while a different repository now occupies it. Conflicting
+	// stable ids mean the route match is reuse, not a rename: the
+	// successor's tracked state must survive.
+	previous := RepoRef{
+		Owner: "acme", Name: "tools", PlatformHost: "github.com",
+		RepoPath: "acme/tools", PlatformExternalID: "repo-x",
+	}
+	resolved := previous
+	resolved.Archived = true
+	syncer.publishResolvedRepository(previous, resolved, true)
+	got := syncer.TrackedRepos()[0]
+	assert.Equal("repo-y", got.PlatformExternalID,
+		"a stale publication must not overwrite the route successor")
+	assert.False(got.Archived)
+}
+
 func TestPublishResolvedRepositoryPreservesNewerConfiguredRepoPath(t *testing.T) {
 	assert := assert.New(t)
 	d := openTestDB(t)

@@ -222,19 +222,31 @@ func (s *Server) replaceGlobRepos(
 }
 
 // removeConfigRepos keeps only tracked repos that match at
-// least one of the remaining config entries.
+// least one of the remaining config entries. A kept repo whose exact-entry
+// provenance no longer names a remaining entry loses it: a stale claim
+// would bind a future entry with the same path to the wrong repository.
 func (s *Server) removeConfigRepos(
 	remaining []config.Repo,
 ) {
 	current := s.syncer.TrackedRepos()
 	kept := make([]ghclient.RepoRef, 0, len(current))
 	for _, repo := range current {
+		matched, provenanceRemains := false, false
 		for _, raw := range remaining {
 			if repoMatchesConfig(repo, raw) {
-				kept = append(kept, repo)
-				break
+				matched = true
+			}
+			if repoMatchesConfigProvenance(repo, raw) {
+				provenanceRemains = true
 			}
 		}
+		if !matched {
+			continue
+		}
+		if !provenanceRemains {
+			repo.ConfiguredRepoPath = ""
+		}
+		kept = append(kept, repo)
 	}
 	s.syncer.SetRepos(kept)
 }
@@ -324,8 +336,16 @@ func repoMatchesConfig(
 ) bool {
 	host := raw.PlatformHostOrDefault()
 	if !strings.EqualFold(repoProvider(repo), raw.PlatformOrDefault()) ||
-		!samePlatformHost(repo.PlatformHost, host) ||
-		!strings.EqualFold(repo.Owner, raw.Owner) {
+		!samePlatformHost(repo.PlatformHost, host) {
+		return false
+	}
+	// A provider-side rename moves the tracked route (possibly across
+	// owners) away from the configured path; provenance still ties the
+	// repo to its exact entry.
+	if repoMatchesConfigProvenance(repo, raw) {
+		return true
+	}
+	if !strings.EqualFold(repo.Owner, raw.Owner) {
 		return false
 	}
 	if raw.HasNameGlob() {
@@ -337,6 +357,13 @@ func repoMatchesConfig(
 	}
 	return strings.EqualFold(trackedRepoPath(repo), configRepoPath(raw)) ||
 		strings.EqualFold(repo.Name, raw.Name)
+}
+
+func repoMatchesConfigProvenance(
+	repo ghclient.RepoRef, raw config.Repo,
+) bool {
+	return !raw.HasNameGlob() && repo.ConfiguredRepoPath != "" &&
+		strings.EqualFold(repo.ConfiguredRepoPath, configRepoPath(raw))
 }
 
 func configRepoPath(raw config.Repo) string {

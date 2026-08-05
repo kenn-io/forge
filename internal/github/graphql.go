@@ -688,15 +688,15 @@ type CommentVisibility struct {
 	Reason string
 }
 
-func gqlCommentVisibility(comment *gqlComment) (CommentVisibility, bool) {
+func gqlCommentVisibility(comment *gqlComment) CommentVisibility {
 	if !comment.IsMinimized {
-		return CommentVisibility{}, false
+		return CommentVisibility{}
 	}
 	reason := ""
 	if comment.MinimizedReason != nil {
 		reason = string(*comment.MinimizedReason)
 	}
-	return CommentVisibility{Hidden: true, Reason: reason}, true
+	return CommentVisibility{Hidden: true, Reason: reason}
 }
 
 func convertGQLIssue(gql *gqlIssue) BulkIssue {
@@ -710,9 +710,7 @@ func convertGQLIssue(gql *gqlIssue) BulkIssue {
 	for i := range gql.Comments.Nodes {
 		comment := &gql.Comments.Nodes[i]
 		bulk.Comments = append(bulk.Comments, adaptComment(comment))
-		if visibility, ok := gqlCommentVisibility(comment); ok {
-			bulk.CommentVisibility[comment.DatabaseId] = visibility
-		}
+		bulk.CommentVisibility[comment.DatabaseId] = gqlCommentVisibility(comment)
 	}
 	for i := range gql.TimelineItems.Nodes {
 		event, ok := adaptIssueTimelineEvent(&gql.TimelineItems.Nodes[i])
@@ -1104,9 +1102,7 @@ func convertGQLPR(gql *gqlPR) BulkPR {
 	for i := range gql.Comments.Nodes {
 		comment := &gql.Comments.Nodes[i]
 		bulk.Comments = append(bulk.Comments, adaptComment(comment))
-		if visibility, ok := gqlCommentVisibility(comment); ok {
-			bulk.CommentVisibility[comment.DatabaseId] = visibility
-		}
+		bulk.CommentVisibility[comment.DatabaseId] = gqlCommentVisibility(comment)
 	}
 	for i := range gql.Reviews.Nodes {
 		bulk.Reviews = append(bulk.Reviews, adaptReview(&gql.Reviews.Nodes[i]))

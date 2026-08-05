@@ -15678,6 +15678,105 @@ func TestSyncOpenIssueFromBulkRemovesDeletedCommentsWhenCommentsAreComplete(t *t
 	assert.Empty(events)
 }
 
+func TestSyncOpenIssueFromBulkMergesPartialCommentVisibilityWithStoredState(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
+	require.NoError(err)
+
+	now := time.Date(2024, 6, 3, 12, 0, 0, 0, time.UTC)
+	issueID := int64(9251)
+	issueNumber := 9
+	issueTitle := "partial comment visibility"
+	issueState := "open"
+	issueURL := "https://github.com/owner/repo/issues/9"
+	issueAuthor := "alice"
+	updatedAt := gh.Timestamp{Time: now}
+	commentAuthor := "reviewer"
+	firstCommentID := int64(9252)
+	secondCommentID := int64(9253)
+	firstCommentBody := "observed by GraphQL"
+	secondCommentBody := "outside the partial GraphQL page"
+	firstCommentURL := issueURL + "#issuecomment-9252"
+	secondCommentURL := issueURL + "#issuecomment-9253"
+	firstCommentTime := gh.Timestamp{Time: now.Add(time.Minute)}
+	secondCommentTime := gh.Timestamp{Time: now.Add(2 * time.Minute)}
+	commentTotal := 2
+	comments := []*gh.IssueComment{
+		{
+			ID:        &firstCommentID,
+			Body:      &firstCommentBody,
+			HTMLURL:   &firstCommentURL,
+			User:      &gh.User{Login: &commentAuthor},
+			CreatedAt: &firstCommentTime,
+			UpdatedAt: &firstCommentTime,
+		},
+		{
+			ID:        &secondCommentID,
+			Body:      &secondCommentBody,
+			HTMLURL:   &secondCommentURL,
+			User:      &gh.User{Login: &commentAuthor},
+			CreatedAt: &secondCommentTime,
+			UpdatedAt: &secondCommentTime,
+		},
+	}
+	issue := &gh.Issue{
+		ID:        &issueID,
+		Number:    &issueNumber,
+		Title:     &issueTitle,
+		State:     &issueState,
+		HTMLURL:   &issueURL,
+		Comments:  &commentTotal,
+		User:      &gh.User{Login: &issueAuthor},
+		CreatedAt: &updatedAt,
+		UpdatedAt: &updatedAt,
+	}
+
+	mock := &mockClient{comments: comments}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mock},
+		d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+		time.Minute, nil, nil,
+	)
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+
+	err = syncer.syncOpenIssueFromBulk(ctx, repo, repoID, &BulkIssue{
+		Issue:             issue,
+		Comments:          comments,
+		CommentVisibility: map[int64]CommentVisibility{firstCommentID: {Hidden: true}, secondCommentID: {Hidden: true}},
+		CommentsComplete:  true,
+		TimelineComplete:  true,
+	})
+	require.NoError(err)
+
+	err = syncer.syncOpenIssueFromBulk(ctx, repo, repoID, &BulkIssue{
+		Issue:             issue,
+		Comments:          comments[:1],
+		CommentVisibility: map[int64]CommentVisibility{firstCommentID: {}},
+		CommentsComplete:  false,
+		TimelineComplete:  true,
+	})
+	require.NoError(err)
+
+	storedIssue, err := d.GetIssue(ctx, "github", "github.com", "owner", "repo", issueNumber)
+	require.NoError(err)
+	require.NotNil(storedIssue)
+	events, err := d.ListIssueEvents(ctx, storedIssue.ID)
+	require.NoError(err)
+	require.Len(events, 2)
+
+	metadataByCommentID := make(map[int64]string, len(events))
+	for _, event := range events {
+		require.NotNil(event.PlatformID)
+		metadataByCommentID[*event.PlatformID] = event.MetadataJSON
+	}
+	assert.NotContains(metadataByCommentID[firstCommentID], `"provider_hidden":true`)
+	assert.Contains(metadataByCommentID[secondCommentID], `"provider_hidden":true`)
+}
+
 func TestSyncOpenIssueFromBulkStoresTimelineEvents(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

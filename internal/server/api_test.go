@@ -12758,6 +12758,191 @@ func TestE2EIssueDetailRemovesDeletedCommentOnGraphQLBulkSync(t *testing.T) {
 	require.Empty(*secondResp.JSON200.Events)
 }
 
+func TestE2EIssueDetailPreservesHiddenCommentsAcrossIncompleteGraphQLRefresh(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+
+	now := time.Date(2026, 4, 13, 11, 30, 0, 0, time.UTC)
+	issueID := int64(171150)
+	issueNumber := 176
+	issueTitle := "Moderated comments issue"
+	issueState := "open"
+	issueURL := "https://github.com/acme/widget/issues/176"
+	issueAuthor := "heidi"
+	issueTime := gh.Timestamp{Time: now}
+	firstCommentID := int64(9131)
+	secondCommentID := int64(9132)
+	firstCommentBody := "visible after moderation review"
+	secondCommentBody := "outside the partial GraphQL page"
+	commentAuthor := "commenter"
+	firstCommentTime := gh.Timestamp{Time: now.Add(time.Minute)}
+	secondCommentTime := gh.Timestamp{Time: now.Add(2 * time.Minute)}
+	partialComments := false
+
+	commentsJSON := func() string {
+		firstVisibility := `"isMinimized":true,"minimizedReason":"OFF_TOPIC"`
+		secondNode := `,{
+			"databaseId":9132,
+			"author":{"login":"commenter"},
+			"body":"outside the partial GraphQL page",
+			"url":"https://github.com/acme/widget/issues/176#issuecomment-9132",
+			"createdAt":"` + secondCommentTime.Format(time.RFC3339) + `",
+			"updatedAt":"` + secondCommentTime.Format(time.RFC3339) + `",
+			"isMinimized":true,
+			"minimizedReason":"OFF_TOPIC"
+		}`
+		hasNextPage := "false"
+		if partialComments {
+			firstVisibility = `"isMinimized":false,"minimizedReason":null`
+			secondNode = ""
+			hasNextPage = "true"
+		}
+		return `{
+			"totalCount":2,
+			"nodes":[{
+				"databaseId":9131,
+				"author":{"login":"commenter"},
+				"body":"visible after moderation review",
+				"url":"https://github.com/acme/widget/issues/176#issuecomment-9131",
+				"createdAt":"` + firstCommentTime.Format(time.RFC3339) + `",
+				"updatedAt":"` + firstCommentTime.Format(time.RFC3339) + `",
+				` + firstVisibility + `
+			}` + secondNode + `],
+			"pageInfo":{"hasNextPage":` + hasNextPage + `,"endCursor":"cursor"}
+		}`
+	}
+
+	gqlSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if bytes.Contains(body, []byte("pullRequests")) {
+			_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequests":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`))
+			return
+		}
+		resp := `{"data":{"repository":{"issues":{"nodes":[{
+			"databaseId":171150,
+			"number":176,
+			"title":"Moderated comments issue",
+			"state":"OPEN",
+			"body":"GraphQL moderation state",
+			"url":"https://github.com/acme/widget/issues/176",
+			"author":{"login":"heidi"},
+			"createdAt":"` + now.Format(time.RFC3339) + `",
+			"updatedAt":"` + now.Format(time.RFC3339) + `",
+			"closedAt":null,
+			"labels":{"nodes":[]},
+			"comments":` + commentsJSON() + `,
+			"timelineItems":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}
+		}],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`
+		_, _ = w.Write([]byte(resp))
+	}))
+	defer gqlSrv.Close()
+
+	restComments := []*gh.IssueComment{
+		{
+			ID:        &firstCommentID,
+			Body:      &firstCommentBody,
+			User:      &gh.User{Login: &commentAuthor},
+			CreatedAt: &firstCommentTime,
+			UpdatedAt: &firstCommentTime,
+		},
+		{
+			ID:        &secondCommentID,
+			Body:      &secondCommentBody,
+			User:      &gh.User{Login: &commentAuthor},
+			CreatedAt: &secondCommentTime,
+			UpdatedAt: &secondCommentTime,
+		},
+	}
+	var restCommentCalls atomic.Int32
+	mock := &mockGH{
+		listOpenPullRequestsFn: func(_ context.Context, _, _ string) ([]*gh.PullRequest, error) {
+			return nil, &gh.ErrorResponse{
+				Response: &http.Response{StatusCode: http.StatusNotModified},
+			}
+		},
+		listOpenIssuesFn: func(_ context.Context, _, _ string) ([]*gh.Issue, error) {
+			return []*gh.Issue{{
+				ID:        &issueID,
+				Number:    &issueNumber,
+				Title:     &issueTitle,
+				State:     &issueState,
+				HTMLURL:   &issueURL,
+				User:      &gh.User{Login: &issueAuthor},
+				CreatedAt: &issueTime,
+				UpdatedAt: &issueTime,
+			}}, nil
+		},
+		listIssueCommentsFn: func(_ context.Context, _, _ string, number int) ([]*gh.IssueComment, error) {
+			require.Equal(issueNumber, number)
+			restCommentCalls.Add(1)
+			return restComments, nil
+		},
+	}
+
+	database := dbtest.Open(t)
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": mock},
+		database,
+		nil,
+		defaultTestRepos,
+		time.Minute,
+		nil,
+		map[string]*ghclient.SyncBudget{"github.com": ghclient.NewSyncBudget(10000)},
+	)
+	t.Cleanup(syncer.Stop)
+	syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{
+		"github.com": ghclient.NewGraphQLFetcherWithClient(
+			githubv4.NewEnterpriseClient(gqlSrv.URL, gqlSrv.Client()),
+			nil,
+		),
+	})
+
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	client := setupTestClient(t, srv)
+
+	srv.syncer.RunOnce(ctx)
+	assert.Zero(restCommentCalls.Load())
+
+	firstResp, err := client.HTTP.GetIssueWithResponse(
+		ctx, "gh", "acme", "widget", int64(issueNumber),
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, firstResp.StatusCode())
+	require.NotNil(firstResp.JSON200)
+	require.NotNil(firstResp.JSON200.Events)
+	require.Len(*firstResp.JSON200.Events, 2)
+	for _, event := range *firstResp.JSON200.Events {
+		assert.Contains(event.MetadataJSON, `"provider_hidden":true`)
+		assert.Contains(event.MetadataJSON, `"provider_hidden_reason":"OFF_TOPIC"`)
+	}
+
+	partialComments = true
+	srv.syncer.RunOnce(ctx)
+	assert.Equal(int32(1), restCommentCalls.Load())
+
+	secondResp, err := client.HTTP.GetIssueWithResponse(
+		ctx, "gh", "acme", "widget", int64(issueNumber),
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, secondResp.StatusCode())
+	require.NotNil(secondResp.JSON200)
+	require.NotNil(secondResp.JSON200.Events)
+	require.Len(*secondResp.JSON200.Events, 2)
+
+	metadataByCommentID := make(map[int64]string, len(*secondResp.JSON200.Events))
+	for _, event := range *secondResp.JSON200.Events {
+		require.NotNil(event.PlatformID)
+		metadataByCommentID[*event.PlatformID] = event.MetadataJSON
+	}
+	assert.NotContains(metadataByCommentID[firstCommentID], `"provider_hidden":true`)
+	assert.Contains(metadataByCommentID[secondCommentID], `"provider_hidden":true`)
+	assert.Contains(metadataByCommentID[secondCommentID], `"provider_hidden_reason":"OFF_TOPIC"`)
+}
+
 func TestE2EGraphQLBulkSyncPersistsIssueTimelineEvents(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

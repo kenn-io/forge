@@ -26985,6 +26985,56 @@ func TestWorkspaceDeleteDirtyKeepsRuntimeSessionsE2E(t *testing.T) {
 	assert.Len(srv.runtime.ListSessions(ws.Id), 2)
 }
 
+func TestDeleteWorkspacePublishesIdentityAfterSuccessfulCleanup(t *testing.T) {
+	client, database, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
+	ctx := t.Context()
+	ws := createReadyWorkspace(t, ctx, client)
+	events, _ := srv.Hub().Subscribe(ctx, false)
+	dirty, err := srv.workspaceAPI.DeleteWorkspace(ctx, ws.Id, false)
+
+	require.NoError(t, err)
+	assert.Empty(t, dirty)
+	stored, err := database.GetWorkspace(ctx, ws.Id)
+	require.NoError(t, err)
+	assert.Nil(t, stored)
+	deleted := readEventMatching(t, events, func(event Event) bool {
+		return event.Type == "workspace_deleted"
+	})
+	payload, ok := deleted.Data.(workspaceapi.WorkspaceDeletedPayload)
+	require.True(t, ok)
+	assert.Equal(t, ws.Id, payload.WorkspaceID)
+	assert.Equal(t, "github", payload.Provider)
+	assert.Equal(t, "github.com", payload.PlatformHost)
+	assert.Equal(t, "acme/widget", payload.RepoPath)
+	assert.Equal(t, "acme", payload.Owner)
+	assert.Equal(t, "widget", payload.Name)
+	assert.Equal(t, db.WorkspaceItemTypePullRequest, payload.ItemType)
+	assert.Equal(t, 1, payload.ItemNumber)
+	assert.Nil(t, payload.AssociatedPRNumber)
+	readEventMatching(t, events, func(event Event) bool {
+		return event.Type == "data_changed"
+	})
+}
+
+func TestDeleteWorkspacePreservesDirtyWorkspace(t *testing.T) {
+	client, database, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
+	ctx := t.Context()
+	ws := createReadyWorkspace(t, ctx, client)
+	require.NoError(t, os.WriteFile(
+		filepath.Join(ws.WorktreePath, "dirty.txt"),
+		[]byte("uncommitted\n"),
+		0o644,
+	))
+	dirty, err := srv.workspaceAPI.DeleteWorkspace(ctx, ws.Id, false)
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{"dirty.txt"}, dirty)
+	stored, err := database.GetWorkspace(ctx, ws.Id)
+	require.NoError(t, err)
+	require.NotNil(t, stored)
+	assert.Equal(t, ws.Id, stored.ID)
+}
+
 // TestWorkspaceListReportsCommitsAheadBehindE2E verifies that the
 // /api/v1/workspaces list response includes commits_ahead /
 // commits_behind for ready workspaces, computed against the worktree's

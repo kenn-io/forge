@@ -3367,29 +3367,6 @@ func (c *liveClient) ConvertPullRequestToDraft(
 	}, nil
 }
 
-func (c *liveClient) MergePullRequest(
-	ctx context.Context, owner, repo string, number int,
-	commitTitle, commitMessage, method, expectedHeadSHA string,
-) (*gh.PullRequestMergeResult, error) {
-	opts := &gh.PullRequestOptions{
-		CommitTitle: commitTitle,
-		MergeMethod: method,
-		// When set, GitHub rejects the merge with 405 "Head branch was
-		// modified" if the PR head moved past the reviewed commit.
-		SHA: expectedHeadSHA,
-	}
-	result, resp, err := c.writeGH().PullRequests.Merge(
-		ctx, owner, repo, number, commitMessage, opts,
-	)
-	c.trackWriteRate(resp)
-	if err != nil {
-		return nil, fmt.Errorf(
-			"merging %s/%s#%d: %w", owner, repo, number, err,
-		)
-	}
-	return result, nil
-}
-
 func (c *liveClient) EditPullRequest(
 	ctx context.Context, owner, repo string, number int, opts EditPullRequestOpts,
 ) (*gh.PullRequest, error) {

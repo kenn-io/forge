@@ -166,6 +166,12 @@ fallback repository listing.
 
 ## Native Stack Rules
 
+- GitHub.com merges are versioned asynchronous direct operations polled to terminal
+  `merged`; `pending`/`enqueued` never count as merged. GHES stays synchronous with no
+  probe fallback. (`internal/github/merge_async.go::liveClient.MergePullRequest`)
+- Preserve required-rebase failures verbatim; do not substitute private website routes
+  or local force-pushes until GitHub exposes a token-authenticated stack-rebase API.
+  (`internal/github/merge_async.go::mergeAsyncTerminalResult`)
 - Confirmed native stacks claim and order their PRs first; branch inference always
   runs afterward on every unclaimed PR, including when the preview is disabled,
   incomplete, or failing. (`internal/stacks/detect.go::RunDetectionWithNativeStacks`)

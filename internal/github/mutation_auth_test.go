@@ -36,7 +36,7 @@ func newSplitAuthTestClient(
 			registries[0], splitAuthReadIdentity, splitAuthWriteIdentity,
 		))
 	}
-	client, err := NewClient(source, "github.example.com", nil, nil, options...)
+	client, err := NewClient(source, "github.com", nil, nil, options...)
 	require.NoError(t, err)
 	live, ok := client.(*liveClient)
 	require.True(t, ok)
@@ -93,11 +93,14 @@ func TestMutationsUseUserPATWhileReadsUseAppToken(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"id":1,"name":"widgets","permissions":{"push":false}}`))
 		})
-	mux.HandleFunc("PUT /api/v3/repos/acme/widgets/pulls/5/merge",
+	mux.HandleFunc("PUT /api/v3/repos/acme/widgets/pulls/5/merge-async",
 		func(w http.ResponseWriter, r *http.Request) {
 			record("write:merge", r)
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"merged":true}`))
+			_, _ = w.Write([]byte(`{
+				"status":"merged",
+				"details":{"message":"Pull request merged.","sha":"merge-sha"}
+			}`))
 		})
 	mux.HandleFunc("PUT /api/v3/repos/acme/widgets/pulls/5/reviews/77/dismissals",
 		func(w http.ResponseWriter, r *http.Request) {
@@ -134,7 +137,7 @@ func TestMutationsUseUserPATWhileReadsUseAppToken(t *testing.T) {
 
 	var mints atomic.Int64
 	source := tokenauth.NewManagedSource(tokenauth.Descriptor{
-		Key: tokenauth.Key{Platform: "github", Host: "github.example.com"},
+		Key: tokenauth.Key{Platform: "github", Host: "github.com"},
 		Candidates: []tokenauth.Candidate{
 			{
 				Kind:           tokenauth.SourceKindGitHubApp,

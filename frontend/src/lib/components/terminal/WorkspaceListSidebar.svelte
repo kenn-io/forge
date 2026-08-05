@@ -447,6 +447,19 @@
     });
   }
 
+  function handleWorkspaceDeleted(event: Event): void {
+    try {
+      const payload = JSON.parse((event as MessageEvent<string>).data) as { workspace_id?: unknown };
+      if (typeof payload.workspace_id !== "string" || payload.workspace_id === "") return;
+      workspaces = workspaces.filter(
+        (workspace) => workspace.id !== payload.workspace_id || workspace.fleet_host_key !== undefined,
+      );
+      scheduleWorkspaceStatusRefresh();
+    } catch {
+      // Ignore malformed event frames and reconcile on the next poll.
+    }
+  }
+
   async function fetchPeerWorkspaces(
     signal: AbortSignal,
   ): Promise<Workspace[]> {
@@ -1176,6 +1189,7 @@
         scheduleWorkspaceStatusRefresh();
       },
     );
+    source.addEventListener("workspace_deleted", handleWorkspaceDeleted);
 
     return () => {
       window.clearInterval(pollHandle);

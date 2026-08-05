@@ -51,13 +51,21 @@ const modePalette = vi.hoisted(() => ({
 const appSurfaceProps = vi.hoisted(() => ({
   palette: null as Record<string, unknown> | null,
   docs: null as Record<string, unknown> | null,
+  provider: null as Record<string, unknown> | null,
+}));
+
+const workspaceHostMocks = vi.hoisted(() => ({
+  notifyWorkspaceDeleted: vi.fn(),
 }));
 
 vi.mock("@kenn-forge/ui", async () => {
-  const Provider = (await import("./lib/testing/AppProviderMock.svelte")).default;
+  const ProviderMock = (await import("./lib/testing/AppProviderMock.svelte")).default;
   const Stub = (await import("./lib/testing/AppViewStub.svelte")).default;
   return {
-    Provider,
+    Provider: (anchor: Parameters<typeof ProviderMock>[0], props: Parameters<typeof ProviderMock>[1]) => {
+      appSurfaceProps.provider = props as Record<string, unknown>;
+      return ProviderMock(anchor, props);
+    },
     WorkspaceCreateSplitButton: Stub,
     PRListView: Stub,
     IssueListView: Stub,
@@ -71,6 +79,14 @@ vi.mock("@kenn-forge/ui", async () => {
       },
     }),
     normalizeRepoFilterSelection: (repo: string | undefined) => repo,
+  };
+});
+
+vi.mock("./lib/stores/workspace-host.svelte.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./lib/stores/workspace-host.svelte.ts")>();
+  return {
+    ...actual,
+    notifyWorkspaceDeleted: workspaceHostMocks.notifyWorkspaceDeleted,
   };
 });
 
@@ -215,6 +231,7 @@ describe("App feature routes", () => {
     kataAuxiliary.instance.issues = [];
     appSurfaceProps.palette = null;
     appSurfaceProps.docs = null;
+    appSurfaceProps.provider = null;
     kataReferences.search.mockResolvedValue({
       server_instance_id: "server-a",
       daemon_id: "home",
@@ -318,6 +335,66 @@ describe("App feature routes", () => {
       showFlash("second shared-store flash");
       await waitFor(() => expect(screen.getByText("second shared-store flash")).toBeTruthy());
       expect(screen.getByText("first shared-store flash")).toBeTruthy();
+    } finally {
+      for (const flash of getFlashes()) dismissFlash(flash.id);
+    }
+  });
+
+  it("tombstones both owning and associated pull identities from workspace deletion events", async () => {
+    const { default: App } = await import("./App.svelte");
+    render(App, { target: createAppTarget() });
+    await waitFor(() => expect(appSurfaceProps.provider).not.toBeNull());
+    const onWorkspaceDeleted = appSurfaceProps.provider?.onWorkspaceDeleted as
+      | ((event: Record<string, unknown>) => void)
+      | undefined;
+
+    onWorkspaceDeleted?.({
+      workspace_id: "ws-issue-7",
+      provider: "github",
+      platform_host: "github.com",
+      repo_path: "acme/widget",
+      owner: "acme",
+      name: "widget",
+      item_type: "issue",
+      item_number: 7,
+      associated_pr_number: 42,
+    });
+
+    expect(workspaceHostMocks.notifyWorkspaceDeleted).toHaveBeenNthCalledWith(1, "ws-issue-7", undefined, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+      owner: "acme",
+      name: "widget",
+      number: 7,
+      itemType: "issue",
+    });
+    expect(workspaceHostMocks.notifyWorkspaceDeleted).toHaveBeenNthCalledWith(2, "ws-issue-7", undefined, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+      owner: "acme",
+      name: "widget",
+      number: 42,
+      itemType: "pull",
+    });
+  });
+
+  it("routes Provider warnings through a warning-tone flash", async () => {
+    const { default: App } = await import("./App.svelte");
+    render(App, { target: createAppTarget() });
+    await waitFor(() => expect(appSurfaceProps.provider).not.toBeNull());
+    const onWarning = appSurfaceProps.provider?.onWarning as ((message: string) => void) | undefined;
+    const { getFlashes, dismissFlash } = await import("@kenn-forge/ui/stores/flash");
+
+    try {
+      onWarning?.("Merged, but workspace cleanup failed");
+      expect(getFlashes()).toContainEqual(
+        expect.objectContaining({
+          message: "Merged, but workspace cleanup failed",
+          tone: "warning",
+        }),
+      );
     } finally {
       for (const flash of getFlashes()) dismissFlash(flash.id);
     }

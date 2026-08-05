@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Button, Modal } from "@kenn-io/kit-ui";
+  import { Button, Checkbox, Modal } from "@kenn-io/kit-ui";
   import { onMount, untrack } from "svelte";
 
   import {
@@ -190,20 +190,23 @@
       // the request when the synced head has moved past it.
       const params = mergeParams();
       const ref = { provider, platformHost, owner, name, repoPath };
-      const { data, error } = await client.POST(providerItemPath("pulls", ref, deferred ? "/merge/deferred" : "/merge"), {
-        params: { path: { ...providerRouteParams(ref), number } },
-        body: params,
-      });
-      if (error) {
+      if (deferred) {
+        const { error } = await client.POST(providerItemPath("pulls", ref, "/merge/deferred"), {
+          params: { path: { ...providerRouteParams(ref), number } },
+          body: params,
+        });
         // Head-pinning conflicts close the modal: the user must
         // re-review the refreshed detail before retrying, so an
         // inline retry from this stale form would be wrong.
-        if (handleMergeError(error)) return;
-      }
-      if (deferred) {
+        if (error && handleMergeError(error)) return;
         onqueued();
         return;
       }
+      const { data, error } = await client.POST(providerItemPath("pulls", ref, "/merge"), {
+        params: { path: { ...providerRouteParams(ref), number } },
+        body: params,
+      });
+      if (error && handleMergeError(error)) return;
       onmerged(data?.workspace_cleanup);
     } catch (err) {
       showFlash(err instanceof Error ? err.message : String(err), { tone: "danger" });
@@ -302,17 +305,14 @@
       </div>
 
       {#if workspacePresent}
-        <label class="cleanup-option">
-          <input
-            type="checkbox"
-            checked={deleteWorkspaceAfterMerge}
-            onchange={(event) => {
-              deleteWorkspaceAfterMerge = event.currentTarget.checked;
-              writeDeleteWorkspaceAfterMergePreference(deleteWorkspaceAfterMerge);
-            }}
-          />
-          <span>Delete workspace after merge</span>
-        </label>
+        <Checkbox
+          checked={deleteWorkspaceAfterMerge}
+          label="Delete workspace after merge"
+          onchange={(checked) => {
+            deleteWorkspaceAfterMerge = checked;
+            writeDeleteWorkspaceAfterMergePreference(checked);
+          }}
+        />
       {/if}
 
       {#if error}
@@ -457,15 +457,6 @@
     display: flex;
     gap: 6px;
     flex-wrap: wrap;
-  }
-
-  .cleanup-option {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2, 8px);
-    color: var(--text-secondary);
-    font-size: var(--font-size-sm);
-    cursor: pointer;
   }
 
   .method-option {

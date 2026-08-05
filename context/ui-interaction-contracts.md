@@ -117,6 +117,9 @@ Interactive surfaces must agree on which item is selected.
   surface immediately and reconcile the tombstone away — an ID-less tombstone
   would mask it forever, because the workspace-absent envelope it waits for
   never arrives once the item has a new workspace.
+- `workspace_deleted` is the cross-client tombstone signal: publish both the
+  owning item and any associated PR identity before refetching, so stale detail
+  envelopes cannot reclaim the deleted ID (`frontend/src/App.svelte::handleWorkspaceDeleted`).
 - Automatic empty-pane launchers stay closed during inline workspace deletion
   and explicit create-and-launch startup: teardown and pre-session gaps are not
   launchable empty workspaces (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::autoOpenLauncher`).

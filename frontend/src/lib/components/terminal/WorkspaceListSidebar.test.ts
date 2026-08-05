@@ -296,6 +296,57 @@ describe("WorkspaceListSidebar", () => {
     await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(1));
   });
 
+  it("removes a deleted local workspace immediately and schedules reconciliation", async () => {
+    const frameCallbacks: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      frameCallbacks.push(callback);
+      return frameCallbacks.length;
+    });
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    mockGet.mockResolvedValue({
+      data: {
+        workspaces: [
+          workspaceFixture({
+            id: "ws-delete",
+            provider: "github",
+            platformHost: "github.com",
+            owner: "acme",
+            name: "widget",
+            number: 1,
+            title: "Delete me",
+          }),
+          workspaceFixture({
+            id: "ws-keep",
+            provider: "github",
+            platformHost: "github.com",
+            owner: "acme",
+            name: "widget",
+            number: 2,
+            title: "Keep me",
+          }),
+        ],
+      },
+    });
+    render(WorkspaceListSidebar, { props: { selectedId: "" } });
+    await screen.findByText("Delete me");
+    mockGet.mockClear();
+    frameCallbacks.length = 0;
+    const source = MockEventSource.instances[0];
+    const listener = source?.addEventListener.mock.calls.find(([type]) => type === "workspace_deleted")?.[1] as
+      | ((event: MessageEvent<string>) => void)
+      | undefined;
+
+    listener?.({ data: JSON.stringify({ workspace_id: "ws-delete" }) } as MessageEvent<string>);
+    await tick();
+
+    expect(screen.queryByText("Delete me")).toBeNull();
+    expect(screen.getByText("Keep me")).toBeTruthy();
+    expect(mockGet).not.toHaveBeenCalled();
+    expect(frameCallbacks).toHaveLength(1);
+    frameCallbacks[0]?.(0);
+    await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(1));
+  });
+
   it("hides the fleet status block when only the local host is present", async () => {
     mockGet.mockImplementation((path: string) => {
       if (path === "/snapshot") {

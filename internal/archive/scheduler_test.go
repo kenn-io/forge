@@ -117,6 +117,27 @@ func TestRunEligibleSkipsUnresolvableConfiguredRef(t *testing.T) {
 	assert.True(states[0].IssueInventory.Complete())
 }
 
+func TestRunEligiblePropagatesStoreFailure(t *testing.T) {
+	require := require.New(t)
+	database := dbtest.Open(t)
+	now := archiveTestTime()
+	healthy := archiveServiceRef(platform.KindGitHub, "github.test", "healthy")
+	archiveServiceSeedRepo(t, database, healthy)
+	provider := newArchiveServiceProvider(healthy.Platform, healthy.Host)
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	service := newArchiveTestService(
+		t, database, registry, []platform.RepoRef{healthy}, &archiveTestAdmission{}, now,
+	)
+	requireEnsureConfigured(t, service, []platform.RepoRef{healthy})
+
+	// A broken store is an infrastructure failure, not a repository-scoped
+	// one: the worker pass must surface it instead of reporting an idle,
+	// successful iteration.
+	require.NoError(database.Close())
+	require.Error(service.RunEligible(t.Context()))
+}
+
 func TestArchiveBootstrapFeatureDeferralSkipsToNextRepository(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

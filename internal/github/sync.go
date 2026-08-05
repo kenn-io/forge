@@ -5595,6 +5595,10 @@ func (s *Syncer) publishResolvedRepository(
 				// tracked state stays authoritative.
 				resolved.Archived = s.repos[i].Archived
 			}
+			// Config-entry provenance is authored only by configuration
+			// resolution; a publication built from an older snapshot must
+			// not overwrite a value a concurrent reload just updated.
+			resolved.ConfiguredRepoPath = s.repos[i].ConfiguredRepoPath
 			s.repos[i] = resolved
 			return
 		}

@@ -282,6 +282,17 @@ func configuredRepoPath(raw config.Repo) string {
 	return raw.Owner + "/" + raw.Name
 }
 
+// exactConfiguredRepoPath is the provenance stamped on resolved refs: only
+// exact entries author it — a glob pattern identifies no single entry to
+// correlate with, and stamping it would displace exact provenance on
+// deduplicated overlaps.
+func exactConfiguredRepoPath(raw config.Repo) string {
+	if raw.HasNameGlob() {
+		return ""
+	}
+	return configuredRepoPath(raw)
+}
+
 func repoPathOrFullName(repo RepoRef) string {
 	if strings.TrimSpace(repo.RepoPath) != "" {
 		return strings.TrimSpace(repo.RepoPath)
@@ -315,7 +326,7 @@ func repoRefFromRepository(
 		CloneURL:           repo.CloneURL,
 		DefaultBranch:      repo.DefaultBranch,
 		Archived:           repo.Archived,
-		ConfiguredRepoPath: configuredRepoPath(raw),
+		ConfiguredRepoPath: exactConfiguredRepoPath(raw),
 	}
 	if ref.PlatformRepoID == 0 {
 		ref.PlatformRepoID = repo.Ref.PlatformID
@@ -405,8 +416,15 @@ func (s *ExpandedRepoSet) Add(repo RepoRef, providerResolved bool) {
 		slot, ok = lookupSlot(s.byRoute, routeKey)
 	}
 	if ok {
+		// Config-entry provenance is authored only by exact entries; glob
+		// refs carry none. Merge it across duplicates in both directions so
+		// whichever ref wins the slot, the exact entry stays correlatable
+		// on the next reload.
 		if providerResolved && !s.resolved[slot] {
 			old := s.refs[slot]
+			if repo.ConfiguredRepoPath == "" {
+				repo.ConfiguredRepoPath = old.ConfiguredRepoPath
+			}
 			delete(s.byRoute, expandedRepoRouteKey(old))
 			if oldIdentity := expandedRepoIdentityKey(old); oldIdentity != "" {
 				delete(s.byIdentity, oldIdentity)
@@ -417,6 +435,8 @@ func (s *ExpandedRepoSet) Add(repo RepoRef, providerResolved bool) {
 			if identityKey != "" {
 				s.byIdentity[identityKey] = slot
 			}
+		} else if s.refs[slot].ConfiguredRepoPath == "" {
+			s.refs[slot].ConfiguredRepoPath = repo.ConfiguredRepoPath
 		}
 		return
 	}

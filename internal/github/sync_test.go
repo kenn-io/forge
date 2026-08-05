@@ -10353,6 +10353,28 @@ func TestPublishResolvedRepositoryPreservesNewerArchivedState(t *testing.T) {
 	assert.False(syncer.TrackedRepos()[0].Archived)
 }
 
+func TestPublishResolvedRepositoryPreservesNewerConfiguredRepoPath(t *testing.T) {
+	assert := assert.New(t)
+	d := openTestDB(t)
+	tracked := RepoRef{
+		Owner: "acme", Name: "frozen", PlatformHost: "github.com",
+		RepoPath: "acme/frozen", ConfiguredRepoPath: "acme/frozen",
+	}
+	syncer := NewSyncer(
+		map[string]Client{}, d, nil, []RepoRef{tracked}, time.Hour, nil, nil,
+	)
+
+	// A sync snapshot taken before a config reload rewired the entry
+	// carries stale provenance. Provider resolution never authors
+	// config-entry provenance, so the currently tracked value survives
+	// even a publication with fresh provider metadata.
+	stale := tracked
+	stale.ConfiguredRepoPath = ""
+	syncer.publishResolvedRepository(stale, stale, true)
+	assert.Equal("acme/frozen", syncer.TrackedRepos()[0].ConfiguredRepoPath,
+		"a stale republication must not erase config-entry provenance")
+}
+
 func TestRunOnceScopesGitHubProviderReserveToRepoCredential(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

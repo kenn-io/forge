@@ -232,21 +232,19 @@ func TestResolveStartupReposExpandsConfiguredGlobs(t *testing.T) {
 
 	assert.Equal([]ghclient.RepoRef{
 		{
-			Platform:           "github",
-			Owner:              "roborev-dev",
-			Name:               "kenn-forge",
-			PlatformHost:       "github.com",
-			RepoPath:           "roborev-dev/kenn-forge",
-			ConfiguredRepoPath: "roborev-dev/*",
+			Platform:     "github",
+			Owner:        "roborev-dev",
+			Name:         "kenn-forge",
+			PlatformHost: "github.com",
+			RepoPath:     "roborev-dev/kenn-forge",
 		},
 		{
-			Platform:           "github",
-			Owner:              "roborev-dev",
-			Name:               "archived",
-			PlatformHost:       "github.com",
-			RepoPath:           "roborev-dev/archived",
-			Archived:           true,
-			ConfiguredRepoPath: "roborev-dev/*",
+			Platform:     "github",
+			Owner:        "roborev-dev",
+			Name:         "archived",
+			PlatformHost: "github.com",
+			RepoPath:     "roborev-dev/archived",
+			Archived:     true,
 		},
 	}, repos)
 }
@@ -299,7 +297,7 @@ func TestResolveStartupReposPrefersResolvedOverFallbackDuplicates(t *testing.T) 
 		RepoPath:           "acme/archived",
 		PlatformExternalID: "repo-acme-archived",
 		Archived:           true,
-		ConfiguredRepoPath: "acme/*",
+		ConfiguredRepoPath: "acme/archived",
 	}}, repos)
 }
 

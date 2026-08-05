@@ -46,21 +46,19 @@ func TestResolveConfiguredRepos_ExpandsGlobIncludingArchived(t *testing.T) {
 	assert.Equal(2, result.Configured[0].MatchedRepoCount)
 	assert.Equal([]RepoRef{
 		{
-			Platform:           platform.KindGitHub,
-			Owner:              "acme",
-			Name:               "widgets-api",
-			PlatformHost:       "github.com",
-			RepoPath:           "acme/widgets-api",
-			ConfiguredRepoPath: "acme/widgets-*",
+			Platform:     platform.KindGitHub,
+			Owner:        "acme",
+			Name:         "widgets-api",
+			PlatformHost: "github.com",
+			RepoPath:     "acme/widgets-api",
 		},
 		{
-			Platform:           platform.KindGitHub,
-			Owner:              "acme",
-			Name:               "widgets-legacy",
-			PlatformHost:       "github.com",
-			RepoPath:           "acme/widgets-legacy",
-			Archived:           true,
-			ConfiguredRepoPath: "acme/widgets-*",
+			Platform:     platform.KindGitHub,
+			Owner:        "acme",
+			Name:         "widgets-legacy",
+			PlatformHost: "github.com",
+			RepoPath:     "acme/widgets-legacy",
+			Archived:     true,
 		},
 	}, result.Expanded)
 }
@@ -161,6 +159,45 @@ func TestExpandedRepoSetReconcilesRenamedRouteByProviderIdentity(t *testing.T) {
 	assert.Equal([]RepoRef{resolved}, set.Refs())
 }
 
+func TestExpandedRepoSetMergesExactProvenanceAcrossDuplicates(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	// The exact entry's fallback preserved a renamed tracked ref with its
+	// config-entry provenance; the overlapping glob resolves the same
+	// provider id without any (glob refs carry none). Whichever ref wins
+	// the slot, losing the exact provenance would leave the next failed
+	// reload unable to correlate the entry and synthesize a duplicate.
+	exactFallback := RepoRef{
+		Platform: platform.KindGitHub, Owner: "acme", Name: "tools-new",
+		PlatformHost: "github.com", RepoPath: "acme/tools-new",
+		PlatformExternalID: "repo-acme-tools",
+		ConfiguredRepoPath: "acme/tools", Archived: true,
+	}
+	resolvedGlob := RepoRef{
+		Platform: platform.KindGitHub, Owner: "acme", Name: "tools-new",
+		PlatformHost: "github.com", RepoPath: "acme/tools-new",
+		PlatformExternalID: "repo-acme-tools",
+		WebURL:             "https://github.com/acme/tools-new",
+		Archived:           true,
+	}
+
+	set := NewExpandedRepoSet()
+	set.Add(exactFallback, false)
+	set.Add(resolvedGlob, true)
+	refs := set.Refs()
+	require.Len(refs, 1)
+	assert.Equal("https://github.com/acme/tools-new", refs[0].WebURL)
+	assert.Equal("acme/tools", refs[0].ConfiguredRepoPath)
+
+	set = NewExpandedRepoSet()
+	set.Add(resolvedGlob, true)
+	set.Add(exactFallback, false)
+	refs = set.Refs()
+	require.Len(refs, 1)
+	assert.Equal("https://github.com/acme/tools-new", refs[0].WebURL)
+	assert.Equal("acme/tools", refs[0].ConfiguredRepoPath)
+}
+
 func TestResolveConfiguredRepos_DeduplicatesExactAndGlobMatches(t *testing.T) {
 	assert := assert.New(t)
 	client := &mockClient{
@@ -201,7 +238,7 @@ func TestResolveConfiguredRepos_DeduplicatesExactAndGlobMatches(t *testing.T) {
 	assert.Len(result.Expanded, 2)
 	assert.ElementsMatch([]RepoRef{
 		{Platform: platform.KindGitHub, Owner: "acme", Name: "widgets", PlatformHost: "github.com", RepoPath: "acme/widgets", ConfiguredRepoPath: "acme/widgets"},
-		{Platform: platform.KindGitHub, Owner: "acme", Name: "widgets-api", PlatformHost: "github.com", RepoPath: "acme/widgets-api", ConfiguredRepoPath: "acme/widgets*"},
+		{Platform: platform.KindGitHub, Owner: "acme", Name: "widgets-api", PlatformHost: "github.com", RepoPath: "acme/widgets-api"},
 	}, result.Expanded)
 }
 
@@ -323,12 +360,11 @@ func TestResolveConfiguredRepos_MatchesRepoNamesCaseInsensitively(t *testing.T) 
 	require.Len(t, result.Configured, 1)
 	assert.Equal(1, result.Configured[0].MatchedRepoCount)
 	assert.Equal([]RepoRef{{
-		Platform:           platform.KindGitHub,
-		Owner:              "acme",
-		Name:               "widget-api",
-		PlatformHost:       "github.com",
-		RepoPath:           "acme/widget-api",
-		ConfiguredRepoPath: "acme/widget-*",
+		Platform:     platform.KindGitHub,
+		Owner:        "acme",
+		Name:         "widget-api",
+		PlatformHost: "github.com",
+		RepoPath:     "acme/widget-api",
 	}}, result.Expanded)
 }
 

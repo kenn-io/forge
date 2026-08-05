@@ -555,4 +555,11 @@ type Capabilities struct {
 type RepositoryListOptions struct {
 	Limit  int
 	Offset int
+	// IncludeArchived asks providers that filter archived repositories
+	// out of listings (GitLab) to keep them. Configuration expansion
+	// sets it so archived repositories can match configured globs;
+	// import previews leave it unset so archived repositories never
+	// crowd live ones out of a limited listing. Providers that never
+	// filter archived repositories (GitHub, gitea-like) ignore it.
+	IncludeArchived bool
 }

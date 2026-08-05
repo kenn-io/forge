@@ -629,13 +629,35 @@ func TestListRepositoriesIncludesArchivedProjects(t *testing.T) {
 
 	client := newTestClient(t, server.URL)
 	repos, err := client.ListRepositories(
-		context.Background(), "kenn-forge", platform.RepositoryListOptions{},
+		context.Background(), "kenn-forge",
+		platform.RepositoryListOptions{IncludeArchived: true},
 	)
 	require.NoError(t, err)
 
 	require.Len(t, repos, 2)
 	assert.False(repos[0].Archived)
 	assert.True(repos[1].Archived)
+}
+
+func TestListRepositoriesFiltersArchivedByDefault(t *testing.T) {
+	assert := assert.New(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal("false", r.URL.Query().Get("archived"),
+			"default listings must filter archived server-side, before any limit applies")
+		writeJSON(w, `[
+			{"id": 1, "path": "one", "path_with_namespace": "kenn-forge/one", "archived": false}
+		]`)
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server.URL)
+	repos, err := client.ListRepositories(
+		context.Background(), "kenn-forge", platform.RepositoryListOptions{},
+	)
+	require.NoError(t, err)
+
+	require.Len(t, repos, 1)
+	assert.False(repos[0].Archived)
 }
 
 func TestPreviewNamespaceFallsBackToUserProjectsAfterGroupNotFound(t *testing.T) {

@@ -346,7 +346,7 @@ func (c *Client) ListRepositories(
 ) ([]platform.Repository, error) {
 	preview, err := c.PreviewNamespace(ctx, owner, PreviewOptions{
 		Limit:           opts.Limit,
-		IncludeArchived: true,
+		IncludeArchived: opts.IncludeArchived,
 	})
 	if err != nil {
 		return nil, err

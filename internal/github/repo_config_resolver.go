@@ -242,7 +242,9 @@ func resolveConfiguredRepo(
 		return status, []RepoRef{repoRefFromRepository(raw, kind, host, repo)}, nil
 	}
 
-	repos, err := reader.ListRepositories(ctx, raw.Owner, platform.RepositoryListOptions{})
+	repos, err := reader.ListRepositories(ctx, raw.Owner, platform.RepositoryListOptions{
+		IncludeArchived: true,
+	})
 	if err != nil {
 		return status, nil, fmt.Errorf(
 			"resolve configured repo glob %s/%s: %w",

@@ -303,11 +303,12 @@ fallback repository listing.
   the repository the snapshot named. The route fallback may displace the
   snapshot's own entry — configured-route reuse replaces the occupant and
   the archive lifecycle pauses the old repository — but never an entry
-  whose id conflicts with the snapshot. When the snapshot and resolved ids
-  differ, the data belongs to the route successor — whether it lands on the
-  successor's own entry or displaces the snapshot's — so the snapshot's
-  archived flag is meaningless: authoritative resolved metadata applies,
-  and only a non-authoritative publication preserves tracked state.
+  whose id conflicts with the snapshot. When the resolved id differs from
+  the snapshot's — or from the landed slot's, which matters when the
+  snapshot carries no id — the data belongs to a different repository than
+  the flags describe, so the snapshot's archived flag is meaningless:
+  authoritative resolved metadata applies, and only a non-authoritative
+  publication preserves tracked state.
   (`internal/github/repo_config_resolver.go::FallbackConfiguredRepoRefs`,
   `internal/github/repo_config_resolver.go::ExpandedRepoSet`,
   `internal/github/sync.go::repoRefFromCatalog`,
@@ -323,11 +324,14 @@ fallback repository listing.
   metadata. (`internal/github/sync.go::publishResolvedRepository`)
   Archived state refreshes wherever resolution already happens (startup,
   config reload, settings add/refresh) and must survive catalog
-  republication, which cannot read it from the store. GitLab configuration
-  enumeration lists namespaces with archived projects included — the
-  server-side `archived=false` filter and the client-side drop apply only to
-  import previews — so GitLab globs match archived projects like GitHub
-  globs do. (`internal/github/repo_config_resolver.go::resolveConfiguredRepo`,
+  republication, which cannot read it from the store. Archived inclusion in
+  repository listings is an explicit request
+  (`RepositoryListOptions.IncludeArchived`): configuration expansion sets it
+  so GitLab globs match archived projects like GitHub globs do, while
+  default listings — import previews and the repo-import handler — keep
+  GitLab's server-side `archived=false` filter, which runs before any
+  listing limit so archived projects cannot crowd live ones out of a
+  bounded preview. (`internal/github/repo_config_resolver.go::resolveConfiguredRepo`,
   `internal/platform/gitlab/client.go::ListRepositories`,
   `internal/github/sync.go::repoRefFromCatalog`)
 - Archived state transitions are observed during normal sync passes, not
@@ -342,14 +346,20 @@ fallback repository listing.
   refresh also advances the bucket's next-sync cadence gate — including for
   buckets holding only archived repositories, which drop out of the pass
   before dispatch eligibility is computed — so the refresh honors the
-  bucket's throttle factor instead of rerunning every base interval. In the
-  other direction, a
-  live repository whose in-pass identity resolution reports archived stops
-  before any clone, overview, label, or item syncing — the publication has
-  already flipped the tracked flag, and the pass must not sync an archived
-  repository's content on the way out.
+  bucket's throttle factor instead of rerunning every base interval. The
+  refresh registers provider work like a live repo sync, so an admitted
+  archive request on the same credential is preempted rather than
+  overlapping it. In the other direction, a live repository whose in-pass
+  identity resolution reports archived stops before any clone, overview,
+  label, or item syncing — the publication has already flipped the tracked
+  flag, and the pass must not sync an archived repository's content on the
+  way out. Identity resolution returns the ref the publication actually
+  stored, not its own snapshot: when the publication kept a newer tracked
+  archived flip over the operation's metadata, the caller deciding whether
+  to keep syncing must see the published value.
   (`internal/github/sync.go::reconcileArchivedRepos`,
-  `internal/github/sync.go::syncRepo`)
+  `internal/github/sync.go::syncRepo`,
+  `internal/github/sync.go::reconcileRepoIdentity`)
 - Archive seeding degrades per repository: a ref that fails validation,
   provider resolution, or catalog reconciliation is logged with its identity
   and skipped, never fatal — one bad configured entry must not crash-loop the

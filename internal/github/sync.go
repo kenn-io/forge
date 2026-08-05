@@ -5408,7 +5408,12 @@ func (s *Syncer) reconcileArchivedRepos(
 			skipped = append(skipped, repo.Owner+"/"+repo.Name)
 			continue
 		}
+		// Register provider work so an admitted archive request on the
+		// same credential is preempted instead of overlapping the
+		// refresh, matching the coordination live repo syncs get.
+		release := s.beginProviderWork(bucket, archive.PriorityNormalIndex)
 		resolved, _, _, err := s.reconcileRepoIdentity(ctx, repo)
+		release()
 		if err != nil {
 			slog.Debug("archived repo metadata refresh failed",
 				"repo", repo.Owner+"/"+repo.Name, "err", err,
@@ -5544,7 +5549,14 @@ func (s *Syncer) reconcileRepoIdentity(
 		}
 	}
 	authoritative := repoRefFromCatalog(repo, entry.Repository, resolved)
-	s.publishResolvedRepository(repo, authoritative, resolved != nil)
+	if published, ok := s.publishResolvedRepository(
+		repo, authoritative, resolved != nil,
+	); ok {
+		// The publication may have kept a newer tracked archived flip
+		// over this snapshot's metadata; callers deciding whether to
+		// keep syncing must see the value that was actually published.
+		authoritative = published
+	}
 	if err := s.reconcileArchiveRepositoryIfNeeded(
 		ctx, previousID, entry.Repository.ID,
 	); err != nil {
@@ -5644,25 +5656,29 @@ func repoRefFromCatalog(previous RepoRef, stored db.Repo, resolved *platform.Rep
 
 func (s *Syncer) publishResolvedRepository(
 	previous, resolved RepoRef, archivedAuthoritative bool,
-) {
+) (RepoRef, bool) {
 	s.clearDisplacedCredentialAlias(resolved)
 	s.aliasRenamedCredentialRoute(previous, resolved)
 	s.reposMu.Lock()
 	defer s.reposMu.Unlock()
 	i, ok := s.trackedRepoSlotLocked(previous, resolved)
 	if !ok {
-		return
+		return resolved, false
 	}
 	// The snapshot comparison below only means anything when the
 	// publication concerns the repository the snapshot named: differing
 	// snapshot and resolved ids mean the data belongs to a route
 	// successor — whether it landed on the successor's own entry or is
 	// displacing the snapshot's — and the snapshot's archived flag says
-	// nothing about it.
+	// nothing about it. A conflicting slot id is cross-identity even
+	// when the snapshot carries no id: the slot's occupant is not the
+	// repository the provider response describes.
 	slotID := strings.TrimSpace(s.repos[i].PlatformExternalID)
 	previousID := strings.TrimSpace(previous.PlatformExternalID)
 	resolvedID := strings.TrimSpace(resolved.PlatformExternalID)
-	crossIdentity := resolvedID != "" && previousID != "" && resolvedID != previousID
+	crossIdentity := resolvedID != "" &&
+		((previousID != "" && resolvedID != previousID) ||
+			(slotID != "" && resolvedID != slotID))
 	sameIdentity := !crossIdentity &&
 		(slotID == "" || previousID == "" || slotID == previousID)
 	if sameIdentity && s.repos[i].Archived != previous.Archived {
@@ -5683,6 +5699,7 @@ func (s *Syncer) publishResolvedRepository(
 	// not overwrite a value a concurrent reload just updated.
 	resolved.ConfiguredRepoPath = s.repos[i].ConfiguredRepoPath
 	s.repos[i] = resolved
+	return resolved, true
 }
 
 // trackedRepoSlotLocked locates the tracked entry a publication should land

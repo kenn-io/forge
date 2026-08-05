@@ -22,6 +22,7 @@ import (
 	"github.com/shurcooL/githubv4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/archive"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/platform"
@@ -10438,6 +10439,114 @@ func TestRunOnceAdvancesCadenceForArchivedOnlyBucket(t *testing.T) {
 	syncer.RunOnce(t.Context())
 	assert.Equal(int32(1), getRepositoryCalls.Load(),
 		"second pass inside the cadence gate must defer the archived refresh")
+}
+
+func TestRunOnceRegistersProviderWorkForArchivedRefresh(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+
+	var syncer *Syncer
+	var workActive atomic.Bool
+	ghMock := &mockClient{
+		openPRs:  []*gh.PullRequest{},
+		comments: []*gh.IssueComment{},
+		reviews:  []*gh.PullRequestReview{},
+		commits:  []*gh.RepositoryCommit{},
+		getRepositoryFn: func(
+			_ context.Context, owner, repo string,
+		) (*gh.Repository, error) {
+			workActive.Store(syncer.higherPriorityProviderWorkActive(
+				"github.com", archive.PriorityFullArchive,
+			))
+			id := int64(1)
+			nodeID := "repo-" + owner + "-" + repo
+			archived := true
+			return &gh.Repository{
+				ID:       &id,
+				NodeID:   &nodeID,
+				Name:     &repo,
+				Owner:    &gh.User{Login: &owner},
+				Archived: &archived,
+			}, nil
+		},
+	}
+	repos := []RepoRef{
+		{Owner: "acme", Name: "frozen", PlatformHost: "github.com", Archived: true},
+	}
+	syncer = NewSyncer(
+		map[string]Client{"github.com": ghMock}, d, nil, repos,
+		time.Minute, nil, nil,
+	)
+
+	syncer.RunOnce(t.Context())
+
+	require.True(workActive.Load(),
+		"archived metadata refresh must register provider work so an "+
+			"admitted archive lease on the credential is preempted")
+}
+
+func TestReconcileRepoIdentityReturnsMidflightArchivedFlip(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+
+	// The default mockClient GetRepository reports the repo unarchived.
+	ghMock := &mockClient{
+		openPRs:  []*gh.PullRequest{},
+		comments: []*gh.IssueComment{},
+		reviews:  []*gh.PullRequestReview{},
+		commits:  []*gh.RepositoryCommit{},
+	}
+	// The tracked ref was flipped archived by a concurrent resolution
+	// after this operation snapshotted it as live.
+	repos := []RepoRef{
+		{Owner: "acme", Name: "widget", PlatformHost: "github.com", Archived: true},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": ghMock}, d, nil, repos,
+		time.Minute, nil, nil,
+	)
+
+	snapshot := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
+	authoritative, _, _, err := syncer.reconcileRepoIdentity(t.Context(), snapshot)
+	require.NoError(err)
+
+	assert.True(authoritative.Archived,
+		"returned ref must carry the newer tracked archived flip the publication preserved")
+	tracked := syncer.TrackedRepos()
+	require.Len(tracked, 1)
+	assert.True(tracked[0].Archived)
+}
+
+func TestPublishResolvedRepositoryEmptySnapshotIDKeepsSuccessorArchivedState(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+
+	syncer := NewSyncer(nil, d, nil, []RepoRef{
+		{
+			Owner: "acme", Name: "widget", PlatformHost: "github.com",
+			PlatformExternalID: "repo-x", Archived: true,
+		},
+	}, time.Minute, nil, nil)
+
+	// The operation's snapshot predates identity resolution and carries no
+	// provider id; fresh metadata resolves the route to a different
+	// repository. The displaced occupant's archived flag must not stamp
+	// the successor.
+	previous := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
+	resolved := RepoRef{
+		Owner: "acme", Name: "widget", PlatformHost: "github.com",
+		PlatformExternalID: "repo-y",
+	}
+	syncer.publishResolvedRepository(previous, resolved, true)
+
+	tracked := syncer.TrackedRepos()
+	require.Len(tracked, 1)
+	assert.Equal("repo-y", tracked[0].PlatformExternalID)
+	assert.False(tracked[0].Archived,
+		"authoritative resolved metadata must apply across identities even "+
+			"when the snapshot id is empty")
 }
 
 func TestRunOnceStopsLiveSyncWhenRepoArchivesMidPass(t *testing.T) {

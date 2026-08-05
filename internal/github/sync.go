@@ -5590,12 +5590,18 @@ func (s *Syncer) publishResolvedRepository(
 	if !ok {
 		return
 	}
-	// The snapshot comparison below only means anything when the slot is
-	// the repository the snapshot named; on a cross-identity landing the
-	// snapshot's archived flag belongs to a different repository.
+	// The snapshot comparison below only means anything when the
+	// publication concerns the repository the snapshot named: differing
+	// snapshot and resolved ids mean the data belongs to a route
+	// successor — whether it landed on the successor's own entry or is
+	// displacing the snapshot's — and the snapshot's archived flag says
+	// nothing about it.
 	slotID := strings.TrimSpace(s.repos[i].PlatformExternalID)
 	previousID := strings.TrimSpace(previous.PlatformExternalID)
-	sameIdentity := slotID == "" || previousID == "" || slotID == previousID
+	resolvedID := strings.TrimSpace(resolved.PlatformExternalID)
+	crossIdentity := resolvedID != "" && previousID != "" && resolvedID != previousID
+	sameIdentity := !crossIdentity &&
+		(slotID == "" || previousID == "" || slotID == previousID)
 	if sameIdentity && s.repos[i].Archived != previous.Archived {
 		// A concurrent resolution flipped archived state after this
 		// operation snapshotted the ref. The in-flight provider

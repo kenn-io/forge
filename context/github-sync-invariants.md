@@ -303,10 +303,11 @@ fallback repository listing.
   the repository the snapshot named. The route fallback may displace the
   snapshot's own entry — configured-route reuse replaces the occupant and
   the archive lifecycle pauses the old repository — but never an entry
-  whose id conflicts with the snapshot. On a cross-identity landing the
-  snapshot's archived flag belongs to a different repository: authoritative
-  resolved metadata applies, and only a non-authoritative publication
-  preserves the successor's tracked state.
+  whose id conflicts with the snapshot. When the snapshot and resolved ids
+  differ, the data belongs to the route successor — whether it lands on the
+  successor's own entry or displaces the snapshot's — so the snapshot's
+  archived flag is meaningless: authoritative resolved metadata applies,
+  and only a non-authoritative publication preserves tracked state.
   (`internal/github/repo_config_resolver.go::FallbackConfiguredRepoRefs`,
   `internal/github/repo_config_resolver.go::ExpandedRepoSet`,
   `internal/github/sync.go::repoRefFromCatalog`,

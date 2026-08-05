@@ -10511,6 +10511,35 @@ func TestPublishResolvedRepositoryCrossIdentityUsesAuthoritativeArchived(t *test
 	}
 }
 
+func TestPublishResolvedRepositoryReplacementIgnoresDisplacedArchivedFlip(t *testing.T) {
+	assert := assert.New(t)
+	d := openTestDB(t)
+	// The configured route's occupant was archived after this operation
+	// snapshotted it; meanwhile the route now resolves to an untracked
+	// replacement repository. The displaced repo's archived flip says
+	// nothing about the replacement — authoritative metadata applies.
+	displaced := RepoRef{
+		Owner: "acme", Name: "tools", PlatformHost: "github.com",
+		RepoPath: "acme/tools", PlatformExternalID: "repo-x", Archived: true,
+	}
+	syncer := NewSyncer(
+		map[string]Client{}, d, nil, []RepoRef{displaced}, time.Hour, nil, nil,
+	)
+
+	previous := displaced
+	previous.Archived = false
+	replacement := RepoRef{
+		Owner: "acme", Name: "tools", PlatformHost: "github.com",
+		RepoPath: "acme/tools", PlatformExternalID: "repo-y", Archived: false,
+	}
+	syncer.publishResolvedRepository(previous, replacement, true)
+
+	got := syncer.TrackedRepos()[0]
+	assert.Equal("repo-y", got.PlatformExternalID)
+	assert.False(got.Archived,
+		"the displaced repo's archived flip must not stamp the replacement")
+}
+
 func TestPublishResolvedRepositoryPreservesNewerConfiguredRepoPath(t *testing.T) {
 	assert := assert.New(t)
 	d := openTestDB(t)

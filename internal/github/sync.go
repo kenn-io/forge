@@ -50,6 +50,36 @@ func withCommitOrderMetadata(metadataJSON string, listOrder int, stableOrder int
 	return string(encoded)
 }
 
+// withObsoleteMetadata records whether a commit event's commit is still
+// reachable from the merge request head. Unchanged input returns the original
+// JSON so callers can skip rewriting untouched rows.
+func withObsoleteMetadata(metadataJSON string, obsolete bool) (string, bool) {
+	metadata := map[string]any{}
+	if metadataJSON != "" {
+		var existing map[string]any
+		if err := json.Unmarshal([]byte(metadataJSON), &existing); err == nil && existing != nil {
+			metadata = existing
+		}
+	}
+	value, present := metadata["obsolete"]
+	if obsolete {
+		if value == true {
+			return metadataJSON, false
+		}
+		metadata["obsolete"] = true
+	} else {
+		if !present {
+			return metadataJSON, false
+		}
+		delete(metadata, "obsolete")
+	}
+	encoded, err := json.Marshal(metadata)
+	if err != nil {
+		return metadataJSON, false
+	}
+	return string(encoded), true
+}
+
 func commitMetadataOrder(metadataJSON string) int {
 	if metadataJSON == "" {
 		return 0

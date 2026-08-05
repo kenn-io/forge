@@ -204,6 +204,17 @@ type QuotaAvailability struct {
 	ResetAt   *time.Time
 }
 
+// QuotaPacingResource is one resource pool's view inside a pacing window.
+type QuotaPacingResource struct {
+	Limit     int
+	Remaining int
+	// Headroom is remaining minus this pool's own archive reserve
+	// (`ArchiveProviderReserve` of this pool's limit). Negative when the
+	// pool sits below its reserve.
+	Headroom int
+	ResetAt  time.Time
+}
+
 type QuotaPacingWindow struct {
 	Limit     int
 	Remaining int
@@ -214,7 +225,39 @@ type QuotaPacingWindow struct {
 	// floor. Negative when the binding pool sits below its reserve.
 	ArchiveHeadroom int
 	ResetAt         time.Time
-	ResourceResets  map[QuotaResource]time.Time
+	Resources       map[QuotaResource]QuotaPacingResource
+}
+
+// ArchiveRetryAt returns the latest reset among pools whose headroom is below
+// cost: the earliest time every deficient pool can have recovered. Waiting for
+// the window-wide latest reset would leave archives paused after the exhausted
+// pool has already reset. Zero when no pool is deficient.
+func (w QuotaPacingWindow) ArchiveRetryAt(cost int) time.Time {
+	var retry time.Time
+	for _, resource := range w.Resources {
+		if resource.Headroom < cost && resource.ResetAt.After(retry) {
+			retry = resource.ResetAt
+		}
+	}
+	return retry
+}
+
+// ArchiveBindingResource returns the pool with the least archive headroom —
+// the constraint that currently limits archive admission — with a
+// lexicographic tie-break for determinism.
+func (w QuotaPacingWindow) ArchiveBindingResource() (QuotaResource, QuotaPacingResource) {
+	var bindingName QuotaResource
+	var binding QuotaPacingResource
+	first := true
+	for name, resource := range w.Resources {
+		if first || resource.Headroom < binding.Headroom ||
+			(resource.Headroom == binding.Headroom && name < bindingName) {
+			bindingName = name
+			binding = resource
+			first = false
+		}
+	}
+	return bindingName, binding
 }
 
 func (r *QuotaRegistry) PacingWindow(
@@ -228,7 +271,7 @@ func (r *QuotaRegistry) PacingWindow(
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	window := QuotaPacingWindow{
-		ResourceResets: make(map[QuotaResource]time.Time, len(resources)),
+		Resources: make(map[QuotaResource]QuotaPacingResource, len(resources)),
 	}
 	for index, resource := range resources {
 		key := newQuotaKey(identity, resource)
@@ -251,7 +294,12 @@ func (r *QuotaRegistry) PacingWindow(
 		if pool.ResetAt.After(window.ResetAt) {
 			window.ResetAt = pool.ResetAt
 		}
-		window.ResourceResets[resource] = pool.ResetAt
+		window.Resources[resource] = QuotaPacingResource{
+			Limit:     pool.Limit,
+			Remaining: remaining,
+			Headroom:  headroom,
+			ResetAt:   pool.ResetAt,
+		}
 	}
 	return window, true
 }

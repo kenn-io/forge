@@ -573,10 +573,10 @@ func TestAPIArchivePacingUsesPerPoolReserves(t *testing.T) {
 	require.Len(rows, 1)
 	row := rows[0]
 	assert.True(row.Known)
-	assert.Equal(5000, row.Limit)
+	// The binding pool is REST (least headroom): every reported number comes
+	// from that one pool so limit, remaining, and reserve are consistent.
+	assert.Equal(15000, row.Limit)
 	assert.Equal(3000, row.Remaining)
-	// REST (15000-limit) sits at its 3000 reserve, so nothing is available;
-	// the reported reserve is the quota held back at that binding pool.
 	assert.Equal(3000, row.Reserve)
 	assert.Zero(row.Available)
 }

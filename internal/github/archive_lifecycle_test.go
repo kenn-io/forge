@@ -1815,3 +1815,31 @@ func TestGitHubArchiveAdmissionHonorsEachPoolsOwnReserve(t *testing.T) {
 	require.NotNil(denied.RetryAt)
 	assert.Equal(reset, *denied.RetryAt)
 }
+
+// When admission defers on the archive reserve, the retry time comes from the
+// pools that actually lack headroom. Waiting for the latest reset across all
+// pools would leave archives paused after the exhausted pool has reset.
+func TestGitHubArchiveAdmissionRetriesWhenDeficientPoolResets(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	now := time.Date(2026, 7, 28, 18, 30, 0, 0, time.UTC)
+	restReset := now.Add(10 * time.Minute)
+	graphQLReset := now.Add(30 * time.Minute)
+	syncer, registry, ref := newProviderQuotaAdmissionSyncer(
+		t, now, NewSyncBudget(100000),
+	)
+	identity := IdentityKey{Host: "github.test", Principal: "user:7"}
+	// REST sits at its own reserve and resets first; GraphQL has headroom
+	// and resets later.
+	registry.UpdateSnapshot(identity, QuotaResourceREST,
+		Rate{Limit: 15000, Remaining: 3000, Reset: restReset})
+	registry.UpdateSnapshot(identity, QuotaResourceGraphQL,
+		Rate{Limit: 5000, Remaining: 4800, Reset: graphQLReset})
+
+	denied, err := syncer.Admit(t.Context(), ref, db.ArchiveItemTypeIssue, 1)
+	require.NoError(err)
+	assert.False(denied.Allowed)
+	assert.Contains(denied.Detail, "provider rate reserve")
+	require.NotNil(denied.RetryAt)
+	assert.Equal(restReset, *denied.RetryAt)
+}

@@ -193,12 +193,13 @@ func (s *Server) registerArchiveAPI(api huma.API) {
 }
 
 // archivePacingStatusResponse reports one provider credential's archive
-// hydration headroom: the quota window admission consumes (limit and
-// remaining are the min across REST and GraphQL), the reserve held back for
-// live sync, and the spend archive work may currently admit. Known is false
-// when the combined window is unavailable (a required pool missing, expired,
-// or never observed) — the state archive admission defers as "provider quota
-// unknown" — and the pacing numbers are zero.
+// hydration headroom. Limit, remaining, reserve, and reset all describe the
+// binding pool — the resource with the least headroom, the constraint that
+// currently limits admission — so the numbers are mutually consistent.
+// Available is that pool's remaining above its own limit/5 reserve. Known is
+// false when the combined window is unavailable (a required pool missing,
+// expired, or never observed) — the state archive admission defers as
+// "provider quota unknown" — and the pacing numbers are zero.
 type archivePacingStatusResponse struct {
 	Provider     string `json:"provider"`
 	PlatformHost string `json:"platform_host"`
@@ -238,15 +239,13 @@ func (s *Server) listArchivePacing(
 			Source:       "provider",
 		}
 		if window, ok := registry.PacingWindow(pool.Identity, resources); ok {
+			_, binding := window.ArchiveBindingResource()
 			status.Known = true
-			status.Limit = window.Limit
-			status.Remaining = window.Remaining
-			// Headroom is per pool (remaining minus that pool's limit/5
-			// reserve); the reported reserve is the quota held back at the
-			// binding pool.
-			status.Reserve = window.Remaining - window.ArchiveHeadroom
-			status.Available = max(window.ArchiveHeadroom, 0)
-			status.ResetAt = formatUTCRFC3339(window.ResetAt)
+			status.Limit = binding.Limit
+			status.Remaining = binding.Remaining
+			status.Reserve = binding.Remaining - binding.Headroom
+			status.Available = max(binding.Headroom, 0)
+			status.ResetAt = formatUTCRFC3339(binding.ResetAt)
 		}
 		statuses = append(statuses, status)
 	}

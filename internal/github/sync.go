@@ -215,6 +215,7 @@ func (s *Syncer) stampObsoleteCommitEvents(
 		return err
 	}
 	if current == nil || current.PlatformHeadSHA != headSHA {
+		delete(s.stampedHeads, mrID)
 		return nil
 	}
 	platformName := string(repoPlatform(repo))
@@ -223,6 +224,7 @@ func (s *Syncer) stampObsoleteCommitEvents(
 		ctx, platformName, host, repo.Owner, repo.Name, headSHA,
 	)
 	if err != nil || !hasHead {
+		delete(s.stampedHeads, mrID)
 		return err
 	}
 	events, err := s.db.ListMREvents(ctx, mrID)

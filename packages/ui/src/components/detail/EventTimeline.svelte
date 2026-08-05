@@ -321,7 +321,6 @@
     eventID: number;
     orderCommitID: number;
     startAfterCommitID: number;
-    beforeCommitID?: number | undefined;
     afterCommitID?: number | undefined;
     endAtCommitID?: number | undefined;
     pushedAt: number;
@@ -438,7 +437,6 @@
             eventID: event.ID,
             orderCommitID: afterOrder,
             startAfterCommitID: 0,
-            beforeCommitID: beforeOrder,
             afterCommitID: afterOrder,
             endAtCommitID: afterOrder,
             pushedAt: eventSortValue(event),
@@ -450,7 +448,6 @@
           eventID: event.ID,
           orderCommitID: beforeOrder,
           startAfterCommitID: beforeOrder,
-          beforeCommitID: beforeOrder,
           afterCommitID: afterCommit ? commitOrder(afterCommit) : undefined,
           pushedAt: eventSortValue(event),
           usesAfterAnchor: false,

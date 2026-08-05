@@ -427,6 +427,65 @@ func TestStampObsoleteCommitEventsSkipsStaleHeadAfterNewerRound(t *testing.T) {
 	assertObsoleteCommitFlags(t, fixture, map[string]bool{
 		h.a1: true, h.a2: true, h.a3: true, h.b1: false, h.b2: false,
 	})
+
+	// The stale call invalidates the b2 cache entry. A subsequent b2 stamp
+	// must therefore inspect a newly persisted event instead of short-circuiting.
+	absentSHA := strings.Repeat("e", 40)
+	seedObsoleteCommitEvents(t, fixture, absentSHA)
+	require.NoError(t, fixture.syncer.stampObsoleteCommitEvents(
+		t.Context(), fixture.repo, fixture.repoID, fixture.mrID, 1, h.b2,
+	))
+	assertObsoleteCommitFlags(t, fixture, map[string]bool{absentSHA: true})
+}
+
+func TestStampObsoleteCommitEventsRestampsRestoredHeadAfterUnverifiedHead(t *testing.T) {
+	assert := assert.New(t)
+	fixture := setupObsoleteStampingFixture(t)
+	h := fixture.history
+	seedObsoleteCommitEvents(t, fixture, h.a1, h.a2, h.a3)
+	require.NoError(t, fixture.syncer.stampObsoleteCommitEvents(
+		t.Context(), fixture.repo, fixture.repoID, fixture.mrID, 1, h.a3,
+	))
+	assertObsoleteCommitFlags(t, fixture, map[string]bool{
+		h.a1: false, h.a2: false, h.a3: false,
+	})
+
+	// Create a divergent lineage after the bare clone was made so its head is
+	// genuinely unavailable to this stamping round.
+	obsoleteTestGit(t, h.sourceDir, "checkout", "-b", "unverified-lineage", h.base)
+	commit := func(contents, message string) string {
+		require.NoError(t, os.WriteFile(
+			filepath.Join(h.sourceDir, "unverified.txt"), []byte(contents), 0o644,
+		))
+		obsoleteTestGit(t, h.sourceDir, "add", "unverified.txt")
+		obsoleteTestGit(t, h.sourceDir, "commit", "-m", message)
+		return obsoleteTestGit(t, h.sourceDir, "rev-parse", "HEAD")
+	}
+	unverifiedCommit1 := commit("replacement 1\n", "unverified replacement 1")
+	unverifiedHead := commit("replacement 2\n", "unverified replacement 2")
+	hasHead, err := h.manager.HasCommit(
+		t.Context(), "github", "github.com", "owner", "repo", unverifiedHead,
+	)
+	require.NoError(t, err)
+	assert.False(hasHead)
+
+	setObsoleteFixtureHead(t, fixture, unverifiedHead)
+	require.NoError(t, fixture.syncer.stampObsoleteCommitEvents(
+		t.Context(), fixture.repo, fixture.repoID, fixture.mrID, 1, unverifiedHead,
+	))
+	assertObsoleteCommitFlags(t, fixture, map[string]bool{
+		h.a1: false, h.a2: false, h.a3: false,
+	})
+
+	setObsoleteFixtureHead(t, fixture, h.a3)
+	seedObsoleteCommitEvents(t, fixture, unverifiedCommit1, unverifiedHead)
+	require.NoError(t, fixture.syncer.stampObsoleteCommitEvents(
+		t.Context(), fixture.repo, fixture.repoID, fixture.mrID, 1, h.a3,
+	))
+	assertObsoleteCommitFlags(t, fixture, map[string]bool{
+		h.a1: false, h.a2: false, h.a3: false,
+		unverifiedCommit1: true, unverifiedHead: true,
+	})
 }
 
 func TestStampObsoleteCommitEventsRepairsThroughUnchangedDetail(t *testing.T) {

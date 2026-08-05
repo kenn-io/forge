@@ -70,6 +70,7 @@ interface WorkspaceFixtureOptions {
   agentState?: "idle" | "working" | "input" | "approval" | "done" | null;
   agentStateUpdatedAt?: string | null;
   status?: string;
+  associatedPRNumber?: number | null;
 }
 
 function workspaceFixture({
@@ -98,6 +99,7 @@ function workspaceFixture({
   agentState = null,
   agentStateUpdatedAt = null,
   status = "ready",
+  associatedPRNumber = null,
 }: WorkspaceFixtureOptions) {
   // Kata and ad-hoc workspaces carry no joined provider item metadata.
   const noProviderItem = itemType === "kata_task" || itemType === "adhoc";
@@ -136,6 +138,7 @@ function workspaceFixture({
     mr_deletions: deletions,
     commits_ahead: commitsAhead,
     commits_behind: commitsBehind,
+    associated_pr_number: associatedPRNumber,
   };
 }
 
@@ -1968,6 +1971,79 @@ describe("WorkspaceListSidebar", () => {
     // open, and the row must never advertise #0.
     expect(container.querySelector(".item-bubble")).toBeNull();
     expect(container.textContent).not.toContain("#0");
+  });
+
+  it("shows the pull request detected for an ad-hoc workspace", async () => {
+    // A workspace created directly gains a PR once its branch is pushed and
+    // the backend links it. The detail pane already resolves that PR, so the
+    // row must advertise it instead of staying permanently bubble-less.
+    mockGet.mockResolvedValue({
+      data: {
+        workspaces: [adHocWorkspaceFixture({ associatedPRNumber: 840 })],
+      },
+    });
+    const onOpenItemSidebar = vi.fn();
+
+    const { container } = render(WorkspaceListSidebar, {
+      props: { selectedId: "ws-adhoc", onOpenItemSidebar },
+    });
+    await waitFor(() => expect(rowTitles(container)).toEqual(["spike/rate-limits"]));
+
+    const bubble = container.querySelector(".item-bubble");
+    expect(bubble).not.toBeNull();
+    expect(bubble!.textContent?.trim()).toBe("#840");
+    expect(bubble!.getAttribute("title")).toBe("Open PR #840");
+
+    await fireEvent.click(bubble!);
+    expect(onOpenItemSidebar).toHaveBeenCalledWith("ws-adhoc", "pr", undefined);
+  });
+
+  it("offers provider item actions for an ad-hoc workspace with a detected PR", async () => {
+    mockGet.mockResolvedValue({
+      data: {
+        workspaces: [adHocWorkspaceFixture({ associatedPRNumber: 840 })],
+      },
+    });
+
+    const { container } = render(WorkspaceListSidebar, {
+      props: { selectedId: "ws-adhoc" },
+    });
+    await waitFor(() => expect(rowTitles(container)).toEqual(["spike/rate-limits"]));
+
+    await fireEvent.contextMenu(container.querySelector(".ws-row")!);
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Copy item URL" }));
+
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith("https://github.com/kenn-io/kenn-forge/pull/840");
+  });
+
+  it("finds an ad-hoc workspace by its detected PR number", async () => {
+    mockGet.mockResolvedValue({
+      data: {
+        workspaces: [
+          adHocWorkspaceFixture({ associatedPRNumber: 840 }),
+          workspaceFixture({
+            id: "ws-pr",
+            provider: "github",
+            platformHost: "github.com",
+            owner: "kenn-io",
+            name: "kenn-forge",
+            number: 4,
+            title: "Some pull request",
+          }),
+        ],
+      },
+    });
+
+    const { container } = render(WorkspaceListSidebar, {
+      props: { selectedId: "ws-adhoc" },
+    });
+    await screen.findByText("Some pull request");
+
+    await fireEvent.input(screen.getByLabelText("Filter workspaces"), {
+      target: { value: "#840" },
+    });
+
+    await waitFor(() => expect(rowTitles(container)).toEqual(["spike/rate-limits"]));
   });
 
   it("finds an ad-hoc workspace by branch", async () => {

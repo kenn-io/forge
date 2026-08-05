@@ -49,7 +49,11 @@ embedder protocol for arbitrary host state.
   item key is `adhoc:<branch>` and `item_number` stays 0, so item-key fallbacks
   derived from the number must exclude this type
   (`internal/db/queries.go::workspaceItemTypeKeysByNumber`). Requesting the same
-  branch twice returns the existing workspace.
+  branch twice returns the existing workspace. Once its branch is pushed the
+  monitor links a PR into `associated_pr_number`
+  (`internal/workspace/monitor.go::workspacePRMonitorEligible`); that number is
+  the workspace's item identity for display, links, and search, so surfaces must
+  never gate PR affordances on `item_type == "pull_request"` alone.
 - `GET /kata/tasks/snapshot`: the browser's sole Kata task authority. Daemon,
   scope, project, status authority, selected task, and graph source form request
   identity; selected detail, history, graph, and workspace target belong to the
@@ -360,7 +364,7 @@ Workspace diffs compare against local `HEAD`, the pushed branch, or a merge
 target. The merge-target scope exists only when the server can resolve a real
 merge target branch, not merely when the workspace carries a PR identity.
 Resolution requires all of: a positive PR number (PR-backed workspaces use their
-own `item_number`; issue-backed and Kata-backed workspaces use
+own `item_number`; issue-backed, Kata-backed, and ad-hoc workspaces use
 `associated_pr_number`), a synced repo row, a synced merge request row, and a
 non-empty base branch on that row. When any of those is missing the API returns
 "workspace merge target branch not available" and treats it as the

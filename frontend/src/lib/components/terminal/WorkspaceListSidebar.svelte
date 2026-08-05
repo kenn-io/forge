@@ -89,6 +89,7 @@
     mr_deletions?: number | null;
     commits_ahead?: number | null;
     commits_behind?: number | null;
+    associated_pr_number?: number | null;
     fleet_host_key?: string;
     fleet_host_name?: string;
   }
@@ -523,9 +524,27 @@
     );
   }
 
+  // An ad-hoc workspace has no provider item at creation, but the daemon links
+  // one once its branch is pushed and a PR appears. That detected PR is the
+  // workspace's item number for display, opening, and search.
+  function adHocPRNumber(ws: Workspace): number | null {
+    if (ws.item_type !== "adhoc") return null;
+    const number = ws.associated_pr_number;
+    return number && number > 0 ? number : null;
+  }
+
+  function itemBubbleNumber(ws: Workspace): number | null {
+    return ws.item_type === "adhoc" ? adHocPRNumber(ws) : ws.item_number;
+  }
+
+  function hasItemBubble(ws: Workspace): boolean {
+    if (ws.item_type === "kata_task") return true;
+    return itemBubbleNumber(ws) !== null;
+  }
+
   function itemBubbleLabel(ws: Workspace): string {
     if (ws.item_type === "kata_task") return kataIdentityLabel(ws);
-    return `#${ws.item_number}`;
+    return `#${itemBubbleNumber(ws)}`;
   }
 
   function itemBubbleTitle(ws: Workspace): string {
@@ -535,8 +554,8 @@
       return title ? `Open Kata task ${identity}: ${title}` : `Open Kata task ${identity}`;
     }
     return ws.item_type === "issue"
-      ? `Open issue #${ws.item_number}`
-      : `Open PR #${ws.item_number}`;
+      ? `Open issue #${itemBubbleNumber(ws)}`
+      : `Open PR #${itemBubbleNumber(ws)}`;
   }
 
   function updateSearch(value: string): void {
@@ -574,9 +593,19 @@
         ws.item_key,
       );
     } else if (ws.item_type === "adhoc") {
-      // No number or item title to match on: the branch (already in the
-      // haystack) plus the kind keywords are what a user would type.
+      // Without a detected PR there is no number or item title to match on:
+      // the branch (already in the haystack) plus the kind keywords are what
+      // a user would type.
       haystack.push("adhoc", "new work");
+      const prNumber = adHocPRNumber(ws);
+      if (prNumber !== null) {
+        haystack.push(
+          String(prNumber),
+          `#${prNumber}`,
+          `pr ${prNumber}`,
+          `pr #${prNumber}`,
+        );
+      }
     } else {
       const itemKind = ws.item_type === "issue" ? "issue" : "pr";
       const itemNumber = String(ws.item_number);
@@ -766,9 +795,11 @@
   }
 
   function providerItemURL(ws: Workspace): string | null {
-    // Kata and ad-hoc workspaces are not backed by a provider PR/issue, so
-    // there is no provider item URL (item_number is 0).
-    if (ws.item_type === "kata_task" || ws.item_type === "adhoc") return null;
+    // Kata workspaces are not backed by a provider item, and an ad-hoc
+    // workspace only has one once a PR has been detected for its branch.
+    if (ws.item_type === "kata_task") return null;
+    const itemNumber = itemBubbleNumber(ws);
+    if (itemNumber === null) return null;
     const provider = workspaceProvider(ws)?.toLowerCase();
     const repoPath = ws.repo?.repo_path ?? `${ws.repo_owner}/${ws.repo_name}`;
     const encodedPath = repoPath
@@ -779,15 +810,15 @@
     if (!host || !encodedPath) return null;
     if (provider === "github") {
       const kind = ws.item_type === "issue" ? "issues" : "pull";
-      return `https://${host}/${encodedPath}/${kind}/${ws.item_number}`;
+      return `https://${host}/${encodedPath}/${kind}/${itemNumber}`;
     }
     if (provider === "gitlab") {
       const kind = ws.item_type === "issue" ? "issues" : "merge_requests";
-      return `https://${host}/${encodedPath}/-/${kind}/${ws.item_number}`;
+      return `https://${host}/${encodedPath}/-/${kind}/${itemNumber}`;
     }
     if (provider === "gitea" || provider === "forgejo") {
       const kind = ws.item_type === "issue" ? "issues" : "pulls";
-      return `https://${host}/${encodedPath}/${kind}/${ws.item_number}`;
+      return `https://${host}/${encodedPath}/${kind}/${itemNumber}`;
     }
     return null;
   }
@@ -1408,9 +1439,9 @@
                 {/if}
               </div>
             </div>
-            <!-- Ad-hoc workspaces have no provider item or task to open, so
-                 they render no bubble at all rather than an empty one. -->
-            {#if ws.item_type !== "adhoc"}
+            <!-- An ad-hoc workspace with no detected PR has nothing for a
+                 bubble to open, so it renders none rather than an empty one. -->
+            {#if hasItemBubble(ws)}
             <button
               class={[
                 "item-bubble",

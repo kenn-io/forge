@@ -113,6 +113,40 @@ func TestConvertGQLCommentsPreservesMinimizedVisibility(t *testing.T) {
 	}
 }
 
+func TestConvertGQLCommentsRecordsObservedVisibleComments(t *testing.T) {
+	comment := gqlComment{DatabaseId: 74}
+
+	tests := []struct {
+		name    string
+		convert func() map[int64]CommentVisibility
+	}{
+		{
+			name: "pull request",
+			convert: func() map[int64]CommentVisibility {
+				input := gqlPR{}
+				input.Comments.Nodes = []gqlComment{comment}
+				return convertGQLPR(&input).CommentVisibility
+			},
+		},
+		{
+			name: "issue",
+			convert: func() map[int64]CommentVisibility {
+				input := gqlIssue{}
+				input.Comments.Nodes = []gqlComment{comment}
+				return convertGQLIssue(&input).CommentVisibility
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			visibility := tt.convert()
+			require.Contains(t, visibility, int64(74))
+			assert.Equal(t, CommentVisibility{}, visibility[74])
+		})
+	}
+}
+
 func TestAdaptComment(t *testing.T) {
 	assert := assert.New(t)
 	now := time.Now().UTC().Truncate(time.Second)

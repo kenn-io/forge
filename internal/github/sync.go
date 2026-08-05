@@ -11276,6 +11276,16 @@ func (s *Syncer) refreshIssueTimeline(
 			"list comments for issue #%d: %w", number, err,
 		)
 	}
+	if visibility != nil {
+		storedVisibility, err := s.storedIssueCommentVisibility(ctx, issueID)
+		if err != nil {
+			return fmt.Errorf(
+				"load stored comment visibility for issue #%d: %w", number, err,
+			)
+		}
+		maps.Copy(storedVisibility, visibility)
+		visibility = storedVisibility
+	}
 
 	derived := db.IssueDerivedFields{
 		CommentCount:   len(comments),

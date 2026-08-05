@@ -52,6 +52,9 @@ what "current" means.
   one item.
 - If a PR or issue is marked as detail-fetched, the persisted fields that power
   the user-visible detail view must match that claim.
+- A partial GraphQL comment page is observation-only: merge its visible and
+  minimized states over stored moderation metadata before REST completion so
+  unseen comments retain their last known state. (`internal/github/sync.go::refreshIssueTimeline`)
 - Budgeted detail drain treats each queue item's worst-case cost as soft admission;
   provider pagination and child hydration may exceed it because the transport counts
   actual wire attempts (`internal/github/sync.go::drainDetailQueue`).

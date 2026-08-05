@@ -274,10 +274,13 @@ fallback repository listing.
   provider quota alone: availability is remaining minus the archive reserve
   (`max(limit/5, RateReserveBuffer)`), enforced at admission and again at
   every wire attempt, and attempts covered by a registry reservation do not
-  debit the local ceiling. Every other archive path — headerless Gitealike
-  hosts, the tracker fallback when the registry has no window, and any
-  attempt whose chain takes no reservation — spends configured local hourly
-  surplus above `archiveLiveFloor`. Live work preempts the archive lease.
+  debit the local ceiling. An active registry whose combined window is
+  incomplete or expired defers admission as provider-quota-unknown; it never
+  falls through to local pacing. Every other archive path — headerless
+  Gitealike hosts, GitHub without registry-based pacing (nil registry or
+  unresolved identity), and any attempt whose chain takes no reservation —
+  spends configured local hourly surplus above `archiveLiveFloor`. Live work
+  preempts the archive lease.
   (`internal/github/budget.go::ArchiveProviderReserve`,
   `internal/github/budget.go::LocalArchiveSpendAvailable`,
   `internal/github/sync.go::Admit`,

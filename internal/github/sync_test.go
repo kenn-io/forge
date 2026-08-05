@@ -2218,6 +2218,37 @@ func TestSyncNotificationsSkipsArchivedRepos(t *testing.T) {
 		"archived repo must not receive notification polling")
 }
 
+func TestAckRepoBucketsIncludesArchivedTrackedRepos(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := openTestDB(t)
+	syncer := NewSyncer(
+		map[string]Client{"github.com": &mockClient{}}, database, nil,
+		[]RepoRef{
+			{Owner: "acme", Name: "frozen", PlatformHost: "github.com", Archived: true},
+			{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
+		},
+		time.Minute, nil, nil,
+	)
+	queued := []db.Notification{{
+		ID: 1, RepoOwner: "acme", RepoName: "widget",
+	}}
+
+	byBucket, byNotification := syncer.ackRepoBuckets(
+		platform.KindGitHub, "github.com", queued,
+	)
+
+	bucket, ok := byNotification[1]
+	require.True(ok)
+	names := make([]string, 0, len(byBucket[bucket]))
+	for _, repo := range byBucket[bucket] {
+		names = append(names, repo.Name)
+	}
+	assert.Contains(names, "frozen",
+		"archived repos must stay in ack deferral buckets: their queued "+
+			"acknowledgements share the credential's rate limit")
+}
+
 func TestSyncNotificationsSkipsUnroutedRepoAndAdvancesRoutedSibling(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

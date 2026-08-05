@@ -941,16 +941,31 @@ name = "*"
 		"glob refresh must apply fresh archived state to overlapping repos")
 }
 
-func TestHandleRefreshRepoStopsNotificationPollingForArchivedRepo(t *testing.T) {
+func TestHandleRefreshRepoStopsLiveLanesForArchivedRepo(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	archivedNow := atomic.Bool{}
 	var listedRepos sync.Map
+	var detailRepos sync.Map
+	detailErr := errors.New("detail fetch short-circuited")
 	mock := &mockGH{
+		getPullRequestIfChangedFn: func(
+			_ context.Context, _, repo string, _ int, _ string,
+		) (*gh.PullRequest, string, bool, error) {
+			detailRepos.Store(repo, true)
+			return nil, "", false, detailErr
+		},
+		getPullRequestFn: func(
+			_ context.Context, _, repo string, _ int,
+		) (*gh.PullRequest, error) {
+			detailRepos.Store(repo, true)
+			return nil, detailErr
+		},
 		getRepositoryFn: func(
 			_ context.Context, owner, repo string,
 		) (*gh.Repository, error) {
 			return &gh.Repository{
+				NodeID:   new("repo-acme-" + repo),
 				Name:     new(repo),
 				Owner:    &gh.User{Login: new(owner)},
 				Archived: new(repo == "widget" && archivedNow.Load()),
@@ -961,11 +976,13 @@ func TestHandleRefreshRepoStopsNotificationPollingForArchivedRepo(t *testing.T) 
 		) ([]*gh.Repository, error) {
 			return []*gh.Repository{
 				{
+					NodeID:   new("repo-acme-widget"),
 					Name:     new("widget"),
 					Owner:    &gh.User{Login: new(owner)},
 					Archived: new(archivedNow.Load()),
 				},
 				{
+					NodeID:   new("repo-acme-tools"),
 					Name:     new("tools"),
 					Owner:    &gh.User{Login: new(owner)},
 					Archived: new(false),
@@ -995,18 +1012,28 @@ name = "widget"
 owner = "acme"
 name = "*"
 `, mock)
-	for _, name := range []string{"widget", "tools"} {
-		_, err := database.UpsertRepo(t.Context(), db.RepoIdentity{
+	recentActivity := time.Now().UTC().Add(-10 * time.Minute)
+	for i, name := range []string{"widget", "tools"} {
+		repoID, err := database.UpsertRepo(t.Context(), db.RepoIdentity{
 			Platform: "github", PlatformHost: "github.com",
 			PlatformRepoID: "repo-acme-" + name, Owner: "acme", Name: name,
 		})
 		require.NoError(err)
+		_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
+			RepoID: repoID, PlatformID: int64(i + 1), Number: i + 1,
+			Title: "PR", Author: "octo", State: db.MergeRequestStateOpen,
+			HeadBranch: "feature", BaseBranch: "main",
+			CreatedAt: recentActivity.Add(-24 * time.Hour),
+			UpdatedAt: recentActivity, LastActivityAt: recentActivity,
+		})
+		require.NoError(err)
 	}
+	srv.syncer.SetActiveMRWindow(4 * time.Hour)
 	require.True(srv.syncer.IsTrackedRepo("acme", "widget"))
 
 	// The provider archives widget; the refresh applies the transition and
-	// the notification lane must stop polling it while the live sibling
-	// keeps syncing.
+	// the live lanes must stop touching it while the live sibling keeps
+	// syncing.
 	archivedNow.Store(true)
 	rr := doJSON(
 		t, srv, http.MethodPost,
@@ -1021,6 +1048,13 @@ name = "*"
 	_, listedWidget := listedRepos.Load("widget")
 	assert.False(listedWidget,
 		"archived repo must not receive notification polling after refresh")
+
+	srv.syncer.SyncWatchedMRs(t.Context())
+	_, detailTools := detailRepos.Load("tools")
+	assert.True(detailTools, "live repo open MR should fast-sync")
+	_, detailWidget := detailRepos.Load("widget")
+	assert.False(detailWidget,
+		"archived repo open MRs must not enter fast sync after refresh")
 }
 
 func trackedRepoArchived(srv *Server, owner, name string) bool {

@@ -200,6 +200,12 @@ func (s *Syncer) stampObsoleteCommitEvents(
 	if s.clones == nil || headSHA == "" {
 		return nil
 	}
+	s.stampedHeadsMu.Lock()
+	alreadyStamped := s.stampedHeads[mrID] == headSHA
+	s.stampedHeadsMu.Unlock()
+	if alreadyStamped {
+		return nil
+	}
 	platformName := string(repoPlatform(repo))
 	host := repoHost(repo)
 	hasHead, err := s.clones.HasCommit(
@@ -240,10 +246,18 @@ func (s *Syncer) stampObsoleteCommitEvents(
 		event.MetadataJSON = metadataJSON
 		changed = append(changed, event)
 	}
-	if len(changed) == 0 {
-		return nil
+	if len(changed) > 0 {
+		if err := s.db.UpsertMREvents(ctx, changed); err != nil {
+			return err
+		}
 	}
-	return s.db.UpsertMREvents(ctx, changed)
+	s.stampedHeadsMu.Lock()
+	if s.stampedHeads == nil {
+		s.stampedHeads = make(map[int64]string)
+	}
+	s.stampedHeads[mrID] = headSHA
+	s.stampedHeadsMu.Unlock()
+	return nil
 }
 
 func (s *Syncer) commitReachableFromHead(
@@ -613,6 +627,8 @@ type Syncer struct {
 	archivePollInterval      time.Duration
 	now                      func() time.Time
 	clones                   *gitclone.Manager
+	stampedHeadsMu           sync.Mutex
+	stampedHeads             map[int64]string // guarded by stampedHeadsMu
 	rateTrackers             map[string]*RateTracker // provider/host bucket -> tracker
 	writeRateTrackers        map[string]*RateTracker // provider/host bucket -> mutation-credential REST tracker
 	writeGQLRateTrackers     map[string]*RateTracker // provider/host bucket -> mutation-credential GraphQL tracker
@@ -9038,6 +9054,17 @@ func (s *Syncer) fetchProviderMRDetail(
 	}
 	if !detailApplied {
 		return calls, nil
+	}
+
+	if normalized.State == db.MergeRequestStateOpen {
+		if err := s.stampObsoleteCommitEvents(
+			ctx, repo, mrID, normalized.PlatformHeadSHA,
+		); err != nil {
+			slog.Warn("stamp obsolete commit events failed",
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", number, "err", err,
+			)
+		}
 	}
 
 	if s.onMRSynced != nil {

@@ -321,6 +321,159 @@ func TestStampObsoleteCommitEventsSkipsUnparseableMetadata(t *testing.T) {
 	assert.Equal(`[1,2]`, stored[0].MetadataJSON)
 }
 
+func TestStampObsoleteCommitEventsSkipsPreviouslyStampedHead(t *testing.T) {
+	assert := assert.New(t)
+	fixture := setupObsoleteStampingFixture(t)
+	h := fixture.history
+	seedObsoleteCommitEvents(t, fixture, h.a1, h.a2, h.a3)
+
+	require.NoError(t, fixture.syncer.stampObsoleteCommitEvents(
+		t.Context(), fixture.repo, fixture.mrID, h.b2,
+	))
+	assertObsoleteCommitFlags(t, fixture, map[string]bool{
+		h.a1: true, h.a2: true, h.a3: true,
+	})
+	before, err := fixture.database.ListMREvents(t.Context(), fixture.mrID)
+	require.NoError(t, err)
+	clonePath, err := h.manager.ClonePath("github", "github.com", "owner", "repo")
+	require.NoError(t, err)
+	require.NoError(t, os.RemoveAll(clonePath))
+
+	// A successful stamp caches this exact head, so the steady-state call must
+	// not touch the now-missing clone or rewrite any event rows.
+	require.NoError(t, fixture.syncer.stampObsoleteCommitEvents(
+		t.Context(), fixture.repo, fixture.mrID, h.b2,
+	))
+	after, err := fixture.database.ListMREvents(t.Context(), fixture.mrID)
+	require.NoError(t, err)
+	assert.Equal(before, after)
+
+	// A different head is not covered by the cache and therefore attempts a
+	// fresh clone verification, which surfaces the missing clone as an error.
+	err = fixture.syncer.stampObsoleteCommitEvents(
+		t.Context(), fixture.repo, fixture.mrID, h.a3,
+	)
+	assert.Error(err)
+}
+
+func TestStampObsoleteCommitEventsViaFetchProviderMRDetail(t *testing.T) {
+	assert := assert.New(t)
+	fixture := setupObsoleteStampingFixture(t)
+	h := fixture.history
+	providerRepo := RepoRef{
+		Platform:           platform.KindForgejo,
+		PlatformHost:       platform.DefaultForgejoHost,
+		PlatformExternalID: "repo-1",
+		Owner:              "owner",
+		Name:               "repo",
+		RepoPath:           "owner/repo",
+		CloneURL:           h.sourceDir,
+	}
+	barePath, err := h.manager.ClonePath(
+		string(platform.KindForgejo), platform.DefaultForgejoHost, "owner", "repo",
+	)
+	require.NoError(t, err)
+	obsoleteTestGit(t, "", "clone", "--bare", h.sourceDir, barePath)
+	providerRepoID, err := fixture.database.UpsertRepo(
+		t.Context(), verifiedDBRepoIdentity(platformRepoRef(providerRepo)),
+	)
+	require.NoError(t, err)
+	now := time.Date(2026, 8, 5, 12, 1, 0, 0, time.UTC)
+	providerMRID, err := fixture.database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
+		RepoID:             providerRepoID,
+		PlatformID:         101,
+		PlatformExternalID: "mr-1",
+		Number:             1,
+		URL:                "https://codeberg.org/owner/repo/pulls/1",
+		Title:              "Synthetic merge request",
+		Author:             "developer",
+		State:              db.MergeRequestStateOpen,
+		HeadBranch:         "feature",
+		BaseBranch:         "main",
+		PlatformHeadSHA:    h.a3,
+		PlatformBaseSHA:    h.base,
+		CreatedAt:          now.Add(-time.Hour),
+		UpdatedAt:          now.Add(-time.Minute),
+		LastActivityAt:     now.Add(-time.Minute),
+	})
+	require.NoError(t, err)
+	providerFixture := fixture
+	providerFixture.repo = providerRepo
+	providerFixture.repoID = providerRepoID
+	providerFixture.mrID = providerMRID
+	seedObsoleteCommitEvents(t, providerFixture, h.a1, h.a2, h.a3)
+
+	providerRef := platformRepoRef(providerRepo)
+	provider := &syncTestReadProvider{
+		syncTestProvider: syncTestProvider{
+			kind: platform.KindForgejo,
+			host: platform.DefaultForgejoHost,
+		},
+		mergeRequests: []platform.MergeRequest{{
+			Repo:               providerRef,
+			PlatformID:         101,
+			PlatformExternalID: "mr-1",
+			Number:             1,
+			URL:                "https://codeberg.org/owner/repo/pulls/1",
+			Title:              "Synthetic merge request",
+			Author:             "developer",
+			State:              "open",
+			HeadBranch:         "feature",
+			BaseBranch:         "main",
+			HeadSHA:            h.b2,
+			BaseSHA:            h.base,
+			CreatedAt:          now.Add(-time.Hour),
+			UpdatedAt:          now,
+			LastActivityAt:     now,
+		}},
+		listMRMergeEvents: []platform.MergeRequestEvent{
+			{
+				Repo:               providerRef,
+				PlatformExternalID: h.b1,
+				MergeRequestNumber: 1,
+				EventType:          "commit",
+				Summary:            "lineage b1",
+				CreatedAt:          now.Add(-2 * time.Minute),
+				DedupeKey:          h.b1,
+			},
+			{
+				Repo:               providerRef,
+				PlatformExternalID: h.b2,
+				MergeRequestNumber: 1,
+				EventType:          "commit",
+				Summary:            "lineage b2",
+				CreatedAt:          now.Add(-time.Minute),
+				DedupeKey:          h.b2,
+			},
+		},
+	}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(t, err)
+	syncer := NewSyncerWithRegistry(
+		registry, fixture.database, h.manager, []RepoRef{providerRepo},
+		time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+
+	_, err = syncer.fetchProviderMRDetail(
+		t.Context(), provider, providerRepo, providerRepoID, 1,
+	)
+	require.NoError(t, err)
+	assertObsoleteCommitFlags(t, providerFixture, map[string]bool{
+		h.a1: true, h.a2: true, h.a3: true, h.b1: false, h.b2: false,
+	})
+	events, err := fixture.database.ListMREvents(t.Context(), providerMRID)
+	require.NoError(t, err)
+	seenReplacement := map[string]bool{h.b1: false, h.b2: false}
+	for _, event := range events {
+		if _, ok := seenReplacement[event.PlatformExternalID]; ok {
+			seenReplacement[event.PlatformExternalID] = true
+		}
+	}
+	assert.True(seenReplacement[h.b1], "replacement commit b1 must be persisted before stamping")
+	assert.True(seenReplacement[h.b2], "replacement commit b2 must be persisted before stamping")
+}
+
 func TestSyncMRForRepoStampsObsoleteCommitEventsAfterTimelinePersistence(t *testing.T) {
 	assert := assert.New(t)
 	fixture := setupObsoleteStampingFixture(t)

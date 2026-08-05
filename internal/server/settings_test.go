@@ -1030,6 +1030,9 @@ name = "*"
 	}
 	srv.syncer.SetActiveMRWindow(4 * time.Hour)
 	require.True(srv.syncer.IsTrackedRepo("acme", "widget"))
+	// Stop background sync loops so the refresh-triggered async full sync
+	// cannot populate the lane recorders; each lane runs synchronously below.
+	srv.syncer.Stop()
 
 	// The provider archives widget; the refresh applies the transition and
 	// the live lanes must stop touching it while the live sibling keeps
@@ -1049,6 +1052,12 @@ name = "*"
 	assert.False(listedWidget,
 		"archived repo must not receive notification polling after refresh")
 
+	// Clear anything recorded by earlier phases so the assertions below
+	// reflect the watched-MR lane exclusively.
+	detailRepos.Range(func(key, _ any) bool {
+		detailRepos.Delete(key)
+		return true
+	})
 	srv.syncer.SyncWatchedMRs(t.Context())
 	_, detailTools := detailRepos.Load("tools")
 	assert.True(detailTools, "live repo open MR should fast-sync")

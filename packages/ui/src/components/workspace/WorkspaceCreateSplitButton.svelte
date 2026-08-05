@@ -70,6 +70,12 @@
     open = false;
   }
 
+  function portalMenu(node: HTMLElement): () => void {
+    const host = root?.closest<HTMLElement>(".kit-modal-panel") ?? document.body;
+    host.appendChild(node);
+    return () => node.remove();
+  }
+
   function selectTarget(targetKey: string): void {
     closeMenu();
     void onCreate(targetKey);
@@ -103,7 +109,8 @@
 
     function dismissPointerDown(event: PointerEvent): void {
       const target = event.target;
-      if (target instanceof Node && root?.contains(target)) return;
+      if (!(target instanceof Node)) return;
+      if (root?.contains(target) || menu?.contains(target)) return;
       closeMenu();
     }
 
@@ -173,6 +180,7 @@
       role="menu"
       aria-label="Create and launch"
       style={menuStyle}
+      {@attach portalMenu}
     >
       <li role="none" class="create-menu-heading">
         <span aria-hidden="true">Create and launch</span>
@@ -239,10 +247,10 @@
     border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
   }
 
-  .workspace-create-split[data-surface="solid"] .create-primary {
+  .workspace-create-split[data-surface="solid"] > button {
     border-color: var(--accent-blue);
     background: var(--accent-blue);
-    color: var(--text-primary);
+    color: var(--bg-surface);
   }
 
   .workspace-create-split > button:hover:not(:disabled),
@@ -258,6 +266,19 @@
     outline-offset: -1px;
   }
 
+  .workspace-create-split[data-surface="solid"] > button:hover:not(:disabled),
+  .workspace-create-split[data-surface="solid"] > button:focus-visible {
+    border-color: color-mix(in srgb, var(--accent-blue) 88%, #000);
+    background: color-mix(in srgb, var(--accent-blue) 88%, #000);
+    color: var(--bg-surface);
+  }
+
+  .workspace-create-split[data-surface="solid"] > button[aria-expanded="true"] {
+    border-color: color-mix(in srgb, var(--accent-blue) 78%, #000);
+    background: color-mix(in srgb, var(--accent-blue) 78%, #000);
+    color: var(--bg-surface);
+  }
+
   .workspace-create-split > button:disabled {
     color: var(--text-faint);
     cursor: default;
@@ -265,7 +286,7 @@
 
   .create-menu {
     position: fixed;
-    z-index: var(--z-popover);
+    z-index: var(--z-popover, 1001);
     min-width: 180px;
     max-width: calc(100vw - 16px);
     margin: 0;

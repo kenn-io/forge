@@ -346,7 +346,7 @@ Intent:
 - overflow-constrained parents must not clip menus or hide available choices
 - repeated positioning, collision, z-index, and outside-click behavior belongs in the shared primitive, not local screen CSS
 
-Before placing an overlay inside a split view, compact sidebar, drawer, or scrollable region, verify that it can extend past its trigger container without being cut off.
+Before placing an overlay inside a split view, compact sidebar, drawer, or scrollable region, verify that it can extend past its trigger container without being cut off. An overlay opened from a modal must escape the modal's scrollable body while remaining inside the modal panel so the modal focus trap still owns it (`packages/ui/src/components/workspace/WorkspaceCreateSplitButton.svelte::portalMenu`).
 
 Popover surface chrome (background, border, radius, shadow) comes from `kit-popover-card`; do not re-declare it in component-scoped styles. Scoped rules outrank the kit class, and a `var()` referencing an undefined token (there is no `--bg-elevated`) computes to transparent with no build-time error.
 

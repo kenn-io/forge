@@ -114,20 +114,29 @@ test.describe("PR timeline filters", () => {
     ]);
   });
 
-  test("restores every ancestor of a pre-rewind head through SQLite", async ({ page }) => {
+  test("collapses SQLite-obsolete replacement commits behind a strict-date disclosure", async ({ page }) => {
     await openPRTimelinePath(page, "/pulls/github/acme/widgets/6");
     const menu = await openActivityViewMenu(page);
     await menu.getByRole("button", { name: "Strict date order" }).click();
 
-    await expect(page.getByText("3 commits replaced by a later force push", { exact: true })).toBeVisible();
     await expect(page.getByText("dashboard original base restored", { exact: true })).toBeVisible();
     await expect(page.getByText("dashboard original filters restored", { exact: true })).toBeVisible();
     await expect(page.getByText("dashboard original widgets restored", { exact: true })).toBeVisible();
     await expect(page.getByText("dashboard original charts restored", { exact: true })).toBeVisible();
     await expect(page.getByText("dashboard original head restored", { exact: true })).toBeVisible();
+    const obsoleteGroup = page.getByRole("button", { name: "3 commits replaced by a later force push" });
+    await expect(obsoleteGroup).toBeVisible();
+    await expect(obsoleteGroup).toHaveAttribute("aria-expanded", "false");
     await expect(page.getByText("dashboard replacement base displaced", { exact: true })).toHaveCount(0);
     await expect(page.getByText("dashboard replacement filters displaced", { exact: true })).toHaveCount(0);
     await expect(page.getByText("dashboard replacement widgets displaced", { exact: true })).toHaveCount(0);
+
+    await obsoleteGroup.click();
+
+    await expect(obsoleteGroup).toHaveAttribute("aria-expanded", "true");
+    await expect(page.getByText("dashboard replacement base displaced", { exact: true })).toBeVisible();
+    await expect(page.getByText("dashboard replacement filters displaced", { exact: true })).toBeVisible();
+    await expect(page.getByText("dashboard replacement widgets displaced", { exact: true })).toBeVisible();
   });
 
   test("persists compact activity layout across PR and issue detail views", async ({ page }) => {

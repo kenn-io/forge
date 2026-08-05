@@ -1738,6 +1738,7 @@ describe("EventTimeline", () => {
         Summary: oldHead,
         Body: "old C3 before rebase",
         CreatedAt: "2024-06-01T10:02:00Z",
+        MetadataJSON: JSON.stringify({ obsolete: true }),
       }),
       makeEvent({
         ID: 2,
@@ -1745,6 +1746,7 @@ describe("EventTimeline", () => {
         Summary: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         Body: "old C2 before rebase",
         CreatedAt: "2024-06-01T10:01:00Z",
+        MetadataJSON: JSON.stringify({ obsolete: true }),
       }),
     ];
 
@@ -1767,43 +1769,32 @@ describe("EventTimeline", () => {
     expect(text).not.toContain("old C2 before rebase");
   });
 
-  it("collapses only the rewound-away commits when a force push resets to an older commit", () => {
-    const commit1 = "1111111111111111111111111111111111111111";
-    const commit3 = "3333333333333333333333333333333333333333";
+  it("collapses commit events flagged obsolete in strict date order", () => {
     const { container } = render(EventTimeline, {
       props: {
         events: [
           makeEvent({
-            ID: 9,
-            EventType: "force_push",
-            Author: "alice",
-            Summary: "3333333 -> 1111111",
-            CreatedAt: "2024-06-01T12:00:00Z",
-            MetadataJSON: JSON.stringify({
-              before_sha: commit3,
-              after_sha: commit1,
-            }),
-          }),
-          makeEvent({
             ID: 3,
             EventType: "commit",
-            Summary: commit3,
-            Body: "commit three rewound away",
+            Summary: "3333333333333333333333333333333333333333",
+            Body: "commit three current",
             CreatedAt: "2024-06-01T10:03:00Z",
           }),
           makeEvent({
             ID: 2,
             EventType: "commit",
             Summary: "2222222222222222222222222222222222222222",
-            Body: "commit two rewound away",
+            Body: "commit two obsolete",
             CreatedAt: "2024-06-01T10:02:00Z",
+            MetadataJSON: JSON.stringify({ commit_order_key: 2, obsolete: true }),
           }),
           makeEvent({
             ID: 1,
             EventType: "commit",
-            Summary: commit1,
-            Body: "commit one still current",
+            Summary: "1111111111111111111111111111111111111111",
+            Body: "commit one obsolete",
             CreatedAt: "2024-06-01T10:01:00Z",
+            MetadataJSON: JSON.stringify({ commit_order_key: 1, obsolete: true }),
           }),
         ],
         timelineOrder: "chronological",
@@ -1811,83 +1802,39 @@ describe("EventTimeline", () => {
     });
 
     const text = container.textContent ?? "";
+    expect(text).toContain("commit three current");
+    expect(text).not.toContain("commit two obsolete");
+    expect(text).not.toContain("commit one obsolete");
     expect(text).toContain("2 commits replaced by a later force push");
-    expect(text).not.toContain("commit three rewound away");
-    expect(text).not.toContain("commit two rewound away");
-    expect(text).toContain("commit one still current");
   });
 
-  it("restores every commit from an obsolete lineage when its head becomes current again", () => {
-    const oldCommit1 = "a111111111111111111111111111111111111111";
-    const oldCommit2 = "a222222222222222222222222222222222222222";
-    const oldCommit3 = "a333333333333333333333333333333333333333";
-    const newCommit1 = "b111111111111111111111111111111111111111";
-    const newCommit2 = "b222222222222222222222222222222222222222";
-    const newCommit3 = "b333333333333333333333333333333333333333";
+  it("ignores the obsolete flag outside commit events and non-boolean values", () => {
     const { container } = render(EventTimeline, {
       props: {
         events: [
           makeEvent({
-            ID: 8,
-            EventType: "force_push",
-            Summary: "b333333 -> a333333",
-            CreatedAt: "2024-06-01T13:00:00Z",
-            MetadataJSON: JSON.stringify({ before_sha: newCommit3, after_sha: oldCommit3 }),
-          }),
-          makeEvent({
-            ID: 7,
-            EventType: "force_push",
-            Summary: "a333333 -> b333333",
-            CreatedAt: "2024-06-01T12:00:00Z",
-            MetadataJSON: JSON.stringify({ before_sha: oldCommit3, after_sha: newCommit3 }),
-          }),
-          makeEvent({
-            ID: 6,
-            EventType: "commit",
-            Summary: newCommit3,
-            Body: "new lineage commit three displaced",
-            CreatedAt: "2024-06-01T10:06:00Z",
-            MetadataJSON: JSON.stringify({ commit_order: 3, commit_order_key: 6 }),
-          }),
-          makeEvent({
-            ID: 5,
-            EventType: "commit",
-            Summary: newCommit2,
-            Body: "new lineage commit two displaced",
-            CreatedAt: "2024-06-01T10:05:00Z",
-            MetadataJSON: JSON.stringify({ commit_order: 2, commit_order_key: 5 }),
-          }),
-          makeEvent({
-            ID: 4,
-            EventType: "commit",
-            Summary: newCommit1,
-            Body: "new lineage commit one displaced",
-            CreatedAt: "2024-06-01T10:04:00Z",
-            MetadataJSON: JSON.stringify({ commit_order: 1, commit_order_key: 4 }),
-          }),
-          makeEvent({
             ID: 3,
             EventType: "commit",
-            Summary: oldCommit3,
-            Body: "old lineage commit three restored",
+            Summary: "3333333333333333333333333333333333333333",
+            Body: "commit with boolean obsolete value",
             CreatedAt: "2024-06-01T10:03:00Z",
-            MetadataJSON: JSON.stringify({ commit_order: 3, commit_order_key: 3 }),
+            MetadataJSON: JSON.stringify({ obsolete: true }),
           }),
           makeEvent({
             ID: 2,
-            EventType: "commit",
-            Summary: oldCommit2,
-            Body: "old lineage commit two restored",
+            EventType: "issue_comment",
+            Summary: "",
+            Body: "a plain comment claiming to be obsolete",
             CreatedAt: "2024-06-01T10:02:00Z",
-            MetadataJSON: JSON.stringify({ commit_order: 2, commit_order_key: 2 }),
+            MetadataJSON: JSON.stringify({ obsolete: true }),
           }),
           makeEvent({
             ID: 1,
             EventType: "commit",
-            Summary: oldCommit1,
-            Body: "old lineage commit one restored",
+            Summary: "1111111111111111111111111111111111111111",
+            Body: "commit with non-boolean obsolete value",
             CreatedAt: "2024-06-01T10:01:00Z",
-            MetadataJSON: JSON.stringify({ commit_order: 1, commit_order_key: 1 }),
+            MetadataJSON: JSON.stringify({ obsolete: "yes" }),
           }),
         ],
         timelineOrder: "chronological",
@@ -1895,278 +1842,10 @@ describe("EventTimeline", () => {
     });
 
     const text = container.textContent ?? "";
-    expect(text).toContain("3 commits replaced by a later force push");
-    expect(text).toContain("old lineage commit three restored");
-    expect(text).toContain("old lineage commit two restored");
-    expect(text).toContain("old lineage commit one restored");
-    expect(text).not.toContain("new lineage commit three displaced");
-    expect(text).not.toContain("new lineage commit two displaced");
-    expect(text).not.toContain("new lineage commit one displaced");
-  });
-
-  it("restores every ancestor when a pre-rewind head becomes current again", () => {
-    const oldCommits = [1, 2, 3, 4, 5].map((order) => `a${String(order).repeat(39)}`);
-    const replacementCommits = [1, 2, 3].map((order) => `b${String(order).repeat(39)}`);
-    const { container } = render(EventTimeline, {
-      props: {
-        events: [
-          makeEvent({
-            ID: 11,
-            EventType: "force_push",
-            Summary: "b333333 -> a555555",
-            CreatedAt: "2024-06-01T14:00:00Z",
-            MetadataJSON: JSON.stringify({ before_sha: replacementCommits[2], after_sha: oldCommits[4] }),
-          }),
-          makeEvent({
-            ID: 10,
-            EventType: "force_push",
-            Summary: "a333333 -> b333333",
-            CreatedAt: "2024-06-01T13:00:00Z",
-            MetadataJSON: JSON.stringify({ before_sha: oldCommits[2], after_sha: replacementCommits[2] }),
-          }),
-          makeEvent({
-            ID: 9,
-            EventType: "force_push",
-            Summary: "a555555 -> a333333",
-            CreatedAt: "2024-06-01T12:00:00Z",
-            MetadataJSON: JSON.stringify({ before_sha: oldCommits[4], after_sha: oldCommits[2] }),
-          }),
-          ...replacementCommits.map((summary, index) =>
-            makeEvent({
-              ID: index + 6,
-              EventType: "commit",
-              Summary: summary,
-              Body: `replacement lineage commit ${index + 1} displaced`,
-              CreatedAt: `2024-06-01T10:0${index + 6}:00Z`,
-              MetadataJSON: JSON.stringify({ commit_order: index + 1, commit_order_key: index + 6 }),
-            }),
-          ),
-          ...oldCommits.map((summary, index) =>
-            makeEvent({
-              ID: index + 1,
-              EventType: "commit",
-              Summary: summary,
-              Body: `original lineage commit ${index + 1} restored`,
-              CreatedAt: `2024-06-01T10:0${index + 1}:00Z`,
-              MetadataJSON: JSON.stringify({ commit_order: index + 1, commit_order_key: index + 1 }),
-            }),
-          ),
-        ],
-        timelineOrder: "chronological",
-      },
-    });
-
-    const text = container.textContent ?? "";
-    expect(text).toContain("3 commits replaced by a later force push");
-    for (const order of [1, 2, 3, 4, 5]) {
-      expect(text).toContain(`original lineage commit ${order} restored`);
-    }
-    for (const order of [1, 2, 3]) {
-      expect(text).not.toContain(`replacement lineage commit ${order} displaced`);
-    }
-  });
-
-  it("keeps descendants obsolete when restoring an intermediate lineage head", () => {
-    const oldCommits = [1, 2, 3, 4].map((order) => `c${String(order).repeat(39)}`);
-    const replacementCommits = [1, 2].map((order) => `d${String(order).repeat(39)}`);
-    const { container } = render(EventTimeline, {
-      props: {
-        events: [
-          makeEvent({
-            ID: 9,
-            EventType: "force_push",
-            Summary: "d222222 -> c333333",
-            CreatedAt: "2024-06-01T14:00:00Z",
-            MetadataJSON: JSON.stringify({ before_sha: replacementCommits[1], after_sha: oldCommits[2] }),
-          }),
-          makeEvent({
-            ID: 8,
-            EventType: "force_push",
-            Summary: "c222222 -> d222222",
-            CreatedAt: "2024-06-01T13:00:00Z",
-            MetadataJSON: JSON.stringify({ before_sha: oldCommits[1], after_sha: replacementCommits[1] }),
-          }),
-          makeEvent({
-            ID: 7,
-            EventType: "force_push",
-            Summary: "c444444 -> c222222",
-            CreatedAt: "2024-06-01T12:00:00Z",
-            MetadataJSON: JSON.stringify({ before_sha: oldCommits[3], after_sha: oldCommits[1] }),
-          }),
-          ...replacementCommits.map((summary, index) =>
-            makeEvent({
-              ID: index + 5,
-              EventType: "commit",
-              Summary: summary,
-              Body: `replacement descendant ${index + 1}`,
-              CreatedAt: `2024-06-01T10:0${index + 5}:00Z`,
-              MetadataJSON: JSON.stringify({ commit_order: index + 1, commit_order_key: index + 5 }),
-            }),
-          ),
-          ...oldCommits.map((summary, index) =>
-            makeEvent({
-              ID: index + 1,
-              EventType: "commit",
-              Summary: summary,
-              Body: `original ancestor ${index + 1}`,
-              CreatedAt: `2024-06-01T10:0${index + 1}:00Z`,
-              MetadataJSON: JSON.stringify({ commit_order: index + 1, commit_order_key: index + 1 }),
-            }),
-          ),
-        ],
-        timelineOrder: "chronological",
-      },
-    });
-
-    const text = container.textContent ?? "";
-    expect(text).toContain("original ancestor 1");
-    expect(text).toContain("original ancestor 2");
-    expect(text).toContain("original ancestor 3");
-    expect(text).not.toContain("original ancestor 4");
-    expect(text).not.toContain("replacement descendant 1");
-    expect(text).not.toContain("replacement descendant 2");
-  });
-
-  it("retires the active lineage after repeated force-push alternation", () => {
-    const oldCommit1 = "a111111111111111111111111111111111111111";
-    const oldCommit2 = "a222222222222222222222222222222222222222";
-    const oldCommit3 = "a333333333333333333333333333333333333333";
-    const newCommit1 = "b111111111111111111111111111111111111111";
-    const newCommit2 = "b222222222222222222222222222222222222222";
-    const newCommit3 = "b333333333333333333333333333333333333333";
-    const { container } = render(EventTimeline, {
-      props: {
-        events: [
-          makeEvent({
-            ID: 9,
-            EventType: "force_push",
-            Summary: "a333333 -> b333333",
-            CreatedAt: "2024-06-01T14:00:00Z",
-            MetadataJSON: JSON.stringify({ before_sha: oldCommit3, after_sha: newCommit3 }),
-          }),
-          makeEvent({
-            ID: 8,
-            EventType: "force_push",
-            Summary: "b333333 -> a333333",
-            CreatedAt: "2024-06-01T13:00:00Z",
-            MetadataJSON: JSON.stringify({ before_sha: newCommit3, after_sha: oldCommit3 }),
-          }),
-          makeEvent({
-            ID: 7,
-            EventType: "force_push",
-            Summary: "a333333 -> b333333",
-            CreatedAt: "2024-06-01T12:00:00Z",
-            MetadataJSON: JSON.stringify({ before_sha: oldCommit3, after_sha: newCommit3 }),
-          }),
-          makeEvent({
-            ID: 6,
-            EventType: "commit",
-            Summary: newCommit3,
-            Body: "new lineage commit three current again",
-            CreatedAt: "2024-06-01T10:06:00Z",
-            MetadataJSON: JSON.stringify({ commit_order: 3, commit_order_key: 6 }),
-          }),
-          makeEvent({
-            ID: 5,
-            EventType: "commit",
-            Summary: newCommit2,
-            Body: "new lineage commit two current again",
-            CreatedAt: "2024-06-01T10:05:00Z",
-            MetadataJSON: JSON.stringify({ commit_order: 2, commit_order_key: 5 }),
-          }),
-          makeEvent({
-            ID: 4,
-            EventType: "commit",
-            Summary: newCommit1,
-            Body: "new lineage commit one current again",
-            CreatedAt: "2024-06-01T10:04:00Z",
-            MetadataJSON: JSON.stringify({ commit_order: 1, commit_order_key: 4 }),
-          }),
-          makeEvent({
-            ID: 3,
-            EventType: "commit",
-            Summary: oldCommit3,
-            Body: "old lineage commit three displaced again",
-            CreatedAt: "2024-06-01T10:03:00Z",
-            MetadataJSON: JSON.stringify({ commit_order: 3, commit_order_key: 3 }),
-          }),
-          makeEvent({
-            ID: 2,
-            EventType: "commit",
-            Summary: oldCommit2,
-            Body: "old lineage commit two displaced again",
-            CreatedAt: "2024-06-01T10:02:00Z",
-            MetadataJSON: JSON.stringify({ commit_order: 2, commit_order_key: 2 }),
-          }),
-          makeEvent({
-            ID: 1,
-            EventType: "commit",
-            Summary: oldCommit1,
-            Body: "old lineage commit one displaced again",
-            CreatedAt: "2024-06-01T10:01:00Z",
-            MetadataJSON: JSON.stringify({ commit_order: 1, commit_order_key: 1 }),
-          }),
-        ],
-        timelineOrder: "chronological",
-      },
-    });
-
-    const text = container.textContent ?? "";
-    expect(text).toContain("3 commits replaced by a later force push");
-    expect(text).toContain("new lineage commit three current again");
-    expect(text).toContain("new lineage commit two current again");
-    expect(text).toContain("new lineage commit one current again");
-    expect(text).not.toContain("old lineage commit three displaced again");
-    expect(text).not.toContain("old lineage commit two displaced again");
-    expect(text).not.toContain("old lineage commit one displaced again");
-  });
-
-  it("preserves unrelated obsolete commits when a later rewind targets current lineage", () => {
-    const commits = [
-      "1111111111111111111111111111111111111111",
-      "2222222222222222222222222222222222222222",
-      "3333333333333333333333333333333333333333",
-      "4444444444444444444444444444444444444444",
-      "5555555555555555555555555555555555555555",
-    ] as const;
-    const { container } = render(EventTimeline, {
-      props: {
-        events: [
-          makeEvent({
-            ID: 7,
-            EventType: "force_push",
-            Summary: "5555555 -> 3333333",
-            CreatedAt: "2024-06-01T13:00:00Z",
-            MetadataJSON: JSON.stringify({ before_sha: commits[4], after_sha: commits[2] }),
-          }),
-          makeEvent({
-            ID: 6,
-            EventType: "force_push",
-            Summary: "2222222 -> 4444444",
-            CreatedAt: "2024-06-01T12:00:00Z",
-            MetadataJSON: JSON.stringify({ before_sha: commits[1], after_sha: commits[3] }),
-          }),
-          ...commits.map((summary, index) =>
-            makeEvent({
-              ID: index + 1,
-              EventType: "commit",
-              Summary: summary,
-              Body: `lineage commit ${index + 1}`,
-              CreatedAt: `2024-06-01T10:0${index + 1}:00Z`,
-              MetadataJSON: JSON.stringify({ commit_order: index + 1, commit_order_key: index + 1 }),
-            }),
-          ),
-        ],
-        timelineOrder: "chronological",
-      },
-    });
-
-    const text = container.textContent ?? "";
-    expect(text).not.toContain("lineage commit 1");
-    expect(text).not.toContain("lineage commit 2");
-    expect(text).toContain("lineage commit 3");
-    expect(text).not.toContain("lineage commit 4");
-    expect(text).not.toContain("lineage commit 5");
+    expect(text).not.toContain("commit with boolean obsolete value");
+    expect(text).toContain("1 commit replaced by a later force push");
+    expect(text).toContain("a plain comment claiming to be obsolete");
+    expect(text).toContain("commit with non-boolean obsolete value");
   });
 
   it("expands collapsed obsolete commits on demand in strict date order", async () => {
@@ -2199,6 +1878,7 @@ describe("EventTimeline", () => {
             Summary: oldHead,
             Body: "old C3 before rebase",
             CreatedAt: "2024-06-01T10:02:00Z",
+            MetadataJSON: JSON.stringify({ obsolete: true }),
           }),
           makeEvent({
             ID: 2,
@@ -2206,6 +1886,7 @@ describe("EventTimeline", () => {
             Summary: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
             Body: "old C2 before rebase",
             CreatedAt: "2024-06-01T10:01:00Z",
+            MetadataJSON: JSON.stringify({ obsolete: true }),
           }),
         ],
         timelineOrder: "chronological",
@@ -2262,6 +1943,7 @@ describe("EventTimeline", () => {
             Summary: oldHead,
             Body: "old C3 before rebase",
             CreatedAt: "2024-06-01T10:02:00Z",
+            MetadataJSON: JSON.stringify({ obsolete: true }),
           }),
         ],
         activityViewMode: "compact",

@@ -604,128 +604,17 @@
     return orderEventsForForcePushBoundaries(sourceEvents, orderingSourceEvents);
   }
 
-  // Grouped mode communicates replaced lineages by sorting commits below
-  // their force-push row. Strict date order instead replays the pushes to
-  // decide which stable commit orders are obsolete after the latest event.
-  // Rewinds can split one lineage into multiple obsolete ranges, so replay
-  // preserves lineage identity separately from each range's obsolete state.
-  function obsoleteCommitOrders(orderingSourceEvents: Array<PREvent | IssueEvent>): Set<number> {
-    const commitOrders = [
-      ...new Set(
-        orderingSourceEvents
-          .filter((event) => event.EventType === "commit")
-          .map(commitOrder),
-      ),
-    ].sort((a, b) => a - b);
-    const generations = buildForcePushGenerations(buildForcePushBoundaries(orderingSourceEvents));
-    generations.sort((a, b) => a.pushedAt - b.pushedAt || a.eventID - b.eventID);
-
-    const lineageByOrder = new Map<number, number>();
-    const obsoleteByLineage = new Map<number, Set<number>>();
-    let activeLineage = 0;
-    let activeHead = 0;
-    let nextLineage = 1;
-
-    const assignLineageBetween = (lineage: number, startAfter: number, endAt: number): void => {
-      for (const order of commitOrders) {
-        if (order > startAfter && order <= endAt && !lineageByOrder.has(order)) {
-          lineageByOrder.set(order, lineage);
-        }
-      }
-    };
-    const retireLineageBetween = (lineage: number, startAfter: number, endAt: number): void => {
-      let obsolete = obsoleteByLineage.get(lineage);
-      for (const order of commitOrders) {
-        if (order <= startAfter || order > endAt || lineageByOrder.get(order) !== lineage) continue;
-        obsolete ??= new Set<number>();
-        obsolete.add(order);
-      }
-      if (obsolete) obsoleteByLineage.set(lineage, obsolete);
-    };
-    const restoreLineageThrough = (lineage: number, endAt: number): void => {
-      const obsolete = obsoleteByLineage.get(lineage);
-      if (!obsolete) return;
-      for (const order of obsolete) {
-        if (order <= endAt) obsolete.delete(order);
-      }
-      if (obsolete.size === 0) obsoleteByLineage.delete(lineage);
-    };
-    const ensureActiveHead = (order: number): void => {
-      const knownLineage = lineageByOrder.get(order);
-      if (knownLineage !== undefined) {
-        activeLineage = knownLineage;
-      } else {
-        const startAfter = activeHead > 0 && order > activeHead ? activeHead : 0;
-        assignLineageBetween(activeLineage, startAfter, order);
-      }
-      activeHead = order;
-    };
-    const createLineageThrough = (order: number, startAfter: number): number => {
-      const lineage = nextLineage;
-      nextLineage += 1;
-      assignLineageBetween(lineage, startAfter, order);
-      return lineage;
-    };
-
-    for (const generation of generations) {
-      const before = generation.beforeCommitID;
-      const after = generation.afterCommitID;
-
-      if (before !== undefined) {
-        ensureActiveHead(before);
-      }
-
-      if (after === undefined) {
-        if (before !== undefined) {
-          retireLineageBetween(activeLineage, 0, before);
-          activeLineage = nextLineage;
-          nextLineage += 1;
-        }
-        activeHead = before ?? activeHead;
-        continue;
-      }
-
-      let afterLineage = lineageByOrder.get(after);
-      if (afterLineage === undefined) {
-        if (before !== undefined && after < before) {
-          assignLineageBetween(activeLineage, 0, after);
-          afterLineage = activeLineage;
-        } else {
-          afterLineage = createLineageThrough(after, before ?? activeHead);
-        }
-      }
-
-      if (before === undefined) {
-        if (afterLineage !== activeLineage && generation.effectiveStartAfterCommitID > 0) {
-          retireLineageBetween(activeLineage, 0, generation.effectiveStartAfterCommitID);
-        }
-        restoreLineageThrough(afterLineage, after);
-        activeLineage = afterLineage;
-        activeHead = after;
-        continue;
-      }
-
-      if (afterLineage === activeLineage) {
-        restoreLineageThrough(activeLineage, after);
-        if (after < before) retireLineageBetween(activeLineage, after, before);
-      } else {
-        restoreLineageThrough(afterLineage, after);
-        retireLineageBetween(activeLineage, 0, before);
-        activeLineage = afterLineage;
-      }
-      activeHead = after;
-    }
-    return new Set([...obsoleteByLineage.values()].flatMap((obsolete) => [...obsolete]));
+  // The backend stamps `obsolete: true` into commit-event metadata when the
+  // commit is no longer reachable from the PR head in clone ancestry, and
+  // clears it when reachable again. The frontend only renders that flag.
+  function isObsoleteCommit(event: PREvent | IssueEvent): boolean {
+    return event.EventType === "commit" && parseMetadata(event).obsolete === true;
   }
 
   function collapseObsoleteCommitEntries(
     entries: TimelineEntry[],
-    orderingSourceEvents: Array<PREvent | IssueEvent>,
     keyPrefix: string,
   ): TimelineEntry[] {
-    const obsoleteOrders = obsoleteCommitOrders(orderingSourceEvents);
-    if (obsoleteOrders.size === 0) return entries;
-
     const collapsed: TimelineEntry[] = [];
     let run: Array<PREvent | IssueEvent> = [];
     const flushRun = (): void => {
@@ -741,7 +630,7 @@
     };
 
     for (const entry of entries) {
-      if (entry.event.EventType === "commit" && obsoleteOrders.has(commitOrder(entry.event))) {
+      if (isObsoleteCommit(entry.event)) {
         run = [...run, entry.event];
         continue;
       }
@@ -814,7 +703,7 @@
     }
 
     return timelineOrder === "chronological"
-      ? collapseObsoleteCommitEntries(entries, orderingSourceEvents, "")
+      ? collapseObsoleteCommitEntries(entries, "")
       : entries;
   }
 
@@ -837,7 +726,7 @@
       replies: [],
     }));
     return timelineOrder === "chronological"
-      ? collapseObsoleteCommitEntries(entries, orderingSourceEvents, "compact-")
+      ? collapseObsoleteCommitEntries(entries, "compact-")
       : entries;
   }
 

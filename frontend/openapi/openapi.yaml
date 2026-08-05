@@ -3889,6 +3889,8 @@ components:
           type: string
         sha:
           type: string
+        workspace_cleanup:
+          $ref: "#/components/schemas/WorkspaceCleanupResult"
       required:
         - merged
         - sha
@@ -3908,6 +3910,8 @@ components:
           type: string
         commit_title:
           type: string
+        delete_workspace_after_merge:
+          type: boolean
         expected_head_sha:
           type: string
         method:
@@ -7685,6 +7689,23 @@ components:
         updated_reason:
           type: string
         updated_source:
+          type: string
+      required:
+        - status
+      type: object
+    WorkspaceCleanupResult:
+      additionalProperties: false
+      properties:
+        status:
+          enum:
+            - deleted
+            - already_absent
+            - not_found_at_submission
+            - failed
+          type: string
+        warning:
+          type: string
+        workspace_id:
           type: string
       required:
         - status

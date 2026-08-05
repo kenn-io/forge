@@ -417,6 +417,8 @@ components:
         available:
           format: int64
           type: integer
+        known:
+          type: boolean
         limit:
           format: int64
           type: integer
@@ -444,6 +446,7 @@ components:
         - platform_host
         - principal
         - source
+        - known
         - limit
         - remaining
         - reserve

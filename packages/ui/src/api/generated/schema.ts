@@ -4522,6 +4522,7 @@ export interface components {
         ArchivePacingStatusResponse: {
             /** Format: int64 */
             available: number;
+            known: boolean;
             /** Format: int64 */
             limit: number;
             platform_host: string;

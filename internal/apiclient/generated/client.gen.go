@@ -1203,6 +1203,7 @@ type ArchiveMutationBody struct {
 // ArchivePacingStatusResponse defines model for ArchivePacingStatusResponse.
 type ArchivePacingStatusResponse struct {
 	Available    int64                             `json:"available"`
+	Known        bool                              `json:"known"`
 	Limit        int64                             `json:"limit"`
 	PlatformHost string                            `json:"platform_host"`
 	Principal    string                            `json:"principal"`

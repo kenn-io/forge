@@ -195,12 +195,16 @@ func (s *Server) registerArchiveAPI(api huma.API) {
 // archivePacingStatusResponse reports one provider credential's archive
 // hydration headroom: the quota window admission consumes (limit and
 // remaining are the min across REST and GraphQL), the reserve held back for
-// live sync, and the spend archive work may currently admit.
+// live sync, and the spend archive work may currently admit. Known is false
+// when the combined window is unavailable (a required pool missing, expired,
+// or never observed) — the state archive admission defers as "provider quota
+// unknown" — and the pacing numbers are zero.
 type archivePacingStatusResponse struct {
 	Provider     string `json:"provider"`
 	PlatformHost string `json:"platform_host"`
 	Principal    string `json:"principal"`
 	Source       string `json:"source" enum:"provider"`
+	Known        bool   `json:"known"`
 	Limit        int    `json:"limit"`
 	Remaining    int    `json:"remaining"`
 	Reserve      int    `json:"reserve"`
@@ -227,22 +231,22 @@ func (s *Server) listArchivePacing(
 			continue
 		}
 		seen[pool.Identity] = true
-		window, ok := registry.PacingWindow(pool.Identity, resources)
-		if !ok {
-			continue
-		}
-		reserve := ghclient.ArchiveProviderReserve(window.Limit)
-		statuses = append(statuses, archivePacingStatusResponse{
+		status := archivePacingStatusResponse{
 			Provider:     string(platform.KindGitHub),
 			PlatformHost: pool.Identity.Host,
 			Principal:    pool.Identity.Principal,
 			Source:       "provider",
-			Limit:        window.Limit,
-			Remaining:    window.Remaining,
-			Reserve:      reserve,
-			Available:    max(window.Remaining-reserve, 0),
-			ResetAt:      formatUTCRFC3339(window.ResetAt),
-		})
+		}
+		if window, ok := registry.PacingWindow(pool.Identity, resources); ok {
+			reserve := ghclient.ArchiveProviderReserve(window.Limit)
+			status.Known = true
+			status.Limit = window.Limit
+			status.Remaining = window.Remaining
+			status.Reserve = reserve
+			status.Available = max(window.Remaining-reserve, 0)
+			status.ResetAt = formatUTCRFC3339(window.ResetAt)
+		}
+		statuses = append(statuses, status)
 	}
 	return &archivePacingOutput{Body: statuses}, nil
 }

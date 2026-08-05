@@ -270,16 +270,18 @@ fallback repository listing.
 - GitHub archive code owns historical identity inventory only; hydration must invoke ordinary item sync instead of adding archive-specific lookup, normalization, or persistence. (`internal/github/pages.go::ListIssuesPage`, `internal/github/sync.go::SyncArchiveItem`)
 - Archive item hydration bypasses persisted parent-detail ETags; an unchanged parent representation does not prove that legacy lifecycle timelines are complete. (`internal/github/sync.go::SyncArchiveItem`)
 - Archive issue hydration treats timeline failures as hard errors; ordinary issue refresh remains best-effort for that optional dataset. (`internal/github/sync.go::refreshIssueTimeline`)
-- GitHub archive hydration paces off provider quota alone: availability is
-  remaining minus the archive reserve (`max(limit/5, RateReserveBuffer)`),
-  enforced at admission and again at every wire attempt. Headerless Gitealike
-  hosts spend configured local hourly surplus above `archiveLiveFloor`.
-  Attempts covered by a registry reservation do not debit the local ceiling —
-  `sync_budget_per_hour` meters live sync only — and live work preempts the
-  archive lease.
+- GitHub archive admission with a known registry pacing window paces off
+  provider quota alone: availability is remaining minus the archive reserve
+  (`max(limit/5, RateReserveBuffer)`), enforced at admission and again at
+  every wire attempt, and attempts covered by a registry reservation do not
+  debit the local ceiling. Every other archive path — headerless Gitealike
+  hosts, the tracker fallback when the registry has no window, and any
+  attempt whose chain takes no reservation — spends configured local hourly
+  surplus above `archiveLiveFloor`. Live work preempts the archive lease.
   (`internal/github/budget.go::ArchiveProviderReserve`,
   `internal/github/budget.go::LocalArchiveSpendAvailable`,
-  `internal/github/sync.go::Admit`)
+  `internal/github/sync.go::Admit`,
+  `internal/github/budget_transport.go::archiveAttemptProviderReserved`)
 - A GitHub issue without `updated_at` uses `created_at` as both its freshness and initial activity boundary; zero timestamps must not bypass monotonic snapshot acceptance. (`internal/platform/github/normalize.go::NormalizeIssue`)
 
 ## Owner Routes And Identity Accounting
@@ -403,8 +405,8 @@ response never overwrites an App installation pool
   `sync_budget_per_hour` ceiling is separate and is reported apart from provider
   quota (`internal/github/sync.go::backgroundQuotaAvailability`).
 - List discovery (open PR/issue lists, repo identity resolve) spends the local
-  ceiling's essential reserve; optional spend (details, fast-sync, headerless
-  archive)
+  ceiling's essential reserve; optional spend (details, fast-sync, archive
+  attempts without a registry reservation)
   stops at limit minus reserve so it can never starve discovery
   (`internal/github/budget.go::TrySpendEssential`). Per-item enrichment nested
   inside an essential list fetch is demoted back to optional and degrades on

@@ -5161,7 +5161,13 @@ func (s *Syncer) runOnce(
 	if onlyRepos != nil {
 		repos = selectRepos(repos, onlyRepos)
 	}
-	repos = s.reconcileArchivedRepos(ctx, repos)
+	nextAfter := s.nextSyncAfter
+	if bypassNextSyncAfter {
+		nextAfter = nil
+	}
+	repos = s.reconcileArchivedRepos(
+		ctx, repos, s.repoEligibility(repos, nextAfter),
+	)
 	repos = prioritizeRepos(repos, priorityRepos)
 
 	total := len(repos)
@@ -5189,10 +5195,6 @@ func (s *Syncer) runOnce(
 		}
 	}
 
-	nextAfter := s.nextSyncAfter
-	if bypassNextSyncAfter {
-		nextAfter = nil
-	}
 	if rateLimitSnapshotCtx.Err() == nil {
 		refreshed := s.refreshRateLimitSnapshots(rateLimitSnapshotCtx)
 		s.clearRecoveredRateLimitGates(refreshed, nextAfter, s.interval)
@@ -5372,9 +5374,15 @@ func prioritizeRepos(repos, priorityRepos []RepoRef) []RepoRef {
 // tracked refs so an upstream unarchive is observed during normal
 // sync passes. Refs the provider still reports archived (or whose
 // metadata refresh fails) stay excluded from the pass; refs that
-// resolved unarchived rejoin it with fresh metadata.
+// resolved unarchived rejoin it with fresh metadata. Refs in
+// credential buckets the pass would not dispatch — throttled,
+// reserve-exhausted, or deferred by next-sync-after — are deferred
+// without a provider call: the refresh must not spend sync budget a
+// live repository's dispatch would be denied. Eligibility is read
+// before the pass refreshes rate-limit snapshots, so a gate that has
+// recovered upstream defers the refresh by at most one pass.
 func (s *Syncer) reconcileArchivedRepos(
-	ctx context.Context, repos []RepoRef,
+	ctx context.Context, repos []RepoRef, eligibility map[string]bool,
 ) []RepoRef {
 	live := make([]RepoRef, 0, len(repos))
 	skipped := make([]string, 0)
@@ -5384,6 +5392,11 @@ func (s *Syncer) reconcileArchivedRepos(
 			continue
 		}
 		if ctx.Err() != nil {
+			skipped = append(skipped, repo.Owner+"/"+repo.Name)
+			continue
+		}
+		bucket, err := s.bucketKeyForRepo(repo, false)
+		if err != nil || !eligibility[bucket] {
 			skipped = append(skipped, repo.Owner+"/"+repo.Name)
 			continue
 		}

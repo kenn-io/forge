@@ -10335,6 +10335,59 @@ func TestRunOnceRestoresLiveSyncForUnarchivedRepo(t *testing.T) {
 		"tracked ref should be live again after the provider unarchives")
 }
 
+func TestRunOnceDefersArchivedRefreshForThrottledBucket(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+
+	var getRepositoryCalled atomic.Bool
+	gheMock := &mockClient{
+		openPRs:  []*gh.PullRequest{},
+		comments: []*gh.IssueComment{},
+		reviews:  []*gh.PullRequestReview{},
+		commits:  []*gh.RepositoryCommit{},
+		getRepositoryFn: func(
+			_ context.Context, owner, repo string,
+		) (*gh.Repository, error) {
+			getRepositoryCalled.Store(true)
+			id := int64(1)
+			nodeID := "repo-" + owner + "-" + repo
+			archived := false
+			return &gh.Repository{
+				ID:       &id,
+				NodeID:   &nodeID,
+				Name:     &repo,
+				Owner:    &gh.User{Login: &owner},
+				Archived: &archived,
+			}, nil
+		},
+	}
+
+	gheTracker := NewRateTracker(d, "ghe.corp.com", "host", "rest")
+	gheTracker.UpdateFromRate(Rate{
+		Limit:     5000,
+		Remaining: 100, // below RateReserveBuffer (200)
+		Reset:     time.Now().Add(30 * time.Minute),
+	})
+
+	repos := []RepoRef{
+		{Owner: "corp", Name: "frozen", PlatformHost: "ghe.corp.com", Archived: true},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"ghe.corp.com": gheMock}, d, nil, repos,
+		time.Minute, map[string]*RateTracker{"ghe.corp.com": gheTracker}, nil,
+	)
+
+	syncer.RunOnce(t.Context())
+
+	assert.False(getRepositoryCalled.Load(),
+		"archived metadata refresh must not spend budget on a throttled bucket")
+	tracked := syncer.TrackedRepos()
+	require.Len(tracked, 1)
+	assert.True(tracked[0].Archived,
+		"deferred archived ref must keep its archived flag")
+}
+
 func TestRunOnceStopsLiveSyncWhenRepoArchivesMidPass(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

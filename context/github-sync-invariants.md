@@ -334,7 +334,11 @@ fallback repository listing.
   only at resolution sites: each pass reconciles archived tracked refs with
   metadata-only identity resolution, so an upstream unarchive returns the
   repository to live syncing without a restart or reload, while refs still
-  archived (or whose refresh fails) stay excluded. In the other direction, a
+  archived (or whose refresh fails) stay excluded. The refresh honors the
+  same credential-bucket eligibility that gates dispatch — a throttled,
+  reserve-exhausted, or next-sync-deferred bucket defers its archived
+  refreshes without a provider call, so they cannot spend essential sync
+  budget a live repository's dispatch would be denied. In the other direction, a
   live repository whose in-pass identity resolution reports archived stops
   before any clone, overview, label, or item syncing — the publication has
   already flipped the tracked flag, and the pass must not sync an archived

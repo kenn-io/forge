@@ -82,6 +82,8 @@ type PullRequestReviewThreadComment struct {
 	URL              string
 	CommitID         string
 	OriginalCommitID string
+	IsMinimized      bool
+	MinimizedReason  string
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 }
@@ -1239,6 +1241,8 @@ query($threadID: ID!, $cursor: String) {
           commit { oid }
           originalCommit { oid }
           pullRequestReview { databaseId }
+          isMinimized
+          minimizedReason
           createdAt
           updatedAt
         }
@@ -1284,8 +1288,10 @@ type graphQLReviewThreadComment struct {
 	PullRequestReview *struct {
 		DatabaseID int64 `json:"databaseId"`
 	} `json:"pullRequestReview"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	IsMinimized     bool      `json:"isMinimized"`
+	MinimizedReason string    `json:"minimizedReason"`
+	CreatedAt       time.Time `json:"createdAt"`
+	UpdatedAt       time.Time `json:"updatedAt"`
 }
 
 type graphQLInt64 int64
@@ -1896,17 +1902,19 @@ func githubReviewThreadCommentFromGraphQL(
 	comment graphQLReviewThreadComment,
 ) PullRequestReviewThreadComment {
 	next := PullRequestReviewThreadComment{
-		NodeID:       comment.NodeID,
-		DatabaseID:   firstPositiveInt64(int64(comment.FullDatabaseID), int64(comment.DatabaseID)),
-		SubjectType:  comment.SubjectType,
-		Body:         comment.Body,
-		Path:         comment.Path,
-		Line:         comment.Line,
-		OriginalLine: comment.OriginalLine,
-		DiffHunk:     comment.DiffHunk,
-		URL:          comment.URL,
-		CreatedAt:    comment.CreatedAt,
-		UpdatedAt:    comment.UpdatedAt,
+		NodeID:          comment.NodeID,
+		DatabaseID:      firstPositiveInt64(int64(comment.FullDatabaseID), int64(comment.DatabaseID)),
+		SubjectType:     comment.SubjectType,
+		Body:            comment.Body,
+		Path:            comment.Path,
+		Line:            comment.Line,
+		OriginalLine:    comment.OriginalLine,
+		DiffHunk:        comment.DiffHunk,
+		URL:             comment.URL,
+		IsMinimized:     comment.IsMinimized,
+		MinimizedReason: comment.MinimizedReason,
+		CreatedAt:       comment.CreatedAt,
+		UpdatedAt:       comment.UpdatedAt,
 	}
 	if comment.Author != nil {
 		next.AuthorLogin = comment.Author.Login

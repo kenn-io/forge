@@ -19,6 +19,28 @@ export type ReviewThreadContext = {
   outdated: boolean;
 };
 
+export type ReviewThreadProviderHiddenState = {
+  reason: string | null;
+};
+
+export function reviewThreadProviderHiddenState(thread: ReviewThread): ReviewThreadProviderHiddenState | null {
+  if (!thread.metadata_json) return null;
+  try {
+    const metadata = JSON.parse(thread.metadata_json) as unknown;
+    if (metadata === null || typeof metadata !== "object" || Array.isArray(metadata)) return null;
+    const values = metadata as Record<string, unknown>;
+    if (values.provider_hidden !== true) return null;
+    return {
+      reason:
+        typeof values.provider_hidden_reason === "string" && values.provider_hidden_reason.length > 0
+          ? values.provider_hidden_reason
+          : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function reviewThreadsFromEvents(events: PREvent[] | null | undefined): ReviewThread[] {
   const threads: ReviewThread[] = [];
   const seen = new Set<string>();

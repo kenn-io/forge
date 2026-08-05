@@ -105,4 +105,24 @@ describe("DiffReviewThreadInlineComment", () => {
     expect(screen.getByDisplayValue("Please take another look")).toBeTruthy();
     expect(screen.queryByText("Could not reply to thread")).toBeNull();
   });
+
+  it("collapses provider-hidden review comments until requested", async () => {
+    render(DiffReviewThreadInlineComment, {
+      props: {
+        thread: makeReviewThread({
+          metadata_json: JSON.stringify({
+            provider_hidden: true,
+            provider_hidden_reason: "OFF_TOPIC",
+          }),
+        }),
+      },
+    });
+
+    expect(screen.getByText("Hidden on GitHub: Off-topic")).toBeTruthy();
+    expect(screen.queryByText("Published review note")).toBeNull();
+
+    await fireEvent.click(screen.getByRole("button", { name: "Show comment" }));
+
+    expect(screen.getByText("Published review note")).toBeTruthy();
+  });
 });

@@ -268,6 +268,21 @@ owner = "acme"
 name = "widget-*"
 `
 
+const validReloadConfigExactPlusGlob = `
+sync_interval = "5m"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "widget"
+
+[[repos]]
+owner = "acme"
+name = "*"
+`
+
 const validReloadConfigChangedActivity = `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
@@ -1747,6 +1762,71 @@ func TestConfigReload_NewRepoEntersSyncerTrackedSet(t *testing.T) {
 	assert.Equal(archiveLifecycle.ensured, archiveLifecycle.retried)
 	assert.Equal("acme/widget", archiveLifecycle.ensured[0].RepoPath)
 	assert.Equal("globex/engine", archiveLifecycle.ensured[1].RepoPath)
+}
+
+func TestConfigReload_ResolvedArchivedStateReplacesFallbackDuplicate(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	var listedRepos sync.Map
+	srv, database, cfgPath := setupTestServerWithConfigContent(
+		t, validReloadConfig, &mockGH{
+			// The exact entry cannot resolve, so it falls back to the
+			// previously tracked (stale, live) ref.
+			getRepositoryFn: func(
+				context.Context, string, string,
+			) (*gh.Repository, error) {
+				return nil, errors.New("temporary repo lookup failure")
+			},
+			// The overlapping glob resolves the same repo as archived.
+			listReposByOwnerFn: func(
+				_ context.Context, owner string,
+			) ([]*gh.Repository, error) {
+				return []*gh.Repository{{
+					NodeID:   new("repo-acme-widget"),
+					Name:     new("widget"),
+					Owner:    &gh.User{Login: new(owner)},
+					Archived: new(true),
+				}}, nil
+			},
+			listNotificationsFn: func(
+				_ context.Context, opts ghclient.NotificationListOptions,
+			) ([]ghclient.NotificationThread, bool, error) {
+				if opts.RepoName != "" {
+					listedRepos.Store(opts.RepoName, true)
+				}
+				return nil, false, nil
+			},
+		},
+	)
+	_, err := database.UpsertRepo(t.Context(), db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget",
+	})
+	require.NoError(err)
+	waitForConfigWatcher(t, srv, 2*time.Second)
+	stream := streamConfigEvents(t, srv)
+	defer stream.Close()
+
+	srv.syncer.SetRepos([]ghclient.RepoRef{{
+		Owner:        "acme",
+		Name:         "widget",
+		PlatformHost: "github.com",
+		RepoPath:     "acme/widget",
+	}})
+
+	writeConfigToml(t, cfgPath, validReloadConfigExactPlusGlob)
+
+	ev := waitForConfigEvent(t, stream, 2*time.Second)
+	require.True(ev.Valid)
+
+	require.True(trackedRepoArchived(srv, "acme", "widget"),
+		"resolved archived metadata must replace the fallback duplicate")
+
+	require.NoError(srv.syncer.SyncNotifications(t.Context()))
+	_, listedWidget := listedRepos.Load("widget")
+	assert.False(listedWidget,
+		"repo resolved as archived must be excluded from notification polling")
 }
 
 func TestConfigReload_GlobFailureKeepsPreviouslyTrackedMatches(t *testing.T) {

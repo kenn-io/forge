@@ -483,7 +483,7 @@ func (t *quotaTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 	var header http.Header
 	if resp == nil || t.registry == nil || t.identity.Principal == "" {
-		reconcileArchiveProviderAttempt(reservation, t.registry, resource, header)
+		reconcileArchiveProviderAttempt(reservation, t.registry, header)
 		return resp, err
 	}
 	header = resp.Header
@@ -492,6 +492,6 @@ func (t *quotaTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		resource,
 		header,
 	)
-	reconcileArchiveProviderAttempt(reservation, t.registry, resource, header)
+	reconcileArchiveProviderAttempt(reservation, t.registry, header)
 	return resp, err
 }

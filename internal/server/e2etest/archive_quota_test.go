@@ -58,7 +58,7 @@ func TestArchiveAPIStopsProviderBurstAtObservedQuotaHeadroomE2E(t *testing.T) {
 	reset := now.Add(30 * time.Minute).Truncate(time.Second)
 	var upstreamCalls atomic.Int32
 	var upstreamRemaining atomic.Int32
-	upstreamRemaining.Store(203)
+	upstreamRemaining.Store(1003)
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		call := upstreamCalls.Add(1)
 		remaining := upstreamRemaining.Add(-2)
@@ -128,10 +128,10 @@ func TestArchiveAPIStopsProviderBurstAtObservedQuotaHeadroomE2E(t *testing.T) {
 	syncer.SetGitHubRouters(map[string]*ghclient.HostRouter{"github.com": router})
 	syncer.SetQuotaRegistry(quotaRegistry)
 	quotaRegistry.UpdateSnapshot(identity, ghclient.QuotaResourceREST, ghclient.Rate{
-		Limit: 5000, Remaining: 203, Reset: reset,
+		Limit: 5000, Remaining: 1003, Reset: reset,
 	})
 	quotaRegistry.UpdateSnapshot(identity, ghclient.QuotaResourceGraphQL, ghclient.Rate{
-		Limit: 5000, Remaining: 203, Reset: reset,
+		Limit: 5000, Remaining: 1003, Reset: reset,
 	})
 
 	source := archiveQuotaBurstSource{refs: []platform.RepoRef{ref}, client: client}
@@ -185,10 +185,12 @@ func TestArchiveAPIStopsProviderBurstAtObservedQuotaHeadroomE2E(t *testing.T) {
 	runErr := archiveService.RunEligible(t.Context())
 	require.ErrorIs(runErr, platform.ErrArchiveAttemptBudget)
 	assert.Equal(int32(1), upstreamCalls.Load())
-	assert.Equal(1, budget.ArchiveSpent())
+	// Provider-reserved attempts are metered by the quota registry, not the
+	// local sync budget.
+	assert.Zero(budget.ArchiveSpent())
 	pool, ok := quotaRegistry.Get(identity, ghclient.QuotaResourceREST)
 	require.True(ok)
-	assert.Equal(201, pool.Remaining)
+	assert.Equal(1001, pool.Remaining)
 	progress, err := database.GetDatasetProgress(
 		t.Context(), repo.ID, db.ArchiveItemTypeIssue, 1, db.ArchiveDatasetLookup,
 	)

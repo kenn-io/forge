@@ -28,7 +28,6 @@ type archiveProviderAttemptConfig struct {
 	identity  IdentityKey
 	resources []QuotaResource
 	reserve   int
-	budget    *SyncBudget
 }
 
 type archiveProviderAttemptReservation struct {
@@ -57,12 +56,10 @@ func WithArchiveProviderAttemptAllowance(
 	identity IdentityKey,
 	resources []QuotaResource,
 	reserve int,
-	budget *SyncBudget,
 ) context.Context {
 	allowance := &archiveAttemptAllowance{
 		provider: &archiveProviderAttemptConfig{
 			identity: identity, resources: slices.Clone(resources), reserve: max(reserve, 0),
-			budget: budget,
 		},
 	}
 	allowance.remaining.Store(int64(attempts))
@@ -148,14 +145,12 @@ func reserveArchiveProviderAttempt(
 func reconcileArchiveProviderAttempt(
 	reservation archiveProviderAttemptReservation,
 	registry *QuotaRegistry,
-	resource QuotaResource,
 	header http.Header,
 ) {
 	if reservation.allowance == nil {
 		return
 	}
 	actualCost := reservation.cost
-	spendReset := reservation.before.ResetAt
 	if observed, ok := rateFromQuotaHeaders(header); ok {
 		observedReset := observed.Reset.UTC()
 		if observedReset.After(reservation.before.ResetAt) ||
@@ -171,7 +166,6 @@ func reconcileArchiveProviderAttempt(
 				reservation.before.Remaining-observed.Remaining,
 			)
 		case observedReset.After(reservation.before.ResetAt):
-			spendReset = observedReset
 			actualCost = max(
 				actualCost,
 				observed.Limit-observed.Remaining,
@@ -182,9 +176,6 @@ func reconcileArchiveProviderAttempt(
 				actualCost,
 			)
 		}
-	}
-	if budget := reservation.allowance.provider.budget; budget != nil {
-		budget.addProviderArchiveSpend(resource, spendReset, actualCost)
 	}
 	if actualCost > reservation.cost {
 		reservation.allowance.debit(actualCost - reservation.cost)
@@ -257,6 +248,20 @@ func WrapSyncBudgetTransport(base http.RoundTripper, budget *SyncBudget) http.Ro
 	return &budgetTransport{base: base, budget: budget}
 }
 
+// archiveAttemptProviderReserved reports whether the attempt in ctx is
+// covered by a provider quota reservation. Reserved attempts are metered by
+// the quota registry; the local sync budget meters live sync only and must
+// not double-count them. Attempts whose chain took no reservation (no quota
+// transport for the identity) stay on the local-debit fallback.
+func archiveAttemptProviderReserved(ctx context.Context) bool {
+	allowance, ok := ctx.Value(archiveAttemptAllowanceKey{}).(*archiveAttemptAllowance)
+	if !ok {
+		return false
+	}
+	reserved, _ := ctx.Value(archiveProviderAttemptReservationKey{}).(*archiveAttemptAllowance)
+	return reserved == allowance
+}
+
 func (t *budgetTransport) RoundTrip(
 	req *http.Request,
 ) (*http.Response, error) {
@@ -265,6 +270,9 @@ func (t *budgetTransport) RoundTrip(
 	}
 	counted := IsSyncBudgetContext(req.Context())
 	archive := IsArchiveSyncBudgetContext(req.Context())
+	if archive && archiveAttemptProviderReserved(req.Context()) {
+		counted = false
+	}
 	var window BudgetWindow
 	if counted {
 		var reserved bool

@@ -140,7 +140,6 @@ func TestArchiveProviderAttemptAllowanceUsesObservedQuotaCost(t *testing.T) {
 		identity,
 		[]QuotaResource{QuotaResourceREST, QuotaResourceGraphQL},
 		RateReserveBuffer,
-		budget,
 	)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.github.test/repos/o/r", nil)
@@ -155,7 +154,7 @@ func TestArchiveProviderAttemptAllowanceUsesObservedQuotaCost(t *testing.T) {
 	require.ErrorIs(err, platform.ErrArchiveAttemptBudget)
 
 	assert.Equal(int32(1), calls.Load())
-	assert.Equal(1, budget.ArchiveSpent())
+	assert.Zero(budget.ArchiveSpent())
 	pool, ok := registry.Get(identity, QuotaResourceREST)
 	require.True(ok)
 	assert.Equal(201, pool.Remaining)
@@ -184,9 +183,7 @@ func TestArchiveProviderQuotaCostPersistsAcrossAdmissions(t *testing.T) {
 	window, ok := registry.PacingWindow(identity, resources)
 	require.True(ok)
 	budget := NewSyncBudget(100000)
-	assert.Equal(1200, budget.ProviderArchiveSpendAvailable(
-		now, window, 24, RateReserveBuffer,
-	))
+	assert.Equal(5000, window.Remaining)
 
 	var calls atomic.Int32
 	base := roundTripFunc(func(req *http.Request) (*http.Response, error) {
@@ -211,7 +208,6 @@ func TestArchiveProviderQuotaCostPersistsAcrossAdmissions(t *testing.T) {
 		identity,
 		resources,
 		RateReserveBuffer,
-		budget,
 	)
 	req, err := http.NewRequestWithContext(
 		ctx, http.MethodGet, "https://api.github.test/repos/o/r", nil,
@@ -222,9 +218,7 @@ func TestArchiveProviderQuotaCostPersistsAcrossAdmissions(t *testing.T) {
 
 	window, ok = registry.PacingWindow(identity, resources)
 	require.True(ok)
-	assert.Equal(1198, budget.ProviderArchiveSpendAvailable(
-		now, window, 24, RateReserveBuffer,
-	))
+	assert.Equal(4998, window.Remaining)
 
 	// A later admission reserves the learned two-unit cost. Even if its
 	// response omits quota headers, that reserved cost must persist beyond the
@@ -235,7 +229,6 @@ func TestArchiveProviderQuotaCostPersistsAcrossAdmissions(t *testing.T) {
 		identity,
 		resources,
 		RateReserveBuffer,
-		budget,
 	)
 	req, err = http.NewRequestWithContext(
 		ctx, http.MethodGet, "https://api.github.test/repos/o/r", nil,
@@ -246,9 +239,7 @@ func TestArchiveProviderQuotaCostPersistsAcrossAdmissions(t *testing.T) {
 
 	window, ok = registry.PacingWindow(identity, resources)
 	require.True(ok)
-	assert.Equal(1196, budget.ProviderArchiveSpendAvailable(
-		now, window, 24, RateReserveBuffer,
-	))
+	assert.Equal(4996, window.Remaining)
 }
 
 func TestArchiveProviderHeaderlessReservationsProtectReserveAcrossAdmissions(t *testing.T) {
@@ -268,9 +259,7 @@ func TestArchiveProviderHeaderlessReservationsProtectReserveAcrossAdmissions(t *
 	window, ok := registry.PacingWindow(identity, resources)
 	require.True(ok)
 	budget := NewSyncBudget(100000)
-	assert.Equal(1, budget.ProviderArchiveSpendAvailable(
-		now, window, 24, RateReserveBuffer,
-	))
+	assert.Equal(RateReserveBuffer+1, window.Remaining)
 
 	var calls atomic.Int32
 	base := roundTripFunc(func(req *http.Request) (*http.Response, error) {
@@ -293,7 +282,6 @@ func TestArchiveProviderHeaderlessReservationsProtectReserveAcrossAdmissions(t *
 			identity,
 			resources,
 			RateReserveBuffer,
-			budget,
 		)
 		req, err := http.NewRequestWithContext(
 			ctx, http.MethodGet, "https://api.github.test/repos/o/r", nil,
@@ -306,9 +294,7 @@ func TestArchiveProviderHeaderlessReservationsProtectReserveAcrossAdmissions(t *
 	require.NoError(request())
 	window, ok = registry.PacingWindow(identity, resources)
 	require.True(ok)
-	assert.Zero(budget.ProviderArchiveSpendAvailable(
-		now, window, 24, RateReserveBuffer,
-	))
+	assert.Equal(RateReserveBuffer, window.Remaining)
 	require.ErrorIs(request(), platform.ErrArchiveAttemptBudget)
 	assert.Equal(int32(1), calls.Load())
 }
@@ -348,7 +334,6 @@ func TestArchiveProviderAttemptAllowanceResetsObservedCostWithQuotaWindow(t *tes
 		identity,
 		[]QuotaResource{QuotaResourceREST, QuotaResourceGraphQL},
 		RateReserveBuffer,
-		budget,
 	)
 	request := func() error {
 		req, err := http.NewRequestWithContext(
@@ -421,7 +406,6 @@ func TestArchiveProviderAttemptAllowanceSeedsCostAcrossQuotaWindowReset(t *testi
 			identity,
 			resources,
 			RateReserveBuffer,
-			budget,
 		)
 		req, err := http.NewRequestWithContext(
 			ctx, http.MethodPost, "https://api.github.test/graphql", nil,
@@ -473,7 +457,6 @@ func TestArchiveProviderAttemptAllowanceRechecksEveryRequiredPool(t *testing.T) 
 		identity,
 		[]QuotaResource{QuotaResourceREST, QuotaResourceGraphQL},
 		RateReserveBuffer,
-		budget,
 	)
 
 	// Concurrent GraphQL work reaches the reserve after admission but before

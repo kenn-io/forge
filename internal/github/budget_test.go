@@ -1,14 +1,10 @@
 package github
 
 import (
-	"io"
-	"net/http"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/platform"
 )
 
@@ -125,278 +121,6 @@ func TestSyncBudgetArchiveAdmissionRampsTowardReset(t *testing.T) {
 	}
 	assert.Equal(80, budget.ArchiveSpent())
 	assert.Equal(20, budget.Remaining())
-}
-
-func TestSyncBudgetProviderArchivePacingUsesConservativeEnvelope(t *testing.T) {
-	reset := time.Date(2026, 7, 28, 19, 0, 0, 0, time.UTC)
-	now := reset.Add(-30 * time.Minute)
-
-	tests := []struct {
-		name            string
-		localLimit      int
-		localFloor      int
-		providerLimit   int
-		providerReserve int
-		want            int
-	}{
-		{
-			name:       "provider quota caps high local guard",
-			localLimit: 100000, localFloor: 24,
-			providerLimit: 5000, providerReserve: 200,
-			want: 1200,
-		},
-		{
-			name:       "lower local guard remains authoritative",
-			localLimit: 3000, localFloor: 24,
-			providerLimit: 5000, providerReserve: 200,
-			want: 744,
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			budget := NewSyncBudget(test.localLimit)
-			assert.Equal(t, test.want, budget.ProviderArchiveSpendCeiling(
-				now, &reset, test.localFloor, test.providerLimit, test.providerReserve,
-			))
-		})
-	}
-}
-
-func providerPacingWindowForTest(
-	limit int,
-	remaining int,
-	reset time.Time,
-) QuotaPacingWindow {
-	return QuotaPacingWindow{
-		Limit: limit, Remaining: remaining, ResetAt: reset,
-		ResourceResets: map[QuotaResource]time.Time{
-			QuotaResourceREST: reset, QuotaResourceGraphQL: reset,
-		},
-	}
-}
-
-func TestSyncBudgetProviderArchiveAvailabilityPreservesCurrentProviderReserve(t *testing.T) {
-	reset := time.Date(2026, 7, 28, 19, 0, 0, 0, time.UTC)
-	now := reset.Add(-30 * time.Minute)
-	budget := NewSyncBudget(100000)
-
-	assert.Equal(t, 1, budget.ProviderArchiveSpendAvailable(
-		now, providerPacingWindowForTest(5000, 201, reset), 24, 200,
-	))
-}
-
-func TestSyncBudgetProviderArchivePacingSurvivesLocalRollover(t *testing.T) {
-	reset := time.Date(2026, 7, 28, 19, 0, 0, 0, time.UTC)
-	clock := reset.Add(-30 * time.Minute)
-	budget := NewSyncBudget(100000)
-	budget.now = func() time.Time { return clock }
-	budget.windowStart = clock.Add(-55 * time.Minute)
-
-	assert.Equal(t, 1200, budget.ProviderArchiveSpendAvailable(
-		clock, providerPacingWindowForTest(5000, 5000, reset), 24, 200,
-	))
-	budget.addProviderArchiveSpend(QuotaResourceREST, reset, 100)
-
-	// The local hour rolls before the provider's conservative pacing window.
-	// That replenishes the local ceiling but must not forget provider attempts
-	// already made against the still-active provider window.
-	clock = clock.Add(5 * time.Minute)
-	assert.Equal(t, 1533, budget.ProviderArchiveSpendAvailable(
-		clock, providerPacingWindowForTest(5000, 5000, reset), 24, 200,
-	))
-}
-
-func TestSyncBudgetProviderArchivePacingSurvivesEarlierPoolReset(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	now := time.Date(2026, 7, 28, 18, 30, 0, 0, time.UTC)
-	restReset := now.Add(5 * time.Minute)
-	graphQLReset := now.Add(30 * time.Minute)
-	registry := NewQuotaRegistry()
-	registry.now = func() time.Time { return now }
-	registry.UpdateSnapshot(quotaTestUser, QuotaResourceREST, Rate{
-		Limit: 5000, Remaining: 5000, Reset: restReset,
-	})
-	registry.UpdateSnapshot(quotaTestUser, QuotaResourceGraphQL, Rate{
-		Limit: 5000, Remaining: 5000, Reset: graphQLReset,
-	})
-	window, ok := registry.PacingWindow(
-		quotaTestUser, []QuotaResource{QuotaResourceREST, QuotaResourceGraphQL},
-	)
-	require.True(ok)
-	require.Equal(graphQLReset, window.ResetAt)
-
-	budget := NewSyncBudget(100000)
-	assert.Equal(1200, budget.ProviderArchiveSpendAvailable(
-		now, window, 24, 200,
-	))
-	budget.addProviderArchiveSpend(QuotaResourceGraphQL, graphQLReset, 100)
-
-	// A tracker for the earlier REST window invokes Reset while the selected
-	// GraphQL pacing window is unchanged. The 100 provider attempts still
-	// belong to that selected window.
-	budget.Reset()
-	window, ok = registry.PacingWindow(
-		quotaTestUser, []QuotaResource{QuotaResourceREST, QuotaResourceGraphQL},
-	)
-	require.True(ok)
-	assert.Equal(1100, budget.ProviderArchiveSpendAvailable(
-		now, window, 24, 200,
-	))
-
-	// Once the selected provider window itself advances, its paced spend starts
-	// fresh independently of the local budget window.
-	nextNow := graphQLReset
-	nextReset := nextNow.Add(30 * time.Minute)
-	assert.Equal(1200, budget.ProviderArchiveSpendAvailable(
-		nextNow,
-		providerPacingWindowForTest(window.Limit, window.Remaining, nextReset),
-		24,
-		200,
-	))
-}
-
-func TestSyncBudgetProviderArchivePacingWaitsForEveryPoolReset(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	now := time.Date(2026, 7, 28, 18, 30, 0, 0, time.UTC)
-	registry := NewQuotaRegistry()
-	registry.now = func() time.Time { return now }
-	restReset := now.Add(5 * time.Minute)
-	graphQLReset := now.Add(30 * time.Minute)
-	registry.UpdateSnapshot(quotaTestUser, QuotaResourceREST, Rate{
-		Limit: 5000, Remaining: 5000, Reset: restReset,
-	})
-	registry.UpdateSnapshot(quotaTestUser, QuotaResourceGraphQL, Rate{
-		Limit: 5000, Remaining: 5000, Reset: graphQLReset,
-	})
-	window, ok := registry.PacingWindow(
-		quotaTestUser, []QuotaResource{QuotaResourceREST, QuotaResourceGraphQL},
-	)
-	require.True(ok)
-
-	budget := NewSyncBudget(100000)
-	assert.Equal(1200, budget.ProviderArchiveSpendAvailable(
-		now, window, 24, 200,
-	))
-	budget.addProviderArchiveSpend(QuotaResourceGraphQL, graphQLReset, 100)
-
-	// Only REST advances. The combined latest reset changes, but GraphQL still
-	// represents the original pacing epoch, so its existing spend must remain.
-	registry.UpdateSnapshot(quotaTestUser, QuotaResourceREST, Rate{
-		Limit: 5000, Remaining: 5000, Reset: now.Add(31 * time.Minute),
-	})
-	window, ok = registry.PacingWindow(
-		quotaTestUser, []QuotaResource{QuotaResourceREST, QuotaResourceGraphQL},
-	)
-	require.True(ok)
-	ceiling := budget.ProviderArchiveSpendCeiling(
-		now, &window.ResetAt, 24, window.Limit, 200,
-	)
-	assert.Equal(ceiling-100, budget.ProviderArchiveSpendAvailable(
-		now, window, 24, 200,
-	))
-
-	// Once GraphQL advances too, every constituent window in the original
-	// epoch has rolled and the provider-paced spend starts fresh.
-	registry.UpdateSnapshot(quotaTestUser, QuotaResourceGraphQL, Rate{
-		Limit: 5000, Remaining: 5000, Reset: now.Add(32 * time.Minute),
-	})
-	window, ok = registry.PacingWindow(
-		quotaTestUser, []QuotaResource{QuotaResourceREST, QuotaResourceGraphQL},
-	)
-	require.True(ok)
-	ceiling = budget.ProviderArchiveSpendCeiling(
-		now, &window.ResetAt, 24, window.Limit, 200,
-	)
-	assert.Equal(ceiling, budget.ProviderArchiveSpendAvailable(
-		now, window, 24, 200,
-	))
-}
-
-func TestSyncBudgetProviderArchivePacingRetainsSpendFromNewerResourceWindow(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	now := time.Date(2026, 7, 28, 18, 30, 0, 0, time.UTC)
-	registry := NewQuotaRegistry()
-	registry.now = func() time.Time { return now }
-	identity := IdentityKey{Host: "github.com", Principal: "user:7"}
-	resources := []QuotaResource{QuotaResourceREST, QuotaResourceGraphQL}
-	restReset := now.Add(5 * time.Minute)
-	graphQLReset := now.Add(30 * time.Minute)
-	registry.UpdateSnapshot(identity, QuotaResourceREST, Rate{
-		Limit: 5000, Remaining: 5000, Reset: restReset,
-	})
-	registry.UpdateSnapshot(identity, QuotaResourceGraphQL, Rate{
-		Limit: 5000, Remaining: 5000, Reset: graphQLReset,
-	})
-	window, ok := registry.PacingWindow(identity, resources)
-	require.True(ok)
-	budget := NewSyncBudget(100000)
-	assert.Equal(1200, budget.ProviderArchiveSpendAvailable(
-		now, window, 24, RateReserveBuffer,
-	))
-
-	transportFor := func(
-		resource QuotaResource,
-		remaining int,
-		reset time.Time,
-	) http.RoundTripper {
-		base := roundTripFunc(func(req *http.Request) (*http.Response, error) {
-			return &http.Response{
-				StatusCode: http.StatusOK,
-				Body:       io.NopCloser(strings.NewReader("{}")),
-				Header:     quotaTestHeaders(5000, remaining, reset),
-				Request:    req,
-			}, nil
-		})
-		return &quotaTransport{
-			base: WrapSyncBudgetTransport(base, budget), registry: registry,
-			identity: identity, resource: resource,
-		}
-	}
-	request := func(transport http.RoundTripper) {
-		ctx := WithArchiveProviderAttemptAllowance(
-			WithArchiveSyncBudget(t.Context()),
-			1000,
-			identity,
-			resources,
-			RateReserveBuffer,
-			budget,
-		)
-		req, err := http.NewRequestWithContext(
-			ctx, http.MethodGet, "https://api.github.test/repos/o/r", nil,
-		)
-		require.NoError(err)
-		_, err = transport.RoundTrip(req)
-		require.NoError(err)
-	}
-
-	// Spend 100 GraphQL units in the original epoch.
-	request(transportFor(QuotaResourceGraphQL, 4900, graphQLReset))
-
-	// REST rolls first, then spends 25 units in its new window while GraphQL
-	// still belongs to the original epoch.
-	nextRESTReset := now.Add(31 * time.Minute)
-	registry.UpdateSnapshot(identity, QuotaResourceREST, Rate{
-		Limit: 5000, Remaining: 5000, Reset: nextRESTReset,
-	})
-	request(transportFor(QuotaResourceREST, 4975, nextRESTReset))
-
-	// GraphQL rolls afterward. Its old 100-unit spend expires, but the 25 REST
-	// units belong to the current REST window and must remain paced.
-	registry.UpdateSnapshot(identity, QuotaResourceGraphQL, Rate{
-		Limit: 5000, Remaining: 5000, Reset: now.Add(32 * time.Minute),
-	})
-	window, ok = registry.PacingWindow(identity, resources)
-	require.True(ok)
-	ceiling := budget.ProviderArchiveSpendCeiling(
-		now, &window.ResetAt, 24, window.Limit, RateReserveBuffer,
-	)
-	assert.Equal(ceiling-25, budget.ProviderArchiveSpendAvailable(
-		now, window, 24, RateReserveBuffer,
-	))
 }
 
 func TestSyncBudgetArchiveAdmissionPreservesLiveFloor(t *testing.T) {
@@ -548,4 +272,15 @@ func TestSyncBudgetResetDropsInFlightRefund(t *testing.T) {
 
 	budget.Refund(stale, 1)
 	assert.Equal(2, budget.Spent())
+}
+
+// The archive reserve holds back a fifth of the provider limit for live and
+// essential work, never dropping below the global rate reserve buffer.
+func TestArchiveProviderReserveHoldsBackFifthOfLimit(t *testing.T) {
+	assert := assert.New(t)
+	assert.Equal(1000, archiveProviderReserve(5000))
+	assert.Equal(300, archiveProviderReserve(1500))
+	assert.Equal(RateReserveBuffer, archiveProviderReserve(500))
+	assert.Equal(RateReserveBuffer, archiveProviderReserve(0))
+	assert.Equal(RateReserveBuffer, archiveProviderReserve(-100))
 }

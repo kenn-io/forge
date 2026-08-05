@@ -321,3 +321,50 @@ func TestBudgetTransportRecoversAfterWindowWithoutProviderResponse(t *testing.T)
 	require.NoError(send())
 	assert.Equal(int32(2), providerCalls.Load())
 }
+
+// An archive attempt covered by a provider quota reservation is metered by
+// the quota registry alone: the local sync budget keeps metering live sync
+// and must not debit for it.
+func TestBudgetTransportSkipsLocalDebitForProviderReservedAttempts(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	budget := NewSyncBudget(100)
+	transport := WrapSyncBudgetTransport(roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       http.NoBody,
+			Header:     make(http.Header),
+			Request:    req,
+		}, nil
+	}), budget)
+	ctx := WithArchiveProviderAttemptAllowance(
+		WithArchiveSyncBudget(t.Context()), 10,
+		IdentityKey{Host: "github.test", Principal: "user:7"},
+		[]QuotaResource{QuotaResourceREST}, 1000,
+	)
+	allowance, ok := ctx.Value(archiveAttemptAllowanceKey{}).(*archiveAttemptAllowance)
+	require.True(ok)
+	reserved := context.WithValue(ctx, archiveProviderAttemptReservationKey{}, allowance)
+
+	req, err := http.NewRequestWithContext(
+		reserved, http.MethodGet,
+		"https://api.github.com/repos/acme/widget/issues/1", nil,
+	)
+	require.NoError(err)
+	_, err = transport.RoundTrip(req)
+	require.NoError(err)
+	assert.Zero(budget.Spent())
+	assert.Zero(budget.ArchiveSpent())
+
+	// Without the reservation marker — a chain that has no quota transport —
+	// the same provider-configured context stays on the local-debit fallback.
+	unreserved, err := http.NewRequestWithContext(
+		ctx, http.MethodGet,
+		"https://api.github.com/repos/acme/widget/issues/2", nil,
+	)
+	require.NoError(err)
+	_, err = transport.RoundTrip(unreserved)
+	require.NoError(err)
+	assert.Equal(1, budget.Spent())
+	assert.Equal(1, budget.ArchiveSpent())
+}

@@ -1016,7 +1016,8 @@ func TestGitHubArchiveAdmissionCapsAttemptAllowanceByProviderQuota(t *testing.T)
 	require.NoError(err)
 	require.True(admission.Allowed)
 	t.Cleanup(func() { admission.Complete(nil, false) })
-	for range 1200 {
+	// remaining 4500 minus the limit/5 archive reserve (1000).
+	for range 3500 {
 		assert.True(ConsumeArchiveAttemptAllowance(admission.Context))
 	}
 	assert.False(ConsumeArchiveAttemptAllowance(admission.Context))
@@ -1678,4 +1679,114 @@ func TestConfiguredRepositoriesCarryStableProviderIdentity(t *testing.T) {
 	require.Len(refs, 1)
 	require.Equal("R_1", refs[0].PlatformExternalID,
 		"archive scheduling needs the stable provider identity for cooldown keys")
+}
+
+func newProviderQuotaAdmissionSyncer(
+	t *testing.T, now time.Time, budget *SyncBudget,
+) (*Syncer, *QuotaRegistry, platform.RepoRef) {
+	t.Helper()
+	database := dbtest.Open(t)
+	registry := NewQuotaRegistry()
+	registry.now = func() time.Time { return now }
+	client := &credentialRateLimitSnapshotMockClient{mockClient: &mockClient{}}
+	identity := IdentityKey{Host: "github.test", Principal: "user:7"}
+	bucket := RateBucketKey("github", "github.test", "user:7")
+	syncer := NewSyncer(
+		map[string]Client{"github.test": client},
+		database, nil,
+		[]RepoRef{{
+			Platform: platform.KindGitHub, PlatformHost: "github.test",
+			Owner: "acme", Name: "widget",
+		}},
+		time.Hour, nil,
+		map[string]*SyncBudget{bucket: budget},
+	)
+	router, err := NewHostRouter("github.test", &Route{
+		Key: RouteKey{Host: "github.test", Owner: "acme"}, Client: client,
+		ReadIdentity: identity, WriteIdentity: identity,
+	})
+	require.NoError(t, err)
+	syncer.SetGitHubRouters(map[string]*HostRouter{"github.test": router})
+	syncer.SetQuotaRegistry(registry)
+	syncer.now = func() time.Time { return now }
+	ref := platform.RepoRef{
+		Platform: platform.KindGitHub, Host: "github.test",
+		Owner: "acme", Name: "widget",
+	}
+	return syncer, registry, ref
+}
+
+// A fresh provider window grants the full surplus above the archive reserve
+// immediately: archive availability is a floor on remaining quota, not a ramp
+// across the window.
+func TestGitHubArchiveAdmissionGrantsFullSurplusAtWindowStart(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	now := time.Date(2026, 7, 28, 18, 30, 0, 0, time.UTC)
+	reset := now.Add(59 * time.Minute)
+	syncer, registry, ref := newProviderQuotaAdmissionSyncer(
+		t, now, NewSyncBudget(100000),
+	)
+	identity := IdentityKey{Host: "github.test", Principal: "user:7"}
+	registry.UpdateSnapshot(identity, QuotaResourceREST,
+		Rate{Limit: 5000, Remaining: 4500, Reset: reset})
+	registry.UpdateSnapshot(identity, QuotaResourceGraphQL,
+		Rate{Limit: 5000, Remaining: 4500, Reset: reset})
+
+	admission, err := syncer.Admit(t.Context(), ref, db.ArchiveItemTypeIssue, 2)
+	require.NoError(err)
+	require.True(admission.Allowed)
+	t.Cleanup(func() { admission.Complete(nil, false) })
+	// remaining 4500 minus the limit/5 reserve (1000) is fully consumable.
+	for range 3500 {
+		assert.True(ConsumeArchiveAttemptAllowance(admission.Context))
+	}
+	assert.False(ConsumeArchiveAttemptAllowance(admission.Context))
+}
+
+// The local sync budget meters live sync only; provider-paced archive
+// admission must not defer because live sync spent the configured hourly
+// ceiling while provider quota still has surplus above the archive reserve.
+func TestGitHubArchiveAdmissionIgnoresLocalSyncBudget(t *testing.T) {
+	require := require.New(t)
+	now := time.Date(2026, 7, 28, 18, 30, 0, 0, time.UTC)
+	reset := now.Add(30 * time.Minute)
+	budget := NewSyncBudget(100)
+	budget.Spend(100)
+	syncer, registry, ref := newProviderQuotaAdmissionSyncer(t, now, budget)
+	identity := IdentityKey{Host: "github.test", Principal: "user:7"}
+	registry.UpdateSnapshot(identity, QuotaResourceREST,
+		Rate{Limit: 5000, Remaining: 4500, Reset: reset})
+	registry.UpdateSnapshot(identity, QuotaResourceGraphQL,
+		Rate{Limit: 5000, Remaining: 4500, Reset: reset})
+
+	admission, err := syncer.Admit(t.Context(), ref, db.ArchiveItemTypeIssue, 1)
+	require.NoError(err)
+	require.True(admission.Allowed)
+	t.Cleanup(func() { admission.Complete(nil, false) })
+}
+
+// Remaining quota at or below the archive reserve defers admission until the
+// provider window resets, even though the global rate reserve buffer still
+// has headroom.
+func TestGitHubArchiveAdmissionDefersAtArchiveReserve(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	now := time.Date(2026, 7, 28, 18, 30, 0, 0, time.UTC)
+	reset := now.Add(30 * time.Minute)
+	syncer, registry, ref := newProviderQuotaAdmissionSyncer(
+		t, now, NewSyncBudget(100000),
+	)
+	identity := IdentityKey{Host: "github.test", Principal: "user:7"}
+	registry.UpdateSnapshot(identity, QuotaResourceREST,
+		Rate{Limit: 5000, Remaining: 1000, Reset: reset})
+	registry.UpdateSnapshot(identity, QuotaResourceGraphQL,
+		Rate{Limit: 5000, Remaining: 4500, Reset: reset})
+
+	denied, err := syncer.Admit(t.Context(), ref, db.ArchiveItemTypeIssue, 1)
+	require.NoError(err)
+	assert.False(denied.Allowed)
+	assert.Contains(denied.Detail, "provider rate reserve")
+	require.NotNil(denied.RetryAt)
+	assert.Equal(reset, *denied.RetryAt)
 }

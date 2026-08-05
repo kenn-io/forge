@@ -941,13 +941,15 @@ func (s *Syncer) Admit(
 	var providerResetAt *time.Time
 	var providerPacingWindow *QuotaPacingWindow
 	var providerResources []QuotaResource
+	providerReserve := 0
 	identity, identityErr := s.identityForRepo(repo, false)
 	if ref.Platform == platform.KindGitHub && s.quotaRegistry != nil && identityErr == nil {
 		providerResources = []QuotaResource{QuotaResourceREST, QuotaResourceGraphQL}
-		availability := s.quotaRegistry.CheckReserve(
-			identity, providerResources, cost, RateReserveBuffer,
-		)
 		pacingWindow, pacingKnown := s.quotaRegistry.PacingWindow(identity, providerResources)
+		providerReserve = archiveProviderReserve(pacingWindow.Limit)
+		availability := s.quotaRegistry.CheckReserve(
+			identity, providerResources, cost, providerReserve,
+		)
 		if !availability.Allowed || !pacingKnown {
 			probe.abandon()
 			retryAt := now.Add(time.Minute)
@@ -976,16 +978,13 @@ func (s *Syncer) Admit(
 		resetAt = archiveBudgetResetAt(tracker)
 	}
 	available := 0
-	if budget != nil {
+	if providerPacingWindow != nil {
+		// Provider quota is authoritative: archive may spend everything above
+		// the archive reserve, and the local sync budget meters live sync only.
+		available = max(providerPacingWindow.Remaining-providerReserve, 0)
+	} else if budget != nil {
 		liveFloor := archiveLiveFloor(ref.Platform)
-		if providerPacingWindow != nil {
-			available = budget.ProviderArchiveSpendAvailable(
-				now,
-				*providerPacingWindow,
-				liveFloor,
-				RateReserveBuffer,
-			)
-		} else if resetAt == nil &&
+		if resetAt == nil &&
 			(ref.Platform == platform.KindGitea || ref.Platform == platform.KindForgejo) {
 			available = budget.LocalArchiveSpendAvailable(liveFloor)
 		} else {
@@ -1012,7 +1011,7 @@ func (s *Syncer) Admit(
 	if !completeGitealikeMR {
 		if providerPacingWindow != nil {
 			requestCtx = WithArchiveProviderAttemptAllowance(
-				requestCtx, available, identity, providerResources, RateReserveBuffer, budget,
+				requestCtx, available, identity, providerResources, providerReserve,
 			)
 		} else {
 			requestCtx = WithArchiveAttemptAllowance(requestCtx, available)

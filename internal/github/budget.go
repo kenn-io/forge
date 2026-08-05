@@ -48,18 +48,12 @@ type SyncBudget struct {
 	// beyond limit-reserve so it can never starve discovery within the
 	// configured ceiling. Zero unless constructed with
 	// NewSyncBudgetWithEssentialReserve.
-	reserve              int
-	spent                int
-	archiveSpent         int
-	providerArchiveSpent map[providerArchiveWindow]int
-	windowStart          time.Time
-	window               BudgetWindow
-	now                  func() time.Time
-}
-
-type providerArchiveWindow struct {
-	resource QuotaResource
-	resetAt  time.Time
+	reserve      int
+	spent        int
+	archiveSpent int
+	windowStart  time.Time
+	window       BudgetWindow
+	now          func() time.Time
 }
 
 // BudgetWindow identifies the hourly window a reservation was made in. Refunds
@@ -74,6 +68,20 @@ func NewSyncBudget(limit int) *SyncBudget {
 		windowStart: time.Now().UTC(),
 		now:         time.Now,
 	}
+}
+
+// archiveProviderReserveDenominator sizes the slice of a provider quota
+// window held back from archive hydration: limit/5. Live and essential sync
+// always keep at least that headroom; archive availability is whatever
+// remains above it.
+const archiveProviderReserveDenominator = 5
+
+// archiveProviderReserve returns the provider quota archive hydration must
+// leave untouched. It never drops below the global rate reserve buffer, so
+// small or unknown limits still keep the hard floor that pauses all
+// background work.
+func archiveProviderReserve(limit int) int {
+	return max(limit/archiveProviderReserveDenominator, RateReserveBuffer)
 }
 
 // essentialReserveDenominator sizes the essential reserve as a fraction of
@@ -194,83 +202,6 @@ func (b *SyncBudget) ArchiveSpendCeiling(now time.Time, resetAt *time.Time, live
 	return b.archiveSpendCeiling(now, resetAt, liveFloor)
 }
 
-func (b *SyncBudget) ProviderArchiveSpendCeiling(
-	now time.Time,
-	resetAt *time.Time,
-	localLiveFloor int,
-	providerLimit int,
-	providerReserve int,
-) int {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.rollLocked()
-	return b.providerArchiveSpendCeiling(
-		now, resetAt, localLiveFloor, providerLimit, providerReserve,
-	)
-}
-
-func (b *SyncBudget) ProviderArchiveSpendAvailable(
-	now time.Time,
-	window QuotaPacingWindow,
-	localLiveFloor int,
-	providerReserve int,
-) int {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.rollLocked()
-	providerArchiveSpent := b.providerArchiveSpendLocked(window.ResourceResets)
-	ceilingRemaining := b.providerArchiveSpendCeiling(
-		now, &window.ResetAt, localLiveFloor, window.Limit, providerReserve,
-	) - providerArchiveSpent
-	localRemaining := b.optionalLimitLocked() - max(localLiveFloor, 0) - b.spent
-	providerHeadroom := window.Remaining - max(providerReserve, 0)
-	return max(min(ceilingRemaining, localRemaining, providerHeadroom), 0)
-}
-
-// providerArchiveSpendLocked returns provider quota-unit spend belonging to
-// each resource's current window. Staggered resets expire only the spend for
-// the resource that advanced, preserving charges already made in another
-// resource's newer window.
-func (b *SyncBudget) providerArchiveSpendLocked(
-	resourceResets map[QuotaResource]time.Time,
-) int {
-	spent := 0
-	for window, amount := range b.providerArchiveSpent {
-		currentReset, current := resourceResets[window.resource]
-		switch {
-		case current && currentReset.Equal(window.resetAt):
-			spent += amount
-		case current && currentReset.After(window.resetAt):
-			delete(b.providerArchiveSpent, window)
-		}
-	}
-	return spent
-}
-
-func (b *SyncBudget) providerArchiveSpendCeiling(
-	now time.Time,
-	resetAt *time.Time,
-	localLiveFloor int,
-	providerLimit int,
-	providerReserve int,
-) int {
-	if resetAt == nil || providerLimit <= providerReserve {
-		return 0
-	}
-	remaining := resetAt.Sub(now)
-	if remaining < 0 || remaining > time.Hour {
-		return 0
-	}
-	elapsedFraction := 1 - float64(remaining)/float64(time.Hour)
-	localSurplus := b.optionalLimitLocked() - max(localLiveFloor, 0)
-	providerSurplus := providerLimit - max(providerReserve, 0)
-	surplus := min(localSurplus, providerSurplus)
-	if surplus <= 0 {
-		return 0
-	}
-	return int(math.Floor(float64(surplus) * elapsedFraction * elapsedFraction))
-}
-
 func (b *SyncBudget) CanSpendArchive(n int, now time.Time, resetAt *time.Time, liveFloor int) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -310,26 +241,6 @@ func (b *SyncBudget) TrySpendArchive(n int) (BudgetWindow, bool) {
 	return b.window, true
 }
 
-// addProviderArchiveSpend records provider quota units independently from the
-// local wire-call ceiling and keys them to the resource window that incurred
-// them so staggered resets cannot clear newer-window spend.
-func (b *SyncBudget) addProviderArchiveSpend(
-	resource QuotaResource,
-	resetAt time.Time,
-	n int,
-) {
-	if resource == "" || resetAt.IsZero() || n <= 0 {
-		return
-	}
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if b.providerArchiveSpent == nil {
-		b.providerArchiveSpent = make(map[providerArchiveWindow]int)
-	}
-	window := providerArchiveWindow{resource: resource, resetAt: resetAt.UTC()}
-	b.providerArchiveSpent[window] += n
-}
-
 func (b *SyncBudget) RefundArchive(window BudgetWindow, n int) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -338,9 +249,6 @@ func (b *SyncBudget) RefundArchive(window BudgetWindow, n int) {
 	}
 	b.spent = max(b.spent-n, 0)
 	b.archiveSpent = max(b.archiveSpent-n, 0)
-	// Provider pacing counts wire attempts, including conditional requests.
-	// Do not return this spend: a late response may belong to an older provider
-	// window even when it still belongs to the current local budget window.
 }
 
 func (b *SyncBudget) ArchiveSpent() int {

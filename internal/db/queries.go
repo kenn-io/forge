@@ -1976,6 +1976,40 @@ func (d *DB) UpsertMREvents(ctx context.Context, events []MREvent) error {
 	})
 }
 
+// UpdateMREventMetadata updates only metadata_json for the matching event
+// dedupe keys. Stamping uses this path so a concurrent provider refresh cannot
+// have its newer event fields overwritten by an older full-row snapshot.
+func (d *DB) UpdateMREventMetadata(
+	ctx context.Context,
+	mergeRequestID int64,
+	metadataByDedupeKey map[string]string,
+) error {
+	if len(metadataByDedupeKey) == 0 {
+		return nil
+	}
+	return d.Tx(ctx, func(tx *sql.Tx) error {
+		stmt, err := tx.PrepareContext(ctx, `
+			UPDATE forge_mr_events
+			SET metadata_json = ?
+			WHERE merge_request_id = ? AND dedupe_key = ?`)
+		if err != nil {
+			return fmt.Errorf("prepare update mr event metadata: %w", err)
+		}
+		defer stmt.Close()
+		for dedupeKey, metadataJSON := range metadataByDedupeKey {
+			if _, err := stmt.ExecContext(
+				ctx, metadataJSON, mergeRequestID, dedupeKey,
+			); err != nil {
+				return fmt.Errorf(
+					"update mr event metadata (dedupe_key=%s): %w",
+					dedupeKey, err,
+				)
+			}
+		}
+		return nil
+	})
+}
+
 func upsertMREventsTx(ctx context.Context, tx *sql.Tx, events []MREvent) error {
 	if len(events) == 0 {
 		return nil

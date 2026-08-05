@@ -195,15 +195,26 @@ func commitEventSHA(event db.MREvent) string {
 // The clone must contain the head (its ancestor closure is then complete);
 // otherwise the round is skipped and flags keep their last verified state.
 func (s *Syncer) stampObsoleteCommitEvents(
-	ctx context.Context, repo RepoRef, mrID int64, headSHA string,
+	ctx context.Context,
+	repo RepoRef,
+	repoID int64,
+	mrID int64,
+	number int,
+	headSHA string,
 ) error {
+	s.stampingMu.Lock()
+	defer s.stampingMu.Unlock()
 	if s.clones == nil || headSHA == "" {
 		return nil
 	}
-	s.stampedHeadsMu.Lock()
-	alreadyStamped := s.stampedHeads[mrID] == headSHA
-	s.stampedHeadsMu.Unlock()
-	if alreadyStamped {
+	if s.stampedHeads[mrID] == headSHA {
+		return nil
+	}
+	current, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoID, number)
+	if err != nil {
+		return err
+	}
+	if current == nil || current.PlatformHeadSHA != headSHA {
 		return nil
 	}
 	platformName := string(repoPlatform(repo))
@@ -218,7 +229,7 @@ func (s *Syncer) stampObsoleteCommitEvents(
 	if err != nil {
 		return err
 	}
-	var changed []db.MREvent
+	metadataByDedupeKey := make(map[string]string)
 	for _, event := range events {
 		if event.EventType != "commit" {
 			continue
@@ -243,20 +254,17 @@ func (s *Syncer) stampObsoleteCommitEvents(
 		if !metadataChanged {
 			continue
 		}
-		event.MetadataJSON = metadataJSON
-		changed = append(changed, event)
+		metadataByDedupeKey[event.DedupeKey] = metadataJSON
 	}
-	if len(changed) > 0 {
-		if err := s.db.UpsertMREvents(ctx, changed); err != nil {
-			return err
-		}
+	if err := s.db.UpdateMREventMetadata(
+		ctx, mrID, metadataByDedupeKey,
+	); err != nil {
+		return err
 	}
-	s.stampedHeadsMu.Lock()
 	if s.stampedHeads == nil {
 		s.stampedHeads = make(map[int64]string)
 	}
 	s.stampedHeads[mrID] = headSHA
-	s.stampedHeadsMu.Unlock()
 	return nil
 }
 
@@ -627,8 +635,8 @@ type Syncer struct {
 	archivePollInterval      time.Duration
 	now                      func() time.Time
 	clones                   *gitclone.Manager
-	stampedHeadsMu           sync.Mutex
-	stampedHeads             map[int64]string // guarded by stampedHeadsMu
+	stampingMu               sync.Mutex
+	stampedHeads             map[int64]string        // guarded by stampingMu
 	rateTrackers             map[string]*RateTracker // provider/host bucket -> tracker
 	writeRateTrackers        map[string]*RateTracker // provider/host bucket -> mutation-credential REST tracker
 	writeGQLRateTrackers     map[string]*RateTracker // provider/host bucket -> mutation-credential GraphQL tracker
@@ -8603,7 +8611,7 @@ func (s *Syncer) syncOpenMRFromBulk(
 	// not publish head metadata. A later accepted round retries the stamp.
 	if normalized.State == db.MergeRequestStateOpen {
 		if err := s.stampObsoleteCommitEvents(
-			ctx, repo, mrID, normalized.PlatformHeadSHA,
+			ctx, repo, repoID, mrID, number, normalized.PlatformHeadSHA,
 		); err != nil {
 			slog.Warn("stamp obsolete commit events failed",
 				"repo", repo.Owner+"/"+repo.Name,
@@ -8867,7 +8875,7 @@ func (s *Syncer) fetchMRDetail(
 
 	if normalized.State == db.MergeRequestStateOpen {
 		if err := s.stampObsoleteCommitEvents(
-			ctx, repo, mrID, normalized.PlatformHeadSHA,
+			ctx, repo, repoID, mrID, number, normalized.PlatformHeadSHA,
 		); err != nil {
 			slog.Warn("stamp obsolete commit events failed",
 				"repo", repo.Owner+"/"+repo.Name,
@@ -8973,6 +8981,16 @@ func (s *Syncer) markUnchangedMRDetailFetched(
 	if !detailApplied {
 		return calls, nil
 	}
+	if existing.State == db.MergeRequestStateOpen {
+		if err := s.stampObsoleteCommitEvents(
+			ctx, repo, repoID, existing.ID, number, existing.PlatformHeadSHA,
+		); err != nil {
+			slog.Warn("stamp obsolete commit events failed",
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", number, "err", err,
+			)
+		}
+	}
 	if s.onMRSynced != nil {
 		fresh, fErr := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoID, number)
 		if fErr != nil {
@@ -9058,7 +9076,7 @@ func (s *Syncer) fetchProviderMRDetail(
 
 	if normalized.State == db.MergeRequestStateOpen {
 		if err := s.stampObsoleteCommitEvents(
-			ctx, repo, mrID, normalized.PlatformHeadSHA,
+			ctx, repo, repoID, mrID, number, normalized.PlatformHeadSHA,
 		); err != nil {
 			slog.Warn("stamp obsolete commit events failed",
 				"repo", repo.Owner+"/"+repo.Name,
@@ -11430,7 +11448,7 @@ func (s *Syncer) syncMRForRepo(
 
 	if normalized.State == db.MergeRequestStateOpen {
 		if err := s.stampObsoleteCommitEvents(
-			ctx, repo, mrID, normalized.PlatformHeadSHA,
+			ctx, repo, repoID, mrID, number, normalized.PlatformHeadSHA,
 		); err != nil {
 			slog.Warn("stamp obsolete commit events failed",
 				"repo", repo.Owner+"/"+repo.Name,

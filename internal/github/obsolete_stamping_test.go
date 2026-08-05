@@ -163,6 +163,30 @@ func seedObsoleteCommitEvents(t *testing.T, fixture obsoleteStampingFixture, sha
 	require.NoError(t, fixture.database.UpsertMREvents(t.Context(), events))
 }
 
+func setObsoleteFixtureHead(
+	t *testing.T,
+	fixture obsoleteStampingFixture,
+	headSHA string,
+) *db.MergeRequest {
+	t.Helper()
+	mr, err := fixture.database.GetMergeRequestByRepoIDAndNumber(
+		t.Context(), fixture.repoID, 1,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, mr)
+	mr.PlatformHeadSHA = headSHA
+	mr.UpdatedAt = mr.UpdatedAt.Add(time.Minute)
+	mr.LastActivityAt = mr.UpdatedAt
+	_, err = fixture.database.UpsertMergeRequest(t.Context(), mr)
+	require.NoError(t, err)
+	fresh, err := fixture.database.GetMergeRequestByRepoIDAndNumber(
+		t.Context(), fixture.repoID, 1,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, fresh)
+	return fresh
+}
+
 func assertObsoleteCommitFlags(
 	t *testing.T,
 	fixture obsoleteStampingFixture,
@@ -197,17 +221,26 @@ func TestStampObsoleteCommitEventsReplaceAndRestore(t *testing.T) {
 	h := fixture.history
 	seedObsoleteCommitEvents(t, fixture, h.a1, h.a2, h.a3, h.b1, h.b2)
 
-	require.NoError(t, fixture.syncer.stampObsoleteCommitEvents(t.Context(), fixture.repo, fixture.mrID, h.b2))
+	setObsoleteFixtureHead(t, fixture, h.b2)
+	require.NoError(t, fixture.syncer.stampObsoleteCommitEvents(
+		t.Context(), fixture.repo, fixture.repoID, fixture.mrID, 1, h.b2,
+	))
 	assertObsoleteCommitFlags(t, fixture, map[string]bool{
 		h.a1: true, h.a2: true, h.a3: true, h.b1: false, h.b2: false,
 	})
 
-	require.NoError(t, fixture.syncer.stampObsoleteCommitEvents(t.Context(), fixture.repo, fixture.mrID, h.a3))
+	setObsoleteFixtureHead(t, fixture, h.a3)
+	require.NoError(t, fixture.syncer.stampObsoleteCommitEvents(
+		t.Context(), fixture.repo, fixture.repoID, fixture.mrID, 1, h.a3,
+	))
 	assertObsoleteCommitFlags(t, fixture, map[string]bool{
 		h.a1: false, h.a2: false, h.a3: false, h.b1: true, h.b2: true,
 	})
 
-	require.NoError(t, fixture.syncer.stampObsoleteCommitEvents(t.Context(), fixture.repo, fixture.mrID, h.a2))
+	setObsoleteFixtureHead(t, fixture, h.a2)
+	require.NoError(t, fixture.syncer.stampObsoleteCommitEvents(
+		t.Context(), fixture.repo, fixture.repoID, fixture.mrID, 1, h.a2,
+	))
 	assertObsoleteCommitFlags(t, fixture, map[string]bool{
 		h.a1: false, h.a2: false, h.a3: true, h.b1: true, h.b2: true,
 	})
@@ -218,7 +251,9 @@ func TestStampObsoleteCommitEventsIgnoresBaseAdvance(t *testing.T) {
 	h := fixture.history
 	seedObsoleteCommitEvents(t, fixture, h.a1, h.a2, h.a3)
 
-	require.NoError(t, fixture.syncer.stampObsoleteCommitEvents(t.Context(), fixture.repo, fixture.mrID, h.a3))
+	require.NoError(t, fixture.syncer.stampObsoleteCommitEvents(
+		t.Context(), fixture.repo, fixture.repoID, fixture.mrID, 1, h.a3,
+	))
 	assertObsoleteCommitFlags(t, fixture, map[string]bool{h.a1: false, h.a2: false, h.a3: false})
 }
 
@@ -234,8 +269,10 @@ func TestStampObsoleteCommitEventsSkipsWhenHeadMissing(t *testing.T) {
 		DedupeKey:      h.a1,
 	}}))
 
+	missingHead := strings.Repeat("d", 40)
+	setObsoleteFixtureHead(t, fixture, missingHead)
 	require.NoError(t, fixture.syncer.stampObsoleteCommitEvents(
-		t.Context(), fixture.repo, fixture.mrID, strings.Repeat("d", 40),
+		t.Context(), fixture.repo, fixture.repoID, fixture.mrID, 1, missingHead,
 	))
 	assertObsoleteCommitFlags(t, fixture, map[string]bool{h.a1: true})
 }
@@ -246,7 +283,7 @@ func TestStampObsoleteCommitEventsFlagsShaAbsentFromClone(t *testing.T) {
 	seedObsoleteCommitEvents(t, fixture, absentSHA)
 
 	require.NoError(t, fixture.syncer.stampObsoleteCommitEvents(
-		t.Context(), fixture.repo, fixture.mrID, fixture.history.a3,
+		t.Context(), fixture.repo, fixture.repoID, fixture.mrID, 1, fixture.history.a3,
 	))
 	assertObsoleteCommitFlags(t, fixture, map[string]bool{absentSHA: true})
 }
@@ -275,7 +312,10 @@ func TestStampObsoleteCommitEventsSkipsNonShaSummaries(t *testing.T) {
 	}
 	require.NoError(t, fixture.database.UpsertMREvents(t.Context(), events))
 
-	require.NoError(t, fixture.syncer.stampObsoleteCommitEvents(t.Context(), fixture.repo, fixture.mrID, h.b2))
+	setObsoleteFixtureHead(t, fixture, h.b2)
+	require.NoError(t, fixture.syncer.stampObsoleteCommitEvents(
+		t.Context(), fixture.repo, fixture.repoID, fixture.mrID, 1, h.b2,
+	))
 	stored, err := fixture.database.ListMREvents(t.Context(), fixture.mrID)
 	require.NoError(t, err)
 	require.Len(t, stored, 2)
@@ -297,7 +337,10 @@ func TestStampObsoleteCommitEventsUsesPlatformExternalID(t *testing.T) {
 		DedupeKey:          "gitealike-commit",
 	}}))
 
-	require.NoError(t, fixture.syncer.stampObsoleteCommitEvents(t.Context(), fixture.repo, fixture.mrID, h.b2))
+	setObsoleteFixtureHead(t, fixture, h.b2)
+	require.NoError(t, fixture.syncer.stampObsoleteCommitEvents(
+		t.Context(), fixture.repo, fixture.repoID, fixture.mrID, 1, h.b2,
+	))
 	assertObsoleteCommitFlags(t, fixture, map[string]bool{"gitealike-commit": true})
 }
 
@@ -314,7 +357,10 @@ func TestStampObsoleteCommitEventsSkipsUnparseableMetadata(t *testing.T) {
 		DedupeKey:      h.a1,
 	}}))
 
-	require.NoError(t, fixture.syncer.stampObsoleteCommitEvents(t.Context(), fixture.repo, fixture.mrID, h.b2))
+	setObsoleteFixtureHead(t, fixture, h.b2)
+	require.NoError(t, fixture.syncer.stampObsoleteCommitEvents(
+		t.Context(), fixture.repo, fixture.repoID, fixture.mrID, 1, h.b2,
+	))
 	stored, err := fixture.database.ListMREvents(t.Context(), fixture.mrID)
 	require.NoError(t, err)
 	require.Len(t, stored, 1)
@@ -326,9 +372,10 @@ func TestStampObsoleteCommitEventsSkipsPreviouslyStampedHead(t *testing.T) {
 	fixture := setupObsoleteStampingFixture(t)
 	h := fixture.history
 	seedObsoleteCommitEvents(t, fixture, h.a1, h.a2, h.a3)
+	setObsoleteFixtureHead(t, fixture, h.b2)
 
 	require.NoError(t, fixture.syncer.stampObsoleteCommitEvents(
-		t.Context(), fixture.repo, fixture.mrID, h.b2,
+		t.Context(), fixture.repo, fixture.repoID, fixture.mrID, 1, h.b2,
 	))
 	assertObsoleteCommitFlags(t, fixture, map[string]bool{
 		h.a1: true, h.a2: true, h.a3: true,
@@ -342,7 +389,7 @@ func TestStampObsoleteCommitEventsSkipsPreviouslyStampedHead(t *testing.T) {
 	// A successful stamp caches this exact head, so the steady-state call must
 	// not touch the now-missing clone or rewrite any event rows.
 	require.NoError(t, fixture.syncer.stampObsoleteCommitEvents(
-		t.Context(), fixture.repo, fixture.mrID, h.b2,
+		t.Context(), fixture.repo, fixture.repoID, fixture.mrID, 1, h.b2,
 	))
 	after, err := fixture.database.ListMREvents(t.Context(), fixture.mrID)
 	require.NoError(t, err)
@@ -350,10 +397,81 @@ func TestStampObsoleteCommitEventsSkipsPreviouslyStampedHead(t *testing.T) {
 
 	// A different head is not covered by the cache and therefore attempts a
 	// fresh clone verification, which surfaces the missing clone as an error.
+	setObsoleteFixtureHead(t, fixture, h.a3)
 	err = fixture.syncer.stampObsoleteCommitEvents(
-		t.Context(), fixture.repo, fixture.mrID, h.a3,
+		t.Context(), fixture.repo, fixture.repoID, fixture.mrID, 1, h.a3,
 	)
 	assert.Error(err)
+}
+
+func TestStampObsoleteCommitEventsSkipsStaleHeadAfterNewerRound(t *testing.T) {
+	assert := assert.New(t)
+	fixture := setupObsoleteStampingFixture(t)
+	h := fixture.history
+	seedObsoleteCommitEvents(t, fixture, h.a1, h.a2, h.a3, h.b1, h.b2)
+	setObsoleteFixtureHead(t, fixture, h.b2)
+	require.NoError(t, fixture.syncer.stampObsoleteCommitEvents(
+		t.Context(), fixture.repo, fixture.repoID, fixture.mrID, 1, h.b2,
+	))
+	before, err := fixture.database.ListMREvents(t.Context(), fixture.mrID)
+	require.NoError(t, err)
+
+	// The persisted MR already belongs to the newer b2 round. A queued a3
+	// stamp must not replace the verified b2 flags with stale-head ancestry.
+	require.NoError(t, fixture.syncer.stampObsoleteCommitEvents(
+		t.Context(), fixture.repo, fixture.repoID, fixture.mrID, 1, h.a3,
+	))
+	after, err := fixture.database.ListMREvents(t.Context(), fixture.mrID)
+	require.NoError(t, err)
+	assert.Equal(before, after)
+	assertObsoleteCommitFlags(t, fixture, map[string]bool{
+		h.a1: true, h.a2: true, h.a3: true, h.b1: false, h.b2: false,
+	})
+}
+
+func TestStampObsoleteCommitEventsRepairsThroughUnchangedDetail(t *testing.T) {
+	assert := assert.New(t)
+	fixture := setupObsoleteStampingFixture(t)
+	h := fixture.history
+	seedObsoleteCommitEvents(t, fixture, h.a1)
+
+	obsoleteTestGit(t, h.sourceDir, "checkout", "-b", "repair-head", "feature-b")
+	require.NoError(t, os.WriteFile(
+		filepath.Join(h.sourceDir, "repair.txt"), []byte("repair\n"), 0o644,
+	))
+	obsoleteTestGit(t, h.sourceDir, "add", "repair.txt")
+	obsoleteTestGit(t, h.sourceDir, "commit", "-m", "repair head")
+	repairHead := obsoleteTestGit(t, h.sourceDir, "rev-parse", "HEAD")
+	existing := setObsoleteFixtureHead(t, fixture, repairHead)
+	hasHead, err := h.manager.HasCommit(
+		t.Context(), "github", "github.com", "owner", "repo", repairHead,
+	)
+	require.NoError(t, err)
+	assert.False(hasHead)
+
+	// The first attempt verifies that the clone does not yet contain the head,
+	// so it leaves metadata unchanged and does not publish a cached stamp.
+	require.NoError(t, fixture.syncer.stampObsoleteCommitEvents(
+		t.Context(), fixture.repo, fixture.repoID, fixture.mrID, 1, repairHead,
+	))
+	assertObsoleteCommitFlags(t, fixture, map[string]bool{h.a1: false})
+
+	clonePath, err := h.manager.ClonePath("github", "github.com", "owner", "repo")
+	require.NoError(t, err)
+	obsoleteTestGit(
+		t, clonePath, "fetch", h.sourceDir,
+		"refs/heads/repair-head:refs/heads/repair-head",
+	)
+	hasHead, err = h.manager.HasCommit(
+		t.Context(), "github", "github.com", "owner", "repo", repairHead,
+	)
+	require.NoError(t, err)
+	assert.True(hasHead)
+	_, err = fixture.syncer.markUnchangedMRDetailFetched(
+		t.Context(), fixture.repo, fixture.repoID, 1, existing, 1,
+	)
+	require.NoError(t, err)
+	assertObsoleteCommitFlags(t, fixture, map[string]bool{h.a1: true})
 }
 
 func TestStampObsoleteCommitEventsViaFetchProviderMRDetail(t *testing.T) {

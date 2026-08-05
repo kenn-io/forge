@@ -430,10 +430,11 @@ func withTrackedProvenance(
 	}
 	// A route match with two different stable provider ids is route reuse
 	// by another repository, not a rename of the same one: provenance stays
-	// with the identity it was resolved for.
+	// with the identity it was resolved for. Provider ids are opaque and
+	// case-sensitive — compared exactly, like identity keys.
 	incomingID := strings.TrimSpace(repo.PlatformExternalID)
 	if entry.providerID != "" && incomingID != "" &&
-		!strings.EqualFold(entry.providerID, incomingID) {
+		entry.providerID != incomingID {
 		return repo
 	}
 	repo.ConfiguredRepoPath = entry.path

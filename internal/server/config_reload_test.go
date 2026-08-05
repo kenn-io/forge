@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -281,6 +282,25 @@ name = "widget"
 [[repos]]
 owner = "acme"
 name = "*"
+`
+
+const validReloadConfigExactPlusGlobChangedActivity = `
+sync_interval = "5m"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "widget"
+
+[[repos]]
+owner = "acme"
+name = "*"
+
+[activity]
+view_mode = "flat"
+time_range = "30d"
 `
 
 const validReloadConfigChangedActivity = `
@@ -1870,6 +1890,90 @@ func TestConfigReload_FallbackKeepsRenamedArchivedTrackedRepo(t *testing.T) {
 		require.NotEqual("widget", repo.Name,
 			"stale configured route must not be tracked as a duplicate")
 	}
+}
+
+func TestConfigReload_RouteReuseRefreshThenFailedReloadTracksRenamedRepoOnce(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	// Phase 0: acme/widget resolves normally. Phase 1: the provider renamed
+	// widget to widget-next and a different repository reused the old route;
+	// exact lookups fail transiently while the glob still lists both.
+	renamed := atomic.Bool{}
+	mock := &mockGH{
+		getRepositoryFn: func(
+			_ context.Context, owner, repo string,
+		) (*gh.Repository, error) {
+			if renamed.Load() {
+				return nil, errors.New("temporary repo lookup failure")
+			}
+			return &gh.Repository{
+				NodeID:   new("repo-x"),
+				Name:     new(repo),
+				Owner:    &gh.User{Login: new(owner)},
+				Archived: new(false),
+			}, nil
+		},
+		listReposByOwnerFn: func(
+			_ context.Context, owner string,
+		) ([]*gh.Repository, error) {
+			if !renamed.Load() {
+				return []*gh.Repository{{
+					NodeID:   new("repo-x"),
+					Name:     new("widget"),
+					Owner:    &gh.User{Login: new(owner)},
+					Archived: new(false),
+				}}, nil
+			}
+			return []*gh.Repository{
+				{
+					NodeID:   new("repo-x"),
+					Name:     new("widget-next"),
+					Owner:    &gh.User{Login: new(owner)},
+					Archived: new(false),
+				},
+				{
+					NodeID:   new("repo-y"),
+					Name:     new("widget"),
+					Owner:    &gh.User{Login: new(owner)},
+					Archived: new(false),
+				},
+			}, nil
+		},
+	}
+	srv, _, cfgPath := setupTestServerWithConfigContent(
+		t, validReloadConfigExactPlusGlob, mock,
+	)
+	require.True(srv.syncer.IsTrackedRepo("acme", "widget"))
+	waitForConfigWatcher(t, srv, 2*time.Second)
+	stream := streamConfigEvents(t, srv)
+	defer stream.Close()
+
+	renamed.Store(true)
+	rr := doJSON(
+		t, srv, http.MethodPost,
+		"/api/v1/repo/gh/acme/*/refresh", nil,
+	)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+	writeConfigToml(t, cfgPath, validReloadConfigExactPlusGlobChangedActivity)
+	ev := waitForConfigEvent(t, stream, 2*time.Second)
+	require.True(ev.Valid)
+
+	tracked := srv.syncer.TrackedRepos()
+	require.Len(tracked, 2,
+		"renamed repo and route successor, no synthetic duplicate")
+	byName := make(map[string]ghclient.RepoRef, len(tracked))
+	for _, repo := range tracked {
+		byName[repo.Name] = repo
+	}
+	assert.Equal("repo-x", byName["widget-next"].PlatformExternalID)
+	assert.Equal("acme/widget", byName["widget-next"].ConfiguredRepoPath,
+		"the renamed repo keeps the exact entry's provenance through the"+
+			" API refresh and the failed reload")
+	assert.Equal("repo-y", byName["widget"].PlatformExternalID)
+	assert.Empty(byName["widget"].ConfiguredRepoPath,
+		"the route successor must not claim the exact entry")
 }
 
 func TestConfigReload_GlobFailureKeepsPreviouslyTrackedMatches(t *testing.T) {

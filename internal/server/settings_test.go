@@ -1166,6 +1166,30 @@ func TestMergeTrackedReposDoesNotTransferProvenanceAcrossProviderIdentities(t *t
 		"a different repository reusing the route must not inherit provenance")
 }
 
+func TestMergeTrackedReposTreatsCaseDifferingProviderIdsAsDistinct(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, _, _ := setupTestServerWithConfig(t)
+	srv.syncer.SetRepos([]ghclient.RepoRef{{
+		Platform: platform.KindGitHub, Owner: "acme", Name: "tools",
+		PlatformHost: "github.com", RepoPath: "acme/tools",
+		PlatformExternalID: "repo-X", ConfiguredRepoPath: "acme/tools",
+	}})
+
+	// Provider ids are opaque, case-sensitive identities (identity keys
+	// compare them exactly); a case-only difference is a different
+	// repository and must not inherit route provenance.
+	srv.mergeTrackedRepos([]ghclient.RepoRef{{
+		Platform: platform.KindGitHub, Owner: "acme", Name: "tools",
+		PlatformHost: "github.com", RepoPath: "acme/tools",
+		PlatformExternalID: "repo-x",
+	}})
+
+	tracked := srv.syncer.TrackedRepos()
+	require.Len(tracked, 1)
+	assert.Empty(tracked[0].ConfiguredRepoPath)
+}
+
 func TestReplaceGlobReposPreservesExactEntryProvenance(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

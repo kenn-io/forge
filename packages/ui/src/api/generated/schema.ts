@@ -38,6 +38,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/archive/pacing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List archive hydration pacing per provider credential */
+        get: operations["list-archive-pacing"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/archive/pause": {
         parameters: {
             query?: never;
@@ -4502,6 +4519,23 @@ export interface components {
             all: boolean;
             repositories?: components["schemas"]["ArchiveRepositoryRef"][] | null;
         };
+        ArchivePacingStatusResponse: {
+            /** Format: int64 */
+            available: number;
+            /** Format: int64 */
+            limit: number;
+            platform_host: string;
+            principal: string;
+            provider: string;
+            /** Format: int64 */
+            remaining: number;
+            /** Format: int64 */
+            reserve: number;
+            /** Format: date-time */
+            reset_at?: string;
+            /** @enum {string} */
+            source: "provider";
+        };
         ArchiveProgressCountsResponse: {
             /** Format: int64 */
             complete_items: number;
@@ -8006,6 +8040,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AgentHookResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "list-archive-pacing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArchivePacingStatusResponse"][] | null;
                 };
             };
             /** @description Error */
@@ -17787,6 +17850,7 @@ export const archiveCoverageResponseInline_commentsValues: ReadonlyArray<Flatten
 export const archiveCoverageResponseIssuesValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArchiveCoverageResponse"]["issues"]> = ["unknown", "supported", "unsupported"];
 export const archiveCoverageResponseMerge_requestsValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArchiveCoverageResponse"]["merge_requests"]> = ["unknown", "supported", "unsupported"];
 export const archiveCoverageResponseReviewsValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArchiveCoverageResponse"]["reviews"]> = ["unknown", "supported", "unsupported"];
+export const archivePacingStatusResponseSourceValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArchivePacingStatusResponse"]["source"]> = ["provider"];
 export const archiveReportActivityResponseKindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArchiveReportActivityResponse"]["kind"]> = ["issue", "issue_closed", "merge_request", "merge_request_merged", "ordinary_comment", "review", "inline_review_comment"];
 export const archiveReportCoverageResponseCollection_modeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArchiveReportCoverageResponse"]["collection_mode"]> = ["discovery", "full"];
 export const archiveReportCoverageResponseCommentsValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ArchiveReportCoverageResponse"]["comments"]> = ["unknown", "supported", "unsupported"];

@@ -946,7 +946,7 @@ func (s *Syncer) Admit(
 	if ref.Platform == platform.KindGitHub && s.quotaRegistry != nil && identityErr == nil {
 		providerResources = []QuotaResource{QuotaResourceREST, QuotaResourceGraphQL}
 		pacingWindow, pacingKnown := s.quotaRegistry.PacingWindow(identity, providerResources)
-		providerReserve = archiveProviderReserve(pacingWindow.Limit)
+		providerReserve = ArchiveProviderReserve(pacingWindow.Limit)
 		availability := s.quotaRegistry.CheckReserve(
 			identity, providerResources, cost, providerReserve,
 		)

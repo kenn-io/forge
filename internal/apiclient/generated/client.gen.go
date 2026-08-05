@@ -164,6 +164,21 @@ func (e ArchiveCoverageResponseReviews) Valid() bool {
 	}
 }
 
+// Defines values for ArchivePacingStatusResponseSource.
+const (
+	Provider ArchivePacingStatusResponseSource = "provider"
+)
+
+// Valid indicates whether the value is a known member of the ArchivePacingStatusResponseSource enum.
+func (e ArchivePacingStatusResponseSource) Valid() bool {
+	switch e {
+	case Provider:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ArchiveReportActivityResponseKind.
 const (
 	ArchiveReportActivityResponseKindInlineReviewComment ArchiveReportActivityResponseKind = "inline_review_comment"
@@ -1184,6 +1199,22 @@ type ArchiveMutationBody struct {
 	All          bool                    `json:"all"`
 	Repositories *[]ArchiveRepositoryRef `json:"repositories,omitempty"`
 }
+
+// ArchivePacingStatusResponse defines model for ArchivePacingStatusResponse.
+type ArchivePacingStatusResponse struct {
+	Available    int64                             `json:"available"`
+	Limit        int64                             `json:"limit"`
+	PlatformHost string                            `json:"platform_host"`
+	Principal    string                            `json:"principal"`
+	Provider     string                            `json:"provider"`
+	Remaining    int64                             `json:"remaining"`
+	Reserve      int64                             `json:"reserve"`
+	ResetAt      *time.Time                        `json:"reset_at,omitempty"`
+	Source       ArchivePacingStatusResponseSource `json:"source"`
+}
+
+// ArchivePacingStatusResponseSource defines model for ArchivePacingStatusResponse.Source.
+type ArchivePacingStatusResponseSource string
 
 // ArchiveProgressCountsResponse defines model for ArchiveProgressCountsResponse.
 type ArchiveProgressCountsResponse struct {
@@ -5501,6 +5532,9 @@ type ClientInterface interface {
 
 	ReceiveAgentHook(ctx context.Context, agent string, params *ReceiveAgentHookParams, body ReceiveAgentHookJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// ListArchivePacing request
+	ListArchivePacing(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// PauseArchivesWithBody request with any body
 	PauseArchivesWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -6595,6 +6629,18 @@ func (c *Client) ReceiveAgentHookWithBody(ctx context.Context, agent string, par
 
 func (c *Client) ReceiveAgentHook(ctx context.Context, agent string, params *ReceiveAgentHookParams, body ReceiveAgentHookJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewReceiveAgentHookRequest(c.Server, agent, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListArchivePacing(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListArchivePacingRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -11468,6 +11514,33 @@ func NewReceiveAgentHookRequestWithBody(server string, agent string, params *Rec
 			req.Header.Set("X-Kenn-Forge-Runtime-Session-Key", headerParam0)
 		}
 
+	}
+
+	return req, nil
+}
+
+// NewListArchivePacingRequest generates requests for ListArchivePacing
+func NewListArchivePacingRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/archive/pacing")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
 	}
 
 	return req, nil
@@ -29052,6 +29125,9 @@ type ClientWithResponsesInterface interface {
 
 	ReceiveAgentHookWithResponse(ctx context.Context, agent string, params *ReceiveAgentHookParams, body ReceiveAgentHookJSONRequestBody, reqEditors ...RequestEditorFn) (*ReceiveAgentHookResponse, error)
 
+	// ListArchivePacingWithResponse request
+	ListArchivePacingWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListArchivePacingResponse, error)
+
 	// PauseArchivesWithBodyWithResponse request with any body
 	PauseArchivesWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PauseArchivesResponse, error)
 
@@ -30154,6 +30230,29 @@ func (r ReceiveAgentHookResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r ReceiveAgentHookResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ListArchivePacingResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *[]ArchivePacingStatusResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r ListArchivePacingResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListArchivePacingResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -36653,6 +36752,15 @@ func (c *ClientWithResponses) ReceiveAgentHookWithResponse(ctx context.Context, 
 	return ParseReceiveAgentHookResponse(rsp)
 }
 
+// ListArchivePacingWithResponse request returning *ListArchivePacingResponse
+func (c *ClientWithResponses) ListArchivePacingWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListArchivePacingResponse, error) {
+	rsp, err := c.ListArchivePacing(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListArchivePacingResponse(rsp)
+}
+
 // PauseArchivesWithBodyWithResponse request with arbitrary body returning *PauseArchivesResponse
 func (c *ClientWithResponses) PauseArchivesWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PauseArchivesResponse, error) {
 	rsp, err := c.PauseArchivesWithBody(ctx, contentType, body, reqEditors...)
@@ -40097,6 +40205,39 @@ func ParseReceiveAgentHookResponse(rsp *http.Response) (*ReceiveAgentHookRespons
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest AgentHookResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListArchivePacingResponse parses an HTTP response from a ListArchivePacingWithResponse call
+func ParseListArchivePacingResponse(rsp *http.Response) (*ListArchivePacingResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListArchivePacingResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest []ArchivePacingStatusResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

@@ -413,3 +413,78 @@ func archiveGeneratedRef(ref platform.RepoRef) generated.ArchiveRepositoryRef {
 		Name: ref.Name, RepoPath: ref.RepoPath,
 	}
 }
+
+func TestAPIArchivePacingReportsProviderHeadroom(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
+	t.Cleanup(syncer.Stop)
+	registry := ghclient.NewQuotaRegistry()
+	identity := ghclient.IdentityKey{Host: "github.test", Principal: "user:7"}
+	reset := time.Now().UTC().Add(30 * time.Minute).Truncate(time.Second)
+	registry.UpdateSnapshot(identity, ghclient.QuotaResourceREST,
+		ghclient.Rate{Limit: 5000, Remaining: 4500, Reset: reset})
+	registry.UpdateSnapshot(identity, ghclient.QuotaResourceGraphQL,
+		ghclient.Rate{Limit: 5000, Remaining: 4200, Reset: reset})
+	syncer.SetQuotaRegistry(registry)
+	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		require.NoError(srv.Shutdown(ctx))
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/archive/pacing", http.NoBody)
+	req.Host = "forge.test"
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	var rows []struct {
+		Provider     string `json:"provider"`
+		PlatformHost string `json:"platform_host"`
+		Principal    string `json:"principal"`
+		Source       string `json:"source"`
+		Limit        int    `json:"limit"`
+		Remaining    int    `json:"remaining"`
+		Reserve      int    `json:"reserve"`
+		Available    int    `json:"available"`
+		ResetAt      string `json:"reset_at"`
+	}
+	require.NoError(json.Unmarshal(rr.Body.Bytes(), &rows))
+	require.Len(rows, 1)
+	row := rows[0]
+	assert.Equal("github", row.Provider)
+	assert.Equal("github.test", row.PlatformHost)
+	assert.Equal("user:7", row.Principal)
+	assert.Equal("provider", row.Source)
+	// Limit and remaining are the min across REST and GraphQL, matching what
+	// archive admission consumes.
+	assert.Equal(5000, row.Limit)
+	assert.Equal(4200, row.Remaining)
+	assert.Equal(1000, row.Reserve)
+	assert.Equal(3200, row.Available)
+	assert.Equal(reset.Format(time.RFC3339), row.ResetAt)
+}
+
+func TestAPIArchivePacingEmptyWithoutKnownPools(t *testing.T) {
+	require := require.New(t)
+	database := dbtest.Open(t)
+	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
+	t.Cleanup(syncer.Stop)
+	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		require.NoError(srv.Shutdown(ctx))
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/archive/pacing", http.NoBody)
+	req.Host = "forge.test"
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	var rows []map[string]any
+	require.NoError(json.Unmarshal(rr.Body.Bytes(), &rows))
+	require.Empty(rows)
+}

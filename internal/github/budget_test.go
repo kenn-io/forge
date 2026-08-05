@@ -278,9 +278,9 @@ func TestSyncBudgetResetDropsInFlightRefund(t *testing.T) {
 // essential work, never dropping below the global rate reserve buffer.
 func TestArchiveProviderReserveHoldsBackFifthOfLimit(t *testing.T) {
 	assert := assert.New(t)
-	assert.Equal(1000, archiveProviderReserve(5000))
-	assert.Equal(300, archiveProviderReserve(1500))
-	assert.Equal(RateReserveBuffer, archiveProviderReserve(500))
-	assert.Equal(RateReserveBuffer, archiveProviderReserve(0))
-	assert.Equal(RateReserveBuffer, archiveProviderReserve(-100))
+	assert.Equal(1000, ArchiveProviderReserve(5000))
+	assert.Equal(300, ArchiveProviderReserve(1500))
+	assert.Equal(RateReserveBuffer, ArchiveProviderReserve(500))
+	assert.Equal(RateReserveBuffer, ArchiveProviderReserve(0))
+	assert.Equal(RateReserveBuffer, ArchiveProviderReserve(-100))
 }

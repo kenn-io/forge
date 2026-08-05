@@ -76,11 +76,11 @@ func NewSyncBudget(limit int) *SyncBudget {
 // remains above it.
 const archiveProviderReserveDenominator = 5
 
-// archiveProviderReserve returns the provider quota archive hydration must
+// ArchiveProviderReserve returns the provider quota archive hydration must
 // leave untouched. It never drops below the global rate reserve buffer, so
 // small or unknown limits still keep the hard floor that pauses all
 // background work.
-func archiveProviderReserve(limit int) int {
+func ArchiveProviderReserve(limit int) int {
 	return max(limit/archiveProviderReserveDenominator, RateReserveBuffer)
 }
 

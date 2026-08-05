@@ -411,6 +411,44 @@ components:
       required:
         - all
       type: object
+    ArchivePacingStatusResponse:
+      additionalProperties: false
+      properties:
+        available:
+          format: int64
+          type: integer
+        limit:
+          format: int64
+          type: integer
+        platform_host:
+          type: string
+        principal:
+          type: string
+        provider:
+          type: string
+        remaining:
+          format: int64
+          type: integer
+        reserve:
+          format: int64
+          type: integer
+        reset_at:
+          format: date-time
+          type: string
+        source:
+          enum:
+            - provider
+          type: string
+      required:
+        - provider
+        - platform_host
+        - principal
+        - source
+        - limit
+        - remaining
+        - reserve
+        - available
+      type: object
     ArchiveProgressCountsResponse:
       additionalProperties: false
       properties:
@@ -8178,6 +8216,29 @@ paths:
       summary: Receive agent lifecycle hook
       tags:
         - Activity
+  /archive/pacing:
+    get:
+      operationId: list-archive-pacing
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/ArchivePacingStatusResponse"
+                type:
+                  - array
+                  - "null"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: List archive hydration pacing per provider credential
+      tags:
+        - Archive
   /archive/pause:
     post:
       operationId: pause-archives

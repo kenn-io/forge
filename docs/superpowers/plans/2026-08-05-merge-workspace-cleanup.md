@@ -35,7 +35,7 @@
 - Produces: `workspaceapi.WorkspaceDeletedPayload`.
 - Produces: `(*workspaceapi.Handler).DeleteWorkspace(ctx context.Context, id string, force bool) ([]string, error)`.
 
-- [ ] **Step 1: Write failing lifecycle tests**
+- [x] **Step 1: Write failing lifecycle tests**
 
 Use `setupTestServerWithWorkspacesServer`, `createReadyWorkspace`, and `srv.Hub().Subscribe`. A clean delete must remove the row and publish exact identity followed by `data_changed`:
 
@@ -67,7 +67,7 @@ func TestDeleteWorkspacePublishesIdentityAfterSuccessfulCleanup(t *testing.T) {
 
 Add `TestDeleteWorkspacePreservesDirtyWorkspace` asserting non-empty dirty files, retained row, and zero events.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 ```bash
 go test ./internal/server -run 'TestDeleteWorkspacePublishesIdentity|TestDeleteWorkspacePreservesDirty' -count=1
@@ -75,7 +75,7 @@ go test ./internal/server -run 'TestDeleteWorkspacePublishesIdentity|TestDeleteW
 
 Expected: build failure because the exported lifecycle and event DTO do not exist.
 
-- [ ] **Step 3: Extract the shared method**
+- [x] **Step 3: Extract the shared method**
 
 Define in `types.go`:
 
@@ -95,7 +95,7 @@ type WorkspaceDeletedPayload struct {
 
 Move the current route's setup admission, runtime stopping, manager delete, and deletion-state cleanup into exported `DeleteWorkspace`. Load the row before deletion for event identity. Publish `workspace_deleted` and then `data_changed` only after successful deletion. The Huma route stays a thin adapter preserving existing 404, 409 dirty/ownership, and 500 mappings.
 
-- [ ] **Step 4: Run GREEN**
+- [x] **Step 4: Run GREEN**
 
 ```bash
 go test ./internal/server -run 'TestDeleteWorkspace' -count=1
@@ -103,7 +103,7 @@ go test ./internal/server -run 'TestDeleteWorkspace' -count=1
 
 Expected: PASS, including existing route tests.
 
-- [ ] **Step 5: Context-sync and commit**
+- [x] **Step 5: Context-sync and commit**
 
 Run mandatory `context-sync --commit`, stage Task 1 plus this plan, and commit with subject `refactor: share workspace deletion lifecycle`. Explain that merge cleanup must reuse dirty/runtime/invalidation safeguards.
 
@@ -126,13 +126,13 @@ Run mandatory `context-sync --commit`, stage Task 1 plus this plan, and commit w
 - Produces: `WorkspaceCleanupResult` status `deleted | already_absent | not_found_at_submission | failed`.
 - Produces: immutable `workspaceCleanupPlan { Requested bool; WorkspaceID string }`.
 
-- [ ] **Step 1: Write failing cleanup tests**
+- [x] **Step 1: Write failing cleanup tests**
 
 Add behavior tests named `TestMergeWorkspaceCleanupRunsOnlyAfterConfirmedMerge`, `TestMergeWorkspaceCleanupPreservesDirtyWorkspaceAsWarning`, `TestMergeWorkspaceCleanupTreatsMissingPinnedWorkspaceAsAbsent`, `TestDeferredMergeCleanupUsesWorkspacePinnedAtQueueTime`, and `TestFailedAndSupersededDeferredMergesNeverRunWorkspaceCleanup`. Use the deferred-merge route fixture's real database/provider and an injected deleter spy.
 
 The replacement test queues with `ws-old`, replaces the linked row with `ws-new` before CI passes, completes the merge, and asserts the deleter sees only `ws-old` and `force=false`.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 ```bash
 go test ./internal/server/pullapi -run 'Test.*Merge.*WorkspaceCleanup|TestDeferredMergeCleanup' -count=1
@@ -140,7 +140,7 @@ go test ./internal/server/pullapi -run 'Test.*Merge.*WorkspaceCleanup|TestDeferr
 
 Expected: failures for absent request/result/plan/dependency types.
 
-- [ ] **Step 3: Add request, result, plan, and dependency**
+- [x] **Step 3: Add request, result, plan, and dependency**
 
 ```go
 type mergePRInputBody struct {
@@ -166,7 +166,7 @@ WorkspaceCleanup *WorkspaceCleanupResult `json:"workspace_cleanup,omitempty"`
 
 Add the deleter callback to `Deps`/`Handler`, and wire `DeleteWorkspace: s.workspaceAPI.DeleteWorkspace` in `server.go`.
 
-- [ ] **Step 4: Implement exact-ID capture and safe execution**
+- [x] **Step 4: Implement exact-ID capture and safe execution**
 
 Implement:
 
@@ -182,7 +182,7 @@ func (s *Handler) executeWorkspaceCleanup(
 
 Capture with `s.workspaces.GetByMRForProvider` after merge validation and before mutation/queue admission. Execution returns nil when unchecked, `not_found_at_submission` for requested empty ID, `already_absent` for `workspace.ErrWorkspaceNotFound`, `failed` plus warning for dirty/errors, and `deleted` on success. Always call the shared service with `force=false`. For a non-dirty error, emit structured `slog.Warn("workspace cleanup after merge failed", "workspace_id", plan.WorkspaceID, "err", err)` before returning the warning result.
 
-- [ ] **Step 5: Thread the immutable plan through both paths**
+- [x] **Step 5: Thread the immutable plan through both paths**
 
 Change the shared signature to:
 
@@ -198,7 +198,7 @@ func (s *Handler) mergePRWithBody(
 
 `capturedCleanup == nil` means the immediate path captures after validation; the deferred worker always passes its non-nil queued plan, including the unchecked zero value, so completion cannot re-resolve. Deferred enqueue captures before `markDeferredMergeInFlight`, passes the value through `runDeferredMerge` and `completeDeferredMerge`, and checks `handle.isSuperseded()` immediately before calling `mergePRWithBody`. Do not check after the call because a successful deferred merge supersedes its own registered handle. Worker exits for CI failure, timeout, cancellation, target change, or prior supersession cannot reach cleanup. Execute only after terminal provider success and local merged-state persistence, then copy the result into the response/event.
 
-- [ ] **Step 6: Run GREEN**
+- [x] **Step 6: Run GREEN**
 
 ```bash
 go test ./internal/server/pullapi -run 'Test.*Merge.*WorkspaceCleanup|TestDeferredMergeCleanup|TestImmediateMergeSupersedesQueuedDeferredMerge' -count=1
@@ -206,7 +206,7 @@ go test ./internal/server/pullapi -run 'Test.*Merge.*WorkspaceCleanup|TestDeferr
 
 Expected: PASS with zero deleter calls on failed/superseded paths.
 
-- [ ] **Step 7: Exercise the composed server lifecycle**
+- [x] **Step 7: Exercise the composed server lifecycle**
 
 Add full HTTP + SQLite e2e tests using the real workspace manager and `workspaceAPI.DeleteWorkspace` wiring. One immediate and one deferred success must create a real PR workspace, merge through the fake provider, assert the workspace row and worktree are gone, assert `workspace_cleanup.status == "deleted"`, and observe `workspace_deleted`. A dirty-worktree case must assert the provider merge persisted, the workspace/worktree remain, the response status is `failed`, and the warning names uncommitted changes.
 
@@ -218,7 +218,7 @@ go test ./internal/server/e2etest -run 'TestMergeWorkspaceCleanup|TestDeferredMe
 
 Expected: PASS through the real composition root, not an injected deleter spy.
 
-- [ ] **Step 8: Context-sync and commit**
+- [x] **Step 8: Context-sync and commit**
 
 Run mandatory `context-sync --commit` and commit Task 2 with subject `feat: prune workspaces after successful merges`. Explain admission-time pinning, non-force cleanup, and merge-success independence.
 
@@ -234,7 +234,7 @@ Run mandatory `context-sync --commit` and commit Task 2 with subject `feat: prun
 **Interfaces:**
 - Produces generated clients containing `delete_workspace_after_merge`, `workspace_cleanup`, and the four cleanup statuses.
 
-- [ ] **Step 1: Regenerate and observe changed artifacts**
+- [x] **Step 1: Regenerate and observe changed artifacts**
 
 ```bash
 make api-generate
@@ -243,7 +243,7 @@ git status --short -- frontend/openapi/openapi.yaml internal/apiclient/generated
 
 Expected: the three tracked generated artifacts are modified. `internal/apiclient/spec/openapi.json` is an ignored intermediate input and is not staged.
 
-- [ ] **Step 2: Inspect exact generated shapes**
+- [x] **Step 2: Inspect exact generated shapes**
 
 ```bash
 rg -n "delete_workspace_after_merge|workspace_cleanup|WorkspaceCleanupResult" frontend/openapi/openapi.yaml internal/apiclient/generated/client.gen.go packages/ui/src/api/generated/schema.ts
@@ -251,7 +251,7 @@ rg -n "delete_workspace_after_merge|workspace_cleanup|WorkspaceCleanupResult" fr
 
 Expected: host-prefixed and default merge operations share the contract and the enum contains exactly four values.
 
-- [ ] **Step 3: Run contract verification**
+- [x] **Step 3: Run contract verification**
 
 ```bash
 make frontend-api-client-check huma-route-check
@@ -260,7 +260,7 @@ go test ./internal/apiclient/generated ./internal/server/pullapi -count=1
 
 Expected: PASS.
 
-- [ ] **Step 4: Context-sync and commit**
+- [x] **Step 4: Context-sync and commit**
 
 Run mandatory `context-sync --commit` and commit generated files with subject `api: expose merge workspace cleanup results`.
 
@@ -281,13 +281,13 @@ Run mandatory `context-sync --commit` and commit generated files with subject `a
 - Produces: `writeDeleteWorkspaceAfterMergePreference(value: boolean, storage?: Storage): void`.
 - Changes: `MergeModal` props `workspacePresent?: boolean` and `onmerged(cleanup?: WorkspaceCleanupResult)`.
 
-- [ ] **Step 1: Write failing helper and component tests**
+- [x] **Step 1: Write failing helper and component tests**
 
 Cover absent, true, false, malformed, throwing-read, and throwing-write storage. Add modal tests for these exact behaviors: a checked option appears only for a PR with a workspace; saved preference is restored and toggles persist; immediate and deferred bodies carry the intent; failed immediate cleanup produces a warning while `onmerged` still runs.
 
 Assert `init.body.delete_workspace_after_merge === true` and a kit-ui flash whose tone is `warning` and whose message matches `/merged.*workspace was not pruned.*uncommitted changes/i`.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 ```bash
 vp test run --project unit packages/ui/src/components/detail/mergeWorkspaceCleanupPreference.test.ts packages/ui/src/components/detail/MergeModal.svelte.test.ts packages/ui/src/components/detail/PullDetail.test.ts
@@ -295,11 +295,11 @@ vp test run --project unit packages/ui/src/components/detail/mergeWorkspaceClean
 
 Expected: failures for missing helper, checkbox, payload, and warning callback.
 
-- [ ] **Step 3: Implement the preference helper**
+- [x] **Step 3: Implement the preference helper**
 
 Use exact key `kenn-forge:merge:delete-workspace-after-merge`. Missing/malformed/read failure returns true. Only string `"false"` returns false. Writes persist `String(value)` and catch storage exceptions without affecting submission.
 
-- [ ] **Step 4: Implement checkbox, payload, and warning flow**
+- [x] **Step 4: Implement checkbox, payload, and warning flow**
 
 Render an accessible checkbox only for `workspacePresent`; initialize it from the helper and persist on change. Add `delete_workspace_after_merge: workspacePresent && deleteWorkspaceAfterMerge` to the common body. Pass `data?.workspace_cleanup` to `onmerged`. `PullDetail` passes `workspacePresent={workspace !== null}` and shows:
 
@@ -312,7 +312,7 @@ showFlash(
 
 Then run the existing close/detail/pulls/activity refreshes.
 
-- [ ] **Step 5: Run Svelte and focused verification**
+- [x] **Step 5: Run Svelte and focused verification**
 
 ```bash
 vp exec -- svelte-mcp svelte-autofixer packages/ui/src/components/detail/MergeModal.svelte --svelte-version 5
@@ -322,7 +322,7 @@ vp test run --project unit packages/ui/src/components/detail/mergeWorkspaceClean
 
 Expected: no actionable Svelte findings and all tests PASS. If `svelte-mcp` remains unavailable, record the exact limitation and rely on `svelte-check`, lint, and component tests rather than installing an undeclared tool.
 
-- [ ] **Step 6: Context-sync and commit**
+- [x] **Step 6: Context-sync and commit**
 
 Run mandatory `context-sync --commit` and commit Task 4 with subject `feat: offer workspace pruning in merge dialog`.
 
@@ -346,13 +346,13 @@ Run mandatory `context-sync --commit` and commit Task 4 with subject `feat: offe
 - Changes Provider props: `onWarning` and `onWorkspaceDeleted`.
 - Consumes: `notifyWorkspaceDeleted(workspaceId, undefined, identity)`.
 
-- [ ] **Step 1: Write failing event and adapter tests**
+- [x] **Step 1: Write failing event and adapter tests**
 
 Add tests for these exact behaviors: `workspace_deleted` JSON is decoded; deferred cleanup failure uses the warning callback; Provider forwards deletion and refreshes matching detail; the App adapter tombstones both owning and associated-PR identities; the workspace sidebar removes the exact event ID immediately and schedules a server refresh.
 
 For issue #7 with `associated_pr_number: 42`, assert two tombstone publications using the same workspace ID.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 ```bash
 vp test run --project unit frontend/src/lib/stores/events.svelte.test.ts frontend/src/Provider.test.ts frontend/src/App.test.ts frontend/src/lib/stores/workspace-host.test.ts frontend/src/lib/components/terminal/WorkspaceListSidebar.test.ts
@@ -360,25 +360,25 @@ vp test run --project unit frontend/src/lib/stores/events.svelte.test.ts fronten
 
 Expected: failures for missing event/callback/warning routes.
 
-- [ ] **Step 3: Register and forward `workspace_deleted`**
+- [x] **Step 3: Register and forward `workspace_deleted`**
 
 Define the TypeScript DTO matching the server payload and register it with `addJSONListener`. Provider forwards the event, refreshes visible stores, and refreshes selected detail when either owning identity or associated PR matches.
 
 Register the same `workspace_deleted` event on `WorkspaceListSidebar`'s own EventSource. Decode `workspace_id`, immediately filter that exact local row from its workspace array, and schedule `fetchWorkspaces()` to reconcile counts and remote state. Keep `workspace_status` behavior unchanged.
 
-- [ ] **Step 4: Route deferred cleanup failure as warning**
+- [x] **Step 4: Route deferred cleanup failure as warning**
 
 Extend `DeferredMergeCompletedEvent` with `workspace_cleanup`. In the merged branch, call `onWarning` with `` `${event.owner}/${event.name}#${event.number} merged, but the workspace was not pruned: ${event.workspace_cleanup.warning ?? "workspace cleanup failed"}` `` when status is `failed`; otherwise keep the existing success notification. Deferred merge failure remains on `onError`.
 
-- [ ] **Step 5: Adapt deletion to workspace-host identities**
+- [x] **Step 5: Adapt deletion to workspace-host identities**
 
 In `App.svelte`, pass `onWarning={(msg) => showFlash(msg, { tone: "warning" })}`. For `onWorkspaceDeleted`, construct the owning identity from provider/host/repo/item fields and call `notifyWorkspaceDeleted`. When `associated_pr_number` is present, call it again with `itemType: "pull"` and that number. Existing tombstone behavior must remain idempotent for the initiating client.
 
-- [ ] **Step 6: Run Svelte and event verification**
+- [x] **Step 6: Run Svelte and event verification**
 
 Run Svelte autofixer on `Provider.svelte`, `App.svelte`, and `WorkspaceListSidebar.svelte` with the same documented missing-tool fallback, then run the five focused test files from Step 2. Expected: PASS.
 
-- [ ] **Step 7: Context-sync and commit**
+- [x] **Step 7: Context-sync and commit**
 
 Run mandatory `context-sync --commit` and commit Task 5 with subject `feat: invalidate pruned workspaces across clients`.
 
@@ -395,7 +395,7 @@ Run mandatory `context-sync --commit` and commit Task 5 with subject `feat: inva
 **Interfaces:**
 - Verifies request → merge/defer → safe delete → SSE → warning/tombstone.
 
-- [ ] **Step 1: Run focused backend suites**
+- [x] **Step 1: Run focused backend suites**
 
 ```bash
 go test ./internal/server/workspaceapi ./internal/server/pullapi -shuffle=on
@@ -403,7 +403,7 @@ go test ./internal/server/workspaceapi ./internal/server/pullapi -shuffle=on
 
 Expected: PASS.
 
-- [ ] **Step 2: Run focused and full frontend unit suites**
+- [x] **Step 2: Run focused and full frontend unit suites**
 
 ```bash
 vp test run --project unit packages/ui/src/components/detail/mergeWorkspaceCleanupPreference.test.ts packages/ui/src/components/detail/MergeModal.svelte.test.ts packages/ui/src/components/detail/PullDetail.test.ts frontend/src/lib/stores/events.svelte.test.ts frontend/src/Provider.test.ts frontend/src/App.test.ts frontend/src/lib/stores/workspace-host.test.ts
@@ -412,7 +412,7 @@ vp test run --project unit
 
 Expected: PASS with pristine output.
 
-- [ ] **Step 3: Run generation and static checks**
+- [x] **Step 3: Run generation and static checks**
 
 ```bash
 make api-generate
@@ -423,7 +423,7 @@ git diff --check
 
 Expected: generation stable; format, lint, types, Svelte checks, and whitespace checks PASS.
 
-- [ ] **Step 4: Run repository short verification**
+- [x] **Step 4: Run repository short verification**
 
 ```bash
 make test-short
@@ -431,14 +431,14 @@ make test-short
 
 Expected: PASS. Preserve and clearly separate any unrelated pre-existing failure output.
 
-- [ ] **Step 5: Synchronize durable context**
+- [x] **Step 5: Synchronize durable context**
 
 Run mandatory `context-sync --commit`. Record only landed cross-cutting invariants supported by code: deferred cleanup pins ID at admission, automatic cleanup is non-force and cannot change merge success, and `workspace_deleted` is the cross-client tombstone signal. Obey the grep-test and per-addition budget.
 
-- [ ] **Step 6: Commit context/checkmarks if changed**
+- [x] **Step 6: Commit context/checkmarks if changed**
 
 Commit with subject `docs: record merge workspace cleanup invariants` only when context or plan checkmarks changed.
 
-- [ ] **Step 7: Verify before completion**
+- [x] **Step 7: Verify before completion**
 
 Invoke `superpowers:verification-before-completion`, inspect `git status --short`, and report exact passing commands, the known `svelte-mcp` limitation if still present, and created commits. Do not claim completion from stale or partial output.

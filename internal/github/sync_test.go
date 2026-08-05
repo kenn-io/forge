@@ -10132,6 +10132,64 @@ func TestRunOnceSkipsThrottledHosts(t *testing.T) {
 		"ghe.corp.com client should NOT have been called")
 }
 
+func TestRunOnceSkipsArchivedRepos(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+
+	ghMock := &mockClient{
+		openPRs:  []*gh.PullRequest{},
+		comments: []*gh.IssueComment{},
+		reviews:  []*gh.PullRequestReview{},
+		commits:  []*gh.RepositoryCommit{},
+	}
+	repos := []RepoRef{
+		{Owner: "acme", Name: "live", PlatformHost: "github.com"},
+		{Owner: "acme", Name: "frozen", PlatformHost: "github.com", Archived: true},
+	}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": ghMock}, d, nil, repos,
+		time.Minute, nil, nil,
+	)
+
+	var gotResults []RepoSyncResult
+	syncer.SetOnSyncCompleted(func(results []RepoSyncResult) {
+		gotResults = results
+	})
+
+	syncer.RunOnce(t.Context())
+
+	require.Len(gotResults, 1,
+		"archived repo should not produce a live sync result")
+	assert.Equal("live", gotResults[0].Name)
+	assert.True(ghMock.listOpenPRsCalled.Load())
+}
+
+func TestRepoRefFromCatalogKeepsArchived(t *testing.T) {
+	assert := assert.New(t)
+	previous := RepoRef{
+		Owner: "acme", Name: "frozen",
+		PlatformHost: "github.com", Archived: true,
+	}
+	stored := db.Repo{
+		ID: 7, Platform: "github", PlatformHost: "github.com",
+		Owner: "acme", Name: "frozen",
+	}
+
+	// Catalog republication without a fresh provider resolve keeps the
+	// previously known archived flag.
+	assert.True(repoRefFromCatalog(previous, stored, nil).Archived)
+
+	// A fresh provider resolve is authoritative in both directions.
+	assert.True(repoRefFromCatalog(previous, stored, &platform.Repository{
+		Archived: true,
+	}).Archived)
+	assert.False(repoRefFromCatalog(previous, stored, &platform.Repository{
+		Archived: false,
+	}).Archived)
+}
+
 func TestRunOnceScopesGitHubProviderReserveToRepoCredential(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

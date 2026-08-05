@@ -794,6 +794,46 @@ func TestHandleAddRepo(t *testing.T) {
 	require.Len(t, cfg2.Repos, 2)
 }
 
+func TestHandleAddRepoAcceptsArchivedRepo(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	mock := &mockGH{
+		getRepositoryFn: func(
+			_ context.Context, owner, repo string,
+		) (*gh.Repository, error) {
+			return &gh.Repository{
+				Name:     new(repo),
+				Owner:    &gh.User{Login: new(owner)},
+				Archived: new(true),
+			}, nil
+		},
+	}
+	srv, _, cfgPath := setupTestServerWithConfigContent(t, `
+sync_interval = "5m"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "widget"
+`, mock)
+
+	rr := doJSON(t, srv, http.MethodPost, "/api/v1/repos", map[string]string{
+		"provider": "github",
+		"host":     "github.com",
+		"owner":    "other-org",
+		"name":     "frozen",
+	})
+	require.Equal(http.StatusCreated, rr.Code, rr.Body.String())
+
+	cfg2, err := config.Load(cfgPath)
+	require.NoError(err)
+	require.Len(cfg2.Repos, 2)
+	assert.True(srv.syncer.IsTrackedRepo("other-org", "frozen"),
+		"archived repo is tracked archive-only after add")
+}
+
 func TestHandleAddRepoTriggersImmediateSyncDuringCooldown(t *testing.T) {
 	require := require.New(t)
 
@@ -1085,7 +1125,8 @@ name = "*"
 	assert.Equal("roborev-dev", resp.Repos[0].Owner)
 	assert.Equal("*", resp.Repos[0].Name)
 	assert.True(resp.Repos[0].IsGlob)
-	assert.Equal(2, resp.Repos[0].MatchedRepoCount)
+	assert.Equal(3, resp.Repos[0].MatchedRepoCount,
+		"archived repos count as archive-only glob matches")
 }
 
 func TestHandleRefreshRepoRebuildsExpandedSyncSet(t *testing.T) {
@@ -1133,10 +1174,11 @@ name = "*"
 
 	var resp settingsResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
-	require.Equal(2, resp.Repos[0].MatchedRepoCount)
+	require.Equal(3, resp.Repos[0].MatchedRepoCount)
 	assert.True(srv.syncer.IsTrackedRepo("roborev-dev", "kenn-forge"))
 	assert.True(srv.syncer.IsTrackedRepo("roborev-dev", "globber"))
-	assert.False(srv.syncer.IsTrackedRepo("roborev-dev", "archived"))
+	assert.True(srv.syncer.IsTrackedRepo("roborev-dev", "archived"),
+		"archived repos stay tracked as archive-only")
 }
 
 func TestHandleRefreshRepoPersistsExpandedReposBeforeAsyncSync(t *testing.T) {
@@ -1202,7 +1244,7 @@ name = "*"
 			names = append(names, repo.Name)
 		}
 	}
-	assert.ElementsMatch([]string{"kenn-forge", "review-bot"}, names)
+	assert.ElementsMatch([]string{"kenn-forge", "archived", "review-bot"}, names)
 }
 
 func TestHandleRefreshRepoKeepsReposMatchedByOtherConfigEntries(t *testing.T) {

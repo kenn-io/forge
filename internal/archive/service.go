@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 	"time"
@@ -116,70 +117,128 @@ func (s *Service) SetMaintenanceInterval(interval time.Duration) {
 
 func (s *Service) SetWake(wake func()) { s.wake = wake }
 
-func (s *Service) EnsureConfigured(ctx context.Context, refs []platform.RepoRef) error {
+// EnsureConfigured seeds archive state for the configured repositories and
+// returns the refs that seeded successfully. Failures scoped to a single
+// repository are logged and skipped so one bad configured entry cannot block
+// the rest (or crash-loop the daemon at startup); only batch reconciliation
+// errors (a broken store) are returned.
+func (s *Service) EnsureConfigured(ctx context.Context, refs []platform.RepoRef) ([]platform.RepoRef, error) {
+	seededRefs := make([]platform.RepoRef, 0, len(refs))
+	resolved := make([]resolvedRepository, 0, len(refs))
+	protectedIDs := make([]int64, 0, len(refs))
+	seen := make(map[string]struct{}, len(refs))
+	unresolvable := make([]string, 0)
 	for _, ref := range refs {
-		if err := validateArchiveRepoRef(ref); err != nil {
-			return err
+		key := archiveRepoIdentityKey(ref)
+		if _, ok := seen[key]; ok {
+			continue
 		}
-		if _, err := s.registry.Provider(ref.Platform, ref.Host); err != nil {
-			return err
-		}
-	}
-	for _, ref := range refs {
-		identity := platform.DBRepoIdentity(ref)
-		// Captured before any provider lookup so a slow resolve cannot
-		// stamp its route data newer than intervening sync observations.
-		observedAt := time.Now().UTC()
-		// Config-asserted and provider-verified identities may move
-		// routes; a catalog-cached identity resolves read-only.
-		authoritative := identity.PlatformRepoID != ""
-		if identity.PlatformRepoID == "" {
-			stored, err := s.db.ResolveActiveRepositoryRoute(ctx, identity)
-			if err != nil {
-				return fmt.Errorf("resolve stored archive repository %s: %w", archiveRepoIdentityKey(ref), err)
-			}
-			if stored != nil && stored.Repository.PlatformRepoID != "" {
-				identity.PlatformRepoID = stored.Repository.PlatformRepoID
-			} else {
-				reader, err := s.registry.RepositoryReader(ref.Platform, ref.Host)
-				if err != nil {
-					return fmt.Errorf("resolve archive repository %s: %w", archiveRepoIdentityKey(ref), err)
-				}
-				resolved, err := reader.GetRepository(ctx, ref)
-				if err != nil {
-					return fmt.Errorf("resolve archive repository %s: %w", archiveRepoIdentityKey(ref), err)
-				}
-				identity = platform.DBRepositoryIdentity(resolved)
-				if identity.PlatformRepoID == "" {
-					return fmt.Errorf("resolve archive repository %s: provider returned no repository id", archiveRepoIdentityKey(ref))
-				}
-				authoritative = true
+		seen[key] = struct{}{}
+		repoID, err := s.seedArchiveRepository(ctx, ref)
+		if err == nil {
+			var repo *resolvedRepository
+			repo, err = s.resolveRepository(ctx, ref, false)
+			if err == nil {
+				seededRefs = append(seededRefs, ref)
+				resolved = append(resolved, *repo)
+				protectedIDs = append(protectedIDs, repo.ID)
+				continue
 			}
 		}
-		if authoritative {
-			if _, _, err := s.db.ReconcileRepositoryObservation(ctx, identity, observedAt); err != nil {
-				return fmt.Errorf("seed archive repository %s: %w", archiveRepoIdentityKey(ref), err)
-			}
-		} else if _, err := s.db.UpsertRepoByProviderID(ctx, identity); err != nil {
-			return fmt.Errorf("seed archive repository %s: %w", archiveRepoIdentityKey(ref), err)
+		slog.Warn("skip archive seeding",
+			"platform", ref.Platform, "host", ref.Host,
+			"owner", ref.Owner, "name", ref.Name, "err", err)
+		if repoID != 0 {
+			// The row is known, so it stays protected from removal pausing
+			// even though this pass could not finish seeding it.
+			protectedIDs = append(protectedIDs, repoID)
+		} else {
+			unresolvable = append(unresolvable, ref.Owner+"/"+ref.Name)
 		}
 	}
-	resolved, err := s.resolveRepositories(ctx, refs, false)
-	if err != nil {
-		return err
-	}
+	sort.Slice(resolved, func(i, j int) bool {
+		return archiveRepoIdentityKey(resolved[i].Ref) < archiveRepoIdentityKey(resolved[j].Ref)
+	})
 	ids := resolvedRepoIDs(resolved)
-	if err := s.db.ReconcileDiscoveryArchives(ctx, ids, s.now()); err != nil {
-		return err
+	if len(unresolvable) > 0 {
+		// An unresolvable ref could correspond to any existing row, so
+		// pausing with an incomplete protection list could pause the wrong
+		// repository's archive. Defer removal pausing until a clean pass.
+		slog.Warn("archive removal reconciliation deferred",
+			"unresolvable_repos", unresolvable)
+		if err := s.db.EnsureDiscoveryArchives(ctx, ids, s.now()); err != nil {
+			return seededRefs, err
+		}
+	} else if err := s.db.ReconcileDiscoveryArchives(ctx, protectedIDs, s.now()); err != nil {
+		return seededRefs, err
 	}
 	for _, repo := range resolved {
 		if err := s.db.ReconcileArchiveCoverage(
 			ctx, repo.ID, archiveCoverage(repo.Capabilities), s.now(),
 		); err != nil {
-			return err
+			return seededRefs, err
 		}
 	}
-	return s.db.RequeueArchiveLifecycleDetails(ctx, ids, s.now())
+	return seededRefs, s.db.RequeueArchiveLifecycleDetails(ctx, ids, s.now())
+}
+
+// seedArchiveRepository reconciles one configured ref into the repository
+// catalog. It returns the repository row id when one is known — including on
+// failure, so callers can keep a known row protected from removal pausing.
+func (s *Service) seedArchiveRepository(ctx context.Context, ref platform.RepoRef) (int64, error) {
+	if err := validateArchiveRepoRef(ref); err != nil {
+		return 0, err
+	}
+	if _, err := s.registry.Provider(ref.Platform, ref.Host); err != nil {
+		return 0, err
+	}
+	identity := platform.DBRepoIdentity(ref)
+	// Captured before any provider lookup so a slow resolve cannot
+	// stamp its route data newer than intervening sync observations.
+	observedAt := time.Now().UTC()
+	// Config-asserted and provider-verified identities may move
+	// routes; a catalog-cached identity resolves read-only.
+	authoritative := identity.PlatformRepoID != ""
+	storedID := int64(0)
+	if identity.PlatformRepoID == "" {
+		stored, err := s.db.ResolveActiveRepositoryRoute(ctx, identity)
+		if err != nil {
+			return 0, fmt.Errorf("resolve stored archive repository %s: %w", archiveRepoIdentityKey(ref), err)
+		}
+		if stored != nil && stored.Repository.PlatformRepoID != "" {
+			identity.PlatformRepoID = stored.Repository.PlatformRepoID
+			storedID = stored.Repository.ID
+		} else {
+			reader, err := s.registry.RepositoryReader(ref.Platform, ref.Host)
+			if err != nil {
+				return 0, fmt.Errorf("resolve archive repository %s: %w", archiveRepoIdentityKey(ref), err)
+			}
+			resolved, err := reader.GetRepository(ctx, ref)
+			if err != nil {
+				return 0, fmt.Errorf("resolve archive repository %s: %w", archiveRepoIdentityKey(ref), err)
+			}
+			identity = platform.DBRepositoryIdentity(resolved)
+			if identity.PlatformRepoID == "" {
+				return 0, fmt.Errorf("resolve archive repository %s: provider returned no repository id", archiveRepoIdentityKey(ref))
+			}
+			authoritative = true
+		}
+	}
+	if authoritative {
+		entry, _, err := s.db.ReconcileRepositoryObservation(ctx, identity, observedAt)
+		if err != nil {
+			return storedID, fmt.Errorf("seed archive repository %s: %w", archiveRepoIdentityKey(ref), err)
+		}
+		if entry != nil {
+			return entry.Repository.ID, nil
+		}
+		return storedID, nil
+	}
+	id, err := s.db.UpsertRepoByProviderID(ctx, identity)
+	if err != nil {
+		return storedID, fmt.Errorf("seed archive repository %s: %w", archiveRepoIdentityKey(ref), err)
+	}
+	return id, nil
 }
 
 // RetryAuthentication makes credential-blocked repositories eligible after a
@@ -354,46 +413,54 @@ func (s *Service) resolveRepositories(ctx context.Context, refs []platform.RepoR
 	resolved := make([]resolvedRepository, 0, len(refs))
 	seen := make(map[string]struct{}, len(refs))
 	for _, ref := range refs {
-		if err := validateArchiveRepoRef(ref); err != nil {
-			return nil, err
-		}
 		key := archiveRepoIdentityKey(ref)
 		if _, ok := seen[key]; ok {
 			continue
 		}
 		seen[key] = struct{}{}
-		provider, err := s.registry.Provider(ref.Platform, ref.Host)
+		repo, err := s.resolveRepository(ctx, ref, requireArchive)
 		if err != nil {
 			return nil, err
 		}
-		issues, err := s.registry.IssuePageReader(ref.Platform, ref.Host)
-		if err != nil && requireArchive {
-			return nil, err
-		}
-		mergeRequests, err := s.registry.MergeRequestPageReader(ref.Platform, ref.Host)
-		if err != nil && requireArchive {
-			return nil, err
-		}
-		repo, err := s.db.GetRepoByIdentity(ctx, platform.DBRepoIdentity(ref))
-		if err != nil {
-			return nil, fmt.Errorf("resolve archive repository %s: %w", key, err)
-		}
-		if repo == nil {
-			return nil, &platform.Error{
-				Code: platform.ErrCodeInvalidRepoRef, Provider: ref.Platform,
-				PlatformHost: ref.Host, Field: "repository",
-				Err: errors.New("repository is not configured"),
-			}
-		}
-		resolved = append(resolved, resolvedRepository{
-			ID: repo.ID, Ref: ref, Issues: issues, MergeRequests: mergeRequests,
-			Capabilities: provider.Capabilities().Archive,
-		})
+		resolved = append(resolved, *repo)
 	}
 	sort.Slice(resolved, func(i, j int) bool {
 		return archiveRepoIdentityKey(resolved[i].Ref) < archiveRepoIdentityKey(resolved[j].Ref)
 	})
 	return resolved, nil
+}
+
+func (s *Service) resolveRepository(ctx context.Context, ref platform.RepoRef, requireArchive bool) (*resolvedRepository, error) {
+	if err := validateArchiveRepoRef(ref); err != nil {
+		return nil, err
+	}
+	provider, err := s.registry.Provider(ref.Platform, ref.Host)
+	if err != nil {
+		return nil, err
+	}
+	issues, err := s.registry.IssuePageReader(ref.Platform, ref.Host)
+	if err != nil && requireArchive {
+		return nil, err
+	}
+	mergeRequests, err := s.registry.MergeRequestPageReader(ref.Platform, ref.Host)
+	if err != nil && requireArchive {
+		return nil, err
+	}
+	repo, err := s.db.GetRepoByIdentity(ctx, platform.DBRepoIdentity(ref))
+	if err != nil {
+		return nil, fmt.Errorf("resolve archive repository %s: %w", archiveRepoIdentityKey(ref), err)
+	}
+	if repo == nil {
+		return nil, &platform.Error{
+			Code: platform.ErrCodeInvalidRepoRef, Provider: ref.Platform,
+			PlatformHost: ref.Host, Field: "repository",
+			Err: fmt.Errorf("repository %s/%s is not configured", ref.Owner, ref.Name),
+		}
+	}
+	return &resolvedRepository{
+		ID: repo.ID, Ref: ref, Issues: issues, MergeRequests: mergeRequests,
+		Capabilities: provider.Capabilities().Archive,
+	}, nil
 }
 
 func validateArchiveRepoRef(ref platform.RepoRef) error {

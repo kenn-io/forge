@@ -109,7 +109,7 @@ func TestArchiveBootstrapFeatureDeferralSkipsToNextRepository(t *testing.T) {
 	service := newArchiveTestService(
 		t, database, registry, []platform.RepoRef{cooled, ready}, admission, now,
 	)
-	require.NoError(service.EnsureConfigured(t.Context(), []platform.RepoRef{cooled, ready}))
+	requireEnsureConfigured(t, service, []platform.RepoRef{cooled, ready})
 	_, err = service.Start(t.Context(), []platform.RepoRef{cooled, ready})
 	require.NoError(err)
 
@@ -146,7 +146,7 @@ func TestArchiveMaintenanceFeatureDeferralSkipsToNextRepository(t *testing.T) {
 	service := newArchiveTestService(
 		t, database, registry, []platform.RepoRef{cooled, ready}, admission, now,
 	)
-	require.NoError(service.EnsureConfigured(t.Context(), []platform.RepoRef{cooled, ready}))
+	requireEnsureConfigured(t, service, []platform.RepoRef{cooled, ready})
 	_, err = service.Start(t.Context(), []platform.RepoRef{cooled, ready})
 	require.NoError(err)
 

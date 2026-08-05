@@ -230,13 +230,23 @@ func TestResolveStartupReposExpandsConfiguredGlobs(t *testing.T) {
 		nil,
 	)
 
-	assert.Equal([]ghclient.RepoRef{{
-		Platform:     "github",
-		Owner:        "roborev-dev",
-		Name:         "kenn-forge",
-		PlatformHost: "github.com",
-		RepoPath:     "roborev-dev/kenn-forge",
-	}}, repos)
+	assert.Equal([]ghclient.RepoRef{
+		{
+			Platform:     "github",
+			Owner:        "roborev-dev",
+			Name:         "kenn-forge",
+			PlatformHost: "github.com",
+			RepoPath:     "roborev-dev/kenn-forge",
+		},
+		{
+			Platform:     "github",
+			Owner:        "roborev-dev",
+			Name:         "archived",
+			PlatformHost: "github.com",
+			RepoPath:     "roborev-dev/archived",
+			Archived:     true,
+		},
+	}, repos)
 }
 
 func TestResolveStartupReposKeepsExactReposWhenResolutionFails(t *testing.T) {

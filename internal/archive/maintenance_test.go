@@ -201,7 +201,7 @@ func archiveMaintenanceService(
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(t, err)
 	service := newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, nil, now)
-	require.NoError(t, service.EnsureConfigured(t.Context(), []platform.RepoRef{ref}))
+	requireEnsureConfigured(t, service, []platform.RepoRef{ref})
 	_, err = service.Start(t.Context(), []platform.RepoRef{ref})
 	require.NoError(t, err)
 	return service

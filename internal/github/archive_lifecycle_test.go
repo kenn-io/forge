@@ -32,6 +32,9 @@ type blockingArchiveRunner struct {
 type archiveLifecycleRecorder struct {
 	ensured []platform.RepoRef
 	retried []platform.RepoRef
+	// ensureResult, when set, is returned from EnsureConfigured in place of
+	// the full ref list to simulate refs skipped by seeding.
+	ensureResult []platform.RepoRef
 }
 
 type archiveWorkerProvider struct{ ref platform.RepoRef }
@@ -292,7 +295,7 @@ func TestArchiveHydrationPRShapedIssueBecomesTerminalInSQLite(t *testing.T) {
 		archiveLifecycleClock{now: func() time.Time { return now }},
 	)
 	require.NoError(err)
-	require.NoError(service.EnsureConfigured(t.Context(), []platform.RepoRef{ref}))
+	requireEnsureConfigured(t, service, []platform.RepoRef{ref})
 	_, err = service.Start(t.Context(), []platform.RepoRef{ref})
 	require.NoError(err)
 
@@ -361,7 +364,7 @@ func TestArchivePreemptedItemRecordsNoFailureAndCompletesOnNextPass(t *testing.T
 	// already-canceled admission.
 	service, err := archive.NewService(database, registry, syncer, syncer, nil, nil)
 	require.NoError(err)
-	require.NoError(service.EnsureConfigured(t.Context(), []platform.RepoRef{ref}))
+	requireEnsureConfigured(t, service, []platform.RepoRef{ref})
 	_, err = service.Start(t.Context(), []platform.RepoRef{ref})
 	require.NoError(err)
 
@@ -467,7 +470,7 @@ func TestArchiveDisabledIssueInventoryCompletesUnsupportedWithoutBlockingMergeRe
 		database, syncer.clients, syncer, syncer, nil, clock,
 	)
 	require.NoError(err)
-	require.NoError(service.EnsureConfigured(t.Context(), []platform.RepoRef{ref}))
+	requireEnsureConfigured(t, service, []platform.RepoRef{ref})
 	_, err = service.Start(t.Context(), []platform.RepoRef{ref})
 	require.NoError(err)
 
@@ -576,7 +579,7 @@ func newDisabledArchiveHydrationFixture(t *testing.T) *disabledArchiveHydrationF
 		fixture.syncer, fixture.syncer, nil, clock,
 	)
 	require.NoError(err)
-	require.NoError(fixture.service.EnsureConfigured(t.Context(), []platform.RepoRef{fixture.ref}))
+	requireEnsureConfigured(t, fixture.service, []platform.RepoRef{fixture.ref})
 	_, err = fixture.service.Start(t.Context(), []platform.RepoRef{fixture.ref})
 	require.NoError(err)
 	for range 3 {
@@ -653,9 +656,12 @@ func TestArchiveDisabledIssueHydrationRecoversAfterManualProbe(t *testing.T) {
 
 func (*archiveLifecycleRecorder) RunEligible(context.Context) error { return nil }
 
-func (r *archiveLifecycleRecorder) EnsureConfigured(_ context.Context, refs []platform.RepoRef) error {
+func (r *archiveLifecycleRecorder) EnsureConfigured(_ context.Context, refs []platform.RepoRef) ([]platform.RepoRef, error) {
 	r.ensured = append(r.ensured, refs...)
-	return nil
+	if r.ensureResult != nil {
+		return r.ensureResult, nil
+	}
+	return refs, nil
 }
 
 func (r *archiveLifecycleRecorder) RetryAuthentication(_ context.Context, refs []platform.RepoRef) error {
@@ -722,7 +728,7 @@ func TestArchiveWorkerAdvancesRealServiceAfterStart(t *testing.T) {
 	service.SetWake(syncer.WakeArchive)
 	syncer.SetArchiveService(service)
 	syncer.SetArchivePollIntervalForTesting(time.Millisecond)
-	require.NoError(service.EnsureConfigured(t.Context(), []platform.RepoRef{ref}))
+	requireEnsureConfigured(t, service, []platform.RepoRef{ref})
 	_, err = service.Start(t.Context(), []platform.RepoRef{ref})
 	require.NoError(err)
 	syncer.Start(t.Context())
@@ -772,6 +778,62 @@ func TestSetReposSeedsArchiveDiscoveryAndRetriesCredentialsBeforeCutover(t *test
 	assert.Equal(repos, syncer.TrackedRepos())
 }
 
+func TestSetReposSeedsActiveArchiveForArchivedRepo(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	registry, err := platform.NewRegistry(syncTestProvider{
+		kind: platform.KindGitHub, host: "github.test",
+	})
+	require.NoError(err)
+	syncer := NewSyncerWithRegistry(registry, database, nil, nil, time.Hour, nil, nil)
+	service, err := archive.NewService(database, registry, nil, syncer, nil, nil)
+	require.NoError(err)
+	syncer.SetArchiveService(service)
+	ref := RepoRef{
+		Platform: platform.KindGitHub, PlatformHost: "github.test",
+		Owner: "acme", Name: "frozen", RepoPath: "acme/frozen",
+		PlatformExternalID: "repo-frozen", Archived: true,
+	}
+
+	require.NoError(syncer.SetReposWithContext(t.Context(), []RepoRef{ref}, false))
+
+	repo, err := database.GetRepoByIdentity(
+		t.Context(), platform.DBRepoIdentity(platformRepoRef(ref)),
+	)
+	require.NoError(err)
+	require.NotNil(repo)
+	states, err := database.ListArchiveRepoStates(t.Context(), []int64{repo.ID})
+	require.NoError(err)
+	require.Len(states, 1)
+	assert.Equal(db.ArchiveOperatorStateActive, states[0].OperatorState,
+		"an archived configured repo keeps an active archive")
+}
+
+func TestSetReposPassesOnlySeededRefsToRetryAuthentication(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	syncer := NewSyncerWithRegistry(nil, database, nil, nil, time.Hour, nil, nil)
+	seeded := platform.RepoRef{
+		Platform: platform.KindGitHub, Host: "github.com",
+		Owner: "acme", Name: "good", RepoPath: "acme/good",
+	}
+	recorder := &archiveLifecycleRecorder{
+		ensureResult: []platform.RepoRef{seeded},
+	}
+	syncer.SetArchiveService(recorder)
+	repos := []RepoRef{
+		{Owner: "acme", Name: "good", PlatformHost: "github.com"},
+		{Owner: "acme", Name: "ghost", PlatformHost: "github.com"},
+	}
+
+	require.NoError(syncer.SetReposWithContext(t.Context(), repos, true))
+	require.Len(recorder.ensured, 2)
+	assert.Equal([]platform.RepoRef{seeded}, recorder.retried,
+		"refs skipped by seeding must not reach authentication retry")
+}
+
 func TestSyncRepoReplacementReconcilesArchiveLifecycle(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -804,9 +866,10 @@ func TestSyncRepoReplacementReconcilesArchiveLifecycle(t *testing.T) {
 	service, err := archive.NewService(database, registry, nil, syncer, nil, nil)
 	require.NoError(err)
 	syncer.SetArchiveService(service)
-	require.NoError(service.EnsureConfigured(
+	_, err = service.EnsureConfigured(
 		ctx, []platform.RepoRef{platformRepoRef(configured)},
-	))
+	)
+	require.NoError(err)
 	oldEntry, err := database.GetRepositoryByProviderID(
 		ctx, "gitlab", "gitlab.test", "gid://gitlab/Project/old",
 	)
@@ -1842,4 +1905,10 @@ func TestGitHubArchiveAdmissionRetriesWhenDeficientPoolResets(t *testing.T) {
 	assert.Contains(denied.Detail, "provider rate reserve")
 	require.NotNil(denied.RetryAt)
 	assert.Equal(restReset, *denied.RetryAt)
+}
+
+func requireEnsureConfigured(t *testing.T, s *archive.Service, refs []platform.RepoRef) {
+	t.Helper()
+	_, err := s.EnsureConfigured(t.Context(), refs)
+	require.NoError(t, err)
 }

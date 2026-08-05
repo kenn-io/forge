@@ -2,7 +2,6 @@ package github
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"path"
 	"strings"
@@ -10,8 +9,6 @@ import (
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/platform"
 )
-
-var ErrConfiguredRepoArchived = errors.New("configured repo archived")
 
 func canonicalRepoName(name string) string {
 	return strings.ToLower(name)
@@ -41,6 +38,7 @@ func canonicalRepoRef(repo RepoRef) RepoRef {
 		WebURL:             strings.TrimSpace(repo.WebURL),
 		CloneURL:           strings.TrimSpace(repo.CloneURL),
 		DefaultBranch:      strings.TrimSpace(repo.DefaultBranch),
+		Archived:           repo.Archived,
 	}
 	if kind == platform.KindGitHub {
 		out.Owner = canonicalRepoOwner(out.Owner)
@@ -226,12 +224,6 @@ func resolveConfiguredRepo(
 				raw.Owner, raw.Name, err,
 			)
 		}
-		if repo.Archived {
-			return status, nil, fmt.Errorf(
-				"%w: %s/%s",
-				ErrConfiguredRepoArchived, raw.Owner, raw.Name,
-			)
-		}
 		status.MatchedRepoCount = 1
 		return status, []RepoRef{repoRefFromRepository(raw, kind, host, repo)}, nil
 	}
@@ -246,9 +238,6 @@ func resolveConfiguredRepo(
 
 	matches := make([]RepoRef, 0, len(repos))
 	for _, repo := range repos {
-		if repo.Archived {
-			continue
-		}
 		repoName := repo.Ref.Name
 		if repoName == "" {
 			repoName = repo.Ref.DisplayName()
@@ -311,6 +300,7 @@ func repoRefFromRepository(
 		WebURL:             repo.WebURL,
 		CloneURL:           repo.CloneURL,
 		DefaultBranch:      repo.DefaultBranch,
+		Archived:           repo.Archived,
 	}
 	if ref.PlatformRepoID == 0 {
 		ref.PlatformRepoID = repo.Ref.PlatformID

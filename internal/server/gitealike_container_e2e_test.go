@@ -252,7 +252,8 @@ func assertGiteaLikeContainerSync(
 		Platform: kind, Host: manifest.Host, Owner: manifest.Owner,
 		Name: manifest.Name, RepoPath: manifest.RepoPath,
 	}
-	require.NoError(archiveService.EnsureConfigured(ctx, []platform.RepoRef{archiveRef}))
+	_, err = archiveService.EnsureConfigured(ctx, []platform.RepoRef{archiveRef})
+	require.NoError(err)
 	_, err = archiveService.Start(ctx, []platform.RepoRef{archiveRef})
 	require.NoError(err)
 	var archiveStatus []archive.Status

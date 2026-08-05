@@ -255,6 +255,33 @@ fallback repository listing.
 ## Historical Archive Rules
 
 - The legacy closed-item backfill is retired; configured repositories seed durable archive discovery before sync cutover, with no cursor translation. (`internal/github/sync.go::SetReposWithContext`)
+- Provider-archived repositories are configurable and archive-only: resolution
+  accepts them (exact and glob) with `RepoRef.Archived` set, live sync skips
+  them, and archive discovery/hydration treat them like any configured repo.
+  Archived state refreshes wherever resolution already happens (startup,
+  config reload, settings add/refresh) and must survive catalog
+  republication, which cannot read it from the store. GitLab namespace
+  listings filter archived projects server-side, so GitLab globs cannot see
+  them; exact GitLab refs work. (`internal/github/repo_config_resolver.go::resolveConfiguredRepo`,
+  `internal/github/sync.go::excludeArchivedRepos`,
+  `internal/github/sync.go::repoRefFromCatalog`)
+- Archive seeding degrades per repository: a ref that fails validation,
+  provider resolution, or catalog reconciliation is logged with its identity
+  and skipped, never fatal — one bad configured entry must not crash-loop the
+  daemon at startup. Only batch reconciliation errors (a broken store)
+  propagate. Refs skipped by seeding are excluded from authentication retry
+  so they cannot fail a config reload.
+  (`internal/archive/service.go::EnsureConfigured`,
+  `internal/github/sync.go::SetReposWithContext`)
+- Removal pausing (`configuration_removed`) requires a complete picture: when
+  any configured ref fails seeding without a known repository row, the pass
+  ensures discovery archives but defers the pausing side entirely — an
+  incomplete protection list could pause the wrong repository's archive
+  (renamed owners resolve to rows under other identities). A ref that failed
+  after its row was identified stays protected without deferring the pass.
+  While an unresolvable ref persists in config, genuinely removed repos keep
+  collecting; the recurring deferral warning is the operator signal.
+  (`internal/archive/service.go::EnsureConfigured`)
 - Initial issue and pull-request inventory includes all states in stable created-time ascending order; issue enumeration excludes PR-shaped rows. (`internal/github/pages.go::ListIssuesPage`, `internal/github/pages.go::ListMergeRequestsPage`)
 - Every issue-only GitHub lookup rejects a PR-shaped Issues API response before normalization; `SyncItemByNumber` is the kind-dispatching exception. (`internal/github/pages.go::gitHubClientProvider.issuePullRequestOutcomeError`, `internal/github/sync.go::SyncItemByNumber`)
 - Updated issue scans query one second before the durable watermark while keeping cursor identity bound to the original boundary. Updated pull-request scans run newest-first across the same overlap. (`internal/github/pages.go::ListIssuesPage`, `internal/github/pages.go::ListMergeRequestsPage`)

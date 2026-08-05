@@ -416,14 +416,10 @@ func (s *Server) defaultPlatformHost() string {
 }
 
 // classifyResolveProblem maps a configured-repo resolve error to its wire
-// problem. Archived repos are caller-side validation; everything else goes
-// through the shared provider mapping so a missing token during token-file
-// rotation surfaces as 400 badRequest like the sync and runtime paths,
-// not a 502 upstream error.
+// problem through the shared provider mapping so a missing token during
+// token-file rotation surfaces as 400 badRequest like the sync and runtime
+// paths, not a 502 upstream error.
 func classifyResolveProblem(err error) huma.StatusError {
-	if errors.Is(err, ghclient.ErrConfiguredRepoArchived) {
-		return httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), nil)
-	}
 	return httpapi.ProviderCallProblem(err, "github", "")
 }
 

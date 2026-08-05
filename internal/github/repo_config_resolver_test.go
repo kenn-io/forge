@@ -12,7 +12,7 @@ import (
 	"go.kenn.io/forge/internal/platform"
 )
 
-func TestResolveConfiguredRepos_ExpandsGlobAndSkipsArchived(t *testing.T) {
+func TestResolveConfiguredRepos_ExpandsGlobIncludingArchived(t *testing.T) {
 	assert := assert.New(t)
 	client := &mockClient{
 		listReposByOwnerFn: func(_ context.Context, owner string) ([]*gh.Repository, error) {
@@ -43,13 +43,56 @@ func TestResolveConfiguredRepos_ExpandsGlobAndSkipsArchived(t *testing.T) {
 	)
 
 	require.Len(t, result.Configured, 1)
+	assert.Equal(2, result.Configured[0].MatchedRepoCount)
+	assert.Equal([]RepoRef{
+		{
+			Platform:     platform.KindGitHub,
+			Owner:        "acme",
+			Name:         "widgets-api",
+			PlatformHost: "github.com",
+			RepoPath:     "acme/widgets-api",
+		},
+		{
+			Platform:     platform.KindGitHub,
+			Owner:        "acme",
+			Name:         "widgets-legacy",
+			PlatformHost: "github.com",
+			RepoPath:     "acme/widgets-legacy",
+			Archived:     true,
+		},
+	}, result.Expanded)
+}
+
+func TestResolveConfiguredRepos_AcceptsArchivedRepoAsArchiveOnly(t *testing.T) {
+	assert := assert.New(t)
+	client := &mockClient{
+		getRepositoryFn: func(
+			_ context.Context, owner, repo string,
+		) (*gh.Repository, error) {
+			return &gh.Repository{
+				Name:     new(repo),
+				Owner:    &gh.User{Login: new(owner)},
+				Archived: new(true),
+			}, nil
+		},
+	}
+
+	result := ResolveConfiguredRepos(
+		t.Context(),
+		map[string]Client{"github.com": client},
+		[]config.Repo{{Owner: "acme", Name: "widgets-legacy"}},
+	)
+
+	assert.Empty(result.Warnings)
+	require.Len(t, result.Configured, 1)
 	assert.Equal(1, result.Configured[0].MatchedRepoCount)
 	assert.Equal([]RepoRef{{
 		Platform:     platform.KindGitHub,
 		Owner:        "acme",
-		Name:         "widgets-api",
+		Name:         "widgets-legacy",
 		PlatformHost: "github.com",
-		RepoPath:     "acme/widgets-api",
+		RepoPath:     "acme/widgets-legacy",
+		Archived:     true,
 	}}, result.Expanded)
 }
 

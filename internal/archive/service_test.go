@@ -88,13 +88,89 @@ func TestArchiveServiceStartValidatesAllRepositoriesBeforePromotion(t *testing.T
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
 	service := newArchiveTestService(t, database, registry, []platform.RepoRef{valid, missing}, nil, now)
-	require.NoError(service.EnsureConfigured(t.Context(), []platform.RepoRef{valid}))
+	requireEnsureConfigured(t, service, []platform.RepoRef{valid})
 
 	_, err = service.Start(t.Context(), []platform.RepoRef{valid, missing})
 	require.Error(err)
 	states, err := database.ListArchiveRepoStates(t.Context(), []int64{validID})
 	require.NoError(err)
 	assert.Equal(db.ArchiveCollectionModeDiscovery, states[0].CollectionMode)
+}
+
+func TestArchiveServiceEnsureConfiguredSkipsUnresolvableRef(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	now := time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC)
+	good := archiveServiceRef(platform.KindGitHub, "github.test", "good")
+	// No provider id, no stored route, and the provider fake has no
+	// repository reader: the seed path cannot identify this ref.
+	ghost := platform.RepoRef{
+		Platform: platform.KindGitHub, Host: "github.test",
+		Owner: "owner", Name: "ghost", RepoPath: "owner/ghost",
+	}
+	provider := newArchiveServiceProvider(good.Platform, good.Host)
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	service := newArchiveTestService(t, database, registry, []platform.RepoRef{good, ghost}, nil, now)
+
+	seeded, err := service.EnsureConfigured(t.Context(), []platform.RepoRef{good, ghost})
+	require.NoError(err, "an unresolvable ref must degrade, not fail the pass")
+	assert.Equal([]platform.RepoRef{good}, seeded)
+
+	repo, err := database.GetRepoByIdentity(t.Context(), platform.DBRepoIdentity(good))
+	require.NoError(err)
+	require.NotNil(repo)
+	states, err := database.ListArchiveRepoStates(t.Context(), []int64{repo.ID})
+	require.NoError(err)
+	require.Len(states, 1)
+	assert.Equal(db.ArchiveOperatorStateActive, states[0].OperatorState)
+
+	ghostRepo, err := database.GetRepoByIdentity(t.Context(), platform.DBRepoIdentity(ghost))
+	require.NoError(err)
+	assert.Nil(ghostRepo)
+}
+
+func TestArchiveServiceEnsureConfiguredDefersRemovalPausingWhenRefUnresolvable(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	now := time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC)
+	removed := archiveServiceRef(platform.KindGitHub, "github.test", "removed")
+	good := archiveServiceRef(platform.KindGitHub, "github.test", "good")
+	ghost := platform.RepoRef{
+		Platform: platform.KindGitHub, Host: "github.test",
+		Owner: "owner", Name: "ghost", RepoPath: "owner/ghost",
+	}
+	provider := newArchiveServiceProvider(good.Platform, good.Host)
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	service := newArchiveTestService(t, database, registry, []platform.RepoRef{good}, nil, now)
+
+	requireEnsureConfigured(t, service, []platform.RepoRef{removed})
+	removedRepo, err := database.GetRepoByIdentity(t.Context(), platform.DBRepoIdentity(removed))
+	require.NoError(err)
+	require.NotNil(removedRepo)
+
+	// An unresolvable ref could correspond to any existing row, so removal
+	// pausing must be deferred rather than pause the wrong archive.
+	seeded, err := service.EnsureConfigured(t.Context(), []platform.RepoRef{good, ghost})
+	require.NoError(err)
+	assert.Equal([]platform.RepoRef{good}, seeded)
+	states, err := database.ListArchiveRepoStates(t.Context(), []int64{removedRepo.ID})
+	require.NoError(err)
+	require.Len(states, 1)
+	assert.Equal(db.ArchiveOperatorStateActive, states[0].OperatorState,
+		"removal pausing must be deferred while a ref is unresolvable")
+
+	// A clean pass applies the deferred removal.
+	requireEnsureConfigured(t, service, []platform.RepoRef{good})
+	states, err = database.ListArchiveRepoStates(t.Context(), []int64{removedRepo.ID})
+	require.NoError(err)
+	require.Len(states, 1)
+	assert.Equal(db.ArchiveOperatorStatePaused, states[0].OperatorState)
+	require.NotNil(states[0].LastErrorCode)
+	assert.Equal(string(db.ArchiveErrorCodeConfigurationRemoved), *states[0].LastErrorCode)
 }
 
 func TestArchiveServiceEnsureConfiguredSeedsFreshRepository(t *testing.T) {
@@ -108,7 +184,7 @@ func TestArchiveServiceEnsureConfiguredSeedsFreshRepository(t *testing.T) {
 	require.NoError(err)
 	service := newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, nil, now)
 
-	require.NoError(service.EnsureConfigured(t.Context(), []platform.RepoRef{ref}))
+	requireEnsureConfigured(t, service, []platform.RepoRef{ref})
 	repo, err := database.GetRepoByIdentity(t.Context(), platform.DBRepoIdentity(ref))
 	require.NoError(err)
 	require.NotNil(repo)
@@ -140,7 +216,7 @@ func TestArchiveServiceEnsureConfiguredPreservesRenamedRepositoryAtExistingDesti
 	require.NoError(err)
 	service := newArchiveTestService(t, database, registry, []platform.RepoRef{current}, nil, now)
 
-	require.NoError(service.EnsureConfigured(t.Context(), []platform.RepoRef{current}))
+	requireEnsureConfigured(t, service, []platform.RepoRef{current})
 	repos, err := database.ListRepositoryCatalog(
 		t.Context(), db.RepositoryCatalogFilter{},
 	)
@@ -189,7 +265,7 @@ func TestArchiveServiceAllScopeAndWakeLifecycle(t *testing.T) {
 	)
 	wakeCount := 0
 	service.SetWake(func() { wakeCount++ })
-	require.NoError(service.EnsureConfigured(t.Context(), []platform.RepoRef{first, second}))
+	requireEnsureConfigured(t, service, []platform.RepoRef{first, second})
 
 	started, err := service.StartAll(t.Context())
 	require.NoError(err)
@@ -224,7 +300,7 @@ func TestArchiveServicePauseRejectsInFlightInventoryCommit(t *testing.T) {
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
 	service := newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, nil, now)
-	require.NoError(service.EnsureConfigured(t.Context(), []platform.RepoRef{ref}))
+	requireEnsureConfigured(t, service, []platform.RepoRef{ref})
 	_, err = service.Start(t.Context(), []platform.RepoRef{ref})
 	require.NoError(err)
 
@@ -261,7 +337,7 @@ func TestArchiveServiceRetryAuthenticationPreservesProgress(t *testing.T) {
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
 	service := newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, nil, now)
-	require.NoError(service.EnsureConfigured(t.Context(), []platform.RepoRef{ref}))
+	requireEnsureConfigured(t, service, []platform.RepoRef{ref})
 	cursor := "issue-page-2"
 	watermark := now.Add(-time.Hour)
 	_, err = database.WriteDB().ExecContext(t.Context(), `
@@ -297,7 +373,7 @@ func TestArchiveAuthenticationFailureDefersPendingHydration(t *testing.T) {
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
 	service := newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, nil, now)
-	require.NoError(service.EnsureConfigured(t.Context(), []platform.RepoRef{ref}))
+	requireEnsureConfigured(t, service, []platform.RepoRef{ref})
 	_, err = service.Start(t.Context(), []platform.RepoRef{ref})
 	require.NoError(err)
 	require.NoError(service.RunEligible(t.Context()))
@@ -329,7 +405,7 @@ func TestArchiveIdlePollDoesNotReconcileConfiguredRepositories(t *testing.T) {
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
 	service := newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, nil, now)
-	require.NoError(service.EnsureConfigured(t.Context(), []platform.RepoRef{ref}))
+	requireEnsureConfigured(t, service, []platform.RepoRef{ref})
 	_, err = service.Pause(t.Context(), []platform.RepoRef{ref})
 	require.NoError(err)
 	_, err = database.WriteDB().ExecContext(t.Context(), `
@@ -357,7 +433,7 @@ func TestArchiveServiceRemovedRepositoryStopsWorkAndReaddResumesState(t *testing
 	source := &archiveMutableSource{refs: []platform.RepoRef{ref}}
 	service, err := NewService(database, registry, nil, source, nil, fixedClock{value: now})
 	require.NoError(err)
-	require.NoError(service.EnsureConfigured(t.Context(), source.refs))
+	requireEnsureConfigured(t, service, source.refs)
 	_, err = service.Start(t.Context(), source.refs)
 	require.NoError(err)
 	cursor := "durable-cursor"
@@ -368,7 +444,7 @@ func TestArchiveServiceRemovedRepositoryStopsWorkAndReaddResumesState(t *testing
 	require.NoError(err)
 
 	source.refs = nil
-	require.NoError(service.EnsureConfigured(t.Context(), source.refs))
+	requireEnsureConfigured(t, service, source.refs)
 	require.NoError(service.RunEligible(t.Context()))
 	assert.Empty(provider.calls)
 	states, err := database.ListArchiveRepoStates(t.Context(), []int64{repoID})
@@ -380,7 +456,7 @@ func TestArchiveServiceRemovedRepositoryStopsWorkAndReaddResumesState(t *testing
 	assert.Equal(&cursor, states[0].IssueInventory.NextCursor)
 
 	source.refs = []platform.RepoRef{ref}
-	require.NoError(service.EnsureConfigured(t.Context(), source.refs))
+	requireEnsureConfigured(t, service, source.refs)
 	states, err = database.ListArchiveRepoStates(t.Context(), []int64{repoID})
 	require.NoError(err)
 	assert.Equal(db.ArchiveCollectionModeFull, states[0].CollectionMode)
@@ -390,9 +466,9 @@ func TestArchiveServiceRemovedRepositoryStopsWorkAndReaddResumesState(t *testing
 
 	require.NoError(database.PauseArchives(t.Context(), []int64{repoID}, now.Add(time.Minute)))
 	source.refs = nil
-	require.NoError(service.EnsureConfigured(t.Context(), source.refs))
+	requireEnsureConfigured(t, service, source.refs)
 	source.refs = []platform.RepoRef{ref}
-	require.NoError(service.EnsureConfigured(t.Context(), source.refs))
+	requireEnsureConfigured(t, service, source.refs)
 	states, err = database.ListArchiveRepoStates(t.Context(), []int64{repoID})
 	require.NoError(err)
 	assert.Equal(db.ArchiveOperatorStatePaused, states[0].OperatorState)
@@ -414,7 +490,7 @@ func TestArchiveInventoryInvalidCursorBlocksScanWithoutRestart(t *testing.T) {
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
 	service := newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, nil, now)
-	require.NoError(service.EnsureConfigured(t.Context(), []platform.RepoRef{ref}))
+	requireEnsureConfigured(t, service, []platform.RepoRef{ref})
 	_, err = service.Start(t.Context(), []platform.RepoRef{ref})
 	require.NoError(err)
 
@@ -453,7 +529,7 @@ func TestArchiveResumesDiscoveryAppliesMaintenanceAndReportsDeterministically(t 
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
 	service := newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, nil, now)
-	require.NoError(service.EnsureConfigured(t.Context(), []platform.RepoRef{ref}))
+	requireEnsureConfigured(t, service, []platform.RepoRef{ref})
 	_, err = service.Start(t.Context(), []platform.RepoRef{ref})
 	require.NoError(err)
 	require.NoError(service.RunEligible(t.Context()))
@@ -530,7 +606,7 @@ func TestArchiveInventoryFailureIsDurableAndClearedBySuccessfulProgress(t *testi
 	require.NoError(err)
 	service := newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, nil, now)
 	service.retries = archiveTestRetryClassifier{}
-	require.NoError(service.EnsureConfigured(t.Context(), []platform.RepoRef{ref}))
+	requireEnsureConfigured(t, service, []platform.RepoRef{ref})
 	_, err = service.Start(t.Context(), []platform.RepoRef{ref})
 	require.NoError(err)
 
@@ -563,7 +639,7 @@ func TestArchiveStartAllowsPartialHistoricalInventory(t *testing.T) {
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
 	service := newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, nil, now)
-	require.NoError(service.EnsureConfigured(t.Context(), []platform.RepoRef{ref}))
+	requireEnsureConfigured(t, service, []platform.RepoRef{ref})
 
 	_, err = service.Start(t.Context(), []platform.RepoRef{ref})
 	require.NoError(err)
@@ -584,7 +660,7 @@ func TestArchiveDiscoverySkipsUnsupportedInventoryStream(t *testing.T) {
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
 	service := newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, nil, now)
-	require.NoError(service.EnsureConfigured(t.Context(), []platform.RepoRef{ref}))
+	requireEnsureConfigured(t, service, []platform.RepoRef{ref})
 	require.NoError(service.RunEligible(t.Context()))
 	require.NoError(service.RunEligible(t.Context()))
 
@@ -617,7 +693,7 @@ func TestArchiveInventoryReopensRepositoryFeatureAfterReenable(t *testing.T) {
 	service := newArchiveTestService(
 		t, database, registry, []platform.RepoRef{ref}, admission, now,
 	)
-	require.NoError(service.EnsureConfigured(t.Context(), []platform.RepoRef{ref}))
+	requireEnsureConfigured(t, service, []platform.RepoRef{ref})
 
 	require.NoError(service.RunEligible(t.Context()))
 	require.NoError(service.RunEligible(t.Context()))
@@ -633,7 +709,7 @@ func TestArchiveInventoryReopensRepositoryFeatureAfterReenable(t *testing.T) {
 	unsupportedGeneration := states[0].IssueInventory.Generation
 
 	provider.issueInventoryErr = nil
-	require.NoError(service.EnsureConfigured(t.Context(), []platform.RepoRef{ref}))
+	requireEnsureConfigured(t, service, []platform.RepoRef{ref})
 	states, err = database.ListArchiveRepoStates(t.Context(), []int64{repoID})
 	require.NoError(err)
 	require.Len(states, 1)
@@ -684,7 +760,7 @@ func TestArchiveBudgetDeferralDoesNotIncrementAttempts(t *testing.T) {
 	retryAt := now.Add(time.Hour)
 	admission := &archiveTestAdmission{deny: true, retryAt: retryAt}
 	service := newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, admission, now)
-	require.NoError(service.EnsureConfigured(t.Context(), []platform.RepoRef{ref}))
+	requireEnsureConfigured(t, service, []platform.RepoRef{ref})
 	_, err = service.Start(t.Context(), []platform.RepoRef{ref})
 	require.NoError(err)
 
@@ -708,7 +784,7 @@ func TestArchiveInventoryAdmissionReservesProviderConfirmationAttempts(t *testin
 	require.NoError(err)
 	admission := &archiveTestAdmission{}
 	service := newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, admission, now)
-	require.NoError(service.EnsureConfigured(t.Context(), []platform.RepoRef{ref}))
+	requireEnsureConfigured(t, service, []platform.RepoRef{ref})
 	_, err = service.Start(t.Context(), []platform.RepoRef{ref})
 	require.NoError(err)
 
@@ -728,7 +804,7 @@ func TestArchivePausePreventsFutureProviderReads(t *testing.T) {
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
 	service := newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, nil, now)
-	require.NoError(service.EnsureConfigured(t.Context(), []platform.RepoRef{ref}))
+	requireEnsureConfigured(t, service, []platform.RepoRef{ref})
 	_, err = service.Start(t.Context(), []platform.RepoRef{ref})
 	require.NoError(err)
 	_, err = service.Pause(t.Context(), []platform.RepoRef{ref})
@@ -753,7 +829,7 @@ func TestArchiveHydrationRetryClassifierReceivesStoredAttemptCount(t *testing.T)
 		classifier, fixedClock{value: now},
 	)
 	require.NoError(err)
-	require.NoError(service.EnsureConfigured(t.Context(), []platform.RepoRef{ref}))
+	requireEnsureConfigured(t, service, []platform.RepoRef{ref})
 	_, err = service.Start(t.Context(), []platform.RepoRef{ref})
 	require.NoError(err)
 
@@ -983,4 +1059,10 @@ func archiveTestIssue(ref platform.RepoRef) platform.Issue {
 func archiveTestMergeRequest(ref platform.RepoRef) platform.MergeRequest {
 	created := archiveTestTime().Add(time.Minute)
 	return platform.MergeRequest{Repo: ref, PlatformID: 2, PlatformExternalID: "mr-2", Number: 2, State: "closed", CreatedAt: created, UpdatedAt: created, LastActivityAt: created}
+}
+
+func requireEnsureConfigured(t *testing.T, s *Service, refs []platform.RepoRef) {
+	t.Helper()
+	_, err := s.EnsureConfigured(t.Context(), refs)
+	require.NoError(t, err)
 }

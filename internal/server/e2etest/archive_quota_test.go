@@ -139,7 +139,7 @@ func TestArchiveAPIStopsProviderBurstAtObservedQuotaHeadroomE2E(t *testing.T) {
 		database, registry, syncer, source, nil, nil,
 	)
 	require.NoError(err)
-	require.NoError(archiveService.EnsureConfigured(t.Context(), []platform.RepoRef{ref}))
+	requireEnsureConfigured(t, archiveService, []platform.RepoRef{ref})
 	srv := servertest.New(t, database, syncer, nil, "/", nil, server.ServerOptions{
 		Archive:                       archiveService,
 		HostCheckAllowLoopbackAnyPort: true,
@@ -277,7 +277,7 @@ func TestArchiveAPIDefersHydrationAtLargerPoolReserveE2E(t *testing.T) {
 		database, registry, syncer, source, nil, nil,
 	)
 	require.NoError(err)
-	require.NoError(archiveService.EnsureConfigured(t.Context(), []platform.RepoRef{ref}))
+	requireEnsureConfigured(t, archiveService, []platform.RepoRef{ref})
 	srv := servertest.New(t, database, syncer, nil, "/", nil, server.ServerOptions{
 		Archive:                       archiveService,
 		HostCheckAllowLoopbackAnyPort: true,
@@ -335,4 +335,10 @@ func TestArchiveAPIDefersHydrationAtLargerPoolReserveE2E(t *testing.T) {
 	)
 	require.NoError(err)
 	assert.Equal(db.ArchiveDatasetProgressPending, progress.Status)
+}
+
+func requireEnsureConfigured(t *testing.T, s *archive.Service, refs []platform.RepoRef) {
+	t.Helper()
+	_, err := s.EnsureConfigured(t.Context(), refs)
+	require.NoError(t, err)
 }

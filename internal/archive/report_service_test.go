@@ -24,7 +24,7 @@ func TestArchiveServiceReportBuildsOfflineCountsCoverageAndDetails(t *testing.T)
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
 	service := newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, nil, now)
-	require.NoError(service.EnsureConfigured(t.Context(), []platform.RepoRef{ref}))
+	requireEnsureConfigured(t, service, []platform.RepoRef{ref})
 	_, err = service.Start(t.Context(), []platform.RepoRef{ref})
 	require.NoError(err)
 	completeArchiveInitial(t, service)
@@ -79,7 +79,7 @@ func TestArchiveServiceReportFiltersFullRepositoryIdentityAndRejectsEmptyScope(t
 	registry, err := platform.NewRegistry(firstProvider, secondProvider)
 	require.NoError(err)
 	service := newArchiveTestService(t, database, registry, []platform.RepoRef{first, second}, nil, now)
-	require.NoError(service.EnsureConfigured(t.Context(), []platform.RepoRef{first, second}))
+	requireEnsureConfigured(t, service, []platform.RepoRef{first, second})
 
 	all, err := service.Report(t.Context(), ReportOptions{
 		Start: now.Add(-time.Hour), End: now.Add(time.Hour),
@@ -114,7 +114,7 @@ func TestArchiveServiceReportUsesRangeEndAsDeterministicStatusTime(t *testing.T)
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
 	before := newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, nil, end.Add(-time.Minute))
-	require.NoError(before.EnsureConfigured(t.Context(), []platform.RepoRef{ref}))
+	requireEnsureConfigured(t, before, []platform.RepoRef{ref})
 	retryAt := end.Add(30 * time.Minute)
 	require.NoError(database.RecordArchiveRepositoryFailure(
 		t.Context(), repoID, db.ArchiveErrorCodeBudgetExhausted, "waiting", &retryAt, end,
@@ -141,7 +141,7 @@ func TestArchiveServiceReportRejectsPartiallyMissingExplicitScope(t *testing.T) 
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
 	service := newArchiveTestService(t, database, registry, []platform.RepoRef{first, second}, nil, now)
-	require.NoError(service.EnsureConfigured(t.Context(), []platform.RepoRef{first}))
+	requireEnsureConfigured(t, service, []platform.RepoRef{first})
 
 	_, err = service.Report(t.Context(), ReportOptions{
 		Start: now.Add(-time.Hour), End: now, Repositories: []platform.RepoRef{first, second},
@@ -162,7 +162,7 @@ func TestArchiveServiceReportUsesOneSQLiteSnapshot(t *testing.T) {
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
 	service := newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, nil, now)
-	require.NoError(service.EnsureConfigured(t.Context(), []platform.RepoRef{ref}))
+	requireEnsureConfigured(t, service, []platform.RepoRef{ref})
 
 	coverageRead := make(chan struct{})
 	writerDone := make(chan struct{})
@@ -216,7 +216,7 @@ func TestArchiveServiceDetailedReportLimitDoesNotLimitSummary(t *testing.T) {
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
 	service := newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, nil, now)
-	require.NoError(service.EnsureConfigured(t.Context(), []platform.RepoRef{ref}))
+	requireEnsureConfigured(t, service, []platform.RepoRef{ref})
 	_, err = database.WriteDB().ExecContext(t.Context(), `
 		WITH RECURSIVE sequence(n) AS (
 			VALUES(1) UNION ALL SELECT n + 1 FROM sequence WHERE n < 10001

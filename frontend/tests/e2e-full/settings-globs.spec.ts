@@ -46,34 +46,6 @@ test("settings shows glob match counts and refresh updates tracked repos", async
 
   const row = page.locator(".repo-row", { hasText: "roborev-dev/*" });
   await expect(row).toContainText("roborev-dev/*");
-  await expect(row).toContainText("(2)");
-  await expect
-    .poll(async () => {
-      if (!api) {
-        throw new Error("settings-globs API context not initialized");
-      }
-      const response = await api.get("/api/v1/repos");
-      const repos = (await response.json()) as RepoSummary[];
-      return repos
-        .filter((repo) => repo.Owner === "roborev-dev")
-        .map((repo) => repo.Name)
-        .sort()
-        .join(",");
-    })
-    .toBe("kenn-forge,worker");
-
-  await page.goto(`${isolatedServer!.info.base_url}/pulls`);
-  const selector = page.getByRole("button", { name: /^Select repository:/ });
-  await expect(selector).toBeVisible();
-  await selector.click();
-  await expect(page.getByRole("option", { name: /roborev-dev\/kenn-forge/ })).toBeVisible();
-  await expect(page.getByRole("option", { name: /roborev-dev\/worker/ })).toBeVisible();
-  await page.keyboard.press("Escape");
-
-  await page.goto(`${isolatedServer!.info.base_url}/settings`);
-  await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
-  await row.getByRole("button", { name: "Refresh" }).click();
-
   await expect(row).toContainText("(3)");
   await expect
     .poll(async () => {
@@ -88,7 +60,35 @@ test("settings shows glob match counts and refresh updates tracked repos", async
         .sort()
         .join(",");
     })
-    .toBe("kenn-forge,review-bot,worker");
+    .toBe("archived,kenn-forge,worker");
+
+  await page.goto(`${isolatedServer!.info.base_url}/pulls`);
+  const selector = page.getByRole("button", { name: /^Select repository:/ });
+  await expect(selector).toBeVisible();
+  await selector.click();
+  await expect(page.getByRole("option", { name: /roborev-dev\/kenn-forge/ })).toBeVisible();
+  await expect(page.getByRole("option", { name: /roborev-dev\/worker/ })).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  await page.goto(`${isolatedServer!.info.base_url}/settings`);
+  await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
+  await row.getByRole("button", { name: "Refresh" }).click();
+
+  await expect(row).toContainText("(4)");
+  await expect
+    .poll(async () => {
+      if (!api) {
+        throw new Error("settings-globs API context not initialized");
+      }
+      const response = await api.get("/api/v1/repos");
+      const repos = (await response.json()) as RepoSummary[];
+      return repos
+        .filter((repo) => repo.Owner === "roborev-dev")
+        .map((repo) => repo.Name)
+        .sort()
+        .join(",");
+    })
+    .toBe("archived,kenn-forge,review-bot,worker");
 
   await page.screenshot({
     path: "test-results/settings-globs-pr.png",

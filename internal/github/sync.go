@@ -241,6 +241,9 @@ type RepoRef struct {
 	WebURL             string
 	CloneURL           string
 	DefaultBranch      string
+	// Archived marks a provider-archived repository: configured for archive
+	// collection only, skipped by live sync.
+	Archived bool
 }
 
 // PartialSyncError reports a repo sync cycle whose index scan completed but
@@ -602,7 +605,7 @@ type archiveRunner interface {
 }
 
 type archiveRepositoryLifecycle interface {
-	EnsureConfigured(context.Context, []platform.RepoRef) error
+	EnsureConfigured(context.Context, []platform.RepoRef) ([]platform.RepoRef, error)
 	RetryAuthentication(context.Context, []platform.RepoRef) error
 }
 
@@ -3790,11 +3793,14 @@ func (s *Syncer) SetReposWithContext(ctx context.Context, repos []RepoRef, retry
 		refs = append(refs, platformRepoRef(repo))
 	}
 	if s.archiveLifecycle != nil {
-		if err := s.archiveLifecycle.EnsureConfigured(ctx, refs); err != nil {
+		seeded, err := s.archiveLifecycle.EnsureConfigured(ctx, refs)
+		if err != nil {
 			return fmt.Errorf("seed archive discovery: %w", err)
 		}
 		if retryAuthentication {
-			if err := s.archiveLifecycle.RetryAuthentication(ctx, refs); err != nil {
+			// Only refs that seeded can resolve; a ref skipped by seeding
+			// must not fail the retry pass (and with it the config reload).
+			if err := s.archiveLifecycle.RetryAuthentication(ctx, seeded); err != nil {
 				return fmt.Errorf("retry archive authentication: %w", err)
 			}
 		}
@@ -5116,6 +5122,7 @@ func (s *Syncer) runOnce(
 	s.reposMu.Lock()
 	repos := slices.Clone(s.repos)
 	s.reposMu.Unlock()
+	repos = excludeArchivedRepos(repos)
 	if onlyRepos != nil {
 		repos = selectRepos(repos, onlyRepos)
 	}
@@ -5322,6 +5329,25 @@ func prioritizeRepos(repos, priorityRepos []RepoRef) []RepoRef {
 	return out
 }
 
+// excludeArchivedRepos drops provider-archived repositories from a live sync
+// pass. Archived repos stay tracked in s.repos for archive collection and
+// API surfaces; only live polling skips them.
+func excludeArchivedRepos(repos []RepoRef) []RepoRef {
+	live := make([]RepoRef, 0, len(repos))
+	skipped := make([]string, 0)
+	for _, repo := range repos {
+		if repo.Archived {
+			skipped = append(skipped, repo.Owner+"/"+repo.Name)
+			continue
+		}
+		live = append(live, repo)
+	}
+	if len(skipped) > 0 {
+		slog.Debug("skipping archived repos in live sync", "repos", skipped)
+	}
+	return live
+}
+
 func selectRepos(repos, selectedRepos []RepoRef) []RepoRef {
 	selectedKeys := make(map[string]struct{}, len(selectedRepos))
 	for _, repo := range selectedRepos {
@@ -5454,7 +5480,7 @@ func (s *Syncer) reconcileArchiveRepositoryIfNeeded(
 	for _, trackedRepo := range tracked {
 		refs = append(refs, platformRepoRef(trackedRepo))
 	}
-	if err := s.archiveLifecycle.EnsureConfigured(ctx, refs); err != nil {
+	if _, err := s.archiveLifecycle.EnsureConfigured(ctx, refs); err != nil {
 		return fmt.Errorf("reconcile archive repository replacement: %w", err)
 	}
 	s.WakeArchive()
@@ -5473,6 +5499,9 @@ func repoRefFromCatalog(previous RepoRef, stored db.Repo, resolved *platform.Rep
 		WebURL:             stored.WebURL,
 		CloneURL:           stored.CloneURL,
 		DefaultBranch:      stored.DefaultBranch,
+		// The repo catalog does not record archived state; without a fresh
+		// provider resolve, the previously tracked flag stands.
+		Archived: previous.Archived,
 	}
 	if repo.PlatformRepoID == 0 {
 		repo.PlatformRepoID = previous.PlatformRepoID
@@ -5489,6 +5518,7 @@ func repoRefFromCatalog(previous RepoRef, stored db.Repo, resolved *platform.Rep
 	if resolved == nil {
 		return repo
 	}
+	repo.Archived = resolved.Archived
 	repo.PlatformRepoID = resolved.PlatformID
 	if repo.PlatformRepoID == 0 {
 		repo.PlatformRepoID = resolved.Ref.PlatformID

@@ -393,7 +393,7 @@ func setupArchiveTestServer(
 		)
 		require.NoError(t, serviceErr)
 		service.SetWake(func() { wakeCount.Add(1) })
-		require.NoError(t, service.EnsureConfigured(t.Context(), []platform.RepoRef{ref}))
+		requireEnsureConfigured(t, service, []platform.RepoRef{ref})
 		controller = service
 	}
 	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
@@ -579,4 +579,10 @@ func TestAPIArchivePacingUsesPerPoolReserves(t *testing.T) {
 	assert.Equal(3000, row.Remaining)
 	assert.Equal(3000, row.Reserve)
 	assert.Zero(row.Available)
+}
+
+func requireEnsureConfigured(t *testing.T, s *archive.Service, refs []platform.RepoRef) {
+	t.Helper()
+	_, err := s.EnsureConfigured(t.Context(), refs)
+	require.NoError(t, err)
 }

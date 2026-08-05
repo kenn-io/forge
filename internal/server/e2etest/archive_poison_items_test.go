@@ -100,7 +100,7 @@ func TestArchiveAPIPersistsTerminalAndBackoffOutcomesE2E(t *testing.T) {
 		database, registry, nil, syncer, nil, clock,
 	)
 	require.NoError(err)
-	require.NoError(archiveService.EnsureConfigured(t.Context(), []platform.RepoRef{ref}))
+	requireEnsureConfigured(t, archiveService, []platform.RepoRef{ref})
 
 	srv := servertest.New(t, database, syncer, nil, "/", nil, server.ServerOptions{
 		Archive:                       archiveService,

@@ -776,7 +776,10 @@ func (s *Syncer) ackRepoBuckets(
 		byNotification[notification.ID] = bucket
 		add(bucket, notification.RepoOwner, notification.RepoName)
 	}
-	for _, repo := range excludeArchivedRepos(s.TrackedRepos()) {
+	// Archived repos stay in the grouping: their queued acknowledgements
+	// (from before archiving) must still be covered by credential-wide
+	// rate-limit deferral. Only polling skips archived repos.
+	for _, repo := range s.TrackedRepos() {
 		if repoPlatform(repo) != kind || repoHost(repo) != host {
 			continue
 		}

@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -938,6 +939,88 @@ name = "*"
 
 	assert.True(trackedRepoArchived(srv, "acme", "widget"),
 		"glob refresh must apply fresh archived state to overlapping repos")
+}
+
+func TestHandleRefreshRepoStopsNotificationPollingForArchivedRepo(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	archivedNow := atomic.Bool{}
+	var listedRepos sync.Map
+	mock := &mockGH{
+		getRepositoryFn: func(
+			_ context.Context, owner, repo string,
+		) (*gh.Repository, error) {
+			return &gh.Repository{
+				Name:     new(repo),
+				Owner:    &gh.User{Login: new(owner)},
+				Archived: new(repo == "widget" && archivedNow.Load()),
+			}, nil
+		},
+		listReposByOwnerFn: func(
+			_ context.Context, owner string,
+		) ([]*gh.Repository, error) {
+			return []*gh.Repository{
+				{
+					Name:     new("widget"),
+					Owner:    &gh.User{Login: new(owner)},
+					Archived: new(archivedNow.Load()),
+				},
+				{
+					Name:     new("tools"),
+					Owner:    &gh.User{Login: new(owner)},
+					Archived: new(false),
+				},
+			}, nil
+		},
+		listNotificationsFn: func(
+			_ context.Context, opts ghclient.NotificationListOptions,
+		) ([]ghclient.NotificationThread, bool, error) {
+			if opts.RepoName != "" {
+				listedRepos.Store(opts.RepoName, true)
+			}
+			return nil, false, nil
+		},
+	}
+	srv, database, _ := setupTestServerWithConfigContent(t, `
+sync_interval = "5m"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "widget"
+
+[[repos]]
+owner = "acme"
+name = "*"
+`, mock)
+	for _, name := range []string{"widget", "tools"} {
+		_, err := database.UpsertRepo(t.Context(), db.RepoIdentity{
+			Platform: "github", PlatformHost: "github.com",
+			PlatformRepoID: "repo-acme-" + name, Owner: "acme", Name: name,
+		})
+		require.NoError(err)
+	}
+	require.True(srv.syncer.IsTrackedRepo("acme", "widget"))
+
+	// The provider archives widget; the refresh applies the transition and
+	// the notification lane must stop polling it while the live sibling
+	// keeps syncing.
+	archivedNow.Store(true)
+	rr := doJSON(
+		t, srv, http.MethodPost,
+		"/api/v1/repo/gh/acme/*/refresh", nil,
+	)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	require.True(trackedRepoArchived(srv, "acme", "widget"))
+
+	require.NoError(srv.syncer.SyncNotifications(t.Context()))
+	_, listedTools := listedRepos.Load("tools")
+	assert.True(listedTools, "live repo notifications should sync")
+	_, listedWidget := listedRepos.Load("widget")
+	assert.False(listedWidget,
+		"archived repo must not receive notification polling after refresh")
 }
 
 func trackedRepoArchived(srv *Server, owner, name string) bool {

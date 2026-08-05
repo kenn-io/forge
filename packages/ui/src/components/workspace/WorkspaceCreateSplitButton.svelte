@@ -1,5 +1,10 @@
 <script lang="ts">
-  import { autoReposition, dismissable, floatingPopoverStyle } from "@kenn-io/kit-ui";
+  import {
+    autoReposition,
+    Button,
+    dismissable,
+    floatingPopoverStyle,
+  } from "@kenn-io/kit-ui";
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
   import PackagePlusIcon from "@lucide/svelte/icons/package-plus";
   import { tick } from "svelte";
@@ -60,6 +65,7 @@
 
   async function openMenu(): Promise<void> {
     if (blocked || agentTargets.length === 0) return;
+    trigger ??= root?.querySelector<HTMLButtonElement>(".create-options-button") ?? undefined;
     open = true;
     await tick();
     position();
@@ -74,6 +80,22 @@
     const host = root?.closest<HTMLElement>(".kit-modal-panel") ?? document.body;
     host.appendChild(node);
     return () => node.remove();
+  }
+
+  function optionsButton(node: HTMLElement): () => void {
+    const button = node.querySelector<HTMLButtonElement>(".create-options-button");
+    if (!button) return () => {};
+    button.setAttribute("aria-haspopup", "menu");
+    function handle(event: KeyboardEvent): void {
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        void openMenu();
+      } else if (event.key === "Tab" && open) {
+        closeMenu();
+      }
+    }
+    button.addEventListener("keydown", handle);
+    return () => button.removeEventListener("keydown", handle);
   }
 
   function selectTarget(targetKey: string): void {
@@ -134,12 +156,14 @@
   });
 </script>
 
-<div class="workspace-create-split" bind:this={root} data-surface={surface}>
-  <button
+<div class="workspace-create-split" bind:this={root}>
+  <Button
     type={primaryType}
     class="create-primary"
-    aria-label={busy ? busyLabel : label}
-    aria-describedby={descriptionId || undefined}
+    tone="info"
+    {surface}
+    ariaLabel={busy ? busyLabel : label}
+    ariaDescribedby={descriptionId || undefined}
     title={disabledReason || label}
     disabled={blocked}
     onclick={() => {
@@ -148,31 +172,24 @@
   >
     <PackagePlusIcon size="14" strokeWidth="2.2" aria-hidden="true" />
     <span>{busy ? busyLabel : label}</span>
-  </button>
-  <button
-    bind:this={trigger}
-    type="button"
-    class="create-options"
-    aria-label={`${label} options`}
-    title={disabledReason || "Create and launch an agent"}
-    aria-haspopup="menu"
-    aria-expanded={open}
-    disabled={blocked || agentTargets.length === 0}
-    onclick={() => {
-      if (open) closeMenu();
-      else void openMenu();
-    }}
-    onkeydown={(event) => {
-      if (event.key === "ArrowDown") {
-        event.preventDefault();
-        void openMenu();
-      } else if (event.key === "Tab" && open) {
-        closeMenu();
-      }
-    }}
-  >
-    <ChevronDownIcon size="12" strokeWidth="2" aria-hidden="true" />
-  </button>
+  </Button>
+  <span class="create-options" {@attach optionsButton}>
+    <Button
+      surface={surface === "solid" ? "solid" : "soft"}
+      tone="info"
+      class="create-options-button"
+      ariaLabel={`${label} options`}
+      title={disabledReason || "Create and launch an agent"}
+      ariaExpanded={open}
+      disabled={blocked || agentTargets.length === 0}
+      onclick={() => {
+        if (open) closeMenu();
+        else void openMenu();
+      }}
+    >
+      <ChevronDownIcon size="12" strokeWidth="2" aria-hidden="true" />
+    </Button>
+  </span>
   {#if open}
     <ul
       bind:this={menu}
@@ -207,78 +224,34 @@
     max-width: 100%;
   }
 
-  .workspace-create-split > button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 30px;
-    border: 1px solid var(--border-default);
-    background: var(--bg-surface);
-    color: var(--text-secondary);
-    font: inherit;
-    font-size: var(--font-size-xs);
-    font-weight: 600;
-    cursor: pointer;
-  }
-
-  .create-primary {
+  .workspace-create-split :global(.create-primary) {
     flex: 1 1 auto;
-    gap: var(--space-2);
     min-width: 0;
+    min-height: 30px;
     overflow: hidden;
-    padding: 0 var(--space-4);
+    padding-inline: var(--space-4);
     border-radius: var(--radius-sm) 0 0 var(--radius-sm);
   }
 
-  .create-primary span {
+  .workspace-create-split :global(.create-primary span) {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   .create-options {
+    display: inline-flex;
     flex: 0 0 30px;
     width: 30px;
+  }
+
+  .create-options :global(.create-options-button) {
+    flex-shrink: 0;
+    width: 30px;
+    min-height: 30px;
     padding: 0;
     border-left: 0;
     border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-  }
-
-  .workspace-create-split[data-surface="solid"] > button {
-    border-color: var(--accent-blue);
-    background: var(--accent-blue);
-    color: var(--bg-surface);
-  }
-
-  .workspace-create-split > button:hover:not(:disabled),
-  .workspace-create-split > button:focus-visible,
-  .workspace-create-split > button[aria-expanded="true"] {
-    border-color: var(--accent-blue);
-    color: var(--text-primary);
-  }
-
-  .workspace-create-split > button:focus-visible {
-    position: relative;
-    outline: 2px solid var(--accent-blue);
-    outline-offset: -1px;
-  }
-
-  .workspace-create-split[data-surface="solid"] > button:hover:not(:disabled),
-  .workspace-create-split[data-surface="solid"] > button:focus-visible {
-    border-color: color-mix(in srgb, var(--accent-blue) 88%, #000);
-    background: color-mix(in srgb, var(--accent-blue) 88%, #000);
-    color: var(--bg-surface);
-  }
-
-  .workspace-create-split[data-surface="solid"] > button[aria-expanded="true"] {
-    border-color: color-mix(in srgb, var(--accent-blue) 78%, #000);
-    background: color-mix(in srgb, var(--accent-blue) 78%, #000);
-    color: var(--bg-surface);
-  }
-
-  .workspace-create-split > button:disabled {
-    color: var(--text-faint);
-    cursor: default;
   }
 
   .create-menu {

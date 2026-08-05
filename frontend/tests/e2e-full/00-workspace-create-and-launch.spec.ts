@@ -346,6 +346,58 @@ test.describe("workspace create-and-launch full stack", () => {
     }
   });
 
+  test("New workspace dialog creates and persists the selected agent launch", async ({ page }) => {
+    test.skip(
+      !hasCommand("git") || !hasCommand("tmux", ["-V"]) || !hasCommand("sh", ["-c", ":"]),
+      "git, tmux, and sh are required for the real workspace runtime flow",
+    );
+
+    let server: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    try {
+      server = await startIsolatedWorkspaceE2EServer();
+      api = await playwrightRequest.newContext({
+        baseURL: server.info.base_url,
+      });
+      await configureAgent(page, server.info.base_url);
+
+      const createResponsePromise = page.waitForResponse(
+        (response) =>
+          response.request().method() === "POST" &&
+          /\/api\/v1\/repo\/github\/acme\/widgets\/workspaces$/.test(response.url()),
+      );
+      const launchResponsePromise = page.waitForResponse(
+        (response) =>
+          response.request().method() === "POST" &&
+          /\/api\/v1\/workspaces\/[^/]+\/runtime\/sessions$/.test(response.url()),
+      );
+
+      await page.goto(`${server.info.base_url}/workspaces`);
+      await page.getByRole("button", { name: "New workspace" }).click();
+      const dialog = page.getByRole("dialog", { name: "New workspace" });
+      await expect(dialog).toBeVisible();
+      await dialog.getByRole("button", { name: "Filter repositories" }).click();
+      await dialog.getByRole("option", { name: /acme\/widgets/ }).click();
+      await expect(dialog.getByRole("button", { name: "Filter repositories" })).toContainText("acme/widgets");
+      await dialog.getByRole("button", { name: "Create workspace options" }).click();
+      const agent = page.getByRole("menuitem", { name: agentLabel });
+      await expect(agent).toBeVisible();
+      await agent.click();
+
+      const createResponse = await createResponsePromise;
+      expect(createResponse.status(), await createResponse.text()).toBe(202);
+      const created = (await createResponse.json()) as WorkspaceResponse;
+      await waitForWorkspaceReady(api, created.id);
+      const launchResponse = await launchResponsePromise;
+      expect(launchResponse.status(), await launchResponse.text()).toBe(200);
+      await expect.poll(() => runtimeTargets(api!, created.id)).toContain(agentKey);
+      await expect.poll(() => persistedRuntimeTargets(api!, created.id)).toEqual([agentKey]);
+    } finally {
+      await api?.dispose();
+      await server?.stop();
+    }
+  });
+
   test("explicit fork-head selection launches through the ordinary manual Launch-menu trust boundary", async ({
     page,
   }) => {

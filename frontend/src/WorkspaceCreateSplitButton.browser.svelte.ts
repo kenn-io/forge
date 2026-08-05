@@ -1,10 +1,13 @@
-import { mount, unmount } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { page } from "vite-plus/test/browser";
+import { cleanup, render } from "vitest-browser-svelte";
 import "./app.css";
 
 import { setThemeMode } from "@kenn-io/kit-ui";
-import { WorkspaceCreateSplitButton } from "@kenn-forge/ui";
-import type { LaunchTarget } from "@kenn-forge/ui/api/types";
+import { STORES_KEY } from "../../packages/ui/src/context.js";
+import type { LaunchTarget } from "../../packages/ui/src/api/types.js";
+import NewWorkspaceDialog from "./lib/components/terminal/NewWorkspaceDialog.svelte";
+import { createMockApiFetch, jsonResponse } from "./test/mockApiFetch.js";
 
 const launchTargets: LaunchTarget[] = [
   {
@@ -27,94 +30,89 @@ function resolvedColor(value: string): string {
   return color;
 }
 
-function mountInScrollableModal(onCreate = vi.fn()): {
-  app: Record<string, unknown>;
-  overlay: HTMLElement;
-  target: HTMLElement;
-  onCreate: ReturnType<typeof vi.fn>;
-} {
-  const overlay = document.createElement("div");
-  overlay.style.cssText = "position: fixed; inset: 0; z-index: 1000;";
+describe("workspace create split button in the New workspace dialog", () => {
+  const originalFetch = globalThis.fetch;
 
-  const panel = document.createElement("div");
-  panel.className = "kit-modal-panel";
-  panel.style.cssText = "position: fixed; left: 80px; top: 80px; width: 440px; background: var(--bg-surface);";
-
-  const body = document.createElement("div");
-  body.className = "kit-modal-body";
-  body.style.cssText = "height: 210px; overflow-y: auto;";
-
-  const target = document.createElement("div");
-  target.style.cssText = "display: flex; justify-content: flex-end; margin-top: 165px; padding-right: 16px;";
-  body.append(target);
-  panel.append(body);
-  overlay.append(panel);
-  document.body.append(overlay);
-
-  const app = mount(WorkspaceCreateSplitButton, {
-    target,
-    props: {
-      label: "Create workspace",
-      launchTargets,
-      surface: "solid",
-      onCreate,
-    },
-  });
-
-  return { app, overlay, target, onCreate };
-}
-
-describe("workspace create split button in a modal", () => {
-  let mounted: ReturnType<typeof mountInScrollableModal> | null = null;
-
-  afterEach(() => {
-    if (mounted) {
-      unmount(mounted.app);
-      mounted.overlay.remove();
-      mounted = null;
-    }
+  afterEach(async () => {
+    cleanup();
+    globalThis.fetch = originalFetch;
     setThemeMode("light");
   });
 
-  it("renders the launch menu outside the scrollable modal body and keeps its items clickable", async () => {
-    mounted = mountInScrollableModal();
-    const trigger = mounted.target.querySelector<HTMLButtonElement>("button[aria-label='Create workspace options']");
-    expect(trigger).not.toBeNull();
+  it("renders the launch menu outside the real modal body and keeps its items clickable", async () => {
+    const api = createMockApiFetch([
+      ({ method, url }) =>
+        method === "POST" && url.pathname.endsWith("/workspaces") ? jsonResponse({ id: "ws-new" }, 202) : undefined,
+    ]);
+    globalThis.fetch = api.fetch;
+    const onCreated = vi.fn();
 
-    trigger!.click();
-
-    const menu = await vi.waitFor(() => {
-      const element = document.querySelector<HTMLUListElement>("[role='menu'][aria-label='Create and launch']");
-      expect(element).not.toBeNull();
-      expect(element!.getBoundingClientRect().height).toBeGreaterThan(0);
-      return element!;
+    render(NewWorkspaceDialog, {
+      props: { open: true, onClose: vi.fn(), onCreated },
+      context: new Map([
+        [
+          STORES_KEY,
+          {
+            settings: { getLaunchTargets: () => launchTargets },
+          },
+        ],
+      ]),
     });
-    expect(menu.parentElement).toBe(mounted.overlay.querySelector(".kit-modal-panel"));
-    expect(menu.parentElement).not.toBe(mounted.overlay.querySelector(".kit-modal-body"));
 
-    const item = menu.querySelector<HTMLButtonElement>("[role='menuitem']");
-    expect(item).not.toBeNull();
-    const rect = item!.getBoundingClientRect();
-    const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
-    expect(item === hit || item!.contains(hit)).toBe(true);
+    const dialog = page.getByRole("dialog", { name: "New workspace" });
+    await expect.element(dialog).toBeVisible();
+    await vi.waitFor(() =>
+      expect(dialog.getByRole("button", { name: "Create workspace", exact: true }).element()).not.toBeDisabled(),
+    );
 
-    item!.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
-    expect(document.body.contains(item)).toBe(true);
-    item!.click();
-    expect(mounted.onCreate).toHaveBeenCalledWith("codex");
+    const options = dialog.getByRole("button", { name: "Create workspace options" });
+    await options.click();
+    const item = page.getByRole("menuitem", { name: "Codex" });
+    await expect.element(item).toBeVisible();
+
+    const menu = item.element().closest<HTMLElement>("[role='menu']");
+    const panel = document.querySelector<HTMLElement>(".kit-modal-panel");
+    const body = document.querySelector<HTMLElement>(".kit-modal-body");
+    expect(menu?.parentElement).toBe(panel);
+    expect(menu?.parentElement).not.toBe(body);
+
+    const itemRect = item.element().getBoundingClientRect();
+    const hit = document.elementFromPoint(itemRect.left + itemRect.width / 2, itemRect.top + itemRect.height / 2);
+    expect(item.element() === hit || item.element().contains(hit)).toBe(true);
+
+    await item.click();
+    await vi.waitFor(() => expect(onCreated).toHaveBeenCalledWith("ws-new"));
   });
 
-  it("styles both solid segments as one themed primary action", () => {
+  it("uses kit-ui primary colors for both solid segments", async () => {
+    globalThis.fetch = createMockApiFetch().fetch;
     setThemeMode("dark");
-    mounted = mountInScrollableModal();
 
-    const primary = mounted.target.querySelector<HTMLButtonElement>(".create-primary");
-    const options = mounted.target.querySelector<HTMLButtonElement>(".create-options");
-    expect(primary).not.toBeNull();
-    expect(options).not.toBeNull();
+    render(NewWorkspaceDialog, {
+      props: { open: true, onClose: vi.fn(), onCreated: vi.fn() },
+      context: new Map([
+        [
+          STORES_KEY,
+          {
+            settings: { getLaunchTargets: () => launchTargets },
+          },
+        ],
+      ]),
+    });
 
-    const primaryStyle = getComputedStyle(primary!);
-    const optionsStyle = getComputedStyle(options!);
+    const dialog = page.getByRole("dialog", { name: "New workspace" });
+    await expect.element(dialog).toBeVisible();
+    await vi.waitFor(() =>
+      expect(dialog.getByRole("button", { name: "Create workspace", exact: true }).element()).not.toBeDisabled(),
+    );
+
+    const primary = dialog.getByRole("button", { name: "Create workspace", exact: true }).element();
+    const options = dialog.getByRole("button", { name: "Create workspace options" }).element();
+    expect(primary.classList.contains("kit-button")).toBe(true);
+    expect(options.classList.contains("kit-button")).toBe(true);
+
+    const primaryStyle = getComputedStyle(primary);
+    const optionsStyle = getComputedStyle(options);
     const rootStyle = getComputedStyle(document.documentElement);
     const accent = resolvedColor(rootStyle.getPropertyValue("--accent-blue").trim());
     const foreground = resolvedColor(rootStyle.getPropertyValue("--bg-surface").trim());
@@ -123,8 +121,5 @@ describe("workspace create split button in a modal", () => {
     expect(optionsStyle.backgroundColor).toBe(accent);
     expect(primaryStyle.color).toBe(foreground);
     expect(optionsStyle.color).toBe(foreground);
-
-    options!.focus();
-    expect(getComputedStyle(options!).color).toBe(foreground);
   });
 });

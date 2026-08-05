@@ -28,8 +28,8 @@ targets, a create-only callback, and a create-and-launch callback.
 
 - The primary segment retains the current create-only behavior.
 - The chevron exposes `aria-haspopup="menu"` and `aria-expanded`.
-- The menu is headed `Create and launch` and lists visible targets whose kind
-  is `agent`, including enabled custom agents.
+- The menu has the accessible name `Create and launch` and lists visible targets whose kind
+  is `agent`, including enabled custom agents, without repeating that name as visible chrome.
 - Available agents are selectable. Unavailable agents remain visible but
   disabled and expose their existing disabled reason.
 - Shell and non-agent run configurations are not creation choices; they remain

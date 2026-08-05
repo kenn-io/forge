@@ -147,6 +147,63 @@ func TestConvertGQLCommentsRecordsObservedVisibleComments(t *testing.T) {
 	}
 }
 
+func TestGraphQLFetcherPaginatesCommentVisibility(t *testing.T) {
+	tests := []struct {
+		name         string
+		responseData string
+		complete     func(*testing.T, *GraphQLFetcher) map[int64]CommentVisibility
+	}{
+		{
+			name:         "pull request",
+			responseData: `{"repository":{"pullRequest":{"comments":{"nodes":[{"databaseId":202,"isMinimized":true,"minimizedReason":"ABUSE"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}`,
+			complete: func(t *testing.T, fetcher *GraphQLFetcher) map[int64]CommentVisibility {
+				pr := gqlPR{Number: 7}
+				pr.Comments.PageInfo = pageInfo{HasNextPage: true, EndCursor: "comment-100"}
+				bulk := convertGQLPR(&pr)
+				require.NoError(t, fetcher.completePRCommentVisibility(
+					t.Context(), "owner", "repo", &pr, &bulk,
+				))
+				return bulk.CommentVisibility
+			},
+		},
+		{
+			name:         "issue",
+			responseData: `{"repository":{"issue":{"comments":{"nodes":[{"databaseId":202,"isMinimized":true,"minimizedReason":"ABUSE"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}`,
+			complete: func(t *testing.T, fetcher *GraphQLFetcher) map[int64]CommentVisibility {
+				issue := gqlIssue{Number: 8}
+				issue.Comments.PageInfo = pageInfo{HasNextPage: true, EndCursor: "comment-100"}
+				bulk := convertGQLIssue(&issue)
+				require.NoError(t, fetcher.completeIssueCommentVisibility(
+					t.Context(), "owner", "repo", &issue, &bulk,
+				))
+				return bulk.CommentVisibility
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var cursor string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var request graphQLRequest
+				require.NoError(t, json.NewDecoder(r.Body).Decode(&request))
+				cursor, _ = request.Variables["cursor"].(string)
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = fmt.Fprintf(w, `{"data":%s}`, tt.responseData)
+			}))
+			defer srv.Close()
+
+			fetcher := NewGraphQLFetcherWithClient(
+				githubv4.NewEnterpriseClient(srv.URL, srv.Client()), nil,
+			)
+			visibility := tt.complete(t, fetcher)
+
+			assert.Equal(t, "comment-100", cursor)
+			assert.Equal(t, CommentVisibility{Hidden: true, Reason: "ABUSE"}, visibility[202])
+		})
+	}
+}
+
 func TestAdaptComment(t *testing.T) {
 	assert := assert.New(t)
 	now := time.Now().UTC().Truncate(time.Second)

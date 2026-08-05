@@ -1752,6 +1752,8 @@ func TestGitHubProviderListMergeRequestReviewThreadsMapsGraphQLThreads(t *testin
 				URL:              "https://github.com/acme/widget/pull/7#discussion_r101",
 				CommitID:         "head-sha",
 				OriginalCommitID: "original-sha",
+				IsMinimized:      true,
+				MinimizedReason:  "OFF_TOPIC",
 				CreatedAt:        createdAt,
 				UpdatedAt:        updatedAt,
 			}, {
@@ -1762,6 +1764,8 @@ func TestGitHubProviderListMergeRequestReviewThreadsMapsGraphQLThreads(t *testin
 				AuthorLogin:      "maintainer",
 				CommitID:         "head-sha",
 				OriginalCommitID: "original-sha",
+				IsMinimized:      true,
+				MinimizedReason:  "ABUSE",
 				CreatedAt:        createdAt.Add(time.Minute),
 				UpdatedAt:        updatedAt.Add(time.Minute),
 			}},
@@ -1798,10 +1802,12 @@ func TestGitHubProviderListMergeRequestReviewThreadsMapsGraphQLThreads(t *testin
 	assert.Equal("add", thread.Range.LineType)
 	assert.Equal("head-sha", thread.Range.DiffHeadSHA)
 	assert.Equal("head-sha", thread.Range.CommitSHA)
+	assert.JSONEq(`{"provider_hidden":true,"provider_hidden_reason":"OFF_TOPIC"}`, thread.MetadataJSON)
 	assert.Equal("PRRT_1", threads[1].ProviderThreadID)
 	assert.Equal("102", threads[1].ProviderCommentID)
 	assert.Equal("reply note", threads[1].Body)
 	assert.Equal("maintainer", threads[1].AuthorLogin)
+	assert.JSONEq(`{"provider_hidden":true,"provider_hidden_reason":"ABUSE"}`, threads[1].MetadataJSON)
 }
 
 func TestGitHubProviderListMergeRequestReviewThreadsMapsFileSubject(t *testing.T) {
@@ -15136,6 +15142,48 @@ func TestSyncOpenMRFromBulkRemovesDeletedCommentsWhenCommentsAreComplete(t *test
 	_ = commentTotal
 }
 
+func TestSyncOpenMRFromBulkMergesPaginatedVisibilityIntoRESTComments(t *testing.T) {
+	ctx := t.Context()
+	database := openTestDB(t)
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", repo.Owner, repo.Name))
+	require.NoError(t, err)
+
+	now := time.Date(2026, 8, 2, 12, 0, 0, 0, time.UTC)
+	commentID := int64(202)
+	commentBody := "hidden after the first GraphQL page"
+	commentAuthor := "reviewer"
+	commentTime := gh.Timestamp{Time: now.Add(time.Minute)}
+	client := &mockClient{comments: []*gh.IssueComment{{
+		ID: &commentID, Body: &commentBody, User: &gh.User{Login: &commentAuthor},
+		CreatedAt: &commentTime, UpdatedAt: &commentTime,
+	}}}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client}, database, nil, []RepoRef{repo},
+		time.Minute, nil, nil,
+	)
+
+	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, &BulkPR{
+		PR:                buildOpenPR(1, now),
+		CommentVisibility: map[int64]CommentVisibility{commentID: {Hidden: true, Reason: "ABUSE"}},
+		CommentsComplete:  false,
+		ReviewsComplete:   true,
+		CommitsComplete:   true,
+		TimelineComplete:  true,
+		CIComplete:        true,
+	}, false)
+	require.NoError(t, err)
+	assert.Equal(t, int32(1), client.listIssueCommentsCalled.Load())
+
+	mr, err := database.GetMergeRequest(ctx, "github", "github.com", repo.Owner, repo.Name, 1)
+	require.NoError(t, err)
+	require.NotNil(t, mr)
+	events, err := database.ListMREvents(ctx, mr.ID)
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+	assert.JSONEq(t, `{"provider_hidden":true,"provider_hidden_reason":"ABUSE"}`, events[0].MetadataJSON)
+}
+
 // TestSyncOpenMRFromBulkPersistsWorkflowApproval verifies the GraphQL
 // bulk path persists the workflow approval snapshot on fully-synced
 // PRs. Without this, the periodic GraphQL sync would mark a PR as
@@ -15684,7 +15732,7 @@ func TestSyncOpenIssueFromBulkMergesPartialCommentVisibilityWithStoredState(t *t
 	ctx := t.Context()
 	d := openTestDB(t)
 
-	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
+	repoID, err := d.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", "owner", "repo"))
 	require.NoError(err)
 
 	now := time.Date(2024, 6, 3, 12, 0, 0, 0, time.UTC)

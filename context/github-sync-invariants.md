@@ -285,7 +285,10 @@ fallback repository listing.
   identity-less live ref — dropping the archived flag and duplicating the
   repository next to a resolved overlapping entry. Settings merges preserve
   tracked provenance the same way (settings-resolved refs never author it),
-  and startup — which has no tracked set — recovers a failed exact entry's
+  but route-keyed recovery refuses to cross conflicting stable provider ids:
+  a route reused by a different repository must not inherit the displaced
+  repository's provenance, or two refs would claim the same config entry.
+  Startup — which has no tracked set — recovers a failed exact entry's
   stable identity through catalog route history before synthesizing.
   (`internal/github/repo_config_resolver.go::FallbackConfiguredRepoRefs`,
   `internal/github/repo_config_resolver.go::ExpandedRepoSet`,

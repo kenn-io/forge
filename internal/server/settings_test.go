@@ -939,6 +939,17 @@ name = "*"
 
 	assert.True(trackedRepoArchived(srv, "acme", "widget"),
 		"glob refresh must apply fresh archived state to overlapping repos")
+	assert.Equal("acme/widget", trackedRepoProvenancePath(srv, "acme", "widget"),
+		"glob refresh through the API must keep the exact entry's provenance")
+}
+
+func trackedRepoProvenancePath(srv *Server, owner, name string) string {
+	for _, repo := range srv.syncer.TrackedRepos() {
+		if strings.EqualFold(repo.Owner, owner) && strings.EqualFold(repo.Name, name) {
+			return repo.ConfiguredRepoPath
+		}
+	}
+	return ""
 }
 
 func TestHandleRefreshRepoStopsLiveLanesForArchivedRepo(t *testing.T) {
@@ -1113,6 +1124,46 @@ func TestMergeTrackedReposPreservesExactEntryProvenance(t *testing.T) {
 	require.Len(tracked, 1)
 	assert.True(tracked[0].Archived)
 	assert.Equal("acme/tools", tracked[0].ConfiguredRepoPath)
+}
+
+func TestMergeTrackedReposDoesNotTransferProvenanceAcrossProviderIdentities(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, _, _ := setupTestServerWithConfig(t)
+	srv.syncer.SetRepos([]ghclient.RepoRef{{
+		Platform: platform.KindGitHub, Owner: "acme", Name: "tools",
+		PlatformHost: "github.com", RepoPath: "acme/tools",
+		PlatformExternalID: "repo-x", ConfiguredRepoPath: "acme/tools",
+	}})
+
+	// The tracked repo was renamed away and its old route reused by a
+	// different repository. The renamed repo keeps its provenance through
+	// stable identity; the route successor must not inherit it — two refs
+	// claiming the same config entry would make a later fallback pick
+	// whichever it sees first.
+	srv.mergeTrackedRepos([]ghclient.RepoRef{
+		{
+			Platform: platform.KindGitHub, Owner: "acme", Name: "tools-new",
+			PlatformHost: "github.com", RepoPath: "acme/tools-new",
+			PlatformExternalID: "repo-x",
+		},
+		{
+			Platform: platform.KindGitHub, Owner: "acme", Name: "tools",
+			PlatformHost: "github.com", RepoPath: "acme/tools",
+			PlatformExternalID: "repo-y",
+		},
+	})
+
+	tracked := srv.syncer.TrackedRepos()
+	require.Len(tracked, 2)
+	byName := make(map[string]ghclient.RepoRef, len(tracked))
+	for _, repo := range tracked {
+		byName[repo.Name] = repo
+	}
+	assert.Equal("acme/tools", byName["tools-new"].ConfiguredRepoPath,
+		"stable identity carries provenance through the rename")
+	assert.Empty(byName["tools"].ConfiguredRepoPath,
+		"a different repository reusing the route must not inherit provenance")
 }
 
 func TestReplaceGlobReposPreservesExactEntryProvenance(t *testing.T) {

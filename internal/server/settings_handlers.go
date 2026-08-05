@@ -381,40 +381,62 @@ func trackedRepoKey(repo ghclient.RepoRef) string {
 // trackedRepoIdentityKey keys a tracked repo by its stable provider id, so a
 // renamed route reconciles onto the same entry instead of tracking the
 // repository twice. Empty when the ref carries no provider id.
+// trackedProvenanceEntry records where a tracked ref's config-entry
+// provenance came from, so route-keyed recovery can refuse to hand it to a
+// different repository that merely reuses the route.
+type trackedProvenanceEntry struct {
+	path       string
+	providerID string
+}
+
 // trackedRepoProvenance captures config-entry provenance from the tracked
 // set before a settings merge rebuilds it. Settings-resolved refs never
 // author provenance — only config resolution does — so a merge or glob
 // refresh must not erase the correlation an exact entry needs to reclaim
 // its repository on the next failed reload.
-func trackedRepoProvenance(refs []ghclient.RepoRef) map[string]string {
-	provenance := make(map[string]string)
+func trackedRepoProvenance(refs []ghclient.RepoRef) map[string]trackedProvenanceEntry {
+	provenance := make(map[string]trackedProvenanceEntry)
 	for _, repo := range refs {
 		if repo.ConfiguredRepoPath == "" {
 			continue
 		}
-		if key := trackedRepoIdentityKey(repo); key != "" {
-			provenance["id\x00"+key] = repo.ConfiguredRepoPath
+		entry := trackedProvenanceEntry{
+			path:       repo.ConfiguredRepoPath,
+			providerID: strings.TrimSpace(repo.PlatformExternalID),
 		}
-		provenance["route\x00"+trackedRepoKey(repo)] = repo.ConfiguredRepoPath
+		if key := trackedRepoIdentityKey(repo); key != "" {
+			provenance["id\x00"+key] = entry
+		}
+		provenance["route\x00"+trackedRepoKey(repo)] = entry
 	}
 	return provenance
 }
 
 func withTrackedProvenance(
-	provenance map[string]string, repo ghclient.RepoRef,
+	provenance map[string]trackedProvenanceEntry, repo ghclient.RepoRef,
 ) ghclient.RepoRef {
 	if repo.ConfiguredRepoPath != "" {
 		return repo
 	}
 	if key := trackedRepoIdentityKey(repo); key != "" {
-		if path, ok := provenance["id\x00"+key]; ok {
-			repo.ConfiguredRepoPath = path
+		if entry, ok := provenance["id\x00"+key]; ok {
+			repo.ConfiguredRepoPath = entry.path
 			return repo
 		}
 	}
-	if path, ok := provenance["route\x00"+trackedRepoKey(repo)]; ok {
-		repo.ConfiguredRepoPath = path
+	entry, ok := provenance["route\x00"+trackedRepoKey(repo)]
+	if !ok {
+		return repo
 	}
+	// A route match with two different stable provider ids is route reuse
+	// by another repository, not a rename of the same one: provenance stays
+	// with the identity it was resolved for.
+	incomingID := strings.TrimSpace(repo.PlatformExternalID)
+	if entry.providerID != "" && incomingID != "" &&
+		!strings.EqualFold(entry.providerID, incomingID) {
+		return repo
+	}
+	repo.ConfiguredRepoPath = entry.path
 	return repo
 }
 

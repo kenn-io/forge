@@ -163,6 +163,108 @@ func (s *Syncer) commitOrderAssigner(ctx context.Context, mrID int64) (commitOrd
 	return newCommitOrderAssigner(events), nil
 }
 
+// commitEventSHA returns the event's full commit SHA, or "" when neither
+// provider field contains one. PlatformExternalID covers Gitealike events,
+// whose Summary contains the commit message instead of the SHA.
+func commitEventSHA(event db.MREvent) string {
+	candidates := []string{
+		strings.ToLower(event.PlatformExternalID),
+		commitOrderSHA(event.Summary),
+	}
+	for _, sha := range candidates {
+		if len(sha) != 40 && len(sha) != 64 {
+			continue
+		}
+		valid := true
+		for _, r := range sha {
+			if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+				valid = false
+				break
+			}
+		}
+		if valid {
+			return sha
+		}
+	}
+	return ""
+}
+
+// stampObsoleteCommitEvents records on each stored commit event whether its
+// commit is still reachable from the merge request's current head, so strict
+// date order can collapse superseded commits without replaying force pushes.
+// The clone must contain the head (its ancestor closure is then complete);
+// otherwise the round is skipped and flags keep their last verified state.
+func (s *Syncer) stampObsoleteCommitEvents(
+	ctx context.Context, repo RepoRef, mrID int64, headSHA string,
+) error {
+	if s.clones == nil || headSHA == "" {
+		return nil
+	}
+	platformName := string(repoPlatform(repo))
+	host := repoHost(repo)
+	hasHead, err := s.clones.HasCommit(
+		ctx, platformName, host, repo.Owner, repo.Name, headSHA,
+	)
+	if err != nil || !hasHead {
+		return err
+	}
+	events, err := s.db.ListMREvents(ctx, mrID)
+	if err != nil {
+		return err
+	}
+	var changed []db.MREvent
+	for _, event := range events {
+		if event.EventType != "commit" {
+			continue
+		}
+		sha := commitEventSHA(event)
+		if sha == "" {
+			continue
+		}
+		if event.MetadataJSON != "" {
+			var metadata map[string]any
+			if err := json.Unmarshal([]byte(event.MetadataJSON), &metadata); err != nil || metadata == nil {
+				continue
+			}
+		}
+		live, err := s.commitReachableFromHead(
+			ctx, platformName, host, repo, sha, headSHA,
+		)
+		if err != nil {
+			return err
+		}
+		metadataJSON, metadataChanged := withObsoleteMetadata(event.MetadataJSON, !live)
+		if !metadataChanged {
+			continue
+		}
+		event.MetadataJSON = metadataJSON
+		changed = append(changed, event)
+	}
+	if len(changed) == 0 {
+		return nil
+	}
+	return s.db.UpsertMREvents(ctx, changed)
+}
+
+func (s *Syncer) commitReachableFromHead(
+	ctx context.Context, platformName, host string, repo RepoRef, sha, headSHA string,
+) (bool, error) {
+	if strings.EqualFold(sha, headSHA) {
+		return true, nil
+	}
+	has, err := s.clones.HasCommit(
+		ctx, platformName, host, repo.Owner, repo.Name, sha,
+	)
+	if err != nil || !has {
+		// A clone containing the head also contains its ancestor closure, so a
+		// confirmed-missing event commit is unreachable from that head.
+		return false, err
+	}
+	return s.clones.IsAncestor(
+		ctx, platformName, host, repo.Owner, repo.Name, sha, headSHA,
+	)
+}
+
 func commitOrderSHA(summary string) string {
 	return strings.ToLower(strings.TrimSpace(summary))
 }
@@ -8480,6 +8582,20 @@ func (s *Syncer) syncOpenMRFromBulk(
 		}
 	}
 
+	// Post-persistence early returns above intentionally skip stamping: the round
+	// either lost snapshot ownership or failed a later snapshot write, so it must
+	// not publish head metadata. A later accepted round retries the stamp.
+	if normalized.State == db.MergeRequestStateOpen {
+		if err := s.stampObsoleteCommitEvents(
+			ctx, repo, mrID, normalized.PlatformHeadSHA,
+		); err != nil {
+			slog.Warn("stamp obsolete commit events failed",
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", number, "err", err,
+			)
+		}
+	}
+
 	// Fire onMRSynced hook.
 	if s.onMRSynced != nil {
 		fresh, fErr := s.db.GetMergeRequestByRepoIDAndNumber(
@@ -8731,6 +8847,17 @@ func (s *Syncer) fetchMRDetail(
 	}
 	if !detailApplied {
 		return calls, nil
+	}
+
+	if normalized.State == db.MergeRequestStateOpen {
+		if err := s.stampObsoleteCommitEvents(
+			ctx, repo, mrID, normalized.PlatformHeadSHA,
+		); err != nil {
+			slog.Warn("stamp obsolete commit events failed",
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", number, "err", err,
+			)
+		}
 	}
 
 	// Fire onMRSynced hook.
@@ -11271,6 +11398,17 @@ func (s *Syncer) syncMRForRepo(
 		}
 		if !detailApplied {
 			return nil
+		}
+	}
+
+	if normalized.State == db.MergeRequestStateOpen {
+		if err := s.stampObsoleteCommitEvents(
+			ctx, repo, mrID, normalized.PlatformHeadSHA,
+		); err != nil {
+			slog.Warn("stamp obsolete commit events failed",
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", number, "err", err,
+			)
 		}
 	}
 

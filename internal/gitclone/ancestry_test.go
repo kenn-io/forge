@@ -75,4 +75,11 @@ func TestHasCommit(t *testing.T) {
 	has, err = mgr.HasCommit(ctx, "github", "example.com", "acme", "widgets", strings.Repeat("d", 40))
 	require.NoError(t, err)
 	assert.False(has)
+
+	brokenMgr := New(t.TempDir(), nil)
+	brokenClonePath, err := brokenMgr.ClonePath("github", "example.com", "broken", "not-a-repo")
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(brokenClonePath, 0o755))
+	_, err = brokenMgr.HasCommit(ctx, "github", "example.com", "broken", "not-a-repo", shas["c1"])
+	require.Error(t, err)
 }

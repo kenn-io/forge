@@ -429,6 +429,10 @@ func (m *Manager) MergeBase(
 // HasCommit reports whether the clone already contains the commit object.
 // A syntactically valid but absent SHA is a clean false, not an error, so
 // callers can treat "missing from a head-complete clone" as unreachable.
+// Any other git failure (corruption, permission errors, malformed input)
+// propagates as an error rather than reading as "absent" — a caller using
+// this to decide obsolescence must not treat an operational failure as
+// proof a commit is unreachable.
 func (m *Manager) HasCommit(
 	ctx context.Context, platform, host, owner, name, sha string,
 ) (bool, error) {
@@ -438,9 +442,6 @@ func (m *Manager) HasCommit(
 	}
 	if _, err := m.git(ctx, clonePath, "cat-file", "-e", sha+"^{commit}"); err != nil {
 		if errors.Is(err, ErrNotFound) {
-			return false, nil
-		}
-		if code, ok := gitExitCode(err); ok && code > 0 {
 			return false, nil
 		}
 		return false, err

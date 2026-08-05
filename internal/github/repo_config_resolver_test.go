@@ -96,6 +96,40 @@ func TestResolveConfiguredRepos_AcceptsArchivedRepoAsArchiveOnly(t *testing.T) {
 	}}, result.Expanded)
 }
 
+func TestExpandedRepoSetPrefersResolvedOverFallbackDuplicates(t *testing.T) {
+	assert := assert.New(t)
+	fallback := RepoRef{
+		Platform: platform.KindGitHub, Owner: "acme", Name: "frozen",
+		PlatformHost: "github.com", RepoPath: "acme/frozen",
+	}
+	resolved := RepoRef{
+		Platform: platform.KindGitHub, Owner: "acme", Name: "frozen",
+		PlatformHost: "github.com", RepoPath: "acme/frozen",
+		PlatformExternalID: "repo-acme-frozen", Archived: true,
+	}
+
+	set := NewExpandedRepoSet()
+	set.Add(fallback, false)
+	set.Add(resolved, true)
+	assert.Equal([]RepoRef{resolved}, set.Refs(),
+		"a provider-resolved duplicate must replace fallback metadata")
+
+	// The reverse order keeps the resolved ref: fallback metadata never
+	// overwrites a successful resolution.
+	set = NewExpandedRepoSet()
+	set.Add(resolved, true)
+	set.Add(fallback, false)
+	assert.Equal([]RepoRef{resolved}, set.Refs())
+
+	// Same-class duplicates keep the first entry.
+	set = NewExpandedRepoSet()
+	set.Add(resolved, true)
+	other := resolved
+	other.Archived = false
+	set.Add(other, true)
+	assert.Equal([]RepoRef{resolved}, set.Refs())
+}
+
 func TestResolveConfiguredRepos_DeduplicatesExactAndGlobMatches(t *testing.T) {
 	assert := assert.New(t)
 	client := &mockClient{

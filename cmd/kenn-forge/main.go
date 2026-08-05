@@ -748,8 +748,7 @@ func resolveStartupRepos(
 	database *db.DB,
 	githubRouters map[string]*ghclient.HostRouter,
 ) []ghclient.RepoRef {
-	seen := make(map[string]struct{})
-	repos := make([]ghclient.RepoRef, 0, len(cfg.Repos))
+	set := ghclient.NewExpandedRepoSet()
 	for _, raw := range cfg.Repos {
 		_, expanded, err := ghclient.ResolveConfiguredRepoWithRegistry(
 			ctx, registry, raw,
@@ -769,18 +768,10 @@ func resolveStartupRepos(
 			)
 		}
 		for _, repo := range expanded {
-			key := string(repoPlatform(repo)) + "\x00" +
-				strings.ToLower(repoHost(repo)) + "\x00" +
-				strings.ToLower(repo.Owner) + "\x00" +
-				strings.ToLower(repo.Name)
-			if _, ok := seen[key]; ok {
-				continue
-			}
-			seen[key] = struct{}{}
-			repos = append(repos, repo)
+			set.Add(repo, err == nil)
 		}
 	}
-	return repos
+	return set.Refs()
 }
 
 func providerHostKey(platformName, host string) string {
@@ -793,23 +784,6 @@ func splitProviderHostKey(key string) (string, string) {
 		return key, ""
 	}
 	return platformName, host
-}
-
-func repoPlatform(repo ghclient.RepoRef) platform.Kind {
-	if repo.Platform != "" {
-		return repo.Platform
-	}
-	return platform.KindGitHub
-}
-
-func repoHost(repo ghclient.RepoRef) string {
-	if repo.PlatformHost != "" {
-		return strings.ToLower(repo.PlatformHost)
-	}
-	if host, ok := platform.DefaultHost(repoPlatform(repo)); ok {
-		return host
-	}
-	return platform.DefaultGitHubHost
 }
 
 // fallbackGlobFromDB returns repos from the database that match

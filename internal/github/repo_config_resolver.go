@@ -342,6 +342,46 @@ func appendExpandedRepo(
 	*dst = append(*dst, repo)
 }
 
+// ExpandedRepoSet accumulates configured-repo expansions across config
+// entries, deduplicating by platform/host/owner/name. A provider-resolved
+// ref replaces a fallback-derived duplicate from an earlier entry, so a
+// transient resolve failure on one entry cannot freeze stale metadata (an
+// archived flip, a rename) when an overlapping entry resolved successfully.
+// Fallback refs never overwrite resolved ones; same-class duplicates keep
+// the first entry.
+type ExpandedRepoSet struct {
+	refs     []RepoRef
+	index    map[string]int
+	resolved map[string]bool
+}
+
+func NewExpandedRepoSet() *ExpandedRepoSet {
+	return &ExpandedRepoSet{
+		index:    make(map[string]int),
+		resolved: make(map[string]bool),
+	}
+}
+
+func (s *ExpandedRepoSet) Add(repo RepoRef, providerResolved bool) {
+	canonical := canonicalRepoRef(repo)
+	key := string(repoPlatform(canonical)) + "\x00" + canonical.PlatformHost +
+		"\x00" + canonical.Owner + "\x00" + canonical.Name
+	if i, ok := s.index[key]; ok {
+		if providerResolved && !s.resolved[key] {
+			s.refs[i] = repo
+			s.resolved[key] = true
+		}
+		return
+	}
+	s.index[key] = len(s.refs)
+	s.resolved[key] = providerResolved
+	s.refs = append(s.refs, repo)
+}
+
+func (s *ExpandedRepoSet) Refs() []RepoRef {
+	return s.refs
+}
+
 func sameConfiguredRepoHost(left, right string) bool {
 	if left == "" {
 		left = "github.com"

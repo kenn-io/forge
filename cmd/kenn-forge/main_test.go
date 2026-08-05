@@ -249,6 +249,57 @@ func TestResolveStartupReposExpandsConfiguredGlobs(t *testing.T) {
 	}, repos)
 }
 
+type getRepoFailingClient struct {
+	*testutil.FixtureClient
+}
+
+func (getRepoFailingClient) GetRepository(
+	context.Context, string, string,
+) (*gh.Repository, error) {
+	return nil, errors.New("transient resolve failure")
+}
+
+func TestResolveStartupReposPrefersResolvedOverFallbackDuplicates(t *testing.T) {
+	assert := assert.New(t)
+	// The exact entry fails resolution and falls back to a synthetic ref;
+	// the overlapping glob resolves the same repo as archived. The resolved
+	// metadata must win or the archived repo would be polled as live.
+	cfg := &config.Config{
+		Repos: []config.Repo{
+			{Owner: "acme", Name: "archived"},
+			{Owner: "acme", Name: "*"},
+		},
+	}
+	client := getRepoFailingClient{&testutil.FixtureClient{
+		ReposByOwner: map[string][]*gh.Repository{
+			"acme": {{
+				NodeID:   new("repo-acme-archived"),
+				Name:     new("archived"),
+				Owner:    &gh.User{Login: new("acme")},
+				Archived: new(true),
+			}},
+		},
+	}}
+
+	repos := resolveStartupRepos(
+		t.Context(),
+		cfg,
+		mustProviderRegistry(t, map[string]ghclient.Client{"github.com": client}),
+		nil,
+		nil,
+	)
+
+	assert.Equal([]ghclient.RepoRef{{
+		Platform:           "github",
+		Owner:              "acme",
+		Name:               "archived",
+		PlatformHost:       "github.com",
+		RepoPath:           "acme/archived",
+		PlatformExternalID: "repo-acme-archived",
+		Archived:           true,
+	}}, repos)
+}
+
 func TestResolveStartupReposKeepsExactReposWhenResolutionFails(t *testing.T) {
 	assert := assert.New(t)
 	cfg := &config.Config{

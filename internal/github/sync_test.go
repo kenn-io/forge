@@ -10353,6 +10353,28 @@ func TestPublishResolvedRepositoryPreservesNewerArchivedState(t *testing.T) {
 	assert.False(syncer.TrackedRepos()[0].Archived)
 }
 
+func TestPublishResolvedRepositoryPreservesMidflightArchivedFlip(t *testing.T) {
+	assert := assert.New(t)
+	d := openTestDB(t)
+	tracked := RepoRef{
+		Owner: "acme", Name: "frozen", PlatformHost: "github.com",
+		RepoPath: "acme/frozen", Archived: true,
+	}
+	syncer := NewSyncer(
+		map[string]Client{}, d, nil, []RepoRef{tracked}, time.Hour, nil, nil,
+	)
+
+	// The operation snapshotted the ref before a concurrent resolution
+	// flipped the tracked archived flag. Its own provider response cannot
+	// be ordered against that flip, so the newer tracked value survives
+	// even a publication carrying fresh provider metadata.
+	stale := tracked
+	stale.Archived = false
+	syncer.publishResolvedRepository(stale, stale, true)
+	assert.True(syncer.TrackedRepos()[0].Archived,
+		"a mid-flight archived flip must not be clobbered by an older publication")
+}
+
 func TestPublishResolvedRepositoryPreservesNewerConfiguredRepoPath(t *testing.T) {
 	assert := assert.New(t)
 	d := openTestDB(t)

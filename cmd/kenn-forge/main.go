@@ -760,7 +760,10 @@ func resolveStartupRepos(
 					ctx, database, raw,
 				)
 			} else {
-				expanded = ghclient.FallbackConfiguredRepoRefs(nil, raw)
+				expanded = fallbackExactFromDB(ctx, database, raw)
+				if len(expanded) == 0 {
+					expanded = ghclient.FallbackConfiguredRepoRefs(nil, raw)
+				}
 			}
 		} else {
 			ghclient.RegisterConfiguredRepoCredentialAliases(
@@ -784,6 +787,71 @@ func splitProviderHostKey(key string) (string, string) {
 		return key, ""
 	}
 	return platformName, host
+}
+
+// fallbackExactFromDB recovers the stored identity for an exact config
+// entry whose provider resolution failed at startup. Catalog route history
+// follows a provider-side rename, so the fallback keeps the stable provider
+// id — deduplicating against overlapping resolved entries — instead of
+// synthesizing an identity-less ref under the stale configured route.
+func fallbackExactFromDB(
+	ctx context.Context,
+	database *db.DB,
+	raw config.Repo,
+) []ghclient.RepoRef {
+	if database == nil {
+		return nil
+	}
+	repoPath := strings.TrimSpace(raw.RepoPath)
+	if repoPath == "" {
+		repoPath = raw.Owner + "/" + raw.Name
+	}
+	entries, err := database.ListRepositoryCatalog(ctx, db.RepositoryCatalogFilter{
+		Platform:     raw.PlatformOrDefault(),
+		PlatformHost: raw.PlatformHostOrDefault(),
+		RepoPath:     repoPath,
+		Lifecycle:    db.RepositoryLifecycleActive,
+	})
+	if err != nil {
+		slog.Warn("fallback exact from db", "err", err)
+		return nil
+	}
+	entry := catalogEntryForConfiguredRoute(entries, repoPath)
+	if entry == nil {
+		return nil
+	}
+	return []ghclient.RepoRef{{
+		Platform:           platform.Kind(raw.PlatformOrDefault()),
+		Owner:              entry.Repository.Owner,
+		Name:               entry.Repository.Name,
+		PlatformHost:       entry.Repository.PlatformHost,
+		RepoPath:           entry.Repository.RepoPath,
+		PlatformExternalID: entry.Repository.PlatformRepoID,
+		WebURL:             entry.Repository.WebURL,
+		CloneURL:           entry.Repository.CloneURL,
+		DefaultBranch:      entry.Repository.DefaultBranch,
+		ConfiguredRepoPath: repoPath,
+	}}
+}
+
+// catalogEntryForConfiguredRoute prefers the repository currently occupying
+// the configured route; a reused route may also historically match the
+// renamed repository that held it before. Multiple historical matches with
+// no current occupant cannot be attributed safely.
+func catalogEntryForConfiguredRoute(
+	entries []db.RepositoryCatalogEntry, repoPath string,
+) *db.RepositoryCatalogEntry {
+	for i := range entries {
+		for _, route := range entries[i].Routes {
+			if route.Current && strings.EqualFold(route.RepoPath, repoPath) {
+				return &entries[i]
+			}
+		}
+	}
+	if len(entries) == 1 {
+		return &entries[0]
+	}
+	return nil
 }
 
 // fallbackGlobFromDB returns repos from the database that match

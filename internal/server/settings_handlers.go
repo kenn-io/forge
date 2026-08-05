@@ -161,12 +161,14 @@ func matchedRepoCount(
 // transitions (renames, archived flips) apply without a daemon restart.
 func (s *Server) mergeTrackedRepos(add []ghclient.RepoRef) {
 	current := s.syncer.TrackedRepos()
+	provenance := trackedRepoProvenance(current)
 	byRoute := make(map[string]int, len(current))
 	byIdentity := make(map[string]int, len(current))
 	for i, r := range current {
 		indexTrackedRepo(byRoute, byIdentity, r, i)
 	}
 	for _, r := range add {
+		r = withTrackedProvenance(provenance, r)
 		if i, ok := trackedRepoIndex(byRoute, byIdentity, r); ok {
 			unindexTrackedRepo(byRoute, byIdentity, current[i])
 			current[i] = r
@@ -188,6 +190,7 @@ func (s *Server) replaceGlobRepos(
 	configured []config.Repo,
 ) {
 	current := s.syncer.TrackedRepos()
+	provenance := trackedRepoProvenance(current)
 	kept := make([]ghclient.RepoRef, 0, len(current))
 	byRoute := make(map[string]int, len(current)+len(expanded))
 	byIdentity := make(map[string]int, len(current)+len(expanded))
@@ -205,6 +208,7 @@ func (s *Server) replaceGlobRepos(
 	// Freshly resolved matches overwrite refs kept for overlapping config
 	// entries so provider state transitions (renames, archived flips) apply.
 	for _, repo := range expanded {
+		repo = withTrackedProvenance(provenance, repo)
 		if i, ok := trackedRepoIndex(byRoute, byIdentity, repo); ok {
 			unindexTrackedRepo(byRoute, byIdentity, kept[i])
 			kept[i] = repo
@@ -377,6 +381,43 @@ func trackedRepoKey(repo ghclient.RepoRef) string {
 // trackedRepoIdentityKey keys a tracked repo by its stable provider id, so a
 // renamed route reconciles onto the same entry instead of tracking the
 // repository twice. Empty when the ref carries no provider id.
+// trackedRepoProvenance captures config-entry provenance from the tracked
+// set before a settings merge rebuilds it. Settings-resolved refs never
+// author provenance — only config resolution does — so a merge or glob
+// refresh must not erase the correlation an exact entry needs to reclaim
+// its repository on the next failed reload.
+func trackedRepoProvenance(refs []ghclient.RepoRef) map[string]string {
+	provenance := make(map[string]string)
+	for _, repo := range refs {
+		if repo.ConfiguredRepoPath == "" {
+			continue
+		}
+		if key := trackedRepoIdentityKey(repo); key != "" {
+			provenance["id\x00"+key] = repo.ConfiguredRepoPath
+		}
+		provenance["route\x00"+trackedRepoKey(repo)] = repo.ConfiguredRepoPath
+	}
+	return provenance
+}
+
+func withTrackedProvenance(
+	provenance map[string]string, repo ghclient.RepoRef,
+) ghclient.RepoRef {
+	if repo.ConfiguredRepoPath != "" {
+		return repo
+	}
+	if key := trackedRepoIdentityKey(repo); key != "" {
+		if path, ok := provenance["id\x00"+key]; ok {
+			repo.ConfiguredRepoPath = path
+			return repo
+		}
+	}
+	if path, ok := provenance["route\x00"+trackedRepoKey(repo)]; ok {
+		repo.ConfiguredRepoPath = path
+	}
+	return repo
+}
+
 func trackedRepoIdentityKey(repo ghclient.RepoRef) string {
 	if strings.TrimSpace(repo.PlatformExternalID) == "" {
 		return ""

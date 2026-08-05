@@ -5588,7 +5588,13 @@ func (s *Syncer) publishResolvedRepository(
 	defer s.reposMu.Unlock()
 	for i := range s.repos {
 		if repoPriorityKey(s.repos[i]) == repoPriorityKey(previous) {
-			if !archivedAuthoritative {
+			if s.repos[i].Archived != previous.Archived {
+				// A concurrent resolution flipped archived state after this
+				// operation snapshotted the ref. The in-flight provider
+				// response cannot be ordered against that flip, so the newer
+				// tracked value stands even over fresh provider metadata.
+				resolved.Archived = s.repos[i].Archived
+			} else if !archivedAuthoritative {
 				// Without fresh provider metadata the archived flag was
 				// reconstructed from the operation's snapshot, which may
 				// predate a newer flip on the tracked ref. The current

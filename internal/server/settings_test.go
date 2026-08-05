@@ -1090,6 +1090,54 @@ func TestMergeTrackedReposReconcilesRenamedRouteByProviderIdentity(t *testing.T)
 	assert.True(tracked[0].Archived)
 }
 
+func TestMergeTrackedReposPreservesExactEntryProvenance(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, _, _ := setupTestServerWithConfig(t)
+	srv.syncer.SetRepos([]ghclient.RepoRef{{
+		Platform: platform.KindGitHub, Owner: "acme", Name: "tools-new",
+		PlatformHost: "github.com", RepoPath: "acme/tools-new",
+		PlatformExternalID: "repo-x", ConfiguredRepoPath: "acme/tools",
+	}})
+
+	// A settings-resolved duplicate (glob refresh, API add) carries no
+	// config-entry provenance; replacing the tracked ref must not erase
+	// the correlation the exact entry needs on the next failed reload.
+	srv.mergeTrackedRepos([]ghclient.RepoRef{{
+		Platform: platform.KindGitHub, Owner: "acme", Name: "tools-new",
+		PlatformHost: "github.com", RepoPath: "acme/tools-new",
+		PlatformExternalID: "repo-x", Archived: true,
+	}})
+
+	tracked := srv.syncer.TrackedRepos()
+	require.Len(tracked, 1)
+	assert.True(tracked[0].Archived)
+	assert.Equal("acme/tools", tracked[0].ConfiguredRepoPath)
+}
+
+func TestReplaceGlobReposPreservesExactEntryProvenance(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, _, _ := setupTestServerWithConfig(t)
+	srv.syncer.SetRepos([]ghclient.RepoRef{{
+		Platform: platform.KindGitHub, Owner: "acme", Name: "tools-new",
+		PlatformHost: "github.com", RepoPath: "acme/tools-new",
+		PlatformExternalID: "repo-x", ConfiguredRepoPath: "acme/tools",
+	}})
+
+	glob := config.Repo{Owner: "acme", Name: "*"}
+	srv.replaceGlobRepos(glob, []ghclient.RepoRef{{
+		Platform: platform.KindGitHub, Owner: "acme", Name: "tools-new",
+		PlatformHost: "github.com", RepoPath: "acme/tools-new",
+		PlatformExternalID: "repo-x", Archived: true,
+	}}, []config.Repo{{Owner: "acme", Name: "tools"}, glob})
+
+	tracked := srv.syncer.TrackedRepos()
+	require.Len(tracked, 1)
+	assert.True(tracked[0].Archived)
+	assert.Equal("acme/tools", tracked[0].ConfiguredRepoPath)
+}
+
 func trackedRepoArchived(srv *Server, owner, name string) bool {
 	for _, repo := range srv.syncer.TrackedRepos() {
 		if strings.EqualFold(repo.Owner, owner) && strings.EqualFold(repo.Name, name) {

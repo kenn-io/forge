@@ -283,15 +283,23 @@ fallback repository listing.
   provider-side rename moves the tracked route away from the configured path,
   and without the provenance match the fallback would synthesize an
   identity-less live ref — dropping the archived flag and duplicating the
-  repository next to a resolved overlapping entry.
+  repository next to a resolved overlapping entry. Settings merges preserve
+  tracked provenance the same way (settings-resolved refs never author it),
+  and startup — which has no tracked set — recovers a failed exact entry's
+  stable identity through catalog route history before synthesizing.
   (`internal/github/repo_config_resolver.go::FallbackConfiguredRepoRefs`,
   `internal/github/repo_config_resolver.go::ExpandedRepoSet`,
   `internal/github/sync.go::repoRefFromCatalog`,
-  `internal/github/sync.go::publishResolvedRepository`)
+  `internal/github/sync.go::publishResolvedRepository`,
+  `internal/server/settings_handlers.go::trackedRepoProvenance`,
+  `cmd/kenn-forge/main.go::fallbackExactFromDB`)
 - Catalog republication without fresh provider metadata preserves the
   currently tracked archived flag: a sync that began before a newer archived
-  flip must not clear it when its own snapshot predates the flip.
-  (`internal/github/sync.go::publishResolvedRepository`)
+  flip must not clear it when its own snapshot predates the flip. When the
+  tracked flag differs from the operation's snapshot, a concurrent resolution
+  flipped it mid-flight — ordering against the in-flight provider response is
+  unknowable, so the newer tracked value stands even over fresh provider
+  metadata. (`internal/github/sync.go::publishResolvedRepository`)
   Archived state refreshes wherever resolution already happens (startup,
   config reload, settings add/refresh) and must survive catalog
   republication, which cannot read it from the store. GitLab namespace

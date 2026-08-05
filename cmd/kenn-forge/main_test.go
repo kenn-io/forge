@@ -325,6 +325,56 @@ func TestResolveStartupReposKeepsExactReposWhenResolutionFails(t *testing.T) {
 	}}, repos)
 }
 
+func TestResolveStartupReposRecoversRenamedExactEntryFromCatalog(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	now := time.Now().UTC()
+	before := db.GitHubRepoIdentity("github.com", "acme", "tools")
+	before.PlatformRepoID = "repo-acme-tools"
+	_, _, err := database.ReconcileRepositoryObservation(
+		t.Context(), before, now.Add(-time.Hour),
+	)
+	require.NoError(err)
+	after := db.GitHubRepoIdentity("github.com", "acme", "tools-new")
+	after.PlatformRepoID = "repo-acme-tools"
+	_, _, err = database.ReconcileRepositoryObservation(t.Context(), after, now)
+	require.NoError(err)
+
+	// The renamed repository resolves through the glob; the exact entry
+	// still lists the old path and fails transiently. Catalog route
+	// history recovers the stable identity so the fallback deduplicates
+	// instead of tracking an identity-less duplicate on the stale route.
+	cfg := &config.Config{Repos: []config.Repo{
+		{Owner: "acme", Name: "tools"},
+		{Owner: "acme", Name: "*"},
+	}}
+	client := getRepoFailingClient{&testutil.FixtureClient{
+		ReposByOwner: map[string][]*gh.Repository{
+			"acme": {{
+				NodeID:   new("repo-acme-tools"),
+				Name:     new("tools-new"),
+				Owner:    &gh.User{Login: new("acme")},
+				Archived: new(true),
+			}},
+		},
+	}}
+
+	repos := resolveStartupRepos(
+		t.Context(),
+		cfg,
+		mustProviderRegistry(t, map[string]ghclient.Client{"github.com": client}),
+		database,
+		nil,
+	)
+
+	require.Len(repos, 1)
+	assert.Equal("tools-new", repos[0].Name)
+	assert.Equal("repo-acme-tools", repos[0].PlatformExternalID)
+	assert.True(repos[0].Archived)
+	assert.Equal("acme/tools", repos[0].ConfiguredRepoPath)
+}
+
 func TestResolveStartupReposFallsBackToDBForOfflineGlobs(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

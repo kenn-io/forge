@@ -111,6 +111,9 @@ func (tracker *testTmuxTracker) stop(key string, tmuxCommand []string) error {
 	if !errors.As(listErr, &listExitErr) {
 		return fmt.Errorf("verify e2e-server test tmux stopped: %w: %s", listErr, listOutput)
 	}
+	if !strings.HasPrefix(strings.TrimSpace(string(listOutput)), "no server running on ") {
+		return fmt.Errorf("verify e2e-server test tmux stopped: %w: %s", listErr, listOutput)
+	}
 	tracker.mu.Lock()
 	if current, ok := tracker.commands[key]; ok && strings.Join(current, "\x00") == key {
 		delete(tracker.commands, key)
@@ -136,7 +139,13 @@ case "$*" in
     [ ! -e "$KF_TEST_TMUX_FAIL" ] || exit 1
     rm -f "$KF_TEST_TMUX_STATE"
     ;;
-  *list-sessions*) [ -e "$KF_TEST_TMUX_STATE" ] ;;
+  *list-sessions*)
+    if [ -e "$KF_TEST_TMUX_STATE" ]; then
+      exit 0
+    fi
+    echo "no server running on test socket" >&2
+    exit 1
+    ;;
 esac
 `), 0o700))
 	t.Setenv("KF_TEST_TMUX_STATE", stateFile)
@@ -151,6 +160,30 @@ esac
 	require.NoError(os.Remove(failFile))
 	require.NoError(tracker.cleanup())
 	assert.NoFileExists(stateFile)
+}
+
+func TestTestTmuxTrackerRetainsUnverifiedListFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell tmux tracker probe is not supported on Windows")
+	}
+	require := require.New(t)
+	dir := t.TempDir()
+	stateFile := filepath.Join(dir, "state")
+	command := filepath.Join(dir, "tmux-probe")
+	require.NoError(os.WriteFile(command, []byte(`#!/bin/sh
+case "$*" in
+  *new-session*) : > "$KF_TEST_TMUX_STATE" ;;
+  *kill-server*) exit 1 ;;
+  *list-sessions*) echo "permission denied" >&2; exit 2 ;;
+esac
+`), 0o700))
+	t.Setenv("KF_TEST_TMUX_STATE", stateFile)
+
+	tracker := newTestTmuxTracker()
+	_, err := tracker.start([]string{command}, []string{"new-session"}, nil)
+	require.NoError(err)
+	require.Error(tracker.cleanup())
+	require.FileExists(stateFile)
 }
 
 func TestWriteServerInfoFile(t *testing.T) {

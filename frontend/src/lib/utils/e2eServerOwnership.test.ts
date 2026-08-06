@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import { spawn, spawnSync } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+import { EventEmitter } from "node:events";
 import { chmodSync, mkdirSync, mkdtempSync, utimesSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { readFile, rm, stat } from "node:fs/promises";
@@ -599,7 +600,7 @@ describe("terminateServerProcess", () => {
       child.stdout?.once("data", () => resolve());
     });
 
-    await e2eServerModule.terminateServerProcess(child, child.pid);
+    await expect(e2eServerModule.terminateServerProcess(child, child.pid)).resolves.toBe(true);
 
     expect(child.exitCode).toBe(0);
   });
@@ -617,9 +618,30 @@ describe("terminateServerProcess", () => {
     expect(child.signalCode).toBe("SIGTERM");
 
     const killSpy = vi.spyOn(process, "kill").mockImplementation(() => true);
-    await e2eServerModule.terminateServerProcess(child, child.pid);
+    await expect(e2eServerModule.terminateServerProcess(child, child.pid)).resolves.toBe(true);
 
     expect(killSpy).not.toHaveBeenCalled();
+  });
+
+  it("reports when a child is still alive after forced termination", async () => {
+    vi.useFakeTimers();
+    const child = Object.assign(new EventEmitter(), {
+      exitCode: null,
+      pid: 12345,
+      signalCode: null,
+    }) as ChildProcess;
+    const killSpy = vi.spyOn(process, "kill").mockImplementation(() => true);
+
+    try {
+      const termination = e2eServerModule.terminateServerProcess(child, child.pid);
+      await vi.advanceTimersByTimeAsync(16_000);
+
+      await expect(termination).resolves.toBe(false);
+      expect(killSpy).toHaveBeenCalledWith(child.pid, "SIGTERM");
+      expect(killSpy).toHaveBeenCalledWith(child.pid, "SIGKILL");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -694,6 +716,31 @@ describe("private tmux ownership", () => {
 });
 
 describe("owned server lifecycle", () => {
+  it("serializes concurrent global shutdown while a child can still create tmux state", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "e2e-server-test-"));
+    process.env.PLAYWRIGHT_E2E_SERVER_BINARY = writeFakeE2EServer(dir);
+    process.env.FAKE_E2E_STARTED_FILE = path.join(dir, "started");
+    process.env.FAKE_E2E_CREATE_LATE_TMUX = "1";
+    const lateMarker = path.join(dir, "late-created");
+    process.env.FAKE_E2E_LATE_MARKER = lateMarker;
+    delete process.env.PLAYWRIGHT_E2E_TMUX_DIR;
+
+    const server = await e2eServerModule.startIsolatedE2EServerWithOptions({ freshProcess: true, fleetKey: "slow" });
+    const tmuxDir = process.env.PLAYWRIGHT_E2E_TMUX_DIR;
+    expect(tmuxDir).toBeTruthy();
+
+    const firstShutdown = e2eServerModule.shutdownOwnedServers();
+    const secondShutdown = e2eServerModule.shutdownOwnedServers();
+    const individualStop = server.stop();
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(await fileExists(tmuxDir ?? "")).toBe(true);
+    await Promise.all([firstShutdown, secondShutdown, individualStop]);
+
+    await expect(readFile(lateMarker, "utf8")).resolves.toBe(JSON.stringify({ rootWasPreserved: true, status: 0 }));
+    expect(await fileExists(tmuxDir ?? "")).toBe(false);
+    await rm(dir, { force: true, recursive: true });
+  });
+
   it("keeps the shared tmux root until concurrent fresh-server stops have exited", async () => {
     const dir = mkdtempSync(path.join(os.tmpdir(), "e2e-server-test-"));
     process.env.PLAYWRIGHT_E2E_SERVER_BINARY = writeFakeE2EServer(dir);
@@ -732,12 +779,13 @@ describe("owned server lifecycle", () => {
     delete process.env.PLAYWRIGHT_E2E_TMUX_DIR;
 
     const starting = e2eServerModule.startIsolatedE2EServerWithOptions({ freshProcess: true });
+    const rejectedStart = expect(starting).rejects.toThrow(/exited/);
     await waitForFile(startedFile);
     const childPID = Number.parseInt(await readFile(startedFile, "utf8"), 10);
 
     await e2eServerModule.shutdownOwnedServers();
 
-    await expect(starting).rejects.toThrow(/exited/);
+    await rejectedStart;
     expect(() => process.kill(childPID, 0)).toThrow();
     expect(process.env.PLAYWRIGHT_E2E_TMUX_DIR).toBeUndefined();
     await rm(dir, { force: true, recursive: true });

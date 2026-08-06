@@ -420,6 +420,91 @@ describe("e2eServerCommand", () => {
   });
 });
 
+describe("ensureE2EServerBinary", () => {
+  it("preserves an explicitly configured binary", async () => {
+    const ensureE2EServerBinary = (
+      e2eServerModule as {
+        ensureE2EServerBinary?: (rootDir?: string) => Promise<string>;
+      }
+    ).ensureE2EServerBinary;
+
+    expect(ensureE2EServerBinary).toBeTypeOf("function");
+    if (!ensureE2EServerBinary) {
+      return;
+    }
+
+    process.env.PLAYWRIGHT_E2E_SERVER_BINARY = "/tmp/configured-e2e-server";
+    await expect(ensureE2EServerBinary("/path/that/does/not/exist")).resolves.toBe("/tmp/configured-e2e-server");
+  });
+
+  it("builds a direct server binary after preparing embedded frontend assets", async () => {
+    const ensureE2EServerBinary = (
+      e2eServerModule as {
+        ensureE2EServerBinary?: (rootDir?: string) => Promise<string>;
+      }
+    ).ensureE2EServerBinary;
+    const cleanupE2ERunnerArtifacts = (
+      e2eServerModule as {
+        cleanupE2ERunnerArtifacts?: () => Promise<void>;
+      }
+    ).cleanupE2ERunnerArtifacts;
+
+    expect(ensureE2EServerBinary).toBeTypeOf("function");
+    expect(cleanupE2ERunnerArtifacts).toBeTypeOf("function");
+    if (!ensureE2EServerBinary || !cleanupE2ERunnerArtifacts) {
+      return;
+    }
+
+    const dir = mkdtempSync(path.join(os.tmpdir(), "e2e-server-build-test-"));
+    const frontendDist = path.join(dir, "frontend", "dist");
+    const embeddedDist = path.join(dir, "internal", "web", "dist");
+    const fakeBin = path.join(dir, "bin");
+    const buildArgsFile = path.join(dir, "go-build-args.json");
+    mkdirSync(frontendDist, { recursive: true });
+    mkdirSync(embeddedDist, { recursive: true });
+    mkdirSync(fakeBin, { recursive: true });
+    const frontendIndex = path.join(frontendDist, "index.html");
+    const embeddedIndex = path.join(embeddedDist, "index.html");
+    writeFileSync(frontendIndex, "current frontend");
+    writeFileSync(embeddedIndex, "stale frontend");
+    const staleTime = new Date("2026-01-01T00:00:00Z");
+    const currentTime = new Date("2026-01-01T00:00:10Z");
+    utimesSync(embeddedIndex, staleTime, staleTime);
+    utimesSync(frontendIndex, currentTime, currentTime);
+    writeFileSync(
+      path.join(fakeBin, "go"),
+      `#!/usr/bin/env node
+const { writeFileSync } = require("node:fs");
+const args = process.argv.slice(2);
+const outputIndex = args.indexOf("-o");
+writeFileSync(args[outputIndex + 1], "built e2e server");
+writeFileSync(process.env.FAKE_GO_BUILD_ARGS_FILE, JSON.stringify(args));
+`,
+    );
+    chmodSync(path.join(fakeBin, "go"), 0o755);
+    process.env.PATH = `${fakeBin}${path.delimiter}${process.env.PATH ?? ""}`;
+    process.env.FAKE_GO_BUILD_ARGS_FILE = buildArgsFile;
+    delete process.env.PLAYWRIGHT_E2E_SERVER_BINARY;
+    delete process.env.PLAYWRIGHT_E2E_FRONTEND_READY;
+
+    const binary = await ensureE2EServerBinary(dir);
+    expect(process.env.PLAYWRIGHT_E2E_SERVER_BINARY).toBe(binary);
+    await expect(readFile(binary, "utf8")).resolves.toBe("built e2e server");
+    await expect(readFile(embeddedIndex, "utf8")).resolves.toBe("current frontend");
+    await expect(readFile(buildArgsFile, "utf8")).resolves.toBe(
+      JSON.stringify(["build", "-o", binary, "./cmd/e2e-server"]),
+    );
+
+    process.env.PLAYWRIGHT_E2E_SERVER_BINARY_OWNER_PID = String(process.pid + 1);
+    await cleanupE2ERunnerArtifacts();
+    await expect(fileExists(binary)).resolves.toBe(true);
+
+    process.env.PLAYWRIGHT_E2E_SERVER_BINARY_OWNER_PID = String(process.pid);
+    await cleanupE2ERunnerArtifacts();
+    await expect(fileExists(path.dirname(binary))).resolves.toBe(false);
+  });
+});
+
 describe("getReusableServerInfo", () => {
   it("accepts a reachable server even when the response is slower than the poll interval", async () => {
     const getReusableServerInfo = (

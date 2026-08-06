@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { access, cp, lstat, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
@@ -48,6 +48,8 @@ const reachabilityTimeoutMs = 1_000;
 const ownedServerEnvVar = "PLAYWRIGHT_E2E_SERVER_OWNED";
 const frontendReadyEnvVar = "PLAYWRIGHT_E2E_FRONTEND_READY";
 const serverBinaryEnvVar = "PLAYWRIGHT_E2E_SERVER_BINARY";
+const serverBinaryOwnedDirEnvVar = "PLAYWRIGHT_E2E_SERVER_BINARY_OWNED_DIR";
+const serverBinaryOwnerPIDEnvVar = "PLAYWRIGHT_E2E_SERVER_BINARY_OWNER_PID";
 const tmuxDirEnvVar = "PLAYWRIGHT_E2E_TMUX_DIR";
 const defaultPlatformHost = "github.com";
 const tmuxDirPrefix = "kf-e2e-tmux-";
@@ -72,6 +74,8 @@ let cleanupInstalled = false;
 let ownedTmuxDir: string | null = null;
 let signalCleanupStarted = false;
 let serverShutdownPromise: Promise<void> | null = null;
+let serverBinaryPromise: Promise<string> | null = null;
+let generatedServerBinaryDir: string | null = null;
 const standaloneServers = new Set<OwnedServerProcess>();
 const startingServers = new Set<ChildProcess>();
 
@@ -386,6 +390,98 @@ export async function ensureEmbeddedFrontend(rootDir: string = repoRoot): Promis
   await cp(frontendDist, embeddedDist, { recursive: true });
   await writeFile(path.join(embeddedDist, "stub.html"), "ok\n");
   process.env[frontendReadyEnvVar] = "1";
+}
+
+async function buildE2EServerBinary(rootDir: string): Promise<string> {
+  await ensureEmbeddedFrontend(rootDir);
+  const binaryDir = mkdtempSync(path.join(os.tmpdir(), "kenn-forge-e2e-server-"));
+  const binary = path.join(binaryDir, process.platform === "win32" ? "e2e-server.exe" : "e2e-server");
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const build = spawn("go", ["build", "-o", binary, "./cmd/e2e-server"], {
+        cwd: rootDir,
+        stdio: "inherit",
+        env: process.env,
+      });
+      let settled = false;
+      build.once("error", (error) => {
+        if (settled) return;
+        settled = true;
+        reject(error);
+      });
+      build.once("exit", (code) => {
+        if (settled) return;
+        settled = true;
+        if (code === 0) {
+          resolve();
+        } else {
+          reject(new Error(`e2e server build failed with exit code ${code ?? "null"}`));
+        }
+      });
+    });
+  } catch (error) {
+    await rm(binaryDir, { force: true, recursive: true });
+    throw error;
+  }
+
+  generatedServerBinaryDir = binaryDir;
+  process.env[serverBinaryEnvVar] = binary;
+  process.env[serverBinaryOwnedDirEnvVar] = binaryDir;
+  process.env[serverBinaryOwnerPIDEnvVar] = String(process.pid);
+  installCleanup();
+  return binary;
+}
+
+export async function ensureE2EServerBinary(rootDir: string = repoRoot): Promise<string> {
+  const configured = process.env[serverBinaryEnvVar]?.trim();
+  if (configured) {
+    return configured;
+  }
+  if (!serverBinaryPromise) {
+    const build = buildE2EServerBinary(rootDir).catch((error) => {
+      if (serverBinaryPromise === build) {
+        serverBinaryPromise = null;
+      }
+      throw error;
+    });
+    serverBinaryPromise = build;
+  }
+  return await serverBinaryPromise;
+}
+
+export async function cleanupE2ERunnerArtifacts(): Promise<void> {
+  const dir = generatedServerBinaryDir ?? process.env[serverBinaryOwnedDirEnvVar]?.trim();
+  if (!dir) {
+    return;
+  }
+  if (process.env[serverBinaryOwnerPIDEnvVar] !== String(process.pid)) {
+    return;
+  }
+  if (!generatedServerBinaryDir) {
+    const binary = process.env[serverBinaryEnvVar]?.trim();
+    const expectedName = process.platform === "win32" ? "e2e-server.exe" : "e2e-server";
+    if (
+      path.dirname(dir) !== os.tmpdir() ||
+      !path.basename(dir).startsWith("kenn-forge-e2e-server-") ||
+      !binary ||
+      path.dirname(binary) !== dir ||
+      path.basename(binary) !== expectedName ||
+      !(await isCurrentUserOwnedPath(dir, (stats) => stats.isDirectory()))
+    ) {
+      return;
+    }
+  }
+  await rm(dir, { force: true, recursive: true });
+  if (!generatedServerBinaryDir || generatedServerBinaryDir === dir) {
+    generatedServerBinaryDir = null;
+    serverBinaryPromise = null;
+    delete process.env[serverBinaryOwnedDirEnvVar];
+    delete process.env[serverBinaryOwnerPIDEnvVar];
+    if (process.env[serverBinaryEnvVar] && path.dirname(process.env[serverBinaryEnvVar]) === dir) {
+      delete process.env[serverBinaryEnvVar];
+    }
+  }
 }
 
 function delay(ms: number): Promise<void> {
@@ -757,6 +853,13 @@ function installCleanup(): void {
         }
       }
     }
+    if (generatedServerBinaryDir) {
+      try {
+        rmSync(generatedServerBinaryDir, { force: true, recursive: true });
+      } catch {
+        // Best-effort synchronous cleanup during process exit.
+      }
+    }
   };
 
   process.once("exit", cleanupImmediately);
@@ -774,6 +877,7 @@ async function cleanupAfterSignal(exitCode: number): Promise<void> {
   }
   signalCleanupStarted = true;
   await shutdownOwnedServers();
+  await cleanupE2ERunnerArtifacts();
   process.exit(exitCode);
 }
 
@@ -998,7 +1102,7 @@ async function resetPooledServer(server: PooledServer, options: PooledServerOpti
   server.options = options;
 }
 
-// Signal only while the spawned child is still alive: once `go run`
+// Signal only while the spawned child is still alive: once the child
 // has exited, the server's reported PID may already have been reused
 // by an unrelated process, and signalling it would be unsafe.
 function killPooledServerProcess(server: PooledServer): void {

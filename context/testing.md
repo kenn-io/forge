@@ -195,14 +195,11 @@ Timezone-sensitive Vitest tests must not mutate `process.env.TZ` after workers
 start; launch the test process with `TZ` or stub the locale formatter instead
 (`frontend/src/lib/components/detail/operation-gates.test.ts:8`).
 
-Full-stack e2e serves the frontend embedded in the e2e-server binary
-(`internal/web/dist`), not live sources: run `make frontend` before building
-`cmd/e2e-server` locally, or the suite silently validates a stale bundle and
-passes on frontend changes that CI then fails.
-Set `PLAYWRIGHT_E2E_SERVER_BINARY` to an explicit prebuilt `cmd/e2e-server`
-binary when startup must exclude `go run` compilation, such as Vercel's docs
-screenshot build. Build the frontend before compiling that binary so it embeds
-the current SPA.
+Full-stack e2e serves the frontend embedded in the e2e-server binary, not live
+sources. The Playwright runner must prepare those assets and build one run-owned
+`cmd/e2e-server`; workers inherit its direct path so signal cleanup targets the
+server instead of a `go run` wrapper. An explicit binary remains externally owned
+and must not be rebuilt or removed (`frontend/tests/e2e-full/support/e2eServer.ts::ensureE2EServerBinary`).
 
 Mounting `KataWorkspace.svelte` in Vitest always fetches the daemon roster and
 opens the live SSE event stream; mock both fetch routes (see

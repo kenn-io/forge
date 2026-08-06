@@ -774,6 +774,7 @@ type apiTestGitLabProvider struct {
 	ciErr                            error
 	reviewThreads                    []platform.MergeRequestReviewThread
 	reviewThreadsErr                 error
+	reviewThreadsFn                  func(context.Context, platform.RepoRef, int) ([]platform.MergeRequestReviewThread, error)
 	publishedReviews                 []platform.PublishDiffReviewDraftInput
 	publishReviewErr                 error
 	appliedSuggestions               []platform.ApplyReviewSuggestionsInput
@@ -879,10 +880,13 @@ func (p *apiTestGitLabProvider) ApplyReviewSuggestions(
 }
 
 func (p *apiTestGitLabProvider) ListMergeRequestReviewThreads(
-	context.Context,
-	platform.RepoRef,
-	int,
+	ctx context.Context,
+	repo platform.RepoRef,
+	number int,
 ) ([]platform.MergeRequestReviewThread, error) {
+	if p.reviewThreadsFn != nil {
+		return p.reviewThreadsFn(ctx, repo, number)
+	}
 	if p.reviewThreadsErr != nil {
 		return nil, p.reviewThreadsErr
 	}
@@ -17882,8 +17886,9 @@ func TestAPIGitLabSyncPrunesLegacyPositionedNoteCommentEvents(t *testing.T) {
 	}
 }
 
-func TestAPIPublishReviewDraftReturnsSuccessWhenAtomicThreadIngestFails(t *testing.T) {
+func TestAPIPublishReviewDraftReconcilesAfterTransientThreadIngestFailure(t *testing.T) {
 	require := require.New(t)
+	assert := assert.New(t)
 	caps := platform.Capabilities{
 		ReadRepositories:       true,
 		ReadMergeRequests:      true,
@@ -17909,12 +17914,13 @@ func TestAPIPublishReviewDraftReturnsSuccessWhenAtomicThreadIngestFails(t *testi
 	require.NoError(database.UpdateDiffSHAs(ctx, repo.ID, 7, "current-head", "base", "merge"))
 	now := time.Now().UTC().Truncate(time.Second)
 	line := 42
+	hiddenMetadata := `{"provider_hidden":true,"provider_hidden_reason":"ABUSE"}`
 	provider.reviewThreads = []platform.MergeRequestReviewThread{{
 		ProviderThreadID:  "thread-atomic",
 		ProviderCommentID: "comment-atomic",
 		Body:              "hidden provider comment",
 		AuthorLogin:       "reviewer",
-		MetadataJSON:      `{"provider_hidden":true,"provider_hidden_reason":"ABUSE"}`,
+		MetadataJSON:      hiddenMetadata,
 		Range: platform.DiffReviewLineRange{
 			Path: "internal/server/api_test.go", Side: "right", Line: line,
 			NewLine: &line, LineType: "add", DiffHeadSHA: "current-head",
@@ -17922,14 +17928,17 @@ func TestAPIPublishReviewDraftReturnsSuccessWhenAtomicThreadIngestFails(t *testi
 		CreatedAt: now,
 		UpdatedAt: now,
 	}}
-	_, err = database.WriteDB().ExecContext(ctx, `
-		CREATE TRIGGER reject_review_comment_event
-		BEFORE INSERT ON forge_mr_events
-		WHEN NEW.event_type = 'review_comment'
-		BEGIN
-			SELECT RAISE(ABORT, 'reject review comment event');
-		END`)
-	require.NoError(err)
+	var reviewThreadCalls atomic.Int32
+	provider.reviewThreadsFn = func(
+		context.Context,
+		platform.RepoRef,
+		int,
+	) ([]platform.MergeRequestReviewThread, error) {
+		if reviewThreadCalls.Add(1) == 1 {
+			return nil, errors.New("transient review thread refresh failure")
+		}
+		return provider.reviewThreads, nil
+	}
 
 	basePath := "/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-draft"
 	createRR := doJSON(t, srv, http.MethodPost, basePath+"/comments", map[string]any{
@@ -17960,12 +17969,35 @@ func TestAPIPublishReviewDraftReturnsSuccessWhenAtomicThreadIngestFails(t *testi
 	draft, err := database.GetMRReviewDraft(ctx, mr.ID)
 	require.NoError(err)
 	require.Nil(draft)
+
+	detailPath := "/api/v1/host/gitlab.example.com/pulls/gl/group/project/7"
+	require.Eventually(func() bool {
+		detailRR := doJSON(t, srv, http.MethodGet, detailPath, nil)
+		if detailRR.Code != http.StatusOK {
+			return false
+		}
+		var detail pullapi.MergeRequestDetailResponse
+		if err := json.NewDecoder(detailRR.Body).Decode(&detail); err != nil {
+			return false
+		}
+		return len(detail.Events) == 1 &&
+			detail.Events[0].EventType == "review_comment" &&
+			detail.Events[0].Body == "hidden provider comment" &&
+			detail.Events[0].MetadataJSON == hiddenMetadata
+	}, time.Second, 10*time.Millisecond)
+
 	threads, err := database.ListMRReviewThreads(ctx, mr.ID)
 	require.NoError(err)
-	require.Empty(threads)
+	require.Len(threads, 1)
+	assert.Equal("thread-atomic", threads[0].ProviderThreadID)
+	assert.JSONEq(hiddenMetadata, threads[0].MetadataJSON)
 	events, err := database.ListMREvents(ctx, mr.ID)
 	require.NoError(err)
-	require.Empty(events)
+	require.Len(events, 1)
+	assert.Equal("review_comment", events[0].EventType)
+	assert.JSONEq(hiddenMetadata, events[0].MetadataJSON)
+	assert.GreaterOrEqual(reviewThreadCalls.Load(), int32(2))
+	assert.Len(provider.publishedReviews, 1)
 }
 
 func TestAPIResolveReviewThreadPersistsProviderState(t *testing.T) {

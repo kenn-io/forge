@@ -1,6 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
-import { ensureE2EServer } from "./tests/e2e-full/support/e2eServer";
+import { ensureE2EServer, ensureE2EServerBinary } from "./tests/e2e-full/support/e2eServer";
 
+await ensureE2EServerBinary();
 const serverInfo = await ensureE2EServer();
 
 // Chromium can use twice the configured CI baseline. Firefox's heavier

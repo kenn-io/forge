@@ -225,6 +225,19 @@ func TestForgejoSyncRouteStampsObsoleteCommitEventsAcrossForcePushes(t *testing.
 		a1: true, a2: true, a3: true, b1: false, b2: false,
 	})
 
+	// Provider activity advances without the head moving: the provider
+	// re-lists the same commits with fresh, unflagged metadata. The re-synced
+	// rounds must keep re-injecting the verified flags — the collapse state
+	// may never flip on a same-head refresh.
+	for range 2 {
+		setProviderState(b2, []string{b1, b2})
+		syncResponse = doJSONRequest(t, srv, http.MethodPost, syncPath, map[string]any{})
+		require.Equal(http.StatusOK, syncResponse.Code, syncResponse.Body.String())
+		assertDetailFlags(map[string]bool{
+			a1: true, a2: true, a3: true, b1: false, b2: false,
+		})
+	}
+
 	runGit(origin, "update-ref", "refs/heads/feature", a3)
 	setProviderState(a3, []string{a1, a2, a3})
 	syncResponse = doJSONRequest(t, srv, http.MethodPost, syncPath, map[string]any{})

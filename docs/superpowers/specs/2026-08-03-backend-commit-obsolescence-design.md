@@ -44,9 +44,15 @@ round's own dataset:
   bare clone — open the bare repository, resolve the head commit (a missing
   head means the round commits without liveness updates), and walk ancestry
   from the head with early termination once every candidate is resolved.
+  The walk carries a visit budget (50k commits): a force-pushed-away
+  candidate is unreachable and would otherwise force a full-history
+  traversal over contributor-controlled input, so exhausting the budget
+  reports the head unverifiable instead of returning partial verdicts.
   Read-only, lock-free, no subprocesses; the git CLI remains only for
   networked operations (clone/fetch with credentials). go-git is an
-  explicitly maintainer-approved dependency for this.
+  explicitly maintainer-approved dependency for this. SHA-256 (64-hex)
+  repositories are an explicit non-goal: their candidates are never
+  evaluated and never flagged.
 - Incoming commit events carry the computed `obsolete` flag in their
   metadata within the normal upsert batch. Stored commit events the provider
   did not re-list receive metadata-only updates applied inside the same
@@ -59,10 +65,14 @@ round's own dataset:
   since caught up repairs flags without any dedicated retry machinery.
 
 The stamping mutex, MR-row head recheck, and cache-invalidation rules are
-deleted; serialization is the snapshot guard's job. The last-computed-head
-memo survives only as a compute-skip hint (skip the ancestry walk when the
-head is unchanged since the last applied round); a stale hint can cause one
-redundant computation, never a wrong write.
+deleted; serialization is the snapshot guard's job. The only cache is a
+per-MR memo of the reachability answer keyed by a hash of the walk's exact
+inputs — the head SHA plus the sorted candidate set. Reachability over
+immutable git history is a pure function of that key, so the memo needs no
+invalidation and cannot be corrupted by concurrent rounds: a hit replaces
+only the ancestry walk and its verdicts flow through the identical flag
+injection as a fresh computation, so a hit can never skip a needed write.
+Only verified walks are memoized.
 
 When the clone is unavailable or lacks the round's head, the round commits
 its events without liveness updates: provider-listed commits still receive

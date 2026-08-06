@@ -375,7 +375,7 @@ func TestCommitLivenessSkipsUnparseableMetadata(t *testing.T) {
 	assert.Equal(`[1,2]`, stored[0].MetadataJSON)
 }
 
-func TestCommitLivenessHintSkipsRecomputeForSameHead(t *testing.T) {
+func TestCommitLivenessMemoServesSameHeadWithoutClone(t *testing.T) {
 	assert := assert.New(t)
 	fixture := setupCommitLivenessFixture(t)
 	h := fixture.history
@@ -392,14 +392,15 @@ func TestCommitLivenessHintSkipsRecomputeForSameHead(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, os.RemoveAll(clonePath))
 
-	// A verified round records this exact head, so the steady-state round must
-	// not touch the now-missing clone or rewrite any event rows.
+	// The verified walk was memoized for this exact (head, candidate set), so
+	// the steady-state round replays the verdicts without touching the
+	// now-missing clone; the flags are already correct, so no row changes.
 	require.True(t, runLivenessRound(t, fixture, h.b2, nil))
 	after, err := fixture.database.ListMREvents(t.Context(), fixture.mrID)
 	require.NoError(t, err)
 	assert.Equal(before, after)
 
-	// A different head misses the hint and attempts a fresh verification. The
+	// A different head misses the memo and attempts a fresh verification. The
 	// clone is gone, so the head is unverifiable and the round commits without
 	// liveness changes: the b2-round flags survive.
 	setLivenessFixtureHead(t, fixture, h.a3)
@@ -407,6 +408,48 @@ func TestCommitLivenessHintSkipsRecomputeForSameHead(t *testing.T) {
 	assertLivenessCommitFlags(t, fixture, map[string]bool{
 		h.a1: true, h.a2: true, h.a3: true,
 	})
+}
+
+func TestCommitLivenessRelistedEventsKeepFlagsOnSameHead(t *testing.T) {
+	fixture := setupCommitLivenessFixture(t)
+	h := fixture.history
+	seedLivenessCommitEvents(t, fixture, h.a1, h.b1, h.b2)
+	setLivenessFixtureHead(t, fixture, h.b2)
+	require.True(t, runLivenessRound(t, fixture, h.b2, nil))
+	assertLivenessCommitFlags(t, fixture, map[string]bool{
+		h.a1: true, h.b1: false, h.b2: false,
+	})
+
+	// Gitealike providers re-list historical commit events with fresh,
+	// unflagged metadata on every detail refresh. Successive same-head rounds
+	// must re-inject the verified flags into those incoming events — never
+	// let the upsert wipe a stored obsolete flag (the collapse used to
+	// flip-flop on alternating refreshes here).
+	relisted := func() []db.MREvent {
+		createdAt := time.Date(2026, 8, 5, 10, 0, 0, 0, time.UTC)
+		return []db.MREvent{
+			{
+				EventType:    "commit",
+				Summary:      h.a1,
+				MetadataJSON: `{"commit_order_key":1}`,
+				CreatedAt:    createdAt,
+				DedupeKey:    h.a1,
+			},
+			{
+				EventType:    "commit",
+				Summary:      h.b1,
+				MetadataJSON: `{"commit_order_key":2}`,
+				CreatedAt:    createdAt.Add(time.Minute),
+				DedupeKey:    h.b1,
+			},
+		}
+	}
+	for range 3 {
+		require.True(t, runLivenessRound(t, fixture, h.b2, relisted()))
+		assertLivenessCommitFlags(t, fixture, map[string]bool{
+			h.a1: true, h.b1: false, h.b2: false,
+		})
+	}
 }
 
 func TestCommitLivenessStaleRevisionRoundIsInert(t *testing.T) {
@@ -466,9 +509,9 @@ func TestCommitLivenessRestampsRestoredHeadAfterUnverifiedRound(t *testing.T) {
 	unverifiedHead := commit("replacement 2\n", "unverified replacement 2")
 
 	// The unverified round persists its incoming commit events without flags
-	// (the provider listed them, so showing them is the safe direction) and
-	// must drop the a3 hint: the stored event set changed without a verified
-	// head certifying it.
+	// (the provider listed them, so showing them is the safe direction). The
+	// stored event set has now changed, so the a3 memo entry no longer
+	// matches any future round's candidates.
 	createdAt := time.Date(2026, 8, 5, 11, 0, 0, 0, time.UTC)
 	incoming := []db.MREvent{
 		{
@@ -494,8 +537,8 @@ func TestCommitLivenessRestampsRestoredHeadAfterUnverifiedRound(t *testing.T) {
 	})
 
 	// Restoring a3 must recompute despite a3 having been the last verified
-	// head: the dropped hint forces a fresh walk that flags the unverified
-	// lineage as obsolete.
+	// head: the memo key covers the candidate set, so the grown set misses
+	// and a fresh walk flags the unverified lineage as obsolete.
 	setLivenessFixtureHead(t, fixture, h.a3)
 	require.True(t, runLivenessRound(t, fixture, h.a3, nil))
 	assertLivenessCommitFlags(t, fixture, map[string]bool{
@@ -505,7 +548,6 @@ func TestCommitLivenessRestampsRestoredHeadAfterUnverifiedRound(t *testing.T) {
 }
 
 func TestCommitLivenessFailedRoundWritesNothing(t *testing.T) {
-	assert := assert.New(t)
 	fixture := setupCommitLivenessFixture(t)
 	h := fixture.history
 	seedLivenessCommitEvents(t, fixture, h.a1, h.a2, h.a3)
@@ -525,7 +567,7 @@ func TestCommitLivenessFailedRoundWritesNothing(t *testing.T) {
 
 	// The b2 head verifies and the round reaches the snapshot transaction, but
 	// the metadata write fails inside it: the transaction rolls back whole and
-	// no liveness hint may survive the failed round.
+	// the database keeps the a3-era flags.
 	mr, err := fixture.database.GetMergeRequestByRepoIDAndNumber(
 		t.Context(), fixture.repoID, 1,
 	)
@@ -539,17 +581,15 @@ func TestCommitLivenessFailedRoundWritesNothing(t *testing.T) {
 	assertLivenessCommitFlags(t, fixture, map[string]bool{
 		h.a1: false, h.a2: false, h.a3: false,
 	})
-	fixture.syncer.livenessHeadsMu.Lock()
-	cached := fixture.syncer.livenessHeads[fixture.mrID]
-	fixture.syncer.livenessHeadsMu.Unlock()
-	assert.NotEqual(strings.ToLower(h.b2), cached,
-		"failed round must not certify the head it failed to persist")
 	_, err = fixture.database.WriteDB().ExecContext(
 		t.Context(), `DROP TRIGGER reject_obsolete_metadata`,
 	)
 	require.NoError(t, err)
 
-	// The retry recomputes and lands the b2 verdicts the failed round lost.
+	// The failed round may have memoized its verified walk — the verdicts are
+	// a pure function of git history, so that is sound. The retry must land
+	// the b2 flags the failed transaction rolled back, whether it recomputes
+	// or replays the memo against the still-stale stored rows.
 	require.True(t, runLivenessRound(t, fixture, h.b2, nil))
 	assertLivenessCommitFlags(t, fixture, map[string]bool{
 		h.a1: true, h.a2: true, h.a3: true,
@@ -613,6 +653,43 @@ func TestCommitLivenessConcurrentMergeRequests(t *testing.T) {
 		h.a1: false, h.a2: false, h.a3: false, h.b1: true, h.b2: true,
 	})
 	assertLivenessCommitFlags(t, secondFixture, map[string]bool{
+		h.a1: true, h.a2: true, h.a3: true, h.b1: false, h.b2: false,
+	})
+}
+
+func TestCommitLivenessConcurrentSameMergeRequestRounds(t *testing.T) {
+	assert := assert.New(t)
+	fixture := setupCommitLivenessFixture(t)
+	h := fixture.history
+	seedLivenessCommitEvents(t, fixture, h.a1, h.a2, h.a3, h.b1, h.b2)
+	setLivenessFixtureHead(t, fixture, h.b2)
+
+	mr, err := fixture.database.GetMergeRequestByRepoIDAndNumber(
+		t.Context(), fixture.repoID, 1,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, mr)
+
+	// Two rounds of the same MR at the same head and revision race each
+	// other. Reachability is a pure function of (head, candidate set), so
+	// both compute identical verdicts and both writes are idempotent — no
+	// interleaving can publish liveness state that was never evaluated.
+	start := make(chan struct{})
+	errs := make(chan error, 2)
+	for range 2 {
+		go func() {
+			<-start
+			_, err := fixture.syncer.commitMergeRequestDatasets(
+				t.Context(), fixture.repo, fixture.mrID, 1, mr.SnapshotRevision,
+				nil, false, nil, nil, nil, false, nil, nil, h.b2,
+			)
+			errs <- err
+		}()
+	}
+	close(start)
+	assert.NoError(<-errs)
+	assert.NoError(<-errs)
+	assertLivenessCommitFlags(t, fixture, map[string]bool{
 		h.a1: true, h.a2: true, h.a3: true, h.b1: false, h.b2: false,
 	})
 }

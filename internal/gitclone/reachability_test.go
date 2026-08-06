@@ -54,6 +54,34 @@ func TestCommitsReachableFromMissingClone(t *testing.T) {
 	assert.False(t, result.HeadVerified)
 }
 
+func TestCommitsReachableFromVisitBudget(t *testing.T) {
+	ctx := context.Background()
+	mgr, shas := setupAncestryClone(t)
+	mgr.ancestryVisitBudget = 1
+
+	// The absent candidate can never be found, so the walk would traverse the
+	// whole history; the budget stops it and reports the head unverifiable
+	// instead of returning partial verdicts.
+	result, err := mgr.CommitsReachableFrom(
+		ctx, "github", "example.com", "acme", "widgets", shas["c2"],
+		[]string{strings.Repeat("d", 40)},
+	)
+	require.NoError(t, err)
+	assert.False(t, result.HeadVerified)
+	assert.Empty(t, result.Live)
+
+	// A budget that covers the history still verifies normally.
+	mgr.ancestryVisitBudget = 100
+	result, err = mgr.CommitsReachableFrom(
+		ctx, "github", "example.com", "acme", "widgets", shas["c2"],
+		[]string{shas["c1"], strings.Repeat("d", 40)},
+	)
+	require.NoError(t, err)
+	assert.True(t, result.HeadVerified)
+	assert.True(t, result.Live[shas["c1"]])
+	assert.False(t, result.Live[strings.Repeat("d", 40)])
+}
+
 func TestCommitsReachableFromNoCandidates(t *testing.T) {
 	ctx := context.Background()
 	mgr, shas := setupAncestryClone(t)

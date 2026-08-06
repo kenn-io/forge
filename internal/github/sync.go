@@ -2,6 +2,7 @@ package github
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -210,41 +211,46 @@ func stampableCommitEvent(event db.MREvent) (string, bool) {
 	return sha, true
 }
 
+// commitLivenessMemo caches one verified reachability answer per MR.
+// Reachability from a fixed head over a fixed candidate set is a pure
+// function of immutable git history, so an entry never needs invalidation:
+// a changed head or candidate set simply misses the key and recomputes, and
+// concurrent rounds writing the same key write the same value. Only verified
+// walks are memoized — an unverifiable head proves nothing durable.
+type commitLivenessMemo struct {
+	key  string
+	live map[string]bool
+}
+
 // computeCommitLiveness derives commit-obsolescence metadata for a sync round
 // BEFORE the round commits, so the results ride the round's own
 // revision-guarded snapshot write and a stale round is inert by construction.
 // It mutates the incoming batch's commit events in place (their flags travel
 // inside the normal upsert) and returns metadata updates for stored commit
-// events the round does not re-list. verified reports whether the clone
-// certified the head this round; unverified rounds return no updates and the
-// affected events keep their last verified flags.
+// events the round does not re-list. Unverifiable heads return no updates and
+// the affected events keep their last verified flags.
 //
-// The livenessHeads hint certifies a (head, event-set) pair: it is recorded
-// only after a verified round's snapshot applies, and any applied round that
-// adds commit events without verification drops it (see
-// commitMergeRequestDatasets), so a hint hit can only ever skip computation
-// whose result is already in the database — never a needed write. Liveness is
-// read-only over go-git and needs no locking.
+// A memo hit replaces only the ancestry walk: the verdicts still flow through
+// the same injection code, so a hit can never skip a needed write — re-listed
+// incoming events always receive their flags, and stored rows that drifted
+// are repaired.
 func (s *Syncer) computeCommitLiveness(
 	ctx context.Context,
 	repo RepoRef,
 	mrID int64,
 	headSHA string,
 	incoming []db.MREvent,
-) (map[string]string, bool) {
+) map[string]string {
 	if s.clones == nil || headSHA == "" {
-		return nil, false
+		return nil
 	}
 	headSHA = strings.ToLower(headSHA)
-	if s.livenessHeadCurrent(mrID, headSHA) {
-		return nil, false
-	}
 
 	stored, err := s.db.ListMREvents(ctx, mrID)
 	if err != nil {
 		slog.Warn("commit liveness: list events failed",
 			"repo", repo.Owner+"/"+repo.Name, "mr", mrID, "err", err)
-		return nil, false
+		return nil
 	}
 	candidateSHAs := make([]string, 0, len(stored)+len(incoming))
 	seen := make(map[string]bool, len(stored)+len(incoming))
@@ -265,20 +271,26 @@ func (s *Syncer) computeCommitLiveness(
 		}
 	}
 	if len(candidateSHAs) == 0 {
-		return nil, true
+		return nil
 	}
 
-	reach, err := s.clones.CommitsReachableFrom(
-		ctx, string(repoPlatform(repo)), repoHost(repo),
-		repo.Owner, repo.Name, headSHA, candidateSHAs,
-	)
-	if err != nil {
-		slog.Warn("commit liveness: reachability failed",
-			"repo", repo.Owner+"/"+repo.Name, "mr", mrID, "err", err)
-		return nil, false
-	}
-	if !reach.HeadVerified {
-		return nil, false
+	memoKey := livenessMemoKey(headSHA, candidateSHAs)
+	live, hit := s.livenessMemoLookup(mrID, memoKey)
+	if !hit {
+		reach, err := s.clones.CommitsReachableFrom(
+			ctx, string(repoPlatform(repo)), repoHost(repo),
+			repo.Owner, repo.Name, headSHA, candidateSHAs,
+		)
+		if err != nil {
+			slog.Warn("commit liveness: reachability failed",
+				"repo", repo.Owner+"/"+repo.Name, "mr", mrID, "err", err)
+			return nil
+		}
+		if !reach.HeadVerified {
+			return nil
+		}
+		live = reach.Live
+		s.livenessMemoStore(mrID, memoKey, live)
 	}
 
 	incomingKeys := make(map[string]bool, len(incoming))
@@ -288,12 +300,12 @@ func (s *Syncer) computeCommitLiveness(
 			continue
 		}
 		incomingKeys[incoming[i].DedupeKey] = true
-		live, evaluated := reach.Live[sha]
+		isLive, evaluated := live[sha]
 		if !evaluated {
 			continue
 		}
 		if metadataJSON, changed := withObsoleteMetadata(
-			incoming[i].MetadataJSON, !live,
+			incoming[i].MetadataJSON, !isLive,
 		); changed {
 			incoming[i].MetadataJSON = metadataJSON
 		}
@@ -305,38 +317,51 @@ func (s *Syncer) computeCommitLiveness(
 		if !ok || incomingKeys[event.DedupeKey] {
 			continue
 		}
-		live, evaluated := reach.Live[sha]
+		isLive, evaluated := live[sha]
 		if !evaluated {
 			continue
 		}
 		if metadataJSON, changed := withObsoleteMetadata(
-			event.MetadataJSON, !live,
+			event.MetadataJSON, !isLive,
 		); changed {
 			updates[event.DedupeKey] = metadataJSON
 		}
 	}
-	return updates, true
+	return updates
 }
 
-func (s *Syncer) livenessHeadCurrent(mrID int64, headSHA string) bool {
-	s.livenessHeadsMu.Lock()
-	defer s.livenessHeadsMu.Unlock()
-	return s.livenessHeads[mrID] == headSHA
-}
-
-func (s *Syncer) recordLivenessHead(mrID int64, headSHA string) {
-	s.livenessHeadsMu.Lock()
-	defer s.livenessHeadsMu.Unlock()
-	if s.livenessHeads == nil {
-		s.livenessHeads = make(map[int64]string)
+// livenessMemoKey hashes the walk's exact inputs: the head plus the sorted,
+// deduplicated candidate set. Any change to either produces a different key.
+func livenessMemoKey(headSHA string, candidateSHAs []string) string {
+	sorted := make([]string, len(candidateSHAs))
+	copy(sorted, candidateSHAs)
+	slices.Sort(sorted)
+	digest := sha256.New()
+	digest.Write([]byte(headSHA))
+	for _, sha := range sorted {
+		digest.Write([]byte{0})
+		digest.Write([]byte(sha))
 	}
-	s.livenessHeads[mrID] = strings.ToLower(headSHA)
+	return string(digest.Sum(nil))
 }
 
-func (s *Syncer) dropLivenessHead(mrID int64) {
-	s.livenessHeadsMu.Lock()
-	defer s.livenessHeadsMu.Unlock()
-	delete(s.livenessHeads, mrID)
+func (s *Syncer) livenessMemoLookup(mrID int64, key string) (map[string]bool, bool) {
+	s.livenessMemoMu.Lock()
+	defer s.livenessMemoMu.Unlock()
+	memo, ok := s.livenessMemos[mrID]
+	if !ok || memo.key != key {
+		return nil, false
+	}
+	return memo.live, true
+}
+
+func (s *Syncer) livenessMemoStore(mrID int64, key string, live map[string]bool) {
+	s.livenessMemoMu.Lock()
+	defer s.livenessMemoMu.Unlock()
+	if s.livenessMemos == nil {
+		s.livenessMemos = make(map[int64]commitLivenessMemo)
+	}
+	s.livenessMemos[mrID] = commitLivenessMemo{key: key, live: live}
 }
 
 func commitOrderSHA(summary string) string {
@@ -687,8 +712,8 @@ type Syncer struct {
 	archivePollInterval      time.Duration
 	now                      func() time.Time
 	clones                   *gitclone.Manager
-	livenessHeadsMu          sync.Mutex
-	livenessHeads            map[int64]string // advisory compute-skip hint; see computeCommitLiveness
+	livenessMemoMu           sync.Mutex
+	livenessMemos            map[int64]commitLivenessMemo // memoized verified reachability; see computeCommitLiveness
 	rateTrackers             map[string]*RateTracker // provider/host bucket -> tracker
 	writeRateTrackers        map[string]*RateTracker // provider/host bucket -> mutation-credential REST tracker
 	writeGQLRateTrackers     map[string]*RateTracker // provider/host bucket -> mutation-credential GraphQL tracker
@@ -1547,7 +1572,7 @@ func (s *Syncer) commitMergeRequestDatasets(
 			events[i].MergeRequestID = mrID
 		}
 	}
-	metadataUpdates, livenessVerified := s.computeCommitLiveness(
+	metadataUpdates := s.computeCommitLiveness(
 		ctx, repo, mrID, livenessHeadSHA, otherEvents,
 	)
 	applied, err := s.db.CommitMergeRequestChildSnapshot(ctx, db.MergeRequestChildSnapshot{
@@ -1560,28 +1585,7 @@ func (s *Syncer) commitMergeRequestDatasets(
 	if err != nil {
 		return false, fmt.Errorf("commit child snapshot for MR #%d: %w", number, err)
 	}
-	if applied {
-		switch {
-		case livenessVerified:
-			s.recordLivenessHead(mrID, livenessHeadSHA)
-		case batchHasCommitEvents(otherEvents):
-			// The round changed the stored commit-event set without a
-			// verified head, so any previous hint no longer certifies
-			// the database state; drop it so the next verifiable round
-			// recomputes instead of skipping.
-			s.dropLivenessHead(mrID)
-		}
-	}
 	return applied, nil
-}
-
-func batchHasCommitEvents(events []db.MREvent) bool {
-	for _, event := range events {
-		if event.EventType == "commit" {
-			return true
-		}
-	}
-	return false
 }
 
 // openMRLivenessHead is the liveness head for a dataset commit: the MR's
@@ -9050,7 +9054,7 @@ func (s *Syncer) markUnchangedMRDetailFetched(
 	if existing.State == db.MergeRequestStateOpen {
 		livenessHead = existing.PlatformHeadSHA
 	}
-	metadataUpdates, livenessVerified := s.computeCommitLiveness(
+	metadataUpdates := s.computeCommitLiveness(
 		ctx, repo, existing.ID, livenessHead, nil,
 	)
 	detailApplied, err := s.db.MarkMergeRequestDetailFetchedSnapshot(
@@ -9061,9 +9065,6 @@ func (s *Syncer) markUnchangedMRDetailFetched(
 	}
 	if !detailApplied {
 		return calls, nil
-	}
-	if livenessVerified {
-		s.recordLivenessHead(existing.ID, livenessHead)
 	}
 	if s.onMRSynced != nil {
 		fresh, fErr := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoID, number)

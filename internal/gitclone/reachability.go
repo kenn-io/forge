@@ -29,6 +29,17 @@ type CommitReachability struct {
 // between context-cancellation checks.
 const contextCheckInterval = 1024
 
+// maxAncestryVisits caps how many commits a single reachability walk may
+// visit. A candidate that was force-pushed away is unreachable, so the walk
+// cannot terminate early on it and would otherwise traverse the entire
+// repository history — which a contributor controls via pushed heads. Hitting
+// the cap reports the head unverifiable: callers leave liveness state exactly
+// as it was, the safe direction.
+const maxAncestryVisits = 50_000
+
+// errAncestryBudgetExhausted terminates a walk that hit maxAncestryVisits.
+var errAncestryBudgetExhausted = errors.New("ancestry visit budget exhausted")
+
 // CommitsReachableFrom answers reachability for all candidates with a single
 // in-process ancestry walk via go-git: no subprocesses, no locks, and no
 // argv limits. The walk starts at the head and terminates early once every
@@ -79,10 +90,17 @@ func (m *Manager) CommitsReachableFrom(
 		return CommitReachability{HeadVerified: true, Live: live}, nil
 	}
 
+	budget := m.ancestryVisitBudget
+	if budget <= 0 {
+		budget = maxAncestryVisits
+	}
 	visited := 0
 	iter := object.NewCommitPreorderIter(headCommit, nil, nil)
 	err = iter.ForEach(func(commit *object.Commit) error {
 		visited++
+		if visited > budget {
+			return errAncestryBudgetExhausted
+		}
 		if visited%contextCheckInterval == 0 {
 			if err := ctx.Err(); err != nil {
 				return err
@@ -97,6 +115,9 @@ func (m *Manager) CommitsReachableFrom(
 		}
 		return nil
 	})
+	if errors.Is(err, errAncestryBudgetExhausted) {
+		return CommitReachability{}, nil
+	}
 	if err != nil {
 		return CommitReachability{}, fmt.Errorf("walk ancestry of %s: %w", headSHA, err)
 	}

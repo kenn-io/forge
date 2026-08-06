@@ -66,6 +66,10 @@ type Manager struct {
 	repoBrowserRefreshSF singleflight.Group
 	repoBrowserMu        sync.Mutex
 	repoBrowserRepos     map[string]RepoBrowserRepoRef
+
+	// ancestryVisitBudget overrides maxAncestryVisits when positive; tests
+	// use it to exercise the budget without building enormous histories.
+	ancestryVisitBudget int
 }
 
 // New creates a Manager that stores bare clones under baseDir. A nil resolver

@@ -222,6 +222,16 @@ type commitLivenessMemo struct {
 	live map[string]bool
 }
 
+// Candidate sets and the memo hold provider-controlled input (every force
+// push accumulates commit events), so both are bounded: an MR whose stored
+// commit events exceed the candidate cap skips liveness for the round exactly
+// like an unverifiable head, and a full memo evicts an arbitrary entry — a
+// miss only costs one budget-capped walk.
+const (
+	defaultLivenessCandidateLimit = 4096
+	defaultLivenessMemoLimit      = 1024
+)
+
 // computeCommitLiveness derives commit-obsolescence metadata for a sync round
 // BEFORE the round commits, so the results ride the round's own
 // revision-guarded snapshot write and a stale round is inert by construction.
@@ -271,6 +281,16 @@ func (s *Syncer) computeCommitLiveness(
 		}
 	}
 	if len(candidateSHAs) == 0 {
+		return nil
+	}
+	candidateLimit := s.livenessCandidateLimit
+	if candidateLimit <= 0 {
+		candidateLimit = defaultLivenessCandidateLimit
+	}
+	if len(candidateSHAs) > candidateLimit {
+		slog.Warn("commit liveness: candidate set exceeds cap, skipping round",
+			"repo", repo.Owner+"/"+repo.Name, "mr", mrID,
+			"candidates", len(candidateSHAs), "cap", candidateLimit)
 		return nil
 	}
 
@@ -360,6 +380,16 @@ func (s *Syncer) livenessMemoStore(mrID int64, key string, live map[string]bool)
 	defer s.livenessMemoMu.Unlock()
 	if s.livenessMemos == nil {
 		s.livenessMemos = make(map[int64]commitLivenessMemo)
+	}
+	limit := s.livenessMemoLimit
+	if limit <= 0 {
+		limit = defaultLivenessMemoLimit
+	}
+	if _, exists := s.livenessMemos[mrID]; !exists && len(s.livenessMemos) >= limit {
+		for evict := range s.livenessMemos {
+			delete(s.livenessMemos, evict)
+			break
+		}
 	}
 	s.livenessMemos[mrID] = commitLivenessMemo{key: key, live: live}
 }
@@ -714,6 +744,8 @@ type Syncer struct {
 	clones                   *gitclone.Manager
 	livenessMemoMu           sync.Mutex
 	livenessMemos            map[int64]commitLivenessMemo // memoized verified reachability; see computeCommitLiveness
+	livenessMemoLimit        int                          // max memo entries; 0 = defaultLivenessMemoLimit
+	livenessCandidateLimit   int                          // max candidate SHAs per round; 0 = defaultLivenessCandidateLimit
 	rateTrackers             map[string]*RateTracker // provider/host bucket -> tracker
 	writeRateTrackers        map[string]*RateTracker // provider/host bucket -> mutation-credential REST tracker
 	writeGQLRateTrackers     map[string]*RateTracker // provider/host bucket -> mutation-credential GraphQL tracker

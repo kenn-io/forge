@@ -657,6 +657,93 @@ func TestCommitLivenessConcurrentMergeRequests(t *testing.T) {
 	})
 }
 
+func TestCommitLivenessCandidateCapSkipsRound(t *testing.T) {
+	fixture := setupCommitLivenessFixture(t)
+	h := fixture.history
+	// Pre-flag a live commit as obsolete: only a real computation would
+	// clear it, so it distinguishes "skipped" from "computed".
+	require.NoError(t, fixture.database.UpsertMREvents(t.Context(), []db.MREvent{{
+		MergeRequestID: fixture.mrID,
+		EventType:      "commit",
+		Summary:        h.b1,
+		MetadataJSON:   `{"commit_order_key":1,"obsolete":true}`,
+		CreatedAt:      time.Date(2026, 8, 5, 10, 0, 0, 0, time.UTC),
+		DedupeKey:      h.b1,
+	}}))
+	seedLivenessCommitEvents(t, fixture, h.a1, h.b2)
+	setLivenessFixtureHead(t, fixture, h.b2)
+
+	// Three candidates exceed a cap of two: the round commits without
+	// liveness changes, exactly like an unverifiable head.
+	fixture.syncer.livenessCandidateLimit = 2
+	require.True(t, runLivenessRound(t, fixture, h.b2, nil))
+	assertLivenessCommitFlags(t, fixture, map[string]bool{
+		h.b1: true, h.a1: false, h.b2: false,
+	})
+
+	// Raising the cap lets the next round compute and repair.
+	fixture.syncer.livenessCandidateLimit = 0
+	require.True(t, runLivenessRound(t, fixture, h.b2, nil))
+	assertLivenessCommitFlags(t, fixture, map[string]bool{
+		h.b1: false, h.a1: true, h.b2: false,
+	})
+}
+
+func TestCommitLivenessMemoEviction(t *testing.T) {
+	assert := assert.New(t)
+	fixture := setupCommitLivenessFixture(t)
+	h := fixture.history
+	fixture.syncer.livenessMemoLimit = 1
+
+	first, err := fixture.database.GetMergeRequestByRepoIDAndNumber(
+		t.Context(), fixture.repoID, 1,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, first)
+	second := *first
+	second.ID = 0
+	second.PlatformID = 2
+	second.PlatformExternalID = "mr-2"
+	second.Number = 2
+	second.URL = "https://github.com/owner/repo/pull/2"
+	second.PlatformHeadSHA = h.b2
+	second.UpdatedAt = second.UpdatedAt.Add(time.Minute)
+	second.LastActivityAt = second.UpdatedAt
+	secondMRID, err := fixture.database.UpsertMergeRequest(t.Context(), &second)
+	require.NoError(t, err)
+	secondFixture := fixture
+	secondFixture.mrID = secondMRID
+
+	seedLivenessCommitEvents(t, fixture, h.a1, h.a2, h.a3)
+	seedLivenessCommitEvents(t, secondFixture, h.a1, h.b2)
+
+	require.True(t, runLivenessRound(t, fixture, h.a3, nil))
+	secondRow, err := fixture.database.GetMergeRequestByRepoIDAndNumber(
+		t.Context(), fixture.repoID, 2,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, secondRow)
+	_, err = fixture.syncer.commitMergeRequestDatasets(
+		t.Context(), fixture.repo, secondMRID, 2, secondRow.SnapshotRevision,
+		nil, false, nil, nil, nil, false, nil, nil, h.b2,
+	)
+	require.NoError(t, err)
+
+	fixture.syncer.livenessMemoMu.Lock()
+	memoLen := len(fixture.syncer.livenessMemos)
+	fixture.syncer.livenessMemoMu.Unlock()
+	assert.Equal(1, memoLen, "memo must stay at its entry cap")
+
+	// The evicted MR just recomputes: flags remain correct.
+	require.True(t, runLivenessRound(t, fixture, h.a3, nil))
+	assertLivenessCommitFlags(t, fixture, map[string]bool{
+		h.a1: false, h.a2: false, h.a3: false,
+	})
+	assertLivenessCommitFlags(t, secondFixture, map[string]bool{
+		h.a1: true, h.b2: false,
+	})
+}
+
 func TestCommitLivenessConcurrentSameMergeRequestRounds(t *testing.T) {
 	assert := assert.New(t)
 	fixture := setupCommitLivenessFixture(t)

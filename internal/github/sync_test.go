@@ -3,6 +3,7 @@ package github
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -11367,7 +11368,7 @@ func TestRunOnceDetailDrain(t *testing.T) {
 		"detail_fetched_at should be set after detail drain")
 }
 
-func TestFetchMRDetailUsesPersistedPullRequestETag(t *testing.T) {
+func TestFetchMRDetailRefreshesCommentVisibilityOnParent304(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -11378,7 +11379,7 @@ func TestFetchMRDetailUsesPersistedPullRequestETag(t *testing.T) {
 	require.NoError(err)
 	updatedAt := time.Date(2024, 6, 1, 10, 0, 0, 0, time.UTC)
 	detailFetchedAt := time.Date(2024, 6, 1, 9, 0, 0, 0, time.UTC)
-	_, err = d.UpsertMergeRequest(ctx, &db.MergeRequest{
+	mrID, err := d.UpsertMergeRequest(ctx, &db.MergeRequest{
 		RepoID:          repoID,
 		PlatformID:      1000,
 		Number:          1,
@@ -11395,6 +11396,15 @@ func TestFetchMRDetailUsesPersistedPullRequestETag(t *testing.T) {
 		DetailFetchedAt: &detailFetchedAt,
 	})
 	require.NoError(err)
+	commentID := int64(10401)
+	require.NoError(d.UpsertMREvents(ctx, []db.MREvent{{
+		MergeRequestID: mrID,
+		PlatformID:     &commentID,
+		EventType:      "issue_comment",
+		Body:           "moderated without changing the parent",
+		CreatedAt:      updatedAt,
+		DedupeKey:      "comment-10401",
+	}}))
 	require.NoError(d.UpsertHTTPEtag(
 		ctx, "github", "github.com", "owner", "repo",
 		"pull_request", 1, `"etag-v1"`,
@@ -11409,11 +11419,34 @@ func TestFetchMRDetailUsesPersistedPullRequestETag(t *testing.T) {
 		[]RepoRef{repo},
 		time.Minute, nil, testBudget(1000),
 	)
+	gqlSrv := currentCommentVisibilityServer(
+		t, "pullRequest", commentID,
+		CommentVisibility{Hidden: true, Reason: "ABUSE"},
+		CommentVisibility{},
+	)
+	defer gqlSrv.Close()
+	syncer.SetFetchers(map[string]*GraphQLFetcher{
+		"github.com": NewGraphQLFetcherWithClient(
+			githubv4.NewEnterpriseClient(gqlSrv.URL, gqlSrv.Client()), nil,
+		),
+	})
 
 	_, err = syncer.fetchMRDetail(ctx, repo, repoID, 1, false)
 	require.NoError(err)
+	events, err := d.ListMREvents(ctx, mrID)
+	require.NoError(err)
+	require.Len(events, 1)
+	assert.JSONEq(`{"provider_hidden":true,"provider_hidden_reason":"ABUSE"}`, events[0].MetadataJSON)
 
-	assert.Equal(int32(1), mc.conditionalCalls.Load())
+	_, err = syncer.fetchMRDetail(ctx, repo, repoID, 1, false)
+	require.NoError(err)
+	events, err = d.ListMREvents(ctx, mrID)
+	require.NoError(err)
+	require.Len(events, 1)
+	assert.Empty(events[0].MetadataJSON)
+	assert.Equal("moderated without changing the parent", events[0].Body)
+
+	assert.Equal(int32(2), mc.conditionalCalls.Load())
 	assert.Equal(`"etag-v1"`, mc.receivedETag)
 	assert.Zero(int(mc.getPRCalls.Load()),
 		"304 should skip the unconditional PR detail fetch")
@@ -11738,7 +11771,7 @@ func TestFetchMRDetailDoesNotPersistPullRequestETagWhenDetailRefreshFails(t *tes
 	assert.Equal(`"etag-v1"`, etag)
 }
 
-func TestFetchIssueDetailUsesPersistedIssueETag(t *testing.T) {
+func TestFetchIssueDetailRefreshesCommentVisibilityOnParent304(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -11749,7 +11782,7 @@ func TestFetchIssueDetailUsesPersistedIssueETag(t *testing.T) {
 	require.NoError(err)
 	updatedAt := time.Date(2024, 6, 1, 10, 0, 0, 0, time.UTC)
 	detailFetchedAt := time.Date(2024, 6, 1, 9, 0, 0, 0, time.UTC)
-	_, err = d.UpsertIssue(ctx, &db.Issue{
+	issueID, err := d.UpsertIssue(ctx, &db.Issue{
 		RepoID:          repoID,
 		PlatformID:      1000,
 		Number:          1,
@@ -11763,6 +11796,15 @@ func TestFetchIssueDetailUsesPersistedIssueETag(t *testing.T) {
 		DetailFetchedAt: &detailFetchedAt,
 	})
 	require.NoError(err)
+	commentID := int64(10801)
+	require.NoError(d.UpsertIssueEvents(ctx, []db.IssueEvent{{
+		IssueID:    issueID,
+		PlatformID: &commentID,
+		EventType:  "issue_comment",
+		Body:       "moderated without changing the parent",
+		CreatedAt:  updatedAt,
+		DedupeKey:  "issue-comment-10801",
+	}}))
 	require.NoError(d.UpsertHTTPEtag(
 		ctx, "github", "github.com", "owner", "repo",
 		"issue", 1, `"issue-etag-v1"`,
@@ -11775,11 +11817,34 @@ func TestFetchIssueDetailUsesPersistedIssueETag(t *testing.T) {
 		[]RepoRef{repo},
 		time.Minute, nil, testBudget(1000),
 	)
+	gqlSrv := currentCommentVisibilityServer(
+		t, "issue", commentID,
+		CommentVisibility{Hidden: true, Reason: "ABUSE"},
+		CommentVisibility{},
+	)
+	defer gqlSrv.Close()
+	syncer.SetFetchers(map[string]*GraphQLFetcher{
+		"github.com": NewGraphQLFetcherWithClient(
+			githubv4.NewEnterpriseClient(gqlSrv.URL, gqlSrv.Client()), nil,
+		),
+	})
 
 	_, err = syncer.fetchIssueDetail(ctx, repo, repoID, 1)
 	require.NoError(err)
+	events, err := d.ListIssueEvents(ctx, issueID)
+	require.NoError(err)
+	require.Len(events, 1)
+	assert.JSONEq(`{"provider_hidden":true,"provider_hidden_reason":"ABUSE"}`, events[0].MetadataJSON)
 
-	assert.Equal(int32(1), mc.conditionalCalls.Load())
+	_, err = syncer.fetchIssueDetail(ctx, repo, repoID, 1)
+	require.NoError(err)
+	events, err = d.ListIssueEvents(ctx, issueID)
+	require.NoError(err)
+	require.Len(events, 1)
+	assert.Empty(events[0].MetadataJSON)
+	assert.Equal("moderated without changing the parent", events[0].Body)
+
+	assert.Equal(int32(2), mc.conditionalCalls.Load())
 	assert.Equal(`"issue-etag-v1"`, mc.receivedETag)
 	assert.Zero(int(mc.listIssueCommentsCalled.Load()),
 		"304 should skip issue comment refresh")
@@ -15064,8 +15129,15 @@ func TestFetchIssueDetailRemovesDeletedCommentDuringFullRefresh(t *testing.T) {
 	assert.Empty(events)
 }
 
-func currentCommentVisibilityServer(t *testing.T, item string, commentID int64) *httptest.Server {
+func currentCommentVisibilityServer(
+	t *testing.T,
+	item string,
+	commentID int64,
+	states ...CommentVisibility,
+) *httptest.Server {
 	t.Helper()
+	require.NotEmpty(t, states)
+	var calls atomic.Int32
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		if !strings.Contains(string(body), item+"(number:") {
@@ -15073,8 +15145,18 @@ func currentCommentVisibilityServer(t *testing.T, item string, commentID int64) 
 			_, _ = w.Write([]byte(`{"errors":[{"message":"unexpected GraphQL query"}]}`))
 			return
 		}
+		index := int(calls.Add(1)) - 1
+		if index >= len(states) {
+			index = len(states) - 1
+		}
+		state := states[index]
+		reasonJSON := "null"
+		if state.Reason != "" {
+			encoded, _ := json.Marshal(state.Reason)
+			reasonJSON = string(encoded)
+		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprintf(w, `{"data":{"repository":{"%s":{"comments":{"nodes":[{"databaseId":%d,"isMinimized":true,"minimizedReason":"ABUSE"}],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}}`, item, commentID)
+		_, _ = fmt.Fprintf(w, `{"data":{"repository":{"%s":{"comments":{"nodes":[{"databaseId":%d,"isMinimized":%t,"minimizedReason":%s}],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}}`, item, commentID, state.Hidden, reasonJSON)
 	}))
 }
 
@@ -15101,7 +15183,9 @@ func TestFetchMRDetailUsesCurrentCommentVisibility(t *testing.T) {
 			return buildOpenPR(1, now), nil
 		},
 	}
-	gqlSrv := currentCommentVisibilityServer(t, "pullRequest", commentID)
+	gqlSrv := currentCommentVisibilityServer(
+		t, "pullRequest", commentID, CommentVisibility{Hidden: true, Reason: "ABUSE"},
+	)
 	defer gqlSrv.Close()
 	syncer := NewSyncer(
 		map[string]Client{"github.com": mock}, d, nil, []RepoRef{repo},
@@ -15152,7 +15236,9 @@ func TestFetchIssueDetailUsesCurrentCommentVisibility(t *testing.T) {
 			return issue, nil
 		},
 	}
-	gqlSrv := currentCommentVisibilityServer(t, "issue", commentID)
+	gqlSrv := currentCommentVisibilityServer(
+		t, "issue", commentID, CommentVisibility{Hidden: true, Reason: "ABUSE"},
+	)
 	defer gqlSrv.Close()
 	syncer := NewSyncer(
 		map[string]Client{"github.com": mock}, d, nil, []RepoRef{repo},
@@ -18630,7 +18716,7 @@ func TestProcessQueuedNotificationReadsRequiresWorstCaseHeadroom(t *testing.T) {
 // decision must read the repository credential's own pool, so an App
 // installation sitting at zero cannot suppress bulk GraphQL for a PAT-backed
 // repository on the same host (or the reverse).
-func TestBulkGraphQLAllowedIsolatesCredentialGraphQLPools(t *testing.T) {
+func TestGraphQLReadAllowedIsolatesCredentialGraphQLPools(t *testing.T) {
 	assert := assert.New(t)
 	d := openTestDB(t)
 	appRepo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
@@ -18674,9 +18760,9 @@ func TestBulkGraphQLAllowedIsolatesCredentialGraphQLPools(t *testing.T) {
 	backoff, _ := fetcher.ShouldBackoff()
 	assert.True(backoff, "host-wide tracker should report exhaustion")
 
-	assert.False(syncer.bulkGraphQLAllowed(t.Context(), appRepo, fetcher),
+	assert.False(syncer.graphQLReadAllowed(t.Context(), appRepo, fetcher),
 		"exhausted App credential must back off")
-	assert.True(syncer.bulkGraphQLAllowed(t.Context(), userRepo, fetcher),
+	assert.True(syncer.graphQLReadAllowed(t.Context(), userRepo, fetcher),
 		"healthy user credential must not inherit the App pool's exhaustion")
 }
 
@@ -18752,12 +18838,12 @@ func TestRepoEligibilityStopsOnExhaustedRESTWithUnobservedGraphQL(t *testing.T) 
 		"an exhausted REST reserve must stop scheduling regardless of GraphQL")
 }
 
-// Background admission gates on REST alone, so bulkGraphQLAllowed is the only
-// place the GraphQL reserve is applied. A background sync holding GraphQL
+// Background admission gates on REST alone, so graphQLReadAllowed is where the
+// GraphQL reserve is applied. A background sync holding GraphQL
 // headroom inside the reserve must fall back to REST rather than spend the
 // capacity held for foreground work, while the same pool stays usable for an
 // explicit foreground sync.
-func TestBulkGraphQLAllowedAppliesReserveOnlyToBackgroundSyncs(t *testing.T) {
+func TestGraphQLReadAllowedAppliesReserveOnlyToBackgroundSyncs(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -18784,11 +18870,54 @@ func TestBulkGraphQLAllowedAppliesReserveOnlyToBackgroundSyncs(t *testing.T) {
 	fetcher := &GraphQLFetcher{}
 
 	assert.False(
-		syncer.bulkGraphQLAllowed(WithSyncBudget(t.Context()), repo, fetcher),
+		syncer.graphQLReadAllowed(WithSyncBudget(t.Context()), repo, fetcher),
 		"background bulk GraphQL must not spend the foreground reserve")
 	assert.True(
-		syncer.bulkGraphQLAllowed(t.Context(), repo, fetcher),
+		syncer.graphQLReadAllowed(t.Context(), repo, fetcher),
 		"an explicit foreground sync may use GraphQL headroom inside the reserve")
+}
+
+func TestCurrentCommentVisibilitySkipsGraphQLInsideBackgroundReserve(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
+	client := &credentialRateLimitSnapshotMockClient{mockClient: &mockClient{}}
+	identity := IdentityKey{Host: "github.com", Principal: "user:7"}
+	var requests atomic.Int32
+	gqlSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"errors":[{"message":"query should not run"}]}`))
+	}))
+	defer gqlSrv.Close()
+	fetcher := NewGraphQLFetcherWithClient(
+		githubv4.NewEnterpriseClient(gqlSrv.URL, gqlSrv.Client()), nil,
+	)
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client}, d, nil, []RepoRef{repo},
+		time.Minute, nil, nil,
+	)
+	router, err := NewHostRouter("github.com", &Route{
+		Key: RouteKey{Host: "github.com", Owner: "acme"}, Client: client,
+		Fetcher: fetcher, ReadIdentity: identity, WriteIdentity: identity,
+	})
+	require.NoError(err)
+	syncer.SetGitHubRouters(map[string]*HostRouter{"github.com": router})
+	registry := NewQuotaRegistry()
+	registry.UpdateSnapshot(identity, QuotaResourceGraphQL, Rate{
+		Limit: 5000, Remaining: RateReserveBuffer / 2,
+		Reset: time.Now().UTC().Add(time.Hour),
+	})
+	syncer.SetQuotaRegistry(registry)
+	ctx := WithSyncBudget(t.Context())
+
+	_, prObserved := syncer.currentPRCommentVisibility(ctx, repo, 7)
+	_, issueObserved := syncer.currentIssueCommentVisibility(ctx, repo, 8)
+
+	assert.False(prObserved)
+	assert.False(issueObserved)
+	assert.Zero(requests.Load())
 }
 
 // End-to-end through the syncer and SQLite: a credential whose GraphQL pool is
@@ -18981,7 +19110,7 @@ func TestRunOnceSkipsSyncWhenRESTPoolExhausted(t *testing.T) {
 }
 
 // Without a registry the host-wide tracker remains authoritative.
-func TestBulkGraphQLAllowedFallsBackToHostTracker(t *testing.T) {
+func TestGraphQLReadAllowedFallsBackToHostTracker(t *testing.T) {
 	assert := assert.New(t)
 	d := openTestDB(t)
 	repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
@@ -18994,8 +19123,8 @@ func TestBulkGraphQLAllowedFallsBackToHostTracker(t *testing.T) {
 		Limit: 5000, Remaining: 0, Reset: time.Now().UTC().Add(time.Hour),
 	})
 
-	assert.False(syncer.bulkGraphQLAllowed(t.Context(), repo, &GraphQLFetcher{rateTracker: exhausted}))
-	assert.True(syncer.bulkGraphQLAllowed(t.Context(), repo, &GraphQLFetcher{}))
+	assert.False(syncer.graphQLReadAllowed(t.Context(), repo, &GraphQLFetcher{rateTracker: exhausted}))
+	assert.True(syncer.graphQLReadAllowed(t.Context(), repo, &GraphQLFetcher{}))
 }
 
 func TestPublishResolvedRepositoryAliasesCredentialRoute(t *testing.T) {

@@ -577,7 +577,9 @@ func (s *Handler) publishDiffReviewDraft(
 				}
 			}
 			if capabilityEnabled(s.capabilitiesForRepo(*repo), capabilityReadReviewThreads) {
-				_ = s.ingestDiffReviewThreads(ctx, *repo, *mr)
+				if ingestErr := s.ingestDiffReviewThreads(ctx, *repo, *mr); ingestErr != nil {
+					return nil, ingestErr
+				}
 			}
 			if errors.Is(partialErr, platform.ErrStaleState) {
 				s.syncAfterStaleReviewDraftPublish(*repo, input.Number)
@@ -601,7 +603,9 @@ func (s *Handler) publishDiffReviewDraft(
 		return nil, huma.Error500InternalServerError("discard published review draft failed")
 	}
 	if capabilityEnabled(s.capabilitiesForRepo(*repo), capabilityReadReviewThreads) {
-		_ = s.ingestDiffReviewThreads(ctx, *repo, *mr)
+		if err := s.ingestDiffReviewThreads(ctx, *repo, *mr); err != nil {
+			return nil, err
+		}
 	}
 	return &actionStatusOutput{Body: ActionStatusBody{Status: "published"}}, nil
 }
@@ -802,8 +806,6 @@ func (s *Handler) ingestDiffReviewThreads(
 	}
 	dbThreads := make([]db.MRReviewThread, 0, len(threads))
 	events := make([]db.MREvent, 0, len(threads))
-	providerThreadIDs := make([]string, 0, len(threads))
-	reviewCommentDedupeKeys := make([]string, 0, len(threads))
 	seenProviderThreadIDs := make(map[string]struct{}, len(threads))
 	for _, thread := range threads {
 		providerThreadID := thread.ProviderThreadID
@@ -815,7 +817,6 @@ func (s *Handler) ingestDiffReviewThreads(
 		}
 		if _, ok := seenProviderThreadIDs[providerThreadID]; !ok {
 			seenProviderThreadIDs[providerThreadID] = struct{}{}
-			providerThreadIDs = append(providerThreadIDs, providerThreadID)
 			dbThread := db.MRReviewThread{
 				ProviderThreadID:  providerThreadID,
 				ProviderReviewID:  thread.ProviderReviewID,
@@ -838,7 +839,6 @@ func (s *Handler) ingestDiffReviewThreads(
 				createdAt = s.now().UTC()
 			}
 			dedupeKey := "review_comment:" + eventExternalID
-			reviewCommentDedupeKeys = append(reviewCommentDedupeKeys, dedupeKey)
 			threadID := providerThreadID
 			events = append(events, db.MREvent{
 				MergeRequestID:     mr.ID,
@@ -853,16 +853,18 @@ func (s *Handler) ingestDiffReviewThreads(
 			})
 		}
 	}
-	if err := s.db.DeleteMissingMRReviewThreads(ctx, mr.ID, providerThreadIDs, reviewCommentDedupeKeys); err != nil {
-		return huma.Error500InternalServerError("delete missing review threads failed")
-	}
-	if err := s.db.UpsertMRReviewThreads(ctx, mr.ID, dbThreads); err != nil {
+	applied, err := s.db.CommitMergeRequestChildSnapshot(ctx, db.MergeRequestChildSnapshot{
+		MergeRequestID:         mr.ID,
+		ExpectedRevision:       mr.SnapshotRevision,
+		InlineComments:         events,
+		ReviewThreads:          dbThreads,
+		InlineCommentsComplete: true,
+	})
+	if err != nil {
 		return huma.Error500InternalServerError("persist review threads failed")
 	}
-	if len(events) > 0 {
-		if err := s.db.UpsertMREvents(ctx, events); err != nil {
-			return huma.Error500InternalServerError("persist review thread events failed")
-		}
+	if !applied {
+		return huma.Error409Conflict("pull request changed during review thread refresh")
 	}
 	return nil
 }

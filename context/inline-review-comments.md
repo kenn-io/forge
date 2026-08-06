@@ -26,7 +26,8 @@ published review-thread ingestion, or review controls in shared diff UI.
   standalone global activity rows
   (`internal/server/pullapi/diff_review_handlers.go::Handler.ingestDiffReviewThreads`).
 - Provider moderation metadata belongs to both thread rows and their corresponding
-  timeline events; ingestion must not let either representation clear or bypass it
+  timeline events; ingestion commits both representations atomically so neither can
+  clear or bypass it independently
   (`internal/server/pullapi/diff_review_handlers.go::Handler.ingestDiffReviewThreads`).
 - Workspace diffs reuse the renderer with review mode disabled. They must not
   expose composers, draft trays, publish actions, or thread-resolution controls,

@@ -17659,7 +17659,7 @@ func TestAPIGitLabSyncPrunesLegacyPositionedNoteCommentEvents(t *testing.T) {
 	}
 }
 
-func TestAPIPublishReviewDraftDeletesDraftBeforeReviewThreadIngest(t *testing.T) {
+func TestAPIPublishReviewDraftRollsBackThreadIngestWhenEventPersistenceFails(t *testing.T) {
 	require := require.New(t)
 	caps := platform.Capabilities{
 		ReadRepositories:       true,
@@ -17672,7 +17672,6 @@ func TestAPIPublishReviewDraftDeletesDraftBeforeReviewThreadIngest(t *testing.T)
 	}
 	srv, database, provider := setupGitLabCapabilityServerWithProvider(t, &caps)
 	ctx := t.Context()
-	provider.reviewThreadsErr = errors.New("thread ingest failed")
 
 	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
 		Platform:     "gitlab",
@@ -17685,6 +17684,29 @@ func TestAPIPublishReviewDraftDeletesDraftBeforeReviewThreadIngest(t *testing.T)
 	require.NoError(err)
 	require.NotNil(mr)
 	require.NoError(database.UpdateDiffSHAs(ctx, repo.ID, 7, "current-head", "base", "merge"))
+	now := time.Now().UTC().Truncate(time.Second)
+	line := 42
+	provider.reviewThreads = []platform.MergeRequestReviewThread{{
+		ProviderThreadID:  "thread-atomic",
+		ProviderCommentID: "comment-atomic",
+		Body:              "hidden provider comment",
+		AuthorLogin:       "reviewer",
+		MetadataJSON:      `{"provider_hidden":true,"provider_hidden_reason":"ABUSE"}`,
+		Range: platform.DiffReviewLineRange{
+			Path: "internal/server/api_test.go", Side: "right", Line: line,
+			NewLine: &line, LineType: "add", DiffHeadSHA: "current-head",
+		},
+		CreatedAt: now,
+		UpdatedAt: now,
+	}}
+	_, err = database.WriteDB().ExecContext(ctx, `
+		CREATE TRIGGER reject_review_comment_event
+		BEFORE INSERT ON forge_mr_events
+		WHEN NEW.event_type = 'review_comment'
+		BEGIN
+			SELECT RAISE(ABORT, 'reject review comment event');
+		END`)
+	require.NoError(err)
 
 	basePath := "/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-draft"
 	createRR := doJSON(t, srv, http.MethodPost, basePath+"/comments", map[string]any{
@@ -17707,11 +17729,17 @@ func TestAPIPublishReviewDraftDeletesDraftBeforeReviewThreadIngest(t *testing.T)
 		basePath+"/publish",
 		map[string]string{"action": "comment"},
 	)
-	require.Equal(http.StatusOK, publishRR.Code, publishRR.Body.String())
+	require.Equal(http.StatusInternalServerError, publishRR.Code, publishRR.Body.String())
 	require.Len(provider.publishedReviews, 1)
 	draft, err := database.GetMRReviewDraft(ctx, mr.ID)
 	require.NoError(err)
 	require.Nil(draft)
+	threads, err := database.ListMRReviewThreads(ctx, mr.ID)
+	require.NoError(err)
+	require.Empty(threads)
+	events, err := database.ListMREvents(ctx, mr.ID)
+	require.NoError(err)
+	require.Empty(events)
 }
 
 func TestAPIResolveReviewThreadPersistsProviderState(t *testing.T) {

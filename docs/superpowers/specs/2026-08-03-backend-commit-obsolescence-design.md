@@ -27,37 +27,49 @@ the current head, and git answers reachability exactly.
 
 ## Design
 
-### Sync stamping
+### Liveness rides the snapshot transaction
 
-A helper on the syncer stamps stored commit events from local-clone ancestry.
-It runs where diff sync has just resolved the merge request's current head
-against the clone, and it is guarded by the clone containing that head: the
-head's ancestor closure is then complete, so a stored commit SHA that is not
-an ancestor of the head (`git merge-base --is-ancestor` via the existing
-`gitclone.Manager` primitives) is genuinely unreachable, including SHAs absent
-from the clone entirely.
+Repeated review rounds each found another race between stamping and the
+sync's own writes (stale caches, clobbered metadata, ordering shuffles,
+error-path invalidation). The root cause was structural: stamping was a
+second, independent writer beside the sync's revision-guarded snapshot
+machinery. This design removes the second writer.
 
-- SHA not an ancestor of the current head: set `obsolete: true` in the
-  event's metadata JSON, beside the existing `commit_order_key`.
-- SHA an ancestor of the current head: remove the flag. Stamping is
-  recomputed from scratch on every round, so any push pattern (alternation,
-  partial restore, split ancestry) and any base movement converges to the
-  git-verified truth.
+Liveness is computed before a round commits and its results travel with the
+round's own dataset:
 
-Updated copies of changed events are upserted through the existing
-`UpsertMREvents` conflict path, which already refreshes `metadata_json` by
-dedupe key, immediately after the diff snapshot for the same head applies.
-Flags are recomputed from scratch on every verified round, so a concurrent
-sync can only briefly interleave states that the next round repairs.
+- A commit event's SHA (from `PlatformExternalID` when it is a full SHA,
+  else the summary) is live iff it is reachable from the round's verified
+  head. Reachability is answered in-process with go-git against the local
+  bare clone — open the bare repository, resolve the head commit (a missing
+  head means the round commits without liveness updates), and walk ancestry
+  from the head with early termination once every candidate is resolved.
+  Read-only, lock-free, no subprocesses; the git CLI remains only for
+  networked operations (clone/fetch with credentials). go-git is an
+  explicitly maintainer-approved dependency for this.
+- Incoming commit events carry the computed `obsolete` flag in their
+  metadata within the normal upsert batch. Stored commit events the provider
+  did not re-list receive metadata-only updates applied inside the same
+  revision-guarded snapshot transaction that commits the round (the child
+  snapshot payload carries them). A round that loses the revision CAS writes
+  nothing — events and flags stay mutually consistent by construction, and
+  stale rounds are inert.
+- Unchanged/not-modified rounds apply the same rule through their
+  revision-guarded detail-fetched marker write, so a round whose clone has
+  since caught up repairs flags without any dedicated retry machinery.
 
-When the clone is unavailable or does not contain the current head, stamping
-skips and flags keep the state of the last verified round — the same soft
-dependency diff sync already has. A skipped round can leave a restored commit
-collapsed (or a removed one visible) until the next verified round; flags
-reflect the last verified sync, not live provider state. Ancestry stamping is
-provider-agnostic: any provider whose merge requests get diff sync inherits
-it, with GitHub wired first alongside the existing `commit_order_key`
-stamping.
+The stamping mutex, MR-row head recheck, and cache-invalidation rules are
+deleted; serialization is the snapshot guard's job. The last-computed-head
+memo survives only as a compute-skip hint (skip the ancestry walk when the
+head is unchanged since the last applied round); a stale hint can cause one
+redundant computation, never a wrong write.
+
+When the clone is unavailable or lacks the round's head, the round commits
+its events without liveness updates: provider-listed commits still receive
+fresh metadata (the provider listing a commit is itself liveness evidence,
+and showing a commit wrongly is the safe direction), while unlisted events
+keep their last verified flags. Ancestry liveness is provider-agnostic: any
+provider whose merge requests sync through the shared flows inherits it.
 
 ### Frontend collapse
 
@@ -76,13 +88,16 @@ no frontend fallback to the old heuristic.
 
 ## Tests
 
-- Go stamping tests through real SQLite and a real git clone fixture: replace
+- Go liveness tests through real SQLite and a real git clone fixture: replace
   a lineage and assert flags set on the removed commits; push back and assert
   flags cleared and set on the displaced replacement (alternation); restore a
   subset and assert only unreachable SHAs stay flagged; advance or retarget
   the base without a force push and assert nothing is stamped obsolete; a
-  clone missing the current head skips stamping and leaves prior flags
-  untouched.
+  clone missing the current head commits the round without liveness updates
+  and unlisted events keep prior flags; a round that loses the revision CAS
+  writes neither events nor flags (staleness by construction, replacing the
+  old interleaving regressions); go-git reachability answers match real
+  repository history including candidates absent from the object store.
 - Component test: flagged commits collapse in strict date order and unflagged
   commits render normally, with no replay scenarios.
 - Full stack, real computation: an integration test drives the real sync path

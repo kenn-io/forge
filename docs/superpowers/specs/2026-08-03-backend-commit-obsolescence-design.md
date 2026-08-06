@@ -47,10 +47,11 @@ round's own dataset:
   The walk reads only what it needs — parent hashes — and refuses
   contributor-controlled bulk: each commit's encoded size is checked before
   go-git decodes it (1 MB cap; real commit objects are a few hundred
-  bytes), and a visit budget (50k commits) bounds the traversal, since a
-  force-pushed-away candidate is unreachable and would otherwise force a
-  full-history walk. Exceeding either limit reports the head unverifiable
-  instead of returning partial verdicts.
+  bytes), a discovery budget (50k distinct commits, counted at enqueue so
+  the frontier itself stays bounded) limits the traversal, and a total
+  parent-edge budget (500k) refuses graphs whose repeated-parent fan-out no
+  real merge history approaches. Exceeding any limit reports the head
+  unverifiable instead of returning partial verdicts.
   Read-only, lock-free, no subprocesses; the git CLI remains only for
   networked operations (clone/fetch with credentials). go-git is an
   explicitly maintainer-approved dependency for this. SHA-256 (64-hex)
@@ -90,7 +91,11 @@ provider whose merge requests sync through the shared flows inherits it.
 
 Liveness runs while an MR is open and once more on the round that takes it
 out of the open state, computed against the final head — the flags that
-round persists are the terminal record. Already-merged and already-closed
+round persists are the terminal record. Because no later round will ever
+recompute them, terminal flags ride inside the parent snapshot transaction
+itself (the parent upsert accepts an event-metadata payload): the terminal
+state and its flags land together or not at all, so no revision race can
+freeze a closed MR with pre-close flags. Already-merged and already-closed
 MRs are never refetched or recomputed; a reopened MR computes again like
 any open one.
 

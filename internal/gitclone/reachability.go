@@ -37,6 +37,13 @@ const contextCheckInterval = 1024
 // as it was, the safe direction.
 const maxAncestryVisits = 50_000
 
+// maxAncestryEdges caps the total parent references a walk may examine.
+// Distinct-hash discovery is bounded by maxAncestryVisits, but a crafted
+// history can point enormous parent lists at the same few commits; without
+// an edge budget those repeated references still cost a lookup each, so the
+// walk refuses histories whose edge count no real merge graph approaches.
+const maxAncestryEdges = 500_000
+
 // maxCommitObjectSize rejects pathological commit objects before anything is
 // decoded. Reachability needs only hashes, never contents, so the walk reads
 // each commit's header prefix (tree and parent lines) and nothing else — but
@@ -99,20 +106,18 @@ func (m *Manager) CommitsReachableFrom(
 	if budget <= 0 {
 		budget = maxAncestryVisits
 	}
+	// Hashes are marked discovered when enqueued, never re-enqueued, and
+	// discovery counts against the budget immediately, so the frontier can
+	// never outgrow the visit budget no matter how a crafted history shapes
+	// its parent lists.
 	visited := 0
-	seen := make(map[plumbing.Hash]bool)
+	edges := 0
+	seen := map[plumbing.Hash]bool{headHash: true}
 	queue := []plumbing.Hash{headHash}
 	for len(queue) > 0 {
 		hash := queue[len(queue)-1]
 		queue = queue[:len(queue)-1]
-		if seen[hash] {
-			continue
-		}
-		seen[hash] = true
 		visited++
-		if visited > budget {
-			return CommitReachability{}, nil
-		}
 		if visited%contextCheckInterval == 0 {
 			if err := ctx.Err(); err != nil {
 				return CommitReachability{}, fmt.Errorf("walk ancestry of %s: %w", headSHA, err)
@@ -136,7 +141,20 @@ func (m *Manager) CommitsReachableFrom(
 			// the walk cannot certify ancestry this round.
 			return CommitReachability{}, nil
 		}
-		queue = append(queue, parents...)
+		edges += len(parents)
+		if edges > maxAncestryEdges {
+			return CommitReachability{}, nil
+		}
+		for _, parent := range parents {
+			if seen[parent] {
+				continue
+			}
+			seen[parent] = true
+			if len(seen) > budget {
+				return CommitReachability{}, nil
+			}
+			queue = append(queue, parent)
+		}
 	}
 	return CommitReachability{HeadVerified: true, Live: live}, nil
 }

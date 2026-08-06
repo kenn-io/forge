@@ -1478,15 +1478,20 @@ func (d *DB) UpsertMergeRequestSnapshotWithLabels(
 	}
 	defer release()
 	return d.UpsertMergeRequestSnapshotWithLabelsUnderRepositoryReconciliationRead(
-		ctx, mr,
+		ctx, mr, nil,
 	)
 }
 
 // UpsertMergeRequestSnapshotWithLabelsUnderRepositoryReconciliationRead applies
 // a parent snapshot while its caller holds LockRepositoryReconciliationRead.
+// eventMetadataUpdates (keyed by event dedupe key) land inside the same
+// transaction as the parent snapshot and only when it is accepted, so state
+// transitions and their derived event metadata are atomic — a rejected
+// snapshot writes neither.
 func (d *DB) UpsertMergeRequestSnapshotWithLabelsUnderRepositoryReconciliationRead(
 	ctx context.Context,
 	mr *MergeRequest,
+	eventMetadataUpdates map[string]string,
 ) (int64, int64, bool, error) {
 	release, err := d.lockMergeRequestSnapshotUnderRepositoryReconciliationRead(
 		ctx, mr.RepoID, mr.Number,
@@ -1502,7 +1507,10 @@ func (d *DB) UpsertMergeRequestSnapshotWithLabelsUnderRepositoryReconciliationRe
 	err = d.Tx(ctx, func(tx *sql.Tx) error {
 		var err error
 		id, revision, accepted, err = commitMergeRequestParentSnapshotTx(ctx, tx, mr, mr.Labels)
-		return err
+		if err != nil || !accepted {
+			return err
+		}
+		return updateMREventMetadataTx(ctx, tx, id, eventMetadataUpdates)
 	})
 	return id, revision, accepted, err
 }

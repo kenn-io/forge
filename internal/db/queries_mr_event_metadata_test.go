@@ -107,6 +107,53 @@ func TestChildSnapshotEventMetadataUpdatesRejectStaleRevision(t *testing.T) {
 	assertMetadataTestEvent(t, database, mrID, `{"commit_order_key":1}`)
 }
 
+func TestParentSnapshotCarriesEventMetadataUpdatesAtomically(t *testing.T) {
+	database := openTestDB(t)
+	ctx := t.Context()
+	repoID, mrID, _ := seedMetadataTestMR(t, database)
+	now := time.Date(2026, 8, 5, 10, 30, 0, 0, time.UTC)
+	updates := map[string]string{
+		"commit-1": `{"commit_order_key":1,"obsolete":true}`,
+	}
+	upsert := func(mr *MergeRequest) bool {
+		t.Helper()
+		release, err := database.LockRepositoryReconciliationRead(ctx)
+		require.NoError(t, err)
+		defer release()
+		_, _, accepted, err :=
+			database.UpsertMergeRequestSnapshotWithLabelsUnderRepositoryReconciliationRead(
+				ctx, mr, updates,
+			)
+		require.NoError(t, err)
+		return accepted
+	}
+
+	// A rejected snapshot (older updated_at) must write neither the terminal
+	// state nor the metadata riding with it.
+	rejected := upsert(&MergeRequest{
+		RepoID: repoID, PlatformID: 1, Number: 1, Title: "stale close",
+		State: MergeRequestStateClosed, PlatformHeadSHA: "head", PlatformBaseSHA: "base",
+		CreatedAt: now.Add(-time.Hour), UpdatedAt: now.Add(-time.Minute),
+		LastActivityAt: now.Add(-time.Minute),
+	})
+	assert.False(t, rejected)
+	assertMetadataTestEvent(t, database, mrID, `{"commit_order_key":1}`)
+
+	// The accepted transition lands state and metadata together.
+	accepted := upsert(&MergeRequest{
+		RepoID: repoID, PlatformID: 1, Number: 1, Title: "real close",
+		State: MergeRequestStateClosed, PlatformHeadSHA: "head", PlatformBaseSHA: "base",
+		CreatedAt: now.Add(-time.Hour), UpdatedAt: now.Add(time.Minute),
+		LastActivityAt: now.Add(time.Minute),
+	})
+	assert.True(t, accepted)
+	assertMetadataTestEvent(t, database, mrID, `{"commit_order_key":1,"obsolete":true}`)
+	fresh, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)
+	require.NoError(t, err)
+	require.NotNil(t, fresh)
+	assert.Equal(t, MergeRequestStateClosed, fresh.State)
+}
+
 func TestMarkDetailFetchedEventMetadataUpdates(t *testing.T) {
 	database := openTestDB(t)
 	ctx := t.Context()

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
 	"strconv"
 	"strings"
@@ -1266,9 +1267,7 @@ func commentVisibilityCursor(startAfter, cursor *string) *githubv4.String {
 func mergeCommentVisibilityMap(
 	dst, src map[int64]CommentVisibility,
 ) {
-	for id, visibility := range src {
-		dst[id] = visibility
-	}
+	maps.Copy(dst, src)
 }
 
 func mergeCommentVisibility(

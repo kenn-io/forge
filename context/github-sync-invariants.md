@@ -55,6 +55,9 @@ what "current" means.
 - A partial GraphQL comment page is observation-only: merge its visible and
   minimized states over stored moderation metadata before REST completion so
   unseen comments retain their last known state. (`internal/github/sync.go::refreshIssueTimeline`)
+- A parent `304 Not Modified` is not a moderation freshness signal. When GraphQL
+  admission permits, re-observe comment visibility and update metadata under the
+  parent revision guard (`internal/github/sync.go::markUnchangedMRDetailFetched`).
 - Budgeted detail drain treats each queue item's worst-case cost as soft admission;
   provider pagination and child hydration may exceed it because the transport counts
   actual wire attempts (`internal/github/sync.go::drainDetailQueue`).
@@ -628,9 +631,9 @@ response never overwrites an App installation pool
 - Outside archive hydration, a credential that crosses its reserve inside a
   cadence window keeps spending until the window turns. That reserve is a soft
   foreground buffer; the local hourly ceiling remains the hard per-wire guard.
-- Gate background eligibility on REST only. Bulk GraphQL is an optimization with
+- Gate background eligibility on REST only. Optional GraphQL reads are optimizations with
   a REST fallback, so requiring GraphQL capacity stops repositories that could
-  still sync (`internal/github/sync.go::repoEligibility`). `bulkGraphQLAllowed`
+  still sync (`internal/github/sync.go::repoEligibility`). `graphQLReadAllowed`
   applies the GraphQL reserve where it is spent, and answers from the credential
   verdict whenever that pool is known — falling through to the fetcher's tracker
   would consult a host-wide signal both credentials on a split-auth host feed.
@@ -653,7 +656,7 @@ response never overwrites an App installation pool
   request (`internal/github/notifications_sync.go::ensureNotificationBudget`).
 - A scheduling decision must read the pool of the credential that will perform
   the work; a host-wide tracker lets one credential's exhaustion suppress
-  another's (`internal/github/sync.go::bulkGraphQLAllowed`).
+  another's (`internal/github/sync.go::graphQLReadAllowed`).
 
 ## GitHub App Manifest Flow
 

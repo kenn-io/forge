@@ -4739,27 +4739,11 @@ func (s *Syncer) advanceNextSync(
 	}
 }
 
-// bulkGraphQLAllowed reports whether a bulk GraphQL fetch may run for repo.
-//
-// In quota-registry mode the decision reads the repository credential's own
-// GraphQL pool: the fetcher's tracker is host-wide, so one credential reaching
-// zero would otherwise suppress bulk fetches for a healthy credential and push
-// that work onto REST.
-//
-// This is the only place the GraphQL reserve is enforced. Background admission
-// deliberately gates on REST alone, because bulk GraphQL is optional and falls
-// back to REST — so the reserve has to be applied here or background work would
-// spend the GraphQL headroom held for foreground requests. Foreground syncs are
-// explicit user work and keep the legacy exhaustion threshold, where only a
-// genuinely empty pool sends them down the REST path.
-// bulkGraphQLAllowed reports whether this repository's bulk fetch may run.
-// It consults the same cadence-cached reserve check as everything else, on the
-// GraphQL pool because that is where a bulk fetch spends. Background
-// eligibility itself gates on REST alone -- bulk GraphQL is an optimization
-// with a REST fallback -- so this is where the GraphQL reserve is applied.
-// Foreground syncs are explicit user work and only stop on a genuinely
-// backed-off tracker.
-func (s *Syncer) bulkGraphQLAllowed(
+// graphQLReadAllowed reports whether optional GraphQL sync work may run for a
+// repository. It reads the routed credential's pool so one exhausted identity
+// cannot suppress a healthy identity sharing the same host tracker. Background
+// work holds the GraphQL reserve; foreground work stops only on hard backoff.
+func (s *Syncer) graphQLReadAllowed(
 	ctx context.Context, repo RepoRef, fetcher *GraphQLFetcher,
 ) bool {
 	verdict := s.reserveVerdictFor(
@@ -7540,7 +7524,7 @@ func (s *Syncer) indexSyncRepo(
 			graphQLDone := false
 			if fetcher := s.fetcherFor(repo); fetcher != nil &&
 				s.shouldUseBulkGraphQLForMRs(ctx, repo, repoID, len(openMRs)) {
-				if s.bulkGraphQLAllowed(ctx, repo, fetcher) {
+				if s.graphQLReadAllowed(ctx, repo, fetcher) {
 					result, gqlErr := fetcher.FetchRepoPRs(
 						ctx, repo.Owner, repo.Name, preferNativeStacks,
 					)
@@ -7694,7 +7678,7 @@ func (s *Syncer) indexSyncRepo(
 			graphQLIssuesDone := false
 			if fetcher := s.fetcherFor(repo); fetcher != nil &&
 				s.shouldUseBulkGraphQLForIssues(ctx, repo, repoID, len(openIssues)+len(ghIssues)) {
-				if s.bulkGraphQLAllowed(ctx, repo, fetcher) {
+				if s.graphQLReadAllowed(ctx, repo, fetcher) {
 					issueResult, gqlErr := fetcher.FetchRepoIssues(
 						ctx, repo.Owner, repo.Name,
 					)
@@ -9773,6 +9757,15 @@ func (s *Syncer) markUnchangedMRDetailFetched(
 	ctx = s.db.WithRepositoryRouteFence(
 		ctx, platform.DBRepoIdentity(platformRepoRef(repo)), routeFence,
 	)
+	if err := s.refreshStoredPRCommentVisibility(
+		ctx, repo, existing.ID, existing.SnapshotRevision, number,
+	); err != nil {
+		if errors.Is(err, errParentSnapshotAdvanced) ||
+			errors.Is(err, db.ErrRepositoryRouteFenceChanged) {
+			return calls, nil
+		}
+		return calls, err
+	}
 	pending := existing.CIHadPending
 	if existing.CIHadPending && existing.PlatformHeadSHA != "" {
 		ciApplied, err := s.refreshCIStatusSnapshot(
@@ -10128,18 +10121,9 @@ func (s *Syncer) fetchIssueDetail(
 			if existing == nil {
 				return calls, fmt.Errorf("mark unchanged detail fetched for issue #%d: issue is missing", number)
 			}
-			detailApplied, markErr := s.markIssueDetailFetchedIfRouteFence(
-				ctx, repo, routeFence, existing.ID, existing.SnapshotRevision,
+			return s.markUnchangedIssueDetailFetched(
+				ctx, repo, number, existing, routeFence, calls,
 			)
-			if markErr != nil {
-				return calls, fmt.Errorf(
-					"mark unchanged detail fetched for issue #%d: %w", number, markErr,
-				)
-			}
-			if !detailApplied {
-				return calls, nil
-			}
-			return calls, nil
 		}
 		err = fmt.Errorf("client returned nil issue")
 	}
@@ -10206,6 +10190,47 @@ func (s *Syncer) fetchIssueDetail(
 		}
 	}
 
+	return calls, nil
+}
+
+func (s *Syncer) markUnchangedIssueDetailFetched(
+	ctx context.Context,
+	repo RepoRef,
+	number int,
+	existing *db.Issue,
+	routeFence db.RepositoryRouteFence,
+	calls int,
+) (int, error) {
+	matches, err := s.repositoryRouteFenceMatches(ctx, repo, routeFence)
+	if err != nil {
+		return calls, err
+	}
+	if !matches {
+		return calls, nil
+	}
+	ctx = s.db.WithRepositoryRouteFence(
+		ctx, platform.DBRepoIdentity(platformRepoRef(repo)), routeFence,
+	)
+	if err := s.refreshStoredIssueCommentVisibility(
+		ctx, repo, existing.ID, existing.SnapshotRevision, number,
+	); err != nil {
+		if errors.Is(err, errParentSnapshotAdvanced) ||
+			errors.Is(err, db.ErrRepositoryRouteFenceChanged) {
+			return calls, nil
+		}
+		return calls, err
+	}
+	detailApplied, err := s.markIssueDetailFetchedIfRouteFence(
+		ctx, repo, routeFence, existing.ID, existing.SnapshotRevision,
+	)
+	if err != nil {
+		return calls, fmt.Errorf(
+			"mark unchanged detail fetched for issue #%d: %w", number, err,
+		)
+	}
+	if !detailApplied {
+		return calls, nil
+	}
 	return calls, nil
 }
 
@@ -10413,19 +10438,8 @@ func (s *Syncer) refreshTimeline(
 	if err != nil {
 		return fmt.Errorf("load stored comment visibility for MR #%d: %w", number, err)
 	}
-	if fetcher := s.fetcherFor(repo); fetcher != nil {
-		observed, visibilityErr := fetcher.FetchPullRequestCommentVisibility(
-			ctx, repo.Owner, repo.Name, number,
-		)
-		if visibilityErr != nil {
-			slog.Warn("current PR comment visibility fetch failed; preserving stored state",
-				"repo", repo.Owner+"/"+repo.Name,
-				"number", number,
-				"err", visibilityErr,
-			)
-		} else {
-			commentVisibility = observed
-		}
+	if observed, ok := s.currentPRCommentVisibility(ctx, repo, number); ok {
+		commentVisibility = observed
 	}
 	for _, c := range comments {
 		commentEvents = append(commentEvents, NormalizeCommentEventWithVisibility(
@@ -10912,6 +10926,110 @@ func (s *Syncer) replaceIssueCommentEvents(
 	return s.commitIssueCommentsSnapshot(ctx, repo, issueID, number, expectedRevision, events, otherEvents, derived)
 }
 
+func (s *Syncer) currentPRCommentVisibility(
+	ctx context.Context,
+	repo RepoRef,
+	number int,
+) (map[int64]CommentVisibility, bool) {
+	fetcher := s.fetcherFor(repo)
+	if fetcher == nil || !s.graphQLReadAllowed(ctx, repo, fetcher) {
+		return nil, false
+	}
+	visibility, err := fetcher.FetchPullRequestCommentVisibility(
+		ctx, repo.Owner, repo.Name, number,
+	)
+	if err != nil {
+		slog.Warn("current PR comment visibility fetch failed; preserving stored state",
+			"repo", repo.Owner+"/"+repo.Name,
+			"number", number,
+			"err", err,
+		)
+		return nil, false
+	}
+	return visibility, true
+}
+
+func (s *Syncer) currentIssueCommentVisibility(
+	ctx context.Context,
+	repo RepoRef,
+	number int,
+) (map[int64]CommentVisibility, bool) {
+	fetcher := s.fetcherFor(repo)
+	if fetcher == nil || !s.graphQLReadAllowed(ctx, repo, fetcher) {
+		return nil, false
+	}
+	visibility, err := fetcher.FetchIssueCommentVisibility(
+		ctx, repo.Owner, repo.Name, number,
+	)
+	if err != nil {
+		slog.Warn("current issue comment visibility fetch failed; preserving stored state",
+			"repo", repo.Owner+"/"+repo.Name,
+			"number", number,
+			"err", err,
+		)
+		return nil, false
+	}
+	return visibility, true
+}
+
+func commentMetadataUpdates(
+	visibility map[int64]CommentVisibility,
+) []db.CommentMetadataUpdate {
+	updates := make([]db.CommentMetadataUpdate, 0, len(visibility))
+	for platformID, state := range visibility {
+		updates = append(updates, db.CommentMetadataUpdate{
+			PlatformID: platformID, MetadataJSON: normalizeCommentVisibilityMetadata(state),
+		})
+	}
+	return updates
+}
+
+func (s *Syncer) refreshStoredPRCommentVisibility(
+	ctx context.Context,
+	repo RepoRef,
+	mrID int64,
+	expectedRevision int64,
+	number int,
+) error {
+	visibility, ok := s.currentPRCommentVisibility(ctx, repo, number)
+	if !ok {
+		return nil
+	}
+	applied, err := s.db.UpdateMergeRequestCommentMetadataSnapshot(
+		ctx, mrID, expectedRevision, commentMetadataUpdates(visibility),
+	)
+	if err != nil {
+		return fmt.Errorf("update current PR comment visibility for #%d: %w", number, err)
+	}
+	if !applied {
+		return errParentSnapshotAdvanced
+	}
+	return nil
+}
+
+func (s *Syncer) refreshStoredIssueCommentVisibility(
+	ctx context.Context,
+	repo RepoRef,
+	issueID int64,
+	expectedRevision int64,
+	number int,
+) error {
+	visibility, ok := s.currentIssueCommentVisibility(ctx, repo, number)
+	if !ok {
+		return nil
+	}
+	applied, err := s.db.UpdateIssueCommentMetadataSnapshot(
+		ctx, issueID, expectedRevision, commentMetadataUpdates(visibility),
+	)
+	if err != nil {
+		return fmt.Errorf("update current issue comment visibility for #%d: %w", number, err)
+	}
+	if !applied {
+		return errParentSnapshotAdvanced
+	}
+	return nil
+}
+
 func (s *Syncer) storedPRCommentVisibility(
 	ctx context.Context,
 	mrID int64,
@@ -11338,19 +11456,8 @@ func (s *Syncer) refreshIssueTimeline(
 				"load stored comment visibility for issue #%d: %w", number, err,
 			)
 		}
-		if fetcher := s.fetcherFor(repo); fetcher != nil {
-			observed, visibilityErr := fetcher.FetchIssueCommentVisibility(
-				ctx, repo.Owner, repo.Name, number,
-			)
-			if visibilityErr != nil {
-				slog.Warn("current issue comment visibility fetch failed; preserving stored state",
-					"repo", repo.Owner+"/"+repo.Name,
-					"number", number,
-					"err", visibilityErr,
-				)
-			} else {
-				visibility = observed
-			}
+		if observed, ok := s.currentIssueCommentVisibility(ctx, repo, number); ok {
+			visibility = observed
 		}
 	} else {
 		storedVisibility, err := s.storedIssueCommentVisibility(ctx, issueID)

@@ -33,6 +33,11 @@ type MergeRequestChildSnapshot struct {
 	EventMetadataUpdates map[string]string
 }
 
+type CommentMetadataUpdate struct {
+	PlatformID   int64
+	MetadataJSON string
+}
+
 func domainParentSnapshotCurrentTx(
 	ctx context.Context,
 	tx *sql.Tx,
@@ -155,6 +160,66 @@ func (d *DB) CommitMergeRequestChildSnapshot(
 			ctx, tx, snapshot.MergeRequestID, snapshot.EventMetadataUpdates,
 		); err != nil {
 			return err
+		}
+		applied = true
+		return nil
+	})
+	return applied, err
+}
+
+func (d *DB) UpdateMergeRequestCommentMetadataSnapshot(
+	ctx context.Context,
+	mergeRequestID int64,
+	expectedRevision int64,
+	updates []CommentMetadataUpdate,
+) (bool, error) {
+	return d.updateCommentMetadataSnapshot(
+		ctx, "forge_merge_requests", "forge_mr_events", "merge_request_id",
+		mergeRequestID, expectedRevision, updates,
+	)
+}
+
+func (d *DB) UpdateIssueCommentMetadataSnapshot(
+	ctx context.Context,
+	issueID int64,
+	expectedRevision int64,
+	updates []CommentMetadataUpdate,
+) (bool, error) {
+	return d.updateCommentMetadataSnapshot(
+		ctx, "forge_issues", "forge_issue_events", "issue_id",
+		issueID, expectedRevision, updates,
+	)
+}
+
+func (d *DB) updateCommentMetadataSnapshot(
+	ctx context.Context,
+	parentTable string,
+	eventTable string,
+	parentColumn string,
+	parentID int64,
+	expectedRevision int64,
+	updates []CommentMetadataUpdate,
+) (bool, error) {
+	applied := false
+	err := d.Tx(ctx, func(tx *sql.Tx) error {
+		current, err := domainParentSnapshotCurrentTx(
+			ctx, tx, parentTable, parentID, expectedRevision,
+		)
+		if err != nil || !current {
+			return err
+		}
+		query := fmt.Sprintf(`
+			UPDATE %s
+			SET metadata_json = ?
+			WHERE %s = ? AND event_type = 'issue_comment' AND platform_id = ?`,
+			eventTable, parentColumn,
+		)
+		for _, update := range updates {
+			if _, err := tx.ExecContext(
+				ctx, query, update.MetadataJSON, parentID, update.PlatformID,
+			); err != nil {
+				return fmt.Errorf("update comment metadata for platform id %d: %w", update.PlatformID, err)
+			}
 		}
 		applied = true
 		return nil

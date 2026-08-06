@@ -1023,6 +1023,97 @@ func TestCommitLivenessViaFetchProviderMRDetail(t *testing.T) {
 	assert.True(seenReplacement[h.b2], "replacement commit b2 must be persisted by the round")
 }
 
+func TestCommitLivenessFinalizedByPeriodicCloseDetection(t *testing.T) {
+	fixture := setupCommitLivenessFixture(t)
+	h := fixture.history
+	providerRepo := RepoRef{
+		Platform:           platform.KindForgejo,
+		PlatformHost:       platform.DefaultForgejoHost,
+		PlatformExternalID: "repo-1",
+		Owner:              "owner",
+		Name:               "repo",
+		RepoPath:           "owner/repo",
+		CloneURL:           h.sourceDir,
+	}
+	barePath, err := h.manager.ClonePath(
+		string(platform.KindForgejo), platform.DefaultForgejoHost, "owner", "repo",
+	)
+	require.NoError(t, err)
+	livenessTestGit(t, "", "clone", "--bare", h.sourceDir, barePath)
+	providerRepoID, err := fixture.database.UpsertRepo(
+		t.Context(), verifiedDBRepoIdentity(platformRepoRef(providerRepo)),
+	)
+	require.NoError(t, err)
+	now := time.Date(2026, 8, 5, 12, 1, 0, 0, time.UTC)
+	providerMRID, err := fixture.database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
+		RepoID:             providerRepoID,
+		PlatformID:         101,
+		PlatformExternalID: "mr-1",
+		Number:             1,
+		URL:                "https://codeberg.org/owner/repo/pulls/1",
+		Title:              "Synthetic merge request",
+		Author:             "developer",
+		State:              db.MergeRequestStateOpen,
+		HeadBranch:         "feature",
+		BaseBranch:         "main",
+		PlatformHeadSHA:    h.a3,
+		PlatformBaseSHA:    h.base,
+		CreatedAt:          now.Add(-time.Hour),
+		UpdatedAt:          now.Add(-time.Minute),
+		LastActivityAt:     now.Add(-time.Minute),
+	})
+	require.NoError(t, err)
+	providerFixture := fixture
+	providerFixture.repo = providerRepo
+	providerFixture.repoID = providerRepoID
+	providerFixture.mrID = providerMRID
+	seedLivenessCommitEvents(t, providerFixture, h.a1, h.a2, h.a3)
+
+	// The provider reports the MR force-pushed to b2 AND already closed —
+	// the shape periodic sync sees when an open MR disappears from the
+	// listing. The close-detection round is the terminal transition, so it
+	// must compute liveness against the final head instead of freezing the
+	// a3-era flags.
+	providerRef := platformRepoRef(providerRepo)
+	provider := &syncTestReadProvider{
+		syncTestProvider: syncTestProvider{
+			kind: platform.KindForgejo,
+			host: platform.DefaultForgejoHost,
+		},
+		mergeRequests: []platform.MergeRequest{{
+			Repo:               providerRef,
+			PlatformID:         101,
+			PlatformExternalID: "mr-1",
+			Number:             1,
+			URL:                "https://codeberg.org/owner/repo/pulls/1",
+			Title:              "Synthetic merge request",
+			Author:             "developer",
+			State:              "closed",
+			HeadBranch:         "feature",
+			BaseBranch:         "main",
+			HeadSHA:            h.b2,
+			BaseSHA:            h.base,
+			CreatedAt:          now.Add(-time.Hour),
+			UpdatedAt:          now,
+			LastActivityAt:     now,
+		}},
+	}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(t, err)
+	syncer := NewSyncerWithRegistry(
+		registry, fixture.database, h.manager, []RepoRef{providerRepo},
+		time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+
+	require.NoError(t, syncer.fetchAndUpdateClosedMergeRequest(
+		t.Context(), provider, providerRepo, providerRepoID, 1, false,
+	))
+	assertLivenessCommitFlags(t, providerFixture, map[string]bool{
+		h.a1: true, h.a2: true, h.a3: true,
+	})
+}
+
 func TestSyncMRForRepoComputesCommitLivenessWithTimeline(t *testing.T) {
 	assert := assert.New(t)
 	fixture := setupCommitLivenessFixture(t)

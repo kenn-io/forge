@@ -12091,9 +12091,11 @@ func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID 
 	if err != nil {
 		return fmt.Errorf("normalize closed PR #%d: %w", number, err)
 	}
-	if existing, getErr := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoID, number); getErr != nil {
-		return fmt.Errorf("get closed MR #%d: %w", number, getErr)
-	} else if existing != nil {
+	existing, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoID, number)
+	if err != nil {
+		return fmt.Errorf("get closed MR #%d: %w", number, err)
+	}
+	if existing != nil {
 		normalized.CommentCount = existing.CommentCount
 		normalized.ReviewDecision = existing.ReviewDecision
 		normalized.CIStatus = existing.CIStatus
@@ -12101,6 +12103,9 @@ func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID 
 		normalized.CIHadPending = existing.CIHadPending
 		normalized.DetailFetchedAt = existing.DetailFetchedAt
 	}
+	// The pre-upsert open state decides whether this round is the terminal
+	// transition that computes liveness once against the final head.
+	livenessHead := livenessHeadForRound(normalized, existing)
 	mrID, revision, accepted, err := s.CommitMergeRequestParentSnapshot(ctx, repo, normalized)
 	if err != nil {
 		return fmt.Errorf("commit closed MR #%d: %w", number, err)
@@ -12110,6 +12115,15 @@ func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID 
 	}
 	if _, err := s.persistMergedTransitionEvent(ctx, mrID, revision, ghPR, normalized.MergedAt); err != nil {
 		return fmt.Errorf("persist merged lifecycle event for MR #%d: %w", number, err)
+	}
+	if livenessHead != "" {
+		if _, err := s.commitMergeRequestDatasets(
+			ctx, repo, mrID, number, revision,
+			nil, false, nil, nil, nil, false, nil, nil,
+			livenessHead,
+		); err != nil {
+			return fmt.Errorf("finalize commit liveness for closed MR #%d: %w", number, err)
+		}
 	}
 	if err := s.markClosedLinkedNotificationsDone(ctx); err != nil {
 		return err
@@ -12267,6 +12281,13 @@ func (s *Syncer) fetchAndUpdateClosedMergeRequest(
 		return fmt.Errorf("get closed MR #%d: %w", number, err)
 	}
 	normalized := platform.DBMergeRequest(repoID, mr)
+	existing, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoID, number)
+	if err != nil {
+		return fmt.Errorf("get existing closed MR #%d: %w", number, err)
+	}
+	// The pre-upsert open state decides whether this round is the terminal
+	// transition that computes liveness once against the final head.
+	livenessHead := livenessHeadForRound(normalized, existing)
 	mrID, revision, accepted, err := s.CommitMergeRequestParentSnapshot(ctx, repo, normalized)
 	if err != nil {
 		return fmt.Errorf("upsert closed MR #%d: %w", number, err)
@@ -12276,6 +12297,15 @@ func (s *Syncer) fetchAndUpdateClosedMergeRequest(
 	}
 	if _, err := s.persistMergedActorEvent(ctx, mrID, revision, mr.MergedBy, normalized.MergedAt); err != nil {
 		return fmt.Errorf("persist merged lifecycle event for closed MR #%d: %w", number, err)
+	}
+	if livenessHead != "" {
+		if _, err := s.commitMergeRequestDatasets(
+			ctx, repo, mrID, number, revision,
+			nil, false, nil, nil, nil, false, nil, nil,
+			livenessHead,
+		); err != nil {
+			return fmt.Errorf("finalize commit liveness for closed MR #%d: %w", number, err)
+		}
 	}
 	return nil
 }

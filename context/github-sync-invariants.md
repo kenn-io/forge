@@ -356,10 +356,18 @@ fallback repository listing.
   way out. Identity resolution returns the ref the publication actually
   stored, not its own snapshot: when the publication kept a newer tracked
   archived flip over the operation's metadata, the caller deciding whether
-  to keep syncing must see the published value.
+  to keep syncing must see the published value. Follow-on detail work
+  honors the flip too: the detail drain skips queue items whose tracked or
+  freshly resolved ref is archived — the queue was built before the pass
+  observed the transition — and per-item MR/issue syncing stops on an
+  archived resolve except under the archive sync budget, which is exactly
+  the hydration path archived repositories rely on.
   (`internal/github/sync.go::reconcileArchivedRepos`,
   `internal/github/sync.go::syncRepo`,
-  `internal/github/sync.go::reconcileRepoIdentity`)
+  `internal/github/sync.go::reconcileRepoIdentity`,
+  `internal/github/sync.go::drainDetailQueue`,
+  `internal/github/sync.go::syncMRForRepo`,
+  `internal/github/sync.go::syncIssueForRepo`)
 - Archive seeding degrades per repository: a ref that fails validation,
   provider resolution, or catalog reconciliation is logged with its identity
   and skipped, never fatal — one bad configured entry must not crash-loop the

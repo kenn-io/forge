@@ -10549,6 +10549,168 @@ func TestPublishResolvedRepositoryEmptySnapshotIDKeepsSuccessorArchivedState(t *
 			"when the snapshot id is empty")
 }
 
+func TestDetailDrainSkipsRepoArchivedMidPass(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	// A stale open item queued before the repository archived.
+	repoID, err := d.UpsertRepo(ctx, verifiedGitHubRepoIdentity(
+		"github.com", "owner", "repo",
+	))
+	require.NoError(err)
+	seededAt := time.Date(2024, 6, 1, 10, 0, 0, 0, time.UTC)
+	_, err = d.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:          repoID,
+		PlatformID:      1000,
+		Number:          1,
+		URL:             "https://github.com/owner/repo/pull/1",
+		Title:           "stale PR",
+		Author:          "alice",
+		State:           "open",
+		HeadBranch:      "feature",
+		BaseBranch:      "main",
+		PlatformHeadSHA: "abc123",
+		CreatedAt:       seededAt,
+		UpdatedAt:       seededAt,
+		LastActivityAt:  seededAt,
+	})
+	require.NoError(err)
+
+	mc := &detailTrackingClient{}
+	mc.openPRs = []*gh.PullRequest{}
+	mc.comments = []*gh.IssueComment{}
+	mc.reviews = []*gh.PullRequestReview{}
+	mc.commits = []*gh.RepositoryCommit{}
+	archived := true
+	mc.getRepositoryFn = func(
+		_ context.Context, owner, repo string,
+	) (*gh.Repository, error) {
+		id := int64(1)
+		nodeID := "repo-" + owner + "-" + repo
+		return &gh.Repository{
+			ID:       &id,
+			NodeID:   &nodeID,
+			Name:     &repo,
+			Owner:    &gh.User{Login: &owner},
+			Archived: &archived,
+		}, nil
+	}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil,
+		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+		time.Minute, nil, testBudget(500),
+	)
+
+	syncer.RunOnce(ctx)
+
+	assert.Zero(int(mc.getPRCalls.Load()),
+		"detail drain must not fetch details for a repo that archived mid-pass")
+	tracked := syncer.TrackedRepos()
+	require.Len(tracked, 1)
+	assert.True(tracked[0].Archived)
+}
+
+func TestSyncWatchedMRsSkipsRepoArchivedMidPass(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	archived := true
+	mc := &mockClient{
+		openPRs:  []*gh.PullRequest{},
+		singlePR: buildOpenPR(7, now),
+		comments: []*gh.IssueComment{},
+		reviews:  []*gh.PullRequestReview{},
+		commits:  []*gh.RepositoryCommit{},
+		getRepositoryFn: func(
+			_ context.Context, owner, repo string,
+		) (*gh.Repository, error) {
+			id := int64(1)
+			nodeID := "repo-" + owner + "-" + repo
+			return &gh.Repository{
+				ID:       &id,
+				NodeID:   &nodeID,
+				Name:     &repo,
+				Owner:    &gh.User{Login: &owner},
+				Archived: &archived,
+			}, nil
+		},
+	}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil,
+		[]RepoRef{{Owner: "acme", Name: "app", PlatformHost: "github.com"}},
+		time.Hour, nil, nil,
+	)
+	hookCalls := 0
+	syncer.SetOnMRSynced(func(_ string, _ string, _ *db.MergeRequest) {
+		hookCalls++
+	})
+	syncer.SetWatchedMRs([]WatchedMR{{Owner: "acme", Name: "app", Number: 7}})
+
+	syncer.syncWatchedMRs(ctx)
+
+	assert.Zero(hookCalls,
+		"watched-MR sync must stop when resolution reports the repo archived")
+	mr, err := d.GetMergeRequest(ctx, "github", "github.com", "acme", "app", 7)
+	require.NoError(err)
+	assert.Nil(mr, "no MR detail should be persisted for the archived repo")
+	tracked := syncer.TrackedRepos()
+	require.Len(tracked, 1)
+	assert.True(tracked[0].Archived)
+}
+
+func TestSyncMRForRepoHydratesArchivedRepoUnderArchiveBudget(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	archived := true
+	mc := &mockClient{
+		openPRs:  []*gh.PullRequest{},
+		singlePR: buildOpenPR(7, now),
+		comments: []*gh.IssueComment{},
+		reviews:  []*gh.PullRequestReview{},
+		commits:  []*gh.RepositoryCommit{},
+		getRepositoryFn: func(
+			_ context.Context, owner, repo string,
+		) (*gh.Repository, error) {
+			id := int64(1)
+			nodeID := "repo-" + owner + "-" + repo
+			return &gh.Repository{
+				ID:       &id,
+				NodeID:   &nodeID,
+				Name:     &repo,
+				Owner:    &gh.User{Login: &owner},
+				Archived: &archived,
+			}, nil
+		},
+	}
+	repo := RepoRef{
+		Owner: "acme", Name: "frozen", PlatformHost: "github.com", Archived: true,
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil, []RepoRef{repo},
+		time.Hour, nil, nil,
+	)
+
+	err := syncer.syncMRForRepo(WithArchiveSyncBudget(ctx), repo, 7, false, nil)
+	require.NoError(err)
+
+	mr, err := d.GetMergeRequest(ctx, "github", "github.com", "acme", "frozen", 7)
+	require.NoError(err)
+	require.NotNil(mr,
+		"archive hydration must still sync an archived repo's items")
+	assert.Equal(7, mr.Number)
+}
+
 func TestRunOnceStopsLiveSyncWhenRepoArchivesMidPass(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

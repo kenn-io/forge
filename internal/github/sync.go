@@ -10571,6 +10571,13 @@ func (s *Syncer) drainDetailQueue(
 			repo.Name = qi.RepoName
 			repo.PlatformHost = host
 		}
+		// The queue was built before the pass ran, so it can hold items
+		// for a repository the pass just published as archived. Detail
+		// work is live syncing; archived repos hydrate through the
+		// archive budget path instead.
+		if repo.Archived {
+			continue
+		}
 		// Resolve the credential bucket from the tracked repository. Routing
 		// keys off the owner and host that survive tracking, not the raw
 		// queue row, so this must follow the lookup above.
@@ -10639,6 +10646,13 @@ func (s *Syncer) drainDetailQueue(
 			repoID = resolvedRepoID
 			verifiedRepos[repoKey] = repo
 			verifiedRepoIDs[repoKey] = repoID
+		}
+		if repo.Archived {
+			// Identity verification just discovered the archived flip;
+			// the publication already dropped the repo from live sync.
+			probe.abandon()
+			rejectedRepos[repoKey] = true
+			continue
 		}
 		if repoID == 0 {
 			probe.abandon()
@@ -10994,6 +11008,14 @@ func (s *Syncer) syncMRForRepo(
 		return fmt.Errorf("resolve repo identity %s/%s: %w", owner, name, err)
 	}
 	repo = resolvedRef
+	if repo.Archived && !IsArchiveSyncBudgetContext(ctx) {
+		// Live detail syncing stops on an archived repo; only archive
+		// hydration, which runs under the archive budget, proceeds.
+		slog.Debug("skipping MR detail sync for archived repo",
+			"repo", owner+"/"+name, "number", number,
+		)
+		return nil
+	}
 
 	// Preserve derived fields that provider detail doesn't populate. CI is
 	// refreshed later in this sync path; keeping the previous values here
@@ -11562,6 +11584,14 @@ func (s *Syncer) syncIssueForRepo(
 		)
 	}
 	repo = resolvedRef
+	if repo.Archived && !IsArchiveSyncBudgetContext(ctx) {
+		// Live detail syncing stops on an archived repo; only archive
+		// hydration, which runs under the archive budget, proceeds.
+		slog.Debug("skipping issue detail sync for archived repo",
+			"repo", repo.Owner+"/"+repo.Name, "number", number,
+		)
+		return nil
+	}
 
 	providerCalls, err := s.fetchIssueDetail(ctx, repo, repoID, number)
 	if providerAttempted != nil && providerCalls > 0 {

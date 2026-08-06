@@ -8,6 +8,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"time"
 
 	shellquote "github.com/kballard/go-shellquote"
 	"go.kenn.io/forge/internal/procutil"
@@ -132,6 +133,7 @@ type tmuxLauncher struct {
 	CWD         string
 	Pane        tmuxPaneEnvironment
 	OwnerMarker string
+	LaunchID    string
 	HideStatus  bool
 }
 
@@ -152,6 +154,9 @@ func (l tmuxLauncher) prepare(ctx context.Context) (tmuxLaunchResult, error) {
 		if err := l.validateOwner(ctx); err != nil {
 			return tmuxLaunchResult{}, err
 		}
+		if err := l.replaceLaunchMarker(ctx); err != nil {
+			return tmuxLaunchResult{}, err
+		}
 		return tmuxLaunchResult{AttachCommand: l.attachSessionCommand()}, nil
 	}
 
@@ -167,13 +172,22 @@ func (l tmuxLauncher) prepare(ctx context.Context) (tmuxLaunchResult, error) {
 	}()
 	if err := l.run(ctx, l.newSessionCommand(paneCommand)); err != nil {
 		if retryErr := l.validateExistingAfterCreateRace(ctx); retryErr == nil {
+			if markerErr := l.replaceLaunchMarker(ctx); markerErr != nil {
+				return tmuxLaunchResult{}, markerErr
+			}
 			return tmuxLaunchResult{AttachCommand: l.attachSessionCommand()}, nil
 		}
 		return tmuxLaunchResult{}, fmt.Errorf("tmux new-session: %w", err)
 	}
 	if l.HideStatus {
 		if err := l.run(ctx, l.hideStatusCommand()); err != nil {
-			if killErr := l.run(ctx, l.killSessionCommand()); killErr != nil {
+			cleanupCtx, cancel := context.WithTimeout(
+				context.WithoutCancel(ctx),
+				5*time.Second,
+			)
+			killErr := l.run(cleanupCtx, l.killSessionCommand())
+			cancel()
+			if killErr != nil {
 				return tmuxLaunchResult{}, fmt.Errorf(
 					"hide tmux status: %w; cleanup new tmux session: %v",
 					err, killErr,
@@ -187,6 +201,25 @@ func (l tmuxLauncher) prepare(ctx context.Context) (tmuxLaunchResult, error) {
 		AttachCommand: l.attachSessionCommand(),
 		Created:       true,
 	}, nil
+}
+
+// replaceLaunchMarker rewrites @forge_launch when this launch adopts an
+// already-existing backend. The creator's rollback kills by launch marker as a
+// fallback when no live manager entry remains, so an adopted backend must stop
+// matching the creator's generation or a stale rollback after the adopting
+// attachment detaches would kill work the adopter durably recorded.
+func (l tmuxLauncher) replaceLaunchMarker(ctx context.Context) error {
+	if l.LaunchID == "" {
+		return nil
+	}
+	command := append(
+		slices.Clone(l.TmuxCommand),
+		"set-option", "-q", "-t", l.Session, "@forge_launch", l.LaunchID,
+	)
+	if err := l.run(ctx, command); err != nil {
+		return fmt.Errorf("replace tmux launch marker: %w", err)
+	}
+	return nil
 }
 
 func (l tmuxLauncher) validateExistingAfterCreateRace(
@@ -409,6 +442,13 @@ func (l tmuxLauncher) newSessionCommand(paneCommand string) []string {
 			command,
 			";", "set-option", "-q", "-t", l.Session,
 			"@forge_owner", l.OwnerMarker,
+		)
+	}
+	if l.LaunchID != "" {
+		command = append(
+			command,
+			";", "set-option", "-q", "-t", l.Session,
+			"@forge_launch", l.LaunchID,
 		)
 	}
 	return command

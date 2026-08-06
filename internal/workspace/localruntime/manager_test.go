@@ -184,6 +184,24 @@ func TestNewSessionKeyUsesWorkspacePrefixAndRandomSuffix(t *testing.T) {
 	assert.Len(strings.TrimPrefix(first, "ws-1_"), 16)
 }
 
+func TestSessionInfoSameGenerationRequiresKeyAndCreatedAt(t *testing.T) {
+	createdAt := time.Date(2026, 8, 6, 12, 0, 0, 0, time.UTC)
+	session := SessionInfo{Key: "surface:console", CreatedAt: createdAt}
+
+	assert.True(t, session.SameGeneration(SessionInfo{
+		Key:       session.Key,
+		CreatedAt: createdAt,
+	}))
+	assert.False(t, session.SameGeneration(SessionInfo{
+		Key:       session.Key,
+		CreatedAt: createdAt.Add(time.Second),
+	}))
+	assert.False(t, session.SameGeneration(SessionInfo{
+		Key:       "surface:replacement",
+		CreatedAt: createdAt,
+	}))
+}
+
 func TestManagerLaunchUnavailableTarget(t *testing.T) {
 	ctx := context.Background()
 	mgr := NewManager(Options{Targets: []LaunchTarget{{
@@ -1488,6 +1506,52 @@ func TestManagerStopKeepsPtyOwnerSessionRetryableAfterStopFailure(t *testing.T) 
 	_, ok = mgr.session("ws-1", info.Key)
 	assert.False(ok)
 	assert.Equal([]string{info.Key, info.Key}, owner.stoppedSessions)
+}
+
+func TestRollbackLaunchStopsOwnedNonTmuxSession(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	owner := newFakeRuntimePtyOwner()
+	mgr := NewManager(Options{
+		PtyOwnerRuntime: owner,
+		ShellCommand:    []string{"/bin/sh"},
+		Targets:         []LaunchTarget{plainShellTarget()},
+	})
+	t.Cleanup(mgr.Shutdown)
+
+	info, err := mgr.Launch(
+		context.Background(), "ws-1", t.TempDir(), string(LaunchTargetPlainShell),
+	)
+	require.NoError(err)
+	require.Empty(info.TmuxSession)
+
+	require.NoError(mgr.RollbackLaunch(context.Background(), info))
+	assert.Equal([]string{info.Key}, owner.stoppedSessions)
+	assert.Empty(mgr.ListSessions("ws-1"))
+}
+
+func TestRollbackLaunchPreservesReusedNonTmuxSession(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	owner := newFakeRuntimePtyOwner()
+	mgr := NewManager(Options{
+		PtyOwnerRuntime: owner,
+		ShellCommand:    []string{"/bin/sh"},
+		Targets:         []LaunchTarget{plainShellTarget()},
+	})
+	t.Cleanup(mgr.Shutdown)
+
+	info, err := mgr.Launch(
+		context.Background(), "ws-1", t.TempDir(), string(LaunchTargetPlainShell),
+	)
+	require.NoError(err)
+	info.Reused = true
+
+	require.NoError(mgr.RollbackLaunch(context.Background(), info))
+	assert.Empty(owner.stoppedSessions)
+	assert.Len(mgr.ListSessions("ws-1"), 1)
 }
 
 func TestManagerStopRemovesSession(t *testing.T) {

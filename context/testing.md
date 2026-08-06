@@ -385,6 +385,7 @@ migration state, dirty database handling, or other internal invariants.
 - Prove pause by blocking provider I/O, pausing, then releasing and asserting no cursor or dataset commit. (`internal/archive/service_test.go::TestArchiveServicePauseRejectsInFlightInventoryCommit`)
 - Prove worker readiness, wake, and shutdown through the owning loop rather than direct service calls. (`internal/github/archive_lifecycle_test.go::TestArchiveWorkerAdvancesRealServiceAfterStart`)
 - Prove cross-ingestion child replacement with a newer dataset followed by an older complete replacement; parent-only races do not cover destructive child deletes. (`internal/github/sync_test.go::TestNormalSyncRejectsChildrenAfterArchivePublishesNewerSnapshot`)
+- Prove lock ownership with a `TryLock` probe while the owner is provably parked inside the guarded section; an event emitted before a blocking `Lock` call proves nothing, because the goroutine can be descheduled before acquiring. (`internal/workspace/localruntime/manager.go::CommandSessionStartLockHeldForTest`)
 
 ### Boundary-value contracts
 

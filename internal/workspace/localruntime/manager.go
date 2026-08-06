@@ -58,14 +58,25 @@ type SessionInfo struct {
 	ExitedAt      *time.Time       `json:"exited_at,omitempty"`
 	ExitCode      *int             `json:"exit_code,omitempty"`
 	TmuxSession   string           `json:"-"`
-	// Reused reports that ensure semantics returned an already-live
-	// session instead of launching one. Callers whose post-launch
-	// bookkeeping fails must not stop a session they did not start.
+	// tmuxLaunchID identifies the concrete tmux backend generation created for
+	// this launch. It is empty when the manager reattached to a pre-existing
+	// backend instead of creating one.
+	tmuxLaunchID string
+	// Reused reports that ensure semantics returned an already-live attachment
+	// or reattached to a pre-existing backend. Callers whose post-launch
+	// bookkeeping fails must not stop a session they did not create.
 	Reused bool `json:"-"`
 }
 
 func (s SessionInfo) Compare(other SessionInfo) int {
 	return s.CreatedAt.Compare(other.CreatedAt)
+}
+
+// SameGeneration reports whether two snapshots identify the same reusable
+// session generation. Keys can be reused after an exit, so the key alone is
+// not a generation identity.
+func (s SessionInfo) SameGeneration(other SessionInfo) bool {
+	return s.Key == other.Key && s.CreatedAt.Equal(other.CreatedAt)
 }
 
 type RestoredRuntimeSession struct {
@@ -370,18 +381,24 @@ func (m *Manager) Launch(
 	)
 
 	started, err := m.startOwnedSession(ctx, SessionInfo{
-		Key:         key,
-		WorkspaceID: workspaceID,
-		TargetKey:   targetKey,
-		Label:       label,
-		Kind:        target.Kind,
-		Status:      SessionStatusStarting,
-		CreatedAt:   time.Now().UTC(),
-		TmuxSession: launch.TmuxSession,
+		Key:          key,
+		WorkspaceID:  workspaceID,
+		TargetKey:    targetKey,
+		Label:        label,
+		Kind:         target.Kind,
+		Status:       SessionStatusStarting,
+		CreatedAt:    time.Now().UTC(),
+		TmuxSession:  launch.TmuxSession,
+		tmuxLaunchID: launch.TmuxLaunchID,
+		Reused:       launch.TmuxSession != "" && !launch.TmuxCreated,
 	}, launch.Command, cwd, m.currentStripEnvVars())
 	if err != nil {
 		if launch.TmuxCreated {
-			_ = m.killTmuxSession(ctx, launch.TmuxSession)
+			cleanupCtx, cancel := context.WithTimeout(
+				context.WithoutCancel(ctx), 5*time.Second,
+			)
+			_ = m.killTmuxSession(cleanupCtx, launch.TmuxSession)
+			cancel()
 		}
 		slog.Debug(
 			"runtime launch start failed",
@@ -771,6 +788,53 @@ func (m *Manager) Stop(
 	}
 }
 
+// RollbackLaunch stops the owned backend created by a launch whose caller
+// failed to persist its metadata. A non-tmux backend can be stopped only while
+// its live manager entry proves ownership. A short-lived tmux attachment can
+// disappear from the manager before persistence returns, so tmux rollback falls
+// back to the generation marker retained in the launch result.
+func (m *Manager) RollbackLaunch(ctx context.Context, info SessionInfo) error {
+	if info.Reused {
+		return nil
+	}
+	startMu := m.startLock(info.Key)
+	startMu.Lock()
+	defer startMu.Unlock()
+	return m.rollbackLaunchLocked(ctx, info)
+}
+
+// rollbackLaunchLocked requires the caller to own startLock(info.Key) and the
+// launch result to represent a newly owned backend.
+func (m *Manager) rollbackLaunchLocked(ctx context.Context, info SessionInfo) error {
+	if info.TmuxSession == "" {
+		stopErr := m.Stop(ctx, info.WorkspaceID, info.Key)
+		if errors.Is(stopErr, ErrSessionNotFound) {
+			return nil
+		}
+		return stopErr
+	}
+	if info.tmuxLaunchID == "" {
+		return nil
+	}
+
+	if current, ok := m.session(info.WorkspaceID, info.Key); ok &&
+		current.snapshot().tmuxLaunchID != info.tmuxLaunchID {
+		return nil
+	}
+
+	stopErr := m.Stop(ctx, info.WorkspaceID, info.Key)
+	if errors.Is(stopErr, ErrSessionNotFound) {
+		stopErr = nil
+	}
+	// Stop normally removes the tmux backend itself. Repeat cleanup only when
+	// the retained launch marker still identifies this concrete generation, so
+	// an older rollback cannot kill a newer replacement using the same name.
+	tmuxErr := m.killTmuxSessionIfLaunchID(
+		ctx, info.TmuxSession, info.tmuxLaunchID,
+	)
+	return errors.Join(stopErr, tmuxErr)
+}
+
 // Detach removes an in-memory runtime session attachment without stopping the
 // owned backend.
 func (m *Manager) Detach(workspaceID string, sessionKey string) error {
@@ -908,6 +972,62 @@ func (m *Manager) knownPtyOwnerSessionKeys(workspaceID string) []string {
 	}
 	slices.Sort(keys)
 	return slices.Compact(keys)
+}
+
+func (m *Manager) killTmuxSessionIfLaunchID(
+	ctx context.Context,
+	session string,
+	launchID string,
+) error {
+	actual, exists, err := m.tmuxSessionLaunchID(ctx, session)
+	if err != nil {
+		return err
+	}
+	if !exists || actual != launchID {
+		return nil
+	}
+	return m.killTmuxSession(ctx, session)
+}
+
+func (m *Manager) tmuxSessionLaunchID(
+	ctx context.Context,
+	session string,
+) (string, bool, error) {
+	if session == "" {
+		return "", false, nil
+	}
+	command := slices.Clone(m.tmuxCommand)
+	if len(command) == 0 {
+		command = []string{"tmux"}
+	}
+	if len(command) == 0 || command[0] == "" {
+		return "", false, nil
+	}
+	var err error
+	command, err = resolveTmuxCommand(command)
+	if err != nil {
+		return "", false, err
+	}
+	args := append(
+		command[1:], "show-options", "-qv", "-t", session, "@forge_launch",
+	)
+	cmd := procutil.CommandContext(ctx, command[0], args...)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err = procutil.Run(ctx, cmd, "tmux subprocess capacity")
+	if err == nil {
+		return strings.TrimSpace(stdout.String()), true, nil
+	}
+	if isTmuxSessionAbsent(stderr.Bytes(), err) {
+		return "", false, nil
+	}
+	msg := strings.TrimSpace(stderr.String())
+	if msg == "" {
+		return "", false, err
+	}
+	return "", false, fmt.Errorf("%w: %s", err, msg)
 }
 
 func (m *Manager) killTmuxSession(
@@ -1319,6 +1439,10 @@ func (m *Manager) shellLaunchCommand(
 	resolvedCommand[0] = resolvedPath
 
 	tmuxSession := tmuxSessionName(workspaceID, sessionKey)
+	launchID, err := newTmuxLaunchID()
+	if err != nil {
+		return launchCommand{}, err
+	}
 	paneEnv := tmuxShellEnvPolicy.paneEnvironment(
 		os.Environ(), resolvedCommand, m.currentStripEnvVars(),
 	)
@@ -1328,16 +1452,21 @@ func (m *Manager) shellLaunchCommand(
 		CWD:         cwd,
 		Pane:        paneEnv,
 		OwnerMarker: m.tmuxOwnerMarker,
+		LaunchID:    launchID,
 		HideStatus:  m.currentHideTmuxStatus(),
 	}.prepare(ctx)
 	if err != nil {
 		return launchCommand{}, err
 	}
-	return launchCommand{
+	result := launchCommand{
 		Command:     prepared.AttachCommand,
 		TmuxSession: tmuxSession,
 		TmuxCreated: prepared.Created,
-	}, nil
+	}
+	if prepared.Created {
+		result.TmuxLaunchID = launchID
+	}
+	return result, nil
 }
 
 func (m *Manager) Shutdown() {
@@ -1391,6 +1520,18 @@ func (m *Manager) startLock(key string) *sync.Mutex {
 	return startMu
 }
 
+// CommandSessionStartLockHeldForTest reports whether the keyed command-session
+// transaction lock is held. It releases the lock immediately when probing finds
+// it available.
+func (m *Manager) CommandSessionStartLockHeldForTest(key string) bool {
+	startMu := m.startLock(key)
+	if startMu.TryLock() {
+		startMu.Unlock()
+		return false
+	}
+	return true
+}
+
 func (m *Manager) beginStart() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -1417,9 +1558,10 @@ func (m *Manager) target(key string) (LaunchTarget, error) {
 }
 
 type launchCommand struct {
-	Command     []string
-	TmuxSession string
-	TmuxCreated bool
+	Command      []string
+	TmuxSession  string
+	TmuxLaunchID string
+	TmuxCreated  bool
 }
 
 func (m *Manager) launchCommand(
@@ -1472,6 +1614,10 @@ func (m *Manager) launchCommand(
 	resolvedAgentCommand[0] = resolvedPath
 
 	tmuxSession := tmuxSessionName(workspaceID, sessionKey)
+	launchID, err := newTmuxLaunchID()
+	if err != nil {
+		return launchCommand{}, err
+	}
 
 	paneEnv := tmuxAgentEnvPolicy.paneEnvironmentWithExtra(
 		os.Environ(), resolvedAgentCommand, m.currentStripEnvVars(), map[string]string{
@@ -1484,16 +1630,21 @@ func (m *Manager) launchCommand(
 		CWD:         cwd,
 		Pane:        paneEnv,
 		OwnerMarker: m.tmuxOwnerMarker,
+		LaunchID:    launchID,
 		HideStatus:  m.currentHideTmuxStatus(),
 	}.prepare(ctx)
 	if err != nil {
 		return launchCommand{}, err
 	}
-	return launchCommand{
+	result := launchCommand{
 		Command:     prepared.AttachCommand,
 		TmuxSession: tmuxSession,
 		TmuxCreated: prepared.Created,
-	}, nil
+	}
+	if prepared.Created {
+		result.TmuxLaunchID = launchID
+	}
+	return result, nil
 }
 
 func tmuxSessionName(workspaceID string, targetKey string) string {
@@ -2212,6 +2363,14 @@ func NewSessionKey(workspaceID string) (string, error) {
 		return "", fmt.Errorf("generate runtime session id: %w", err)
 	}
 	return workspaceID + "_" + hex.EncodeToString(data[:]), nil
+}
+
+func newTmuxLaunchID() (string, error) {
+	var data [16]byte
+	if _, err := cryptorand.Read(data[:]); err != nil {
+		return "", fmt.Errorf("generate tmux launch id: %w", err)
+	}
+	return hex.EncodeToString(data[:]), nil
 }
 
 // resolveExecutable returns an absolute path for name. Names that

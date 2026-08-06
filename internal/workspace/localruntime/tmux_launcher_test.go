@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	shellquote "github.com/kballard/go-shellquote"
 	"github.com/stretchr/testify/assert"
@@ -201,6 +202,139 @@ exit 0
 		"-u", "attach-session", "-t", "kenn-forge-test",
 	})
 	assert.NoFileExists(created)
+}
+
+func TestTmuxLauncherCleansUpCreatedSessionAfterLaunchContextCancellation(
+	t *testing.T,
+) {
+	require := require.New(t)
+	assert := assert.New(t)
+	dir := t.TempDir()
+	record := filepath.Join(dir, "tmux-record")
+	createdSessionState := filepath.Join(dir, "created-session")
+	statusStarted := filepath.Join(dir, "status-started")
+	tmuxPath := filepath.Join(dir, "tmux")
+	require.NoError(os.WriteFile(tmuxPath, []byte(`#!/bin/sh
+printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"
+case "$1" in
+  has-session)
+    if [ -f "$TMUX_CREATED" ]; then exit 0; fi
+    echo "can't find session: $3" >&2
+    exit 1
+    ;;
+  new-session)
+    : > "$TMUX_CREATED"
+    exit 0
+    ;;
+  set-option)
+    if [ "$5" = "status" ] && [ "$6" = "off" ]; then
+      : > "$TMUX_STATUS_STARTED"
+      while [ ! -f "$TMUX_STATUS_RELEASE" ]; do
+        sleep 0.01
+      done
+    fi
+    exit 0
+    ;;
+  kill-session)
+    rm -f "$TMUX_CREATED"
+    exit 0
+    ;;
+esac
+exit 0
+`), 0o755))
+
+	launcher := tmuxLauncher{
+		TmuxCommand: []string{tmuxPath},
+		Session:     "kenn-forge-test",
+		Pane: tmuxPaneEnvironment{
+			paneCommand: "exec /bin/sh",
+			keys:        []string{"PATH", "TERM"},
+			commandEnv: []string{
+				"PATH=" + os.Getenv("PATH"),
+				"TERM=xterm-256color",
+				"TMUX_RECORD=" + record,
+				"TMUX_CREATED=" + createdSessionState,
+				"TMUX_STATUS_STARTED=" + statusStarted,
+				"TMUX_STATUS_RELEASE=" + filepath.Join(dir, "status-release"),
+			},
+		},
+		HideStatus: true,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := launcher.prepare(ctx)
+		errCh <- err
+	}()
+
+	require.Eventually(func() bool {
+		_, err := os.Stat(statusStarted)
+		return err == nil
+	}, time.Second, 10*time.Millisecond)
+
+	cancel()
+
+	var err error
+	select {
+	case err = <-errCh:
+	case <-time.After(5 * time.Second):
+		require.FailNow("tmux launcher did not return after cancellation")
+	}
+
+	require.Error(err)
+	assert.Contains(err.Error(), "hide tmux status")
+	assert.NoFileExists(createdSessionState)
+	assert.Contains(readNullArgvRecord(t, record), []string{
+		"kill-session", "-t", launcher.Session,
+	})
+}
+
+func TestTmuxLauncherDoesNotKillSessionAfterNewSessionError(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	dir := t.TempDir()
+	record := filepath.Join(dir, "tmux-record")
+	tmuxPath := filepath.Join(dir, "tmux")
+	require.NoError(os.WriteFile(tmuxPath, []byte(`#!/bin/sh
+printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"
+case "$1" in
+  has-session)
+    echo "can't find session: $3" >&2
+    exit 1
+    ;;
+  new-session)
+    echo "new session failed" >&2
+    exit 1
+    ;;
+  kill-session)
+    exit 0
+    ;;
+esac
+exit 0
+`), 0o755))
+
+	launcher := tmuxLauncher{
+		TmuxCommand: []string{tmuxPath},
+		Session:     "kenn-forge-test",
+		Pane: tmuxPaneEnvironment{
+			paneCommand: "exec /bin/sh",
+			keys:        []string{"PATH", "TERM"},
+			commandEnv: []string{
+				"PATH=" + os.Getenv("PATH"),
+				"TERM=xterm-256color",
+				"TMUX_RECORD=" + record,
+			},
+		},
+	}
+
+	_, err := launcher.prepare(context.Background())
+
+	require.Error(err)
+	assert.Contains(err.Error(), "tmux new-session")
+	assert.NotContains(readNullArgvRecord(t, record), []string{
+		"kill-session", "-t", launcher.Session,
+	})
 }
 
 func TestTmuxLauncherShellPolicyPreservesCustomEnvByKey(t *testing.T) {

@@ -2105,7 +2105,15 @@ func (s *Handler) launchWorkspaceRuntimeSession(
 			context.WithoutCancel(ctx), 5*time.Second,
 		)
 		defer cancel()
-		_ = s.runtime.Stop(cleanupCtx, summary.ID, session.Key)
+		if cleanupErr := s.runtime.RollbackLaunch(cleanupCtx, session); cleanupErr != nil {
+			slog.Warn(
+				"roll back unrecorded runtime session",
+				"workspace_id", summary.ID,
+				"session_key", session.Key,
+				"tmux_session", session.TmuxSession,
+				"err", cleanupErr,
+			)
+		}
 		return nil, err
 	}
 	s.invalidateWorkspaceEnrichment(summary.ID)

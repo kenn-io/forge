@@ -6,8 +6,8 @@ const (
 	LaunchTargetAgent      LaunchTargetKind = "agent"
 	LaunchTargetShell      LaunchTargetKind = "shell"
 	LaunchTargetPlainShell LaunchTargetKind = "plain_shell"
-	// LaunchTargetCommand marks sessions launched from a caller-supplied
-	// command line via EnsureCommandSession rather than a configured target.
+	// LaunchTargetCommand marks sessions launched from a caller-supplied command
+	// line via EnsureCommandSessionAndPersist rather than a configured target.
 	LaunchTargetCommand LaunchTargetKind = "command"
 )
 

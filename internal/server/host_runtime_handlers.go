@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -112,7 +113,7 @@ func (s *Server) launchHostRuntimeSession(
 	}
 
 	sessionKey := strings.TrimSpace(input.Body.SessionKey)
-	session, err := s.runtime.EnsureCommandSession(
+	session, err := s.runtime.EnsureCommandSessionAndPersist(
 		ctx, hostRuntimeScope, localruntime.CommandLaunchSpec{
 			SessionKey: sessionKey,
 			Command:    input.Body.Command,
@@ -120,38 +121,69 @@ func (s *Server) launchHostRuntimeSession(
 			Label:      input.Body.Label,
 			CWD:        cwd,
 		},
+		func(ctx context.Context, session localruntime.SessionInfo) error {
+			// Always upsert with the returned live generation: ensure semantics
+			// can reuse a session, and stale async exit cleanup is generation-safe.
+			return s.db.UpsertHostRuntimeTmuxSession(
+				ctx, &db.HostRuntimeTmuxSession{
+					SessionKey:  session.Key,
+					SessionName: session.TmuxSession,
+					Label:       session.Label,
+					CWD:         cwd,
+					CreatedAt:   session.CreatedAt,
+				},
+			)
+		},
 	)
 	if err != nil {
-		return nil, workspaceapi.RuntimeLaunchError(err)
-	}
-	// Always upsert with the returned session's generation: ensure semantics
-	// can return a live reused session or a brand-new one, and the stored
-	// row must carry the live created_at so a stale generation's async exit
-	// cleanup cannot delete it.
-	if session.TmuxSession != "" {
-		if err := s.db.UpsertHostRuntimeTmuxSession(
-			ctx, &db.HostRuntimeTmuxSession{
-				SessionKey:  session.Key,
-				SessionName: session.TmuxSession,
-				Label:       session.Label,
-				CWD:         cwd,
-				CreatedAt:   session.CreatedAt,
-			},
-		); err != nil {
-			// Only roll back a session this request launched: stopping
-			// a reused live session would kill someone else's work
-			// over a bookkeeping failure.
-			if !session.Reused {
-				_ = s.runtime.Stop(ctx, hostRuntimeScope, session.Key)
+		var persistenceErr *localruntime.CommandSessionPersistenceError
+		if errors.As(err, &persistenceErr) {
+			if persistenceErr.RollbackErr != nil {
+				slog.Warn(
+					"roll back unrecorded host runtime session",
+					"session_key", session.Key,
+					"tmux_session", session.TmuxSession,
+					"err", persistenceErr.RollbackErr,
+				)
 			}
 			return nil, httpapi.Internal(
-				"record host runtime tmux session: " + err.Error(),
+				"record host runtime tmux session: " + persistenceErr.Error(),
 			)
 		}
+		return nil, workspaceapi.RuntimeLaunchError(err)
 	}
+	s.forgetHostRuntimeCommandSessionIfExited(ctx, session)
 	return &hostRuntimeSessionOutput{
 		Body: hostRuntimeSessionFromRuntime(session),
 	}, nil
+}
+
+// forgetHostRuntimeCommandSessionIfExited reconciles a command that exited
+// while its metadata write was still in flight: the async exit handler's
+// generation-qualified delete can run before the row exists, so a short-lived
+// command could otherwise leave a durable row for a dead session.
+func (s *Server) forgetHostRuntimeCommandSessionIfExited(
+	ctx context.Context, session localruntime.SessionInfo,
+) {
+	for _, live := range s.runtime.ListSessions(hostRuntimeScope) {
+		if live.SameGeneration(session) {
+			return
+		}
+	}
+	cleanupCtx, cancel := context.WithTimeout(
+		context.WithoutCancel(ctx), runtimeSessionCleanupTimeout,
+	)
+	defer cancel()
+	if _, err := s.db.DeleteHostRuntimeTmuxSessionCreatedAt(
+		cleanupCtx, session.Key, session.CreatedAt,
+	); err != nil {
+		slog.Warn(
+			"forget host runtime tmux session recorded after exit",
+			"session_key", session.Key,
+			"tmux_session", session.TmuxSession,
+			"err", err,
+		)
+	}
 }
 
 func (s *Server) listHostRuntimeSessions(

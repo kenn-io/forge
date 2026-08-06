@@ -25060,6 +25060,62 @@ func TestWorkspaceRuntimePlainShellUsesPtyOwnerWhenTmuxUnavailableE2E(t *testing
 	)
 }
 
+func TestWorkspaceRuntimePtyOwnerPersistenceFailureRollsBackSessionE2E(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test fixture uses /bin/sh")
+	}
+	runParallelPTYE2E(t)
+
+	require := require.New(t)
+	assert := assert.New(t)
+	fixture, _, ptyOwnerDir := setupPtyOwnerWorkspaceFixture(t)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, fixture.client)
+	cleanupPtyOwnerWorkspace(t, ptyOwnerDir, ws.TmuxSession)
+
+	transaction := occupyRuntimeWriter(t, fixture.database)
+	baseline := fixture.database.WriteDB().Stats().WaitCount
+	requestCtx, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+	responses := serveRuntimeRequestAsync(
+		fixture.server,
+		requestCtx,
+		http.MethodPost,
+		"/api/v1/workspaces/"+ws.Id+"/runtime/sessions",
+		mustMarshal(t, map[string]any{
+			"target_key": string(localruntime.LaunchTargetPlainShell),
+		}),
+	)
+
+	var launched localruntime.SessionInfo
+	require.Eventually(func() bool {
+		sessions := fixture.server.workspaceAPI.RuntimeSnapshot(ws.Id)
+		if len(sessions) != 1 || sessions[0].TmuxSession != "" {
+			return false
+		}
+		launched = sessions[0]
+		return true
+	}, 2*time.Second, 20*time.Millisecond)
+	cleanupPtyOwnerWorkspace(t, ptyOwnerDir, launched.Key)
+	paths, err := ptyowner.NewSessionPaths(ptyOwnerDir, launched.Key)
+	require.NoError(err)
+	require.FileExists(paths.StatePath)
+	waitForRuntimeWriterWait(t, fixture.database, baseline)
+
+	cancel()
+	recorder := awaitRuntimeResponse(t, responses)
+	require.NoError(transaction.Rollback())
+
+	assert.Equal(http.StatusInternalServerError, recorder.Code)
+	assert.Contains(recorder.Body.String(), "record runtime session")
+	assert.Contains(recorder.Body.String(), "context canceled")
+	assert.NoFileExists(paths.StatePath)
+	assert.Empty(fixture.server.workspaceAPI.RuntimeSnapshot(ws.Id))
+	runtimeRows, err := fixture.database.ListWorkspaceRuntimeSessions(ctx, ws.Id)
+	require.NoError(err)
+	assert.Empty(runtimeRows)
+}
+
 func TestWorkspaceRuntimePtyOwnerShellReattachesAfterServerRestartE2E(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("test fixture uses /bin/sh")
@@ -25551,6 +25607,9 @@ func buildRustPtyManagerForTest(t *testing.T) string {
 	cargo, err := exec.LookPath("cargo")
 	if err != nil {
 		t.Skip("cargo not available")
+	}
+	if err := procutil.Command(cargo, "--version").Run(); err != nil {
+		t.Skipf("cargo not usable: %v", err)
 	}
 	root := repoRootForTest(t)
 	cmd := procutil.Command(cargo, "build", "-p", "kenn-forge-pty-manager")
@@ -27461,6 +27520,10 @@ func TestWorkspaceRuntimePlainShellRecordFailureCleansCreatedTmuxShellE2E(t *tes
 	require := require.New(t)
 
 	tmuxPath := writeFakeWorkspaceRuntimeTmux(t)
+	attachGate := filepath.Join(t.TempDir(), "attach-gate")
+	require.NoError(os.WriteFile(attachGate, []byte("wait"), 0o600))
+	t.Setenv("KENN_FORGE_FAKE_TMUX_ATTACH_GATE", attachGate)
+	t.Setenv("KENN_FORGE_FAKE_TMUX_ATTACH_EXIT", "1")
 	cfg := &config.Config{
 		Tmux: config.Tmux{Command: []string{tmuxPath}},
 		Shell: config.Shell{
@@ -27481,16 +27544,42 @@ func TestWorkspaceRuntimePlainShellRecordFailureCleansCreatedTmuxShellE2E(t *tes
 	tx, err := fixture.database.WriteDB().BeginTx(ctx, &sql.TxOptions{})
 	require.NoError(err)
 	defer func() { _ = tx.Rollback() }()
-	recordCtx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	recordCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	failedResp, err := fixture.client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
-		recordCtx, ws.Id,
-		generated.LaunchWorkspaceRuntimeSessionInputBody{
-			TargetKey: string(localruntime.LaunchTargetPlainShell),
-		},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusInternalServerError, failedResp.StatusCode())
+	type launchResult struct {
+		response *generated.LaunchWorkspaceRuntimeSessionResponse
+		err      error
+	}
+	launchDone := make(chan launchResult, 1)
+	go func() {
+		response, launchErr := fixture.client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
+			recordCtx, ws.Id,
+			generated.LaunchWorkspaceRuntimeSessionInputBody{
+				TargetKey: string(localruntime.LaunchTargetPlainShell),
+			},
+		)
+		launchDone <- launchResult{response: response, err: launchErr}
+	}()
+	require.Eventually(func() bool {
+		entries, readErr := os.ReadDir(stateDir)
+		return readErr == nil && len(entries) > len(initialState)
+	}, 2*time.Second, 20*time.Millisecond)
+	require.Eventually(func() bool {
+		return len(fixture.server.runtime.ListSessions(ws.Id)) > 0
+	}, 2*time.Second, 20*time.Millisecond)
+	require.NoError(os.Remove(attachGate))
+	require.Eventually(func() bool {
+		return len(fixture.server.runtime.ListSessions(ws.Id)) == 0
+	}, 2*time.Second, 20*time.Millisecond)
+	cancel()
+	var result launchResult
+	select {
+	case result = <-launchDone:
+	case <-time.After(5 * time.Second):
+		require.FailNow("runtime launch request did not complete within 5 seconds")
+	}
+	require.NoError(result.err)
+	require.Equal(http.StatusInternalServerError, result.response.StatusCode())
 	require.NoError(tx.Rollback())
 
 	require.Eventually(func() bool {
@@ -28519,17 +28608,19 @@ session_arg() {
   done
   printf '%s' "$session"
 }
-owner_arg() {
-  owner=""
+option_arg() {
+  option="$1"
+  shift
+  value=""
   while [ "$#" -gt 0 ]; do
-    if [ "$1" = "@forge_owner" ]; then
+    if [ "$1" = "$option" ]; then
       shift
-      owner="${1:-}"
+      value="${1:-}"
       break
     fi
     [ "$#" -gt 0 ] && shift || true
   done
-  printf '%s' "$owner"
+  printf '%s' "$value"
 }
 cmd="${1:-}"
 [ "$#" -gt 0 ] && shift || true
@@ -28541,6 +28632,9 @@ case "$cmd" in
   list-sessions)
     for session in "$state_dir"/*; do
       [ -e "$session" ] || continue
+      case "$session" in
+        *.owner|*.launch) continue ;;
+      esac
       basename "$session"
     done
     ;;
@@ -28555,23 +28649,37 @@ case "$cmd" in
   new-session)
     session="$(session_arg "$@")"
     [ -n "$session" ] && : > "$state_dir/$session"
-    owner="$(owner_arg "$@")"
+    owner="$(option_arg @forge_owner "$@")"
     if [ -n "$session" ] && [ -n "$owner" ]; then
       printf '%s\n' "$owner" > "$state_dir/$session.owner"
+    fi
+    launch="$(option_arg @forge_launch "$@")"
+    if [ -n "$session" ] && [ -n "$launch" ]; then
+      printf '%s\n' "$launch" > "$state_dir/$session.launch"
     fi
     ;;
   set-option)
     session="$(session_arg "$@")"
-    owner="$(owner_arg "$@")"
+    owner="$(option_arg @forge_owner "$@")"
     if [ -n "$session" ] && [ -n "$owner" ]; then
       printf '%s\n' "$owner" > "$state_dir/$session.owner"
+    fi
+    launch="$(option_arg @forge_launch "$@")"
+    if [ -n "$session" ] && [ -n "$launch" ]; then
+      printf '%s\n' "$launch" > "$state_dir/$session.launch"
     fi
     ;;
   show-option)
     ;;
   show-options)
     session="$(session_arg "$@")"
-    if [ -n "$session" ] && [ -e "$state_dir/$session.owner" ]; then
+    requested=""
+    for arg in "$@"; do requested="$arg"; done
+    if [ "$requested" = "@forge_launch" ]; then
+      if [ -n "$session" ] && [ -e "$state_dir/$session.launch" ]; then
+        cat "$state_dir/$session.launch"
+      fi
+    elif [ -n "$session" ] && [ -e "$state_dir/$session.owner" ]; then
       cat "$state_dir/$session.owner"
     else
       printf '%s\n' "${KENN_FORGE_FAKE_TMUX_OWNER:-kenn-forge:test-owner}"
@@ -28584,6 +28692,14 @@ case "$cmd" in
       exit 1
     fi
     printf 'attached:%s\n' "$session"
+    if [ -n "${KENN_FORGE_FAKE_TMUX_ATTACH_GATE:-}" ]; then
+      while [ -e "$KENN_FORGE_FAKE_TMUX_ATTACH_GATE" ]; do
+        sleep 0.01
+      done
+    fi
+    if [ "${KENN_FORGE_FAKE_TMUX_ATTACH_EXIT:-}" = "1" ]; then
+      exit 0
+    fi
     while [ -e "$state_dir/$session" ]; do
       if IFS= read -r line; then
         printf 'fake-tmux:%s\n' "$line"
@@ -28596,6 +28712,7 @@ case "$cmd" in
     session="$(session_arg "$@")"
     [ -n "$session" ] && rm -f "$state_dir/$session"
     [ -n "$session" ] && rm -f "$state_dir/$session.owner"
+    [ -n "$session" ] && rm -f "$state_dir/$session.launch"
     ;;
   capture-pane|list-clients|refresh-client|wait-for)
     ;;

@@ -137,6 +137,7 @@ type Handler struct {
 	workspaceSetupMu               sync.Mutex
 	workspaceSetupDone             map[string]chan struct{}
 	workspaceDeleting              map[string]*workspaceDeletion
+	worktreeShellTransactions      sync.Map
 	workspaceTmuxPrunedAt          time.Time
 	workspaceTmuxPrunePending      bool
 	workspaceTmuxPruneInFlight     bool

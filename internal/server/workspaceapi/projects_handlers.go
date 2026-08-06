@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/exec"
@@ -1237,6 +1238,30 @@ func (s *Handler) getProjectWorktreeRuntime(
 	return &getProjectWorktreeRuntimeOutput{Body: out}, nil
 }
 
+func (s *Handler) rollbackProjectWorktreeRuntimeLaunch(
+	ctx context.Context,
+	projectID string,
+	worktreeID string,
+	session localruntime.SessionInfo,
+) {
+	cleanupCtx, cancel := context.WithTimeout(
+		context.WithoutCancel(ctx),
+		5*time.Second,
+	)
+	defer cancel()
+
+	if err := s.runtime.RollbackLaunch(cleanupCtx, session); err != nil {
+		slog.Warn(
+			"roll back unrecorded project worktree runtime session",
+			"project_id", projectID,
+			"worktree_id", worktreeID,
+			"session_key", session.Key,
+			"tmux_session", session.TmuxSession,
+			"err", err,
+		)
+	}
+}
+
 func (s *Handler) ensureProjectWorktreeRuntimeShell(
 	ctx context.Context,
 	input *projectWorktreeIDInput,
@@ -1245,6 +1270,10 @@ func (s *Handler) ensureProjectWorktreeRuntimeShell(
 	if err != nil {
 		return nil, err
 	}
+	transaction := s.projectWorktreeShellTransaction(worktree.ID)
+	transaction.Lock()
+	defer transaction.Unlock()
+
 	scope := projectWorktreeRuntimeScope(worktree.ID)
 	var session localruntime.SessionInfo
 	if shell := projectWorktreeShellSession(s.runtime.ListSessions(scope)); shell != nil {
@@ -1276,7 +1305,12 @@ func (s *Handler) ensureProjectWorktreeRuntimeShell(
 			// a reused live shell would kill someone else's work over
 			// a bookkeeping failure.
 			if !session.Reused {
-				_ = s.runtime.Stop(ctx, scope, session.Key)
+				s.rollbackProjectWorktreeRuntimeLaunch(
+					ctx,
+					input.ProjectID,
+					worktree.ID,
+					session,
+				)
 			}
 			return nil, httpapi.Internal(
 				"record project worktree runtime tmux session: " + err.Error(),
@@ -1347,7 +1381,12 @@ func (s *Handler) launchProjectWorktreeRuntimeSession(
 				CreatedAt:   session.CreatedAt,
 			},
 		); err != nil {
-			_ = s.runtime.Stop(ctx, scope, session.Key)
+			s.rollbackProjectWorktreeRuntimeLaunch(
+				ctx,
+				input.ProjectID,
+				worktree.ID,
+				session,
+			)
 			return nil, httpapi.Internal(
 				"record project worktree runtime tmux session: " + err.Error(),
 			)
@@ -1381,7 +1420,7 @@ func (s *Handler) launchProjectWorktreeRuntimeCommandSession(
 	if cwd == "" {
 		cwd = worktree.Path
 	}
-	session, err := s.runtime.EnsureCommandSession(
+	session, err := s.runtime.EnsureCommandSessionAndPersist(
 		ctx, scope, localruntime.CommandLaunchSpec{
 			SessionKey: sessionKey,
 			Command:    input.Body.Command,
@@ -1389,39 +1428,77 @@ func (s *Handler) launchProjectWorktreeRuntimeCommandSession(
 			Label:      input.Body.Label,
 			CWD:        cwd,
 		},
+		func(ctx context.Context, session localruntime.SessionInfo) error {
+			// Always upsert with the returned live generation: ensure semantics
+			// can reuse a session, and stale async exit cleanup is generation-safe.
+			return s.db.UpsertProjectWorktreeTmuxSession(
+				ctx, &db.ProjectWorktreeTmuxSession{
+					WorktreeID:  worktree.ID,
+					SessionKey:  session.Key,
+					SessionName: session.TmuxSession,
+					Label:       session.Label,
+					CreatedAt:   session.CreatedAt,
+				},
+			)
+		},
 	)
 	if err != nil {
-		return nil, projectWorktreeRuntimeLaunchError(err)
-	}
-	// Always upsert with the returned session's generation: ensure semantics
-	// can return a live reused session or a brand-new one, and the stored
-	// row must carry the live created_at so a stale generation's async exit
-	// cleanup cannot delete it.
-	if session.TmuxSession != "" {
-		if err := s.db.UpsertProjectWorktreeTmuxSession(
-			ctx, &db.ProjectWorktreeTmuxSession{
-				WorktreeID:  worktree.ID,
-				SessionKey:  session.Key,
-				SessionName: session.TmuxSession,
-				Label:       session.Label,
-				CreatedAt:   session.CreatedAt,
-			},
-		); err != nil {
-			// Only roll back a session this request launched (see the
-			// shell ensure above).
-			if !session.Reused {
-				_ = s.runtime.Stop(ctx, scope, session.Key)
+		var persistenceErr *localruntime.CommandSessionPersistenceError
+		if errors.As(err, &persistenceErr) {
+			if persistenceErr.RollbackErr != nil {
+				slog.Warn(
+					"roll back unrecorded project worktree runtime session",
+					"project_id", input.ProjectID,
+					"worktree_id", worktree.ID,
+					"session_key", session.Key,
+					"tmux_session", session.TmuxSession,
+					"err", persistenceErr.RollbackErr,
+				)
 			}
 			return nil, httpapi.Internal(
-				"record project worktree runtime tmux session: " + err.Error(),
+				"record project worktree runtime tmux session: " + persistenceErr.Error(),
 			)
 		}
+		return nil, projectWorktreeRuntimeLaunchError(err)
 	}
+	s.forgetProjectWorktreeCommandSessionIfExited(ctx, scope, worktree.ID, session)
 	return &projectWorktreeRuntimeSessionOutput{
 		Body: projectWorktreeRuntimeSessionFromRuntime(
 			session, input.ProjectID, worktree.ID,
 		),
 	}, nil
+}
+
+// forgetProjectWorktreeCommandSessionIfExited reconciles a command that exited
+// while its metadata write was still in flight: the async exit handler's
+// generation-qualified delete can run before the row exists, so a short-lived
+// command could otherwise leave a durable row for a dead session.
+func (s *Handler) forgetProjectWorktreeCommandSessionIfExited(
+	ctx context.Context,
+	scope string,
+	worktreeID string,
+	session localruntime.SessionInfo,
+) {
+	for _, live := range s.runtime.ListSessions(scope) {
+		if live.SameGeneration(session) {
+			return
+		}
+	}
+	cleanupCtx, cancel := context.WithTimeout(
+		context.WithoutCancel(ctx), runtimeSessionCleanupTimeout,
+	)
+	defer cancel()
+	if _, err := s.db.DeleteProjectWorktreeTmuxSessionCreatedAt(
+		cleanupCtx, worktreeID, session.Key, session.CreatedAt,
+	); err != nil {
+		slog.Warn(
+			"forget project worktree runtime tmux session recorded after exit",
+			"worktree_id", worktreeID,
+			"session_key", session.Key,
+			"tmux_session", session.TmuxSession,
+			"err", err,
+		)
+	}
 }
 
 func (s *Handler) stopProjectWorktreeRuntimeSession(
@@ -1641,6 +1718,13 @@ func (s *Handler) readyRuntimeProjectWorktree(
 
 func projectWorktreeRuntimeScope(worktreeID string) string {
 	return "project-worktree:" + worktreeID
+}
+
+func (s *Handler) projectWorktreeShellTransaction(worktreeID string) *sync.Mutex {
+	transaction, _ := s.worktreeShellTransactions.LoadOrStore(
+		worktreeID, &sync.Mutex{},
+	)
+	return transaction.(*sync.Mutex)
 }
 
 // ProjectWorktreeRuntimeScope returns the runtime-manager scope for a

@@ -54,6 +54,10 @@ type Manager struct {
 	deletedSummaryIDs         map[string]bool
 	worktreeBaseResolver      WorktreeBasePathResolver
 	afterHeadRepoSnapshotRead func()
+	// beforeExistingWorktreeRepoLock runs after reuse pre-validation and right
+	// before acquiring the repository lock; tests use it to coordinate a path
+	// replacement while lock acquisition is blocked.
+	beforeExistingWorktreeRepoLock func()
 	// beforeSetupRouteRevalidation runs right before setup's final route
 	// re-validation; tests use it to interleave a route replacement.
 	beforeSetupRouteRevalidation func()
@@ -1332,6 +1336,9 @@ func (m *Manager) reuseExistingWorkspaceWorktree(
 	}
 	if !reusable {
 		return "", false, nil
+	}
+	if m.beforeExistingWorktreeRepoLock != nil {
+		m.beforeExistingWorktreeRepoLock()
 	}
 	var branch string
 	if err := m.withRepoLockForGitDir(ctx, commonDir, func() error {

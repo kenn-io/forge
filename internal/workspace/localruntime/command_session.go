@@ -21,9 +21,9 @@ var ErrSessionKeyConflict = errors.New("session key conflict")
 type CommandLaunchSpec struct {
 	// SessionKey optionally names the session with a caller-owned durable
 	// key. When a live command session with the same key already exists in
-	// the same scope, EnsureCommandSession returns it instead of launching
-	// again; a key owned by a different session kind (agent, shell) is a
-	// conflict. Empty means a random session key is generated.
+	// the same scope, EnsureCommandSessionAndPersist returns it instead of
+	// launching again; a key owned by a different session kind (agent, shell)
+	// is a conflict. Empty means a random session key is generated.
 	SessionKey string
 	// Command is the argv to run inside the tmux pane. Required.
 	Command []string
@@ -37,15 +37,38 @@ type CommandLaunchSpec struct {
 	CWD string
 }
 
-// EnsureCommandSession launches spec.Command in a tmux session owned by this
-// manager, or returns the existing live session when spec.SessionKey names
-// one in the same scope. The tmux session name is derived deterministically
-// from (workspaceID, key), so re-ensuring after a manager restart reattaches
-// to a surviving tmux session instead of launching a duplicate.
-func (m *Manager) EnsureCommandSession(
+// CommandSessionPersistenceError reports that a command session generation
+// could not be recorded durably. PersistenceErr remains the caller-visible
+// cause; RollbackErr is diagnostic only.
+type CommandSessionPersistenceError struct {
+	PersistenceErr error
+	RollbackErr    error
+}
+
+func (e *CommandSessionPersistenceError) Error() string {
+	if e == nil || e.PersistenceErr == nil {
+		return "command session persistence failed"
+	}
+	return e.PersistenceErr.Error()
+}
+
+func (e *CommandSessionPersistenceError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.PersistenceErr
+}
+
+// EnsureCommandSessionAndPersist launches spec.Command in a tmux session owned
+// by this manager, or returns the existing live session when spec.SessionKey
+// names one in the same scope. Same-key ensure, persistence, and compensation
+// share one manager-owned transaction, so no request can reuse a generation
+// while another request still owns rollback authority over it.
+func (m *Manager) EnsureCommandSessionAndPersist(
 	ctx context.Context,
 	workspaceID string,
 	spec CommandLaunchSpec,
+	persist func(context.Context, SessionInfo) error,
 ) (SessionInfo, error) {
 	if err := ctx.Err(); err != nil {
 		return SessionInfo{}, err
@@ -69,6 +92,69 @@ func (m *Manager) EnsureCommandSession(
 		startMu := m.startLock(key)
 		startMu.Lock()
 		defer startMu.Unlock()
+		return m.ensureCommandSessionAndPersistLocked(
+			ctx, workspaceID, spec, key, persist,
+		)
+	}
+
+	session, err := m.ensureCommandSessionLocked(ctx, workspaceID, spec, "")
+	if err != nil {
+		return SessionInfo{}, err
+	}
+	startMu := m.startLock(session.Key)
+	startMu.Lock()
+	defer startMu.Unlock()
+	return m.persistCommandSessionLocked(ctx, session, persist)
+}
+
+func (m *Manager) ensureCommandSessionAndPersistLocked(
+	ctx context.Context,
+	workspaceID string,
+	spec CommandLaunchSpec,
+	key string,
+	persist func(context.Context, SessionInfo) error,
+) (SessionInfo, error) {
+	session, err := m.ensureCommandSessionLocked(ctx, workspaceID, spec, key)
+	if err != nil {
+		return SessionInfo{}, err
+	}
+	return m.persistCommandSessionLocked(ctx, session, persist)
+}
+
+func (m *Manager) persistCommandSessionLocked(
+	ctx context.Context,
+	session SessionInfo,
+	persist func(context.Context, SessionInfo) error,
+) (SessionInfo, error) {
+	persistenceErr := persist(ctx, session)
+	if persistenceErr == nil {
+		return session, nil
+	}
+
+	var rollbackErr error
+	if !session.Reused {
+		cleanupCtx, cancel := context.WithTimeout(
+			context.WithoutCancel(ctx), 5*time.Second,
+		)
+		rollbackErr = m.rollbackLaunchLocked(cleanupCtx, session)
+		cancel()
+	}
+	return session, &CommandSessionPersistenceError{
+		PersistenceErr: persistenceErr,
+		RollbackErr:    rollbackErr,
+	}
+}
+
+// ensureCommandSessionLocked assumes the caller owns startLock(key) when key is
+// non-empty. Empty keys are generated here and locked by the caller before
+// persistence or compensation.
+func (m *Manager) ensureCommandSessionLocked(
+	ctx context.Context,
+	workspaceID string,
+	spec CommandLaunchSpec,
+	key string,
+) (SessionInfo, error) {
+	if key != "" {
 		if existing := m.runningSession(m.sessions, key); existing != nil {
 			info := existing.snapshot()
 			if info.WorkspaceID != workspaceID {
@@ -126,17 +212,23 @@ func (m *Manager) EnsureCommandSession(
 	}
 
 	started, err := m.startOwnedSession(ctx, SessionInfo{
-		Key:         key,
-		WorkspaceID: workspaceID,
-		Label:       label,
-		Kind:        LaunchTargetCommand,
-		Status:      SessionStatusStarting,
-		CreatedAt:   time.Now().UTC(),
-		TmuxSession: launch.TmuxSession,
+		Key:          key,
+		WorkspaceID:  workspaceID,
+		Label:        label,
+		Kind:         LaunchTargetCommand,
+		Status:       SessionStatusStarting,
+		CreatedAt:    time.Now().UTC(),
+		TmuxSession:  launch.TmuxSession,
+		tmuxLaunchID: launch.TmuxLaunchID,
+		Reused:       !launch.TmuxCreated,
 	}, launch.Command, spec.CWD, stripEnvVars)
 	if err != nil {
 		if launch.TmuxCreated {
-			_ = m.killTmuxSession(ctx, launch.TmuxSession)
+			cleanupCtx, cancel := context.WithTimeout(
+				context.WithoutCancel(ctx), 5*time.Second,
+			)
+			_ = m.killTmuxSession(cleanupCtx, launch.TmuxSession)
+			cancel()
 		}
 		return SessionInfo{}, err
 	}
@@ -185,6 +277,10 @@ func (m *Manager) commandSessionLaunch(
 	command[0] = resolvedPath
 
 	tmuxSession := tmuxSessionName(workspaceID, key)
+	launchID, err := newTmuxLaunchID()
+	if err != nil {
+		return launchCommand{}, err
+	}
 	paneEnv := tmuxAgentEnvPolicy.paneEnvironmentWithExtra(
 		os.Environ(), command, stripEnvVars, spec.Env,
 	)
@@ -194,14 +290,19 @@ func (m *Manager) commandSessionLaunch(
 		CWD:         spec.CWD,
 		Pane:        paneEnv,
 		OwnerMarker: m.tmuxOwnerMarker,
+		LaunchID:    launchID,
 		HideStatus:  m.currentHideTmuxStatus(),
 	}.prepare(ctx)
 	if err != nil {
 		return launchCommand{}, err
 	}
-	return launchCommand{
+	result := launchCommand{
 		Command:     prepared.AttachCommand,
 		TmuxSession: tmuxSession,
 		TmuxCreated: prepared.Created,
-	}, nil
+	}
+	if prepared.Created {
+		result.TmuxLaunchID = launchID
+	}
+	return result, nil
 }

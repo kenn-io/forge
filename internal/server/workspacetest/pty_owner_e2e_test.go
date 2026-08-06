@@ -206,6 +206,9 @@ func buildRustPtyManagerForTest(t *testing.T) string {
 	if err != nil {
 		t.Skip("cargo not available")
 	}
+	if err := procutil.Command(cargo, "--version").Run(); err != nil {
+		t.Skipf("cargo not usable: %v", err)
+	}
 	rustPtyManagerBuild.once.Do(func() {
 		root := repoRootForPtyOwnerTest(t)
 		cmd := procutil.Command(cargo, "build", "-p", "kenn-forge-pty-manager")

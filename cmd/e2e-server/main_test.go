@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -10,8 +11,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
+	"sync"
+	"syscall"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -23,8 +27,55 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/testutil"
+	"go.kenn.io/forge/internal/testutil/testsignal"
 	"go.kenn.io/forge/internal/web"
 )
+
+var (
+	testTmuxMu       sync.Mutex
+	testTmuxCommands = make(map[string][]string)
+)
+
+func TestMain(m *testing.M) {
+	runCleanup, stopSignalCleanup := testsignal.Install(cleanupTrackedTestTmux, func(err error) {
+		fmt.Fprintf(os.Stderr, "cleanup e2e-server test tmux: %v\n", err)
+	})
+	code := m.Run()
+	if err := runCleanup(); err != nil {
+		fmt.Fprintf(os.Stderr, "cleanup e2e-server test tmux: %v\n", err)
+		if code == 0 {
+			code = 1
+		}
+	}
+	stopSignalCleanup()
+	os.Exit(code)
+}
+
+func trackTestTmux(tmuxCommand []string) func() {
+	key := strings.Join(tmuxCommand, "\x00")
+	testTmuxMu.Lock()
+	testTmuxCommands[key] = append([]string{}, tmuxCommand...)
+	testTmuxMu.Unlock()
+	return func() {
+		testTmuxMu.Lock()
+		delete(testTmuxCommands, key)
+		testTmuxMu.Unlock()
+	}
+}
+
+func cleanupTrackedTestTmux() error {
+	testTmuxMu.Lock()
+	commands := make([][]string, 0, len(testTmuxCommands))
+	for _, command := range testTmuxCommands {
+		commands = append(commands, command)
+	}
+	clear(testTmuxCommands)
+	testTmuxMu.Unlock()
+	for _, command := range commands {
+		killTmuxServer(command)
+	}
+	return nil
+}
 
 func TestWriteServerInfoFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "server-info.json")
@@ -461,6 +512,73 @@ func TestRunCancellationStopsPrivateTmuxBeforeShutdown(t *testing.T) {
 	requirePrivateTmuxServerStopped(t, tmuxCommand)
 }
 
+func TestE2EServerTestMainStopsPrivateTmuxOnSIGTERM(t *testing.T) {
+	if os.Getenv("KENN_FORGE_E2E_SIGNAL_HELPER") == "1" {
+		tmuxCommand := instanceTmuxCommand()
+		args := append([]string{}, tmuxCommand[1:]...)
+		args = append(args, "new-session", "-d", "-s", "signal-cleanup", "sleep 30")
+		if output, err := procutil.Command(tmuxCommand[0], args...).CombinedOutput(); err != nil {
+			_, _ = os.Stderr.Write(output)
+			os.Exit(2)
+		}
+		trackTestTmux(tmuxCommand)
+		encoded, err := json.Marshal(tmuxCommand)
+		if err != nil {
+			os.Exit(3)
+		}
+		if err := os.WriteFile(os.Getenv("KENN_FORGE_E2E_SIGNAL_READY"), encoded, 0o600); err != nil {
+			os.Exit(4)
+		}
+		select {}
+	}
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows does not support the tmux signal-cleanup probe")
+	}
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux not available")
+	}
+
+	require := require.New(t)
+	tmuxDir, err := os.MkdirTemp("/tmp", "kf-e2e-tmux-")
+	require.NoError(err)
+	t.Cleanup(func() { _ = os.RemoveAll(tmuxDir) })
+	readyFile := filepath.Join(t.TempDir(), "ready.json")
+	cmd := procutil.Command(os.Args[0], "-test.run=^TestE2EServerTestMainStopsPrivateTmuxOnSIGTERM$")
+	cmd.Env = append(os.Environ(),
+		"KENN_FORGE_E2E_SIGNAL_HELPER=1",
+		"KENN_FORGE_E2E_SIGNAL_READY="+readyFile,
+		e2eTmuxDirEnv+"="+tmuxDir,
+	)
+	require.NoError(cmd.Start())
+	t.Cleanup(func() {
+		if cmd.ProcessState == nil {
+			_ = cmd.Process.Kill()
+			_, _ = cmd.Process.Wait()
+		}
+	})
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		data, readErr := os.ReadFile(readyFile)
+		if readErr == nil {
+			var tmuxCommand []string
+			require.NoError(json.Unmarshal(data, &tmuxCommand))
+			t.Cleanup(func() { killTmuxServer(tmuxCommand) })
+			require.NoError(cmd.Process.Signal(syscall.SIGTERM))
+			waitErr := cmd.Wait()
+			var exitErr *exec.ExitError
+			require.ErrorAs(waitErr, &exitErr)
+			require.Equal(143, exitErr.ExitCode())
+			requirePrivateTmuxServerStopped(t, tmuxCommand)
+			return
+		}
+		if time.Now().After(deadline) {
+			require.FailNow("signal helper did not create its private tmux server")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 // TestResetSwapsFixtureState pins the /__e2e/reset contract that the
 // Playwright server pool depends on: a reset discards mutations made
 // against the old state, serves the rebuilt state on the same port,
@@ -595,7 +713,11 @@ func startPrivateE2ETmuxServer(t *testing.T, configPath string) []string {
 	args = append(args, "new-session", "-d", "-s", "forge-e2e-shutdown-test", "sleep 30")
 	output, err := procutil.Command(tmuxCommand[0], args...).CombinedOutput()
 	require.NoError(t, err, string(output))
-	t.Cleanup(func() { killTmuxServer(tmuxCommand) })
+	untrack := trackTestTmux(tmuxCommand)
+	t.Cleanup(func() {
+		killTmuxServer(tmuxCommand)
+		untrack()
+	})
 	return tmuxCommand
 }
 

@@ -61,6 +61,7 @@ import (
 	"go.kenn.io/forge/internal/testutil/gitfake"
 	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/testutil/processjob"
+	"go.kenn.io/forge/internal/testutil/testsignal"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
@@ -90,15 +91,21 @@ func TestMain(m *testing.M) {
 	if envDirErr == nil {
 		_ = os.Setenv("KENN_FORGE_TMUX_ENV_DIR", envDir)
 	}
+	runCleanup, stopSignalCleanup := testsignal.Install(func() error {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		return cleanupForgeTestTmuxSessionsWithContext(ctx)
+	}, func(err error) {
+		fmt.Fprintf(os.Stderr, "cleanup kenn-forge test tmux sessions: %v\n", err)
+	})
 	code := gitsafe.RunIsolatedMain(m)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	if err := cleanupForgeTestTmuxSessionsWithContext(ctx); err != nil {
+	stopSignalCleanup()
+	if err := runCleanup(); err != nil {
 		fmt.Fprintf(os.Stderr, "cleanup kenn-forge test tmux sessions: %v\n", err)
 		if code == 0 {
 			code = 1
 		}
 	}
-	cancel()
 	if envDirErr == nil {
 		_ = os.RemoveAll(envDir)
 	}

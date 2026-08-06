@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -17,7 +18,9 @@ import (
 	gh "github.com/google/go-github/v89/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/web"
 )
@@ -54,6 +57,7 @@ func TestCleanupServerInfoFileRemovesFile(t *testing.T) {
 }
 
 func TestInstanceTmuxCommandUsesPrivateSocketAndDefaultConfig(t *testing.T) {
+	t.Setenv(e2eTmuxDirEnv, "")
 	command := instanceTmuxCommand()
 
 	require.Len(t, command, 5)
@@ -63,6 +67,23 @@ func TestInstanceTmuxCommandUsesPrivateSocketAndDefaultConfig(t *testing.T) {
 	assert.Equal("/dev/null", command[2])
 	assert.Equal("-L", command[3])
 	assert.Regexp(`^mm-e2e-\d+-\d+-[0-9a-f]{8}$`, command[4])
+}
+
+func TestInstanceTmuxCommandUsesPlaywrightOwnedSocketDirectory(t *testing.T) {
+	dir, err := os.MkdirTemp("", "kf-e2e-tmux-")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	t.Setenv(e2eTmuxDirEnv, dir)
+
+	command := instanceTmuxCommand()
+
+	require.Len(t, command, 5)
+	assert := assert.New(t)
+	assert.Equal("tmux", command[0])
+	assert.Equal("-S", command[3])
+	assert.Equal(dir, filepath.Dir(command[4]))
+	assert.Regexp(`^mm-e2e-\d+-\d+-[0-9a-f]{8}\.sock$`, filepath.Base(command[4]))
+	assert.True(isOwnedE2ETmuxCommand(command))
 }
 
 func TestPatchFixturePRSHAsUpdatesOpenPRs(t *testing.T) {
@@ -141,7 +162,7 @@ func TestAppStateRegistryWaitsForInFlightHandlersAfterSwap(t *testing.T) {
 	drained := make(chan struct{})
 	go func() {
 		defer close(drained)
-		swapped.waitForHandlers()
+		_ = swapped.waitForHandlers(context.Background())
 	}()
 
 	select {
@@ -379,6 +400,35 @@ func TestRunPprofListenerFromEnv(t *testing.T) {
 	}
 }
 
+func TestRunCancellationStopsPrivateTmuxBeforeShutdown(t *testing.T) {
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux not available")
+	}
+	tmuxDir, err := os.MkdirTemp("/tmp", "kf-e2e-tmux-")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(tmuxDir) })
+	t.Setenv(e2eTmuxDirEnv, tmuxDir)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+	serverInfoFile := filepath.Join(t.TempDir(), "server-info.json")
+	done := make(chan error, 1)
+	go func() {
+		done <- run(ctx, 0, defaultRoborevEndpoint, serverInfoFile, "github.com", "", false, false)
+	}()
+	info := waitForServerInfo(t, serverInfoFile, done)
+	tmuxCommand := startPrivateE2ETmuxServer(t, info.ConfigPath)
+
+	cancel()
+	select {
+	case runErr := <-done:
+		require.NoError(t, runErr)
+	case <-time.After(10 * time.Second):
+		require.Fail(t, "run() did not exit within 10s of cancellation")
+	}
+	requirePrivateTmuxServerStopped(t, tmuxCommand)
+}
+
 // TestResetSwapsFixtureState pins the /__e2e/reset contract that the
 // Playwright server pool depends on: a reset discards mutations made
 // against the old state, serves the rebuilt state on the same port,
@@ -466,6 +516,63 @@ func TestResetSwapsFixtureState(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		require.Fail("run() did not exit within 10s of cancellation")
 	}
+}
+
+func TestResetStopsOldPrivateTmuxServerBeforeReturning(t *testing.T) {
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux not available")
+	}
+	require := require.New(t)
+	tmuxDir, err := os.MkdirTemp("/tmp", "kf-e2e-tmux-")
+	require.NoError(err)
+	t.Cleanup(func() { _ = os.RemoveAll(tmuxDir) })
+	t.Setenv(e2eTmuxDirEnv, tmuxDir)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+	serverInfoFile := filepath.Join(t.TempDir(), "server-info.json")
+	done := make(chan error, 1)
+	go func() {
+		done <- run(ctx, 0, defaultRoborevEndpoint, serverInfoFile, "github.com", "", false, false)
+	}()
+	info := waitForServerInfo(t, serverInfoFile, done)
+	oldTmuxCommand := startPrivateE2ETmuxServer(t, info.ConfigPath)
+
+	resp, err := http.Post(info.BaseURL+"/__e2e/reset", "application/json", nil)
+	require.NoError(err)
+	resp.Body.Close()
+	require.Equal(http.StatusOK, resp.StatusCode)
+	requirePrivateTmuxServerStopped(t, oldTmuxCommand)
+
+	cancel()
+	select {
+	case runErr := <-done:
+		require.NoError(runErr)
+	case <-time.After(10 * time.Second):
+		require.Fail("run() did not exit within 10s of cancellation")
+	}
+}
+
+func startPrivateE2ETmuxServer(t *testing.T, configPath string) []string {
+	t.Helper()
+	cfg, err := config.Load(configPath)
+	require.NoError(t, err)
+	tmuxCommand := cfg.TmuxCommand()
+	require.True(t, isOwnedE2ETmuxCommand(tmuxCommand))
+	args := append([]string{}, tmuxCommand[1:]...)
+	args = append(args, "new-session", "-d", "-s", "forge-e2e-shutdown-test", "sleep 30")
+	output, err := procutil.Command(tmuxCommand[0], args...).CombinedOutput()
+	require.NoError(t, err, string(output))
+	t.Cleanup(func() { killTmuxServer(tmuxCommand) })
+	return tmuxCommand
+}
+
+func requirePrivateTmuxServerStopped(t *testing.T, tmuxCommand []string) {
+	t.Helper()
+	args := append([]string{}, tmuxCommand[1:]...)
+	args = append(args, "list-sessions")
+	output, err := procutil.Command(tmuxCommand[0], args...).CombinedOutput()
+	require.Error(t, err, "private tmux server still accepts commands: %s", output)
 }
 
 func readInfoFile(t *testing.T, path string) e2eServerInfo {

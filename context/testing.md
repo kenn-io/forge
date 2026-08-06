@@ -362,6 +362,15 @@ resource pressure rather than correctness, keep `t.Parallel()` and gate the
 expensive section with a package-level `golang.org/x/sync/semaphore.Weighted`
 instead of serializing the whole test.
 
+- E2e processes must stop private tmux servers before bounded graceful shutdown;
+  Go defers and Node `exit` callbacks cannot clean up after forced termination
+  (`cmd/e2e-server/main.go::appState.stopTmux`).
+- Playwright workers share one run-owned socket directory; new runs reap those
+  whose recorded owner PID is dead
+  (`frontend/tests/e2e-full/support/e2eServer.ts::ensureE2ETmuxDir`).
+- Real-tmux Go test binaries install signal cleanup because termination skips
+  code after `m.Run` and `t.Cleanup` (`internal/testutil/testsignal.Install`).
+
 Windows test binaries that launch restart-durable PTY processes must contain
 their descendants in a kill-on-close Job Object; test timeouts bypass normal
 Go cleanup (`internal/testutil/processjob/processjob_windows.go::ContainCurrentProcessTree`).

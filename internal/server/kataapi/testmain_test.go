@@ -28,13 +28,13 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "cleanup isolated Kata API test tmux: %v\n", err)
 	})
 	code := gitsafe.RunIsolatedMain(m)
-	stopSignalCleanup()
 	if err := runCleanup(); err != nil {
 		fmt.Fprintf(os.Stderr, "cleanup isolated Kata API test tmux: %v\n", err)
 		if code == 0 {
 			code = 1
 		}
 	}
+	stopSignalCleanup()
 	os.Exit(code)
 }
 

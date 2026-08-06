@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
-import { access, cp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { access, cp, lstat, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -58,6 +58,7 @@ const gracefulStopTimeoutMs = 15_000;
 type ManagedChildLike = {
   pid?: number | undefined;
   exitCode: number | null;
+  signalCode?: NodeJS.Signals | null | undefined;
 };
 
 type OwnedServerProcess = {
@@ -71,6 +72,7 @@ let cleanupInstalled = false;
 let ownedTmuxDir: string | null = null;
 let signalCleanupStarted = false;
 const standaloneServers = new Set<OwnedServerProcess>();
+const startingServers = new Set<ChildProcess>();
 
 type E2ETmuxOwner = {
   pid: number;
@@ -92,6 +94,22 @@ function isPrivateE2ETmuxDir(dir: string): boolean {
   return path.dirname(dir) === tmuxBaseDir && path.basename(dir).startsWith(tmuxDirPrefix);
 }
 
+export function isCurrentUserOwned(stats: { uid: number }): boolean {
+  return process.getuid === undefined || stats.uid === process.getuid();
+}
+
+async function isCurrentUserOwnedPath(
+  candidate: string,
+  matchesType: (stats: Awaited<ReturnType<typeof lstat>>) => boolean,
+): Promise<boolean> {
+  try {
+    const stats = await lstat(candidate);
+    return isCurrentUserOwned(stats) && matchesType(stats);
+  } catch {
+    return false;
+  }
+}
+
 async function killTmuxSocket(socket: string): Promise<boolean> {
   return await new Promise<boolean>((resolve) => {
     const child = spawn("tmux", ["-f", "/dev/null", "-S", socket, "kill-server"], {
@@ -109,28 +127,48 @@ async function killTmuxSocket(socket: string): Promise<boolean> {
       finish(false);
     }, 5_000);
     child.once("error", () => finish(false));
-    child.once("exit", () => finish(true));
+    child.once("exit", (code) => finish(code === 0));
   });
 }
 
-async function cleanupE2ETmuxDir(dir: string): Promise<void> {
+export async function cleanupE2ETmuxDir(dir: string): Promise<boolean> {
   if (!isPrivateE2ETmuxDir(dir)) {
-    return;
+    return false;
+  }
+  try {
+    const stats = await lstat(dir);
+    if (!isCurrentUserOwned(stats) || !stats.isDirectory()) {
+      return false;
+    }
+  } catch (error) {
+    return error instanceof Error && "code" in error && error.code === "ENOENT";
+  }
+  if (!(await isCurrentUserOwnedPath(path.join(dir, tmuxOwnerFile), (stats) => stats.isFile()))) {
+    return false;
   }
   let entries;
   try {
     entries = await readdir(dir, { withFileTypes: true });
   } catch {
-    return;
+    return false;
   }
+  const sockets = entries.filter(
+    (entry) => entry.isSocket() && entry.name.startsWith("mm-e2e-") && entry.name.endsWith(".sock"),
+  );
   const stopped = await Promise.all(
-    entries
-      .filter((entry) => entry.isSocket() && entry.name.startsWith("mm-e2e-") && entry.name.endsWith(".sock"))
-      .map((entry) => killTmuxSocket(path.join(dir, entry.name))),
+    sockets.map(async (entry) => {
+      const socket = path.join(dir, entry.name);
+      if (!(await isCurrentUserOwnedPath(socket, (stats) => stats.isSocket()))) {
+        return false;
+      }
+      return await killTmuxSocket(socket);
+    }),
   );
   if (stopped.every(Boolean)) {
     await rm(dir, { force: true, recursive: true });
+    return true;
   }
+  return false;
 }
 
 async function reapStaleE2ETmuxDirs(): Promise<void> {
@@ -145,8 +183,14 @@ async function reapStaleE2ETmuxDirs(): Promise<void> {
       continue;
     }
     const dir = path.join(tmuxBaseDir, entry.name);
+    if (!(await isCurrentUserOwnedPath(dir, (stats) => stats.isDirectory()))) {
+      continue;
+    }
     let owner: E2ETmuxOwner;
     try {
+      if (!(await isCurrentUserOwnedPath(path.join(dir, tmuxOwnerFile), (stats) => stats.isFile()))) {
+        continue;
+      }
       const parsed: unknown = JSON.parse(await readFile(path.join(dir, tmuxOwnerFile), "utf8"));
       if (typeof parsed !== "object" || parsed === null || !("pid" in parsed) || typeof parsed.pid !== "number") {
         continue;
@@ -164,7 +208,7 @@ async function reapStaleE2ETmuxDirs(): Promise<void> {
 async function ensureE2ETmuxDir(): Promise<string> {
   const inherited = process.env[tmuxDirEnvVar]?.trim();
   if (inherited) {
-    if (!isPrivateE2ETmuxDir(inherited)) {
+    if (!isPrivateE2ETmuxDir(inherited) || !(await isCurrentUserOwnedPath(inherited, (stats) => stats.isDirectory()))) {
       throw new Error(`${tmuxDirEnvVar} must name a private ${tmuxDirPrefix} directory under ${tmuxBaseDir}`);
     }
     return inherited;
@@ -384,7 +428,7 @@ export async function getReusableServerInfo(filePath: string): Promise<E2EServer
 
 export async function waitForServerInfo(
   filePath: string,
-  child: Pick<ManagedChildLike, "exitCode">,
+  child: Pick<ManagedChildLike, "exitCode" | "signalCode">,
 ): Promise<E2EServerInfo> {
   const deadline = Date.now() + startupTimeoutMs;
   while (Date.now() < deadline) {
@@ -392,8 +436,9 @@ export async function waitForServerInfo(
     if (info && (await isServerReachable(info.base_url))) {
       return info;
     }
-    if (child.exitCode !== null) {
-      throw new Error(`e2e server exited with code ${child.exitCode} before becoming ready from ${filePath}`);
+    if (childHasExited(child)) {
+      const outcome = child.exitCode ?? child.signalCode ?? "unknown";
+      throw new Error(`e2e server exited with ${outcome} before becoming ready from ${filePath}`);
     }
     await delay(pollIntervalMs);
   }
@@ -431,7 +476,11 @@ async function spawnServer(
   child: ChildProcess;
   info: E2EServerInfo;
 }> {
+  installCleanup();
   await ensureE2ETmuxDir();
+  if (signalCleanupStarted) {
+    throw new Error("e2e server shutdown started before spawn");
+  }
   const invocation = e2eServerCommand(infoFile);
   if (!invocation.prebuilt) {
     await ensureEmbeddedFrontend();
@@ -459,11 +508,24 @@ async function spawnServer(
     stdio: "inherit",
     env: process.env,
   });
+  startingServers.add(child);
 
-  return {
-    child,
-    info: await waitForServerInfo(infoFile, child),
-  };
+  try {
+    const info = await waitForServerInfo(infoFile, child);
+    if (signalCleanupStarted) {
+      await terminateServerProcess(child, info.pid);
+      throw new Error("e2e server shutdown started during spawn");
+    }
+    return { child, info };
+  } catch (error) {
+    startingServers.delete(child);
+    await terminateServerProcess(child, undefined);
+    throw error;
+  }
+}
+
+function childHasExited(child: ManagedChildLike): boolean {
+  return child.exitCode !== null || child.signalCode != null;
 }
 
 export function cleanupManagedServerProcess(
@@ -471,7 +533,7 @@ export function cleanupManagedServerProcess(
   infoFile: string | undefined = process.env.PLAYWRIGHT_E2E_SERVER_INFO_FILE,
 ): void {
   const serverPID = infoFile ? readServerInfoSync(infoFile)?.pid : undefined;
-  const fallbackPID = child?.exitCode === null ? child.pid : undefined;
+  const fallbackPID = child && !childHasExited(child) ? child.pid : undefined;
   const pid = serverPID ?? fallbackPID;
   if (!pid) {
     return;
@@ -485,7 +547,7 @@ export function cleanupManagedServerProcess(
 }
 
 function waitForChildExit(child: ChildProcess, timeoutMs: number): Promise<boolean> {
-  if (child.exitCode !== null) {
+  if (childHasExited(child)) {
     return Promise.resolve(true);
   }
   return new Promise<boolean>((resolve) => {
@@ -503,23 +565,31 @@ function waitForChildExit(child: ChildProcess, timeoutMs: number): Promise<boole
   });
 }
 
-export async function terminateServerProcess(child: ChildProcess | null, serverPID: number | undefined): Promise<void> {
-  if (child && child.exitCode !== null) {
+function signalServerProcess(child: ChildProcess | null, serverPID: number | undefined): boolean {
+  if (child && childHasExited(child)) {
+    return false;
+  }
+  const pid = serverPID ?? child?.pid;
+  if (!pid) {
+    return false;
+  }
+  try {
+    process.kill(pid, "SIGTERM");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function terminateServerProcess(
+  child: ChildProcess | null,
+  serverPID: number | undefined,
+  alreadySignaled = false,
+): Promise<void> {
+  if (child && childHasExited(child)) {
     return;
   }
-  if (serverPID) {
-    try {
-      process.kill(serverPID, "SIGTERM");
-    } catch {
-      return;
-    }
-  } else if (child?.pid) {
-    try {
-      process.kill(child.pid, "SIGTERM");
-    } catch {
-      return;
-    }
-  } else {
+  if (!alreadySignaled && !signalServerProcess(child, serverPID)) {
     return;
   }
 
@@ -542,53 +612,72 @@ async function cleanupOwnedTmuxDir(): Promise<void> {
     return;
   }
   const dir = ownedTmuxDir;
-  ownedTmuxDir = null;
-  delete process.env[tmuxDirEnvVar];
-  await cleanupE2ETmuxDir(dir);
+  if (await cleanupE2ETmuxDir(dir)) {
+    ownedTmuxDir = null;
+    delete process.env[tmuxDirEnvVar];
+  }
 }
 
-async function shutdownPooledServers(): Promise<void> {
-  const servers = isolatedPool.splice(0);
-  await Promise.all(servers.map((server) => terminateServerProcess(server.child, server.info.pid)));
+function noOwnedServersRemain(): boolean {
+  return !managedChild && startingServers.size === 0 && isolatedPool.length === 0 && standaloneServers.size === 0;
 }
 
-async function shutdownStandaloneServers(): Promise<void> {
-  const servers = [...standaloneServers];
-  standaloneServers.clear();
-  await Promise.all(servers.map((server) => terminateServerProcess(server.child, server.info.pid)));
+async function cleanupOwnedTmuxDirIfIdle(): Promise<void> {
+  if (noOwnedServersRemain()) {
+    await cleanupOwnedTmuxDir();
+  }
 }
 
-async function shutdownOwnedServers(): Promise<void> {
+export async function shutdownOwnedServers(): Promise<void> {
   const filePath = managedChild ? process.env.PLAYWRIGHT_E2E_SERVER_INFO_FILE : undefined;
   const info = filePath ? readServerInfoSync(filePath) : null;
-  // The shared socket directory is the outer Playwright process's
-  // authoritative ownership record. Reap it before waiting on child shutdown
-  // so a stuck or force-killed worker cannot strand a daemonized tmux server.
-  await cleanupOwnedTmuxDir();
-  await Promise.all([
-    managedChild ? terminateServerProcess(managedChild, info?.pid) : Promise.resolve(),
-    shutdownPooledServers(),
-    shutdownStandaloneServers(),
-  ]);
+  const tmuxDir = ownedTmuxDir;
+  const servers = [
+    ...[...startingServers].map((child) => ({ child, serverPID: undefined })),
+    ...(managedChild ? [{ child: managedChild, serverPID: info?.pid }] : []),
+    ...isolatedPool.map((server) => ({ child: server.child, serverPID: server.info.pid })),
+    ...[...standaloneServers].map((server) => ({ child: server.child, serverPID: server.info.pid })),
+  ];
+
+  startingServers.clear();
+  isolatedPool.length = 0;
+  standaloneServers.clear();
   managedChild = null;
+  for (const server of servers) {
+    signalServerProcess(server.child, server.serverPID);
+  }
+  if (tmuxDir) {
+    await cleanupE2ETmuxDir(tmuxDir);
+  }
+  await Promise.all(servers.map((server) => terminateServerProcess(server.child, server.serverPID, true)));
+  if (tmuxDir) {
+    const removed = await cleanupE2ETmuxDir(tmuxDir);
+    if (removed && ownedTmuxDir === tmuxDir) {
+      ownedTmuxDir = null;
+      delete process.env[tmuxDirEnvVar];
+    }
+  }
   if (filePath) {
     await removeServerInfo(filePath);
   }
 }
 
-function installCleanup(infoFile: string): void {
+function installCleanup(): void {
   if (cleanupInstalled) {
     return;
   }
   cleanupInstalled = true;
 
   const cleanupImmediately = () => {
-    cleanupManagedServerProcess(managedChild, infoFile);
+    cleanupManagedServerProcess(managedChild);
+    for (const child of startingServers) {
+      signalServerProcess(child, undefined);
+    }
     for (const server of isolatedPool) {
       killPooledServerProcess(server);
     }
     for (const server of standaloneServers) {
-      if (server.child.exitCode === null) {
+      if (!childHasExited(server.child)) {
         try {
           process.kill(server.info.pid, "SIGTERM");
         } catch {
@@ -619,8 +708,7 @@ async function cleanupAfterSignal(exitCode: number): Promise<void> {
 async function startManagedServer(): Promise<E2EServerInfo> {
   const started = await spawnServer(serverInfoFile, { visibleImportedModes: true });
   managedChild = started.child;
-
-  installCleanup(serverInfoFile);
+  startingServers.delete(started.child);
 
   const info = started.info;
   process.env.PLAYWRIGHT_E2E_BASE_URL = info.base_url;
@@ -694,9 +782,10 @@ export async function stopE2EServer(): Promise<void> {
     return;
   }
 
-  const info = await readServerInfo(filePath);
-  await cleanupOwnedTmuxDir();
-  await terminateServerProcess(managedChild, info?.pid);
+  if (!managedChild) {
+    await terminateServerProcess(null, (await readServerInfo(filePath))?.pid);
+  }
+  await shutdownOwnedServers();
 
   await removeServerInfo(filePath);
   delete process.env[ownedServerEnvVar];
@@ -786,7 +875,7 @@ function samePooledOptions(a: PooledServerOptions, b: PooledServerOptions): bool
 const isolatedPool: PooledServer[] = [];
 
 function installPoolCleanup(): void {
-  installCleanup(serverInfoFile);
+  installCleanup();
 }
 
 async function postReset(baseURL: string, options: PooledServerOptions): Promise<E2EServerInfo> {
@@ -841,7 +930,7 @@ async function resetPooledServer(server: PooledServer, options: PooledServerOpti
 // has exited, the server's reported PID may already have been reused
 // by an unrelated process, and signalling it would be unsafe.
 function killPooledServerProcess(server: PooledServer): void {
-  if (server.child.exitCode !== null) {
+  if (childHasExited(server.child)) {
     return;
   }
   try {
@@ -882,6 +971,7 @@ async function spawnPooledServer(options: PooledServerOptions): Promise<PooledSe
     options,
   };
   isolatedPool.push(server);
+  startingServers.delete(started.child);
   installPoolCleanup();
   return server;
 }
@@ -901,6 +991,7 @@ export async function startIsolatedE2EServerWithOptions(
       started.info = await postReset(started.info.base_url, normalizedPooledOptions(options));
     }
     standaloneServers.add(started);
+    startingServers.delete(started.child);
     return {
       info: started.info,
       stop: async () => {
@@ -908,7 +999,7 @@ export async function startIsolatedE2EServerWithOptions(
         await terminateServerProcess(started.child, started.info.pid);
         await removeServerInfo(infoFile);
         await rm(infoDir, { force: true, recursive: true });
-        await cleanupOwnedTmuxDir();
+        await cleanupOwnedTmuxDirIfIdle();
       },
     };
   }
@@ -927,7 +1018,7 @@ export async function startIsolatedE2EServerWithOptions(
       }
       // The server may have died while idle (crash, OOM, external
       // kill); never hand out a dead base_url.
-      if (candidate.child.exitCode !== null || !(await isServerReachable(candidate.info.base_url))) {
+      if (childHasExited(candidate.child) || !(await isServerReachable(candidate.info.base_url))) {
         throw new Error("pooled e2e server is no longer reachable");
       }
       if (!samePooledOptions(candidate.options, desired)) {

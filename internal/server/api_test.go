@@ -99,13 +99,13 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "cleanup kenn-forge test tmux sessions: %v\n", err)
 	})
 	code := gitsafe.RunIsolatedMain(m)
-	stopSignalCleanup()
 	if err := runCleanup(); err != nil {
 		fmt.Fprintf(os.Stderr, "cleanup kenn-forge test tmux sessions: %v\n", err)
 		if code == 0 {
 			code = 1
 		}
 	}
+	stopSignalCleanup()
 	if envDirErr == nil {
 		_ = os.RemoveAll(envDir)
 	}

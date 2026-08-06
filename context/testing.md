@@ -368,6 +368,9 @@ instead of serializing the whole test.
 - Playwright workers share one run-owned socket directory; new runs reap those
   whose recorded owner PID is dead
   (`frontend/tests/e2e-full/support/e2eServer.ts::ensureE2ETmuxDir`).
+- Stale recovery may connect only to tmux roots, owner files, and sockets owned
+  by the current user; matching a private test name is not ownership
+  (`frontend/tests/e2e-full/support/e2eServer.ts::cleanupE2ETmuxDir`).
 - Real-tmux Go test binaries install signal cleanup because termination skips
   code after `m.Run` and `t.Cleanup` (`internal/testutil/testsignal.Install`).
 

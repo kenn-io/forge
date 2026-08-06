@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import { spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, utimesSync, writeFileSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { chmodSync, mkdirSync, mkdtempSync, utimesSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
-import { readFile, stat } from "node:fs/promises";
+import { readFile, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -18,6 +18,69 @@ function writeFakeVitePlus(rootDir: string, body: string): void {
   writeFileSync(path.join(vitePlusBin, "vp"), body, {
     flag: "wx",
   });
+}
+
+function writeFakeE2EServer(rootDir: string): string {
+  const serverPath = path.join(rootDir, "fake-e2e-server");
+  writeFileSync(
+    serverPath,
+    `#!/usr/bin/env node
+const { spawnSync } = require("node:child_process");
+const { mkdirSync, writeFileSync } = require("node:fs");
+const { createServer } = require("node:http");
+const path = require("node:path");
+
+const infoFlag = process.argv.indexOf("-server-info-file");
+const infoFile = process.argv[infoFlag + 1];
+const server = createServer((_req, response) => {
+  response.writeHead(200);
+  response.end("ok");
+});
+
+writeFileSync(process.env.FAKE_E2E_STARTED_FILE, String(process.pid));
+server.listen(0, "127.0.0.1", () => {
+  const address = server.address();
+  const publish = () => writeFileSync(infoFile, JSON.stringify({
+    host: "127.0.0.1",
+    port: address.port,
+    base_url: "http://127.0.0.1:" + address.port,
+    pid: process.pid,
+  }));
+  setTimeout(publish, Number(process.env.FAKE_E2E_READY_DELAY_MS || "0"));
+});
+
+process.on("SIGTERM", () => {
+  const finish = () => server.close(() => process.exit(0));
+  if (process.env.FAKE_E2E_CREATE_LATE_TMUX === "1") {
+    setTimeout(() => {
+      const dir = process.env.PLAYWRIGHT_E2E_TMUX_DIR;
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(path.join(dir, "owner.json"), JSON.stringify({ pid: process.ppid }));
+      const result = spawnSync("tmux", [
+        "-f", "/dev/null", "-S", path.join(dir, "mm-e2e-late.sock"),
+        "new-session", "-d", "-s", "late", "sleep", "30",
+      ]);
+      writeFileSync(process.env.FAKE_E2E_LATE_MARKER, String(result.status));
+      finish();
+    }, 100);
+    return;
+  }
+  finish();
+});
+`,
+  );
+  chmodSync(serverPath, 0o755);
+  return serverPath;
+}
+
+async function waitForFile(filePath: string): Promise<void> {
+  const deadline = Date.now() + 5_000;
+  while (!(await fileExists(filePath))) {
+    if (Date.now() >= deadline) {
+      throw new Error(`timed out waiting for ${filePath}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
 }
 
 async function fileExists(filePath: string): Promise<boolean> {
@@ -537,6 +600,128 @@ describe("terminateServerProcess", () => {
     await e2eServerModule.terminateServerProcess(child, child.pid);
 
     expect(child.exitCode).toBe(0);
+  });
+
+  it("does not signal a child that already exited from a signal", async () => {
+    const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
+      stdio: "ignore",
+    });
+    await new Promise<void>((resolve, reject) => {
+      child.once("spawn", resolve);
+      child.once("error", reject);
+    });
+    child.kill("SIGTERM");
+    await new Promise<void>((resolve) => child.once("exit", () => resolve()));
+    expect(child.signalCode).toBe("SIGTERM");
+
+    const killSpy = vi.spyOn(process, "kill").mockImplementation(() => true);
+    await e2eServerModule.terminateServerProcess(child, child.pid);
+
+    expect(killSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("private tmux ownership", () => {
+  it("rejects a stale path owned by another local user", () => {
+    if (process.getuid === undefined) {
+      return;
+    }
+    expect(e2eServerModule.isCurrentUserOwned({ uid: process.getuid() + 1 })).toBe(false);
+  });
+
+  it("keeps the socket directory when tmux cleanup fails", async () => {
+    if (process.platform === "win32") {
+      return;
+    }
+    const dir = mkdtempSync("/tmp/kf-e2e-tmux-");
+    const socket = path.join(dir, "mm-e2e-failed.sock");
+    writeFileSync(path.join(dir, "owner.json"), JSON.stringify({ pid: 999_999 }), { mode: 0o600 });
+    const socketServer = createServer();
+    await new Promise<void>((resolve, reject) => {
+      socketServer.once("error", reject);
+      socketServer.listen(socket, () => resolve());
+    });
+
+    const binDir = mkdtempSync(path.join(os.tmpdir(), "e2e-fake-bin-"));
+    const fakeTmux = path.join(binDir, "tmux");
+    writeFileSync(fakeTmux, "#!/bin/sh\nexit 1\n");
+    chmodSync(fakeTmux, 0o755);
+    process.env.PATH = `${binDir}${path.delimiter}${process.env.PATH ?? ""}`;
+
+    try {
+      await e2eServerModule.cleanupE2ETmuxDir(dir);
+      expect(await fileExists(dir)).toBe(true);
+    } finally {
+      await new Promise<void>((resolve) => socketServer.close(() => resolve()));
+      await rm(dir, { force: true, recursive: true });
+      await rm(binDir, { force: true, recursive: true });
+    }
+  });
+});
+
+describe("owned server lifecycle", () => {
+  it("does not remove a shared tmux directory while another fresh server is active", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "e2e-server-test-"));
+    process.env.PLAYWRIGHT_E2E_SERVER_BINARY = writeFakeE2EServer(dir);
+    process.env.FAKE_E2E_STARTED_FILE = path.join(dir, "started");
+    delete process.env.PLAYWRIGHT_E2E_TMUX_DIR;
+
+    const first = await e2eServerModule.startIsolatedE2EServerWithOptions({ freshProcess: true });
+    const second = await e2eServerModule.startIsolatedE2EServerWithOptions({ freshProcess: true });
+    const tmuxDir = process.env.PLAYWRIGHT_E2E_TMUX_DIR;
+    expect(tmuxDir).toBeTruthy();
+
+    try {
+      await first.stop();
+      expect(await fileExists(tmuxDir ?? "")).toBe(true);
+    } finally {
+      await second.stop();
+      await rm(dir, { force: true, recursive: true });
+    }
+  });
+
+  it("terminates a fresh server that has not published readiness", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "e2e-server-test-"));
+    const startedFile = path.join(dir, "started");
+    process.env.PLAYWRIGHT_E2E_SERVER_BINARY = writeFakeE2EServer(dir);
+    process.env.FAKE_E2E_STARTED_FILE = startedFile;
+    process.env.FAKE_E2E_READY_DELAY_MS = "60000";
+    delete process.env.PLAYWRIGHT_E2E_TMUX_DIR;
+
+    const starting = e2eServerModule.startIsolatedE2EServerWithOptions({ freshProcess: true });
+    await waitForFile(startedFile);
+    const childPID = Number.parseInt(await readFile(startedFile, "utf8"), 10);
+
+    await e2eServerModule.shutdownOwnedServers();
+
+    await expect(starting).rejects.toThrow(/exited/);
+    expect(() => process.kill(childPID, 0)).toThrow();
+    expect(process.env.PLAYWRIGHT_E2E_TMUX_DIR).toBeUndefined();
+    await rm(dir, { force: true, recursive: true });
+  });
+
+  it("reaps a tmux socket created while a server is shutting down", async () => {
+    if (process.platform === "win32" || spawnSync("tmux", ["-V"], { stdio: "ignore" }).status !== 0) {
+      return;
+    }
+    const dir = mkdtempSync(path.join(os.tmpdir(), "e2e-server-test-"));
+    process.env.PLAYWRIGHT_E2E_SERVER_BINARY = writeFakeE2EServer(dir);
+    process.env.FAKE_E2E_STARTED_FILE = path.join(dir, "started");
+    process.env.FAKE_E2E_CREATE_LATE_TMUX = "1";
+    const lateMarker = path.join(dir, "late-created");
+    process.env.FAKE_E2E_LATE_MARKER = lateMarker;
+    delete process.env.PLAYWRIGHT_E2E_TMUX_DIR;
+
+    await e2eServerModule.startIsolatedE2EServerWithOptions({ freshProcess: true });
+    const tmuxDir = process.env.PLAYWRIGHT_E2E_TMUX_DIR;
+    expect(tmuxDir).toBeTruthy();
+
+    await e2eServerModule.shutdownOwnedServers();
+
+    await expect(readFile(lateMarker, "utf8")).resolves.toBe("0");
+    expect(await fileExists(tmuxDir ?? "")).toBe(false);
+    expect(process.env.PLAYWRIGHT_E2E_TMUX_DIR).toBeUndefined();
+    await rm(dir, { force: true, recursive: true });
   });
 });
 

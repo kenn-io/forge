@@ -72,11 +72,11 @@ immutable git history is a pure function of that key, so the memo needs no
 invalidation and cannot be corrupted by concurrent rounds: a hit replaces
 only the ancestry walk and its verdicts flow through the identical flag
 injection as a fresh computation, so a hit can never skip a needed write.
-Only verified walks are memoized. Both structures hold provider-controlled
-input and are bounded: rounds whose candidate set exceeds a cap (4096) skip
-liveness like an unverifiable head, and the memo holds a capped number of MR
-entries (1024) with arbitrary eviction — a miss only costs one budget-capped
-walk.
+Only verified walks are memoized. The memo holds provider-controlled input
+and is bounded on both axes: at most 1024 MR entries with least-recently-used
+eviction, and candidate sets larger than 4096 are computed normally every
+round but never memoized. Neither bound affects flag correctness — a miss or
+an unmemoized round only costs one budget-capped walk.
 
 When the clone is unavailable or lacks the round's head, the round commits
 its events without liveness updates: provider-listed commits still receive

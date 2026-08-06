@@ -657,11 +657,12 @@ func TestCommitLivenessConcurrentMergeRequests(t *testing.T) {
 	})
 }
 
-func TestCommitLivenessCandidateCapSkipsRound(t *testing.T) {
+func TestCommitLivenessOversizedCandidatesComputeWithoutMemo(t *testing.T) {
+	assert := assert.New(t)
 	fixture := setupCommitLivenessFixture(t)
 	h := fixture.history
-	// Pre-flag a live commit as obsolete: only a real computation would
-	// clear it, so it distinguishes "skipped" from "computed".
+	// Pre-flag a live commit as obsolete: only a real computation clears it,
+	// so it proves oversized rounds still compute.
 	require.NoError(t, fixture.database.UpsertMREvents(t.Context(), []db.MREvent{{
 		MergeRequestID: fixture.mrID,
 		EventType:      "commit",
@@ -673,20 +674,18 @@ func TestCommitLivenessCandidateCapSkipsRound(t *testing.T) {
 	seedLivenessCommitEvents(t, fixture, h.a1, h.b2)
 	setLivenessFixtureHead(t, fixture, h.b2)
 
-	// Three candidates exceed a cap of two: the round commits without
-	// liveness changes, exactly like an unverifiable head.
+	// Three candidates exceed a cap of two: the round computes and repairs
+	// exactly like any other round — the cap only forgoes memoization, so
+	// oversized MRs never freeze at stale flags.
 	fixture.syncer.livenessCandidateLimit = 2
-	require.True(t, runLivenessRound(t, fixture, h.b2, nil))
-	assertLivenessCommitFlags(t, fixture, map[string]bool{
-		h.b1: true, h.a1: false, h.b2: false,
-	})
-
-	// Raising the cap lets the next round compute and repair.
-	fixture.syncer.livenessCandidateLimit = 0
 	require.True(t, runLivenessRound(t, fixture, h.b2, nil))
 	assertLivenessCommitFlags(t, fixture, map[string]bool{
 		h.b1: false, h.a1: true, h.b2: false,
 	})
+	fixture.syncer.livenessMemoMu.Lock()
+	memoLen := len(fixture.syncer.livenessMemos)
+	fixture.syncer.livenessMemoMu.Unlock()
+	assert.Equal(0, memoLen, "oversized candidate sets must not be memoized")
 }
 
 func TestCommitLivenessMemoEviction(t *testing.T) {
@@ -742,6 +741,73 @@ func TestCommitLivenessMemoEviction(t *testing.T) {
 	assertLivenessCommitFlags(t, secondFixture, map[string]bool{
 		h.a1: true, h.b2: false,
 	})
+}
+
+func TestCommitLivenessMemoEvictsLeastRecentlyUsed(t *testing.T) {
+	assert := assert.New(t)
+	fixture := setupCommitLivenessFixture(t)
+	h := fixture.history
+	fixture.syncer.livenessMemoLimit = 2
+
+	first, err := fixture.database.GetMergeRequestByRepoIDAndNumber(
+		t.Context(), fixture.repoID, 1,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, first)
+	cloneMR := func(number int, platformID int64) int64 {
+		t.Helper()
+		mr := *first
+		mr.ID = 0
+		mr.PlatformID = platformID
+		mr.PlatformExternalID = fmt.Sprintf("mr-%d", number)
+		mr.Number = number
+		mr.URL = fmt.Sprintf("https://github.com/owner/repo/pull/%d", number)
+		mr.UpdatedAt = mr.UpdatedAt.Add(time.Duration(number) * time.Minute)
+		mr.LastActivityAt = mr.UpdatedAt
+		id, err := fixture.database.UpsertMergeRequest(t.Context(), &mr)
+		require.NoError(t, err)
+		return id
+	}
+	secondMRID := cloneMR(2, 2)
+	thirdMRID := cloneMR(3, 3)
+	seedLivenessCommitEvents(t, fixture, h.a1)
+	secondFixture := fixture
+	secondFixture.mrID = secondMRID
+	seedLivenessCommitEvents(t, secondFixture, h.a2)
+	thirdFixture := fixture
+	thirdFixture.mrID = thirdMRID
+	seedLivenessCommitEvents(t, thirdFixture, h.a3)
+
+	round := func(mrID int64, number int) {
+		t.Helper()
+		row, err := fixture.database.GetMergeRequestByRepoIDAndNumber(
+			t.Context(), fixture.repoID, number,
+		)
+		require.NoError(t, err)
+		require.NotNil(t, row)
+		_, err = fixture.syncer.commitMergeRequestDatasets(
+			t.Context(), fixture.repo, mrID, number, row.SnapshotRevision,
+			nil, false, nil, nil, nil, false, nil, nil, h.a3,
+		)
+		require.NoError(t, err)
+	}
+	memoKeys := func() map[int64]bool {
+		fixture.syncer.livenessMemoMu.Lock()
+		defer fixture.syncer.livenessMemoMu.Unlock()
+		keys := make(map[int64]bool, len(fixture.syncer.livenessMemos))
+		for mrID := range fixture.syncer.livenessMemos {
+			keys[mrID] = true
+		}
+		return keys
+	}
+
+	// Fill the memo (MR1, MR2), then touch MR1 so MR2 becomes the
+	// least-recently-used entry; adding MR3 must evict MR2, not MR1.
+	round(fixture.mrID, 1)
+	round(secondMRID, 2)
+	round(fixture.mrID, 1)
+	round(thirdMRID, 3)
+	assert.Equal(map[int64]bool{fixture.mrID: true, thirdMRID: true}, memoKeys())
 }
 
 func TestCommitLivenessConcurrentSameMergeRequestRounds(t *testing.T) {

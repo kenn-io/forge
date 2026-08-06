@@ -1,6 +1,7 @@
 package github
 
 import (
+	"container/list"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
@@ -222,11 +223,18 @@ type commitLivenessMemo struct {
 	live map[string]bool
 }
 
-// Candidate sets and the memo hold provider-controlled input (every force
-// push accumulates commit events), so both are bounded: an MR whose stored
-// commit events exceed the candidate cap skips liveness for the round exactly
-// like an unverifiable head, and a full memo evicts an arbitrary entry — a
-// miss only costs one budget-capped walk.
+// commitLivenessMemoEntry is the LRU list payload for one MR's memo.
+type commitLivenessMemoEntry struct {
+	mrID int64
+	memo commitLivenessMemo
+}
+
+// The memo retains provider-controlled input (candidate sets grow with every
+// force push), so it is bounded on both axes: at most defaultLivenessMemoLimit
+// MR entries with least-recently-used eviction, and results for candidate
+// sets larger than defaultLivenessCandidateLimit are computed normally but
+// never memoized. Neither bound affects flag correctness — a miss or an
+// unmemoized round only costs one budget-capped walk.
 const (
 	defaultLivenessCandidateLimit = 4096
 	defaultLivenessMemoLimit      = 1024
@@ -287,12 +295,7 @@ func (s *Syncer) computeCommitLiveness(
 	if candidateLimit <= 0 {
 		candidateLimit = defaultLivenessCandidateLimit
 	}
-	if len(candidateSHAs) > candidateLimit {
-		slog.Warn("commit liveness: candidate set exceeds cap, skipping round",
-			"repo", repo.Owner+"/"+repo.Name, "mr", mrID,
-			"candidates", len(candidateSHAs), "cap", candidateLimit)
-		return nil
-	}
+	memoizable := len(candidateSHAs) <= candidateLimit
 
 	memoKey := livenessMemoKey(headSHA, candidateSHAs)
 	live, hit := s.livenessMemoLookup(mrID, memoKey)
@@ -310,7 +313,9 @@ func (s *Syncer) computeCommitLiveness(
 			return nil
 		}
 		live = reach.Live
-		s.livenessMemoStore(mrID, memoKey, live)
+		if memoizable {
+			s.livenessMemoStore(mrID, memoKey, live)
+		}
 	}
 
 	incomingKeys := make(map[string]bool, len(incoming))
@@ -368,30 +373,46 @@ func livenessMemoKey(headSHA string, candidateSHAs []string) string {
 func (s *Syncer) livenessMemoLookup(mrID int64, key string) (map[string]bool, bool) {
 	s.livenessMemoMu.Lock()
 	defer s.livenessMemoMu.Unlock()
-	memo, ok := s.livenessMemos[mrID]
-	if !ok || memo.key != key {
+	elem, ok := s.livenessMemos[mrID]
+	if !ok {
 		return nil, false
 	}
-	return memo.live, true
+	entry := elem.Value.(*commitLivenessMemoEntry)
+	if entry.memo.key != key {
+		return nil, false
+	}
+	s.livenessMemoLRU.MoveToFront(elem)
+	return entry.memo.live, true
 }
 
 func (s *Syncer) livenessMemoStore(mrID int64, key string, live map[string]bool) {
 	s.livenessMemoMu.Lock()
 	defer s.livenessMemoMu.Unlock()
 	if s.livenessMemos == nil {
-		s.livenessMemos = make(map[int64]commitLivenessMemo)
+		s.livenessMemos = make(map[int64]*list.Element)
+		s.livenessMemoLRU = list.New()
+	}
+	memo := commitLivenessMemo{key: key, live: live}
+	if elem, exists := s.livenessMemos[mrID]; exists {
+		elem.Value.(*commitLivenessMemoEntry).memo = memo
+		s.livenessMemoLRU.MoveToFront(elem)
+		return
 	}
 	limit := s.livenessMemoLimit
 	if limit <= 0 {
 		limit = defaultLivenessMemoLimit
 	}
-	if _, exists := s.livenessMemos[mrID]; !exists && len(s.livenessMemos) >= limit {
-		for evict := range s.livenessMemos {
-			delete(s.livenessMemos, evict)
+	for s.livenessMemoLRU.Len() >= limit {
+		oldest := s.livenessMemoLRU.Back()
+		if oldest == nil {
 			break
 		}
+		s.livenessMemoLRU.Remove(oldest)
+		delete(s.livenessMemos, oldest.Value.(*commitLivenessMemoEntry).mrID)
 	}
-	s.livenessMemos[mrID] = commitLivenessMemo{key: key, live: live}
+	s.livenessMemos[mrID] = s.livenessMemoLRU.PushFront(
+		&commitLivenessMemoEntry{mrID: mrID, memo: memo},
+	)
 }
 
 func commitOrderSHA(summary string) string {
@@ -743,9 +764,10 @@ type Syncer struct {
 	now                      func() time.Time
 	clones                   *gitclone.Manager
 	livenessMemoMu           sync.Mutex
-	livenessMemos            map[int64]commitLivenessMemo // memoized verified reachability; see computeCommitLiveness
-	livenessMemoLimit        int                          // max memo entries; 0 = defaultLivenessMemoLimit
-	livenessCandidateLimit   int                          // max candidate SHAs per round; 0 = defaultLivenessCandidateLimit
+	livenessMemos            map[int64]*list.Element // memoized verified reachability (LRU); see computeCommitLiveness
+	livenessMemoLRU          *list.List              // recency order for livenessMemos; front = most recent
+	livenessMemoLimit        int                     // max memo entries; 0 = defaultLivenessMemoLimit
+	livenessCandidateLimit   int                     // max memoizable candidate SHAs; 0 = defaultLivenessCandidateLimit
 	rateTrackers             map[string]*RateTracker // provider/host bucket -> tracker
 	writeRateTrackers        map[string]*RateTracker // provider/host bucket -> mutation-credential REST tracker
 	writeGQLRateTrackers     map[string]*RateTracker // provider/host bucket -> mutation-credential GraphQL tracker

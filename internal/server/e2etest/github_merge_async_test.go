@@ -29,6 +29,7 @@ type githubAsyncMergeUpstream struct {
 	checkRunReads int
 	statusReads   int
 	pullReads     int
+	merged        bool
 	pollStarted   chan struct{}
 	pollRelease   chan struct{}
 	pollStartOnce sync.Once
@@ -68,13 +69,25 @@ func (u *githubAsyncMergeUpstream) ServeHTTP(w http.ResponseWriter, r *http.Requ
 	case r.URL.Path == "/api/v3/repos/acme/widget/pulls/7" && r.Method == http.MethodGet:
 		u.mu.Lock()
 		u.pullReads++
+		merged := u.merged
 		u.mu.Unlock()
+		// Reflect a delivered terminal merge result the way the real
+		// provider does: the canonical post-merge resync reads this
+		// detail to record the transition. updated_at must be current so
+		// the monotonic snapshot guard accepts the resync.
+		stateFields := `"state":"open",`
+		if merged {
+			stateFields = `"state":"closed","merged":true,
+				"merge_commit_sha":"merge-sha",
+				"merged_at":"` + time.Now().UTC().Format(time.RFC3339) + `",
+				"merged_by":{"login":"merger"},`
+		}
 		_, _ = io.WriteString(w, `{
-			"id":7001,"number":7,"state":"open","title":"Test PR",
+			"id":7001,"number":7,`+stateFields+`"title":"Test PR",
 			"html_url":"https://github.com/acme/widget/pull/7",
 			"user":{"login":"author"},
 			"created_at":"2026-08-01T10:00:00Z",
-			"updated_at":"2026-08-01T10:00:00Z",
+			"updated_at":"`+time.Now().UTC().Format(time.RFC3339)+`",
 			"head":{"ref":"feature","sha":"reviewed-sha","repo":{"id":1,"full_name":"acme/widget"}},
 			"base":{"ref":"main","sha":"base-sha","repo":{"id":1,"full_name":"acme/widget"}}
 		}`)
@@ -96,6 +109,9 @@ func (u *githubAsyncMergeUpstream) writeMergeResult(w http.ResponseWriter, r *ht
 	result := u.mergeResults[len(u.mergeResults)-1]
 	if index < len(u.mergeResults) {
 		result = u.mergeResults[index]
+	}
+	if strings.Contains(result, `"status":"merged"`) {
+		u.merged = true
 	}
 	u.mu.Unlock()
 	if r.Method == http.MethodGet && u.pollStarted != nil {

@@ -1554,7 +1554,7 @@ func (s *Handler) readyForReview(ctx context.Context, input *repoNumberInput) (*
 
 	normalized := platform.DBMergeRequest(repo.ID, pr)
 	if mrID, _, accepted, upsertErr := s.syncer.CommitMergeRequestParentSnapshot(
-		ctx, mergeRequestRepoRef(*repo), normalized, nil,
+		ctx, mergeRequestRepoRef(*repo), normalized,
 	); upsertErr == nil && accepted {
 		_ = s.db.EnsureKanbanState(ctx, mrID)
 	}
@@ -1676,8 +1676,25 @@ func (s *Handler) mergePRWithBody(
 		)
 	}
 
-	now := s.now().UTC()
-	_ = s.db.UpdateMRState(ctx, repo.ID, number, "merged", &now, &now)
+	// Record the transition through the same close-detection flow the
+	// periodic sync uses rather than an eager local state write. The sync
+	// fetches the provider's own merged snapshot — state, provider
+	// timestamps, and the merging actor — and commits it through the
+	// parent-snapshot choke point, which finalizes commit liveness inside
+	// the same transaction. An eager write would suppress that transition
+	// and advance updated_at past the provider's, leaving later resyncs
+	// rejected as stale. If this sync fails, the row stays open until the
+	// next periodic round repairs it through the same path; the response
+	// below still reports the provider's merge result.
+	if syncErr := s.syncer.SyncClosedMROnProvider(
+		ctx,
+		repoProviderKind(*repo), repoProviderHost(*repo),
+		repo.Owner, repo.Name, repo.ID, number,
+	); syncErr != nil {
+		slog.Warn("sync after merge",
+			"owner", repo.Owner, "repo", repo.Name,
+			"number", number, "err", syncErr)
+	}
 	s.markClosedLinkedNotificationsDone(ctx)
 
 	// The merge landed, so any deferred merge still queued for this pull
@@ -1690,52 +1707,6 @@ func (s *Handler) mergePRWithBody(
 	if result.Merged {
 		workspaceCleanupWarning = s.cleanupMergedWorkspace(ctx, body.DeleteWorkspaceID)
 	}
-
-	// The eager state write above suppresses the sync-side open->closed
-	// transition — the path that records who merged. Backfill the authored
-	// merged event from the provider so the actor is not lost, and target the
-	// affected detail once it lands: the merge response returns before this
-	// completes, so an already-open detail would otherwise keep showing the
-	// synthetic actorless merge event.
-	repoID := repo.ID
-	s.runBackground(func(bgCtx context.Context) {
-		changed, err := s.syncer.BackfillMergedActorEventOnProvider(bgCtx, repoID, number)
-		if err != nil {
-			slog.Warn("record merged actor after merge",
-				"owner", repo.Owner, "repo", repo.Name,
-				"number", number, "err", err)
-			return
-		}
-		if !changed {
-			return
-		}
-		currentRepo, err := s.db.GetRepoByID(bgCtx, repoID)
-		if err != nil || currentRepo == nil {
-			slog.Warn("load repository for merged-actor detail refresh",
-				"repo_id", repoID, "number", number, "err", err)
-			return
-		}
-		currentMR, err := s.db.GetMergeRequestByRepoIDAndNumber(bgCtx, repoID, number)
-		if err != nil || currentMR == nil {
-			slog.Warn("load pull request for merged-actor detail refresh",
-				"repo_id", repoID, "number", number, "err", err)
-			return
-		}
-		s.publish(Event{
-			Type: "pr_detail_refreshed",
-			Data: workspaceapi.PRDetailRefreshedPayload{
-				Provider:     currentRepo.Platform,
-				PlatformHost: currentRepo.PlatformHost,
-				RepoPath:     currentRepo.RepoPath,
-				Owner:        currentRepo.Owner,
-				Name:         currentRepo.Name,
-				Number:       number,
-				HeadSHA:      currentMR.PlatformHeadSHA,
-				SyncedAt:     formatUTCRFC3339(s.now().UTC()),
-				Warnings:     []string{},
-			},
-		})
-	})
 
 	return mergePRBody{
 		Merged:                  result.Merged,
@@ -2042,7 +2013,7 @@ func (s *Handler) setPRGitHubState(
 	if err != nil {
 		return nil, unsupportedCapabilityProblem(*repo, capabilityStateMutation)
 	}
-	_, err = mutator.SetMergeRequestState(
+	updatedMR, err := mutator.SetMergeRequestState(
 		ctx, platformRepoRefFromDB(*repo), input.Number, input.Body.State,
 	)
 	if err != nil {
@@ -2074,7 +2045,7 @@ func (s *Handler) setPRGitHubState(
 						)
 					}
 					_, _, _, _ = s.syncer.CommitMergeRequestParentSnapshot(
-						ctx, mergeRequestRepoRef(*repo), normalized, nil,
+						ctx, mergeRequestRepoRef(*repo), normalized,
 					)
 					s.markClosedLinkedNotificationsDone(ctx)
 					if ghPR.GetMerged() {
@@ -2100,18 +2071,28 @@ func (s *Handler) setPRGitHubState(
 		)
 	}
 
-	repoID := repo.ID
-
-	var closedAt *time.Time
-	if input.Body.State == "closed" {
-		now := s.now().UTC()
-		closedAt = &now
-	}
-	if err := s.db.UpdateMRState(
-		ctx, repoID, input.Number,
-		input.Body.State, nil, closedAt,
-	); err != nil {
-		return nil, httpapi.Internal("update mr state: " + err.Error())
+	// Commit the provider's own post-mutation snapshot through the
+	// parent-snapshot choke point rather than writing local state eagerly:
+	// a close transition finalizes commit liveness inside that snapshot's
+	// transaction, and the provider's timestamps keep concurrent stale
+	// syncs ordered behind this write instead of an eager local clock
+	// suppressing them. If the commit is rejected or fails, the next sync
+	// round repairs state through the same path; the provider mutation
+	// itself succeeded.
+	if updatedMR.Number == input.Number {
+		normalized := platform.DBMergeRequest(repo.ID, updatedMR)
+		if _, _, _, commitErr := s.syncer.CommitMergeRequestParentSnapshot(
+			ctx, mergeRequestRepoRef(*repo), normalized,
+		); commitErr != nil {
+			slog.Warn("record state change snapshot",
+				"owner", repo.Owner, "repo", repo.Name,
+				"number", input.Number, "state", input.Body.State, "err", commitErr)
+		}
+	} else {
+		slog.Warn("state change returned mismatched merge request; leaving local state to the next sync",
+			"owner", repo.Owner, "repo", repo.Name,
+			"number", input.Number, "returned_number", updatedMR.Number,
+			"state", input.Body.State)
 	}
 	if input.Body.State == "closed" {
 		s.markClosedLinkedNotificationsDone(ctx)

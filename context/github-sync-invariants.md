@@ -148,10 +148,16 @@ Some PR-derived state is only valid for one head commit.
   post-persistence writer — so a round that loses the revision CAS writes no
   liveness state at all; the only cache allowed is a memo of the pure
   (head, candidate-set) reachability function, which can never substitute for a
-  write. Local ancestry reads run in-process via go-git with a bounded visit
-  budget, never git subprocesses; SHA-256 (64-hex) repositories are out of scope
-  and their commit events are never flagged
+  write. The open-to-terminal transition is detected and finalized inside the
+  parent snapshot transaction itself, so every state change — including UI
+  merge/close mutations, which must resync from the provider through the normal
+  sync flow rather than write local state eagerly — funnels through that one
+  choke point and no terminal MR is ever recomputed. Local ancestry reads run
+  in-process via go-git with a bounded visit budget, never git subprocesses;
+  SHA-256 (64-hex) repositories are out of scope and their commit events are
+  never flagged
   (`internal/github/sync.go::computeCommitLiveness`,
+  `internal/db/queries.go::UpsertMergeRequestSnapshotWithLabelsUnderRepositoryReconciliationRead`,
   `internal/gitclone/reachability.go::CommitsReachableFrom`).
 - Workflow-approval decisions must be tied to the correct PR identity, not just
   the head SHA. Shared SHAs across forks or sibling PRs must not leak approval

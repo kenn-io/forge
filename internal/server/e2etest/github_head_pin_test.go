@@ -115,6 +115,36 @@ func decodeConflictProblemBody(t *testing.T, body *json.Decoder) conflictProblem
 	return problem
 }
 
+// mergedHeadPinPullRequest is the provider's view of PR 7 after its merge
+// succeeded; the canonical post-merge resync commits this snapshot to record
+// the transition. updated_at must be current so the monotonic snapshot guard
+// accepts it.
+func mergedHeadPinPullRequest() *gh.PullRequest {
+	now := gh.Timestamp{Time: time.Now().UTC()}
+	return &gh.PullRequest{
+		ID:             new(int64(7001)),
+		Number:         new(7),
+		State:          new("closed"),
+		Merged:         new(true),
+		Title:          new("Test PR"),
+		HTMLURL:        new("https://github.com/acme/widget/pull/7"),
+		User:           &gh.User{Login: new("author")},
+		MergedBy:       &gh.User{Login: new("merger")},
+		MergeCommitSHA: new("merge-sha"),
+		CreatedAt:      &gh.Timestamp{Time: now.Add(-time.Hour)},
+		UpdatedAt:      &now,
+		MergedAt:       &now,
+		Head: &gh.PullRequestBranch{
+			Ref: new("feature"), SHA: new("reviewed-sha"),
+			Repo: &gh.Repository{ID: new(int64(1)), FullName: new("acme/widget")},
+		},
+		Base: &gh.PullRequestBranch{
+			Ref: new("main"), SHA: new("base-sha"),
+			Repo: &gh.Repository{ID: new(int64(1)), FullName: new("acme/widget")},
+		},
+	}
+}
+
 func TestGitHubMergePassesReviewedHeadPinToProvider(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -128,6 +158,13 @@ func TestGitHubMergePassesReviewedHeadPinToProvider(t *testing.T) {
 			sha := "merge-sha"
 			message := "merged"
 			return &gh.PullRequestMergeResult{Merged: &merged, SHA: &sha, Message: &message}, nil
+		},
+		// The canonical post-merge resync reads the pull request back;
+		// reflect the merge the way the real provider does.
+		getPullRequestFn: func(
+			context.Context, string, string, int,
+		) (*gh.PullRequest, error) {
+			return mergedHeadPinPullRequest(), nil
 		},
 	}
 	srv, database, repoID := setupGitHubHeadPinServer(t, mock)

@@ -1233,6 +1233,53 @@ func assertTimePtrEqualsUTC(t *testing.T, got *time.Time, want time.Time) {
 	assert.Equal(t, want.UTC(), got.UTC())
 }
 
+// providerStatePR builds the provider's view of a seeded test PR after a
+// state mutation, the way the real provider returns it from an edit or a
+// post-merge fetch. The handler commits this snapshot through the canonical
+// parent-snapshot path, so updatedAt must be newer than the seeded row's or
+// the monotonic guard rejects it; merged/closed timestamps come from here,
+// not from any local clock.
+func providerStatePR(
+	number int,
+	state string,
+	updatedAt time.Time,
+	closedAt, mergedAt *time.Time,
+	headSHA string,
+) *gh.PullRequest {
+	toTimestamp := func(value *time.Time) *gh.Timestamp {
+		if value == nil {
+			return nil
+		}
+		return &gh.Timestamp{Time: *value}
+	}
+	numberText := strconv.Itoa(number)
+	pr := &gh.PullRequest{
+		ID:        new(int64(number) * 1000),
+		Number:    &number,
+		State:     &state,
+		Title:     new("Test PR #" + numberText),
+		HTMLURL:   new("https://github.com/acme/widget/pull/" + numberText),
+		User:      &gh.User{Login: new("testuser")},
+		CreatedAt: &gh.Timestamp{Time: updatedAt.Add(-2 * time.Hour)},
+		UpdatedAt: &gh.Timestamp{Time: updatedAt},
+		ClosedAt:  toTimestamp(closedAt),
+		MergedAt:  toTimestamp(mergedAt),
+		Head: &gh.PullRequestBranch{
+			Ref: new("feature"), SHA: &headSHA,
+			Repo: &gh.Repository{ID: new(int64(1)), FullName: new("acme/widget")},
+		},
+		Base: &gh.PullRequestBranch{
+			Ref: new("main"), SHA: new("base-sha"),
+			Repo: &gh.Repository{ID: new(int64(1)), FullName: new("acme/widget")},
+		},
+	}
+	if mergedAt != nil {
+		pr.Merged = new(true)
+		pr.MergedBy = &gh.User{Login: new("merger")}
+	}
+	return pr
+}
+
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -1718,10 +1765,21 @@ func TestAPIMergePRForwardsGitHubErrorDetailsAndLogsError(t *testing.T) {
 func TestAPIMergePRStoresUTCTimestamps(t *testing.T) {
 	require := require.New(t)
 
-	srv, database := setupTestServer(t)
-	handlerNow := testEDTTime(8, 30)
-	setTestServerNow(t, srv, handlerNow)
+	// The provider reports the merge in a non-UTC zone; the canonical
+	// post-merge resync must store it as UTC.
+	providerNow := testEDTTime(8, 30)
 	expectedHeadSHA := "reviewed-sha"
+	mock := &mockGH{
+		getPullRequestFn: func(
+			context.Context, string, string, int,
+		) (*gh.PullRequest, error) {
+			return providerStatePR(
+				1, "closed", time.Now().UTC().Add(time.Hour),
+				&providerNow, &providerNow, expectedHeadSHA,
+			), nil
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
 	seedPR(t, database, "acme", "widget", 1, withSeedPRHeadSHA(expectedHeadSHA))
 	client := setupTestClient(t, srv)
 
@@ -1740,8 +1798,8 @@ func TestAPIMergePRStoresUTCTimestamps(t *testing.T) {
 	pr, err := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
 	require.NoError(err)
 	require.Equal(db.MergeRequestStateMerged, pr.State)
-	assertTimePtrEqualsUTC(t, pr.MergedAt, handlerNow)
-	assertTimePtrEqualsUTC(t, pr.ClosedAt, handlerNow)
+	assertTimePtrEqualsUTC(t, pr.MergedAt, providerNow)
+	assertTimePtrEqualsUTC(t, pr.ClosedAt, providerNow)
 }
 
 func TestAPIClientConstruction(t *testing.T) {
@@ -8827,13 +8885,25 @@ func TestAPIClosePR(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
-	srv, database := setupTestServer(t)
-	handlerNow := testEDTTime(9, 15)
-	setTestServerNow(t, srv, handlerNow)
+	// The provider reports the close in a non-UTC zone; the handler commits
+	// the provider's own edit response, so closed_at comes from there.
+	providerClosedAt := testEDTTime(9, 15)
+	mock := &mockGH{
+		editPullRequestFn: func(
+			_ context.Context, _, _ string, number int, opts ghclient.EditPullRequestOpts,
+		) (*gh.PullRequest, error) {
+			require.NotNil(opts.State)
+			return providerStatePR(
+				number, *opts.State, time.Now().UTC().Add(time.Hour),
+				&providerClosedAt, nil, "head-sha",
+			), nil
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
 	seedPR(t, database, "acme", "widget", 1)
 	repo, err := database.GetRepoByIdentity(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
-	updatedAt := handlerNow.Add(-time.Hour)
+	updatedAt := providerClosedAt.Add(-time.Hour)
 	number := 1
 	require.NoError(database.UpsertNotifications(t.Context(), []db.Notification{{
 		Platform:               "github",
@@ -8864,7 +8934,7 @@ func TestAPIClosePR(t *testing.T) {
 	pr, err := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
 	require.NoError(err)
 	assert.Equal(db.MergeRequestStateClosed, pr.State)
-	assertTimePtrEqualsUTC(t, pr.ClosedAt, handlerNow)
+	assertTimePtrEqualsUTC(t, pr.ClosedAt, providerClosedAt)
 	doneNotifications, err := database.ListNotifications(t.Context(), db.ListNotificationsOpts{State: "done"})
 	require.NoError(err)
 	require.Len(doneNotifications, 1)
@@ -8874,7 +8944,18 @@ func TestAPIClosePR(t *testing.T) {
 
 func TestAPIReopenPR(t *testing.T) {
 	require := require.New(t)
-	srv, database := setupTestServer(t)
+	mock := &mockGH{
+		editPullRequestFn: func(
+			_ context.Context, _, _ string, number int, opts ghclient.EditPullRequestOpts,
+		) (*gh.PullRequest, error) {
+			require.NotNil(opts.State)
+			return providerStatePR(
+				number, *opts.State, time.Now().UTC().Add(time.Hour),
+				nil, nil, "head-sha",
+			), nil
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
 	seedPR(t, database, "acme", "widget", 1)
 	ctx := t.Context()
 
@@ -8977,9 +9058,25 @@ func TestAPISyncPRDoesNotOverwriteNewerStateChange(t *testing.T) {
 	assert := assert.New(t)
 
 	staleUpdatedAt := time.Date(2026, 4, 12, 1, 0, 0, 0, time.UTC)
+	closedAt := staleUpdatedAt.Add(time.Hour)
 	syncStarted := make(chan struct{}, 1)
 	releaseSync := make(chan struct{})
 	mock := &mockGH{
+		// The user's close commits the provider's edit response, whose
+		// updated_at is newer than the in-flight stale sync's snapshot;
+		// the monotonic snapshot guard then rejects the stale sync.
+		editPullRequestFn: func(
+			_ context.Context, _, _ string, number int, opts ghclient.EditPullRequestOpts,
+		) (*gh.PullRequest, error) {
+			state := "closed"
+			if opts.State != nil {
+				state = *opts.State
+			}
+			return providerStatePR(
+				number, state, time.Now().UTC().Add(time.Hour),
+				&closedAt, nil, "abc123",
+			), nil
+		},
 		getPullRequestFn: func(_ context.Context, owner, repo string, number int) (*gh.PullRequest, error) {
 			syncStarted <- struct{}{}
 			<-releaseSync

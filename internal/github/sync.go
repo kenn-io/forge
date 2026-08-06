@@ -262,14 +262,33 @@ func (s *Syncer) computeCommitLiveness(
 	if s.clones == nil || headSHA == "" {
 		return nil
 	}
-	headSHA = strings.ToLower(headSHA)
-
 	stored, err := s.db.ListMREvents(ctx, mrID)
 	if err != nil {
 		slog.Warn("commit liveness: list events failed",
 			"repo", repo.Owner+"/"+repo.Name, "mr", mrID, "err", err)
 		return nil
 	}
+	return s.computeCommitLivenessForEvents(ctx, repo, mrID, headSHA, incoming, stored)
+}
+
+// computeCommitLivenessForEvents is the computation core behind
+// computeCommitLiveness for callers that already hold the stored events —
+// in particular the terminal-transition finalizer, which receives them from
+// the parent snapshot's own transaction so the walk runs on tx-consistent
+// data.
+func (s *Syncer) computeCommitLivenessForEvents(
+	ctx context.Context,
+	repo RepoRef,
+	mrID int64,
+	headSHA string,
+	incoming []db.MREvent,
+	stored []db.MREvent,
+) map[string]string {
+	if s.clones == nil || headSHA == "" {
+		return nil
+	}
+	headSHA = strings.ToLower(headSHA)
+
 	candidateSHAs := make([]string, 0, len(stored)+len(incoming))
 	seen := make(map[string]bool, len(stored)+len(incoming))
 	addCandidate := func(sha string) {
@@ -1532,15 +1551,17 @@ func (s *Syncer) commitIssueParentSnapshot(
 // here guarantees every path that can change an MR's head_repo_clone_url fans
 // that change out to a tracking workspace's mr_head_repo — see
 // reclassifyWorkspaceHeadRepoTrust.
-// CommitMergeRequestParentSnapshot applies a provider parent snapshot.
-// eventMetadataUpdates ride the same transaction and only land when the
-// snapshot is accepted; state-transition rounds use this to make terminal
-// commit-liveness flags atomic with the state they finalize.
+// CommitMergeRequestParentSnapshot applies a provider parent snapshot. When
+// the accepted snapshot takes the merge request out of the open state, the
+// db layer detects that transition inside the snapshot transaction and runs
+// the terminal commit-liveness computation there, against the transaction's
+// own view of the stored events — finalization is intrinsic to the choke
+// point, so no caller can commit a terminal transition without it and no
+// concurrent round can shift the data between compute and commit.
 func (s *Syncer) CommitMergeRequestParentSnapshot(
 	ctx context.Context,
 	repo RepoRef,
 	mr *db.MergeRequest,
-	eventMetadataUpdates map[string]string,
 ) (int64, int64, bool, error) {
 	releaseReconciliation, err := s.db.LockRepositoryReconciliationRead(ctx)
 	if err != nil {
@@ -1555,7 +1576,7 @@ func (s *Syncer) CommitMergeRequestParentSnapshot(
 	}
 	mrID, revision, accepted, err :=
 		s.db.UpsertMergeRequestSnapshotWithLabelsUnderRepositoryReconciliationRead(
-			ctx, mr, eventMetadataUpdates,
+			ctx, mr, s.terminalLivenessComputer(ctx, repo, mr),
 		)
 	if err != nil || !accepted {
 		return mrID, revision, accepted, err
@@ -1647,27 +1668,29 @@ func (s *Syncer) commitMergeRequestDatasets(
 	return applied, nil
 }
 
-// terminalLivenessUpdates returns the commit-liveness metadata a
-// terminal-transition round must land atomically with its parent snapshot:
-// the transition is the last round that will ever compute this MR's flags,
-// so they may not ride a separate write whose revision guard could silently
-// reject them. Open-state rounds return nil — their flags travel with the
-// dataset commit, and any lost race is repaired by the next round, which
-// terminal MRs never get.
-func (s *Syncer) terminalLivenessUpdates(
+// terminalLivenessComputer returns the in-transaction finalizer for a parent
+// snapshot that may take the merge request out of the open state. The db
+// layer invokes it only when the accepted upsert is that transition, with the
+// transaction's own view of the stored events: the transition round is the
+// last round that will ever compute this MR's flags, so they are computed
+// from data no concurrent round can shift and land atomically with the
+// terminal state. Snapshots that cannot be such a transition return nil —
+// open rounds' flags travel with the dataset commit, and any lost race there
+// is repaired by the next round, which terminal MRs never get.
+func (s *Syncer) terminalLivenessComputer(
 	ctx context.Context,
 	repo RepoRef,
-	normalized, existing *db.MergeRequest,
-) map[string]string {
-	if normalized == nil || existing == nil ||
-		normalized.State == db.MergeRequestStateOpen {
+	mr *db.MergeRequest,
+) db.MREventMetadataComputer {
+	if mr == nil || mr.State == db.MergeRequestStateOpen ||
+		mr.PlatformHeadSHA == "" || s.clones == nil {
 		return nil
 	}
-	head := livenessHeadForRound(normalized, existing)
-	if head == "" {
-		return nil
+	return func(mrID int64, events []db.MREvent) map[string]string {
+		return s.computeCommitLivenessForEvents(
+			ctx, repo, mrID, mr.PlatformHeadSHA, nil, events,
+		)
 	}
-	return s.computeCommitLiveness(ctx, repo, existing.ID, head, nil)
 }
 
 // livenessHeadForRound picks the head against which a round computes commit
@@ -7746,7 +7769,7 @@ func (s *Syncer) indexUpsertMergeRequest(
 		}
 	}
 
-	mrID, revision, accepted, err := s.CommitMergeRequestParentSnapshot(ctx, repo, normalized, s.terminalLivenessUpdates(ctx, repo, normalized, existing))
+	mrID, revision, accepted, err := s.CommitMergeRequestParentSnapshot(ctx, repo, normalized)
 	if err != nil {
 		return fmt.Errorf(
 			"upsert MR #%d: %w", mr.Number, err,
@@ -7965,7 +7988,7 @@ func (s *Syncer) indexUpsertMR(
 		}
 	}
 
-	mrID, revision, accepted, err := s.CommitMergeRequestParentSnapshot(ctx, repo, normalized, s.terminalLivenessUpdates(ctx, repo, normalized, existing))
+	mrID, revision, accepted, err := s.CommitMergeRequestParentSnapshot(ctx, repo, normalized)
 	if err != nil {
 		return fmt.Errorf(
 			"upsert MR #%d: %w", ghPR.GetNumber(), err,
@@ -8596,7 +8619,7 @@ func (s *Syncer) syncOpenMRFromBulk(
 		}
 	}
 
-	mrID, revision, accepted, err := s.CommitMergeRequestParentSnapshot(ctx, repo, normalized, s.terminalLivenessUpdates(ctx, repo, normalized, existing))
+	mrID, revision, accepted, err := s.CommitMergeRequestParentSnapshot(ctx, repo, normalized)
 	if err != nil {
 		return fmt.Errorf("upsert MR #%d: %w", number, err)
 	}
@@ -8932,7 +8955,7 @@ func (s *Syncer) fetchMRDetail(
 		calls++ // GetUser
 	}
 
-	mrID, revision, accepted, err := s.CommitMergeRequestParentSnapshot(ctx, repo, normalized, s.terminalLivenessUpdates(ctx, repo, normalized, existing))
+	mrID, revision, accepted, err := s.CommitMergeRequestParentSnapshot(ctx, repo, normalized)
 	if err != nil {
 		return calls, fmt.Errorf(
 			"upsert MR #%d: %w", number, err,
@@ -9202,7 +9225,7 @@ func (s *Syncer) fetchProviderMRDetail(
 	}
 	preserveMergeableStateIfOmitted(normalized, existing)
 
-	mrID, revision, accepted, err := s.CommitMergeRequestParentSnapshot(ctx, repo, normalized, s.terminalLivenessUpdates(ctx, repo, normalized, existing))
+	mrID, revision, accepted, err := s.CommitMergeRequestParentSnapshot(ctx, repo, normalized)
 	if err != nil {
 		return calls, fmt.Errorf(
 			"upsert MR #%d: %w", number, err,
@@ -11249,6 +11272,41 @@ func (s *Syncer) SyncMR(ctx context.Context, owner, name string, number int) err
 
 // SyncMROnProvider fetches fresh data for a single MR from a specific
 // configured provider host.
+// SyncClosedMROnProvider records a merge request the provider now reports as
+// closed or merged, through the same close-detection flow the periodic sync
+// uses. UI-driven terminal mutations call this instead of writing local state
+// eagerly, so every terminal transition — user-initiated or detected — flows
+// through the one parent-snapshot choke point, which finalizes commit
+// liveness inside the transition's own transaction, and local rows always
+// carry provider timestamps instead of eager local ones that would leave
+// later resyncs rejected as stale.
+func (s *Syncer) SyncClosedMROnProvider(
+	ctx context.Context,
+	kind platform.Kind,
+	host, owner, name string,
+	repoID int64,
+	number int,
+) error {
+	repo, ok := s.trackedRepoByIdentity(kind, owner, name, host)
+	if !ok {
+		host = repoHost(RepoRef{Platform: kind, PlatformHost: host})
+		return fmt.Errorf(
+			"repo %s/%s on %s/%s is not tracked",
+			owner, name, kind, host,
+		)
+	}
+	repo.Owner = owner
+	repo.Name = name
+	repo.PlatformHost = repoHost(repo)
+	reader, err := s.mergeRequestReaderFor(repo)
+	if err != nil {
+		return fmt.Errorf(
+			"resolve merge request reader for %s/%s: %w", owner, name, err,
+		)
+	}
+	return s.fetchAndUpdateClosedMergeRequest(ctx, reader, repo, repoID, number, true)
+}
+
 func (s *Syncer) SyncMROnProvider(
 	ctx context.Context,
 	kind platform.Kind,
@@ -11479,7 +11537,7 @@ func (s *Syncer) syncMRForRepo(
 		}
 	}
 
-	mrID, revision, accepted, err := s.CommitMergeRequestParentSnapshot(ctx, repo, normalized, s.terminalLivenessUpdates(ctx, repo, normalized, existing))
+	mrID, revision, accepted, err := s.CommitMergeRequestParentSnapshot(ctx, repo, normalized)
 	if err != nil {
 		return fmt.Errorf("upsert MR #%d: %w", number, err)
 	}
@@ -12131,9 +12189,7 @@ func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID 
 		normalized.CIHadPending = existing.CIHadPending
 		normalized.DetailFetchedAt = existing.DetailFetchedAt
 	}
-	mrID, revision, accepted, err := s.CommitMergeRequestParentSnapshot(
-		ctx, repo, normalized, s.terminalLivenessUpdates(ctx, repo, normalized, existing),
-	)
+	mrID, revision, accepted, err := s.CommitMergeRequestParentSnapshot(ctx, repo, normalized)
 	if err != nil {
 		return fmt.Errorf("commit closed MR #%d: %w", number, err)
 	}
@@ -12299,13 +12355,7 @@ func (s *Syncer) fetchAndUpdateClosedMergeRequest(
 		return fmt.Errorf("get closed MR #%d: %w", number, err)
 	}
 	normalized := platform.DBMergeRequest(repoID, mr)
-	existing, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoID, number)
-	if err != nil {
-		return fmt.Errorf("get existing closed MR #%d: %w", number, err)
-	}
-	mrID, revision, accepted, err := s.CommitMergeRequestParentSnapshot(
-		ctx, repo, normalized, s.terminalLivenessUpdates(ctx, repo, normalized, existing),
-	)
+	mrID, revision, accepted, err := s.CommitMergeRequestParentSnapshot(ctx, repo, normalized)
 	if err != nil {
 		return fmt.Errorf("upsert closed MR #%d: %w", number, err)
 	}

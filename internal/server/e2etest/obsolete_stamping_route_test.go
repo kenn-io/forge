@@ -83,6 +83,21 @@ func TestForgejoSyncRouteStampsObsoleteCommitEventsAcrossForcePushes(t *testing.
 		state.updatedAt = state.updatedAt.Add(time.Minute)
 		stateMu.Unlock()
 	}
+	writePullRequest := func(w http.ResponseWriter, current providerState) {
+		assert.NoError(json.NewEncoder(w).Encode(map[string]any{
+			"id": 101, "number": 1, "title": "Synthetic merge request", "state": current.prState,
+			"url":      "https://codeberg.org/api/v1/repos/owner/repo/pulls/1",
+			"html_url": "https://codeberg.org/owner/repo/pulls/1",
+			"user":     map[string]any{"id": 3, "login": "developer", "full_name": "Developer"},
+			"head": map[string]any{
+				"ref": "feature", "sha": current.head,
+				"repo": map[string]any{"id": 1, "name": "repo", "full_name": "owner/repo", "clone_url": origin},
+			},
+			"base":       map[string]any{"ref": "main", "sha": base},
+			"created_at": "2026-08-05T11:00:00Z",
+			"updated_at": current.updatedAt.Format(time.RFC3339),
+		}))
+	}
 
 	providerAPI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -99,19 +114,24 @@ func TestForgejoSyncRouteStampsObsoleteCommitEventsAcrossForcePushes(t *testing.
 				"owner": map[string]any{"id": 2, "login": "owner"},
 			}))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/repos/owner/repo/pulls/1":
-			assert.NoError(json.NewEncoder(w).Encode(map[string]any{
-				"id": 101, "number": 1, "title": "Synthetic merge request", "state": current.prState,
-				"url":      "https://codeberg.org/api/v1/repos/owner/repo/pulls/1",
-				"html_url": "https://codeberg.org/owner/repo/pulls/1",
-				"user":     map[string]any{"id": 3, "login": "developer", "full_name": "Developer"},
-				"head": map[string]any{
-					"ref": "feature", "sha": current.head,
-					"repo": map[string]any{"id": 1, "name": "repo", "full_name": "owner/repo", "clone_url": origin},
-				},
-				"base":       map[string]any{"ref": "main", "sha": base},
-				"created_at": "2026-08-05T11:00:00Z",
-				"updated_at": current.updatedAt.Format(time.RFC3339),
-			}))
+			writePullRequest(w, current)
+		case r.Method == http.MethodPatch && r.URL.Path == "/api/v1/repos/owner/repo/pulls/1":
+			// UI state mutation: flip the provider's PR state the way the
+			// real provider does and return the updated pull request; the
+			// handler's canonical post-mutation resync reads it back.
+			var body struct {
+				State string `json:"state"`
+			}
+			assert.NoError(json.NewDecoder(r.Body).Decode(&body))
+			stateMu.Lock()
+			if body.State != "" {
+				state.prState = body.State
+			}
+			state.updatedAt = state.updatedAt.Add(time.Minute)
+			current = state
+			current.commits = append([]string(nil), state.commits...)
+			stateMu.Unlock()
+			writePullRequest(w, current)
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/repos/owner/repo/issues/1/comments":
 			assert.NoError(json.NewEncoder(w).Encode([]any{}))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/repos/owner/repo/pulls/1/reviews":
@@ -249,11 +269,24 @@ func TestForgejoSyncRouteStampsObsoleteCommitEventsAcrossForcePushes(t *testing.
 		a1: false, a2: false, a3: false, b1: true, b2: true,
 	})
 
-	// A force push followed immediately by close, observed by one sync: the
-	// transition round must compute liveness against the final head so the
-	// terminal record is correct, not frozen at the pre-push flags.
+	// A force push followed immediately by a UI-driven close: the terminal
+	// mutation must flow through the same close-detection path the periodic
+	// sync uses, so the transition round computes liveness against the
+	// final head instead of freezing the pre-push flags behind an eager
+	// local state write.
 	runGit(origin, "update-ref", "refs/heads/feature", b2)
-	setProviderState(b2, "closed", []string{b1, b2})
+	setProviderState(b2, "open", []string{b1, b2})
+	closeResponse := doJSONRequest(t, srv, http.MethodPost,
+		"/api/v1/pulls/forgejo/owner/repo/1/github-state",
+		map[string]any{"state": "closed"},
+	)
+	require.Equal(http.StatusOK, closeResponse.Code, closeResponse.Body.String())
+	assertDetailFlags(map[string]bool{
+		a1: true, a2: true, a3: true, b1: false, b2: false,
+	})
+
+	// A later sync of the now-closed PR must leave the terminal record
+	// alone: merged and closed history is never recomputed.
 	syncResponse = doJSONRequest(t, srv, http.MethodPost, syncPath, map[string]any{})
 	require.Equal(http.StatusOK, syncResponse.Code, syncResponse.Body.String())
 	assertDetailFlags(map[string]bool{

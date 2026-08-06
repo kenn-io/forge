@@ -335,7 +335,7 @@ func TestCommitMergeRequestParentSnapshotRollsBackParentWhenLabelsFail(t *testin
 		RepoID: repoID, PlatformID: 2, Name: "new", Color: "000000", UpdatedAt: updated.UpdatedAt,
 	}}
 	syncer := &Syncer{db: database}
-	_, _, _, err = syncer.CommitMergeRequestParentSnapshot(ctx, RepoRef{}, &updated, nil)
+	_, _, _, err = syncer.CommitMergeRequestParentSnapshot(ctx, RepoRef{}, &updated)
 	require.Error(err)
 
 	result, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)
@@ -5712,7 +5712,7 @@ func TestCommitMergeRequestParentSnapshotReclassifiesWorkspaceHeadRepo(t *testin
 
 	syncer := &Syncer{db: d}
 	_, _, accepted, err := syncer.CommitMergeRequestParentSnapshot(
-		ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, &updated, nil,
+		ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}, &updated,
 	)
 	require.NoError(err)
 	require.True(accepted)
@@ -5805,7 +5805,7 @@ func TestCommitMergeRequestParentSnapshotKeepsHistoryBoundDuringReconciliation(
 			Platform: platform.KindGitLab, PlatformHost: "gitlab.com",
 			Owner: "old-group", Name: "old-name",
 		},
-		&updated, nil,
+		&updated,
 	)
 	require.NoError(err)
 	require.True(accepted)
@@ -18861,7 +18861,7 @@ func TestCommitMergeRequestParentSnapshotRejectsDisplacedRepository(t *testing.T
 			Title: "stale sync write", Author: "ada", State: "open",
 			HeadBranch: "feature", BaseBranch: "main",
 			CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
-		}, nil,
+		},
 	)
 	require.ErrorContains(err, "route",
 		"a displaced repository must not receive the route's new data")

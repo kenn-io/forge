@@ -107,51 +107,66 @@ func TestChildSnapshotEventMetadataUpdatesRejectStaleRevision(t *testing.T) {
 	assertMetadataTestEvent(t, database, mrID, `{"commit_order_key":1}`)
 }
 
-func TestParentSnapshotCarriesEventMetadataUpdatesAtomically(t *testing.T) {
+func TestParentSnapshotComputesTerminalEventMetadataInTransaction(t *testing.T) {
+	assert := assert.New(t)
 	database := openTestDB(t)
 	ctx := t.Context()
 	repoID, mrID, _ := seedMetadataTestMR(t, database)
 	now := time.Date(2026, 8, 5, 10, 30, 0, 0, time.UTC)
-	updates := map[string]string{
-		"commit-1": `{"commit_order_key":1,"obsolete":true}`,
+	invocations := 0
+	computer := func(id int64, events []MREvent) map[string]string {
+		invocations++
+		assert.Equal(mrID, id)
+		if assert.Len(events, 1) {
+			assert.Equal("commit-1", events[0].DedupeKey)
+		}
+		return map[string]string{
+			"commit-1": `{"commit_order_key":1,"obsolete":true}`,
+		}
 	}
-	upsert := func(mr *MergeRequest) bool {
+	upsert := func(state MergeRequestState, title string, updatedAt time.Time) bool {
 		t.Helper()
 		release, err := database.LockRepositoryReconciliationRead(ctx)
 		require.NoError(t, err)
 		defer release()
 		_, _, accepted, err :=
 			database.UpsertMergeRequestSnapshotWithLabelsUnderRepositoryReconciliationRead(
-				ctx, mr, updates,
+				ctx, &MergeRequest{
+					RepoID: repoID, PlatformID: 1, Number: 1, Title: title,
+					State: state, PlatformHeadSHA: "head", PlatformBaseSHA: "base",
+					CreatedAt: now.Add(-time.Hour), UpdatedAt: updatedAt,
+					LastActivityAt: updatedAt,
+				}, computer,
 			)
 		require.NoError(t, err)
 		return accepted
 	}
 
-	// A rejected snapshot (older updated_at) must write neither the terminal
-	// state nor the metadata riding with it.
-	rejected := upsert(&MergeRequest{
-		RepoID: repoID, PlatformID: 1, Number: 1, Title: "stale close",
-		State: MergeRequestStateClosed, PlatformHeadSHA: "head", PlatformBaseSHA: "base",
-		CreatedAt: now.Add(-time.Hour), UpdatedAt: now.Add(-time.Minute),
-		LastActivityAt: now.Add(-time.Minute),
-	})
-	assert.False(t, rejected)
+	// A rejected snapshot (older updated_at) must invoke nothing and write
+	// neither the terminal state nor any metadata.
+	assert.False(upsert(MergeRequestStateClosed, "stale close", now.Add(-time.Minute)))
+	assert.Equal(0, invocations)
 	assertMetadataTestEvent(t, database, mrID, `{"commit_order_key":1}`)
 
-	// The accepted transition lands state and metadata together.
-	accepted := upsert(&MergeRequest{
-		RepoID: repoID, PlatformID: 1, Number: 1, Title: "real close",
-		State: MergeRequestStateClosed, PlatformHeadSHA: "head", PlatformBaseSHA: "base",
-		CreatedAt: now.Add(-time.Hour), UpdatedAt: now.Add(time.Minute),
-		LastActivityAt: now.Add(time.Minute),
-	})
-	assert.True(t, accepted)
+	// An accepted open-state snapshot is not a terminal transition.
+	assert.True(upsert(MergeRequestStateOpen, "still open", now.Add(30*time.Second)))
+	assert.Equal(0, invocations)
+	assertMetadataTestEvent(t, database, mrID, `{"commit_order_key":1}`)
+
+	// The accepted transition runs the computation inside the snapshot
+	// transaction and lands state and metadata together.
+	assert.True(upsert(MergeRequestStateClosed, "real close", now.Add(time.Minute)))
+	assert.Equal(1, invocations)
 	assertMetadataTestEvent(t, database, mrID, `{"commit_order_key":1,"obsolete":true}`)
 	fresh, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)
 	require.NoError(t, err)
 	require.NotNil(t, fresh)
-	assert.Equal(t, MergeRequestStateClosed, fresh.State)
+	assert.Equal(MergeRequestStateClosed, fresh.State)
+
+	// A later snapshot of the already-terminal MR is no transition: the
+	// terminal record is never recomputed.
+	assert.True(upsert(MergeRequestStateClosed, "closed again", now.Add(2*time.Minute)))
+	assert.Equal(1, invocations)
 }
 
 func TestMarkDetailFetchedEventMetadataUpdates(t *testing.T) {

@@ -92,12 +92,18 @@ provider whose merge requests sync through the shared flows inherits it.
 Liveness runs while an MR is open and once more on the round that takes it
 out of the open state, computed against the final head — the flags that
 round persists are the terminal record. Because no later round will ever
-recompute them, terminal flags ride inside the parent snapshot transaction
-itself (the parent upsert accepts an event-metadata payload): the terminal
-state and its flags land together or not at all, so no revision race can
-freeze a closed MR with pre-close flags. Already-merged and already-closed
-MRs are never refetched or recomputed; a reopened MR computes again like
-any open one.
+recompute them, finalization is intrinsic to the parent-snapshot choke
+point: the snapshot transaction itself detects the open-to-terminal
+transition (prior stored state open, incoming state not), reads the stored
+events inside the transaction, runs the liveness computation there, and
+lands the flags with the terminal state — together or not at all, computed
+from data no concurrent round can shift. No caller can commit a terminal
+transition without it. Every state transition flows through this one path:
+UI merge and close mutations resync the merge request from the provider
+through the normal sync flow instead of writing local state eagerly, which
+would suppress the transition and push updated_at past the provider's.
+Already-merged and already-closed MRs are never refetched or recomputed; a
+reopened MR computes again like any open one.
 
 ### Frontend collapse
 
@@ -131,7 +137,10 @@ no frontend fallback to the old heuristic.
 - Full stack, real computation: an integration test drives the real sync path
   with successive head states and asserts the stamped flags surface through
   the detail API, so the test fails if stamping is missing or unwired rather
-  than only proving metadata propagation.
+  than only proving metadata propagation. The same harness closes the merge
+  request through the UI state route after a force push and asserts the
+  terminal record is computed against the final head and never recomputed by
+  later syncs.
 - Full stack, browser boundary: the SQLite-backed fixture seeds `obsolete`
   metadata on a replaced lineage, and the Playwright timeline case verifies
   the flag survives the database and detail API into strict-date rendering.

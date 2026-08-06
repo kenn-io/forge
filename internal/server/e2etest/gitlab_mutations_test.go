@@ -111,12 +111,31 @@ func setupGitLabMutationServer(
 				"default_branch": "main"
 			}`)
 		case path == "/api/v4/projects/4242/merge_requests/7" && r.Method == http.MethodGet:
+			// Reflect prior mutations the way the real provider does: a
+			// successful merge or close changes the state later GETs
+			// report, which the canonical post-mutation resync depends on.
 			// updated_at must be current: UpsertMergeRequest discards
 			// snapshots older than the stored row.
+			state := "opened"
+			terminalFields := ""
+			if merge, ok := recorder.find(
+				http.MethodPut, "/api/v4/projects/4242/merge_requests/7/merge",
+			); ok && strings.Contains(merge.Body, `"sha":"head-sha"`) &&
+				!strings.Contains(merge.Body, "force-generic-conflict") {
+				state = "merged"
+				terminalFields = `"merged_at": "2026-06-01T11:00:00Z",
+					"merged_by": {"username": "ada"},`
+			} else if update, ok := recorder.find(
+				http.MethodPut, "/api/v4/projects/4242/merge_requests/7",
+			); ok && strings.Contains(update.Body, `"state_event":"close"`) {
+				state = "closed"
+				terminalFields = `"closed_at": "2026-06-01T11:00:00Z",`
+			}
 			writeGitLabJSON(w, `{
-				"id": 7001, "iid": 7, "title": "Test MR", "state": "opened",
+				"id": 7001, "iid": 7, "title": "Test MR", "state": "`+state+`",
 				"sha": "head-sha",
 				"author": {"username": "author"},
+				`+terminalFields+`
 				"created_at": "2026-05-01T09:00:00Z",
 				"updated_at": "`+time.Now().UTC().Add(time.Minute).Format(time.RFC3339)+`"
 			}`)
@@ -182,7 +201,17 @@ func setupGitLabMutationServer(
 			}`)
 		case path == "/api/v4/projects/4242/merge_requests/7" && r.Method == http.MethodPut:
 			if strings.Contains(request.Body, "state_event") {
-				writeGitLabJSON(w, `{"id": 7001, "iid": 7, "title": "Test MR", "state": "closed"}`)
+				// The real provider returns the full updated MR with fresh
+				// timestamps; the handler commits this snapshot, and a
+				// zero updated_at would be rejected as stale.
+				writeGitLabJSON(w, `{
+					"id": 7001, "iid": 7, "title": "Test MR", "state": "closed",
+					"sha": "head-sha",
+					"author": {"username": "author"},
+					"closed_at": "2026-06-01T11:00:00Z",
+					"created_at": "2026-05-01T09:00:00Z",
+					"updated_at": "`+time.Now().UTC().Add(time.Minute).Format(time.RFC3339)+`"
+				}`)
 				return
 			}
 			writeGitLabJSON(w, `{

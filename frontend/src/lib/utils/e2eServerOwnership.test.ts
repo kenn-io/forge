@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, utimesSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { readFile, stat } from "node:fs/promises";
@@ -514,6 +515,28 @@ describe("cleanupManagedServerProcess", () => {
 
     expect(killSpy).toHaveBeenCalledWith(99999, "SIGTERM");
     expect(killSpy).not.toHaveBeenCalledWith(11111, "SIGTERM");
+  });
+});
+
+describe("terminateServerProcess", () => {
+  it("waits for a SIGTERM-aware e2e child to finish", async () => {
+    const child = spawn(
+      process.execPath,
+      [
+        "-e",
+        "process.on('SIGTERM', () => setTimeout(() => process.exit(0), 100)); " +
+          "process.stdout.write('ready\\n'); setInterval(() => {}, 1000);",
+      ],
+      { stdio: ["ignore", "pipe", "ignore"] },
+    );
+    await new Promise<void>((resolve, reject) => {
+      child.once("error", reject);
+      child.stdout?.once("data", () => resolve());
+    });
+
+    await e2eServerModule.terminateServerProcess(child, child.pid);
+
+    expect(child.exitCode).toBe(0);
   });
 });
 

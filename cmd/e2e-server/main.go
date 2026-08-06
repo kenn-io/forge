@@ -54,6 +54,8 @@ import (
 // always passes -roborev explicitly to the dockerized seeded daemon.
 const defaultRoborevEndpoint = "http://127.0.0.1:1"
 
+const e2eTmuxDirEnv = "PLAYWRIGHT_E2E_TMUX_DIR"
+
 func main() {
 	port := flag.Int("port", 0, "port to listen on (0 selects a random free port)")
 	roborev := flag.String(
@@ -825,16 +827,17 @@ type appOptions struct {
 // Playwright tests can reuse the process (and its port) instead of
 // paying a full spawn/teardown per test.
 type appState struct {
-	tmpDir      string
-	database    *db.DB
-	srv         *server.Server
-	handler     http.Handler
-	cfgPath     string
-	worktreeDir string
-	tmuxCommand []string
-	ptyOwner    bool
-	clones      *gitclone.Manager
-	handlerWG   sync.WaitGroup
+	tmpDir       string
+	database     *db.DB
+	srv          *server.Server
+	handler      http.Handler
+	cfgPath      string
+	worktreeDir  string
+	tmuxCommand  []string
+	ptyOwner     bool
+	clones       *gitclone.Manager
+	handlerWG    sync.WaitGroup
+	tmuxStopOnce sync.Once
 }
 
 type appStateRegistry struct {
@@ -889,8 +892,18 @@ func (st *appState) finishRequest() {
 	st.handlerWG.Done()
 }
 
-func (st *appState) waitForHandlers() {
-	st.handlerWG.Wait()
+func (st *appState) waitForHandlers(ctx context.Context) error {
+	done := make(chan struct{})
+	go func() {
+		st.handlerWG.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // tmuxSocketCounter feeds per-instance tmux socket names so
@@ -908,27 +921,26 @@ func instanceTmuxCommand() []string {
 		// states apart, only crash+pid-reuse protection degrades.
 		slog.Warn("tmux socket random suffix", "err", err)
 	}
-	return []string{
-		"tmux",
-		"-f",
-		"/dev/null",
-		"-L",
-		fmt.Sprintf(
-			"mm-e2e-%d-%d-%s",
-			os.Getpid(),
-			tmuxSocketCounter.Add(1),
-			hex.EncodeToString(randSuffix[:]),
-		),
+	name := fmt.Sprintf(
+		"mm-e2e-%d-%d-%s",
+		os.Getpid(),
+		tmuxSocketCounter.Add(1),
+		hex.EncodeToString(randSuffix[:]),
+	)
+	if root := strings.TrimSpace(os.Getenv(e2eTmuxDirEnv)); root != "" {
+		return []string{
+			"tmux", "-f", "/dev/null", "-S",
+			filepath.Join(root, name+".sock"),
+		}
 	}
+	return []string{"tmux", "-f", "/dev/null", "-L", name}
 }
 
 // killTmuxServer tears down the per-instance tmux server. It only
 // acts on sockets named by instanceTmuxCommand so a misconfigured
 // command can never kill a developer's real tmux server.
 func killTmuxServer(tmuxCmd []string) {
-	idx := slices.Index(tmuxCmd, "-L")
-	if idx < 0 || idx+1 >= len(tmuxCmd) ||
-		!strings.HasPrefix(tmuxCmd[idx+1], "mm-e2e-") {
+	if !isOwnedE2ETmuxCommand(tmuxCmd) {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -937,10 +949,44 @@ func killTmuxServer(tmuxCmd []string) {
 	_ = procutil.CommandContext(ctx, tmuxCmd[0], args...).Run()
 }
 
+func isOwnedE2ETmuxCommand(tmuxCmd []string) bool {
+	for _, flag := range []string{"-L", "-S"} {
+		idx := slices.Index(tmuxCmd, flag)
+		if idx < 0 || idx+1 >= len(tmuxCmd) {
+			continue
+		}
+		name := tmuxCmd[idx+1]
+		if flag == "-S" {
+			if !strings.HasPrefix(
+				filepath.Base(filepath.Dir(name)),
+				"kf-e2e-tmux-",
+			) {
+				return false
+			}
+			name = filepath.Base(name)
+			if !strings.HasSuffix(name, ".sock") {
+				return false
+			}
+		}
+		return strings.HasPrefix(name, "mm-e2e-")
+	}
+	return false
+}
+
+func (st *appState) stopTmux() {
+	st.tmuxStopOnce.Do(func() {
+		killTmuxServer(st.tmuxCommand)
+	})
+}
+
 // close releases everything the state owns. Shutdown drains HTTP
 // handlers and background goroutines before the workspace cleanup
 // and database close, mirroring the old process-exit defer ordering.
 func (st *appState) close() {
+	// tmux is an isolated test resource, not durable product state. Tear it
+	// down before graceful HTTP draining so a stuck handler cannot strand the
+	// daemon after SIGTERM or a reset.
+	st.stopTmux()
 	shutdownCtx, cancel := context.WithTimeout(
 		context.Background(), 10*time.Second,
 	)
@@ -948,11 +994,9 @@ func (st *appState) close() {
 	if err := st.srv.Shutdown(shutdownCtx); err != nil {
 		slog.Warn("server shutdown", "err", err)
 	}
-	st.waitForHandlers()
-	// The private tmux daemon outlives this process unless it is stopped
-	// explicitly. Retired reset states can still have slower workspace cleanup
-	// ahead of them, so release the daemon as soon as no handler can use it.
-	killTmuxServer(st.tmuxCommand)
+	if err := st.waitForHandlers(shutdownCtx); err != nil {
+		slog.Warn("drain e2e handlers", "err", err)
+	}
 	cleanupE2EWorkspaces(st.database, st.clones, st.worktreeDir, st.tmuxCommand, st.ptyOwner)
 	if err := st.database.Close(); err != nil {
 		slog.Warn("close database", "err", err)
@@ -2626,12 +2670,12 @@ func run(
 				return
 			}
 			old := states.Swap(newState)
-			// The retired state owns a private tmux server that must not
-			// outlive the reset, even if the runner exits before its slower
-			// workspace cleanup goroutine completes.
-			killTmuxServer(old.tmuxCommand)
-			// Old-state teardown (handler drain, tmux kill, temp
-			// dir removal) happens off the request path, matching
+			// Stop the old state's private tmux server synchronously. Its
+			// remaining handler/database cleanup may continue off-request,
+			// but a process exit cannot strand this test-owned daemon.
+			old.stopTmux()
+			// Remaining old-state teardown (handler drain and temp-dir
+			// removal) happens off the request path, matching
 			// the old SIGTERM-and-return stop() semantics.
 			states.closeAsync(old.close)
 
@@ -2682,7 +2726,7 @@ func run(
 		// Runner exit can close inherited stdio immediately after sending
 		// SIGTERM. Release the private daemon before logging or draining so
 		// that abrupt parent teardown cannot orphan it.
-		killTmuxServer(states.Load().tmuxCommand)
+		states.Load().stopTmux()
 		slog.Info("shutting down")
 		// Trigger Shutdown so Serve unblocks (the defer is a
 		// safety net for other exit paths and is idempotent).

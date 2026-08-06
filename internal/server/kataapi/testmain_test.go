@@ -13,6 +13,7 @@ import (
 
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/testutil/gitsafe"
+	"go.kenn.io/forge/internal/testutil/testsignal"
 )
 
 var kataAPITestTmuxCommand []string
@@ -23,8 +24,12 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "configure isolated Kata API test tmux: %v\n", err)
 		os.Exit(1)
 	}
+	runCleanup, stopSignalCleanup := testsignal.Install(cleanupTmux, func(err error) {
+		fmt.Fprintf(os.Stderr, "cleanup isolated Kata API test tmux: %v\n", err)
+	})
 	code := gitsafe.RunIsolatedMain(m)
-	if err := cleanupTmux(); err != nil {
+	stopSignalCleanup()
+	if err := runCleanup(); err != nil {
 		fmt.Fprintf(os.Stderr, "cleanup isolated Kata API test tmux: %v\n", err)
 		if code == 0 {
 			code = 1

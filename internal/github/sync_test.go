@@ -192,7 +192,7 @@ func TestNormalSyncRejectsAllMergeRequestChildrenAfterParentAdvances(t *testing.
 		[]db.MREvent{{EventType: "review", DedupeKey: "stale-review", CreatedAt: oldUpdatedAt}},
 		[]db.MREvent{{EventType: "review_comment", DedupeKey: "stale-inline", CreatedAt: oldUpdatedAt}},
 		[]db.MRReviewThread{{ProviderThreadID: "stale-thread", CreatedAt: oldUpdatedAt, UpdatedAt: oldUpdatedAt}},
-		true, nil, nil,
+		true, nil, nil, "",
 	)
 	require.NoError(err)
 	assert.False(applied)
@@ -4394,7 +4394,7 @@ func TestRefreshTimelineUsesForcePushForLastActivity(t *testing.T) {
 	}
 
 	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{repo}, time.Minute, nil, testBudget(500))
-	require.NoError(syncer.refreshTimeline(ctx, repo, repoID, mrID,
+	require.NoError(syncer.refreshTimeline(ctx, repo, mrID,
 		mergeRequestSnapshotRevision(t, d, repoID, 1), buildOpenPR(1, now.Add(-2*time.Hour))))
 
 	pr, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)
@@ -4455,7 +4455,7 @@ func TestRefreshTimelineFetchFailurePreservesStoredForcePushActivity(t *testing.
 	}
 
 	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{repo}, time.Minute, nil, testBudget(500))
-	require.NoError(syncer.refreshTimeline(ctx, repo, repoID, mrID,
+	require.NoError(syncer.refreshTimeline(ctx, repo, mrID,
 		mergeRequestSnapshotRevision(t, d, repoID, 1), buildOpenPR(1, now.Add(-2*time.Hour))))
 
 	pr, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)
@@ -4541,7 +4541,7 @@ func TestSyncAssignsStableCommitOrderKeysAcrossForcePushReplacement(t *testing.T
 	}))
 
 	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{repo}, time.Minute, nil, testBudget(500))
-	require.NoError(syncer.refreshTimeline(ctx, repo, repoID, mrID,
+	require.NoError(syncer.refreshTimeline(ctx, repo, mrID,
 		mergeRequestSnapshotRevision(t, d, repoID, 1), buildOpenPR(1, now)))
 
 	events, err := d.ListMREvents(ctx, mrID)
@@ -8197,7 +8197,7 @@ func TestRefreshTimelineSkipsMergedEventWhenAuthoredMergedEventAlreadyExists(t *
 		nil,
 	)
 
-	require.NoError(syncer.refreshTimeline(ctx, repo, repoID, mrID,
+	require.NoError(syncer.refreshTimeline(ctx, repo, mrID,
 		mergeRequestSnapshotRevision(t, d, repoID, 7), pr))
 
 	events, err := d.ListMREvents(ctx, mrID)
@@ -19002,7 +19002,7 @@ func TestCommitMergeRequestDatasetsBindsToParentID(t *testing.T) {
 			MergeRequestID: oldMRID, EventType: "comment", Author: "ada",
 			Body: "stale comment", CreatedAt: now, DedupeKey: "comment-1",
 		}},
-		true, nil, nil, nil, false, nil, nil,
+		true, nil, nil, nil, false, nil, nil, "",
 	)
 	require.NoError(err)
 	require.True(applied)

@@ -32,7 +32,7 @@ func TestSnapshotBoundUpdatesRejectAdvancedRevision(t *testing.T) {
 	applied, err := database.UpdateMergeRequestCISnapshot(ctx, mrID, currentRevision, "success", `[{"name":"current"}]`)
 	require.NoError(err)
 	require.True(applied)
-	applied, err = database.MarkMergeRequestDetailFetchedSnapshot(ctx, mrID, currentRevision, true)
+	applied, err = database.MarkMergeRequestDetailFetchedSnapshot(ctx, mrID, currentRevision, true, nil)
 	require.NoError(err)
 	require.True(applied)
 

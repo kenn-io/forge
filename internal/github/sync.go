@@ -189,133 +189,154 @@ func commitEventSHA(event db.MREvent) string {
 	return ""
 }
 
-func (s *Syncer) obsoleteStampLock(mrID int64) *sync.Mutex {
-	s.stampingLocksMu.Lock()
-	defer s.stampingLocksMu.Unlock()
-	if s.stampingLocks == nil {
-		s.stampingLocks = make(map[int64]*sync.Mutex)
+// stampableCommitEvent reports whether liveness computation may touch this
+// event: it must be a commit event with a representable full SHA and, when
+// metadata is present, that metadata must parse to a JSON object (corrupt
+// metadata is left untouched rather than clobbered).
+func stampableCommitEvent(event db.MREvent) (string, bool) {
+	if event.EventType != "commit" {
+		return "", false
 	}
-	if s.stampingLocks[mrID] == nil {
-		s.stampingLocks[mrID] = &sync.Mutex{}
+	sha := commitEventSHA(event)
+	if sha == "" {
+		return "", false
 	}
-	return s.stampingLocks[mrID]
+	if event.MetadataJSON != "" {
+		var metadata map[string]any
+		if err := json.Unmarshal([]byte(event.MetadataJSON), &metadata); err != nil || metadata == nil {
+			return "", false
+		}
+	}
+	return sha, true
 }
 
-// stampObsoleteCommitEvents records on each stored commit event whether its
-// commit is still reachable from the merge request's current head, so strict
-// date order can collapse superseded commits without replaying force pushes.
-// The clone must contain the head (its ancestor closure is then complete);
-// otherwise the round is skipped and flags keep their last verified state.
-func (s *Syncer) stampObsoleteCommitEvents(
+// computeCommitLiveness derives commit-obsolescence metadata for a sync round
+// BEFORE the round commits, so the results ride the round's own
+// revision-guarded snapshot write and a stale round is inert by construction.
+// It mutates the incoming batch's commit events in place (their flags travel
+// inside the normal upsert) and returns metadata updates for stored commit
+// events the round does not re-list. verified reports whether the clone
+// certified the head this round; unverified rounds return no updates and the
+// affected events keep their last verified flags.
+//
+// The livenessHeads hint certifies a (head, event-set) pair: it is recorded
+// only after a verified round's snapshot applies, and any applied round that
+// adds commit events without verification drops it (see
+// commitMergeRequestDatasets), so a hint hit can only ever skip computation
+// whose result is already in the database — never a needed write. Liveness is
+// read-only over go-git and needs no locking.
+func (s *Syncer) computeCommitLiveness(
 	ctx context.Context,
 	repo RepoRef,
-	repoID int64,
 	mrID int64,
-	number int,
 	headSHA string,
-) error {
-	stampLock := s.obsoleteStampLock(mrID)
-	stampLock.Lock()
-	defer stampLock.Unlock()
+	incoming []db.MREvent,
+) (map[string]string, bool) {
 	if s.clones == nil || headSHA == "" {
-		return nil
+		return nil, false
 	}
-	s.stampedHeadsMu.Lock()
-	if s.stampedHeads[mrID] == headSHA {
-		s.stampedHeadsMu.Unlock()
-		return nil
+	headSHA = strings.ToLower(headSHA)
+	if s.livenessHeadCurrent(mrID, headSHA) {
+		return nil, false
 	}
-	delete(s.stampedHeads, mrID)
-	s.stampedHeadsMu.Unlock()
 
-	current, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoID, number)
+	stored, err := s.db.ListMREvents(ctx, mrID)
 	if err != nil {
-		return err
+		slog.Warn("commit liveness: list events failed",
+			"repo", repo.Owner+"/"+repo.Name, "mr", mrID, "err", err)
+		return nil, false
 	}
-	if current == nil || current.PlatformHeadSHA != headSHA {
-		return nil
-	}
-	platformName := string(repoPlatform(repo))
-	host := repoHost(repo)
-	hasHead, err := s.clones.HasCommit(
-		ctx, platformName, host, repo.Owner, repo.Name, headSHA,
-	)
-	if err != nil || !hasHead {
-		return err
-	}
-	events, err := s.db.ListMREvents(ctx, mrID)
-	if err != nil {
-		return err
-	}
-	type commitCandidate struct {
-		event db.MREvent
-		sha   string
-	}
-	candidates := make([]commitCandidate, 0, len(events))
-	candidateSHAs := make([]string, 0, len(events))
-	seenSHAs := make(map[string]bool)
-	for _, event := range events {
-		if event.EventType != "commit" {
-			continue
-		}
-		sha := commitEventSHA(event)
-		if sha == "" {
-			continue
-		}
-		if event.MetadataJSON != "" {
-			var metadata map[string]any
-			if err := json.Unmarshal([]byte(event.MetadataJSON), &metadata); err != nil || metadata == nil {
-				continue
-			}
-		}
-		candidates = append(candidates, commitCandidate{event: event, sha: sha})
-		if !seenSHAs[sha] {
-			seenSHAs[sha] = true
+	candidateSHAs := make([]string, 0, len(stored)+len(incoming))
+	seen := make(map[string]bool, len(stored)+len(incoming))
+	addCandidate := func(sha string) {
+		if !seen[sha] {
+			seen[sha] = true
 			candidateSHAs = append(candidateSHAs, sha)
 		}
 	}
-	missing, err := s.clones.FilterMissingCommits(
-		ctx, platformName, host, repo.Owner, repo.Name, candidateSHAs,
-	)
-	if err != nil {
-		return err
-	}
-	presentSHAs := make([]string, 0, len(candidateSHAs))
-	for _, sha := range candidateSHAs {
-		if !missing[sha] {
-			presentSHAs = append(presentSHAs, sha)
+	for _, event := range stored {
+		if sha, ok := stampableCommitEvent(event); ok {
+			addCandidate(sha)
 		}
 	}
-	unreachable, err := s.clones.UnreachableFrom(
-		ctx, platformName, host, repo.Owner, repo.Name, headSHA, presentSHAs,
-	)
-	if err != nil {
-		return err
+	for i := range incoming {
+		if sha, ok := stampableCommitEvent(incoming[i]); ok {
+			addCandidate(sha)
+		}
+	}
+	if len(candidateSHAs) == 0 {
+		return nil, true
 	}
 
-	metadataByDedupeKey := make(map[string]string)
-	for _, candidate := range candidates {
-		obsolete := missing[candidate.sha] || unreachable[candidate.sha]
-		metadataJSON, metadataChanged := withObsoleteMetadata(
-			candidate.event.MetadataJSON, obsolete,
-		)
-		if !metadataChanged {
+	reach, err := s.clones.CommitsReachableFrom(
+		ctx, string(repoPlatform(repo)), repoHost(repo),
+		repo.Owner, repo.Name, headSHA, candidateSHAs,
+	)
+	if err != nil {
+		slog.Warn("commit liveness: reachability failed",
+			"repo", repo.Owner+"/"+repo.Name, "mr", mrID, "err", err)
+		return nil, false
+	}
+	if !reach.HeadVerified {
+		return nil, false
+	}
+
+	incomingKeys := make(map[string]bool, len(incoming))
+	for i := range incoming {
+		sha, ok := stampableCommitEvent(incoming[i])
+		if !ok {
 			continue
 		}
-		metadataByDedupeKey[candidate.event.DedupeKey] = metadataJSON
+		incomingKeys[incoming[i].DedupeKey] = true
+		live, evaluated := reach.Live[sha]
+		if !evaluated {
+			continue
+		}
+		if metadataJSON, changed := withObsoleteMetadata(
+			incoming[i].MetadataJSON, !live,
+		); changed {
+			incoming[i].MetadataJSON = metadataJSON
+		}
 	}
-	if err := s.db.UpdateMREventMetadata(
-		ctx, mrID, metadataByDedupeKey,
-	); err != nil {
-		return err
+
+	updates := make(map[string]string)
+	for _, event := range stored {
+		sha, ok := stampableCommitEvent(event)
+		if !ok || incomingKeys[event.DedupeKey] {
+			continue
+		}
+		live, evaluated := reach.Live[sha]
+		if !evaluated {
+			continue
+		}
+		if metadataJSON, changed := withObsoleteMetadata(
+			event.MetadataJSON, !live,
+		); changed {
+			updates[event.DedupeKey] = metadataJSON
+		}
 	}
-	s.stampedHeadsMu.Lock()
-	defer s.stampedHeadsMu.Unlock()
-	if s.stampedHeads == nil {
-		s.stampedHeads = make(map[int64]string)
+	return updates, true
+}
+
+func (s *Syncer) livenessHeadCurrent(mrID int64, headSHA string) bool {
+	s.livenessHeadsMu.Lock()
+	defer s.livenessHeadsMu.Unlock()
+	return s.livenessHeads[mrID] == headSHA
+}
+
+func (s *Syncer) recordLivenessHead(mrID int64, headSHA string) {
+	s.livenessHeadsMu.Lock()
+	defer s.livenessHeadsMu.Unlock()
+	if s.livenessHeads == nil {
+		s.livenessHeads = make(map[int64]string)
 	}
-	s.stampedHeads[mrID] = headSHA
-	return nil
+	s.livenessHeads[mrID] = strings.ToLower(headSHA)
+}
+
+func (s *Syncer) dropLivenessHead(mrID int64) {
+	s.livenessHeadsMu.Lock()
+	defer s.livenessHeadsMu.Unlock()
+	delete(s.livenessHeads, mrID)
 }
 
 func commitOrderSHA(summary string) string {
@@ -666,10 +687,8 @@ type Syncer struct {
 	archivePollInterval      time.Duration
 	now                      func() time.Time
 	clones                   *gitclone.Manager
-	stampingLocksMu          sync.Mutex
-	stampingLocks            map[int64]*sync.Mutex // guarded by stampingLocksMu
-	stampedHeadsMu           sync.Mutex
-	stampedHeads             map[int64]string        // guarded by stampedHeadsMu
+	livenessHeadsMu          sync.Mutex
+	livenessHeads            map[int64]string // advisory compute-skip hint; see computeCommitLiveness
 	rateTrackers             map[string]*RateTracker // provider/host bucket -> tracker
 	writeRateTrackers        map[string]*RateTracker // provider/host bucket -> mutation-credential REST tracker
 	writeGQLRateTrackers     map[string]*RateTracker // provider/host bucket -> mutation-credential GraphQL tracker
@@ -1499,9 +1518,17 @@ func (s *Syncer) commitIssueCommentsSnapshot(
 // commitMergeRequestDatasets binds the child snapshot to the parent MR ID the
 // caller fetched for — see commitIssueCommentsSnapshot for why the route must
 // not resolve the parent.
+//
+// livenessHeadSHA, when non-empty, is the open MR's current head for this
+// round: commit-obsolescence flags are computed against it and ride this same
+// revision-guarded snapshot (incoming commit events carry flags in their
+// metadata; stored events the round does not re-list are updated in the same
+// transaction). Rounds without a verifiable head commit their events without
+// liveness changes. Callers pass "" for closed MRs and for batches that carry
+// no commit events.
 func (s *Syncer) commitMergeRequestDatasets(
 	ctx context.Context,
-	_ RepoRef,
+	repo RepoRef,
 	mrID int64,
 	number int,
 	expectedRevision int64,
@@ -1513,22 +1540,57 @@ func (s *Syncer) commitMergeRequestDatasets(
 	inlineComplete bool,
 	otherEvents []db.MREvent,
 	derived *db.MRDerivedFields,
+	livenessHeadSHA string,
 ) (bool, error) {
 	for _, events := range [][]db.MREvent{comments, reviews, inline, otherEvents} {
 		for i := range events {
 			events[i].MergeRequestID = mrID
 		}
 	}
+	metadataUpdates, livenessVerified := s.computeCommitLiveness(
+		ctx, repo, mrID, livenessHeadSHA, otherEvents,
+	)
 	applied, err := s.db.CommitMergeRequestChildSnapshot(ctx, db.MergeRequestChildSnapshot{
 		MergeRequestID: mrID, ExpectedRevision: expectedRevision,
 		Comments: comments, CommentsComplete: commentsComplete, Reviews: reviews,
 		InlineComments: inline, ReviewThreads: threads, InlineCommentsComplete: inlineComplete,
 		OtherEvents: otherEvents, DerivedFields: derived,
+		EventMetadataUpdates: metadataUpdates,
 	})
 	if err != nil {
 		return false, fmt.Errorf("commit child snapshot for MR #%d: %w", number, err)
 	}
+	if applied {
+		switch {
+		case livenessVerified:
+			s.recordLivenessHead(mrID, livenessHeadSHA)
+		case batchHasCommitEvents(otherEvents):
+			// The round changed the stored commit-event set without a
+			// verified head, so any previous hint no longer certifies
+			// the database state; drop it so the next verifiable round
+			// recomputes instead of skipping.
+			s.dropLivenessHead(mrID)
+		}
+	}
 	return applied, nil
+}
+
+func batchHasCommitEvents(events []db.MREvent) bool {
+	for _, event := range events {
+		if event.EventType == "commit" {
+			return true
+		}
+	}
+	return false
+}
+
+// openMRLivenessHead is the liveness head for a dataset commit: the MR's
+// current head while it is open, and "" (no liveness evaluation) otherwise.
+func openMRLivenessHead(normalized *db.MergeRequest) string {
+	if normalized != nil && normalized.State == db.MergeRequestStateOpen {
+		return normalized.PlatformHeadSHA
+	}
+	return ""
 }
 
 type gitHubClientProvider struct {
@@ -8567,6 +8629,7 @@ func (s *Syncer) syncOpenMRFromBulk(
 			comments, bulk.CommentsComplete,
 			reviews,
 			nil, nil, false, events, derived,
+			openMRLivenessHead(normalized),
 		)
 		if err != nil {
 			return fmt.Errorf("commit archival events for MR #%d: %w", number, err)
@@ -8611,7 +8674,7 @@ func (s *Syncer) syncOpenMRFromBulk(
 	// their complete mirrored datasets above.
 	if allComplete {
 		pending := ciHasPending(string(ciJSON))
-		detailApplied, err := s.db.MarkMergeRequestDetailFetchedSnapshot(ctx, mrID, revision, pending)
+		detailApplied, err := s.db.MarkMergeRequestDetailFetchedSnapshot(ctx, mrID, revision, pending, nil)
 		if err != nil {
 			slog.Warn("mark GraphQL detail fetched failed",
 				"repo", repo.Owner+"/"+repo.Name,
@@ -8636,20 +8699,6 @@ func (s *Syncer) syncOpenMRFromBulk(
 			if !approvalApplied {
 				return nil
 			}
-		}
-	}
-
-	// Post-persistence early returns above intentionally skip stamping: the round
-	// either lost snapshot ownership or failed a later snapshot write, so it must
-	// not publish head metadata. A later accepted round retries the stamp.
-	if normalized.State == db.MergeRequestStateOpen {
-		if err := s.stampObsoleteCommitEvents(
-			ctx, repo, repoID, mrID, number, normalized.PlatformHeadSHA,
-		); err != nil {
-			slog.Warn("stamp obsolete commit events failed",
-				"repo", repo.Owner+"/"+repo.Name,
-				"number", number, "err", err,
-			)
 		}
 	}
 
@@ -8839,7 +8888,7 @@ func (s *Syncer) fetchMRDetail(
 	}
 
 	if err := s.refreshTimeline(
-		ctx, repo, repoID, mrID, revision, fullPR,
+		ctx, repo, mrID, revision, fullPR,
 	); err != nil {
 		// Timeline = 4 base calls (comments + reviews + commits + force-push);
 		// provider review-thread sync is handled inside refreshTimeline.
@@ -8896,7 +8945,7 @@ func (s *Syncer) fetchMRDetail(
 		pending = ciHasPending(freshMR.CIChecksJSON)
 	}
 
-	detailApplied, err := s.db.MarkMergeRequestDetailFetchedSnapshot(ctx, mrID, revision, pending)
+	detailApplied, err := s.db.MarkMergeRequestDetailFetchedSnapshot(ctx, mrID, revision, pending, nil)
 	if err != nil {
 		return calls, fmt.Errorf(
 			"mark detail fetched for MR #%d: %w", number, err,
@@ -8904,17 +8953,6 @@ func (s *Syncer) fetchMRDetail(
 	}
 	if !detailApplied {
 		return calls, nil
-	}
-
-	if normalized.State == db.MergeRequestStateOpen {
-		if err := s.stampObsoleteCommitEvents(
-			ctx, repo, repoID, mrID, number, normalized.PlatformHeadSHA,
-		); err != nil {
-			slog.Warn("stamp obsolete commit events failed",
-				"repo", repo.Owner+"/"+repo.Name,
-				"number", number, "err", err,
-			)
-		}
 	}
 
 	// Fire onMRSynced hook.
@@ -9005,8 +9043,18 @@ func (s *Syncer) markUnchangedMRDetailFetched(
 			pending = ciHasPending(fresh.CIChecksJSON)
 		}
 	}
+	// Unchanged rounds have no dataset commit of their own, so commit
+	// liveness travels with the detail-fetched marker under the same
+	// revision guard instead.
+	livenessHead := ""
+	if existing.State == db.MergeRequestStateOpen {
+		livenessHead = existing.PlatformHeadSHA
+	}
+	metadataUpdates, livenessVerified := s.computeCommitLiveness(
+		ctx, repo, existing.ID, livenessHead, nil,
+	)
 	detailApplied, err := s.db.MarkMergeRequestDetailFetchedSnapshot(
-		ctx, existing.ID, existing.SnapshotRevision, pending,
+		ctx, existing.ID, existing.SnapshotRevision, pending, metadataUpdates,
 	)
 	if err != nil {
 		return calls, fmt.Errorf("mark unchanged detail fetched for MR #%d: %w", number, err)
@@ -9014,15 +9062,8 @@ func (s *Syncer) markUnchangedMRDetailFetched(
 	if !detailApplied {
 		return calls, nil
 	}
-	if existing.State == db.MergeRequestStateOpen {
-		if err := s.stampObsoleteCommitEvents(
-			ctx, repo, repoID, existing.ID, number, existing.PlatformHeadSHA,
-		); err != nil {
-			slog.Warn("stamp obsolete commit events failed",
-				"repo", repo.Owner+"/"+repo.Name,
-				"number", number, "err", err,
-			)
-		}
+	if livenessVerified {
+		s.recordLivenessHead(existing.ID, livenessHead)
 	}
 	if s.onMRSynced != nil {
 		fresh, fErr := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoID, number)
@@ -9086,7 +9127,8 @@ func (s *Syncer) fetchProviderMRDetail(
 	}
 
 	detailCalls, pending, err := s.syncProviderMRDetailExtras(
-		ctx, reader, repo, repoID, mrID, number, revision, normalized.PlatformHeadSHA,
+		ctx, reader, repo, mrID, number, revision, normalized.PlatformHeadSHA,
+		openMRLivenessHead(normalized),
 	)
 	calls += detailCalls
 	if err != nil {
@@ -9099,23 +9141,12 @@ func (s *Syncer) fetchProviderMRDetail(
 		return calls, fmt.Errorf("persist merged lifecycle event for MR #%d: %w", number, err)
 	}
 
-	detailApplied, err := s.db.MarkMergeRequestDetailFetchedSnapshot(ctx, mrID, revision, pending)
+	detailApplied, err := s.db.MarkMergeRequestDetailFetchedSnapshot(ctx, mrID, revision, pending, nil)
 	if err != nil {
 		return calls, fmt.Errorf("mark detail fetched for MR #%d: %w", number, err)
 	}
 	if !detailApplied {
 		return calls, nil
-	}
-
-	if normalized.State == db.MergeRequestStateOpen {
-		if err := s.stampObsoleteCommitEvents(
-			ctx, repo, repoID, mrID, number, normalized.PlatformHeadSHA,
-		); err != nil {
-			slog.Warn("stamp obsolete commit events failed",
-				"repo", repo.Owner+"/"+repo.Name,
-				"number", number, "err", err,
-			)
-		}
 	}
 
 	if s.onMRSynced != nil {
@@ -9137,11 +9168,11 @@ func (s *Syncer) syncProviderMRDetailExtras(
 	ctx context.Context,
 	reader platform.MergeRequestReader,
 	repo RepoRef,
-	repoID int64,
 	mrID int64,
 	number int,
 	expectedRevision int64,
 	headSHA string,
+	livenessHeadSHA string,
 ) (int, bool, error) {
 	calls := 0
 	events, err := reader.ListMergeRequestEvents(ctx, platformRepoRef(repo), number)
@@ -9182,6 +9213,7 @@ func (s *Syncer) syncProviderMRDetailExtras(
 			comments, true,
 			reviews,
 			nil, nil, false, dbEvents, nil,
+			livenessHeadSHA,
 		)
 		if commitErr != nil {
 			return calls, false, fmt.Errorf("replace provider MR events for #%d: %w", number, commitErr)
@@ -9269,7 +9301,7 @@ func (s *Syncer) syncProviderMRReviewThreads(
 	}
 	events, dbThreads := platform.DBReviewThreads(threads)
 	applied, err := s.commitMergeRequestDatasets(
-		ctx, repo, mrID, number, expectedRevision, nil, false, nil, events, dbThreads, true, nil, nil,
+		ctx, repo, mrID, number, expectedRevision, nil, false, nil, events, dbThreads, true, nil, nil, "",
 	)
 	if err != nil {
 		return calls, err
@@ -9540,7 +9572,6 @@ func (s *Syncer) classifyProviderItemLookupError(
 func (s *Syncer) refreshTimeline(
 	ctx context.Context,
 	repo RepoRef,
-	repoID int64,
 	mrID int64,
 	expectedRevision int64,
 	ghPR *gh.PullRequest,
@@ -9633,11 +9664,16 @@ func (s *Syncer) refreshTimeline(
 		CommentCount:   len(comments),
 		LastActivityAt: lastActivityAt,
 	}
+	livenessHead := ""
+	if ghPR.GetState() == "open" {
+		livenessHead = ghPR.GetHead().GetSHA()
+	}
 	applied, err := s.commitMergeRequestDatasets(
 		ctx, repo, mrID, number, expectedRevision,
 		commentEvents, true,
 		reviewEvents,
 		nil, nil, false, events, &derived,
+		livenessHead,
 	)
 	if err != nil {
 		return fmt.Errorf("commit comments and reviews for MR #%d: %w", number, err)
@@ -10032,7 +10068,7 @@ func (s *Syncer) replacePRCommentEvents(
 		events = append(events, event)
 	}
 	applied, err := s.commitMergeRequestDatasets(
-		ctx, repo, mrID, number, expectedRevision, events, true, nil, nil, nil, false, nil, derived,
+		ctx, repo, mrID, number, expectedRevision, events, true, nil, nil, nil, false, nil, derived, "",
 	)
 	return applied, err
 }
@@ -11393,7 +11429,7 @@ func (s *Syncer) syncMRForRepo(
 			return nil
 		}
 
-		if err := s.refreshTimeline(ctx, repo, repoID, mrID, revision, ghPR); err != nil {
+		if err := s.refreshTimeline(ctx, repo, mrID, revision, ghPR); err != nil {
 			if errors.Is(err, errParentSnapshotAdvanced) {
 				return nil
 			}
@@ -11435,7 +11471,7 @@ func (s *Syncer) syncMRForRepo(
 		if freshErr == nil && fresh != nil {
 			pending := ciHasPending(fresh.CIChecksJSON)
 			detailApplied, detailErr := s.db.MarkMergeRequestDetailFetchedSnapshot(
-				ctx, mrID, revision, pending,
+				ctx, mrID, revision, pending, nil,
 			)
 			if detailErr != nil {
 				return fmt.Errorf("mark detail fetched for MR #%d: %w", number, detailErr)
@@ -11457,7 +11493,8 @@ func (s *Syncer) syncMRForRepo(
 
 		pending := false
 		_, pending, err = s.syncProviderMRDetailExtras(
-			ctx, mrReader, repo, repoID, mrID, number, revision, normalized.PlatformHeadSHA,
+			ctx, mrReader, repo, mrID, number, revision, normalized.PlatformHeadSHA,
+			openMRLivenessHead(normalized),
 		)
 		if err != nil {
 			if errors.Is(err, errParentSnapshotAdvanced) {
@@ -11469,24 +11506,13 @@ func (s *Syncer) syncMRForRepo(
 			return fmt.Errorf("persist merged lifecycle event for MR #%d: %w", number, err)
 		}
 		detailApplied, err := s.db.MarkMergeRequestDetailFetchedSnapshot(
-			ctx, mrID, revision, pending,
+			ctx, mrID, revision, pending, nil,
 		)
 		if err != nil {
 			return fmt.Errorf("mark detail fetched for MR #%d: %w", number, err)
 		}
 		if !detailApplied {
 			return nil
-		}
-	}
-
-	if normalized.State == db.MergeRequestStateOpen {
-		if err := s.stampObsoleteCommitEvents(
-			ctx, repo, repoID, mrID, number, normalized.PlatformHeadSHA,
-		); err != nil {
-			slog.Warn("stamp obsolete commit events failed",
-				"repo", repo.Owner+"/"+repo.Name,
-				"number", number, "err", err,
-			)
 		}
 	}
 

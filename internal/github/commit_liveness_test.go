@@ -18,7 +18,7 @@ import (
 	gitcmd "go.kenn.io/kit/git/cmd"
 )
 
-type obsoleteTestHistory struct {
+type livenessTestHistory struct {
 	sourceDir string
 	manager   *gitclone.Manager
 	base      string
@@ -29,29 +29,29 @@ type obsoleteTestHistory struct {
 	b2        string
 }
 
-type obsoleteStampingFixture struct {
+type commitLivenessFixture struct {
 	syncer   *Syncer
 	database *db.DB
 	repo     RepoRef
 	repoID   int64
 	mrID     int64
-	history  obsoleteTestHistory
+	history  livenessTestHistory
 }
 
-func obsoleteTestGit(t *testing.T, dir string, args ...string) string {
+func livenessTestGit(t *testing.T, dir string, args ...string) string {
 	t.Helper()
 	out, stderr, err := gitcmd.New().Run(t.Context(), dir, nil, args...)
 	require.NoError(t, err, "git %v: %s%s", args, out, stderr)
 	return strings.TrimSpace(string(out))
 }
 
-func setupObsoleteTestHistory(t *testing.T) obsoleteTestHistory {
+func setupLivenessTestHistory(t *testing.T) livenessTestHistory {
 	t.Helper()
 	dir := t.TempDir()
 	sourceDir := filepath.Join(dir, "source")
 	require.NoError(t, os.MkdirAll(sourceDir, 0o755))
 	run := func(args ...string) string {
-		return obsoleteTestGit(t, sourceDir, args...)
+		return livenessTestGit(t, sourceDir, args...)
 	}
 	run("init", "-b", "main")
 	run("config", "user.email", "fixture@example.invalid")
@@ -77,7 +77,7 @@ func setupObsoleteTestHistory(t *testing.T) obsoleteTestHistory {
 	b1 := lineageCommit("lineage-b.txt", "b1\n", "lineage b1")
 	b2 := lineageCommit("lineage-b.txt", "b2\n", "lineage b2")
 
-	// Advance main after both feature lineages fork. Stamping must depend only
+	// Advance main after both feature lineages fork. Liveness must depend only
 	// on reachability from the MR head, never on the moving base branch.
 	run("checkout", "main")
 	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, "base.txt"), []byte("m2\n"), 0o644))
@@ -87,9 +87,9 @@ func setupObsoleteTestHistory(t *testing.T) obsoleteTestHistory {
 	manager := gitclone.New(filepath.Join(dir, "clones"), nil)
 	barePath, err := manager.ClonePath("github", "github.com", "owner", "repo")
 	require.NoError(t, err)
-	obsoleteTestGit(t, "", "clone", "--bare", sourceDir, barePath)
+	livenessTestGit(t, "", "clone", "--bare", sourceDir, barePath)
 
-	return obsoleteTestHistory{
+	return livenessTestHistory{
 		sourceDir: sourceDir,
 		manager:   manager,
 		base:      base,
@@ -101,9 +101,9 @@ func setupObsoleteTestHistory(t *testing.T) obsoleteTestHistory {
 	}
 }
 
-func setupObsoleteStampingFixture(t *testing.T) obsoleteStampingFixture {
+func setupCommitLivenessFixture(t *testing.T) commitLivenessFixture {
 	t.Helper()
-	history := setupObsoleteTestHistory(t)
+	history := setupLivenessTestHistory(t)
 	database := openTestDB(t)
 	repo := RepoRef{
 		Platform:           platform.KindGitHub,
@@ -135,7 +135,7 @@ func setupObsoleteStampingFixture(t *testing.T) obsoleteStampingFixture {
 		LastActivityAt:     now,
 	})
 	require.NoError(t, err)
-	return obsoleteStampingFixture{
+	return commitLivenessFixture{
 		syncer:   &Syncer{db: database, clones: history.manager},
 		database: database,
 		repo:     repo,
@@ -145,7 +145,7 @@ func setupObsoleteStampingFixture(t *testing.T) obsoleteStampingFixture {
 	}
 }
 
-func seedObsoleteCommitEvents(t *testing.T, fixture obsoleteStampingFixture, shas ...string) {
+func seedLivenessCommitEvents(t *testing.T, fixture commitLivenessFixture, shas ...string) {
 	t.Helper()
 	events := make([]db.MREvent, 0, len(shas))
 	createdAt := time.Date(2026, 8, 5, 10, 0, 0, 0, time.UTC)
@@ -163,9 +163,9 @@ func seedObsoleteCommitEvents(t *testing.T, fixture obsoleteStampingFixture, sha
 	require.NoError(t, fixture.database.UpsertMREvents(t.Context(), events))
 }
 
-func setObsoleteFixtureHead(
+func setLivenessFixtureHead(
 	t *testing.T,
-	fixture obsoleteStampingFixture,
+	fixture commitLivenessFixture,
 	headSHA string,
 ) *db.MergeRequest {
 	t.Helper()
@@ -187,9 +187,33 @@ func setObsoleteFixtureHead(
 	return fresh
 }
 
-func assertObsoleteCommitFlags(
+// runLivenessRound performs one dataset-commit sync round against the MR's
+// current snapshot revision: the incoming events (if any) are persisted and
+// commit-liveness flags ride the same revision-guarded transaction, exactly as
+// production rounds do.
+func runLivenessRound(
 	t *testing.T,
-	fixture obsoleteStampingFixture,
+	fixture commitLivenessFixture,
+	headSHA string,
+	incoming []db.MREvent,
+) bool {
+	t.Helper()
+	mr, err := fixture.database.GetMergeRequestByRepoIDAndNumber(
+		t.Context(), fixture.repoID, 1,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, mr)
+	applied, err := fixture.syncer.commitMergeRequestDatasets(
+		t.Context(), fixture.repo, fixture.mrID, 1, mr.SnapshotRevision,
+		nil, false, nil, nil, nil, false, incoming, nil, headSHA,
+	)
+	require.NoError(t, err)
+	return applied
+}
+
+func assertLivenessCommitFlags(
+	t *testing.T,
+	fixture commitLivenessFixture,
 	want map[string]bool,
 ) {
 	t.Helper()
@@ -216,49 +240,41 @@ func assertObsoleteCommitFlags(
 	}
 }
 
-func TestStampObsoleteCommitEventsReplaceAndRestore(t *testing.T) {
-	fixture := setupObsoleteStampingFixture(t)
+func TestCommitLivenessReplaceAndRestore(t *testing.T) {
+	fixture := setupCommitLivenessFixture(t)
 	h := fixture.history
-	seedObsoleteCommitEvents(t, fixture, h.a1, h.a2, h.a3, h.b1, h.b2)
+	seedLivenessCommitEvents(t, fixture, h.a1, h.a2, h.a3, h.b1, h.b2)
 
-	setObsoleteFixtureHead(t, fixture, h.b2)
-	require.NoError(t, fixture.syncer.stampObsoleteCommitEvents(
-		t.Context(), fixture.repo, fixture.repoID, fixture.mrID, 1, h.b2,
-	))
-	assertObsoleteCommitFlags(t, fixture, map[string]bool{
+	setLivenessFixtureHead(t, fixture, h.b2)
+	require.True(t, runLivenessRound(t, fixture, h.b2, nil))
+	assertLivenessCommitFlags(t, fixture, map[string]bool{
 		h.a1: true, h.a2: true, h.a3: true, h.b1: false, h.b2: false,
 	})
 
-	setObsoleteFixtureHead(t, fixture, h.a3)
-	require.NoError(t, fixture.syncer.stampObsoleteCommitEvents(
-		t.Context(), fixture.repo, fixture.repoID, fixture.mrID, 1, h.a3,
-	))
-	assertObsoleteCommitFlags(t, fixture, map[string]bool{
+	setLivenessFixtureHead(t, fixture, h.a3)
+	require.True(t, runLivenessRound(t, fixture, h.a3, nil))
+	assertLivenessCommitFlags(t, fixture, map[string]bool{
 		h.a1: false, h.a2: false, h.a3: false, h.b1: true, h.b2: true,
 	})
 
-	setObsoleteFixtureHead(t, fixture, h.a2)
-	require.NoError(t, fixture.syncer.stampObsoleteCommitEvents(
-		t.Context(), fixture.repo, fixture.repoID, fixture.mrID, 1, h.a2,
-	))
-	assertObsoleteCommitFlags(t, fixture, map[string]bool{
+	setLivenessFixtureHead(t, fixture, h.a2)
+	require.True(t, runLivenessRound(t, fixture, h.a2, nil))
+	assertLivenessCommitFlags(t, fixture, map[string]bool{
 		h.a1: false, h.a2: false, h.a3: true, h.b1: true, h.b2: true,
 	})
 }
 
-func TestStampObsoleteCommitEventsIgnoresBaseAdvance(t *testing.T) {
-	fixture := setupObsoleteStampingFixture(t)
+func TestCommitLivenessIgnoresBaseAdvance(t *testing.T) {
+	fixture := setupCommitLivenessFixture(t)
 	h := fixture.history
-	seedObsoleteCommitEvents(t, fixture, h.a1, h.a2, h.a3)
+	seedLivenessCommitEvents(t, fixture, h.a1, h.a2, h.a3)
 
-	require.NoError(t, fixture.syncer.stampObsoleteCommitEvents(
-		t.Context(), fixture.repo, fixture.repoID, fixture.mrID, 1, h.a3,
-	))
-	assertObsoleteCommitFlags(t, fixture, map[string]bool{h.a1: false, h.a2: false, h.a3: false})
+	require.True(t, runLivenessRound(t, fixture, h.a3, nil))
+	assertLivenessCommitFlags(t, fixture, map[string]bool{h.a1: false, h.a2: false, h.a3: false})
 }
 
-func TestStampObsoleteCommitEventsSkipsWhenHeadMissing(t *testing.T) {
-	fixture := setupObsoleteStampingFixture(t)
+func TestCommitLivenessSkipsWhenHeadMissing(t *testing.T) {
+	fixture := setupCommitLivenessFixture(t)
 	h := fixture.history
 	require.NoError(t, fixture.database.UpsertMREvents(t.Context(), []db.MREvent{{
 		MergeRequestID: fixture.mrID,
@@ -269,28 +285,26 @@ func TestStampObsoleteCommitEventsSkipsWhenHeadMissing(t *testing.T) {
 		DedupeKey:      h.a1,
 	}}))
 
+	// The head is absent from the clone, so the round commits without liveness
+	// changes and previously verified flags survive untouched.
 	missingHead := strings.Repeat("d", 40)
-	setObsoleteFixtureHead(t, fixture, missingHead)
-	require.NoError(t, fixture.syncer.stampObsoleteCommitEvents(
-		t.Context(), fixture.repo, fixture.repoID, fixture.mrID, 1, missingHead,
-	))
-	assertObsoleteCommitFlags(t, fixture, map[string]bool{h.a1: true})
+	setLivenessFixtureHead(t, fixture, missingHead)
+	require.True(t, runLivenessRound(t, fixture, missingHead, nil))
+	assertLivenessCommitFlags(t, fixture, map[string]bool{h.a1: true})
 }
 
-func TestStampObsoleteCommitEventsFlagsShaAbsentFromClone(t *testing.T) {
-	fixture := setupObsoleteStampingFixture(t)
+func TestCommitLivenessFlagsShaAbsentFromClone(t *testing.T) {
+	fixture := setupCommitLivenessFixture(t)
 	absentSHA := strings.Repeat("f", 40)
-	seedObsoleteCommitEvents(t, fixture, absentSHA)
+	seedLivenessCommitEvents(t, fixture, absentSHA)
 
-	require.NoError(t, fixture.syncer.stampObsoleteCommitEvents(
-		t.Context(), fixture.repo, fixture.repoID, fixture.mrID, 1, fixture.history.a3,
-	))
-	assertObsoleteCommitFlags(t, fixture, map[string]bool{absentSHA: true})
+	require.True(t, runLivenessRound(t, fixture, fixture.history.a3, nil))
+	assertLivenessCommitFlags(t, fixture, map[string]bool{absentSHA: true})
 }
 
-func TestStampObsoleteCommitEventsSkipsNonShaSummaries(t *testing.T) {
+func TestCommitLivenessSkipsNonShaSummaries(t *testing.T) {
 	assert := assert.New(t)
-	fixture := setupObsoleteStampingFixture(t)
+	fixture := setupCommitLivenessFixture(t)
 	h := fixture.history
 	events := []db.MREvent{
 		{
@@ -312,10 +326,8 @@ func TestStampObsoleteCommitEventsSkipsNonShaSummaries(t *testing.T) {
 	}
 	require.NoError(t, fixture.database.UpsertMREvents(t.Context(), events))
 
-	setObsoleteFixtureHead(t, fixture, h.b2)
-	require.NoError(t, fixture.syncer.stampObsoleteCommitEvents(
-		t.Context(), fixture.repo, fixture.repoID, fixture.mrID, 1, h.b2,
-	))
+	setLivenessFixtureHead(t, fixture, h.b2)
+	require.True(t, runLivenessRound(t, fixture, h.b2, nil))
 	stored, err := fixture.database.ListMREvents(t.Context(), fixture.mrID)
 	require.NoError(t, err)
 	require.Len(t, stored, 2)
@@ -324,8 +336,8 @@ func TestStampObsoleteCommitEventsSkipsNonShaSummaries(t *testing.T) {
 	assert.JSONEq(`{"review":"approved"}`, byKey["non-commit"].MetadataJSON)
 }
 
-func TestStampObsoleteCommitEventsUsesPlatformExternalID(t *testing.T) {
-	fixture := setupObsoleteStampingFixture(t)
+func TestCommitLivenessUsesPlatformExternalID(t *testing.T) {
+	fixture := setupCommitLivenessFixture(t)
 	h := fixture.history
 	require.NoError(t, fixture.database.UpsertMREvents(t.Context(), []db.MREvent{{
 		MergeRequestID:     fixture.mrID,
@@ -337,16 +349,14 @@ func TestStampObsoleteCommitEventsUsesPlatformExternalID(t *testing.T) {
 		DedupeKey:          "gitealike-commit",
 	}}))
 
-	setObsoleteFixtureHead(t, fixture, h.b2)
-	require.NoError(t, fixture.syncer.stampObsoleteCommitEvents(
-		t.Context(), fixture.repo, fixture.repoID, fixture.mrID, 1, h.b2,
-	))
-	assertObsoleteCommitFlags(t, fixture, map[string]bool{"gitealike-commit": true})
+	setLivenessFixtureHead(t, fixture, h.b2)
+	require.True(t, runLivenessRound(t, fixture, h.b2, nil))
+	assertLivenessCommitFlags(t, fixture, map[string]bool{"gitealike-commit": true})
 }
 
-func TestStampObsoleteCommitEventsSkipsUnparseableMetadata(t *testing.T) {
+func TestCommitLivenessSkipsUnparseableMetadata(t *testing.T) {
 	assert := assert.New(t)
-	fixture := setupObsoleteStampingFixture(t)
+	fixture := setupCommitLivenessFixture(t)
 	h := fixture.history
 	require.NoError(t, fixture.database.UpsertMREvents(t.Context(), []db.MREvent{{
 		MergeRequestID: fixture.mrID,
@@ -357,27 +367,23 @@ func TestStampObsoleteCommitEventsSkipsUnparseableMetadata(t *testing.T) {
 		DedupeKey:      h.a1,
 	}}))
 
-	setObsoleteFixtureHead(t, fixture, h.b2)
-	require.NoError(t, fixture.syncer.stampObsoleteCommitEvents(
-		t.Context(), fixture.repo, fixture.repoID, fixture.mrID, 1, h.b2,
-	))
+	setLivenessFixtureHead(t, fixture, h.b2)
+	require.True(t, runLivenessRound(t, fixture, h.b2, nil))
 	stored, err := fixture.database.ListMREvents(t.Context(), fixture.mrID)
 	require.NoError(t, err)
 	require.Len(t, stored, 1)
 	assert.Equal(`[1,2]`, stored[0].MetadataJSON)
 }
 
-func TestStampObsoleteCommitEventsSkipsPreviouslyStampedHead(t *testing.T) {
+func TestCommitLivenessHintSkipsRecomputeForSameHead(t *testing.T) {
 	assert := assert.New(t)
-	fixture := setupObsoleteStampingFixture(t)
+	fixture := setupCommitLivenessFixture(t)
 	h := fixture.history
-	seedObsoleteCommitEvents(t, fixture, h.a1, h.a2, h.a3)
-	setObsoleteFixtureHead(t, fixture, h.b2)
+	seedLivenessCommitEvents(t, fixture, h.a1, h.a2, h.a3)
+	setLivenessFixtureHead(t, fixture, h.b2)
 
-	require.NoError(t, fixture.syncer.stampObsoleteCommitEvents(
-		t.Context(), fixture.repo, fixture.repoID, fixture.mrID, 1, h.b2,
-	))
-	assertObsoleteCommitFlags(t, fixture, map[string]bool{
+	require.True(t, runLivenessRound(t, fixture, h.b2, nil))
+	assertLivenessCommitFlags(t, fixture, map[string]bool{
 		h.a1: true, h.a2: true, h.a3: true,
 	})
 	before, err := fixture.database.ListMREvents(t.Context(), fixture.mrID)
@@ -386,121 +392,129 @@ func TestStampObsoleteCommitEventsSkipsPreviouslyStampedHead(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, os.RemoveAll(clonePath))
 
-	// A successful stamp caches this exact head, so the steady-state call must
+	// A verified round records this exact head, so the steady-state round must
 	// not touch the now-missing clone or rewrite any event rows.
-	require.NoError(t, fixture.syncer.stampObsoleteCommitEvents(
-		t.Context(), fixture.repo, fixture.repoID, fixture.mrID, 1, h.b2,
-	))
+	require.True(t, runLivenessRound(t, fixture, h.b2, nil))
 	after, err := fixture.database.ListMREvents(t.Context(), fixture.mrID)
 	require.NoError(t, err)
 	assert.Equal(before, after)
 
-	// A different head is not covered by the cache and therefore attempts a
-	// fresh clone verification, which surfaces the missing clone as an error.
-	setObsoleteFixtureHead(t, fixture, h.a3)
-	err = fixture.syncer.stampObsoleteCommitEvents(
-		t.Context(), fixture.repo, fixture.repoID, fixture.mrID, 1, h.a3,
-	)
-	assert.Error(err)
+	// A different head misses the hint and attempts a fresh verification. The
+	// clone is gone, so the head is unverifiable and the round commits without
+	// liveness changes: the b2-round flags survive.
+	setLivenessFixtureHead(t, fixture, h.a3)
+	require.True(t, runLivenessRound(t, fixture, h.a3, nil))
+	assertLivenessCommitFlags(t, fixture, map[string]bool{
+		h.a1: true, h.a2: true, h.a3: true,
+	})
 }
 
-func TestStampObsoleteCommitEventsSkipsStaleHeadAfterNewerRound(t *testing.T) {
+func TestCommitLivenessStaleRevisionRoundIsInert(t *testing.T) {
 	assert := assert.New(t)
-	fixture := setupObsoleteStampingFixture(t)
+	fixture := setupCommitLivenessFixture(t)
 	h := fixture.history
-	seedObsoleteCommitEvents(t, fixture, h.a1, h.a2, h.a3, h.b1, h.b2)
-	setObsoleteFixtureHead(t, fixture, h.b2)
-	require.NoError(t, fixture.syncer.stampObsoleteCommitEvents(
-		t.Context(), fixture.repo, fixture.repoID, fixture.mrID, 1, h.b2,
-	))
-	before, err := fixture.database.ListMREvents(t.Context(), fixture.mrID)
-	require.NoError(t, err)
+	seedLivenessCommitEvents(t, fixture, h.a1, h.a2, h.a3, h.b1, h.b2)
 
-	// The persisted MR already belongs to the newer b2 round. A queued a3
-	// stamp must not replace the verified b2 flags with stale-head ancestry.
-	require.NoError(t, fixture.syncer.stampObsoleteCommitEvents(
-		t.Context(), fixture.repo, fixture.repoID, fixture.mrID, 1, h.a3,
-	))
-	after, err := fixture.database.ListMREvents(t.Context(), fixture.mrID)
+	stale, err := fixture.database.GetMergeRequestByRepoIDAndNumber(
+		t.Context(), fixture.repoID, 1,
+	)
 	require.NoError(t, err)
-	assert.Equal(before, after)
-	assertObsoleteCommitFlags(t, fixture, map[string]bool{
-		h.a1: true, h.a2: true, h.a3: true, h.b1: false, h.b2: false,
+	require.NotNil(t, stale)
+
+	// The MR advances to b2 after the a3 round captured its revision. The
+	// revision CAS rejects the whole stale snapshot, liveness flags included.
+	setLivenessFixtureHead(t, fixture, h.b2)
+	applied, err := fixture.syncer.commitMergeRequestDatasets(
+		t.Context(), fixture.repo, fixture.mrID, 1, stale.SnapshotRevision,
+		nil, false, nil, nil, nil, false, nil, nil, h.a3,
+	)
+	require.NoError(t, err)
+	assert.False(applied)
+	assertLivenessCommitFlags(t, fixture, map[string]bool{
+		h.a1: false, h.a2: false, h.a3: false, h.b1: false, h.b2: false,
 	})
 
-	// The stale call invalidates the b2 cache entry. A subsequent b2 stamp
-	// must therefore inspect a newly persisted event instead of short-circuiting.
-	absentSHA := strings.Repeat("e", 40)
-	seedObsoleteCommitEvents(t, fixture, absentSHA)
-	require.NoError(t, fixture.syncer.stampObsoleteCommitEvents(
-		t.Context(), fixture.repo, fixture.repoID, fixture.mrID, 1, h.b2,
-	))
-	assertObsoleteCommitFlags(t, fixture, map[string]bool{absentSHA: true})
+	// A current-revision round for the real head must still compute freshly:
+	// the rejected round may not have recorded any liveness hint.
+	require.True(t, runLivenessRound(t, fixture, h.b2, nil))
+	assertLivenessCommitFlags(t, fixture, map[string]bool{
+		h.a1: true, h.a2: true, h.a3: true, h.b1: false, h.b2: false,
+	})
 }
 
-func TestStampObsoleteCommitEventsRestampsRestoredHeadAfterUnverifiedHead(t *testing.T) {
-	assert := assert.New(t)
-	fixture := setupObsoleteStampingFixture(t)
+func TestCommitLivenessRestampsRestoredHeadAfterUnverifiedRound(t *testing.T) {
+	fixture := setupCommitLivenessFixture(t)
 	h := fixture.history
-	seedObsoleteCommitEvents(t, fixture, h.a1, h.a2, h.a3)
-	require.NoError(t, fixture.syncer.stampObsoleteCommitEvents(
-		t.Context(), fixture.repo, fixture.repoID, fixture.mrID, 1, h.a3,
-	))
-	assertObsoleteCommitFlags(t, fixture, map[string]bool{
+	seedLivenessCommitEvents(t, fixture, h.a1, h.a2, h.a3)
+	require.True(t, runLivenessRound(t, fixture, h.a3, nil))
+	assertLivenessCommitFlags(t, fixture, map[string]bool{
 		h.a1: false, h.a2: false, h.a3: false,
 	})
 
 	// Create a divergent lineage after the bare clone was made so its head is
-	// genuinely unavailable to this stamping round.
-	obsoleteTestGit(t, h.sourceDir, "checkout", "-b", "unverified-lineage", h.base)
+	// genuinely unavailable to this round.
+	livenessTestGit(t, h.sourceDir, "checkout", "-b", "unverified-lineage", h.base)
 	commit := func(contents, message string) string {
 		require.NoError(t, os.WriteFile(
 			filepath.Join(h.sourceDir, "unverified.txt"), []byte(contents), 0o644,
 		))
-		obsoleteTestGit(t, h.sourceDir, "add", "unverified.txt")
-		obsoleteTestGit(t, h.sourceDir, "commit", "-m", message)
-		return obsoleteTestGit(t, h.sourceDir, "rev-parse", "HEAD")
+		livenessTestGit(t, h.sourceDir, "add", "unverified.txt")
+		livenessTestGit(t, h.sourceDir, "commit", "-m", message)
+		return livenessTestGit(t, h.sourceDir, "rev-parse", "HEAD")
 	}
 	unverifiedCommit1 := commit("replacement 1\n", "unverified replacement 1")
 	unverifiedHead := commit("replacement 2\n", "unverified replacement 2")
-	hasHead, err := h.manager.HasCommit(
-		t.Context(), "github", "github.com", "owner", "repo", unverifiedHead,
-	)
-	require.NoError(t, err)
-	assert.False(hasHead)
 
-	setObsoleteFixtureHead(t, fixture, unverifiedHead)
-	require.NoError(t, fixture.syncer.stampObsoleteCommitEvents(
-		t.Context(), fixture.repo, fixture.repoID, fixture.mrID, 1, unverifiedHead,
-	))
-	assertObsoleteCommitFlags(t, fixture, map[string]bool{
+	// The unverified round persists its incoming commit events without flags
+	// (the provider listed them, so showing them is the safe direction) and
+	// must drop the a3 hint: the stored event set changed without a verified
+	// head certifying it.
+	createdAt := time.Date(2026, 8, 5, 11, 0, 0, 0, time.UTC)
+	incoming := []db.MREvent{
+		{
+			EventType:    "commit",
+			Summary:      unverifiedCommit1,
+			MetadataJSON: `{"commit_order_key":10}`,
+			CreatedAt:    createdAt,
+			DedupeKey:    unverifiedCommit1,
+		},
+		{
+			EventType:    "commit",
+			Summary:      unverifiedHead,
+			MetadataJSON: `{"commit_order_key":11}`,
+			CreatedAt:    createdAt.Add(time.Minute),
+			DedupeKey:    unverifiedHead,
+		},
+	}
+	setLivenessFixtureHead(t, fixture, unverifiedHead)
+	require.True(t, runLivenessRound(t, fixture, unverifiedHead, incoming))
+	assertLivenessCommitFlags(t, fixture, map[string]bool{
 		h.a1: false, h.a2: false, h.a3: false,
+		unverifiedCommit1: false, unverifiedHead: false,
 	})
 
-	setObsoleteFixtureHead(t, fixture, h.a3)
-	seedObsoleteCommitEvents(t, fixture, unverifiedCommit1, unverifiedHead)
-	require.NoError(t, fixture.syncer.stampObsoleteCommitEvents(
-		t.Context(), fixture.repo, fixture.repoID, fixture.mrID, 1, h.a3,
-	))
-	assertObsoleteCommitFlags(t, fixture, map[string]bool{
+	// Restoring a3 must recompute despite a3 having been the last verified
+	// head: the dropped hint forces a fresh walk that flags the unverified
+	// lineage as obsolete.
+	setLivenessFixtureHead(t, fixture, h.a3)
+	require.True(t, runLivenessRound(t, fixture, h.a3, nil))
+	assertLivenessCommitFlags(t, fixture, map[string]bool{
 		h.a1: false, h.a2: false, h.a3: false,
 		unverifiedCommit1: true, unverifiedHead: true,
 	})
 }
 
-func TestStampObsoleteCommitEventsInvalidatesCacheOnMidRoundFailure(t *testing.T) {
+func TestCommitLivenessFailedRoundWritesNothing(t *testing.T) {
 	assert := assert.New(t)
-	fixture := setupObsoleteStampingFixture(t)
+	fixture := setupCommitLivenessFixture(t)
 	h := fixture.history
-	seedObsoleteCommitEvents(t, fixture, h.a1, h.a2, h.a3)
-	require.NoError(t, fixture.syncer.stampObsoleteCommitEvents(
-		t.Context(), fixture.repo, fixture.repoID, fixture.mrID, 1, h.a3,
-	))
-	assertObsoleteCommitFlags(t, fixture, map[string]bool{
+	seedLivenessCommitEvents(t, fixture, h.a1, h.a2, h.a3)
+	require.True(t, runLivenessRound(t, fixture, h.a3, nil))
+	assertLivenessCommitFlags(t, fixture, map[string]bool{
 		h.a1: false, h.a2: false, h.a3: false,
 	})
 
-	setObsoleteFixtureHead(t, fixture, h.b2)
+	setLivenessFixtureHead(t, fixture, h.b2)
 	_, err := fixture.database.WriteDB().ExecContext(t.Context(), `
 		CREATE TRIGGER reject_obsolete_metadata
 		BEFORE UPDATE OF metadata_json ON forge_mr_events
@@ -509,37 +523,42 @@ func TestStampObsoleteCommitEventsInvalidatesCacheOnMidRoundFailure(t *testing.T
 		END`)
 	require.NoError(t, err)
 
-	// The b2 head exists and all batched git checks complete before this
-	// metadata-only write fails, exercising an error after verification began.
-	err = fixture.syncer.stampObsoleteCommitEvents(
-		t.Context(), fixture.repo, fixture.repoID, fixture.mrID, 1, h.b2,
+	// The b2 head verifies and the round reaches the snapshot transaction, but
+	// the metadata write fails inside it: the transaction rolls back whole and
+	// no liveness hint may survive the failed round.
+	mr, err := fixture.database.GetMergeRequestByRepoIDAndNumber(
+		t.Context(), fixture.repoID, 1,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, mr)
+	_, err = fixture.syncer.commitMergeRequestDatasets(
+		t.Context(), fixture.repo, fixture.mrID, 1, mr.SnapshotRevision,
+		nil, false, nil, nil, nil, false, nil, nil, h.b2,
 	)
 	require.ErrorContains(t, err, "reject obsolete metadata")
-	fixture.syncer.stampedHeadsMu.Lock()
-	_, cached := fixture.syncer.stampedHeads[fixture.mrID]
-	fixture.syncer.stampedHeadsMu.Unlock()
-	assert.False(cached, "failed round must leave no stamped-head certification")
+	assertLivenessCommitFlags(t, fixture, map[string]bool{
+		h.a1: false, h.a2: false, h.a3: false,
+	})
+	fixture.syncer.livenessHeadsMu.Lock()
+	cached := fixture.syncer.livenessHeads[fixture.mrID]
+	fixture.syncer.livenessHeadsMu.Unlock()
+	assert.NotEqual(strings.ToLower(h.b2), cached,
+		"failed round must not certify the head it failed to persist")
 	_, err = fixture.database.WriteDB().ExecContext(
 		t.Context(), `DROP TRIGGER reject_obsolete_metadata`,
 	)
 	require.NoError(t, err)
 
-	// Restoring a3 must not hit the certification cached before the failed b2
-	// round. Newly persisted b-lineage events prove a3 is verified again.
-	setObsoleteFixtureHead(t, fixture, h.a3)
-	seedObsoleteCommitEvents(t, fixture, h.b1, h.b2)
-	require.NoError(t, fixture.syncer.stampObsoleteCommitEvents(
-		t.Context(), fixture.repo, fixture.repoID, fixture.mrID, 1, h.a3,
-	))
-	assertObsoleteCommitFlags(t, fixture, map[string]bool{
-		h.a1: false, h.a2: false, h.a3: false,
-		h.b1: true, h.b2: true,
+	// The retry recomputes and lands the b2 verdicts the failed round lost.
+	require.True(t, runLivenessRound(t, fixture, h.b2, nil))
+	assertLivenessCommitFlags(t, fixture, map[string]bool{
+		h.a1: true, h.a2: true, h.a3: true,
 	})
 }
 
-func TestStampObsoleteCommitEventsConcurrentMergeRequests(t *testing.T) {
+func TestCommitLivenessConcurrentMergeRequests(t *testing.T) {
 	assert := assert.New(t)
-	fixture := setupObsoleteStampingFixture(t)
+	fixture := setupCommitLivenessFixture(t)
 	h := fixture.history
 	first, err := fixture.database.GetMergeRequestByRepoIDAndNumber(
 		t.Context(), fixture.repoID, 1,
@@ -560,79 +579,84 @@ func TestStampObsoleteCommitEventsConcurrentMergeRequests(t *testing.T) {
 
 	secondFixture := fixture
 	secondFixture.mrID = secondMRID
-	seedObsoleteCommitEvents(t, fixture, h.a1, h.a2, h.a3, h.b1, h.b2)
-	seedObsoleteCommitEvents(t, secondFixture, h.a1, h.a2, h.a3, h.b1, h.b2)
+	seedLivenessCommitEvents(t, fixture, h.a1, h.a2, h.a3, h.b1, h.b2)
+	seedLivenessCommitEvents(t, secondFixture, h.a1, h.a2, h.a3, h.b1, h.b2)
+
+	firstRow, err := fixture.database.GetMergeRequestByRepoIDAndNumber(
+		t.Context(), fixture.repoID, 1,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, firstRow)
+	secondRow, err := fixture.database.GetMergeRequestByRepoIDAndNumber(
+		t.Context(), fixture.repoID, 2,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, secondRow)
 
 	start := make(chan struct{})
 	errs := make(chan error, 2)
-	stamp := func(mrID int64, number int, headSHA string) {
+	round := func(mrID int64, number int, revision int64, headSHA string) {
 		<-start
-		errs <- fixture.syncer.stampObsoleteCommitEvents(
-			t.Context(), fixture.repo, fixture.repoID, mrID, number, headSHA,
+		_, err := fixture.syncer.commitMergeRequestDatasets(
+			t.Context(), fixture.repo, mrID, number, revision,
+			nil, false, nil, nil, nil, false, nil, nil, headSHA,
 		)
+		errs <- err
 	}
-	go stamp(fixture.mrID, 1, h.a3)
-	go stamp(secondMRID, 2, h.b2)
+	go round(fixture.mrID, 1, firstRow.SnapshotRevision, h.a3)
+	go round(secondMRID, 2, secondRow.SnapshotRevision, h.b2)
 	close(start)
 	assert.NoError(<-errs)
 	assert.NoError(<-errs)
 
-	assertObsoleteCommitFlags(t, fixture, map[string]bool{
+	assertLivenessCommitFlags(t, fixture, map[string]bool{
 		h.a1: false, h.a2: false, h.a3: false, h.b1: true, h.b2: true,
 	})
-	assertObsoleteCommitFlags(t, secondFixture, map[string]bool{
+	assertLivenessCommitFlags(t, secondFixture, map[string]bool{
 		h.a1: true, h.a2: true, h.a3: true, h.b1: false, h.b2: false,
 	})
 }
 
-func TestStampObsoleteCommitEventsRepairsThroughUnchangedDetail(t *testing.T) {
-	assert := assert.New(t)
-	fixture := setupObsoleteStampingFixture(t)
+func TestCommitLivenessRepairsThroughUnchangedDetail(t *testing.T) {
+	fixture := setupCommitLivenessFixture(t)
 	h := fixture.history
-	seedObsoleteCommitEvents(t, fixture, h.a1)
+	seedLivenessCommitEvents(t, fixture, h.a1)
 
-	obsoleteTestGit(t, h.sourceDir, "checkout", "-b", "repair-head", "feature-b")
+	livenessTestGit(t, h.sourceDir, "checkout", "-b", "repair-head", "feature-b")
 	require.NoError(t, os.WriteFile(
 		filepath.Join(h.sourceDir, "repair.txt"), []byte("repair\n"), 0o644,
 	))
-	obsoleteTestGit(t, h.sourceDir, "add", "repair.txt")
-	obsoleteTestGit(t, h.sourceDir, "commit", "-m", "repair head")
-	repairHead := obsoleteTestGit(t, h.sourceDir, "rev-parse", "HEAD")
-	existing := setObsoleteFixtureHead(t, fixture, repairHead)
-	hasHead, err := h.manager.HasCommit(
-		t.Context(), "github", "github.com", "owner", "repo", repairHead,
+	livenessTestGit(t, h.sourceDir, "add", "repair.txt")
+	livenessTestGit(t, h.sourceDir, "commit", "-m", "repair head")
+	repairHead := livenessTestGit(t, h.sourceDir, "rev-parse", "HEAD")
+	existing := setLivenessFixtureHead(t, fixture, repairHead)
+
+	// The clone does not yet contain the head, so the unchanged-detail round
+	// marks detail fetched without touching liveness metadata.
+	_, err := fixture.syncer.markUnchangedMRDetailFetched(
+		t.Context(), fixture.repo, fixture.repoID, 1, existing, 1,
 	)
 	require.NoError(t, err)
-	assert.False(hasHead)
-
-	// The first attempt verifies that the clone does not yet contain the head,
-	// so it leaves metadata unchanged and does not publish a cached stamp.
-	require.NoError(t, fixture.syncer.stampObsoleteCommitEvents(
-		t.Context(), fixture.repo, fixture.repoID, fixture.mrID, 1, repairHead,
-	))
-	assertObsoleteCommitFlags(t, fixture, map[string]bool{h.a1: false})
+	assertLivenessCommitFlags(t, fixture, map[string]bool{h.a1: false})
 
 	clonePath, err := h.manager.ClonePath("github", "github.com", "owner", "repo")
 	require.NoError(t, err)
-	obsoleteTestGit(
+	livenessTestGit(
 		t, clonePath, "fetch", h.sourceDir,
 		"refs/heads/repair-head:refs/heads/repair-head",
 	)
-	hasHead, err = h.manager.HasCommit(
-		t.Context(), "github", "github.com", "owner", "repo", repairHead,
-	)
-	require.NoError(t, err)
-	assert.True(hasHead)
+	// Once the clone has the head, the next unchanged-detail round carries the
+	// liveness updates with its marker under the same revision guard.
 	_, err = fixture.syncer.markUnchangedMRDetailFetched(
 		t.Context(), fixture.repo, fixture.repoID, 1, existing, 1,
 	)
 	require.NoError(t, err)
-	assertObsoleteCommitFlags(t, fixture, map[string]bool{h.a1: true})
+	assertLivenessCommitFlags(t, fixture, map[string]bool{h.a1: true})
 }
 
-func TestStampObsoleteCommitEventsViaFetchProviderMRDetail(t *testing.T) {
+func TestCommitLivenessViaFetchProviderMRDetail(t *testing.T) {
 	assert := assert.New(t)
-	fixture := setupObsoleteStampingFixture(t)
+	fixture := setupCommitLivenessFixture(t)
 	h := fixture.history
 	providerRepo := RepoRef{
 		Platform:           platform.KindForgejo,
@@ -647,7 +671,7 @@ func TestStampObsoleteCommitEventsViaFetchProviderMRDetail(t *testing.T) {
 		string(platform.KindForgejo), platform.DefaultForgejoHost, "owner", "repo",
 	)
 	require.NoError(t, err)
-	obsoleteTestGit(t, "", "clone", "--bare", h.sourceDir, barePath)
+	livenessTestGit(t, "", "clone", "--bare", h.sourceDir, barePath)
 	providerRepoID, err := fixture.database.UpsertRepo(
 		t.Context(), verifiedDBRepoIdentity(platformRepoRef(providerRepo)),
 	)
@@ -675,7 +699,7 @@ func TestStampObsoleteCommitEventsViaFetchProviderMRDetail(t *testing.T) {
 	providerFixture.repo = providerRepo
 	providerFixture.repoID = providerRepoID
 	providerFixture.mrID = providerMRID
-	seedObsoleteCommitEvents(t, providerFixture, h.a1, h.a2, h.a3)
+	seedLivenessCommitEvents(t, providerFixture, h.a1, h.a2, h.a3)
 
 	providerRef := platformRepoRef(providerRepo)
 	provider := &syncTestReadProvider{
@@ -733,7 +757,7 @@ func TestStampObsoleteCommitEventsViaFetchProviderMRDetail(t *testing.T) {
 		t.Context(), provider, providerRepo, providerRepoID, 1,
 	)
 	require.NoError(t, err)
-	assertObsoleteCommitFlags(t, providerFixture, map[string]bool{
+	assertLivenessCommitFlags(t, providerFixture, map[string]bool{
 		h.a1: true, h.a2: true, h.a3: true, h.b1: false, h.b2: false,
 	})
 	events, err := fixture.database.ListMREvents(t.Context(), providerMRID)
@@ -744,15 +768,15 @@ func TestStampObsoleteCommitEventsViaFetchProviderMRDetail(t *testing.T) {
 			seenReplacement[event.PlatformExternalID] = true
 		}
 	}
-	assert.True(seenReplacement[h.b1], "replacement commit b1 must be persisted before stamping")
-	assert.True(seenReplacement[h.b2], "replacement commit b2 must be persisted before stamping")
+	assert.True(seenReplacement[h.b1], "replacement commit b1 must be persisted by the round")
+	assert.True(seenReplacement[h.b2], "replacement commit b2 must be persisted by the round")
 }
 
-func TestSyncMRForRepoStampsObsoleteCommitEventsAfterTimelinePersistence(t *testing.T) {
+func TestSyncMRForRepoComputesCommitLivenessWithTimeline(t *testing.T) {
 	assert := assert.New(t)
-	fixture := setupObsoleteStampingFixture(t)
+	fixture := setupCommitLivenessFixture(t)
 	h := fixture.history
-	seedObsoleteCommitEvents(t, fixture, h.a1, h.a2, h.a3)
+	seedLivenessCommitEvents(t, fixture, h.a1, h.a2, h.a3)
 
 	now := time.Date(2026, 8, 5, 12, 1, 0, 0, time.UTC)
 	pr := buildOpenPRWithSHA(1, now, h.b2)
@@ -790,7 +814,7 @@ func TestSyncMRForRepoStampsObsoleteCommitEventsAfterTimelinePersistence(t *test
 	t.Cleanup(syncer.Stop)
 
 	require.NoError(t, syncer.syncMRForRepo(t.Context(), fixture.repo, 1, false, nil))
-	assertObsoleteCommitFlags(t, fixture, map[string]bool{
+	assertLivenessCommitFlags(t, fixture, map[string]bool{
 		h.a1: true, h.a2: true, h.a3: true,
 	})
 	events, err := fixture.database.ListMREvents(t.Context(), fixture.mrID)
@@ -805,6 +829,6 @@ func TestSyncMRForRepoStampsObsoleteCommitEventsAfterTimelinePersistence(t *test
 			seenB[event.Summary] = true
 		}
 	}
-	assert.True(seenB[h.b1], "replacement commit b1 must be persisted before stamping")
-	assert.True(seenB[h.b2], "replacement commit b2 must be persisted before stamping")
+	assert.True(seenB[h.b1], "replacement commit b1 must be persisted by the round")
+	assert.True(seenB[h.b2], "replacement commit b2 must be persisted by the round")
 }

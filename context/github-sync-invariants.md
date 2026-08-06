@@ -139,11 +139,15 @@ Some PR-derived state is only valid for one head commit.
 
 - Never carry CI status, check runs, or similar head-derived summaries forward
   when the PR head SHA changed underneath the refresh.
-- Stamp commit-event `obsolete` metadata after event persistence from clone-verified
-  head ancestry only; provider commit lists are base-sensitive and may clear `obsolete`
-  for relisted commits as liveness evidence before later clone verification, while the
-  frontend never infers obsolescence. On unverifiable heads, only events not relisted
-  retain last-verified flags as a narrow exception (`internal/github/sync.go::stampObsoleteCommitEvents`).
+- Commit-event `obsolete` metadata comes from clone-verified head ancestry only and
+  must ride the sync round's own revision-guarded snapshot write — never a separate
+  post-persistence writer, so a round that loses the revision CAS writes no liveness
+  state at all. On unverifiable heads the round commits its events without liveness
+  changes: relisted provider commits arrive unflagged (listing is liveness evidence)
+  while unlisted events keep last-verified flags; the frontend never infers
+  obsolescence. Local ancestry reads run in-process via go-git, never git
+  subprocesses (`internal/github/sync.go::computeCommitLiveness`,
+  `internal/gitclone/reachability.go::CommitsReachableFrom`).
 - Workflow-approval decisions must be tied to the correct PR identity, not just
   the head SHA. Shared SHAs across forks or sibling PRs must not leak approval
   state between items.

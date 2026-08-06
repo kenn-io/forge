@@ -26,6 +26,11 @@ type MergeRequestChildSnapshot struct {
 	InlineCommentsComplete bool
 	OtherEvents            []MREvent
 	DerivedFields          *MRDerivedFields
+	// EventMetadataUpdates rewrites metadata_json on already-stored events
+	// (keyed by dedupe key) inside the same revision-guarded transaction as
+	// the rest of the snapshot. Derived state such as commit liveness rides
+	// here so a round that loses the revision CAS writes nothing at all.
+	EventMetadataUpdates map[string]string
 }
 
 func domainParentSnapshotCurrentTx(
@@ -146,6 +151,11 @@ func (d *DB) CommitMergeRequestChildSnapshot(
 		if err := upsertMREventsTx(ctx, tx, snapshot.OtherEvents); err != nil {
 			return err
 		}
+		if err := updateMREventMetadataTx(
+			ctx, tx, snapshot.MergeRequestID, snapshot.EventMetadataUpdates,
+		); err != nil {
+			return err
+		}
 		applied = true
 		return nil
 	})
@@ -236,16 +246,50 @@ func (d *DB) ClearIssueDetailFetchedSnapshot(
 		WHERE id = ? AND snapshot_revision = ?`, issueID, expectedRevision)
 }
 
+// MarkMergeRequestDetailFetchedSnapshot stamps the detail-fetched marker
+// under the parent revision guard. Rounds with no dataset commit of their own
+// (unchanged/not-modified refreshes) pass their derived event-metadata
+// updates here so the updates land inside the same revision-guarded
+// transaction as the marker — or not at all.
 func (d *DB) MarkMergeRequestDetailFetchedSnapshot(
 	ctx context.Context,
 	mergeRequestID int64,
 	expectedRevision int64,
 	ciHadPending bool,
+	eventMetadataUpdates map[string]string,
 ) (bool, error) {
-	return d.updateApplied(ctx, "mark merge-request detail fetched", `
+	const markQuery = `
 		UPDATE forge_merge_requests
 		SET detail_fetched_at = datetime('now'), ci_had_pending = ?
-		WHERE id = ? AND snapshot_revision = ?`, ciHadPending, mergeRequestID, expectedRevision)
+		WHERE id = ? AND snapshot_revision = ?`
+	if len(eventMetadataUpdates) == 0 {
+		return d.updateApplied(ctx, "mark merge-request detail fetched",
+			markQuery, ciHadPending, mergeRequestID, expectedRevision)
+	}
+	applied := false
+	err := d.Tx(ctx, func(tx *sql.Tx) error {
+		result, err := tx.ExecContext(
+			ctx, markQuery, ciHadPending, mergeRequestID, expectedRevision,
+		)
+		if err != nil {
+			return fmt.Errorf("mark merge-request detail fetched: %w", err)
+		}
+		changed, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("read mark merge-request detail fetched result: %w", err)
+		}
+		if changed == 0 {
+			return nil
+		}
+		if err := updateMREventMetadataTx(
+			ctx, tx, mergeRequestID, eventMetadataUpdates,
+		); err != nil {
+			return err
+		}
+		applied = true
+		return nil
+	})
+	return applied, err
 }
 
 func (d *DB) MarkIssueDetailFetchedSnapshot(

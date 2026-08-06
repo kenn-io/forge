@@ -576,13 +576,9 @@ func (s *Handler) publishDiffReviewDraft(
 					return nil, huma.Error500InternalServerError("discard partially published review draft comments failed")
 				}
 			}
-			if capabilityEnabled(s.capabilitiesForRepo(*repo), capabilityReadReviewThreads) {
-				if ingestErr := s.ingestDiffReviewThreads(ctx, *repo, *mr); ingestErr != nil {
-					return nil, ingestErr
-				}
-			}
-			if errors.Is(partialErr, platform.ErrStaleState) {
-				s.syncAfterStaleReviewDraftPublish(*repo, input.Number)
+			ingestErr := s.tryIngestPublishedReviewThreads(ctx, *repo, *mr)
+			if errors.Is(partialErr, platform.ErrStaleState) || ingestErr != nil {
+				s.syncAfterReviewDraftPublish(*repo, input.Number)
 			}
 			if mapped := diffReviewPartialPublishProblem(partialErr, *repo); mapped != nil {
 				return nil, mapped
@@ -590,7 +586,7 @@ func (s *Handler) publishDiffReviewDraft(
 			return &actionStatusOutput{Body: ActionStatusBody{Status: "partially_published"}}, nil
 		}
 		if errors.Is(err, platform.ErrStaleState) {
-			s.syncAfterStaleReviewDraftPublish(*repo, input.Number)
+			s.syncAfterReviewDraftPublish(*repo, input.Number)
 		}
 		return nil, httpapi.ProviderCallProblemWithDetail(
 			err,
@@ -602,22 +598,39 @@ func (s *Handler) publishDiffReviewDraft(
 	if err := s.db.DeleteMRReviewDraft(ctx, mr.ID); err != nil {
 		return nil, huma.Error500InternalServerError("discard published review draft failed")
 	}
-	if capabilityEnabled(s.capabilitiesForRepo(*repo), capabilityReadReviewThreads) {
-		if err := s.ingestDiffReviewThreads(ctx, *repo, *mr); err != nil {
-			return nil, err
-		}
+	if err := s.tryIngestPublishedReviewThreads(ctx, *repo, *mr); err != nil {
+		s.syncAfterReviewDraftPublish(*repo, input.Number)
 	}
 	return &actionStatusOutput{Body: ActionStatusBody{Status: "published"}}, nil
 }
 
-func (s *Handler) syncAfterStaleReviewDraftPublish(repo db.Repo, number int) {
+func (s *Handler) tryIngestPublishedReviewThreads(
+	ctx context.Context,
+	repo db.Repo,
+	mr db.MergeRequest,
+) error {
+	if !capabilityEnabled(s.capabilitiesForRepo(repo), capabilityReadReviewThreads) {
+		return nil
+	}
+	if err := s.ingestDiffReviewThreads(ctx, repo, mr); err != nil {
+		slog.Warn("published review thread ingestion failed; scheduling background sync",
+			"repo", repo.Owner+"/"+repo.Name,
+			"number", mr.Number,
+			"err", err,
+		)
+		return err
+	}
+	return nil
+}
+
+func (s *Handler) syncAfterReviewDraftPublish(repo db.Repo, number int) {
 	s.runBackground(func(bgCtx context.Context) {
 		if syncErr := s.syncer.SyncMROnProvider(
 			bgCtx,
 			repoProviderKind(repo), repoProviderHost(repo),
 			repo.Owner, repo.Name, number,
 		); syncErr != nil {
-			slog.Warn("background sync after stale review draft publish", "err", syncErr)
+			slog.Warn("background sync after review draft publish", "err", syncErr)
 		}
 	})
 }

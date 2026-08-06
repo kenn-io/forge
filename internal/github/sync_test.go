@@ -12579,6 +12579,25 @@ func TestFetchMRDetailRefreshesCommentVisibilityOnParent304(t *testing.T) {
 	mc.comments = []*gh.IssueComment{{ID: new(int64)}}
 	mc.reviews = []*gh.PullRequestReview{{ID: new(int64)}}
 	mc.commits = []*gh.RepositoryCommit{{SHA: new(string)}}
+	inlineCommentID := int64(10402)
+	inlineLine := 12
+	mc.reviewThreads = []PullRequestReviewThread{{
+		NodeID: "PRRT_10402",
+		Path:   "src/main.go",
+		Side:   "RIGHT",
+		Line:   inlineLine,
+		Comments: []PullRequestReviewThreadComment{{
+			NodeID:          "PRRC_10402",
+			DatabaseID:      inlineCommentID,
+			Body:            "inline moderation changed without changing the parent",
+			AuthorLogin:     "reviewer",
+			CommitID:        "abc123def456",
+			IsMinimized:     true,
+			MinimizedReason: "ABUSE",
+			CreatedAt:       updatedAt,
+			UpdatedAt:       updatedAt,
+		}},
+	}}
 	syncer := NewSyncer(
 		map[string]Client{"github.com": mc}, d, nil,
 		[]RepoRef{repo},
@@ -12600,16 +12619,37 @@ func TestFetchMRDetailRefreshesCommentVisibilityOnParent304(t *testing.T) {
 	require.NoError(err)
 	events, err := d.ListMREvents(ctx, mrID)
 	require.NoError(err)
-	require.Len(events, 1)
-	assert.JSONEq(`{"provider_hidden":true,"provider_hidden_reason":"ABUSE"}`, events[0].MetadataJSON)
+	require.Len(events, 2)
+	metadataByType := make(map[string]string, len(events))
+	for _, event := range events {
+		metadataByType[event.EventType] = event.MetadataJSON
+	}
+	assert.JSONEq(`{"provider_hidden":true,"provider_hidden_reason":"ABUSE"}`, metadataByType["issue_comment"])
+	assert.JSONEq(`{"provider_hidden":true,"provider_hidden_reason":"ABUSE"}`, metadataByType["review_comment"])
+	threads, err := d.ListMRReviewThreads(ctx, mrID)
+	require.NoError(err)
+	require.Len(threads, 1)
+	assert.JSONEq(`{"provider_hidden":true,"provider_hidden_reason":"ABUSE"}`, threads[0].MetadataJSON)
 
+	mc.reviewThreads[0].Comments[0].IsMinimized = false
+	mc.reviewThreads[0].Comments[0].MinimizedReason = ""
 	_, err = syncer.fetchMRDetail(ctx, repo, repoID, 1, false)
 	require.NoError(err)
 	events, err = d.ListMREvents(ctx, mrID)
 	require.NoError(err)
-	require.Len(events, 1)
-	assert.Empty(events[0].MetadataJSON)
-	assert.Equal("moderated without changing the parent", events[0].Body)
+	require.Len(events, 2)
+	for _, event := range events {
+		assert.Empty(event.MetadataJSON)
+	}
+	threads, err = d.ListMRReviewThreads(ctx, mrID)
+	require.NoError(err)
+	require.Len(threads, 1)
+	assert.Empty(threads[0].MetadataJSON)
+	for _, event := range events {
+		if event.EventType == "issue_comment" {
+			assert.Equal("moderated without changing the parent", event.Body)
+		}
+	}
 
 	assert.Equal(int32(2), mc.conditionalCalls.Load())
 	assert.Equal(`"etag-v1"`, mc.receivedETag)

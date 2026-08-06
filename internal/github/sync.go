@@ -9766,6 +9766,18 @@ func (s *Syncer) markUnchangedMRDetailFetched(
 		}
 		return calls, err
 	}
+	if fetcher := s.fetcherFor(repo); fetcher != nil && s.graphQLReadAllowed(ctx, repo, fetcher) {
+		threadCalls, err := s.syncProviderMRReviewThreads(
+			ctx, repo, existing.ID, number, existing.SnapshotRevision, true,
+		)
+		calls += threadCalls
+		if err != nil {
+			if errors.Is(err, errParentSnapshotAdvanced) {
+				return calls, nil
+			}
+			return calls, err
+		}
+	}
 	pending := existing.CIHadPending
 	if existing.CIHadPending && existing.PlatformHeadSHA != "" {
 		ciApplied, err := s.refreshCIStatusSnapshot(
@@ -9971,7 +9983,7 @@ func (s *Syncer) syncProviderMRDetailExtras(
 		}
 	}
 
-	reviewThreadCalls, err := s.syncProviderMRReviewThreads(ctx, repo, mrID, number, expectedRevision)
+	reviewThreadCalls, err := s.syncProviderMRReviewThreads(ctx, repo, mrID, number, expectedRevision, false)
 	calls += reviewThreadCalls
 	if err != nil {
 		return calls, false, fmt.Errorf("sync review threads for MR #%d: %w", number, err)
@@ -10021,6 +10033,7 @@ func (s *Syncer) syncProviderMRReviewThreads(
 	mrID int64,
 	number int,
 	expectedRevision int64,
+	preserveOnReadFailure bool,
 ) (int, error) {
 	caps, err := s.clients.Capabilities(repoPlatform(repo), repoHost(repo))
 	if err != nil {
@@ -10039,6 +10052,14 @@ func (s *Syncer) syncProviderMRReviewThreads(
 	threads, err := reader.ListMergeRequestReviewThreads(ctx, platformRepoRef(repo), number)
 	calls := 1
 	if err != nil {
+		if preserveOnReadFailure {
+			slog.Warn("current PR review-thread visibility fetch failed; preserving stored state",
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", number,
+				"err", err,
+			)
+			return calls, nil
+		}
 		return calls, err
 	}
 
@@ -10496,7 +10517,7 @@ func (s *Syncer) refreshTimeline(
 	if !applied {
 		return errParentSnapshotAdvanced
 	}
-	if _, err := s.syncProviderMRReviewThreads(ctx, repo, mrID, number, expectedRevision); err != nil {
+	if _, err := s.syncProviderMRReviewThreads(ctx, repo, mrID, number, expectedRevision, false); err != nil {
 		return fmt.Errorf("sync review threads for MR #%d: %w", number, err)
 	}
 	return nil
